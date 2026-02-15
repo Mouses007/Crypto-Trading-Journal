@@ -1,8 +1,8 @@
 {
-  "name": "tradenote",
-  "version": "20.0.0",
-  "description": "TradeNote - Local Trading Journal for Bitunix",
-  "author": "eleven.trading",
+  "name": "tj-trading-journal",
+  "version": "1.0.0",
+  "description": "TJ - Local Trading Journal for Bitunix Futures",
+  "author": "Mouses007",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {

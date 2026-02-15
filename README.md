@@ -1,77 +1,74 @@
+# TJ - Trading Journal
 
-<p style='font-size:2.5em;' align="center">TradeNote</p>
-<p style='font-size:16px;' align="center" style='margin-bottom:30px'>- Open Source Trading Journal -</p>
+A local, privacy-focused trading journal for **Bitunix futures trading**. No cloud, no accounts, no Docker — just run it on your machine.
 
-<p align="center"><a href="https://tradenote.co">🌐 Website</a> | <a href="https://tradenote.co/project-overview.html">📚 Documentation</a> |  <a href="https://discord.gg/ZbHekKYb85"><img src="https://f003.backblazeb2.com/file/7ak-public/tradenote/discord-icon.svg" width="12" height="12"/> Discord</a><p>
-<br />
+## Features
 
-There are numerous great and very powerful trading journals out there. However, I wanted to build a journal for traders who care about data security and privacy but also for individuals that need simplicity and flexibility.
+- **Dashboard** with P&L analytics, win rate, profit factor, and more
+- **Playbook** for trade notes with stress level (0-5) and emotion level (1-10)
+- **Auswertung** (Evaluation) with tag-based strategy analysis, stress/emotion charts, and completeness radar
+- **Calendar** view of daily trading performance
+- **Diary** for daily journal entries
+- **Screenshots** with annotation support
+- **Incoming positions** — track and evaluate open trades in real-time via Bitunix API
+- **CSV and API import** from Bitunix
 
-By creating and sharing TradeNote as an open source project, I hope to help other days traders like myself store, discover and recollect trade patterns so they can become and remain consistent and profitable traders.
+## Tech Stack
 
-![dashboard](https://tradenote.co/screenshots/dashboard2.png "Dashboard")
+- **Frontend**: Vue 3, Vue Router, ECharts, Bootstrap (dark theme)
+- **Backend**: Express.js + SQLite (better-sqlite3)
+- **No external database** required — everything stored in a single `tradenote.db` file
 
+## Installation
 
-# Installation
-For detailed installation and user guide, please visit the [documentation](https://tradenote.co/project-overview.html "documentation") page.
-## Docker Compose
 ### Requirements
-- Docker
-- Docker Compose
 
-### Installation
-1. Download the docker compose.yml file
-2. Run `docker compose up -d`
+- Node.js 18+
 
-This will automatically setup the database (mongodDB) and the TradeNote app.
+### Setup
 
-You can then access the website on http://localhost:8080.
-
-If you cannot access the website, please refer to the importante notice above (and try changing the mongo version) or get support via [Discord](https://discord.gg/ZbHekKYb85 "Discord")
-
-## Docker
-### Requirements
-- Docker
-- Node 18.X
-- MongoDB
-
-### Installation
-You need to have a running MongoDB database. Please see their [Docker Hub](https://hub.docker.com/_/mongo "Docker Hub") for instructions.
-
-Then, run the TradeNote image with its environment variables.
-
+```bash
+git clone <repo-url>
+cd Journal
+npm install
+npm run build
+npm start
 ```
-docker run \
-    -e MONGO_URI=<mongo_uri> \
-    -e TRADENOTE_DATABASE=<tradenote_database>
-    -e APP_ID=<app_id> \
-    -e MASTER_KEY=<master_key> \
-    -e TRADENOTE_PORT=<tradenote_port> \
-    -p <tradenote_port>:<tradenote_port> \
-    --name tradenote_app \
-    -d eleventrading/tradenote
+
+Open `http://localhost:8080` in your browser.
+
+### Development
+
+```bash
+npm run dev
 ```
-- **MONGO_URI**: The MongoDB connection string, with tradenote database name and enforced access control ([explanation](https://www.mongodb.com/docs/manual/reference/connection-string/ "explanation")). You can use any MongoDB instance you like. If you are using Docker, you can use the default MongoDB instance. (example: mongodb://tradenote:tradenote@mongo:27017/tradenote?authSource=admin)
-- **TRADENOTE_DATABASE**: The TradeNote database name in the MongoDB (example: tradenote)
-- **APP_ID**: Set a random string as application ID, which will be used to connect to the backend (no spaces) (example: 12345).
-- **MASTER_KEY**: Set a random string as master key, which will be used to make root connections to the backend (no spaces) (example: 12345)
-- **TRADENOTE_PORT**: TradeNote port number, from which you wish to serve the website. (example: 8080)
 
+Starts the Vite dev server with hot module replacement.
 
-# Quick Start
-## Registering a User
-Start by registering a user. Visit `http://localhost:8080/register` to register a TradeNote user.
-- Use any (random) email and set a password.
-- Choose your broker and/or account timezone.
+### Port
 
-## Importing Trades
-Please make sure to follow the instructions in the <a href="https://tradenote.co/brokers.html">brokers folder</a> for exporting and importing trades. 
+Default port is `8080`. Change with the `TRADENOTE_PORT` environment variable:
 
-# Contribute
-I'm a trader and recreational developer. My days are very packed but I will do my best to answer your questions and update the code when needed. As such, do not hesitate to contact me if you would like to contribute and help improve this project. Things to work on and improve:
-- Add support to other trading platforms
-- Improve front end layout and develop new ideas
-- And more...
+```bash
+TRADENOTE_PORT=3000 npm start
+```
 
-# License
-This project is open sourced under the GNU GPL v3 licence.
+## Usage
+
+1. Go to **Settings** and configure your Bitunix API Key + Secret (optional, for API import)
+2. Import trades via **CSV upload** or **API fetch**
+3. Evaluate your trades in **Playbook** — add tags, stress/emotion levels, notes
+4. Review your performance in **Dashboard** and **Auswertung**
+
+## Attribution
+
+This project is a fork of [TradeNote](https://github.com/Eleven-Trading/TradeNote) by eleven.trading, substantially modified:
+
+- Replaced MongoDB/Parse Server with SQLite
+- Removed Docker, authentication, payments, analytics
+- Simplified to single-user, Bitunix-only
+- Added emotion level tracking, tag-based strategy evaluation, incoming positions
+
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE) file.
