@@ -1,0 +1,16 @@
+.env
+vendor
+node_modules
+.DS_Store
+dist
+.vscode
+logs
+.idea/
+tradenote.db
+tradenote.db-wal
+tradenote.db-shm
+*.db-journal
+*.csv
+*.backup
+Screenshots/
+.claude/
