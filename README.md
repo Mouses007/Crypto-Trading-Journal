@@ -36,10 +36,16 @@ A local, privacy-focused trading journal for **Bitunix futures trading**. No clo
 ### Windows
 
 1. [Node.js](https://nodejs.org/) installieren (LTS Version)
-2. Dieses Repository herunterladen oder klonen
-3. `install.bat` doppelklicken — installiert Abhängigkeiten und baut das Frontend
-4. `start.bat` doppelklicken — startet den Server
-5. Im Browser `http://localhost:8080` öffnen
+2. **Windows Build Tools** installieren (nötig für `better-sqlite3`):
+   - [Python 3](https://www.python.org/downloads/) installieren — **"Add to PATH" ankreuzen**
+   - In einer **Admin-Eingabeaufforderung** ausführen:
+     ```
+     npm install -g windows-build-tools
+     ```
+3. Dieses Repository herunterladen oder klonen
+4. `install.bat` doppelklicken — installiert Abhängigkeiten und baut das Frontend
+5. `start.bat` doppelklicken — startet den Server
+6. Im Browser `http://localhost:8080` öffnen
 
 ### Linux
 
