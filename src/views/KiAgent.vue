@@ -9,6 +9,7 @@ import dayjs from 'dayjs'
 // Status
 const aiOnline = ref(false)
 const aiProvider = ref('ollama')
+const aiModel = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
 
@@ -22,6 +23,21 @@ const customEnd = ref(dayjs().format('YYYY-MM-DD'))
 const savedReports = reactive([])
 const expandedReports = reactive(new Set())
 const deleteConfirmId = ref(null)
+
+// Token-Verbrauch pro Provider
+const tokensByProvider = computed(() => {
+    const result = {}
+    for (const r of savedReports) {
+        const p = r.provider || 'unknown'
+        if (r.totalTokens > 0) {
+            result[p] = (result[p] || 0) + (r.totalTokens || 0)
+        }
+    }
+    return result
+})
+
+const providerColors = { ollama: '#6c757d', openai: '#10a37f', anthropic: '#7c5cfc', gemini: '#4285f4', deepseek: '#0066ff' }
+const providerNames = { ollama: 'Ollama', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepseek: 'DeepSeek' }
 
 // Zeitraum als Unix berechnen
 const dateRange = computed(() => {
@@ -44,8 +60,17 @@ const dateRange = computed(() => {
 
 // Provider-Label
 const providerLabel = computed(() => {
-    const labels = { ollama: 'Ollama', openai: 'OpenAI', anthropic: 'Anthropic' }
+    const labels = { ollama: 'Ollama', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepseek: 'DeepSeek' }
     return labels[aiProvider.value] || aiProvider.value
+})
+
+// Modell-Label (kurzer Name für Badge)
+const modelLabel = computed(() => {
+    if (!aiModel.value) return providerLabel.value
+    // Kürze lange Modellnamen: "claude-sonnet-4-5-20250929" → "claude-sonnet-4-5"
+    let name = aiModel.value
+    name = name.replace(/[-:]\d{8,}$/, '') // Entferne Datums-Suffixe
+    return name
 })
 
 // KI Status prüfen
@@ -54,6 +79,7 @@ async function checkStatus() {
         const res = await axios.get('/api/ai/status')
         aiOnline.value = res.data.online
         aiProvider.value = res.data.provider || 'ollama'
+        aiModel.value = res.data.model || ''
     } catch (e) {
         aiOnline.value = false
     }
@@ -78,10 +104,11 @@ async function generateReport() {
         const res = await axios.post('/api/ai/report', {
             startDate: dateRange.value.startDate,
             endDate: dateRange.value.endDate
-        }, { timeout: 300000 })
+        }, { timeout: 600000 })
 
         const report = res.data.report
         const reportData = res.data.data || null
+        const tokenUsage = res.data.tokenUsage || null
 
         // Automatisch speichern
         const saveRes = await axios.post('/api/ai/reports/save', {
@@ -91,7 +118,8 @@ async function generateReport() {
             provider: res.data.provider || aiProvider.value,
             model: res.data.model || '',
             report,
-            reportData
+            reportData,
+            tokenUsage
         })
 
         // Berichte neu laden und neuen aufklappen
@@ -177,11 +205,14 @@ onBeforeMount(async () => {
             <!-- Header -->
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="mb-0">
-                    <i class="uil uil-robot me-2"></i>KI-Agent
+                    <i class="uil uil-robot me-2"></i>KI-Bericht erstellen
                 </h5>
                 <div class="d-flex align-items-center gap-2">
+                    <span class="text-muted small">
+                        <i class="uil uil-processor me-1"></i>{{ (tokensByProvider[aiProvider] || 0).toLocaleString() }} Tokens
+                    </span>
                     <span class="badge" :class="aiOnline ? 'bg-success' : 'bg-danger'">
-                        {{ aiOnline ? providerLabel + ' Online' : providerLabel + ' Offline' }}
+                        {{ aiOnline ? modelLabel + ' Online' : providerLabel + ' Offline' }}
                     </span>
                     <button class="btn btn-sm btn-outline-secondary" @click="checkStatus" title="Status prüfen">
                         <i class="uil uil-sync"></i>
@@ -202,8 +233,8 @@ onBeforeMount(async () => {
             </div>
 
             <!-- Konfiguration -->
-            <div v-if="aiOnline" class="dailyCard mb-3">
-                <div class="row align-items-end g-3">
+            <div v-if="aiOnline" class="dailyCard mb-3" style="height: auto; padding: 0.6em 1em;">
+                <div class="row align-items-end g-2">
 
                     <!-- Zeitraum-Typ -->
                     <div class="col-auto">
@@ -261,7 +292,7 @@ onBeforeMount(async () => {
                 <p class="text-muted mt-2 mb-0">Noch keine Berichte erstellt.</p>
             </div>
 
-            <div v-for="report in savedReports" :key="report.id" class="dailyCard mb-2">
+            <div v-for="report in savedReports" :key="report.id" class="dailyCard mb-2" style="height: auto;">
                 <!-- Klickbarer Header -->
                 <div class="d-flex justify-content-between align-items-center pointerClass" @click="toggleReport(report.id)">
                     <div class="d-flex align-items-center">
@@ -319,6 +350,14 @@ onBeforeMount(async () => {
 
                     <!-- Bericht-Text -->
                     <div class="report-content" v-html="markdownToHtml(report.report)"></div>
+
+                    <!-- Token-Verbrauch -->
+                    <div class="d-flex align-items-center gap-3 mt-2 pt-2 text-muted small" style="border-top: 1px solid var(--border-color, #333);">
+                        <span><i class="uil uil-processor me-1"></i>{{ report.model || '—' }}</span>
+                        <span>Prompt: {{ report.totalTokens > 0 ? report.promptTokens?.toLocaleString() : '—' }}</span>
+                        <span>Antwort: {{ report.totalTokens > 0 ? report.completionTokens?.toLocaleString() : '—' }}</span>
+                        <span class="fw-bold">Gesamt: {{ report.totalTokens > 0 ? report.totalTokens?.toLocaleString() + ' Tokens' : '—' }}</span>
+                    </div>
                 </div>
             </div>
 

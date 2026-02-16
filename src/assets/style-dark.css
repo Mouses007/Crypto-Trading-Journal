@@ -846,6 +846,7 @@ img.logo {
     background-color: var(--black-bg-0) !important;
     color: var(--white-87);
     height: 63px;
+    margin-top: 46px;
     box-shadow: none;
 }
 

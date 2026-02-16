@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeMount, onMounted, ref, reactive } from 'vue';
+import { onBeforeMount, onMounted, ref, reactive, computed } from 'vue';
 import { useCheckCurrentUser, useInitTooltip, useDateCalFormat } from '../utils/utils';
 import { currentUser, renderProfile, allTradeTimeframes, selectedTradeTimeframes } from '../stores/globals';
 import { dbUpdateSettings, dbGetSettings, dbFind, dbFirst, dbDelete, dbDeleteWhere } from '../utils/db.js'
@@ -30,21 +30,32 @@ let reparaturExpanded = ref(false)
 /* KI-AGENT SETTINGS */
 let aiProvider = ref('ollama')
 let aiModel = ref('')
-let aiApiKey = ref('')
+let aiKeys = reactive({ openai: '', anthropic: '', gemini: '', deepseek: '' })
 let aiOllamaUrl = ref('http://localhost:11434')
 let aiTemperature = ref(0.7)
 let aiMaxTokens = ref(1500)
+let aiScreenshots = ref(false)
 let aiTestLoading = ref(false)
 let aiTestResult = ref(null)
 let ollamaModels = ref([])
 
+// Aktueller Key für den gewählten Provider
+const currentApiKey = computed({
+    get: () => aiKeys[aiProvider.value] || '',
+    set: (val) => { aiKeys[aiProvider.value] = val }
+})
+
 const openaiModels = ['gpt-4o-mini', 'gpt-4o']
 const anthropicModels = ['claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001']
+const geminiModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro']
+const deepseekModels = ['deepseek-chat', 'deepseek-reasoner']
 
 const availableModels = {
     ollama: () => ollamaModels.value,
     openai: () => openaiModels,
-    anthropic: () => anthropicModels
+    anthropic: () => anthropicModels,
+    gemini: () => geminiModels,
+    deepseek: () => deepseekModels
 }
 
 function getModelsForProvider() {
@@ -63,13 +74,19 @@ async function loadOllamaModels() {
 
 async function saveAiSettings() {
     try {
-        await dbUpdateSettings({
+        await axios.post('/api/ai/settings', {
             aiProvider: aiProvider.value,
             aiModel: aiModel.value,
-            aiApiKey: aiApiKey.value,
             aiOllamaUrl: aiOllamaUrl.value || 'http://localhost:11434',
             aiTemperature: parseFloat(aiTemperature.value) || 0.7,
-            aiMaxTokens: parseInt(aiMaxTokens.value) || 1500
+            aiMaxTokens: parseInt(aiMaxTokens.value) || 1500,
+            aiScreenshots: aiScreenshots.value,
+            keys: {
+                openai: aiKeys.openai,
+                anthropic: aiKeys.anthropic,
+                gemini: aiKeys.gemini,
+                deepseek: aiKeys.deepseek
+            }
         })
         currentUser.value.aiProvider = aiProvider.value
         currentUser.value.aiModel = aiModel.value
@@ -79,6 +96,8 @@ async function saveAiSettings() {
         console.log(' -> KI-Einstellungen gespeichert')
         aiTestResult.value = { success: true, message: 'Gespeichert!' }
         setTimeout(() => aiTestResult.value = null, 3000)
+        // Maskierte Keys neu laden
+        await loadAiSettings()
     } catch (error) {
         alert('Fehler beim Speichern: ' + error.message)
     }
@@ -90,7 +109,7 @@ async function testAiConnection() {
     try {
         const res = await axios.post('/api/ai/test', {
             provider: aiProvider.value,
-            apiKey: aiApiKey.value,
+            apiKey: currentApiKey.value,
             model: aiModel.value,
             ollamaUrl: aiOllamaUrl.value
         })
@@ -113,8 +132,28 @@ function onProviderChange() {
     aiModel.value = models.length > 0 ? models[0] : ''
     aiTestResult.value = null
     if (aiProvider.value === 'ollama') {
-        aiApiKey.value = ''
         loadOllamaModels()
+    }
+}
+
+async function loadAiSettings() {
+    try {
+        const res = await axios.get('/api/ai/settings')
+        const s = res.data
+        aiProvider.value = s.aiProvider || 'ollama'
+        aiModel.value = s.aiModel || ''
+        aiOllamaUrl.value = s.aiOllamaUrl || 'http://localhost:11434'
+        aiTemperature.value = s.aiTemperature ?? 0.7
+        aiMaxTokens.value = s.aiMaxTokens || 1500
+        aiScreenshots.value = s.aiScreenshots || false
+        if (s.keys) {
+            aiKeys.openai = s.keys.openai || ''
+            aiKeys.anthropic = s.keys.anthropic || ''
+            aiKeys.gemini = s.keys.gemini || ''
+            aiKeys.deepseek = s.keys.deepseek || ''
+        }
+    } catch (e) {
+        console.error('Fehler beim Laden der KI-Settings:', e)
     }
 }
 let localTimeframes = reactive(new Set())
@@ -465,13 +504,8 @@ onBeforeMount(async () => {
         startBalance.value = currentUser.value?.startBalance || 0
         currentBalance.value = currentUser.value?.currentBalance || 0
     }
-    // KI-Settings laden
-    aiProvider.value = settings?.aiProvider || 'ollama'
-    aiModel.value = settings?.aiModel || ''
-    aiApiKey.value = settings?.aiApiKey || ''
-    aiOllamaUrl.value = settings?.aiOllamaUrl || 'http://localhost:11434'
-    aiTemperature.value = settings?.aiTemperature ?? 0.7
-    aiMaxTokens.value = settings?.aiMaxTokens || 1500
+    // KI-Settings über verschlüsselten Endpoint laden
+    await loadAiSettings()
     if (aiProvider.value === 'ollama') {
         await loadOllamaModels()
     }
@@ -491,8 +525,8 @@ onBeforeMount(async () => {
 
 <template>
     <div class="row mt-2">
-        <div class="row justify-content-md-center">
-            <div class="col-12 col-md-8">
+        <div class="row">
+            <div class="col-12 col-md-10" style="padding-left: 2rem;">
                 <!--=============== Layout & Style ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="layoutExpanded = !layoutExpanded">
                     <i class="uil me-2" :class="layoutExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
@@ -693,7 +727,7 @@ onBeforeMount(async () => {
                     <p class="fs-5 fw-bold mb-0">KI-Agent</p>
                 </div>
                 <div v-show="kiExpanded" class="mt-2">
-                    <p class="fw-lighter">Konfiguriere den KI-Anbieter für die automatische Berichterstellung. Ollama (lokal, kostenlos) oder Online-KI (OpenAI/Anthropic, benötigt API-Key).</p>
+                    <p class="fw-lighter">Konfiguriere den KI-Anbieter für die automatische Berichterstellung. Ollama (lokal, kostenlos) oder Online-KI (OpenAI/Anthropic/Gemini/DeepSeek, benötigt API-Key).</p>
 
                     <!-- Anbieter -->
                     <div class="row mt-2">
@@ -703,6 +737,8 @@ onBeforeMount(async () => {
                                 <option value="ollama">Ollama (lokal)</option>
                                 <option value="openai">OpenAI</option>
                                 <option value="anthropic">Anthropic (Claude)</option>
+                                <option value="gemini">Google Gemini</option>
+                                <option value="deepseek">DeepSeek</option>
                             </select>
                         </div>
                     </div>
@@ -733,10 +769,20 @@ onBeforeMount(async () => {
                     <div v-if="aiProvider !== 'ollama'" class="row mt-2">
                         <div class="col-12 col-md-4">API-Key</div>
                         <div class="col-12 col-md-8">
-                            <input type="password" class="form-control" v-model="aiApiKey" placeholder="API-Key eingeben..." />
+                            <div class="input-group">
+                                <input type="password" class="form-control" v-model="currentApiKey" placeholder="API-Key eingeben..."
+                                       @focus="e => { if (currentApiKey.includes('•')) e.target.select() }" />
+                                <button v-if="currentApiKey" class="btn btn-outline-secondary" type="button"
+                                        @click="currentApiKey = ''" title="Key löschen">
+                                    <i class="uil uil-times"></i>
+                                </button>
+                            </div>
                             <small class="text-muted">
-                                <span v-if="aiProvider === 'openai'">Von platform.openai.com/api-keys</span>
-                                <span v-if="aiProvider === 'anthropic'">Von console.anthropic.com/settings/keys</span>
+                                <i class="uil uil-lock me-1"></i>Verschlüsselt gespeichert.
+                                <span v-if="aiProvider === 'openai'"> Von platform.openai.com/api-keys</span>
+                                <span v-else-if="aiProvider === 'anthropic'"> Von console.anthropic.com/settings/keys</span>
+                                <span v-else-if="aiProvider === 'gemini'"> Von aistudio.google.com/apikey</span>
+                                <span v-else-if="aiProvider === 'deepseek'"> Von platform.deepseek.com/api_keys</span>
                             </small>
                         </div>
                     </div>
@@ -759,6 +805,18 @@ onBeforeMount(async () => {
                         <div class="col-12 col-md-8">
                             <input type="number" class="form-control" v-model="aiMaxTokens" min="500" max="4000" step="100" />
                             <small class="text-muted">500–4000 Tokens (ca. 1 Token = 0.75 Wörter)</small>
+                        </div>
+                    </div>
+
+                    <!-- Screenshot-Analyse (nur Online-Provider) -->
+                    <div v-if="aiProvider !== 'ollama'" class="row mt-3">
+                        <div class="col-12 col-md-4">Chart-Analyse</div>
+                        <div class="col-12 col-md-8">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="aiScreenshotsToggle" v-model="aiScreenshots">
+                                <label class="form-check-label" for="aiScreenshotsToggle">Screenshots in Bericht einbeziehen</label>
+                            </div>
+                            <small class="text-muted">Sendet bis zu 4 Chart-Screenshots an die KI zur visuellen Analyse. Erhöht den Token-Verbrauch.</small>
                         </div>
                     </div>
 

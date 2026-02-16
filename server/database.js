@@ -251,6 +251,33 @@ function initSchema() {
     try { db.exec(`ALTER TABLE settings ADD COLUMN aiTemperature REAL DEFAULT 0.7`) } catch (e) {}
     try { db.exec(`ALTER TABLE settings ADD COLUMN aiMaxTokens INTEGER DEFAULT 1500`) } catch (e) {}
     try { db.exec(`ALTER TABLE settings ADD COLUMN aiOllamaUrl TEXT DEFAULT 'http://localhost:11434'`) } catch (e) {}
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiScreenshots INTEGER DEFAULT 0`) } catch (e) {}
+
+    // Migration: add token tracking to ai_reports
+    try { db.exec(`ALTER TABLE ai_reports ADD COLUMN promptTokens INTEGER DEFAULT 0`) } catch (e) {}
+    try { db.exec(`ALTER TABLE ai_reports ADD COLUMN completionTokens INTEGER DEFAULT 0`) } catch (e) {}
+    try { db.exec(`ALTER TABLE ai_reports ADD COLUMN totalTokens INTEGER DEFAULT 0`) } catch (e) {}
+
+    // Migration: separate API key per provider (encrypted)
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiKeyOpenai TEXT DEFAULT ''`) } catch (e) {}
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiKeyAnthropic TEXT DEFAULT ''`) } catch (e) {}
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiKeyGemini TEXT DEFAULT ''`) } catch (e) {}
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiKeyDeepseek TEXT DEFAULT ''`) } catch (e) {}
+
+    // Migration: migrate old aiApiKey to provider-specific column
+    try {
+        const row = db.prepare('SELECT aiApiKey, aiProvider FROM settings WHERE id = 1').get()
+        if (row && row.aiApiKey) {
+            const col = { openai: 'aiKeyOpenai', anthropic: 'aiKeyAnthropic', gemini: 'aiKeyGemini' }[row.aiProvider]
+            if (col) {
+                const current = db.prepare(`SELECT ${col} FROM settings WHERE id = 1`).get()
+                if (!current[col]) {
+                    db.prepare(`UPDATE settings SET ${col} = ? WHERE id = 1`).run(row.aiApiKey)
+                    console.log(` -> Migrated API key to ${col}`)
+                }
+            }
+        }
+    } catch (e) {}
 
     console.log(' -> SQLite database initialized at', DB_PATH)
 }

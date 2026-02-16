@@ -35,17 +35,13 @@ A local, privacy-focused trading journal for **Bitunix futures trading**. No clo
 
 ### Windows
 
-1. [Node.js](https://nodejs.org/) installieren (LTS Version)
-2. **Windows Build Tools** installieren (nötig für `better-sqlite3`):
-   - [Python 3](https://www.python.org/downloads/) installieren — **"Add to PATH" ankreuzen**
-   - In einer **Admin-Eingabeaufforderung** ausführen:
-     ```
-     npm install -g windows-build-tools
-     ```
-3. Dieses Repository herunterladen oder klonen
-4. `install.bat` doppelklicken — installiert Abhängigkeiten und baut das Frontend
-5. `start.bat` doppelklicken — startet den Server
-6. Im Browser `http://localhost:8080` öffnen
+1. Dieses Repository herunterladen oder klonen
+2. `install.bat` doppelklicken — prüft automatisch alle Voraussetzungen:
+   - **Node.js 20+** — [Download](https://nodejs.org/)
+   - **Python 3** — [Download](https://www.python.org/downloads/) (bei Installation "Add to PATH" ankreuzen)
+   - **Visual Studio Build Tools** — [Download](https://visualstudio.microsoft.com/visual-cpp-build-tools/) ("Desktopentwicklung mit C++" auswählen)
+   - Falls etwas fehlt, zeigt der Installer die Download-Links an
+3. `start.bat` doppelklicken — startet den Server und öffnet den Browser
 
 ### Linux
 
