@@ -1,6 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import { pageId, screenType, currentUser } from "../stores/globals"
+
+const appVersion = __APP_VERSION__
 import { useToggleMobileMenu } from "../utils/utils";
 import { useQuickApiImport } from "../utils/quickImport";
 
@@ -97,6 +99,12 @@ async function quickApiImport() {
                     href="/settings">
                     <i class="uil uil-setting me-2"></i>Einstellungen
                 </a>
+            </div>
+        </div>
+
+        <div class="mt-auto pt-3">
+            <div class="text-center">
+                <small class="text-muted" style="font-size: 0.7rem; opacity: 0.5;">v{{ appVersion }}</small>
             </div>
         </div>
     </div>
