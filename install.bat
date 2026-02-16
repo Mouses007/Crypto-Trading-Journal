@@ -246,6 +246,25 @@ if !errorlevel! neq 0 (
 )
 
 :: ══════════════════════════════════════════
+::  Desktop-Verknuepfung erstellen
+:: ══════════════════════════════════════════
+echo.
+echo   !WHITE!Erstelle Desktop-Verknuepfung...!RESET!
+
+set "DESKTOP=%USERPROFILE%\Desktop"
+set "SHORTCUT=%DESKTOP%\TJ Trading Journal.lnk"
+set "INSTALL_DIR=%CD%"
+
+:: PowerShell nutzen um .lnk Verknuepfung zu erstellen
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT%'); $s.TargetPath = '%INSTALL_DIR%\start.bat'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'TJ Trading Journal starten'; $s.Save()" 2>nul
+
+if exist "%SHORTCUT%" (
+    echo   !GREEN![OK]!RESET! Desktop-Verknuepfung erstellt
+) else (
+    echo   !YELLOW![!]!RESET! Desktop-Verknuepfung konnte nicht erstellt werden
+)
+
+:: ══════════════════════════════════════════
 ::  Erfolg
 :: ══════════════════════════════════════════
 echo.
@@ -253,8 +272,8 @@ echo   !GREEN!══════════════════════
 echo   !GREEN!!BOLD!  Installation erfolgreich abgeschlossen!!RESET!
 echo   !GREEN!══════════════════════════════════════════!RESET!
 echo.
-echo   !WHITE!Starten:!RESET!   start.bat doppelklicken
-echo   !WHITE!Oder:!RESET!      npm start
+echo   !WHITE!Starten:!RESET!   Doppelklick auf "TJ Trading Journal" am Desktop
+echo   !WHITE!Oder:!RESET!      start.bat doppelklicken
 echo   !WHITE!Browser:!RESET!   http://localhost:8080
 echo.
 pause
