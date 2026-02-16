@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=TJ Trading Journal
+Comment=Trading Journal starten
+Exec=bash -c 'cd INSTALL_PATH && node index.mjs & sleep 2 && xdg-open http://localhost:8080'
+Icon=INSTALL_PATH/src/assets/tj-logo-256.png
+Terminal=false
+Type=Application
+Categories=Office;Finance;
