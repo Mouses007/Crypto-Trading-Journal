@@ -228,6 +228,30 @@ function initSchema() {
     // Migration: add skipEvaluation to incoming_positions
     try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN skipEvaluation INTEGER DEFAULT 0`) } catch (e) {}
 
+    // AI Reports table
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            label TEXT DEFAULT '',
+            startDate INTEGER NOT NULL,
+            endDate INTEGER NOT NULL,
+            provider TEXT DEFAULT '',
+            model TEXT DEFAULT '',
+            report TEXT DEFAULT '',
+            reportData TEXT DEFAULT '{}',
+            createdAt TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_reports_created ON ai_reports(createdAt);
+    `)
+
+    // Migration: AI settings
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiProvider TEXT DEFAULT 'ollama'`) } catch (e) {}
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiModel TEXT DEFAULT ''`) } catch (e) {}
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiApiKey TEXT DEFAULT ''`) } catch (e) {}
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiTemperature REAL DEFAULT 0.7`) } catch (e) {}
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiMaxTokens INTEGER DEFAULT 1500`) } catch (e) {}
+    try { db.exec(`ALTER TABLE settings ADD COLUMN aiOllamaUrl TEXT DEFAULT 'http://localhost:11434'`) } catch (e) {}
+
     console.log(' -> SQLite database initialized at', DB_PATH)
 }
 

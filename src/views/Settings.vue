@@ -24,7 +24,99 @@ let apiExpanded = ref(false)
 let tagsExpanded = ref(false)
 let bewertungExpanded = ref(false)
 let chartExpanded = ref(false)
+let kiExpanded = ref(false)
 let reparaturExpanded = ref(false)
+
+/* KI-AGENT SETTINGS */
+let aiProvider = ref('ollama')
+let aiModel = ref('')
+let aiApiKey = ref('')
+let aiOllamaUrl = ref('http://localhost:11434')
+let aiTemperature = ref(0.7)
+let aiMaxTokens = ref(1500)
+let aiTestLoading = ref(false)
+let aiTestResult = ref(null)
+let ollamaModels = ref([])
+
+const openaiModels = ['gpt-4o-mini', 'gpt-4o']
+const anthropicModels = ['claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001']
+
+const availableModels = {
+    ollama: () => ollamaModels.value,
+    openai: () => openaiModels,
+    anthropic: () => anthropicModels
+}
+
+function getModelsForProvider() {
+    const fn = availableModels[aiProvider.value]
+    return fn ? fn() : []
+}
+
+async function loadOllamaModels() {
+    try {
+        const res = await axios.get('/api/ollama/status', { params: { url: aiOllamaUrl.value } })
+        ollamaModels.value = res.data.models || []
+    } catch (e) {
+        ollamaModels.value = []
+    }
+}
+
+async function saveAiSettings() {
+    try {
+        await dbUpdateSettings({
+            aiProvider: aiProvider.value,
+            aiModel: aiModel.value,
+            aiApiKey: aiApiKey.value,
+            aiOllamaUrl: aiOllamaUrl.value || 'http://localhost:11434',
+            aiTemperature: parseFloat(aiTemperature.value) || 0.7,
+            aiMaxTokens: parseInt(aiMaxTokens.value) || 1500
+        })
+        currentUser.value.aiProvider = aiProvider.value
+        currentUser.value.aiModel = aiModel.value
+        currentUser.value.aiOllamaUrl = aiOllamaUrl.value
+        currentUser.value.aiTemperature = aiTemperature.value
+        currentUser.value.aiMaxTokens = aiMaxTokens.value
+        console.log(' -> KI-Einstellungen gespeichert')
+        aiTestResult.value = { success: true, message: 'Gespeichert!' }
+        setTimeout(() => aiTestResult.value = null, 3000)
+    } catch (error) {
+        alert('Fehler beim Speichern: ' + error.message)
+    }
+}
+
+async function testAiConnection() {
+    aiTestLoading.value = true
+    aiTestResult.value = null
+    try {
+        const res = await axios.post('/api/ai/test', {
+            provider: aiProvider.value,
+            apiKey: aiApiKey.value,
+            model: aiModel.value,
+            ollamaUrl: aiOllamaUrl.value
+        })
+        aiTestResult.value = res.data
+        // Nach erfolgreichem Ollama-Test Modelle neu laden
+        if (aiProvider.value === 'ollama' && res.data.success) {
+            await loadOllamaModels()
+            if (!aiModel.value && ollamaModels.value.length > 0) {
+                aiModel.value = ollamaModels.value[0]
+            }
+        }
+    } catch (e) {
+        aiTestResult.value = { success: false, message: e.message }
+    }
+    aiTestLoading.value = false
+}
+
+function onProviderChange() {
+    const models = getModelsForProvider()
+    aiModel.value = models.length > 0 ? models[0] : ''
+    aiTestResult.value = null
+    if (aiProvider.value === 'ollama') {
+        aiApiKey.value = ''
+        loadOllamaModels()
+    }
+}
 let localTimeframes = reactive(new Set())
 
 /* TAGS */
@@ -352,8 +444,9 @@ function timeframesByGroup(group) {
 onBeforeMount(async () => {
     // Settings direkt von der API laden (nicht auf currentUser verlassen,
     // da das Layout's useInitParse() evtl. noch nicht fertig ist)
+    let settings = null
     try {
-        const settings = await dbGetSettings()
+        settings = await dbGetSettings()
         currentUser.value = settings
         username.value = settings.username || ''
         startBalance.value = settings.startBalance || 0
@@ -372,6 +465,22 @@ onBeforeMount(async () => {
         startBalance.value = currentUser.value?.startBalance || 0
         currentBalance.value = currentUser.value?.currentBalance || 0
     }
+    // KI-Settings laden
+    aiProvider.value = settings?.aiProvider || 'ollama'
+    aiModel.value = settings?.aiModel || ''
+    aiApiKey.value = settings?.aiApiKey || ''
+    aiOllamaUrl.value = settings?.aiOllamaUrl || 'http://localhost:11434'
+    aiTemperature.value = settings?.aiTemperature ?? 0.7
+    aiMaxTokens.value = settings?.aiMaxTokens || 1500
+    if (aiProvider.value === 'ollama') {
+        await loadOllamaModels()
+    }
+    // Falls kein Modell gesetzt, Default setzen
+    if (!aiModel.value) {
+        const models = getModelsForProvider()
+        aiModel.value = models.length > 0 ? models[0] : ''
+    }
+
     await loadBitunixConfig()
     await loadTags()
     await loadImports()
@@ -573,6 +682,98 @@ onBeforeMount(async () => {
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="binanceToggle" v-model="enableBinanceChart" @change="saveBinanceSetting">
                         <label class="form-check-label" for="binanceToggle">Binance OHLC-Chart aktivieren</label>
+                    </div>
+                </div>
+
+                <hr />
+
+                <!--=============== KI-AGENT ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="kiExpanded = !kiExpanded">
+                    <i class="uil me-2" :class="kiExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">KI-Agent</p>
+                </div>
+                <div v-show="kiExpanded" class="mt-2">
+                    <p class="fw-lighter">Konfiguriere den KI-Anbieter für die automatische Berichterstellung. Ollama (lokal, kostenlos) oder Online-KI (OpenAI/Anthropic, benötigt API-Key).</p>
+
+                    <!-- Anbieter -->
+                    <div class="row mt-2">
+                        <div class="col-12 col-md-4">Anbieter</div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model="aiProvider" @change="onProviderChange">
+                                <option value="ollama">Ollama (lokal)</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="anthropic">Anthropic (Claude)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Ollama URL (nur bei Ollama) -->
+                    <div v-if="aiProvider === 'ollama'" class="row mt-2">
+                        <div class="col-12 col-md-4">Ollama URL</div>
+                        <div class="col-12 col-md-8">
+                            <input type="text" class="form-control" v-model="aiOllamaUrl" placeholder="http://localhost:11434" />
+                            <small class="text-muted">Standard: http://localhost:11434 — Ändere die URL wenn Ollama auf einem anderen Server läuft.</small>
+                        </div>
+                    </div>
+
+                    <!-- Modell -->
+                    <div class="row mt-2">
+                        <div class="col-12 col-md-4">Modell</div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model="aiModel">
+                                <option v-for="m in getModelsForProvider()" :key="m" :value="m">{{ m }}</option>
+                            </select>
+                            <small v-if="aiProvider === 'ollama' && ollamaModels.length === 0" class="text-warning">
+                                Klicke auf "Verbindung testen" um die Modelle zu laden.
+                            </small>
+                        </div>
+                    </div>
+
+                    <!-- API Key (nur bei Online-Providern) -->
+                    <div v-if="aiProvider !== 'ollama'" class="row mt-2">
+                        <div class="col-12 col-md-4">API-Key</div>
+                        <div class="col-12 col-md-8">
+                            <input type="password" class="form-control" v-model="aiApiKey" placeholder="API-Key eingeben..." />
+                            <small class="text-muted">
+                                <span v-if="aiProvider === 'openai'">Von platform.openai.com/api-keys</span>
+                                <span v-if="aiProvider === 'anthropic'">Von console.anthropic.com/settings/keys</span>
+                            </small>
+                        </div>
+                    </div>
+
+                    <!-- Temperatur -->
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">Kreativität</div>
+                        <div class="col-12 col-md-8">
+                            <div class="d-flex align-items-center gap-2">
+                                <input type="range" class="form-range flex-grow-1" v-model="aiTemperature" min="0" max="1" step="0.1" />
+                                <span class="badge bg-secondary" style="min-width: 40px;">{{ aiTemperature }}</span>
+                            </div>
+                            <small class="text-muted">0 = sachlich, 1 = kreativ</small>
+                        </div>
+                    </div>
+
+                    <!-- Max Tokens -->
+                    <div class="row mt-2">
+                        <div class="col-12 col-md-4">Max. Textlänge</div>
+                        <div class="col-12 col-md-8">
+                            <input type="number" class="form-control" v-model="aiMaxTokens" min="500" max="4000" step="100" />
+                            <small class="text-muted">500–4000 Tokens (ca. 1 Token = 0.75 Wörter)</small>
+                        </div>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="mt-3 mb-3">
+                        <button type="button" @click="saveAiSettings" class="btn btn-success me-2">Speichern</button>
+                        <button type="button" @click="testAiConnection" class="btn btn-outline-primary" :disabled="aiTestLoading">
+                            <span v-if="aiTestLoading">
+                                <span class="spinner-border spinner-border-sm me-1"></span>Teste...
+                            </span>
+                            <span v-else>Verbindung testen</span>
+                        </button>
+                        <span v-if="aiTestResult" class="ms-2" :class="aiTestResult.success ? 'text-success' : 'text-danger'">
+                            {{ aiTestResult.message }}
+                        </span>
                     </div>
                 </div>
 

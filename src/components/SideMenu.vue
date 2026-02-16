@@ -39,7 +39,7 @@ async function quickApiImport() {
                 <span v-else><img class="logoProfileImg me-2" src="../assets/astronaut.png" /></span>
                 <div class="logo-text">
                     <div class="logo-title">Trading Journal</div>
-                    <div v-if="currentUser.username" class="logo-username">{{ currentUser.username }}</div>
+                    <div v-if="currentUser?.username" class="logo-username">{{ currentUser.username }}</div>
                 </div>
             </div>
         </div>
@@ -57,6 +57,9 @@ async function quickApiImport() {
                 <a id="step5" v-bind:class="[pageId === 'calendar' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/calendar">
                     <i class="uil uil-calendar-alt me-2"></i>Kalender</a>
+                <a v-bind:class="[pageId === 'kiAgent' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
+                    href="/ki-agent">
+                    <i class="uil uil-robot me-2"></i>KI-Agent</a>
             </div>
         </div>
 

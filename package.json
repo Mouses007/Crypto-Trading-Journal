@@ -19,6 +19,7 @@
     "echarts": "^5.5.1",
     "express": "^4.19.2",
     "http-proxy": "^1.18.1",
+    "jspdf": "^4.1.0",
     "lodash": "^4.17.21",
     "markerjs2": "^2.32.1",
     "papaparse": "^5.4.1",

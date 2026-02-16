@@ -83,6 +83,16 @@ const router = createRouter({
             import('../views/Auswertung.vue')
     },
     {
+        path: '/ki-agent',
+        name: 'kiAgent',
+        meta: {
+            title: "KI-Agent",
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/KiAgent.vue')
+    },
+    {
         path: '/addTrades',
         name: 'addTrades',
         meta: {

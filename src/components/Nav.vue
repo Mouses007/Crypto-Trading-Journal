@@ -41,6 +41,11 @@ const pages = [{
     icon: "uil uil-chart-pie"
 },
 {
+    id: "kiAgent",
+    name: "KI-Agent",
+    icon: "uil uil-robot"
+},
+{
     id: "addTrades",
     name: "Manueller Trade Import",
     icon: "uil uil-plus-circle"
