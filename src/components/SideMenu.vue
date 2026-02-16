@@ -106,10 +106,10 @@ async function quickApiImport() {
         </div>
 
         <div class="mt-auto pt-3">
-            <div class="text-center">
+            <div class="text-start" style="padding-left: 21px;">
                 <a href="https://github.com/Mouses007/TJ-Trading-Journal/releases" target="_blank" rel="noopener"
                     class="text-muted text-decoration-none" style="font-size: 0.7rem; opacity: 0.5;"
-                    title="Updates auf GitHub prüfen">v{{ appVersion }}</a>
+                    title="Updates auf GitHub prüfen">TJ Beta V.{{ appVersion }}</a>
             </div>
         </div>
     </div>

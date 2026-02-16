@@ -192,7 +192,7 @@ export function setupOllamaRoutes(app) {
                 report = result.text
                 tokenUsage = result.usage
             } else if (provider === 'deepseek') {
-                const result = await generateDeepSeek(prompt, apiKey, model || 'deepseek-chat', temperature, maxTokens, screenshots)
+                const result = await generateDeepSeek(prompt, apiKey, model || 'deepseek-chat', temperature, maxTokens)
                 report = result.text
                 tokenUsage = result.usage
             } else {
@@ -578,28 +578,8 @@ async function generateGemini(prompt, apiKey, model, temperature, maxTokens, scr
     }
 }
 
-async function generateDeepSeek(prompt, apiKey, model, temperature, maxTokens, screenshots = []) {
-    // DeepSeek API ist OpenAI-kompatibel
-    const userContent = []
-
-    // Screenshots als Bilder hinzufügen
-    for (const s of screenshots) {
-        userContent.push({
-            type: 'image_url',
-            image_url: {
-                url: `data:${s.mimeType};base64,${s.base64}`,
-                detail: 'low'
-            }
-        })
-        userContent.push({
-            type: 'text',
-            text: `[Chart: ${s.symbol} ${s.side}]`
-        })
-    }
-
-    // Prompt als Text
-    userContent.push({ type: 'text', text: prompt })
-
+async function generateDeepSeek(prompt, apiKey, model, temperature, maxTokens) {
+    // DeepSeek API ist OpenAI-kompatibel, aber KEIN Multimodal-Support
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -610,7 +590,7 @@ async function generateDeepSeek(prompt, apiKey, model, temperature, maxTokens, s
             model,
             messages: [
                 { role: 'system', content: 'Du bist ein erfahrener Trading-Analyst und Coach. Antworte auf Deutsch. Verwende Markdown-Formatierung.' },
-                { role: 'user', content: screenshots.length > 0 ? userContent : prompt }
+                { role: 'user', content: prompt }
             ],
             temperature,
             max_tokens: maxTokens
