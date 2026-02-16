@@ -23,31 +23,47 @@ A local, privacy-focused trading journal for **Bitunix futures trading**. No clo
 
 ### Requirements
 
-- Node.js 18+
+- [Node.js 20+](https://nodejs.org/) (LTS empfohlen)
 
-### Setup
+### Windows
+
+1. [Node.js](https://nodejs.org/) installieren (LTS Version)
+2. Dieses Repository herunterladen oder klonen
+3. `install.bat` doppelklicken — installiert Abhängigkeiten und baut das Frontend
+4. `start.bat` doppelklicken — startet den Server
+5. Im Browser `http://localhost:8080` öffnen
+
+### Linux
 
 ```bash
-git clone <repo-url>
-cd Journal
+git clone https://github.com/Mouses007/TJ-Trading-Journal.git
+cd TJ-Trading-Journal
+chmod +x install.sh
+./install.sh
+npm start
+```
+
+Oder manuell:
+
+```bash
 npm install
 npm run build
 npm start
 ```
 
-Open `http://localhost:8080` in your browser.
+Im Browser `http://localhost:8080` öffnen.
 
-### Development
+### Entwicklung (Dev Mode)
 
 ```bash
 npm run dev
 ```
 
-Starts the Vite dev server with hot module replacement.
+Startet den Vite Dev-Server mit Hot Module Replacement.
 
-### Port
+### Port ändern
 
-Default port is `8080`. Change with the `TRADENOTE_PORT` environment variable:
+Standard-Port ist `8080`. Ändern mit:
 
 ```bash
 TRADENOTE_PORT=3000 npm start
