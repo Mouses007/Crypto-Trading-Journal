@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onBeforeMount, watch, nextTick } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
-import Filters from '../components/Filters.vue'
 import NoData from '../components/NoData.vue'
 import { spinnerLoadingPage, filteredTrades, auswertungNotes, auswertungMounted, satisfactionArray, satisfactionTradeArray, tags, availableTags, amountCase } from '../stores/globals'
 import { useMountAuswertung, useChartFormat, useThousandCurrencyFormat } from '../utils/utils'
@@ -429,7 +428,6 @@ async function renderCharts() {
     <SpinnerLoadingPage />
     <div class="row mt-2">
         <div v-show="!spinnerLoadingPage">
-            <Filters />
             <div v-if="allTrades.length === 0 && auswertungMounted">
                 <NoData />
             </div>
@@ -588,9 +586,9 @@ async function renderCharts() {
                     </div>
                 </div>
 
-                <!-- ============ REIHE 5: Emotionslevel vs. Performance ============ -->
-                <div v-if="emotionVsPerfData.categories.length > 0" class="row mb-3">
-                    <div class="col-12 col-md-6 offset-md-3">
+                <!-- ============ REIHE 5: Emotionslevel vs. Performance & Vollständigkeits-Radar ============ -->
+                <div class="row mb-3">
+                    <div v-if="emotionVsPerfData.categories.length > 0" class="col-12 col-md-6 mb-3 mb-md-0">
                         <div class="dailyCard h-100">
                             <h6>Emotionslevel vs. Win Rate
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
@@ -599,11 +597,7 @@ async function renderCharts() {
                             <div id="hbarChart4" class="chartClass"></div>
                         </div>
                     </div>
-                </div>
-
-                <!-- ============ REIHE 5: Vollständigkeits-Radar ============ -->
-                <div class="row mb-3">
-                    <div class="col-12 col-md-6 offset-md-3">
+                    <div :class="emotionVsPerfData.categories.length > 0 ? 'col-12 col-md-6' : 'col-12 col-md-6 offset-md-3'">
                         <div class="dailyCard h-100">
                             <h6>Vollständigkeits-Radar
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
