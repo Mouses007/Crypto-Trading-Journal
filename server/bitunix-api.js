@@ -113,9 +113,9 @@ export function setupBitunixRoutes(app, getDb) {
             const db = getDb()
             const config = db.prepare('SELECT * FROM bitunix_config WHERE id = 1').get()
             if (config) {
-                res.json({ apiKey: config.apiKey || '', hasSecret: !!config.secretKey })
+                res.json({ apiKey: config.apiKey || '', hasSecret: !!config.secretKey, apiImportStartDate: config.apiImportStartDate || '' })
             } else {
-                res.json({ apiKey: '', hasSecret: false })
+                res.json({ apiKey: '', hasSecret: false, apiImportStartDate: '' })
             }
         } catch (error) {
             res.status(500).json({ error: error.message })
@@ -126,7 +126,7 @@ export function setupBitunixRoutes(app, getDb) {
     app.post('/api/bitunix/config', (req, res) => {
         try {
             const db = getDb()
-            const { apiKey, secretKey } = req.body
+            const { apiKey, secretKey, apiImportStartDate } = req.body
 
             const existing = db.prepare('SELECT id FROM bitunix_config WHERE id = 1').get()
             if (existing) {
@@ -140,12 +140,16 @@ export function setupBitunixRoutes(app, getDb) {
                     updates.push('secretKey = @secretKey')
                     params.secretKey = secretKey
                 }
+                if (apiImportStartDate !== undefined) {
+                    updates.push('apiImportStartDate = @apiImportStartDate')
+                    params.apiImportStartDate = apiImportStartDate
+                }
                 if (updates.length > 0) {
                     db.prepare(`UPDATE bitunix_config SET ${updates.join(', ')} WHERE id = 1`).run(params)
                 }
             } else {
-                db.prepare('INSERT INTO bitunix_config (id, apiKey, secretKey) VALUES (1, @apiKey, @secretKey)')
-                    .run({ apiKey: apiKey || '', secretKey: secretKey || '' })
+                db.prepare('INSERT INTO bitunix_config (id, apiKey, secretKey, apiImportStartDate) VALUES (1, @apiKey, @secretKey, @apiImportStartDate)')
+                    .run({ apiKey: apiKey || '', secretKey: secretKey || '', apiImportStartDate: apiImportStartDate || '' })
             }
 
             res.json({ ok: true })
@@ -233,6 +237,14 @@ export function setupBitunixRoutes(app, getDb) {
             if (!startTime) {
                 // Default: 30 days ago
                 startTime = Date.now() - (30 * 24 * 60 * 60 * 1000)
+            }
+
+            // Enforce minimum start date if configured
+            if (config.apiImportStartDate) {
+                const minStart = new Date(config.apiImportStartDate).getTime()
+                if (minStart > startTime) {
+                    startTime = minStart
+                }
             }
             const endTime = Date.now()
 

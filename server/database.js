@@ -176,6 +176,12 @@ function initSchema() {
         // Column already exists, ignore
     }
 
+    // Migration: add apiImportStartDate column to bitunix_config
+    try {
+        db.exec(`ALTER TABLE bitunix_config ADD COLUMN apiImportStartDate TEXT DEFAULT ''`)
+    } catch (e) {}
+
+
     // Migration: add tags column to incoming_positions (may already exist)
     try {
         db.exec(`ALTER TABLE incoming_positions ADD COLUMN tags TEXT DEFAULT '[]'`)

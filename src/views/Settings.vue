@@ -12,6 +12,7 @@ let startBalance = ref(0)
 let currentBalance = ref(0)
 let bitunixApiKey = ref('')
 let bitunixSecretKey = ref('')
+let bitunixImportStartDate = ref('')
 let bitunixTestResult = ref(null)
 let bitunixTestLoading = ref(false)
 let showTradePopups = ref(true)
@@ -207,6 +208,7 @@ async function loadBitunixConfig() {
     try {
         const response = await axios.get('/api/bitunix/config')
         bitunixApiKey.value = response.data.apiKey || ''
+        bitunixImportStartDate.value = response.data.apiImportStartDate || ''
         if (response.data.hasSecret) {
             bitunixSecretKey.value = '••••••••'
         }
@@ -217,12 +219,12 @@ async function loadBitunixConfig() {
 
 async function saveBitunixConfig() {
     try {
-        const data = { apiKey: bitunixApiKey.value }
+        const data = { apiKey: bitunixApiKey.value, apiImportStartDate: bitunixImportStartDate.value }
         if (bitunixSecretKey.value && bitunixSecretKey.value !== '••••••••') {
             data.secretKey = bitunixSecretKey.value
         }
         await axios.post('/api/bitunix/config', data)
-        alert('Bitunix API config saved')
+        alert('Bitunix API Einstellungen gespeichert')
     } catch (error) {
         alert('Error saving Bitunix config: ' + error.message)
     }
@@ -623,6 +625,13 @@ onBeforeMount(async () => {
                         <div class="col-12 col-md-4">Secret Key</div>
                         <div class="col-12 col-md-8">
                             <input type="password" class="form-control" v-model="bitunixSecretKey" placeholder="Enter Secret Key" />
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-12 col-md-4">Import ab Datum</div>
+                        <div class="col-12 col-md-8">
+                            <input type="date" class="form-control" v-model="bitunixImportStartDate" />
+                            <small class="text-muted">Trades vor diesem Datum werden beim API-Import ignoriert. Leer = alle Trades.</small>
                         </div>
                     </div>
                     <div class="mt-3">

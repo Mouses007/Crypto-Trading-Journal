@@ -241,6 +241,7 @@ export async function useGetFilteredTrades(param) {
                     /* Just use the once that have recreated trades (or else daily was showing last 3 months and only one month with trades data) */
                     if (temp.trades.length > 0) {
                         filteredTrades.push(temp)
+                        filteredTradesDaily.push(temp)
                     }
                 }
             });
