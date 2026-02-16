@@ -4,6 +4,12 @@ A local, privacy-focused trading journal for **Bitunix futures trading**. No clo
 
 > **Hinweis:** Die Benutzeroberfläche ist komplett auf **Deutsch**.
 
+## Screenshots
+
+![Dashboard](docs/dashboard.png)
+
+![Playbook](docs/playbook.png)
+
 ## Features
 
 - **Dashboard** with P&L analytics, win rate, profit factor, and more
