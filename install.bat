@@ -256,7 +256,7 @@ set "SHORTCUT=%DESKTOP%\TJ Trading Journal.lnk"
 set "INSTALL_DIR=%CD%"
 
 :: PowerShell nutzen um .lnk Verknuepfung zu erstellen
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT%'); $s.TargetPath = '%INSTALL_DIR%\start.bat'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.Description = 'TJ Trading Journal starten'; $s.Save()" 2>nul
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT%'); $s.TargetPath = '%INSTALL_DIR%\start.bat'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.IconLocation = '%INSTALL_DIR%\src\assets\tj-logo.ico,0'; $s.Description = 'TJ Trading Journal starten'; $s.Save()" 2>nul
 
 if exist "%SHORTCUT%" (
     echo   !GREEN![OK]!RESET! Desktop-Verknuepfung erstellt
