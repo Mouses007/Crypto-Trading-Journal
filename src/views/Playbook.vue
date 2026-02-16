@@ -172,6 +172,7 @@ async function loadPlaybookEntries() {
             playbook: note.playbook || parsed.playbook || '',
             timeframe: note.timeframe || parsed.timeframe || '',
             screenshotId: note.screenshotId || '',
+            closingNote: note.closingNote || '',
             note: note.note || '',
             satisfaction: satisfaction ? satisfaction.satisfaction : null,
             tags: resolvedTags,
@@ -381,6 +382,7 @@ async function saveEntry(entry) {
             feelings: entry.feelings || '',
             playbook: entry.playbook || '',
             timeframe: entry.timeframe || '',
+            closingNote: entry.closingNote || '',
         })
 
         if (entry.satisfactionObjectId) {
@@ -490,6 +492,14 @@ async function saveEntry(entry) {
                     <div class="d-flex gap-3">
                     <!-- Data grid -->
                     <div class="pb-grid flex-grow-1">
+
+                        <!-- Eröffnungsbewertung Header (nur wenn Daten vorhanden) -->
+                        <div v-if="entry.entryStressLevel > 0 || getTagsForGroup(entry, 'Strategie').length > 0 || entry.timeframe || entry.emotionLevel > 0 || entry.feelings || (entry.playbook && stripHtml(entry.playbook).trim())"
+                            class="pb-field pb-field-wide">
+                            <div class="pb-label fw-bold" style="color: var(--white-80)">Eröffnungsbewertung</div>
+                            <div class="pb-value"></div>
+                        </div>
+
                         <div v-if="entry.entryStressLevel > 0" class="pb-field">
                             <div class="pb-label">Stresslevel</div>
                             <div class="pb-value">
@@ -546,6 +556,13 @@ async function saveEntry(entry) {
                             <div class="pb-value pb-note-content" v-html="entry.playbook"></div>
                         </div>
 
+                        <!-- Abschlussbewertung Header (nur wenn Daten vorhanden) -->
+                        <div v-if="(entry.satisfaction !== null && entry.satisfaction !== undefined) || getTagsForGroup(entry, 'Trade Abschluss').length > 0 || entry.closingNote"
+                            class="pb-field pb-field-wide">
+                            <div class="pb-label fw-bold" style="color: var(--white-80)">Abschlussbewertung</div>
+                            <div class="pb-value"></div>
+                        </div>
+
                         <div v-if="entry.satisfaction !== null && entry.satisfaction !== undefined" class="pb-field">
                             <div class="pb-label">Zufriedenheit</div>
                             <div class="pb-value">
@@ -564,6 +581,11 @@ async function saveEntry(entry) {
                                     {{ tag.name }}
                                 </span>
                             </div>
+                        </div>
+
+                        <div v-if="entry.closingNote" class="pb-field pb-field-wide">
+                            <div class="pb-label">Abschlussnotiz</div>
+                            <div class="pb-value pb-text">{{ entry.closingNote }}</div>
                         </div>
                     </div>
 
@@ -589,6 +611,9 @@ async function saveEntry(entry) {
 
                 <!-- Expanded: EDIT MODE -->
                 <div v-if="expandedId === entry.tradeId && editingId === entry.tradeId" class="pb-body pb-edit-mode">
+
+                    <!-- ===== ERÖFFNUNGSBEWERTUNG ===== -->
+                    <p class="pb-edit-label fw-bold mb-2" style="color: var(--white-80); font-size: 0.95rem; border-bottom: 1px solid var(--white-10);">Eröffnungsbewertung</p>
 
                     <!-- Stresslevel -->
                     <div class="pb-edit-section">
@@ -674,6 +699,9 @@ async function saveEntry(entry) {
                         <div :id="'quillPlaybook-' + entry.tradeId" class="quill-incoming"></div>
                     </div>
 
+                    <!-- ===== ABSCHLUSSBEWERTUNG ===== -->
+                    <p class="pb-edit-label fw-bold mb-2 mt-3" style="color: var(--white-80); font-size: 0.95rem; border-bottom: 1px solid var(--white-10);">Abschlussbewertung</p>
+
                     <!-- Zufriedenheit -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">Zufriedenheit</label>
@@ -711,6 +739,13 @@ async function saveEntry(entry) {
                                 {{ tag.name }}
                             </option>
                         </select>
+                    </div>
+
+                    <!-- Abschlussnotiz -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Abschlussnotiz</label>
+                        <textarea class="form-control form-control-sm" v-model="entry.closingNote"
+                            placeholder="Notizen zum Trade-Abschluss..." rows="2"></textarea>
                     </div>
 
                     <!-- Actions -->

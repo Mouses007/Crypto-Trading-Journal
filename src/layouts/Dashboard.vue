@@ -69,7 +69,7 @@ onUnmounted(() => {
     <div class="modal-dialog modal-fullscreen">
       <div class="modal-content">
         <div class="modal-body">
-          <Screenshot v-if="selectedScreenshot" :index="selectedScreenshotIndex" source="fullScreen" :screenshot-data="selectedScreenshot" />
+          <Screenshot v-if="Object.keys(selectedScreenshot).length > 0" :index="selectedScreenshotIndex" source="fullScreen" :screenshot-data="selectedScreenshot" />
         </div>
         <div class="modal-footer">
           <!-- NEXT / PREVIOUS -->

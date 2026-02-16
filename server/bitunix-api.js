@@ -323,8 +323,72 @@ export function setupBitunixRoutes(app, getDb) {
             }
 
             const positions = result.data?.positionList || []
-            res.json({ ok: true, position: positions[0] || null })
+            const pos = positions[0] || null
+            if (pos) {
+                console.log(` -> History position ${pos.symbol}: side=${pos.side}, entryPrice=${pos.entryPrice}, closePrice=${pos.closePrice}, realizedPNL=${pos.realizedPNL}`)
+            }
+            res.json({ ok: true, position: pos })
         } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Fix trade sides: repair all existing trades based on entry/exit price vs P&L direction
+    app.post('/api/fix-trade-sides', (req, res) => {
+        try {
+            const db = getDb()
+            const allRows = db.prepare('SELECT id, trades FROM trades').all()
+            let fixedCount = 0
+            let skippedCount = 0
+
+            for (const row of allRows) {
+                let trades
+                try {
+                    trades = JSON.parse(row.trades)
+                } catch (e) {
+                    continue
+                }
+
+                let changed = false
+                for (const t of trades) {
+                    const entry = parseFloat(t.entryPrice || 0)
+                    const exit = parseFloat(t.exitPrice || 0)
+                    const grossPL = parseFloat(t.grossProceeds || 0)
+
+                    // Skip trades without price data (e.g. CSV imports)
+                    if (entry === 0 || exit === 0 || grossPL === 0) {
+                        skippedCount++
+                        continue
+                    }
+
+                    const priceDiff = exit - entry
+                    // Same sign = Long (price up + profit, or price down + loss)
+                    // Different sign = Short (price up + loss, or price down + profit)
+                    const isLong = (priceDiff > 0 && grossPL > 0) || (priceDiff < 0 && grossPL < 0)
+                    const newSide = isLong ? 'B' : 'SS'
+                    const newStrategy = isLong ? 'long' : 'short'
+
+                    if (t.side !== newSide || t.strategy !== newStrategy) {
+                        t.side = newSide
+                        t.strategy = newStrategy
+                        changed = true
+                        fixedCount++
+                    }
+                }
+
+                if (changed) {
+                    db.prepare('UPDATE trades SET trades = ? WHERE id = ?').run(JSON.stringify(trades), row.id)
+                }
+            }
+
+            // Also reset all MFE prices so they get recalculated with correct side
+            const mfeResult = db.prepare('UPDATE excursions SET mfePrice = NULL WHERE mfePrice IS NOT NULL').run()
+            const mfeReset = mfeResult.changes || 0
+
+            console.log(` -> Fixed ${fixedCount} trades, skipped ${skippedCount}, reset ${mfeReset} MFE values`)
+            res.json({ ok: true, fixed: fixedCount, skipped: skippedCount, mfeReset })
+        } catch (error) {
+            console.error(' -> Fix trade sides error:', error.message)
             res.status(500).json({ error: error.message })
         }
     })

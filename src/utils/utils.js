@@ -107,16 +107,17 @@ export function useInitTab(param) {
 
                     if (idCurrentType.value === "screenshots") {
                         let screenshotsDate = filteredTrades[idCurrentNumber.value].dateUnix
-                        //console.log(" -> Clicked on screenshots tab in Daily so getting screensots for "+screenshotsDate)
-                        //console.log(" screenshots infos " + JSON.stringify(screenshotsInfos))
-                        let index = screenshotsInfos.findIndex(obj => obj.dateUnixDay == screenshotsDate)
-                        //console.log(" index " + index)
+                        // Match by dateUnixDay or by startOfDay(dateUnix) for timezone robustness
+                        let index = screenshotsInfos.findIndex(obj =>
+                            obj.dateUnixDay == screenshotsDate ||
+                            useStartOfDay(obj.dateUnix) == screenshotsDate
+                        )
                         if (index != -1) {
-
-                            if (screenshots.length == 0 || (screenshots.length > 0 && screenshots[0].dateUnixDay != screenshotsDate)) {
+                            let queryDate = screenshotsInfos[index].dateUnixDay
+                            if (screenshots.length == 0 || (screenshots.length > 0 && screenshots[0].dateUnixDay != queryDate)) {
                                 console.log("  --> getting Screenshots")
                                 await (tabGettingScreenshots.value = true)
-                                await useGetScreenshots(true, screenshotsDate)
+                                await useGetScreenshots(true, queryDate)
                                 await (tabGettingScreenshots.value = false)
                             } else {
                                 console.log("  --> Screenshots already stored")
@@ -124,7 +125,6 @@ export function useInitTab(param) {
                         } else {
                             console.log("  --> No screenshots")
                         }
-                        //console.log(" screenshots "+JSON.stringify(screenshots[0]))
                     }
 
                     if (idCurrent.value == idPrevious.value) {

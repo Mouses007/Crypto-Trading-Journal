@@ -33,7 +33,7 @@ async function quickApiImport() {
     <div class="col-2 logoDiv">
         <div class="logo-area" :class="{ 'pointerClass': screenType == 'mobile' }" @click="screenType == 'mobile' ? useToggleMobileMenu() : null">
             <div class="d-flex align-items-center">
-                <span v-if="currentUser.hasOwnProperty('avatar')"><img class="logoProfileImg me-2" v-bind:src="currentUser.avatar" /></span>
+                <span v-if="currentUser?.hasOwnProperty('avatar')"><img class="logoProfileImg me-2" v-bind:src="currentUser.avatar" /></span>
                 <span v-else><img class="logoProfileImg me-2" src="../assets/astronaut.png" /></span>
                 <div class="logo-text">
                     <div class="logo-title">Trading Journal</div>
@@ -97,19 +97,6 @@ async function quickApiImport() {
                     href="/settings">
                     <i class="uil uil-setting me-2"></i>Einstellungen
                 </a>
-                <a class="nav-link mb-2 pointerClass" v-on:click="quickApiImport" :class="{ 'text-muted': apiImporting }">
-                    <span v-if="apiImporting">
-                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Importiere...
-                    </span>
-                    <span v-else>
-                        <i class="uil uil-cloud-download me-2"></i>API Import
-                    </span>
-                </a>
-                <div v-if="apiImportResult" class="px-2 pb-2">
-                    <small :class="apiImportResult.success ? 'text-success' : 'text-danger'">
-                        {{ apiImportResult.message }}
-                    </small>
-                </div>
             </div>
         </div>
     </div>

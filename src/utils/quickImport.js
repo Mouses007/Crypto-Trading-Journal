@@ -44,7 +44,8 @@ export async function useQuickApiImport() {
         if (!tradesByDay[dateUnix]) tradesByDay[dateUnix] = []
         if (!executionsByDay[dateUnix]) executionsByDay[dateUnix] = []
 
-        const side = pos.side === 'LONG' ? 'B' : 'SS'
+        // Bitunix API: Pending uses 'BUY'/'SELL', History uses 'LONG'/'SHORT' — accept both
+        const side = (pos.side === 'LONG' || pos.side === 'BUY') ? 'B' : 'SS'
         const netPL = grossPL - fee
         const isGrossWin = grossPL > 0
         const isNetWin = netPL > 0

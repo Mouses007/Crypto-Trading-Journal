@@ -1,6 +1,9 @@
 <script setup>
+import { useRouter } from 'vue-router'
 import { pageId, selectedMonth, selectedPlSatisfaction, amountCase, calendarData, miniCalendarsData, timeZoneTrade, spinnerLoadingPage, scrollToDateUnix } from '../stores/globals';
 import { useThousandCurrencyFormat, useMountCalendar, useMountDaily } from '../utils/utils';
+
+const router = useRouter()
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 dayjs.extend(utc)
@@ -23,8 +26,11 @@ const days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
 //console.log("perdio range "+JSON.stringify(periodRange))
 
 function scrollToDay(dayData) {
-    if (pageId.value === 'daily' && dayData.dateUnix && dayData.pAndL && dayData.pAndL.trades) {
+    if (dayData.dateUnix && dayData.pAndL && dayData.pAndL.trades) {
         scrollToDateUnix.value = dayData.dateUnix
+        if (pageId.value === 'calendar') {
+            router.push('/daily')
+        }
     }
 }
 
@@ -70,7 +76,7 @@ async function monthLastNext(param) {
                 <div v-for="line in calendarData">
                     <div class="row">
                         <div v-show="line[index] != 0"
-                            v-bind:class="[{ 'greenTradeDiv': selectedPlSatisfaction == 'pl' ? line[index].pAndL[amountCase + 'Proceeds'] >= 0 : line[index].satisfaction == true, 'redTradeDiv': selectedPlSatisfaction == 'pl' ? line[index].pAndL[amountCase + 'Proceeds'] < 0 : line[index].satisfaction == false, 'calDivDay': pageId == 'daily', 'calDivDash': pageId == 'calendar' }, 'col', pageId == 'daily' && line[index].pAndL && line[index].pAndL.trades ? 'pointerClass' : '']"
+                            v-bind:class="[{ 'greenTradeDiv': selectedPlSatisfaction == 'pl' ? line[index].pAndL[amountCase + 'Proceeds'] >= 0 : line[index].satisfaction == true, 'redTradeDiv': selectedPlSatisfaction == 'pl' ? line[index].pAndL[amountCase + 'Proceeds'] < 0 : line[index].satisfaction == false, 'calDivDay': pageId == 'daily', 'calDivDash': pageId == 'calendar' }, 'col', (pageId == 'daily' || pageId == 'calendar') && line[index].pAndL && line[index].pAndL.trades ? 'pointerClass' : '']"
                             @click="scrollToDay(line[index])">
                             <p class="mb-1 dayNumber" v-show="line[index].day != 0">{{ line[index].day }}</p>
                             <div v-if="pageId == 'calendar'" class="d-none d-md-block">

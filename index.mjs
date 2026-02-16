@@ -4,6 +4,7 @@ import * as Vite from 'vite'
 import { getDb } from './server/database.js'
 import { setupApiRoutes } from './server/api-routes.js'
 import { setupBitunixRoutes } from './server/bitunix-api.js'
+import { setupBinanceRoutes } from './server/binance-api.js'
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -38,6 +39,7 @@ const startIndex = async () => {
                 });
                 setupApiRoutes(app);
                 setupBitunixRoutes(app, getDb);
+                setupBinanceRoutes(app);
 
                 // Proxy non-API routes to Vite dev server
                 const { default: Proxy } = await import('http-proxy')
@@ -63,6 +65,7 @@ const startIndex = async () => {
                 });
                 setupApiRoutes(app);
                 setupBitunixRoutes(app, getDb);
+                setupBinanceRoutes(app);
 
                 app.use(express.static('dist'));
                 app.get('*', (req, res) => {

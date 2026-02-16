@@ -352,7 +352,7 @@ const selectAllTags = () => {
                 <span v-if="!filtersOpen" class="dashInfoTitle ms-3">
                     <span v-show="filters[pageId].includes('accounts')">
                         <span
-                            v-if="currentUser.hasOwnProperty('accounts') && currentUser.accounts.length == selectedAccounts.length">Alle
+                            v-if="currentUser?.hasOwnProperty('accounts') && currentUser.accounts.length == selectedAccounts.length">Alle
                             Konten |</span>
                         <span v-else>Ausgewählte Konten |</span>
                     </span>

@@ -15,7 +15,16 @@ let bitunixSecretKey = ref('')
 let bitunixTestResult = ref(null)
 let bitunixTestLoading = ref(false)
 let showTradePopups = ref(true)
+let enableBinanceChart = ref(false)
 let importsExpanded = ref(false)
+let layoutExpanded = ref(false)
+let balanceExpanded = ref(false)
+let timeframesExpanded = ref(false)
+let apiExpanded = ref(false)
+let tagsExpanded = ref(false)
+let bewertungExpanded = ref(false)
+let chartExpanded = ref(false)
+let reparaturExpanded = ref(false)
 let localTimeframes = reactive(new Set())
 
 /* TAGS */
@@ -257,6 +266,45 @@ async function savePopupSetting() {
     }
 }
 
+/* BINANCE CHART SETTING */
+async function loadBinanceSetting() {
+    enableBinanceChart.value = currentUser.value?.enableBinanceChart === 1
+}
+
+async function saveBinanceSetting() {
+    try {
+        await dbUpdateSettings({ enableBinanceChart: enableBinanceChart.value ? 1 : 0 })
+        currentUser.value.enableBinanceChart = enableBinanceChart.value ? 1 : 0
+        console.log(' -> Binance-Chart-Einstellung gespeichert:', enableBinanceChart.value)
+    } catch (error) {
+        console.error(' -> Fehler beim Speichern der Binance-Chart-Einstellung:', error)
+    }
+}
+
+/* FIX TRADE SIDES */
+let fixTradesLoading = ref(false)
+let fixTradesResult = ref(null)
+
+async function fixTradeSides() {
+    fixTradesLoading.value = true
+    fixTradesResult.value = null
+    try {
+        const response = await axios.post('/api/fix-trade-sides')
+        fixTradesResult.value = {
+            success: true,
+            message: `${response.data.fixed} Trades korrigiert, ${response.data.skipped} übersprungen, ${response.data.mfeReset || 0} MFE-Werte zurückgesetzt.`
+        }
+        console.log(' -> Trade sides fixed:', response.data)
+    } catch (error) {
+        fixTradesResult.value = {
+            success: false,
+            message: 'Fehler: ' + (error.response?.data?.error || error.message)
+        }
+    } finally {
+        fixTradesLoading.value = false
+    }
+}
+
 // Load imports on mount
 /* KONTOSTAND */
 async function saveBalances() {
@@ -311,6 +359,7 @@ onBeforeMount(async () => {
         startBalance.value = settings.startBalance || 0
         currentBalance.value = settings.currentBalance || 0
         showTradePopups.value = settings.showTradePopups !== 0
+        enableBinanceChart.value = settings.enableBinanceChart === 1
         // Timeframes laden
         const saved = settings.tradeTimeframes || []
         localTimeframes.clear()
@@ -336,9 +385,12 @@ onBeforeMount(async () => {
         <div class="row justify-content-md-center">
             <div class="col-12 col-md-8">
                 <!--=============== Layout & Style ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="layoutExpanded = !layoutExpanded">
+                    <i class="uil me-2" :class="layoutExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Layout & Stil</p>
+                </div>
 
-                <div class="row align-items-center">
-                    <p class="fs-5 fw-bold">Layout & Stil</p>
+                <div v-show="layoutExpanded" class="row align-items-center mt-2">
 
                     <!-- Username -->
                     <div class="col-12 col-md-4">
@@ -355,17 +407,20 @@ onBeforeMount(async () => {
                     <div class="col-12 col-md-8 mt-2">
                         <input type="file" @change="uploadProfileAvatar" />
                     </div>
-                </div>
 
-                <div class="mt-3 mb-3">
-                    <button type="button" v-on:click="updateProfile" class="btn btn-success">Speichern</button>
+                    <div class="col-12 mt-3 mb-3">
+                        <button type="button" v-on:click="updateProfile" class="btn btn-success">Speichern</button>
+                    </div>
                 </div>
 
                 <hr />
 
                 <!--=============== KONTOSTAND ===============-->
-                <div class="mt-3 row align-items-center">
-                    <p class="fs-5 fw-bold">Kontostand</p>
+                <div class="d-flex align-items-center pointerClass" @click="balanceExpanded = !balanceExpanded">
+                    <i class="uil me-2" :class="balanceExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Kontostand</p>
+                </div>
+                <div v-show="balanceExpanded" class="mt-2 row align-items-center">
                     <p class="fw-lighter">Start-Kontostand = deine Einzahlung. Aktueller Kontostand = dein heutiger Stand auf Bitunix. Gewinn wird als Differenz berechnet.</p>
                     <div class="row mt-2">
                         <div class="col-12 col-md-4">Start-Kontostand (USDT)</div>
@@ -387,8 +442,11 @@ onBeforeMount(async () => {
                 <hr />
 
                 <!--=============== TIMEFRAMES ===============-->
-                <div class="mt-3 row align-items-center">
-                    <p class="fs-5 fw-bold">Timeframes</p>
+                <div class="d-flex align-items-center pointerClass" @click="timeframesExpanded = !timeframesExpanded">
+                    <i class="uil me-2" :class="timeframesExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Timeframes</p>
+                </div>
+                <div v-show="timeframesExpanded" class="mt-2 row align-items-center">
                     <p class="fw-lighter">Wähle die Timeframes aus, die du beim Trading verwendest. Diese erscheinen dann in Offene Trades und Playbook.</p>
                     <div v-for="group in timeframeGroups" :key="group" class="mb-2">
                         <label class="fw-lighter text-uppercase small mb-1">{{ group }}</label>
@@ -406,8 +464,11 @@ onBeforeMount(async () => {
                 <hr />
 
                 <!--=============== BITUNIX API ===============-->
-                <div class="mt-3 row align-items-center">
-                    <p class="fs-5 fw-bold">Bitunix API</p>
+                <div class="d-flex align-items-center pointerClass" @click="apiExpanded = !apiExpanded">
+                    <i class="uil me-2" :class="apiExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Bitunix API</p>
+                </div>
+                <div v-show="apiExpanded" class="mt-2 row align-items-center">
                     <p class="fw-lighter">Verbinde dein Bitunix-Konto, um Trades mit allen Details (Symbol, Preise, Richtung) zu importieren.</p>
                     <div class="row mt-2">
                         <div class="col-12 col-md-4">API Key</div>
@@ -435,8 +496,11 @@ onBeforeMount(async () => {
                 <hr />
 
                 <!--=============== TAGS ===============-->
-                <div class="mt-3">
-                    <p class="fs-5 fw-bold">Tags</p>
+                <div class="d-flex align-items-center pointerClass" @click="tagsExpanded = !tagsExpanded">
+                    <i class="uil me-2" :class="tagsExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Tags</p>
+                </div>
+                <div v-show="tagsExpanded" class="mt-2">
                     <p class="fw-lighter">Erstelle Tag-Gruppen und Tags, um deine Trades zu kategorisieren.</p>
 
                     <!-- Existing groups -->
@@ -485,8 +549,11 @@ onBeforeMount(async () => {
                 <hr />
 
                 <!--=============== BEWERTUNG ===============-->
-                <div class="mt-3">
-                    <p class="fs-5 fw-bold">Bewertung</p>
+                <div class="d-flex align-items-center pointerClass" @click="bewertungExpanded = !bewertungExpanded">
+                    <i class="uil me-2" :class="bewertungExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Bewertung</p>
+                </div>
+                <div v-show="bewertungExpanded" class="mt-2">
                     <p class="fw-lighter">Trade-Bewertungs-Popups beim Öffnen und Schließen von Positionen anzeigen.</p>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="popupToggle" v-model="showTradePopups" @change="savePopupSetting">
@@ -496,16 +563,53 @@ onBeforeMount(async () => {
 
                 <hr />
 
-                <!--=============== IMPORTE ===============-->
-                <div class="mt-3">
-                    <div class="d-flex align-items-center pointerClass" @click="importsExpanded = !importsExpanded">
-                        <i class="uil me-2" :class="importsExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                        <p class="fs-5 fw-bold mb-0">Importe</p>
-                        <span class="badge bg-secondary ms-2">{{ importsList.length }}</span>
+                <!--=============== OHLC-CHART ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="chartExpanded = !chartExpanded">
+                    <i class="uil me-2" :class="chartExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">OHLC-Chart</p>
+                </div>
+                <div v-show="chartExpanded" class="mt-2">
+                    <p class="fw-lighter">Candlestick-Chart mit Binance-Daten im Trade-Detail anzeigen (kostenlos, kein API-Key nötig).</p>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="binanceToggle" v-model="enableBinanceChart" @change="saveBinanceSetting">
+                        <label class="form-check-label" for="binanceToggle">Binance OHLC-Chart aktivieren</label>
                     </div>
-                    <p class="fw-lighter mt-1">Sei vorsichtig beim Löschen von Importen. Screenshots, Tags, Notizen und Zufriedenheitsbewertungen bleiben erhalten.</p>
+                </div>
 
-                    <div v-show="importsExpanded">
+                <hr />
+
+                <!--=============== TRADE-REPARATUR ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="reparaturExpanded = !reparaturExpanded">
+                    <i class="uil me-2" :class="reparaturExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Trade-Reparatur</p>
+                </div>
+                <div v-show="reparaturExpanded" class="mt-2">
+                    <p class="fw-lighter">Korrigiert die Long/Short-Zuordnung aller bestehenden Trades anhand von Entry/Exit-Preis und P&L-Richtung.</p>
+                    <button class="btn btn-outline-warning btn-sm" @click="fixTradeSides" :disabled="fixTradesLoading">
+                        <span v-if="fixTradesLoading">
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>Repariere...
+                        </span>
+                        <span v-else><i class="uil uil-wrench me-1"></i>Trades reparieren</span>
+                    </button>
+                    <div v-if="fixTradesResult" class="mt-2">
+                        <div :class="fixTradesResult.success ? 'text-success' : 'text-danger'" class="txt-small">
+                            {{ fixTradesResult.message }}
+                        </div>
+                    </div>
+                </div>
+
+                <hr />
+
+                <!--=============== IMPORTE ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="importsExpanded = !importsExpanded">
+                    <i class="uil me-2" :class="importsExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Importe</p>
+                    <span class="badge bg-secondary ms-2">{{ importsList.length }}</span>
+                </div>
+                <div v-show="importsExpanded" class="mt-2">
+                    <p class="fw-lighter">Sei vorsichtig beim Löschen von Importen. Screenshots, Tags, Notizen und Zufriedenheitsbewertungen bleiben erhalten.</p>
+
+                    <div>
                         <div v-if="importsLoading" class="text-center">
                             <div class="spinner-border spinner-border-sm" role="status"></div>
                         </div>

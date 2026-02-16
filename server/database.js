@@ -215,6 +215,19 @@ function initSchema() {
     // Migration: add emotionLevel to incoming_positions
     try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN emotionLevel INTEGER DEFAULT 0`) } catch (e) {}
 
+    // Migration: add enableBinanceChart to settings
+    try { db.exec(`ALTER TABLE settings ADD COLUMN enableBinanceChart INTEGER DEFAULT 0`) } catch (e) {}
+
+    // Migration: add closingNote to notes and incoming_positions
+    try { db.exec(`ALTER TABLE notes ADD COLUMN closingNote TEXT DEFAULT ''`) } catch (e) {}
+    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN closingNote TEXT DEFAULT ''`) } catch (e) {}
+
+    // Migration: add satisfaction to incoming_positions
+    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN satisfaction INTEGER DEFAULT -1`) } catch (e) {}
+
+    // Migration: add skipEvaluation to incoming_positions
+    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN skipEvaluation INTEGER DEFAULT 0`) } catch (e) {}
+
     console.log(' -> SQLite database initialized at', DB_PATH)
 }
 

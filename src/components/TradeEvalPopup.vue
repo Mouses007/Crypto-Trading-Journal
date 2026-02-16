@@ -342,7 +342,8 @@ async function saveEvaluation() {
                     note: formData.note,
                     tags: formData.tags,
                     satisfaction: formData.satisfaction,
-                    stressLevel: formData.stressLevel
+                    stressLevel: formData.stressLevel,
+                    closingNote: formData.note,
                 }
             )
         }

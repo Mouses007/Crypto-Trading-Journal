@@ -3,14 +3,13 @@ import { onBeforeMount, onMounted, computed, reactive, ref, watch, nextTick } fr
 import Filters from '../components/Filters.vue'
 import NoData from '../components/NoData.vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
-import Calendar from '../components/Calendar.vue';
 import Screenshot from '../components/Screenshot.vue'
 
 import { spinnerLoadingPage, calendarData, filteredTrades, screenshots, modalDailyTradeOpen, amountCase, markerAreaOpen, screenshot, tradeScreenshotChanged, excursion, tradeExcursionChanged, spinnerSetups, spinnerSetupsText, tradeExcursionId, tradeExcursionDateUnix, hasData, tradeId, excursions, saveButton, itemTradeIndex, tradeIndex, tradeIndexPrevious, spinnerLoadMore, endOfList, selectedGrossNet, availableTags, tradeTagsChanged, tagInput, tags, tradeTags, showTagsList, selectedTagIndex, tradeTagsId, tradeTagsDateUnix, newTradeTags, notes, tradeNote, tradeNoteChanged, tradeNoteDateUnix, tradeNoteId, availableTagsArray, timeZoneTrade, screenshotsInfos, idCurrentType, idCurrentNumber, tabGettingScreenshots, currentUser, apis, satisfactionTradeArray, satisfactionArray, scrollToDateUnix } from '../stores/globals';
 
 import { useCreatedDateFormat, useTwoDecCurrencyFormat, useTimeFormat, useTimeDuration, useMountDaily, useGetSelectedRange, useLoadMore, useCheckVisibleScreen, useDecimalsArithmetic, useInitTooltip, useDateCalFormat, useSwingDuration, useStartOfDay, useInitTab } from '../utils/utils';
 
-import { useSetupImageUpload, useSaveScreenshot, useGetScreenshots } from '../utils/screenshots';
+import { useSetupImageUpload, useSaveScreenshot, useGetScreenshots, useSelectedScreenshotFunction } from '../utils/screenshots';
 
 import { useGetExcursions, useGetTags, useGetAvailableTags, useUpdateAvailableTags, useUpdateTags, useFindHighestIdNumber, useFindHighestIdNumberTradeTags, useUpdateNote, useGetNotes, useGetTagInfo, useCreateAvailableTagsArray, useFilterSuggestions, useTradeTagsChange, useFilterTags, useToggleTagsDropdown, useResetTags, useDailySatisfactionChange } from '../utils/daily';
 
@@ -59,6 +58,11 @@ const dailyTabs = [{
 let tradesModal = null
 let tagsModal = null
 
+const stripHtml = (html) => {
+    if (!html) return ''
+    return html.replace(/<[^>]*>/g, '').trim()
+}
+
 let tradeSatisfactionId
 let tradeSatisfaction
 let tradeSatisfactionDateUnix
@@ -81,6 +85,12 @@ onMounted(async () => {
     await useInitTooltip()
     useCreateAvailableTagsArray()
 
+    // Nach dem Laden: Scroll zum angeforderten Tag (z.B. vom Kalender)
+    if (scrollToDateUnix.value) {
+        await nextTick()
+        scrollToTradeCard(scrollToDateUnix.value)
+    }
+
     tradesModal = new bootstrap.Modal("#tradesModal")
     document.getElementById("tradesModal").addEventListener('shown.bs.modal', async (event) => {
         const caller = event.relatedTarget
@@ -97,16 +107,28 @@ onMounted(async () => {
     })
 })
 
-// Watch for calendar day click → scroll to trade card
+// Watch for calendar day click → scroll to trade card (für Mini-Kalender innerhalb Daily)
 watch(scrollToDateUnix, async (dateUnix) => {
     if (!dateUnix) return
+    if (spinnerLoadingPage.value) return // Wird von onMounted übernommen
     await nextTick()
-    const el = document.getElementById('daily-card-' + dateUnix)
-    if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-    scrollToDateUnix.value = null
+    scrollToTradeCard(dateUnix)
 })
+
+function scrollToTradeCard(dateUnix) {
+    const tryScroll = (attempts = 0) => {
+        const el = document.getElementById('daily-card-' + dateUnix)
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            scrollToDateUnix.value = null
+        } else if (attempts < 5) {
+            setTimeout(() => tryScroll(attempts + 1), 100)
+        } else {
+            scrollToDateUnix.value = null
+        }
+    }
+    tryScroll()
+}
 
 
 /**************
@@ -218,87 +240,95 @@ async function clickTradesModal(param1, param2, param3) {
                 await Promise.all([resetExcursion(), useResetTags()])
 
                 //For setups I have added setups into filteredTrades. For screenshots and excursions I need to find so I create on each modal page a screenshot and excursion object
+                let tradeDateUnix = filteredTrades[itemTradeIndex.value].dateUnix
                 let findScreenshot = screenshots.find(obj => obj.name == filteredTradeId)
+                    || screenshots.find(obj => obj.dateUnixDay == tradeDateUnix)
+                // If not in full screenshots, check screenshotsInfos and load full data
+                if (!findScreenshot) {
+                    let infoMatch = screenshotsInfos.find(obj => obj.dateUnixDay == tradeDateUnix)
+                    if (infoMatch) {
+                        await useGetScreenshots(true, infoMatch.dateUnixDay)
+                        findScreenshot = screenshots.find(obj => obj.name == filteredTradeId)
+                            || screenshots.find(obj => obj.dateUnixDay == tradeDateUnix)
+                    }
+                }
                 for (let key in screenshot) delete screenshot[key]
                 candlestickChartFailureMessage.value = null // to avoid message when screenshot is present
 
                 if (findScreenshot) {
-                    //console.log(" found screenshot")
                     for (let key in findScreenshot) {
                         screenshot[key] = findScreenshot[key]
                     }
                 } else {
-                    //console.log(" did not find any screenshot")
                     screenshot.side = null
                     screenshot.type = null
+                }
 
-                    /* GET OHLC / CANDLESTICK CHARTS */
+                /* GET OHLC / CANDLESTICK CHARTS */
+                let loadChart = false
+                let filteredTradesObject = filteredTrades[itemTradeIndex.value].trades[param3]
 
+                // Timeframe aus der Note des Trades holen, oder 15m als Default
+                let tradeNote_ = notes.find(obj => obj.tradeId == filteredTradeId)
+                let chartInterval = (tradeNote_ && tradeNote_.timeframe) ? tradeNote_.timeframe : '15m'
 
-                    if (apiIndex.value != -1) {
-                        apiKey.value = apis[apiIndex.value].key
-                        let filteredTradesObject = filteredTrades[itemTradeIndex.value].trades[param3]
-                        if (apiKey.value) {
-                            if (filteredTradesObject.type == "future" && (databentoIndex === -1 || apis[databentoIndex].key === "")) {
-                                candlestickChartFailureMessage.value = "Du benötigst eine Databento API für Futures."
-                            } else {
-                                try {
-                                    candlestickChartFailureMessage.value = null
-                                    let ohlcTimestamps
-                                    let ohlcPrices
-                                    let ohlcVolumes
-                                    if (ohlcArray.length == 0) {
-                                        console.log(" -> No symbol/date in ohlcArray")
-                                        await getOHLC(filteredTradesObject.td, filteredTradesObject.symbol, filteredTradesObject.type)
-                                        ohlcTimestamps = ohlcArray[0].ohlcTimestamps
-                                        ohlcPrices = ohlcArray[0].ohlcPrices
-                                        ohlcVolumes = ohlcArray[0].ohlcVolumes
-
-                                    } else {
-                                        let index = ohlcArray.findIndex(obj => obj.date == filteredTradesObject.td && obj.symbol == filteredTradesObject.symbol)
-
-                                        if (index != -1) {
-                                            console.log(" -> Symbol and/or date exists in ohlcArray")
-                                            ohlcTimestamps = ohlcArray[index].ohlcTimestamps
-                                            ohlcPrices = ohlcArray[index].ohlcPrices
-                                            ohlcVolumes = ohlcArray[index].ohlcVolumes
-                                        } else {
-                                            console.log(" -> Symbol and/or date does not exist in ohlcArray")
-                                            await getOHLC(filteredTradesObject.td, filteredTradesObject.symbol, filteredTradesObject.type)
-                                            //console.log("ohlcArray "+JSON.stringify(ohlcArray))
-                                            let index = ohlcArray.findIndex(obj => obj.date === filteredTradesObject.td && obj.symbol === filteredTradesObject.symbol)
-                                            //console.log("index "+index)
-                                            if (index != -1) {
-                                                ohlcTimestamps = ohlcArray[index].ohlcTimestamps
-                                                ohlcPrices = ohlcArray[index].ohlcPrices
-                                                ohlcVolumes = ohlcArray[index].ohlcVolumes
-                                            } else {
-                                                console.log(" -> there's an issues with OHLC")
-                                            }
-                                        }
-                                    }
-                                    await useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, filteredTradesObject, initCandleChart)
-                                    initCandleChart = false
-
-                                } catch (error) {
-                                    if (error.response && error.response.status === 429) {
-                                        candlestickChartFailureMessage.value = "Zu viele Anfragen, versuche es später erneut"
-                                    }
-                                    else if (error.response) {
-                                        candlestickChartFailureMessage.value = error.response.statusText
-                                    }
-                                    else {
-                                        candlestickChartFailureMessage.value = error
-                                    }
-                                    console.error(error)
-                                }
-                            }
-                        } else {
-                            candlestickChartFailureMessage.value = "Fehlender API-Schlüssel. Um Ein- und Ausstieg im Chart zu sehen, trage deinen API-Schlüssel in den Einstellungen ein."
-                        }
-                    } else {
-                        candlestickChartFailureMessage.value = "Fehlender API-Schlüssel. Um Ein- und Ausstieg im Chart zu sehen, trage deinen API-Schlüssel in den Einstellungen ein."
+                // Binance-Chart (kein API-Key nötig)
+                if (currentUser.value?.enableBinanceChart) {
+                    apiSource.value = "binance"
+                    loadChart = true
+                }
+                // Fallback: Databento/Polygon
+                else if (apiIndex.value != -1) {
+                    apiKey.value = apis[apiIndex.value].key
+                    if (apiKey.value) {
+                        loadChart = true
                     }
+                }
+
+                if (loadChart) {
+                    try {
+                        candlestickChartFailureMessage.value = null
+                        let ohlcTimestamps
+                        let ohlcPrices
+                        let ohlcVolumes
+
+                        // Cache-Key enthält auch das Interval
+                        let cacheIndex = ohlcArray.findIndex(obj => obj.date == filteredTradesObject.td && obj.symbol == filteredTradesObject.symbol && obj.interval == chartInterval)
+
+                        if (cacheIndex != -1) {
+                            console.log(" -> Symbol/date/interval exists in ohlcArray cache")
+                            ohlcTimestamps = ohlcArray[cacheIndex].ohlcTimestamps
+                            ohlcPrices = ohlcArray[cacheIndex].ohlcPrices
+                            ohlcVolumes = ohlcArray[cacheIndex].ohlcVolumes
+                        } else {
+                            console.log(" -> Fetching OHLC data for " + filteredTradesObject.symbol + " (" + chartInterval + ")")
+                            await getOHLC(filteredTradesObject.td, filteredTradesObject.symbol, filteredTradesObject.type, chartInterval)
+                            cacheIndex = ohlcArray.findIndex(obj => obj.date === filteredTradesObject.td && obj.symbol === filteredTradesObject.symbol && obj.interval == chartInterval)
+                            if (cacheIndex != -1) {
+                                ohlcTimestamps = ohlcArray[cacheIndex].ohlcTimestamps
+                                ohlcPrices = ohlcArray[cacheIndex].ohlcPrices
+                                ohlcVolumes = ohlcArray[cacheIndex].ohlcVolumes
+                            } else {
+                                console.log(" -> Problem beim Laden der OHLC-Daten")
+                            }
+                        }
+
+                        if (ohlcTimestamps) {
+                            await useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, filteredTradesObject, initCandleChart)
+                            initCandleChart = false
+                        }
+                    } catch (error) {
+                        if (error.response && error.response.status === 429) {
+                            candlestickChartFailureMessage.value = "Zu viele Anfragen, versuche es später erneut"
+                        } else if (error.response) {
+                            candlestickChartFailureMessage.value = error.response.statusText
+                        } else {
+                            candlestickChartFailureMessage.value = error.message || String(error)
+                        }
+                        console.error(error)
+                    }
+                } else {
+                    candlestickChartFailureMessage.value = null
                 }
 
                 //We differentiate
@@ -307,13 +337,13 @@ async function clickTradesModal(param1, param2, param3) {
                 let findTags = tags.find(obj => obj.tradeId == filteredTradeId)
                 if (findTags) {
                     findTags.tags.forEach(element => {
+                        // Skip wenn Tag schon in tradeTags existiert
+                        if (tradeTags.findIndex(t => t.id === element) !== -1) return
                         for (let obj of availableTags) {
                             for (let tag of obj.tags) {
                                 if (tag.id === element) {
-                                    let temp = {}
-                                    temp.id = tag.id
-                                    temp.name = tag.name
-                                    tradeTags.push(temp)
+                                    tradeTags.push({ id: tag.id, name: tag.name })
+                                    return  // Gefunden, nicht weiter suchen
                                 }
                             }
                         }
@@ -323,7 +353,7 @@ async function clickTradesModal(param1, param2, param3) {
                 let noteIndex = notes.findIndex(obj => obj.tradeId == filteredTradeId)
                 tradeNote.value = null
                 if (noteIndex != -1) {
-                    tradeNote.value = notes[noteIndex].note
+                    tradeNote.value = stripHtml(notes[noteIndex].note)
                 }
 
                 let findExcursion = excursions.filter(obj => obj.tradeId == filteredTradeId)
@@ -340,7 +370,19 @@ async function clickTradesModal(param1, param2, param3) {
                     findExcursion[0].stopLoss != null ? excursion.stopLoss = findExcursion[0].stopLoss : null
                     findExcursion[0].maePrice != null ? excursion.maePrice = findExcursion[0].maePrice : null
                     findExcursion[0].mfePrice != null ? excursion.mfePrice = findExcursion[0].mfePrice : null
-                    //console.log(" tradeExcursion "+JSON.stringify(tradeExcursion))
+                }
+
+                // Auto-MFE: Berechne aus 1m Binance-Daten wenn noch nicht gesetzt
+                if (apiSource.value === "binance" && currentUser.value?.enableBinanceChart && !excursion.mfePrice) {
+                    let autoMfe = await calcMfeFromOhlc(null, null, filteredTradesObject)
+                    if (autoMfe !== null) {
+                        excursion.mfePrice = autoMfe
+                        tradeExcursionDateUnix.value = filteredTrades[itemTradeIndex.value].dateUnix
+                        tradeExcursionId.value = filteredTradeId
+                        tradeExcursionChanged.value = true
+                        saveButton.value = true
+                        console.log(" -> Auto-MFE berechnet: " + autoMfe)
+                    }
                 }
 
                 //if (firstTimeOpen) firstTimeOpen = false
@@ -513,6 +555,56 @@ async function updateExcursions() {
 
 
 /**************
+ * MFE BERECHNUNG
+ ***************/
+
+/**
+ * Berechnet den MFE-Preis aus 1m-Binance-Daten für maximale Genauigkeit.
+ * Long: höchster High zwischen Entry und Exit
+ * Short: tiefster Low zwischen Entry und Exit
+ */
+async function calcMfeFromOhlc(ohlcTimestamps, ohlcPrices, trade) {
+    if (!trade.entryTime || !trade.exitTime || !trade.symbol) return null
+
+    const entryMs = trade.entryTime * 1000
+    const exitMs = trade.exitTime * 1000
+    const isLong = trade.strategy === 'long'
+
+    try {
+        // 1m-Daten nur für den Trade-Zeitraum holen (genauer als Chart-Interval)
+        const response = await axios.get('/api/binance/klines', {
+            params: {
+                symbol: trade.symbol.toUpperCase(),
+                interval: '1m',
+                startTime: entryMs,
+                endTime: exitMs,
+                limit: 1500
+            }
+        })
+
+        if (!response.data || response.data.length === 0) return null
+
+        let mfePrice = isLong ? -Infinity : Infinity
+
+        for (let i = 0; i < response.data.length; i++) {
+            const kline = response.data[i]
+            const high = parseFloat(kline[2])  // high
+            const low = parseFloat(kline[3])   // low
+
+            if (isLong && high > mfePrice) mfePrice = high
+            if (!isLong && low < mfePrice) mfePrice = low
+        }
+
+        if (mfePrice === -Infinity || mfePrice === Infinity) return null
+        return mfePrice
+
+    } catch (error) {
+        console.log(" -> MFE-Berechnung fehlgeschlagen: " + error.message)
+        return null
+    }
+}
+
+/**************
  * MISC
  ***************/
 
@@ -549,45 +641,97 @@ const tradeNoteChange = (param) => {
  * SCREENSHOTS
  ***************/
 const filteredScreenshots = (param1, param2) => {
-    //console.log(" param1 dateUnix " + JSON.stringify(param1.dateUnix))
-    //console.log(" filteredScreenshots")
-    /*if (param1) {
-
-        console.log(" param1 ")
-    }
-    */if (param2) {
-        console.log(" param2 ")
-    }
     let screenshotArray = []
-    //console.log(" screenshotsInfos "+JSON.stringify(screenshotsInfos))
     for (let index = 0; index < param1.trades.length; index++) {
         const el1 = param1.trades[index];
-        let screenshotsArray = []
-        if (param2) {
-            screenshotsArray = screenshots
-        } else {
-            screenshotsArray = screenshotsInfos
+        let screenshotsArray = param2 ? screenshots : screenshotsInfos
 
-        }
         for (let index2 = 0; index2 < screenshotsArray.length; index2++) {
             const el2 = screenshotsArray[index2]
-            if (el2.name == el1.id && (screenshotArray.findIndex(obj => obj == el2) == -1)) {
+            if (screenshotArray.findIndex(obj => obj == el2) != -1) continue // already added
+            // Match by name == tradeId
+            if (el2.name == el1.id) {
                 screenshotArray.push(el2)
-            } else if (useStartOfDay(el2.dateUnix) == param1.dateUnix && (screenshotArray.findIndex(obj => obj == el2) == -1)) {
+            }
+            // Match by dateUnixDay (consistent timezone handling)
+            else if (el2.dateUnixDay == param1.dateUnix) {
+                screenshotArray.push(el2)
+            }
+            // Fallback: startOfDay comparison
+            else if (useStartOfDay(el2.dateUnix) == param1.dateUnix) {
                 screenshotArray.push(el2)
             }
         }
-
     }
-    //console.log(" screenshotArray " + JSON.stringify(screenshotArray))
     return screenshotArray
 }
 
 
 
 
-function getOHLC(date, symbol, type) {
-    if (apiSource.value === "databento") {
+// Mapping: TJ-Timeframe → Binance-kompatibles Interval
+const binanceIntervalMap = {
+    '1m': '1m', '2m': '3m', '3m': '3m', '5m': '5m',
+    '6m': '5m', '10m': '15m', '15m': '15m', '30m': '30m',
+    '45m': '1h', '1h': '1h', '2h': '2h', '3h': '4h', '4h': '4h',
+    '1D': '1d', '1W': '1w', '1M': '1M'
+}
+
+function getOHLC(date, symbol, type, interval) {
+    if (apiSource.value === "binance") {
+        // Binance-kompatibles Interval bestimmen
+        const binanceInterval = binanceIntervalMap[interval] || '15m'
+        console.log(" -> getting OHLC from Binance for " + symbol + " (" + binanceInterval + ") on " + useDateCalFormat(date))
+
+        return new Promise(async (resolve, reject) => {
+            try {
+                // Zeitraum: ganzer Tag der Trade-Eröffnung
+                const startTime = dayjs(date * 1000).tz(timeZoneTrade.value).startOf('day').valueOf()
+                const endTime = dayjs(date * 1000).tz(timeZoneTrade.value).endOf('day').valueOf()
+
+                const response = await axios.get('/api/binance/klines', {
+                    params: {
+                        symbol: symbol.toUpperCase(),
+                        interval: binanceInterval,
+                        startTime: startTime,
+                        endTime: endTime,
+                        limit: 1500
+                    }
+                })
+
+                let tempArray = {
+                    date: date,
+                    symbol: symbol,
+                    interval: interval,
+                    ohlcTimestamps: [],
+                    ohlcPrices: [],
+                    ohlcVolumes: []
+                }
+
+                // Binance klines format: [openTime, open, high, low, close, volume, closeTime, ...]
+                for (let i = 0; i < response.data.length; i++) {
+                    const kline = response.data[i]
+                    tempArray.ohlcTimestamps.push(kline[0]) // openTime in ms
+                    // ECharts candlestick: [close, open, low, high]
+                    tempArray.ohlcPrices.push([
+                        parseFloat(kline[4]),  // close
+                        parseFloat(kline[1]),  // open
+                        parseFloat(kline[3]),  // low
+                        parseFloat(kline[2])   // high
+                    ])
+                    tempArray.ohlcVolumes.push(parseFloat(kline[5]))
+                }
+
+                ohlcArray.push(tempArray)
+                console.log(" -> Binance: " + tempArray.ohlcTimestamps.length + " Kerzen geladen (" + binanceInterval + ")")
+                resolve()
+            } catch (error) {
+                console.log(" -> Binance API Error: " + error)
+                reject(error)
+            }
+        })
+
+    } else if (apiSource.value === "databento") {
         console.log(" -> getting OHLC from " + apiSource.value + " for date " + useDateCalFormat(date))
 
         return new Promise(async (resolve, reject) => {
@@ -736,7 +880,6 @@ function getOHLC(date, symbol, type) {
 <template>
     <SpinnerLoadingPage />
     <div v-if="!spinnerLoadingPage && filteredTrades" class="row mt-2 mb-2">
-        <Filters />
         <div v-if="!hasData">
             <NoData />
         </div>
@@ -744,7 +887,7 @@ function getOHLC(date, symbol, type) {
             <!-- added v-if instead v-show because need to wait for patterns to load -->
             <div class="row">
                 <!-- ============ CARD ============ -->
-                <div class="col-12 col-xl-8">
+                <div class="col-12">
                     <!-- v-show insead of v-if or else init tab does not work cause div is not created until spinner is false-->
                     <div v-for="(itemTrade, index) in filteredTrades" class="row mt-2" :id="'daily-card-' + itemTrade.dateUnix">
                         <div class="col-12">
@@ -769,13 +912,6 @@ function getOHLC(date, symbol, type) {
                                                     :data-index="index" class="ms-2 uil uil-tag-alt pointerClass"></i>
 
                                             </div>
-                                            <div class="col-12 col-lg-auto ms-auto">PnL({{ selectedGrossNet.charAt(0)
-                                                }}):
-                                                <span
-                                                    v-bind:class="[itemTrade.pAndL[amountCase + 'Proceeds'] > 0 ? 'greenTrade' : 'redTrade']">{{
-                                                        useTwoDecCurrencyFormat(itemTrade.pAndL[amountCase + 'Proceeds'])
-                                                    }}</span>
-                                            </div>
 
                                         </div>
                                         <div>
@@ -796,69 +932,21 @@ function getOHLC(date, symbol, type) {
                                         </div>
                                     </div>
 
-                                    <!-- Line 2 : Charts and total data -->
-                                    <div class="col-12 d-flex align-items-center text-center">
-                                        <div class="row">
-
-                                            <!--  -> Win Loss Chart -->
-                                            <div class="col-12 col-lg-6">
-                                                <div class="row">
-                                                    <div class="col-4">
-                                                        <div v-bind:id="'pieChart' + itemTrade.dateUnix"
-                                                            class="chartIdDailyClass">
-                                                        </div>
-                                                    </div>
-                                                    <!--  -> Win Loss evolution Chart -->
-                                                    <div class="col-8 chartCard">
-                                                        <div v-bind:id="'doubleLineChart' + itemTrade.dateUnix"
-                                                            class="chartIdDailyClass"></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <!--  -> Tot trades and total executions -->
-                                            <div class="col-12 col-lg-6">
-                                                <div class="row">
-                                                    <div class="col row">
-                                                        <div>
-                                                            <label>Executions</label>
-                                                            <p>{{ itemTrade.pAndL.executions }}</p>
-                                                        </div>
-                                                        <div>
-                                                            <label>Trades</label>
-                                                            <p>{{ itemTrade.pAndL.trades }}</p>
-                                                        </div>
-                                                    </div>
-
-                                                    <!--  -> Tot Wins and losses -->
-                                                    <div class="col row">
-                                                        <div>
-                                                            <label>Wins</label>
-                                                            <p>{{ itemTrade.pAndL.grossWinsCount }}</p>
-                                                        </div>
-                                                        <div>
-                                                            <label>Losses</label>
-                                                            <p>{{ itemTrade.pAndL.grossLossCount }}</p>
-                                                        </div>
-                                                    </div>
-
-                                                    <!--  -> Tot commission and gross p&l -->
-                                                    <div class="col row">
-                                                        <div>
-                                                            <label>Total Fees</label>
-                                                            <p>{{ useTwoDecCurrencyFormat(itemTrade.pAndL.fees) }}</p>
-                                                        </div>
-                                                        <div>
-                                                            <label>PnL(g)</label>
-                                                            <p>{{ useTwoDecCurrencyFormat(itemTrade.pAndL.grossProceeds)
-                                                                }}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                    <!-- Stats bar -->
+                                    <div class="col-12 mb-1">
+                                        <div class="daily-stats-bar">
+                                            <span class="stats-item"><span class="stats-label">Trades</span> {{ itemTrade.pAndL.trades }}</span>
+                                            <span class="stats-divider">|</span>
+                                            <span class="stats-item"><span class="stats-label">Wins</span> <span class="greenTrade">{{ itemTrade.pAndL.grossWinsCount }}</span></span>
+                                            <span class="stats-divider">|</span>
+                                            <span class="stats-item"><span class="stats-label">Losses</span> <span class="redTrade">{{ itemTrade.pAndL.grossLossCount }}</span></span>
+                                            <span class="stats-divider">|</span>
+                                            <span class="stats-item"><span class="stats-label">Fees</span> {{ useTwoDecCurrencyFormat(itemTrade.pAndL.fees) }}</span>
+                                            <span class="stats-divider">|</span>
+                                            <span class="stats-item"><span class="stats-label">PnL(g)</span> <span :class="itemTrade.pAndL.grossProceeds > 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(itemTrade.pAndL.grossProceeds) }}</span></span>
                                         </div>
                                     </div>
+
                                     <!-- end PART 1 -->
 
                                     <!-- ============ PART 2 ============ -->
@@ -870,7 +958,7 @@ function getOHLC(date, symbol, type) {
 
                                             <!--Trades-->
                                             <div class="nav nav-tabs mb-2" id="nav-tab" role="tablist">
-                                                <button class="nav-link" v-bind:id="'trades-' + index"
+                                                <button :class="['nav-link', index === 0 ? 'active' : '']" v-bind:id="'trades-' + index"
                                                     data-bs-toggle="tab" v-bind:data-bs-target="'#tradesNav-' + index"
                                                     type="button" role="tab" aria-controls="nav-overview"
                                                     aria-selected="true">Trades
@@ -883,22 +971,14 @@ function getOHLC(date, symbol, type) {
                                                     aria-selected="true">Blotter
                                                 </button>
 
-                                                <!--Screenshots-->
-                                                <button v-bind:id="'screenshots-' + index" data-bs-toggle="tab"
-                                                    v-bind:data-bs-target="'#screenshotsNav-' + index" type="button"
-                                                    role="tab" aria-controls="nav-overview" aria-selected="true"
-                                                    v-bind:class="[filteredScreenshots(itemTrade).length > 0 ? '' : 'noDataTab', 'nav-link']">Screenshots<span
-                                                        v-if="filteredScreenshots(itemTrade).length > 0"
-                                                        class="txt-small">
-                                                        ({{ filteredScreenshots(itemTrade).length }})</span>
-                                                </button>
+                                                <!--Screenshots tab removed - thumbnails now shown in trade detail modal-->
 
                                             </div>
                                         </nav>
                                         <div class="tab-content" id="nav-tabContent">
 
                                             <!-- TRADES TAB -->
-                                            <div class="tab-pane fade txt-small" v-bind:id="'tradesNav-' + index"
+                                            <div :class="['tab-pane', 'fade', 'txt-small', index === 0 ? 'show active' : '']" v-bind:id="'tradesNav-' + index"
                                                 role="tabpanel" aria-labelledby="nav-overview-tab">
                                                 <table class="table">
                                                     <thead>
@@ -915,8 +995,6 @@ function getOHLC(date, symbol, type) {
                                                                     data-bs-title="PnL per unit of security traded (bought or shorted)"></i>
                                                             </th>
                                                             <th scope="col">PnL(n)</th>
-                                                            <th scope="col">Tags</th>
-                                                            <th scope="col">Notiz</th>
                                                             <th scope="col"></th>
                                                             <th scope="col"></th>
                                                         </tr>
@@ -982,28 +1060,6 @@ function getOHLC(date, symbol, type) {
                                                                     }}</span>
                                                             </td>
 
-                                                            <!--TAGS -->
-                                                            <td>
-                                                                <span
-                                                                    v-for="tags in tags.filter(obj => obj.tradeId == trade.id)">
-                                                                    <span v-for="tag in tags.tags.slice(0, 2)"
-                                                                        class="tag txt-small"
-                                                                        :style="{ 'background-color': useGetTagInfo(tag).groupColor }">{{
-                                                                            useGetTagInfo(tag).tagName }}
-                                                                    </span>
-                                                                    <span v-show="tags.tags.length > 2">+{{
-                                                                        tags.tags.length
-                                                                        - 2 }}</span>
-                                                                </span>
-                                                            </td>
-                                                            <td>
-                                                                <span
-                                                                    v-for="note in notes.filter(obj => obj.tradeId == trade.id)">
-                                                                    <span v-if="note.note.length > 12">{{
-                                                                        note.note.substring(0, 12) }}...</span><span
-                                                                        v-else>{{ note.note }}</span>
-                                                                </span>
-                                                            </td>
                                                             <td>
                                                                 <span v-if="trade.satisfaction == true">
                                                                     <i class="greenTrade uil uil-thumbs-up"></i>
@@ -1064,21 +1120,7 @@ function getOHLC(date, symbol, type) {
                                                 </table>
                                             </div>
 
-                                            <!-- SCREENSHOTS TAB -->
-                                            <div class="tab-pane fade txt-small" v-bind:id="'screenshotsNav-' + index"
-                                                role="tabpanel" aria-labelledby="nav-overview-tab">
-                                                <div v-show="idCurrentType == 'screenshots' && idCurrentNumber == index && tabGettingScreenshots"
-                                                    class="text-center spinnerHeigth">
-                                                    <div class="spinner-border text-blue" role="status"></div>
-                                                </div>
-                                                <div v-if="filteredScreenshots(itemTrade).length > 0 && idCurrentType == 'screenshots' && idCurrentNumber == index"
-                                                    v-for="itemScreenshot in filteredScreenshots(itemTrade, itemTrade.dateUnix)">
-                                                    <span class="mb-2">
-                                                        <Screenshot :screenshot-data="itemScreenshot" show-title
-                                                            source="dailyTab" />
-                                                    </span>
-                                                </div>
-                                            </div>
+                                            <!-- Screenshots tab content removed -->
 
 
                                         </div>
@@ -1091,15 +1133,6 @@ function getOHLC(date, symbol, type) {
                     </div>
                 </div>
                 <!-- end card-->
-                <!-- ============ CALENDAR ============ -->
-                <div v-show="calendarData && !spinnerLoadingPage"
-                    class="col-12 col-xl-4 text-center mt-2 align-self-start">
-                    <div class="dailyCard calCard">
-                        <div class="row">
-                            <Calendar />
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- Load more spinner -->
@@ -1116,10 +1149,8 @@ function getOHLC(date, symbol, type) {
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div v-if="modalDailyTradeOpen">
-                    <div v-if="screenshot.originalBase64">
-                        <Screenshot :screenshot-data="screenshot" source="dailyModal" />
-                    </div>
-                    <div v-show="!candlestickChartFailureMessage && !screenshot.originalBase64" id="candlestickChart"
+                    <!-- Candlestick Chart (Binance / Databento / Polygon) -->
+                    <div v-show="!candlestickChartFailureMessage && (currentUser?.enableBinanceChart || apiIndex != -1)" id="candlestickChart"
                         class="candlestickClass">
                     </div>
                     <div class="container mt-2 text-center" v-show="candlestickChartFailureMessage">{{
@@ -1253,6 +1284,7 @@ function getOHLC(date, symbol, type) {
 
                                         <!-- Satisfaction -->
                                         <div class="col-1">
+                                            <label class="form-label txt-small mb-1" style="color: var(--white-60);">&nbsp;</label><br>
                                             <i v-on:click="tradeSatisfactionChange(filteredTrades[itemTradeIndex].trades[tradeIndex], true)"
                                                 v-bind:class="[filteredTrades[itemTradeIndex].trades[tradeIndex].satisfaction == true ? 'greenTrade' : '', 'uil', 'uil-thumbs-up', 'pointerClass', 'me-1']"></i>
 
@@ -1263,6 +1295,7 @@ function getOHLC(date, symbol, type) {
 
                                         <!-- Tags -->
                                         <div class="container-tags col-8">
+                                            <label class="form-label txt-small mb-1" style="color: var(--white-60);">Tags</label>
                                             <div class="form-control dropdown form-select" style="height: auto;">
                                                 <div style="display: flex; align-items: center; flex-wrap: wrap;">
                                                     <span v-for="(tag, index) in tradeTags" :key="index"
@@ -1299,7 +1332,13 @@ function getOHLC(date, symbol, type) {
                                         </div>
                                         <!-- MFE -->
                                         <div class="col-3">
-                                            <input type="number" class="form-control" placeholder="MFE Preis"
+                                            <label class="form-label txt-small mb-1" style="color: var(--white-60);">
+                                                MFE Preis
+                                                <i class="uil uil-info-circle pointerClass" style="font-size: 0.85rem;"
+                                                    data-bs-toggle="tooltip" data-bs-placement="top"
+                                                    title="Maximum Favorable Excursion: Bester Preis w&#228;hrend des Trades. Long = h&#246;chster High, Short = tiefster Low. Wird automatisch aus Binance 1m-Daten berechnet."></i>
+                                            </label>
+                                            <input type="number" class="form-control form-control-sm" placeholder="MFE"
                                                         style="font-size: small;" v-bind:value="excursion.mfePrice"
                                                         v-on:click="tradeExcursionClicked"
                                                         v-on:change="tradeExcursionChange($event.target.value, 'mfePrice')">
@@ -1317,6 +1356,16 @@ function getOHLC(date, symbol, type) {
                                     <textarea class="form-control" placeholder="Notiz" id="floatingTextarea"
                                         v-bind:value="tradeNote"
                                         @input="tradeNoteChange($event.target.value)"></textarea>
+                                </div>
+
+                                <!-- Screenshot Icon-Button -->
+                                <div class="col-12 mt-2" v-show="!spinnerSetups && screenshot.originalBase64">
+                                    <span class="pointerClass" style="font-size: 1.3rem;"
+                                        data-bs-toggle="modal" data-bs-target="#fullScreenModal"
+                                        @click="useSelectedScreenshotFunction(-1, 'dailyModal', screenshot)">
+                                        <i class="uil uil-image me-1"></i>
+                                        <span class="txt-small" style="color: var(--white-60);">Screenshot</span>
+                                    </span>
                                 </div>
 
                                 <!-- Forth line -->

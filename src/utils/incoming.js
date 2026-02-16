@@ -127,7 +127,17 @@ async function handleClosedPositions(closedPositions) {
             // Create trade record (skip metadata transfer if popups enabled — popup handles it)
             await createTradeFromClosedPosition(histPos, incoming, popupsEnabled)
 
-            if (popupsEnabled) {
+            if (incoming.skipEvaluation === 1) {
+                // Skip evaluation: transfer existing metadata directly, no popup
+                await useTransferClosingMetadata(incoming, histPos, {
+                    note: '',
+                    tags: incoming.tags || [],
+                    satisfaction: incoming.satisfaction,
+                    stressLevel: incoming.stressLevel || 0,
+                    closingNote: incoming.closingNote || '',
+                })
+                console.log(` -> Position ${incoming.symbol} geschlossen — Bewertung übersprungen`)
+            } else if (popupsEnabled) {
                 // Keep position as pending_evaluation, store historyData for popup
                 await dbUpdate('incoming_positions', incoming.objectId, {
                     status: 'pending_evaluation',
@@ -165,7 +175,8 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
     const openTime = parseInt(histPos.ctime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
 
-    const side = histPos.side === 'LONG' ? 'B' : 'SS'
+    // Bitunix API: Pending uses 'BUY'/'SELL', History uses 'LONG'/'SHORT' — accept both
+    const side = (histPos.side === 'LONG' || histPos.side === 'BUY') ? 'B' : 'SS'
     const netPL = grossPL - fee
     const isGrossWin = grossPL > 0
     const isNetWin = netPL > 0
@@ -497,7 +508,7 @@ export function useStopGlobalPolling() {
  * Transfer metadata from closing evaluation popup to the trade record.
  * Called by TradeEvalPopup after user submits closing evaluation.
  */
-export async function useTransferClosingMetadata(incoming, histPos, { note, tags, satisfaction, stressLevel }) {
+export async function useTransferClosingMetadata(incoming, histPos, { note, tags, satisfaction, stressLevel, closingNote }) {
     const closeTime = parseInt(histPos.mtime || histPos.ctime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
     const tradeId = `t${dateUnix}_0_${histPos.positionId}`
@@ -525,7 +536,8 @@ export async function useTransferClosingMetadata(incoming, histPos, { note, tags
         feelings: incoming.feelings || '',
         playbook: incoming.playbook || '',
         timeframe: incoming.entryTimeframe || '',
-        screenshotId: incoming.screenshotId || ''
+        screenshotId: incoming.screenshotId || '',
+        closingNote: closingNote || incoming.closingNote || '',
     })
 
     // Save satisfaction

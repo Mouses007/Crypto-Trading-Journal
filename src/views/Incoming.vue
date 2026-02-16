@@ -135,9 +135,39 @@ function addTag(pos, tag) {
     pos.tags.push({ id: tag.id, name: tag.name })
 }
 
-function removeTag(pos, index) {
+function removeTag(pos, idx, groupName) {
     if (!pos.tags) return
-    pos.tags.splice(index, 1)
+    if (groupName) {
+        const groupTags = getTagsForGroup(pos, groupName)
+        if (idx >= 0 && idx < groupTags.length) {
+            const tagToRemove = groupTags[idx]
+            const realIdx = pos.tags.findIndex(t => t.id === tagToRemove.id)
+            if (realIdx !== -1) pos.tags.splice(realIdx, 1)
+        }
+    } else {
+        pos.tags.splice(idx, 1)
+    }
+}
+
+function getTagsForGroup(pos, groupName) {
+    return (pos.tags || []).filter(t => {
+        const info = useGetTagInfo(t.id)
+        return info?.tagGroupName === groupName
+    })
+}
+
+function getStrategieTags() {
+    const group = availableTags.find(g => g.name === 'Strategie')
+    return group ? group.tags : []
+}
+
+function getTradeAbschlussTags() {
+    const group = availableTags.find(g => g.name === 'Trade Abschluss')
+    return group ? group.tags : []
+}
+
+function updateSatisfaction(pos, val) {
+    pos.satisfaction = pos.satisfaction === val ? null : val
 }
 
 function getTagColor(tagId) {
@@ -153,6 +183,9 @@ async function saveMetadata(pos) {
         emotionLevel: pos.emotionLevel || 0,
         entryTimeframe: pos.entryTimeframe || '',
         tags: pos.tags || [],
+        closingNote: pos.closingNote || '',
+        satisfaction: pos.satisfaction === true ? 1 : pos.satisfaction === false ? 0 : (pos.satisfaction ?? -1),
+        skipEvaluation: pos.skipEvaluation || 0,
     }
 
     // Get Quill content
@@ -185,6 +218,8 @@ async function completeClosingEvaluation(pos) {
         emotionLevel: pos.emotionLevel || 0,
         entryTimeframe: pos.entryTimeframe || '',
         tags: pos.tags || [],
+        closingNote: pos.closingNote || '',
+        satisfaction: pos.satisfaction === true ? 1 : pos.satisfaction === false ? 0 : (pos.satisfaction ?? -1),
     }
     if (quillInstances[pos.positionId]) {
         data.playbook = quillInstances[pos.positionId].root.innerHTML
@@ -199,8 +234,9 @@ async function completeClosingEvaluation(pos) {
         {
             note: '',
             tags: pos.tags || [],
-            satisfaction: null,
-            stressLevel: pos.stressLevel || 0
+            satisfaction: pos.satisfaction,
+            stressLevel: pos.stressLevel || 0,
+            closingNote: pos.closingNote || '',
         }
     )
 
@@ -357,52 +393,53 @@ function getPositionDate(pos) {
 
                 <!-- Expanded detail section -->
                 <div v-if="expandedId === pos.positionId" class="mt-2 incoming-meta-section">
+
+                    <!-- ===== ERÖFFNUNGSBEWERTUNG ===== -->
+                    <p class="pb-edit-label fw-bold mb-2" style="color: var(--white-80); font-size: 0.95rem; border-bottom: 1px solid var(--white-10);">Eröffnungsbewertung</p>
+
                     <!-- Stress Level -->
-                    <div class="mb-2">
-                        <label class="form-label fw-bold mb-1">Stresslevel</label>
-                        <div>
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Stresslevel</label>
+                        <div class="d-flex align-items-end flex-wrap">
                             <template v-for="n in 10" :key="n">
                                 <span @click.stop="updateStress(pos, n)"
                                     class="stress-dot pointerClass"
                                     :class="n <= pos.stressLevel ? 'active' : 'inactive'">
-                                    <span class="stress-number">{{ n }}</span>●
+                                    <span class="stress-number">{{ n }}</span>&#x25CF;
                                 </span>
                                 <span v-if="n < 10" class="stress-dot stress-spacer"
                                     :class="n <= pos.stressLevel ? 'active' : 'inactive'">
-                                    <span class="stress-number">&nbsp;</span>●
+                                    <span class="stress-number">&nbsp;</span>&#x25CF;
                                 </span>
                             </template>
                         </div>
                     </div>
 
-                    <!-- Tags -->
-                    <div class="mb-2">
-                        <label class="form-label fw-bold mb-1">Tags</label>
+                    <!-- Tags Strategie -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Tags</label>
                         <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
-                            <span v-for="(tag, idx) in (pos.tags || [])" :key="tag.id"
+                            <span v-for="(tag, idx) in getTagsForGroup(pos, 'Strategie')" :key="tag.id"
                                 class="badge me-1 pointerClass"
                                 :style="{ backgroundColor: getTagColor(tag.id) }"
-                                @click.stop="removeTag(pos, idx)">
+                                @click.stop="removeTag(pos, idx, 'Strategie')">
                                 {{ tag.name }} <span class="ms-1">&times;</span>
                             </span>
                         </div>
-                        <select class="form-select form-select-sm" @change.stop="addTag(pos, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
+                        <select class="form-select form-select-sm"
+                            @change.stop="addTag(pos, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
                             <option selected disabled>Tag hinzufügen...</option>
-                            <template v-for="group in availableTags" :key="group.id">
-                                <optgroup :label="group.name">
-                                    <option v-for="tag in group.tags" :key="tag.id"
-                                        :value="JSON.stringify({ id: tag.id, name: tag.name })"
-                                        :disabled="(pos.tags || []).some(t => t.id === tag.id)">
-                                        {{ tag.name }}
-                                    </option>
-                                </optgroup>
-                            </template>
+                            <option v-for="tag in getStrategieTags()" :key="tag.id"
+                                :value="JSON.stringify({ id: tag.id, name: tag.name })"
+                                :disabled="(pos.tags || []).some(t => t.id === tag.id)">
+                                {{ tag.name }}
+                            </option>
                         </select>
                     </div>
 
                     <!-- Timeframe -->
-                    <div class="mb-2">
-                        <label class="form-label fw-bold mb-1">Timeframe</label>
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Timeframe</label>
                         <div class="d-flex flex-wrap gap-1">
                             <button v-for="tf in timeframeOptions" :key="tf.value"
                                 class="btn btn-sm py-0 px-2"
@@ -414,8 +451,8 @@ function getPositionDate(pos) {
                     </div>
 
                     <!-- Emotionslevel -->
-                    <div class="mb-2">
-                        <label class="form-label fw-bold mb-1">Emotionslevel</label>
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Emotionslevel</label>
                         <div class="d-flex align-items-end flex-wrap">
                             <template v-for="n in 10" :key="'emo'+n">
                                 <span @click.stop="updateEmotionLevel(pos, n)"
@@ -431,22 +468,71 @@ function getPositionDate(pos) {
                         </div>
                     </div>
 
-                    <!-- Feelings -->
-                    <div class="mb-2">
-                        <label class="form-label fw-bold mb-1">Gefühle / Emotionen</label>
+                    <!-- Gefühle -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Emotionen</label>
                         <textarea class="form-control form-control-sm" v-model="pos.feelings"
                             placeholder="Wie fühlst du dich bei diesem Trade?" rows="2"></textarea>
                     </div>
 
-                    <!-- Playbook (Quill) -->
-                    <div class="mb-2">
-                        <label class="form-label fw-bold mb-1">Playbook Notiz</label>
+                    <!-- Playbook Notiz -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Notiz</label>
                         <div :id="'quillIncoming-' + pos.positionId" class="quill-incoming"></div>
                     </div>
 
+                    <!-- ===== ABSCHLUSSBEWERTUNG ===== -->
+                    <p class="pb-edit-label fw-bold mb-2 mt-3" style="color: var(--white-80); font-size: 0.95rem; border-bottom: 1px solid var(--white-10);">Abschlussbewertung</p>
+
+                    <!-- Zufriedenheit -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Zufriedenheit</label>
+                        <div class="d-flex gap-3">
+                            <span class="pointerClass fs-4"
+                                :class="pos.satisfaction === true || pos.satisfaction === 1 ? 'greenTrade' : 'text-muted'"
+                                @click.stop="updateSatisfaction(pos, true)">
+                                <i class="uil uil-thumbs-up"></i>
+                            </span>
+                            <span class="pointerClass fs-4"
+                                :class="pos.satisfaction === false || pos.satisfaction === 0 ? 'redTrade' : 'text-muted'"
+                                @click.stop="updateSatisfaction(pos, false)">
+                                <i class="uil uil-thumbs-down"></i>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Trade Abschluss Tags -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Trade Abschluss</label>
+                        <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                            <span v-for="(tag, idx) in getTagsForGroup(pos, 'Trade Abschluss')" :key="tag.id"
+                                class="badge me-1 pointerClass"
+                                :style="{ backgroundColor: getTagColor(tag.id) }"
+                                @click.stop="removeTag(pos, idx, 'Trade Abschluss')">
+                                {{ tag.name }} <span class="ms-1">&times;</span>
+                            </span>
+                        </div>
+                        <select class="form-select form-select-sm"
+                            @change.stop="addTag(pos, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
+                            <option selected disabled>Tag hinzufügen...</option>
+                            <option v-for="tag in getTradeAbschlussTags()" :key="tag.id"
+                                :value="JSON.stringify({ id: tag.id, name: tag.name })"
+                                :disabled="(pos.tags || []).some(t => t.id === tag.id)">
+                                {{ tag.name }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- Abschlussnotiz -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Abschlussnotiz</label>
+                        <textarea class="form-control form-control-sm" v-model="pos.closingNote"
+                            placeholder="Notizen zum Trade-Abschluss..." rows="2"></textarea>
+                    </div>
+
                     <!-- Screenshot -->
-                    <div class="mb-2">
-                        <label class="form-label fw-bold mb-1">Screenshot</label>
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Screenshot</label>
                         <div v-if="pos.screenshotId">
                             <img v-if="screenshotPreviews[pos.positionId]"
                                 :src="screenshotPreviews[pos.positionId]"
@@ -462,7 +548,7 @@ function getPositionDate(pos) {
 
                     <!-- Save / Complete buttons -->
                     <div class="d-flex justify-content-between align-items-center mt-2">
-                        <div>
+                        <div class="d-flex align-items-center gap-3">
                             <button v-if="pos.status === 'pending_evaluation'"
                                 class="btn btn-primary btn-sm"
                                 @click.stop="completeClosingEvaluation(pos)"
@@ -473,6 +559,14 @@ function getPositionDate(pos) {
                                 <span v-else><i class="uil uil-check-circle me-1"></i></span>
                                 Bewertung abschließen
                             </button>
+                            <div class="form-check mb-0">
+                                <input type="checkbox" class="form-check-input" :id="'skipEval-' + pos.positionId"
+                                    v-model="pos.skipEvaluation" :true-value="1" :false-value="0"
+                                    @click.stop>
+                                <label class="form-check-label small text-muted" :for="'skipEval-' + pos.positionId">
+                                    Trade nicht bewerten
+                                </label>
+                            </div>
                         </div>
                         <div>
                             <button class="btn btn-success btn-sm" @click.stop="saveMetadata(pos)" :disabled="savingId === pos.objectId">

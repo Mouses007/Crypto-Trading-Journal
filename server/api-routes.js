@@ -2,6 +2,15 @@ import { getDb } from './database.js'
 
 const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions']
 
+const MAX_QUERY_LIMIT = 10000
+const MAX_QUERY_SKIP = 100000
+
+/** Returns allowed column names for a table (prevents SQL injection via column names). */
+function getTableColumns(db, table) {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all()
+    return rows.map(r => r.name)
+}
+
 // JSON columns per table that should be parsed on read and stringified on write
 const JSON_COLUMNS = {
     trades: ['executions', 'trades', 'blotter', 'pAndL', 'cashJournal'],
@@ -153,11 +162,15 @@ export function setupApiRoutes(app) {
                 }
             }
 
-            // doesNotExist: ?doesNotExist=field
+            const allowedColumns = getTableColumns(db, table)
+
+            // doesNotExist: ?doesNotExist=field (only allow valid column names)
             if (req.query.doesNotExist) {
                 const fields = Array.isArray(req.query.doesNotExist) ? req.query.doesNotExist : [req.query.doesNotExist]
                 for (const field of fields) {
-                    where.push(`(${field} IS NULL OR ${field} = '' OR ${field} = '0')`)
+                    if (allowedColumns.includes(field)) {
+                        where.push(`(${field} IS NULL OR ${field} = '' OR ${field} = '0')`)
+                    }
                 }
             }
 
@@ -165,11 +178,8 @@ export function setupApiRoutes(app) {
             let selectCols = '*'
             if (req.query.exclude) {
                 const excludeList = Array.isArray(req.query.exclude) ? req.query.exclude : req.query.exclude.split(',')
-                // Get table columns and exclude specified ones
-                const tableInfo = db.prepare(`PRAGMA table_info(${table})`).all()
-                const allCols = tableInfo.map(c => c.name)
-                const includeCols = allCols.filter(c => !excludeList.includes(c))
-                selectCols = includeCols.join(', ')
+                const includeCols = allowedColumns.filter(c => !excludeList.includes(c))
+                selectCols = includeCols.length ? includeCols.join(', ') : '*'
             }
 
             // Build query
@@ -178,19 +188,21 @@ export function setupApiRoutes(app) {
                 sql += ` WHERE ${where.join(' AND ')}`
             }
 
-            // Sort
-            if (req.query.descending) {
+            // Sort (only allow valid column names)
+            if (req.query.descending && allowedColumns.includes(req.query.descending)) {
                 sql += ` ORDER BY ${req.query.descending} DESC`
-            } else if (req.query.ascending) {
+            } else if (req.query.ascending && allowedColumns.includes(req.query.ascending)) {
                 sql += ` ORDER BY ${req.query.ascending} ASC`
             }
 
-            // Limit and skip
-            if (req.query.limit) {
-                sql += ` LIMIT ${parseInt(req.query.limit)}`
+            // Limit and skip (bounded integers when provided)
+            if (req.query.limit !== undefined && req.query.limit !== '') {
+                const limitNum = Math.min(Math.max(0, parseInt(req.query.limit, 10) || 0), MAX_QUERY_LIMIT)
+                sql += ` LIMIT ${limitNum}`
             }
-            if (req.query.skip) {
-                sql += ` OFFSET ${parseInt(req.query.skip)}`
+            if (req.query.skip !== undefined && req.query.skip !== '') {
+                const skipNum = Math.min(Math.max(0, parseInt(req.query.skip, 10) || 0), MAX_QUERY_SKIP)
+                sql += ` OFFSET ${skipNum}`
             }
 
             const rows = db.prepare(sql).all(params)

@@ -244,19 +244,15 @@ export const useCreateAvailableTagsArray = () => {
     }
 }
 
-let filteredSuggestions = []
 export const useFilterSuggestions = (param) => {
     let index = availableTags.findIndex(obj => obj.id == param)
-    let temp = {}
-    temp.id = param
-    temp.tags = availableTags[index].tags.filter(tag => tag.name.toLowerCase().startsWith(tagInput.value.toLowerCase()));
-    let index2 = filteredSuggestions.findIndex(obj => obj.id == temp.id)
-    if (index2 == -1) {
-        filteredSuggestions.push(temp)
-    } else {
-        filteredSuggestions[index2].tags = temp.tags
-    }
-    return filteredSuggestions
+    if (index === -1) return []
+    return [{
+        id: param,
+        tags: availableTags[index].tags.filter(tag =>
+            tag.name.toLowerCase().startsWith(tagInput.value.toLowerCase())
+        )
+    }]
 }
 
 export const useTradeTagsChange = async (param1, param2) => {

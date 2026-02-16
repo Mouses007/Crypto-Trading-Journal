@@ -301,7 +301,9 @@ export function useDoubleLineChart(param1, param2, param3, param4) { //chartID, 
     //console.log("param1 "+param1+", param2 "+param2+", param3 "+param3+", param4 "+param4)
     return new Promise((resolve, reject) => {
         //console.log("param1 "+param1)
-        var myChart = echarts.init(document.getElementById(param1));
+        var el = document.getElementById(param1);
+        if (!el) { resolve(); return; }
+        var myChart = echarts.init(el);
         const option = {
             tooltip: {
                 trigger: 'axis',
@@ -611,7 +613,9 @@ export function usePieChart(param1, param2, param3) { //chart ID, green, red, pa
     return new Promise((resolve, reject) => {
         //console.log("  --> " + param1)
         //console.log("para 2 " + param2 + " and 3 " + param3)
-        let myChart = echarts.init(document.getElementById(param1));
+        var el = document.getElementById(param1);
+        if (!el) { resolve(); return; }
+        let myChart = echarts.init(el);
         let green = param2
         let red = param3
         const option = {
@@ -1777,14 +1781,16 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
     //console.log(" trade " + JSON.stringify(trade))
     let green = '#26a69a'
     let red = '#FF6960'
-    let exitMarkerColor
+    // Long: Entry = grün (Kauf), Exit = rot (Verkauf)
+    // Short: Entry = rot (Verkauf), Exit = grün (Kauf/Deckung)
     let entryMarkerColor
+    let exitMarkerColor
     if (trade.strategy == 'long') {
-        entryMarkerColor = red
-        exitMarkerColor = green
-    } else {
         entryMarkerColor = green
         exitMarkerColor = red
+    } else {
+        entryMarkerColor = red
+        exitMarkerColor = green
     }
 
 
@@ -1922,65 +1928,123 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
                     type: 'candlestick',
                     data: ohlcPrices,
                     markPoint: {
-                        /*label: {
-                            formatter: function (param) {
-                                return param != null ? Math.round(param.value) + '' : '';
-                            }
-                        },*/
                         data: [],
                         tooltip: {
                             formatter: function (param) {
                                 return param.name + '<br>' + (param.data.coord || '');
                             }
                         }
+                    },
+                    markLine: {
+                        silent: true,
+                        symbol: 'none',
+                        data: [
+                            {
+                                name: 'Entry',
+                                yAxis: trade.entryPrice,
+                                lineStyle: { color: green, width: 1, type: 'dashed' },
+                                label: {
+                                    show: true,
+                                    position: 'insideStartTop',
+                                    formatter: 'Entry ' + trade.entryPrice,
+                                    fontSize: 10,
+                                    color: green
+                                }
+                            },
+                            {
+                                name: 'Exit',
+                                yAxis: trade.exitPrice,
+                                lineStyle: { color: red, width: 1, type: 'dashed' },
+                                label: {
+                                    show: true,
+                                    position: 'insideStartTop',
+                                    formatter: 'Exit ' + trade.exitPrice,
+                                    fontSize: 10,
+                                    color: red
+                                }
+                            }
+                        ]
                     }
                 },
             ]
         };
 
-        if (dayjs.unix(trade.entryTime).tz(timeZoneTrade.value).isSame(dayjs(ohlcTimestamps[0]), 'day')) {
-            //console.log(" trade.entryPrice " + trade.entryPrice)
-            option.series[0].markPoint.data.push({
-                name: 'entryMark',
-                symbol: 'path://M17.92,11.62a1,1,0,0,0-.21-.33l-5-5a1,1,0,0,0-1.42,1.42L14.59,11H7a1,1,0,0,0,0,2h7.59l-3.3,3.29a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0l5-5a1,1,0,0,0,.21-.33A1,1,0,0,0,17.92,11.62Z',
-                symbolSize: '17',
-                symbolRotate: '0',
-                symbolOffset: ['-60%', 0],
-                coord: [String(useHourMinuteFormat(trade.entryTime)), trade.entryPrice],
-                //value: trade.entryPrice,
-                itemStyle: {
-                    color: entryMarkerColor,
-                    borderColor: '#FFFFFF',
-                    borderWidth: '0.5'
-                },
-                emphasis: {
-                    disabled: true
-                }
-            })
+        // X-Achsen-Labels für Marker-Matching berechnen (bei >1m Kerzen stimmt der exakte Zeitpunkt nicht mit einer Kerze überein)
+        const xLabels = ohlcTimestamps.map(ms => useHourMinuteFormat(ms / 1000))
 
+        // Finde die nächste Kerze (≤ Zeitpunkt)
+        let entryXIndex = -1
+        for (let i = 0; i < ohlcTimestamps.length; i++) {
+            if (ohlcTimestamps[i] / 1000 <= trade.entryTime) entryXIndex = i
+            else break
+        }
+        let exitXIndex = -1
+        for (let i = 0; i < ohlcTimestamps.length; i++) {
+            if (ohlcTimestamps[i] / 1000 <= trade.exitTime) exitXIndex = i
+            else break
+        }
+        const entryXLabel = entryXIndex >= 0 ? xLabels[entryXIndex] : useHourMinuteFormat(trade.entryTime)
+        const exitXLabel = exitXIndex >= 0 ? xLabels[exitXIndex] : useHourMinuteFormat(trade.exitTime)
+
+        // Marker-Richtung: Long → Entry unten △, Exit oben ▽ | Short → Entry oben ▽, Exit unten △
+        const isLong = trade.strategy == 'long'
+        const chartDay = dayjs(ohlcTimestamps[0]).tz(timeZoneTrade.value)
+        const entryOnChart = dayjs.unix(trade.entryTime).tz(timeZoneTrade.value).isSame(chartDay, 'day')
+        const exitOnChart = dayjs.unix(trade.exitTime).tz(timeZoneTrade.value).isSame(chartDay, 'day')
+
+        // Entry-Marker
+        if (entryOnChart && entryXIndex >= 0) {
+            option.series[0].markPoint.data.push({
+                name: 'Entry',
+                symbol: 'triangle',
+                symbolSize: 18,
+                symbolRotate: isLong ? 0 : 180,
+                symbolOffset: [0, isLong ? '150%' : '-150%'],
+                coord: [entryXLabel, trade.entryPrice],
+                itemStyle: { color: entryMarkerColor, borderColor: '#FFFFFF', borderWidth: 1 },
+                emphasis: { disabled: true }
+            })
             option.dataZoom[0].startValue = useHourMinuteFormat(dataZoomStartUnix)
+        } else if (!entryOnChart && xLabels.length > 0) {
+            // Über-Nacht-Trade: Entry am Vortag → Pfeil am linken Rand
+            option.series[0].markPoint.data.push({
+                name: 'Entry (Vortag)',
+                symbol: 'arrow',
+                symbolSize: 16,
+                symbolRotate: 0,
+                coord: [xLabels[0], trade.entryPrice],
+                itemStyle: { color: entryMarkerColor, borderColor: '#FFFFFF', borderWidth: 1, opacity: 0.8 },
+                emphasis: { disabled: true }
+            })
         }
 
-        if (dayjs.unix(trade.exitTime).tz(timeZoneTrade.value).isSame(dayjs(ohlcTimestamps[0]), 'day')) {
+        // Exit-Marker
+        if (exitOnChart && exitXIndex >= 0) {
             option.series[0].markPoint.data.push({
-                name: 'exitMark',
-                symbol: 'path://M17.92,11.62a1,1,0,0,0-.21-.33l-5-5a1,1,0,0,0-1.42,1.42L14.59,11H7a1,1,0,0,0,0,2h7.59l-3.3,3.29a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0l5-5a1,1,0,0,0,.21-.33A1,1,0,0,0,17.92,11.62Z',
-                symbolSize: '17',
-                symbolRotate: '180',
-                symbolOffset: ['60%', 0],
-                coord: [String(useHourMinuteFormat(trade.exitTime)), trade.exitPrice],
-                //value: trade.exitPrice,
-                itemStyle: {
-                    color: exitMarkerColor,
-                    borderColor: '#FFFFFF',
-                    borderWidth: '0.5'
-                },
-                emphasis: {
-                    disabled: true
-                }
+                name: 'Exit',
+                symbol: 'triangle',
+                symbolSize: 18,
+                symbolRotate: isLong ? 180 : 0,
+                symbolOffset: [0, isLong ? '-150%' : '150%'],
+                coord: [exitXLabel, trade.exitPrice],
+                itemStyle: { color: exitMarkerColor, borderColor: '#FFFFFF', borderWidth: 1 },
+                emphasis: { disabled: true }
             })
-
             option.dataZoom[0].endValue = useHourMinuteFormat(dataZoomEndUnix)
+            if (!entryOnChart) {
+                option.dataZoom[0].startValue = xLabels[0]
+            }
+        } else if (!exitOnChart && xLabels.length > 0) {
+            // Über-Nacht-Trade: Exit am Folgetag → Pfeil am rechten Rand
+            option.series[0].markPoint.data.push({
+                name: 'Exit (Folgetag)',
+                symbol: 'arrow',
+                symbolSize: 16,
+                symbolRotate: 180,
+                coord: [xLabels[xLabels.length - 1], trade.exitPrice],
+                itemStyle: { color: exitMarkerColor, borderColor: '#FFFFFF', borderWidth: 1, opacity: 0.8 },
+                emphasis: { disabled: true }
+            })
         }
         candlestickChart.setOption(option);
         resolve()

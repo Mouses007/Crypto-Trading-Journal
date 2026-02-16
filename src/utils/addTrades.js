@@ -178,6 +178,10 @@ async function createBitunixTrades() {
             const isGrossWin = row.GrossProceeds > 0
             const isNetWin = row.NetProceeds > 0
 
+            // NOTE: Bitunix CSV does not contain side (long/short) info.
+            // We default to 'SS'/short as a placeholder. The side cannot be
+            // reliably determined from P&L alone (profit ≠ long, loss ≠ short).
+            // Users should use the API import instead for correct side detection.
             const tradeObj = {
                 id: `t${dateUnix}_${i}_${row.TrxId || i}`,
                 account: 'bitunix',
@@ -185,8 +189,8 @@ async function createBitunixTrades() {
                 td: dateUnix,
                 currency: row.IncomingAsset || row.OutgoingAsset || 'USDT',
                 type: 'futures',
-                side: isGrossWin ? 'B' : 'SS',
-                strategy: isGrossWin ? 'long' : 'short',
+                side: 'SS',
+                strategy: 'short',
                 symbol: row.Symbol,
                 buyQuantity: 1,
                 sellQuantity: 1,

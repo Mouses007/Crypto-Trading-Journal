@@ -296,20 +296,22 @@ onBeforeMount(async () => {
 
                                         <!-- Brutto vs. Netto -->
                                         <hr />
-                                        <div class="px-2 pb-2">
-                                            <div class="d-flex justify-content-between small">
-                                                <span>Brutto PnL</span>
-                                                <span :class="totals.grossProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(totals.grossProceeds || 0) }}</span>
-                                            </div>
-                                            <div class="d-flex justify-content-between small">
-                                                <span>Netto PnL</span>
-                                                <span :class="totals.netProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(totals.netProceeds || 0) }}</span>
-                                            </div>
-                                            <div class="d-flex justify-content-between small mt-1">
-                                                <span class="text-muted">Differenz (Gebühren)</span>
-                                                <span class="text-warning">{{ useTwoDecCurrencyFormat(feeStats.totalFees) }}</span>
-                                            </div>
-                                        </div>
+                                        <table class="stats-table w-100">
+                                            <tbody>
+                                                <tr>
+                                                    <td class="fw-bold">Brutto PnL</td>
+                                                    <td class="text-end fw-bold" :class="totals.grossProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(totals.grossProceeds || 0) }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="fw-bold">Netto PnL</td>
+                                                    <td class="text-end fw-bold" :class="totals.netProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(totals.netProceeds || 0) }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="text-muted">Differenz (Gebühren)</td>
+                                                    <td class="text-end text-warning">{{ useTwoDecCurrencyFormat(feeStats.totalFees) }}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
 

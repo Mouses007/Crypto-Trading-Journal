@@ -946,7 +946,6 @@ img.logo {
     max-height: 100%;
 }
 
-
 /* End Screenshot */
 
 
@@ -1173,6 +1172,24 @@ ol li[data-list="bullet"] {
     min-width: 100%;
 }
 
+.daily-stats-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+    white-space: nowrap;
+}
+
+.daily-stats-bar .stats-label {
+    color: var(--grey-color);
+    margin-right: 0.3rem;
+}
+
+.daily-stats-bar .stats-divider {
+    color: var(--grey-color);
+    opacity: 0.3;
+}
+
 .chartIdDailyClass {
     height: 100px;
     min-width: 100%;
@@ -1258,22 +1275,35 @@ ol li[data-list="bullet"] {
 /* STATS TABLE (Dashboard Kennzahlen) */
 .stats-table {
     border-collapse: collapse;
+    margin-left: -1em;
+    margin-right: -1em;
+    width: calc(100% + 2em) !important;
 }
 
 .stats-table td {
-    padding: 0.35rem 0.5rem;
+    padding: 0.35rem 1em;
     font-size: 0.8rem;
     color: var(--white-87);
     border: none;
+    border-bottom: 1px dashed hsla(0, 0%, 100%, 0.20);
 }
 
-.stats-table tr:nth-child(even) {
-    background: hsla(0, 0%, 100%, 0.03);
+.stats-table tr:last-child td,
+.stats-table tr.stats-separator td,
+.stats-table tr:has(+ .stats-separator) td {
+    border-bottom: none;
+}
+
+.stats-table td:first-child {
+    width: 100%;
+}
+
+.stats-table td:last-child {
+    white-space: nowrap;
 }
 
 .stats-table tr.stats-separator td {
     padding: 0;
-    background: none;
 }
 
 .stats-table tr.stats-separator hr {
