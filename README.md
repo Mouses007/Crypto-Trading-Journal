@@ -43,7 +43,7 @@ A local, privacy-focused trading journal for **Bitunix futures trading**. No clo
    - Falls etwas fehlt, zeigt der Installer die Download-Links an
 3. `start.bat` doppelklicken — startet den Server und öffnet den Browser
 
-### Linux
+### Linux / macOS
 
 ```bash
 git clone https://github.com/Mouses007/TJ-Trading-Journal.git
@@ -61,7 +61,29 @@ npm run build
 npm start
 ```
 
+> **macOS**: Build Tools mit `xcode-select --install` installieren. Python 3 ist bereits vorinstalliert.
+
 Im Browser `http://localhost:8080` öffnen.
+
+## Update
+
+Deine Datenbank (`tradenote.db`) bleibt bei jedem Update erhalten.
+
+### Windows
+
+1. `update.bat` doppelklicken — erstellt ein DB-Backup und aktualisiert automatisch (Git erforderlich)
+2. Ohne Git: Neues [Release](https://github.com/Mouses007/TJ-Trading-Journal/releases) herunterladen, Dateien überschreiben (**`tradenote.db` NICHT überschreiben!**), dann `update.bat` doppelklicken
+
+### Linux / macOS
+
+```bash
+git pull origin master
+npm install
+npm run build
+npm start
+```
+
+Ohne Git: Release-ZIP herunterladen, Dateien überschreiben (`tradenote.db` behalten), dann `npm install && npm run build`.
 
 ### Entwicklung (Dev Mode)
 
