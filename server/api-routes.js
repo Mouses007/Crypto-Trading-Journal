@@ -11,6 +11,18 @@ function getTableColumns(db, table) {
     return rows.map(r => r.name)
 }
 
+function parseQueryJson(val, paramName) {
+    if (val == null) return null
+    if (typeof val !== 'string') return val
+    try {
+        return JSON.parse(val)
+    } catch (e) {
+        const err = new Error(`Ungültiges JSON für Parameter: ${paramName}`)
+        err.statusCode = 400
+        throw err
+    }
+}
+
 // JSON columns per table that should be parsed on read and stringified on write
 const JSON_COLUMNS = {
     trades: ['executions', 'trades', 'blotter', 'pAndL', 'cashJournal'],
@@ -77,8 +89,9 @@ export function setupApiRoutes(app) {
 
     app.put('/api/db/settings', (req, res) => {
         try {
+            const allowedSettingsCols = getTableColumns(db, 'settings')
             const data = stringifyJsonColumns('settings', req.body)
-            const fields = Object.keys(data).filter(k => k !== 'id' && k !== 'objectId')
+            const fields = Object.keys(data).filter(k => k !== 'id' && k !== 'objectId' && k !== 'createdAt' && allowedSettingsCols.includes(k))
             if (fields.length === 0) return res.json({ ok: true })
 
             const sets = fields.map(f => `${f} = @${f}`).join(', ')
@@ -123,46 +136,61 @@ export function setupApiRoutes(app) {
         }
 
         try {
+            const allowedColumns = getTableColumns(db, table)
             let where = []
             let params = {}
 
-            // equalTo filters: ?equalTo[field]=value
+            // equalTo filters: ?equalTo[field]=value (only allow valid column names)
             if (req.query.equalTo) {
-                const eq = typeof req.query.equalTo === 'string' ? JSON.parse(req.query.equalTo) : req.query.equalTo
-                for (const [key, val] of Object.entries(eq)) {
-                    where.push(`${key} = @eq_${key}`)
-                    params[`eq_${key}`] = typeof val === 'boolean' ? (val ? 1 : 0) : val
+                const eq = parseQueryJson(req.query.equalTo, 'equalTo')
+                if (eq && typeof eq === 'object') {
+                    for (const [key, val] of Object.entries(eq)) {
+                        if (allowedColumns.includes(key)) {
+                            where.push(`${key} = @eq_${key}`)
+                            params[`eq_${key}`] = typeof val === 'boolean' ? (val ? 1 : 0) : val
+                        }
+                    }
                 }
             }
 
             // greaterThanOrEqualTo: ?gte[field]=value
             if (req.query.gte) {
-                const gte = typeof req.query.gte === 'string' ? JSON.parse(req.query.gte) : req.query.gte
-                for (const [key, val] of Object.entries(gte)) {
-                    where.push(`${key} >= @gte_${key}`)
-                    params[`gte_${key}`] = Number(val)
+                const gte = parseQueryJson(req.query.gte, 'gte')
+                if (gte && typeof gte === 'object') {
+                    for (const [key, val] of Object.entries(gte)) {
+                        if (allowedColumns.includes(key)) {
+                            where.push(`${key} >= @gte_${key}`)
+                            params[`gte_${key}`] = Number(val)
+                        }
+                    }
                 }
             }
 
             // lessThan: ?lt[field]=value
             if (req.query.lt) {
-                const lt = typeof req.query.lt === 'string' ? JSON.parse(req.query.lt) : req.query.lt
-                for (const [key, val] of Object.entries(lt)) {
-                    where.push(`${key} < @lt_${key}`)
-                    params[`lt_${key}`] = Number(val)
+                const lt = parseQueryJson(req.query.lt, 'lt')
+                if (lt && typeof lt === 'object') {
+                    for (const [key, val] of Object.entries(lt)) {
+                        if (allowedColumns.includes(key)) {
+                            where.push(`${key} < @lt_${key}`)
+                            params[`lt_${key}`] = Number(val)
+                        }
+                    }
                 }
             }
 
             // lessThanOrEqualTo: ?lte[field]=value
             if (req.query.lte) {
-                const lte = typeof req.query.lte === 'string' ? JSON.parse(req.query.lte) : req.query.lte
-                for (const [key, val] of Object.entries(lte)) {
-                    where.push(`${key} <= @lte_${key}`)
-                    params[`lte_${key}`] = Number(val)
+                const lte = parseQueryJson(req.query.lte, 'lte')
+                if (lte && typeof lte === 'object') {
+                    for (const [key, val] of Object.entries(lte)) {
+                        if (allowedColumns.includes(key)) {
+                            where.push(`${key} <= @lte_${key}`)
+                            params[`lte_${key}`] = Number(val)
+                        }
+                    }
                 }
             }
-
-            const allowedColumns = getTableColumns(db, table)
 
             // doesNotExist: ?doesNotExist=field (only allow valid column names)
             if (req.query.doesNotExist) {
@@ -208,6 +236,7 @@ export function setupApiRoutes(app) {
             const rows = db.prepare(sql).all(params)
             res.json(rows.map(r => parseJsonColumns(table, r)))
         } catch (error) {
+            if (error.statusCode === 400) return res.status(400).json({ error: error.message })
             console.error('DB query error:', error)
             res.status(500).json({ error: error.message })
         }
@@ -239,19 +268,20 @@ export function setupApiRoutes(app) {
         }
 
         try {
+            const allowedCols = getTableColumns(db, table)
             const data = stringifyJsonColumns(table, req.body)
-            // Remove objectId/id if present (auto-increment)
             delete data.objectId
             delete data.id
-
-            const fields = Object.keys(data)
+            const fields = Object.keys(data).filter(k => allowedCols.includes(k) && k !== 'createdAt')
             if (fields.length === 0) {
-                return res.status(400).json({ error: 'No data provided' })
+                return res.status(400).json({ error: 'No data provided or only invalid columns' })
             }
 
             const placeholders = fields.map(f => `@${f}`).join(', ')
+            const insertData = {}
+            for (const f of fields) insertData[f] = data[f]
             const sql = `INSERT INTO ${table} (${fields.join(', ')}) VALUES (${placeholders})`
-            const result = db.prepare(sql).run(data)
+            const result = db.prepare(sql).run(insertData)
 
             const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(result.lastInsertRowid)
             res.status(201).json(parseJsonColumns(table, row))
@@ -269,19 +299,20 @@ export function setupApiRoutes(app) {
         }
 
         try {
+            const allowedCols = getTableColumns(db, table)
             const data = stringifyJsonColumns(table, req.body)
             delete data.objectId
             delete data.id
-
-            const fields = Object.keys(data)
+            const fields = Object.keys(data).filter(k => allowedCols.includes(k) && k !== 'createdAt')
             if (fields.length === 0) {
-                return res.status(400).json({ error: 'No data provided' })
+                return res.status(400).json({ error: 'No data provided or only invalid columns' })
             }
 
             const sets = fields.map(f => `${f} = @${f}`).join(', ')
+            const updateData = { _id: id }
+            for (const f of fields) updateData[f] = data[f]
             const sql = `UPDATE ${table} SET ${sets}, updatedAt = datetime('now') WHERE id = @_id`
-            data._id = id
-            db.prepare(sql).run(data)
+            db.prepare(sql).run(updateData)
 
             const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id)
             res.json(parseJsonColumns(table, row))
@@ -317,30 +348,43 @@ export function setupApiRoutes(app) {
         }
 
         try {
+            const allowedColumns = getTableColumns(db, table)
             let where = []
             let params = {}
 
             if (req.query.equalTo) {
-                const eq = typeof req.query.equalTo === 'string' ? JSON.parse(req.query.equalTo) : req.query.equalTo
-                for (const [key, val] of Object.entries(eq)) {
-                    where.push(`${key} = @eq_${key}`)
-                    params[`eq_${key}`] = val
+                const eq = parseQueryJson(req.query.equalTo, 'equalTo')
+                if (eq && typeof eq === 'object') {
+                    for (const [key, val] of Object.entries(eq)) {
+                        if (allowedColumns.includes(key)) {
+                            where.push(`${key} = @eq_${key}`)
+                            params[`eq_${key}`] = val
+                        }
+                    }
                 }
             }
 
             if (req.query.gte) {
-                const gte = typeof req.query.gte === 'string' ? JSON.parse(req.query.gte) : req.query.gte
-                for (const [key, val] of Object.entries(gte)) {
-                    where.push(`${key} >= @gte_${key}`)
-                    params[`gte_${key}`] = Number(val)
+                const gte = parseQueryJson(req.query.gte, 'gte')
+                if (gte && typeof gte === 'object') {
+                    for (const [key, val] of Object.entries(gte)) {
+                        if (allowedColumns.includes(key)) {
+                            where.push(`${key} >= @gte_${key}`)
+                            params[`gte_${key}`] = Number(val)
+                        }
+                    }
                 }
             }
 
             if (req.query.lt) {
-                const lt = typeof req.query.lt === 'string' ? JSON.parse(req.query.lt) : req.query.lt
-                for (const [key, val] of Object.entries(lt)) {
-                    where.push(`${key} < @lt_${key}`)
-                    params[`lt_${key}`] = Number(val)
+                const lt = parseQueryJson(req.query.lt, 'lt')
+                if (lt && typeof lt === 'object') {
+                    for (const [key, val] of Object.entries(lt)) {
+                        if (allowedColumns.includes(key)) {
+                            where.push(`${key} < @lt_${key}`)
+                            params[`lt_${key}`] = Number(val)
+                        }
+                    }
                 }
             }
 
@@ -352,6 +396,7 @@ export function setupApiRoutes(app) {
             const result = db.prepare(sql).run(params)
             res.json({ ok: true, deleted: result.changes })
         } catch (error) {
+            if (error.statusCode === 400) return res.status(400).json({ error: error.message })
             res.status(500).json({ error: error.message })
         }
     })
