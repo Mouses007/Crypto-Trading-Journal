@@ -2,6 +2,8 @@
 
 A local, privacy-focused trading journal for **Bitunix futures trading**. No cloud, no accounts, no Docker — just run it on your machine.
 
+> **Hinweis:** Die Benutzeroberfläche ist komplett auf **Deutsch**.
+
 ## Features
 
 - **Dashboard** with P&L analytics, win rate, profit factor, and more
