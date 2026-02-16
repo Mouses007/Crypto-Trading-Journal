@@ -432,7 +432,7 @@ async function generateOpenAI(prompt, apiKey, model, temperature, maxTokens, scr
         })
         userContent.push({
             type: 'text',
-            text: `[Chart: ${s.symbol} ${s.side}]`
+            text: `[Chart: ${s.symbol} ${s.side}${s.timeframe ? ' TF:' + s.timeframe : ''}]`
         })
     }
 
@@ -488,7 +488,7 @@ async function generateAnthropic(prompt, apiKey, model, temperature, maxTokens, 
         })
         userContent.push({
             type: 'text',
-            text: `[Chart: ${s.symbol} ${s.side}]`
+            text: `[Chart: ${s.symbol} ${s.side}${s.timeframe ? ' TF:' + s.timeframe : ''}]`
         })
     }
 
@@ -542,7 +542,7 @@ async function generateGemini(prompt, apiKey, model, temperature, maxTokens, scr
                 data: s.base64
             }
         })
-        parts.push({ text: `[Chart: ${s.symbol} ${s.side}]` })
+        parts.push({ text: `[Chart: ${s.symbol} ${s.side}${s.timeframe ? ' TF:' + s.timeframe : ''}]` })
     }
 
     // Prompt als Text
@@ -680,7 +680,7 @@ function collectScreenshots(db, startDate, endDate, maxCount = 4) {
     try {
         const screenshots = db.prepare(`
             SELECT s.id, s.symbol, s.side, s.annotatedBase64, s.originalBase64, s.dateUnix,
-                   n.tradeId
+                   n.tradeId, n.timeframe
             FROM screenshots s
             LEFT JOIN notes n ON n.screenshotId = CAST(s.id AS TEXT)
             WHERE s.dateUnix >= ? AND s.dateUnix <= ?
@@ -700,6 +700,7 @@ function collectScreenshots(db, startDate, endDate, maxCount = 4) {
             return {
                 symbol: s.symbol || 'Unknown',
                 side: s.side === 'B' ? 'Long' : s.side === 'SS' ? 'Short' : s.side,
+                timeframe: s.timeframe || '',
                 base64: cleanBase64,
                 mimeType,
                 dateUnix: s.dateUnix
@@ -902,7 +903,7 @@ function buildPrompt(data) {
 
     // Screenshot-Hinweis
     const screenshotHint = data.screenshots && data.screenshots.length > 0
-        ? `\n\nCHART-SCREENSHOTS:\nEs wurden ${data.screenshots.length} Chart-Screenshots beigefügt. Analysiere die Charts und beziehe deine Beobachtungen in die Analyse ein (z.B. Einstiegspunkte, Trendrichtung, Unterstützungs-/Widerstandslinien, Kerzenmuster).`
+        ? `\n\nCHART-SCREENSHOTS:\nEs wurden ${data.screenshots.length} Chart-Screenshots beigefügt. Analysiere die Charts und beziehe deine Beobachtungen in die Analyse ein (z.B. Einstiegspunkte, Trendrichtung, Unterstützungs-/Widerstandslinien, Kerzenmuster). Beachte den angegebenen Timeframe (TF) — der Screenshot kann auf einem anderen Timeframe aufgenommen worden sein als der tatsächliche Trade-Timeframe.`
         : ''
 
     return `Du bist ein erfahrener Trading-Analyst und Coach. Analysiere AUSSCHLIESSLICH die folgenden Daten aus dem Zeitraum ${zeitraum}.
