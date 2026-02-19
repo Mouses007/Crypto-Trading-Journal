@@ -81,7 +81,7 @@ async function bitgetRequest(method, path, apiKey, secretKey, passphrase, params
  * Endpoint: GET /api/v2/mix/position/history-position
  * Returns: positionId, symbol, holdSide, openAvgPrice, closeAvgPrice,
  *          openTotalPos, closeTotalPos, pnl, netProfit, openFee, closeFee,
- *          totalFunding, marginMode, cTime, uTime
+ *          totalFunding, marginMode, ctime, utime
  */
 export async function getHistoryPositions(apiKey, secretKey, passphrase, options = {}) {
     const params = { productType: 'USDT-FUTURES' }
@@ -98,7 +98,7 @@ export async function getHistoryPositions(apiKey, secretKey, passphrase, options
  * Get currently open positions from Bitget (USDT-M Futures).
  * Endpoint: GET /api/v2/mix/position/all-position
  * Returns: positionId, symbol, holdSide, openAvgPrice, total, available,
- *          unrealizedPL, leverage, liquidationPrice, marginMode, cTime, uTime
+ *          unrealizedPL, leverage, liquidationPrice, marginMode, ctime, utime
  */
 export async function getCurrentPositions(apiKey, secretKey, passphrase, options = {}) {
     const params = { productType: 'USDT-FUTURES' }
@@ -193,8 +193,8 @@ function normalizeOpenPosition(p) {
         unrealizedPNL: p.unrealizedPL ?? 0,
         liqPrice: p.liquidationPrice ?? 0,
         markPrice: p.markPrice ?? p.liquidationPrice ?? 0,
-        ctime: p.cTime ?? '',
-        mtime: p.uTime ?? '',
+        ctime: p.ctime ?? p.cTime ?? '',
+        mtime: p.utime ?? p.uTime ?? '',
         ...p
     }
 }

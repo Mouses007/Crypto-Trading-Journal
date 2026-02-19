@@ -69,8 +69,8 @@ function parseBitgetPosition(pos) {
     const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
     const totalFunding = Math.abs(parseFloat(pos.totalFunding || 0))
     const fee = openFee + closeFee + totalFunding
-    const closeTime = parseInt(pos.uTime || pos.cTime)
-    const openTime = parseInt(pos.cTime)
+    const closeTime = parseInt(pos.utime || pos.uTime || pos.ctime || pos.cTime)
+    const openTime = parseInt(pos.ctime || pos.cTime)
     // Bitget: holdSide is 'long' or 'short'
     const holdSide = (pos.holdSide || '').toLowerCase()
     const side = holdSide === 'long' ? 'B' : 'SS'

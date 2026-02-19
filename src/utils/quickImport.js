@@ -252,8 +252,8 @@ function createBitgetTradeObj(pos, i) {
     const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
     const totalFunding = Math.abs(parseFloat(pos.totalFunding || 0))
     const fee = openFee + closeFee + totalFunding
-    const closeTime = parseInt(pos.uTime || pos.cTime)
-    const openTime = parseInt(pos.cTime)
+    const closeTime = parseInt(pos.utime || pos.uTime || pos.ctime || pos.cTime)
+    const openTime = parseInt(pos.ctime || pos.cTime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
 
     // Bitget holdSide: 'long' or 'short'
