@@ -1,5 +1,5 @@
 <script setup>
-    import { windowIsScrolled } from "../stores/globals";
+    import { windowIsScrolled } from "../stores/ui.js";
     import { returnToTop, useCheckIfWindowIsScrolled } from "../utils/utils";
     useCheckIfWindowIsScrolled();
 </script>

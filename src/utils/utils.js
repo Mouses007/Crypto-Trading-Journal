@@ -1,29 +1,18 @@
 import { useRoute } from "vue-router";
 import { nextTick } from 'vue';
-import { pageId, timeZoneTrade, currentUser, periodRange, selectedDashTab, renderData, selectedPeriodRange, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccount, selectedGrossNet, selectedPlSatisfaction, selectedBroker, selectedDateRange, selectedMonth, selectedAccounts, amountCase, screenshotsPagination, selectedItem, sideMenuMobileOut, spinnerLoadingPage, dashboardChartsMounted, dashboardIdMounted, hasData, renderingCharts, screenType, selectedRange, dailyQueryLimit, dailyPagination, endOfList, spinnerLoadMore, windowIsScrolled, legacy, selectedTags, tags, filteredTrades, idCurrent, idPrevious, idCurrentType, idCurrentNumber, idPreviousType, idPreviousNumber, screenshots, screenshotsInfos, tabGettingScreenshots, apis, layoutStyle, countdownInterval, countdownSeconds, barChartNegativeTagGroups, availableTags, groups, selectedTradeTimeframes, auswertungMounted } from "../stores/globals.js"
-import { useECharts, useRenderDoubleLineChart, useRenderPieChart } from './charts.js';
-import { useDeleteScreenshot, useGetScreenshots, useGetScreenshotsPagination } from '../utils/screenshots.js'
-import { useCalculateProfitAnalysis, useGetFilteredTrades, useGetFilteredTradesForDaily, useGroupTrades, useTotalTrades, useDeleteTrade, useDeleteExcursions } from "./trades.js";
-import { useLoadCalendar } from "./calendar.js";
-import { useGetAvailableTags, useGetExcursions, useGetSatisfactions, useGetTags, useGetNotes, useGetAuswertungNotes } from "./daily.js";
+import { pageId, timeZoneTrade, currentUser, renderData, screenshotsPagination, selectedItem, sideMenuMobileOut, spinnerLoadingPage, dashboardChartsMounted, dashboardIdMounted, hasData, renderingCharts, screenType, dailyQueryLimit, dailyPagination, endOfList, spinnerLoadMore, windowIsScrolled, legacy, idCurrent, idPrevious, idCurrentType, idCurrentNumber, idPreviousType, idPreviousNumber, tabGettingScreenshots, countdownInterval, countdownSeconds, barChartNegativeTagGroups, auswertungMounted } from "../stores/ui.js"
+import { periodRange, selectedDashTab, selectedPeriodRange, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccount, selectedGrossNet, selectedPlSatisfaction, selectedBroker, selectedDateRange, selectedMonth, selectedAccounts, amountCase, selectedRange, selectedTags, selectedTradeTimeframes } from "../stores/filters.js"
+import { tags, filteredTrades, screenshots, screenshotsInfos, availableTags, groups } from "../stores/trades.js"
+import { apis, layoutStyle } from "../stores/settings.js"
+import { useECharts } from './charts.js';
+import { useDeleteScreenshot, useGetScreenshots } from '../utils/screenshots.js'
+import { useDeleteTrade, useDeleteExcursions } from "./trades.js";
+import { useGetAvailableTags, useGetTags } from "./daily.js";
+import { useStartOfDay } from './formatters.js'
 
 /* MODULES */
 import { dbGetSettings, dbUpdateSettings } from './db.js'
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from './dayjs-setup.js'
 import axios from 'axios'
 
 /**************************************
@@ -402,167 +391,7 @@ export function useInitTooltip() {
 
 }
 
-/**************************************
-* MOUNT 
-**************************************/
-export async function useMountDashboard() {
-    try {
-        console.log("\MOUNTING DASHBOARD")
-        console.time("  --> Duration mount dashboard");
-        spinnerLoadingPage.value = true
-        dashboardChartsMounted.value = false
-        dashboardIdMounted.value = false
-        barChartNegativeTagGroups.value = []
-        await useGetSelectedRange()
-        console.log(" -> Selected range done")
-        await Promise.all([useGetExcursions(), useGetSatisfactions(), useGetTags()])
-        console.log(" -> Excursions/satisfactions/tags done")
-        await useGetFilteredTrades()
-        console.log(" -> Filtered trades done")
-        await useTotalTrades()
-        console.log(" -> Total trades done")
-        await useGroupTrades()
-        console.log(" -> Group trades done")
-        await useCalculateProfitAnalysis()
-        console.log(" -> Profit analysis done")
-        spinnerLoadingPage.value = false
-        dashboardIdMounted.value = true
-        useInitTab("dashboard")
-        await nextTick()
-        useInitTooltip()
-        availableTags.forEach(element => {
-            let index = Object.keys(groups).indexOf(element.id);
-            if (index != -1) {
-                let temp = {}
-                temp.id = element.id
-                temp.name = element.name
-                barChartNegativeTagGroups.value.push(temp)
-            }
-        });
-        console.timeEnd("  --> Duration mount dashboard");
-        if (hasData.value) {
-            console.log("\nBUILDING CHARTS")
-            dashboardChartsMounted.value = true
-            renderData.value += 1
-            await nextTick()
-            await useECharts("init")
-        }
-    } catch (error) {
-        console.error("DASHBOARD MOUNT ERROR:", error)
-        spinnerLoadingPage.value = false
-    }
-}
-
-export async function useMountDaily() {
-    console.log("\MOUNTING DAILY")
-    console.time("  --> Duration mount daily");
-    dailyPagination.value = 0
-    dailyQueryLimit.value = 3
-    endOfList.value = false
-    spinnerLoadingPage.value = true
-    await useGetSelectedRange()
-    await Promise.all([useGetExcursions(), useGetSatisfactions(), useGetTags(), useGetAvailableTags(), useGetNotes(), useGetAPIS()])
-    await useGetFilteredTrades()
-    spinnerLoadingPage.value = false
-    console.timeEnd("  --> Duration mount daily")
-    useInitTab("daily")
-    useRenderDoubleLineChart()
-    useRenderPieChart()
-    useLoadCalendar()
-    useGetScreenshots(true)
-    useInitPopover()
-    renderingCharts.value = false
-
-    //useInitPopover()
-
-
-}
-
-export async function useMountCalendar(param) {
-    console.log("\MOUNTING CALENDAR")
-    console.time("  --> Duration mount calendar");
-    spinnerLoadingPage.value = true
-    try {
-        await useGetSelectedRange()
-        console.log(" -> selectedRange:", JSON.stringify(selectedRange.value))
-        console.log(" -> selectedMonth:", JSON.stringify(selectedMonth.value))
-        await Promise.all([useGetTags(), useGetAvailableTags()])
-        await useGetFilteredTrades()
-        console.log(" -> filteredTrades count:", filteredTrades.length)
-        await useLoadCalendar() // if param (true), then its coming from next or filter so we need to get filteredTrades (again)
-    } catch (error) {
-        console.error("MOUNT CALENDAR ERROR:", error)
-    }
-    spinnerLoadingPage.value = false
-    console.timeEnd("  --> Duration mount calendar")
-}
-
-export async function useMountScreenshots() {
-    spinnerLoadingPage.value = true
-    console.log("\MOUNTING SCREENSHOTS")
-    console.time("  --> Duration mount screenshots");
-    useGetScreenshotsPagination()
-    await useGetSelectedRange()
-    await Promise.all([useGetTags(), useGetAvailableTags()])
-    await useGetScreenshots(false)
-    console.timeEnd("  --> Duration mount screenshots")
-    useInitPopover()
-}
-
-export async function useMountAuswertung() {
-    try {
-        console.log("\nMOUNTING AUSWERTUNG")
-        spinnerLoadingPage.value = true
-        auswertungMounted.value = false
-
-        await useGetSelectedRange()
-        await Promise.all([
-            useGetAuswertungNotes(),
-            useGetSatisfactions(),
-            useGetTags()
-        ])
-        // useGetAvailableTags() wird bereits im Dashboard-Layout geladen
-        await useGetFilteredTrades()
-
-        spinnerLoadingPage.value = false
-        auswertungMounted.value = true
-
-        await nextTick()
-        useInitTooltip()
-    } catch (error) {
-        console.error("AUSWERTUNG MOUNT ERROR:", error)
-        spinnerLoadingPage.value = false
-    }
-}
-
-export function useCheckVisibleScreen() {
-    let visibleScreen = (window.innerHeight) // adding 200 so that loads before getting to bottom
-    let documentHeight = document.documentElement.scrollHeight
-    //console.log("visible screen " + visibleScreen)
-    //console.log("documentHeight " + documentHeight)
-    if (visibleScreen >= documentHeight) {
-        useLoadMore()
-    }
-}
-
-export async function useLoadMore() {
-    console.log("  --> Loading more")
-    spinnerLoadMore.value = true
-
-    if (pageId.value == "daily") {
-        await useGetFilteredTradesForDaily()
-        await Promise.all([useRenderDoubleLineChart(), useRenderPieChart()])
-        await useInitTab("daily")
-        //await (renderingCharts.value = false)
-    }
-
-    if (pageId.value == "screenshots") {
-        await useGetScreenshots(false)
-    }
-
-    spinnerLoadMore.value = false
-
-}
+/* Mount/orchestration functions: see src/utils/mountOrchestration.js */
 
 export function useCheckIfWindowIsScrolled() {
     window.addEventListener('scroll', () => {
@@ -578,24 +407,6 @@ export function usePageId() {
     pageId.value = route.name
     console.log("\n======== " + pageId.value.charAt(0).toUpperCase() + pageId.value.slice(1) + " Page/View ========\n")
     return pageId.value
-}
-
-export function useGetSelectedRange() {
-    return new Promise(async (resolve, reject) => {
-        if (pageId.value == "dashboard" || pageId.value == "auswertung") {
-            selectedRange.value = selectedDateRange.value
-        } else if (pageId.value == "calendar") {
-            selectedRange.value = {}
-            selectedRange.value.start = dayjs.unix(selectedMonth.value.start).tz(timeZoneTrade.value).startOf('year').unix()
-            selectedRange.value.end = selectedMonth.value.end
-            //console.log("SelectedRange "+JSON.stringify(selectedRange.value))
-        }
-        else {
-            selectedRange.value = selectedMonth.value
-        }
-        //console.log("SelectedRange "+JSON.stringify(selectedRange.value))
-        resolve()
-    })
 }
 
 export function useScreenType() {
@@ -680,6 +491,23 @@ export async function useSetValues() {
                 console.log("selectedTags " + JSON.stringify(selectedTags.value))
             }
 
+        } else {
+            // Auto-sync: Neue Tags die in Settings erstellt wurden automatisch in den Filter aufnehmen
+            await useGetAvailableTags()
+            const currentSelected = localStorage.getItem('selectedTags').split(",")
+            let added = false
+            for (const group of availableTags) {
+                for (const tag of group.tags) {
+                    if (!currentSelected.includes(tag.id)) {
+                        currentSelected.push(tag.id)
+                        added = true
+                    }
+                }
+            }
+            if (added) {
+                selectedTags.value = currentSelected
+                localStorage.setItem('selectedTags', selectedTags.value)
+            }
         }
 
 
@@ -719,9 +547,7 @@ export function useToggleMobileMenu() {
     console.log("sideMenuMobileOut " + sideMenuMobileOut.value)
 }
 
-export function useCapitalizeFirstLetter(param) {
-    return param.charAt(0).toUpperCase() + param.slice(1)
-}
+/* Formatter functions: see src/utils/formatters.js */
 
 export function returnToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -824,123 +650,7 @@ export const useExport = async (param1, param2, param3, param4) => {
     // Release the blob URL
     URL.revokeObjectURL(url);
 }
-/**************************************
-* DATE FORMATS
-**************************************/
-export function useDateNumberFormat(param) {
-    return Number(Math.trunc(param)) //we have to use /1000 and not unix because or else does not take into account tz
-}
-
-export function useDateCalFormat(param) {
-    return dayjs.unix(param).tz(timeZoneTrade.value).format("YYYY-MM-DD")
-}
-
-export function useDateCalFormatMonth(param) {
-    return dayjs.unix(param).tz(timeZoneTrade.value).format("YYYY-MM")
-}
-
-export function useTimeFormat(param) {
-    return dayjs.unix(param).tz(timeZoneTrade.value).format("HH:mm:ss")
-}
-
-export function useTimeFormatFromDate(param) {
-    return dayjs(param).tz(timeZoneTrade.value).format("HH:mm:ss")
-}
-
-export function useTimeDuration(param) {
-    return dayjs.duration(param * 1000).format("HH:mm:ss")
-}
-
-export function useSwingDuration(param) {
-    let duration = Number(dayjs.duration(param * 1000).format("D"))
-    let period
-    duration > 1 ? period = "days" : period = "day"
-    return (duration + " " + period)
-}
-
-export function useHourMinuteFormat(param) {
-    return dayjs.unix(param).tz(timeZoneTrade.value).format("HH:mm")
-}
-
-export function useDateTimeFormat(param) {
-    return dayjs.unix(param).tz(timeZoneTrade.value).format("YYYY-MM-DD HH:mm:ss")
-}
-
-export function useChartFormat(param) {
-    return dayjs.unix(param).tz(timeZoneTrade.value).format("D.M.YYYY")
-}
-
-export function useMonthFormat(param) {
-    return dayjs.unix(param).tz(timeZoneTrade.value).format("MMMM YYYY")
-}
-
-export function useMonthFormatShort(param) {
-    return dayjs.unix(param).tz(timeZoneTrade.value).format("MMM YY")
-}
-
-export function useCreatedDateFormat(param) {
-    return dayjs.unix(param).tz(timeZoneTrade.value).format("ddd DD MMMM YYYY")
-}
-
-export function useDatetimeLocalFormat(param) {
-    return dayjs.tz(param * 1000, timeZoneTrade.value).format("YYYY-MM-DDTHH:mm:ss") //here we ne
-}
-
-export function useStartOfDay(param) {
-    return dayjs(param * 1000).tz(timeZoneTrade.value).startOf("day").unix()
-}
-/**************************************
-* NUMBER FORMATS
-**************************************/
-export function useThousandCurrencyFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0, style: 'currency', currency: 'USD' }).format(param)
-}
-
-export function useThousandFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(param)
-}
-
-export function useTwoDecCurrencyFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, style: 'currency', currency: 'USD' }).format(param)
-}
-
-export function useThreeDecCurrencyFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 3, style: 'currency', currency: 'USD' }).format(param)
-}
-
-export function useXDecCurrencyFormat(param, param2) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: param2, style: 'currency', currency: 'USD' }).format(param)
-}
-
-export function useTwoDecFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(param)
-}
-
-export function useXDecFormat(param, param2) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: param2 }).format(param)
-}
-
-export function useOneDecPercentFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1, style: 'percent' }).format(param)
-}
-
-export function useTwoDecPercentFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, style: 'percent' }).format(param)
-}
-
-export function useFormatBytes(param, decimals = 2) {
-    if (param === 0) return '0 bytes';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['param', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-    const i = Math.floor(Math.log(param) / Math.log(k));
-    return parseFloat((param / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-
-export function useDecimalsArithmetic(param1, param2) {
-    //https://flaviocopes.com/javascript-decimal-arithmetics/
-    return ((param1.toFixed(6) * 100) + (param2.toFixed(6) * 100)) / 100
-}
+/* Formatter functions moved to src/utils/formatters.js */
 
 
 

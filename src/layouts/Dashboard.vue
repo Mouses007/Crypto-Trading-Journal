@@ -4,12 +4,19 @@ import Nav from '../components/Nav.vue'
 import Screenshot from '../components/Screenshot.vue'
 import ReturnToTopButton from '../components/ReturnToTopButton.vue'
 import TradeEvalPopup from '../components/TradeEvalPopup.vue'
-import { onBeforeMount, onMounted, onUnmounted } from 'vue'
-import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues, useCreatedDateFormat, useTimeFormat, useHourMinuteFormat } from '../utils/utils.js'
-import { screenType, sideMenuMobileOut, screenshots, pageId, screenshot, selectedScreenshot, selectedScreenshotIndex, getMore, currentUser, evaluationQueue } from '../stores/globals'
+import { onBeforeMount, onMounted, onUnmounted, watch } from 'vue'
+import { useCreatedDateFormat, useTimeFormat, useHourMinuteFormat } from '../utils/formatters.js'
+import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues } from '../utils/utils.js'
+import { screenType, sideMenuMobileOut, pageId, selectedScreenshotIndex } from '../stores/ui.js'
+import { getMore } from '../stores/filters.js'
+import { screenshots, selectedScreenshot, screenshot } from '../stores/trades.js'
+import { currentUser, aiReportGenerating, aiReportCountBefore, aiReportLabel } from '../stores/settings.js'
 import { useSelectedScreenshotFunction } from '../utils/screenshots'
-import { useRestorePendingEvaluations, useStartGlobalPolling, useStopGlobalPolling } from '../utils/incoming.js'
+import { useUpdatePendingCounts, useStartGlobalPolling, useStopGlobalPolling } from '../utils/incoming.js'
 import { useGetAvailableTags } from '../utils/daily.js'
+import { requestNotificationPermission, sendNotification } from '../utils/notify'
+import { logWarn } from '../utils/logger.js'
+import axios from 'axios'
 
 /*========================================
   Functions used on all Dashboard components
@@ -25,13 +32,17 @@ onBeforeMount(async () => {
   // Load available tags for evaluation popup
   await useGetAvailableTags()
 
-  // Restore pending evaluations and start polling
+  // Update pending evaluation counters and start polling
   // This runs after currentUser is loaded, so showTradePopups check works.
-  // The queue watcher in TradeEvalPopup will show popups once modalInstance is ready.
+  // TradeEvalPopup watches evalNotificationShown and shows popup when counts > 0.
+  // Request notification permission if enabled
+  if (currentUser.value?.browserNotifications !== 0) {
+    requestNotificationPermission()
+  }
+
   if (currentUser.value?.showTradePopups !== 0) {
-    console.log(' -> Dashboard: restoring pending evaluations')
-    await useRestorePendingEvaluations()
-    console.log(' -> Dashboard: restore done, queue length =', evaluationQueue.length)
+    console.log(' -> Dashboard: updating pending evaluation counts')
+    await useUpdatePendingCounts()
     useStartGlobalPolling()
   }
 })
@@ -43,6 +54,42 @@ onMounted(() => {
 
 onUnmounted(() => {
   useStopGlobalPolling()
+})
+
+// KI-Bericht Polling: Wenn ein Bericht generiert wird und der User NICHT auf der KI-Agent-Seite ist,
+// pollen wir ob der Server den Bericht schon gespeichert hat und senden eine Benachrichtigung.
+// Wir watchen BEIDE Refs: aiReportGenerating UND pageId — damit das Polling auch startet,
+// wenn der User erst nach dem Start des Berichts die Seite wechselt.
+let aiPollInterval = null
+let lastAiPollErrorTs = 0
+watch([aiReportGenerating, pageId], ([generating, page]) => {
+  if (generating && page !== 'kiAgent') {
+    // Polling starten (falls noch nicht aktiv)
+    if (!aiPollInterval) {
+      aiPollInterval = setInterval(async () => {
+        try {
+          const res = await axios.get('/api/ai/reports')
+          if (res.data.length > aiReportCountBefore.value) {
+            // Neuer Report gefunden — Benachrichtigung senden und Polling stoppen
+            sendNotification('KI-Bericht fertig', `Bericht für ${aiReportLabel.value || 'Zeitraum'} wurde erstellt.`)
+            aiReportGenerating.value = false
+            clearInterval(aiPollInterval)
+            aiPollInterval = null
+          }
+        } catch (e) {
+          // Throttle logging to avoid console spam during temporary outages
+          const now = Date.now()
+          if (now - lastAiPollErrorTs > 15000) {
+            logWarn('dashboard-layout', 'KI-Report-Polling fehlgeschlagen', e)
+            lastAiPollErrorTs = now
+          }
+        }
+      }, 5000)
+    }
+  } else if (!generating && aiPollInterval) {
+    clearInterval(aiPollInterval)
+    aiPollInterval = null
+  }
 })
 </script>
 <template>

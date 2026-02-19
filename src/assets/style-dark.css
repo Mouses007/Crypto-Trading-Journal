@@ -75,6 +75,10 @@ hr {
     color: var(--red-color) !important;
 }
 
+.neutralTrade {
+    color: #FFC107 !important;
+}
+
 .greenTradeDiv {
     background-color: #00CA73;
     color: #013820;

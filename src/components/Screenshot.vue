@@ -1,7 +1,9 @@
 <script setup>
-import { selectedItem, modalDailyTradeOpen, pageId, tags } from '../stores/globals';
+import { selectedItem, modalDailyTradeOpen, pageId } from '../stores/ui.js';
+import { tags } from '../stores/trades.js';
 import { useSetupMarkerArea, useSelectedScreenshotFunction } from '../utils/screenshots';
-import { useHourMinuteFormat, useTimeFormat, useEditItem, useCreatedDateFormat } from '../utils/utils';
+import { useHourMinuteFormat, useTimeFormat, useCreatedDateFormat } from '../utils/formatters.js';
+import { useEditItem } from '../utils/utils';
 import { useGetTagInfo } from '../utils/daily';
 
 

@@ -4,8 +4,9 @@ import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Filters from '../components/Filters.vue'
 import NoData from '../components/NoData.vue';
 import Calendar from '../components/Calendar.vue';
-import { spinnerLoadingPage, calendarData, filteredTrades } from '../stores/globals';
-import { useMountCalendar } from '../utils/utils'
+import { spinnerLoadingPage } from '../stores/ui.js';
+import { calendarData, filteredTrades } from '../stores/trades.js';
+import { useMountCalendar } from '../utils/mountOrchestration.js'
 
 onBeforeMount(async () => {
     await useMountCalendar()

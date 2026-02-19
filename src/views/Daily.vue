@@ -4,10 +4,14 @@ import Filters from '../components/Filters.vue'
 import NoData from '../components/NoData.vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Screenshot from '../components/Screenshot.vue'
+import { spinnerLoadingPage, modalDailyTradeOpen, markerAreaOpen, spinnerSetups, spinnerSetupsText, hasData, saveButton, spinnerLoadMore, endOfList, timeZoneTrade, idCurrentType, idCurrentNumber, tabGettingScreenshots, scrollToDateUnix } from '../stores/ui.js';
+import { amountCase, selectedGrossNet, selectedTagIndex, filteredSuggestions } from '../stores/filters.js';
+import { calendarData, filteredTrades, screenshots, screenshot, tradeScreenshotChanged, excursion, tradeExcursionChanged, tradeExcursionId, tradeExcursionDateUnix, tradeId, excursions, itemTradeIndex, tradeIndex, tradeIndexPrevious, availableTags, tradeTagsChanged, tagInput, tags, tradeTags, showTagsList, tradeTagsId, tradeTagsDateUnix, newTradeTags, notes, tradeNote, tradeNoteChanged, tradeNoteDateUnix, tradeNoteId, availableTagsArray, screenshotsInfos, satisfactionTradeArray, satisfactionArray } from '../stores/trades.js';
+import { currentUser, apis } from '../stores/settings.js';
 
-import { spinnerLoadingPage, calendarData, filteredTrades, screenshots, modalDailyTradeOpen, amountCase, markerAreaOpen, screenshot, tradeScreenshotChanged, excursion, tradeExcursionChanged, spinnerSetups, spinnerSetupsText, tradeExcursionId, tradeExcursionDateUnix, hasData, tradeId, excursions, saveButton, itemTradeIndex, tradeIndex, tradeIndexPrevious, spinnerLoadMore, endOfList, selectedGrossNet, availableTags, tradeTagsChanged, tagInput, tags, tradeTags, showTagsList, selectedTagIndex, tradeTagsId, tradeTagsDateUnix, newTradeTags, notes, tradeNote, tradeNoteChanged, tradeNoteDateUnix, tradeNoteId, availableTagsArray, timeZoneTrade, screenshotsInfos, idCurrentType, idCurrentNumber, tabGettingScreenshots, currentUser, apis, satisfactionTradeArray, satisfactionArray, scrollToDateUnix } from '../stores/globals';
-
-import { useCreatedDateFormat, useTwoDecCurrencyFormat, useTimeFormat, useTimeDuration, useMountDaily, useGetSelectedRange, useLoadMore, useCheckVisibleScreen, useDecimalsArithmetic, useInitTooltip, useDateCalFormat, useSwingDuration, useStartOfDay, useInitTab } from '../utils/utils';
+import { useCreatedDateFormat, useTwoDecCurrencyFormat, useTimeFormat, useTimeDuration, useDecimalsArithmetic, useDateCalFormat, useSwingDuration, useStartOfDay } from '../utils/formatters.js';
+import { useMountDaily, useGetSelectedRange, useLoadMore, useCheckVisibleScreen } from '../utils/mountOrchestration.js';
+import { useInitTooltip, useInitTab } from '../utils/utils';
 
 import { useSetupImageUpload, useSaveScreenshot, useGetScreenshots, useSelectedScreenshotFunction } from '../utils/screenshots';
 
@@ -19,21 +23,7 @@ import { useGetMFEPrices } from '../utils/addTrades';
 
 /* MODULES */
 import { dbFirst, dbCreate, dbUpdate } from '../utils/db.js'
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from '../utils/dayjs-setup.js'
 import axios from 'axios'
 import { useCreateOHLCV } from '../utils/addTrades';
 
@@ -57,6 +47,7 @@ const dailyTabs = [{
 
 let tradesModal = null
 let tagsModal = null
+let tagsModalOpen = ref(false)
 
 const stripHtml = (html) => {
     if (!html) return ''
@@ -101,9 +92,15 @@ onMounted(async () => {
 
     tagsModal = new bootstrap.Modal("#tagsModal")
     document.getElementById("tagsModal").addEventListener('shown.bs.modal', async (event) => {
+        tagsModalOpen.value = true
+        showTagsList.value = ''
         const caller = event.relatedTarget
         const index = caller.dataset.index
         clickTagsModal(index)
+    })
+    document.getElementById("tagsModal").addEventListener('hidden.bs.modal', () => {
+        tagsModalOpen.value = false
+        showTagsList.value = ''
     })
 })
 
@@ -178,7 +175,7 @@ async function clickTradesModal(param1, param2, param3) {
         tradeScreenshotChanged.value = false
         tradeTagsChanged.value = false
 
-        showTagsList.value = false
+        showTagsList.value = ''
 
 
         if (param1 === undefined && param2 === undefined && param3 === undefined) {
@@ -194,7 +191,7 @@ async function clickTradesModal(param1, param2, param3) {
             tradeScreenshotChanged.value = false
             tradeTagsChanged.value = false
 
-            showTagsList.value = false
+            showTagsList.value = ''
 
             tradesModal.hide()
             await (modalDailyTradeOpen.value = false) //this is important because we use itemTradeIndex on filteredTrades and if change month, this causes problems. So only show modal content when clicked on open modal/v-if
@@ -428,6 +425,32 @@ const saveDailyTags = async () => {
     }
     tradeTagsChanged.value = false
     closeTagsModal()
+}
+
+const toggleTagsModalDropdown = () => {
+    selectedTagIndex.value = -1
+    showTagsList.value = showTagsList.value === 'tagsModal' ? '' : 'tagsModal'
+    if (showTagsList.value === 'tagsModal') {
+        filteredSuggestions.splice(0)
+        for (const group of availableTags) {
+            for (const tag of group.tags) {
+                filteredSuggestions.push(tag)
+            }
+        }
+    }
+}
+
+const onTagsModalInput = () => {
+    selectedTagIndex.value = -1
+    filteredSuggestions.splice(0)
+    for (const group of availableTags) {
+        for (const tag of group.tags) {
+            if (tagInput.value === '' || tag.name.toLowerCase().startsWith(tagInput.value.toLowerCase())) {
+                filteredSuggestions.push(tag)
+            }
+        }
+    }
+    showTagsList.value = (tagInput.value !== '' && filteredSuggestions.length > 0) ? 'tagsModal' : ''
 }
 
 const closeTagsModal = async () => {
@@ -830,7 +853,21 @@ function getOHLC(date, symbol, type, interval) {
         console.log("  --> Getting OHLC for ticker " + ticker + " on " + date)
 
         return new Promise(async (resolve, reject) => {
-            await axios.get("https://api.polygon.io/v2/aggs/ticker/" + ticker + "/range/1/minute/" + useDateCalFormat(date) + "/" + useDateCalFormat(date) + "?adjusted=true&sort=asc&limit=50000&apiKey=" + apiKey.value)
+            await axios.get('/api/polygon/aggs', {
+                params: {
+                    ticker,
+                    from: useDateCalFormat(date),
+                    to: useDateCalFormat(date),
+                    interval: 1,
+                    span: 'minute',
+                    adjusted: true,
+                    sort: 'asc',
+                    limit: 50000
+                },
+                headers: {
+                    'x-polygon-api-key': apiKey.value
+                }
+            })
 
                 .then((response) => {
                     let tempArray = {}
@@ -904,8 +941,11 @@ function getOHLC(date, symbol, type, interval) {
                                                 }}
                                                 <i v-on:click="useDailySatisfactionChange(itemTrade.dateUnix, true, itemTrade)"
                                                     v-bind:class="[itemTrade.satisfaction == true ? 'greenTrade' : '', 'uil', 'uil-thumbs-up', 'ms-2', 'me-1', 'pointerClass']"></i>
+                                                <i v-on:click="useDailySatisfactionChange(itemTrade.dateUnix, 'neutral', itemTrade)"
+                                                    v-bind:class="[itemTrade.satisfaction == 'neutral' ? 'neutralTrade' : '', 'uil', 'uil-thumbs-up', 'me-1', 'pointerClass']"
+                                                    style="transform: rotate(-90deg); display: inline-block;"></i>
                                                 <i v-on:click="useDailySatisfactionChange(itemTrade.dateUnix, false, itemTrade)"
-                                                    v-bind:class="[itemTrade.satisfaction == false ? 'redTrade' : '', , 'uil', 'uil-thumbs-down', 'pointerClass']"></i>
+                                                    v-bind:class="[itemTrade.satisfaction == false ? 'redTrade' : '', 'uil', 'uil-thumbs-down', 'pointerClass']"></i>
 
                                                 <i v-show="tags.filter(obj => obj.tradeId == itemTrade.dateUnix.toString()).length == 0 || (tags.filter(obj => obj.tradeId == itemTrade.dateUnix.toString()).length > 0 && tags.filter(obj => obj.tradeId == itemTrade.dateUnix.toString())[0].tags.length === 0)"
                                                     data-bs-toggle="modal" data-bs-target="#tagsModal"
@@ -1287,7 +1327,9 @@ function getOHLC(date, symbol, type, interval) {
                                             <label class="form-label txt-small mb-1" style="color: var(--white-60);">&nbsp;</label><br>
                                             <i v-on:click="tradeSatisfactionChange(filteredTrades[itemTradeIndex].trades[tradeIndex], true)"
                                                 v-bind:class="[filteredTrades[itemTradeIndex].trades[tradeIndex].satisfaction == true ? 'greenTrade' : '', 'uil', 'uil-thumbs-up', 'pointerClass', 'me-1']"></i>
-
+                                            <i v-on:click="tradeSatisfactionChange(filteredTrades[itemTradeIndex].trades[tradeIndex], 'neutral')"
+                                                v-bind:class="[filteredTrades[itemTradeIndex].trades[tradeIndex].satisfaction == 'neutral' ? 'neutralTrade' : '', 'uil', 'uil-thumbs-up', 'pointerClass', 'me-1']"
+                                                style="transform: rotate(-90deg); display: inline-block;"></i>
                                             <i v-on:click="tradeSatisfactionChange(filteredTrades[itemTradeIndex].trades[tradeIndex], false)"
                                                 v-bind:class="[filteredTrades[itemTradeIndex].trades[tradeIndex].satisfaction == false ? 'redTrade' : '', 'uil', 'uil-thumbs-down', 'pointerClass']"></i>
                                         </div>
@@ -1314,9 +1356,8 @@ function getOHLC(date, symbol, type, interval) {
                                                 </div>
                                             </div>
 
-                                            <ul id="dropdown-menu-tags" class="dropdown-menu-tags"
-                                                :style="[!showTagsList ? 'border: none;' : '']">
-                                                <span v-show="showTagsList" v-for="group in availableTags">
+                                            <ul class="dropdown-menu-tags" v-show="showTagsList === 'daily'">
+                                                <span v-for="group in availableTags">
                                                     <h6 class="p-1 mb-0"
                                                         :style="'background-color: ' + group.color + ';'"
                                                         v-show="useFilterSuggestions(group.id).filter(obj => obj.id == group.id)[0].tags.length > 0">
@@ -1422,7 +1463,7 @@ function getOHLC(date, symbol, type, interval) {
     <div class="modal fade" id="tagsModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1"
         aria-labelledby="exampleModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl">
-            <div class="modal-content">
+            <div class="modal-content" v-if="tagsModalOpen">
                 <!-- Tags -->
                 <div class="container col mt-4">
                     <div class="form-control dropdown form-select" style="height: auto;">
@@ -1433,18 +1474,17 @@ function getOHLC(date, symbol, type, interval) {
                                 {{ tag.name }}<span class="remove-tag">×</span>
                             </span>
 
-                            <input type="text" v-model="tagInput" @input="useFilterTags"
+                            <input type="text" v-model="tagInput" @input="onTagsModalInput"
                                 @keydown.enter.prevent="useTradeTagsChange('add', tagInput)"
                                 @keydown.tab.prevent="useTradeTagsChange('add', tagInput)"
                                 class="form-control tag-input" placeholder="Tag hinzufügen">
-                            <div class="clickable-area" v-on:click="useToggleTagsDropdown">
+                            <div class="clickable-area" v-on:click="toggleTagsModalDropdown">
                             </div>
                         </div>
                     </div>
 
-                    <ul id="dropdown-menu-tags" class="dropdown-menu-tags"
-                        :style="[!showTagsList ? 'border: none;' : '']">
-                        <span v-show="showTagsList" v-for="group in availableTags">
+                    <ul class="dropdown-menu-tags" v-show="showTagsList === 'tagsModal'">
+                        <span v-for="group in availableTags">
                             <h6 class="p-1 mb-0" :style="'background-color: ' + group.color + ';'"
                                 v-show="useFilterSuggestions(group.id).filter(obj => obj.id == group.id)[0].tags.length > 0">
                                 {{ group.name }}</h6>

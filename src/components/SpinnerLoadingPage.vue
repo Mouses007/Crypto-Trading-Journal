@@ -1,5 +1,5 @@
 <script setup>
-import { spinnerLoadingPage, spinnerLoadingPageText } from '../stores/globals';
+import { spinnerLoadingPage, spinnerLoadingPageText } from '../stores/ui.js';
 </script>
 <template>
     <div v-show="spinnerLoadingPage" class="text-center overlay">

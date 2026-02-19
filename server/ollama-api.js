@@ -1,7 +1,17 @@
-import { getDb } from './database.js'
+import { getKnex } from './database.js'
 import { encrypt, decrypt } from './crypto.js'
+import { logWarn, logError } from './logger.js'
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
+
+// Prompt-Presets (muss mit Settings.vue synchron sein)
+const PROMPT_PRESETS = {
+    'Halte den Bericht kurz und prägnant. Maximal 3-4 Sätze pro Abschnitt. Fokussiere dich auf die wichtigsten Erkenntnisse.': 'Kurz & knapp',
+    'Sei sehr direkt und kritisch. Beschönige nichts. Sprich Schwächen und Fehler klar an. Gib konkrete Verbesserungsvorschläge wie ein strenger Trading-Coach.': 'Strenger Coach',
+    'Erkläre alle Kennzahlen und Begriffe einfach und verständlich. Gib grundlegende Trading-Tipps. Verwende eine ermutigende Sprache.': 'Anfänger-freundlich',
+    'Lege besonderen Fokus auf die psychologischen Aspekte: Stress, Emotionen, Disziplin, Overtrading. Analysiere Verhaltensmuster und emotionale Trigger.': 'Psychologie-Fokus',
+    'Fokussiere dich auf Risikomanagement: Positionsgrößen, Risk/Reward, Drawdowns, maximale Verlustserien. Bewerte die Risikokontrolle kritisch.': 'Risiko-Analyse',
+}
 
 // Hilfsfunktion: API-Key für den aktuellen Provider lesen (entschlüsselt)
 function getApiKeyForProvider(settings, provider) {
@@ -14,12 +24,13 @@ function getApiKeyForProvider(settings, provider) {
     return settings.aiApiKey ? decrypt(settings.aiApiKey) : ''
 }
 
-function getOllamaUrl() {
+async function getOllamaUrl() {
     try {
-        const db = getDb()
-        const settings = db.prepare('SELECT aiOllamaUrl FROM settings WHERE id = 1').get()
+        const knex = getKnex()
+        const settings = await knex('settings').select('aiOllamaUrl').where('id', 1).first()
         return settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
     } catch (e) {
+        logWarn('ollama-api', 'Could not load Ollama URL from settings, using default URL', e)
         return DEFAULT_OLLAMA_URL
     }
 }
@@ -28,8 +39,10 @@ export function setupOllamaRoutes(app) {
     // KI Status prüfen (basierend auf gespeichertem Provider)
     app.get('/api/ai/status', async (req, res) => {
         try {
-            const db = getDb()
-            const settings = db.prepare('SELECT aiProvider, aiModel, aiApiKey, aiOllamaUrl, aiKeyOpenai, aiKeyAnthropic, aiKeyGemini, aiKeyDeepseek FROM settings WHERE id = 1').get()
+            const knex = getKnex()
+            const settings = await knex('settings')
+                .select('aiProvider', 'aiModel', 'aiApiKey', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .where('id', 1).first()
             const provider = settings?.aiProvider || 'ollama'
             const model = settings?.aiModel || ''
             const apiKey = getApiKeyForProvider(settings, provider)
@@ -53,7 +66,19 @@ export function setupOllamaRoutes(app) {
 
     // Legacy Ollama status endpoint (für Abwärtskompatibilität + Modelle laden)
     app.get('/api/ollama/status', async (req, res) => {
-        const url = req.query.url || getOllamaUrl()
+        let url = req.query.url || await getOllamaUrl()
+        // SSRF-Schutz: Nur localhost/private Hosts erlauben
+        try {
+            const parsed = new URL(url)
+            const host = parsed.hostname
+            const isLocal = ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(host)
+            const isPrivate = host.startsWith('192.168.') || host.startsWith('10.') || host.match(/^172\.(1[6-9]|2\d|3[01])\./)
+            if (!isLocal && !isPrivate) {
+                return res.status(400).json({ error: 'Nur lokale/private Hosts erlaubt' })
+            }
+        } catch (e) {
+            return res.status(400).json({ error: 'Ungültige URL' })
+        }
         await checkOllamaStatus(res, url)
     })
 
@@ -61,11 +86,13 @@ export function setupOllamaRoutes(app) {
     app.post('/api/ai/test', async (req, res) => {
         let { provider, apiKey, model, ollamaUrl } = req.body
 
-        // Wenn Key maskiert ist (•), den gespeicherten Key aus DB verwenden
+        // Wenn Key maskiert ist (·), den gespeicherten Key aus DB verwenden
         if (apiKey && apiKey.includes('•')) {
             try {
-                const db = getDb()
-                const settings = db.prepare('SELECT aiKeyOpenai, aiKeyAnthropic, aiKeyGemini, aiKeyDeepseek, aiApiKey FROM settings WHERE id = 1').get()
+                const knex = getKnex()
+                const settings = await knex('settings')
+                    .select('aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek', 'aiApiKey')
+                    .where('id', 1).first()
                 apiKey = getApiKeyForProvider(settings, provider)
             } catch (e) {
                 apiKey = ''
@@ -74,7 +101,7 @@ export function setupOllamaRoutes(app) {
 
         try {
             if (provider === 'ollama') {
-                const url = ollamaUrl || getOllamaUrl()
+                const url = ollamaUrl || await getOllamaUrl()
                 const response = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(5000) })
                 if (response.ok) {
                     return res.json({ success: true, message: 'Ollama ist erreichbar' })
@@ -114,7 +141,8 @@ export function setupOllamaRoutes(app) {
                 return res.json({ success: false, message: err.error?.message || 'Anthropic Fehler' })
             } else if (provider === 'gemini') {
                 if (!apiKey) return res.json({ success: false, message: 'API-Key fehlt' })
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+                    headers: { 'x-goog-api-key': apiKey },
                     signal: AbortSignal.timeout(10000)
                 })
                 if (response.ok) {
@@ -148,17 +176,20 @@ export function setupOllamaRoutes(app) {
         }
 
         try {
-            const db = getDb()
-            const settings = db.prepare('SELECT aiProvider, aiModel, aiApiKey, aiTemperature, aiMaxTokens, aiOllamaUrl, aiScreenshots, aiKeyOpenai, aiKeyAnthropic, aiKeyGemini, aiKeyDeepseek FROM settings WHERE id = 1').get()
+            const knex = getKnex()
+            const settings = await knex('settings')
+                .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiScreenshots', 'aiReportPrompt', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .where('id', 1).first()
             const provider = settings?.aiProvider || 'ollama'
             const model = settings?.aiModel || ''
             const temperature = settings?.aiTemperature ?? 0.7
             const maxTokens = settings?.aiMaxTokens || 1500
             const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
             const screenshotsEnabled = settings?.aiScreenshots === 1
+            const customPrompt = settings?.aiReportPrompt || ''
             const apiKey = getApiKeyForProvider(settings, provider)
 
-            const reportData = collectReportData(db, startDate, endDate)
+            const reportData = await collectReportData(knex, startDate, endDate)
 
             if (reportData.tradeCount === 0) {
                 return res.json({ report: 'Keine Trades im gewählten Zeitraum gefunden.', provider })
@@ -167,11 +198,11 @@ export function setupOllamaRoutes(app) {
             // Screenshots sammeln (nur für Online-Provider wenn aktiviert)
             let screenshots = []
             if (screenshotsEnabled && provider !== 'ollama' && provider !== 'deepseek') {
-                screenshots = collectScreenshots(db, startDate, endDate, 4)
+                screenshots = await collectScreenshots(knex, startDate, endDate, 4)
                 reportData.screenshots = screenshots // Für Prompt-Hinweis
             }
 
-            const prompt = buildPrompt(reportData)
+            const prompt = buildPrompt(reportData, customPrompt)
             let report = ''
             let tokenUsage = null
 
@@ -199,7 +230,30 @@ export function setupOllamaRoutes(app) {
                 return res.status(400).json({ error: 'Unbekannter KI-Anbieter: ' + provider })
             }
 
-            res.json({ report, provider, model: model || provider, data: reportData, tokenUsage })
+            // Auto-save: Bericht direkt serverseitig speichern (damit Tab-Wechsel kein Problem ist)
+            const label = req.body.label || ''
+            const promptPreset = PROMPT_PRESETS[customPrompt] || (customPrompt ? 'Eigener Prompt' : 'Standard')
+            let savedId = null
+            try {
+                const [inserted] = await knex('ai_reports').insert({
+                    label,
+                    startDate: startDate || 0,
+                    endDate: endDate || 0,
+                    provider: provider || '',
+                    model: model || provider,
+                    report,
+                    reportData: JSON.stringify(reportData || {}),
+                    promptTokens: tokenUsage?.promptTokens || 0,
+                    completionTokens: tokenUsage?.completionTokens || 0,
+                    totalTokens: tokenUsage?.totalTokens || 0,
+                    promptPreset
+                }).returning('id')
+                savedId = typeof inserted === 'object' ? inserted.id : inserted
+            } catch (saveErr) {
+                console.error('Auto-save report error:', saveErr)
+            }
+
+            res.json({ report, provider, model: model || provider, data: reportData, tokenUsage, savedId })
         } catch (e) {
             console.error('AI report error:', e)
             res.status(500).json({ error: e.message || 'Bericht-Generierung fehlgeschlagen' })
@@ -214,8 +268,8 @@ export function setupOllamaRoutes(app) {
         }
 
         try {
-            const db = getDb()
-            const reportData = collectReportData(db, startDate, endDate)
+            const knex = getKnex()
+            const reportData = await collectReportData(knex, startDate, endDate)
 
             if (reportData.tradeCount === 0) {
                 return res.json({ report: 'Keine Trades im gewählten Zeitraum gefunden.' })
@@ -223,7 +277,7 @@ export function setupOllamaRoutes(app) {
 
             const prompt = buildPrompt(reportData)
             const ollamaModel = model || 'llama3.2:latest'
-            const result = await generateOllama(prompt, ollamaModel, 0.7, 1500, getOllamaUrl())
+            const result = await generateOllama(prompt, ollamaModel, 0.7, 1500, await getOllamaUrl())
             res.json({ report: result.text, model: ollamaModel, data: reportData })
         } catch (e) {
             console.error('Ollama report error:', e)
@@ -234,30 +288,36 @@ export function setupOllamaRoutes(app) {
     // --- KI-Einstellungen mit Verschlüsselung ---
 
     // KI-Settings speichern (verschlüsselt die API-Keys)
-    app.post('/api/ai/settings', (req, res) => {
+    app.post('/api/ai/settings', async (req, res) => {
         try {
-            const db = getDb()
-            const { aiProvider, aiModel, aiOllamaUrl, aiTemperature, aiMaxTokens, aiScreenshots, keys } = req.body
+            const knex = getKnex()
+            const { aiProvider, aiModel, aiOllamaUrl, aiTemperature, aiMaxTokens, aiScreenshots, aiReportPrompt, aiChatEnabled, keys } = req.body
 
             // Basis-Settings
-            db.prepare(`UPDATE settings SET aiProvider = ?, aiModel = ?, aiOllamaUrl = ?, aiTemperature = ?, aiMaxTokens = ?, aiScreenshots = ? WHERE id = 1`).run(
-                aiProvider || 'ollama', aiModel || '', aiOllamaUrl || 'http://localhost:11434',
-                aiTemperature ?? 0.7, aiMaxTokens || 1500, aiScreenshots ? 1 : 0
-            )
+            await knex('settings').where('id', 1).update({
+                aiProvider: aiProvider || 'ollama',
+                aiModel: aiModel || '',
+                aiOllamaUrl: aiOllamaUrl || 'http://localhost:11434',
+                aiTemperature: aiTemperature ?? 0.7,
+                aiMaxTokens: aiMaxTokens || 1500,
+                aiScreenshots: aiScreenshots ? 1 : 0,
+                aiReportPrompt: aiReportPrompt || '',
+                aiChatEnabled: aiChatEnabled !== undefined ? (aiChatEnabled ? 1 : 0) : 1
+            })
 
             // API-Keys verschlüsselt speichern (nur wenn nicht maskiert)
             if (keys) {
                 if (keys.openai !== undefined && !keys.openai.includes('•')) {
-                    db.prepare('UPDATE settings SET aiKeyOpenai = ? WHERE id = 1').run(keys.openai ? encrypt(keys.openai) : '')
+                    await knex('settings').where('id', 1).update({ aiKeyOpenai: keys.openai ? encrypt(keys.openai) : '' })
                 }
                 if (keys.anthropic !== undefined && !keys.anthropic.includes('•')) {
-                    db.prepare('UPDATE settings SET aiKeyAnthropic = ? WHERE id = 1').run(keys.anthropic ? encrypt(keys.anthropic) : '')
+                    await knex('settings').where('id', 1).update({ aiKeyAnthropic: keys.anthropic ? encrypt(keys.anthropic) : '' })
                 }
                 if (keys.gemini !== undefined && !keys.gemini.includes('•')) {
-                    db.prepare('UPDATE settings SET aiKeyGemini = ? WHERE id = 1').run(keys.gemini ? encrypt(keys.gemini) : '')
+                    await knex('settings').where('id', 1).update({ aiKeyGemini: keys.gemini ? encrypt(keys.gemini) : '' })
                 }
                 if (keys.deepseek !== undefined && !keys.deepseek.includes('•')) {
-                    db.prepare('UPDATE settings SET aiKeyDeepseek = ? WHERE id = 1').run(keys.deepseek ? encrypt(keys.deepseek) : '')
+                    await knex('settings').where('id', 1).update({ aiKeyDeepseek: keys.deepseek ? encrypt(keys.deepseek) : '' })
                 }
             }
 
@@ -269,10 +329,12 @@ export function setupOllamaRoutes(app) {
     })
 
     // KI-Settings laden (Keys maskiert zurückgeben)
-    app.get('/api/ai/settings', (req, res) => {
+    app.get('/api/ai/settings', async (req, res) => {
         try {
-            const db = getDb()
-            const settings = db.prepare('SELECT aiProvider, aiModel, aiOllamaUrl, aiTemperature, aiMaxTokens, aiScreenshots, aiKeyOpenai, aiKeyAnthropic, aiKeyGemini, aiKeyDeepseek FROM settings WHERE id = 1').get()
+            const knex = getKnex()
+            const settings = await knex('settings')
+                .select('aiProvider', 'aiModel', 'aiOllamaUrl', 'aiTemperature', 'aiMaxTokens', 'aiScreenshots', 'aiReportPrompt', 'aiChatEnabled', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .where('id', 1).first()
 
             // Keys maskieren: "sk-abc...xyz" → "sk-a•••xyz"
             function maskKey(encryptedKey) {
@@ -290,6 +352,8 @@ export function setupOllamaRoutes(app) {
                 aiTemperature: settings?.aiTemperature ?? 0.7,
                 aiMaxTokens: settings?.aiMaxTokens || 1500,
                 aiScreenshots: settings?.aiScreenshots === 1,
+                aiReportPrompt: settings?.aiReportPrompt || '',
+                aiChatEnabled: settings?.aiChatEnabled !== 0,
                 keys: {
                     openai: maskKey(settings?.aiKeyOpenai),
                     anthropic: maskKey(settings?.aiKeyAnthropic),
@@ -306,19 +370,26 @@ export function setupOllamaRoutes(app) {
     // --- Gespeicherte Berichte ---
 
     // Bericht speichern
-    app.post('/api/ai/reports/save', (req, res) => {
+    app.post('/api/ai/reports/save', async (req, res) => {
         const { label, startDate, endDate, provider, model, report, reportData, tokenUsage } = req.body
         if (!report) return res.status(400).json({ error: 'Kein Bericht zum Speichern' })
         try {
-            const db = getDb()
-            const stmt = db.prepare(`INSERT INTO ai_reports (label, startDate, endDate, provider, model, report, reportData, promptTokens, completionTokens, totalTokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+            const knex = getKnex()
             const tokens = tokenUsage || {}
-            const result = stmt.run(
-                label || '', startDate || 0, endDate || 0, provider || '', model || '', report,
-                JSON.stringify(reportData || {}),
-                tokens.promptTokens || 0, tokens.completionTokens || 0, tokens.totalTokens || 0
-            )
-            res.json({ success: true, id: result.lastInsertRowid })
+            const [inserted] = await knex('ai_reports').insert({
+                label: label || '',
+                startDate: startDate || 0,
+                endDate: endDate || 0,
+                provider: provider || '',
+                model: model || '',
+                report,
+                reportData: JSON.stringify(reportData || {}),
+                promptTokens: tokens.promptTokens || 0,
+                completionTokens: tokens.completionTokens || 0,
+                totalTokens: tokens.totalTokens || 0
+            }).returning('id')
+            const id = typeof inserted === 'object' ? inserted.id : inserted
+            res.json({ success: true, id })
         } catch (e) {
             console.error('Save report error:', e)
             res.status(500).json({ error: e.message })
@@ -326,30 +397,153 @@ export function setupOllamaRoutes(app) {
     })
 
     // Alle Berichte laden (neueste zuerst)
-    app.get('/api/ai/reports', (req, res) => {
+    app.get('/api/ai/reports', async (req, res) => {
         try {
-            const db = getDb()
-            const reports = db.prepare('SELECT * FROM ai_reports ORDER BY id DESC').all()
+            const knex = getKnex()
+            const reports = await knex('ai_reports').orderBy('id', 'desc')
             // reportData JSON parsen
             for (const r of reports) {
-                try { r.reportData = JSON.parse(r.reportData || '{}') } catch (e) { r.reportData = {} }
+                try {
+                    r.reportData = JSON.parse(r.reportData || '{}')
+                } catch (e) {
+                    logWarn('ollama-api', `Invalid reportData JSON for ai_reports.id=${r.id}, using fallback object`, e)
+                    r.reportData = {}
+                }
             }
             res.json(reports)
         } catch (e) {
-            console.error('Load reports error:', e)
+            logError('ollama-api', 'Load reports error', e)
             res.json([])
         }
     })
 
     // Bericht löschen
-    app.delete('/api/ai/reports/:id', (req, res) => {
+    app.delete('/api/ai/reports/:id', async (req, res) => {
         try {
-            const db = getDb()
-            db.prepare('DELETE FROM ai_reports WHERE id = ?').run(req.params.id)
+            const knex = getKnex()
+            await knex('ai_reports').where('id', req.params.id).del()
+            // Chat-Nachrichten mitlöschen
+            await knex('ai_report_messages').where('reportId', req.params.id).del()
             res.json({ success: true })
         } catch (e) {
             console.error('Delete report error:', e)
             res.status(500).json({ error: e.message })
+        }
+    })
+
+    // --- Chat/Rückfragen zu Berichten ---
+
+    // Chat-Verlauf laden
+    app.get('/api/ai/reports/:reportId/messages', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const messages = await knex('ai_report_messages')
+                .where('reportId', req.params.reportId)
+                .orderBy('id', 'asc')
+            res.json(messages)
+        } catch (e) {
+            console.error('Load chat messages error:', e)
+            res.json([])
+        }
+    })
+
+    // Chat-Verlauf löschen
+    app.delete('/api/ai/reports/:reportId/messages', async (req, res) => {
+        try {
+            const knex = getKnex()
+            await knex('ai_report_messages').where('reportId', req.params.reportId).del()
+            res.json({ success: true })
+        } catch (e) {
+            console.error('Delete chat messages error:', e)
+            res.status(500).json({ error: e.message })
+        }
+    })
+
+    // Rückfrage an KI senden
+    app.post('/api/ai/reports/:reportId/chat', async (req, res) => {
+        const { message } = req.body
+        if (!message || !message.trim()) {
+            return res.status(400).json({ error: 'Nachricht darf nicht leer sein' })
+        }
+
+        try {
+            const knex = getKnex()
+
+            // Report laden
+            const report = await knex('ai_reports').where('id', req.params.reportId).first()
+            if (!report) {
+                return res.status(404).json({ error: 'Bericht nicht gefunden' })
+            }
+
+            // KI-Settings laden
+            const settings = await knex('settings')
+                .select('aiProvider', 'aiModel', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .where('id', 1).first()
+            const provider = settings?.aiProvider || 'ollama'
+            const model = settings?.aiModel || ''
+            const temperature = settings?.aiTemperature ?? 0.7
+            const maxTokens = settings?.aiMaxTokens || 1500
+            const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
+            const apiKey = getApiKeyForProvider(settings, provider)
+
+            // Bisherige Chat-Nachrichten laden
+            const chatHistory = await knex('ai_report_messages')
+                .where('reportId', req.params.reportId)
+                .orderBy('id', 'asc')
+
+            // Konversation aufbauen
+            const systemMsg = 'Du bist ein erfahrener Trading-Analyst und Coach. Du hast den folgenden Bericht erstellt. Beantworte Rückfragen des Nutzers basierend auf diesem Bericht und den zugrunde liegenden Daten. Antworte auf Deutsch. Verwende Markdown-Formatierung.'
+            const messages = [
+                { role: 'assistant', content: report.report }
+            ]
+            for (const msg of chatHistory) {
+                messages.push({ role: msg.role, content: msg.content })
+            }
+            messages.push({ role: 'user', content: message.trim() })
+
+            // An Provider senden
+            let result
+            if (provider === 'ollama') {
+                result = await chatOllama(systemMsg, messages, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
+            } else if (provider === 'openai') {
+                result = await chatOpenAI(systemMsg, messages, apiKey, model || 'gpt-4o-mini', temperature, maxTokens)
+            } else if (provider === 'anthropic') {
+                result = await chatAnthropic(systemMsg, messages, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens)
+            } else if (provider === 'gemini') {
+                result = await chatGemini(systemMsg, messages, apiKey, model || 'gemini-2.0-flash', temperature, maxTokens)
+            } else if (provider === 'deepseek') {
+                result = await chatOpenAI(systemMsg, messages, apiKey, model || 'deepseek-chat', temperature, maxTokens, 'https://api.deepseek.com/v1/chat/completions')
+            } else {
+                return res.status(400).json({ error: 'Unbekannter KI-Anbieter: ' + provider })
+            }
+
+            // User-Frage speichern
+            await knex('ai_report_messages').insert({
+                reportId: parseInt(req.params.reportId),
+                role: 'user',
+                content: message.trim(),
+                promptTokens: 0,
+                completionTokens: 0,
+                totalTokens: 0
+            })
+
+            // KI-Antwort speichern
+            await knex('ai_report_messages').insert({
+                reportId: parseInt(req.params.reportId),
+                role: 'assistant',
+                content: result.text,
+                promptTokens: result.usage?.promptTokens || 0,
+                completionTokens: result.usage?.completionTokens || 0,
+                totalTokens: result.usage?.totalTokens || 0
+            })
+
+            res.json({
+                reply: result.text,
+                tokenUsage: result.usage
+            })
+        } catch (e) {
+            console.error('Chat error:', e)
+            res.status(500).json({ error: e.message || 'Chat-Anfrage fehlgeschlagen' })
         }
     })
 }
@@ -357,7 +551,7 @@ export function setupOllamaRoutes(app) {
 // --- Provider-spezifische Generate-Funktionen ---
 
 async function generateOllama(prompt, model, temperature, maxTokens, ollamaUrl) {
-    const url = ollamaUrl || getOllamaUrl()
+    const url = ollamaUrl || await getOllamaUrl()
 
     // Verwende http/https direkt statt fetch(), da Node.js fetch (undici)
     // einen headersTimeout von 300s hat, der bei großen Modellen (7B+) nicht reicht.
@@ -548,9 +742,12 @@ async function generateGemini(prompt, apiKey, model, temperature, maxTokens, scr
     // Prompt als Text
     parts.push({ text: prompt })
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+        },
         body: JSON.stringify({
             contents: [{ parts }],
             generationConfig: {
@@ -613,10 +810,193 @@ async function generateDeepSeek(prompt, apiKey, model, temperature, maxTokens) {
     }
 }
 
+// --- Chat-Funktionen (Multi-Turn Konversation) ---
+
+async function chatOllama(systemMsg, messages, model, temperature, maxTokens, ollamaUrl) {
+    const url = ollamaUrl || await getOllamaUrl()
+
+    // Ollama /api/chat Format: messages array mit role/content
+    const ollamaMessages = [
+        { role: 'system', content: systemMsg },
+        ...messages
+    ]
+
+    const { URL } = await import('url')
+    const parsedUrl = new URL(`${url}/api/chat`)
+    const httpModule = parsedUrl.protocol === 'https:' ? await import('https') : await import('http')
+
+    const postData = JSON.stringify({
+        model,
+        messages: ollamaMessages,
+        stream: false,
+        options: { temperature, num_predict: maxTokens }
+    })
+
+    return new Promise((resolve, reject) => {
+        const req = httpModule.request({
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port,
+            path: parsedUrl.pathname,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            },
+            timeout: 600000
+        }, (res) => {
+            let body = ''
+            res.on('data', chunk => body += chunk)
+            res.on('end', () => {
+                if (res.statusCode !== 200) {
+                    return reject(new Error('Ollama-Chat-Fehler: ' + body))
+                }
+                try {
+                    const data = JSON.parse(body)
+                    resolve({
+                        text: data.message?.content || '',
+                        usage: {
+                            promptTokens: data.prompt_eval_count || 0,
+                            completionTokens: data.eval_count || 0,
+                            totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
+                        }
+                    })
+                } catch (e) {
+                    reject(new Error('Ollama-Chat-Antwort ungültig: ' + e.message))
+                }
+            })
+        })
+
+        req.on('timeout', () => {
+            req.destroy()
+            reject(new Error('Ollama Chat Timeout (>10 Min)'))
+        })
+        req.on('error', (e) => reject(new Error('Ollama nicht erreichbar: ' + e.message)))
+
+        req.write(postData)
+        req.end()
+    })
+}
+
+async function chatOpenAI(systemMsg, messages, apiKey, model, temperature, maxTokens, endpoint = 'https://api.openai.com/v1/chat/completions') {
+    // OpenAI/DeepSeek Chat: messages array
+    const apiMessages = [
+        { role: 'system', content: systemMsg },
+        ...messages
+    ]
+
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            model,
+            messages: apiMessages,
+            temperature,
+            max_tokens: maxTokens
+        })
+    })
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error('Chat-Fehler: ' + (err.error?.message || response.statusText))
+    }
+
+    const data = await response.json()
+    return {
+        text: data.choices?.[0]?.message?.content || '',
+        usage: {
+            promptTokens: data.usage?.prompt_tokens || 0,
+            completionTokens: data.usage?.completion_tokens || 0,
+            totalTokens: data.usage?.total_tokens || 0
+        }
+    }
+}
+
+async function chatAnthropic(systemMsg, messages, apiKey, model, temperature, maxTokens) {
+    // Anthropic: system als separater Parameter, messages array
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            model,
+            max_tokens: maxTokens,
+            system: systemMsg,
+            messages,
+            temperature
+        })
+    })
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error('Chat-Fehler: ' + (err.error?.message || response.statusText))
+    }
+
+    const data = await response.json()
+    return {
+        text: data.content?.[0]?.text || '',
+        usage: {
+            promptTokens: data.usage?.input_tokens || 0,
+            completionTokens: data.usage?.output_tokens || 0,
+            totalTokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0)
+        }
+    }
+}
+
+async function chatGemini(systemMsg, messages, apiKey, model, temperature, maxTokens) {
+    // Gemini: contents array mit parts
+    const contents = []
+
+    for (const msg of messages) {
+        contents.push({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: msg.content }]
+        })
+    }
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+        },
+        body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemMsg }] },
+            contents,
+            generationConfig: {
+                temperature,
+                maxOutputTokens: maxTokens
+            }
+        })
+    })
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error('Chat-Fehler: ' + (err.error?.message || response.statusText))
+    }
+
+    const data = await response.json()
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    const usageMeta = data.usageMetadata || {}
+    return {
+        text,
+        usage: {
+            promptTokens: usageMeta.promptTokenCount || 0,
+            completionTokens: usageMeta.candidatesTokenCount || 0,
+            totalTokens: usageMeta.totalTokenCount || 0
+        }
+    }
+}
+
 // --- Ollama Status Check ---
 
 async function checkOllamaStatus(res, ollamaUrl, model = '') {
-    const url = ollamaUrl || getOllamaUrl()
+    const url = ollamaUrl || await getOllamaUrl()
     try {
         const response = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(3000) })
         if (response.ok) {
@@ -651,7 +1031,8 @@ async function checkAnthropicStatus(apiKey, res, model = '') {
 async function checkGeminiStatus(apiKey, res, model = '') {
     if (!apiKey) return res.json({ online: false, provider: 'gemini', model, message: 'Kein API-Key konfiguriert' })
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+            headers: { 'x-goog-api-key': apiKey },
             signal: AbortSignal.timeout(5000)
         })
         return res.json({ online: response.ok, provider: 'gemini', model })
@@ -675,19 +1056,21 @@ async function checkDeepseekStatus(apiKey, res, model = '') {
 
 // --- Screenshot-Sammlung für Chart-Analyse ---
 
-function collectScreenshots(db, startDate, endDate, maxCount = 4) {
+async function collectScreenshots(knex, startDate, endDate, maxCount = 4) {
     // Sammle Screenshots aus dem Zeitraum — priorisiere die mit den größten Trades
     try {
-        const screenshots = db.prepare(`
-            SELECT s.id, s.symbol, s.side, s.annotatedBase64, s.originalBase64, s.dateUnix,
-                   n.tradeId, n.timeframe
-            FROM screenshots s
-            LEFT JOIN notes n ON n.screenshotId = CAST(s.id AS TEXT)
-            WHERE s.dateUnix >= ? AND s.dateUnix <= ?
-              AND (s.annotatedBase64 != '' OR s.originalBase64 != '')
-            ORDER BY s.dateUnix DESC
-            LIMIT ?
-        `).all(startDate, endDate, maxCount)
+        const screenshots = await knex('screenshots as s')
+            .leftJoin('notes as n', function () {
+                this.on('n.screenshotId', '=', knex.raw('CAST(s.id AS TEXT)'))
+            })
+            .select('s.id', 's.symbol', 's.side', 's.annotatedBase64', 's.originalBase64', 's.dateUnix', 'n.tradeId', 'n.timeframe')
+            .where('s.dateUnix', '>=', startDate)
+            .where('s.dateUnix', '<=', endDate)
+            .where(function () {
+                this.where('s.annotatedBase64', '!=', '').orWhere('s.originalBase64', '!=', '')
+            })
+            .orderBy('s.dateUnix', 'desc')
+            .limit(maxCount)
 
         return screenshots.map(s => {
             // Bevorzuge annotated (mit Markierungen), dann original
@@ -714,10 +1097,10 @@ function collectScreenshots(db, startDate, endDate, maxCount = 4) {
 
 // --- Daten-Sammlung und Prompt-Bau ---
 
-function collectReportData(db, startDate, endDate) {
-    const trades = db.prepare(
-        'SELECT * FROM trades WHERE dateUnix >= ? AND dateUnix <= ?'
-    ).all(startDate, endDate)
+async function collectReportData(knex, startDate, endDate) {
+    const trades = await knex('trades')
+        .where('dateUnix', '>=', startDate)
+        .where('dateUnix', '<=', endDate)
 
     let allTrades = []
     let totalGrossProceeds = 0
@@ -734,10 +1117,20 @@ function collectReportData(db, startDate, endDate) {
 
     for (const row of trades) {
         let tradesArr = []
-        try { tradesArr = JSON.parse(row.trades || '[]') } catch (e) {}
+        try {
+            tradesArr = JSON.parse(row.trades || '[]')
+        } catch (e) {
+            logWarn('ollama-api', `collectReportData: invalid trades JSON for dateUnix=${row.dateUnix}, using []`, e)
+            tradesArr = []
+        }
 
         let pAndL = {}
-        try { pAndL = JSON.parse(row.pAndL || '{}') } catch (e) {}
+        try {
+            pAndL = JSON.parse(row.pAndL || '{}')
+        } catch (e) {
+            logWarn('ollama-api', `collectReportData: invalid pAndL JSON for dateUnix=${row.dateUnix}, using {}`, e)
+            pAndL = {}
+        }
 
         const dayPnl = pAndL.grossProceeds || 0
         if (dayPnl > bestDay.pnl) bestDay = { dateUnix: row.dateUnix, pnl: dayPnl }
@@ -800,9 +1193,9 @@ function collectReportData(db, startDate, endDate) {
         .sort((a, b) => b[1].count - a[1].count)
         .slice(0, 5)
 
-    const notes = db.prepare(
-        'SELECT * FROM notes WHERE dateUnix >= ? AND dateUnix <= ?'
-    ).all(startDate, endDate)
+    const notes = await knex('notes')
+        .where('dateUnix', '>=', startDate)
+        .where('dateUnix', '<=', endDate)
 
     let stressSum = 0, stressCount = 0
     let emotionSum = 0, emotionCount = 0
@@ -817,20 +1210,25 @@ function collectReportData(db, startDate, endDate) {
     const avgStress = stressCount > 0 ? (stressSum / stressCount).toFixed(1) : 'N/A'
     const avgEmotion = emotionCount > 0 ? (emotionSum / emotionCount).toFixed(1) : 'N/A'
 
-    const satisfactions = db.prepare(
-        'SELECT * FROM satisfactions WHERE dateUnix >= ? AND dateUnix <= ?'
-    ).all(startDate, endDate)
+    const satisfactions = await knex('satisfactions')
+        .where('dateUnix', '>=', startDate)
+        .where('dateUnix', '<=', endDate)
     const satisfiedCount = satisfactions.filter(s => s.satisfaction === 1).length
     const satisfactionRate = satisfactions.length > 0
         ? ((satisfiedCount / satisfactions.length) * 100).toFixed(0) : 'N/A'
 
-    const tagsRows = db.prepare(
-        'SELECT * FROM tags WHERE dateUnix >= ? AND dateUnix <= ?'
-    ).all(startDate, endDate)
+    const tagsRows = await knex('tags')
+        .where('dateUnix', '>=', startDate)
+        .where('dateUnix', '<=', endDate)
 
-    const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get()
+    const settings = await knex('settings').where('id', 1).first()
     let availableTags = []
-    try { availableTags = JSON.parse(settings.tags || '[]') } catch (e) {}
+    try {
+        availableTags = JSON.parse(settings?.tags || '[]')
+    } catch (e) {
+        logWarn('ollama-api', 'collectReportData: invalid settings.tags JSON, using []', e)
+        availableTags = []
+    }
 
     const tagIdToName = {}
     for (const group of availableTags) {
@@ -844,7 +1242,12 @@ function collectReportData(db, startDate, endDate) {
     const tagUsage = {}
     for (const row of tagsRows) {
         let tagIds = []
-        try { tagIds = JSON.parse(row.tags || '[]') } catch (e) {}
+        try {
+            tagIds = JSON.parse(row.tags || '[]')
+        } catch (e) {
+            logWarn('ollama-api', `collectReportData: invalid tags row JSON for tags.id=${row.id || 'unknown'}, using []`, e)
+            tagIds = []
+        }
         for (const id of tagIds) {
             const name = tagIdToName[id] || id
             if (!tagUsage[name]) tagUsage[name] = 0
@@ -876,7 +1279,7 @@ function collectReportData(db, startDate, endDate) {
     }
 }
 
-function buildPrompt(data) {
+function buildPrompt(data, customPrompt = '') {
     const startDt = new Date(data.startDate * 1000)
     const endDt = new Date(data.endDate * 1000)
     const zeitraum = `${startDt.toLocaleDateString('de-DE')} – ${endDt.toLocaleDateString('de-DE')}`
@@ -966,5 +1369,8 @@ Was muss verbessert werden? Sei direkt und ehrlich. Nenne konkrete Probleme mit 
 ## Empfehlungen für den nächsten Zeitraum
 Gib 3–5 konkrete, umsetzbare Empfehlungen. Keine allgemeinen Floskeln — beziehe dich auf die spezifischen Schwächen aus den Daten.
 
-WICHTIG: Dieser Bericht bezieht sich ausschließlich auf den Zeitraum ${zeitraum} (${data.tradeCount} Trades, ${data.tradingDays} Handelstage). Beschreibe nur die oben genannten Daten.`
+WICHTIG: Dieser Bericht bezieht sich ausschließlich auf den Zeitraum ${zeitraum} (${data.tradeCount} Trades, ${data.tradingDays} Handelstage). Beschreibe nur die oben genannten Daten.${customPrompt ? `
+
+ZUSÄTZLICHE ANWEISUNGEN DES NUTZERS:
+${customPrompt}` : ''}`
 }

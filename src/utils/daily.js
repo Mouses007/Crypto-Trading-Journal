@@ -1,23 +1,11 @@
-import { excursions, queryLimit, satisfactionArray, satisfactionTradeArray, tags, selectedRange, availableTags, currentUser, tradeTags, tradeTagsDateUnix, tradeTagsId, newTradeTags, pageId, notes, tradeNote, tradeNoteDateUnix, tradeNoteId, spinnerSetups, spinnerSetupsText, availableTagsArray, tagInput, selectedTagIndex, showTagsList, tradeTagsChanged, filteredTrades, itemTradeIndex, tradeIndex, saveButton, screenshot, screenshotsPagination, screenshotsQueryLimit, auswertungNotes } from "../stores/globals.js";
-import { daysBack } from "../stores/globals.js";
+import { queryLimit, pageId, spinnerSetups, spinnerSetupsText, saveButton, screenshotsPagination, screenshotsQueryLimit } from "../stores/ui.js";
+import { selectedRange, selectedTagIndex, filteredSuggestions, daysBack } from "../stores/filters.js";
+import { excursions, satisfactionArray, satisfactionTradeArray, tags, availableTags, tradeTags, tradeTagsDateUnix, tradeTagsId, newTradeTags, notes, tradeNote, tradeNoteDateUnix, tradeNoteId, availableTagsArray, tagInput, showTagsList, tradeTagsChanged, filteredTrades, screenshot, auswertungNotes, itemTradeIndex, tradeIndex } from "../stores/trades.js";
+import { currentUser } from "../stores/settings.js";
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbGetSettings, dbUpdateSettings } from './db.js'
 
 /* MODULES */
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from './dayjs-setup.js'
 
 //query limit must be same as diary limit
 let satisfactionPagination = 0
@@ -164,7 +152,8 @@ export const useGetTagInfo = (param) => {
 
         let color = "#6c757d"
         if (availableTags.length > 0) {
-            color = availableTags.filter(obj => obj.id == "group_0")[0].color
+            const firstGroup = availableTags[0]
+            if (firstGroup && firstGroup.color) color = firstGroup.color
         }
         temp.groupColor = color
         temp.tagName = ''
@@ -190,10 +179,9 @@ export async function useGetTags() {
             let endD = selectedRange.value.end
             options.greaterThanOrEqualTo = { dateUnix: startD }
             options.lessThan = { dateUnix: endD }
-        } else {
-            options.limit = screenshotsQueryLimit.value
-            options.skip = screenshotsPagination.value
         }
+        // Dashboard und andere Seiten: queryLimit bleibt auf dem hohen Standardwert
+        // damit ALLE Tags geladen werden (nicht nur Screenshots-Limit)
 
         const results = await dbFind("tags", options)
 
@@ -211,26 +199,26 @@ export async function useGetTags() {
     })
 }
 
+let _loadingAvailableTags = null
 export async function useGetAvailableTags() {
-    return new Promise(async (resolve, reject) => {
+    // Guard gegen parallele Aufrufe → Race Condition verhindert Doppel-Einträge
+    if (_loadingAvailableTags) return _loadingAvailableTags
+    _loadingAvailableTags = (async () => {
         console.log(" -> Getting Available Tags");
-        availableTags.splice(0);
-
         const settings = await dbGetSettings()
         let currentTags = settings.tags
 
-        if (currentTags == undefined || currentTags == null) {
-            resolve()
-        } else if (Array.isArray(currentTags) && currentTags.length > 0) {
-            for (let index = 0; index < currentTags.length; index++) {
-                const element = currentTags[index];
-                availableTags.push(element)
-            }
-            resolve()
-        } else {
-            resolve()
+        // Atomar: erst leeren, dann sofort befüllen
+        availableTags.splice(0)
+        if (Array.isArray(currentTags) && currentTags.length > 0) {
+            availableTags.push(...currentTags)
         }
-    })
+    })()
+    try {
+        await _loadingAvailableTags
+    } finally {
+        _loadingAvailableTags = null
+    }
 }
 
 export const useCreateAvailableTagsArray = () => {
@@ -305,7 +293,7 @@ export const useTradeTagsChange = async (param1, param2) => {
             }
         }
         selectedTagIndex.value = -1
-        showTagsList.value = false
+        showTagsList.value = ''
         console.log(" -> TradeTags " + JSON.stringify(tradeTags))
     }
     if (param1 == "addFromDropdownMenu") {
@@ -318,7 +306,7 @@ export const useTradeTagsChange = async (param1, param2) => {
             tagInput.value = '';
         }
         selectedTagIndex.value = -1
-        showTagsList.value = false
+        showTagsList.value = ''
         console.log(" -> TradeTags " + JSON.stringify(tradeTags))
     }
 
@@ -341,12 +329,20 @@ export const useTradeTagsChange = async (param1, param2) => {
 
 export const useFilterTags = () => {
     if (tagInput.value == '') selectedTagIndex.value = -1
-    let showDropdownToReturn = tagInput.value !== '' && filteredSuggestions.length > 0
-    showTagsList.value = showDropdownToReturn
+    // Flache Liste aller Tags die zum Input passen
+    filteredSuggestions.splice(0)
+    for (const group of availableTags) {
+        for (const tag of group.tags) {
+            if (tagInput.value === '' || tag.name.toLowerCase().startsWith(tagInput.value.toLowerCase())) {
+                filteredSuggestions.push(tag)
+            }
+        }
+    }
+    showTagsList.value = (tagInput.value !== '' && filteredSuggestions.length > 0) ? pageId.value : ''
 };
 
 export const useHandleKeyDown = (event) => {
-    if (showTagsList.value) {
+    if (showTagsList.value !== '') {
         if (event.key === 'ArrowDown') {
             event.preventDefault();
             console.log("filteredSuggestions " + JSON.stringify(filteredSuggestions))
@@ -360,7 +356,16 @@ export const useHandleKeyDown = (event) => {
 
 export const useToggleTagsDropdown = () => {
     selectedTagIndex.value = -1
-    showTagsList.value = !showTagsList.value
+    showTagsList.value = showTagsList.value ? '' : pageId.value
+    if (showTagsList.value) {
+        // Alle Tags als flache Liste bereitstellen
+        filteredSuggestions.splice(0)
+        for (const group of availableTags) {
+            for (const tag of group.tags) {
+                filteredSuggestions.push(tag)
+            }
+        }
+    }
 }
 
 export const useGetTagGroup = (param) => {

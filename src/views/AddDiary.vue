@@ -1,28 +1,19 @@
 <script setup>
 import { onBeforeMount } from 'vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
-import { spinnerLoadingPage, itemToEditId, currentDate, diaryUpdate, timeZoneTrade, diaryIdToEdit, diaryButton, tradeTags, tagInput, selectedTagIndex, showTagsList, availableTags, tags, countdownSeconds } from '../stores/globals';
-import { useInitQuill, useDateCalFormat } from '../utils/utils';
+import { spinnerLoadingPage, itemToEditId, currentDate, timeZoneTrade, countdownSeconds } from '../stores/ui.js';
+import { selectedTagIndex } from '../stores/filters.js';
+import { tradeTags, tagInput, showTagsList, availableTags, tags } from '../stores/trades.js';
+import { diaryUpdate, diaryIdToEdit, diaryButton } from '../stores/diary.js';
+import { useDateCalFormat } from '../utils/formatters.js';
+import { useInitQuill } from '../utils/utils';
 import { useUploadDiary } from '../utils/diary'
+import { sanitizeHtml } from '../utils/sanitize'
 import { useFilterSuggestions, useTradeTagsChange, useFilterTags, useToggleTagsDropdown, useGetTags, useGetAvailableTags, useGetTagInfo } from '../utils/daily';
 
 /* MODULES */
 import { dbGet } from '../utils/db.js'
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from '../utils/dayjs-setup.js'
 
 let diary = {}
 currentDate.value = dayjs().tz(timeZoneTrade.value).format("YYYY-MM-DD")
@@ -60,7 +51,7 @@ async function getDiaryToEdit(param) {
         diaryUpdate.date = dayjs.unix(diary.dateUnix).format("YYYY-MM-DD")
         diaryUpdate.dateDateFormat = new Date(diaryUpdate.date)
         //console.log("diaryUpdate " + JSON.stringify(diaryUpdate))
-        document.querySelector("#quillEditorDiary .ql-editor").innerHTML = diary.diary
+        document.querySelector("#quillEditorDiary .ql-editor").innerHTML = sanitizeHtml(diary.diary)
 
         let findTags = tags.find(obj => obj.tradeId == diaryUpdate.dateUnix)
         if (findTags) {
@@ -128,9 +119,8 @@ async function initDiaryJson(param) {
                         </div>
                     </div>
 
-                    <ul id="dropdown-menu-tags" class="dropdown-menu-tags"
-                        :style="[!showTagsList ? 'border: none;' : '']">
-                        <span v-show="showTagsList" v-for="group in availableTags">
+                    <ul class="dropdown-menu-tags" v-show="showTagsList === 'addDiary'">
+                        <span v-for="group in availableTags">
                             <h6 class="p-1 mb-0" :style="'background-color: ' + group.color + ';'"
                                 v-show="useFilterSuggestions(group.id).filter(obj => obj.id == group.id)[0].tags.length > 0">
                                 {{ group.name }}</h6>

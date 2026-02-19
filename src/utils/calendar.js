@@ -1,20 +1,8 @@
-import { renderingCharts, pageId, filteredTrades, selectedMonth, calendarData, miniCalendarsData, timeZoneTrade, filteredTradesDaily } from "../stores/globals.js"
-import { useMonthFormat } from "./utils.js"
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import { renderingCharts, pageId, timeZoneTrade } from "../stores/ui.js"
+import { selectedMonth } from "../stores/filters.js"
+import { filteredTrades, calendarData, miniCalendarsData, filteredTradesDaily } from "../stores/trades.js"
+import { useMonthFormat } from "./formatters.js"
+import dayjs from './dayjs-setup.js'
 import calendarize from 'calendarize';
 
 export async function useLoadCalendar() {

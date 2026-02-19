@@ -1,4 +1,6 @@
-import { diaries, selectedMonth, endOfList, spinnerLoadingPage, spinnerLoadMore, pageId, diaryIdToEdit, diaryUpdate, selectedItem, renderData, diaryQueryLimit, diaryPagination } from "../stores/globals.js"
+import { endOfList, spinnerLoadingPage, spinnerLoadMore, pageId, selectedItem, renderData } from "../stores/ui.js"
+import { selectedMonth } from "../stores/filters.js"
+import { diaries, diaryIdToEdit, diaryUpdate, diaryQueryLimit, diaryPagination } from "../stores/diary.js"
 import { usePageRedirect } from "./utils.js";
 import { useUpdateTags, useUpdateAvailableTags } from "./daily.js";
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete } from './db.js'

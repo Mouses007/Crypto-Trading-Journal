@@ -2,10 +2,15 @@
 import { onMounted, onBeforeMount } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import NoData from '../components/NoData.vue';
-import { spinnerLoadingPage, diaries, selectedItem, spinnerLoadMore, endOfList, tags, satisfactionArray, diaryPagination } from '../stores/globals';
-import { useCheckVisibleScreen, useCreatedDateFormat, useEditItem, useInitPopover, useLoadMore } from '../utils/utils';
+import { spinnerLoadingPage, selectedItem, spinnerLoadMore, endOfList } from '../stores/ui.js';
+import { tags, satisfactionArray } from '../stores/trades.js';
+import { diaries, diaryPagination } from '../stores/diary.js';
+import { useCreatedDateFormat } from '../utils/formatters.js';
+import { useCheckVisibleScreen, useLoadMore } from '../utils/mountOrchestration.js';
+import { useEditItem, useInitPopover } from '../utils/utils';
 import { useGetDiaries } from '../utils/diary';
 import { useGetTags, useGetTagInfo, useGetAvailableTags, useDailySatisfactionChange, useGetSatisfactions } from '../utils/daily';
+import { sanitizeHtml } from '../utils/sanitize';
 
 onBeforeMount(async () => {
 
@@ -82,7 +87,7 @@ onMounted(async () => {
                                 </div>
                             </div>
                             <div class="col-12 mt-2">
-                                <p v-html="itemDiary.diary"></p>
+                                <p v-html="sanitizeHtml(itemDiary.diary)"></p>
                             </div>
                         </div>
                     </div>

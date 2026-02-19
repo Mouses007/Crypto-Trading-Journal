@@ -1,88 +1,90 @@
 import express from 'express';
 import path from 'path'
 import * as Vite from 'vite'
-import { getDb } from './server/database.js'
+import { initDb } from './server/database.js'
 import { setupApiRoutes } from './server/api-routes.js'
 import { setupBitunixRoutes } from './server/bitunix-api.js'
+import { setupBitgetRoutes } from './server/bitget-api.js'
 import { setupBinanceRoutes } from './server/binance-api.js'
+import { setupPolygonRoutes } from './server/polygon-api.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
+import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString } from './server/auth.js'
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
+// Security: Session cookie + API auth
+app.use(sessionCookieMiddleware)
+app.use('/api', apiAuthMiddleware)
+
 const port = process.env.TRADENOTE_PORT || 8080;
+const host = process.env.TRADENOTE_HOST || '127.0.0.1'; // Default: nur lokal erreichbar
 const PROXY_PORT = 39482;
 
 const startIndex = async () => {
-
-    // Initialize SQLite database
+    // Initialize database (Knex — SQLite or PostgreSQL)
     console.log("\nINITIALIZING DATABASE")
-    getDb()
+    await initDb()
 
-    const startServer = async () => {
-        console.log("\nSTARTING NODEJS SERVER")
-        return new Promise(async (resolve) => {
-            app.listen(port, function () {
-                console.log(' -> TradeNote server started on http://localhost:' + port)
-            });
-            resolve()
+    // Setup API routes
+    console.log("\nRUNNING SERVER")
+    setupApiRoutes(app);
+    setupBitunixRoutes(app);
+    setupBitgetRoutes(app);
+    setupBinanceRoutes(app);
+    setupPolygonRoutes(app);
+    setupOllamaRoutes(app);
+    console.log(" -> API routes initialized")
+
+    if (process.env.NODE_ENV == 'dev') {
+        // Proxy non-API routes to Vite dev server
+        const { default: Proxy } = await import('http-proxy')
+        const proxy = new Proxy.createProxyServer({
+            target: { host: 'localhost', port: PROXY_PORT },
+        });
+
+        // Inject session cookie into ALL proxied responses (Vite dev server)
+        proxy.on('proxyRes', (proxyRes) => {
+            const existing = proxyRes.headers['set-cookie'] || []
+            const arr = Array.isArray(existing) ? existing : [existing].filter(Boolean)
+            arr.push(getSessionCookieString())
+            proxyRes.headers['set-cookie'] = arr
         })
+
+        app.use((req, res, next) => {
+            if (req.url.startsWith('/api/')) return next();
+            proxy.web(req, res);
+        });
+
+        const vite = await Vite.createServer({ server: { port: PROXY_PORT } });
+        vite.listen();
+        console.log(" -> Running vite dev server");
+    } else {
+        // Production: static files
+        app.use(express.static('dist'));
+        app.get('*', (req, res) => {
+            res.sendFile(path.resolve('dist', 'index.html'));
+        });
+        console.log(" -> Running prod server");
     }
 
-    const runServer = async () => {
-        console.log("\nRUNNING SERVER");
-
-        return new Promise(async (resolve) => {
-            if (process.env.NODE_ENV == 'dev') {
-                // Set up API routes first
-                app.use('/api/*', (req, res, next) => {
-                    next();
-                });
-                setupApiRoutes(app);
-                setupBitunixRoutes(app, getDb);
-                setupBinanceRoutes(app);
-                setupOllamaRoutes(app);
-
-                // Proxy non-API routes to Vite dev server
-                const { default: Proxy } = await import('http-proxy')
-                const proxy = new Proxy.createProxyServer({
-                    target: { host: 'localhost', port: PROXY_PORT },
-                });
-
-                app.use((req, res, next) => {
-                    if (req.url.startsWith('/api/')) {
-                        return next();
-                    }
-                    proxy.web(req, res);
-                });
-
-                const vite = await Vite.createServer({ server: { port: PROXY_PORT } });
-                vite.listen();
-                console.log(" -> Running vite dev server");
-                resolve();
-            } else {
-                // Production: API routes + static files
-                app.use('/api/*', express.json(), (req, res, next) => {
-                    next();
-                });
-                setupApiRoutes(app);
-                setupBitunixRoutes(app, getDb);
-                setupBinanceRoutes(app);
-                setupOllamaRoutes(app);
-
-                app.use(express.static('dist'));
-                app.get('*', (req, res) => {
-                    res.sendFile(path.resolve('dist', 'index.html'));
-                });
-                console.log(" -> Running prod server");
-                resolve();
+    // Start listening
+    console.log("\nSTARTING NODEJS SERVER")
+    await new Promise((resolve, reject) => {
+        const server = app.listen(port, host, () => {
+            console.log(` -> TradeNote server started on http://${host}:${port}`)
+            if (host === '127.0.0.1' || host === 'localhost') {
+                console.log(' -> Server is only accessible locally (set TRADENOTE_HOST=0.0.0.0 to allow network access)')
             }
+            resolve()
         });
-    };
-
-    await startServer()
-    await runServer()
+        server.on('error', reject)
+    })
 
     console.log("\n TradeNote ready!")
 }
-startIndex()
+
+startIndex().catch(err => {
+    console.error('\n STARTUP FAILED:', err.message || err)
+    process.exit(1)
+})

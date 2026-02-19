@@ -1,7 +1,9 @@
 <script setup>
 import { onBeforeMount, ref } from 'vue';
-import { imports, selectedItem } from '../stores/globals';
-import { useDateCalFormat, useInitPopover } from '../utils/utils';
+import { selectedItem } from '../stores/ui.js';
+import { imports } from '../stores/trades.js';
+import { useDateCalFormat } from '../utils/formatters.js';
+import { useInitPopover } from '../utils/utils';
 import { useGetTrades } from '../utils/trades';
 
 onBeforeMount(async () => {

@@ -1,296 +1,448 @@
-import Database from 'better-sqlite3'
-import path from 'path'
-import { fileURLToPath } from 'url'
+/**
+ * Database initialization with Knex.
+ * Supports SQLite (default) and PostgreSQL (optional).
+ */
+import Knex from 'knex'
+import { loadDbConfig } from './db-config.js'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const DB_PATH = path.join(__dirname, '..', 'tradenote.db')
+let knex = null
 
-let db
+/**
+ * Initialize and return the Knex instance.
+ * Call once at startup — subsequent calls return the cached instance.
+ */
+export async function initDb() {
+    if (knex) return knex
 
-export function getDb() {
-    if (!db) {
-        db = new Database(DB_PATH)
-        db.pragma('journal_mode = WAL')
-        db.pragma('foreign_keys = ON')
-        initSchema()
+    const config = loadDbConfig()
+    console.log(` -> Database client: ${config.client}`)
+
+    knex = Knex.default(config)
+
+    // SQLite-specific pragmas
+    if (config.client === 'better-sqlite3') {
+        await knex.raw('PRAGMA journal_mode = WAL')
+        await knex.raw('PRAGMA foreign_keys = ON')
     }
-    return db
+
+    await runMigrations(knex, config.client)
+
+    // Fix PostgreSQL sequences after migration/import
+    if (config.client === 'pg') {
+        await fixPostgresSequences(knex)
+    }
+
+    const clientLabel = config.client === 'pg' ? 'PostgreSQL' : 'SQLite'
+    console.log(` -> ${clientLabel} database initialized`)
+
+    return knex
 }
 
-function initSchema() {
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS settings (
-            id INTEGER PRIMARY KEY DEFAULT 1,
-            timeZone TEXT DEFAULT 'Europe/Brussels',
-            accounts TEXT DEFAULT '[]',
-            tags TEXT DEFAULT '[]',
-            apis TEXT DEFAULT '[]',
-            layoutStyle TEXT DEFAULT '[]',
-            avatar TEXT DEFAULT '',
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
+/**
+ * Get the Knex instance (must call initDb first).
+ */
+export function getKnex() {
+    if (!knex) throw new Error('Database not initialized — call initDb() first')
+    return knex
+}
 
-        INSERT OR IGNORE INTO settings (id) VALUES (1);
+/**
+ * Close the database connection.
+ */
+export async function closeDb() {
+    if (knex) {
+        await knex.destroy()
+        knex = null
+    }
+}
 
-        CREATE TABLE IF NOT EXISTS trades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dateUnix INTEGER NOT NULL,
-            date TEXT,
-            executions TEXT DEFAULT '[]',
-            trades TEXT DEFAULT '[]',
-            blotter TEXT DEFAULT '{}',
-            pAndL TEXT DEFAULT '{}',
-            cashJournal TEXT DEFAULT '{}',
-            openPositions INTEGER DEFAULT 0,
-            video TEXT DEFAULT '',
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
+// ============================================================
+// Schema Migrations
+// ============================================================
 
-        CREATE TABLE IF NOT EXISTS diaries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dateUnix INTEGER NOT NULL,
-            date TEXT,
-            diary TEXT DEFAULT '',
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
+/**
+ * Fix PostgreSQL auto-increment sequences after data import.
+ * When rows are inserted with explicit IDs (e.g., from SQLite migration),
+ * the sequence doesn't advance, causing "duplicate key" errors on next insert.
+ */
+async function fixPostgresSequences(knex) {
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports']
+    let fixed = 0
 
-        CREATE TABLE IF NOT EXISTS screenshots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT DEFAULT '',
-            symbol TEXT DEFAULT '',
-            side TEXT DEFAULT '',
-            originalBase64 TEXT DEFAULT '',
-            annotatedBase64 TEXT DEFAULT '',
-            original TEXT DEFAULT '',
-            annotated TEXT DEFAULT '',
-            markersOnly INTEGER DEFAULT 1,
-            maState TEXT DEFAULT '{}',
-            date TEXT,
-            dateUnix INTEGER,
-            dateUnixDay INTEGER,
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
+    for (const table of tables) {
+        try {
+            const hasTable = await knex.schema.hasTable(table)
+            if (!hasTable) continue
 
-        CREATE TABLE IF NOT EXISTS playbooks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dateUnix INTEGER,
-            date TEXT,
-            playbook TEXT DEFAULT '',
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS satisfactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dateUnix INTEGER NOT NULL,
-            tradeId TEXT DEFAULT '',
-            satisfaction INTEGER DEFAULT 0,
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS tags (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dateUnix INTEGER,
-            tradeId TEXT DEFAULT '',
-            tags TEXT DEFAULT '[]',
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS notes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dateUnix INTEGER,
-            tradeId TEXT DEFAULT '',
-            note TEXT DEFAULT '',
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS excursions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dateUnix INTEGER,
-            tradeId TEXT DEFAULT '',
-            stopLoss REAL DEFAULT 0,
-            maePrice REAL DEFAULT 0,
-            mfePrice REAL DEFAULT 0,
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS bitunix_config (
-            id INTEGER PRIMARY KEY DEFAULT 1,
-            apiKey TEXT DEFAULT '',
-            secretKey TEXT DEFAULT '',
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
-
-        INSERT OR IGNORE INTO bitunix_config (id) VALUES (1);
-
-        CREATE TABLE IF NOT EXISTS incoming_positions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            positionId TEXT NOT NULL UNIQUE,
-            symbol TEXT DEFAULT '',
-            side TEXT DEFAULT '',
-            entryPrice REAL DEFAULT 0,
-            leverage REAL DEFAULT 0,
-            quantity REAL DEFAULT 0,
-            unrealizedPNL REAL DEFAULT 0,
-            markPrice REAL DEFAULT 0,
-            playbook TEXT DEFAULT '',
-            stressLevel INTEGER DEFAULT 0,
-            feelings TEXT DEFAULT '',
-            screenshotId TEXT DEFAULT '',
-            status TEXT DEFAULT 'open',
-            bitunixData TEXT DEFAULT '{}',
-            createdAt TEXT DEFAULT (datetime('now')),
-            updatedAt TEXT DEFAULT (datetime('now'))
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_incoming_positionId ON incoming_positions(positionId);
-        CREATE INDEX IF NOT EXISTS idx_incoming_status ON incoming_positions(status);
-
-        CREATE INDEX IF NOT EXISTS idx_trades_dateUnix ON trades(dateUnix);
-        CREATE INDEX IF NOT EXISTS idx_diaries_dateUnix ON diaries(dateUnix);
-        CREATE INDEX IF NOT EXISTS idx_screenshots_dateUnix ON screenshots(dateUnix);
-        CREATE INDEX IF NOT EXISTS idx_screenshots_dateUnixDay ON screenshots(dateUnixDay);
-        CREATE INDEX IF NOT EXISTS idx_playbooks_dateUnix ON playbooks(dateUnix);
-        CREATE INDEX IF NOT EXISTS idx_satisfactions_dateUnix ON satisfactions(dateUnix);
-        CREATE INDEX IF NOT EXISTS idx_satisfactions_tradeId ON satisfactions(tradeId);
-        CREATE INDEX IF NOT EXISTS idx_tags_dateUnix ON tags(dateUnix);
-        CREATE INDEX IF NOT EXISTS idx_tags_tradeId ON tags(tradeId);
-        CREATE INDEX IF NOT EXISTS idx_notes_tradeId ON notes(tradeId);
-        CREATE INDEX IF NOT EXISTS idx_excursions_tradeId ON excursions(tradeId);
-    `)
-
-    // Migration: add lastApiImport column to bitunix_config (may already exist)
-    try {
-        db.exec(`ALTER TABLE bitunix_config ADD COLUMN lastApiImport INTEGER DEFAULT 0`)
-    } catch (e) {
-        // Column already exists, ignore
+            const result = await knex.raw(
+                `SELECT setval(pg_get_serial_sequence('${table}', 'id'), COALESCE((SELECT MAX(id) FROM "${table}"), 0) + 1, false)`
+            )
+            const newVal = result.rows?.[0]?.setval
+            if (newVal && newVal > 1) fixed++
+        } catch (e) {
+            // Table might not have a sequence (e.g., settings with fixed id=1)
+        }
     }
 
-    // Migration: add apiImportStartDate column to bitunix_config
-    try {
-        db.exec(`ALTER TABLE bitunix_config ADD COLUMN apiImportStartDate TEXT DEFAULT ''`)
-    } catch (e) {}
+    if (fixed > 0) {
+        console.log(` -> ${fixed} PostgreSQL-Sequenzen repariert`)
+    }
+}
 
+async function runMigrations(knex, client) {
+    const isPg = client === 'pg'
 
-    // Migration: add tags column to incoming_positions (may already exist)
-    try {
-        db.exec(`ALTER TABLE incoming_positions ADD COLUMN tags TEXT DEFAULT '[]'`)
-    } catch (e) {
-        // Column already exists, ignore
+    // Helper: add column if it doesn't exist
+    async function addColumnIfNotExists(table, column, buildCol) {
+        const hasCol = await knex.schema.hasColumn(table, column)
+        if (!hasCol) {
+            await knex.schema.alterTable(table, (t) => {
+                buildCol(t)
+            })
+        }
     }
 
-    // Migration: add evaluation popup columns to incoming_positions
-    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN entryNote TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN historyData TEXT DEFAULT '{}'`) } catch (e) {}
-    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN openingEvalDone INTEGER DEFAULT 0`) } catch (e) {}
-    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN entryTimeframe TEXT DEFAULT ''`) } catch (e) {}
+    // ==================== SETTINGS ====================
+    if (!(await knex.schema.hasTable('settings'))) {
+        await knex.schema.createTable('settings', (t) => {
+            t.integer('id').primary().defaultTo(1)
+            t.text('timeZone').defaultTo('Europe/Brussels')
+            t.text('accounts').defaultTo('[]')
+            t.text('tags').defaultTo('[]')
+            t.text('apis').defaultTo('[]')
+            t.text('layoutStyle').defaultTo('[]')
+            t.text('avatar').defaultTo('')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+        })
+        // Seed the single settings row
+        const existing = await knex('settings').where('id', 1).first()
+        if (!existing) {
+            await knex('settings').insert({ id: 1 })
+        }
+    }
 
-    // Migration: add showTradePopups setting
-    try { db.exec(`ALTER TABLE settings ADD COLUMN showTradePopups INTEGER DEFAULT 1`) } catch (e) {}
+    // ==================== TRADES ====================
+    if (!(await knex.schema.hasTable('trades'))) {
+        await knex.schema.createTable('trades', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('dateUnix').notNullable()
+            t.text('date')
+            t.text('executions').defaultTo('[]')
+            t.text('trades').defaultTo('[]')
+            t.text('blotter').defaultTo('{}')
+            t.text('pAndL').defaultTo('{}')
+            t.text('cashJournal').defaultTo('{}')
+            t.integer('openPositions').defaultTo(0)
+            t.text('video').defaultTo('')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('dateUnix', 'idx_trades_dateUnix')
+        })
+    }
 
-    // Migration: add username to settings
-    try { db.exec(`ALTER TABLE settings ADD COLUMN username TEXT DEFAULT ''`) } catch (e) {}
+    // ==================== DIARIES ====================
+    if (!(await knex.schema.hasTable('diaries'))) {
+        await knex.schema.createTable('diaries', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('dateUnix').notNullable()
+            t.text('date')
+            t.text('diary').defaultTo('')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('dateUnix', 'idx_diaries_dateUnix')
+        })
+    }
 
-    // Migration: add startBalance and currentBalance to settings
-    try { db.exec(`ALTER TABLE settings ADD COLUMN startBalance REAL DEFAULT 0`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN startBalanceDate INTEGER DEFAULT 0`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN currentBalance REAL DEFAULT 0`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN tradeTimeframes TEXT DEFAULT '[]'`) } catch (e) {}
+    // ==================== SCREENSHOTS ====================
+    if (!(await knex.schema.hasTable('screenshots'))) {
+        await knex.schema.createTable('screenshots', (t) => {
+            t.increments('id').primary()
+            t.text('name').defaultTo('')
+            t.text('symbol').defaultTo('')
+            t.text('side').defaultTo('')
+            t.text('originalBase64').defaultTo('')
+            t.text('annotatedBase64').defaultTo('')
+            t.text('original').defaultTo('')
+            t.text('annotated').defaultTo('')
+            t.integer('markersOnly').defaultTo(1)
+            t.text('maState').defaultTo('{}')
+            t.text('date')
+            t.bigInteger('dateUnix')
+            t.bigInteger('dateUnixDay')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('dateUnix', 'idx_screenshots_dateUnix')
+            t.index('dateUnixDay', 'idx_screenshots_dateUnixDay')
+        })
+    }
 
-    // Migration: add structured metadata columns to notes table (for Playbook)
-    try { db.exec(`ALTER TABLE notes ADD COLUMN title TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE notes ADD COLUMN entryStressLevel INTEGER DEFAULT 0`) } catch (e) {}
-    try { db.exec(`ALTER TABLE notes ADD COLUMN exitStressLevel INTEGER DEFAULT 0`) } catch (e) {}
-    try { db.exec(`ALTER TABLE notes ADD COLUMN entryNote TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE notes ADD COLUMN feelings TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE notes ADD COLUMN playbook TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE notes ADD COLUMN timeframe TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE notes ADD COLUMN screenshotId TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE notes ADD COLUMN emotionLevel INTEGER DEFAULT 0`) } catch (e) {}
+    // ==================== PLAYBOOKS ====================
+    if (!(await knex.schema.hasTable('playbooks'))) {
+        await knex.schema.createTable('playbooks', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('dateUnix')
+            t.text('date')
+            t.text('playbook').defaultTo('')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('dateUnix', 'idx_playbooks_dateUnix')
+        })
+    }
 
-    // Migration: add emotionLevel to incoming_positions
-    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN emotionLevel INTEGER DEFAULT 0`) } catch (e) {}
+    // ==================== SATISFACTIONS ====================
+    if (!(await knex.schema.hasTable('satisfactions'))) {
+        await knex.schema.createTable('satisfactions', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('dateUnix').notNullable()
+            t.text('tradeId').defaultTo('')
+            t.integer('satisfaction').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('dateUnix', 'idx_satisfactions_dateUnix')
+            t.index('tradeId', 'idx_satisfactions_tradeId')
+        })
+    }
 
-    // Migration: add enableBinanceChart to settings
-    try { db.exec(`ALTER TABLE settings ADD COLUMN enableBinanceChart INTEGER DEFAULT 0`) } catch (e) {}
+    // ==================== TAGS ====================
+    if (!(await knex.schema.hasTable('tags'))) {
+        await knex.schema.createTable('tags', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('dateUnix')
+            t.text('tradeId').defaultTo('')
+            t.text('tags').defaultTo('[]')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('dateUnix', 'idx_tags_dateUnix')
+            t.index('tradeId', 'idx_tags_tradeId')
+        })
+    }
 
-    // Migration: add closingNote to notes and incoming_positions
-    try { db.exec(`ALTER TABLE notes ADD COLUMN closingNote TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN closingNote TEXT DEFAULT ''`) } catch (e) {}
+    // ==================== NOTES ====================
+    if (!(await knex.schema.hasTable('notes'))) {
+        await knex.schema.createTable('notes', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('dateUnix')
+            t.text('tradeId').defaultTo('')
+            t.text('note').defaultTo('')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('tradeId', 'idx_notes_tradeId')
+        })
+    }
 
-    // Migration: add satisfaction to incoming_positions
-    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN satisfaction INTEGER DEFAULT -1`) } catch (e) {}
+    // ==================== EXCURSIONS ====================
+    if (!(await knex.schema.hasTable('excursions'))) {
+        await knex.schema.createTable('excursions', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('dateUnix')
+            t.text('tradeId').defaultTo('')
+            t.float('stopLoss').defaultTo(0)
+            t.float('maePrice').defaultTo(0)
+            t.float('mfePrice').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('tradeId', 'idx_excursions_tradeId')
+        })
+    }
 
-    // Migration: add skipEvaluation to incoming_positions
-    try { db.exec(`ALTER TABLE incoming_positions ADD COLUMN skipEvaluation INTEGER DEFAULT 0`) } catch (e) {}
+    // ==================== BITUNIX CONFIG ====================
+    if (!(await knex.schema.hasTable('bitunix_config'))) {
+        await knex.schema.createTable('bitunix_config', (t) => {
+            t.integer('id').primary().defaultTo(1)
+            t.text('apiKey').defaultTo('')
+            t.text('secretKey').defaultTo('')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+        })
+        const existing = await knex('bitunix_config').where('id', 1).first()
+        if (!existing) {
+            await knex('bitunix_config').insert({ id: 1 })
+        }
+    }
 
-    // AI Reports table
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS ai_reports (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            label TEXT DEFAULT '',
-            startDate INTEGER NOT NULL,
-            endDate INTEGER NOT NULL,
-            provider TEXT DEFAULT '',
-            model TEXT DEFAULT '',
-            report TEXT DEFAULT '',
-            reportData TEXT DEFAULT '{}',
-            createdAt TEXT DEFAULT (datetime('now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_ai_reports_created ON ai_reports(createdAt);
-    `)
+    // ==================== BITGET CONFIG ====================
+    if (!(await knex.schema.hasTable('bitget_config'))) {
+        await knex.schema.createTable('bitget_config', (t) => {
+            t.integer('id').primary().defaultTo(1)
+            t.text('apiKey').defaultTo('')
+            t.text('secretKey').defaultTo('')
+            t.text('passphrase').defaultTo('')
+            t.text('apiImportStartDate').defaultTo('')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+        })
+        const existing = await knex('bitget_config').where('id', 1).first()
+        if (!existing) {
+            await knex('bitget_config').insert({ id: 1 })
+        }
+    }
 
-    // Migration: AI settings
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiProvider TEXT DEFAULT 'ollama'`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiModel TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiApiKey TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiTemperature REAL DEFAULT 0.7`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiMaxTokens INTEGER DEFAULT 1500`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiOllamaUrl TEXT DEFAULT 'http://localhost:11434'`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiScreenshots INTEGER DEFAULT 0`) } catch (e) {}
+    // ==================== INCOMING POSITIONS ====================
+    if (!(await knex.schema.hasTable('incoming_positions'))) {
+        await knex.schema.createTable('incoming_positions', (t) => {
+            t.increments('id').primary()
+            t.text('positionId').notNullable().unique()
+            t.text('symbol').defaultTo('')
+            t.text('side').defaultTo('')
+            t.float('entryPrice').defaultTo(0)
+            t.float('leverage').defaultTo(0)
+            t.float('quantity').defaultTo(0)
+            t.float('unrealizedPNL').defaultTo(0)
+            t.float('markPrice').defaultTo(0)
+            t.text('playbook').defaultTo('')
+            t.integer('stressLevel').defaultTo(0)
+            t.text('feelings').defaultTo('')
+            t.text('screenshotId').defaultTo('')
+            t.text('status').defaultTo('open')
+            t.text('bitunixData').defaultTo('{}')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('positionId', 'idx_incoming_positionId')
+            t.index('status', 'idx_incoming_status')
+        })
+    }
 
-    // Migration: add token tracking to ai_reports
-    try { db.exec(`ALTER TABLE ai_reports ADD COLUMN promptTokens INTEGER DEFAULT 0`) } catch (e) {}
-    try { db.exec(`ALTER TABLE ai_reports ADD COLUMN completionTokens INTEGER DEFAULT 0`) } catch (e) {}
-    try { db.exec(`ALTER TABLE ai_reports ADD COLUMN totalTokens INTEGER DEFAULT 0`) } catch (e) {}
+    // ==================== AI REPORTS ====================
+    if (!(await knex.schema.hasTable('ai_reports'))) {
+        await knex.schema.createTable('ai_reports', (t) => {
+            t.increments('id').primary()
+            t.text('label').defaultTo('')
+            t.bigInteger('startDate').notNullable()
+            t.bigInteger('endDate').notNullable()
+            t.text('provider').defaultTo('')
+            t.text('model').defaultTo('')
+            t.text('report').defaultTo('')
+            t.text('reportData').defaultTo('{}')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.index('createdAt', 'idx_ai_reports_created')
+        })
+    }
 
-    // Migration: separate API key per provider (encrypted)
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiKeyOpenai TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiKeyAnthropic TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiKeyGemini TEXT DEFAULT ''`) } catch (e) {}
-    try { db.exec(`ALTER TABLE settings ADD COLUMN aiKeyDeepseek TEXT DEFAULT ''`) } catch (e) {}
+    // ==================== AI REPORT MESSAGES (Chat) ====================
+    if (!(await knex.schema.hasTable('ai_report_messages'))) {
+        await knex.schema.createTable('ai_report_messages', (t) => {
+            t.increments('id').primary()
+            t.integer('reportId').notNullable()
+            t.text('role').notNullable() // 'user' or 'assistant'
+            t.text('content').defaultTo('')
+            t.integer('promptTokens').defaultTo(0)
+            t.integer('completionTokens').defaultTo(0)
+            t.integer('totalTokens').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.index('reportId', 'idx_report_messages_reportId')
+        })
+    }
 
-    // Migration: migrate old aiApiKey to provider-specific column
+    // ==================== COLUMN MIGRATIONS ====================
+    // bitunix_config additions
+    await addColumnIfNotExists('bitunix_config', 'lastApiImport', (t) => t.bigInteger('lastApiImport').defaultTo(0))
+    await addColumnIfNotExists('bitunix_config', 'apiImportStartDate', (t) => t.text('apiImportStartDate').defaultTo(''))
+
+    // incoming_positions additions
+    await addColumnIfNotExists('incoming_positions', 'tags', (t) => t.text('tags').defaultTo('[]'))
+    await addColumnIfNotExists('incoming_positions', 'entryNote', (t) => t.text('entryNote').defaultTo(''))
+    await addColumnIfNotExists('incoming_positions', 'historyData', (t) => t.text('historyData').defaultTo('{}'))
+    await addColumnIfNotExists('incoming_positions', 'openingEvalDone', (t) => t.integer('openingEvalDone').defaultTo(0))
+    await addColumnIfNotExists('incoming_positions', 'entryTimeframe', (t) => t.text('entryTimeframe').defaultTo(''))
+    await addColumnIfNotExists('incoming_positions', 'emotionLevel', (t) => t.integer('emotionLevel').defaultTo(0))
+    await addColumnIfNotExists('incoming_positions', 'closingNote', (t) => t.text('closingNote').defaultTo(''))
+    await addColumnIfNotExists('incoming_positions', 'satisfaction', (t) => t.integer('satisfaction').defaultTo(-1))
+    await addColumnIfNotExists('incoming_positions', 'skipEvaluation', (t) => t.integer('skipEvaluation').defaultTo(0))
+
+    // Closing evaluation fields (einheitliche Maske)
+    await addColumnIfNotExists('incoming_positions', 'closingStressLevel', (t) => t.integer('closingStressLevel').defaultTo(0))
+    await addColumnIfNotExists('incoming_positions', 'closingEmotionLevel', (t) => t.integer('closingEmotionLevel').defaultTo(0))
+    await addColumnIfNotExists('incoming_positions', 'closingFeelings', (t) => t.text('closingFeelings').defaultTo(''))
+    await addColumnIfNotExists('incoming_positions', 'closingTimeframe', (t) => t.text('closingTimeframe').defaultTo(''))
+    await addColumnIfNotExists('incoming_positions', 'closingTags', (t) => t.text('closingTags').defaultTo('[]'))
+    await addColumnIfNotExists('incoming_positions', 'closingScreenshotId', (t) => t.text('closingScreenshotId').defaultTo(''))
+    await addColumnIfNotExists('incoming_positions', 'closingPlaybook', (t) => t.text('closingPlaybook').defaultTo(''))
+
+    // Entry screenshot (migrate from screenshotId)
+    await addColumnIfNotExists('incoming_positions', 'entryScreenshotId', (t) => t.text('entryScreenshotId').defaultTo(''))
+
+    // settings additions
+    await addColumnIfNotExists('settings', 'showTradePopups', (t) => t.integer('showTradePopups').defaultTo(1))
+    await addColumnIfNotExists('settings', 'username', (t) => t.text('username').defaultTo(''))
+    await addColumnIfNotExists('settings', 'startBalance', (t) => t.float('startBalance').defaultTo(0))
+    await addColumnIfNotExists('settings', 'startBalanceDate', (t) => t.bigInteger('startBalanceDate').defaultTo(0))
+    await addColumnIfNotExists('settings', 'currentBalance', (t) => t.float('currentBalance').defaultTo(0))
+    await addColumnIfNotExists('settings', 'tradeTimeframes', (t) => t.text('tradeTimeframes').defaultTo('[]'))
+    await addColumnIfNotExists('settings', 'enableBinanceChart', (t) => t.integer('enableBinanceChart').defaultTo(0))
+
+    // AI settings
+    await addColumnIfNotExists('settings', 'aiProvider', (t) => t.text('aiProvider').defaultTo('ollama'))
+    await addColumnIfNotExists('settings', 'aiModel', (t) => t.text('aiModel').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiApiKey', (t) => t.text('aiApiKey').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiTemperature', (t) => t.float('aiTemperature').defaultTo(0.7))
+    await addColumnIfNotExists('settings', 'aiMaxTokens', (t) => t.integer('aiMaxTokens').defaultTo(1500))
+    await addColumnIfNotExists('settings', 'aiOllamaUrl', (t) => t.text('aiOllamaUrl').defaultTo('http://localhost:11434'))
+    await addColumnIfNotExists('settings', 'aiScreenshots', (t) => t.integer('aiScreenshots').defaultTo(0))
+    await addColumnIfNotExists('settings', 'aiKeyOpenai', (t) => t.text('aiKeyOpenai').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiKeyAnthropic', (t) => t.text('aiKeyAnthropic').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiKeyGemini', (t) => t.text('aiKeyGemini').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiKeyDeepseek', (t) => t.text('aiKeyDeepseek').defaultTo(''))
+
+    // notes additions
+    await addColumnIfNotExists('notes', 'title', (t) => t.text('title').defaultTo(''))
+    await addColumnIfNotExists('notes', 'entryStressLevel', (t) => t.integer('entryStressLevel').defaultTo(0))
+    await addColumnIfNotExists('notes', 'exitStressLevel', (t) => t.integer('exitStressLevel').defaultTo(0))
+    await addColumnIfNotExists('notes', 'entryNote', (t) => t.text('entryNote').defaultTo(''))
+    await addColumnIfNotExists('notes', 'feelings', (t) => t.text('feelings').defaultTo(''))
+    await addColumnIfNotExists('notes', 'playbook', (t) => t.text('playbook').defaultTo(''))
+    await addColumnIfNotExists('notes', 'timeframe', (t) => t.text('timeframe').defaultTo(''))
+    await addColumnIfNotExists('notes', 'screenshotId', (t) => t.text('screenshotId').defaultTo(''))
+    await addColumnIfNotExists('notes', 'emotionLevel', (t) => t.integer('emotionLevel').defaultTo(0))
+    await addColumnIfNotExists('notes', 'closingNote', (t) => t.text('closingNote').defaultTo(''))
+
+    // Closing evaluation fields for notes
+    await addColumnIfNotExists('notes', 'closingScreenshotId', (t) => t.text('closingScreenshotId').defaultTo(''))
+    await addColumnIfNotExists('notes', 'closingStressLevel', (t) => t.integer('closingStressLevel').defaultTo(0))
+    await addColumnIfNotExists('notes', 'closingEmotionLevel', (t) => t.integer('closingEmotionLevel').defaultTo(0))
+    await addColumnIfNotExists('notes', 'closingFeelings', (t) => t.text('closingFeelings').defaultTo(''))
+    await addColumnIfNotExists('notes', 'closingTimeframe', (t) => t.text('closingTimeframe').defaultTo(''))
+    await addColumnIfNotExists('notes', 'closingPlaybook', (t) => t.text('closingPlaybook').defaultTo(''))
+
+    // AI report prompt + chat
+    await addColumnIfNotExists('settings', 'aiReportPrompt', (t) => t.text('aiReportPrompt').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiChatEnabled', (t) => t.integer('aiChatEnabled').defaultTo(1))
+    await addColumnIfNotExists('settings', 'browserNotifications', (t) => t.integer('browserNotifications').defaultTo(1))
+
+    // First-Run Setup
+    const hadSetupCol = await knex.schema.hasColumn('settings', 'setupComplete')
+    await addColumnIfNotExists('settings', 'setupComplete', (t) => t.integer('setupComplete').defaultTo(0))
+    // Auto-detect existing installations: if setupComplete column is new AND trades exist, mark as complete
+    if (!hadSetupCol) {
+        try {
+            const tradeCount = await knex('trades').count('* as cnt').first()
+            if (tradeCount && tradeCount.cnt > 0) {
+                await knex('settings').where('id', 1).update({ setupComplete: 1 })
+                console.log(' -> Existing installation detected, setup marked as complete')
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // ai_reports additions
+    await addColumnIfNotExists('ai_reports', 'promptTokens', (t) => t.integer('promptTokens').defaultTo(0))
+    await addColumnIfNotExists('ai_reports', 'completionTokens', (t) => t.integer('completionTokens').defaultTo(0))
+    await addColumnIfNotExists('ai_reports', 'totalTokens', (t) => t.integer('totalTokens').defaultTo(0))
+    await addColumnIfNotExists('ai_reports', 'promptPreset', (t) => t.text('promptPreset').defaultTo(''))
+
+    // ==================== DATA MIGRATION ====================
+    // Migrate old aiApiKey to provider-specific column
     try {
-        const row = db.prepare('SELECT aiApiKey, aiProvider FROM settings WHERE id = 1').get()
+        const row = await knex('settings').select('aiApiKey', 'aiProvider').where('id', 1).first()
         if (row && row.aiApiKey) {
-            const col = { openai: 'aiKeyOpenai', anthropic: 'aiKeyAnthropic', gemini: 'aiKeyGemini' }[row.aiProvider]
+            const colMap = { openai: 'aiKeyOpenai', anthropic: 'aiKeyAnthropic', gemini: 'aiKeyGemini' }
+            const col = colMap[row.aiProvider]
             if (col) {
-                const current = db.prepare(`SELECT ${col} FROM settings WHERE id = 1`).get()
+                const current = await knex('settings').select(col).where('id', 1).first()
                 if (!current[col]) {
-                    db.prepare(`UPDATE settings SET ${col} = ? WHERE id = 1`).run(row.aiApiKey)
+                    await knex('settings').where('id', 1).update({ [col]: row.aiApiKey })
                     console.log(` -> Migrated API key to ${col}`)
                 }
             }
         }
-    } catch (e) {}
-
-    console.log(' -> SQLite database initialized at', DB_PATH)
-}
-
-export function closeDb() {
-    if (db) {
-        db.close()
-        db = null
-    }
+    } catch (e) { /* ignore */ }
 }

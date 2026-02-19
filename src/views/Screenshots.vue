@@ -4,9 +4,10 @@ import NoData from '../components/NoData.vue';
 import Filters from '../components/Filters.vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Screenshot from '../components/Screenshot.vue';
-import { screenshots, spinnerLoadMore, spinnerLoadingPage, expandedScreenshot } from '../stores/globals';
-import { useMountScreenshots, useCheckVisibleScreen, useLoadMore } from '../utils/utils';
-import { endOfList } from '../stores/globals';
+import { spinnerLoadMore, spinnerLoadingPage, expandedScreenshot } from '../stores/ui.js';
+import { screenshots } from '../stores/trades.js';
+import { useMountScreenshots, useCheckVisibleScreen, useLoadMore } from '../utils/mountOrchestration.js';
+import { endOfList } from '../stores/ui.js';
 
 onBeforeMount(async () => {
 

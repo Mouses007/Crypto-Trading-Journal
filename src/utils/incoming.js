@@ -1,11 +1,50 @@
 import axios from 'axios'
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
+import dayjs from './dayjs-setup.js'
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete } from './db.js'
-import { incomingPositions, incomingPollingActive, incomingLastFetched, evaluationQueue, evaluationPopupVisible, currentUser } from '../stores/globals.js'
+import { incomingPositions, incomingPollingActive, incomingLastFetched, pendingOpeningCount, pendingClosingCount, evalNotificationShown, evalNotificationDismissed, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
+import { currentUser } from '../stores/settings.js'
 
 let globalPollingInterval = null
+
+/**
+ * Update the pending evaluation counters from the database.
+ * Called after each sync cycle and on page load.
+ */
+export async function useUpdatePendingCounts() {
+    try {
+        const openPositions = await dbFind('incoming_positions', { equalTo: { status: 'open', openingEvalDone: 0 } })
+        const pendingPositions = await dbFind('incoming_positions', { equalTo: { status: 'pending_evaluation' } })
+
+        pendingOpeningCount.value = openPositions.length
+        pendingClosingCount.value = pendingPositions.length
+
+        // Collect all current position IDs that need evaluation
+        const currentIds = new Set([
+            ...openPositions.map(p => 'open_' + p.positionId),
+            ...pendingPositions.map(p => 'close_' + p.positionId),
+        ])
+
+        // Compare with already-notified IDs from localStorage
+        const alreadyNotified = getNotifiedPositionIds()
+        const brandNewIds = [...currentIds].filter(id => !alreadyNotified.has(id))
+
+        // Clean up notified IDs that are no longer pending (position was evaluated/deleted)
+        const staleIds = [...alreadyNotified].filter(id => !currentIds.has(id))
+        if (staleIds.length > 0) {
+            removeNotifiedPositionIds(staleIds)
+        }
+
+        // Only show popup if there are truly new (never-before-notified) positions
+        if (brandNewIds.length > 0) {
+            // Mark them as notified so popup won't fire again for these
+            addNotifiedPositionIds(brandNewIds)
+            evalNotificationShown.value = true
+            evalNotificationDismissed.value = false
+        }
+    } catch (error) {
+        console.error(' -> Fehler beim Aktualisieren der Zähler:', error)
+    }
+}
 
 /**
  * Fetch open positions from Bitunix API, sync with local DB,
@@ -27,6 +66,9 @@ export async function useFetchOpenPositions() {
 
         await syncPositionsWithDb(apiPositions)
         await loadIncomingPositions()
+
+        // Update counters after sync
+        await useUpdatePendingCounts()
 
         incomingLastFetched.value = new Date()
     } catch (error) {
@@ -62,7 +104,6 @@ async function syncPositionsWithDb(apiPositions) {
 
         if (existing) {
             // Update unrealizedPNL, markPrice, bitunixData
-            // Pending API fields: avgOpenPrice, qty, unrealizedPNL, liqPrice
             await dbUpdate('incoming_positions', existing.objectId, {
                 unrealizedPNL: parseFloat(apiPos.unrealizedPNL || 0),
                 markPrice: parseFloat(apiPos.liqPrice || 0),
@@ -72,8 +113,6 @@ async function syncPositionsWithDb(apiPositions) {
             })
         } else {
             // New open position
-            // Pending API: avgOpenPrice (not entryPrice), qty (not maxQty), liqPrice (no markPrice)
-            // Pending API uses BUY/SELL for side, map to LONG/SHORT for consistency
             const normalizedSide = apiPos.side === 'BUY' ? 'LONG' : apiPos.side === 'SELL' ? 'SHORT' : apiPos.side
             await dbCreate('incoming_positions', {
                 positionId: apiPos.positionId,
@@ -88,18 +127,6 @@ async function syncPositionsWithDb(apiPositions) {
                 bitunixData: apiPos
             })
             console.log(` -> Neue Position: ${apiPos.symbol} ${apiPos.side}`)
-
-            // Push opening evaluation to queue if popups enabled
-            if (currentUser.value?.showTradePopups !== 0) {
-                const created = await dbFind('incoming_positions', { equalTo: { positionId: apiPos.positionId } })
-                if (created.length > 0) {
-                    evaluationQueue.push({
-                        type: 'opening',
-                        positionObjectId: created[0].objectId,
-                        position: { ...created[0] }
-                    })
-                }
-            }
         }
     }
 }
@@ -117,43 +144,41 @@ async function handleClosedPositions(closedPositions) {
             const histResponse = await axios.get(`/api/bitunix/position-history/${incoming.positionId}`)
 
             if (!histResponse.data.ok || !histResponse.data.position) {
-                // History not yet available — mark as closed but keep for retry
                 console.log(` -> History für ${incoming.symbol} noch nicht verfügbar, wird übersprungen`)
                 continue
             }
 
             const histPos = histResponse.data.position
 
-            // Create trade record (skip metadata transfer if popups enabled — popup handles it)
+            // Create trade record (skip metadata transfer if popups enabled — pending evaluation handles it)
             await createTradeFromClosedPosition(histPos, incoming, popupsEnabled)
 
             if (incoming.skipEvaluation === 1) {
-                // Skip evaluation: transfer existing metadata directly, no popup
+                // Skip evaluation: transfer existing metadata directly
                 await useTransferClosingMetadata(incoming, histPos, {
                     note: '',
                     tags: incoming.tags || [],
                     satisfaction: incoming.satisfaction,
                     stressLevel: incoming.stressLevel || 0,
                     closingNote: incoming.closingNote || '',
+                    closingStressLevel: 0,
+                    closingEmotionLevel: 0,
+                    closingFeelings: '',
+                    closingTimeframe: '',
+                    closingPlaybook: '',
+                    closingScreenshotId: '',
+                    closingTags: [],
                 })
                 console.log(` -> Position ${incoming.symbol} geschlossen — Bewertung übersprungen`)
             } else if (popupsEnabled) {
-                // Keep position as pending_evaluation, store historyData for popup
+                // Keep position as pending_evaluation, store historyData
                 await dbUpdate('incoming_positions', incoming.objectId, {
                     status: 'pending_evaluation',
                     historyData: histPos
                 })
-
-                // Push closing evaluation to queue
-                evaluationQueue.push({
-                    type: 'closing',
-                    positionObjectId: incoming.objectId,
-                    position: { ...incoming },
-                    historyData: histPos
-                })
-                console.log(` -> Position ${incoming.symbol} geschlossen — Bewertungs-Popup in Warteschlange`)
+                console.log(` -> Position ${incoming.symbol} geschlossen — Abschlussbewertung ausstehend`)
             } else {
-                // No popups: existing behavior — transfer metadata and delete
+                // No popups: transfer metadata and delete
                 await dbDelete('incoming_positions', incoming.objectId)
                 console.log(` -> Position ${incoming.symbol} geschlossen und als Trade übernommen`)
             }
@@ -175,7 +200,6 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
     const openTime = parseInt(histPos.ctime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
 
-    // Bitunix API: Pending uses 'BUY'/'SELL', History uses 'LONG'/'SHORT' — accept both
     const side = (histPos.side === 'LONG' || histPos.side === 'BUY') ? 'B' : 'SS'
     const netPL = grossPL - fee
     const isGrossWin = grossPL > 0
@@ -310,7 +334,7 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
         })
     }
 
-    // Skip metadata transfer if popup will handle it
+    // Skip metadata transfer if pending evaluation will handle it
     if (!skipMetadata) {
         // Link metadata: playbook → notes table
         if (incoming.playbook && incoming.playbook.trim()) {
@@ -327,7 +351,6 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
                 note: noteText
             })
         } else if (incoming.feelings || incoming.stressLevel) {
-            // Save feelings/stress even without playbook
             let noteText = ''
             if (incoming.stressLevel) {
                 noteText += `<p><strong>Stresslevel: ${incoming.stressLevel}/10</strong></p>`
@@ -344,10 +367,11 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
             }
         }
 
-        // Link metadata: screenshotId → update screenshot name for trade linking
-        if (incoming.screenshotId) {
+        // Link metadata: entryScreenshotId → update screenshot name for trade linking
+        if (incoming.entryScreenshotId || incoming.screenshotId) {
+            const ssId = incoming.entryScreenshotId || incoming.screenshotId
             try {
-                await dbUpdate('screenshots', incoming.screenshotId, {
+                await dbUpdate('screenshots', ssId, {
                     name: `${dateUnix}_${histPos.symbol}`,
                     dateUnixDay: dateUnix
                 })
@@ -362,7 +386,7 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
                 await dbCreate('tags', {
                     dateUnix: dateUnix,
                     tradeId: tradeId,
-                    tags: incoming.tags.map(t => t.id)
+                    tags: incoming.tags.map(t => typeof t === 'object' ? t.id : t)
                 })
             } catch (e) {
                 console.log(' -> Tag-Verknüpfung fehlgeschlagen:', e)
@@ -421,53 +445,8 @@ export async function useDeleteIncomingPosition(objectId) {
 }
 
 /**
- * Restore pending evaluations after page reload.
- * Re-populates the evaluation queue from DB records:
- * - status: 'open' + openingEvalDone: 0 → Opening-Popups
- * - status: 'pending_evaluation' → Closing-Popups
- */
-export async function useRestorePendingEvaluations() {
-    if (currentUser.value?.showTradePopups === 0) return
-
-    try {
-        // Opening evaluations: open positions that haven't shown the popup yet
-        const openPositions = await dbFind('incoming_positions', { equalTo: { status: 'open', openingEvalDone: 0 } })
-        for (const pos of openPositions) {
-            const alreadyInQueue = evaluationQueue.some(q => q.type === 'opening' && q.positionObjectId === pos.objectId)
-            if (!alreadyInQueue) {
-                evaluationQueue.push({
-                    type: 'opening',
-                    positionObjectId: pos.objectId,
-                    position: { ...pos }
-                })
-            }
-        }
-
-        // Closing evaluations: positions waiting for closing popup
-        const pendingPositions = await dbFind('incoming_positions', { equalTo: { status: 'pending_evaluation' } })
-        for (const pos of pendingPositions) {
-            const alreadyInQueue = evaluationQueue.some(q => q.type === 'closing' && q.positionObjectId === pos.objectId)
-            if (!alreadyInQueue) {
-                evaluationQueue.push({
-                    type: 'closing',
-                    positionObjectId: pos.objectId,
-                    position: { ...pos },
-                    historyData: pos.historyData || {}
-                })
-            }
-        }
-
-        if (evaluationQueue.length > 0) {
-            console.log(` -> ${evaluationQueue.length} ausstehende Bewertungen wiederhergestellt`)
-        }
-    } catch (error) {
-        console.error(' -> Fehler beim Wiederherstellen ausstehender Bewertungen:', error)
-    }
-}
-
-/**
  * Start global polling for position changes (used in DashboardLayout).
- * Runs every 60 seconds. Detects new/closed positions and populates queue.
+ * Runs every 60 seconds. Detects new/closed positions and updates counters.
  * Only active when showTradePopups is enabled.
  */
 export function useStartGlobalPolling() {
@@ -505,15 +484,29 @@ export function useStopGlobalPolling() {
 }
 
 /**
- * Transfer metadata from closing evaluation popup to the trade record.
- * Called by TradeEvalPopup after user submits closing evaluation.
+ * Transfer metadata from closing evaluation to the trade record.
+ * Called when user completes closing evaluation on the Pendente Trades page.
+ * Includes both opening and closing metadata fields.
  */
-export async function useTransferClosingMetadata(incoming, histPos, { note, tags, satisfaction, stressLevel, closingNote }) {
+export async function useTransferClosingMetadata(incoming, histPos, {
+    note = '',
+    tags = [],
+    satisfaction = null,
+    stressLevel = 0,
+    closingNote = '',
+    closingStressLevel = 0,
+    closingEmotionLevel = 0,
+    closingFeelings = '',
+    closingTimeframe = '',
+    closingPlaybook = '',
+    closingScreenshotId = '',
+    closingTags = [],
+}) {
     const closeTime = parseInt(histPos.mtime || histPos.ctime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
     const tradeId = `t${dateUnix}_0_${histPos.positionId}`
 
-    // Build combined note HTML for backwards compatibility (playbook-note-content display)
+    // Build combined note HTML for backwards compatibility
     let noteText = ''
     if (incoming.playbook && incoming.playbook.trim()) {
         noteText += incoming.playbook
@@ -525,19 +518,27 @@ export async function useTransferClosingMetadata(incoming, histPos, { note, tags
         noteText = '<p>-</p>'
     }
 
-    // Save note with structured metadata fields
+    // Save note with structured metadata fields (opening + closing)
     await dbCreate('notes', {
         dateUnix: dateUnix,
         tradeId: tradeId,
         note: noteText,
+        // Opening fields
         entryStressLevel: incoming.stressLevel || 0,
         emotionLevel: incoming.emotionLevel || 0,
         entryNote: incoming.entryNote || '',
         feelings: incoming.feelings || '',
         playbook: incoming.playbook || '',
         timeframe: incoming.entryTimeframe || '',
-        screenshotId: incoming.screenshotId || '',
+        screenshotId: incoming.entryScreenshotId || incoming.screenshotId || '',
+        // Closing fields
         closingNote: closingNote || incoming.closingNote || '',
+        closingStressLevel: closingStressLevel,
+        closingEmotionLevel: closingEmotionLevel,
+        closingFeelings: closingFeelings,
+        closingTimeframe: closingTimeframe,
+        closingPlaybook: closingPlaybook,
+        closingScreenshotId: closingScreenshotId,
     })
 
     // Save satisfaction
@@ -549,28 +550,51 @@ export async function useTransferClosingMetadata(incoming, histPos, { note, tags
         })
     }
 
-    // Save tags
-    if (tags && Array.isArray(tags) && tags.length > 0) {
+    // Save tags (combined opening + closing tags)
+    const allTags = [
+        ...(tags || []).map(t => typeof t === 'object' ? t.id : t),
+        ...(closingTags || []).map(t => typeof t === 'object' ? t.id : t),
+    ]
+    // Deduplicate
+    const uniqueTags = [...new Set(allTags)]
+    if (uniqueTags.length > 0) {
         await dbCreate('tags', {
             dateUnix: dateUnix,
             tradeId: tradeId,
-            tags: tags.map(t => typeof t === 'object' ? t.id : t)
+            tags: uniqueTags
         })
     }
 
-    // Link screenshot if present
-    if (incoming.screenshotId) {
+    // Link entry screenshot if present
+    const entryScreenshotId = incoming.entryScreenshotId || incoming.screenshotId
+    if (entryScreenshotId) {
         try {
-            await dbUpdate('screenshots', incoming.screenshotId, {
-                name: `${dateUnix}_${histPos.symbol}`,
+            await dbUpdate('screenshots', entryScreenshotId, {
+                name: `${dateUnix}_${histPos.symbol}_entry`,
                 dateUnixDay: dateUnix
             })
         } catch (e) {
-            console.log(' -> Screenshot-Verknüpfung fehlgeschlagen:', e)
+            console.log(' -> Entry-Screenshot-Verknüpfung fehlgeschlagen:', e)
+        }
+    }
+
+    // Link closing screenshot if present
+    if (closingScreenshotId) {
+        try {
+            await dbUpdate('screenshots', closingScreenshotId, {
+                name: `${dateUnix}_${histPos.symbol}_closing`,
+                dateUnixDay: dateUnix
+            })
+        } catch (e) {
+            console.log(' -> Closing-Screenshot-Verknüpfung fehlgeschlagen:', e)
         }
     }
 
     // Delete incoming position (evaluation complete)
     await dbDelete('incoming_positions', incoming.objectId)
+
+    // Update counters
+    await useUpdatePendingCounts()
+
     console.log(` -> Bewertung abgeschlossen für ${incoming.symbol}`)
 }

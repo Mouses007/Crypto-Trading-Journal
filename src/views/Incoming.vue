@@ -2,21 +2,25 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
-import { spinnerLoadingPage, incomingPositions, incomingPollingActive, incomingLastFetched, availableTags, allTradeTimeframes, selectedTradeTimeframes } from '../stores/globals'
+import { spinnerLoadingPage } from '../stores/ui.js'
+import { allTradeTimeframes, selectedTradeTimeframes } from '../stores/filters.js'
+import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
 import { useFetchOpenPositions, useGetIncomingPositions, useUpdateIncomingPosition, useDeleteIncomingPosition, useTransferClosingMetadata } from '../utils/incoming'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
 import { dbCreate, dbUpdate } from '../utils/db.js'
-import dayjs from 'dayjs'
+import dayjs from '../utils/dayjs-setup.js'
 import Quill from 'quill'
+import { sanitizeHtml } from '../utils/sanitize'
 
 let pollingInterval = null
 const expandedId = ref(null)
-const quillInstances = {}
+const quillInstances = {} // key: positionId_opening / positionId_closing
 const incomingError = ref(null)
 const savingId = ref(null)
 
-// Screenshot upload state
-const screenshotPreviews = ref({}) // positionId → base64 preview
+// Screenshot upload state — separate previews for entry and closing
+const entryScreenshotPreviews = ref({}) // positionId → base64
+const closingScreenshotPreviews = ref({}) // positionId → base64
 
 // Timeframes aus Settings (oder Fallback auf alle)
 const timeframeOptions = computed(() => {
@@ -71,23 +75,37 @@ async function manualRefresh() {
 }
 
 async function toggleExpand(positionId) {
-    // Close current: clean up Quill instance (v-if destroys the DOM)
+    // Close current: clean up Quill instances
     if (expandedId.value && expandedId.value !== positionId) {
-        delete quillInstances[expandedId.value]
+        delete quillInstances[expandedId.value + '_opening']
+        delete quillInstances[expandedId.value + '_closing']
     }
 
     if (expandedId.value === positionId) {
-        delete quillInstances[positionId]
+        delete quillInstances[positionId + '_opening']
+        delete quillInstances[positionId + '_closing']
         expandedId.value = null
         return
     }
 
     expandedId.value = positionId
 
-    // Initialize Quill for this position after DOM renders
+    // Initialize Quill editors after DOM renders
     await nextTick()
-    const editorEl = document.getElementById('quillIncoming-' + positionId)
-    if (editorEl && !quillInstances[positionId]) {
+    initQuillEditor(positionId, 'opening')
+    // Only init closing Quill if position is pending evaluation
+    const pos = incomingPositions.find(p => p.positionId === positionId)
+    if (pos && pos.status === 'pending_evaluation') {
+        initQuillEditor(positionId, 'closing')
+    }
+}
+
+function initQuillEditor(positionId, type) {
+    const editorId = `quillIncoming-${positionId}-${type}`
+    const key = `${positionId}_${type}`
+    const editorEl = document.getElementById(editorId)
+
+    if (editorEl && !quillInstances[key]) {
         const quill = new Quill(editorEl, {
             modules: {
                 toolbar: [
@@ -99,18 +117,23 @@ async function toggleExpand(positionId) {
             theme: 'snow'
         })
         quill.root.setAttribute('spellcheck', true)
-        quillInstances[positionId] = quill
+        quillInstances[key] = quill
 
-        // Load existing playbook content
+        // Load existing content
         const pos = incomingPositions.find(p => p.positionId === positionId)
-        if (pos && pos.playbook) {
-            quill.root.innerHTML = pos.playbook
+        if (pos) {
+            if (type === 'opening' && pos.playbook) {
+                quill.root.innerHTML = sanitizeHtml(pos.playbook)
+            } else if (type === 'closing' && pos.closingPlaybook) {
+                quill.root.innerHTML = sanitizeHtml(pos.closingPlaybook)
+            }
         }
     }
 }
 
+// ===== OPENING FIELD HANDLERS =====
+
 function updateStress(pos, level) {
-    // Toggle: clicking same level resets to 0
     const newLevel = pos.stressLevel === level ? 0 : level
     pos.stressLevel = newLevel
     useUpdateIncomingPosition(pos.objectId, { stressLevel: newLevel })
@@ -128,52 +151,128 @@ function updateTimeframe(pos, value) {
     useUpdateIncomingPosition(pos.objectId, { entryTimeframe: newValue })
 }
 
+// ===== CLOSING FIELD HANDLERS =====
+
+function updateClosingStress(pos, level) {
+    const newLevel = (pos.closingStressLevel || 0) === level ? 0 : level
+    pos.closingStressLevel = newLevel
+    useUpdateIncomingPosition(pos.objectId, { closingStressLevel: newLevel })
+}
+
+function updateClosingEmotionLevel(pos, level) {
+    const newLevel = (pos.closingEmotionLevel || 0) === level ? 0 : level
+    pos.closingEmotionLevel = newLevel
+    useUpdateIncomingPosition(pos.objectId, { closingEmotionLevel: newLevel })
+}
+
+function updateClosingTimeframe(pos, value) {
+    const newValue = (pos.closingTimeframe || '') === value ? '' : value
+    pos.closingTimeframe = newValue
+    useUpdateIncomingPosition(pos.objectId, { closingTimeframe: newValue })
+}
+
+// ===== TAG HANDLERS =====
+
 function addTag(pos, tag) {
     if (!pos.tags) pos.tags = []
-    // Don't add duplicate
     if (pos.tags.some(t => t.id === tag.id)) return
     pos.tags.push({ id: tag.id, name: tag.name })
 }
 
-function removeTag(pos, idx, groupName) {
+function removeTag(pos, idx) {
     if (!pos.tags) return
-    if (groupName) {
-        const groupTags = getTagsForGroup(pos, groupName)
-        if (idx >= 0 && idx < groupTags.length) {
-            const tagToRemove = groupTags[idx]
-            const realIdx = pos.tags.findIndex(t => t.id === tagToRemove.id)
-            if (realIdx !== -1) pos.tags.splice(realIdx, 1)
-        }
-    } else {
-        pos.tags.splice(idx, 1)
-    }
+    pos.tags.splice(idx, 1)
 }
 
-function getTagsForGroup(pos, groupName) {
-    return (pos.tags || []).filter(t => {
-        const info = useGetTagInfo(t.id)
-        return info?.tagGroupName === groupName
-    })
+function addClosingTag(pos, tag) {
+    if (!pos.closingTags) pos.closingTags = []
+    if (pos.closingTags.some(t => t.id === tag.id)) return
+    pos.closingTags.push({ id: tag.id, name: tag.name })
 }
 
-function getStrategieTags() {
-    const group = availableTags.find(g => g.name === 'Strategie')
-    return group ? group.tags : []
-}
-
-function getTradeAbschlussTags() {
-    const group = availableTags.find(g => g.name === 'Trade Abschluss')
-    return group ? group.tags : []
-}
-
-function updateSatisfaction(pos, val) {
-    pos.satisfaction = pos.satisfaction === val ? null : val
+function removeClosingTag(pos, idx) {
+    if (!pos.closingTags) return
+    pos.closingTags.splice(idx, 1)
 }
 
 function getTagColor(tagId) {
     const info = useGetTagInfo(tagId)
     return info?.groupColor || '#6c757d'
 }
+
+// ===== SCREENSHOT HANDLERS =====
+
+async function handleEntryScreenshotUpload(event, pos) {
+    const file = event.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+        const base64 = reader.result
+
+        const screenshot = await dbCreate('screenshots', {
+            name: `incoming_entry_${pos.positionId}`,
+            symbol: pos.symbol,
+            side: pos.side === 'LONG' ? 'B' : 'SS',
+            originalBase64: base64,
+            annotatedBase64: '',
+            markersOnly: 1,
+            maState: {},
+            dateUnix: dayjs().unix(),
+            dateUnixDay: dayjs().utc().startOf('day').unix()
+        })
+
+        await useUpdateIncomingPosition(pos.objectId, { entryScreenshotId: screenshot.objectId })
+        pos.entryScreenshotId = screenshot.objectId
+        entryScreenshotPreviews.value[pos.positionId] = base64
+    }
+    reader.readAsDataURL(file)
+}
+
+async function removeEntryScreenshot(pos) {
+    if (pos.entryScreenshotId) {
+        await useUpdateIncomingPosition(pos.objectId, { entryScreenshotId: '' })
+        pos.entryScreenshotId = ''
+        delete entryScreenshotPreviews.value[pos.positionId]
+    }
+}
+
+async function handleClosingScreenshotUpload(event, pos) {
+    const file = event.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+        const base64 = reader.result
+
+        const screenshot = await dbCreate('screenshots', {
+            name: `incoming_closing_${pos.positionId}`,
+            symbol: pos.symbol,
+            side: pos.side === 'LONG' ? 'B' : 'SS',
+            originalBase64: base64,
+            annotatedBase64: '',
+            markersOnly: 1,
+            maState: {},
+            dateUnix: dayjs().unix(),
+            dateUnixDay: dayjs().utc().startOf('day').unix()
+        })
+
+        await useUpdateIncomingPosition(pos.objectId, { closingScreenshotId: screenshot.objectId })
+        pos.closingScreenshotId = screenshot.objectId
+        closingScreenshotPreviews.value[pos.positionId] = base64
+    }
+    reader.readAsDataURL(file)
+}
+
+async function removeClosingScreenshot(pos) {
+    if (pos.closingScreenshotId) {
+        await useUpdateIncomingPosition(pos.objectId, { closingScreenshotId: '' })
+        pos.closingScreenshotId = ''
+        delete closingScreenshotPreviews.value[pos.positionId]
+    }
+}
+
+// ===== SAVE / COMPLETE =====
 
 async function saveMetadata(pos) {
     savingId.value = pos.objectId
@@ -183,24 +282,36 @@ async function saveMetadata(pos) {
         emotionLevel: pos.emotionLevel || 0,
         entryTimeframe: pos.entryTimeframe || '',
         tags: pos.tags || [],
-        closingNote: pos.closingNote || '',
-        satisfaction: pos.satisfaction === true ? 1 : pos.satisfaction === false ? 0 : (pos.satisfaction ?? -1),
         skipEvaluation: pos.skipEvaluation || 0,
+        // Closing fields
+        closingStressLevel: pos.closingStressLevel || 0,
+        closingEmotionLevel: pos.closingEmotionLevel || 0,
+        closingFeelings: pos.closingFeelings || '',
+        closingTimeframe: pos.closingTimeframe || '',
+        closingTags: pos.closingTags || [],
     }
 
-    // Get Quill content
-    if (quillInstances[pos.positionId]) {
-        data.playbook = quillInstances[pos.positionId].root.innerHTML
+    // Get opening Quill content
+    const openingKey = pos.positionId + '_opening'
+    if (quillInstances[openingKey]) {
+        data.playbook = quillInstances[openingKey].root.innerHTML
+    }
+
+    // Get closing Quill content
+    const closingKey = pos.positionId + '_closing'
+    if (quillInstances[closingKey]) {
+        data.closingPlaybook = quillInstances[closingKey].root.innerHTML
     }
 
     await useUpdateIncomingPosition(pos.objectId, data)
     savingId.value = null
 
     // Save Quill content to pos and collapse card
-    if (data.playbook) {
-        pos.playbook = data.playbook
-    }
-    delete quillInstances[pos.positionId]
+    if (data.playbook) pos.playbook = data.playbook
+    if (data.closingPlaybook) pos.closingPlaybook = data.closingPlaybook
+
+    delete quillInstances[openingKey]
+    delete quillInstances[closingKey]
     expandedId.value = null
 }
 
@@ -218,12 +329,21 @@ async function completeClosingEvaluation(pos) {
         emotionLevel: pos.emotionLevel || 0,
         entryTimeframe: pos.entryTimeframe || '',
         tags: pos.tags || [],
-        closingNote: pos.closingNote || '',
-        satisfaction: pos.satisfaction === true ? 1 : pos.satisfaction === false ? 0 : (pos.satisfaction ?? -1),
+        closingStressLevel: pos.closingStressLevel || 0,
+        closingEmotionLevel: pos.closingEmotionLevel || 0,
+        closingFeelings: pos.closingFeelings || '',
+        closingTimeframe: pos.closingTimeframe || '',
+        closingTags: pos.closingTags || [],
     }
-    if (quillInstances[pos.positionId]) {
-        data.playbook = quillInstances[pos.positionId].root.innerHTML
+    const openingKey = pos.positionId + '_opening'
+    const closingKey = pos.positionId + '_closing'
+    if (quillInstances[openingKey]) {
+        data.playbook = quillInstances[openingKey].root.innerHTML
         pos.playbook = data.playbook
+    }
+    if (quillInstances[closingKey]) {
+        data.closingPlaybook = quillInstances[closingKey].root.innerHTML
+        pos.closingPlaybook = data.closingPlaybook
     }
     await useUpdateIncomingPosition(pos.objectId, data)
 
@@ -236,7 +356,14 @@ async function completeClosingEvaluation(pos) {
             tags: pos.tags || [],
             satisfaction: pos.satisfaction,
             stressLevel: pos.stressLevel || 0,
-            closingNote: pos.closingNote || '',
+            closingNote: pos.closingPlaybook || '',
+            closingStressLevel: pos.closingStressLevel || 0,
+            closingEmotionLevel: pos.closingEmotionLevel || 0,
+            closingFeelings: pos.closingFeelings || '',
+            closingTimeframe: pos.closingTimeframe || '',
+            closingPlaybook: pos.closingPlaybook || '',
+            closingScreenshotId: pos.closingScreenshotId || '',
+            closingTags: pos.closingTags || [],
         }
     )
 
@@ -246,49 +373,13 @@ async function completeClosingEvaluation(pos) {
         incomingPositions.splice(idx, 1)
     }
 
-    delete quillInstances[pos.positionId]
+    delete quillInstances[openingKey]
+    delete quillInstances[closingKey]
     expandedId.value = null
     closingId.value = null
 }
 
-async function handleScreenshotUpload(event, pos) {
-    const file = event.target.files[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onloadend = async () => {
-        const base64 = reader.result
-
-        // Create screenshot in DB
-        const screenshot = await dbCreate('screenshots', {
-            name: `incoming_${pos.positionId}`,
-            symbol: pos.symbol,
-            side: pos.side === 'LONG' ? 'B' : 'SS',
-            originalBase64: base64,
-            annotatedBase64: '',
-            markersOnly: 1,
-            maState: {},
-            dateUnix: dayjs().unix(),
-            dateUnixDay: dayjs().utc().startOf('day').unix()
-        })
-
-        // Link screenshot to position
-        await useUpdateIncomingPosition(pos.objectId, { screenshotId: screenshot.objectId })
-        pos.screenshotId = screenshot.objectId
-
-        // Store preview
-        screenshotPreviews.value[pos.positionId] = base64
-    }
-    reader.readAsDataURL(file)
-}
-
-async function removeScreenshot(pos) {
-    if (pos.screenshotId) {
-        await useUpdateIncomingPosition(pos.objectId, { screenshotId: '' })
-        pos.screenshotId = ''
-        delete screenshotPreviews.value[pos.positionId]
-    }
-}
+// ===== FORMATTING =====
 
 function formatCurrency(val) {
     const num = parseFloat(val || 0)
@@ -301,12 +392,10 @@ function formatTime(date) {
 }
 
 function getPositionDate(pos) {
-    // Try bitunixData.ctime first (ms timestamp from API)
     const ctime = pos.bitunixData?.ctime
     if (ctime) {
         return dayjs(parseInt(ctime)).format('DD.MM.YYYY')
     }
-    // Fallback to DB createdAt
     if (pos.createdAt) {
         return dayjs(pos.createdAt).format('DD.MM.YYYY')
     }
@@ -320,7 +409,7 @@ function getPositionDate(pos) {
             <!-- Header -->
             <div class="row mb-3 align-items-center">
                 <div class="col">
-                    <h5 class="mb-0">Offene Positionen</h5>
+                    <h5 class="mb-0">Pendente Trades</h5>
                     <small v-if="incomingLastFetched" class="text-muted">
                         Zuletzt aktualisiert: {{ formatTime(incomingLastFetched) }}
                         <span v-if="incomingPollingActive" class="spinner-border spinner-border-sm ms-2" role="status"></span>
@@ -383,25 +472,29 @@ function getPositionDate(pos) {
                     <small class="incoming-info">Stress: </small>
                     <template v-for="n in 10" :key="n">
                         <span class="stress-dot" :class="n <= pos.stressLevel ? 'active' : 'inactive'">
-                            <span class="stress-number">{{ n }}</span>●
+                            <span class="stress-number">{{ n }}</span>&#x25CF;
                         </span>
                         <span v-if="n < 10" class="stress-dot stress-spacer" :class="n <= pos.stressLevel ? 'active' : 'inactive'">
-                            <span class="stress-number">&nbsp;</span>●
+                            <span class="stress-number">&nbsp;</span>&#x25CF;
                         </span>
                     </template>
                 </div>
 
-                <!-- Expanded detail section -->
+                <!-- ===== EXPANDED DETAIL SECTION ===== -->
                 <div v-if="expandedId === pos.positionId" class="mt-2 incoming-meta-section">
 
-                    <!-- ===== ERÖFFNUNGSBEWERTUNG ===== -->
-                    <p class="pb-edit-label fw-bold mb-2" style="color: var(--white-80); font-size: 0.95rem; border-bottom: 1px solid var(--white-10);">Eröffnungsbewertung</p>
+                    <!-- ========== ERÖFFNUNGSBEWERTUNG ========== -->
+                    <div class="opening-eval-section p-3 mb-2">
+                    <div class="d-flex align-items-center mb-3">
+                        <i class="uil uil-unlock-alt me-2" style="color: var(--green-color, #10b981); font-size: 1.1rem;"></i>
+                        <span class="fw-bold" style="font-size: 0.95rem;">Eröffnungsbewertung</span>
+                    </div>
 
-                    <!-- Stress Level -->
+                    <!-- Stresslevel -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">Stresslevel</label>
                         <div class="d-flex align-items-end flex-wrap">
-                            <template v-for="n in 10" :key="n">
+                            <template v-for="n in 10" :key="'os'+n">
                                 <span @click.stop="updateStress(pos, n)"
                                     class="stress-dot pointerClass"
                                     :class="n <= pos.stressLevel ? 'active' : 'inactive'">
@@ -415,25 +508,29 @@ function getPositionDate(pos) {
                         </div>
                     </div>
 
-                    <!-- Tags Strategie -->
+                    <!-- Tags -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">Tags</label>
                         <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
-                            <span v-for="(tag, idx) in getTagsForGroup(pos, 'Strategie')" :key="tag.id"
+                            <span v-for="(tag, idx) in (pos.tags || [])" :key="tag.id"
                                 class="badge me-1 pointerClass"
                                 :style="{ backgroundColor: getTagColor(tag.id) }"
-                                @click.stop="removeTag(pos, idx, 'Strategie')">
+                                @click.stop="removeTag(pos, idx)">
                                 {{ tag.name }} <span class="ms-1">&times;</span>
                             </span>
                         </div>
                         <select class="form-select form-select-sm"
                             @change.stop="addTag(pos, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
                             <option selected disabled>Tag hinzufügen...</option>
-                            <option v-for="tag in getStrategieTags()" :key="tag.id"
-                                :value="JSON.stringify({ id: tag.id, name: tag.name })"
-                                :disabled="(pos.tags || []).some(t => t.id === tag.id)">
-                                {{ tag.name }}
-                            </option>
+                            <template v-for="group in availableTags" :key="group.id">
+                                <optgroup :label="group.name">
+                                    <option v-for="tag in group.tags" :key="tag.id"
+                                        :value="JSON.stringify({ id: tag.id, name: tag.name })"
+                                        :disabled="(pos.tags || []).some(t => t.id === tag.id)">
+                                        {{ tag.name }}
+                                    </option>
+                                </optgroup>
+                            </template>
                         </select>
                     </div>
 
@@ -454,7 +551,7 @@ function getPositionDate(pos) {
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">Emotionslevel</label>
                         <div class="d-flex align-items-end flex-wrap">
-                            <template v-for="n in 10" :key="'emo'+n">
+                            <template v-for="n in 10" :key="'oe'+n">
                                 <span @click.stop="updateEmotionLevel(pos, n)"
                                     class="stress-dot pointerClass"
                                     :class="n <= pos.emotionLevel ? 'active' : 'inactive'">
@@ -468,85 +565,94 @@ function getPositionDate(pos) {
                         </div>
                     </div>
 
-                    <!-- Gefühle -->
+                    <!-- Emotionen -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">Emotionen</label>
                         <textarea class="form-control form-control-sm" v-model="pos.feelings"
                             placeholder="Wie fühlst du dich bei diesem Trade?" rows="2"></textarea>
                     </div>
 
-                    <!-- Playbook Notiz -->
+                    <!-- Notiz (Quill Editor) -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">Notiz</label>
-                        <div :id="'quillIncoming-' + pos.positionId" class="quill-incoming"></div>
+                        <div :id="'quillIncoming-' + pos.positionId + '-opening'" class="quill-incoming"></div>
                     </div>
 
-                    <!-- ===== ABSCHLUSSBEWERTUNG ===== -->
-                    <p class="pb-edit-label fw-bold mb-2 mt-3" style="color: var(--white-80); font-size: 0.95rem; border-bottom: 1px solid var(--white-10);">Abschlussbewertung</p>
-
-                    <!-- Zufriedenheit -->
-                    <div class="pb-edit-section">
-                        <label class="pb-edit-label">Zufriedenheit</label>
-                        <div class="d-flex gap-3">
-                            <span class="pointerClass fs-4"
-                                :class="pos.satisfaction === true || pos.satisfaction === 1 ? 'greenTrade' : 'text-muted'"
-                                @click.stop="updateSatisfaction(pos, true)">
-                                <i class="uil uil-thumbs-up"></i>
-                            </span>
-                            <span class="pointerClass fs-4"
-                                :class="pos.satisfaction === false || pos.satisfaction === 0 ? 'redTrade' : 'text-muted'"
-                                @click.stop="updateSatisfaction(pos, false)">
-                                <i class="uil uil-thumbs-down"></i>
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Trade Abschluss Tags -->
-                    <div class="pb-edit-section">
-                        <label class="pb-edit-label">Trade Abschluss</label>
-                        <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
-                            <span v-for="(tag, idx) in getTagsForGroup(pos, 'Trade Abschluss')" :key="tag.id"
-                                class="badge me-1 pointerClass"
-                                :style="{ backgroundColor: getTagColor(tag.id) }"
-                                @click.stop="removeTag(pos, idx, 'Trade Abschluss')">
-                                {{ tag.name }} <span class="ms-1">&times;</span>
-                            </span>
-                        </div>
-                        <select class="form-select form-select-sm"
-                            @change.stop="addTag(pos, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
-                            <option selected disabled>Tag hinzufügen...</option>
-                            <option v-for="tag in getTradeAbschlussTags()" :key="tag.id"
-                                :value="JSON.stringify({ id: tag.id, name: tag.name })"
-                                :disabled="(pos.tags || []).some(t => t.id === tag.id)">
-                                {{ tag.name }}
-                            </option>
-                        </select>
-                    </div>
-
-                    <!-- Abschlussnotiz -->
-                    <div class="pb-edit-section">
-                        <label class="pb-edit-label">Abschlussnotiz</label>
-                        <textarea class="form-control form-control-sm" v-model="pos.closingNote"
-                            placeholder="Notizen zum Trade-Abschluss..." rows="2"></textarea>
-                    </div>
-
-                    <!-- Screenshot -->
+                    <!-- Eröffnungs-Screenshot -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">Screenshot</label>
-                        <div v-if="pos.screenshotId">
-                            <img v-if="screenshotPreviews[pos.positionId]"
-                                :src="screenshotPreviews[pos.positionId]"
+                        <div v-if="pos.entryScreenshotId">
+                            <img v-if="entryScreenshotPreviews[pos.positionId]"
+                                :src="entryScreenshotPreviews[pos.positionId]"
                                 class="img-fluid rounded mb-1" style="max-height: 200px;" />
                             <span v-else class="badge bg-success">Screenshot verknüpft</span>
-                            <button class="btn btn-sm btn-outline-danger ms-2" @click.stop="removeScreenshot(pos)">
+                            <button class="btn btn-sm btn-outline-danger ms-2" @click.stop="removeEntryScreenshot(pos)">
                                 <i class="uil uil-times"></i> Entfernen
                             </button>
                         </div>
                         <input v-else type="file" accept="image/*" class="form-control form-control-sm"
-                            @change="handleScreenshotUpload($event, pos)" />
+                            @change="handleEntryScreenshotUpload($event, pos)" />
                     </div>
 
-                    <!-- Save / Complete buttons -->
+                    </div><!-- /opening-eval-section -->
+
+                    <!-- ========== ABSCHLUSSBEWERTUNG ========== -->
+                    <div v-if="pos.status === 'pending_evaluation'" class="closing-eval-section mt-3 p-3">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="uil uil-lock-alt me-2" style="color: var(--blue-color); font-size: 1.1rem;"></i>
+                            <span class="fw-bold" style="font-size: 0.95rem;">Abschlussbewertung</span>
+                        </div>
+
+                        <!-- Tags -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">Tags</label>
+                            <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                                <span v-for="(tag, idx) in (pos.closingTags || [])" :key="tag.id"
+                                    class="badge me-1 pointerClass"
+                                    :style="{ backgroundColor: getTagColor(tag.id) }"
+                                    @click.stop="removeClosingTag(pos, idx)">
+                                    {{ tag.name }} <span class="ms-1">&times;</span>
+                                </span>
+                            </div>
+                            <select class="form-select form-select-sm"
+                                @change.stop="addClosingTag(pos, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
+                                <option selected disabled>Tag hinzufügen...</option>
+                                <template v-for="group in availableTags" :key="group.id">
+                                    <optgroup :label="group.name">
+                                        <option v-for="tag in group.tags" :key="tag.id"
+                                            :value="JSON.stringify({ id: tag.id, name: tag.name })"
+                                            :disabled="(pos.closingTags || []).some(t => t.id === tag.id)">
+                                            {{ tag.name }}
+                                        </option>
+                                    </optgroup>
+                                </template>
+                            </select>
+                        </div>
+
+                        <!-- Notiz (Quill Editor) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">Notiz</label>
+                            <div :id="'quillIncoming-' + pos.positionId + '-closing'" class="quill-incoming"></div>
+                        </div>
+
+                        <!-- Abschluss-Screenshot -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">Screenshot</label>
+                            <div v-if="pos.closingScreenshotId">
+                                <img v-if="closingScreenshotPreviews[pos.positionId]"
+                                    :src="closingScreenshotPreviews[pos.positionId]"
+                                    class="img-fluid rounded mb-1" style="max-height: 200px;" />
+                                <span v-else class="badge bg-success">Screenshot verknüpft</span>
+                                <button class="btn btn-sm btn-outline-danger ms-2" @click.stop="removeClosingScreenshot(pos)">
+                                    <i class="uil uil-times"></i> Entfernen
+                                </button>
+                            </div>
+                            <input v-else type="file" accept="image/*" class="form-control form-control-sm"
+                                @change="handleClosingScreenshotUpload($event, pos)" />
+                        </div>
+                    </div>
+
+                    <!-- ===== SAVE / COMPLETE BUTTONS ===== -->
                     <div class="d-flex justify-content-between align-items-center mt-2">
                         <div class="d-flex align-items-center gap-3">
                             <button v-if="pos.status === 'pending_evaluation'"
@@ -585,3 +691,18 @@ function getPositionDate(pos) {
         <SpinnerLoadingPage />
     </div>
 </template>
+
+<style scoped>
+.opening-eval-section {
+    background: var(--black-bg-3, #1a1a2e);
+    border: 1px solid var(--white-10, rgba(255,255,255,0.06));
+    border-left: 3px solid var(--green-color, #10b981);
+    border-radius: var(--border-radius, 6px);
+}
+.closing-eval-section {
+    background: var(--black-bg-3, #1a1a2e);
+    border: 1px solid var(--white-10, rgba(255,255,255,0.06));
+    border-left: 3px solid var(--blue-color, #3b82f6);
+    border-radius: var(--border-radius, 6px);
+}
+</style>

@@ -1,12 +1,9 @@
 
-import { tradesData, timeZoneTrade } from "../stores/globals.js"
+import { timeZoneTrade } from "../stores/ui.js"
+import { tradesData } from "../stores/trades.js"
 
 /* MODULES */
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
+import dayjs from './dayjs-setup.js'
 import Papa from 'papaparse'
 
 /**

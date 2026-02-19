@@ -1,24 +1,13 @@
-import { pageId, spinnerLoadingPage, selectedRange, selectedDateRange, filteredTrades, filteredTradesTrades, selectedPositions, selectedAccounts, pAndL, queryLimit, blotter, totals, totalsByDate, groups, profitAnalysis, timeFrame, timeZoneTrade, hasData, satisfactionArray, satisfactionTradeArray, tags, filteredTradesDaily, dailyPagination, dailyQueryLimit, endOfList, excursions, selectedTags, availableTags, selectedItem, imports, daysBack } from "../stores/globals.js"
-import { useMountDashboard, useMountDaily, useMountCalendar, useDateTimeFormat } from "./utils.js";
+import { pageId, spinnerLoadingPage, queryLimit, timeZoneTrade, hasData, dailyPagination, dailyQueryLimit, endOfList, selectedItem } from "../stores/ui.js"
+import { selectedRange, selectedDateRange, selectedPositions, selectedAccounts, selectedTags, daysBack } from "../stores/filters.js"
+import { filteredTrades, filteredTradesTrades, pAndL, blotter, totals, totalsByDate, groups, profitAnalysis, timeFrame, satisfactionArray, satisfactionTradeArray, tags, filteredTradesDaily, excursions, availableTags, imports } from "../stores/trades.js"
+import { useDateTimeFormat } from "./formatters.js";
+/* useRefreshTrades moved to mountOrchestration.js */
 import { useCreateBlotter, useCreatePnL } from "./addTrades.js"
 import { dbFind, dbFirst, dbDelete, dbDeleteWhere } from './db.js'
 
 /* MODULES */
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from './dayjs-setup.js'
 import _ from 'lodash'
 import { useGetTagInfo } from "./daily.js";
 
@@ -50,6 +39,43 @@ export async function useGetFilteredTrades(param) {
         filteredTrades.length = 0
         filteredTradesDaily.length = 0
         filteredTradesTrades.length = 0
+        const selectedTagsArray = Object.values(selectedTags.value)
+        const selectedTagsSet = new Set(selectedTagsArray)
+        const noTagsSelected = selectedTagsSet.has("t000t")
+
+        const tagsByTradeId = new Map()
+        const tagsByDateUnix = new Map()
+        for (const tagRow of tags) {
+            if (tagRow.tradeId != null) {
+                tagsByTradeId.set(String(tagRow.tradeId), Array.isArray(tagRow.tags) ? tagRow.tags : [])
+            }
+            if (tagRow.dateUnix != null) {
+                tagsByDateUnix.set(String(tagRow.dateUnix), Array.isArray(tagRow.tags) ? tagRow.tags : [])
+            }
+        }
+
+        const satisfactionByDateUnix = new Map()
+        for (const item of satisfactionArray) {
+            satisfactionByDateUnix.set(String(item.dateUnix), item.satisfaction)
+        }
+
+        const satisfactionByTradeId = new Map()
+        for (const item of satisfactionTradeArray) {
+            satisfactionByTradeId.set(String(item.tradeId), item.satisfaction)
+        }
+
+        const excursionByTradeId = new Map()
+        for (const item of excursions) {
+            excursionByTradeId.set(String(item.tradeId), item)
+        }
+
+        const availableTagById = new Map()
+        for (const group of availableTags) {
+            if (!group?.tags) continue
+            for (const tag of group.tags) {
+                availableTagById.set(tag.id, tag.name)
+            }
+        }
 
         let loopTrades = (param1) => {
             //console.log("param1 "+JSON.stringify(param1))
@@ -71,14 +97,7 @@ export async function useGetFilteredTrades(param) {
                     if (pageId.value == "daily") {
 
                         //Adding satisfaction for daily page
-                        temp.satisfaction = null
-                        for (let index = 0; index < satisfactionArray.length; index++) {
-                            const el = satisfactionArray[index];
-                            if (el.dateUnix == element.dateUnix) {
-                                //console.log("satisfaction "+el.satisfaction)
-                                temp.satisfaction = el.satisfaction
-                            }
-                        }
+                        temp.satisfaction = satisfactionByDateUnix.get(String(element.dateUnix)) ?? null
                     }
 
                     //console.log("element "+JSON.stringify(element))
@@ -93,68 +112,48 @@ export async function useGetFilteredTrades(param) {
                         }
 
                         let tradeTagsSelected = false
-                        let selectedTagsArray = Object.values(selectedTags.value)
 
                         //console.log(" tags "+JSON.stringify(tags))
                         //console.log(" element "+JSON.stringify(element))
 
                         //Check if trade(Id) is present in tags list for Trades
-                        let tagsIndex = tags.findIndex(obj => obj.tradeId == element.id)
-                        if (tagsIndex != -1) {
-                            //console.log(" -> selected tags "+Object.values(selectedTags.value))
-                            //console.log(" -> trade tags " + JSON.stringify(tags[tagsIndex].tags))
-                            //console.log(" includes ? "+selectedTagsArray.some(value => tags[tagsIndex].tags.find(obj => obj === value)))
+                        const tradeTagIds = tagsByTradeId.get(String(element.id)) || []
+                        if (tradeTagIds.length > 0) {
 
                             //Case/check if tag_id is present in selectedTagsArray
-                            if (selectedTagsArray.some(value => tags[tagsIndex].tags.find(obj => obj === value))) {
-                                tradeTagsSelected = true
-                            }
-
-                            //If its not present, there may be the case where array is null, but 'No tags' is still selected
-                            if (tags[tagsIndex].tags.length == 0 && selectedTagsArray.includes("t000t")) {
+                            if (tradeTagIds.some(tagId => selectedTagsSet.has(tagId))) {
                                 tradeTagsSelected = true
                             }
                         }
 
                         //If not, check if no tags is selected or not
                         else {
-                            if (selectedTagsArray.includes("t000t")) {
+                            if (noTagsSelected) {
                                 tradeTagsSelected = true
                             }
                         }
 
                         //Check if trade(Id) is present in tags list for Daily tags
-                        let dayTagsIndex = tags.findIndex(obj => obj.tradeId == element.td)
-                        if (dayTagsIndex != -1) {
+                        const dayTagIds = tagsByDateUnix.get(String(element.td)) || []
+                        if (dayTagIds.length > 0) {
                             //console.log(" -> selected tags "+Object.values(selectedTags.value))
                             //console.log(" -> trade tags " + JSON.stringify(tags[dayTagsIndex].tags))
                             //console.log(" includes ? "+selectedTagsArray.some(value => tags[dayTagsIndex].tags.find(obj => obj === value)))
 
                             //Case/check if tag_id is present in selectedTagsArray
-                            if (selectedTagsArray.some(value => tags[dayTagsIndex].tags.find(obj => obj === value))) {
-                                tradeTagsSelected = true
-                            }
-
-                            //If its not present, there may be the case where array is null, but 'No tags' is still selected
-                            if (tags[dayTagsIndex].tags.length == 0 && selectedTagsArray.includes("t000t")) {
+                            if (dayTagIds.some(tagId => selectedTagsSet.has(tagId))) {
                                 tradeTagsSelected = true
                             }
                         }
 
                         //If not, check if no tags is selected or not
                         else {
-                            if (selectedTagsArray.includes("t000t")) {
+                            if (noTagsSelected) {
                                 tradeTagsSelected = true
                             }
                         }
 
-                        let tradeSatisfaction = null
-                        for (let index = 0; index < satisfactionTradeArray.length; index++) {
-                            const el = satisfactionTradeArray[index];
-                            if (el.tradeId == element.id) {
-                                tradeSatisfaction = el.satisfaction
-                            }
-                        }
+                        const tradeSatisfaction = satisfactionByTradeId.get(String(element.id)) ?? null
 
                         if ((selectedRange.value.start === 0 && selectedRange.value.end === 0 ? element.td >= selectedRange.value.start : element.td >= selectedRange.value.start && element.td < selectedRange.value.end) && selectedPositions.value.includes(element.strategy) && selectedAccounts.value.includes(element.account) && tradeTagsSelected) {
 
@@ -165,53 +164,22 @@ export async function useGetFilteredTrades(param) {
 
                             //console.log(" -> trade tags " + JSON.stringify(tags[tagsIndex]))
                             let tempArray = []
-                            if (tags[tagsIndex] != undefined) {
-                                for (let index = 0; index < tags[tagsIndex].tags.length; index++) {
-                                    const tagsElement = tags[tagsIndex].tags[index];
-                                    for (let obj of availableTags) {
-                                        for (let tag of obj.tags) {
-                                            if (tag.id === tagsElement && selectedTagsArray.includes(tag.id)) { // as you can have several tags per trade or day, we filter out only the once that are in selectedArray
-                                                //console.log(" selectedTagsArray "+selectedTagsArray)
-                                                //console.log(" in selected array " +selectedTagsArray.includes(tag.id))
-                                                //console.log(" tag "+JSON.stringify(tag))
-                                                let temp = {}
-                                                temp.id = tag.id
-                                                temp.name = tag.name
-                                                tempArray.push(temp)
-                                            }
-                                        }
-                                    }
-                                    //let index = availableTags.findIndex(obj)
-                                    //console.log(" tempArray "+JSON.stringify(tempArray))
-
-                                }
+                            for (const tagsElement of tradeTagIds) {
+                                if (!selectedTagsSet.has(tagsElement)) continue
+                                const tagName = availableTagById.get(tagsElement)
+                                if (!tagName) continue
+                                tempArray.push({ id: tagsElement, name: tagName })
                             }
 
-                            if (tags[dayTagsIndex] != undefined) {
-
-                                for (let index = 0; index < tags[dayTagsIndex].tags.length; index++) {
-                                    const tagsElement = tags[dayTagsIndex].tags[index];
-                                    for (let obj of availableTags) {
-                                        for (let tag of obj.tags) {
-                                            if (tag.id === tagsElement && selectedTagsArray.includes(tag.id)) { // as you can have several tags per trade or day, we filter out only the once that are in selectedArray
-                                                //console.log(" selectedTagsArray "+selectedTagsArray)
-                                                //console.log(" in selected array " +selectedTagsArray.includes(tag.id))
-                                                //console.log(" tag "+JSON.stringify(tag))
-                                                let temp = {}
-                                                temp.id = tag.id
-                                                temp.name = tag.name
-                                                tempArray.push(temp)
-                                            }
-                                        }
-                                    }
-                                    //let index = availableTags.findIndex(obj)
-                                    //console.log(" tempArray "+JSON.stringify(tempArray))
-                                }
+                            for (const tagsElement of dayTagIds) {
+                                if (!selectedTagsSet.has(tagsElement)) continue
+                                const tagName = availableTagById.get(tagsElement)
+                                if (!tagName) continue
+                                tempArray.push({ id: tagsElement, name: tagName })
                             }
 
                             element.tags = tempArray
 
-                            //console.log(" element "+JSON.stringify(element))
                             element.satisfaction = tradeSatisfaction
 
 
@@ -219,11 +187,11 @@ export async function useGetFilteredTrades(param) {
                             element.maePrice = null
                             element.mfePrice = null
 
-                            let indexExcursion = excursions.findIndex(obj => obj.tradeId == element.id)
-                            if (indexExcursion != -1) {
-                                if (excursions[indexExcursion].stopLoss) element.stopLoss = excursions[indexExcursion].stopLoss
-                                if (excursions[indexExcursion].maePrice) element.maePrice = excursions[indexExcursion].maePrice
-                                if (excursions[indexExcursion].mfePrice) element.mfePrice = excursions[indexExcursion].mfePrice
+                            const tradeExcursion = excursionByTradeId.get(String(element.id))
+                            if (tradeExcursion) {
+                                if (tradeExcursion.stopLoss) element.stopLoss = tradeExcursion.stopLoss
+                                if (tradeExcursion.maePrice) element.maePrice = tradeExcursion.maePrice
+                                if (tradeExcursion.mfePrice) element.mfePrice = tradeExcursion.mfePrice
                             }
 
                             /**
@@ -258,12 +226,14 @@ export async function useGetFilteredTrades(param) {
         //console.log(" P and L "+JSON.stringify(pAndL))
         let keys = Object.keys(pAndL)
         //console.log(" keys "+keys)
+        const filteredTradeByDateUnix = new Map(
+            filteredTrades.map(item => [String(item.dateUnix), item])
+        )
         for (const key of keys) {
-            let index
-
-            index = filteredTrades.findIndex(obj => obj.dateUnix == key)
-            filteredTrades[index].pAndL = pAndL[key]
-            filteredTrades[index].blotter = blotter[key]
+            const dayTrade = filteredTradeByDateUnix.get(String(key))
+            if (!dayTrade) continue
+            dayTrade.pAndL = pAndL[key]
+            dayTrade.blotter = blotter[key]
 
         }
 
@@ -1288,19 +1258,7 @@ async function calculateSatisfaction(param) {
     })
 }
 
-export async function useRefreshTrades() {
-    console.log("\nREFRESHING INFO")
-    await (spinnerLoadingPage.value = true)
-    if (pageId.value == "dashboard") {
-        useMountDashboard()
-    } else if (pageId.value == "daily") {
-        useMountDaily()
-    } else if (pageId.value == "calendar") {
-        useMountCalendar()
-    } else {
-        window.location.href = "/dashboard"
-    }
-}
+/* useRefreshTrades moved to src/utils/mountOrchestration.js */
 
 /***************************************
 * IMPORTS

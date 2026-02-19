@@ -12,5 +12,8 @@ tradenote.db-shm
 *.db-journal
 *.csv
 *.backup
+*.json.bak
+db-config.json
+tradejournal-backup-*.json
 Screenshots/
 .claude/

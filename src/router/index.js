@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import axios from 'axios'
 import DashboardLayout from '../layouts/Dashboard.vue'
 
 const router = createRouter({
@@ -7,6 +8,16 @@ const router = createRouter({
     routes: [{
         path: '/',
         redirect: '/dashboard'
+    },
+    {
+        path: '/setup',
+        name: 'setup',
+        meta: {
+            title: "Setup",
+            skipSetupCheck: true
+        },
+        component: () =>
+            import('../views/Setup.vue')
     },
     {
         path: '/dashboard',
@@ -42,7 +53,7 @@ const router = createRouter({
         path: '/incoming',
         name: 'incoming',
         meta: {
-            title: "Offene Trades",
+            title: "Pendente Trades",
             layout: DashboardLayout
         },
         component: () =>
@@ -142,11 +153,38 @@ const router = createRouter({
     ]
 })
 
-router.beforeEach((to, from, next) => {
+// Cache fuer Setup-Status (wird einmal geladen)
+let setupChecked = false
+let setupComplete = false
+
+router.beforeEach(async (to, from, next) => {
     const title = to.meta.title
     if (title) {
         document.title = title
     }
+
+    // Setup-Seite selbst braucht keinen Check
+    if (to.meta.skipSetupCheck) {
+        return next()
+    }
+
+    // Setup-Status pruefen (nur einmal pro Session)
+    if (!setupChecked) {
+        try {
+            const { data } = await axios.get('/api/setup/status')
+            setupComplete = !!data.setupComplete
+        } catch (e) {
+            // Bei Fehler Setup ueberspringen (z.B. alter Server ohne Endpoint)
+            setupComplete = true
+        }
+        setupChecked = true
+    }
+
+    // Zum Setup weiterleiten wenn nicht abgeschlossen
+    if (!setupComplete) {
+        return next('/setup')
+    }
+
     next()
 })
 

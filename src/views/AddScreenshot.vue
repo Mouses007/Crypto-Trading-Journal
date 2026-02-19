@@ -2,28 +2,17 @@
 import { onBeforeMount } from 'vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Screenshot from '../components/Screenshot.vue'
-import { currentDate, dateScreenshotEdited, editingScreenshot, itemToEditId, screenshot, spinnerLoadingPage, timeZoneTrade, tradeTags, tagInput, selectedTagIndex, showTagsList, availableTags, tags } from '../stores/globals';
+import { currentDate, dateScreenshotEdited, editingScreenshot, itemToEditId, spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js';
+import { selectedTagIndex } from '../stores/filters.js';
+import { screenshot, tradeTags, tagInput, showTagsList, availableTags, tags } from '../stores/trades.js';
 import { useSaveScreenshot, useSetupImageUpload } from '../utils/screenshots';
-import { useDatetimeLocalFormat, useGetSelectedRange } from '../utils/utils';
+import { useDatetimeLocalFormat } from '../utils/formatters.js';
+import { useGetSelectedRange } from '../utils/mountOrchestration.js';
 import { useFilterSuggestions, useTradeTagsChange, useFilterTags, useToggleTagsDropdown, useGetTags, useGetAvailableTags, useGetTagInfo } from '../utils/daily';
 
 /* MODULES */
 import { dbGet } from '../utils/db.js'
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from '../utils/dayjs-setup.js'
 
 onBeforeMount(async () => {
     await (spinnerLoadingPage.value = true)
@@ -171,9 +160,8 @@ async function getScreenshotToEdit(param) {
                             </div>
                         </div>
 
-                        <ul id="dropdown-menu-tags" class="dropdown-menu-tags"
-                            :style="[!showTagsList ? 'border: none;' : '']">
-                            <span v-show="showTagsList" v-for="group in availableTags">
+                        <ul class="dropdown-menu-tags" v-show="showTagsList === 'addScreenshot'">
+                            <span v-for="group in availableTags">
                                 <h6 class="p-1 mb-0" :style="'background-color: ' + group.color + ';'"
                                     v-show="useFilterSuggestions(group.id).filter(obj => obj.id == group.id)[0].tags.length > 0">
                                     {{ group.name }}</h6>

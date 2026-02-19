@@ -1,26 +1,17 @@
-import { getDb } from './database.js'
+import { getKnex } from './database.js'
 
 const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions']
 
-const MAX_QUERY_LIMIT = 10000
-const MAX_QUERY_SKIP = 100000
-
-/** Returns allowed column names for a table (prevents SQL injection via column names). */
-function getTableColumns(db, table) {
-    const rows = db.prepare(`PRAGMA table_info(${table})`).all()
-    return rows.map(r => r.name)
-}
-
-function parseQueryJson(val, paramName) {
-    if (val == null) return null
-    if (typeof val !== 'string') return val
-    try {
-        return JSON.parse(val)
-    } catch (e) {
-        const err = new Error(`Ungültiges JSON für Parameter: ${paramName}`)
-        err.statusCode = 400
-        throw err
-    }
+// Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten
+const TABLE_COLUMNS = {
+    trades: ['id', 'dateUnix', 'date', 'executions', 'trades', 'blotter', 'pAndL', 'cashJournal', 'openPositions', 'video', 'createdAt', 'updatedAt'],
+    diaries: ['id', 'dateUnix', 'date', 'diary', 'createdAt', 'updatedAt'],
+    screenshots: ['id', 'name', 'symbol', 'side', 'originalBase64', 'annotatedBase64', 'original', 'annotated', 'markersOnly', 'maState', 'date', 'dateUnix', 'dateUnixDay', 'createdAt', 'updatedAt'],
+    satisfactions: ['id', 'dateUnix', 'tradeId', 'satisfaction', 'createdAt', 'updatedAt'],
+    tags: ['id', 'dateUnix', 'tradeId', 'tags', 'createdAt', 'updatedAt'],
+    notes: ['id', 'dateUnix', 'tradeId', 'note', 'title', 'entryStressLevel', 'exitStressLevel', 'entryNote', 'feelings', 'playbook', 'timeframe', 'screenshotId', 'emotionLevel', 'closingNote', 'closingScreenshotId', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingPlaybook', 'createdAt', 'updatedAt'],
+    excursions: ['id', 'dateUnix', 'tradeId', 'stopLoss', 'maePrice', 'mfePrice', 'createdAt', 'updatedAt'],
+    incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId']
 }
 
 // JSON columns per table that should be parsed on read and stringified on write
@@ -36,7 +27,6 @@ function parseJsonColumns(tableName, row) {
     if (!row) return row
     const cols = JSON_COLUMNS[tableName] || []
     const parsed = { ...row }
-    // Map SQLite id to objectId for frontend compatibility
     if (parsed.id !== undefined) {
         parsed.objectId = String(parsed.id)
     }
@@ -60,7 +50,6 @@ function stringifyJsonColumns(tableName, data) {
             result[col] = JSON.stringify(result[col])
         }
     }
-    // Sanitize remaining values: SQLite3 only accepts numbers, strings, bigints, buffers, and null
     for (const key of Object.keys(result)) {
         const val = result[key]
         if (typeof val === 'boolean') {
@@ -74,31 +63,47 @@ function stringifyJsonColumns(tableName, data) {
     return result
 }
 
+/** Nur erlaubte Spaltennamen (Whitelist) – verhindert SQL-Injection. */
+function allowedColumn(table, column) {
+    const allowed = TABLE_COLUMNS[table]
+    return allowed && typeof column === 'string' && allowed.includes(column)
+}
+
+/** Query-Parameter sicher parsen (JSON); bei Fehler null. */
+function safeParseQuery(value) {
+    if (value == null) return null
+    if (typeof value === 'object') return value
+    try {
+        return JSON.parse(value)
+    } catch {
+        return null
+    }
+}
+
 export function setupApiRoutes(app) {
-    const db = getDb()
+    const knex = getKnex()
 
     // ==================== SETTINGS ====================
-    app.get('/api/db/settings', (req, res) => {
+    app.get('/api/db/settings', async (req, res) => {
         try {
-            const row = db.prepare('SELECT * FROM settings WHERE id = 1').get()
+            const row = await knex('settings').where('id', 1).first()
             res.json(parseJsonColumns('settings', row))
         } catch (error) {
             res.status(500).json({ error: error.message })
         }
     })
 
-    app.put('/api/db/settings', (req, res) => {
+    app.put('/api/db/settings', async (req, res) => {
         try {
-            const allowedSettingsCols = getTableColumns(db, 'settings')
             const data = stringifyJsonColumns('settings', req.body)
-            const fields = Object.keys(data).filter(k => k !== 'id' && k !== 'objectId' && k !== 'createdAt' && allowedSettingsCols.includes(k))
+            const fields = Object.keys(data).filter(k => k !== 'id' && k !== 'objectId')
             if (fields.length === 0) return res.json({ ok: true })
 
-            const sets = fields.map(f => `${f} = @${f}`).join(', ')
-            const stmt = db.prepare(`UPDATE settings SET ${sets}, updatedAt = datetime('now') WHERE id = 1`)
-            stmt.run(data)
-
-            const row = db.prepare('SELECT * FROM settings WHERE id = 1').get()
+            const updateData = { ...data, updatedAt: knex.fn.now() }
+            delete updateData.id
+            delete updateData.objectId
+            await knex('settings').where('id', 1).update(updateData)
+            const row = await knex('settings').where('id', 1).first()
             res.json(parseJsonColumns('settings', row))
         } catch (error) {
             res.status(500).json({ error: error.message })
@@ -106,21 +111,31 @@ export function setupApiRoutes(app) {
     })
 
     // ==================== BITUNIX CONFIG ====================
-    app.get('/api/db/bitunix_config', (req, res) => {
+    // Hinweis: Bitunix-Keys werden über /api/bitunix/* (bitunix-api.js) mit Verschlüsselung verwaltet.
+    // Diese Endpoints werden vom Frontend nicht genutzt; Antwort ohne Secret-Key.
+    app.get('/api/db/bitunix_config', async (req, res) => {
         try {
-            const row = db.prepare('SELECT * FROM bitunix_config WHERE id = 1').get()
-            res.json(row || {})
+            const row = await knex('bitunix_config').where('id', 1).first()
+            if (!row) return res.json({})
+            // Kein secretKey in Antwort ausliefern
+            const { secretKey, ...safe } = row
+            res.json({ ...safe, hasSecret: !!secretKey })
         } catch (error) {
             res.status(500).json({ error: error.message })
         }
     })
 
-    app.put('/api/db/bitunix_config', (req, res) => {
+    app.put('/api/db/bitunix_config', async (req, res) => {
         try {
             const { apiKey, secretKey } = req.body
-            db.prepare(`UPDATE bitunix_config SET apiKey = ?, secretKey = ?, updatedAt = datetime('now') WHERE id = 1`).run(apiKey || '', secretKey || '')
-            const row = db.prepare('SELECT * FROM bitunix_config WHERE id = 1').get()
-            res.json(row)
+            await knex('bitunix_config').where('id', 1).update({
+                apiKey: apiKey || '',
+                secretKey: secretKey || '',
+                updatedAt: knex.fn.now()
+            })
+            const row = await knex('bitunix_config').where('id', 1).first()
+            const { secretKey: _s, ...safe } = row || {}
+            res.json({ ...safe, hasSecret: !!_s })
         } catch (error) {
             res.status(500).json({ error: error.message })
         }
@@ -128,162 +143,127 @@ export function setupApiRoutes(app) {
 
     // ==================== GENERIC CRUD ====================
 
-    // GET /api/db/:table - Query with filters
-    app.get('/api/db/:table', (req, res) => {
+    app.get('/api/db/:table', async (req, res) => {
         const { table } = req.params
         if (!VALID_TABLES.includes(table)) {
             return res.status(400).json({ error: `Invalid table: ${table}` })
         }
 
         try {
-            const allowedColumns = getTableColumns(db, table)
-            let where = []
-            let params = {}
+            let query = knex(table)
 
-            // equalTo filters: ?equalTo[field]=value (only allow valid column names)
-            if (req.query.equalTo) {
-                const eq = parseQueryJson(req.query.equalTo, 'equalTo')
-                if (eq && typeof eq === 'object') {
-                    for (const [key, val] of Object.entries(eq)) {
-                        if (allowedColumns.includes(key)) {
-                            where.push(`${key} = @eq_${key}`)
-                            params[`eq_${key}`] = typeof val === 'boolean' ? (val ? 1 : 0) : val
-                        }
-                    }
+            const eq = safeParseQuery(req.query.equalTo)
+            if (eq && typeof eq === 'object') {
+                for (const [key, val] of Object.entries(eq)) {
+                    if (!allowedColumn(table, key)) continue
+                    const v = typeof val === 'boolean' ? (val ? 1 : 0) : val
+                    query = query.where(key, v)
                 }
             }
 
-            // greaterThanOrEqualTo: ?gte[field]=value
-            if (req.query.gte) {
-                const gte = parseQueryJson(req.query.gte, 'gte')
-                if (gte && typeof gte === 'object') {
-                    for (const [key, val] of Object.entries(gte)) {
-                        if (allowedColumns.includes(key)) {
-                            where.push(`${key} >= @gte_${key}`)
-                            params[`gte_${key}`] = Number(val)
-                        }
-                    }
+            const gte = safeParseQuery(req.query.gte)
+            if (gte && typeof gte === 'object') {
+                for (const [key, val] of Object.entries(gte)) {
+                    if (!allowedColumn(table, key)) continue
+                    const n = Number(val)
+                    if (!Number.isNaN(n)) query = query.where(key, '>=', n)
                 }
             }
 
-            // lessThan: ?lt[field]=value
-            if (req.query.lt) {
-                const lt = parseQueryJson(req.query.lt, 'lt')
-                if (lt && typeof lt === 'object') {
-                    for (const [key, val] of Object.entries(lt)) {
-                        if (allowedColumns.includes(key)) {
-                            where.push(`${key} < @lt_${key}`)
-                            params[`lt_${key}`] = Number(val)
-                        }
-                    }
+            const lt = safeParseQuery(req.query.lt)
+            if (lt && typeof lt === 'object') {
+                for (const [key, val] of Object.entries(lt)) {
+                    if (!allowedColumn(table, key)) continue
+                    const n = Number(val)
+                    if (!Number.isNaN(n)) query = query.where(key, '<', n)
                 }
             }
 
-            // lessThanOrEqualTo: ?lte[field]=value
-            if (req.query.lte) {
-                const lte = parseQueryJson(req.query.lte, 'lte')
-                if (lte && typeof lte === 'object') {
-                    for (const [key, val] of Object.entries(lte)) {
-                        if (allowedColumns.includes(key)) {
-                            where.push(`${key} <= @lte_${key}`)
-                            params[`lte_${key}`] = Number(val)
-                        }
-                    }
+            const lte = safeParseQuery(req.query.lte)
+            if (lte && typeof lte === 'object') {
+                for (const [key, val] of Object.entries(lte)) {
+                    if (!allowedColumn(table, key)) continue
+                    const n = Number(val)
+                    if (!Number.isNaN(n)) query = query.where(key, '<=', n)
                 }
             }
 
-            // doesNotExist: ?doesNotExist=field (only allow valid column names)
-            if (req.query.doesNotExist) {
-                const fields = Array.isArray(req.query.doesNotExist) ? req.query.doesNotExist : [req.query.doesNotExist]
+            const doesNotExist = req.query.doesNotExist
+            if (doesNotExist) {
+                const fields = Array.isArray(doesNotExist) ? doesNotExist : [doesNotExist]
                 for (const field of fields) {
-                    if (allowedColumns.includes(field)) {
-                        where.push(`(${field} IS NULL OR ${field} = '' OR ${field} = '0')`)
-                    }
+                    if (!allowedColumn(table, field)) continue
+                    query = query.where(function () {
+                        this.whereNull(field).orWhere(field, '').orWhere(field, '0')
+                    })
                 }
             }
 
-            // Build SELECT with optional exclude
-            let selectCols = '*'
-            if (req.query.exclude) {
-                const excludeList = Array.isArray(req.query.exclude) ? req.query.exclude : req.query.exclude.split(',')
-                const includeCols = allowedColumns.filter(c => !excludeList.includes(c))
-                selectCols = includeCols.length ? includeCols.join(', ') : '*'
+            const columns = TABLE_COLUMNS[table]
+            if (req.query.exclude && columns) {
+                const excludeList = Array.isArray(req.query.exclude) ? req.query.exclude : String(req.query.exclude).split(',')
+                const selectCols = columns.filter(c => !excludeList.includes(c))
+                if (selectCols.length > 0) query = query.select(selectCols)
             }
 
-            // Build query
-            let sql = `SELECT ${selectCols} FROM ${table}`
-            if (where.length > 0) {
-                sql += ` WHERE ${where.join(' AND ')}`
+            const orderCol = req.query.descending || req.query.ascending
+            if (orderCol && allowedColumn(table, orderCol)) {
+                query = req.query.descending ? query.orderBy(orderCol, 'desc') : query.orderBy(orderCol, 'asc')
             }
 
-            // Sort (only allow valid column names)
-            if (req.query.descending && allowedColumns.includes(req.query.descending)) {
-                sql += ` ORDER BY ${req.query.descending} DESC`
-            } else if (req.query.ascending && allowedColumns.includes(req.query.ascending)) {
-                sql += ` ORDER BY ${req.query.ascending} ASC`
-            }
+            const limit = parseInt(req.query.limit, 10)
+            if (Number.isInteger(limit) && limit > 0) query = query.limit(limit)
+            const skip = parseInt(req.query.skip, 10)
+            if (Number.isInteger(skip) && skip >= 0) query = query.offset(skip)
 
-            // Limit and skip (bounded integers when provided)
-            if (req.query.limit !== undefined && req.query.limit !== '') {
-                const limitNum = Math.min(Math.max(0, parseInt(req.query.limit, 10) || 0), MAX_QUERY_LIMIT)
-                sql += ` LIMIT ${limitNum}`
-            }
-            if (req.query.skip !== undefined && req.query.skip !== '') {
-                const skipNum = Math.min(Math.max(0, parseInt(req.query.skip, 10) || 0), MAX_QUERY_SKIP)
-                sql += ` OFFSET ${skipNum}`
-            }
-
-            const rows = db.prepare(sql).all(params)
+            const rows = await query
             res.json(rows.map(r => parseJsonColumns(table, r)))
         } catch (error) {
-            if (error.statusCode === 400) return res.status(400).json({ error: error.message })
             console.error('DB query error:', error)
             res.status(500).json({ error: error.message })
         }
     })
 
-    // GET /api/db/:table/:id - Get single record
-    app.get('/api/db/:table/:id', (req, res) => {
+    app.get('/api/db/:table/:id', async (req, res) => {
         const { table, id } = req.params
         if (!VALID_TABLES.includes(table)) {
             return res.status(400).json({ error: `Invalid table: ${table}` })
         }
-
         try {
-            const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id)
-            if (!row) {
-                return res.status(404).json({ error: 'Not found' })
-            }
+            const row = await knex(table).where('id', id).first()
+            if (!row) return res.status(404).json({ error: 'Not found' })
             res.json(parseJsonColumns(table, row))
         } catch (error) {
             res.status(500).json({ error: error.message })
         }
     })
 
-    // POST /api/db/:table - Create record
-    app.post('/api/db/:table', (req, res) => {
+    app.post('/api/db/:table', async (req, res) => {
         const { table } = req.params
         if (!VALID_TABLES.includes(table)) {
             return res.status(400).json({ error: `Invalid table: ${table}` })
         }
+        const columns = TABLE_COLUMNS[table]
+        if (!columns) return res.status(400).json({ error: 'Invalid table' })
 
         try {
-            const allowedCols = getTableColumns(db, table)
-            const data = stringifyJsonColumns(table, req.body)
+            let data = stringifyJsonColumns(table, req.body)
             delete data.objectId
             delete data.id
-            const fields = Object.keys(data).filter(k => allowedCols.includes(k) && k !== 'createdAt')
-            if (fields.length === 0) {
-                return res.status(400).json({ error: 'No data provided or only invalid columns' })
+            // Nur erlaubte Spalten übernehmen (Schutz vor SQL-Injection)
+            data = columns.reduce((acc, col) => {
+                if (data[col] !== undefined) acc[col] = data[col]
+                return acc
+            }, {})
+            if (Object.keys(data).length === 0) {
+                return res.status(400).json({ error: 'No data provided' })
             }
 
-            const placeholders = fields.map(f => `@${f}`).join(', ')
-            const insertData = {}
-            for (const f of fields) insertData[f] = data[f]
-            const sql = `INSERT INTO ${table} (${fields.join(', ')}) VALUES (${placeholders})`
-            const result = db.prepare(sql).run(insertData)
-
-            const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(result.lastInsertRowid)
+            const isPg = knex.client.config.client === 'pg'
+            const id = isPg
+                ? (await knex(table).insert(data).returning('id'))[0]?.id
+                : (await knex(table).insert(data))[0]
+            const row = await knex(table).where('id', id).first()
             res.status(201).json(parseJsonColumns(table, row))
         } catch (error) {
             console.error('DB insert error:', error)
@@ -291,30 +271,29 @@ export function setupApiRoutes(app) {
         }
     })
 
-    // PUT /api/db/:table/:id - Update record
-    app.put('/api/db/:table/:id', (req, res) => {
+    app.put('/api/db/:table/:id', async (req, res) => {
         const { table, id } = req.params
         if (!VALID_TABLES.includes(table)) {
             return res.status(400).json({ error: `Invalid table: ${table}` })
         }
+        const columns = TABLE_COLUMNS[table]
+        if (!columns) return res.status(400).json({ error: 'Invalid table' })
 
         try {
-            const allowedCols = getTableColumns(db, table)
-            const data = stringifyJsonColumns(table, req.body)
+            let data = stringifyJsonColumns(table, req.body)
             delete data.objectId
             delete data.id
-            const fields = Object.keys(data).filter(k => allowedCols.includes(k) && k !== 'createdAt')
-            if (fields.length === 0) {
-                return res.status(400).json({ error: 'No data provided or only invalid columns' })
+            data = columns.reduce((acc, col) => {
+                if (data[col] !== undefined) acc[col] = data[col]
+                return acc
+            }, {})
+            if (Object.keys(data).length === 0) {
+                return res.status(400).json({ error: 'No data provided' })
             }
-
-            const sets = fields.map(f => `${f} = @${f}`).join(', ')
-            const updateData = { _id: id }
-            for (const f of fields) updateData[f] = data[f]
-            const sql = `UPDATE ${table} SET ${sets}, updatedAt = datetime('now') WHERE id = @_id`
-            db.prepare(sql).run(updateData)
-
-            const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id)
+            data.updatedAt = knex.fn.now()
+            const count = await knex(table).where('id', id).update(data)
+            if (count === 0) return res.status(404).json({ error: 'Not found' })
+            const row = await knex(table).where('id', id).first()
             res.json(parseJsonColumns(table, row))
         } catch (error) {
             console.error('DB update error:', error)
@@ -322,81 +301,66 @@ export function setupApiRoutes(app) {
         }
     })
 
-    // DELETE /api/db/:table/:id - Delete record
-    app.delete('/api/db/:table/:id', (req, res) => {
+    app.delete('/api/db/:table/:id', async (req, res) => {
         const { table, id } = req.params
         if (!VALID_TABLES.includes(table)) {
             return res.status(400).json({ error: `Invalid table: ${table}` })
         }
-
         try {
-            const result = db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id)
-            if (result.changes === 0) {
-                return res.status(404).json({ error: 'Not found' })
-            }
+            const count = await knex(table).where('id', id).delete()
+            if (count === 0) return res.status(404).json({ error: 'Not found' })
             res.json({ ok: true, deleted: id })
         } catch (error) {
             res.status(500).json({ error: error.message })
         }
     })
 
-    // DELETE /api/db/:table - Delete with filters (for bulk delete)
-    app.delete('/api/db/:table', (req, res) => {
+    app.delete('/api/db/:table', async (req, res) => {
         const { table } = req.params
         if (!VALID_TABLES.includes(table)) {
             return res.status(400).json({ error: `Invalid table: ${table}` })
         }
-
         try {
-            const allowedColumns = getTableColumns(db, table)
-            let where = []
-            let params = {}
+            let query = knex(table)
+            let hasFilter = false
 
-            if (req.query.equalTo) {
-                const eq = parseQueryJson(req.query.equalTo, 'equalTo')
-                if (eq && typeof eq === 'object') {
-                    for (const [key, val] of Object.entries(eq)) {
-                        if (allowedColumns.includes(key)) {
-                            where.push(`${key} = @eq_${key}`)
-                            params[`eq_${key}`] = val
-                        }
+            const eq = safeParseQuery(req.query.equalTo)
+            if (eq && typeof eq === 'object') {
+                for (const [key, val] of Object.entries(eq)) {
+                    if (!allowedColumn(table, key)) continue
+                    query = query.where(key, val)
+                    hasFilter = true
+                }
+            }
+            const gte = safeParseQuery(req.query.gte)
+            if (gte && typeof gte === 'object') {
+                for (const [key, val] of Object.entries(gte)) {
+                    if (!allowedColumn(table, key)) continue
+                    const n = Number(val)
+                    if (!Number.isNaN(n)) {
+                        query = query.where(key, '>=', n)
+                        hasFilter = true
                     }
                 }
             }
-
-            if (req.query.gte) {
-                const gte = parseQueryJson(req.query.gte, 'gte')
-                if (gte && typeof gte === 'object') {
-                    for (const [key, val] of Object.entries(gte)) {
-                        if (allowedColumns.includes(key)) {
-                            where.push(`${key} >= @gte_${key}`)
-                            params[`gte_${key}`] = Number(val)
-                        }
+            const lt = safeParseQuery(req.query.lt)
+            if (lt && typeof lt === 'object') {
+                for (const [key, val] of Object.entries(lt)) {
+                    if (!allowedColumn(table, key)) continue
+                    const n = Number(val)
+                    if (!Number.isNaN(n)) {
+                        query = query.where(key, '<', n)
+                        hasFilter = true
                     }
                 }
             }
-
-            if (req.query.lt) {
-                const lt = parseQueryJson(req.query.lt, 'lt')
-                if (lt && typeof lt === 'object') {
-                    for (const [key, val] of Object.entries(lt)) {
-                        if (allowedColumns.includes(key)) {
-                            where.push(`${key} < @lt_${key}`)
-                            params[`lt_${key}`] = Number(val)
-                        }
-                    }
-                }
-            }
-
-            if (where.length === 0) {
+            if (!hasFilter) {
                 return res.status(400).json({ error: 'Filters required for bulk delete' })
             }
 
-            const sql = `DELETE FROM ${table} WHERE ${where.join(' AND ')}`
-            const result = db.prepare(sql).run(params)
-            res.json({ ok: true, deleted: result.changes })
+            const count = await query.delete()
+            res.json({ ok: true, deleted: count })
         } catch (error) {
-            if (error.statusCode === 400) return res.status(400).json({ error: error.message })
             res.status(500).json({ error: error.message })
         }
     })

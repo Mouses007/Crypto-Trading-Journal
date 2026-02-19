@@ -1,21 +1,27 @@
 <script setup>
 import { ref, reactive, onBeforeMount, computed } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
-import { spinnerLoadingPage } from '../stores/globals'
+import { spinnerLoadingPage } from '../stores/ui.js'
+import { aiReportGenerating, aiReportError, aiReportLastSavedId, aiReportLabel, aiReportCountBefore } from '../stores/settings.js'
 import axios from 'axios'
 import { useExportReportPdf } from '../utils/pdfExport'
-import dayjs from 'dayjs'
+import { sanitizeHtml } from '../utils/sanitize'
+import { logError, logWarn } from '../utils/logger.js'
+import dayjs from '../utils/dayjs-setup.js'
+import { sendNotification } from '../utils/notify'
 
 // Status
 const aiOnline = ref(false)
 const aiProvider = ref('ollama')
 const aiModel = ref('')
-const loading = ref(false)
-const errorMsg = ref('')
+// loading und errorMsg sind global (überleben Tab-Wechsel im SPA)
+const loading = aiReportGenerating
+const errorMsg = aiReportError
 
 // Zeitraum
 const periodType = ref('month')
 const selectedMonth = ref(dayjs().format('YYYY-MM'))
+const selectedWeekStart = ref(dayjs().startOf('week').format('YYYY-MM-DD'))
 const customStart = ref(dayjs().startOf('month').format('YYYY-MM-DD'))
 const customEnd = ref(dayjs().format('YYYY-MM-DD'))
 
@@ -23,6 +29,13 @@ const customEnd = ref(dayjs().format('YYYY-MM-DD'))
 const savedReports = reactive([])
 const expandedReports = reactive(new Set())
 const deleteConfirmId = ref(null)
+
+// Chat
+const chatEnabled = ref(true)
+const chatMessages = reactive({}) // { reportId: [{ id, role, content, createdAt }] }
+const chatInput = reactive({}) // { reportId: 'text' }
+const chatLoading = reactive({}) // { reportId: true/false }
+const chatError = reactive({}) // { reportId: 'error msg' }
 
 // Token-Verbrauch pro Provider
 const tokensByProvider = computed(() => {
@@ -41,13 +54,39 @@ const providerNames = { ollama: 'Ollama', openai: 'OpenAI', anthropic: 'Anthropi
 
 // Zeitraum als Unix berechnen
 const dateRange = computed(() => {
-    if (periodType.value === 'month') {
+    const type = periodType.value
+    if (type === 'week') {
+        const start = dayjs(selectedWeekStart.value).startOf('day')
+        const end = start.add(6, 'day').endOf('day')
+        return {
+            startDate: start.unix(),
+            endDate: end.unix(),
+            label: `KW ${start.format('DD.MM.')} – ${end.format('DD.MM.YYYY')}`
+        }
+    } else if (type === 'month') {
         const start = dayjs(selectedMonth.value + '-01').startOf('day')
         const end = start.endOf('month')
         return {
             startDate: start.unix(),
             endDate: end.unix(),
             label: start.format('MMMM YYYY')
+        }
+    } else if (type === 'halfyear') {
+        const now = dayjs()
+        const start = now.subtract(6, 'month').startOf('day')
+        const end = now.endOf('day')
+        return {
+            startDate: start.unix(),
+            endDate: end.unix(),
+            label: `${start.format('DD.MM.YYYY')} – ${end.format('DD.MM.YYYY')}`
+        }
+    } else if (type === 'year') {
+        const start = dayjs().startOf('year')
+        const end = dayjs().endOf('day')
+        return {
+            startDate: start.unix(),
+            endDate: end.unix(),
+            label: `Jahr ${start.format('YYYY')}`
         }
     } else {
         return {
@@ -91,43 +130,42 @@ async function loadReports() {
         const res = await axios.get('/api/ai/reports')
         savedReports.splice(0, savedReports.length, ...res.data)
     } catch (e) {
-        console.error('Fehler beim Laden der Berichte:', e)
+        logError('ki-agent', 'Fehler beim Laden der Berichte', e)
     }
 }
 
-// Bericht generieren und speichern
+// Bericht generieren (Server speichert automatisch)
 async function generateReport() {
+    if (loading.value) return // Doppelklick verhindern
+
     loading.value = true
     errorMsg.value = ''
+    const label = dateRange.value.label
+    aiReportLabel.value = label
+    aiReportCountBefore.value = savedReports.length
 
     try {
         const res = await axios.post('/api/ai/report', {
             startDate: dateRange.value.startDate,
-            endDate: dateRange.value.endDate
-        }, { timeout: 600000 })
-
-        const report = res.data.report
-        const reportData = res.data.data || null
-        const tokenUsage = res.data.tokenUsage || null
-
-        // Automatisch speichern
-        const saveRes = await axios.post('/api/ai/reports/save', {
-            label: dateRange.value.label,
-            startDate: dateRange.value.startDate,
             endDate: dateRange.value.endDate,
-            provider: res.data.provider || aiProvider.value,
-            model: res.data.model || '',
-            report,
-            reportData,
-            tokenUsage
-        })
+            label
+        }, { timeout: 600000 })
 
         // Berichte neu laden und neuen aufklappen
         await loadReports()
-        if (saveRes.data.id) {
-            expandedReports.add(saveRes.data.id)
+        if (res.data.savedId) {
+            expandedReports.add(res.data.savedId)
         }
+
+        // Browser-Benachrichtigung
+        sendNotification('KI-Bericht fertig', `Bericht für ${label} wurde erstellt.`)
     } catch (e) {
+        // Server hat evtl. schon gespeichert bevor der Frontend-Request abbrach
+        try {
+            await loadReports()
+        } catch (reloadError) {
+            logWarn('ki-agent', 'Berichte konnten nach Fehler nicht neu geladen werden', reloadError)
+        }
         errorMsg.value = e.response?.data?.error || e.message || 'Fehler bei der Berichterstellung'
     }
 
@@ -142,7 +180,7 @@ async function deleteReport(id) {
         deleteConfirmId.value = null
         await loadReports()
     } catch (e) {
-        console.error('Fehler beim Löschen:', e)
+        logError('ki-agent', 'Fehler beim Löschen', e)
     }
 }
 
@@ -152,6 +190,10 @@ function toggleReport(id) {
         expandedReports.delete(id)
     } else {
         expandedReports.add(id)
+        // Chat-Nachrichten laden wenn noch nicht vorhanden
+        if (chatEnabled.value && !chatMessages[id]) {
+            loadChatMessages(id)
+        }
     }
 }
 
@@ -164,6 +206,59 @@ function downloadPdf(report) {
 // Datum formatieren
 function formatDate(dateStr) {
     return dayjs(dateStr).format('DD.MM.YYYY HH:mm')
+}
+
+// Chat-Nachrichten laden
+async function loadChatMessages(reportId) {
+    try {
+        const res = await axios.get(`/api/ai/reports/${reportId}/messages`)
+        chatMessages[reportId] = res.data
+    } catch (e) {
+        chatMessages[reportId] = []
+    }
+}
+
+// Chat-Nachricht senden
+async function sendChatMessage(reportId) {
+    const msg = (chatInput[reportId] || '').trim()
+    if (!msg) return
+
+    chatLoading[reportId] = true
+    chatError[reportId] = ''
+
+    try {
+        const res = await axios.post(`/api/ai/reports/${reportId}/chat`, {
+            message: msg
+        }, { timeout: 600000 })
+
+        chatInput[reportId] = ''
+        // Nachrichten neu laden
+        await loadChatMessages(reportId)
+    } catch (e) {
+        chatError[reportId] = e.response?.data?.error || e.message || 'Chat-Anfrage fehlgeschlagen'
+    }
+
+    chatLoading[reportId] = false
+}
+
+// Chat-Verlauf löschen
+async function clearChat(reportId) {
+    try {
+        await axios.delete(`/api/ai/reports/${reportId}/messages`)
+        chatMessages[reportId] = []
+    } catch (e) {
+        logError('ki-agent', 'Chat löschen fehlgeschlagen', e)
+    }
+}
+
+// Chat-Setting laden
+async function loadChatSetting() {
+    try {
+        const res = await axios.get('/api/ai/settings')
+        chatEnabled.value = res.data.aiChatEnabled !== false
+    } catch (e) {
+        chatEnabled.value = true
+    }
 }
 
 // Markdown → HTML (verbesserter Parser)
@@ -187,12 +282,12 @@ function markdownToHtml(md) {
         return `<p>${trimmed}</p>`
     }).filter(Boolean).join('\n')
 
-    return html
+    return sanitizeHtml(html)
 }
 
 onBeforeMount(async () => {
     spinnerLoadingPage.value = false
-    await checkStatus()
+    await Promise.all([checkStatus(), loadChatSetting()])
     await loadReports()
 })
 </script>
@@ -240,9 +335,18 @@ onBeforeMount(async () => {
                     <div class="col-auto">
                         <label class="form-label small text-muted">Zeitraum</label>
                         <select v-model="periodType" class="form-select form-select-sm">
+                            <option value="week">Woche</option>
                             <option value="month">Monat</option>
+                            <option value="halfyear">Halbjahr</option>
+                            <option value="year">Jahr</option>
                             <option value="custom">Benutzerdefiniert</option>
                         </select>
+                    </div>
+
+                    <!-- Woche -->
+                    <div v-if="periodType === 'week'" class="col-auto">
+                        <label class="form-label small text-muted">Woche ab</label>
+                        <input type="date" v-model="selectedWeekStart" class="form-control form-control-sm">
                     </div>
 
                     <!-- Monat -->
@@ -300,6 +404,7 @@ onBeforeMount(async () => {
                         <i class="uil uil-file-check-alt me-1"></i>
                         <span class="fw-bold me-2">{{ report.label }}</span>
                         <span class="badge bg-secondary me-2" style="font-size: 0.7rem;">{{ report.provider }}</span>
+                        <span v-if="report.promptPreset" class="badge me-2" style="font-size: 0.65rem; background-color: var(--blue-color, #4a90d9); opacity: 0.8;">{{ report.promptPreset }}</span>
                         <span class="text-muted small">{{ formatDate(report.createdAt) }}</span>
                     </div>
                     <div class="d-flex align-items-center gap-1">
@@ -358,6 +463,53 @@ onBeforeMount(async () => {
                         <span>Antwort: {{ report.totalTokens > 0 ? report.completionTokens?.toLocaleString() : '—' }}</span>
                         <span class="fw-bold">Gesamt: {{ report.totalTokens > 0 ? report.totalTokens?.toLocaleString() + ' Tokens' : '—' }}</span>
                     </div>
+
+                    <!-- Chat / Rückfragen -->
+                    <div v-if="chatEnabled && aiOnline" class="chat-section mt-3 pt-3" style="border-top: 1px solid var(--border-color, #333);">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="small fw-bold"><i class="uil uil-comment-dots me-1"></i>Rückfragen</span>
+                            <button v-if="chatMessages[report.id]?.length > 0" class="btn btn-sm btn-outline-secondary" @click="clearChat(report.id)" title="Chat löschen">
+                                <i class="uil uil-trash-alt me-1"></i>Chat löschen
+                            </button>
+                        </div>
+
+                        <!-- Chat-Verlauf -->
+                        <div v-if="chatMessages[report.id]?.length > 0" class="chat-messages mb-2">
+                            <div v-for="msg in chatMessages[report.id]" :key="msg.id" class="chat-msg mb-2" :class="'chat-msg-' + msg.role">
+                                <div class="d-flex align-items-center gap-1 mb-1">
+                                    <i class="uil" :class="msg.role === 'user' ? 'uil-user' : 'uil-robot'"></i>
+                                    <span class="small fw-bold">{{ msg.role === 'user' ? 'Du' : 'KI' }}</span>
+                                    <span class="text-muted small ms-1">{{ formatDate(msg.createdAt) }}</span>
+                                    <span v-if="msg.role === 'assistant' && msg.totalTokens > 0" class="text-muted small ms-auto">{{ msg.totalTokens }} Tokens</span>
+                                </div>
+                                <div v-if="msg.role === 'user'" class="chat-bubble chat-bubble-user">{{ msg.content }}</div>
+                                <div v-else class="chat-bubble chat-bubble-ai report-content" v-html="markdownToHtml(msg.content)"></div>
+                            </div>
+                        </div>
+
+                        <!-- Loading -->
+                        <div v-if="chatLoading[report.id]" class="text-center py-3">
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                            <span class="text-muted small">KI denkt nach...</span>
+                        </div>
+
+                        <!-- Error -->
+                        <div v-if="chatError[report.id]" class="alert alert-danger py-1 px-2 small mb-2">
+                            {{ chatError[report.id] }}
+                        </div>
+
+                        <!-- Input -->
+                        <div class="d-flex gap-2 align-items-end">
+                            <textarea class="form-control form-control-sm chat-input" rows="3" placeholder="Rückfrage stellen..."
+                                v-model="chatInput[report.id]"
+                                @keydown.enter.exact.prevent="sendChatMessage(report.id)"
+                                :disabled="chatLoading[report.id]"></textarea>
+                            <button class="btn btn-sm btn-primary" style="height: 2.4rem;" @click="sendChatMessage(report.id)" :disabled="chatLoading[report.id] || !(chatInput[report.id] || '').trim()">
+                                <i class="uil uil-message"></i>
+                            </button>
+                        </div>
+                        <small class="text-muted mt-1">Enter = Senden, Shift+Enter = Neue Zeile</small>
+                    </div>
                 </div>
             </div>
 
@@ -408,5 +560,39 @@ onBeforeMount(async () => {
 }
 .report-content :deep(strong) {
     color: var(--white-100, #fff);
+}
+/* Chat */
+.chat-section {
+    max-height: 500px;
+    display: flex;
+    flex-direction: column;
+}
+.chat-messages {
+    max-height: 350px;
+    overflow-y: auto;
+    padding-right: 0.3rem;
+}
+.chat-bubble {
+    padding: 0.4rem 0.7rem;
+    border-radius: 0.6rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+.chat-bubble-user {
+    background: var(--blue-color, #6cb4ee);
+    color: #fff;
+    margin-left: 2rem;
+    border-bottom-right-radius: 0.15rem;
+    white-space: pre-wrap;
+}
+.chat-bubble-ai {
+    background: var(--black-bg-2, #1e1e1e);
+    color: var(--white-87);
+    margin-right: 2rem;
+    border-bottom-left-radius: 0.15rem;
+}
+.chat-input {
+    resize: vertical;
+    min-height: 2.4rem;
 }
 </style>

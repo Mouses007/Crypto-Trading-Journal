@@ -1,24 +1,13 @@
-import { filteredTradesTrades, blotter, pAndL, tradeExcursionId, spinnerLoadingPage, currentUser, selectedBroker, tradesData, timeZoneTrade, uploadMfePrices, executions, tradeId, existingImports, trades, gotExistingTradesArray, existingTradesArray, queryLimit, queryLimitExistingTrades, marketCloseTime } from '../stores/globals.js'
+import { spinnerLoadingPage, timeZoneTrade, queryLimit, queryLimitExistingTrades } from '../stores/ui.js'
+import { selectedBroker, uploadMfePrices } from '../stores/filters.js'
+import { filteredTradesTrades, blotter, pAndL, tradeExcursionId, tradesData, executions, tradeId, existingImports, trades, gotExistingTradesArray, existingTradesArray, marketCloseTime } from '../stores/trades.js'
+import { currentUser } from '../stores/settings.js'
 import { useBrokerBitunix } from './brokers.js'
-import { useChartFormat, useDateTimeFormat, useDecimalsArithmetic, useTimeFormat } from './utils.js'
+import { useChartFormat, useDateTimeFormat, useDecimalsArithmetic, useTimeFormat } from './formatters.js'
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbGetSettings, dbUpdateSettings } from './db.js'
 
 /* MODULES */
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from './dayjs-setup.js'
 import _ from 'lodash'
 import axios from 'axios'
 import Papa from 'papaparse';
@@ -534,7 +523,11 @@ export const useGetOHLCV = (param, param2, param3, param4, param5) => { //param=
 
 
                 } else if (param === "polygon") {
-                    axios.interceptors.response.use(undefined, (err) => {
+                    // Vorherigen Interceptor entfernen (Memory-Leak verhindern)
+                    if (window._polygonInterceptorId !== undefined) {
+                        axios.interceptors.response.eject(window._polygonInterceptorId)
+                    }
+                    window._polygonInterceptorId = axios.interceptors.response.use(undefined, (err) => {
                         const { config, message } = err;
                         if (err) {
                             console.log(" -> Interceptors status " + err.response.status)
@@ -566,7 +559,23 @@ export const useGetOHLCV = (param, param2, param3, param4, param5) => { //param=
 
                     // when request, can set retry times and retry delay time
                     let index = currentUser.value.apis.findIndex(obj => obj.provider === 'polygon')
-                    await axios.get("https://api.polygon.io/v2/aggs/ticker/" + temp.symbol + "/range/1/minute/" + tradedStartDate * 1000 + "/" + toDate * 1000 + "?adjusted=true&sort=asc&limit=50000&apiKey=" + currentUser.value.apis[index].key, { retry: 5, retryDelay: 60000 })
+                    await axios.get('/api/polygon/aggs', {
+                        params: {
+                            ticker: temp.symbol,
+                            from: tradedStartDate * 1000,
+                            to: toDate * 1000,
+                            interval: 1,
+                            span: 'minute',
+                            adjusted: true,
+                            sort: 'asc',
+                            limit: 50000
+                        },
+                        headers: {
+                            'x-polygon-api-key': currentUser.value.apis[index].key
+                        },
+                        retry: 5,
+                        retryDelay: 60000
+                    })
                         .then((response) => {
                             //console.log(" -> data " + JSON.stringify(response))
                             //console.log(" -> ohlcvData " + JSON.stringify(ohlcvData))

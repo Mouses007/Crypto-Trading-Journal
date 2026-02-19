@@ -1,16 +1,12 @@
 <script setup>
 import { onMounted, ref } from 'vue';
-import { spinnerLoadingPage, executions, existingImports, blotter, pAndL, tradesData, timeZoneTrade, existingTradesArray, trades as globalTrades } from '../stores/globals';
-import { useDecimalsArithmetic } from '../utils/utils';
+import { spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js';
+import { executions, existingImports, blotter, pAndL, tradesData, existingTradesArray, trades as globalTrades } from '../stores/trades.js';
+import { useDecimalsArithmetic, useCreatedDateFormat, useDateCalFormat } from '../utils/formatters.js';
 import { useImportTrades, useUploadTrades, useGetExistingTradesArray, useCreateBlotter, useCreatePnL } from '../utils/addTrades'
-import { useCreatedDateFormat, useDateCalFormat } from '../utils/utils';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import axios from 'axios'
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
+import dayjs from '../utils/dayjs-setup.js'
 
 spinnerLoadingPage.value = false
 

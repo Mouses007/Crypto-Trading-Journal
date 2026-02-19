@@ -125,7 +125,31 @@ if !VS_FOUND!==0 (
 )
 
 :: ══════════════════════════════════════════
-::  CHECK 4: Ollama (optional)
+::  CHECK 4: npm Version
+:: ══════════════════════════════════════════
+where npm >nul 2>nul
+if !errorlevel!==0 (
+    for /f "tokens=*" %%v in ('npm -v 2^>nul') do set "NPM_VER=%%v"
+    echo   !GREEN![OK]!RESET!  npm                v!NPM_VER!
+) else (
+    echo   !RED![!!]!RESET!  npm                !RED!Nicht gefunden!RESET!
+    set "MANDATORY_MISSING=1"
+)
+
+:: ══════════════════════════════════════════
+::  CHECK 5: Port 8080 frei
+:: ══════════════════════════════════════════
+set "PORT_FREE=1"
+netstat -ano 2>nul | findstr ":8080 " | findstr "LISTENING" >nul 2>nul
+if !errorlevel!==0 (
+    set "PORT_FREE=0"
+    echo   !YELLOW![!]!RESET!  Port 8080          !YELLOW!Belegt!RESET! !GRAY!^(anderer Dienst laeuft auf 8080^)!RESET!
+) else (
+    echo   !GREEN![OK]!RESET!  Port 8080          Frei
+)
+
+:: ══════════════════════════════════════════
+::  CHECK 6: Ollama (optional)
 :: ══════════════════════════════════════════
 where ollama >nul 2>nul
 if !errorlevel!==0 (

@@ -1,20 +1,8 @@
-import { totals, amountCase, totalsByDate, pageId, selectedTimeFrame, groups, timeZoneTrade, selectedRatio, filteredTrades, selectedGrossNet, satisfactionArray, satisfactionTradeArray, dailyChartZoom, barChartNegativeTagGroups } from "../stores/globals.js"
-import { useOneDecPercentFormat, useChartFormat, useThousandCurrencyFormat, useTwoDecCurrencyFormat, useTimeFormat, useHourMinuteFormat, useCapitalizeFirstLetter, useXDecCurrencyFormat, useXDecFormat } from "./utils.js"
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import { pageId, timeZoneTrade, dailyChartZoom, barChartNegativeTagGroups } from "../stores/ui.js"
+import { amountCase, selectedTimeFrame, selectedRatio, selectedGrossNet } from "../stores/filters.js"
+import { totals, totalsByDate, groups, filteredTrades, filteredTradesTrades, satisfactionArray, satisfactionTradeArray, availableTags } from "../stores/trades.js"
+import { useOneDecPercentFormat, useChartFormat, useThousandCurrencyFormat, useTwoDecCurrencyFormat, useTimeFormat, useHourMinuteFormat, useCapitalizeFirstLetter, useXDecCurrencyFormat, useXDecFormat } from "./formatters.js"
+import dayjs from './dayjs-setup.js'
 import * as echarts from 'echarts';
 
 const cssColor87 = "rgba(255, 255, 255, 0.87)"
@@ -32,8 +20,27 @@ const redColor = "rgba(235, 87, 87, 0.85)"      // leichtes Rot für negative We
 const redColorHover = "rgba(235, 87, 87, 1)"
 const maxChartValues = 20
 
+// Globales Resize-Handling für alle ECharts-Instanzen
+let resizeListenerAdded = false
+function ensureResizeListener() {
+    if (resizeListenerAdded) return
+    resizeListenerAdded = true
+    let resizeTimer = null
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer)
+        resizeTimer = setTimeout(() => {
+            // Alle aktiven ECharts-Instanzen resizen
+            const chartElements = document.querySelectorAll('.chartClass, .chartIdCardClass')
+            chartElements.forEach(el => {
+                const instance = echarts.getInstanceByDom(el)
+                if (instance) instance.resize()
+            })
+        }, 150)
+    })
+}
 
 export async function useECharts(param) {
+    ensureResizeListener()
     for (let index = 1; index <= 2; index++) {
         var chartId = 'pieChart' + index
         //console.log("chartId " + chartId)
@@ -79,6 +86,14 @@ export async function useECharts(param) {
     }
 
     // Call the function for each chart type
+    handleCharts('perfChart', usePerfChart);
+    handleCharts('feesChart', useFeesChart);
+    handleCharts('symbolChart', useSymbolChart);
+    handleCharts('weekdayChart', useWeekdayChart);
+    handleCharts('entryTimeChart', useEntryTimeChart);
+    handleCharts('durationChart', useDurationChart);
+    handleCharts('positionChart', usePositionChart);
+    handleCharts('strategyChart', useStrategyChart);
     handleCharts('lineBarChart', useLineBarChart);
     handleCharts('barChart', useBarChart);
     handleCharts('barChartNegative', useBarChartNegative);
@@ -1146,7 +1161,16 @@ export function useBarChartNegative(param1) {
         }
 
         if (param1 == "barChartNegative18") {
-            keyObject = groups.tags
+            // Nur Tags aus der ersten Tag-Gruppe (Strategie) anzeigen
+            const stratGroup = availableTags.length > 0 ? availableTags[0] : null
+            if (stratGroup && groups.tags) {
+                const stratTagIds = new Set(stratGroup.tags.map(t => t.id))
+                keyObject = Object.keys(groups.tags)
+                    .filter(key => stratTagIds.has(key))
+                    .reduce((acc, key) => { acc[key] = groups.tags[key]; return acc }, {})
+            } else {
+                keyObject = groups.tags
+            }
         }
 
         //case for group tags
@@ -2332,6 +2356,870 @@ export function useRadarChart(elementId, indicators, values) {
                     lineStyle: { color: greenColor, width: 2 },
                     itemStyle: { color: greenColor }
                 }]
+            }]
+        }
+
+        myChart.setOption(option)
+        resolve()
+    })
+}
+
+/**
+ * Trading Performance Chart
+ * - Orange Balken: PnL pro Trade ($)
+ * - Blaue Fläche: Kumulative Equity-Kurve ($)
+ * - Dunkelblaue Linie: High Water Mark ($)
+ * - Rote gestrichelte Linie: Drawdown ($)
+ */
+export function usePerfChart(param) {
+    return new Promise((resolve, reject) => {
+        var el = document.getElementById(param)
+        if (!el) { resolve(); return }
+        var myChart = echarts.init(el)
+
+        // Trades nach Datum sortiert (aufsteigend)
+        let trades = [...filteredTradesTrades].sort((a, b) => a.td - b.td)
+
+        if (trades.length === 0) { resolve(); return }
+
+        let xAxisData = []       // Trade-Labels
+        let pnlBars = []         // Einzel-PnL pro Trade
+        let equityCurve = []     // Kumulative Equity
+        let hwmLine = []         // High Water Mark
+        let drawdownLine = []    // Drawdown vom HWM
+
+        let cumPnl = 0
+        let highWaterMark = 0
+
+        const amountKey = amountCase.value + 'Proceeds'
+
+        trades.forEach((trade, i) => {
+            const pnl = trade[amountKey] || trade.grossProceeds || 0
+            cumPnl += pnl
+
+            // High Water Mark
+            if (cumPnl > highWaterMark) highWaterMark = cumPnl
+            const drawdown = cumPnl - highWaterMark
+
+            // X-Achse: Nummer + Symbol
+            const symbol = trade.symbol ? trade.symbol.replace('/USDT', '').replace('USDT', '') : ''
+            xAxisData.push('#' + (i + 1) + (symbol ? ' ' + symbol : ''))
+
+            // PnL Balken (grün/rot)
+            pnlBars.push({
+                value: Number(pnl.toFixed(2)),
+                itemStyle: { color: pnl >= 0 ? greenColor : redColor },
+                emphasis: { itemStyle: { color: pnl >= 0 ? greenColorHover : redColorHover } }
+            })
+
+            equityCurve.push(Number(cumPnl.toFixed(2)))
+            hwmLine.push(Number(highWaterMark.toFixed(2)))
+            drawdownLine.push(Number(drawdown.toFixed(2)))
+        })
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                backgroundColor: blackbg7,
+                borderColor: blackbg7,
+                textStyle: { color: cssColor87 },
+                formatter: (params) => {
+                    let label = params[0]?.name || ''
+                    let html = '<b>' + label + '</b>'
+                    params.forEach(p => {
+                        const val = useTwoDecCurrencyFormat(p.value)
+                        html += '<br>' + p.marker + ' ' + p.seriesName + ': ' + val
+                    })
+                    return html
+                }
+            },
+            legend: {
+                data: ['PnL', 'Equity', 'High Water Mark', 'Drawdown'],
+                textStyle: { color: cssColor60 },
+                top: 0
+            },
+            grid: {
+                left: 60,
+                right: 20,
+                top: 40,
+                bottom: 90
+            },
+            xAxis: {
+                type: 'category',
+                data: xAxisData,
+                axisLabel: {
+                    color: cssColor38,
+                    fontSize: 10,
+                    rotate: trades.length > 30 ? 45 : 0,
+                    interval: trades.length > 50 ? Math.floor(trades.length / 25) : 0
+                },
+                axisTick: { show: false }
+            },
+            yAxis: [
+                {
+                    type: 'value',
+                    name: 'Equity ($)',
+                    nameTextStyle: { color: cssColor38, fontSize: 10 },
+                    splitLine: {
+                        lineStyle: { type: 'solid', color: cssColor38 }
+                    },
+                    axisLabel: {
+                        formatter: (val) => useThousandCurrencyFormat(val),
+                        color: cssColor60
+                    }
+                },
+                {
+                    type: 'value',
+                    name: 'Trade PnL ($)',
+                    nameTextStyle: { color: cssColor38, fontSize: 10 },
+                    splitLine: { show: false },
+                    axisLabel: {
+                        formatter: (val) => useThousandCurrencyFormat(val),
+                        color: cssColor38
+                    }
+                }
+            ],
+            dataZoom: [
+                {
+                    type: 'inside',
+                    start: 0,
+                    end: 100
+                },
+                {
+                    type: 'slider',
+                    start: 0,
+                    end: 100,
+                    height: 20,
+                    bottom: 5,
+                    borderColor: cssColor38,
+                    fillerColor: 'rgba(108, 171, 247, 0.15)',
+                    handleStyle: { color: '#6cabf7' },
+                    textStyle: { color: cssColor38 }
+                }
+            ],
+            series: [
+                {
+                    name: 'PnL',
+                    type: 'bar',
+                    yAxisIndex: 1,
+                    data: pnlBars,
+                    barMaxWidth: 8,
+                    z: 1
+                },
+                {
+                    name: 'Equity',
+                    type: 'line',
+                    yAxisIndex: 0,
+                    data: equityCurve,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { color: '#6cabf7', width: 1.5 },
+                    itemStyle: { color: '#6cabf7' },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(108, 171, 247, 0.35)' },
+                            { offset: 1, color: 'rgba(108, 171, 247, 0.05)' }
+                        ])
+                    },
+                    z: 2
+                },
+                {
+                    name: 'High Water Mark',
+                    type: 'line',
+                    yAxisIndex: 0,
+                    data: hwmLine,
+                    smooth: false,
+                    showSymbol: false,
+                    lineStyle: { color: '#1a4a8a', width: 2, type: 'solid' },
+                    itemStyle: { color: '#1a4a8a' },
+                    z: 3
+                },
+                {
+                    name: 'Drawdown',
+                    type: 'line',
+                    yAxisIndex: 0,
+                    data: drawdownLine,
+                    smooth: true,
+                    showSymbol: false,
+                    lineStyle: { color: '#eb5757', width: 1.5, type: 'dashed' },
+                    itemStyle: { color: '#eb5757' },
+                    z: 4
+                }
+            ]
+        }
+
+        myChart.setOption(option)
+        resolve()
+    })
+}
+
+export function usePositionChart(param) {
+    return new Promise((resolve, reject) => {
+        var el = document.getElementById(param)
+        if (!el) { resolve(); return }
+        var myChart = echarts.init(el)
+
+        const keyObject = groups.position
+        if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
+
+        const keys = Object.keys(keyObject)
+        let items = []
+
+        for (const key of keys) {
+            var sumWins = 0, sumLoss = 0, sumProceeds = 0, trades = 0
+
+            keyObject[key].forEach(element => {
+                sumWins += element[amountCase.value + 'Wins']
+                sumLoss += element[amountCase.value + 'Loss']
+                sumProceeds += element[amountCase.value + 'Proceeds']
+                trades += element.tradesCount
+            })
+
+            let ratio = null
+            if (selectedRatio.value == "appt") {
+                ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
+            }
+            if (selectedRatio.value == "profitFactor") {
+                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+            }
+
+            if (ratio !== null) {
+                items.push({ name: useCapitalizeFirstLetter(key), ratio: Number(ratio.toFixed(4)) })
+            }
+        }
+
+        items.sort((a, b) => a.ratio - b.ratio)
+
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                backgroundColor: blackbg7,
+                borderColor: blackbg7,
+                textStyle: { color: cssColor87 },
+                formatter: (params) => {
+                    const p = params[0]
+                    const val = selectedRatio.value == "appt"
+                        ? useTwoDecCurrencyFormat(p.value)
+                        : useXDecFormat(p.value, 2)
+                    return '<b>' + p.name + '</b><br>' + p.marker + ' ' + ratioLabel + ': ' + val
+                }
+            },
+            grid: { left: 10, right: 80, top: 10, bottom: 10, containLabel: true },
+            xAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: (val) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(val) : useXDecFormat(val, 2),
+                    color: cssColor38
+                },
+                splitLine: { lineStyle: { type: 'dashed', color: cssColor38 } }
+            },
+            yAxis: {
+                type: 'category',
+                data: items.map(s => s.name),
+                axisLabel: { color: cssColor60 },
+                axisTick: { show: false }
+            },
+            series: [{
+                type: 'bar',
+                data: items.map(s => ({
+                    value: s.ratio,
+                    itemStyle: { color: s.ratio >= 0 ? greenColor : redColor }
+                })),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: (p) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(p.value) : useXDecFormat(p.value, 2),
+                    color: cssColor60,
+                    fontSize: 11
+                }
+            }]
+        }
+
+        myChart.setOption(option)
+        resolve()
+    })
+}
+
+export function useStrategyChart(param) {
+    return new Promise((resolve, reject) => {
+        var el = document.getElementById(param)
+        if (!el) { resolve(); return }
+        var myChart = echarts.init(el)
+
+        // Nur Tags aus der ersten Tag-Gruppe (Strategie) anzeigen
+        const stratGroup = availableTags.length > 0 ? availableTags[0] : null
+        let keyObject
+        if (stratGroup && groups.tags) {
+            const stratTagIds = new Set(stratGroup.tags.map(t => t.id))
+            keyObject = Object.keys(groups.tags)
+                .filter(key => stratTagIds.has(key))
+                .reduce((acc, key) => { acc[key] = groups.tags[key]; return acc }, {})
+        } else {
+            keyObject = groups.tags
+        }
+
+        if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
+
+        const keys = Object.keys(keyObject)
+        let items = []
+
+        for (const key of keys) {
+            var sumWins = 0, sumLoss = 0, sumProceeds = 0, trades = 0
+            let tagName = key
+
+            keyObject[key].forEach(element => {
+                sumWins += element[amountCase.value + 'Wins']
+                sumLoss += element[amountCase.value + 'Loss']
+                sumProceeds += element[amountCase.value + 'Proceeds']
+                trades += element.tradesCount
+                if (element.tagName) tagName = element.tagName
+            })
+
+            let ratio = null
+            if (selectedRatio.value == "appt") {
+                ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
+            }
+            if (selectedRatio.value == "profitFactor") {
+                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+            }
+
+            if (ratio !== null) {
+                items.push({ name: tagName, ratio: Number(ratio.toFixed(4)) })
+            }
+        }
+
+        items.sort((a, b) => a.ratio - b.ratio)
+
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                backgroundColor: blackbg7,
+                borderColor: blackbg7,
+                textStyle: { color: cssColor87 },
+                formatter: (params) => {
+                    const p = params[0]
+                    const val = selectedRatio.value == "appt"
+                        ? useTwoDecCurrencyFormat(p.value)
+                        : useXDecFormat(p.value, 2)
+                    return '<b>' + p.name + '</b><br>' + p.marker + ' ' + ratioLabel + ': ' + val
+                }
+            },
+            grid: { left: 10, right: 80, top: 10, bottom: 10, containLabel: true },
+            xAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: (val) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(val) : useXDecFormat(val, 2),
+                    color: cssColor38
+                },
+                splitLine: { lineStyle: { type: 'dashed', color: cssColor38 } }
+            },
+            yAxis: {
+                type: 'category',
+                data: items.map(s => s.name),
+                axisLabel: { color: cssColor60 },
+                axisTick: { show: false }
+            },
+            series: [{
+                type: 'bar',
+                data: items.map(s => ({
+                    value: s.ratio,
+                    itemStyle: { color: s.ratio >= 0 ? greenColor : redColor }
+                })),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: (p) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(p.value) : useXDecFormat(p.value, 2),
+                    color: cssColor60,
+                    fontSize: 11
+                }
+            }]
+        }
+
+        myChart.setOption(option)
+        resolve()
+    })
+}
+
+export function useWeekdayChart(param) {
+    return new Promise((resolve, reject) => {
+        var el = document.getElementById(param)
+        if (!el) { resolve(); return }
+        var myChart = echarts.init(el)
+
+        const keyObject = groups.day
+        if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
+
+        // Wochentage in richtiger Reihenfolge (0=Sonntag, 1=Montag, ...)
+        const dayNames = dayjs.updateLocale('en').weekdays
+        const keys = Object.keys(keyObject)
+        let items = []
+
+        for (const key of keys) {
+            var sumWins = 0, sumLoss = 0, sumProceeds = 0, trades = 0
+
+            keyObject[key].forEach(element => {
+                sumWins += element[amountCase.value + 'Wins']
+                sumLoss += element[amountCase.value + 'Loss']
+                sumProceeds += element[amountCase.value + 'Proceeds']
+                trades += element.tradesCount
+            })
+
+            let ratio = null
+            if (selectedRatio.value == "appt") {
+                ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
+            }
+            if (selectedRatio.value == "profitFactor") {
+                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+            }
+
+            if (ratio !== null) {
+                items.push({ name: dayNames[key] || key, ratio: Number(ratio.toFixed(4)), dayIndex: Number(key) })
+            }
+        }
+
+        // Nach Wochentag sortieren (Montag zuerst)
+        items.sort((a, b) => a.dayIndex - b.dayIndex)
+
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                backgroundColor: blackbg7,
+                borderColor: blackbg7,
+                textStyle: { color: cssColor87 },
+                formatter: (params) => {
+                    const p = params[0]
+                    const val = selectedRatio.value == "appt"
+                        ? useTwoDecCurrencyFormat(p.value)
+                        : useXDecFormat(p.value, 2)
+                    return '<b>' + p.name + '</b><br>' + p.marker + ' ' + ratioLabel + ': ' + val
+                }
+            },
+            grid: { left: 10, right: 80, top: 10, bottom: 10, containLabel: true },
+            xAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: (val) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(val) : useXDecFormat(val, 2),
+                    color: cssColor38
+                },
+                splitLine: { lineStyle: { type: 'dashed', color: cssColor38 } }
+            },
+            yAxis: {
+                type: 'category',
+                data: items.map(s => s.name),
+                axisLabel: { color: cssColor60 },
+                axisTick: { show: false }
+            },
+            series: [{
+                type: 'bar',
+                data: items.map(s => ({
+                    value: s.ratio,
+                    itemStyle: { color: s.ratio >= 0 ? greenColor : redColor }
+                })),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: (p) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(p.value) : useXDecFormat(p.value, 2),
+                    color: cssColor60,
+                    fontSize: 11
+                }
+            }]
+        }
+
+        myChart.setOption(option)
+        resolve()
+    })
+}
+
+export function useEntryTimeChart(param) {
+    return new Promise((resolve, reject) => {
+        var el = document.getElementById(param)
+        if (!el) { resolve(); return }
+        var myChart = echarts.init(el)
+
+        const keyObject = groups.timeframe
+        if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
+
+        const keys = Object.keys(keyObject)
+        let items = []
+
+        for (const key of keys) {
+            var sumWins = 0, sumLoss = 0, sumProceeds = 0, trades = 0
+
+            keyObject[key].forEach(element => {
+                sumWins += element[amountCase.value + 'Wins']
+                sumLoss += element[amountCase.value + 'Loss']
+                sumProceeds += element[amountCase.value + 'Proceeds']
+                trades += element.tradesCount
+            })
+
+            let ratio = null
+            if (selectedRatio.value == "appt") {
+                ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
+            }
+            if (selectedRatio.value == "profitFactor") {
+                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+            }
+
+            if (ratio !== null) {
+                items.push({ name: key, ratio: Number(ratio.toFixed(4)), timeKey: Number(key) })
+            }
+        }
+
+        // Nach Uhrzeit sortieren
+        items.sort((a, b) => a.timeKey - b.timeKey)
+
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                backgroundColor: blackbg7,
+                borderColor: blackbg7,
+                textStyle: { color: cssColor87 },
+                formatter: (params) => {
+                    const p = params[0]
+                    const val = selectedRatio.value == "appt"
+                        ? useTwoDecCurrencyFormat(p.value)
+                        : useXDecFormat(p.value, 2)
+                    return '<b>' + p.name + ':00</b><br>' + p.marker + ' ' + ratioLabel + ': ' + val
+                }
+            },
+            grid: { left: 10, right: 80, top: 10, bottom: 10, containLabel: true },
+            xAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: (val) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(val) : useXDecFormat(val, 2),
+                    color: cssColor38
+                },
+                splitLine: { lineStyle: { type: 'dashed', color: cssColor38 } }
+            },
+            yAxis: {
+                type: 'category',
+                data: items.map(s => s.name + ':00'),
+                axisLabel: { color: cssColor60 },
+                axisTick: { show: false }
+            },
+            series: [{
+                type: 'bar',
+                data: items.map(s => ({
+                    value: s.ratio,
+                    itemStyle: { color: s.ratio >= 0 ? greenColor : redColor }
+                })),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: (p) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(p.value) : useXDecFormat(p.value, 2),
+                    color: cssColor60,
+                    fontSize: 11
+                }
+            }]
+        }
+
+        myChart.setOption(option)
+        resolve()
+    })
+}
+
+export function useDurationChart(param) {
+    return new Promise((resolve, reject) => {
+        var el = document.getElementById(param)
+        if (!el) { resolve(); return }
+        var myChart = echarts.init(el)
+
+        const keyObject = groups.duration
+        if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
+
+        const keys = Object.keys(keyObject)
+        let items = []
+
+        // Dauer-Labels
+        function durationLabel(mins) {
+            const m = Number(mins)
+            if (m < 1) return "00:00-00:59"
+            if (m < 2) return "01:00-01:59"
+            if (m < 5) return "02:00-04:59"
+            if (m < 10) return "05:00-09:59"
+            if (m < 20) return "10:00-19:59"
+            if (m < 40) return "20:00-39:59"
+            if (m < 60) return "40:00-59:59"
+            return "+60:00"
+        }
+
+        for (const key of keys) {
+            var sumWins = 0, sumLoss = 0, sumProceeds = 0, trades = 0
+
+            keyObject[key].forEach(element => {
+                sumWins += element[amountCase.value + 'Wins']
+                sumLoss += element[amountCase.value + 'Loss']
+                sumProceeds += element[amountCase.value + 'Proceeds']
+                trades += element.tradesCount
+            })
+
+            let ratio = null
+            if (selectedRatio.value == "appt") {
+                ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
+            }
+            if (selectedRatio.value == "profitFactor") {
+                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+            }
+
+            if (ratio !== null) {
+                items.push({ name: durationLabel(key), ratio: Number(ratio.toFixed(4)), durationKey: Number(key) })
+            }
+        }
+
+        // Nach Dauer sortieren
+        items.sort((a, b) => a.durationKey - b.durationKey)
+
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                backgroundColor: blackbg7,
+                borderColor: blackbg7,
+                textStyle: { color: cssColor87 },
+                formatter: (params) => {
+                    const p = params[0]
+                    const val = selectedRatio.value == "appt"
+                        ? useTwoDecCurrencyFormat(p.value)
+                        : useXDecFormat(p.value, 2)
+                    return '<b>' + p.name + '</b><br>' + p.marker + ' ' + ratioLabel + ': ' + val
+                }
+            },
+            grid: { left: 10, right: 80, top: 10, bottom: 10, containLabel: true },
+            xAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: (val) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(val) : useXDecFormat(val, 2),
+                    color: cssColor38
+                },
+                splitLine: { lineStyle: { type: 'dashed', color: cssColor38 } }
+            },
+            yAxis: {
+                type: 'category',
+                data: items.map(s => s.name),
+                axisLabel: { color: cssColor60 },
+                axisTick: { show: false }
+            },
+            series: [{
+                type: 'bar',
+                data: items.map(s => ({
+                    value: s.ratio,
+                    itemStyle: { color: s.ratio >= 0 ? greenColor : redColor }
+                })),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: (p) => selectedRatio.value == "appt" ? useTwoDecCurrencyFormat(p.value) : useXDecFormat(p.value, 2),
+                    color: cssColor60,
+                    fontSize: 11
+                }
+            }]
+        }
+
+        myChart.setOption(option)
+        resolve()
+    })
+}
+
+export function useSymbolChart(param) {
+    return new Promise((resolve, reject) => {
+        var el = document.getElementById(param)
+        if (!el) { resolve(); return }
+        var myChart = echarts.init(el)
+
+        const keyObject = groups.symbols
+        if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
+
+        const keys = Object.keys(keyObject)
+        let items = []
+
+        for (const key of keys) {
+            var sumWins = 0
+            var sumLoss = 0
+            let sumProceeds = 0
+            var trades = 0
+
+            keyObject[key].forEach(element => {
+                sumWins += element[amountCase.value + 'Wins']
+                sumLoss += element[amountCase.value + 'Loss']
+                sumProceeds += element[amountCase.value + 'Proceeds']
+                trades += element.tradesCount
+            })
+
+            let ratio = null
+            if (selectedRatio.value == "appt") {
+                ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
+            }
+            if (selectedRatio.value == "profitFactor") {
+                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+            }
+
+            if (ratio !== null) {
+                items.push({ symbol: key, ratio: Number(ratio.toFixed(4)) })
+            }
+        }
+
+        // Sortieren: niedrigste unten, höchste oben
+        items.sort((a, b) => a.ratio - b.ratio)
+
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                backgroundColor: blackbg7,
+                borderColor: blackbg7,
+                textStyle: { color: cssColor87 },
+                formatter: (params) => {
+                    const p = params[0]
+                    const val = selectedRatio.value == "appt"
+                        ? useTwoDecCurrencyFormat(p.value)
+                        : useXDecFormat(p.value, 2)
+                    return '<b>' + p.name + '</b><br>' + p.marker + ' ' + ratioLabel + ': ' + val
+                }
+            },
+            grid: {
+                left: 10,
+                right: 80,
+                top: 10,
+                bottom: 10,
+                containLabel: true
+            },
+            xAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: (val) => selectedRatio.value == "appt"
+                        ? useTwoDecCurrencyFormat(val)
+                        : useXDecFormat(val, 2),
+                    color: cssColor38
+                },
+                splitLine: {
+                    lineStyle: { type: 'dashed', color: cssColor38 }
+                }
+            },
+            yAxis: {
+                type: 'category',
+                data: items.map(s => s.symbol),
+                axisLabel: { color: cssColor60 },
+                axisTick: { show: false }
+            },
+            series: [{
+                type: 'bar',
+                data: items.map(s => ({
+                    value: s.ratio,
+                    itemStyle: {
+                        color: s.ratio >= 0 ? greenColor : redColor
+                    }
+                })),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: (p) => selectedRatio.value == "appt"
+                        ? useTwoDecCurrencyFormat(p.value)
+                        : useXDecFormat(p.value, 2),
+                    color: cssColor60,
+                    fontSize: 11
+                }
+            }]
+        }
+
+        myChart.setOption(option)
+        resolve()
+    })
+}
+
+export function useFeesChart(param) {
+    return new Promise((resolve, reject) => {
+        var el = document.getElementById(param)
+        if (!el) { resolve(); return }
+        var myChart = echarts.init(el)
+
+        let trades = [...filteredTradesTrades]
+        if (trades.length === 0) { resolve(); return }
+
+        // Gebühren pro Symbol summieren
+        let feesBySymbol = {}
+        trades.forEach(trade => {
+            const symbol = trade.symbol || 'Unbekannt'
+            const fee = Math.abs(trade.commission || 0)
+            if (!feesBySymbol[symbol]) feesBySymbol[symbol] = 0
+            feesBySymbol[symbol] += fee
+        })
+
+        // Nach Gebühren sortieren (höchste oben im horizontalen Chart)
+        let sorted = Object.entries(feesBySymbol)
+            .map(([symbol, fee]) => ({ symbol, fee: Number(fee.toFixed(2)) }))
+            .sort((a, b) => a.fee - b.fee)
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                backgroundColor: blackbg7,
+                borderColor: blackbg7,
+                textStyle: { color: cssColor87 },
+                formatter: (params) => {
+                    const p = params[0]
+                    return '<b>' + p.name + '</b><br>' + p.marker + ' Gebühren: ' + useTwoDecCurrencyFormat(p.value)
+                }
+            },
+            grid: {
+                left: 10,
+                right: 80,
+                top: 10,
+                bottom: 10,
+                containLabel: true
+            },
+            xAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: (val) => useTwoDecCurrencyFormat(val),
+                    color: cssColor38
+                },
+                splitLine: {
+                    lineStyle: { type: 'dashed', color: cssColor38 }
+                }
+            },
+            yAxis: {
+                type: 'category',
+                data: sorted.map(s => s.symbol),
+                axisLabel: { color: cssColor60 },
+                axisTick: { show: false }
+            },
+            series: [{
+                type: 'bar',
+                data: sorted.map(s => ({
+                    value: s.fee,
+                    itemStyle: { color: '#f5a623' }
+                })),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: (p) => useTwoDecCurrencyFormat(p.value),
+                    color: cssColor60,
+                    fontSize: 11
+                }
             }]
         }
 

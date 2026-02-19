@@ -3,11 +3,14 @@ import { ref, computed, onBeforeMount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
-import { spinnerLoadingPage, availableTags, allTradeTimeframes, selectedTradeTimeframes } from '../stores/globals'
+import { spinnerLoadingPage } from '../stores/ui.js'
+import { allTradeTimeframes, selectedTradeTimeframes } from '../stores/filters.js'
+import { availableTags } from '../stores/trades.js'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
-import { useCreatedDateFormat } from '../utils/utils.js'
-import { dbFind, dbUpdate } from '../utils/db.js'
+import { useCreatedDateFormat } from '../utils/formatters.js'
+import { dbFind, dbUpdate, dbCreate } from '../utils/db.js'
 import Quill from 'quill'
+import { sanitizeHtml } from '../utils/sanitize'
 
 const route = useRoute()
 const playbookEntries = ref([])
@@ -32,14 +35,59 @@ onBeforeMount(async () => {
     await loadPlaybookEntries()
     spinnerLoadingPage.value = false
 
-    // Auto-expand entry if tradeId query param is present (e.g. from Screenshots link)
+    // Auto-expand entry if tradeId query param is present (e.g. from Screenshots link or Bewerten)
     const targetTradeId = route.query.tradeId
     if (targetTradeId) {
-        const entry = playbookEntries.value.find(e => e.tradeId === targetTradeId)
+        let entry = playbookEntries.value.find(e => e.tradeId === targetTradeId)
+
+        // If no note exists yet, create an empty one so the user can evaluate
+        if (!entry) {
+            const allTrades = await dbFind('trades', { descending: 'dateUnix', limit: 500 })
+            let tradeDay = null
+            let tradeDetail = null
+            for (const day of allTrades) {
+                if (day.trades && Array.isArray(day.trades)) {
+                    const found = day.trades.find(tr => tr.id === targetTradeId)
+                    if (found) {
+                        tradeDay = day
+                        tradeDetail = found
+                        break
+                    }
+                }
+            }
+
+            if (tradeDay) {
+                await dbCreate('notes', {
+                    dateUnix: tradeDay.dateUnix,
+                    tradeId: targetTradeId,
+                    note: '<p>-</p>',
+                    entryStressLevel: 0,
+                    emotionLevel: 0,
+                    entryNote: '',
+                    feelings: '',
+                    playbook: '',
+                    timeframe: '',
+                    closingNote: '',
+                    closingStressLevel: 0,
+                    closingEmotionLevel: 0,
+                    closingFeelings: '',
+                    closingTimeframe: '',
+                    closingPlaybook: '',
+                })
+                await loadPlaybookEntries()
+                entry = playbookEntries.value.find(e => e.tradeId === targetTradeId)
+            }
+        }
+
         if (entry) {
             await nextTick()
             toggleExpand(entry.tradeId)
             await nextTick()
+            // Auto-start edit mode for new entries (no data yet)
+            if (!hasData(entry)) {
+                startEdit(entry.tradeId)
+                await nextTick()
+            }
             setTimeout(() => {
                 const el = document.getElementById('playbook-' + entry.tradeId)
                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -165,6 +213,7 @@ async function loadPlaybookEntries() {
             satisfactionObjectId: satisfaction?.objectId || null,
             dateUnix: note.dateUnix,
             tradeId: note.tradeId,
+            // Opening fields
             entryStressLevel: note.entryStressLevel || parsed.entryStressLevel || 0,
             emotionLevel: note.emotionLevel || 0,
             entryNote: note.entryNote || parsed.entryNote || '',
@@ -172,7 +221,15 @@ async function loadPlaybookEntries() {
             playbook: note.playbook || parsed.playbook || '',
             timeframe: note.timeframe || parsed.timeframe || '',
             screenshotId: note.screenshotId || '',
+            // Closing fields
             closingNote: note.closingNote || '',
+            closingStressLevel: note.closingStressLevel || 0,
+            closingEmotionLevel: note.closingEmotionLevel || 0,
+            closingFeelings: note.closingFeelings || '',
+            closingTimeframe: note.closingTimeframe || '',
+            closingPlaybook: note.closingPlaybook || '',
+            closingScreenshotId: note.closingScreenshotId || '',
+            // General
             note: note.note || '',
             satisfaction: satisfaction ? satisfaction.satisfaction : null,
             tags: resolvedTags,
@@ -200,7 +257,10 @@ function hasData(entry) {
     return entry.entryStressLevel > 0 || entry.emotionLevel > 0 || entry.timeframe || entry.feelings ||
         (entry.playbook && stripHtml(entry.playbook).trim()) ||
         (entry.tags && entry.tags.length > 0) ||
-        entry.satisfaction !== null || entry.entryNote
+        entry.satisfaction !== null || entry.entryNote ||
+        entry.closingStressLevel > 0 || entry.closingEmotionLevel > 0 || entry.closingTimeframe ||
+        entry.closingFeelings || (entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim()) ||
+        entry.closingNote
 }
 
 // --- Expand/Collapse ---
@@ -221,10 +281,13 @@ async function startEdit(tradeId) {
     editingId.value = tradeId
 
     await nextTick()
-    const editorEl = document.getElementById('quillPlaybook-' + tradeId)
-    if (editorEl && !quillInstances[tradeId]) {
-        const entry = playbookEntries.value.find(e => e.tradeId === tradeId)
-        const quill = new Quill(editorEl, {
+    const entry = playbookEntries.value.find(e => e.tradeId === tradeId)
+
+    // Opening Quill
+    const openingKey = tradeId + '_opening'
+    const openingEl = document.getElementById('quillPlaybook-' + tradeId + '-opening')
+    if (openingEl && !quillInstances[openingKey]) {
+        const quill = new Quill(openingEl, {
             modules: {
                 toolbar: [
                     [{ 'header': [1, 2, false] }],
@@ -233,27 +296,63 @@ async function startEdit(tradeId) {
                     ['clean']
                 ]
             },
-            placeholder: 'Playbook Notiz...',
+            placeholder: 'Eröffnungs-Notiz...',
             theme: 'snow'
         })
-        quill.root.innerHTML = entry?.playbook || ''
-        quillInstances[tradeId] = quill
+        quill.root.innerHTML = sanitizeHtml(entry?.playbook || '')
+        quillInstances[openingKey] = quill
+    }
+
+    // Closing Quill
+    const closingKey = tradeId + '_closing'
+    const closingEl = document.getElementById('quillPlaybook-' + tradeId + '-closing')
+    if (closingEl && !quillInstances[closingKey]) {
+        const quill = new Quill(closingEl, {
+            modules: {
+                toolbar: [
+                    [{ 'header': [1, 2, false] }],
+                    ['bold', 'italic', 'underline'],
+                    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                    ['clean']
+                ]
+            },
+            placeholder: 'Abschluss-Notiz...',
+            theme: 'snow'
+        })
+        quill.root.innerHTML = sanitizeHtml(entry?.closingPlaybook || '')
+        quillInstances[closingKey] = quill
     }
 }
 
 function cancelEdit(tradeId) {
-    delete quillInstances[tradeId]
+    delete quillInstances[tradeId + '_opening']
+    delete quillInstances[tradeId + '_closing']
     editingId.value = null
 }
 
-// --- Stress Level ---
+// --- Opening Stress Level ---
 function updateEntryStress(entry, level) {
     entry.entryStressLevel = entry.entryStressLevel === level ? 0 : level
 }
 
-// --- Emotion Level ---
+// --- Opening Emotion Level ---
 function updateEmotionLevel(entry, level) {
     entry.emotionLevel = entry.emotionLevel === level ? 0 : level
+}
+
+// --- Closing Stress Level ---
+function updateClosingStress(entry, level) {
+    entry.closingStressLevel = (entry.closingStressLevel || 0) === level ? 0 : level
+}
+
+// --- Closing Emotion Level ---
+function updateClosingEmotionLevel(entry, level) {
+    entry.closingEmotionLevel = (entry.closingEmotionLevel || 0) === level ? 0 : level
+}
+
+// --- Closing Timeframe ---
+function updateClosingTimeframe(entry, tf) {
+    entry.closingTimeframe = (entry.closingTimeframe || '') === tf ? '' : tf
 }
 
 // --- Tags ---
@@ -280,13 +379,8 @@ function getTagsForGroup(entry, groupName) {
     })
 }
 
-function getStrategieTags() {
-    const group = availableTags.find(g => g.name === 'Strategie')
-    return group ? group.tags : []
-}
-
-function getTradeAbschlussTags() {
-    const group = availableTags.find(g => g.name === 'Trade Abschluss')
+function getGroupTags(groupId) {
+    const group = availableTags.find(g => g.id === groupId)
     return group ? group.tags : []
 }
 
@@ -300,20 +394,35 @@ function updateSatisfaction(entry, val) {
     entry.satisfaction = entry.satisfaction === val ? null : val
 }
 
-// --- Screenshot ---
-function getScreenshot(entry) {
+// --- Screenshots ---
+function getScreenshotById(screenshotId) {
+    if (!screenshotId) return null
+    const list = screenshotMap.value
+    if (!list || !list.length) return null
+    return list.find(s => s.objectId === screenshotId) || null
+}
+
+function getEntryScreenshot(entry) {
+    // 1. By screenshotId field
+    const byId = getScreenshotById(entry.screenshotId)
+    if (byId) return byId
+
     const list = screenshotMap.value
     if (!list || !list.length) return null
 
-    // 1. Exact match by name
-    let match = list.find(s => s.name === entry.tradeId)
+    // 2. Match by name containing "_entry"
+    let match = list.find(s => s.name && s.name.includes(entry.tradeId) && s.name.includes('_entry'))
     if (match) return match
 
-    // 2. Match by name containing tradeId prefix (e.g. screenshot "incoming_XXX" for trade with same XXX)
+    // 3. Exact match by name (legacy)
+    match = list.find(s => s.name === entry.tradeId)
+    if (match) return match
+
+    // 4. Match by name containing tradeId prefix
     match = list.find(s => s.name && entry.tradeId && s.name.includes(entry.tradeId))
     if (match) return match
 
-    // 3. Match by dateUnix + symbol (screenshot dateUnixDay == note dateUnix and same symbol)
+    // 5. Match by dateUnix + symbol
     if (entry.dateUnix && entry.symbol) {
         match = list.find(s =>
             s.symbol === entry.symbol &&
@@ -322,7 +431,7 @@ function getScreenshot(entry) {
         if (match) return match
     }
 
-    // 4. Fuzzy: tradeId starts with "t{dateUnixDay}_" and screenshot name starts with same dateUnixDay
+    // 6. Fuzzy: dateUnixDay prefix
     if (entry.tradeId) {
         const m = entry.tradeId.match(/^t?(\d+)_/)
         if (m) {
@@ -337,10 +446,22 @@ function getScreenshot(entry) {
     return null
 }
 
-function openFullscreen(entry) {
-    const s = getScreenshot(entry)
-    if (s) {
-        fullscreenImg.value = s.annotatedBase64 || s.originalBase64
+function getClosingScreenshot(entry) {
+    // By closingScreenshotId
+    const byId = getScreenshotById(entry.closingScreenshotId)
+    if (byId) return byId
+
+    const list = screenshotMap.value
+    if (!list || !list.length) return null
+
+    // Match by name containing "_closing"
+    const match = list.find(s => s.name && s.name.includes(entry.tradeId) && s.name.includes('_closing'))
+    return match || null
+}
+
+function openFullscreen(screenshotObj) {
+    if (screenshotObj) {
+        fullscreenImg.value = screenshotObj.annotatedBase64 || screenshotObj.originalBase64
     }
 }
 
@@ -352,7 +473,7 @@ function closeFullscreen() {
 function stripHtml(html) {
     if (!html) return ''
     const tmp = document.createElement('div')
-    tmp.innerHTML = html
+    tmp.innerHTML = sanitizeHtml(html)
     return tmp.textContent || tmp.innerText || ''
 }
 
@@ -361,8 +482,16 @@ async function saveEntry(entry) {
     savingId.value = entry.tradeId
 
     try {
-        if (quillInstances[entry.tradeId]) {
-            entry.playbook = quillInstances[entry.tradeId].root.innerHTML
+        // Get opening Quill content
+        const openingKey = entry.tradeId + '_opening'
+        if (quillInstances[openingKey]) {
+            entry.playbook = quillInstances[openingKey].root.innerHTML
+        }
+
+        // Get closing Quill content
+        const closingKey = entry.tradeId + '_closing'
+        if (quillInstances[closingKey]) {
+            entry.closingPlaybook = quillInstances[closingKey].root.innerHTML
         }
 
         let noteText = ''
@@ -376,13 +505,20 @@ async function saveEntry(entry) {
 
         await dbUpdate('notes', entry.noteObjectId, {
             note: entry.note,
+            // Opening fields
             entryStressLevel: entry.entryStressLevel || 0,
             emotionLevel: entry.emotionLevel || 0,
             entryNote: entry.entryNote || '',
             feelings: entry.feelings || '',
             playbook: entry.playbook || '',
             timeframe: entry.timeframe || '',
+            // Closing fields
             closingNote: entry.closingNote || '',
+            closingStressLevel: entry.closingStressLevel || 0,
+            closingEmotionLevel: entry.closingEmotionLevel || 0,
+            closingFeelings: entry.closingFeelings || '',
+            closingTimeframe: entry.closingTimeframe || '',
+            closingPlaybook: entry.closingPlaybook || '',
         })
 
         if (entry.satisfactionObjectId) {
@@ -414,7 +550,8 @@ async function saveEntry(entry) {
             entry.tagRecordObjectId = result.objectId
         }
 
-        delete quillInstances[entry.tradeId]
+        delete quillInstances[entry.tradeId + '_opening']
+        delete quillInstances[entry.tradeId + '_closing']
         editingId.value = null
     } catch (error) {
         console.error(' -> Playbook saveEntry Fehler:', error)
@@ -488,114 +625,115 @@ async function saveEntry(entry) {
 
                 <!-- Expanded: VIEW MODE -->
                 <div v-if="expandedId === entry.tradeId && editingId !== entry.tradeId" class="pb-body">
-                    <!-- Content with optional thumbnail -->
-                    <div class="d-flex gap-3">
-                    <!-- Data grid -->
-                    <div class="pb-grid flex-grow-1">
-
-                        <!-- Eröffnungsbewertung Header (nur wenn Daten vorhanden) -->
-                        <div v-if="entry.entryStressLevel > 0 || getTagsForGroup(entry, 'Strategie').length > 0 || entry.timeframe || entry.emotionLevel > 0 || entry.feelings || (entry.playbook && stripHtml(entry.playbook).trim())"
-                            class="pb-field pb-field-wide">
-                            <div class="pb-label fw-bold" style="color: var(--white-80)">Eröffnungsbewertung</div>
-                            <div class="pb-value"></div>
+                    <!-- ===== ERÖFFNUNGSBEWERTUNG (View) ===== -->
+                    <div v-if="entry.entryStressLevel > 0 || (entry.tags && entry.tags.length > 0) || entry.timeframe || entry.emotionLevel > 0 || entry.feelings || (entry.playbook && stripHtml(entry.playbook).trim())"
+                        class="pb-view-opening mb-2 p-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="uil uil-unlock-alt me-2" style="color: var(--green-color, #10b981); font-size: 1rem;"></i>
+                            <span class="fw-bold small">Eröffnungsbewertung</span>
+                            <!-- Entry Screenshot inline -->
+                            <div v-if="getEntryScreenshot(entry)" class="ms-auto">
+                                <img :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
+                                    class="pb-thumbnail-sm pointerClass"
+                                    @click.stop="openFullscreen(getEntryScreenshot(entry))"
+                                    title="Eröffnungs-Screenshot vergrößern" />
+                            </div>
                         </div>
-
-                        <div v-if="entry.entryStressLevel > 0" class="pb-field">
-                            <div class="pb-label">Stresslevel</div>
-                            <div class="pb-value">
-                                <div class="d-flex align-items-center">
-                                    <div class="pb-stress-bar">
-                                        <div class="pb-stress-fill"
-                                            :style="{ width: (entry.entryStressLevel * 10) + '%' }"
-                                            :class="entry.entryStressLevel <= 3 ? 'stress-low' : entry.entryStressLevel <= 6 ? 'stress-mid' : 'stress-high'">
+                        <div class="pb-grid">
+                            <div v-if="entry.entryStressLevel > 0" class="pb-field">
+                                <div class="pb-label">Stresslevel</div>
+                                <div class="pb-value">
+                                    <div class="d-flex align-items-center">
+                                        <div class="pb-stress-bar">
+                                            <div class="pb-stress-fill"
+                                                :style="{ width: (entry.entryStressLevel * 10) + '%' }"
+                                                :class="entry.entryStressLevel <= 3 ? 'stress-low' : entry.entryStressLevel <= 6 ? 'stress-mid' : 'stress-high'">
+                                            </div>
                                         </div>
+                                        <span class="small ms-2" style="color: var(--white-60)">{{ entry.entryStressLevel }}/10</span>
                                     </div>
-                                    <span class="small ms-2" style="color: var(--white-60)">{{ entry.entryStressLevel }}/10</span>
                                 </div>
                             </div>
-                        </div>
 
-                        <div v-if="getTagsForGroup(entry, 'Strategie').length > 0" class="pb-field">
-                            <div class="pb-label">Strategie</div>
-                            <div class="pb-value">
-                                <span v-for="tag in getTagsForGroup(entry, 'Strategie')" :key="tag.id"
-                                    class="pb-pill me-1"
-                                    :style="{ backgroundColor: getTagColor(tag.id), color: '#fff' }">
-                                    {{ tag.name }}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div v-if="entry.timeframe" class="pb-field">
-                            <div class="pb-label">Timeframe</div>
-                            <div class="pb-value"><span class="pb-pill">{{ entry.timeframe }}</span></div>
-                        </div>
-
-                        <div v-if="entry.emotionLevel > 0" class="pb-field">
-                            <div class="pb-label">Emotionslevel</div>
-                            <div class="pb-value">
-                                <div class="d-flex align-items-center">
-                                    <div class="pb-stress-bar">
-                                        <div class="pb-stress-fill"
-                                            :style="{ width: (entry.emotionLevel * 10) + '%' }"
-                                            :class="entry.emotionLevel <= 3 ? 'stress-high' : entry.emotionLevel <= 6 ? 'stress-mid' : 'stress-low'">
-                                        </div>
-                                    </div>
-                                    <span class="small ms-2" style="color: var(--white-60)">{{ entry.emotionLevel }}/10</span>
+                            <div v-if="entry.tags && entry.tags.length > 0" class="pb-field">
+                                <div class="pb-label">Tags</div>
+                                <div class="pb-value">
+                                    <span v-for="tag in entry.tags" :key="tag.id"
+                                        class="pb-pill me-1"
+                                        :style="{ backgroundColor: tag.color || getTagColor(tag.id), color: '#fff' }">
+                                        {{ tag.name }}
+                                    </span>
                                 </div>
                             </div>
-                        </div>
 
-                        <div v-if="entry.feelings" class="pb-field">
-                            <div class="pb-label">Emotionen</div>
-                            <div class="pb-value pb-text">{{ entry.feelings }}</div>
-                        </div>
-
-                        <div v-if="entry.playbook && stripHtml(entry.playbook).trim()" class="pb-field pb-field-wide">
-                            <div class="pb-label">Notiz</div>
-                            <div class="pb-value pb-note-content" v-html="entry.playbook"></div>
-                        </div>
-
-                        <!-- Abschlussbewertung Header (nur wenn Daten vorhanden) -->
-                        <div v-if="(entry.satisfaction !== null && entry.satisfaction !== undefined) || getTagsForGroup(entry, 'Trade Abschluss').length > 0 || entry.closingNote"
-                            class="pb-field pb-field-wide">
-                            <div class="pb-label fw-bold" style="color: var(--white-80)">Abschlussbewertung</div>
-                            <div class="pb-value"></div>
-                        </div>
-
-                        <div v-if="entry.satisfaction !== null && entry.satisfaction !== undefined" class="pb-field">
-                            <div class="pb-label">Zufriedenheit</div>
-                            <div class="pb-value">
-                                <i v-if="entry.satisfaction === true || entry.satisfaction === 1"
-                                    class="uil uil-thumbs-up fs-5 greenTrade"></i>
-                                <i v-else class="uil uil-thumbs-down fs-5 redTrade"></i>
+                            <div v-if="entry.timeframe" class="pb-field">
+                                <div class="pb-label">Timeframe</div>
+                                <div class="pb-value"><span class="pb-pill">{{ entry.timeframe }}</span></div>
                             </div>
-                        </div>
 
-                        <div v-if="getTagsForGroup(entry, 'Trade Abschluss').length > 0" class="pb-field">
-                            <div class="pb-label">Trade Abschluss</div>
-                            <div class="pb-value">
-                                <span v-for="tag in getTagsForGroup(entry, 'Trade Abschluss')" :key="tag.id"
-                                    class="pb-pill me-1"
-                                    :style="{ backgroundColor: getTagColor(tag.id), color: '#fff' }">
-                                    {{ tag.name }}
-                                </span>
+                            <div v-if="entry.emotionLevel > 0" class="pb-field">
+                                <div class="pb-label">Emotionslevel</div>
+                                <div class="pb-value">
+                                    <div class="d-flex align-items-center">
+                                        <div class="pb-stress-bar">
+                                            <div class="pb-stress-fill"
+                                                :style="{ width: (entry.emotionLevel * 10) + '%' }"
+                                                :class="entry.emotionLevel <= 3 ? 'stress-high' : entry.emotionLevel <= 6 ? 'stress-mid' : 'stress-low'">
+                                            </div>
+                                        </div>
+                                        <span class="small ms-2" style="color: var(--white-60)">{{ entry.emotionLevel }}/10</span>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
 
-                        <div v-if="entry.closingNote" class="pb-field pb-field-wide">
-                            <div class="pb-label">Abschlussnotiz</div>
-                            <div class="pb-value pb-text">{{ entry.closingNote }}</div>
+                            <div v-if="entry.feelings" class="pb-field">
+                                <div class="pb-label">Emotionen</div>
+                                <div class="pb-value pb-text">{{ entry.feelings }}</div>
+                            </div>
+
+                            <div v-if="entry.playbook && stripHtml(entry.playbook).trim()" class="pb-field pb-field-wide">
+                                <div class="pb-label">Notiz</div>
+                                <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.playbook)"></div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Screenshot thumbnail -->
-                    <div v-if="getScreenshot(entry)" class="pb-thumbnail-wrap flex-shrink-0">
-                        <img :src="getScreenshot(entry).annotatedBase64 || getScreenshot(entry).originalBase64"
-                            class="pb-thumbnail pointerClass"
-                            @click.stop="openFullscreen(entry)"
-                            title="Klicken zum Vergrößern" />
-                    </div>
+                    <!-- ===== ABSCHLUSSBEWERTUNG (View) — nur Tags + Notiz + Screenshot ===== -->
+                    <div v-if="(entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim()) || entry.closingNote || (entry.satisfaction !== null && entry.satisfaction !== undefined) || getClosingScreenshot(entry)"
+                        class="pb-view-closing mb-2 p-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="uil uil-lock-alt me-2" style="color: var(--blue-color, #3b82f6); font-size: 1rem;"></i>
+                            <span class="fw-bold small">Abschlussbewertung</span>
+                            <!-- Closing Screenshot inline -->
+                            <div v-if="getClosingScreenshot(entry)" class="ms-auto">
+                                <img :src="getClosingScreenshot(entry).annotatedBase64 || getClosingScreenshot(entry).originalBase64"
+                                    class="pb-thumbnail-sm pointerClass"
+                                    @click.stop="openFullscreen(getClosingScreenshot(entry))"
+                                    title="Abschluss-Screenshot vergrößern" />
+                            </div>
+                        </div>
+                        <div class="pb-grid">
+                            <div v-if="entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim()" class="pb-field pb-field-wide">
+                                <div class="pb-label">Notiz</div>
+                                <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.closingPlaybook)"></div>
+                            </div>
+
+                            <div v-if="entry.closingNote && !(entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim())" class="pb-field pb-field-wide">
+                                <div class="pb-label">Abschlussnotiz (alt)</div>
+                                <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.closingNote)"></div>
+                            </div>
+
+                            <div v-if="entry.satisfaction !== null && entry.satisfaction !== undefined" class="pb-field">
+                                <div class="pb-label">Zufriedenheit</div>
+                                <div class="pb-value">
+                                    <i v-if="entry.satisfaction === true || entry.satisfaction === 1"
+                                        class="uil uil-thumbs-up fs-5 greenTrade"></i>
+                                    <i v-else-if="entry.satisfaction === 'neutral'"
+                                        class="uil uil-thumbs-up fs-5 neutralTrade" style="transform: rotate(-90deg); display: inline-block;"></i>
+                                    <i v-else class="uil uil-thumbs-down fs-5 redTrade"></i>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Empty state -->
@@ -612,8 +750,12 @@ async function saveEntry(entry) {
                 <!-- Expanded: EDIT MODE -->
                 <div v-if="expandedId === entry.tradeId && editingId === entry.tradeId" class="pb-body pb-edit-mode">
 
-                    <!-- ===== ERÖFFNUNGSBEWERTUNG ===== -->
-                    <p class="pb-edit-label fw-bold mb-2" style="color: var(--white-80); font-size: 0.95rem; border-bottom: 1px solid var(--white-10);">Eröffnungsbewertung</p>
+                    <!-- ===== ERÖFFNUNGSBEWERTUNG (Edit) ===== -->
+                    <div class="pb-edit-opening p-3">
+                    <div class="d-flex align-items-center mb-3">
+                        <i class="uil uil-unlock-alt me-2" style="color: var(--green-color, #10b981); font-size: 1.1rem;"></i>
+                        <span class="fw-bold" style="font-size: 0.95rem;">Eröffnungsbewertung</span>
+                    </div>
 
                     <!-- Stresslevel -->
                     <div class="pb-edit-section">
@@ -633,25 +775,29 @@ async function saveEntry(entry) {
                         </div>
                     </div>
 
-                    <!-- Tags Strategie -->
+                    <!-- Tags -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">Tags</label>
-                        <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
-                            <span v-for="(tag, idx) in getTagsForGroup(entry, 'Strategie')" :key="tag.id"
+                        <!-- Zugewiesene Tags als Badges -->
+                        <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
+                            <span v-for="(tag, idx) in (entry.tags || [])" :key="tag.id"
                                 class="badge me-1 pointerClass"
                                 :style="{ backgroundColor: getTagColor(tag.id) }"
-                                @click.stop="removeTag(entry, idx, 'Strategie')">
+                                @click.stop="entry.tags.splice(idx, 1)">
                                 {{ tag.name }} <span class="ms-1">&times;</span>
                             </span>
                         </div>
+                        <!-- Ein Dropdown mit allen Gruppen als optgroups -->
                         <select class="form-select form-select-sm"
                             @change.stop="addTag(entry, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
                             <option selected disabled>Tag hinzufügen...</option>
-                            <option v-for="tag in getStrategieTags()" :key="tag.id"
-                                :value="JSON.stringify({ id: tag.id, name: tag.name })"
-                                :disabled="(entry.tags || []).some(t => t.id === tag.id)">
-                                {{ tag.name }}
-                            </option>
+                            <optgroup v-for="group in availableTags" :key="group.id" :label="group.name">
+                                <option v-for="tag in getGroupTags(group.id)" :key="tag.id"
+                                    :value="JSON.stringify({ id: tag.id, name: tag.name })"
+                                    :disabled="(entry.tags || []).some(t => t.id === tag.id)">
+                                    {{ tag.name }}
+                                </option>
+                            </optgroup>
                         </select>
                     </div>
 
@@ -696,57 +842,71 @@ async function saveEntry(entry) {
                     <!-- Playbook Notiz -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">Notiz</label>
-                        <div :id="'quillPlaybook-' + entry.tradeId" class="quill-incoming"></div>
+                        <div :id="'quillPlaybook-' + entry.tradeId + '-opening'" class="quill-incoming"></div>
                     </div>
 
-                    <!-- ===== ABSCHLUSSBEWERTUNG ===== -->
-                    <p class="pb-edit-label fw-bold mb-2 mt-3" style="color: var(--white-80); font-size: 0.95rem; border-bottom: 1px solid var(--white-10);">Abschlussbewertung</p>
+                    <!-- ===== ABSCHLUSSBEWERTUNG (Edit) ===== -->
+                    </div><!-- /opening-eval-edit -->
 
-                    <!-- Zufriedenheit -->
-                    <div class="pb-edit-section">
-                        <label class="pb-edit-label">Zufriedenheit</label>
-                        <div class="d-flex gap-3">
-                            <span class="pointerClass fs-4"
-                                :class="entry.satisfaction === true || entry.satisfaction === 1 ? 'greenTrade' : 'text-muted'"
-                                @click.stop="updateSatisfaction(entry, true)">
-                                <i class="uil uil-thumbs-up"></i>
-                            </span>
-                            <span class="pointerClass fs-4"
-                                :class="entry.satisfaction === false || entry.satisfaction === 0 ? 'redTrade' : 'text-muted'"
-                                @click.stop="updateSatisfaction(entry, false)">
-                                <i class="uil uil-thumbs-down"></i>
-                            </span>
+                    <div class="pb-edit-closing p-3 mt-2">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="uil uil-lock-alt me-2" style="color: var(--blue-color, #3b82f6); font-size: 1.1rem;"></i>
+                            <span class="fw-bold" style="font-size: 0.95rem;">Abschlussbewertung</span>
                         </div>
-                    </div>
 
-                    <!-- Trade Abschluss Tags -->
-                    <div class="pb-edit-section">
-                        <label class="pb-edit-label">Trade Abschluss</label>
-                        <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
-                            <span v-for="(tag, idx) in getTagsForGroup(entry, 'Trade Abschluss')" :key="tag.id"
-                                class="badge me-1 pointerClass"
-                                :style="{ backgroundColor: getTagColor(tag.id) }"
-                                @click.stop="removeTag(entry, idx, 'Trade Abschluss')">
-                                {{ tag.name }} <span class="ms-1">&times;</span>
-                            </span>
+                        <!-- Tags -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">Tags</label>
+                            <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
+                                <span v-for="(tag, idx) in (entry.tags || [])" :key="tag.id"
+                                    class="badge me-1 pointerClass"
+                                    :style="{ backgroundColor: getTagColor(tag.id) }"
+                                    @click.stop="entry.tags.splice(idx, 1)">
+                                    {{ tag.name }} <span class="ms-1">&times;</span>
+                                </span>
+                            </div>
+                            <select class="form-select form-select-sm"
+                                @change.stop="addTag(entry, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
+                                <option selected disabled>Tag hinzufügen...</option>
+                                <optgroup v-for="group in availableTags" :key="group.id" :label="group.name">
+                                    <option v-for="tag in getGroupTags(group.id)" :key="tag.id"
+                                        :value="JSON.stringify({ id: tag.id, name: tag.name })"
+                                        :disabled="(entry.tags || []).some(t => t.id === tag.id)">
+                                        {{ tag.name }}
+                                    </option>
+                                </optgroup>
+                            </select>
                         </div>
-                        <select class="form-select form-select-sm"
-                            @change.stop="addTag(entry, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
-                            <option selected disabled>Tag hinzufügen...</option>
-                            <option v-for="tag in getTradeAbschlussTags()" :key="tag.id"
-                                :value="JSON.stringify({ id: tag.id, name: tag.name })"
-                                :disabled="(entry.tags || []).some(t => t.id === tag.id)">
-                                {{ tag.name }}
-                            </option>
-                        </select>
-                    </div>
 
-                    <!-- Abschlussnotiz -->
-                    <div class="pb-edit-section">
-                        <label class="pb-edit-label">Abschlussnotiz</label>
-                        <textarea class="form-control form-control-sm" v-model="entry.closingNote"
-                            placeholder="Notizen zum Trade-Abschluss..." rows="2"></textarea>
-                    </div>
+                        <!-- Notiz (Closing Quill) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">Notiz</label>
+                            <div :id="'quillPlaybook-' + entry.tradeId + '-closing'" class="quill-incoming"></div>
+                        </div>
+
+                        <!-- Zufriedenheit -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">Zufriedenheit</label>
+                            <div class="d-flex gap-3">
+                                <span class="pointerClass fs-4"
+                                    :class="entry.satisfaction === true || entry.satisfaction === 1 ? 'greenTrade' : 'text-muted'"
+                                    @click.stop="updateSatisfaction(entry, true)">
+                                    <i class="uil uil-thumbs-up"></i>
+                                </span>
+                                <span class="pointerClass fs-4"
+                                    :class="entry.satisfaction === 'neutral' ? 'neutralTrade' : 'text-muted'"
+                                    @click.stop="updateSatisfaction(entry, 'neutral')"
+                                    style="transform: rotate(-90deg); display: inline-block;">
+                                    <i class="uil uil-thumbs-up"></i>
+                                </span>
+                                <span class="pointerClass fs-4"
+                                    :class="entry.satisfaction === false || entry.satisfaction === 0 ? 'redTrade' : 'text-muted'"
+                                    @click.stop="updateSatisfaction(entry, false)">
+                                    <i class="uil uil-thumbs-down"></i>
+                                </span>
+                            </div>
+                        </div>
+                    </div><!-- /closing-eval-edit -->
 
                     <!-- Actions -->
                     <div class="d-flex justify-content-end gap-2 mt-2">
@@ -775,3 +935,37 @@ async function saveEntry(entry) {
         </div>
     </div>
 </template>
+
+<style scoped>
+.pb-view-opening {
+    background: var(--black-bg-3, #1a1a2e);
+    border: 1px solid var(--white-10, rgba(255,255,255,0.06));
+    border-left: 3px solid var(--green-color, #10b981);
+    border-radius: var(--border-radius, 6px);
+}
+.pb-view-closing {
+    background: var(--black-bg-3, #1a1a2e);
+    border: 1px solid var(--white-10, rgba(255,255,255,0.06));
+    border-left: 3px solid var(--blue-color, #3b82f6);
+    border-radius: var(--border-radius, 6px);
+}
+.pb-edit-opening {
+    background: var(--black-bg-3, #1a1a2e);
+    border: 1px solid var(--white-10, rgba(255,255,255,0.06));
+    border-left: 3px solid var(--green-color, #10b981);
+    border-radius: var(--border-radius, 6px);
+}
+.pb-edit-closing {
+    background: var(--black-bg-3, #1a1a2e);
+    border: 1px solid var(--white-10, rgba(255,255,255,0.06));
+    border-left: 3px solid var(--blue-color, #3b82f6);
+    border-radius: var(--border-radius, 6px);
+}
+.pb-thumbnail-sm {
+    width: 80px;
+    height: 50px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--white-10, rgba(255,255,255,0.1));
+}
+</style>

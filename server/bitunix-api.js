@@ -1,4 +1,6 @@
 import crypto from 'crypto'
+import { getKnex } from './database.js'
+import { encrypt, decrypt } from './crypto.js'
 
 const BASE_URL = 'https://fapi.bitunix.com'
 
@@ -103,17 +105,33 @@ export async function testConnection(apiKey, secretKey) {
 }
 
 /**
+ * Load and decrypt Bitunix config from DB.
+ */
+async function getDecryptedConfig() {
+    const knex = getKnex()
+    const config = await knex('bitunix_config').where('id', 1).first()
+    if (!config) return null
+    return {
+        ...config,
+        apiKey: config.apiKey ? decrypt(config.apiKey) : '',
+        secretKey: config.secretKey ? decrypt(config.secretKey) : ''
+    }
+}
+
+/**
  * Setup Bitunix API routes on Express app.
  */
-export function setupBitunixRoutes(app, getDb) {
+export function setupBitunixRoutes(app) {
 
     // Get Bitunix API config
-    app.get('/api/bitunix/config', (req, res) => {
+    app.get('/api/bitunix/config', async (req, res) => {
         try {
-            const db = getDb()
-            const config = db.prepare('SELECT * FROM bitunix_config WHERE id = 1').get()
+            const knex = getKnex()
+            const config = await knex('bitunix_config').where('id', 1).first()
             if (config) {
-                res.json({ apiKey: config.apiKey || '', hasSecret: !!config.secretKey, apiImportStartDate: config.apiImportStartDate || '' })
+                // Decrypt apiKey for display, never expose secretKey
+                const decryptedApiKey = config.apiKey ? decrypt(config.apiKey) : ''
+                res.json({ apiKey: decryptedApiKey, hasSecret: !!config.secretKey, apiImportStartDate: config.apiImportStartDate || '' })
             } else {
                 res.json({ apiKey: '', hasSecret: false, apiImportStartDate: '' })
             }
@@ -123,33 +141,27 @@ export function setupBitunixRoutes(app, getDb) {
     })
 
     // Save Bitunix API config
-    app.post('/api/bitunix/config', (req, res) => {
+    app.post('/api/bitunix/config', async (req, res) => {
         try {
-            const db = getDb()
+            const knex = getKnex()
             const { apiKey, secretKey, apiImportStartDate } = req.body
 
-            const existing = db.prepare('SELECT id FROM bitunix_config WHERE id = 1').get()
+            const existing = await knex('bitunix_config').where('id', 1).first()
             if (existing) {
-                const updates = []
-                const params = {}
-                if (apiKey !== undefined) {
-                    updates.push('apiKey = @apiKey')
-                    params.apiKey = apiKey
-                }
-                if (secretKey !== undefined) {
-                    updates.push('secretKey = @secretKey')
-                    params.secretKey = secretKey
-                }
-                if (apiImportStartDate !== undefined) {
-                    updates.push('apiImportStartDate = @apiImportStartDate')
-                    params.apiImportStartDate = apiImportStartDate
-                }
-                if (updates.length > 0) {
-                    db.prepare(`UPDATE bitunix_config SET ${updates.join(', ')} WHERE id = 1`).run(params)
+                const updates = {}
+                if (apiKey !== undefined) updates.apiKey = encrypt(apiKey)
+                if (secretKey !== undefined) updates.secretKey = encrypt(secretKey)
+                if (apiImportStartDate !== undefined) updates.apiImportStartDate = apiImportStartDate
+                if (Object.keys(updates).length > 0) {
+                    await knex('bitunix_config').where('id', 1).update(updates)
                 }
             } else {
-                db.prepare('INSERT INTO bitunix_config (id, apiKey, secretKey, apiImportStartDate) VALUES (1, @apiKey, @secretKey, @apiImportStartDate)')
-                    .run({ apiKey: apiKey || '', secretKey: secretKey || '', apiImportStartDate: apiImportStartDate || '' })
+                await knex('bitunix_config').insert({
+                    id: 1,
+                    apiKey: apiKey ? encrypt(apiKey) : '',
+                    secretKey: secretKey ? encrypt(secretKey) : '',
+                    apiImportStartDate: apiImportStartDate || ''
+                })
             }
 
             res.json({ ok: true })
@@ -161,8 +173,7 @@ export function setupBitunixRoutes(app, getDb) {
     // Test Bitunix API connection
     app.post('/api/bitunix/test', async (req, res) => {
         try {
-            const db = getDb()
-            const config = db.prepare('SELECT * FROM bitunix_config WHERE id = 1').get()
+            const config = await getDecryptedConfig()
 
             if (!config || !config.apiKey || !config.secretKey) {
                 return res.status(400).json({ error: 'API key and secret not configured' })
@@ -178,8 +189,7 @@ export function setupBitunixRoutes(app, getDb) {
     // Fetch history positions (proxy)
     app.get('/api/bitunix/positions', async (req, res) => {
         try {
-            const db = getDb()
-            const config = db.prepare('SELECT * FROM bitunix_config WHERE id = 1').get()
+            const config = await getDecryptedConfig()
 
             if (!config || !config.apiKey || !config.secretKey) {
                 return res.status(400).json({ error: 'API key and secret not configured' })
@@ -200,10 +210,10 @@ export function setupBitunixRoutes(app, getDb) {
     })
 
     // Get last API import timestamp
-    app.get('/api/bitunix/last-import', (req, res) => {
+    app.get('/api/bitunix/last-import', async (req, res) => {
         try {
-            const db = getDb()
-            const config = db.prepare('SELECT lastApiImport FROM bitunix_config WHERE id = 1').get()
+            const knex = getKnex()
+            const config = await knex('bitunix_config').select('lastApiImport').where('id', 1).first()
             res.json({ lastApiImport: config?.lastApiImport || 0 })
         } catch (error) {
             res.status(500).json({ error: error.message })
@@ -211,11 +221,11 @@ export function setupBitunixRoutes(app, getDb) {
     })
 
     // Set last API import timestamp
-    app.post('/api/bitunix/last-import', (req, res) => {
+    app.post('/api/bitunix/last-import', async (req, res) => {
         try {
-            const db = getDb()
+            const knex = getKnex()
             const { timestamp } = req.body
-            db.prepare('UPDATE bitunix_config SET lastApiImport = @timestamp WHERE id = 1').run({ timestamp })
+            await knex('bitunix_config').where('id', 1).update({ lastApiImport: timestamp })
             res.json({ ok: true })
         } catch (error) {
             res.status(500).json({ error: error.message })
@@ -225,8 +235,8 @@ export function setupBitunixRoutes(app, getDb) {
     // Quick API import: fetch, process, and save trades in one call
     app.post('/api/bitunix/quick-import', async (req, res) => {
         try {
-            const db = getDb()
-            const config = db.prepare('SELECT * FROM bitunix_config WHERE id = 1').get()
+            const knex = getKnex()
+            const config = await getDecryptedConfig()
 
             if (!config || !config.apiKey || !config.secretKey) {
                 return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert. Bitte zuerst in den Einstellungen hinterlegen.' })
@@ -273,7 +283,7 @@ export function setupBitunixRoutes(app, getDb) {
             }
 
             // Update last import timestamp
-            db.prepare('UPDATE bitunix_config SET lastApiImport = @timestamp WHERE id = 1').run({ timestamp: endTime })
+            await knex('bitunix_config').where('id', 1).update({ lastApiImport: endTime })
 
             res.json({
                 ok: true,
@@ -290,8 +300,7 @@ export function setupBitunixRoutes(app, getDb) {
     // Fetch open/pending positions (proxy)
     app.get('/api/bitunix/open-positions', async (req, res) => {
         try {
-            const db = getDb()
-            const config = db.prepare('SELECT * FROM bitunix_config WHERE id = 1').get()
+            const config = await getDecryptedConfig()
 
             if (!config || !config.apiKey || !config.secretKey) {
                 return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
@@ -319,8 +328,7 @@ export function setupBitunixRoutes(app, getDb) {
     // Get specific historical position by positionId (for close detection)
     app.get('/api/bitunix/position-history/:positionId', async (req, res) => {
         try {
-            const db = getDb()
-            const config = db.prepare('SELECT * FROM bitunix_config WHERE id = 1').get()
+            const config = await getDecryptedConfig()
 
             if (!config || !config.apiKey || !config.secretKey) {
                 return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
@@ -346,10 +354,10 @@ export function setupBitunixRoutes(app, getDb) {
     })
 
     // Fix trade sides: repair all existing trades based on entry/exit price vs P&L direction
-    app.post('/api/fix-trade-sides', (req, res) => {
+    app.post('/api/fix-trade-sides', async (req, res) => {
         try {
-            const db = getDb()
-            const allRows = db.prepare('SELECT id, trades FROM trades').all()
+            const knex = getKnex()
+            const allRows = await knex('trades').select('id', 'trades')
             let fixedCount = 0
             let skippedCount = 0
 
@@ -389,13 +397,12 @@ export function setupBitunixRoutes(app, getDb) {
                 }
 
                 if (changed) {
-                    db.prepare('UPDATE trades SET trades = ? WHERE id = ?').run(JSON.stringify(trades), row.id)
+                    await knex('trades').where('id', row.id).update({ trades: JSON.stringify(trades) })
                 }
             }
 
             // Also reset all MFE prices so they get recalculated with correct side
-            const mfeResult = db.prepare('UPDATE excursions SET mfePrice = NULL WHERE mfePrice IS NOT NULL').run()
-            const mfeReset = mfeResult.changes || 0
+            const mfeReset = await knex('excursions').whereNotNull('mfePrice').update({ mfePrice: null })
 
             console.log(` -> Fixed ${fixedCount} trades, skipped ${skippedCount}, reset ${mfeReset} MFE values`)
             res.json({ ok: true, fixed: fixedCount, skipped: skippedCount, mfeReset })

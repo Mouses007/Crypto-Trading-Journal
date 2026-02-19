@@ -2,7 +2,8 @@
 import { onMounted } from 'vue';
 import { useToggleMobileMenu } from '../utils/utils.js'
 import { useInitTooltip } from "../utils/utils.js";
-import { pageId, currentUser, renderProfile, screenType } from "../stores/globals"
+import { pageId, screenType } from "../stores/ui.js"
+import { currentUser, renderProfile } from "../stores/settings.js"
 import { version } from '../../package.json';
 
 const pages = [{

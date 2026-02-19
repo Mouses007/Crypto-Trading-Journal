@@ -2,8 +2,13 @@
 import { computed, onBeforeMount, ref } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Filters from '../components/Filters.vue'
-import { selectedDashTab, spinnerLoadingPage, dashboardIdMounted, totals, amountCase, amountCapital, profitAnalysis, renderData, selectedRatio, dashboardChartsMounted, hasData, satisfactionArray, satisfactionTradeArray, availableTags, groups, barChartNegativeTagGroups, currentUser, filteredTradesTrades } from '../stores/globals';
-import { useThousandCurrencyFormat, useTwoDecCurrencyFormat, useXDecCurrencyFormat, useMountDashboard, useThousandFormat, useXDecFormat } from '../utils/utils';
+import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMounted, hasData, barChartNegativeTagGroups, timeZoneTrade } from '../stores/ui.js'
+import { selectedDashTab, amountCase, amountCapital, selectedRatio } from '../stores/filters.js'
+import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades } from '../stores/trades.js'
+import { currentUser } from '../stores/settings.js'
+import dayjs from '../utils/dayjs-setup.js'
+import { useThousandCurrencyFormat, useTwoDecCurrencyFormat, useXDecCurrencyFormat, useThousandFormat, useXDecFormat } from '../utils/formatters.js';
+import { useMountDashboard } from '../utils/mountOrchestration.js';
 import NoData from '../components/NoData.vue';
 
 const dashTabs = [{
@@ -12,14 +17,14 @@ const dashTabs = [{
     target: "#overviewNav"
 },
 {
+    id: "tradesTab",
+    label: "Performance",
+    target: "#tradesNav"
+},
+{
     id: "timeTab",
     label: "Zeit & Datum",
     target: "#timeNav"
-},
-{
-    id: "tradesTab",
-    label: "Trades & Executions",
-    target: "#tradesNav"
 },
 {
     id: "setupsTab",
@@ -60,6 +65,24 @@ const ratioCompute = computed(() => {
 })
 
 const hasSatisfactionData = computed(() => satisfactionArray.length > 0 || satisfactionTradeArray.length > 0)
+
+const todayStats = computed(() => {
+    const tz = timeZoneTrade.value || 'Europe/Brussels'
+    const todayStart = dayjs().tz(tz).startOf('day').unix()
+    const todayEnd = dayjs().tz(tz).endOf('day').unix()
+
+    let total = 0, wins = 0, losses = 0, pnl = 0
+    for (const trade of filteredTradesTrades) {
+        if (trade.td >= todayStart && trade.td <= todayEnd) {
+            total++
+            const gp = trade.grossProceeds || 0
+            pnl += gp
+            if (gp > 0) wins++
+            else losses++
+        }
+    }
+    return { total, wins, losses, pnl }
+})
 
 const accountBalance = computed(() => {
     const start = currentUser.value?.startBalance || 0
@@ -156,6 +179,19 @@ onBeforeMount(async () => {
                                             </div>
                                             <div v-if="hasSatisfactionData" class="col-6">
                                                 <div v-bind:key="renderData" id="pieChart2" class="chartIdCardClass"></div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Tages Trade Zähler -->
+                                        <div v-if="todayStats.total > 0" class="text-center mt-2 pt-2" style="border-top: 1px solid var(--white-10);">
+                                            <div class="small text-muted mb-1">Heute</div>
+                                            <div class="d-flex justify-content-center align-items-center gap-3">
+                                                <span class="fw-bold">{{ todayStats.total }} <span class="text-muted fw-normal">Trades</span></span>
+                                                <span class="greenTrade">{{ todayStats.wins }} <i class="uil uil-arrow-up"></i></span>
+                                                <span class="redTrade">{{ todayStats.losses }} <i class="uil uil-arrow-down"></i></span>
+                                            </div>
+                                            <div class="mt-1" :class="todayStats.pnl >= 0 ? 'greenTrade' : 'redTrade'">
+                                                <small class="fw-bold">{{ todayStats.pnl >= 0 ? '+' : '' }}{{ useTwoDecCurrencyFormat(todayStats.pnl) }}</small>
                                             </div>
                                         </div>
                                     </div>
@@ -381,23 +417,17 @@ onBeforeMount(async () => {
                                         <h6>Nach Wochentag ({{ ratioCompute.shortName }})
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Wochentag des Trade-Einstiegs. Zeigt, an welchen Tagen du am besten/schlechtesten tradest."></i>
                                         </h6>
-                                        <!--<div class="text-center" v-if="!dashboardChartsMounted">
-                                    <div class="spinner-border text-blue" role="status"></div>
-                                </div>-->
-                                        <div v-bind:key="renderData" id="barChartNegative3" class="chartClass"></div>
+                                        <div v-bind:key="renderData" id="weekdayChart1" class="chartClass"></div>
                                     </div>
                                 </div>
 
                                 <!-- GROUP BY TIMEFRAME -->
                                 <div class="col-12 col-xl-4 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Einstiegszeit ({{ratioCompute.shortName}})
+                                        <h6>Nach Einstiegszeit ({{ ratioCompute.shortName }})
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Uhrzeit des Trade-Einstiegs. Zeigt, zu welchen Tageszeiten du am besten/schlechtesten tradest."></i>
                                         </h6>
-                                        <!--<div class="text-center" v-if="!dashboardChartsMounted">
-                                    <div class="spinner-border text-blue" role="status"></div>
-                                </div>-->
-                                        <div v-bind:key="renderData" id="barChartNegative1" class="chartClass"></div>
+                                        <div v-bind:key="renderData" id="entryTimeChart1" class="chartClass"></div>
                                     </div>
                                 </div>
 
@@ -407,10 +437,7 @@ onBeforeMount(async () => {
                                         <h6>Nach Haltedauer ({{ ratioCompute.shortName }})
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Haltedauer (Einstieg bis Ausstieg). Zeigt, ob du mit kürzeren oder längeren Trades besser fährst."></i>
                                         </h6>
-                                        <!--<div class="text-center" v-if="!dashboardChartsMounted">
-                                    <div class="spinner-border text-blue" role="status"></div>
-                                </div>-->
-                                        <div v-bind:key="renderData" id="barChartNegative2" class="chartClass"></div>
+                                        <div v-bind:key="renderData" id="durationChart1" class="chartClass"></div>
                                     </div>
                                 </div>
 
@@ -435,33 +462,22 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
-                    <!-- ============ TRADES ============ -->
+                    <!-- ============ TRADES (Trading Performance) ============ -->
                     <div v-bind:class="'tab-pane fade ' + (selectedDashTab == 'tradesTab' ? 'active show' : '')"
                         id="tradesNav" role="tabpanel" aria-labelledby="nav-trades-tab">
                         <div class="col-12">
                             <div class="row">
 
-                                <!-- GROUP BY TRADES -->
-                                <div class="col-12 col-xl-6 mb-3">
+                                <!-- TRADING PERFORMANCE CHART -->
+                                <div class="col-12 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Trades ({{ ratioCompute.shortName }})</h6>
-                                        <!--<div class="text-center" v-if="!dashboardChartsMounted">
-                                    <div class="spinner-border text-blue" role="status"></div>
-                                </div>-->
-                                        <div v-bind:key="renderData" id="barChartNegative4" class="chartClass"></div>
+                                        <h6>Trading Performance
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="<b>PnL</b>: Gewinn/Verlust pro Trade<br><b>Equity</b>: Kumulative Equity-Kurve<br><b>High Water Mark</b>: Bisheriger Höchststand<br><b>Drawdown</b>: Rückgang vom Höchststand"></i>
+                                        </h6>
+                                        <div v-bind:key="renderData" id="perfChart1" class="chartClass" style="height: 550px;"></div>
                                     </div>
                                 </div>
 
-                                <!-- GROUP BY EXECUTIONS -->
-                                <div class="col-12 col-xl-6 mb-3">
-                                    <div class="dailyCard">
-                                        <h6>By Executions ({{ ratioCompute.shortName }})</h6>
-                                        <!--<div class="text-center" v-if="!dashboardChartsMounted">
-                                    <div class="spinner-border text-blue" role="status"></div>
-                                </div>-->
-                                        <div v-bind:key="renderData" id="barChartNegative7" class="chartClass"></div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -475,33 +491,20 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY POSITION -->
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Position ({{ ratioCompute.shortName }})</h6>
-                                        <div class="text-center" v-if="!dashboardChartsMounted">
-                                            <div class="spinner-border text-blue" role="status"></div>
-                                        </div>
-                                        <div v-bind:key="renderData" id="barChartNegative17" class="chartClass"></div>
+                                        <h6>Nach Position ({{ ratioCompute.shortName }})
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Long/Short. Zeigt, ob du in eine Richtung besser tradest."></i>
+                                        </h6>
+                                        <div v-bind:key="renderData" id="positionChart1" class="chartClass"></div>
                                     </div>
                                 </div>
 
                                 <!-- GROUP BY TAGS -->
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Tag ({{ ratioCompute.shortName }})</h6>
-                                        <div class="text-center" v-if="!dashboardChartsMounted">
-                                            <div class="spinner-border text-blue" role="status"></div>
-                                        </div>
-                                        <div v-bind:key="renderData" id="barChartNegative18" class="chartClass"></div>
-                                    </div>
-                                </div>
-
-                                <!-- GROUP BY TAG COMBINATION -->
-                                <div class="col-12 col-xl-6 mb-3" v-for="obj in barChartNegativeTagGroups">
-                                    <div class="dailyCard">
-                                        <h6>Nach Tag-Gruppe - {{ obj.name }} ({{ ratioCompute.shortName }})</h6>
-                                        <div class="text-center" v-if="!dashboardChartsMounted">
-                                            <div class="spinner-border text-blue" role="status"></div>
-                                        </div>
-                                        <div v-bind:key="renderData" :id="'barChartNegative'+obj.id" class="chartClass"></div>
+                                        <h6>Nach Strategie ({{ ratioCompute.shortName }})
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Strategie-Tags (erste Tag-Gruppe). Zeigt, welche Strategien profitabel sind."></i>
+                                        </h6>
+                                        <div v-bind:key="renderData" id="strategyChart1" class="chartClass"></div>
                                     </div>
                                 </div>
 
@@ -518,11 +521,10 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY SYMBOL -->
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Symbol ({{ ratioCompute.shortName }})</h6>
-                                        <!--<div class="text-center" v-if="!dashboardChartsMounted">
-                                    <div class="spinner-border text-blue" role="status"></div>
-                                </div>-->
-                                        <div v-bind:key="renderData" id="barChartNegative16" class="chartClass"></div>
+                                        <h6>Nach Symbol ({{ ratioCompute.shortName }})
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance pro Symbol, sortiert nach Profitabilität."></i>
+                                        </h6>
+                                        <div v-bind:key="renderData" id="symbolChart1" class="chartClass"></div>
                                     </div>
                                 </div>
 
@@ -548,14 +550,13 @@ onBeforeMount(async () => {
                             </div>
                         </div>-->
 
-                                <!-- GROUP BY ENTRYPRICE -->
+                                <!-- FEES BY SYMBOL -->
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Einstiegspreis ({{ ratioCompute.shortName }})</h6>
-                                        <!--<div class="text-center" v-if="!dashboardChartsMounted">
-                                    <div class="spinner-border text-blue" role="status"></div>
-                                </div>-->
-                                        <div v-bind:key="renderData" id="barChartNegative13" class="chartClass"></div>
+                                        <h6>Gebühren nach Symbol
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Gesamte Handelsgebühren (Kommissionen) pro Symbol. Zeigt, wo die meisten Kosten anfallen."></i>
+                                        </h6>
+                                        <div v-bind:key="renderData" id="feesChart1" class="chartClass"></div>
                                     </div>
                                 </div>
                             </div>

@@ -1,24 +1,13 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { pageId, selectedMonth, selectedPlSatisfaction, amountCase, calendarData, miniCalendarsData, timeZoneTrade, spinnerLoadingPage, scrollToDateUnix } from '../stores/globals';
-import { useThousandCurrencyFormat, useMountCalendar, useMountDaily } from '../utils/utils';
+import { pageId, timeZoneTrade, spinnerLoadingPage, scrollToDateUnix } from '../stores/ui.js';
+import { selectedMonth, selectedPlSatisfaction, amountCase } from '../stores/filters.js';
+import { calendarData, miniCalendarsData } from '../stores/trades.js';
+import { useThousandCurrencyFormat } from '../utils/formatters.js';
+import { useMountCalendar, useMountDaily } from '../utils/mountOrchestration.js';
 
 const router = useRouter()
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from '../utils/dayjs-setup.js'
 
 
 const days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]

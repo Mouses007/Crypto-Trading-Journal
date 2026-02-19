@@ -1,10 +1,9 @@
 import axios from 'axios'
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
+import dayjs from './dayjs-setup.js'
 import { dbCreate, dbFind, dbDelete, dbUpdate as dbUpdateRecord } from './db.js'
 import { dbUpdateSettings } from './db.js'
-import { currentUser } from '../stores/globals.js'
+import { currentUser } from '../stores/settings.js'
+import { logWarn } from './logger.js'
 
 /**
  * Quick API Import: Fetches trades from Bitunix API since last import,
@@ -230,7 +229,9 @@ export async function useQuickApiImport() {
                             name: `${dateUnix}_${wasImported.symbol}`,
                             dateUnixDay: dateUnix
                         })
-                    } catch (e) { /* ignore */ }
+                    } catch (e) {
+                        logWarn('quick-import', `Screenshot-Linking fehlgeschlagen (incoming=${incoming.objectId}, screenshot=${incoming.screenshotId})`, e)
+                    }
                 }
 
                 // Remove from incoming

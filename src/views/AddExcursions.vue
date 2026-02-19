@@ -1,27 +1,17 @@
 <script setup>
 import { onBeforeMount, ref, onMounted, nextTick } from 'vue';
-import { apis, imports, excursions, spinnerLoadingPage, daysMargin, daysBack } from '../stores/globals';
+import { spinnerLoadingPage } from '../stores/ui.js';
+import { daysMargin, daysBack } from '../stores/filters.js';
+import { imports, excursions } from '../stores/trades.js';
+import { apis } from '../stores/settings.js';
 import { useGetExcursions } from '../utils/daily';
-import { useDateCalFormat, useGetAPIS, usePageRedirect } from '../utils/utils';
+import { useDateCalFormat } from '../utils/formatters.js';
+import { useGetAPIS, usePageRedirect } from '../utils/utils';
 import { useGetTrades } from '../utils/trades';
 import { useGetOHLCV, useGetMFEPrices, useUpdateMfePrices } from '../utils/addTrades';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 /* MODULES */
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from '../utils/dayjs-setup.js'
 
 spinnerLoadingPage.value = false
 

@@ -236,7 +236,7 @@ export const newTradeTags = reactive([])
 export const availableTags = reactive([])
 export const availableTagsArray = reactive([])
 export const tagInput = ref('')
-export const showTagsList = ref(false)
+export const showTagsList = ref('')
 export const tradeNote = ref(null)
 export const tradeNoteChanged = ref(false)
 export const tradeNoteDateUnix = ref()
@@ -259,12 +259,35 @@ export const incomingPollingActive = ref(false)
 export const incomingLastFetched = ref(null)
 
 /**************************************
-* EVALUATION POPUPS
+* EVALUATION NOTIFICATIONS
 **************************************/
-export const evaluationQueue = reactive([])
-// Items: { type: 'opening'|'closing', positionObjectId, position, historyData? }
-export const evaluationPopupVisible = ref(false)
-export const currentEvaluation = ref(null)
+export const pendingOpeningCount = ref(0)
+export const pendingClosingCount = ref(0)
+export const evalNotificationShown = ref(false)
+export const evalNotificationDismissed = ref(false)
+
+// Persistent set of position IDs that have already triggered a popup notification.
+// Stored in localStorage so dismissal survives page reloads and navigation.
+const NOTIFIED_KEY = 'evalNotifiedPositionIds'
+
+export function getNotifiedPositionIds() {
+    try {
+        const raw = localStorage.getItem(NOTIFIED_KEY)
+        return raw ? new Set(JSON.parse(raw)) : new Set()
+    } catch { return new Set() }
+}
+
+export function addNotifiedPositionIds(ids) {
+    const current = getNotifiedPositionIds()
+    ids.forEach(id => current.add(id))
+    localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...current]))
+}
+
+export function removeNotifiedPositionIds(ids) {
+    const current = getNotifiedPositionIds()
+    ids.forEach(id => current.delete(id))
+    localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...current]))
+}
 
 export const dailyPagination = ref(0)
 export const dailyQueryLimit = ref(10)
@@ -304,4 +327,14 @@ export const getMore = ref(false)
 export const uploadMfePrices = ref(false)
 export const tradeAccounts = reactive([])
 export const selectedTagIndex = ref()
+export const filteredSuggestions = reactive([])
 export const expandedScreenshot = ref()
+
+/**************************************
+* KI-AGENT (globaler Report-Status)
+**************************************/
+export const aiReportGenerating = ref(false)
+export const aiReportError = ref('')
+export const aiReportLastSavedId = ref(null)
+export const aiReportLabel = ref('') // Label des aktuell generierten Berichts
+export const aiReportCountBefore = ref(0) // Anzahl Reports vor dem Start

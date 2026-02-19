@@ -1,24 +1,12 @@
-import { selectedMonth, pageId, screenshots, screenshot, tradeScreenshotChanged, dateScreenshotEdited, renderData, markerAreaOpen, spinnerLoadingPage, spinnerSetups, editingScreenshot, timeZoneTrade, endOfList, screenshotsPagination, screenshotsQueryLimit, selectedItem, saveButton, resizeCompressImg, resizeCompressMaxWidth, resizeCompressMaxHeight, resizeCompressQuality, expandedScreenshot, expandedId, expandedSource, selectedScreenshot, selectedScreenshotIndex, selectedScreenshotSource, tags, selectedTags, tradeTags, screenshotsInfos } from '../stores/globals.js'
-import { useLoadMore } from './utils.js';
+import { pageId, dateScreenshotEdited, renderData, markerAreaOpen, spinnerLoadingPage, spinnerSetups, editingScreenshot, timeZoneTrade, endOfList, screenshotsPagination, screenshotsQueryLimit, selectedItem, saveButton, selectedScreenshotIndex, selectedScreenshotSource, resizeCompressImg, resizeCompressMaxWidth, resizeCompressMaxHeight, resizeCompressQuality, expandedScreenshot, expandedId, expandedSource } from '../stores/ui.js'
+import { selectedMonth, selectedTags } from '../stores/filters.js'
+import { screenshots, screenshot, tradeScreenshotChanged, selectedScreenshot, tags, tradeTags, screenshotsInfos } from '../stores/trades.js'
+/* useLoadMore removed — inlined below to break circular dependency */
 import { useUpdateTags, useUpdateAvailableTags} from './daily.js';
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete } from './db.js'
 
 /* MODULES */
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from './dayjs-setup.js'
 import * as markerjs2 from 'markerjs2';
 
 
@@ -557,7 +545,8 @@ export async function useSelectedScreenshotFunction(param1, param2, param3) {
     //console.log("selectedScreenshotSource " + selectedScreenshotSource.value)
     //Case where there is index (so screenshots) and we get to end array on screenshots page
     if (param1 && ((param1 + 2) == screenshots.length) && !endOfList.value) {
-        useLoadMore()
+        // Inline: trigger screenshot loading (was useLoadMore() — inlined to avoid circular dep)
+        useGetScreenshots(false)
     }
 
 

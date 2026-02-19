@@ -1,24 +1,15 @@
 <script setup>
 import { ref, computed, onBeforeMount, onMounted } from "vue";
-import { useMonthFormat, useDateCalFormat, useDateCalFormatMonth, useMountCalendar, useMountDashboard, useMountDaily, useMountAuswertung, useCheckVisibleScreen, useExport } from "../utils/utils.js";
-import { pageId, currentUser, timeZoneTrade, periodRange, positions, timeFrames, ratios, grossNet, plSatisfaction, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccounts, selectedGrossNet, selectedPlSatisfaction, selectedDateRange, selectedMonth, selectedPeriodRange, tempSelectedPlSatisfaction, amountCase, amountCapital, hasData, selectedTags, tags, availableTags, filteredTradesTrades } from "../stores/globals"
+import { useMonthFormat, useDateCalFormat, useDateCalFormatMonth } from "../utils/formatters.js";
+import { useMountCalendar, useMountDashboard, useMountDaily, useMountAuswertung, useCheckVisibleScreen } from "../utils/mountOrchestration.js";
+import { useExport } from "../utils/utils.js";
+import { pageId, timeZoneTrade, hasData } from "../stores/ui.js"
+import { currentUser } from "../stores/settings.js"
+import { periodRange, positions, timeFrames, ratios, grossNet, plSatisfaction, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccounts, selectedGrossNet, selectedPlSatisfaction, selectedDateRange, selectedMonth, selectedPeriodRange, tempSelectedPlSatisfaction, amountCase, amountCapital, selectedTags } from "../stores/filters.js"
+import { tags, availableTags, filteredTradesTrades } from "../stores/trades.js"
 import { useECharts } from "../utils/charts.js";
 import { useRefreshScreenshot } from "../utils/screenshots"
-import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-dayjs.extend(utc)
-import isoWeek from 'dayjs/plugin/isoWeek.js'
-dayjs.extend(isoWeek)
-import timezone from 'dayjs/plugin/timezone.js'
-dayjs.extend(timezone)
-import duration from 'dayjs/plugin/duration.js'
-dayjs.extend(duration)
-import updateLocale from 'dayjs/plugin/updateLocale.js'
-dayjs.extend(updateLocale)
-import localizedFormat from 'dayjs/plugin/localizedFormat.js'
-dayjs.extend(localizedFormat)
-import customParseFormat from 'dayjs/plugin/customParseFormat.js'
-dayjs.extend(customParseFormat)
+import dayjs from '../utils/dayjs-setup.js'
 
 /*============================================
     VARIABLES
@@ -71,11 +62,11 @@ const dashTagSelectValue = computed(() => {
 
 let filtersOpen = ref(false)
 let filters = ref({
-    "dashboard": ["accounts", "periodRange", "grossNet", "positions", "timeFrame", "ratio", "tags"],
+    "dashboard": ["periodRange", "grossNet", "positions", "timeFrame", "ratio", "tags"],
     "calendar": ["month", "grossNet", "plSatisfaction"],
-    "daily": ["accounts", "month", "grossNet", "positions", "tags"],
-    "screenshots": ["accounts", "grossNet", "positions", "tags"],
-    "auswertung": ["accounts", "periodRange", "positions", "tags"],
+    "daily": ["month", "grossNet", "positions", "tags"],
+    "screenshots": ["grossNet", "positions", "tags"],
+    "auswertung": ["periodRange", "positions", "tags"],
 })
 
 
@@ -350,13 +341,6 @@ const selectAllTags = () => {
                         class="uil uil-angle-up"></i>
                 </span>
                 <span v-if="!filtersOpen" class="dashInfoTitle ms-3">
-                    <span v-show="filters[pageId].includes('accounts')">
-                        <span
-                            v-if="currentUser?.hasOwnProperty('accounts') && currentUser.accounts.length == selectedAccounts.length">Alle
-                            Konten |</span>
-                        <span v-else>Ausgewählte Konten |</span>
-                    </span>
-
                     <span v-show="filters[pageId].includes('periodRange')">
                         {{ selectedPeriodRange.label }} |
                         <span v-show="selectedPeriodRange.value == 'custom'"> Bereich |</span>
@@ -429,20 +413,6 @@ const selectAllTags = () => {
                             <div class="row"></div>
                         </div>
                     </div>
-                </div>
-
-                <!-- Accounts -->
-                <div class="col-6 dropdown" v-show="pageId != 'screenshots' && pageId != 'calendar'">
-                    <button class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown"
-                        aria-expanded="false">Konten <span class="dashInfoTitle">({{ selectedAccounts.length
-                            }})</span></button>
-                    <ul class="dropdown-menu dropdownCheck">
-                        <div v-for="item in currentUser.accounts" :key="item.value" class="form-check">
-                            <input class="form-check-input" type="checkbox" :value="item.value"
-                                v-model="selectedAccounts">
-                            {{ item.label }}
-                        </div>
-                    </ul>
                 </div>
 
                 <!-- Month -->
