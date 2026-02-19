@@ -3,7 +3,7 @@
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
-PORT="${TRADENOTE_PORT:-8080}"
+PORT="${CTJ_PORT:-8080}"
 
 # Pruefen ob bereits laeuft
 if curl -s "http://localhost:$PORT" > /dev/null 2>&1; then

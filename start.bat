@@ -14,7 +14,7 @@ if not exist "dist\index.html" (
 
 :: Port aus Umgebungsvariable oder Standard
 set "PORT=8080"
-if defined TRADENOTE_PORT set "PORT=!TRADENOTE_PORT!"
+if defined CTJ_PORT set "PORT=!CTJ_PORT!"
 
 echo.
 echo   Crypto Trading Journal startet...

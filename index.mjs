@@ -17,8 +17,8 @@ app.use(express.json({ limit: '50mb' }));
 app.use(sessionCookieMiddleware)
 app.use('/api', apiAuthMiddleware)
 
-const port = process.env.TRADENOTE_PORT || 8080;
-const host = process.env.TRADENOTE_HOST || '127.0.0.1'; // Default: nur lokal erreichbar
+const port = process.env.CTJ_PORT || 8080;
+const host = process.env.CTJ_HOST || '127.0.0.1'; // Default: nur lokal erreichbar
 const PROXY_PORT = 39482;
 
 const startIndex = async () => {
@@ -74,7 +74,7 @@ const startIndex = async () => {
         const server = app.listen(port, host, () => {
             console.log(` -> Crypto Trading Journal started on http://${host}:${port}`)
             if (host === '127.0.0.1' || host === 'localhost') {
-                console.log(' -> Server is only accessible locally (set TRADENOTE_HOST=0.0.0.0 to allow network access)')
+                console.log(' -> Server is only accessible locally (set CTJ_HOST=0.0.0.0 to allow network access)')
             }
             resolve()
         });

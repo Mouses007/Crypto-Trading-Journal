@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Crypto Trading Journal is a **local single-user** trading journal for **Bitunix futures trading**. It lets users import trades via CSV or Bitunix API, view dashboards with analytics/charts, keep a diary, manage playbooks, and store screenshots. Licensed under GPL-3.0.
 
-**Key simplifications from the original TradeNote:**
+**Key simplifications from the original project:**
 - No cloud login (single user, direct to dashboard); API protected by session cookie
 - SQLite (or optional PostgreSQL) instead of MongoDB/Parse Server (no Docker needed)
 - Bitunix primary; optional Bitget broker (CSV + API)
@@ -38,7 +38,7 @@ There are **no tests, no linter, and no CI/CD pipeline** configured.
 
 ### Server
 
-- **`index.mjs`** — Entry point: Express server + DB init (Knex) + API routes. Session cookie set for all non-API requests; all `/api/*` require valid session. In dev mode (`NODE_ENV=dev`), proxies non-API requests to Vite dev server on port 39482. In production, serves static files from `dist/`. Default bind: `127.0.0.1` (override with `TRADENOTE_HOST`).
+- **`index.mjs`** — Entry point: Express server + DB init (Knex) + API routes. Session cookie set for all non-API requests; all `/api/*` require valid session. In dev mode (`NODE_ENV=dev`), proxies non-API requests to Vite dev server on port 39482. In production, serves static files from `dist/`. Default bind: `127.0.0.1` (override with `CTJ_HOST`).
 - **`server/database.js`** — Knex setup: **`initDb()`** / **`getKnex()`**. Schema and migrations in code. Default: SQLite (**`tradenote.db`** in project root, WAL mode). Optional PostgreSQL via **`server/db-config.js`** and `db-config.json`. Tables: settings, trades, diaries, screenshots, playbooks, satisfactions, tags, notes, excursions, bitunix_config, bitget_config, incoming_positions, ai_reports, ai_report_messages, etc.
 - **`server/auth.js`** — Session cookie (`tn_session`) for API auth; token generated at startup.
 - **`server/api-routes.js`** — Generic REST CRUD (`GET/POST/PUT/DELETE /api/db/{table}`) using Knex; table/column whitelist; settings and bitunix_config endpoints (bitunix_config response omits secretKey).
@@ -97,8 +97,8 @@ Bootstrap loaded from CDN (not bundled).
 
 ### Environment Variables
 
-- `TRADENOTE_PORT` — Server port (default 8080)
-- `TRADENOTE_HOST` — Bind address (default 127.0.0.1; use 0.0.0.0 for network access)
+- `CTJ_PORT` — Server port (default 8080)
+- `CTJ_HOST` — Bind address (default 127.0.0.1; use 0.0.0.0 for network access)
 - `NODE_ENV=dev` — Enable Vite dev server with HMR
 
 No `.env` files — runtime config stored in DB (settings table) and localStorage. Optional DB: `db-config.json` for PostgreSQL.

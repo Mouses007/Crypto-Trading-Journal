@@ -692,7 +692,7 @@ const filteredScreenshots = (param1, param2) => {
 
 
 
-// Mapping: TJ-Timeframe → Binance-kompatibles Interval
+// Mapping: Timeframe → Binance-kompatibles Interval
 const binanceIntervalMap = {
     '1m': '1m', '2m': '3m', '3m': '3m', '5m': '5m',
     '6m': '5m', '10m': '15m', '15m': '15m', '30m': '30m',

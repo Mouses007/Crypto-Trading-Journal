@@ -13,7 +13,7 @@ A local, privacy-focused trading journal for **Bitunix futures trading**. No clo
 ## Features
 
 - **Dashboard** with P&L analytics, win rate, profit factor, and more
-- **Playbook** for trade notes with stress level (0-5) and emotion level (1-10)
+- **Playbook** for trade notes with stress level (1-10) and emotion level (1-10)
 - **Auswertung** (Evaluation) with tag-based strategy analysis, stress/emotion charts, and completeness radar
 - **Calendar** view of daily trading performance
 - **Diary** for daily journal entries
@@ -101,8 +101,8 @@ Startet den Vite Dev-Server mit Hot Module Replacement.
 Standard-Port ist `8080`, gebunden an `127.0.0.1` (nur lokal). Beispiele:
 
 ```bash
-TRADENOTE_PORT=3000 npm start
-TRADENOTE_HOST=0.0.0.0 npm start   # Zugriff im Netzwerk (z. B. von anderen Geräten)
+CTJ_PORT=3000 npm start
+CTJ_HOST=0.0.0.0 npm start   # Zugriff im Netzwerk (z. B. von anderen Geräten)
 ```
 
 ## Usage
@@ -114,7 +114,7 @@ TRADENOTE_HOST=0.0.0.0 npm start   # Zugriff im Netzwerk (z. B. von anderen Ge
 
 ## Attribution
 
-This project is a fork of [TradeNote](https://github.com/Eleven-Trading/TradeNote) by eleven.trading, substantially modified:
+This project is based on [TradeNote](https://github.com/Eleven-Trading/TradeNote) by eleven.trading, substantially modified:
 
 - Replaced MongoDB/Parse Server with SQLite (optional PostgreSQL via Knex)
 - Removed Docker, cloud auth, payments, analytics
