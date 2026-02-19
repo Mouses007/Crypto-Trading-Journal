@@ -1,5 +1,5 @@
 #!/bin/bash
-# TJ Trading Journal — Update (macOS)
+# Crypto Trading Journal — Update (macOS)
 set -e
 cd "$(dirname "$0")"
 
@@ -13,7 +13,7 @@ RESET='\033[0m'
 
 echo ""
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════${RESET}"
-echo -e "${CYAN}${BOLD}  TJ Trading Journal — Update             ${RESET}"
+echo -e "${CYAN}${BOLD}  Crypto Trading Journal — Update             ${RESET}"
 echo -e "${CYAN}${BOLD}══════════════════════════════════════════${RESET}"
 echo ""
 
@@ -51,7 +51,7 @@ else
     echo ""
     echo -e "${BOLD}Manuelles Update:${RESET}"
     echo "  1. Lade das neueste Release herunter:"
-    echo -e "     ${CYAN}https://github.com/Mouses007/TJ-Trading-Journal/releases${RESET}"
+    echo -e "     ${CYAN}https://github.com/Mouses007/Crypto-Trading-Journal/releases${RESET}"
     echo "  2. Entpacke die Dateien in diesen Ordner"
     echo -e "  3. ${RED}WICHTIG: tradenote.db NICHT ueberschreiben!${RESET}"
     echo "  4. Druecke Enter um fortzufahren..."

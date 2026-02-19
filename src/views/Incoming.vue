@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
@@ -11,6 +12,8 @@ import { dbCreate, dbUpdate } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
 import Quill from 'quill'
 import { sanitizeHtml } from '../utils/sanitize'
+
+const route = useRoute()
 
 let pollingInterval = null
 const expandedId = ref(null)
@@ -30,20 +33,28 @@ const timeframeOptions = computed(() => {
     return allTradeTimeframes
 })
 
-onMounted(async () => {
+// Beim Betreten der Seite immer von der API laden (auch beim ersten Öffnen)
+async function loadPageData() {
     spinnerLoadingPage.value = true
     incomingError.value = null
-
     try {
         await useGetAvailableTags()
         await useFetchOpenPositions()
     } catch (error) {
         incomingError.value = error.response?.data?.error || error.message || 'Fehler beim Laden'
     }
-
     spinnerLoadingPage.value = false
+}
 
-    // Start polling every 60 seconds
+// Beim Betreten der Route laden (erstes Öffnen + Rückkehr von anderer Seite)
+watch(() => route.name, (name) => {
+    if (name === 'incoming') {
+        loadPageData()
+    }
+}, { immediate: true })
+
+onMounted(() => {
+    // Polling alle 60 Sekunden
     pollingInterval = setInterval(async () => {
         try {
             await useFetchOpenPositions()
@@ -174,7 +185,9 @@ function updateClosingTimeframe(pos, value) {
 // ===== TAG HANDLERS =====
 
 function addTag(pos, tag) {
-    if (!pos.tags) pos.tags = []
+    // Sicherstellen, dass Eingangs- und Abschluss-Tags nicht dieselbe Referenz teilen
+    if (pos.tags === pos.closingTags) pos.closingTags = Array.isArray(pos.closingTags) ? JSON.parse(JSON.stringify(pos.closingTags)) : []
+    if (!Array.isArray(pos.tags)) pos.tags = []
     if (pos.tags.some(t => t.id === tag.id)) return
     pos.tags.push({ id: tag.id, name: tag.name })
 }
@@ -185,7 +198,9 @@ function removeTag(pos, idx) {
 }
 
 function addClosingTag(pos, tag) {
-    if (!pos.closingTags) pos.closingTags = []
+    // Sicherstellen, dass Eingangs- und Abschluss-Tags nicht dieselbe Referenz teilen
+    if (pos.closingTags === pos.tags) pos.tags = Array.isArray(pos.tags) ? JSON.parse(JSON.stringify(pos.tags)) : []
+    if (!Array.isArray(pos.closingTags)) pos.closingTags = []
     if (pos.closingTags.some(t => t.id === tag.id)) return
     pos.closingTags.push({ id: tag.id, name: tag.name })
 }
@@ -281,14 +296,14 @@ async function saveMetadata(pos) {
         stressLevel: pos.stressLevel || 0,
         emotionLevel: pos.emotionLevel || 0,
         entryTimeframe: pos.entryTimeframe || '',
-        tags: pos.tags || [],
+        tags: JSON.parse(JSON.stringify(pos.tags || [])),
         skipEvaluation: pos.skipEvaluation || 0,
         // Closing fields
         closingStressLevel: pos.closingStressLevel || 0,
         closingEmotionLevel: pos.closingEmotionLevel || 0,
         closingFeelings: pos.closingFeelings || '',
         closingTimeframe: pos.closingTimeframe || '',
-        closingTags: pos.closingTags || [],
+        closingTags: JSON.parse(JSON.stringify(pos.closingTags || [])),
     }
 
     // Get opening Quill content
@@ -322,61 +337,67 @@ async function completeClosingEvaluation(pos) {
 
     closingId.value = pos.objectId
 
-    // First save any unsaved metadata
-    const data = {
-        feelings: pos.feelings || '',
-        stressLevel: pos.stressLevel || 0,
-        emotionLevel: pos.emotionLevel || 0,
-        entryTimeframe: pos.entryTimeframe || '',
-        tags: pos.tags || [],
-        closingStressLevel: pos.closingStressLevel || 0,
-        closingEmotionLevel: pos.closingEmotionLevel || 0,
-        closingFeelings: pos.closingFeelings || '',
-        closingTimeframe: pos.closingTimeframe || '',
-        closingTags: pos.closingTags || [],
-    }
-    const openingKey = pos.positionId + '_opening'
-    const closingKey = pos.positionId + '_closing'
-    if (quillInstances[openingKey]) {
-        data.playbook = quillInstances[openingKey].root.innerHTML
-        pos.playbook = data.playbook
-    }
-    if (quillInstances[closingKey]) {
-        data.closingPlaybook = quillInstances[closingKey].root.innerHTML
-        pos.closingPlaybook = data.closingPlaybook
-    }
-    await useUpdateIncomingPosition(pos.objectId, data)
-
-    // Transfer metadata to trade record and delete incoming position
-    await useTransferClosingMetadata(
-        pos,
-        pos.historyData,
-        {
-            note: '',
-            tags: pos.tags || [],
-            satisfaction: pos.satisfaction,
+    try {
+        // First save any unsaved metadata (deep-copy tags to prevent shared references)
+        const data = {
+            feelings: pos.feelings || '',
             stressLevel: pos.stressLevel || 0,
-            closingNote: pos.closingPlaybook || '',
+            emotionLevel: pos.emotionLevel || 0,
+            entryTimeframe: pos.entryTimeframe || '',
+            tags: JSON.parse(JSON.stringify(pos.tags || [])),
             closingStressLevel: pos.closingStressLevel || 0,
             closingEmotionLevel: pos.closingEmotionLevel || 0,
             closingFeelings: pos.closingFeelings || '',
             closingTimeframe: pos.closingTimeframe || '',
-            closingPlaybook: pos.closingPlaybook || '',
-            closingScreenshotId: pos.closingScreenshotId || '',
-            closingTags: pos.closingTags || [],
+            closingTags: JSON.parse(JSON.stringify(pos.closingTags || [])),
         }
-    )
+        const openingKey = pos.positionId + '_opening'
+        const closingKey = pos.positionId + '_closing'
+        if (quillInstances[openingKey]) {
+            data.playbook = quillInstances[openingKey].root.innerHTML
+            pos.playbook = data.playbook
+        }
+        if (quillInstances[closingKey]) {
+            data.closingPlaybook = quillInstances[closingKey].root.innerHTML
+            pos.closingPlaybook = data.closingPlaybook
+        }
+        await useUpdateIncomingPosition(pos.objectId, data)
 
-    // Remove from local list
-    const idx = incomingPositions.findIndex(p => p.objectId === pos.objectId)
-    if (idx !== -1) {
-        incomingPositions.splice(idx, 1)
+        // Transfer metadata to trade record and delete incoming position
+        await useTransferClosingMetadata(
+            pos,
+            pos.historyData,
+            {
+                note: '',
+                tags: JSON.parse(JSON.stringify(pos.tags || [])),
+                satisfaction: (pos.satisfaction != null && pos.satisfaction >= 0) ? pos.satisfaction : null,
+                stressLevel: pos.stressLevel || 0,
+                closingNote: pos.closingPlaybook || '',
+                closingStressLevel: pos.closingStressLevel || 0,
+                closingEmotionLevel: pos.closingEmotionLevel || 0,
+                closingFeelings: pos.closingFeelings || '',
+                closingTimeframe: pos.closingTimeframe || '',
+                closingPlaybook: pos.closingPlaybook || '',
+                closingScreenshotId: pos.closingScreenshotId || '',
+                closingTags: JSON.parse(JSON.stringify(pos.closingTags || [])),
+            }
+        )
+
+        // Remove from local list
+        const idx = incomingPositions.findIndex(p => p.objectId === pos.objectId)
+        if (idx !== -1) {
+            incomingPositions.splice(idx, 1)
+        }
+
+        delete quillInstances[openingKey]
+        delete quillInstances[closingKey]
+        expandedId.value = null
+    } catch (error) {
+        console.error('Fehler beim Abschließen der Bewertung:', error)
+        alert('Fehler beim Abschließen: ' + (error?.response?.data?.error || error.message || 'Unbekannter Fehler'))
+    } finally {
+        closingId.value = null
     }
-
-    delete quillInstances[openingKey]
-    delete quillInstances[closingKey]
-    expandedId.value = null
-    closingId.value = null
 }
 
 // ===== FORMATTING =====
@@ -409,7 +430,6 @@ function getPositionDate(pos) {
             <!-- Header -->
             <div class="row mb-3 align-items-center">
                 <div class="col">
-                    <h5 class="mb-0">Pendente Trades</h5>
                     <small v-if="incomingLastFetched" class="text-muted">
                         Zuletzt aktualisiert: {{ formatTime(incomingLastFetched) }}
                         <span v-if="incomingPollingActive" class="spinner-border spinner-border-sm ms-2" role="status"></span>
@@ -654,7 +674,15 @@ function getPositionDate(pos) {
 
                     <!-- ===== SAVE / COMPLETE BUTTONS ===== -->
                     <div class="d-flex justify-content-between align-items-center mt-2">
-                        <div class="d-flex align-items-center gap-3">
+                        <div class="form-check mb-0">
+                            <input type="checkbox" class="form-check-input" :id="'skipEval-' + pos.positionId"
+                                v-model="pos.skipEvaluation" :true-value="1" :false-value="0"
+                                @click.stop>
+                            <label class="form-check-label small text-muted" :for="'skipEval-' + pos.positionId">
+                                Trade nicht bewerten
+                            </label>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
                             <button v-if="pos.status === 'pending_evaluation'"
                                 class="btn btn-primary btn-sm"
                                 @click.stop="completeClosingEvaluation(pos)"
@@ -665,16 +693,6 @@ function getPositionDate(pos) {
                                 <span v-else><i class="uil uil-check-circle me-1"></i></span>
                                 Bewertung abschließen
                             </button>
-                            <div class="form-check mb-0">
-                                <input type="checkbox" class="form-check-input" :id="'skipEval-' + pos.positionId"
-                                    v-model="pos.skipEvaluation" :true-value="1" :false-value="0"
-                                    @click.stop>
-                                <label class="form-check-label small text-muted" :for="'skipEval-' + pos.positionId">
-                                    Trade nicht bewerten
-                                </label>
-                            </div>
-                        </div>
-                        <div>
                             <button class="btn btn-success btn-sm" @click.stop="saveMetadata(pos)" :disabled="savingId === pos.objectId">
                                 <span v-if="savingId === pos.objectId">
                                     <span class="spinner-border spinner-border-sm me-1" role="status"></span>

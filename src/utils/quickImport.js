@@ -3,18 +3,21 @@ import dayjs from './dayjs-setup.js'
 import { dbCreate, dbFind, dbDelete, dbUpdate as dbUpdateRecord } from './db.js'
 import { dbUpdateSettings } from './db.js'
 import { currentUser } from '../stores/settings.js'
+import { selectedBroker } from '../stores/filters.js'
 import { logWarn } from './logger.js'
 
 /**
- * Quick API Import: Fetches trades from Bitunix API since last import,
+ * Quick API Import: Fetches trades from exchange API since last import,
  * creates trade objects, filters duplicates, saves to DB.
+ * Works for both Bitunix and Bitget based on selectedBroker.
  * Returns { success, message, count }
  */
 export async function useQuickApiImport() {
-    console.log(' -> Starting quick API import')
+    const broker = selectedBroker.value || 'bitunix'
+    console.log(` -> Starting quick API import for ${broker}`)
 
     // 1. Call server endpoint that fetches positions and updates lastApiImport
-    const response = await axios.post('/api/bitunix/quick-import')
+    const response = await axios.post(`/api/${broker}/quick-import`)
 
     if (!response.data.ok) {
         throw new Error(response.data.error || 'Import fehlgeschlagen')
@@ -34,70 +37,17 @@ export async function useQuickApiImport() {
     const executionsByDay = {}
 
     allPositions.forEach((pos, i) => {
-        const grossPL = parseFloat(pos.realizedPNL || 0)
-        const fee = Math.abs(parseFloat(pos.fee || 0)) + Math.abs(parseFloat(pos.funding || 0))
-        const closeTime = parseInt(pos.mtime || pos.ctime)
-        const openTime = parseInt(pos.ctime)
-        const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
+        let tradeObj
 
+        if (broker === 'bitget') {
+            tradeObj = createBitgetTradeObj(pos, i)
+        } else {
+            tradeObj = createBitunixTradeObj(pos, i)
+        }
+
+        const dateUnix = tradeObj.td
         if (!tradesByDay[dateUnix]) tradesByDay[dateUnix] = []
         if (!executionsByDay[dateUnix]) executionsByDay[dateUnix] = []
-
-        // Bitunix API: Pending uses 'BUY'/'SELL', History uses 'LONG'/'SHORT' — accept both
-        const side = (pos.side === 'LONG' || pos.side === 'BUY') ? 'B' : 'SS'
-        const netPL = grossPL - fee
-        const isGrossWin = grossPL > 0
-        const isNetWin = netPL > 0
-        const quantity = parseFloat(pos.maxQty || 1)
-        const entryTime = dayjs(openTime).utc().unix()
-        const exitTime = dayjs(closeTime).utc().unix()
-
-        const tradeObj = {
-            id: `t${dateUnix}_${i}_${pos.positionId || i}`,
-            account: 'bitunix',
-            broker: 'bitunix',
-            td: dateUnix,
-            currency: 'USDT',
-            type: 'futures',
-            side: side,
-            strategy: side === 'B' ? 'long' : 'short',
-            symbol: pos.symbol || 'FUTURES',
-            buyQuantity: quantity,
-            sellQuantity: quantity,
-            entryPrice: parseFloat(pos.entryPrice || 0),
-            exitPrice: parseFloat(pos.closePrice || 0),
-            entryTime: entryTime,
-            exitTime: exitTime,
-            grossProceeds: grossPL,
-            netProceeds: netPL,
-            commission: fee,
-            sec: 0, taf: 0, nscc: 0, nasdaq: 0,
-            grossSharePL: grossPL,
-            netSharePL: netPL,
-            grossWins: isGrossWin ? grossPL : 0,
-            grossLoss: isGrossWin ? 0 : grossPL,
-            netWins: isNetWin ? netPL : 0,
-            netLoss: isNetWin ? 0 : netPL,
-            grossWinsCount: isGrossWin ? 1 : 0,
-            grossLossCount: isGrossWin ? 0 : 1,
-            netWinsCount: isNetWin ? 1 : 0,
-            netLossCount: isNetWin ? 0 : 1,
-            grossWinsQuantity: isGrossWin ? quantity : 0,
-            grossLossQuantity: isGrossWin ? 0 : quantity,
-            netWinsQuantity: isNetWin ? quantity : 0,
-            netLossQuantity: isNetWin ? 0 : quantity,
-            grossSharePLWins: isGrossWin ? grossPL : 0,
-            grossSharePLLoss: isGrossWin ? 0 : grossPL,
-            netSharePLWins: isNetWin ? netPL : 0,
-            netSharePLLoss: isNetWin ? 0 : netPL,
-            highGrossSharePLWin: isGrossWin ? grossPL : 0,
-            highGrossSharePLLoss: isGrossWin ? 0 : grossPL,
-            highNetSharePLWin: isNetWin ? netPL : 0,
-            highNetSharePLLoss: isNetWin ? 0 : netPL,
-            executionsCount: 1,
-            tradesCount: 1,
-            openPosition: false,
-        }
 
         tradesByDay[dateUnix].push(tradeObj)
         executionsByDay[dateUnix].push({ ...tradeObj, trade: tradeObj.id })
@@ -176,19 +126,19 @@ export async function useQuickApiImport() {
         console.log(' -> Saved trades for ' + dayjs.unix(dateUnix).format('YYYY-MM-DD'))
     }
 
-    // 6. Ensure 'bitunix' account exists in settings
+    // 6. Ensure broker account exists in settings
     if (currentUser.value && currentUser.value.accounts) {
-        const hasAccount = currentUser.value.accounts.find(a => a.value === 'bitunix')
+        const hasAccount = currentUser.value.accounts.find(a => a.value === broker)
         if (!hasAccount) {
-            const accounts = [...currentUser.value.accounts, { value: 'bitunix', label: 'bitunix' }]
+            const accounts = [...currentUser.value.accounts, { value: broker, label: broker }]
             await dbUpdateSettings({ accounts })
             currentUser.value.accounts = accounts
             // Also update localStorage
             const selected = localStorage.getItem('selectedAccounts')
             if (selected) {
-                localStorage.setItem('selectedAccounts', selected + ',bitunix')
+                localStorage.setItem('selectedAccounts', selected + ',' + broker)
             } else {
-                localStorage.setItem('selectedAccounts', 'bitunix')
+                localStorage.setItem('selectedAccounts', broker)
             }
         }
     }
@@ -199,9 +149,13 @@ export async function useQuickApiImport() {
         let linkedCount = 0
 
         for (const incoming of openIncoming) {
-            const wasImported = allPositions.find(p => p.positionId === incoming.positionId)
+            const wasImported = allPositions.find(p =>
+                String(p.positionId) === String(incoming.positionId)
+            )
             if (wasImported) {
-                const closeTime = parseInt(wasImported.mtime || wasImported.ctime)
+                const closeTime = parseInt(
+                    wasImported.mtime || wasImported.uTime || wasImported.ctime || wasImported.cTime
+                )
                 const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
                 const tradeId = `t${dateUnix}_0_${wasImported.positionId}`
 
@@ -226,7 +180,7 @@ export async function useQuickApiImport() {
                 if (incoming.screenshotId) {
                     try {
                         await dbUpdateRecord('screenshots', incoming.screenshotId, {
-                            name: `${dateUnix}_${wasImported.symbol}`,
+                            name: `${dateUnix}_${wasImported.symbol || wasImported.symbolName}`,
                             dateUnixDay: dateUnix
                         })
                     } catch (e) {
@@ -252,5 +206,127 @@ export async function useQuickApiImport() {
         success: true,
         message: `${allPositions.length} Positionen geladen, ${savedCount} neue Tage importiert.`,
         count: savedCount
+    }
+}
+
+/**
+ * Create a trade object from a Bitunix API position.
+ */
+function createBitunixTradeObj(pos, i) {
+    const grossPL = parseFloat(pos.realizedPNL || 0)
+    const fee = Math.abs(parseFloat(pos.fee || 0)) + Math.abs(parseFloat(pos.funding || 0))
+    const closeTime = parseInt(pos.mtime || pos.ctime)
+    const openTime = parseInt(pos.ctime)
+    const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
+
+    // Bitunix API: Pending uses 'BUY'/'SELL', History uses 'LONG'/'SHORT' — accept both
+    const side = (pos.side === 'LONG' || pos.side === 'BUY') ? 'B' : 'SS'
+    const netPL = grossPL - fee
+    const isGrossWin = grossPL > 0
+    const isNetWin = netPL > 0
+    const quantity = parseFloat(pos.maxQty || 1)
+    const entryTime = dayjs(openTime).utc().unix()
+    const exitTime = dayjs(closeTime).utc().unix()
+
+    return buildTradeObj({
+        id: `t${dateUnix}_${i}_${pos.positionId || i}`,
+        broker: 'bitunix',
+        td: dateUnix,
+        side, quantity, entryTime, exitTime,
+        entryPrice: parseFloat(pos.entryPrice || 0),
+        exitPrice: parseFloat(pos.closePrice || 0),
+        symbol: pos.symbol || 'FUTURES',
+        grossPL, netPL, fee, isGrossWin, isNetWin
+    })
+}
+
+/**
+ * Create a trade object from a Bitget API position.
+ * Bitget fields: positionId, symbol, holdSide, openAvgPrice, closeAvgPrice,
+ *                openTotalPos, closeTotalPos, pnl, netProfit, openFee, closeFee,
+ *                totalFunding, cTime, uTime
+ */
+function createBitgetTradeObj(pos, i) {
+    const grossPL = parseFloat(pos.pnl || 0)
+    const openFee = Math.abs(parseFloat(pos.openFee || 0))
+    const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
+    const totalFunding = Math.abs(parseFloat(pos.totalFunding || 0))
+    const fee = openFee + closeFee + totalFunding
+    const closeTime = parseInt(pos.uTime || pos.cTime)
+    const openTime = parseInt(pos.cTime)
+    const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
+
+    // Bitget holdSide: 'long' or 'short'
+    const holdSide = (pos.holdSide || '').toLowerCase()
+    const side = holdSide === 'long' ? 'B' : 'SS'
+    const netPL = parseFloat(pos.netProfit || 0) || (grossPL - fee)
+    const isGrossWin = grossPL > 0
+    const isNetWin = netPL > 0
+    const quantity = parseFloat(pos.closeTotalPos || pos.openTotalPos || 1)
+    const entryTime = dayjs(openTime).utc().unix()
+    const exitTime = dayjs(closeTime).utc().unix()
+
+    return buildTradeObj({
+        id: `t${dateUnix}_${i}_${pos.positionId || i}`,
+        broker: 'bitget',
+        td: dateUnix,
+        side, quantity, entryTime, exitTime,
+        entryPrice: parseFloat(pos.openAvgPrice || 0),
+        exitPrice: parseFloat(pos.closeAvgPrice || 0),
+        symbol: pos.symbol || 'FUTURES',
+        grossPL, netPL, fee, isGrossWin, isNetWin
+    })
+}
+
+/**
+ * Build a standardized trade object from normalized fields.
+ */
+function buildTradeObj({ id, broker, td, side, quantity, entryTime, exitTime,
+    entryPrice, exitPrice, symbol, grossPL, netPL, fee, isGrossWin, isNetWin }) {
+    return {
+        id,
+        account: broker,
+        broker: broker,
+        td,
+        currency: 'USDT',
+        type: 'futures',
+        side,
+        strategy: side === 'B' ? 'long' : 'short',
+        symbol,
+        buyQuantity: quantity,
+        sellQuantity: quantity,
+        entryPrice,
+        exitPrice,
+        entryTime,
+        exitTime,
+        grossProceeds: grossPL,
+        netProceeds: netPL,
+        commission: fee,
+        sec: 0, taf: 0, nscc: 0, nasdaq: 0,
+        grossSharePL: grossPL,
+        netSharePL: netPL,
+        grossWins: isGrossWin ? grossPL : 0,
+        grossLoss: isGrossWin ? 0 : grossPL,
+        netWins: isNetWin ? netPL : 0,
+        netLoss: isNetWin ? 0 : netPL,
+        grossWinsCount: isGrossWin ? 1 : 0,
+        grossLossCount: isGrossWin ? 0 : 1,
+        netWinsCount: isNetWin ? 1 : 0,
+        netLossCount: isNetWin ? 0 : 1,
+        grossWinsQuantity: isGrossWin ? quantity : 0,
+        grossLossQuantity: isGrossWin ? 0 : quantity,
+        netWinsQuantity: isNetWin ? quantity : 0,
+        netLossQuantity: isNetWin ? 0 : quantity,
+        grossSharePLWins: isGrossWin ? grossPL : 0,
+        grossSharePLLoss: isGrossWin ? 0 : grossPL,
+        netSharePLWins: isNetWin ? netPL : 0,
+        netSharePLLoss: isNetWin ? 0 : netPL,
+        highGrossSharePLWin: isGrossWin ? grossPL : 0,
+        highGrossSharePLLoss: isGrossWin ? 0 : grossPL,
+        highNetSharePLWin: isNetWin ? netPL : 0,
+        highNetSharePLLoss: isNetWin ? 0 : netPL,
+        executionsCount: 1,
+        tradesCount: 1,
+        openPosition: false,
     }
 }

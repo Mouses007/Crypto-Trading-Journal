@@ -338,6 +338,7 @@ async function runMigrations(knex, client) {
     // bitunix_config additions
     await addColumnIfNotExists('bitunix_config', 'lastApiImport', (t) => t.bigInteger('lastApiImport').defaultTo(0))
     await addColumnIfNotExists('bitunix_config', 'apiImportStartDate', (t) => t.text('apiImportStartDate').defaultTo(''))
+    await addColumnIfNotExists('bitunix_config', 'lastHistoryScan', (t) => t.bigInteger('lastHistoryScan').defaultTo(0))
 
     // incoming_positions additions
     await addColumnIfNotExists('incoming_positions', 'tags', (t) => t.text('tags').defaultTo('[]'))
@@ -361,6 +362,9 @@ async function runMigrations(knex, client) {
 
     // Entry screenshot (migrate from screenshotId)
     await addColumnIfNotExists('incoming_positions', 'entryScreenshotId', (t) => t.text('entryScreenshotId').defaultTo(''))
+
+    // tags: closingTags for separate opening/closing tag storage
+    await addColumnIfNotExists('tags', 'closingTags', (t) => t.text('closingTags').defaultTo('[]'))
 
     // settings additions
     await addColumnIfNotExists('settings', 'showTradePopups', (t) => t.integer('showTradePopups').defaultTo(1))
@@ -428,6 +432,16 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('ai_reports', 'completionTokens', (t) => t.integer('completionTokens').defaultTo(0))
     await addColumnIfNotExists('ai_reports', 'totalTokens', (t) => t.integer('totalTokens').defaultTo(0))
     await addColumnIfNotExists('ai_reports', 'promptPreset', (t) => t.text('promptPreset').defaultTo(''))
+
+    // ==================== BITGET CONFIG COLUMNS ====================
+    await addColumnIfNotExists('bitget_config', 'lastApiImport', (t) => t.bigInteger('lastApiImport').defaultTo(0))
+    await addColumnIfNotExists('bitget_config', 'lastHistoryScan', (t) => t.bigInteger('lastHistoryScan').defaultTo(0))
+
+    // ==================== INCOMING POSITIONS: BROKER COLUMN ====================
+    await addColumnIfNotExists('incoming_positions', 'broker', (t) => t.text('broker').defaultTo('bitunix'))
+
+    // ==================== SETTINGS: BALANCES (per broker) ====================
+    await addColumnIfNotExists('settings', 'balances', (t) => t.text('balances').defaultTo('{}'))
 
     // ==================== DATA MIGRATION ====================
     // Migrate old aiApiKey to provider-specific column

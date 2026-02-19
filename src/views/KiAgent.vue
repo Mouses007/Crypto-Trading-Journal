@@ -3,6 +3,7 @@ import { ref, reactive, onBeforeMount, computed } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
 import { aiReportGenerating, aiReportError, aiReportLastSavedId, aiReportLabel, aiReportCountBefore } from '../stores/settings.js'
+import { selectedBroker } from '../stores/filters.js'
 import axios from 'axios'
 import { useExportReportPdf } from '../utils/pdfExport'
 import { sanitizeHtml } from '../utils/sanitize'
@@ -148,7 +149,8 @@ async function generateReport() {
         const res = await axios.post('/api/ai/report', {
             startDate: dateRange.value.startDate,
             endDate: dateRange.value.endDate,
-            label
+            label,
+            broker: selectedBroker.value || null
         }, { timeout: 600000 })
 
         // Berichte neu laden und neuen aufklappen

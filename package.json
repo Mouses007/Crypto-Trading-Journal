@@ -1,7 +1,7 @@
 {
-  "name": "tj-trading-journal",
+  "name": "crypto-trading-journal",
   "version": "1.1.0",
-  "description": "TJ - Local Trading Journal for Bitunix Futures",
+  "description": "Crypto Trading Journal - Local Trading Journal for Bitunix (optional Bitget). SQLite or PostgreSQL, session auth, AI reports (Ollama/OpenAI/Anthropic/Gemini/DeepSeek).",
   "author": "Mouses007",
   "license": "GPL-3.0-or-later",
   "type": "module",

@@ -1,7 +1,8 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, computed } from 'vue';
 import { spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js';
 import { executions, existingImports, blotter, pAndL, tradesData, existingTradesArray, trades as globalTrades } from '../stores/trades.js';
+import { selectedBroker } from '../stores/filters.js';
 import { useDecimalsArithmetic, useCreatedDateFormat, useDateCalFormat } from '../utils/formatters.js';
 import { useImportTrades, useUploadTrades, useGetExistingTradesArray, useCreateBlotter, useCreatePnL } from '../utils/addTrades'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
@@ -16,40 +17,132 @@ const apiEndDate = ref(dayjs().format('YYYY-MM-DD'))
 const apiImportLoading = ref(false)
 const apiImportError = ref('')
 
+const broker = computed(() => selectedBroker.value || 'bitunix')
+const isBitget = computed(() => broker.value === 'bitget')
+const brokerLabel = computed(() => broker.value === 'bitget' ? 'Bitget' : 'Bitunix')
+
 onMounted(async () => {
     await useGetExistingTradesArray()
 })
+
+/**
+ * Parse a single Bitunix API position into tradesData row format.
+ */
+function parseBitunixPosition(pos) {
+    const grossPL = parseFloat(pos.realizedPNL || 0)
+    const fee = Math.abs(parseFloat(pos.fee || 0)) + Math.abs(parseFloat(pos.funding || 0))
+    const closeTime = parseInt(pos.mtime || pos.ctime)
+    const openTime = parseInt(pos.ctime)
+    // Bitunix: side is LONG/SHORT or BUY/SELL
+    const side = (pos.side === 'LONG' || pos.side === 'BUY') ? 'B' : 'SS'
+
+    return {
+        Account: 'bitunix',
+        Broker: 'bitunix',
+        DateUTC: dayjs(closeTime).utc().format('YYYY-MM-DD HH:mm:ss'),
+        EntryDateUTC: dayjs(openTime).utc().format('YYYY-MM-DD HH:mm:ss'),
+        Symbol: pos.symbol || 'FUTURES',
+        Type: 'futures',
+        GrossProceeds: grossPL,
+        Fee: fee,
+        NetProceeds: grossPL - fee,
+        TrxId: pos.positionId || '',
+        Side: side,
+        EntryPrice: parseFloat(pos.entryPrice || 0),
+        ClosePrice: parseFloat(pos.closePrice || 0),
+        Quantity: parseFloat(pos.maxQty || 1),
+        Leverage: pos.leverage || '',
+        IncomingAsset: 'USDT',
+        OutgoingAsset: 'USDT',
+    }
+}
+
+/**
+ * Parse a single Bitget API position into tradesData row format.
+ * Bitget fields: positionId, symbol, holdSide, openAvgPrice, closeAvgPrice,
+ *                openTotalPos, closeTotalPos, pnl, netProfit, openFee, closeFee,
+ *                totalFunding, cTime, uTime
+ */
+function parseBitgetPosition(pos) {
+    const grossPL = parseFloat(pos.pnl || 0)
+    const openFee = Math.abs(parseFloat(pos.openFee || 0))
+    const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
+    const totalFunding = Math.abs(parseFloat(pos.totalFunding || 0))
+    const fee = openFee + closeFee + totalFunding
+    const closeTime = parseInt(pos.uTime || pos.cTime)
+    const openTime = parseInt(pos.cTime)
+    // Bitget: holdSide is 'long' or 'short'
+    const holdSide = (pos.holdSide || '').toLowerCase()
+    const side = holdSide === 'long' ? 'B' : 'SS'
+    const netPL = parseFloat(pos.netProfit || 0) || (grossPL - fee)
+    const quantity = parseFloat(pos.closeTotalPos || pos.openTotalPos || 1)
+
+    return {
+        Account: 'bitget',
+        Broker: 'bitget',
+        DateUTC: dayjs(closeTime).utc().format('YYYY-MM-DD HH:mm:ss'),
+        EntryDateUTC: dayjs(openTime).utc().format('YYYY-MM-DD HH:mm:ss'),
+        Symbol: pos.symbol || 'FUTURES',
+        Type: 'futures',
+        GrossProceeds: grossPL,
+        Fee: fee,
+        NetProceeds: netPL,
+        TrxId: pos.positionId || '',
+        Side: side,
+        EntryPrice: parseFloat(pos.openAvgPrice || 0),
+        ClosePrice: parseFloat(pos.closeAvgPrice || 0),
+        Quantity: quantity,
+        Leverage: pos.leverage || '',
+        IncomingAsset: 'USDT',
+        OutgoingAsset: 'USDT',
+    }
+}
 
 async function importFromApi() {
     apiImportLoading.value = true
     apiImportError.value = ''
 
     try {
-        // Convert dates to UTC millisecond timestamps (Bitunix API expects ms)
         const startTime = dayjs.utc(apiStartDate.value).startOf('day').valueOf()
         const endTime = dayjs.utc(apiEndDate.value).endOf('day').valueOf()
+        const currentBroker = broker.value
 
-        // Fetch all pages
+        // Fetch positions from selected broker API
         let allPositions = []
-        let skip = 0
-        let hasMore = true
 
-        while (hasMore) {
-            const response = await axios.get('/api/bitunix/positions', {
-                params: { startTime, endTime, skip, limit: 100 }
+        if (currentBroker === 'bitget') {
+            // Bitget: server-side pagination is handled by the endpoint
+            const response = await axios.get('/api/bitget/positions', {
+                params: { startTime, endTime }
             })
 
             if (response.data.code !== 0) {
                 throw new Error(response.data.msg || 'API error')
             }
 
-            const positions = response.data.data?.positionList || []
-            allPositions = allPositions.concat(positions)
+            allPositions = response.data.data?.positionList || []
+        } else {
+            // Bitunix: client-side pagination with skip
+            let skip = 0
+            let hasMore = true
 
-            if (positions.length < 100) {
-                hasMore = false
-            } else {
-                skip += 100
+            while (hasMore) {
+                const response = await axios.get('/api/bitunix/positions', {
+                    params: { startTime, endTime, skip, limit: 100 }
+                })
+
+                if (response.data.code !== 0) {
+                    throw new Error(response.data.msg || 'API error')
+                }
+
+                const positions = response.data.data?.positionList || []
+                allPositions = allPositions.concat(positions)
+
+                if (positions.length < 100) {
+                    hasMore = false
+                } else {
+                    skip += 100
+                }
             }
         }
 
@@ -62,36 +155,16 @@ async function importFromApi() {
         // Convert API positions to tradesData format
         tradesData.length = 0
         allPositions.forEach(pos => {
-            const grossPL = parseFloat(pos.realizedPNL || 0)
-            const fee = Math.abs(parseFloat(pos.fee || 0)) + Math.abs(parseFloat(pos.funding || 0))
-            // Use mtime (close time) for trade date, fall back to ctime (open time)
-            const closeTime = parseInt(pos.mtime || pos.ctime)
-            const openTime = parseInt(pos.ctime)
-
-            tradesData.push({
-                Account: 'bitunix',
-                DateUTC: dayjs(closeTime).utc().format('YYYY-MM-DD HH:mm:ss'),
-                EntryDateUTC: dayjs(openTime).utc().format('YYYY-MM-DD HH:mm:ss'),
-                Symbol: pos.symbol || 'FUTURES',
-                Type: 'futures',
-                GrossProceeds: grossPL,
-                Fee: fee,
-                NetProceeds: grossPL - fee,
-                TrxId: pos.positionId || '',
-                Side: pos.side === 'LONG' ? 'B' : 'SS',
-                EntryPrice: parseFloat(pos.entryPrice || 0),
-                ClosePrice: parseFloat(pos.closePrice || 0),
-                Quantity: parseFloat(pos.maxQty || 1),
-                Leverage: pos.leverage || '',
-                IncomingAsset: 'USDT',
-                OutgoingAsset: 'USDT',
-            })
+            if (currentBroker === 'bitget') {
+                tradesData.push(parseBitgetPosition(pos))
+            } else {
+                tradesData.push(parseBitunixPosition(pos))
+            }
         })
 
         // Create trades from the API data
         spinnerLoadingPage.value = true
 
-        // Group tradesData by day and create trade objects
         for (let key in executions) delete executions[key]
         const trades = {}
         existingImports.length = 0
@@ -110,8 +183,8 @@ async function importFromApi() {
 
             const tradeObj = {
                 id: `t${dateUnix}_${i}_${row.TrxId || i}`,
-                account: 'bitunix',
-                broker: 'bitunix',
+                account: currentBroker,
+                broker: currentBroker,
                 td: dateUnix,
                 currency: 'USDT',
                 type: 'futures',
@@ -160,13 +233,16 @@ async function importFromApi() {
         })
 
         // Filter out already imported dates
-        for (let i = 0; i < existingTradesArray.length; i++) {
-            const existingDate = existingTradesArray[i]
-            if (trades[existingDate]) {
-                console.log(" -> Already imported date " + existingDate)
-                existingImports.push(existingDate)
-                delete trades[existingDate]
-                delete executions[existingDate]
+        // existingTradesArray contains date strings (YYYY-MM-DD),
+        // trades/executions keys are dateUnix numbers
+        const existingDateSet = new Set(existingTradesArray)
+        for (const dateUnixKey of Object.keys(trades)) {
+            const dateStr = dayjs.unix(Number(dateUnixKey)).utc().format('YYYY-MM-DD')
+            if (existingDateSet.has(dateStr)) {
+                console.log(" -> Already imported date " + dateStr + " (dateUnix=" + dateUnixKey + ")")
+                existingImports.push(Number(dateUnixKey))
+                delete trades[dateUnixKey]
+                delete executions[dateUnixKey]
             }
         }
 
@@ -186,7 +262,7 @@ async function importFromApi() {
         await useCreatePnL()
 
         spinnerLoadingPage.value = false
-        console.log(" -> Imported " + allPositions.length + " positions from Bitunix API (" + Object.keys(trades).length + " new days)")
+        console.log(` -> Imported ${allPositions.length} positions from ${brokerLabel.value} API (${Object.keys(trades).length} new days)`)
 
     } catch (error) {
         apiImportError.value = error.message || 'Import von API fehlgeschlagen'
@@ -214,7 +290,7 @@ async function importFromApi() {
 
     <!-- CSV Import -->
     <div v-show="importMode === 'csv'" class="mt-3">
-        <p class="txt-small">Importiere deinen Bitunix CSV-Export. Nur Zeilen mit "Futures Profit" und "Futures Loss" werden verarbeitet.</p>
+        <p class="txt-small">Importiere deinen {{ brokerLabel }} CSV-Export. Nur Zeilen mit "Futures Profit" und "Futures Loss" werden verarbeitet.</p>
         <div class="input-group mb-3">
             <input id="tradesInput" type="file" accept=".csv" v-on:change="useImportTrades($event, 'file')" />
         </div>
@@ -222,7 +298,7 @@ async function importFromApi() {
 
     <!-- API Import -->
     <div v-show="importMode === 'api'" class="mt-3">
-        <p class="txt-small">Importiere Trades direkt von deinem Bitunix-Konto. Konfiguriere deine API-Schlüssel in den <a href="/settings">Einstellungen</a>.</p>
+        <p class="txt-small">Importiere Trades direkt von deinem {{ brokerLabel }}-Konto. Konfiguriere deine API-Schlüssel in den <a href="/settings">Einstellungen</a>.</p>
         <div class="row mb-3">
             <div class="col">
                 <label class="form-label">Startdatum</label>

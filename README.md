@@ -1,4 +1,4 @@
-# TJ - Trading Journal
+# Crypto Trading Journal
 
 A local, privacy-focused trading journal for **Bitunix futures trading**. No cloud, no accounts, no Docker — just run it on your machine.
 
@@ -19,13 +19,16 @@ A local, privacy-focused trading journal for **Bitunix futures trading**. No clo
 - **Diary** for daily journal entries
 - **Screenshots** with annotation support
 - **Incoming positions** — track and evaluate open trades in real-time via Bitunix API
-- **CSV and API import** from Bitunix
+- **CSV and API import** from Bitunix (optional: Bitget API)
+- **KI-Agent** — AI reports and chat (Ollama, OpenAI, Anthropic, Gemini, DeepSeek)
+- **First-Run Setup** — guided initial configuration
 
 ## Tech Stack
 
 - **Frontend**: Vue 3, Vue Router, ECharts, Bootstrap (dark theme)
-- **Backend**: Express.js + SQLite (better-sqlite3)
-- **No external database** required — everything stored in a single `tradenote.db` file
+- **Backend**: Express.js mit **Knex** — SQLite (Standard) oder optional PostgreSQL
+- **Datenbank**: Standard eine lokale `tradenote.db` (SQLite). Optional: PostgreSQL über `db-config.json`
+- **Sicherheit**: Session-Cookie für API-Zugriff; API-Keys (Bitunix/Bitget) serverseitig verschlüsselt
 
 ## Installation
 
@@ -46,8 +49,8 @@ A local, privacy-focused trading journal for **Bitunix futures trading**. No clo
 ### Linux / macOS
 
 ```bash
-git clone https://github.com/Mouses007/TJ-Trading-Journal.git
-cd TJ-Trading-Journal
+git clone https://github.com/Mouses007/Crypto-Trading-Journal.git
+cd Crypto-Trading-Journal
 chmod +x install.sh
 ./install.sh
 npm start
@@ -61,7 +64,7 @@ npm run build
 npm start
 ```
 
-> **macOS**: Build Tools mit `xcode-select --install` installieren. Python 3 ist bereits vorinstalliert.
+> **macOS**: Zusätzlich gibt es `install-mac.command`, `start-mac.command` und `update-mac.command` (doppelklicken). Build Tools mit `xcode-select --install` installieren. Python 3 ist bereits vorinstalliert.
 
 Im Browser `http://localhost:8080` öffnen.
 
@@ -72,7 +75,7 @@ Deine Datenbank (`tradenote.db`) bleibt bei jedem Update erhalten.
 ### Windows
 
 1. `update.bat` doppelklicken — erstellt ein DB-Backup und aktualisiert automatisch (Git erforderlich)
-2. Ohne Git: Neues [Release](https://github.com/Mouses007/TJ-Trading-Journal/releases) herunterladen, Dateien überschreiben (**`tradenote.db` NICHT überschreiben!**), dann `update.bat` doppelklicken
+2. Ohne Git: Neues [Release](https://github.com/Mouses007/Crypto-Trading-Journal/releases) herunterladen, Dateien überschreiben (**`tradenote.db` NICHT überschreiben!**), dann `update.bat` doppelklicken
 
 ### Linux / macOS
 
@@ -93,12 +96,13 @@ npm run dev
 
 Startet den Vite Dev-Server mit Hot Module Replacement.
 
-### Port ändern
+### Port und Host ändern
 
-Standard-Port ist `8080`. Ändern mit:
+Standard-Port ist `8080`, gebunden an `127.0.0.1` (nur lokal). Beispiele:
 
 ```bash
 TRADENOTE_PORT=3000 npm start
+TRADENOTE_HOST=0.0.0.0 npm start   # Zugriff im Netzwerk (z. B. von anderen Geräten)
 ```
 
 ## Usage
@@ -112,10 +116,15 @@ TRADENOTE_PORT=3000 npm start
 
 This project is a fork of [TradeNote](https://github.com/Eleven-Trading/TradeNote) by eleven.trading, substantially modified:
 
-- Replaced MongoDB/Parse Server with SQLite
-- Removed Docker, authentication, payments, analytics
-- Simplified to single-user, Bitunix-only
-- Added emotion level tracking, tag-based strategy evaluation, incoming positions
+- Replaced MongoDB/Parse Server with SQLite (optional PostgreSQL via Knex)
+- Removed Docker, cloud auth, payments, analytics
+- Simplified to single-user; Bitunix (and optional Bitget) broker support
+- Session-cookie API auth; encrypted storage for broker API keys
+- Added emotion level tracking, tag-based strategy evaluation, incoming positions, KI-Agent (AI reports)
+
+## Dokumentation
+
+- **CLAUDE.md** — Technische Architektur und Konventionen (für Entwicklung/CI).
 
 ## License
 

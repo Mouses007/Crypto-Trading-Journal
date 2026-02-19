@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
-import { allTradeTimeframes, selectedTradeTimeframes } from '../stores/filters.js'
+import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js'
 import { availableTags } from '../stores/trades.js'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
 import { useCreatedDateFormat } from '../utils/formatters.js'
@@ -165,16 +165,30 @@ async function loadPlaybookEntries() {
     })
     screenshotMap.value = allScreenshots
 
+    // Broker filter: only show trades matching selected exchange
+    const broker = selectedBroker.value
+    const brokerFilteredTrades = broker
+        ? allTrades.filter(t => {
+            if (t.trades && Array.isArray(t.trades)) {
+                return t.trades.some(tr => tr.broker === broker)
+            }
+            return false
+        })
+        : allTrades
+
     const entries = []
     for (const note of allNotes) {
         if (!note.tradeId) continue
 
-        const trade = allTrades.find(t => {
+        const trade = brokerFilteredTrades.find(t => {
             if (t.trades && Array.isArray(t.trades)) {
                 return t.trades.some(tr => tr.id === note.tradeId)
             }
             return false
         })
+
+        // Skip notes that don't belong to the selected broker
+        if (broker && !trade) continue
 
         const satisfaction = allSatisfactions.find(s => s.tradeId === note.tradeId)
 
@@ -185,6 +199,19 @@ async function loadPlaybookEntries() {
                 const info = useGetTagInfo(tagId)
                 if (info) {
                     resolvedTags.push({
+                        id: tagId,
+                        name: info.tagName || tagId,
+                        color: info.groupColor || '#6c757d'
+                    })
+                }
+            }
+        }
+        const resolvedClosingTags = []
+        if (tagRecord && tagRecord.closingTags && Array.isArray(tagRecord.closingTags)) {
+            for (const tagId of tagRecord.closingTags) {
+                const info = useGetTagInfo(tagId)
+                if (info) {
+                    resolvedClosingTags.push({
                         id: tagId,
                         name: info.tagName || tagId,
                         color: info.groupColor || '#6c757d'
@@ -233,6 +260,7 @@ async function loadPlaybookEntries() {
             note: note.note || '',
             satisfaction: satisfaction ? satisfaction.satisfaction : null,
             tags: resolvedTags,
+            closingTags: resolvedClosingTags,
             symbol: tradeDetail?.symbol || trade?.trades?.[0]?.symbol || '',
             side: tradeDetail?.strategy || '',
             pnl: tradeDetail?.netProceeds || tradeDetail?.grossProceeds || 0,
@@ -360,6 +388,13 @@ function addTag(entry, tagData) {
     if (!entry.tags) entry.tags = []
     if (!entry.tags.some(t => t.id === tagData.id)) {
         entry.tags.push(tagData)
+    }
+}
+
+function addClosingTag(entry, tagData) {
+    if (!entry.closingTags) entry.closingTags = []
+    if (!entry.closingTags.some(t => t.id === tagData.id)) {
+        entry.closingTags.push(tagData)
     }
 }
 
@@ -536,16 +571,19 @@ async function saveEntry(entry) {
         }
 
         const tagIds = (entry.tags || []).map(t => typeof t === 'object' ? t.id : t)
+        const closingTagIds = (entry.closingTags || []).map(t => typeof t === 'object' ? t.id : t)
         if (entry.tagRecordObjectId) {
             await dbUpdate('tags', entry.tagRecordObjectId, {
-                tags: tagIds
+                tags: tagIds,
+                closingTags: closingTagIds
             })
-        } else if (tagIds.length > 0) {
+        } else if (tagIds.length > 0 || closingTagIds.length > 0) {
             const { dbCreate } = await import('../utils/db.js')
             const result = await dbCreate('tags', {
                 dateUnix: entry.dateUnix,
                 tradeId: entry.tradeId,
-                tags: tagIds
+                tags: tagIds,
+                closingTags: closingTagIds
             })
             entry.tagRecordObjectId = result.objectId
         }
@@ -566,7 +604,6 @@ async function saveEntry(entry) {
         <div v-show="!spinnerLoadingPage">
             <div class="row mb-3">
                 <div class="col">
-                    <h5 class="mb-0">Playbook</h5>
                     <small class="text-muted">Trade-Bewertungen und Notizen</small>
                 </div>
             </div>
@@ -615,8 +652,12 @@ async function saveEntry(entry) {
                                 Stress {{ entry.entryStressLevel }}/10
                             </span>
                             <span v-if="entry.timeframe" class="pb-pill">{{ entry.timeframe }}</span>
-                            <span v-for="tag in entry.tags" :key="tag.id"
+                            <span v-for="tag in entry.tags" :key="'o'+tag.id"
                                 class="pb-pill" :style="{ backgroundColor: tag.color, color: '#fff' }">
+                                {{ tag.name }}
+                            </span>
+                            <span v-for="tag in (entry.closingTags || [])" :key="'c'+tag.id"
+                                class="pb-pill" :style="{ backgroundColor: tag.color || getTagColor(tag.id), color: '#fff', opacity: 0.7 }">
                                 {{ tag.name }}
                             </span>
                         </div>
@@ -698,8 +739,8 @@ async function saveEntry(entry) {
                         </div>
                     </div>
 
-                    <!-- ===== ABSCHLUSSBEWERTUNG (View) — nur Tags + Notiz + Screenshot ===== -->
-                    <div v-if="(entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim()) || entry.closingNote || (entry.satisfaction !== null && entry.satisfaction !== undefined) || getClosingScreenshot(entry)"
+                    <!-- ===== ABSCHLUSSBEWERTUNG (View) — Tags + Notiz + Screenshot ===== -->
+                    <div v-if="(entry.closingTags && entry.closingTags.length > 0) || (entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim()) || entry.closingNote || (entry.satisfaction !== null && entry.satisfaction !== undefined) || getClosingScreenshot(entry)"
                         class="pb-view-closing mb-2 p-3">
                         <div class="d-flex align-items-center mb-2">
                             <i class="uil uil-lock-alt me-2" style="color: var(--blue-color, #3b82f6); font-size: 1rem;"></i>
@@ -713,6 +754,17 @@ async function saveEntry(entry) {
                             </div>
                         </div>
                         <div class="pb-grid">
+                            <div v-if="entry.closingTags && entry.closingTags.length > 0" class="pb-field">
+                                <div class="pb-label">Tags</div>
+                                <div class="pb-value">
+                                    <span v-for="tag in entry.closingTags" :key="tag.id"
+                                        class="pb-pill me-1"
+                                        :style="{ backgroundColor: tag.color || getTagColor(tag.id), color: '#fff' }">
+                                        {{ tag.name }}
+                                    </span>
+                                </div>
+                            </div>
+
                             <div v-if="entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim()" class="pb-field pb-field-wide">
                                 <div class="pb-label">Notiz</div>
                                 <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.closingPlaybook)"></div>
@@ -854,24 +906,24 @@ async function saveEntry(entry) {
                             <span class="fw-bold" style="font-size: 0.95rem;">Abschlussbewertung</span>
                         </div>
 
-                        <!-- Tags -->
+                        <!-- Tags (Closing) -->
                         <div class="pb-edit-section">
                             <label class="pb-edit-label">Tags</label>
                             <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
-                                <span v-for="(tag, idx) in (entry.tags || [])" :key="tag.id"
+                                <span v-for="(tag, idx) in (entry.closingTags || [])" :key="tag.id"
                                     class="badge me-1 pointerClass"
                                     :style="{ backgroundColor: getTagColor(tag.id) }"
-                                    @click.stop="entry.tags.splice(idx, 1)">
+                                    @click.stop="entry.closingTags.splice(idx, 1)">
                                     {{ tag.name }} <span class="ms-1">&times;</span>
                                 </span>
                             </div>
                             <select class="form-select form-select-sm"
-                                @change.stop="addTag(entry, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
+                                @change.stop="addClosingTag(entry, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
                                 <option selected disabled>Tag hinzufügen...</option>
                                 <optgroup v-for="group in availableTags" :key="group.id" :label="group.name">
                                     <option v-for="tag in getGroupTags(group.id)" :key="tag.id"
                                         :value="JSON.stringify({ id: tag.id, name: tag.name })"
-                                        :disabled="(entry.tags || []).some(t => t.id === tag.id)">
+                                        :disabled="(entry.closingTags || []).some(t => t.id === tag.id)">
                                         {{ tag.name }}
                                     </option>
                                 </optgroup>

@@ -2,7 +2,7 @@
 import { onBeforeMount, onMounted, ref, reactive, computed } from 'vue';
 import { useDateCalFormat } from '../utils/formatters.js';
 import { useCheckCurrentUser, useInitTooltip } from '../utils/utils';
-import { allTradeTimeframes, selectedTradeTimeframes } from '../stores/filters.js';
+import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js';
 import { currentUser, renderProfile } from '../stores/settings.js';
 import { dbUpdateSettings, dbGetSettings, dbFind, dbFirst, dbDelete, dbDeleteWhere } from '../utils/db.js'
 import axios from 'axios'
@@ -54,6 +54,7 @@ let dbHasPassword = ref(false)
 let dbTestLoading = ref(false)
 let dbTestResult = ref(null)
 let dbSaveResult = ref(null)
+let dbRestartLoading = ref(false)
 let dbExportLoading = ref(false)
 let dbImportLoading = ref(false)
 let dbMigrationResult = ref(null)
@@ -270,6 +271,30 @@ async function saveDbConfig() {
     } catch (e) {
         dbSaveResult.value = { ok: false, message: 'Fehler: ' + e.message }
     }
+}
+
+async function restartServer() {
+    dbRestartLoading.value = true
+    try {
+        await axios.post('/api/restart')
+    } catch (e) {
+        // Connection will drop during restart — that's expected
+    }
+    // Wait for server to come back
+    let retries = 0
+    while (retries < 20) {
+        await new Promise(r => setTimeout(r, 1500))
+        try {
+            await axios.get('/api/db/settings')
+            // Server is back — reload page to get new session cookie
+            window.location.reload()
+            return
+        } catch (e) {
+            retries++
+        }
+    }
+    dbRestartLoading.value = false
+    dbSaveResult.value = { ok: false, message: 'Server antwortet nicht. Bitte manuell neu starten.' }
 }
 
 async function exportDb() {
@@ -578,7 +603,20 @@ async function loadImports() {
     try {
         const results = await dbFind('trades', { descending: 'dateUnix', limit: 10000 })
         importsList.length = 0
-        results.forEach(r => importsList.push(r))
+
+        const broker = selectedBroker.value
+        results.forEach(r => {
+            if (broker && r.trades && Array.isArray(r.trades)) {
+                // Filter trades within the day to only the selected broker
+                const brokerTrades = r.trades.filter(t => t.broker === broker)
+                if (brokerTrades.length === 0) return // skip days with no trades for this broker
+                // Clone and replace trades array with filtered version
+                const filtered = { ...r, trades: brokerTrades }
+                importsList.push(filtered)
+            } else {
+                importsList.push(r)
+            }
+        })
 
         // Load notes to check which trades have evaluations
         const notes = await dbFind('notes', { limit: 10000 })
@@ -725,16 +763,54 @@ async function fixTradeSides() {
     }
 }
 
+/* REMOVE DUPLICATE TRADES */
+let removeDupsLoading = ref(false)
+let removeDupsResult = ref(null)
+
+async function removeDuplicateTrades() {
+    removeDupsLoading.value = true
+    removeDupsResult.value = null
+    try {
+        const response = await axios.post('/api/remove-duplicate-trades')
+        const d = response.data
+        if (d.duplicateRowsDeleted === 0 && d.duplicateTradesRemoved === 0) {
+            removeDupsResult.value = { success: true, message: 'Keine Duplikate gefunden.' }
+        } else {
+            removeDupsResult.value = {
+                success: true,
+                message: `${d.duplicateTradesRemoved} doppelte Trades entfernt, ${d.duplicateRowsDeleted} doppelte Tage zusammengeführt. ${d.evaluatedKept} bewertete Trades behalten.`
+            }
+        }
+        // Reload imports list
+        await loadImports()
+    } catch (error) {
+        removeDupsResult.value = {
+            success: false,
+            message: 'Fehler: ' + (error.response?.data?.error || error.message)
+        }
+    } finally {
+        removeDupsLoading.value = false
+    }
+}
+
 // Load imports on mount
-/* KONTOSTAND */
+/* KONTOSTAND (per broker) */
 async function saveBalances() {
     try {
+        const broker = selectedBroker.value || 'bitunix'
         const start = parseFloat(startBalance.value) || 0
         const current = parseFloat(currentBalance.value) || 0
-        await dbUpdateSettings({ startBalance: start, currentBalance: current })
+
+        // Load existing balances object, update current broker
+        const existingBalances = currentUser.value?.balances || {}
+        const balances = { ...existingBalances, [broker]: { start, current } }
+
+        // Save both: balances (per broker JSON) and legacy fields (for backwards compatibility)
+        await dbUpdateSettings({ balances, startBalance: start, currentBalance: current })
+        currentUser.value.balances = balances
         currentUser.value.startBalance = start
         currentUser.value.currentBalance = current
-        console.log(' -> Kontostände gespeichert: Start', start, '/ Aktuell', current)
+        console.log(` -> Kontostände gespeichert für ${broker}: Start`, start, '/ Aktuell', current)
     } catch (error) {
         alert('Fehler beim Speichern: ' + error.message)
     }
@@ -777,8 +853,16 @@ onBeforeMount(async () => {
         settings = await dbGetSettings()
         currentUser.value = settings
         username.value = settings.username || ''
-        startBalance.value = settings.startBalance || 0
-        currentBalance.value = settings.currentBalance || 0
+        // Load balances for current broker (with fallback to legacy fields)
+        const broker = selectedBroker.value || 'bitunix'
+        const balances = settings.balances || {}
+        if (balances[broker]) {
+            startBalance.value = balances[broker].start || 0
+            currentBalance.value = balances[broker].current || 0
+        } else {
+            startBalance.value = settings.startBalance || 0
+            currentBalance.value = settings.currentBalance || 0
+        }
         showTradePopups.value = settings.showTradePopups !== 0
         enableBinanceChart.value = settings.enableBinanceChart === 1
         browserNotifications.value = settings.browserNotifications !== 0
@@ -791,8 +875,15 @@ onBeforeMount(async () => {
     } catch (error) {
         console.log(' -> Error loading settings:', error)
         username.value = currentUser.value?.username || ''
-        startBalance.value = currentUser.value?.startBalance || 0
-        currentBalance.value = currentUser.value?.currentBalance || 0
+        const brokerFb = selectedBroker.value || 'bitunix'
+        const balancesFb = currentUser.value?.balances || {}
+        if (balancesFb[brokerFb]) {
+            startBalance.value = balancesFb[brokerFb].start || 0
+            currentBalance.value = balancesFb[brokerFb].current || 0
+        } else {
+            startBalance.value = currentUser.value?.startBalance || 0
+            currentBalance.value = currentUser.value?.currentBalance || 0
+        }
     }
     // KI-Settings über verschlüsselten Endpoint laden
     await loadAiSettings()
@@ -871,7 +962,7 @@ onBeforeMount(async () => {
                     <p class="fs-5 fw-bold mb-0">Kontostand</p>
                 </div>
                 <div v-show="balanceExpanded" class="mt-2 row align-items-center">
-                    <p class="fw-lighter">Start-Kontostand = deine Einzahlung. Aktueller Kontostand = dein heutiger Stand auf Bitunix. Gewinn wird als Differenz berechnet.</p>
+                    <p class="fw-lighter">Start-Kontostand = deine Einzahlung. Aktueller Kontostand = dein heutiger Stand auf <strong>{{ (selectedBroker || 'bitunix').charAt(0).toUpperCase() + (selectedBroker || 'bitunix').slice(1) }}</strong>. Gewinn wird als Differenz berechnet.</p>
                     <div class="row mt-2">
                         <div class="col-12 col-md-4">Start-Kontostand (USDT)</div>
                         <div class="col-12 col-md-8">
@@ -1312,8 +1403,13 @@ onBeforeMount(async () => {
                         </span>
                     </div>
 
-                    <div v-if="dbType === 'postgresql'" class="alert alert-info small">
-                        <strong>Hinweis:</strong> Nach dem Speichern muss der Server neu gestartet werden, damit die neue Datenbank verwendet wird.
+                    <div v-if="dbSaveResult?.ok" class="mt-2">
+                        <button type="button" @click="restartServer" class="btn btn-warning btn-sm" :disabled="dbRestartLoading">
+                            <span v-if="dbRestartLoading">
+                                <span class="spinner-border spinner-border-sm me-1"></span>Server wird neu gestartet...
+                            </span>
+                            <span v-else><i class="uil uil-redo me-1"></i>Server neu starten</span>
+                        </button>
                     </div>
 
                     <!-- Export / Import -->
@@ -1357,13 +1453,14 @@ onBeforeMount(async () => {
 
                 <hr />
 
-                <!--=============== TRADE-REPARATUR ===============-->
+                <!--=============== TRADE-WERKZEUGE ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="reparaturExpanded = !reparaturExpanded">
                     <i class="uil me-2" :class="reparaturExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Trade-Reparatur</p>
+                    <p class="fs-5 fw-bold mb-0">Trade-Werkzeuge</p>
                 </div>
                 <div v-show="reparaturExpanded" class="mt-2">
-                    <p class="fw-lighter">Korrigiert die Long/Short-Zuordnung aller bestehenden Trades anhand von Entry/Exit-Preis und P&L-Richtung.</p>
+                    <!-- Long/Short Reparatur -->
+                    <p class="fw-lighter mb-1">Korrigiert die Long/Short-Zuordnung aller bestehenden Trades anhand von Entry/Exit-Preis und P&L-Richtung.</p>
                     <button class="btn btn-outline-warning btn-sm" @click="fixTradeSides" :disabled="fixTradesLoading">
                         <span v-if="fixTradesLoading">
                             <span class="spinner-border spinner-border-sm me-1" role="status"></span>Repariere...
@@ -1373,6 +1470,22 @@ onBeforeMount(async () => {
                     <div v-if="fixTradesResult" class="mt-2">
                         <div :class="fixTradesResult.success ? 'text-success' : 'text-danger'" class="txt-small">
                             {{ fixTradesResult.message }}
+                        </div>
+                    </div>
+
+                    <hr class="my-3" style="opacity: 0.15;" />
+
+                    <!-- Duplikate entfernen -->
+                    <p class="fw-lighter mb-1">Erkennt und entfernt doppelt importierte Trades. Bewertete Trades (mit Notizen) werden nicht gelöscht.</p>
+                    <button class="btn btn-outline-warning btn-sm" @click="removeDuplicateTrades" :disabled="removeDupsLoading">
+                        <span v-if="removeDupsLoading">
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>Suche Duplikate...
+                        </span>
+                        <span v-else><i class="uil uil-copy me-1"></i>Duplikate entfernen</span>
+                    </button>
+                    <div v-if="removeDupsResult" class="mt-2">
+                        <div :class="removeDupsResult.success ? 'text-success' : 'text-danger'" class="txt-small">
+                            {{ removeDupsResult.message }}
                         </div>
                     </div>
                 </div>

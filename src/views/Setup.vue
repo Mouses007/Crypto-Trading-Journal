@@ -89,8 +89,23 @@ async function completeSetup() {
         if (dbType.value === 'postgresql') {
             step.value = 4 // Neustart-Schritt
         } else {
-            router.replace('/dashboard')
+            // Reload damit Router setupComplete neu lädt
+            window.location.href = '/dashboard'
         }
+    } catch (e) {
+        error.value = 'Fehler: ' + (e.response?.data?.error || e.message)
+    }
+    saving.value = false
+}
+
+/** Setup als abgeschlossen markieren und zum Dashboard (für Nutzer, die schon alles konfiguriert haben). */
+async function skipSetup() {
+    saving.value = true
+    error.value = ''
+    try {
+        await axios.post('/api/setup/complete')
+        // Vollständiger Reload, damit der Router setupComplete neu lädt und nicht mehr zu /setup umleitet
+        window.location.href = '/dashboard'
     } catch (e) {
         error.value = 'Fehler: ' + (e.response?.data?.error || e.message)
     }
@@ -103,8 +118,8 @@ async function completeSetup() {
         <div class="setup-card">
             <!-- Header -->
             <div class="setup-header">
-                <img src="@/assets/tj-logo.svg" alt="TJ" class="setup-logo" onerror="this.style.display='none'" />
-                <h2>TJ Trading Journal</h2>
+                <img src="@/assets/icon.png" alt="Crypto Trading Journal" class="setup-logo" onerror="this.style.display='none'" />
+                <h2>Crypto Trading Journal</h2>
                 <!-- Step indicator -->
                 <div class="step-indicator">
                     <div class="step-dot" :class="{ active: step >= 1, done: step > 1 }">1</div>
@@ -119,7 +134,7 @@ async function completeSetup() {
             <div v-if="step === 1" class="setup-body">
                 <h3>Willkommen!</h3>
                 <p class="text-muted">
-                    Schoen, dass du TJ Trading Journal nutzt. Dieses Setup hilft dir, die Grundkonfiguration vorzunehmen.
+                    Schoen, dass du Crypto Trading Journal nutzt. Dieses Setup hilft dir, die Grundkonfiguration vorzunehmen.
                 </p>
                 <div class="feature-list">
                     <div class="feature-item">
@@ -154,6 +169,11 @@ async function completeSetup() {
                 <button class="btn btn-primary btn-lg w-100 mt-4" @click="nextStep">
                     Weiter <i class="uil uil-arrow-right ms-1"></i>
                 </button>
+                <p class="mt-3 mb-0 text-center">
+                    <button type="button" class="btn btn-link btn-sm text-muted p-0" @click="skipSetup">
+                        Bereits konfiguriert? Setup überspringen
+                    </button>
+                </p>
             </div>
 
             <!-- Step 2: Datenbank waehlen -->

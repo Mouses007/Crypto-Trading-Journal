@@ -1,5 +1,5 @@
 import { pageId, dateScreenshotEdited, renderData, markerAreaOpen, spinnerLoadingPage, spinnerSetups, editingScreenshot, timeZoneTrade, endOfList, screenshotsPagination, screenshotsQueryLimit, selectedItem, saveButton, selectedScreenshotIndex, selectedScreenshotSource, resizeCompressImg, resizeCompressMaxWidth, resizeCompressMaxHeight, resizeCompressQuality, expandedScreenshot, expandedId, expandedSource } from '../stores/ui.js'
-import { selectedMonth, selectedTags } from '../stores/filters.js'
+import { selectedMonth, selectedTags, selectedBroker } from '../stores/filters.js'
 import { screenshots, screenshot, tradeScreenshotChanged, selectedScreenshot, tags, tradeTags, screenshotsInfos } from '../stores/trades.js'
 /* useLoadMore removed — inlined below to break circular dependency */
 import { useUpdateTags, useUpdateAvailableTags} from './daily.js';
@@ -50,10 +50,43 @@ export async function useGetScreenshots(param1, param2) {
         }
 
         const results = await dbFind("screenshots", options)
+
+        // Broker filter: build set of tradeIds and dateUnix days for selected broker
+        let brokerTradeIds = null
+        let brokerDateUnixDays = null
+        const broker = selectedBroker.value
+        if (broker && pageId.value === 'screenshots') {
+            const allTrades = await dbFind('trades', { descending: 'dateUnix', limit: 10000, exclude: ['executions', 'blotter', 'pAndL'] })
+            brokerTradeIds = new Set()
+            brokerDateUnixDays = new Set()
+            for (const day of allTrades) {
+                if (day.trades && Array.isArray(day.trades)) {
+                    for (const t of day.trades) {
+                        if (t.broker === broker) {
+                            brokerTradeIds.add(t.id)
+                            brokerDateUnixDays.add(day.dateUnix)
+                        }
+                    }
+                }
+            }
+        }
+
         await (async () => {
             //console.log("results " + JSON.stringify(results))
             if (results.length > 0) {
                 let parsedResult = JSON.parse(JSON.stringify(results))
+
+                // Filter screenshots by broker if applicable
+                if (brokerTradeIds) {
+                    parsedResult = parsedResult.filter(el => {
+                        // Match by tradeId (screenshot name === trade id)
+                        if (el.name && brokerTradeIds.has(el.name)) return true
+                        // Match by dateUnixDay (screenshot belongs to a day with broker trades)
+                        if (el.dateUnixDay && brokerDateUnixDays.has(el.dateUnixDay)) return true
+                        return false
+                    })
+                }
+
                 //console.log(" parsedResult "+JSON.stringify(parsedResult))
                 if (pageId.value == "daily") {
                     //on daily page, when need to reset setups or else after new screenshot is added, it apreaeed double. 

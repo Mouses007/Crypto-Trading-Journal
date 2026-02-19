@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { pageId, screenType } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
+import { selectedBroker, brokers } from "../stores/globals.js"
 
 const appVersion = __APP_VERSION__
 import { useToggleMobileMenu } from "../utils/utils";
@@ -10,6 +11,13 @@ import { sendNotification } from "../utils/notify";
 
 const apiImporting = ref(false)
 const apiImportResult = ref(null) // { success, message }
+
+function onBrokerChange(event) {
+    const value = event.target.value
+    selectedBroker.value = value
+    localStorage.setItem('selectedBroker', value)
+    window.location.reload()
+}
 
 function goToDashboard() {
     if (screenType.value === 'mobile') {
@@ -59,7 +67,20 @@ async function quickApiImport() {
     <div id="step2" class="mt-3">
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
-                <label class="fw-lighter">ANALYSIEREN</label>
+                <label class="fw-lighter">BÖRSE</label>
+                <div class="px-2 mb-2">
+                    <select class="form-select form-select-sm broker-select"
+                        :value="selectedBroker"
+                        @change="onBrokerChange">
+                        <option v-for="b in brokers" :key="b.value" :value="b.value">{{ b.label }}</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="sideMenuDiv">
+            <div class="sideMenuDivContent">
+                <label class="fw-lighter mt-3">ANALYSIEREN</label>
                 <a id="step3" v-bind:class="[pageId === 'dashboard' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/dashboard">
                     <i class="uil uil-apps me-2"></i>Dashboard</a>
@@ -119,10 +140,31 @@ async function quickApiImport() {
 
         <div class="mt-auto pt-3">
             <div class="text-start" style="padding-left: 21px;">
-                <a href="https://github.com/Mouses007/TJ-Trading-Journal/releases" target="_blank" rel="noopener"
+                <a href="https://github.com/Mouses007/Crypto-Trading-Journal/releases" target="_blank" rel="noopener"
                     class="text-muted text-decoration-none" style="font-size: 0.7rem; opacity: 0.5;"
-                    title="Updates auf GitHub prüfen">TJ Beta V.{{ appVersion }}</a>
+                    title="Updates auf GitHub prüfen">Beta V.{{ appVersion }}</a>
             </div>
         </div>
     </div>
 </template>
+
+<style scoped>
+.broker-select {
+    background-color: var(--black-bg-2, #1e1e2f);
+    color: var(--white-1, #e0e0e0);
+    border: 1px solid var(--grey-color, #444);
+    font-size: 0.85rem;
+    padding: 0.3rem 0.5rem;
+    cursor: pointer;
+}
+.broker-select:focus {
+    background-color: var(--black-bg-2, #1e1e2f);
+    color: var(--white-1, #e0e0e0);
+    border-color: var(--blue-color, #4a9eff);
+    box-shadow: 0 0 0 0.15rem rgba(74, 158, 255, 0.25);
+}
+.broker-select option {
+    background-color: var(--black-bg-2, #1e1e2f);
+    color: var(--white-1, #e0e0e0);
+}
+</style>

@@ -1,5 +1,5 @@
 #!/bin/bash
-# TJ Trading Journal — Server starten und Browser oeffnen (macOS)
+# Crypto Trading Journal — Server starten und Browser oeffnen (macOS)
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
@@ -7,7 +7,7 @@ PORT="${TRADENOTE_PORT:-8080}"
 
 # Pruefen ob bereits laeuft
 if curl -s "http://localhost:$PORT" > /dev/null 2>&1; then
-    echo "TJ Trading Journal laeuft bereits auf http://localhost:$PORT"
+    echo "Crypto Trading Journal laeuft bereits auf http://localhost:$PORT"
     open "http://localhost:$PORT"
     exit 0
 fi
@@ -19,7 +19,7 @@ if [ ! -f "dist/index.html" ]; then
 fi
 
 echo ""
-echo "  TJ Trading Journal startet..."
+echo "  Crypto Trading Journal startet..."
 echo ""
 echo "  Server:   http://localhost:$PORT"
 echo "  Beenden:  Ctrl+C oder Fenster schliessen"

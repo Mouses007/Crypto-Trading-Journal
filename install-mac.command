@@ -1,5 +1,5 @@
 #!/bin/bash
-# TJ Trading Journal - Installer for macOS
+# Crypto Trading Journal - Installer for macOS
 # Doppelklick auf diese Datei oder: chmod +x install-mac.command && ./install-mac.command
 
 set -e
@@ -18,7 +18,7 @@ MANDATORY_MISSING=0
 
 echo ""
 echo -e "  ${CYAN}${BOLD}══════════════════════════════════════════${RESET}"
-echo -e "  ${CYAN}${BOLD}     TJ Trading Journal - Installer       ${RESET}"
+echo -e "  ${CYAN}${BOLD}     Crypto Trading Journal - Installer       ${RESET}"
 echo -e "  ${CYAN}${BOLD}══════════════════════════════════════════${RESET}"
 echo ""
 echo -e "  ${GRAY}Pruefe System-Voraussetzungen...${RESET}"
@@ -199,7 +199,7 @@ INSTALL_DIR="$(pwd)"
 DESKTOP_DIR="$HOME/Desktop"
 
 # .command-Datei als Shortcut auf dem Desktop
-SHORTCUT="$DESKTOP_DIR/TJ Trading Journal.command"
+SHORTCUT="$DESKTOP_DIR/Crypto Trading Journal.command"
 cat > "$SHORTCUT" << INNEREOF
 #!/bin/bash
 cd "$INSTALL_DIR"
@@ -221,7 +221,7 @@ echo -e "  ${GREEN}════════════════════�
 echo -e "  ${GREEN}${BOLD}  Installation erfolgreich abgeschlossen!${RESET}"
 echo -e "  ${GREEN}══════════════════════════════════════════${RESET}"
 echo ""
-echo -e "  ${BOLD}Starten:${RESET}   Doppelklick auf 'TJ Trading Journal' am Desktop"
+echo -e "  ${BOLD}Starten:${RESET}   Doppelklick auf 'Crypto Trading Journal' am Desktop"
 echo -e "  ${BOLD}Oder:${RESET}      ./start-mac.command"
 echo -e "  ${BOLD}Browser:${RESET}   http://localhost:8080"
 echo ""

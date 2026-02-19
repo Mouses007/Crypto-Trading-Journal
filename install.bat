@@ -1,19 +1,6 @@
 @echo off
-chcp 65001 >nul
+chcp 65001 >nul 2>nul
 setlocal EnableDelayedExpansion
-
-:: ANSI Escape-Zeichen generieren (Windows 10+)
-for /f %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
-
-:: Farben definieren
-set "GREEN=!ESC![92m"
-set "RED=!ESC![91m"
-set "YELLOW=!ESC![93m"
-set "CYAN=!ESC![96m"
-set "WHITE=!ESC![97m"
-set "GRAY=!ESC![90m"
-set "BOLD=!ESC![1m"
-set "RESET=!ESC![0m"
 
 :: Status-Variablen
 set "NODE_OK=0"
@@ -26,44 +13,35 @@ set "PYTHON_VER="
 set "GIT_VER="
 set "MANDATORY_MISSING=0"
 
-:: ══════════════════════════════════════════
-::  Banner
-:: ══════════════════════════════════════════
 echo.
-echo   !CYAN!══════════════════════════════════════════!RESET!
-echo   !CYAN!!BOLD!     TJ Trading Journal - Installer       !RESET!
-echo   !CYAN!══════════════════════════════════════════!RESET!
+echo   ==============================================
+echo      Crypto Trading Journal - Installer
+echo   ==============================================
 echo.
-echo   !GRAY!Pruefe System-Voraussetzungen...!RESET!
+echo   Pruefe System-Voraussetzungen...
 echo.
 
-:: ══════════════════════════════════════════
-::  CHECK 1: Node.js 20+
-:: ══════════════════════════════════════════
+:: CHECK 1: Node.js 20+
 where node >nul 2>nul
 if !errorlevel!==0 (
     for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NODE_VER=%%v"
-    :: Major-Version extrahieren: v20.11.0 -> 20
     for /f "tokens=1 delims=." %%a in ("!NODE_VER!") do set "NODE_RAW=%%a"
     set "NODE_MAJOR=!NODE_RAW:v=!"
     if !NODE_MAJOR! GEQ 20 (
         set "NODE_OK=1"
-        echo   !GREEN![OK]!RESET!  Node.js            !NODE_VER!
+        echo   [OK]  Node.js            !NODE_VER!
     ) else (
-        echo   !RED![!!]!RESET!  Node.js            !NODE_VER! !RED!^(Version 20+ erforderlich^)!RESET!
+        echo   [!!]  Node.js            !NODE_VER! (Version 20+ erforderlich)
         set "MANDATORY_MISSING=1"
     )
 ) else (
-    echo   !RED![!!]!RESET!  Node.js            !RED!Nicht gefunden!RESET!
+    echo   [!!]  Node.js            Nicht gefunden
     set "MANDATORY_MISSING=1"
 )
 
-:: ══════════════════════════════════════════
-::  CHECK 2: Python 3
-:: ══════════════════════════════════════════
+:: CHECK 2: Python 3
 set "PY_FOUND=0"
 
-:: Versuch 1: python
 where python >nul 2>nul
 if !errorlevel!==0 (
     for /f "tokens=2 delims= " %%a in ('python --version 2^>^&1') do set "PY_VER_FULL=%%a"
@@ -77,7 +55,6 @@ if !errorlevel!==0 (
     )
 )
 
-:: Versuch 2: python3 (falls python nicht gefunden)
 if !PY_FOUND!==0 (
     where python3 >nul 2>nul
     if !errorlevel!==0 (
@@ -93,120 +70,106 @@ if !PY_FOUND!==0 (
 )
 
 if !PYTHON_OK!==1 (
-    echo   !GREEN![OK]!RESET!  Python             !PYTHON_VER!
+    echo   [OK]  Python             !PYTHON_VER!
 ) else (
-    echo   !RED![!!]!RESET!  Python 3           !RED!Nicht gefunden!RESET!
+    echo   [!!]  Python 3           Nicht gefunden
     set "MANDATORY_MISSING=1"
 )
 
-:: ══════════════════════════════════════════
-::  CHECK 3: Visual Studio Build Tools
-:: ══════════════════════════════════════════
+:: CHECK 3: Visual Studio Build Tools
 set "VS_FOUND=0"
 
-:: Methode 1: vswhere.exe (Standard-Pfad vom VS Installer)
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if exist "!VSWHERE!" (
     set "VS_FOUND=1"
     set "VSBUILD_OK=1"
-    echo   !GREEN![OK]!RESET!  VS Build Tools     Gefunden
+    echo   [OK]  VS Build Tools     Gefunden
 )
 
-:: Methode 2: cl.exe im PATH (C++ Compiler)
 if !VS_FOUND!==0 (
     where cl >nul 2>nul
     if !errorlevel!==0 (
         set "VSBUILD_OK=1"
-        echo   !GREEN![OK]!RESET!  C++ Compiler       Gefunden ^(cl.exe^)
+        echo   [OK]  C++ Compiler       Gefunden (cl.exe)
     ) else (
-        echo   !RED![!!]!RESET!  VS Build Tools     !RED!Nicht gefunden!RESET!
+        echo   [!!]  VS Build Tools     Nicht gefunden
         set "MANDATORY_MISSING=1"
     )
 )
 
-:: ══════════════════════════════════════════
-::  CHECK 4: npm Version
-:: ══════════════════════════════════════════
+:: CHECK 4: npm
 where npm >nul 2>nul
 if !errorlevel!==0 (
     for /f "tokens=*" %%v in ('npm -v 2^>nul') do set "NPM_VER=%%v"
-    echo   !GREEN![OK]!RESET!  npm                v!NPM_VER!
+    echo   [OK]  npm                v!NPM_VER!
 ) else (
-    echo   !RED![!!]!RESET!  npm                !RED!Nicht gefunden!RESET!
+    echo   [!!]  npm                Nicht gefunden
     set "MANDATORY_MISSING=1"
 )
 
-:: ══════════════════════════════════════════
-::  CHECK 5: Port 8080 frei
-:: ══════════════════════════════════════════
+:: CHECK 5: Port 8080
 set "PORT_FREE=1"
 netstat -ano 2>nul | findstr ":8080 " | findstr "LISTENING" >nul 2>nul
 if !errorlevel!==0 (
     set "PORT_FREE=0"
-    echo   !YELLOW![!]!RESET!  Port 8080          !YELLOW!Belegt!RESET! !GRAY!^(anderer Dienst laeuft auf 8080^)!RESET!
+    echo   [!]   Port 8080          Belegt (anderer Dienst laeuft auf 8080)
 ) else (
-    echo   !GREEN![OK]!RESET!  Port 8080          Frei
+    echo   [OK]  Port 8080          Frei
 )
 
-:: ══════════════════════════════════════════
-::  CHECK 6: Ollama (optional)
-:: ══════════════════════════════════════════
+:: CHECK 6: Ollama (optional)
 where ollama >nul 2>nul
 if !errorlevel!==0 (
     set "OLLAMA_OK=1"
-    echo   !GREEN![OK]!RESET!  Ollama             Gefunden !GRAY!^(optional^)!RESET!
+    echo   [OK]  Ollama             Gefunden (optional)
 ) else (
-    echo   !YELLOW![--]!RESET!  Ollama             !YELLOW!Nicht installiert!RESET! !GRAY!^(optional, fuer lokale KI^)!RESET!
+    echo   [--]  Ollama             Nicht installiert (optional, fuer lokale KI)
 )
 
-:: ══════════════════════════════════════════
-::  CHECK 5: Git (optional)
-:: ══════════════════════════════════════════
+:: CHECK 7: Git (optional)
 where git >nul 2>nul
 if !errorlevel!==0 (
     set "GIT_OK=1"
     for /f "tokens=3" %%v in ('git --version 2^>nul') do set "GIT_VER=%%v"
-    echo   !GREEN![OK]!RESET!  Git                !GIT_VER! !GRAY!^(optional^)!RESET!
+    echo   [OK]  Git                !GIT_VER! (optional)
 ) else (
-    echo   !YELLOW![--]!RESET!  Git                !YELLOW!Nicht installiert!RESET! !GRAY!^(optional^)!RESET!
+    echo   [--]  Git                Nicht installiert (optional)
 )
 
 echo.
-echo   !GRAY!══════════════════════════════════════════!RESET!
+echo   ==============================================
 echo.
 
-:: ══════════════════════════════════════════
-::  Pflicht-Komponenten fehlen?
-:: ══════════════════════════════════════════
+:: Pflicht-Komponenten fehlen?
 if !MANDATORY_MISSING!==1 (
-    echo   !RED!!BOLD!Fehlende Pflicht-Komponenten!!RESET!
-    echo   !RED!Die Installation kann nicht fortgesetzt werden.!RESET!
+    echo   Fehlende Pflicht-Komponenten!
+    echo   Die Installation kann nicht fortgesetzt werden.
     echo.
-    echo   !WHITE!Bitte installiere folgende Komponenten:!RESET!
+    echo   Bitte installiere folgende Komponenten:
     echo.
 
     if !NODE_OK!==0 (
-        echo   !CYAN!Node.js 20+ ^(LTS^)!RESET!
-        echo   !CYAN!https://nodejs.org/!RESET!
-        echo   Waehle die LTS-Version und aktiviere "Add to PATH"
+        echo   Node.js 20+ (LTS)
+        echo     https://nodejs.org/
+        echo     Waehle die LTS-Version und aktiviere "Add to PATH"
         echo.
     )
 
     if !PYTHON_OK!==0 (
-        echo   !CYAN!Python 3!RESET!
-        echo   !CYAN!https://www.python.org/downloads/!RESET!
-        echo   WICHTIG: Bei der Installation "Add Python to PATH" ankreuzen!
+        echo   Python 3
+        echo     https://www.python.org/downloads/
+        echo     WICHTIG: Bei der Installation "Add Python to PATH" ankreuzen!
         echo.
     )
 
     if !VSBUILD_OK!==0 (
-        echo   !CYAN!Visual Studio Build Tools!RESET!
-        echo   !CYAN!https://visualstudio.microsoft.com/visual-cpp-build-tools/!RESET!
-        echo   Bei der Installation "Desktopentwicklung mit C++" auswaehlen
+        echo   Visual Studio Build Tools
+        echo     https://visualstudio.microsoft.com/visual-cpp-build-tools/
+        echo     Bei der Installation "Desktopentwicklung mit C++" auswaehlen
         echo.
     )
 
-    echo   !GRAY!Nach der Installation dieses Script erneut starten.!RESET!
+    echo   Nach der Installation dieses Script erneut starten.
     echo.
 
     set /p "OPEN_LINKS=  Download-Links im Browser oeffnen? (j/n): "
@@ -215,7 +178,7 @@ if !MANDATORY_MISSING!==1 (
         if !PYTHON_OK!==0 start https://www.python.org/downloads/
         if !VSBUILD_OK!==0 start https://visualstudio.microsoft.com/visual-cpp-build-tools/
         echo.
-        echo   !GREEN!Links wurden im Browser geoeffnet.!RESET!
+        echo   Links wurden im Browser geoeffnet.
     )
 
     echo.
@@ -223,81 +186,72 @@ if !MANDATORY_MISSING!==1 (
     exit /b 1
 )
 
-:: ══════════════════════════════════════════
-::  Hinweise fuer optionale Komponenten
-:: ══════════════════════════════════════════
+:: Hinweise fuer optionale Komponenten
 if !OLLAMA_OK!==0 (
-    echo   !YELLOW!Hinweis:!RESET! Ollama ist nicht installiert.
-    echo   Fuer lokale KI-Berichte: !CYAN!https://ollama.ai/!RESET!
+    echo   Hinweis: Ollama ist nicht installiert.
+    echo   Fuer lokale KI-Berichte: https://ollama.ai/
     echo.
 )
 
-:: ══════════════════════════════════════════
-::  Installation starten
-:: ══════════════════════════════════════════
-echo   !BOLD!Alle Voraussetzungen erfuellt - starte Installation...!RESET!
+:: Installation starten
+echo   Alle Voraussetzungen erfuellt - starte Installation...
 echo.
 
-echo   !WHITE![1/2] Installiere Abhaengigkeiten...!RESET!
+echo   [1/2] Installiere Abhaengigkeiten...
 echo.
 call npm install
 if !errorlevel! neq 0 (
     echo.
-    echo   !RED!FEHLER bei npm install!!RESET!
+    echo   FEHLER bei npm install!
     echo.
-    echo   !YELLOW!Moegliche Ursachen:!RESET!
+    echo   Moegliche Ursachen:
     echo   - Python oder Build Tools nicht korrekt installiert
     echo   - Keine Internetverbindung
     echo   - Firewall blockiert npm
     echo.
-    echo   !GRAY!Tipp: Versuche in einer Admin-Eingabeaufforderung:!RESET!
-    echo   !GRAY!  npm install -g windows-build-tools!RESET!
+    echo   Tipp: Versuche in einer Admin-Eingabeaufforderung:
+    echo     npm install -g windows-build-tools
     echo.
     pause
     exit /b 1
 )
 
 echo.
-echo   !WHITE![2/2] Baue Frontend...!RESET!
+echo   [2/2] Baue Frontend...
 echo.
 call npm run build
 if !errorlevel! neq 0 (
     echo.
-    echo   !RED!FEHLER beim Frontend-Build!!RESET!
+    echo   FEHLER beim Frontend-Build!
     echo.
     pause
     exit /b 1
 )
 
-:: ══════════════════════════════════════════
-::  Desktop-Verknuepfung erstellen
-:: ══════════════════════════════════════════
+:: Desktop-Verknuepfung erstellen
 echo.
-echo   !WHITE!Erstelle Desktop-Verknuepfung...!RESET!
+echo   Erstelle Desktop-Verknuepfung...
 
 set "DESKTOP=%USERPROFILE%\Desktop"
-set "SHORTCUT=%DESKTOP%\TJ Trading Journal.lnk"
+set "SHORTCUT=%DESKTOP%\Crypto Trading Journal.lnk"
 set "INSTALL_DIR=%CD%"
 
-:: PowerShell nutzen um .lnk Verknuepfung zu erstellen
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT%'); $s.TargetPath = '%INSTALL_DIR%\start.bat'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.IconLocation = '%INSTALL_DIR%\src\assets\tj-logo.ico,0'; $s.Description = 'TJ Trading Journal starten'; $s.Save()" 2>nul
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT%'); $s.TargetPath = '%INSTALL_DIR%\start.bat'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.IconLocation = '%INSTALL_DIR%\src\assets\icon.ico,0'; $s.Description = 'Crypto Trading Journal starten'; $s.Save()" 2>nul
 
 if exist "%SHORTCUT%" (
-    echo   !GREEN![OK]!RESET! Desktop-Verknuepfung erstellt
+    echo   [OK] Desktop-Verknuepfung erstellt
 ) else (
-    echo   !YELLOW![!]!RESET! Desktop-Verknuepfung konnte nicht erstellt werden
+    echo   [!] Desktop-Verknuepfung konnte nicht erstellt werden
 )
 
-:: ══════════════════════════════════════════
-::  Erfolg
-:: ══════════════════════════════════════════
+:: Erfolg
 echo.
-echo   !GREEN!══════════════════════════════════════════!RESET!
-echo   !GREEN!!BOLD!  Installation erfolgreich abgeschlossen!!RESET!
-echo   !GREEN!══════════════════════════════════════════!RESET!
+echo   ==============================================
+echo     Installation erfolgreich abgeschlossen!
+echo   ==============================================
 echo.
-echo   !WHITE!Starten:!RESET!   Doppelklick auf "TJ Trading Journal" am Desktop
-echo   !WHITE!Oder:!RESET!      start.bat doppelklicken
-echo   !WHITE!Browser:!RESET!   http://localhost:8080
+echo   Starten:   Doppelklick auf "Crypto Trading Journal" am Desktop
+echo   Oder:      start.bat doppelklicken
+echo   Browser:   http://localhost:8080
 echo.
 pause

@@ -1,5 +1,5 @@
 import { pageId, spinnerLoadingPage, queryLimit, timeZoneTrade, hasData, dailyPagination, dailyQueryLimit, endOfList, selectedItem } from "../stores/ui.js"
-import { selectedRange, selectedDateRange, selectedPositions, selectedAccounts, selectedTags, daysBack } from "../stores/filters.js"
+import { selectedRange, selectedDateRange, selectedPositions, selectedAccounts, selectedTags, selectedBroker, daysBack } from "../stores/filters.js"
 import { filteredTrades, filteredTradesTrades, pAndL, blotter, totals, totalsByDate, groups, profitAnalysis, timeFrame, satisfactionArray, satisfactionTradeArray, tags, filteredTradesDaily, excursions, availableTags, imports } from "../stores/trades.js"
 import { useDateTimeFormat } from "./formatters.js";
 /* useRefreshTrades moved to mountOrchestration.js */
@@ -155,7 +155,10 @@ export async function useGetFilteredTrades(param) {
 
                         const tradeSatisfaction = satisfactionByTradeId.get(String(element.id)) ?? null
 
-                        if ((selectedRange.value.start === 0 && selectedRange.value.end === 0 ? element.td >= selectedRange.value.start : element.td >= selectedRange.value.start && element.td < selectedRange.value.end) && selectedPositions.value.includes(element.strategy) && selectedAccounts.value.includes(element.account) && tradeTagsSelected) {
+                        // Broker filter: only show trades matching selected exchange
+                        const brokerMatch = !selectedBroker.value || element.broker === selectedBroker.value
+
+                        if (brokerMatch && (selectedRange.value.start === 0 && selectedRange.value.end === 0 ? element.td >= selectedRange.value.start : element.td >= selectedRange.value.start && element.td < selectedRange.value.end) && selectedPositions.value.includes(element.strategy) && selectedAccounts.value.includes(element.account) && tradeTagsSelected) {
 
                             /**
                              * We're using tempArray to be able to group
@@ -794,8 +797,8 @@ export async function useTotalTrades() {
         //console.log(" temp 3 " + JSON.stringify(temp3))
         for (let key in totalsByDate) delete totalsByDate[key]
         Object.assign(totalsByDate, temp3)
-        //console.log(" -> TOTALS BY DATE " + JSON.stringify(totalsByDate))
-        //console.log(" -> TOTALS BY DATE (length) " + Object.keys(totalsByDate).length)
+        console.log(" -> TOTALS BY DATE (length) " + Object.keys(totalsByDate).length)
+        console.log(" -> temp1 trades count: " + temp1.length + ", unique td values: " + new Set(temp1.map(t => t.td)).size)
         resolve()
     })
 }

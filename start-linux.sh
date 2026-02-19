@@ -1,5 +1,5 @@
 #!/bin/bash
-# TJ Trading Journal — Server starten und Browser öffnen
+# Crypto Trading Journal — Server starten und Browser öffnen
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 

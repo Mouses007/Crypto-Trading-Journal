@@ -105,6 +105,30 @@ export async function testConnection(apiKey, secretKey) {
 }
 
 /**
+ * Normalize a single open/pending position from Bitunix API.
+ * API may return camelCase or snake_case; we always return camelCase with positionId as string.
+ */
+function normalizeOpenPosition(p) {
+    if (!p) return null
+    const positionId = String(p.positionId ?? p.position_id ?? p.id ?? '')
+    if (!positionId) return null
+    return {
+        positionId,
+        symbol: p.symbol ?? p.symbolName ?? '',
+        side: p.side ?? p.positionSide ?? '',
+        entryPrice: p.entryPrice ?? p.avgOpenPrice ?? p.avg_open_price ?? 0,
+        avgOpenPrice: p.avgOpenPrice ?? p.avg_open_price ?? p.entryPrice ?? 0,
+        leverage: p.leverage ?? 0,
+        qty: p.qty ?? p.quantity ?? p.maxQty ?? p.max_qty ?? 0,
+        maxQty: p.maxQty ?? p.max_qty ?? p.qty ?? p.quantity ?? 0,
+        unrealizedPNL: p.unrealizedPNL ?? p.unrealized_pnl ?? p.unrealizedPnl ?? 0,
+        liqPrice: p.liqPrice ?? p.liq_price ?? p.markPrice ?? p.mark_price ?? 0,
+        markPrice: p.markPrice ?? p.mark_price ?? p.liqPrice ?? p.liq_price ?? 0,
+        ...p
+    }
+}
+
+/**
  * Load and decrypt Bitunix config from DB.
  */
 async function getDecryptedConfig() {
@@ -232,6 +256,63 @@ export function setupBitunixRoutes(app) {
         }
     })
 
+    // Fetch recently closed positions (for Pendente Trades history scan)
+    app.get('/api/bitunix/recent-closed', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const config = await getDecryptedConfig()
+
+            if (!config || !config.apiKey || !config.secretKey) {
+                return res.json({ ok: true, positions: [], count: 0 })
+            }
+
+            // Read lastHistoryScan timestamp (PostgreSQL returns bigint as string)
+            const row = await knex('bitunix_config').select('lastHistoryScan').where('id', 1).first()
+            let startTime = parseInt(row?.lastHistoryScan) || 0
+
+            // Default: look back 24 hours on first run
+            if (!startTime || startTime < 1000000000000) {
+                startTime = Date.now() - (24 * 60 * 60 * 1000)
+            }
+            const endTime = Date.now()
+
+            console.log(` -> History-Scan: startTime=${startTime} (${new Date(startTime).toISOString()}), endTime=${endTime}`)
+
+            // Fetch all pages
+            let allPositions = []
+            let skip = 0
+            let hasMore = true
+
+            while (hasMore) {
+                const result = await getHistoryPositions(config.apiKey, config.secretKey, {
+                    startTime, endTime, skip, limit: 100
+                })
+
+                if (result.code !== 0) {
+                    throw new Error(result.msg || 'Bitunix API Fehler')
+                }
+
+                const positions = result.data?.positionList || []
+                allPositions = allPositions.concat(positions)
+
+                if (positions.length < 100) {
+                    hasMore = false
+                } else {
+                    skip += 100
+                }
+            }
+
+            // Update lastHistoryScan
+            await knex('bitunix_config').where('id', 1).update({ lastHistoryScan: endTime })
+
+            console.log(` -> History-Scan: ${allPositions.length} geschlossene Positionen seit ${new Date(startTime).toISOString()}`)
+            res.json({ ok: true, positions: allPositions, count: allPositions.length })
+        } catch (error) {
+            console.error(' -> Recent closed positions error:', error.message)
+            res.json({ ok: true, positions: [], count: 0 })
+        }
+    })
+
     // Quick API import: fetch, process, and save trades in one call
     app.post('/api/bitunix/quick-import', async (req, res) => {
         try {
@@ -315,7 +396,8 @@ export function setupBitunixRoutes(app) {
             }
 
             // Pending positions API: data is directly an array (unlike history where it's data.positionList)
-            const positions = Array.isArray(result.data) ? result.data : (result.data?.positionList || [])
+            const raw = Array.isArray(result.data) ? result.data : (result.data?.positionList || [])
+            const positions = raw.map(normalizeOpenPosition).filter(Boolean)
 
             console.log(` -> Bitunix open positions fetched: ${positions.length}`)
             res.json({ ok: true, positions })
@@ -408,6 +490,103 @@ export function setupBitunixRoutes(app) {
             res.json({ ok: true, fixed: fixedCount, skipped: skippedCount, mfeReset })
         } catch (error) {
             console.error(' -> Fix trade sides error:', error.message)
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // =============== REMOVE DUPLICATE TRADES ===============
+    app.post('/api/remove-duplicate-trades', async (req, res) => {
+        try {
+            const knex = getKnex()
+
+            // 1. Load all trade rows and notes/satisfactions/tags (for evaluated check)
+            const allRows = await knex('trades').select('id', 'dateUnix', 'date', 'trades', 'executions', 'blotter', 'pAndL').orderBy('id', 'asc')
+            const allNotes = await knex('notes').select('tradeId')
+            const allSats = await knex('satisfactions').select('tradeId')
+            const allTags = await knex('tags').select('tradeId')
+            const evaluatedIds = new Set([
+                ...allNotes.map(n => n.tradeId).filter(Boolean),
+                ...allSats.map(s => s.tradeId).filter(Boolean),
+                ...allTags.map(t => t.tradeId).filter(Boolean)
+            ])
+
+            // 2. Group DB rows by calendar date (not dateUnix) to catch timezone duplicates
+            const byDate = {}
+            for (const row of allRows) {
+                const key = row.date || String(row.dateUnix)
+                if (!byDate[key]) byDate[key] = []
+                byDate[key].push(row)
+            }
+
+            let duplicateRowsDeleted = 0
+            let duplicateTradesRemoved = 0
+            let evaluatedKept = 0
+
+            for (const [dateKey, rows] of Object.entries(byDate)) {
+                if (rows.length <= 1) continue
+
+                // Collect all trades from all rows for this date
+                let allTrades = []
+                for (const row of rows) {
+                    let trades = []
+                    try { trades = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch (e) { continue }
+                    allTrades.push(...trades)
+                }
+
+                // Deduplicate trades by TrxId (the part after the last underscore in trade.id)
+                // This handles cases where trade IDs differ only by dateUnix prefix
+                const seen = new Map() // normalized key -> trade object
+                for (const t of allTrades) {
+                    const tid = t.id
+                    if (!tid) { seen.set(Math.random().toString(), t); continue }
+                    // Extract TrxId from trade id format: t{dateUnix}_{index}_{trxId}
+                    const parts = tid.split('_')
+                    const trxId = parts.length >= 3 ? parts.slice(2).join('_') : tid
+                    const normalizedKey = (t.symbol || '') + '|' + trxId
+
+                    if (seen.has(normalizedKey)) {
+                        // Duplicate found — prefer the one with evaluations
+                        const existing = seen.get(normalizedKey)
+                        if (evaluatedIds.has(tid) && !evaluatedIds.has(existing.id)) {
+                            seen.set(normalizedKey, t)
+                            evaluatedKept++
+                        }
+                        duplicateTradesRemoved++
+                    } else {
+                        seen.set(normalizedKey, t)
+                    }
+                }
+
+                const uniqueTrades = [...seen.values()]
+
+                // Find the row to keep — prefer the one with evaluated trades
+                let keepRow = rows[0]
+                for (const row of rows) {
+                    let trades = []
+                    try { trades = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch (e) { continue }
+                    if (trades.some(t => evaluatedIds.has(t.id))) {
+                        keepRow = row
+                        break
+                    }
+                }
+
+                // Update the kept row with merged unique trades
+                await knex('trades').where('id', keepRow.id).update({
+                    trades: JSON.stringify(uniqueTrades)
+                })
+
+                // Delete extra rows
+                const deleteIds = rows.filter(r => r.id !== keepRow.id).map(r => r.id)
+                if (deleteIds.length > 0) {
+                    await knex('trades').whereIn('id', deleteIds).del()
+                    duplicateRowsDeleted += deleteIds.length
+                }
+            }
+
+            console.log(` -> Duplicates removed: ${duplicateRowsDeleted} rows, ${duplicateTradesRemoved} trades (${evaluatedKept} evaluated kept)`)
+            res.json({ ok: true, duplicateRowsDeleted, duplicateTradesRemoved, evaluatedKept })
+        } catch (error) {
+            console.error(' -> Remove duplicates error:', error.message)
             res.status(500).json({ error: error.message })
         }
     })

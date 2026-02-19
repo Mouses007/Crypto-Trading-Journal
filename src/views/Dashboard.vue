@@ -3,7 +3,7 @@ import { computed, onBeforeMount, ref } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Filters from '../components/Filters.vue'
 import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMounted, hasData, barChartNegativeTagGroups, timeZoneTrade } from '../stores/ui.js'
-import { selectedDashTab, amountCase, amountCapital, selectedRatio } from '../stores/filters.js'
+import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBroker } from '../stores/filters.js'
 import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
 import dayjs from '../utils/dayjs-setup.js'
@@ -85,8 +85,17 @@ const todayStats = computed(() => {
 })
 
 const accountBalance = computed(() => {
-    const start = currentUser.value?.startBalance || 0
-    const current = currentUser.value?.currentBalance || 0
+    const broker = selectedBroker.value || 'bitunix'
+    const balances = currentUser.value?.balances || {}
+    let start, current
+    if (balances[broker]) {
+        start = balances[broker].start || 0
+        current = balances[broker].current || 0
+    } else {
+        // Fallback to legacy fields
+        start = currentUser.value?.startBalance || 0
+        current = currentUser.value?.currentBalance || 0
+    }
     if (!start && !current) return null
     const pnl = current - start
     const perf = start > 0 ? ((current / start) - 1) * 100 : 0

@@ -1,5 +1,5 @@
 #!/bin/bash
-# TJ Trading Journal - Installer for Linux (Ubuntu/Mint/Debian/Fedora/Arch)
+# Crypto Trading Journal - Installer for Linux (Ubuntu/Mint/Debian/Fedora/Arch)
 # Ausfuehren: chmod +x install.sh && ./install.sh
 
 set -e
@@ -18,7 +18,7 @@ MANDATORY_MISSING=0
 
 echo ""
 echo -e "  ${CYAN}${BOLD}══════════════════════════════════════════${RESET}"
-echo -e "  ${CYAN}${BOLD}     TJ Trading Journal - Installer       ${RESET}"
+echo -e "  ${CYAN}${BOLD}     Crypto Trading Journal - Installer       ${RESET}"
 echo -e "  ${CYAN}${BOLD}══════════════════════════════════════════${RESET}"
 echo ""
 echo -e "  ${GRAY}Pruefe System-Voraussetzungen...${RESET}"
@@ -268,9 +268,9 @@ if [ -z "$DESKTOP_DIR" ] || [ ! -d "$DESKTOP_DIR" ]; then
 fi
 
 # .desktop Datei aus Template erstellen
-DESKTOP_FILE="$DESKTOP_DIR/TJ-Trading-Journal.desktop"
-if [ -f "$INSTALL_DIR/TJ-Trading-Journal.desktop" ]; then
-    sed "s|INSTALL_PATH|$INSTALL_DIR|g" "$INSTALL_DIR/TJ-Trading-Journal.desktop" > "$DESKTOP_FILE"
+DESKTOP_FILE="$DESKTOP_DIR/Crypto-Trading-Journal.desktop"
+if [ -f "$INSTALL_DIR/Crypto-Trading-Journal.desktop" ]; then
+    sed "s|INSTALL_PATH|$INSTALL_DIR|g" "$INSTALL_DIR/Crypto-Trading-Journal.desktop" > "$DESKTOP_FILE"
     chmod +x "$DESKTOP_FILE"
     # GNOME: als vertrauenswuerdig markieren
     if command -v gio &>/dev/null; then
@@ -281,10 +281,10 @@ else
     # Fallback: .desktop-Datei direkt erstellen
     cat > "$DESKTOP_FILE" << EOF
 [Desktop Entry]
-Name=TJ Trading Journal
+Name=Crypto Trading Journal
 Comment=Trading Journal starten
 Exec=bash -c 'cd "$INSTALL_DIR" && ./start-linux.sh'
-Icon=$INSTALL_DIR/src/assets/tj-logo.png
+Icon=$INSTALL_DIR/src/assets/icon.png
 Terminal=true
 Type=Application
 Categories=Office;Finance;
@@ -304,7 +304,7 @@ echo -e "  ${GREEN}════════════════════�
 echo -e "  ${GREEN}${BOLD}  Installation erfolgreich abgeschlossen!${RESET}"
 echo -e "  ${GREEN}══════════════════════════════════════════${RESET}"
 echo ""
-echo -e "  ${BOLD}Starten:${RESET}   Doppelklick auf 'TJ Trading Journal' am Desktop"
+echo -e "  ${BOLD}Starten:${RESET}   Doppelklick auf 'Crypto Trading Journal' am Desktop"
 echo -e "  ${BOLD}Oder:${RESET}      ./start-linux.sh"
 echo -e "  ${BOLD}Browser:${RESET}   http://localhost:8080"
 echo ""

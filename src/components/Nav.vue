@@ -28,7 +28,7 @@ const pages = [{
 },
 {
     id: "incoming",
-    name: "Offene Trades",
+    name: "Pendente Trades",
     icon: "uil uil-arrow-circle-down"
 },
 {

@@ -2,7 +2,7 @@ import { spinnerLoadingPage, timeZoneTrade, queryLimit, queryLimitExistingTrades
 import { selectedBroker, uploadMfePrices } from '../stores/filters.js'
 import { filteredTradesTrades, blotter, pAndL, tradeExcursionId, tradesData, executions, tradeId, existingImports, trades, gotExistingTradesArray, existingTradesArray, marketCloseTime } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
-import { useBrokerBitunix } from './brokers.js'
+import { useBrokerBitunix, useBrokerBitget } from './brokers.js'
 import { useChartFormat, useDateTimeFormat, useDecimalsArithmetic, useTimeFormat } from './formatters.js'
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbGetSettings, dbUpdateSettings } from './db.js'
 
@@ -44,7 +44,9 @@ export async function useGetExistingTradesArray(param99, param0) {
                 limit: queryLimitExistingTrades.value
             })
             for (let i = 0; i < results.length; i++) {
-                existingTradesArray.push(results[i].dateUnix)
+                // Store date strings (YYYY-MM-DD) instead of dateUnix to avoid
+                // timezone mismatch between CET and UTC imports
+                existingTradesArray.push(results[i].date)
             }
             gotExistingTradesArray.value = true
             console.log(" -> Finished getting existing trades for filter")
@@ -89,14 +91,22 @@ export async function useImportTrades(param1, param2) {
         }
 
         /****************************
-         * BITUNIX CSV
+         * CSV IMPORT (broker-aware)
          ****************************/
         let fileInput = await readAsText(files)
 
-        console.log(" -> Bitunix CSV")
-        await useBrokerBitunix(fileInput).catch(error => {
-            importFileErrorFunction(error)
-        })
+        const broker = selectedBroker.value || 'bitunix'
+        console.log(" -> CSV Import for broker: " + broker)
+
+        if (broker === 'bitget') {
+            await useBrokerBitget(fileInput).catch(error => {
+                importFileErrorFunction(error)
+            })
+        } else {
+            await useBrokerBitunix(fileInput).catch(error => {
+                importFileErrorFunction(error)
+            })
+        }
 
         if (importFileError) return
 
@@ -136,12 +146,13 @@ export async function useImportTrades(param1, param2) {
 }
 
 /**
- * Create trade objects directly from Bitunix CSV data.
- * Bitunix CSV provides completed P&L per row, so we skip execution pairing.
+ * Create trade objects from CSV data (broker-aware).
+ * Both Bitunix and Bitget CSV provide completed P&L per row, so we skip execution pairing.
  */
 async function createBitunixTrades() {
     return new Promise(async (resolve, reject) => {
-        console.log("\nCREATING BITUNIX TRADES")
+        const broker = selectedBroker.value || 'bitunix'
+        console.log("\nCREATING " + broker.toUpperCase() + " TRADES")
 
         // Clear previous data
         for (let key in executions) delete executions[key]
@@ -149,7 +160,7 @@ async function createBitunixTrades() {
         existingImports.length = 0
         tradeAccounts.length = 0
 
-        if (!tradeAccounts.includes('bitunix')) tradeAccounts.push('bitunix')
+        if (!tradeAccounts.includes(broker)) tradeAccounts.push(broker)
 
         // Group tradesData by day
         tradesData.forEach((row, i) => {
@@ -167,25 +178,26 @@ async function createBitunixTrades() {
             const isGrossWin = row.GrossProceeds > 0
             const isNetWin = row.NetProceeds > 0
 
-            // NOTE: Bitunix CSV does not contain side (long/short) info.
-            // We default to 'SS'/short as a placeholder. The side cannot be
-            // reliably determined from P&L alone (profit ≠ long, loss ≠ short).
-            // Users should use the API import instead for correct side detection.
+            // Determine side: Bitget CSV provides Side field, Bitunix CSV does not.
+            // For Bitunix we default to 'SS'/short as a placeholder.
+            const side = row.Side || 'SS'
+            const strategy = (side === 'B' || side === 'S') ? 'long' : 'short'
+
             const tradeObj = {
                 id: `t${dateUnix}_${i}_${row.TrxId || i}`,
-                account: 'bitunix',
-                broker: 'bitunix',
+                account: broker,
+                broker: broker,
                 td: dateUnix,
                 currency: row.IncomingAsset || row.OutgoingAsset || 'USDT',
                 type: 'futures',
-                side: 'SS',
-                strategy: 'short',
+                side: side,
+                strategy: strategy,
                 symbol: row.Symbol,
-                buyQuantity: 1,
-                sellQuantity: 1,
-                entryPrice: 0,
-                exitPrice: 0,
-                entryTime: dateUnix,
+                buyQuantity: row.Quantity || 1,
+                sellQuantity: row.Quantity || 1,
+                entryPrice: row.EntryPrice || 0,
+                exitPrice: row.ClosePrice || 0,
+                entryTime: row.EntryDateUTC ? dayjs.utc(row.EntryDateUTC).unix() : dateUnix,
                 exitTime: dateUnix,
                 grossProceeds: row.GrossProceeds,
                 netProceeds: row.NetProceeds,
@@ -1376,21 +1388,25 @@ async function filterExisting(param) {
         } */
 
         if (param == "trades") {
-            //console.log(" -> ExistingTradesArray "+existingTradesArray)
-            existingTradesArray.forEach(element => {
-                //console.log("element "+element)
-                if (executions.hasOwnProperty(element)) {
-                    console.log(" -> Already imported date " + element)
-                    existingImports.push(element)
+            // existingTradesArray contains date strings (YYYY-MM-DD).
+            // executions/trades keys are dateUnix numbers.
+            // Build a set of dateUnix keys that match existing dates.
+            const existingDateSet = new Set(existingTradesArray)
+            const keysToRemove = []
+            for (const dateUnixKey of Object.keys(executions)) {
+                const dateStr = dayjs.unix(Number(dateUnixKey)).utc().format('YYYY-MM-DD')
+                if (existingDateSet.has(dateStr)) {
+                    console.log(" -> Already imported date " + dateStr + " (dateUnix=" + dateUnixKey + ")")
+                    existingImports.push(Number(dateUnixKey))
+                    keysToRemove.push(dateUnixKey)
                 }
-            });
+            }
 
-            let tempExecutions = _.omit(executions, existingTradesArray)
+            let tempExecutions = _.omit(executions, keysToRemove)
             for (let key in executions) delete executions[key]
             Object.assign(executions, tempExecutions)
-            //console.log(" -> executions "+JSON.stringify(executions))
 
-            let tempTrades = _.omit(trades, existingTradesArray)
+            let tempTrades = _.omit(trades, keysToRemove)
             for (let key in trades) delete trades[key]
             Object.assign(trades, tempTrades)
         }

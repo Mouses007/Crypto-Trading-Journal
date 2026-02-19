@@ -170,7 +170,7 @@ export function setupOllamaRoutes(app) {
 
     // Bericht generieren (alle Provider)
     app.post('/api/ai/report', async (req, res) => {
-        const { startDate, endDate } = req.body
+        const { startDate, endDate, broker } = req.body
         if (!startDate || !endDate) {
             return res.status(400).json({ error: 'startDate und endDate erforderlich' })
         }
@@ -189,7 +189,7 @@ export function setupOllamaRoutes(app) {
             const customPrompt = settings?.aiReportPrompt || ''
             const apiKey = getApiKeyForProvider(settings, provider)
 
-            const reportData = await collectReportData(knex, startDate, endDate)
+            const reportData = await collectReportData(knex, startDate, endDate, broker || null)
 
             if (reportData.tradeCount === 0) {
                 return res.json({ report: 'Keine Trades im gewählten Zeitraum gefunden.', provider })
@@ -262,14 +262,14 @@ export function setupOllamaRoutes(app) {
 
     // Legacy report endpoint
     app.post('/api/ollama/report', async (req, res) => {
-        const { startDate, endDate, model } = req.body
+        const { startDate, endDate, model, broker } = req.body
         if (!startDate || !endDate) {
             return res.status(400).json({ error: 'startDate und endDate erforderlich' })
         }
 
         try {
             const knex = getKnex()
-            const reportData = await collectReportData(knex, startDate, endDate)
+            const reportData = await collectReportData(knex, startDate, endDate, broker || null)
 
             if (reportData.tradeCount === 0) {
                 return res.json({ report: 'Keine Trades im gewählten Zeitraum gefunden.' })
@@ -1097,7 +1097,7 @@ async function collectScreenshots(knex, startDate, endDate, maxCount = 4) {
 
 // --- Daten-Sammlung und Prompt-Bau ---
 
-async function collectReportData(knex, startDate, endDate) {
+async function collectReportData(knex, startDate, endDate, broker) {
     const trades = await knex('trades')
         .where('dateUnix', '>=', startDate)
         .where('dateUnix', '<=', endDate)
@@ -1124,6 +1124,12 @@ async function collectReportData(knex, startDate, endDate) {
             tradesArr = []
         }
 
+        // Filter trades by broker if specified
+        if (broker) {
+            tradesArr = tradesArr.filter(t => t.broker === broker)
+            if (tradesArr.length === 0) continue
+        }
+
         let pAndL = {}
         try {
             pAndL = JSON.parse(row.pAndL || '{}')
@@ -1132,7 +1138,13 @@ async function collectReportData(knex, startDate, endDate) {
             pAndL = {}
         }
 
-        const dayPnl = pAndL.grossProceeds || 0
+        // Recalculate day PnL from filtered trades (broker-specific)
+        let dayPnl = 0
+        if (broker) {
+            dayPnl = tradesArr.reduce((sum, t) => sum + (t.grossProceeds || 0), 0)
+        } else {
+            dayPnl = pAndL.grossProceeds || 0
+        }
         if (dayPnl > bestDay.pnl) bestDay = { dateUnix: row.dateUnix, pnl: dayPnl }
         if (dayPnl < worstDay.pnl) worstDay = { dateUnix: row.dateUnix, pnl: dayPnl }
 

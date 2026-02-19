@@ -201,7 +201,7 @@ const tagGroupChartData = computed(() => {
 
 const timeframeChartData = computed(() => {
     const tfMap = {}
-    auswertungNotes.forEach(n => {
+    brokerFilteredNotes.value.forEach(n => {
         if (n.timeframe) {
             if (!tfMap[n.timeframe]) tfMap[n.timeframe] = { count: 0, wins: 0 }
             tfMap[n.timeframe].count++
@@ -224,8 +224,14 @@ const timeframeChartData = computed(() => {
 
 // ========== STRESS ==========
 
+// Helper: only notes that have a matching trade in filtered (broker-filtered) trades
+const brokerFilteredNotes = computed(() => {
+    const tradeIds = new Set(allTrades.value.map(t => t.id))
+    return auswertungNotes.filter(n => n.tradeId && tradeIds.has(n.tradeId))
+})
+
 const stressTimeData = computed(() => {
-    const notesWithStress = auswertungNotes.filter(n => n.entryStressLevel > 0)
+    const notesWithStress = brokerFilteredNotes.value.filter(n => n.entryStressLevel > 0)
     const sorted = [...notesWithStress].sort((a, b) => a.dateUnix - b.dateUnix)
     return {
         dates: sorted.map(n => useChartFormat(n.dateUnix)),
@@ -235,7 +241,7 @@ const stressTimeData = computed(() => {
 
 const stressVsPerfData = computed(() => {
     const stressGroups = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [] }
-    auswertungNotes.forEach(n => {
+    brokerFilteredNotes.value.forEach(n => {
         if (n.entryStressLevel >= 0 && n.entryStressLevel <= 5) {
             const trade = allTrades.value.find(t => t.id === n.tradeId)
             if (trade) {
@@ -260,7 +266,7 @@ const stressVsPerfData = computed(() => {
 })
 
 const avgStress = computed(() => {
-    const withStress = auswertungNotes.filter(n => n.entryStressLevel > 0)
+    const withStress = brokerFilteredNotes.value.filter(n => n.entryStressLevel > 0)
     if (withStress.length === 0) return 0
     const avg = withStress.reduce((s, n) => s + n.entryStressLevel, 0) / withStress.length
     return avg.toFixed(1)
@@ -269,7 +275,7 @@ const avgStress = computed(() => {
 // ========== EMOTIONSLEVEL ==========
 
 const emotionTimeData = computed(() => {
-    const notesWithEmotion = auswertungNotes.filter(n => n.emotionLevel > 0)
+    const notesWithEmotion = brokerFilteredNotes.value.filter(n => n.emotionLevel > 0)
     const sorted = [...notesWithEmotion].sort((a, b) => a.dateUnix - b.dateUnix)
     return {
         dates: sorted.map(n => useChartFormat(n.dateUnix)),
@@ -280,7 +286,7 @@ const emotionTimeData = computed(() => {
 const emotionVsPerfData = computed(() => {
     const emotionGroups = {}
     for (let i = 0; i <= 10; i++) emotionGroups[i] = []
-    auswertungNotes.forEach(n => {
+    brokerFilteredNotes.value.forEach(n => {
         if (n.emotionLevel >= 1 && n.emotionLevel <= 10) {
             const trade = allTrades.value.find(t => t.id === n.tradeId)
             if (trade) {
@@ -305,7 +311,7 @@ const emotionVsPerfData = computed(() => {
 })
 
 const avgEmotion = computed(() => {
-    const withEmotion = auswertungNotes.filter(n => n.emotionLevel > 0)
+    const withEmotion = brokerFilteredNotes.value.filter(n => n.emotionLevel > 0)
     if (withEmotion.length === 0) return 0
     const avg = withEmotion.reduce((s, n) => s + n.emotionLevel, 0) / withEmotion.length
     return avg.toFixed(1)
@@ -365,6 +371,17 @@ watch(() => auswertungMounted.value, async (newVal) => {
     }
 })
 
+// Re-render tag charts when tag data changes (may load after initial render)
+watch(() => tagGroupChartData.value, async (newVal) => {
+    if (!auswertungMounted.value) return
+    await nextTick()
+    newVal.forEach(group => {
+        if (group.categories.length > 0) {
+            useHorizontalBarChart(group.chartId, group.categories, group.values, group.colors)
+        }
+    })
+}, { deep: true })
+
 async function renderCharts() {
     await nextTick()
 
@@ -401,7 +418,7 @@ async function renderCharts() {
     // Stress-Chart
     const stressTime = stressTimeData.value
     if (stressTime.dates.length > 0) {
-        useStressLineChart('stressLineChart', stressTime.dates, stressTime.entryStress)
+        useStressLineChart('stressLineChart', stressTime.dates, stressTime.entryStress, { max: 10 })
     }
     const stressPerf = stressVsPerfData.value
     if (stressPerf.categories.length > 0) {
@@ -549,7 +566,7 @@ async function renderCharts() {
                         <div class="dailyCard h-100">
                             <h6>Stresslevel-Verlauf
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Entwicklung deines Stresslevels über die Zeit (0-5)."></i>
+                                    data-bs-title="Entwicklung deines Stresslevels über die Zeit (1-10)."></i>
                             </h6>
                             <div v-if="stressTimeData.dates.length > 0" id="stressLineChart" class="chartClass"></div>
                             <div v-else class="text-center text-muted py-4">Keine Stress-Daten. Trage Stresslevel in deinen Trade-Notizen ein.</div>

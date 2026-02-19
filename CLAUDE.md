@@ -4,20 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TradeNote is a **local single-user** trading journal for **Bitunix futures trading**. It lets users import trades via CSV or Bitunix API, view dashboards with analytics/charts, keep a diary, manage playbooks, and store screenshots. Licensed under GPL-3.0.
+Crypto Trading Journal is a **local single-user** trading journal for **Bitunix futures trading**. It lets users import trades via CSV or Bitunix API, view dashboards with analytics/charts, keep a diary, manage playbooks, and store screenshots. Licensed under GPL-3.0.
 
 **Key simplifications from the original TradeNote:**
-- No login/auth (single user, direct to dashboard)
-- SQLite instead of MongoDB/Parse Server (no Docker needed)
-- Only Bitunix broker support (CSV + API)
+- No cloud login (single user, direct to dashboard); API protected by session cookie
+- SQLite (or optional PostgreSQL) instead of MongoDB/Parse Server (no Docker needed)
+- Bitunix primary; optional Bitget broker (CSV + API)
 - No Stripe payments, no PostHog analytics, no Shepherd tours
+- KI-Agent: AI reports/chat (Ollama, OpenAI, Anthropic, Gemini, DeepSeek)
 
-> **Note:** `README.md` is stale — it still references Docker/MongoDB from the original project. This file is the authoritative reference.
+README.md and this file are kept in sync for project and architecture description.
 
 ## Tech Stack
 
 - **Frontend**: Vue 3 (Composition API with `<script setup>`), Vue Router, Pinia (installed but not used — state in globals.js), Vite
-- **Backend**: Express.js with SQLite (better-sqlite3)
+- **Backend**: Express.js with Knex (SQLite default, optional PostgreSQL)
 - **Charts**: Apache ECharts
 - **Styling**: Bootstrap (CDN in `index.html`), custom dark theme via CSS variables (`src/assets/style-dark.css`)
 - **Other key libs**: dayjs (dates/timezones), PapaParse (CSV), Quill (rich text), markerjs2 (screenshot annotation), lodash, axios
@@ -37,10 +38,14 @@ There are **no tests, no linter, and no CI/CD pipeline** configured.
 
 ### Server
 
-- **`index.mjs`** — Entry point: Express server + SQLite init + API routes. In dev mode (`NODE_ENV=dev`), proxies non-API requests to Vite dev server on port 39482. In production, serves static files from `dist/`.
-- **`server/database.js`** — SQLite schema and singleton `getDb()`. DB file: **`tradenote.db`** in project root. WAL mode enabled. Tables: settings, trades, diaries, screenshots, playbooks, satisfactions, tags, notes, excursions, bitunix_config.
-- **`server/api-routes.js`** — Generic REST CRUD (`GET/POST/PUT/DELETE /api/db/{table}`) + settings endpoints.
-- **`server/bitunix-api.js`** — Bitunix API client (SHA256 double-hash auth) + proxy endpoints for positions.
+- **`index.mjs`** — Entry point: Express server + DB init (Knex) + API routes. Session cookie set for all non-API requests; all `/api/*` require valid session. In dev mode (`NODE_ENV=dev`), proxies non-API requests to Vite dev server on port 39482. In production, serves static files from `dist/`. Default bind: `127.0.0.1` (override with `TRADENOTE_HOST`).
+- **`server/database.js`** — Knex setup: **`initDb()`** / **`getKnex()`**. Schema and migrations in code. Default: SQLite (**`tradenote.db`** in project root, WAL mode). Optional PostgreSQL via **`server/db-config.js`** and `db-config.json`. Tables: settings, trades, diaries, screenshots, playbooks, satisfactions, tags, notes, excursions, bitunix_config, bitget_config, incoming_positions, ai_reports, ai_report_messages, etc.
+- **`server/auth.js`** — Session cookie (`tn_session`) for API auth; token generated at startup.
+- **`server/api-routes.js`** — Generic REST CRUD (`GET/POST/PUT/DELETE /api/db/{table}`) using Knex; table/column whitelist; settings and bitunix_config endpoints (bitunix_config response omits secretKey).
+- **`server/bitunix-api.js`** — Bitunix API client (SHA256 double-hash auth); encrypt/decrypt for API keys; proxy endpoints for positions.
+- **`server/bitget-api.js`** — Bitget API (HMAC-SHA256); encrypt/decrypt for keys.
+- **`server/ollama-api.js`** — AI: Ollama, OpenAI, Anthropic, Gemini, DeepSeek (reports + chat).
+- **`server/polygon-api.js`** — Polygon.io proxy (e.g. market data).
 
 ### Key Backend Patterns
 
@@ -93,12 +98,13 @@ Bootstrap loaded from CDN (not bundled).
 ### Environment Variables
 
 - `TRADENOTE_PORT` — Server port (default 8080)
+- `TRADENOTE_HOST` — Bind address (default 127.0.0.1; use 0.0.0.0 for network access)
 - `NODE_ENV=dev` — Enable Vite dev server with HMR
 
-No `.env` files — runtime config stored in SQLite settings table and localStorage.
+No `.env` files — runtime config stored in DB (settings table) and localStorage. Optional DB: `db-config.json` for PostgreSQL.
 
-### Bitunix Integration
+### Bitunix / Bitget Integration
 
-**CSV Import**: Upload Bitunix CSV export, parses "Futures Profit"/"Futures Loss" rows into trade objects.
+**CSV Import**: Bitunix CSV export; parses "Futures Profit"/"Futures Loss" rows into trade objects. Bitget CSV supported where implemented.
 
-**API Import**: Configure API Key + Secret in Settings. Server-side proxy (`/api/bitunix/positions`) fetches historical positions with full details (symbol, entry/close prices, side, fees, realized PnL).
+**API Import**: Configure API Key + Secret (Bitunix) or API Key + Secret + Passphrase (Bitget) in Settings. Keys are encrypted at rest (`server/crypto.js`). Server-side proxies (`/api/bitunix/*`, `/api/bitget/*`) fetch positions; Bitunix uses SHA256 double-hash auth.

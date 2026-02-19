@@ -1,4 +1,5 @@
 import { getKnex } from './database.js'
+import { loadDbConfig, saveDbConfig } from './db-config.js'
 
 const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions']
 
@@ -8,19 +9,19 @@ const TABLE_COLUMNS = {
     diaries: ['id', 'dateUnix', 'date', 'diary', 'createdAt', 'updatedAt'],
     screenshots: ['id', 'name', 'symbol', 'side', 'originalBase64', 'annotatedBase64', 'original', 'annotated', 'markersOnly', 'maState', 'date', 'dateUnix', 'dateUnixDay', 'createdAt', 'updatedAt'],
     satisfactions: ['id', 'dateUnix', 'tradeId', 'satisfaction', 'createdAt', 'updatedAt'],
-    tags: ['id', 'dateUnix', 'tradeId', 'tags', 'createdAt', 'updatedAt'],
+    tags: ['id', 'dateUnix', 'tradeId', 'tags', 'closingTags', 'createdAt', 'updatedAt'],
     notes: ['id', 'dateUnix', 'tradeId', 'note', 'title', 'entryStressLevel', 'exitStressLevel', 'entryNote', 'feelings', 'playbook', 'timeframe', 'screenshotId', 'emotionLevel', 'closingNote', 'closingScreenshotId', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingPlaybook', 'createdAt', 'updatedAt'],
     excursions: ['id', 'dateUnix', 'tradeId', 'stopLoss', 'maePrice', 'mfePrice', 'createdAt', 'updatedAt'],
-    incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId']
+    incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker']
 }
 
 // JSON columns per table that should be parsed on read and stringified on write
 const JSON_COLUMNS = {
     trades: ['executions', 'trades', 'blotter', 'pAndL', 'cashJournal'],
     screenshots: ['maState'],
-    tags: ['tags'],
-    settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes'],
-    incoming_positions: ['bitunixData', 'tags', 'historyData'],
+    tags: ['tags', 'closingTags'],
+    settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'balances'],
+    incoming_positions: ['bitunixData', 'tags', 'closingTags', 'historyData'],
 }
 
 function parseJsonColumns(tableName, row) {
@@ -110,6 +111,25 @@ export function setupApiRoutes(app) {
         }
     })
 
+    // ==================== SETUP (Installationsassistent) ====================
+    app.get('/api/setup/status', async (req, res) => {
+        try {
+            const row = await knex('settings').where('id', 1).select('setupComplete').first()
+            res.json({ setupComplete: row?.setupComplete === 1 })
+        } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    app.post('/api/setup/complete', async (req, res) => {
+        try {
+            await knex('settings').where('id', 1).update({ setupComplete: 1, updatedAt: knex.fn.now() })
+            res.json({ ok: true })
+        } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
     // ==================== BITUNIX CONFIG ====================
     // Hinweis: Bitunix-Keys werden über /api/bitunix/* (bitunix-api.js) mit Verschlüsselung verwaltet.
     // Diese Endpoints werden vom Frontend nicht genutzt; Antwort ohne Secret-Key.
@@ -127,18 +147,125 @@ export function setupApiRoutes(app) {
 
     app.put('/api/db/bitunix_config', async (req, res) => {
         try {
-            const { apiKey, secretKey } = req.body
-            await knex('bitunix_config').where('id', 1).update({
-                apiKey: apiKey || '',
-                secretKey: secretKey || '',
-                updatedAt: knex.fn.now()
-            })
+            const updateData = { updatedAt: knex.fn.now() }
+            // Only update keys if explicitly provided (avoid accidental deletion)
+            if (req.body.apiKey !== undefined) updateData.apiKey = req.body.apiKey
+            if (req.body.secretKey !== undefined) updateData.secretKey = req.body.secretKey
+            // Allow updating other safe fields
+            if (req.body.lastHistoryScan !== undefined) updateData.lastHistoryScan = req.body.lastHistoryScan
+            if (req.body.lastApiImport !== undefined) updateData.lastApiImport = req.body.lastApiImport
+            if (req.body.apiImportStartDate !== undefined) updateData.apiImportStartDate = req.body.apiImportStartDate
+
+            await knex('bitunix_config').where('id', 1).update(updateData)
             const row = await knex('bitunix_config').where('id', 1).first()
             const { secretKey: _s, ...safe } = row || {}
             res.json({ ...safe, hasSecret: !!_s })
         } catch (error) {
             res.status(500).json({ error: error.message })
         }
+    })
+
+    // ==================== DB CONFIG ====================
+    app.get('/api/db-config', async (req, res) => {
+        try {
+            const config = loadDbConfig()
+            const type = config.client === 'pg' ? 'postgresql' : 'sqlite'
+            if (type === 'postgresql') {
+                const conn = config.connection || {}
+                res.json({
+                    type: 'postgresql',
+                    host: conn.host || 'localhost',
+                    port: conn.port || 5432,
+                    user: conn.user || '',
+                    database: conn.database || '',
+                    hasPassword: !!conn.password
+                })
+            } else {
+                res.json({ type: 'sqlite' })
+            }
+        } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    app.put('/api/db-config', async (req, res) => {
+        try {
+            const { type, host, port, user, password, database } = req.body
+            if (type === 'postgresql') {
+                // Strip http:// or https:// from host if present
+                const cleanHost = (host || 'localhost').replace(/^https?:\/\//, '').replace(/\/+$/, '')
+
+                // If no new password provided, keep the saved one
+                let savePassword = password || ''
+                if (!savePassword) {
+                    const savedConfig = loadDbConfig()
+                    if (savedConfig.client === 'pg' && savedConfig.connection?.password) {
+                        savePassword = savedConfig.connection.password
+                    }
+                }
+
+                saveDbConfig({
+                    type: 'postgresql',
+                    host: cleanHost,
+                    port: parseInt(port) || 5432,
+                    user: user || '',
+                    password: savePassword,
+                    database: database || ''
+                })
+            } else {
+                saveDbConfig({ type: 'sqlite' })
+            }
+            res.json({ ok: true, message: 'Konfiguration gespeichert. Bitte Server neu starten.' })
+        } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    app.post('/api/db-config/test', async (req, res) => {
+        try {
+            const { host, port, user, password, database } = req.body
+            // Strip http:// or https:// from host if present
+            const cleanHost = (host || 'localhost').replace(/^https?:\/\//, '').replace(/\/+$/, '')
+
+            // If no password provided, use the saved one from db-config.json
+            let testPassword = password || ''
+            if (!testPassword) {
+                const savedConfig = loadDbConfig()
+                if (savedConfig.client === 'pg' && savedConfig.connection?.password) {
+                    testPassword = savedConfig.connection.password
+                }
+            }
+
+            const knexTest = (await import('knex')).default({
+                client: 'pg',
+                connection: {
+                    host: cleanHost,
+                    port: parseInt(port) || 5432,
+                    user: user || '',
+                    password: testPassword,
+                    database: database || ''
+                },
+                pool: { min: 0, max: 1 },
+                acquireConnectionTimeout: 5000
+            })
+
+            await knexTest.raw('SELECT 1')
+            await knexTest.destroy()
+            res.json({ ok: true, message: 'Verbindung erfolgreich!' })
+        } catch (error) {
+            res.json({ ok: false, message: `Verbindung fehlgeschlagen: ${error.message}` })
+        }
+    })
+
+    // ==================== SERVER RESTART ====================
+    app.post('/api/restart', async (req, res) => {
+        res.json({ ok: true, message: 'Server wird neu gestartet...' })
+        // Give the response time to be sent, then exit.
+        // systemd / process manager will restart the process automatically.
+        setTimeout(() => {
+            console.log(' -> Server restart requested via API')
+            process.exit(0)
+        }, 500)
     })
 
     // ==================== GENERIC CRUD ====================

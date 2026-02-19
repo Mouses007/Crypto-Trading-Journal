@@ -99,11 +99,10 @@ export const existingTradesArray = reactive([])
 export const gotExistingTradesArray = ref(false)
 export const marketCloseTime = ref("16:00:00")
 
-export const brokers = reactive([{
-    value: "bitunix",
-    label: "Bitunix",
-    assetTypes: ["futures"]
-}])
+export const brokers = reactive([
+    { value: "bitunix", label: "Bitunix", assetTypes: ["futures"] },
+    { value: "bitget", label: "Bitget", assetTypes: ["futures"] },
+])
 
 /**************************************
 * SETTINGS

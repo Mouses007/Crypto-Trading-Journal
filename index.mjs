@@ -72,7 +72,7 @@ const startIndex = async () => {
     console.log("\nSTARTING NODEJS SERVER")
     await new Promise((resolve, reject) => {
         const server = app.listen(port, host, () => {
-            console.log(` -> TradeNote server started on http://${host}:${port}`)
+            console.log(` -> Crypto Trading Journal started on http://${host}:${port}`)
             if (host === '127.0.0.1' || host === 'localhost') {
                 console.log(' -> Server is only accessible locally (set TRADENOTE_HOST=0.0.0.0 to allow network access)')
             }
@@ -81,7 +81,7 @@ const startIndex = async () => {
         server.on('error', reject)
     })
 
-    console.log("\n TradeNote ready!")
+    console.log("\n Crypto Trading Journal ready!")
 }
 
 startIndex().catch(err => {

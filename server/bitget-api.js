@@ -95,6 +95,19 @@ export async function getHistoryPositions(apiKey, secretKey, passphrase, options
 }
 
 /**
+ * Get currently open positions from Bitget (USDT-M Futures).
+ * Endpoint: GET /api/v2/mix/position/all-position
+ * Returns: positionId, symbol, holdSide, openAvgPrice, total, available,
+ *          unrealizedPL, leverage, liquidationPrice, marginMode, cTime, uTime
+ */
+export async function getCurrentPositions(apiKey, secretKey, passphrase, options = {}) {
+    const params = { productType: 'USDT-FUTURES' }
+    if (options.marginCoin) params.marginCoin = options.marginCoin
+
+    return bitgetRequest('GET', '/api/v2/mix/position/all-position', apiKey, secretKey, passphrase, params)
+}
+
+/**
  * Test API connection with diagnostics.
  * Tests multiple scenarios to give the user a clear error message.
  */
@@ -152,6 +165,37 @@ export async function testConnection(apiKey, secretKey, passphrase) {
                 'Prüfe: 1) Credentials korrekt kopiert? 2) HMAC als Verschlüsselung gewählt? 3) IP-Whitelist deaktiviert oder Server-IP eingetragen?')
         }
         throw error
+    }
+}
+
+/**
+ * Normalize a single open position from Bitget API to the format expected by the frontend.
+ * Bitget uses: holdSide, openAvgPrice, total, unrealizedPL, liquidationPrice, etc.
+ * We normalize to: positionId, symbol, side, entryPrice, qty, unrealizedPNL, markPrice, leverage
+ */
+function normalizeOpenPosition(p) {
+    if (!p) return null
+    const positionId = String(p.positionId ?? p.id ?? '')
+    if (!positionId) return null
+
+    // Bitget holdSide: 'long' or 'short' → normalize to 'LONG'/'SHORT'
+    const side = (p.holdSide || '').toUpperCase()
+
+    return {
+        positionId,
+        symbol: p.symbol ?? '',
+        side: side,
+        entryPrice: p.openAvgPrice ?? p.averageOpenPrice ?? 0,
+        avgOpenPrice: p.openAvgPrice ?? p.averageOpenPrice ?? 0,
+        leverage: p.leverage ?? 0,
+        qty: p.total ?? p.available ?? 0,
+        maxQty: p.total ?? p.available ?? 0,
+        unrealizedPNL: p.unrealizedPL ?? 0,
+        liqPrice: p.liquidationPrice ?? 0,
+        markPrice: p.markPrice ?? p.liquidationPrice ?? 0,
+        ctime: p.cTime ?? '',
+        mtime: p.uTime ?? '',
+        ...p
     }
 }
 
@@ -238,6 +282,246 @@ export function setupBitgetRoutes(app) {
 
             const result = await testConnection(config.apiKey, config.secretKey, config.passphrase)
             res.json({ ok: true, result })
+        } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // ==================== NEW ENDPOINTS (analog to bitunix) ====================
+
+    // Fetch history positions with date range (for manual API import)
+    app.get('/api/bitget/positions', async (req, res) => {
+        try {
+            const config = await getDecryptedBitgetConfig()
+
+            if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
+                return res.status(400).json({ code: -1, msg: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            const options = {}
+            if (req.query.startTime) options.startTime = req.query.startTime
+            if (req.query.endTime) options.endTime = req.query.endTime
+            if (req.query.limit) options.limit = parseInt(req.query.limit)
+            if (req.query.idLessThan) options.idLessThan = req.query.idLessThan
+
+            // Paginate through all results using cursor-based pagination
+            let allPositions = []
+            let hasMore = true
+            let cursor = null
+
+            while (hasMore) {
+                const opts = { ...options, limit: 100 }
+                if (cursor) opts.idLessThan = cursor
+
+                const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, opts)
+                const positions = result.data?.list || []
+                allPositions = allPositions.concat(positions)
+
+                if (positions.length < 100) {
+                    hasMore = false
+                } else {
+                    // Use last position's ID as cursor for next page
+                    cursor = positions[positions.length - 1].positionId
+                }
+            }
+
+            // Return in same format as Bitunix for compatibility
+            res.json({ code: 0, data: { positionList: allPositions } })
+        } catch (error) {
+            console.error(' -> Bitget positions error:', error.message)
+            res.status(500).json({ code: -1, msg: error.message })
+        }
+    })
+
+    // Fetch open/current positions
+    app.get('/api/bitget/open-positions', async (req, res) => {
+        try {
+            const config = await getDecryptedBitgetConfig()
+
+            if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            const result = await getCurrentPositions(config.apiKey, config.secretKey, config.passphrase)
+
+            console.log(' -> Bitget open positions raw response:', JSON.stringify(result).substring(0, 500))
+
+            // Bitget all-position: data is an array of position objects
+            const raw = Array.isArray(result.data) ? result.data : []
+            const positions = raw.map(normalizeOpenPosition).filter(Boolean)
+
+            console.log(` -> Bitget open positions fetched: ${positions.length}`)
+            res.json({ ok: true, positions })
+        } catch (error) {
+            console.error(' -> Bitget open positions error:', error.message)
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Get last API import timestamp
+    app.get('/api/bitget/last-import', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const config = await knex('bitget_config').select('lastApiImport').where('id', 1).first()
+            res.json({ lastApiImport: config?.lastApiImport || 0 })
+        } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Set last API import timestamp
+    app.post('/api/bitget/last-import', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const { timestamp } = req.body
+            await knex('bitget_config').where('id', 1).update({ lastApiImport: timestamp })
+            res.json({ ok: true })
+        } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Fetch recently closed positions (for Pendente Trades history scan)
+    app.get('/api/bitget/recent-closed', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const config = await getDecryptedBitgetConfig()
+
+            if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
+                return res.json({ ok: true, positions: [], count: 0 })
+            }
+
+            // Read lastHistoryScan timestamp
+            const row = await knex('bitget_config').select('lastHistoryScan').where('id', 1).first()
+            let startTime = parseInt(row?.lastHistoryScan) || 0
+
+            // Default: look back 24 hours on first run
+            if (!startTime || startTime < 1000000000000) {
+                startTime = Date.now() - (24 * 60 * 60 * 1000)
+            }
+            const endTime = Date.now()
+
+            console.log(` -> Bitget History-Scan: startTime=${startTime} (${new Date(startTime).toISOString()}), endTime=${endTime}`)
+
+            // Fetch all pages using idLessThan pagination (Bitget uses cursor-based pagination)
+            let allPositions = []
+            let idLessThan = null
+            let hasMore = true
+
+            while (hasMore) {
+                const opts = { startTime, endTime, limit: 100 }
+                if (idLessThan) opts.idLessThan = idLessThan
+
+                const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, opts)
+
+                const positions = result.data?.list || []
+                allPositions = allPositions.concat(positions)
+
+                if (positions.length < 100) {
+                    hasMore = false
+                } else {
+                    // Use last position's positionId for cursor pagination
+                    idLessThan = positions[positions.length - 1]?.positionId
+                    if (!idLessThan) hasMore = false
+                }
+            }
+
+            // Update lastHistoryScan
+            await knex('bitget_config').where('id', 1).update({ lastHistoryScan: endTime })
+
+            console.log(` -> Bitget History-Scan: ${allPositions.length} geschlossene Positionen seit ${new Date(startTime).toISOString()}`)
+            res.json({ ok: true, positions: allPositions, count: allPositions.length })
+        } catch (error) {
+            console.error(' -> Bitget recent closed positions error:', error.message)
+            res.json({ ok: true, positions: [], count: 0 })
+        }
+    })
+
+    // Quick API import: fetch history, return positions for frontend processing
+    app.post('/api/bitget/quick-import', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const config = await getDecryptedBitgetConfig()
+
+            if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert. Bitte zuerst in den Einstellungen hinterlegen.' })
+            }
+
+            // Determine start time
+            let startTime = config.lastApiImport || 0
+            if (!startTime) {
+                // Default: 30 days ago
+                startTime = Date.now() - (30 * 24 * 60 * 60 * 1000)
+            }
+
+            // Enforce minimum start date if configured
+            if (config.apiImportStartDate) {
+                const minStart = new Date(config.apiImportStartDate).getTime()
+                if (minStart > startTime) {
+                    startTime = minStart
+                }
+            }
+            const endTime = Date.now()
+
+            // Fetch all pages of historical positions (cursor-based pagination)
+            let allPositions = []
+            let idLessThan = null
+            let hasMore = true
+
+            while (hasMore) {
+                const opts = { startTime, endTime, limit: 100 }
+                if (idLessThan) opts.idLessThan = idLessThan
+
+                const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, opts)
+
+                const positions = result.data?.list || []
+                allPositions = allPositions.concat(positions)
+
+                if (positions.length < 100) {
+                    hasMore = false
+                } else {
+                    idLessThan = positions[positions.length - 1]?.positionId
+                    if (!idLessThan) hasMore = false
+                }
+            }
+
+            // Update last import timestamp
+            await knex('bitget_config').where('id', 1).update({ lastApiImport: endTime })
+
+            res.json({
+                ok: true,
+                positions: allPositions,
+                startTime,
+                endTime,
+                count: allPositions.length
+            })
+        } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Get specific historical position by positionId (for close detection)
+    app.get('/api/bitget/position-history/:positionId', async (req, res) => {
+        try {
+            const config = await getDecryptedBitgetConfig()
+
+            if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            // Bitget history-position doesn't support positionId filter directly,
+            // so we fetch recent history and filter client-side
+            const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, {
+                limit: 100
+            })
+
+            const positions = result.data?.list || []
+            const pos = positions.find(p => String(p.positionId) === String(req.params.positionId)) || null
+
+            if (pos) {
+                console.log(` -> Bitget history position ${pos.symbol}: side=${pos.holdSide}, openAvgPrice=${pos.openAvgPrice}, closeAvgPrice=${pos.closeAvgPrice}, pnl=${pos.pnl}`)
+            }
+            res.json({ ok: true, position: pos })
         } catch (error) {
             res.status(500).json({ error: error.message })
         }
