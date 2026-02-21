@@ -126,14 +126,15 @@ if !errorlevel! equ 0 (
     echo   [--]  Ollama             Nicht installiert ^(optional, fuer lokale KI^)
 )
 
-REM CHECK 7: Git (optional)
+REM CHECK 7: Git (fuer Updates erforderlich)
 where git >nul 2>nul
 if !errorlevel! equ 0 (
     set "GIT_OK=1"
     for /f "tokens=3" %%v in ('git --version 2^>nul') do set "GIT_VER=%%v"
-    echo   [OK]  Git                !GIT_VER! ^(optional^)
+    echo   [OK]  Git                !GIT_VER!
 ) else (
-    echo   [--]  Git                Nicht installiert ^(optional^)
+    echo   [!!]  Git                Nicht gefunden
+    set "MANDATORY_MISSING=1"
 )
 
 echo.
@@ -147,6 +148,7 @@ if "!MANDATORY_MISSING!"=="1" (
     if "!NODE_OK!"=="0"    echo     * Node.js 20+
     if "!PYTHON_OK!"=="0"  echo     * Python 3
     if "!VSBUILD_OK!"=="0" echo     * Visual Studio Build Tools
+    if "!GIT_OK!"=="0"     echo     * Git
     echo.
 
     REM Pruefen ob winget verfuegbar ist
@@ -208,6 +210,17 @@ if "!VSBUILD_OK!"=="0" (
     echo.
 )
 
+if "!GIT_OK!"=="0" (
+    echo   → Installiere Git...
+    winget install Git.Git --accept-source-agreements --accept-package-agreements -h
+    if !errorlevel! neq 0 (
+        echo   [!] Git Installation fehlgeschlagen
+    ) else (
+        echo   [OK] Git installiert
+    )
+    echo.
+)
+
 REM PATH aktualisieren (neue Installationen sichtbar machen)
 echo   Aktualisiere PATH...
 echo.
@@ -261,6 +274,14 @@ if "!VS_CHECK!"=="1" (
     set "STILL_MISSING=1"
 )
 
+where git >nul 2>nul
+if !errorlevel! equ 0 (
+    echo   [OK]  Git                Gefunden
+) else (
+    echo   [!!]  Git                Nicht gefunden
+    set "STILL_MISSING=1"
+)
+
 echo.
 
 if "!STILL_MISSING!"=="1" (
@@ -301,12 +322,20 @@ if "!VSBUILD_OK!"=="0" (
     echo.
 )
 
+if "!GIT_OK!"=="0" (
+    echo   Git
+    echo     https://git-scm.com/download/win
+    echo     Standardeinstellungen beibehalten, "Add to PATH" ist vorausgewaehlt
+    echo.
+)
+
 set /p "OPEN_LINKS=  Download-Links im Browser oeffnen? [J/n]: "
 if /i "!OPEN_LINKS!"=="" set "OPEN_LINKS=j"
 if /i "!OPEN_LINKS!"=="j" (
     if "!NODE_OK!"=="0" start https://nodejs.org/
     if "!PYTHON_OK!"=="0" start https://www.python.org/downloads/
     if "!VSBUILD_OK!"=="0" start https://aka.ms/vs/17/release/vs_BuildTools.exe
+    if "!GIT_OK!"=="0" start https://git-scm.com/download/win
     echo.
     echo   Links wurden im Browser geoeffnet.
 )
@@ -388,6 +417,18 @@ if "!VSBUILD_OK!"=="0" (
     )
 )
 
+REM Git nochmal pruefen
+if "!GIT_OK!"=="0" (
+    where git >nul 2>nul
+    if !errorlevel! equ 0 (
+        set "GIT_OK=1"
+        for /f "tokens=3" %%v in ('git --version 2^>nul') do set "GIT_VER=%%v"
+        echo   [OK]  Git                !GIT_VER!
+    ) else (
+        echo   [!!]  Git                Immer noch nicht gefunden
+    )
+)
+
 REM npm nochmal pruefen
 where npm >nul 2>nul
 if !errorlevel! equ 0 (
@@ -402,6 +443,7 @@ set "STILL_MISSING=0"
 if "!NODE_OK!"=="0" set "STILL_MISSING=1"
 if "!PYTHON_OK!"=="0" set "STILL_MISSING=1"
 if "!VSBUILD_OK!"=="0" set "STILL_MISSING=1"
+if "!GIT_OK!"=="0" set "STILL_MISSING=1"
 
 if "!STILL_MISSING!"=="1" (
     echo   Es fehlen immer noch Komponenten.
