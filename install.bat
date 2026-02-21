@@ -74,11 +74,20 @@ if "!PYTHON_OK!"=="1" (
     set "MANDATORY_MISSING=1"
 )
 
-REM CHECK 3: Visual Studio Build Tools
+REM CHECK 3: Visual Studio Build Tools (mit VC++ Toolset)
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+set "VSBUILD_OK=0"
 if exist "!VSWHERE!" (
-    set "VSBUILD_OK=1"
-    echo   [OK]  VS Build Tools     Gefunden
+    REM Pruefen ob VC++ Toolset installiert ist (nicht nur vswhere vorhanden)
+    for /f "tokens=*" %%p in ('"!VSWHERE!" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul') do set "VS_INSTALL_PATH=%%p"
+    if defined VS_INSTALL_PATH (
+        set "VSBUILD_OK=1"
+        echo   [OK]  VS Build Tools     Gefunden ^(mit VC++ Toolset^)
+    ) else (
+        echo   [!!]  VS Build Tools     Installiert, aber VC++ Toolset fehlt
+        echo                             Bitte "Desktopentwicklung mit C++" nachinstallieren
+        set "MANDATORY_MISSING=1"
+    )
 ) else (
     where cl >nul 2>nul
     if !errorlevel! equ 0 (
@@ -238,13 +247,17 @@ if "!PY_CHECK!"=="1" (
 )
 
 set "VS_CHECK=0"
-if exist "!VSWHERE!" set "VS_CHECK=1"
+if exist "!VSWHERE!" (
+    set "VS_INSTALL_PATH="
+    for /f "tokens=*" %%p in ('"!VSWHERE!" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul') do set "VS_INSTALL_PATH=%%p"
+    if defined VS_INSTALL_PATH set "VS_CHECK=1"
+)
 where cl >nul 2>nul
 if !errorlevel! equ 0 set "VS_CHECK=1"
 if "!VS_CHECK!"=="1" (
-    echo   [OK]  Build Tools        Gefunden
+    echo   [OK]  Build Tools        Gefunden ^(mit VC++ Toolset^)
 ) else (
-    echo   [!!]  Build Tools        Nicht gefunden
+    echo   [!!]  Build Tools        VC++ Toolset fehlt
     set "STILL_MISSING=1"
 )
 
@@ -356,8 +369,14 @@ REM VS Build Tools nochmal pruefen
 if "!VSBUILD_OK!"=="0" (
     set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
     if exist "!VSWHERE!" (
-        set "VSBUILD_OK=1"
-        echo   [OK]  VS Build Tools     Gefunden
+        set "VS_INSTALL_PATH="
+        for /f "tokens=*" %%p in ('"!VSWHERE!" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul') do set "VS_INSTALL_PATH=%%p"
+        if defined VS_INSTALL_PATH (
+            set "VSBUILD_OK=1"
+            echo   [OK]  VS Build Tools     Gefunden ^(mit VC++ Toolset^)
+        ) else (
+            echo   [!!]  VS Build Tools     VC++ Toolset immer noch nicht gefunden
+        )
     ) else (
         where cl >nul 2>nul
         if !errorlevel! equ 0 (
