@@ -2,73 +2,159 @@
   Crypto Trading Journal - Installationsanleitung
 ═══════════════════════════════════════════════════
 
-Hallo!
+Hallo Toby!
 
 Hier ist die Anleitung zum Installieren des Crypto Trading Journals
 auf deinem Linux-Rechner (Ubuntu/Debian/Mint).
 
-Die Installation dauert ca. 5-10 Minuten und ist fast komplett automatisch.
+Die Installation dauert ca. 5-10 Minuten.
+Du brauchst dein Linux-Passwort (fuer sudo) und deinen GitHub-Account.
 
+
+═══════════════════════════════════════════════════
+  VORBEREITUNG (einmalig)
+═══════════════════════════════════════════════════
 
 SCHRITT 1: Terminal oeffnen
 ────────────────────────────
 Druecke Ctrl+Alt+T um ein Terminal zu oeffnen.
 
 
-SCHRITT 2: Setup-Script herunterladen und ausfuehren
-─────────────────────────────────────────────────────
-Kopiere diese 3 Zeilen ins Terminal und druecke Enter:
+SCHRITT 2: Git installieren (falls nicht vorhanden)
+────────────────────────────────────────────────────
+Kopiere ins Terminal und druecke Enter:
 
-    curl -fsSL https://raw.githubusercontent.com/Mouses007/Crypto-Trading-Journal/master/setup-remote.sh -o setup-remote.sh
-    chmod +x setup-remote.sh
-    ./setup-remote.sh
+    sudo apt-get update && sudo apt-get install -y git
+
+Es fragt nach deinem Linux-Passwort.
+
+
+SCHRITT 3: GitHub Zugang einrichten
+────────────────────────────────────
+Das Repository ist privat. Du brauchst ein GitHub Personal Access Token.
+
+So erstellst du es:
+  1. Gehe zu: https://github.com/settings/tokens
+  2. Klicke "Generate new token" > "Generate new token (classic)"
+  3. Name: z.B. "Trading Journal"
+  4. Haken setzen bei: "repo" (Full control of private repositories)
+  5. Klicke "Generate token"
+  6. WICHTIG: Kopiere den Token sofort (wird nur einmal angezeigt!)
+
+Der Token sieht so aus: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+
+═══════════════════════════════════════════════════
+  INSTALLATION
+═══════════════════════════════════════════════════
+
+SCHRITT 4: Projekt herunterladen
+─────────────────────────────────
+Kopiere ins Terminal:
+
+    git clone https://github.com/Mouses007/Crypto-Trading-Journal.git
+
+Wenn nach Username gefragt wird: Dein GitHub-Benutzername (Toby369)
+Wenn nach Password gefragt wird: Deinen Token von Schritt 3 eingeben
+(NICHT dein GitHub-Passwort, sondern den Token!)
+
+
+SCHRITT 5: Installations-Script ausfuehren
+───────────────────────────────────────────
+Kopiere ins Terminal:
+
+    cd Crypto-Trading-Journal
+    chmod +x install.sh
+    ./install.sh
 
 Das Script macht alles automatisch:
-  - Installiert Node.js, Git und Build-Tools (falls nicht vorhanden)
-  - Laedt das Projekt herunter
+  - Prueft und installiert Node.js, Python, Build-Tools
+  - Installiert alle Abhaengigkeiten
   - Baut die Anwendung
   - Erstellt eine Desktop-Verknuepfung
 
-Bei manchen Schritten fragt es nach deinem Passwort (fuer sudo).
+Kann ein paar Minuten dauern — einfach warten bis es fertig ist.
 
 
-SCHRITT 3: Trading Journal starten
+═══════════════════════════════════════════════════
+  STARTEN
+═══════════════════════════════════════════════════
+
+SCHRITT 6: Trading Journal starten
 ───────────────────────────────────
 Nach der Installation gibt es zwei Moeglichkeiten:
 
   Option A: Doppelklick auf "Crypto Trading Journal" auf dem Desktop
+
   Option B: Im Terminal:
             cd ~/Crypto-Trading-Journal
-            ./start.sh
+            npm start
 
-Dann oeffnet sich automatisch der Browser mit http://localhost:8080
+Dann im Browser oeffnen: http://localhost:8080
+
+Zum Beenden: Im Terminal Ctrl+C druecken.
 
 
-SCHRITT 4: Erste Einrichtung
-─────────────────────────────
-1. Gehe zu "Einstellungen" (im Menue links)
-2. Waehle deine Boerse (Bitunix oder Bitget)
-3. Gib deinen API Key und Secret ein
-   (findest du auf der Boersenwebsite unter API-Management)
-4. Waehle ein Import-Startdatum
-5. Speichern — die Trades werden automatisch importiert
+═══════════════════════════════════════════════════
+  ERSTE EINRICHTUNG
+═══════════════════════════════════════════════════
+
+1. Im Browser auf "Einstellungen" klicken (im Menue links unten)
+2. Deine Boerse waehlen (oben links: Bitunix oder Bitget)
+3. API Key und Secret eingeben
+   → Findest du auf deiner Boersenwebsite unter API-Management
+   → Bei Bitget zusaetzlich: Passphrase eingeben
+4. Import-Startdatum waehlen (ab wann sollen Trades importiert werden)
+5. Auf "Speichern" klicken
+6. Die Trades werden automatisch importiert!
 
 Fertig! Dein Trading Journal ist einsatzbereit.
 
 
-UPDATES
-───────
+═══════════════════════════════════════════════════
+  UPDATES
+═══════════════════════════════════════════════════
+
 Wenn ein Update verfuegbar ist, erscheint in der Seitenleiste
-ein gruener Button "Update vX.X.X". Einfach draufklicken —
-das Update wird automatisch installiert.
+(links unten, zwischen Versionsnummer und "Spenden")
+ein gruener Button "Update vX.X.X".
+
+Einfach draufklicken — das Update wird automatisch
+heruntergeladen, installiert und der Server neu gestartet.
+Du musst nichts weiter tun.
 
 
-BEI PROBLEMEN
-──────────────
-- "Permission denied": Versuche "sudo ./setup-remote.sh"
-- "npm install Fehler": sudo apt-get install -y build-essential python3
-- Port 8080 belegt: CTJ_PORT=3000 npm start (nutzt dann Port 3000)
-- Andere Fragen: Meld dich einfach bei mir!
+═══════════════════════════════════════════════════
+  BEI PROBLEMEN
+═══════════════════════════════════════════════════
+
+Problem: "Permission denied"
+Loesung: chmod +x install.sh && sudo ./install.sh
+
+Problem: "npm install" Fehler
+Loesung: sudo apt-get install -y build-essential python3
+         Dann nochmal: npm install
+
+Problem: Port 8080 ist belegt
+Loesung: CTJ_PORT=3000 npm start
+         Dann im Browser: http://localhost:3000
+
+Problem: "Repository not found" bei git clone
+Loesung: Pruefe ob du als Collaborator eingeladen bist
+         und ob der Token korrekt ist.
+
+Problem: Sonstige Fehler
+Loesung: Meld dich bei mir!
+
+
+═══════════════════════════════════════════════════
+  KURZREFERENZ
+═══════════════════════════════════════════════════
+
+Starten:    cd ~/Crypto-Trading-Journal && npm start
+Browser:    http://localhost:8080
+Beenden:    Ctrl+C im Terminal
+Update:     Gruener Button in der Seitenleiste klicken
 
 
 Viel Erfolg beim Traden!
