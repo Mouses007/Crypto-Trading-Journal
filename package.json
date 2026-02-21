@@ -1,7 +1,7 @@
 {
   "name": "crypto-trading-journal",
-  "version": "2.0.0",
-  "description": "Crypto Trading Journal - Local Trading Journal for Bitunix (optional Bitget). SQLite or PostgreSQL, session auth, AI reports (Ollama/OpenAI/Anthropic/Gemini/DeepSeek).",
+  "version": "2.1.0",
+  "description": "Local, privacy-focused crypto futures trading journal. Bitunix + Bitget support, SQLite/PostgreSQL, AI reports, auto-update.",
   "author": "Mouses007",
   "license": "GPL-3.0-or-later",
   "type": "module",
