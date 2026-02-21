@@ -173,21 +173,10 @@ async function handleClosedPositions(closedPositions) {
             await createTradeFromClosedPosition(histPos, incoming, popupsEnabled)
 
             if (incoming.skipEvaluation === 1) {
-                // Skip evaluation: transfer existing metadata directly
-                await useTransferClosingMetadata(incoming, histPos, {
-                    note: '',
-                    tags: incoming.tags || [],
-                    satisfaction: incoming.satisfaction,
-                    stressLevel: incoming.stressLevel || 0,
-                    closingNote: incoming.closingNote || '',
-                    closingStressLevel: 0,
-                    closingEmotionLevel: 0,
-                    closingFeelings: '',
-                    closingTimeframe: '',
-                    closingPlaybook: '',
-                    closingScreenshotId: '',
-                    closingTags: [],
-                })
+                // Skip evaluation: just delete the incoming position, no notes/tags transfer
+                // Trade stays "unbewertet" in Settings and won't appear in Playbook
+                await dbDelete('incoming_positions', incoming.objectId)
+                await useUpdatePendingCounts()
                 console.log(` -> Position ${incoming.symbol} geschlossen — Bewertung übersprungen`)
             } else if (popupsEnabled) {
                 // Keep position as pending_evaluation, store historyData
@@ -380,8 +369,8 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
 
     const execution = { ...tradeObj, trade: tradeId }
 
-    // Check if a trade record for this day already exists
-    const existingDay = await dbFirst('trades', { equalTo: { dateUnix: dateUnix } })
+    // Check if a trade record for this day already exists (same broker only!)
+    const existingDay = await dbFirst('trades', { equalTo: { dateUnix: dateUnix, broker: broker } })
 
     if (existingDay) {
         // Merge into existing day: append trade and execution
@@ -447,6 +436,7 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
         await dbCreate('trades', {
             date: dayjs.unix(dateUnix).format('YYYY-MM-DD'),
             dateUnix: Number(dateUnix),
+            broker: broker,
             executions: [execution],
             trades: [tradeObj],
             blotter: blotter,

@@ -567,11 +567,12 @@ export async function useGetAuswertungNotes() {
         auswertungNotes.length = 0
         let startD = selectedRange.value.start
         let endD = selectedRange.value.end
-        const results = await dbFind("notes", {
-            greaterThanOrEqualTo: { dateUnix: startD },
-            lessThan: { dateUnix: endD },
-            limit: queryLimit.value
-        })
+        const options = { limit: queryLimit.value }
+        if (!(startD === 0 && endD === 0)) {
+            options.greaterThanOrEqualTo = { dateUnix: startD }
+            options.lessThan = { dateUnix: endD }
+        }
+        const results = await dbFind("notes", options)
         if (results.length > 0) {
             for (let i = 0; i < results.length; i++) {
                 const obj = results[i]

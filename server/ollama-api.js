@@ -285,6 +285,124 @@ export function setupOllamaRoutes(app) {
         }
     })
 
+    // --- Screenshot KI-Bewertung ---
+    app.post('/api/ai/screenshot-review', async (req, res) => {
+        const { screenshotId } = req.body
+        if (!screenshotId) {
+            return res.status(400).json({ error: 'screenshotId erforderlich' })
+        }
+
+        try {
+            const knex = getKnex()
+
+            // Screenshot laden (objectId vom Frontend = String(id))
+            const screenshot = await knex('screenshots').where('id', parseInt(screenshotId)).first()
+            if (!screenshot) {
+                return res.status(404).json({ error: 'Screenshot nicht gefunden' })
+            }
+
+            // KI-Settings laden
+            const settings = await knex('settings')
+                .select('aiProvider', 'aiModel', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .where('id', 1).first()
+            const provider = settings?.aiProvider || 'ollama'
+            const model = settings?.aiModel || ''
+            const temperature = settings?.aiTemperature ?? 0.7
+            const maxTokens = settings?.aiMaxTokens || 800
+            const apiKey = getApiKeyForProvider(settings, provider)
+
+            // Prüfen ob Provider Bilder unterstützt
+            if (provider === 'ollama' || provider === 'deepseek') {
+                return res.status(400).json({ error: `${provider} unterstützt keine Bildanalyse. Bitte verwende OpenAI, Anthropic oder Gemini.` })
+            }
+
+            // Bild vorbereiten
+            const base64 = screenshot.annotatedBase64 || screenshot.originalBase64
+            if (!base64 || base64.length < 100) {
+                return res.status(400).json({ error: 'Screenshot hat kein gültiges Bild' })
+            }
+
+            const cleanBase64 = base64.replace(/^data:image\/[^;]+;base64,/, '')
+            const mimeMatch = base64.match(/^data:(image\/[^;]+);base64,/)
+            const mimeType = mimeMatch ? mimeMatch[1] : 'image/png'
+
+            const symbol = screenshot.symbol || 'Unknown'
+            const side = screenshot.side === 'B' || screenshot.side === 'BC' ? 'Long' : screenshot.side === 'SS' ? 'Short' : screenshot.side || ''
+
+            const reviewPrompt = `Du bist ein erfahrener Crypto-Trading-Coach. Analysiere diesen Chart-Screenshot und gib eine kompakte Bewertung.
+
+TRADE-INFO: ${symbol} ${side}
+
+Bewerte folgende Punkte in 1-2 Sätzen je Punkt:
+1. **Setup-Qualität**: Wie gut ist der Einstiegspunkt? Gibt es eine klare Struktur?
+2. **Fehler**: Was wurde falsch gemacht oder hätte besser sein können?
+3. **Tipps**: Ein konkreter Verbesserungsvorschlag für den nächsten ähnlichen Trade.
+4. **Gesamtnote**: Vergib eine Note von 1-10 (10 = perfekt).
+
+Antworte auf Deutsch. Halte es kurz und prägnant (max 150 Wörter). Verwende Markdown.`
+
+            // Screenshots array für die Provider-Funktionen
+            const screenshots = [{
+                symbol,
+                side,
+                timeframe: '',
+                base64: cleanBase64,
+                mimeType
+            }]
+
+            let result
+            if (provider === 'openai') {
+                result = await generateOpenAI(reviewPrompt, apiKey, model || 'gpt-4o-mini', temperature, Math.min(maxTokens, 800), screenshots)
+            } else if (provider === 'anthropic') {
+                result = await generateAnthropic(reviewPrompt, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, Math.min(maxTokens, 800), screenshots)
+            } else if (provider === 'gemini') {
+                result = await generateGemini(reviewPrompt, apiKey, model || 'gemini-2.0-flash', temperature, Math.min(maxTokens, 800), screenshots)
+            } else {
+                return res.status(400).json({ error: 'Unbekannter KI-Anbieter: ' + provider })
+            }
+
+            // Bewertung + Token-Verbrauch in DB speichern
+            await knex('screenshots').where('id', parseInt(screenshotId)).update({
+                aiReview: result.text,
+                aiReviewProvider: provider,
+                aiReviewModel: model || provider,
+                aiReviewPromptTokens: result.usage?.promptTokens || 0,
+                aiReviewCompletionTokens: result.usage?.completionTokens || 0,
+                aiReviewTotalTokens: result.usage?.totalTokens || 0,
+                updatedAt: knex.fn.now()
+            })
+
+            res.json({
+                review: result.text,
+                provider,
+                model: model || provider,
+                tokenUsage: result.usage
+            })
+        } catch (e) {
+            console.error('Screenshot review error:', e)
+            res.status(500).json({ error: e.message || 'Bewertung fehlgeschlagen' })
+        }
+    })
+
+    // --- Screenshot-Review Token-Summen (für Kostenberechnung im Frontend) ---
+    app.get('/api/ai/screenshot-review-tokens', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const rows = await knex('screenshots')
+                .select('aiReviewProvider as provider', 'aiReviewModel as model')
+                .sum('aiReviewPromptTokens as promptTokens')
+                .sum('aiReviewCompletionTokens as completionTokens')
+                .sum('aiReviewTotalTokens as totalTokens')
+                .whereNot('aiReview', '')
+                .andWhere('aiReviewTotalTokens', '>', 0)
+                .groupBy('aiReviewProvider', 'aiReviewModel')
+            res.json(rows)
+        } catch (e) {
+            console.error('Screenshot review tokens error:', e)
+            res.status(500).json({ error: e.message })
+        }
+    })
+
     // --- KI-Einstellungen mit Verschlüsselung ---
 
     // KI-Settings speichern (verschlüsselt die API-Keys)

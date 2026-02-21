@@ -9,6 +9,8 @@ import axios from 'axios'
 import dayjs from 'dayjs'
 import { requestNotificationPermission } from '../utils/notify'
 import { logWarn } from '../utils/logger.js'
+import { useQuickApiImport } from '../utils/quickImport.js'
+import { sendNotification } from '../utils/notify.js'
 
 let profileAvatar = null
 let username = ref('')
@@ -460,6 +462,8 @@ async function loadBitgetConfig() {
     }
 }
 
+const bitgetImporting = ref(false)
+
 async function saveBitgetConfig() {
     try {
         const data = { apiKey: bitgetApiKey.value, apiImportStartDate: bitgetImportStartDate.value }
@@ -471,6 +475,23 @@ async function saveBitgetConfig() {
         }
         await axios.post('/api/bitget/config', data)
         alert('Bitget API Einstellungen gespeichert')
+
+        // Auto-trigger historical import if start date is set
+        if (bitgetImportStartDate.value) {
+            bitgetImporting.value = true
+            try {
+                const result = await useQuickApiImport('bitget')
+                if (result.count > 0) {
+                    sendNotification('Bitget Import', result.message || `${result.count} Tage importiert.`)
+                } else {
+                    sendNotification('Bitget Import', result.message || 'Keine neuen Trades gefunden.')
+                }
+            } catch (importError) {
+                console.log(' -> Bitget auto-import error:', importError.message)
+                sendNotification('Bitget Import', 'Import fehlgeschlagen: ' + (importError.response?.data?.error || importError.message))
+            }
+            bitgetImporting.value = false
+        }
     } catch (error) {
         alert('Error saving Bitget config: ' + error.message)
     }
@@ -671,11 +692,20 @@ async function cancelDeleteImport() {
 
 async function executeDeleteImport(dateUnix) {
     try {
-        // Find and delete trade
-        const existing = await dbFirst('trades', { equalTo: { dateUnix: dateUnix } })
+        const broker = selectedBroker.value || 'bitunix'
+        // Find and delete trade (broker-aware)
+        const existing = await dbFirst('trades', { equalTo: { dateUnix: dateUnix, broker: broker } })
         if (existing) {
             await dbDelete('trades', existing.objectId)
-            console.log(' -> Deleted trade for dateUnix ' + dateUnix)
+            console.log(' -> Deleted trade for dateUnix ' + dateUnix + ' (broker: ' + broker + ')')
+
+            // Reset lastApiImport so deleted trades can be re-imported
+            try {
+                await axios.post(`/api/${broker}/last-import`, { timestamp: 0 })
+                console.log(` -> Reset ${broker} lastApiImport for re-import`)
+            } catch (e) {
+                console.log(' -> Could not reset lastApiImport:', e.message)
+            }
         }
         // Delete related excursions
         try {
@@ -795,22 +825,60 @@ async function removeDuplicateTrades() {
 
 // Load imports on mount
 /* KONTOSTAND (per broker) */
+const balanceLoading = ref(false)
+const apiBalanceValue = ref(null)
+
+async function loadBalanceFromApi() {
+    const broker = selectedBroker.value || 'bitunix'
+    balanceLoading.value = true
+    apiBalanceValue.value = null
+    try {
+        // 1. Get current balance from exchange API
+        const response = await axios.get(`/api/${broker}/balance`)
+        if (!response.data.ok) {
+            alert('API Fehler: ' + (response.data.error || 'Unbekannter Fehler'))
+            balanceLoading.value = false
+            return
+        }
+        const apiBalance = response.data.balance
+        apiBalanceValue.value = apiBalance
+
+        // 2. Calculate all-time net P&L for this broker
+        const trades = await dbFind('trades', { equalTo: { broker }, limit: 100000 })
+        let totalNetPnL = 0
+        for (const day of trades) {
+            if (day.pAndL && typeof day.pAndL === 'object') {
+                totalNetPnL += day.pAndL.netProceeds || 0
+            }
+        }
+
+        // 3. Start-Einzahlung = API-Balance - alle Journal-P&L
+        const calculatedStart = apiBalance - totalNetPnL
+        startBalance.value = Math.round(calculatedStart * 100) / 100
+
+        console.log(` -> ${broker}: API=${apiBalance.toFixed(2)}, P&L=${totalNetPnL.toFixed(2)}, Start=${calculatedStart.toFixed(2)}`)
+    } catch (error) {
+        alert('Kontostand konnte nicht geladen werden: ' + (error.response?.data?.error || error.message))
+    }
+    balanceLoading.value = false
+}
+
 async function saveBalances() {
     try {
         const broker = selectedBroker.value || 'bitunix'
         const start = parseFloat(startBalance.value) || 0
-        const current = parseFloat(currentBalance.value) || 0
 
-        // Load existing balances object, update current broker
+        // Save start balance per broker (no offset needed — Dashboard calculates current from P&L)
         const existingBalances = currentUser.value?.balances || {}
-        const balances = { ...existingBalances, [broker]: { start, current } }
+        const balances = { ...existingBalances, [broker]: { start } }
 
-        // Save both: balances (per broker JSON) and legacy fields (for backwards compatibility)
-        await dbUpdateSettings({ balances, startBalance: start, currentBalance: current })
+        await dbUpdateSettings({ balances, startBalance: start })
         currentUser.value.balances = balances
         currentUser.value.startBalance = start
-        currentUser.value.currentBalance = current
-        console.log(` -> Kontostände gespeichert für ${broker}: Start`, start, '/ Aktuell', current)
+
+        apiBalanceValue.value = null
+
+        console.log(` -> Start-Einzahlung gespeichert für ${broker}:`, start)
     } catch (error) {
         alert('Fehler beim Speichern: ' + error.message)
     }
@@ -858,11 +926,11 @@ onBeforeMount(async () => {
         const balances = settings.balances || {}
         if (balances[broker]) {
             startBalance.value = balances[broker].start || 0
-            currentBalance.value = balances[broker].current || 0
         } else {
             startBalance.value = settings.startBalance || 0
-            currentBalance.value = settings.currentBalance || 0
         }
+        // "Aktueller Kontostand" stays empty — only used for initial offset calculation
+        currentBalance.value = ''
         showTradePopups.value = settings.showTradePopups !== 0
         enableBinanceChart.value = settings.enableBinanceChart === 1
         browserNotifications.value = settings.browserNotifications !== 0
@@ -879,11 +947,10 @@ onBeforeMount(async () => {
         const balancesFb = currentUser.value?.balances || {}
         if (balancesFb[brokerFb]) {
             startBalance.value = balancesFb[brokerFb].start || 0
-            currentBalance.value = balancesFb[brokerFb].current || 0
         } else {
             startBalance.value = currentUser.value?.startBalance || 0
-            currentBalance.value = currentUser.value?.currentBalance || 0
         }
+        currentBalance.value = ''
     }
     // KI-Settings über verschlüsselten Endpoint laden
     await loadAiSettings()
@@ -962,17 +1029,19 @@ onBeforeMount(async () => {
                     <p class="fs-5 fw-bold mb-0">Kontostand</p>
                 </div>
                 <div v-show="balanceExpanded" class="mt-2 row align-items-center">
-                    <p class="fw-lighter">Start-Kontostand = deine Einzahlung. Aktueller Kontostand = dein heutiger Stand auf <strong>{{ (selectedBroker || 'bitunix').charAt(0).toUpperCase() + (selectedBroker || 'bitunix').slice(1) }}</strong>. Gewinn wird als Differenz berechnet.</p>
+                    <p class="fw-lighter">Dashboard-Kontostand = Start-Einzahlung + alle Trade-Ergebnisse. Klicke <strong>Von API berechnen</strong> um die Start-Einzahlung automatisch aus deinem <strong>{{ (selectedBroker || 'bitunix').charAt(0).toUpperCase() + (selectedBroker || 'bitunix').slice(1) }}</strong>-Kontostand zurückzurechnen.</p>
                     <div class="row mt-2">
-                        <div class="col-12 col-md-4">Start-Kontostand (USDT)</div>
+                        <div class="col-12 col-md-4">Start-Einzahlung (USDT)</div>
                         <div class="col-12 col-md-8">
-                            <input type="number" class="form-control" v-model="startBalance" placeholder="z.B. 1000" step="0.01" />
-                        </div>
-                    </div>
-                    <div class="row mt-2">
-                        <div class="col-12 col-md-4">Aktueller Kontostand (USDT)</div>
-                        <div class="col-12 col-md-8">
-                            <input type="number" class="form-control" v-model="currentBalance" placeholder="z.B. 1150" step="0.01" />
+                            <div class="input-group">
+                                <input type="number" class="form-control" v-model="startBalance" placeholder="z.B. 1000" step="0.01" />
+                                <button type="button" class="btn btn-outline-primary" @click="loadBalanceFromApi" :disabled="balanceLoading">
+                                    <span v-if="balanceLoading" class="spinner-border spinner-border-sm" style="width: 0.7rem; height: 0.7rem;"></span>
+                                    <span v-else><i class="uil uil-cloud-download me-1"></i>Von API berechnen</span>
+                                </button>
+                            </div>
+                            <small v-if="apiBalanceValue !== null" class="text-success">API-Balance: {{ apiBalanceValue.toFixed(2) }} USDT</small>
+                            <small v-else class="text-muted">Manuell eingeben oder automatisch von der API berechnen lassen.</small>
                         </div>
                     </div>
                     <div class="mt-3 mb-3">
@@ -1066,7 +1135,10 @@ onBeforeMount(async () => {
                                 </div>
                             </div>
                             <div class="mt-3">
-                                <button type="button" v-on:click="saveBitgetConfig" class="btn btn-success me-2">Speichern</button>
+                                <button type="button" v-on:click="saveBitgetConfig" class="btn btn-success me-2" :disabled="bitgetImporting">
+                                    <span v-if="bitgetImporting" class="spinner-border spinner-border-sm me-1" style="width: 0.7rem; height: 0.7rem;"></span>
+                                    {{ bitgetImporting ? 'Importiert...' : 'Speichern' }}
+                                </button>
                                 <button type="button" v-on:click="testBitgetConnection" class="btn btn-outline-primary" :disabled="bitgetTestLoading">
                                     <span v-if="bitgetTestLoading">Testing...</span>
                                     <span v-else>Verbindung testen</span>

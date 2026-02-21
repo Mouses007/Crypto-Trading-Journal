@@ -8,9 +8,10 @@ import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../
 import { availableTags } from '../stores/trades.js'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
 import { useCreatedDateFormat } from '../utils/formatters.js'
-import { dbFind, dbUpdate, dbCreate } from '../utils/db.js'
+import { dbFind, dbGet, dbUpdate, dbCreate } from '../utils/db.js'
 import Quill from 'quill'
 import { sanitizeHtml } from '../utils/sanitize'
+import * as markerjs2 from 'markerjs2'
 
 const route = useRoute()
 const playbookEntries = ref([])
@@ -20,6 +21,10 @@ const savingId = ref(null)
 const quillInstances = {}
 const screenshotMap = ref([]) // array of screenshot records
 const fullscreenImg = ref(null) // base64 string for fullscreen modal
+const fullscreenScreenshot = ref(null) // full screenshot object for editing
+const screenshotEditing = ref(false) // true while markerjs2 is open
+const entryScreenshotPreviews = ref({}) // tradeId → base64 preview
+const closingScreenshotPreviews = ref({}) // tradeId → base64 preview
 
 // Timeframes aus Settings (oder Fallback auf alle)
 const timeframeOptions = computed(() => {
@@ -154,19 +159,23 @@ function parseOldNoteHtml(noteHtml) {
 }
 
 async function loadPlaybookEntries() {
-    const allNotes = await dbFind('notes', { descending: 'dateUnix', limit: 200 })
-    const allSatisfactions = await dbFind('satisfactions', { limit: 500 })
-    const allTags = await dbFind('tags', { limit: 500 })
-    const allTrades = await dbFind('trades', { descending: 'dateUnix', limit: 200 })
-    const allScreenshots = await dbFind('screenshots', {
-        descending: 'dateUnix',
-        limit: 500,
-        exclude: ['original', 'annotated', 'maState']
-    })
-    screenshotMap.value = allScreenshots
+    const [allNotes, allSatisfactions, allTags, allTrades, allScreenshots] = await Promise.all([
+        dbFind('notes', { descending: 'dateUnix', limit: 200 }),
+        dbFind('satisfactions', { limit: 500 }),
+        dbFind('tags', { limit: 500 }),
+        dbFind('trades', { descending: 'dateUnix', limit: 200 }),
+        dbFind('screenshots', { descending: 'dateUnix', limit: 500, exclude: ['original', 'annotated', 'maState'] })
+    ])
+    // Broker filter for screenshots: only show screenshots matching selected exchange
+    // Screenshots with no broker field (legacy) are shown for all brokers
+    const broker = selectedBroker.value
+    if (broker) {
+        screenshotMap.value = allScreenshots.filter(s => !s.broker || s.broker === broker)
+    } else {
+        screenshotMap.value = allScreenshots
+    }
 
     // Broker filter: only show trades matching selected exchange
-    const broker = selectedBroker.value
     const brokerFilteredTrades = broker
         ? allTrades.filter(t => {
             if (t.trades && Array.isArray(t.trades)) {
@@ -497,11 +506,187 @@ function getClosingScreenshot(entry) {
 function openFullscreen(screenshotObj) {
     if (screenshotObj) {
         fullscreenImg.value = screenshotObj.annotatedBase64 || screenshotObj.originalBase64
+        fullscreenScreenshot.value = screenshotObj
     }
 }
 
 function closeFullscreen() {
+    if (screenshotEditing.value) return // don't close while markerjs2 is open
     fullscreenImg.value = null
+    fullscreenScreenshot.value = null
+}
+
+async function openAndEdit(screenshotObj) {
+    if (!screenshotObj || !screenshotObj.objectId) return
+    // Load full data by ID (dbGet uses /api/db/screenshots/:id which correctly maps objectId→id)
+    const full = await dbGet('screenshots', screenshotObj.objectId)
+    if (!full) return
+
+    // Update cache
+    const idx = screenshotMap.value.findIndex(s => s.objectId === screenshotObj.objectId)
+    if (idx !== -1) {
+        screenshotMap.value[idx] = { ...screenshotMap.value[idx], ...full }
+    }
+
+    fullscreenScreenshot.value = full
+    fullscreenImg.value = full.originalBase64
+    await nextTick()
+    launchMarkerArea(full)
+}
+
+async function editScreenshot(screenshotObj) {
+    if (!screenshotObj || !screenshotObj.objectId) return
+
+    // Load full screenshot data by ID (dbGet uses /api/db/screenshots/:id)
+    const full = await dbGet('screenshots', screenshotObj.objectId)
+    if (!full) return
+
+    // Update cache
+    const idx = screenshotMap.value.findIndex(s => s.objectId === screenshotObj.objectId)
+    if (idx !== -1) {
+        screenshotMap.value[idx] = { ...screenshotMap.value[idx], ...full }
+    }
+
+    fullscreenScreenshot.value = full
+    fullscreenImg.value = full.originalBase64
+    await nextTick()
+    launchMarkerArea(full)
+}
+
+function launchMarkerArea(full) {
+    const imgEl = document.getElementById('pb-fullscreen-marker-img')
+    if (!imgEl) {
+        console.error('Playbook: marker image element not found')
+        return
+    }
+
+    function startMarker() {
+        if (!imgEl.naturalWidth || !imgEl.naturalHeight) {
+            console.error('Playbook: image has no dimensions', imgEl.naturalWidth, imgEl.naturalHeight)
+            return
+        }
+
+        screenshotEditing.value = true
+
+        const markerArea = new markerjs2.MarkerArea(imgEl)
+        markerArea.renderAtNaturalSize = true
+        markerArea.renderImageQuality = 1
+        markerArea.renderMarkersOnly = true
+        markerArea.settings.displayMode = 'popup'
+        markerArea.availableMarkerTypes = markerArea.ALL_MARKER_TYPES
+        markerArea.settings.defaultFillColor = '#ffffffde'
+        markerArea.settings.defaultStrokeColor = 'black'
+        markerArea.settings.defaultColorsFollowCurrentColors = true
+        markerArea.settings.defaultStrokeWidth = 2
+        markerArea.settings.defaultColor = 'white'
+
+        markerArea.addEventListener('render', async (event) => {
+            // Save annotation to DB
+            await dbUpdate('screenshots', full.objectId, {
+                annotatedBase64: event.dataUrl,
+                maState: event.state,
+                markersOnly: true
+            })
+
+            // Update local data
+            full.annotatedBase64 = event.dataUrl
+            full.maState = event.state
+            fullscreenImg.value = event.dataUrl
+
+            // Update screenshotMap cache
+            const cacheIdx = screenshotMap.value.findIndex(s => s.objectId === full.objectId)
+            if (cacheIdx !== -1) {
+                screenshotMap.value[cacheIdx].annotatedBase64 = event.dataUrl
+                screenshotMap.value[cacheIdx].maState = event.state
+            }
+
+            screenshotEditing.value = false
+        })
+
+        markerArea.addEventListener('close', () => {
+            screenshotEditing.value = false
+        })
+
+        markerArea.show()
+
+        // Restore previous marker state
+        if (full.maState) {
+            markerArea.restoreState(full.maState)
+        }
+    }
+
+    // Wait for image to fully load before starting marker
+    if (imgEl.complete && imgEl.naturalWidth > 0) {
+        startMarker()
+    } else {
+        imgEl.onload = () => startMarker()
+    }
+}
+
+// --- Screenshot Upload / Remove ---
+async function handleEntryScreenshotUpload(event, entry) {
+    const file = event.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+        const base64 = reader.result
+        const screenshot = await dbCreate('screenshots', {
+            name: entry.tradeId + '_entry',
+            symbol: entry.symbol || '',
+            side: entry.side || '',
+            broker: selectedBroker.value || 'bitunix',
+            originalBase64: base64,
+            annotatedBase64: base64,
+            markersOnly: true,
+            maState: {},
+            dateUnix: entry.dateUnix,
+            dateUnixDay: entry.dateUnix
+        })
+        entry.screenshotId = screenshot.objectId
+        entryScreenshotPreviews.value[entry.tradeId] = base64
+        // Add to screenshotMap cache
+        screenshotMap.value.push(screenshot)
+    }
+    reader.readAsDataURL(file)
+}
+
+async function removeEntryScreenshot(entry) {
+    if (entry.screenshotId) {
+        entry.screenshotId = ''
+        delete entryScreenshotPreviews.value[entry.tradeId]
+    }
+}
+
+async function handleClosingScreenshotUpload(event, entry) {
+    const file = event.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+        const base64 = reader.result
+        const screenshot = await dbCreate('screenshots', {
+            name: entry.tradeId + '_closing',
+            symbol: entry.symbol || '',
+            side: entry.side || '',
+            broker: selectedBroker.value || 'bitunix',
+            originalBase64: base64,
+            annotatedBase64: base64,
+            markersOnly: true,
+            maState: {},
+            dateUnix: entry.dateUnix,
+            dateUnixDay: entry.dateUnix
+        })
+        entry.closingScreenshotId = screenshot.objectId
+        closingScreenshotPreviews.value[entry.tradeId] = base64
+        screenshotMap.value.push(screenshot)
+    }
+    reader.readAsDataURL(file)
+}
+
+async function removeClosingScreenshot(entry) {
+    if (entry.closingScreenshotId) {
+        entry.closingScreenshotId = ''
+        delete closingScreenshotPreviews.value[entry.tradeId]
+    }
 }
 
 // --- Strip HTML ---
@@ -547,6 +732,7 @@ async function saveEntry(entry) {
             feelings: entry.feelings || '',
             playbook: entry.playbook || '',
             timeframe: entry.timeframe || '',
+            screenshotId: entry.screenshotId || '',
             // Closing fields
             closingNote: entry.closingNote || '',
             closingStressLevel: entry.closingStressLevel || 0,
@@ -554,6 +740,7 @@ async function saveEntry(entry) {
             closingFeelings: entry.closingFeelings || '',
             closingTimeframe: entry.closingTimeframe || '',
             closingPlaybook: entry.closingPlaybook || '',
+            closingScreenshotId: entry.closingScreenshotId || '',
         })
 
         if (entry.satisfactionObjectId) {
@@ -673,7 +860,10 @@ async function saveEntry(entry) {
                             <i class="uil uil-unlock-alt me-2" style="color: var(--green-color, #10b981); font-size: 1rem;"></i>
                             <span class="fw-bold small">Eröffnungsbewertung</span>
                             <!-- Entry Screenshot inline -->
-                            <div v-if="getEntryScreenshot(entry)" class="ms-auto">
+                            <div v-if="getEntryScreenshot(entry)" class="ms-auto d-flex align-items-center gap-1">
+                                <i class="uil uil-image-edit pointerClass text-muted"
+                                    @click.stop="openAndEdit(getEntryScreenshot(entry))"
+                                    title="Screenshot bearbeiten" style="font-size: 1.1rem;"></i>
                                 <img :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
                                     class="pb-thumbnail-sm pointerClass"
                                     @click.stop="openFullscreen(getEntryScreenshot(entry))"
@@ -746,7 +936,10 @@ async function saveEntry(entry) {
                             <i class="uil uil-lock-alt me-2" style="color: var(--blue-color, #3b82f6); font-size: 1rem;"></i>
                             <span class="fw-bold small">Abschlussbewertung</span>
                             <!-- Closing Screenshot inline -->
-                            <div v-if="getClosingScreenshot(entry)" class="ms-auto">
+                            <div v-if="getClosingScreenshot(entry)" class="ms-auto d-flex align-items-center gap-1">
+                                <i class="uil uil-image-edit pointerClass text-muted"
+                                    @click.stop="openAndEdit(getClosingScreenshot(entry))"
+                                    title="Screenshot bearbeiten" style="font-size: 1.1rem;"></i>
                                 <img :src="getClosingScreenshot(entry).annotatedBase64 || getClosingScreenshot(entry).originalBase64"
                                     class="pb-thumbnail-sm pointerClass"
                                     @click.stop="openFullscreen(getClosingScreenshot(entry))"
@@ -897,6 +1090,34 @@ async function saveEntry(entry) {
                         <div :id="'quillPlaybook-' + entry.tradeId + '-opening'" class="quill-incoming"></div>
                     </div>
 
+                    <!-- Eröffnungs-Screenshot -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">Screenshot</label>
+                        <div v-if="entry.screenshotId || getEntryScreenshot(entry)">
+                            <div class="d-flex align-items-center gap-2">
+                                <img v-if="entryScreenshotPreviews[entry.tradeId]"
+                                    :src="entryScreenshotPreviews[entry.tradeId]"
+                                    class="img-fluid rounded mb-1" style="max-height: 200px;" />
+                                <img v-else-if="getEntryScreenshot(entry)"
+                                    :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
+                                    class="img-fluid rounded mb-1" style="max-height: 200px;"
+                                    @click.stop="openFullscreen(getEntryScreenshot(entry))" />
+                                <span v-else class="badge bg-success">Screenshot verknüpft</span>
+                            </div>
+                            <div class="d-flex gap-2 mt-1">
+                                <button v-if="getEntryScreenshot(entry)" class="btn btn-sm btn-outline-light"
+                                    @click.stop="openAndEdit(getEntryScreenshot(entry))" title="Bearbeiten">
+                                    <i class="uil uil-image-edit me-1"></i>Bearbeiten
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" @click.stop="removeEntryScreenshot(entry)">
+                                    <i class="uil uil-times me-1"></i>Entfernen
+                                </button>
+                            </div>
+                        </div>
+                        <input v-else type="file" accept="image/*" class="form-control form-control-sm"
+                            @change="handleEntryScreenshotUpload($event, entry)" />
+                    </div>
+
                     <!-- ===== ABSCHLUSSBEWERTUNG (Edit) ===== -->
                     </div><!-- /opening-eval-edit -->
 
@@ -934,6 +1155,34 @@ async function saveEntry(entry) {
                         <div class="pb-edit-section">
                             <label class="pb-edit-label">Notiz</label>
                             <div :id="'quillPlaybook-' + entry.tradeId + '-closing'" class="quill-incoming"></div>
+                        </div>
+
+                        <!-- Abschluss-Screenshot -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">Screenshot</label>
+                            <div v-if="entry.closingScreenshotId || getClosingScreenshot(entry)">
+                                <div class="d-flex align-items-center gap-2">
+                                    <img v-if="closingScreenshotPreviews[entry.tradeId]"
+                                        :src="closingScreenshotPreviews[entry.tradeId]"
+                                        class="img-fluid rounded mb-1" style="max-height: 200px;" />
+                                    <img v-else-if="getClosingScreenshot(entry)"
+                                        :src="getClosingScreenshot(entry).annotatedBase64 || getClosingScreenshot(entry).originalBase64"
+                                        class="img-fluid rounded mb-1" style="max-height: 200px;"
+                                        @click.stop="openFullscreen(getClosingScreenshot(entry))" />
+                                    <span v-else class="badge bg-success">Screenshot verknüpft</span>
+                                </div>
+                                <div class="d-flex gap-2 mt-1">
+                                    <button v-if="getClosingScreenshot(entry)" class="btn btn-sm btn-outline-light"
+                                        @click.stop="openAndEdit(getClosingScreenshot(entry))" title="Bearbeiten">
+                                        <i class="uil uil-image-edit me-1"></i>Bearbeiten
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" @click.stop="removeClosingScreenshot(entry)">
+                                        <i class="uil uil-times me-1"></i>Entfernen
+                                    </button>
+                                </div>
+                            </div>
+                            <input v-else type="file" accept="image/*" class="form-control form-control-sm"
+                                @change="handleClosingScreenshotUpload($event, entry)" />
                         </div>
 
                         <!-- Zufriedenheit -->
@@ -982,8 +1231,20 @@ async function saveEntry(entry) {
 
         <!-- Fullscreen screenshot overlay -->
         <div v-if="fullscreenImg" class="pb-fullscreen-overlay" @click="closeFullscreen">
-            <img :src="fullscreenImg" class="pb-fullscreen-img" />
-            <span class="pb-fullscreen-close">&times;</span>
+            <img id="pb-fullscreen-marker-img"
+                :src="fullscreenImg" class="pb-fullscreen-img" @click.stop />
+            <div class="pb-fullscreen-toolbar" @click.stop>
+                <button v-if="fullscreenScreenshot && fullscreenScreenshot.objectId"
+                    class="btn btn-sm btn-outline-light me-2"
+                    @click="editScreenshot(fullscreenScreenshot)"
+                    :disabled="screenshotEditing"
+                    title="Screenshot bearbeiten">
+                    <i class="uil uil-image-edit me-1"></i>Bearbeiten
+                </button>
+                <button class="btn btn-sm btn-outline-light" @click="closeFullscreen" title="Schließen">
+                    <i class="uil uil-times"></i>
+                </button>
+            </div>
         </div>
     </div>
 </template>
@@ -1019,5 +1280,13 @@ async function saveEntry(entry) {
     object-fit: cover;
     border-radius: 4px;
     border: 1px solid var(--white-10, rgba(255,255,255,0.1));
+}
+.pb-fullscreen-toolbar {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
 }
 </style>

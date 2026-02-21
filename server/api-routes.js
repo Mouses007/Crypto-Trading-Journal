@@ -5,9 +5,9 @@ const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags
 
 // Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten
 const TABLE_COLUMNS = {
-    trades: ['id', 'dateUnix', 'date', 'executions', 'trades', 'blotter', 'pAndL', 'cashJournal', 'openPositions', 'video', 'createdAt', 'updatedAt'],
+    trades: ['id', 'dateUnix', 'date', 'broker', 'executions', 'trades', 'blotter', 'pAndL', 'cashJournal', 'openPositions', 'video', 'createdAt', 'updatedAt'],
     diaries: ['id', 'dateUnix', 'date', 'diary', 'createdAt', 'updatedAt'],
-    screenshots: ['id', 'name', 'symbol', 'side', 'originalBase64', 'annotatedBase64', 'original', 'annotated', 'markersOnly', 'maState', 'date', 'dateUnix', 'dateUnixDay', 'createdAt', 'updatedAt'],
+    screenshots: ['id', 'name', 'symbol', 'side', 'broker', 'originalBase64', 'annotatedBase64', 'original', 'annotated', 'markersOnly', 'maState', 'date', 'dateUnix', 'dateUnixDay', 'createdAt', 'updatedAt'],
     satisfactions: ['id', 'dateUnix', 'tradeId', 'satisfaction', 'createdAt', 'updatedAt'],
     tags: ['id', 'dateUnix', 'tradeId', 'tags', 'closingTags', 'createdAt', 'updatedAt'],
     notes: ['id', 'dateUnix', 'tradeId', 'note', 'title', 'entryStressLevel', 'exitStressLevel', 'entryNote', 'feelings', 'playbook', 'timeframe', 'screenshotId', 'emotionLevel', 'closingNote', 'closingScreenshotId', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingPlaybook', 'createdAt', 'updatedAt'],

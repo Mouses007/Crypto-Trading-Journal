@@ -402,6 +402,23 @@ input:checked+.slider:before {
 .sideMenu {
     background-color: var(--black-bg-5);
     box-shadow: 2px 0 12px rgba(0, 0, 0, 0.3);
+    overflow-y: auto;
+    position: sticky;
+    top: 0;
+    max-height: 100vh;
+}
+
+.sideMenu::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sideMenu::-webkit-scrollbar-thumb {
+    background-color: var(--white-38);
+    border-radius: 2px;
+}
+
+.sideMenu::-webkit-scrollbar-track {
+    background-color: transparent;
 }
 
 .sideMenuMobile {
@@ -412,6 +429,8 @@ input:checked+.slider:before {
     width: 230px;
     margin-left: -500px;
     -webkit-transition: 0.5s;
+    overflow-y: auto;
+    max-height: 100vh;
 }
 
 .toggleSideMenu {
@@ -436,7 +455,12 @@ input:checked+.slider:before {
 
 .sideMenuDiv {
     border-bottom: 1px solid var(--white-18);
-    padding-bottom: 0.25rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
+
+.sideMenuDiv:first-child {
+    padding-top: 0;
 }
 
 .sideMenuDiv:last-child {
@@ -460,8 +484,8 @@ input:checked+.slider:before {
 
 .logoDiv {
     width: 100%;
-    margin-bottom: 0.5rem;
-    padding: 1rem 0.75rem 0.75rem;
+    margin-bottom: 2.69rem;
+    padding: 0.75rem 0.75rem 0.75rem;
     border-bottom: 1px solid var(--white-18);
 }
 
@@ -477,17 +501,21 @@ input:checked+.slider:before {
 .logo-text {
     display: flex;
     flex-direction: column;
-    line-height: 1.3;
+    flex: 1;
+    line-height: 1.05;
+    text-align: center;
 }
 
 .logo-title {
-    font-size: 1.6rem;
-    font-weight: 700;
+    font-family: 'Bebas Neue', Impact, 'Arial Narrow', sans-serif;
+    font-size: 1.55rem;
+    font-weight: 400;
     color: var(--white-87);
+    letter-spacing: 0.06em;
 }
 
 .logo-username {
-    font-size: 1rem;
+    font-size: 0.85rem;
     color: var(--white-60);
     margin-top: 2px;
 }
@@ -498,7 +526,7 @@ input:checked+.slider:before {
     letter-spacing: 0.08em;
     color: var(--white-38);
     padding-left: 0.75rem;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.5rem;
 }
 
 img.navbar-brand {
@@ -850,12 +878,20 @@ img.logo {
     background-color: var(--black-bg-0) !important;
     color: var(--white-87);
     height: 63px;
-    margin-top: 46px;
+    margin-top: 42px;
     box-shadow: none;
 }
 
 #navbarDropdown {
     color: var(--white-87);
+}
+
+.nav-filter-info {
+    font-size: 0.72rem;
+    color: var(--white-38);
+    font-weight: 400;
+    margin-left: 0.75rem;
+    letter-spacing: 0.02em;
 }
 
 .nav-link {

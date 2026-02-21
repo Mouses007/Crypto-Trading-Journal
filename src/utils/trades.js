@@ -5,6 +5,7 @@ import { useDateTimeFormat } from "./formatters.js";
 /* useRefreshTrades moved to mountOrchestration.js */
 import { useCreateBlotter, useCreatePnL } from "./addTrades.js"
 import { dbFind, dbFirst, dbDelete, dbDeleteWhere } from './db.js'
+import axios from 'axios'
 
 /* MODULES */
 import dayjs from './dayjs-setup.js'
@@ -1274,8 +1275,18 @@ export const useDeleteTrade = async () => {
         })
 
         if (existing) {
+            const broker = existing.broker || 'bitunix'
             await dbDelete("trades", existing.objectId)
-            console.log('  --> Deleted trade with id ' + existing.objectId)
+            console.log('  --> Deleted trade with id ' + existing.objectId + ' (broker: ' + broker + ')')
+
+            // Reset lastApiImport so deleted trades can be re-imported
+            try {
+                await axios.post(`/api/${broker}/last-import`, { timestamp: 0 })
+                console.log(`  --> Reset ${broker} lastApiImport for re-import`)
+            } catch (e) {
+                console.log('  --> Could not reset lastApiImport:', e.message)
+            }
+
             useGetTrades("imports")
             resolve()
         } else {

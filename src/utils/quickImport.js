@@ -12,8 +12,8 @@ import { logWarn } from './logger.js'
  * Works for both Bitunix and Bitget based on selectedBroker.
  * Returns { success, message, count }
  */
-export async function useQuickApiImport() {
-    const broker = selectedBroker.value || 'bitunix'
+export async function useQuickApiImport(explicitBroker) {
+    const broker = explicitBroker || selectedBroker.value || 'bitunix'
     console.log(` -> Starting quick API import for ${broker}`)
 
     // 1. Call server endpoint that fetches positions and updates lastApiImport
@@ -28,8 +28,8 @@ export async function useQuickApiImport() {
         return { success: true, message: 'Keine neuen Positionen gefunden.', count: 0 }
     }
 
-    // 2. Get existing trade dates to filter duplicates
-    const existingTrades = await dbFind('trades', { descending: 'dateUnix', limit: 10000 })
+    // 2. Get existing trade dates to filter duplicates (only for same broker!)
+    const existingTrades = await dbFind('trades', { equalTo: { broker }, descending: 'dateUnix', limit: 10000 })
     const existingDates = existingTrades.map(t => t.dateUnix)
 
     // 3. Convert positions to trade objects grouped by day
@@ -116,6 +116,7 @@ export async function useQuickApiImport() {
         await dbCreate('trades', {
             date: dayjs.unix(dateUnix).format('YYYY-MM-DD'),
             dateUnix: Number(dateUnix),
+            broker: broker,
             executions: dayExecutions,
             trades: dayTrades,
             blotter: blotter,

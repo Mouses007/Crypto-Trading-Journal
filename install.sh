@@ -136,15 +136,9 @@ echo -e "  ${GRAY}════════════════════�
 echo ""
 
 # ══════════════════════════════════════════
-#  Pflicht-Komponenten fehlen?
+#  Pflicht-Komponenten fehlen? → Auto-Installation anbieten
 # ══════════════════════════════════════════
 if [ "$MANDATORY_MISSING" = "1" ]; then
-    echo -e "  ${RED}${BOLD}Fehlende Pflicht-Komponenten!${RESET}"
-    echo -e "  ${RED}Die Installation kann nicht fortgesetzt werden.${RESET}"
-    echo ""
-    echo -e "  ${BOLD}Bitte installiere folgende Komponenten:${RESET}"
-    echo ""
-
     # Distro erkennen fuer passende Installationsbefehle
     DISTRO="unknown"
     if [ -f /etc/os-release ]; then
@@ -156,52 +150,188 @@ if [ "$MANDATORY_MISSING" = "1" ]; then
         esac
     fi
 
+    NEED_NODE=0
+    NEED_PYTHON=0
+    NEED_BUILD=0
+
     if ! command -v node &>/dev/null || [ "${NODE_MAJOR:-0}" -lt 20 ]; then
-        echo -e "  ${CYAN}Node.js 20+:${RESET}"
-        case "$DISTRO" in
-            debian)
-                echo "     curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
-                echo "     sudo apt-get install -y nodejs"
-                ;;
-            fedora)
-                echo "     curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -"
-                echo "     sudo dnf install -y nodejs"
-                ;;
-            arch)
-                echo "     sudo pacman -S nodejs npm"
-                ;;
-            *)
-                echo "     https://nodejs.org/ (LTS-Version herunterladen)"
-                ;;
-        esac
-        echo ""
+        NEED_NODE=1
     fi
-
     if [ "$PY_OK" = "0" ]; then
-        echo -e "  ${CYAN}Python 3:${RESET}"
-        case "$DISTRO" in
-            debian) echo "     sudo apt-get install -y python3" ;;
-            fedora) echo "     sudo dnf install -y python3" ;;
-            arch)   echo "     sudo pacman -S python" ;;
-            *)      echo "     https://www.python.org/downloads/" ;;
-        esac
-        echo ""
+        NEED_PYTHON=1
     fi
-
     if [ "$BUILD_OK" = "0" ]; then
-        echo -e "  ${CYAN}Build-Tools (gcc, make):${RESET}"
-        case "$DISTRO" in
-            debian) echo "     sudo apt-get install -y build-essential" ;;
-            fedora) echo "     sudo dnf groupinstall -y 'Development Tools'" ;;
-            arch)   echo "     sudo pacman -S base-devel" ;;
-            *)      echo "     Installiere gcc und make ueber deinen Paketmanager" ;;
-        esac
-        echo ""
+        NEED_BUILD=1
     fi
 
-    echo -e "  ${GRAY}Nach der Installation dieses Script erneut starten.${RESET}"
+    # Pruefen ob automatische Installation moeglich ist
+    if [ "$DISTRO" = "unknown" ]; then
+        echo -e "  ${RED}${BOLD}Fehlende Pflicht-Komponenten!${RESET}"
+        echo -e "  ${RED}Deine Linux-Distribution wurde nicht erkannt.${RESET}"
+        echo -e "  ${RED}Bitte installiere die fehlenden Pakete manuell:${RESET}"
+        echo ""
+        [ "$NEED_NODE" = "1" ] && echo -e "  ${CYAN}- Node.js 20+${RESET}  →  https://nodejs.org/"
+        [ "$NEED_PYTHON" = "1" ] && echo -e "  ${CYAN}- Python 3${RESET}"
+        [ "$NEED_BUILD" = "1" ] && echo -e "  ${CYAN}- Build-Tools (gcc, make)${RESET}"
+        echo ""
+        echo -e "  ${GRAY}Danach dieses Script erneut starten.${RESET}"
+        echo ""
+        exit 1
+    fi
+
+    # Fehlende Pakete auflisten
+    echo -e "  ${YELLOW}${BOLD}Fehlende Pflicht-Komponenten gefunden:${RESET}"
     echo ""
-    exit 1
+    [ "$NEED_NODE" = "1" ] && echo -e "    ${CYAN}•${RESET} Node.js 20+"
+    [ "$NEED_PYTHON" = "1" ] && echo -e "    ${CYAN}•${RESET} Python 3"
+    [ "$NEED_BUILD" = "1" ] && echo -e "    ${CYAN}•${RESET} Build-Tools (gcc, make)"
+    echo ""
+
+    echo -en "  ${BOLD}Sollen die fehlenden Pakete jetzt automatisch installiert werden? [J/n]:${RESET} "
+    read -r ANSWER
+    echo ""
+
+    # Standard ist Ja (Enter = Ja)
+    if [ -z "$ANSWER" ] || echo "$ANSWER" | grep -iq "^[jy]"; then
+
+        echo -e "  ${BOLD}Installiere fehlende Pakete...${RESET}"
+        echo ""
+
+        # ── Build-Tools ──
+        if [ "$NEED_BUILD" = "1" ]; then
+            echo -e "  ${CYAN}→ Installiere Build-Tools...${RESET}"
+            case "$DISTRO" in
+                debian) sudo apt-get update -qq && sudo apt-get install -y build-essential ;;
+                fedora) sudo dnf groupinstall -y 'Development Tools' ;;
+                arch)   sudo pacman -S --noconfirm base-devel ;;
+            esac
+            echo ""
+        fi
+
+        # ── Python 3 ──
+        if [ "$NEED_PYTHON" = "1" ]; then
+            echo -e "  ${CYAN}→ Installiere Python 3...${RESET}"
+            case "$DISTRO" in
+                debian) sudo apt-get install -y python3 ;;
+                fedora) sudo dnf install -y python3 ;;
+                arch)   sudo pacman -S --noconfirm python ;;
+            esac
+            echo ""
+        fi
+
+        # ── Node.js 20+ ──
+        if [ "$NEED_NODE" = "1" ]; then
+            echo -e "  ${CYAN}→ Installiere Node.js 20+...${RESET}"
+            case "$DISTRO" in
+                debian)
+                    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                    sudo apt-get install -y nodejs
+                    ;;
+                fedora)
+                    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+                    sudo dnf install -y nodejs
+                    ;;
+                arch)
+                    sudo pacman -S --noconfirm nodejs npm
+                    ;;
+            esac
+            echo ""
+        fi
+
+        # ── Ergebnis pruefen ──
+        echo ""
+        echo -e "  ${GRAY}Pruefe Installation...${RESET}"
+        echo ""
+
+        STILL_MISSING=0
+
+        if command -v node &>/dev/null; then
+            NEW_NODE_VER=$(node -v)
+            NEW_NODE_MAJOR=$(echo "$NEW_NODE_VER" | sed 's/v//' | cut -d. -f1)
+            if [ "$NEW_NODE_MAJOR" -ge 20 ]; then
+                echo -e "  ${GREEN}[OK]${RESET}  Node.js            ${NEW_NODE_VER}"
+            else
+                echo -e "  ${RED}[!!]${RESET}  Node.js            ${NEW_NODE_VER} ${RED}(immer noch < 20)${RESET}"
+                STILL_MISSING=1
+            fi
+        else
+            echo -e "  ${RED}[!!]${RESET}  Node.js            ${RED}Installation fehlgeschlagen${RESET}"
+            STILL_MISSING=1
+        fi
+
+        if command -v python3 &>/dev/null; then
+            echo -e "  ${GREEN}[OK]${RESET}  Python 3           $(python3 --version 2>&1 | awk '{print $2}')"
+        elif [ "$NEED_PYTHON" = "1" ]; then
+            echo -e "  ${RED}[!!]${RESET}  Python 3           ${RED}Installation fehlgeschlagen${RESET}"
+            STILL_MISSING=1
+        fi
+
+        if command -v gcc &>/dev/null && command -v make &>/dev/null; then
+            echo -e "  ${GREEN}[OK]${RESET}  Build-Tools        gcc + make gefunden"
+        elif [ "$NEED_BUILD" = "1" ]; then
+            echo -e "  ${RED}[!!]${RESET}  Build-Tools        ${RED}Installation fehlgeschlagen${RESET}"
+            STILL_MISSING=1
+        fi
+
+        echo ""
+
+        if [ "$STILL_MISSING" = "1" ]; then
+            echo -e "  ${RED}Einige Pakete konnten nicht installiert werden.${RESET}"
+            echo -e "  ${GRAY}Bitte manuell installieren und dieses Script erneut starten.${RESET}"
+            echo ""
+            exit 1
+        fi
+
+        echo -e "  ${GREEN}Alle Pakete erfolgreich installiert!${RESET}"
+        echo ""
+
+    else
+        # Benutzer will nicht automatisch installieren → manuelle Befehle zeigen
+        echo -e "  ${BOLD}Bitte installiere die Pakete manuell:${RESET}"
+        echo ""
+
+        if [ "$NEED_NODE" = "1" ]; then
+            echo -e "  ${CYAN}Node.js 20+:${RESET}"
+            case "$DISTRO" in
+                debian)
+                    echo "     curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
+                    echo "     sudo apt-get install -y nodejs"
+                    ;;
+                fedora)
+                    echo "     curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -"
+                    echo "     sudo dnf install -y nodejs"
+                    ;;
+                arch)
+                    echo "     sudo pacman -S nodejs npm"
+                    ;;
+            esac
+            echo ""
+        fi
+
+        if [ "$NEED_PYTHON" = "1" ]; then
+            echo -e "  ${CYAN}Python 3:${RESET}"
+            case "$DISTRO" in
+                debian) echo "     sudo apt-get install -y python3" ;;
+                fedora) echo "     sudo dnf install -y python3" ;;
+                arch)   echo "     sudo pacman -S python" ;;
+            esac
+            echo ""
+        fi
+
+        if [ "$NEED_BUILD" = "1" ]; then
+            echo -e "  ${CYAN}Build-Tools (gcc, make):${RESET}"
+            case "$DISTRO" in
+                debian) echo "     sudo apt-get install -y build-essential" ;;
+                fedora) echo "     sudo dnf groupinstall -y 'Development Tools'" ;;
+                arch)   echo "     sudo pacman -S base-devel" ;;
+            esac
+            echo ""
+        fi
+
+        echo -e "  ${GRAY}Danach dieses Script erneut starten.${RESET}"
+        echo ""
+        exit 1
+    fi
 fi
 
 # ══════════════════════════════════════════

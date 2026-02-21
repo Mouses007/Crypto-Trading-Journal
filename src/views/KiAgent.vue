@@ -31,6 +31,9 @@ const savedReports = reactive([])
 const expandedReports = reactive(new Set())
 const deleteConfirmId = ref(null)
 
+// Screenshot-Review Token-Daten (für Kostenberechnung)
+const screenshotReviewTokens = reactive([]) // [{ provider, model, promptTokens, completionTokens, totalTokens }]
+
 // Chat
 const chatEnabled = ref(true)
 const chatMessages = reactive({}) // { reportId: [{ id, role, content, createdAt }] }
@@ -38,7 +41,7 @@ const chatInput = reactive({}) // { reportId: 'text' }
 const chatLoading = reactive({}) // { reportId: true/false }
 const chatError = reactive({}) // { reportId: 'error msg' }
 
-// Token-Verbrauch pro Provider
+// Token-Verbrauch pro Provider (Reports + Screenshot-Reviews)
 const tokensByProvider = computed(() => {
     const result = {}
     for (const r of savedReports) {
@@ -47,7 +50,104 @@ const tokensByProvider = computed(() => {
             result[p] = (result[p] || 0) + (r.totalTokens || 0)
         }
     }
+    // Screenshot-Reviews dazurechnen
+    for (const sr of screenshotReviewTokens) {
+        const p = sr.provider || 'unknown'
+        if (sr.totalTokens > 0) {
+            result[p] = (result[p] || 0) + (sr.totalTokens || 0)
+        }
+    }
     return result
+})
+
+// Geschätzte Kosten pro Provider (basierend auf bekannten Preisen pro 1M Tokens)
+// Preise in USD pro 1M Tokens: [input, output]
+const MODEL_PRICES = {
+    // OpenAI
+    'gpt-4o':           [2.50, 10.00],
+    'gpt-4o-mini':      [0.15, 0.60],
+    'gpt-4-turbo':      [10.00, 30.00],
+    'gpt-4':            [30.00, 60.00],
+    'gpt-3.5-turbo':    [0.50, 1.50],
+    'o1':               [15.00, 60.00],
+    'o1-mini':          [3.00, 12.00],
+    'o3-mini':          [1.10, 4.40],
+    // Anthropic
+    'claude-sonnet-4-5': [3.00, 15.00],
+    'claude-opus-4':     [15.00, 75.00],
+    'claude-haiku-3-5':  [0.80, 4.00],
+    'claude-3-5-sonnet': [3.00, 15.00],
+    'claude-3-haiku':    [0.25, 1.25],
+    'claude-3-opus':     [15.00, 75.00],
+    // Gemini
+    'gemini-2.0-flash':  [0.10, 0.40],
+    'gemini-1.5-flash':  [0.075, 0.30],
+    'gemini-1.5-pro':    [1.25, 5.00],
+    'gemini-2.0-pro':    [1.25, 10.00],
+    // DeepSeek
+    'deepseek-chat':     [0.14, 0.28],
+    'deepseek-reasoner': [0.55, 2.19],
+}
+
+// Preis für ein Modell finden (fuzzy match)
+function getModelPrice(model) {
+    if (!model) return null
+    const m = model.toLowerCase()
+    // Exakter Match
+    for (const [key, price] of Object.entries(MODEL_PRICES)) {
+        if (m === key || m.startsWith(key)) return price
+    }
+    // Teilmatch (z.B. "claude-sonnet-4-5-20250929" → "claude-sonnet-4-5")
+    for (const [key, price] of Object.entries(MODEL_PRICES)) {
+        if (m.includes(key)) return price
+    }
+    return null
+}
+
+// Gesamtkosten berechnen (Reports + Chat + Screenshot-Reviews)
+const estimatedCostByProvider = computed(() => {
+    const result = {}
+    // 1. Berichte
+    for (const r of savedReports) {
+        const p = r.provider || 'unknown'
+        const price = getModelPrice(r.model)
+        if (price && r.totalTokens > 0) {
+            const inputCost = (r.promptTokens || 0) / 1_000_000 * price[0]
+            const outputCost = (r.completionTokens || 0) / 1_000_000 * price[1]
+            result[p] = (result[p] || 0) + inputCost + outputCost
+        }
+    }
+    // 2. Chat-Nachrichten
+    for (const reportId in chatMessages) {
+        const msgs = chatMessages[reportId] || []
+        for (const msg of msgs) {
+            if (msg.totalTokens > 0 && msg.role === 'assistant') {
+                const p = msg.provider || aiProvider.value
+                const price = getModelPrice(msg.model || aiModel.value)
+                if (price) {
+                    const inputCost = (msg.promptTokens || 0) / 1_000_000 * price[0]
+                    const outputCost = (msg.completionTokens || 0) / 1_000_000 * price[1]
+                    result[p] = (result[p] || 0) + inputCost + outputCost
+                }
+            }
+        }
+    }
+    // 3. Screenshot-Reviews
+    for (const sr of screenshotReviewTokens) {
+        const p = sr.provider || 'unknown'
+        const price = getModelPrice(sr.model)
+        if (price && sr.totalTokens > 0) {
+            const inputCost = (sr.promptTokens || 0) / 1_000_000 * price[0]
+            const outputCost = (sr.completionTokens || 0) / 1_000_000 * price[1]
+            result[p] = (result[p] || 0) + inputCost + outputCost
+        }
+    }
+    return result
+})
+
+// Gesamtkosten aller Provider
+const totalEstimatedCost = computed(() => {
+    return Object.values(estimatedCostByProvider.value).reduce((sum, c) => sum + c, 0)
 })
 
 const providerColors = { ollama: '#6c757d', openai: '#10a37f', anthropic: '#7c5cfc', gemini: '#4285f4', deepseek: '#0066ff' }
@@ -132,6 +232,16 @@ async function loadReports() {
         savedReports.splice(0, savedReports.length, ...res.data)
     } catch (e) {
         logError('ki-agent', 'Fehler beim Laden der Berichte', e)
+    }
+}
+
+// Screenshot-Review Token-Daten laden
+async function loadScreenshotReviewTokens() {
+    try {
+        const res = await axios.get('/api/ai/screenshot-review-tokens')
+        screenshotReviewTokens.splice(0, screenshotReviewTokens.length, ...res.data)
+    } catch (e) {
+        // Nicht kritisch — einfach leer lassen
     }
 }
 
@@ -290,7 +400,7 @@ function markdownToHtml(md) {
 onBeforeMount(async () => {
     spinnerLoadingPage.value = false
     await Promise.all([checkStatus(), loadChatSetting()])
-    await loadReports()
+    await Promise.all([loadReports(), loadScreenshotReviewTokens()])
 })
 </script>
 
@@ -307,6 +417,10 @@ onBeforeMount(async () => {
                 <div class="d-flex align-items-center gap-2">
                     <span class="text-muted small">
                         <i class="uil uil-processor me-1"></i>{{ (tokensByProvider[aiProvider] || 0).toLocaleString() }} Tokens
+                    </span>
+                    <span v-if="totalEstimatedCost > 0" class="ki-cost-badge" :title="'Geschätzte Kosten aller Provider: ~$' + totalEstimatedCost.toFixed(4)">
+                        <i class="uil uil-dollar-sign"></i>~{{ totalEstimatedCost < 0.01 ? totalEstimatedCost.toFixed(4) : totalEstimatedCost.toFixed(2) }}
+                        <span class="ki-cost-hint">geschätzt</span>
                     </span>
                     <span class="badge" :class="aiOnline ? 'bg-success' : 'bg-danger'">
                         {{ aiOnline ? modelLabel + ' Online' : providerLabel + ' Offline' }}
@@ -520,6 +634,26 @@ onBeforeMount(async () => {
 </template>
 
 <style scoped>
+/* Kosten-Badge */
+.ki-cost-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 4px;
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+    cursor: default;
+}
+
+.ki-cost-hint {
+    font-size: 0.6rem;
+    opacity: 0.6;
+    font-style: italic;
+}
+
 .report-content :deep(h3) {
     color: var(--white-87);
     font-size: 1.1rem;

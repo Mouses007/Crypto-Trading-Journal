@@ -216,16 +216,6 @@ export async function useGetPeriods() {
             start: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'week').startOf('week').add(1, 'day').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).endOf('week').add(1, 'day').unix())
         }, {
-            value: "lastTwoWeeks",
-            label: "Letzte zwei Wochen",
-            start: Number(dayjs().tz(timeZoneTrade.value).subtract(2, 'week').startOf('week').add(1, 'day').unix()),
-            end: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'week').endOf('week').add(1, 'day').unix())
-        }, {
-            value: "lastTwoWeeksTilNow",
-            label: "Letzte zwei Wochen bis jetzt",
-            start: Number(dayjs().tz(timeZoneTrade.value).subtract(2, 'week').startOf('week').add(1, 'day').unix()),
-            end: Number(dayjs().tz(timeZoneTrade.value).endOf('week').add(1, 'day').unix())
-        }, {
             value: "thisMonth",
             label: "Dieser Monat",
             start: Number(dayjs().tz(timeZoneTrade.value).startOf('month').unix()),
@@ -239,16 +229,6 @@ export async function useGetPeriods() {
             value: "lastMonthTilNow",
             label: "Letzter Monat bis jetzt",
             start: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'month').startOf('month').unix()),
-            end: Number(dayjs().tz(timeZoneTrade.value).endOf('month').unix())
-        }, {
-            value: "lastTwoMonths",
-            label: "Letzte zwei Monate",
-            start: Number(dayjs().tz(timeZoneTrade.value).subtract(2, 'month').startOf('month').unix()),
-            end: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'month').endOf('month').unix())
-        }, {
-            value: "lastTwoMonthsTilNow",
-            label: "Letzte zwei Monate bis jetzt",
-            start: Number(dayjs().tz(timeZoneTrade.value).subtract(2, 'month').startOf('month').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).endOf('month').unix())
         }, {
             value: "lastThreeMonths",

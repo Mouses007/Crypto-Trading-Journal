@@ -387,8 +387,7 @@ async function renderCharts() {
 
     // Gauges
     useGaugeChart('gaugeChart1', longShortRatio.value, 'Long-Anteil', [
-        [0.3, 'rgba(235, 87, 87, 0.85)'],
-        [0.7, 'rgba(255, 193, 7, 0.85)'],
+        [0.5, 'rgba(235, 87, 87, 0.85)'],
         [1, 'rgba(72, 199, 142, 0.85)']
     ])
     useGaugeChart('gaugeChart2', satisfactionRate.value, 'Zufrieden', [

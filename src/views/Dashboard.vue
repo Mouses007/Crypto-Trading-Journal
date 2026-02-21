@@ -1,11 +1,11 @@
 <script setup>
 import { computed, onBeforeMount, ref } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
-import Filters from '../components/Filters.vue'
 import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMounted, hasData, barChartNegativeTagGroups, timeZoneTrade } from '../stores/ui.js'
 import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBroker } from '../stores/filters.js'
 import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
+import { dbFind } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
 import { useThousandCurrencyFormat, useTwoDecCurrencyFormat, useXDecCurrencyFormat, useThousandFormat, useXDecFormat } from '../utils/formatters.js';
 import { useMountDashboard } from '../utils/mountOrchestration.js';
@@ -84,19 +84,33 @@ const todayStats = computed(() => {
     return { total, wins, losses, pnl }
 })
 
+// All-time net P&L for selected broker (loaded on mount, independent of date filter)
+const allTimeNetPnL = ref(0)
+
+async function loadAllTimeNetPnL() {
+    const broker = selectedBroker.value || 'bitunix'
+    const allTrades = await dbFind('trades', { equalTo: { broker }, limit: 100000 })
+    let totalNet = 0
+    for (const day of allTrades) {
+        if (day.pAndL && typeof day.pAndL === 'object') {
+            totalNet += day.pAndL.netProceeds || 0
+        }
+    }
+    allTimeNetPnL.value = totalNet
+}
+
 const accountBalance = computed(() => {
     const broker = selectedBroker.value || 'bitunix'
     const balances = currentUser.value?.balances || {}
-    let start, current
+    let start = 0
     if (balances[broker]) {
         start = balances[broker].start || 0
-        current = balances[broker].current || 0
     } else {
-        // Fallback to legacy fields
         start = currentUser.value?.startBalance || 0
-        current = currentUser.value?.currentBalance || 0
     }
-    if (!start && !current) return null
+    if (!start) return null
+    // Current balance = start deposit + all-time net P&L (fees included)
+    const current = start + allTimeNetPnL.value
     const pnl = current - start
     const perf = start > 0 ? ((current / start) - 1) * 100 : 0
     return { start, current, pnl, perf }
@@ -117,6 +131,7 @@ const feeStats = computed(() => {
 
 onBeforeMount(async () => {
     barChartNegativeTagGroups.length = 0
+    await loadAllTimeNetPnL()
     await useMountDashboard()
     //console.log(" availableTags "+JSON.stringify(availableTags))
     //console.log(" groups "+JSON.stringify(groups))
@@ -134,7 +149,6 @@ onBeforeMount(async () => {
     <div class="row mt-2">
 
         <div v-show="!spinnerLoadingPage">
-            <Filters />
             <div v-if="!hasData">
                 <NoData />
             </div>

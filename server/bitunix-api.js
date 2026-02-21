@@ -591,5 +591,43 @@ export function setupBitunixRoutes(app) {
         }
     })
 
+    // Get account balance from Bitunix API
+    app.get('/api/bitunix/balance', async (req, res) => {
+        try {
+            const config = await getDecryptedConfig()
+            if (!config || !config.apiKey || !config.secretKey) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            const result = await bitunixRequest('GET', '/api/v1/futures/account', config.apiKey, config.secretKey, { marginCoin: 'USDT' })
+            console.log(' -> Bitunix account raw:', JSON.stringify(result).substring(0, 500))
+
+            if (result.code !== 0) {
+                return res.status(400).json({ error: result.msg || 'Bitunix API Fehler' })
+            }
+
+            const accountData = result.data
+            if (!accountData) {
+                return res.json({ ok: true, balance: 0 })
+            }
+            // Handle both array and single object response
+            const account = Array.isArray(accountData) ? accountData[0] : accountData
+            if (!account) {
+                return res.json({ ok: true, balance: 0 })
+            }
+
+            const available = parseFloat(account.available || 0)
+            const margin = parseFloat(account.margin || 0)
+            const crossUnrealizedPNL = parseFloat(account.crossUnrealizedPNL || 0)
+            const isolationUnrealizedPNL = parseFloat(account.isolationUnrealizedPNL || 0)
+            const balance = available + margin + crossUnrealizedPNL + isolationUnrealizedPNL
+
+            res.json({ ok: true, balance, available, margin, crossUnrealizedPNL, isolationUnrealizedPNL })
+        } catch (error) {
+            console.error(' -> Bitunix balance error:', error.message)
+            res.status(500).json({ error: error.message })
+        }
+    })
+
     console.log(' -> Bitunix API routes initialized')
 }

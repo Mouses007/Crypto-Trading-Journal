@@ -433,12 +433,26 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('ai_reports', 'totalTokens', (t) => t.integer('totalTokens').defaultTo(0))
     await addColumnIfNotExists('ai_reports', 'promptPreset', (t) => t.text('promptPreset').defaultTo(''))
 
+    // ==================== SCREENSHOT BROKER ====================
+    await addColumnIfNotExists('screenshots', 'broker', (t) => t.text('broker').defaultTo(''))
+
+    // ==================== SCREENSHOT AI REVIEW ====================
+    await addColumnIfNotExists('screenshots', 'aiReview', (t) => t.text('aiReview').defaultTo(''))
+    await addColumnIfNotExists('screenshots', 'aiReviewProvider', (t) => t.text('aiReviewProvider').defaultTo(''))
+    await addColumnIfNotExists('screenshots', 'aiReviewModel', (t) => t.text('aiReviewModel').defaultTo(''))
+    await addColumnIfNotExists('screenshots', 'aiReviewPromptTokens', (t) => t.integer('aiReviewPromptTokens').defaultTo(0))
+    await addColumnIfNotExists('screenshots', 'aiReviewCompletionTokens', (t) => t.integer('aiReviewCompletionTokens').defaultTo(0))
+    await addColumnIfNotExists('screenshots', 'aiReviewTotalTokens', (t) => t.integer('aiReviewTotalTokens').defaultTo(0))
+
     // ==================== BITGET CONFIG COLUMNS ====================
     await addColumnIfNotExists('bitget_config', 'lastApiImport', (t) => t.bigInteger('lastApiImport').defaultTo(0))
     await addColumnIfNotExists('bitget_config', 'lastHistoryScan', (t) => t.bigInteger('lastHistoryScan').defaultTo(0))
 
     // ==================== INCOMING POSITIONS: BROKER COLUMN ====================
     await addColumnIfNotExists('incoming_positions', 'broker', (t) => t.text('broker').defaultTo('bitunix'))
+
+    // ==================== TRADES: BROKER COLUMN ====================
+    await addColumnIfNotExists('trades', 'broker', (t) => t.text('broker').defaultTo('bitunix'))
 
     // ==================== SETTINGS: BALANCES (per broker) ====================
     await addColumnIfNotExists('settings', 'balances', (t) => t.text('balances').defaultTo('{}'))

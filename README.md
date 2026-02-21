@@ -1,6 +1,6 @@
 # Crypto Trading Journal
 
-A local, privacy-focused trading journal for **Bitunix futures trading**. No cloud, no accounts, no Docker — just run it on your machine.
+A local, privacy-focused trading journal for **crypto futures trading** (Bitunix, Bitget). No cloud, no accounts, no Docker — just run it on your machine.
 
 > **Hinweis:** Die Benutzeroberfläche ist komplett auf **Deutsch**.
 
@@ -12,39 +12,33 @@ A local, privacy-focused trading journal for **Bitunix futures trading**. No clo
 
 ## Features
 
-- **Dashboard** with P&L analytics, win rate, profit factor, and more
+- **Dashboard** with P&L analytics, win rate, profit factor, account balance tracking, and more
+- **Multi-Broker** — Bitunix and Bitget support (CSV + API import), broker-separated data
 - **Playbook** for trade notes with stress level (1-10) and emotion level (1-10)
 - **Auswertung** (Evaluation) with tag-based strategy analysis, stress/emotion charts, and completeness radar
 - **Calendar** view of daily trading performance
-- **Diary** for daily journal entries
-- **Screenshots** with annotation support
-- **Incoming positions** — track and evaluate open trades in real-time via Bitunix API
-- **CSV and API import** from Bitunix (optional: Bitget API)
+- **Daily View** for detailed per-day trade analysis
+- **Screenshots** with annotation support (broker-separated)
+- **Incoming Positions** — track and evaluate open trades in real-time via exchange API
+- **CSV and API Import** from Bitunix and Bitget
 - **KI-Agent** — AI reports and chat (Ollama, OpenAI, Anthropic, Gemini, DeepSeek)
+- **Auto-Update** — checks GitHub for new releases on startup, one-click update from the app
+- **Account Balance** — auto-calculated from start deposit + trade P&L, or loaded from exchange API
 - **First-Run Setup** — guided initial configuration
 
 ## Tech Stack
 
-- **Frontend**: Vue 3, Vue Router, ECharts, Bootstrap (dark theme)
-- **Backend**: Express.js mit **Knex** — SQLite (Standard) oder optional PostgreSQL
-- **Datenbank**: Standard eine lokale `tradenote.db` (SQLite). Optional: PostgreSQL über `db-config.json`
-- **Sicherheit**: Session-Cookie für API-Zugriff; API-Keys (Bitunix/Bitget) serverseitig verschlüsselt
+- **Frontend**: Vue 3 (Composition API), Vue Router, ECharts, Bootstrap (dark theme)
+- **Backend**: Express.js with **Knex** — SQLite (default) or optional PostgreSQL
+- **Database**: Local `tradenote.db` (SQLite) by default. Optional: PostgreSQL via `db-config.json`
+- **Security**: Session cookie for API access; broker API keys encrypted at rest
 
 ## Installation
 
 ### Requirements
 
-- [Node.js 20+](https://nodejs.org/) (LTS empfohlen)
-
-### Windows
-
-1. Dieses Repository herunterladen oder klonen
-2. `install.bat` doppelklicken — prüft automatisch alle Voraussetzungen:
-   - **Node.js 20+** — [Download](https://nodejs.org/)
-   - **Python 3** — [Download](https://www.python.org/downloads/) (bei Installation "Add to PATH" ankreuzen)
-   - **Visual Studio Build Tools** — [Download](https://visualstudio.microsoft.com/visual-cpp-build-tools/) ("Desktopentwicklung mit C++" auswählen)
-   - Falls etwas fehlt, zeigt der Installer die Download-Links an
-3. `start.bat` doppelklicken — startet den Server und öffnet den Browser
+- [Node.js 20+](https://nodejs.org/) (LTS recommended)
+- Git (for updates and auto-update feature)
 
 ### Linux / macOS
 
@@ -56,7 +50,7 @@ chmod +x install.sh
 npm start
 ```
 
-Oder manuell:
+Or manually:
 
 ```bash
 npm install
@@ -64,53 +58,83 @@ npm run build
 npm start
 ```
 
-> **macOS**: Zusätzlich gibt es `install-mac.command`, `start-mac.command` und `update-mac.command` (doppelklicken). Build Tools mit `xcode-select --install` installieren. Python 3 ist bereits vorinstalliert.
-
-Im Browser `http://localhost:8080` öffnen.
-
-## Update
-
-Deine Datenbank (`tradenote.db`) bleibt bei jedem Update erhalten.
+> **macOS**: Additionally there are `install-mac.command`, `start-mac.command` and `update-mac.command` (double-click). Install build tools with `xcode-select --install`. Python 3 is pre-installed.
 
 ### Windows
 
-1. `update.bat` doppelklicken — erstellt ein DB-Backup und aktualisiert automatisch (Git erforderlich)
-2. Ohne Git: Neues [Release](https://github.com/Mouses007/Crypto-Trading-Journal/releases) herunterladen, Dateien überschreiben (**`tradenote.db` NICHT überschreiben!**), dann `update.bat` doppelklicken
+1. Download or clone this repository
+2. Double-click `install.bat` — automatically checks all prerequisites:
+   - **Node.js 20+** — [Download](https://nodejs.org/)
+   - **Python 3** — [Download](https://www.python.org/downloads/) (check "Add to PATH" during install)
+   - **Visual Studio Build Tools** — [Download](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (select "Desktop development with C++")
+   - If anything is missing, the installer shows download links
+3. Double-click `start.bat` — starts the server and opens the browser
 
-### Linux / macOS
+Open `http://localhost:8080` in your browser.
+
+## Update
+
+Your database (`tradenote.db`) is preserved during every update.
+
+### In-App Update (recommended)
+
+When a new version is available, an **update button** appears in the sidebar (green, between version number and donate link). Click it to automatically run `git pull`, `npm install`, and `npm run build`. The server restarts automatically.
+
+### Manual Update
 
 ```bash
-git pull origin master
+git pull origin main
 npm install
 npm run build
 npm start
 ```
 
-Ohne Git: Release-ZIP herunterladen, Dateien überschreiben (`tradenote.db` behalten), dann `npm install && npm run build`.
+### Windows (Manual)
 
-### Entwicklung (Dev Mode)
+1. Double-click `update.bat` — creates a DB backup and updates automatically (Git required)
+2. Without Git: Download new [Release](https://github.com/Mouses007/Crypto-Trading-Journal/releases), overwrite files (**do NOT overwrite `tradenote.db`!**), then double-click `update.bat`
+
+## Configuration
+
+### Port and Host
+
+Default port is `8080`, bound to `127.0.0.1` (local only). Examples:
+
+```bash
+CTJ_PORT=3000 npm start
+CTJ_HOST=0.0.0.0 npm start   # Network access (e.g., from other devices)
+```
+
+### Database
+
+Default: SQLite (`tradenote.db` in project root). For PostgreSQL, create a `db-config.json`:
+
+```json
+{
+  "client": "pg",
+  "host": "localhost",
+  "port": 5432,
+  "database": "cryptojournal",
+  "user": "youruser",
+  "password": "yourpassword"
+}
+```
+
+### Development (Dev Mode)
 
 ```bash
 npm run dev
 ```
 
-Startet den Vite Dev-Server mit Hot Module Replacement.
-
-### Port und Host ändern
-
-Standard-Port ist `8080`, gebunden an `127.0.0.1` (nur lokal). Beispiele:
-
-```bash
-CTJ_PORT=3000 npm start
-CTJ_HOST=0.0.0.0 npm start   # Zugriff im Netzwerk (z. B. von anderen Geräten)
-```
+Starts the Vite dev server with Hot Module Replacement.
 
 ## Usage
 
-1. Go to **Settings** and configure your Bitunix API Key + Secret (optional, for API import)
+1. Go to **Einstellungen** (Settings) and configure your broker API Key + Secret
 2. Import trades via **CSV upload** or **API fetch**
 3. Evaluate your trades in **Playbook** — add tags, stress/emotion levels, notes
 4. Review your performance in **Dashboard** and **Auswertung**
+5. Use the **KI-Agent** for AI-powered trade analysis (requires Ollama, OpenAI, or other provider)
 
 ## Attribution
 
@@ -118,13 +142,12 @@ This project is based on [TradeNote](https://github.com/Eleven-Trading/TradeNote
 
 - Replaced MongoDB/Parse Server with SQLite (optional PostgreSQL via Knex)
 - Removed Docker, cloud auth, payments, analytics
-- Simplified to single-user; Bitunix (and optional Bitget) broker support
+- Simplified to single-user; multi-broker support (Bitunix + Bitget)
 - Session-cookie API auth; encrypted storage for broker API keys
-- Added emotion level tracking, tag-based strategy evaluation, incoming positions, KI-Agent (AI reports)
-
-## Dokumentation
-
-- **CLAUDE.md** — Technische Architektur und Konventionen (für Entwicklung/CI).
+- Added emotion level tracking, tag-based strategy evaluation, incoming positions
+- Added KI-Agent (AI reports via Ollama/OpenAI/Anthropic/Gemini/DeepSeek)
+- Added auto-update system with GitHub release checking
+- Added account balance tracking with exchange API integration
 
 ## License
 

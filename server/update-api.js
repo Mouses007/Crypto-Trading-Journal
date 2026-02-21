@@ -1,0 +1,200 @@
+/**
+ * Update API — checks GitHub for new releases, performs one-click updates.
+ *
+ * GET  /api/update/check   → compare local version with latest GitHub release
+ * POST /api/update/install  → git pull + npm install + signal restart
+ */
+import { execSync, exec } from 'child_process'
+import { readFileSync } from 'fs'
+import path from 'path'
+import https from 'https'
+
+const GITHUB_REPO = 'Mouses007/Crypto-Trading-Journal'
+const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
+
+// Simple HTTPS GET returning JSON
+function httpsGetJson(url) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            headers: { 'User-Agent': 'CryptoTradingJournal' }
+        }
+        https.get(url, options, (res) => {
+            // Follow redirects
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                return httpsGetJson(res.headers.location).then(resolve).catch(reject)
+            }
+            let data = ''
+            res.on('data', chunk => data += chunk)
+            res.on('end', () => {
+                try { resolve(JSON.parse(data)) }
+                catch (e) { reject(new Error('Invalid JSON: ' + data.substring(0, 200))) }
+            })
+        }).on('error', reject)
+    })
+}
+
+// Get local version from package.json
+function getLocalVersion() {
+    const pkg = JSON.parse(readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'))
+    return pkg.version
+}
+
+// Compare semver: returns 1 if a > b, -1 if a < b, 0 if equal
+function compareSemver(a, b) {
+    const pa = a.replace(/^v/, '').split('.').map(Number)
+    const pb = b.replace(/^v/, '').split('.').map(Number)
+    for (let i = 0; i < 3; i++) {
+        if ((pa[i] || 0) > (pb[i] || 0)) return 1
+        if ((pa[i] || 0) < (pb[i] || 0)) return -1
+    }
+    return 0
+}
+
+// Cache: last check result (avoid hammering GitHub)
+let lastCheck = null
+let lastCheckTime = 0
+const CHECK_CACHE_MS = 5 * 60 * 1000 // 5 min cache
+
+export function setupUpdateRoutes(app) {
+
+    // ── Check for updates ──────────────────────────────────────────
+    app.get('/api/update/check', async (req, res) => {
+        try {
+            const now = Date.now()
+            const forceRefresh = req.query.force === '1'
+
+            // Return cached result if fresh
+            if (!forceRefresh && lastCheck && (now - lastCheckTime) < CHECK_CACHE_MS) {
+                return res.json(lastCheck)
+            }
+
+            const localVersion = getLocalVersion()
+
+            // Fetch latest release from GitHub
+            const release = await httpsGetJson(
+                `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
+            )
+
+            const remoteVersion = (release.tag_name || '').replace(/^v/, '')
+            const updateAvailable = compareSemver(remoteVersion, localVersion) > 0
+
+            lastCheck = {
+                ok: true,
+                localVersion,
+                remoteVersion,
+                updateAvailable,
+                releaseName: release.name || '',
+                releaseNotes: release.body || '',
+                releaseUrl: release.html_url || '',
+                publishedAt: release.published_at || ''
+            }
+            lastCheckTime = now
+
+            res.json(lastCheck)
+        } catch (err) {
+            // If no releases exist yet, that's OK
+            if (err.message && err.message.includes('Not Found')) {
+                const localVersion = getLocalVersion()
+                lastCheck = {
+                    ok: true,
+                    localVersion,
+                    remoteVersion: localVersion,
+                    updateAvailable: false,
+                    releaseName: '',
+                    releaseNotes: '',
+                    releaseUrl: '',
+                    publishedAt: ''
+                }
+                lastCheckTime = Date.now()
+                return res.json(lastCheck)
+            }
+            console.error('Update check failed:', err.message)
+            res.status(500).json({ ok: false, error: err.message })
+        }
+    })
+
+    // ── Install update ─────────────────────────────────────────────
+    app.post('/api/update/install', async (req, res) => {
+        try {
+            const steps = []
+
+            // 1. git pull
+            const pullOutput = execSync('git pull origin main', {
+                cwd: PROJECT_ROOT,
+                encoding: 'utf8',
+                timeout: 60000
+            }).trim()
+            steps.push({ step: 'git pull', output: pullOutput })
+
+            // 2. npm install (in case dependencies changed)
+            const npmOutput = execSync('npm install --omit=dev', {
+                cwd: PROJECT_ROOT,
+                encoding: 'utf8',
+                timeout: 120000
+            }).trim()
+            steps.push({ step: 'npm install', output: npmOutput })
+
+            // 3. npm run build
+            const buildOutput = execSync('npm run build', {
+                cwd: PROJECT_ROOT,
+                encoding: 'utf8',
+                timeout: 120000
+            }).trim()
+            steps.push({ step: 'npm run build', output: buildOutput })
+
+            // Read new version
+            const newVersion = getLocalVersion()
+
+            // Clear cache
+            lastCheck = null
+            lastCheckTime = 0
+
+            res.json({ ok: true, steps, newVersion })
+
+            // 4. Restart server after response is sent
+            setTimeout(() => {
+                console.log('\n🔄 Update installed — restarting server...')
+                process.exit(0) // Process manager (systemd etc.) will restart
+            }, 1500)
+
+        } catch (err) {
+            console.error('Update install failed:', err.message)
+            res.status(500).json({ ok: false, error: err.message })
+        }
+    })
+
+    // ── Startup check (non-blocking) ───────────────────────────────
+    setTimeout(async () => {
+        try {
+            const localVersion = getLocalVersion()
+            const release = await httpsGetJson(
+                `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
+            )
+            const remoteVersion = (release.tag_name || '').replace(/^v/, '')
+            const updateAvailable = compareSemver(remoteVersion, localVersion) > 0
+
+            lastCheck = {
+                ok: true,
+                localVersion,
+                remoteVersion,
+                updateAvailable,
+                releaseName: release.name || '',
+                releaseNotes: release.body || '',
+                releaseUrl: release.html_url || '',
+                publishedAt: release.published_at || ''
+            }
+            lastCheckTime = Date.now()
+
+            if (updateAvailable) {
+                console.log(`\n🆕 Update verfügbar: v${localVersion} → v${remoteVersion}`)
+            } else {
+                console.log(` -> Version v${localVersion} ist aktuell`)
+            }
+        } catch (err) {
+            // Silent fail on startup — no release yet is fine
+            if (!err.message?.includes('Not Found')) {
+                console.log(' -> Update-Check fehlgeschlagen:', err.message)
+            }
+        }
+    }, 3000)
+}

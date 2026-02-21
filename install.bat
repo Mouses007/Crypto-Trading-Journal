@@ -142,49 +142,177 @@ echo.
 
 :: Pflicht-Komponenten fehlen?
 if !MANDATORY_MISSING!==1 (
-    echo   Fehlende Pflicht-Komponenten!
-    echo   Die Installation kann nicht fortgesetzt werden.
+    echo   Fehlende Pflicht-Komponenten gefunden:
     echo.
-    echo   Bitte installiere folgende Komponenten:
-    echo.
-
-    if !NODE_OK!==0 (
-        echo   Node.js 20+ (LTS)
-        echo     https://nodejs.org/
-        echo     Waehle die LTS-Version und aktiviere "Add to PATH"
-        echo.
-    )
-
-    if !PYTHON_OK!==0 (
-        echo   Python 3
-        echo     https://www.python.org/downloads/
-        echo     WICHTIG: Bei der Installation "Add Python to PATH" ankreuzen!
-        echo.
-    )
-
-    if !VSBUILD_OK!==0 (
-        echo   Visual Studio Build Tools
-        echo     https://visualstudio.microsoft.com/visual-cpp-build-tools/
-        echo     Bei der Installation "Desktopentwicklung mit C++" auswaehlen
-        echo.
-    )
-
-    echo   Nach der Installation dieses Script erneut starten.
+    if !NODE_OK!==0   echo     * Node.js 20+
+    if !PYTHON_OK!==0 echo     * Python 3
+    if !VSBUILD_OK!==0 echo     * Visual Studio Build Tools
     echo.
 
-    set /p "OPEN_LINKS=  Download-Links im Browser oeffnen? (j/n): "
-    if /i "!OPEN_LINKS!"=="j" (
-        if !NODE_OK!==0 start https://nodejs.org/
-        if !PYTHON_OK!==0 start https://www.python.org/downloads/
-        if !VSBUILD_OK!==0 start https://visualstudio.microsoft.com/visual-cpp-build-tools/
-        echo.
-        echo   Links wurden im Browser geoeffnet.
-    )
+    :: Pruefen ob winget verfuegbar ist
+    set "WINGET_OK=0"
+    where winget >nul 2>nul
+    if !errorlevel!==0 set "WINGET_OK=1"
 
+    if !WINGET_OK!==1 (
+        set /p "AUTO_INSTALL=  Fehlende Pakete jetzt automatisch installieren (via winget)? [J/n]: "
+        if /i "!AUTO_INSTALL!"=="" set "AUTO_INSTALL=j"
+        if /i "!AUTO_INSTALL!"=="j" goto :AUTO_INSTALL_START
+        if /i "!AUTO_INSTALL!"=="y" goto :AUTO_INSTALL_START
+        goto :MANUAL_INSTALL
+    ) else (
+        echo   winget nicht gefunden - automatische Installation nicht moeglich.
+        echo.
+        goto :MANUAL_INSTALL
+    )
+)
+goto :INSTALL_OK
+
+:AUTO_INSTALL_START
+echo.
+echo   Installiere fehlende Pakete...
+echo.
+
+if !NODE_OK!==0 (
+    echo   → Installiere Node.js 20 LTS...
+    winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements -h
+    if !errorlevel! neq 0 (
+        echo   [!] Node.js Installation fehlgeschlagen
+    ) else (
+        echo   [OK] Node.js installiert
+    )
+    echo.
+)
+
+if !PYTHON_OK!==0 (
+    echo   → Installiere Python 3...
+    winget install Python.Python.3.12 --accept-source-agreements --accept-package-agreements -h
+    if !errorlevel! neq 0 (
+        echo   [!] Python Installation fehlgeschlagen
+    ) else (
+        echo   [OK] Python installiert
+    )
+    echo.
+)
+
+if !VSBUILD_OK!==0 (
+    echo   → Installiere Visual Studio Build Tools...
+    echo     (Dies kann einige Minuten dauern)
+    winget install Microsoft.VisualStudio.2022.BuildTools --accept-source-agreements --accept-package-agreements -h --override "--wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+    if !errorlevel! neq 0 (
+        echo   [!] VS Build Tools Installation fehlgeschlagen
+        echo   [!] Alternative: npm install -g windows-build-tools (als Admin)
+    ) else (
+        echo   [OK] VS Build Tools installiert
+    )
+    echo.
+)
+
+:: PATH aktualisieren (neue Installationen sichtbar machen)
+echo   Aktualisiere PATH...
+echo.
+
+:: Neuen PATH aus Registry holen
+for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "SYS_PATH=%%B"
+for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USR_PATH=%%B"
+set "PATH=!SYS_PATH!;!USR_PATH!"
+
+:: Ergebnis pruefen
+echo   Pruefe Installation...
+echo.
+
+set "STILL_MISSING=0"
+
+where node >nul 2>nul
+if !errorlevel!==0 (
+    for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NEW_NODE_VER=%%v"
+    echo   [OK]  Node.js            !NEW_NODE_VER!
+) else (
+    echo   [!!]  Node.js            Nicht gefunden
+    set "STILL_MISSING=1"
+)
+
+set "PY_CHECK=0"
+where python >nul 2>nul
+if !errorlevel!==0 set "PY_CHECK=1"
+where python3 >nul 2>nul
+if !errorlevel!==0 set "PY_CHECK=1"
+if !PY_CHECK!==1 (
+    echo   [OK]  Python             Gefunden
+) else (
+    echo   [!!]  Python             Nicht gefunden
+    set "STILL_MISSING=1"
+)
+
+set "VS_CHECK=0"
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+if exist "!VSWHERE!" set "VS_CHECK=1"
+where cl >nul 2>nul
+if !errorlevel!==0 set "VS_CHECK=1"
+if !VS_CHECK!==1 (
+    echo   [OK]  Build Tools        Gefunden
+) else (
+    echo   [!!]  Build Tools        Nicht gefunden
+    set "STILL_MISSING=1"
+)
+
+echo.
+
+if !STILL_MISSING!==1 (
+    echo   Einige Pakete erfordern einen Neustart der Eingabeaufforderung.
+    echo.
+    echo   Bitte dieses Fenster schliessen und install.bat erneut starten.
     echo.
     pause
     exit /b 1
 )
+
+echo   Alle Pakete erfolgreich installiert!
+echo.
+goto :INSTALL_OK
+
+:MANUAL_INSTALL
+echo   Bitte installiere die Pakete manuell:
+echo.
+
+if !NODE_OK!==0 (
+    echo   Node.js 20+ (LTS)
+    echo     https://nodejs.org/
+    echo     Waehle die LTS-Version und aktiviere "Add to PATH"
+    echo.
+)
+
+if !PYTHON_OK!==0 (
+    echo   Python 3
+    echo     https://www.python.org/downloads/
+    echo     WICHTIG: Bei der Installation "Add Python to PATH" ankreuzen!
+    echo.
+)
+
+if !VSBUILD_OK!==0 (
+    echo   Visual Studio Build Tools
+    echo     https://visualstudio.microsoft.com/visual-cpp-build-tools/
+    echo     Bei der Installation "Desktopentwicklung mit C++" auswaehlen
+    echo.
+)
+
+echo   Nach der Installation dieses Script erneut starten.
+echo.
+
+set /p "OPEN_LINKS=  Download-Links im Browser oeffnen? (j/n): "
+if /i "!OPEN_LINKS!"=="j" (
+    if !NODE_OK!==0 start https://nodejs.org/
+    if !PYTHON_OK!==0 start https://www.python.org/downloads/
+    if !VSBUILD_OK!==0 start https://visualstudio.microsoft.com/visual-cpp-build-tools/
+    echo.
+    echo   Links wurden im Browser geoeffnet.
+)
+
+echo.
+pause
+exit /b 1
+
+:INSTALL_OK
 
 :: Hinweise fuer optionale Komponenten
 if !OLLAMA_OK!==0 (

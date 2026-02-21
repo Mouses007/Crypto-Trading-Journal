@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
-import { allTradeTimeframes, selectedTradeTimeframes } from '../stores/filters.js'
+import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
 import { useFetchOpenPositions, useGetIncomingPositions, useUpdateIncomingPosition, useDeleteIncomingPosition, useTransferClosingMetadata } from '../utils/incoming'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
@@ -215,6 +215,13 @@ function getTagColor(tagId) {
     return info?.groupColor || '#6c757d'
 }
 
+// ===== SATISFACTION HANDLER =====
+
+function updateSatisfaction(pos, val) {
+    pos.satisfaction = pos.satisfaction === val ? null : val
+    useUpdateIncomingPosition(pos.objectId, { satisfaction: pos.satisfaction })
+}
+
 // ===== SCREENSHOT HANDLERS =====
 
 async function handleEntryScreenshotUpload(event, pos) {
@@ -229,6 +236,7 @@ async function handleEntryScreenshotUpload(event, pos) {
             name: `incoming_entry_${pos.positionId}`,
             symbol: pos.symbol,
             side: pos.side === 'LONG' ? 'B' : 'SS',
+            broker: pos.broker || selectedBroker.value || 'bitunix',
             originalBase64: base64,
             annotatedBase64: '',
             markersOnly: 1,
@@ -264,6 +272,7 @@ async function handleClosingScreenshotUpload(event, pos) {
             name: `incoming_closing_${pos.positionId}`,
             symbol: pos.symbol,
             side: pos.side === 'LONG' ? 'B' : 'SS',
+            broker: pos.broker || selectedBroker.value || 'bitunix',
             originalBase64: base64,
             annotatedBase64: '',
             markersOnly: 1,
@@ -298,6 +307,7 @@ async function saveMetadata(pos) {
         entryTimeframe: pos.entryTimeframe || '',
         tags: JSON.parse(JSON.stringify(pos.tags || [])),
         skipEvaluation: pos.skipEvaluation || 0,
+        satisfaction: pos.satisfaction != null ? pos.satisfaction : null,
         // Closing fields
         closingStressLevel: pos.closingStressLevel || 0,
         closingEmotionLevel: pos.closingEmotionLevel || 0,
@@ -319,12 +329,23 @@ async function saveMetadata(pos) {
     }
 
     await useUpdateIncomingPosition(pos.objectId, data)
-    savingId.value = null
 
-    // Save Quill content to pos and collapse card
+    // Save Quill content to pos
     if (data.playbook) pos.playbook = data.playbook
     if (data.closingPlaybook) pos.closingPlaybook = data.closingPlaybook
 
+    // If "Trade nicht bewerten" is checked and position is pending_evaluation,
+    // just delete the incoming position — NO notes/satisfactions/tags transfer,
+    // so the trade stays "unbewertet" in Settings and won't appear in Playbook.
+    if (pos.skipEvaluation === 1 && pos.status === 'pending_evaluation') {
+        try {
+            await useDeleteIncomingPosition(pos.objectId)
+        } catch (error) {
+            console.error('Fehler beim Überspringen der Bewertung:', error)
+        }
+    }
+
+    savingId.value = null
     delete quillInstances[openingKey]
     delete quillInstances[closingKey]
     expandedId.value = null
@@ -345,6 +366,7 @@ async function completeClosingEvaluation(pos) {
             emotionLevel: pos.emotionLevel || 0,
             entryTimeframe: pos.entryTimeframe || '',
             tags: JSON.parse(JSON.stringify(pos.tags || [])),
+            satisfaction: pos.satisfaction != null ? pos.satisfaction : null,
             closingStressLevel: pos.closingStressLevel || 0,
             closingEmotionLevel: pos.closingEmotionLevel || 0,
             closingFeelings: pos.closingFeelings || '',
@@ -370,7 +392,7 @@ async function completeClosingEvaluation(pos) {
             {
                 note: '',
                 tags: JSON.parse(JSON.stringify(pos.tags || [])),
-                satisfaction: (pos.satisfaction != null && pos.satisfaction >= 0) ? pos.satisfaction : null,
+                satisfaction: pos.satisfaction != null ? pos.satisfaction : null,
                 stressLevel: pos.stressLevel || 0,
                 closingNote: pos.closingPlaybook || '',
                 closingStressLevel: pos.closingStressLevel || 0,
@@ -669,6 +691,29 @@ function getPositionDate(pos) {
                             </div>
                             <input v-else type="file" accept="image/*" class="form-control form-control-sm"
                                 @change="handleClosingScreenshotUpload($event, pos)" />
+                        </div>
+
+                        <!-- Zufriedenheit -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">Zufriedenheit</label>
+                            <div class="d-flex gap-3">
+                                <span class="pointerClass fs-4"
+                                    :class="pos.satisfaction === 1 || pos.satisfaction === true ? 'greenTrade' : 'text-muted'"
+                                    @click.stop="updateSatisfaction(pos, 1)">
+                                    <i class="uil uil-thumbs-up"></i>
+                                </span>
+                                <span class="pointerClass fs-4"
+                                    :class="pos.satisfaction === 'neutral' ? 'neutralTrade' : 'text-muted'"
+                                    @click.stop="updateSatisfaction(pos, 'neutral')"
+                                    style="transform: rotate(-90deg); display: inline-block;">
+                                    <i class="uil uil-thumbs-up"></i>
+                                </span>
+                                <span class="pointerClass fs-4"
+                                    :class="pos.satisfaction === 0 || pos.satisfaction === false ? 'redTrade' : 'text-muted'"
+                                    @click.stop="updateSatisfaction(pos, 0)">
+                                    <i class="uil uil-thumbs-down"></i>
+                                </span>
+                            </div>
                         </div>
                     </div>
 

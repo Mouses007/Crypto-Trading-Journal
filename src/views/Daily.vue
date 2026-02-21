@@ -1,6 +1,5 @@
 <script setup>
 import { onBeforeMount, onMounted, computed, reactive, ref, watch, nextTick } from 'vue';
-import Filters from '../components/Filters.vue'
 import NoData from '../components/NoData.vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Screenshot from '../components/Screenshot.vue'

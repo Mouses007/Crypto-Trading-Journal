@@ -120,38 +120,211 @@ echo -e "  ${GRAY}════════════════════�
 echo ""
 
 # ══════════════════════════════════════════
-#  Pflicht-Komponenten fehlen?
+#  Pflicht-Komponenten fehlen? → Auto-Installation anbieten
 # ══════════════════════════════════════════
 if [ "$MANDATORY_MISSING" = "1" ]; then
-    echo -e "  ${RED}${BOLD}Fehlende Pflicht-Komponenten!${RESET}"
-    echo -e "  ${RED}Die Installation kann nicht fortgesetzt werden.${RESET}"
-    echo ""
-    echo -e "  ${BOLD}Empfohlene Installation via Homebrew:${RESET}"
-    echo ""
-
-    if ! command -v brew &>/dev/null; then
-        echo -e "  ${CYAN}1. Homebrew installieren:${RESET}"
-        echo '     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
-        echo ""
-    fi
+    NEED_NODE=0
+    NEED_PYTHON=0
 
     if ! command -v node &>/dev/null || [ "${NODE_MAJOR:-0}" -lt 20 ]; then
-        echo -e "  ${CYAN}Node.js 20+:${RESET}"
-        echo "     brew install node@20"
-        echo "     Oder: https://nodejs.org/"
-        echo ""
+        NEED_NODE=1
     fi
-
     if [ "$PY_OK" = "0" ]; then
-        echo -e "  ${CYAN}Python 3:${RESET}"
-        echo "     brew install python3"
-        echo "     Oder: https://www.python.org/downloads/"
-        echo ""
+        NEED_PYTHON=1
     fi
 
-    echo -e "  ${GRAY}Nach der Installation dieses Script erneut starten.${RESET}"
+    # Fehlende Pakete auflisten
+    echo -e "  ${YELLOW}${BOLD}Fehlende Pflicht-Komponenten gefunden:${RESET}"
     echo ""
-    exit 1
+    [ "$NEED_NODE" = "1" ] && echo -e "    ${CYAN}•${RESET} Node.js 20+"
+    [ "$NEED_PYTHON" = "1" ] && echo -e "    ${CYAN}•${RESET} Python 3"
+    echo ""
+
+    # Pruefen ob Homebrew verfuegbar ist
+    BREW_OK=0
+    if command -v brew &>/dev/null; then
+        BREW_OK=1
+    fi
+
+    if [ "$BREW_OK" = "1" ]; then
+        echo -en "  ${BOLD}Sollen die fehlenden Pakete jetzt automatisch installiert werden (via Homebrew)? [J/n]:${RESET} "
+        read -r ANSWER
+        echo ""
+
+        if [ -z "$ANSWER" ] || echo "$ANSWER" | grep -iq "^[jy]"; then
+
+            echo -e "  ${BOLD}Installiere fehlende Pakete...${RESET}"
+            echo ""
+
+            # ── Node.js 20+ ──
+            if [ "$NEED_NODE" = "1" ]; then
+                echo -e "  ${CYAN}→ Installiere Node.js 20+...${RESET}"
+                brew install node@20
+                # Sicherstellen dass node@20 im PATH ist
+                if [ -d "$(brew --prefix)/opt/node@20/bin" ]; then
+                    export PATH="$(brew --prefix)/opt/node@20/bin:$PATH"
+                fi
+                echo ""
+            fi
+
+            # ── Python 3 ──
+            if [ "$NEED_PYTHON" = "1" ]; then
+                echo -e "  ${CYAN}→ Installiere Python 3...${RESET}"
+                brew install python3
+                echo ""
+            fi
+
+            # ── Ergebnis pruefen ──
+            echo ""
+            echo -e "  ${GRAY}Pruefe Installation...${RESET}"
+            echo ""
+
+            STILL_MISSING=0
+
+            if command -v node &>/dev/null; then
+                NEW_NODE_VER=$(node -v)
+                NEW_NODE_MAJOR=$(echo "$NEW_NODE_VER" | sed 's/v//' | cut -d. -f1)
+                if [ "$NEW_NODE_MAJOR" -ge 20 ]; then
+                    echo -e "  ${GREEN}[OK]${RESET}  Node.js            ${NEW_NODE_VER}"
+                else
+                    echo -e "  ${RED}[!!]${RESET}  Node.js            ${NEW_NODE_VER} ${RED}(immer noch < 20)${RESET}"
+                    STILL_MISSING=1
+                fi
+            else
+                echo -e "  ${RED}[!!]${RESET}  Node.js            ${RED}Installation fehlgeschlagen${RESET}"
+                STILL_MISSING=1
+            fi
+
+            if command -v python3 &>/dev/null; then
+                echo -e "  ${GREEN}[OK]${RESET}  Python 3           $(python3 --version 2>&1 | awk '{print $2}')"
+            elif [ "$NEED_PYTHON" = "1" ]; then
+                echo -e "  ${RED}[!!]${RESET}  Python 3           ${RED}Installation fehlgeschlagen${RESET}"
+                STILL_MISSING=1
+            fi
+
+            echo ""
+
+            if [ "$STILL_MISSING" = "1" ]; then
+                echo -e "  ${RED}Einige Pakete konnten nicht installiert werden.${RESET}"
+                echo -e "  ${GRAY}Bitte manuell installieren und dieses Script erneut starten.${RESET}"
+                echo ""
+                exit 1
+            fi
+
+            echo -e "  ${GREEN}Alle Pakete erfolgreich installiert!${RESET}"
+            echo ""
+
+        else
+            # Benutzer will nicht → manuelle Befehle zeigen
+            echo -e "  ${BOLD}Bitte installiere die Pakete manuell:${RESET}"
+            echo ""
+            [ "$NEED_NODE" = "1" ] && echo -e "  ${CYAN}Node.js 20+:${RESET}  brew install node@20" && echo ""
+            [ "$NEED_PYTHON" = "1" ] && echo -e "  ${CYAN}Python 3:${RESET}     brew install python3" && echo ""
+            echo -e "  ${GRAY}Danach dieses Script erneut starten.${RESET}"
+            echo ""
+            exit 1
+        fi
+
+    else
+        # Kein Homebrew → anbieten Homebrew zu installieren
+        echo -e "  ${YELLOW}Homebrew ist nicht installiert.${RESET}"
+        echo -e "  Homebrew ist der empfohlene Paketmanager fuer macOS."
+        echo ""
+        echo -en "  ${BOLD}Soll Homebrew jetzt installiert werden? [J/n]:${RESET} "
+        read -r BREW_ANSWER
+        echo ""
+
+        if [ -z "$BREW_ANSWER" ] || echo "$BREW_ANSWER" | grep -iq "^[jy]"; then
+            echo -e "  ${CYAN}→ Installiere Homebrew...${RESET}"
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+            # Homebrew PATH setzen (Apple Silicon vs Intel)
+            if [ -f "/opt/homebrew/bin/brew" ]; then
+                eval "$(/opt/homebrew/bin/brew shellenv)"
+            elif [ -f "/usr/local/bin/brew" ]; then
+                eval "$(/usr/local/bin/brew shellenv)"
+            fi
+
+            if command -v brew &>/dev/null; then
+                echo ""
+                echo -e "  ${GREEN}[OK]${RESET} Homebrew installiert"
+                echo ""
+
+                # Jetzt fehlende Pakete installieren
+                if [ "$NEED_NODE" = "1" ]; then
+                    echo -e "  ${CYAN}→ Installiere Node.js 20+...${RESET}"
+                    brew install node@20
+                    if [ -d "$(brew --prefix)/opt/node@20/bin" ]; then
+                        export PATH="$(brew --prefix)/opt/node@20/bin:$PATH"
+                    fi
+                    echo ""
+                fi
+
+                if [ "$NEED_PYTHON" = "1" ]; then
+                    echo -e "  ${CYAN}→ Installiere Python 3...${RESET}"
+                    brew install python3
+                    echo ""
+                fi
+
+                # Ergebnis pruefen
+                echo -e "  ${GRAY}Pruefe Installation...${RESET}"
+                echo ""
+
+                STILL_MISSING=0
+
+                if command -v node &>/dev/null; then
+                    NEW_NODE_VER=$(node -v)
+                    NEW_NODE_MAJOR=$(echo "$NEW_NODE_VER" | sed 's/v//' | cut -d. -f1)
+                    if [ "$NEW_NODE_MAJOR" -ge 20 ]; then
+                        echo -e "  ${GREEN}[OK]${RESET}  Node.js            ${NEW_NODE_VER}"
+                    else
+                        echo -e "  ${RED}[!!]${RESET}  Node.js            ${NEW_NODE_VER} ${RED}(immer noch < 20)${RESET}"
+                        STILL_MISSING=1
+                    fi
+                else
+                    echo -e "  ${RED}[!!]${RESET}  Node.js            ${RED}Installation fehlgeschlagen${RESET}"
+                    STILL_MISSING=1
+                fi
+
+                if command -v python3 &>/dev/null; then
+                    echo -e "  ${GREEN}[OK]${RESET}  Python 3           $(python3 --version 2>&1 | awk '{print $2}')"
+                elif [ "$NEED_PYTHON" = "1" ]; then
+                    echo -e "  ${RED}[!!]${RESET}  Python 3           ${RED}Installation fehlgeschlagen${RESET}"
+                    STILL_MISSING=1
+                fi
+
+                echo ""
+
+                if [ "$STILL_MISSING" = "1" ]; then
+                    echo -e "  ${RED}Einige Pakete konnten nicht installiert werden.${RESET}"
+                    echo -e "  ${GRAY}Bitte manuell installieren und dieses Script erneut starten.${RESET}"
+                    echo ""
+                    exit 1
+                fi
+
+                echo -e "  ${GREEN}Alle Pakete erfolgreich installiert!${RESET}"
+                echo ""
+            else
+                echo ""
+                echo -e "  ${RED}Homebrew-Installation fehlgeschlagen.${RESET}"
+                echo -e "  ${BOLD}Bitte manuell installieren:${RESET}"
+                echo ""
+                [ "$NEED_NODE" = "1" ] && echo -e "  ${CYAN}Node.js 20+:${RESET}  https://nodejs.org/"
+                [ "$NEED_PYTHON" = "1" ] && echo -e "  ${CYAN}Python 3:${RESET}     https://www.python.org/downloads/"
+                echo ""
+                exit 1
+            fi
+        else
+            # Kein Homebrew, kein Auto-Install → manuelle Links
+            echo -e "  ${BOLD}Bitte installiere die Pakete manuell:${RESET}"
+            echo ""
+            [ "$NEED_NODE" = "1" ] && echo -e "  ${CYAN}Node.js 20+:${RESET}  https://nodejs.org/" && echo ""
+            [ "$NEED_PYTHON" = "1" ] && echo -e "  ${CYAN}Python 3:${RESET}     https://www.python.org/downloads/" && echo ""
+            echo -e "  ${GRAY}Danach dieses Script erneut starten.${RESET}"
+            echo ""
+            exit 1
+        fi
+    fi
 fi
 
 # ══════════════════════════════════════════

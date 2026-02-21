@@ -251,7 +251,13 @@ export function setupBitgetRoutes(app) {
                 if (apiKey !== undefined) updates.apiKey = encrypt(apiKey.trim())
                 if (secretKey !== undefined) updates.secretKey = encrypt(secretKey.trim())
                 if (passphrase !== undefined) updates.passphrase = encrypt(passphrase.trim())
-                if (apiImportStartDate !== undefined) updates.apiImportStartDate = apiImportStartDate
+                if (apiImportStartDate !== undefined) {
+                    updates.apiImportStartDate = apiImportStartDate
+                    // Reset lastApiImport so next quick-import fetches from the new start date
+                    if (apiImportStartDate !== existing.apiImportStartDate) {
+                        updates.lastApiImport = 0
+                    }
+                }
                 if (Object.keys(updates).length > 0) {
                     await knex('bitget_config').where('id', 1).update(updates)
                 }
@@ -523,6 +529,40 @@ export function setupBitgetRoutes(app) {
             }
             res.json({ ok: true, position: pos })
         } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Get account balance from Bitget API
+    app.get('/api/bitget/balance', async (req, res) => {
+        try {
+            const config = await getDecryptedBitgetConfig()
+            if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            const result = await bitgetRequest('GET', '/api/v2/mix/account/accounts', config.apiKey, config.secretKey, config.passphrase, { productType: 'USDT-FUTURES' })
+
+            if (String(result.code) !== '00000') {
+                return res.status(400).json({ error: result.msg || 'Bitget API Fehler' })
+            }
+
+            const accounts = result.data || []
+            if (!Array.isArray(accounts) || accounts.length === 0) {
+                return res.json({ ok: true, balance: 0 })
+            }
+
+            // Find USDT account
+            const usdtAccount = accounts.find(a => a.marginCoin === 'USDT') || accounts[0]
+            const available = parseFloat(usdtAccount.available || 0)
+            const locked = parseFloat(usdtAccount.locked || 0)
+            const unrealizedPL = parseFloat(usdtAccount.unrealizedPL || usdtAccount.crossedUnrealizedPL || 0)
+            const usdtEquity = parseFloat(usdtAccount.usdtEquity || usdtAccount.accountEquity || 0)
+            const balance = usdtEquity || (available + locked + unrealizedPL)
+
+            res.json({ ok: true, balance, available, locked, unrealizedPL, usdtEquity })
+        } catch (error) {
+            console.error(' -> Bitget balance error:', error.message)
             res.status(500).json({ error: error.message })
         }
     })
