@@ -256,7 +256,7 @@ echo.
 goto :INSTALL_OK
 
 :MANUAL_INSTALL
-echo   Bitte installiere die Pakete manuell:
+echo   Bitte installiere die fehlenden Pakete:
 echo.
 
 if "!NODE_OK!"=="0" (
@@ -280,10 +280,8 @@ if "!VSBUILD_OK!"=="0" (
     echo.
 )
 
-echo   Nach der Installation dieses Script erneut starten.
-echo.
-
-set /p "OPEN_LINKS=  Download-Links im Browser oeffnen? (j/n): "
+set /p "OPEN_LINKS=  Download-Links im Browser oeffnen? [J/n]: "
+if /i "!OPEN_LINKS!"=="" set "OPEN_LINKS=j"
 if /i "!OPEN_LINKS!"=="j" (
     if "!NODE_OK!"=="0" start https://nodejs.org/
     if "!PYTHON_OK!"=="0" start https://www.python.org/downloads/
@@ -293,8 +291,106 @@ if /i "!OPEN_LINKS!"=="j" (
 )
 
 echo.
+echo   ==============================================
+echo   Installiere jetzt die fehlenden Programme.
+echo   Wenn du fertig bist, druecke eine beliebige Taste
+echo   und ich pruefe nochmal ob alles da ist.
+echo   ==============================================
+echo.
 pause
-exit /b 1
+
+:: PATH aktualisieren nach manueller Installation
+for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "SYS_PATH=%%B"
+for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USR_PATH=%%B"
+set "PATH=!SYS_PATH!;!USR_PATH!"
+
+echo.
+echo   Pruefe erneut...
+echo.
+
+:: Node.js nochmal pruefen
+if "!NODE_OK!"=="0" (
+    where node >nul 2>nul
+    if %errorlevel% equ 0 (
+        for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NODE_VER=%%v"
+        for /f "tokens=1 delims=." %%a in ("!NODE_VER!") do set "NODE_RAW=%%a"
+        set "NODE_MAJOR=!NODE_RAW:v=!"
+        if !NODE_MAJOR! GEQ 20 (
+            set "NODE_OK=1"
+            echo   [OK]  Node.js            !NODE_VER!
+        ) else (
+            echo   [!!]  Node.js            !NODE_VER! ^(Version 20+ erforderlich^)
+        )
+    ) else (
+        echo   [!!]  Node.js            Immer noch nicht gefunden
+    )
+)
+
+:: Python nochmal pruefen
+if "!PYTHON_OK!"=="0" (
+    where python >nul 2>nul && (
+        for /f "tokens=2 delims= " %%a in ('python --version 2^>^&1') do set "PY_VER_FULL=%%a"
+        if defined PY_VER_FULL (
+            for /f "tokens=1 delims=." %%b in ("!PY_VER_FULL!") do set "PY_MAJOR=%%b"
+            if "!PY_MAJOR!"=="3" (
+                set "PYTHON_OK=1"
+                set "PYTHON_VER=!PY_VER_FULL!"
+                echo   [OK]  Python             !PY_VER_FULL!
+            )
+        )
+    )
+    if "!PYTHON_OK!"=="0" echo   [!!]  Python             Immer noch nicht gefunden
+)
+
+:: VS Build Tools nochmal pruefen
+if "!VSBUILD_OK!"=="0" (
+    set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+    if exist "!VSWHERE!" (
+        set "VSBUILD_OK=1"
+        echo   [OK]  VS Build Tools     Gefunden
+    ) else (
+        where cl >nul 2>nul
+        if %errorlevel% equ 0 (
+            set "VSBUILD_OK=1"
+            echo   [OK]  VS Build Tools     Gefunden
+        ) else (
+            echo   [!!]  VS Build Tools     Immer noch nicht gefunden
+        )
+    )
+)
+
+:: npm nochmal pruefen
+where npm >nul 2>nul
+if %errorlevel% equ 0 (
+    for /f "tokens=*" %%v in ('npm -v 2^>nul') do set "NPM_VER=%%v"
+    echo   [OK]  npm                v!NPM_VER!
+)
+
+echo.
+
+:: Immer noch was fehlend?
+set "STILL_MISSING=0"
+if "!NODE_OK!"=="0" set "STILL_MISSING=1"
+if "!PYTHON_OK!"=="0" set "STILL_MISSING=1"
+if "!VSBUILD_OK!"=="0" set "STILL_MISSING=1"
+
+if "!STILL_MISSING!"=="1" (
+    echo   Es fehlen immer noch Komponenten.
+    echo.
+    set /p "RETRY=  Nochmal pruefen? [J/n]: "
+    if /i "!RETRY!"=="" set "RETRY=j"
+    if /i "!RETRY!"=="j" goto :MANUAL_INSTALL
+    if /i "!RETRY!"=="y" goto :MANUAL_INSTALL
+    echo.
+    echo   Bitte installiere die fehlenden Pakete und starte install.bat erneut.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo   Alle Komponenten gefunden!
+echo.
+goto :INSTALL_OK
 
 :INSTALL_OK
 
