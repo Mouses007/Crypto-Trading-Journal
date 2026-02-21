@@ -2,7 +2,7 @@
 chcp 65001 >nul 2>nul
 setlocal EnableDelayedExpansion
 
-:: Status-Variablen
+REM Status-Variablen
 set "NODE_OK=0"
 set "PYTHON_OK=0"
 set "VSBUILD_OK=0"
@@ -21,9 +21,9 @@ echo.
 echo   Pruefe System-Voraussetzungen...
 echo.
 
-:: CHECK 1: Node.js 20+
+REM CHECK 1: Node.js 20+
 where node >nul 2>nul
-if %errorlevel% equ 0 (
+if !errorlevel! equ 0 (
     for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NODE_VER=%%v"
     for /f "tokens=1 delims=." %%a in ("!NODE_VER!") do set "NODE_RAW=%%a"
     set "NODE_MAJOR=!NODE_RAW:v=!"
@@ -39,8 +39,10 @@ if %errorlevel% equ 0 (
     set "MANDATORY_MISSING=1"
 )
 
-:: CHECK 2: Python 3
-where python >nul 2>nul && (
+REM CHECK 2: Python 3
+set "PY_VER_FULL="
+where python >nul 2>nul
+if !errorlevel! equ 0 (
     for /f "tokens=2 delims= " %%a in ('python --version 2^>^&1') do set "PY_VER_FULL=%%a"
     if defined PY_VER_FULL (
         for /f "tokens=1 delims=." %%b in ("!PY_VER_FULL!") do set "PY_MAJOR=%%b"
@@ -52,7 +54,8 @@ where python >nul 2>nul && (
 )
 
 if "!PYTHON_OK!"=="0" (
-    where python3 >nul 2>nul && (
+    where python3 >nul 2>nul
+    if !errorlevel! equ 0 (
         for /f "tokens=2 delims= " %%a in ('python3 --version 2^>^&1') do set "PY_VER_FULL=%%a"
         if defined PY_VER_FULL (
             for /f "tokens=1 delims=." %%b in ("!PY_VER_FULL!") do set "PY_MAJOR=%%b"
@@ -71,14 +74,14 @@ if "!PYTHON_OK!"=="1" (
     set "MANDATORY_MISSING=1"
 )
 
-:: CHECK 3: Visual Studio Build Tools
+REM CHECK 3: Visual Studio Build Tools
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if exist "!VSWHERE!" (
     set "VSBUILD_OK=1"
     echo   [OK]  VS Build Tools     Gefunden
 ) else (
     where cl >nul 2>nul
-    if %errorlevel% equ 0 (
+    if !errorlevel! equ 0 (
         set "VSBUILD_OK=1"
         echo   [OK]  C++ Compiler       Gefunden ^(cl.exe^)
     ) else (
@@ -87,9 +90,9 @@ if exist "!VSWHERE!" (
     )
 )
 
-:: CHECK 4: npm
+REM CHECK 4: npm
 where npm >nul 2>nul
-if %errorlevel% equ 0 (
+if !errorlevel! equ 0 (
     for /f "tokens=*" %%v in ('npm -v 2^>nul') do set "NPM_VER=%%v"
     echo   [OK]  npm                v!NPM_VER!
 ) else (
@@ -97,26 +100,26 @@ if %errorlevel% equ 0 (
     set "MANDATORY_MISSING=1"
 )
 
-:: CHECK 5: Port 8080
+REM CHECK 5: Port 8080
 netstat -ano 2>nul | findstr ":8080 " | findstr "LISTENING" >nul 2>nul
-if %errorlevel% equ 0 (
+if !errorlevel! equ 0 (
     echo   [!]   Port 8080          Belegt ^(anderer Dienst laeuft auf 8080^)
 ) else (
     echo   [OK]  Port 8080          Frei
 )
 
-:: CHECK 6: Ollama (optional)
+REM CHECK 6: Ollama (optional)
 where ollama >nul 2>nul
-if %errorlevel% equ 0 (
+if !errorlevel! equ 0 (
     set "OLLAMA_OK=1"
     echo   [OK]  Ollama             Gefunden ^(optional^)
 ) else (
     echo   [--]  Ollama             Nicht installiert ^(optional, fuer lokale KI^)
 )
 
-:: CHECK 7: Git (optional)
+REM CHECK 7: Git (optional)
 where git >nul 2>nul
-if %errorlevel% equ 0 (
+if !errorlevel! equ 0 (
     set "GIT_OK=1"
     for /f "tokens=3" %%v in ('git --version 2^>nul') do set "GIT_VER=%%v"
     echo   [OK]  Git                !GIT_VER! ^(optional^)
@@ -128,19 +131,19 @@ echo.
 echo   ==============================================
 echo.
 
-:: Pflicht-Komponenten fehlen?
+REM Pflicht-Komponenten fehlen?
 if "!MANDATORY_MISSING!"=="1" (
     echo   Fehlende Pflicht-Komponenten gefunden:
     echo.
-    if "!NODE_OK!"=="0"   echo     * Node.js 20+
-    if "!PYTHON_OK!"=="0" echo     * Python 3
+    if "!NODE_OK!"=="0"    echo     * Node.js 20+
+    if "!PYTHON_OK!"=="0"  echo     * Python 3
     if "!VSBUILD_OK!"=="0" echo     * Visual Studio Build Tools
     echo.
 
-    :: Pruefen ob winget verfuegbar ist
+    REM Pruefen ob winget verfuegbar ist
     set "WINGET_OK=0"
     where winget >nul 2>nul
-    if %errorlevel% equ 0 set "WINGET_OK=1"
+    if !errorlevel! equ 0 set "WINGET_OK=1"
 
     if "!WINGET_OK!"=="1" (
         set /p "AUTO_INSTALL=  Fehlende Pakete jetzt automatisch installieren (via winget)? [J/n]: "
@@ -185,34 +188,36 @@ if "!PYTHON_OK!"=="0" (
 
 if "!VSBUILD_OK!"=="0" (
     echo   → Installiere Visual Studio Build Tools...
-    echo     (Dies kann einige Minuten dauern)
+    echo     ^(Dies kann einige Minuten dauern^)
     winget install Microsoft.VisualStudio.2022.BuildTools --accept-source-agreements --accept-package-agreements -h --override "--wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
     if !errorlevel! neq 0 (
         echo   [!] VS Build Tools Installation fehlgeschlagen
-        echo   [!] Alternative: npm install -g windows-build-tools (als Admin)
+        echo   [!] Alternative: npm install -g windows-build-tools ^(als Admin^)
     ) else (
         echo   [OK] VS Build Tools installiert
     )
     echo.
 )
 
-:: PATH aktualisieren (neue Installationen sichtbar machen)
+REM PATH aktualisieren (neue Installationen sichtbar machen)
 echo   Aktualisiere PATH...
 echo.
+goto :REFRESH_PATH_AND_CHECK
 
-:: Neuen PATH aus Registry holen
+:REFRESH_PATH_AND_CHECK
+REM Neuen PATH aus Registry holen
 for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "SYS_PATH=%%B"
 for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USR_PATH=%%B"
 set "PATH=!SYS_PATH!;!USR_PATH!"
 
-:: Ergebnis pruefen
+REM Ergebnis pruefen
 echo   Pruefe Installation...
 echo.
 
 set "STILL_MISSING=0"
 
 where node >nul 2>nul
-if %errorlevel% equ 0 (
+if !errorlevel! equ 0 (
     for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NEW_NODE_VER=%%v"
     echo   [OK]  Node.js            !NEW_NODE_VER!
 ) else (
@@ -221,8 +226,10 @@ if %errorlevel% equ 0 (
 )
 
 set "PY_CHECK=0"
-where python >nul 2>nul && set "PY_CHECK=1"
-where python3 >nul 2>nul && set "PY_CHECK=1"
+where python >nul 2>nul
+if !errorlevel! equ 0 set "PY_CHECK=1"
+where python3 >nul 2>nul
+if !errorlevel! equ 0 set "PY_CHECK=1"
 if "!PY_CHECK!"=="1" (
     echo   [OK]  Python             Gefunden
 ) else (
@@ -232,7 +239,8 @@ if "!PY_CHECK!"=="1" (
 
 set "VS_CHECK=0"
 if exist "!VSWHERE!" set "VS_CHECK=1"
-where cl >nul 2>nul && set "VS_CHECK=1"
+where cl >nul 2>nul
+if !errorlevel! equ 0 set "VS_CHECK=1"
 if "!VS_CHECK!"=="1" (
     echo   [OK]  Build Tools        Gefunden
 ) else (
@@ -299,7 +307,7 @@ echo   ==============================================
 echo.
 pause
 
-:: PATH aktualisieren nach manueller Installation
+REM PATH aktualisieren nach manueller Installation
 for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "SYS_PATH=%%B"
 for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USR_PATH=%%B"
 set "PATH=!SYS_PATH!;!USR_PATH!"
@@ -308,10 +316,10 @@ echo.
 echo   Pruefe erneut...
 echo.
 
-:: Node.js nochmal pruefen
+REM Node.js nochmal pruefen
 if "!NODE_OK!"=="0" (
     where node >nul 2>nul
-    if %errorlevel% equ 0 (
+    if !errorlevel! equ 0 (
         for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NODE_VER=%%v"
         for /f "tokens=1 delims=." %%a in ("!NODE_VER!") do set "NODE_RAW=%%a"
         set "NODE_MAJOR=!NODE_RAW:v=!"
@@ -326,9 +334,11 @@ if "!NODE_OK!"=="0" (
     )
 )
 
-:: Python nochmal pruefen
+REM Python nochmal pruefen
 if "!PYTHON_OK!"=="0" (
-    where python >nul 2>nul && (
+    set "PY_VER_FULL="
+    where python >nul 2>nul
+    if !errorlevel! equ 0 (
         for /f "tokens=2 delims= " %%a in ('python --version 2^>^&1') do set "PY_VER_FULL=%%a"
         if defined PY_VER_FULL (
             for /f "tokens=1 delims=." %%b in ("!PY_VER_FULL!") do set "PY_MAJOR=%%b"
@@ -342,7 +352,7 @@ if "!PYTHON_OK!"=="0" (
     if "!PYTHON_OK!"=="0" echo   [!!]  Python             Immer noch nicht gefunden
 )
 
-:: VS Build Tools nochmal pruefen
+REM VS Build Tools nochmal pruefen
 if "!VSBUILD_OK!"=="0" (
     set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
     if exist "!VSWHERE!" (
@@ -350,7 +360,7 @@ if "!VSBUILD_OK!"=="0" (
         echo   [OK]  VS Build Tools     Gefunden
     ) else (
         where cl >nul 2>nul
-        if %errorlevel% equ 0 (
+        if !errorlevel! equ 0 (
             set "VSBUILD_OK=1"
             echo   [OK]  VS Build Tools     Gefunden
         ) else (
@@ -359,16 +369,16 @@ if "!VSBUILD_OK!"=="0" (
     )
 )
 
-:: npm nochmal pruefen
+REM npm nochmal pruefen
 where npm >nul 2>nul
-if %errorlevel% equ 0 (
+if !errorlevel! equ 0 (
     for /f "tokens=*" %%v in ('npm -v 2^>nul') do set "NPM_VER=%%v"
     echo   [OK]  npm                v!NPM_VER!
 )
 
 echo.
 
-:: Immer noch was fehlend?
+REM Immer noch was fehlend?
 set "STILL_MISSING=0"
 if "!NODE_OK!"=="0" set "STILL_MISSING=1"
 if "!PYTHON_OK!"=="0" set "STILL_MISSING=1"
@@ -394,14 +404,14 @@ goto :INSTALL_OK
 
 :INSTALL_OK
 
-:: Hinweise fuer optionale Komponenten
+REM Hinweise fuer optionale Komponenten
 if "!OLLAMA_OK!"=="0" (
     echo   Hinweis: Ollama ist nicht installiert.
     echo   Fuer lokale KI-Berichte: https://ollama.ai/
     echo.
 )
 
-:: Installation starten
+REM Installation starten
 echo   Alle Voraussetzungen erfuellt - starte Installation...
 echo.
 
@@ -436,7 +446,7 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-:: Desktop-Verknuepfung erstellen
+REM Desktop-Verknuepfung erstellen
 echo.
 echo   Erstelle Desktop-Verknuepfung...
 
@@ -452,7 +462,7 @@ if exist "%SHORTCUT%" (
     echo   [!] Desktop-Verknuepfung konnte nicht erstellt werden
 )
 
-:: Erfolg
+REM Erfolg
 echo.
 echo   ==============================================
 echo     Installation erfolgreich abgeschlossen!
