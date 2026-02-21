@@ -66,7 +66,7 @@ npm start
 2. Double-click `install.bat` — automatically checks all prerequisites:
    - **Node.js 20+** — [Download](https://nodejs.org/)
    - **Python 3** — [Download](https://www.python.org/downloads/) (check "Add to PATH" during install)
-   - **Visual Studio Build Tools** — [Download](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (select "Desktop development with C++")
+   - **Visual Studio Build Tools** — [Download](https://aka.ms/vs/17/release/vs_BuildTools.exe) (select "Desktop development with C++")
    - If anything is missing, the installer shows download links
 3. Double-click `start.bat` — starts the server and opens the browser
 

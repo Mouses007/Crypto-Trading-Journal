@@ -291,7 +291,7 @@ if !PYTHON_OK!==0 (
 
 if !VSBUILD_OK!==0 (
     echo   Visual Studio Build Tools
-    echo     https://visualstudio.microsoft.com/visual-cpp-build-tools/
+    echo     https://aka.ms/vs/17/release/vs_BuildTools.exe
     echo     Bei der Installation "Desktopentwicklung mit C++" auswaehlen
     echo.
 )
@@ -303,7 +303,7 @@ set /p "OPEN_LINKS=  Download-Links im Browser oeffnen? (j/n): "
 if /i "!OPEN_LINKS!"=="j" (
     if !NODE_OK!==0 start https://nodejs.org/
     if !PYTHON_OK!==0 start https://www.python.org/downloads/
-    if !VSBUILD_OK!==0 start https://visualstudio.microsoft.com/visual-cpp-build-tools/
+    if !VSBUILD_OK!==0 start https://aka.ms/vs/17/release/vs_BuildTools.exe
     echo.
     echo   Links wurden im Browser geoeffnet.
 )
