@@ -1,0 +1,75 @@
+═══════════════════════════════════════════════════
+  Crypto Trading Journal - Installationsanleitung
+═══════════════════════════════════════════════════
+
+Hallo!
+
+Hier ist die Anleitung zum Installieren des Crypto Trading Journals
+auf deinem Linux-Rechner (Ubuntu/Debian/Mint).
+
+Die Installation dauert ca. 5-10 Minuten und ist fast komplett automatisch.
+
+
+SCHRITT 1: Terminal oeffnen
+────────────────────────────
+Druecke Ctrl+Alt+T um ein Terminal zu oeffnen.
+
+
+SCHRITT 2: Setup-Script herunterladen und ausfuehren
+─────────────────────────────────────────────────────
+Kopiere diese 3 Zeilen ins Terminal und druecke Enter:
+
+    curl -fsSL https://raw.githubusercontent.com/Mouses007/Crypto-Trading-Journal/master/setup-remote.sh -o setup-remote.sh
+    chmod +x setup-remote.sh
+    ./setup-remote.sh
+
+Das Script macht alles automatisch:
+  - Installiert Node.js, Git und Build-Tools (falls nicht vorhanden)
+  - Laedt das Projekt herunter
+  - Baut die Anwendung
+  - Erstellt eine Desktop-Verknuepfung
+
+Bei manchen Schritten fragt es nach deinem Passwort (fuer sudo).
+
+
+SCHRITT 3: Trading Journal starten
+───────────────────────────────────
+Nach der Installation gibt es zwei Moeglichkeiten:
+
+  Option A: Doppelklick auf "Crypto Trading Journal" auf dem Desktop
+  Option B: Im Terminal:
+            cd ~/Crypto-Trading-Journal
+            ./start.sh
+
+Dann oeffnet sich automatisch der Browser mit http://localhost:8080
+
+
+SCHRITT 4: Erste Einrichtung
+─────────────────────────────
+1. Gehe zu "Einstellungen" (im Menue links)
+2. Waehle deine Boerse (Bitunix oder Bitget)
+3. Gib deinen API Key und Secret ein
+   (findest du auf der Boersenwebsite unter API-Management)
+4. Waehle ein Import-Startdatum
+5. Speichern — die Trades werden automatisch importiert
+
+Fertig! Dein Trading Journal ist einsatzbereit.
+
+
+UPDATES
+───────
+Wenn ein Update verfuegbar ist, erscheint in der Seitenleiste
+ein gruener Button "Update vX.X.X". Einfach draufklicken —
+das Update wird automatisch installiert.
+
+
+BEI PROBLEMEN
+──────────────
+- "Permission denied": Versuche "sudo ./setup-remote.sh"
+- "npm install Fehler": sudo apt-get install -y build-essential python3
+- Port 8080 belegt: CTJ_PORT=3000 npm start (nutzt dann Port 3000)
+- Andere Fragen: Meld dich einfach bei mir!
+
+
+Viel Erfolg beim Traden!
+═══════════════════════════════════════════════════
