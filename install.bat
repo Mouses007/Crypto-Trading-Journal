@@ -23,7 +23,7 @@ echo.
 
 :: CHECK 1: Node.js 20+
 where node >nul 2>nul
-if !errorlevel!==0 (
+if %errorlevel% equ 0 (
     for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NODE_VER=%%v"
     for /f "tokens=1 delims=." %%a in ("!NODE_VER!") do set "NODE_RAW=%%a"
     set "NODE_MAJOR=!NODE_RAW:v=!"
@@ -31,7 +31,7 @@ if !errorlevel!==0 (
         set "NODE_OK=1"
         echo   [OK]  Node.js            !NODE_VER!
     ) else (
-        echo   [!!]  Node.js            !NODE_VER! (Version 20+ erforderlich)
+        echo   [!!]  Node.js            !NODE_VER! ^(Version 20+ erforderlich^)
         set "MANDATORY_MISSING=1"
     )
 ) else (
@@ -40,24 +40,19 @@ if !errorlevel!==0 (
 )
 
 :: CHECK 2: Python 3
-set "PY_FOUND=0"
-
-where python >nul 2>nul
-if !errorlevel!==0 (
+where python >nul 2>nul && (
     for /f "tokens=2 delims= " %%a in ('python --version 2^>^&1') do set "PY_VER_FULL=%%a"
     if defined PY_VER_FULL (
         for /f "tokens=1 delims=." %%b in ("!PY_VER_FULL!") do set "PY_MAJOR=%%b"
         if "!PY_MAJOR!"=="3" (
-            set "PY_FOUND=1"
             set "PYTHON_OK=1"
             set "PYTHON_VER=!PY_VER_FULL!"
         )
     )
 )
 
-if !PY_FOUND!==0 (
-    where python3 >nul 2>nul
-    if !errorlevel!==0 (
+if "!PYTHON_OK!"=="0" (
+    where python3 >nul 2>nul && (
         for /f "tokens=2 delims= " %%a in ('python3 --version 2^>^&1') do set "PY_VER_FULL=%%a"
         if defined PY_VER_FULL (
             for /f "tokens=1 delims=." %%b in ("!PY_VER_FULL!") do set "PY_MAJOR=%%b"
@@ -69,7 +64,7 @@ if !PY_FOUND!==0 (
     )
 )
 
-if !PYTHON_OK!==1 (
+if "!PYTHON_OK!"=="1" (
     echo   [OK]  Python             !PYTHON_VER!
 ) else (
     echo   [!!]  Python 3           Nicht gefunden
@@ -77,20 +72,15 @@ if !PYTHON_OK!==1 (
 )
 
 :: CHECK 3: Visual Studio Build Tools
-set "VS_FOUND=0"
-
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if exist "!VSWHERE!" (
-    set "VS_FOUND=1"
     set "VSBUILD_OK=1"
     echo   [OK]  VS Build Tools     Gefunden
-)
-
-if !VS_FOUND!==0 (
+) else (
     where cl >nul 2>nul
-    if !errorlevel!==0 (
+    if %errorlevel% equ 0 (
         set "VSBUILD_OK=1"
-        echo   [OK]  C++ Compiler       Gefunden (cl.exe)
+        echo   [OK]  C++ Compiler       Gefunden ^(cl.exe^)
     ) else (
         echo   [!!]  VS Build Tools     Nicht gefunden
         set "MANDATORY_MISSING=1"
@@ -99,7 +89,7 @@ if !VS_FOUND!==0 (
 
 :: CHECK 4: npm
 where npm >nul 2>nul
-if !errorlevel!==0 (
+if %errorlevel% equ 0 (
     for /f "tokens=*" %%v in ('npm -v 2^>nul') do set "NPM_VER=%%v"
     echo   [OK]  npm                v!NPM_VER!
 ) else (
@@ -108,32 +98,30 @@ if !errorlevel!==0 (
 )
 
 :: CHECK 5: Port 8080
-set "PORT_FREE=1"
 netstat -ano 2>nul | findstr ":8080 " | findstr "LISTENING" >nul 2>nul
-if !errorlevel!==0 (
-    set "PORT_FREE=0"
-    echo   [!]   Port 8080          Belegt (anderer Dienst laeuft auf 8080)
+if %errorlevel% equ 0 (
+    echo   [!]   Port 8080          Belegt ^(anderer Dienst laeuft auf 8080^)
 ) else (
     echo   [OK]  Port 8080          Frei
 )
 
 :: CHECK 6: Ollama (optional)
 where ollama >nul 2>nul
-if !errorlevel!==0 (
+if %errorlevel% equ 0 (
     set "OLLAMA_OK=1"
-    echo   [OK]  Ollama             Gefunden (optional)
+    echo   [OK]  Ollama             Gefunden ^(optional^)
 ) else (
-    echo   [--]  Ollama             Nicht installiert (optional, fuer lokale KI)
+    echo   [--]  Ollama             Nicht installiert ^(optional, fuer lokale KI^)
 )
 
 :: CHECK 7: Git (optional)
 where git >nul 2>nul
-if !errorlevel!==0 (
+if %errorlevel% equ 0 (
     set "GIT_OK=1"
     for /f "tokens=3" %%v in ('git --version 2^>nul') do set "GIT_VER=%%v"
-    echo   [OK]  Git                !GIT_VER! (optional)
+    echo   [OK]  Git                !GIT_VER! ^(optional^)
 ) else (
-    echo   [--]  Git                Nicht installiert (optional)
+    echo   [--]  Git                Nicht installiert ^(optional^)
 )
 
 echo.
@@ -141,20 +129,20 @@ echo   ==============================================
 echo.
 
 :: Pflicht-Komponenten fehlen?
-if !MANDATORY_MISSING!==1 (
+if "!MANDATORY_MISSING!"=="1" (
     echo   Fehlende Pflicht-Komponenten gefunden:
     echo.
-    if !NODE_OK!==0   echo     * Node.js 20+
-    if !PYTHON_OK!==0 echo     * Python 3
-    if !VSBUILD_OK!==0 echo     * Visual Studio Build Tools
+    if "!NODE_OK!"=="0"   echo     * Node.js 20+
+    if "!PYTHON_OK!"=="0" echo     * Python 3
+    if "!VSBUILD_OK!"=="0" echo     * Visual Studio Build Tools
     echo.
 
     :: Pruefen ob winget verfuegbar ist
     set "WINGET_OK=0"
     where winget >nul 2>nul
-    if !errorlevel!==0 set "WINGET_OK=1"
+    if %errorlevel% equ 0 set "WINGET_OK=1"
 
-    if !WINGET_OK!==1 (
+    if "!WINGET_OK!"=="1" (
         set /p "AUTO_INSTALL=  Fehlende Pakete jetzt automatisch installieren (via winget)? [J/n]: "
         if /i "!AUTO_INSTALL!"=="" set "AUTO_INSTALL=j"
         if /i "!AUTO_INSTALL!"=="j" goto :AUTO_INSTALL_START
@@ -173,7 +161,7 @@ echo.
 echo   Installiere fehlende Pakete...
 echo.
 
-if !NODE_OK!==0 (
+if "!NODE_OK!"=="0" (
     echo   → Installiere Node.js 20 LTS...
     winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements -h
     if !errorlevel! neq 0 (
@@ -184,7 +172,7 @@ if !NODE_OK!==0 (
     echo.
 )
 
-if !PYTHON_OK!==0 (
+if "!PYTHON_OK!"=="0" (
     echo   → Installiere Python 3...
     winget install Python.Python.3.12 --accept-source-agreements --accept-package-agreements -h
     if !errorlevel! neq 0 (
@@ -195,7 +183,7 @@ if !PYTHON_OK!==0 (
     echo.
 )
 
-if !VSBUILD_OK!==0 (
+if "!VSBUILD_OK!"=="0" (
     echo   → Installiere Visual Studio Build Tools...
     echo     (Dies kann einige Minuten dauern)
     winget install Microsoft.VisualStudio.2022.BuildTools --accept-source-agreements --accept-package-agreements -h --override "--wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
@@ -224,7 +212,7 @@ echo.
 set "STILL_MISSING=0"
 
 where node >nul 2>nul
-if !errorlevel!==0 (
+if %errorlevel% equ 0 (
     for /f "tokens=*" %%v in ('node -v 2^>nul') do set "NEW_NODE_VER=%%v"
     echo   [OK]  Node.js            !NEW_NODE_VER!
 ) else (
@@ -233,11 +221,9 @@ if !errorlevel!==0 (
 )
 
 set "PY_CHECK=0"
-where python >nul 2>nul
-if !errorlevel!==0 set "PY_CHECK=1"
-where python3 >nul 2>nul
-if !errorlevel!==0 set "PY_CHECK=1"
-if !PY_CHECK!==1 (
+where python >nul 2>nul && set "PY_CHECK=1"
+where python3 >nul 2>nul && set "PY_CHECK=1"
+if "!PY_CHECK!"=="1" (
     echo   [OK]  Python             Gefunden
 ) else (
     echo   [!!]  Python             Nicht gefunden
@@ -245,11 +231,9 @@ if !PY_CHECK!==1 (
 )
 
 set "VS_CHECK=0"
-set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if exist "!VSWHERE!" set "VS_CHECK=1"
-where cl >nul 2>nul
-if !errorlevel!==0 set "VS_CHECK=1"
-if !VS_CHECK!==1 (
+where cl >nul 2>nul && set "VS_CHECK=1"
+if "!VS_CHECK!"=="1" (
     echo   [OK]  Build Tools        Gefunden
 ) else (
     echo   [!!]  Build Tools        Nicht gefunden
@@ -258,7 +242,7 @@ if !VS_CHECK!==1 (
 
 echo.
 
-if !STILL_MISSING!==1 (
+if "!STILL_MISSING!"=="1" (
     echo   Einige Pakete erfordern einen Neustart der Eingabeaufforderung.
     echo.
     echo   Bitte dieses Fenster schliessen und install.bat erneut starten.
@@ -275,21 +259,21 @@ goto :INSTALL_OK
 echo   Bitte installiere die Pakete manuell:
 echo.
 
-if !NODE_OK!==0 (
-    echo   Node.js 20+ (LTS)
+if "!NODE_OK!"=="0" (
+    echo   Node.js 20+ ^(LTS^)
     echo     https://nodejs.org/
     echo     Waehle die LTS-Version und aktiviere "Add to PATH"
     echo.
 )
 
-if !PYTHON_OK!==0 (
+if "!PYTHON_OK!"=="0" (
     echo   Python 3
     echo     https://www.python.org/downloads/
     echo     WICHTIG: Bei der Installation "Add Python to PATH" ankreuzen!
     echo.
 )
 
-if !VSBUILD_OK!==0 (
+if "!VSBUILD_OK!"=="0" (
     echo   Visual Studio Build Tools
     echo     https://aka.ms/vs/17/release/vs_BuildTools.exe
     echo     Bei der Installation "Desktopentwicklung mit C++" auswaehlen
@@ -301,9 +285,9 @@ echo.
 
 set /p "OPEN_LINKS=  Download-Links im Browser oeffnen? (j/n): "
 if /i "!OPEN_LINKS!"=="j" (
-    if !NODE_OK!==0 start https://nodejs.org/
-    if !PYTHON_OK!==0 start https://www.python.org/downloads/
-    if !VSBUILD_OK!==0 start https://aka.ms/vs/17/release/vs_BuildTools.exe
+    if "!NODE_OK!"=="0" start https://nodejs.org/
+    if "!PYTHON_OK!"=="0" start https://www.python.org/downloads/
+    if "!VSBUILD_OK!"=="0" start https://aka.ms/vs/17/release/vs_BuildTools.exe
     echo.
     echo   Links wurden im Browser geoeffnet.
 )
@@ -315,7 +299,7 @@ exit /b 1
 :INSTALL_OK
 
 :: Hinweise fuer optionale Komponenten
-if !OLLAMA_OK!==0 (
+if "!OLLAMA_OK!"=="0" (
     echo   Hinweis: Ollama ist nicht installiert.
     echo   Fuer lokale KI-Berichte: https://ollama.ai/
     echo.
