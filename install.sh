@@ -122,13 +122,15 @@ else
 fi
 
 # ══════════════════════════════════════════
-#  CHECK 7: Git (optional)
+#  CHECK 7: Git (empfohlen fuer Auto-Updates)
 # ══════════════════════════════════════════
+GIT_OK=0
 if command -v git &>/dev/null; then
+    GIT_OK=1
     GIT_VER=$(git --version | awk '{print $3}')
-    echo -e "  ${GREEN}[OK]${RESET}  Git                ${GIT_VER} ${GRAY}(optional)${RESET}"
+    echo -e "  ${GREEN}[OK]${RESET}  Git                ${GIT_VER}"
 else
-    echo -e "  ${YELLOW}[--]${RESET}  Git                ${YELLOW}Nicht installiert${RESET} ${GRAY}(optional)${RESET}"
+    echo -e "  ${YELLOW}[!]${RESET}   Git                ${YELLOW}Nicht installiert${RESET} ${GRAY}(empfohlen fuer Auto-Updates)${RESET}"
 fi
 
 echo ""
@@ -346,6 +348,31 @@ fi
 # ══════════════════════════════════════════
 #  Installation starten
 # ══════════════════════════════════════════
+# ══════════════════════════════════════════
+#  Git-Repository initialisieren (fuer Auto-Updates)
+# ══════════════════════════════════════════
+if [ ! -d ".git" ]; then
+    if [ "$GIT_OK" = "1" ]; then
+        echo -e "  ${CYAN}Git-Repository initialisieren (fuer Auto-Updates)...${RESET}"
+        git init >/dev/null 2>&1
+        git remote add origin https://github.com/Mouses007/Crypto-Trading-Journal.git >/dev/null 2>&1
+        if git fetch origin master >/dev/null 2>&1; then
+            echo -e "  ${GREEN}[OK]${RESET}  Git-Repository     Initialisiert"
+        else
+            echo -e "  ${YELLOW}[!]${RESET}   Git-Repository     Konnte nicht initialisiert werden"
+            echo -e "  ${GRAY}       Auto-Updates sind moeglicherweise nicht verfuegbar${RESET}"
+        fi
+        echo ""
+    else
+        echo -e "  ${YELLOW}Hinweis:${RESET} Ohne Git sind keine Auto-Updates moeglich."
+        echo -e "  ${GRAY}Installiere Git und starte den Installer erneut fuer Update-Support.${RESET}"
+        echo ""
+    fi
+else
+    echo -e "  ${GREEN}[OK]${RESET}  Git-Repository     Vorhanden"
+    echo ""
+fi
+
 echo -e "  ${BOLD}Alle Voraussetzungen erfuellt - starte Installation...${RESET}"
 echo ""
 

@@ -5,7 +5,7 @@
  * POST /api/update/install  → git pull + npm install + signal restart
  */
 import { execSync, exec } from 'child_process'
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 import path from 'path'
 import https from 'https'
 import { fileURLToPath } from 'url'
@@ -123,6 +123,16 @@ export function setupUpdateRoutes(app) {
     // ── Install update ─────────────────────────────────────────────
     app.post('/api/update/install', async (req, res) => {
         try {
+            // Pruefen ob Git-Repository vorhanden ist
+            if (!existsSync(path.join(PROJECT_ROOT, '.git'))) {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'Git-Repository nicht gefunden. Bitte fuehre im Installationsordner aus:\n' +
+                        'git init && git remote add origin https://github.com/Mouses007/Crypto-Trading-Journal.git && git fetch origin master\n' +
+                        'Oder installiere neu mit: git clone https://github.com/Mouses007/Crypto-Trading-Journal.git'
+                })
+            }
+
             const steps = []
 
             // 0. Aktuellen Commit-Hash speichern (für Rollback)
@@ -180,6 +190,13 @@ export function setupUpdateRoutes(app) {
 
     // ── Rollback to previous version ────────────────────────────────
     app.post('/api/update/rollback', async (req, res) => {
+        // Pruefen ob Git-Repository vorhanden ist
+        if (!existsSync(path.join(PROJECT_ROOT, '.git'))) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Git-Repository nicht gefunden. Rollback nicht moeglich.'
+            })
+        }
         if (!preUpdateCommit) {
             return res.status(400).json({ ok: false, error: 'Kein Rollback-Punkt vorhanden. Rollback ist nur nach einem Update möglich.' })
         }
@@ -237,6 +254,13 @@ export function setupUpdateRoutes(app) {
 
     // ── Startup check (non-blocking) ───────────────────────────────
     setTimeout(async () => {
+        // Pruefen ob Git-Repository vorhanden ist
+        if (!existsSync(path.join(PROJECT_ROOT, '.git'))) {
+            console.log(' -> Kein Git-Repository gefunden — Auto-Updates nicht verfuegbar')
+            console.log('    Tipp: git init && git remote add origin https://github.com/Mouses007/Crypto-Trading-Journal.git && git fetch origin master')
+            return
+        }
+
         try {
             const localVersion = getLocalVersion()
             const release = await httpsGetJson(

@@ -472,6 +472,24 @@ if "!OLLAMA_OK!"=="0" (
     echo.
 )
 
+REM Git-Repository initialisieren (fuer Auto-Updates)
+if not exist ".git\" (
+    echo   Git-Repository initialisieren ^(fuer Auto-Updates^)...
+    git init >nul 2>nul
+    git remote add origin https://github.com/Mouses007/Crypto-Trading-Journal.git >nul 2>nul
+    git fetch origin master >nul 2>nul
+    if !errorlevel! equ 0 (
+        echo   [OK]  Git-Repository     Initialisiert
+    ) else (
+        echo   [!]   Git-Repository     Konnte nicht initialisiert werden
+        echo                             Auto-Updates sind moeglicherweise nicht verfuegbar
+    )
+    echo.
+) else (
+    echo   [OK]  Git-Repository     Vorhanden
+    echo.
+)
+
 REM Installation starten
 echo   Alle Voraussetzungen erfuellt - starte Installation...
 echo.
