@@ -533,7 +533,7 @@ set "DESKTOP=%USERPROFILE%\Desktop"
 set "SHORTCUT=%DESKTOP%\Crypto Trading Journal.lnk"
 set "INSTALL_DIR=%CD%"
 
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT%'); $s.TargetPath = '%INSTALL_DIR%\start.bat'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.IconLocation = '%INSTALL_DIR%\src\assets\icon.ico,0'; $s.Description = 'Crypto Trading Journal starten'; $s.Save()" 2>nul
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT%'); $s.TargetPath = '%INSTALL_DIR%\start.bat'; $s.WorkingDirectory = '%INSTALL_DIR%'; $s.IconLocation = '%INSTALL_DIR%\src\assets\icon.ico,0'; $s.Description = 'Crypto Trading Journal starten'; $s.WindowStyle = 7; $s.Save()" 2>nul
 
 if exist "%SHORTCUT%" (
     echo   [OK] Desktop-Verknuepfung erstellt

@@ -99,7 +99,7 @@ const currentApiKey = computed({
 })
 
 const openaiModels = ['gpt-4o-mini', 'gpt-4o']
-const anthropicModels = ['claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001']
+const anthropicModels = ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001']
 const geminiModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro']
 const deepseekModels = ['deepseek-chat', 'deepseek-reasoner']
 
@@ -1396,18 +1396,6 @@ onBeforeMount(async () => {
                             </select>
                             <textarea class="form-control" v-model="aiReportPrompt" rows="3" placeholder="Zusätzliche Anweisungen für die KI-Berichterstellung... (leer = Standard-Prompt)"></textarea>
                             <small class="text-muted">Diese Anweisungen werden dem Standard-Prompt hinzugefügt. Hiermit kannst du den Stil, Fokus und Detailgrad des Berichts beeinflussen.</small>
-                        </div>
-                    </div>
-
-                    <!-- Screenshot-Analyse (nur Online-Provider) -->
-                    <div v-if="aiProvider !== 'ollama'" class="row mt-3">
-                        <div class="col-12 col-md-4">Chart-Analyse</div>
-                        <div class="col-12 col-md-8">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="aiScreenshotsToggle" v-model="aiScreenshots">
-                                <label class="form-check-label" for="aiScreenshotsToggle">Screenshots in Bericht einbeziehen</label>
-                            </div>
-                            <small class="text-muted">Sendet bis zu 4 Chart-Screenshots an die KI zur visuellen Analyse. Erhöht den Token-Verbrauch.</small>
                         </div>
                     </div>
 

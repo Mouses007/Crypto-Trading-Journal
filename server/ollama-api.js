@@ -286,21 +286,15 @@ export function setupOllamaRoutes(app) {
         }
     })
 
-    // --- Screenshot KI-Bewertung ---
-    app.post('/api/ai/screenshot-review', async (req, res) => {
-        const { screenshotId } = req.body
-        if (!screenshotId) {
-            return res.status(400).json({ error: 'screenshotId erforderlich' })
+    // --- Per-Trade KI-Bewertung ---
+    app.post('/api/ai/trade-review', async (req, res) => {
+        const { tradeId, dateUnix, tradeData } = req.body
+        if (!tradeId || !tradeData) {
+            return res.status(400).json({ error: 'tradeId und tradeData erforderlich' })
         }
 
         try {
             const knex = getKnex()
-
-            // Screenshot laden (objectId vom Frontend = String(id))
-            const screenshot = await knex('screenshots').where('id', parseInt(screenshotId)).first()
-            if (!screenshot) {
-                return res.status(404).json({ error: 'Screenshot nicht gefunden' })
-            }
 
             // KI-Settings laden
             const settings = await knex('settings')
@@ -309,69 +303,201 @@ export function setupOllamaRoutes(app) {
             const provider = settings?.aiProvider || 'ollama'
             const model = settings?.aiModel || ''
             const temperature = settings?.aiTemperature ?? 0.7
-            const maxTokens = settings?.aiMaxTokens || 800
+            const maxTokens = settings?.aiMaxTokens || 1500
+            const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
             const apiKey = getApiKeyForProvider(settings, provider)
 
-            // Prüfen ob Provider Bilder unterstützt
-            if (provider === 'ollama' || provider === 'deepseek') {
-                return res.status(400).json({ error: `${provider} unterstützt keine Bildanalyse. Bitte verwende OpenAI, Anthropic oder Gemini.` })
+            // Notiz des Users laden (falls vorhanden)
+            const noteRecord = await knex('notes').where('tradeId', tradeId).first()
+            const userNote = noteRecord?.note || ''
+            const entryNote = noteRecord?.entryNote || ''
+            const closingNote = noteRecord?.closingNote || ''
+            const feelings = noteRecord?.feelings || ''
+            const playbook = noteRecord?.playbook || ''
+
+            // Satisfaction laden
+            const satRecord = await knex('satisfactions').where('tradeId', tradeId).first()
+            const satisfaction = satRecord ? (satRecord.satisfaction === 1 ? 'Zufrieden' : satRecord.satisfaction === 0 ? 'Unzufrieden' : 'Neutral') : 'Nicht bewertet'
+
+            // Tags laden
+            const tagRecord = await knex('tags').where('tradeId', tradeId).first()
+            let tradeTags = ''
+            if (tagRecord?.tags) {
+                try {
+                    const parsed = JSON.parse(tagRecord.tags)
+                    tradeTags = parsed.map(t => t.name || t).join(', ')
+                } catch (e) { /* ignore */ }
             }
 
-            // Bild vorbereiten
-            const base64 = screenshot.annotatedBase64 || screenshot.originalBase64
-            if (!base64 || base64.length < 100) {
-                return res.status(400).json({ error: 'Screenshot hat kein gültiges Bild' })
+            // Screenshot laden (falls vorhanden) — mehrere Suchstrategien
+            let screenshotData = []
+            const symbol = tradeData.symbol || ''
+            const tradeSide = tradeData.side === 'B' ? 'Long' : 'Short'
+            const tradeSideShort = tradeData.side === 'B' ? 'B' : 'S'
+
+            // Strategie 1: Direkt per name = tradeId
+            let screenshotRecord = await knex('screenshots').where('name', tradeId).first()
+
+            // Strategie 2: Per dateUnixDay (gleicher Tag)
+            if (!screenshotRecord && dateUnix) {
+                screenshotRecord = await knex('screenshots')
+                    .where('dateUnixDay', dateUnix)
+                    .andWhere('symbol', symbol)
+                    .first()
             }
 
-            const cleanBase64 = base64.replace(/^data:image\/[^;]+;base64,/, '')
-            const mimeMatch = base64.match(/^data:(image\/[^;]+);base64,/)
-            const mimeType = mimeMatch ? mimeMatch[1] : 'image/png'
+            // Strategie 3: Per name-Pattern "t{dateUnix}_{symbol}_{side}"
+            if (!screenshotRecord && dateUnix && symbol) {
+                const namePattern = 't' + dateUnix + '_' + symbol + '_' + tradeSideShort
+                screenshotRecord = await knex('screenshots').where('name', namePattern).first()
+            }
 
-            const symbol = screenshot.symbol || 'Unknown'
-            const side = screenshot.side === 'B' || screenshot.side === 'BC' ? 'Long' : screenshot.side === 'SS' ? 'Short' : screenshot.side || ''
+            // Strategie 4: Nur per dateUnixDay (irgendein Screenshot vom gleichen Tag)
+            if (!screenshotRecord && dateUnix) {
+                screenshotRecord = await knex('screenshots').where('dateUnixDay', dateUnix).first()
+            }
+            if (screenshotRecord) {
+                const base64 = screenshotRecord.annotatedBase64 || screenshotRecord.originalBase64
+                if (base64 && base64.length > 100) {
+                    const cleanBase64 = base64.replace(/^data:image\/[^;]+;base64,/, '')
+                    const mimeMatch = base64.match(/^data:(image\/[^;]+);base64,/)
+                    const mimeType = mimeMatch ? mimeMatch[1] : 'image/png'
+                    screenshotData.push({
+                        symbol: screenshotRecord.symbol || '',
+                        side: screenshotRecord.side || '',
+                        timeframe: '',
+                        base64: cleanBase64,
+                        mimeType
+                    })
+                }
+            }
 
-            const reviewPrompt = `Du bist ein erfahrener Crypto-Trading-Coach. Analysiere diesen Chart-Screenshot und gib eine kompakte Bewertung.
+            const hasScreenshot = screenshotData.length > 0 && provider !== 'ollama' && provider !== 'deepseek'
 
-TRADE-INFO: ${symbol} ${side}
+            // Trade-Daten aufbereiten
+            const t = tradeData
+            const side = t.side === 'B' ? 'Long' : 'Short'
+            const pnl = t.netProceeds || 0
+            const pnlFormatted = pnl >= 0 ? `+$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`
+            const volume = (t.buyQuantity || 0) + (t.sellQuantity || 0)
 
-Bewerte folgende Punkte in 1-2 Sätzen je Punkt:
-1. **Setup-Qualität**: Wie gut ist der Einstiegspunkt? Gibt es eine klare Struktur?
-2. **Fehler**: Was wurde falsch gemacht oder hätte besser sein können?
-3. **Tipps**: Ein konkreter Verbesserungsvorschlag für den nächsten ähnlichen Trade.
-4. **Gesamtnote**: Vergib eine Note von 1-10 (10 = perfekt).
+            // Prompt zusammenbauen
+            let reviewPrompt = `Du bist ein erfahrener Crypto-Trading-Coach. Analysiere diesen Trade und gib eine detaillierte, aber kompakte Bewertung.
 
-Antworte auf Deutsch. Halte es kurz und prägnant (max 150 Wörter). Verwende Markdown.`
+TRADE-DATEN:
+- Symbol: ${t.symbol || 'Unknown'}
+- Position: ${side}
+- Volumen: ${volume}
+- Einstiegspreis: ${t.entryPrice ? '$' + t.entryPrice.toFixed(4) : 'N/A'}
+- Ausstiegspreis: ${t.exitPrice ? '$' + t.exitPrice.toFixed(4) : 'N/A'}
+- PnL: ${pnlFormatted}
+- PnL/Vol: ${t.grossSharePL ? '$' + t.grossSharePL.toFixed(4) : 'N/A'}
+- Ergebnis: ${pnl >= 0 ? 'Gewinn' : 'Verlust'}
+- Selbstbewertung: ${satisfaction}`
 
-            // Screenshots array für die Provider-Funktionen
-            const screenshots = [{
-                symbol,
-                side,
-                timeframe: '',
-                base64: cleanBase64,
-                mimeType
-            }]
+            if (tradeTags) {
+                reviewPrompt += `\n- Tags/Strategie: ${tradeTags}`
+            }
+            if (playbook) {
+                reviewPrompt += `\n- Playbook: ${playbook}`
+            }
+
+            // User-Notizen und Überlegungen einbeziehen
+            const userContext = [userNote, entryNote, closingNote].filter(Boolean).join('\n')
+            if (userContext) {
+                reviewPrompt += `\n\nNOTIZEN DES TRADERS (seine Überlegungen und Einschätzung):\n${userContext}`
+            }
+            if (feelings) {
+                reviewPrompt += `\n\nEmotionaler Zustand: ${feelings}`
+            }
+
+            if (hasScreenshot) {
+                reviewPrompt += `\n\nCHART-SCREENSHOT ANALYSE:
+Der beigefügte Screenshot zeigt den TradingView-Chart dieses Trades. DER SCREENSHOT IST DIE PRIMAERE QUELLE FUER SL/TP-INFORMATIONEN.
+
+**WICHTIG — SL und TP aus dem Chart ABLESEN:**
+Die farbigen Rechtecke im Chart SIND die dokumentierten Stop-Loss- und Take-Profit-Zonen des Traders.
+Der Trader HAT SL und TP gesetzt — sie sind als Rechtecke im Chart eingezeichnet UND die Preise werden als Zahlen an der Y-Achse (rechte Seite) angezeigt!
+
+**So liest du die Preise ab:**
+1. Schau auf die Y-ACHSE (rechte Seite des Charts) — dort stehen die Preisniveaus als ZAHLEN
+2. Die OBERKANTE und UNTERKANTE jedes Rechtecks entspricht einem ablesbaren Preis auf der Y-Achse
+3. Farbige Preis-Labels mit farbigem Hintergrund an der Y-Achse markieren die exakten Niveaus:
+   - ROT hinterlegtes Preis-Label = SL-Niveau oder aktueller Kurs
+   - GRUEN/TUERKIS hinterlegtes Preis-Label = TP-Niveau
+   - GRAU/WEISS hinterlegte Labels = andere Niveaus (z.B. MA-Werte)
+4. Lies die ZAHLEN direkt von der Y-Achse ab und nenne sie in deiner Bewertung
+
+- ROTES Rechteck = Stop-Loss-Zone (SL)
+- GRUENES/TUERKISES Rechteck = Take-Profit-Zone (TP)
+- SHORT-Position: Rotes Rechteck OBEN (SL) + Gruenes Rechteck UNTEN (TP)
+- LONG-Position: Gruenes Rechteck OBEN (TP) + Rotes Rechteck UNTEN (SL)
+- Die Grenze/Kante zwischen den beiden Rechtecken = ungefaehrer Entry-Bereich
+- BERECHNE das RRR: Abstand Entry-zu-TP geteilt durch Abstand Entry-zu-SL
+
+SAGE NIEMALS "kein SL dokumentiert" oder "kein TP dokumentiert" — die Rechtecke IM CHART sind die SL/TP-Dokumentation!
+Nenne IMMER die konkreten Preisniveaus die du von der Y-Achse abliest.
+
+**Chart-Elemente erkennen:**
+- Kerzenmuster (Doji, Hammer, Engulfing etc.) am Entry/Exit
+- Trendlinien, Support/Resistance (horizontale Linien)
+- Gleitende Durchschnitte (gelbe/orange/weisse Linien = MAs)
+- Indikatoren: GUSS, LSOB, VRVP falls im Chart-Header sichtbar
+- Marktstruktur: Higher Highs/Lows, Lower Highs/Lows, Konsolidierung
+- Labels im Chart wie "GUSS Start", "GUSS Entry" = Indikator-Signale
+
+**Bewerte im Screenshot:**
+- War der Entry an einer sinnvollen Stelle (Support/Resistance, Trendwende, Indikator-Signal)?
+- BERECHNE das RRR aus den Rechtecken und nenne es explizit (z.B. "RRR = 1:1.8")
+- War der SL sinnvoll platziert (ueber/unter Struktur, nicht zu eng/weit)?
+- War der TP realistisch (an naechster Support/Resistance-Zone)?
+- Gab es Warnsignale im Chart die gegen den Trade sprachen?`
+            }
+
+            reviewPrompt += `\n\nBewerte folgende Punkte:
+1. **Trade-Analyse**: ${hasScreenshot ? 'Lies zuerst SL, TP und Entry aus den farbigen Rechtecken im Chart ab (Y-Achse rechts). Nenne die konkreten Preise und berechne das RRR. Dann bewerte ob die Platzierung gut war.' : 'War der Einstieg/Ausstieg gut gewaehlt?'} Passte die Positionsgroesse?
+2. **Ueberlegungen des Traders**: Waren die Gedanken/Ueberlegungen nachvollziehbar?${hasScreenshot ? ' SL/TP sind im Chart als Rechtecke eingezeichnet und werden rechts an der Y-Achse als Zahlen angezeigt — das ZAEHLT als dokumentiert, bewerte sie NICHT als fehlend!' : ''}
+3. **Fehler & Verbesserungen**: Was haette besser sein koennen?${hasScreenshot ? ' Bewerte die QUALITAET der SL/TP-Platzierung im Chart, nicht ob sie fehlen.' : ''}
+4. **Konkrete Tipps**: 1-2 spezifische Verbesserungsvorschlaege.
+5. **Gesamtnote**: Note von 1-10 (10 = perfekt).
+
+Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
+
+            const screenshots = hasScreenshot ? screenshotData : []
 
             let result
-            if (provider === 'openai') {
-                result = await generateOpenAI(reviewPrompt, apiKey, model || 'gpt-4o-mini', temperature, Math.min(maxTokens, 800), screenshots)
+            if (provider === 'ollama') {
+                result = await generateOllama(reviewPrompt, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
+            } else if (provider === 'openai') {
+                result = await generateOpenAI(reviewPrompt, apiKey, model || 'gpt-4o-mini', temperature, maxTokens, screenshots)
             } else if (provider === 'anthropic') {
-                result = await generateAnthropic(reviewPrompt, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, Math.min(maxTokens, 800), screenshots)
+                result = await generateAnthropic(reviewPrompt, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens, screenshots)
             } else if (provider === 'gemini') {
-                result = await generateGemini(reviewPrompt, apiKey, model || 'gemini-2.0-flash', temperature, Math.min(maxTokens, 800), screenshots)
+                result = await generateGemini(reviewPrompt, apiKey, model || 'gemini-2.0-flash', temperature, maxTokens, screenshots)
+            } else if (provider === 'deepseek') {
+                result = await generateDeepSeek(reviewPrompt, apiKey, model || 'deepseek-chat', temperature, maxTokens)
             } else {
                 return res.status(400).json({ error: 'Unbekannter KI-Anbieter: ' + provider })
             }
 
-            // Bewertung + Token-Verbrauch in DB speichern
-            await knex('screenshots').where('id', parseInt(screenshotId)).update({
-                aiReview: result.text,
-                aiReviewProvider: provider,
-                aiReviewModel: model || provider,
-                aiReviewPromptTokens: result.usage?.promptTokens || 0,
-                aiReviewCompletionTokens: result.usage?.completionTokens || 0,
-                aiReviewTotalTokens: result.usage?.totalTokens || 0,
-                updatedAt: knex.fn.now()
-            })
+            // Bewertung in notes speichern (upsert)
+            if (noteRecord) {
+                await knex('notes').where('tradeId', tradeId).update({
+                    aiReview: result.text,
+                    aiReviewProvider: provider,
+                    aiReviewModel: model || provider,
+                    updatedAt: knex.fn.now()
+                })
+            } else {
+                await knex('notes').insert({
+                    tradeId,
+                    dateUnix: dateUnix || 0,
+                    note: '',
+                    aiReview: result.text,
+                    aiReviewProvider: provider,
+                    aiReviewModel: model || provider
+                })
+            }
 
             res.json({
                 review: result.text,
@@ -380,30 +506,27 @@ Antworte auf Deutsch. Halte es kurz und prägnant (max 150 Wörter). Verwende Ma
                 tokenUsage: result.usage
             })
         } catch (e) {
-            console.error('Screenshot review error:', e)
-            res.status(500).json({ error: e.message || 'Bewertung fehlgeschlagen' })
+            console.error('Trade review error:', e)
+            res.status(500).json({ error: e.message || 'Trade-Bewertung fehlgeschlagen' })
         }
     })
 
-    // --- Screenshot-Review Token-Summen (für Kostenberechnung im Frontend) ---
-    app.get('/api/ai/screenshot-review-tokens', async (req, res) => {
+    // --- Trade-Review laden ---
+    app.get('/api/ai/trade-review/:tradeId', async (req, res) => {
         try {
             const knex = getKnex()
-            const broker = req.query.broker || ''
-            let query = knex('screenshots')
-                .select('aiReviewProvider as provider', 'aiReviewModel as model')
-                .sum('aiReviewPromptTokens as promptTokens')
-                .sum('aiReviewCompletionTokens as completionTokens')
-                .sum('aiReviewTotalTokens as totalTokens')
-                .whereNot('aiReview', '')
-                .andWhere('aiReviewTotalTokens', '>', 0)
-            if (broker) {
-                query = query.andWhere('broker', broker)
+            const note = await knex('notes').where('tradeId', req.params.tradeId).first()
+            if (note?.aiReview) {
+                res.json({
+                    review: note.aiReview,
+                    provider: note.aiReviewProvider || '',
+                    model: note.aiReviewModel || ''
+                })
+            } else {
+                res.json({ review: '', provider: '', model: '' })
             }
-            const rows = await query.groupBy('aiReviewProvider', 'aiReviewModel')
-            res.json(rows)
         } catch (e) {
-            console.error('Screenshot review tokens error:', e)
+            console.error('Load trade review error:', e)
             res.status(500).json({ error: e.message })
         }
     })

@@ -409,6 +409,11 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('notes', 'closingTimeframe', (t) => t.text('closingTimeframe').defaultTo(''))
     await addColumnIfNotExists('notes', 'closingPlaybook', (t) => t.text('closingPlaybook').defaultTo(''))
 
+    // AI trade review columns for notes
+    await addColumnIfNotExists('notes', 'aiReview', (t) => t.text('aiReview').defaultTo(''))
+    await addColumnIfNotExists('notes', 'aiReviewProvider', (t) => t.text('aiReviewProvider').defaultTo(''))
+    await addColumnIfNotExists('notes', 'aiReviewModel', (t) => t.text('aiReviewModel').defaultTo(''))
+
     // AI report prompt + chat
     await addColumnIfNotExists('settings', 'aiReportPrompt', (t) => t.text('aiReportPrompt').defaultTo(''))
     await addColumnIfNotExists('settings', 'aiChatEnabled', (t) => t.integer('aiChatEnabled').defaultTo(1))

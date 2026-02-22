@@ -19,6 +19,7 @@ import { useGetExcursions, useGetTags, useGetAvailableTags, useUpdateAvailableTa
 import { useCandlestickChart } from '../utils/charts';
 
 import { useGetMFEPrices } from '../utils/addTrades';
+import { sanitizeHtml } from '../utils/sanitize';
 
 /* MODULES */
 import { dbFirst, dbCreate, dbUpdate } from '../utils/db.js'
@@ -56,6 +57,81 @@ const stripHtml = (html) => {
 let tradeSatisfactionId
 let tradeSatisfaction
 let tradeSatisfactionDateUnix
+
+// KI Trade-Bewertung
+const aiTradeReview = ref('')
+const aiTradeReviewLoading = ref(false)
+const aiTradeReviewError = ref('')
+const aiTradeReviewOpen = ref(false)
+const autoStartReview = ref(false)
+
+function markdownToHtml(md) {
+    if (!md) return ''
+    let html = md
+        .replace(/^### (.+)$/gm, '<h6 class="mt-2 mb-1">$1</h6>')
+        .replace(/^## (.+)$/gm, '<h5 class="mt-2 mb-1">$1</h5>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+        .replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul class="mb-1">${match}</ul>`)
+    html = html.split('\n\n').map(p => {
+        const trimmed = p.trim()
+        if (!trimmed) return ''
+        if (trimmed.startsWith('<h') || trimmed.startsWith('<ul')) return trimmed
+        return `<p>${trimmed}</p>`
+    }).filter(Boolean).join('\n')
+    return sanitizeHtml(html)
+}
+
+async function loadTradeReview(tradeId) {
+    aiTradeReview.value = ''
+    aiTradeReviewError.value = ''
+    aiTradeReviewOpen.value = false
+    try {
+        const { data } = await axios.get(`/api/ai/trade-review/${tradeId}`)
+        if (data.review) {
+            aiTradeReview.value = data.review
+            aiTradeReviewOpen.value = true
+        }
+    } catch (e) {
+        // Silent fail
+    }
+}
+
+async function requestTradeReview() {
+    if (aiTradeReviewLoading.value) return
+    const trade = filteredTrades[itemTradeIndex.value].trades[tradeIndex.value]
+    const dateUnix = filteredTrades[itemTradeIndex.value].dateUnix
+
+    aiTradeReviewLoading.value = true
+    aiTradeReviewError.value = ''
+
+    try {
+        const { data } = await axios.post('/api/ai/trade-review', {
+            tradeId: trade.id,
+            dateUnix,
+            tradeData: {
+                symbol: trade.symbol,
+                side: trade.side,
+                entryPrice: trade.entryPrice,
+                exitPrice: trade.exitPrice,
+                buyQuantity: trade.buyQuantity,
+                sellQuantity: trade.sellQuantity,
+                grossSharePL: trade.grossSharePL,
+                netProceeds: trade.netProceeds,
+                entryTime: trade.entryTime,
+                exitTime: trade.exitTime
+            }
+        }, { timeout: 120000 })
+
+        aiTradeReview.value = data.review
+        aiTradeReviewOpen.value = true
+    } catch (e) {
+        aiTradeReviewError.value = e.response?.data?.error || e.message || 'Bewertung fehlgeschlagen'
+    }
+    aiTradeReviewLoading.value = false
+}
 
 
 let ohlcArray = [] // array used for charts
@@ -354,6 +430,9 @@ async function clickTradesModal(param1, param2, param3) {
                     tradeNote.value = stripHtml(notes[noteIndex].note)
                 }
 
+                // KI-Bewertung laden (non-blocking)
+                loadTradeReview(filteredTradeId)
+
                 let findExcursion = excursions.filter(obj => obj.tradeId == filteredTradeId)
                 if (findExcursion.length) {
                     findExcursion[0].stopLoss != null ? excursion.stopLoss = findExcursion[0].stopLoss : null
@@ -390,6 +469,12 @@ async function clickTradesModal(param1, param2, param3) {
             tagInput.value = ''
             saveButton.value = false
             await useInitTooltip()
+
+            // Auto-Start KI-Bewertung (wenn aus der Zeile geklickt)
+            if (autoStartReview.value) {
+                autoStartReview.value = false
+                requestTradeReview()
+            }
         }
 
     }
@@ -1025,6 +1110,7 @@ function getOHLC(date, symbol, type, interval) {
                                                     <thead>
                                                         <tr>
                                                             <th scope="col">Symbol</th>
+                                                            <th scope="col"></th>
                                                             <th scope="col">Vol<i class="ps-1 uil uil-info-circle"
                                                                     data-bs-toggle="tooltip"
                                                                     data-bs-title="Total number of securities during the trade (bought + sold or shorted + covered)"></i>
@@ -1054,6 +1140,16 @@ function getOHLC(date, symbol, type, interval) {
 
 
                                                             <td>{{ trade.symbol }}</td>
+
+                                                            <!--KI-Bewertung Quick-Button-->
+                                                            <td @click.stop="">
+                                                                <button class="ai-quick-btn"
+                                                                    data-bs-toggle="modal" data-bs-target="#tradesModal"
+                                                                    :data-index="index" :data-indextwo="index2"
+                                                                    @click="autoStartReview = true">
+                                                                    <i class="uil uil-robot me-1"></i>KI-Bewertung
+                                                                </button>
+                                                            </td>
 
                                                             <!--Vol-->
                                                             <td>{{ trade.buyQuantity + trade.sellQuantity }}</td>
@@ -1400,6 +1496,30 @@ function getOHLC(date, symbol, type, interval) {
                                         @input="tradeNoteChange($event.target.value)"></textarea>
                                 </div>
 
+                                <!-- KI Trade-Bewertung -->
+                                <div class="col-12 mt-2" v-show="!spinnerSetups">
+                                    <div class="ai-trade-review-section">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <button class="ai-review-btn"
+                                                :disabled="aiTradeReviewLoading"
+                                                @click="requestTradeReview">
+                                                <span v-if="aiTradeReviewLoading" class="spinner-border spinner-border-sm me-1" style="width: 0.7rem; height: 0.7rem;"></span>
+                                                <i v-else class="uil uil-robot me-1"></i>
+                                                {{ aiTradeReviewLoading ? 'Analysiert...' : (aiTradeReview ? 'Neu bewerten' : 'KI-Bewertung') }}
+                                            </button>
+                                            <button v-if="aiTradeReview && !aiTradeReviewLoading"
+                                                class="ai-review-toggle"
+                                                @click="aiTradeReviewOpen = !aiTradeReviewOpen">
+                                                <i class="uil" :class="aiTradeReviewOpen ? 'uil-angle-up' : 'uil-angle-down'"></i>
+                                            </button>
+                                        </div>
+                                        <span v-if="aiTradeReviewError" class="ai-review-error">{{ aiTradeReviewError }}</span>
+                                        <div v-if="aiTradeReview && aiTradeReviewOpen" class="ai-review-result mt-2">
+                                            <div class="ai-review-content" v-html="markdownToHtml(aiTradeReview)"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Screenshot Icon-Button -->
                                 <div class="col-12 mt-2" v-show="!spinnerSetups && screenshot.originalBase64">
                                     <span class="pointerClass" style="font-size: 1.3rem;"
@@ -1507,3 +1627,116 @@ function getOHLC(date, symbol, type, interval) {
     </div>
 
 </template>
+
+<style scoped>
+/* KI Quick-Button in Trade-Zeile */
+.ai-quick-btn {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.78rem;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--white-38, rgba(255,255,255,0.38));
+    border-radius: 6px;
+    color: var(--white-60, rgba(255,255,255,0.6));
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.ai-quick-btn:hover {
+    border-color: #7c5cfc;
+    color: #7c5cfc;
+}
+
+/* KI Trade-Bewertung */
+.ai-trade-review-section {
+    border-top: 1px solid var(--white-18, rgba(255,255,255,0.12));
+    padding-top: 0.5rem;
+}
+
+.ai-review-btn {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.78rem;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid var(--white-38, rgba(255,255,255,0.38));
+    border-radius: 6px;
+    color: var(--white-60, rgba(255,255,255,0.6));
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.ai-review-btn:hover:not(:disabled) {
+    border-color: #7c5cfc;
+    color: #7c5cfc;
+}
+
+.ai-review-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.ai-review-toggle {
+    display: inline-flex;
+    align-items: center;
+    font-size: 1rem;
+    padding: 0.1rem 0.3rem;
+    border: 1px solid var(--white-18, rgba(255,255,255,0.12));
+    border-radius: 4px;
+    color: var(--white-60, rgba(255,255,255,0.6));
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.ai-review-toggle:hover {
+    border-color: var(--white-38, rgba(255,255,255,0.38));
+    color: var(--white-87, rgba(255,255,255,0.87));
+}
+
+.ai-review-error {
+    display: block;
+    font-size: 0.72rem;
+    color: #f87171;
+    margin-top: 0.25rem;
+}
+
+.ai-review-result {
+    background: var(--black-bg-2, #1a1a1a);
+    border: 1px solid var(--white-18, rgba(255,255,255,0.12));
+    border-radius: 6px;
+    padding: 0.6rem 0.75rem;
+}
+
+.ai-review-content :deep(h5),
+.ai-review-content :deep(h6) {
+    font-size: 0.82rem;
+    color: var(--blue-color, #6cb4ee);
+    margin-top: 0.4rem;
+    margin-bottom: 0.2rem;
+}
+
+.ai-review-content :deep(p) {
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--white-87, rgba(255,255,255,0.87));
+    margin-bottom: 0.3rem;
+}
+
+.ai-review-content :deep(ul) {
+    padding-left: 1rem;
+    margin-bottom: 0.3rem;
+}
+
+.ai-review-content :deep(li) {
+    font-size: 0.8rem;
+    color: var(--white-87, rgba(255,255,255,0.87));
+    margin-bottom: 0.1rem;
+}
+
+.ai-review-content :deep(strong) {
+    color: var(--white-100, #fff);
+}
+</style>

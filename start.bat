@@ -2,6 +2,8 @@
 chcp 65001 >nul 2>nul
 setlocal EnableDelayedExpansion
 
+title Crypto Trading Journal
+
 :: Pruefen ob Frontend gebaut wurde
 if not exist "dist\index.html" (
     echo.

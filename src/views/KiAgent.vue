@@ -31,9 +31,6 @@ const savedReports = reactive([])
 const expandedReports = reactive(new Set())
 const deleteConfirmId = ref(null)
 
-// Screenshot-Review Token-Daten (für Kostenberechnung)
-const screenshotReviewTokens = reactive([]) // [{ provider, model, promptTokens, completionTokens, totalTokens }]
-
 // Chat
 const chatEnabled = ref(true)
 const chatMessages = reactive({}) // { reportId: [{ id, role, content, createdAt }] }
@@ -41,20 +38,13 @@ const chatInput = reactive({}) // { reportId: 'text' }
 const chatLoading = reactive({}) // { reportId: true/false }
 const chatError = reactive({}) // { reportId: 'error msg' }
 
-// Token-Verbrauch pro Provider (Reports + Screenshot-Reviews)
+// Token-Verbrauch pro Provider (Reports)
 const tokensByProvider = computed(() => {
     const result = {}
     for (const r of savedReports) {
         const p = r.provider || 'unknown'
         if (r.totalTokens > 0) {
             result[p] = (result[p] || 0) + (r.totalTokens || 0)
-        }
-    }
-    // Screenshot-Reviews dazurechnen
-    for (const sr of screenshotReviewTokens) {
-        const p = sr.provider || 'unknown'
-        if (sr.totalTokens > 0) {
-            result[p] = (result[p] || 0) + (sr.totalTokens || 0)
         }
     }
     return result
@@ -73,8 +63,12 @@ const MODEL_PRICES = {
     'o1-mini':          [3.00, 12.00],
     'o3-mini':          [1.10, 4.40],
     // Anthropic
+    'claude-opus-4-6':   [5.00, 25.00],
+    'claude-sonnet-4-6': [3.00, 15.00],
     'claude-sonnet-4-5': [3.00, 15.00],
+    'claude-opus-4-0':   [15.00, 75.00],
     'claude-opus-4':     [15.00, 75.00],
+    'claude-haiku-4-5':  [1.00, 5.00],
     'claude-haiku-3-5':  [0.80, 4.00],
     'claude-3-5-sonnet': [3.00, 15.00],
     'claude-3-haiku':    [0.25, 1.25],
@@ -130,16 +124,6 @@ const estimatedCostByProvider = computed(() => {
                     result[p] = (result[p] || 0) + inputCost + outputCost
                 }
             }
-        }
-    }
-    // 3. Screenshot-Reviews
-    for (const sr of screenshotReviewTokens) {
-        const p = sr.provider || 'unknown'
-        const price = getModelPrice(sr.model)
-        if (price && sr.totalTokens > 0) {
-            const inputCost = (sr.promptTokens || 0) / 1_000_000 * price[0]
-            const outputCost = (sr.completionTokens || 0) / 1_000_000 * price[1]
-            result[p] = (result[p] || 0) + inputCost + outputCost
         }
     }
     return result
@@ -234,18 +218,6 @@ async function loadReports() {
         savedReports.splice(0, savedReports.length, ...res.data)
     } catch (e) {
         logError('ki-agent', 'Fehler beim Laden der Berichte', e)
-    }
-}
-
-// Screenshot-Review Token-Daten laden (gefiltert nach gewählter Börse)
-async function loadScreenshotReviewTokens() {
-    try {
-        const params = {}
-        if (selectedBroker.value) params.broker = selectedBroker.value
-        const res = await axios.get('/api/ai/screenshot-review-tokens', { params })
-        screenshotReviewTokens.splice(0, screenshotReviewTokens.length, ...res.data)
-    } catch (e) {
-        // Nicht kritisch — einfach leer lassen
     }
 }
 
@@ -404,7 +376,7 @@ function markdownToHtml(md) {
 onBeforeMount(async () => {
     spinnerLoadingPage.value = false
     await Promise.all([checkStatus(), loadChatSetting()])
-    await Promise.all([loadReports(), loadScreenshotReviewTokens()])
+    await loadReports()
 })
 </script>
 
