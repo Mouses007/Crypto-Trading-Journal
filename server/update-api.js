@@ -4,9 +4,10 @@
  * GET  /api/update/check   → compare local version with latest GitHub release
  * POST /api/update/install  → git fetch + reset + npm install + signal restart
  */
-import { execSync, exec } from 'child_process'
-import { readFileSync, existsSync } from 'fs'
+import { execSync, spawn } from 'child_process'
+import { readFileSync, existsSync, writeFileSync } from 'fs'
 import path from 'path'
+import os from 'os'
 import https from 'https'
 import { fileURLToPath } from 'url'
 
@@ -15,6 +16,42 @@ const __dirname = path.dirname(__filename)
 
 const GITHUB_REPO = 'Mouses007/Crypto-Trading-Journal'
 const PROJECT_ROOT = path.resolve(__dirname, '..')
+const IS_WINDOWS = os.platform() === 'win32'
+
+/**
+ * Windows: Erstellt ein .bat-Script und startet es in einem neuen Fenster.
+ * Nötig weil Windows native .node-Dateien sperrt solange der Server läuft.
+ * Das Script wartet bis der Server beendet ist, dann: npm install + build + Neustart.
+ */
+function spawnWindowsUpdateScript(commands, label) {
+    const scriptPath = path.join(PROJECT_ROOT, '_ctj_update.bat')
+    const script = `@echo off
+chcp 65001 >nul
+echo.
+echo ========================================
+echo   Crypto Trading Journal - ${label}
+echo ========================================
+echo.
+echo Warte auf Server-Beendigung...
+timeout /t 4 /nobreak >nul
+cd /d "${PROJECT_ROOT}"
+${commands.map(cmd => `echo ^> ${cmd}\ncall ${cmd}\nif %errorlevel% neq 0 (\n    echo.\n    echo FEHLER bei: ${cmd}\n    echo Druecke eine Taste zum Schliessen...\n    pause >nul\n    exit /b 1\n)`).join('\n')}
+echo.
+echo ========================================
+echo   ${label} erfolgreich!
+echo   Server wird neu gestartet...
+echo ========================================
+echo.
+node index.mjs
+`
+    writeFileSync(scriptPath, script, 'utf8')
+
+    spawn('cmd.exe', ['/c', 'start', `"CTJ ${label}"`, 'cmd.exe', '/k', scriptPath], {
+        detached: true,
+        stdio: 'ignore',
+        cwd: PROJECT_ROOT
+    }).unref()
+}
 
 // Simple HTTPS GET returning JSON
 function httpsGetJson(url) {
@@ -165,36 +202,45 @@ export function setupUpdateRoutes(app) {
             }).trim()
             steps.push({ step: 'git reset', output: pullOutput })
 
-            // 2. npm install (inkl. devDependencies — vite wird für Build benötigt)
-            const npmOutput = execSync('npm install', {
-                cwd: PROJECT_ROOT,
-                encoding: 'utf8',
-                timeout: 120000
-            }).trim()
-            steps.push({ step: 'npm install', output: npmOutput })
-
-            // 3. npm run build
-            const buildOutput = execSync('npm run build', {
-                cwd: PROJECT_ROOT,
-                encoding: 'utf8',
-                timeout: 120000
-            }).trim()
-            steps.push({ step: 'npm run build', output: buildOutput })
-
-            // Read new version
+            // Read new version (from git reset — package.json ist schon aktuell)
             const newVersion = getLocalVersion()
 
             // Clear cache
             lastCheck = null
             lastCheckTime = 0
 
-            res.json({ ok: true, steps, newVersion })
+            if (IS_WINDOWS) {
+                // Windows: native .node-Dateien sind gesperrt → externes Script
+                steps.push({ step: 'npm install + build', output: 'Wird in neuem Fenster ausgeführt...' })
+                spawnWindowsUpdateScript(['npm install', 'npm run build'], 'Update')
+                res.json({ ok: true, steps, newVersion })
+                setTimeout(() => {
+                    console.log('\n🔄 Update — Server wird beendet, externes Script übernimmt...')
+                    process.exit(0)
+                }, 1500)
+            } else {
+                // Linux/macOS: npm install + build inline (keine Dateisperren)
+                const npmOutput = execSync('npm install', {
+                    cwd: PROJECT_ROOT,
+                    encoding: 'utf8',
+                    timeout: 120000
+                }).trim()
+                steps.push({ step: 'npm install', output: npmOutput })
 
-            // 4. Restart server after response is sent
-            setTimeout(() => {
-                console.log('\n🔄 Update installed — restarting server...')
-                process.exit(0) // Process manager (systemd etc.) will restart
-            }, 1500)
+                const buildOutput = execSync('npm run build', {
+                    cwd: PROJECT_ROOT,
+                    encoding: 'utf8',
+                    timeout: 120000
+                }).trim()
+                steps.push({ step: 'npm run build', output: buildOutput })
+
+                res.json({ ok: true, steps, newVersion })
+
+                setTimeout(() => {
+                    console.log('\n🔄 Update installed — restarting server...')
+                    process.exit(0)
+                }, 1500)
+            }
 
         } catch (err) {
             console.error('Update install failed:', err.message)
@@ -226,34 +272,41 @@ export function setupUpdateRoutes(app) {
             }).trim()
             steps.push({ step: 'git checkout', output: checkoutOutput || 'OK' })
 
-            // 2. npm install (inkl. devDependencies — vite wird für Build benötigt)
-            const npmOutput = execSync('npm install', {
-                cwd: PROJECT_ROOT,
-                encoding: 'utf8',
-                timeout: 120000
-            }).trim()
-            steps.push({ step: 'npm install', output: npmOutput })
-
-            // 3. npm run build
-            const buildOutput = execSync('npm run build', {
-                cwd: PROJECT_ROOT,
-                encoding: 'utf8',
-                timeout: 120000
-            }).trim()
-            steps.push({ step: 'npm run build', output: buildOutput })
-
             const restoredVersion = getLocalVersion()
             preUpdateCommit = null // Rollback-Punkt verbraucht
             lastCheck = null
             lastCheckTime = 0
 
-            res.json({ ok: true, steps, restoredVersion })
+            if (IS_WINDOWS) {
+                steps.push({ step: 'npm install + build', output: 'Wird in neuem Fenster ausgeführt...' })
+                spawnWindowsUpdateScript(['npm install', 'npm run build'], 'Rollback')
+                res.json({ ok: true, steps, restoredVersion })
+                setTimeout(() => {
+                    console.log('\n🔄 Rollback — Server wird beendet, externes Script übernimmt...')
+                    process.exit(0)
+                }, 1500)
+            } else {
+                const npmOutput = execSync('npm install', {
+                    cwd: PROJECT_ROOT,
+                    encoding: 'utf8',
+                    timeout: 120000
+                }).trim()
+                steps.push({ step: 'npm install', output: npmOutput })
 
-            // Restart
-            setTimeout(() => {
-                console.log('\n🔄 Rollback durchgeführt — Server wird neu gestartet...')
-                process.exit(0)
-            }, 1500)
+                const buildOutput = execSync('npm run build', {
+                    cwd: PROJECT_ROOT,
+                    encoding: 'utf8',
+                    timeout: 120000
+                }).trim()
+                steps.push({ step: 'npm run build', output: buildOutput })
+
+                res.json({ ok: true, steps, restoredVersion })
+
+                setTimeout(() => {
+                    console.log('\n🔄 Rollback durchgeführt — Server wird neu gestartet...')
+                    process.exit(0)
+                }, 1500)
+            }
 
         } catch (err) {
             console.error('Rollback failed:', err.message)
