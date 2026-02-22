@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeMount, watch, nextTick } from 'vue'
+import { ref, computed, reactive, onBeforeMount, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
 import { spinnerLoadingPage, auswertungMounted } from '../stores/ui.js'
@@ -7,11 +7,56 @@ import { amountCase } from '../stores/filters.js'
 import { filteredTrades, auswertungNotes, satisfactionArray, satisfactionTradeArray, tags, availableTags } from '../stores/trades.js'
 import { useChartFormat, useThousandCurrencyFormat } from '../utils/formatters.js'
 import { useMountAuswertung } from '../utils/mountOrchestration.js'
-import { useGaugeChart, useHorizontalBarChart, useStressLineChart, useRadarChart } from '../utils/charts'
+import { useGaugeChart, useHorizontalBarChart, useSplitBarChart, useStressLineChart, useRadarChart } from '../utils/charts'
+
+// ========== Karten-Konfiguration ==========
+const CARD_STORAGE_KEY = 'auswertung_hidden_cards'
+const hiddenCards = reactive(new Set(JSON.parse(localStorage.getItem(CARD_STORAGE_KEY) || '[]')))
+const showConfigDropdown = ref(false)
+
+const cardDefinitions = [
+    { key: 'longShort', label: 'Long/Short Verhältnis' },
+    { key: 'satisfaction', label: 'Zufriedenheitsrate' },
+    { key: 'completeness', label: 'Journal-Vollständigkeit' },
+    { key: 'timeframe', label: 'Timeframe-Nutzung' },
+    { key: 'stressTime', label: 'Stresslevel-Verlauf' },
+    { key: 'stressPerf', label: 'Stress vs. Win Rate' },
+    { key: 'emotionTime', label: 'Emotionslevel-Verlauf' },
+    { key: 'emotionPerf', label: 'Emotionslevel vs. Win Rate' },
+    { key: 'radar', label: 'Vollständigkeits-Radar' },
+]
+
+function toggleCard(key) {
+    if (hiddenCards.has(key)) {
+        hiddenCards.delete(key)
+    } else {
+        hiddenCards.add(key)
+    }
+    localStorage.setItem(CARD_STORAGE_KEY, JSON.stringify([...hiddenCards]))
+}
+
+function isVisible(key) {
+    return !hiddenCards.has(key)
+}
+
+// Dynamische Tag-Gruppen-Keys (werden separat in der Config-Liste angezeigt)
+const tagGroupKeys = computed(() => {
+    return tagGroupStats.value.map(g => ({ key: 'tag_' + g.name, label: g.name }))
+})
 
 onBeforeMount(async () => {
     await useMountAuswertung()
 })
+
+// Dropdown schließen bei Klick außerhalb
+const configRef = ref(null)
+function onClickOutside(e) {
+    if (showConfigDropdown.value && configRef.value && !configRef.value.contains(e.target)) {
+        showConfigDropdown.value = false
+    }
+}
+onMounted(() => document.addEventListener('click', onClickOutside))
+onUnmounted(() => document.removeEventListener('click', onClickOutside))
 
 // ========== COMPUTED: Basis-Daten ==========
 
@@ -181,17 +226,15 @@ const tagGroupStats = computed(() => {
     return result
 })
 
-// Chart-Daten pro Tag-Gruppe (für horizontale Balken)
+// Chart-Daten pro Tag-Gruppe (geteilte Balken: Wins rechts, Losses links)
 const tagGroupChartData = computed(() => {
     return tagGroupStats.value.map((group, groupIdx) => {
         return {
             name: group.name,
             color: group.color,
             categories: group.tags.map(t => t.name),
-            values: group.tags.map(t => t.count),
-            colors: group.tags.map(t =>
-                t.winRate >= 50 ? 'rgba(72, 199, 142, 0.85)' : 'rgba(235, 87, 87, 0.85)'
-            ),
+            wins: group.tags.map(t => t.wins),
+            losses: group.tags.map(t => -t.losses),  // negativ für links
             chartId: 'hbarTagGroup' + groupIdx
         }
     })
@@ -377,7 +420,7 @@ watch(() => tagGroupChartData.value, async (newVal) => {
     await nextTick()
     newVal.forEach(group => {
         if (group.categories.length > 0) {
-            useHorizontalBarChart(group.chartId, group.categories, group.values, group.colors)
+            useSplitBarChart(group.chartId, group.categories, group.wins, group.losses)
         }
     })
 }, { deep: true })
@@ -401,10 +444,10 @@ async function renderCharts() {
         [1, 'rgba(72, 199, 142, 0.85)']
     ])
 
-    // Tag-Gruppen Charts
+    // Tag-Gruppen Charts (geteilte Balken: Wins/Losses)
     tagGroupChartData.value.forEach(group => {
         if (group.categories.length > 0) {
-            useHorizontalBarChart(group.chartId, group.categories, group.values, group.colors)
+            useSplitBarChart(group.chartId, group.categories, group.wins, group.losses)
         }
     })
 
@@ -452,9 +495,29 @@ async function renderCharts() {
             </div>
             <div v-else-if="auswertungMounted">
 
-                <!-- ============ REIHE 1: Übersicht Gauges ============ -->
+                <!-- Config-Button -->
+                <div ref="configRef" class="d-flex justify-content-end mb-2 position-relative">
+                    <button class="btn btn-sm btn-outline-secondary" @click="showConfigDropdown = !showConfigDropdown">
+                        <i class="uil uil-setting me-1"></i>Karten
+                    </button>
+                    <div v-if="showConfigDropdown" class="card-config-dropdown">
+                        <div class="card-config-title">Sichtbare Karten</div>
+                        <div v-for="card in cardDefinitions" :key="card.key" class="card-config-item" @click="toggleCard(card.key)">
+                            <i class="uil me-2" :class="isVisible(card.key) ? 'uil-check-square text-success' : 'uil-square-full text-muted'"></i>
+                            {{ card.label }}
+                        </div>
+                        <div v-if="tagGroupKeys.length > 0" class="card-config-divider"></div>
+                        <div v-for="tg in tagGroupKeys" :key="tg.key" class="card-config-item" @click="toggleCard(tg.key)">
+                            <i class="uil me-2" :class="isVisible(tg.key) ? 'uil-check-square text-success' : 'uil-square-full text-muted'"></i>
+                            {{ tg.label }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ Alle Karten als flexibles Grid ============ -->
                 <div class="row mb-3">
-                    <div class="col-12 col-md-4 mb-3 mb-md-0">
+                    <!-- Gauge: Long/Short -->
+                    <div v-if="isVisible('longShort')" class="col-12 col-md-4 mb-3">
                         <div class="dailyCard h-100 text-center">
                             <h6>Long/Short Verhältnis
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
@@ -473,7 +536,8 @@ async function renderCharts() {
                             </div>
                         </div>
                     </div>
-                    <div class="col-12 col-md-4 mb-3 mb-md-0">
+                    <!-- Gauge: Zufriedenheit -->
+                    <div v-if="isVisible('satisfaction')" class="col-12 col-md-4 mb-3">
                         <div class="dailyCard h-100 text-center">
                             <h6>Zufriedenheitsrate
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
@@ -487,11 +551,12 @@ async function renderCharts() {
                             </div>
                         </div>
                     </div>
-                    <div class="col-12 col-md-4">
+                    <!-- Gauge: Vollständigkeit -->
+                    <div v-if="isVisible('completeness')" class="col-12 col-md-4 mb-3">
                         <div class="dailyCard h-100 text-center">
                             <h6>Journal-Vollständigkeit
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Anteil der Trades, bei denen du mindestens ein Journal-Feld (Playbook, Timeframe, Stress, Gefühle, Notiz, Tags) ausgefüllt hast."></i>
+                                    data-bs-title="Anteil der Trades, bei denen du mindestens ein Journal-Feld ausgefüllt hast."></i>
                             </h6>
                             <div id="gaugeChart3" class="chartGaugeClass"></div>
                             <div class="mt-2">
@@ -501,126 +566,115 @@ async function renderCharts() {
                     </div>
                 </div>
 
-                <!-- ============ REIHE 2: Tag-Gruppen Auswertung (dynamisch) ============ -->
-                <div v-if="tagGroupStats.length > 0" class="row mb-3">
-                    <div v-for="(group, idx) in tagGroupStats" :key="group.name"
-                        :class="tagGroupStats.length === 1 ? 'col-12 mb-3' : 'col-12 col-md-6 mb-3'">
-                        <div class="dailyCard h-100">
-                            <h6>
-                                <span class="me-2" :style="{ color: group.color }">&#9679;</span>
-                                {{ group.name }}
-                                <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    :data-bs-title="'Auswertung der Tag-Gruppe &quot;' + group.name + '&quot;. Grün = Win Rate ≥ 50%, Rot = unter 50%. Balken zeigen die Anzahl der Trades.'"></i>
-                            </h6>
-                            <div :id="tagGroupChartData[idx].chartId" class="chartClass"></div>
-                            <!-- Details-Tabelle unter dem Chart -->
-                            <div class="mt-2">
-                                <table class="table table-sm table-borderless mb-0" style="font-size: 0.85rem;">
-                                    <thead>
-                                        <tr class="text-muted">
-                                            <th>Tag</th>
-                                            <th class="text-center">Trades</th>
-                                            <th class="text-center">Win%</th>
-                                            <th class="text-end">PnL</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="tag in group.tags" :key="tag.name">
-                                            <td>{{ tag.name }}</td>
-                                            <td class="text-center">{{ tag.count }}</td>
-                                            <td class="text-center" :class="tag.winRate >= 50 ? 'greenTrade' : 'redTrade'">
-                                                {{ tag.winRate }}%
-                                            </td>
-                                            <td class="text-end" :class="tag.pnl >= 0 ? 'greenTrade' : 'redTrade'">
-                                                {{ tag.pnl >= 0 ? '+' : '' }}{{ tag.pnl.toFixed(2) }}
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                <!-- Alle Karten in einem durchgehenden Grid -->
+                <div class="row mb-3">
+                    <!-- Tag-Gruppen (dynamisch) -->
+                    <template v-for="(group, idx) in tagGroupStats" :key="group.name">
+                        <div v-if="isVisible('tag_' + group.name)"
+                            :class="tagGroupStats.length === 1 ? 'col-12 mb-3' : 'col-12 col-md-6 mb-3'">
+                            <div class="dailyCard h-100">
+                                <h6>
+                                    <span class="me-2" :style="{ color: group.color }">&#9679;</span>
+                                    {{ group.name }}
+                                    <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
+                                        :data-bs-title="'Auswertung der Tag-Gruppe &quot;' + group.name + '&quot;. Grün = Wins, Rot = Losses.'"></i>
+                                </h6>
+                                <div :id="tagGroupChartData[idx].chartId" class="chartClass"></div>
+                                <div class="mt-2">
+                                    <table class="table table-sm table-borderless mb-0" style="font-size: 0.85rem;">
+                                        <thead>
+                                            <tr class="text-muted">
+                                                <th>Tag</th>
+                                                <th class="text-center">Trades</th>
+                                                <th class="text-center">Win%</th>
+                                                <th class="text-end">PnL</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="tag in group.tags" :key="tag.name">
+                                                <td>{{ tag.name }}</td>
+                                                <td class="text-center">{{ tag.count }}</td>
+                                                <td class="text-center" :class="tag.winRate >= 50 ? 'greenTrade' : 'redTrade'">
+                                                    {{ tag.winRate }}%
+                                                </td>
+                                                <td class="text-end" :class="tag.pnl >= 0 ? 'greenTrade' : 'redTrade'">
+                                                    {{ tag.pnl >= 0 ? '+' : '' }}{{ tag.pnl.toFixed(2) }}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-                <div v-else class="row mb-3">
-                    <div class="col-12">
-                        <div class="dailyCard text-center text-muted py-4">
-                            Keine Strategie-Tags vorhanden. Vergib Tags an deine Trades um die Strategie-Auswertung zu sehen.
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ============ REIHE 3: Timeframe & Stress-Verlauf ============ -->
-                <div class="row mb-3">
-                    <div class="col-12 col-md-6 mb-3 mb-md-0">
+                    </template>
+                    <!-- Timeframe -->
+                    <div v-if="isVisible('timeframe')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
                             <h6>Timeframe-Nutzung
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
                                     data-bs-title="Welche Chart-Timeframes du am häufigsten verwendest. Grün = Win Rate ≥ 50%, Gelb = unter 50%."></i>
                             </h6>
                             <div v-if="timeframeChartData.categories.length > 0" id="hbarChart2" class="chartClass"></div>
-                            <div v-else class="text-center text-muted py-4">Keine Timeframe-Daten. Trage Timeframes in deinen Trade-Notizen ein.</div>
+                            <div v-else class="text-center text-muted py-4">Keine Timeframe-Daten.</div>
                         </div>
                     </div>
-                    <div class="col-12 col-md-6">
+                    <!-- Stresslevel-Verlauf -->
+                    <div v-if="isVisible('stressTime')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
                             <h6>Stresslevel-Verlauf
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
                                     data-bs-title="Entwicklung deines Stresslevels über die Zeit (1-10)."></i>
                             </h6>
                             <div v-if="stressTimeData.dates.length > 0" id="stressLineChart" class="chartClass"></div>
-                            <div v-else class="text-center text-muted py-4">Keine Stress-Daten. Trage Stresslevel in deinen Trade-Notizen ein.</div>
+                            <div v-else class="text-center text-muted py-4">Keine Stress-Daten.</div>
                             <div v-if="stressTimeData.dates.length > 0" class="mt-2 text-center">
                                 <small class="text-muted">Ø Stresslevel</small>
                                 <div class="fw-bold" style="color: rgba(255, 167, 38, 0.85)">{{ avgStress }}</div>
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <!-- ============ REIHE 4: Stress vs. Performance & Emotionslevel-Verlauf ============ -->
-                <div class="row mb-3">
-                    <div class="col-12 col-md-6 mb-3 mb-md-0">
+                    <!-- Stress vs. Win Rate -->
+                    <div v-if="isVisible('stressPerf')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
                             <h6>Stress vs. Win Rate
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Win Rate gruppiert nach Stresslevel. Zeigt ob du unter bestimmtem Stress besser oder schlechter tradest."></i>
+                                    data-bs-title="Win Rate gruppiert nach Stresslevel."></i>
                             </h6>
                             <div v-if="stressVsPerfData.categories.length > 0" id="hbarChart3" class="chartClass"></div>
                             <div v-else class="text-center text-muted py-4">Keine Stress-Daten vorhanden</div>
                         </div>
                     </div>
-                    <div class="col-12 col-md-6">
+                    <!-- Emotionslevel-Verlauf -->
+                    <div v-if="isVisible('emotionTime')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
                             <h6>Emotionslevel-Verlauf
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Entwicklung deines Emotionslevels über die Zeit (1-10). Höher = bessere Stimmung."></i>
+                                    data-bs-title="Entwicklung deines Emotionslevels über die Zeit (1-10)."></i>
                             </h6>
                             <div v-if="emotionTimeData.dates.length > 0" id="emotionLineChart" class="chartClass"></div>
-                            <div v-else class="text-center text-muted py-4">Keine Emotionslevel-Daten. Trage den Emotionslevel bei deinen Trades ein.</div>
+                            <div v-else class="text-center text-muted py-4">Keine Emotionslevel-Daten.</div>
                             <div v-if="emotionTimeData.dates.length > 0" class="mt-2 text-center">
                                 <small class="text-muted">Ø Emotionslevel</small>
                                 <div class="fw-bold" style="color: rgba(72, 199, 142, 0.85)">{{ avgEmotion }}</div>
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <!-- ============ REIHE 5: Emotionslevel vs. Performance & Vollständigkeits-Radar ============ -->
-                <div class="row mb-3">
-                    <div v-if="emotionVsPerfData.categories.length > 0" class="col-12 col-md-6 mb-3 mb-md-0">
+                    <!-- Emotionslevel vs. Win Rate -->
+                    <div v-if="isVisible('emotionPerf') && emotionVsPerfData.categories.length > 0" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
                             <h6>Emotionslevel vs. Win Rate
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Win Rate gruppiert nach Emotionslevel. Zeigt ob du mit besserer Stimmung erfolgreicher tradest."></i>
+                                    data-bs-title="Win Rate gruppiert nach Emotionslevel."></i>
                             </h6>
                             <div id="hbarChart4" class="chartClass"></div>
                         </div>
                     </div>
-                    <div :class="emotionVsPerfData.categories.length > 0 ? 'col-12 col-md-6' : 'col-12 col-md-6 offset-md-3'">
+                    <!-- Vollständigkeits-Radar -->
+                    <div v-if="isVisible('radar')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
                             <h6>Vollständigkeits-Radar
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Wie vollständig du dein Trading-Journal führst. Zeigt den Anteil (%) der Trades, bei denen du das jeweilige Feld ausgefüllt hast."></i>
+                                    data-bs-title="Wie vollständig du dein Trading-Journal führst."></i>
                             </h6>
                             <div id="radarChart1" class="chartClass"></div>
                         </div>
@@ -631,3 +685,39 @@ async function renderCharts() {
         </div>
     </div>
 </template>
+
+<style scoped>
+.card-config-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 1000;
+    min-width: 250px;
+    background: var(--black-bg-3, #1e1e2f);
+    border: 1px solid var(--white-38, rgba(255, 255, 255, 0.15));
+    border-radius: var(--border-radius, 0.5rem);
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.3));
+    padding: 0.5rem 0;
+}
+.card-config-title {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--white-38, rgba(255, 255, 255, 0.38));
+}
+.card-config-item {
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--white-87, rgba(255, 255, 255, 0.87));
+    user-select: none;
+}
+.card-config-item:hover {
+    background: var(--white-38, rgba(255, 255, 255, 0.08));
+}
+.card-config-divider {
+    border-top: 1px solid var(--white-38, rgba(255, 255, 255, 0.1));
+    margin: 0.3rem 0;
+}
+</style>

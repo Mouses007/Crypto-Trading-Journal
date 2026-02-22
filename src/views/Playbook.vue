@@ -8,10 +8,9 @@ import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../
 import { availableTags } from '../stores/trades.js'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
 import { useCreatedDateFormat } from '../utils/formatters.js'
-import { dbFind, dbGet, dbUpdate, dbCreate } from '../utils/db.js'
+import { dbFind, dbGet, dbUpdate, dbCreate, dbDelete } from '../utils/db.js'
 import Quill from 'quill'
 import { sanitizeHtml } from '../utils/sanitize'
-import * as markerjs2 from 'markerjs2'
 
 const route = useRoute()
 const playbookEntries = ref([])
@@ -21,8 +20,6 @@ const savingId = ref(null)
 const quillInstances = {}
 const screenshotMap = ref([]) // array of screenshot records
 const fullscreenImg = ref(null) // base64 string for fullscreen modal
-const fullscreenScreenshot = ref(null) // full screenshot object for editing
-const screenshotEditing = ref(false) // true while markerjs2 is open
 const entryScreenshotPreviews = ref({}) // tradeId → base64 preview
 const closingScreenshotPreviews = ref({}) // tradeId → base64 preview
 
@@ -514,121 +511,11 @@ function getClosingScreenshot(entry) {
 function openFullscreen(screenshotObj) {
     if (screenshotObj) {
         fullscreenImg.value = screenshotObj.annotatedBase64 || screenshotObj.originalBase64
-        fullscreenScreenshot.value = screenshotObj
     }
 }
 
 function closeFullscreen() {
-    if (screenshotEditing.value) return // don't close while markerjs2 is open
     fullscreenImg.value = null
-    fullscreenScreenshot.value = null
-}
-
-async function openAndEdit(screenshotObj) {
-    if (!screenshotObj || !screenshotObj.objectId) return
-    // Load full data by ID (dbGet uses /api/db/screenshots/:id which correctly maps objectId→id)
-    const full = await dbGet('screenshots', screenshotObj.objectId)
-    if (!full) return
-
-    // Update cache
-    const idx = screenshotMap.value.findIndex(s => s.objectId === screenshotObj.objectId)
-    if (idx !== -1) {
-        screenshotMap.value[idx] = { ...screenshotMap.value[idx], ...full }
-    }
-
-    fullscreenScreenshot.value = full
-    fullscreenImg.value = full.originalBase64
-    await nextTick()
-    launchMarkerArea(full)
-}
-
-async function editScreenshot(screenshotObj) {
-    if (!screenshotObj || !screenshotObj.objectId) return
-
-    // Load full screenshot data by ID (dbGet uses /api/db/screenshots/:id)
-    const full = await dbGet('screenshots', screenshotObj.objectId)
-    if (!full) return
-
-    // Update cache
-    const idx = screenshotMap.value.findIndex(s => s.objectId === screenshotObj.objectId)
-    if (idx !== -1) {
-        screenshotMap.value[idx] = { ...screenshotMap.value[idx], ...full }
-    }
-
-    fullscreenScreenshot.value = full
-    fullscreenImg.value = full.originalBase64
-    await nextTick()
-    launchMarkerArea(full)
-}
-
-function launchMarkerArea(full) {
-    const imgEl = document.getElementById('pb-fullscreen-marker-img')
-    if (!imgEl) {
-        console.error('Playbook: marker image element not found')
-        return
-    }
-
-    function startMarker() {
-        if (!imgEl.naturalWidth || !imgEl.naturalHeight) {
-            console.error('Playbook: image has no dimensions', imgEl.naturalWidth, imgEl.naturalHeight)
-            return
-        }
-
-        screenshotEditing.value = true
-
-        const markerArea = new markerjs2.MarkerArea(imgEl)
-        markerArea.renderAtNaturalSize = true
-        markerArea.renderImageQuality = 1
-        markerArea.renderMarkersOnly = true
-        markerArea.settings.displayMode = 'popup'
-        markerArea.availableMarkerTypes = markerArea.ALL_MARKER_TYPES
-        markerArea.settings.defaultFillColor = '#ffffffde'
-        markerArea.settings.defaultStrokeColor = 'black'
-        markerArea.settings.defaultColorsFollowCurrentColors = true
-        markerArea.settings.defaultStrokeWidth = 2
-        markerArea.settings.defaultColor = 'white'
-
-        markerArea.addEventListener('render', async (event) => {
-            // Save annotation to DB
-            await dbUpdate('screenshots', full.objectId, {
-                annotatedBase64: event.dataUrl,
-                maState: event.state,
-                markersOnly: true
-            })
-
-            // Update local data
-            full.annotatedBase64 = event.dataUrl
-            full.maState = event.state
-            fullscreenImg.value = event.dataUrl
-
-            // Update screenshotMap cache
-            const cacheIdx = screenshotMap.value.findIndex(s => s.objectId === full.objectId)
-            if (cacheIdx !== -1) {
-                screenshotMap.value[cacheIdx].annotatedBase64 = event.dataUrl
-                screenshotMap.value[cacheIdx].maState = event.state
-            }
-
-            screenshotEditing.value = false
-        })
-
-        markerArea.addEventListener('close', () => {
-            screenshotEditing.value = false
-        })
-
-        markerArea.show()
-
-        // Restore previous marker state
-        if (full.maState) {
-            markerArea.restoreState(full.maState)
-        }
-    }
-
-    // Wait for image to fully load before starting marker
-    if (imgEl.complete && imgEl.naturalWidth > 0) {
-        startMarker()
-    } else {
-        imgEl.onload = () => startMarker()
-    }
 }
 
 // --- Screenshot Upload / Remove ---
@@ -659,9 +546,35 @@ async function handleEntryScreenshotUpload(event, entry) {
 }
 
 async function removeEntryScreenshot(entry) {
-    if (entry.screenshotId) {
-        entry.screenshotId = ''
-        delete entryScreenshotPreviews.value[entry.tradeId]
+    const screenshotId = entry.screenshotId
+    const matchedScreenshot = getEntryScreenshot(entry)
+
+    // 1. Clear in-memory state
+    entry.screenshotId = ''
+    delete entryScreenshotPreviews.value[entry.tradeId]
+
+    // 2. Persist to DB — clear the reference in the notes record
+    if (entry.noteObjectId) {
+        await dbUpdate('notes', entry.noteObjectId, { screenshotId: '' })
+    }
+
+    // 3. Delete the actual screenshot record
+    if (screenshotId) {
+        try {
+            await dbDelete('screenshots', screenshotId)
+            const idx = screenshotMap.value.findIndex(s => s.objectId === screenshotId)
+            if (idx !== -1) screenshotMap.value.splice(idx, 1)
+        } catch (e) {
+            console.warn('Could not delete screenshot record:', e.message)
+        }
+    } else if (matchedScreenshot) {
+        try {
+            await dbDelete('screenshots', matchedScreenshot.objectId)
+            const idx = screenshotMap.value.findIndex(s => s.objectId === matchedScreenshot.objectId)
+            if (idx !== -1) screenshotMap.value.splice(idx, 1)
+        } catch (e) {
+            console.warn('Could not delete screenshot record:', e.message)
+        }
     }
 }
 
@@ -691,9 +604,37 @@ async function handleClosingScreenshotUpload(event, entry) {
 }
 
 async function removeClosingScreenshot(entry) {
-    if (entry.closingScreenshotId) {
-        entry.closingScreenshotId = ''
-        delete closingScreenshotPreviews.value[entry.tradeId]
+    const screenshotId = entry.closingScreenshotId
+    const matchedScreenshot = getClosingScreenshot(entry)
+
+    // 1. Clear in-memory state
+    entry.closingScreenshotId = ''
+    delete closingScreenshotPreviews.value[entry.tradeId]
+
+    // 2. Persist to DB — clear the reference in the notes record
+    if (entry.noteObjectId) {
+        await dbUpdate('notes', entry.noteObjectId, { closingScreenshotId: '' })
+    }
+
+    // 3. Delete the actual screenshot record
+    if (screenshotId) {
+        try {
+            await dbDelete('screenshots', screenshotId)
+            // Remove from local screenshotMap
+            const idx = screenshotMap.value.findIndex(s => s.objectId === screenshotId)
+            if (idx !== -1) screenshotMap.value.splice(idx, 1)
+        } catch (e) {
+            console.warn('Could not delete screenshot record:', e.message)
+        }
+    } else if (matchedScreenshot) {
+        // Fallback: screenshot was matched by name, not by ID
+        try {
+            await dbDelete('screenshots', matchedScreenshot.objectId)
+            const idx = screenshotMap.value.findIndex(s => s.objectId === matchedScreenshot.objectId)
+            if (idx !== -1) screenshotMap.value.splice(idx, 1)
+        } catch (e) {
+            console.warn('Could not delete screenshot record:', e.message)
+        }
     }
 }
 
@@ -934,9 +875,9 @@ async function saveEntry(entry) {
                                             class="pb-screenshot-view pointerClass"
                                             @click.stop="openFullscreen(getEntryScreenshot(entry))"
                                             title="Screenshot vergrößern" />
-                                        <i class="uil uil-image-edit pointerClass text-muted"
-                                            @click.stop="openAndEdit(getEntryScreenshot(entry))"
-                                            title="Screenshot bearbeiten" style="font-size: 1.1rem;"></i>
+                                        <i class="uil uil-times pointerClass text-danger"
+                                            @click.stop="removeEntryScreenshot(entry)"
+                                            title="Screenshot entfernen" style="font-size: 1.1rem;"></i>
                                     </div>
                                 </div>
                             </div>
@@ -992,9 +933,9 @@ async function saveEntry(entry) {
                                             class="pb-screenshot-view pointerClass"
                                             @click.stop="openFullscreen(getClosingScreenshot(entry))"
                                             title="Screenshot vergrößern" />
-                                        <i class="uil uil-image-edit pointerClass text-muted"
-                                            @click.stop="openAndEdit(getClosingScreenshot(entry))"
-                                            title="Screenshot bearbeiten" style="font-size: 1.1rem;"></i>
+                                        <i class="uil uil-times pointerClass text-danger"
+                                            @click.stop="removeClosingScreenshot(entry)"
+                                            title="Screenshot entfernen" style="font-size: 1.1rem;"></i>
                                     </div>
                                 </div>
                             </div>
@@ -1125,10 +1066,6 @@ async function saveEntry(entry) {
                                 <span v-else class="badge bg-success">Screenshot verknüpft</span>
                             </div>
                             <div class="d-flex gap-2 mt-1">
-                                <button v-if="getEntryScreenshot(entry)" class="btn btn-sm btn-outline-light"
-                                    @click.stop="openAndEdit(getEntryScreenshot(entry))" title="Bearbeiten">
-                                    <i class="uil uil-image-edit me-1"></i>Bearbeiten
-                                </button>
                                 <button class="btn btn-sm btn-outline-danger" @click.stop="removeEntryScreenshot(entry)">
                                     <i class="uil uil-times me-1"></i>Entfernen
                                 </button>
@@ -1192,10 +1129,6 @@ async function saveEntry(entry) {
                                     <span v-else class="badge bg-success">Screenshot verknüpft</span>
                                 </div>
                                 <div class="d-flex gap-2 mt-1">
-                                    <button v-if="getClosingScreenshot(entry)" class="btn btn-sm btn-outline-light"
-                                        @click.stop="openAndEdit(getClosingScreenshot(entry))" title="Bearbeiten">
-                                        <i class="uil uil-image-edit me-1"></i>Bearbeiten
-                                    </button>
                                     <button class="btn btn-sm btn-outline-danger" @click.stop="removeClosingScreenshot(entry)">
                                         <i class="uil uil-times me-1"></i>Entfernen
                                     </button>
@@ -1251,16 +1184,8 @@ async function saveEntry(entry) {
 
         <!-- Fullscreen screenshot overlay -->
         <div v-if="fullscreenImg" class="pb-fullscreen-overlay" @click="closeFullscreen">
-            <img id="pb-fullscreen-marker-img"
-                :src="fullscreenImg" class="pb-fullscreen-img" @click.stop />
+            <img :src="fullscreenImg" class="pb-fullscreen-img" @click.stop />
             <div class="pb-fullscreen-toolbar" @click.stop>
-                <button v-if="fullscreenScreenshot && fullscreenScreenshot.objectId"
-                    class="btn btn-sm btn-outline-light me-2"
-                    @click="editScreenshot(fullscreenScreenshot)"
-                    :disabled="screenshotEditing"
-                    title="Screenshot bearbeiten">
-                    <i class="uil uil-image-edit me-1"></i>Bearbeiten
-                </button>
                 <button class="btn btn-sm btn-outline-light" @click="closeFullscreen" title="Schließen">
                     <i class="uil uil-times"></i>
                 </button>

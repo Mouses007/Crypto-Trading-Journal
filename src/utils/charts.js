@@ -2240,6 +2240,115 @@ export function useHorizontalBarChart(elementId, categories, values, colors) {
 }
 
 /**
+ * Geteilter Balken-Chart: Wins nach rechts (grün), Losses nach links (rot)
+ * @param {string} elementId - DOM element ID
+ * @param {Array} categories - Tag-Namen (y-Achse)
+ * @param {Array} wins - Anzahl Wins pro Tag (positive Werte)
+ * @param {Array} losses - Anzahl Losses pro Tag (negative Werte, z.B. -1, -2)
+ */
+export function useSplitBarChart(elementId, categories, wins, losses) {
+    return new Promise((resolve) => {
+        let el = document.getElementById(elementId)
+        if (!el) { resolve(); return }
+        let myChart = echarts.getInstanceByDom(el) || echarts.init(el)
+
+        // Maximalen Wert für symmetrische Achse berechnen
+        const maxVal = Math.max(
+            Math.max(...wins.map(Math.abs), 0),
+            Math.max(...losses.map(Math.abs), 0)
+        )
+        // Etwas Puffer für Labels
+        const axisMax = maxVal + 1
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                backgroundColor: blackbg7,
+                borderColor: white38,
+                textStyle: { color: cssColor87 },
+                formatter: (params) => {
+                    const name = params[0].name
+                    const w = params.find(p => p.seriesName === 'Wins')
+                    const l = params.find(p => p.seriesName === 'Losses')
+                    const winVal = w ? w.value : 0
+                    const lossVal = l ? Math.abs(l.value) : 0
+                    return '<b>' + name + '</b><br>' +
+                        '<span style="color: rgba(72, 199, 142, 0.85);">●</span> Wins: ' + winVal + '<br>' +
+                        '<span style="color: rgba(235, 87, 87, 0.85);">●</span> Losses: ' + lossVal
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '3%',
+                top: '3%',
+                bottom: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'value',
+                min: -axisMax,
+                max: axisMax,
+                axisLabel: {
+                    color: cssColor60,
+                    formatter: (val) => Math.abs(val)
+                },
+                splitLine: { lineStyle: { color: white38, width: 0.5 } }
+            },
+            yAxis: {
+                type: 'category',
+                data: categories,
+                axisLabel: {
+                    color: cssColor87,
+                    fontSize: 12
+                },
+                axisLine: { show: false },
+                axisTick: { show: false }
+            },
+            series: [
+                {
+                    name: 'Wins',
+                    type: 'bar',
+                    stack: 'total',
+                    data: wins.map(v => ({
+                        value: v,
+                        itemStyle: { color: 'rgba(72, 199, 142, 0.85)' }
+                    })),
+                    barMaxWidth: 25,
+                    label: {
+                        show: true,
+                        position: 'right',
+                        color: cssColor87,
+                        fontSize: 11,
+                        formatter: (p) => p.value > 0 ? '+' + p.value : ''
+                    }
+                },
+                {
+                    name: 'Losses',
+                    type: 'bar',
+                    stack: 'total',
+                    data: losses.map(v => ({
+                        value: v,
+                        itemStyle: { color: 'rgba(235, 87, 87, 0.85)' }
+                    })),
+                    barMaxWidth: 25,
+                    label: {
+                        show: true,
+                        position: 'left',
+                        color: cssColor87,
+                        fontSize: 11,
+                        formatter: (p) => p.value < 0 ? p.value : ''
+                    }
+                }
+            ]
+        }
+
+        myChart.setOption(option, true)
+        resolve()
+    })
+}
+
+/**
  * Linien-Chart für Stresslevel über Zeit
  * @param {string} elementId - DOM element ID
  * @param {Array} dates - X-Achse Datum-Labels
