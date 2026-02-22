@@ -2090,7 +2090,7 @@ export function useGaugeChart(elementId, value, title, colorStops) {
     return new Promise((resolve, reject) => {
         let el = document.getElementById(elementId)
         if (!el) { resolve(); return }
-        let myChart = echarts.init(el)
+        let myChart = echarts.getInstanceByDom(el) || echarts.init(el)
 
         const defaultColorStops = [
             [0.3, redColor],
@@ -2177,7 +2177,7 @@ export function useHorizontalBarChart(elementId, categories, values, colors) {
     return new Promise((resolve, reject) => {
         let el = document.getElementById(elementId)
         if (!el) { resolve(); return }
-        let myChart = echarts.init(el)
+        let myChart = echarts.getInstanceByDom(el) || echarts.init(el)
 
         const barData = values.map((val, idx) => ({
             value: val,
@@ -2249,7 +2249,7 @@ export function useStressLineChart(elementId, dates, stressValues, options = {})
     return new Promise((resolve, reject) => {
         let el = document.getElementById(elementId)
         if (!el) { resolve(); return }
-        let myChart = echarts.init(el)
+        let myChart = echarts.getInstanceByDom(el) || echarts.init(el)
 
         const maxVal = options.max || 5
         const lineColor = options.color || 'rgba(255, 167, 38, 0.85)'

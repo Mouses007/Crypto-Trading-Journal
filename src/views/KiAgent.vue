@@ -225,20 +225,24 @@ async function checkStatus() {
     }
 }
 
-// Gespeicherte Berichte laden
+// Gespeicherte Berichte laden (gefiltert nach gewählter Börse)
 async function loadReports() {
     try {
-        const res = await axios.get('/api/ai/reports')
+        const params = {}
+        if (selectedBroker.value) params.broker = selectedBroker.value
+        const res = await axios.get('/api/ai/reports', { params })
         savedReports.splice(0, savedReports.length, ...res.data)
     } catch (e) {
         logError('ki-agent', 'Fehler beim Laden der Berichte', e)
     }
 }
 
-// Screenshot-Review Token-Daten laden
+// Screenshot-Review Token-Daten laden (gefiltert nach gewählter Börse)
 async function loadScreenshotReviewTokens() {
     try {
-        const res = await axios.get('/api/ai/screenshot-review-tokens')
+        const params = {}
+        if (selectedBroker.value) params.broker = selectedBroker.value
+        const res = await axios.get('/api/ai/screenshot-review-tokens', { params })
         screenshotReviewTokens.splice(0, screenshotReviewTokens.length, ...res.data)
     } catch (e) {
         // Nicht kritisch — einfach leer lassen

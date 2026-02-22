@@ -1,6 +1,6 @@
 {
   "name": "crypto-trading-journal",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Local, privacy-focused crypto futures trading journal. Bitunix + Bitget support, SQLite/PostgreSQL, AI reports, auto-update.",
   "author": "Mouses007",
   "license": "GPL-3.0-or-later",

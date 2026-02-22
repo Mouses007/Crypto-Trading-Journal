@@ -246,7 +246,8 @@ export function setupOllamaRoutes(app) {
                     promptTokens: tokenUsage?.promptTokens || 0,
                     completionTokens: tokenUsage?.completionTokens || 0,
                     totalTokens: tokenUsage?.totalTokens || 0,
-                    promptPreset
+                    promptPreset,
+                    broker: broker || ''
                 }).returning('id')
                 savedId = typeof inserted === 'object' ? inserted.id : inserted
             } catch (saveErr) {
@@ -388,14 +389,18 @@ Antworte auf Deutsch. Halte es kurz und prägnant (max 150 Wörter). Verwende Ma
     app.get('/api/ai/screenshot-review-tokens', async (req, res) => {
         try {
             const knex = getKnex()
-            const rows = await knex('screenshots')
+            const broker = req.query.broker || ''
+            let query = knex('screenshots')
                 .select('aiReviewProvider as provider', 'aiReviewModel as model')
                 .sum('aiReviewPromptTokens as promptTokens')
                 .sum('aiReviewCompletionTokens as completionTokens')
                 .sum('aiReviewTotalTokens as totalTokens')
                 .whereNot('aiReview', '')
                 .andWhere('aiReviewTotalTokens', '>', 0)
-                .groupBy('aiReviewProvider', 'aiReviewModel')
+            if (broker) {
+                query = query.andWhere('broker', broker)
+            }
+            const rows = await query.groupBy('aiReviewProvider', 'aiReviewModel')
             res.json(rows)
         } catch (e) {
             console.error('Screenshot review tokens error:', e)
@@ -514,11 +519,16 @@ Antworte auf Deutsch. Halte es kurz und prägnant (max 150 Wörter). Verwende Ma
         }
     })
 
-    // Alle Berichte laden (neueste zuerst)
+    // Alle Berichte laden (neueste zuerst, optional nach Broker gefiltert)
     app.get('/api/ai/reports', async (req, res) => {
         try {
             const knex = getKnex()
-            const reports = await knex('ai_reports').orderBy('id', 'desc')
+            const broker = req.query.broker || ''
+            let query = knex('ai_reports')
+            if (broker) {
+                query = query.where('broker', broker)
+            }
+            const reports = await query.orderBy('id', 'desc')
             // reportData JSON parsen
             for (const r of reports) {
                 try {

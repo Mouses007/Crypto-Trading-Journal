@@ -8,6 +8,7 @@ import { useImportTrades, useUploadTrades, useGetExistingTradesArray, useCreateB
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
+import { sendNotification } from '../utils/notify.js'
 
 spinnerLoadingPage.value = false
 
@@ -148,6 +149,7 @@ async function importFromApi() {
 
         if (allPositions.length === 0) {
             apiImportError.value = 'Keine Positionen für den ausgewählten Zeitraum gefunden.'
+            sendNotification(`${brokerLabel.value} Import`, 'Keine Positionen gefunden.')
             apiImportLoading.value = false
             return
         }
@@ -249,6 +251,7 @@ async function importFromApi() {
         // Check if anything left to import
         if (Object.keys(trades).length === 0) {
             apiImportError.value = 'Alle Positionen in diesem Zeitraum wurden bereits importiert.'
+            sendNotification(`${brokerLabel.value} Import`, 'Keine neuen Trades gefunden.')
             spinnerLoadingPage.value = false
             apiImportLoading.value = false
             return
@@ -263,9 +266,11 @@ async function importFromApi() {
 
         spinnerLoadingPage.value = false
         console.log(` -> Imported ${allPositions.length} positions from ${brokerLabel.value} API (${Object.keys(trades).length} new days)`)
+        sendNotification(`${brokerLabel.value} Import`, `${allPositions.length} Positionen importiert (${Object.keys(trades).length} neue Tage).`)
 
     } catch (error) {
         apiImportError.value = error.message || 'Import von API fehlgeschlagen'
+        sendNotification(`${brokerLabel.value} Import`, 'Import fehlgeschlagen: ' + (error.message || 'Unbekannter Fehler'))
         spinnerLoadingPage.value = false
     }
 

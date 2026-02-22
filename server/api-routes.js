@@ -20,7 +20,7 @@ const JSON_COLUMNS = {
     trades: ['executions', 'trades', 'blotter', 'pAndL', 'cashJournal'],
     screenshots: ['maState'],
     tags: ['tags', 'closingTags'],
-    settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'balances'],
+    settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'customTimeframes', 'balances'],
     incoming_positions: ['bitunixData', 'tags', 'closingTags', 'historyData'],
 }
 

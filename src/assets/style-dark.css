@@ -854,21 +854,31 @@ img.logo {
     min-height: auto;
 }
 
-.quill-incoming .ql-toolbar {
+.pb-edit-section .ql-toolbar,
+.incoming-eval-section .ql-toolbar {
     border-color: var(--white-18) !important;
     border-radius: var(--border-radius) var(--border-radius) 0 0;
     padding: 4px 8px;
+    background-color: var(--black-bg-7);
 }
 
-.quill-incoming .ql-container {
+.quill-incoming.ql-container {
     border-color: var(--white-18) !important;
     border-radius: 0 0 var(--border-radius) var(--border-radius);
     min-height: 50px;
+    background-color: var(--black-bg-7);
 }
 
-.quill-incoming .ql-editor {
+.quill-incoming .ql-editor,
+.quill-incoming.ql-container .ql-editor {
     min-height: 50px;
     padding: 6px 10px;
+    color: var(--white-87);
+}
+
+.quill-incoming .ql-editor.ql-blank::before,
+.quill-incoming.ql-container .ql-editor.ql-blank::before {
+    color: var(--white-30);
 }
 
 .navbar {

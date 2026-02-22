@@ -9,6 +9,7 @@ import { setupBinanceRoutes } from './server/binance-api.js'
 import { setupPolygonRoutes } from './server/polygon-api.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
 import { setupUpdateRoutes } from './server/update-api.js'
+import { setupBackupRoutes } from './server/backup-api.js'
 import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString } from './server/auth.js'
 
 const app = express();
@@ -36,6 +37,7 @@ const startIndex = async () => {
     setupPolygonRoutes(app);
     setupOllamaRoutes(app);
     setupUpdateRoutes(app);
+    setupBackupRoutes(app);
     console.log(" -> API routes initialized")
 
     if (process.env.NODE_ENV == 'dev') {

@@ -349,6 +349,8 @@ async function importDb() {
 }
 
 let localTimeframes = reactive(new Set())
+let customTimeframes = reactive([])
+let newCustomTf = ref('')
 
 /* TAGS */
 let tagGroups = reactive([])
@@ -896,21 +898,44 @@ function toggleTimeframe(value) {
 async function saveTimeframes() {
     try {
         const arr = [...localTimeframes]
-        await dbUpdateSettings({ tradeTimeframes: arr })
+        const custom = customTimeframes.map(tf => ({ value: tf.value, label: tf.label }))
+        await dbUpdateSettings({ tradeTimeframes: arr, customTimeframes: custom })
         currentUser.value.tradeTimeframes = arr
+        currentUser.value.customTimeframes = custom
         // Globales reactive Array aktualisieren
         selectedTradeTimeframes.splice(0)
         arr.forEach(v => selectedTradeTimeframes.push(v))
-        console.log(' -> Timeframes gespeichert:', arr)
+        console.log(' -> Timeframes gespeichert:', arr, 'custom:', custom)
     } catch (error) {
         alert('Fehler beim Speichern: ' + error.message)
     }
 }
 
 // Timeframe-Gruppen für die Anzeige
-const timeframeGroups = ['Minuten', 'Stunden', 'Tage']
+const timeframeGroups = computed(() => {
+    const groups = ['Minuten', 'Stunden', 'Tage']
+    if (customTimeframes.length > 0) groups.push('Eigene')
+    return groups
+})
 function timeframesByGroup(group) {
+    if (group === 'Eigene') return customTimeframes
     return allTradeTimeframes.filter(tf => tf.group === group)
+}
+function addCustomTimeframe() {
+    const label = newCustomTf.value.trim()
+    if (!label) return
+    const value = 'custom_' + label.replace(/\s+/g, '_').toLowerCase()
+    if (allTradeTimeframes.some(tf => tf.value === value) || customTimeframes.some(tf => tf.value === value)) return
+    customTimeframes.push({ value, label, group: 'Eigene' })
+    localTimeframes.add(value)
+    newCustomTf.value = ''
+    saveTimeframes()
+}
+function removeCustomTimeframe(tf) {
+    const idx = customTimeframes.findIndex(c => c.value === tf.value)
+    if (idx !== -1) customTimeframes.splice(idx, 1)
+    localTimeframes.delete(tf.value)
+    saveTimeframes()
 }
 
 onBeforeMount(async () => {
@@ -939,6 +964,12 @@ onBeforeMount(async () => {
         localTimeframes.clear()
         if (Array.isArray(saved)) {
             saved.forEach(v => localTimeframes.add(v))
+        }
+        // Custom Timeframes laden
+        customTimeframes.splice(0)
+        const savedCustom = settings.customTimeframes || []
+        if (Array.isArray(savedCustom)) {
+            savedCustom.forEach(tf => customTimeframes.push({ value: tf.value, label: tf.label, group: 'Eigene' }))
         }
     } catch (error) {
         console.log(' -> Error loading settings:', error)
@@ -1172,26 +1203,9 @@ onBeforeMount(async () => {
                     <p class="fs-5 fw-bold mb-0">Bewertung</p>
                 </div>
                 <div v-show="bewertungExpanded" class="mt-2">
-                    <p class="fw-lighter">Trade-Bewertungs-Popups beim Öffnen und Schließen von Positionen anzeigen.</p>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" id="popupToggle" v-model="showTradePopups" @change="savePopupSetting">
-                        <label class="form-check-label" for="popupToggle">Bewertungs-Popups aktivieren</label>
-                    </div>
-                    <div class="form-check form-switch mt-3">
-                        <input class="form-check-input" type="checkbox" id="notificationToggle" v-model="browserNotifications" @change="saveNotificationSetting">
-                        <label class="form-check-label" for="notificationToggle">Browser-Benachrichtigungen</label>
-                    </div>
-                    <small class="text-muted">Desktop-Benachrichtigung wenn ein KI-Bericht fertig ist oder ein API-Import abgeschlossen wurde (nur wenn Tab nicht im Fokus).</small>
-                </div>
 
-                <hr />
-
-                <!--=============== TAGS ===============-->
-                <div class="d-flex align-items-center pointerClass" @click="tagsExpanded = !tagsExpanded">
-                    <i class="uil me-2" :class="tagsExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Tags</p>
-                </div>
-                <div v-show="tagsExpanded" class="mt-2">
+                    <!--=============== TAGS (Unterabschnitt) ===============-->
+                    <p class="fs-6 fw-bold mb-1">Tags</p>
                     <p class="fw-lighter">Erstelle Tag-Gruppen und Tags, um deine Trades zu kategorisieren.</p>
 
                     <!-- Existing groups -->
@@ -1236,28 +1250,52 @@ onBeforeMount(async () => {
                             <button class="btn btn-outline-success btn-sm" @click="addGroup">+ Gruppe</button>
                         </div>
                     </div>
-                </div>
 
-                <hr />
+                    <hr />
 
-                <!--=============== TIMEFRAMES ===============-->
-                <div class="d-flex align-items-center pointerClass" @click="timeframesExpanded = !timeframesExpanded">
-                    <i class="uil me-2" :class="timeframesExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Timeframes</p>
-                </div>
-                <div v-show="timeframesExpanded" class="mt-2 row align-items-center">
+                    <!--=============== TIMEFRAMES (Unterabschnitt) ===============-->
+                    <p class="fs-6 fw-bold mb-1">Timeframes</p>
                     <p class="fw-lighter">Wähle die Timeframes aus, die du beim Trading verwendest. Diese erscheinen dann in Offene Trades und Playbook.</p>
                     <div v-for="group in timeframeGroups" :key="group" class="mb-2">
                         <label class="fw-lighter text-uppercase small mb-1">{{ group }}</label>
                         <div class="d-flex flex-wrap gap-1">
-                            <span v-for="tf in timeframesByGroup(group)" :key="tf.value"
-                                class="tag-badge" :class="{ active: localTimeframes.has(tf.value) }"
-                                v-on:click="toggleTimeframe(tf.value)">{{ tf.label }}</span>
+                            <template v-if="group === 'Eigene'">
+                                <span v-for="tf in timeframesByGroup(group)" :key="tf.value"
+                                    class="tag-badge d-flex align-items-center" :class="{ active: localTimeframes.has(tf.value) }"
+                                    v-on:click="toggleTimeframe(tf.value)">{{ tf.label }}
+                                    <i class="uil uil-times ms-1" style="font-size: 0.75rem; cursor: pointer;" @click.stop="removeCustomTimeframe(tf)"></i>
+                                </span>
+                            </template>
+                            <template v-else>
+                                <span v-for="tf in timeframesByGroup(group)" :key="tf.value"
+                                    class="tag-badge" :class="{ active: localTimeframes.has(tf.value) }"
+                                    v-on:click="toggleTimeframe(tf.value)">{{ tf.label }}</span>
+                            </template>
                         </div>
+                    </div>
+                    <!-- Eigenen Timeframe hinzufügen -->
+                    <div class="d-flex mt-2 mb-2">
+                        <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" placeholder="z.B. 8 Stunden" v-model="newCustomTf" @keyup.enter="addCustomTimeframe" />
+                        <button class="btn btn-outline-primary btn-sm" @click="addCustomTimeframe">+ Timeframe</button>
                     </div>
                     <div class="mt-3 mb-3">
                         <button type="button" v-on:click="saveTimeframes" class="btn btn-success">Speichern</button>
                     </div>
+
+                    <hr />
+
+                    <!--=============== POPUPS (Unterabschnitt) ===============-->
+                    <p class="fs-6 fw-bold mb-1">Popups & Benachrichtigungen</p>
+                    <p class="fw-lighter">Trade-Bewertungs-Popups beim Öffnen und Schließen von Positionen anzeigen.</p>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="popupToggle" v-model="showTradePopups" @change="savePopupSetting">
+                        <label class="form-check-label" for="popupToggle">Bewertungs-Popups aktivieren</label>
+                    </div>
+                    <div class="form-check form-switch mt-3">
+                        <input class="form-check-input" type="checkbox" id="notificationToggle" v-model="browserNotifications" @change="saveNotificationSetting">
+                        <label class="form-check-label" for="notificationToggle">Browser-Benachrichtigungen</label>
+                    </div>
+                    <small class="text-muted">Desktop-Benachrichtigung wenn ein KI-Bericht fertig ist oder ein API-Import abgeschlossen wurde (nur wenn Tab nicht im Fokus).</small>
                 </div>
 
                 <hr />
@@ -1486,8 +1524,8 @@ onBeforeMount(async () => {
 
                     <!-- Export / Import -->
                     <div class="mt-3 pt-3" style="border-top: 1px solid var(--white-10);">
-                        <p class="fw-bold mb-2">Daten-Migration</p>
-                        <p class="fw-lighter small">Exportiert alle Daten als JSON-Backup oder importiert ein bestehendes Backup in die aktuelle Datenbank.</p>
+                        <p class="fw-bold mb-2">Backup</p>
+                        <p class="fw-lighter small">Sichert alle Daten (Trades, Screenshots, Einstellungen, API-Keys, KI-Berichte, DB-Konfiguration) als JSON-Backup. API-Keys bleiben verschlüsselt.</p>
                         <div class="d-flex align-items-center gap-2">
                             <button type="button" @click="exportDb" class="btn btn-outline-primary btn-sm" :disabled="dbExportLoading">
                                 <span v-if="dbExportLoading">

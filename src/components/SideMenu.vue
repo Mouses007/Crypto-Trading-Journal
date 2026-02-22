@@ -5,15 +5,21 @@ import { pageId, screenType } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
 import { selectedBroker, brokers } from "../stores/globals.js"
 import SidebarFilters from './SidebarFilters.vue'
+import donateBtc from '../assets/donate-btc.png'
+import donatePaypal from '../assets/donate-paypal.jpg'
 
 const appVersion = __APP_VERSION__
 import { useToggleMobileMenu } from "../utils/utils";
+
+const showDonateModal = ref(false)
 
 // ── Update System ──
 const updateAvailable = ref(false)
 const updateInfo = ref(null)
 const updateInstalling = ref(false)
 const updateError = ref('')
+const rollbackAvailable = ref(false)
+const rollbackInstalling = ref(false)
 
 async function checkForUpdate() {
     try {
@@ -29,6 +35,18 @@ async function checkForUpdate() {
 
 async function installUpdate() {
     if (updateInstalling.value) return
+
+    const info = updateInfo.value
+    const version = `v${info?.localVersion || '?'} → v${info?.remoteVersion || '?'}`
+    const notes = info?.releaseNotes ? `\n\nÄnderungen:\n${info.releaseNotes}` : ''
+    const ok = confirm(
+        `Update ${version}${notes}\n\n` +
+        '⚠️ Vor dem Update ein Backup erstellen!\n' +
+        'Einstellungen → Datenbank → Backup → Export\n\n' +
+        'Hast du ein Backup erstellt und möchtest fortfahren?'
+    )
+    if (!ok) return
+
     updateInstalling.value = true
     updateError.value = ''
     try {
@@ -43,8 +61,36 @@ async function installUpdate() {
     }
 }
 
+async function checkRollbackStatus() {
+    try {
+        const { data } = await axios.get('/api/update/rollback-status')
+        rollbackAvailable.value = data.available
+    } catch (e) {
+        // Silent fail
+    }
+}
+
+async function rollback() {
+    if (rollbackInstalling.value) return
+    const ok = confirm('Möchtest du zur vorherigen Version zurückkehren?')
+    if (!ok) return
+
+    rollbackInstalling.value = true
+    updateError.value = ''
+    try {
+        const { data } = await axios.post('/api/update/rollback')
+        if (data.ok) {
+            setTimeout(() => window.location.reload(), 5000)
+        }
+    } catch (e) {
+        updateError.value = e.response?.data?.error || e.message
+        rollbackInstalling.value = false
+    }
+}
+
 onMounted(() => {
     checkForUpdate()
+    checkRollbackStatus()
 })
 
 function onBrokerChange(event) {
@@ -163,13 +209,41 @@ function goToDashboard() {
             <span v-if="updateInstalling" class="footer-update installing">
                 <span class="spinner-border spinner-border-sm me-1"></span>Installiere...
             </span>
+            <a v-if="rollbackAvailable && !rollbackInstalling" class="footer-rollback" @click.prevent="rollback">
+                <i class="uil uil-redo me-1"></i>Rollback
+            </a>
+            <span v-if="rollbackInstalling" class="footer-update installing">
+                <span class="spinner-border spinner-border-sm me-1"></span>Rollback...
+            </span>
             <span v-if="updateError" class="footer-update-error">{{ updateError }}</span>
-            <a href="https://paypal.me/RosenbergManuel" target="_blank" rel="noopener"
+            <a href="#" @click.prevent="showDonateModal = true"
                 :class="['footer-donate', { 'footer-donate-highlight': updateAvailable }]">
                 <i class="uil uil-heart me-1"></i>Spenden
             </a>
         </div>
     </div>
+
+    <!-- Spenden Modal — Teleport to body to escape sidebar stacking context -->
+    <Teleport to="body">
+        <div v-if="showDonateModal" class="donate-overlay" @click.self="showDonateModal = false">
+            <div class="donate-modal">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="mb-0"><i class="uil uil-heart me-1"></i>Spenden</h6>
+                    <button class="btn btn-sm btn-outline-secondary" @click="showDonateModal = false">
+                        <i class="uil uil-times"></i>
+                    </button>
+                </div>
+                <div class="donate-qr-row">
+                    <div class="donate-qr-card">
+                        <img :src="donateBtc" alt="BTC QR Code" class="donate-qr-img" />
+                    </div>
+                    <div class="donate-qr-card">
+                        <img :src="donatePaypal" alt="PayPal QR Code" class="donate-qr-img" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </Teleport>
 </template>
 
 <style scoped>
@@ -252,6 +326,7 @@ function goToDashboard() {
     color: #66bb6a !important;
 }
 
+
 .footer-update {
     display: block;
     font-size: 0.72rem;
@@ -275,6 +350,17 @@ function goToDashboard() {
     opacity: 0.8;
 }
 
+.footer-rollback {
+    display: block;
+    font-size: 0.7rem;
+    color: #ff9800;
+    cursor: pointer;
+    margin: 0.2rem 0;
+}
+.footer-rollback:hover {
+    color: #ffb74d;
+    text-decoration: underline;
+}
 .footer-update-error {
     display: block;
     font-size: 0.65rem;
@@ -285,5 +371,52 @@ function goToDashboard() {
 @keyframes updatePulse {
     0%, 100% { opacity: 0.8; }
     50% { opacity: 1; }
+}
+</style>
+
+<!-- Unscoped styles for Teleported donate modal -->
+<style>
+.donate-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.donate-modal {
+    background: var(--black-bg-3, #1a1a2e);
+    border: 1px solid var(--white-18, rgba(255,255,255,0.18));
+    border-radius: var(--border-radius, 6px);
+    padding: 1.25rem;
+    max-width: 900px;
+    width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.donate-qr-row {
+    display: flex;
+    gap: 200px;
+    justify-content: center;
+    align-items: center;
+}
+
+.donate-qr-card {
+    flex: 1;
+    min-width: 0;
+}
+
+.donate-qr-img {
+    width: 100%;
+    border-radius: var(--border-radius, 6px);
+}
+
+@media (max-width: 500px) {
+    .donate-qr-row {
+        flex-direction: column;
+    }
 }
 </style>

@@ -521,6 +521,7 @@ export function setupBitunixRoutes(app) {
             let duplicateRowsDeleted = 0
             let duplicateTradesRemoved = 0
             let evaluatedKept = 0
+            const remappedTradeIds = new Map() // discardedId -> keptId
 
             for (const [dateKey, rows] of Object.entries(byDate)) {
                 if (rows.length <= 1) continue
@@ -548,8 +549,13 @@ export function setupBitunixRoutes(app) {
                         // Duplicate found — prefer the one with evaluations
                         const existing = seen.get(normalizedKey)
                         if (evaluatedIds.has(tid) && !evaluatedIds.has(existing.id)) {
+                            // Keep new trade, discard existing
+                            remappedTradeIds.set(existing.id, tid)
                             seen.set(normalizedKey, t)
                             evaluatedKept++
+                        } else {
+                            // Keep existing, discard new trade
+                            remappedTradeIds.set(tid, existing.id)
                         }
                         duplicateTradesRemoved++
                     } else {
@@ -583,8 +589,21 @@ export function setupBitunixRoutes(app) {
                 }
             }
 
+            // Remap tradeId references in metadata tables for discarded duplicates
+            const metadataTables = ['tags', 'notes', 'satisfactions', 'excursions']
+            let remappedCount = 0
+            for (const [oldId, newId] of remappedTradeIds) {
+                for (const table of metadataTables) {
+                    const updated = await knex(table).where('tradeId', oldId).update({ tradeId: newId })
+                    remappedCount += updated
+                }
+            }
+            if (remappedCount > 0) {
+                console.log(` -> Remapped ${remappedCount} metadata references (${remappedTradeIds.size} trade IDs)`)
+            }
+
             console.log(` -> Duplicates removed: ${duplicateRowsDeleted} rows, ${duplicateTradesRemoved} trades (${evaluatedKept} evaluated kept)`)
-            res.json({ ok: true, duplicateRowsDeleted, duplicateTradesRemoved, evaluatedKept })
+            res.json({ ok: true, duplicateRowsDeleted, duplicateTradesRemoved, evaluatedKept, remappedCount })
         } catch (error) {
             console.error(' -> Remove duplicates error:', error.message)
             res.status(500).json({ error: error.message })

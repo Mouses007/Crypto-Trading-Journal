@@ -373,6 +373,7 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'startBalanceDate', (t) => t.bigInteger('startBalanceDate').defaultTo(0))
     await addColumnIfNotExists('settings', 'currentBalance', (t) => t.float('currentBalance').defaultTo(0))
     await addColumnIfNotExists('settings', 'tradeTimeframes', (t) => t.text('tradeTimeframes').defaultTo('[]'))
+    await addColumnIfNotExists('settings', 'customTimeframes', (t) => t.text('customTimeframes').defaultTo('[]'))
     await addColumnIfNotExists('settings', 'enableBinanceChart', (t) => t.integer('enableBinanceChart').defaultTo(0))
 
     // AI settings
@@ -432,6 +433,9 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('ai_reports', 'completionTokens', (t) => t.integer('completionTokens').defaultTo(0))
     await addColumnIfNotExists('ai_reports', 'totalTokens', (t) => t.integer('totalTokens').defaultTo(0))
     await addColumnIfNotExists('ai_reports', 'promptPreset', (t) => t.text('promptPreset').defaultTo(''))
+    await addColumnIfNotExists('ai_reports', 'broker', (t) => t.text('broker').defaultTo(''))
+    // Bestehende Berichte ohne Broker auf 'bitunix' setzen (einmalige Migration)
+    await knex('ai_reports').where('broker', '').update({ broker: 'bitunix' })
 
     // ==================== SCREENSHOT BROKER ====================
     await addColumnIfNotExists('screenshots', 'broker', (t) => t.text('broker').defaultTo(''))
@@ -456,6 +460,66 @@ async function runMigrations(knex, client) {
 
     // ==================== SETTINGS: BALANCES (per broker) ====================
     await addColumnIfNotExists('settings', 'balances', (t) => t.text('balances').defaultTo('{}'))
+
+    // ==================== SEED: Default Tag Groups ====================
+    // Ensure the mandatory "Strategie" tag group exists (required by charts/dashboard).
+    // On fresh install: create with example tags. On update: preserve existing tags.
+    try {
+        const settingsRow = await knex('settings').select('tags').where('id', 1).first()
+        let existingTags = []
+        if (settingsRow && settingsRow.tags) {
+            try { existingTags = JSON.parse(settingsRow.tags) } catch (e) { existingTags = [] }
+        }
+        if (!Array.isArray(existingTags) || existingTags.length === 0) {
+            // Fresh install: create Strategie group with example tags (green)
+            const defaultTags = [
+                {
+                    id: 'group_0',
+                    name: 'Strategie',
+                    color: '#198754',
+                    tags: [
+                        { id: 'tag_strat_1', name: 'LSOB', color: '#198754' },
+                        { id: 'tag_strat_2', name: 'Guss', color: '#198754' },
+                        { id: 'tag_strat_3', name: 'Breakout', color: '#198754' }
+                    ]
+                }
+            ]
+            await knex('settings').where('id', 1).update({ tags: JSON.stringify(defaultTags) })
+            console.log(' -> Default tag group "Strategie" created with example tags')
+        } else {
+            // Update: ensure Strategie group exists, but never overwrite existing tags
+            const hasStrategie = existingTags.some(g => g.id === 'group_0')
+            if (!hasStrategie) {
+                existingTags.unshift({
+                    id: 'group_0',
+                    name: 'Strategie',
+                    color: '#198754',
+                    tags: []
+                })
+                await knex('settings').where('id', 1).update({ tags: JSON.stringify(existingTags) })
+                console.log(' -> Mandatory "Strategie" tag group restored (no tags overwritten)')
+            }
+        }
+    } catch (e) { /* ignore */ }
+
+    // ==================== SEED: Default Timeframes ====================
+    // On fresh install: activate all timeframes. On update: preserve existing selection.
+    try {
+        const tfRow = await knex('settings').select('tradeTimeframes').where('id', 1).first()
+        let existingTf = []
+        if (tfRow && tfRow.tradeTimeframes) {
+            try { existingTf = JSON.parse(tfRow.tradeTimeframes) } catch (e) { existingTf = [] }
+        }
+        if (!Array.isArray(existingTf) || existingTf.length === 0) {
+            const allTimeframes = [
+                '1m','2m','3m','5m','6m','10m','15m','30m','45m',
+                '1h','2h','3h','4h',
+                '1D','1W','1M','3M','6M','12M'
+            ]
+            await knex('settings').where('id', 1).update({ tradeTimeframes: JSON.stringify(allTimeframes) })
+            console.log(' -> Default timeframes activated (all)')
+        }
+    } catch (e) { /* ignore */ }
 
     // ==================== DATA MIGRATION ====================
     // Migrate old aiApiKey to provider-specific column

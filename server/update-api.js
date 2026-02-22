@@ -55,6 +55,9 @@ let lastCheck = null
 let lastCheckTime = 0
 const CHECK_CACHE_MS = 5 * 60 * 1000 // 5 min cache
 
+// Rollback: Commit-Hash vor dem Update
+let preUpdateCommit = null
+
 export function setupUpdateRoutes(app) {
 
     // ── Check for updates ──────────────────────────────────────────
@@ -118,8 +121,16 @@ export function setupUpdateRoutes(app) {
         try {
             const steps = []
 
+            // 0. Aktuellen Commit-Hash speichern (für Rollback)
+            preUpdateCommit = execSync('git rev-parse HEAD', {
+                cwd: PROJECT_ROOT,
+                encoding: 'utf8',
+                timeout: 5000
+            }).trim()
+            steps.push({ step: 'save rollback point', output: preUpdateCommit })
+
             // 1. git pull
-            const pullOutput = execSync('git pull origin main', {
+            const pullOutput = execSync('git pull origin master', {
                 cwd: PROJECT_ROOT,
                 encoding: 'utf8',
                 timeout: 60000
@@ -161,6 +172,63 @@ export function setupUpdateRoutes(app) {
             console.error('Update install failed:', err.message)
             res.status(500).json({ ok: false, error: err.message })
         }
+    })
+
+    // ── Rollback to previous version ────────────────────────────────
+    app.post('/api/update/rollback', async (req, res) => {
+        if (!preUpdateCommit) {
+            return res.status(400).json({ ok: false, error: 'Kein Rollback-Punkt vorhanden. Rollback ist nur nach einem Update möglich.' })
+        }
+
+        try {
+            const steps = []
+
+            // 1. Zurück zum gespeicherten Commit
+            const checkoutOutput = execSync(`git checkout ${preUpdateCommit} -- .`, {
+                cwd: PROJECT_ROOT,
+                encoding: 'utf8',
+                timeout: 30000
+            }).trim()
+            steps.push({ step: 'git checkout', output: checkoutOutput || 'OK' })
+
+            // 2. npm install
+            const npmOutput = execSync('npm install --omit=dev', {
+                cwd: PROJECT_ROOT,
+                encoding: 'utf8',
+                timeout: 120000
+            }).trim()
+            steps.push({ step: 'npm install', output: npmOutput })
+
+            // 3. npm run build
+            const buildOutput = execSync('npm run build', {
+                cwd: PROJECT_ROOT,
+                encoding: 'utf8',
+                timeout: 120000
+            }).trim()
+            steps.push({ step: 'npm run build', output: buildOutput })
+
+            const restoredVersion = getLocalVersion()
+            preUpdateCommit = null // Rollback-Punkt verbraucht
+            lastCheck = null
+            lastCheckTime = 0
+
+            res.json({ ok: true, steps, restoredVersion })
+
+            // Restart
+            setTimeout(() => {
+                console.log('\n🔄 Rollback durchgeführt — Server wird neu gestartet...')
+                process.exit(0)
+            }, 1500)
+
+        } catch (err) {
+            console.error('Rollback failed:', err.message)
+            res.status(500).json({ ok: false, error: err.message })
+        }
+    })
+
+    // ── Rollback status ─────────────────────────────────────────────
+    app.get('/api/update/rollback-status', (req, res) => {
+        res.json({ available: !!preUpdateCommit, commit: preUpdateCommit || null })
     })
 
     // ── Startup check (non-blocking) ───────────────────────────────

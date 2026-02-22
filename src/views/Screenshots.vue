@@ -141,7 +141,7 @@ onMounted(async () => {
             <div v-for="(itemScreenshot, index) in filteredScreenshots" class="col-12 col-md-6 col-xl-4 mt-2">
                 <div class="dailyCard" v-bind:id="itemScreenshot.objectId">
                     <div class="row">
-                        <Screenshot :screenshot-data="itemScreenshot" show-title source="screenshots" :index="index"/>
+                        <Screenshot :screenshot-data="itemScreenshot" show-title source="screenshots" :index="screenshots.indexOf(itemScreenshot)"/>
                     </div>
 
                     <!-- Buttons: Playbook + KI-Bewertung -->

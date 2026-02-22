@@ -316,6 +316,8 @@ async function clickTradesModal(param1, param2, param3) {
                     } catch (error) {
                         if (error.response && error.response.status === 429) {
                             candlestickChartFailureMessage.value = "Zu viele Anfragen, versuche es später erneut"
+                        } else if (error.response && error.response.status === 400) {
+                            candlestickChartFailureMessage.value = "Chart nicht verfügbar für dieses Symbol"
                         } else if (error.response) {
                             candlestickChartFailureMessage.value = error.response.statusText
                         } else {

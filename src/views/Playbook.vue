@@ -447,42 +447,50 @@ function getScreenshotById(screenshotId) {
 }
 
 function getEntryScreenshot(entry) {
-    // 1. By screenshotId field
+    // 1. By screenshotId field (explicit link — always trust)
     const byId = getScreenshotById(entry.screenshotId)
     if (byId) return byId
 
     const list = screenshotMap.value
     if (!list || !list.length) return null
 
+    // Helper: exclude screenshots that belong to the closing evaluation
+    const isClosing = (s) => {
+        if (entry.closingScreenshotId && s.objectId === entry.closingScreenshotId) return true
+        if (s.name && s.name.includes('_closing')) return true
+        return false
+    }
+
     // 2. Match by name containing "_entry"
     let match = list.find(s => s.name && s.name.includes(entry.tradeId) && s.name.includes('_entry'))
     if (match) return match
 
     // 3. Exact match by name (legacy)
-    match = list.find(s => s.name === entry.tradeId)
+    match = list.find(s => s.name === entry.tradeId && !isClosing(s))
     if (match) return match
 
-    // 4. Match by name containing tradeId prefix
-    match = list.find(s => s.name && entry.tradeId && s.name.includes(entry.tradeId))
+    // 4. Match by name containing tradeId prefix (exclude closing)
+    match = list.find(s => s.name && entry.tradeId && s.name.includes(entry.tradeId) && !isClosing(s))
     if (match) return match
 
-    // 5. Match by dateUnix + symbol
+    // 5. Match by dateUnix + symbol (exclude closing)
     if (entry.dateUnix && entry.symbol) {
         match = list.find(s =>
             s.symbol === entry.symbol &&
-            (s.dateUnixDay === entry.dateUnix || s.dateUnix === entry.dateUnix)
+            (s.dateUnixDay === entry.dateUnix || s.dateUnix === entry.dateUnix) &&
+            !isClosing(s)
         )
         if (match) return match
     }
 
-    // 6. Fuzzy: dateUnixDay prefix
+    // 6. Fuzzy: dateUnixDay prefix (exclude closing)
     if (entry.tradeId) {
         const m = entry.tradeId.match(/^t?(\d+)_/)
         if (m) {
             const prefix = m[1]
-            match = list.find(s => s.name && s.name.startsWith(prefix + '_'))
+            match = list.find(s => s.name && s.name.startsWith(prefix + '_') && !isClosing(s))
             if (match) return match
-            match = list.find(s => s.dateUnixDay && s.dateUnixDay.toString() === prefix)
+            match = list.find(s => s.dateUnixDay && s.dateUnixDay.toString() === prefix && !isClosing(s))
             if (match) return match
         }
     }
@@ -775,12 +783,12 @@ async function saveEntry(entry) {
             entry.tagRecordObjectId = result.objectId
         }
 
-        delete quillInstances[entry.tradeId + '_opening']
-        delete quillInstances[entry.tradeId + '_closing']
-        editingId.value = null
     } catch (error) {
         console.error(' -> Playbook saveEntry Fehler:', error)
     } finally {
+        delete quillInstances[entry.tradeId + '_opening']
+        delete quillInstances[entry.tradeId + '_closing']
+        editingId.value = null
         savingId.value = null
     }
 }
@@ -854,21 +862,11 @@ async function saveEntry(entry) {
                 <!-- Expanded: VIEW MODE -->
                 <div v-if="expandedId === entry.tradeId && editingId !== entry.tradeId" class="pb-body">
                     <!-- ===== ERÖFFNUNGSBEWERTUNG (View) ===== -->
-                    <div v-if="entry.entryStressLevel > 0 || (entry.tags && entry.tags.length > 0) || entry.timeframe || entry.emotionLevel > 0 || entry.feelings || (entry.playbook && stripHtml(entry.playbook).trim())"
+                    <div v-if="entry.entryStressLevel > 0 || (entry.tags && entry.tags.length > 0) || entry.timeframe || entry.emotionLevel > 0 || entry.feelings || (entry.playbook && stripHtml(entry.playbook).trim()) || getEntryScreenshot(entry)"
                         class="pb-view-opening mb-2 p-3">
                         <div class="d-flex align-items-center mb-2">
                             <i class="uil uil-unlock-alt me-2" style="color: var(--green-color, #10b981); font-size: 1rem;"></i>
                             <span class="fw-bold small">Eröffnungsbewertung</span>
-                            <!-- Entry Screenshot inline -->
-                            <div v-if="getEntryScreenshot(entry)" class="ms-auto d-flex align-items-center gap-1">
-                                <i class="uil uil-image-edit pointerClass text-muted"
-                                    @click.stop="openAndEdit(getEntryScreenshot(entry))"
-                                    title="Screenshot bearbeiten" style="font-size: 1.1rem;"></i>
-                                <img :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
-                                    class="pb-thumbnail-sm pointerClass"
-                                    @click.stop="openFullscreen(getEntryScreenshot(entry))"
-                                    title="Eröffnungs-Screenshot vergrößern" />
-                            </div>
                         </div>
                         <div class="pb-grid">
                             <div v-if="entry.entryStressLevel > 0" class="pb-field">
@@ -926,6 +924,22 @@ async function saveEntry(entry) {
                                 <div class="pb-label">Notiz</div>
                                 <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.playbook)"></div>
                             </div>
+
+                            <!-- Entry Screenshot -->
+                            <div v-if="getEntryScreenshot(entry)" class="pb-field pb-field-wide">
+                                <div class="pb-label">Screenshot</div>
+                                <div class="pb-value">
+                                    <div class="d-flex align-items-start gap-2">
+                                        <img :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
+                                            class="pb-screenshot-view pointerClass"
+                                            @click.stop="openFullscreen(getEntryScreenshot(entry))"
+                                            title="Screenshot vergrößern" />
+                                        <i class="uil uil-image-edit pointerClass text-muted"
+                                            @click.stop="openAndEdit(getEntryScreenshot(entry))"
+                                            title="Screenshot bearbeiten" style="font-size: 1.1rem;"></i>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -935,16 +949,6 @@ async function saveEntry(entry) {
                         <div class="d-flex align-items-center mb-2">
                             <i class="uil uil-lock-alt me-2" style="color: var(--blue-color, #3b82f6); font-size: 1rem;"></i>
                             <span class="fw-bold small">Abschlussbewertung</span>
-                            <!-- Closing Screenshot inline -->
-                            <div v-if="getClosingScreenshot(entry)" class="ms-auto d-flex align-items-center gap-1">
-                                <i class="uil uil-image-edit pointerClass text-muted"
-                                    @click.stop="openAndEdit(getClosingScreenshot(entry))"
-                                    title="Screenshot bearbeiten" style="font-size: 1.1rem;"></i>
-                                <img :src="getClosingScreenshot(entry).annotatedBase64 || getClosingScreenshot(entry).originalBase64"
-                                    class="pb-thumbnail-sm pointerClass"
-                                    @click.stop="openFullscreen(getClosingScreenshot(entry))"
-                                    title="Abschluss-Screenshot vergrößern" />
-                            </div>
                         </div>
                         <div class="pb-grid">
                             <div v-if="entry.closingTags && entry.closingTags.length > 0" class="pb-field">
@@ -976,6 +980,22 @@ async function saveEntry(entry) {
                                     <i v-else-if="entry.satisfaction === 'neutral'"
                                         class="uil uil-thumbs-up fs-5 neutralTrade" style="transform: rotate(-90deg); display: inline-block;"></i>
                                     <i v-else class="uil uil-thumbs-down fs-5 redTrade"></i>
+                                </div>
+                            </div>
+
+                            <!-- Closing Screenshot -->
+                            <div v-if="getClosingScreenshot(entry)" class="pb-field pb-field-wide">
+                                <div class="pb-label">Screenshot</div>
+                                <div class="pb-value">
+                                    <div class="d-flex align-items-start gap-2">
+                                        <img :src="getClosingScreenshot(entry).annotatedBase64 || getClosingScreenshot(entry).originalBase64"
+                                            class="pb-screenshot-view pointerClass"
+                                            @click.stop="openFullscreen(getClosingScreenshot(entry))"
+                                            title="Screenshot vergrößern" />
+                                        <i class="uil uil-image-edit pointerClass text-muted"
+                                            @click.stop="openAndEdit(getClosingScreenshot(entry))"
+                                            title="Screenshot bearbeiten" style="font-size: 1.1rem;"></i>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1279,6 +1299,13 @@ async function saveEntry(entry) {
     height: 50px;
     object-fit: cover;
     border-radius: 4px;
+    border: 1px solid var(--white-10, rgba(255,255,255,0.1));
+}
+.pb-screenshot-view {
+    max-height: 200px;
+    max-width: 100%;
+    object-fit: contain;
+    border-radius: var(--border-radius, 6px);
     border: 1px solid var(--white-10, rgba(255,255,255,0.1));
 }
 .pb-fullscreen-toolbar {
