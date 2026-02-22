@@ -8,9 +8,13 @@ import { execSync, exec } from 'child_process'
 import { readFileSync } from 'fs'
 import path from 'path'
 import https from 'https'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const GITHUB_REPO = 'Mouses007/Crypto-Trading-Journal'
-const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
+const PROJECT_ROOT = path.resolve(__dirname, '..')
 
 // Simple HTTPS GET returning JSON
 function httpsGetJson(url) {
