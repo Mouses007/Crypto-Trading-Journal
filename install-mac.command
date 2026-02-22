@@ -97,7 +97,7 @@ else
 fi
 
 # ══════════════════════════════════════════
-#  CHECK 6: Git (empfohlen fuer Auto-Updates)
+#  CHECK 6: Git (erforderlich fuer Updates)
 # ══════════════════════════════════════════
 GIT_OK=0
 if command -v git &>/dev/null; then
@@ -105,7 +105,9 @@ if command -v git &>/dev/null; then
     GIT_VER=$(git --version | awk '{print $3}')
     echo -e "  ${GREEN}[OK]${RESET}  Git                ${GIT_VER}"
 else
-    echo -e "  ${YELLOW}[!]${RESET}   Git                ${YELLOW}Nicht installiert${RESET} ${GRAY}(empfohlen fuer Auto-Updates)${RESET}"
+    echo -e "  ${RED}[!!]${RESET}  Git                ${RED}Nicht gefunden${RESET} ${GRAY}(erforderlich fuer Updates)${RESET}"
+    echo -e "  ${GRAY}       Installiere mit: xcode-select --install  oder  brew install git${RESET}"
+    MANDATORY_MISSING=1
 fi
 
 # ══════════════════════════════════════════

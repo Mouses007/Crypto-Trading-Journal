@@ -46,12 +46,18 @@ if errorlevel 1 (
     goto :npm_install
 )
 
-:: Git pull
-echo     git pull origin master...
-git pull origin master
+:: Git fetch + reset (funktioniert auch bei frischer Installation ohne Commits)
+echo     git fetch origin master...
+git fetch origin master
 if errorlevel 1 (
-    echo   [X] Git pull fehlgeschlagen!
-    echo     Tipp: Lokale Aenderungen? Versuche: git stash ^&^& git pull ^&^& git stash pop
+    echo   [X] Git fetch fehlgeschlagen!
+    echo     Tipp: Keine Internetverbindung? Remote korrekt konfiguriert?
+    goto :error
+)
+echo     git reset --hard origin/master...
+git reset --hard origin/master
+if errorlevel 1 (
+    echo   [X] Git reset fehlgeschlagen!
     goto :error
 )
 echo   [OK] Code aktualisiert

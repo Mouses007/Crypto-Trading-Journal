@@ -38,7 +38,8 @@ A local, privacy-focused trading journal for **crypto futures trading** (Bitunix
 ### Requirements
 
 - [Node.js 20+](https://nodejs.org/) (LTS recommended)
-- Git (for updates and auto-update feature)
+- [Git](https://git-scm.com/) (required for installation and auto-updates)
+- Python 3 + Build-Tools (for native npm modules)
 
 ### Linux / macOS
 
@@ -65,25 +66,29 @@ npm start
 1. Download or clone this repository
 2. Double-click `install.bat` — automatically checks all prerequisites:
    - **Node.js 20+** — [Download](https://nodejs.org/)
+   - **Git** — [Download](https://git-scm.com/download/win) (required for updates)
    - **Python 3** — [Download](https://www.python.org/downloads/) (check "Add to PATH" during install)
    - **Visual Studio Build Tools** — [Download](https://aka.ms/vs/17/release/vs_BuildTools.exe) (select "Desktop development with C++")
-   - If anything is missing, the installer shows download links
+   - If anything is missing, the installer shows download links and can auto-install via winget
 3. Double-click `start.bat` — starts the server and opens the browser
 
 Open `http://localhost:8080` in your browser.
 
 ## Update
 
-Your database (`tradenote.db`) is preserved during every update.
+Your database (`tradenote.db`) is preserved during every update. Git is required for all update methods.
 
 ### In-App Update (recommended)
 
-When a new version is available, an **update button** appears in the sidebar (green, between version number and donate link). Click it to automatically run `git pull`, `npm install`, and `npm run build`. The server restarts automatically.
+When a new version is available, an **update button** appears in the sidebar (green, between version number and donate link). Click it to automatically fetch the latest code from GitHub, install dependencies, and rebuild. The server restarts automatically.
+
+> **How it works:** The app runs `git fetch origin master` + `git reset --hard origin/master` + `npm install` + `npm run build`. This also works on fresh installations without prior commits.
 
 ### Manual Update
 
 ```bash
-git pull origin main
+git fetch origin master
+git reset --hard origin/master
 npm install
 npm run build
 npm start
@@ -91,8 +96,7 @@ npm start
 
 ### Windows (Manual)
 
-1. Double-click `update.bat` — creates a DB backup and updates automatically (Git required)
-2. Without Git: Download new [Release](https://github.com/Mouses007/Crypto-Trading-Journal/releases), overwrite files (**do NOT overwrite `tradenote.db`!**), then double-click `update.bat`
+Double-click `update.bat` — creates a DB backup and updates automatically via Git.
 
 ## Configuration
 

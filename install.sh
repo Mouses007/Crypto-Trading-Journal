@@ -122,7 +122,7 @@ else
 fi
 
 # ══════════════════════════════════════════
-#  CHECK 7: Git (empfohlen fuer Auto-Updates)
+#  CHECK 7: Git (erforderlich fuer Updates)
 # ══════════════════════════════════════════
 GIT_OK=0
 if command -v git &>/dev/null; then
@@ -130,7 +130,8 @@ if command -v git &>/dev/null; then
     GIT_VER=$(git --version | awk '{print $3}')
     echo -e "  ${GREEN}[OK]${RESET}  Git                ${GIT_VER}"
 else
-    echo -e "  ${YELLOW}[!]${RESET}   Git                ${YELLOW}Nicht installiert${RESET} ${GRAY}(empfohlen fuer Auto-Updates)${RESET}"
+    echo -e "  ${RED}[!!]${RESET}  Git                ${RED}Nicht gefunden${RESET} ${GRAY}(erforderlich fuer Updates)${RESET}"
+    MANDATORY_MISSING=1
 fi
 
 echo ""
@@ -155,6 +156,7 @@ if [ "$MANDATORY_MISSING" = "1" ]; then
     NEED_NODE=0
     NEED_PYTHON=0
     NEED_BUILD=0
+    NEED_GIT=0
 
     if ! command -v node &>/dev/null || [ "${NODE_MAJOR:-0}" -lt 20 ]; then
         NEED_NODE=1
@@ -164,6 +166,9 @@ if [ "$MANDATORY_MISSING" = "1" ]; then
     fi
     if [ "$BUILD_OK" = "0" ]; then
         NEED_BUILD=1
+    fi
+    if [ "$GIT_OK" = "0" ]; then
+        NEED_GIT=1
     fi
 
     # Pruefen ob automatische Installation moeglich ist
@@ -175,6 +180,7 @@ if [ "$MANDATORY_MISSING" = "1" ]; then
         [ "$NEED_NODE" = "1" ] && echo -e "  ${CYAN}- Node.js 20+${RESET}  →  https://nodejs.org/"
         [ "$NEED_PYTHON" = "1" ] && echo -e "  ${CYAN}- Python 3${RESET}"
         [ "$NEED_BUILD" = "1" ] && echo -e "  ${CYAN}- Build-Tools (gcc, make)${RESET}"
+        [ "$NEED_GIT" = "1" ] && echo -e "  ${CYAN}- Git${RESET}  →  https://git-scm.com/"
         echo ""
         echo -e "  ${GRAY}Danach dieses Script erneut starten.${RESET}"
         echo ""
@@ -187,6 +193,7 @@ if [ "$MANDATORY_MISSING" = "1" ]; then
     [ "$NEED_NODE" = "1" ] && echo -e "    ${CYAN}•${RESET} Node.js 20+"
     [ "$NEED_PYTHON" = "1" ] && echo -e "    ${CYAN}•${RESET} Python 3"
     [ "$NEED_BUILD" = "1" ] && echo -e "    ${CYAN}•${RESET} Build-Tools (gcc, make)"
+    [ "$NEED_GIT" = "1" ] && echo -e "    ${CYAN}•${RESET} Git"
     echo ""
 
     echo -en "  ${BOLD}Sollen die fehlenden Pakete jetzt automatisch installiert werden? [J/n]:${RESET} "
@@ -198,6 +205,17 @@ if [ "$MANDATORY_MISSING" = "1" ]; then
 
         echo -e "  ${BOLD}Installiere fehlende Pakete...${RESET}"
         echo ""
+
+        # ── Git ──
+        if [ "$NEED_GIT" = "1" ]; then
+            echo -e "  ${CYAN}→ Installiere Git...${RESET}"
+            case "$DISTRO" in
+                debian) sudo apt-get update -qq && sudo apt-get install -y git ;;
+                fedora) sudo dnf install -y git ;;
+                arch)   sudo pacman -S --noconfirm git ;;
+            esac
+            echo ""
+        fi
 
         # ── Build-Tools ──
         if [ "$NEED_BUILD" = "1" ]; then
@@ -275,6 +293,14 @@ if [ "$MANDATORY_MISSING" = "1" ]; then
             STILL_MISSING=1
         fi
 
+        if command -v git &>/dev/null; then
+            echo -e "  ${GREEN}[OK]${RESET}  Git                $(git --version | awk '{print $3}')"
+            GIT_OK=1
+        elif [ "$NEED_GIT" = "1" ]; then
+            echo -e "  ${RED}[!!]${RESET}  Git                ${RED}Installation fehlgeschlagen${RESET}"
+            STILL_MISSING=1
+        fi
+
         echo ""
 
         if [ "$STILL_MISSING" = "1" ]; then
@@ -326,6 +352,16 @@ if [ "$MANDATORY_MISSING" = "1" ]; then
                 debian) echo "     sudo apt-get install -y build-essential" ;;
                 fedora) echo "     sudo dnf groupinstall -y 'Development Tools'" ;;
                 arch)   echo "     sudo pacman -S base-devel" ;;
+            esac
+            echo ""
+        fi
+
+        if [ "$NEED_GIT" = "1" ]; then
+            echo -e "  ${CYAN}Git:${RESET}"
+            case "$DISTRO" in
+                debian) echo "     sudo apt-get install -y git" ;;
+                fedora) echo "     sudo dnf install -y git" ;;
+                arch)   echo "     sudo pacman -S git" ;;
             esac
             echo ""
         fi

@@ -38,24 +38,29 @@ fi
 echo ""
 echo -e "${CYAN}[2/4]${RESET} Code aktualisieren..."
 if command -v git &>/dev/null; then
-    echo -e "${GRAY}  git pull origin master...${RESET}"
-    git pull origin master
+    echo -e "${GRAY}  git fetch origin master...${RESET}"
+    git fetch origin master
     if [ $? -ne 0 ]; then
-        echo -e "${RED}[X] Git pull fehlgeschlagen!${RESET}"
-        echo -e "${YELLOW}  Tipp: Lokale Aenderungen? Versuche: git stash && git pull && git stash pop${RESET}"
+        echo -e "${RED}[X] Git fetch fehlgeschlagen!${RESET}"
+        echo -e "${YELLOW}  Tipp: Keine Internetverbindung? Remote korrekt konfiguriert?${RESET}"
+        exit 1
+    fi
+    echo -e "${GRAY}  git reset --hard origin/master...${RESET}"
+    git reset --hard origin/master
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}[X] Git reset fehlgeschlagen!${RESET}"
         exit 1
     fi
     echo -e "${GREEN}[OK]${RESET} Code aktualisiert"
 else
-    echo -e "${YELLOW}[!] Git nicht installiert — automatisches Update nicht moeglich.${RESET}"
+    echo -e "${RED}[X] Git nicht installiert — Update nicht moeglich.${RESET}"
     echo ""
-    echo -e "${BOLD}Manuelles Update:${RESET}"
-    echo "  1. Lade das neueste Release herunter:"
-    echo -e "     ${CYAN}https://github.com/Mouses007/Crypto-Trading-Journal/releases${RESET}"
-    echo "  2. Entpacke die Dateien in diesen Ordner"
-    echo -e "  3. ${RED}WICHTIG: tradenote.db NICHT ueberschreiben!${RESET}"
-    echo "  4. Druecke Enter um fortzufahren..."
-    read
+    echo -e "${BOLD}Git installieren:${RESET}"
+    echo -e "  ${CYAN}brew install git${RESET}"
+    echo -e "  Oder: ${CYAN}xcode-select --install${RESET}"
+    echo ""
+    echo -e "  Danach dieses Script erneut starten."
+    exit 1
 fi
 
 # npm install

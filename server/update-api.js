@@ -2,7 +2,7 @@
  * Update API — checks GitHub for new releases, performs one-click updates.
  *
  * GET  /api/update/check   → compare local version with latest GitHub release
- * POST /api/update/install  → git pull + npm install + signal restart
+ * POST /api/update/install  → git fetch + reset + npm install + signal restart
  */
 import { execSync, exec } from 'child_process'
 import { readFileSync, existsSync } from 'fs'

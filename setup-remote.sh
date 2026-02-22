@@ -97,9 +97,10 @@ echo ""
 
 if [ -d "$INSTALL_DIR" ]; then
     echo -e "  ${YELLOW}Ordner existiert bereits: $INSTALL_DIR${RESET}"
-    echo -e "  ${CYAN}→ Aktualisiere mit git pull...${RESET}"
+    echo -e "  ${CYAN}→ Aktualisiere mit git fetch + reset...${RESET}"
     cd "$INSTALL_DIR"
-    git pull origin main || git pull origin master
+    git fetch origin master
+    git reset --hard origin/master
 else
     echo -e "  ${CYAN}→ Klone Repository...${RESET}"
     git clone "$REPO_URL" "$INSTALL_DIR"
