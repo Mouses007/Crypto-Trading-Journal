@@ -16,8 +16,7 @@ let trades = []
 
 export async function useGetFilteredTrades(param) {
     console.log("\nGETTING FILTERED TRADES")
-    return new Promise(async (resolve, reject) => {
-        try {
+    try {
 
         /*============= 3 - Get data from DB =============
          ***************************************************/
@@ -249,20 +248,16 @@ export async function useGetFilteredTrades(param) {
         //console.log(" -> Filtered trades " + JSON.stringify(filteredTrades))
         //console.log(" -> Filtered trades daily " + JSON.stringify(filteredTradesDaily))
         //console.log("\nFinished getting filtered trades\n\n")
-        resolve()
-        } catch (error) {
-            console.error("FILTERED TRADES ERROR:", error)
-            resolve() // resolve anyway to prevent hanging
-        }
-    })
+    } catch (error) {
+        console.error("FILTERED TRADES ERROR:", error)
+    }
 }
 
 
 /***************************************
- * GETTING DATA FROM PARSE DB 
+ * GETTING DATA FROM PARSE DB
  ***************************************/
 export async function useGetTrades(param) {
-    return new Promise(async (resolve, reject) => {
         console.log("\nGETTING TRADES");
         console.time("  --> Duration getting trades");
 
@@ -299,13 +294,10 @@ export async function useGetTrades(param) {
         const results = await dbFind("trades", options)
         console.timeEnd("  --> Duration getting trades");
         if (results.length > 0) {
-            trades = []
-            trades = JSON.parse(JSON.stringify(results))
+            trades = [...results]
             imports.length = 0
-            imports.value = JSON.parse(JSON.stringify(results))
+            imports.value = [...results]
         }
-        resolve()
-    })
 }
 
 export function useGetFilteredTradesForDaily() {
@@ -338,7 +330,6 @@ let temp3 = {}
 
 export async function useTotalTrades() {
     console.log("\nCREATING TOTAL TRADES")
-    return new Promise(async (resolve, reject) => {
         /* Variables */
         temp1 = []
         temp2 = {}
@@ -584,12 +575,11 @@ export async function useTotalTrades() {
          */
 
         //console.log("temp2 "+JSON.stringify(temp2))
-        var z = _
+        let objectY = _
             .chain(temp1)
             .orderBy(["td"], ["asc"])
             .groupBy("td")
-
-        let objectY = JSON.parse(JSON.stringify(z))
+            .value()
         const keys3 = Object.keys(objectY);
         //console.log(" keys 3 "+keys3)
         for (const key3 of keys3) {
@@ -800,15 +790,12 @@ export async function useTotalTrades() {
         Object.assign(totalsByDate, temp3)
         console.log(" -> TOTALS BY DATE (length) " + Object.keys(totalsByDate).length)
         console.log(" -> temp1 trades count: " + temp1.length + ", unique td values: " + new Set(temp1.map(t => t.td)).size)
-        resolve()
-    })
 }
 
 export async function useGroupTrades() {
     console.log("\nGROUPING TRADES")
-    return new Promise(async (resolve, reject) => {
         /*============= 3- MISC GROUPING =============
-        
+
         * Miscelanious grouping of trades by entry, price, etc.
         */
         var thousand = 1000
@@ -1100,8 +1087,6 @@ export async function useGroupTrades() {
             })
             .value()
         //console.log("group by entryprice " + JSON.stringify(groups.entryPrice))
-        resolve()
-    })
 }
 
 /***************************************
@@ -1110,7 +1095,6 @@ export async function useGroupTrades() {
 //get data from excursions db
 export async function useCalculateProfitAnalysis(param) {
     console.log("\nCALCULATING PROFIT ANALYSIS")
-    return new Promise(async (resolve, reject) => {
         //console.log(" -> Getting MFE Prices")
         let mfePricesArray = []
         for (let key in profitAnalysis) delete profitAnalysis[key]
@@ -1238,28 +1222,23 @@ export async function useCalculateProfitAnalysis(param) {
             //console.log("  --> Profit analysis " + JSON.stringify(profitAnalysis))
         }
 
-        resolve()
-    })
 }
 
 async function calculateSatisfaction(param) {
     console.log("\nCALCULATING SATISFACTION")
-    return new Promise(async (resolve, reject) => {
-        console.log(" -> Getting Satisfactions")
-        let satOptions = {
-            ascending: "order",
-            limit: queryLimit.value
-        }
-        // "Gesamt" filter: start=0, end=0 means all — skip date filters
-        if (!(selectedDateRange.value.start === 0 && selectedDateRange.value.end === 0)) {
-            satOptions.greaterThanOrEqualTo = { dateUnix: selectedDateRange.value.start }
-            satOptions.lessThanOrEqualTo = { dateUnix: selectedDateRange.value.end }
-        }
-        const results = await dbFind("satisfactions", satOptions)
-        mfePricesArray = []
-        mfePricesArray = JSON.parse(JSON.stringify(results))
-        resolve()
-    })
+    console.log(" -> Getting Satisfactions")
+    let satOptions = {
+        ascending: "order",
+        limit: queryLimit.value
+    }
+    // "Gesamt" filter: start=0, end=0 means all — skip date filters
+    if (!(selectedDateRange.value.start === 0 && selectedDateRange.value.end === 0)) {
+        satOptions.greaterThanOrEqualTo = { dateUnix: selectedDateRange.value.start }
+        satOptions.lessThanOrEqualTo = { dateUnix: selectedDateRange.value.end }
+    }
+    const results = await dbFind("satisfactions", satOptions)
+    mfePricesArray = []
+    mfePricesArray = [...results]
 }
 
 /* useRefreshTrades moved to src/utils/mountOrchestration.js */
@@ -1269,44 +1248,38 @@ async function calculateSatisfaction(param) {
 ***************************************/
 
 export const useDeleteTrade = async () => {
-    return new Promise(async (resolve, reject) => {
-        const existing = await dbFirst("trades", {
-            equalTo: { dateUnix: selectedItem.value }
-        })
-
-        if (existing) {
-            const broker = existing.broker || 'bitunix'
-            await dbDelete("trades", existing.objectId)
-            console.log('  --> Deleted trade with id ' + existing.objectId + ' (broker: ' + broker + ')')
-
-            // Reset lastApiImport so deleted trades can be re-imported
-            try {
-                await axios.post(`/api/${broker}/last-import`, { timestamp: 0 })
-                console.log(`  --> Reset ${broker} lastApiImport for re-import`)
-            } catch (e) {
-                console.log('  --> Could not reset lastApiImport:', e.message)
-            }
-
-            useGetTrades("imports")
-            resolve()
-        } else {
-            alert("There was problem with deleting trade")
-            reject("There was problem with deleting trade")
-        }
+    const existing = await dbFirst("trades", {
+        equalTo: { dateUnix: selectedItem.value }
     })
+
+    if (existing) {
+        const broker = existing.broker || 'bitunix'
+        await dbDelete("trades", existing.objectId)
+        console.log('  --> Deleted trade with id ' + existing.objectId + ' (broker: ' + broker + ')')
+
+        // Reset lastApiImport so deleted trades can be re-imported
+        try {
+            await axios.post(`/api/${broker}/last-import`, { timestamp: 0 })
+            console.log(`  --> Reset ${broker} lastApiImport for re-import`)
+        } catch (e) {
+            console.log('  --> Could not reset lastApiImport:', e.message)
+        }
+
+        useGetTrades("imports")
+    } else {
+        alert("There was problem with deleting trade")
+        throw new Error("There was problem with deleting trade")
+    }
 }
 
 export const useDeleteExcursions = async () => {
-    return new Promise(async (resolve, reject) => {
-        try {
-            await dbDeleteWhere("excursions", {
-                equalTo: { dateUnix: selectedItem.value }
-            })
-            console.log('  --> Deleted excursions for dateUnix ' + selectedItem.value)
-            resolve()
-        } catch (error) {
-            alert("There was a problem with deleting excursions")
-            reject(error)
-        }
-    })
+    try {
+        await dbDeleteWhere("excursions", {
+            equalTo: { dateUnix: selectedItem.value }
+        })
+        console.log('  --> Deleted excursions for dateUnix ' + selectedItem.value)
+    } catch (error) {
+        alert("There was a problem with deleting excursions")
+        throw error
+    }
 }

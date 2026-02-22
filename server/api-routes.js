@@ -3,6 +3,16 @@ import { loadDbConfig, saveDbConfig } from './db-config.js'
 
 const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions']
 
+// Whitelist of allowed settings keys (from schema + migrations)
+const VALID_SETTINGS_KEYS = [
+    'timeZone', 'accounts', 'tags', 'apis', 'layoutStyle', 'avatar',
+    'showTradePopups', 'username', 'startBalance', 'startBalanceDate', 'currentBalance',
+    'tradeTimeframes', 'customTimeframes', 'enableBinanceChart',
+    'aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
+    'aiScreenshots', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
+    'aiReportPrompt', 'aiChatEnabled', 'browserNotifications', 'setupComplete', 'balances'
+]
+
 // Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten
 const TABLE_COLUMNS = {
     trades: ['id', 'dateUnix', 'date', 'broker', 'executions', 'trades', 'blotter', 'pAndL', 'cashJournal', 'openPositions', 'video', 'createdAt', 'updatedAt'],
@@ -97,12 +107,14 @@ export function setupApiRoutes(app) {
     app.put('/api/db/settings', async (req, res) => {
         try {
             const data = stringifyJsonColumns('settings', req.body)
-            const fields = Object.keys(data).filter(k => k !== 'id' && k !== 'objectId')
-            if (fields.length === 0) return res.json({ ok: true })
+            // Only allow known settings keys (whitelist)
+            const updateData = {}
+            for (const key of VALID_SETTINGS_KEYS) {
+                if (data[key] !== undefined) updateData[key] = data[key]
+            }
+            if (Object.keys(updateData).length === 0) return res.json({ ok: true })
 
-            const updateData = { ...data, updatedAt: knex.fn.now() }
-            delete updateData.id
-            delete updateData.objectId
+            updateData.updatedAt = knex.fn.now()
             await knex('settings').where('id', 1).update(updateData)
             const row = await knex('settings').where('id', 1).first()
             res.json(parseJsonColumns('settings', row))
@@ -338,8 +350,9 @@ export function setupApiRoutes(app) {
                 query = req.query.descending ? query.orderBy(orderCol, 'desc') : query.orderBy(orderCol, 'asc')
             }
 
+            const MAX_API_LIMIT = 100000
             const limit = parseInt(req.query.limit, 10)
-            if (Number.isInteger(limit) && limit > 0) query = query.limit(limit)
+            if (Number.isInteger(limit) && limit > 0) query = query.limit(Math.min(limit, MAX_API_LIMIT))
             const skip = parseInt(req.query.skip, 10)
             if (Number.isInteger(skip) && skip >= 0) query = query.offset(skip)
 

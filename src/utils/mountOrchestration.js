@@ -68,28 +68,29 @@ export async function useMountDashboard() {
 }
 
 export async function useMountDaily() {
-    console.log("\MOUNTING DAILY")
-    console.time("  --> Duration mount daily");
-    dailyPagination.value = 0
-    dailyQueryLimit.value = 3
-    endOfList.value = false
-    spinnerLoadingPage.value = true
-    await useGetSelectedRange()
-    await Promise.all([useGetExcursions(), useGetSatisfactions(), useGetTags(), useGetAvailableTags(), useGetNotes(), useGetAPIS()])
-    await useGetFilteredTrades()
-    spinnerLoadingPage.value = false
-    console.timeEnd("  --> Duration mount daily")
-    useInitTab("daily")
-    useRenderDoubleLineChart()
-    useRenderPieChart()
-    useLoadCalendar()
-    useGetScreenshots(true)
-    useInitPopover()
-    renderingCharts.value = false
-
-    //useInitPopover()
-
-
+    try {
+        console.log("\MOUNTING DAILY")
+        console.time("  --> Duration mount daily");
+        dailyPagination.value = 0
+        dailyQueryLimit.value = 3
+        endOfList.value = false
+        spinnerLoadingPage.value = true
+        await useGetSelectedRange()
+        await Promise.all([useGetExcursions(), useGetSatisfactions(), useGetTags(), useGetAvailableTags(), useGetNotes(), useGetAPIS()])
+        await useGetFilteredTrades()
+        spinnerLoadingPage.value = false
+        console.timeEnd("  --> Duration mount daily")
+        useInitTab("daily")
+        useRenderDoubleLineChart()
+        useRenderPieChart()
+        useLoadCalendar()
+        useGetScreenshots(true)
+        useInitPopover()
+        renderingCharts.value = false
+    } catch (error) {
+        console.error("DAILY MOUNT ERROR:", error)
+        spinnerLoadingPage.value = false
+    }
 }
 
 export async function useMountCalendar(param) {
@@ -112,15 +113,21 @@ export async function useMountCalendar(param) {
 }
 
 export async function useMountScreenshots() {
-    spinnerLoadingPage.value = true
-    console.log("\MOUNTING SCREENSHOTS")
-    console.time("  --> Duration mount screenshots");
-    useGetScreenshotsPagination()
-    await useGetSelectedRange()
-    await Promise.all([useGetTags(), useGetAvailableTags()])
-    await useGetScreenshots(false)
-    console.timeEnd("  --> Duration mount screenshots")
-    useInitPopover()
+    try {
+        spinnerLoadingPage.value = true
+        console.log("\MOUNTING SCREENSHOTS")
+        console.time("  --> Duration mount screenshots");
+        useGetScreenshotsPagination()
+        await useGetSelectedRange()
+        await Promise.all([useGetTags(), useGetAvailableTags()])
+        await useGetScreenshots(false)
+        console.timeEnd("  --> Duration mount screenshots")
+        useInitPopover()
+    } catch (error) {
+        console.error("SCREENSHOTS MOUNT ERROR:", error)
+    } finally {
+        spinnerLoadingPage.value = false
+    }
 }
 
 export async function useMountAuswertung() {
@@ -192,20 +199,15 @@ export async function useRefreshTrades() {
     }
 }
 
-export function useGetSelectedRange() {
-    return new Promise(async (resolve, reject) => {
-        if (pageId.value == "dashboard" || pageId.value == "auswertung") {
-            selectedRange.value = selectedDateRange.value
-        } else if (pageId.value == "calendar") {
-            selectedRange.value = {}
-            selectedRange.value.start = dayjs.unix(selectedMonth.value.start).tz(timeZoneTrade.value).startOf('year').unix()
-            selectedRange.value.end = selectedMonth.value.end
-            //console.log("SelectedRange "+JSON.stringify(selectedRange.value))
-        }
-        else {
-            selectedRange.value = selectedMonth.value
-        }
-        //console.log("SelectedRange "+JSON.stringify(selectedRange.value))
-        resolve()
-    })
+export async function useGetSelectedRange() {
+    if (pageId.value == "dashboard" || pageId.value == "auswertung") {
+        selectedRange.value = selectedDateRange.value
+    } else if (pageId.value == "calendar") {
+        selectedRange.value = {}
+        selectedRange.value.start = dayjs.unix(selectedMonth.value.start).tz(timeZoneTrade.value).startOf('year').unix()
+        selectedRange.value.end = selectedMonth.value.end
+    }
+    else {
+        selectedRange.value = selectedMonth.value
+    }
 }

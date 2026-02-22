@@ -4,6 +4,16 @@ import { logWarn, logError } from './logger.js'
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
+/** Parse and validate a numeric ID from request params. Returns the integer or sends 400 and returns null. */
+function parseId(param, res, paramName = 'id') {
+    const id = parseInt(param, 10)
+    if (!Number.isInteger(id) || id < 1) {
+        res.status(400).json({ error: `Ungültige ${paramName}` })
+        return null
+    }
+    return id
+}
+
 // Prompt-Presets (muss mit Settings.vue synchron sein)
 const PROMPT_PRESETS = {
     'Halte den Bericht kurz und prägnant. Maximal 3-4 Sätze pro Abschnitt. Fokussiere dich auf die wichtigsten Erkenntnisse.': 'Kurz & knapp',
@@ -670,11 +680,13 @@ Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
 
     // Bericht löschen
     app.delete('/api/ai/reports/:id', async (req, res) => {
+        const id = parseId(req.params.id, res)
+        if (id === null) return
         try {
             const knex = getKnex()
-            await knex('ai_reports').where('id', req.params.id).del()
+            await knex('ai_reports').where('id', id).del()
             // Chat-Nachrichten mitlöschen
-            await knex('ai_report_messages').where('reportId', req.params.id).del()
+            await knex('ai_report_messages').where('reportId', id).del()
             res.json({ success: true })
         } catch (e) {
             console.error('Delete report error:', e)
@@ -686,10 +698,12 @@ Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
 
     // Chat-Verlauf laden
     app.get('/api/ai/reports/:reportId/messages', async (req, res) => {
+        const reportId = parseId(req.params.reportId, res, 'reportId')
+        if (reportId === null) return
         try {
             const knex = getKnex()
             const messages = await knex('ai_report_messages')
-                .where('reportId', req.params.reportId)
+                .where('reportId', reportId)
                 .orderBy('id', 'asc')
             res.json(messages)
         } catch (e) {
@@ -700,9 +714,11 @@ Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
 
     // Chat-Verlauf löschen
     app.delete('/api/ai/reports/:reportId/messages', async (req, res) => {
+        const reportId = parseId(req.params.reportId, res, 'reportId')
+        if (reportId === null) return
         try {
             const knex = getKnex()
-            await knex('ai_report_messages').where('reportId', req.params.reportId).del()
+            await knex('ai_report_messages').where('reportId', reportId).del()
             res.json({ success: true })
         } catch (e) {
             console.error('Delete chat messages error:', e)
@@ -712,6 +728,8 @@ Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
 
     // Rückfrage an KI senden
     app.post('/api/ai/reports/:reportId/chat', async (req, res) => {
+        const reportId = parseId(req.params.reportId, res, 'reportId')
+        if (reportId === null) return
         const { message } = req.body
         if (!message || !message.trim()) {
             return res.status(400).json({ error: 'Nachricht darf nicht leer sein' })
@@ -721,7 +739,7 @@ Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
             const knex = getKnex()
 
             // Report laden
-            const report = await knex('ai_reports').where('id', req.params.reportId).first()
+            const report = await knex('ai_reports').where('id', reportId).first()
             if (!report) {
                 return res.status(404).json({ error: 'Bericht nicht gefunden' })
             }
@@ -739,7 +757,7 @@ Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
 
             // Bisherige Chat-Nachrichten laden
             const chatHistory = await knex('ai_report_messages')
-                .where('reportId', req.params.reportId)
+                .where('reportId', reportId)
                 .orderBy('id', 'asc')
 
             // Konversation aufbauen
@@ -770,7 +788,7 @@ Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
 
             // User-Frage speichern
             await knex('ai_report_messages').insert({
-                reportId: parseInt(req.params.reportId),
+                reportId: reportId,
                 role: 'user',
                 content: message.trim(),
                 promptTokens: 0,
@@ -780,7 +798,7 @@ Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
 
             // KI-Antwort speichern
             await knex('ai_report_messages').insert({
-                reportId: parseInt(req.params.reportId),
+                reportId: reportId,
                 role: 'assistant',
                 content: result.text,
                 promptTokens: result.usage?.promptTokens || 0,

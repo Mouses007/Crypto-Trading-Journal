@@ -136,20 +136,34 @@ export function setupUpdateRoutes(app) {
             const steps = []
 
             // 0. Aktuellen Commit-Hash speichern (für Rollback)
-            preUpdateCommit = execSync('git rev-parse HEAD', {
-                cwd: PROJECT_ROOT,
-                encoding: 'utf8',
-                timeout: 5000
-            }).trim()
-            steps.push({ step: 'save rollback point', output: preUpdateCommit })
+            // HEAD kann fehlen wenn git init ohne Commits (frische Installation)
+            try {
+                preUpdateCommit = execSync('git rev-parse HEAD', {
+                    cwd: PROJECT_ROOT,
+                    encoding: 'utf8',
+                    timeout: 5000
+                }).trim()
+                steps.push({ step: 'save rollback point', output: preUpdateCommit })
+            } catch (e) {
+                // Kein HEAD vorhanden — frische Installation ohne Commits
+                preUpdateCommit = null
+                steps.push({ step: 'save rollback point', output: 'Kein bisheriger Commit (frische Installation) — Rollback nicht verfügbar' })
+            }
 
-            // 1. git pull
-            const pullOutput = execSync('git pull origin master', {
+            // 1. git fetch + reset statt pull (funktioniert auch ohne HEAD/Commits)
+            const fetchOutput = execSync('git fetch origin master', {
                 cwd: PROJECT_ROOT,
                 encoding: 'utf8',
                 timeout: 60000
             }).trim()
-            steps.push({ step: 'git pull', output: pullOutput })
+            steps.push({ step: 'git fetch', output: fetchOutput || 'OK' })
+
+            const pullOutput = execSync('git reset --hard origin/master', {
+                cwd: PROJECT_ROOT,
+                encoding: 'utf8',
+                timeout: 60000
+            }).trim()
+            steps.push({ step: 'git reset', output: pullOutput })
 
             // 2. npm install (in case dependencies changed)
             const npmOutput = execSync('npm install --omit=dev', {

@@ -5,6 +5,30 @@
  */
 import axios from 'axios'
 
+// Central error handling for API responses
+axios.interceptors.response.use(
+    response => response,
+    error => {
+        if (error.response) {
+            const status = error.response.status
+            if (status === 401) {
+                console.error('[DB] Session abgelaufen (401). Bitte Seite neu laden.')
+                // Avoid spamming alerts — show once
+                if (!window._dbSessionExpiredShown) {
+                    window._dbSessionExpiredShown = true
+                    alert('Sitzung abgelaufen. Bitte Seite neu laden.')
+                    window.location.reload()
+                }
+            } else if (status >= 500) {
+                console.error(`[DB] Server-Fehler (${status}):`, error.response.data?.error || error.message)
+            }
+        } else if (error.request) {
+            console.error('[DB] Netzwerk-Fehler: Server nicht erreichbar', error.message)
+        }
+        return Promise.reject(error)
+    }
+)
+
 /**
  * Query records from a table.
  * Replaces: Parse.Object.extend(className) + new Parse.Query() + query.find()
