@@ -165,8 +165,8 @@ export function setupUpdateRoutes(app) {
             }).trim()
             steps.push({ step: 'git reset', output: pullOutput })
 
-            // 2. npm install (in case dependencies changed)
-            const npmOutput = execSync('npm install --omit=dev', {
+            // 2. npm install (inkl. devDependencies — vite wird für Build benötigt)
+            const npmOutput = execSync('npm install', {
                 cwd: PROJECT_ROOT,
                 encoding: 'utf8',
                 timeout: 120000
@@ -226,8 +226,8 @@ export function setupUpdateRoutes(app) {
             }).trim()
             steps.push({ step: 'git checkout', output: checkoutOutput || 'OK' })
 
-            // 2. npm install
-            const npmOutput = execSync('npm install --omit=dev', {
+            // 2. npm install (inkl. devDependencies — vite wird für Build benötigt)
+            const npmOutput = execSync('npm install', {
                 cwd: PROJECT_ROOT,
                 encoding: 'utf8',
                 timeout: 120000
