@@ -1,9 +1,12 @@
 import { pageId, timeZoneTrade, dailyChartZoom, barChartNegativeTagGroups } from "../stores/ui.js"
 import { amountCase, selectedTimeFrame, selectedRatio, selectedGrossNet } from "../stores/filters.js"
 import { totals, totalsByDate, groups, filteredTrades, filteredTradesTrades, satisfactionArray, satisfactionTradeArray, availableTags } from "../stores/trades.js"
+import { profitAnalysis } from "../stores/globals.js"
 import { useOneDecPercentFormat, useChartFormat, useThousandCurrencyFormat, useTwoDecCurrencyFormat, useTimeFormat, useHourMinuteFormat, useCapitalizeFirstLetter, useXDecCurrencyFormat, useXDecFormat } from "./formatters.js"
 import dayjs from './dayjs-setup.js'
 import * as echarts from 'echarts';
+import i18n from '../i18n'
+const _t = (key, named) => i18n.global.t(key, named)
 
 const cssColor87 = "rgba(255, 255, 255, 0.87)"
 const cssColor60 = "rgba(255, 255, 255, 0.60)"
@@ -41,11 +44,12 @@ function ensureResizeListener() {
 
 export async function useECharts(param) {
     ensureResizeListener()
-    for (let index = 1; index <= 2; index++) {
+    for (let index = 1; index <= 3; index++) {
         var chartId = 'pieChart' + index
         //console.log("chartId " + chartId)
         if (param == "clear") {
-            echarts.init(document.getElementById(chartId)).clear()
+            var clearEl = document.getElementById(chartId)
+            if (clearEl) echarts.init(clearEl).clear()
         }
 
         if (param == "init") {
@@ -67,6 +71,15 @@ export async function useECharts(param) {
                     let dissatisfied = allSatisfactions.filter(obj => obj.satisfaction == false || obj.satisfaction == 0).length
                     green = satisfied / allSatisfactions.length
                     red = dissatisfied / allSatisfactions.length
+                    await usePieChart(chartId, green, red)
+                }
+            }
+            if (index == 3) {
+                // RRR donut: R ratio visualized as reward/risk portion
+                const rVal = profitAnalysis[amountCase.value + 'R']
+                if (rVal && !isNaN(rVal) && rVal > 0) {
+                    green = rVal / (rVal + 1)  // reward portion
+                    red = 1 / (rVal + 1)       // risk portion
                     await usePieChart(chartId, green, red)
                 }
             }
@@ -97,6 +110,7 @@ export async function useECharts(param) {
     handleCharts('lineBarChart', useLineBarChart);
     handleCharts('barChart', useBarChart);
     handleCharts('barChartNegative', useBarChartNegative);
+    handleCharts('heatmapChart', useHeatmapChart);
 
 }
 
@@ -658,14 +672,17 @@ export function usePieChart(param1, param2, param3) { //chart ID, green, red, pa
                     color: cssColor87,
                     formatter: (params) => {
                         if (pageId.value == "dashboard") {
-                            let rate
                             if (param1 == "pieChart1") {
-                                rate = "\nWin rate"
+                                return useOneDecPercentFormat(green) + "\nWin rate"
                             }
                             if (param1 == "pieChart2") {
-                                rate = "\nSatisfaction"
+                                return useOneDecPercentFormat(green) + "\nSatisfaction"
                             }
-                            return useOneDecPercentFormat(green) + rate
+                            if (param1 == "pieChart3") {
+                                // RRR: green = R/(R+1), so R = green/(1-green)
+                                const rVal = green > 0 && green < 1 ? (green / (1 - green)).toFixed(1) : '0'
+                                return "1:" + rVal + "\nØ RRR"
+                            }
                         }
                         if (pageId.value == "daily") {
                             return useOneDecPercentFormat(green)
@@ -1800,6 +1817,36 @@ export function useScatterChart(param1) { //chart ID, green, red, page
 let candlestickChart
 let currentTD
 
+/**
+ * Wandelt sparse Step-Daten [[xLabel, value], ...] in ein vollständiges Array
+ * für ECharts step-line um. Füllt null wo kein Wert, hält letzten Wert bis zur nächsten Änderung.
+ */
+function buildStepData(steps, xLabels) {
+    if (!steps || steps.length === 0) return []
+
+    // Map xLabel → Wert
+    const stepMap = {}
+    steps.forEach(([label, val]) => { stepMap[label] = val })
+
+    const result = []
+    let currentVal = null
+    let started = false
+
+    for (let i = 0; i < xLabels.length; i++) {
+        const label = xLabels[i]
+        if (stepMap[label] !== undefined) {
+            currentVal = stepMap[label]
+            started = true
+        }
+        if (started) {
+            result.push(currentVal)
+        } else {
+            result.push(null)
+        }
+    }
+    return result
+}
+
 export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, trade, initCandleChart) {
     console.log(" -> creating candlestick chart")
     //console.log(" trade " + JSON.stringify(trade))
@@ -1898,6 +1945,7 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
 
         let decimals = 2
         const option = {
+            backgroundColor: '#121212',
             tooltip: {
                 trigger: 'axis',
                 axisPointer: {
@@ -2032,7 +2080,7 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
         } else if (!entryOnChart && xLabels.length > 0) {
             // Über-Nacht-Trade: Entry am Vortag → Pfeil am linken Rand
             option.series[0].markPoint.data.push({
-                name: 'Entry (Vortag)',
+                name: _t('charts.entryPrevDay'),
                 symbol: 'arrow',
                 symbolSize: 16,
                 symbolRotate: 0,
@@ -2061,7 +2109,7 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
         } else if (!exitOnChart && xLabels.length > 0) {
             // Über-Nacht-Trade: Exit am Folgetag → Pfeil am rechten Rand
             option.series[0].markPoint.data.push({
-                name: 'Exit (Folgetag)',
+                name: _t('charts.exitNextDay'),
                 symbol: 'arrow',
                 symbolSize: 16,
                 symbolRotate: 180,
@@ -2070,6 +2118,122 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
                 emphasis: { disabled: true }
             })
         }
+
+        // ===== TRADING METADATA ERWEITERUNGEN =====
+        const meta = trade._tradingMeta
+        if (meta) {
+            // 2a: SL/TP/BE horizontale Linien
+            if (meta.sl) {
+                option.series[0].markLine.data.push({
+                    name: 'SL',
+                    yAxis: parseFloat(meta.sl),
+                    lineStyle: { color: '#ef4444', width: 1.5, type: 'dashed' },
+                    label: { show: true, position: 'insideStartTop', formatter: 'SL ' + meta.sl, fontSize: 10, color: '#ef4444' }
+                })
+            }
+            if (meta.tp) {
+                option.series[0].markLine.data.push({
+                    name: 'TP',
+                    yAxis: parseFloat(meta.tp),
+                    lineStyle: { color: '#f59e0b', width: 1.5, type: 'dashed' },
+                    label: { show: true, position: 'insideStartTop', formatter: 'TP ' + meta.tp, fontSize: 10, color: '#f59e0b' }
+                })
+            }
+            if (meta.breakeven) {
+                option.series[0].markLine.data.push({
+                    name: 'BE',
+                    yAxis: parseFloat(meta.breakeven),
+                    lineStyle: { color: '#9ca3af', width: 1, type: 'dotted' },
+                    label: { show: true, position: 'insideStartTop', formatter: 'BE ' + parseFloat(meta.breakeven).toFixed(2), fontSize: 10, color: '#9ca3af' }
+                })
+            }
+
+            // 2b: Fill-Marker (Compound-Entries und Teil-TPs)
+            if (meta.fills && meta.fills.length > 1) {
+                meta.fills.forEach((fill, idx) => {
+                    const fillTimeS = parseInt(fill.time) / 1000
+                    let fillXIdx = -1
+                    for (let i = 0; i < ohlcTimestamps.length; i++) {
+                        if (ohlcTimestamps[i] / 1000 <= fillTimeS) fillXIdx = i
+                        else break
+                    }
+                    if (fillXIdx < 0) return
+                    const fillXLabel = xLabels[fillXIdx]
+                    const isEntry = !fill.reduceOnly
+                    const isCompound = isEntry && idx > 0 && meta.fills.slice(0, idx).some(f => !f.reduceOnly)
+
+                    let sym, clr, rot, off
+                    if (isCompound) {
+                        // Compound-Entry: grüne Raute ◇
+                        sym = 'diamond'; clr = '#22c55e'; rot = 0
+                        off = [0, isLong ? '200%' : '-200%']
+                    } else if (fill.reduceOnly) {
+                        // Teil-TP / Partial Close
+                        sym = 'triangle'; clr = exitMarkerColor
+                        rot = isLong ? 180 : 0
+                        off = [0, isLong ? '-200%' : '200%']
+                    } else {
+                        // Initial entry — existiert bereits als Hauptmarker
+                        return
+                    }
+
+                    option.series[0].markPoint.data.push({
+                        name: isCompound ? 'Compound (' + fill.qty + ')' : 'Teil-TP (' + fill.qty + ')',
+                        symbol: sym, symbolSize: 14, symbolRotate: rot,
+                        symbolOffset: off,
+                        coord: [fillXLabel, fill.price],
+                        itemStyle: { color: clr, borderColor: '#fff', borderWidth: 1 },
+                        emphasis: { disabled: true }
+                    })
+                })
+            }
+
+            // 2c: SL/TP-Verlauf als Stufenlinien
+            if (meta.tpslHistory && meta.tpslHistory.length > 0) {
+                const slSteps = []
+                const tpSteps = []
+
+                meta.tpslHistory.forEach(h => {
+                    const timeS = h.time / 1000
+                    let xIdx = -1
+                    for (let i = 0; i < ohlcTimestamps.length; i++) {
+                        if (ohlcTimestamps[i] / 1000 <= timeS) xIdx = i
+                        else break
+                    }
+                    if (xIdx < 0) return
+                    const xLabel = xLabels[xIdx]
+
+                    if (h.type === 'SL') {
+                        if (h.action === 'set' || h.action === 'moved') slSteps.push([xLabel, h.newVal])
+                        else if (h.action === 'triggered' || h.action === 'removed') slSteps.push([xLabel, null])
+                    }
+                    if (h.type === 'TP') {
+                        if (h.action === 'set' || h.action === 'moved') tpSteps.push([xLabel, h.newVal])
+                        else if (h.action === 'triggered' || h.action === 'removed') tpSteps.push([xLabel, null])
+                    }
+                })
+
+                if (slSteps.length > 0) {
+                    option.series.push({
+                        name: 'SL-Verlauf', type: 'line', step: 'end',
+                        data: buildStepData(slSteps, xLabels),
+                        lineStyle: { color: 'rgba(239, 68, 68, 0.6)', width: 1.5, type: 'dashed' },
+                        symbol: 'none',
+                        connectNulls: false, silent: true
+                    })
+                }
+                if (tpSteps.length > 0) {
+                    option.series.push({
+                        name: 'TP-Verlauf', type: 'line', step: 'end',
+                        data: buildStepData(tpSteps, xLabels),
+                        lineStyle: { color: 'rgba(245, 158, 11, 0.6)', width: 1.5, type: 'dashed' },
+                        symbol: 'none',
+                        connectNulls: false, silent: true
+                    })
+                }
+            }
+        }
+
         candlestickChart.setOption(option);
         resolve()
     })
@@ -2269,8 +2433,8 @@ export function useSplitBarChart(elementId, categories, wins, losses) {
                 textStyle: { color: cssColor87 },
                 formatter: (params) => {
                     const name = params[0].name
-                    const w = params.find(p => p.seriesName === 'Wins')
-                    const l = params.find(p => p.seriesName === 'Losses')
+                    const w = params.find(p => p.seriesName === _t('charts.wins'))
+                    const l = params.find(p => p.seriesName === _t('charts.losses'))
                     const winVal = w ? w.value : 0
                     const lossVal = l ? Math.abs(l.value) : 0
                     return '<b>' + name + '</b><br>' +
@@ -2307,7 +2471,7 @@ export function useSplitBarChart(elementId, categories, wins, losses) {
             },
             series: [
                 {
-                    name: 'Wins',
+                    name: _t('charts.wins'),
                     type: 'bar',
                     stack: 'total',
                     data: wins.map(v => ({
@@ -2324,7 +2488,7 @@ export function useSplitBarChart(elementId, categories, wins, losses) {
                     }
                 },
                 {
-                    name: 'Losses',
+                    name: _t('charts.losses'),
                     type: 'bar',
                     stack: 'total',
                     data: losses.map(v => ({
@@ -2455,7 +2619,7 @@ export function useRadarChart(elementId, indicators, values) {
                 type: 'radar',
                 data: [{
                     value: values,
-                    name: 'Vollständigkeit',
+                    name: _t('charts.completeness'),
                     areaStyle: {
                         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                             { offset: 0, color: 'rgba(72, 199, 142, 0.5)' },
@@ -2543,7 +2707,7 @@ export function usePerfChart(param) {
                 }
             },
             legend: {
-                data: ['PnL', 'Equity', 'High Water Mark', 'Drawdown'],
+                data: [_t('charts.pnl'), _t('charts.equity'), _t('charts.highWaterMark'), _t('charts.drawdown')],
                 textStyle: { color: cssColor60 },
                 top: 0
             },
@@ -2567,7 +2731,7 @@ export function usePerfChart(param) {
             yAxis: [
                 {
                     type: 'value',
-                    name: 'Equity ($)',
+                    name: _t('charts.equityDollar'),
                     nameTextStyle: { color: cssColor38, fontSize: 10 },
                     splitLine: {
                         lineStyle: { type: 'solid', color: cssColor38 }
@@ -2579,7 +2743,7 @@ export function usePerfChart(param) {
                 },
                 {
                     type: 'value',
-                    name: 'Trade PnL ($)',
+                    name: _t('charts.tradePnlDollar'),
                     nameTextStyle: { color: cssColor38, fontSize: 10 },
                     splitLine: { show: false },
                     axisLabel: {
@@ -2608,7 +2772,7 @@ export function usePerfChart(param) {
             ],
             series: [
                 {
-                    name: 'PnL',
+                    name: _t('charts.pnl'),
                     type: 'bar',
                     yAxisIndex: 1,
                     data: pnlBars,
@@ -2616,7 +2780,7 @@ export function usePerfChart(param) {
                     z: 1
                 },
                 {
-                    name: 'Equity',
+                    name: _t('charts.equity'),
                     type: 'line',
                     yAxisIndex: 0,
                     data: equityCurve,
@@ -2633,7 +2797,7 @@ export function usePerfChart(param) {
                     z: 2
                 },
                 {
-                    name: 'High Water Mark',
+                    name: _t('charts.highWaterMark'),
                     type: 'line',
                     yAxisIndex: 0,
                     data: hwmLine,
@@ -2644,7 +2808,7 @@ export function usePerfChart(param) {
                     z: 3
                 },
                 {
-                    name: 'Drawdown',
+                    name: _t('charts.drawdown'),
                     type: 'line',
                     yAxisIndex: 0,
                     data: drawdownLine,
@@ -2652,6 +2816,12 @@ export function usePerfChart(param) {
                     showSymbol: false,
                     lineStyle: { color: '#eb5757', width: 1.5, type: 'dashed' },
                     itemStyle: { color: '#eb5757' },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(235, 87, 87, 0.30)' },
+                            { offset: 1, color: 'rgba(235, 87, 87, 0.05)' }
+                        ])
+                    },
                     z: 4
                 }
             ]
@@ -2699,7 +2869,7 @@ export function usePositionChart(param) {
 
         items.sort((a, b) => a.ratio - b.ratio)
 
-        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : _t('options.profitFactor')
 
         const option = {
             tooltip: {
@@ -2803,7 +2973,7 @@ export function useStrategyChart(param) {
 
         items.sort((a, b) => a.ratio - b.ratio)
 
-        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : _t('options.profitFactor')
 
         const option = {
             tooltip: {
@@ -2897,7 +3067,7 @@ export function useWeekdayChart(param) {
         // Nach Wochentag sortieren (Montag zuerst)
         items.sort((a, b) => a.dayIndex - b.dayIndex)
 
-        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : _t('options.profitFactor')
 
         const option = {
             tooltip: {
@@ -2989,7 +3159,7 @@ export function useEntryTimeChart(param) {
         // Nach Uhrzeit sortieren
         items.sort((a, b) => a.timeKey - b.timeKey)
 
-        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : _t('options.profitFactor')
 
         const option = {
             tooltip: {
@@ -3094,7 +3264,7 @@ export function useDurationChart(param) {
         // Nach Dauer sortieren
         items.sort((a, b) => a.durationKey - b.durationKey)
 
-        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : _t('options.profitFactor')
 
         const option = {
             tooltip: {
@@ -3189,7 +3359,7 @@ export function useSymbolChart(param) {
         // Sortieren: niedrigste unten, höchste oben
         items.sort((a, b) => a.ratio - b.ratio)
 
-        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : "Profitfaktor"
+        const ratioLabel = selectedRatio.value == "appt" ? "APPT" : _t('options.profitFactor')
 
         const option = {
             tooltip: {
@@ -3257,6 +3427,134 @@ export function useSymbolChart(param) {
     })
 }
 
+export function useHeatmapChart(param) {
+    return new Promise((resolve, reject) => {
+        var el = document.getElementById(param)
+        if (!el) { resolve(); return }
+        var myChart = echarts.init(el)
+
+        if (!filteredTradesTrades || filteredTradesTrades.length === 0) { resolve(); return }
+
+        const weekdays = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
+        const hours = Array.from({length: 24}, (_, i) => i + ':00')
+
+        // Zellen-Daten: [hour, dayIndex, avgPnL, tradeCount]
+        const cellMap = {}
+
+        filteredTradesTrades.forEach(trade => {
+            const d = dayjs.unix(trade.entryTime).tz(timeZoneTrade.value)
+            const day = d.day()    // 0=So, 1=Mo, ...
+            const hour = d.hour()  // 0-23
+            const key = day + '-' + hour
+            if (!cellMap[key]) cellMap[key] = { sum: 0, count: 0 }
+            cellMap[key].sum += trade[amountCase.value + 'Proceeds'] || 0
+            cellMap[key].count++
+        })
+
+        // Farbe direkt pro Zelle berechnen (ohne visualMap)
+        const allValues = []
+        for (let day = 0; day < 7; day++) {
+            for (let hour = 0; hour < 24; hour++) {
+                const cell = cellMap[day + '-' + hour]
+                if (cell && cell.count > 0) {
+                    allValues.push(Math.abs(cell.sum / cell.count))
+                }
+            }
+        }
+        if (allValues.length === 0) { resolve(); return }
+        // 80. Perzentil für Farbsättigung
+        const sortedAbs = [...allValues].sort((a, b) => a - b)
+        const rangeVal = Math.max(sortedAbs[Math.floor(sortedAbs.length * 0.8)] || 1, 0.5)
+
+        function cellColor(avg) {
+            // Intensität: 0 (neutral) bis 1 (voll gesättigt)
+            const intensity = Math.min(Math.abs(avg) / rangeVal, 1)
+            // Mindest-Sättigung damit auch kleine Werte sichtbar sind
+            const t = 0.25 + intensity * 0.75
+            if (avg >= 0) {
+                // Grün: von #161616 bis #44dd88
+                const r = Math.round(22 + (68 - 22) * t * 0.3)
+                const g = Math.round(22 + (221 - 22) * t)
+                const b = Math.round(22 + (136 - 22) * t * 0.5)
+                return 'rgb(' + r + ',' + g + ',' + b + ')'
+            } else {
+                // Rot: von #161616 bis #ff4444
+                const r = Math.round(22 + (255 - 22) * t)
+                const g = Math.round(22 + (68 - 22) * t * 0.3)
+                const b = Math.round(22 + (68 - 22) * t * 0.3)
+                return 'rgb(' + r + ',' + g + ',' + b + ')'
+            }
+        }
+
+        const heatmapData = []
+        const emptyData = []
+        for (let day = 0; day < 7; day++) {
+            for (let hour = 0; hour < 24; hour++) {
+                const cell = cellMap[day + '-' + hour]
+                if (cell && cell.count > 0) {
+                    const avg = parseFloat((cell.sum / cell.count).toFixed(2))
+                    heatmapData.push({
+                        value: [hour, day, avg, cell.count],
+                        itemStyle: { color: cellColor(avg) }
+                    })
+                } else {
+                    emptyData.push([hour, day, 0, 0])
+                }
+            }
+        }
+
+        const option = {
+            tooltip: {
+                backgroundColor: blackbg7,
+                borderColor: blackbg7,
+                textStyle: { color: cssColor87 },
+                formatter: (p) => {
+                    const d = p.data.value || p.data
+                    if (d[3] === 0) return weekdays[d[1]] + ' ' + d[0] + ':00<br>Keine Trades'
+                    return weekdays[d[1]] + ' ' + d[0] + ':00<br>Ø P&L: ' + useTwoDecCurrencyFormat(d[2]) + '<br>Trades: ' + d[3]
+                }
+            },
+            grid: { top: 10, right: 20, bottom: 40, left: 40 },
+            xAxis: {
+                type: 'category',
+                data: hours,
+                splitArea: { show: false },
+                splitLine: { show: false },
+                axisLabel: { color: cssColor60, interval: 1, fontSize: 10 }
+            },
+            yAxis: {
+                type: 'category',
+                data: weekdays,
+                splitArea: { show: false },
+                splitLine: { show: false },
+                axisLabel: { color: cssColor60 }
+            },
+            series: [{
+                type: 'heatmap',
+                data: heatmapData,
+                label: { show: false },
+                itemStyle: {
+                    borderColor: '#0a0a0a',
+                    borderWidth: 1
+                },
+                emphasis: {
+                    itemStyle: { shadowBlur: 5, shadowColor: 'rgba(0,0,0,0.5)' }
+                }
+            }, {
+                type: 'heatmap',
+                data: emptyData,
+                label: { show: false },
+                itemStyle: { color: '#0e0e0e', borderColor: '#0a0a0a', borderWidth: 1 },
+                emphasis: { itemStyle: { color: '#151515' } },
+                tooltip: { formatter: (p) => weekdays[p.data[1]] + ' ' + p.data[0] + ':00<br>Keine Trades' }
+            }]
+        }
+
+        myChart.setOption(option)
+        resolve()
+    })
+}
+
 export function useFeesChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
@@ -3266,19 +3564,73 @@ export function useFeesChart(param) {
         let trades = [...filteredTradesTrades]
         if (trades.length === 0) { resolve(); return }
 
-        // Gebühren pro Symbol summieren
+        // Gebühren pro Symbol summieren (Trading vs Funding getrennt)
         let feesBySymbol = {}
+        let hasFundingData = false
         trades.forEach(trade => {
             const symbol = trade.symbol || 'Unbekannt'
-            const fee = Math.abs(trade.commission || 0)
-            if (!feesBySymbol[symbol]) feesBySymbol[symbol] = 0
-            feesBySymbol[symbol] += fee
+            if (!feesBySymbol[symbol]) feesBySymbol[symbol] = { trading: 0, funding: 0, total: 0 }
+            const tradingFee = Math.abs(trade.tradingFee || 0)
+            const fundingFee = Math.abs(trade.fundingFee || 0)
+            const totalFee = Math.abs(trade.commission || 0)
+            // Wenn tradingFee+fundingFee vorhanden, nutze sie; sonst alles als Trading
+            if (tradingFee > 0 || fundingFee > 0) {
+                feesBySymbol[symbol].trading += tradingFee
+                feesBySymbol[symbol].funding += fundingFee
+                if (fundingFee > 0) hasFundingData = true
+            } else {
+                feesBySymbol[symbol].trading += totalFee
+            }
+            feesBySymbol[symbol].total += totalFee
         })
 
         // Nach Gebühren sortieren (höchste oben im horizontalen Chart)
         let sorted = Object.entries(feesBySymbol)
-            .map(([symbol, fee]) => ({ symbol, fee: Number(fee.toFixed(2)) }))
-            .sort((a, b) => a.fee - b.fee)
+            .map(([symbol, fees]) => ({
+                symbol,
+                trading: Number(fees.trading.toFixed(2)),
+                funding: Number(fees.funding.toFixed(2)),
+                total: Number(fees.total.toFixed(2))
+            }))
+            .sort((a, b) => a.total - b.total)
+
+        const seriesData = [{
+            name: _t('dashboard.tradingFees'),
+            type: 'bar',
+            stack: 'fees',
+            data: sorted.map(s => s.trading),
+            barMaxWidth: 20,
+            itemStyle: { color: '#f5a623' },
+            label: {
+                show: !hasFundingData,
+                position: 'right',
+                formatter: (p) => useTwoDecCurrencyFormat(p.value),
+                color: cssColor60,
+                fontSize: 11
+            }
+        }]
+
+        if (hasFundingData) {
+            seriesData.push({
+                name: _t('dashboard.fundingFees'),
+                type: 'bar',
+                stack: 'fees',
+                data: sorted.map(s => s.funding),
+                barMaxWidth: 20,
+                itemStyle: { color: '#6366f1' },
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: (p) => {
+                        // Auf dem letzten (Funding) Bar den Gesamtwert anzeigen
+                        const idx = p.dataIndex
+                        return useTwoDecCurrencyFormat(sorted[idx].total)
+                    },
+                    color: cssColor60,
+                    fontSize: 11
+                }
+            })
+        }
 
         const option = {
             tooltip: {
@@ -3288,15 +3640,27 @@ export function useFeesChart(param) {
                 borderColor: blackbg7,
                 textStyle: { color: cssColor87 },
                 formatter: (params) => {
-                    const p = params[0]
-                    return '<b>' + p.name + '</b><br>' + p.marker + ' Gebühren: ' + useTwoDecCurrencyFormat(p.value)
+                    let tip = '<b>' + params[0].name + '</b>'
+                    params.forEach(p => {
+                        if (p.value > 0) {
+                            tip += '<br>' + p.marker + ' ' + p.seriesName + ': ' + useTwoDecCurrencyFormat(p.value)
+                        }
+                    })
+                    const idx = params[0].dataIndex
+                    tip += '<br><b>Gesamt: ' + useTwoDecCurrencyFormat(sorted[idx].total) + '</b>'
+                    return tip
                 }
             },
+            legend: hasFundingData ? {
+                data: [_t('dashboard.tradingFees'), _t('dashboard.fundingFees')],
+                textStyle: { color: cssColor60, fontSize: 11 },
+                bottom: 0
+            } : undefined,
             grid: {
                 left: 10,
                 right: 80,
                 top: 10,
-                bottom: 10,
+                bottom: hasFundingData ? 30 : 10,
                 containLabel: true
             },
             xAxis: {
@@ -3315,21 +3679,7 @@ export function useFeesChart(param) {
                 axisLabel: { color: cssColor60 },
                 axisTick: { show: false }
             },
-            series: [{
-                type: 'bar',
-                data: sorted.map(s => ({
-                    value: s.fee,
-                    itemStyle: { color: '#f5a623' }
-                })),
-                barMaxWidth: 20,
-                label: {
-                    show: true,
-                    position: 'right',
-                    formatter: (p) => useTwoDecCurrencyFormat(p.value),
-                    color: cssColor60,
-                    fontSize: 11
-                }
-            }]
+            series: seriesData
         }
 
         myChart.setOption(option)

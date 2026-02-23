@@ -69,6 +69,15 @@ export async function useGetFilteredTrades(param) {
             excursionByTradeId.set(String(item.tradeId), item)
         }
 
+        // Load tradeType from notes table
+        const allNotes = await dbFind("notes", {})
+        const tradeTypeByTradeId = new Map()
+        for (const note of (allNotes || [])) {
+            if (note.tradeType && note.tradeType !== '' && note.tradeId) {
+                tradeTypeByTradeId.set(String(note.tradeId), note.tradeType)
+            }
+        }
+
         const availableTagById = new Map()
         for (const group of availableTags) {
             if (!group?.tags) continue
@@ -196,6 +205,9 @@ export async function useGetFilteredTrades(param) {
                                 if (tradeExcursion.maePrice) element.maePrice = tradeExcursion.maePrice
                                 if (tradeExcursion.mfePrice) element.mfePrice = tradeExcursion.mfePrice
                             }
+
+                            // Attach tradeType from notes
+                            element.tradeType = tradeTypeByTradeId.get(String(element.id)) || ''
 
                             /**
                              * CALC OPTIMIZATION
@@ -338,6 +350,8 @@ export async function useTotalTrades() {
         var totalQuantity = 0
 
         var totalCommission = 0
+        var totalFundingFees = 0
+        var totalTradingFees = 0
         var totalOtherCommission = 0
         var totalFees = 0
         var totalLocateFees = 0
@@ -413,6 +427,8 @@ export async function useTotalTrades() {
 
                 totalQuantity += el.buyQuantity + el.sellQuantity
                 totalCommission += el.commission
+                totalFundingFees += (el.fundingFee || 0)
+                totalTradingFees += (el.tradingFee || 0)
                 totalOtherCommission += el.sec + el.taf + el.nscc + el.nasdaq
                 totalFees += el.commission + el.sec + el.taf + el.nscc + el.nasdaq
 
@@ -487,6 +503,8 @@ export async function useTotalTrades() {
          * Commissions and fees
          *******************/
         temp2.commission = totalCommission
+        temp2.fundingFees = totalFundingFees
+        temp2.tradingFees = totalTradingFees
         temp2.otherCommission = totalOtherCommission
         temp2.fees = totalFees
         temp2.locateFees = totalLocateFees
@@ -599,6 +617,8 @@ export async function useTotalTrades() {
              * Commissions and fees
              *******************/
             var sumCommission = 0
+            var sumFundingFees = 0
+            var sumTradingFees = 0
             var sumSec = 0
             var sumTaf = 0
             var sumNscc = 0
@@ -651,6 +671,8 @@ export async function useTotalTrades() {
                 sumBuyQuantity += element.buyQuantity
                 sumSellQuantity += element.sellQuantity
                 sumCommission += element.commission
+                sumFundingFees += (element.fundingFee || 0)
+                sumTradingFees += (element.tradingFee || 0)
                 sumSec += element.sec
                 sumTaf += element.taf
                 sumNscc += element.nscc
@@ -721,6 +743,8 @@ export async function useTotalTrades() {
              * Commissions and fees
              *******************/
             temp3[key3].commission = sumCommission;
+            temp3[key3].fundingFees = sumFundingFees;
+            temp3[key3].tradingFees = sumTradingFees;
             temp3[key3].sec = sumSec
             temp3[key3].taf = sumTaf
             temp3[key3].nscc = sumNscc
@@ -922,6 +946,14 @@ export async function useGroupTrades() {
             .groupBy('strategy')
             .value()
         //console.log("group by position " + JSON.stringify(groups.position))
+
+        /*******************
+        * GROUP BY TRADE TYPE (scalp/day/swing)
+        *******************/
+        groups.tradeType = _(temp1)
+            .filter(t => t.tradeType && t.tradeType !== '')
+            .groupBy('tradeType')
+            .value()
 
         /*******************
         * GROUP BY TAGS

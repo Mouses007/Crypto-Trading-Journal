@@ -11,8 +11,11 @@ import { useCreatedDateFormat } from '../utils/formatters.js'
 import { dbFind, dbGet, dbUpdate, dbCreate, dbDelete } from '../utils/db.js'
 import Quill from 'quill'
 import { sanitizeHtml } from '../utils/sanitize'
+import { useI18n } from 'vue-i18n'
+import dayjs from '../utils/dayjs-setup.js'
 
 const route = useRoute()
+const { t } = useI18n()
 const playbookEntries = ref([])
 const expandedId = ref(null)
 const editingId = ref(null)
@@ -26,9 +29,9 @@ const closingScreenshotPreviews = ref({}) // tradeId → base64 preview
 // Timeframes aus Settings (oder Fallback auf alle)
 const timeframeOptions = computed(() => {
     if (selectedTradeTimeframes.length > 0) {
-        return allTradeTimeframes.filter(tf => selectedTradeTimeframes.includes(tf.value))
+        return allTradeTimeframes.value.filter(tf => selectedTradeTimeframes.includes(tf.value))
     }
-    return allTradeTimeframes
+    return allTradeTimeframes.value
 })
 
 onBeforeMount(async () => {
@@ -247,6 +250,7 @@ async function loadPlaybookEntries() {
             dateUnix: note.dateUnix,
             tradeId: note.tradeId,
             // Opening fields
+            tradeType: note.tradeType || '',
             entryStressLevel: note.entryStressLevel || parsed.entryStressLevel || 0,
             emotionLevel: note.emotionLevel || 0,
             entryNote: note.entryNote || parsed.entryNote || '',
@@ -270,6 +274,7 @@ async function loadPlaybookEntries() {
             symbol: tradeDetail?.symbol || trade?.trades?.[0]?.symbol || '',
             side: tradeDetail?.strategy || '',
             pnl: tradeDetail?.netProceeds || tradeDetail?.grossProceeds || 0,
+            tradingMetadata: note.tradingMetadata || null,
         })
     }
 
@@ -282,13 +287,46 @@ function formatSide(side) {
     return side
 }
 
+// ===== TRADING METADATA HELPERS =====
+function hasTradingMetadata(meta) {
+    if (!meta) return false
+    return (meta.fills?.length > 0) || meta.sl != null || meta.tp != null
+        || meta.positionSize || (meta.tpslHistory?.length > 0) || meta.rrr
+}
+
+function getEntryFillsFromMeta(fills, side) {
+    if (!fills || !Array.isArray(fills)) return []
+    return fills.filter(f => !f.reduceOnly)
+}
+
+function getAvgEntryPriceFromMeta(fills, side) {
+    const entryFills = getEntryFillsFromMeta(fills, side)
+    if (entryFills.length === 0) return 0
+    let totalValue = 0, totalQty = 0
+    for (const f of entryFills) {
+        totalValue += parseFloat(f.qty || 0) * parseFloat(f.price || 0)
+        totalQty += parseFloat(f.qty || 0)
+    }
+    return totalQty > 0 ? totalValue / totalQty : 0
+}
+
+function formatMetaFillTime(timestamp) {
+    return dayjs(parseInt(timestamp)).format('DD.MM. HH:mm')
+}
+
+function getFillBadgeType(fill, idx, allFills) {
+    if (fill.reduceOnly) return 'partialClose'
+    if (idx === 0 || allFills.slice(0, idx).every(f => f.reduceOnly)) return 'initial'
+    return 'compound'
+}
+
 function getTagColor(tagId) {
     const info = useGetTagInfo(tagId)
     return info?.groupColor || '#6c757d'
 }
 
 function hasData(entry) {
-    return entry.entryStressLevel > 0 || entry.emotionLevel > 0 || entry.timeframe || entry.feelings ||
+    return entry.tradeType || entry.entryStressLevel > 0 || entry.emotionLevel > 0 || entry.timeframe || entry.feelings ||
         (entry.playbook && stripHtml(entry.playbook).trim()) ||
         (entry.tags && entry.tags.length > 0) ||
         entry.satisfaction !== null || entry.entryNote ||
@@ -330,7 +368,7 @@ async function startEdit(tradeId) {
                     ['clean']
                 ]
             },
-            placeholder: 'Eröffnungs-Notiz...',
+            placeholder: t('incoming.note') + '...',
             theme: 'snow'
         })
         quill.root.innerHTML = sanitizeHtml(entry?.playbook || '')
@@ -350,7 +388,7 @@ async function startEdit(tradeId) {
                     ['clean']
                 ]
             },
-            placeholder: 'Abschluss-Notiz...',
+            placeholder: t('incoming.note') + '...',
             theme: 'snow'
         })
         quill.root.innerHTML = sanitizeHtml(entry?.closingPlaybook || '')
@@ -362,6 +400,22 @@ function cancelEdit(tradeId) {
     delete quillInstances[tradeId + '_opening']
     delete quillInstances[tradeId + '_closing']
     editingId.value = null
+}
+
+// --- Trade Type ---
+const tradeTypeOptions = [
+    { value: 'scalp', labelKey: 'incoming.scalptrade' },
+    { value: 'day', labelKey: 'incoming.daytrade' },
+    { value: 'swing', labelKey: 'incoming.swingtrade' },
+]
+
+function updateTradeType(entry, value) {
+    entry.tradeType = entry.tradeType === value ? '' : value
+}
+
+function getTradeTypeLabel(value) {
+    const opt = tradeTypeOptions.find(o => o.value === value)
+    return opt ? t(opt.labelKey) : value
 }
 
 // --- Opening Stress Level ---
@@ -675,6 +729,7 @@ async function saveEntry(entry) {
         await dbUpdate('notes', entry.noteObjectId, {
             note: entry.note,
             // Opening fields
+            tradeType: entry.tradeType || '',
             entryStressLevel: entry.entryStressLevel || 0,
             emotionLevel: entry.emotionLevel || 0,
             entryNote: entry.entryNote || '',
@@ -740,7 +795,7 @@ async function saveEntry(entry) {
         <div v-show="!spinnerLoadingPage">
             <div class="row mb-3">
                 <div class="col">
-                    <small class="text-muted">Trade-Bewertungen und Notizen</small>
+                    <small class="text-muted">{{ t('playbook.tradeEvaluations') }}</small>
                 </div>
             </div>
 
@@ -760,18 +815,15 @@ async function saveEntry(entry) {
                             </span>
                             <span v-if="expandedId === entry.tradeId && editingId !== entry.tradeId"
                                 class="pb-edit-btn pointerClass" @click.stop="startEdit(entry.tradeId)"
-                                title="Bearbeiten">
+                                :title="t('common.edit')">
                                 <i class="uil uil-pen"></i>
                             </span>
                             <span class="text-muted small">{{ useCreatedDateFormat(entry.dateUnix) }}</span>
                         </div>
                         <div class="d-flex align-items-center gap-2">
-                            <span v-if="entry.satisfaction === true || entry.satisfaction === 1">
-                                <i class="uil uil-thumbs-up greenTrade"></i>
-                            </span>
-                            <span v-if="entry.satisfaction === false || entry.satisfaction === 0">
-                                <i class="uil uil-thumbs-down redTrade"></i>
-                            </span>
+                            <span v-if="entry.satisfaction === 1">👍</span>
+                            <span v-if="entry.satisfaction === 2">✊</span>
+                            <span v-if="entry.satisfaction === 0">👎</span>
                             <span v-if="entry.pnl" class="fw-bold"
                                 :class="entry.pnl >= 0 ? 'greenTrade' : 'redTrade'">
                                 {{ entry.pnl >= 0 ? '+' : '' }}{{ parseFloat(entry.pnl).toFixed(2) }}
@@ -784,8 +836,9 @@ async function saveEntry(entry) {
                     <!-- Collapsed preview -->
                     <div v-if="expandedId !== entry.tradeId && hasData(entry)" class="mt-1">
                         <div class="d-flex flex-wrap align-items-center gap-1">
+                            <span v-if="entry.tradeType" class="pb-pill">{{ getTradeTypeLabel(entry.tradeType) }}</span>
                             <span v-if="entry.entryStressLevel > 0" class="pb-pill">
-                                Stress {{ entry.entryStressLevel }}/10
+                                {{ t('incoming.stress') }} {{ entry.entryStressLevel }}/10
                             </span>
                             <span v-if="entry.timeframe" class="pb-pill">{{ entry.timeframe }}</span>
                             <span v-for="tag in entry.tags" :key="'o'+tag.id"
@@ -803,15 +856,25 @@ async function saveEntry(entry) {
                 <!-- Expanded: VIEW MODE -->
                 <div v-if="expandedId === entry.tradeId && editingId !== entry.tradeId" class="pb-body">
                     <!-- ===== ERÖFFNUNGSBEWERTUNG (View) ===== -->
-                    <div v-if="entry.entryStressLevel > 0 || (entry.tags && entry.tags.length > 0) || entry.timeframe || entry.emotionLevel > 0 || entry.feelings || (entry.playbook && stripHtml(entry.playbook).trim()) || getEntryScreenshot(entry)"
+                    <div v-if="entry.tradeType || entry.entryStressLevel > 0 || (entry.tags && entry.tags.length > 0) || entry.timeframe || entry.emotionLevel > 0 || entry.feelings || (entry.playbook && stripHtml(entry.playbook).trim()) || getEntryScreenshot(entry)"
                         class="pb-view-opening mb-2 p-3">
                         <div class="d-flex align-items-center mb-2">
                             <i class="uil uil-unlock-alt me-2" style="color: var(--green-color, #10b981); font-size: 1rem;"></i>
-                            <span class="fw-bold small">Eröffnungsbewertung</span>
+                            <span class="fw-bold small">{{ t('incoming.openingEvaluation') }}</span>
                         </div>
                         <div class="pb-grid">
+                            <div v-if="entry.tradeType" class="pb-field">
+                                <div class="pb-label">{{ t('incoming.tradeType') }}</div>
+                                <div class="pb-value"><span class="pb-pill">{{ getTradeTypeLabel(entry.tradeType) }}</span></div>
+                            </div>
+
+                            <div v-if="entry.timeframe" class="pb-field">
+                                <div class="pb-label">{{ t('incoming.timeframe') }}</div>
+                                <div class="pb-value"><span class="pb-pill">{{ entry.timeframe }}</span></div>
+                            </div>
+
                             <div v-if="entry.entryStressLevel > 0" class="pb-field">
-                                <div class="pb-label">Stresslevel</div>
+                                <div class="pb-label">{{ t('incoming.stressLevel') }}</div>
                                 <div class="pb-value">
                                     <div class="d-flex align-items-center">
                                         <div class="pb-stress-bar">
@@ -825,24 +888,8 @@ async function saveEntry(entry) {
                                 </div>
                             </div>
 
-                            <div v-if="entry.tags && entry.tags.length > 0" class="pb-field">
-                                <div class="pb-label">Tags</div>
-                                <div class="pb-value">
-                                    <span v-for="tag in entry.tags" :key="tag.id"
-                                        class="pb-pill me-1"
-                                        :style="{ backgroundColor: tag.color || getTagColor(tag.id), color: '#fff' }">
-                                        {{ tag.name }}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div v-if="entry.timeframe" class="pb-field">
-                                <div class="pb-label">Timeframe</div>
-                                <div class="pb-value"><span class="pb-pill">{{ entry.timeframe }}</span></div>
-                            </div>
-
                             <div v-if="entry.emotionLevel > 0" class="pb-field">
-                                <div class="pb-label">Emotionslevel</div>
+                                <div class="pb-label">{{ t('incoming.emotionLevel') }}</div>
                                 <div class="pb-value">
                                     <div class="d-flex align-items-center">
                                         <div class="pb-stress-bar">
@@ -857,29 +904,170 @@ async function saveEntry(entry) {
                             </div>
 
                             <div v-if="entry.feelings" class="pb-field">
-                                <div class="pb-label">Emotionen</div>
+                                <div class="pb-label">{{ t('incoming.emotions') }}</div>
                                 <div class="pb-value pb-text">{{ entry.feelings }}</div>
                             </div>
 
                             <div v-if="entry.playbook && stripHtml(entry.playbook).trim()" class="pb-field pb-field-wide">
-                                <div class="pb-label">Notiz</div>
+                                <div class="pb-label">{{ t('incoming.note') }}</div>
                                 <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.playbook)"></div>
+                            </div>
+
+                            <div v-if="entry.tags && entry.tags.length > 0" class="pb-field">
+                                <div class="pb-label">{{ t('incoming.tags') }}</div>
+                                <div class="pb-value">
+                                    <span v-for="tag in entry.tags" :key="tag.id"
+                                        class="pb-pill me-1"
+                                        :style="{ backgroundColor: tag.color || getTagColor(tag.id), color: '#fff' }">
+                                        {{ tag.name }}
+                                    </span>
+                                </div>
                             </div>
 
                             <!-- Entry Screenshot -->
                             <div v-if="getEntryScreenshot(entry)" class="pb-field pb-field-wide">
-                                <div class="pb-label">Screenshot</div>
+                                <div class="pb-label">{{ t('incoming.screenshot') }}</div>
                                 <div class="pb-value">
                                     <div class="d-flex align-items-start gap-2">
                                         <img :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
                                             class="pb-screenshot-view pointerClass"
                                             @click.stop="openFullscreen(getEntryScreenshot(entry))"
-                                            title="Screenshot vergrößern" />
+                                            :title="t('incoming.screenshot')" />
                                         <i class="uil uil-times pointerClass text-danger"
                                             @click.stop="removeEntryScreenshot(entry)"
-                                            title="Screenshot entfernen" style="font-size: 1.1rem;"></i>
+                                            :title="t('common.remove')" style="font-size: 1.1rem;"></i>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== TRADING METADATA (View) — Fills, Positionsgröße, SL/BE/TP, Protokoll ===== -->
+                    <div v-if="hasTradingMetadata(entry.tradingMetadata)"
+                        class="pb-view-trading-meta mb-2 p-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="uil uil-layers me-2" style="color: var(--grey-color, #6b7280); font-size: 1rem;"></i>
+                            <span class="fw-bold small">{{ t('incoming.fills') }}</span>
+                            <span v-if="getEntryFillsFromMeta(entry.tradingMetadata.fills, entry.side).length > 1"
+                                class="text-muted small ms-2">
+                                ({{ getEntryFillsFromMeta(entry.tradingMetadata.fills, entry.side).length }} {{ t('incoming.fillEntries') }})
+                            </span>
+                            <span v-if="getEntryFillsFromMeta(entry.tradingMetadata.fills, entry.side).length > 0"
+                                class="ms-auto fw-bold" style="font-size: 0.85rem;">
+                                {{ t('incoming.fillAvgPrice') }}: {{ getAvgEntryPriceFromMeta(entry.tradingMetadata.fills, entry.side).toFixed(5) }}
+                            </span>
+                        </div>
+
+                        <!-- Fills Table -->
+                        <div v-if="entry.tradingMetadata.fills && entry.tradingMetadata.fills.length > 0">
+                            <table class="table table-sm table-borderless mb-1" style="font-size: 0.8rem; color: var(--white-80);">
+                                <tbody>
+                                    <tr v-for="(fill, idx) in entry.tradingMetadata.fills" :key="idx"
+                                        :class="fill.reduceOnly ? 'text-danger' : ''">
+                                        <td class="text-muted ps-0" style="width: 100px;">{{ formatMetaFillTime(fill.time) }}</td>
+                                        <td style="width: 80px;" class="text-end">{{ parseFloat(fill.qty) }}</td>
+                                        <td class="text-muted px-1">&times;</td>
+                                        <td style="width: 90px;">{{ parseFloat(fill.price) }}</td>
+                                        <td class="text-muted px-1">=</td>
+                                        <td class="text-end" style="width: 90px;">{{ (parseFloat(fill.qty) * parseFloat(fill.price)).toFixed(2) }}</td>
+                                        <td>
+                                            <span v-if="getFillBadgeType(fill, idx, entry.tradingMetadata.fills) === 'partialClose'"
+                                                class="badge bg-danger" style="font-size: 0.65rem;">{{ t('incoming.fillPartialClose') }}</span>
+                                            <span v-else-if="getFillBadgeType(fill, idx, entry.tradingMetadata.fills) === 'initial'"
+                                                class="badge bg-secondary" style="font-size: 0.65rem;">{{ t('incoming.fillInitial') }}</span>
+                                            <span v-else
+                                                class="badge bg-info" style="font-size: 0.65rem;">{{ t('incoming.fillCompound') }}</span>
+                                        </td>
+                                        <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ parseFloat(fill.fee || 0).toFixed(4) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- Totals row -->
+                            <div v-if="getEntryFillsFromMeta(entry.tradingMetadata.fills, entry.side).length > 1"
+                                class="d-flex justify-content-between border-top pt-1 mt-1"
+                                style="font-size: 0.8rem; border-color: var(--white-20) !important;">
+                                <span class="text-muted">
+                                    {{ t('incoming.fillTotal') }}:
+                                    <strong class="text-white">{{ getEntryFillsFromMeta(entry.tradingMetadata.fills, entry.side).reduce((sum, f) => sum + parseFloat(f.qty || 0), 0) }}</strong>
+                                </span>
+                                <span class="text-muted">
+                                    {{ t('incoming.fillFee') }}:
+                                    <strong class="text-white">{{ entry.tradingMetadata.fills.reduce((sum, f) => sum + parseFloat(f.fee || 0), 0).toFixed(4) }}</strong>
+                                </span>
+                            </div>
+
+                            <!-- Position Size row -->
+                            <div v-if="entry.tradingMetadata.positionSize"
+                                class="d-flex justify-content-between border-top pt-1 mt-1"
+                                style="font-size: 0.8rem; border-color: var(--white-20) !important;">
+                                <span class="text-muted">
+                                    {{ t('incoming.positionSize') }}:
+                                    <span class="text-white">{{ parseFloat(entry.tradingMetadata.margin || 0).toFixed(2) }}</span>
+                                    <span class="text-muted"> &times; </span>
+                                    <span class="text-white">{{ entry.tradingMetadata.leverage }}x</span>
+                                    <span class="text-muted"> = </span>
+                                    <strong class="text-white">{{ parseFloat(entry.tradingMetadata.positionSize).toFixed(2) }} USDT</strong>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- SL / BE / TP Row -->
+                        <div v-if="entry.tradingMetadata.sl || entry.tradingMetadata.tp || entry.tradingMetadata.breakeven"
+                            class="d-flex gap-3 mt-2 pt-2 border-top"
+                            style="font-size: 0.8rem; border-color: var(--white-20) !important;">
+                            <span v-if="entry.tradingMetadata.sl">
+                                <span class="fw-bold"
+                                    :class="!entry.tradingMetadata.slAboveBreakeven ? 'text-danger' : ''"
+                                    :style="entry.tradingMetadata.slAboveBreakeven ? 'color: #86efac' : ''">
+                                    SL: {{ entry.tradingMetadata.sl }}
+                                </span>
+                                <span v-if="entry.tradingMetadata.slQty" class="text-muted ms-1">({{ entry.tradingMetadata.slQty }})</span>
+                            </span>
+                            <span v-if="entry.tradingMetadata.breakeven">
+                                <span class="text-muted fw-bold">BE: {{ parseFloat(entry.tradingMetadata.breakeven).toFixed(2) }}</span>
+                            </span>
+                            <span v-if="entry.tradingMetadata.tp">
+                                <span class="fw-bold" style="color: #f59e0b;">TP: {{ entry.tradingMetadata.tp }}</span>
+                                <span v-if="entry.tradingMetadata.tpQty" class="text-muted ms-1">({{ entry.tradingMetadata.tpQty }})</span>
+                            </span>
+                            <span v-if="entry.tradingMetadata.rrr" class="ms-auto">
+                                <span class="fw-bold" style="color: #a78bfa;">RRR 1:{{ entry.tradingMetadata.rrr }}</span>
+                            </span>
+                        </div>
+
+                        <!-- SL/TP Protocol History -->
+                        <div v-if="entry.tradingMetadata.tpslHistory && entry.tradingMetadata.tpslHistory.length > 0"
+                            class="mt-2 pt-2 border-top"
+                            style="font-size: 0.75rem; border-color: var(--white-20) !important;">
+                            <div class="text-muted mb-1"><i class="uil uil-history me-1"></i>SL/TP Protokoll</div>
+                            <div v-for="(histEntry, idx) in entry.tradingMetadata.tpslHistory" :key="'hist-'+idx"
+                                class="d-flex align-items-center gap-2 mb-1">
+                                <span class="text-muted" style="width: 90px;">{{ dayjs(histEntry.time).format('DD.MM. HH:mm') }}</span>
+                                <span :class="histEntry.type === 'SL' ? (entry.tradingMetadata.slAboveBreakeven ? '' : 'text-danger') : (histEntry.action === 'triggered' ? 'text-success fw-bold' : '')"
+                                    :style="histEntry.type === 'SL' && entry.tradingMetadata.slAboveBreakeven ? 'color: #86efac' : (histEntry.type === 'TP' && histEntry.action !== 'triggered' ? 'color: #f59e0b' : '')">
+                                    {{ histEntry.type }}
+                                </span>
+                                <template v-if="histEntry.action === 'set'">
+                                    <span class="text-muted">&rarr;</span>
+                                    <span class="text-white">{{ histEntry.newVal }}</span>
+                                    <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
+                                </template>
+                                <template v-else-if="histEntry.action === 'moved'">
+                                    <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
+                                    <span class="text-muted">&rarr;</span>
+                                    <span class="text-white">{{ histEntry.newVal }}</span>
+                                    <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
+                                </template>
+                                <template v-else-if="histEntry.action === 'triggered'">
+                                    <span class="text-success" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
+                                    <span class="text-success">&rarr;</span>
+                                    <span class="text-success fw-bold">Ausgelöst &#x2713;</span>
+                                </template>
+                                <template v-else-if="histEntry.action === 'removed'">
+                                    <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
+                                    <span class="text-muted">&rarr; entfernt</span>
+                                </template>
                             </div>
                         </div>
                     </div>
@@ -889,11 +1077,21 @@ async function saveEntry(entry) {
                         class="pb-view-closing mb-2 p-3">
                         <div class="d-flex align-items-center mb-2">
                             <i class="uil uil-lock-alt me-2" style="color: var(--blue-color, #3b82f6); font-size: 1rem;"></i>
-                            <span class="fw-bold small">Abschlussbewertung</span>
+                            <span class="fw-bold small">{{ t('incoming.closingEvaluation') }}</span>
                         </div>
                         <div class="pb-grid">
+                            <div v-if="entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim()" class="pb-field pb-field-wide">
+                                <div class="pb-label">{{ t('incoming.note') }}</div>
+                                <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.closingPlaybook)"></div>
+                            </div>
+
+                            <div v-if="entry.closingNote && !(entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim())" class="pb-field pb-field-wide">
+                                <div class="pb-label">{{ t('incoming.closingNote') }}</div>
+                                <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.closingNote)"></div>
+                            </div>
+
                             <div v-if="entry.closingTags && entry.closingTags.length > 0" class="pb-field">
-                                <div class="pb-label">Tags</div>
+                                <div class="pb-label">{{ t('incoming.tags') }}</div>
                                 <div class="pb-value">
                                     <span v-for="tag in entry.closingTags" :key="tag.id"
                                         class="pb-pill me-1"
@@ -903,39 +1101,27 @@ async function saveEntry(entry) {
                                 </div>
                             </div>
 
-                            <div v-if="entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim()" class="pb-field pb-field-wide">
-                                <div class="pb-label">Notiz</div>
-                                <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.closingPlaybook)"></div>
-                            </div>
-
-                            <div v-if="entry.closingNote && !(entry.closingPlaybook && stripHtml(entry.closingPlaybook).trim())" class="pb-field pb-field-wide">
-                                <div class="pb-label">Abschlussnotiz (alt)</div>
-                                <div class="pb-value pb-note-content" v-html="sanitizeHtml(entry.closingNote)"></div>
-                            </div>
-
                             <div v-if="entry.satisfaction !== null && entry.satisfaction !== undefined" class="pb-field">
-                                <div class="pb-label">Zufriedenheit</div>
+                                <div class="pb-label">{{ t('incoming.satisfaction') }}</div>
                                 <div class="pb-value">
-                                    <i v-if="entry.satisfaction === true || entry.satisfaction === 1"
-                                        class="uil uil-thumbs-up fs-5 greenTrade"></i>
-                                    <i v-else-if="entry.satisfaction === 'neutral'"
-                                        class="uil uil-thumbs-up fs-5 neutralTrade" style="transform: rotate(-90deg); display: inline-block;"></i>
-                                    <i v-else class="uil uil-thumbs-down fs-5 redTrade"></i>
+                                    <span v-if="entry.satisfaction === 1" class="fs-5">👍</span>
+                                    <span v-else-if="entry.satisfaction === 2" class="fs-5">✊</span>
+                                    <span v-else class="fs-5">👎</span>
                                 </div>
                             </div>
 
                             <!-- Closing Screenshot -->
                             <div v-if="getClosingScreenshot(entry)" class="pb-field pb-field-wide">
-                                <div class="pb-label">Screenshot</div>
+                                <div class="pb-label">{{ t('incoming.screenshot') }}</div>
                                 <div class="pb-value">
                                     <div class="d-flex align-items-start gap-2">
                                         <img :src="getClosingScreenshot(entry).annotatedBase64 || getClosingScreenshot(entry).originalBase64"
                                             class="pb-screenshot-view pointerClass"
                                             @click.stop="openFullscreen(getClosingScreenshot(entry))"
-                                            title="Screenshot vergrößern" />
+                                            :title="t('incoming.screenshot')" />
                                         <i class="uil uil-times pointerClass text-danger"
                                             @click.stop="removeClosingScreenshot(entry)"
-                                            title="Screenshot entfernen" style="font-size: 1.1rem;"></i>
+                                            :title="t('common.remove')" style="font-size: 1.1rem;"></i>
                                     </div>
                                 </div>
                             </div>
@@ -944,10 +1130,10 @@ async function saveEntry(entry) {
 
                     <!-- Empty state -->
                     <div v-if="!hasData(entry)" class="text-center py-3">
-                        <small class="text-muted">Noch keine Bewertung vorhanden</small>
+                        <small class="text-muted">{{ t('playbook.noEvaluation') }}</small>
                         <div class="mt-2">
                             <button class="btn btn-sm btn-outline-primary" @click.stop="startEdit(entry.tradeId)">
-                                <i class="uil uil-pen me-1"></i>Jetzt bewerten
+                                <i class="uil uil-pen me-1"></i>{{ t('playbook.evaluateNow') }}
                             </button>
                         </div>
                     </div>
@@ -960,12 +1146,38 @@ async function saveEntry(entry) {
                     <div class="pb-edit-opening p-3">
                     <div class="d-flex align-items-center mb-3">
                         <i class="uil uil-unlock-alt me-2" style="color: var(--green-color, #10b981); font-size: 1.1rem;"></i>
-                        <span class="fw-bold" style="font-size: 0.95rem;">Eröffnungsbewertung</span>
+                        <span class="fw-bold" style="font-size: 0.95rem;">{{ t('incoming.openingEvaluation') }}</span>
+                    </div>
+
+                    <!-- Trade-Typ -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">{{ t('incoming.tradeType') }}</label>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button v-for="tt in tradeTypeOptions" :key="tt.value"
+                                class="btn btn-sm py-0 px-2"
+                                :class="entry.tradeType === tt.value ? 'btn-primary' : 'btn-outline-secondary'"
+                                @click.stop="updateTradeType(entry, tt.value)">
+                                {{ t(tt.labelKey) }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Timeframe -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">{{ t('incoming.timeframe') }}</label>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button v-for="tf in timeframeOptions" :key="tf.value"
+                                class="btn btn-sm py-0 px-2"
+                                :class="entry.timeframe === tf.value ? 'btn-primary' : 'btn-outline-secondary'"
+                                @click.stop="updateTimeframe(entry, tf.value)">
+                                {{ tf.label }}
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Stresslevel -->
                     <div class="pb-edit-section">
-                        <label class="pb-edit-label">Stresslevel</label>
+                        <label class="pb-edit-label">{{ t('incoming.stressLevel') }}</label>
                         <div class="d-flex align-items-end flex-wrap">
                             <template v-for="n in 10" :key="n">
                                 <span @click.stop="updateEntryStress(entry, n)"
@@ -981,48 +1193,9 @@ async function saveEntry(entry) {
                         </div>
                     </div>
 
-                    <!-- Tags -->
-                    <div class="pb-edit-section">
-                        <label class="pb-edit-label">Tags</label>
-                        <!-- Zugewiesene Tags als Badges -->
-                        <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
-                            <span v-for="(tag, idx) in (entry.tags || [])" :key="tag.id"
-                                class="badge me-1 pointerClass"
-                                :style="{ backgroundColor: getTagColor(tag.id) }"
-                                @click.stop="entry.tags.splice(idx, 1)">
-                                {{ tag.name }} <span class="ms-1">&times;</span>
-                            </span>
-                        </div>
-                        <!-- Ein Dropdown mit allen Gruppen als optgroups -->
-                        <select class="form-select form-select-sm"
-                            @change.stop="addTag(entry, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
-                            <option selected disabled>Tag hinzufügen...</option>
-                            <optgroup v-for="group in availableTags" :key="group.id" :label="group.name">
-                                <option v-for="tag in getGroupTags(group.id)" :key="tag.id"
-                                    :value="JSON.stringify({ id: tag.id, name: tag.name })"
-                                    :disabled="(entry.tags || []).some(t => t.id === tag.id)">
-                                    {{ tag.name }}
-                                </option>
-                            </optgroup>
-                        </select>
-                    </div>
-
-                    <!-- Timeframe -->
-                    <div class="pb-edit-section">
-                        <label class="pb-edit-label">Timeframe</label>
-                        <div class="d-flex flex-wrap gap-1">
-                            <button v-for="tf in timeframeOptions" :key="tf.value"
-                                class="btn btn-sm py-0 px-2"
-                                :class="entry.timeframe === tf.value ? 'btn-primary' : 'btn-outline-secondary'"
-                                @click.stop="updateTimeframe(entry, tf.value)">
-                                {{ tf.label }}
-                            </button>
-                        </div>
-                    </div>
-
                     <!-- Emotionslevel -->
                     <div class="pb-edit-section">
-                        <label class="pb-edit-label">Emotionslevel</label>
+                        <label class="pb-edit-label">{{ t('incoming.emotionLevel') }}</label>
                         <div class="d-flex align-items-end flex-wrap">
                             <template v-for="n in 10" :key="'emo'+n">
                                 <span @click.stop="updateEmotionLevel(entry, n)"
@@ -1040,20 +1213,46 @@ async function saveEntry(entry) {
 
                     <!-- Gefühle -->
                     <div class="pb-edit-section">
-                        <label class="pb-edit-label">Emotionen</label>
+                        <label class="pb-edit-label">{{ t('incoming.emotions') }}</label>
                         <textarea class="form-control form-control-sm" v-model="entry.feelings"
-                            placeholder="Wie fühlst du dich bei diesem Trade?" rows="2"></textarea>
+                            :placeholder="t('incoming.emotionsPlaceholder')" rows="2"></textarea>
                     </div>
 
                     <!-- Playbook Notiz -->
                     <div class="pb-edit-section">
-                        <label class="pb-edit-label">Notiz</label>
+                        <label class="pb-edit-label">{{ t('incoming.note') }}</label>
                         <div :id="'quillPlaybook-' + entry.tradeId + '-opening'" class="quill-incoming"></div>
+                    </div>
+
+                    <!-- Tags -->
+                    <div class="pb-edit-section">
+                        <label class="pb-edit-label">{{ t('incoming.tags') }}</label>
+                        <!-- Zugewiesene Tags als Badges -->
+                        <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
+                            <span v-for="(tag, idx) in (entry.tags || [])" :key="tag.id"
+                                class="badge me-1 pointerClass"
+                                :style="{ backgroundColor: getTagColor(tag.id) }"
+                                @click.stop="entry.tags.splice(idx, 1)">
+                                {{ tag.name }} <span class="ms-1">&times;</span>
+                            </span>
+                        </div>
+                        <!-- Ein Dropdown mit allen Gruppen als optgroups -->
+                        <select class="form-select form-select-sm"
+                            @change.stop="addTag(entry, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
+                            <option selected disabled>{{ t('incoming.addTag') }}</option>
+                            <optgroup v-for="group in availableTags" :key="group.id" :label="group.name">
+                                <option v-for="tag in getGroupTags(group.id)" :key="tag.id"
+                                    :value="JSON.stringify({ id: tag.id, name: tag.name })"
+                                    :disabled="(entry.tags || []).some(t => t.id === tag.id)">
+                                    {{ tag.name }}
+                                </option>
+                            </optgroup>
+                        </select>
                     </div>
 
                     <!-- Eröffnungs-Screenshot -->
                     <div class="pb-edit-section">
-                        <label class="pb-edit-label">Screenshot</label>
+                        <label class="pb-edit-label">{{ t('incoming.screenshot') }}</label>
                         <div v-if="entry.screenshotId || getEntryScreenshot(entry)">
                             <div class="d-flex align-items-center gap-2">
                                 <img v-if="entryScreenshotPreviews[entry.tradeId]"
@@ -1063,11 +1262,11 @@ async function saveEntry(entry) {
                                     :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
                                     class="img-fluid rounded mb-1" style="max-height: 200px;"
                                     @click.stop="openFullscreen(getEntryScreenshot(entry))" />
-                                <span v-else class="badge bg-success">Screenshot verknüpft</span>
+                                <span v-else class="badge bg-success">{{ t('incoming.screenshotLinked') }}</span>
                             </div>
                             <div class="d-flex gap-2 mt-1">
                                 <button class="btn btn-sm btn-outline-danger" @click.stop="removeEntryScreenshot(entry)">
-                                    <i class="uil uil-times me-1"></i>Entfernen
+                                    <i class="uil uil-times me-1"></i>{{ t('common.remove') }}
                                 </button>
                             </div>
                         </div>
@@ -1081,12 +1280,31 @@ async function saveEntry(entry) {
                     <div class="pb-edit-closing p-3 mt-2">
                         <div class="d-flex align-items-center mb-3">
                             <i class="uil uil-lock-alt me-2" style="color: var(--blue-color, #3b82f6); font-size: 1.1rem;"></i>
-                            <span class="fw-bold" style="font-size: 0.95rem;">Abschlussbewertung</span>
+                            <span class="fw-bold" style="font-size: 0.95rem;">{{ t('incoming.closingEvaluation') }}</span>
+                        </div>
+
+                        <!-- Trade-Typ (änderbar) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.tradeType') }}</label>
+                            <div class="d-flex flex-wrap gap-1">
+                                <button v-for="tt in tradeTypeOptions" :key="tt.value"
+                                    class="btn btn-sm py-0 px-2"
+                                    :class="entry.tradeType === tt.value ? 'btn-primary' : 'btn-outline-secondary'"
+                                    @click.stop="updateTradeType(entry, tt.value)">
+                                    {{ t(tt.labelKey) }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Notiz (Closing Quill) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.note') }}</label>
+                            <div :id="'quillPlaybook-' + entry.tradeId + '-closing'" class="quill-incoming"></div>
                         </div>
 
                         <!-- Tags (Closing) -->
                         <div class="pb-edit-section">
-                            <label class="pb-edit-label">Tags</label>
+                            <label class="pb-edit-label">{{ t('incoming.tags') }}</label>
                             <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
                                 <span v-for="(tag, idx) in (entry.closingTags || [])" :key="tag.id"
                                     class="badge me-1 pointerClass"
@@ -1097,7 +1315,7 @@ async function saveEntry(entry) {
                             </div>
                             <select class="form-select form-select-sm"
                                 @change.stop="addClosingTag(entry, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
-                                <option selected disabled>Tag hinzufügen...</option>
+                                <option selected disabled>{{ t('incoming.addTag') }}</option>
                                 <optgroup v-for="group in availableTags" :key="group.id" :label="group.name">
                                     <option v-for="tag in getGroupTags(group.id)" :key="tag.id"
                                         :value="JSON.stringify({ id: tag.id, name: tag.name })"
@@ -1108,15 +1326,9 @@ async function saveEntry(entry) {
                             </select>
                         </div>
 
-                        <!-- Notiz (Closing Quill) -->
-                        <div class="pb-edit-section">
-                            <label class="pb-edit-label">Notiz</label>
-                            <div :id="'quillPlaybook-' + entry.tradeId + '-closing'" class="quill-incoming"></div>
-                        </div>
-
                         <!-- Abschluss-Screenshot -->
                         <div class="pb-edit-section">
-                            <label class="pb-edit-label">Screenshot</label>
+                            <label class="pb-edit-label">{{ t('incoming.screenshot') }}</label>
                             <div v-if="entry.closingScreenshotId || getClosingScreenshot(entry)">
                                 <div class="d-flex align-items-center gap-2">
                                     <img v-if="closingScreenshotPreviews[entry.tradeId]"
@@ -1126,11 +1338,11 @@ async function saveEntry(entry) {
                                         :src="getClosingScreenshot(entry).annotatedBase64 || getClosingScreenshot(entry).originalBase64"
                                         class="img-fluid rounded mb-1" style="max-height: 200px;"
                                         @click.stop="openFullscreen(getClosingScreenshot(entry))" />
-                                    <span v-else class="badge bg-success">Screenshot verknüpft</span>
+                                    <span v-else class="badge bg-success">{{ t('incoming.screenshotLinked') }}</span>
                                 </div>
                                 <div class="d-flex gap-2 mt-1">
                                     <button class="btn btn-sm btn-outline-danger" @click.stop="removeClosingScreenshot(entry)">
-                                        <i class="uil uil-times me-1"></i>Entfernen
+                                        <i class="uil uil-times me-1"></i>{{ t('common.remove') }}
                                     </button>
                                 </div>
                             </div>
@@ -1140,23 +1352,22 @@ async function saveEntry(entry) {
 
                         <!-- Zufriedenheit -->
                         <div class="pb-edit-section">
-                            <label class="pb-edit-label">Zufriedenheit</label>
+                            <label class="pb-edit-label">{{ t('incoming.satisfaction') }}</label>
                             <div class="d-flex gap-3">
                                 <span class="pointerClass fs-4"
-                                    :class="entry.satisfaction === true || entry.satisfaction === 1 ? 'greenTrade' : 'text-muted'"
-                                    @click.stop="updateSatisfaction(entry, true)">
-                                    <i class="uil uil-thumbs-up"></i>
+                                    :style="entry.satisfaction === 1 ? '' : 'opacity: 0.3; filter: grayscale(1)'"
+                                    @click.stop="updateSatisfaction(entry, 1)">
+                                    👍
                                 </span>
                                 <span class="pointerClass fs-4"
-                                    :class="entry.satisfaction === 'neutral' ? 'neutralTrade' : 'text-muted'"
-                                    @click.stop="updateSatisfaction(entry, 'neutral')"
-                                    style="transform: rotate(-90deg); display: inline-block;">
-                                    <i class="uil uil-thumbs-up"></i>
+                                    :style="entry.satisfaction === 2 ? '' : 'opacity: 0.3; filter: grayscale(1)'"
+                                    @click.stop="updateSatisfaction(entry, 2)">
+                                    ✊
                                 </span>
                                 <span class="pointerClass fs-4"
-                                    :class="entry.satisfaction === false || entry.satisfaction === 0 ? 'redTrade' : 'text-muted'"
-                                    @click.stop="updateSatisfaction(entry, false)">
-                                    <i class="uil uil-thumbs-down"></i>
+                                    :style="entry.satisfaction === 0 ? '' : 'opacity: 0.3; filter: grayscale(1)'"
+                                    @click.stop="updateSatisfaction(entry, 0)">
+                                    👎
                                 </span>
                             </div>
                         </div>
@@ -1165,7 +1376,7 @@ async function saveEntry(entry) {
                     <!-- Actions -->
                     <div class="d-flex justify-content-end gap-2 mt-2">
                         <button class="btn btn-outline-secondary btn-sm" @click.stop="cancelEdit(entry.tradeId)">
-                            Abbrechen
+                            {{ t('common.cancel') }}
                         </button>
                         <button class="btn btn-success btn-sm" @click.stop="saveEntry(entry)"
                             :disabled="savingId === entry.tradeId">
@@ -1173,7 +1384,7 @@ async function saveEntry(entry) {
                                 <span class="spinner-border spinner-border-sm me-1" role="status"></span>
                             </span>
                             <span v-else><i class="uil uil-check me-1"></i></span>
-                            Speichern
+                            {{ t('common.save') }}
                         </button>
                     </div>
                 </div>
@@ -1186,7 +1397,7 @@ async function saveEntry(entry) {
         <div v-if="fullscreenImg" class="pb-fullscreen-overlay" @click="closeFullscreen">
             <img :src="fullscreenImg" class="pb-fullscreen-img" @click.stop />
             <div class="pb-fullscreen-toolbar" @click.stop>
-                <button class="btn btn-sm btn-outline-light" @click="closeFullscreen" title="Schließen">
+                <button class="btn btn-sm btn-outline-light" @click="closeFullscreen" :title="t('common.close')">
                     <i class="uil uil-times"></i>
                 </button>
             </div>
@@ -1200,6 +1411,20 @@ async function saveEntry(entry) {
     border: 1px solid var(--white-10, rgba(255,255,255,0.06));
     border-left: 3px solid var(--green-color, #10b981);
     border-radius: var(--border-radius, 6px);
+}
+.pb-view-trading-meta {
+    background: var(--black-bg-3, #1a1a2e);
+    border: 1px solid var(--white-10, rgba(255,255,255,0.06));
+    border-left: 3px solid var(--grey-color, #6b7280);
+    border-radius: var(--border-radius, 6px);
+}
+.pb-view-trading-meta .table {
+    margin-bottom: 0;
+}
+.pb-view-trading-meta .table td {
+    padding: 0.15rem 0.3rem;
+    vertical-align: middle;
+    border: none;
 }
 .pb-view-closing {
     background: var(--black-bg-3, #1a1a2e);

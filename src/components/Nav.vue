@@ -1,6 +1,8 @@
 <script setup>
 import { onMounted, computed } from 'vue';
 import { useToggleMobileMenu, useExport } from '../utils/utils.js'
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 import { useInitTooltip } from "../utils/utils.js";
 import { pageId, screenType } from "../stores/ui.js"
 import { currentUser, renderProfile } from "../stores/settings.js"
@@ -23,13 +25,13 @@ const filterSummary = computed(() => {
     if (['dashboard', 'auswertung'].includes(pageId.value) && selectedPeriodRange.value) {
         parts.push(selectedPeriodRange.value.label || '')
     } else if (['daily', 'calendar'].includes(pageId.value) && selectedMonth.value) {
-        const m = dayjs(selectedMonth.value.start)
+        const m = dayjs.unix(selectedMonth.value.start)
         if (m.isValid()) parts.push(m.format('MMM YYYY'))
     }
 
     // Brutto/Netto
-    if (selectedGrossNet.value === 'gross') parts.push('Brutto')
-    else if (selectedGrossNet.value === 'net') parts.push('Netto')
+    if (selectedGrossNet.value === 'gross') parts.push(t('options.gross'))
+    else if (selectedGrossNet.value === 'net') parts.push(t('options.net'))
 
     // Positionen
     if (selectedPositions.value && selectedPositions.value.length > 0 && selectedPositions.value.length < 2) {
@@ -39,67 +41,67 @@ const filterSummary = computed(() => {
     return parts.filter(Boolean).join(' · ')
 })
 
-const pages = [{
+const pages = computed(() => [{
     id: "dashboard",
-    name: "Dashboard",
+    name: t('nav.dashboard'),
     icon: "uil uil-apps"
 },
 {
     id: "daily",
-    name: "Tages Ansicht",
+    name: t('nav.dailyView'),
     icon: "uil uil-signal-alt-3"
 },
 {
     id: "calendar",
-    name: "Kalender",
+    name: t('nav.calendar'),
     icon: "uil uil-calendar-alt"
 },
 {
     id: "screenshots",
-    name: "Screenshots",
+    name: t('nav.screenshots'),
     icon: "uil uil-image-v"
 },
 {
     id: "incoming",
-    name: "Pendente Trades",
+    name: t('nav.pendingTrades'),
     icon: "uil uil-arrow-circle-down"
 },
 {
     id: "playbook",
-    name: "Playbook",
+    name: t('nav.playbook'),
     icon: "uil uil-compass"
 },
 {
     id: "auswertung",
-    name: "Auswertung",
+    name: t('nav.evaluation'),
     icon: "uil uil-chart-pie"
 },
 {
     id: "kiAgent",
-    name: "KI-Agent",
+    name: t('nav.kiAgent'),
     icon: "uil uil-robot"
 },
 {
     id: "addTrades",
-    name: "Manueller Trade Import",
+    name: t('nav.manualImport'),
     icon: "uil uil-plus-circle"
 },
 {
     id: "settings",
-    name: "Einstellungen",
+    name: t('nav.settings'),
     icon: "uil uil-sliders-v-alt"
 },
 {
     id: "addExcursions",
-    name: "Exkursionen hinzufügen",
+    name: t('nav.addExcursions'),
     icon: "uil uil-refresh"
 },
 {
     id: "imports",
-    name: "Importe",
+    name: t('settings.imports'),
     icon: "uil uil-import"
 }
-]
+])
 
 onMounted(async () => {
     await useInitTooltip()

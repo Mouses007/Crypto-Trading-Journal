@@ -13,6 +13,7 @@
     --red-hover-color: #fd4b42;
     --black: #333333;
     --black-bg-0: hsl(0, 0%, 0%);
+    --black-bg-3: hsl(0, 0%, 3%);
     --black-bg-5: hsl(0, 0%, 5%);
     --black-bg-7: hsl(0, 0%, 7%);
     --green: #26a69a;
@@ -1920,4 +1921,46 @@ h4 {
 
 .InputElement.is-invalid {
     color: blue !important
+}
+
+/*=================== TRADE-TYP STATISTIK ===================*/
+.trade-type-table th {
+    font-size: 0.75rem;
+    color: var(--white-38);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 0.4rem 0.5rem;
+}
+.trade-type-table td {
+    font-size: 0.82rem;
+    color: var(--white-87);
+    padding: 0.45rem 0.5rem;
+    vertical-align: middle;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.trade-type-table tbody tr:last-child td {
+    border-bottom: none;
+}
+.trade-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #fff;
+}
+.winrate-bar {
+    width: 50px;
+    height: 5px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.winrate-fill {
+    height: 100%;
+    background: var(--green-color, #4caf50);
+    border-radius: 3px;
+    transition: width 0.3s ease;
 }

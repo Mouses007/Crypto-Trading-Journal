@@ -202,6 +202,8 @@ async function createBitunixTrades() {
                 grossProceeds: row.GrossProceeds,
                 netProceeds: row.NetProceeds,
                 commission: row.Fee,
+                tradingFee: row.TradingFee || 0,
+                fundingFee: row.FundingFee || 0,
                 sec: 0,
                 taf: 0,
                 nscc: 0,

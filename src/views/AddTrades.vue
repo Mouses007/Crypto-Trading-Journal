@@ -9,6 +9,9 @@ import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
 import { sendNotification } from '../utils/notify.js'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 spinnerLoadingPage.value = false
 
@@ -31,7 +34,9 @@ onMounted(async () => {
  */
 function parseBitunixPosition(pos) {
     const grossPL = parseFloat(pos.realizedPNL || 0)
-    const fee = Math.abs(parseFloat(pos.fee || 0)) + Math.abs(parseFloat(pos.funding || 0))
+    const tradingFee = Math.abs(parseFloat(pos.fee || 0))
+    const fundingFee = Math.abs(parseFloat(pos.funding || 0))
+    const fee = tradingFee + fundingFee
     const closeTime = parseInt(pos.mtime || pos.ctime)
     const openTime = parseInt(pos.ctime)
     // Bitunix: side is LONG/SHORT or BUY/SELL
@@ -55,6 +60,8 @@ function parseBitunixPosition(pos) {
         Leverage: pos.leverage || '',
         IncomingAsset: 'USDT',
         OutgoingAsset: 'USDT',
+        TradingFee: tradingFee,
+        FundingFee: fundingFee,
     }
 }
 
@@ -69,7 +76,9 @@ function parseBitgetPosition(pos) {
     const openFee = Math.abs(parseFloat(pos.openFee || 0))
     const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
     const totalFunding = Math.abs(parseFloat(pos.totalFunding || 0))
-    const fee = openFee + closeFee + totalFunding
+    const tradingFee = openFee + closeFee
+    const fundingFee = totalFunding
+    const fee = tradingFee + fundingFee
     const closeTime = parseInt(pos.utime || pos.uTime || pos.ctime || pos.cTime)
     const openTime = parseInt(pos.ctime || pos.cTime)
     // Bitget: holdSide is 'long' or 'short'
@@ -96,6 +105,8 @@ function parseBitgetPosition(pos) {
         Leverage: pos.leverage || '',
         IncomingAsset: 'USDT',
         OutgoingAsset: 'USDT',
+        TradingFee: tradingFee,
+        FundingFee: fundingFee,
     }
 }
 
@@ -148,8 +159,8 @@ async function importFromApi() {
         }
 
         if (allPositions.length === 0) {
-            apiImportError.value = 'Keine Positionen für den ausgewählten Zeitraum gefunden.'
-            sendNotification(`${brokerLabel.value} Import`, 'Keine Positionen gefunden.')
+            apiImportError.value = t('addTrades.noPositionsFound')
+            sendNotification(`${brokerLabel.value} Import`, t('addTrades.noPositionsFound'))
             apiImportLoading.value = false
             return
         }
@@ -250,8 +261,8 @@ async function importFromApi() {
 
         // Check if anything left to import
         if (Object.keys(trades).length === 0) {
-            apiImportError.value = 'Alle Positionen in diesem Zeitraum wurden bereits importiert.'
-            sendNotification(`${brokerLabel.value} Import`, 'Keine neuen Trades gefunden.')
+            apiImportError.value = t('addTrades.allAlreadyImported')
+            sendNotification(`${brokerLabel.value} Import`, t('messages.noNewTrades'))
             spinnerLoadingPage.value = false
             apiImportLoading.value = false
             return
@@ -266,11 +277,11 @@ async function importFromApi() {
 
         spinnerLoadingPage.value = false
         console.log(` -> Imported ${allPositions.length} positions from ${brokerLabel.value} API (${Object.keys(trades).length} new days)`)
-        sendNotification(`${brokerLabel.value} Import`, `${allPositions.length} Positionen importiert (${Object.keys(trades).length} neue Tage).`)
+        sendNotification(`${brokerLabel.value} Import`, t('messages.positionsImported', { count: allPositions.length, days: Object.keys(trades).length }))
 
     } catch (error) {
-        apiImportError.value = error.message || 'Import von API fehlgeschlagen'
-        sendNotification(`${brokerLabel.value} Import`, 'Import fehlgeschlagen: ' + (error.message || 'Unbekannter Fehler'))
+        apiImportError.value = error.message || t('addTrades.importFailed')
+        sendNotification(`${brokerLabel.value} Import`, t('messages.importFailed') + (error.message || t('common.error')))
         spinnerLoadingPage.value = false
     }
 
@@ -285,17 +296,17 @@ async function importFromApi() {
     <div class="mt-3">
         <ul class="nav nav-tabs">
             <li class="nav-item">
-                <a class="nav-link" :class="{ active: importMode === 'csv' }" href="#" @click.prevent="importMode = 'csv'">CSV Import</a>
+                <a class="nav-link" :class="{ active: importMode === 'csv' }" href="#" @click.prevent="importMode = 'csv'">{{ t('addTrades.csvImport') }}</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" :class="{ active: importMode === 'api' }" href="#" @click.prevent="importMode = 'api'">API Import</a>
+                <a class="nav-link" :class="{ active: importMode === 'api' }" href="#" @click.prevent="importMode = 'api'">{{ t('addTrades.apiImport') }}</a>
             </li>
         </ul>
     </div>
 
     <!-- CSV Import -->
     <div v-show="importMode === 'csv'" class="mt-3">
-        <p class="txt-small">Importiere deinen {{ brokerLabel }} CSV-Export. Nur Zeilen mit "Futures Profit" und "Futures Loss" werden verarbeitet.</p>
+        <p class="txt-small" v-html="t('addTrades.csvDescription', { broker: brokerLabel })"></p>
         <div class="input-group mb-3">
             <input id="tradesInput" type="file" accept=".csv" v-on:change="useImportTrades($event, 'file')" />
         </div>
@@ -303,20 +314,20 @@ async function importFromApi() {
 
     <!-- API Import -->
     <div v-show="importMode === 'api'" class="mt-3">
-        <p class="txt-small">Importiere Trades direkt von deinem {{ brokerLabel }}-Konto. Konfiguriere deine API-Schlüssel in den <a href="/settings">Einstellungen</a>.</p>
+        <p class="txt-small" v-html="t('addTrades.apiDescription', { broker: brokerLabel })"></p>
         <div class="row mb-3">
             <div class="col">
-                <label class="form-label">Startdatum</label>
+                <label class="form-label">{{ t('addTrades.startDate') }}</label>
                 <input type="date" class="form-control" v-model="apiStartDate" />
             </div>
             <div class="col">
-                <label class="form-label">Enddatum</label>
+                <label class="form-label">{{ t('addTrades.endDate') }}</label>
                 <input type="date" class="form-control" v-model="apiEndDate" />
             </div>
             <div class="col align-self-end">
                 <button type="button" class="btn btn-primary" @click="importFromApi" :disabled="apiImportLoading">
-                    <span v-if="apiImportLoading">Importiere...</span>
-                    <span v-else>Von API importieren</span>
+                    <span v-if="apiImportLoading">{{ t('addTrades.importingStatus') }}</span>
+                    <span v-else>{{ t('addTrades.importFromApi') }}</span>
                 </button>
             </div>
         </div>
@@ -326,7 +337,7 @@ async function importFromApi() {
     <!-- Results (shared by both modes) -->
     <div class="mt-3">
         <div v-if="existingImports.length != 0">
-            Folgende Daten sind bereits importiert: <span v-for="(item, index) in existingImports">
+            {{ t('addTrades.alreadyImported') }} <span v-for="(item, index) in existingImports">
                 <span v-if="index > 0">, </span>{{ useDateCalFormat(item) }}</span>
         </div>
 
@@ -359,7 +370,7 @@ async function importFromApi() {
                             <td>{{ blot.trades }}</td>
                         </tr>
                         <tr v-if="index != null" class="sumRow">
-                            <td>Gesamt</td>
+                            <td>{{ t('common.total') }}</td>
                             <td v-bind:class="[pAndL[index].grossProceeds > 0 ? 'greenTrade' : 'redTrade']">
                                 {{ (pAndL[index].grossProceeds).toFixed(2) }}</td>
                             <td>{{ (pAndL[index].fees).toFixed(2) }}</td>
@@ -378,10 +389,10 @@ async function importFromApi() {
     <!--BUTTONS-->
     <div>
         <button v-show="Object.keys(executions).length > 0 && !spinnerLoadingPage" type="button"
-            v-on:click="useUploadTrades" class="btn btn-success btn-lg me-3">Absenden</button>
+            v-on:click="useUploadTrades" class="btn btn-success btn-lg me-3">{{ t('common.submit') }}</button>
 
         <button type="cancel" onclick="location.href = 'dashboard';"
-            class="btn btn-outline-secondary btn-sm me-2">Abbrechen</button>
+            class="btn btn-outline-secondary btn-sm me-2">{{ t('common.cancel') }}</button>
 
     </div>
 </template>

@@ -8,18 +8,22 @@ A local, trading journal for **crypto futures trading** (Bitunix, Bitget). No cl
 
 ![Dashboard](docs/dashboard.png)
 
-![Playbook](docs/playbook.png)
+![Daily View](docs/daily.png)
+
+![Incoming Positions](docs/incoming.png)
 
 ## Features
 
-- **Dashboard** with P&L analytics, win rate, profit factor, account balance tracking, and more
+- **Dashboard** with P&L analytics, win rate, profit factor, account balance tracking, performance heatmap (weekday x hour), and more
+- **Trade-Type Statistics** — profitability analysis per trade type (Scalp/Day/Swing) and per strategy tag
+- **Fees Chart** — trading and funding fees breakdown per symbol
 - **Multi-Broker** — Bitunix and Bitget support (CSV + API import), broker-separated data
 - **Playbook** for trade notes with stress level (1-10) and emotion level (1-10)
 - **Auswertung** (Evaluation) with tag-based strategy analysis, stress/emotion charts, and completeness radar
 - **Calendar** view of daily trading performance
-- **Daily View** for detailed per-day trade analysis
+- **Daily View** for detailed per-day trade analysis with candlestick charts, read-only trade metadata, and screenshot thumbnails
 - **Screenshots** with annotation support (broker-separated)
-- **Incoming Positions** — track and evaluate open trades in real-time via exchange API
+- **Incoming Positions** — track and evaluate open trades in real-time via exchange API, with AI-powered trade ratings
 - **CSV and API Import** from Bitunix and Bitget
 - **KI-Agent** — AI reports and chat (Ollama, OpenAI, Anthropic, Gemini, DeepSeek)
 - **Auto-Update** — checks GitHub for new releases on startup, one-click update from the app
@@ -139,6 +143,17 @@ Starts the Vite dev server with Hot Module Replacement.
 3. Evaluate your trades in **Playbook** — add tags, stress/emotion levels, notes
 4. Review your performance in **Dashboard** and **Auswertung**
 5. Use the **KI-Agent** for AI-powered trade analysis (requires Ollama, OpenAI, or other provider)
+
+## What's New in v2.4.0
+
+- **Performance Heatmap** — weekday × hour heatmap showing where you win and lose
+- **Trade-Type Statistics** — Scalp/Day/Swing profitability comparison table
+- **Strategy-Tag Statistics** — per-strategy profitability analysis
+- **Fees Chart** — per-symbol fee breakdown (trading vs funding)
+- **Daily View Improvements** — candlestick charts, read-only trade details with screenshot thumbnails
+- **Incoming Positions** — improved real-time position tracking with AI trade ratings
+- **Bitget API** — expanded integration for positions and balance
+- **Bug Fixes** — date display, heatmap rendering, chart backgrounds, and more
 
 ## Attribution
 

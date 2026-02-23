@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeMount, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMounted, hasData, barChartNegativeTagGroups, timeZoneTrade } from '../stores/ui.js'
 import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBroker } from '../stores/filters.js'
@@ -11,45 +12,47 @@ import { useThousandCurrencyFormat, useTwoDecCurrencyFormat, useXDecCurrencyForm
 import { useMountDashboard } from '../utils/mountOrchestration.js';
 import NoData from '../components/NoData.vue';
 
-const dashTabs = [{
+const { t } = useI18n()
+
+const dashTabs = computed(() => [{
     id: "overviewTab",
-    label: "Übersicht",
+    label: t('dashboard.overview'),
     target: "#overviewNav"
 },
 {
     id: "tradesTab",
-    label: "Performance",
+    label: t('dashboard.performance'),
     target: "#tradesNav"
 },
 {
     id: "timeTab",
-    label: "Zeit & Datum",
+    label: t('dashboard.timeAndDate'),
     target: "#timeNav"
 },
 {
     id: "setupsTab",
-    label: "Setups",
+    label: t('dashboard.setups'),
     target: "#setupsNav"
 },
 {
     id: "financialsTab",
-    label: "Finanzen",
+    label: t('dashboard.finances'),
     target: "#financialsNav"
 }
-]
+])
 amountCapital.value = amountCase.value ? amountCase.value.charAt(0).toUpperCase() + amountCase.value.slice(1) : ''
 
 const ratioCompute = computed(() => {
     let ratio = {}
     if (localStorage.getItem('selectedRatio') == 'appt') {
         ratio.shortName = "APPT"
-        ratio.name = "Ø Gewinn pro Trade"
+        ratio.name = t('dashboard.avgProfitPerTrade')
         ratio.value = useTwoDecCurrencyFormat(totals[amountCase.value + 'Proceeds'] / totals.trades)
-        ratio.tooltipTitle = '<div>Ø Gewinn pro Trade</div><div>APPT = Erlöse &divide; Anzahl Trades</div><div>Erlöse: ' + useThousandCurrencyFormat(totals[amountCase.value + 'Proceeds']) + '</div><div>Trades: ' + useThousandFormat(totals.trades) + '</div>'
+        ratio.tooltipTitle = '<div>' + t('dashboard.avgProfitPerTrade') + '</div><div>' + t('dashboard.apptFormula') + '</div><div>' + t('dashboard.proceeds') + ': ' + useThousandCurrencyFormat(totals[amountCase.value + 'Proceeds']) + '</div><div>Trades: ' + useThousandFormat(totals.trades) + '</div>'
     }
     if (localStorage.getItem('selectedRatio') == 'profitFactor') {
-        ratio.shortName = "Profitfaktor"
-        ratio.name = "Profitfaktor"
+        ratio.shortName = t('options.profitFactor')
+        ratio.name = t('options.profitFactor')
         let wins = parseFloat(totals[amountCase.value + 'Wins']).toFixed(2)
         let loss = parseFloat(-totals[amountCase.value + 'Loss']).toFixed(2)
         let profitFactor = 0
@@ -59,12 +62,16 @@ const ratioCompute = computed(() => {
             //console.log(" -> profitFactor "+profitFactor)
         }
         ratio.value = useXDecFormat(profitFactor, 2)
-        ratio.tooltipTitle = '<div>Profitfaktor = Gewinne &divide; Verluste</div><div>Gewinne: ' + useThousandCurrencyFormat(totals[amountCase.value + 'Wins']) + '</div><div>Verluste: ' + useThousandCurrencyFormat(totals[amountCase.value + 'Loss']) + '</div>'
+        ratio.tooltipTitle = '<div>' + t('dashboard.profitFactorFormula') + '</div><div>' + t('dashboard.gains') + ': ' + useThousandCurrencyFormat(totals[amountCase.value + 'Wins']) + '</div><div>' + t('dashboard.losses') + ': ' + useThousandCurrencyFormat(totals[amountCase.value + 'Loss']) + '</div>'
     }
     return ratio
 })
 
 const hasSatisfactionData = computed(() => satisfactionArray.length > 0 || satisfactionTradeArray.length > 0)
+const hasRRRData = computed(() => {
+    const rVal = profitAnalysis[amountCase.value + 'R']
+    return rVal && !isNaN(rVal) && rVal > 0
+})
 
 const todayStats = computed(() => {
     const tz = timeZoneTrade.value || 'Europe/Brussels'
@@ -114,6 +121,83 @@ const accountBalance = computed(() => {
     const pnl = current - start
     const perf = start > 0 ? ((current / start) - 1) * 100 : 0
     return { start, current, pnl, perf }
+})
+
+// Trade-Typ Statistik (Scalptrade / Daytrade / Swingtrade)
+const tradeTypeLabels = { scalp: 'Scalptrade', day: 'Daytrade', swing: 'Swingtrade' }
+const tradeTypeColors = { scalp: '#f59e0b', day: '#3b82f6', swing: '#8b5cf6' }
+
+const tradeTypeStats = computed(() => {
+    if (!groups.tradeType || Object.keys(groups.tradeType).length === 0) return []
+
+    const stats = []
+
+    for (const [type, trades] of Object.entries(groups.tradeType)) {
+        if (!trades || trades.length === 0) continue
+
+        let wins = 0, losses = 0, totalPnl = 0, grossWins = 0, grossLoss = 0
+
+        trades.forEach(t => {
+            const pnl = t.netProceeds || 0
+            totalPnl += pnl
+            if (pnl >= 0) { wins++; grossWins += pnl }
+            else { losses++; grossLoss += Math.abs(pnl) }
+        })
+
+        const count = trades.length
+        const winRate = count > 0 ? (wins / count * 100) : 0
+        const avgPnl = count > 0 ? totalPnl / count : 0
+        const profitFactor = grossLoss > 0 ? grossWins / grossLoss : grossWins > 0 ? Infinity : 0
+
+        stats.push({
+            type,
+            label: tradeTypeLabels[type] || type,
+            color: tradeTypeColors[type] || '#6b7280',
+            count, wins, losses, winRate, totalPnl, avgPnl, profitFactor
+        })
+    }
+
+    stats.sort((a, b) => b.totalPnl - a.totalPnl)
+    return stats
+})
+
+// Strategie-Tag Statistik (Retest EMA, Guss, etc.)
+const strategyTagStats = computed(() => {
+    const stratGroup = availableTags.length > 0 ? availableTags[0] : null
+    if (!stratGroup || !groups.tags) return []
+
+    const stratTagIds = new Set(stratGroup.tags.map(t => t.id))
+    const stats = []
+
+    for (const tagId of Object.keys(groups.tags)) {
+        if (!stratTagIds.has(tagId)) continue
+        const trades = groups.tags[tagId]
+        if (!trades || trades.length === 0) continue
+
+        let tagName = tagId, tagColor = stratGroup.color
+        let wins = 0, losses = 0, totalPnl = 0, grossWins = 0, grossLoss = 0
+
+        trades.forEach(t => {
+            if (t.tagName) tagName = t.tagName
+            const pnl = t.netProceeds || 0
+            totalPnl += pnl
+            if (pnl >= 0) { wins++; grossWins += pnl }
+            else { losses++; grossLoss += Math.abs(pnl) }
+        })
+
+        const tagDef = stratGroup.tags.find(t => t.id === tagId)
+        if (tagDef && tagDef.color) tagColor = tagDef.color
+
+        const count = trades.length
+        const winRate = count > 0 ? (wins / count * 100) : 0
+        const avgPnl = count > 0 ? totalPnl / count : 0
+        const profitFactor = grossLoss > 0 ? grossWins / grossLoss : grossWins > 0 ? Infinity : 0
+
+        stats.push({ tagName, tagColor, count, wins, losses, winRate, totalPnl, avgPnl, profitFactor })
+    }
+
+    stats.sort((a, b) => b.totalPnl - a.totalPnl)
+    return stats
 })
 
 const feeStats = computed(() => {
@@ -174,14 +258,14 @@ onBeforeMount(async () => {
                                 <!-- ===== LINKE SPALTE: Kontostand + Donuts ===== -->
                                 <div class="col-12 col-xl-4 mb-3 mb-xl-0">
                                     <div class="dailyCard h-100">
-                                        <h6>Kontostand</h6>
+                                        <h6>{{ t('dashboard.accountBalance') }}</h6>
 
                                         <!-- Kontostand wenn gesetzt -->
                                         <div v-if="accountBalance" class="text-center py-3">
                                             <div class="fs-2 fw-bold" :class="accountBalance.pnl >= 0 ? 'greenTrade' : 'redTrade'">
                                                 {{ useTwoDecCurrencyFormat(accountBalance.current) }}
                                             </div>
-                                            <div class="dashInfoTitle mb-1">Aktueller Stand</div>
+                                            <div class="dashInfoTitle mb-1">{{ t('dashboard.currentBalance') }}</div>
                                             <div class="fs-5" :class="accountBalance.perf >= 0 ? 'greenTrade' : 'redTrade'">
                                                 {{ accountBalance.perf >= 0 ? '+' : '' }}{{ accountBalance.perf.toFixed(1) }}%
                                             </div>
@@ -190,26 +274,29 @@ onBeforeMount(async () => {
                                         <!-- Platzhalter wenn nicht gesetzt -->
                                         <div v-else class="text-center py-3">
                                             <div class="text-muted mb-1"><i class="uil uil-wallet fs-3"></i></div>
-                                            <div class="text-muted small">Kontostand in Einstellungen konfigurieren</div>
+                                            <div class="text-muted small">{{ t('dashboard.configureBalance') }}</div>
                                         </div>
 
                                         <hr />
 
                                         <!-- Donuts nebeneinander -->
                                         <div class="row text-center">
-                                            <div :class="hasSatisfactionData ? 'col-6' : 'col-12'">
+                                            <div :class="(hasSatisfactionData || hasRRRData) ? ((hasSatisfactionData && hasRRRData) ? 'col-4' : 'col-6') : 'col-12'">
                                                 <div v-bind:key="renderData" id="pieChart1" class="chartIdCardClass"></div>
                                             </div>
-                                            <div v-if="hasSatisfactionData" class="col-6">
+                                            <div v-if="hasSatisfactionData" :class="hasRRRData ? 'col-4' : 'col-6'">
                                                 <div v-bind:key="renderData" id="pieChart2" class="chartIdCardClass"></div>
+                                            </div>
+                                            <div v-if="hasRRRData" :class="hasSatisfactionData ? 'col-4' : 'col-6'">
+                                                <div v-bind:key="renderData" id="pieChart3" class="chartIdCardClass"></div>
                                             </div>
                                         </div>
 
                                         <!-- Tages Trade Zähler -->
                                         <div v-if="todayStats.total > 0" class="text-center mt-2 pt-2" style="border-top: 1px solid var(--white-10);">
-                                            <div class="small text-muted mb-1">Heute</div>
+                                            <div class="small text-muted mb-1">{{ t('common.today') }}</div>
                                             <div class="d-flex justify-content-center align-items-center gap-3">
-                                                <span class="fw-bold">{{ todayStats.total }} <span class="text-muted fw-normal">Trades</span></span>
+                                                <span class="fw-bold">{{ todayStats.total }} <span class="text-muted fw-normal">{{ t('common.trades') }}</span></span>
                                                 <span class="greenTrade">{{ todayStats.wins }} <i class="uil uil-arrow-up"></i></span>
                                                 <span class="redTrade">{{ todayStats.losses }} <i class="uil uil-arrow-down"></i></span>
                                             </div>
@@ -223,12 +310,12 @@ onBeforeMount(async () => {
                                 <!-- ===== MITTLERE SPALTE: Kennzahlen ===== -->
                                 <div class="col-12 col-xl-4 mb-3 mb-xl-0">
                                     <div class="dailyCard h-100">
-                                        <h6>Kennzahlen</h6>
+                                        <h6>{{ t('dashboard.metrics') }}</h6>
                                         <table class="stats-table w-100">
                                             <tbody>
                                                 <tr>
-                                                    <td>Kumulierter PnL
-                                                        <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Summe aller Gewinne und Verluste im gewählten Zeitraum"></i>
+                                                    <td>{{ t('dashboard.cumulativePnl') }}
+                                                        <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.cumulativePnlTooltip')"></i>
                                                     </td>
                                                     <td class="text-end fw-bold" :class="totals[amountCase + 'Proceeds'] >= 0 ? 'greenTrade' : 'redTrade'">
                                                         {{ useThousandCurrencyFormat(totals[amountCase + 'Proceeds']) }}
@@ -242,8 +329,8 @@ onBeforeMount(async () => {
                                                     <td class="text-end fw-bold">{{ ratioCompute.value }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td>P/L Ratio
-                                                        <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Verhältnis von Ø Gewinn zu Ø Verlust pro Trade. Wert &gt; 1 bedeutet, dass Gewinntrades im Schnitt größer sind als Verlusttrades."></i>
+                                                    <td>{{ t('dashboard.plRatio') }}
+                                                        <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.plRatioTooltip')"></i>
                                                     </td>
                                                     <td class="text-end fw-bold">
                                                         <span v-if="!isNaN(profitAnalysis[amountCase + 'R'])">{{ (profitAnalysis[amountCase + 'R']).toFixed(2) }}</span>
@@ -251,33 +338,35 @@ onBeforeMount(async () => {
                                                     </td>
                                                 </tr>
                                                 <tr v-if="profitAnalysis[amountCase + 'MfeR'] != null">
-                                                    <td>MFE P/L Ratio</td>
+                                                    <td>{{ t('dashboard.mfePlRatio') }}
+                                                        <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.mfePlRatioTooltip')"></i>
+                                                    </td>
                                                     <td class="text-end fw-bold">{{ (profitAnalysis[amountCase + 'MfeR']).toFixed(2) }}</td>
                                                 </tr>
                                                 <tr class="stats-separator"><td colspan="2"><hr /></td></tr>
                                                 <tr>
-                                                    <td class="greenTrade">Ø Gewinn/Trade</td>
+                                                    <td class="greenTrade">{{ t('dashboard.avgWinPerTrade') }}</td>
                                                     <td class="text-end">
                                                         <span v-if="!isNaN(profitAnalysis[amountCase + 'AvWinPerShare'])">{{ useTwoDecCurrencyFormat(profitAnalysis[amountCase + 'AvWinPerShare']) }}</span>
                                                         <span v-else>-</span>
                                                     </td>
                                                 </tr>
                                                 <tr>
-                                                    <td class="redTrade">Ø Verlust/Trade</td>
+                                                    <td class="redTrade">{{ t('dashboard.avgLossPerTrade') }}</td>
                                                     <td class="text-end">
                                                         <span v-if="!isNaN(profitAnalysis[amountCase + 'AvLossPerShare'])">{{ useTwoDecCurrencyFormat(profitAnalysis[amountCase + 'AvLossPerShare']) }}</span>
                                                         <span v-else>-</span>
                                                     </td>
                                                 </tr>
                                                 <tr>
-                                                    <td class="greenTrade">Max Gewinn</td>
+                                                    <td class="greenTrade">{{ t('dashboard.maxWin') }}</td>
                                                     <td class="text-end">
                                                         <span v-if="profitAnalysis[amountCase + 'HighWinPerShare'] > 0">{{ useTwoDecCurrencyFormat(profitAnalysis[amountCase + 'HighWinPerShare']) }}</span>
                                                         <span v-else>-</span>
                                                     </td>
                                                 </tr>
                                                 <tr>
-                                                    <td class="redTrade">Max Verlust</td>
+                                                    <td class="redTrade">{{ t('dashboard.maxLoss') }}</td>
                                                     <td class="text-end">
                                                         <span v-if="profitAnalysis[amountCase + 'HighLossPerShare'] > 0">{{ useTwoDecCurrencyFormat(profitAnalysis[amountCase + 'HighLossPerShare']) }}</span>
                                                         <span v-else>-</span>
@@ -285,19 +374,15 @@ onBeforeMount(async () => {
                                                 </tr>
                                                 <tr class="stats-separator"><td colspan="2"><hr /></td></tr>
                                                 <tr>
-                                                    <td>Trades</td>
+                                                    <td>{{ t('common.trades') }}</td>
                                                     <td class="text-end fw-bold">{{ useThousandFormat(totals.trades) }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td>Executions</td>
-                                                    <td class="text-end">{{ useThousandFormat(totals.executions) }}</td>
-                                                </tr>
-                                                <tr>
-                                                    <td class="greenTrade">Gewinn-Trades</td>
+                                                    <td class="greenTrade">{{ t('dashboard.winTrades') }}</td>
                                                     <td class="text-end">{{ totals[amountCase + 'WinsCount'] }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td class="redTrade">Verlust-Trades</td>
+                                                    <td class="redTrade">{{ t('dashboard.lossTrades') }}</td>
                                                     <td class="text-end">{{ totals[amountCase + 'LossCount'] }}</td>
                                                 </tr>
                                             </tbody>
@@ -308,20 +393,20 @@ onBeforeMount(async () => {
                                 <!-- ===== RECHTE SPALTE: Gebühren ===== -->
                                 <div class="col-12 col-xl-4">
                                     <div class="dailyCard h-100">
-                                        <h6>Gebühren</h6>
+                                        <h6>{{ t('dashboard.fees') }}</h6>
 
                                         <!-- Gesamtgebühren -->
                                         <div class="text-center py-3">
                                             <div class="fs-2 fw-bold text-warning">
                                                 {{ useTwoDecCurrencyFormat(feeStats.totalFees) }}
                                             </div>
-                                            <div class="dashInfoTitle">Gesamte Gebühren</div>
+                                            <div class="dashInfoTitle">{{ t('dashboard.totalFees') }}</div>
                                         </div>
 
                                         <!-- Visueller Balken: Anteil am Brutto-Gewinn -->
                                         <div v-if="feeStats.impactPercent > 0" class="mb-3 px-2">
                                             <div class="d-flex justify-content-between small mb-1">
-                                                <span>Anteil an Bruttogewinnen</span>
+                                                <span>{{ t('dashboard.feeShareOfGross') }}</span>
                                                 <span class="fw-bold">{{ feeStats.impactPercent.toFixed(1) }}%</span>
                                             </div>
                                             <div class="fee-bar-bg">
@@ -335,19 +420,27 @@ onBeforeMount(async () => {
                                         <table class="stats-table w-100">
                                             <tbody>
                                                 <tr>
-                                                    <td>Ø pro Trade</td>
+                                                    <td>{{ t('dashboard.avgPerTrade') }}</td>
                                                     <td class="text-end fw-bold">{{ useTwoDecCurrencyFormat(feeStats.perTrade) }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td>Kommission</td>
-                                                    <td class="text-end">{{ useTwoDecCurrencyFormat(totals.commission || 0) }}</td>
+                                                    <td>{{ t('dashboard.tradingFees') }}
+                                                        <i class="ps-1 uil uil-info-circle" style="font-size: 0.75rem; opacity: 0.5;" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.tradingFeesTooltip')"></i>
+                                                    </td>
+                                                    <td class="text-end">{{ useTwoDecCurrencyFormat(totals.tradingFees || totals.commission || 0) }}</td>
+                                                </tr>
+                                                <tr v-if="(totals.fundingFees || 0) > 0">
+                                                    <td>{{ t('dashboard.fundingFees') }}
+                                                        <i class="ps-1 uil uil-info-circle" style="font-size: 0.75rem; opacity: 0.5;" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.fundingFeesTooltip')"></i>
+                                                    </td>
+                                                    <td class="text-end">{{ useTwoDecCurrencyFormat(totals.fundingFees) }}</td>
                                                 </tr>
                                                 <tr v-if="(totals.otherCommission || 0) > 0">
-                                                    <td>Regulatorische Gebühren</td>
+                                                    <td>{{ t('dashboard.regulatoryFees') }}</td>
                                                     <td class="text-end">{{ useTwoDecCurrencyFormat(totals.otherCommission) }}</td>
                                                 </tr>
                                                 <tr v-if="(totals.otherFees || 0) > 0">
-                                                    <td>Sonstige Gebühren</td>
+                                                    <td>{{ t('dashboard.otherFees') }}</td>
                                                     <td class="text-end">{{ useTwoDecCurrencyFormat(totals.otherFees) }}</td>
                                                 </tr>
                                             </tbody>
@@ -358,15 +451,15 @@ onBeforeMount(async () => {
                                         <table class="stats-table w-100">
                                             <tbody>
                                                 <tr>
-                                                    <td class="fw-bold">Brutto PnL</td>
+                                                    <td class="fw-bold">{{ t('dashboard.grossPnl') }}</td>
                                                     <td class="text-end fw-bold" :class="totals.grossProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(totals.grossProceeds || 0) }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td class="fw-bold">Netto PnL</td>
+                                                    <td class="fw-bold">{{ t('dashboard.netPnl') }}</td>
                                                     <td class="text-end fw-bold" :class="totals.netProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(totals.netProceeds || 0) }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td class="text-muted">Differenz (Gebühren)</td>
+                                                    <td class="text-muted">{{ t('dashboard.feeDifference') }}</td>
                                                     <td class="text-end text-warning">{{ useTwoDecCurrencyFormat(feeStats.totalFees) }}</td>
                                                 </tr>
                                             </tbody>
@@ -383,8 +476,8 @@ onBeforeMount(async () => {
                                 <!-- KUMULIERTER G/V -->
                                 <div class="col-12 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Kumulierter PnL
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Balken zeigen den Tagesgewinn/-verlust. Die Linie zeigt den kumulierten Gesamtverlauf über den Zeitraum."></i>
+                                        <h6>{{ t('dashboard.cumulativePnlChart') }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.cumulativePnlChartTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="lineBarChart1" class="chartClass"></div>
                                     </div>
@@ -394,7 +487,7 @@ onBeforeMount(async () => {
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ ratioCompute.name }} <span
-                                                v-if="ratioCompute.name != 'Profitfaktor'">({{ ratioCompute.shortName
+                                                v-if="ratioCompute.shortName === 'APPT'">({{ ratioCompute.shortName
                                                 }})</span></h6>
                                         <div v-bind:key="renderData" id="barChart1" class="chartClass"></div>
                                     </div>
@@ -403,8 +496,8 @@ onBeforeMount(async () => {
                                 <!-- WIN LOSS CHART -->
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Win Rate
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Anteil der Gewinntrades an der Gesamtzahl der Trades pro Zeitabschnitt."></i>
+                                        <h6>{{ t('dashboard.winRate') }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.winRateTooltip')"></i>
                                         </h6>
                                         <!--<div class="text-center" v-if="!dashboardChartsMounted">
                                     <div class="spinner-border text-blue" role="status"></div>
@@ -437,8 +530,8 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY DAY OF WEEK -->
                                 <div class="col-12 col-xl-4 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Wochentag ({{ ratioCompute.shortName }})
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Wochentag des Trade-Einstiegs. Zeigt, an welchen Tagen du am besten/schlechtesten tradest."></i>
+                                        <h6>{{ t('dashboard.byWeekday', { metric: ratioCompute.shortName }) }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byWeekdayTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="weekdayChart1" class="chartClass"></div>
                                     </div>
@@ -447,8 +540,8 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY TIMEFRAME -->
                                 <div class="col-12 col-xl-4 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Einstiegszeit ({{ ratioCompute.shortName }})
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Uhrzeit des Trade-Einstiegs. Zeigt, zu welchen Tageszeiten du am besten/schlechtesten tradest."></i>
+                                        <h6>{{ t('dashboard.byEntryTime', { metric: ratioCompute.shortName }) }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byEntryTimeTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="entryTimeChart1" class="chartClass"></div>
                                     </div>
@@ -457,13 +550,23 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY DURATION -->
                                 <div class="col-12 col-xl-4 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Haltedauer ({{ ratioCompute.shortName }})
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Haltedauer (Einstieg bis Ausstieg). Zeigt, ob du mit kürzeren oder längeren Trades besser fährst."></i>
+                                        <h6>{{ t('dashboard.byDuration', { metric: ratioCompute.shortName }) }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byDurationTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="durationChart1" class="chartClass"></div>
                                     </div>
                                 </div>
 
+
+                                <!-- HEATMAP: WEEKDAY × HOUR -->
+                                <div class="col-12 mb-3">
+                                    <div class="dailyCard">
+                                        <h6>{{ t('dashboard.heatmapTitle') }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.heatmapTooltip')"></i>
+                                        </h6>
+                                        <div v-bind:key="renderData" id="heatmapChart1" class="chartClass" style="height: 280px;"></div>
+                                    </div>
+                                </div>
 
                                 <!-- SCATTER WINS
                                 <div class="col-12">
@@ -473,7 +576,7 @@ onBeforeMount(async () => {
                                     </div>
                                 </div>
 
-                                SCATTER LOSSES 
+                                SCATTER LOSSES
                                 <div class="col-12">
                                     <div class="dailyCard">
                                         <h6>Scatter Losses</h6>
@@ -494,8 +597,8 @@ onBeforeMount(async () => {
                                 <!-- TRADING PERFORMANCE CHART -->
                                 <div class="col-12 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Trading Performance
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="<b>PnL</b>: Gewinn/Verlust pro Trade<br><b>Equity</b>: Kumulative Equity-Kurve<br><b>High Water Mark</b>: Bisheriger Höchststand<br><b>Drawdown</b>: Rückgang vom Höchststand"></i>
+                                        <h6>{{ t('dashboard.tradingPerformance') }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.tradingPerformanceTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="perfChart1" class="chartClass" style="height: 550px;"></div>
                                     </div>
@@ -514,20 +617,118 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY POSITION -->
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Position ({{ ratioCompute.shortName }})
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Long/Short. Zeigt, ob du in eine Richtung besser tradest."></i>
+                                        <h6>{{ t('dashboard.byPosition', { metric: ratioCompute.shortName }) }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byPositionTooltip')"></i>
                                         </h6>
-                                        <div v-bind:key="renderData" id="positionChart1" class="chartClass"></div>
+                                        <div v-bind:key="renderData" id="positionChart1" class="chartClass" style="height: 160px !important;"></div>
                                     </div>
                                 </div>
 
                                 <!-- GROUP BY TAGS -->
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Strategie ({{ ratioCompute.shortName }})
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance gruppiert nach Strategie-Tags (erste Tag-Gruppe). Zeigt, welche Strategien profitabel sind."></i>
+                                        <h6>{{ t('dashboard.byStrategy', { metric: ratioCompute.shortName }) }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byStrategyTooltip')"></i>
                                         </h6>
-                                        <div v-bind:key="renderData" id="strategyChart1" class="chartClass"></div>
+                                        <div v-bind:key="renderData" id="strategyChart1" class="chartClass" style="height: 160px !important;"></div>
+                                    </div>
+                                </div>
+
+                                <!-- TRADE-TYP STATISTIK -->
+                                <div class="col-12 mb-3" v-if="tradeTypeStats.length > 0">
+                                    <div class="dailyCard">
+                                        <h6>{{ t('dashboard.tradeTypeStats') }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.tradeTypeStatsTooltip')"></i>
+                                        </h6>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-borderless trade-type-table mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>{{ t('dashboard.tradeType') }}</th>
+                                                        <th class="text-center">Trades</th>
+                                                        <th class="text-center">{{ t('dashboard.winRate') }}</th>
+                                                        <th class="text-end">∅ P&L</th>
+                                                        <th class="text-end">{{ t('dashboard.netPnl') }}</th>
+                                                        <th class="text-end">{{ t('options.profitFactor') }}</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-for="row in tradeTypeStats" :key="row.type">
+                                                        <td>
+                                                            <span class="trade-type-badge" :style="{ background: row.color }">{{ row.label }}</span>
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <span class="text-muted">{{ row.count }}</span>
+                                                            <span class="txt-small text-muted ms-1">({{ row.wins }}W / {{ row.losses }}L)</span>
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <div class="d-flex align-items-center justify-content-center gap-1">
+                                                                <div class="winrate-bar">
+                                                                    <div class="winrate-fill" :style="{ width: row.winRate + '%' }"></div>
+                                                                </div>
+                                                                <span class="txt-small" :class="row.winRate >= 50 ? 'greenTrade' : 'redTrade'">{{ row.winRate.toFixed(0) }}%</span>
+                                                            </div>
+                                                        </td>
+                                                        <td class="text-end" :class="row.avgPnl >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(row.avgPnl) }}</td>
+                                                        <td class="text-end fw-bold" :class="row.totalPnl >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(row.totalPnl) }}</td>
+                                                        <td class="text-end">
+                                                            <span :class="row.profitFactor >= 1 ? 'greenTrade' : 'redTrade'">
+                                                                {{ row.profitFactor === Infinity ? '∞' : useXDecFormat(row.profitFactor, 2) }}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- STRATEGIE-TAG STATISTIK -->
+                                <div class="col-12 mb-3" v-if="strategyTagStats.length > 0">
+                                    <div class="dailyCard">
+                                        <h6>{{ t('dashboard.strategyTagStats') }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.strategyTagStatsTooltip')"></i>
+                                        </h6>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-borderless trade-type-table mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>{{ t('dashboard.strategy') }}</th>
+                                                        <th class="text-center">Trades</th>
+                                                        <th class="text-center">{{ t('dashboard.winRate') }}</th>
+                                                        <th class="text-end">∅ P&L</th>
+                                                        <th class="text-end">{{ t('dashboard.netPnl') }}</th>
+                                                        <th class="text-end">{{ t('options.profitFactor') }}</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-for="row in strategyTagStats" :key="row.tagName">
+                                                        <td>
+                                                            <span class="trade-type-badge" :style="{ background: row.tagColor }">{{ row.tagName }}</span>
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <span class="text-muted">{{ row.count }}</span>
+                                                            <span class="txt-small text-muted ms-1">({{ row.wins }}W / {{ row.losses }}L)</span>
+                                                        </td>
+                                                        <td class="text-center">
+                                                            <div class="d-flex align-items-center justify-content-center gap-1">
+                                                                <div class="winrate-bar">
+                                                                    <div class="winrate-fill" :style="{ width: row.winRate + '%' }"></div>
+                                                                </div>
+                                                                <span class="txt-small" :class="row.winRate >= 50 ? 'greenTrade' : 'redTrade'">{{ row.winRate.toFixed(0) }}%</span>
+                                                            </div>
+                                                        </td>
+                                                        <td class="text-end" :class="row.avgPnl >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(row.avgPnl) }}</td>
+                                                        <td class="text-end fw-bold" :class="row.totalPnl >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(row.totalPnl) }}</td>
+                                                        <td class="text-end">
+                                                            <span :class="row.profitFactor >= 1 ? 'greenTrade' : 'redTrade'">
+                                                                {{ row.profitFactor === Infinity ? '∞' : useXDecFormat(row.profitFactor, 2) }}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -544,8 +745,8 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY SYMBOL -->
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Nach Symbol ({{ ratioCompute.shortName }})
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Performance pro Symbol, sortiert nach Profitabilität."></i>
+                                        <h6>{{ t('dashboard.bySymbol', { metric: ratioCompute.shortName }) }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.bySymbolTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="symbolChart1" class="chartClass"></div>
                                     </div>
@@ -576,8 +777,8 @@ onBeforeMount(async () => {
                                 <!-- FEES BY SYMBOL -->
                                 <div class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>Gebühren nach Symbol
-                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" data-bs-title="Gesamte Handelsgebühren (Kommissionen) pro Symbol. Zeigt, wo die meisten Kosten anfallen."></i>
+                                        <h6>{{ t('dashboard.feesBySymbol') }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.feesBySymbolTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="feesChart1" class="chartClass"></div>
                                     </div>

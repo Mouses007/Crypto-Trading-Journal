@@ -16,7 +16,11 @@ import { useUpdatePendingCounts, useStartGlobalPolling, useStopGlobalPolling } f
 import { useGetAvailableTags } from '../utils/daily.js'
 import { requestNotificationPermission, sendNotification } from '../utils/notify'
 import { logWarn } from '../utils/logger.js'
+import { setLocale } from '../i18n'
+import i18n from '../i18n'
 import axios from 'axios'
+
+const _t = (key, named) => i18n.global.t(key, named)
 
 /*========================================
   Functions used on all Dashboard components
@@ -24,6 +28,8 @@ import axios from 'axios'
 onBeforeMount(async () => {
   usePageId()
   await useInitParse()
+  // Sync language from DB settings to i18n
+  setLocale(currentUser.value?.language || 'de')
   useGetTimeZone()
   await useGetPeriods()
   await useSetValues()
@@ -71,7 +77,7 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
           const res = await axios.get('/api/ai/reports')
           if (res.data.length > aiReportCountBefore.value) {
             // Neuer Report gefunden — Benachrichtigung senden und Polling stoppen
-            sendNotification('KI-Bericht fertig', `Bericht für ${aiReportLabel.value || 'Zeitraum'} wurde erstellt.`)
+            sendNotification(_t('notifications.reportReady'), _t('notifications.reportCreated', { label: aiReportLabel.value || 'Zeitraum' }))
             aiReportGenerating.value = false
             clearInterval(aiPollInterval)
             aiPollInterval = null

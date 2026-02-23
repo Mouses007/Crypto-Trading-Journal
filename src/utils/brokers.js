@@ -6,6 +6,7 @@ import { selectedBroker } from "../stores/filters.js"
 /* MODULES */
 import dayjs from './dayjs-setup.js'
 import Papa from 'papaparse'
+import i18n from '../i18n'
 
 /**
  * Parse Bitunix CSV export.
@@ -97,7 +98,7 @@ export async function useBrokerBitget(csvInput) {
             tradesData.length = 0
 
             if (parsed.data.length === 0) {
-                reject("Keine Daten in der CSV-Datei gefunden")
+                reject(i18n.global.t('addTrades.noCsvData'))
                 return
             }
 
@@ -170,7 +171,7 @@ export async function useBrokerBitget(csvInput) {
             })
 
             if (tradesData.length === 0) {
-                reject("Keine gültigen Trades in der Bitget CSV gefunden")
+                reject(i18n.global.t('addTrades.noValidBitgetTrades'))
                 return
             }
 

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import axios from 'axios'
 import DashboardLayout from '../layouts/Dashboard.vue'
+import i18n from '../i18n'
 
 const router = createRouter({
     history: createWebHistory(
@@ -13,7 +14,7 @@ const router = createRouter({
         path: '/setup',
         name: 'setup',
         meta: {
-            title: "Setup",
+            title: "Setup", titleKey: "nav.setup",
             skipSetupCheck: true
         },
         component: () =>
@@ -23,7 +24,7 @@ const router = createRouter({
         path: '/dashboard',
         name: 'dashboard',
         meta: {
-            title: "Dashboard",
+            title: "Dashboard", titleKey: "nav.dashboard",
             layout: DashboardLayout
         },
         component: () =>
@@ -33,7 +34,7 @@ const router = createRouter({
         path: '/calendar',
         name: 'calendar',
         meta: {
-            title: "Calendar",
+            title: "Calendar", titleKey: "nav.calendar",
             layout: DashboardLayout
         },
         component: () =>
@@ -43,7 +44,7 @@ const router = createRouter({
         path: '/daily',
         name: 'daily',
         meta: {
-            title: "Daily",
+            title: "Daily", titleKey: "nav.dailyView",
             layout: DashboardLayout
         },
         component: () =>
@@ -53,7 +54,7 @@ const router = createRouter({
         path: '/incoming',
         name: 'incoming',
         meta: {
-            title: "Pendente Trades",
+            title: "Pendente Trades", titleKey: "nav.pendingTrades",
             layout: DashboardLayout
         },
         component: () =>
@@ -67,7 +68,7 @@ const router = createRouter({
         path: '/screenshots',
         name: 'screenshots',
         meta: {
-            title: "Screenshots",
+            title: "Screenshots", titleKey: "nav.screenshots",
             layout: DashboardLayout
         },
         component: () =>
@@ -77,7 +78,7 @@ const router = createRouter({
         path: '/playbook',
         name: 'playbook',
         meta: {
-            title: "Playbook",
+            title: "Playbook", titleKey: "nav.playbook",
             layout: DashboardLayout
         },
         component: () =>
@@ -87,7 +88,7 @@ const router = createRouter({
         path: '/auswertung',
         name: 'auswertung',
         meta: {
-            title: "Auswertung",
+            title: "Auswertung", titleKey: "nav.evaluation",
             layout: DashboardLayout
         },
         component: () =>
@@ -97,7 +98,7 @@ const router = createRouter({
         path: '/ki-agent',
         name: 'kiAgent',
         meta: {
-            title: "KI-Agent",
+            title: "KI-Agent", titleKey: "nav.kiAgent",
             layout: DashboardLayout
         },
         component: () =>
@@ -107,7 +108,7 @@ const router = createRouter({
         path: '/addTrades',
         name: 'addTrades',
         meta: {
-            title: "Manueller Trade Import",
+            title: "Manueller Trade Import", titleKey: "nav.manualImport",
             layout: DashboardLayout
         },
         component: () =>
@@ -130,7 +131,7 @@ const router = createRouter({
         path: '/addExcursions',
         name: 'addExcursions',
         meta: {
-            title: "Add Excursions",
+            title: "Add Excursions", titleKey: "nav.addExcursions",
             layout: DashboardLayout
         },
         component: () =>
@@ -140,7 +141,7 @@ const router = createRouter({
         path: '/settings',
         name: 'settings',
         meta: {
-            title: "Settings",
+            title: "Settings", titleKey: "nav.settings",
             layout: DashboardLayout
         },
         component: () =>
@@ -158,9 +159,10 @@ let setupChecked = false
 let setupComplete = false
 
 router.beforeEach(async (to, from, next) => {
-    const title = to.meta.title
-    if (title) {
-        document.title = title
+    if (to.meta.titleKey) {
+        document.title = i18n.global.t(to.meta.titleKey)
+    } else if (to.meta.title) {
+        document.title = to.meta.title
     }
 
     // Setup-Seite selbst braucht keinen Check

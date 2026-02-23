@@ -19,7 +19,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(sessionCookieMiddleware)
 app.use('/api', apiAuthMiddleware)
 
-const port = process.env.CTJ_PORT || 8080;
+const port = process.env.CTJ_PORT || process.env.PORT || 8080;
 const host = process.env.CTJ_HOST || '127.0.0.1'; // Default: nur lokal erreichbar
 const PROXY_PORT = 39482;
 

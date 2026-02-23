@@ -363,6 +363,9 @@ async function runMigrations(knex, client) {
     // Entry screenshot (migrate from screenshotId)
     await addColumnIfNotExists('incoming_positions', 'entryScreenshotId', (t) => t.text('entryScreenshotId').defaultTo(''))
 
+    // Trade type (scalp, day, swing)
+    await addColumnIfNotExists('incoming_positions', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
+
     // tags: closingTags for separate opening/closing tag storage
     await addColumnIfNotExists('tags', 'closingTags', (t) => t.text('closingTags').defaultTo('[]'))
 
@@ -408,6 +411,12 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('notes', 'closingFeelings', (t) => t.text('closingFeelings').defaultTo(''))
     await addColumnIfNotExists('notes', 'closingTimeframe', (t) => t.text('closingTimeframe').defaultTo(''))
     await addColumnIfNotExists('notes', 'closingPlaybook', (t) => t.text('closingPlaybook').defaultTo(''))
+
+    // Trade type (scalp, day, swing)
+    await addColumnIfNotExists('notes', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
+
+    // Trading metadata (SL/TP, BE, fills, position size — JSON)
+    await addColumnIfNotExists('notes', 'tradingMetadata', (t) => t.text('tradingMetadata').defaultTo(''))
 
     // AI trade review columns for notes
     await addColumnIfNotExists('notes', 'aiReview', (t) => t.text('aiReview').defaultTo(''))
@@ -465,6 +474,9 @@ async function runMigrations(knex, client) {
 
     // ==================== SETTINGS: BALANCES (per broker) ====================
     await addColumnIfNotExists('settings', 'balances', (t) => t.text('balances').defaultTo('{}'))
+
+    // ==================== SETTINGS: LANGUAGE ====================
+    await addColumnIfNotExists('settings', 'language', (t) => t.text('language').defaultTo('de'))
 
     // ==================== SEED: Default Tag Groups ====================
     // Ensure the mandatory "Strategie" tag group exists (required by charts/dashboard).

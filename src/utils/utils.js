@@ -14,6 +14,8 @@ import { useStartOfDay } from './formatters.js'
 import { dbGetSettings, dbUpdateSettings } from './db.js'
 import dayjs from './dayjs-setup.js'
 import axios from 'axios'
+import i18n from '../i18n'
+const _t = (key) => i18n.global.t(key)
 
 /**************************************
 * INITS
@@ -197,62 +199,62 @@ export async function useGetPeriods() {
     return new Promise((resolve, reject) => {
         let temp = [{
             value: "all",
-            label: "Gesamt",
+            label: _t('options.total'),
             start: 0,
             end: 0
         }, {
             value: "thisWeek",
-            label: "Diese Woche",
+            label: _t('options.thisWeek'),
             start: Number(dayjs().tz(timeZoneTrade.value).startOf('week').add(1, 'day').unix()), // we need to transform as number because later it's stringified and this becomes date format and note unix format
             end: Number(dayjs().tz(timeZoneTrade.value).endOf('week').add(1, 'day').unix())
         }, {
             value: "lastWeek",
-            label: "Letzte Woche",
+            label: _t('options.lastWeek'),
             start: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'week').startOf('week').add(1, 'day').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'week').endOf('week').add(1, 'day').unix())
         }, {
             value: "lastWeekTilNow",
-            label: "Letzte Woche bis jetzt",
+            label: _t('options.lastWeekTilNow'),
             start: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'week').startOf('week').add(1, 'day').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).endOf('week').add(1, 'day').unix())
         }, {
             value: "thisMonth",
-            label: "Dieser Monat",
+            label: _t('options.thisMonth'),
             start: Number(dayjs().tz(timeZoneTrade.value).startOf('month').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).endOf('month').unix())
         }, {
             value: "lastMonth",
-            label: "Letzter Monat",
+            label: _t('options.lastMonth'),
             start: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'month').startOf('month').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'month').endOf('month').unix())
         }, {
             value: "lastMonthTilNow",
-            label: "Letzter Monat bis jetzt",
+            label: _t('options.lastMonthTilNow'),
             start: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'month').startOf('month').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).endOf('month').unix())
         }, {
             value: "lastThreeMonths",
-            label: "Letzte drei Monate",
+            label: _t('options.lastThreeMonths'),
             start: Number(dayjs().tz(timeZoneTrade.value).subtract(3, 'month').startOf('month').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'month').endOf('month').unix())
         }, {
             value: "lastThreeMonthsTilNow",
-            label: "Letzte drei Monate bis jetzt",
+            label: _t('options.lastThreeMonthsTilNow'),
             start: Number(dayjs().tz(timeZoneTrade.value).subtract(3, 'month').startOf('month').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).endOf('month').unix())
         }, {
             value: "thisYear",
-            label: "Dieses Jahr",
+            label: _t('options.thisYear'),
             start: Number(dayjs().tz(timeZoneTrade.value).startOf('year').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).endOf('year').unix())
         }, {
             value: "lastYear",
-            label: "Letztes Jahr",
+            label: _t('options.lastYear'),
             start: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'year').startOf('year').unix()),
             end: Number(dayjs().tz(timeZoneTrade.value).subtract(1, 'year').endOf('year').unix())
         }, {
             value: "custom",
-            label: "Benutzerdefiniert",
+            label: _t('options.custom'),
             start: -1,
             end: -1
         }]

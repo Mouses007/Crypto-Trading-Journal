@@ -10,6 +10,8 @@ import { useGetAPIS, usePageRedirect } from '../utils/utils';
 import { useGetTrades } from '../utils/trades';
 import { useGetOHLCV, useGetMFEPrices, useUpdateMfePrices } from '../utils/addTrades';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 /* MODULES */
 import dayjs from '../utils/dayjs-setup.js'
 
@@ -137,32 +139,32 @@ const updateMFEPrices = async () => {
 
                 <div>
                     <p style="display: inline-flex; align-items: center; flex-wrap: wrap;">
-                        Für die letzten
+                        {{ t('excursions.forLastDays') }}
                         <input type="number" class="form-control ms-2 me-2 inputText" v-model="daysBack"
                             v-on:input="checkMFEDates()" />
-                        Tage mit einem
+                        {{ t('excursions.daysWithBuffer') }}
                         <input type="number" class="form-control ms-2 me-2 inputText" v-model="daysMargin"
                             v-on:input="checkMFEDates()" style="width: 70px;vertical-align: baseline;" />
-                            Tag
+                            {{ t('excursions.dayBuffer') }}
                         <span v-if="daysMargin > 1" class="me-1">e</span><span v-else class="me-1"></span>
-                        Puffer,
-                        <span v-if="dateArray.length > 0">fehlen die MFE-Preise für folgende
-                            Daten: <span v-for="(item, index) in dateArray">
+                        {{ t('excursions.buffer') }}
+                        <span v-if="dateArray.length > 0">{{ t('excursions.missingMfeDates') }}
+                            <span v-for="(item, index) in dateArray">
                                 <span v-if="index > 0">, </span>{{ useDateCalFormat(item) }}</span></span>
-                        <span v-else class="ms-1">alle MFE-Preise sind aktuell.</span>
+                        <span v-else class="ms-1">{{ t('excursions.allUpToDate') }}</span>
                     </p>
                 </div>
 
                 <!--BUTTONS-->
 
                 <button v-show="dateArray.length > 0 && !spinnerLoadingPage" type="button" v-on:click="updateMFEPrices"
-                    class="btn btn-success btn-lg me-3">Hinzufügen</button>
+                    class="btn btn-success btn-lg me-3">{{ t('excursions.add') }}</button>
 
                 <button type="cancel" onclick="location.href = 'dashboard';"
-                    class="btn btn-outline-secondary btn-sm me-2">Abbrechen</button>
+                    class="btn btn-outline-secondary btn-sm me-2">{{ t('common.cancel') }}</button>
 
             </div>
-            <div v-else>Um MFE-Preise automatisch hinzuzufügen, trage deinen API-Schlüssel in den <a href="/settings">Einstellungen</a> ein.</div>
+            <div v-else v-html="t('excursions.configureApiKey', { link: '<a href=\'/settings\'>' + t('nav.settings') + '</a>' })"></div>
 
         </div>
     </div>

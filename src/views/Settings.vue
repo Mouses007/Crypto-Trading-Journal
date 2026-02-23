@@ -11,6 +11,20 @@ import { requestNotificationPermission } from '../utils/notify'
 import { logWarn } from '../utils/logger.js'
 import { useQuickApiImport } from '../utils/quickImport.js'
 import { sendNotification } from '../utils/notify.js'
+import { useI18n } from 'vue-i18n'
+import { setLocale } from '../i18n'
+import { useGetPeriods } from '../utils/utils.js'
+
+const { t } = useI18n()
+
+let selectedLanguage = ref('de')
+
+async function changeLanguage(lang) {
+    setLocale(lang)
+    await dbUpdateSettings({ language: lang })
+    currentUser.value.language = lang
+    await useGetPeriods()
+}
 
 let profileAvatar = null
 let username = ref('')
@@ -33,6 +47,7 @@ let bitgetSubExpanded = ref(false)
 let showTradePopups = ref(true)
 let enableBinanceChart = ref(false)
 let browserNotifications = ref(true)
+let languageExpanded = ref(false)
 let importsExpanded = ref(false)
 let layoutExpanded = ref(false)
 let balanceExpanded = ref(false)
@@ -76,17 +91,17 @@ let aiTestLoading = ref(false)
 let aiTestResult = ref(null)
 let ollamaModels = ref([])
 
-const promptPresets = [
-    { value: 'custom', label: 'Eigener Prompt', prompt: '' },
-    { value: 'kurz', label: 'Kurz & knapp', prompt: 'Halte den Bericht kurz und prägnant. Maximal 3-4 Sätze pro Abschnitt. Fokussiere dich auf die wichtigsten Erkenntnisse.' },
-    { value: 'coach', label: 'Strenger Coach', prompt: 'Sei sehr direkt und kritisch. Beschönige nichts. Sprich Schwächen und Fehler klar an. Gib konkrete Verbesserungsvorschläge wie ein strenger Trading-Coach.' },
-    { value: 'anfaenger', label: 'Anfänger-freundlich', prompt: 'Erkläre alle Kennzahlen und Begriffe einfach und verständlich. Gib grundlegende Trading-Tipps. Verwende eine ermutigende Sprache.' },
-    { value: 'psychologie', label: 'Psychologie-Fokus', prompt: 'Lege besonderen Fokus auf die psychologischen Aspekte: Stress, Emotionen, Disziplin, Overtrading. Analysiere Verhaltensmuster und emotionale Trigger.' },
-    { value: 'risiko', label: 'Risiko-Analyse', prompt: 'Fokussiere dich auf Risikomanagement: Positionsgrößen, Risk/Reward, Drawdowns, maximale Verlustserien. Bewerte die Risikokontrolle kritisch.' }
-]
+const promptPresets = computed(() => [
+    { value: 'custom', label: t('settings.promptCustom'), prompt: '' },
+    { value: 'kurz', label: t('settings.promptShort'), prompt: 'Halte den Bericht kurz und prägnant. Maximal 3-4 Sätze pro Abschnitt. Fokussiere dich auf die wichtigsten Erkenntnisse.' },
+    { value: 'coach', label: t('settings.promptCoach'), prompt: 'Sei sehr direkt und kritisch. Beschönige nichts. Sprich Schwächen und Fehler klar an. Gib konkrete Verbesserungsvorschläge wie ein strenger Trading-Coach.' },
+    { value: 'anfaenger', label: t('settings.promptBeginner'), prompt: 'Erkläre alle Kennzahlen und Begriffe einfach und verständlich. Gib grundlegende Trading-Tipps. Verwende eine ermutigende Sprache.' },
+    { value: 'psychologie', label: t('settings.promptPsychology'), prompt: 'Lege besonderen Fokus auf die psychologischen Aspekte: Stress, Emotionen, Disziplin, Overtrading. Analysiere Verhaltensmuster und emotionale Trigger.' },
+    { value: 'risiko', label: t('settings.promptRisk'), prompt: 'Fokussiere dich auf Risikomanagement: Positionsgrößen, Risk/Reward, Drawdowns, maximale Verlustserien. Bewerte die Risikokontrolle kritisch.' }
+])
 
 function onPromptPresetChange() {
-    const preset = promptPresets.find(p => p.value === aiReportPromptPreset.value)
+    const preset = promptPresets.value.find(p => p.value === aiReportPromptPreset.value)
     if (preset && preset.value !== 'custom') {
         aiReportPrompt.value = preset.prompt
     }
@@ -149,12 +164,12 @@ async function saveAiSettings() {
         currentUser.value.aiTemperature = aiTemperature.value
         currentUser.value.aiMaxTokens = aiMaxTokens.value
         console.log(' -> KI-Einstellungen gespeichert')
-        aiTestResult.value = { success: true, message: 'Gespeichert!' }
+        aiTestResult.value = { success: true, message: t('common.saved') }
         setTimeout(() => aiTestResult.value = null, 3000)
         // Maskierte Keys neu laden
         await loadAiSettings()
     } catch (error) {
-        alert('Fehler beim Speichern: ' + error.message)
+        alert(t('common.errorSaving') + error.message)
     }
 }
 
@@ -204,12 +219,12 @@ async function loadAiSettings() {
         aiChatEnabled.value = s.aiChatEnabled !== false
         aiReportPrompt.value = s.aiReportPrompt || ''
         // Preset erkennen — Standard: "Kurz & knapp" wenn kein Prompt gespeichert
-        const matchedPreset = promptPresets.find(p => p.value !== 'custom' && p.prompt === aiReportPrompt.value)
+        const matchedPreset = promptPresets.value.find(p => p.value !== 'custom' && p.prompt === aiReportPrompt.value)
         if (matchedPreset) {
             aiReportPromptPreset.value = matchedPreset.value
         } else if (!aiReportPrompt.value) {
             aiReportPromptPreset.value = 'kurz'
-            aiReportPrompt.value = promptPresets.find(p => p.value === 'kurz').prompt
+            aiReportPrompt.value = promptPresets.value.find(p => p.value === 'kurz').prompt
         } else {
             aiReportPromptPreset.value = 'custom'
         }
@@ -271,7 +286,7 @@ async function saveDbConfig() {
         const res = await axios.put('/api/db-config', data)
         dbSaveResult.value = { ok: true, message: res.data.message }
     } catch (e) {
-        dbSaveResult.value = { ok: false, message: 'Fehler: ' + e.message }
+        dbSaveResult.value = { ok: false, message: t('common.errorPrefix') + e.message }
     }
 }
 
@@ -296,7 +311,7 @@ async function restartServer() {
         }
     }
     dbRestartLoading.value = false
-    dbSaveResult.value = { ok: false, message: 'Server antwortet nicht. Bitte manuell neu starten.' }
+    dbSaveResult.value = { ok: false, message: t('common.serverNotResponding') }
 }
 
 async function exportDb() {
@@ -311,9 +326,9 @@ async function exportDb() {
         a.download = `tradejournal-backup-${new Date().toISOString().slice(0,10)}.json`
         a.click()
         URL.revokeObjectURL(url)
-        dbMigrationResult.value = { ok: true, message: 'Export erfolgreich heruntergeladen.' }
+        dbMigrationResult.value = { ok: true, message: t('settings.exportSuccess') }
     } catch (e) {
-        dbMigrationResult.value = { ok: false, message: 'Export fehlgeschlagen: ' + e.message }
+        dbMigrationResult.value = { ok: false, message: t('settings.exportFailed') + e.message }
     }
     dbExportLoading.value = false
 }
@@ -336,12 +351,12 @@ async function importDb() {
             })
             if (res.data.ok) {
                 const counts = Object.entries(res.data.imported).map(([t, n]) => `${t}: ${n}`).join(', ')
-                dbMigrationResult.value = { ok: true, message: `Import erfolgreich! ${counts}` }
+                dbMigrationResult.value = { ok: true, message: t('settings.importSuccess', { counts }) }
             } else {
-                dbMigrationResult.value = { ok: false, message: res.data.error || 'Import fehlgeschlagen' }
+                dbMigrationResult.value = { ok: false, message: res.data.error || t('settings.importFailed') }
             }
         } catch (e) {
-            dbMigrationResult.value = { ok: false, message: 'Import fehlgeschlagen: ' + e.message }
+            dbMigrationResult.value = { ok: false, message: t('settings.importFailed') + ': ' + e.message }
         }
         dbImportLoading.value = false
     }
@@ -425,9 +440,9 @@ async function saveBitunixConfig() {
             data.secretKey = bitunixSecretKey.value
         }
         await axios.post('/api/bitunix/config', data)
-        alert('Bitunix API Einstellungen gespeichert')
+        alert(t('settings.bitunixSaved'))
     } catch (error) {
-        alert('Error saving Bitunix config: ' + error.message)
+        alert(t('settings.savingConfigError') + error.message)
     }
 }
 
@@ -476,7 +491,7 @@ async function saveBitgetConfig() {
             data.passphrase = bitgetPassphrase.value
         }
         await axios.post('/api/bitget/config', data)
-        alert('Bitget API Einstellungen gespeichert')
+        alert(t('settings.bitgetSaved'))
 
         // Auto-trigger historical import if start date is set
         if (bitgetImportStartDate.value) {
@@ -484,18 +499,18 @@ async function saveBitgetConfig() {
             try {
                 const result = await useQuickApiImport('bitget')
                 if (result.count > 0) {
-                    sendNotification('Bitget Import', result.message || `${result.count} Tage importiert.`)
+                    sendNotification('Bitget Import', result.message || t('messages.importCount', { count: result.count }))
                 } else {
-                    sendNotification('Bitget Import', result.message || 'Keine neuen Trades gefunden.')
+                    sendNotification('Bitget Import', result.message || t('messages.noNewTrades'))
                 }
             } catch (importError) {
                 console.log(' -> Bitget auto-import error:', importError.message)
-                sendNotification('Bitget Import', 'Import fehlgeschlagen: ' + (importError.response?.data?.error || importError.message))
+                sendNotification('Bitget Import', t('messages.importFailed') + (importError.response?.data?.error || importError.message))
             }
             bitgetImporting.value = false
         }
     } catch (error) {
-        alert('Error saving Bitget config: ' + error.message)
+        alert(t('settings.savingConfigError') + error.message)
     }
 }
 
@@ -511,11 +526,11 @@ async function testBitgetConnection() {
             bitgetTestResult.value = 'success'
         } else {
             bitgetTestResult.value = 'error'
-            bitgetTestError.value = response.data.error || 'Unbekannter Fehler'
+            bitgetTestError.value = response.data.error || t('settings.unknownError')
         }
     } catch (error) {
         bitgetTestResult.value = 'error'
-        bitgetTestError.value = error.response?.data?.error || error.message || 'Verbindung fehlgeschlagen'
+        bitgetTestError.value = error.response?.data?.error || error.message || t('common.connectionFailed')
     }
     bitgetTestLoading.value = false
 }
@@ -913,20 +928,20 @@ async function saveTimeframes() {
 
 // Timeframe-Gruppen für die Anzeige
 const timeframeGroups = computed(() => {
-    const groups = ['Minuten', 'Stunden', 'Tage']
-    if (customTimeframes.length > 0) groups.push('Eigene')
+    const groups = [t('timeframes.minutes'), t('timeframes.hours'), t('timeframes.days')]
+    if (customTimeframes.length > 0) groups.push(t('timeframes.custom'))
     return groups
 })
 function timeframesByGroup(group) {
-    if (group === 'Eigene') return customTimeframes
-    return allTradeTimeframes.filter(tf => tf.group === group)
+    if (group === t('timeframes.custom')) return customTimeframes
+    return allTradeTimeframes.value.filter(tf => tf.group === group)
 }
 function addCustomTimeframe() {
     const label = newCustomTf.value.trim()
     if (!label) return
     const value = 'custom_' + label.replace(/\s+/g, '_').toLowerCase()
-    if (allTradeTimeframes.some(tf => tf.value === value) || customTimeframes.some(tf => tf.value === value)) return
-    customTimeframes.push({ value, label, group: 'Eigene' })
+    if (allTradeTimeframes.value.some(tf => tf.value === value) || customTimeframes.some(tf => tf.value === value)) return
+    customTimeframes.push({ value, label, group: 'custom' })
     localTimeframes.add(value)
     newCustomTf.value = ''
     saveTimeframes()
@@ -958,6 +973,7 @@ onBeforeMount(async () => {
         currentBalance.value = ''
         showTradePopups.value = settings.showTradePopups !== 0
         enableBinanceChart.value = settings.enableBinanceChart === 1
+        selectedLanguage.value = settings.language || 'de'
         browserNotifications.value = settings.browserNotifications !== 0
         // Timeframes laden
         const saved = settings.tradeTimeframes || []
@@ -969,7 +985,7 @@ onBeforeMount(async () => {
         customTimeframes.splice(0)
         const savedCustom = settings.customTimeframes || []
         if (Array.isArray(savedCustom)) {
-            savedCustom.forEach(tf => customTimeframes.push({ value: tf.value, label: tf.label, group: 'Eigene' }))
+            savedCustom.forEach(tf => customTimeframes.push({ value: tf.value, label: tf.label, group: 'custom' }))
         }
     } catch (error) {
         console.log(' -> Error loading settings:', error)
@@ -1019,36 +1035,47 @@ onBeforeMount(async () => {
                 <!--=============== Layout & Style ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="layoutExpanded = !layoutExpanded">
                     <i class="uil me-2" :class="layoutExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Layout & Stil</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.layoutAndStyle') }}</p>
                 </div>
 
                 <div v-show="layoutExpanded" class="row align-items-center mt-2">
 
-                    <!-- Username -->
+                    <!-- Sprache / Language -->
                     <div class="col-12 col-md-4">
-                        Benutzername
+                        {{ t('settings.languageLabel') }}
                     </div>
                     <div class="col-12 col-md-8">
-                        <input type="text" class="form-control" v-model="username" placeholder="Dein Name..." />
+                        <select class="form-select" v-model="selectedLanguage" @change="changeLanguage(selectedLanguage)">
+                            <option value="de">Deutsch</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+
+                    <!-- Username -->
+                    <div class="col-12 col-md-4 mt-2">
+                        {{ t('settings.username') }}
+                    </div>
+                    <div class="col-12 col-md-8">
+                        <input type="text" class="form-control" v-model="username" :placeholder="t('settings.usernamePlaceholder')" />
                     </div>
 
                     <!-- Profile Picture -->
                     <div class="col-12 col-md-4 mt-2">
-                        Profilbild
+                        {{ t('settings.profilePicture') }}
                     </div>
                     <div class="col-12 col-md-8 mt-2">
                         <div class="d-flex align-items-center gap-2 mb-2">
                             <img v-if="currentUser?.avatar" :src="currentUser.avatar" class="rounded-circle" style="width: 40px; height: 40px; object-fit: cover;" />
                             <img v-else src="../assets/icon.png" class="rounded-circle" style="width: 40px; height: 40px; object-fit: cover;" />
                             <button v-if="currentUser?.avatar" type="button" class="btn btn-outline-danger btn-sm" @click="deleteAvatar">
-                                <i class="uil uil-trash-alt me-1"></i>Entfernen
+                                <i class="uil uil-trash-alt me-1"></i>{{ t('common.remove') }}
                             </button>
                         </div>
                         <input type="file" @change="uploadProfileAvatar" />
                     </div>
 
                     <div class="col-12 mt-3 mb-3">
-                        <button type="button" v-on:click="updateProfile" class="btn btn-success">Speichern</button>
+                        <button type="button" v-on:click="updateProfile" class="btn btn-success">{{ t('common.save') }}</button>
                     </div>
                 </div>
 
@@ -1057,26 +1084,26 @@ onBeforeMount(async () => {
                 <!--=============== KONTOSTAND ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="balanceExpanded = !balanceExpanded">
                     <i class="uil me-2" :class="balanceExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Kontostand</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.balance') }}</p>
                 </div>
                 <div v-show="balanceExpanded" class="mt-2 row align-items-center">
-                    <p class="fw-lighter">Dashboard-Kontostand = Start-Einzahlung + alle Trade-Ergebnisse. Klicke <strong>Von API berechnen</strong> um die Start-Einzahlung automatisch aus deinem <strong>{{ (selectedBroker || 'bitunix').charAt(0).toUpperCase() + (selectedBroker || 'bitunix').slice(1) }}</strong>-Kontostand zurückzurechnen.</p>
+                    <p class="fw-lighter" v-html="t('settings.balanceDescription', { broker: (selectedBroker || 'bitunix').charAt(0).toUpperCase() + (selectedBroker || 'bitunix').slice(1) })"></p>
                     <div class="row mt-2">
-                        <div class="col-12 col-md-4">Start-Einzahlung (USDT)</div>
+                        <div class="col-12 col-md-4">{{ t('settings.startDeposit') }}</div>
                         <div class="col-12 col-md-8">
                             <div class="input-group">
-                                <input type="number" class="form-control" v-model="startBalance" placeholder="z.B. 1000" step="0.01" />
+                                <input type="number" class="form-control" v-model="startBalance" :placeholder="t('settings.startDepositPlaceholder')" step="0.01" />
                                 <button type="button" class="btn btn-outline-primary" @click="loadBalanceFromApi" :disabled="balanceLoading">
                                     <span v-if="balanceLoading" class="spinner-border spinner-border-sm" style="width: 0.7rem; height: 0.7rem;"></span>
-                                    <span v-else><i class="uil uil-cloud-download me-1"></i>Von API berechnen</span>
+                                    <span v-else><i class="uil uil-cloud-download me-1"></i>{{ t('settings.calculateFromApi') }}</span>
                                 </button>
                             </div>
-                            <small v-if="apiBalanceValue !== null" class="text-success">API-Balance: {{ apiBalanceValue.toFixed(2) }} USDT</small>
-                            <small v-else class="text-muted">Manuell eingeben oder automatisch von der API berechnen lassen.</small>
+                            <small v-if="apiBalanceValue !== null" class="text-success">{{ t('settings.apiBalance', { value: apiBalanceValue.toFixed(2) }) }}</small>
+                            <small v-else class="text-muted">{{ t('settings.manualOrApi') }}</small>
                         </div>
                     </div>
                     <div class="mt-3 mb-3">
-                        <button type="button" v-on:click="saveBalances" class="btn btn-success">Speichern</button>
+                        <button type="button" v-on:click="saveBalances" class="btn btn-success">{{ t('common.save') }}</button>
                     </div>
                 </div>
 
@@ -1085,10 +1112,10 @@ onBeforeMount(async () => {
                 <!--=============== API ANBINDUNG ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="apiExpanded = !apiExpanded">
                     <i class="uil me-2" :class="apiExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">API Anbindung</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.apiConnection') }}</p>
                 </div>
                 <div v-show="apiExpanded" class="mt-2">
-                    <p class="fw-lighter">Verbinde deine Börsen-Konten, um Trades automatisch zu importieren.</p>
+                    <p class="fw-lighter">{{ t('settings.apiConnectionDescription') }}</p>
 
                     <!-- BITUNIX -->
                     <div class="mb-3" style="border: var(--border-subtle); border-radius: var(--border-radius); overflow: hidden;">
@@ -1096,36 +1123,36 @@ onBeforeMount(async () => {
                             style="background-color: var(--black-bg-5);">
                             <i class="uil me-2" :class="bitunixSubExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                             <strong>Bitunix</strong>
-                            <span v-if="bitunixApiKey" class="ms-2 badge bg-success" style="font-size: 0.65rem;">Konfiguriert</span>
+                            <span v-if="bitunixApiKey" class="ms-2 badge bg-success" style="font-size: 0.65rem;">{{ t('common.configured') }}</span>
                         </div>
                         <div v-show="bitunixSubExpanded" class="row align-items-center px-3 py-3">
                             <div class="row mt-1">
                                 <div class="col-12 col-md-4">API Key</div>
                                 <div class="col-12 col-md-8">
-                                    <input type="text" class="form-control" v-model="bitunixApiKey" placeholder="API Key eingeben" />
+                                    <input type="text" class="form-control" v-model="bitunixApiKey" :placeholder="t('settings.apiKeyPlaceholder')" />
                                 </div>
                             </div>
                             <div class="row mt-2">
                                 <div class="col-12 col-md-4">Secret Key</div>
                                 <div class="col-12 col-md-8">
-                                    <input type="password" class="form-control" v-model="bitunixSecretKey" placeholder="Secret Key eingeben" />
+                                    <input type="password" class="form-control" v-model="bitunixSecretKey" :placeholder="t('settings.secretKeyPlaceholder')" />
                                 </div>
                             </div>
                             <div class="row mt-2">
-                                <div class="col-12 col-md-4">Import ab Datum</div>
+                                <div class="col-12 col-md-4">{{ t('settings.importFromDate') }}</div>
                                 <div class="col-12 col-md-8">
                                     <input type="date" class="form-control" v-model="bitunixImportStartDate" />
-                                    <small class="text-muted">Trades vor diesem Datum werden ignoriert. Leer = alle Trades.</small>
+                                    <small class="text-muted">{{ t('settings.importFromDateHint') }}</small>
                                 </div>
                             </div>
                             <div class="mt-3">
-                                <button type="button" v-on:click="saveBitunixConfig" class="btn btn-success me-2">Speichern</button>
+                                <button type="button" v-on:click="saveBitunixConfig" class="btn btn-success me-2">{{ t('common.save') }}</button>
                                 <button type="button" v-on:click="testBitunixConnection" class="btn btn-outline-primary" :disabled="bitunixTestLoading">
                                     <span v-if="bitunixTestLoading">Testing...</span>
-                                    <span v-else>Verbindung testen</span>
+                                    <span v-else>{{ t('common.testConnection') }}</span>
                                 </button>
-                                <span v-if="bitunixTestResult === 'success'" class="ms-2 text-success">Verbunden</span>
-                                <span v-if="bitunixTestResult === 'error'" class="ms-2 text-danger">Verbindung fehlgeschlagen</span>
+                                <span v-if="bitunixTestResult === 'success'" class="ms-2 text-success">{{ t('common.connected') }}</span>
+                                <span v-if="bitunixTestResult === 'error'" class="ms-2 text-danger">{{ t('common.connectionFailed') }}</span>
                             </div>
                         </div>
                     </div>
@@ -1136,46 +1163,46 @@ onBeforeMount(async () => {
                             style="background-color: var(--black-bg-5);">
                             <i class="uil me-2" :class="bitgetSubExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                             <strong>Bitget</strong>
-                            <span v-if="bitgetApiKey" class="ms-2 badge bg-success" style="font-size: 0.65rem;">Konfiguriert</span>
+                            <span v-if="bitgetApiKey" class="ms-2 badge bg-success" style="font-size: 0.65rem;">{{ t('common.configured') }}</span>
                         </div>
                         <div v-show="bitgetSubExpanded" class="row align-items-center px-3 py-3">
                             <div class="row mt-1">
                                 <div class="col-12 col-md-4">API Key</div>
                                 <div class="col-12 col-md-8">
-                                    <input type="text" class="form-control" v-model="bitgetApiKey" placeholder="API Key eingeben" />
+                                    <input type="text" class="form-control" v-model="bitgetApiKey" :placeholder="t('settings.apiKeyPlaceholder')" />
                                 </div>
                             </div>
                             <div class="row mt-2">
                                 <div class="col-12 col-md-4">Secret Key</div>
                                 <div class="col-12 col-md-8">
-                                    <input type="password" class="form-control" v-model="bitgetSecretKey" placeholder="Secret Key eingeben" />
+                                    <input type="password" class="form-control" v-model="bitgetSecretKey" :placeholder="t('settings.secretKeyPlaceholder')" />
                                 </div>
                             </div>
                             <div class="row mt-2">
                                 <div class="col-12 col-md-4">Passphrase</div>
                                 <div class="col-12 col-md-8">
-                                    <input type="password" class="form-control" v-model="bitgetPassphrase" placeholder="API Passphrase eingeben" />
-                                    <small class="text-muted">Die Passphrase wird bei der API-Key-Erstellung auf Bitget festgelegt.</small>
+                                    <input type="password" class="form-control" v-model="bitgetPassphrase" :placeholder="t('settings.passphrasePlaceholder')" />
+                                    <small class="text-muted">{{ t('settings.passphraseHint') }}</small>
                                 </div>
                             </div>
                             <div class="row mt-2">
-                                <div class="col-12 col-md-4">Import ab Datum</div>
+                                <div class="col-12 col-md-4">{{ t('settings.importFromDate') }}</div>
                                 <div class="col-12 col-md-8">
                                     <input type="date" class="form-control" v-model="bitgetImportStartDate" />
-                                    <small class="text-muted">Trades vor diesem Datum werden ignoriert. Leer = alle Trades.</small>
+                                    <small class="text-muted">{{ t('settings.importFromDateHint') }}</small>
                                 </div>
                             </div>
                             <div class="mt-3">
                                 <button type="button" v-on:click="saveBitgetConfig" class="btn btn-success me-2" :disabled="bitgetImporting">
                                     <span v-if="bitgetImporting" class="spinner-border spinner-border-sm me-1" style="width: 0.7rem; height: 0.7rem;"></span>
-                                    {{ bitgetImporting ? 'Importiert...' : 'Speichern' }}
+                                    {{ bitgetImporting ? t('common.importing') : t('common.save') }}
                                 </button>
                                 <button type="button" v-on:click="testBitgetConnection" class="btn btn-outline-primary" :disabled="bitgetTestLoading">
                                     <span v-if="bitgetTestLoading">Testing...</span>
-                                    <span v-else>Verbindung testen</span>
+                                    <span v-else>{{ t('common.testConnection') }}</span>
                                 </button>
                                 <span v-if="bitgetTestResult === 'success'" class="ms-2 text-success"><i class="uil uil-check-circle"></i> Verbunden</span>
-                                <span v-if="bitgetTestResult === 'error'" class="ms-2 text-danger"><i class="uil uil-exclamation-triangle"></i> Fehlgeschlagen</span>
+                                <span v-if="bitgetTestResult === 'error'" class="ms-2 text-danger"><i class="uil uil-exclamation-triangle"></i> {{ t('common.failed') }}</span>
                             </div>
                             <div v-if="bitgetTestResult === 'error' && bitgetTestError" class="mt-2">
                                 <div class="p-2" style="background: rgba(255,0,0,0.1); border-radius: var(--border-radius); font-size: 0.85rem;">
@@ -1200,13 +1227,13 @@ onBeforeMount(async () => {
                 <!--=============== BEWERTUNG ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="bewertungExpanded = !bewertungExpanded">
                     <i class="uil me-2" :class="bewertungExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Bewertung</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.evaluation') }}</p>
                 </div>
                 <div v-show="bewertungExpanded" class="mt-2">
 
                     <!--=============== TAGS (Unterabschnitt) ===============-->
-                    <p class="fs-6 fw-bold mb-1">Tags</p>
-                    <p class="fw-lighter">Erstelle Tag-Gruppen und Tags, um deine Trades zu kategorisieren.</p>
+                    <p class="fs-6 fw-bold mb-1">{{ t('settings.tagsSection') }}</p>
+                    <p class="fw-lighter">{{ t('settings.tagsDescription') }}</p>
 
                     <!-- Existing groups -->
                     <div v-for="group in tagGroups" :key="group.id" class="mb-3 p-3" :style="{ borderLeft: '4px solid ' + group.color, background: 'var(--bg-card)' }">
@@ -1223,7 +1250,7 @@ onBeforeMount(async () => {
                                 <span class="badge me-2" :style="{ backgroundColor: group.color }">{{ group.tags.length }} Tags</span>
                                 <button v-if="tagGroups.indexOf(group) !== 0" class="btn btn-outline-secondary btn-sm me-1" @click="startEditGroup(group)"><i class="uil uil-pen"></i></button>
                                 <button v-if="tagGroups.indexOf(group) !== 0" class="btn btn-outline-danger btn-sm" @click="removeGroup(group.id)"><i class="uil uil-trash-alt"></i></button>
-                                <span v-else class="badge bg-secondary ms-1" style="font-size: 0.65rem;"><i class="uil uil-lock-alt me-1"></i>Pflicht</span>
+                                <span v-else class="badge bg-secondary ms-1" style="font-size: 0.65rem;"><i class="uil uil-lock-alt me-1"></i>{{ t('common.mandatory') }}</span>
                             </template>
                         </div>
 
@@ -1237,7 +1264,7 @@ onBeforeMount(async () => {
 
                         <!-- Add tag input -->
                         <div class="d-flex">
-                            <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" placeholder="Neuer Tag..." v-model="newTagName[group.id]" @keyup.enter="addTag(group)" />
+                            <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" :placeholder="t('settings.newTagPlaceholder')" v-model="newTagName[group.id]" @keyup.enter="addTag(group)" />
                             <button class="btn btn-outline-primary btn-sm" @click="addTag(group)">+ Tag</button>
                         </div>
                     </div>
@@ -1245,7 +1272,7 @@ onBeforeMount(async () => {
                     <!-- Add new group -->
                     <div class="mt-3 p-3" style="border: 1px dashed var(--border-color); background: var(--bg-card);">
                         <div class="d-flex align-items-center">
-                            <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" placeholder="Neue Gruppe..." v-model="newGroupName" @keyup.enter="addGroup" />
+                            <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" :placeholder="t('settings.newGroupPlaceholder')" v-model="newGroupName" @keyup.enter="addGroup" />
                             <input type="color" class="form-control form-control-color form-control-sm me-2" v-model="newGroupColor" />
                             <button class="btn btn-outline-success btn-sm" @click="addGroup">+ Gruppe</button>
                         </div>
@@ -1254,12 +1281,12 @@ onBeforeMount(async () => {
                     <hr />
 
                     <!--=============== TIMEFRAMES (Unterabschnitt) ===============-->
-                    <p class="fs-6 fw-bold mb-1">Timeframes</p>
-                    <p class="fw-lighter">Wähle die Timeframes aus, die du beim Trading verwendest. Diese erscheinen dann in Offene Trades und Playbook.</p>
+                    <p class="fs-6 fw-bold mb-1">{{ t('settings.timeframesSection') }}</p>
+                    <p class="fw-lighter">{{ t('settings.timeframesDescription') }}</p>
                     <div v-for="group in timeframeGroups" :key="group" class="mb-2">
                         <label class="fw-lighter text-uppercase small mb-1">{{ group }}</label>
                         <div class="d-flex flex-wrap gap-1">
-                            <template v-if="group === 'Eigene'">
+                            <template v-if="group === t('timeframes.custom')">
                                 <span v-for="tf in timeframesByGroup(group)" :key="tf.value"
                                     class="tag-badge d-flex align-items-center" :class="{ active: localTimeframes.has(tf.value) }"
                                     v-on:click="toggleTimeframe(tf.value)">{{ tf.label }}
@@ -1275,27 +1302,27 @@ onBeforeMount(async () => {
                     </div>
                     <!-- Eigenen Timeframe hinzufügen -->
                     <div class="d-flex mt-2 mb-2">
-                        <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" placeholder="z.B. 8 Stunden" v-model="newCustomTf" @keyup.enter="addCustomTimeframe" />
-                        <button class="btn btn-outline-primary btn-sm" @click="addCustomTimeframe">+ Timeframe</button>
+                        <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" :placeholder="t('timeframes.egCustom')" v-model="newCustomTf" @keyup.enter="addCustomTimeframe" />
+                        <button class="btn btn-outline-primary btn-sm" @click="addCustomTimeframe">{{ t('timeframes.addCustom') }}</button>
                     </div>
                     <div class="mt-3 mb-3">
-                        <button type="button" v-on:click="saveTimeframes" class="btn btn-success">Speichern</button>
+                        <button type="button" v-on:click="saveTimeframes" class="btn btn-success">{{ t('common.save') }}</button>
                     </div>
 
                     <hr />
 
                     <!--=============== POPUPS (Unterabschnitt) ===============-->
-                    <p class="fs-6 fw-bold mb-1">Popups & Benachrichtigungen</p>
-                    <p class="fw-lighter">Trade-Bewertungs-Popups beim Öffnen und Schließen von Positionen anzeigen.</p>
+                    <p class="fs-6 fw-bold mb-1">{{ t('settings.popupsAndNotifications') }}</p>
+                    <p class="fw-lighter">{{ t('settings.popupsDescription') }}</p>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="popupToggle" v-model="showTradePopups" @change="savePopupSetting">
-                        <label class="form-check-label" for="popupToggle">Bewertungs-Popups aktivieren</label>
+                        <label class="form-check-label" for="popupToggle">{{ t('settings.enablePopups') }}</label>
                     </div>
                     <div class="form-check form-switch mt-3">
                         <input class="form-check-input" type="checkbox" id="notificationToggle" v-model="browserNotifications" @change="saveNotificationSetting">
-                        <label class="form-check-label" for="notificationToggle">Browser-Benachrichtigungen</label>
+                        <label class="form-check-label" for="notificationToggle">{{ t('settings.browserNotifications') }}</label>
                     </div>
-                    <small class="text-muted">Desktop-Benachrichtigung wenn ein KI-Bericht fertig ist oder ein API-Import abgeschlossen wurde (nur wenn Tab nicht im Fokus).</small>
+                    <small class="text-muted">{{ t('settings.browserNotificationsHint') }}</small>
                 </div>
 
                 <hr />
@@ -1303,17 +1330,17 @@ onBeforeMount(async () => {
                 <!--=============== KI-AGENT ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="kiExpanded = !kiExpanded">
                     <i class="uil me-2" :class="kiExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">KI-Agent</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.kiAgent') }}</p>
                 </div>
                 <div v-show="kiExpanded" class="mt-2">
-                    <p class="fw-lighter">Konfiguriere den KI-Anbieter für die automatische Berichterstellung. Ollama (lokal, kostenlos) oder Online-KI (OpenAI/Anthropic/Gemini/DeepSeek, benötigt API-Key).</p>
+                    <p class="fw-lighter">{{ t('settings.kiDescription') }}</p>
 
                     <!-- Anbieter -->
                     <div class="row mt-2">
-                        <div class="col-12 col-md-4">Anbieter</div>
+                        <div class="col-12 col-md-4">{{ t('settings.provider') }}</div>
                         <div class="col-12 col-md-8">
                             <select class="form-select" v-model="aiProvider" @change="onProviderChange">
-                                <option value="ollama">Ollama (lokal)</option>
+                                <option value="ollama">{{ t('settings.ollamaLocal') }}</option>
                                 <option value="openai">OpenAI</option>
                                 <option value="anthropic">Anthropic (Claude)</option>
                                 <option value="gemini">Google Gemini</option>
@@ -1324,40 +1351,40 @@ onBeforeMount(async () => {
 
                     <!-- Ollama URL (nur bei Ollama) -->
                     <div v-if="aiProvider === 'ollama'" class="row mt-2">
-                        <div class="col-12 col-md-4">Ollama URL</div>
+                        <div class="col-12 col-md-4">{{ t('settings.ollamaUrl') }}</div>
                         <div class="col-12 col-md-8">
                             <input type="text" class="form-control" v-model="aiOllamaUrl" placeholder="http://localhost:11434" />
-                            <small class="text-muted">Standard: http://localhost:11434 — Ändere die URL wenn Ollama auf einem anderen Server läuft.</small>
+                            <small class="text-muted">{{ t('settings.ollamaUrlHint') }}</small>
                         </div>
                     </div>
 
                     <!-- Modell -->
                     <div class="row mt-2">
-                        <div class="col-12 col-md-4">Modell</div>
+                        <div class="col-12 col-md-4">{{ t('settings.model') }}</div>
                         <div class="col-12 col-md-8">
                             <select class="form-select" v-model="aiModel">
                                 <option v-for="m in getModelsForProvider()" :key="m" :value="m">{{ m }}</option>
                             </select>
                             <small v-if="aiProvider === 'ollama' && ollamaModels.length === 0" class="text-warning">
-                                Klicke auf "Verbindung testen" um die Modelle zu laden.
+                                {{ t('settings.loadModelsHint') }}
                             </small>
                         </div>
                     </div>
 
                     <!-- API Key (nur bei Online-Providern) -->
                     <div v-if="aiProvider !== 'ollama'" class="row mt-2">
-                        <div class="col-12 col-md-4">API-Key</div>
+                        <div class="col-12 col-md-4">{{ t('settings.apiKeyLabel') }}</div>
                         <div class="col-12 col-md-8">
                             <div class="input-group">
-                                <input type="password" class="form-control" v-model="currentApiKey" placeholder="API-Key eingeben..."
+                                <input type="password" class="form-control" v-model="currentApiKey" :placeholder="t('settings.apiKeyInputPlaceholder')"
                                        @focus="e => { if (currentApiKey.includes('•')) e.target.select() }" />
                                 <button v-if="currentApiKey" class="btn btn-outline-secondary" type="button"
-                                        @click="currentApiKey = ''" title="Key löschen">
+                                        @click="currentApiKey = ''" :title="t('settings.deleteKey')">
                                     <i class="uil uil-times"></i>
                                 </button>
                             </div>
                             <small class="text-muted">
-                                <i class="uil uil-lock me-1"></i>Verschlüsselt gespeichert.
+                                <i class="uil uil-lock me-1"></i>{{ t('settings.encryptedStored') }}
                                 <span v-if="aiProvider === 'openai'"> Von platform.openai.com/api-keys</span>
                                 <span v-else-if="aiProvider === 'anthropic'"> Von console.anthropic.com/settings/keys</span>
                                 <span v-else-if="aiProvider === 'gemini'"> Von aistudio.google.com/apikey</span>
@@ -1368,57 +1395,57 @@ onBeforeMount(async () => {
 
                     <!-- Temperatur -->
                     <div class="row mt-3">
-                        <div class="col-12 col-md-4">Kreativität</div>
+                        <div class="col-12 col-md-4">{{ t('settings.creativity') }}</div>
                         <div class="col-12 col-md-8">
                             <div class="d-flex align-items-center gap-2">
                                 <input type="range" class="form-range flex-grow-1" v-model="aiTemperature" min="0" max="1" step="0.1" />
                                 <span class="badge bg-secondary" style="min-width: 40px;">{{ aiTemperature }}</span>
                             </div>
-                            <small class="text-muted">0 = sachlich, 1 = kreativ</small>
+                            <small class="text-muted">{{ t('settings.creativityFactual') }}</small>
                         </div>
                     </div>
 
                     <!-- Max Tokens -->
                     <div class="row mt-2">
-                        <div class="col-12 col-md-4">Max. Textlänge</div>
+                        <div class="col-12 col-md-4">{{ t('settings.maxTextLength') }}</div>
                         <div class="col-12 col-md-8">
                             <input type="number" class="form-control" v-model="aiMaxTokens" min="500" max="4000" step="100" />
-                            <small class="text-muted">500–4000 Tokens (ca. 1 Token = 0.75 Wörter)</small>
+                            <small class="text-muted">{{ t('settings.maxTokensHint') }}</small>
                         </div>
                     </div>
 
                     <!-- Bericht-Prompt -->
                     <div class="row mt-3">
-                        <div class="col-12 col-md-4">Bericht-Stil</div>
+                        <div class="col-12 col-md-4">{{ t('settings.reportStyle') }}</div>
                         <div class="col-12 col-md-8">
                             <select class="form-select mb-2" v-model="aiReportPromptPreset" @change="onPromptPresetChange">
                                 <option v-for="p in promptPresets" :key="p.value" :value="p.value">{{ p.label }}</option>
                             </select>
-                            <textarea class="form-control" v-model="aiReportPrompt" rows="3" placeholder="Zusätzliche Anweisungen für die KI-Berichterstellung... (leer = Standard-Prompt)"></textarea>
-                            <small class="text-muted">Diese Anweisungen werden dem Standard-Prompt hinzugefügt. Hiermit kannst du den Stil, Fokus und Detailgrad des Berichts beeinflussen.</small>
+                            <textarea class="form-control" v-model="aiReportPrompt" rows="3" :placeholder="t('settings.reportPromptPlaceholder')"></textarea>
+                            <small class="text-muted">{{ t('settings.reportPromptHint') }}</small>
                         </div>
                     </div>
 
                     <!-- Chat/Rückfragen -->
                     <div class="row mt-3">
-                        <div class="col-12 col-md-4">Bericht-Chat</div>
+                        <div class="col-12 col-md-4">{{ t('settings.reportChat') }}</div>
                         <div class="col-12 col-md-8">
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" id="aiChatToggle" v-model="aiChatEnabled">
-                                <label class="form-check-label" for="aiChatToggle">Rückfragen zu Berichten erlauben</label>
+                                <label class="form-check-label" for="aiChatToggle">{{ t('settings.enableChat') }}</label>
                             </div>
-                            <small class="text-muted">Ermöglicht Chat-Rückfragen unter jedem KI-Bericht. Die KI erhält den Bericht als Kontext.</small>
+                            <small class="text-muted">{{ t('settings.enableChatHint') }}</small>
                         </div>
                     </div>
 
                     <!-- Buttons -->
                     <div class="mt-3 mb-3">
-                        <button type="button" @click="saveAiSettings" class="btn btn-success me-2">Speichern</button>
+                        <button type="button" @click="saveAiSettings" class="btn btn-success me-2">{{ t('common.save') }}</button>
                         <button type="button" @click="testAiConnection" class="btn btn-outline-primary" :disabled="aiTestLoading">
                             <span v-if="aiTestLoading">
-                                <span class="spinner-border spinner-border-sm me-1"></span>Teste...
+                                <span class="spinner-border spinner-border-sm me-1"></span>{{ t('common.testing') }}
                             </span>
-                            <span v-else>Verbindung testen</span>
+                            <span v-else>{{ t('common.testConnection') }}</span>
                         </button>
                         <span v-if="aiTestResult" class="ms-2" :class="aiTestResult.success ? 'text-success' : 'text-danger'">
                             {{ aiTestResult.message }}
@@ -1431,21 +1458,21 @@ onBeforeMount(async () => {
                 <!--=============== DATENBANK ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="dbExpanded = !dbExpanded">
                     <i class="uil me-2" :class="dbExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Datenbank</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.database') }}</p>
                     <span class="badge ms-2" :class="dbType === 'postgresql' ? 'bg-primary' : 'bg-secondary'">
                         {{ dbType === 'postgresql' ? 'PostgreSQL' : 'SQLite' }}
                     </span>
                 </div>
                 <div v-show="dbExpanded" class="mt-2">
-                    <p class="fw-lighter">SQLite (lokal, Standard) oder PostgreSQL (remote, z.B. auf NAS/Server). Nach dem Wechsel ist ein Server-Neustart nötig.</p>
+                    <p class="fw-lighter">{{ t('settings.dbDescription') }}</p>
 
                     <!-- DB-Typ -->
                     <div class="row mt-2">
-                        <div class="col-12 col-md-4">Datenbank-Typ</div>
+                        <div class="col-12 col-md-4">{{ t('settings.dbType') }}</div>
                         <div class="col-12 col-md-8">
                             <select class="form-select" v-model="dbType">
-                                <option value="sqlite">SQLite (lokal)</option>
-                                <option value="postgresql">PostgreSQL (remote)</option>
+                                <option value="sqlite">{{ t('settings.sqliteLocal') }}</option>
+                                <option value="postgresql">{{ t('settings.postgresRemote') }}</option>
                             </select>
                         </div>
                     </div>
@@ -1455,7 +1482,7 @@ onBeforeMount(async () => {
                         <div class="row mt-2">
                             <div class="col-12 col-md-4">Host</div>
                             <div class="col-12 col-md-8">
-                                <input type="text" class="form-control" v-model="dbHost" placeholder="z.B. 192.168.1.100" />
+                                <input type="text" class="form-control" v-model="dbHost" :placeholder="t('settings.hostPlaceholder')" />
                             </div>
                         </div>
                         <div class="row mt-2">
@@ -1465,19 +1492,19 @@ onBeforeMount(async () => {
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Benutzer</div>
+                            <div class="col-12 col-md-4">{{ t('settings.user') }}</div>
                             <div class="col-12 col-md-8">
                                 <input type="text" class="form-control" v-model="dbUser" placeholder="tradejournal" />
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Passwort</div>
+                            <div class="col-12 col-md-4">{{ t('settings.password') }}</div>
                             <div class="col-12 col-md-8">
-                                <input type="password" class="form-control" v-model="dbPassword" :placeholder="dbHasPassword ? '(gespeichert)' : 'Passwort'" />
+                                <input type="password" class="form-control" v-model="dbPassword" :placeholder="dbHasPassword ? t('settings.passwordSaved') : t('settings.password')" />
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Datenbank</div>
+                            <div class="col-12 col-md-4">{{ t('settings.databaseName') }}</div>
                             <div class="col-12 col-md-8">
                                 <input type="text" class="form-control" v-model="dbDatabase" placeholder="tradejournal" />
                             </div>
@@ -1486,12 +1513,12 @@ onBeforeMount(async () => {
 
                     <!-- Buttons -->
                     <div class="mt-3 mb-3">
-                        <button type="button" @click="saveDbConfig" class="btn btn-success me-2">Speichern</button>
+                        <button type="button" @click="saveDbConfig" class="btn btn-success me-2">{{ t('common.save') }}</button>
                         <button v-if="dbType === 'postgresql'" type="button" @click="testDbConnection" class="btn btn-outline-primary" :disabled="dbTestLoading">
                             <span v-if="dbTestLoading">
-                                <span class="spinner-border spinner-border-sm me-1"></span>Teste...
+                                <span class="spinner-border spinner-border-sm me-1"></span>{{ t('common.testing') }}
                             </span>
-                            <span v-else>Verbindung testen</span>
+                            <span v-else>{{ t('common.testConnection') }}</span>
                         </button>
                         <span v-if="dbTestResult" class="ms-2" :class="dbTestResult.ok ? 'text-success' : 'text-danger'">
                             {{ dbTestResult.message }}
@@ -1504,28 +1531,28 @@ onBeforeMount(async () => {
                     <div v-if="dbSaveResult?.ok" class="mt-2">
                         <button type="button" @click="restartServer" class="btn btn-warning btn-sm" :disabled="dbRestartLoading">
                             <span v-if="dbRestartLoading">
-                                <span class="spinner-border spinner-border-sm me-1"></span>Server wird neu gestartet...
+                                <span class="spinner-border spinner-border-sm me-1"></span>{{ t('settings.serverRestarting') }}
                             </span>
-                            <span v-else><i class="uil uil-redo me-1"></i>Server neu starten</span>
+                            <span v-else><i class="uil uil-redo me-1"></i>{{ t('settings.restartServerBtn') }}</span>
                         </button>
                     </div>
 
                     <!-- Export / Import -->
                     <div class="mt-3 pt-3" style="border-top: 1px solid var(--white-10);">
-                        <p class="fw-bold mb-2">Backup</p>
-                        <p class="fw-lighter small">Sichert alle Daten (Trades, Screenshots, Einstellungen, API-Keys, KI-Berichte, DB-Konfiguration) als JSON-Backup. API-Keys bleiben verschlüsselt.</p>
+                        <p class="fw-bold mb-2">{{ t('settings.backup') }}</p>
+                        <p class="fw-lighter small">{{ t('settings.backupDescription') }}</p>
                         <div class="d-flex align-items-center gap-2">
                             <button type="button" @click="exportDb" class="btn btn-outline-primary btn-sm" :disabled="dbExportLoading">
                                 <span v-if="dbExportLoading">
-                                    <span class="spinner-border spinner-border-sm me-1"></span>Exportiere...
+                                    <span class="spinner-border spinner-border-sm me-1"></span>{{ t('settings.exporting') }}
                                 </span>
-                                <span v-else><i class="uil uil-export me-1"></i>Export</span>
+                                <span v-else><i class="uil uil-export me-1"></i>{{ t('settings.export') }}</span>
                             </button>
                             <button type="button" @click="importDb" class="btn btn-outline-warning btn-sm" :disabled="dbImportLoading">
                                 <span v-if="dbImportLoading">
-                                    <span class="spinner-border spinner-border-sm me-1"></span>Importiere...
+                                    <span class="spinner-border spinner-border-sm me-1"></span>{{ t('settings.importingData') }}
                                 </span>
-                                <span v-else><i class="uil uil-import me-1"></i>Import</span>
+                                <span v-else><i class="uil uil-import me-1"></i>{{ t('settings.import') }}</span>
                             </button>
                         </div>
                         <span v-if="dbMigrationResult" class="small mt-1 d-block" :class="dbMigrationResult.ok ? 'text-success' : 'text-danger'">
@@ -1542,10 +1569,10 @@ onBeforeMount(async () => {
                     <p class="fs-5 fw-bold mb-0">OHLC-Chart</p>
                 </div>
                 <div v-show="chartExpanded" class="mt-2">
-                    <p class="fw-lighter">Candlestick-Chart mit Binance-Daten im Trade-Detail anzeigen (kostenlos, kein API-Key nötig).</p>
+                    <p class="fw-lighter">{{ t('settings.ohlcDescription') }}</p>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="binanceToggle" v-model="enableBinanceChart" @change="saveBinanceSetting">
-                        <label class="form-check-label" for="binanceToggle">Binance OHLC-Chart aktivieren</label>
+                        <label class="form-check-label" for="binanceToggle">{{ t('settings.enableBinanceChart') }}</label>
                     </div>
                 </div>
 
@@ -1554,16 +1581,16 @@ onBeforeMount(async () => {
                 <!--=============== TRADE-WERKZEUGE ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="reparaturExpanded = !reparaturExpanded">
                     <i class="uil me-2" :class="reparaturExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Trade-Werkzeuge</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.repair') }}</p>
                 </div>
                 <div v-show="reparaturExpanded" class="mt-2">
                     <!-- Long/Short Reparatur -->
-                    <p class="fw-lighter mb-1">Korrigiert die Long/Short-Zuordnung aller bestehenden Trades anhand von Entry/Exit-Preis und P&L-Richtung.</p>
+                    <p class="fw-lighter mb-1">{{ t('settings.repairDescription') }}</p>
                     <button class="btn btn-outline-warning btn-sm" @click="fixTradeSides" :disabled="fixTradesLoading">
                         <span v-if="fixTradesLoading">
-                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>Repariere...
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>{{ t('settings.repairing') }}
                         </span>
-                        <span v-else><i class="uil uil-wrench me-1"></i>Trades reparieren</span>
+                        <span v-else><i class="uil uil-wrench me-1"></i>{{ t('settings.repairTrades') }}</span>
                     </button>
                     <div v-if="fixTradesResult" class="mt-2">
                         <div :class="fixTradesResult.success ? 'text-success' : 'text-danger'" class="txt-small">
@@ -1574,12 +1601,12 @@ onBeforeMount(async () => {
                     <hr class="my-3" style="opacity: 0.15;" />
 
                     <!-- Duplikate entfernen -->
-                    <p class="fw-lighter mb-1">Erkennt und entfernt doppelt importierte Trades. Bewertete Trades (mit Notizen) werden nicht gelöscht.</p>
+                    <p class="fw-lighter mb-1">{{ t('settings.duplicatesDescription') }}</p>
                     <button class="btn btn-outline-warning btn-sm" @click="removeDuplicateTrades" :disabled="removeDupsLoading">
                         <span v-if="removeDupsLoading">
-                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>Suche Duplikate...
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>{{ t('settings.searchingDuplicates') }}
                         </span>
-                        <span v-else><i class="uil uil-copy me-1"></i>Duplikate entfernen</span>
+                        <span v-else><i class="uil uil-copy me-1"></i>{{ t('settings.duplicates') }}</span>
                     </button>
                     <div v-if="removeDupsResult" class="mt-2">
                         <div :class="removeDupsResult.success ? 'text-success' : 'text-danger'" class="txt-small">
@@ -1593,11 +1620,11 @@ onBeforeMount(async () => {
                 <!--=============== IMPORTE ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="importsExpanded = !importsExpanded">
                     <i class="uil me-2" :class="importsExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Importe</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.imports') }}</p>
                     <span class="badge bg-secondary ms-2">{{ importsList.length }}</span>
                 </div>
                 <div v-show="importsExpanded" class="mt-2">
-                    <p class="fw-lighter">Sei vorsichtig beim Löschen von Importen. Screenshots, Tags, Notizen und Zufriedenheitsbewertungen bleiben erhalten.</p>
+                    <p class="fw-lighter">{{ t('settings.importsDescription') }}</p>
 
                     <div>
                         <div v-if="importsLoading" class="text-center">
@@ -1605,7 +1632,7 @@ onBeforeMount(async () => {
                         </div>
 
                         <div v-else-if="importsList.length === 0">
-                            <p class="text-muted">Keine Importe vorhanden.</p>
+                            <p class="text-muted">{{ t('settings.noImports') }}</p>
                         </div>
 
                         <div v-else>
@@ -1617,19 +1644,19 @@ onBeforeMount(async () => {
                                     <div class="d-flex align-items-center gap-2">
                                         <i class="uil" :class="expandedImport === data.dateUnix ? 'uil-angle-down' : 'uil-angle-right'"></i>
                                         <span class="fw-bold">{{ useDateCalFormat(data.dateUnix) }}</span>
-                                        <span class="badge bg-secondary">{{ getTradeCount(data) }} Trades</span>
+                                        <span class="badge bg-secondary">{{ getTradeCount(data) }} {{ t('common.trades') }}</span>
                                         <span v-if="getEvaluatedCount(data) === getTradeCount(data) && getTradeCount(data) > 0"
-                                            class="badge bg-success">Alle bewertet</span>
+                                            class="badge bg-success">{{ t('settings.allEvaluated') }}</span>
                                         <span v-else-if="getEvaluatedCount(data) > 0"
-                                            class="badge bg-warning text-dark">{{ getEvaluatedCount(data) }}/{{ getTradeCount(data) }} bewertet</span>
+                                            class="badge bg-warning text-dark">{{ t('settings.xOfYEvaluated', { x: getEvaluatedCount(data), y: getTradeCount(data) }) }}</span>
                                         <span v-else-if="getTradeCount(data) > 0"
-                                            class="badge bg-secondary" style="opacity: 0.6;">Nicht bewertet</span>
+                                            class="badge bg-secondary" style="opacity: 0.6;">{{ t('settings.notEvaluated') }}</span>
                                     </div>
                                     <div>
                                         <span v-if="deleteConfirm === data.dateUnix" @click.stop>
-                                            <span class="me-2 small">Sicher?</span>
-                                            <button class="btn btn-danger btn-sm me-1" @click.stop="executeDeleteImport(data.dateUnix)">Ja</button>
-                                            <button class="btn btn-outline-secondary btn-sm" @click.stop="cancelDeleteImport">Nein</button>
+                                            <span class="me-2 small">{{ t('settings.sure') }}</span>
+                                            <button class="btn btn-danger btn-sm me-1" @click.stop="executeDeleteImport(data.dateUnix)">{{ t('common.yes') }}</button>
+                                            <button class="btn btn-outline-secondary btn-sm" @click.stop="cancelDeleteImport">{{ t('common.no') }}</button>
                                         </span>
                                         <i v-else class="uil uil-trash-alt pointerClass text-danger" @click.stop="confirmDeleteImport(data.dateUnix)"></i>
                                     </div>

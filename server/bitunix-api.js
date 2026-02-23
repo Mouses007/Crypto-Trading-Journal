@@ -105,6 +105,37 @@ export async function testConnection(apiKey, secretKey) {
 }
 
 /**
+ * Get trade/fill history for a specific position from Bitunix.
+ * Returns individual executions: tradeId, orderId, qty, price, fee, side, ctime, roleType
+ */
+export async function getHistoryTrades(apiKey, secretKey, options = {}) {
+    const params = {}
+    if (options.positionId) params.positionId = options.positionId
+    if (options.symbol) params.symbol = options.symbol
+    if (options.orderId) params.orderId = options.orderId
+    if (options.startTime) params.startTime = options.startTime
+    if (options.endTime) params.endTime = options.endTime
+    params.skip = options.skip || 0
+    params.limit = options.limit || 100
+
+    return bitunixRequest('GET', '/api/v1/futures/trade/get_history_trades', apiKey, secretKey, params)
+}
+
+/**
+ * Get pending TP/SL orders for a specific position from Bitunix.
+ * Returns: id, positionId, symbol, tpPrice, slPrice, tpQty, slQty, tpStopType, slStopType, etc.
+ */
+export async function getTpSlOrders(apiKey, secretKey, options = {}) {
+    const params = {}
+    if (options.positionId) params.positionId = options.positionId
+    if (options.symbol) params.symbol = options.symbol
+    params.skip = options.skip || 0
+    params.limit = options.limit || 100
+
+    return bitunixRequest('GET', '/api/v1/futures/tpsl/get_pending_orders', apiKey, secretKey, params)
+}
+
+/**
  * Normalize a single open/pending position from Bitunix API.
  * API may return camelCase or snake_case; we always return camelCase with positionId as string.
  */
@@ -431,6 +462,58 @@ export function setupBitunixRoutes(app) {
             }
             res.json({ ok: true, position: pos })
         } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Get individual trade fills for a position (for compound tracking)
+    app.get('/api/bitunix/position-trades/:positionId', async (req, res) => {
+        try {
+            const config = await getDecryptedConfig()
+
+            if (!config || !config.apiKey || !config.secretKey) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            const result = await getHistoryTrades(config.apiKey, config.secretKey, {
+                positionId: req.params.positionId, limit: 100
+            })
+
+            if (result.code !== 0) {
+                throw new Error(result.msg || 'Bitunix API Fehler')
+            }
+
+            const trades = result.data?.tradeList || []
+            console.log(` -> Position trades for ${req.params.positionId}: ${trades.length} fills`)
+            res.json({ ok: true, trades })
+        } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Fetch TP/SL orders for a specific position
+    app.get('/api/bitunix/position-tpsl/:positionId', async (req, res) => {
+        try {
+            const config = await getDecryptedConfig()
+
+            if (!config || !config.apiKey || !config.secretKey) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            const result = await getTpSlOrders(config.apiKey, config.secretKey, {
+                positionId: req.params.positionId, limit: 100
+            })
+
+            if (result.code !== 0) {
+                throw new Error(result.msg || 'Bitunix API Fehler')
+            }
+
+            // Response structure may vary — try common patterns
+            const orders = result.data?.orderList || result.data || []
+            console.log(` -> TP/SL orders for ${req.params.positionId}: ${Array.isArray(orders) ? orders.length : 0} orders`)
+            res.json({ ok: true, orders: Array.isArray(orders) ? orders : [] })
+        } catch (error) {
+            console.error(' -> TP/SL orders error:', error.message)
             res.status(500).json({ error: error.message })
         }
     })

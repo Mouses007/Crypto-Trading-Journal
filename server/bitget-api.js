@@ -108,6 +108,38 @@ export async function getCurrentPositions(apiKey, secretKey, passphrase, options
 }
 
 /**
+ * Get order fills (individual trades) for a position from Bitget.
+ * Endpoint: GET /api/v2/mix/order/fills
+ * Returns: fillList with tradeId, orderId, symbol, side, price, size, fee, ctime etc.
+ */
+export async function getOrderFills(apiKey, secretKey, passphrase, options = {}) {
+    const params = { productType: 'USDT-FUTURES' }
+    if (options.symbol) params.symbol = options.symbol
+    if (options.orderId) params.orderId = options.orderId
+    if (options.startTime) params.startTime = options.startTime
+    if (options.endTime) params.endTime = options.endTime
+    if (options.limit) params.limit = String(options.limit)
+    if (options.idLessThan) params.idLessThan = options.idLessThan
+
+    return bitgetRequest('GET', '/api/v2/mix/order/fills', apiKey, secretKey, passphrase, params)
+}
+
+/**
+ * Get pending TP/SL plan orders from Bitget.
+ * Endpoint: GET /api/v2/mix/order/orders-plan-pending
+ * Returns: entrustedList with orderId, symbol, planType (profit_plan, loss_plan),
+ *          triggerPrice, triggerType, size, side, etc.
+ */
+export async function getPlanOrders(apiKey, secretKey, passphrase, options = {}) {
+    const params = { productType: 'USDT-FUTURES' }
+    if (options.symbol) params.symbol = options.symbol
+    if (options.planType) params.planType = options.planType
+    if (options.limit) params.limit = String(options.limit)
+
+    return bitgetRequest('GET', '/api/v2/mix/order/orders-plan-pending', apiKey, secretKey, passphrase, params)
+}
+
+/**
  * Test API connection with diagnostics.
  * Tests multiple scenarios to give the user a clear error message.
  */
@@ -529,6 +561,71 @@ export function setupBitgetRoutes(app) {
             }
             res.json({ ok: true, position: pos })
         } catch (error) {
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Get order fills (individual trades) for a position
+    app.get('/api/bitget/position-trades/:symbol', async (req, res) => {
+        try {
+            const config = await getDecryptedBitgetConfig()
+            if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            const symbol = req.params.symbol
+            // Fetch fills for this symbol (last 7 days by default)
+            const startTime = req.query.startTime || String(Date.now() - 7 * 24 * 60 * 60 * 1000)
+            const result = await getOrderFills(config.apiKey, config.secretKey, config.passphrase, {
+                symbol,
+                startTime,
+                limit: 100
+            })
+
+            const fills = result.data?.fillList || []
+            console.log(` -> Bitget fills for ${symbol}: ${fills.length} fills`)
+            res.json({ ok: true, trades: fills })
+        } catch (error) {
+            console.error(' -> Bitget fills error:', error.message)
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Get pending TP/SL plan orders for a symbol
+    app.get('/api/bitget/position-tpsl/:symbol', async (req, res) => {
+        try {
+            const config = await getDecryptedBitgetConfig()
+            if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            const symbol = req.params.symbol
+            const result = await getPlanOrders(config.apiKey, config.secretKey, config.passphrase, {
+                symbol,
+                limit: 100
+            })
+
+            const orders = result.data?.entrustedList || []
+            console.log(` -> Bitget TP/SL for ${symbol}: ${orders.length} orders`)
+
+            // Map to unified format (similar to Bitunix response)
+            const mapped = orders.map(o => ({
+                orderId: o.orderId,
+                symbol: o.symbol,
+                planType: o.planType, // profit_plan, loss_plan, pos_profit, pos_loss
+                triggerPrice: o.triggerPrice,
+                size: o.size,
+                side: o.side,
+                // Map to tpPrice/slPrice for frontend compatibility
+                tpPrice: (o.planType === 'profit_plan' || o.planType === 'pos_profit') ? o.triggerPrice : null,
+                slPrice: (o.planType === 'loss_plan' || o.planType === 'pos_loss') ? o.triggerPrice : null,
+                tpQty: (o.planType === 'profit_plan' || o.planType === 'pos_profit') ? o.size : null,
+                slQty: (o.planType === 'loss_plan' || o.planType === 'pos_loss') ? o.size : null,
+            }))
+
+            res.json({ ok: true, orders: mapped })
+        } catch (error) {
+            console.error(' -> Bitget TP/SL error:', error.message)
             res.status(500).json({ error: error.message })
         }
     })

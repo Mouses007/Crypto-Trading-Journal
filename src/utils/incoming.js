@@ -4,6 +4,7 @@ import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete } from './db.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, pendingOpeningCount, pendingClosingCount, evalNotificationShown, evalNotificationDismissed, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker } from '../stores/filters.js'
+import i18n from '../i18n'
 
 let globalPollingInterval = null
 
@@ -61,7 +62,7 @@ export async function useFetchOpenPositions() {
         const response = await axios.get(`/api/${broker}/open-positions`)
 
         if (!response.data.ok) {
-            throw new Error(response.data.error || 'Fehler beim Abrufen offener Positionen')
+            throw new Error(response.data.error || i18n.global.t('incoming.errorFetchingPositions'))
         }
 
         const apiPositions = response.data.positions || []
@@ -623,6 +624,7 @@ export async function useTransferClosingMetadata(incoming, histPos, {
     tags = [],
     satisfaction = null,
     stressLevel = 0,
+    tradeType = '',
     closingNote = '',
     closingStressLevel = 0,
     closingEmotionLevel = 0,
@@ -631,6 +633,7 @@ export async function useTransferClosingMetadata(incoming, histPos, {
     closingPlaybook = '',
     closingScreenshotId = '',
     closingTags = [],
+    tradingMetadata = null,
 }) {
     // Support both Bitunix (mtime/ctime) and Bitget (uTime/cTime) timestamps
     const closeTime = parseInt(histPos.mtime || histPos.uTime || histPos.ctime || histPos.cTime)
@@ -659,6 +662,7 @@ export async function useTransferClosingMetadata(incoming, histPos, {
         tradeId: tradeId,
         note: noteText,
         // Opening fields
+        tradeType: tradeType || incoming.tradeType || '',
         entryStressLevel: incoming.stressLevel || 0,
         emotionLevel: incoming.emotionLevel || 0,
         entryNote: incoming.entryNote || '',
@@ -674,6 +678,7 @@ export async function useTransferClosingMetadata(incoming, histPos, {
         closingTimeframe: closingTimeframe,
         closingPlaybook: closingPlaybook,
         closingScreenshotId: closingScreenshotId,
+        tradingMetadata: tradingMetadata || null,
     })
 
     // Save satisfaction (only if user actually set a value, -1 = not set)

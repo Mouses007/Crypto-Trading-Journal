@@ -2,7 +2,9 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const router = useRouter()
 
 const step = ref(1)
@@ -42,7 +44,7 @@ async function testConnection() {
         })
         testResult.value = data
     } catch (e) {
-        testResult.value = { ok: false, message: 'Verbindungsfehler: ' + (e.response?.data?.message || e.message) }
+        testResult.value = { ok: false, message: t('common.connectionError') + (e.response?.data?.message || e.message) }
     }
     testLoading.value = false
 }
@@ -63,7 +65,7 @@ async function saveDbConfig() {
             await axios.put('/api/db-config', { type: 'sqlite' })
         }
     } catch (e) {
-        error.value = 'Fehler beim Speichern: ' + (e.response?.data?.error || e.message)
+        error.value = t('common.errorSaving') + (e.response?.data?.error || e.message)
     }
 }
 
@@ -93,7 +95,7 @@ async function completeSetup() {
             window.location.href = '/dashboard'
         }
     } catch (e) {
-        error.value = 'Fehler: ' + (e.response?.data?.error || e.message)
+        error.value = t('common.errorPrefix') + (e.response?.data?.error || e.message)
     }
     saving.value = false
 }
@@ -107,7 +109,7 @@ async function skipSetup() {
         // Vollständiger Reload, damit der Router setupComplete neu lädt und nicht mehr zu /setup umleitet
         window.location.href = '/dashboard'
     } catch (e) {
-        error.value = 'Fehler: ' + (e.response?.data?.error || e.message)
+        error.value = t('common.errorPrefix') + (e.response?.data?.error || e.message)
     }
     saving.value = false
 }
@@ -132,55 +134,55 @@ async function skipSetup() {
 
             <!-- Step 1: Willkommen -->
             <div v-if="step === 1" class="setup-body">
-                <h3>Willkommen!</h3>
+                <h3>{{ t('setup.welcome') }}</h3>
                 <p class="text-muted">
-                    Schoen, dass du Crypto Trading Journal nutzt. Dieses Setup hilft dir, die Grundkonfiguration vorzunehmen.
+                    {{ t('setup.welcomeText') }}
                 </p>
                 <div class="feature-list">
                     <div class="feature-item">
                         <i class="uil uil-chart-line"></i>
                         <div>
-                            <strong>Trading-Analyse</strong>
-                            <small>Dashboard mit Charts, PnL-Analyse und Statistiken</small>
+                            <strong>{{ t('setup.featureAnalysis') }}</strong>
+                            <small>{{ t('setup.featureDashboard') }}</small>
                         </div>
                     </div>
                     <div class="feature-item">
                         <i class="uil uil-book-open"></i>
                         <div>
-                            <strong>Trading-Tagebuch</strong>
-                            <small>Tagesnotizen, Playbooks und Screenshots</small>
+                            <strong>{{ t('setup.featureJournal') }}</strong>
+                            <small>{{ t('setup.featureDiary') }}</small>
                         </div>
                     </div>
                     <div class="feature-item">
                         <i class="uil uil-robot"></i>
                         <div>
-                            <strong>KI-Berichte</strong>
-                            <small>Automatische Analyse mit lokaler oder Cloud-KI</small>
+                            <strong>{{ t('setup.featureAiReports') }}</strong>
+                            <small>{{ t('setup.featureKi') }}</small>
                         </div>
                     </div>
                     <div class="feature-item">
                         <i class="uil uil-import"></i>
                         <div>
-                            <strong>Bitunix-Import</strong>
-                            <small>CSV-Upload oder automatischer API-Import</small>
+                            <strong>{{ t('setup.featureBitunixImport') }}</strong>
+                            <small>{{ t('setup.featureImport') }}</small>
                         </div>
                     </div>
                 </div>
                 <button class="btn btn-primary btn-lg w-100 mt-4" @click="nextStep">
-                    Weiter <i class="uil uil-arrow-right ms-1"></i>
+                    {{ t('common.next') }} <i class="uil uil-arrow-right ms-1"></i>
                 </button>
                 <p class="mt-3 mb-0 text-center">
                     <button type="button" class="btn btn-link btn-sm text-muted p-0" @click="skipSetup">
-                        Bereits konfiguriert? Setup überspringen
+                        {{ t('setup.skipSetup') }}
                     </button>
                 </p>
             </div>
 
             <!-- Step 2: Datenbank waehlen -->
             <div v-if="step === 2" class="setup-body">
-                <h3>Datenbank waehlen</h3>
+                <h3>{{ t('setup.chooseDatabase') }}</h3>
                 <p class="text-muted mb-3">
-                    Waehle, wo deine Daten gespeichert werden sollen.
+                    {{ t('setup.chooseDatabaseText') }}
                 </p>
 
                 <!-- SQLite -->
@@ -190,12 +192,12 @@ async function skipSetup() {
                             <input class="form-check-input" type="radio" v-model="dbType" value="sqlite" id="dbSqlite">
                             <label class="form-check-label" for="dbSqlite">
                                 <strong>SQLite</strong>
-                                <span class="badge bg-success ms-2">Empfohlen</span>
+                                <span class="badge bg-success ms-2">{{ t('setup.recommended') }}</span>
                             </label>
                         </div>
                     </div>
                     <p class="small text-muted mb-0 ms-4">
-                        Einfache Datei-Datenbank. Keine weitere Software noetig. Ideal fuer Einzelplatz-Nutzung.
+                        {{ t('setup.sqliteDescription') }}
                     </p>
                 </div>
 
@@ -210,38 +212,38 @@ async function skipSetup() {
                         </div>
                     </div>
                     <p class="small text-muted mb-0 ms-4">
-                        Externer Datenbankserver. Fuer NAS, Server oder wenn mehrere Geraete zugreifen sollen.
+                        {{ t('setup.postgresDescription') }}
                     </p>
 
                     <!-- PostgreSQL Felder -->
                     <div v-if="dbType === 'postgresql'" class="pg-fields mt-3 ms-4">
                         <div class="row g-2">
                             <div class="col-8">
-                                <label class="form-label small">Host</label>
+                                <label class="form-label small">{{ t('settings.host') }}</label>
                                 <input type="text" class="form-control form-control-sm" v-model="pgHost" placeholder="localhost">
                             </div>
                             <div class="col-4">
-                                <label class="form-label small">Port</label>
+                                <label class="form-label small">{{ t('settings.port') }}</label>
                                 <input type="number" class="form-control form-control-sm" v-model="pgPort" placeholder="5432">
                             </div>
                         </div>
                         <div class="row g-2 mt-1">
                             <div class="col-6">
-                                <label class="form-label small">Benutzer</label>
+                                <label class="form-label small">{{ t('settings.user') }}</label>
                                 <input type="text" class="form-control form-control-sm" v-model="pgUser" placeholder="postgres">
                             </div>
                             <div class="col-6">
-                                <label class="form-label small">Passwort</label>
-                                <input type="password" class="form-control form-control-sm" v-model="pgPassword" placeholder="Passwort">
+                                <label class="form-label small">{{ t('settings.password') }}</label>
+                                <input type="password" class="form-control form-control-sm" v-model="pgPassword" :placeholder="t('settings.password')">
                             </div>
                         </div>
                         <div class="mt-2">
-                            <label class="form-label small">Datenbank</label>
+                            <label class="form-label small">{{ t('settings.databaseName') }}</label>
                             <input type="text" class="form-control form-control-sm" v-model="pgDatabase" placeholder="tradejournal">
                         </div>
                         <button class="btn btn-outline-secondary btn-sm mt-2" @click.stop="testConnection" :disabled="testLoading">
                             <span v-if="testLoading" class="spinner-border spinner-border-sm me-1"></span>
-                            Verbindung testen
+                            {{ t('common.testConnection') }}
                         </button>
                         <div v-if="testResult" class="mt-2">
                             <div v-if="testResult.ok" class="text-success small">
@@ -258,11 +260,11 @@ async function skipSetup() {
 
                 <div class="d-flex gap-2 mt-4">
                     <button class="btn btn-outline-secondary" @click="step = 1">
-                        <i class="uil uil-arrow-left me-1"></i> Zurueck
+                        <i class="uil uil-arrow-left me-1"></i> {{ t('common.back') }}
                     </button>
                     <button class="btn btn-primary flex-grow-1" @click="nextStep" :disabled="saving">
                         <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>
-                        Weiter <i class="uil uil-arrow-right ms-1"></i>
+                        {{ t('common.next') }} <i class="uil uil-arrow-right ms-1"></i>
                     </button>
                 </div>
             </div>
@@ -272,24 +274,24 @@ async function skipSetup() {
                 <div class="success-icon">
                     <i class="uil uil-check-circle"></i>
                 </div>
-                <h3>Setup abgeschlossen!</h3>
+                <h3>{{ t('setup.setupComplete') }}</h3>
                 <p class="text-muted">
-                    Deine Konfiguration wurde gespeichert.
-                    <span v-if="dbType === 'sqlite'">SQLite-Datenbank wird automatisch erstellt.</span>
-                    <span v-else>PostgreSQL-Verbindung wird beim naechsten Start verwendet.</span>
+                    {{ t('setup.configSaved') }}
+                    <span v-if="dbType === 'sqlite'">{{ t('setup.sqliteAutoCreated') }}</span>
+                    <span v-else>{{ t('setup.postgresUsedOnRestart') }}</span>
                 </p>
 
                 <div class="next-steps">
-                    <p class="small text-muted mb-2"><strong>Naechste Schritte:</strong></p>
+                    <p class="small text-muted mb-2"><strong>{{ t('setup.nextSteps') }}</strong></p>
                     <ul class="small text-muted text-start">
-                        <li>Gehe zu <strong>Einstellungen</strong> um deine Zeitzone und Konten einzurichten</li>
-                        <li>Importiere deine ersten Trades ueber <strong>CSV-Upload</strong> oder <strong>Bitunix-API</strong></li>
+                        <li v-html="t('setup.nextStepSettings', { settings: '<strong>' + t('nav.settings') + '</strong>' })"></li>
+                        <li v-html="t('setup.nextStepImport', { csv: '<strong>CSV-Upload</strong>', api: '<strong>Bitunix-API</strong>' })"></li>
                     </ul>
                 </div>
 
                 <button class="btn btn-primary btn-lg w-100 mt-3" @click="completeSetup" :disabled="saving">
                     <span v-if="saving" class="spinner-border spinner-border-sm me-1"></span>
-                    Zum Dashboard <i class="uil uil-arrow-right ms-1"></i>
+                    {{ t('setup.goToDashboard') }} <i class="uil uil-arrow-right ms-1"></i>
                 </button>
 
                 <div v-if="error" class="alert alert-danger mt-3 py-2 small">{{ error }}</div>
@@ -300,15 +302,15 @@ async function skipSetup() {
                 <div class="restart-icon">
                     <i class="uil uil-redo"></i>
                 </div>
-                <h3>Server-Neustart erforderlich</h3>
+                <h3>{{ t('setup.serverRestartRequired') }}</h3>
                 <p class="text-muted">
-                    Du hast PostgreSQL gewaehlt. Die Datenbank-Konfiguration wurde gespeichert.
-                    Bitte starte den Server neu, damit die neue Datenbank verwendet wird.
+                    {{ t('setup.postgresChosen') }}
+                    {{ t('setup.restartServer') }}
                 </p>
                 <div class="alert alert-info small">
-                    <strong>So geht's:</strong><br>
-                    1. Beende den aktuellen Server (Ctrl+C oder Fenster schliessen)<br>
-                    2. Starte den Server erneut (Doppelklick auf Desktop-Verknuepfung)
+                    <strong>{{ t('setup.restartInstructions') }}</strong><br>
+                    1. {{ t('setup.restartStep1') }}<br>
+                    2. {{ t('setup.restartStep2') }}
                 </div>
             </div>
         </div>

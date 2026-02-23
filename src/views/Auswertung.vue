@@ -8,23 +8,26 @@ import { filteredTrades, auswertungNotes, satisfactionArray, satisfactionTradeAr
 import { useChartFormat, useThousandCurrencyFormat } from '../utils/formatters.js'
 import { useMountAuswertung } from '../utils/mountOrchestration.js'
 import { useGaugeChart, useHorizontalBarChart, useSplitBarChart, useStressLineChart, useRadarChart } from '../utils/charts'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 // ========== Karten-Konfiguration ==========
 const CARD_STORAGE_KEY = 'auswertung_hidden_cards'
 const hiddenCards = reactive(new Set(JSON.parse(localStorage.getItem(CARD_STORAGE_KEY) || '[]')))
 const showConfigDropdown = ref(false)
 
-const cardDefinitions = [
-    { key: 'longShort', label: 'Long/Short Verhältnis' },
-    { key: 'satisfaction', label: 'Zufriedenheitsrate' },
-    { key: 'completeness', label: 'Journal-Vollständigkeit' },
-    { key: 'timeframe', label: 'Timeframe-Nutzung' },
-    { key: 'stressTime', label: 'Stresslevel-Verlauf' },
-    { key: 'stressPerf', label: 'Stress vs. Win Rate' },
-    { key: 'emotionTime', label: 'Emotionslevel-Verlauf' },
-    { key: 'emotionPerf', label: 'Emotionslevel vs. Win Rate' },
-    { key: 'radar', label: 'Vollständigkeits-Radar' },
-]
+const cardDefinitions = computed(() => [
+    { key: 'longShort', label: t('auswertung.longShortRatio') },
+    { key: 'satisfaction', label: t('auswertung.satisfactionRate') },
+    { key: 'completeness', label: t('auswertung.journalCompleteness') },
+    { key: 'timeframe', label: t('auswertung.timeframeUsage') },
+    { key: 'stressTime', label: t('auswertung.stressProgress') },
+    { key: 'stressPerf', label: t('auswertung.stressVsWinRate') },
+    { key: 'emotionTime', label: t('auswertung.emotionProgress') },
+    { key: 'emotionPerf', label: t('auswertung.emotionVsWinRate') },
+    { key: 'radar', label: t('auswertung.completenessRadar') },
+])
 
 function toggleCard(key) {
     if (hiddenCards.has(key)) {
@@ -429,16 +432,16 @@ async function renderCharts() {
     await nextTick()
 
     // Gauges
-    useGaugeChart('gaugeChart1', longShortRatio.value, 'Long-Anteil', [
+    useGaugeChart('gaugeChart1', longShortRatio.value, t('auswertung.longShortRatio'), [
         [0.5, 'rgba(235, 87, 87, 0.85)'],
         [1, 'rgba(72, 199, 142, 0.85)']
     ])
-    useGaugeChart('gaugeChart2', satisfactionRate.value, 'Zufrieden', [
+    useGaugeChart('gaugeChart2', satisfactionRate.value, t('auswertung.satisfactionRate'), [
         [0.3, 'rgba(235, 87, 87, 0.85)'],
         [0.7, 'rgba(255, 193, 7, 0.85)'],
         [1, 'rgba(72, 199, 142, 0.85)']
     ])
-    useGaugeChart('gaugeChart3', completenessRate.value, 'Ausgefüllt', [
+    useGaugeChart('gaugeChart3', completenessRate.value, t('auswertung.journalCompleteness'), [
         [0.3, 'rgba(235, 87, 87, 0.85)'],
         [0.7, 'rgba(255, 193, 7, 0.85)'],
         [1, 'rgba(72, 199, 142, 0.85)']
@@ -471,7 +474,7 @@ async function renderCharts() {
     const emotionTime = emotionTimeData.value
     if (emotionTime.dates.length > 0) {
         useStressLineChart('emotionLineChart', emotionTime.dates, emotionTime.emotionLevels, {
-            max: 10, color: 'rgba(72, 199, 142, 0.85)', name: 'Emotionslevel'
+            max: 10, color: 'rgba(72, 199, 142, 0.85)', name: t('auswertung.emotionProgress')
         })
     }
     const emotionPerf = emotionVsPerfData.value
@@ -498,10 +501,10 @@ async function renderCharts() {
                 <!-- Config-Button -->
                 <div ref="configRef" class="d-flex justify-content-end mb-2 position-relative">
                     <button class="btn btn-sm btn-outline-secondary" @click="showConfigDropdown = !showConfigDropdown">
-                        <i class="uil uil-setting me-1"></i>Karten
+                        <i class="uil uil-setting me-1"></i>{{ t('auswertung.cards') }}
                     </button>
                     <div v-if="showConfigDropdown" class="card-config-dropdown">
-                        <div class="card-config-title">Sichtbare Karten</div>
+                        <div class="card-config-title">{{ t('auswertung.visibleCards') }}</div>
                         <div v-for="card in cardDefinitions" :key="card.key" class="card-config-item" @click="toggleCard(card.key)">
                             <i class="uil me-2" :class="isVisible(card.key) ? 'uil-check-square text-success' : 'uil-square-full text-muted'"></i>
                             {{ card.label }}
@@ -519,9 +522,9 @@ async function renderCharts() {
                     <!-- Gauge: Long/Short -->
                     <div v-if="isVisible('longShort')" class="col-12 col-md-4 mb-3">
                         <div class="dailyCard h-100 text-center">
-                            <h6>Long/Short Verhältnis
+                            <h6>{{ t('auswertung.longShortRatio') }}
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Anteil der Long-Trades an allen Trades. 50% = ausgewogenes Verhältnis."></i>
+                                    :data-bs-title="t('auswertung.tooltipLongShort')"></i>
                             </h6>
                             <div id="gaugeChart1" class="chartGaugeClass"></div>
                             <div class="row mt-2">
@@ -539,14 +542,14 @@ async function renderCharts() {
                     <!-- Gauge: Zufriedenheit -->
                     <div v-if="isVisible('satisfaction')" class="col-12 col-md-4 mb-3">
                         <div class="dailyCard h-100 text-center">
-                            <h6>Zufriedenheitsrate
+                            <h6>{{ t('auswertung.satisfactionRate') }}
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Anteil der Trades/Tage, bei denen du zufrieden warst."></i>
+                                    :data-bs-title="t('auswertung.tooltipSatisfaction')"></i>
                             </h6>
                             <div id="gaugeChart2" class="chartGaugeClass"></div>
                             <div class="mt-2">
                                 <small class="text-muted">
-                                    {{ [...satisfactionArray, ...satisfactionTradeArray].length }} Bewertungen
+                                    {{ [...satisfactionArray, ...satisfactionTradeArray].length }} {{ t('auswertung.ratings') }}
                                 </small>
                             </div>
                         </div>
@@ -554,13 +557,13 @@ async function renderCharts() {
                     <!-- Gauge: Vollständigkeit -->
                     <div v-if="isVisible('completeness')" class="col-12 col-md-4 mb-3">
                         <div class="dailyCard h-100 text-center">
-                            <h6>Journal-Vollständigkeit
+                            <h6>{{ t('auswertung.journalCompleteness') }}
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Anteil der Trades, bei denen du mindestens ein Journal-Feld ausgefüllt hast."></i>
+                                    :data-bs-title="t('auswertung.tooltipCompleteness')"></i>
                             </h6>
                             <div id="gaugeChart3" class="chartGaugeClass"></div>
                             <div class="mt-2">
-                                <small class="text-muted">{{ allTrades.length }} Trades insgesamt</small>
+                                <small class="text-muted">{{ allTrades.length }} {{ t('common.trades') }}</small>
                             </div>
                         </div>
                     </div>
@@ -577,16 +580,16 @@ async function renderCharts() {
                                     <span class="me-2" :style="{ color: group.color }">&#9679;</span>
                                     {{ group.name }}
                                     <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                        :data-bs-title="'Auswertung der Tag-Gruppe &quot;' + group.name + '&quot;. Grün = Wins, Rot = Losses.'"></i>
+                                        :data-bs-title="t('auswertung.tooltipTagGroup', { name: group.name })"></i>
                                 </h6>
                                 <div :id="tagGroupChartData[idx].chartId" class="chartClass"></div>
                                 <div class="mt-2">
                                     <table class="table table-sm table-borderless mb-0" style="font-size: 0.85rem;">
                                         <thead>
                                             <tr class="text-muted">
-                                                <th>Tag</th>
-                                                <th class="text-center">Trades</th>
-                                                <th class="text-center">Win%</th>
+                                                <th>{{ t('auswertung.tag') }}</th>
+                                                <th class="text-center">{{ t('common.trades') }}</th>
+                                                <th class="text-center">{{ t('auswertung.winPercent') }}</th>
                                                 <th class="text-end">PnL</th>
                                             </tr>
                                         </thead>
@@ -610,25 +613,25 @@ async function renderCharts() {
                     <!-- Timeframe -->
                     <div v-if="isVisible('timeframe')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
-                            <h6>Timeframe-Nutzung
+                            <h6>{{ t('auswertung.timeframeUsage') }}
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Welche Chart-Timeframes du am häufigsten verwendest. Grün = Win Rate ≥ 50%, Gelb = unter 50%."></i>
+                                    :data-bs-title="t('auswertung.tooltipTimeframe')"></i>
                             </h6>
                             <div v-if="timeframeChartData.categories.length > 0" id="hbarChart2" class="chartClass"></div>
-                            <div v-else class="text-center text-muted py-4">Keine Timeframe-Daten.</div>
+                            <div v-else class="text-center text-muted py-4">{{ t('auswertung.noTimeframeData') }}</div>
                         </div>
                     </div>
                     <!-- Stresslevel-Verlauf -->
                     <div v-if="isVisible('stressTime')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
-                            <h6>Stresslevel-Verlauf
+                            <h6>{{ t('auswertung.stressProgress') }}
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Entwicklung deines Stresslevels über die Zeit (1-10)."></i>
+                                    :data-bs-title="t('auswertung.tooltipStressProgress')"></i>
                             </h6>
                             <div v-if="stressTimeData.dates.length > 0" id="stressLineChart" class="chartClass"></div>
-                            <div v-else class="text-center text-muted py-4">Keine Stress-Daten.</div>
+                            <div v-else class="text-center text-muted py-4">{{ t('auswertung.noStressData') }}</div>
                             <div v-if="stressTimeData.dates.length > 0" class="mt-2 text-center">
-                                <small class="text-muted">Ø Stresslevel</small>
+                                <small class="text-muted">{{ t('auswertung.avgStress') }}</small>
                                 <div class="fw-bold" style="color: rgba(255, 167, 38, 0.85)">{{ avgStress }}</div>
                             </div>
                         </div>
@@ -636,25 +639,25 @@ async function renderCharts() {
                     <!-- Stress vs. Win Rate -->
                     <div v-if="isVisible('stressPerf')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
-                            <h6>Stress vs. Win Rate
+                            <h6>{{ t('auswertung.stressVsWinRate') }}
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Win Rate gruppiert nach Stresslevel."></i>
+                                    :data-bs-title="t('auswertung.tooltipStressVsWin')"></i>
                             </h6>
                             <div v-if="stressVsPerfData.categories.length > 0" id="hbarChart3" class="chartClass"></div>
-                            <div v-else class="text-center text-muted py-4">Keine Stress-Daten vorhanden</div>
+                            <div v-else class="text-center text-muted py-4">{{ t('auswertung.noStressData') }}</div>
                         </div>
                     </div>
                     <!-- Emotionslevel-Verlauf -->
                     <div v-if="isVisible('emotionTime')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
-                            <h6>Emotionslevel-Verlauf
+                            <h6>{{ t('auswertung.emotionProgress') }}
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Entwicklung deines Emotionslevels über die Zeit (1-10)."></i>
+                                    :data-bs-title="t('auswertung.tooltipEmotionProgress')"></i>
                             </h6>
                             <div v-if="emotionTimeData.dates.length > 0" id="emotionLineChart" class="chartClass"></div>
-                            <div v-else class="text-center text-muted py-4">Keine Emotionslevel-Daten.</div>
+                            <div v-else class="text-center text-muted py-4">{{ t('auswertung.noEmotionData') }}</div>
                             <div v-if="emotionTimeData.dates.length > 0" class="mt-2 text-center">
-                                <small class="text-muted">Ø Emotionslevel</small>
+                                <small class="text-muted">{{ t('auswertung.avgEmotion') }}</small>
                                 <div class="fw-bold" style="color: rgba(72, 199, 142, 0.85)">{{ avgEmotion }}</div>
                             </div>
                         </div>
@@ -662,9 +665,9 @@ async function renderCharts() {
                     <!-- Emotionslevel vs. Win Rate -->
                     <div v-if="isVisible('emotionPerf') && emotionVsPerfData.categories.length > 0" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
-                            <h6>Emotionslevel vs. Win Rate
+                            <h6>{{ t('auswertung.emotionVsWinRate') }}
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Win Rate gruppiert nach Emotionslevel."></i>
+                                    :data-bs-title="t('auswertung.tooltipEmotionVsWin')"></i>
                             </h6>
                             <div id="hbarChart4" class="chartClass"></div>
                         </div>
@@ -672,9 +675,9 @@ async function renderCharts() {
                     <!-- Vollständigkeits-Radar -->
                     <div v-if="isVisible('radar')" class="col-12 col-md-6 mb-3">
                         <div class="dailyCard h-100">
-                            <h6>Vollständigkeits-Radar
+                            <h6>{{ t('auswertung.completenessRadar') }}
                                 <i class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip" data-bs-html="true"
-                                    data-bs-title="Wie vollständig du dein Trading-Journal führst."></i>
+                                    :data-bs-title="t('auswertung.tooltipCompletenessRadar')"></i>
                             </h6>
                             <div id="radarChart1" class="chartClass"></div>
                         </div>

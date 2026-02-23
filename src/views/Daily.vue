@@ -8,6 +8,9 @@ import { amountCase, selectedGrossNet, selectedTagIndex, filteredSuggestions } f
 import { calendarData, filteredTrades, screenshots, screenshot, tradeScreenshotChanged, excursion, tradeExcursionChanged, tradeExcursionId, tradeExcursionDateUnix, tradeId, excursions, itemTradeIndex, tradeIndex, tradeIndexPrevious, availableTags, tradeTagsChanged, tagInput, tags, tradeTags, showTagsList, tradeTagsId, tradeTagsDateUnix, newTradeTags, notes, tradeNote, tradeNoteChanged, tradeNoteDateUnix, tradeNoteId, availableTagsArray, screenshotsInfos, satisfactionTradeArray, satisfactionArray } from '../stores/trades.js';
 import { currentUser, apis } from '../stores/settings.js';
 
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
+
 import { useCreatedDateFormat, useTwoDecCurrencyFormat, useTimeFormat, useTimeDuration, useDecimalsArithmetic, useDateCalFormat, useSwingDuration, useStartOfDay } from '../utils/formatters.js';
 import { useMountDaily, useGetSelectedRange, useLoadMore, useCheckVisibleScreen } from '../utils/mountOrchestration.js';
 import { useInitTooltip, useInitTab } from '../utils/utils';
@@ -57,6 +60,42 @@ const stripHtml = (html) => {
 let tradeSatisfactionId
 let tradeSatisfaction
 let tradeSatisfactionDateUnix
+
+// Trading Metadata (aus notes.tradingMetadata)
+const tradingMeta = ref(null)
+
+// ===== TRADING METADATA HELPERS =====
+function hasTradingMetadata(meta) {
+    if (!meta) return false
+    return (meta.fills?.length > 0) || meta.sl != null || meta.tp != null
+        || meta.positionSize || (meta.tpslHistory?.length > 0) || meta.rrr
+}
+
+function getEntryFillsFromMeta(fills, side) {
+    if (!fills || !Array.isArray(fills)) return []
+    return fills.filter(f => !f.reduceOnly)
+}
+
+function getAvgEntryPriceFromMeta(fills, side) {
+    const entryFills = getEntryFillsFromMeta(fills, side)
+    if (entryFills.length === 0) return 0
+    let totalValue = 0, totalQty = 0
+    for (const f of entryFills) {
+        totalValue += parseFloat(f.qty || 0) * parseFloat(f.price || 0)
+        totalQty += parseFloat(f.qty || 0)
+    }
+    return totalQty > 0 ? totalValue / totalQty : 0
+}
+
+function formatMetaFillTime(timestamp) {
+    return dayjs(parseInt(timestamp)).format('DD.MM. HH:mm')
+}
+
+function getFillBadgeType(fill, idx, allFills) {
+    if (fill.reduceOnly) return 'partialClose'
+    if (idx === 0 || allFills.slice(0, idx).every(f => f.reduceOnly)) return 'initial'
+    return 'compound'
+}
 
 // KI Trade-Bewertung
 const aiTradeReview = ref('')
@@ -128,7 +167,7 @@ async function requestTradeReview() {
         aiTradeReview.value = data.review
         aiTradeReviewOpen.value = true
     } catch (e) {
-        aiTradeReviewError.value = e.response?.data?.error || e.message || 'Bewertung fehlgeschlagen'
+        aiTradeReviewError.value = e.response?.data?.error || e.message || t('daily.reviewFailed')
     }
     aiTradeReviewLoading.value = false
 }
@@ -386,6 +425,10 @@ async function clickTradesModal(param1, param2, param3) {
                         }
 
                         if (ohlcTimestamps) {
+                            // tradingMetadata an Trade anhängen für Chart-Erweiterungen (SL/TP/Fills)
+                            if (tradeNote_ && tradeNote_.tradingMetadata) {
+                                filteredTradesObject._tradingMeta = tradeNote_.tradingMetadata
+                            }
                             await useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, filteredTradesObject, initCandleChart)
                             initCandleChart = false
                         }
@@ -426,8 +469,10 @@ async function clickTradesModal(param1, param2, param3) {
 
                 let noteIndex = notes.findIndex(obj => obj.tradeId == filteredTradeId)
                 tradeNote.value = null
+                tradingMeta.value = null
                 if (noteIndex != -1) {
                     tradeNote.value = stripHtml(notes[noteIndex].note)
+                    tradingMeta.value = notes[noteIndex].tradingMetadata || null
                 }
 
                 // KI-Bewertung laden (non-blocking)
@@ -1025,36 +1070,12 @@ function getOHLC(date, symbol, type, interval) {
                                         <div class="row">
                                             <div class="col-12 col-lg-auto">{{ useCreatedDateFormat(itemTrade.dateUnix)
                                                 }}
-                                                <i v-on:click="useDailySatisfactionChange(itemTrade.dateUnix, true, itemTrade)"
-                                                    v-bind:class="[itemTrade.satisfaction == true ? 'greenTrade' : '', 'uil', 'uil-thumbs-up', 'ms-2', 'me-1', 'pointerClass']"></i>
-                                                <i v-on:click="useDailySatisfactionChange(itemTrade.dateUnix, 'neutral', itemTrade)"
-                                                    v-bind:class="[itemTrade.satisfaction == 'neutral' ? 'neutralTrade' : '', 'uil', 'uil-thumbs-up', 'me-1', 'pointerClass']"
-                                                    style="transform: rotate(-90deg); display: inline-block;"></i>
-                                                <i v-on:click="useDailySatisfactionChange(itemTrade.dateUnix, false, itemTrade)"
-                                                    v-bind:class="[itemTrade.satisfaction == false ? 'redTrade' : '', 'uil', 'uil-thumbs-down', 'pointerClass']"></i>
-
-                                                <i v-show="tags.filter(obj => obj.tradeId == itemTrade.dateUnix.toString()).length == 0 || (tags.filter(obj => obj.tradeId == itemTrade.dateUnix.toString()).length > 0 && tags.filter(obj => obj.tradeId == itemTrade.dateUnix.toString())[0].tags.length === 0)"
-                                                    data-bs-toggle="modal" data-bs-target="#tagsModal"
-                                                    :data-index="index" class="ms-2 uil uil-tag-alt pointerClass"></i>
 
                                             </div>
 
                                         </div>
                                         <div>
-                                            <span
-                                                v-for="tags in tags.filter(obj => obj.tradeId == itemTrade.dateUnix.toString())">
-                                                <span v-for="tag in tags.tags.slice(0, 7)"
-                                                    class="tag txt-small pointerClass"
-                                                    :style="{ 'background-color': useGetTagInfo(tag).groupColor }"
-                                                    data-bs-toggle="modal" data-bs-target="#tagsModal"
-                                                    :data-index="index">{{
-                                                        useGetTagInfo(tag).tagName
-                                                    }}
-                                                </span>
-                                                <span v-show="tags.tags.length > 7">+{{
-                                                    tags.tags.length
-                                                    - 7 }}</span>
-                                            </span>
+                                            <!-- Tags display removed -->
                                         </div>
                                     </div>
 
@@ -1113,13 +1134,13 @@ function getOHLC(date, symbol, type, interval) {
                                                             <th scope="col"></th>
                                                             <th scope="col">Vol<i class="ps-1 uil uil-info-circle"
                                                                     data-bs-toggle="tooltip"
-                                                                    data-bs-title="Total number of securities during the trade (bought + sold or shorted + covered)"></i>
+                                                                    :data-bs-title="t('daily.volTooltip')"></i>
                                                             </th>
                                                             <th scope="col">Position</th>
-                                                            <th scope="col">Einstieg</th>
+                                                            <th scope="col">{{ t('daily.entry') }}</th>
                                                             <th scope="col">PnL/Stk<i class="ps-1 uil uil-info-circle"
                                                                     data-bs-toggle="tooltip"
-                                                                    data-bs-title="PnL per unit of security traded (bought or shorted)"></i>
+                                                                    :data-bs-title="t('daily.pnlPerUnitTooltip')"></i>
                                                             </th>
                                                             <th scope="col">PnL(n)</th>
                                                             <th scope="col"></th>
@@ -1147,7 +1168,7 @@ function getOHLC(date, symbol, type, interval) {
                                                                     data-bs-toggle="modal" data-bs-target="#tradesModal"
                                                                     :data-index="index" :data-indextwo="index2"
                                                                     @click="autoStartReview = true">
-                                                                    <i class="uil uil-robot me-1"></i>KI-Bewertung
+                                                                    <i class="uil uil-robot me-1"></i>{{ t('daily.aiReview') }}
                                                                 </button>
                                                             </td>
 
@@ -1165,18 +1186,18 @@ function getOHLC(date, symbol, type, interval) {
                                                             <!--Entry-->
                                                             <td>
                                                                 <span v-if="trade.tradesCount == 0"><span
-                                                                        v-if="trade.openPosition">Offen<i
+                                                                        v-if="trade.openPosition">{{ t('daily.open') }}<i
                                                                             class="ps-1 uil uil-info-circle"
                                                                             data-bs-toggle="tooltip" data-bs-html="true"
-                                                                            v-bind:data-bs-title="'Swing trade opened on ' + useDateCalFormat(trade.entryTime)"></i></span><span
-                                                                        v-else>Geschlossen<i class="ps-1 uil uil-info-circle"
+                                                                            v-bind:data-bs-title="t('daily.swingOpenedOn', { date: useDateCalFormat(trade.entryTime) })"></i></span><span
+                                                                        v-else>{{ t('daily.closed') }}<i class="ps-1 uil uil-info-circle"
                                                                             data-bs-toggle="tooltip" data-bs-html="true"
-                                                                            v-bind:data-bs-title="'Swing trade closed on ' + useDateCalFormat(trade.exitTime)"></i></span></span><span
+                                                                            v-bind:data-bs-title="t('daily.swingClosedOn', { date: useDateCalFormat(trade.exitTime) })"></i></span></span><span
                                                                     v-else>{{ useTimeFormat(trade.entryTime) }}<span
                                                                         v-if="checkDate(trade.td, trade.entryTime) == false"><i
                                                                             class="ps-1 uil uil-info-circle"
                                                                             data-bs-toggle="tooltip" data-bs-html="true"
-                                                                            v-bind:data-bs-title="'Swing trade from ' + useDateCalFormat(trade.entryTime)"></i></span></span>
+                                                                            v-bind:data-bs-title="t('daily.swingFrom', { date: useDateCalFormat(trade.entryTime) })"></i></span></span>
                                                             </td>
 
                                                             <!--P&L/Vol-->
@@ -1197,14 +1218,7 @@ function getOHLC(date, symbol, type, interval) {
                                                                     }}</span>
                                                             </td>
 
-                                                            <td>
-                                                                <span v-if="trade.satisfaction == true">
-                                                                    <i class="greenTrade uil uil-thumbs-up"></i>
-                                                                </span>
-                                                                <span v-if="trade.satisfaction == false">
-                                                                    <i class="redTrade uil uil-thumbs-down"></i>
-                                                                </span>
-                                                            </td>
+                                                            <!-- Satisfaction display removed -->
 
                                                             <td>
                                                                 <span
@@ -1301,7 +1315,7 @@ function getOHLC(date, symbol, type, interval) {
                                     <th scope="col">Symbol</th>
                                     <th scope="col">Vol</th>
                                     <th scope="col">Position</th>
-                                    <th scope="col">Einstieg</th>
+                                    <th scope="col">{{ t('daily.entry') }}</th>
                                     <th scope="col">Price</th>
                                     <th scope="col">Ausstieg</th>
                                     <th scope="col">Price</th>
@@ -1411,6 +1425,135 @@ function getOHLC(date, symbol, type, interval) {
                         </table>
                     </div>
 
+                    <!-- *** TRADING METADATA *** -->
+                    <div v-if="tradingMeta && hasTradingMetadata(tradingMeta)" class="mx-2 mt-2 mb-1 trading-meta-daily p-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="uil uil-layers me-2" style="color: var(--grey-color, #6b7280); font-size: 1rem;"></i>
+                            <span class="fw-bold small">{{ t('incoming.fills') }}</span>
+                            <span v-if="getEntryFillsFromMeta(tradingMeta.fills, filteredTrades[itemTradeIndex]?.trades[tradeIndex]?.side).length > 1"
+                                class="text-muted small ms-2">
+                                ({{ getEntryFillsFromMeta(tradingMeta.fills, filteredTrades[itemTradeIndex]?.trades[tradeIndex]?.side).length }} {{ t('incoming.fillEntries') }})
+                            </span>
+                            <span v-if="getEntryFillsFromMeta(tradingMeta.fills, filteredTrades[itemTradeIndex]?.trades[tradeIndex]?.side).length > 0"
+                                class="ms-auto fw-bold" style="font-size: 0.85rem;">
+                                {{ t('incoming.fillAvgPrice') }}: {{ getAvgEntryPriceFromMeta(tradingMeta.fills, filteredTrades[itemTradeIndex]?.trades[tradeIndex]?.side).toFixed(5) }}
+                            </span>
+                        </div>
+
+                        <!-- Fills Table -->
+                        <div v-if="tradingMeta.fills && tradingMeta.fills.length > 0">
+                            <table class="table table-sm table-borderless mb-1" style="font-size: 0.8rem; color: var(--white-80);">
+                                <tbody>
+                                    <tr v-for="(fill, idx) in tradingMeta.fills" :key="idx"
+                                        :class="fill.reduceOnly ? 'text-danger' : ''">
+                                        <td class="text-muted ps-0" style="width: 100px;">{{ formatMetaFillTime(fill.time) }}</td>
+                                        <td style="width: 80px;" class="text-end">{{ parseFloat(fill.qty) }}</td>
+                                        <td class="text-muted px-1">&times;</td>
+                                        <td style="width: 90px;">{{ parseFloat(fill.price) }}</td>
+                                        <td class="text-muted px-1">=</td>
+                                        <td class="text-end" style="width: 90px;">{{ (parseFloat(fill.qty) * parseFloat(fill.price)).toFixed(2) }}</td>
+                                        <td>
+                                            <span v-if="getFillBadgeType(fill, idx, tradingMeta.fills) === 'partialClose'"
+                                                class="badge bg-danger" style="font-size: 0.65rem;">{{ t('incoming.fillPartialClose') }}</span>
+                                            <span v-else-if="getFillBadgeType(fill, idx, tradingMeta.fills) === 'initial'"
+                                                class="badge bg-secondary" style="font-size: 0.65rem;">{{ t('incoming.fillInitial') }}</span>
+                                            <span v-else
+                                                class="badge bg-info" style="font-size: 0.65rem;">{{ t('incoming.fillCompound') }}</span>
+                                        </td>
+                                        <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ parseFloat(fill.fee || 0).toFixed(4) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- Totals row -->
+                            <div v-if="getEntryFillsFromMeta(tradingMeta.fills, filteredTrades[itemTradeIndex]?.trades[tradeIndex]?.side).length > 1"
+                                class="d-flex justify-content-between border-top pt-1 mt-1"
+                                style="font-size: 0.8rem; border-color: var(--white-20) !important;">
+                                <span class="text-muted">
+                                    {{ t('incoming.fillTotal') }}:
+                                    <strong class="text-white">{{ getEntryFillsFromMeta(tradingMeta.fills, filteredTrades[itemTradeIndex]?.trades[tradeIndex]?.side).reduce((sum, f) => sum + parseFloat(f.qty || 0), 0) }}</strong>
+                                </span>
+                                <span class="text-muted">
+                                    {{ t('incoming.fillFee') }}:
+                                    <strong class="text-white">{{ tradingMeta.fills.reduce((sum, f) => sum + parseFloat(f.fee || 0), 0).toFixed(4) }}</strong>
+                                </span>
+                            </div>
+
+                            <!-- Position Size row -->
+                            <div v-if="tradingMeta.positionSize"
+                                class="d-flex justify-content-between border-top pt-1 mt-1"
+                                style="font-size: 0.8rem; border-color: var(--white-20) !important;">
+                                <span class="text-muted">
+                                    {{ t('incoming.positionSize') }}:
+                                    <span class="text-white">{{ parseFloat(tradingMeta.margin || 0).toFixed(2) }}</span>
+                                    <span class="text-muted"> &times; </span>
+                                    <span class="text-white">{{ tradingMeta.leverage }}x</span>
+                                    <span class="text-muted"> = </span>
+                                    <strong class="text-white">{{ parseFloat(tradingMeta.positionSize).toFixed(2) }} USDT</strong>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- SL / BE / TP Row -->
+                        <div v-if="tradingMeta.sl || tradingMeta.tp || tradingMeta.breakeven"
+                            class="d-flex gap-3 mt-2 pt-2 border-top"
+                            style="font-size: 0.8rem; border-color: var(--white-20) !important;">
+                            <span v-if="tradingMeta.sl">
+                                <span class="fw-bold"
+                                    :class="!tradingMeta.slAboveBreakeven ? 'text-danger' : ''"
+                                    :style="tradingMeta.slAboveBreakeven ? 'color: #86efac' : ''">
+                                    SL: {{ tradingMeta.sl }}
+                                </span>
+                                <span v-if="tradingMeta.slQty" class="text-muted ms-1">({{ tradingMeta.slQty }})</span>
+                            </span>
+                            <span v-if="tradingMeta.breakeven">
+                                <span class="text-muted fw-bold">BE: {{ parseFloat(tradingMeta.breakeven).toFixed(2) }}</span>
+                            </span>
+                            <span v-if="tradingMeta.tp">
+                                <span class="fw-bold" style="color: #f59e0b;">TP: {{ tradingMeta.tp }}</span>
+                                <span v-if="tradingMeta.tpQty" class="text-muted ms-1">({{ tradingMeta.tpQty }})</span>
+                            </span>
+                            <span v-if="tradingMeta.rrr" class="ms-auto">
+                                <span class="fw-bold" style="color: #a78bfa;">RRR 1:{{ tradingMeta.rrr }}</span>
+                            </span>
+                        </div>
+
+                        <!-- SL/TP Protocol History -->
+                        <div v-if="tradingMeta.tpslHistory && tradingMeta.tpslHistory.length > 0"
+                            class="mt-2 pt-2 border-top"
+                            style="font-size: 0.75rem; border-color: var(--white-20) !important;">
+                            <div class="text-muted mb-1"><i class="uil uil-history me-1"></i>SL/TP Protokoll</div>
+                            <div v-for="(histEntry, idx) in tradingMeta.tpslHistory" :key="'hist-'+idx"
+                                class="d-flex align-items-center gap-2 mb-1">
+                                <span class="text-muted" style="width: 90px;">{{ dayjs(histEntry.time).format('DD.MM. HH:mm') }}</span>
+                                <span :class="histEntry.type === 'SL' ? (tradingMeta.slAboveBreakeven ? '' : 'text-danger') : (histEntry.action === 'triggered' ? 'text-success fw-bold' : '')"
+                                    :style="histEntry.type === 'SL' && tradingMeta.slAboveBreakeven ? 'color: #86efac' : (histEntry.type === 'TP' && histEntry.action !== 'triggered' ? 'color: #f59e0b' : '')">
+                                    {{ histEntry.type }}
+                                </span>
+                                <template v-if="histEntry.action === 'set'">
+                                    <span class="text-muted">&rarr;</span>
+                                    <span class="text-white">{{ histEntry.newVal }}</span>
+                                    <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
+                                </template>
+                                <template v-else-if="histEntry.action === 'moved'">
+                                    <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
+                                    <span class="text-muted">&rarr;</span>
+                                    <span class="text-white">{{ histEntry.newVal }}</span>
+                                    <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
+                                </template>
+                                <template v-else-if="histEntry.action === 'triggered'">
+                                    <span class="text-success" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
+                                    <span class="text-success">&rarr;</span>
+                                    <span class="text-success fw-bold">Ausgelöst &#x2713;</span>
+                                </template>
+                                <template v-else-if="histEntry.action === 'removed'">
+                                    <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
+                                    <span class="text-muted">&rarr; entfernt</span>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- *** VARIABLES *** -->
                     <div class="mt-1 mb-2 row align-items-center ms-1 me-1 tradeSetup">
                         <div class="col-12">
@@ -1419,62 +1562,28 @@ function getOHLC(date, symbol, type, interval) {
                                 <div class="col-12" v-show="!spinnerSetups">
                                     <div class="row align-items-center">
 
-                                        <!-- Satisfaction -->
-                                        <div class="col-1">
-                                            <label class="form-label txt-small mb-1" style="color: var(--white-60);">&nbsp;</label><br>
-                                            <i v-on:click="tradeSatisfactionChange(filteredTrades[itemTradeIndex].trades[tradeIndex], true)"
-                                                v-bind:class="[filteredTrades[itemTradeIndex].trades[tradeIndex].satisfaction == true ? 'greenTrade' : '', 'uil', 'uil-thumbs-up', 'pointerClass', 'me-1']"></i>
-                                            <i v-on:click="tradeSatisfactionChange(filteredTrades[itemTradeIndex].trades[tradeIndex], 'neutral')"
-                                                v-bind:class="[filteredTrades[itemTradeIndex].trades[tradeIndex].satisfaction == 'neutral' ? 'neutralTrade' : '', 'uil', 'uil-thumbs-up', 'pointerClass', 'me-1']"
-                                                style="transform: rotate(-90deg); display: inline-block;"></i>
-                                            <i v-on:click="tradeSatisfactionChange(filteredTrades[itemTradeIndex].trades[tradeIndex], false)"
-                                                v-bind:class="[filteredTrades[itemTradeIndex].trades[tradeIndex].satisfaction == false ? 'redTrade' : '', 'uil', 'uil-thumbs-down', 'pointerClass']"></i>
-                                        </div>
+                                        <!-- Satisfaction removed - managed in Incoming/Playbook -->
 
 
-                                        <!-- Tags -->
-                                        <div class="container-tags col-8">
+                                        <!-- Tags (read-only) -->
+                                        <div class="col-8">
                                             <label class="form-label txt-small mb-1" style="color: var(--white-60);">Tags</label>
-                                            <div class="form-control dropdown form-select" style="height: auto;">
-                                                <div style="display: flex; align-items: center; flex-wrap: wrap;">
-                                                    <span v-for="(tag, index) in tradeTags" :key="index"
-                                                        class="tag txt-small"
-                                                        :style="{ 'background-color': useGetTagInfo(tag.id).groupColor }"
-                                                        @click="useTradeTagsChange('remove', index)">
-                                                        {{ tag.name }}<span class="remove-tag">×</span>
-                                                    </span>
-
-                                                    <input type="text" v-model="tagInput" @input="useFilterTags"
-                                                        @keydown.enter.prevent="useTradeTagsChange('add', tagInput)"
-                                                        @keydown.tab.prevent="useTradeTagsChange('add', tagInput)"
-                                                        class="form-control tag-input" placeholder="Tag hinzufügen">
-                                                    <div class="clickable-area" v-on:click="useToggleTagsDropdown">
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <ul class="dropdown-menu-tags" v-show="showTagsList === 'daily'">
-                                                <span v-for="group in availableTags">
-                                                    <h6 class="p-1 mb-0"
-                                                        :style="'background-color: ' + group.color + ';'"
-                                                        v-show="useFilterSuggestions(group.id).filter(obj => obj.id == group.id)[0].tags.length > 0">
-                                                        {{ group.name }}</h6>
-                                                    <li v-for="(suggestion, index) in useFilterSuggestions(group.id).filter(obj => obj.id == group.id)[0].tags"
-                                                        :key="index" :class="{ active: index === selectedTagIndex }"
-                                                        @click="useTradeTagsChange('addFromDropdownMenu', suggestion)"
-                                                        class="dropdown-item dropdown-item-tags">
-                                                        <span class="ms-2">{{ suggestion.name }}</span>
-                                                    </li>
+                                            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-height: 30px;">
+                                                <span v-for="(tag, index) in tradeTags" :key="index"
+                                                    class="tag txt-small"
+                                                    :style="{ 'background-color': useGetTagInfo(tag.id).groupColor }">
+                                                    {{ tag.name }}
                                                 </span>
-                                            </ul>
+                                                <span v-if="!tradeTags.length" class="txt-small" style="color: var(--white-40);">–</span>
+                                            </div>
                                         </div>
                                         <!-- MFE -->
                                         <div class="col-3">
                                             <label class="form-label txt-small mb-1" style="color: var(--white-60);">
-                                                MFE Preis
+                                                {{ t('daily.mfePrice') }}
                                                 <i class="uil uil-info-circle pointerClass" style="font-size: 0.85rem;"
                                                     data-bs-toggle="tooltip" data-bs-placement="top"
-                                                    title="Maximum Favorable Excursion: Bester Preis w&#228;hrend des Trades. Long = h&#246;chster High, Short = tiefster Low. Wird automatisch aus Binance 1m-Daten berechnet."></i>
+                                                    :title="t('daily.mfeTooltip')"></i>
                                             </label>
                                             <input type="number" class="form-control form-control-sm" placeholder="MFE"
                                                         style="font-size: small;" v-bind:value="excursion.mfePrice"
@@ -1490,10 +1599,9 @@ function getOHLC(date, symbol, type, interval) {
                                 </div>
 
                                 <!-- Second line -->
-                                <div class="col-12 mt-2" v-show="!spinnerSetups">
-                                    <textarea class="form-control" placeholder="Notiz" id="floatingTextarea"
-                                        v-bind:value="tradeNote"
-                                        @input="tradeNoteChange($event.target.value)"></textarea>
+                                <div class="col-12 mt-2" v-show="!spinnerSetups && tradeNote">
+                                    <label class="form-label txt-small mb-1" style="color: var(--white-60);">{{ t('daily.note') }}</label>
+                                    <div class="trade-note-readonly">{{ tradeNote }}</div>
                                 </div>
 
                                 <!-- KI Trade-Bewertung -->
@@ -1505,7 +1613,7 @@ function getOHLC(date, symbol, type, interval) {
                                                 @click="requestTradeReview">
                                                 <span v-if="aiTradeReviewLoading" class="spinner-border spinner-border-sm me-1" style="width: 0.7rem; height: 0.7rem;"></span>
                                                 <i v-else class="uil uil-robot me-1"></i>
-                                                {{ aiTradeReviewLoading ? 'Analysiert...' : (aiTradeReview ? 'Neu bewerten' : 'KI-Bewertung') }}
+                                                {{ aiTradeReviewLoading ? t('daily.aiAnalyzing') : (aiTradeReview ? t('daily.aiReReview') : t('daily.aiReview')) }}
                                             </button>
                                             <button v-if="aiTradeReview && !aiTradeReviewLoading"
                                                 class="ai-review-toggle"
@@ -1520,26 +1628,9 @@ function getOHLC(date, symbol, type, interval) {
                                     </div>
                                 </div>
 
-                                <!-- Screenshot Icon-Button -->
-                                <div class="col-12 mt-2" v-show="!spinnerSetups && screenshot.originalBase64">
-                                    <span class="pointerClass" style="font-size: 1.3rem;"
-                                        data-bs-toggle="modal" data-bs-target="#fullScreenModal"
-                                        @click="useSelectedScreenshotFunction(-1, 'dailyModal', screenshot)">
-                                        <i class="uil uil-image me-1"></i>
-                                        <span class="txt-small" style="color: var(--white-60);">Screenshot</span>
-                                    </span>
-                                </div>
-
-                                <!-- Forth line -->
+                                <!-- Navigation + Screenshot Thumbnail -->
                                 <div class="col-12 mt-3" v-show="!spinnerSetups">
-                                    <input class="screenshotFile" type="file"
-                                        @change="useSetupImageUpload($event, filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime, filteredTrades[itemTradeIndex].trades[tradeIndex].symbol, filteredTrades[itemTradeIndex].trades[tradeIndex].side)" />
-                                </div>
-
-
-                                <!-- Fifth line -->
-                                <div class="col-12 mt-3" v-show="!spinnerSetups">
-                                    <div class="row">
+                                    <div class="row align-items-end">
                                         <div class="col-4 text-start">
                                             <button
                                                 v-show="filteredTrades[itemTradeIndex].trades.hasOwnProperty(tradeIndex - 1)"
@@ -1550,14 +1641,21 @@ function getOHLC(date, symbol, type, interval) {
                                         </div>
                                         <div class="col-4 text-center">
                                             <button v-if="saveButton" class="btn btn-outline-success btn-sm"
-                                                v-on:click="clickTradesModal()">Schließen
-                                                & Speichern</button>
+                                                v-on:click="clickTradesModal()">{{ t('daily.closeAndSave') }}</button>
                                             <button v-else class="btn btn-outline-primary btn-sm"
-                                                v-on:click="clickTradesModal()">Schließen</button>
+                                                v-on:click="clickTradesModal()">{{ t('daily.closeModal') }}</button>
                                         </div>
-                                        <div v-show="filteredTrades[itemTradeIndex].trades.hasOwnProperty(tradeIndex + 1)"
-                                            class="ms-auto col-4 text-end">
-                                            <button class="btn btn-outline-primary btn-sm me-3 mb-2"
+                                        <div class="col-4 text-end d-flex justify-content-end align-items-end gap-2">
+                                            <!-- Screenshot Thumbnail -->
+                                            <img v-if="screenshot.annotatedBase64 || screenshot.originalBase64"
+                                                :src="screenshot.annotatedBase64 || screenshot.originalBase64"
+                                                class="screenshot-thumb pointerClass"
+                                                data-bs-toggle="modal" data-bs-target="#fullScreenModal"
+                                                @click="useSelectedScreenshotFunction(-1, 'dailyModal', screenshot)"
+                                                title="Screenshot vergrößern" />
+                                            <button
+                                                v-show="filteredTrades[itemTradeIndex].trades.hasOwnProperty(tradeIndex + 1)"
+                                                class="btn btn-outline-primary btn-sm me-3 mb-2"
                                                 v-on:click="clickTradesModal(itemTradeIndex, tradeIndex, tradeIndex + 1)"
                                                 v-bind:disabled="spinnerSetups == true">
                                                 <i class="fa fa-chevron-right ms-2"></i></button>
@@ -1598,7 +1696,7 @@ function getOHLC(date, symbol, type, interval) {
                             <input type="text" v-model="tagInput" @input="onTagsModalInput"
                                 @keydown.enter.prevent="useTradeTagsChange('add', tagInput)"
                                 @keydown.tab.prevent="useTradeTagsChange('add', tagInput)"
-                                class="form-control tag-input" placeholder="Tag hinzufügen">
+                                class="form-control tag-input" :placeholder="t('daily.addTag')">
                             <div class="clickable-area" v-on:click="toggleTagsModalDropdown">
                             </div>
                         </div>
@@ -1738,5 +1836,43 @@ function getOHLC(date, symbol, type, interval) {
 
 .ai-review-content :deep(strong) {
     color: var(--white-100, #fff);
+}
+
+.trading-meta-daily {
+    background: var(--black-bg-5);
+    border: none;
+    border-radius: var(--border-radius, 6px);
+}
+.trading-meta-daily .table {
+    margin-bottom: 0;
+}
+.trading-meta-daily .table td {
+    padding: 0.15rem 0.3rem;
+    vertical-align: middle;
+    border: none;
+}
+
+.trade-note-readonly {
+    font-size: 0.85rem;
+    color: var(--white-87, rgba(255,255,255,0.87));
+    background: var(--black-bg-5, #0d0d0d);
+    border-radius: var(--border-radius, 6px);
+    padding: 0.4rem 0.6rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.screenshot-thumb {
+    width: 120px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 0.5rem;
+    transition: opacity 0.15s;
+}
+.screenshot-thumb:hover {
+    opacity: 0.8;
+    border-color: rgba(255,255,255,0.3);
 }
 </style>

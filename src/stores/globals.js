@@ -1,4 +1,7 @@
-import { ref, reactive } from "vue";
+import { ref, reactive, computed } from "vue";
+import i18n from '../i18n'
+
+const t = (key) => i18n.global.t(key)
 
 /**************************************
 * GENERAL
@@ -130,73 +133,73 @@ export const positions = ref([{
 }
 ])
 
-export const timeFrames = ref([{
+export const timeFrames = computed(() => [{
     value: "daily",
-    label: "Täglich"
+    label: t('options.daily')
 },
 {
     value: "weekly",
-    label: "Wöchentlich"
+    label: t('options.weekly')
 },
 {
     value: "monthly",
-    label: "Monatlich"
+    label: t('options.monthly')
 }
 ])
 
-export const ratios = ref([{
+export const ratios = computed(() => [{
     value: "appt",
     label: "APPT"
 },
 {
     value: "profitFactor",
-    label: "Profitfaktor"
+    label: t('options.profitFactor')
 }
 ])
 
-export const grossNet = ref([{
+export const grossNet = computed(() => [{
     value: "gross",
-    label: "Brutto"
+    label: t('options.gross')
 },
 {
     value: "net",
-    label: "Netto"
+    label: t('options.net')
 }
 ])
 
 // Alle verfügbaren Trade-Timeframes
-export const allTradeTimeframes = [
-    { value: '1m', label: '1 Minute', group: 'Minuten' },
-    { value: '2m', label: '2 Minuten', group: 'Minuten' },
-    { value: '3m', label: '3 Minuten', group: 'Minuten' },
-    { value: '5m', label: '5 Minuten', group: 'Minuten' },
-    { value: '6m', label: '6 Minuten', group: 'Minuten' },
-    { value: '10m', label: '10 Minuten', group: 'Minuten' },
-    { value: '15m', label: '15 Minuten', group: 'Minuten' },
-    { value: '30m', label: '30 Minuten', group: 'Minuten' },
-    { value: '45m', label: '45 Minuten', group: 'Minuten' },
-    { value: '1h', label: '1 Stunde', group: 'Stunden' },
-    { value: '2h', label: '2 Stunden', group: 'Stunden' },
-    { value: '3h', label: '3 Stunden', group: 'Stunden' },
-    { value: '4h', label: '4 Stunden', group: 'Stunden' },
-    { value: '1D', label: '1 Tag', group: 'Tage' },
-    { value: '1W', label: '1 Woche', group: 'Tage' },
-    { value: '1M', label: '1 Monat', group: 'Tage' },
-    { value: '3M', label: '3 Monate', group: 'Tage' },
-    { value: '6M', label: '6 Monate', group: 'Tage' },
-    { value: '12M', label: '12 Monate', group: 'Tage' },
-]
+export const allTradeTimeframes = computed(() => [
+    { value: '1m', label: t('timeframes.1m'), group: t('timeframes.minutes') },
+    { value: '2m', label: t('timeframes.2m'), group: t('timeframes.minutes') },
+    { value: '3m', label: t('timeframes.3m'), group: t('timeframes.minutes') },
+    { value: '5m', label: t('timeframes.5m'), group: t('timeframes.minutes') },
+    { value: '6m', label: t('timeframes.6m'), group: t('timeframes.minutes') },
+    { value: '10m', label: t('timeframes.10m'), group: t('timeframes.minutes') },
+    { value: '15m', label: t('timeframes.15m'), group: t('timeframes.minutes') },
+    { value: '30m', label: t('timeframes.30m'), group: t('timeframes.minutes') },
+    { value: '45m', label: t('timeframes.45m'), group: t('timeframes.minutes') },
+    { value: '1h', label: t('timeframes.1h'), group: t('timeframes.hours') },
+    { value: '2h', label: t('timeframes.2h'), group: t('timeframes.hours') },
+    { value: '3h', label: t('timeframes.3h'), group: t('timeframes.hours') },
+    { value: '4h', label: t('timeframes.4h'), group: t('timeframes.hours') },
+    { value: '1D', label: t('timeframes.1D'), group: t('timeframes.days') },
+    { value: '1W', label: t('timeframes.1W'), group: t('timeframes.days') },
+    { value: '1M', label: t('timeframes.1M'), group: t('timeframes.days') },
+    { value: '3M', label: t('timeframes.3M'), group: t('timeframes.days') },
+    { value: '6M', label: t('timeframes.6M'), group: t('timeframes.days') },
+    { value: '12M', label: t('timeframes.12M'), group: t('timeframes.days') },
+])
 
 // Vom User ausgewählte Timeframes (wird aus Settings geladen)
 export const selectedTradeTimeframes = reactive([])
 
-export const plSatisfaction = ref([{
+export const plSatisfaction = computed(() => [{
     value: "pl",
     label: "PnL"
 },
 {
     value: "satisfaction",
-    label: "Zufriedenheit"
+    label: t('options.satisfaction')
 }
 ])
 

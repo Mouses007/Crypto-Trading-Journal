@@ -10,7 +10,7 @@ const VALID_SETTINGS_KEYS = [
     'tradeTimeframes', 'customTimeframes', 'enableBinanceChart',
     'aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
     'aiScreenshots', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-    'aiReportPrompt', 'aiChatEnabled', 'browserNotifications', 'setupComplete', 'balances'
+    'aiReportPrompt', 'aiChatEnabled', 'browserNotifications', 'setupComplete', 'balances', 'language'
 ]
 
 // Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten
@@ -20,9 +20,9 @@ const TABLE_COLUMNS = {
     screenshots: ['id', 'name', 'symbol', 'side', 'broker', 'originalBase64', 'annotatedBase64', 'original', 'annotated', 'markersOnly', 'maState', 'date', 'dateUnix', 'dateUnixDay', 'createdAt', 'updatedAt'],
     satisfactions: ['id', 'dateUnix', 'tradeId', 'satisfaction', 'createdAt', 'updatedAt'],
     tags: ['id', 'dateUnix', 'tradeId', 'tags', 'closingTags', 'createdAt', 'updatedAt'],
-    notes: ['id', 'dateUnix', 'tradeId', 'note', 'title', 'entryStressLevel', 'exitStressLevel', 'entryNote', 'feelings', 'playbook', 'timeframe', 'screenshotId', 'emotionLevel', 'closingNote', 'closingScreenshotId', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingPlaybook', 'createdAt', 'updatedAt'],
+    notes: ['id', 'dateUnix', 'tradeId', 'note', 'title', 'entryStressLevel', 'exitStressLevel', 'entryNote', 'feelings', 'playbook', 'timeframe', 'screenshotId', 'emotionLevel', 'closingNote', 'closingScreenshotId', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingPlaybook', 'tradeType', 'tradingMetadata', 'createdAt', 'updatedAt'],
     excursions: ['id', 'dateUnix', 'tradeId', 'stopLoss', 'maePrice', 'mfePrice', 'createdAt', 'updatedAt'],
-    incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker']
+    incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType']
 }
 
 // JSON columns per table that should be parsed on read and stringified on write
@@ -32,6 +32,7 @@ const JSON_COLUMNS = {
     tags: ['tags', 'closingTags'],
     settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'customTimeframes', 'balances'],
     incoming_positions: ['bitunixData', 'tags', 'closingTags', 'historyData'],
+    notes: ['tradingMetadata'],
 }
 
 function parseJsonColumns(tableName, row) {

@@ -10,7 +10,9 @@ import donatePaypal from '../assets/donate-paypal.jpg'
 
 const appVersion = __APP_VERSION__
 import { useToggleMobileMenu } from "../utils/utils";
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const showDonateModal = ref(false)
 
 // ── Update System ──
@@ -38,12 +40,12 @@ async function installUpdate() {
 
     const info = updateInfo.value
     const version = `v${info?.localVersion || '?'} → v${info?.remoteVersion || '?'}`
-    const notes = info?.releaseNotes ? `\n\nÄnderungen:\n${info.releaseNotes}` : ''
+    const notes = info?.releaseNotes ? `\n\n${t('nav.changes')}\n${info.releaseNotes}` : ''
     const ok = confirm(
         `Update ${version}${notes}\n\n` +
-        '⚠️ Vor dem Update ein Backup erstellen!\n' +
-        'Einstellungen → Datenbank → Backup → Export\n\n' +
-        'Hast du ein Backup erstellt und möchtest fortfahren?'
+        t('nav.updateBackupWarning') + '\n' +
+        t('nav.updateBackupPath') + '\n\n' +
+        t('nav.updateConfirm')
     )
     if (!ok) return
 
@@ -72,7 +74,7 @@ async function checkRollbackStatus() {
 
 async function rollback() {
     if (rollbackInstalling.value) return
-    const ok = confirm('Möchtest du zur vorherigen Version zurückkehren?')
+    const ok = confirm(t('nav.rollbackConfirm'))
     if (!ok) return
 
     rollbackInstalling.value = true
@@ -126,7 +128,7 @@ function goToDashboard() {
     <div id="step2" class="mt-2">
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
-                <label class="fw-lighter">BÖRSE</label>
+                <label class="fw-lighter">{{ t('nav.exchange') }}</label>
                 <div class="sidebar-control">
                     <select class="form-select form-select-sm sidebar-select"
                         :value="selectedBroker"
@@ -140,33 +142,33 @@ function goToDashboard() {
 
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
-                <label class="fw-lighter">ANALYSIEREN</label>
+                <label class="fw-lighter">{{ t('nav.analyze') }}</label>
                 <a id="step3" v-bind:class="[pageId === 'dashboard' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/dashboard">
-                    <i class="uil uil-apps me-2"></i>Dashboard</a>
+                    <i class="uil uil-apps me-2"></i>{{ t('nav.dashboard') }}</a>
                 <a id="step4" v-bind:class="[pageId === 'daily' ? 'activeNavCss' : '', 'nav-link', 'mb-2']" href="/daily">
-                    <i class="uil uil-signal-alt-3 me-2"></i>Tages Ansicht
+                    <i class="uil uil-signal-alt-3 me-2"></i>{{ t('nav.dailyView') }}
                 </a>
                 <a id="step5" v-bind:class="[pageId === 'calendar' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/calendar">
-                    <i class="uil uil-calendar-alt me-2"></i>Kalender</a>
+                    <i class="uil uil-calendar-alt me-2"></i>{{ t('nav.calendar') }}</a>
             </div>
         </div>
 
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
-                <label class="fw-lighter">REFLEKTIEREN</label>
+                <label class="fw-lighter">{{ t('nav.reflect') }}</label>
                 <a v-bind:class="[pageId === 'playbook' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/playbook">
-                    <i class="uil uil-compass me-2"></i>Playbook
+                    <i class="uil uil-compass me-2"></i>{{ t('nav.playbook') }}
                 </a>
                 <a v-bind:class="[pageId === 'auswertung' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/auswertung">
-                    <i class="uil uil-chart-pie me-2"></i>Auswertung
+                    <i class="uil uil-chart-pie me-2"></i>{{ t('nav.evaluation') }}
                 </a>
                 <a v-bind:class="[pageId === 'kiAgent' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/ki-agent">
-                    <i class="uil uil-robot me-2"></i>KI-Agent</a>
+                    <i class="uil uil-robot me-2"></i>{{ t('nav.kiAgent') }}</a>
                 <a id="step7" v-bind:class="[pageId === 'screenshots' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/screenshots">
                     <i class="uil uil-image-v me-2"></i>Screenshots
@@ -176,24 +178,24 @@ function goToDashboard() {
 
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
-                <label class="fw-lighter">HINZUFÜGEN</label>
+                <label class="fw-lighter">{{ t('nav.add') }}</label>
                 <a v-bind:class="[pageId === 'incoming' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/incoming">
-                    <i class="uil uil-arrow-circle-down me-2"></i>Pendente Trades
+                    <i class="uil uil-arrow-circle-down me-2"></i>{{ t('nav.pendingTrades') }}
                 </a>
                 <a v-bind:class="[pageId === 'addTrades' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/addTrades">
-                    <i class="uil uil-plus-circle me-2"></i>Manueller Import
+                    <i class="uil uil-plus-circle me-2"></i>{{ t('nav.manualImport') }}
                 </a>
             </div>
         </div>
 
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
-                <label class="fw-lighter">VERWALTUNG</label>
+                <label class="fw-lighter">{{ t('nav.manage') }}</label>
                 <a v-bind:class="[pageId === 'settings' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/settings">
-                    <i class="uil uil-setting me-2"></i>Einstellungen
+                    <i class="uil uil-setting me-2"></i>{{ t('nav.settings') }}
                 </a>
             </div>
         </div>
@@ -207,18 +209,18 @@ function goToDashboard() {
                 <i class="uil uil-download-alt me-1"></i>Update v{{ updateInfo?.remoteVersion }}
             </a>
             <span v-if="updateInstalling" class="footer-update installing">
-                <span class="spinner-border spinner-border-sm me-1"></span>Installiere...
+                <span class="spinner-border spinner-border-sm me-1"></span>{{ t('nav.installing') }}
             </span>
             <a v-if="rollbackAvailable && !rollbackInstalling" class="footer-rollback" @click.prevent="rollback">
                 <i class="uil uil-redo me-1"></i>Rollback
             </a>
             <span v-if="rollbackInstalling" class="footer-update installing">
-                <span class="spinner-border spinner-border-sm me-1"></span>Rollback...
+                <span class="spinner-border spinner-border-sm me-1"></span>{{ t('nav.rollback') }}
             </span>
             <span v-if="updateError" class="footer-update-error">{{ updateError }}</span>
             <a href="#" @click.prevent="showDonateModal = true"
                 :class="['footer-donate', { 'footer-donate-highlight': updateAvailable }]">
-                <i class="uil uil-heart me-1"></i>Spenden
+                <i class="uil uil-heart me-1"></i>{{ t('nav.donate') }}
             </a>
         </div>
     </div>
@@ -228,7 +230,7 @@ function goToDashboard() {
         <div v-if="showDonateModal" class="donate-overlay" @click.self="showDonateModal = false">
             <div class="donate-modal">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h6 class="mb-0"><i class="uil uil-heart me-1"></i>Spenden</h6>
+                    <h6 class="mb-0"><i class="uil uil-heart me-1"></i>{{ t('nav.donate') }}</h6>
                     <button class="btn btn-sm btn-outline-secondary" @click="showDonateModal = false">
                         <i class="uil uil-times"></i>
                     </button>

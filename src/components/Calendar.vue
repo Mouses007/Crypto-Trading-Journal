@@ -1,16 +1,19 @@
 <script setup>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { pageId, timeZoneTrade, spinnerLoadingPage, scrollToDateUnix } from '../stores/ui.js';
 import { selectedMonth, selectedPlSatisfaction, amountCase } from '../stores/filters.js';
 import { calendarData, miniCalendarsData } from '../stores/trades.js';
 import { useThousandCurrencyFormat } from '../utils/formatters.js';
 import { useMountCalendar, useMountDaily } from '../utils/mountOrchestration.js';
 
+const { t } = useI18n()
 const router = useRouter()
 import dayjs from '../utils/dayjs-setup.js'
 
 
-const days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+const days = computed(() => [t('calendar.mon'), t('calendar.tue'), t('calendar.wed'), t('calendar.thu'), t('calendar.fri'), t('calendar.sat'), t('calendar.sun')])
 
 //console.log("perdio range "+JSON.stringify(periodRange))
 
@@ -69,7 +72,7 @@ async function monthLastNext(param) {
                             @click="scrollToDay(line[index])">
                             <p class="mb-1 dayNumber" v-show="line[index].day != 0">{{ line[index].day }}</p>
                             <div v-if="pageId == 'calendar'" class="d-none d-md-block">
-                                <p v-show="line[index].pAndL.trades">{{ line[index].pAndL.trades }} trades</p>
+                                <p v-show="line[index].pAndL.trades">{{ line[index].pAndL.trades }} {{ t('common.trades') }}</p>
                                 <p v-show="line[index].pAndL[amountCase + 'Proceeds']">
                                     {{ useThousandCurrencyFormat(parseInt(line[index].pAndL[amountCase + 'Proceeds'])) }}
                                 </p>

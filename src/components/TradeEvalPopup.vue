@@ -6,10 +6,10 @@
                 <!-- Header -->
                 <div class="modal-header border-bottom-0 pb-1">
                     <h5 class="modal-title">
-                        <i class="uil uil-bell me-2"></i>Neue Trade-Bewertungen
+                        <i class="uil uil-bell me-2"></i>{{ t('incoming.newTradeEvals') }}
                     </h5>
                     <button type="button" class="btn-close btn-close-white" @click="dismissPopup"
-                        aria-label="Schließen"></button>
+                        :aria-label="t('common.close')"></button>
                 </div>
 
                 <!-- Body -->
@@ -17,11 +17,11 @@
                     <div class="eval-counts">
                         <div v-if="pendingOpeningCount > 0" class="d-flex align-items-center mb-2">
                             <span class="eval-dot eval-dot-opening me-2"></span>
-                            <span>{{ pendingOpeningCount }} Eröffnungsbewertung{{ pendingOpeningCount > 1 ? 'en' : '' }}</span>
+                            <span>{{ pendingOpeningCount }} {{ pendingOpeningCount > 1 ? t('incoming.openingEvaluations') : t('incoming.openingEvaluation') }}</span>
                         </div>
                         <div v-if="pendingClosingCount > 0" class="d-flex align-items-center mb-2">
                             <span class="eval-dot eval-dot-closing me-2"></span>
-                            <span>{{ pendingClosingCount }} Abschlussbewertung{{ pendingClosingCount > 1 ? 'en' : '' }}</span>
+                            <span>{{ pendingClosingCount }} {{ t('incoming.closingEvaluation') }}</span>
                         </div>
                     </div>
                 </div>
@@ -29,7 +29,7 @@
                 <!-- Footer -->
                 <div class="modal-footer border-top-0 pt-0">
                     <button type="button" class="btn btn-primary btn-sm w-100" @click="goToIncoming">
-                        <i class="uil uil-arrow-circle-down me-1"></i>Zu Pendente Trades
+                        <i class="uil uil-arrow-circle-down me-1"></i>{{ t('incoming.goToPendingTrades') }}
                     </button>
                 </div>
             </div>
@@ -40,8 +40,10 @@
 <script setup>
 import { watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { pendingOpeningCount, pendingClosingCount, evalNotificationShown, evalNotificationDismissed } from '../stores/trades.js'
 
+const { t } = useI18n()
 const router = useRouter()
 let modalInstance = null
 

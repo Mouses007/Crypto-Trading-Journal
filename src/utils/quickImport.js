@@ -5,6 +5,7 @@ import { dbUpdateSettings } from './db.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker } from '../stores/filters.js'
 import { logWarn } from './logger.js'
+import i18n from '../i18n'
 
 /**
  * Quick API Import: Fetches trades from exchange API since last import,
@@ -20,12 +21,12 @@ export async function useQuickApiImport(explicitBroker) {
     const response = await axios.post(`/api/${broker}/quick-import`)
 
     if (!response.data.ok) {
-        throw new Error(response.data.error || 'Import fehlgeschlagen')
+        throw new Error(response.data.error || i18n.global.t('messages.importFailed'))
     }
 
     const allPositions = response.data.positions || []
     if (allPositions.length === 0) {
-        return { success: true, message: 'Keine neuen Positionen gefunden.', count: 0 }
+        return { success: true, message: i18n.global.t('messages.noNewPositions'), count: 0 }
     }
 
     // 2. Get existing trade dates to filter duplicates (only for same broker!)
@@ -63,7 +64,7 @@ export async function useQuickApiImport(explicitBroker) {
 
     const newDays = Object.keys(tradesByDay)
     if (newDays.length === 0) {
-        return { success: true, message: 'Alle Trades bereits importiert.', count: 0 }
+        return { success: true, message: i18n.global.t('messages.allTradesImported'), count: 0 }
     }
 
     // 5. Create blotter and P&L for each day, then save
@@ -205,7 +206,7 @@ export async function useQuickApiImport(explicitBroker) {
 
     return {
         success: true,
-        message: `${allPositions.length} Positionen geladen, ${savedCount} neue Tage importiert.`,
+        message: i18n.global.t('messages.positionsImported', { count: allPositions.length, days: savedCount }),
         count: savedCount
     }
 }
@@ -215,7 +216,9 @@ export async function useQuickApiImport(explicitBroker) {
  */
 function createBitunixTradeObj(pos, i) {
     const grossPL = parseFloat(pos.realizedPNL || 0)
-    const fee = Math.abs(parseFloat(pos.fee || 0)) + Math.abs(parseFloat(pos.funding || 0))
+    const tradingFee = Math.abs(parseFloat(pos.fee || 0))
+    const fundingFee = Math.abs(parseFloat(pos.funding || 0))
+    const fee = tradingFee + fundingFee
     const closeTime = parseInt(pos.mtime || pos.ctime)
     const openTime = parseInt(pos.ctime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
@@ -237,7 +240,7 @@ function createBitunixTradeObj(pos, i) {
         entryPrice: parseFloat(pos.entryPrice || 0),
         exitPrice: parseFloat(pos.closePrice || 0),
         symbol: pos.symbol || 'FUTURES',
-        grossPL, netPL, fee, isGrossWin, isNetWin
+        grossPL, netPL, fee, tradingFee, fundingFee, isGrossWin, isNetWin
     })
 }
 
@@ -252,7 +255,9 @@ function createBitgetTradeObj(pos, i) {
     const openFee = Math.abs(parseFloat(pos.openFee || 0))
     const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
     const totalFunding = Math.abs(parseFloat(pos.totalFunding || 0))
-    const fee = openFee + closeFee + totalFunding
+    const tradingFee = openFee + closeFee
+    const fundingFee = totalFunding
+    const fee = tradingFee + fundingFee
     const closeTime = parseInt(pos.utime || pos.uTime || pos.ctime || pos.cTime)
     const openTime = parseInt(pos.ctime || pos.cTime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
@@ -275,7 +280,7 @@ function createBitgetTradeObj(pos, i) {
         entryPrice: parseFloat(pos.openAvgPrice || 0),
         exitPrice: parseFloat(pos.closeAvgPrice || 0),
         symbol: pos.symbol || 'FUTURES',
-        grossPL, netPL, fee, isGrossWin, isNetWin
+        grossPL, netPL, fee, tradingFee, fundingFee, isGrossWin, isNetWin
     })
 }
 
@@ -283,7 +288,7 @@ function createBitgetTradeObj(pos, i) {
  * Build a standardized trade object from normalized fields.
  */
 function buildTradeObj({ id, broker, td, side, quantity, entryTime, exitTime,
-    entryPrice, exitPrice, symbol, grossPL, netPL, fee, isGrossWin, isNetWin }) {
+    entryPrice, exitPrice, symbol, grossPL, netPL, fee, tradingFee, fundingFee, isGrossWin, isNetWin }) {
     return {
         id,
         account: broker,
@@ -303,6 +308,8 @@ function buildTradeObj({ id, broker, td, side, quantity, entryTime, exitTime,
         grossProceeds: grossPL,
         netProceeds: netPL,
         commission: fee,
+        tradingFee: tradingFee || 0,
+        fundingFee: fundingFee || 0,
         sec: 0, taf: 0, nscc: 0, nasdaq: 0,
         grossSharePL: grossPL,
         netSharePL: netPL,

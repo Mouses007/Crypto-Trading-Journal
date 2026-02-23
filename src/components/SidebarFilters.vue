@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, nextTick } from "vue"
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useMonthFormat, useDateCalFormat, useDateCalFormatMonth } from "../utils/formatters.js"
 import { useMountCalendar, useMountDashboard, useMountDaily, useMountAuswertung, useCheckVisibleScreen } from "../utils/mountOrchestration.js"
 import { pageId, timeZoneTrade, hasData } from "../stores/ui.js"
@@ -9,6 +9,9 @@ import { useECharts } from "../utils/charts.js"
 import { useRefreshScreenshot } from "../utils/screenshots"
 import { useInitTooltip } from "../utils/utils.js"
 import dayjs from '../utils/dayjs-setup.js'
+import { useI18n } from 'vue-i18n'
+
+const { t: $t } = useI18n()
 
 /*============================================
     FILTER CONFIG PER PAGE
@@ -28,16 +31,16 @@ const showFilters = computed(() => filterPages.includes(pageId.value))
 const filtersOpen = ref(false)
 
 // Tooltip descriptions for info icons
-const tooltips = {
-    periodRange: "Zeitraum der angezeigten Trades",
-    month: "Monat der angezeigten Trades",
-    grossNet: "Brutto- oder Nettodaten anzeigen",
-    positions: "Long, Short oder beide Positionen",
-    timeFrame: "Balken-Darstellung: Trades pro Tag, Woche oder Monat zusammenfassen",
-    ratio: "Kennzahl: Profitfaktor oder APPT",
-    plSatisfaction: "PnL oder Zufriedenheit im Kalender",
-    tags: "Nach Tags filtern",
-}
+const tooltips = computed(() => ({
+    periodRange: $t('filters.periodRange'),
+    month: $t('filters.month'),
+    grossNet: $t('filters.grossNet'),
+    positions: $t('filters.positions'),
+    timeFrame: $t('filters.timeFrame'),
+    ratio: $t('filters.ratio'),
+    plSatisfaction: $t('filters.plSatisfaction'),
+    tags: $t('filters.tags'),
+}))
 
 /*============================================
     TAGS
@@ -107,8 +110,8 @@ const selectAllTags = () => {
 
 // Positions: display label for dropdown
 const positionsLabel = computed(() => {
-    if (selectedPositions.value.length === positions.value.length) return 'Alle'
-    if (selectedPositions.value.length === 0) return 'Keine'
+    if (selectedPositions.value.length === positions.value.length) return $t('common.all')
+    if (selectedPositions.value.length === 0) return $t('common.none')
     return selectedPositions.value.map(v => {
         const p = positions.value.find(p => p.value === v)
         return p ? p.label : v
@@ -159,7 +162,7 @@ function applyAndClose() {
 
 async function saveFilter() {
     if (selectedDateRange.value.end < selectedDateRange.value.start) {
-        alert("Enddatum kann nicht vor dem Startdatum liegen")
+        alert($t('filters.endBeforeStart'))
         return
     } else {
         localStorage.setItem('selectedDateRange', JSON.stringify(selectedDateRange.value))
@@ -227,7 +230,7 @@ onMounted(async () => {
         <!-- Toggle Header -->
         <div class="sf-header" @click="filtersOpen = !filtersOpen">
             <i class="uil uil-filter me-1"></i>
-            <span>Filter</span>
+            <span>{{ $t('common.filter') }}</span>
             <i :class="filtersOpen ? 'uil uil-angle-up' : 'uil uil-angle-down'" class="ms-auto"></i>
         </div>
 
@@ -317,8 +320,8 @@ onMounted(async () => {
             <div v-if="has('tags') && pageId === 'dashboard'" class="sf-row">
                 <span class="sf-info" data-bs-toggle="tooltip" data-bs-placement="right" :title="tooltips.tags"><i class="uil uil-info-circle"></i></span>
                 <select @input="inputDashTag($event.target.value)" class="form-select form-select-sm sf-select">
-                    <option value="all" :selected="dashTagSelectValue == 'all'">Alle Tags</option>
-                    <option value="t000t" :selected="dashTagSelectValue == 't000t'">Kein Tag</option>
+                    <option value="all" :selected="dashTagSelectValue == 'all'">{{ $t('filters.allTags') }}</option>
+                    <option value="t000t" :selected="dashTagSelectValue == 't000t'">{{ $t('filters.noTag') }}</option>
                     <option v-for="tag in dashboardTags" :key="tag.id" :value="tag.id"
                         :selected="dashTagSelectValue == tag.id">{{ tag.name }}</option>
                 </select>
@@ -334,12 +337,12 @@ onMounted(async () => {
                     <ul class="dropdown-menu sf-dropdown-menu sf-tag-dropdown">
                         <li class="sf-tag-actions">
                             <a class="pointerClass sf-tag-toggle" @click="selectAllTags">
-                                <span v-if="!allTagsSelected">Alle</span><span v-else>Keine</span>
+                                <span v-if="!allTagsSelected">{{ $t('common.all') }}</span><span v-else>{{ $t('common.none') }}</span>
                             </a>
                         </li>
                         <li class="form-check sf-check-item">
                             <input class="form-check-input" type="checkbox" value="t000t" v-model="selectedTags" id="tag-none">
-                            <label class="form-check-label" for="tag-none">Kein Tag</label>
+                            <label class="form-check-label" for="tag-none">{{ $t('filters.noTag') }}</label>
                         </li>
                         <template v-for="group in availableTags" :key="group.name">
                             <li class="sf-tag-group-hdr" :style="'background-color: ' + group.color + ';'">{{ group.name }}</li>
@@ -355,7 +358,7 @@ onMounted(async () => {
             <!-- Anwenden Button -->
             <div class="sf-apply-row">
                 <button class="btn btn-success btn-sm sf-apply-btn" @click="applyAndClose">
-                    <i class="uil uil-check me-1"></i>Anwenden
+                    <i class="uil uil-check me-1"></i>{{ $t('common.apply') }}
                 </button>
             </div>
         </div>

@@ -10,6 +10,9 @@ import { sanitizeHtml } from '../utils/sanitize'
 import { logError, logWarn } from '../utils/logger.js'
 import dayjs from '../utils/dayjs-setup.js'
 import { sendNotification } from '../utils/notify'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 // Status
 const aiOnline = ref(false)
@@ -146,7 +149,7 @@ const dateRange = computed(() => {
         return {
             startDate: start.unix(),
             endDate: end.unix(),
-            label: `KW ${start.format('DD.MM.')} – ${end.format('DD.MM.YYYY')}`
+            label: t('kiAgent.weekLabel', { range: `${start.format('DD.MM.')} – ${end.format('DD.MM.YYYY')}` })
         }
     } else if (type === 'month') {
         const start = dayjs(selectedMonth.value + '-01').startOf('day')
@@ -171,7 +174,7 @@ const dateRange = computed(() => {
         return {
             startDate: start.unix(),
             endDate: end.unix(),
-            label: `Jahr ${start.format('YYYY')}`
+            label: t('kiAgent.yearLabel', { year: start.format('YYYY') })
         }
     } else {
         return {
@@ -246,7 +249,7 @@ async function generateReport() {
         }
 
         // Browser-Benachrichtigung
-        sendNotification('KI-Bericht fertig', `Bericht für ${label} wurde erstellt.`)
+        sendNotification(t('kiAgent.reportReady'), t('kiAgent.reportCreated', { label }))
     } catch (e) {
         // Server hat evtl. schon gespeichert bevor der Frontend-Request abbrach
         try {
@@ -254,7 +257,7 @@ async function generateReport() {
         } catch (reloadError) {
             logWarn('ki-agent', 'Berichte konnten nach Fehler nicht neu geladen werden', reloadError)
         }
-        errorMsg.value = e.response?.data?.error || e.message || 'Fehler bei der Berichterstellung'
+        errorMsg.value = e.response?.data?.error || e.message || t('kiAgent.errorGenerating')
     }
 
     loading.value = false
@@ -323,7 +326,7 @@ async function sendChatMessage(reportId) {
         // Nachrichten neu laden
         await loadChatMessages(reportId)
     } catch (e) {
-        chatError[reportId] = e.response?.data?.error || e.message || 'Chat-Anfrage fehlgeschlagen'
+        chatError[reportId] = e.response?.data?.error || e.message || t('kiAgent.chatRequestFailed')
     }
 
     chatLoading[reportId] = false
@@ -388,20 +391,20 @@ onBeforeMount(async () => {
             <!-- Header -->
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="mb-0">
-                    <i class="uil uil-robot me-2"></i>KI-Bericht erstellen
+                    <i class="uil uil-robot me-2"></i>{{ t('kiAgent.createReport') }}
                 </h5>
                 <div class="d-flex align-items-center gap-2">
                     <span class="text-muted small">
-                        <i class="uil uil-processor me-1"></i>{{ (tokensByProvider[aiProvider] || 0).toLocaleString() }} Tokens
+                        <i class="uil uil-processor me-1"></i>{{ (tokensByProvider[aiProvider] || 0).toLocaleString() }} {{ t('kiAgent.tokens') }}
                     </span>
-                    <span v-if="totalEstimatedCost > 0" class="ki-cost-badge" :title="'Geschätzte Kosten aller Provider: ~$' + totalEstimatedCost.toFixed(4)">
+                    <span v-if="totalEstimatedCost > 0" class="ki-cost-badge" :title="t('kiAgent.estimatedCostTitle', { cost: totalEstimatedCost.toFixed(4) })">
                         <i class="uil uil-dollar-sign"></i>~{{ totalEstimatedCost < 0.01 ? totalEstimatedCost.toFixed(4) : totalEstimatedCost.toFixed(2) }}
-                        <span class="ki-cost-hint">geschätzt</span>
+                        <span class="ki-cost-hint">{{ t('kiAgent.estimated') }}</span>
                     </span>
                     <span class="badge" :class="aiOnline ? 'bg-success' : 'bg-danger'">
-                        {{ aiOnline ? modelLabel + ' Online' : providerLabel + ' Offline' }}
+                        {{ aiOnline ? modelLabel + ' ' + t('kiAgent.online') : providerLabel + ' ' + t('kiAgent.offline') }}
                     </span>
-                    <button class="btn btn-sm btn-outline-secondary" @click="checkStatus" title="Status prüfen">
+                    <button class="btn btn-sm btn-outline-secondary" @click="checkStatus" :title="t('kiAgent.checkStatus')">
                         <i class="uil uil-sync"></i>
                     </button>
                 </div>
@@ -410,12 +413,11 @@ onBeforeMount(async () => {
             <!-- Offline Warnung -->
             <div v-if="!aiOnline" class="dailyCard text-center py-4 mb-3">
                 <i class="uil uil-exclamation-triangle text-warning" style="font-size: 2rem;"></i>
-                <p class="mt-2 mb-1">KI-Anbieter ist nicht erreichbar.</p>
+                <p class="mt-2 mb-1">{{ t('kiAgent.providerNotReachable') }}</p>
                 <small v-if="aiProvider === 'ollama'" class="text-muted">
-                    Starte den Ollama Docker Container: <code>docker start ollama</code>
+                    {{ t('kiAgent.ollamaDockerHint') }} <code>docker start ollama</code>
                 </small>
-                <small v-else class="text-muted">
-                    Prüfe deinen API-Key in den <a href="/settings">Einstellungen</a>.
+                <small v-else class="text-muted" v-html="t('kiAgent.checkApiKey', { link: '<a href=\'/settings\'>' + t('nav.settings') + '</a>' })">
                 </small>
             </div>
 
@@ -425,35 +427,35 @@ onBeforeMount(async () => {
 
                     <!-- Zeitraum-Typ -->
                     <div class="col-auto">
-                        <label class="form-label small text-muted">Zeitraum</label>
+                        <label class="form-label small text-muted">{{ t('kiAgent.period') }}</label>
                         <select v-model="periodType" class="form-select form-select-sm">
-                            <option value="week">Woche</option>
-                            <option value="month">Monat</option>
-                            <option value="halfyear">Halbjahr</option>
-                            <option value="year">Jahr</option>
-                            <option value="custom">Benutzerdefiniert</option>
+                            <option value="week">{{ t('kiAgent.periodWeek') }}</option>
+                            <option value="month">{{ t('kiAgent.periodMonth') }}</option>
+                            <option value="halfyear">{{ t('kiAgent.periodHalfYear') }}</option>
+                            <option value="year">{{ t('kiAgent.periodYear') }}</option>
+                            <option value="custom">{{ t('options.custom') }}</option>
                         </select>
                     </div>
 
                     <!-- Woche -->
                     <div v-if="periodType === 'week'" class="col-auto">
-                        <label class="form-label small text-muted">Woche ab</label>
+                        <label class="form-label small text-muted">{{ t('kiAgent.weekOf') }}</label>
                         <input type="date" v-model="selectedWeekStart" class="form-control form-control-sm">
                     </div>
 
                     <!-- Monat -->
                     <div v-if="periodType === 'month'" class="col-auto">
-                        <label class="form-label small text-muted">Monat</label>
+                        <label class="form-label small text-muted">{{ t('kiAgent.periodMonth') }}</label>
                         <input type="month" v-model="selectedMonth" class="form-control form-control-sm">
                     </div>
 
                     <!-- Custom Range -->
                     <div v-if="periodType === 'custom'" class="col-auto">
-                        <label class="form-label small text-muted">Von</label>
+                        <label class="form-label small text-muted">{{ t('kiAgent.from') }}</label>
                         <input type="date" v-model="customStart" class="form-control form-control-sm">
                     </div>
                     <div v-if="periodType === 'custom'" class="col-auto">
-                        <label class="form-label small text-muted">Bis</label>
+                        <label class="form-label small text-muted">{{ t('kiAgent.to') }}</label>
                         <input type="date" v-model="customEnd" class="form-control form-control-sm">
                     </div>
 
@@ -462,7 +464,7 @@ onBeforeMount(async () => {
                         <button class="btn btn-sm btn-primary" @click="generateReport" :disabled="loading">
                             <span v-if="loading" class="spinner-border spinner-border-sm me-1"></span>
                             <i v-else class="uil uil-file-alt me-1"></i>
-                            {{ loading ? 'Wird generiert...' : 'Bericht erstellen' }}
+                            {{ loading ? t('kiAgent.generating') : t('kiAgent.generate') }}
                         </button>
                     </div>
                 </div>
@@ -471,10 +473,10 @@ onBeforeMount(async () => {
             <!-- Lade-Animation -->
             <div v-if="loading" class="dailyCard text-center py-5">
                 <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
-                    <span class="visually-hidden">Lädt...</span>
+                    <span class="visually-hidden">{{ t('common.loading') }}</span>
                 </div>
-                <p class="text-muted">KI analysiert deine Trades...</p>
-                <small class="text-muted">Das kann 1–3 Minuten dauern.</small>
+                <p class="text-muted">{{ t('kiAgent.analyzing') }}</p>
+                <small class="text-muted">{{ t('kiAgent.analyzeHint') }}</small>
             </div>
 
             <!-- Fehler -->
@@ -485,7 +487,7 @@ onBeforeMount(async () => {
             <!-- Gespeicherte Berichte -->
             <div v-if="savedReports.length === 0 && !loading" class="dailyCard text-center py-4">
                 <i class="uil uil-file-search-alt text-muted" style="font-size: 2rem;"></i>
-                <p class="text-muted mt-2 mb-0">Noch keine Berichte erstellt.</p>
+                <p class="text-muted mt-2 mb-0">{{ t('kiAgent.noReports') }}</p>
             </div>
 
             <div v-for="report in savedReports" :key="report.id" class="dailyCard mb-2" style="height: auto;">
@@ -502,7 +504,7 @@ onBeforeMount(async () => {
                     <div class="d-flex align-items-center gap-1">
                         <!-- Kompakte Stats wenn zugeklappt -->
                         <span v-if="report.reportData && !expandedReports.has(report.id)" class="text-muted small me-2 d-none d-md-inline">
-                            {{ report.reportData.tradeCount }} Trades · {{ report.reportData.winRate }}% WR ·
+                            {{ report.reportData.tradeCount }} {{ t('common.trades') }} · {{ report.reportData.winRate }}% WR ·
                             <span :class="parseFloat(report.reportData.totalNetProceeds) >= 0 ? 'greenTrade' : 'redTrade'">
                                 {{ report.reportData.totalNetProceeds }} USDT
                             </span>
@@ -511,12 +513,12 @@ onBeforeMount(async () => {
                             <i class="uil uil-file-download"></i>
                         </button>
                         <!-- Löschen -->
-                        <button v-if="deleteConfirmId !== report.id" class="btn btn-sm btn-outline-danger" @click.stop="deleteConfirmId = report.id" title="Löschen">
+                        <button v-if="deleteConfirmId !== report.id" class="btn btn-sm btn-outline-danger" @click.stop="deleteConfirmId = report.id" :title="t('kiAgent.deleteReport')">
                             <i class="uil uil-trash-alt"></i>
                         </button>
                         <span v-else class="d-flex align-items-center gap-1" @click.stop>
-                            <button class="btn btn-sm btn-danger" @click="deleteReport(report.id)">Ja</button>
-                            <button class="btn btn-sm btn-outline-secondary" @click="deleteConfirmId = null">Nein</button>
+                            <button class="btn btn-sm btn-danger" @click="deleteReport(report.id)">{{ t('common.yes') }}</button>
+                            <button class="btn btn-sm btn-outline-secondary" @click="deleteConfirmId = null">{{ t('common.no') }}</button>
                         </span>
                     </div>
                 </div>
@@ -526,21 +528,21 @@ onBeforeMount(async () => {
                     <!-- Datenbasis -->
                     <div v-if="report.reportData && report.reportData.tradeCount" class="row mt-2 mb-2 py-2" style="border-top: 1px solid var(--border-color, #333); border-bottom: 1px solid var(--border-color, #333);">
                         <div class="col-6 col-md-3 text-center">
-                            <div class="text-muted small">Trades</div>
+                            <div class="text-muted small">{{ t('common.trades') }}</div>
                             <div class="fw-bold">{{ report.reportData.tradeCount }}</div>
                         </div>
                         <div class="col-6 col-md-3 text-center">
-                            <div class="text-muted small">Win Rate</div>
+                            <div class="text-muted small">{{ t('dashboard.winRate') }}</div>
                             <div class="fw-bold">{{ report.reportData.winRate }}%</div>
                         </div>
                         <div class="col-6 col-md-3 text-center">
-                            <div class="text-muted small">Netto PnL</div>
+                            <div class="text-muted small">{{ t('dashboard.netPnl') }}</div>
                             <div class="fw-bold" :class="parseFloat(report.reportData.totalNetProceeds) >= 0 ? 'greenTrade' : 'redTrade'">
                                 {{ report.reportData.totalNetProceeds }} USDT
                             </div>
                         </div>
                         <div class="col-6 col-md-3 text-center">
-                            <div class="text-muted small">Profit Factor</div>
+                            <div class="text-muted small">{{ t('options.profitFactor') }}</div>
                             <div class="fw-bold">{{ report.reportData.profitFactor }}</div>
                         </div>
                     </div>
@@ -551,17 +553,17 @@ onBeforeMount(async () => {
                     <!-- Token-Verbrauch -->
                     <div class="d-flex align-items-center gap-3 mt-2 pt-2 text-muted small" style="border-top: 1px solid var(--border-color, #333);">
                         <span><i class="uil uil-processor me-1"></i>{{ report.model || '—' }}</span>
-                        <span>Prompt: {{ report.totalTokens > 0 ? report.promptTokens?.toLocaleString() : '—' }}</span>
-                        <span>Antwort: {{ report.totalTokens > 0 ? report.completionTokens?.toLocaleString() : '—' }}</span>
-                        <span class="fw-bold">Gesamt: {{ report.totalTokens > 0 ? report.totalTokens?.toLocaleString() + ' Tokens' : '—' }}</span>
+                        <span>{{ t('kiAgent.prompt') }}: {{ report.totalTokens > 0 ? report.promptTokens?.toLocaleString() : '—' }}</span>
+                        <span>{{ t('kiAgent.response') }}: {{ report.totalTokens > 0 ? report.completionTokens?.toLocaleString() : '—' }}</span>
+                        <span class="fw-bold">{{ t('kiAgent.total') }}: {{ report.totalTokens > 0 ? report.totalTokens?.toLocaleString() + ' ' + t('kiAgent.tokens') : '—' }}</span>
                     </div>
 
                     <!-- Chat / Rückfragen -->
                     <div v-if="chatEnabled && aiOnline" class="chat-section mt-3 pt-3" style="border-top: 1px solid var(--border-color, #333);">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="small fw-bold"><i class="uil uil-comment-dots me-1"></i>Rückfragen</span>
-                            <button v-if="chatMessages[report.id]?.length > 0" class="btn btn-sm btn-outline-secondary" @click="clearChat(report.id)" title="Chat löschen">
-                                <i class="uil uil-trash-alt me-1"></i>Chat löschen
+                            <span class="small fw-bold"><i class="uil uil-comment-dots me-1"></i>{{ t('kiAgent.followUp') }}</span>
+                            <button v-if="chatMessages[report.id]?.length > 0" class="btn btn-sm btn-outline-secondary" @click="clearChat(report.id)" :title="t('kiAgent.clearChat')">
+                                <i class="uil uil-trash-alt me-1"></i>{{ t('kiAgent.clearChat') }}
                             </button>
                         </div>
 
@@ -570,9 +572,9 @@ onBeforeMount(async () => {
                             <div v-for="msg in chatMessages[report.id]" :key="msg.id" class="chat-msg mb-2" :class="'chat-msg-' + msg.role">
                                 <div class="d-flex align-items-center gap-1 mb-1">
                                     <i class="uil" :class="msg.role === 'user' ? 'uil-user' : 'uil-robot'"></i>
-                                    <span class="small fw-bold">{{ msg.role === 'user' ? 'Du' : 'KI' }}</span>
+                                    <span class="small fw-bold">{{ msg.role === 'user' ? t('kiAgent.you') : t('kiAgent.ai') }}</span>
                                     <span class="text-muted small ms-1">{{ formatDate(msg.createdAt) }}</span>
-                                    <span v-if="msg.role === 'assistant' && msg.totalTokens > 0" class="text-muted small ms-auto">{{ msg.totalTokens }} Tokens</span>
+                                    <span v-if="msg.role === 'assistant' && msg.totalTokens > 0" class="text-muted small ms-auto">{{ msg.totalTokens }} {{ t('kiAgent.tokens') }}</span>
                                 </div>
                                 <div v-if="msg.role === 'user'" class="chat-bubble chat-bubble-user">{{ msg.content }}</div>
                                 <div v-else class="chat-bubble chat-bubble-ai report-content" v-html="markdownToHtml(msg.content)"></div>
@@ -582,7 +584,7 @@ onBeforeMount(async () => {
                         <!-- Loading -->
                         <div v-if="chatLoading[report.id]" class="text-center py-3">
                             <span class="spinner-border spinner-border-sm me-1"></span>
-                            <span class="text-muted small">KI denkt nach...</span>
+                            <span class="text-muted small">{{ t('kiAgent.aiThinking') }}</span>
                         </div>
 
                         <!-- Error -->
@@ -592,7 +594,7 @@ onBeforeMount(async () => {
 
                         <!-- Input -->
                         <div class="d-flex gap-2 align-items-end">
-                            <textarea class="form-control form-control-sm chat-input" rows="3" placeholder="Rückfrage stellen..."
+                            <textarea class="form-control form-control-sm chat-input" rows="3" :placeholder="t('kiAgent.askFollowUp')"
                                 v-model="chatInput[report.id]"
                                 @keydown.enter.exact.prevent="sendChatMessage(report.id)"
                                 :disabled="chatLoading[report.id]"></textarea>
@@ -600,7 +602,7 @@ onBeforeMount(async () => {
                                 <i class="uil uil-message"></i>
                             </button>
                         </div>
-                        <small class="text-muted mt-1">Enter = Senden, Shift+Enter = Neue Zeile</small>
+                        <small class="text-muted mt-1">{{ t('kiAgent.chatInputHint') }}</small>
                     </div>
                 </div>
             </div>

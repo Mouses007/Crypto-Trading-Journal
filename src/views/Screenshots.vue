@@ -8,6 +8,8 @@ import { screenshots } from '../stores/trades.js';
 import { useMountScreenshots, useCheckVisibleScreen, useLoadMore } from '../utils/mountOrchestration.js';
 import { endOfList } from '../stores/ui.js';
 import { sanitizeHtml } from '../utils/sanitize';
+import { useI18n } from 'vue-i18n'
+const { t } = useI18n()
 
 // Screenshot-Filter: 'alle' | 'entry' | 'closing'
 const screenshotFilter = ref('alle')
@@ -59,15 +61,15 @@ onMounted(async () => {
         <div class="ss-filter-bar mb-2">
             <button :class="['ss-filter-btn', screenshotFilter === 'alle' && 'active']"
                 @click="screenshotFilter = 'alle'">
-                Alle
+                {{ t('common.all') }}
             </button>
             <button :class="['ss-filter-btn', screenshotFilter === 'entry' && 'active']"
                 @click="screenshotFilter = 'entry'">
-                <i class="uil uil-arrow-up-right me-1"></i>Eröffnung
+                <i class="uil uil-arrow-up-right me-1"></i>{{ t('screenshots.opening') }}
             </button>
             <button :class="['ss-filter-btn', screenshotFilter === 'closing' && 'active']"
                 @click="screenshotFilter = 'closing'">
-                <i class="uil uil-arrow-down-left me-1"></i>Abschluss
+                <i class="uil uil-arrow-down-left me-1"></i>{{ t('screenshots.closing') }}
             </button>
         </div>
 
@@ -85,7 +87,7 @@ onMounted(async () => {
                     <div v-if="itemScreenshot.name" class="px-2 pb-2 pt-1">
                         <a :href="'/playbook?tradeId=' + encodeURIComponent(itemScreenshot.name)"
                             class="playbook-link-btn">
-                            <i class="uil uil-compass me-1"></i>Playbook
+                            <i class="uil uil-compass me-1"></i>{{ t('nav.playbook') }}
                         </a>
                     </div>
                 </div>

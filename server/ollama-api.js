@@ -384,12 +384,25 @@ export function setupOllamaRoutes(app) {
 
             const hasScreenshot = screenshotData.length > 0 && provider !== 'ollama' && provider !== 'deepseek'
 
+            // Trading-Metadaten laden (SL/TP, Fills, BE etc.)
+            let tradingMeta = null
+            if (noteRecord?.tradingMetadata) {
+                try {
+                    tradingMeta = typeof noteRecord.tradingMetadata === 'string'
+                        ? JSON.parse(noteRecord.tradingMetadata)
+                        : noteRecord.tradingMetadata
+                } catch (e) { /* ignore parse errors */ }
+            }
+
             // Trade-Daten aufbereiten
             const t = tradeData
             const side = t.side === 'B' ? 'Long' : 'Short'
             const pnl = t.netProceeds || 0
             const pnlFormatted = pnl >= 0 ? `+$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`
             const volume = (t.buyQuantity || 0) + (t.sellQuantity || 0)
+            const tradeType = noteRecord?.tradeType || ''
+            const entryStress = noteRecord?.entryStressLevel || 0
+            const closingStress = noteRecord?.closingStressLevel || 0
 
             // Prompt zusammenbauen
             let reviewPrompt = `Du bist ein erfahrener Crypto-Trading-Coach. Analysiere diesen Trade und gib eine detaillierte, aber kompakte Bewertung.
@@ -404,6 +417,87 @@ TRADE-DATEN:
 - PnL/Vol: ${t.grossSharePL ? '$' + t.grossSharePL.toFixed(4) : 'N/A'}
 - Ergebnis: ${pnl >= 0 ? 'Gewinn' : 'Verlust'}
 - Selbstbewertung: ${satisfaction}`
+
+            // Trade-Typ
+            if (tradeType) {
+                reviewPrompt += `\n- Trade-Typ: ${tradeType}`
+            }
+
+            // Stress-Level
+            if (entryStress > 0 || closingStress > 0) {
+                reviewPrompt += `\n- Stress bei Eröffnung: ${entryStress}/10${closingStress > 0 ? `, bei Schließung: ${closingStress}/10` : ''}`
+            }
+
+            // Trading-Metadaten (SL/TP, Fills, Positionsgröße, BE)
+            if (tradingMeta) {
+                reviewPrompt += `\n\nRISIKOMANAGEMENT & POSITIONSDATEN:`
+
+                if (tradingMeta.margin && tradingMeta.leverage) {
+                    reviewPrompt += `\n- Marge: $${tradingMeta.margin.toFixed(2)} × ${tradingMeta.leverage}x Hebel = Positionsgröße $${tradingMeta.positionSize?.toFixed(2) || 'N/A'}`
+                }
+
+                if (tradingMeta.sl) {
+                    reviewPrompt += `\n- Stop-Loss: $${tradingMeta.sl}`
+                }
+                if (tradingMeta.tp) {
+                    reviewPrompt += `\n- Take-Profit: $${tradingMeta.tp}`
+                }
+                if (tradingMeta.breakeven) {
+                    reviewPrompt += `\n- Breakeven: $${tradingMeta.breakeven}`
+                }
+                if (tradingMeta.slAboveBreakeven !== undefined) {
+                    reviewPrompt += `\n- SL über Breakeven: ${tradingMeta.slAboveBreakeven ? 'Ja (abgesichert)' : 'Nein (in Verlustzone)'}`
+                }
+
+                // RRR berechnen
+                if (tradingMeta.sl && tradingMeta.tp && t.entryPrice) {
+                    const entry = t.entryPrice
+                    const sl = parseFloat(tradingMeta.sl)
+                    const tp = parseFloat(tradingMeta.tp)
+                    const riskDist = Math.abs(entry - sl)
+                    const rewardDist = Math.abs(entry - tp)
+                    if (riskDist > 0) {
+                        const rrr = (rewardDist / riskDist).toFixed(2)
+                        reviewPrompt += `\n- Risk/Reward Ratio (RRR): 1:${rrr}`
+                    }
+                }
+
+                // Fills (Nachkäufe, Teilschließungen)
+                if (tradingMeta.fills && tradingMeta.fills.length > 1) {
+                    const entries = tradingMeta.fills.filter(f => !f.reduceOnly)
+                    const closes = tradingMeta.fills.filter(f => f.reduceOnly)
+
+                    if (entries.length > 1) {
+                        reviewPrompt += `\n- Positionsaufbau: ${entries.length} Einstiege (Nachkäufe)`
+                        entries.forEach((f, i) => {
+                            reviewPrompt += `\n  ${i + 1}. ${f.qty} × $${f.price}`
+                        })
+                    }
+                    if (closes.length > 0) {
+                        reviewPrompt += `\n- Teilschließungen: ${closes.length}`
+                        closes.forEach((f, i) => {
+                            reviewPrompt += `\n  ${i + 1}. ${f.qty} × $${f.price}`
+                        })
+                    }
+                }
+
+                // SL/TP Verschiebungen
+                if (tradingMeta.tpslHistory && tradingMeta.tpslHistory.length > 0) {
+                    reviewPrompt += `\n\nSL/TP PROTOKOLL (Verschiebungen):`
+                    tradingMeta.tpslHistory.forEach(h => {
+                        const timeStr = new Date(h.time).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                        if (h.action === 'set') {
+                            reviewPrompt += `\n- ${timeStr}: ${h.type} gesetzt auf $${h.newVal}`
+                        } else if (h.action === 'moved') {
+                            reviewPrompt += `\n- ${timeStr}: ${h.type} verschoben $${h.oldVal} → $${h.newVal}`
+                        } else if (h.action === 'triggered') {
+                            reviewPrompt += `\n- ${timeStr}: ${h.type} ausgelöst bei $${h.oldVal}`
+                        } else if (h.action === 'removed') {
+                            reviewPrompt += `\n- ${timeStr}: ${h.type} entfernt (war $${h.oldVal})`
+                        }
+                    })
+                }
+            }
 
             if (tradeTags) {
                 reviewPrompt += `\n- Tags/Strategie: ${tradeTags}`
@@ -466,12 +560,14 @@ Nenne IMMER die konkreten Preisniveaus die du von der Y-Achse abliest.
 
             reviewPrompt += `\n\nBewerte folgende Punkte:
 1. **Trade-Analyse**: ${hasScreenshot ? 'Lies zuerst SL, TP und Entry aus den farbigen Rechtecken im Chart ab (Y-Achse rechts). Nenne die konkreten Preise und berechne das RRR. Dann bewerte ob die Platzierung gut war.' : 'War der Einstieg/Ausstieg gut gewaehlt?'} Passte die Positionsgroesse?
-2. **Ueberlegungen des Traders**: Waren die Gedanken/Ueberlegungen nachvollziehbar?${hasScreenshot ? ' SL/TP sind im Chart als Rechtecke eingezeichnet und werden rechts an der Y-Achse als Zahlen angezeigt — das ZAEHLT als dokumentiert, bewerte sie NICHT als fehlend!' : ''}
-3. **Fehler & Verbesserungen**: Was haette besser sein koennen?${hasScreenshot ? ' Bewerte die QUALITAET der SL/TP-Platzierung im Chart, nicht ob sie fehlen.' : ''}
-4. **Konkrete Tipps**: 1-2 spezifische Verbesserungsvorschlaege.
-5. **Gesamtnote**: Note von 1-10 (10 = perfekt).
+2. **Risikomanagement**: ${tradingMeta ? 'Bewerte SL/TP-Platzierung, RRR, Positionsgroesse relativ zur Marge, und ob der SL ueber Breakeven gezogen wurde. Waren die SL/TP-Verschiebungen sinnvoll?' : 'Wurde ein SL/TP gesetzt? War das Risiko kontrolliert?'}
+3. **Positionsaufbau**: ${tradingMeta?.fills?.length > 1 ? 'Bewerte die Nachkaeufe und Teilschliessungen. War der Positionsaufbau sinnvoll? Wurde richtig skaliert?' : 'War der Einstieg in einem Schritt oder gestaffelt?'}
+4. **Ueberlegungen des Traders**: Waren die Gedanken/Ueberlegungen nachvollziehbar?${hasScreenshot ? ' SL/TP sind im Chart als Rechtecke eingezeichnet und werden rechts an der Y-Achse als Zahlen angezeigt — das ZAEHLT als dokumentiert, bewerte sie NICHT als fehlend!' : ''}
+5. **Fehler & Verbesserungen**: Was haette besser sein koennen?${hasScreenshot ? ' Bewerte die QUALITAET der SL/TP-Platzierung im Chart, nicht ob sie fehlen.' : ''}
+6. **Konkrete Tipps**: 1-2 spezifische Verbesserungsvorschlaege.
+7. **Gesamtnote**: Note von 1-10 (10 = perfekt).
 
-Antworte auf Deutsch. Kompakt (max 400 Woerter). Markdown.`
+Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
 
             const screenshots = hasScreenshot ? screenshotData : []
 
