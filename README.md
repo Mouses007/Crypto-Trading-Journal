@@ -1,6 +1,6 @@
 # Crypto Trading Journal
 
-A local, privacy-focused trading journal for **crypto futures trading** (Bitunix, Bitget). No cloud, no accounts, no Docker — just run it on your machine.
+A local, trading journal for **crypto futures trading** (Bitunix, Bitget). No cloud, no accounts — just run it on your machine.
 
 > **Hinweis:** Die Benutzeroberfläche ist komplett auf **Deutsch**.
 
