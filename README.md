@@ -2,7 +2,7 @@
 
 A local, trading journal for **crypto futures trading** (Bitunix, Bitget). No cloud, no accounts — just run it on your machine.
 
-> **Hinweis:** Die Benutzeroberfläche ist komplett auf **Deutsch** (optional KI-Englisch).
+> **Hinweis:** Die Benutzeroberfläche ist komplett auf **Deutsch** (optional Englisch).
 
 ## Screenshots
 
