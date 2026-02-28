@@ -1964,3 +1964,92 @@ h4 {
     border-radius: 3px;
     transition: width 0.3s ease;
 }
+
+/*=================== AI CHAT (KI-Agent + Daily) ===================*/
+.chat-section {
+    max-height: 500px;
+    display: flex;
+    flex-direction: column;
+}
+.chat-messages {
+    max-height: 350px;
+    overflow-y: auto;
+    padding-right: 0.3rem;
+}
+.chat-bubble {
+    padding: 0.4rem 0.7rem;
+    border-radius: 0.6rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+.chat-bubble-user {
+    background: var(--blue-color, #6cb4ee);
+    color: #fff;
+    margin-left: 2rem;
+    border-bottom-right-radius: 0.15rem;
+    white-space: pre-wrap;
+}
+.chat-bubble-ai {
+    background: var(--black-bg-5, #2a2a2a);
+    color: var(--white-87);
+    margin-right: 2rem;
+    border-bottom-left-radius: 0.15rem;
+}
+.trade-chat-section {
+    max-height: none;
+}
+.trade-chat-section .chat-messages {
+    max-height: 400px;
+    overflow-y: auto;
+}
+.chat-input {
+    resize: vertical;
+    min-height: 2.4rem;
+}
+
+/*=================== SHARE CARD MODAL ===================*/
+.share-card-modal {
+    background: var(--black-bg-5);
+    color: var(--white-87);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.share-card-modal .modal-header {
+    padding: 1rem 1.5rem;
+}
+.share-card-modal .modal-title {
+    color: var(--white-87);
+    font-size: 1.1rem;
+}
+.share-card-summary {
+    background: var(--black-bg-7);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+}
+.share-card-prompt {
+    background: var(--black-bg-3) !important;
+    color: var(--white-87) !important;
+    border: 1px solid rgba(255,255,255,0.1);
+    font-size: 0.85rem;
+}
+.share-card-prompt:focus {
+    border-color: var(--blue-color);
+    box-shadow: 0 0 0 0.15rem rgba(1, 180, 255, 0.15);
+}
+.share-card-generating {
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.share-card-preview img {
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+.share-card-btn {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+    border-color: #6366f1 !important;
+}
+.share-card-btn:hover {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed) !important;
+}

@@ -187,7 +187,17 @@ async function handleClosedPositions(closedPositions) {
                 })
                 console.log(` -> Position ${incoming.symbol} geschlossen — Abschlussbewertung ausstehend`)
             } else {
-                // No popups: transfer metadata and delete
+                // No popups: auto-detect trade type based on duration, transfer metadata and delete
+                const openTime = parseInt(histPos.ctime || histPos.cTime || 0)
+                const closeTime = parseInt(histPos.mtime || histPos.uTime || 0)
+                if (openTime && closeTime && closeTime > openTime) {
+                    const durationMin = (closeTime - openTime) / (1000 * 60)
+                    const scalpMax = currentUser.value?.scalpMaxMinutes ?? 15
+                    const daytradeMaxMin = (currentUser.value?.daytradeMaxHours ?? 24) * 60
+                    if (durationMin <= scalpMax) incoming.tradeType = 'scalp'
+                    else if (durationMin <= daytradeMaxMin) incoming.tradeType = 'day'
+                    else incoming.tradeType = 'swing'
+                }
                 await dbDelete('incoming_positions', incoming.objectId)
                 console.log(` -> Position ${incoming.symbol} geschlossen und als Trade übernommen`)
             }
@@ -625,6 +635,7 @@ export async function useTransferClosingMetadata(incoming, histPos, {
     satisfaction = null,
     stressLevel = 0,
     tradeType = '',
+    strategyFollowed = -1,
     closingNote = '',
     closingStressLevel = 0,
     closingEmotionLevel = 0,
@@ -670,7 +681,9 @@ export async function useTransferClosingMetadata(incoming, histPos, {
         playbook: incoming.playbook || '',
         timeframe: incoming.entryTimeframe || '',
         screenshotId: incoming.entryScreenshotId || incoming.screenshotId || '',
+        trendScreenshotId: incoming.trendScreenshotId || '',
         // Closing fields
+        strategyFollowed: strategyFollowed != null ? strategyFollowed : (incoming.strategyFollowed != null ? incoming.strategyFollowed : -1),
         closingNote: closingNote || incoming.closingNote || '',
         closingStressLevel: closingStressLevel,
         closingEmotionLevel: closingEmotionLevel,
@@ -715,6 +728,19 @@ export async function useTransferClosingMetadata(incoming, histPos, {
             })
         } catch (e) {
             console.log(' -> Entry-Screenshot-Verknüpfung fehlgeschlagen:', e)
+        }
+    }
+
+    // Link trend screenshot if present
+    const trendScreenshotId = incoming.trendScreenshotId
+    if (trendScreenshotId) {
+        try {
+            await dbUpdate('screenshots', trendScreenshotId, {
+                name: `${dateUnix}_${histPos.symbol}_trend`,
+                dateUnixDay: dateUnix
+            })
+        } catch (e) {
+            console.log(' -> Trend-Screenshot-Verknüpfung fehlgeschlagen:', e)
         }
     }
 

@@ -14,6 +14,7 @@ import { sendNotification } from '../utils/notify.js'
 import { useI18n } from 'vue-i18n'
 import { setLocale } from '../i18n'
 import { useGetPeriods } from '../utils/utils.js'
+import appLogoSrc from '../assets/icon.png'
 
 const { t } = useI18n()
 
@@ -45,6 +46,8 @@ let bitgetTestLoading = ref(false)
 let bitunixSubExpanded = ref(false)
 let bitgetSubExpanded = ref(false)
 let showTradePopups = ref(true)
+let scalpMaxMinutes = ref(15)
+let daytradeMaxHours = ref(24)
 let enableBinanceChart = ref(false)
 let browserNotifications = ref(true)
 let languageExpanded = ref(false)
@@ -55,6 +58,10 @@ let timeframesExpanded = ref(false)
 let apiExpanded = ref(false)
 let tagsExpanded = ref(false)
 let bewertungExpanded = ref(false)
+let subTagsExpanded = ref(false)
+let subTimeframesExpanded = ref(false)
+let subTradeTypeExpanded = ref(false)
+let subPopupsExpanded = ref(false)
 let chartExpanded = ref(false)
 let kiExpanded = ref(false)
 let reparaturExpanded = ref(false)
@@ -90,6 +97,14 @@ let aiReportPromptPreset = ref('kurz')
 let aiTestLoading = ref(false)
 let aiTestResult = ref(null)
 let ollamaModels = ref([])
+let aiTokenStats = ref(null)
+
+async function loadAiTokenStats() {
+    try {
+        const res = await axios.get('/api/ai/token-stats')
+        aiTokenStats.value = res.data
+    } catch (e) { /* silent */ }
+}
 
 const promptPresets = computed(() => [
     { value: 'custom', label: t('settings.promptCustom'), prompt: '' },
@@ -137,6 +152,16 @@ async function loadOllamaModels() {
         ollamaModels.value = res.data.models || []
     } catch (e) {
         ollamaModels.value = []
+    }
+}
+
+async function toggleAiEnabled(enabled) {
+    try {
+        const val = enabled ? 1 : 0
+        await dbUpdateSettings({ aiEnabled: val })
+        currentUser.value.aiEnabled = val
+    } catch (error) {
+        console.error('Fehler beim Speichern der KI-Einstellung:', error)
     }
 }
 
@@ -238,6 +263,103 @@ async function loadAiSettings() {
         console.error('Fehler beim Laden der KI-Settings:', e)
     }
 }
+/* SHARE CARD SETTINGS (FLUX.2 + Gemini) */
+let fluxExpanded = ref(false)
+let shareCardProvider = ref('flux')
+let fluxApiKey = ref('')
+let fluxModel = ref('flux-2-pro')
+let fluxDisplayName = ref('')
+let fluxAvatar = ref('')
+let fluxUseCustomAvatar = ref(false)
+let fluxTestLoading = ref(false)
+let fluxTestResult = ref(null)
+let geminiImageApiKey = ref('')
+let geminiImageModel = ref('gemini-2.5-flash-image')
+let geminiTestLoading = ref(false)
+let geminiTestResult = ref(null)
+
+const fluxModels = [
+    { value: 'flux-2-pro', label: 'FLUX.2 Pro (~$0.03)' },
+    { value: 'flux-2-flex', label: 'FLUX.2 Flex (~$0.05)' },
+    { value: 'flux-2-max', label: 'FLUX.2 Max (~$0.07)' }
+]
+
+const geminiImageModels = [
+    { value: 'gemini-2.5-flash-image', label: 'Nano Banana (Gemini 2.5 Flash)' },
+    { value: 'gemini-3.1-flash-image-preview', label: 'Nano Banana 2 (Gemini 3.1 Flash)' },
+    { value: 'gemini-3-pro-image-preview', label: 'Nano Banana Pro (Gemini 3 Pro)' }
+]
+
+async function loadFluxSettings() {
+    try {
+        const res = await axios.get('/api/flux/settings')
+        shareCardProvider.value = res.data.shareCardProvider || 'flux'
+        fluxApiKey.value = res.data.fluxApiKey || ''
+        fluxModel.value = res.data.fluxModel || 'flux-2-pro'
+        fluxDisplayName.value = res.data.fluxDisplayName || ''
+        fluxAvatar.value = res.data.fluxAvatar || ''
+        fluxUseCustomAvatar.value = !!res.data.fluxUseCustomAvatar
+        geminiImageApiKey.value = res.data.geminiImageApiKey || ''
+        geminiImageModel.value = res.data.geminiImageModel || 'gemini-2.5-flash-image'
+    } catch (e) {
+        console.error('Fehler beim Laden der Share-Card-Settings:', e)
+    }
+}
+
+async function saveFluxSettings() {
+    try {
+        await axios.post('/api/flux/settings', {
+            shareCardProvider: shareCardProvider.value,
+            fluxApiKey: fluxApiKey.value,
+            fluxModel: fluxModel.value,
+            fluxDisplayName: fluxDisplayName.value,
+            fluxAvatar: fluxAvatar.value,
+            fluxUseCustomAvatar: fluxUseCustomAvatar.value,
+            geminiImageApiKey: geminiImageApiKey.value,
+            geminiImageModel: geminiImageModel.value
+        })
+        fluxTestResult.value = { success: true, message: t('common.saved') }
+        setTimeout(() => fluxTestResult.value = null, 3000)
+        await loadFluxSettings()
+    } catch (e) {
+        alert(t('common.errorSaving') + e.message)
+    }
+}
+
+async function testFluxConnection() {
+    fluxTestLoading.value = true
+    fluxTestResult.value = null
+    try {
+        const res = await axios.post('/api/flux/test', { fluxApiKey: fluxApiKey.value })
+        fluxTestResult.value = res.data
+    } catch (e) {
+        fluxTestResult.value = { success: false, message: e.message }
+    }
+    fluxTestLoading.value = false
+}
+
+async function testGeminiConnection() {
+    geminiTestLoading.value = true
+    geminiTestResult.value = null
+    try {
+        const res = await axios.post('/api/flux/test-gemini', { geminiImageApiKey: geminiImageApiKey.value })
+        geminiTestResult.value = res.data
+    } catch (e) {
+        geminiTestResult.value = { success: false, message: e.message }
+    }
+    geminiTestLoading.value = false
+}
+
+function onFluxAvatarUpload(event) {
+    const file = event.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (e) => {
+        fluxAvatar.value = e.target.result
+    }
+    reader.readAsDataURL(file)
+}
+
 async function loadDbConfig() {
     try {
         const res = await axios.get('/api/db-config')
@@ -666,6 +788,29 @@ async function loadImports() {
     importsLoading.value = false
 }
 
+// Importe nach Monat gruppieren
+const expandedMonths = reactive(new Set())
+const importsGroupedByMonth = computed(() => {
+    const groups = {}
+    importsList.forEach(data => {
+        const d = dayjs.unix(data.dateUnix)
+        const monthKey = d.format('YYYY-MM')
+        if (!groups[monthKey]) {
+            groups[monthKey] = { key: monthKey, label: d.format('MMMM YYYY'), days: [], tradeCount: 0, evaluatedCount: 0 }
+        }
+        const tc = getTradeCount(data)
+        groups[monthKey].days.push(data)
+        groups[monthKey].tradeCount += tc
+        groups[monthKey].evaluatedCount += getEvaluatedCount(data)
+    })
+    return Object.values(groups).sort((a, b) => b.key.localeCompare(a.key))
+})
+
+function toggleMonth(monthKey) {
+    if (expandedMonths.has(monthKey)) expandedMonths.delete(monthKey)
+    else expandedMonths.add(monthKey)
+}
+
 function toggleImportExpand(dateUnix) {
     expandedImport.value = expandedImport.value === dateUnix ? null : dateUnix
 }
@@ -753,6 +898,21 @@ async function savePopupSetting() {
     }
 }
 
+/* TRADE TYPE THRESHOLDS */
+async function saveTradeTypeThresholds() {
+    try {
+        await dbUpdateSettings({
+            scalpMaxMinutes: scalpMaxMinutes.value,
+            daytradeMaxHours: daytradeMaxHours.value
+        })
+        currentUser.value.scalpMaxMinutes = scalpMaxMinutes.value
+        currentUser.value.daytradeMaxHours = daytradeMaxHours.value
+        console.log(' -> Trade-Typ-Schwellwerte gespeichert')
+    } catch (error) {
+        console.error(' -> Fehler beim Speichern der Trade-Typ-Schwellwerte:', error)
+    }
+}
+
 /* BINANCE CHART SETTING */
 async function loadBinanceSetting() {
     enableBinanceChart.value = currentUser.value?.enableBinanceChart === 1
@@ -807,6 +967,38 @@ async function fixTradeSides() {
         }
     } finally {
         fixTradesLoading.value = false
+    }
+}
+
+/* REPAIR FUNDING FEES */
+let repairFundingLoading = ref(false)
+let repairFundingResult = ref(null)
+
+async function repairFundingFees() {
+    repairFundingLoading.value = true
+    repairFundingResult.value = null
+    try {
+        const response = await axios.post('/api/repair-funding-fees')
+        const d = response.data
+        if (d.matched === 0) {
+            repairFundingResult.value = {
+                success: true,
+                message: `${d.apiPositions} API-Positionen geladen, aber keine Trades ohne Funding-Daten gefunden.`
+            }
+        } else {
+            repairFundingResult.value = {
+                success: true,
+                message: `${d.matched} Trades mit Funding-Fee-Daten aktualisiert (${d.apiPositions} API-Positionen geladen).`
+            }
+        }
+        console.log(' -> Funding fees repaired:', response.data)
+    } catch (error) {
+        repairFundingResult.value = {
+            success: false,
+            message: 'Fehler: ' + (error.response?.data?.error || error.message)
+        }
+    } finally {
+        repairFundingLoading.value = false
     }
 }
 
@@ -972,6 +1164,8 @@ onBeforeMount(async () => {
         // "Aktueller Kontostand" stays empty — only used for initial offset calculation
         currentBalance.value = ''
         showTradePopups.value = settings.showTradePopups !== 0
+        scalpMaxMinutes.value = settings.scalpMaxMinutes ?? 15
+        daytradeMaxHours.value = settings.daytradeMaxHours ?? 24
         enableBinanceChart.value = settings.enableBinanceChart === 1
         selectedLanguage.value = settings.language || 'de'
         browserNotifications.value = settings.browserNotifications !== 0
@@ -1000,7 +1194,7 @@ onBeforeMount(async () => {
         currentBalance.value = ''
     }
     // KI-Settings über verschlüsselten Endpoint laden
-    await loadAiSettings()
+    await Promise.all([loadAiSettings(), loadAiTokenStats()])
     if (aiProvider.value === 'ollama') {
         await loadOllamaModels()
     }
@@ -1016,6 +1210,7 @@ onBeforeMount(async () => {
     await loadImports()
     await loadPopupSetting()
     await loadDbConfig()
+    await loadFluxSettings()
 
     // Query-Parameter: ?section=api → API-Sektion aufklappen
     const urlParams = new URLSearchParams(window.location.search)
@@ -1038,7 +1233,7 @@ onBeforeMount(async () => {
                     <p class="fs-5 fw-bold mb-0">{{ t('settings.layoutAndStyle') }}</p>
                 </div>
 
-                <div v-show="layoutExpanded" class="row align-items-center mt-2">
+                <div v-show="layoutExpanded" class="row align-items-center mt-2 ms-3">
 
                     <!-- Sprache / Language -->
                     <div class="col-12 col-md-4">
@@ -1086,7 +1281,7 @@ onBeforeMount(async () => {
                     <i class="uil me-2" :class="balanceExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                     <p class="fs-5 fw-bold mb-0">{{ t('settings.balance') }}</p>
                 </div>
-                <div v-show="balanceExpanded" class="mt-2 row align-items-center">
+                <div v-show="balanceExpanded" class="mt-2 ms-3 row align-items-center">
                     <p class="fw-lighter" v-html="t('settings.balanceDescription', { broker: (selectedBroker || 'bitunix').charAt(0).toUpperCase() + (selectedBroker || 'bitunix').slice(1) })"></p>
                     <div class="row mt-2">
                         <div class="col-12 col-md-4">{{ t('settings.startDeposit') }}</div>
@@ -1114,7 +1309,7 @@ onBeforeMount(async () => {
                     <i class="uil me-2" :class="apiExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                     <p class="fs-5 fw-bold mb-0">{{ t('settings.apiConnection') }}</p>
                 </div>
-                <div v-show="apiExpanded" class="mt-2">
+                <div v-show="apiExpanded" class="mt-2 ms-3">
                     <p class="fw-lighter">{{ t('settings.apiConnectionDescription') }}</p>
 
                     <!-- BITUNIX -->
@@ -1229,10 +1424,14 @@ onBeforeMount(async () => {
                     <i class="uil me-2" :class="bewertungExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                     <p class="fs-5 fw-bold mb-0">{{ t('settings.evaluation') }}</p>
                 </div>
-                <div v-show="bewertungExpanded" class="mt-2">
+                <div v-show="bewertungExpanded" class="mt-2 ms-3">
 
                     <!--=============== TAGS (Unterabschnitt) ===============-->
-                    <p class="fs-6 fw-bold mb-1">{{ t('settings.tagsSection') }}</p>
+                    <div class="d-flex align-items-center pointerClass mb-1" @click="subTagsExpanded = !subTagsExpanded">
+                        <i class="uil me-1" :class="subTagsExpanded ? 'uil-angle-down' : 'uil-angle-right'" style="font-size: 1.1rem;"></i>
+                        <p class="fs-6 fw-bold mb-0">{{ t('settings.tagsSection') }}</p>
+                    </div>
+                    <div v-show="subTagsExpanded">
                     <p class="fw-lighter">{{ t('settings.tagsDescription') }}</p>
 
                     <!-- Existing groups -->
@@ -1278,10 +1477,16 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
+                    </div><!-- /subTagsExpanded -->
+
                     <hr />
 
                     <!--=============== TIMEFRAMES (Unterabschnitt) ===============-->
-                    <p class="fs-6 fw-bold mb-1">{{ t('settings.timeframesSection') }}</p>
+                    <div class="d-flex align-items-center pointerClass mb-1" @click="subTimeframesExpanded = !subTimeframesExpanded">
+                        <i class="uil me-1" :class="subTimeframesExpanded ? 'uil-angle-down' : 'uil-angle-right'" style="font-size: 1.1rem;"></i>
+                        <p class="fs-6 fw-bold mb-0">{{ t('settings.timeframesSection') }}</p>
+                    </div>
+                    <div v-show="subTimeframesExpanded">
                     <p class="fw-lighter">{{ t('settings.timeframesDescription') }}</p>
                     <div v-for="group in timeframeGroups" :key="group" class="mb-2">
                         <label class="fw-lighter text-uppercase small mb-1">{{ group }}</label>
@@ -1309,10 +1514,44 @@ onBeforeMount(async () => {
                         <button type="button" v-on:click="saveTimeframes" class="btn btn-success">{{ t('common.save') }}</button>
                     </div>
 
+                    </div><!-- /subTimeframesExpanded -->
+
+                    <hr />
+
+                    <!--=============== TRADE-TYP AUTO-ERKENNUNG (Unterabschnitt) ===============-->
+                    <div class="d-flex align-items-center pointerClass mb-1" @click="subTradeTypeExpanded = !subTradeTypeExpanded">
+                        <i class="uil me-1" :class="subTradeTypeExpanded ? 'uil-angle-down' : 'uil-angle-right'" style="font-size: 1.1rem;"></i>
+                        <p class="fs-6 fw-bold mb-0">{{ t('settings.tradeTypeAutoDetection') }}</p>
+                    </div>
+                    <div v-show="subTradeTypeExpanded">
+                    <p class="fw-lighter">{{ t('settings.tradeTypeAutoDetectionDescription') }}</p>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-auto">
+                            <label class="form-label small mb-0">{{ t('settings.scalpMaxMinutes') }}</label>
+                            <input type="number" class="form-control form-control-sm" style="max-width: 100px;"
+                                v-model.number="scalpMaxMinutes" min="1" max="1440" />
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label small mb-0">{{ t('settings.daytradeMaxHours') }}</label>
+                            <input type="number" class="form-control form-control-sm" style="max-width: 100px;"
+                                v-model.number="daytradeMaxHours" min="1" max="720" />
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-success btn-sm" @click="saveTradeTypeThresholds">{{ t('common.save') }}</button>
+                        </div>
+                    </div>
+                    <small class="text-muted">{{ t('settings.tradeTypeThresholdHint') }}</small>
+
+                    </div><!-- /subTradeTypeExpanded -->
+
                     <hr />
 
                     <!--=============== POPUPS (Unterabschnitt) ===============-->
-                    <p class="fs-6 fw-bold mb-1">{{ t('settings.popupsAndNotifications') }}</p>
+                    <div class="d-flex align-items-center pointerClass mb-1" @click="subPopupsExpanded = !subPopupsExpanded">
+                        <i class="uil me-1" :class="subPopupsExpanded ? 'uil-angle-down' : 'uil-angle-right'" style="font-size: 1.1rem;"></i>
+                        <p class="fs-6 fw-bold mb-0">{{ t('settings.popupsAndNotifications') }}</p>
+                    </div>
+                    <div v-show="subPopupsExpanded">
                     <p class="fw-lighter">{{ t('settings.popupsDescription') }}</p>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="popupToggle" v-model="showTradePopups" @change="savePopupSetting">
@@ -1323,6 +1562,7 @@ onBeforeMount(async () => {
                         <label class="form-check-label" for="notificationToggle">{{ t('settings.browserNotifications') }}</label>
                     </div>
                     <small class="text-muted">{{ t('settings.browserNotificationsHint') }}</small>
+                    </div><!-- /subPopupsExpanded -->
                 </div>
 
                 <hr />
@@ -1332,7 +1572,17 @@ onBeforeMount(async () => {
                     <i class="uil me-2" :class="kiExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                     <p class="fs-5 fw-bold mb-0">{{ t('settings.kiAgent') }}</p>
                 </div>
-                <div v-show="kiExpanded" class="mt-2">
+                <div v-show="kiExpanded" class="mt-2 ms-3">
+                    <!-- KI aktivieren/deaktivieren -->
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="aiEnabledToggle"
+                            :checked="currentUser?.aiEnabled !== false && currentUser?.aiEnabled !== 0"
+                            @change="toggleAiEnabled($event.target.checked)">
+                        <label class="form-check-label" for="aiEnabledToggle">{{ t('settings.aiEnabled') }}</label>
+                    </div>
+                    <small class="text-muted d-block mb-3">{{ t('settings.aiEnabledHint') }}</small>
+
+                    <div v-show="currentUser?.aiEnabled !== false && currentUser?.aiEnabled !== 0">
                     <p class="fw-lighter">{{ t('settings.kiDescription') }}</p>
 
                     <!-- Anbieter -->
@@ -1451,6 +1701,173 @@ onBeforeMount(async () => {
                             {{ aiTestResult.message }}
                         </span>
                     </div>
+
+                    <!-- Token-Statistiken -->
+                    <div v-if="aiTokenStats?.total?.totalTokens > 0" class="mt-2 mb-3">
+                        <p class="fw-bold small mb-2"><i class="uil uil-processor me-1"></i>{{ t('kiAgent.aiTokenUsage') }}</p>
+                        <table class="table table-sm table-borderless mb-0" style="font-size: 0.8rem; max-width: 500px;">
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted">{{ t('kiAgent.totalTokens') }}</td>
+                                    <td class="text-end fw-bold">{{ (aiTokenStats?.total?.totalTokens || 0).toLocaleString() }}</td>
+                                </tr>
+                                <tr v-for="(data, provider) in (aiTokenStats?.byProvider || {})" :key="provider">
+                                    <td class="text-muted ps-3">{{ provider.charAt(0).toUpperCase() + provider.slice(1) }}</td>
+                                    <td class="text-end">{{ (data.totalTokens || 0).toLocaleString() }}</td>
+                                </tr>
+                                <tr class="border-top" style="border-color: var(--grey-color) !important;">
+                                    <td class="text-muted" style="font-size: 0.75rem;">
+                                        {{ t('kiAgent.reports') }}: {{ aiTokenStats?.counts?.reports || 0 }} ·
+                                        {{ t('kiAgent.chatMessages') }}: {{ aiTokenStats?.counts?.chatMessages || 0 }} ·
+                                        {{ t('kiAgent.tradeReviews') }}: {{ aiTokenStats?.counts?.tradeReviews || 0 }}
+                                    </td>
+                                    <td></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    </div><!-- /v-show aiEnabled -->
+                </div>
+
+                <hr />
+
+                <!--=============== SHARE CARDS (FLUX.2 + Gemini) ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="fluxExpanded = !fluxExpanded">
+                    <i class="uil me-2" :class="fluxExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Share-Karten</p>
+                </div>
+                <div v-show="fluxExpanded" class="mt-2 ms-3">
+                    <p class="fw-lighter">Erstelle stylische Share-Bilder für deine Trades mit KI-Bildgenerierung.</p>
+
+                    <!-- Provider Selection -->
+                    <div class="row mt-2">
+                        <div class="col-12 col-md-4">Bild-Provider</div>
+                        <div class="col-12 col-md-8">
+                            <div class="d-flex gap-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" id="provFlux" value="flux" v-model="shareCardProvider" />
+                                    <label class="form-check-label" for="provFlux">FLUX.2 <small class="text-muted">(Black Forest Labs)</small></label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" id="provGemini" value="gemini" v-model="shareCardProvider" />
+                                    <label class="form-check-label" for="provGemini">Google Gemini <small class="text-muted">(Nano Banana)</small></label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FLUX-specific settings -->
+                    <div v-show="shareCardProvider === 'flux'">
+                        <div class="row mt-3">
+                            <div class="col-12 col-md-4">{{ t('settings.fluxApiKey') }}</div>
+                            <div class="col-12 col-md-8">
+                                <div class="input-group">
+                                    <input type="password" class="form-control" v-model="fluxApiKey" placeholder="bfl-..."
+                                           @focus="e => { if (fluxApiKey.includes('•')) e.target.select() }" />
+                                    <button v-if="fluxApiKey" class="btn btn-outline-secondary" type="button"
+                                            @click="fluxApiKey = ''">
+                                        <i class="uil uil-times"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted">
+                                    <i class="uil uil-lock me-1"></i>{{ t('settings.encryptedStored') }}
+                                    — <a href="https://api.bfl.ai" target="_blank" rel="noopener" class="text-info">api.bfl.ai</a>
+                                </small>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-12 col-md-4">{{ t('settings.fluxModel') }}</div>
+                            <div class="col-12 col-md-8">
+                                <select class="form-select" v-model="fluxModel">
+                                    <option v-for="m in fluxModels" :key="m.value" :value="m.value">{{ m.label }}</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gemini-specific settings -->
+                    <div v-show="shareCardProvider === 'gemini'">
+                        <div class="row mt-3">
+                            <div class="col-12 col-md-4">Gemini API-Key</div>
+                            <div class="col-12 col-md-8">
+                                <div class="input-group">
+                                    <input type="password" class="form-control" v-model="geminiImageApiKey" placeholder="AIza..."
+                                           @focus="e => { if (geminiImageApiKey.includes('•')) e.target.select() }" />
+                                    <button v-if="geminiImageApiKey" class="btn btn-outline-secondary" type="button"
+                                            @click="geminiImageApiKey = ''">
+                                        <i class="uil uil-times"></i>
+                                    </button>
+                                </div>
+                                <small class="text-muted">
+                                    <i class="uil uil-lock me-1"></i>{{ t('settings.encryptedStored') }}
+                                    — <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="text-info">aistudio.google.com</a>
+                                </small>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-12 col-md-4">Gemini Modell</div>
+                            <div class="col-12 col-md-8">
+                                <select class="form-select" v-model="geminiImageModel">
+                                    <option v-for="m in geminiImageModels" :key="m.value" :value="m.value">{{ m.label }}</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Shared settings (always visible) -->
+                    <hr class="my-3" />
+
+                    <!-- Display Name -->
+                    <div class="row mt-2">
+                        <div class="col-12 col-md-4">{{ t('settings.fluxDisplayName') }}</div>
+                        <div class="col-12 col-md-8">
+                            <input type="text" class="form-control" v-model="fluxDisplayName" :placeholder="t('settings.usernamePlaceholder')" />
+                            <small class="text-muted">{{ t('settings.fluxDisplayNameHint') }}</small>
+                        </div>
+                    </div>
+
+                    <!-- Avatar -->
+                    <div class="row mt-2">
+                        <div class="col-12 col-md-4">{{ t('settings.fluxAvatar') }}</div>
+                        <div class="col-12 col-md-8">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="fluxUseCustomAvatarCheck" v-model="fluxUseCustomAvatar" />
+                                <label class="form-check-label" for="fluxUseCustomAvatarCheck">{{ t('settings.fluxUseCustomAvatar') }}</label>
+                            </div>
+                            <div v-if="fluxUseCustomAvatar" class="mt-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <img v-if="fluxAvatar" :src="fluxAvatar" class="rounded-circle" style="width: 40px; height: 40px; object-fit: cover;" />
+                                    <input type="file" class="form-control form-control-sm" accept="image/*" @change="onFluxAvatarUpload" />
+                                    <button v-if="fluxAvatar" class="btn btn-outline-secondary btn-sm" @click="fluxAvatar = ''">
+                                        <i class="uil uil-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="mt-3 mb-3">
+                        <button type="button" @click="saveFluxSettings" class="btn btn-success me-2">{{ t('common.save') }}</button>
+                        <button v-if="shareCardProvider === 'flux'" type="button" @click="testFluxConnection" class="btn btn-outline-primary" :disabled="fluxTestLoading">
+                            <span v-if="fluxTestLoading">
+                                <span class="spinner-border spinner-border-sm me-1"></span>{{ t('common.testing') }}
+                            </span>
+                            <span v-else>{{ t('common.testConnection') }}</span>
+                        </button>
+                        <button v-if="shareCardProvider === 'gemini'" type="button" @click="testGeminiConnection" class="btn btn-outline-primary" :disabled="geminiTestLoading">
+                            <span v-if="geminiTestLoading">
+                                <span class="spinner-border spinner-border-sm me-1"></span>{{ t('common.testing') }}
+                            </span>
+                            <span v-else>{{ t('common.testConnection') }}</span>
+                        </button>
+                        <span v-if="shareCardProvider === 'flux' && fluxTestResult" class="ms-2" :class="fluxTestResult.success ? 'text-success' : 'text-danger'">
+                            {{ fluxTestResult.message }}
+                        </span>
+                        <span v-if="shareCardProvider === 'gemini' && geminiTestResult" class="ms-2" :class="geminiTestResult.success ? 'text-success' : 'text-danger'">
+                            {{ geminiTestResult.message }}
+                        </span>
+                    </div>
                 </div>
 
                 <hr />
@@ -1463,7 +1880,7 @@ onBeforeMount(async () => {
                         {{ dbType === 'postgresql' ? 'PostgreSQL' : 'SQLite' }}
                     </span>
                 </div>
-                <div v-show="dbExpanded" class="mt-2">
+                <div v-show="dbExpanded" class="mt-2 ms-3">
                     <p class="fw-lighter">{{ t('settings.dbDescription') }}</p>
 
                     <!-- DB-Typ -->
@@ -1568,7 +1985,7 @@ onBeforeMount(async () => {
                     <i class="uil me-2" :class="chartExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                     <p class="fs-5 fw-bold mb-0">OHLC-Chart</p>
                 </div>
-                <div v-show="chartExpanded" class="mt-2">
+                <div v-show="chartExpanded" class="mt-2 ms-3">
                     <p class="fw-lighter">{{ t('settings.ohlcDescription') }}</p>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="binanceToggle" v-model="enableBinanceChart" @change="saveBinanceSetting">
@@ -1583,7 +2000,7 @@ onBeforeMount(async () => {
                     <i class="uil me-2" :class="reparaturExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                     <p class="fs-5 fw-bold mb-0">{{ t('settings.repair') }}</p>
                 </div>
-                <div v-show="reparaturExpanded" class="mt-2">
+                <div v-show="reparaturExpanded" class="mt-2 ms-3">
                     <!-- Long/Short Reparatur -->
                     <p class="fw-lighter mb-1">{{ t('settings.repairDescription') }}</p>
                     <button class="btn btn-outline-warning btn-sm" @click="fixTradeSides" :disabled="fixTradesLoading">
@@ -1595,6 +2012,22 @@ onBeforeMount(async () => {
                     <div v-if="fixTradesResult" class="mt-2">
                         <div :class="fixTradesResult.success ? 'text-success' : 'text-danger'" class="txt-small">
                             {{ fixTradesResult.message }}
+                        </div>
+                    </div>
+
+                    <hr class="my-3" style="opacity: 0.15;" />
+
+                    <!-- Funding Fees reparieren -->
+                    <p class="fw-lighter mb-1">{{ t('settings.fundingFeeRepairDescription') }}</p>
+                    <button class="btn btn-outline-warning btn-sm" @click="repairFundingFees" :disabled="repairFundingLoading">
+                        <span v-if="repairFundingLoading">
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>{{ t('settings.repairing') }}
+                        </span>
+                        <span v-else><i class="uil uil-dollar-sign me-1"></i>{{ t('settings.fundingFeeRepair') }}</span>
+                    </button>
+                    <div v-if="repairFundingResult" class="mt-2">
+                        <div :class="repairFundingResult.success ? 'text-success' : 'text-danger'" class="txt-small">
+                            {{ repairFundingResult.message }}
                         </div>
                     </div>
 
@@ -1623,7 +2056,7 @@ onBeforeMount(async () => {
                     <p class="fs-5 fw-bold mb-0">{{ t('settings.imports') }}</p>
                     <span class="badge bg-secondary ms-2">{{ importsList.length }}</span>
                 </div>
-                <div v-show="importsExpanded" class="mt-2">
+                <div v-show="importsExpanded" class="mt-2 ms-3">
                     <p class="fw-lighter">{{ t('settings.importsDescription') }}</p>
 
                     <div>
@@ -1636,57 +2069,77 @@ onBeforeMount(async () => {
                         </div>
 
                         <div v-else>
-                            <div v-for="data in importsList" :key="data.dateUnix" class="import-row mb-1">
-                                <!-- Import Day Header -->
-                                <div class="d-flex align-items-center justify-content-between p-2 pointerClass"
-                                    style="background: var(--black-bg-3, #1a1a2e); border-radius: var(--border-radius, 6px);"
-                                    @click="toggleImportExpand(data.dateUnix)">
-                                    <div class="d-flex align-items-center gap-2">
-                                        <i class="uil" :class="expandedImport === data.dateUnix ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                                        <span class="fw-bold">{{ useDateCalFormat(data.dateUnix) }}</span>
-                                        <span class="badge bg-secondary">{{ getTradeCount(data) }} {{ t('common.trades') }}</span>
-                                        <span v-if="getEvaluatedCount(data) === getTradeCount(data) && getTradeCount(data) > 0"
-                                            class="badge bg-success">{{ t('settings.allEvaluated') }}</span>
-                                        <span v-else-if="getEvaluatedCount(data) > 0"
-                                            class="badge bg-warning text-dark">{{ t('settings.xOfYEvaluated', { x: getEvaluatedCount(data), y: getTradeCount(data) }) }}</span>
-                                        <span v-else-if="getTradeCount(data) > 0"
-                                            class="badge bg-secondary" style="opacity: 0.6;">{{ t('settings.notEvaluated') }}</span>
-                                    </div>
-                                    <div>
-                                        <span v-if="deleteConfirm === data.dateUnix" @click.stop>
-                                            <span class="me-2 small">{{ t('settings.sure') }}</span>
-                                            <button class="btn btn-danger btn-sm me-1" @click.stop="executeDeleteImport(data.dateUnix)">{{ t('common.yes') }}</button>
-                                            <button class="btn btn-outline-secondary btn-sm" @click.stop="cancelDeleteImport">{{ t('common.no') }}</button>
-                                        </span>
-                                        <i v-else class="uil uil-trash-alt pointerClass text-danger" @click.stop="confirmDeleteImport(data.dateUnix)"></i>
-                                    </div>
+                            <!-- Monat-Gruppen -->
+                            <div v-for="month in importsGroupedByMonth" :key="month.key" class="mb-2">
+                                <!-- Monats-Header -->
+                                <div class="d-flex align-items-center gap-2 p-2 pointerClass"
+                                    style="background: var(--black-bg-5, #141422); border-radius: var(--border-radius, 6px);"
+                                    @click="toggleMonth(month.key)">
+                                    <i class="uil" :class="expandedMonths.has(month.key) ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                                    <span class="fw-bold">{{ month.label }}</span>
+                                    <span class="badge bg-secondary">{{ month.days.length }} {{ month.days.length === 1 ? 'Tag' : 'Tage' }}</span>
+                                    <span class="badge bg-secondary">{{ month.tradeCount }} {{ t('common.trades') }}</span>
+                                    <span v-if="month.evaluatedCount === month.tradeCount && month.tradeCount > 0"
+                                        class="badge bg-success">{{ t('settings.allEvaluated') }}</span>
+                                    <span v-else-if="month.evaluatedCount > 0"
+                                        class="badge bg-warning text-dark">{{ month.evaluatedCount }}/{{ month.tradeCount }}</span>
                                 </div>
 
-                                <!-- Expanded: Individual Trades -->
-                                <div v-if="expandedImport === data.dateUnix" class="ps-4 pe-2 py-2">
-                                    <div v-for="trade in getTradesForDay(data)" :key="trade.id"
-                                        class="d-flex align-items-center justify-content-between py-1"
-                                        style="border-bottom: 1px solid var(--white-10, rgba(255,255,255,0.05));">
-                                        <div class="d-flex align-items-center gap-2">
-                                            <strong>{{ trade.symbol }}</strong>
-                                            <span class="badge" :class="trade.strategy === 'long' || trade.side === 'B' ? 'bg-success' : 'bg-danger'">
-                                                {{ formatTradeSide(trade) }}
-                                            </span>
-                                            <span class="fw-bold" :class="parseFloat(trade.netProceeds || trade.grossProceeds || 0) >= 0 ? 'greenTrade' : 'redTrade'">
-                                                {{ formatTradePnl(trade) }} USDT
-                                            </span>
+                                <!-- Tage innerhalb des Monats -->
+                                <div v-show="expandedMonths.has(month.key)" class="ps-3 mt-1">
+                                    <div v-for="data in month.days" :key="data.dateUnix" class="import-row mb-1">
+                                        <!-- Import Day Header -->
+                                        <div class="d-flex align-items-center justify-content-between p-2 pointerClass"
+                                            style="background: var(--black-bg-3, #1a1a2e); border-radius: var(--border-radius, 6px);"
+                                            @click="toggleImportExpand(data.dateUnix)">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <i class="uil" :class="expandedImport === data.dateUnix ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                                                <span class="fw-bold">{{ useDateCalFormat(data.dateUnix) }}</span>
+                                                <span class="badge bg-secondary">{{ getTradeCount(data) }} {{ t('common.trades') }}</span>
+                                                <span v-if="getEvaluatedCount(data) === getTradeCount(data) && getTradeCount(data) > 0"
+                                                    class="badge bg-success">{{ t('settings.allEvaluated') }}</span>
+                                                <span v-else-if="getEvaluatedCount(data) > 0"
+                                                    class="badge bg-warning text-dark">{{ t('settings.xOfYEvaluated', { x: getEvaluatedCount(data), y: getTradeCount(data) }) }}</span>
+                                                <span v-else-if="getTradeCount(data) > 0"
+                                                    class="badge bg-secondary" style="opacity: 0.6;">{{ t('settings.notEvaluated') }}</span>
+                                            </div>
+                                            <div>
+                                                <span v-if="deleteConfirm === data.dateUnix" @click.stop>
+                                                    <span class="me-2 small">{{ t('settings.sure') }}</span>
+                                                    <button class="btn btn-danger btn-sm me-1" @click.stop="executeDeleteImport(data.dateUnix)">{{ t('common.yes') }}</button>
+                                                    <button class="btn btn-outline-secondary btn-sm" @click.stop="cancelDeleteImport">{{ t('common.no') }}</button>
+                                                </span>
+                                                <i v-else class="uil uil-trash-alt pointerClass text-danger" @click.stop="confirmDeleteImport(data.dateUnix)"></i>
+                                            </div>
                                         </div>
-                                        <div class="d-flex align-items-center gap-2">
-                                            <span v-if="isTradeEvaluated(trade.id)" class="badge bg-success">
-                                                <i class="uil uil-check me-1"></i>Bewertet
-                                            </span>
-                                            <a v-else :href="'/playbook?tradeId=' + trade.id" class="btn btn-sm btn-outline-primary py-0 px-2">
-                                                <i class="uil uil-pen me-1"></i>Bewerten
-                                            </a>
+
+                                        <!-- Expanded: Individual Trades -->
+                                        <div v-if="expandedImport === data.dateUnix" class="ps-4 pe-2 py-2">
+                                            <div v-for="trade in getTradesForDay(data)" :key="trade.id"
+                                                class="d-flex align-items-center justify-content-between py-1"
+                                                style="border-bottom: 1px solid var(--white-10, rgba(255,255,255,0.05));">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <strong>{{ trade.symbol }}</strong>
+                                                    <span class="badge" :class="trade.strategy === 'long' || trade.side === 'B' ? 'bg-success' : 'bg-danger'">
+                                                        {{ formatTradeSide(trade) }}
+                                                    </span>
+                                                    <span class="fw-bold" :class="parseFloat(trade.netProceeds || trade.grossProceeds || 0) >= 0 ? 'greenTrade' : 'redTrade'">
+                                                        {{ formatTradePnl(trade) }} USDT
+                                                    </span>
+                                                </div>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span v-if="isTradeEvaluated(trade.id)" class="badge bg-success">
+                                                        <i class="uil uil-check me-1"></i>Bewertet
+                                                    </span>
+                                                    <a v-else :href="'/playbook?tradeId=' + trade.id" class="btn btn-sm btn-outline-primary py-0 px-2">
+                                                        <i class="uil uil-pen me-1"></i>Bewerten
+                                                    </a>
+                                                </div>
+                                            </div>
+                                            <div v-if="getTradesForDay(data).length === 0" class="text-muted small py-1">
+                                                Keine einzelnen Trades gefunden.
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div v-if="getTradesForDay(data).length === 0" class="text-muted small py-1">
-                                        Keine einzelnen Trades gefunden.
                                     </div>
                                 </div>
                             </div>

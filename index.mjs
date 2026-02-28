@@ -10,6 +10,7 @@ import { setupPolygonRoutes } from './server/polygon-api.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
 import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
+import { setupFluxRoutes } from './server/flux-api.js'
 import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString } from './server/auth.js'
 
 const app = express();
@@ -38,6 +39,7 @@ const startIndex = async () => {
     setupOllamaRoutes(app);
     setupUpdateRoutes(app);
     setupBackupRoutes(app);
+    await setupFluxRoutes(app);
     console.log(" -> API routes initialized")
 
     if (process.env.NODE_ENV == 'dev') {

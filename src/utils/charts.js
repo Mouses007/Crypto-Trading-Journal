@@ -53,6 +53,9 @@ export async function useECharts(param) {
         }
 
         if (param == "init") {
+            // Nicht initialisieren wenn Element versteckt ist (Bootstrap-Tab)
+            var pieEl = document.getElementById(chartId)
+            if (!pieEl || pieEl.clientWidth === 0 || pieEl.clientHeight === 0) continue
             let green
             let red
             if (index == 1) {
@@ -93,6 +96,8 @@ export async function useECharts(param) {
                 echarts.init(element).clear();
             }
             if (param == "init" || param == prefix) {
+                // Nicht initialisieren wenn Element versteckt ist (Bootstrap-Tab)
+                if (element.clientWidth === 0 || element.clientHeight === 0) return
                 useChartFunction(element.id);
             }
         });
@@ -2190,10 +2195,17 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
 
             // 2c: SL/TP-Verlauf als Stufenlinien
             if (meta.tpslHistory && meta.tpslHistory.length > 0) {
+                // Filter out entries recorded after the last fill (position close artifacts)
+                const lastFillTime = meta.fills?.length > 0
+                    ? Math.max(...meta.fills.map(f => parseInt(f.time || 0)))
+                    : 0
+                const cutoff = lastFillTime ? lastFillTime + 60000 : Infinity
+                const filteredHistory = meta.tpslHistory.filter(h => h.time <= cutoff)
+
                 const slSteps = []
                 const tpSteps = []
 
-                meta.tpslHistory.forEach(h => {
+                filteredHistory.forEach(h => {
                     const timeS = h.time / 1000
                     let xIdx = -1
                     for (let i = 0; i < ohlcTimestamps.length; i++) {
@@ -2646,6 +2658,7 @@ export function useRadarChart(elementId, indicators, values) {
  */
 export function usePerfChart(param) {
     return new Promise((resolve, reject) => {
+        ensureResizeListener()
         var el = document.getElementById(param)
         if (!el) { resolve(); return }
         var myChart = echarts.init(el)
@@ -2657,12 +2670,17 @@ export function usePerfChart(param) {
 
         let xAxisData = []       // Trade-Labels
         let pnlBars = []         // Einzel-PnL pro Trade
+        let pnlRaw = []          // Original-PnL für Tooltip
         let equityCurve = []     // Kumulative Equity
         let hwmLine = []         // High Water Mark
         let drawdownLine = []    // Drawdown vom HWM
 
         let cumPnl = 0
         let highWaterMark = 0
+
+        // Signed-Log: behält Vorzeichen, komprimiert Ausreißer
+        const signedLog = (v) => Math.sign(v) * Math.log10(Math.abs(v) + 1)
+        const signedLogInv = (v) => Math.sign(v) * (Math.pow(10, Math.abs(v)) - 1)
 
         const amountKey = amountCase.value + 'Proceeds'
 
@@ -2678,9 +2696,10 @@ export function usePerfChart(param) {
             const symbol = trade.symbol ? trade.symbol.replace('/USDT', '').replace('USDT', '') : ''
             xAxisData.push('#' + (i + 1) + (symbol ? ' ' + symbol : ''))
 
-            // PnL Balken (grün/rot)
+            // PnL Balken (signed-log skaliert)
+            pnlRaw.push(Number(pnl.toFixed(2)))
             pnlBars.push({
-                value: Number(pnl.toFixed(2)),
+                value: Number(signedLog(pnl).toFixed(4)),
                 itemStyle: { color: pnl >= 0 ? greenColor : redColor },
                 emphasis: { itemStyle: { color: pnl >= 0 ? greenColorHover : redColorHover } }
             })
@@ -2700,8 +2719,11 @@ export function usePerfChart(param) {
                     let label = params[0]?.name || ''
                     let html = '<b>' + label + '</b>'
                     params.forEach(p => {
-                        const val = useTwoDecCurrencyFormat(p.value)
-                        html += '<br>' + p.marker + ' ' + p.seriesName + ': ' + val
+                        // PnL-Serie: echten Wert aus pnlRaw nehmen
+                        const realVal = p.seriesName === _t('charts.pnl')
+                            ? useTwoDecCurrencyFormat(pnlRaw[p.dataIndex])
+                            : useTwoDecCurrencyFormat(p.value)
+                        html += '<br>' + p.marker + ' ' + p.seriesName + ': ' + realVal
                     })
                     return html
                 }
@@ -2713,7 +2735,7 @@ export function usePerfChart(param) {
             },
             grid: {
                 left: 60,
-                right: 20,
+                right: 60,
                 top: 40,
                 bottom: 90
             },
@@ -2747,7 +2769,7 @@ export function usePerfChart(param) {
                     nameTextStyle: { color: cssColor38, fontSize: 10 },
                     splitLine: { show: false },
                     axisLabel: {
-                        formatter: (val) => useThousandCurrencyFormat(val),
+                        formatter: (val) => useThousandCurrencyFormat(Math.round(signedLogInv(val))),
                         color: cssColor38
                     }
                 }
@@ -2776,7 +2798,8 @@ export function usePerfChart(param) {
                     type: 'bar',
                     yAxisIndex: 1,
                     data: pnlBars,
-                    barMaxWidth: 8,
+                    barMaxWidth: 30,
+                    barCategoryGap: '30%',
                     z: 1
                 },
                 {
@@ -3064,8 +3087,8 @@ export function useWeekdayChart(param) {
             }
         }
 
-        // Nach Wochentag sortieren (Montag zuerst)
-        items.sort((a, b) => a.dayIndex - b.dayIndex)
+        // Nach Wochentag sortieren (Montag zuerst: Mo=0, Di=1, ..., So=6)
+        items.sort((a, b) => ((a.dayIndex + 6) % 7) - ((b.dayIndex + 6) % 7))
 
         const ratioLabel = selectedRatio.value == "appt" ? "APPT" : _t('options.profitFactor')
 
@@ -3430,12 +3453,12 @@ export function useSymbolChart(param) {
 export function useHeatmapChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
-        if (!el) { resolve(); return }
+        if (!el || el.clientWidth === 0) { resolve(); return }
         var myChart = echarts.init(el)
 
         if (!filteredTradesTrades || filteredTradesTrades.length === 0) { resolve(); return }
 
-        const weekdays = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
+        const weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
         const hours = Array.from({length: 24}, (_, i) => i + ':00')
 
         // Zellen-Daten: [hour, dayIndex, avgPnL, tradeCount]
@@ -3443,7 +3466,7 @@ export function useHeatmapChart(param) {
 
         filteredTradesTrades.forEach(trade => {
             const d = dayjs.unix(trade.entryTime).tz(timeZoneTrade.value)
-            const day = d.day()    // 0=So, 1=Mo, ...
+            const day = (d.day() + 6) % 7  // 0=Mo, 1=Di, ..., 6=So
             const hour = d.hour()  // 0-23
             const key = day + '-' + hour
             if (!cellMap[key]) cellMap[key] = { sum: 0, count: 0 }
@@ -3471,17 +3494,17 @@ export function useHeatmapChart(param) {
             const intensity = Math.min(Math.abs(avg) / rangeVal, 1)
             // Mindest-Sättigung damit auch kleine Werte sichtbar sind
             const t = 0.25 + intensity * 0.75
+            // Farben passend zu den Balken-Charts: rgb(72,199,142) / rgb(235,87,87)
+            const bg = 22 // Hintergrund ~#161616
             if (avg >= 0) {
-                // Grün: von #161616 bis #44dd88
-                const r = Math.round(22 + (68 - 22) * t * 0.3)
-                const g = Math.round(22 + (221 - 22) * t)
-                const b = Math.round(22 + (136 - 22) * t * 0.5)
+                const r = Math.round(bg + (72 - bg) * t)
+                const g = Math.round(bg + (199 - bg) * t)
+                const b = Math.round(bg + (142 - bg) * t)
                 return 'rgb(' + r + ',' + g + ',' + b + ')'
             } else {
-                // Rot: von #161616 bis #ff4444
-                const r = Math.round(22 + (255 - 22) * t)
-                const g = Math.round(22 + (68 - 22) * t * 0.3)
-                const b = Math.round(22 + (68 - 22) * t * 0.3)
+                const r = Math.round(bg + (235 - bg) * t)
+                const g = Math.round(bg + (87 - bg) * t)
+                const b = Math.round(bg + (87 - bg) * t)
                 return 'rgb(' + r + ',' + g + ',' + b + ')'
             }
         }
@@ -3513,6 +3536,12 @@ export function useHeatmapChart(param) {
                     if (d[3] === 0) return weekdays[d[1]] + ' ' + d[0] + ':00<br>Keine Trades'
                     return weekdays[d[1]] + ' ' + d[0] + ':00<br>Ø P&L: ' + useTwoDecCurrencyFormat(d[2]) + '<br>Trades: ' + d[3]
                 }
+            },
+            visualMap: {
+                show: false,
+                min: -1,
+                max: 1,
+                inRange: { color: ['#eb5757', '#161616', '#48c78e'] }
             },
             grid: { top: 10, right: 20, bottom: 40, left: 40 },
             xAxis: {

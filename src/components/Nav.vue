@@ -41,67 +41,71 @@ const filterSummary = computed(() => {
     return parts.filter(Boolean).join(' · ')
 })
 
-const pages = computed(() => [{
-    id: "dashboard",
-    name: t('nav.dashboard'),
-    icon: "uil uil-apps"
-},
-{
-    id: "daily",
-    name: t('nav.dailyView'),
-    icon: "uil uil-signal-alt-3"
-},
-{
-    id: "calendar",
-    name: t('nav.calendar'),
-    icon: "uil uil-calendar-alt"
-},
-{
-    id: "screenshots",
-    name: t('nav.screenshots'),
-    icon: "uil uil-image-v"
-},
-{
-    id: "incoming",
-    name: t('nav.pendingTrades'),
-    icon: "uil uil-arrow-circle-down"
-},
-{
-    id: "playbook",
-    name: t('nav.playbook'),
-    icon: "uil uil-compass"
-},
-{
-    id: "auswertung",
-    name: t('nav.evaluation'),
-    icon: "uil uil-chart-pie"
-},
-{
-    id: "kiAgent",
-    name: t('nav.kiAgent'),
-    icon: "uil uil-robot"
-},
-{
-    id: "addTrades",
-    name: t('nav.manualImport'),
-    icon: "uil uil-plus-circle"
-},
-{
-    id: "settings",
-    name: t('nav.settings'),
-    icon: "uil uil-sliders-v-alt"
-},
-{
-    id: "addExcursions",
-    name: t('nav.addExcursions'),
-    icon: "uil uil-refresh"
-},
-{
-    id: "imports",
-    name: t('settings.imports'),
-    icon: "uil uil-import"
-}
-])
+const aiActive = computed(() => currentUser.value?.aiEnabled !== false && currentUser.value?.aiEnabled !== 0)
+
+const pages = computed(() => {
+    const all = [{
+        id: "dashboard",
+        name: t('nav.dashboard'),
+        icon: "uil uil-apps"
+    },
+    {
+        id: "daily",
+        name: t('nav.dailyView'),
+        icon: "uil uil-signal-alt-3"
+    },
+    {
+        id: "calendar",
+        name: t('nav.calendar'),
+        icon: "uil uil-calendar-alt"
+    },
+    {
+        id: "screenshots",
+        name: t('nav.screenshots'),
+        icon: "uil uil-image-v"
+    },
+    {
+        id: "incoming",
+        name: t('nav.pendingTrades'),
+        icon: "uil uil-arrow-circle-down"
+    },
+    {
+        id: "playbook",
+        name: t('nav.playbook'),
+        icon: "uil uil-compass"
+    },
+    {
+        id: "auswertung",
+        name: t('nav.evaluation'),
+        icon: "uil uil-chart-pie"
+    },
+    {
+        id: "kiAgent",
+        name: t('nav.kiAgent'),
+        icon: "uil uil-robot"
+    },
+    {
+        id: "addTrades",
+        name: t('nav.manualImport'),
+        icon: "uil uil-plus-circle"
+    },
+    {
+        id: "settings",
+        name: t('nav.settings'),
+        icon: "uil uil-sliders-v-alt"
+    },
+    {
+        id: "addExcursions",
+        name: t('nav.addExcursions'),
+        icon: "uil uil-refresh"
+    },
+    {
+        id: "imports",
+        name: t('settings.imports'),
+        icon: "uil uil-import"
+    }]
+    return all.filter(p => p.id !== 'kiAgent' || aiActive.value)
+})
 
 onMounted(async () => {
     await useInitTooltip()

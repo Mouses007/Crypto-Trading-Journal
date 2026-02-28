@@ -481,10 +481,15 @@ TRADE-DATEN:
                     }
                 }
 
-                // SL/TP Verschiebungen
+                // SL/TP Verschiebungen (filter out post-close artifacts)
                 if (tradingMeta.tpslHistory && tradingMeta.tpslHistory.length > 0) {
+                    const lastFillTime = tradingMeta.fills?.length > 0
+                        ? Math.max(...tradingMeta.fills.map(f => parseInt(f.time || 0)))
+                        : 0
+                    const cutoff = lastFillTime ? lastFillTime + 60000 : Infinity
+                    const filteredTpsl = tradingMeta.tpslHistory.filter(h => h.time <= cutoff)
                     reviewPrompt += `\n\nSL/TP PROTOKOLL (Verschiebungen):`
-                    tradingMeta.tpslHistory.forEach(h => {
+                    filteredTpsl.forEach(h => {
                         const timeStr = new Date(h.time).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
                         if (h.action === 'set') {
                             reviewPrompt += `\n- ${timeStr}: ${h.type} gesetzt auf $${h.newVal}`
@@ -587,11 +592,17 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             }
 
             // Bewertung in notes speichern (upsert)
+            const tokenData = {
+                aiReview: result.text,
+                aiReviewProvider: provider,
+                aiReviewModel: model || provider,
+                aiReviewPromptTokens: result.usage?.promptTokens || 0,
+                aiReviewCompletionTokens: result.usage?.completionTokens || 0,
+                aiReviewTotalTokens: result.usage?.totalTokens || 0
+            }
             if (noteRecord) {
                 await knex('notes').where('tradeId', tradeId).update({
-                    aiReview: result.text,
-                    aiReviewProvider: provider,
-                    aiReviewModel: model || provider,
+                    ...tokenData,
                     updatedAt: knex.fn.now()
                 })
             } else {
@@ -599,9 +610,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                     tradeId,
                     dateUnix: dateUnix || 0,
                     note: '',
-                    aiReview: result.text,
-                    aiReviewProvider: provider,
-                    aiReviewModel: model || provider
+                    ...tokenData
                 })
             }
 
@@ -633,6 +642,226 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             }
         } catch (e) {
             console.error('Load trade review error:', e)
+            res.status(500).json({ error: e.message })
+        }
+    })
+
+    // --- Trade-Review Chat (Rückfragen zur Einzeltrade-Bewertung) ---
+
+    // Chat-Verlauf laden
+    app.get('/api/ai/trade-review/:tradeId/messages', async (req, res) => {
+        const tradeId = req.params.tradeId
+        try {
+            const knex = getKnex()
+            const messages = await knex('ai_trade_messages')
+                .where('tradeId', tradeId)
+                .orderBy('id', 'asc')
+            res.json(messages)
+        } catch (e) {
+            res.json([])
+        }
+    })
+
+    // Chat-Verlauf löschen
+    app.delete('/api/ai/trade-review/:tradeId/messages', async (req, res) => {
+        const tradeId = req.params.tradeId
+        try {
+            const knex = getKnex()
+            await knex('ai_trade_messages').where('tradeId', tradeId).del()
+            res.json({ success: true })
+        } catch (e) {
+            res.status(500).json({ error: e.message })
+        }
+    })
+
+    // Rückfrage zur Trade-Bewertung senden
+    app.post('/api/ai/trade-review/:tradeId/chat', async (req, res) => {
+        const tradeId = req.params.tradeId
+        const { message } = req.body
+        if (!message || !message.trim()) {
+            return res.status(400).json({ error: 'Nachricht darf nicht leer sein' })
+        }
+
+        try {
+            const knex = getKnex()
+
+            // Review aus notes laden
+            const note = await knex('notes').where('tradeId', tradeId).first()
+            if (!note?.aiReview) {
+                return res.status(404).json({ error: 'Keine KI-Bewertung für diesen Trade vorhanden' })
+            }
+
+            // KI-Settings laden
+            const settings = await knex('settings')
+                .select('aiProvider', 'aiModel', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .where('id', 1).first()
+            const provider = settings?.aiProvider || 'ollama'
+            const model = settings?.aiModel || ''
+            const temperature = settings?.aiTemperature ?? 0.7
+            const maxTokens = settings?.aiMaxTokens || 1500
+            const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
+            const apiKey = getApiKeyForProvider(settings, provider)
+
+            // Bisherige Chat-Nachrichten laden
+            const chatHistory = await knex('ai_trade_messages')
+                .where('tradeId', tradeId)
+                .orderBy('id', 'asc')
+
+            // Konversation aufbauen
+            const systemMsg = 'Du bist ein erfahrener Trading-Coach. Du hast die folgende Trade-Bewertung erstellt. Beantworte Rückfragen des Nutzers basierend auf dieser Bewertung und den Trade-Daten. Antworte auf Deutsch. Verwende Markdown-Formatierung. Sei konkret und praxisnah.'
+            const messages = [
+                { role: 'assistant', content: note.aiReview }
+            ]
+            for (const msg of chatHistory) {
+                messages.push({ role: msg.role, content: msg.content })
+            }
+            messages.push({ role: 'user', content: message.trim() })
+
+            // An Provider senden
+            let result
+            if (provider === 'ollama') {
+                result = await chatOllama(systemMsg, messages, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
+            } else if (provider === 'openai') {
+                result = await chatOpenAI(systemMsg, messages, apiKey, model || 'gpt-4o-mini', temperature, maxTokens)
+            } else if (provider === 'anthropic') {
+                result = await chatAnthropic(systemMsg, messages, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens)
+            } else if (provider === 'gemini') {
+                result = await chatGemini(systemMsg, messages, apiKey, model || 'gemini-2.0-flash', temperature, maxTokens)
+            } else if (provider === 'deepseek') {
+                result = await chatOpenAI(systemMsg, messages, apiKey, model || 'deepseek-chat', temperature, maxTokens, 'https://api.deepseek.com/v1/chat/completions')
+            } else {
+                return res.status(400).json({ error: 'Unbekannter KI-Anbieter: ' + provider })
+            }
+
+            // User-Frage speichern
+            await knex('ai_trade_messages').insert({
+                tradeId,
+                role: 'user',
+                content: message.trim(),
+                provider,
+                model: model || '',
+                promptTokens: 0,
+                completionTokens: 0,
+                totalTokens: 0
+            })
+
+            // KI-Antwort speichern
+            await knex('ai_trade_messages').insert({
+                tradeId,
+                role: 'assistant',
+                content: result.text,
+                provider,
+                model: model || '',
+                promptTokens: result.usage?.promptTokens || 0,
+                completionTokens: result.usage?.completionTokens || 0,
+                totalTokens: result.usage?.totalTokens || 0
+            })
+
+            res.json({
+                reply: result.text,
+                tokenUsage: result.usage
+            })
+        } catch (e) {
+            console.error('Trade review chat error:', e)
+            res.status(500).json({ error: e.message || 'Chat-Anfrage fehlgeschlagen' })
+        }
+    })
+
+    // --- Aggregierte Token-Statistiken ---
+    app.get('/api/ai/token-stats', async (req, res) => {
+        try {
+            const knex = getKnex()
+
+            // Jede Quelle einzeln abfragen (falls Spalten noch nicht existieren)
+            let reports = []
+            try {
+                reports = await knex('ai_reports')
+                    .select('provider', 'model', 'promptTokens', 'completionTokens', 'totalTokens')
+                    .where('totalTokens', '>', 0)
+            } catch (e) { /* Spalten fehlen noch */ }
+
+            let messages = []
+            try {
+                messages = await knex('ai_report_messages')
+                    .select('provider', 'model', 'promptTokens', 'completionTokens', 'totalTokens')
+                    .where('role', 'assistant')
+                    .andWhere('totalTokens', '>', 0)
+            } catch (e) { /* provider/model Spalten fehlen evtl. */ }
+
+            let reviews = []
+            try {
+                const reviewsRaw = await knex('notes')
+                    .select('aiReviewProvider', 'aiReviewModel', 'aiReviewPromptTokens', 'aiReviewCompletionTokens', 'aiReviewTotalTokens')
+                    .where('aiReviewTotalTokens', '>', 0)
+                reviews = reviewsRaw.map(r => ({
+                    provider: r.aiReviewProvider, model: r.aiReviewModel,
+                    promptTokens: r.aiReviewPromptTokens, completionTokens: r.aiReviewCompletionTokens, totalTokens: r.aiReviewTotalTokens
+                }))
+            } catch (e) { /* Spalten fehlen noch */ }
+
+            let screenshotReviews = []
+            try {
+                const ssRaw = await knex('screenshots')
+                    .select('aiReviewProvider', 'aiReviewModel', 'aiReviewPromptTokens', 'aiReviewCompletionTokens', 'aiReviewTotalTokens')
+                    .where('aiReviewTotalTokens', '>', 0)
+                screenshotReviews = ssRaw.map(r => ({
+                    provider: r.aiReviewProvider, model: r.aiReviewModel,
+                    promptTokens: r.aiReviewPromptTokens, completionTokens: r.aiReviewCompletionTokens, totalTokens: r.aiReviewTotalTokens
+                }))
+            } catch (e) { /* Spalten fehlen noch */ }
+
+            // 5. ai_trade_messages (Trade-Review Chat)
+            let tradeChat = []
+            try {
+                tradeChat = await knex('ai_trade_messages')
+                    .select('provider', 'model', 'promptTokens', 'completionTokens', 'totalTokens')
+                    .where('role', 'assistant')
+                    .andWhere('totalTokens', '>', 0)
+            } catch (e) { /* Tabelle existiert evtl. noch nicht */ }
+
+            // Aggregieren
+            const byProvider = {}
+            let totalPrompt = 0, totalCompletion = 0, totalAll = 0
+
+            const allEntries = [...reports, ...messages, ...reviews, ...screenshotReviews, ...tradeChat]
+            for (const entry of allEntries) {
+                const p = entry.provider || 'unknown'
+                const pt = entry.promptTokens || 0
+                const ct = entry.completionTokens || 0
+                const tt = entry.totalTokens || 0
+
+                if (!byProvider[p]) {
+                    byProvider[p] = { promptTokens: 0, completionTokens: 0, totalTokens: 0, models: {} }
+                }
+                byProvider[p].promptTokens += pt
+                byProvider[p].completionTokens += ct
+                byProvider[p].totalTokens += tt
+
+                const m = entry.model || 'unknown'
+                if (!byProvider[p].models[m]) {
+                    byProvider[p].models[m] = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+                }
+                byProvider[p].models[m].promptTokens += pt
+                byProvider[p].models[m].completionTokens += ct
+                byProvider[p].models[m].totalTokens += tt
+
+                totalPrompt += pt
+                totalCompletion += ct
+                totalAll += tt
+            }
+
+            res.json({
+                total: { promptTokens: totalPrompt, completionTokens: totalCompletion, totalTokens: totalAll },
+                byProvider,
+                counts: {
+                    reports: reports.length,
+                    chatMessages: messages.length,
+                    tradeReviews: reviews.length,
+                    screenshotReviews: screenshotReviews.length
+                }
+            })
+        } catch (e) {
+            console.error('Token stats error:', e)
             res.status(500).json({ error: e.message })
         }
     })
@@ -887,6 +1116,8 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                 reportId: reportId,
                 role: 'user',
                 content: message.trim(),
+                provider,
+                model: model || '',
                 promptTokens: 0,
                 completionTokens: 0,
                 totalTokens: 0
@@ -897,6 +1128,8 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                 reportId: reportId,
                 role: 'assistant',
                 content: result.text,
+                provider,
+                model: model || '',
                 promptTokens: result.usage?.promptTokens || 0,
                 completionTokens: result.usage?.completionTokens || 0,
                 totalTokens: result.usage?.totalTokens || 0

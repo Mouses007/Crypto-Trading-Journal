@@ -3,6 +3,7 @@ import { onBeforeMount, onMounted, computed, reactive, ref, watch, nextTick } fr
 import NoData from '../components/NoData.vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Screenshot from '../components/Screenshot.vue'
+import ShareCardModal from '../components/ShareCardModal.vue'
 import { spinnerLoadingPage, modalDailyTradeOpen, markerAreaOpen, spinnerSetups, spinnerSetupsText, hasData, saveButton, spinnerLoadMore, endOfList, timeZoneTrade, idCurrentType, idCurrentNumber, tabGettingScreenshots, scrollToDateUnix } from '../stores/ui.js';
 import { amountCase, selectedGrossNet, selectedTagIndex, filteredSuggestions } from '../stores/filters.js';
 import { calendarData, filteredTrades, screenshots, screenshot, tradeScreenshotChanged, excursion, tradeExcursionChanged, tradeExcursionId, tradeExcursionDateUnix, tradeId, excursions, itemTradeIndex, tradeIndex, tradeIndexPrevious, availableTags, tradeTagsChanged, tagInput, tags, tradeTags, showTagsList, tradeTagsId, tradeTagsDateUnix, newTradeTags, notes, tradeNote, tradeNoteChanged, tradeNoteDateUnix, tradeNoteId, availableTagsArray, screenshotsInfos, satisfactionTradeArray, satisfactionArray } from '../stores/trades.js';
@@ -31,6 +32,92 @@ import axios from 'axios'
 import { useCreateOHLCV } from '../utils/addTrades';
 
 
+/* SHARE CARD */
+const shareCardOpen = ref(false)
+const shareCardTrade = ref(null)
+
+function openShareCard() {
+    const dayData = filteredTrades[itemTradeIndex.value]
+    const trade = dayData?.trades?.[tradeIndex.value]
+    if (!trade) return
+
+    // Build a trade object with all needed fields for the share card
+    // Leverage: prefer tradingMeta (from incoming_positions), fallback to trade field
+    const lev = tradingMeta.value?.leverage || trade.leverage || 0
+
+    // Collect tag names — only from "Strategie" group (first group)
+    const stratGroup = availableTags.length > 0 ? availableTags[0] : null
+    const stratTagIds = stratGroup ? new Set(stratGroup.tags.map(t => t.id)) : new Set()
+    const tagNames = tradeTags.filter(t => stratTagIds.has(t.id)).map(t => t.name).filter(Boolean)
+
+    // RRR from tradingMeta
+    const rrr = tradingMeta.value?.rrr || ''
+
+    shareCardTrade.value = {
+        symbol: trade.symbol || '',
+        strategy: trade.strategy || (trade.side === 'SS' || trade.side === 'BC' ? 'short' : 'long'),
+        entryPrice: trade.entryPrice || 0,
+        exitPrice: trade.exitPrice || 0,
+        netProceeds: trade.netProceeds || 0,
+        grossProceeds: trade.grossProceeds || 0,
+        leverage: lev,
+        commission: trade.commission || 0,
+        fundingFee: trade.fundingFee || 0,
+        dateUnix: dayData.dateUnix || 0,
+        entryTime: trade.entryTime || dayData.dateUnix || 0,
+        exitTime: trade.exitTime || 0,
+        tagNames,
+        rrr
+    }
+    shareCardOpen.value = true
+}
+
+// Open share card directly from table row — look up tags + tradingMeta from data
+function openShareCardFromRow(dayIndex, tradeIdx) {
+    const dayData = filteredTrades[dayIndex]
+    const trade = dayData?.trades?.[tradeIdx]
+    if (!trade) return
+
+    const tradeId = trade.id
+
+    // Look up tags for this trade — only from "Strategie" group (first group)
+    const tagNames = []
+    const stratGroup = availableTags.length > 0 ? availableTags[0] : null
+    const stratTagIds = stratGroup ? new Set(stratGroup.tags.map(t => t.id)) : new Set()
+    const findTags = tags.find(obj => obj.tradeId == tradeId)
+    if (findTags && findTags.tags) {
+        for (const tagId of findTags.tags) {
+            if (!stratTagIds.has(tagId)) continue
+            const info = useGetTagInfo(tagId)
+            if (info.tagName) tagNames.push(info.tagName)
+        }
+    }
+
+    // Look up tradingMetadata from notes
+    const tradeNote = notes.find(obj => obj.tradeId == tradeId)
+    const meta = tradeNote?.tradingMetadata || null
+    const lev = meta?.leverage || trade.leverage || 0
+    const rrr = meta?.rrr || ''
+
+    shareCardTrade.value = {
+        symbol: trade.symbol || '',
+        strategy: trade.strategy || (trade.side === 'SS' || trade.side === 'BC' ? 'short' : 'long'),
+        entryPrice: trade.entryPrice || 0,
+        exitPrice: trade.exitPrice || 0,
+        netProceeds: trade.netProceeds || 0,
+        grossProceeds: trade.grossProceeds || 0,
+        leverage: lev,
+        commission: trade.commission || 0,
+        fundingFee: trade.fundingFee || 0,
+        dateUnix: dayData.dateUnix || 0,
+        entryTime: trade.entryTime || dayData.dateUnix || 0,
+        exitTime: trade.exitTime || 0,
+        tagNames,
+        rrr
+    }
+    shareCardOpen.value = true
+}
+
 const dailyTabs = [{
     id: "trades",
     label: "Trades",
@@ -52,6 +139,11 @@ let tradesModal = null
 let tagsModal = null
 let tagsModalOpen = ref(false)
 
+function closeTradeModal() {
+    tradesModal.hide()
+    modalDailyTradeOpen.value = false
+}
+
 const stripHtml = (html) => {
     if (!html) return ''
     return html.replace(/<[^>]*>/g, '').trim()
@@ -71,6 +163,18 @@ function hasTradingMetadata(meta) {
         || meta.positionSize || (meta.tpslHistory?.length > 0) || meta.rrr
 }
 
+// Filter tpslHistory: remove entries recorded after the last fill (position close)
+// These are artifacts from polling that detected SL/TP removal after position was already closed
+function getFilteredTpslHistory(meta) {
+    if (!meta?.tpslHistory?.length) return []
+    if (!meta.fills?.length) return meta.tpslHistory
+    // Find the last fill timestamp (= position close time), add 60s buffer
+    const lastFillTime = Math.max(...meta.fills.map(f => parseInt(f.time || 0)))
+    if (!lastFillTime) return meta.tpslHistory
+    const cutoff = lastFillTime + 60000 // 60s tolerance
+    return meta.tpslHistory.filter(h => h.time <= cutoff)
+}
+
 function getEntryFillsFromMeta(fills, side) {
     if (!fills || !Array.isArray(fills)) return []
     return fills.filter(f => !f.reduceOnly)
@@ -88,13 +192,60 @@ function getAvgEntryPriceFromMeta(fills, side) {
 }
 
 function formatMetaFillTime(timestamp) {
-    return dayjs(parseInt(timestamp)).format('DD.MM. HH:mm')
+    return dayjs(parseInt(timestamp)).tz(timeZoneTrade.value).format('DD.MM. HH:mm')
 }
 
 function getFillBadgeType(fill, idx, allFills) {
-    if (fill.reduceOnly) return 'partialClose'
+    if (fill.reduceOnly) {
+        // Prüfen ob alle Close-Fills zusammen die Position komplett schließen
+        const openQty = allFills.filter(f => !f.reduceOnly).reduce((sum, f) => sum + parseFloat(f.qty || 0), 0)
+        const totalClosedQty = allFills.filter(f => f.reduceOnly).reduce((sum, f) => sum + parseFloat(f.qty || 0), 0)
+        return totalClosedQty >= openQty ? 'close' : 'partialClose'
+    }
     if (idx === 0 || allFills.slice(0, idx).every(f => f.reduceOnly)) return 'initial'
     return 'compound'
+}
+
+// Fills nach Zeitstempel (Minutengenau) + Richtung gruppieren
+function groupFillsByMinute(fills, timeField = 'time') {
+    if (!fills || fills.length === 0) return []
+    const groups = []
+    let current = null
+    for (let i = 0; i < fills.length; i++) {
+        const fill = fills[i]
+        const minute = dayjs(parseInt(fill[timeField])).tz(timeZoneTrade.value).format('YYYY-MM-DD HH:mm')
+        const key = minute + '_' + (fill.reduceOnly ? '1' : '0')
+        if (current && current.key === key) {
+            current.fills.push(fill)
+        } else {
+            current = { key, fills: [fill], time: fill[timeField], reduceOnly: fill.reduceOnly }
+            groups.push(current)
+        }
+    }
+    return groups.map((g, gIdx) => {
+        const totalQty = g.fills.reduce((s, f) => s + parseFloat(f.qty || 0), 0)
+        const totalValue = g.fills.reduce((s, f) => s + parseFloat(f.qty || 0) * parseFloat(f.price || 0), 0)
+        const totalFee = g.fills.reduce((s, f) => s + parseFloat(f.fee || 0), 0)
+        return {
+            ...g,
+            totalQty,
+            avgPrice: totalQty > 0 ? totalValue / totalQty : 0,
+            totalValue,
+            totalFee,
+            isGroup: g.fills.length > 1,
+            // Badge: erster Fill-Index in der Gesamtliste für getFillBadgeType
+            firstFillIdx: fills.indexOf(g.fills[0])
+        }
+    })
+}
+
+const expandedFillGroups = ref(new Set())
+function toggleFillGroup(key) {
+    if (expandedFillGroups.value.has(key)) {
+        expandedFillGroups.value.delete(key)
+    } else {
+        expandedFillGroups.value.add(key)
+    }
 }
 
 // KI Trade-Bewertung
@@ -102,6 +253,7 @@ const aiTradeReview = ref('')
 const aiTradeReviewLoading = ref(false)
 const aiTradeReviewError = ref('')
 const aiTradeReviewOpen = ref(false)
+const aiTradeReviewTokens = ref(null) // { promptTokens, completionTokens, totalTokens }
 const autoStartReview = ref(false)
 
 function markdownToHtml(md) {
@@ -132,6 +284,8 @@ async function loadTradeReview(tradeId) {
         if (data.review) {
             aiTradeReview.value = data.review
             aiTradeReviewOpen.value = true
+            // Chat-Messages auch laden
+            loadTradeReviewChat(tradeId)
         }
     } catch (e) {
         // Silent fail
@@ -166,10 +320,64 @@ async function requestTradeReview() {
 
         aiTradeReview.value = data.review
         aiTradeReviewOpen.value = true
+        aiTradeReviewTokens.value = data.tokenUsage || null
     } catch (e) {
         aiTradeReviewError.value = e.response?.data?.error || e.message || t('daily.reviewFailed')
     }
     aiTradeReviewLoading.value = false
+}
+
+// Trade-Review Chat (Rückfragen)
+const tradeReviewChat = reactive({})        // { tradeId: [messages] }
+const tradeReviewChatInput = reactive({})   // { tradeId: 'text' }
+const tradeReviewChatLoading = reactive({}) // { tradeId: true/false }
+const tradeReviewChatError = reactive({})   // { tradeId: 'error msg' }
+
+function currentTradeId() {
+    try {
+        return filteredTrades[itemTradeIndex.value].trades[tradeIndex.value].id
+    } catch (e) { return null }
+}
+
+async function loadTradeReviewChat(tradeId) {
+    if (!tradeId) return
+    try {
+        const { data } = await axios.get(`/api/ai/trade-review/${tradeId}/messages`)
+        tradeReviewChat[tradeId] = Array.isArray(data) ? data : []
+    } catch (e) {
+        tradeReviewChat[tradeId] = []
+    }
+}
+
+async function sendTradeReviewChat() {
+    const tradeId = currentTradeId()
+    if (!tradeId) return
+    const msg = (tradeReviewChatInput[tradeId] || '').trim()
+    if (!msg) return
+
+    tradeReviewChatLoading[tradeId] = true
+    tradeReviewChatError[tradeId] = ''
+
+    try {
+        await axios.post(`/api/ai/trade-review/${tradeId}/chat`, {
+            message: msg
+        }, { timeout: 600000 })
+
+        tradeReviewChatInput[tradeId] = ''
+        await loadTradeReviewChat(tradeId)
+    } catch (e) {
+        tradeReviewChatError[tradeId] = e.response?.data?.error || e.message || t('daily.chatFailed')
+    }
+    tradeReviewChatLoading[tradeId] = false
+}
+
+async function clearTradeReviewChat() {
+    const tradeId = currentTradeId()
+    if (!tradeId) return
+    try {
+        await axios.delete(`/api/ai/trade-review/${tradeId}/messages`)
+        tradeReviewChat[tradeId] = []
+    } catch (e) { /* silent */ }
 }
 
 
@@ -413,7 +621,7 @@ async function clickTradesModal(param1, param2, param3) {
                             ohlcVolumes = ohlcArray[cacheIndex].ohlcVolumes
                         } else {
                             console.log(" -> Fetching OHLC data for " + filteredTradesObject.symbol + " (" + chartInterval + ")")
-                            await getOHLC(filteredTradesObject.td, filteredTradesObject.symbol, filteredTradesObject.type, chartInterval)
+                            await getOHLC(filteredTradesObject.td, filteredTradesObject.symbol, filteredTradesObject.type, chartInterval, filteredTradesObject.entryTime)
                             cacheIndex = ohlcArray.findIndex(obj => obj.date === filteredTradesObject.td && obj.symbol === filteredTradesObject.symbol && obj.interval == chartInterval)
                             if (cacheIndex != -1) {
                                 ohlcTimestamps = ohlcArray[cacheIndex].ohlcTimestamps
@@ -831,7 +1039,7 @@ const binanceIntervalMap = {
     '1D': '1d', '1W': '1w', '1M': '1M'
 }
 
-function getOHLC(date, symbol, type, interval) {
+function getOHLC(date, symbol, type, interval, entryTime) {
     if (apiSource.value === "binance") {
         // Binance-kompatibles Interval bestimmen
         const binanceInterval = binanceIntervalMap[interval] || '15m'
@@ -839,9 +1047,10 @@ function getOHLC(date, symbol, type, interval) {
 
         return new Promise(async (resolve, reject) => {
             try {
-                // Zeitraum: ganzer Tag der Trade-Eröffnung
-                const startTime = dayjs(date * 1000).tz(timeZoneTrade.value).startOf('day').valueOf()
-                const endTime = dayjs(date * 1000).tz(timeZoneTrade.value).endOf('day').valueOf()
+                // Zeitraum: ±6h um den Trade-Einstieg (halber Tag)
+                const entryMs = entryTime ? entryTime * 1000 : dayjs(date * 1000).tz(timeZoneTrade.value).startOf('day').add(12, 'hour').valueOf()
+                const startTime = dayjs(entryMs).subtract(6, 'hour').valueOf()
+                const endTime = dayjs(entryMs).add(6, 'hour').valueOf()
 
                 const response = await axios.get('/api/binance/klines', {
                     params: {
@@ -1158,18 +1367,22 @@ function getOHLC(date, symbol, type, interval) {
                                                             :data-indextwo="index2">
 
                                                             <!--Symbol-->
+                                                            <td class="align-middle">{{ trade.symbol }}</td>
 
-
-                                                            <td>{{ trade.symbol }}</td>
-
-                                                            <!--KI-Bewertung Quick-Button-->
-                                                            <td @click.stop="">
-                                                                <button class="ai-quick-btn"
-                                                                    data-bs-toggle="modal" data-bs-target="#tradesModal"
-                                                                    :data-index="index" :data-indextwo="index2"
-                                                                    @click="autoStartReview = true">
-                                                                    <i class="uil uil-robot me-1"></i>{{ t('daily.aiReview') }}
-                                                                </button>
+                                                            <!--KI-Bewertung + Share Quick-Buttons-->
+                                                            <td v-if="currentUser?.aiEnabled !== false && currentUser?.aiEnabled !== 0" @click.stop="" class="align-middle">
+                                                                <div class="d-flex align-items-center gap-1">
+                                                                    <button class="ai-quick-btn"
+                                                                        data-bs-toggle="modal" data-bs-target="#tradesModal"
+                                                                        :data-index="index" :data-indextwo="index2"
+                                                                        @click="autoStartReview = true">
+                                                                        <i class="uil uil-robot me-1"></i>{{ t('daily.aiReview') }}
+                                                                    </button>
+                                                                    <button class="ai-quick-btn share-quick-btn"
+                                                                        @click="openShareCardFromRow(index, index2)">
+                                                                        <i class="uil uil-image-share"></i>
+                                                                    </button>
+                                                                </div>
                                                             </td>
 
                                                             <!--Vol-->
@@ -1299,7 +1512,10 @@ function getOHLC(date, symbol, type, interval) {
         aria-labelledby="exampleModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
-                <div v-if="modalDailyTradeOpen">
+                <div v-if="modalDailyTradeOpen" style="position: relative;">
+                    <!-- Close button top right -->
+                    <button type="button" class="btn-close btn-close-white" style="position: absolute; top: 12px; right: 16px; z-index: 10;" aria-label="Close" @click="closeTradeModal"></button>
+
                     <!-- Candlestick Chart (Binance / Databento / Polygon) -->
                     <div v-show="!candlestickChartFailureMessage && (currentUser?.enableBinanceChart || apiIndex != -1)" id="candlestickChart"
                         class="candlestickClass">
@@ -1444,24 +1660,48 @@ function getOHLC(date, symbol, type, interval) {
                         <div v-if="tradingMeta.fills && tradingMeta.fills.length > 0">
                             <table class="table table-sm table-borderless mb-1" style="font-size: 0.8rem; color: var(--white-80);">
                                 <tbody>
-                                    <tr v-for="(fill, idx) in tradingMeta.fills" :key="idx"
-                                        :class="fill.reduceOnly ? 'text-danger' : ''">
-                                        <td class="text-muted ps-0" style="width: 100px;">{{ formatMetaFillTime(fill.time) }}</td>
-                                        <td style="width: 80px;" class="text-end">{{ parseFloat(fill.qty) }}</td>
-                                        <td class="text-muted px-1">&times;</td>
-                                        <td style="width: 90px;">{{ parseFloat(fill.price) }}</td>
-                                        <td class="text-muted px-1">=</td>
-                                        <td class="text-end" style="width: 90px;">{{ (parseFloat(fill.qty) * parseFloat(fill.price)).toFixed(2) }}</td>
-                                        <td>
-                                            <span v-if="getFillBadgeType(fill, idx, tradingMeta.fills) === 'partialClose'"
-                                                class="badge bg-danger" style="font-size: 0.65rem;">{{ t('incoming.fillPartialClose') }}</span>
-                                            <span v-else-if="getFillBadgeType(fill, idx, tradingMeta.fills) === 'initial'"
-                                                class="badge bg-secondary" style="font-size: 0.65rem;">{{ t('incoming.fillInitial') }}</span>
-                                            <span v-else
-                                                class="badge bg-info" style="font-size: 0.65rem;">{{ t('incoming.fillCompound') }}</span>
-                                        </td>
-                                        <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ parseFloat(fill.fee || 0).toFixed(4) }}</td>
-                                    </tr>
+                                    <template v-for="(group, gIdx) in groupFillsByMinute(tradingMeta.fills)" :key="group.key">
+                                        <!-- Gruppierte Zeile -->
+                                        <tr :class="group.reduceOnly ? 'text-danger' : ''"
+                                            :style="group.isGroup ? 'cursor: pointer;' : ''"
+                                            @click="group.isGroup && toggleFillGroup(group.key)">
+                                            <td class="text-muted ps-0" style="width: 100px;">
+                                                <span v-if="group.isGroup" style="font-size: 0.6rem; margin-right: 2px;">{{ expandedFillGroups.has(group.key) ? '▼' : '▶' }}</span>
+                                                {{ formatMetaFillTime(group.time) }}
+                                            </td>
+                                            <td style="width: 80px;" class="text-end">{{ group.totalQty }}</td>
+                                            <td class="text-muted px-1">&times;</td>
+                                            <td style="width: 90px;">{{ group.isGroup ? group.avgPrice.toFixed(5) : parseFloat(group.fills[0].price) }}</td>
+                                            <td class="text-muted px-1">=</td>
+                                            <td class="text-end" style="width: 90px;">{{ group.totalValue.toFixed(2) }}</td>
+                                            <td>
+                                                <span v-if="getFillBadgeType(group.fills[0], group.firstFillIdx, tradingMeta.fills) === 'close'"
+                                                    class="badge bg-danger" style="font-size: 0.65rem;">{{ t('incoming.fillClose') }}</span>
+                                                <span v-else-if="getFillBadgeType(group.fills[0], group.firstFillIdx, tradingMeta.fills) === 'partialClose'"
+                                                    class="badge bg-warning text-dark" style="font-size: 0.65rem;">{{ t('incoming.fillPartialClose') }}</span>
+                                                <span v-else-if="getFillBadgeType(group.fills[0], group.firstFillIdx, tradingMeta.fills) === 'initial'"
+                                                    class="badge bg-secondary" style="font-size: 0.65rem;">{{ t('incoming.fillInitial') }}</span>
+                                                <span v-else
+                                                    class="badge bg-info" style="font-size: 0.65rem;">{{ t('incoming.fillCompound') }}</span>
+                                                <span v-if="group.isGroup" class="text-muted ms-1" style="font-size: 0.6rem;">({{ group.fills.length }})</span>
+                                            </td>
+                                            <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ group.totalFee.toFixed(4) }}</td>
+                                        </tr>
+                                        <!-- Aufgeklappte Einzel-Fills -->
+                                        <template v-if="group.isGroup && expandedFillGroups.has(group.key)">
+                                            <tr v-for="(fill, fIdx) in group.fills" :key="group.key + '_' + fIdx"
+                                                :class="fill.reduceOnly ? 'text-danger' : ''" style="opacity: 0.6; font-size: 0.7rem;">
+                                                <td class="ps-0" style="width: 100px; padding-left: 1rem !important;"></td>
+                                                <td style="width: 80px;" class="text-end">{{ parseFloat(fill.qty) }}</td>
+                                                <td class="text-muted px-1">&times;</td>
+                                                <td style="width: 90px;">{{ parseFloat(fill.price) }}</td>
+                                                <td class="text-muted px-1">=</td>
+                                                <td class="text-end" style="width: 90px;">{{ (parseFloat(fill.qty) * parseFloat(fill.price)).toFixed(2) }}</td>
+                                                <td></td>
+                                                <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ parseFloat(fill.fee || 0).toFixed(4) }}</td>
+                                            </tr>
+                                        </template>
+                                    </template>
                                 </tbody>
                             </table>
 
@@ -1519,13 +1759,13 @@ function getOHLC(date, symbol, type, interval) {
                         </div>
 
                         <!-- SL/TP Protocol History -->
-                        <div v-if="tradingMeta.tpslHistory && tradingMeta.tpslHistory.length > 0"
+                        <div v-if="getFilteredTpslHistory(tradingMeta).length > 0"
                             class="mt-2 pt-2 border-top"
                             style="font-size: 0.75rem; border-color: var(--white-20) !important;">
                             <div class="text-muted mb-1"><i class="uil uil-history me-1"></i>SL/TP Protokoll</div>
-                            <div v-for="(histEntry, idx) in tradingMeta.tpslHistory" :key="'hist-'+idx"
+                            <div v-for="(histEntry, idx) in getFilteredTpslHistory(tradingMeta)" :key="'hist-'+idx"
                                 class="d-flex align-items-center gap-2 mb-1">
-                                <span class="text-muted" style="width: 90px;">{{ dayjs(histEntry.time).format('DD.MM. HH:mm') }}</span>
+                                <span class="text-muted" style="width: 90px;">{{ dayjs(histEntry.time).tz(timeZoneTrade.value).format('DD.MM. HH:mm') }}</span>
                                 <span :class="histEntry.type === 'SL' ? (tradingMeta.slAboveBreakeven ? '' : 'text-danger') : (histEntry.action === 'triggered' ? 'text-success fw-bold' : '')"
                                     :style="histEntry.type === 'SL' && tradingMeta.slAboveBreakeven ? 'color: #86efac' : (histEntry.type === 'TP' && histEntry.action !== 'triggered' ? 'color: #f59e0b' : '')">
                                     {{ histEntry.type }}
@@ -1605,9 +1845,14 @@ function getOHLC(date, symbol, type, interval) {
                                 </div>
 
                                 <!-- KI Trade-Bewertung -->
-                                <div class="col-12 mt-2" v-show="!spinnerSetups">
+                                <div class="col-12 mt-2" v-show="!spinnerSetups && currentUser?.aiEnabled !== false && currentUser?.aiEnabled !== 0">
                                     <div class="ai-trade-review-section">
                                         <div class="d-flex align-items-center gap-2">
+                                            <button class="ai-review-btn share-card-btn"
+                                                @click="openShareCard">
+                                                <i class="uil uil-image-share me-1"></i>
+                                                {{ t('daily.shareCard') }}
+                                            </button>
                                             <button class="ai-review-btn"
                                                 :disabled="aiTradeReviewLoading"
                                                 @click="requestTradeReview">
@@ -1621,9 +1866,66 @@ function getOHLC(date, symbol, type, interval) {
                                                 <i class="uil" :class="aiTradeReviewOpen ? 'uil-angle-up' : 'uil-angle-down'"></i>
                                             </button>
                                         </div>
+                                        <span v-if="aiTradeReviewTokens && !aiTradeReviewLoading" class="text-muted ms-2" style="font-size: 0.7rem;">
+                                            <i class="uil uil-processor"></i> {{ (aiTradeReviewTokens.totalTokens || 0).toLocaleString() }} Tokens
+                                        </span>
                                         <span v-if="aiTradeReviewError" class="ai-review-error">{{ aiTradeReviewError }}</span>
                                         <div v-if="aiTradeReview && aiTradeReviewOpen" class="ai-review-result mt-2">
                                             <div class="ai-review-content" v-html="markdownToHtml(aiTradeReview)"></div>
+                                        </div>
+
+                                        <!-- Chat / Rückfragen (außerhalb ai-review-result für besseren Kontrast) -->
+                                        <div v-if="aiTradeReview && aiTradeReviewOpen" class="trade-chat-section mt-3 pt-3" style="border-top: 1px solid var(--border-color, #333);">
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <span class="small fw-bold"><i class="uil uil-comment-dots me-1"></i>{{ t('daily.chatFollowUp') }}</span>
+                                                <button v-if="tradeReviewChat[currentTradeId()]?.length > 0"
+                                                    class="btn btn-sm btn-outline-secondary"
+                                                    @click="clearTradeReviewChat()"
+                                                    :title="t('daily.chatClear')">
+                                                    <i class="uil uil-trash-alt me-1"></i>{{ t('daily.chatClear') }}
+                                                </button>
+                                            </div>
+
+                                            <!-- Chat-Verlauf -->
+                                            <div v-if="tradeReviewChat[currentTradeId()]?.length > 0" class="chat-messages mb-2">
+                                                <div v-for="msg in tradeReviewChat[currentTradeId()]" :key="msg.id"
+                                                    class="chat-msg mb-2" :class="'chat-msg-' + msg.role">
+                                                    <div class="d-flex align-items-center gap-1 mb-1">
+                                                        <i class="uil" :class="msg.role === 'user' ? 'uil-user' : 'uil-robot'"></i>
+                                                        <span class="small fw-bold">{{ msg.role === 'user' ? 'Du' : 'KI' }}</span>
+                                                        <span class="text-muted small ms-1">{{ dayjs(msg.createdAt).format('DD.MM. HH:mm') }}</span>
+                                                        <span v-if="msg.role === 'assistant' && msg.totalTokens > 0" class="text-muted small ms-auto">{{ msg.totalTokens }} Tokens</span>
+                                                    </div>
+                                                    <div v-if="msg.role === 'user'" class="chat-bubble chat-bubble-user">{{ msg.content }}</div>
+                                                    <div v-else class="chat-bubble chat-bubble-ai ai-review-content" v-html="markdownToHtml(msg.content)"></div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Loading -->
+                                            <div v-if="tradeReviewChatLoading[currentTradeId()]" class="text-center py-3">
+                                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                                <span class="text-muted small">{{ t('daily.chatThinking') }}</span>
+                                            </div>
+
+                                            <!-- Error -->
+                                            <div v-if="tradeReviewChatError[currentTradeId()]" class="alert alert-danger py-1 px-2 small mb-2">
+                                                {{ tradeReviewChatError[currentTradeId()] }}
+                                            </div>
+
+                                            <!-- Input -->
+                                            <div class="d-flex gap-2 align-items-end">
+                                                <textarea class="form-control form-control-sm chat-input" rows="2"
+                                                    :placeholder="t('daily.chatPlaceholder')"
+                                                    v-model="tradeReviewChatInput[currentTradeId()]"
+                                                    @keydown.enter.exact.prevent="sendTradeReviewChat()"
+                                                    :disabled="tradeReviewChatLoading[currentTradeId()]"></textarea>
+                                                <button class="btn btn-sm btn-primary" style="height: 2.4rem;"
+                                                    @click="sendTradeReviewChat()"
+                                                    :disabled="tradeReviewChatLoading[currentTradeId()] || !(tradeReviewChatInput[currentTradeId()] || '').trim()">
+                                                    <i class="uil uil-message"></i>
+                                                </button>
+                                            </div>
+                                            <small class="text-muted mt-1">Enter = {{ t('daily.chatFollowUp') }}</small>
                                         </div>
                                     </div>
                                 </div>
@@ -1724,6 +2026,11 @@ function getOHLC(date, symbol, type, interval) {
         </div>
     </div>
 
+    <!-- Share Card Modal (Teleport to body to escape Bootstrap focus trap) -->
+    <Teleport to="body">
+        <ShareCardModal :trade="shareCardTrade" :visible="shareCardOpen" @close="shareCardOpen = false" />
+    </Teleport>
+
 </template>
 
 <style scoped>
@@ -1745,6 +2052,16 @@ function getOHLC(date, symbol, type, interval) {
 .ai-quick-btn:hover {
     border-color: #7c5cfc;
     color: #7c5cfc;
+}
+
+.share-quick-btn {
+    padding: 0.25rem 0.45rem;
+    border-color: rgba(99, 102, 241, 0.4);
+    color: rgba(99, 102, 241, 0.7);
+}
+.share-quick-btn:hover {
+    border-color: #6366f1;
+    color: #6366f1;
 }
 
 /* KI Trade-Bewertung */

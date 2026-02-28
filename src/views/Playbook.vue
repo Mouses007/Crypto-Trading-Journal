@@ -3,7 +3,7 @@ import { ref, computed, onBeforeMount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
-import { spinnerLoadingPage } from '../stores/ui.js'
+import { spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js'
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js'
 import { availableTags } from '../stores/trades.js'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
@@ -23,6 +23,7 @@ const savingId = ref(null)
 const quillInstances = {}
 const screenshotMap = ref([]) // array of screenshot records
 const fullscreenImg = ref(null) // base64 string for fullscreen modal
+const trendScreenshotPreviews = ref({}) // tradeId → base64 preview
 const entryScreenshotPreviews = ref({}) // tradeId → base64 preview
 const closingScreenshotPreviews = ref({}) // tradeId → base64 preview
 
@@ -294,6 +295,16 @@ function hasTradingMetadata(meta) {
         || meta.positionSize || (meta.tpslHistory?.length > 0) || meta.rrr
 }
 
+// Filter tpslHistory: remove entries recorded after the last fill (position close)
+function getFilteredTpslHistory(meta) {
+    if (!meta?.tpslHistory?.length) return []
+    if (!meta.fills?.length) return meta.tpslHistory
+    const lastFillTime = Math.max(...meta.fills.map(f => parseInt(f.time || 0)))
+    if (!lastFillTime) return meta.tpslHistory
+    const cutoff = lastFillTime + 60000
+    return meta.tpslHistory.filter(h => h.time <= cutoff)
+}
+
 function getEntryFillsFromMeta(fills, side) {
     if (!fills || !Array.isArray(fills)) return []
     return fills.filter(f => !f.reduceOnly)
@@ -311,13 +322,57 @@ function getAvgEntryPriceFromMeta(fills, side) {
 }
 
 function formatMetaFillTime(timestamp) {
-    return dayjs(parseInt(timestamp)).format('DD.MM. HH:mm')
+    return dayjs(parseInt(timestamp)).tz(timeZoneTrade.value).format('DD.MM. HH:mm')
 }
 
 function getFillBadgeType(fill, idx, allFills) {
-    if (fill.reduceOnly) return 'partialClose'
+    if (fill.reduceOnly) {
+        const openQty = allFills.filter(f => !f.reduceOnly).reduce((sum, f) => sum + parseFloat(f.qty || 0), 0)
+        const totalClosedQty = allFills.filter(f => f.reduceOnly).reduce((sum, f) => sum + parseFloat(f.qty || 0), 0)
+        return totalClosedQty >= openQty ? 'close' : 'partialClose'
+    }
     if (idx === 0 || allFills.slice(0, idx).every(f => f.reduceOnly)) return 'initial'
     return 'compound'
+}
+
+function groupFillsByMinute(fills, timeField = 'time') {
+    if (!fills || fills.length === 0) return []
+    const groups = []
+    let current = null
+    for (let i = 0; i < fills.length; i++) {
+        const fill = fills[i]
+        const minute = dayjs(parseInt(fill[timeField])).tz(timeZoneTrade.value).format('YYYY-MM-DD HH:mm')
+        const key = minute + '_' + (fill.reduceOnly ? '1' : '0')
+        if (current && current.key === key) {
+            current.fills.push(fill)
+        } else {
+            current = { key, fills: [fill], time: fill[timeField], reduceOnly: fill.reduceOnly }
+            groups.push(current)
+        }
+    }
+    return groups.map(g => {
+        const totalQty = g.fills.reduce((s, f) => s + parseFloat(f.qty || 0), 0)
+        const totalValue = g.fills.reduce((s, f) => s + parseFloat(f.qty || 0) * parseFloat(f.price || 0), 0)
+        const totalFee = g.fills.reduce((s, f) => s + parseFloat(f.fee || 0), 0)
+        return {
+            ...g,
+            totalQty,
+            avgPrice: totalQty > 0 ? totalValue / totalQty : 0,
+            totalValue,
+            totalFee,
+            isGroup: g.fills.length > 1,
+            firstFillIdx: fills.indexOf(g.fills[0])
+        }
+    })
+}
+
+const expandedFillGroups = ref(new Set())
+function toggleFillGroup(key) {
+    if (expandedFillGroups.value.has(key)) {
+        expandedFillGroups.value.delete(key)
+    } else {
+        expandedFillGroups.value.add(key)
+    }
 }
 
 function getTagColor(tagId) {
@@ -549,6 +604,17 @@ function getEntryScreenshot(entry) {
     return null
 }
 
+function getTrendScreenshot(entry) {
+    const byId = getScreenshotById(entry.trendScreenshotId)
+    if (byId) return byId
+
+    const list = screenshotMap.value
+    if (!list || !list.length) return null
+
+    const match = list.find(s => s.name && s.name.includes(entry.tradeId) && s.name.includes('_trend'))
+    return match || null
+}
+
 function getClosingScreenshot(entry) {
     // By closingScreenshotId
     const byId = getScreenshotById(entry.closingScreenshotId)
@@ -613,6 +679,61 @@ async function removeEntryScreenshot(entry) {
     }
 
     // 3. Delete the actual screenshot record
+    if (screenshotId) {
+        try {
+            await dbDelete('screenshots', screenshotId)
+            const idx = screenshotMap.value.findIndex(s => s.objectId === screenshotId)
+            if (idx !== -1) screenshotMap.value.splice(idx, 1)
+        } catch (e) {
+            console.warn('Could not delete screenshot record:', e.message)
+        }
+    } else if (matchedScreenshot) {
+        try {
+            await dbDelete('screenshots', matchedScreenshot.objectId)
+            const idx = screenshotMap.value.findIndex(s => s.objectId === matchedScreenshot.objectId)
+            if (idx !== -1) screenshotMap.value.splice(idx, 1)
+        } catch (e) {
+            console.warn('Could not delete screenshot record:', e.message)
+        }
+    }
+}
+
+async function handleTrendScreenshotUpload(event, entry) {
+    const file = event.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+        const base64 = reader.result
+        const screenshot = await dbCreate('screenshots', {
+            name: entry.tradeId + '_trend',
+            symbol: entry.symbol || '',
+            side: entry.side || '',
+            broker: selectedBroker.value || 'bitunix',
+            originalBase64: base64,
+            annotatedBase64: base64,
+            markersOnly: true,
+            maState: {},
+            dateUnix: entry.dateUnix,
+            dateUnixDay: entry.dateUnix
+        })
+        entry.trendScreenshotId = screenshot.objectId
+        trendScreenshotPreviews.value[entry.tradeId] = base64
+        screenshotMap.value.push(screenshot)
+    }
+    reader.readAsDataURL(file)
+}
+
+async function removeTrendScreenshot(entry) {
+    const screenshotId = entry.trendScreenshotId
+    const matchedScreenshot = getTrendScreenshot(entry)
+
+    entry.trendScreenshotId = ''
+    delete trendScreenshotPreviews.value[entry.tradeId]
+
+    if (entry.noteObjectId) {
+        await dbUpdate('notes', entry.noteObjectId, { trendScreenshotId: '' })
+    }
+
     if (screenshotId) {
         try {
             await dbDelete('screenshots', screenshotId)
@@ -856,7 +977,7 @@ async function saveEntry(entry) {
                 <!-- Expanded: VIEW MODE -->
                 <div v-if="expandedId === entry.tradeId && editingId !== entry.tradeId" class="pb-body">
                     <!-- ===== ERÖFFNUNGSBEWERTUNG (View) ===== -->
-                    <div v-if="entry.tradeType || entry.entryStressLevel > 0 || (entry.tags && entry.tags.length > 0) || entry.timeframe || entry.emotionLevel > 0 || entry.feelings || (entry.playbook && stripHtml(entry.playbook).trim()) || getEntryScreenshot(entry)"
+                    <div v-if="entry.tradeType || entry.entryStressLevel > 0 || (entry.tags && entry.tags.length > 0) || entry.timeframe || entry.emotionLevel > 0 || entry.feelings || (entry.playbook && stripHtml(entry.playbook).trim()) || getTrendScreenshot(entry) || getEntryScreenshot(entry)"
                         class="pb-view-opening mb-2 p-3">
                         <div class="d-flex align-items-center mb-2">
                             <i class="uil uil-unlock-alt me-2" style="color: var(--green-color, #10b981); font-size: 1rem;"></i>
@@ -924,18 +1045,21 @@ async function saveEntry(entry) {
                                 </div>
                             </div>
 
-                            <!-- Entry Screenshot -->
-                            <div v-if="getEntryScreenshot(entry)" class="pb-field pb-field-wide">
+                            <!-- Screenshots -->
+                            <div v-if="getEntryScreenshot(entry) || getTrendScreenshot(entry)" class="pb-field pb-field-wide">
                                 <div class="pb-label">{{ t('incoming.screenshot') }}</div>
                                 <div class="pb-value">
-                                    <div class="d-flex align-items-start gap-2">
-                                        <img :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
-                                            class="pb-screenshot-view pointerClass"
-                                            @click.stop="openFullscreen(getEntryScreenshot(entry))"
-                                            :title="t('incoming.screenshot')" />
-                                        <i class="uil uil-times pointerClass text-danger"
-                                            @click.stop="removeEntryScreenshot(entry)"
-                                            :title="t('common.remove')" style="font-size: 1.1rem;"></i>
+                                    <div class="d-flex flex-wrap align-items-start gap-3">
+                                        <div v-if="getEntryScreenshot(entry)">
+                                            <img :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
+                                                class="pb-screenshot-view pointerClass"
+                                                @click.stop="openFullscreen(getEntryScreenshot(entry))" />
+                                        </div>
+                                        <div v-if="getTrendScreenshot(entry)">
+                                            <img :src="getTrendScreenshot(entry).annotatedBase64 || getTrendScreenshot(entry).originalBase64"
+                                                class="pb-screenshot-view pointerClass"
+                                                @click.stop="openFullscreen(getTrendScreenshot(entry))" />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -962,24 +1086,46 @@ async function saveEntry(entry) {
                         <div v-if="entry.tradingMetadata.fills && entry.tradingMetadata.fills.length > 0">
                             <table class="table table-sm table-borderless mb-1" style="font-size: 0.8rem; color: var(--white-80);">
                                 <tbody>
-                                    <tr v-for="(fill, idx) in entry.tradingMetadata.fills" :key="idx"
-                                        :class="fill.reduceOnly ? 'text-danger' : ''">
-                                        <td class="text-muted ps-0" style="width: 100px;">{{ formatMetaFillTime(fill.time) }}</td>
-                                        <td style="width: 80px;" class="text-end">{{ parseFloat(fill.qty) }}</td>
-                                        <td class="text-muted px-1">&times;</td>
-                                        <td style="width: 90px;">{{ parseFloat(fill.price) }}</td>
-                                        <td class="text-muted px-1">=</td>
-                                        <td class="text-end" style="width: 90px;">{{ (parseFloat(fill.qty) * parseFloat(fill.price)).toFixed(2) }}</td>
-                                        <td>
-                                            <span v-if="getFillBadgeType(fill, idx, entry.tradingMetadata.fills) === 'partialClose'"
-                                                class="badge bg-danger" style="font-size: 0.65rem;">{{ t('incoming.fillPartialClose') }}</span>
-                                            <span v-else-if="getFillBadgeType(fill, idx, entry.tradingMetadata.fills) === 'initial'"
-                                                class="badge bg-secondary" style="font-size: 0.65rem;">{{ t('incoming.fillInitial') }}</span>
-                                            <span v-else
-                                                class="badge bg-info" style="font-size: 0.65rem;">{{ t('incoming.fillCompound') }}</span>
-                                        </td>
-                                        <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ parseFloat(fill.fee || 0).toFixed(4) }}</td>
-                                    </tr>
+                                    <template v-for="(group, gIdx) in groupFillsByMinute(entry.tradingMetadata.fills)" :key="group.key">
+                                        <tr :class="group.reduceOnly ? 'text-danger' : ''"
+                                            :style="group.isGroup ? 'cursor: pointer;' : ''"
+                                            @click="group.isGroup && toggleFillGroup(group.key)">
+                                            <td class="text-muted ps-0" style="width: 100px;">
+                                                <span v-if="group.isGroup" style="font-size: 0.6rem; margin-right: 2px;">{{ expandedFillGroups.has(group.key) ? '▼' : '▶' }}</span>
+                                                {{ formatMetaFillTime(group.time) }}
+                                            </td>
+                                            <td style="width: 80px;" class="text-end">{{ group.totalQty }}</td>
+                                            <td class="text-muted px-1">&times;</td>
+                                            <td style="width: 90px;">{{ group.isGroup ? group.avgPrice.toFixed(5) : parseFloat(group.fills[0].price) }}</td>
+                                            <td class="text-muted px-1">=</td>
+                                            <td class="text-end" style="width: 90px;">{{ group.totalValue.toFixed(2) }}</td>
+                                            <td>
+                                                <span v-if="getFillBadgeType(group.fills[0], group.firstFillIdx, entry.tradingMetadata.fills) === 'close'"
+                                                    class="badge bg-danger" style="font-size: 0.65rem;">{{ t('incoming.fillClose') }}</span>
+                                                <span v-else-if="getFillBadgeType(group.fills[0], group.firstFillIdx, entry.tradingMetadata.fills) === 'partialClose'"
+                                                    class="badge bg-warning text-dark" style="font-size: 0.65rem;">{{ t('incoming.fillPartialClose') }}</span>
+                                                <span v-else-if="getFillBadgeType(group.fills[0], group.firstFillIdx, entry.tradingMetadata.fills) === 'initial'"
+                                                    class="badge bg-secondary" style="font-size: 0.65rem;">{{ t('incoming.fillInitial') }}</span>
+                                                <span v-else
+                                                    class="badge bg-info" style="font-size: 0.65rem;">{{ t('incoming.fillCompound') }}</span>
+                                                <span v-if="group.isGroup" class="text-muted ms-1" style="font-size: 0.6rem;">({{ group.fills.length }})</span>
+                                            </td>
+                                            <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ group.totalFee.toFixed(4) }}</td>
+                                        </tr>
+                                        <template v-if="group.isGroup && expandedFillGroups.has(group.key)">
+                                            <tr v-for="(fill, fIdx) in group.fills" :key="group.key + '_' + fIdx"
+                                                :class="fill.reduceOnly ? 'text-danger' : ''" style="opacity: 0.6; font-size: 0.7rem;">
+                                                <td class="ps-0" style="width: 100px;"></td>
+                                                <td style="width: 80px;" class="text-end">{{ parseFloat(fill.qty) }}</td>
+                                                <td class="text-muted px-1">&times;</td>
+                                                <td style="width: 90px;">{{ parseFloat(fill.price) }}</td>
+                                                <td class="text-muted px-1">=</td>
+                                                <td class="text-end" style="width: 90px;">{{ (parseFloat(fill.qty) * parseFloat(fill.price)).toFixed(2) }}</td>
+                                                <td></td>
+                                                <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ parseFloat(fill.fee || 0).toFixed(4) }}</td>
+                                            </tr>
+                                        </template>
+                                    </template>
                                 </tbody>
                             </table>
 
@@ -1037,13 +1183,13 @@ async function saveEntry(entry) {
                         </div>
 
                         <!-- SL/TP Protocol History -->
-                        <div v-if="entry.tradingMetadata.tpslHistory && entry.tradingMetadata.tpslHistory.length > 0"
+                        <div v-if="getFilteredTpslHistory(entry.tradingMetadata).length > 0"
                             class="mt-2 pt-2 border-top"
                             style="font-size: 0.75rem; border-color: var(--white-20) !important;">
                             <div class="text-muted mb-1"><i class="uil uil-history me-1"></i>SL/TP Protokoll</div>
-                            <div v-for="(histEntry, idx) in entry.tradingMetadata.tpslHistory" :key="'hist-'+idx"
+                            <div v-for="(histEntry, idx) in getFilteredTpslHistory(entry.tradingMetadata)" :key="'hist-'+idx"
                                 class="d-flex align-items-center gap-2 mb-1">
-                                <span class="text-muted" style="width: 90px;">{{ dayjs(histEntry.time).format('DD.MM. HH:mm') }}</span>
+                                <span class="text-muted" style="width: 90px;">{{ dayjs(histEntry.time).tz(timeZoneTrade.value).format('DD.MM. HH:mm') }}</span>
                                 <span :class="histEntry.type === 'SL' ? (entry.tradingMetadata.slAboveBreakeven ? '' : 'text-danger') : (histEntry.action === 'triggered' ? 'text-success fw-bold' : '')"
                                     :style="histEntry.type === 'SL' && entry.tradingMetadata.slAboveBreakeven ? 'color: #86efac' : (histEntry.type === 'TP' && histEntry.action !== 'triggered' ? 'color: #f59e0b' : '')">
                                     {{ histEntry.type }}
@@ -1114,14 +1260,11 @@ async function saveEntry(entry) {
                             <div v-if="getClosingScreenshot(entry)" class="pb-field pb-field-wide">
                                 <div class="pb-label">{{ t('incoming.screenshot') }}</div>
                                 <div class="pb-value">
-                                    <div class="d-flex align-items-start gap-2">
+                                    <div>
                                         <img :src="getClosingScreenshot(entry).annotatedBase64 || getClosingScreenshot(entry).originalBase64"
                                             class="pb-screenshot-view pointerClass"
                                             @click.stop="openFullscreen(getClosingScreenshot(entry))"
                                             :title="t('incoming.screenshot')" />
-                                        <i class="uil uil-times pointerClass text-danger"
-                                            @click.stop="removeClosingScreenshot(entry)"
-                                            :title="t('common.remove')" style="font-size: 1.1rem;"></i>
                                     </div>
                                 </div>
                             </div>
@@ -1250,28 +1393,37 @@ async function saveEntry(entry) {
                         </select>
                     </div>
 
-                    <!-- Eröffnungs-Screenshot -->
+                    <!-- Screenshots (max 2) -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">{{ t('incoming.screenshot') }}</label>
-                        <div v-if="entry.screenshotId || getEntryScreenshot(entry)">
-                            <div class="d-flex align-items-center gap-2">
-                                <img v-if="entryScreenshotPreviews[entry.tradeId]"
-                                    :src="entryScreenshotPreviews[entry.tradeId]"
-                                    class="img-fluid rounded mb-1" style="max-height: 200px;" />
-                                <img v-else-if="getEntryScreenshot(entry)"
-                                    :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
-                                    class="img-fluid rounded mb-1" style="max-height: 200px;"
-                                    @click.stop="openFullscreen(getEntryScreenshot(entry))" />
-                                <span v-else class="badge bg-success">{{ t('incoming.screenshotLinked') }}</span>
-                            </div>
-                            <div class="d-flex gap-2 mt-1">
-                                <button class="btn btn-sm btn-outline-danger" @click.stop="removeEntryScreenshot(entry)">
-                                    <i class="uil uil-times me-1"></i>{{ t('common.remove') }}
-                                </button>
-                            </div>
+                        <!-- Erster Screenshot (entry) -->
+                        <div v-if="entry.screenshotId || getEntryScreenshot(entry)" class="d-flex align-items-start gap-2 mb-2">
+                            <img v-if="entryScreenshotPreviews[entry.tradeId]"
+                                :src="entryScreenshotPreviews[entry.tradeId]"
+                                class="img-fluid rounded" style="max-height: 150px;" />
+                            <img v-else-if="getEntryScreenshot(entry)"
+                                :src="getEntryScreenshot(entry).annotatedBase64 || getEntryScreenshot(entry).originalBase64"
+                                class="img-fluid rounded" style="max-height: 150px;"
+                                @click.stop="openFullscreen(getEntryScreenshot(entry))" />
+                            <span v-else class="badge bg-success">{{ t('incoming.screenshotLinked') }}</span>
+                            <i class="uil uil-times pointerClass text-danger" @click.stop="removeEntryScreenshot(entry)"></i>
                         </div>
-                        <input v-else type="file" accept="image/*" class="form-control form-control-sm"
-                            @change="handleEntryScreenshotUpload($event, entry)" />
+                        <!-- Zweiter Screenshot (trend) -->
+                        <div v-if="entry.trendScreenshotId || getTrendScreenshot(entry)" class="d-flex align-items-start gap-2 mb-2">
+                            <img v-if="trendScreenshotPreviews[entry.tradeId]"
+                                :src="trendScreenshotPreviews[entry.tradeId]"
+                                class="img-fluid rounded" style="max-height: 150px;" />
+                            <img v-else-if="getTrendScreenshot(entry)"
+                                :src="getTrendScreenshot(entry).annotatedBase64 || getTrendScreenshot(entry).originalBase64"
+                                class="img-fluid rounded" style="max-height: 150px;"
+                                @click.stop="openFullscreen(getTrendScreenshot(entry))" />
+                            <span v-else class="badge bg-success">{{ t('incoming.screenshotLinked') }}</span>
+                            <i class="uil uil-times pointerClass text-danger" @click.stop="removeTrendScreenshot(entry)"></i>
+                        </div>
+                        <!-- Upload sichtbar bis 2 Screenshots vorhanden -->
+                        <input v-if="!(entry.screenshotId || getEntryScreenshot(entry)) || !(entry.trendScreenshotId || getTrendScreenshot(entry))"
+                            type="file" accept="image/*" class="form-control form-control-sm"
+                            @change="!(entry.screenshotId || getEntryScreenshot(entry)) ? handleEntryScreenshotUpload($event, entry) : handleTrendScreenshotUpload($event, entry)" />
                     </div>
 
                     <!-- ===== ABSCHLUSSBEWERTUNG (Edit) ===== -->

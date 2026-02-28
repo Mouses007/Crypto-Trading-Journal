@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeMount, ref } from 'vue'
+import { computed, onBeforeMount, onMounted, onUnmounted, ref, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMounted, hasData, barChartNegativeTagGroups, timeZoneTrade } from '../stores/ui.js'
@@ -13,6 +13,55 @@ import { useMountDashboard } from '../utils/mountOrchestration.js';
 import NoData from '../components/NoData.vue';
 
 const { t } = useI18n()
+
+// ========== Karten-Konfiguration ==========
+const CARD_STORAGE_KEY = 'dashboard_hidden_cards'
+const hiddenCards = reactive(new Set(JSON.parse(localStorage.getItem(CARD_STORAGE_KEY) || '[]')))
+const showConfigDropdown = ref(false)
+
+const cardDefinitions = computed(() => [
+    { key: 'accountBalance', label: t('dashboard.accountBalance') },
+    { key: 'metrics', label: t('dashboard.metrics') },
+    { key: 'fees', label: t('dashboard.fees') },
+    { key: 'cumulativePnl', label: t('dashboard.cumulativePnlChart') },
+    { key: 'appt', label: 'APPT' },
+    { key: 'winRate', label: t('dashboard.winRate') },
+    { key: 'tradingPerformance', label: t('dashboard.tradingPerformance') },
+    { key: 'byWeekday', label: t('dashboard.byWeekday', { metric: '' }).replace(/[()]/g, '').trim() },
+    { key: 'byEntryTime', label: t('dashboard.byEntryTime', { metric: '' }).replace(/[()]/g, '').trim() },
+    { key: 'byDuration', label: t('dashboard.byDuration', { metric: '' }).replace(/[()]/g, '').trim() },
+    { key: 'heatmap', label: t('dashboard.heatmapTitle') },
+    { key: 'byPosition', label: t('dashboard.byPosition', { metric: '' }).replace(/[()]/g, '').trim() },
+    { key: 'byStrategy', label: t('dashboard.byStrategy', { metric: '' }).replace(/[()]/g, '').trim() },
+    { key: 'tradeTypeStats', label: t('dashboard.tradeTypeStats') },
+    { key: 'strategyTagStats', label: t('dashboard.strategyTagStats') },
+    { key: 'bySymbol', label: t('dashboard.bySymbol', { metric: '' }).replace(/[()]/g, '').trim() },
+    { key: 'feesBySymbol', label: t('dashboard.feesBySymbol') },
+])
+
+function toggleCard(key) {
+    if (hiddenCards.has(key)) {
+        hiddenCards.delete(key)
+    } else {
+        hiddenCards.add(key)
+    }
+    localStorage.setItem(CARD_STORAGE_KEY, JSON.stringify([...hiddenCards]))
+}
+
+function isVisible(key) {
+    return !hiddenCards.has(key)
+}
+
+// Dropdown schließen bei Klick außerhalb
+const configRef = ref(null)
+function onClickOutside(e) {
+    if (showConfigDropdown.value && configRef.value && !configRef.value.contains(e.target)) {
+        showConfigDropdown.value = false
+    }
+}
+
+onMounted(() => document.addEventListener('click', onClickOutside))
+onUnmounted(() => document.removeEventListener('click', onClickOutside))
 
 const dashTabs = computed(() => [{
     id: "overviewTab",
@@ -93,17 +142,37 @@ const todayStats = computed(() => {
 
 // All-time net P&L for selected broker (loaded on mount, independent of date filter)
 const allTimeNetPnL = ref(0)
+const allTimeVolume = ref(0)
+const last30dVolume = ref(0)
 
 async function loadAllTimeNetPnL() {
     const broker = selectedBroker.value || 'bitunix'
     const allTrades = await dbFind('trades', { equalTo: { broker }, limit: 100000 })
     let totalNet = 0
+    let totalVol = 0
+    let vol30d = 0
+    const cutoff30d = dayjs().subtract(30, 'day').unix()
+
     for (const day of allTrades) {
         if (day.pAndL && typeof day.pAndL === 'object') {
             totalNet += day.pAndL.netProceeds || 0
         }
+        // Volumen aus den Einzeltrades berechnen: qty × entryPrice
+        if (day.trades && Array.isArray(day.trades)) {
+            for (const trade of day.trades) {
+                const qty = Math.max(trade.buyQuantity || 0, trade.sellQuantity || 0)
+                const price = trade.entryPrice || 0
+                const vol = qty * price
+                totalVol += vol
+                if (day.dateUnix >= cutoff30d) {
+                    vol30d += vol
+                }
+            }
+        }
     }
     allTimeNetPnL.value = totalNet
+    allTimeVolume.value = totalVol
+    last30dVolume.value = vol30d
 }
 
 const accountBalance = computed(() => {
@@ -237,14 +306,28 @@ onBeforeMount(async () => {
                 <NoData />
             </div>
             <div v-else>
-                <nav>
-                    <div class="nav nav-tabs mb-2" id="nav-tab" role="tablist">
-                        <button v-for="dashTab in dashTabs" :key="dashTab.id"
-                            :class="'nav-link ' + (selectedDashTab == dashTab.id ? 'active' : '')" :id="dashTab.id"
-                            data-bs-toggle="tab" :data-bs-target="dashTab.target" type="button" role="tab"
-                            aria-controls="nav-overview" aria-selected="true">{{ dashTab.label }}</button>
+                <div class="d-flex align-items-center mb-2">
+                    <nav class="flex-grow-1">
+                        <div class="nav nav-tabs" id="nav-tab" role="tablist">
+                            <button v-for="dashTab in dashTabs" :key="dashTab.id"
+                                :class="'nav-link ' + (selectedDashTab == dashTab.id ? 'active' : '')" :id="dashTab.id"
+                                data-bs-toggle="tab" :data-bs-target="dashTab.target" type="button" role="tab"
+                                aria-controls="nav-overview" aria-selected="true">{{ dashTab.label }}</button>
+                        </div>
+                    </nav>
+                    <div ref="configRef" class="position-relative ms-2">
+                        <button class="btn btn-sm btn-outline-secondary" @click="showConfigDropdown = !showConfigDropdown">
+                            <i class="uil uil-setting"></i>
+                        </button>
+                        <div v-if="showConfigDropdown" class="card-config-dropdown">
+                            <div class="card-config-title">{{ t('auswertung.visibleCards') }}</div>
+                            <div v-for="card in cardDefinitions" :key="card.key" class="card-config-item" @click="toggleCard(card.key)">
+                                <i class="uil me-2" :class="isVisible(card.key) ? 'uil-check-square text-success' : 'uil-square-full text-muted'"></i>
+                                {{ card.label }}
+                            </div>
+                        </div>
                     </div>
-                </nav>
+                </div>
 
                 <div class="tab-content" id="nav-tabContent">
 
@@ -256,7 +339,7 @@ onBeforeMount(async () => {
                             <div class="row">
 
                                 <!-- ===== LINKE SPALTE: Kontostand + Donuts ===== -->
-                                <div class="col-12 col-xl-4 mb-3 mb-xl-0">
+                                <div v-if="isVisible('accountBalance')" class="col-12 col-xl-4 mb-3 mb-xl-0">
                                     <div class="dailyCard h-100">
                                         <h6>{{ t('dashboard.accountBalance') }}</h6>
 
@@ -275,6 +358,22 @@ onBeforeMount(async () => {
                                         <div v-else class="text-center py-3">
                                             <div class="text-muted mb-1"><i class="uil uil-wallet fs-3"></i></div>
                                             <div class="text-muted small">{{ t('dashboard.configureBalance') }}</div>
+                                        </div>
+
+                                        <!-- Trading-Volumen -->
+                                        <div v-if="allTimeVolume > 0" class="mt-2 pt-2" style="border-top: 1px solid var(--white-10);">
+                                            <table class="stats-table w-100">
+                                                <tbody>
+                                                    <tr>
+                                                        <td class="text-muted small">{{ t('dashboard.volume30d') }}</td>
+                                                        <td class="text-end fw-bold small">{{ useThousandCurrencyFormat(last30dVolume) }}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td class="text-muted small">{{ t('dashboard.volumeTotal') }}</td>
+                                                        <td class="text-end fw-bold small">{{ useThousandCurrencyFormat(allTimeVolume) }}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
                                         </div>
 
                                         <hr />
@@ -308,7 +407,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- ===== MITTLERE SPALTE: Kennzahlen ===== -->
-                                <div class="col-12 col-xl-4 mb-3 mb-xl-0">
+                                <div v-if="isVisible('metrics')" class="col-12 col-xl-4 mb-3 mb-xl-0">
                                     <div class="dailyCard h-100">
                                         <h6>{{ t('dashboard.metrics') }}</h6>
                                         <table class="stats-table w-100">
@@ -391,7 +490,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- ===== RECHTE SPALTE: Gebühren ===== -->
-                                <div class="col-12 col-xl-4">
+                                <div v-if="isVisible('fees')" class="col-12 col-xl-4">
                                     <div class="dailyCard h-100">
                                         <h6>{{ t('dashboard.fees') }}</h6>
 
@@ -474,7 +573,7 @@ onBeforeMount(async () => {
                         <div class="col-12">
                             <div class="row">
                                 <!-- KUMULIERTER G/V -->
-                                <div class="col-12 mb-3">
+                                <div v-if="isVisible('cumulativePnl')" class="col-12 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.cumulativePnlChart') }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.cumulativePnlChartTooltip')"></i>
@@ -484,7 +583,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- APPT/APPS/PROFIT FACTOR CHART -->
-                                <div class="col-12 col-xl-6 mb-3">
+                                <div v-if="isVisible('appt')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ ratioCompute.name }} <span
                                                 v-if="ratioCompute.shortName === 'APPT'">({{ ratioCompute.shortName
@@ -494,7 +593,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- WIN LOSS CHART -->
-                                <div class="col-12 col-xl-6 mb-3">
+                                <div v-if="isVisible('winRate')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.winRate') }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.winRateTooltip')"></i>
@@ -528,7 +627,7 @@ onBeforeMount(async () => {
                         <div class="col-12">
                             <div class="row">
                                 <!-- GROUP BY DAY OF WEEK -->
-                                <div class="col-12 col-xl-4 mb-3">
+                                <div v-if="isVisible('byWeekday')" class="col-12 col-xl-4 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.byWeekday', { metric: ratioCompute.shortName }) }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byWeekdayTooltip')"></i>
@@ -538,7 +637,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- GROUP BY TIMEFRAME -->
-                                <div class="col-12 col-xl-4 mb-3">
+                                <div v-if="isVisible('byEntryTime')" class="col-12 col-xl-4 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.byEntryTime', { metric: ratioCompute.shortName }) }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byEntryTimeTooltip')"></i>
@@ -548,7 +647,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- GROUP BY DURATION -->
-                                <div class="col-12 col-xl-4 mb-3">
+                                <div v-if="isVisible('byDuration')" class="col-12 col-xl-4 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.byDuration', { metric: ratioCompute.shortName }) }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byDurationTooltip')"></i>
@@ -559,7 +658,7 @@ onBeforeMount(async () => {
 
 
                                 <!-- HEATMAP: WEEKDAY × HOUR -->
-                                <div class="col-12 mb-3">
+                                <div v-if="isVisible('heatmap')" class="col-12 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.heatmapTitle') }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.heatmapTooltip')"></i>
@@ -595,7 +694,7 @@ onBeforeMount(async () => {
                             <div class="row">
 
                                 <!-- TRADING PERFORMANCE CHART -->
-                                <div class="col-12 mb-3">
+                                <div v-if="isVisible('tradingPerformance')" class="col-12 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.tradingPerformance') }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.tradingPerformanceTooltip')"></i>
@@ -615,7 +714,7 @@ onBeforeMount(async () => {
                             <div class="row">
 
                                 <!-- GROUP BY POSITION -->
-                                <div class="col-12 col-xl-6 mb-3">
+                                <div v-if="isVisible('byPosition')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.byPosition', { metric: ratioCompute.shortName }) }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byPositionTooltip')"></i>
@@ -625,7 +724,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- GROUP BY TAGS -->
-                                <div class="col-12 col-xl-6 mb-3">
+                                <div v-if="isVisible('byStrategy')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.byStrategy', { metric: ratioCompute.shortName }) }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byStrategyTooltip')"></i>
@@ -635,7 +734,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- TRADE-TYP STATISTIK -->
-                                <div class="col-12 mb-3" v-if="tradeTypeStats.length > 0">
+                                <div class="col-12 mb-3" v-if="tradeTypeStats.length > 0 && isVisible('tradeTypeStats')">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.tradeTypeStats') }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.tradeTypeStatsTooltip')"></i>
@@ -684,7 +783,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- STRATEGIE-TAG STATISTIK -->
-                                <div class="col-12 mb-3" v-if="strategyTagStats.length > 0">
+                                <div class="col-12 mb-3" v-if="strategyTagStats.length > 0 && isVisible('strategyTagStats')">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.strategyTagStats') }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.strategyTagStatsTooltip')"></i>
@@ -743,7 +842,7 @@ onBeforeMount(async () => {
                             <div class="row">
 
                                 <!-- GROUP BY SYMBOL -->
-                                <div class="col-12 col-xl-6 mb-3">
+                                <div v-if="isVisible('bySymbol')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.bySymbol', { metric: ratioCompute.shortName }) }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.bySymbolTooltip')"></i>
@@ -775,7 +874,7 @@ onBeforeMount(async () => {
                         </div>-->
 
                                 <!-- FEES BY SYMBOL -->
-                                <div class="col-12 col-xl-6 mb-3">
+                                <div v-if="isVisible('feesBySymbol')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.feesBySymbol') }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.feesBySymbolTooltip')"></i>
@@ -792,3 +891,37 @@ onBeforeMount(async () => {
         </div>
     </div>
 </template>
+
+<style scoped>
+.card-config-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 1000;
+    min-width: 250px;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--black-bg-3, #1e1e2f);
+    border: 1px solid var(--white-38, rgba(255, 255, 255, 0.15));
+    border-radius: var(--border-radius, 0.5rem);
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.3));
+    padding: 0.5rem 0;
+}
+.card-config-title {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--white-38, rgba(255, 255, 255, 0.38));
+}
+.card-config-item {
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--white-87, rgba(255, 255, 255, 0.87));
+    user-select: none;
+}
+.card-config-item:hover {
+    background: var(--white-38, rgba(255, 255, 255, 0.08));
+}
+</style>

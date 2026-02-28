@@ -41,7 +41,7 @@ const chatInput = reactive({}) // { reportId: 'text' }
 const chatLoading = reactive({}) // { reportId: true/false }
 const chatError = reactive({}) // { reportId: 'error msg' }
 
-// Token-Verbrauch pro Provider (Reports)
+// Token-Verbrauch pro Provider (nur Reports auf dieser Seite)
 const tokensByProvider = computed(() => {
     const result = {}
     for (const r of savedReports) {
@@ -52,6 +52,18 @@ const tokensByProvider = computed(() => {
     }
     return result
 })
+
+// Globale Token-Statistik (alle Quellen: Reports + Chat + Trade-Reviews + Screenshot-Reviews)
+const globalTokenStats = ref(null)
+
+async function loadGlobalTokenStats() {
+    try {
+        const res = await axios.get('/api/ai/token-stats')
+        globalTokenStats.value = res.data
+    } catch (e) {
+        logWarn('ki-agent', 'Token-Stats konnten nicht geladen werden', e)
+    }
+}
 
 // Geschätzte Kosten pro Provider (basierend auf bekannten Preisen pro 1M Tokens)
 // Preise in USD pro 1M Tokens: [input, output]
@@ -132,9 +144,11 @@ const estimatedCostByProvider = computed(() => {
     return result
 })
 
-// Gesamtkosten aller Provider
+// Offsets: bisheriger Verbrauch vor Token-Tracking (Console: 122.785 Tokens, ~$1.09)
+const AI_TOKEN_OFFSET = 106000
+const AI_COST_OFFSET = 0.96
 const totalEstimatedCost = computed(() => {
-    return Object.values(estimatedCostByProvider.value).reduce((sum, c) => sum + c, 0)
+    return AI_COST_OFFSET + Object.values(estimatedCostByProvider.value).reduce((sum, c) => sum + c, 0)
 })
 
 const providerColors = { ollama: '#6c757d', openai: '#10a37f', anthropic: '#7c5cfc', gemini: '#4285f4', deepseek: '#0066ff' }
@@ -379,7 +393,7 @@ function markdownToHtml(md) {
 onBeforeMount(async () => {
     spinnerLoadingPage.value = false
     await Promise.all([checkStatus(), loadChatSetting()])
-    await loadReports()
+    await Promise.all([loadReports(), loadGlobalTokenStats()])
 })
 </script>
 
@@ -394,8 +408,8 @@ onBeforeMount(async () => {
                     <i class="uil uil-robot me-2"></i>{{ t('kiAgent.createReport') }}
                 </h5>
                 <div class="d-flex align-items-center gap-2">
-                    <span class="text-muted small">
-                        <i class="uil uil-processor me-1"></i>{{ (tokensByProvider[aiProvider] || 0).toLocaleString() }} {{ t('kiAgent.tokens') }}
+                    <span class="text-muted small" :title="t('kiAgent.totalTokensHint')">
+                        <i class="uil uil-processor me-1"></i>{{ (AI_TOKEN_OFFSET + (globalTokenStats?.total?.totalTokens || Object.values(tokensByProvider).reduce((s, v) => s + v, 0) || 0)).toLocaleString() }} {{ t('kiAgent.tokens') }}
                     </span>
                     <span v-if="totalEstimatedCost > 0" class="ki-cost-badge" :title="t('kiAgent.estimatedCostTitle', { cost: totalEstimatedCost.toFixed(4) })">
                         <i class="uil uil-dollar-sign"></i>~{{ totalEstimatedCost < 0.01 ? totalEstimatedCost.toFixed(4) : totalEstimatedCost.toFixed(2) }}
@@ -675,38 +689,5 @@ onBeforeMount(async () => {
 .report-content :deep(strong) {
     color: var(--white-100, #fff);
 }
-/* Chat */
-.chat-section {
-    max-height: 500px;
-    display: flex;
-    flex-direction: column;
-}
-.chat-messages {
-    max-height: 350px;
-    overflow-y: auto;
-    padding-right: 0.3rem;
-}
-.chat-bubble {
-    padding: 0.4rem 0.7rem;
-    border-radius: 0.6rem;
-    font-size: 0.85rem;
-    line-height: 1.5;
-}
-.chat-bubble-user {
-    background: var(--blue-color, #6cb4ee);
-    color: #fff;
-    margin-left: 2rem;
-    border-bottom-right-radius: 0.15rem;
-    white-space: pre-wrap;
-}
-.chat-bubble-ai {
-    background: var(--black-bg-2, #1e1e1e);
-    color: var(--white-87);
-    margin-right: 2rem;
-    border-bottom-left-radius: 0.15rem;
-}
-.chat-input {
-    resize: vertical;
-    min-height: 2.4rem;
-}
+/* Chat-CSS ist in style-dark.css global */
 </style>

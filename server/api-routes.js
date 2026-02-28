@@ -1,7 +1,7 @@
 import { getKnex } from './database.js'
 import { loadDbConfig, saveDbConfig } from './db-config.js'
 
-const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions']
+const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions', 'share_card_templates']
 
 // Whitelist of allowed settings keys (from schema + migrations)
 const VALID_SETTINGS_KEYS = [
@@ -10,7 +10,9 @@ const VALID_SETTINGS_KEYS = [
     'tradeTimeframes', 'customTimeframes', 'enableBinanceChart',
     'aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
     'aiScreenshots', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-    'aiReportPrompt', 'aiChatEnabled', 'browserNotifications', 'setupComplete', 'balances', 'language'
+    'aiEnabled', 'aiReportPrompt', 'aiChatEnabled', 'browserNotifications', 'setupComplete', 'balances', 'language',
+    'fluxApiKey', 'fluxModel', 'fluxDisplayName', 'fluxAvatar', 'fluxUseCustomAvatar',
+    'shareCardProvider', 'geminiImageApiKey', 'geminiImageModel'
 ]
 
 // Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten
@@ -22,7 +24,8 @@ const TABLE_COLUMNS = {
     tags: ['id', 'dateUnix', 'tradeId', 'tags', 'closingTags', 'createdAt', 'updatedAt'],
     notes: ['id', 'dateUnix', 'tradeId', 'note', 'title', 'entryStressLevel', 'exitStressLevel', 'entryNote', 'feelings', 'playbook', 'timeframe', 'screenshotId', 'emotionLevel', 'closingNote', 'closingScreenshotId', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingPlaybook', 'tradeType', 'tradingMetadata', 'createdAt', 'updatedAt'],
     excursions: ['id', 'dateUnix', 'tradeId', 'stopLoss', 'maePrice', 'mfePrice', 'createdAt', 'updatedAt'],
-    incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType']
+    incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType'],
+    share_card_templates: ['id', 'name', 'prompt', 'imageBase64', 'category', 'createdAt', 'updatedAt']
 }
 
 // JSON columns per table that should be parsed on read and stringified on write

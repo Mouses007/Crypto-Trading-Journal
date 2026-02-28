@@ -69,7 +69,7 @@ onUnmounted(() => {
 let aiPollInterval = null
 let lastAiPollErrorTs = 0
 watch([aiReportGenerating, pageId], ([generating, page]) => {
-  if (generating && page !== 'kiAgent') {
+  if (generating && page !== 'kiAgent' && currentUser.value?.aiEnabled !== false && currentUser.value?.aiEnabled !== 0) {
     // Polling starten (falls noch nicht aktiv)
     if (!aiPollInterval) {
       aiPollInterval = setInterval(async () => {

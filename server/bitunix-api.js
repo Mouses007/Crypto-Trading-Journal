@@ -509,9 +509,15 @@ export function setupBitunixRoutes(app) {
             }
 
             // Response structure may vary — try common patterns
-            const orders = result.data?.orderList || result.data || []
-            console.log(` -> TP/SL orders for ${req.params.positionId}: ${Array.isArray(orders) ? orders.length : 0} orders`)
-            res.json({ ok: true, orders: Array.isArray(orders) ? orders : [] })
+            const allOrders = result.data?.orderList || result.data || []
+            const ordersArr = Array.isArray(allOrders) ? allOrders : []
+            // Bitunix API may return ALL pending orders — filter by positionId
+            const posId = String(req.params.positionId)
+            const orders = ordersArr.filter(o =>
+                String(o.positionId || o.position_id || '') === posId
+            )
+            console.log(` -> TP/SL orders for ${posId}: ${orders.length} matched (${ordersArr.length} total)`)
+            res.json({ ok: true, orders })
         } catch (error) {
             console.error(' -> TP/SL orders error:', error.message)
             res.status(500).json({ error: error.message })
@@ -727,6 +733,147 @@ export function setupBitunixRoutes(app) {
             res.json({ ok: true, balance, available, margin, crossUnrealizedPNL, isolationUnrealizedPNL })
         } catch (error) {
             console.error(' -> Bitunix balance error:', error.message)
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // =============== REPAIR FUNDING FEES ===============
+    // Backfill tradingFee/fundingFee for existing trades using Bitunix API history data.
+    // Fetches all historical positions and matches by positionId.
+    app.post('/api/repair-funding-fees', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const config = await getDecryptedConfig()
+
+            if (!config || !config.apiKey || !config.secretKey) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+
+            // 1. Load all trade rows
+            const allRows = await knex('trades').select('id', 'trades')
+            if (allRows.length === 0) {
+                return res.json({ ok: true, updated: 0, matched: 0, message: 'Keine Trades vorhanden.' })
+            }
+
+            // 2. Find the time range of all trades (entryTime/exitTime as unix seconds)
+            let minTime = Infinity, maxTime = 0
+            for (const row of allRows) {
+                let trades
+                try { trades = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch (e) { continue }
+                for (const t of trades) {
+                    const et = t.entryTime || 0
+                    const xt = t.exitTime || 0
+                    if (et > 0 && et < minTime) minTime = et
+                    if (xt > maxTime) maxTime = xt
+                }
+            }
+
+            if (minTime === Infinity) {
+                return res.json({ ok: true, updated: 0, matched: 0, message: 'Keine gültigen Trade-Zeiten gefunden.' })
+            }
+
+            // Convert to milliseconds and add buffer (1 day before, 1 day after)
+            const startTime = (minTime - 86400) * 1000
+            const endTime = (maxTime + 86400) * 1000
+
+            console.log(` -> Funding-Fee-Repair: Fetching positions from ${new Date(startTime).toISOString()} to ${new Date(endTime).toISOString()}`)
+
+            // 3. Fetch ALL historical positions from Bitunix API (paged)
+            let allPositions = []
+            let skip = 0
+            let hasMore = true
+
+            while (hasMore) {
+                const result = await getHistoryPositions(config.apiKey, config.secretKey, {
+                    startTime, endTime, skip, limit: 100
+                })
+
+                if (result.code !== 0) {
+                    throw new Error(result.msg || 'Bitunix API Fehler')
+                }
+
+                const positions = result.data?.positionList || []
+                allPositions = allPositions.concat(positions)
+
+                if (positions.length < 100) {
+                    hasMore = false
+                } else {
+                    skip += 100
+                }
+            }
+
+            console.log(` -> Funding-Fee-Repair: ${allPositions.length} API-Positionen geladen`)
+
+            // 4. Build lookup map: positionId -> { tradingFee, fundingFee }
+            const feeMap = {}
+            for (const pos of allPositions) {
+                const posId = String(pos.positionId || '')
+                if (posId) {
+                    feeMap[posId] = {
+                        tradingFee: Math.abs(parseFloat(pos.fee || 0)),
+                        fundingFee: Math.abs(parseFloat(pos.funding || 0))
+                    }
+                }
+            }
+
+            // 5. Update each trade row
+            let totalMatched = 0
+            let totalUpdatedRows = 0
+
+            for (const row of allRows) {
+                let trades
+                try { trades = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch (e) { continue }
+
+                let changed = false
+                for (const t of trades) {
+                    // Extract positionId from trade ID: "t{dateUnix}_{index}_{positionId}"
+                    const parts = (t.id || '').split('_')
+                    const posId = parts.length >= 3 ? parts.slice(2).join('_') : ''
+
+                    if (posId && feeMap[posId]) {
+                        const fees = feeMap[posId]
+                        // Only update if fees differ from current values
+                        const currentTradingFee = t.tradingFee || 0
+                        const currentFundingFee = t.fundingFee || 0
+                        if (currentTradingFee !== fees.tradingFee || currentFundingFee !== fees.fundingFee) {
+                            t.tradingFee = fees.tradingFee
+                            t.fundingFee = fees.fundingFee
+                            // Also ensure commission = tradingFee + fundingFee
+                            t.commission = fees.tradingFee + fees.fundingFee
+                            // Recalculate netProceeds: grossProceeds - commission
+                            t.netProceeds = (t.grossProceeds || 0) - t.commission
+                            t.netSharePL = t.netProceeds
+                            const isNetWin = t.netProceeds > 0
+                            t.netWins = isNetWin ? t.netProceeds : 0
+                            t.netLoss = isNetWin ? 0 : t.netProceeds
+                            t.netWinsCount = isNetWin ? 1 : 0
+                            t.netLossCount = isNetWin ? 0 : 1
+                            t.netSharePLWins = isNetWin ? t.netProceeds : 0
+                            t.netSharePLLoss = isNetWin ? 0 : t.netProceeds
+                            t.highNetSharePLWin = isNetWin ? t.netProceeds : 0
+                            t.highNetSharePLLoss = isNetWin ? 0 : t.netProceeds
+                            changed = true
+                            totalMatched++
+                        }
+                    }
+                }
+
+                if (changed) {
+                    await knex('trades').where('id', row.id).update({ trades: JSON.stringify(trades) })
+                    totalUpdatedRows++
+                }
+            }
+
+            console.log(` -> Funding-Fee-Repair: ${totalMatched} Trades aktualisiert in ${totalUpdatedRows} Zeilen`)
+            res.json({
+                ok: true,
+                apiPositions: allPositions.length,
+                matched: totalMatched,
+                updatedRows: totalUpdatedRows,
+                message: `${totalMatched} Trades mit Funding-Fee-Daten aktualisiert.`
+            })
+        } catch (error) {
+            console.error(' -> Repair funding fees error:', error.message)
             res.status(500).json({ error: error.message })
         }
     })

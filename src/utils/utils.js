@@ -52,7 +52,8 @@ export function useInitTab(param) {
                     selectedDashTab.value = event.target.getAttribute('id')
                     console.log("selected tab " + selectedDashTab.value)
                     localStorage.setItem('selectedDashTab', event.target.getAttribute('id'))
-                    await (renderData.value += 1)
+                    renderData.value += 1
+                    await nextTick()
                     await useECharts("init")
                     //console.log("related" + event.relatedTarget) // previous active tab
                 })

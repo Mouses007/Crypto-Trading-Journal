@@ -4,6 +4,7 @@
  */
 import Knex from 'knex'
 import { loadDbConfig } from './db-config.js'
+import { seedDefaultTemplates } from './default-templates.js'
 
 let knex = null
 
@@ -334,6 +335,23 @@ async function runMigrations(knex, client) {
         })
     }
 
+    // ==================== AI TRADE REVIEW MESSAGES (Chat) ====================
+    if (!(await knex.schema.hasTable('ai_trade_messages'))) {
+        await knex.schema.createTable('ai_trade_messages', (t) => {
+            t.increments('id').primary()
+            t.text('tradeId').notNullable()
+            t.text('role').notNullable() // 'user' or 'assistant'
+            t.text('content').defaultTo('')
+            t.text('provider').defaultTo('')
+            t.text('model').defaultTo('')
+            t.integer('promptTokens').defaultTo(0)
+            t.integer('completionTokens').defaultTo(0)
+            t.integer('totalTokens').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.index('tradeId', 'idx_trade_messages_tradeId')
+        })
+    }
+
     // ==================== COLUMN MIGRATIONS ====================
     // bitunix_config additions
     await addColumnIfNotExists('bitunix_config', 'lastApiImport', (t) => t.bigInteger('lastApiImport').defaultTo(0))
@@ -362,9 +380,14 @@ async function runMigrations(knex, client) {
 
     // Entry screenshot (migrate from screenshotId)
     await addColumnIfNotExists('incoming_positions', 'entryScreenshotId', (t) => t.text('entryScreenshotId').defaultTo(''))
+    // Trend screenshot (übergeordneter TF)
+    await addColumnIfNotExists('incoming_positions', 'trendScreenshotId', (t) => t.text('trendScreenshotId').defaultTo(''))
 
     // Trade type (scalp, day, swing)
     await addColumnIfNotExists('incoming_positions', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
+
+    // Strategy followed (closing eval)
+    await addColumnIfNotExists('incoming_positions', 'strategyFollowed', (t) => t.integer('strategyFollowed').defaultTo(-1))
 
     // tags: closingTags for separate opening/closing tag storage
     await addColumnIfNotExists('tags', 'closingTags', (t) => t.text('closingTags').defaultTo('[]'))
@@ -401,6 +424,7 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('notes', 'playbook', (t) => t.text('playbook').defaultTo(''))
     await addColumnIfNotExists('notes', 'timeframe', (t) => t.text('timeframe').defaultTo(''))
     await addColumnIfNotExists('notes', 'screenshotId', (t) => t.text('screenshotId').defaultTo(''))
+    await addColumnIfNotExists('notes', 'trendScreenshotId', (t) => t.text('trendScreenshotId').defaultTo(''))
     await addColumnIfNotExists('notes', 'emotionLevel', (t) => t.integer('emotionLevel').defaultTo(0))
     await addColumnIfNotExists('notes', 'closingNote', (t) => t.text('closingNote').defaultTo(''))
 
@@ -415,6 +439,9 @@ async function runMigrations(knex, client) {
     // Trade type (scalp, day, swing)
     await addColumnIfNotExists('notes', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
 
+    // Strategy followed
+    await addColumnIfNotExists('notes', 'strategyFollowed', (t) => t.integer('strategyFollowed').defaultTo(-1))
+
     // Trading metadata (SL/TP, BE, fills, position size — JSON)
     await addColumnIfNotExists('notes', 'tradingMetadata', (t) => t.text('tradingMetadata').defaultTo(''))
 
@@ -422,10 +449,34 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('notes', 'aiReview', (t) => t.text('aiReview').defaultTo(''))
     await addColumnIfNotExists('notes', 'aiReviewProvider', (t) => t.text('aiReviewProvider').defaultTo(''))
     await addColumnIfNotExists('notes', 'aiReviewModel', (t) => t.text('aiReviewModel').defaultTo(''))
+    await addColumnIfNotExists('notes', 'aiReviewPromptTokens', (t) => t.integer('aiReviewPromptTokens').defaultTo(0))
+    await addColumnIfNotExists('notes', 'aiReviewCompletionTokens', (t) => t.integer('aiReviewCompletionTokens').defaultTo(0))
+    await addColumnIfNotExists('notes', 'aiReviewTotalTokens', (t) => t.integer('aiReviewTotalTokens').defaultTo(0))
+
+    // Einmalige Backfill: Token-Schätzung für alte Trade-Reviews (vor Token-Tracking)
+    // ~1 Token ≈ 4 Zeichen, Prompt ≈ 2× Output-Länge
+    try {
+        const untracked = await knex('notes')
+            .whereNot('aiReview', '').andWhere('aiReviewTotalTokens', 0)
+        if (untracked.length > 0) {
+            for (const n of untracked) {
+                const outputTokens = Math.ceil((n.aiReview || '').length / 4)
+                const promptTokens = Math.ceil(outputTokens * 2)
+                const totalTokens = promptTokens + outputTokens
+                await knex('notes').where('id', n.id).update({
+                    aiReviewPromptTokens: promptTokens,
+                    aiReviewCompletionTokens: outputTokens,
+                    aiReviewTotalTokens: totalTokens
+                })
+            }
+            console.log(` -> Backfilled token estimates for ${untracked.length} trade reviews`)
+        }
+    } catch (e) { /* ignore if columns don't exist yet */ }
 
     // AI report prompt + chat
     await addColumnIfNotExists('settings', 'aiReportPrompt', (t) => t.text('aiReportPrompt').defaultTo(''))
     await addColumnIfNotExists('settings', 'aiChatEnabled', (t) => t.integer('aiChatEnabled').defaultTo(1))
+    await addColumnIfNotExists('settings', 'aiEnabled', (t) => t.integer('aiEnabled').defaultTo(1))
     await addColumnIfNotExists('settings', 'browserNotifications', (t) => t.integer('browserNotifications').defaultTo(1))
 
     // First-Run Setup
@@ -448,6 +499,10 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('ai_reports', 'totalTokens', (t) => t.integer('totalTokens').defaultTo(0))
     await addColumnIfNotExists('ai_reports', 'promptPreset', (t) => t.text('promptPreset').defaultTo(''))
     await addColumnIfNotExists('ai_reports', 'broker', (t) => t.text('broker').defaultTo(''))
+
+    // ai_report_messages additions (provider/model für Token-Statistiken)
+    await addColumnIfNotExists('ai_report_messages', 'provider', (t) => t.text('provider').defaultTo(''))
+    await addColumnIfNotExists('ai_report_messages', 'model', (t) => t.text('model').defaultTo(''))
     // Bestehende Berichte ohne Broker auf 'bitunix' setzen (einmalige Migration)
     await knex('ai_reports').where('broker', '').update({ broker: 'bitunix' })
 
@@ -477,6 +532,39 @@ async function runMigrations(knex, client) {
 
     // ==================== SETTINGS: LANGUAGE ====================
     await addColumnIfNotExists('settings', 'language', (t) => t.text('language').defaultTo('de'))
+
+    // ==================== SETTINGS: TRADE TYPE AUTO-DETECTION ====================
+    await addColumnIfNotExists('settings', 'scalpMaxMinutes', (t) => t.integer('scalpMaxMinutes').defaultTo(15))
+    await addColumnIfNotExists('settings', 'daytradeMaxHours', (t) => t.integer('daytradeMaxHours').defaultTo(24))
+
+    // ==================== SETTINGS: FLUX.2 SHARE CARDS ====================
+    await addColumnIfNotExists('settings', 'fluxApiKey', (t) => t.text('fluxApiKey').defaultTo(''))
+    await addColumnIfNotExists('settings', 'fluxModel', (t) => t.text('fluxModel').defaultTo('flux-2-klein-9b'))
+    await addColumnIfNotExists('settings', 'fluxDisplayName', (t) => t.text('fluxDisplayName').defaultTo(''))
+    await addColumnIfNotExists('settings', 'fluxAvatar', (t) => t.text('fluxAvatar').defaultTo(''))
+    await addColumnIfNotExists('settings', 'fluxUseCustomAvatar', (t) => t.boolean('fluxUseCustomAvatar').defaultTo(false))
+
+    // ==================== SETTINGS: GEMINI IMAGE GENERATION ====================
+    await addColumnIfNotExists('settings', 'shareCardProvider', (t) => t.text('shareCardProvider').defaultTo('flux'))
+    await addColumnIfNotExists('settings', 'geminiImageApiKey', (t) => t.text('geminiImageApiKey').defaultTo(''))
+    await addColumnIfNotExists('settings', 'geminiImageModel', (t) => t.text('geminiImageModel').defaultTo('gemini-2.0-flash-preview-image-generation'))
+
+    // ==================== SHARE CARD TEMPLATES ====================
+    if (!(await knex.schema.hasTable('share_card_templates'))) {
+        await knex.schema.createTable('share_card_templates', (t) => {
+            t.increments('id').primary()
+            t.text('name').notNullable()           // "Cyberpunk Bull"
+            t.text('prompt').defaultTo('')          // Der verwendete Prompt
+            t.text('imageBase64').defaultTo('')     // Hintergrundbild OHNE Overlay (base64)
+            t.text('category').defaultTo('')        // 'win' oder 'loss'
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+        })
+        console.log(' -> Created table: share_card_templates')
+    }
+
+    // Seed default templates from server/templates/ (only if table is empty)
+    await seedDefaultTemplates(knex)
 
     // ==================== SEED: Default Tag Groups ====================
     // Ensure the mandatory "Strategie" tag group exists (required by charts/dashboard).

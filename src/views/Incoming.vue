@@ -4,12 +4,13 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
-import { spinnerLoadingPage } from '../stores/ui.js'
+import { spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js'
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
+import { currentUser } from '../stores/settings.js'
 import { useFetchOpenPositions, useGetIncomingPositions, useUpdateIncomingPosition, useDeleteIncomingPosition, useTransferClosingMetadata } from '../utils/incoming'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
-import { dbCreate, dbUpdate } from '../utils/db.js'
+import { dbCreate, dbUpdate, dbFind } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
 import Quill from 'quill'
 import { sanitizeHtml } from '../utils/sanitize'
@@ -153,7 +154,57 @@ function isSLAboveBreakeven(positionId, side) {
 }
 
 function formatFillTime(ctime) {
-    return dayjs(parseInt(ctime)).format('DD.MM. HH:mm')
+    return dayjs(parseInt(ctime)).tz(timeZoneTrade.value).format('DD.MM. HH:mm')
+}
+
+function getIncomingFillBadgeType(fill, idx, allFills) {
+    if (fill.reduceOnly) {
+        const openQty = allFills.filter(f => !f.reduceOnly).reduce((sum, f) => sum + parseFloat(f.qty || 0), 0)
+        const totalClosedQty = allFills.filter(f => f.reduceOnly).reduce((sum, f) => sum + parseFloat(f.qty || 0), 0)
+        return totalClosedQty >= openQty ? 'close' : 'partialClose'
+    }
+    if (idx === 0 || allFills.slice(0, idx).every(f => f.reduceOnly)) return 'initial'
+    return 'compound'
+}
+
+function groupFillsByMinute(fills, timeField = 'time') {
+    if (!fills || fills.length === 0) return []
+    const groups = []
+    let current = null
+    for (let i = 0; i < fills.length; i++) {
+        const fill = fills[i]
+        const minute = dayjs(parseInt(fill[timeField])).tz(timeZoneTrade.value).format('YYYY-MM-DD HH:mm')
+        const key = minute + '_' + (fill.reduceOnly ? '1' : '0')
+        if (current && current.key === key) {
+            current.fills.push(fill)
+        } else {
+            current = { key, fills: [fill], time: fill[timeField], reduceOnly: fill.reduceOnly }
+            groups.push(current)
+        }
+    }
+    return groups.map(g => {
+        const totalQty = g.fills.reduce((s, f) => s + parseFloat(f.qty || 0), 0)
+        const totalValue = g.fills.reduce((s, f) => s + parseFloat(f.qty || 0) * parseFloat(f.price || 0), 0)
+        const totalFee = g.fills.reduce((s, f) => s + parseFloat(f.fee || 0), 0)
+        return {
+            ...g,
+            totalQty,
+            avgPrice: totalQty > 0 ? totalValue / totalQty : 0,
+            totalValue,
+            totalFee,
+            isGroup: g.fills.length > 1,
+            firstFillIdx: fills.indexOf(g.fills[0])
+        }
+    })
+}
+
+const expandedFillGroups = ref(new Set())
+function toggleFillGroup(key) {
+    if (expandedFillGroups.value.has(key)) {
+        expandedFillGroups.value.delete(key)
+    } else {
+        expandedFillGroups.value.add(key)
+    }
 }
 
 // ===== TP/SL TRACKING =====
@@ -268,9 +319,14 @@ async function fetchPositionTpSl(positionId, force = false, broker = 'bitunix', 
 function getTpSlForPosition(positionId) {
     const data = positionTpSl.value[positionId]
     if (!data || !data.orders || data.orders.length === 0) return { sl: null, tp: null, orders: [] }
+    // Safety: filter orders by positionId (API may return all pending orders)
+    const posId = String(positionId)
+    const filtered = data.orders.filter(o =>
+        !o.positionId && !o.position_id || String(o.positionId || o.position_id || '') === posId
+    )
     // Aggregate: collect all SL/TP values
     let sl = null, tp = null, slQty = 0, tpQty = 0
-    for (const o of data.orders) {
+    for (const o of filtered) {
         if (o.slPrice && parseFloat(o.slPrice) > 0) {
             sl = parseFloat(o.slPrice)
             slQty += parseFloat(o.slQty || 0)
@@ -280,10 +336,11 @@ function getTpSlForPosition(positionId) {
             tpQty += parseFloat(o.tpQty || 0)
         }
     }
-    return { sl, tp, slQty, tpQty, orders: data.orders }
+    return { sl, tp, slQty, tpQty, orders: filtered }
 }
 
-// Screenshot upload state — separate previews for entry and closing
+// Screenshot upload state — separate previews for trend, entry and closing
+const trendScreenshotPreviews = ref({}) // positionId → base64
 const entryScreenshotPreviews = ref({}) // positionId → base64
 const closingScreenshotPreviews = ref({}) // positionId → base64
 
@@ -352,6 +409,7 @@ async function manualRefresh() {
                 if (expandPos.status === 'pending_evaluation') {
                     await nextTick()
                     initQuillEditor(expandedId.value, 'closing')
+                    autoDetectAndSetTradeType(expandPos)
                 }
             }
         }
@@ -378,6 +436,8 @@ async function toggleExpand(positionId) {
 
     // Fetch fills and TP/SL for open and pending_evaluation positions (Bitunix + Bitget)
     const expandPos = incomingPositions.find(p => p.positionId === positionId)
+    // Screenshot-Previews aus DB laden
+    if (expandPos) loadScreenshotPreviews(expandPos)
     if (expandPos && (expandPos.status === 'open' || expandPos.status === 'pending_evaluation') && (expandPos.broker === 'bitunix' || expandPos.broker === 'bitget')) {
         fetchPositionFills(positionId, false, expandPos.broker, expandPos.symbol)
         fetchPositionTpSl(positionId, false, expandPos.broker, expandPos.symbol)
@@ -389,6 +449,7 @@ async function toggleExpand(positionId) {
     // Only init closing Quill if position is pending evaluation
     if (expandPos && expandPos.status === 'pending_evaluation') {
         initQuillEditor(positionId, 'closing')
+        autoDetectAndSetTradeType(expandPos)
     }
 }
 
@@ -435,6 +496,60 @@ function updateTradeType(pos, value) {
     const newValue = pos.tradeType === value ? '' : value
     pos.tradeType = newValue
     useUpdateIncomingPosition(pos.objectId, { tradeType: newValue })
+    // Mark as manually overridden so auto-detect doesn't re-apply
+    if (pos.status === 'pending_evaluation') {
+        autoDetectedTradeType.value[pos.positionId] = false
+    }
+}
+
+// ===== TRADE TYPE AUTO-DETECTION =====
+
+const autoDetectedTradeType = ref({}) // positionId → true (auto) / false (manual override)
+const tpslHistoryCollapsed = ref({}) // positionId → true/false
+
+function getTradeDurationMinutes(pos) {
+    let hd = pos.historyData
+    if (!hd) return null
+    if (typeof hd === 'string') { try { hd = JSON.parse(hd) } catch { return null } }
+    const openTime = parseInt(hd.ctime || hd.cTime || 0)
+    const closeTime = parseInt(hd.mtime || hd.uTime || 0)
+    if (!openTime || !closeTime || closeTime <= openTime) return null
+    return (closeTime - openTime) / (1000 * 60)
+}
+
+function detectTradeType(durationMinutes) {
+    const scalpMax = currentUser.value?.scalpMaxMinutes ?? 15
+    const daytradeMaxMinutes = (currentUser.value?.daytradeMaxHours ?? 24) * 60
+    if (durationMinutes <= scalpMax) return 'scalp'
+    if (durationMinutes <= daytradeMaxMinutes) return 'day'
+    return 'swing'
+}
+
+function autoDetectAndSetTradeType(pos) {
+    if (pos.status !== 'pending_evaluation') return
+    if (!pos.historyData) return
+    if (autoDetectedTradeType.value[pos.positionId] === false) return // manual override
+
+    const durationMin = getTradeDurationMinutes(pos)
+    if (durationMin === null) return
+
+    const detected = detectTradeType(durationMin)
+    if (pos.tradeType !== detected) {
+        pos.tradeType = detected
+        useUpdateIncomingPosition(pos.objectId, { tradeType: detected })
+    }
+    if (autoDetectedTradeType.value[pos.positionId] === undefined) {
+        autoDetectedTradeType.value[pos.positionId] = true
+    }
+}
+
+function formatDuration(minutes) {
+    if (minutes === null || minutes === undefined) return ''
+    if (minutes < 60) return `${Math.round(minutes)}m`
+    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ${Math.round(minutes % 60)}m`
+    const days = Math.floor(minutes / 1440)
+    const hours = Math.floor((minutes % 1440) / 60)
+    return `${days}d ${hours}h`
 }
 
 // ===== OPENING FIELD HANDLERS =====
@@ -458,6 +573,12 @@ function updateTimeframe(pos, value) {
 }
 
 // ===== CLOSING FIELD HANDLERS =====
+
+function updateStrategyFollowed(pos, value) {
+    const newValue = pos.strategyFollowed === value ? -1 : value
+    pos.strategyFollowed = newValue
+    useUpdateIncomingPosition(pos.objectId, { strategyFollowed: newValue })
+}
 
 function updateClosingStress(pos, level) {
     const newLevel = (pos.closingStressLevel || 0) === level ? 0 : level
@@ -555,6 +676,72 @@ async function removeEntryScreenshot(pos) {
     }
 }
 
+async function handleTrendScreenshotUpload(event, pos) {
+    const file = event.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onloadend = async () => {
+        const base64 = reader.result
+
+        const screenshot = await dbCreate('screenshots', {
+            name: `incoming_trend_${pos.positionId}`,
+            symbol: pos.symbol,
+            side: pos.side === 'LONG' ? 'B' : 'SS',
+            broker: pos.broker || selectedBroker.value || 'bitunix',
+            originalBase64: base64,
+            annotatedBase64: '',
+            markersOnly: 1,
+            maState: {},
+            dateUnix: dayjs().unix(),
+            dateUnixDay: dayjs().utc().startOf('day').unix()
+        })
+
+        await useUpdateIncomingPosition(pos.objectId, { trendScreenshotId: screenshot.objectId })
+        pos.trendScreenshotId = screenshot.objectId
+        trendScreenshotPreviews.value[pos.positionId] = base64
+    }
+    reader.readAsDataURL(file)
+}
+
+async function removeTrendScreenshot(pos) {
+    if (pos.trendScreenshotId) {
+        await useUpdateIncomingPosition(pos.objectId, { trendScreenshotId: '' })
+        pos.trendScreenshotId = ''
+        delete trendScreenshotPreviews.value[pos.positionId]
+    }
+}
+
+async function loadScreenshotPreviews(pos) {
+    // Entry-Screenshot laden
+    if (pos.entryScreenshotId && !entryScreenshotPreviews.value[pos.positionId]) {
+        try {
+            const results = await dbFind('screenshots', { equalTo: { objectId: pos.entryScreenshotId }, limit: 1 })
+            if (results.length > 0) {
+                entryScreenshotPreviews.value[pos.positionId] = results[0].annotatedBase64 || results[0].originalBase64
+            }
+        } catch (e) { console.log('Screenshot-Load fehlgeschlagen:', e) }
+    }
+    // Trend-Screenshot laden
+    if (pos.trendScreenshotId && !trendScreenshotPreviews.value[pos.positionId]) {
+        try {
+            const results = await dbFind('screenshots', { equalTo: { objectId: pos.trendScreenshotId }, limit: 1 })
+            if (results.length > 0) {
+                trendScreenshotPreviews.value[pos.positionId] = results[0].annotatedBase64 || results[0].originalBase64
+            }
+        } catch (e) { console.log('Screenshot-Load fehlgeschlagen:', e) }
+    }
+    // Closing-Screenshot laden
+    if (pos.closingScreenshotId && !closingScreenshotPreviews.value[pos.positionId]) {
+        try {
+            const results = await dbFind('screenshots', { equalTo: { objectId: pos.closingScreenshotId }, limit: 1 })
+            if (results.length > 0) {
+                closingScreenshotPreviews.value[pos.positionId] = results[0].annotatedBase64 || results[0].originalBase64
+            }
+        } catch (e) { console.log('Screenshot-Load fehlgeschlagen:', e) }
+    }
+}
+
 async function handleClosingScreenshotUpload(event, pos) {
     const file = event.target.files[0]
     if (!file) return
@@ -605,6 +792,7 @@ async function saveMetadata(pos) {
         skipEvaluation: pos.skipEvaluation || 0,
         satisfaction: pos.satisfaction != null ? pos.satisfaction : null,
         // Closing fields
+        strategyFollowed: pos.strategyFollowed != null ? pos.strategyFollowed : -1,
         closingStressLevel: pos.closingStressLevel || 0,
         closingEmotionLevel: pos.closingEmotionLevel || 0,
         closingFeelings: pos.closingFeelings || '',
@@ -664,6 +852,7 @@ async function completeClosingEvaluation(pos) {
             tradeType: pos.tradeType || '',
             tags: JSON.parse(JSON.stringify(pos.tags || [])),
             satisfaction: pos.satisfaction != null ? pos.satisfaction : null,
+            strategyFollowed: pos.strategyFollowed != null ? pos.strategyFollowed : -1,
             closingStressLevel: pos.closingStressLevel || 0,
             closingEmotionLevel: pos.closingEmotionLevel || 0,
             closingFeelings: pos.closingFeelings || '',
@@ -717,13 +906,23 @@ async function completeClosingEvaluation(pos) {
                 reduceOnly: !!f.reduceOnly,
                 side: f.side
             })),
-            tpslHistory: tpslHistory.map(h => ({
-                time: h.time,
-                type: h.type,
-                action: h.action,
-                oldVal: h.oldVal,
-                newVal: h.newVal
-            }))
+            tpslHistory: (() => {
+                // Filter out entries recorded after the last fill (position close artifacts)
+                const fills = (fillData.trades || [])
+                const lastFillTime = fills.length > 0
+                    ? Math.max(...fills.map(f => parseInt(f.ctime || 0)))
+                    : 0
+                const cutoff = lastFillTime ? lastFillTime + 60000 : Infinity
+                return tpslHistory
+                    .filter(h => h.time <= cutoff)
+                    .map(h => ({
+                        time: h.time,
+                        type: h.type,
+                        action: h.action,
+                        oldVal: h.oldVal,
+                        newVal: h.newVal
+                    }))
+            })()
         }
 
         // Transfer metadata to trade record and delete incoming position
@@ -736,6 +935,7 @@ async function completeClosingEvaluation(pos) {
                 satisfaction: pos.satisfaction != null ? pos.satisfaction : null,
                 stressLevel: pos.stressLevel || 0,
                 tradeType: pos.tradeType || '',
+                strategyFollowed: pos.strategyFollowed != null ? pos.strategyFollowed : -1,
                 closingNote: pos.closingPlaybook || '',
                 closingStressLevel: pos.closingStressLevel || 0,
                 closingEmotionLevel: pos.closingEmotionLevel || 0,
@@ -774,13 +974,13 @@ function formatCurrency(val) {
 
 function formatTime(date) {
     if (!date) return ''
-    return dayjs(date).format('HH:mm:ss')
+    return dayjs(date).tz(timeZoneTrade.value).format('HH:mm:ss')
 }
 
 function getPositionDate(pos) {
     const ctime = pos.bitunixData?.ctime
     if (ctime) {
-        return dayjs(parseInt(ctime)).format('DD.MM.YYYY')
+        return dayjs(parseInt(ctime)).tz(timeZoneTrade.value).format('DD.MM.YYYY')
     }
     if (pos.createdAt) {
         return dayjs(pos.createdAt).format('DD.MM.YYYY')
@@ -912,21 +1112,45 @@ function getPositionDate(pos) {
                         <div v-else-if="getFillsForPosition(pos.positionId).trades.length > 0">
                             <table class="table table-sm table-borderless mb-1" style="font-size: 0.8rem; color: var(--white-80);">
                                 <tbody>
-                                    <tr v-for="(fill, idx) in getFillsForPosition(pos.positionId).trades" :key="fill.tradeId"
-                                        :class="fill.reduceOnly ? 'text-danger' : ''">
-                                        <td class="text-muted ps-0" style="width: 100px;">{{ formatFillTime(fill.ctime) }}</td>
-                                        <td style="width: 80px;" class="text-end">{{ parseFloat(fill.qty) }}</td>
-                                        <td class="text-muted px-1">×</td>
-                                        <td style="width: 90px;">{{ parseFloat(fill.price) }}</td>
-                                        <td class="text-muted px-1">=</td>
-                                        <td class="text-end" style="width: 90px;">{{ (parseFloat(fill.qty) * parseFloat(fill.price)).toFixed(2) }}</td>
-                                        <td>
-                                            <span v-if="fill.reduceOnly" class="badge bg-danger" style="font-size: 0.65rem;">{{ t('incoming.fillPartialClose') }}</span>
-                                            <span v-else-if="idx === 0 || getFillsForPosition(pos.positionId).trades.slice(0, idx).every(f => f.reduceOnly)" class="badge bg-secondary" style="font-size: 0.65rem;">{{ t('incoming.fillInitial') }}</span>
-                                            <span v-else class="badge bg-info" style="font-size: 0.65rem;">{{ t('incoming.fillCompound') }}</span>
-                                        </td>
-                                        <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ parseFloat(fill.fee || 0).toFixed(4) }}</td>
-                                    </tr>
+                                    <template v-for="(group, gIdx) in groupFillsByMinute(getFillsForPosition(pos.positionId).trades, 'ctime')" :key="group.key">
+                                        <tr :class="group.reduceOnly ? 'text-danger' : ''"
+                                            :style="group.isGroup ? 'cursor: pointer;' : ''"
+                                            @click="group.isGroup && toggleFillGroup(group.key)">
+                                            <td class="text-muted ps-0" style="width: 100px;">
+                                                <span v-if="group.isGroup" style="font-size: 0.6rem; margin-right: 2px;">{{ expandedFillGroups.has(group.key) ? '▼' : '▶' }}</span>
+                                                {{ formatFillTime(group.time) }}
+                                            </td>
+                                            <td style="width: 80px;" class="text-end">{{ group.totalQty }}</td>
+                                            <td class="text-muted px-1">×</td>
+                                            <td style="width: 90px;">{{ group.isGroup ? group.avgPrice.toFixed(5) : parseFloat(group.fills[0].price) }}</td>
+                                            <td class="text-muted px-1">=</td>
+                                            <td class="text-end" style="width: 90px;">{{ group.totalValue.toFixed(2) }}</td>
+                                            <td>
+                                                <span v-if="getIncomingFillBadgeType(group.fills[0], group.firstFillIdx, getFillsForPosition(pos.positionId).trades) === 'close'"
+                                                    class="badge bg-danger" style="font-size: 0.65rem;">{{ t('incoming.fillClose') }}</span>
+                                                <span v-else-if="getIncomingFillBadgeType(group.fills[0], group.firstFillIdx, getFillsForPosition(pos.positionId).trades) === 'partialClose'"
+                                                    class="badge bg-warning text-dark" style="font-size: 0.65rem;">{{ t('incoming.fillPartialClose') }}</span>
+                                                <span v-else-if="getIncomingFillBadgeType(group.fills[0], group.firstFillIdx, getFillsForPosition(pos.positionId).trades) === 'initial'"
+                                                    class="badge bg-secondary" style="font-size: 0.65rem;">{{ t('incoming.fillInitial') }}</span>
+                                                <span v-else class="badge bg-info" style="font-size: 0.65rem;">{{ t('incoming.fillCompound') }}</span>
+                                                <span v-if="group.isGroup" class="text-muted ms-1" style="font-size: 0.6rem;">({{ group.fills.length }})</span>
+                                            </td>
+                                            <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ group.totalFee.toFixed(4) }}</td>
+                                        </tr>
+                                        <template v-if="group.isGroup && expandedFillGroups.has(group.key)">
+                                            <tr v-for="(fill, fIdx) in group.fills" :key="group.key + '_' + fIdx"
+                                                :class="fill.reduceOnly ? 'text-danger' : ''" style="opacity: 0.6; font-size: 0.7rem;">
+                                                <td class="ps-0" style="width: 100px;"></td>
+                                                <td style="width: 80px;" class="text-end">{{ parseFloat(fill.qty) }}</td>
+                                                <td class="text-muted px-1">×</td>
+                                                <td style="width: 90px;">{{ parseFloat(fill.price) }}</td>
+                                                <td class="text-muted px-1">=</td>
+                                                <td class="text-end" style="width: 90px;">{{ (parseFloat(fill.qty) * parseFloat(fill.price)).toFixed(2) }}</td>
+                                                <td></td>
+                                                <td class="text-end text-muted pe-0" style="width: 90px;">{{ t('incoming.fillFee') }}: {{ parseFloat(fill.fee || 0).toFixed(4) }}</td>
+                                            </tr>
+                                        </template>
+                                    </template>
                                 </tbody>
                             </table>
                             <!-- Totals row -->
@@ -976,35 +1200,40 @@ function getPositionDate(pos) {
                         <!-- TP/SL Change History -->
                         <div v-if="getTpSlHistoryForPosition(pos.positionId).length > 0"
                             class="mt-2 pt-2 border-top" style="font-size: 0.75rem; border-color: var(--white-20) !important;">
-                            <div class="text-muted mb-1"><i class="uil uil-history me-1"></i>SL/TP Protokoll</div>
-                            <div v-for="(entry, idx) in getTpSlHistoryForPosition(pos.positionId)" :key="idx"
-                                class="d-flex align-items-center gap-2 mb-1">
-                                <span class="text-muted" style="width: 90px;">{{ dayjs(entry.time).format('DD.MM. HH:mm') }}</span>
-                                <span :class="entry.type === 'SL' ? (isSLAboveBreakeven(pos.positionId, pos.side) ? '' : 'text-danger') : (entry.action === 'triggered' ? 'text-success fw-bold' : '')"
-                                    :style="entry.type === 'SL' && isSLAboveBreakeven(pos.positionId, pos.side) ? 'color: #86efac' : (entry.type === 'TP' && entry.action !== 'triggered' ? 'color: #f59e0b' : '')">
-                                    {{ entry.type }}
-                                </span>
-                                <template v-if="entry.action === 'set'">
-                                    <span class="text-muted">→</span>
-                                    <span class="text-white">{{ entry.newVal }}</span>
-                                    <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
-                                </template>
-                                <template v-else-if="entry.action === 'moved'">
-                                    <span class="text-muted" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
-                                    <span class="text-muted">→</span>
-                                    <span class="text-white">{{ entry.newVal }}</span>
-                                    <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
-                                </template>
-                                <template v-else-if="entry.action === 'triggered'">
-                                    <span class="text-success" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
-                                    <span class="text-success">→</span>
-                                    <span class="text-success fw-bold">Ausgelöst ✓</span>
-                                </template>
-                                <template v-else-if="entry.action === 'removed'">
-                                    <span class="text-muted" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
-                                    <span class="text-muted">→ entfernt</span>
-                                </template>
+                            <div class="text-muted mb-1 pointerClass" @click.stop="tpslHistoryCollapsed[pos.positionId] = !tpslHistoryCollapsed[pos.positionId]">
+                                <i class="uil uil-history me-1"></i>SL/TP Protokoll
+                                <i :class="tpslHistoryCollapsed[pos.positionId] ? 'uil-angle-down' : 'uil-angle-up'" class="uil ms-1"></i>
                             </div>
+                            <template v-if="!tpslHistoryCollapsed[pos.positionId]">
+                                <div v-for="(entry, idx) in getTpSlHistoryForPosition(pos.positionId)" :key="idx"
+                                    class="d-flex align-items-center gap-2 mb-1">
+                                    <span class="text-muted" style="width: 90px;">{{ dayjs(entry.time).tz(timeZoneTrade.value).format('DD.MM. HH:mm') }}</span>
+                                    <span :class="entry.type === 'SL' ? (isSLAboveBreakeven(pos.positionId, pos.side) ? '' : 'text-danger') : (entry.action === 'triggered' ? 'text-success fw-bold' : '')"
+                                        :style="entry.type === 'SL' && isSLAboveBreakeven(pos.positionId, pos.side) ? 'color: #86efac' : (entry.type === 'TP' && entry.action !== 'triggered' ? 'color: #f59e0b' : '')">
+                                        {{ entry.type }}
+                                    </span>
+                                    <template v-if="entry.action === 'set'">
+                                        <span class="text-muted">→</span>
+                                        <span class="text-white">{{ entry.newVal }}</span>
+                                        <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
+                                    </template>
+                                    <template v-else-if="entry.action === 'moved'">
+                                        <span class="text-muted" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
+                                        <span class="text-muted">→</span>
+                                        <span class="text-white">{{ entry.newVal }}</span>
+                                        <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
+                                    </template>
+                                    <template v-else-if="entry.action === 'triggered'">
+                                        <span class="text-success" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
+                                        <span class="text-success">→</span>
+                                        <span class="text-success fw-bold">Ausgelöst ✓</span>
+                                    </template>
+                                    <template v-else-if="entry.action === 'removed'">
+                                        <span class="text-muted" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
+                                        <span class="text-muted">→ entfernt</span>
+                                    </template>
+                                </div>
+                            </template>
                         </div>
                     </div>
 
@@ -1116,20 +1345,30 @@ function getPositionDate(pos) {
                         </select>
                     </div>
 
-                    <!-- Entry Screenshot -->
+                    <!-- Screenshots (max 2) -->
                     <div class="pb-edit-section">
                         <label class="pb-edit-label">{{ t('incoming.screenshot') }}</label>
-                        <div v-if="pos.entryScreenshotId">
-                            <img v-if="entryScreenshotPreviews[pos.positionId]"
-                                :src="entryScreenshotPreviews[pos.positionId]"
-                                class="img-fluid rounded mb-1" style="max-height: 200px;" />
-                            <span v-else class="badge bg-success">{{ t('incoming.screenshotLinked') }}</span>
-                            <button class="btn btn-sm btn-outline-danger ms-2" @click.stop="removeEntryScreenshot(pos)">
-                                <i class="uil uil-times"></i> {{ t('common.remove') }}
-                            </button>
+                        <div class="d-flex flex-wrap align-items-start gap-2 mb-2">
+                            <!-- Erster Screenshot (Thumbnail) -->
+                            <div v-if="pos.entryScreenshotId" class="position-relative screenshot-thumb">
+                                <img v-if="entryScreenshotPreviews[pos.positionId]"
+                                    :src="entryScreenshotPreviews[pos.positionId]"
+                                    class="rounded" style="max-height: 120px; max-width: 200px; object-fit: cover;" />
+                                <span v-else class="badge bg-secondary"><i class="uil uil-image me-1"></i>1</span>
+                                <i class="uil uil-times-circle screenshot-remove" @click.stop="removeEntryScreenshot(pos)"></i>
+                            </div>
+                            <!-- Zweiter Screenshot (Thumbnail) -->
+                            <div v-if="pos.trendScreenshotId" class="position-relative screenshot-thumb">
+                                <img v-if="trendScreenshotPreviews[pos.positionId]"
+                                    :src="trendScreenshotPreviews[pos.positionId]"
+                                    class="rounded" style="max-height: 120px; max-width: 200px; object-fit: cover;" />
+                                <span v-else class="badge bg-secondary"><i class="uil uil-image me-1"></i>2</span>
+                                <i class="uil uil-times-circle screenshot-remove" @click.stop="removeTrendScreenshot(pos)"></i>
+                            </div>
                         </div>
-                        <input v-else type="file" accept="image/*" class="form-control form-control-sm"
-                            @change="handleEntryScreenshotUpload($event, pos)" />
+                        <!-- Upload (sichtbar solange weniger als 2 Screenshots) -->
+                        <input v-if="!pos.entryScreenshotId || !pos.trendScreenshotId" type="file" accept="image/*" class="form-control form-control-sm"
+                            @change="!pos.entryScreenshotId ? handleEntryScreenshotUpload($event, pos) : handleTrendScreenshotUpload($event, pos)" />
                     </div>
 
                     </div><!-- /opening-eval-section -->
@@ -1141,17 +1380,83 @@ function getPositionDate(pos) {
                             <span class="fw-bold" style="font-size: 0.95rem;">{{ t('incoming.closingEvaluation') }}</span>
                         </div>
 
-                        <!-- Trade-Typ (änderbar in Abschlussbewertung) -->
+                        <!-- Strategie eingehalten? (oberster Punkt) -->
                         <div class="pb-edit-section">
-                            <label class="pb-edit-label">{{ t('incoming.tradeType') }}</label>
-                            <div class="d-flex flex-wrap gap-1">
+                            <label class="pb-edit-label">{{ t('incoming.strategyFollowed') }}</label>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm px-3"
+                                    :class="pos.strategyFollowed === 1 ? 'btn-success' : 'btn-outline-secondary'"
+                                    @click.stop="updateStrategyFollowed(pos, 1)">
+                                    {{ t('incoming.strategyYes') }}
+                                </button>
+                                <button class="btn btn-sm px-3"
+                                    :class="pos.strategyFollowed === 0 ? 'btn-danger' : 'btn-outline-secondary'"
+                                    @click.stop="updateStrategyFollowed(pos, 0)">
+                                    {{ t('incoming.strategyNo') }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Trade-Typ (auto-erkannt, manuell überschreibbar) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">
+                                {{ t('incoming.tradeType') }}
+                                <small v-if="autoDetectedTradeType[pos.positionId] === true" class="text-muted ms-1">{{ t('incoming.autoDetected') }}</small>
+                            </label>
+                            <div class="d-flex flex-wrap gap-1 align-items-center">
                                 <button v-for="tt in tradeTypeOptions" :key="tt.value"
                                     class="btn btn-sm py-0 px-2"
                                     :class="pos.tradeType === tt.value ? 'btn-primary' : 'btn-outline-secondary'"
                                     @click.stop="updateTradeType(pos, tt.value)">
                                     {{ t(tt.labelKey) }}
                                 </button>
+                                <small v-if="getTradeDurationMinutes(pos)" class="text-muted ms-2">
+                                    {{ t('incoming.holdDuration') }}: {{ formatDuration(getTradeDurationMinutes(pos)) }}
+                                </small>
                             </div>
+                        </div>
+
+                        <!-- Stresslevel (Abschluss) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.closingStressLevel') }}</label>
+                            <div class="d-flex align-items-end flex-wrap">
+                                <template v-for="n in 10" :key="'cs'+n">
+                                    <span @click.stop="updateClosingStress(pos, n)"
+                                        class="stress-dot pointerClass"
+                                        :class="n <= (pos.closingStressLevel || 0) ? 'active' : 'inactive'">
+                                        <span class="stress-number">{{ n }}</span>&#x25CF;
+                                    </span>
+                                    <span v-if="n < 10" class="stress-dot stress-spacer"
+                                        :class="n <= (pos.closingStressLevel || 0) ? 'active' : 'inactive'">
+                                        <span class="stress-number">&nbsp;</span>&#x25CF;
+                                    </span>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Emotionslevel (Abschluss) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.closingEmotionLevel') }}</label>
+                            <div class="d-flex align-items-end flex-wrap">
+                                <template v-for="n in 10" :key="'ce'+n">
+                                    <span @click.stop="updateClosingEmotionLevel(pos, n)"
+                                        class="stress-dot pointerClass"
+                                        :class="n <= (pos.closingEmotionLevel || 0) ? 'active' : 'inactive'">
+                                        <span class="stress-number">{{ n }}</span>&#x25CF;
+                                    </span>
+                                    <span v-if="n < 10" class="stress-dot stress-spacer"
+                                        :class="n <= (pos.closingEmotionLevel || 0) ? 'active' : 'inactive'">
+                                        <span class="stress-number">&nbsp;</span>&#x25CF;
+                                    </span>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Emotionen (Abschluss) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.closingEmotions') }}</label>
+                            <textarea class="form-control form-control-sm" v-model="pos.closingFeelings"
+                                :placeholder="t('incoming.closingEmotionsPlaceholder')" rows="2"></textarea>
                         </div>
 
                         <!-- Notiz (Quill Editor) -->
@@ -1189,14 +1494,14 @@ function getPositionDate(pos) {
                         <!-- Closing Screenshot -->
                         <div class="pb-edit-section">
                             <label class="pb-edit-label">{{ t('incoming.screenshot') }}</label>
-                            <div v-if="pos.closingScreenshotId">
-                                <img v-if="closingScreenshotPreviews[pos.positionId]"
-                                    :src="closingScreenshotPreviews[pos.positionId]"
-                                    class="img-fluid rounded mb-1" style="max-height: 200px;" />
-                                <span v-else class="badge bg-success">{{ t('incoming.screenshotLinked') }}</span>
-                                <button class="btn btn-sm btn-outline-danger ms-2" @click.stop="removeClosingScreenshot(pos)">
-                                    <i class="uil uil-times"></i> {{ t('common.remove') }}
-                                </button>
+                            <div v-if="pos.closingScreenshotId" class="d-flex align-items-start gap-2 mb-2">
+                                <div class="position-relative screenshot-thumb">
+                                    <img v-if="closingScreenshotPreviews[pos.positionId]"
+                                        :src="closingScreenshotPreviews[pos.positionId]"
+                                        class="rounded" style="max-height: 120px; max-width: 200px; object-fit: cover;" />
+                                    <span v-else class="badge bg-secondary"><i class="uil uil-image me-1"></i>1</span>
+                                    <i class="uil uil-times-circle screenshot-remove" @click.stop="removeClosingScreenshot(pos)"></i>
+                                </div>
                             </div>
                             <input v-else type="file" accept="image/*" class="form-control form-control-sm"
                                 @change="handleClosingScreenshotUpload($event, pos)" />
@@ -1289,5 +1594,22 @@ function getPositionDate(pos) {
     padding: 0.15rem 0.3rem;
     vertical-align: middle;
     border: none;
+}
+.screenshot-thumb {
+    display: inline-block;
+}
+.screenshot-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    color: var(--red-color, #ff6960);
+    background: var(--black-bg-3, #1a1a2e);
+    border-radius: 50%;
+    font-size: 1.2rem;
+    cursor: pointer;
+    line-height: 1;
+}
+.screenshot-remove:hover {
+    color: #ff4040;
 }
 </style>
