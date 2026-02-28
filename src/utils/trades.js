@@ -167,7 +167,9 @@ export async function useGetFilteredTrades(param) {
                         // Broker filter: only show trades matching selected exchange
                         const brokerMatch = !selectedBroker.value || element.broker === selectedBroker.value
 
-                        if (brokerMatch && (selectedRange.value.start === 0 && selectedRange.value.end === 0 ? element.td >= selectedRange.value.start : element.td >= selectedRange.value.start && element.td < selectedRange.value.end) && selectedPositions.value.includes(element.strategy) && selectedAccounts.value.includes(element.account) && tradeTagsSelected) {
+                        const accountMatch = !selectedAccounts.value.length || selectedAccounts.value.includes(element.account)
+
+                        if (brokerMatch && (selectedRange.value.start === 0 && selectedRange.value.end === 0 ? element.td >= selectedRange.value.start : element.td >= selectedRange.value.start && element.td < selectedRange.value.end) && selectedPositions.value.includes(element.strategy) && accountMatch && tradeTagsSelected) {
 
                             /**
                              * We're using tempArray to be able to group
