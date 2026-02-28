@@ -2,6 +2,11 @@ import fs from 'fs'
 import { getKnex } from './database.js'
 import { loadDbConfig, getConfigPath } from './db-config.js'
 
+// Sensitive Felder die im Export redaktiert werden
+const REDACTED_SETTINGS_KEYS = [
+    'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek', 'fluxApiKey', 'geminiImageApiKey'
+]
+
 // Alle Tabellen die gesichert werden (Reihenfolge wichtig für Import: abhängige zuletzt)
 const BACKUP_TABLES = [
     'settings',
@@ -58,12 +63,31 @@ export function setupBackupRoutes(app) {
                 }
             }
 
+            // Sensitive Felder redaktieren
+            if (tables.settings && tables.settings.length > 0) {
+                for (const key of REDACTED_SETTINGS_KEYS) {
+                    if (tables.settings[0][key]) tables.settings[0][key] = '[REDACTED]'
+                }
+            }
+            for (const configTable of ['bitunix_config', 'bitget_config']) {
+                if (tables[configTable]) {
+                    for (const row of tables[configTable]) {
+                        if (row.secretKey) row.secretKey = '[REDACTED]'
+                        if (row.passphrase) row.passphrase = '[REDACTED]'
+                    }
+                }
+            }
+
             // db-config.json mitlesen (Datenbankverbindung)
             let dbConfigFile = null
             try {
                 const configPath = getConfigPath()
                 if (fs.existsSync(configPath)) {
                     dbConfigFile = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+                    // DB-Passwort redaktieren
+                    if (dbConfigFile && dbConfigFile.password) {
+                        dbConfigFile = { ...dbConfigFile, password: '[REDACTED]' }
+                    }
                 }
             } catch (e) {
                 // Kein db-config.json vorhanden (SQLite default)

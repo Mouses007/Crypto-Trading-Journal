@@ -18,6 +18,11 @@ const route = useRoute()
 const { t } = useI18n()
 const playbookEntries = ref([])
 const expandedId = ref(null)
+const tpslCollapsedIds = ref([])
+function toggleTpSlHistory(id) {
+    const idx = tpslCollapsedIds.value.indexOf(id)
+    if (idx >= 0) { tpslCollapsedIds.value.splice(idx, 1) } else { tpslCollapsedIds.value.push(id) }
+}
 const editingId = ref(null)
 const savingId = ref(null)
 const quillInstances = {}
@@ -186,23 +191,37 @@ async function loadPlaybookEntries() {
         })
         : allTrades
 
+    // Maps aufbauen für O(1)-Lookups statt O(n)-find() pro Note
+    const tradeByTradeId = new Map()
+    for (const t of brokerFilteredTrades) {
+        if (t.trades && Array.isArray(t.trades)) {
+            for (const tr of t.trades) {
+                tradeByTradeId.set(tr.id, { day: t, detail: tr })
+            }
+        }
+    }
+    const satisfactionByTradeId = new Map()
+    for (const s of allSatisfactions) {
+        if (s.tradeId) satisfactionByTradeId.set(s.tradeId, s)
+    }
+    const tagByTradeId = new Map()
+    for (const t of allTags) {
+        if (t.tradeId) tagByTradeId.set(t.tradeId, t)
+    }
+
     const entries = []
     for (const note of allNotes) {
         if (!note.tradeId) continue
 
-        const trade = brokerFilteredTrades.find(t => {
-            if (t.trades && Array.isArray(t.trades)) {
-                return t.trades.some(tr => tr.id === note.tradeId)
-            }
-            return false
-        })
+        const tradeMatch = tradeByTradeId.get(note.tradeId)
 
         // Skip notes that don't belong to the selected broker
-        if (broker && !trade) continue
+        if (broker && !tradeMatch) continue
 
-        const satisfaction = allSatisfactions.find(s => s.tradeId === note.tradeId)
+        const trade = tradeMatch?.day || null
+        const satisfaction = satisfactionByTradeId.get(note.tradeId)
 
-        const tagRecord = allTags.find(t => t.tradeId === note.tradeId)
+        const tagRecord = tagByTradeId.get(note.tradeId)
         const resolvedTags = []
         if (tagRecord && tagRecord.tags && Array.isArray(tagRecord.tags)) {
             for (const tagId of tagRecord.tags) {
@@ -230,10 +249,7 @@ async function loadPlaybookEntries() {
             }
         }
 
-        let tradeDetail = null
-        if (trade && trade.trades && Array.isArray(trade.trades)) {
-            tradeDetail = trade.trades.find(tr => tr.id === note.tradeId)
-        }
+        const tradeDetail = tradeMatch?.detail || null
 
         const needsParsing = (
             !note.feelings && !note.playbook && !note.entryStressLevel &&
@@ -1186,35 +1202,40 @@ async function saveEntry(entry) {
                         <div v-if="getFilteredTpslHistory(entry.tradingMetadata).length > 0"
                             class="mt-2 pt-2 border-top"
                             style="font-size: 0.75rem; border-color: var(--white-20) !important;">
-                            <div class="text-muted mb-1"><i class="uil uil-history me-1"></i>SL/TP Protokoll</div>
-                            <div v-for="(histEntry, idx) in getFilteredTpslHistory(entry.tradingMetadata)" :key="'hist-'+idx"
-                                class="d-flex align-items-center gap-2 mb-1">
-                                <span class="text-muted" style="width: 90px;">{{ dayjs(histEntry.time).tz(timeZoneTrade.value).format('DD.MM. HH:mm') }}</span>
-                                <span :class="histEntry.type === 'SL' ? (entry.tradingMetadata.slAboveBreakeven ? '' : 'text-danger') : (histEntry.action === 'triggered' ? 'text-success fw-bold' : '')"
-                                    :style="histEntry.type === 'SL' && entry.tradingMetadata.slAboveBreakeven ? 'color: #86efac' : (histEntry.type === 'TP' && histEntry.action !== 'triggered' ? 'color: #f59e0b' : '')">
-                                    {{ histEntry.type }}
-                                </span>
-                                <template v-if="histEntry.action === 'set'">
-                                    <span class="text-muted">&rarr;</span>
-                                    <span class="text-white">{{ histEntry.newVal }}</span>
-                                    <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
-                                </template>
-                                <template v-else-if="histEntry.action === 'moved'">
-                                    <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
-                                    <span class="text-muted">&rarr;</span>
-                                    <span class="text-white">{{ histEntry.newVal }}</span>
-                                    <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
-                                </template>
-                                <template v-else-if="histEntry.action === 'triggered'">
-                                    <span class="text-success" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
-                                    <span class="text-success">&rarr;</span>
-                                    <span class="text-success fw-bold">Ausgelöst &#x2713;</span>
-                                </template>
-                                <template v-else-if="histEntry.action === 'removed'">
-                                    <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
-                                    <span class="text-muted">&rarr; entfernt</span>
-                                </template>
+                            <div class="text-muted mb-1 pointerClass" @click.stop="toggleTpSlHistory(entry.tradeId)">
+                                <i class="uil uil-history me-1"></i>SL/TP Protokoll
+                                <i :class="tpslCollapsedIds.includes(entry.tradeId) ? 'uil-angle-down' : 'uil-angle-up'" class="uil ms-1" style="font-size: 1.3rem; vertical-align: middle;"></i>
                             </div>
+                            <template v-if="!tpslCollapsedIds.includes(entry.tradeId)">
+                                <div v-for="(histEntry, idx) in getFilteredTpslHistory(entry.tradingMetadata)" :key="'hist-'+idx"
+                                    class="d-flex align-items-center gap-2 mb-1">
+                                    <span class="text-muted" style="width: 90px;">{{ dayjs(histEntry.time).tz(timeZoneTrade.value).format('DD.MM. HH:mm') }}</span>
+                                    <span :class="histEntry.type === 'SL' ? (entry.tradingMetadata.slAboveBreakeven ? '' : 'text-danger') : (histEntry.action === 'triggered' ? 'text-success fw-bold' : '')"
+                                        :style="histEntry.type === 'SL' && entry.tradingMetadata.slAboveBreakeven ? 'color: #86efac' : (histEntry.type === 'TP' && histEntry.action !== 'triggered' ? 'color: #f59e0b' : '')">
+                                        {{ histEntry.type }}
+                                    </span>
+                                    <template v-if="histEntry.action === 'set'">
+                                        <span class="text-muted">&rarr;</span>
+                                        <span class="text-white">{{ histEntry.newVal }}</span>
+                                        <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
+                                    </template>
+                                    <template v-else-if="histEntry.action === 'moved'">
+                                        <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
+                                        <span class="text-muted">&rarr;</span>
+                                        <span class="text-white">{{ histEntry.newVal }}</span>
+                                        <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
+                                    </template>
+                                    <template v-else-if="histEntry.action === 'triggered'">
+                                        <span class="text-success" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
+                                        <span class="text-success">&rarr;</span>
+                                        <span class="text-success fw-bold">Ausgelöst &#x2713;</span>
+                                    </template>
+                                    <template v-else-if="histEntry.action === 'removed'">
+                                        <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
+                                        <span class="text-muted">&rarr; entfernt</span>
+                                    </template>
+                                </div>
+                            </template>
                         </div>
                     </div>
 

@@ -216,15 +216,50 @@ function loadTpSlHistory(positionId) {
     if (tpSlHistory.value[positionId]) return tpSlHistory.value[positionId]
     try {
         const stored = localStorage.getItem(`tpsl_history_${positionId}`)
-        const history = stored ? JSON.parse(stored) : []
+        let history = stored ? JSON.parse(stored) : []
+        // Deduplicate: per type, skip entries with same action+oldVal+newVal as previous of same type
+        const norm = v => (v === undefined || v === null || v === '' || v === 0) ? null : String(v)
+        if (history.length > 1) {
+            const clean = []
+            const lastByType = {}
+            for (const curr of history) {
+                const key = curr.type
+                const prev = lastByType[key]
+                if (prev && curr.action === prev.action &&
+                    norm(curr.oldVal) === norm(prev.oldVal) &&
+                    norm(curr.newVal) === norm(prev.newVal)) {
+                    continue
+                }
+                clean.push(curr)
+                lastByType[key] = { action: curr.action, oldVal: curr.oldVal, newVal: curr.newVal }
+            }
+            if (clean.length !== history.length) {
+                history = clean
+                localStorage.setItem(`tpsl_history_${positionId}`, JSON.stringify(history))
+            }
+        }
         tpSlHistory.value[positionId] = history
         return history
     } catch { return [] }
 }
 
 function saveTpSlHistory(positionId, history) {
-    tpSlHistory.value[positionId] = history
-    localStorage.setItem(`tpsl_history_${positionId}`, JSON.stringify(history))
+    // Always dedup before saving
+    const norm = v => (v === undefined || v === null || v === '' || v === 0) ? null : String(v)
+    const clean = []
+    const lastByType = {}
+    for (const curr of history) {
+        const prev = lastByType[curr.type]
+        if (prev && curr.action === prev.action &&
+            norm(curr.oldVal) === norm(prev.oldVal) &&
+            norm(curr.newVal) === norm(prev.newVal)) {
+            continue
+        }
+        clean.push(curr)
+        lastByType[curr.type] = { action: curr.action, oldVal: curr.oldVal, newVal: curr.newVal }
+    }
+    tpSlHistory.value[positionId] = clean
+    localStorage.setItem(`tpsl_history_${positionId}`, JSON.stringify(clean))
 }
 
 function wasTpSlTriggered(positionId, type, oldPrice) {
@@ -246,40 +281,58 @@ function trackTpSlChanges(positionId, newSl, newTp) {
     const history = loadTpSlHistory(positionId)
     const now = Date.now()
 
-    // Get last known values from history
-    let lastSl = null, lastTp = null
-    for (let i = history.length - 1; i >= 0; i--) {
-        if (lastSl === null && history[i].type === 'SL') lastSl = history[i].newVal
-        if (lastTp === null && history[i].type === 'TP') lastTp = history[i].newVal
-        if (lastSl !== null && lastTp !== null) break
+    // Normalize values for consistent comparison
+    const norm = v => (v === undefined || v === null || v === '' || v === 0) ? null : String(v)
+    newSl = norm(newSl)
+    newTp = norm(newTp)
+
+    // Helper: find last entry of given type
+    function lastOfType(type) {
+        for (let i = history.length - 1; i >= 0; i--) {
+            if (history[i].type === type) return { val: norm(history[i].newVal), entry: history[i] }
+        }
+        return { val: null, entry: null }
+    }
+
+    // Helper: prevent duplicate — only push if last entry of same type differs
+    function safePush(entry) {
+        const last = lastOfType(entry.type)
+        if (last.entry &&
+            last.entry.action === entry.action &&
+            norm(last.entry.oldVal) === norm(entry.oldVal) &&
+            norm(last.entry.newVal) === norm(entry.newVal)) {
+            return false // duplicate, skip
+        }
+        history.push(entry)
+        return true
     }
 
     let changed = false
+    const lastSlInfo = lastOfType('SL')
+    const lastTpInfo = lastOfType('TP')
 
     // Track SL changes
-    if (newSl !== lastSl) {
-        if (lastSl === null && newSl !== null) {
-            history.push({ time: now, type: 'SL', oldVal: null, newVal: newSl, action: 'set' })
-        } else if (lastSl !== null && newSl === null) {
-            const triggered = wasTpSlTriggered(positionId, 'SL', lastSl)
-            history.push({ time: now, type: 'SL', oldVal: lastSl, newVal: null, action: triggered ? 'triggered' : 'removed' })
+    if (newSl !== lastSlInfo.val) {
+        if (lastSlInfo.val === null && newSl !== null) {
+            changed = safePush({ time: now, type: 'SL', oldVal: null, newVal: newSl, action: 'set' }) || changed
+        } else if (lastSlInfo.val !== null && newSl === null) {
+            const triggered = wasTpSlTriggered(positionId, 'SL', lastSlInfo.val)
+            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: null, action: triggered ? 'triggered' : 'removed' }) || changed
         } else if (newSl !== null) {
-            history.push({ time: now, type: 'SL', oldVal: lastSl, newVal: newSl, action: 'moved' })
+            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: newSl, action: 'moved' }) || changed
         }
-        changed = true
     }
 
     // Track TP changes
-    if (newTp !== lastTp) {
-        if (lastTp === null && newTp !== null) {
-            history.push({ time: now, type: 'TP', oldVal: null, newVal: newTp, action: 'set' })
-        } else if (lastTp !== null && newTp === null) {
-            const triggered = wasTpSlTriggered(positionId, 'TP', lastTp)
-            history.push({ time: now, type: 'TP', oldVal: lastTp, newVal: null, action: triggered ? 'triggered' : 'removed' })
+    if (newTp !== lastTpInfo.val) {
+        if (lastTpInfo.val === null && newTp !== null) {
+            changed = safePush({ time: now, type: 'TP', oldVal: null, newVal: newTp, action: 'set' }) || changed
+        } else if (lastTpInfo.val !== null && newTp === null) {
+            const triggered = wasTpSlTriggered(positionId, 'TP', lastTpInfo.val)
+            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: null, action: triggered ? 'triggered' : 'removed' }) || changed
         } else if (newTp !== null) {
-            history.push({ time: now, type: 'TP', oldVal: lastTp, newVal: newTp, action: 'moved' })
+            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: newTp, action: 'moved' }) || changed
         }
-        changed = true
     }
 
     if (changed) saveTpSlHistory(positionId, history)
@@ -496,16 +549,29 @@ function updateTradeType(pos, value) {
     const newValue = pos.tradeType === value ? '' : value
     pos.tradeType = newValue
     useUpdateIncomingPosition(pos.objectId, { tradeType: newValue })
+}
+
+function updateClosingTradeType(pos, value) {
+    const newValue = pos.closingTradeType === value ? '' : value
+    pos.closingTradeType = newValue
+    useUpdateIncomingPosition(pos.objectId, { closingTradeType: newValue })
     // Mark as manually overridden so auto-detect doesn't re-apply
-    if (pos.status === 'pending_evaluation') {
-        autoDetectedTradeType.value[pos.positionId] = false
-    }
+    autoDetectedTradeType.value[pos.positionId] = false
 }
 
 // ===== TRADE TYPE AUTO-DETECTION =====
 
 const autoDetectedTradeType = ref({}) // positionId → true (auto) / false (manual override)
-const tpslHistoryCollapsed = ref({}) // positionId → true/false
+const tpslCollapsedIds = ref([])
+
+function toggleTpSlHistory(positionId) {
+    const idx = tpslCollapsedIds.value.indexOf(positionId)
+    if (idx >= 0) {
+        tpslCollapsedIds.value.splice(idx, 1)
+    } else {
+        tpslCollapsedIds.value.push(positionId)
+    }
+}
 
 function getTradeDurationMinutes(pos) {
     let hd = pos.historyData
@@ -534,9 +600,9 @@ function autoDetectAndSetTradeType(pos) {
     if (durationMin === null) return
 
     const detected = detectTradeType(durationMin)
-    if (pos.tradeType !== detected) {
-        pos.tradeType = detected
-        useUpdateIncomingPosition(pos.objectId, { tradeType: detected })
+    if (pos.closingTradeType !== detected) {
+        pos.closingTradeType = detected
+        useUpdateIncomingPosition(pos.objectId, { closingTradeType: detected })
     }
     if (autoDetectedTradeType.value[pos.positionId] === undefined) {
         autoDetectedTradeType.value[pos.positionId] = true
@@ -788,6 +854,7 @@ async function saveMetadata(pos) {
         emotionLevel: pos.emotionLevel || 0,
         entryTimeframe: pos.entryTimeframe || '',
         tradeType: pos.tradeType || '',
+        closingTradeType: pos.closingTradeType || '',
         tags: JSON.parse(JSON.stringify(pos.tags || [])),
         skipEvaluation: pos.skipEvaluation || 0,
         satisfaction: pos.satisfaction != null ? pos.satisfaction : null,
@@ -850,6 +917,7 @@ async function completeClosingEvaluation(pos) {
             emotionLevel: pos.emotionLevel || 0,
             entryTimeframe: pos.entryTimeframe || '',
             tradeType: pos.tradeType || '',
+            closingTradeType: pos.closingTradeType || '',
             tags: JSON.parse(JSON.stringify(pos.tags || [])),
             satisfaction: pos.satisfaction != null ? pos.satisfaction : null,
             strategyFollowed: pos.strategyFollowed != null ? pos.strategyFollowed : -1,
@@ -935,6 +1003,7 @@ async function completeClosingEvaluation(pos) {
                 satisfaction: pos.satisfaction != null ? pos.satisfaction : null,
                 stressLevel: pos.stressLevel || 0,
                 tradeType: pos.tradeType || '',
+                closingTradeType: pos.closingTradeType || '',
                 strategyFollowed: pos.strategyFollowed != null ? pos.strategyFollowed : -1,
                 closingNote: pos.closingPlaybook || '',
                 closingStressLevel: pos.closingStressLevel || 0,
@@ -1154,7 +1223,7 @@ function getPositionDate(pos) {
                                 </tbody>
                             </table>
                             <!-- Totals row -->
-                            <div v-if="getEntryFills(pos.positionId, pos.side).length > 1"
+                            <div v-if="getFillsForPosition(pos.positionId).trades.length > 0"
                                 class="d-flex justify-content-between border-top pt-1 mt-1" style="font-size: 0.8rem; border-color: var(--white-20) !important;">
                                 <span class="text-muted">
                                     {{ t('incoming.fillTotal') }}:
@@ -1200,11 +1269,11 @@ function getPositionDate(pos) {
                         <!-- TP/SL Change History -->
                         <div v-if="getTpSlHistoryForPosition(pos.positionId).length > 0"
                             class="mt-2 pt-2 border-top" style="font-size: 0.75rem; border-color: var(--white-20) !important;">
-                            <div class="text-muted mb-1 pointerClass" @click.stop="tpslHistoryCollapsed[pos.positionId] = !tpslHistoryCollapsed[pos.positionId]">
+                            <div class="text-muted mb-1 pointerClass" @click.stop="toggleTpSlHistory(pos.positionId)">
                                 <i class="uil uil-history me-1"></i>SL/TP Protokoll
-                                <i :class="tpslHistoryCollapsed[pos.positionId] ? 'uil-angle-down' : 'uil-angle-up'" class="uil ms-1"></i>
+                                <i :class="tpslCollapsedIds.includes(pos.positionId) ? 'uil-angle-down' : 'uil-angle-up'" class="uil ms-1" style="font-size: 1.3rem; vertical-align: middle;"></i>
                             </div>
-                            <template v-if="!tpslHistoryCollapsed[pos.positionId]">
+                            <template v-if="!tpslCollapsedIds.includes(pos.positionId)">
                                 <div v-for="(entry, idx) in getTpSlHistoryForPosition(pos.positionId)" :key="idx"
                                     class="d-flex align-items-center gap-2 mb-1">
                                     <span class="text-muted" style="width: 90px;">{{ dayjs(entry.time).tz(timeZoneTrade.value).format('DD.MM. HH:mm') }}</span>
@@ -1406,31 +1475,13 @@ function getPositionDate(pos) {
                             <div class="d-flex flex-wrap gap-1 align-items-center">
                                 <button v-for="tt in tradeTypeOptions" :key="tt.value"
                                     class="btn btn-sm py-0 px-2"
-                                    :class="pos.tradeType === tt.value ? 'btn-primary' : 'btn-outline-secondary'"
-                                    @click.stop="updateTradeType(pos, tt.value)">
+                                    :class="pos.closingTradeType === tt.value ? 'btn-primary' : 'btn-outline-secondary'"
+                                    @click.stop="updateClosingTradeType(pos, tt.value)">
                                     {{ t(tt.labelKey) }}
                                 </button>
                                 <small v-if="getTradeDurationMinutes(pos)" class="text-muted ms-2">
                                     {{ t('incoming.holdDuration') }}: {{ formatDuration(getTradeDurationMinutes(pos)) }}
                                 </small>
-                            </div>
-                        </div>
-
-                        <!-- Stresslevel (Abschluss) -->
-                        <div class="pb-edit-section">
-                            <label class="pb-edit-label">{{ t('incoming.closingStressLevel') }}</label>
-                            <div class="d-flex align-items-end flex-wrap">
-                                <template v-for="n in 10" :key="'cs'+n">
-                                    <span @click.stop="updateClosingStress(pos, n)"
-                                        class="stress-dot pointerClass"
-                                        :class="n <= (pos.closingStressLevel || 0) ? 'active' : 'inactive'">
-                                        <span class="stress-number">{{ n }}</span>&#x25CF;
-                                    </span>
-                                    <span v-if="n < 10" class="stress-dot stress-spacer"
-                                        :class="n <= (pos.closingStressLevel || 0) ? 'active' : 'inactive'">
-                                        <span class="stress-number">&nbsp;</span>&#x25CF;
-                                    </span>
-                                </template>
                             </div>
                         </div>
 

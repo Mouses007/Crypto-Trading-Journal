@@ -1,7 +1,8 @@
 import axios from 'axios'
 import dayjs from './dayjs-setup.js'
-import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete } from './db.js'
+import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete, dbFindTradeIdByPositionId } from './db.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, pendingOpeningCount, pendingClosingCount, evalNotificationShown, evalNotificationDismissed, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
+import { expandedId } from '../stores/ui.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker } from '../stores/filters.js'
 import i18n from '../i18n'
@@ -194,9 +195,9 @@ async function handleClosedPositions(closedPositions) {
                     const durationMin = (closeTime - openTime) / (1000 * 60)
                     const scalpMax = currentUser.value?.scalpMaxMinutes ?? 15
                     const daytradeMaxMin = (currentUser.value?.daytradeMaxHours ?? 24) * 60
-                    if (durationMin <= scalpMax) incoming.tradeType = 'scalp'
-                    else if (durationMin <= daytradeMaxMin) incoming.tradeType = 'day'
-                    else incoming.tradeType = 'swing'
+                    if (durationMin <= scalpMax) incoming.closingTradeType = 'scalp'
+                    else if (durationMin <= daytradeMaxMin) incoming.closingTradeType = 'day'
+                    else incoming.closingTradeType = 'swing'
                 }
                 await dbDelete('incoming_positions', incoming.objectId)
                 console.log(` -> Position ${incoming.symbol} geschlossen und als Trade übernommen`)
@@ -236,16 +237,16 @@ async function fetchRecentlyClosed() {
             })
             if (existingIncoming) continue
 
-            // Dedup 2: Check if trade already exists
+            // Dedup 2: Check if trade already exists (positionId-Suche statt starrem ID-Muster)
             // Support both Bitunix (mtime/ctime) and Bitget (uTime/cTime) timestamps
             const closeTime = parseInt(histPos.mtime || histPos.uTime || histPos.ctime || histPos.cTime)
             const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
-            const expectedTradeId = `t${dateUnix}_0_${positionId}`
 
             const dayRecord = await dbFirst('trades', { equalTo: { dateUnix: dateUnix } })
             if (dayRecord) {
                 const dayTrades = Array.isArray(dayRecord.trades) ? dayRecord.trades : []
-                if (dayTrades.some(t => t.id === expectedTradeId)) continue
+                // Prüfe ob positionId bereits in einem Trade-ID vorkommt (Format: t{date}_{idx}_{posId})
+                if (dayTrades.some(t => t.id && String(t.id).endsWith('_' + positionId))) continue
             }
 
             // New closed position: create trade record
@@ -309,9 +310,11 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
     const grossPL = isBitget
         ? parseFloat(histPos.pnl || 0)
         : parseFloat(histPos.realizedPNL || 0)
+    // Funding-Vorzeichen beibehalten (wie in quickImport.js):
+    // positiv = bezahlt, negativ = erhalten → reduziert Gesamtgebühren
     const fee = isBitget
-        ? Math.abs(parseFloat(histPos.openFee || 0)) + Math.abs(parseFloat(histPos.closeFee || 0)) + Math.abs(parseFloat(histPos.totalFunding || 0))
-        : Math.abs(parseFloat(histPos.fee || 0)) + Math.abs(parseFloat(histPos.funding || 0))
+        ? Math.abs(parseFloat(histPos.openFee || 0)) + Math.abs(parseFloat(histPos.closeFee || 0)) + parseFloat(histPos.totalFunding || 0)
+        : Math.abs(parseFloat(histPos.fee || 0)) + parseFloat(histPos.funding || 0)
     // Bitunix: mtime/ctime; Bitget: uTime/cTime
     const closeTime = parseInt(histPos.mtime || histPos.uTime || histPos.ctime || histPos.cTime)
     const openTime = parseInt(histPos.ctime || histPos.cTime)
@@ -521,6 +524,15 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
  * Load all incoming positions from local DB into reactive state.
  * Ensures tags and closingTags are always independent deep-copied arrays.
  */
+// Metadata fields that the user edits locally (preserve during polling reload)
+const LOCAL_EDIT_FIELDS = [
+    'feelings', 'stressLevel', 'emotionLevel', 'entryTimeframe', 'tradeType',
+    'closingTradeType', 'tags', 'closingTags', 'skipEvaluation', 'satisfaction',
+    'strategyFollowed', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings',
+    'closingTimeframe', 'playbook', 'closingPlaybook', 'entryNote', 'closingNote',
+    'entryScreenshotId', 'closingScreenshotId', 'trendScreenshotId'
+]
+
 async function loadIncomingPositions() {
     const broker = selectedBroker.value || 'bitunix'
     // Load both open and pending_evaluation positions, filtered by broker
@@ -532,6 +544,24 @@ async function loadIncomingPositions() {
         equalTo: { status: 'pending_evaluation', broker: broker },
         descending: 'id'
     })
+
+    // Preserve local state of the expanded (currently edited) position
+    let preservedLocal = null
+    if (expandedId.value) {
+        const expandedPos = incomingPositions.find(p => p.positionId === expandedId.value)
+        if (expandedPos) {
+            preservedLocal = { positionId: expandedPos.positionId }
+            LOCAL_EDIT_FIELDS.forEach(field => {
+                const val = expandedPos[field]
+                if (val !== undefined && val !== null) {
+                    preservedLocal[field] = (Array.isArray(val) || typeof val === 'object')
+                        ? JSON.parse(JSON.stringify(val))
+                        : val
+                }
+            })
+        }
+    }
+
     incomingPositions.length = 0
 
     // Ensure tags and closingTags are independent deep-copied arrays (never shared reference)
@@ -539,6 +569,17 @@ async function loadIncomingPositions() {
         pos.tags = Array.isArray(pos.tags) ? JSON.parse(JSON.stringify(pos.tags)) : []
         pos.closingTags = Array.isArray(pos.closingTags) ? JSON.parse(JSON.stringify(pos.closingTags)) : []
         if (pos.tags === pos.closingTags) pos.closingTags = []
+
+        // Restore local edits for the expanded position
+        if (preservedLocal && String(pos.positionId) === String(preservedLocal.positionId)) {
+            LOCAL_EDIT_FIELDS.forEach(field => {
+                if (preservedLocal[field] !== undefined) {
+                    pos[field] = (Array.isArray(preservedLocal[field]) || typeof preservedLocal[field] === 'object')
+                        ? JSON.parse(JSON.stringify(preservedLocal[field]))
+                        : preservedLocal[field]
+                }
+            })
+        }
         return pos
     }
 
@@ -635,6 +676,7 @@ export async function useTransferClosingMetadata(incoming, histPos, {
     satisfaction = null,
     stressLevel = 0,
     tradeType = '',
+    closingTradeType = '',
     strategyFollowed = -1,
     closingNote = '',
     closingStressLevel = 0,
@@ -653,7 +695,7 @@ export async function useTransferClosingMetadata(incoming, histPos, {
         throw new Error('Kein gültiger Zeitstempel für die geschlossene Position')
     }
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
-    const tradeId = `t${dateUnix}_0_${histPos.positionId}`
+    const tradeId = await dbFindTradeIdByPositionId(dateUnix, histPos.positionId)
 
     // Build combined note HTML for backwards compatibility
     let noteText = ''
@@ -674,6 +716,7 @@ export async function useTransferClosingMetadata(incoming, histPos, {
         note: noteText,
         // Opening fields
         tradeType: tradeType || incoming.tradeType || '',
+        closingTradeType: closingTradeType || incoming.closingTradeType || '',
         entryStressLevel: incoming.stressLevel || 0,
         emotionLevel: incoming.emotionLevel || 0,
         entryNote: incoming.entryNote || '',

@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages']
     let fixed = 0
 
     for (const table of tables) {
@@ -383,8 +383,9 @@ async function runMigrations(knex, client) {
     // Trend screenshot (übergeordneter TF)
     await addColumnIfNotExists('incoming_positions', 'trendScreenshotId', (t) => t.text('trendScreenshotId').defaultTo(''))
 
-    // Trade type (scalp, day, swing)
+    // Trade type (scalp, day, swing) — opening + closing separate
     await addColumnIfNotExists('incoming_positions', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
+    await addColumnIfNotExists('incoming_positions', 'closingTradeType', (t) => t.text('closingTradeType').defaultTo(''))
 
     // Strategy followed (closing eval)
     await addColumnIfNotExists('incoming_positions', 'strategyFollowed', (t) => t.integer('strategyFollowed').defaultTo(-1))
@@ -436,8 +437,9 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('notes', 'closingTimeframe', (t) => t.text('closingTimeframe').defaultTo(''))
     await addColumnIfNotExists('notes', 'closingPlaybook', (t) => t.text('closingPlaybook').defaultTo(''))
 
-    // Trade type (scalp, day, swing)
+    // Trade type (scalp, day, swing) — opening + closing separate
     await addColumnIfNotExists('notes', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
+    await addColumnIfNotExists('notes', 'closingTradeType', (t) => t.text('closingTradeType').defaultTo(''))
 
     // Strategy followed
     await addColumnIfNotExists('notes', 'strategyFollowed', (t) => t.integer('strategyFollowed').defaultTo(-1))

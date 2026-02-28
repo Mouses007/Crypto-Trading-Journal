@@ -426,7 +426,7 @@ export function setupBitgetRoutes(app) {
             const config = await getDecryptedBitgetConfig()
 
             if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
-                return res.json({ ok: true, positions: [], count: 0 })
+                return res.status(400).json({ ok: false, error: 'Bitget API nicht konfiguriert', positions: [], count: 0 })
             }
 
             // Read lastHistoryScan timestamp
@@ -471,7 +471,7 @@ export function setupBitgetRoutes(app) {
             res.json({ ok: true, positions: allPositions, count: allPositions.length })
         } catch (error) {
             console.error(' -> Bitget recent closed positions error:', error.message)
-            res.json({ ok: true, positions: [], count: 0 })
+            res.status(500).json({ ok: false, error: error.message || 'Bitget History-Scan fehlgeschlagen', positions: [], count: 0 })
         }
     })
 
@@ -548,13 +548,19 @@ export function setupBitgetRoutes(app) {
             }
 
             // Bitget history-position doesn't support positionId filter directly,
-            // so we fetch recent history and filter client-side
-            const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, {
-                limit: 100
-            })
-
-            const positions = result.data?.list || []
-            const pos = positions.find(p => String(p.positionId) === String(req.params.positionId)) || null
+            // so we fetch recent history and filter client-side (paginated)
+            let pos = null
+            let endTime = ''
+            for (let page = 0; page < 10 && !pos; page++) {
+                const params = { limit: 100 }
+                if (endTime) params.endTime = endTime
+                const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, params)
+                const list = result.data?.list || []
+                if (!list.length) break
+                pos = list.find(p => String(p.positionId) === String(req.params.positionId)) || null
+                endTime = list[list.length - 1].cTime || list[list.length - 1].ctime || ''
+                if (!endTime) break
+            }
 
             if (pos) {
                 console.log(` -> Bitget history position ${pos.symbol}: side=${pos.holdSide}, openAvgPrice=${pos.openAvgPrice}, closeAvgPrice=${pos.closeAvgPrice}, pnl=${pos.pnl}`)

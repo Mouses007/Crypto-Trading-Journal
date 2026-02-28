@@ -4,6 +4,24 @@ import { logWarn, logError } from './logger.js'
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
+/**
+ * SSRF-Schutz: Prüft ob eine URL auf einen lokalen/privaten Host zeigt.
+ * Erlaubt: localhost, 127.0.0.1, ::1, 0.0.0.0, 192.168.x.x, 10.x.x.x, 172.16-31.x.x
+ * @param {string} url - Die zu prüfende URL
+ * @returns {boolean} true wenn lokal/privat, false sonst
+ */
+function isAllowedOllamaUrl(url) {
+    try {
+        const parsed = new URL(url)
+        const host = parsed.hostname
+        const isLocal = ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(host)
+        const isPrivate = host.startsWith('192.168.') || host.startsWith('10.') || host.match(/^172\.(1[6-9]|2\d|3[01])\./)
+        return isLocal || isPrivate
+    } catch {
+        return false
+    }
+}
+
 /** Parse and validate a numeric ID from request params. Returns the integer or sends 400 and returns null. */
 function parseId(param, res, paramName = 'id') {
     const id = parseInt(param, 10)
@@ -77,17 +95,8 @@ export function setupOllamaRoutes(app) {
     // Legacy Ollama status endpoint (für Abwärtskompatibilität + Modelle laden)
     app.get('/api/ollama/status', async (req, res) => {
         let url = req.query.url || await getOllamaUrl()
-        // SSRF-Schutz: Nur localhost/private Hosts erlauben
-        try {
-            const parsed = new URL(url)
-            const host = parsed.hostname
-            const isLocal = ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(host)
-            const isPrivate = host.startsWith('192.168.') || host.startsWith('10.') || host.match(/^172\.(1[6-9]|2\d|3[01])\./)
-            if (!isLocal && !isPrivate) {
-                return res.status(400).json({ error: 'Nur lokale/private Hosts erlaubt' })
-            }
-        } catch (e) {
-            return res.status(400).json({ error: 'Ungültige URL' })
+        if (!isAllowedOllamaUrl(url)) {
+            return res.status(400).json({ error: 'Nur lokale/private Hosts erlaubt' })
         }
         await checkOllamaStatus(res, url)
     })
@@ -112,6 +121,9 @@ export function setupOllamaRoutes(app) {
         try {
             if (provider === 'ollama') {
                 const url = ollamaUrl || await getOllamaUrl()
+                if (!isAllowedOllamaUrl(url)) {
+                    return res.json({ success: false, message: 'Nur lokale/private Hosts erlaubt für Ollama-URL' })
+                }
                 const response = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(5000) })
                 if (response.ok) {
                     return res.json({ success: true, message: 'Ollama ist erreichbar' })
@@ -306,10 +318,16 @@ export function setupOllamaRoutes(app) {
         try {
             const knex = getKnex()
 
-            // KI-Settings laden
-            const settings = await knex('settings')
-                .select('aiProvider', 'aiModel', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
-                .where('id', 1).first()
+            // KI-Settings + Trade-Metadaten parallel laden (4 unabhängige Queries)
+            const [settings, noteRecord, satRecord, tagRecord] = await Promise.all([
+                knex('settings')
+                    .select('aiProvider', 'aiModel', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                    .where('id', 1).first(),
+                knex('notes').where('tradeId', tradeId).first(),
+                knex('satisfactions').where('tradeId', tradeId).first(),
+                knex('tags').where('tradeId', tradeId).first(),
+            ])
+
             const provider = settings?.aiProvider || 'ollama'
             const model = settings?.aiModel || ''
             const temperature = settings?.aiTemperature ?? 0.7
@@ -317,20 +335,14 @@ export function setupOllamaRoutes(app) {
             const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
             const apiKey = getApiKeyForProvider(settings, provider)
 
-            // Notiz des Users laden (falls vorhanden)
-            const noteRecord = await knex('notes').where('tradeId', tradeId).first()
             const userNote = noteRecord?.note || ''
             const entryNote = noteRecord?.entryNote || ''
             const closingNote = noteRecord?.closingNote || ''
             const feelings = noteRecord?.feelings || ''
             const playbook = noteRecord?.playbook || ''
 
-            // Satisfaction laden
-            const satRecord = await knex('satisfactions').where('tradeId', tradeId).first()
             const satisfaction = satRecord ? (satRecord.satisfaction === 1 ? 'Zufrieden' : satRecord.satisfaction === 0 ? 'Unzufrieden' : 'Neutral') : 'Nicht bewertet'
 
-            // Tags laden
-            const tagRecord = await knex('tags').where('tradeId', tradeId).first()
             let tradeTags = ''
             if (tagRecord?.tags) {
                 try {
@@ -874,11 +886,17 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             const knex = getKnex()
             const { aiProvider, aiModel, aiOllamaUrl, aiTemperature, aiMaxTokens, aiScreenshots, aiReportPrompt, aiChatEnabled, keys } = req.body
 
+            // SSRF-Schutz: Ollama-URL validieren bevor sie in die DB geht
+            const sanitizedOllamaUrl = aiOllamaUrl || 'http://localhost:11434'
+            if (!isAllowedOllamaUrl(sanitizedOllamaUrl)) {
+                return res.status(400).json({ error: 'Nur lokale/private Hosts erlaubt für Ollama-URL' })
+            }
+
             // Basis-Settings
             await knex('settings').where('id', 1).update({
                 aiProvider: aiProvider || 'ollama',
                 aiModel: aiModel || '',
-                aiOllamaUrl: aiOllamaUrl || 'http://localhost:11434',
+                aiOllamaUrl: sanitizedOllamaUrl,
                 aiTemperature: aiTemperature ?? 0.7,
                 aiMaxTokens: aiMaxTokens || 1500,
                 aiScreenshots: aiScreenshots ? 1 : 0,
@@ -1150,6 +1168,11 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
 
 async function generateOllama(prompt, model, temperature, maxTokens, ollamaUrl) {
     const url = ollamaUrl || await getOllamaUrl()
+
+    // SSRF-Schutz
+    if (!isAllowedOllamaUrl(url)) {
+        throw new Error('Nur lokale/private Hosts erlaubt für Ollama-URL')
+    }
 
     // Verwende http/https direkt statt fetch(), da Node.js fetch (undici)
     // einen headersTimeout von 300s hat, der bei großen Modellen (7B+) nicht reicht.

@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { pageId, screenType } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
-import { selectedBroker, brokers } from "../stores/globals.js"
+import { selectedBroker, brokers } from "../stores/filters.js"
 import SidebarFilters from './SidebarFilters.vue'
 import donateBtc from '../assets/donate-btc.png'
 import donatePaypal from '../assets/donate-paypal.jpg'

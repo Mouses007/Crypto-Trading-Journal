@@ -1,6 +1,6 @@
 {
   "name": "crypto-trading-journal",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "Local, privacy-focused crypto futures trading journal. Bitunix + Bitget support, SQLite/PostgreSQL, AI reports, auto-update.",
   "author": "Mouses007",
   "license": "GPL-3.0-or-later",
@@ -26,7 +26,6 @@
     "markerjs2": "^2.32.1",
     "papaparse": "^5.4.1",
     "pg": "^8.18.0",
-    "pinia": "^2.2.2",
     "quill": "^2.0.2",
     "sharp": "^0.34.5",
     "sortablejs": "^1.15.2",

@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMounted, hasData, barChartNegativeTagGroups, timeZoneTrade } from '../stores/ui.js'
 import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBroker } from '../stores/filters.js'
-import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades } from '../stores/trades.js'
+import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades, excursions } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
 import { dbFind } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
@@ -37,6 +37,7 @@ const cardDefinitions = computed(() => [
     { key: 'strategyTagStats', label: t('dashboard.strategyTagStats') },
     { key: 'bySymbol', label: t('dashboard.bySymbol', { metric: '' }).replace(/[()]/g, '').trim() },
     { key: 'feesBySymbol', label: t('dashboard.feesBySymbol') },
+    { key: 'mfeAnalysis', label: t('dashboard.mfeAnalysis') },
 ])
 
 function toggleCard(key) {
@@ -96,7 +97,7 @@ const ratioCompute = computed(() => {
     if (localStorage.getItem('selectedRatio') == 'appt') {
         ratio.shortName = "APPT"
         ratio.name = t('dashboard.avgProfitPerTrade')
-        ratio.value = useTwoDecCurrencyFormat(totals[amountCase.value + 'Proceeds'] / totals.trades)
+        ratio.value = useTwoDecCurrencyFormat(totals.trades ? (totals[amountCase.value + 'Proceeds'] / totals.trades) : 0)
         ratio.tooltipTitle = '<div>' + t('dashboard.avgProfitPerTrade') + '</div><div>' + t('dashboard.apptFormula') + '</div><div>' + t('dashboard.proceeds') + ': ' + useThousandCurrencyFormat(totals[amountCase.value + 'Proceeds']) + '</div><div>Trades: ' + useThousandFormat(totals.trades) + '</div>'
     }
     if (localStorage.getItem('selectedRatio') == 'profitFactor') {
@@ -267,6 +268,73 @@ const strategyTagStats = computed(() => {
 
     stats.sort((a, b) => b.totalPnl - a.totalPnl)
     return stats
+})
+
+// MFE Analyse: Verlust-Trades die zwischenzeitlich im Plus waren
+const mfeAnalysisStats = computed(() => {
+    const prefix = amountCase.value // 'gross' oder 'net'
+    const result = {
+        totalLossTrades: 0,
+        lossTradesWithMfe: 0,
+        percentage: 0,
+        totalMfeProfit: 0,
+        totalRealizedLoss: 0,
+        trades: []
+    }
+    if (!filteredTradesTrades || filteredTradesTrades.length === 0 || !excursions || excursions.length === 0) return result
+
+    // Excursions-Map für schnellen Lookup
+    const excMap = new Map()
+    excursions.forEach(e => { if (e.tradeId) excMap.set(e.tradeId, e) })
+
+    filteredTradesTrades.forEach(trade => {
+        const proceeds = trade[prefix + 'Proceeds'] || 0
+        if (proceeds >= 0) return // nur Verlust-Trades
+
+        result.totalLossTrades++
+
+        const exc = excMap.get(trade.id)
+        if (!exc || !exc.mfePrice) return
+
+        // War der Trade zwischenzeitlich im Plus?
+        const isLong = trade.strategy === 'long'
+        const wasInProfit = isLong
+            ? exc.mfePrice > trade.entryPrice
+            : exc.mfePrice < trade.entryPrice
+
+        if (!wasInProfit) return
+
+        result.lossTradesWithMfe++
+
+        // Berechne verschenkten Gewinn
+        const mfeProfit = isLong
+            ? (exc.mfePrice - trade.entryPrice) * (trade.buyQuantity || 0)
+            : (trade.entryPrice - exc.mfePrice) * (trade.buyQuantity || 0)
+        const realizedLoss = Math.abs(proceeds)
+
+        result.totalMfeProfit += mfeProfit
+        result.totalRealizedLoss += realizedLoss
+
+        result.trades.push({
+            symbol: trade.symbol || '',
+            date: trade.td || trade.entryTime,
+            strategy: trade.strategy,
+            mfeProfit,
+            realizedLoss,
+            mfePrice: exc.mfePrice,
+            entryPrice: trade.entryPrice,
+            exitPrice: trade.exitPrice
+        })
+    })
+
+    result.percentage = result.totalLossTrades > 0
+        ? (result.lossTradesWithMfe / result.totalLossTrades * 100)
+        : 0
+
+    // Sortiert nach verschenktem Gewinn (mfeProfit) absteigend
+    result.trades.sort((a, b) => b.mfeProfit - a.mfeProfit)
+
+    return result
 })
 
 const feeStats = computed(() => {
@@ -528,11 +596,17 @@ onBeforeMount(async () => {
                                                     </td>
                                                     <td class="text-end">{{ useTwoDecCurrencyFormat(totals.tradingFees || totals.commission || 0) }}</td>
                                                 </tr>
-                                                <tr v-if="(totals.fundingFees || 0) > 0">
-                                                    <td>{{ t('dashboard.fundingFees') }}
+                                                <tr v-if="(totals.fundingPaid || 0) > 0">
+                                                    <td>{{ t('dashboard.fundingPaid') }}
                                                         <i class="ps-1 uil uil-info-circle" style="font-size: 0.75rem; opacity: 0.5;" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.fundingFeesTooltip')"></i>
                                                     </td>
-                                                    <td class="text-end">{{ useTwoDecCurrencyFormat(totals.fundingFees) }}</td>
+                                                    <td class="text-end">{{ useTwoDecCurrencyFormat(totals.fundingPaid) }}</td>
+                                                </tr>
+                                                <tr v-if="(totals.fundingReceived || 0) > 0">
+                                                    <td>{{ t('dashboard.fundingReceived') }}
+                                                        <i class="ps-1 uil uil-info-circle" style="font-size: 0.75rem; opacity: 0.5;" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.fundingFeesTooltip')"></i>
+                                                    </td>
+                                                    <td class="text-end greenTrade">-{{ useTwoDecCurrencyFormat(totals.fundingReceived) }}</td>
                                                 </tr>
                                                 <tr v-if="(totals.otherCommission || 0) > 0">
                                                     <td>{{ t('dashboard.regulatoryFees') }}</td>
@@ -700,6 +774,68 @@ onBeforeMount(async () => {
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.tradingPerformanceTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="perfChart1" class="chartClass" style="height: 550px;"></div>
+                                    </div>
+                                </div>
+
+                                <!-- MFE ANALYSE: Verlust-Trades die im Plus waren -->
+                                <div v-if="isVisible('mfeAnalysis') && mfeAnalysisStats.lossTradesWithMfe > 0" class="col-12 mb-3">
+                                    <div class="dailyCard">
+                                        <h6>{{ t('dashboard.mfeAnalysis') }}
+                                            <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.mfeAnalysisTooltip')"></i>
+                                        </h6>
+
+                                        <!-- Zusammenfassung -->
+                                        <div class="d-flex flex-wrap gap-3 mb-3">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="text-muted">{{ t('dashboard.lossTradesInProfit') }}:</span>
+                                                <span class="fw-bold redTrade">
+                                                    {{ mfeAnalysisStats.lossTradesWithMfe }} / {{ mfeAnalysisStats.totalLossTrades }}
+                                                    <span class="txt-small">({{ mfeAnalysisStats.percentage.toFixed(0) }}%)</span>
+                                                </span>
+                                            </div>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="text-muted">{{ t('dashboard.givenBackProfit') }}:</span>
+                                                <span class="fw-bold greenTrade">{{ useTwoDecCurrencyFormat(mfeAnalysisStats.totalMfeProfit) }}</span>
+                                            </div>
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="text-muted">{{ t('dashboard.realizedLoss') }}:</span>
+                                                <span class="fw-bold redTrade">-{{ useTwoDecCurrencyFormat(mfeAnalysisStats.totalRealizedLoss) }}</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Detail-Tabelle -->
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-borderless trade-type-table mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>{{ t('dashboard.symbol') }}</th>
+                                                        <th>{{ t('dashboard.date') }}</th>
+                                                        <th class="text-center">{{ t('dashboard.side') }}</th>
+                                                        <th class="text-end">Entry</th>
+                                                        <th class="text-end">MFE</th>
+                                                        <th class="text-end">Exit</th>
+                                                        <th class="text-end">{{ t('dashboard.maxReachedProfit') }}</th>
+                                                        <th class="text-end">{{ t('dashboard.realizedLoss') }}</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-for="(row, idx) in mfeAnalysisStats.trades" :key="idx">
+                                                        <td>{{ row.symbol }}</td>
+                                                        <td class="text-muted">{{ dayjs.unix(row.date).tz(timeZoneTrade).format('DD.MM.YY HH:mm') }}</td>
+                                                        <td class="text-center">
+                                                            <span class="trade-type-badge" :style="{ background: row.strategy === 'long' ? '#22c55e' : '#ef4444' }">
+                                                                {{ row.strategy === 'long' ? 'Long' : 'Short' }}
+                                                            </span>
+                                                        </td>
+                                                        <td class="text-end text-muted">{{ useXDecFormat(row.entryPrice, 4) }}</td>
+                                                        <td class="text-end greenTrade">{{ useXDecFormat(row.mfePrice, 4) }}</td>
+                                                        <td class="text-end redTrade">{{ useXDecFormat(row.exitPrice, 4) }}</td>
+                                                        <td class="text-end fw-bold greenTrade">{{ useTwoDecCurrencyFormat(row.mfeProfit) }}</td>
+                                                        <td class="text-end fw-bold redTrade">-{{ useTwoDecCurrencyFormat(row.realizedLoss) }}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 </div>
 

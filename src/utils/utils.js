@@ -340,9 +340,6 @@ export function useInitPopover() {
                     bootstrap.Popover.getInstance(popDelete).hide();
                 }
             });
-            if (pageId.value == "notes") {
-                deleteNote.value();
-            }
             if (pageId.value == "screenshots" || pageId.value == "daily") {
                 useDeleteScreenshot();
             }

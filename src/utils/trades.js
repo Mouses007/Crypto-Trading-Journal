@@ -114,10 +114,10 @@ export async function useGetFilteredTrades(param) {
                         element = _.omit(element, ["excursions"]) //We recreate trades and omit excursions
 
                         //console.log("element "+JSON.stringify(element))
-                        if (element.side == "long") {
-                            element.priceVar = element.entryPrice - element.exitPrice
-                        } else {
+                        if (element.strategy == "long") {
                             element.priceVar = element.exitPrice - element.entryPrice
+                        } else {
+                            element.priceVar = element.entryPrice - element.exitPrice
                         }
 
                         let tradeTagsSelected = false
@@ -311,6 +311,10 @@ export async function useGetTrades(param) {
             trades = [...results]
             imports.length = 0
             imports.value = [...results]
+        } else {
+            trades.length = 0
+            imports.length = 0
+            imports.value = []
         }
 }
 
@@ -353,6 +357,8 @@ export async function useTotalTrades() {
 
         var totalCommission = 0
         var totalFundingFees = 0
+        var totalFundingPaid = 0
+        var totalFundingReceived = 0
         var totalTradingFees = 0
         var totalOtherCommission = 0
         var totalFees = 0
@@ -390,7 +396,7 @@ export async function useTotalTrades() {
         var totalNetLossQuantity = 0
         var totalNetWinsCount = 0
         var totalNetLossCount = 0
-        var financials = {}
+        var financials = 0
 
         //console.log("filtered trades "+JSON.stringify(filteredTrades[0].trades))
 
@@ -430,6 +436,8 @@ export async function useTotalTrades() {
                 totalQuantity += el.buyQuantity + el.sellQuantity
                 totalCommission += el.commission
                 totalFundingFees += (el.fundingFee || 0)
+                if ((el.fundingFee || 0) > 0) totalFundingPaid += el.fundingFee
+                if ((el.fundingFee || 0) < 0) totalFundingReceived += Math.abs(el.fundingFee)
                 totalTradingFees += (el.tradingFee || 0)
                 totalOtherCommission += el.sec + el.taf + el.nscc + el.nasdaq
                 totalFees += el.commission + el.sec + el.taf + el.nscc + el.nasdaq
@@ -506,6 +514,8 @@ export async function useTotalTrades() {
          *******************/
         temp2.commission = totalCommission
         temp2.fundingFees = totalFundingFees
+        temp2.fundingPaid = totalFundingPaid
+        temp2.fundingReceived = totalFundingReceived
         temp2.tradingFees = totalTradingFees
         temp2.otherCommission = totalOtherCommission
         temp2.fees = totalFees
@@ -543,9 +553,9 @@ export async function useTotalTrades() {
         temp2.netSharePLLoss = totalNetSharePLLoss
         temp2.highNetSharePLWin = highNetSharePLWin
         temp2.highNetSharePLLoss = highNetSharePLLoss
-        temp2.netProceedsEstimations = temp2.grossProceedsEstimations - temp2.feesEstimations
-        temp2.netWinsEstimations = temp2.grossWinsEstimations - temp2.feesEstimations
-        temp2.netLossEstimations = temp2.grossLossEstimations - temp2.feesEstimations
+        temp2.netProceedsEstimations = 0
+        temp2.netWinsEstimations = 0
+        temp2.netLossEstimations = 0
 
 
         /*******************
@@ -568,21 +578,21 @@ export async function useTotalTrades() {
         //temp2.netSharePLLoss = totalNetSharePLLoss
 
         //Needed for Dashboard
-        temp2.probGrossWins = (totalGrossWinsCount / totalTrades)
-        temp2.probGrossLoss = (totalGrossLossCount / totalTrades)
-        temp2.probNetWins = (totalNetWinsCount / totalTrades)
-        temp2.probNetLoss = (totalNetLossCount / totalTrades)
+        temp2.probGrossWins = totalTrades ? (totalGrossWinsCount / totalTrades) : 0
+        temp2.probGrossLoss = totalTrades ? (totalGrossLossCount / totalTrades) : 0
+        temp2.probNetWins = totalTrades ? (totalNetWinsCount / totalTrades) : 0
+        temp2.probNetLoss = totalTrades ? (totalNetLossCount / totalTrades) : 0
         //console.log("prob net win "+temp2.probNetWins+" and loss "+temp2.probNetLoss)
 
-        temp2.avgGrossWins = (totalGrossWins / totalGrossWinsCount)
-        temp2.avgGrossLoss = -(totalGrossLoss / totalGrossLossCount)
-        temp2.avgNetWins = (totalNetWins / totalNetWinsCount)
-        temp2.avgNetLoss = -(totalNetLoss / totalNetLossCount)
+        temp2.avgGrossWins = totalGrossWinsCount ? (totalGrossWins / totalGrossWinsCount) : 0
+        temp2.avgGrossLoss = totalGrossLossCount ? -(totalGrossLoss / totalGrossLossCount) : 0
+        temp2.avgNetWins = totalNetWinsCount ? (totalNetWins / totalNetWinsCount) : 0
+        temp2.avgNetLoss = totalNetLossCount ? -(totalNetLoss / totalNetLossCount) : 0
 
-        temp2.avgGrossSharePLWins = (totalGrossSharePLWins / totalGrossWinsCount)
-        temp2.avgGrossSharePLLoss = -(totalGrossSharePLLoss / totalGrossLossCount)
-        temp2.avgNetSharePLWins = (totalNetSharePLWins / totalNetWinsCount)
-        temp2.avgNetSharePLLoss = -(totalNetSharePLLoss / totalNetLossCount)
+        temp2.avgGrossSharePLWins = totalGrossWinsCount ? (totalGrossSharePLWins / totalGrossWinsCount) : 0
+        temp2.avgGrossSharePLLoss = totalGrossLossCount ? -(totalGrossSharePLLoss / totalGrossLossCount) : 0
+        temp2.avgNetSharePLWins = totalNetWinsCount ? (totalNetSharePLWins / totalNetWinsCount) : 0
+        temp2.avgNetSharePLLoss = totalNetLossCount ? -(totalNetSharePLLoss / totalNetLossCount) : 0
         for (let key in totals) delete totals[key]
         Object.assign(totals, temp2)
         //console.log(" -> TOTALS " + JSON.stringify(totals))
@@ -620,6 +630,8 @@ export async function useTotalTrades() {
              *******************/
             var sumCommission = 0
             var sumFundingFees = 0
+            var sumFundingPaid = 0
+            var sumFundingReceived = 0
             var sumTradingFees = 0
             var sumSec = 0
             var sumTaf = 0
@@ -674,6 +686,8 @@ export async function useTotalTrades() {
                 sumSellQuantity += element.sellQuantity
                 sumCommission += element.commission
                 sumFundingFees += (element.fundingFee || 0)
+                if ((element.fundingFee || 0) > 0) sumFundingPaid += element.fundingFee
+                if ((element.fundingFee || 0) < 0) sumFundingReceived += Math.abs(element.fundingFee)
                 sumTradingFees += (element.tradingFee || 0)
                 sumSec += element.sec
                 sumTaf += element.taf
@@ -746,6 +760,8 @@ export async function useTotalTrades() {
              *******************/
             temp3[key3].commission = sumCommission;
             temp3[key3].fundingFees = sumFundingFees;
+            temp3[key3].fundingPaid = sumFundingPaid;
+            temp3[key3].fundingReceived = sumFundingReceived;
             temp3[key3].tradingFees = sumTradingFees;
             temp3[key3].sec = sumSec
             temp3[key3].taf = sumTaf
@@ -1141,13 +1157,13 @@ export async function useCalculateProfitAnalysis(param) {
         if (JSON.stringify(totals) != '{}') {
             //console.log(" -> Calculating profit loss ratio risk&reward and MFE")
             //console.log(" -> Calculating gross and net Average Win Per Share")
-            profitAnalysis.grossAvWinPerShare = (totals.grossSharePLWins / totals.grossWinsCount)
-            profitAnalysis.netAvWinPerShare = (totals.netSharePLWins / totals.netWinsCount)
+            profitAnalysis.grossAvWinPerShare = totals.grossWinsCount ? (totals.grossSharePLWins / totals.grossWinsCount) : 0
+            profitAnalysis.netAvWinPerShare = totals.netWinsCount ? (totals.netSharePLWins / totals.netWinsCount) : 0
             //console.log("  --> Gross average win per share "+grossAvWinPerShare+" and net "+netAvWinPerShare)
 
             //console.log(" -> Calculating gross and net Average Loss Per Share")
-            profitAnalysis.grossAvLossPerShare = (-totals.grossSharePLLoss / totals.grossLossCount)
-            profitAnalysis.netAvLossPerShare = (-totals.netSharePLLoss / totals.netLossCount)
+            profitAnalysis.grossAvLossPerShare = totals.grossLossCount ? (-totals.grossSharePLLoss / totals.grossLossCount) : 0
+            profitAnalysis.netAvLossPerShare = totals.netLossCount ? (-totals.netSharePLLoss / totals.netLossCount) : 0
             //console.log("  --> Gross Average Loss Per Share "+grossAvLossPerShare+" and net "+netAvLossPerShare)
 
             //console.log(" -> Calculating gross and net Highest Win Per Share")
@@ -1161,8 +1177,8 @@ export async function useCalculateProfitAnalysis(param) {
             //console.log("  --> Gross Highest Loss Per Share "+grossHighLossPerShare+" and net stop loss "+netHighLossPerShare)
 
             //console.log(" -> Calculating gross and net R")
-            profitAnalysis.grossR = profitAnalysis.grossAvWinPerShare / profitAnalysis.grossAvLossPerShare
-            profitAnalysis.netR = profitAnalysis.netAvWinPerShare / profitAnalysis.netAvLossPerShare
+            profitAnalysis.grossR = profitAnalysis.grossAvLossPerShare ? (profitAnalysis.grossAvWinPerShare / profitAnalysis.grossAvLossPerShare) : 0
+            profitAnalysis.netR = profitAnalysis.netAvLossPerShare ? (profitAnalysis.netAvWinPerShare / profitAnalysis.netAvLossPerShare) : 0
             //console.log("  --> Gross R " + profitAnalysis.grossR + " and net R " + profitAnalysis.netR)
 
             //console.log(" -> Calculating gross and net mfe R")
@@ -1187,10 +1203,10 @@ export async function useCalculateProfitAnalysis(param) {
                             //console.log(" Entry price " + tradeEntryPrice + " | MFE Price " + element.mfePrice)
                             let entryMfeDiff
                             trade.strategy == "long" ? entryMfeDiff = (element.mfePrice - tradeEntryPrice) : entryMfeDiff = (tradeEntryPrice - element.mfePrice)
-                            let grossMfeR = entryMfeDiff / profitAnalysis.grossAvLossPerShare
+                            let grossMfeR = profitAnalysis.grossAvLossPerShare ? (entryMfeDiff / profitAnalysis.grossAvLossPerShare) : 0
                             //console.log("  --> Strategy "+trade.strategy+", entry price : "+tradeEntryPrice+", mfe price "+element.mfePrice+", diff "+entryMfeDiff+" and grosmfe R "+grossMfeR)
                             grossMfeRArray.push(grossMfeR)
-                            let netMfeR = entryMfeDiff / profitAnalysis.netAvLossPerShare
+                            let netMfeR = profitAnalysis.netAvLossPerShare ? (entryMfeDiff / profitAnalysis.netAvLossPerShare) : 0
                             netMfeRArray.push(netMfeR)
                         }
                     }
@@ -1229,9 +1245,9 @@ export async function useCalculateProfitAnalysis(param) {
                 let occurenceGross = grossMfeRArray.filter(x => x >= element).length
                 let occurenceNet = netMfeRArray.filter(x => x >= element).length
                 temp.rLevel = element
-                temp.winRateGross = occurenceGross / grossMfeRArrayLength
+                temp.winRateGross = grossMfeRArrayLength ? (occurenceGross / grossMfeRArrayLength) : 0
                 temp.grossExpectReturn = temp.winRateGross * element
-                temp.winRateNet = occurenceNet / netMfeRArrayLength
+                temp.winRateNet = netMfeRArrayLength ? (occurenceNet / netMfeRArrayLength) : 0
                 temp.netExpectReturn = temp.winRateNet * element
                 if (temp.grossExpectReturn > previousGrossExpectReturn) {
                     previousGrossExpectReturn = temp.grossExpectReturn

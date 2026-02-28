@@ -532,6 +532,7 @@ export function setupBitunixRoutes(app) {
             let fixedCount = 0
             let skippedCount = 0
 
+            const pendingUpdates = []
             for (const row of allRows) {
                 let trades
                 try {
@@ -568,8 +569,15 @@ export function setupBitunixRoutes(app) {
                 }
 
                 if (changed) {
-                    await knex('trades').where('id', row.id).update({ trades: JSON.stringify(trades) })
+                    pendingUpdates.push({ id: row.id, trades: JSON.stringify(trades) })
                 }
+            }
+
+            // Batch: alle geänderten Rows parallel updaten statt sequentiell
+            if (pendingUpdates.length > 0) {
+                await Promise.all(pendingUpdates.map(u =>
+                    knex('trades').where('id', u.id).update({ trades: u.trades })
+                ))
             }
 
             // Also reset all MFE prices so they get recalculated with correct side
@@ -681,10 +689,19 @@ export function setupBitunixRoutes(app) {
             // Remap tradeId references in metadata tables for discarded duplicates
             const metadataTables = ['tags', 'notes', 'satisfactions', 'excursions']
             let remappedCount = 0
-            for (const [oldId, newId] of remappedTradeIds) {
+            if (remappedTradeIds.size > 0) {
+                const oldIds = [...remappedTradeIds.keys()]
                 for (const table of metadataTables) {
-                    const updated = await knex(table).where('tradeId', oldId).update({ tradeId: newId })
-                    remappedCount += updated
+                    // Batch: alle betroffenen Rows auf einmal laden, dann per CASE/WHEN updaten
+                    const affectedRows = await knex(table).whereIn('tradeId', oldIds).select('id', 'tradeId')
+                    if (affectedRows.length === 0) continue
+                    // Einzeln updaten lässt sich bei SQLite nicht per CASE optimieren,
+                    // aber wir parallelisieren zumindest die Updates pro Tabelle
+                    const updates = affectedRows.map(row =>
+                        knex(table).where('id', row.id).update({ tradeId: remappedTradeIds.get(row.tradeId) })
+                    )
+                    const results = await Promise.all(updates)
+                    remappedCount += results.reduce((sum, n) => sum + n, 0)
                 }
             }
             if (remappedCount > 0) {
@@ -811,7 +828,7 @@ export function setupBitunixRoutes(app) {
                 if (posId) {
                     feeMap[posId] = {
                         tradingFee: Math.abs(parseFloat(pos.fee || 0)),
-                        fundingFee: Math.abs(parseFloat(pos.funding || 0))
+                        fundingFee: parseFloat(pos.funding || 0)  // Vorzeichen beibehalten: positiv = bezahlt, negativ = erhalten
                     }
                 }
             }

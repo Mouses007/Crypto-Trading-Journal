@@ -66,6 +66,7 @@ let chartExpanded = ref(false)
 let kiExpanded = ref(false)
 let reparaturExpanded = ref(false)
 let dbExpanded = ref(false)
+let pgProvidersExpanded = ref(false)
 
 /* DATENBANK-KONFIGURATION */
 let dbType = ref('sqlite')
@@ -1891,6 +1892,43 @@ onBeforeMount(async () => {
                                 <option value="sqlite">{{ t('settings.sqliteLocal') }}</option>
                                 <option value="postgresql">{{ t('settings.postgresRemote') }}</option>
                             </select>
+                        </div>
+                    </div>
+
+                    <!-- PostgreSQL Provider-Info -->
+                    <div v-if="dbType === 'postgresql'" class="mt-3 p-3" style="background: var(--black-bg-2); border-radius: var(--border-radius); border: 1px solid var(--white-10);">
+                        <div class="d-flex align-items-center pointerClass" @click="pgProvidersExpanded = !pgProvidersExpanded">
+                            <i class="uil me-1" :class="pgProvidersExpanded ? 'uil-angle-down' : 'uil-angle-right'" style="font-size: 1.1rem;"></i>
+                            <span class="fw-bold small"><i class="uil uil-info-circle me-1"></i>{{ t('settings.pgProviderTitle') }}</span>
+                        </div>
+                        <div v-show="pgProvidersExpanded" class="mt-2">
+                            <p class="fw-lighter small mb-2">{{ t('settings.pgProviderDesc') }}</p>
+                            <table class="table table-sm table-borderless mb-0" style="font-size: 0.82rem;">
+                                <thead>
+                                    <tr style="color: var(--white-50);">
+                                        <th>{{ t('settings.pgProvider') }}</th>
+                                        <th>Free Tier</th>
+                                        <th>{{ t('settings.pgFeature') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><a href="https://neon.tech" target="_blank" class="text-decoration-none">Neon <i class="uil uil-external-link-alt" style="font-size: 0.75rem;"></i></a></td>
+                                        <td>512 MB</td>
+                                        <td>Branching, Autoscaling</td>
+                                    </tr>
+                                    <tr>
+                                        <td><a href="https://supabase.com" target="_blank" class="text-decoration-none">Supabase <i class="uil uil-external-link-alt" style="font-size: 0.75rem;"></i></a></td>
+                                        <td>500 MB</td>
+                                        <td>Auth, API, Realtime</td>
+                                    </tr>
+                                    <tr>
+                                        <td><a href="https://aiven.io" target="_blank" class="text-decoration-none">Aiven <i class="uil uil-external-link-alt" style="font-size: 0.75rem;"></i></a></td>
+                                        <td>1 GB</td>
+                                        <td>{{ t('settings.pgAivenFeature') }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 

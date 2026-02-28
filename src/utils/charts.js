@@ -1,7 +1,7 @@
 import { pageId, timeZoneTrade, dailyChartZoom, barChartNegativeTagGroups } from "../stores/ui.js"
 import { amountCase, selectedTimeFrame, selectedRatio, selectedGrossNet } from "../stores/filters.js"
 import { totals, totalsByDate, groups, filteredTrades, filteredTradesTrades, satisfactionArray, satisfactionTradeArray, availableTags } from "../stores/trades.js"
-import { profitAnalysis } from "../stores/globals.js"
+import { profitAnalysis } from "../stores/trades.js"
 import { useOneDecPercentFormat, useChartFormat, useThousandCurrencyFormat, useTwoDecCurrencyFormat, useTimeFormat, useHourMinuteFormat, useCapitalizeFirstLetter, useXDecCurrencyFormat, useXDecFormat } from "./formatters.js"
 import dayjs from './dayjs-setup.js'
 import * as echarts from 'echarts';
@@ -61,8 +61,8 @@ export async function useECharts(param) {
             if (index == 1) {
                 //green = probWins
                 //red = probLoss
-                green = (totals[amountCase.value + 'WinsCount'] / totals.trades)
-                red = (totals[amountCase.value + 'LossCount'] / totals.trades)
+                green = totals.trades ? (totals[amountCase.value + 'WinsCount'] / totals.trades) : 0
+                red = totals.trades ? (totals[amountCase.value + 'LossCount'] / totals.trades) : 0
                 await usePieChart(chartId, green, red)
 
             }
@@ -155,8 +155,8 @@ export function useRenderPieChart() {
     return new Promise(async (resolve, reject) => {
         filteredTrades.forEach(el => {
             var chartId = "pieChart" + el.dateUnix
-            var probWins = (el.pAndL[amountCase.value + 'WinsCount'] / el.pAndL.trades)
-            var probLoss = (el.pAndL[amountCase.value + 'LossCount'] / el.pAndL.trades)
+            var probWins = el.pAndL.trades ? (el.pAndL[amountCase.value + 'WinsCount'] / el.pAndL.trades) : 0
+            var probLoss = el.pAndL.trades ? (el.pAndL[amountCase.value + 'LossCount'] / el.pAndL.trades) : 0
             //var probNetWins = (el.pAndL.netWinsCount / el.pAndL.trades)
             //var probNetLoss = (el.pAndL.netLossCount / el.pAndL.trades)
             //console.log("prob net win " + probNetWins + " and loss " + probNetLoss)
@@ -194,10 +194,7 @@ export function useLineChart(param) { //chartID, chartDataGross, chartDataNet, c
                 wins = parseFloat(element[amountCase.value + 'Wins']).toFixed(2)
                 loss = parseFloat(-element[amountCase.value + 'Loss']).toFixed(2)
                 //console.log("wins " + wins + " and loss " + loss)
-                if (loss != 0) {
-                    profitFactor = wins / loss
-                    //console.log(" -> profitFactor "+profitFactor)
-                }
+                profitFactor = loss != 0 ? (wins / loss) : 0
                 chartXAxis.push(useChartFormat(key))
                 pushingChartData()
             }
@@ -834,12 +831,12 @@ export function useBarChart(param1) {
                     trades = element.trades
                     quantities = element.buyQuantity
 
-                    appt = proceeds / trades
-                    apps = proceeds / quantities
+                    appt = trades ? (proceeds / trades) : 0
+                    apps = quantities ? (proceeds / quantities) : 0
                 }
 
                 //For win rate
-                probWins = (element[amountCase.value + 'WinsCount'] / element.trades)
+                probWins = element.trades ? (element[amountCase.value + 'WinsCount'] / element.trades) : 0
 
                 chartXAxis.push(useChartFormat(key))
                 pushingChartData()
@@ -892,11 +889,11 @@ export function useBarChart(param1) {
                     }
 
                     if (selectedRatio.value == "appt" || selectedRatio.value == "apps") {
-                        appt = proceeds / trades
-                        apps = proceeds / quantities
+                        appt = trades ? (proceeds / trades) : 0
+                        apps = quantities ? (proceeds / quantities) : 0
                     }
 
-                    probWins = (sumWinsCount / sumTrades)
+                    probWins = sumTrades ? (sumWinsCount / sumTrades) : 0
 
                     pushingChartData()
 
@@ -940,11 +937,11 @@ export function useBarChart(param1) {
                     }
 
                     if (selectedRatio.value == "appt" || selectedRatio.value == "apps") {
-                        appt = proceeds / trades
-                        apps = proceeds / quantities
+                        appt = trades ? (proceeds / trades) : 0
+                        apps = quantities ? (proceeds / quantities) : 0
                     }
 
-                    probWins = (sumWinsCount / sumTrades)
+                    probWins = sumTrades ? (sumWinsCount / sumTrades) : 0
 
                     pushingChartData()
                     //console.log("Last element")
@@ -993,16 +990,16 @@ export function useBarChart(param1) {
                     //When week changes, we create values proceeds and push both chart datas
                     if (selectedRatio.value == "profitFactor") {
                         //When week changes, we create values proceeds and push both chart datas
-                        profitFactor = wins / loss
+                        profitFactor = loss ? (wins / loss) : 0
 
                     }
 
                     if (selectedRatio.value == "appt" || selectedRatio.value == "apps") {
-                        appt = proceeds / trades
-                        apps = proceeds / quantities
+                        appt = trades ? (proceeds / trades) : 0
+                        apps = quantities ? (proceeds / quantities) : 0
                     }
 
-                    probWins = (sumWinsCount / sumTrades)
+                    probWins = sumTrades ? (sumWinsCount / sumTrades) : 0
 
                     pushingChartData()
 
@@ -1037,15 +1034,15 @@ export function useBarChart(param1) {
                     //Last key. We wrap up.
 
                     if (selectedRatio.value == "appt" || selectedRatio.value == "apps") {
-                        appt = proceeds / trades
-                        apps = proceeds / quantities
+                        appt = trades ? (proceeds / trades) : 0
+                        apps = quantities ? (proceeds / quantities) : 0
                     }
 
                     if (selectedRatio.value == "profitFactor") {
-                        profitFactor = wins / loss
+                        profitFactor = loss ? (wins / loss) : 0
                     }
 
-                    probWins = (sumWinsCount / sumTrades)
+                    probWins = sumTrades ? (sumWinsCount / sumTrades) : 0
 
                     pushingChartData()
                 }
@@ -3593,24 +3590,31 @@ export function useFeesChart(param) {
         let trades = [...filteredTradesTrades]
         if (trades.length === 0) { resolve(); return }
 
-        // Gebühren pro Symbol summieren (Trading vs Funding getrennt)
+        // Gebühren pro Symbol summieren (Trading vs Funding bezahlt/erhalten getrennt)
         let feesBySymbol = {}
         let hasFundingData = false
+        let hasReceivedFunding = false
         trades.forEach(trade => {
             const symbol = trade.symbol || 'Unbekannt'
-            if (!feesBySymbol[symbol]) feesBySymbol[symbol] = { trading: 0, funding: 0, total: 0 }
+            if (!feesBySymbol[symbol]) feesBySymbol[symbol] = { trading: 0, fundingPaid: 0, fundingReceived: 0, total: 0 }
             const tradingFee = Math.abs(trade.tradingFee || 0)
-            const fundingFee = Math.abs(trade.fundingFee || 0)
-            const totalFee = Math.abs(trade.commission || 0)
-            // Wenn tradingFee+fundingFee vorhanden, nutze sie; sonst alles als Trading
-            if (tradingFee > 0 || fundingFee > 0) {
+            const fundingFee = trade.fundingFee || 0  // Vorzeichen beibehalten
+            const totalFee = trade.commission || 0
+            // Wenn tradingFee oder fundingFee vorhanden, nutze sie; sonst alles als Trading
+            if (tradingFee > 0 || fundingFee !== 0) {
                 feesBySymbol[symbol].trading += tradingFee
-                feesBySymbol[symbol].funding += fundingFee
-                if (fundingFee > 0) hasFundingData = true
-            } else {
-                feesBySymbol[symbol].trading += totalFee
+                if (fundingFee > 0) {
+                    feesBySymbol[symbol].fundingPaid += fundingFee
+                    hasFundingData = true
+                } else if (fundingFee < 0) {
+                    feesBySymbol[symbol].fundingReceived += Math.abs(fundingFee)
+                    hasFundingData = true
+                    hasReceivedFunding = true
+                }
+            } else if (Math.abs(totalFee) > 0) {
+                feesBySymbol[symbol].trading += Math.abs(totalFee)
             }
-            feesBySymbol[symbol].total += totalFee
+            feesBySymbol[symbol].total += tradingFee + Math.max(0, fundingFee) // Netto-Kosten (ohne erhaltene Funding)
         })
 
         // Nach Gebühren sortieren (höchste oben im horizontalen Chart)
@@ -3618,10 +3622,12 @@ export function useFeesChart(param) {
             .map(([symbol, fees]) => ({
                 symbol,
                 trading: Number(fees.trading.toFixed(2)),
-                funding: Number(fees.funding.toFixed(2)),
-                total: Number(fees.total.toFixed(2))
+                fundingPaid: Number(fees.fundingPaid.toFixed(2)),
+                fundingReceived: Number(fees.fundingReceived.toFixed(2)),
+                total: Number((fees.trading + fees.fundingPaid).toFixed(2)),
+                netTotal: Number((fees.trading + fees.fundingPaid - fees.fundingReceived).toFixed(2))
             }))
-            .sort((a, b) => a.total - b.total)
+            .sort((a, b) => a.netTotal - b.netTotal)
 
         const seriesData = [{
             name: _t('dashboard.tradingFees'),
@@ -3640,18 +3646,18 @@ export function useFeesChart(param) {
         }]
 
         if (hasFundingData) {
+            // Funding bezahlt (lila)
             seriesData.push({
-                name: _t('dashboard.fundingFees'),
+                name: _t('dashboard.fundingPaid'),
                 type: 'bar',
                 stack: 'fees',
-                data: sorted.map(s => s.funding),
+                data: sorted.map(s => s.fundingPaid),
                 barMaxWidth: 20,
                 itemStyle: { color: '#6366f1' },
                 label: {
-                    show: true,
+                    show: !hasReceivedFunding,
                     position: 'right',
                     formatter: (p) => {
-                        // Auf dem letzten (Funding) Bar den Gesamtwert anzeigen
                         const idx = p.dataIndex
                         return useTwoDecCurrencyFormat(sorted[idx].total)
                     },
@@ -3660,6 +3666,32 @@ export function useFeesChart(param) {
                 }
             })
         }
+
+        if (hasReceivedFunding) {
+            // Funding erhalten (grün, als negativer Balken)
+            seriesData.push({
+                name: _t('dashboard.fundingReceived'),
+                type: 'bar',
+                stack: 'received',
+                data: sorted.map(s => s.fundingReceived > 0 ? -s.fundingReceived : 0),
+                barMaxWidth: 20,
+                itemStyle: { color: '#22c55e' },
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: (p) => {
+                        const idx = p.dataIndex
+                        return useTwoDecCurrencyFormat(sorted[idx].netTotal)
+                    },
+                    color: cssColor60,
+                    fontSize: 11
+                }
+            })
+        }
+
+        const legendData = [_t('dashboard.tradingFees')]
+        if (hasFundingData) legendData.push(_t('dashboard.fundingPaid'))
+        if (hasReceivedFunding) legendData.push(_t('dashboard.fundingReceived'))
 
         const option = {
             tooltip: {
@@ -3673,15 +3705,17 @@ export function useFeesChart(param) {
                     params.forEach(p => {
                         if (p.value > 0) {
                             tip += '<br>' + p.marker + ' ' + p.seriesName + ': ' + useTwoDecCurrencyFormat(p.value)
+                        } else if (p.value < 0) {
+                            tip += '<br>' + p.marker + ' ' + p.seriesName + ': -' + useTwoDecCurrencyFormat(Math.abs(p.value))
                         }
                     })
                     const idx = params[0].dataIndex
-                    tip += '<br><b>Gesamt: ' + useTwoDecCurrencyFormat(sorted[idx].total) + '</b>'
+                    tip += '<br><b>Netto: ' + useTwoDecCurrencyFormat(sorted[idx].netTotal) + '</b>'
                     return tip
                 }
             },
             legend: hasFundingData ? {
-                data: [_t('dashboard.tradingFees'), _t('dashboard.fundingFees')],
+                data: legendData,
                 textStyle: { color: cssColor60, fontSize: 11 },
                 bottom: 0
             } : undefined,

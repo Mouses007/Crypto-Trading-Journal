@@ -1,6 +1,6 @@
 import axios from 'axios'
 import dayjs from './dayjs-setup.js'
-import { dbCreate, dbFind, dbDelete, dbUpdate as dbUpdateRecord } from './db.js'
+import { dbCreate, dbFind, dbDelete, dbUpdate as dbUpdateRecord, dbFindTradeIdByPositionId } from './db.js'
 import { dbUpdateSettings } from './db.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker } from '../stores/filters.js'
@@ -29,15 +29,37 @@ export async function useQuickApiImport(explicitBroker) {
         return { success: true, message: i18n.global.t('messages.noNewPositions'), count: 0 }
     }
 
-    // 2. Get existing trade dates to filter duplicates (only for same broker!)
+    // 2. Build set of already-imported positionIds (for same broker)
     const existingTrades = await dbFind('trades', { equalTo: { broker }, descending: 'dateUnix', limit: 10000 })
-    const existingDates = existingTrades.map(t => t.dateUnix)
+    const existingPositionIds = new Set()
+    for (const record of existingTrades) {
+        const dayTrades = Array.isArray(record.trades) ? record.trades : []
+        for (const t of dayTrades) {
+            // Trade-ID-Format: t{dateUnix}_{index}_{positionId}
+            if (t.id) {
+                const parts = t.id.split('_')
+                if (parts.length >= 3) {
+                    existingPositionIds.add(parts.slice(2).join('_'))
+                }
+            }
+        }
+    }
 
-    // 3. Convert positions to trade objects grouped by day
+    // 3. Filter out already imported positions (Position-ID-Ebene statt Tagesebene)
+    const newPositions = allPositions.filter(pos => {
+        const posId = String(pos.positionId || '')
+        return posId && !existingPositionIds.has(posId)
+    })
+
+    if (newPositions.length === 0) {
+        return { success: true, message: i18n.global.t('messages.allTradesImported'), count: 0 }
+    }
+
+    // 4. Convert new positions to trade objects grouped by day
     const tradesByDay = {}
     const executionsByDay = {}
 
-    allPositions.forEach((pos, i) => {
+    newPositions.forEach((pos, i) => {
         let tradeObj
 
         if (broker === 'bitget') {
@@ -54,28 +76,34 @@ export async function useQuickApiImport(explicitBroker) {
         executionsByDay[dateUnix].push({ ...tradeObj, trade: tradeObj.id })
     })
 
-    // 4. Filter out already imported dates
-    for (const existingDate of existingDates) {
-        if (tradesByDay[existingDate]) {
-            delete tradesByDay[existingDate]
-            delete executionsByDay[existingDate]
-        }
-    }
-
     const newDays = Object.keys(tradesByDay)
-    if (newDays.length === 0) {
-        return { success: true, message: i18n.global.t('messages.allTradesImported'), count: 0 }
+
+    // 5. Für jeden Tag: existierenden Record mergen oder neuen anlegen
+    // Index der existierenden Records für schnellen Lookup
+    const existingByDate = {}
+    for (const record of existingTrades) {
+        existingByDate[record.dateUnix] = record
     }
 
-    // 5. Create blotter and P&L for each day, then save
     let savedCount = 0
     for (const dateUnix of newDays) {
         const dayTrades = tradesByDay[dateUnix]
         const dayExecutions = executionsByDay[dateUnix]
+        const existingRecord = existingByDate[dateUnix]
 
-        // Build blotter (grouped by symbol)
+        // Merge mit existierendem Tag-Record falls vorhanden
+        let allDayTrades = dayTrades
+        let allDayExecutions = dayExecutions
+        if (existingRecord) {
+            const prevTrades = Array.isArray(existingRecord.trades) ? existingRecord.trades : []
+            const prevExec = Array.isArray(existingRecord.executions) ? existingRecord.executions : []
+            allDayTrades = [...prevTrades, ...dayTrades]
+            allDayExecutions = [...prevExec, ...dayExecutions]
+        }
+
+        // Build blotter (grouped by symbol) — über ALLE Trades des Tages
         const blotterMap = {}
-        dayTrades.forEach(t => {
+        allDayTrades.forEach(t => {
             if (!blotterMap[t.symbol]) {
                 blotterMap[t.symbol] = {
                     symbol: t.symbol,
@@ -93,10 +121,10 @@ export async function useQuickApiImport(explicitBroker) {
         })
         const blotter = Object.values(blotterMap)
 
-        // Build P&L summary
+        // Build P&L summary — über ALLE Trades des Tages
         let totalGross = 0, totalNet = 0, totalFees = 0
         let grossWinsCount = 0, grossLossCount = 0, totalTrades = 0
-        dayTrades.forEach(t => {
+        allDayTrades.forEach(t => {
             totalGross += t.grossProceeds
             totalNet += t.netProceeds
             totalFees += t.commission
@@ -113,19 +141,30 @@ export async function useQuickApiImport(explicitBroker) {
             trades: totalTrades
         }
 
-        // Save to DB
-        await dbCreate('trades', {
-            date: dayjs.unix(dateUnix).format('YYYY-MM-DD'),
-            dateUnix: Number(dateUnix),
-            broker: broker,
-            executions: dayExecutions,
-            trades: dayTrades,
-            blotter: blotter,
-            pAndL: pAndL,
-            openPositions: false
-        })
-        savedCount++
-        console.log(' -> Saved trades for ' + dayjs.unix(dateUnix).format('YYYY-MM-DD'))
+        if (existingRecord) {
+            // Tag existiert → Merge: neue Trades anhängen, Blotter/P&L neu berechnen
+            await dbUpdateRecord('trades', existingRecord.objectId, {
+                executions: allDayExecutions,
+                trades: allDayTrades,
+                blotter: blotter,
+                pAndL: pAndL,
+            })
+            console.log(` -> Merged ${dayTrades.length} new trade(s) into existing day ${dayjs.unix(dateUnix).format('YYYY-MM-DD')}`)
+        } else {
+            // Neuer Tag → Create
+            await dbCreate('trades', {
+                date: dayjs.unix(dateUnix).format('YYYY-MM-DD'),
+                dateUnix: Number(dateUnix),
+                broker: broker,
+                executions: allDayExecutions,
+                trades: allDayTrades,
+                blotter: blotter,
+                pAndL: pAndL,
+                openPositions: false
+            })
+            console.log(' -> Saved trades for ' + dayjs.unix(dateUnix).format('YYYY-MM-DD'))
+        }
+        savedCount += dayTrades.length
     }
 
     // 6. Ensure broker account exists in settings
@@ -159,7 +198,7 @@ export async function useQuickApiImport(explicitBroker) {
                     wasImported.mtime || wasImported.uTime || wasImported.ctime || wasImported.cTime
                 )
                 const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
-                const tradeId = `t${dateUnix}_0_${wasImported.positionId}`
+                const tradeId = await dbFindTradeIdByPositionId(dateUnix, wasImported.positionId)
 
                 // Link playbook/feelings/stress as note
                 if (incoming.playbook || incoming.feelings || incoming.stressLevel) {
@@ -206,7 +245,7 @@ export async function useQuickApiImport(explicitBroker) {
 
     return {
         success: true,
-        message: i18n.global.t('messages.positionsImported', { count: allPositions.length, days: savedCount }),
+        message: i18n.global.t('messages.positionsImported', { count: newPositions.length, days: newDays.length }),
         count: savedCount
     }
 }
@@ -217,7 +256,7 @@ export async function useQuickApiImport(explicitBroker) {
 function createBitunixTradeObj(pos, i) {
     const grossPL = parseFloat(pos.realizedPNL || 0)
     const tradingFee = Math.abs(parseFloat(pos.fee || 0))
-    const fundingFee = Math.abs(parseFloat(pos.funding || 0))
+    const fundingFee = parseFloat(pos.funding || 0)  // Vorzeichen beibehalten: positiv = bezahlt, negativ = erhalten
     const fee = tradingFee + fundingFee
     const closeTime = parseInt(pos.mtime || pos.ctime)
     const openTime = parseInt(pos.ctime)
@@ -254,7 +293,7 @@ function createBitgetTradeObj(pos, i) {
     const grossPL = parseFloat(pos.pnl || 0)
     const openFee = Math.abs(parseFloat(pos.openFee || 0))
     const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
-    const totalFunding = Math.abs(parseFloat(pos.totalFunding || 0))
+    const totalFunding = parseFloat(pos.totalFunding || 0)  // Vorzeichen beibehalten
     const tradingFee = openFee + closeFee
     const fundingFee = totalFunding
     const fee = tradingFee + fundingFee

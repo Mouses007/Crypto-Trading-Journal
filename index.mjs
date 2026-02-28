@@ -57,6 +57,14 @@ const startIndex = async () => {
             proxyRes.headers['set-cookie'] = arr
         })
 
+        proxy.on('error', (err, req, res) => {
+            console.error('Vite proxy error:', err.message)
+            if (!res.headersSent) {
+                res.writeHead(502, { 'Content-Type': 'text/plain' })
+            }
+            res.end('Vite dev server nicht erreichbar. Läuft "npm run dev"?')
+        })
+
         app.use((req, res, next) => {
             if (req.url.startsWith('/api/')) return next();
             proxy.web(req, res);
@@ -73,6 +81,14 @@ const startIndex = async () => {
         });
         console.log(" -> Running prod server");
     }
+
+    // Central error handler — catches unhandled errors from async route handlers
+    app.use((err, req, res, _next) => {
+        console.error(`[ERROR] ${req.method} ${req.url}:`, err.message || err)
+        if (!res.headersSent) {
+            res.status(err.status || 500).json({ error: err.message || 'Interner Serverfehler' })
+        }
+    })
 
     // Start listening
     console.log("\nSTARTING NODEJS SERVER")

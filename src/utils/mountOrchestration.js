@@ -187,13 +187,13 @@ export async function useLoadMore() {
 
 export async function useRefreshTrades() {
     console.log("\nREFRESHING INFO")
-    await (spinnerLoadingPage.value = true)
+    spinnerLoadingPage.value = true
     if (pageId.value == "dashboard") {
-        useMountDashboard()
+        await useMountDashboard()
     } else if (pageId.value == "daily") {
-        useMountDaily()
+        await useMountDaily()
     } else if (pageId.value == "calendar") {
-        useMountCalendar()
+        await useMountCalendar()
     } else {
         window.location.href = "/dashboard"
     }

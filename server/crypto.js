@@ -1,11 +1,15 @@
 import crypto from 'crypto'
 import os from 'os'
 
-// Maschinenspezifischer Schlüssel: basierend auf hostname + username + __dirname
-// So ist der Key an diese Installation gebunden
+// Verschlüsselungs-Key: bevorzugt aus ENV, Fallback auf maschinenspezifischen Seed
+const ENV_SECRET = process.env.CTJ_SECRET
 const MACHINE_SEED = `tradenote-${os.hostname()}-${os.userInfo().username}-v1`
-const ENCRYPTION_KEY = crypto.createHash('sha256').update(MACHINE_SEED).digest()
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENV_SECRET || MACHINE_SEED).digest()
 const ALGORITHM = 'aes-256-gcm'
+
+if (!ENV_SECRET) {
+    console.warn('[CRYPTO] Kein CTJ_SECRET gesetzt – verwende maschinenspezifischen Schlüssel. Für höhere Sicherheit CTJ_SECRET als Umgebungsvariable setzen.')
+}
 
 /**
  * Verschlüsselt einen String mit AES-256-GCM
@@ -45,7 +49,8 @@ export function decrypt(encryptedText) {
         return decrypted
     } catch (e) {
         // Falls Entschlüsselung fehlschlägt (z.B. alter Klartext-Key),
-        // gib den Originaltext zurück
+        // gib den Originaltext zurück (Abwärtskompatibilität)
+        console.warn('[CRYPTO] Entschlüsselung fehlgeschlagen — Klartext-Fallback:', e.message)
         return encryptedText
     }
 }

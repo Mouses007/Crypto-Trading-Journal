@@ -166,6 +166,29 @@ export async function dbDeleteWhere(className, options = {}) {
 }
 
 /**
+ * Find the actual trade ID for a given positionId by searching the trades JSON array.
+ * Trade IDs follow the format: t${dateUnix}_${index}_${positionId}
+ * The index is assigned during import and may not be 0 for multi-trade days.
+ *
+ * @param {number} dateUnix - The trade day (unix timestamp, start of day)
+ * @param {string} positionId - The broker position ID to match
+ * @returns {Promise<string>} The matched trade ID, or fallback `t${dateUnix}_0_${positionId}`
+ */
+export async function dbFindTradeIdByPositionId(dateUnix, positionId) {
+    try {
+        const rows = await dbFind('trades', { equalTo: { td: dateUnix } })
+        for (const row of rows) {
+            const trades = row.trades || []
+            const match = trades.find(t => t.id && String(t.id).endsWith('_' + positionId))
+            if (match) return match.id
+        }
+    } catch (e) {
+        console.warn('[DB] dbFindTradeIdByPositionId lookup failed:', e.message)
+    }
+    return `t${dateUnix}_0_${positionId}`
+}
+
+/**
  * Get app settings (replaces Parse.User.current()).
  * @returns {Promise<object>} Settings object
  */
