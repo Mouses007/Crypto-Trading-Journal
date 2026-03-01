@@ -16,6 +16,13 @@ RUN npm prune --omit=dev
 
 # ── Production-Stage ────────────────────────────────────────
 FROM node:20-slim
+
+# Schriftarten für Share-Card SVG-Overlay (sharp braucht System-Fonts)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fontconfig fonts-dejavu-core fonts-liberation \
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -f
+
 WORKDIR /app
 
 COPY --from=builder /app/node_modules ./node_modules
