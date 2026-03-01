@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
-import { spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js'
+import { spinnerLoadingPage, timeZoneTrade, expandedId } from '../stores/ui.js'
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
@@ -19,7 +19,6 @@ const route = useRoute()
 const { t } = useI18n()
 
 let pollingInterval = null
-const expandedId = ref(null)
 const quillInstances = {} // key: positionId_opening / positionId_closing
 const incomingError = ref(null)
 const savingId = ref(null)
@@ -277,7 +276,7 @@ function wasTpSlTriggered(positionId, type, oldPrice) {
     })
 }
 
-function trackTpSlChanges(positionId, newSl, newTp) {
+function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0) {
     const history = loadTpSlHistory(positionId)
     const now = Date.now()
 
@@ -314,24 +313,24 @@ function trackTpSlChanges(positionId, newSl, newTp) {
     // Track SL changes
     if (newSl !== lastSlInfo.val) {
         if (lastSlInfo.val === null && newSl !== null) {
-            changed = safePush({ time: now, type: 'SL', oldVal: null, newVal: newSl, action: 'set' }) || changed
+            changed = safePush({ time: now, type: 'SL', oldVal: null, newVal: newSl, qty: slQty || 0, action: 'set' }) || changed
         } else if (lastSlInfo.val !== null && newSl === null) {
             const triggered = wasTpSlTriggered(positionId, 'SL', lastSlInfo.val)
-            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: null, action: triggered ? 'triggered' : 'removed' }) || changed
+            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: null, qty: 0, action: triggered ? 'triggered' : 'removed' }) || changed
         } else if (newSl !== null) {
-            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: newSl, action: 'moved' }) || changed
+            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: newSl, qty: slQty || 0, action: 'moved' }) || changed
         }
     }
 
     // Track TP changes
     if (newTp !== lastTpInfo.val) {
         if (lastTpInfo.val === null && newTp !== null) {
-            changed = safePush({ time: now, type: 'TP', oldVal: null, newVal: newTp, action: 'set' }) || changed
+            changed = safePush({ time: now, type: 'TP', oldVal: null, newVal: newTp, qty: tpQty || 0, action: 'set' }) || changed
         } else if (lastTpInfo.val !== null && newTp === null) {
             const triggered = wasTpSlTriggered(positionId, 'TP', lastTpInfo.val)
-            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: null, action: triggered ? 'triggered' : 'removed' }) || changed
+            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: null, qty: 0, action: triggered ? 'triggered' : 'removed' }) || changed
         } else if (newTp !== null) {
-            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: newTp, action: 'moved' }) || changed
+            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: newTp, qty: tpQty || 0, action: 'moved' }) || changed
         }
     }
 
@@ -359,10 +358,10 @@ async function fetchPositionTpSl(positionId, force = false, broker = 'bitunix', 
             positionTpSl.value[positionId] = { loading: false, orders: data.orders, error: null }
             // Track changes
             const current = getTpSlForPosition(positionId)
-            trackTpSlChanges(positionId, current.sl, current.tp)
+            trackTpSlChanges(positionId, current.sl, current.tp, current.slQty, current.tpQty)
         } else {
             positionTpSl.value[positionId] = { loading: false, orders: [], error: null }
-            trackTpSlChanges(positionId, null, null)
+            trackTpSlChanges(positionId, null, null, 0, 0)
         }
     } catch (err) {
         positionTpSl.value[positionId] = { loading: false, orders: [], error: err.message }
@@ -446,6 +445,7 @@ onBeforeUnmount(() => {
     Object.keys(quillInstances).forEach(key => {
         delete quillInstances[key]
     })
+    expandedId.value = null
 })
 
 async function manualRefresh() {
@@ -988,7 +988,8 @@ async function completeClosingEvaluation(pos) {
                         type: h.type,
                         action: h.action,
                         oldVal: h.oldVal,
-                        newVal: h.newVal
+                        newVal: h.newVal,
+                        qty: h.qty || 0
                     }))
             })()
         }
@@ -1284,12 +1285,14 @@ function getPositionDate(pos) {
                                     <template v-if="entry.action === 'set'">
                                         <span class="text-muted">→</span>
                                         <span class="text-white">{{ entry.newVal }}</span>
+                                        <span v-if="entry.qty" class="text-muted">({{ entry.qty }} · {{ pos.quantity > 0 ? (entry.qty / pos.quantity * 100).toFixed(0) : '?' }}%)</span>
                                         <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
                                     </template>
                                     <template v-else-if="entry.action === 'moved'">
                                         <span class="text-muted" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
                                         <span class="text-muted">→</span>
                                         <span class="text-white">{{ entry.newVal }}</span>
+                                        <span v-if="entry.qty" class="text-muted">({{ entry.qty }} · {{ pos.quantity > 0 ? (entry.qty / pos.quantity * 100).toFixed(0) : '?' }}%)</span>
                                         <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
                                     </template>
                                     <template v-else-if="entry.action === 'triggered'">
