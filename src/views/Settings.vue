@@ -64,7 +64,6 @@ let subTradeTypeExpanded = ref(false)
 let subPopupsExpanded = ref(false)
 let chartExpanded = ref(false)
 let kiExpanded = ref(false)
-let reparaturExpanded = ref(false)
 let dbExpanded = ref(false)
 let pgProvidersExpanded = ref(false)
 
@@ -944,92 +943,6 @@ async function saveNotificationSetting() {
         console.log(' -> Benachrichtigungs-Einstellung gespeichert:', browserNotifications.value)
     } catch (error) {
         console.error(' -> Fehler beim Speichern der Benachrichtigungs-Einstellung:', error)
-    }
-}
-
-/* FIX TRADE SIDES */
-let fixTradesLoading = ref(false)
-let fixTradesResult = ref(null)
-
-async function fixTradeSides() {
-    fixTradesLoading.value = true
-    fixTradesResult.value = null
-    try {
-        const response = await axios.post('/api/fix-trade-sides')
-        fixTradesResult.value = {
-            success: true,
-            message: `${response.data.fixed} Trades korrigiert, ${response.data.skipped} übersprungen, ${response.data.mfeReset || 0} MFE-Werte zurückgesetzt.`
-        }
-        console.log(' -> Trade sides fixed:', response.data)
-    } catch (error) {
-        fixTradesResult.value = {
-            success: false,
-            message: 'Fehler: ' + (error.response?.data?.error || error.message)
-        }
-    } finally {
-        fixTradesLoading.value = false
-    }
-}
-
-/* REPAIR FUNDING FEES */
-let repairFundingLoading = ref(false)
-let repairFundingResult = ref(null)
-
-async function repairFundingFees() {
-    repairFundingLoading.value = true
-    repairFundingResult.value = null
-    try {
-        const response = await axios.post('/api/repair-funding-fees')
-        const d = response.data
-        if (d.matched === 0) {
-            repairFundingResult.value = {
-                success: true,
-                message: `${d.apiPositions} API-Positionen geladen, aber keine Trades ohne Funding-Daten gefunden.`
-            }
-        } else {
-            repairFundingResult.value = {
-                success: true,
-                message: `${d.matched} Trades mit Funding-Fee-Daten aktualisiert (${d.apiPositions} API-Positionen geladen).`
-            }
-        }
-        console.log(' -> Funding fees repaired:', response.data)
-    } catch (error) {
-        repairFundingResult.value = {
-            success: false,
-            message: 'Fehler: ' + (error.response?.data?.error || error.message)
-        }
-    } finally {
-        repairFundingLoading.value = false
-    }
-}
-
-/* REMOVE DUPLICATE TRADES */
-let removeDupsLoading = ref(false)
-let removeDupsResult = ref(null)
-
-async function removeDuplicateTrades() {
-    removeDupsLoading.value = true
-    removeDupsResult.value = null
-    try {
-        const response = await axios.post('/api/remove-duplicate-trades')
-        const d = response.data
-        if (d.duplicateRowsDeleted === 0 && d.duplicateTradesRemoved === 0) {
-            removeDupsResult.value = { success: true, message: 'Keine Duplikate gefunden.' }
-        } else {
-            removeDupsResult.value = {
-                success: true,
-                message: `${d.duplicateTradesRemoved} doppelte Trades entfernt, ${d.duplicateRowsDeleted} doppelte Tage zusammengeführt. ${d.evaluatedKept} bewertete Trades behalten.`
-            }
-        }
-        // Reload imports list
-        await loadImports()
-    } catch (error) {
-        removeDupsResult.value = {
-            success: false,
-            message: 'Fehler: ' + (error.response?.data?.error || error.message)
-        }
-    } finally {
-        removeDupsLoading.value = false
     }
 }
 
@@ -2028,61 +1941,6 @@ onBeforeMount(async () => {
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="binanceToggle" v-model="enableBinanceChart" @change="saveBinanceSetting">
                         <label class="form-check-label" for="binanceToggle">{{ t('settings.enableBinanceChart') }}</label>
-                    </div>
-                </div>
-
-                <hr />
-
-                <!--=============== TRADE-WERKZEUGE ===============-->
-                <div class="d-flex align-items-center pointerClass" @click="reparaturExpanded = !reparaturExpanded">
-                    <i class="uil me-2" :class="reparaturExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">{{ t('settings.repair') }}</p>
-                </div>
-                <div v-show="reparaturExpanded" class="mt-2 ms-3">
-                    <!-- Long/Short Reparatur -->
-                    <p class="fw-lighter mb-1">{{ t('settings.repairDescription') }}</p>
-                    <button class="btn btn-outline-warning btn-sm" @click="fixTradeSides" :disabled="fixTradesLoading">
-                        <span v-if="fixTradesLoading">
-                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>{{ t('settings.repairing') }}
-                        </span>
-                        <span v-else><i class="uil uil-wrench me-1"></i>{{ t('settings.repairTrades') }}</span>
-                    </button>
-                    <div v-if="fixTradesResult" class="mt-2">
-                        <div :class="fixTradesResult.success ? 'text-success' : 'text-danger'" class="txt-small">
-                            {{ fixTradesResult.message }}
-                        </div>
-                    </div>
-
-                    <hr class="my-3" style="opacity: 0.15;" />
-
-                    <!-- Funding Fees reparieren -->
-                    <p class="fw-lighter mb-1">{{ t('settings.fundingFeeRepairDescription') }}</p>
-                    <button class="btn btn-outline-warning btn-sm" @click="repairFundingFees" :disabled="repairFundingLoading">
-                        <span v-if="repairFundingLoading">
-                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>{{ t('settings.repairing') }}
-                        </span>
-                        <span v-else><i class="uil uil-dollar-sign me-1"></i>{{ t('settings.fundingFeeRepair') }}</span>
-                    </button>
-                    <div v-if="repairFundingResult" class="mt-2">
-                        <div :class="repairFundingResult.success ? 'text-success' : 'text-danger'" class="txt-small">
-                            {{ repairFundingResult.message }}
-                        </div>
-                    </div>
-
-                    <hr class="my-3" style="opacity: 0.15;" />
-
-                    <!-- Duplikate entfernen -->
-                    <p class="fw-lighter mb-1">{{ t('settings.duplicatesDescription') }}</p>
-                    <button class="btn btn-outline-warning btn-sm" @click="removeDuplicateTrades" :disabled="removeDupsLoading">
-                        <span v-if="removeDupsLoading">
-                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>{{ t('settings.searchingDuplicates') }}
-                        </span>
-                        <span v-else><i class="uil uil-copy me-1"></i>{{ t('settings.duplicates') }}</span>
-                    </button>
-                    <div v-if="removeDupsResult" class="mt-2">
-                        <div :class="removeDupsResult.success ? 'text-success' : 'text-danger'" class="txt-small">
-                            {{ removeDupsResult.message }}
-                        </div>
                     </div>
                 </div>
 
