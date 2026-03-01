@@ -407,7 +407,7 @@ onBeforeMount(async () => {
                             <div class="row">
 
                                 <!-- ===== LINKE SPALTE: Kontostand + Donuts ===== -->
-                                <div v-if="isVisible('accountBalance')" class="col-12 col-xl-4 mb-3 mb-xl-0">
+                                <div v-if="isVisible('accountBalance')" class="col-12 col-md-6 col-xl-4 mb-3 mb-xl-0">
                                     <div class="dailyCard h-100">
                                         <h6>{{ t('dashboard.accountBalance') }}</h6>
 
@@ -475,7 +475,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- ===== MITTLERE SPALTE: Kennzahlen ===== -->
-                                <div v-if="isVisible('metrics')" class="col-12 col-xl-4 mb-3 mb-xl-0">
+                                <div v-if="isVisible('metrics')" class="col-12 col-md-6 col-xl-4 mb-3 mb-xl-0">
                                     <div class="dailyCard h-100">
                                         <h6>{{ t('dashboard.metrics') }}</h6>
                                         <table class="stats-table w-100">
@@ -558,7 +558,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- ===== RECHTE SPALTE: Gebühren ===== -->
-                                <div v-if="isVisible('fees')" class="col-12 col-xl-4">
+                                <div v-if="isVisible('fees')" class="col-12 col-md-6 col-xl-4">
                                     <div class="dailyCard h-100">
                                         <h6>{{ t('dashboard.fees') }}</h6>
 
@@ -701,7 +701,7 @@ onBeforeMount(async () => {
                         <div class="col-12">
                             <div class="row">
                                 <!-- GROUP BY DAY OF WEEK -->
-                                <div v-if="isVisible('byWeekday')" class="col-12 col-xl-4 mb-3">
+                                <div v-if="isVisible('byWeekday')" class="col-12 col-md-6 col-xl-4 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.byWeekday', { metric: ratioCompute.shortName }) }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byWeekdayTooltip')"></i>
@@ -711,7 +711,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- GROUP BY TIMEFRAME -->
-                                <div v-if="isVisible('byEntryTime')" class="col-12 col-xl-4 mb-3">
+                                <div v-if="isVisible('byEntryTime')" class="col-12 col-md-6 col-xl-4 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.byEntryTime', { metric: ratioCompute.shortName }) }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byEntryTimeTooltip')"></i>
@@ -721,7 +721,7 @@ onBeforeMount(async () => {
                                 </div>
 
                                 <!-- GROUP BY DURATION -->
-                                <div v-if="isVisible('byDuration')" class="col-12 col-xl-4 mb-3">
+                                <div v-if="isVisible('byDuration')" class="col-12 col-md-6 col-xl-4 mb-3">
                                     <div class="dailyCard">
                                         <h6>{{ t('dashboard.byDuration', { metric: ratioCompute.shortName }) }}
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byDurationTooltip')"></i>
