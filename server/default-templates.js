@@ -53,14 +53,19 @@ const TEMPLATE_DEFS = [
 // ============================================================
 
 export async function seedDefaultTemplates(knex) {
-    // Only seed if table is empty
-    const count = await knex('share_card_templates').count('id as cnt').first()
-    if (count && count.cnt > 0) return
+    // Check which default templates already exist (by name)
+    const existing = await knex('share_card_templates')
+        .select('name')
+        .whereIn('name', TEMPLATE_DEFS.map(t => t.name))
+    const existingNames = new Set(existing.map(r => r.name))
 
-    console.log(' -> Seeding default share card templates...')
+    const missing = TEMPLATE_DEFS.filter(t => !existingNames.has(t.name))
+    if (missing.length === 0) return
+
+    console.log(` -> Seeding ${missing.length} default share card templates...`)
     let seeded = 0
 
-    for (const tpl of TEMPLATE_DEFS) {
+    for (const tpl of missing) {
         const filePath = path.join(TEMPLATES_DIR, tpl.file)
 
         // Also check for .jpg variant

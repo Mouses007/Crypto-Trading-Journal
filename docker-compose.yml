@@ -1,0 +1,17 @@
+services:
+  journal:
+    build: .
+    container_name: crypto-trading-journal
+    ports:
+      - "${CTJ_PORT:-8080}:8080"
+    environment:
+      - CTJ_SECRET=${CTJ_SECRET}
+      - DB_TYPE=${DB_TYPE:-postgresql}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+    env_file:
+      - .env
+    restart: unless-stopped

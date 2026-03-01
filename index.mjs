@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path'
-import * as Vite from 'vite'
 import { initDb } from './server/database.js'
 import { setupApiRoutes } from './server/api-routes.js'
 import { setupBitunixRoutes } from './server/bitunix-api.js'
@@ -70,6 +69,7 @@ const startIndex = async () => {
             proxy.web(req, res);
         });
 
+        const Vite = await import('vite')
         const vite = await Vite.createServer({ server: { port: PROXY_PORT } });
         vite.listen();
         console.log(" -> Running vite dev server");
