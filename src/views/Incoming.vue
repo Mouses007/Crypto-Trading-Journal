@@ -365,14 +365,17 @@ function getPosQtyAtTime(positionId, side, timestamp) {
 }
 
 /**
- * Calculate the display percentage for an SL/TP history entry.
- * Uses stored posQty, falls back to reconstructing from fills. >100% means SL/TP qty exceeds remaining position.
+ * Calculate display qty + percentage for an SL/TP history entry.
+ * Always relative to CURRENT remaining position. If SL/TP qty exceeds remaining
+ * (e.g. not adjusted after partial close), caps to remaining qty and 100%.
  */
-function getTpSlEntryPercent(entry, positionId, side, currentQty) {
+function getTpSlEntryDisplay(entry, currentQty) {
     if (!entry.qty) return null
-    const refQty = entry.posQty || getPosQtyAtTime(positionId, side, entry.time) || currentQty
-    if (refQty <= 0) return '?'
-    return Math.round(entry.qty / refQty * 100)
+    const refQty = parseFloat(currentQty) || 0
+    if (refQty <= 0) return { qty: entry.qty, pct: '?' }
+    const effectiveQty = Math.min(entry.qty, refQty)
+    const pct = Math.min(100, Math.round(entry.qty / refQty * 100))
+    return { qty: effectiveQty, pct }
 }
 
 async function fetchPositionTpSl(positionId, force = false, broker = 'bitunix', symbol = '') {
@@ -1316,14 +1319,14 @@ function getPositionDate(pos) {
                                     <template v-if="entry.action === 'set'">
                                         <span class="text-muted">→</span>
                                         <span class="text-white">{{ entry.newVal }}</span>
-                                        <span v-if="entry.qty" class="text-muted">({{ entry.qty }} · {{ getTpSlEntryPercent(entry, pos.positionId, pos.side, pos.quantity) }}%)</span>
+                                        <span v-if="entry.qty && getTpSlEntryDisplay(entry, pos.quantity)" class="text-muted">({{ getTpSlEntryDisplay(entry, pos.quantity).qty }} · {{ getTpSlEntryDisplay(entry, pos.quantity).pct }}%)</span>
                                         <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
                                     </template>
                                     <template v-else-if="entry.action === 'moved'">
                                         <span class="text-muted" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
                                         <span class="text-muted">→</span>
                                         <span class="text-white">{{ entry.newVal }}</span>
-                                        <span v-if="entry.qty" class="text-muted">({{ entry.qty }} · {{ getTpSlEntryPercent(entry, pos.positionId, pos.side, pos.quantity) }}%)</span>
+                                        <span v-if="entry.qty && getTpSlEntryDisplay(entry, pos.quantity)" class="text-muted">({{ getTpSlEntryDisplay(entry, pos.quantity).qty }} · {{ getTpSlEntryDisplay(entry, pos.quantity).pct }}%)</span>
                                         <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
                                     </template>
                                     <template v-else-if="entry.action === 'triggered'">

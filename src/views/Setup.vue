@@ -18,6 +18,7 @@ const testResult = ref(null)
 const testLoading = ref(false)
 const saving = ref(false)
 const error = ref('')
+const restarting = ref(false)
 
 // Pruefen ob Setup bereits abgeschlossen
 onMounted(async () => {
@@ -112,6 +113,29 @@ async function skipSetup() {
         error.value = t('common.errorPrefix') + (e.response?.data?.error || e.message)
     }
     saving.value = false
+}
+
+async function restartServer() {
+    restarting.value = true
+    try {
+        await axios.post('/api/restart')
+    } catch (e) {
+        // Connection drops during restart — expected
+    }
+    // Wait for server to come back, then redirect
+    const checkServer = async () => {
+        for (let i = 0; i < 30; i++) {
+            await new Promise(r => setTimeout(r, 2000))
+            try {
+                await axios.get('/api/setup/status')
+                window.location.href = '/dashboard'
+                return
+            } catch (e) { /* still restarting */ }
+        }
+        // Fallback: just reload
+        window.location.reload()
+    }
+    checkServer()
 }
 </script>
 
@@ -307,11 +331,12 @@ async function skipSetup() {
                     {{ t('setup.postgresChosen') }}
                     {{ t('setup.restartServer') }}
                 </p>
-                <div class="alert alert-info small">
-                    <strong>{{ t('setup.restartInstructions') }}</strong><br>
-                    1. {{ t('setup.restartStep1') }}<br>
-                    2. {{ t('setup.restartStep2') }}
-                </div>
+                <button class="btn btn-primary mt-3" @click="restartServer" :disabled="restarting">
+                    <span v-if="restarting">
+                        <span class="spinner-border spinner-border-sm me-1"></span>{{ t('settings.serverRestarting') }}
+                    </span>
+                    <span v-else><i class="uil uil-redo me-1"></i>{{ t('settings.restartServerBtn') }}</span>
+                </button>
             </div>
         </div>
     </div>
