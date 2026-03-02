@@ -276,7 +276,7 @@ function wasTpSlTriggered(positionId, type, oldPrice) {
     })
 }
 
-function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0) {
+function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0, posQty = 0) {
     const history = loadTpSlHistory(positionId)
     const now = Date.now()
 
@@ -313,24 +313,24 @@ function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0) {
     // Track SL changes
     if (newSl !== lastSlInfo.val) {
         if (lastSlInfo.val === null && newSl !== null) {
-            changed = safePush({ time: now, type: 'SL', oldVal: null, newVal: newSl, qty: slQty || 0, action: 'set' }) || changed
+            changed = safePush({ time: now, type: 'SL', oldVal: null, newVal: newSl, qty: slQty || 0, posQty, action: 'set' }) || changed
         } else if (lastSlInfo.val !== null && newSl === null) {
             const triggered = wasTpSlTriggered(positionId, 'SL', lastSlInfo.val)
-            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: null, qty: 0, action: triggered ? 'triggered' : 'removed' }) || changed
+            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: null, qty: 0, posQty, action: triggered ? 'triggered' : 'removed' }) || changed
         } else if (newSl !== null) {
-            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: newSl, qty: slQty || 0, action: 'moved' }) || changed
+            changed = safePush({ time: now, type: 'SL', oldVal: lastSlInfo.val, newVal: newSl, qty: slQty || 0, posQty, action: 'moved' }) || changed
         }
     }
 
     // Track TP changes
     if (newTp !== lastTpInfo.val) {
         if (lastTpInfo.val === null && newTp !== null) {
-            changed = safePush({ time: now, type: 'TP', oldVal: null, newVal: newTp, qty: tpQty || 0, action: 'set' }) || changed
+            changed = safePush({ time: now, type: 'TP', oldVal: null, newVal: newTp, qty: tpQty || 0, posQty, action: 'set' }) || changed
         } else if (lastTpInfo.val !== null && newTp === null) {
             const triggered = wasTpSlTriggered(positionId, 'TP', lastTpInfo.val)
-            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: null, qty: 0, action: triggered ? 'triggered' : 'removed' }) || changed
+            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: null, qty: 0, posQty, action: triggered ? 'triggered' : 'removed' }) || changed
         } else if (newTp !== null) {
-            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: newTp, qty: tpQty || 0, action: 'moved' }) || changed
+            changed = safePush({ time: now, type: 'TP', oldVal: lastTpInfo.val, newVal: newTp, qty: tpQty || 0, posQty, action: 'moved' }) || changed
         }
     }
 
@@ -339,6 +339,40 @@ function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0) {
 
 function getTpSlHistoryForPosition(positionId) {
     return loadTpSlHistory(positionId)
+}
+
+/**
+ * Get position quantity at a given timestamp by reconstructing from fills.
+ * Used as fallback for old tpslHistory entries that don't have posQty stored.
+ */
+function getPosQtyAtTime(positionId, side, timestamp) {
+    const fillData = getFillsForPosition(positionId)
+    if (!fillData.trades || fillData.trades.length === 0) return 0
+    const isShort = side === 'SHORT' || side === 'SELL'
+    const entrySide = isShort ? 'SELL' : 'BUY'
+    let entryQty = 0, closeQty = 0
+    for (const f of fillData.trades) {
+        const fTime = parseInt(f.ctime || f.cTime || 0)
+        if (fTime > timestamp) break // fills are sorted by time
+        const qty = parseFloat(f.qty || 0)
+        if (f.side === entrySide && !f.reduceOnly) {
+            entryQty += qty
+        } else if (f.reduceOnly || f.side !== entrySide) {
+            closeQty += qty
+        }
+    }
+    return Math.max(0, entryQty - closeQty)
+}
+
+/**
+ * Calculate the display percentage for an SL/TP history entry.
+ * Uses stored posQty, falls back to reconstructing from fills, capped at 100%.
+ */
+function getTpSlEntryPercent(entry, positionId, side, currentQty) {
+    if (!entry.qty) return null
+    const refQty = entry.posQty || getPosQtyAtTime(positionId, side, entry.time) || currentQty
+    if (refQty <= 0) return '?'
+    return Math.min(100, Math.round(entry.qty / refQty * 100))
 }
 
 async function fetchPositionTpSl(positionId, force = false, broker = 'bitunix', symbol = '') {
@@ -356,12 +390,14 @@ async function fetchPositionTpSl(positionId, force = false, broker = 'bitunix', 
         }
         if (data.ok && data.orders) {
             positionTpSl.value[positionId] = { loading: false, orders: data.orders, error: null }
-            // Track changes
+            // Track changes — pass current position quantity for accurate % display
             const current = getTpSlForPosition(positionId)
-            trackTpSlChanges(positionId, current.sl, current.tp, current.slQty, current.tpQty)
+            const pos = incomingPositions.find(p => p.positionId === positionId)
+            const posQty = pos ? parseFloat(pos.quantity || 0) : 0
+            trackTpSlChanges(positionId, current.sl, current.tp, current.slQty, current.tpQty, posQty)
         } else {
             positionTpSl.value[positionId] = { loading: false, orders: [], error: null }
-            trackTpSlChanges(positionId, null, null, 0, 0)
+            trackTpSlChanges(positionId, null, null, 0, 0, 0)
         }
     } catch (err) {
         positionTpSl.value[positionId] = { loading: false, orders: [], error: err.message }
@@ -989,7 +1025,8 @@ async function completeClosingEvaluation(pos) {
                         action: h.action,
                         oldVal: h.oldVal,
                         newVal: h.newVal,
-                        qty: h.qty || 0
+                        qty: h.qty || 0,
+                        posQty: h.posQty || 0
                     }))
             })()
         }
@@ -1285,14 +1322,14 @@ function getPositionDate(pos) {
                                     <template v-if="entry.action === 'set'">
                                         <span class="text-muted">→</span>
                                         <span class="text-white">{{ entry.newVal }}</span>
-                                        <span v-if="entry.qty" class="text-muted">({{ entry.qty }} · {{ pos.quantity > 0 ? (entry.qty / pos.quantity * 100).toFixed(0) : '?' }}%)</span>
+                                        <span v-if="entry.qty" class="text-muted">({{ entry.qty }} · {{ getTpSlEntryPercent(entry, pos.positionId, pos.side, pos.quantity) }}%)</span>
                                         <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
                                     </template>
                                     <template v-else-if="entry.action === 'moved'">
                                         <span class="text-muted" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
                                         <span class="text-muted">→</span>
                                         <span class="text-white">{{ entry.newVal }}</span>
-                                        <span v-if="entry.qty" class="text-muted">({{ entry.qty }} · {{ pos.quantity > 0 ? (entry.qty / pos.quantity * 100).toFixed(0) : '?' }}%)</span>
+                                        <span v-if="entry.qty" class="text-muted">({{ entry.qty }} · {{ getTpSlEntryPercent(entry, pos.positionId, pos.side, pos.quantity) }}%)</span>
                                         <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
                                     </template>
                                     <template v-else-if="entry.action === 'triggered'">
