@@ -366,13 +366,13 @@ function getPosQtyAtTime(positionId, side, timestamp) {
 
 /**
  * Calculate the display percentage for an SL/TP history entry.
- * Uses stored posQty, falls back to reconstructing from fills, capped at 100%.
+ * Uses stored posQty, falls back to reconstructing from fills. >100% means SL/TP qty exceeds remaining position.
  */
 function getTpSlEntryPercent(entry, positionId, side, currentQty) {
     if (!entry.qty) return null
     const refQty = entry.posQty || getPosQtyAtTime(positionId, side, entry.time) || currentQty
     if (refQty <= 0) return '?'
-    return Math.min(100, Math.round(entry.qty / refQty * 100))
+    return Math.round(entry.qty / refQty * 100)
 }
 
 async function fetchPositionTpSl(positionId, force = false, broker = 'bitunix', symbol = '') {
