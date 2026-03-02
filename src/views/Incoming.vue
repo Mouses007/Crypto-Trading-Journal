@@ -10,7 +10,7 @@ import { incomingPositions, incomingPollingActive, incomingLastFetched, availabl
 import { currentUser } from '../stores/settings.js'
 import { useFetchOpenPositions, useGetIncomingPositions, useUpdateIncomingPosition, useDeleteIncomingPosition, useTransferClosingMetadata } from '../utils/incoming'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
-import { dbCreate, dbUpdate, dbFind } from '../utils/db.js'
+import { dbCreate, dbUpdate, dbFind, dbGet } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
 import Quill from 'quill'
 import { sanitizeHtml } from '../utils/sanitize'
@@ -818,28 +818,22 @@ async function loadScreenshotPreviews(pos) {
     // Entry-Screenshot laden
     if (pos.entryScreenshotId && !entryScreenshotPreviews.value[pos.positionId]) {
         try {
-            const results = await dbFind('screenshots', { equalTo: { objectId: pos.entryScreenshotId }, limit: 1 })
-            if (results.length > 0) {
-                entryScreenshotPreviews.value[pos.positionId] = results[0].annotatedBase64 || results[0].originalBase64
-            }
+            const result = await dbGet('screenshots', pos.entryScreenshotId)
+            if (result) entryScreenshotPreviews.value[pos.positionId] = result.annotatedBase64 || result.originalBase64
         } catch (e) { console.log('Screenshot-Load fehlgeschlagen:', e) }
     }
     // Trend-Screenshot laden
     if (pos.trendScreenshotId && !trendScreenshotPreviews.value[pos.positionId]) {
         try {
-            const results = await dbFind('screenshots', { equalTo: { objectId: pos.trendScreenshotId }, limit: 1 })
-            if (results.length > 0) {
-                trendScreenshotPreviews.value[pos.positionId] = results[0].annotatedBase64 || results[0].originalBase64
-            }
+            const result = await dbGet('screenshots', pos.trendScreenshotId)
+            if (result) trendScreenshotPreviews.value[pos.positionId] = result.annotatedBase64 || result.originalBase64
         } catch (e) { console.log('Screenshot-Load fehlgeschlagen:', e) }
     }
     // Closing-Screenshot laden
     if (pos.closingScreenshotId && !closingScreenshotPreviews.value[pos.positionId]) {
         try {
-            const results = await dbFind('screenshots', { equalTo: { objectId: pos.closingScreenshotId }, limit: 1 })
-            if (results.length > 0) {
-                closingScreenshotPreviews.value[pos.positionId] = results[0].annotatedBase64 || results[0].originalBase64
-            }
+            const result = await dbGet('screenshots', pos.closingScreenshotId)
+            if (result) closingScreenshotPreviews.value[pos.positionId] = result.annotatedBase64 || result.originalBase64
         } catch (e) { console.log('Screenshot-Load fehlgeschlagen:', e) }
     }
 }
@@ -1462,7 +1456,7 @@ function getPositionDate(pos) {
                             <div v-if="pos.entryScreenshotId" class="position-relative screenshot-thumb">
                                 <img v-if="entryScreenshotPreviews[pos.positionId]"
                                     :src="entryScreenshotPreviews[pos.positionId]"
-                                    class="rounded" style="max-height: 120px; max-width: 200px; object-fit: cover;" />
+                                    class="rounded" style="max-height: 120px; max-width: 200px; object-fit: contain;" />
                                 <span v-else class="badge bg-secondary"><i class="uil uil-image me-1"></i>1</span>
                                 <i class="uil uil-times-circle screenshot-remove" @click.stop="removeEntryScreenshot(pos)"></i>
                             </div>
@@ -1470,7 +1464,7 @@ function getPositionDate(pos) {
                             <div v-if="pos.trendScreenshotId" class="position-relative screenshot-thumb">
                                 <img v-if="trendScreenshotPreviews[pos.positionId]"
                                     :src="trendScreenshotPreviews[pos.positionId]"
-                                    class="rounded" style="max-height: 120px; max-width: 200px; object-fit: cover;" />
+                                    class="rounded" style="max-height: 120px; max-width: 200px; object-fit: contain;" />
                                 <span v-else class="badge bg-secondary"><i class="uil uil-image me-1"></i>2</span>
                                 <i class="uil uil-times-circle screenshot-remove" @click.stop="removeTrendScreenshot(pos)"></i>
                             </div>
@@ -1589,7 +1583,7 @@ function getPositionDate(pos) {
                                 <div class="position-relative screenshot-thumb">
                                     <img v-if="closingScreenshotPreviews[pos.positionId]"
                                         :src="closingScreenshotPreviews[pos.positionId]"
-                                        class="rounded" style="max-height: 120px; max-width: 200px; object-fit: cover;" />
+                                        class="rounded" style="max-height: 120px; max-width: 200px; object-fit: contain;" />
                                     <span v-else class="badge bg-secondary"><i class="uil uil-image me-1"></i>1</span>
                                     <i class="uil uil-times-circle screenshot-remove" @click.stop="removeClosingScreenshot(pos)"></i>
                                 </div>
