@@ -214,8 +214,21 @@ const tpSlHistory = ref({}) // Map: positionId → [{ time, type, oldVal, newVal
 function loadTpSlHistory(positionId) {
     if (tpSlHistory.value[positionId]) return tpSlHistory.value[positionId]
     try {
+        // 1. Try localStorage (fast, same-origin cache)
         const stored = localStorage.getItem(`tpsl_history_${positionId}`)
         let history = stored ? JSON.parse(stored) : []
+
+        // 2. DB fallback — if localStorage empty, load from incoming_positions.tpslHistory
+        if (history.length === 0) {
+            const pos = incomingPositions.find(p => p.positionId === positionId)
+            const dbHistory = pos?.tpslHistory
+            if (Array.isArray(dbHistory) && dbHistory.length > 0) {
+                history = dbHistory
+                // Sync back to localStorage for fast access
+                localStorage.setItem(`tpsl_history_${positionId}`, JSON.stringify(history))
+            }
+        }
+
         // Deduplicate: per type, skip entries with same action+oldVal+newVal as previous of same type
         const norm = v => (v === undefined || v === null || v === '' || v === 0) ? null : String(v)
         if (history.length > 1) {
@@ -259,6 +272,13 @@ function saveTpSlHistory(positionId, history) {
     }
     tpSlHistory.value[positionId] = clean
     localStorage.setItem(`tpsl_history_${positionId}`, JSON.stringify(clean))
+
+    // Persist to DB (non-blocking) — ensures history survives browser/port switches
+    const pos = incomingPositions.find(p => p.positionId === positionId)
+    if (pos?.objectId) {
+        dbUpdate('incoming_positions', pos.objectId, { tpslHistory: clean })
+            .catch(err => console.warn('tpslHistory DB save failed:', err.message))
+    }
 }
 
 function wasTpSlTriggered(positionId, type, oldPrice) {

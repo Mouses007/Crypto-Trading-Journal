@@ -893,6 +893,26 @@ img.logo {
     box-shadow: none;
 }
 
+.mobile-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--border-radius);
+    color: var(--white-87);
+    transition: var(--transition-fast);
+}
+
+.mobile-menu-toggle:hover,
+.mobile-menu-toggle:active {
+    background: var(--black-bg-12);
+    color: var(--white-87);
+}
+
+.mobile-menu-toggle .fa-bars {
+    font-size: 1.1rem;
+}
+
 #navbarDropdown {
     color: var(--white-87);
 }

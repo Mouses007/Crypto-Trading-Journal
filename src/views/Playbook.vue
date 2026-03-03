@@ -276,6 +276,7 @@ async function loadPlaybookEntries() {
             timeframe: note.timeframe || parsed.timeframe || '',
             screenshotId: note.screenshotId || '',
             // Closing fields
+            closingTradeType: note.closingTradeType || '',
             closingNote: note.closingNote || '',
             closingStressLevel: note.closingStressLevel || 0,
             closingEmotionLevel: note.closingEmotionLevel || 0,
@@ -482,6 +483,10 @@ const tradeTypeOptions = [
 
 function updateTradeType(entry, value) {
     entry.tradeType = entry.tradeType === value ? '' : value
+}
+
+function updateClosingTradeType(entry, value) {
+    entry.closingTradeType = entry.closingTradeType === value ? '' : value
 }
 
 function getTradeTypeLabel(value) {
@@ -875,6 +880,7 @@ async function saveEntry(entry) {
             timeframe: entry.timeframe || '',
             screenshotId: entry.screenshotId || '',
             // Closing fields
+            closingTradeType: entry.closingTradeType || '',
             closingNote: entry.closingNote || '',
             closingStressLevel: entry.closingStressLevel || 0,
             closingEmotionLevel: entry.closingEmotionLevel || 0,
@@ -973,7 +979,14 @@ async function saveEntry(entry) {
                     <!-- Collapsed preview -->
                     <div v-if="expandedId !== entry.tradeId && hasData(entry)" class="mt-1">
                         <div class="d-flex flex-wrap align-items-center gap-1">
-                            <span v-if="entry.tradeType" class="pb-pill">{{ getTradeTypeLabel(entry.tradeType) }}</span>
+                            <template v-if="entry.tradeType">
+                                <span v-if="entry.closingTradeType && entry.closingTradeType !== entry.tradeType" class="d-flex align-items-center gap-1">
+                                    <span class="pb-pill" style="background: var(--orange-color, #f59e0b); color: #000;">{{ getTradeTypeLabel(entry.tradeType) }}</span>
+                                    <span class="text-muted" style="font-size: 1.1rem;">→</span>
+                                    <span class="pb-pill" style="background: var(--green-color, #10b981); color: #000;">{{ getTradeTypeLabel(entry.closingTradeType) }}</span>
+                                </span>
+                                <span v-else class="pb-pill">{{ getTradeTypeLabel(entry.closingTradeType || entry.tradeType) }}</span>
+                            </template>
                             <span v-if="entry.entryStressLevel > 0" class="pb-pill">
                                 {{ t('incoming.stress') }} {{ entry.entryStressLevel }}/10
                             </span>
@@ -1002,7 +1015,14 @@ async function saveEntry(entry) {
                         <div class="pb-grid">
                             <div v-if="entry.tradeType" class="pb-field">
                                 <div class="pb-label">{{ t('incoming.tradeType') }}</div>
-                                <div class="pb-value"><span class="pb-pill">{{ getTradeTypeLabel(entry.tradeType) }}</span></div>
+                                <div class="pb-value">
+                                    <span v-if="entry.closingTradeType && entry.closingTradeType !== entry.tradeType" class="d-flex align-items-center gap-1">
+                                        <span class="pb-pill" style="background: var(--orange-color, #f59e0b); color: #000;">{{ getTradeTypeLabel(entry.tradeType) }}</span>
+                                        <span class="text-muted" style="font-size: 1.1rem;">→</span>
+                                        <span class="pb-pill" style="background: var(--green-color, #10b981); color: #000;">{{ getTradeTypeLabel(entry.closingTradeType) }}</span>
+                                    </span>
+                                    <span v-else class="pb-pill">{{ getTradeTypeLabel(entry.closingTradeType || entry.tradeType) }}</span>
+                                </div>
                             </div>
 
                             <div v-if="entry.timeframe" class="pb-field">
@@ -1464,8 +1484,8 @@ async function saveEntry(entry) {
                             <div class="d-flex flex-wrap gap-1">
                                 <button v-for="tt in tradeTypeOptions" :key="tt.value"
                                     class="btn btn-sm py-0 px-2"
-                                    :class="entry.tradeType === tt.value ? 'btn-primary' : 'btn-outline-secondary'"
-                                    @click.stop="updateTradeType(entry, tt.value)">
+                                    :class="entry.closingTradeType === tt.value ? 'btn-primary' : 'btn-outline-secondary'"
+                                    @click.stop="updateClosingTradeType(entry, tt.value)">
                                     {{ t(tt.labelKey) }}
                                 </button>
                             </div>

@@ -387,6 +387,9 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('incoming_positions', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
     await addColumnIfNotExists('incoming_positions', 'closingTradeType', (t) => t.text('closingTradeType').defaultTo(''))
 
+    // SL/TP History (persistent — replaces localStorage-only storage)
+    await addColumnIfNotExists('incoming_positions', 'tpslHistory', (t) => t.text('tpslHistory').defaultTo('[]'))
+
     // Strategy followed (closing eval)
     await addColumnIfNotExists('incoming_positions', 'strategyFollowed', (t) => t.integer('strategyFollowed').defaultTo(-1))
 

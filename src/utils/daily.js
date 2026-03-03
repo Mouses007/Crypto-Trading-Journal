@@ -555,6 +555,8 @@ export async function useGetNotes() {
                 temp.note = object.note
                 temp.dateUnix = object.dateUnix
                 temp.tradingMetadata = object.tradingMetadata || null
+                temp.tradeType = object.tradeType || ''
+                temp.closingTradeType = object.closingTradeType || ''
                 notes.push(temp)
             }
         }

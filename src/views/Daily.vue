@@ -155,6 +155,19 @@ let tradeSatisfactionDateUnix
 
 // Trading Metadata (aus notes.tradingMetadata)
 const tradingMeta = ref(null)
+const tradeTypeRef = ref('')
+const closingTradeTypeRef = ref('')
+
+// ===== TRADE TYPE HELPERS =====
+const tradeTypeOptions = [
+    { value: 'scalp', labelKey: 'incoming.scalptrade' },
+    { value: 'day', labelKey: 'incoming.daytrade' },
+    { value: 'swing', labelKey: 'incoming.swingtrade' },
+]
+function getTradeTypeLabel(value) {
+    const opt = tradeTypeOptions.find(o => o.value === value)
+    return opt ? t(opt.labelKey) : value
+}
 
 // ===== TRADING METADATA HELPERS =====
 function hasTradingMetadata(meta) {
@@ -683,9 +696,13 @@ async function clickTradesModal(param1, param2, param3) {
                 let noteIndex = notes.findIndex(obj => obj.tradeId == filteredTradeId)
                 tradeNote.value = null
                 tradingMeta.value = null
+                tradeTypeRef.value = ''
+                closingTradeTypeRef.value = ''
                 if (noteIndex != -1) {
                     tradeNote.value = stripHtml(notes[noteIndex].note)
                     tradingMeta.value = notes[noteIndex].tradingMetadata || null
+                    tradeTypeRef.value = notes[noteIndex].tradeType || ''
+                    closingTradeTypeRef.value = notes[noteIndex].closingTradeType || ''
                 }
 
                 // KI-Bewertung laden (non-blocking)
@@ -1644,6 +1661,17 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+
+                    <!-- *** TRADE TYPE *** -->
+                    <div v-if="tradeTypeRef || closingTradeTypeRef" class="mx-2 mt-2 mb-1 d-flex align-items-center gap-2" style="font-size: 0.85rem;">
+                        <i class="uil uil-tag-alt" style="color: var(--grey-color, #6b7280);"></i>
+                        <span v-if="closingTradeTypeRef && tradeTypeRef && closingTradeTypeRef !== tradeTypeRef" class="d-flex align-items-center gap-2">
+                            <span class="badge" style="background: var(--orange-color, #f59e0b); color: #000; font-size: 0.8rem;">{{ getTradeTypeLabel(tradeTypeRef) }}</span>
+                            <span class="text-muted" style="font-size: 1.1rem;">→</span>
+                            <span class="badge" style="background: var(--green-color, #10b981); color: #000; font-size: 0.8rem;">{{ getTradeTypeLabel(closingTradeTypeRef) }}</span>
+                        </span>
+                        <span v-else class="badge" style="background: var(--white-10, #374151); font-size: 0.8rem;">{{ getTradeTypeLabel(closingTradeTypeRef || tradeTypeRef) }}</span>
                     </div>
 
                     <!-- *** TRADING METADATA *** -->

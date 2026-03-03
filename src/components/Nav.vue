@@ -121,8 +121,9 @@ const navAdd = (param) => {
 <template>
     <div class="justify-content-between navbar">
         <div class="col-6">
-            <span v-if="screenType == 'mobile'">
-                <a v-on:click="useToggleMobileMenu">
+            <span v-if="screenType == 'mobile'" class="d-flex align-items-center">
+                <a v-on:click="useToggleMobileMenu" class="mobile-menu-toggle">
+                    <i class="fa fa-bars me-2"></i>
                     <i v-bind:class="pages.filter(item => item.id == pageId)[0].icon" class="me-1"></i>{{
                         pages.filter(item => item.id == pageId)[0].name }}
                     <span v-if="filterSummary" class="nav-filter-info">{{ filterSummary }}</span>

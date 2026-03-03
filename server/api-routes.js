@@ -24,7 +24,7 @@ const TABLE_COLUMNS = {
     tags: ['id', 'dateUnix', 'tradeId', 'tags', 'closingTags', 'createdAt', 'updatedAt'],
     notes: ['id', 'dateUnix', 'tradeId', 'note', 'title', 'entryStressLevel', 'exitStressLevel', 'entryNote', 'feelings', 'playbook', 'timeframe', 'screenshotId', 'trendScreenshotId', 'emotionLevel', 'closingNote', 'closingScreenshotId', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingPlaybook', 'tradeType', 'closingTradeType', 'strategyFollowed', 'tradingMetadata', 'aiReview', 'aiReviewProvider', 'aiReviewModel', 'aiReviewPromptTokens', 'aiReviewCompletionTokens', 'aiReviewTotalTokens', 'createdAt', 'updatedAt'],
     excursions: ['id', 'dateUnix', 'tradeId', 'stopLoss', 'maePrice', 'mfePrice', 'createdAt', 'updatedAt'],
-    incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType', 'closingTradeType', 'strategyFollowed', 'trendScreenshotId'],
+    incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType', 'closingTradeType', 'strategyFollowed', 'trendScreenshotId', 'tpslHistory'],
     share_card_templates: ['id', 'name', 'prompt', 'imageBase64', 'category', 'createdAt', 'updatedAt']
 }
 
@@ -34,7 +34,7 @@ const JSON_COLUMNS = {
     screenshots: ['maState'],
     tags: ['tags', 'closingTags'],
     settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'customTimeframes', 'balances'],
-    incoming_positions: ['bitunixData', 'tags', 'closingTags', 'historyData'],
+    incoming_positions: ['bitunixData', 'tags', 'closingTags', 'historyData', 'tpslHistory'],
     notes: ['tradingMetadata'],
 }
 
