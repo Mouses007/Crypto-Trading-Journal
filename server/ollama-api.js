@@ -534,30 +534,7 @@ TRADE-DATEN:
 
             if (hasScreenshot) {
                 reviewPrompt += `\n\nCHART-SCREENSHOT ANALYSE:
-Der beigefügte Screenshot zeigt den TradingView-Chart dieses Trades. DER SCREENSHOT IST DIE PRIMAERE QUELLE FUER SL/TP-INFORMATIONEN.
-
-**WICHTIG — SL und TP aus dem Chart ABLESEN:**
-Die farbigen Rechtecke im Chart SIND die dokumentierten Stop-Loss- und Take-Profit-Zonen des Traders.
-Der Trader HAT SL und TP gesetzt — sie sind als Rechtecke im Chart eingezeichnet UND die Preise werden als Zahlen an der Y-Achse (rechte Seite) angezeigt!
-
-**So liest du die Preise ab:**
-1. Schau auf die Y-ACHSE (rechte Seite des Charts) — dort stehen die Preisniveaus als ZAHLEN
-2. Die OBERKANTE und UNTERKANTE jedes Rechtecks entspricht einem ablesbaren Preis auf der Y-Achse
-3. Farbige Preis-Labels mit farbigem Hintergrund an der Y-Achse markieren die exakten Niveaus:
-   - ROT hinterlegtes Preis-Label = SL-Niveau oder aktueller Kurs
-   - GRUEN/TUERKIS hinterlegtes Preis-Label = TP-Niveau
-   - GRAU/WEISS hinterlegte Labels = andere Niveaus (z.B. MA-Werte)
-4. Lies die ZAHLEN direkt von der Y-Achse ab und nenne sie in deiner Bewertung
-
-- ROTES Rechteck = Stop-Loss-Zone (SL)
-- GRUENES/TUERKISES Rechteck = Take-Profit-Zone (TP)
-- SHORT-Position: Rotes Rechteck OBEN (SL) + Gruenes Rechteck UNTEN (TP)
-- LONG-Position: Gruenes Rechteck OBEN (TP) + Rotes Rechteck UNTEN (SL)
-- Die Grenze/Kante zwischen den beiden Rechtecken = ungefaehrer Entry-Bereich
-- BERECHNE das RRR: Abstand Entry-zu-TP geteilt durch Abstand Entry-zu-SL
-
-SAGE NIEMALS "kein SL dokumentiert" oder "kein TP dokumentiert" — die Rechtecke IM CHART sind die SL/TP-Dokumentation!
-Nenne IMMER die konkreten Preisniveaus die du von der Y-Achse abliest.
+Der beigefügte Screenshot zeigt den TradingView-Chart dieses Trades. Die SL/TP-Daten oben (RISIKOMANAGEMENT & POSITIONSDATEN + SL/TP PROTOKOLL) sind die primaere Quelle — der Chart dient zur visuellen Bestätigung und Chartanalyse.
 
 **Chart-Elemente erkennen:**
 - Kerzenmuster (Doji, Hammer, Engulfing etc.) am Entry/Exit
@@ -566,21 +543,20 @@ Nenne IMMER die konkreten Preisniveaus die du von der Y-Achse abliest.
 - Indikatoren: GUSS, LSOB, VRVP falls im Chart-Header sichtbar
 - Marktstruktur: Higher Highs/Lows, Lower Highs/Lows, Konsolidierung
 - Labels im Chart wie "GUSS Start", "GUSS Entry" = Indikator-Signale
+- Farbige Rechtecke koennen SL/TP-Zonen visuell markieren (Rot = SL, Gruen = TP)
 
 **Bewerte im Screenshot:**
 - War der Entry an einer sinnvollen Stelle (Support/Resistance, Trendwende, Indikator-Signal)?
-- BERECHNE das RRR aus den Rechtecken und nenne es explizit (z.B. "RRR = 1:1.8")
-- War der SL sinnvoll platziert (ueber/unter Struktur, nicht zu eng/weit)?
-- War der TP realistisch (an naechster Support/Resistance-Zone)?
+- Passt die SL/TP-Platzierung zur Chartstruktur (ueber/unter Support/Resistance)?
 - Gab es Warnsignale im Chart die gegen den Trade sprachen?`
             }
 
             reviewPrompt += `\n\nBewerte folgende Punkte:
-1. **Trade-Analyse**: ${hasScreenshot ? 'Lies zuerst SL, TP und Entry aus den farbigen Rechtecken im Chart ab (Y-Achse rechts). Nenne die konkreten Preise und berechne das RRR. Dann bewerte ob die Platzierung gut war.' : 'War der Einstieg/Ausstieg gut gewaehlt?'} Passte die Positionsgroesse?
-2. **Risikomanagement**: ${tradingMeta ? 'Bewerte SL/TP-Platzierung, RRR, Positionsgroesse relativ zur Marge, und ob der SL ueber Breakeven gezogen wurde. Waren die SL/TP-Verschiebungen sinnvoll?' : 'Wurde ein SL/TP gesetzt? War das Risiko kontrolliert?'}
+1. **Trade-Analyse**: War der Einstieg/Ausstieg gut gewaehlt? Passte die Positionsgroesse?${hasScreenshot ? ' Nutze den Chart zur Bewertung der Entry-Qualitaet (Marktstruktur, Indikatoren).' : ''}
+2. **Risikomanagement**: ${tradingMeta ? 'Bewerte SL/TP-Platzierung anhand der strukturierten Daten oben, RRR, Positionsgroesse relativ zur Marge, und ob der SL ueber Breakeven gezogen wurde. Waren die SL/TP-Verschiebungen im Protokoll sinnvoll?' : 'Wurde ein SL/TP gesetzt? War das Risiko kontrolliert?'}${hasScreenshot ? ' Prüfe im Chart ob SL/TP zur Marktstruktur passt.' : ''}
 3. **Positionsaufbau**: ${tradingMeta?.fills?.length > 1 ? 'Bewerte die Nachkaeufe und Teilschliessungen. War der Positionsaufbau sinnvoll? Wurde richtig skaliert?' : 'War der Einstieg in einem Schritt oder gestaffelt?'}
-4. **Ueberlegungen des Traders**: Waren die Gedanken/Ueberlegungen nachvollziehbar?${hasScreenshot ? ' SL/TP sind im Chart als Rechtecke eingezeichnet und werden rechts an der Y-Achse als Zahlen angezeigt — das ZAEHLT als dokumentiert, bewerte sie NICHT als fehlend!' : ''}
-5. **Fehler & Verbesserungen**: Was haette besser sein koennen?${hasScreenshot ? ' Bewerte die QUALITAET der SL/TP-Platzierung im Chart, nicht ob sie fehlen.' : ''}
+4. **Ueberlegungen des Traders**: Waren die Gedanken/Ueberlegungen nachvollziehbar?
+5. **Fehler & Verbesserungen**: Was haette besser sein koennen?
 6. **Konkrete Tipps**: 1-2 spezifische Verbesserungsvorschlaege.
 7. **Gesamtnote**: Note von 1-10 (10 = perfekt).
 

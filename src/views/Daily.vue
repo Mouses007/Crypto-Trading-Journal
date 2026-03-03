@@ -1782,12 +1782,14 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                     <template v-if="histEntry.action === 'set'">
                                         <span class="text-muted">&rarr;</span>
                                         <span class="text-white">{{ histEntry.newVal }}</span>
+                                        <span v-if="histEntry.qty" class="text-muted">({{ histEntry.qty }})</span>
                                         <span class="badge bg-secondary" style="font-size: 0.6rem;">Gesetzt</span>
                                     </template>
                                     <template v-else-if="histEntry.action === 'moved'">
                                         <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
                                         <span class="text-muted">&rarr;</span>
                                         <span class="text-white">{{ histEntry.newVal }}</span>
+                                        <span v-if="histEntry.qty" class="text-muted">({{ histEntry.qty }})</span>
                                         <span class="badge bg-warning text-dark" style="font-size: 0.6rem;">Verschoben</span>
                                     </template>
                                     <template v-else-if="histEntry.action === 'triggered'">
