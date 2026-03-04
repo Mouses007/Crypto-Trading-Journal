@@ -296,7 +296,7 @@ function wasTpSlTriggered(positionId, type, oldPrice) {
     })
 }
 
-function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0, posQty = 0) {
+function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0, posQty = 0, side = '') {
     const history = loadTpSlHistory(positionId)
     const now = Date.now()
 
@@ -313,6 +313,20 @@ function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0, posQty
         return { val: null, entry: null }
     }
 
+    // Calculate current RRR after this change
+    function calcCurrentRRR() {
+        // Determine effective SL/TP after this change
+        const effectiveSl = newSl ? parseFloat(newSl) : null
+        const effectiveTp = newTp ? parseFloat(newTp) : null
+        if (!effectiveSl || !effectiveTp) return null
+        const entry = getAvgEntryPrice(positionId, side)
+        if (entry <= 0) return null
+        const riskDist = Math.abs(entry - effectiveSl)
+        const rewardDist = Math.abs(entry - effectiveTp)
+        if (riskDist <= 0) return null
+        return parseFloat((rewardDist / riskDist).toFixed(2))
+    }
+
     // Helper: prevent duplicate — only push if last entry of same type differs
     function safePush(entry) {
         const last = lastOfType(entry.type)
@@ -322,6 +336,8 @@ function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0, posQty
             norm(last.entry.newVal) === norm(entry.newVal)) {
             return false // duplicate, skip
         }
+        // Attach current RRR to every entry
+        entry.rrr = calcCurrentRRR()
         history.push(entry)
         return true
     }
@@ -417,10 +433,12 @@ async function fetchPositionTpSl(positionId, force = false, broker = 'bitunix', 
             const current = getTpSlForPosition(positionId)
             const pos = incomingPositions.find(p => p.positionId === positionId)
             const posQty = pos ? parseFloat(pos.quantity || 0) : 0
-            trackTpSlChanges(positionId, current.sl, current.tp, current.slQty, current.tpQty, posQty)
+            const posSide = pos?.side || ''
+            trackTpSlChanges(positionId, current.sl, current.tp, current.slQty, current.tpQty, posQty, posSide)
         } else {
             positionTpSl.value[positionId] = { loading: false, orders: [], error: null }
-            trackTpSlChanges(positionId, null, null, 0, 0, 0)
+            const pos2 = incomingPositions.find(p => p.positionId === positionId)
+            trackTpSlChanges(positionId, null, null, 0, 0, 0, pos2?.side || '')
         }
     } catch (err) {
         positionTpSl.value[positionId] = { loading: false, orders: [], error: err.message }
@@ -1043,7 +1061,8 @@ async function completeClosingEvaluation(pos) {
                         oldVal: h.oldVal,
                         newVal: h.newVal,
                         qty: h.qty || 0,
-                        posQty: h.posQty || 0
+                        posQty: h.posQty || 0,
+                        rrr: h.rrr || null
                     }))
             })()
         }
@@ -1358,6 +1377,7 @@ function getPositionDate(pos) {
                                         <span class="text-muted" style="text-decoration: line-through;">{{ entry.oldVal }}</span>
                                         <span class="text-muted">→ entfernt</span>
                                     </template>
+                                    <span v-if="entry.rrr" class="ms-auto" style="color: #a78bfa; font-weight: 600;">1:{{ entry.rrr }}</span>
                                 </div>
                             </template>
                         </div>

@@ -82,40 +82,47 @@ export function useStartOfDay(param) {
 /**************************************
 * NUMBER FORMATS
 **************************************/
+// Map app language → Intl number locale (de→de-CH with apostrophe, en→en-US with comma)
+const LOCALE_MAP = { de: 'de-CH', en: 'en-US' }
+function numLocale() {
+    const lang = localStorage.getItem('appLanguage') || 'de'
+    return LOCALE_MAP[lang] || 'de-CH'
+}
+
 export function useThousandCurrencyFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0, style: 'currency', currency: 'USD' }).format(param)
+    return new Intl.NumberFormat(numLocale(), { maximumFractionDigits: 0, style: 'currency', currency: 'USD' }).format(param)
 }
 
 export function useThousandFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(param)
+    return new Intl.NumberFormat(numLocale(), { maximumFractionDigits: 0 }).format(param)
 }
 
 export function useTwoDecCurrencyFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, style: 'currency', currency: 'USD' }).format(param)
+    return new Intl.NumberFormat(numLocale(), { maximumFractionDigits: 2, style: 'currency', currency: 'USD' }).format(param)
 }
 
 export function useThreeDecCurrencyFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 3, style: 'currency', currency: 'USD' }).format(param)
+    return new Intl.NumberFormat(numLocale(), { maximumFractionDigits: 3, style: 'currency', currency: 'USD' }).format(param)
 }
 
 export function useXDecCurrencyFormat(param, param2) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: param2, style: 'currency', currency: 'USD' }).format(param)
+    return new Intl.NumberFormat(numLocale(), { maximumFractionDigits: param2, style: 'currency', currency: 'USD' }).format(param)
 }
 
 export function useTwoDecFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(param)
+    return new Intl.NumberFormat(numLocale(), { maximumFractionDigits: 2 }).format(param)
 }
 
 export function useXDecFormat(param, param2) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: param2 }).format(param)
+    return new Intl.NumberFormat(numLocale(), { maximumFractionDigits: param2 }).format(param)
 }
 
 export function useOneDecPercentFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1, style: 'percent' }).format(param)
+    return new Intl.NumberFormat(numLocale(), { maximumFractionDigits: 1, style: 'percent' }).format(param)
 }
 
 export function useTwoDecPercentFormat(param) {
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, style: 'percent' }).format(param)
+    return new Intl.NumberFormat(numLocale(), { maximumFractionDigits: 2, style: 'percent' }).format(param)
 }
 
 export function useFormatBytes(param, decimals = 2) {

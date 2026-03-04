@@ -1203,10 +1203,13 @@ export async function useCalculateProfitAnalysis(param) {
                             //console.log(" Entry price " + tradeEntryPrice + " | MFE Price " + element.mfePrice)
                             let entryMfeDiff
                             trade.strategy == "long" ? entryMfeDiff = (element.mfePrice - tradeEntryPrice) : entryMfeDiff = (tradeEntryPrice - element.mfePrice)
-                            let grossMfeR = profitAnalysis.grossAvLossPerShare ? (entryMfeDiff / profitAnalysis.grossAvLossPerShare) : 0
-                            //console.log("  --> Strategy "+trade.strategy+", entry price : "+tradeEntryPrice+", mfe price "+element.mfePrice+", diff "+entryMfeDiff+" and grosmfe R "+grossMfeR)
+                            // Convert price difference to dollar P&L (critical for crypto where qty != 1)
+                            let qty = trade.buyQuantity || trade.sellQuantity || 1
+                            let mfeDollar = entryMfeDiff * qty
+                            let grossMfeR = profitAnalysis.grossAvLossPerShare ? (mfeDollar / profitAnalysis.grossAvLossPerShare) : 0
+                            //console.log("  --> Strategy "+trade.strategy+", entry price : "+tradeEntryPrice+", mfe price "+element.mfePrice+", diff "+entryMfeDiff+", mfeDollar "+mfeDollar+" and grosmfe R "+grossMfeR)
                             grossMfeRArray.push(grossMfeR)
-                            let netMfeR = profitAnalysis.netAvLossPerShare ? (entryMfeDiff / profitAnalysis.netAvLossPerShare) : 0
+                            let netMfeR = profitAnalysis.netAvLossPerShare ? (mfeDollar / profitAnalysis.netAvLossPerShare) : 0
                             netMfeRArray.push(netMfeR)
                         }
                     }
@@ -1265,8 +1268,10 @@ export async function useCalculateProfitAnalysis(param) {
             //console.table(profitTakingAnalysis)
             profitAnalysis.grossMfeR = null
             profitAnalysis.netMfeR = null
-            if (tempGrossExpectedReturn > grossCurrExpectReturn) profitAnalysis.grossMfeR = tempGrossMfeR
-            if (tempNetExpectedReturn > netCurrExpectReturn) profitAnalysis.netMfeR = tempNetMfeR
+            // Require at least 10 trades with excursion data for statistical significance
+            const MIN_MFE_TRADES = 10
+            if (grossMfeRArrayLength >= MIN_MFE_TRADES && tempGrossExpectedReturn > grossCurrExpectReturn) profitAnalysis.grossMfeR = tempGrossMfeR
+            if (netMfeRArrayLength >= MIN_MFE_TRADES && tempNetExpectedReturn > netCurrExpectReturn) profitAnalysis.netMfeR = tempNetMfeR
 
             //console.log("  --> Gross MFE " + profitAnalysis.grossMfeR + " and net " + profitAnalysis.netMfeR)
             //console.log("  --> Profit analysis " + JSON.stringify(profitAnalysis))

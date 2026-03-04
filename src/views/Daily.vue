@@ -1829,6 +1829,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                         <span class="text-muted" style="text-decoration: line-through;">{{ histEntry.oldVal }}</span>
                                         <span class="text-muted">&rarr; entfernt</span>
                                     </template>
+                                    <span v-if="histEntry.rrr" class="ms-auto" style="color: #a78bfa; font-weight: 600;">1:{{ histEntry.rrr }}</span>
                                 </div>
                             </template>
                         </div>

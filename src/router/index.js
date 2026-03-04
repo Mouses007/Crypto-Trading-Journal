@@ -95,10 +95,10 @@ const router = createRouter({
             import('../views/Auswertung.vue')
     },
     {
-        path: '/ki-agent',
+        path: '/ki-coach',
         name: 'kiAgent',
         meta: {
-            title: "KI-Agent", titleKey: "nav.kiAgent",
+            title: "KI-Coach", titleKey: "nav.kiAgent",
             layout: DashboardLayout
         },
         component: () =>

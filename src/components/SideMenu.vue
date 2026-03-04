@@ -168,7 +168,7 @@ function goToDashboard() {
                 </a>
                 <a v-if="currentUser?.aiEnabled !== false && currentUser?.aiEnabled !== 0"
                     v-bind:class="[pageId === 'kiAgent' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/ki-agent">
+                    href="/ki-coach">
                     <i class="uil uil-robot me-2"></i>{{ t('nav.kiAgent') }}</a>
                 <a id="step7" v-bind:class="[pageId === 'screenshots' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/screenshots">
