@@ -352,6 +352,40 @@ async function runMigrations(knex, client) {
         })
     }
 
+    // ==================== AI AGENT SESSIONS ====================
+    if (!(await knex.schema.hasTable('ai_agent_sessions'))) {
+        await knex.schema.createTable('ai_agent_sessions', (t) => {
+            t.increments('id').primary()
+            t.text('title').defaultTo('')
+            t.text('provider').defaultTo('')
+            t.text('model').defaultTo('')
+            t.integer('totalTokens').defaultTo(0)
+            t.integer('totalToolCalls').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+        })
+        console.log(' -> Created table: ai_agent_sessions')
+    }
+
+    // ==================== AI AGENT MESSAGES ====================
+    if (!(await knex.schema.hasTable('ai_agent_messages'))) {
+        await knex.schema.createTable('ai_agent_messages', (t) => {
+            t.increments('id').primary()
+            t.integer('sessionId').notNullable()
+            t.text('role').notNullable()        // 'user' | 'assistant' | 'tool'
+            t.text('content').defaultTo('')
+            t.text('toolName').defaultTo('')     // Only for role='tool'
+            t.text('toolCallId').defaultTo('')
+            t.text('toolParams').defaultTo('')   // JSON
+            t.text('toolResult').defaultTo('')   // JSON
+            t.integer('promptTokens').defaultTo(0)
+            t.integer('completionTokens').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.index('sessionId', 'idx_agent_messages_sessionId')
+        })
+        console.log(' -> Created table: ai_agent_messages')
+    }
+
     // ==================== COLUMN MIGRATIONS ====================
     // bitunix_config additions
     await addColumnIfNotExists('bitunix_config', 'lastApiImport', (t) => t.bigInteger('lastApiImport').defaultTo(0))

@@ -7,6 +7,7 @@ import { setupBitgetRoutes } from './server/bitget-api.js'
 import { setupBinanceRoutes } from './server/binance-api.js'
 import { setupPolygonRoutes } from './server/polygon-api.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
+import { setupAgentRoutes } from './server/ai-agent.js'
 import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
@@ -36,6 +37,7 @@ const startIndex = async () => {
     setupBinanceRoutes(app);
     setupPolygonRoutes(app);
     setupOllamaRoutes(app);
+    setupAgentRoutes(app);
     setupUpdateRoutes(app);
     setupBackupRoutes(app);
     await setupFluxRoutes(app);

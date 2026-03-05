@@ -1940,9 +1940,12 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
         //console.log(" currentTD "+currentTD)
         //console.log(" trade.td "+trade.td)
         if (initCandleChart) {
-            //console.log(" init new candlestickChart")
-            candlestickChart = echarts.init(document.getElementById("candlestickChart"));
-            //currentTD = trade.td
+            const chartEl = document.getElementById("candlestickChart")
+            if (!chartEl) {
+                reject(new Error("Candlestick chart container not found"))
+                return
+            }
+            candlestickChart = echarts.init(chartEl)
         }
 
         let decimals = 2

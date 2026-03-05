@@ -1,5 +1,6 @@
 <script setup>
 import { ref, reactive, onBeforeMount, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
 import { aiReportGenerating, aiReportError, aiReportLastSavedId, aiReportLabel, aiReportCountBefore } from '../stores/settings.js'
@@ -34,12 +35,35 @@ const savedReports = reactive([])
 const expandedReports = reactive(new Set())
 const deleteConfirmId = ref(null)
 
+// Tabs
+const currentTab = ref('reports') // 'reports' | 'agent'
+
+// Report-Stil Quick-Selection (alle außer 'custom')
+const reportStylePresets = [
+    { value: 'kurz', icon: 'uil-bolt', prompt: 'Halte den Bericht kurz und prägnant. Maximal 3-4 Sätze pro Abschnitt. Fokussiere dich auf die wichtigsten Erkenntnisse.' },
+    { value: 'standard', icon: 'uil-file-alt', prompt: 'Erstelle einen ausgewogenen Trading-Bericht mit allen wichtigen Kennzahlen, Stärken, Schwächen und konkreten Verbesserungsvorschlägen. Nutze eine sachliche, professionelle Sprache.' },
+    { value: 'coach', icon: 'uil-shield-exclamation', prompt: 'Sei sehr direkt und kritisch. Beschönige nichts. Sprich Schwächen und Fehler klar an. Gib konkrete Verbesserungsvorschläge wie ein strenger Trading-Coach.' },
+    { value: 'psychologie', icon: 'uil-brain', prompt: 'Lege besonderen Fokus auf die psychologischen Aspekte: Stress, Emotionen, Disziplin, Overtrading. Analysiere Verhaltensmuster und emotionale Trigger.' }
+]
+const selectedReportStyle = ref('standard')
+
 // Chat
 const chatEnabled = ref(true)
 const chatMessages = reactive({}) // { reportId: [{ id, role, content, createdAt }] }
 const chatInput = reactive({}) // { reportId: 'text' }
 const chatLoading = reactive({}) // { reportId: true/false }
 const chatError = reactive({}) // { reportId: 'error msg' }
+
+// ==================== AGENT STATE ====================
+const agentSessions = reactive([])
+const agentCurrentSessionId = ref(null)
+const agentMessages = reactive([]) // Current session messages
+const agentInput = ref('')
+const agentLoading = ref(false)
+const agentError = ref('')
+const agentSteps = reactive([]) // Live SSE steps during agent run
+const agentExpandedTools = reactive(new Set())
+const agentDeleteConfirmId = ref(null)
 
 // Token-Verbrauch pro Provider (nur Reports auf dieser Seite)
 const tokensByProvider = computed(() => {
@@ -113,40 +137,32 @@ function getModelPrice(model) {
     return null
 }
 
-// Gesamtkosten berechnen (Reports + Chat + Screenshot-Reviews)
+// Gesamtkosten berechnen (aus globalTokenStats — alle Quellen inkl. Agent)
 const estimatedCostByProvider = computed(() => {
     const result = {}
-    // 1. Berichte
-    for (const r of savedReports) {
-        const p = r.provider || 'unknown'
-        const price = getModelPrice(r.model)
-        if (price && r.totalTokens > 0) {
-            const inputCost = (r.promptTokens || 0) / 1_000_000 * price[0]
-            const outputCost = (r.completionTokens || 0) / 1_000_000 * price[1]
-            result[p] = (result[p] || 0) + inputCost + outputCost
-        }
-    }
-    // 2. Chat-Nachrichten
-    for (const reportId in chatMessages) {
-        const msgs = chatMessages[reportId] || []
-        for (const msg of msgs) {
-            if (msg.totalTokens > 0 && msg.role === 'assistant') {
-                const p = msg.provider || aiProvider.value
-                const price = getModelPrice(msg.model || aiModel.value)
-                if (price) {
-                    const inputCost = (msg.promptTokens || 0) / 1_000_000 * price[0]
-                    const outputCost = (msg.completionTokens || 0) / 1_000_000 * price[1]
-                    result[p] = (result[p] || 0) + inputCost + outputCost
-                }
+    const bp = globalTokenStats.value?.byProvider || {}
+    for (const [provider, data] of Object.entries(bp)) {
+        let cost = 0
+        // Versuche modellbasierte Berechnung
+        for (const [model, mData] of Object.entries(data.models || {})) {
+            const price = getModelPrice(model)
+            if (price) {
+                cost += (mData.promptTokens || 0) / 1_000_000 * price[0]
+                cost += (mData.completionTokens || 0) / 1_000_000 * price[1]
+            } else {
+                // Fallback: Durchschnittspreis schätzen (Input $5, Output $15 pro 1M — Claude-Sonnet-Niveau)
+                cost += (mData.promptTokens || 0) / 1_000_000 * 5
+                cost += (mData.completionTokens || 0) / 1_000_000 * 15
             }
         }
+        if (cost > 0) result[provider] = cost
     }
     return result
 })
 
-// Offsets: bisheriger Verbrauch vor Token-Tracking (Console: 122.785 Tokens, ~$1.09)
-const AI_TOKEN_OFFSET = 106000
-const AI_COST_OFFSET = 0.96
+// Offsets: bisheriger Verbrauch vor Token-Tracking (≈58K Tokens / ~$0.50 vor Implementierung)
+const AI_TOKEN_OFFSET = 58000
+const AI_COST_OFFSET = 0.50
 const totalEstimatedCost = computed(() => {
     return AI_COST_OFFSET + Object.values(estimatedCostByProvider.value).reduce((sum, c) => sum + c, 0)
 })
@@ -249,11 +265,14 @@ async function generateReport() {
     aiReportCountBefore.value = savedReports.length
 
     try {
+        // Stil-Prompt für Quick-Selection mitschicken
+        const stylePreset = reportStylePresets.find(p => p.value === selectedReportStyle.value)
         const res = await axios.post('/api/ai/report', {
             startDate: dateRange.value.startDate,
             endDate: dateRange.value.endDate,
             label,
-            broker: selectedBroker.value || null
+            broker: selectedBroker.value || null,
+            promptOverride: stylePreset?.prompt || null
         }, { timeout: 600000 })
 
         // Berichte neu laden und neuen aufklappen
@@ -390,10 +409,179 @@ function markdownToHtml(md) {
     return sanitizeHtml(html)
 }
 
+// ==================== AGENT FUNCTIONS ====================
+
+async function loadAgentSessions() {
+    try {
+        const { data } = await axios.get('/api/ai/agent/sessions')
+        agentSessions.splice(0, agentSessions.length, ...data)
+    } catch (err) {
+        logWarn('KiAgent', 'Failed to load agent sessions: ' + err.message)
+    }
+}
+
+async function loadAgentSession(sessionId) {
+    try {
+        const { data } = await axios.get(`/api/ai/agent/sessions/${sessionId}`)
+        agentCurrentSessionId.value = sessionId
+        agentMessages.splice(0, agentMessages.length, ...(data.messages || []))
+        agentSteps.splice(0)
+        agentError.value = ''
+    } catch (err) {
+        agentError.value = 'Session konnte nicht geladen werden: ' + err.message
+    }
+}
+
+function startNewAgentSession() {
+    agentCurrentSessionId.value = null
+    agentMessages.splice(0)
+    agentSteps.splice(0)
+    agentError.value = ''
+    agentInput.value = ''
+}
+
+async function deleteAgentSession(sessionId) {
+    try {
+        await axios.delete(`/api/ai/agent/sessions/${sessionId}`)
+        const idx = agentSessions.findIndex(s => s.id === sessionId)
+        if (idx >= 0) agentSessions.splice(idx, 1)
+        if (agentCurrentSessionId.value === sessionId) {
+            startNewAgentSession()
+        }
+        agentDeleteConfirmId.value = null
+    } catch (err) {
+        agentError.value = 'Löschen fehlgeschlagen: ' + err.message
+    }
+}
+
+async function sendAgentMessage() {
+    const msg = agentInput.value.trim()
+    if (!msg || agentLoading.value) return
+
+    agentInput.value = ''
+    agentLoading.value = true
+    agentError.value = ''
+    agentSteps.splice(0)
+
+    // Add user message to UI immediately
+    agentMessages.push({ role: 'user', content: msg, createdAt: new Date().toISOString() })
+
+    try {
+        const response = await fetch('/api/ai/agent/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId: agentCurrentSessionId.value,
+                message: msg
+            })
+        })
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() // Keep incomplete line
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue
+                try {
+                    const event = JSON.parse(line.slice(6))
+                    handleAgentSSE(event)
+                } catch { /* ignore parse errors */ }
+            }
+        }
+    } catch (err) {
+        agentError.value = 'Agent-Fehler: ' + err.message
+    } finally {
+        agentLoading.value = false
+    }
+}
+
+function handleAgentSSE(event) {
+    switch (event.type) {
+        case 'session':
+            agentCurrentSessionId.value = event.sessionId
+            break
+        case 'thinking':
+            agentSteps.push({ type: 'thinking', iteration: event.iteration })
+            break
+        case 'tool_call':
+            agentSteps.push({ type: 'tool_call', name: event.name, params: event.params })
+            break
+        case 'tool_result':
+            agentSteps.push({ type: 'tool_result', name: event.name, resultPreview: event.resultPreview })
+            break
+        case 'answer':
+            agentMessages.push({ role: 'assistant', content: event.content, createdAt: new Date().toISOString() })
+            break
+        case 'warning':
+            agentSteps.push({ type: 'warning', content: event.content })
+            break
+        case 'error':
+            agentError.value = event.content
+            break
+        case 'done':
+            // Refresh sessions list
+            loadAgentSessions()
+            break
+    }
+}
+
+function toggleAgentTool(index) {
+    if (agentExpandedTools.has(index)) {
+        agentExpandedTools.delete(index)
+    } else {
+        agentExpandedTools.add(index)
+    }
+}
+
+function formatToolParams(params) {
+    if (!params) return ''
+    return Object.entries(params)
+        .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+        .join(', ')
+}
+
+const route = useRoute()
+const vueRouter = useRouter()
+
+// Capture agent prompt from query param BEFORE any async work
+const pendingAgentPrompt = route.query.agentPrompt || null
+
 onBeforeMount(async () => {
     spinnerLoadingPage.value = false
+
+    // Switch tab immediately if agent prompt is pending
+    if (pendingAgentPrompt) {
+        currentTab.value = 'agent'
+    }
+
+    // Clean URL immediately (remove query param so it doesn't retrigger)
+    if (route.query.agentPrompt) {
+        vueRouter.replace({ path: route.path })
+    }
+
+    // Clean up any stale Bootstrap modal backdrops from previous page
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove())
+    document.body.classList.remove('modal-open')
+    document.body.style.removeProperty('overflow')
+    document.body.style.removeProperty('padding-right')
+
     await Promise.all([checkStatus(), loadChatSetting()])
-    await Promise.all([loadReports(), loadGlobalTokenStats()])
+    await Promise.all([loadReports(), loadGlobalTokenStats(), loadAgentSessions()])
+
+    // Auto-start agent after data is loaded (use setTimeout for DOM readiness)
+    if (pendingAgentPrompt) {
+        startNewAgentSession()
+        agentInput.value = pendingAgentPrompt
+        setTimeout(() => sendAgentMessage(), 150)
+    }
 })
 </script>
 
@@ -402,10 +590,27 @@ onBeforeMount(async () => {
     <div class="row mt-2">
         <div v-show="!spinnerLoadingPage">
 
+            <!-- Tab-Switcher -->
+            <ul class="nav nav-pills mb-3" style="gap: 0.3rem;">
+                <li class="nav-item">
+                    <a class="nav-link" :class="{ active: currentTab === 'reports' }" href="#" @click.prevent="currentTab = 'reports'">
+                        <i class="uil uil-file-alt me-1"></i>{{ t('kiAgent.tabReports') }}
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="{ active: currentTab === 'agent' }" href="#" @click.prevent="currentTab = 'agent'">
+                        <i class="uil uil-brain me-1"></i>{{ t('kiAgent.tabAgent') }}
+                    </a>
+                </li>
+            </ul>
+
+            <!-- ==================== REPORTS TAB ==================== -->
+            <div v-show="currentTab === 'reports'">
+
             <!-- Header -->
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="mb-0">
-                    <i class="uil uil-robot me-2"></i>{{ t('kiAgent.createReport') }}
+                    <i class="uil uil-file-alt me-2"></i>{{ t('kiAgent.createReport') }}
                 </h5>
                 <div class="d-flex align-items-center gap-2">
                     <span class="text-muted small" :title="t('kiAgent.totalTokensHint')">
@@ -481,6 +686,18 @@ onBeforeMount(async () => {
                             {{ loading ? t('kiAgent.generating') : t('kiAgent.generate') }}
                         </button>
                     </div>
+                </div>
+
+                <!-- Stil Quick-Selection -->
+                <div class="d-flex align-items-center gap-2 mt-2 pt-2" style="border-top: 1px solid var(--white-18, rgba(255,255,255,0.08));">
+                    <span class="text-muted small me-1"><i class="uil uil-palette me-1"></i>{{ t('kiAgent.reportStyle') }}:</span>
+                    <button v-for="preset in reportStylePresets" :key="preset.value"
+                        class="report-style-btn"
+                        :class="{ active: selectedReportStyle === preset.value }"
+                        @click="selectedReportStyle = preset.value"
+                        :disabled="loading">
+                        <i class="uil me-1" :class="preset.icon"></i>{{ t('settings.prompt_' + preset.value) }}
+                    </button>
                 </div>
             </div>
 
@@ -621,11 +838,189 @@ onBeforeMount(async () => {
                 </div>
             </div>
 
+        </div> <!-- end reports tab -->
+
+            <!-- ==================== AGENT TAB ==================== -->
+            <div v-show="currentTab === 'agent'">
+
+                <!-- Header -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0">
+                        <i class="uil uil-brain me-2"></i>{{ t('kiAgent.agentTitle') }}
+                    </h5>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge" :class="aiOnline ? 'bg-success' : 'bg-danger'">
+                            {{ aiOnline ? modelLabel + ' ' + t('kiAgent.online') : providerLabel + ' ' + t('kiAgent.offline') }}
+                        </span>
+                        <button class="btn btn-sm btn-outline-primary" @click="startNewAgentSession" :title="t('kiAgent.newSession')">
+                            <i class="uil uil-plus me-1"></i>{{ t('kiAgent.newSession') }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Offline -->
+                <div v-if="!aiOnline" class="dailyCard text-center py-4 mb-3">
+                    <i class="uil uil-exclamation-triangle text-warning" style="font-size: 2rem;"></i>
+                    <p class="mt-2 mb-1">{{ t('kiAgent.providerNotReachable') }}</p>
+                </div>
+
+                <div v-if="aiOnline" class="row">
+                    <!-- Session-Liste (links) -->
+                    <div class="col-12 col-md-3 mb-3">
+                        <div class="dailyCard" style="height: auto; max-height: 70vh; overflow-y: auto; padding: 0.5em;">
+                            <div class="small fw-bold mb-2"><i class="uil uil-history me-1"></i>{{ t('kiAgent.sessions') }}</div>
+                            <div v-if="agentSessions.length === 0" class="text-muted small text-center py-2">
+                                {{ t('kiAgent.noSessions') }}
+                            </div>
+                            <div v-for="s in agentSessions" :key="s.id"
+                                class="agent-session-item p-2 mb-1 rounded pointerClass"
+                                :class="{ 'agent-session-active': agentCurrentSessionId === s.id }"
+                                @click="loadAgentSession(s.id)">
+                                <div class="small fw-bold text-truncate" style="max-width: 100%;">{{ s.title || 'Session ' + s.id }}</div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="text-muted" style="font-size: 0.65rem;">{{ formatDate(s.updatedAt || s.createdAt) }}</span>
+                                    <span v-if="agentDeleteConfirmId !== s.id"
+                                        class="text-danger" style="font-size: 0.7rem; cursor: pointer;"
+                                        @click.stop="agentDeleteConfirmId = s.id">
+                                        <i class="uil uil-trash-alt"></i>
+                                    </span>
+                                    <span v-else class="d-flex gap-1" @click.stop>
+                                        <button class="btn btn-danger" style="font-size: 0.6rem; padding: 0 0.3rem;" @click="deleteAgentSession(s.id)">{{ t('common.yes') }}</button>
+                                        <button class="btn btn-outline-secondary" style="font-size: 0.6rem; padding: 0 0.3rem;" @click="agentDeleteConfirmId = null">{{ t('common.no') }}</button>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat-Bereich (rechts) -->
+                    <div class="col-12 col-md-9">
+                        <div class="dailyCard" style="height: auto; min-height: 50vh; display: flex; flex-direction: column; padding: 0.8em;">
+
+                            <!-- Chat-Verlauf -->
+                            <div class="agent-chat-messages flex-grow-1 mb-3" style="overflow-y: auto; max-height: 60vh;">
+                                <div v-if="agentMessages.length === 0 && !agentLoading" class="text-center text-muted py-5">
+                                    <i class="uil uil-brain" style="font-size: 3rem; opacity: 0.3;"></i>
+                                    <p class="mt-2 mb-0">{{ t('kiAgent.agentWelcome') }}</p>
+                                    <small>{{ t('kiAgent.agentHint') }}</small>
+                                </div>
+
+                                <template v-for="(msg, idx) in agentMessages" :key="idx">
+                                    <!-- User Message -->
+                                    <div v-if="msg.role === 'user'" class="chat-msg mb-2">
+                                        <div class="d-flex align-items-center gap-1 mb-1">
+                                            <i class="uil uil-user"></i>
+                                            <span class="small fw-bold">{{ t('kiAgent.you') }}</span>
+                                        </div>
+                                        <div class="chat-bubble chat-bubble-user">{{ msg.content }}</div>
+                                    </div>
+
+                                    <!-- Tool Messages -->
+                                    <div v-if="msg.role === 'tool'" class="agent-tool-step mb-1 ms-3">
+                                        <div class="d-flex align-items-center gap-1 pointerClass" @click="toggleAgentTool(idx)">
+                                            <i class="uil uil-cog" style="color: #a78bfa;"></i>
+                                            <span class="small" style="color: #a78bfa;">{{ msg.toolName }}</span>
+                                            <i class="uil" :class="agentExpandedTools.has(idx) ? 'uil-angle-down' : 'uil-angle-right'" style="font-size: 0.7rem;"></i>
+                                        </div>
+                                        <div v-if="agentExpandedTools.has(idx)" class="agent-tool-detail mt-1 p-2 rounded" style="background: rgba(167, 139, 250, 0.08); font-size: 0.75rem; max-height: 200px; overflow-y: auto;">
+                                            <pre style="white-space: pre-wrap; word-break: break-word; margin: 0; color: var(--white-60);">{{ msg.content?.substring(0, 2000) }}</pre>
+                                        </div>
+                                    </div>
+
+                                    <!-- Assistant Message -->
+                                    <div v-if="msg.role === 'assistant'" class="chat-msg mb-2">
+                                        <div class="d-flex align-items-center gap-1 mb-1">
+                                            <i class="uil uil-robot"></i>
+                                            <span class="small fw-bold">{{ t('kiAgent.agent') }}</span>
+                                        </div>
+                                        <div class="chat-bubble chat-bubble-ai report-content" v-html="markdownToHtml(msg.content)"></div>
+                                    </div>
+                                </template>
+
+                                <!-- Live Steps (during agent run) -->
+                                <div v-if="agentLoading" class="ms-3 mb-2">
+                                    <div v-for="(step, si) in agentSteps" :key="si" class="agent-live-step mb-1">
+                                        <template v-if="step.type === 'thinking'">
+                                            <span class="spinner-border spinner-border-sm me-1" style="width: 0.7rem; height: 0.7rem;"></span>
+                                            <span class="text-muted small">{{ t('kiAgent.agentThinking') }} ({{ step.iteration }})</span>
+                                        </template>
+                                        <template v-if="step.type === 'tool_call'">
+                                            <i class="uil uil-cog me-1" style="color: #a78bfa;"></i>
+                                            <span class="small" style="color: #a78bfa;">{{ step.name }}</span>
+                                            <span class="text-muted small ms-1">({{ formatToolParams(step.params) }})</span>
+                                        </template>
+                                        <template v-if="step.type === 'tool_result'">
+                                            <i class="uil uil-check-circle me-1" style="color: #34d399;"></i>
+                                            <span class="small" style="color: #34d399;">{{ step.name }}: {{ step.resultPreview }}</span>
+                                        </template>
+                                        <template v-if="step.type === 'warning'">
+                                            <i class="uil uil-exclamation-triangle me-1 text-warning"></i>
+                                            <span class="small text-warning">{{ step.content }}</span>
+                                        </template>
+                                    </div>
+                                    <div class="text-center py-2">
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                        <span class="text-muted small">{{ t('kiAgent.agentWorking') }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Error -->
+                            <div v-if="agentError" class="alert alert-danger py-1 px-2 small mb-2">
+                                {{ agentError }}
+                            </div>
+
+                            <!-- Input -->
+                            <div class="d-flex gap-2 align-items-end mt-auto">
+                                <textarea class="form-control form-control-sm chat-input" rows="2"
+                                    :placeholder="t('kiAgent.agentPlaceholder')"
+                                    v-model="agentInput"
+                                    @keydown.enter.exact.prevent="sendAgentMessage"
+                                    :disabled="agentLoading || !aiOnline"></textarea>
+                                <button class="btn btn-sm btn-primary" style="height: 2.4rem;"
+                                    @click="sendAgentMessage"
+                                    :disabled="agentLoading || !agentInput.trim() || !aiOnline">
+                                    <i class="uil uil-message"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div> <!-- end agent tab -->
+
         </div>
     </div>
 </template>
 
 <style scoped>
+/* Report-Style Quick-Selection */
+.report-style-btn {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.78rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--white-18, rgba(255,255,255,0.15));
+    border-radius: 4px;
+    color: var(--white-60, rgba(255,255,255,0.6));
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.report-style-btn:hover:not(:disabled) {
+    border-color: var(--blue-color, #6cb4ee);
+    color: var(--blue-color, #6cb4ee);
+}
+.report-style-btn.active {
+    border-color: var(--blue-color, #6cb4ee);
+    color: var(--blue-color, #6cb4ee);
+    background: rgba(108, 180, 238, 0.1);
+}
+.report-style-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 /* Kosten-Badge */
 .ki-cost-badge {
     display: inline-flex;
@@ -690,4 +1085,44 @@ onBeforeMount(async () => {
     color: var(--white-100, #fff);
 }
 /* Chat-CSS ist in style-dark.css global */
+
+/* Tab-Styling */
+.nav-pills .nav-link {
+    color: var(--white-60);
+    background: transparent;
+    border: 1px solid var(--border-color, #333);
+    font-size: 0.85rem;
+    padding: 0.3rem 0.8rem;
+}
+.nav-pills .nav-link.active {
+    color: #fff;
+    background: var(--blue-color, #4a90d9);
+    border-color: var(--blue-color, #4a90d9);
+}
+
+/* Agent Session List */
+.agent-session-item {
+    border: 1px solid transparent;
+    transition: all 0.15s;
+}
+.agent-session-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--border-color, #333);
+}
+.agent-session-active {
+    background: rgba(74, 144, 217, 0.15) !important;
+    border-color: var(--blue-color, #4a90d9) !important;
+}
+
+/* Agent Tool Steps */
+.agent-live-step {
+    display: flex;
+    align-items: center;
+    padding: 0.15rem 0;
+}
+.agent-tool-step {
+    border-left: 2px solid rgba(167, 139, 250, 0.3);
+    padding-left: 0.5rem;
+}
+
 </style>

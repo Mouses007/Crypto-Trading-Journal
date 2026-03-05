@@ -1,5 +1,6 @@
 <script setup>
-import { onBeforeMount, onMounted, computed, reactive, ref, watch, nextTick } from 'vue';
+import { onBeforeMount, onMounted, computed, ref, watch, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
 import NoData from '../components/NoData.vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Screenshot from '../components/Screenshot.vue'
@@ -23,7 +24,6 @@ import { useGetExcursions, useGetTags, useGetAvailableTags, useUpdateAvailableTa
 import { useCandlestickChart } from '../utils/charts';
 
 import { useGetMFEPrices } from '../utils/addTrades';
-import { sanitizeHtml } from '../utils/sanitize';
 
 /* MODULES */
 import { dbFirst, dbCreate, dbUpdate } from '../utils/db.js'
@@ -31,6 +31,25 @@ import dayjs from '../utils/dayjs-setup.js'
 import axios from 'axios'
 import { useCreateOHLCV } from '../utils/addTrades';
 
+
+const router = useRouter()
+
+/* AGENT TRADE REVIEW */
+function navigateToAgentReview() {
+    const trade = filteredTrades[itemTradeIndex.value].trades[tradeIndex.value]
+    const dateUnix = filteredTrades[itemTradeIndex.value].dateUnix
+    const date = filteredTrades[itemTradeIndex.value].date || ''
+    const side = trade.strategy === 'short' ? 'Short' : 'Long'
+    const pnl = (trade.grossProceeds || trade.grossSharePL || 0).toFixed(2)
+
+    const prompt = `${trade.symbol} ${side} — Trade-Analyse\n` +
+        `Datum: ${date} (dateUnix: ${dateUnix}), Einstieg: ${trade.entryPrice}, Ausstieg: ${trade.exitPrice || trade.closePrice}, PnL: $${pnl}\n` +
+        `Nutze query_trades, query_notes, query_tags, query_satisfactions und query_screenshots um alle Details zu sammeln. ` +
+        `Falls ein Screenshot existiert, analysiere ihn mit analyze_screenshot.\n` +
+        `Bewerte: 1) Einstieg/Ausstieg, 2) Risikomanagement (SL/TP), 3) Strategie-Treue, 4) Fehler & Verbesserungen, 5) Gesamtnote (1-10).`
+
+    router.push({ path: '/ki-coach', query: { agentPrompt: prompt } })
+}
 
 /* SHARE CARD */
 const shareCardOpen = ref(false)
@@ -266,137 +285,6 @@ function toggleFillGroup(key) {
     }
 }
 
-// KI Trade-Bewertung
-const aiTradeReview = ref('')
-const aiTradeReviewLoading = ref(false)
-const aiTradeReviewError = ref('')
-const aiTradeReviewOpen = ref(false)
-const aiTradeReviewTokens = ref(null) // { promptTokens, completionTokens, totalTokens }
-const autoStartReview = ref(false)
-
-function markdownToHtml(md) {
-    if (!md) return ''
-    let html = md
-        .replace(/^### (.+)$/gm, '<h6 class="mt-2 mb-1">$1</h6>')
-        .replace(/^## (.+)$/gm, '<h5 class="mt-2 mb-1">$1</h5>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
-        .replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul class="mb-1">${match}</ul>`)
-    html = html.split('\n\n').map(p => {
-        const trimmed = p.trim()
-        if (!trimmed) return ''
-        if (trimmed.startsWith('<h') || trimmed.startsWith('<ul')) return trimmed
-        return `<p>${trimmed}</p>`
-    }).filter(Boolean).join('\n')
-    return sanitizeHtml(html)
-}
-
-async function loadTradeReview(tradeId) {
-    aiTradeReview.value = ''
-    aiTradeReviewError.value = ''
-    aiTradeReviewOpen.value = false
-    try {
-        const { data } = await axios.get(`/api/ai/trade-review/${tradeId}`)
-        if (data.review) {
-            aiTradeReview.value = data.review
-            aiTradeReviewOpen.value = true
-            // Chat-Messages auch laden
-            loadTradeReviewChat(tradeId)
-        }
-    } catch (e) {
-        // Silent fail
-    }
-}
-
-async function requestTradeReview() {
-    if (aiTradeReviewLoading.value) return
-    const trade = filteredTrades[itemTradeIndex.value].trades[tradeIndex.value]
-    const dateUnix = filteredTrades[itemTradeIndex.value].dateUnix
-
-    aiTradeReviewLoading.value = true
-    aiTradeReviewError.value = ''
-
-    try {
-        const { data } = await axios.post('/api/ai/trade-review', {
-            tradeId: trade.id,
-            dateUnix,
-            tradeData: {
-                symbol: trade.symbol,
-                side: trade.side,
-                entryPrice: trade.entryPrice,
-                exitPrice: trade.exitPrice,
-                buyQuantity: trade.buyQuantity,
-                sellQuantity: trade.sellQuantity,
-                grossSharePL: trade.grossSharePL,
-                netProceeds: trade.netProceeds,
-                entryTime: trade.entryTime,
-                exitTime: trade.exitTime
-            }
-        }, { timeout: 120000 })
-
-        aiTradeReview.value = data.review
-        aiTradeReviewOpen.value = true
-        aiTradeReviewTokens.value = data.tokenUsage || null
-    } catch (e) {
-        aiTradeReviewError.value = e.response?.data?.error || e.message || t('daily.reviewFailed')
-    }
-    aiTradeReviewLoading.value = false
-}
-
-// Trade-Review Chat (Rückfragen)
-const tradeReviewChat = reactive({})        // { tradeId: [messages] }
-const tradeReviewChatInput = reactive({})   // { tradeId: 'text' }
-const tradeReviewChatLoading = reactive({}) // { tradeId: true/false }
-const tradeReviewChatError = reactive({})   // { tradeId: 'error msg' }
-
-function currentTradeId() {
-    try {
-        return filteredTrades[itemTradeIndex.value].trades[tradeIndex.value].id
-    } catch (e) { return null }
-}
-
-async function loadTradeReviewChat(tradeId) {
-    if (!tradeId) return
-    try {
-        const { data } = await axios.get(`/api/ai/trade-review/${tradeId}/messages`)
-        tradeReviewChat[tradeId] = Array.isArray(data) ? data : []
-    } catch (e) {
-        tradeReviewChat[tradeId] = []
-    }
-}
-
-async function sendTradeReviewChat() {
-    const tradeId = currentTradeId()
-    if (!tradeId) return
-    const msg = (tradeReviewChatInput[tradeId] || '').trim()
-    if (!msg) return
-
-    tradeReviewChatLoading[tradeId] = true
-    tradeReviewChatError[tradeId] = ''
-
-    try {
-        await axios.post(`/api/ai/trade-review/${tradeId}/chat`, {
-            message: msg
-        }, { timeout: 600000 })
-
-        tradeReviewChatInput[tradeId] = ''
-        await loadTradeReviewChat(tradeId)
-    } catch (e) {
-        tradeReviewChatError[tradeId] = e.response?.data?.error || e.message || t('daily.chatFailed')
-    }
-    tradeReviewChatLoading[tradeId] = false
-}
-
-async function clearTradeReviewChat() {
-    const tradeId = currentTradeId()
-    if (!tradeId) return
-    try {
-        await axios.delete(`/api/ai/trade-review/${tradeId}/messages`)
-        tradeReviewChat[tradeId] = []
-    } catch (e) { /* silent */ }
-}
 
 
 let ohlcArray = [] // array used for charts
@@ -705,9 +593,6 @@ async function clickTradesModal(param1, param2, param3) {
                     closingTradeTypeRef.value = notes[noteIndex].closingTradeType || ''
                 }
 
-                // KI-Bewertung laden (non-blocking)
-                loadTradeReview(filteredTradeId)
-
                 let findExcursion = excursions.filter(obj => obj.tradeId == filteredTradeId)
                 if (findExcursion.length) {
                     findExcursion[0].stopLoss != null ? excursion.stopLoss = findExcursion[0].stopLoss : null
@@ -745,11 +630,6 @@ async function clickTradesModal(param1, param2, param3) {
             saveButton.value = false
             await useInitTooltip()
 
-            // Auto-Start KI-Bewertung (wenn aus der Zeile geklickt)
-            if (autoStartReview.value) {
-                autoStartReview.value = false
-                requestTradeReview()
-            }
         }
 
     }
@@ -1395,10 +1275,8 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                                             <td v-if="currentUser?.aiEnabled !== false && currentUser?.aiEnabled !== 0" @click.stop="" class="align-middle">
                                                                 <div class="d-flex align-items-center gap-1">
                                                                     <button class="ai-quick-btn"
-                                                                        data-bs-toggle="modal" data-bs-target="#tradesModal"
-                                                                        :data-index="index" :data-indextwo="index2"
-                                                                        @click="autoStartReview = true">
-                                                                        <i class="uil uil-robot me-1"></i>{{ t('daily.aiReview') }}
+                                                                        @click="itemTradeIndex = index; tradeIndex = index2; navigateToAgentReview()">
+                                                                        <i class="uil uil-brain me-1"></i>{{ t('daily.aiReview') }}
                                                                     </button>
                                                                     <button class="ai-quick-btn share-quick-btn"
                                                                         @click="openShareCardFromRow(index, index2)">
@@ -1885,89 +1763,14 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                     <div class="trade-note-readonly">{{ tradeNote }}</div>
                                 </div>
 
-                                <!-- KI Trade-Bewertung -->
+                                <!-- Share-Karte -->
                                 <div class="col-12 mt-2" v-show="!spinnerSetups && currentUser?.aiEnabled !== false && currentUser?.aiEnabled !== 0">
                                     <div class="ai-trade-review-section">
-                                        <div class="d-flex align-items-center gap-2">
-                                            <button class="ai-review-btn share-card-btn"
-                                                @click="openShareCard">
-                                                <i class="uil uil-image-share me-1"></i>
-                                                {{ t('daily.shareCard') }}
-                                            </button>
-                                            <button class="ai-review-btn"
-                                                :disabled="aiTradeReviewLoading"
-                                                @click="requestTradeReview">
-                                                <span v-if="aiTradeReviewLoading" class="spinner-border spinner-border-sm me-1" style="width: 0.7rem; height: 0.7rem;"></span>
-                                                <i v-else class="uil uil-robot me-1"></i>
-                                                {{ aiTradeReviewLoading ? t('daily.aiAnalyzing') : (aiTradeReview ? t('daily.aiReReview') : t('daily.aiReview')) }}
-                                            </button>
-                                            <button v-if="aiTradeReview && !aiTradeReviewLoading"
-                                                class="ai-review-toggle"
-                                                @click="aiTradeReviewOpen = !aiTradeReviewOpen">
-                                                <i class="uil" :class="aiTradeReviewOpen ? 'uil-angle-up' : 'uil-angle-down'"></i>
-                                            </button>
-                                        </div>
-                                        <span v-if="aiTradeReviewTokens && !aiTradeReviewLoading" class="text-muted ms-2" style="font-size: 0.7rem;">
-                                            <i class="uil uil-processor"></i> {{ (aiTradeReviewTokens.totalTokens || 0).toLocaleString() }} Tokens
-                                        </span>
-                                        <span v-if="aiTradeReviewError" class="ai-review-error">{{ aiTradeReviewError }}</span>
-                                        <div v-if="aiTradeReview && aiTradeReviewOpen" class="ai-review-result mt-2">
-                                            <div class="ai-review-content" v-html="markdownToHtml(aiTradeReview)"></div>
-                                        </div>
-
-                                        <!-- Chat / Rückfragen (außerhalb ai-review-result für besseren Kontrast) -->
-                                        <div v-if="aiTradeReview && aiTradeReviewOpen" class="trade-chat-section mt-3 pt-3" style="border-top: 1px solid var(--border-color, #333);">
-                                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                                <span class="small fw-bold"><i class="uil uil-comment-dots me-1"></i>{{ t('daily.chatFollowUp') }}</span>
-                                                <button v-if="tradeReviewChat[currentTradeId()]?.length > 0"
-                                                    class="btn btn-sm btn-outline-secondary"
-                                                    @click="clearTradeReviewChat()"
-                                                    :title="t('daily.chatClear')">
-                                                    <i class="uil uil-trash-alt me-1"></i>{{ t('daily.chatClear') }}
-                                                </button>
-                                            </div>
-
-                                            <!-- Chat-Verlauf -->
-                                            <div v-if="tradeReviewChat[currentTradeId()]?.length > 0" class="chat-messages mb-2">
-                                                <div v-for="msg in tradeReviewChat[currentTradeId()]" :key="msg.id"
-                                                    class="chat-msg mb-2" :class="'chat-msg-' + msg.role">
-                                                    <div class="d-flex align-items-center gap-1 mb-1">
-                                                        <i class="uil" :class="msg.role === 'user' ? 'uil-user' : 'uil-robot'"></i>
-                                                        <span class="small fw-bold">{{ msg.role === 'user' ? 'Du' : 'KI' }}</span>
-                                                        <span class="text-muted small ms-1">{{ dayjs(msg.createdAt).format('DD.MM. HH:mm') }}</span>
-                                                        <span v-if="msg.role === 'assistant' && msg.totalTokens > 0" class="text-muted small ms-auto">{{ msg.totalTokens }} Tokens</span>
-                                                    </div>
-                                                    <div v-if="msg.role === 'user'" class="chat-bubble chat-bubble-user">{{ msg.content }}</div>
-                                                    <div v-else class="chat-bubble chat-bubble-ai ai-review-content" v-html="markdownToHtml(msg.content)"></div>
-                                                </div>
-                                            </div>
-
-                                            <!-- Loading -->
-                                            <div v-if="tradeReviewChatLoading[currentTradeId()]" class="text-center py-3">
-                                                <span class="spinner-border spinner-border-sm me-1"></span>
-                                                <span class="text-muted small">{{ t('daily.chatThinking') }}</span>
-                                            </div>
-
-                                            <!-- Error -->
-                                            <div v-if="tradeReviewChatError[currentTradeId()]" class="alert alert-danger py-1 px-2 small mb-2">
-                                                {{ tradeReviewChatError[currentTradeId()] }}
-                                            </div>
-
-                                            <!-- Input -->
-                                            <div class="d-flex gap-2 align-items-end">
-                                                <textarea class="form-control form-control-sm chat-input" rows="2"
-                                                    :placeholder="t('daily.chatPlaceholder')"
-                                                    v-model="tradeReviewChatInput[currentTradeId()]"
-                                                    @keydown.enter.exact.prevent="sendTradeReviewChat()"
-                                                    :disabled="tradeReviewChatLoading[currentTradeId()]"></textarea>
-                                                <button class="btn btn-sm btn-primary" style="height: 2.4rem;"
-                                                    @click="sendTradeReviewChat()"
-                                                    :disabled="tradeReviewChatLoading[currentTradeId()] || !(tradeReviewChatInput[currentTradeId()] || '').trim()">
-                                                    <i class="uil uil-message"></i>
-                                                </button>
-                                            </div>
-                                            <small class="text-muted mt-1">Enter = {{ t('daily.chatFollowUp') }}</small>
-                                        </div>
+                                        <button class="ai-review-btn share-card-btn"
+                                            @click="openShareCard">
+                                            <i class="uil uil-image-share me-1"></i>
+                                            {{ t('daily.shareCard') }}
+                                        </button>
                                     </div>
                                 </div>
 
@@ -2132,68 +1935,6 @@ function getOHLC(date, symbol, type, interval, entryTime) {
 .ai-review-btn:disabled {
     opacity: 0.6;
     cursor: wait;
-}
-
-.ai-review-toggle {
-    display: inline-flex;
-    align-items: center;
-    font-size: 1rem;
-    padding: 0.1rem 0.3rem;
-    border: 1px solid var(--white-18, rgba(255,255,255,0.12));
-    border-radius: 4px;
-    color: var(--white-60, rgba(255,255,255,0.6));
-    background: transparent;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-
-.ai-review-toggle:hover {
-    border-color: var(--white-38, rgba(255,255,255,0.38));
-    color: var(--white-87, rgba(255,255,255,0.87));
-}
-
-.ai-review-error {
-    display: block;
-    font-size: 0.72rem;
-    color: #f87171;
-    margin-top: 0.25rem;
-}
-
-.ai-review-result {
-    background: var(--black-bg-2, #1a1a1a);
-    border: 1px solid var(--white-18, rgba(255,255,255,0.12));
-    border-radius: 6px;
-    padding: 0.6rem 0.75rem;
-}
-
-.ai-review-content :deep(h5),
-.ai-review-content :deep(h6) {
-    font-size: 0.82rem;
-    color: var(--blue-color, #6cb4ee);
-    margin-top: 0.4rem;
-    margin-bottom: 0.2rem;
-}
-
-.ai-review-content :deep(p) {
-    font-size: 0.8rem;
-    line-height: 1.45;
-    color: var(--white-87, rgba(255,255,255,0.87));
-    margin-bottom: 0.3rem;
-}
-
-.ai-review-content :deep(ul) {
-    padding-left: 1rem;
-    margin-bottom: 0.3rem;
-}
-
-.ai-review-content :deep(li) {
-    font-size: 0.8rem;
-    color: var(--white-87, rgba(255,255,255,0.87));
-    margin-bottom: 0.1rem;
-}
-
-.ai-review-content :deep(strong) {
-    color: var(--white-100, #fff);
 }
 
 .trading-meta-daily {

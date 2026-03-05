@@ -132,9 +132,9 @@ const todayStats = computed(() => {
     for (const trade of filteredTradesTrades) {
         if (trade.td >= todayStart && trade.td <= todayEnd) {
             total++
-            const gp = trade.grossProceeds || 0
-            pnl += gp
-            if (gp > 0) wins++
+            const np = trade.netProceeds ?? trade.grossProceeds ?? 0
+            pnl += np
+            if (np > 0) wins++
             else losses++
         }
     }

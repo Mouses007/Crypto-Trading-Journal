@@ -93,7 +93,7 @@ let aiMaxTokens = ref(1500)
 let aiScreenshots = ref(false)
 let aiChatEnabled = ref(true)
 let aiReportPrompt = ref('')
-let aiReportPromptPreset = ref('kurz')
+let aiReportPromptPreset = ref('standard')
 let aiTestLoading = ref(false)
 let aiTestResult = ref(null)
 let ollamaModels = ref([])
@@ -109,10 +109,9 @@ async function loadAiTokenStats() {
 const promptPresets = computed(() => [
     { value: 'custom', label: t('settings.promptCustom'), prompt: '' },
     { value: 'kurz', label: t('settings.promptShort'), prompt: 'Halte den Bericht kurz und prägnant. Maximal 3-4 Sätze pro Abschnitt. Fokussiere dich auf die wichtigsten Erkenntnisse.' },
+    { value: 'standard', label: t('settings.promptStandard'), prompt: 'Erstelle einen ausgewogenen Trading-Bericht mit allen wichtigen Kennzahlen, Stärken, Schwächen und konkreten Verbesserungsvorschlägen. Nutze eine sachliche, professionelle Sprache.' },
     { value: 'coach', label: t('settings.promptCoach'), prompt: 'Sei sehr direkt und kritisch. Beschönige nichts. Sprich Schwächen und Fehler klar an. Gib konkrete Verbesserungsvorschläge wie ein strenger Trading-Coach.' },
-    { value: 'anfaenger', label: t('settings.promptBeginner'), prompt: 'Erkläre alle Kennzahlen und Begriffe einfach und verständlich. Gib grundlegende Trading-Tipps. Verwende eine ermutigende Sprache.' },
-    { value: 'psychologie', label: t('settings.promptPsychology'), prompt: 'Lege besonderen Fokus auf die psychologischen Aspekte: Stress, Emotionen, Disziplin, Overtrading. Analysiere Verhaltensmuster und emotionale Trigger.' },
-    { value: 'risiko', label: t('settings.promptRisk'), prompt: 'Fokussiere dich auf Risikomanagement: Positionsgrößen, Risk/Reward, Drawdowns, maximale Verlustserien. Bewerte die Risikokontrolle kritisch.' }
+    { value: 'psychologie', label: t('settings.promptPsychology'), prompt: 'Lege besonderen Fokus auf die psychologischen Aspekte: Stress, Emotionen, Disziplin, Overtrading. Analysiere Verhaltensmuster und emotionale Trigger.' }
 ])
 
 function onPromptPresetChange() {
@@ -243,13 +242,13 @@ async function loadAiSettings() {
         aiScreenshots.value = s.aiScreenshots || false
         aiChatEnabled.value = s.aiChatEnabled !== false
         aiReportPrompt.value = s.aiReportPrompt || ''
-        // Preset erkennen — Standard: "Kurz & knapp" wenn kein Prompt gespeichert
+        // Preset erkennen — Standard wenn kein Prompt gespeichert
         const matchedPreset = promptPresets.value.find(p => p.value !== 'custom' && p.prompt === aiReportPrompt.value)
         if (matchedPreset) {
             aiReportPromptPreset.value = matchedPreset.value
         } else if (!aiReportPrompt.value) {
-            aiReportPromptPreset.value = 'kurz'
-            aiReportPrompt.value = promptPresets.value.find(p => p.value === 'kurz').prompt
+            aiReportPromptPreset.value = 'standard'
+            aiReportPrompt.value = promptPresets.value.find(p => p.value === 'standard').prompt
         } else {
             aiReportPromptPreset.value = 'custom'
         }
@@ -1633,7 +1632,8 @@ onBeforeMount(async () => {
                                     <td class="text-muted" style="font-size: 0.75rem;">
                                         {{ t('kiAgent.reports') }}: {{ aiTokenStats?.counts?.reports || 0 }} ·
                                         {{ t('kiAgent.chatMessages') }}: {{ aiTokenStats?.counts?.chatMessages || 0 }} ·
-                                        {{ t('kiAgent.tradeReviews') }}: {{ aiTokenStats?.counts?.tradeReviews || 0 }}
+                                        {{ t('kiAgent.tradeReviews') }}: {{ aiTokenStats?.counts?.tradeReviews || 0 }} ·
+                                        Agent: {{ aiTokenStats?.counts?.agentSessions || 0 }}
                                     </td>
                                     <td></td>
                                 </tr>

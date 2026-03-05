@@ -35,10 +35,9 @@ function parseId(param, res, paramName = 'id') {
 // Prompt-Presets (muss mit Settings.vue synchron sein)
 const PROMPT_PRESETS = {
     'Halte den Bericht kurz und prägnant. Maximal 3-4 Sätze pro Abschnitt. Fokussiere dich auf die wichtigsten Erkenntnisse.': 'Kurz & knapp',
+    'Erstelle einen ausgewogenen Trading-Bericht mit allen wichtigen Kennzahlen, Stärken, Schwächen und konkreten Verbesserungsvorschlägen. Nutze eine sachliche, professionelle Sprache.': 'Standard',
     'Sei sehr direkt und kritisch. Beschönige nichts. Sprich Schwächen und Fehler klar an. Gib konkrete Verbesserungsvorschläge wie ein strenger Trading-Coach.': 'Strenger Coach',
-    'Erkläre alle Kennzahlen und Begriffe einfach und verständlich. Gib grundlegende Trading-Tipps. Verwende eine ermutigende Sprache.': 'Anfänger-freundlich',
     'Lege besonderen Fokus auf die psychologischen Aspekte: Stress, Emotionen, Disziplin, Overtrading. Analysiere Verhaltensmuster und emotionale Trigger.': 'Psychologie-Fokus',
-    'Fokussiere dich auf Risikomanagement: Positionsgrößen, Risk/Reward, Drawdowns, maximale Verlustserien. Bewerte die Risikokontrolle kritisch.': 'Risiko-Analyse',
 }
 
 // Hilfsfunktion: API-Key für den aktuellen Provider lesen (entschlüsselt)
@@ -192,7 +191,7 @@ export function setupOllamaRoutes(app) {
 
     // Bericht generieren (alle Provider)
     app.post('/api/ai/report', async (req, res) => {
-        const { startDate, endDate, broker } = req.body
+        const { startDate, endDate, broker, promptOverride } = req.body
         if (!startDate || !endDate) {
             return res.status(400).json({ error: 'startDate und endDate erforderlich' })
         }
@@ -208,7 +207,8 @@ export function setupOllamaRoutes(app) {
             const maxTokens = settings?.aiMaxTokens || 1500
             const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
             const screenshotsEnabled = settings?.aiScreenshots === 1
-            const customPrompt = settings?.aiReportPrompt || ''
+            // promptOverride from quick-selection takes priority over DB setting
+            const customPrompt = promptOverride || settings?.aiReportPrompt || ''
             const apiKey = getApiKeyForProvider(settings, provider)
 
             const reportData = await collectReportData(knex, startDate, endDate, broker || null)
@@ -807,11 +807,44 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                     .andWhere('totalTokens', '>', 0)
             } catch (e) { /* Tabelle existiert evtl. noch nicht */ }
 
+            // 6. ai_agent_messages (Agent-Gespräche — per Message für genaue prompt/completion-Aufteilung)
+            let agentSessions = []
+            try {
+                // Hole die tatsächlichen promptTokens/completionTokens aus den Messages
+                // und den Provider/Model aus der zugehörigen Session
+                const agentMsgs = await knex('ai_agent_messages as m')
+                    .join('ai_agent_sessions as s', 'm.sessionId', 's.id')
+                    .select('s.provider', 's.model', 'm.promptTokens', 'm.completionTokens')
+                    .where('m.role', 'assistant')
+                    .andWhere(function() {
+                        this.where('m.promptTokens', '>', 0).orWhere('m.completionTokens', '>', 0)
+                    })
+                agentSessions = agentMsgs.map(m => ({
+                    provider: m.provider, model: m.model,
+                    promptTokens: m.promptTokens || 0,
+                    completionTokens: m.completionTokens || 0,
+                    totalTokens: (m.promptTokens || 0) + (m.completionTokens || 0)
+                }))
+            } catch (e) {
+                // Fallback: Wenn JOIN fehlschlägt (z.B. Tabelle fehlt), Session-Tabelle mit Schätzung
+                try {
+                    const sessions = await knex('ai_agent_sessions')
+                        .select('provider', 'model', 'totalTokens')
+                        .where('totalTokens', '>', 0)
+                    agentSessions = sessions.map(s => ({
+                        provider: s.provider, model: s.model,
+                        promptTokens: Math.round((s.totalTokens || 0) * 0.4),
+                        completionTokens: Math.round((s.totalTokens || 0) * 0.6),
+                        totalTokens: s.totalTokens || 0
+                    }))
+                } catch (e2) { /* Tabellen existieren evtl. noch nicht */ }
+            }
+
             // Aggregieren
             const byProvider = {}
             let totalPrompt = 0, totalCompletion = 0, totalAll = 0
 
-            const allEntries = [...reports, ...messages, ...reviews, ...screenshotReviews, ...tradeChat]
+            const allEntries = [...reports, ...messages, ...reviews, ...screenshotReviews, ...tradeChat, ...agentSessions]
             for (const entry of allEntries) {
                 const p = entry.provider || 'unknown'
                 const pt = entry.promptTokens || 0
@@ -845,7 +878,8 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                     reports: reports.length,
                     chatMessages: messages.length,
                     tradeReviews: reviews.length,
-                    screenshotReviews: screenshotReviews.length
+                    screenshotReviews: screenshotReviews.length,
+                    agentSessions: agentSessions.length
                 }
             })
         } catch (e) {
