@@ -1617,7 +1617,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                             </table>
 
                             <!-- Totals row -->
-                            <div v-if="getEntryFillsFromMeta(tradingMeta.fills, filteredTrades[itemTradeIndex]?.trades[tradeIndex]?.side).length > 1"
+                            <div v-if="tradingMeta.fills && tradingMeta.fills.length > 1"
                                 class="d-flex justify-content-between border-top pt-1 mt-1"
                                 style="font-size: 0.8rem; border-color: var(--white-20) !important;">
                                 <span class="text-muted">
