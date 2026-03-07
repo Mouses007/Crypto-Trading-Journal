@@ -1166,7 +1166,7 @@ async function saveEntry(entry) {
                             </table>
 
                             <!-- Totals row -->
-                            <div v-if="getEntryFillsFromMeta(entry.tradingMetadata.fills, entry.side).length > 1"
+                            <div v-if="entry.tradingMetadata.fills && entry.tradingMetadata.fills.length > 1"
                                 class="d-flex justify-content-between border-top pt-1 mt-1"
                                 style="font-size: 0.8rem; border-color: var(--white-20) !important;">
                                 <span class="text-muted">
