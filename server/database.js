@@ -681,4 +681,97 @@ async function runMigrations(knex, client) {
             }
         }
     } catch (e) { /* ignore */ }
+
+    // ==================== FIX: Double Fee Counting (Bitunix) ====================
+    // Bitunix CSV "Incoming/Outgoing Amount" is already NET (after fees), but was
+    // stored as grossProceeds, then fees were subtracted again for netProceeds.
+    // Fix: grossProceeds = old_grossProceeds + commission, netProceeds = old_grossProceeds
+    await addColumnIfNotExists('settings', 'feeFixMigrated', (t) => t.integer('feeFixMigrated').defaultTo(0))
+    try {
+        const feeFixRow = await knex('settings').select('feeFixMigrated').where('id', 1).first()
+        if (feeFixRow && !feeFixRow.feeFixMigrated) {
+            const allTradeRows = await knex('trades').where('broker', 'bitunix').orWhere('broker', '').orWhereNull('broker')
+            let fixedCount = 0
+            for (const row of allTradeRows) {
+                let tradesArr = []
+                let pAndLObj = {}
+                try { tradesArr = JSON.parse(row.trades || '[]') } catch (e) { continue }
+                try { pAndLObj = JSON.parse(row.pAndL || '{}') } catch (e) { pAndLObj = {} }
+
+                let changed = false
+                for (const t of tradesArr) {
+                    const fee = t.commission || 0
+                    if (fee === 0) continue // no fee = nothing to fix
+
+                    const oldGross = t.grossProceeds || 0
+                    // oldGross was actually NET, reconstruct:
+                    const realNet = oldGross                // what Bitunix showed as PnL
+                    const realGross = oldGross + fee        // true gross = net + fee
+
+                    const isGrossWin = realGross > 0
+                    const isNetWin = realNet > 0
+
+                    t.grossProceeds = realGross
+                    t.netProceeds = realNet
+                    t.grossSharePL = realGross
+                    t.netSharePL = realNet
+                    t.grossWins = isGrossWin ? realGross : 0
+                    t.grossLoss = isGrossWin ? 0 : realGross
+                    t.netWins = isNetWin ? realNet : 0
+                    t.netLoss = isNetWin ? 0 : realNet
+                    t.grossWinsCount = isGrossWin ? 1 : 0
+                    t.grossLossCount = isGrossWin ? 0 : 1
+                    t.netWinsCount = isNetWin ? 1 : 0
+                    t.netLossCount = isNetWin ? 0 : 1
+                    t.grossSharePLWins = isGrossWin ? realGross : 0
+                    t.grossSharePLLoss = isGrossWin ? 0 : realGross
+                    t.netSharePLWins = isNetWin ? realNet : 0
+                    t.netSharePLLoss = isNetWin ? 0 : realNet
+                    t.highGrossSharePLWin = isGrossWin ? realGross : 0
+                    t.highGrossSharePLLoss = isGrossWin ? 0 : realGross
+                    t.highNetSharePLWin = isNetWin ? realNet : 0
+                    t.highNetSharePLLoss = isNetWin ? 0 : realNet
+                    changed = true
+                }
+
+                if (changed) {
+                    // Recalculate pAndL aggregates from fixed trades
+                    let gp = 0, np = 0, gw = 0, gl = 0, nw = 0, nl = 0
+                    let gwc = 0, glc = 0, nwc = 0, nlc = 0
+                    for (const t of tradesArr) {
+                        gp += t.grossProceeds || 0
+                        np += t.netProceeds || 0
+                        if ((t.grossProceeds || 0) > 0) { gw += t.grossProceeds; gwc++ }
+                        else { gl += t.grossProceeds || 0; glc++ }
+                        if ((t.netProceeds || 0) > 0) { nw += t.netProceeds; nwc++ }
+                        else { nl += t.netProceeds || 0; nlc++ }
+                    }
+                    pAndLObj.grossProceeds = gp
+                    pAndLObj.netProceeds = np
+                    pAndLObj.grossWins = gw
+                    pAndLObj.grossLoss = gl
+                    pAndLObj.netWins = nw
+                    pAndLObj.netLoss = nl
+                    pAndLObj.grossWinsCount = gwc
+                    pAndLObj.grossLossCount = glc
+                    pAndLObj.netWinsCount = nwc
+                    pAndLObj.netLossCount = nlc
+                    if (pAndLObj.grossSharePL !== undefined) pAndLObj.grossSharePL = gp
+                    if (pAndLObj.netSharePL !== undefined) pAndLObj.netSharePL = np
+
+                    await knex('trades').where('id', row.id).update({
+                        trades: JSON.stringify(tradesArr),
+                        pAndL: JSON.stringify(pAndLObj),
+                    })
+                    fixedCount++
+                }
+            }
+            await knex('settings').where('id', 1).update({ feeFixMigrated: 1 })
+            if (fixedCount > 0) {
+                console.log(` -> Fee-Fix: ${fixedCount} Tageszeilen korrigiert (doppelte Gebühren entfernt)`)
+            }
+        }
+    } catch (e) {
+        console.error(' -> Fee-Fix migration error:', e.message)
+    }
 }

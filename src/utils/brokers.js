@@ -40,15 +40,19 @@ export async function useBrokerBitunix(csvInput) {
                 const label = row.Label.trim()
                 const isProfit = label === 'Futures Profit'
 
-                let grossPL = 0
+                // Bitunix CSV amounts are already NET (after fees).
+                // "Incoming Amount" for profits = net profit received.
+                // "Outgoing Amount" for losses = net loss paid (including fees).
+                let netPL = 0
                 if (isProfit) {
-                    grossPL = parseFloat(row['Incoming Amount'] || 0)
+                    netPL = parseFloat(row['Incoming Amount'] || 0)
                 } else {
-                    grossPL = -Math.abs(parseFloat(row['Outgoing Amount'] || 0))
+                    netPL = -Math.abs(parseFloat(row['Outgoing Amount'] || 0))
                 }
 
                 const fee = Math.abs(parseFloat(row['Fee Amount'] || 0))
-                const netPL = grossPL - fee
+                // Reconstruct true gross by adding fees back
+                const grossPL = netPL + fee
 
                 // Extract symbol from Comment if available
                 const comment = (row.Comment || '').trim()
