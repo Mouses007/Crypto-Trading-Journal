@@ -106,12 +106,12 @@ const ratioCompute = computed(() => {
         let wins = parseFloat(totals[amountCase.value + 'Wins']).toFixed(2)
         let loss = parseFloat(-totals[amountCase.value + 'Loss']).toFixed(2)
         let profitFactor = 0
-        //console.log("wins " + wins + " and loss " + loss)
         if (loss != 0) {
             profitFactor = wins / loss
-            //console.log(" -> profitFactor "+profitFactor)
+        } else if (wins > 0) {
+            profitFactor = Infinity
         }
-        ratio.value = useXDecFormat(profitFactor, 2)
+        ratio.value = profitFactor === Infinity ? '∞' : useXDecFormat(profitFactor, 2)
         ratio.tooltipTitle = '<div>' + t('dashboard.profitFactorFormula') + '</div><div>' + t('dashboard.gains') + ': ' + useThousandCurrencyFormat(totals[amountCase.value + 'Wins']) + '</div><div>' + t('dashboard.losses') + ': ' + useThousandCurrencyFormat(totals[amountCase.value + 'Loss']) + '</div>'
     }
     return ratio

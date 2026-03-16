@@ -178,17 +178,20 @@ export async function useGetFilteredTrades(param) {
 
                             //console.log(" -> trade tags " + JSON.stringify(tags[tagsIndex]))
                             let tempArray = []
+                            const seenTagIds = new Set()
                             for (const tagsElement of tradeTagIds) {
-                                if (!selectedTagsSet.has(tagsElement)) continue
+                                if (!selectedTagsSet.has(tagsElement) || seenTagIds.has(tagsElement)) continue
                                 const tagName = availableTagById.get(tagsElement)
                                 if (!tagName) continue
+                                seenTagIds.add(tagsElement)
                                 tempArray.push({ id: tagsElement, name: tagName })
                             }
 
                             for (const tagsElement of dayTagIds) {
-                                if (!selectedTagsSet.has(tagsElement)) continue
+                                if (!selectedTagsSet.has(tagsElement) || seenTagIds.has(tagsElement)) continue
                                 const tagName = availableTagById.get(tagsElement)
                                 if (!tagName) continue
+                                seenTagIds.add(tagsElement)
                                 tempArray.push({ id: tagsElement, name: tagName })
                             }
 

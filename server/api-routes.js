@@ -3,6 +3,12 @@ import { loadDbConfig, saveDbConfig } from './db-config.js'
 
 const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions', 'share_card_templates']
 
+// Sensitive fields to strip from settings GET responses (encrypted API keys etc.)
+const SETTINGS_SENSITIVE_FIELDS = [
+    'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
+    'fluxApiKey', 'geminiImageApiKey'
+]
+
 // Whitelist of allowed settings keys (from schema + migrations)
 const VALID_SETTINGS_KEYS = [
     'timeZone', 'accounts', 'tags', 'apis', 'layoutStyle', 'avatar',
@@ -104,9 +110,18 @@ export function setupApiRoutes(app) {
     app.get('/api/db/settings', async (req, res) => {
         try {
             const row = await knex('settings').where('id', 1).first()
-            res.json(parseJsonColumns('settings', row))
+            const parsed = parseJsonColumns('settings', row)
+            // Strip sensitive fields, expose only presence flags
+            for (const field of SETTINGS_SENSITIVE_FIELDS) {
+                if (parsed[field]) {
+                    parsed[`${field}Set`] = true
+                    delete parsed[field]
+                }
+            }
+            res.json(parsed)
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            console.error('Settings read error:', error)
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
@@ -125,7 +140,8 @@ export function setupApiRoutes(app) {
             const row = await knex('settings').where('id', 1).first()
             res.json(parseJsonColumns('settings', row))
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            console.error('Settings update error:', error)
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
@@ -135,7 +151,7 @@ export function setupApiRoutes(app) {
             const row = await knex('settings').where('id', 1).select('setupComplete').first()
             res.json({ setupComplete: row?.setupComplete === 1 })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
@@ -144,7 +160,7 @@ export function setupApiRoutes(app) {
             await knex('settings').where('id', 1).update({ setupComplete: 1, updatedAt: knex.fn.now() })
             res.json({ ok: true })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
@@ -159,7 +175,7 @@ export function setupApiRoutes(app) {
             const { secretKey, ...safe } = row
             res.json({ ...safe, hasSecret: !!secretKey })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
@@ -179,7 +195,7 @@ export function setupApiRoutes(app) {
             const { secretKey: _s, ...safe } = row || {}
             res.json({ ...safe, hasSecret: !!_s })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
@@ -202,7 +218,7 @@ export function setupApiRoutes(app) {
                 res.json({ type: 'sqlite' })
             }
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
@@ -235,7 +251,7 @@ export function setupApiRoutes(app) {
             }
             res.json({ ok: true, message: 'Konfiguration gespeichert. Bitte Server neu starten.' })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
@@ -291,7 +307,7 @@ export function setupApiRoutes(app) {
     app.get('/api/db/:table', async (req, res) => {
         const { table } = req.params
         if (!VALID_TABLES.includes(table)) {
-            return res.status(400).json({ error: `Invalid table: ${table}` })
+            return res.status(400).json({ error: 'Bad request' })
         }
 
         try {
@@ -366,28 +382,29 @@ export function setupApiRoutes(app) {
             res.json(rows.map(r => parseJsonColumns(table, r)))
         } catch (error) {
             console.error('DB query error:', error)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
     app.get('/api/db/:table/:id', async (req, res) => {
         const { table, id } = req.params
         if (!VALID_TABLES.includes(table)) {
-            return res.status(400).json({ error: `Invalid table: ${table}` })
+            return res.status(400).json({ error: 'Bad request' })
         }
         try {
             const row = await knex(table).where('id', id).first()
             if (!row) return res.status(404).json({ error: 'Not found' })
             res.json(parseJsonColumns(table, row))
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            console.error('DB read error:', error)
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
     app.post('/api/db/:table', async (req, res) => {
         const { table } = req.params
         if (!VALID_TABLES.includes(table)) {
-            return res.status(400).json({ error: `Invalid table: ${table}` })
+            return res.status(400).json({ error: 'Bad request' })
         }
         const columns = TABLE_COLUMNS[table]
         if (!columns) return res.status(400).json({ error: 'Invalid table' })
@@ -413,14 +430,14 @@ export function setupApiRoutes(app) {
             res.status(201).json(parseJsonColumns(table, row))
         } catch (error) {
             console.error('DB insert error:', error)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
     app.put('/api/db/:table/:id', async (req, res) => {
         const { table, id } = req.params
         if (!VALID_TABLES.includes(table)) {
-            return res.status(400).json({ error: `Invalid table: ${table}` })
+            return res.status(400).json({ error: 'Bad request' })
         }
         const columns = TABLE_COLUMNS[table]
         if (!columns) return res.status(400).json({ error: 'Invalid table' })
@@ -443,28 +460,29 @@ export function setupApiRoutes(app) {
             res.json(parseJsonColumns(table, row))
         } catch (error) {
             console.error('DB update error:', error)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
     app.delete('/api/db/:table/:id', async (req, res) => {
         const { table, id } = req.params
         if (!VALID_TABLES.includes(table)) {
-            return res.status(400).json({ error: `Invalid table: ${table}` })
+            return res.status(400).json({ error: 'Bad request' })
         }
         try {
             const count = await knex(table).where('id', id).delete()
             if (count === 0) return res.status(404).json({ error: 'Not found' })
             res.json({ ok: true, deleted: id })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            console.error('DB delete error:', error)
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 
     app.delete('/api/db/:table', async (req, res) => {
         const { table } = req.params
         if (!VALID_TABLES.includes(table)) {
-            return res.status(400).json({ error: `Invalid table: ${table}` })
+            return res.status(400).json({ error: 'Bad request' })
         }
         try {
             let query = knex(table)
@@ -507,7 +525,8 @@ export function setupApiRoutes(app) {
             const count = await query.delete()
             res.json({ ok: true, deleted: count })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            console.error('DB bulk delete error:', error)
+            res.status(500).json({ error: 'Internal server error' })
         }
     })
 

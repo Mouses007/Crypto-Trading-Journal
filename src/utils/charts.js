@@ -2685,7 +2685,7 @@ export function usePerfChart(param) {
         const amountKey = amountCase.value + 'Proceeds'
 
         trades.forEach((trade, i) => {
-            const pnl = trade[amountKey] || trade.grossProceeds || 0
+            const pnl = trade[amountKey] ?? trade.grossProceeds ?? 0
             cumPnl += pnl
 
             // High Water Mark
@@ -2882,7 +2882,7 @@ export function usePositionChart(param) {
                 ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
             }
             if (selectedRatio.value == "profitFactor") {
-                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+                ratio = sumLoss === 0 ? (sumWins > 0 ? Infinity : null) : sumWins / -sumLoss
             }
 
             if (ratio !== null) {
@@ -2986,7 +2986,7 @@ export function useStrategyChart(param) {
                 ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
             }
             if (selectedRatio.value == "profitFactor") {
-                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+                ratio = sumLoss === 0 ? (sumWins > 0 ? Infinity : null) : sumWins / -sumLoss
             }
 
             if (ratio !== null) {
@@ -3079,7 +3079,7 @@ export function useWeekdayChart(param) {
                 ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
             }
             if (selectedRatio.value == "profitFactor") {
-                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+                ratio = sumLoss === 0 ? (sumWins > 0 ? Infinity : null) : sumWins / -sumLoss
             }
 
             if (ratio !== null) {
@@ -3171,7 +3171,7 @@ export function useEntryTimeChart(param) {
                 ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
             }
             if (selectedRatio.value == "profitFactor") {
-                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+                ratio = sumLoss === 0 ? (sumWins > 0 ? Infinity : null) : sumWins / -sumLoss
             }
 
             if (ratio !== null) {
@@ -3276,7 +3276,7 @@ export function useDurationChart(param) {
                 ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
             }
             if (selectedRatio.value == "profitFactor") {
-                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+                ratio = sumLoss === 0 ? (sumWins > 0 ? Infinity : null) : sumWins / -sumLoss
             }
 
             if (ratio !== null) {
@@ -3371,7 +3371,7 @@ export function useSymbolChart(param) {
                 ratio = sumProceeds == 0 && trades == 0 ? null : sumProceeds / trades
             }
             if (selectedRatio.value == "profitFactor") {
-                ratio = sumWins > 0 ? sumWins / -sumLoss : 0
+                ratio = sumLoss === 0 ? (sumWins > 0 ? Infinity : null) : sumWins / -sumLoss
             }
 
             if (ratio !== null) {
