@@ -224,7 +224,8 @@ class TradingPositionsDesklet extends Desklet.Desklet {
     }
 
     _fetchPositions() {
-        this._soupGet(this._baseUrl + '/api/db/incoming_positions', (status, body) => {
+        // Live-Daten von Bitunix API via Server-Proxy
+        this._soupGet(this._baseUrl + '/api/bitunix/open-positions', (status, body) => {
             if (status === 401) {
                 // Token ungültig (Server neugestartet?) → neues Cookie holen
                 this._cookieAcquired = false;
@@ -236,9 +237,9 @@ class TradingPositionsDesklet extends Desklet.Desklet {
                 return;
             }
             try {
-                let all  = JSON.parse(body);
-                let open = all.filter(p => p.status === 'open');
-                this._renderPositions(open);
+                let result = JSON.parse(body);
+                let positions = result.positions || [];
+                this._renderPositions(positions);
                 this._updateFooterTime();
             } catch(e) {
                 this._showStatus("Fehler beim Parsen:\n" + e.message);
