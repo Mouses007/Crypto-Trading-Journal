@@ -1,13 +1,13 @@
 {
   "info-header": {
     "type": "label",
-    "description": "Dieses Desklet benötigt ein laufendes Crypto Trading Journal.\ngithub.com/Mouses007/Crypto-Trading-Journal"
+    "description": "This desklet requires a running Crypto Trading Journal.\ngithub.com/Mouses007/Crypto-Trading-Journal"
   },
   "server-host": {
     "type": "entry",
     "default": "localhost",
-    "description": "Server-Host",
-    "tooltip": "IP oder Hostname, z.B. 192.168.178.100 oder localhost"
+    "description": "Server host",
+    "tooltip": "IP or hostname, e.g. 192.168.178.100 or localhost"
   },
   "server-port": {
     "type": "spinbutton",
@@ -16,8 +16,8 @@
     "max": 65535,
     "step": 1,
     "units": "",
-    "description": "Server-Port",
-    "tooltip": "Standard: 8080"
+    "description": "Server port",
+    "tooltip": "Default: 8080"
   },
   "refresh-interval": {
     "type": "spinbutton",
@@ -25,23 +25,23 @@
     "min": 5,
     "max": 300,
     "step": 5,
-    "units": "Sekunden",
-    "description": "Aktualisierungsintervall"
+    "units": "seconds",
+    "description": "Refresh interval"
   },
   "show-leverage": {
     "type": "checkbox",
     "default": true,
-    "description": "Hebel anzeigen"
+    "description": "Show leverage"
   },
   "show-mark-price": {
     "type": "checkbox",
     "default": true,
-    "description": "Mark-Preis anzeigen"
+    "description": "Show mark price"
   },
   "show-github-link": {
     "type": "checkbox",
     "default": true,
-    "description": "GitHub-Link in Fußzeile anzeigen"
+    "description": "Show GitHub link in footer"
   },
   "font-size": {
     "type": "spinbutton",
@@ -50,7 +50,7 @@
     "max": 18,
     "step": 1,
     "units": "px",
-    "description": "Schriftgröße (Positionen)"
+    "description": "Font size (positions)"
   },
   "font-size-ui": {
     "type": "spinbutton",
@@ -59,7 +59,7 @@
     "max": 16,
     "step": 1,
     "units": "px",
-    "description": "Schriftgröße (Titel, Fußzeile, Gesamt)"
+    "description": "Font size (title, footer, total)"
   },
   "bg-opacity": {
     "type": "spinbutton",
@@ -68,7 +68,7 @@
     "max": 100,
     "step": 5,
     "units": "%",
-    "description": "Hintergrund-Transparenz (0 = unsichtbar, 100 = voll)"
+    "description": "Background opacity (0 = invisible, 100 = solid)"
   },
   "min-width": {
     "type": "spinbutton",
@@ -77,6 +77,6 @@
     "max": 800,
     "step": 20,
     "units": "px",
-    "description": "Breite"
+    "description": "Width"
   }
 }
