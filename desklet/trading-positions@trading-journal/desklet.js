@@ -317,7 +317,8 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         let isProfit  = pnl >= 0;
         let pnlClass  = isProfit ? 'pnl-profit' : 'pnl-loss';
         let pnlText   = (isProfit ? '+' : '') + pnl.toFixed(2) + ' USDT';
-        let sideClass = pos.side === 'LONG' ? 'side-long' : 'side-short';
+        let sideLower = (pos.side || '').toLowerCase();
+        let sideClass = (sideLower === 'long' || sideLower === 'buy') ? 'side-long' : 'side-short';
 
         let markPrice = pos.markPrice;
         if (!markPrice && pos.bitunixData) {
