@@ -25,7 +25,7 @@ const UUID         = "trading-positions@trading-journal";
 const APP_VERSION  = "2.7.1";
 const APP_NAME     = "Crypto Trading Journal";
 
-Gettext.bindtextdomain(UUID, GLib.get_home_dir() + "/.local/share/locale");
+Gettext.bindtextdomain(UUID, GLib.get_user_data_dir() + "/locale");
 
 function _(str) {
     return Gettext.dgettext(UUID, str);
