@@ -588,6 +588,9 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'geminiImageApiKey', (t) => t.text('geminiImageApiKey').defaultTo(''))
     await addColumnIfNotExists('settings', 'geminiImageModel', (t) => t.text('geminiImageModel').defaultTo('gemini-2.0-flash-preview-image-generation'))
 
+    // ==================== SETTINGS: ESP32 DISPLAY ====================
+    await addColumnIfNotExists('settings', 'esp32ApiKey', (t) => t.text('esp32ApiKey').defaultTo(''))
+
     // ==================== SHARE CARD TEMPLATES ====================
     if (!(await knex.schema.hasTable('share_card_templates'))) {
         await knex.schema.createTable('share_card_templates', (t) => {

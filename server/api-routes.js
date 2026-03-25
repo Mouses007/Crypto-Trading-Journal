@@ -1,12 +1,13 @@
 import { getKnex } from './database.js'
 import { loadDbConfig, saveDbConfig } from './db-config.js'
+import { setupEsp32AdminRoutes } from './esp32-api.js'
 
 const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions', 'share_card_templates']
 
 // Sensitive fields to strip from settings GET responses (encrypted API keys etc.)
 const SETTINGS_SENSITIVE_FIELDS = [
     'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-    'fluxApiKey', 'geminiImageApiKey'
+    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey'
 ]
 
 // Whitelist of allowed settings keys (from schema + migrations)
@@ -18,7 +19,8 @@ const VALID_SETTINGS_KEYS = [
     'aiScreenshots', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
     'aiEnabled', 'aiReportPrompt', 'aiChatEnabled', 'browserNotifications', 'setupComplete', 'balances', 'language',
     'fluxApiKey', 'fluxModel', 'fluxDisplayName', 'fluxAvatar', 'fluxUseCustomAvatar',
-    'shareCardProvider', 'geminiImageApiKey', 'geminiImageModel'
+    'shareCardProvider', 'geminiImageApiKey', 'geminiImageModel',
+    'esp32ApiKey'
 ]
 
 // Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten
@@ -530,5 +532,6 @@ export function setupApiRoutes(app) {
         }
     })
 
+    setupEsp32AdminRoutes(app)
     console.log(' -> API routes initialized')
 }

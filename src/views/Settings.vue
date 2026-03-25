@@ -359,6 +359,50 @@ function onFluxAvatarUpload(event) {
     reader.readAsDataURL(file)
 }
 
+/* ESP32 DISPLAY SETTINGS */
+let esp32Expanded = ref(false)
+let esp32KeySet = ref(false)
+let esp32ApiKeyDisplay = ref('')
+let esp32SaveLoading = ref(false)
+let esp32SaveResult = ref(null)
+
+async function loadEsp32Settings() {
+    try {
+        const res = await axios.get('/api/esp32/settings')
+        esp32KeySet.value = res.data.esp32ApiKeySet || false
+        if (esp32KeySet.value && !esp32ApiKeyDisplay.value) {
+            esp32ApiKeyDisplay.value = '••••••••••••••••••••••••••••••••'
+        }
+    } catch (e) {
+        console.error('ESP32 settings load error:', e)
+    }
+}
+
+async function generateEsp32Key() {
+    esp32SaveLoading.value = true
+    esp32SaveResult.value = null
+    try {
+        const res = await axios.post('/api/esp32/settings', { regenerate: true })
+        esp32ApiKeyDisplay.value = res.data.plainKey || ''
+        esp32KeySet.value = true
+        esp32SaveResult.value = { success: true, message: 'Neuer Key generiert — einmalig sichtbar. Jetzt kopieren!' }
+        setTimeout(() => esp32SaveResult.value = null, 10000)
+    } catch (e) {
+        esp32SaveResult.value = { success: false, message: e.message }
+    }
+    esp32SaveLoading.value = false
+}
+
+async function clearEsp32Key() {
+    try {
+        await axios.delete('/api/esp32/key')
+        esp32KeySet.value = false
+        esp32ApiKeyDisplay.value = ''
+    } catch (e) {
+        alert('Fehler: ' + e.message)
+    }
+}
+
 async function loadDbConfig() {
     try {
         const res = await axios.get('/api/db-config')
@@ -1124,6 +1168,7 @@ onBeforeMount(async () => {
     await loadPopupSetting()
     await loadDbConfig()
     await loadFluxSettings()
+    await loadEsp32Settings()
 
     // Query-Parameter: ?section=api → API-Sektion aufklappen
     const urlParams = new URLSearchParams(window.location.search)
@@ -1781,6 +1826,59 @@ onBeforeMount(async () => {
                         <span v-if="shareCardProvider === 'gemini' && geminiTestResult" class="ms-2" :class="geminiTestResult.success ? 'text-success' : 'text-danger'">
                             {{ geminiTestResult.message }}
                         </span>
+                    </div>
+                </div>
+
+                <hr />
+
+                <!--=============== ESP32 DISPLAY ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="esp32Expanded = !esp32Expanded">
+                    <i class="uil me-2" :class="esp32Expanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">ESP32 Display</p>
+                    <span v-if="esp32KeySet" class="badge bg-success ms-2">aktiv</span>
+                </div>
+                <div v-show="esp32Expanded" class="mt-2 ms-3">
+                    <p class="fw-lighter">Zeige Trading-Daten auf deinem ESP32-2432S028 (CYD) TFT-Display an.</p>
+
+                    <div class="mb-3 p-2" style="background: var(--black-bg-3, #1a1a2e); border-radius: var(--border-radius, 6px); font-size: 0.85rem;">
+                        <div><span style="color: var(--white-50);">Endpoint:</span> <code>GET /api/esp32/display</code></div>
+                        <div><span style="color: var(--white-50);">Header:</span> <code>X-ESP32-Key: &lt;key&gt;</code></div>
+                        <div class="mt-1" style="color: var(--white-50);">Liefert: heutiger PnL, Gesamt-PnL, Win-Rate, offene Positionen</div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">API-Key</div>
+                        <div class="col-12 col-md-8">
+                            <div class="input-group">
+                                <input type="text" class="form-control font-monospace"
+                                    :value="esp32ApiKeyDisplay"
+                                    readonly
+                                    :placeholder="esp32KeySet ? '(gesetzt — neu generieren zum Anzeigen)' : '(kein Key gesetzt)'" />
+                                <button v-if="esp32ApiKeyDisplay && !esp32ApiKeyDisplay.startsWith('•')"
+                                    class="btn btn-outline-secondary" type="button"
+                                    @click="navigator.clipboard.writeText(esp32ApiKeyDisplay)"
+                                    title="Kopieren">
+                                    <i class="uil uil-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 d-flex gap-2">
+                        <button class="btn btn-primary" @click="generateEsp32Key" :disabled="esp32SaveLoading">
+                            <span v-if="esp32SaveLoading" class="spinner-border spinner-border-sm me-1"></span>
+                            {{ esp32KeySet ? 'Key neu generieren' : 'Key generieren' }}
+                        </button>
+                        <button v-if="esp32KeySet" class="btn btn-outline-danger" @click="clearEsp32Key">
+                            Key löschen
+                        </button>
+                    </div>
+
+                    <div v-if="esp32SaveResult" class="mt-2">
+                        <small :class="esp32SaveResult.success ? 'text-success' : 'text-danger'">
+                            <i class="uil me-1" :class="esp32SaveResult.success ? 'uil-check' : 'uil-exclamation-triangle'"></i>
+                            {{ esp32SaveResult.message }}
+                        </small>
                     </div>
                 </div>
 

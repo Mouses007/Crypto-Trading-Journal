@@ -11,10 +11,14 @@ import { setupAgentRoutes } from './server/ai-agent.js'
 import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
+import { setupEsp32Routes } from './server/esp32-api.js'
 import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString } from './server/auth.js'
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
+
+// ESP32 display endpoint — registered BEFORE auth middleware (uses own key-based auth)
+setupEsp32Routes(app)
 
 // Security: Session cookie + API auth
 app.use(sessionCookieMiddleware)
