@@ -90,54 +90,57 @@ export function setupEsp32Routes(app) {
             else if (filter === 'year')  periodStart = dayjs().tz(tz).startOf('year').unix()
 
             // Always load ALL trades — filter in-memory so balance/volume are never cut off
-            const allTrades = await knex('trades').select('dateUnix', 'trades')
+            const allTrades = await knex('trades').select('dateUnix', 'pAndL', 'trades')
 
             const cutoff30d = dayjs().tz(tz).subtract(30, 'day').unix()
-            let todayPnL = 0, totalPnL = 0
-            let totalWins = 0, totalLoss = 0
+            let todayPnL = 0, totalPnL = 0, allTimePnL = 0
+            let totalGrossWins = 0, totalTradeCount = 0
             let totalNetWins = 0, totalNetLoss = 0
             let totalNetWinsCount = 0, totalNetLossCount = 0
-            let volume30d = 0, volumeTotal = 0, allTimePnL = 0
+            let volume30d = 0, volumeTotal = 0
 
             for (const row of allTrades) {
                 const ts = parseInt(row.dateUnix || 0)
                 const inPeriod = periodStart === 0 || ts >= periodStart
 
+                // pAndL for net proceeds and win counts (pre-aggregated per day)
+                let pl = {}
+                try { pl = typeof row.pAndL === 'string' ? JSON.parse(row.pAndL) : (row.pAndL || {}) } catch {}
+
+                // All-time PnL for balance (ignores filter)
+                allTimePnL += parseFloat(pl.netProceeds || 0)
+
+                // Volume from individual trades (all-time + rolling 30d, ignores filter)
                 let tradesArr = []
-                try { tradesArr = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch { continue }
-
+                try { tradesArr = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch {}
                 for (const t of tradesArr) {
-                    const tNet = parseFloat(t.netProceeds || 0)
-
-                    // All-time PnL for balance (always, ignores filter)
-                    allTimePnL += tNet
-
-                    // Volume: always all-time + rolling 30d (ignores filter)
                     const qty = Math.max(parseFloat(t.buyQuantity || 0), parseFloat(t.sellQuantity || 0))
                     const vol = qty * parseFloat(t.entryPrice || 0)
                     volumeTotal += vol
                     if (ts >= cutoff30d) volume30d += vol
+                }
 
-                    // Period-filtered metrics
-                    if (!inPeriod) continue
+                if (!inPeriod) continue
 
-                    totalPnL += tNet
-                    if (ts >= todayStart && ts <= todayEnd) todayPnL += tNet
+                // Period-filtered PnL
+                const net = parseFloat(pl.netProceeds || 0)
+                totalPnL += net
+                if (ts >= todayStart && ts <= todayEnd) todayPnL += net
 
-                    // Win rate: use netWinsCount/netLossCount to match journal (handles CSV multi-trade groups)
-                    totalWins += parseInt(t.netWinsCount || (tNet > 0 ? 1 : 0))
-                    totalLoss += parseInt(t.netLossCount || (tNet < 0 ? 1 : 0))
+                // Win rate: grossWinsCount / trades — matches journal formula exactly
+                totalGrossWins  += parseInt(pl.grossWinsCount || 0)
+                totalTradeCount += parseInt(pl.trades || 0)
 
-                    // RRR: avg win / avg loss per trade, matches journal netR
-                    const tNetWins  = parseFloat(t.netWins  || (tNet > 0 ? tNet : 0))
-                    const tNetLoss  = parseFloat(t.netLoss  || (tNet < 0 ? tNet : 0))
-                    if (tNetWins  > 0) { totalNetWins += tNetWins;          totalNetWinsCount += parseInt(t.netWinsCount || 1) }
-                    if (tNetLoss  < 0) { totalNetLoss += Math.abs(tNetLoss); totalNetLossCount += parseInt(t.netLossCount || 1) }
+                // RRR: gross avg-win / gross avg-loss from individual trades (matches journal grossR)
+                for (const t of tradesArr) {
+                    const tGross = parseFloat(t.grossProceeds || 0)
+                    if (tGross > 0) { totalNetWins += tGross; totalNetWinsCount++ }
+                    else if (tGross < 0) { totalNetLoss += Math.abs(tGross); totalNetLossCount++ }
                 }
             }
 
-            const winRate = (totalWins + totalLoss) > 0
-                ? (totalWins / (totalWins + totalLoss)) * 100 : 0
+            const winRate = totalTradeCount > 0
+                ? (totalGrossWins / totalTradeCount) * 100 : 0
 
             const avgWin = totalNetWinsCount > 0 ? totalNetWins / totalNetWinsCount : 0
             const avgLoss = totalNetLossCount > 0 ? totalNetLoss / totalNetLossCount : 0
