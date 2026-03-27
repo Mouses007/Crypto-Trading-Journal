@@ -123,13 +123,15 @@ export async function useQuickApiImport(explicitBroker) {
 
         // Build P&L summary — über ALLE Trades des Tages
         let totalGross = 0, totalNet = 0, totalFees = 0
-        let grossWinsCount = 0, grossLossCount = 0, totalTrades = 0
+        let grossWinsCount = 0, grossLossCount = 0, netWinsCount = 0, netLossCount = 0, totalTrades = 0
         allDayTrades.forEach(t => {
             totalGross += t.grossProceeds
             totalNet += t.netProceeds
             totalFees += t.commission
             grossWinsCount += t.grossWinsCount
             grossLossCount += t.grossLossCount
+            netWinsCount += t.netWinsCount
+            netLossCount += t.netLossCount
             totalTrades += 1
         })
         const pAndL = {
@@ -138,6 +140,8 @@ export async function useQuickApiImport(explicitBroker) {
             fees: totalFees,
             grossWinsCount,
             grossLossCount,
+            netWinsCount,
+            netLossCount,
             trades: totalTrades
         }
 
@@ -254,9 +258,12 @@ export async function useQuickApiImport(explicitBroker) {
  * Create a trade object from a Bitunix API position.
  */
 function createBitunixTradeObj(pos, i) {
-    const grossPL = parseFloat(pos.realizedPNL || 0)
+    // Bitunix API: realizedPNL ist bereits NETTO (nach Handelsgebühren).
+    // Brutto muss rekonstruiert werden: grossPL = realizedPNL + tradingFee
+    const realizedPNL = parseFloat(pos.realizedPNL || 0)
     const tradingFee = Math.abs(parseFloat(pos.fee || 0))
     const fundingFee = parseFloat(pos.funding || 0)  // Vorzeichen beibehalten: positiv = bezahlt, negativ = erhalten
+    const grossPL = realizedPNL + tradingFee
     const fee = tradingFee + fundingFee
     const closeTime = parseInt(pos.mtime || pos.ctime)
     const openTime = parseInt(pos.ctime)
@@ -264,7 +271,7 @@ function createBitunixTradeObj(pos, i) {
 
     // Bitunix API: Pending uses 'BUY'/'SELL', History uses 'LONG'/'SHORT' — accept both
     const side = (pos.side === 'LONG' || pos.side === 'BUY') ? 'B' : 'SS'
-    const netPL = grossPL - fee
+    const netPL = grossPL - fee  // = realizedPNL - fundingFee (korrekt)
     const isGrossWin = grossPL > 0
     const isNetWin = netPL > 0
     const quantity = parseFloat(pos.maxQty || 1)

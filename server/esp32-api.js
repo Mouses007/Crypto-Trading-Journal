@@ -80,51 +80,104 @@ export function setupEsp32Routes(app) {
 
             // Today's range in unix seconds
             const todayStart = dayjs().tz(tz).startOf('day').unix()
-            const todayEnd = dayjs().tz(tz).endOf('day').unix()
+            const todayEnd   = dayjs().tz(tz).endOf('day').unix()
 
-            // Load all trades for PnL calculation
-            const trades = await knex('trades').select('dateUnix', 'pAndL')
+            // filter=month/week/year/all  (default: all)
+            const filter = req.query.filter || 'all'
+            let periodStart = 0
+            if      (filter === 'month') periodStart = dayjs().tz(tz).startOf('month').unix()
+            else if (filter === 'week')  periodStart = dayjs().tz(tz).startOf('week').unix()
+            else if (filter === 'year')  periodStart = dayjs().tz(tz).startOf('year').unix()
 
-            let todayPnL = 0
-            let totalPnL = 0
-            let totalWins = 0
-            let totalLoss = 0
+            // Load trades (with optional period filter)
+            let tradesQuery = knex('trades').select('dateUnix', 'pAndL', 'trades')
+            if (periodStart > 0) tradesQuery = tradesQuery.where('dateUnix', '>=', periodStart)
+            const trades = await tradesQuery
+
+            const cutoff30d = dayjs().tz(tz).subtract(30, 'day').unix()
+            let todayPnL = 0, totalPnL = 0
+            let totalWins = 0, totalLoss = 0
+            let totalNetWins = 0, totalNetLoss = 0
+            let totalNetWinsCount = 0, totalNetLossCount = 0
+            let volume30d = 0, volumeTotal = 0
 
             for (const row of trades) {
-                let pl = {}
-                try {
-                    pl = typeof row.pAndL === 'string' ? JSON.parse(row.pAndL) : (row.pAndL || {})
-                } catch {
-                    continue
-                }
-
-                const net = parseFloat(pl.netProceeds || 0)
-                totalPnL += net
-                totalWins += parseInt(pl.netWinsCount || 0)
-                totalLoss += parseInt(pl.netLossCount || 0)
-
                 const ts = parseInt(row.dateUnix || 0)
-                if (ts >= todayStart && ts <= todayEnd) {
-                    todayPnL += net
+
+                // All metrics computed from individual trades for consistency with journal
+                let tradesArr = []
+                try { tradesArr = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch { continue }
+
+                for (const t of tradesArr) {
+                    const tNet = parseFloat(t.netProceeds || 0)
+
+                    totalPnL += tNet
+                    if (ts >= todayStart && ts <= todayEnd) todayPnL += tNet
+
+                    // Win rate (trade-level, matches journal)
+                    if (tNet > 0) totalWins++
+                    else if (tNet < 0) totalLoss++
+
+                    // RRR (trade-level avg win / avg loss, matches journal netR)
+                    if (tNet > 0) { totalNetWins += tNet; totalNetWinsCount++ }
+                    else if (tNet < 0) { totalNetLoss += Math.abs(tNet); totalNetLossCount++ }
+
+                    // Volume
+                    const qty = Math.max(parseFloat(t.buyQuantity || 0), parseFloat(t.sellQuantity || 0))
+                    const vol = qty * parseFloat(t.entryPrice || 0)
+                    volumeTotal += vol
+                    if (ts >= cutoff30d) volume30d += vol
                 }
             }
 
             const winRate = (totalWins + totalLoss) > 0
-                ? (totalWins / (totalWins + totalLoss)) * 100
-                : 0
+                ? (totalWins / (totalWins + totalLoss)) * 100 : 0
+
+            const avgWin = totalNetWinsCount > 0 ? totalNetWins / totalNetWinsCount : 0
+            const avgLoss = totalNetLossCount > 0 ? totalNetLoss / totalNetLossCount : 0
+            const rrr = avgLoss > 0 ? avgWin / avgLoss : 0
+
+            // Satisfaction
+            const sats = await knex('satisfactions').select('satisfaction')
+            const satisfied = sats.filter(s => s.satisfaction == 1 || s.satisfaction == true).length
+            const satisfaction = sats.length > 0 ? (satisfied / sats.length) * 100 : 0
+
+            // Balance
+            const settingsRow = await knex('settings').where('id', 1).select('startBalance', 'balances').first()
+            let startBalance = parseFloat(settingsRow?.startBalance || 0)
+            try {
+                const balances = typeof settingsRow?.balances === 'string'
+                    ? JSON.parse(settingsRow.balances) : (settingsRow?.balances || {})
+                if (balances.bitunix?.start) startBalance = balances.bitunix.start
+            } catch {}
+            const balance = startBalance > 0 ? startBalance + totalPnL : null
+            const balancePerf = startBalance > 0 ? ((balance / startBalance) - 1) * 100 : null
 
             // Open positions
             const openPositions = await knex('incoming_positions')
                 .where('status', 'open')
-                .select('symbol', 'side', 'unrealizedPNL', 'broker')
+                .select('symbol', 'side', 'unrealizedPNL', 'leverage', 'entryPrice', 'markPrice', 'qty')
 
+            const filterLabels = { month: 'Monat', week: 'Woche', year: 'Jahr', all: 'Gesamt' }
             res.json({
-                todayPnL: Math.round(todayPnL * 100) / 100,
-                totalPnL: Math.round(totalPnL * 100) / 100,
-                winRate: Math.round(winRate * 10) / 10,
+                filter:       filter,
+                filterLabel:  filterLabels[filter] || 'Gesamt',
+                todayPnL:     Math.round(todayPnL * 100) / 100,
+                totalPnL:     Math.round(totalPnL * 100) / 100,
+                winRate:      Math.round(winRate * 10) / 10,
+                satisfaction: Math.round(satisfaction * 10) / 10,
+                rrr:          Math.round(rrr * 100) / 100,
+                balance:      balance !== null ? Math.round(balance * 100) / 100 : null,
+                balancePerf:  balancePerf !== null ? Math.round(balancePerf * 10) / 10 : null,
+                volume30d:    Math.round(volume30d),
+                volumeTotal:  Math.round(volumeTotal),
                 openPositions: openPositions.map(p => ({
-                    symbol: p.symbol,
-                    side: p.side,
+                    symbol:       p.symbol,
+                    side:         p.side,
+                    leverage:     parseFloat(p.leverage   || 0),
+                    entryPrice:   parseFloat(p.entryPrice || 0),
+                    markPrice:    parseFloat(p.markPrice  || 0),
+                    qty:          parseFloat(p.qty        || 0),
                     unrealizedPNL: parseFloat(p.unrealizedPNL || 0)
                 }))
             })
