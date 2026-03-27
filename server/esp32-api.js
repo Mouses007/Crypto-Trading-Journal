@@ -89,44 +89,50 @@ export function setupEsp32Routes(app) {
             else if (filter === 'week')  periodStart = dayjs().tz(tz).startOf('week').unix()
             else if (filter === 'year')  periodStart = dayjs().tz(tz).startOf('year').unix()
 
-            // Load trades (with optional period filter)
-            let tradesQuery = knex('trades').select('dateUnix', 'pAndL', 'trades')
-            if (periodStart > 0) tradesQuery = tradesQuery.where('dateUnix', '>=', periodStart)
-            const trades = await tradesQuery
+            // Always load ALL trades — filter in-memory so balance/volume are never cut off
+            const allTrades = await knex('trades').select('dateUnix', 'trades')
 
             const cutoff30d = dayjs().tz(tz).subtract(30, 'day').unix()
             let todayPnL = 0, totalPnL = 0
             let totalWins = 0, totalLoss = 0
             let totalNetWins = 0, totalNetLoss = 0
             let totalNetWinsCount = 0, totalNetLossCount = 0
-            let volume30d = 0, volumeTotal = 0
+            let volume30d = 0, volumeTotal = 0, allTimePnL = 0
 
-            for (const row of trades) {
+            for (const row of allTrades) {
                 const ts = parseInt(row.dateUnix || 0)
+                const inPeriod = periodStart === 0 || ts >= periodStart
 
-                // All metrics computed from individual trades for consistency with journal
                 let tradesArr = []
                 try { tradesArr = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch { continue }
 
                 for (const t of tradesArr) {
                     const tNet = parseFloat(t.netProceeds || 0)
 
-                    totalPnL += tNet
-                    if (ts >= todayStart && ts <= todayEnd) todayPnL += tNet
+                    // All-time PnL for balance (always, ignores filter)
+                    allTimePnL += tNet
 
-                    // Win rate (trade-level, matches journal)
-                    if (tNet > 0) totalWins++
-                    else if (tNet < 0) totalLoss++
-
-                    // RRR (trade-level avg win / avg loss, matches journal netR)
-                    if (tNet > 0) { totalNetWins += tNet; totalNetWinsCount++ }
-                    else if (tNet < 0) { totalNetLoss += Math.abs(tNet); totalNetLossCount++ }
-
-                    // Volume
+                    // Volume: always all-time + rolling 30d (ignores filter)
                     const qty = Math.max(parseFloat(t.buyQuantity || 0), parseFloat(t.sellQuantity || 0))
                     const vol = qty * parseFloat(t.entryPrice || 0)
                     volumeTotal += vol
                     if (ts >= cutoff30d) volume30d += vol
+
+                    // Period-filtered metrics
+                    if (!inPeriod) continue
+
+                    totalPnL += tNet
+                    if (ts >= todayStart && ts <= todayEnd) todayPnL += tNet
+
+                    // Win rate: use netWinsCount/netLossCount to match journal (handles CSV multi-trade groups)
+                    totalWins += parseInt(t.netWinsCount || (tNet > 0 ? 1 : 0))
+                    totalLoss += parseInt(t.netLossCount || (tNet < 0 ? 1 : 0))
+
+                    // RRR: avg win / avg loss per trade, matches journal netR
+                    const tNetWins  = parseFloat(t.netWins  || (tNet > 0 ? tNet : 0))
+                    const tNetLoss  = parseFloat(t.netLoss  || (tNet < 0 ? tNet : 0))
+                    if (tNetWins  > 0) { totalNetWins += tNetWins;          totalNetWinsCount += parseInt(t.netWinsCount || 1) }
+                    if (tNetLoss  < 0) { totalNetLoss += Math.abs(tNetLoss); totalNetLossCount += parseInt(t.netLossCount || 1) }
                 }
             }
 
@@ -150,7 +156,8 @@ export function setupEsp32Routes(app) {
                     ? JSON.parse(settingsRow.balances) : (settingsRow?.balances || {})
                 if (balances.bitunix?.start) startBalance = balances.bitunix.start
             } catch {}
-            const balance = startBalance > 0 ? startBalance + totalPnL : null
+            // Balance always uses all-time PnL (not filtered)
+            const balance = startBalance > 0 ? startBalance + allTimePnL : null
             const balancePerf = startBalance > 0 ? ((balance / startBalance) - 1) * 100 : null
 
             // Open positions
