@@ -156,7 +156,7 @@ export function setupEsp32Routes(app) {
             // Open positions
             const openPositions = await knex('incoming_positions')
                 .where('status', 'open')
-                .select('symbol', 'side', 'unrealizedPNL', 'leverage', 'entryPrice', 'markPrice', 'qty')
+                .select('symbol', 'side', 'unrealizedPNL', 'leverage', 'entryPrice', 'markPrice', 'quantity')
 
             const filterLabels = { month: 'Monat', week: 'Woche', year: 'Jahr', all: 'Gesamt' }
             res.json({
@@ -177,7 +177,7 @@ export function setupEsp32Routes(app) {
                     leverage:     parseFloat(p.leverage   || 0),
                     entryPrice:   parseFloat(p.entryPrice || 0),
                     markPrice:    parseFloat(p.markPrice  || 0),
-                    qty:          parseFloat(p.qty        || 0),
+                    qty:          parseFloat(p.quantity   || 0),
                     unrealizedPNL: parseFloat(p.unrealizedPNL || 0)
                 }))
             })
