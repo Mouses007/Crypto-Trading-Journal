@@ -74,9 +74,24 @@ export function setupEsp32Routes(app) {
 
             const knex = getKnex()
 
-            // Load timezone from settings
-            const settings = await knex('settings').where('id', 1).select('timeZone').first()
+            // Load all needed settings in one query
+            const settings = await knex('settings').where('id', 1).select('timeZone', 'startBalance', 'balances').first()
             const tz = settings?.timeZone || 'Europe/Berlin'
+
+            // Determine primary broker and start balance from settings
+            let startBalance = parseFloat(settings?.startBalance || 0)
+            let primaryBroker = 'bitunix'
+            try {
+                const balances = typeof settings?.balances === 'string'
+                    ? JSON.parse(settings.balances) : (settings?.balances || {})
+                if (balances.bitunix?.start) {
+                    startBalance = balances.bitunix.start
+                    primaryBroker = 'bitunix'
+                } else if (balances.bitget?.start) {
+                    startBalance = balances.bitget.start
+                    primaryBroker = 'bitget'
+                }
+            } catch {}
 
             // Today's range in unix seconds
             const todayStart = dayjs().tz(tz).startOf('day').unix()
@@ -89,8 +104,8 @@ export function setupEsp32Routes(app) {
             else if (filter === 'week')  periodStart = dayjs().tz(tz).startOf('week').unix()
             else if (filter === 'year')  periodStart = dayjs().tz(tz).startOf('year').unix()
 
-            // Always load ALL trades — filter in-memory so balance/volume are never cut off
-            const allTrades = await knex('trades').select('dateUnix', 'pAndL', 'trades')
+            // Always load ALL trades (for primary broker) — filter in-memory so balance/volume are never cut off
+            const allTrades = await knex('trades').where('broker', primaryBroker).select('dateUnix', 'pAndL', 'trades')
 
             const cutoff30d = dayjs().tz(tz).subtract(30, 'day').unix()
             let todayPnL = 0, totalPnL = 0, allTimePnL = 0
@@ -151,15 +166,7 @@ export function setupEsp32Routes(app) {
             const satisfied = sats.filter(s => s.satisfaction == 1 || s.satisfaction == true).length
             const satisfaction = sats.length > 0 ? (satisfied / sats.length) * 100 : 0
 
-            // Balance
-            const settingsRow = await knex('settings').where('id', 1).select('startBalance', 'balances').first()
-            let startBalance = parseFloat(settingsRow?.startBalance || 0)
-            try {
-                const balances = typeof settingsRow?.balances === 'string'
-                    ? JSON.parse(settingsRow.balances) : (settingsRow?.balances || {})
-                if (balances.bitunix?.start) startBalance = balances.bitunix.start
-            } catch {}
-            // Balance always uses all-time PnL (not filtered)
+            // Balance always uses all-time PnL (not filtered), same broker as trade query
             const balance = startBalance > 0 ? startBalance + allTimePnL : null
             const balancePerf = startBalance > 0 ? ((balance / startBalance) - 1) * 100 : null
 
