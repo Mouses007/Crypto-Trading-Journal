@@ -22,10 +22,12 @@ const updateInstalling = ref(false)
 const updateError = ref('')
 const rollbackAvailable = ref(false)
 const rollbackInstalling = ref(false)
+const isDocker = ref(false)
 
 async function checkForUpdate() {
     try {
         const { data } = await axios.get('/api/update/check')
+        isDocker.value = !!data.isDocker
         if (data.ok && data.updateAvailable) {
             updateAvailable.value = true
             updateInfo.value = data
@@ -206,7 +208,15 @@ function goToDashboard() {
                 class="footer-version">
                 Crypto Trading Journal V.{{ appVersion }}
             </a>
-            <a v-if="updateAvailable && !updateInstalling" class="footer-update" @click.prevent="installUpdate">
+            <!-- Docker: Watchtower zieht automatisch — Link zur Release-Seite -->
+            <a v-if="updateAvailable && isDocker" class="footer-update"
+                :href="updateInfo?.releaseUrl || 'https://github.com/Mouses007/Crypto-Trading-Journal/releases/latest'"
+                target="_blank" rel="noopener"
+                :title="'Update v' + updateInfo?.remoteVersion + ' — wird automatisch via Watchtower installiert'">
+                <i class="uil uil-docker me-1"></i>Update v{{ updateInfo?.remoteVersion }}
+            </a>
+            <!-- Non-Docker: normaler Install-Button -->
+            <a v-if="updateAvailable && !isDocker && !updateInstalling" class="footer-update" @click.prevent="installUpdate">
                 <i class="uil uil-download-alt me-1"></i>Update v{{ updateInfo?.remoteVersion }}
             </a>
             <span v-if="updateInstalling" class="footer-update installing">

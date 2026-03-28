@@ -17,6 +17,7 @@ const __dirname = path.dirname(__filename)
 const GITHUB_REPO = 'Mouses007/Crypto-Trading-Journal'
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 const IS_WINDOWS = os.platform() === 'win32'
+const IS_DOCKER = existsSync('/.dockerenv')
 
 /**
  * Windows: Erstellt ein .bat-Script und startet es in einem neuen Fenster.
@@ -127,6 +128,7 @@ export function setupUpdateRoutes(app) {
                 localVersion,
                 remoteVersion,
                 updateAvailable,
+                isDocker: IS_DOCKER,
                 releaseName: release.name || '',
                 releaseNotes: release.body || '',
                 releaseUrl: release.html_url || '',
@@ -144,6 +146,7 @@ export function setupUpdateRoutes(app) {
                     localVersion,
                     remoteVersion: localVersion,
                     updateAvailable: false,
+                    isDocker: IS_DOCKER,
                     releaseName: '',
                     releaseNotes: '',
                     releaseUrl: '',
@@ -341,6 +344,7 @@ export function setupUpdateRoutes(app) {
                 localVersion,
                 remoteVersion,
                 updateAvailable,
+                isDocker: IS_DOCKER,
                 releaseName: release.name || '',
                 releaseNotes: release.body || '',
                 releaseUrl: release.html_url || '',
