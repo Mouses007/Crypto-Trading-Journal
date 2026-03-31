@@ -18,6 +18,7 @@
 import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { encrypt, decrypt } from './crypto.js'
+import { getPendingPositions } from './bitunix-api.js'
 import dayjs from 'dayjs'
 import dayjsUtc from 'dayjs/plugin/utc.js'
 import dayjsTimezone from 'dayjs/plugin/timezone.js'
@@ -170,10 +171,42 @@ export function setupEsp32Routes(app) {
             const balance = startBalance > 0 ? startBalance + allTimePnL : null
             const balancePerf = startBalance > 0 ? ((balance / startBalance) - 1) * 100 : null
 
-            // Open positions
-            const openPositions = await knex('incoming_positions')
-                .where('status', 'open')
-                .select('symbol', 'side', 'unrealizedPNL', 'leverage', 'entryPrice', 'markPrice', 'quantity')
+            // Open positions — direkt live von Bitunix API (immer aktuell)
+            let openPositions = []
+            try {
+                const bCfg = await knex('bitunix_config').where('id', 1).first()
+                if (bCfg?.apiKey && bCfg?.secretKey) {
+                    const apiKey    = decrypt(bCfg.apiKey)
+                    const secretKey = decrypt(bCfg.secretKey)
+                    const result = await getPendingPositions(apiKey, secretKey, {})
+                    if (result.code === 0) {
+                        const raw = Array.isArray(result.data) ? result.data : (result.data?.positionList || [])
+                        openPositions = raw.map(p => ({
+                            symbol:        p.symbol || '',
+                            side:          p.side   || '',
+                            leverage:      parseFloat(p.leverage     || 0),
+                            entryPrice:    parseFloat(p.entryPrice   || 0),
+                            markPrice:     parseFloat(p.markPrice    || 0),
+                            qty:           parseFloat(p.qty ?? p.maxQty ?? 0),
+                            unrealizedPNL: parseFloat(p.unrealizedPNL ?? p.unrealized_pnl ?? 0)
+                        }))
+                    }
+                }
+            } catch (posErr) {
+                console.warn('ESP32 positions live fetch failed, fallback to DB:', posErr.message)
+                const rows = await knex('incoming_positions')
+                    .where('status', 'open')
+                    .select('symbol', 'side', 'unrealizedPNL', 'leverage', 'entryPrice', 'markPrice', 'quantity')
+                openPositions = rows.map(p => ({
+                    symbol:        p.symbol,
+                    side:          p.side,
+                    leverage:      parseFloat(p.leverage    || 0),
+                    entryPrice:    parseFloat(p.entryPrice  || 0),
+                    markPrice:     parseFloat(p.markPrice   || 0),
+                    qty:           parseFloat(p.quantity    || 0),
+                    unrealizedPNL: parseFloat(p.unrealizedPNL || 0)
+                }))
+            }
 
             const filterLabels = { month: 'Monat', week: 'Woche', year: 'Jahr', all: 'Gesamt' }
             res.json({
@@ -188,15 +221,7 @@ export function setupEsp32Routes(app) {
                 balancePerf:  balancePerf !== null ? Math.round(balancePerf * 10) / 10 : null,
                 volume30d:    Math.round(volume30d),
                 volumeTotal:  Math.round(volumeTotal),
-                openPositions: openPositions.map(p => ({
-                    symbol:       p.symbol,
-                    side:         p.side,
-                    leverage:     parseFloat(p.leverage   || 0),
-                    entryPrice:   parseFloat(p.entryPrice || 0),
-                    markPrice:    parseFloat(p.markPrice  || 0),
-                    qty:          parseFloat(p.quantity   || 0),
-                    unrealizedPNL: parseFloat(p.unrealizedPNL || 0)
-                }))
+                openPositions: openPositions
             })
         } catch (e) {
             console.error('ESP32 display error:', e)
