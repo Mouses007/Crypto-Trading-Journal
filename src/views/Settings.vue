@@ -1838,8 +1838,44 @@ onBeforeMount(async () => {
                     <span v-if="esp32KeySet" class="badge bg-success ms-2">aktiv</span>
                 </div>
                 <div v-show="esp32Expanded" class="mt-2 ms-3">
-                    <p class="fw-lighter">Zeige Trading-Daten auf deinem ESP32-2432S028 (CYD) TFT-Display an.</p>
+                    <p class="fw-lighter">Zeige Trading-Daten auf einem ESP32 TFT-Display an. Firmware für beide unterstützten Boards liegt im Repo.</p>
 
+                    <!-- Hardware-Übersicht -->
+                    <div class="mb-3 p-2" style="background: var(--black-bg-3, #1a1a2e); border-radius: var(--border-radius, 6px); font-size: 0.85rem;">
+                        <div class="fw-semibold mb-2" style="color: var(--white-75);">Unterstützte Hardware</div>
+                        <table class="table table-dark table-sm mb-0" style="font-size:0.8rem;">
+                            <thead>
+                                <tr>
+                                    <th>Board</th>
+                                    <th>Display</th>
+                                    <th>Touch</th>
+                                    <th>MCU</th>
+                                    <th>Firmware-Ordner</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>ESP32-2432S028</strong><br><small class="text-muted">Cheap Yellow Display</small></td>
+                                    <td>ILI9341 2.8"</td>
+                                    <td>Resistiv (XPT2046)</td>
+                                    <td>ESP32</td>
+                                    <td><code>ESP32-2432S028/</code></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Waveshare ESP32-S3</strong><br><small class="text-muted">Touch-LCD-2.8</small></td>
+                                    <td>ST7789T3 2.8"</td>
+                                    <td>Kapazitiv (CST328)</td>
+                                    <td>ESP32-S3</td>
+                                    <td><code>ESP32-Waveshare/</code></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="mt-2" style="color: var(--white-50);">
+                            Flash-Anleitung: <code>cd &lt;firmware-ordner&gt;</code> → <code>pio run -e esp32dev --target upload</code>
+                        </div>
+                    </div>
+
+                    <!-- API-Info -->
                     <div class="mb-3 p-2" style="background: var(--black-bg-3, #1a1a2e); border-radius: var(--border-radius, 6px); font-size: 0.85rem;">
                         <div><span style="color: var(--white-50);">Endpoint:</span> <code>GET /api/esp32/display</code></div>
                         <div><span style="color: var(--white-50);">Header:</span> <code>X-ESP32-Key: &lt;key&gt;</code></div>

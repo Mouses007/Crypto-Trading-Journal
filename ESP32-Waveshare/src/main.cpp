@@ -26,19 +26,21 @@
 #define TFT_BL_PIN        5        // Backlight-Pin Waveshare ESP32-S3-Touch-LCD-2.8
 #define FW_VERSION       "2.8.2"
 
-// ── Farben RGB565 ────────────────────────────────────────
-
-#define COLOR_BG         0x0841   // Dunkles Blau-Schwarz
-#define COLOR_CARD       0x1082   // Karten-Hintergrund
-#define COLOR_GREEN      0x07E0
-#define COLOR_RED        0xF800
-#define COLOR_WHITE      0xFFFF
-#define COLOR_GREY       0x8410
-#define COLOR_GREY_DARK  0x2104
-#define COLOR_YELLOW     0xFFE0
-#define COLOR_BLUE_NAV   0x1F6F   // Aktiver Nav-Button
-#define COLOR_NAV_BG     0x0841
-#define COLOR_HEADER_BG  0x0010   // Fast schwarz für Header
+// ── Farben RGB565 — Journal-Farbschema ──────────────────
+// Aus src/assets/style-dark.css konvertiert
+#define COLOR_BG         0x0000   // #000000  --black-bg-0
+#define COLOR_CARD       0x0000   // Schwarz — Display-Gamma macht Grau lila, daher transparent
+#define COLOR_GREEN      0x064E   // #00CA73  .greenTrade
+#define COLOR_RED        0xFB4C   // #FF6960  .redTrade
+#define COLOR_WHITE      0xFFFF   // #FFFFFF
+#define COLOR_WHITE_DIM  0x9CF3   // ~#999999 Sekundärtext
+#define COLOR_GREY       0x6BAF   // #6c757d  --grey-color
+#define COLOR_GREY_DARK  0x2945   // #292929  Trennlinien / Kartenrand
+#define COLOR_YELLOW     0xFE00   // #FFC107  .neutralTrade
+#define COLOR_BLUE       0x05BF   // #01B4FF  --blue-color
+#define COLOR_BLUE_NAV   0x2D1B   // #2ea2d9  --blue-active-color
+#define COLOR_NAV_BG     0x0841   // #080808  Nav-Hintergrund
+#define COLOR_HEADER_BG  0x0841   // #080808  Header-Hintergrund
 
 // ── Globals ──────────────────────────────────────────────
 
@@ -179,10 +181,30 @@ bool mapTouch(int* screenX, int* screenY) {
 
   Serial.printf("[Touch] n=%d raw_x=%d raw_y=%d\n", n, raw_x, raw_y);
 
-  // Portrait → Landscape Rotation 3 Mapping
-  *screenX = constrain((int)raw_y,         0, 319);
-  *screenY = constrain(239 - (int)raw_x,   0, 239);
+  // Portrait → Landscape Rotation 3 Mapping (ermittelt per Debug)
+  // Drücken unten-links (x≈50,y≈220) → raw_x=224, raw_y=262
+  // → screenX = 319 - raw_y, screenY = raw_x
+  *screenX = constrain(319 - (int)raw_y, 0, 319);
+  *screenY = constrain((int)raw_x,       0, 239);
   return true;
+}
+
+// CST328 initialisieren: Reset + Normal-Mode aktivieren
+// Ohne diesen Befehl bleibt der Chip im Debug-Modus und meldet keine Touches!
+void cst328Init() {
+  Wire1.begin(TOUCH_SDA, TOUCH_SCL, 400000);
+  pinMode(TOUCH_INT, INPUT);
+  pinMode(TOUCH_RST, OUTPUT);
+  // Reset-Sequenz
+  digitalWrite(TOUCH_RST, HIGH); delay(50);
+  digitalWrite(TOUCH_RST, LOW);  delay(5);
+  digitalWrite(TOUCH_RST, HIGH); delay(50);
+  // Normal-Mode aktivieren (0xD109 = HYN_REG_MUT_NORMAL_MODE)
+  Wire1.beginTransmission(CST328_ADDR);
+  Wire1.write(0xD1);
+  Wire1.write(0x09);
+  Wire1.endTransmission(true);
+  delay(10);
 }
 
 void loadTouchCal() {}  // Keine Kalibrierung nötig (kapazitiv)
@@ -278,7 +300,7 @@ uint16_t pnlColor(float v) {
 
 void fillCard(int x, int y, int w, int h) {
   tft.fillRoundRect(x, y, w, h, 6, COLOR_CARD);
-  tft.drawRoundRect(x, y, w, h, 6, COLOR_GREY_DARK);
+  tft.drawRoundRect(x, y, w, h, 6, COLOR_BLUE_NAV);
 }
 
 // ── Nav-Bar (Landscape: y=207, h=33, 3 Buttons je ~107px) ──
@@ -290,36 +312,51 @@ void drawNavBar() {
   const int ny = 207, nh = 33;
 
   tft.fillRect(0, ny, 320, nh, COLOR_NAV_BG);
-  tft.drawFastHLine(0, ny, 320, COLOR_GREY_DARK);
-  tft.drawFastVLine(107, ny, nh, COLOR_GREY_DARK);
-  tft.drawFastVLine(214, ny, nh, COLOR_GREY_DARK);
+  // Blauer Trennstrich oben (Journal-Stil)
+  tft.drawFastHLine(0, ny, 320, COLOR_BLUE_NAV);
+  tft.drawFastVLine(107, ny+1, nh-1, COLOR_GREY_DARK);
+  tft.drawFastVLine(214, ny+1, nh-1, COLOR_GREY_DARK);
   tft.setTextSize(1);
 
   // Dashboard
-  if (activeScreen == 0) tft.fillRect(1,   ny+1, 105, nh-1, COLOR_BLUE_NAV);
+  if (activeScreen == 0) {
+    tft.fillRect(1, ny+1, 105, nh-1, 0x0C62);   // leicht blau-dunkel aktiv
+    tft.drawFastHLine(1, ny, 105, COLOR_BLUE);    // blauer Indikator-Strich
+  }
   tft.setTextColor(activeScreen == 0 ? COLOR_WHITE : COLOR_GREY,
-                   activeScreen == 0 ? COLOR_BLUE_NAV : COLOR_NAV_BG);
-  tft.setCursor(22, ny + 12);
+                   activeScreen == 0 ? 0x0C62 : COLOR_NAV_BG);
+  tft.setCursor(18, ny + 12);
   tft.print("Dashboard");
 
   // Positionen
-  if (activeScreen == 1) tft.fillRect(108, ny+1, 105, nh-1, COLOR_BLUE_NAV);
+  if (activeScreen == 1) {
+    tft.fillRect(108, ny+1, 105, nh-1, 0x0C62);
+    tft.drawFastHLine(108, ny, 105, COLOR_BLUE);
+  }
   tft.setTextColor(activeScreen == 1 ? COLOR_WHITE : COLOR_GREY,
-                   activeScreen == 1 ? COLOR_BLUE_NAV : COLOR_NAV_BG);
-  tft.setCursor(122, ny + 12);
+                   activeScreen == 1 ? 0x0C62 : COLOR_NAV_BG);
+  tft.setCursor(118, ny + 12);
   tft.print("Positionen");
 
-  // Filter (aktiver Filter als Label)
+  // Filter
   const char* fLabel = cfgFilter == "month" ? "Monat"  :
                        cfgFilter == "week"  ? "Woche"  :
                        cfgFilter == "year"  ? "Jahr"   : "Gesamt";
-  if (activeScreen == 2) tft.fillRect(215, ny+1, 104, nh-1, COLOR_BLUE_NAV);
+  if (activeScreen == 2) {
+    tft.fillRect(215, ny+1, 104, nh-1, 0x0C62);
+    tft.drawFastHLine(215, ny, 104, COLOR_BLUE);
+  }
   tft.setTextColor(activeScreen == 2 ? COLOR_WHITE : COLOR_YELLOW,
-                   activeScreen == 2 ? COLOR_BLUE_NAV : COLOR_NAV_BG);
-  tft.setCursor(220, ny + 6);
+                   activeScreen == 2 ? 0x0C62 : COLOR_NAV_BG);
+  tft.setCursor(223, ny + 6);
   tft.print("Filter");
-  tft.setCursor(228, ny + 18);
+  tft.setCursor(229, ny + 18);
   tft.print(fLabel);
+
+  // Offline-Indikator: kleiner roter Punkt rechts unten wenn keine Daten
+  if (!data.valid) {
+    tft.fillCircle(313, ny + 26, 4, COLOR_RED);
+  }
 }
 
 // ── Donut-Chart ──────────────────────────────────────────
@@ -353,98 +390,107 @@ void drawDonut(int cx, int cy, int r, int ir, float pct, uint16_t color,
 void drawScreen1() {
   tft.fillRect(0, 0, 320, 207, COLOR_BG);
 
-  // ── Kontostand-Karte (x=4, y=2, w=312, h=60) ─────
-  fillCard(4, 2, 312, 60);
+  // ── Offline-Banner wenn keine Daten ───────────────
+  if (!data.valid) {
+    tft.fillRoundRect(4, 2, 312, 20, 4, COLOR_GREY_DARK);
+    tft.setTextColor(COLOR_RED, COLOR_GREY_DARK);
+    tft.setTextSize(1);
+    tft.setCursor(8, 8);
+    tft.print("OFFLINE — API nicht erreichbar");
+  }
 
+  // ── Kontostand-Karte ──────────────────────────────
+  int cardY = data.valid ? 2 : 26;
+  int cardH = data.valid ? 62 : 38;
+  fillCard(4, cardY, 312, cardH);
+
+  // Label + Filter
   tft.setTextColor(COLOR_GREY, COLOR_CARD);
   tft.setTextSize(1);
-  tft.setCursor(12, 9);
-  tft.print("KONTOSTAND");
+  tft.setCursor(12, cardY + 7);
+  tft.print(data.hasBalance ? "KONTOSTAND" : "P&L GESAMT");
 
-  // Filter-Label (oben rechts in der Karte)
-  const char* fLbl = cfgFilter == "month" ? "Monat"  :
-                     cfgFilter == "week"  ? "Woche"  :
-                     cfgFilter == "year"  ? "Jahr"   : "Gesamt";
+  const char* fLbl = cfgFilter == "month" ? "Monat" :
+                     cfgFilter == "week"  ? "Woche" :
+                     cfgFilter == "year"  ? "Jahr"  : "Alle";
   tft.setTextColor(COLOR_YELLOW, COLOR_CARD);
-  tft.setTextSize(1);
-  tft.setCursor(264, 9);
+  int fLblX = 316 - (int)strlen(fLbl) * 6;
+  tft.setCursor(fLblX, cardY + 7);
   tft.print(fLbl);
 
   if (data.hasBalance) {
-    // Balance-Modus: Kontostand gross, Perf rechts, Heute PnL unten
-    String balStr = "$ " + String(data.balance, 2);
+    String balStr = "$" + String(data.balance, 2);
     tft.setTextColor(pnlColor(data.balancePerf), COLOR_CARD);
     tft.setTextSize(2);
-    tft.setCursor(12, 26);
+    tft.setCursor(12, cardY + 22);
     tft.print(balStr);
-    String perfStr = (data.balancePerf >= 0 ? "+" : "") + String(data.balancePerf, 1) + "%";
-    tft.setTextColor(pnlColor(data.balancePerf), COLOR_CARD);
     tft.setTextSize(1);
-    tft.setCursor(12, 50);
-    tft.print("Heute: ");
+    tft.setTextColor(COLOR_GREY, COLOR_CARD);
+    tft.setCursor(12, cardY + 48);
+    tft.print("Heute ");
     tft.setTextColor(pnlColor(data.todayPnL), COLOR_CARD);
     tft.print((data.todayPnL >= 0 ? "+" : "") + String(data.todayPnL, 2));
+    String perfStr = (data.balancePerf >= 0 ? "+" : "") + String(data.balancePerf, 1) + "%";
     tft.setTextColor(pnlColor(data.balancePerf), COLOR_CARD);
-    tft.setCursor(220, 50);
-    tft.print("Perf: " + perfStr);
+    tft.setCursor(220, cardY + 48);
+    tft.print("Perf " + perfStr);
   } else {
-    // Kein Startkapital: Gefilterter PnL gross, Heute-PnL klein
     String totStr = (data.totalPnL >= 0 ? "+" : "") + String(data.totalPnL, 2) + " USDT";
     tft.setTextColor(pnlColor(data.totalPnL), COLOR_CARD);
     tft.setTextSize(2);
-    tft.setCursor(12, 26);
+    tft.setCursor(12, cardY + 22);
     tft.print(totStr);
-    // Heute PnL klein unten links
-    tft.setTextColor(COLOR_GREY, COLOR_CARD);
     tft.setTextSize(1);
-    tft.setCursor(12, 50);
-    tft.print("Heute: ");
+    tft.setTextColor(COLOR_GREY, COLOR_CARD);
+    tft.setCursor(12, cardY + 48);
+    tft.print("Heute ");
     tft.setTextColor(pnlColor(data.todayPnL), COLOR_CARD);
-    tft.print((data.todayPnL >= 0 ? "+" : "") + String(data.todayPnL, 2) + " USDT");
+    tft.print((data.todayPnL >= 0 ? "+" : "") + String(data.todayPnL, 2));
   }
 
-  // ── Volumen-Zeilen ────────────────────────────────
-  tft.drawFastHLine(4, 66, 312, COLOR_GREY_DARK);
+  // ── Volumen (kompakt, 2 Zeilen) ───────────────────
+  int volY = cardY + cardH + 4;
+  tft.drawFastHLine(0, volY, 320, COLOR_GREY_DARK);
   tft.setTextColor(COLOR_GREY, COLOR_BG);
   tft.setTextSize(1);
-  tft.setCursor(8, 72);
-  tft.print("Volumen (30 Tage)");
-  String v30 = "$ " + fmtVol(data.volume30d);
-  tft.setTextColor(COLOR_WHITE, COLOR_BG);
-  tft.setCursor(320 - 8 - (int)v30.length() * 6, 72);
+  tft.setCursor(8, volY + 5);
+  tft.print("Vol 30d");
+  String v30 = "$" + fmtVol(data.volume30d);
+  tft.setTextColor(COLOR_WHITE_DIM, COLOR_BG);
+  tft.setCursor(316 - (int)v30.length() * 6, volY + 5);
   tft.print(v30);
 
-  tft.drawFastHLine(4, 84, 312, COLOR_GREY_DARK);
   tft.setTextColor(COLOR_GREY, COLOR_BG);
-  tft.setCursor(8, 90);
-  tft.print("Volumen (Gesamt)");
-  String vtot = "$ " + fmtVol(data.volumeTotal);
-  tft.setTextColor(COLOR_WHITE, COLOR_BG);
-  tft.setCursor(320 - 8 - (int)vtot.length() * 6, 90);
+  tft.setCursor(8, volY + 17);
+  tft.print("Vol Total");
+  String vtot = "$" + fmtVol(data.volumeTotal);
+  tft.setTextColor(COLOR_WHITE_DIM, COLOR_BG);
+  tft.setCursor(316 - (int)vtot.length() * 6, volY + 17);
   tft.print(vtot);
 
-  // ── Trennlinie ────────────────────────────────────
-  tft.drawFastHLine(0, 101, 320, COLOR_GREY_DARK);
+  // ── Trennlinie vor Donuts ─────────────────────────
+  int donutY = volY + 30;
+  tft.drawFastHLine(0, donutY, 320, COLOR_GREY_DARK);
 
-  // ── 3 Donuts (Landscape: cx=55/160/265, cy=158) ──
-  // cy=158: label-Unterkante bei 158+34+4+8=204px < NavBar 207px
-  const int cy = 158, r = 34, ir = 23;
+  // ── 3 Donuts ─────────────────────────────────────
+  int cy = donutY + 46;
+  const int r = 34, ir = 23;
 
   char wrStr[10];
-  snprintf(wrStr, sizeof(wrStr), "%.1f%%", data.winRate);
+  snprintf(wrStr, sizeof(wrStr), "%.0f%%", data.winRate);
   uint16_t wrCol = data.winRate >= 50 ? COLOR_GREEN : (data.winRate >= 40 ? COLOR_YELLOW : COLOR_RED);
-  drawDonut(55, cy, r, ir, data.winRate, wrCol, "Win rate", wrStr);
+  drawDonut(55, cy, r, ir, data.winRate, wrCol, "Win Rate", wrStr);
 
   char satStr[10];
-  snprintf(satStr, sizeof(satStr), "%.1f%%", data.satisfaction);
+  snprintf(satStr, sizeof(satStr), "%.0f%%", data.satisfaction);
   uint16_t satCol = data.satisfaction >= 50 ? COLOR_GREEN : (data.satisfaction >= 30 ? COLOR_YELLOW : COLOR_RED);
-  drawDonut(160, cy, r, ir, data.satisfaction, satCol, "Satisfaction", satStr);
+  drawDonut(160, cy, r, ir, data.satisfaction, satCol, "Zufried.", satStr);
 
   char rrrStr[12];
   snprintf(rrrStr, sizeof(rrrStr), "1:%.1f", data.rrr);
   float rrrPct = constrain(data.rrr / 3.0f * 100.0f, 0, 100);
   uint16_t rrrCol = data.rrr >= 1.5f ? COLOR_GREEN : (data.rrr >= 1.0f ? COLOR_YELLOW : COLOR_RED);
-  drawDonut(265, cy, r, ir, rrrPct, rrrCol, "O RRR", rrrStr);
+  drawDonut(265, cy, r, ir, rrrPct, rrrCol, "RRR", rrrStr);
 }
 
 // ── SCREEN 2: Offene Positionen (Landscape 320×207) ──────
@@ -455,14 +501,15 @@ void drawScreen2() {
   tft.fillRect(0, 0, 320, 207, COLOR_BG);
 
   // ── Header ────────────────────────────────────────
-  tft.fillRect(0, 0, 320, 26, COLOR_HEADER_BG);
-  tft.setTextColor(COLOR_WHITE, COLOR_HEADER_BG);
+  tft.fillRect(0, 0, 320, 24, COLOR_HEADER_BG);
+  tft.drawFastHLine(0, 24, 320, COLOR_GREY_DARK);
+  tft.setTextColor(COLOR_BLUE, COLOR_HEADER_BG);
   tft.setTextSize(1);
   tft.setCursor(8, 5);
-  tft.print("Crypto Trading Journal");
+  tft.print("Trading Journal");
   tft.setTextColor(COLOR_GREY, COLOR_HEADER_BG);
   tft.setCursor(8, 16);
-  tft.print("Offene Bitunix Futures");
+  tft.print("Offene Positionen · Bitunix");
 
   // ── Gesamt-Zeile ──────────────────────────────────
   float totalUnrPnL = 0;
@@ -470,11 +517,11 @@ void drawScreen2() {
   int n = data.positions.size();
 
   char gesamt[52];
-  snprintf(gesamt, sizeof(gesamt), "Gesamt: %.2f USDT  (%d Position%s)",
-           totalUnrPnL, n, n == 1 ? "" : "en");
+  snprintf(gesamt, sizeof(gesamt), "unr. PnL: %+.2f USDT  (%d Pos.)",
+           totalUnrPnL, n);
   tft.setTextColor(pnlColor(totalUnrPnL), COLOR_BG);
   tft.setTextSize(1);
-  tft.setCursor(8, 31);
+  tft.setCursor(8, 30);
   tft.print(gesamt);
 
   if (n == 0) {
@@ -580,31 +627,35 @@ void drawScreen3() {
 
   // Header
   tft.fillRect(0, 0, 320, 22, COLOR_HEADER_BG);
-  tft.setTextColor(COLOR_WHITE, COLOR_HEADER_BG);
+  tft.drawFastHLine(0, 22, 320, COLOR_GREY_DARK);
+  tft.setTextColor(COLOR_BLUE, COLOR_HEADER_BG);
   tft.setTextSize(1);
   tft.setCursor(8, 7);
-  tft.print("FILTER / ZEITRAUM");
+  tft.print("ZEITRAUM");
 
   // 4 Buttons
   for (int i = 0; i < 4; i++) {
     int by = 26 + i * 46;
     bool active = (cfgFilter == String(FILTER_OPTS[i].key));
-    uint16_t bgCol  = active ? COLOR_BLUE_NAV : COLOR_CARD;
-    uint16_t bdrCol = active ? COLOR_WHITE    : COLOR_GREY_DARK;
-    tft.fillRoundRect(6, by, 308, 40, 5, bgCol);
-    tft.drawRoundRect(6, by, 308, 40, 5, bdrCol);
-    tft.setTextColor(active ? COLOR_WHITE : COLOR_WHITE, bgCol);
+    uint16_t bgCol  = active ? 0x0C62 : COLOR_CARD;     // dunkelblau aktiv, karte inaktiv
+    uint16_t bdrCol = active ? COLOR_BLUE_NAV : COLOR_GREY_DARK;
+    tft.fillRoundRect(6, by, 308, 40, 6, bgCol);
+    tft.drawRoundRect(6, by, 308, 40, 6, bdrCol);
+    if (active) {
+      // Linker blauer Balken als Indikator
+      tft.fillRoundRect(6, by, 4, 40, 2, COLOR_BLUE_NAV);
+    }
+    tft.setTextColor(active ? COLOR_WHITE : COLOR_WHITE_DIM, bgCol);
     tft.setTextSize(1);
-    tft.setCursor(16, by + 8);
+    tft.setCursor(18, by + 8);
     tft.print(FILTER_OPTS[i].label);
-    tft.setTextColor(active ? COLOR_YELLOW : COLOR_GREY, bgCol);
-    tft.setCursor(16, by + 22);
+    tft.setTextColor(active ? COLOR_BLUE : COLOR_GREY, bgCol);
+    tft.setCursor(18, by + 22);
     tft.print(FILTER_OPTS[i].sub);
     if (active) {
-      // Checkmark rechts
       tft.setTextColor(COLOR_GREEN, bgCol);
-      tft.setCursor(290, by + 14);
-      tft.print("<<");
+      tft.setCursor(292, by + 14);
+      tft.print("OK");
     }
   }
 }
@@ -910,15 +961,8 @@ void setup() {
   tft.setRotation(DISPLAY_ROTATION);
   tft.fillScreen(COLOR_BG);
 
-  // ── Touch I2C (CST328 direkt) — Waveshare ESP32-S3-Touch-LCD-2.8 ──
-  pinMode(TOUCH_RST, OUTPUT);
-  digitalWrite(TOUCH_RST, HIGH);
-  delay(50);
-  digitalWrite(TOUCH_RST, LOW);
-  delay(5);
-  digitalWrite(TOUCH_RST, HIGH);
-  delay(50);
-  Wire1.begin(TOUCH_SDA, TOUCH_SCL, 400000);
+  // ── Touch I2C (CST328) ───────────────────────────
+  cst328Init();
 
   loadConfig();
 
@@ -1002,7 +1046,7 @@ void loop() {
 
   unsigned long now = millis();
 
-  // Touch prüfen (FT6336G, I2C)
+  // Touch prüfen (CST328, I2C)
   int tx, ty;
   if (mapTouch(&tx, &ty)) {
     lastTouchTime = now;

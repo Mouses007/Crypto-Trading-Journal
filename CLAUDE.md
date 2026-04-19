@@ -44,8 +44,16 @@ There are **no tests, no linter, and no CI/CD pipeline** configured.
 - **`server/api-routes.js`** — Generic REST CRUD (`GET/POST/PUT/DELETE /api/db/{table}`) using Knex; table/column whitelist; settings and bitunix_config endpoints (bitunix_config response omits secretKey).
 - **`server/bitunix-api.js`** — Bitunix API client (SHA256 double-hash auth); encrypt/decrypt for API keys; proxy endpoints for positions.
 - **`server/bitget-api.js`** — Bitget API (HMAC-SHA256); encrypt/decrypt for keys.
+- **`server/binance-api.js`** — Binance public klines proxy (no API key needed, CORS bypass).
 - **`server/ollama-api.js`** — AI: Ollama, OpenAI, Anthropic, Gemini, DeepSeek (reports + chat).
+- **`server/ai-agent.js`** — Autonomous KI-Agent with tool use / function calling. Supports Anthropic (native), OpenAI/DeepSeek (native), Gemini (native), Ollama (prompt-based fallback). Agent loop runs via SSE streaming; max 10 iterations; concurrency-guarded (one run at a time).
+- **`server/ai-agent-tools.js`** — Tool definitions and `executeTool()` for the agent loop (DB queries, trade analysis, etc.).
+- **`server/flux-api.js`** — Share Card API: generates stylized trade share images using FLUX.2 (Black Forest Labs) AI backgrounds + SVG overlay. Uses `sharp` for image processing. Admin: `/api/flux/*`.
+- **`server/esp32-api.js`** — Read-only endpoint for ESP32-2432S028 (CYD) hardware display. Auth via static API key in `X-ESP32-Key` header (key stored encrypted in `settings.esp32ApiKey`). `/api/esp32/display` is public (no session); admin routes behind session.
+- **`server/backup-api.js`** — JSON export/import of all DB tables. Redacts sensitive keys (AI keys, etc.) on export. Handles import order to respect FK constraints.
+- **`server/update-api.js`** — Checks GitHub releases (`GET /api/update/check`) and performs one-click update via git fetch+reset+npm install (`POST /api/update/install`). Repo: `Mouses007/Crypto-Trading-Journal`.
 - **`server/polygon-api.js`** — Polygon.io proxy (e.g. market data).
+- **`server/logger.js`** — Shared logging utility (`logWarn`, `logError`) used across server modules.
 
 ### Key Backend Patterns
 
@@ -86,6 +94,18 @@ View initialization follows a pattern in `src/utils/utils.js`:
 - `brokers.js` — Bitunix-only CSV parser (PapaParse)
 - `charts.js` — ECharts configuration and rendering
 
+### Key Views
+
+- `KiAgent.vue` — Frontend for the autonomous KI-Agent (SSE-based streaming, tool-call visualization)
+- `Incoming.vue` — Live open positions from Bitunix API
+- `Imports.vue` — CSV / API trade import UI
+
+### Key Components
+
+- `ShareCardModal.vue` — Trade share card generator (FLUX.2 AI image + SVG overlay via `flux-api.js`)
+- `TradeEvalPopup.vue` — Trade evaluation/rating popup (SL/TP, RRR, etc.)
+- `SidebarFilters.vue` — Global filter panel (tags, date range, position type); state in `globals.js`
+
 ### Styling
 
 Dark theme uses CSS custom properties defined in `src/assets/style-dark.css`:
@@ -97,8 +117,9 @@ Bootstrap loaded from CDN (not bundled).
 
 ### Environment Variables
 
-- `CTJ_PORT` — Server port (default 8080)
+- `CTJ_PORT` — Server port (default 8080; also accepts `PORT`)
 - `CTJ_HOST` — Bind address (default 127.0.0.1; use 0.0.0.0 for network access)
+- `CTJ_SECRET` — Secret for session token / crypto key derivation (required in production)
 - `NODE_ENV=dev` — Enable Vite dev server with HMR
 
 No `.env` files — runtime config stored in DB (settings table) and localStorage. Optional DB: `db-config.json` for PostgreSQL.

@@ -23,3 +23,7 @@ docs/ARCHITECTURE-AUDIT.md
 docs/TEST-ANALYSE.md
 ANLEITUNG-INSTALLATION.txt
 _ctj_update.bat
+
+# PlatformIO build artifacts
+ESP32-Waveshare/.pio/
+ESP32-2432S028/.pio/
