@@ -16,13 +16,12 @@ services:
       - .env
     restart: unless-stopped
 
-  watchtower:
-    image: containrrr/watchtower
-    container_name: watchtower-journal
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - WATCHTOWER_POLL_INTERVAL=3600
-      - WATCHTOWER_CLEANUP=true
-    command: crypto-trading-journal
-    restart: unless-stopped
+# Auto-Updates sind bewusst NICHT Teil dieses Compose-Files:
+# - Localhost-Installationen nutzen den Update-Button unten links in der App
+#   (Klick-Install via git fetch + reset + npm install + build + restart).
+# - Wer auf einem Server/NAS automatische Updates will, kann Watchtower
+#   als eigenen Container hinzufügen, z.B.:
+#     docker run -d --name watchtower-journal \
+#       -v /var/run/docker.sock:/var/run/docker.sock \
+#       -e WATCHTOWER_POLL_INTERVAL=3600 -e WATCHTOWER_CLEANUP=true \
+#       containrrr/watchtower crypto-trading-journal
