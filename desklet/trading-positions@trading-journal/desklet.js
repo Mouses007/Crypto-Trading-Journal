@@ -21,7 +21,6 @@ try {
 }
 
 const UUID         = "trading-positions@trading-journal";
-const APP_VERSION  = "2.7.1";
 const APP_NAME     = "Crypto Trading Journal";
 
 class TradingPositionsDesklet extends Desklet.Desklet {
@@ -37,6 +36,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         this._settings.bind("refresh-interval", "refreshInterval", this._onSettingChanged.bind(this));
         this._settings.bind("show-leverage",    "showLeverage",    this._onSettingChanged.bind(this));
         this._settings.bind("show-mark-price",  "showMarkPrice",   this._onSettingChanged.bind(this));
+        this._settings.bind("show-realized-pnl","showRealizedPnl", this._onSettingChanged.bind(this));
         this._settings.bind("show-github-link", "showGithubLink",  this._onFooterChanged.bind(this));
         this._settings.bind("font-size",        "fontSize",        this._onStyleChanged.bind(this));
         this._settings.bind("font-size-ui",    "fontSizeUi",      this._onStyleChanged.bind(this));
@@ -45,6 +45,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
 
         this._cookieAcquired = false;
         this._timeoutId      = null;
+        this._appVersion     = null;
 
         this._initSoup();
         this._buildUI();
@@ -63,7 +64,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         let opacity = Math.max(0, Math.min(100, this.bgOpacity ?? 88)) / 100;
         let fs      = this.fontSize    ?? 12;
         let fsUi    = this.fontSizeUi  ?? 11;
-        let mw      = this.minWidth    ?? 400;
+        let mw      = this.minWidth    ?? 480;
         this._outer.set_style(
             `background-color: rgba(15,20,28,${opacity.toFixed(2)});` +
             `min-width: ${mw}px;`
@@ -75,7 +76,8 @@ class TradingPositionsDesklet extends Desklet.Desklet {
             side:     Math.round(55  * scale),
             leverage: Math.round(36  * scale),
             price:    Math.round(78  * scale),
-            pnl:     Math.round(95  * scale),
+            pnl:      Math.round(95  * scale),
+            realized: Math.round(85  * scale),
         };
         // Positionen
         this._posFs        = fs;
@@ -120,6 +122,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
                     let body   = bytes ? new TextDecoder().decode(bytes.get_data()) : '';
                     callback(status, body);
                 } catch(e) {
+                    global.logError('[' + UUID + '] soup GET ' + url + ': ' + e.message);
                     callback(0, '');
                 }
             });
@@ -216,9 +219,27 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         this._soupGet(this._baseUrl + '/', (status, _body) => {
             if (status > 0 && status < 500) {
                 this._cookieAcquired = true;
+                this._fetchVersion();
                 this._fetchPositions();
             } else {
                 this._showStatus("Server nicht erreichbar\n" + this.serverHost + ":" + this.serverPort);
+            }
+        });
+    }
+
+    _fetchVersion() {
+        // Nur einmal pro Session holen
+        if (this._appVersion) return;
+        this._soupGet(this._baseUrl + '/api/update/check', (status, body) => {
+            if (status !== 200) return;
+            try {
+                let data = JSON.parse(body);
+                if (data && data.localVersion) {
+                    this._appVersion = String(data.localVersion);
+                    this._updateFooterRight();
+                }
+            } catch(e) {
+                global.logError('[' + UUID + '] version parse: ' + e.message);
             }
         });
     }
@@ -259,9 +280,10 @@ class TradingPositionsDesklet extends Desklet.Desklet {
 
     _updateFooterRight() {
         if (!this._footerRight) return;
-        let text = `v${APP_VERSION}`;
+        let text = this._appVersion ? `v${this._appVersion}` : '';
         if (this.showGithubLink !== false) {
-            text += `  \u2022  github.com/Mouses007/Crypto-Trading-Journal`;
+            if (text) text += '  \u2022  ';
+            text += 'github.com/Mouses007/Crypto-Trading-Journal';
         }
         this._footerRight.set_text(text);
     }
@@ -305,6 +327,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         headerCells.push({ text: 'Entry', width: this._colWidths.price });
         if (this.showMarkPrice) headerCells.push({ text: 'Mark',  width: this._colWidths.price });
         headerCells.push({ text: 'unr. PnL', width: this._colWidths.pnl });
+        if (this.showRealizedPnl !== false) headerCells.push({ text: 'real. PnL', width: this._colWidths.realized });
         this._content.add_child(this._makeHeaderRow(headerCells));
 
         for (let pos of positions) {
@@ -325,7 +348,9 @@ class TradingPositionsDesklet extends Desklet.Desklet {
             try {
                 let bd = typeof pos.bitunixData === 'string' ? JSON.parse(pos.bitunixData) : pos.bitunixData;
                 markPrice = bd.markPrice || bd.liqPrice || null;
-            } catch(_) {}
+            } catch(e) {
+                global.logError('[' + UUID + '] bitunixData parse: ' + e.message);
+            }
         }
 
         let fmt = (v) => {
@@ -346,6 +371,15 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         cells.push({ text: fmt(pos.entryPrice), cls: 'price-cell', width: cw.price });
         if (this.showMarkPrice) cells.push({ text: fmt(markPrice), cls: 'price-cell', width: cw.price });
         cells.push({ text: pnlText, cls: 'pnl-cell ' + pnlClass, width: cw.pnl });
+
+        if (this.showRealizedPnl !== false) {
+            let realized = parseFloat(
+                pos.realizedPNL ?? pos.realized_pnl ?? pos.realizedPnl ?? pos.realizedPL ?? 0
+            ) || 0;
+            let realClass = realized >= 0 ? 'pnl-profit' : 'pnl-loss';
+            let realText  = (realized >= 0 ? '+' : '') + realized.toFixed(2) + ' USDT';
+            cells.push({ text: realText, cls: 'pnl-cell ' + realClass, width: cw.realized });
+        }
 
         let fs  = this._posFs || 12;
         let row = new St.BoxLayout({ style_class: 'position-row' });
@@ -377,6 +411,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
 
     _onSettingChanged() {
         this._cookieAcquired = false;
+        this._appVersion     = null;  // Server-Wechsel → Version neu holen
         this._startPolling();
     }
 
