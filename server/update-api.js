@@ -9,6 +9,7 @@ import { readFileSync, existsSync, writeFileSync } from 'fs'
 import path from 'path'
 import os from 'os'
 import https from 'https'
+import http from 'http'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -18,6 +19,50 @@ const GITHUB_REPO = 'Mouses007/Crypto-Trading-Journal'
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 const IS_WINDOWS = os.platform() === 'win32'
 const IS_DOCKER = existsSync('/.dockerenv')
+const DOCKER_SOCK = '/var/run/docker.sock'
+const HAS_DOCKER_SOCK = IS_DOCKER && existsSync(DOCKER_SOCK)
+
+/**
+ * Minimal Docker Engine API client via Unix socket.
+ * No dependency — just http over the docker socket.
+ */
+function dockerApi(method, apiPath, body) {
+    return new Promise((resolve, reject) => {
+        const opts = {
+            socketPath: DOCKER_SOCK,
+            method,
+            path: apiPath,
+            headers: { 'Host': 'docker' }
+        }
+        if (body !== undefined) {
+            const payload = typeof body === 'string' ? body : JSON.stringify(body)
+            opts.headers['Content-Type'] = 'application/json'
+            opts.headers['Content-Length'] = Buffer.byteLength(payload)
+            const req = http.request(opts, (res) => {
+                let data = ''
+                res.on('data', c => data += c)
+                res.on('end', () => {
+                    if (res.statusCode >= 400) return reject(new Error(`Docker API ${method} ${apiPath} -> ${res.statusCode}: ${data}`))
+                    try { resolve(data ? JSON.parse(data) : {}) } catch { resolve({ raw: data }) }
+                })
+            })
+            req.on('error', reject)
+            req.write(payload)
+            req.end()
+            return
+        }
+        const req = http.request(opts, (res) => {
+            let data = ''
+            res.on('data', c => data += c)
+            res.on('end', () => {
+                if (res.statusCode >= 400) return reject(new Error(`Docker API ${method} ${apiPath} -> ${res.statusCode}: ${data}`))
+                try { resolve(data ? JSON.parse(data) : {}) } catch { resolve({ raw: data }) }
+            })
+        })
+        req.on('error', reject)
+        req.end()
+    })
+}
 
 /**
  * Treat localhost-access as "non-Docker" even when the server runs in a container.
@@ -33,6 +78,119 @@ function isLocalRequest(req) {
 }
 function effectiveIsDocker(req) {
     return IS_DOCKER && !isLocalRequest(req)
+}
+
+/**
+ * Docker-Mode Install:
+ * 1. Lese eigene Container-Config via Docker-Socket (hostname = Container-ID im Docker-Netzwerk)
+ * 2. Extrahiere compose-Projekt-Label (working_dir auf dem Host) + Image-Name
+ * 3. Pull neues Image via Docker API (blocking, damit wir erst danach antworten)
+ * 4. Erstelle einen Helfer-Container (Image: docker:cli) der nach kurzer Wartezeit
+ *    `docker compose -f <compose> up -d --force-recreate --no-deps journal` ausfuehrt
+ * 5. Antworte dem Client, sterbe kurz danach — der Helfer ersetzt uns
+ */
+async function installDockerUpdate(res) {
+    if (!HAS_DOCKER_SOCK) {
+        return res.status(400).json({
+            ok: false,
+            error: 'Docker-Socket nicht verfuegbar (/var/run/docker.sock nicht gemountet). Fuege in docker-compose.yml im journal-Service hinzu:\n\n' +
+                '  volumes:\n    - /var/run/docker.sock:/var/run/docker.sock\n\n' +
+                'Oder update manuell: docker compose pull && docker compose up -d'
+        })
+    }
+
+    const steps = []
+    let selfName = process.env.HOSTNAME || 'crypto-trading-journal'
+
+    // 1. Eigene Config lesen (hostname inside docker == container short-id)
+    let self
+    try {
+        self = await dockerApi('GET', `/containers/${selfName}/json`)
+    } catch (e) {
+        // Fallback: try by known container_name from compose
+        try {
+            self = await dockerApi('GET', `/containers/crypto-trading-journal/json`)
+            selfName = 'crypto-trading-journal'
+        } catch (e2) {
+            return res.status(500).json({ ok: false, error: 'Kann eigenen Container nicht identifizieren: ' + e.message })
+        }
+    }
+    const imageName = self.Config?.Image || 'mouses007/trading-journal:latest'
+    const labels = self.Config?.Labels || {}
+    const composeWorkingDir = labels['com.docker.compose.project.working_dir']
+    const composeConfigFiles = labels['com.docker.compose.project.config_files']
+    const composeService = labels['com.docker.compose.service']
+    const composeProject = labels['com.docker.compose.project']
+
+    if (!composeWorkingDir || !composeService) {
+        return res.status(400).json({
+            ok: false,
+            error: 'Container wurde nicht mit docker-compose gestartet. Update manuell ausfuehren: docker pull ' + imageName + ' und Container neu erstellen.'
+        })
+    }
+    steps.push({ step: 'self config', output: `image=${imageName} service=${composeService} project=${composeProject} cwd=${composeWorkingDir}` })
+
+    // 2. Neues Image pullen (streaming response — wir lesen bis Ende)
+    try {
+        await new Promise((resolve, reject) => {
+            const opts = {
+                socketPath: DOCKER_SOCK,
+                method: 'POST',
+                path: `/images/create?fromImage=${encodeURIComponent(imageName)}`,
+                headers: { 'Host': 'docker' }
+            }
+            const req = http.request(opts, (pullRes) => {
+                pullRes.on('data', () => {}) // verbrauchen
+                pullRes.on('end', () => pullRes.statusCode < 400 ? resolve() : reject(new Error('Pull fehlgeschlagen: HTTP ' + pullRes.statusCode)))
+            })
+            req.on('error', reject)
+            req.end()
+        })
+        steps.push({ step: 'docker pull', output: 'OK: ' + imageName })
+    } catch (e) {
+        return res.status(500).json({ ok: false, error: 'docker pull fehlgeschlagen: ' + e.message })
+    }
+
+    // 3. Helfer-Container erstellen + starten
+    // - docker:cli Image enthaelt `docker` CLI
+    // - Socket gemountet, Compose-Projekt-Dir gemountet
+    // - AutoRemove loescht den Helfer nach Abschluss
+    // - Das Skript wartet 3s, damit unsere Response den Client erreicht
+    const helperName = `ctj-updater-${Date.now()}`
+    const helperConfig = {
+        Image: 'docker:cli',
+        Cmd: ['sh', '-c',
+            // journal-service im Projekt neu erstellen — compose pullt Image (schon im Cache) + ersetzt Container
+            'sleep 3 && cd /compose && docker compose -f "$(basename "$COMPOSE_FILE")" up -d --force-recreate --no-deps ' + composeService
+        ],
+        Env: [
+            `COMPOSE_FILE=${composeConfigFiles || 'docker-compose.yml'}`,
+            `COMPOSE_PROJECT_NAME=${composeProject || ''}`
+        ],
+        HostConfig: {
+            Binds: [
+                `${DOCKER_SOCK}:${DOCKER_SOCK}`,
+                `${composeWorkingDir}:/compose`
+            ],
+            AutoRemove: true,
+            NetworkMode: 'bridge'
+        }
+    }
+
+    try {
+        const created = await dockerApi('POST', `/containers/create?name=${helperName}`, helperConfig)
+        await dockerApi('POST', `/containers/${created.Id}/start`)
+        steps.push({ step: 'helper container', output: helperName + ' gestartet' })
+    } catch (e) {
+        return res.status(500).json({ ok: false, error: 'Helfer-Container konnte nicht gestartet werden: ' + e.message })
+    }
+
+    // 4. Antworten — danach wird uns der Helfer in ~3s beenden und neu erstellen
+    res.json({ ok: true, dockerMode: true, steps, newVersion: null, message: 'Update laeuft (Docker-Modus). Container wird in ~10 Sekunden neu erstellt.' })
+
+    // Defensive: Cache leeren, damit naechster Check nicht wartet
+    lastCheck = null
+    lastCheckTime = 0
 }
 
 /**
@@ -177,6 +335,11 @@ export function setupUpdateRoutes(app) {
     // ── Install update ─────────────────────────────────────────────
     app.post('/api/update/install', async (req, res) => {
         try {
+            // Docker-Modus: neues Image pullen und Container via Helfer neu erstellen
+            if (IS_DOCKER) {
+                return await installDockerUpdate(res)
+            }
+
             // Pruefen ob Git-Repository vorhanden ist
             if (!existsSync(path.join(PROJECT_ROOT, '.git'))) {
                 return res.status(400).json({

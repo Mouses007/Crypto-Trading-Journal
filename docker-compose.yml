@@ -12,16 +12,22 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
+    volumes:
+      # Read-only Docker-Socket — ermoeglicht Klick-Update aus der App heraus.
+      # Entferne den Mount, wenn du Updates nur manuell via
+      # "docker compose pull && docker compose up -d" machen willst.
+      - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env
     restart: unless-stopped
 
-# Auto-Updates sind bewusst NICHT Teil dieses Compose-Files:
-# - Localhost-Installationen nutzen den Update-Button unten links in der App
-#   (Klick-Install via git fetch + reset + npm install + build + restart).
-# - Wer auf einem Server/NAS automatische Updates will, kann Watchtower
-#   als eigenen Container hinzufügen, z.B.:
-#     docker run -d --name watchtower-journal \
-#       -v /var/run/docker.sock:/var/run/docker.sock \
-#       -e WATCHTOWER_POLL_INTERVAL=3600 -e WATCHTOWER_CLEANUP=true \
-#       containrrr/watchtower crypto-trading-journal
+# Auto-Updates (Watchtower) sind bewusst NICHT Teil dieses Compose-Files.
+# Fuer lokalen Klick-Update-Betrieb reicht der Socket-Mount oben + der
+# Update-Button in der App (Docker-Mode erkannt -> App startet Helper-
+# Container, der "docker compose pull + up -d" gegen diesen Compose-File
+# ausfuehrt).
+# Wer einen Background-Poller will, kann Watchtower separat starten:
+#   docker run -d --name watchtower-journal \
+#     -v /var/run/docker.sock:/var/run/docker.sock \
+#     -e WATCHTOWER_POLL_INTERVAL=3600 -e WATCHTOWER_CLEANUP=true \
+#     containrrr/watchtower crypto-trading-journal
