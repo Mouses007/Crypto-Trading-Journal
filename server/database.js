@@ -590,6 +590,7 @@ async function runMigrations(knex, client) {
 
     // ==================== SETTINGS: ESP32 DISPLAY ====================
     await addColumnIfNotExists('settings', 'esp32ApiKey', (t) => t.text('esp32ApiKey').defaultTo(''))
+    await addColumnIfNotExists('settings', 'esp32Filter', (t) => t.text('esp32Filter').defaultTo('month'))
 
     // ==================== SHARE CARD TEMPLATES ====================
     if (!(await knex.schema.hasTable('share_card_templates'))) {

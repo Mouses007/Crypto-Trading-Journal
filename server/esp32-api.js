@@ -76,7 +76,7 @@ export function setupEsp32Routes(app) {
             const knex = getKnex()
 
             // Load all needed settings in one query
-            const settings = await knex('settings').where('id', 1).select('timeZone', 'startBalance', 'balances').first()
+            const settings = await knex('settings').where('id', 1).select('timeZone', 'startBalance', 'balances', 'esp32Filter').first()
             const tz = settings?.timeZone || 'Europe/Berlin'
 
             // Determine primary broker and start balance from settings
@@ -98,8 +98,9 @@ export function setupEsp32Routes(app) {
             const todayStart = dayjs().tz(tz).startOf('day').unix()
             const todayEnd   = dayjs().tz(tz).endOf('day').unix()
 
-            // filter=month/week/year/all  (default: all)
-            const filter = req.query.filter || 'all'
+            // Server-side filter (settings.esp32Filter) takes priority over query param
+            // This allows the journal admin to control which period the ESP32 displays
+            const filter = settings?.esp32Filter || req.query.filter || 'month'
             let periodStart = 0
             if      (filter === 'month') periodStart = dayjs().tz(tz).startOf('month').unix()
             else if (filter === 'week')  periodStart = dayjs().tz(tz).startOf('week').unix()
@@ -114,10 +115,12 @@ export function setupEsp32Routes(app) {
             let totalNetWins = 0, totalNetLoss = 0
             let totalNetWinsCount = 0, totalNetLossCount = 0
             let volume30d = 0, volumeTotal = 0
+            let todayTradeCount = 0, todayWins = 0, todayLosses = 0
 
             for (const row of allTrades) {
                 const ts = parseInt(row.dateUnix || 0)
                 const inPeriod = periodStart === 0 || ts >= periodStart
+                const isToday = ts >= todayStart && ts <= todayEnd
 
                 // pAndL for net proceeds and win counts (pre-aggregated per day)
                 let pl = {}
@@ -141,7 +144,16 @@ export function setupEsp32Routes(app) {
                 // Period-filtered PnL
                 const net = parseFloat(pl.netProceeds || 0)
                 totalPnL += net
-                if (ts >= todayStart && ts <= todayEnd) todayPnL += net
+
+                // Today's stats
+                if (isToday) {
+                    todayPnL += net
+                    const tw = parseInt(pl.grossWinsCount || 0)
+                    const tc = parseInt(pl.trades || 0)
+                    todayWins    += tw
+                    todayLosses  += Math.max(0, tc - tw)
+                    todayTradeCount += tc
+                }
 
                 // Win rate: grossWinsCount / trades — matches journal formula exactly
                 totalGrossWins  += parseInt(pl.grossWinsCount || 0)
@@ -162,8 +174,10 @@ export function setupEsp32Routes(app) {
             const avgLoss = totalNetLossCount > 0 ? totalNetLoss / totalNetLossCount : 0
             const rrr = avgLoss > 0 ? avgWin / avgLoss : 0
 
-            // Satisfaction
-            const sats = await knex('satisfactions').select('satisfaction')
+            // Satisfaction — gefiltert nach Zeitraum (wie Journal)
+            const satsQuery = knex('satisfactions').select('satisfaction')
+            if (periodStart > 0) satsQuery.where('dateUnix', '>=', periodStart)
+            const sats = await satsQuery
             const satisfied = sats.filter(s => s.satisfaction == 1 || s.satisfaction == true).length
             const satisfaction = sats.length > 0 ? (satisfied / sats.length) * 100 : 0
 
@@ -185,11 +199,11 @@ export function setupEsp32Routes(app) {
                             symbol:        p.symbol || '',
                             side:          p.side   || '',
                             leverage:      parseFloat(p.leverage     || 0),
-                            entryPrice:    parseFloat(p.entryPrice   || 0),
-                            markPrice:     parseFloat(p.markPrice    || 0),
+                            entryPrice:    parseFloat(p.entryPrice   ?? p.avgOpenPrice ?? p.avg_open_price ?? 0),
+                            markPrice:     parseFloat(p.markPrice    ?? p.liqPrice ?? p.mark_price ?? 0),
                             qty:           parseFloat(p.qty ?? p.maxQty ?? 0),
                             unrealizedPNL: parseFloat(p.unrealizedPNL ?? p.unrealized_pnl ?? 0),
-                            realizedPNL:   parseFloat(p.realizedPNL ?? p.realized_pnl ?? p.achievedProfits ?? p.achieved_profits ?? 0)
+                            realizedPNL:   parseFloat(p.realizedPNL  ?? p.realized_pnl ?? p.achievedProfits ?? 0)
                         }))
                     }
                 }
@@ -214,15 +228,18 @@ export function setupEsp32Routes(app) {
             res.json({
                 filter:       filter,
                 filterLabel:  filterLabels[filter] || 'Gesamt',
-                todayPnL:     Math.round(todayPnL * 100) / 100,
-                totalPnL:     Math.round(totalPnL * 100) / 100,
-                winRate:      Math.round(winRate * 10) / 10,
-                satisfaction: Math.round(satisfaction * 10) / 10,
-                rrr:          Math.round(rrr * 100) / 100,
-                balance:      balance !== null ? Math.round(balance * 100) / 100 : null,
-                balancePerf:  balancePerf !== null ? Math.round(balancePerf * 10) / 10 : null,
-                volume30d:    Math.round(volume30d),
-                volumeTotal:  Math.round(volumeTotal),
+                todayPnL:      Math.round(todayPnL * 100) / 100,
+                todayTrades:   todayTradeCount,
+                todayWins:     todayWins,
+                todayLosses:   todayLosses,
+                totalPnL:      Math.round(totalPnL * 100) / 100,
+                winRate:       Math.round(winRate * 10) / 10,
+                satisfaction:  Math.round(satisfaction * 10) / 10,
+                rrr:           Math.round(rrr * 100) / 100,
+                balance:       balance !== null ? Math.round(balance * 100) / 100 : null,
+                balancePerf:   balancePerf !== null ? Math.round(balancePerf * 10) / 10 : null,
+                volume30d:     Math.round(volume30d),
+                volumeTotal:   Math.round(volumeTotal),
                 openPositions: openPositions
             })
         } catch (e) {

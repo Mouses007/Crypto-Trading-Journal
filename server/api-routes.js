@@ -20,7 +20,8 @@ const VALID_SETTINGS_KEYS = [
     'aiEnabled', 'aiReportPrompt', 'aiChatEnabled', 'browserNotifications', 'setupComplete', 'balances', 'language',
     'fluxApiKey', 'fluxModel', 'fluxDisplayName', 'fluxAvatar', 'fluxUseCustomAvatar',
     'shareCardProvider', 'geminiImageApiKey', 'geminiImageModel',
-    'esp32ApiKey'
+    'esp32ApiKey', 'esp32Filter',
+    'scalpMaxMinutes', 'daytradeMaxHours', 'feeFixMigrated'
 ]
 
 // Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten

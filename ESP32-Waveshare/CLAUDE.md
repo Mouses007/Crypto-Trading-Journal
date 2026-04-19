@@ -104,12 +104,14 @@ Display runs in landscape rotation 3 (320×240 effective).
 ### Important Constants (top of main.cpp)
 
 ```cpp
-#define FW_VERSION      "2.8.2"
-#define ACTIVE_INTERVAL 5        // seconds between API fetches when active
-#define STANDBY_TIMEOUT 30       // seconds without touch → backlight off
-#define WIFI_TIMEOUT_MS 12000
-#define AP_SSID         "TradingJournal-Setup"
-#define TFT_BL_PIN      5
+#define FW_VERSION          "2.8.4"
+#define ACTIVE_INTERVAL     10        // seconds between API fetches when active
+#define STANDBY_TIMEOUT     30        // seconds without touch → backlight off
+#define LIGHT_SLEEP_TIMEOUT 60        // seconds without touch → light sleep + WiFi off
+#define BOOT_GRACE_MS       300000    // 5 min after boot: no light sleep (so flashing works)
+#define WIFI_TIMEOUT_MS     12000
+#define AP_SSID             "TradingJournal-Setup"
+#define TFT_BL_PIN          5
 ```
 
 ## Libraries

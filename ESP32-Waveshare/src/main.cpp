@@ -19,14 +19,16 @@
 
 // ── Konstanten ───────────────────────────────────────────
 
-#define AP_SSID          "TradingJournal-Setup"
-#define ACTIVE_INTERVAL  5         // Sekunden zwischen Updates wenn aktiv
-#define STANDBY_TIMEOUT  30        // Sekunden ohne Touch → Standby
-#define PREF_NAMESPACE   "tjcfg"
-#define WIFI_TIMEOUT_MS  12000
-#define DISPLAY_ROTATION 3
-#define TFT_BL_PIN        5        // Backlight-Pin Waveshare ESP32-S3-Touch-LCD-2.8
-#define FW_VERSION       "2.8.2"
+#define AP_SSID            "TradingJournal-Setup"
+#define ACTIVE_INTERVAL    10        // Sekunden zwischen Updates wenn aktiv
+#define STANDBY_TIMEOUT    30        // Sekunden ohne Touch → Backlight aus
+#define LIGHT_SLEEP_TIMEOUT 60       // Sekunden ohne Touch → Light Sleep + WiFi aus
+#define BOOT_GRACE_MS    300000      // 5 Min nach Boot kein Light Sleep (für Flash-Vorgang)
+#define PREF_NAMESPACE     "tjcfg"
+#define WIFI_TIMEOUT_MS    12000
+#define DISPLAY_ROTATION   3
+#define TFT_BL_PIN         5         // Backlight-Pin Waveshare ESP32-S3-Touch-LCD-2.8
+#define FW_VERSION         "2.8.4"
 
 // ── Farben RGB565 — Journal-Farbschema ──────────────────
 // Aus src/assets/style-dark.css konvertiert
@@ -68,6 +70,41 @@ void backlightInit() {
   ledcWrite(0, 800);
 }
 
+// ── Light Sleep mit WiFi aus, Wakeup über Touch-INT (GPIO 4) oder Timer ──
+// Blockiert bis Touch oder 30 Min Timer. CST328 INT ist active-low.
+void enterLightSleep() {
+  Serial.println("[PWR] Light Sleep — WiFi aus, Wakeup via Touch oder 30min Timer");
+  Serial.flush();
+
+  // Backlight aus + Pin festhalten, damit er während Sleep nicht flackert
+  setBacklight(false);
+  gpio_hold_en((gpio_num_t)TFT_BL_PIN);
+
+  // WiFi komplett runterfahren
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+
+  // Touch INT (GPIO 4) als Wake-Quelle — gpio_wakeup ist der korrekte API für Light Sleep
+  pinMode(TOUCH_INT, INPUT_PULLUP);
+  gpio_wakeup_enable((gpio_num_t)TOUCH_INT, GPIO_INTR_LOW_LEVEL);
+  esp_sleep_enable_gpio_wakeup();
+
+  // Safety-Net: alle 30 Min auf jeden Fall aufwachen für Datenrefresh
+  esp_sleep_enable_timer_wakeup(30ULL * 60ULL * 1000000ULL);  // 30 Min in µs
+
+  // BLOCKIERT bis Wakeup
+  esp_light_sleep_start();
+
+  // ── Wake-Up ─────────────────────────────────────────
+  esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  gpio_hold_dis((gpio_num_t)TFT_BL_PIN);
+  Serial.printf("[PWR] Wake from Light Sleep — cause=%d (2=GPIO, 4=Timer)\n", cause);
+
+  // WiFi wieder an
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(cfgSSID.c_str(), cfgPass.c_str());
+}
+
 // ── Datenstrukturen ──────────────────────────────────────
 
 struct Position {
@@ -83,6 +120,9 @@ struct Position {
 
 struct TradeData {
   float todayPnL    = 0;
+  int   todayTrades = 0;
+  int   todayWins   = 0;
+  int   todayLosses = 0;
   float totalPnL    = 0;
   float winRate     = 0;
   float satisfaction= 0;
@@ -106,14 +146,13 @@ void loadConfig() {
   cfgHost   = prefs.getString("host",   "192.168.178.100");
   cfgPort   = prefs.getString("port",   "8080");
   cfgKey    = prefs.getString("key",    "");
-  cfgFilter = prefs.getString("filter", "month");
+  // Filter kommt vom Server — nicht aus NVS laden
+  cfgFilter = "month";
   prefs.end();
 }
 
 void saveFilter() {
-  prefs.begin(PREF_NAMESPACE, false);
-  prefs.putString("filter", cfgFilter);
-  prefs.end();
+  // Filter wird vom Server gesteuert, kein lokales Speichern nötig
 }
 
 void saveConfig(String ssid, String pass, String host, String port, String key) {
@@ -341,20 +380,15 @@ void drawNavBar() {
   tft.setCursor(118, ny + 12);
   tft.print("Positionen");
 
-  // Filter
-  const char* fLabel = cfgFilter == "month" ? "Monat"  :
-                       cfgFilter == "week"  ? "Woche"  :
-                       cfgFilter == "year"  ? "Jahr"   : "Gesamt";
+  // Info-Tab
   if (activeScreen == 2) {
     tft.fillRect(215, ny+1, 104, nh-1, 0x0C62);
     tft.drawFastHLine(215, ny, 104, COLOR_BLUE);
   }
   tft.setTextColor(activeScreen == 2 ? COLOR_WHITE : COLOR_YELLOW,
                    activeScreen == 2 ? 0x0C62 : COLOR_NAV_BG);
-  tft.setCursor(223, ny + 6);
-  tft.print("Filter");
-  tft.setCursor(229, ny + 18);
-  tft.print(fLabel);
+  tft.setCursor(251, ny + 12);
+  tft.print("Info");
 
   // Offline-Indikator: kleiner roter Punkt rechts unten wenn keine Daten
   if (!data.valid) {
@@ -417,7 +451,7 @@ void drawScreen1() {
                      cfgFilter == "week"  ? "Woche" :
                      cfgFilter == "year"  ? "Jahr"  : "Alle";
   tft.setTextColor(COLOR_YELLOW, COLOR_CARD);
-  int fLblX = 316 - (int)strlen(fLbl) * 6;
+  int fLblX = 304 - (int)strlen(fLbl) * 6;
   tft.setCursor(fLblX, cardY + 7);
   tft.print(fLbl);
 
@@ -431,6 +465,15 @@ void drawScreen1() {
     tft.setTextColor(COLOR_GREY, COLOR_CARD);
     tft.setCursor(12, cardY + 48);
     tft.print("Heute ");
+    tft.setTextColor(COLOR_WHITE_DIM, COLOR_CARD);
+    tft.print(String(data.todayTrades));
+    tft.print(" T  ");
+    tft.setTextColor(COLOR_GREEN, COLOR_CARD);
+    tft.print(String(data.todayWins));
+    tft.print("+ ");
+    tft.setTextColor(COLOR_RED, COLOR_CARD);
+    tft.print(String(data.todayLosses));
+    tft.print("-  ");
     tft.setTextColor(pnlColor(data.todayPnL), COLOR_CARD);
     tft.print((data.todayPnL >= 0 ? "+" : "") + String(data.todayPnL, 2));
     String perfStr = (data.balancePerf >= 0 ? "+" : "") + String(data.balancePerf, 1) + "%";
@@ -447,6 +490,15 @@ void drawScreen1() {
     tft.setTextColor(COLOR_GREY, COLOR_CARD);
     tft.setCursor(12, cardY + 48);
     tft.print("Heute ");
+    tft.setTextColor(COLOR_WHITE_DIM, COLOR_CARD);
+    tft.print(String(data.todayTrades));
+    tft.print(" T  ");
+    tft.setTextColor(COLOR_GREEN, COLOR_CARD);
+    tft.print(String(data.todayWins));
+    tft.print("+ ");
+    tft.setTextColor(COLOR_RED, COLOR_CARD);
+    tft.print(String(data.todayLosses));
+    tft.print("-  ");
     tft.setTextColor(pnlColor(data.todayPnL), COLOR_CARD);
     tft.print((data.todayPnL >= 0 ? "+" : "") + String(data.todayPnL, 2));
   }
@@ -514,29 +566,7 @@ void drawScreen2() {
   tft.setCursor(8, 16);
   tft.print("Offene Positionen · Bitunix");
 
-  // ── Zusammenfassung: unr. + real. PnL aller Positionen ─
-  float totalUnrPnL  = 0;
-  float totalRealPnL = 0;
-  for (auto& p : data.positions) {
-    totalUnrPnL  += p.unrealizedPNL;
-    totalRealPnL += p.realizedPNL;
-  }
   int n = data.positions.size();
-
-  // Zeile 1: unrealisierter PnL gesamt
-  char unrStr[52];
-  snprintf(unrStr, sizeof(unrStr), "unr. PnL: %+.2f USDT  (%d Pos.)", totalUnrPnL, n);
-  tft.setTextColor(pnlColor(totalUnrPnL), COLOR_BG);
-  tft.setTextSize(1);
-  tft.setCursor(8, 28);
-  tft.print(unrStr);
-
-  // Zeile 2: realisierter PnL gesamt (pro offener Position)
-  char realStr[52];
-  snprintf(realStr, sizeof(realStr), "real. PnL: %+.2f USDT", totalRealPnL);
-  tft.setTextColor(pnlColor(totalRealPnL), COLOR_BG);
-  tft.setCursor(8, 39);
-  tft.print(realStr);
 
   if (n == 0) {
     tft.setTextColor(COLOR_GREY, COLOR_BG);
@@ -547,22 +577,22 @@ void drawScreen2() {
     return;
   }
 
-  // ── Tabellen-Header (y=52) ────────────────────────
+  // ── Tabellen-Header (y=28) ────────────────────────
   // Spalten: Symbol | Side | Heb. | unr. PnL | real. PnL
   // x:       4       72     104    140         228
-  tft.drawFastHLine(0, 52, 320, COLOR_GREY_DARK);
+  tft.drawFastHLine(0, 28, 320, COLOR_GREY_DARK);
   tft.setTextColor(COLOR_GREY, COLOR_BG);
   tft.setTextSize(1);
-  tft.setCursor(4,   56); tft.print("Symbol");
-  tft.setCursor(72,  56); tft.print("Side");
-  tft.setCursor(104, 56); tft.print("Heb.");
-  tft.setCursor(140, 56); tft.print("unr. PnL");
-  tft.setCursor(228, 56); tft.print("real. PnL");
-  tft.drawFastHLine(0, 68, 320, COLOR_GREY_DARK);
+  tft.setCursor(4,   32); tft.print("Symbol");
+  tft.setCursor(72,  32); tft.print("Side");
+  tft.setCursor(104, 32); tft.print("Heb.");
+  tft.setCursor(140, 32); tft.print("unr. PnL");
+  tft.setCursor(228, 32); tft.print("real. PnL");
+  tft.drawFastHLine(0, 44, 320, COLOR_GREY_DARK);
 
-  // ── Tabellenzeilen (ab y=71, 20px pro Zeile, max 6) ──
-  int maxRows = min((int)data.positions.size(), 6);
-  int y = 71;
+  // ── Tabellenzeilen (ab y=47, 20px pro Zeile, max 7) ──
+  int maxRows = min((int)data.positions.size(), 7);
+  int y = 47;
 
   for (int i = 0; i < maxRows; i++) {
     auto& p = data.positions[i];
@@ -625,8 +655,9 @@ void drawScreen2() {
   tft.print("v" FW_VERSION);
 }
 
-// ── SCREEN 3: Filter-Auswahl ─────────────────────────────
-// 4 große Tap-Buttons, y=8/58/108/158, je h=44px
+// ── SCREEN 3: Info-Screen ────────────────────────────────
+// Zeigt aktuellen Filter (vom Server gesteuert) + Verbindungsinfos.
+// Tap → zurück zum Dashboard + Daten neu laden.
 
 struct FilterOption { const char* key; const char* label; const char* sub; };
 static const FilterOption FILTER_OPTS[] = {
@@ -645,33 +676,57 @@ void drawScreen3() {
   tft.setTextColor(COLOR_BLUE, COLOR_HEADER_BG);
   tft.setTextSize(1);
   tft.setCursor(8, 7);
-  tft.print("ZEITRAUM");
+  tft.print("ZEITRAUM & INFO");
 
-  // 4 Buttons
-  for (int i = 0; i < 4; i++) {
-    int by = 26 + i * 46;
-    bool active = (cfgFilter == String(FILTER_OPTS[i].key));
-    uint16_t bgCol  = active ? 0x0C62 : COLOR_CARD;     // dunkelblau aktiv, karte inaktiv
-    uint16_t bdrCol = active ? COLOR_BLUE_NAV : COLOR_GREY_DARK;
-    tft.fillRoundRect(6, by, 308, 40, 6, bgCol);
-    tft.drawRoundRect(6, by, 308, 40, 6, bdrCol);
-    if (active) {
-      // Linker blauer Balken als Indikator
-      tft.fillRoundRect(6, by, 4, 40, 2, COLOR_BLUE_NAV);
-    }
-    tft.setTextColor(active ? COLOR_WHITE : COLOR_WHITE_DIM, bgCol);
-    tft.setTextSize(1);
-    tft.setCursor(18, by + 8);
-    tft.print(FILTER_OPTS[i].label);
-    tft.setTextColor(active ? COLOR_BLUE : COLOR_GREY, bgCol);
-    tft.setCursor(18, by + 22);
-    tft.print(FILTER_OPTS[i].sub);
-    if (active) {
-      tft.setTextColor(COLOR_GREEN, bgCol);
-      tft.setCursor(292, by + 14);
-      tft.print("OK");
-    }
-  }
+  // Aktiver Filter — vom Server
+  fillCard(6, 30, 308, 52);
+  tft.setTextColor(COLOR_GREY, COLOR_CARD);
+  tft.setTextSize(1);
+  tft.setCursor(18, 40);
+  tft.print("Aktiver Zeitraum (vom Server):");
+
+  // Aktuellen Filter anzeigen
+  const char* fLabel = cfgFilter == "month" ? "Aktueller Monat"  :
+                       cfgFilter == "week"  ? "Aktuelle Woche"   :
+                       cfgFilter == "year"  ? "Aktuelles Jahr"   : "Gesamtzeitraum";
+  tft.setTextColor(COLOR_WHITE, COLOR_CARD);
+  tft.setTextSize(1);
+  tft.setCursor(18, 54);
+  tft.print(fLabel);
+
+  // Hinweis: Einstellung im Journal
+  fillCard(6, 92, 308, 40);
+  tft.setTextColor(COLOR_GREY, COLOR_CARD);
+  tft.setTextSize(1);
+  tft.setCursor(18, 102);
+  tft.print("Aendern: Journal");
+  tft.setTextColor(COLOR_WHITE_DIM, COLOR_CARD);
+  tft.setCursor(18, 115);
+  tft.print("Einstellungen > ESP32 Display > Zeitraum");
+
+  // Verbindungsinfo
+  fillCard(6, 142, 308, 54);
+  tft.setTextColor(COLOR_GREY, COLOR_CARD);
+  tft.setTextSize(1);
+  tft.setCursor(18, 152);
+  tft.print("Server:");
+  tft.setTextColor(COLOR_WHITE_DIM, COLOR_CARD);
+  tft.setCursor(72, 152);
+  tft.print(cfgHost + ":" + cfgPort);
+  tft.setTextColor(COLOR_GREY, COLOR_CARD);
+  tft.setCursor(18, 164);
+  tft.print("WLAN:");
+  tft.setTextColor(WiFi.status() == WL_CONNECTED ? COLOR_GREEN : COLOR_RED, COLOR_CARD);
+  tft.setCursor(72, 164);
+  tft.print(WiFi.status() == WL_CONNECTED ? cfgSSID.substring(0, 22) : "getrennt");
+  tft.setTextColor(COLOR_GREY, COLOR_CARD);
+  tft.setCursor(18, 176);
+  tft.print("Firmware:");
+  tft.setTextColor(COLOR_WHITE_DIM, COLOR_CARD);
+  tft.setCursor(80, 176);
+  tft.print("v" FW_VERSION);
+  tft.setCursor(200, 176);
+  tft.print("Tap: Dashboard");
 }
 
 // ── Verbindungs-/Fehler-Screens ──────────────────────────
@@ -930,6 +985,9 @@ bool fetchData() {
   }
 
   data.todayPnL    = doc["todayPnL"]    | 0.0f;
+  data.todayTrades = doc["todayTrades"] | 0;
+  data.todayWins   = doc["todayWins"]   | 0;
+  data.todayLosses = doc["todayLosses"] | 0;
   data.totalPnL    = doc["totalPnL"]    | 0.0f;
   data.winRate     = doc["winRate"]     | 0.0f;
   data.satisfaction= doc["satisfaction"]| 0.0f;
@@ -939,6 +997,17 @@ bool fetchData() {
   data.balancePerf = doc["balancePerf"] | 0.0f;
   data.volume30d   = doc["volume30d"]   | 0L;
   data.volumeTotal = doc["volumeTotal"] | 0L;
+
+  // Sync filter from server (server controls which period to display)
+  const char* srvFilter = doc["filter"] | "";
+  if (strlen(srvFilter) > 0) {
+    String newFilter = String(srvFilter);
+    if (newFilter != cfgFilter) {
+      cfgFilter = newFilter;
+      saveFilter();
+      Serial.println("[CFG] Filter synced from server: " + cfgFilter);
+    }
+  }
 
   data.positions.clear();
   JsonArray posArr = doc["openPositions"].as<JsonArray>();
@@ -967,13 +1036,14 @@ void setup() {
   Serial.println("[BOOT] Start");
 
   // ── Display initialisieren ──────────────────────
-  // Backlight VOR tft.init(): LEDC muss zuerst auf Pin 5 eingerichtet sein
-  Serial.println("[BOOT] Backlight LEDC init");
-  backlightInit();
+  // tft.init() zuerst (TFT_BL=5 in Build-Flags lässt TFT_eSPI digitalWrite auf Pin 5 machen)
+  // backlightInit() danach: re-attached LEDC auf Pin 5, sonst funktioniert ledcWrite nicht
   Serial.println("[BOOT] tft.init()");
   tft.init();
   waveshareInitST7789();     // ST7789T3 Custom-Init (Waveshare ESP32-S3-Touch-LCD-2.8)
   tft.setRotation(DISPLAY_ROTATION);
+  Serial.println("[BOOT] Backlight LEDC init");
+  backlightInit();           // NACH tft.init(): LEDC re-attached Pin 5 nach TFT_eSPI digitalWrite
   tft.fillScreen(COLOR_BG);
 
   // ── Touch I2C (CST328) ───────────────────────────
@@ -1055,16 +1125,14 @@ void setup() {
 
 // ── Loop ─────────────────────────────────────────────────
 
-// ── Light Sleep Hilfsfunktion ─────────────────────────────
-// Schläft bis Touch (GPIO 4 LOW) oder Timer abläuft.
-// LEDC-Backlight und Display-RAM bleiben während Light Sleep erhalten.
-static void lightSleepMs(uint32_t ms) {
-  gpio_wakeup_enable((gpio_num_t)TOUCH_INT, GPIO_INTR_LOW_LEVEL);
-  esp_sleep_enable_gpio_wakeup();
-  esp_sleep_enable_timer_wakeup((uint64_t)ms * 1000ULL);
-  esp_light_sleep_start();
-  // Nach Aufwachen: GPIO-Wakeup-Quelle deaktivieren
-  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+// ── WiFi sicherstellen (nach Verbindungsverlust) ──────────
+static void ensureWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+  WiFi.reconnect();
+  unsigned long t = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t < WIFI_TIMEOUT_MS)
+    delay(100);
+  if (WiFi.status() == WL_CONNECTED) WiFi.setSleep(true);
 }
 
 void loop() {
@@ -1084,6 +1152,7 @@ void loop() {
       inStandby = false;
       setBacklight(true);
       drawConnecting("Lade Daten...");
+      ensureWiFi();
       fetchData();
       drawCurrentScreen();
       lastUpdate = millis();
@@ -1099,16 +1168,15 @@ void loop() {
         drawCurrentScreen();
       }
     } else if (activeScreen == 2) {
-      // ── Filter-Screen: Content-Tap → Filter auswählen ──
-      int idx = (ty < 72) ? 0 : (ty < 118) ? 1 : (ty < 164) ? 2 : 3;
-      cfgFilter = FILTER_OPTS[idx].key;
-      saveFilter();
+      // Screen 3 ist jetzt rein informativ (Filter wird vom Server gesteuert)
+      // Tap wechselt zurück zum Dashboard und lädt aktuelle Daten
       activeScreen = 0;
       drawConnecting("Lade Daten...");
+      ensureWiFi();
       if (fetchData()) {
         drawCurrentScreen();
       } else {
-        drawStartupError("API Fehler", "Filter konnte nicht geladen werden");
+        drawStartupError("API Fehler", "Verbindung zum Server fehlgeschlagen");
         delay(2000);
         drawCurrentScreen();
       }
@@ -1117,39 +1185,47 @@ void loop() {
     return;
   }
 
-  // ── Standby-Timeout: 30s ohne Touch → Display aus ────
+  // ── Standby Stufe 1: 30s ohne Touch → Backlight aus ─
   if (!inStandby && now - lastTouchTime >= (unsigned long)STANDBY_TIMEOUT * 1000) {
     inStandby = true;
     tft.fillScreen(COLOR_BG);
     setBacklight(false);
-    Serial.println("[PWR] Standby — Light Sleep aktiv");
+    Serial.println("[PWR] Standby — Backlight aus");
+  }
+
+  // ── Standby Stufe 2: 60s ohne Touch → Light Sleep + WiFi aus ─
+  // Boot-Grace: erste 5 Min nach Boot kein Sleep (damit Flashen funktioniert)
+  if (inStandby
+      && now > BOOT_GRACE_MS
+      && now - lastTouchTime >= (unsigned long)LIGHT_SLEEP_TIMEOUT * 1000) {
+
+    enterLightSleep();   // BLOCKIERT bis Touch
+
+    // ── Nach Wake: aufwachen wie bei Touch im Standby ──
+    inStandby = false;
+    lastTouchTime = millis();
+    setBacklight(true);
+    drawConnecting("Lade Daten...");
+    ensureWiFi();
+    if (fetchData()) drawCurrentScreen();
+    lastUpdate = millis();
+    delay(150);   // Touch-Event abklingen lassen
+    return;
+  }
+
+  // Im Standby (Stufe 1): nur kurz warten, Touch-Polling läuft weiter
+  if (inStandby) {
+    delay(50);
+    return;
   }
 
   // ── Aktiv: Daten alle 5 Sekunden aktualisieren ───────
-  if (!inStandby && now - lastUpdate >= (unsigned long)ACTIVE_INTERVAL * 1000) {
-    if (WiFi.status() != WL_CONNECTED) {
-      WiFi.reconnect();
-      WiFi.setSleep(true);
-      unsigned long t = millis();
-      while (WiFi.status() != WL_CONNECTED && millis() - t < WIFI_TIMEOUT_MS)
-        delay(200);
-    }
+  if (now - lastUpdate >= (unsigned long)ACTIVE_INTERVAL * 1000) {
+    ensureWiFi();
     if (fetchData()) drawCurrentScreen();
     lastUpdate = millis();
-    return;  // Sofort nächste Loop-Iteration (kein Sleep direkt nach Fetch)
+    return;
   }
 
-  // ── Light Sleep bis zum nächsten Event ───────────────
-  // Im Standby: lange schlafen (nur Touch weckt uns)
-  // Aktiv: bis zum nächsten Fetch-Zeitpunkt schlafen
-  uint32_t sleepMs;
-  if (inStandby) {
-    sleepMs = 30000;  // 30s — Touch-INT weckt früher auf
-  } else {
-    unsigned long elapsed  = millis() - lastUpdate;
-    unsigned long interval = (unsigned long)ACTIVE_INTERVAL * 1000;
-    sleepMs = (elapsed < interval) ? (uint32_t)(interval - elapsed) : 100;
-  }
-
-  lightSleepMs(sleepMs);
+  delay(50);
 }

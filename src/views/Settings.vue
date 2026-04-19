@@ -365,6 +365,7 @@ let esp32KeySet = ref(false)
 let esp32ApiKeyDisplay = ref('')
 let esp32SaveLoading = ref(false)
 let esp32SaveResult = ref(null)
+let esp32Filter = ref('month')
 
 async function loadEsp32Settings() {
     try {
@@ -375,6 +376,16 @@ async function loadEsp32Settings() {
         }
     } catch (e) {
         console.error('ESP32 settings load error:', e)
+    }
+}
+
+async function saveEsp32Filter() {
+    try {
+        await dbUpdateSettings({ esp32Filter: esp32Filter.value })
+        esp32SaveResult.value = { success: true, message: 'Filter gespeichert — ESP32 übernimmt beim nächsten Abruf.' }
+        setTimeout(() => esp32SaveResult.value = null, 5000)
+    } catch (e) {
+        esp32SaveResult.value = { success: false, message: e.message }
     }
 }
 
@@ -1169,6 +1180,7 @@ onBeforeMount(async () => {
     await loadDbConfig()
     await loadFluxSettings()
     await loadEsp32Settings()
+    esp32Filter.value = currentUser.value?.esp32Filter || 'month'
 
     // Query-Parameter: ?section=api → API-Sektion aufklappen
     const urlParams = new URLSearchParams(window.location.search)
@@ -1895,6 +1907,27 @@ onBeforeMount(async () => {
                                     @click="navigator.clipboard.writeText(esp32ApiKeyDisplay)"
                                     title="Kopieren">
                                     <i class="uil uil-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Zeitraum-Filter -->
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Zeitraum
+                            <small class="d-block text-muted" style="font-size:0.78rem;">ESP32 übernimmt automatisch</small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <div class="input-group">
+                                <select class="form-select" v-model="esp32Filter">
+                                    <option value="month">Aktueller Monat</option>
+                                    <option value="week">Aktuelle Woche</option>
+                                    <option value="year">Aktuelles Jahr</option>
+                                    <option value="all">Gesamtzeitraum</option>
+                                </select>
+                                <button class="btn btn-outline-primary" type="button" @click="saveEsp32Filter">
+                                    Speichern
                                 </button>
                             </div>
                         </div>
