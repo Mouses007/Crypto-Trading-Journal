@@ -12,6 +12,10 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
+      # Absoluter Host-Pfad zum Projekt-Dir (muss in .env gesetzt sein).
+      # Der App-Update-Button im Docker-Modus uebergibt diesen Pfad an
+      # den Helfer-Container, damit compose das richtige Projekt findet.
+      - CTJ_HOST_COMPOSE_DIR=${CTJ_HOST_COMPOSE_DIR}
     volumes:
       # Read-only Docker-Socket — ermoeglicht Klick-Update aus der App heraus.
       # Entferne den Mount, wenn du Updates nur manuell via

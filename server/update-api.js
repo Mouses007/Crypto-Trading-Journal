@@ -117,15 +117,18 @@ async function installDockerUpdate(res) {
     }
     const imageName = self.Config?.Image || 'mouses007/trading-journal:latest'
     const labels = self.Config?.Labels || {}
-    const composeWorkingDir = labels['com.docker.compose.project.working_dir']
-    const composeConfigFiles = labels['com.docker.compose.project.config_files']
+    // HOST-Pfad bevorzugt aus CTJ_HOST_COMPOSE_DIR (.env) — der ist stabil.
+    // Der compose-Label 'working_dir' wird von compose bei jedem Recreate
+    // auf den CWD gesetzt und damit pollutet, wenn compose aus einem
+    // Helfer-Container heraus laeuft. Env-Var aus .env bleibt unveraendert.
+    const composeWorkingDir = process.env.CTJ_HOST_COMPOSE_DIR || labels['com.docker.compose.project.working_dir']
     const composeService = labels['com.docker.compose.service']
     const composeProject = labels['com.docker.compose.project']
 
     if (!composeWorkingDir || !composeService) {
         return res.status(400).json({
             ok: false,
-            error: 'Container wurde nicht mit docker-compose gestartet. Update manuell ausfuehren: docker pull ' + imageName + ' und Container neu erstellen.'
+            error: 'Container wurde nicht mit docker-compose gestartet oder CTJ_HOST_COMPOSE_DIR fehlt in .env. Update manuell: docker pull ' + imageName + ' && docker compose up -d'
         })
     }
     steps.push({ step: 'self config', output: `image=${imageName} service=${composeService} project=${composeProject} cwd=${composeWorkingDir}` })
@@ -152,25 +155,26 @@ async function installDockerUpdate(res) {
     }
 
     // 3. Helfer-Container erstellen + starten
-    // - docker:cli Image enthaelt `docker` CLI
-    // - Socket gemountet, Compose-Projekt-Dir gemountet
+    // - docker:cli Image enthaelt `docker` CLI + compose-Plugin
+    // - Socket gemountet; Host-Projekt-Dir wird an den IDENTISCHEN Pfad im
+    //   Helfer gemountet. Damit sieht compose denselben Pfad wie auf dem
+    //   Host und setzt die compose-Labels korrekt — verhindert die
+    //   "/compose"-Label-Pollution die beim Pfad-Remapping auftritt.
     // - AutoRemove loescht den Helfer nach Abschluss
     // - Das Skript wartet 3s, damit unsere Response den Client erreicht
     const helperName = `ctj-updater-${Date.now()}`
     const helperConfig = {
         Image: 'docker:cli',
         Cmd: ['sh', '-c',
-            // journal-service im Projekt neu erstellen — compose pullt Image (schon im Cache) + ersetzt Container
-            'sleep 3 && cd /compose && docker compose -f "$(basename "$COMPOSE_FILE")" up -d --force-recreate --no-deps ' + composeService
+            `sleep 3 && cd "${composeWorkingDir}" && docker compose up -d --force-recreate --no-deps ${composeService}`
         ],
         Env: [
-            `COMPOSE_FILE=${composeConfigFiles || 'docker-compose.yml'}`,
             `COMPOSE_PROJECT_NAME=${composeProject || ''}`
         ],
         HostConfig: {
             Binds: [
                 `${DOCKER_SOCK}:${DOCKER_SOCK}`,
-                `${composeWorkingDir}:/compose`
+                `${composeWorkingDir}:${composeWorkingDir}`
             ],
             AutoRemove: true,
             NetworkMode: 'bridge'
