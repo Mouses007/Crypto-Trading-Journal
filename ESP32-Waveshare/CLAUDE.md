@@ -14,8 +14,20 @@ This is a **PlatformIO** project (Arduino framework, **ESP32 Arduino core 2.0.11
 # Compile firmware
 pio run -e esp32dev
 
-# Compile & upload to device (requires /dev/ttyACM0)
+# Compile & upload — FIRST TIME or after fresh boot (auto-reset works):
 pio run -e esp32dev --target upload
+
+# Upload after Light Sleep (USB CDC breaks auto-reset after first sleep cycle):
+# 1. Hold BOOT button on device
+# 2. Press & release RESET
+# 3. Release BOOT
+# 4. Run:
+pio run -e esp32dev && python3 ~/.platformio/packages/tool-esptoolpy@1.40501.0/esptool.py \
+  --chip esp32s3 --port /dev/ttyACM0 --baud 921600 --before no_reset \
+  write_flash -z --flash_mode dio --flash_freq 80m --flash_size detect \
+  0x0 .pio/build/esp32dev/bootloader.bin \
+  0x8000 .pio/build/esp32dev/partitions.bin \
+  0x10000 .pio/build/esp32dev/firmware.bin
 
 # Open serial monitor (115200 baud)
 pio device monitor -p /dev/ttyACM0 --baud 115200

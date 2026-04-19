@@ -8,6 +8,8 @@
 #include <ArduinoJson.h>
 #include <TFT_eSPI.h>
 #include <vector>
+#include "esp_sleep.h"
+#include "driver/gpio.h"
 
 // ── Touch I2C — Waveshare ESP32-S3-Touch-LCD-2.8 (CST328) ─
 #define TOUCH_SDA  1
@@ -511,44 +513,54 @@ void drawScreen2() {
   tft.setCursor(8, 16);
   tft.print("Offene Positionen · Bitunix");
 
-  // ── Gesamt-Zeile ──────────────────────────────────
+  // ── Zusammenfassung: unr. PnL + realisierter PnL ─
   float totalUnrPnL = 0;
   for (auto& p : data.positions) totalUnrPnL += p.unrealizedPNL;
   int n = data.positions.size();
 
-  char gesamt[52];
-  snprintf(gesamt, sizeof(gesamt), "unr. PnL: %+.2f USDT  (%d Pos.)",
-           totalUnrPnL, n);
+  // Zeile 1: unrealisierter PnL aller offenen Positionen
+  char unrStr[52];
+  snprintf(unrStr, sizeof(unrStr), "unr. PnL: %+.2f USDT  (%d Pos.)", totalUnrPnL, n);
   tft.setTextColor(pnlColor(totalUnrPnL), COLOR_BG);
   tft.setTextSize(1);
-  tft.setCursor(8, 30);
-  tft.print(gesamt);
+  tft.setCursor(8, 28);
+  tft.print(unrStr);
+
+  // Zeile 2: realisierter PnL der Filterperiode (aus data.totalPnL)
+  const char* fLabel = "Monat";
+  if      (cfgFilter == "all")  fLabel = "Gesamt";
+  else if (cfgFilter == "year") fLabel = "Jahr";
+  else if (cfgFilter == "week") fLabel = "Woche";
+  char realStr[52];
+  snprintf(realStr, sizeof(realStr), "real. PnL (%s): %+.2f USDT", fLabel, data.totalPnL);
+  tft.setTextColor(pnlColor(data.totalPnL), COLOR_BG);
+  tft.setCursor(8, 39);
+  tft.print(realStr);
 
   if (n == 0) {
     tft.setTextColor(COLOR_GREY, COLOR_BG);
-    tft.setCursor(8, 100);
+    tft.setCursor(8, 110);
     tft.print("Keine offenen Positionen");
-    tft.setTextColor(COLOR_GREY, COLOR_BG);
     tft.setCursor(270, 193);
     tft.print("v" FW_VERSION);
     return;
   }
 
-  // ── Tabellen-Header (y=44) ────────────────────────
-  tft.drawFastHLine(0, 44, 320, COLOR_GREY_DARK);
+  // ── Tabellen-Header (y=52) ────────────────────────
+  tft.drawFastHLine(0, 52, 320, COLOR_GREY_DARK);
   tft.setTextColor(COLOR_GREY, COLOR_BG);
   tft.setTextSize(1);
-  tft.setCursor(4,   48); tft.print("Symbol");
-  tft.setCursor(76,  48); tft.print("Side");
-  tft.setCursor(108, 48); tft.print("Heb.");
-  tft.setCursor(140, 48); tft.print("Einst.");
-  tft.setCursor(194, 48); tft.print("Mark");
-  tft.setCursor(248, 48); tft.print("unr. PnL");
-  tft.drawFastHLine(0, 60, 320, COLOR_GREY_DARK);
+  tft.setCursor(4,   56); tft.print("Symbol");
+  tft.setCursor(76,  56); tft.print("Side");
+  tft.setCursor(108, 56); tft.print("Heb.");
+  tft.setCursor(140, 56); tft.print("Einst.");
+  tft.setCursor(194, 56); tft.print("Mark");
+  tft.setCursor(248, 56); tft.print("unr. PnL");
+  tft.drawFastHLine(0, 68, 320, COLOR_GREY_DARK);
 
-  // ── Tabellenzeilen (ab y=63, 20px pro Zeile, max 7) ──
-  int maxRows = min((int)data.positions.size(), 7);
-  int y = 63;
+  // ── Tabellenzeilen (ab y=71, 20px pro Zeile, max 6) ──
+  int maxRows = min((int)data.positions.size(), 6);
+  int y = 71;
 
   for (int i = 0; i < maxRows; i++) {
     auto& p = data.positions[i];
@@ -1024,6 +1036,7 @@ void setup() {
   }
 
   Serial.printf("[WiFi] %s\n", WiFi.localIP().toString().c_str());
+  WiFi.setSleep(true);   // Modem Sleep: Radio schläft zwischen Requests (~50 mA gespart)
   setupRoutes();
 
   drawConnecting("Lade Daten...");
@@ -1039,6 +1052,18 @@ void setup() {
 
 // ── Loop ─────────────────────────────────────────────────
 
+// ── Light Sleep Hilfsfunktion ─────────────────────────────
+// Schläft bis Touch (GPIO 4 LOW) oder Timer abläuft.
+// LEDC-Backlight und Display-RAM bleiben während Light Sleep erhalten.
+static void lightSleepMs(uint32_t ms) {
+  gpio_wakeup_enable((gpio_num_t)TOUCH_INT, GPIO_INTR_LOW_LEVEL);
+  esp_sleep_enable_gpio_wakeup();
+  esp_sleep_enable_timer_wakeup((uint64_t)ms * 1000ULL);
+  esp_light_sleep_start();
+  // Nach Aufwachen: GPIO-Wakeup-Quelle deaktivieren
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+}
+
 void loop() {
   server.handleClient();
 
@@ -1046,7 +1071,7 @@ void loop() {
 
   unsigned long now = millis();
 
-  // Touch prüfen (CST328, I2C)
+  // ── Touch prüfen ─────────────────────────────────────
   int tx, ty;
   if (mapTouch(&tx, &ty)) {
     lastTouchTime = now;
@@ -1058,10 +1083,7 @@ void loop() {
       drawConnecting("Lade Daten...");
       fetchData();
       drawCurrentScreen();
-      lastUpdate = now;
-      // Warten bis Finger losgelassen
-      unsigned long tRelease = millis() + 600;
-      
+      lastUpdate = millis();
       delay(80);
       return;
     }
@@ -1088,33 +1110,43 @@ void loop() {
         drawCurrentScreen();
       }
     }
-    // Warten bis Finger losgelassen, max 600ms (verhindert Ghost-Touches & Deadlock)
-    unsigned long tRelease = millis() + 600;
-    
-    delay(80);
+    delay(80);  // Ghost-Touch-Schutz
     return;
   }
 
-  // Im Standby nur auf Touch warten — nichts tun
-  if (inStandby) return;
-
   // ── Standby-Timeout: 30s ohne Touch → Display aus ────
-  if (now - lastTouchTime >= (unsigned long)STANDBY_TIMEOUT * 1000) {
+  if (!inStandby && now - lastTouchTime >= (unsigned long)STANDBY_TIMEOUT * 1000) {
     inStandby = true;
     tft.fillScreen(COLOR_BG);
     setBacklight(false);
-    return;
+    Serial.println("[PWR] Standby — Light Sleep aktiv");
   }
 
   // ── Aktiv: Daten alle 5 Sekunden aktualisieren ───────
-  if (now - lastUpdate >= (unsigned long)ACTIVE_INTERVAL * 1000) {
+  if (!inStandby && now - lastUpdate >= (unsigned long)ACTIVE_INTERVAL * 1000) {
     if (WiFi.status() != WL_CONNECTED) {
       WiFi.reconnect();
+      WiFi.setSleep(true);
       unsigned long t = millis();
       while (WiFi.status() != WL_CONNECTED && millis() - t < WIFI_TIMEOUT_MS)
         delay(200);
     }
     if (fetchData()) drawCurrentScreen();
-    lastUpdate = now;
+    lastUpdate = millis();
+    return;  // Sofort nächste Loop-Iteration (kein Sleep direkt nach Fetch)
   }
+
+  // ── Light Sleep bis zum nächsten Event ───────────────
+  // Im Standby: lange schlafen (nur Touch weckt uns)
+  // Aktiv: bis zum nächsten Fetch-Zeitpunkt schlafen
+  uint32_t sleepMs;
+  if (inStandby) {
+    sleepMs = 30000;  // 30s — Touch-INT weckt früher auf
+  } else {
+    unsigned long elapsed  = millis() - lastUpdate;
+    unsigned long interval = (unsigned long)ACTIVE_INTERVAL * 1000;
+    sleepMs = (elapsed < interval) ? (uint32_t)(interval - elapsed) : 100;
+  }
+
+  lightSleepMs(sleepMs);
 }
