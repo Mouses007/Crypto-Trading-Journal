@@ -1115,6 +1115,15 @@ function formatCurrency(val) {
     return (num >= 0 ? '+' : '') + num.toFixed(2) + ' USDT'
 }
 
+// Realized PnL for an open position (already booked via partial TPs).
+// Reads directly from broker raw data (no extra fetch needed).
+function getOpenRealizedPnL(pos) {
+    const d = pos?.bitunixData || {}
+    const raw = d.realizedPNL ?? d.realized_pnl ?? d.realizedPnl ?? d.realizedPL ?? d.achievedProfits ?? 0
+    const num = parseFloat(raw)
+    return Number.isFinite(num) ? num : 0
+}
+
 function formatTime(date) {
     if (!date) return ''
     return dayjs(date).tz(timeZoneTrade.value).format('HH:mm:ss')
@@ -1174,9 +1183,16 @@ function getPositionDate(pos) {
                             :class="parseFloat(pos.historyData.realizedPNL) >= 0 ? 'greenTrade' : 'redTrade'">
                             {{ formatCurrency(pos.historyData.realizedPNL) }}
                         </span>
-                        <span v-else class="incoming-pnl" :class="parseFloat(pos.unrealizedPNL || 0) >= 0 ? 'greenTrade' : 'redTrade'">
-                            {{ formatCurrency(pos.unrealizedPNL) }}
-                        </span>
+                        <template v-else>
+                            <span class="incoming-pnl" :class="parseFloat(pos.unrealizedPNL || 0) >= 0 ? 'greenTrade' : 'redTrade'">
+                                {{ formatCurrency(pos.unrealizedPNL) }}
+                            </span>
+                            <div v-if="getOpenRealizedPnL(pos) !== 0" class="small mt-1"
+                                :class="getOpenRealizedPnL(pos) >= 0 ? 'greenTrade' : 'redTrade'"
+                                style="opacity: 0.85;">
+                                <span class="text-muted me-1">{{ t('incoming.realized') }}</span>{{ formatCurrency(getOpenRealizedPnL(pos)) }}
+                            </div>
+                        </template>
                     </div>
                     <div class="col-auto">
                         <i :class="expandedId === pos.positionId ? 'uil-angle-up' : 'uil-angle-down'" class="uil fs-4"></i>

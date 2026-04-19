@@ -439,6 +439,19 @@ export async function useSetValues() {
         }
         selectedPeriodRange.value = JSON.parse(localStorage.getItem('selectedPeriodRange'))
 
+        // Refresh dynamic period ranges (thisWeek/thisMonth/...) against the
+        // freshly computed periodRange so stored timestamps stay current when
+        // the week/month/year rolls over while the app is open.
+        if (selectedPeriodRange.value && selectedPeriodRange.value.value && selectedPeriodRange.value.value !== 'custom' && selectedPeriodRange.value.value !== 'all') {
+            const fresh = periodRange.find(el => el.value === selectedPeriodRange.value.value)
+            if (fresh && (fresh.start !== selectedPeriodRange.value.start || fresh.end !== selectedPeriodRange.value.end)) {
+                selectedPeriodRange.value = { ...fresh }
+                localStorage.setItem('selectedPeriodRange', JSON.stringify(selectedPeriodRange.value))
+                selectedDateRange.value = { start: fresh.start, end: fresh.end }
+                localStorage.setItem('selectedDateRange', JSON.stringify(selectedDateRange.value))
+            }
+        }
+
         if (!localStorage.getItem('selectedMonth')) localStorage.setItem('selectedMonth', JSON.stringify({ start: periodRange.filter(element => element.value == 'thisMonth')[0].start, end: periodRange.filter(element => element.value == 'thisMonth')[0].end }))
         selectedMonth.value = JSON.parse(localStorage.getItem('selectedMonth'))
 

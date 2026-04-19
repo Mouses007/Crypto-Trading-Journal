@@ -53,9 +53,26 @@ onBeforeMount(async () => {
   }
 })
 
+// Re-sync dynamic period ranges (thisMonth/thisWeek/...) when the app
+// regains focus, so a month rollover while the tab was hidden is picked up.
+async function refreshPeriodsOnVisible() {
+  if (document.visibilityState !== 'visible') return
+  try {
+    await useGetPeriods()
+    await useSetValues()
+  } catch (e) {
+    logWarn('Period refresh failed:', e)
+  }
+}
+
 onMounted(() => {
-  // Nothing needed here — evaluation restore happens in onBeforeMount
-  // after currentUser is loaded. TradeEvalPopup handles queue via watcher + onMounted check.
+  document.addEventListener('visibilitychange', refreshPeriodsOnVisible)
+  window.addEventListener('focus', refreshPeriodsOnVisible)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', refreshPeriodsOnVisible)
+  window.removeEventListener('focus', refreshPeriodsOnVisible)
 })
 
 onUnmounted(() => {
