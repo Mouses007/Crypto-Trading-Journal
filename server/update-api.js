@@ -20,6 +20,22 @@ const IS_WINDOWS = os.platform() === 'win32'
 const IS_DOCKER = existsSync('/.dockerenv')
 
 /**
+ * Treat localhost-access as "non-Docker" even when the server runs in a container.
+ * This restores direct git-based updates for developers who run the stack
+ * locally (docker-compose on their own machine) while keeping the Watchtower
+ * UI for remote access (e.g. NAS at 192.168.x.x).
+ */
+function isLocalRequest(req) {
+    const host = String(req.hostname || '').toLowerCase()
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
+    const ip = String(req.ip || '').replace('::ffff:', '')
+    return ip === '127.0.0.1' || ip === '::1'
+}
+function effectiveIsDocker(req) {
+    return IS_DOCKER && !isLocalRequest(req)
+}
+
+/**
  * Windows: Erstellt ein .bat-Script und startet es in einem neuen Fenster.
  * Nötig weil Windows native .node-Dateien sperrt solange der Server läuft.
  * Das Script wartet bis der Server beendet ist, dann: npm install + build + Neustart.
@@ -108,9 +124,9 @@ export function setupUpdateRoutes(app) {
             const now = Date.now()
             const forceRefresh = req.query.force === '1'
 
-            // Return cached result if fresh
+            // Return cached result if fresh (isDocker is computed per-request)
             if (!forceRefresh && lastCheck && (now - lastCheckTime) < CHECK_CACHE_MS) {
-                return res.json(lastCheck)
+                return res.json({ ...lastCheck, isDocker: effectiveIsDocker(req) })
             }
 
             const localVersion = getLocalVersion()
@@ -128,7 +144,6 @@ export function setupUpdateRoutes(app) {
                 localVersion,
                 remoteVersion,
                 updateAvailable,
-                isDocker: IS_DOCKER,
                 releaseName: release.name || '',
                 releaseNotes: release.body || '',
                 releaseUrl: release.html_url || '',
@@ -136,7 +151,7 @@ export function setupUpdateRoutes(app) {
             }
             lastCheckTime = now
 
-            res.json(lastCheck)
+            res.json({ ...lastCheck, isDocker: effectiveIsDocker(req) })
         } catch (err) {
             // If no releases exist yet, that's OK
             if (err.message && err.message.includes('Not Found')) {
@@ -146,14 +161,13 @@ export function setupUpdateRoutes(app) {
                     localVersion,
                     remoteVersion: localVersion,
                     updateAvailable: false,
-                    isDocker: IS_DOCKER,
                     releaseName: '',
                     releaseNotes: '',
                     releaseUrl: '',
                     publishedAt: ''
                 }
                 lastCheckTime = Date.now()
-                return res.json(lastCheck)
+                return res.json({ ...lastCheck, isDocker: effectiveIsDocker(req) })
             }
             console.error('Update check failed:', err.message)
             res.status(500).json({ ok: false, error: err.message })
@@ -344,7 +358,6 @@ export function setupUpdateRoutes(app) {
                 localVersion,
                 remoteVersion,
                 updateAvailable,
-                isDocker: IS_DOCKER,
                 releaseName: release.name || '',
                 releaseNotes: release.body || '',
                 releaseUrl: release.html_url || '',
