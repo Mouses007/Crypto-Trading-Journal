@@ -188,7 +188,8 @@ export function setupEsp32Routes(app) {
                             entryPrice:    parseFloat(p.entryPrice   || 0),
                             markPrice:     parseFloat(p.markPrice    || 0),
                             qty:           parseFloat(p.qty ?? p.maxQty ?? 0),
-                            unrealizedPNL: parseFloat(p.unrealizedPNL ?? p.unrealized_pnl ?? 0)
+                            unrealizedPNL: parseFloat(p.unrealizedPNL ?? p.unrealized_pnl ?? 0),
+                            realizedPNL:   parseFloat(p.realizedPNL ?? p.realized_pnl ?? p.achievedProfits ?? p.achieved_profits ?? 0)
                         }))
                     }
                 }
@@ -204,7 +205,8 @@ export function setupEsp32Routes(app) {
                     entryPrice:    parseFloat(p.entryPrice  || 0),
                     markPrice:     parseFloat(p.markPrice   || 0),
                     qty:           parseFloat(p.quantity    || 0),
-                    unrealizedPNL: parseFloat(p.unrealizedPNL || 0)
+                    unrealizedPNL: parseFloat(p.unrealizedPNL || 0),
+                    realizedPNL:   parseFloat(p.realizedPNL || 0)
                 }))
             }
 

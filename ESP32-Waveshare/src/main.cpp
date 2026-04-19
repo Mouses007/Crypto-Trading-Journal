@@ -78,6 +78,7 @@ struct Position {
   float  markPrice;
   float  qty;
   float  unrealizedPNL;
+  float  realizedPNL;
 };
 
 struct TradeData {
@@ -513,12 +514,16 @@ void drawScreen2() {
   tft.setCursor(8, 16);
   tft.print("Offene Positionen · Bitunix");
 
-  // ── Zusammenfassung: unr. PnL + realisierter PnL ─
-  float totalUnrPnL = 0;
-  for (auto& p : data.positions) totalUnrPnL += p.unrealizedPNL;
+  // ── Zusammenfassung: unr. + real. PnL aller Positionen ─
+  float totalUnrPnL  = 0;
+  float totalRealPnL = 0;
+  for (auto& p : data.positions) {
+    totalUnrPnL  += p.unrealizedPNL;
+    totalRealPnL += p.realizedPNL;
+  }
   int n = data.positions.size();
 
-  // Zeile 1: unrealisierter PnL aller offenen Positionen
+  // Zeile 1: unrealisierter PnL gesamt
   char unrStr[52];
   snprintf(unrStr, sizeof(unrStr), "unr. PnL: %+.2f USDT  (%d Pos.)", totalUnrPnL, n);
   tft.setTextColor(pnlColor(totalUnrPnL), COLOR_BG);
@@ -526,14 +531,10 @@ void drawScreen2() {
   tft.setCursor(8, 28);
   tft.print(unrStr);
 
-  // Zeile 2: realisierter PnL der Filterperiode (aus data.totalPnL)
-  const char* fLabel = "Monat";
-  if      (cfgFilter == "all")  fLabel = "Gesamt";
-  else if (cfgFilter == "year") fLabel = "Jahr";
-  else if (cfgFilter == "week") fLabel = "Woche";
+  // Zeile 2: realisierter PnL gesamt (pro offener Position)
   char realStr[52];
-  snprintf(realStr, sizeof(realStr), "real. PnL (%s): %+.2f USDT", fLabel, data.totalPnL);
-  tft.setTextColor(pnlColor(data.totalPnL), COLOR_BG);
+  snprintf(realStr, sizeof(realStr), "real. PnL: %+.2f USDT", totalRealPnL);
+  tft.setTextColor(pnlColor(totalRealPnL), COLOR_BG);
   tft.setCursor(8, 39);
   tft.print(realStr);
 
@@ -547,15 +548,16 @@ void drawScreen2() {
   }
 
   // ── Tabellen-Header (y=52) ────────────────────────
+  // Spalten: Symbol | Side | Heb. | unr. PnL | real. PnL
+  // x:       4       72     104    140         228
   tft.drawFastHLine(0, 52, 320, COLOR_GREY_DARK);
   tft.setTextColor(COLOR_GREY, COLOR_BG);
   tft.setTextSize(1);
   tft.setCursor(4,   56); tft.print("Symbol");
-  tft.setCursor(76,  56); tft.print("Side");
-  tft.setCursor(108, 56); tft.print("Heb.");
-  tft.setCursor(140, 56); tft.print("Einst.");
-  tft.setCursor(194, 56); tft.print("Mark");
-  tft.setCursor(248, 56); tft.print("unr. PnL");
+  tft.setCursor(72,  56); tft.print("Side");
+  tft.setCursor(104, 56); tft.print("Heb.");
+  tft.setCursor(140, 56); tft.print("unr. PnL");
+  tft.setCursor(228, 56); tft.print("real. PnL");
   tft.drawFastHLine(0, 68, 320, COLOR_GREY_DARK);
 
   // ── Tabellenzeilen (ab y=71, 20px pro Zeile, max 6) ──
@@ -564,7 +566,6 @@ void drawScreen2() {
 
   for (int i = 0; i < maxRows; i++) {
     auto& p = data.positions[i];
-    uint16_t rowColor = pnlColor(p.unrealizedPNL);
 
     // Symbol (ohne USDT-Suffix, max 7 Zeichen)
     tft.setTextColor(COLOR_WHITE, COLOR_BG);
@@ -576,34 +577,35 @@ void drawScreen2() {
 
     // Side
     tft.setTextColor(p.side == "BUY" || p.side == "LONG" ? COLOR_GREEN : COLOR_RED, COLOR_BG);
-    tft.setCursor(76, y);
+    tft.setCursor(72, y);
     tft.print(p.side.substring(0, 4));
 
     // Hebel
     tft.setTextColor(COLOR_WHITE, COLOR_BG);
-    tft.setCursor(108, y);
+    tft.setCursor(104, y);
     char hebStr[8];
     snprintf(hebStr, sizeof(hebStr), "%dx", (int)p.leverage);
     tft.print(hebStr);
 
-    // Entry price
-    tft.setCursor(140, y);
-    char epStr[10];
-    snprintf(epStr, sizeof(epStr), "%.2f", p.entryPrice);
-    tft.print(epStr);
-
-    // Mark price
-    tft.setCursor(194, y);
-    char mpStr[10];
-    snprintf(mpStr, sizeof(mpStr), "%.2f", p.markPrice);
-    tft.print(mpStr);
-
     // unr. PnL
-    tft.setTextColor(rowColor, COLOR_BG);
-    tft.setCursor(248, y);
-    char pnlStr[12];
-    snprintf(pnlStr, sizeof(pnlStr), "%.2f", p.unrealizedPNL);
-    tft.print(pnlStr);
+    tft.setTextColor(pnlColor(p.unrealizedPNL), COLOR_BG);
+    tft.setCursor(140, y);
+    char unrPnlStr[12];
+    snprintf(unrPnlStr, sizeof(unrPnlStr), "%+.2f", p.unrealizedPNL);
+    tft.print(unrPnlStr);
+
+    // real. PnL (nur anzeigen wenn != 0)
+    if (p.realizedPNL != 0.0f) {
+      tft.setTextColor(pnlColor(p.realizedPNL), COLOR_BG);
+      tft.setCursor(228, y);
+      char realPnlStr[12];
+      snprintf(realPnlStr, sizeof(realPnlStr), "%+.2f", p.realizedPNL);
+      tft.print(realPnlStr);
+    } else {
+      tft.setTextColor(COLOR_GREY, COLOR_BG);
+      tft.setCursor(228, y);
+      tft.print("—");
+    }
 
     tft.drawFastHLine(0, y + 15, 320, COLOR_GREY_DARK);
     y += 20;
@@ -949,6 +951,7 @@ bool fetchData() {
     pos.markPrice     = p["markPrice"]     | 0.0f;
     pos.qty           = p["qty"]           | 0.0f;
     pos.unrealizedPNL = p["unrealizedPNL"] | 0.0f;
+    pos.realizedPNL   = p["realizedPNL"]   | 0.0f;
     data.positions.push_back(pos);
   }
 
