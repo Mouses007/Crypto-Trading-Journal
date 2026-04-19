@@ -1,28 +1,30 @@
 #include <Arduino.h>
 #include <SPI.h>
+#include <Wire.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Preferences.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <TFT_eSPI.h>
-#include <XPT2046_Touchscreen.h>
 #include <vector>
 
-// ── Touch SPI (VSPI) CYD ESP32-2432S028 Pins ─────────────
-#define TOUCH_CLK   25
-#define TOUCH_MISO  39
-#define TOUCH_MOSI  32
-#define MY_TOUCH_CS 33   // Eigener Name — vermeidet Konflikt mit -DTOUCH_CS=-1 Build-Flag
+// ── Touch I2C — Waveshare ESP32-S3-Touch-LCD-2.8 (CST328) ─
+#define TOUCH_SDA  1
+#define TOUCH_SCL  3
+#define TOUCH_RST  2
+#define TOUCH_INT  4
 
 // ── Konstanten ───────────────────────────────────────────
 
 #define AP_SSID          "TradingJournal-Setup"
-#define UPDATE_INTERVAL  30        // Sekunden
+#define ACTIVE_INTERVAL  5         // Sekunden zwischen Updates wenn aktiv
+#define STANDBY_TIMEOUT  30        // Sekunden ohne Touch → Standby
 #define PREF_NAMESPACE   "tjcfg"
 #define WIFI_TIMEOUT_MS  12000
 #define DISPLAY_ROTATION 3
-#define FW_VERSION       "2.8.0"
+#define TFT_BL_PIN        5        // Backlight-Pin Waveshare ESP32-S3-Touch-LCD-2.8
+#define FW_VERSION       "2.8.2"
 
 // ── Farben RGB565 ────────────────────────────────────────
 
@@ -40,16 +42,27 @@
 
 // ── Globals ──────────────────────────────────────────────
 
-TFT_eSPI    tft;
-XPT2046_Touchscreen ts(MY_TOUCH_CS);   // Verwendet globale SPI-Instanz
-WebServer   server(80);
+TFT_eSPI  tft;
+WebServer server(80);
 Preferences prefs;
 
 String cfgSSID, cfgPass, cfgHost, cfgPort, cfgKey;
 String cfgFilter = "month";       // "month", "week", "year", "all"
 bool   configMode  = false;
 int    activeScreen = 0;          // 0 = Dashboard, 1 = Positionen, 2 = Filter
-unsigned long lastUpdate = 0;
+unsigned long lastUpdate    = 0;
+unsigned long lastTouchTime = 0;
+bool          inStandby     = false;
+
+void setBacklight(bool on) {
+  ledcWrite(0, on ? 800 : 0);
+}
+
+void backlightInit() {
+  ledcSetup(0, 20000, 10);
+  ledcAttachPin(TFT_BL_PIN, 0);
+  ledcWrite(0, 800);
+}
 
 // ── Datenstrukturen ──────────────────────────────────────
 
@@ -114,27 +127,137 @@ void clearConfig() {
   prefs.end();
 }
 
-// ── Touch (XPT2046_Touchscreen, VSPI via globale SPI-Instanz) ────────────
-// Kalibrierungswerte aus tatsächlich beobachteten Rohkoordinaten (Landscape)
-// ts.setRotation(1): p.x = 4095 - hardware_y, p.y = hardware_x
-// p.x = 250..3750 → screen x 0..319 (links→rechts)
-// p.y = 200..930  → screen y 0..239 (oben→unten)
-#define TOUCH_X_MIN  560   // Linker Rand  (~600 gemessen, Marge -40)
-#define TOUCH_X_MAX  3520  // Rechter Rand (~3475 gemessen, Marge +45)
-#define TOUCH_Y_MIN  650   // Oberer Rand  (~700 gemessen, Marge -50)
-#define TOUCH_Y_MAX  3420  // Unterer Rand (~3352 gemessen, Marge +68)
+// ── Touch (CST328 direkt via I2C) — Waveshare ESP32-S3-Touch-LCD-2.8 ────
+// CST328 I2C Adresse: 0x1A  — verwendet Wire1 (SDA=1, SCL=3)
+// 16-bit Registeradressen (MSB first)
+// 0xD005 = Anzahl Touch-Punkte
+// 0xD000 = XY-Daten (Portrait: x=0..239, y=0..319)
+// Display läuft in Rotation 3 (Landscape 320×240):
+//   screen_x = raw_y         (0..319)
+//   screen_y = 239 - raw_x   (0..239)
 
-bool mapTouch(int* screenX, int* screenY) {
-  if (!ts.touched()) return false;
-  TS_Point p = ts.getPoint();
-  if (p.z < 100) return false;
-  Serial.printf("[Touch] raw x=%d y=%d z=%d\n", p.x, p.y, p.z);
-  *screenX = constrain(map(p.x, TOUCH_X_MAX, TOUCH_X_MIN, 0, 319), 0, 319); // X invertiert: hoher raw = links
-  *screenY = constrain(map(p.y, TOUCH_Y_MAX, TOUCH_Y_MIN, 0, 239), 0, 239); // Y invertiert: hoher raw = oben
+#define CST328_ADDR       0x1A
+#define CST328_REG_NUM    0xD005
+#define CST328_REG_XY     0xD000
+
+static bool cst328Read(uint16_t reg, uint8_t* buf, uint8_t len) {
+  Wire1.beginTransmission(CST328_ADDR);
+  Wire1.write((uint8_t)(reg >> 8));
+  Wire1.write((uint8_t)(reg & 0xFF));
+  if (Wire1.endTransmission(true) != 0) return false;
+  Wire1.requestFrom((uint8_t)CST328_ADDR, len);
+  for (uint8_t i = 0; i < len; i++) {
+    if (!Wire1.available()) return false;
+    buf[i] = Wire1.read();
+  }
   return true;
 }
 
-void loadTouchCal() {}  // Keine NVS-Kalibrierung nötig
+static void cst328ClearFlag() {
+  uint8_t clear = 0;
+  Wire1.beginTransmission(CST328_ADDR);
+  Wire1.write((uint8_t)(CST328_REG_NUM >> 8));
+  Wire1.write((uint8_t)(CST328_REG_NUM & 0xFF));
+  Wire1.write(clear);
+  Wire1.endTransmission(true);
+}
+
+bool mapTouch(int* screenX, int* screenY) {
+  uint8_t nbuf[1];
+  if (!cst328Read(CST328_REG_NUM, nbuf, 1)) return false;
+  uint8_t n = nbuf[0] & 0x0F;
+  if (n == 0) return false;
+
+  uint8_t xy[27] = {};
+  if (!cst328Read(CST328_REG_XY, xy, 27)) { cst328ClearFlag(); return false; }
+  cst328ClearFlag();
+
+  // Ersten Touch-Punkt dekodieren (12-bit Koordinaten)
+  // xy[1]=x_high, xy[2]=y_high, xy[3]=xy_low (für i=0, num=0)
+  uint16_t raw_x = ((uint16_t)xy[1] << 4) | ((xy[3] & 0xF0) >> 4);
+  uint16_t raw_y = ((uint16_t)xy[2] << 4) |  (xy[3] & 0x0F);
+
+  Serial.printf("[Touch] n=%d raw_x=%d raw_y=%d\n", n, raw_x, raw_y);
+
+  // Portrait → Landscape Rotation 3 Mapping
+  *screenX = constrain((int)raw_y,         0, 319);
+  *screenY = constrain(239 - (int)raw_x,   0, 239);
+  return true;
+}
+
+void loadTouchCal() {}  // Keine Kalibrierung nötig (kapazitiv)
+
+// ── Waveshare ST7789T3 Custom Init ───────────────────────
+// Exakt aus dem offiziellen Waveshare Demo (Display_ST7789.cpp)
+void waveshareInitST7789() {
+  tft.startWrite();         // SPI-Bus öffnen (CS low, Transaktion starten)
+
+  tft.writecommand(0x01);   // Software Reset
+  tft.endWrite(); delay(120); tft.startWrite();
+
+  tft.writecommand(0x11);   // Sleep Out
+  tft.endWrite(); delay(120); tft.startWrite();
+
+  tft.writecommand(0x36);   // MADCTL
+  tft.writedata(0x00);
+
+  tft.writecommand(0x3A);   // COLMOD 16-bit
+  tft.writedata(0x05);
+
+  tft.writecommand(0xB0);
+  tft.writedata(0x00);
+  tft.writedata(0xE8);
+
+  tft.writecommand(0xB2);
+  tft.writedata(0x0C); tft.writedata(0x0C); tft.writedata(0x00);
+  tft.writedata(0x33); tft.writedata(0x33);
+
+  tft.writecommand(0xB7);
+  tft.writedata(0x75);
+
+  tft.writecommand(0xBB);
+  tft.writedata(0x1A);
+
+  tft.writecommand(0xC0);
+  tft.writedata(0x2C);
+
+  tft.writecommand(0xC2);
+  tft.writedata(0x01); tft.writedata(0xFF);
+
+  tft.writecommand(0xC3);
+  tft.writedata(0x13);
+
+  tft.writecommand(0xC4);
+  tft.writedata(0x20);
+
+  tft.writecommand(0xC6);
+  tft.writedata(0x0F);
+
+  tft.writecommand(0xD0);
+  tft.writedata(0xA4); tft.writedata(0xA1);
+
+  tft.writecommand(0xD6);
+  tft.writedata(0xA1);
+
+  tft.writecommand(0xE0);   // Gamma+
+  tft.writedata(0xD0); tft.writedata(0x0D); tft.writedata(0x14);
+  tft.writedata(0x0D); tft.writedata(0x0D); tft.writedata(0x09);
+  tft.writedata(0x38); tft.writedata(0x44); tft.writedata(0x4E);
+  tft.writedata(0x3A); tft.writedata(0x17); tft.writedata(0x18);
+  tft.writedata(0x2F); tft.writedata(0x30);
+
+  tft.writecommand(0xE1);   // Gamma-
+  tft.writedata(0xD0); tft.writedata(0x09); tft.writedata(0x0F);
+  tft.writedata(0x08); tft.writedata(0x07); tft.writedata(0x14);
+  tft.writedata(0x37); tft.writedata(0x44); tft.writedata(0x4D);
+  tft.writedata(0x38); tft.writedata(0x15); tft.writedata(0x16);
+  tft.writedata(0x2C); tft.writedata(0x2E);
+
+  tft.writecommand(0x21);   // Display Inversion ON (ST7789T3 braucht das)
+  tft.writecommand(0x29);   // Display ON
+  tft.endWrite();
+  delay(50);
+}
 
 // ── Hilfsfunktionen Display ──────────────────────────────
 
@@ -774,31 +897,28 @@ bool fetchData() {
 
 void setup() {
   Serial.begin(115200);
+  delay(1500);  // ESP32-S3 USB CDC: warten bis Host verbunden
+  Serial.println("[BOOT] Start");
 
   // ── Display initialisieren ──────────────────────
-  pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, HIGH);
+  // Backlight VOR tft.init(): LEDC muss zuerst auf Pin 5 eingerichtet sein
+  Serial.println("[BOOT] Backlight LEDC init");
+  backlightInit();
+  Serial.println("[BOOT] tft.init()");
   tft.init();
-  // Alle 4 Rotationen leeren → komplettes GRAM egal welcher Chip-Variant
-  for (uint8_t r = 0; r < 4; r++) { tft.setRotation(r); tft.fillScreen(TFT_BLACK); }
+  waveshareInitST7789();     // ST7789T3 Custom-Init (Waveshare ESP32-S3-Touch-LCD-2.8)
   tft.setRotation(DISPLAY_ROTATION);
-  tft.invertDisplay(true);   // CYD ILI9341_2_DRIVER benötigt Farb-Inversion
   tft.fillScreen(COLOR_BG);
 
-  // ── Touch-SPI via globale SPI-Instanz (VSPI, ESP32 SPI3_HOST) ──
-  // Globale SPI.begin() VOR ts.begin(), damit ts.begin()'s interner
-  // SPI.begin()-Aufruf ein No-Op ist und unsere Pins erhalten bleiben.
-  // MY_TOUCH_CS ist 33 (separater Name, kein Konflikt mit Build-Flag -DTOUCH_CS=-1)
-  pinMode(MY_TOUCH_CS, OUTPUT);
-  digitalWrite(MY_TOUCH_CS, HIGH);
-  SPI.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, MY_TOUCH_CS);
-  ts.begin();           // verwendet globale SPI — intern: SPI.begin() → No-Op
-  ts.setRotation(1);    // Landscape: Rotation 1 passt zu Display-Rotation 3
-
-  // GPIO-Diagnose (einmalig beim Boot)
-  Serial.printf("[GPIO] CS=%d CLK=%d MOSI=%d MISO=%d\n",
-    digitalRead(MY_TOUCH_CS), digitalRead(TOUCH_CLK),
-    digitalRead(TOUCH_MOSI), digitalRead(TOUCH_MISO));
+  // ── Touch I2C (CST328 direkt) — Waveshare ESP32-S3-Touch-LCD-2.8 ──
+  pinMode(TOUCH_RST, OUTPUT);
+  digitalWrite(TOUCH_RST, HIGH);
+  delay(50);
+  digitalWrite(TOUCH_RST, LOW);
+  delay(5);
+  digitalWrite(TOUCH_RST, HIGH);
+  delay(50);
+  Wire1.begin(TOUCH_SDA, TOUCH_SCL, 400000);
 
   loadConfig();
 
@@ -869,7 +989,8 @@ void setup() {
     delay(5000);
   }
   drawCurrentScreen();
-  lastUpdate = millis();
+  lastUpdate    = millis();
+  lastTouchTime = millis();
 }
 
 // ── Loop ─────────────────────────────────────────────────
@@ -879,9 +1000,28 @@ void loop() {
 
   if (configMode) return;
 
-  // Touch prüfen (XPT2046, VSPI)
+  unsigned long now = millis();
+
+  // Touch prüfen (FT6336G, I2C)
   int tx, ty;
   if (mapTouch(&tx, &ty)) {
+    lastTouchTime = now;
+
+    if (inStandby) {
+      // ── Aufwachen aus Standby ─────────────────────────
+      inStandby = false;
+      setBacklight(true);
+      drawConnecting("Lade Daten...");
+      fetchData();
+      drawCurrentScreen();
+      lastUpdate = now;
+      // Warten bis Finger losgelassen
+      unsigned long tRelease = millis() + 600;
+      
+      delay(80);
+      return;
+    }
+
     if (ty > 180) {
       // ── Nav-Bar: 3 Buttons (je ~107px breit) ──────────
       int newScreen = (tx < 107) ? 0 : (tx < 214) ? 1 : 2;
@@ -891,8 +1031,6 @@ void loop() {
       }
     } else if (activeScreen == 2) {
       // ── Filter-Screen: Content-Tap → Filter auswählen ──
-      // 4 Buttons bei y=26/72/118/164 (je 46px)
-      // Tap-Bereiche: 0→Gesamt, 1→Jahr, 2→Monat, 3→Woche
       int idx = (ty < 72) ? 0 : (ty < 118) ? 1 : (ty < 164) ? 2 : 3;
       cfgFilter = FILTER_OPTS[idx].key;
       saveFilter();
@@ -908,12 +1046,24 @@ void loop() {
     }
     // Warten bis Finger losgelassen, max 600ms (verhindert Ghost-Touches & Deadlock)
     unsigned long tRelease = millis() + 600;
-    while (ts.touched() && millis() < tRelease) delay(10);
+    
     delay(80);
+    return;
   }
 
-  // Daten aktualisieren
-  if (millis() - lastUpdate >= (unsigned long)UPDATE_INTERVAL * 1000) {
+  // Im Standby nur auf Touch warten — nichts tun
+  if (inStandby) return;
+
+  // ── Standby-Timeout: 30s ohne Touch → Display aus ────
+  if (now - lastTouchTime >= (unsigned long)STANDBY_TIMEOUT * 1000) {
+    inStandby = true;
+    tft.fillScreen(COLOR_BG);
+    setBacklight(false);
+    return;
+  }
+
+  // ── Aktiv: Daten alle 5 Sekunden aktualisieren ───────
+  if (now - lastUpdate >= (unsigned long)ACTIVE_INTERVAL * 1000) {
     if (WiFi.status() != WL_CONNECTED) {
       WiFi.reconnect();
       unsigned long t = millis();
@@ -921,6 +1071,6 @@ void loop() {
         delay(200);
     }
     if (fetchData()) drawCurrentScreen();
-    lastUpdate = millis();
+    lastUpdate = now;
   }
 }
