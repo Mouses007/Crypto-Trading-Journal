@@ -56,13 +56,36 @@ async function installUpdate() {
     try {
         const { data } = await axios.post('/api/update/install')
         if (data.ok) {
-            // Server will restart — wait and reload
-            setTimeout(() => window.location.reload(), 5000)
+            // Docker-Recreate dauert laenger als die git-basierte Variante.
+            // Statt Fix-Timeout: pollen bis der Server wieder antwortet.
+            const initialDelay = data.dockerMode ? 8000 : 4000
+            setTimeout(() => waitForServerThenReload(), initialDelay)
         }
     } catch (e) {
         updateError.value = e.response?.data?.error || e.message
         updateInstalling.value = false
     }
+}
+
+/**
+ * Pollt /api/update/check (leichtgewichtig, kein Fetch-Side-Effekt) bis
+ * der Server wieder erreichbar ist, dann Hard-Reload. Gibt nach 90s auf.
+ */
+async function waitForServerThenReload(startedAt = Date.now()) {
+    try {
+        const r = await fetch('/api/update/check', { cache: 'no-store' })
+        if (r.ok) {
+            window.location.reload()
+            return
+        }
+    } catch (_) { /* Server noch nicht da — weiter pollen */ }
+
+    if (Date.now() - startedAt > 90000) {
+        // Fallback: trotzdem reloaden
+        window.location.reload()
+        return
+    }
+    setTimeout(() => waitForServerThenReload(startedAt), 1500)
 }
 
 async function checkRollbackStatus() {
