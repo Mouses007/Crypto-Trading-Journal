@@ -4,6 +4,7 @@ import { dbCreate, dbFind, dbDelete, dbUpdate as dbUpdateRecord, dbFindTradeIdBy
 import { dbUpdateSettings } from './db.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker } from '../stores/filters.js'
+import { refreshAccountBalance } from '../stores/accountBalance.js'
 import { logWarn } from './logger.js'
 import i18n from '../i18n'
 
@@ -245,6 +246,14 @@ export async function useQuickApiImport(explicitBroker) {
         }
     } catch (e) {
         console.log(' -> Incoming-Verknüpfung übersprungen:', e.message)
+    }
+
+    // Kontostand-Cache invalidieren + neu laden, damit das Dashboard den
+    // Effekt der frisch importierten Trades sofort anzeigt.
+    try {
+        await refreshAccountBalance({ broker, force: true })
+    } catch (e) {
+        logWarn('quick-import', 'refreshAccountBalance nach Import fehlgeschlagen', e)
     }
 
     return {

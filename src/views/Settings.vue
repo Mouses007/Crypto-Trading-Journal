@@ -5,6 +5,7 @@ import { useCheckCurrentUser, useInitTooltip } from '../utils/utils';
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js';
 import { currentUser, renderProfile } from '../stores/settings.js';
 import { dbUpdateSettings, dbGetSettings, dbFind, dbFirst, dbDelete, dbDeleteWhere } from '../utils/db.js'
+import { refreshAccountBalance } from '../stores/accountBalance.js'
 import axios from 'axios'
 import dayjs from 'dayjs'
 import { requestNotificationPermission } from '../utils/notify'
@@ -928,6 +929,14 @@ async function executeDeleteImport(dateUnix) {
             await dbDeleteWhere('excursions', { equalTo: { dateUnix: dateUnix } })
         } catch (e) {
             logWarn('settings-view', 'Excursions konnten nicht gelöscht werden', e)
+        }
+
+        // Kontostand-Cache aktualisieren nach Trade-Loeschung
+        try {
+            const broker = selectedBroker.value || 'bitunix'
+            await refreshAccountBalance({ broker, force: true })
+        } catch (e) {
+            logWarn('settings-view', 'refreshAccountBalance nach Delete fehlgeschlagen', e)
         }
 
         deleteConfirm.value = null

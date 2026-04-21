@@ -5,6 +5,7 @@ import { useDateTimeFormat } from "./formatters.js";
 /* useRefreshTrades moved to mountOrchestration.js */
 import { useCreateBlotter, useCreatePnL } from "./addTrades.js"
 import { dbFind, dbFirst, dbDelete, dbDeleteWhere } from './db.js'
+import { refreshAccountBalance } from '../stores/accountBalance.js'
 import axios from 'axios'
 
 /* MODULES */
@@ -1321,6 +1322,14 @@ export const useDeleteTrade = async () => {
             console.log(`  --> Reset ${broker} lastApiImport for re-import`)
         } catch (e) {
             console.log('  --> Could not reset lastApiImport:', e.message)
+        }
+
+        // Kontostand-Cache aktualisieren — Geloeschter Trade muss aus der
+        // Summe verschwinden.
+        try {
+            await refreshAccountBalance({ broker, force: true })
+        } catch (e) {
+            console.log('  --> refreshAccountBalance nach Trade-Delete fehlgeschlagen:', e?.message)
         }
 
         useGetTrades("imports")

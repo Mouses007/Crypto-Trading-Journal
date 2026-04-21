@@ -6,6 +6,7 @@ import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMoun
 import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBroker } from '../stores/filters.js'
 import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades, excursions } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
+import { allTimeNetPnL, allTimeVolume, last30dVolume, refreshAccountBalance } from '../stores/accountBalance.js'
 import { dbFind } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
 import { useThousandCurrencyFormat, useTwoDecCurrencyFormat, useXDecCurrencyFormat, useThousandFormat, useXDecFormat } from '../utils/formatters.js';
@@ -143,39 +144,9 @@ const todayStats = computed(() => {
 })
 
 // All-time net P&L for selected broker (loaded on mount, independent of date filter)
-const allTimeNetPnL = ref(0)
-const allTimeVolume = ref(0)
-const last30dVolume = ref(0)
-
-async function loadAllTimeNetPnL() {
-    const broker = selectedBroker.value || 'bitunix'
-    const allTrades = await dbFind('trades', { equalTo: { broker }, limit: 100000 })
-    let totalNet = 0
-    let totalVol = 0
-    let vol30d = 0
-    const cutoff30d = dayjs().subtract(30, 'day').unix()
-
-    for (const day of allTrades) {
-        if (day.pAndL && typeof day.pAndL === 'object') {
-            totalNet += day.pAndL.netProceeds || 0
-        }
-        // Volumen aus den Einzeltrades berechnen: qty × entryPrice
-        if (day.trades && Array.isArray(day.trades)) {
-            for (const trade of day.trades) {
-                const qty = Math.max(trade.buyQuantity || 0, trade.sellQuantity || 0)
-                const price = trade.entryPrice || 0
-                const vol = qty * price
-                totalVol += vol
-                if (day.dateUnix >= cutoff30d) {
-                    vol30d += vol
-                }
-            }
-        }
-    }
-    allTimeNetPnL.value = totalNet
-    allTimeVolume.value = totalVol
-    last30dVolume.value = vol30d
-}
+// allTimeNetPnL, allTimeVolume, last30dVolume kommen aus dem accountBalance-Store
+// und werden nach jeder Trade-Mutation zentral aktualisiert — nicht mehr nur
+// beim Mount (historischer Bug: Dashboard-Kontostand blieb stale nach Bewertung).
 
 const accountBalance = computed(() => {
     const broker = selectedBroker.value || 'bitunix'
@@ -353,7 +324,7 @@ const feeStats = computed(() => {
 
 onBeforeMount(async () => {
     barChartNegativeTagGroups.length = 0
-    await loadAllTimeNetPnL()
+    await refreshAccountBalance({ force: true })
     await useMountDashboard()
     //console.log(" availableTags "+JSON.stringify(availableTags))
     //console.log(" groups "+JSON.stringify(groups))

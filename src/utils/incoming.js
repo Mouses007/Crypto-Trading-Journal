@@ -5,6 +5,7 @@ import { incomingPositions, incomingPollingActive, incomingLastFetched, pendingO
 import { expandedId } from '../stores/ui.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker } from '../stores/filters.js'
+import { refreshAccountBalance } from '../stores/accountBalance.js'
 import i18n from '../i18n'
 
 let globalPollingInterval = null
@@ -518,6 +519,15 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
             }
         }
     }
+
+    // Trade-Tabelle hat sich geaendert → Kontostand-Cache fuer diesen Broker
+    // invalidieren + neu laden. Sorgt dafuer, dass das Dashboard den
+    // Kontostand sofort korrekt zeigt, ohne dass ein Reload noetig ist.
+    try {
+        await refreshAccountBalance({ broker, force: true })
+    } catch (e) {
+        console.log(' -> refreshAccountBalance nach Trade-Insert fehlgeschlagen:', e?.message)
+    }
 }
 
 /**
@@ -804,6 +814,17 @@ export async function useTransferClosingMetadata(incoming, histPos, {
 
     // Update counters
     await useUpdatePendingCounts()
+
+    // Defensive: Kontostand-Cache aktualisieren. Der Trade selbst wurde
+    // schon bei Schluss-Erkennung erstellt; dieser Call faengt Faelle ab,
+    // in denen der Cache zwischendurch stale geworden ist (Browser-Tab
+    // lange offen, Broker-Wechsel, etc.).
+    try {
+        const broker = selectedBroker.value || 'bitunix'
+        await refreshAccountBalance({ broker, force: true })
+    } catch (e) {
+        console.log(' -> refreshAccountBalance nach Bewertung fehlgeschlagen:', e?.message)
+    }
 
     console.log(` -> Bewertung abgeschlossen für ${incoming.symbol}`)
 }
