@@ -3,7 +3,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useMonthFormat, useDateCalFormat, useDateCalFormatMonth } from "../utils/formatters.js"
 import { useMountCalendar, useMountDashboard, useMountDaily, useMountAuswertung, useCheckVisibleScreen } from "../utils/mountOrchestration.js"
 import { pageId, timeZoneTrade, hasData } from "../stores/ui.js"
-import { periodRange, positions, timeFrames, ratios, grossNet, plSatisfaction, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccounts, selectedGrossNet, selectedPlSatisfaction, selectedDateRange, selectedMonth, selectedPeriodRange, tempSelectedPlSatisfaction, amountCase, amountCapital, selectedTags } from "../stores/filters.js"
+import { periodRange, positions, timeFrames, ratios, grossNet, plSatisfaction, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccounts, selectedGrossNet, selectedPlSatisfaction, selectedDateRange, selectedMonth, selectedMonthPreset, selectedPeriodRange, tempSelectedPlSatisfaction, amountCase, amountCapital, selectedTags } from "../stores/filters.js"
 import { tags, availableTags } from "../stores/trades.js"
 import { useECharts } from "../utils/charts.js"
 import { useRefreshScreenshot } from "../utils/screenshots"
@@ -150,6 +150,8 @@ function inputMonth(param1) {
     temp.start = dayjs.tz(param1, timeZoneTrade.value).unix()
     temp.end = dayjs.tz(param1, timeZoneTrade.value).endOf("month").unix()
     selectedMonth.value = temp
+    const thisMonthStart = dayjs().tz(timeZoneTrade.value).startOf('month').unix()
+    selectedMonthPreset.value = temp.start === thisMonthStart ? 'current' : 'custom'
 }
 
 /*============================================
@@ -185,6 +187,7 @@ async function saveFilter() {
 
     if (pageId.value === "daily" || pageId.value === "calendar") {
         localStorage.setItem('selectedMonth', JSON.stringify(selectedMonth.value))
+        localStorage.setItem('selectedMonthPreset', selectedMonthPreset.value)
     }
 
     localStorage.setItem('selectedTags', selectedTags.value)

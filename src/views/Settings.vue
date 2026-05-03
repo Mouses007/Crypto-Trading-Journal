@@ -1034,7 +1034,8 @@ async function loadBalanceFromApi() {
         let totalNetPnL = 0
         for (const day of trades) {
             if (day.pAndL && typeof day.pAndL === 'object') {
-                totalNetPnL += day.pAndL.netProceeds || 0
+                const np = Number(day.pAndL.netProceeds)
+                if (Number.isFinite(np)) totalNetPnL += np
             }
         }
 

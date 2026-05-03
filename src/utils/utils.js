@@ -1,7 +1,7 @@
 import { useRoute } from "vue-router";
 import { nextTick } from 'vue';
 import { pageId, timeZoneTrade, currentUser, renderData, screenshotsPagination, selectedItem, sideMenuMobileOut, spinnerLoadingPage, dashboardChartsMounted, dashboardIdMounted, hasData, renderingCharts, screenType, dailyQueryLimit, dailyPagination, endOfList, spinnerLoadMore, windowIsScrolled, legacy, idCurrent, idPrevious, idCurrentType, idCurrentNumber, idPreviousType, idPreviousNumber, tabGettingScreenshots, countdownInterval, countdownSeconds, barChartNegativeTagGroups, auswertungMounted } from "../stores/ui.js"
-import { periodRange, selectedDashTab, selectedPeriodRange, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccount, selectedGrossNet, selectedPlSatisfaction, selectedBroker, selectedDateRange, selectedMonth, selectedAccounts, amountCase, selectedRange, selectedTags, selectedTradeTimeframes } from "../stores/filters.js"
+import { periodRange, selectedDashTab, selectedPeriodRange, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccount, selectedGrossNet, selectedPlSatisfaction, selectedBroker, selectedDateRange, selectedMonth, selectedMonthPreset, selectedAccounts, amountCase, selectedRange, selectedTags, selectedTradeTimeframes } from "../stores/filters.js"
 import { tags, filteredTrades, screenshots, screenshotsInfos, availableTags, groups } from "../stores/trades.js"
 import { apis, layoutStyle } from "../stores/settings.js"
 import { useECharts } from './charts.js';
@@ -454,6 +454,18 @@ export async function useSetValues() {
 
         if (!localStorage.getItem('selectedMonth')) localStorage.setItem('selectedMonth', JSON.stringify({ start: periodRange.filter(element => element.value == 'thisMonth')[0].start, end: periodRange.filter(element => element.value == 'thisMonth')[0].end }))
         selectedMonth.value = JSON.parse(localStorage.getItem('selectedMonth'))
+
+        // Refresh selectedMonth when in "current" preset mode so it stays on
+        // the actual current month after the month rolls over.
+        if (!localStorage.getItem('selectedMonthPreset')) localStorage.setItem('selectedMonthPreset', 'current')
+        selectedMonthPreset.value = localStorage.getItem('selectedMonthPreset')
+        if (selectedMonthPreset.value === 'current') {
+            const thisMonth = periodRange.find(el => el.value === 'thisMonth')
+            if (thisMonth && (thisMonth.start !== selectedMonth.value.start || thisMonth.end !== selectedMonth.value.end)) {
+                selectedMonth.value = { start: thisMonth.start, end: thisMonth.end }
+                localStorage.setItem('selectedMonth', JSON.stringify(selectedMonth.value))
+            }
+        }
 
         if (Object.is(localStorage.getItem('selectedAccounts'), null) && currentUser.value && currentUser.value.hasOwnProperty("accounts") && currentUser.value.accounts.length > 0) {
             currentUser.value.accounts.forEach(element => {

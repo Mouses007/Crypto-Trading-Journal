@@ -53,9 +53,15 @@ const inflight = new Map()
 export async function refreshAccountBalance({ broker, force = false } = {}) {
     const b = broker || getCurrentBroker()
 
-    // Debounce: konkurrierende Calls für denselben Broker zusammenfassen
-    if (inflight.has(b)) {
+    // Debounce: konkurrierende Calls für denselben Broker zusammenfassen.
+    // ABER: bei force=true muss der in-flight-Read ignoriert werden, weil der
+    // Aufrufer gerade Trades mutiert hat und der laufende Read die Mutation
+    // ggf. noch nicht sieht — sonst bleibt der Cache stale.
+    if (inflight.has(b) && !force) {
         return inflight.get(b)
+    }
+    if (inflight.has(b) && force) {
+        try { await inflight.get(b) } catch (_) { /* ignore */ }
     }
 
     const task = (async () => {
@@ -69,12 +75,13 @@ export async function refreshAccountBalance({ broker, force = false } = {}) {
 
             for (const day of allTrades) {
                 if (day.pAndL && typeof day.pAndL === 'object') {
-                    totalNet += day.pAndL.netProceeds || 0
+                    const np = Number(day.pAndL.netProceeds)
+                    if (Number.isFinite(np)) totalNet += np
                 }
                 if (day.trades && Array.isArray(day.trades)) {
                     for (const trade of day.trades) {
-                        const qty = Math.max(trade.buyQuantity || 0, trade.sellQuantity || 0)
-                        const price = trade.entryPrice || 0
+                        const qty = Math.max(Number(trade.buyQuantity) || 0, Number(trade.sellQuantity) || 0)
+                        const price = Number(trade.entryPrice) || 0
                         const vol = qty * price
                         totalVol += vol
                         if (day.dateUnix >= cutoff30d) {

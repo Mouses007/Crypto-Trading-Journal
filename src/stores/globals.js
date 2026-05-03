@@ -215,6 +215,7 @@ export const selectedPlSatisfaction = typeof localStorage !== 'undefined' ? ref(
 export const selectedBroker = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedBroker')) : ref()
 export const selectedDateRange = typeof localStorage !== 'undefined' ? ref(JSON.parse(localStorage.getItem('selectedDateRange'))) : ""
 export const selectedMonth = typeof localStorage !== 'undefined' ? ref(JSON.parse(localStorage.getItem('selectedMonth'))) : ""
+export const selectedMonthPreset = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedMonthPreset') || 'current') : ref('current')
 export const selectedPeriodRange = typeof localStorage !== 'undefined' ? ref(JSON.parse(localStorage.getItem('selectedPeriodRange'))) : ""
 export const selectedDashTab = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedDashTab')) : ""
 

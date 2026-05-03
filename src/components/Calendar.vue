@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { pageId, timeZoneTrade, spinnerLoadingPage, scrollToDateUnix } from '../stores/ui.js';
-import { selectedMonth, selectedPlSatisfaction, amountCase } from '../stores/filters.js';
+import { selectedMonth, selectedMonthPreset, selectedPlSatisfaction, amountCase } from '../stores/filters.js';
 import { calendarData, miniCalendarsData } from '../stores/trades.js';
 import { useThousandCurrencyFormat } from '../utils/formatters.js';
 import { useMountCalendar, useMountDaily } from '../utils/mountOrchestration.js';
@@ -33,6 +33,9 @@ async function monthLastNext(param) {
     selectedMonth.value.end = dayjs.tz(selectedMonth.value.start * 1000, timeZoneTrade.value).endOf('month').unix()
     //console.log("selectedMonth.value.start " + selectedMonth.value.start+" selectedMonth.value.end " + selectedMonth.value.end)
     localStorage.setItem('selectedMonth', JSON.stringify(selectedMonth.value))
+    const thisMonthStart = dayjs().tz(timeZoneTrade.value).startOf('month').unix()
+    selectedMonthPreset.value = selectedMonth.value.start === thisMonthStart ? 'current' : 'custom'
+    localStorage.setItem('selectedMonthPreset', selectedMonthPreset.value)
     
     if (pageId.value == "calendar") {
         useMountCalendar()
