@@ -116,7 +116,7 @@ export function setupBackupRoutes(app) {
         try {
             const knex = getKnex()
             const dbConfig = loadDbConfig()
-            const isPg = dbConfig?.type === 'postgresql'
+            const isPg = dbConfig?.client === 'pg' || dbConfig?.client === 'postgresql' || dbConfig?.type === 'postgresql'
             const imported = {}
 
             // Alle Tabellen in einer Transaktion leeren und neu befüllen

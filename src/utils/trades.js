@@ -323,16 +323,20 @@ export async function useGetTrades(param) {
 }
 
 export function useGetFilteredTradesForDaily() {
+    // Dedupe-Set basierend auf dateUnix der bereits gerenderten Trades.
+    // Hintergrund: useGetFilteredTrades() (im Mount) befuellt sowohl filteredTrades
+    // als auch filteredTradesDaily komplett. useLoadMore() wuerde sonst die ersten
+    // dailyQueryLimit Eintraege erneut anhaengen -> doppelte Tageskarten / verzerrte Summen.
+    const seen = new Set(filteredTrades.map(t => String(t.dateUnix)))
     for (let index = dailyPagination.value; index < (dailyPagination.value + dailyQueryLimit.value); index++) {
         const element = filteredTradesDaily[index];
-        //console.log("element "+JSON.stringify(element))
         if (!element) {
             endOfList.value = true
-        } else {
+        } else if (!seen.has(String(element.dateUnix))) {
             filteredTrades.push(element)
+            seen.add(String(element.dateUnix))
         }
     }
-    //console.log("filtered trade for daily " + JSON.stringify(filteredTrades))
     dailyPagination.value = dailyPagination.value + dailyQueryLimit.value
 }
 

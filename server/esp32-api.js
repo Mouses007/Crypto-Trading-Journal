@@ -19,6 +19,7 @@ import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { encrypt, decrypt } from './crypto.js'
 import { getPendingPositions } from './bitunix-api.js'
+import { getCurrentPositions as getBitgetCurrentPositions } from './bitget-api.js'
 import dayjs from 'dayjs'
 import dayjsUtc from 'dayjs/plugin/utc.js'
 import dayjsTimezone from 'dayjs/plugin/timezone.js'
@@ -185,26 +186,51 @@ export function setupEsp32Routes(app) {
             const balance = startBalance > 0 ? startBalance + allTimePnL : null
             const balancePerf = startBalance > 0 ? ((balance / startBalance) - 1) * 100 : null
 
-            // Open positions — direkt live von Bitunix API (immer aktuell)
+            // Open positions — live vom primaryBroker (Bitunix oder Bitget)
             let openPositions = []
             try {
-                const bCfg = await knex('bitunix_config').where('id', 1).first()
-                if (bCfg?.apiKey && bCfg?.secretKey) {
-                    const apiKey    = decrypt(bCfg.apiKey)
-                    const secretKey = decrypt(bCfg.secretKey)
-                    const result = await getPendingPositions(apiKey, secretKey, {})
-                    if (result.code === 0) {
-                        const raw = Array.isArray(result.data) ? result.data : (result.data?.positionList || [])
-                        openPositions = raw.map(p => ({
-                            symbol:        p.symbol || '',
-                            side:          p.side   || '',
-                            leverage:      parseFloat(p.leverage     || 0),
-                            entryPrice:    parseFloat(p.entryPrice   ?? p.avgOpenPrice ?? p.avg_open_price ?? 0),
-                            markPrice:     parseFloat(p.markPrice    ?? p.liqPrice ?? p.mark_price ?? 0),
-                            qty:           parseFloat(p.qty ?? p.maxQty ?? 0),
-                            unrealizedPNL: parseFloat(p.unrealizedPNL ?? p.unrealized_pnl ?? 0),
-                            realizedPNL:   parseFloat(p.realizedPNL  ?? p.realized_pnl ?? p.achievedProfits ?? 0)
-                        }))
+                if (primaryBroker === 'bitget') {
+                    const bCfg = await knex('bitget_config').where('id', 1).first()
+                    if (bCfg?.apiKey && bCfg?.secretKey && bCfg?.passphrase) {
+                        const apiKey     = decrypt(bCfg.apiKey)
+                        const secretKey  = decrypt(bCfg.secretKey)
+                        const passphrase = decrypt(bCfg.passphrase)
+                        const result = await getBitgetCurrentPositions(apiKey, secretKey, passphrase, {})
+                        if (String(result.code) === '00000') {
+                            const raw = Array.isArray(result.data) ? result.data : []
+                            openPositions = raw
+                                .filter(p => parseFloat(p.total || p.available || 0) > 0)
+                                .map(p => ({
+                                    symbol:        p.symbol || '',
+                                    side:          (p.holdSide || p.posSide || '').toLowerCase() === 'long' ? 'BUY' : 'SELL',
+                                    leverage:      parseFloat(p.leverage      || 0),
+                                    entryPrice:    parseFloat(p.openPriceAvg  ?? p.averageOpenPrice ?? 0),
+                                    markPrice:     parseFloat(p.markPrice     ?? 0),
+                                    qty:           parseFloat(p.total ?? p.available ?? 0),
+                                    unrealizedPNL: parseFloat(p.unrealizedPL  ?? 0),
+                                    realizedPNL:   parseFloat(p.achievedProfits ?? 0)
+                                }))
+                        }
+                    }
+                } else {
+                    const bCfg = await knex('bitunix_config').where('id', 1).first()
+                    if (bCfg?.apiKey && bCfg?.secretKey) {
+                        const apiKey    = decrypt(bCfg.apiKey)
+                        const secretKey = decrypt(bCfg.secretKey)
+                        const result = await getPendingPositions(apiKey, secretKey, {})
+                        if (result.code === 0) {
+                            const raw = Array.isArray(result.data) ? result.data : (result.data?.positionList || [])
+                            openPositions = raw.map(p => ({
+                                symbol:        p.symbol || '',
+                                side:          p.side   || '',
+                                leverage:      parseFloat(p.leverage     || 0),
+                                entryPrice:    parseFloat(p.entryPrice   ?? p.avgOpenPrice ?? p.avg_open_price ?? 0),
+                                markPrice:     parseFloat(p.markPrice    ?? p.liqPrice ?? p.mark_price ?? 0),
+                                qty:           parseFloat(p.qty ?? p.maxQty ?? 0),
+                                unrealizedPNL: parseFloat(p.unrealizedPNL ?? p.unrealized_pnl ?? 0),
+                                realizedPNL:   parseFloat(p.realizedPNL  ?? p.realized_pnl ?? p.achievedProfits ?? 0)
+                            }))
+                        }
                     }
                 }
             } catch (posErr) {

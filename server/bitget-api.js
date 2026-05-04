@@ -660,8 +660,13 @@ export function setupBitgetRoutes(app) {
             const available = parseFloat(usdtAccount.available || 0)
             const locked = parseFloat(usdtAccount.locked || 0)
             const unrealizedPL = parseFloat(usdtAccount.unrealizedPL || usdtAccount.crossedUnrealizedPL || 0)
-            const usdtEquity = parseFloat(usdtAccount.usdtEquity || usdtAccount.accountEquity || 0)
-            const balance = usdtEquity || (available + locked + unrealizedPL)
+            // Nullish-Logik: usdtEquity=0 ist ein gueltiger Wert (leeres Konto) und darf
+            // nicht durch eine zusammengesetzte Summe ueberschrieben werden.
+            const rawUsdtEquity = usdtAccount.usdtEquity ?? usdtAccount.accountEquity
+            const usdtEquity = rawUsdtEquity != null && rawUsdtEquity !== '' ? parseFloat(rawUsdtEquity) : null
+            const balance = usdtEquity != null && Number.isFinite(usdtEquity)
+                ? usdtEquity
+                : (available + locked + unrealizedPL)
 
             res.json({ ok: true, balance, available, locked, unrealizedPL, usdtEquity })
         } catch (error) {

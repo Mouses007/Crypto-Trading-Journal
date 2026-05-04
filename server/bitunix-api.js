@@ -340,7 +340,7 @@ export function setupBitunixRoutes(app) {
             res.json({ ok: true, positions: allPositions, count: allPositions.length })
         } catch (error) {
             console.error(' -> Recent closed positions error:', error.message)
-            res.json({ ok: true, positions: [], count: 0 })
+            res.json({ ok: false, error: error.message, positions: [], count: 0 })
         }
     })
 
