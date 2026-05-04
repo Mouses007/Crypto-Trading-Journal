@@ -1029,6 +1029,13 @@ async function loadBalanceFromApi() {
         const apiBalance = response.data.balance
         apiBalanceValue.value = apiBalance
 
+        // Subtract unrealized P&L of open positions — otherwise the start
+        // balance would absorb it and double-count once the positions close.
+        const unrealized = (Number(response.data.crossUnrealizedPNL) || 0)
+            + (Number(response.data.isolationUnrealizedPNL) || 0)
+            + (Number(response.data.unrealizedPL) || 0)
+        const realizedEquity = apiBalance - unrealized
+
         // 2. Calculate all-time net P&L for this broker
         const trades = await dbFind('trades', { equalTo: { broker }, limit: 100000 })
         let totalNetPnL = 0
@@ -1039,11 +1046,11 @@ async function loadBalanceFromApi() {
             }
         }
 
-        // 3. Start-Einzahlung = API-Balance - alle Journal-P&L
-        const calculatedStart = apiBalance - totalNetPnL
+        // 3. Start-Einzahlung = realized equity - alle Journal-P&L
+        const calculatedStart = realizedEquity - totalNetPnL
         startBalance.value = Math.round(calculatedStart * 100) / 100
 
-        console.log(` -> ${broker}: API=${apiBalance.toFixed(2)}, P&L=${totalNetPnL.toFixed(2)}, Start=${calculatedStart.toFixed(2)}`)
+        console.log(` -> ${broker}: API=${apiBalance.toFixed(2)}, unrealized=${unrealized.toFixed(2)}, realized=${realizedEquity.toFixed(2)}, P&L=${totalNetPnL.toFixed(2)}, Start=${calculatedStart.toFixed(2)}`)
     } catch (error) {
         alert('Kontostand konnte nicht geladen werden: ' + (error.response?.data?.error || error.message))
     }

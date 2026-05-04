@@ -7,6 +7,8 @@ import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBrok
 import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades, excursions } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
 import { allTimeNetPnL, allTimeVolume, last30dVolume, refreshAccountBalance } from '../stores/accountBalance.js'
+import { incomingPositions } from '../stores/globals.js'
+import { useFetchOpenPositions } from '../utils/incoming.js'
 import { dbFind } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
 import { useThousandCurrencyFormat, useTwoDecCurrencyFormat, useXDecCurrencyFormat, useThousandFormat, useXDecFormat } from '../utils/formatters.js';
@@ -148,6 +150,22 @@ const todayStats = computed(() => {
 // und werden nach jeder Trade-Mutation zentral aktualisiert — nicht mehr nur
 // beim Mount (historischer Bug: Dashboard-Kontostand blieb stale nach Bewertung).
 
+// Sum of unrealized P&L from currently open positions for the active broker.
+// This is what makes Dashboard balance match the live broker equity: the
+// broker's wallet balance includes unrealized P&L of open positions, while
+// allTimeNetPnL only reflects closed trades.
+const openUnrealizedPnL = computed(() => {
+    const broker = selectedBroker.value || 'bitunix'
+    let sum = 0
+    for (const p of incomingPositions) {
+        if (p.status !== 'open') continue
+        if (p.broker && p.broker !== broker) continue
+        const v = Number(p.unrealizedPNL)
+        if (Number.isFinite(v)) sum += v
+    }
+    return sum
+})
+
 const accountBalance = computed(() => {
     const broker = selectedBroker.value || 'bitunix'
     const balances = currentUser.value?.balances || {}
@@ -158,8 +176,9 @@ const accountBalance = computed(() => {
         start = currentUser.value?.startBalance || 0
     }
     if (!start) return null
-    // Current balance = start deposit + all-time net P&L (fees included)
-    const current = start + allTimeNetPnL.value
+    // Current balance = start deposit + closed-trade net P&L + open positions' unrealized P&L
+    // (matches broker equity which includes unrealized PnL).
+    const current = start + allTimeNetPnL.value + openUnrealizedPnL.value
     const pnl = current - start
     const perf = start > 0 ? ((current / start) - 1) * 100 : 0
     return { start, current, pnl, perf }
@@ -325,6 +344,10 @@ const feeStats = computed(() => {
 onBeforeMount(async () => {
     barChartNegativeTagGroups.length = 0
     await refreshAccountBalance({ force: true })
+    // Trigger live fetch of open positions so unrealized PnL flows into the
+    // dashboard balance immediately on mount (otherwise it would only update
+    // on the next 60s polling tick).
+    useFetchOpenPositions().catch(() => { /* silent — polling will retry */ })
     await useMountDashboard()
     //console.log(" availableTags "+JSON.stringify(availableTags))
     //console.log(" groups "+JSON.stringify(groups))

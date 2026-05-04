@@ -121,7 +121,9 @@ async function syncPositionsWithDb(apiPositions) {
             // Update unrealizedPNL, markPrice, bitunixData
             await dbUpdate('incoming_positions', existing.objectId, {
                 unrealizedPNL: parseFloat(apiPos.unrealizedPNL ?? apiPos.unrealized_pnl ?? 0),
-                markPrice: parseFloat(apiPos.liqPrice ?? apiPos.liq_price ?? apiPos.markPrice ?? 0),
+                // Mark price first, liquidation as fallback (was reversed before — caused mark
+                // price field to be populated with the liquidation price).
+                markPrice: parseFloat(apiPos.markPrice ?? apiPos.mark_price ?? apiPos.liqPrice ?? apiPos.liq_price ?? 0),
                 quantity: parseFloat(apiPos.qty ?? apiPos.maxQty ?? apiPos.quantity ?? existing.quantity ?? 0),
                 entryPrice: parseFloat(apiPos.avgOpenPrice ?? apiPos.entryPrice ?? apiPos.avg_open_price ?? 0),
                 bitunixData: apiPos
