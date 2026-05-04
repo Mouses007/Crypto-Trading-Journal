@@ -106,10 +106,12 @@ const ratioCompute = computed(() => {
     if (localStorage.getItem('selectedRatio') == 'profitFactor') {
         ratio.shortName = t('options.profitFactor')
         ratio.name = t('options.profitFactor')
-        let wins = parseFloat(totals[amountCase.value + 'Wins']).toFixed(2)
-        let loss = parseFloat(-totals[amountCase.value + 'Loss']).toFixed(2)
+        // Use raw numbers — rounding before division (toFixed) caused tiny losses
+        // like 0.004 → "0.00" to coerce as zero and flip profitFactor to Infinity.
+        const wins = Number(totals[amountCase.value + 'Wins']) || 0
+        const loss = Math.abs(Number(totals[amountCase.value + 'Loss']) || 0)
         let profitFactor = 0
-        if (loss != 0) {
+        if (loss > 0) {
             profitFactor = wins / loss
         } else if (wins > 0) {
             profitFactor = Infinity
@@ -201,8 +203,9 @@ const tradeTypeStats = computed(() => {
         trades.forEach(t => {
             const pnl = t.netProceeds || 0
             totalPnl += pnl
-            if (pnl >= 0) { wins++; grossWins += pnl }
-            else { losses++; grossLoss += Math.abs(pnl) }
+            if (pnl > 0) { wins++; grossWins += pnl }
+            else if (pnl < 0) { losses++; grossLoss += Math.abs(pnl) }
+            // pnl === 0 → break-even, weder Win noch Loss
         })
 
         const count = trades.length
@@ -242,8 +245,9 @@ const strategyTagStats = computed(() => {
             if (t.tagName) tagName = t.tagName
             const pnl = t.netProceeds || 0
             totalPnl += pnl
-            if (pnl >= 0) { wins++; grossWins += pnl }
-            else { losses++; grossLoss += Math.abs(pnl) }
+            if (pnl > 0) { wins++; grossWins += pnl }
+            else if (pnl < 0) { losses++; grossLoss += Math.abs(pnl) }
+            // pnl === 0 → break-even, weder Win noch Loss
         })
 
         const tagDef = stratGroup.tags.find(t => t.id === tagId)
@@ -297,10 +301,13 @@ const mfeAnalysisStats = computed(() => {
 
         result.lossTradesWithMfe++
 
-        // Berechne verschenkten Gewinn
+        // Berechne verschenkten Gewinn — Bitunix setzt buyQuantity == sellQuantity,
+        // aber für Code-Klarheit (und falls je ein Broker asymmetrisch importiert)
+        // nehmen wir das Maximum.
+        const qty = Math.max(Number(trade.buyQuantity) || 0, Number(trade.sellQuantity) || 0)
         const mfeProfit = isLong
-            ? (exc.mfePrice - trade.entryPrice) * (trade.buyQuantity || 0)
-            : (trade.entryPrice - exc.mfePrice) * (trade.buyQuantity || 0)
+            ? (exc.mfePrice - trade.entryPrice) * qty
+            : (trade.entryPrice - exc.mfePrice) * qty
         const realizedLoss = Math.abs(proceeds)
 
         result.totalMfeProfit += mfeProfit

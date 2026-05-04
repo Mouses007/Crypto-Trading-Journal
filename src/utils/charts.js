@@ -191,10 +191,11 @@ export function useLineChart(param) { //chartID, chartDataGross, chartDataNet, c
             }
 
             if (selectedTimeFrame.value == "daily") {
-                wins = parseFloat(element[amountCase.value + 'Wins']).toFixed(2)
-                loss = parseFloat(-element[amountCase.value + 'Loss']).toFixed(2)
-                //console.log("wins " + wins + " and loss " + loss)
-                profitFactor = loss != 0 ? (wins / loss) : 0
+                wins = Number(element[amountCase.value + 'Wins']) || 0
+                loss = Math.abs(Number(element[amountCase.value + 'Loss']) || 0)
+                // loss=0 + wins>0 → PF undefiniert → null (ECharts zeigt Luecke).
+                // 0 waere irrefuehrend (sieht wie schlechtester PF aus).
+                profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
                 chartXAxis.push(useChartFormat(key))
                 pushingChartData()
             }
@@ -213,9 +214,7 @@ export function useLineChart(param) { //chartID, chartDataGross, chartDataNet, c
                 }
                 if (dayjs.unix(key).isoWeek() != weekOfYear) {
                     //When week changes, we create values proceeds and push both chart datas
-                    if (loss != 0) {
-                        profitFactor = wins / loss
-                    }
+                    profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
                     pushingChartData()
 
                     //New week, new proceeds
@@ -229,9 +228,7 @@ export function useLineChart(param) { //chartID, chartDataGross, chartDataNet, c
                 }
                 if (i == keys.length) {
                     //Last key. We wrap up.
-                    if (loss != 0) {
-                        profitFactor = wins / loss
-                    }
+                    profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
                     pushingChartData()
                     //console.log("Last element")
                 }
@@ -253,7 +250,7 @@ export function useLineChart(param) { //chartID, chartDataGross, chartDataNet, c
                 }
                 if (dayjs.unix(key).month() != monthOfYear) {
                     //When week changes, we create values proceeds and push both chart datas
-                    profitFactor = wins / loss
+                    profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
                     pushingChartData()
 
                     //New month, new proceeds
@@ -267,7 +264,7 @@ export function useLineChart(param) { //chartID, chartDataGross, chartDataNet, c
                 }
                 if (i == keys.length) {
                     //Last key. We wrap up.
-                    profitFactor = wins / loss
+                    profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
                     pushingChartData()
                 }
             }
@@ -818,13 +815,9 @@ export function useBarChart(param1) {
 
             if (selectedTimeFrame.value == "daily") {
                 if (selectedRatio.value == "profitFactor") {
-                    wins = parseFloat(element[amountCase.value + 'Wins']).toFixed(2)
-                    loss = parseFloat(-element[amountCase.value + 'Loss']).toFixed(2)
-                    //console.log("wins " + wins + " and loss " + loss)
-                    if (loss != 0) {
-                        profitFactor = wins / loss
-                        //console.log(" -> profitFactor "+profitFactor)
-                    }
+                    wins = Number(element[amountCase.value + 'Wins']) || 0
+                    loss = Math.abs(Number(element[amountCase.value + 'Loss']) || 0)
+                    profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
                 }
                 if (selectedRatio.value == "appt" || selectedRatio.value == "apps") {
                     proceeds = element[amountCase.value + 'Proceeds']
@@ -883,9 +876,7 @@ export function useBarChart(param1) {
                 if (dayjs.unix(key).isoWeek() != weekOfYear) {
                     //When week changes, we create values proceeds and push both chart datas
                     if (selectedRatio.value == "profitFactor") {
-                        if (loss != 0) {
-                            profitFactor = wins / loss
-                        }
+                        profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
                     }
 
                     if (selectedRatio.value == "appt" || selectedRatio.value == "apps") {
@@ -931,9 +922,7 @@ export function useBarChart(param1) {
                     //Last key. We wrap up.
 
                     if (selectedRatio.value == "profitFactor") {
-                        if (loss != 0) {
-                            profitFactor = wins / loss
-                        }
+                        profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
                     }
 
                     if (selectedRatio.value == "appt" || selectedRatio.value == "apps") {
@@ -990,7 +979,7 @@ export function useBarChart(param1) {
                     //When week changes, we create values proceeds and push both chart datas
                     if (selectedRatio.value == "profitFactor") {
                         //When week changes, we create values proceeds and push both chart datas
-                        profitFactor = loss ? (wins / loss) : 0
+                        profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
 
                     }
 
@@ -1039,7 +1028,7 @@ export function useBarChart(param1) {
                     }
 
                     if (selectedRatio.value == "profitFactor") {
-                        profitFactor = loss ? (wins / loss) : 0
+                        profitFactor = loss > 0 ? (wins / loss) : (wins > 0 ? null : 0)
                     }
 
                     probWins = sumTrades ? (sumWinsCount / sumTrades) : 0
