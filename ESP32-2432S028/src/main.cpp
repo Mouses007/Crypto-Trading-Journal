@@ -32,7 +32,7 @@ XPT2046_Touchscreen ts(TOUCH_CS_PIN, TOUCH_IRQ_PIN);
 #define WIFI_TIMEOUT_MS     12000
 #define DISPLAY_ROTATION    3
 #define TFT_BL_PIN          21        // Backlight-Pin ESP32-2432S028 (CYD)
-#define FW_VERSION          "2.8.4-CYD"
+#define FW_VERSION          "2.8.5-CYD"
 
 // ── Farben RGB565 — Journal-Farbschema (ILI9341, korrektes Gamma) ────────
 #define COLOR_BG         0x0000   // #000000
@@ -99,6 +99,9 @@ void enterLightSleep() {
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   gpio_hold_dis((gpio_num_t)TFT_BL_PIN);
   Serial.printf("[PWR] Wake from Light Sleep — cause=%d (7=GPIO, 4=Timer)\n", cause);
+
+  // LEDC nach Sleep neu attachen — gpio_hold + Sleep können den Pin-Mux verlieren
+  backlightInit();
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(cfgSSID.c_str(), cfgPass.c_str());
@@ -889,13 +892,15 @@ void setup() {
   Serial.println("[BOOT] Start");
 
   // ── Display initialisieren ──────────────────────
-  Serial.println("[BOOT] Backlight LEDC init");
-  backlightInit();
+  // WICHTIG: tft.init() ZUERST — TFT_eSPI macht intern digitalWrite(TFT_BL, HIGH)
+  // wegen des TFT_BL=21 Build-Flags. Das zerstört eine vorherige LEDC-Mux-Konfig.
   Serial.println("[BOOT] tft.init()");
   tft.init();
   tft.setRotation(DISPLAY_ROTATION);
   tft.invertDisplay(1);   // Micro-USB CYD braucht Invert
   tft.fillScreen(COLOR_BG);
+  Serial.println("[BOOT] Backlight LEDC init (nach tft.init)");
+  backlightInit();   // jetzt re-attacht LEDC den Pin sicher
 
   // ── Touch init auf separatem HSPI-Bus ───────────
   touchSPI.begin(TOUCH_SCK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS_PIN);
