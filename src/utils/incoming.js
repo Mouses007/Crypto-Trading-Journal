@@ -309,15 +309,31 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
     const broker = selectedBroker.value || 'bitunix'
     const isBitget = broker === 'bitget'
 
-    // Bitunix: realizedPNL, fee, funding; Bitget: pnl, openFee, closeFee, totalFunding
-    const grossPL = isBitget
-        ? parseFloat(histPos.pnl || 0)
-        : parseFloat(histPos.realizedPNL || 0)
-    // Funding-Vorzeichen beibehalten (wie in quickImport.js):
-    // positiv = bezahlt, negativ = erhalten → reduziert Gesamtgebühren
-    const fee = isBitget
-        ? Math.abs(parseFloat(histPos.openFee || 0)) + Math.abs(parseFloat(histPos.closeFee || 0)) + parseFloat(histPos.totalFunding || 0)
-        : Math.abs(parseFloat(histPos.fee || 0)) + parseFloat(histPos.funding || 0)
+    // PnL- und Fee-Logik MUSS identisch zu quickImport.js sein, sonst weichen
+    // live-importierte Trades von CSV-/manuell-importierten ab und der
+    // Dashboard-Kontostand stimmt nicht mehr mit dem Broker-Wallet ueberein.
+    //
+    // Bitunix:  realizedPNL ist bereits NETTO (nach Trading-Fee).
+    //           gross = realizedPNL + tradingFee, fee = tradingFee + funding (signed)
+    // Bitget:   pnl ist BRUTTO. fee = openFee + closeFee + funding (signed),
+    //           netPL bevorzugt netProfit, sonst pnl - fee
+    let grossPL, fee, tradingFee, fundingFee, netPL
+    if (isBitget) {
+        grossPL = parseFloat(histPos.pnl || 0)
+        const openFee = Math.abs(parseFloat(histPos.openFee || 0))
+        const closeFee = Math.abs(parseFloat(histPos.closeFee || 0))
+        tradingFee = openFee + closeFee
+        fundingFee = parseFloat(histPos.totalFunding || 0)  // Vorzeichen beibehalten
+        fee = tradingFee + fundingFee
+        netPL = parseFloat(histPos.netProfit || 0) || (grossPL - fee)
+    } else {
+        const realizedPNL = parseFloat(histPos.realizedPNL || 0)
+        tradingFee = Math.abs(parseFloat(histPos.fee || 0))
+        fundingFee = parseFloat(histPos.funding || 0)  // Vorzeichen beibehalten
+        grossPL = realizedPNL + tradingFee
+        fee = tradingFee + fundingFee
+        netPL = grossPL - fee  // = realizedPNL - fundingFee
+    }
     // Bitunix: mtime/ctime; Bitget: uTime/cTime
     const closeTime = parseInt(histPos.mtime || histPos.uTime || histPos.ctime || histPos.cTime)
     const openTime = parseInt(histPos.ctime || histPos.cTime)
@@ -326,9 +342,6 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
     // Bitunix: side LONG/SHORT/BUY/SELL; Bitget: holdSide long/short
     const rawSide = histPos.side || (histPos.holdSide || '').toUpperCase() || ''
     const side = (rawSide === 'LONG' || rawSide === 'BUY') ? 'B' : 'SS'
-    const netPL = isBitget
-        ? (parseFloat(histPos.netProfit || 0) || (grossPL - fee))
-        : (grossPL - fee)
     const isGrossWin = grossPL > 0
     const isNetWin = netPL > 0
     const quantity = parseFloat(histPos.maxQty || histPos.closeTotalPos || histPos.openTotalPos || 1)
@@ -356,6 +369,8 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
         grossProceeds: grossPL,
         netProceeds: netPL,
         commission: fee,
+        tradingFee: tradingFee || 0,
+        fundingFee: fundingFee || 0,
         sec: 0, taf: 0, nscc: 0, nasdaq: 0,
         grossSharePL: grossPL,
         netSharePL: netPL,
