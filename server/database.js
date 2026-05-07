@@ -691,6 +691,7 @@ async function runMigrations(knex, client) {
     // stored as grossProceeds, then fees were subtracted again for netProceeds.
     // Fix: grossProceeds = old_grossProceeds + commission, netProceeds = old_grossProceeds
     await addColumnIfNotExists('settings', 'feeFixMigrated', (t) => t.integer('feeFixMigrated').defaultTo(0))
+    await addColumnIfNotExists('settings', 'feeFixV297Migrated', (t) => t.integer('feeFixV297Migrated').defaultTo(0))
     try {
         const feeFixRow = await knex('settings').select('feeFixMigrated').where('id', 1).first()
         if (feeFixRow && !feeFixRow.feeFixMigrated) {
@@ -777,5 +778,101 @@ async function runMigrations(knex, client) {
         }
     } catch (e) {
         console.error(' -> Fee-Fix migration error:', e.message)
+    }
+
+    // ==================== FIX: Duplicate Trades (Race in incoming.js) ====================
+    // createTradeFromClosedPosition wurde durch Race zwischen syncPositionsWithDb und
+    // fetchRecentlyClosed teils zweimal pro positionId ausgeführt → Duplikat im trades[]
+    // eines Tages. Idempotenz-Guard ist in v2.9.8 ergänzt; bestehende Duplikate werden
+    // hier einmalig dedupliziert (nach trade.id). pAndL/blotter werden neu berechnet.
+    await addColumnIfNotExists('settings', 'dupTradeFixV298Migrated', (t) => t.integer('dupTradeFixV298Migrated').defaultTo(0))
+    try {
+        const dupRow = await knex('settings').select('dupTradeFixV298Migrated').where('id', 1).first()
+        if (dupRow && !dupRow.dupTradeFixV298Migrated) {
+            const allRows = await knex('trades')
+            let dedupedDays = 0
+            let removedTrades = 0
+            for (const row of allRows) {
+                let tradesArr = []
+                let execsArr = []
+                let pAndLObj = {}
+                let blotterArr = []
+                try { tradesArr = JSON.parse(row.trades || '[]') } catch (e) { continue }
+                try { execsArr = JSON.parse(row.executions || '[]') } catch (e) { execsArr = [] }
+                try { pAndLObj = JSON.parse(row.pAndL || '{}') } catch (e) { pAndLObj = {} }
+                try { blotterArr = JSON.parse(row.blotter || '[]') } catch (e) { blotterArr = [] }
+
+                if (!Array.isArray(tradesArr) || tradesArr.length < 2) continue
+
+                const seen = new Set()
+                const dedupTrades = []
+                for (const t of tradesArr) {
+                    const key = t && t.id ? String(t.id) : JSON.stringify(t)
+                    if (seen.has(key)) { removedTrades++; continue }
+                    seen.add(key)
+                    dedupTrades.push(t)
+                }
+                if (dedupTrades.length === tradesArr.length) continue
+
+                const seenExec = new Set()
+                const dedupExecs = []
+                for (const e of (Array.isArray(execsArr) ? execsArr : [])) {
+                    const key = e && e.id ? String(e.id) : JSON.stringify(e)
+                    if (seenExec.has(key)) continue
+                    seenExec.add(key)
+                    dedupExecs.push(e)
+                }
+
+                // Rebuild blotter
+                const blotterMap = {}
+                for (const t of dedupTrades) {
+                    if (!blotterMap[t.symbol]) {
+                        blotterMap[t.symbol] = { symbol: t.symbol, grossProceeds: 0, netProceeds: 0, fees: 0, grossWinsCount: 0, grossLossCount: 0, trades: 0 }
+                    }
+                    const b = blotterMap[t.symbol]
+                    b.grossProceeds += t.grossProceeds || 0
+                    b.netProceeds += t.netProceeds || 0
+                    b.fees += t.commission || 0
+                    b.grossWinsCount += t.grossWinsCount || 0
+                    b.grossLossCount += t.grossLossCount || 0
+                    b.trades += 1
+                }
+
+                // Rebuild pAndL
+                let gp = 0, np = 0, totalFees = 0, gwc = 0, glc = 0, nwc = 0, nlc = 0, tc = 0
+                for (const t of dedupTrades) {
+                    gp += t.grossProceeds || 0
+                    np += t.netProceeds || 0
+                    totalFees += t.commission || 0
+                    gwc += t.grossWinsCount || 0
+                    glc += t.grossLossCount || 0
+                    nwc += t.netWinsCount || 0
+                    nlc += t.netLossCount || 0
+                    tc += 1
+                }
+                pAndLObj.grossProceeds = gp
+                pAndLObj.netProceeds = np
+                pAndLObj.fees = totalFees
+                pAndLObj.grossWinsCount = gwc
+                pAndLObj.grossLossCount = glc
+                if (pAndLObj.netWinsCount !== undefined) pAndLObj.netWinsCount = nwc
+                if (pAndLObj.netLossCount !== undefined) pAndLObj.netLossCount = nlc
+                pAndLObj.trades = tc
+
+                await knex('trades').where('id', row.id).update({
+                    trades: JSON.stringify(dedupTrades),
+                    executions: JSON.stringify(dedupExecs),
+                    blotter: JSON.stringify(Object.values(blotterMap)),
+                    pAndL: JSON.stringify(pAndLObj),
+                })
+                dedupedDays++
+            }
+            await knex('settings').where('id', 1).update({ dupTradeFixV298Migrated: 1 })
+            if (removedTrades > 0) {
+                console.log(` -> Duplicate-Trade-Fix: ${removedTrades} Duplikate aus ${dedupedDays} Tagen entfernt`)
+            }
+        }
+    } catch (e) {
+        console.error(' -> Duplicate-Trade-Fix migration error:', e.message)
     }
 }

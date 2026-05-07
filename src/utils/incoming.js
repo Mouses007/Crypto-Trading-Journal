@@ -409,6 +409,18 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
         const existingTrades = Array.isArray(existingDay.trades) ? existingDay.trades : []
         const existingExecs = Array.isArray(existingDay.executions) ? existingDay.executions : []
 
+        // Idempotency-Guard: positionId darf nicht doppelt im Tag landen.
+        // Race-Bedingung zwischen syncPositionsWithDb→handleClosedPositions
+        // und fetchRecentlyClosed kann sonst denselben just-geschlossenen
+        // Trade zweimal anhängen (Duplikat → falscher Tageskontostand).
+        const posIdSuffix = '_' + histPos.positionId
+        const alreadyPresent = existingTrades.some(t => t && t.id && String(t.id).endsWith(posIdSuffix))
+            || existingExecs.some(e => e && e.id && String(e.id).endsWith(posIdSuffix))
+        if (alreadyPresent) {
+            console.log(` -> Trade für positionId ${histPos.positionId} bereits vorhanden — Duplikat verhindert`)
+            return
+        }
+
         existingTrades.push(tradeObj)
         existingExecs.push(execution)
 

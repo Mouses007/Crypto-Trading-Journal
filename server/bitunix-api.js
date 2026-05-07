@@ -225,6 +225,159 @@ export function setupBitunixRoutes(app) {
         }
     })
 
+    // ============================================================
+    // Backfill: Fix double-counted trading fees on existing Bitunix trades
+    //
+    // Hintergrund: Vor v2.9.7 hat createTradeFromClosedPosition (Live-Scan)
+    // realizedPNL faelschlich als gross interpretiert und tradingFee nochmal
+    // abgezogen. Dieser Endpoint laedt die echte Bitunix-History und korrigiert
+    // jeden DB-Trade per positionId, sodass:
+    //   gross = realizedPNL + |fee|
+    //   net   = realizedPNL - funding   (= gross - (|fee| + funding))
+    // Tagesaggregate (pAndL) werden aus den korrigierten Einzeltrades neu berechnet.
+    // ============================================================
+    app.post('/api/bitunix/fix-double-fees', async (req, res) => {
+        try {
+            const config = await getDecryptedConfig()
+            if (!config?.apiKey || !config?.secretKey) {
+                return res.status(400).json({ error: 'API-Schluessel nicht konfiguriert.' })
+            }
+            const knex = getKnex()
+
+            // 1) Komplette Bitunix-History laden (paginiert)
+            const bitMap = new Map()
+            let skip = 0
+            for (let page = 0; page < 60; page++) { // safety cap = 6000 positions
+                const r = await getHistoryPositions(config.apiKey, config.secretKey, { skip, limit: 100 })
+                if (r.code !== 0) {
+                    return res.status(502).json({ error: 'Bitunix API: ' + (r.msg || 'unknown') })
+                }
+                const list = r.data?.positionList || []
+                for (const p of list) bitMap.set(String(p.positionId), p)
+                if (list.length < 100) break
+                skip += 100
+            }
+            console.log(` -> Fee-Fix v2.9.7: ${bitMap.size} Bitunix history positions geladen`)
+
+            // 2) DB-Trades durchgehen, matchen, korrigieren
+            const dayRows = await knex('trades').where('broker', 'bitunix')
+            let daysFixed = 0
+            let tradesFixed = 0
+            let totalNetDelta = 0
+            let unmatched = 0
+
+            for (const row of dayRows) {
+                let tradesArr = []
+                let pAndLObj = {}
+                try { tradesArr = typeof row.trades === 'string' ? JSON.parse(row.trades || '[]') : (row.trades || []) } catch (e) { continue }
+                try { pAndLObj = typeof row.pAndL === 'string' ? JSON.parse(row.pAndL || '{}') : (row.pAndL || {}) } catch (e) { pAndLObj = {} }
+
+                let dayChanged = false
+                for (const t of tradesArr) {
+                    const idStr = String(t.id || '')
+                    const parts = idStr.split('_')
+                    const posId = parts[parts.length - 1]
+                    const b = bitMap.get(posId)
+                    if (!b) { unmatched++; continue }
+
+                    const realizedPNL = parseFloat(b.realizedPNL || 0)
+                    const tradingFee = Math.abs(parseFloat(b.fee || 0))
+                    const fundingFee = parseFloat(b.funding || 0)
+                    const fee = tradingFee + fundingFee
+                    const newGross = realizedPNL + tradingFee
+                    const newNet = newGross - fee  // = realizedPNL - funding
+                    const oldNet = parseFloat(t.netProceeds || 0)
+                    const delta = newNet - oldNet
+                    if (Math.abs(delta) < 0.0001) continue
+
+                    const isGrossWin = newGross > 0
+                    const isNetWin = newNet > 0
+                    t.grossProceeds = newGross
+                    t.netProceeds = newNet
+                    t.commission = fee
+                    t.tradingFee = tradingFee
+                    t.fundingFee = fundingFee
+                    t.grossSharePL = newGross
+                    t.netSharePL = newNet
+                    t.grossWins = isGrossWin ? newGross : 0
+                    t.grossLoss = isGrossWin ? 0 : newGross
+                    t.netWins = isNetWin ? newNet : 0
+                    t.netLoss = isNetWin ? 0 : newNet
+                    t.grossWinsCount = isGrossWin ? 1 : 0
+                    t.grossLossCount = isGrossWin ? 0 : 1
+                    t.netWinsCount = isNetWin ? 1 : 0
+                    t.netLossCount = isNetWin ? 0 : 1
+                    t.grossSharePLWins = isGrossWin ? newGross : 0
+                    t.grossSharePLLoss = isGrossWin ? 0 : newGross
+                    t.netSharePLWins = isNetWin ? newNet : 0
+                    t.netSharePLLoss = isNetWin ? 0 : newNet
+                    t.highGrossSharePLWin = isGrossWin ? newGross : 0
+                    t.highGrossSharePLLoss = isGrossWin ? 0 : newGross
+                    t.highNetSharePLWin = isNetWin ? newNet : 0
+                    t.highNetSharePLLoss = isNetWin ? 0 : newNet
+
+                    totalNetDelta += delta
+                    tradesFixed++
+                    dayChanged = true
+                }
+
+                if (dayChanged) {
+                    // pAndL Tagesaggregate aus korrigierten Trades neu berechnen
+                    let gp = 0, np = 0, gw = 0, gl = 0, nw = 0, nl = 0
+                    let gwc = 0, glc = 0, nwc = 0, nlc = 0, fees = 0, tFee = 0, fFee = 0
+                    for (const t of tradesArr) {
+                        gp += t.grossProceeds || 0
+                        np += t.netProceeds || 0
+                        fees += t.commission || 0
+                        tFee += t.tradingFee || 0
+                        fFee += t.fundingFee || 0
+                        if ((t.grossProceeds || 0) > 0) { gw += t.grossProceeds; gwc++ }
+                        else if ((t.grossProceeds || 0) < 0) { gl += t.grossProceeds; glc++ }
+                        if ((t.netProceeds || 0) > 0) { nw += t.netProceeds; nwc++ }
+                        else if ((t.netProceeds || 0) < 0) { nl += t.netProceeds; nlc++ }
+                    }
+                    pAndLObj.grossProceeds = gp
+                    pAndLObj.netProceeds = np
+                    pAndLObj.fees = fees
+                    pAndLObj.commission = fees
+                    pAndLObj.tradingFees = tFee
+                    pAndLObj.fundingFees = fFee
+                    pAndLObj.grossWins = gw
+                    pAndLObj.grossLoss = gl
+                    pAndLObj.netWins = nw
+                    pAndLObj.netLoss = nl
+                    pAndLObj.grossWinsCount = gwc
+                    pAndLObj.grossLossCount = glc
+                    pAndLObj.netWinsCount = nwc
+                    pAndLObj.netLossCount = nlc
+                    if (pAndLObj.grossSharePL !== undefined) pAndLObj.grossSharePL = gp
+                    if (pAndLObj.netSharePL !== undefined) pAndLObj.netSharePL = np
+
+                    await knex('trades').where('id', row.id).update({
+                        trades: JSON.stringify(tradesArr),
+                        pAndL: JSON.stringify(pAndLObj)
+                    })
+                    daysFixed++
+                }
+            }
+
+            // 3) Settings-Flag setzen
+            await knex('settings').where('id', 1).update({ feeFixV297Migrated: 1 }).catch(() => {})
+
+            res.json({
+                ok: true,
+                bitunixHistoryCount: bitMap.size,
+                daysFixed,
+                tradesFixed,
+                totalNetDelta: Math.round(totalNetDelta * 10000) / 10000,
+                unmatched
+            })
+        } catch (error) {
+            console.error(' -> Fee-Fix v2.9.7 error:', error)
+            res.status(500).json({ error: error.message })
+        }
+    })
+
     // Test Bitunix API connection
     app.post('/api/bitunix/test', async (req, res) => {
         try {
