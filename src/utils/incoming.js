@@ -313,8 +313,12 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
     // live-importierte Trades von CSV-/manuell-importierten ab und der
     // Dashboard-Kontostand stimmt nicht mehr mit dem Broker-Wallet ueberein.
     //
-    // Bitunix:  realizedPNL ist bereits NETTO (nach Trading-Fee).
-    //           gross = realizedPNL + tradingFee, fee = tradingFee + funding (signed)
+    // Bitunix:  API `realizedPNL` ist bereits der FINALE Wallet-Delta
+    //           (inkl. Trading-Fee UND Funding — wie Bitunix-UI "Realisierter G/V"
+    //           anzeigt). Verifiziert via /futures/position/get_history_positions.
+    //           → netPL = realizedPNL (kein zusaetzliches Funding abziehen!)
+    //           → grossPL = realizedPNL + tradingFee − fundingFee
+    //           → commission = tradingFee (Funding separat in fundingFee tracken)
     // Bitget:   pnl ist BRUTTO. fee = openFee + closeFee + funding (signed),
     //           netPL bevorzugt netProfit, sonst pnl - fee
     let grossPL, fee, tradingFee, fundingFee, netPL
@@ -330,9 +334,9 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
         const realizedPNL = parseFloat(histPos.realizedPNL || 0)
         tradingFee = Math.abs(parseFloat(histPos.fee || 0))
         fundingFee = parseFloat(histPos.funding || 0)  // Vorzeichen beibehalten
-        grossPL = realizedPNL + tradingFee
-        fee = tradingFee + fundingFee
-        netPL = grossPL - fee  // = realizedPNL - fundingFee
+        netPL = realizedPNL                                       // Wallet-Delta direkt
+        grossPL = realizedPNL + tradingFee - fundingFee           // reine Trade-PnL
+        fee = tradingFee                                          // commission = trading fee
     }
     // Bitunix: mtime/ctime; Bitget: uTime/cTime
     const closeTime = parseInt(histPos.mtime || histPos.uTime || histPos.ctime || histPos.cTime)

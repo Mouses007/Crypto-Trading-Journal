@@ -267,20 +267,24 @@ export async function useQuickApiImport(explicitBroker) {
  * Create a trade object from a Bitunix API position.
  */
 function createBitunixTradeObj(pos, i) {
-    // Bitunix API: realizedPNL ist bereits NETTO (nach Handelsgebühren).
-    // Brutto muss rekonstruiert werden: grossPL = realizedPNL + tradingFee
+    // Bitunix API: `realizedPNL` ist bereits der FINALE Wallet-Delta
+    // (inkl. Trading-Fee UND Funding — verifiziert gegen Bitunix-UI
+    // "Realisierter Gewinn/Verlust"). Daher:
+    //   netPL    = realizedPNL                               (Wallet-Delta)
+    //   grossPL  = realizedPNL + tradingFee − fundingFee     (reine Trade-PnL)
+    //   commission = tradingFee  (Funding separat in fundingFee)
     const realizedPNL = parseFloat(pos.realizedPNL || 0)
     const tradingFee = Math.abs(parseFloat(pos.fee || 0))
-    const fundingFee = parseFloat(pos.funding || 0)  // Vorzeichen beibehalten: positiv = bezahlt, negativ = erhalten
-    const grossPL = realizedPNL + tradingFee
-    const fee = tradingFee + fundingFee
+    const fundingFee = parseFloat(pos.funding || 0)  // signed: + erhalten, − bezahlt
+    const netPL = realizedPNL
+    const grossPL = realizedPNL + tradingFee - fundingFee
+    const fee = tradingFee
     const closeTime = parseInt(pos.mtime || pos.ctime)
     const openTime = parseInt(pos.ctime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
 
     // Bitunix API: Pending uses 'BUY'/'SELL', History uses 'LONG'/'SHORT' — accept both
     const side = (pos.side === 'LONG' || pos.side === 'BUY') ? 'B' : 'SS'
-    const netPL = grossPL - fee  // = realizedPNL - fundingFee (korrekt)
     const isGrossWin = grossPL > 0
     const isNetWin = netPL > 0
     const quantity = parseFloat(pos.maxQty || 1)

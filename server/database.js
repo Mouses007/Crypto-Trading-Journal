@@ -875,4 +875,125 @@ async function runMigrations(knex, client) {
     } catch (e) {
         console.error(' -> Duplicate-Trade-Fix migration error:', e.message)
     }
+
+    // ==================== FIX: Bitunix Funding-Vorzeichen (v2.9.9) ====================
+    // v2.9.7 nahm an, Bitunix `realizedPNL` sei brutto-vor-Funding und zog
+    // Funding nochmal ab. Korrektur (verifiziert gegen Bitunix-UI
+    // "Realisierter Gewinn/Verlust"): `realizedPNL` ist BEREITS der Wallet-Delta
+    // inkl. Trading-Fee UND Funding.
+    //   oldNet  = realizedPNL − fundingFee          (falsch)
+    //   newNet  = realizedPNL = oldNet + fundingFee (korrekt)
+    //   oldGross = realizedPNL + tradingFee
+    //   newGross = realizedPNL + tradingFee − fundingFee = oldGross − fundingFee
+    //   commission alt = tradingFee + fundingFee  → neu = tradingFee
+    // Betrifft nur live-/API-importierte Bitunix-Trades (haben `tradingFee` und
+    // `fundingFee` Felder); CSV-Pfad nicht betroffen (keine Funding-Daten).
+    await addColumnIfNotExists('settings', 'fundingFixV299Migrated', (t) => t.integer('fundingFixV299Migrated').defaultTo(0))
+    try {
+        const fundRow = await knex('settings').select('fundingFixV299Migrated').where('id', 1).first()
+        if (fundRow && !fundRow.fundingFixV299Migrated) {
+            const rows = await knex('trades').where('broker', 'bitunix')
+            let fixedDays = 0
+            let fixedTrades = 0
+            for (const row of rows) {
+                let tradesArr = []
+                let pAndLObj = {}
+                let blotterArr = []
+                try { tradesArr = JSON.parse(row.trades || '[]') } catch (e) { continue }
+                try { pAndLObj = JSON.parse(row.pAndL || '{}') } catch (e) { pAndLObj = {} }
+                try { blotterArr = JSON.parse(row.blotter || '[]') } catch (e) { blotterArr = [] }
+                if (!Array.isArray(tradesArr) || tradesArr.length === 0) continue
+
+                let dayChanged = false
+                for (const t of tradesArr) {
+                    const fund = Number(t.fundingFee)
+                    const trFee = Number(t.tradingFee)
+                    // Nur live/API-Trades (haben tradingFee+fundingFee).
+                    // Falls fundingFee = 0, ist net schon korrekt → skippen.
+                    if (!Number.isFinite(fund) || fund === 0) continue
+                    if (!Number.isFinite(trFee)) continue
+
+                    const oldNet = Number(t.netProceeds) || 0
+                    const oldGross = Number(t.grossProceeds) || 0
+                    const newNet = oldNet + fund        // realizedPNL
+                    const newGross = oldGross - fund    // gross − fundingFee
+
+                    const isGrossWin = newGross > 0
+                    const isNetWin = newNet > 0
+
+                    t.netProceeds = newNet
+                    t.grossProceeds = newGross
+                    t.commission = trFee                // commission ohne Funding
+                    t.netSharePL = newNet
+                    t.grossSharePL = newGross
+                    t.grossWins = isGrossWin ? newGross : 0
+                    t.grossLoss = isGrossWin ? 0 : newGross
+                    t.netWins = isNetWin ? newNet : 0
+                    t.netLoss = isNetWin ? 0 : newNet
+                    t.grossWinsCount = isGrossWin ? 1 : 0
+                    t.grossLossCount = isGrossWin ? 0 : 1
+                    t.netWinsCount = isNetWin ? 1 : 0
+                    t.netLossCount = isNetWin ? 0 : 1
+                    t.grossSharePLWins = isGrossWin ? newGross : 0
+                    t.grossSharePLLoss = isGrossWin ? 0 : newGross
+                    t.netSharePLWins = isNetWin ? newNet : 0
+                    t.netSharePLLoss = isNetWin ? 0 : newNet
+                    t.highGrossSharePLWin = isGrossWin ? newGross : 0
+                    t.highGrossSharePLLoss = isGrossWin ? 0 : newGross
+                    t.highNetSharePLWin = isNetWin ? newNet : 0
+                    t.highNetSharePLLoss = isNetWin ? 0 : newNet
+                    dayChanged = true
+                    fixedTrades++
+                }
+
+                if (!dayChanged) continue
+
+                // Tages-pAndL und blotter aus korrigierten Trades neu aggregieren
+                const blotterMap = {}
+                let gp = 0, np = 0, totalFees = 0, gwc = 0, glc = 0, nwc = 0, nlc = 0, tc = 0
+                for (const t of tradesArr) {
+                    gp += Number(t.grossProceeds) || 0
+                    np += Number(t.netProceeds) || 0
+                    totalFees += Number(t.commission) || 0
+                    gwc += Number(t.grossWinsCount) || 0
+                    glc += Number(t.grossLossCount) || 0
+                    nwc += Number(t.netWinsCount) || 0
+                    nlc += Number(t.netLossCount) || 0
+                    tc += 1
+                    if (!blotterMap[t.symbol]) {
+                        blotterMap[t.symbol] = { symbol: t.symbol, grossProceeds: 0, netProceeds: 0, fees: 0, grossWinsCount: 0, grossLossCount: 0, trades: 0 }
+                    }
+                    const b = blotterMap[t.symbol]
+                    b.grossProceeds += Number(t.grossProceeds) || 0
+                    b.netProceeds += Number(t.netProceeds) || 0
+                    b.fees += Number(t.commission) || 0
+                    b.grossWinsCount += Number(t.grossWinsCount) || 0
+                    b.grossLossCount += Number(t.grossLossCount) || 0
+                    b.trades += 1
+                }
+                pAndLObj.grossProceeds = gp
+                pAndLObj.netProceeds = np
+                pAndLObj.fees = totalFees
+                pAndLObj.grossWinsCount = gwc
+                pAndLObj.grossLossCount = glc
+                if (pAndLObj.netWinsCount !== undefined) pAndLObj.netWinsCount = nwc
+                if (pAndLObj.netLossCount !== undefined) pAndLObj.netLossCount = nlc
+                if (pAndLObj.grossSharePL !== undefined) pAndLObj.grossSharePL = gp
+                if (pAndLObj.netSharePL !== undefined) pAndLObj.netSharePL = np
+
+                await knex('trades').where('id', row.id).update({
+                    trades: JSON.stringify(tradesArr),
+                    pAndL: JSON.stringify(pAndLObj),
+                    blotter: JSON.stringify(Object.values(blotterMap)),
+                })
+                fixedDays++
+            }
+            await knex('settings').where('id', 1).update({ fundingFixV299Migrated: 1 })
+            if (fixedTrades > 0) {
+                console.log(` -> Funding-Fix v2.9.9: ${fixedTrades} Trades in ${fixedDays} Tagen korrigiert`)
+            }
+        }
+    } catch (e) {
+        console.error(' -> Funding-Fix v2.9.9 migration error:', e.message)
+    }
 }
