@@ -6,7 +6,7 @@ import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMoun
 import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBroker } from '../stores/filters.js'
 import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades, excursions } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
-import { allTimeNetPnL, allTimeVolume, last30dVolume, refreshAccountBalance, syncStartBalanceFromBroker } from '../stores/accountBalance.js'
+import { allTimeNetPnL, allTimeVolume, last30dVolume, displayBonus, refreshAccountBalance, syncStartBalanceFromBroker } from '../stores/accountBalance.js'
 import { incomingPositions } from '../stores/globals.js'
 import { useFetchOpenPositions } from '../utils/incoming.js'
 import { dbFind } from '../utils/db.js'
@@ -212,12 +212,16 @@ const accountBalance = computed(() => {
         start = currentUser.value?.startBalance || 0
     }
     if (!start) return null
-    // Current balance = start deposit + closed-trade net P&L + open positions' unrealized P&L
-    // (matches broker equity which includes unrealized PnL).
-    const current = start + allTimeNetPnL.value + openUnrealizedPnL.value
-    const pnl = current - start
-    const perf = start > 0 ? ((current / start) - 1) * 100 : 0
-    return { start, current, pnl, perf }
+    // Current balance = start deposit + closed-trade net P&L + open positions'
+    // unrealized P&L + Broker-Bonus. Der Bonus wird NUR hier auf die Anzeige
+    // addiert (nicht in startBalance), damit der angezeigte Kontostand 1:1 mit
+    // dem Wallet uebereinstimmt — interne Performance-Berechnungen
+    // (Drawdown, Equity-Curve, perf%) bleiben dagegen bonus-frei.
+    const bonus = displayBonus.value || 0
+    const current = start + allTimeNetPnL.value + openUnrealizedPnL.value + bonus
+    const pnl = current - start - bonus
+    const perf = start > 0 ? (((current - bonus) / start) - 1) * 100 : 0
+    return { start, current, pnl, perf, bonus }
 })
 
 // Trade-Typ Statistik (Scalptrade / Daytrade / Swingtrade)
@@ -474,6 +478,9 @@ onBeforeMount(async () => {
                                             <div class="dashInfoTitle mb-1">{{ t('dashboard.currentBalance') }}</div>
                                             <div class="fs-5" :class="accountBalance.perf >= 0 ? 'greenTrade' : 'redTrade'">
                                                 {{ accountBalance.perf >= 0 ? '+' : '' }}{{ accountBalance.perf.toFixed(1) }}%
+                                            </div>
+                                            <div v-if="accountBalance.bonus > 0" class="small text-muted mt-1" :title="t('dashboard.bonusHint') || 'Broker-Bonus in der Wallet enthalten, nicht in Performance-Kalkulation'">
+                                                inkl. {{ useTwoDecCurrencyFormat(accountBalance.bonus) }} Bonus
                                             </div>
                                         </div>
 

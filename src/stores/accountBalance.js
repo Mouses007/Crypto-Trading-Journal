@@ -43,6 +43,15 @@ export const allTimeVolume = computed(() => cache[getCurrentBroker()]?.totalVol 
 export const last30dVolume = computed(() => cache[getCurrentBroker()]?.vol30d ?? 0)
 export const accountBalanceLoading = computed(() => loading.value)
 
+/**
+ * Aktueller Futures-Bonus (Bitunix Promo-/Referral-Bonus), der im Broker-
+ * Wallet mitgezaehlt wird. Wird vom Dashboard-Kontostand-Display addiert,
+ * damit die angezeigte Zahl 1:1 mit dem Wallet uebereinstimmt. NICHT in
+ * startBalance/Equity-Curve/Drawdown einfliessen lassen — das wuerde die
+ * Performance-Statistik verfaelschen (Bonus ist keine echte Trading-Equity).
+ */
+export const displayBonus = computed(() => cache[getCurrentBroker()]?.bonus ?? 0)
+
 // Kleine Debounce-Map pro Broker, um konkurrierende Refreshes zu serialisieren
 const inflight = new Map()
 
@@ -92,7 +101,17 @@ export async function refreshAccountBalance({ broker, force = false } = {}) {
                     }
                 }
             }
-            cache[b] = { totalNet, totalVol, vol30d, ts: Date.now() }
+            // Bonus zusaetzlich vom Broker holen (best effort — kein Fehler
+            // wenn API gerade down ist, Bonus bleibt dann 0 bzw. Vorwert).
+            let bonus = cache[b]?.bonus ?? 0
+            try {
+                const resp = await axios.get(`/api/${b}/balance`)
+                if (resp.data?.ok && Number.isFinite(Number(resp.data.bonus))) {
+                    bonus = Number(resp.data.bonus)
+                }
+            } catch (_) { /* offline / kein API-Key → Bonus bleibt unveraendert */ }
+
+            cache[b] = { totalNet, totalVol, vol30d, bonus, ts: Date.now() }
         } finally {
             loading.value = false
             inflight.delete(b)
@@ -161,9 +180,13 @@ export async function syncStartBalanceFromBroker() {
 
         // Cache invalidieren + neu laden, damit Dashboard sofort den neuen
         // Wert zeigt (allTimeNetPnL ist abhaengig vom Cache, aber der
-        // angezeigte Kontostand = startBalance + allTimeNetPnL).
+        // angezeigte Kontostand = startBalance + allTimeNetPnL + bonus).
         invalidateAccountBalance(broker)
         await refreshAccountBalance({ broker, force: true })
+        // Sicherstellen, dass der eben frisch geholte Bonus auch im Cache
+        // landet (refreshAccountBalance macht einen eigenen Roundtrip, aber
+        // wir haben den Wert hier schon — gleiches Resultat).
+        if (cache[broker]) cache[broker].bonus = bonus
 
         console.log(` -> Sync ${broker}: API=${apiBalance.toFixed(2)} (Bonus ${bonus.toFixed(2)}), unreal=${unrealized.toFixed(2)}, P&L=${totalNet.toFixed(2)} → Start=${calculatedStart.toFixed(2)}`)
         return { ok: true, broker, start: calculatedStart, apiBalance, bonus, unrealized, totalNet }
