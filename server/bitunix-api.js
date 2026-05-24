@@ -706,9 +706,15 @@ export function setupBitunixRoutes(app) {
             const margin = parseFloat(account.margin || 0)
             const crossUnrealizedPNL = parseFloat(account.crossUnrealizedPNL || 0)
             const isolationUnrealizedPNL = parseFloat(account.isolationUnrealizedPNL || 0)
-            const balance = available + margin + crossUnrealizedPNL + isolationUnrealizedPNL
+            // Bitunix vergibt Futures-Boni (Promo/Referral), die in `available`
+            // mitgezaehlt werden, aber KEINE Trading-PnL sind. Wuerde der Bonus
+            // mit in die Start-Einzahlungs-Kalibrierung wandern, waere das
+            // Dashboard um den Bonusbetrag dauerhaft zu niedrig vs. Wallet.
+            // → Bonus separat ausweisen, balance-Feld zaehlt nur echtes Equity.
+            const bonus = parseFloat(account.bonus || 0)
+            const balance = available + margin + crossUnrealizedPNL + isolationUnrealizedPNL - bonus
 
-            res.json({ ok: true, balance, available, margin, crossUnrealizedPNL, isolationUnrealizedPNL })
+            res.json({ ok: true, balance, available, margin, crossUnrealizedPNL, isolationUnrealizedPNL, bonus })
         } catch (error) {
             console.error(' -> Bitunix balance error:', error.message)
             res.status(500).json({ error: error.message })

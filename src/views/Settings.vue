@@ -1050,7 +1050,8 @@ async function loadBalanceFromApi() {
         const calculatedStart = realizedEquity - totalNetPnL
         startBalance.value = Math.round(calculatedStart * 100) / 100
 
-        console.log(` -> ${broker}: API=${apiBalance.toFixed(2)}, unrealized=${unrealized.toFixed(2)}, realized=${realizedEquity.toFixed(2)}, P&L=${totalNetPnL.toFixed(2)}, Start=${calculatedStart.toFixed(2)}`)
+        const bonus = Number(response.data.bonus) || 0
+        console.log(` -> ${broker}: API=${apiBalance.toFixed(2)} (Bonus: ${bonus.toFixed(2)}), unrealized=${unrealized.toFixed(2)}, realized=${realizedEquity.toFixed(2)}, P&L=${totalNetPnL.toFixed(2)}, Start=${calculatedStart.toFixed(2)}`)
     } catch (error) {
         alert('Kontostand konnte nicht geladen werden: ' + (error.response?.data?.error || error.message))
     }
