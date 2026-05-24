@@ -121,6 +121,14 @@ const dashTabs = computed(() => [{
 ])
 amountCapital.value = amountCase.value ? amountCase.value.charAt(0).toUpperCase() + amountCase.value.slice(1) : ''
 
+// Kleines Label "(Brutto)" oder "(Netto)" zum Anhaengen an PnL-Karten-Titel,
+// damit der Nutzer auf einen Blick sieht, welche Datenbasis gerade aktiv ist.
+const grossNetBadge = computed(() => {
+    if (amountCase.value === 'gross') return ' (' + t('options.gross') + ')'
+    if (amountCase.value === 'net') return ' (' + t('options.net') + ')'
+    return ''
+})
+
 const ratioCompute = computed(() => {
     let ratio = {}
     if (localStorage.getItem('selectedRatio') == 'appt') {
@@ -524,7 +532,7 @@ onBeforeMount(async () => {
                                 <!-- ===== MITTLERE SPALTE: Kennzahlen ===== -->
                                 <div v-if="isVisible('metrics')" class="col-12 col-md-6 col-xl-4 mb-3 mb-xl-0">
                                     <div class="dailyCard h-100">
-                                        <h6>{{ t('dashboard.metrics') }}</h6>
+                                        <h6>{{ t('dashboard.metrics') }}<span class="grossNetBadge">{{ grossNetBadge }}</span></h6>
                                         <table class="stats-table w-100">
                                             <tbody>
                                                 <tr>
@@ -696,7 +704,7 @@ onBeforeMount(async () => {
                                 <!-- KUMULIERTER G/V -->
                                 <div v-if="isVisible('cumulativePnl')" class="col-12 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.cumulativePnlChart') }}
+                                        <h6>{{ t('dashboard.cumulativePnlChart') }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.cumulativePnlChartTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="lineBarChart1" class="chartClass"></div>
@@ -708,7 +716,7 @@ onBeforeMount(async () => {
                                     <div class="dailyCard">
                                         <h6>{{ ratioCompute.name }} <span
                                                 v-if="ratioCompute.shortName === 'APPT'">({{ ratioCompute.shortName
-                                                }})</span></h6>
+                                                }})</span><span class="grossNetBadge">{{ grossNetBadge }}</span></h6>
                                         <div v-bind:key="renderData" id="barChart1" class="chartClass"></div>
                                     </div>
                                 </div>
@@ -716,7 +724,7 @@ onBeforeMount(async () => {
                                 <!-- WIN LOSS CHART -->
                                 <div v-if="isVisible('winRate')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.winRate') }}
+                                        <h6>{{ t('dashboard.winRate') }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.winRateTooltip')"></i>
                                         </h6>
                                         <!--<div class="text-center" v-if="!dashboardChartsMounted">
@@ -750,7 +758,7 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY DAY OF WEEK -->
                                 <div v-if="isVisible('byWeekday')" class="col-12 col-md-6 col-xl-4 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.byWeekday', { metric: ratioCompute.shortName }) }}
+                                        <h6>{{ t('dashboard.byWeekday', { metric: ratioCompute.shortName }) }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byWeekdayTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="weekdayChart1" class="chartClass"></div>
@@ -760,7 +768,7 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY TIMEFRAME -->
                                 <div v-if="isVisible('byEntryTime')" class="col-12 col-md-6 col-xl-4 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.byEntryTime', { metric: ratioCompute.shortName }) }}
+                                        <h6>{{ t('dashboard.byEntryTime', { metric: ratioCompute.shortName }) }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byEntryTimeTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="entryTimeChart1" class="chartClass"></div>
@@ -770,7 +778,7 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY DURATION -->
                                 <div v-if="isVisible('byDuration')" class="col-12 col-md-6 col-xl-4 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.byDuration', { metric: ratioCompute.shortName }) }}
+                                        <h6>{{ t('dashboard.byDuration', { metric: ratioCompute.shortName }) }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byDurationTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="durationChart1" class="chartClass"></div>
@@ -781,7 +789,7 @@ onBeforeMount(async () => {
                                 <!-- HEATMAP: WEEKDAY × HOUR -->
                                 <div v-if="isVisible('heatmap')" class="col-12 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.heatmapTitle') }}
+                                        <h6>{{ t('dashboard.heatmapTitle') }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.heatmapTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="heatmapChart1" class="chartClass" style="height: 280px;"></div>
@@ -817,7 +825,7 @@ onBeforeMount(async () => {
                                 <!-- TRADING PERFORMANCE CHART -->
                                 <div v-if="isVisible('tradingPerformance')" class="col-12 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.tradingPerformance') }}
+                                        <h6>{{ t('dashboard.tradingPerformance') }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.tradingPerformanceTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="perfChart1" class="chartClass" style="height: 550px;"></div>
@@ -827,7 +835,7 @@ onBeforeMount(async () => {
                                 <!-- MFE ANALYSE: Verlust-Trades die im Plus waren -->
                                 <div v-if="isVisible('mfeAnalysis') && mfeAnalysisStats.lossTradesWithMfe > 0" class="col-12 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.mfeAnalysis') }}
+                                        <h6>{{ t('dashboard.mfeAnalysis') }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.mfeAnalysisTooltip')"></i>
                                         </h6>
 
@@ -899,7 +907,7 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY POSITION -->
                                 <div v-if="isVisible('byPosition')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.byPosition', { metric: ratioCompute.shortName }) }}
+                                        <h6>{{ t('dashboard.byPosition', { metric: ratioCompute.shortName }) }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byPositionTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="positionChart1" class="chartClass" style="height: 160px !important;"></div>
@@ -909,7 +917,7 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY TAGS -->
                                 <div v-if="isVisible('byStrategy')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.byStrategy', { metric: ratioCompute.shortName }) }}
+                                        <h6>{{ t('dashboard.byStrategy', { metric: ratioCompute.shortName }) }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.byStrategyTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="strategyChart1" class="chartClass" style="height: 160px !important;"></div>
@@ -919,7 +927,7 @@ onBeforeMount(async () => {
                                 <!-- TRADE-TYP STATISTIK -->
                                 <div class="col-12 mb-3" v-if="tradeTypeStats.length > 0 && isVisible('tradeTypeStats')">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.tradeTypeStats') }}
+                                        <h6>{{ t('dashboard.tradeTypeStats') }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.tradeTypeStatsTooltip')"></i>
                                         </h6>
                                         <div class="table-responsive">
@@ -968,7 +976,7 @@ onBeforeMount(async () => {
                                 <!-- STRATEGIE-TAG STATISTIK -->
                                 <div class="col-12 mb-3" v-if="strategyTagStats.length > 0 && isVisible('strategyTagStats')">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.strategyTagStats') }}
+                                        <h6>{{ t('dashboard.strategyTagStats') }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.strategyTagStatsTooltip')"></i>
                                         </h6>
                                         <div class="table-responsive">
@@ -1027,7 +1035,7 @@ onBeforeMount(async () => {
                                 <!-- GROUP BY SYMBOL -->
                                 <div v-if="isVisible('bySymbol')" class="col-12 col-xl-6 mb-3">
                                     <div class="dailyCard">
-                                        <h6>{{ t('dashboard.bySymbol', { metric: ratioCompute.shortName }) }}
+                                        <h6>{{ t('dashboard.bySymbol', { metric: ratioCompute.shortName }) }}<span class="grossNetBadge">{{ grossNetBadge }}</span>
                                             <i class="ps-1 uil uil-info-circle" data-bs-custom-class="tooltipLargeLeft" data-bs-toggle="tooltip" data-bs-html="true" :data-bs-title="t('dashboard.bySymbolTooltip')"></i>
                                         </h6>
                                         <div v-bind:key="renderData" id="symbolChart1" class="chartClass"></div>
@@ -1114,5 +1122,12 @@ onBeforeMount(async () => {
 .spinning {
     display: inline-block;
     animation: ctj-spin 1s linear infinite;
+}
+.grossNetBadge {
+    font-size: 0.72rem;
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+    font-weight: normal;
+    margin-left: 0.25rem;
+    letter-spacing: 0.02em;
 }
 </style>
