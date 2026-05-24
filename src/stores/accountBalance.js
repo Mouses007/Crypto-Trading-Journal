@@ -24,9 +24,11 @@
  *   - selectedBroker-Watcher (Broker-Wechsel)
  */
 import { ref, reactive, computed, watch } from 'vue'
+import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
-import { dbFind } from '../utils/db.js'
+import { dbFind, dbUpdateSettings } from '../utils/db.js'
 import { selectedBroker } from './filters.js'
+import { currentUser } from './globals.js'
 
 // Per-Broker-Cache: { bitunix: { totalNet, totalVol, vol30d, ts }, bitget: {...} }
 const cache = reactive({})
@@ -110,6 +112,64 @@ export function invalidateAccountBalance(broker = null) {
         delete cache[broker]
     } else {
         for (const k of Object.keys(cache)) delete cache[k]
+    }
+}
+
+/**
+ * Synchronisiert die `startBalance` mit dem aktuellen Broker-Wallet:
+ *   startBalance = realizedEquity − Σ netProceeds
+ * Das setzt voraus, dass alle Trades sauber importiert sind (Live-Polling
+ * + ggf. CSV). Anschliessend stimmt das Dashboard exakt mit der echten
+ * Trading-Equity (Wallet ohne Bonus) ueberein.
+ *
+ * Genutzt von Settings ("Vom API laden") UND dem Dashboard-Sync-Button.
+ *
+ * @returns {Promise<{ok:true,broker,start,apiBalance,bonus,unrealized,totalNet}>|
+ *           {ok:false,error}>}
+ */
+export async function syncStartBalanceFromBroker() {
+    const broker = selectedBroker.value || 'bitunix'
+    try {
+        const response = await axios.get(`/api/${broker}/balance`)
+        if (!response.data?.ok) {
+            return { ok: false, error: response.data?.error || 'API-Fehler' }
+        }
+        const apiBalance = Number(response.data.balance) || 0
+        const bonus = Number(response.data.bonus) || 0
+        const unrealized = (Number(response.data.crossUnrealizedPNL) || 0)
+            + (Number(response.data.isolationUnrealizedPNL) || 0)
+            + (Number(response.data.unrealizedPL) || 0)
+        const realizedEquity = apiBalance - unrealized
+
+        const trades = await dbFind('trades', { equalTo: { broker }, limit: 100000 })
+        let totalNet = 0
+        for (const day of trades) {
+            if (day.pAndL && typeof day.pAndL === 'object') {
+                const np = Number(day.pAndL.netProceeds)
+                if (Number.isFinite(np)) totalNet += np
+            }
+        }
+
+        const calculatedStart = Math.round((realizedEquity - totalNet) * 100) / 100
+        const existing = currentUser.value?.balances || {}
+        const balances = { ...existing, [broker]: { start: calculatedStart } }
+        await dbUpdateSettings({ balances, startBalance: calculatedStart })
+        if (currentUser.value) {
+            currentUser.value.balances = balances
+            currentUser.value.startBalance = calculatedStart
+        }
+
+        // Cache invalidieren + neu laden, damit Dashboard sofort den neuen
+        // Wert zeigt (allTimeNetPnL ist abhaengig vom Cache, aber der
+        // angezeigte Kontostand = startBalance + allTimeNetPnL).
+        invalidateAccountBalance(broker)
+        await refreshAccountBalance({ broker, force: true })
+
+        console.log(` -> Sync ${broker}: API=${apiBalance.toFixed(2)} (Bonus ${bonus.toFixed(2)}), unreal=${unrealized.toFixed(2)}, P&L=${totalNet.toFixed(2)} → Start=${calculatedStart.toFixed(2)}`)
+        return { ok: true, broker, start: calculatedStart, apiBalance, bonus, unrealized, totalNet }
+    } catch (e) {
+        console.error('syncStartBalanceFromBroker:', e)
+        return { ok: false, error: e.response?.data?.error || e.message }
     }
 }
 

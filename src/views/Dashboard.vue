@@ -6,7 +6,7 @@ import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMoun
 import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBroker } from '../stores/filters.js'
 import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades, excursions } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
-import { allTimeNetPnL, allTimeVolume, last30dVolume, refreshAccountBalance } from '../stores/accountBalance.js'
+import { allTimeNetPnL, allTimeVolume, last30dVolume, refreshAccountBalance, syncStartBalanceFromBroker } from '../stores/accountBalance.js'
 import { incomingPositions } from '../stores/globals.js'
 import { useFetchOpenPositions } from '../utils/incoming.js'
 import { dbFind } from '../utils/db.js'
@@ -66,6 +66,32 @@ function onClickOutside(e) {
 
 onMounted(() => document.addEventListener('click', onClickOutside))
 onUnmounted(() => document.removeEventListener('click', onClickOutside))
+
+// ========== Kontostand-Direkt-Sync ==========
+const syncingBalance = ref(false)
+const syncFeedback = ref(null)  // { ok:boolean, msg:string, ts:number }
+async function onSyncBalance() {
+    if (syncingBalance.value) return
+    syncingBalance.value = true
+    syncFeedback.value = null
+    const result = await syncStartBalanceFromBroker()
+    syncingBalance.value = false
+    if (result.ok) {
+        syncFeedback.value = {
+            ok: true,
+            msg: `✓ Synchronisiert (Start ${result.start.toFixed(2)}${result.bonus ? `, Bonus ${result.bonus.toFixed(2)} ignoriert` : ''})`,
+            ts: Date.now(),
+        }
+    } else {
+        syncFeedback.value = { ok: false, msg: '✗ ' + (result.error || 'Fehler'), ts: Date.now() }
+    }
+    // Feedback automatisch nach 6s ausblenden
+    setTimeout(() => {
+        if (syncFeedback.value && Date.now() - syncFeedback.value.ts >= 6000) {
+            syncFeedback.value = null
+        }
+    }, 6500)
+}
 
 const dashTabs = computed(() => [{
     id: "overviewTab",
@@ -411,7 +437,26 @@ onBeforeMount(async () => {
                                 <!-- ===== LINKE SPALTE: Kontostand + Donuts ===== -->
                                 <div v-if="isVisible('accountBalance')" class="col-12 col-md-6 col-xl-4 mb-3 mb-xl-0">
                                     <div class="dailyCard h-100">
-                                        <h6>{{ t('dashboard.accountBalance') }}</h6>
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <h6 class="mb-0">{{ t('dashboard.accountBalance') }}</h6>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-link p-0 text-decoration-none"
+                                                :disabled="syncingBalance"
+                                                @click="onSyncBalance"
+                                                :title="'Mit Broker-Wallet synchronisieren'"
+                                                style="line-height:1;"
+                                            >
+                                                <i
+                                                    class="uil uil-sync"
+                                                    :class="{ 'spinning': syncingBalance }"
+                                                    style="font-size:1.1rem;"
+                                                ></i>
+                                            </button>
+                                        </div>
+                                        <div v-if="syncFeedback" class="small mt-1" :class="syncFeedback.ok ? 'greenTrade' : 'redTrade'" style="font-size:0.75rem;">
+                                            {{ syncFeedback.msg }}
+                                        </div>
 
                                         <!-- Kontostand wenn gesetzt -->
                                         <div v-if="accountBalance" class="text-center py-3">
@@ -1061,5 +1106,13 @@ onBeforeMount(async () => {
 }
 .card-config-item:hover {
     background: var(--white-38, rgba(255, 255, 255, 0.08));
+}
+@keyframes ctj-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+.spinning {
+    display: inline-block;
+    animation: ctj-spin 1s linear infinite;
 }
 </style>
