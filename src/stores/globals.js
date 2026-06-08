@@ -269,6 +269,9 @@ export const incomingLastFetched = ref(null)
 **************************************/
 export const pendingOpeningCount = ref(0)
 export const pendingClosingCount = ref(0)
+// Aufschlüsselung je Börse: { bitunix: 2, bitget: 1, pionex: 0 }
+export const pendingOpeningByBroker = ref({})
+export const pendingClosingByBroker = ref({})
 export const evalNotificationShown = ref(false)
 export const evalNotificationDismissed = ref(false)
 

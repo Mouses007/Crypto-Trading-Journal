@@ -15,13 +15,27 @@
                 <!-- Body -->
                 <div class="modal-body pt-1">
                     <div class="eval-counts">
-                        <div v-if="pendingOpeningCount > 0" class="d-flex align-items-center mb-2">
-                            <span class="eval-dot eval-dot-opening me-2"></span>
-                            <span>{{ pendingOpeningCount }} {{ pendingOpeningCount > 1 ? t('incoming.openingEvaluations') : t('incoming.openingEvaluation') }}</span>
+                        <div v-if="pendingOpeningCount > 0" class="mb-2">
+                            <div class="d-flex align-items-center mb-1">
+                                <span class="eval-dot eval-dot-opening me-2"></span>
+                                <span>{{ pendingOpeningCount }} {{ pendingOpeningCount > 1 ? t('incoming.openingEvaluations') : t('incoming.openingEvaluation') }}</span>
+                            </div>
+                            <div class="broker-breakdown">
+                                <span v-for="(cnt, broker) in pendingOpeningByBroker" :key="'o_' + broker" class="broker-chip">
+                                    {{ brokerLabel(broker) }} <strong>{{ cnt }}</strong>
+                                </span>
+                            </div>
                         </div>
-                        <div v-if="pendingClosingCount > 0" class="d-flex align-items-center mb-2">
-                            <span class="eval-dot eval-dot-closing me-2"></span>
-                            <span>{{ pendingClosingCount }} {{ t('incoming.closingEvaluation') }}</span>
+                        <div v-if="pendingClosingCount > 0" class="mb-2">
+                            <div class="d-flex align-items-center mb-1">
+                                <span class="eval-dot eval-dot-closing me-2"></span>
+                                <span>{{ pendingClosingCount }} {{ pendingClosingCount > 1 ? t('incoming.closingEvaluations') : t('incoming.closingEvaluation') }}</span>
+                            </div>
+                            <div class="broker-breakdown">
+                                <span v-for="(cnt, broker) in pendingClosingByBroker" :key="'c_' + broker" class="broker-chip">
+                                    {{ brokerLabel(broker) }} <strong>{{ cnt }}</strong>
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -41,10 +55,15 @@
 import { watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { pendingOpeningCount, pendingClosingCount, evalNotificationShown, evalNotificationDismissed } from '../stores/trades.js'
+import { pendingOpeningCount, pendingClosingCount, pendingOpeningByBroker, pendingClosingByBroker, evalNotificationShown, evalNotificationDismissed } from '../stores/trades.js'
 
 const { t } = useI18n()
 const router = useRouter()
+
+const BROKER_LABELS = { bitunix: 'Bitunix', bitget: 'Bitget', pionex: 'Pionex' }
+function brokerLabel(b) {
+    return BROKER_LABELS[b] || (b ? b.charAt(0).toUpperCase() + b.slice(1) : '—')
+}
 let modalInstance = null
 
 onMounted(() => {
@@ -103,5 +122,26 @@ function goToIncoming() {
 
 .eval-counts {
     font-size: 0.95rem;
+}
+
+.broker-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding-left: 1.4rem;
+}
+
+.broker-chip {
+    font-size: 0.78rem;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    background: var(--white-10, rgba(255, 255, 255, 0.08));
+    color: var(--white-70, rgba(255, 255, 255, 0.75));
+    border: 1px solid var(--white-10, rgba(255, 255, 255, 0.1));
+}
+
+.broker-chip strong {
+    color: var(--white-87, rgba(255, 255, 255, 0.95));
+    margin-left: 0.15rem;
 }
 </style>

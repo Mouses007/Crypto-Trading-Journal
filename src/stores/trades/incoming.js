@@ -7,6 +7,8 @@ export {
     incomingLastFetched,
     pendingOpeningCount,
     pendingClosingCount,
+    pendingOpeningByBroker,
+    pendingClosingByBroker,
     evalNotificationShown,
     evalNotificationDismissed,
     getNotifiedPositionIds,

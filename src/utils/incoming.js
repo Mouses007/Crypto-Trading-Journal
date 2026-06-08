@@ -1,7 +1,7 @@
 import axios from 'axios'
 import dayjs from './dayjs-setup.js'
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete, dbFindTradeIdByPositionId } from './db.js'
-import { incomingPositions, incomingPollingActive, incomingLastFetched, pendingOpeningCount, pendingClosingCount, evalNotificationShown, evalNotificationDismissed, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
+import { incomingPositions, incomingPollingActive, incomingLastFetched, pendingOpeningCount, pendingClosingCount, pendingOpeningByBroker, pendingClosingByBroker, evalNotificationShown, evalNotificationDismissed, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
 import { expandedId } from '../stores/ui.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker } from '../stores/filters.js'
@@ -21,6 +21,15 @@ export async function useUpdatePendingCounts() {
 
         pendingOpeningCount.value = openPositions.length
         pendingClosingCount.value = pendingPositions.length
+
+        // Aufschlüsselung je Börse (für das Bewertungs-Popup)
+        const byBroker = (list) => list.reduce((acc, p) => {
+            const b = p.broker || 'unbekannt'
+            acc[b] = (acc[b] || 0) + 1
+            return acc
+        }, {})
+        pendingOpeningByBroker.value = byBroker(openPositions)
+        pendingClosingByBroker.value = byBroker(pendingPositions)
 
         // Collect all current position IDs that need evaluation
         const currentIds = new Set([
