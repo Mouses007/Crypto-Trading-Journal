@@ -1,23 +1,25 @@
 <script setup>
 /**
- * Einmaliger Hinweis nach einem Update (bzw. bei Erstnutzung): erklärt, wie die
- * Pionex-API für die Bot-Funktionen einzurichten ist. Wird über ein localStorage-
- * Flag genau EINMAL gezeigt und danach nie wieder.
+ * Hinweis nach einem Update (bzw. bei Erstnutzung): erklärt, wie die Pionex-API
+ * für die Bot-Funktionen einzurichten ist. Wird genau EINMAL je NOTICE_VERSION
+ * gezeigt: ist der gespeicherte Wert ≠ NOTICE_VERSION, erscheint das Popup wieder.
+ * → NOTICE_VERSION hochzählen, wenn der Hinweis erneut gezeigt werden soll.
  */
 import { ref, onMounted } from 'vue'
 
 const STORAGE_KEY = 'pionexApiNoticeSeen'
+const NOTICE_VERSION = '3.0.1'
 const show = ref(false)
 
 onMounted(() => {
     try {
-        if (localStorage.getItem(STORAGE_KEY) !== '1') show.value = true
+        if (localStorage.getItem(STORAGE_KEY) !== NOTICE_VERSION) show.value = true
     } catch (_) { /* localStorage nicht verfügbar → nicht zeigen */ }
 })
 
 function dismiss() {
     show.value = false
-    try { localStorage.setItem(STORAGE_KEY, '1') } catch (_) { /* egal */ }
+    try { localStorage.setItem(STORAGE_KEY, NOTICE_VERSION) } catch (_) { /* egal */ }
 }
 
 function goToSettings() {
