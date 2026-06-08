@@ -4,6 +4,7 @@ import { initDb } from './server/database.js'
 import { setupApiRoutes } from './server/api-routes.js'
 import { setupBitunixRoutes } from './server/bitunix-api.js'
 import { setupBitgetRoutes } from './server/bitget-api.js'
+import { setupPionexRoutes } from './server/pionex-api.js'
 import { setupBinanceRoutes } from './server/binance-api.js'
 import { setupPolygonRoutes } from './server/polygon-api.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
@@ -38,6 +39,7 @@ const startIndex = async () => {
     setupApiRoutes(app);
     setupBitunixRoutes(app);
     setupBitgetRoutes(app);
+    setupPionexRoutes(app);
     setupBinanceRoutes(app);
     setupPolygonRoutes(app);
     setupOllamaRoutes(app);

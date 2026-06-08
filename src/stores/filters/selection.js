@@ -11,6 +11,7 @@ export {
     selectedGrossNet,
     selectedPlSatisfaction,
     selectedBroker,
+    selectedTradeCategory,
     selectedDateRange,
     selectedMonth,
     selectedMonthPreset,

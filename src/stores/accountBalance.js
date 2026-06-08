@@ -91,9 +91,17 @@ export async function refreshAccountBalance({ broker, force = false } = {}) {
                 }
                 if (day.trades && Array.isArray(day.trades)) {
                     for (const trade of day.trades) {
-                        const qty = Math.max(Number(trade.buyQuantity) || 0, Number(trade.sellQuantity) || 0)
-                        const price = Number(trade.entryPrice) || 0
-                        const vol = qty * price
+                        // Bot-Trades (Grid): buyQuantity hält bereits das kumulierte
+                        // USDT-Volumen (totalVolume) → NICHT mit Preis multiplizieren,
+                        // sonst explodiert das Volumen (Mrd.). Reguläre Trades: qty×Preis.
+                        let vol
+                        if (trade.botType) {
+                            vol = Math.max(Number(trade.buyQuantity) || 0, Number(trade.sellQuantity) || 0)
+                        } else {
+                            const qty = Math.max(Number(trade.buyQuantity) || 0, Number(trade.sellQuantity) || 0)
+                            const price = Number(trade.entryPrice) || 0
+                            vol = qty * price
+                        }
                         totalVol += vol
                         if (day.dateUnix >= cutoff30d) {
                             vol30d += vol

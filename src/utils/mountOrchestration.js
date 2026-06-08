@@ -6,7 +6,7 @@
  */
 import { nextTick } from 'vue'
 import { pageId, spinnerLoadingPage, dashboardChartsMounted, dashboardIdMounted, barChartNegativeTagGroups, timeZoneTrade, hasData, renderData, dailyPagination, dailyQueryLimit, endOfList, renderingCharts, spinnerLoadMore, auswertungMounted, screenshotsPagination } from "../stores/ui.js"
-import { selectedRange, selectedDateRange, selectedMonth, selectedAccounts } from "../stores/filters.js"
+import { selectedRange, selectedDateRange, selectedMonth, selectedAccounts, selectedPeriodRange } from "../stores/filters.js"
 import { filteredTrades, availableTags, groups } from "../stores/trades.js"
 import { useCalculateProfitAnalysis, useGetFilteredTrades, useGetFilteredTradesForDaily, useGroupTrades, useTotalTrades } from "./trades.js"
 import { useECharts, useRenderDoubleLineChart, useRenderPieChart } from './charts.js'
@@ -201,7 +201,14 @@ export async function useRefreshTrades() {
 
 export async function useGetSelectedRange() {
     if (pageId.value == "dashboard" || pageId.value == "auswertung") {
-        selectedRange.value = selectedDateRange.value
+        // 'Gesamt' (all): IMMER {0,0} erzwingen, unabhängig von einem evtl.
+        // veralteten selectedDateRange (Label/Range-Desync). Sonst wird trotz
+        // "Gesamt"-Anzeige nach einem alten Monat gefiltert → leere Liste.
+        if (selectedPeriodRange.value?.value === 'all') {
+            selectedRange.value = { start: 0, end: 0 }
+        } else {
+            selectedRange.value = selectedDateRange.value
+        }
     } else if (pageId.value == "calendar") {
         selectedRange.value = {}
         selectedRange.value.start = dayjs.unix(selectedMonth.value.start).tz(timeZoneTrade.value).startOf('year').unix()

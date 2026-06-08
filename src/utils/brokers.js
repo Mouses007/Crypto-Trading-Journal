@@ -129,15 +129,22 @@ export async function useBrokerBitget(csvInput) {
                 const grossPL = parseFloat(row[colPnl] || 0)
                 if (grossPL === 0 && !row[colPnl]) return // skip empty rows
 
-                let fee = 0
+                // commission = NUR Trading-Fee (Open + Close). Funding NICHT
+                // einrechnen — identisch zur API-Import- und Bitunix-Semantik.
+                // Funding ist (sofern vorhanden) bereits in netProfit enthalten.
+                let tradingFee = 0
+                let fundingFee = 0
                 if (colOpenFee && colCloseFee) {
-                    fee = Math.abs(parseFloat(row[colOpenFee] || 0)) + Math.abs(parseFloat(row[colCloseFee] || 0))
-                    if (colFunding) fee += Math.abs(parseFloat(row[colFunding] || 0))
+                    tradingFee = Math.abs(parseFloat(row[colOpenFee] || 0)) + Math.abs(parseFloat(row[colCloseFee] || 0))
+                    if (colFunding) fundingFee = parseFloat(row[colFunding] || 0)  // signiert
                 } else if (colFee) {
-                    fee = Math.abs(parseFloat(row[colFee] || 0))
+                    tradingFee = Math.abs(parseFloat(row[colFee] || 0))
                 }
+                const fee = tradingFee
 
-                const netPL = colNetProfit ? parseFloat(row[colNetProfit] || 0) : (grossPL - fee)
+                // netProfit ist der echte Wallet-Delta (auch 0 = gueltiges Break-even).
+                const hasNet = colNetProfit && row[colNetProfit] !== undefined && row[colNetProfit] !== ''
+                const netPL = hasNet ? parseFloat(row[colNetProfit]) : (grossPL - tradingFee + fundingFee)
 
                 // Parse side
                 const rawSide = (row[colSide] || '').toLowerCase()

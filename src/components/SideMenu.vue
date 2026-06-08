@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { pageId, screenType } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
-import { selectedBroker, brokers } from "../stores/filters.js"
+import { selectedBroker, brokers, selectedTradeCategory } from "../stores/filters.js"
 import SidebarFilters from './SidebarFilters.vue'
 import donateBtc from '../assets/donate-btc.png'
 import donatePaypal from '../assets/donate-paypal.jpg'
@@ -118,12 +118,26 @@ async function rollback() {
 onMounted(() => {
     checkForUpdate()
     checkRollbackStatus()
+    // Migration: „Alle" gibt es nicht mehr → auf Futures normalisieren.
+    if (selectedTradeCategory.value === 'all' || !selectedTradeCategory.value) {
+        selectedTradeCategory.value = 'futures'
+        localStorage.setItem('selectedTradeCategory', 'futures')
+    }
 })
 
 function onBrokerChange(event) {
     const value = event.target.value
     selectedBroker.value = value
     localStorage.setItem('selectedBroker', value)
+    window.location.reload()
+}
+
+// Trade-Kategorie-Filter (Futures / Bot) als Pillen-Buttons. „Alle" entfällt;
+// Spot kann später ergänzt werden.
+function setCategory(value) {
+    if (selectedTradeCategory.value === value) return
+    selectedTradeCategory.value = value
+    localStorage.setItem('selectedTradeCategory', value)
     window.location.reload()
 }
 
@@ -153,13 +167,14 @@ function goToDashboard() {
     <div id="step2" class="mt-2">
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
-                <label class="fw-lighter">{{ t('nav.exchange') }}</label>
-                <div class="sidebar-control">
-                    <select class="form-select form-select-sm sidebar-select"
-                        :value="selectedBroker"
-                        @change="onBrokerChange">
-                        <option v-for="b in brokers" :key="b.value" :value="b.value">{{ b.label }}</option>
-                    </select>
+                <label class="fw-lighter">{{ t('nav.tradeCategory') }}</label>
+                <div class="category-pills">
+                    <button type="button"
+                        :class="['cat-pill', selectedTradeCategory !== 'bot' ? 'active' : '']"
+                        @click="setCategory('futures')">Futures</button>
+                    <button type="button"
+                        :class="['cat-pill', selectedTradeCategory === 'bot' ? 'active' : '']"
+                        @click="setCategory('bot')">Bot</button>
                 </div>
                 <SidebarFilters />
             </div>
@@ -283,6 +298,37 @@ function goToDashboard() {
 </template>
 
 <style scoped>
+/* Trade-Kategorie-Pillen (Stil wie die Börsen-Pillen oben) */
+.category-pills {
+    display: flex;
+    gap: 0.55rem;
+    margin-top: 0.35rem;
+    /* Abstand zwischen Pillen und Filter: 3mm + 0.4rem */
+    margin-bottom: calc(3mm + 0.4rem);
+    flex-wrap: wrap;
+}
+.cat-pill {
+    font-size: 0.78rem;
+    padding: 0.2rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
+    background: transparent;
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+    line-height: 1.5;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.cat-pill:hover {
+    border-color: var(--blue-color, #3b82f6);
+    color: var(--white-87, rgba(255, 255, 255, 0.9));
+}
+.cat-pill.active {
+    background: var(--blue-color, #3b82f6);
+    border-color: var(--blue-color, #3b82f6);
+    color: #fff;
+    font-weight: 600;
+}
+
 /* Sidebar controls – shared style for broker + filter */
 .sidebar-control {
     margin-bottom: 0.35rem;

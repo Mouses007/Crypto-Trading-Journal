@@ -105,6 +105,7 @@ export const marketCloseTime = ref("16:00:00")
 export const brokers = reactive([
     { value: "bitunix", label: "Bitunix", assetTypes: ["futures"] },
     { value: "bitget", label: "Bitget", assetTypes: ["futures"] },
+    { value: "pionex", label: "Pionex", assetTypes: ["futures"] },
 ])
 
 /**************************************
@@ -213,6 +214,8 @@ export const selectedAccounts = typeof localStorage !== 'undefined' ? localStora
 export const selectedGrossNet = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedGrossNet')) : ""
 export const selectedPlSatisfaction = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedPlSatisfaction')) : ""
 export const selectedBroker = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedBroker')) : ref()
+// Trade-Kategorie-Filter: 'futures' | 'bot' (Pillen im Seitenmenü; 'all' entfällt)
+export const selectedTradeCategory = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedTradeCategory') || 'futures') : ref('futures')
 export const selectedDateRange = typeof localStorage !== 'undefined' ? ref(JSON.parse(localStorage.getItem('selectedDateRange'))) : ""
 export const selectedMonth = typeof localStorage !== 'undefined' ? ref(JSON.parse(localStorage.getItem('selectedMonth'))) : ""
 export const selectedMonthPreset = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedMonthPreset') || 'current') : ref('current')

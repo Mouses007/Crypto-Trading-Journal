@@ -439,6 +439,16 @@ export async function useSetValues() {
         }
         selectedPeriodRange.value = JSON.parse(localStorage.getItem('selectedPeriodRange'))
 
+        // 'all' (Gesamt): selectedDateRange MUSS {0,0} sein. Sonst zeigt das Label
+        // "Gesamt", gefiltert wird aber nach einem alten Monat (Desync, da der
+        // Refresh-Block unten 'all' überspringt) → leere Trade-Liste trotz Daten.
+        if (selectedPeriodRange.value && selectedPeriodRange.value.value === 'all') {
+            if (selectedDateRange.value?.start !== 0 || selectedDateRange.value?.end !== 0) {
+                selectedDateRange.value = { start: 0, end: 0 }
+                localStorage.setItem('selectedDateRange', JSON.stringify(selectedDateRange.value))
+            }
+        }
+
         // Refresh dynamic period ranges (thisWeek/thisMonth/...) against the
         // freshly computed periodRange so stored timestamps stay current when
         // the week/month/year rolls over while the app is open.

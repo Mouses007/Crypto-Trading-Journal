@@ -44,6 +44,8 @@
   },
   "nav": {
     "exchange": "BÖRSE",
+    "tradeCategory": "ART",
+    "categoryAll": "Alle",
     "analyze": "ANALYSIEREN",
     "dashboard": "Dashboard",
     "dailyView": "Tages Ansicht",
@@ -245,6 +247,7 @@
     "importFromDateHint": "Trades vor diesem Datum werden ignoriert. Leer = alle Trades.",
     "bitunixSaved": "Bitunix API Einstellungen gespeichert",
     "bitgetSaved": "Bitget API Einstellungen gespeichert",
+    "pionexSaved": "Pionex API Einstellungen gespeichert",
     "evaluation": "Bewertung",
     "tagsSection": "Tags",
     "tagsDescription": "Erstelle Tag-Gruppen und Tags, um deine Trades zu kategorisieren.",

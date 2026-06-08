@@ -1110,9 +1110,12 @@ async function completeClosingEvaluation(pos) {
 
 // ===== FORMATTING =====
 
-function formatCurrency(val) {
+function formatCurrency(val, unit = 'USDT') {
     const num = parseFloat(val || 0)
-    return (num >= 0 ? '+' : '') + num.toFixed(2) + ' USDT'
+    // Coin-M-Bots werden in der Margin-Münze (z.B. SOL) mit mehr Nachkommastellen
+    // angezeigt; USDT bleibt bei 2.
+    const dec = unit && unit !== 'USDT' ? 4 : 2
+    return (num >= 0 ? '+' : '') + num.toFixed(dec) + ' ' + unit
 }
 
 // Realized PnL for an open position (already booked via partial TPs).
@@ -1175,6 +1178,7 @@ function getPositionDate(pos) {
                             {{ pos.side }}
                         </span>
                         <span class="ms-2 incoming-info">{{ pos.leverage }}x</span>
+                        <span v-if="pos.coinM" class="badge ms-2" style="background:rgba(245,158,11,0.18);color:#f59e0b;font-size:0.6rem;">COIN-M</span>
                         <span v-if="pos.status === 'pending_evaluation'" class="badge bg-warning text-dark ms-2">{{ t('incoming.closed') }}</span>
                     </div>
                     <div class="col text-end">
@@ -1185,7 +1189,7 @@ function getPositionDate(pos) {
                         </span>
                         <template v-else>
                             <span class="incoming-pnl" :class="parseFloat(pos.unrealizedPNL || 0) >= 0 ? 'greenTrade' : 'redTrade'">
-                                {{ formatCurrency(pos.unrealizedPNL) }}
+                                {{ formatCurrency(pos.unrealizedPNL, pos.marginCoin) }}
                             </span>
                             <div v-if="getOpenRealizedPnL(pos) !== 0" class="small mt-1"
                                 :class="getOpenRealizedPnL(pos) >= 0 ? 'greenTrade' : 'redTrade'"

@@ -207,27 +207,43 @@ export async function testConnection(apiKey, secretKey, passphrase) {
  */
 function normalizeOpenPosition(p) {
     if (!p) return null
-    const positionId = String(p.positionId ?? p.id ?? '')
-    if (!positionId) return null
 
     // Bitget holdSide: 'long' or 'short' → normalize to 'LONG'/'SHORT'
     const side = (p.holdSide || '').toUpperCase()
 
+    // WICHTIG: Bitgets all-position (offene Positionen) liefert KEINE positionId
+    // (nur das history-position-Endpoint tut das). Ohne synthetische ID wuerde
+    // jede offene Position verworfen → "wird nicht importiert".
+    // → stabile ID aus symbol+holdSide bilden. one_way_mode hat pro symbol+side
+    //   genau eine offene Position; hedge-mode unterscheidet long/short ebenfalls.
+    //   Beim Schliessen loest position-history die echte numerische ID auf.
+    let positionId = String(p.positionId ?? p.id ?? '')
+    if (!positionId || positionId === 'undefined' || positionId === 'null') {
+        const sym = p.symbol ?? ''
+        if (!sym) return null
+        positionId = `${sym}_${(p.holdSide ?? '').toLowerCase()}`
+    }
+
+    // Entry-Preis: all-position nutzt `openPriceAvg` (NICHT openAvgPrice — das ist
+    // history-position). Beide als Fallback abdecken.
+    const entry = p.openPriceAvg ?? p.openAvgPrice ?? p.averageOpenPrice ?? 0
+
+    // Raw-Felder zuerst, normalisierte Felder gewinnen (override).
     return {
+        ...p,
         positionId,
         symbol: p.symbol ?? '',
         side: side,
-        entryPrice: p.openAvgPrice ?? p.averageOpenPrice ?? 0,
-        avgOpenPrice: p.openAvgPrice ?? p.averageOpenPrice ?? 0,
+        entryPrice: entry,
+        avgOpenPrice: entry,
         leverage: p.leverage ?? 0,
         qty: p.total ?? p.available ?? 0,
         maxQty: p.total ?? p.available ?? 0,
         unrealizedPNL: p.unrealizedPL ?? 0,
         liqPrice: p.liquidationPrice ?? 0,
         markPrice: p.markPrice ?? p.liquidationPrice ?? 0,
-        ctime: p.ctime ?? p.cTime ?? '',
-        mtime: p.utime ?? p.uTime ?? '',
-        ...p
+        ctime: p.cTime ?? p.ctime ?? '',
+        mtime: p.uTime ?? p.utime ?? ''
     }
 }
 
@@ -548,7 +564,21 @@ export function setupBitgetRoutes(app) {
             }
 
             // Bitget history-position doesn't support positionId filter directly,
-            // so we fetch recent history and filter client-side (paginated)
+            // so we fetch recent history and filter client-side (paginated).
+            //
+            // Zwei Lookup-Modi:
+            //  - Echte numerische positionId (vom history-Scan)        → exakter Match
+            //  - Synthetische ID `${symbol}_${holdSide}` (offene Pos.) → juengste
+            //    geschlossene Position fuer symbol+side (Bitget sortiert desc).
+            const reqId = String(req.params.positionId)
+            const isSynthetic = !/^\d+$/.test(reqId)
+            let wantSymbol = null, wantSide = null
+            if (isSynthetic) {
+                const idx = reqId.lastIndexOf('_')
+                wantSymbol = idx >= 0 ? reqId.slice(0, idx) : reqId
+                wantSide = idx >= 0 ? reqId.slice(idx + 1).toLowerCase() : null
+            }
+
             let pos = null
             let endTime = ''
             for (let page = 0; page < 10 && !pos; page++) {
@@ -557,7 +587,15 @@ export function setupBitgetRoutes(app) {
                 const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, params)
                 const list = result.data?.list || []
                 if (!list.length) break
-                pos = list.find(p => String(p.positionId) === String(req.params.positionId)) || null
+                if (isSynthetic) {
+                    // Liste ist absteigend nach Schlusszeit → erster Treffer = juengster.
+                    pos = list.find(p =>
+                        String(p.symbol) === wantSymbol &&
+                        (!wantSide || String(p.holdSide).toLowerCase() === wantSide)
+                    ) || null
+                } else {
+                    pos = list.find(p => String(p.positionId) === reqId) || null
+                }
                 endTime = list[list.length - 1].cTime || list[list.length - 1].ctime || ''
                 if (!endTime) break
             }

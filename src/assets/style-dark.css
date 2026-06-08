@@ -462,6 +462,8 @@ input:checked+.slider:before {
 
 .sideMenuDiv:first-child {
     padding-top: 0;
+    /* Abstand zwischen Filter und der Linie darunter: 7mm */
+    padding-bottom: 7mm;
 }
 
 .sideMenuDiv:last-child {
@@ -485,8 +487,10 @@ input:checked+.slider:before {
 
 .logoDiv {
     width: 100%;
-    margin-bottom: 2.69rem;
-    padding: 0.75rem 0.75rem 0.75rem;
+    /* Abstand Linie → ART um 4mm verringert */
+    margin-bottom: calc(2.69rem - 4mm);
+    /* Linie unter dem Logo: 8mm tiefer, dann wieder 0.2rem + 4px hoch */
+    padding: 0.75rem 0.75rem calc(0.55rem + 8mm - 4px);
     border-bottom: 1px solid var(--white-18);
 }
 

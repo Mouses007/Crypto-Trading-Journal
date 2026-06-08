@@ -4,6 +4,7 @@ import Nav from '../components/Nav.vue'
 import Screenshot from '../components/Screenshot.vue'
 import ReturnToTopButton from '../components/ReturnToTopButton.vue'
 import TradeEvalPopup from '../components/TradeEvalPopup.vue'
+import UpdateNoticeModal from '../components/UpdateNoticeModal.vue'
 import { onBeforeMount, onMounted, onUnmounted, watch } from 'vue'
 import { useCreatedDateFormat, useTimeFormat, useHourMinuteFormat } from '../utils/formatters.js'
 import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues } from '../utils/utils.js'
@@ -167,4 +168,6 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
   </div>
   <!-- Trade Evaluation Popup -->
   <TradeEvalPopup />
+  <!-- Einmaliger Pionex-API-Hinweis (nach Update / Erstnutzung) -->
+  <UpdateNoticeModal />
 </template>

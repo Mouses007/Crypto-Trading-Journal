@@ -1,5 +1,5 @@
 import { pageId, spinnerLoadingPage, queryLimit, timeZoneTrade, hasData, dailyPagination, dailyQueryLimit, endOfList, selectedItem } from "../stores/ui.js"
-import { selectedRange, selectedDateRange, selectedPositions, selectedAccounts, selectedTags, selectedBroker, daysBack } from "../stores/filters.js"
+import { selectedRange, selectedDateRange, selectedPositions, selectedAccounts, selectedTags, selectedBroker, selectedTradeCategory, daysBack } from "../stores/filters.js"
 import { filteredTrades, filteredTradesTrades, pAndL, blotter, totals, totalsByDate, groups, profitAnalysis, timeFrame, satisfactionArray, satisfactionTradeArray, tags, filteredTradesDaily, excursions, availableTags, imports } from "../stores/trades.js"
 import { useDateTimeFormat } from "./formatters.js";
 /* useRefreshTrades moved to mountOrchestration.js */
@@ -123,6 +123,14 @@ export async function useGetFilteredTrades(param) {
 
                         let tradeTagsSelected = false
 
+                        // Bot-Trades (Grid) werden auto-importiert und nie manuell
+                        // getaggt. Ein aktiver Tag-Filter (ohne "untagged"/t000t)
+                        // würde sie sonst alle ausblenden → Bots vom Tag-Filter
+                        // ausnehmen, damit sie immer sichtbar sind.
+                        if (element.botType) {
+                            tradeTagsSelected = true
+                        }
+
                         //console.log(" tags "+JSON.stringify(tags))
                         //console.log(" element "+JSON.stringify(element))
 
@@ -165,12 +173,21 @@ export async function useGetFilteredTrades(param) {
 
                         const tradeSatisfaction = satisfactionByTradeId.get(String(element.id)) ?? null
 
-                        // Broker filter: only show trades matching selected exchange
+                        // Kategorie-Filter: Futures vs Bot (element.botType gesetzt → Bot)
+                        const cat = selectedTradeCategory.value || 'all'
+                        const isBotTrade = !!element.botType
+                        const categoryMatch = cat === 'all' || (cat === 'bot' ? isBotTrade : !isBotTrade)
+
+                        // Broker-Filter (Börsen-Pille) IMMER anwenden — auch im
+                        // Bot-Modus: so hat jede Börse ihre eigene Bot-Seite
+                        // (Pionex-Pille → Pionex-Bots, Bitunix → Bitunix-Bots …).
+                        // NUR der Konto-Filter (selectedAccounts) wird im Bot-Modus
+                        // übersprungen: er ist Futures-orientiert (i.d.R.
+                        // ["bitunix","bitget"]) und würde Bots sonst ausblenden.
+                        const accountMatch = cat === 'bot' || !selectedAccounts.value.length || selectedAccounts.value.includes(element.account)
                         const brokerMatch = !selectedBroker.value || element.broker === selectedBroker.value
 
-                        const accountMatch = !selectedAccounts.value.length || selectedAccounts.value.includes(element.account)
-
-                        if (brokerMatch && (selectedRange.value.start === 0 && selectedRange.value.end === 0 ? element.td >= selectedRange.value.start : element.td >= selectedRange.value.start && element.td < selectedRange.value.end) && selectedPositions.value.includes(element.strategy) && accountMatch && tradeTagsSelected) {
+                        if (brokerMatch && categoryMatch && (selectedRange.value.start === 0 && selectedRange.value.end === 0 ? element.td >= selectedRange.value.start : element.td >= selectedRange.value.start && element.td < selectedRange.value.end) && selectedPositions.value.includes(element.strategy) && accountMatch && tradeTagsSelected) {
 
                             /**
                              * We're using tempArray to be able to group

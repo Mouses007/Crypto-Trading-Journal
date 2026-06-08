@@ -65,6 +65,8 @@ export async function useQuickApiImport(explicitBroker) {
 
         if (broker === 'bitget') {
             tradeObj = createBitgetTradeObj(pos, i)
+        } else if (broker === 'pionex') {
+            tradeObj = createPionexTradeObj(pos, i)
         } else {
             tradeObj = createBitunixTradeObj(pos, i)
         }
@@ -310,13 +312,16 @@ function createBitunixTradeObj(pos, i) {
  *                totalFunding, cTime, uTime
  */
 function createBitgetTradeObj(pos, i) {
-    const grossPL = parseFloat(pos.pnl || 0)
+    const grossPL = parseFloat(pos.pnl || 0)            // Bitget pnl = BRUTTO (vor Gebuehren)
     const openFee = Math.abs(parseFloat(pos.openFee || 0))
     const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
-    const totalFunding = parseFloat(pos.totalFunding || 0)  // Vorzeichen beibehalten
     const tradingFee = openFee + closeFee
-    const fundingFee = totalFunding
-    const fee = tradingFee + fundingFee
+    const fundingFee = parseFloat(pos.totalFunding || 0)  // signiert: + erhalten / − bezahlt
+    // commission = NUR Trading-Fee (Funding wird separat in fundingFee getrackt),
+    // identisch zur Bitunix-Semantik. Frueher: tradingFee + fundingFee — das
+    // verfaelschte die Gebuehren-Summe je nach Funding-Vorzeichen (erhaltenes
+    // Funding bläht die Fees auf, bezahltes reduziert sie faelschlich).
+    const fee = tradingFee
     const closeTime = parseInt(pos.utime || pos.uTime || pos.ctime || pos.cTime)
     const openTime = parseInt(pos.ctime || pos.cTime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
@@ -324,7 +329,12 @@ function createBitgetTradeObj(pos, i) {
     // Bitget holdSide: 'long' or 'short'
     const holdSide = (pos.holdSide || '').toLowerCase()
     const side = holdSide === 'long' ? 'B' : 'SS'
-    const netPL = parseFloat(pos.netProfit || 0) || (grossPL - fee)
+    // netProfit ist Bitgets echter Wallet-Delta (nach Fee & Funding). Auch 0 ist
+    // ein gueltiger Break-even-Wert und darf NICHT in den Fallback laufen
+    // (frueher: `parseFloat(netProfit||0) || (gross-fee)` → 0 ist falsy → Fallback).
+    const rawNet = pos.netProfit
+    const hasNet = rawNet !== undefined && rawNet !== null && rawNet !== ''
+    const netPL = hasNet ? parseFloat(rawNet) : (grossPL - tradingFee + fundingFee)
     const isGrossWin = grossPL > 0
     const isNetWin = netPL > 0
     const quantity = parseFloat(pos.closeTotalPos || pos.openTotalPos || 1)
@@ -344,9 +354,100 @@ function createBitgetTradeObj(pos, i) {
 }
 
 /**
+ * Create a trade object from a Pionex item — unterstützt zwei Quellen:
+ *  1) Bot-Order (Grid-Bot): Server liefert normalisierte Felder aus
+ *     /api/v1/bot/orders → totalRealizedProfit (NETTO-Wallet-Delta, verifiziert),
+ *     totalFee, totalFundingFee, totalVolume, setLeverage, positionOpenPrice,
+ *     closedPrice, botType (futures_grid/spot_grid), buOrderId.
+ *  2) Reguläre Futures-Position (historyPositions) — falls der Nutzer künftig
+ *     manuell Futures tradet.
+ *
+ * netPL = totalRealizedProfit ist bereits der finale Wallet-Delta (wie Bitunix
+ * realizedPNL). grossPL = netPL + tradingFee − fundingFee (reine Strategie-PnL).
+ */
+function createPionexTradeObj(pos, i) {
+    const isBot = pos.botType !== undefined || pos.totalRealizedProfit !== undefined || pos.buOrderId !== undefined
+
+    // Spot-Grid hat ein eigenes Layout: Profit = gridProfit + realizedProfit,
+    // Gebühren in totalFeeInQuote (USDT), KEIN Funding, kein Hebel.
+    const isSpot = !!pos.spotGrid || /spot|token_grid/i.test(pos.botType || '')
+
+    let netPL, tradingFee, fundingFee, grossPL, fee
+    if (isSpot) {
+        // gridProfit ist bereits netto (nach Gebühren); grossPL rekonstruiert.
+        netPL = parseFloat(pos.gridProfit ?? 0) + parseFloat(pos.realizedProfit ?? 0)
+        tradingFee = Math.abs(parseFloat(pos.totalFeeInQuote ?? pos.totalFee ?? 0))
+        fundingFee = 0
+        grossPL = netPL + tradingFee
+        fee = tradingFee
+    } else {
+        // NETTO-Wallet-Delta: futures_grid → totalRealizedProfit; Futures → amountSettled/realizedPnl.
+        const netRaw = pos.totalRealizedProfit ?? pos.realizedPnl ?? pos.amountSettled ?? pos.gridProfit ?? pos.pnl ?? 0
+        netPL = parseFloat(netRaw || 0)
+        tradingFee = Math.abs(parseFloat(pos.totalFee ?? pos.fee ?? pos.tradingFee ?? 0))
+        fundingFee = parseFloat(pos.totalFundingFee ?? pos.fundingFee ?? pos.funding ?? 0)  // signiert
+        grossPL = netPL + tradingFee - fundingFee
+        fee = tradingFee
+    }
+
+    const closeTime = parseInt(pos.closeTime ?? pos.updateTime ?? pos.uTime ?? Date.now())
+    const openTime = parseInt(pos.createTime ?? pos.openTime ?? pos.cTime ?? closeTime)
+    const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
+
+    // Grid-Bots sind nicht gerichtet → Richtung aus Open/Close-Preis ableiten
+    // (Long, wenn der Bot von steigenden Kursen profitiert hätte). Reguläre
+    // Futures: positionSide.
+    let side
+    if (isSpot) {
+        side = 'B'   // Spot-Grid ist immer long (kauft tief / verkauft hoch)
+    } else {
+        const sideRaw = String(pos.positionSide ?? pos.side ?? '').toUpperCase()
+        if (sideRaw === 'LONG' || sideRaw === 'SHORT') {
+            side = sideRaw === 'LONG' ? 'B' : 'SS'
+        } else {
+            const op = parseFloat(pos.positionOpenPrice ?? pos.avgEntryPrice ?? pos.entryPrice ?? 0)
+            const cp = parseFloat(pos.closedPrice ?? pos.avgClosePrice ?? pos.closePrice ?? 0)
+            side = (cp >= op) ? 'B' : 'SS'
+        }
+    }
+
+    // Spot-Grid hat kein totalVolume → USDT-Investment als Volumen-Proxy.
+    const quantity = isSpot
+        ? Math.abs(parseFloat(pos.usdtInvestment ?? pos.totalVolume ?? 1))
+        : Math.abs(parseFloat(pos.totalVolume ?? pos.netSize ?? pos.sizeLong ?? pos.sizeShort ?? pos.size ?? 1))
+    const isGrossWin = grossPL > 0
+    const isNetWin = netPL > 0
+    const entryTime = dayjs(openTime).utc().unix()
+    const exitTime = dayjs(closeTime).utc().unix()
+    const idSuffix = pos.buOrderId ?? pos.positionId ?? i
+
+    const obj = buildTradeObj({
+        id: `t${dateUnix}_${i}_${idSuffix}`,
+        broker: 'pionex',
+        td: dateUnix,
+        side, quantity, entryTime, exitTime,
+        entryPrice: parseFloat(pos.positionOpenPrice ?? pos.avgEntryPrice ?? pos.entryPrice ?? pos.avgPrice ?? 0),
+        exitPrice: parseFloat(pos.closedPrice ?? pos.avgClosePrice ?? pos.closePrice ?? pos.exitPrice ?? 0),
+        symbol: pos.symbol || 'FUTURES',
+        grossPL, netPL, fee, tradingFee, fundingFee, isGrossWin, isNetWin
+    })
+    // Bot-Metadaten anhängen (für Anzeige/Filter). NICHT `tradeType` nutzen —
+    // das ist für Scalp/Day/Swing belegt. `botType` ist das Bot-Kennzeichen.
+    if (isBot) {
+        obj.botType = pos.botType || 'grid'
+        obj.category = 'bot'
+        obj.leverage = parseFloat(pos.setLeverage || 0)
+        obj.investment = parseFloat(pos.initQuoteInvestment ?? pos.usdtInvestment ?? 0)
+    } else {
+        obj.category = 'futures'
+    }
+    return obj
+}
+
+/**
  * Build a standardized trade object from normalized fields.
  */
-function buildTradeObj({ id, broker, td, side, quantity, entryTime, exitTime,
+export function buildTradeObj({ id, broker, td, side, quantity, entryTime, exitTime,
     entryPrice, exitPrice, symbol, grossPL, netPL, fee, tradingFee, fundingFee, isGrossWin, isNetWin }) {
     return {
         id,
@@ -396,4 +497,56 @@ function buildTradeObj({ id, broker, td, side, quantity, entryTime, exitTime,
         tradesCount: 1,
         openPosition: false,
     }
+}
+
+/**
+ * Speichert EINEN manuell erfassten Trade merge-sicher: hängt ihn an den
+ * bestehenden Tages-Record an (oder legt einen neuen Tag an) und berechnet
+ * Blotter/P&L neu — analog zur Import-Logik, aber für einen Einzel-Trade.
+ * tradeObj sollte via buildTradeObj() erzeugt sein (enthält td, broker, symbol,
+ * grossProceeds/netProceeds/commission und alle Win/Loss-Felder).
+ */
+export async function saveManualTrade(tradeObj) {
+    const broker = tradeObj.broker
+    const dateUnix = Number(tradeObj.td)
+
+    const existing = await dbFind('trades', { equalTo: { broker, dateUnix }, limit: 1 })
+    const existingRecord = Array.isArray(existing) ? existing[0] : null
+
+    const execObj = { ...tradeObj, trade: tradeObj.id }
+    const prevTrades = existingRecord && Array.isArray(existingRecord.trades) ? existingRecord.trades : []
+    const prevExec = existingRecord && Array.isArray(existingRecord.executions) ? existingRecord.executions : []
+    const allTrades = [...prevTrades, tradeObj]
+    const allExec = [...prevExec, execObj]
+
+    // Blotter (je Symbol) + P&L über alle Trades des Tages neu berechnen
+    const blotterMap = {}
+    let gross = 0, net = 0, fees = 0, gWins = 0, gLoss = 0, nWins = 0, nLoss = 0, count = 0
+    for (const t of allTrades) {
+        if (!blotterMap[t.symbol]) {
+            blotterMap[t.symbol] = { symbol: t.symbol, grossProceeds: 0, netProceeds: 0, fees: 0, grossWinsCount: 0, grossLossCount: 0, trades: 0 }
+        }
+        const b = blotterMap[t.symbol]
+        b.grossProceeds += t.grossProceeds || 0
+        b.netProceeds += t.netProceeds || 0
+        b.fees += t.commission || 0
+        b.grossWinsCount += t.grossWinsCount || 0
+        b.grossLossCount += t.grossLossCount || 0
+        b.trades += 1
+        gross += t.grossProceeds || 0; net += t.netProceeds || 0; fees += t.commission || 0
+        gWins += t.grossWinsCount || 0; gLoss += t.grossLossCount || 0
+        nWins += t.netWinsCount || 0; nLoss += t.netLossCount || 0; count += 1
+    }
+    const blotter = Object.values(blotterMap)
+    const pAndL = { grossProceeds: gross, netProceeds: net, fees, grossWinsCount: gWins, grossLossCount: gLoss, netWinsCount: nWins, netLossCount: nLoss, trades: count }
+
+    if (existingRecord) {
+        await dbUpdateRecord('trades', existingRecord.objectId, { executions: allExec, trades: allTrades, blotter, pAndL })
+    } else {
+        await dbCreate('trades', {
+            date: dayjs.unix(dateUnix).format('YYYY-MM-DD'),
+            dateUnix, broker, executions: allExec, trades: allTrades, blotter, pAndL, openPositions: false
+        })
+    }
+    return true
 }

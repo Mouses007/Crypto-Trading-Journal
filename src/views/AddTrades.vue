@@ -5,6 +5,8 @@ import { executions, existingImports, blotter, pAndL, tradesData, existingTrades
 import { selectedBroker } from '../stores/filters.js';
 import { useDecimalsArithmetic, useCreatedDateFormat, useDateCalFormat } from '../utils/formatters.js';
 import { useImportTrades, useUploadTrades, useGetExistingTradesArray, useCreateBlotter, useCreatePnL } from '../utils/addTrades'
+import { buildTradeObj, saveManualTrade } from '../utils/quickImport.js'
+import { refreshAccountBalance } from '../stores/accountBalance.js'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
@@ -15,7 +17,58 @@ const { t } = useI18n()
 
 spinnerLoadingPage.value = false
 
-const importMode = ref('csv')
+const importMode = ref('manual')
+
+// ===== Manuelle Futures-Trade-Eingabe =====
+const manual = ref({
+    symbol: '', side: 'B', date: dayjs().format('YYYY-MM-DD'), entryDate: '',
+    entryPrice: '', exitPrice: '', qty: '', netPL: '', fee: '', leverage: ''
+})
+const manualSaving = ref(false)
+const manualMsg = ref(null)   // { ok, text }
+
+async function addManualTrade() {
+    manualMsg.value = null
+    const sym = (manual.value.symbol || '').trim().toUpperCase()
+    if (!sym) { manualMsg.value = { ok: false, text: 'Symbol fehlt' }; return }
+    if (manual.value.netPL === '' || isNaN(parseFloat(manual.value.netPL))) {
+        manualMsg.value = { ok: false, text: 'Netto-PnL fehlt' }; return
+    }
+    manualSaving.value = true
+    try {
+        const fee = Math.abs(parseFloat(manual.value.fee || 0)) || 0
+        const netPL = parseFloat(manual.value.netPL)
+        const grossPL = netPL + fee   // Brutto = Netto + Gebühren
+        const qty = parseFloat(manual.value.qty || 1) || 1
+        const closeDay = dayjs.utc(manual.value.date)
+        const dateUnix = closeDay.startOf('day').unix()
+        const exitTime = closeDay.hour(12).minute(0).second(0).unix()
+        const entryTime = manual.value.entryDate
+            ? dayjs.utc(manual.value.entryDate).hour(12).minute(0).second(0).unix()
+            : exitTime
+
+        const tradeObj = buildTradeObj({
+            id: `t${dateUnix}_0_manual${Date.now()}`,
+            broker: broker.value, td: dateUnix, side: manual.value.side, quantity: qty,
+            entryTime, exitTime,
+            entryPrice: parseFloat(manual.value.entryPrice || 0) || 0,
+            exitPrice: parseFloat(manual.value.exitPrice || 0) || 0,
+            symbol: sym, grossPL, netPL, fee, tradingFee: fee, fundingFee: 0,
+            isGrossWin: grossPL > 0, isNetWin: netPL > 0,
+        })
+        if (manual.value.leverage) tradeObj.leverage = parseFloat(manual.value.leverage)
+
+        await saveManualTrade(tradeObj)
+        try { await refreshAccountBalance({ broker: broker.value, force: true }) } catch (_) { /* egal */ }
+
+        manualMsg.value = { ok: true, text: `Gespeichert: ${sym} ${manual.value.side === 'B' ? 'Long' : 'Short'} ${netPL >= 0 ? '+' : ''}${netPL} USDT (${manual.value.date})` }
+        // PnL-bezogene Felder zurücksetzen, Symbol/Datum für schnelle Mehrfacheingabe behalten
+        manual.value.netPL = ''; manual.value.fee = ''; manual.value.entryPrice = ''; manual.value.exitPrice = ''; manual.value.qty = ''
+    } catch (e) {
+        manualMsg.value = { ok: false, text: 'Fehler beim Speichern: ' + (e?.message || e) }
+    }
+    manualSaving.value = false
+}
 const apiStartDate = ref(dayjs().subtract(7, 'day').format('YYYY-MM-DD'))
 const apiEndDate = ref(dayjs().format('YYYY-MM-DD'))
 const apiImportLoading = ref(false)
@@ -296,7 +349,7 @@ async function importFromApi() {
     <div class="mt-3">
         <ul class="nav nav-tabs">
             <li class="nav-item">
-                <a class="nav-link" :class="{ active: importMode === 'csv' }" href="#" @click.prevent="importMode = 'csv'">{{ t('addTrades.csvImport') }}</a>
+                <a class="nav-link" :class="{ active: importMode === 'manual' }" href="#" @click.prevent="importMode = 'manual'">Manuell</a>
             </li>
             <li class="nav-item">
                 <a class="nav-link" :class="{ active: importMode === 'api' }" href="#" @click.prevent="importMode = 'api'">{{ t('addTrades.apiImport') }}</a>
@@ -304,12 +357,66 @@ async function importFromApi() {
         </ul>
     </div>
 
-    <!-- CSV Import -->
-    <div v-show="importMode === 'csv'" class="mt-3">
-        <p class="txt-small" v-html="t('addTrades.csvDescription', { broker: brokerLabel })"></p>
-        <div class="input-group mb-3">
-            <input id="tradesInput" type="file" accept=".csv" v-on:change="useImportTrades($event, 'file')" />
+    <!-- Manuelle Eingabe (Futures) -->
+    <div v-show="importMode === 'manual'" class="mt-3" style="max-width: 660px;">
+        <p class="txt-small">Einzelnen Futures-Trade manuell erfassen — Konto: <strong>{{ brokerLabel }}</strong>. Pflicht: Symbol &amp; Netto-PnL.</p>
+        <div class="row g-2 mb-2">
+            <div class="col-sm-6">
+                <label class="form-label mb-0">Symbol</label>
+                <input class="form-control" v-model="manual.symbol" placeholder="BTCUSDT" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label mb-0">Richtung</label>
+                <select class="form-control" v-model="manual.side">
+                    <option value="B">Long</option>
+                    <option value="SS">Short</option>
+                </select>
+            </div>
         </div>
+        <div class="row g-2 mb-2">
+            <div class="col-sm-6">
+                <label class="form-label mb-0">Datum (Ausstieg)</label>
+                <input type="date" class="form-control" v-model="manual.date" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label mb-0">Einstiegsdatum <span class="text-muted">(optional)</span></label>
+                <input type="date" class="form-control" v-model="manual.entryDate" />
+            </div>
+        </div>
+        <div class="row g-2 mb-2">
+            <div class="col-sm-6">
+                <label class="form-label mb-0">Einstiegspreis <span class="text-muted">(opt.)</span></label>
+                <input type="number" step="any" class="form-control" v-model="manual.entryPrice" />
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label mb-0">Ausstiegspreis <span class="text-muted">(opt.)</span></label>
+                <input type="number" step="any" class="form-control" v-model="manual.exitPrice" />
+            </div>
+        </div>
+        <div class="row g-2 mb-2">
+            <div class="col-sm-4">
+                <label class="form-label mb-0">Menge <span class="text-muted">(opt.)</span></label>
+                <input type="number" step="any" class="form-control" v-model="manual.qty" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label mb-0">Netto-PnL (USDT) *</label>
+                <input type="number" step="any" class="form-control" v-model="manual.netPL" placeholder="z.B. 25.40" />
+            </div>
+            <div class="col-sm-4">
+                <label class="form-label mb-0">Gebühren <span class="text-muted">(opt.)</span></label>
+                <input type="number" step="any" class="form-control" v-model="manual.fee" />
+            </div>
+        </div>
+        <div class="row g-2 mb-3">
+            <div class="col-sm-4">
+                <label class="form-label mb-0">Hebel <span class="text-muted">(opt.)</span></label>
+                <input type="number" step="any" class="form-control" v-model="manual.leverage" />
+            </div>
+        </div>
+        <button type="button" class="btn btn-success" :disabled="manualSaving" @click="addManualTrade">
+            {{ manualSaving ? 'Speichern…' : 'Trade speichern' }}
+        </button>
+        <div v-if="manualMsg" class="mt-2 small" :class="manualMsg.ok ? 'greenTrade' : 'redTrade'">{{ manualMsg.text }}</div>
     </div>
 
     <!-- API Import -->
@@ -334,8 +441,8 @@ async function importFromApi() {
         <div v-if="apiImportError" class="alert alert-danger">{{ apiImportError }}</div>
     </div>
 
-    <!-- Results (shared by both modes) -->
-    <div class="mt-3">
+    <!-- Results (API-Import-Vorschau) -->
+    <div v-show="importMode === 'api'" class="mt-3">
         <div v-if="existingImports.length != 0">
             {{ t('addTrades.alreadyImported') }} <span v-for="(item, index) in existingImports">
                 <span v-if="index > 0">, </span>{{ useDateCalFormat(item) }}</span>
@@ -386,8 +493,8 @@ async function importFromApi() {
         </div>
     </div>
 
-    <!--BUTTONS-->
-    <div>
+    <!--BUTTONS (API-Import-Vorschau)-->
+    <div v-show="importMode === 'api'">
         <button v-show="Object.keys(executions).length > 0 && !spinnerLoadingPage" type="button"
             v-on:click="useUploadTrades" class="btn btn-success btn-lg me-3">{{ t('common.submit') }}</button>
 

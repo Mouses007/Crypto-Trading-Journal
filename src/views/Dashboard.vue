@@ -3,7 +3,8 @@ import { computed, onBeforeMount, onMounted, onUnmounted, ref, reactive } from '
 import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMounted, hasData, barChartNegativeTagGroups, timeZoneTrade } from '../stores/ui.js'
-import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBroker } from '../stores/filters.js'
+import { selectedDashTab, amountCase, amountCapital, selectedRatio, selectedBroker, selectedTradeCategory } from '../stores/filters.js'
+import BotDashboard from '../components/BotDashboard.vue'
 import { totals, profitAnalysis, satisfactionArray, satisfactionTradeArray, availableTags, groups, filteredTradesTrades, excursions } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
 import { allTimeNetPnL, allTimeVolume, last30dVolume, displayBonus, refreshAccountBalance, syncStartBalanceFromBroker } from '../stores/accountBalance.js'
@@ -386,6 +387,9 @@ const feeStats = computed(() => {
     return { totalFees, perTrade, impactPercent, bruttoNetDiff, tradeCount }
 })
 
+// ART-Filter = Bot → dediziertes Bot-Dashboard statt Futures-Ansicht
+const isBotView = computed(() => selectedTradeCategory.value === 'bot')
+
 onBeforeMount(async () => {
     barChartNegativeTagGroups.length = 0
     await refreshAccountBalance({ force: true })
@@ -413,6 +417,7 @@ onBeforeMount(async () => {
             <div v-if="!hasData">
                 <NoData />
             </div>
+            <BotDashboard v-else-if="isBotView" />
             <div v-else>
                 <div class="d-flex align-items-center mb-2">
                     <nav class="flex-grow-1">

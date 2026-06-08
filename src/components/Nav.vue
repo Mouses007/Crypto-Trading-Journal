@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, computed } from 'vue';
+import { onMounted, computed, ref } from 'vue';
+import axios from 'axios'
 import { useToggleMobileMenu, useExport } from '../utils/utils.js'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
@@ -7,7 +8,7 @@ import { useInitTooltip } from "../utils/utils.js";
 import { pageId, screenType } from "../stores/ui.js"
 import { currentUser, renderProfile } from "../stores/settings.js"
 import { version } from '../../package.json';
-import { selectedDateRange, selectedPeriodRange, selectedGrossNet, selectedPositions, selectedMonth, selectedBroker } from "../stores/filters.js"
+import { selectedDateRange, selectedPeriodRange, selectedGrossNet, selectedPositions, selectedMonth, selectedBroker, brokers } from "../stores/filters.js"
 import { filteredTradesTrades } from "../stores/trades.js"
 import { useDateCalFormat } from "../utils/formatters.js"
 import dayjs from '../utils/dayjs-setup.js'
@@ -107,7 +108,31 @@ const pages = computed(() => {
     return all.filter(p => p.id !== 'kiAgent' || aiActive.value)
 })
 
+// ===== Börsen-Buttons (nur Börsen mit hinterlegter API) =====
+const configuredBrokers = ref([])
+
+async function loadConfiguredBrokers() {
+    const result = []
+    for (const b of brokers) {
+        try {
+            const { data } = await axios.get(`/api/${b.value}/config`)
+            if (data && (data.apiKey || data.hasSecret)) result.push(b)
+        } catch (_) { /* Broker ohne Config-Endpoint/Key → überspringen */ }
+    }
+    // Fallback: ist gar keine API hinterlegt, zeige trotzdem alle, damit man
+    // nicht festsitzt (z.B. frische Installation).
+    configuredBrokers.value = result.length ? result : brokers.slice()
+}
+
+function switchBroker(value) {
+    if (selectedBroker.value === value) return
+    selectedBroker.value = value
+    localStorage.setItem('selectedBroker', value)
+    window.location.reload()
+}
+
 onMounted(async () => {
+    await loadConfiguredBrokers()
     await useInitTooltip()
 })
 
@@ -119,7 +144,15 @@ const navAdd = (param) => {
 </script>
 
 <template>
-    <div class="justify-content-between navbar">
+    <!-- Börsen-Buttons über dem Seitentitel (nur Börsen mit hinterlegter API) -->
+    <div v-if="configuredBrokers.length > 1" class="broker-switch d-flex align-items-center gap-1 px-2 pt-2 pb-1">
+        <button v-for="b in configuredBrokers" :key="b.value" type="button"
+            @click="switchBroker(b.value)"
+            :class="['btn', 'btn-sm', 'broker-pill', selectedBroker === b.value ? 'active' : '']">
+            {{ b.label }}
+        </button>
+    </div>
+    <div class="justify-content-between navbar nav-pull-up">
         <div class="col-6">
             <span v-if="screenType == 'mobile'" class="d-flex align-items-center">
                 <a v-on:click="useToggleMobileMenu" class="mobile-menu-toggle">
@@ -152,3 +185,36 @@ const navAdd = (param) => {
         </div>
     </div>
 </template>
+
+<style scoped>
+.broker-switch {
+    flex-wrap: wrap;
+    /* Oberer Abstand + 20px → ganze Seite 20px tiefer */
+    margin-top: calc(0.85rem + 20px);
+}
+
+/* Seitentitel + Inhalt etwas hochziehen (ca. ein Drittel des Pillen-Abstands). */
+.nav-pull-up {
+    margin-top: -0.28rem;
+}
+.broker-pill {
+    font-size: 0.78rem;
+    padding: 0.15rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--white-10, rgba(255, 255, 255, 0.15));
+    background: transparent;
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+    line-height: 1.4;
+    transition: all 0.15s ease;
+}
+.broker-pill:hover {
+    border-color: var(--blue-color, #3b82f6);
+    color: var(--white-87, rgba(255, 255, 255, 0.9));
+}
+.broker-pill.active {
+    background: var(--blue-color, #3b82f6);
+    border-color: var(--blue-color, #3b82f6);
+    color: #fff;
+    font-weight: 600;
+}
+</style>

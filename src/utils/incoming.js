@@ -119,6 +119,8 @@ async function syncPositionsWithDb(apiPositions) {
 
         if (existing) {
             // Update unrealizedPNL, markPrice, bitunixData
+            const rawSide = apiPos.side || (apiPos.holdSide || '').toUpperCase() || ''
+            const normSide = (rawSide === 'BUY' || rawSide === 'LONG') ? 'LONG' : (rawSide === 'SELL' || rawSide === 'SHORT') ? 'SHORT' : rawSide
             await dbUpdate('incoming_positions', existing.objectId, {
                 unrealizedPNL: parseFloat(apiPos.unrealizedPNL ?? apiPos.unrealized_pnl ?? 0),
                 // Mark price first, liquidation as fallback (was reversed before — caused mark
@@ -126,6 +128,10 @@ async function syncPositionsWithDb(apiPositions) {
                 markPrice: parseFloat(apiPos.markPrice ?? apiPos.mark_price ?? apiPos.liqPrice ?? apiPos.liq_price ?? 0),
                 quantity: parseFloat(apiPos.qty ?? apiPos.maxQty ?? apiPos.quantity ?? existing.quantity ?? 0),
                 entryPrice: parseFloat(apiPos.avgOpenPrice ?? apiPos.entryPrice ?? apiPos.avg_open_price ?? 0),
+                // symbol/side/leverage aktuell halten (z.B. nach Normalisierungs-Fix)
+                symbol: String(apiPos.symbol ?? apiPos.symbolName ?? existing.symbol ?? ''),
+                side: normSide || existing.side,
+                leverage: parseFloat(apiPos.leverage ?? existing.leverage ?? 0),
                 bitunixData: apiPos
             })
         } else {
@@ -308,6 +314,7 @@ async function fetchRecentlyClosed() {
 async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = false) {
     const broker = selectedBroker.value || 'bitunix'
     const isBitget = broker === 'bitget'
+    const isPionex = broker === 'pionex'
 
     // PnL- und Fee-Logik MUSS identisch zu quickImport.js sein, sonst weichen
     // live-importierte Trades von CSV-/manuell-importierten ab und der
@@ -322,14 +329,30 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
     // Bitget:   pnl ist BRUTTO. fee = openFee + closeFee + funding (signed),
     //           netPL bevorzugt netProfit, sonst pnl - fee
     let grossPL, fee, tradingFee, fundingFee, netPL
-    if (isBitget) {
-        grossPL = parseFloat(histPos.pnl || 0)
+    if (isPionex) {
+        // Pionex Bot/Futures: totalRealizedProfit = NETTO-Wallet-Delta (live
+        // verifiziert), analog Bitunix realizedPNL. grossPL rekonstruiert.
+        const netRaw = histPos.totalRealizedProfit ?? histPos.realizedPnl ?? histPos.amountSettled ?? histPos.gridProfit ?? histPos.pnl ?? 0
+        netPL = parseFloat(netRaw || 0)
+        tradingFee = Math.abs(parseFloat(histPos.totalFee ?? histPos.fee ?? histPos.tradingFee ?? 0))
+        fundingFee = parseFloat(histPos.totalFundingFee ?? histPos.fundingFee ?? histPos.funding ?? 0)
+        grossPL = netPL + tradingFee - fundingFee
+        fee = tradingFee
+    } else if (isBitget) {
+        grossPL = parseFloat(histPos.pnl || 0)            // Bitget pnl = BRUTTO (vor Gebuehren)
         const openFee = Math.abs(parseFloat(histPos.openFee || 0))
         const closeFee = Math.abs(parseFloat(histPos.closeFee || 0))
         tradingFee = openFee + closeFee
-        fundingFee = parseFloat(histPos.totalFunding || 0)  // Vorzeichen beibehalten
-        fee = tradingFee + fundingFee
-        netPL = parseFloat(histPos.netProfit || 0) || (grossPL - fee)
+        fundingFee = parseFloat(histPos.totalFunding || 0)  // signiert: + erhalten / − bezahlt
+        // commission = NUR Trading-Fee (Funding separat in fundingFee), identisch
+        // zur Bitunix-Semantik. Frueher: tradingFee + fundingFee → verfaelschte
+        // die Gebuehren-Summe je nach Funding-Vorzeichen.
+        fee = tradingFee
+        // netProfit ist Bitgets echter Wallet-Delta (nach Fee & Funding). Auch 0
+        // ist ein gueltiger Break-even-Wert und darf NICHT in den Fallback laufen.
+        const rawNet = histPos.netProfit
+        const hasNet = rawNet !== undefined && rawNet !== null && rawNet !== ''
+        netPL = hasNet ? parseFloat(rawNet) : (grossPL - tradingFee + fundingFee)
     } else {
         const realizedPNL = parseFloat(histPos.realizedPNL || 0)
         tradingFee = Math.abs(parseFloat(histPos.fee || 0))
@@ -338,17 +361,25 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
         grossPL = realizedPNL + tradingFee - fundingFee           // reine Trade-PnL
         fee = tradingFee                                          // commission = trading fee
     }
-    // Bitunix: mtime/ctime; Bitget: uTime/cTime
-    const closeTime = parseInt(histPos.mtime || histPos.uTime || histPos.ctime || histPos.cTime)
-    const openTime = parseInt(histPos.ctime || histPos.cTime)
+    // Bitunix: mtime/ctime; Bitget: uTime/cTime; Pionex-Futures: updateTime/createTime; Bot: closeTime/createTime
+    const closeTime = parseInt(histPos.mtime || histPos.uTime || histPos.updateTime || histPos.closeTime || histPos.ctime || histPos.cTime || 0)
+    const openTime = parseInt(histPos.ctime || histPos.cTime || histPos.createTime || histPos.openTime || closeTime)
     const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
 
-    // Bitunix: side LONG/SHORT/BUY/SELL; Bitget: holdSide long/short
-    const rawSide = histPos.side || (histPos.holdSide || '').toUpperCase() || ''
-    const side = (rawSide === 'LONG' || rawSide === 'BUY') ? 'B' : 'SS'
+    // Bitunix: side LONG/SHORT/BUY/SELL; Bitget: holdSide; Pionex-Futures: positionSide.
+    // Grid-Bots sind richtungslos → aus Open/Close-Preis ableiten.
+    const rawSide = (histPos.side || histPos.positionSide || histPos.holdSide || '').toString().toUpperCase()
+    let side
+    if (rawSide === 'LONG' || rawSide === 'BUY') side = 'B'
+    else if (rawSide === 'SHORT' || rawSide === 'SELL') side = 'SS'
+    else {
+        const op = parseFloat(histPos.positionOpenPrice || histPos.entryPrice || histPos.openAvgPrice || 0)
+        const cp = parseFloat(histPos.closedPrice || histPos.closePrice || histPos.closeAvgPrice || 0)
+        side = (cp >= op) ? 'B' : 'SS'
+    }
     const isGrossWin = grossPL > 0
     const isNetWin = netPL > 0
-    const quantity = parseFloat(histPos.maxQty || histPos.closeTotalPos || histPos.openTotalPos || 1)
+    const quantity = Math.abs(parseFloat(histPos.maxQty || histPos.closeTotalPos || histPos.openTotalPos || histPos.totalVolume || histPos.sizeLong || histPos.sizeShort || histPos.netSize || 1))
     const entryTime = dayjs(openTime).utc().unix()
     const exitTime = dayjs(closeTime).utc().unix()
 
@@ -366,8 +397,8 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
         symbol: histPos.symbol || 'FUTURES',
         buyQuantity: quantity,
         sellQuantity: quantity,
-        entryPrice: parseFloat(histPos.entryPrice || histPos.openAvgPrice || 0),
-        exitPrice: parseFloat(histPos.closePrice || histPos.closeAvgPrice || 0),
+        entryPrice: parseFloat(histPos.entryPrice || histPos.openAvgPrice || histPos.avgEntryPrice || histPos.avgPrice || histPos.positionOpenPrice || 0),
+        exitPrice: parseFloat(histPos.closePrice || histPos.closeAvgPrice || histPos.avgClosePrice || histPos.closedPrice || 0),
         entryTime: entryTime,
         exitTime: exitTime,
         grossProceeds: grossPL,
@@ -401,6 +432,17 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
         executionsCount: 1,
         tradesCount: 1,
         openPosition: false,
+    }
+
+    // Bot- vs. Futures-Kategorie (für den Futures/Bot-Filter). Pionex-Bots
+    // liefern botType; alles andere ist "futures".
+    if (isPionex && histPos.botType) {
+        tradeObj.botType = histPos.botType
+        tradeObj.category = 'bot'
+        if (histPos.setLeverage) tradeObj.leverage = parseFloat(histPos.setLeverage)
+        if (histPos.initQuoteInvestment) tradeObj.investment = parseFloat(histPos.initQuoteInvestment)
+    } else {
+        tradeObj.category = 'futures'
     }
 
     const execution = { ...tradeObj, trade: tradeId }
@@ -612,6 +654,19 @@ async function loadIncomingPositions() {
         pos.tags = Array.isArray(pos.tags) ? JSON.parse(JSON.stringify(pos.tags)) : []
         pos.closingTags = Array.isArray(pos.closingTags) ? JSON.parse(JSON.stringify(pos.closingTags)) : []
         if (pos.tags === pos.closingTags) pos.closingTags = []
+
+        // "Börsen-Wahrheit" aus dem live gespeicherten API-Objekt übernehmen:
+        // symbol/side/leverage in der DB-Zeile können veraltet sein (z.B. nach einer
+        // Normalisierungs-Änderung wird beim Update nur PnL/markPrice aktualisiert).
+        // coinM/marginCoin sind keine DB-Spalten und kommen ausschließlich von hier.
+        const bd = pos.bitunixData
+        if (bd && typeof bd === 'object') {
+            if (bd.symbol) pos.symbol = bd.symbol
+            if (bd.side) pos.side = bd.side
+            if (bd.leverage != null && bd.leverage !== '') pos.leverage = bd.leverage
+            pos.coinM = !!bd.coinM
+            pos.marginCoin = bd.marginCoin || 'USDT'
+        }
 
         // Restore local edits for the expanded position
         if (preservedLocal && String(pos.positionId) === String(preservedLocal.positionId)) {

@@ -44,6 +44,8 @@
   },
   "nav": {
     "exchange": "EXCHANGE",
+    "tradeCategory": "TYPE",
+    "categoryAll": "All",
     "analyze": "ANALYZE",
     "dashboard": "Dashboard",
     "dailyView": "Daily View",
@@ -245,6 +247,7 @@
     "importFromDateHint": "Trades before this date will be ignored. Empty = all trades.",
     "bitunixSaved": "Bitunix API settings saved",
     "bitgetSaved": "Bitget API settings saved",
+    "pionexSaved": "Pionex API settings saved",
     "evaluation": "Evaluation",
     "tagsSection": "Tags",
     "tagsDescription": "Create tag groups and tags to categorize your trades.",

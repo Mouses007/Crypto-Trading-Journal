@@ -279,6 +279,24 @@ async function runMigrations(knex, client) {
         }
     }
 
+    // ==================== PIONEX CONFIG ====================
+    if (!(await knex.schema.hasTable('pionex_config'))) {
+        await knex.schema.createTable('pionex_config', (t) => {
+            t.integer('id').primary().defaultTo(1)
+            t.text('apiKey').defaultTo('')
+            t.text('secretKey').defaultTo('')
+            t.text('apiImportStartDate').defaultTo('')
+            t.bigInteger('lastApiImport').defaultTo(0)
+            t.bigInteger('lastHistoryScan').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+        })
+        const existing = await knex('pionex_config').where('id', 1).first()
+        if (!existing) {
+            await knex('pionex_config').insert({ id: 1 })
+        }
+    }
+
     // ==================== INCOMING POSITIONS ====================
     if (!(await knex.schema.hasTable('incoming_positions'))) {
         await knex.schema.createTable('incoming_positions', (t) => {
