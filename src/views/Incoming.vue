@@ -27,7 +27,7 @@ const savingId = ref(null)
 import axios from 'axios'
 const positionFills = ref({}) // Map: positionId → { loading, trades[], error }
 
-async function fetchPositionFills(positionId, force = false, broker = 'bitunix', symbol = '', openTime = null) {
+async function fetchPositionFills(positionId, force = false, broker = 'bitunix', symbol = '', openTime = null, posSide = '') {
     if (!positionId) return
     if (!force && positionFills.value[positionId]?.trades) return // cached
     positionFills.value[positionId] = { loading: true, trades: [], error: null }
@@ -59,7 +59,13 @@ async function fetchPositionFills(positionId, force = false, broker = 'bitunix',
                         ? f.feeDetail.reduce((s, d) => s + Math.abs(parseFloat(d.totalFee || 0)), 0)
                         : Math.abs(parseFloat(f.fee || 0)),
                     ctime: f.cTime,
-                    reduceOnly: f.tradeSide === 'close' || f.tradeSide === 'reduce_close_short' || f.tradeSide === 'reduce_close_long',
+                    // reduceOnly = Schließung. Hedge-Modus liefert tradeSide
+                    // 'close'/'reduce_close_*'. One-Way-Modus liefert nur
+                    // 'buy_single'/'sell_single' → dort ist die GEGEN-Richtung zur
+                    // Position eine Schließung (Long → sell schließt, Short → buy).
+                    reduceOnly: f.tradeSide === 'close' || f.tradeSide === 'reduce_close_short' || f.tradeSide === 'reduce_close_long'
+                        || (posSide === 'LONG' && f.side === 'sell')
+                        || (posSide === 'SHORT' && f.side === 'buy'),
                 }))
             }
         } else {
@@ -544,7 +550,7 @@ async function manualRefresh() {
         if (expandedId.value) {
             const expandPos = incomingPositions.find(p => p.positionId === expandedId.value)
             if (expandPos) {
-                fetchPositionFills(expandedId.value, true, expandPos.broker, expandPos.symbol, expandPos.bitunixData?.ctime)
+                fetchPositionFills(expandedId.value, true, expandPos.broker, expandPos.symbol, expandPos.bitunixData?.ctime, expandPos.side)
                 fetchPositionTpSl(expandedId.value, true, expandPos.broker, expandPos.symbol)
                 // If position transitioned to pending_evaluation, init closing Quill
                 if (expandPos.status === 'pending_evaluation') {
@@ -580,7 +586,7 @@ async function toggleExpand(positionId) {
     // Screenshot-Previews aus DB laden
     if (expandPos) loadScreenshotPreviews(expandPos)
     if (expandPos && (expandPos.status === 'open' || expandPos.status === 'pending_evaluation') && (expandPos.broker === 'bitunix' || expandPos.broker === 'bitget')) {
-        fetchPositionFills(positionId, false, expandPos.broker, expandPos.symbol, expandPos.bitunixData?.ctime)
+        fetchPositionFills(positionId, false, expandPos.broker, expandPos.symbol, expandPos.bitunixData?.ctime, expandPos.side)
         fetchPositionTpSl(positionId, false, expandPos.broker, expandPos.symbol)
     }
 
