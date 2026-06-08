@@ -27,15 +27,22 @@ const savingId = ref(null)
 import axios from 'axios'
 const positionFills = ref({}) // Map: positionId → { loading, trades[], error }
 
-async function fetchPositionFills(positionId, force = false, broker = 'bitunix', symbol = '') {
+async function fetchPositionFills(positionId, force = false, broker = 'bitunix', symbol = '', openTime = null) {
     if (!positionId) return
     if (!force && positionFills.value[positionId]?.trades) return // cached
     positionFills.value[positionId] = { loading: true, trades: [], error: null }
     try {
         let url, data
         if (broker === 'bitget') {
-            // Bitget uses symbol instead of positionId for fills
-            const resp = await axios.get(`/api/bitget/position-trades/${encodeURIComponent(symbol)}`)
+            // Bitget-Fills sind symbol-basiert (nicht positionsgebunden). Ohne
+            // Zeitgrenze würden Fills FRÜHERER, bereits geschlossener Positionen
+            // desselben Symbols mit reingemischt → falsche „Nachkäufe"/⌀-Einstieg.
+            // Darum ab der Öffnungszeit der aktuellen Position laden (60s Puffer
+            // gegen Clock-Skew zwischen Fill- und Positions-Timestamp).
+            let params = ''
+            const ot = parseInt(openTime || 0)
+            if (ot > 0) params = `?startTime=${ot - 60000}`
+            const resp = await axios.get(`/api/bitget/position-trades/${encodeURIComponent(symbol)}${params}`)
             data = resp.data
             // Map Bitget fill fields to unified format
             if (data.ok && data.trades) {
@@ -46,7 +53,11 @@ async function fetchPositionFills(positionId, force = false, broker = 'bitunix',
                     side: f.side === 'buy' ? 'BUY' : 'SELL',
                     price: f.price,
                     qty: f.baseVolume || f.size,
-                    fee: f.fee,
+                    // Bitget v2 liefert die Gebühr in feeDetail[].totalFee (signiert,
+                    // negativ = gezahlt) — NICHT in f.fee. Summe über alle Einträge.
+                    fee: Array.isArray(f.feeDetail)
+                        ? f.feeDetail.reduce((s, d) => s + Math.abs(parseFloat(d.totalFee || 0)), 0)
+                        : Math.abs(parseFloat(f.fee || 0)),
                     ctime: f.cTime,
                     reduceOnly: f.tradeSide === 'close' || f.tradeSide === 'reduce_close_short' || f.tradeSide === 'reduce_close_long',
                 }))
@@ -533,7 +544,7 @@ async function manualRefresh() {
         if (expandedId.value) {
             const expandPos = incomingPositions.find(p => p.positionId === expandedId.value)
             if (expandPos) {
-                fetchPositionFills(expandedId.value, true, expandPos.broker, expandPos.symbol)
+                fetchPositionFills(expandedId.value, true, expandPos.broker, expandPos.symbol, expandPos.bitunixData?.ctime)
                 fetchPositionTpSl(expandedId.value, true, expandPos.broker, expandPos.symbol)
                 // If position transitioned to pending_evaluation, init closing Quill
                 if (expandPos.status === 'pending_evaluation') {
@@ -569,7 +580,7 @@ async function toggleExpand(positionId) {
     // Screenshot-Previews aus DB laden
     if (expandPos) loadScreenshotPreviews(expandPos)
     if (expandPos && (expandPos.status === 'open' || expandPos.status === 'pending_evaluation') && (expandPos.broker === 'bitunix' || expandPos.broker === 'bitget')) {
-        fetchPositionFills(positionId, false, expandPos.broker, expandPos.symbol)
+        fetchPositionFills(positionId, false, expandPos.broker, expandPos.symbol, expandPos.bitunixData?.ctime)
         fetchPositionTpSl(positionId, false, expandPos.broker, expandPos.symbol)
     }
 
