@@ -758,6 +758,24 @@ function updateClosingTimeframe(pos, value) {
     useUpdateIncomingPosition(pos.objectId, { closingTimeframe: newValue })
 }
 
+// ===== BOT DETECTION =====
+// Pionex-Bots tragen botType in historyData (normalizeBotOrder) bzw. isBot/botType
+// im live bitunixData (normalizeRunningBot). Für sie wird eine schlankere
+// Bewertungsmaske gezeigt (langfristige, automatisierte Bots).
+function isBotPosition(pos) {
+    return !!(pos?.historyData?.botType || pos?.bitunixData?.isBot || pos?.bitunixData?.botType)
+}
+
+// Realisierter PnL einer geschlossenen Position für den Karten-Header.
+// Bots liefern kein realizedPNL (normalizeBotOrder) → Fallback auf
+// totalRealizedProfit / gridProfit.
+function closedPnL(pos) {
+    const hd = pos?.historyData
+    if (!hd) return null
+    const v = hd.realizedPNL ?? hd.totalRealizedProfit ?? hd.gridProfit
+    return (v === null || v === undefined || v === '') ? null : v
+}
+
 // ===== TAG HANDLERS =====
 
 function addTag(pos, tag) {
@@ -1027,6 +1045,11 @@ async function completeClosingEvaluation(pos) {
         }
         await useUpdateIncomingPosition(pos.objectId, data)
 
+        // Bots: keine SL/TP/RRR/Fill-Metadaten (automatisiert, langfristig) → überspringen.
+        const isBot = isBotPosition(pos)
+        let tradingMeta = null
+        if (!isBot) {
+
         // Ensure fills are loaded before building metadata
         if (!positionFills.value[pos.positionId]?.trades?.length) {
             await fetchPositionFills(pos.positionId, true, pos.broker || 'bitunix', pos.symbol || '')
@@ -1043,7 +1066,7 @@ async function completeClosingEvaluation(pos) {
 
         const rrr = getRRR(pos.positionId, pos.side)
 
-        const tradingMeta = {
+        tradingMeta = {
             sl: tpsl.sl || null,
             tp: tpsl.tp || null,
             slQty: tpsl.slQty || null,
@@ -1083,6 +1106,7 @@ async function completeClosingEvaluation(pos) {
                     }))
             })()
         }
+        } // /if (!isBot)
 
         // Transfer metadata to trade record and delete incoming position
         await useTransferClosingMetadata(
@@ -1199,10 +1223,10 @@ function getPositionDate(pos) {
                         <span v-if="pos.status === 'pending_evaluation'" class="badge bg-warning text-dark ms-2">{{ t('incoming.closed') }}</span>
                     </div>
                     <div class="col text-end">
-                        <span v-if="pos.status === 'pending_evaluation' && pos.historyData?.realizedPNL"
+                        <span v-if="pos.status === 'pending_evaluation' && closedPnL(pos) != null"
                             class="incoming-pnl fw-bold"
-                            :class="parseFloat(pos.historyData.realizedPNL) >= 0 ? 'greenTrade' : 'redTrade'">
-                            {{ formatCurrency(pos.historyData.realizedPNL) }}
+                            :class="parseFloat(closedPnL(pos)) >= 0 ? 'greenTrade' : 'redTrade'">
+                            {{ formatCurrency(closedPnL(pos)) }}
                         </span>
                         <template v-else>
                             <span class="incoming-pnl" :class="parseFloat(pos.unrealizedPNL || 0) >= 0 ? 'greenTrade' : 'redTrade'">
@@ -1420,8 +1444,8 @@ function getPositionDate(pos) {
                         </div>
                     </div>
 
-                    <!-- ========== OPENING EVALUATION ========== -->
-                    <div class="opening-eval-section p-3 mb-2">
+                    <!-- ========== OPENING EVALUATION (nur Futures, nicht für Bots) ========== -->
+                    <div v-if="!isBotPosition(pos)" class="opening-eval-section p-3 mb-2">
                     <div class="d-flex align-items-center mb-3">
                         <i class="uil uil-unlock-alt me-2" style="color: var(--green-color, #10b981); font-size: 1.1rem;"></i>
                         <span class="fw-bold" style="font-size: 0.95rem;">{{ t('incoming.openingEvaluation') }}</span>
@@ -1556,8 +1580,8 @@ function getPositionDate(pos) {
 
                     </div><!-- /opening-eval-section -->
 
-                    <!-- ========== CLOSING EVALUATION ========== -->
-                    <div v-if="pos.status === 'pending_evaluation'" class="closing-eval-section mt-3 p-3">
+                    <!-- ========== CLOSING EVALUATION (Futures) ========== -->
+                    <div v-if="pos.status === 'pending_evaluation' && !isBotPosition(pos)" class="closing-eval-section mt-3 p-3">
                         <div class="d-flex align-items-center mb-3">
                             <i class="uil uil-lock-alt me-2" style="color: var(--blue-color); font-size: 1.1rem;"></i>
                             <span class="fw-bold" style="font-size: 0.95rem;">{{ t('incoming.closingEvaluation') }}</span>
@@ -1670,6 +1694,68 @@ function getPositionDate(pos) {
                             </div>
                             <input v-else type="file" accept="image/*" class="form-control form-control-sm"
                                 @change="handleClosingScreenshotUpload($event, pos)" />
+                        </div>
+
+                        <!-- Satisfaction -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.satisfaction') }}</label>
+                            <div class="d-flex gap-3">
+                                <span class="pointerClass fs-4"
+                                    :style="pos.satisfaction === 1 ? '' : 'opacity: 0.3; filter: grayscale(1)'"
+                                    @click.stop="updateSatisfaction(pos, 1)">
+                                    👍
+                                </span>
+                                <span class="pointerClass fs-4"
+                                    :style="pos.satisfaction === 2 ? '' : 'opacity: 0.3; filter: grayscale(1)'"
+                                    @click.stop="updateSatisfaction(pos, 2)">
+                                    ✊
+                                </span>
+                                <span class="pointerClass fs-4"
+                                    :style="pos.satisfaction === 0 ? '' : 'opacity: 0.3; filter: grayscale(1)'"
+                                    @click.stop="updateSatisfaction(pos, 0)">
+                                    👎
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========== BOT EVALUATION (schlank) ========== -->
+                    <div v-if="pos.status === 'pending_evaluation' && isBotPosition(pos)" class="closing-eval-section mt-3 p-3">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="uil uil-robot me-2" style="color: var(--blue-color); font-size: 1.1rem;"></i>
+                            <span class="fw-bold" style="font-size: 0.95rem;">{{ t('incoming.botEvaluation') }}</span>
+                        </div>
+
+                        <!-- Notiz (Quill Editor) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.note') }}</label>
+                            <div :id="'quillIncoming-' + pos.positionId + '-closing'" class="quill-incoming"></div>
+                        </div>
+
+                        <!-- Tags -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.tags') }}</label>
+                            <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                                <span v-for="(tag, idx) in (pos.closingTags || [])" :key="tag.id"
+                                    class="badge me-1 pointerClass"
+                                    :style="{ backgroundColor: getTagColor(tag.id) }"
+                                    @click.stop="removeClosingTag(pos, idx)">
+                                    {{ tag.name }} <span class="ms-1">&times;</span>
+                                </span>
+                            </div>
+                            <select class="form-select form-select-sm"
+                                @change.stop="addClosingTag(pos, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
+                                <option selected disabled>{{ t('incoming.addTag') }}</option>
+                                <template v-for="group in availableTags" :key="group.id">
+                                    <optgroup :label="group.name">
+                                        <option v-for="tag in group.tags" :key="tag.id"
+                                            :value="JSON.stringify({ id: tag.id, name: tag.name })"
+                                            :disabled="(pos.closingTags || []).some(t => t.id === tag.id)">
+                                            {{ tag.name }}
+                                        </option>
+                                    </optgroup>
+                                </template>
+                            </select>
                         </div>
 
                         <!-- Satisfaction -->

@@ -795,8 +795,13 @@ export async function useTransferClosingMetadata(incoming, histPos, {
     closingTags = [],
     tradingMetadata = null,
 }) {
-    // Support both Bitunix (mtime/ctime) and Bitget (uTime/cTime) timestamps
-    const closeTime = parseInt(histPos.mtime || histPos.uTime || histPos.ctime || histPos.cTime)
+    // Support Bitunix (mtime/ctime), Bitget (uTime/cTime), Pionex-Futures
+    // (updateTime/createTime) und Pionex-Bots (closeTime/createTime).
+    // Schließzeit-Felder zuerst, Öffnungszeit (createTime) nur als letzter Fallback.
+    const closeTime = parseInt(
+        histPos.mtime || histPos.uTime || histPos.updateTime ||
+        histPos.closeTime || histPos.ctime || histPos.cTime || histPos.createTime
+    )
     if (!closeTime || isNaN(closeTime)) {
         console.error(' -> useTransferClosingMetadata: Kein gültiger Zeitstempel in histPos', histPos)
         throw new Error('Kein gültiger Zeitstempel für die geschlossene Position')

@@ -1,9 +1,10 @@
 <script setup>
 /**
  * Hinweis nach einem Update (bzw. bei Erstnutzung): erklärt, wie die Pionex-API
- * für die Bot-Funktionen einzurichten ist. Wird genau EINMAL je NOTICE_VERSION
- * gezeigt: ist der gespeicherte Wert ≠ NOTICE_VERSION, erscheint das Popup wieder.
- * → NOTICE_VERSION hochzählen, wenn der Hinweis erneut gezeigt werden soll.
+ * für die Bot-Funktionen einzurichten ist. Wird genau EINMAL gezeigt — nämlich
+ * nur, wenn noch nie eine 3.x-Version bestätigt wurde (Upgrade von 2.x oder
+ * Neuinstallation). Bei 3.x → 3.x Updates erscheint der Hinweis NICHT erneut,
+ * da die Bot-/Pionex-Features dann bereits bekannt sind.
  */
 import { ref, onMounted } from 'vue'
 
@@ -13,7 +14,9 @@ const show = ref(false)
 
 onMounted(() => {
     try {
-        if (localStorage.getItem(STORAGE_KEY) !== NOTICE_VERSION) show.value = true
+        const seen = localStorage.getItem(STORAGE_KEY) || ''
+        // Nur zeigen, wenn noch keine 3.x-Version bestätigt wurde.
+        if (!seen.startsWith('3.')) show.value = true
     } catch (_) { /* localStorage nicht verfügbar → nicht zeigen */ }
 })
 
