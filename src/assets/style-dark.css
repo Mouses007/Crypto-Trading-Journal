@@ -2127,11 +2127,20 @@ h4 {
         font-size: 0.85rem;
     }
 
+    /* Toggle darf umbrechen, damit die Filter-Info eine eigene Zeile bekommt */
+    .mobile-menu-toggle {
+        flex-wrap: wrap;
+        row-gap: 0;
+    }
+
     .nav-filter-info {
+        flex-basis: 100%;
+        width: 100%;
         display: block;
         font-size: 0.65rem;
-        margin-left: 0;
-        margin-top: 2px;
+        margin-left: 1.7rem;
+        margin-top: 1px;
+        line-height: 1.2;
     }
 
     /* --- Main Content --- */

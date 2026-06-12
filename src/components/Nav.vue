@@ -144,14 +144,6 @@ const navAdd = (param) => {
 </script>
 
 <template>
-    <!-- Börsen-Buttons über dem Seitentitel (nur Börsen mit hinterlegter API) -->
-    <div v-if="configuredBrokers.length > 1" class="broker-switch d-flex align-items-center gap-1 px-2 pt-2 pb-1">
-        <button v-for="b in configuredBrokers" :key="b.value" type="button"
-            @click="switchBroker(b.value)"
-            :class="['btn', 'btn-sm', 'broker-pill', selectedBroker === b.value ? 'active' : '']">
-            {{ b.label }}
-        </button>
-    </div>
     <div class="justify-content-between navbar nav-pull-up">
         <div class="col-6">
             <span v-if="screenType == 'mobile'" class="d-flex align-items-center">
@@ -184,18 +176,36 @@ const navAdd = (param) => {
             </span>
         </div>
     </div>
+    <!-- Börsen-Buttons unter dem Seitentitel (nur Börsen mit hinterlegter API) -->
+    <div v-if="configuredBrokers.length > 1" class="broker-switch d-flex align-items-center gap-1 px-2 pt-1 pb-2">
+        <button v-for="b in configuredBrokers" :key="b.value" type="button"
+            @click="switchBroker(b.value)"
+            :class="['btn', 'btn-sm', 'broker-pill', selectedBroker === b.value ? 'active' : '']">
+            {{ b.label }}
+        </button>
+    </div>
 </template>
 
 <style scoped>
 .broker-switch {
     flex-wrap: wrap;
-    /* Oberer Abstand + 20px → ganze Seite 20px tiefer */
-    margin-top: calc(0.85rem + 20px);
+    /* Pillen sitzen jetzt unter dem Titel → nur leichter Abstand nach oben */
+    margin-top: -0.1rem;
 }
 
-/* Seitentitel + Inhalt etwas hochziehen (ca. ein Drittel des Pillen-Abstands). */
+/* Trennlinie unter die Pillen ziehen (statt unter die Navbar), damit
+   die Börsen-Buttons zwischen Titel und Linie liegen. */
+.navbar:has(+ .broker-switch) {
+    border-bottom: none;
+}
+.broker-switch {
+    border-bottom: 1px solid var(--white-18);
+    padding-bottom: calc(0.55rem + 15px) !important;
+}
+
+/* Seitentitel oben, mit etwas Abstand nach oben. */
 .nav-pull-up {
-    margin-top: -0.28rem;
+    margin-top: 0.85rem;
 }
 .broker-pill {
     font-size: 0.78rem;

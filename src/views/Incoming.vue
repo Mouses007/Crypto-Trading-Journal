@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
 import { spinnerLoadingPage, timeZoneTrade, expandedId } from '../stores/ui.js'
-import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js'
+import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker, selectedTradeCategory } from '../stores/filters.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
 import { useFetchOpenPositions, useGetIncomingPositions, useUpdateIncomingPosition, useDeleteIncomingPosition, useTransferClosingMetadata } from '../utils/incoming'
@@ -766,6 +766,12 @@ function isBotPosition(pos) {
     return !!(pos?.historyData?.botType || pos?.bitunixData?.isBot || pos?.bitunixData?.botType)
 }
 
+// Im Futures-Modus keine Bot-Positionen (laufend oder pendent) anzeigen.
+const displayedPositions = computed(() => {
+    if (selectedTradeCategory.value === 'bot') return incomingPositions
+    return incomingPositions.filter(p => !isBotPosition(p))
+})
+
 // Realisierter PnL einer geschlossenen Position für den Karten-Header.
 // Bots liefern kein realizedPNL (normalizeBotOrder) → Fallback auf
 // totalRealizedProfit / gridProfit.
@@ -1207,10 +1213,10 @@ function getPositionDate(pos) {
             <div v-if="incomingError" class="alert alert-danger">{{ incomingError }}</div>
 
             <!-- No positions -->
-            <NoData v-if="incomingPositions.length === 0 && !incomingError" />
+            <NoData v-if="displayedPositions.length === 0 && !incomingError" />
 
             <!-- Position cards -->
-            <div v-for="pos in incomingPositions" :key="pos.positionId" class="dailyCard incoming-card mb-2 p-2">
+            <div v-for="pos in displayedPositions" :key="pos.positionId" class="dailyCard incoming-card mb-2 p-2">
                 <!-- Card header -->
                 <div class="row align-items-center pointerClass" @click="toggleExpand(pos.positionId)">
                     <div class="col-auto">
@@ -1716,6 +1722,46 @@ function getPositionDate(pos) {
                                     👎
                                 </span>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- ========== BOT NOTIZ (laufend, schlank) ========== -->
+                    <div v-if="pos.status !== 'pending_evaluation' && isBotPosition(pos)" class="opening-eval-section p-3 mb-2">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="uil uil-robot me-2" style="color: var(--blue-color); font-size: 1.1rem;"></i>
+                            <span class="fw-bold" style="font-size: 0.95rem;">{{ t('incoming.botEvaluation') }}</span>
+                        </div>
+
+                        <!-- Notiz (Quill Editor) -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.note') }}</label>
+                            <div :id="'quillIncoming-' + pos.positionId + '-opening'" class="quill-incoming"></div>
+                        </div>
+
+                        <!-- Tags -->
+                        <div class="pb-edit-section">
+                            <label class="pb-edit-label">{{ t('incoming.tags') }}</label>
+                            <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                                <span v-for="(tag, idx) in (pos.tags || [])" :key="tag.id"
+                                    class="badge me-1 pointerClass"
+                                    :style="{ backgroundColor: getTagColor(tag.id) }"
+                                    @click.stop="removeTag(pos, idx)">
+                                    {{ tag.name }} <span class="ms-1">&times;</span>
+                                </span>
+                            </div>
+                            <select class="form-select form-select-sm"
+                                @change.stop="addTag(pos, JSON.parse($event.target.value)); $event.target.selectedIndex = 0">
+                                <option selected disabled>{{ t('incoming.addTag') }}</option>
+                                <template v-for="group in availableTags" :key="group.id">
+                                    <optgroup :label="group.name">
+                                        <option v-for="tag in group.tags" :key="tag.id"
+                                            :value="JSON.stringify({ id: tag.id, name: tag.name })"
+                                            :disabled="(pos.tags || []).some(t => t.id === tag.id)">
+                                            {{ tag.name }}
+                                        </option>
+                                    </optgroup>
+                                </template>
+                            </select>
                         </div>
                     </div>
 
