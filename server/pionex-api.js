@@ -212,6 +212,20 @@ function normalizeBotOrder(o) {
  *
  * Beide Formeln gegen die Pionex-UI verifiziert (BTC linear, SOL coin-M).
  */
+/**
+ * Liquidationspreis (in USDT) eines laufenden Bots ermitteln.
+ * Linear: liquidationPrice direkt. Coin-M (invers): liquidationPrice ist oft 0 →
+ * estimateLiquidationPrice(Up|Down) verwenden (invers, Coin/USDT) und invertieren.
+ */
+function liqPriceFor(coinM, d) {
+    const direct = parseFloat(d.liquidationPrice || 0)
+    if (!coinM) return direct
+    const est = parseFloat(d.estimateLiquidationPriceUp || 0) || parseFloat(d.estimateLiquidationPriceDown || 0)
+    if (est) return 1 / est
+    if (direct) return 1 / direct   // falls liquidationPrice doch (invers) gesetzt ist
+    return 0
+}
+
 async function normalizeRunningBot(o) {
     const n = normalizeBotOrder(o)
     if (!n) return null
@@ -228,9 +242,13 @@ async function normalizeRunningBot(o) {
 
     const markPrice = await fetchTickerPrice(inst.tickerSymbol)   // USDT/Coin
 
+    // AKTUELLES Investment (Margin-Münze) — Pionex aktualisiert quoteInvestment/
+    // usdtInvestment bei Einsatz-Aufstockung, NICHT init*. init* nur als Fallback,
+    // sonst würde zugefügte Margin als „Gewinn" verbucht (marginBalance − init zu groß)
+    // und die Marge-Anzeige bliebe auf dem Startbetrag stehen.
     const startInv = inst.coinM
-        ? parseFloat(d.initQuoteInvestment ?? d.quoteInvestment ?? 0)   // SOL
-        : parseFloat(d.initUsdtInvestment ?? d.usdtInvestment ?? 0)     // USDT
+        ? parseFloat(d.quoteInvestment ?? d.initQuoteInvestment ?? 0)   // SOL
+        : parseFloat(d.usdtInvestment ?? d.initUsdtInvestment ?? 0)     // USDT
     const realized = parseFloat(d.marginBalance ?? 0) - startInv
 
     let floating = 0
@@ -247,16 +265,27 @@ async function normalizeRunningBot(o) {
         coinM: inst.coinM,
         marginCoin: inst.marginCoin,
         side,
-        // Anzeige-Einstieg immer in USDT/Coin (coin-M entry ist invers → 1/entry)
+        // Anzeige-Einstieg = Durchschn. Haltepreis (driftet); coin-M entry ist invers → 1/entry
         entryPrice: inst.coinM ? (entry ? 1 / entry : 0) : entry,
         avgOpenPrice: inst.coinM ? (entry ? 1 / entry : 0) : entry,
+        // Startpreis = Preis bei Bot-Start (Pionex „Startpreis", aus initPrice; coin-M invers)
+        startPrice: (() => {
+            const s = parseFloat(d.initPrice || 0)
+            return inst.coinM ? (s ? 1 / s : 0) : s
+        })(),
         leverage: n.leverage,
         qty: parseFloat(d.totalVolume || 0),
         maxQty: parseFloat(d.totalVolume || 0),
         unrealizedPNL: profit,
         realizedPart: realized,
         floatingPart: floating,
-        liqPrice: parseFloat(d.liquidationPrice || 0),
+        // Investment in der Margin-Münze (coin-M: SOL, linear: USDT) — analog
+        // Pionex „Tatsächliche Investition". Frontend zeigt es als „Marge".
+        margin: startInv,
+        // Liquidationspreis: linear direkt aus liquidationPrice. Coin-M ist invers —
+        // liquidationPrice ist dort oft "0"; der echte Schätzwert liegt (invers) in
+        // estimateLiquidationPrice(Up|Down). 1/est = Liq in USDT (gegen Pionex-UI verifiziert).
+        liqPrice: liqPriceFor(inst.coinM, d),
         markPrice,
         ctime: n.createTime,
         mtime: n.closeTime,

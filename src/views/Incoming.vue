@@ -1255,7 +1255,11 @@ function getPositionDate(pos) {
                     <div class="col">
                         <small class="incoming-info">
                             {{ t('incoming.entry') }}
-                            <template v-if="getEntryFills(pos.positionId, pos.side).length > 1">
+                            <!-- Bots: Startpreis (Bot-Start) + Ø Haltepreis (driftet). Futures: bisher. -->
+                            <template v-if="isBotPosition(pos)">
+                                <span v-if="parseFloat(pos.bitunixData?.startPrice) > 0">Start {{ parseFloat(pos.bitunixData.startPrice).toFixed(2) }} · </span>Ø {{ parseFloat(pos.entryPrice || 0).toFixed(2) }}
+                            </template>
+                            <template v-else-if="getEntryFills(pos.positionId, pos.side).length > 1">
                                 Ø {{ getAvgEntryPrice(pos.positionId, pos.side).toFixed(5) }} ({{ getEntryFills(pos.positionId, pos.side).length }}×)
                             </template>
                             <template v-else>
@@ -1270,8 +1274,17 @@ function getPositionDate(pos) {
                             <template v-if="getTpSlForPosition(pos.positionId).tp">
                                 | <span style="color: #f59e0b;">TP: {{ getTpSlForPosition(pos.positionId).tp }}</span>
                             </template>
-                            <span v-if="pos.markPrice"> | {{ t('incoming.liquidation') }} {{ parseFloat(pos.markPrice || 0).toFixed(2) }}</span>
-                            | {{ t('incoming.margin') }} {{ parseFloat(pos.bitunixData?.margin || 0).toFixed(2) }} USDT
+                            <!-- Bots: echte Liquidation + Investment in Margin-Münze (coin-M: z.B. SOL);
+                                 Futures: bisheriges Verhalten (markPrice als Liq, Marge in USDT). -->
+                            <template v-if="isBotPosition(pos)">
+                                <span v-if="parseFloat(pos.bitunixData?.liqPrice) > 0"> | {{ t('incoming.liquidation') }} {{ parseFloat(pos.bitunixData.liqPrice).toFixed(2) }}</span>
+                                <span v-if="parseFloat(pos.bitunixData?.margin) > 0"> | {{ t('incoming.margin') }} {{ parseFloat(pos.bitunixData.margin).toFixed(pos.coinM ? 4 : 2) }} {{ pos.marginCoin || 'USDT' }}</span>
+                                <span v-if="parseFloat(pos.markPrice) > 0"> | {{ t('incoming.marketPrice') }} {{ parseFloat(pos.markPrice).toFixed(2) }}</span>
+                            </template>
+                            <template v-else>
+                                <span v-if="pos.markPrice"> | {{ t('incoming.liquidation') }} {{ parseFloat(pos.markPrice || 0).toFixed(2) }}</span>
+                                | {{ t('incoming.margin') }} {{ parseFloat(pos.bitunixData?.margin || 0).toFixed(2) }} USDT
+                            </template>
                             <span v-if="getPositionDate(pos)"> | {{ getPositionDate(pos) }}</span>
                         </small>
                     </div>

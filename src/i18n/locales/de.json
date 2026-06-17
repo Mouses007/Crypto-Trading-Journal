@@ -413,6 +413,7 @@
     "entry": "Einstieg:",
     "realized": "Realisiert:",
     "liquidation": "Liq:",
+    "marketPrice": "Kurs:",
     "quantity": "Menge:",
     "margin": "Marge:",
     "positionSize": "Positionsgröße",

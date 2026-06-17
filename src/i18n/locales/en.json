@@ -413,6 +413,7 @@
     "entry": "Entry:",
     "realized": "Realized:",
     "liquidation": "Liq:",
+    "marketPrice": "Price:",
     "quantity": "Qty:",
     "margin": "Margin:",
     "positionSize": "Position Size",
