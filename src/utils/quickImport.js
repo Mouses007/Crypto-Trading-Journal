@@ -52,6 +52,51 @@ export async function useQuickApiImport(explicitBroker) {
         return posId && !existingPositionIds.has(posId)
     })
 
+    // 3b. Backfill bestehender Pionex-Bot-Trades um den PnL-Breakdown
+    // (gridProfit/coinM/marginCoin). Der Re-Import überspringt bekannte Bots
+    // (Dedup oben), daher hier direkt aus den bereits geladenen Bot-Rohdaten
+    // nachrüsten — läuft auch, wenn es keine neuen Positionen gibt.
+    if (broker === 'pionex') {
+        const botRaw = new Map()
+        for (const pos of allPositions) {
+            const id = String(pos.buOrderId ?? pos.positionId ?? '')
+            if (id && (pos.botType !== undefined || pos.buOrderId !== undefined)) botRaw.set(id, pos)
+        }
+        let patchedDays = 0
+        for (const record of existingTrades) {
+            const dayTrades = Array.isArray(record.trades) ? record.trades : []
+            let changed = false
+            for (const t of dayTrades) {
+                if (!t.id) continue
+                const suffix = t.id.split('_').slice(2).join('_')
+                const raw = botRaw.get(suffix)
+                if (!raw) continue
+                // Patchen, wenn Breakdown- ODER USDT-Felder fehlen (neue Felder
+                // nachrüsten, auch bei bereits gridProfit-gepatchten Trades).
+                if (t.gridProfit !== undefined && t.pnlUsdt !== undefined) continue
+                t.gridProfit = parseFloat(raw.gridProfit ?? 0)
+                t.coinM = !!raw.coinM
+                t.marginCoin = raw.marginCoin || 'USDT'
+                t.pnlUsdt = parseFloat(raw.pnlUsdt ?? 0)
+                t.investUsdt = parseFloat(raw.investUsdt ?? 0)
+                t.quoteCloseP = parseFloat(raw.quoteCloseP ?? 0)
+                // Richtung korrigieren (Coin-M war fälschlich invertiert)
+                if (raw.side) {
+                    t.strategy = raw.side === 'LONG' ? 'long' : 'short'
+                    t.side = raw.side === 'LONG' ? 'B' : 'SS'
+                }
+                if (!t.botType) t.botType = raw.botType || 'grid'
+                if (t.category === undefined) t.category = 'bot'
+                changed = true
+            }
+            if (changed) {
+                await dbUpdateRecord('trades', record.objectId, { trades: dayTrades })
+                patchedDays++
+            }
+        }
+        if (patchedDays > 0) console.log(` -> gridProfit-Backfill: ${patchedDays} Tag(e) aktualisiert`)
+    }
+
     if (newPositions.length === 0) {
         return { success: true, message: i18n.global.t('messages.allTradesImported'), count: 0 }
     }
@@ -438,6 +483,16 @@ function createPionexTradeObj(pos, i) {
         obj.category = 'bot'
         obj.leverage = parseFloat(pos.setLeverage || 0)
         obj.investment = parseFloat(pos.initQuoteInvestment ?? pos.usdtInvestment ?? 0)
+        // PnL-Breakdown (wie Pionex): Grid-Gewinn separat; Trend-PnL wird im
+        // Frontend abgeleitet (netPL − gridProfit − fundingFee). coinM/marginCoin
+        // für korrekte Einheit (Coin-M: PnL in der Coin, z.B. SOL).
+        obj.gridProfit = parseFloat(pos.gridProfit ?? 0)
+        obj.coinM = !!pos.coinM
+        obj.marginCoin = pos.marginCoin || 'USDT'
+        // USDT-Sekundärwerte (Coin-M: invers gerechneter echter USD-PnL; sonst == netPL)
+        obj.pnlUsdt = parseFloat(pos.pnlUsdt ?? 0)
+        obj.investUsdt = parseFloat(pos.investUsdt ?? 0)
+        obj.quoteCloseP = parseFloat(pos.quoteCloseP ?? 0)   // Schlusskurs für SOL→USD
     } else {
         obj.category = 'futures'
     }

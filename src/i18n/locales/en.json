@@ -627,6 +627,16 @@
     "importCount": "{count} days imported."
   },
   "daily": {
+    "botPnLBreakdown": "PnL Breakdown (Bot)",
+    "gesamtProfit": "Total Profit",
+    "trendPnl": "Trend PnL",
+    "gridProfit": "Grid Profit",
+    "funding": "Funding",
+    "tradingFeeLabel": "Trading Fee",
+    "leverage": "Leverage",
+    "investment": "Investment",
+    "runtime": "Runtime",
+    "botBreakdownReimport": "Grid/Trend available after a re-import.",
     "entry": "Entry",
     "volTooltip": "Total number of securities during the trade (bought + sold or shorted + covered)",
     "pnlPerUnitTooltip": "PnL per unit of security traded (bought or shorted)",

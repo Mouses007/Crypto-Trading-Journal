@@ -102,17 +102,28 @@ function pl(t) {
     return isNet.value ? (t.netSharePL ?? 0) : (t.grossSharePL ?? 0)
 }
 
+// ===== USD-Sicht (für die zusammengefassten Statistiken) =====
+// Coin-M-Bots werden mit ihrem echten USD-Wert eingerechnet (pnlUsdt invers
+// gerechnet; SOL-Komponenten via Schlusskurs quoteCloseP). USDT-Bots: nativ.
+function netUsd(t)    { return isCoinM(t) ? parseFloat(t.pnlUsdt ?? 0) : (t.netSharePL ?? 0) }
+function investUsd(t) { return isCoinM(t) ? parseFloat(t.investUsdt ?? 0) : (t.investment ?? 0) }
+function feeUsd(t)    { const f = t.tradingFee ?? 0; return isCoinM(t) ? f * (parseFloat(t.quoteCloseP) || 0) : f }
+function fundUsd(t)   { const f = t.fundingFee ?? 0; return isCoinM(t) ? f * (parseFloat(t.quoteCloseP) || 0) : f }
+function grossUsd(t)  { return isCoinM(t) ? (netUsd(t) + feeUsd(t) - fundUsd(t)) : (t.grossSharePL ?? 0) }
+function plUsd(t)     { return isNet.value ? netUsd(t) : grossUsd(t) }
+
 // Coin-M-Bots je Coin (SOL/BTC) nativ aggregieren
 const coinMGroups = computed(() => {
     const map = new Map()
     for (const t of coinMBots.value) {
         const coin = botCoin(t) || '?'
-        const e = map.get(coin) || { coin, count: 0, net: 0, gross: 0, fees: 0, funding: 0, wins: 0, losses: 0 }
+        const e = map.get(coin) || { coin, count: 0, net: 0, gross: 0, fees: 0, funding: 0, usdt: 0, wins: 0, losses: 0 }
         e.count++
         e.net += t.netSharePL ?? 0
         e.gross += t.grossSharePL ?? 0
         e.fees += t.tradingFee ?? 0
         e.funding += t.fundingFee ?? 0
+        e.usdt += parseFloat(t.pnlUsdt ?? 0)   // echter USD-Wert (invers gerechnet)
         const p = pl(t)
         if (p > 0) e.wins++; else if (p < 0) e.losses++
         map.set(coin, e)
@@ -123,30 +134,70 @@ function fmtCoin(v, coin) {
     return `${v >= 0 ? '+' : ''}${(v ?? 0).toFixed(4)} ${coin}`
 }
 
-// ===== Aggregierte KPIs =====
+// ===== Geschlossene Bots: Einzelliste mit Pionex-artigem PnL-Breakdown =====
+const expandedBotIds = ref(new Set())
+function toggleBotExpand(id) {
+    const s = new Set(expandedBotIds.value)
+    if (s.has(id)) s.delete(id); else s.add(id)
+    expandedBotIds.value = s
+}
+// Einheiten-bewusstes Format: USDT → Währung, Coin-M → nativ (z.B. SOL).
+function fmtBotAmt(v, unit) {
+    return unit === 'USDT' ? useTwoDecCurrencyFormat(v ?? 0) : fmtCoin(v, unit)
+}
+const closedBotsList = computed(() => {
+    return [...allBots.value]
+        .sort((a, b) => (b.exitTime ?? 0) - (a.exitTime ?? 0))
+        .map(t => {
+            const coin = botCoin(t)            // null ⇒ USDT-margined
+            const net = t.netSharePL ?? 0
+            const grid = t.gridProfit          // undefined bei Alt-Importen (kein Backfill)
+            const funding = t.fundingFee ?? 0
+            return {
+                id: t.id,
+                symbol: displaySymbol(t.symbol),
+                typeLabel: botTypeLabel(t.botType),
+                unit: coin || 'USDT',
+                net,
+                grid: grid ?? 0,
+                funding,
+                tradingFee: t.tradingFee ?? 0,
+                trend: net - (grid ?? 0) - funding,   // Pionex-Definition (inkl. Trading-Fee)
+                hasGrid: grid !== undefined,
+                // USDT-Sekundärwert (nur Coin-M); sonst == net
+                pnlUsdt: parseFloat(t.pnlUsdt ?? 0),
+                showUsdt: !!coin && t.pnlUsdt != null,
+                leverage: t.leverage || 0,
+                investment: t.investment || 0,
+                runtime: fmtDuration((t.exitTime ?? 0) - (t.entryTime ?? 0)),
+            }
+        })
+})
+
+// ===== Aggregierte KPIs (ALLE Bots, Coin-M mit USD-Wert eingerechnet) =====
 const stats = computed(() => {
-    const list = bots.value
+    const list = allBots.value
     let net = 0, gross = 0, tradingFee = 0, fundingFee = 0, investment = 0
     let fundingPaid = 0, fundingReceived = 0
     let wins = 0, losses = 0, levSum = 0, levCount = 0, durSum = 0, durCount = 0
     let best = null, worst = null
     const symbols = new Set()
     for (const t of list) {
-        const p = pl(t)
-        net += t.netSharePL ?? 0
-        gross += t.grossSharePL ?? 0
-        tradingFee += t.tradingFee ?? 0
-        const f = t.fundingFee ?? 0
+        const p = plUsd(t)
+        net += netUsd(t)
+        gross += grossUsd(t)
+        tradingFee += feeUsd(t)
+        const f = fundUsd(t)
         fundingFee += f
         if (f >= 0) fundingReceived += f; else fundingPaid += f
-        investment += t.investment ?? 0
+        investment += investUsd(t)
         if (p > 0) wins++; else if (p < 0) losses++
         if (t.leverage > 0) { levSum += t.leverage; levCount++ }
         const dur = (t.exitTime ?? 0) - (t.entryTime ?? 0)
         if (dur > 0) { durSum += dur; durCount++ }
         symbols.add(displaySymbol(t.symbol))
-        if (!best || p > pl(best)) best = t
-        if (!worst || p < pl(worst)) worst = t
+        if (!best || p > plUsd(best)) best = t
+        if (!worst || p < plUsd(worst)) worst = t
     }
     const count = list.length
     const profit = isNet.value ? net : gross
@@ -165,44 +216,34 @@ const stats = computed(() => {
     }
 })
 
-// ===== Gruppierung nach Bot-Typ =====
-// USDT-Bots nach botType + Coin-M je Coin als eigene Zeilen (in Coin-Einheiten).
+// Bester/Schlechtester Bot — USD-Profit fürs Anzeige-Format
+function plUsdDisplay(t) { return t ? plUsd(t) : 0 }
+
+// ===== Gruppierung nach Bot-Typ (alle Bots, USD) =====
 const byType = computed(() => {
     const map = new Map()
-    for (const t of bots.value) {
+    for (const t of allBots.value) {
         const key = t.botType || 'grid'
         const e = map.get(key) || { key, label: botTypeLabel(key), unit: 'USDT', count: 0, profit: 0, fees: 0, investment: 0 }
         e.count++
-        e.profit += pl(t)
-        e.fees += (t.tradingFee ?? 0)
-        e.investment += (t.investment ?? 0)
+        e.profit += plUsd(t)
+        e.fees += feeUsd(t)
+        e.investment += investUsd(t)
         map.set(key, e)
     }
-    const rows = [...map.values()]
-    // Coin-M: je Coin (SOL/BTC) eigene Zeile, Profit nativ in der Coin
-    for (const g of coinMGroups.value) {
-        rows.push({
-            key: 'coinm_' + g.coin,
-            label: `Futures-Grid · Coin-M (${g.coin})`,
-            coinM: true,
-            unit: g.coin,
-            count: g.count,
-            profit: isNet.value ? g.net : g.gross,
-        })
-    }
-    return rows.sort((a, b) => b.count - a.count)
+    return [...map.values()].sort((a, b) => b.count - a.count)
 })
 
-// ===== Gruppierung nach Symbol =====
+// ===== Gruppierung nach Symbol (alle Bots, USD) =====
 const bySymbol = computed(() => {
     const map = new Map()
-    for (const t of bots.value) {
+    for (const t of allBots.value) {
         const key = displaySymbol(t.symbol)
         const e = map.get(key) || { symbol: key, count: 0, profit: 0, fees: 0, funding: 0 }
         e.count++
-        e.profit += pl(t)
-        e.fees += (t.tradingFee ?? 0)
-        e.funding += (t.fundingFee ?? 0)
+        e.profit += plUsd(t)
+        e.fees += feeUsd(t)
+        e.funding += fundUsd(t)
         map.set(key, e)
     }
     return [...map.values()].sort((a, b) => b.profit - a.profit)
@@ -232,10 +273,10 @@ let symbolChart = null
 function renderCumChart() {
     if (!cumChartEl.value) return
     if (!cumChart) cumChart = echarts.init(cumChartEl.value)
-    const sorted = [...bots.value].sort((a, b) => (a.exitTime || a.td) - (b.exitTime || b.td))
+    const sorted = [...allBots.value].sort((a, b) => (a.exitTime || a.td) - (b.exitTime || b.td))
     let acc = 0
     const data = sorted.map(t => {
-        acc += pl(t)
+        acc += plUsd(t)
         return [dayjs.unix(t.exitTime || t.td).valueOf(), +acc.toFixed(2)]
     })
     cumChart.setOption({
@@ -329,7 +370,7 @@ onBeforeUnmount(() => {
     if (pollTimer) clearInterval(pollTimer)
     cumChart?.dispose(); symbolChart?.dispose()
 })
-watch([bots, amountCase], renderAll, { deep: false })
+watch([allBots, amountCase], renderAll, { deep: false })
 </script>
 
 <template>
@@ -426,12 +467,12 @@ watch([bots, amountCase], renderAll, { deep: false })
                             <div v-if="stats.best" class="d-flex justify-content-between small">
                                 <span class="text-muted">Bester Bot</span>
                                 <span><strong>{{ displaySymbol(stats.best.symbol) }}</strong>
-                                    <span class="greenTrade ms-1">{{ useTwoDecCurrencyFormat(pl(stats.best)) }}</span></span>
+                                    <span class="greenTrade ms-1">{{ useTwoDecCurrencyFormat(plUsd(stats.best)) }}</span></span>
                             </div>
                             <div v-if="stats.worst" class="d-flex justify-content-between small mt-1">
                                 <span class="text-muted">Schlechtester Bot</span>
                                 <span><strong>{{ displaySymbol(stats.worst.symbol) }}</strong>
-                                    <span class="redTrade ms-1">{{ useTwoDecCurrencyFormat(pl(stats.worst)) }}</span></span>
+                                    <span class="redTrade ms-1">{{ useTwoDecCurrencyFormat(plUsd(stats.worst)) }}</span></span>
                             </div>
                         </div>
                     </div>
@@ -491,7 +532,7 @@ watch([bots, amountCase], renderAll, { deep: false })
                     <div class="dailyCard">
                         <div class="card-title-sm">
                             Coin-M Bots <span class="coinm-badge">COIN-M</span>
-                            <span class="text-muted ms-1" style="font-size:0.78rem;font-weight:400;">— margined &amp; abgerechnet in der Coin (nicht in USDT-Summen enthalten)</span>
+                            <span class="text-muted ms-1" style="font-size:0.78rem;font-weight:400;">— margined &amp; abgerechnet in der Coin (USDT-Wert sekundär, ≈ zum jeweiligen Schlusskurs)</span>
                         </div>
                         <table class="table-bot">
                             <thead>
@@ -503,6 +544,7 @@ watch([bots, amountCase], renderAll, { deep: false })
                                     <th class="text-end">Gebühren</th>
                                     <th class="text-end">Funding</th>
                                     <th class="text-end">Netto</th>
+                                    <th class="text-end">≈ Netto (USD)</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -514,6 +556,7 @@ watch([bots, amountCase], renderAll, { deep: false })
                                     <td class="text-end text-muted">{{ fmtCoin(-Math.abs(g.fees), g.coin) }}</td>
                                     <td class="text-end" :class="g.funding >= 0 ? 'greenTrade' : 'redTrade'">{{ fmtCoin(g.funding, g.coin) }}</td>
                                     <td class="text-end" :class="g.net >= 0 ? 'greenTrade' : 'redTrade'"><strong>{{ fmtCoin(g.net, g.coin) }}</strong></td>
+                                    <td class="text-end text-muted">{{ useTwoDecCurrencyFormat(g.usdt) }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -564,11 +607,81 @@ watch([bots, amountCase], renderAll, { deep: false })
                     </div>
                 </div>
             </div>
+
+            <!-- ===== Geschlossene Bots: Einzelliste mit PnL-Breakdown ===== -->
+            <div class="row g-3 mt-0" v-if="closedBotsList.length">
+                <div class="col-12">
+                    <div class="dailyCard">
+                        <div class="card-title-sm">Geschlossene Bots ({{ closedBotsList.length }})</div>
+                        <div class="closed-bots">
+                            <div v-for="b in closedBotsList" :key="b.id" class="cbot">
+                                <div class="cbot-head" @click="toggleBotExpand(b.id)">
+                                    <i class="uil" :class="expandedBotIds.has(b.id) ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                                    <span class="cbot-sym">{{ b.symbol }}</span>
+                                    <span class="cbot-type">{{ b.typeLabel }}</span>
+                                    <span v-if="b.leverage" class="cbot-lev">{{ b.leverage }}x</span>
+                                    <span v-if="b.unit !== 'USDT'" class="cbot-coinm">COIN-M</span>
+                                    <span class="cbot-pnl ms-auto" :class="b.net >= 0 ? 'greenTrade' : 'redTrade'">{{ fmtBotAmt(b.net, b.unit) }}</span>
+                                    <span v-if="b.showUsdt" class="text-muted" style="font-size:0.78rem;">(≈ {{ useTwoDecCurrencyFormat(b.pnlUsdt) }})</span>
+                                </div>
+                                <div v-if="expandedBotIds.has(b.id)" class="cbot-body">
+                                    <template v-if="b.hasGrid">
+                                        <div class="cbot-cell"><span class="cbot-lbl">Trend-PnL</span><span :class="b.trend >= 0 ? 'greenTrade' : 'redTrade'">{{ fmtBotAmt(b.trend, b.unit) }}</span></div>
+                                        <div class="cbot-cell"><span class="cbot-lbl">Grid-Gewinn</span><span :class="b.grid >= 0 ? 'greenTrade' : 'redTrade'">{{ fmtBotAmt(b.grid, b.unit) }}</span></div>
+                                    </template>
+                                    <div class="cbot-cell"><span class="cbot-lbl">Funding</span><span :class="b.funding >= 0 ? 'greenTrade' : 'redTrade'">{{ fmtBotAmt(b.funding, b.unit) }}</span></div>
+                                    <div class="cbot-cell"><span class="cbot-lbl">Trading-Gebühr</span><span class="text-muted">{{ fmtBotAmt(b.tradingFee, b.unit) }}</span></div>
+                                    <div class="cbot-cell" v-if="b.investment"><span class="cbot-lbl">Investment</span><span>{{ fmtBotAmt(b.investment, b.unit) }}</span></div>
+                                    <div class="cbot-cell"><span class="cbot-lbl">Laufzeit</span><span>{{ b.runtime }}</span></div>
+                                    <div v-if="!b.hasGrid" class="cbot-hint">Grid/Trend erst nach einem erneuten Import verfügbar.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </template>
     </div>
 </template>
 
 <style scoped>
+/* Geschlossene Bots — Einzelliste mit Breakdown */
+.cbot {
+    border: 1px solid var(--white-10, rgba(255,255,255,0.08));
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+.cbot-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.75rem;
+    cursor: pointer;
+}
+.cbot-head:hover { background: var(--white-10, rgba(255,255,255,0.04)); }
+.cbot-sym { font-weight: 700; }
+.cbot-type { font-size: 0.72rem; color: var(--white-60, rgba(255,255,255,0.6)); }
+.cbot-lev { font-size: 0.72rem; color: var(--white-60, rgba(255,255,255,0.6)); }
+.cbot-coinm {
+    font-size: 0.6rem; padding: 0.05rem 0.4rem; border-radius: 999px;
+    background: rgba(245,158,11,0.18); color: #f59e0b;
+}
+.cbot-pnl { font-weight: 700; }
+.cbot-body {
+    display: flex; flex-wrap: wrap; gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border-top: 1px solid var(--white-10, rgba(255,255,255,0.08));
+}
+.cbot-cell {
+    display: flex; flex-direction: column;
+    min-width: 110px;
+    background: var(--white-10, rgba(255,255,255,0.04));
+    border-radius: 6px; padding: 0.35rem 0.55rem; font-size: 0.85rem;
+}
+.cbot-lbl { font-size: 0.68rem; color: var(--white-60, rgba(255,255,255,0.6)); }
+.cbot-hint { flex-basis: 100%; font-size: 0.7rem; color: var(--white-60, rgba(255,255,255,0.6)); }
+
 .kpi-label {
     font-size: 0.78rem;
     color: var(--white-60, rgba(255, 255, 255, 0.6));

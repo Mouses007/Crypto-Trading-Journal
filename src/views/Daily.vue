@@ -188,6 +188,60 @@ function getTradeTypeLabel(value) {
     return opt ? t(opt.labelKey) : value
 }
 
+// ===== BOT PnL-BREAKDOWN (Pionex) =====
+// Coin-M-Bots haben PnL in der Coin (z.B. SOL). Münze aus marginCoin, sonst aus
+// invertiertem Symbol ableiten (USDTSOL -> SOL); USDT-Bots bleiben USDT.
+function botCoinDaily(t) {
+    if (!t) return 'USDT'
+    if (t.coinM || (t.marginCoin && t.marginCoin !== 'USDT')) {
+        return t.marginCoin || String(t.symbol || '').replace(/USDT/i, '') || 'USDT'
+    }
+    const s = String(t.symbol || '').toUpperCase()
+    if (s.startsWith('USDT') && s.length > 4) return s.slice(4)
+    return 'USDT'
+}
+function fmtBotAmount(v, coin) {
+    const n = parseFloat(v || 0)
+    if (coin === 'USDT') return useTwoDecCurrencyFormat(n)
+    return (n >= 0 ? '+' : '') + n.toFixed(4) + ' ' + coin
+}
+function fmtRuntime(sec) {
+    sec = parseInt(sec || 0)
+    if (sec <= 0) return '–'
+    const d = Math.floor(sec / 86400)
+    const h = Math.floor((sec % 86400) / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    if (d > 0) return `${d}d ${h}h`
+    if (h > 0) return `${h}h ${m}m`
+    return `${m}m`
+}
+const modalTradeObj = computed(() => {
+    if (itemTradeIndex.value == null || tradeIndex.value == null) return null
+    return filteredTrades[itemTradeIndex.value]?.trades?.[tradeIndex.value] || null
+})
+const botBreakdown = computed(() => {
+    const t = modalTradeObj.value
+    if (!t || !t.botType) return null
+    const net = parseFloat(t.netProceeds ?? t.netSharePL ?? 0)
+    const grid = parseFloat(t.gridProfit ?? 0)
+    const funding = parseFloat(t.fundingFee ?? 0)
+    const tradingFee = parseFloat(t.tradingFee ?? 0)
+    const coin = botCoinDaily(t)
+    return {
+        net, grid, funding, tradingFee,
+        trend: net - grid - funding,        // Pionex-Definition (inkl. Trading-Fee)
+        hasGrid: t.gridProfit !== undefined, // alte Trades ohne Backfill: Grid/Trend ausblenden
+        coin,
+        // USDT-Sekundärwert (nur bei Coin-M relevant; sonst == net)
+        pnlUsdt: parseFloat(t.pnlUsdt ?? 0),
+        showUsdt: coin !== 'USDT' && t.pnlUsdt != null,
+        leverage: parseFloat(t.leverage || 0),
+        investment: parseFloat(t.investment || 0),
+        runtimeSec: parseInt(t.exitTime || 0) - parseInt(t.entryTime || 0),
+        symbol: t.symbol,
+    }
+})
+
 // ===== TRADING METADATA HELPERS =====
 function hasTradingMetadata(meta) {
     if (!meta) return false
@@ -1713,6 +1767,75 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                         </div>
                     </div>
 
+                    <!-- *** BOT PnL-BREAKDOWN (Pionex) *** -->
+                    <div v-if="botBreakdown" class="mt-1 mb-2 ms-1 me-1 bot-breakdown p-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="uil uil-layers me-2" style="color: var(--blue-color); font-size: 1.05rem;"></i>
+                            <span class="fw-bold" style="font-size: 0.95rem;">{{ t('daily.botPnLBreakdown') }}</span>
+                        </div>
+
+                        <!-- Gesamt = Trend + Funding + Grid -->
+                        <div class="bot-bd-total mb-2">
+                            <span class="bot-bd-total-val" :class="botBreakdown.net >= 0 ? 'greenTrade' : 'redTrade'">
+                                {{ fmtBotAmount(botBreakdown.net, botBreakdown.coin) }}
+                            </span>
+                            <span v-if="botBreakdown.showUsdt" class="text-muted ms-2" style="font-size: 0.9rem;">
+                                (≈ {{ useTwoDecCurrencyFormat(botBreakdown.pnlUsdt) }})
+                            </span>
+                            <span class="text-muted ms-2" style="font-size: 0.8rem;">{{ t('daily.gesamtProfit') }}</span>
+                        </div>
+
+                        <div class="row g-2">
+                            <template v-if="botBreakdown.hasGrid">
+                                <div class="col-6 col-md-4">
+                                    <div class="bot-bd-cell">
+                                        <div class="bot-bd-label">{{ t('daily.trendPnl') }}</div>
+                                        <div :class="botBreakdown.trend >= 0 ? 'greenTrade' : 'redTrade'">{{ fmtBotAmount(botBreakdown.trend, botBreakdown.coin) }}</div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-4">
+                                    <div class="bot-bd-cell">
+                                        <div class="bot-bd-label">{{ t('daily.gridProfit') }}</div>
+                                        <div :class="botBreakdown.grid >= 0 ? 'greenTrade' : 'redTrade'">{{ fmtBotAmount(botBreakdown.grid, botBreakdown.coin) }}</div>
+                                    </div>
+                                </div>
+                            </template>
+                            <div class="col-6 col-md-4">
+                                <div class="bot-bd-cell">
+                                    <div class="bot-bd-label">{{ t('daily.funding') }}</div>
+                                    <div :class="botBreakdown.funding >= 0 ? 'greenTrade' : 'redTrade'">{{ fmtBotAmount(botBreakdown.funding, botBreakdown.coin) }}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <div class="bot-bd-cell">
+                                    <div class="bot-bd-label">{{ t('daily.tradingFeeLabel') }}</div>
+                                    <div class="text-white">{{ fmtBotAmount(botBreakdown.tradingFee, botBreakdown.coin) }}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4" v-if="botBreakdown.leverage">
+                                <div class="bot-bd-cell">
+                                    <div class="bot-bd-label">{{ t('daily.leverage') }}</div>
+                                    <div class="text-white">{{ botBreakdown.leverage }}x</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4" v-if="botBreakdown.investment">
+                                <div class="bot-bd-cell">
+                                    <div class="bot-bd-label">{{ t('daily.investment') }}</div>
+                                    <div class="text-white">{{ fmtBotAmount(botBreakdown.investment, botBreakdown.coin) }}</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4" v-if="botBreakdown.runtimeSec > 0">
+                                <div class="bot-bd-cell">
+                                    <div class="bot-bd-label">{{ t('daily.runtime') }}</div>
+                                    <div class="text-white">{{ fmtRuntime(botBreakdown.runtimeSec) }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-if="!botBreakdown.hasGrid" class="text-muted mt-2" style="font-size: 0.72rem;">
+                            {{ t('daily.botBreakdownReimport') }}
+                        </div>
+                    </div>
+
                     <!-- *** VARIABLES *** -->
                     <div class="mt-1 mb-2 row align-items-center ms-1 me-1 tradeSetup">
                         <div class="col-12">
@@ -1973,5 +2096,27 @@ function getOHLC(date, symbol, type, interval, entryTime) {
 .screenshot-thumb:hover {
     opacity: 0.8;
     border-color: rgba(255,255,255,0.3);
+}
+
+/* Bot PnL-Breakdown */
+.bot-breakdown {
+    background: var(--black-bg-2, rgba(255,255,255,0.03));
+    border: 1px solid var(--white-10, rgba(255,255,255,0.08));
+    border-radius: var(--border-radius, 8px);
+}
+.bot-bd-total-val {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+.bot-bd-cell {
+    background: var(--white-10, rgba(255,255,255,0.04));
+    border-radius: 6px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+}
+.bot-bd-label {
+    color: var(--white-60, rgba(255,255,255,0.6));
+    font-size: 0.72rem;
+    margin-bottom: 0.1rem;
 }
 </style>

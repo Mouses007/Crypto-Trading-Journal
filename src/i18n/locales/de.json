@@ -627,6 +627,16 @@
     "importCount": "{count} Tage importiert."
   },
   "daily": {
+    "botPnLBreakdown": "PnL-Aufschlüsselung (Bot)",
+    "gesamtProfit": "Gesamt-Profit",
+    "trendPnl": "Trend-PnL",
+    "gridProfit": "Grid-Gewinn",
+    "funding": "Funding",
+    "tradingFeeLabel": "Trading-Gebühr",
+    "leverage": "Hebel",
+    "investment": "Investment",
+    "runtime": "Laufzeit",
+    "botBreakdownReimport": "Grid/Trend erst nach einem erneuten Import verfügbar.",
     "entry": "Einstieg",
     "volTooltip": "Gesamtanzahl der Securities während des Trades (gekauft + verkauft oder leer verkauft + eingedeckt)",
     "pnlPerUnitTooltip": "PnL pro Einheit der gehandelten Security (gekauft oder leer verkauft)",

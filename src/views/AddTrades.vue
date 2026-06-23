@@ -5,7 +5,7 @@ import { executions, existingImports, blotter, pAndL, tradesData, existingTrades
 import { selectedBroker } from '../stores/filters.js';
 import { useDecimalsArithmetic, useCreatedDateFormat, useDateCalFormat } from '../utils/formatters.js';
 import { useImportTrades, useUploadTrades, useGetExistingTradesArray, useCreateBlotter, useCreatePnL } from '../utils/addTrades'
-import { buildTradeObj, saveManualTrade } from '../utils/quickImport.js'
+import { buildTradeObj, saveManualTrade, useQuickApiImport } from '../utils/quickImport.js'
 import { refreshAccountBalance } from '../stores/accountBalance.js'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import axios from 'axios'
@@ -76,7 +76,9 @@ const apiImportError = ref('')
 
 const broker = computed(() => selectedBroker.value || 'bitunix')
 const isBitget = computed(() => broker.value === 'bitget')
-const brokerLabel = computed(() => broker.value === 'bitget' ? 'Bitget' : 'Bitunix')
+const isPionex = computed(() => broker.value === 'pionex')
+const BROKER_LABEL = { bitunix: 'Bitunix', bitget: 'Bitget', pionex: 'Pionex' }
+const brokerLabel = computed(() => BROKER_LABEL[broker.value] || 'Bitunix')
 
 onMounted(async () => {
     await useGetExistingTradesArray()
@@ -166,6 +168,21 @@ function parseBitgetPosition(pos) {
 async function importFromApi() {
     apiImportLoading.value = true
     apiImportError.value = ''
+
+    // Pionex: Bots werden über useQuickApiImport importiert (inkl. PnL-Breakdown-
+    // Backfill bestehender Bots). Datumsfelder sind hier irrelevant — der Server
+    // nutzt lastApiImport / apiImportStartDate.
+    if (isPionex.value) {
+        try {
+            const result = await useQuickApiImport('pionex')
+            sendNotification('Pionex Import', result.message || t('messages.importCount', { count: result.count || 0 }))
+        } catch (error) {
+            apiImportError.value = error.response?.data?.error || error.message || t('addTrades.importFailed')
+            sendNotification('Pionex Import', t('messages.importFailed') + (error.message || ''))
+        }
+        apiImportLoading.value = false
+        return
+    }
 
     try {
         const startTime = dayjs.utc(apiStartDate.value).startOf('day').valueOf()
@@ -422,7 +439,18 @@ async function importFromApi() {
     <!-- API Import -->
     <div v-show="importMode === 'api'" class="mt-3">
         <p class="txt-small" v-html="t('addTrades.apiDescription', { broker: brokerLabel })"></p>
-        <div class="row mb-3">
+
+        <!-- Pionex: Bot-Import (Zeitraum über Einstellungen → kein Datumsfeld) -->
+        <div v-if="isPionex" class="mb-3">
+            <p class="txt-small text-muted">Pionex-Bots werden importiert (Zeitraum via „Import ab Datum" in den Einstellungen). Bestehende Bots werden dabei um den PnL-Breakdown ergänzt.</p>
+            <button type="button" class="btn btn-primary" @click="importFromApi" :disabled="apiImportLoading">
+                <span v-if="apiImportLoading">{{ t('addTrades.importingStatus') }}</span>
+                <span v-else>Bots importieren</span>
+            </button>
+        </div>
+
+        <!-- Bitunix / Bitget: Zeitraum-basierter Import -->
+        <div v-else class="row mb-3">
             <div class="col">
                 <label class="form-label">{{ t('addTrades.startDate') }}</label>
                 <input type="date" class="form-control" v-model="apiStartDate" />

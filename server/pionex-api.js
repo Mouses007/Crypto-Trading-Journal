@@ -172,6 +172,29 @@ function normalizeBotOrder(o) {
     // gridProfit/realizedProfit, Gebühren in totalFeeInQuote, Investment in USDT,
     // KEIN Funding/Position/totalRealizedProfit. Eigenes Symbol (quote=USDT).
     const isSpot = /spot/i.test(o.buOrderType || '') || /spot|token_grid/i.test(d.cateType || '')
+
+    // Richtung: Coin-M ist invers (base=USDT.PERP) — short auf der USDT-Seite
+    // (trend='short' bzw. initBaseAmount<0) = LONG der Coin. Linear: trend direkt.
+    const baseShort = (d.trend === 'short') ||
+        (parseFloat(d.initBaseAmount ?? d.baseAmount ?? d.position ?? 0) < 0)
+    const side = inst.coinM ? (baseShort ? 'LONG' : 'SHORT') : (baseShort ? 'SHORT' : 'LONG')
+
+    // USDT-Sekundärwerte. Coin-M ist invers → echter USD-PnL ist die Differenz
+    // der USDT-Werte (Endwert − Einsatz), NICHT SOL-PnL × Kurs. Gegen Pionex
+    // verifiziert (SOL Coin-M Bot: +18.63 USDT).
+    const closeQuoteP = parseFloat(d.closedQuotePrice ?? d.initQuotePrice ?? 0)   // Coin-Preis (USDT) bei Schliessung
+    const entryQuoteP = parseFloat(d.initQuotePrice ?? d.openQuotePrice ?? 0)     // Coin-Preis (USDT) bei Start
+    const investSol = parseFloat(d.quoteInvestment ?? d.initQuoteInvestment ?? 0)
+    const marginBal = parseFloat(d.marginBalance ?? 0)
+    let pnlUsdt, investUsdt
+    if (inst.coinM) {
+        investUsdt = investSol * entryQuoteP
+        pnlUsdt = (marginBal && closeQuoteP) ? (marginBal * closeQuoteP - investSol * entryQuoteP) : 0
+    } else {
+        investUsdt = parseFloat(d.usdtInvestment ?? d.initUsdtInvestment ?? 0)
+        pnlUsdt = parseFloat(d.totalRealizedProfit ?? d.realizedProfit ?? 0)   // linear: bereits USDT
+    }
+
     return {
         positionId: buOrderId,
         buOrderId,
@@ -180,6 +203,7 @@ function normalizeBotOrder(o) {
         symbol: inst.symbol,
         coinM: inst.coinM,
         marginCoin: inst.marginCoin,
+        side,
         status: d.status ?? o.status ?? '',
         reasonBy: d.reasonBy ?? null,
         createTime: o.createTime ?? d.createTime ?? '',
@@ -195,6 +219,12 @@ function normalizeBotOrder(o) {
         setLeverage: leverage,   // Feldname beibehalten (createPionexTradeObj liest pos.setLeverage)
         leverage,
         initQuoteInvestment: d.initQuoteInvestment,
+        // USDT-Sekundärwerte (Coin-M: invers gerechnet; sonst nativ)
+        pnlUsdt,
+        investUsdt,
+        // Schlusskurs der Coin (USDT) — Frontend rechnet damit SOL-Komponenten
+        // (Grid/Gebühren/Funding) in USD um. Linear: 1 (Werte schon in USDT).
+        quoteCloseP: inst.coinM ? closeQuoteP : 1,
         // Spot: Einstieg/Ausstieg aus openPrice/gridAverageOpenPrice bzw. closedPrice
         positionOpenPrice: d.positionOpenPrice ?? d.gridAverageOpenPrice ?? d.openPrice,
         closedPrice: d.closedPrice
