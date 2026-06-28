@@ -177,6 +177,7 @@
     "fundingFeesTooltip": "Periodische Finanzierungsgebühren für das Halten offener Futures-Positionen. Werden alle 8 Stunden berechnet. Negative Werte = erhaltene Funding.",
     "fundingPaid": "Funding bezahlt",
     "fundingReceived": "Funding erhalten",
+    "fundingNet": "Funding (netto)",
     "regulatoryFees": "Regulatorische Gebühren",
     "otherFees": "Sonstige Gebühren",
     "grossPnl": "Brutto PnL",

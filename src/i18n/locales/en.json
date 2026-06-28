@@ -177,6 +177,7 @@
     "fundingFeesTooltip": "Periodic financing fees for holding open futures positions. Charged every 8 hours. Negative values = received funding.",
     "fundingPaid": "Funding paid",
     "fundingReceived": "Funding received",
+    "fundingNet": "Funding (net)",
     "regulatoryFees": "Regulatory Fees",
     "otherFees": "Other Fees",
     "grossPnl": "Gross PnL",

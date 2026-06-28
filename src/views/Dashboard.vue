@@ -387,6 +387,9 @@ const feeStats = computed(() => {
     return { totalFees, perTrade, impactPercent, bruttoNetDiff, tradeCount }
 })
 
+// Netto-Funding für die Brutto→Netto-Brücke: + = netto bezahlt (Kosten), − = netto erhalten.
+const netFunding = computed(() => (totals.fundingPaid || 0) - (totals.fundingReceived || 0))
+
 // ART-Filter = Bot → dediziertes Bot-Dashboard statt Futures-Ansicht
 const isBotView = computed(() => selectedTradeCategory.value === 'bot')
 
@@ -686,7 +689,7 @@ onBeforeMount(async () => {
                                             </tbody>
                                         </table>
 
-                                        <!-- Brutto vs. Netto -->
+                                        <!-- Brutto → Netto Brücke (geht auf: Brutto − Fees ∓ Funding = Netto) -->
                                         <hr />
                                         <table class="stats-table w-100">
                                             <tbody>
@@ -695,12 +698,16 @@ onBeforeMount(async () => {
                                                     <td class="text-end fw-bold" :class="totals.grossProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(totals.grossProceeds || 0) }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td class="fw-bold">{{ t('dashboard.netPnl') }}</td>
-                                                    <td class="text-end fw-bold" :class="totals.netProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(totals.netProceeds || 0) }}</td>
+                                                    <td class="text-muted">&minus; {{ t('dashboard.tradingFees') }}</td>
+                                                    <td class="text-end text-warning">{{ useTwoDecCurrencyFormat(totals.tradingFees || totals.commission || 0) }}</td>
+                                                </tr>
+                                                <tr v-if="netFunding !== 0">
+                                                    <td class="text-muted">{{ netFunding >= 0 ? '−' : '+' }} {{ t('dashboard.fundingNet') }}</td>
+                                                    <td class="text-end" :class="netFunding >= 0 ? 'text-warning' : 'greenTrade'">{{ useTwoDecCurrencyFormat(netFunding >= 0 ? netFunding : -netFunding) }}</td>
                                                 </tr>
                                                 <tr>
-                                                    <td class="text-muted">{{ t('dashboard.feeDifference') }}</td>
-                                                    <td class="text-end text-warning">{{ useTwoDecCurrencyFormat(feeStats.totalFees) }}</td>
+                                                    <td class="fw-bold">{{ t('dashboard.netPnl') }}</td>
+                                                    <td class="text-end fw-bold" :class="totals.netProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(totals.netProceeds || 0) }}</td>
                                                 </tr>
                                             </tbody>
                                         </table>

@@ -469,8 +469,9 @@ export async function useTotalTrades() {
                 totalQuantity += el.buyQuantity + el.sellQuantity
                 totalCommission += el.commission
                 totalFundingFees += (el.fundingFee || 0)
-                if ((el.fundingFee || 0) > 0) totalFundingPaid += el.fundingFee
-                if ((el.fundingFee || 0) < 0) totalFundingReceived += Math.abs(el.fundingFee)
+                // Vorzeichen-Konvention: + = erhalten (erhöht Netto), − = bezahlt (senkt Netto).
+                if ((el.fundingFee || 0) > 0) totalFundingReceived += el.fundingFee
+                if ((el.fundingFee || 0) < 0) totalFundingPaid += Math.abs(el.fundingFee)
                 totalTradingFees += (el.tradingFee || 0)
                 totalOtherCommission += el.sec + el.taf + el.nscc + el.nasdaq
                 totalFees += el.commission + el.sec + el.taf + el.nscc + el.nasdaq
