@@ -50,6 +50,7 @@
     "dashboard": "Dashboard",
     "dailyView": "Daily View",
     "calendar": "Calendar",
+    "accounts": "Accounts",
     "reflect": "REFLECT",
     "playbook": "Playbook",
     "evaluation": "Reports",
@@ -406,9 +407,25 @@
     "restartStep1": "Stop the current server (Ctrl+C or close the window)",
     "restartStep2": "Start the server again (double-click on desktop shortcut)"
   },
+  "accounts": {
+    "totalEquity": "Total Equity",
+    "refresh": "Refresh",
+    "noBrokers": "No exchange with a stored API key.",
+    "loading": "Loading …",
+    "runningBots": "running bots",
+    "moneyFlow": "Money Flow (90 days)",
+    "flowUnavailable": "Money flow not available via the API.",
+    "noFlow": "No movements in the last 90 days.",
+    "deposit": "Deposit",
+    "withdrawal": "Withdrawal",
+    "more": "more",
+    "empty": "Empty"
+  },
   "incoming": {
     "lastUpdated": "Last updated:",
     "refresh": "Refresh",
+    "futuresSection": "Futures",
+    "botsSection": "Bots",
     "closed": "Closed",
     "entry": "Entry:",
     "realized": "Realized:",

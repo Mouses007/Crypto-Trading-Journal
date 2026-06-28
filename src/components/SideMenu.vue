@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { pageId, screenType } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
-import { selectedBroker, brokers, selectedTradeCategory } from "../stores/filters.js"
+import { selectedBroker, brokers, selectedTradeCategory, BOT_BROKERS } from "../stores/filters.js"
 import SidebarFilters from './SidebarFilters.vue'
 import donateBtc from '../assets/donate-btc.png'
 import donatePaypal from '../assets/donate-paypal.jpg'
@@ -135,10 +135,18 @@ function onBrokerChange(event) {
 // Trade-Kategorie-Filter (Futures / Bot) als Pillen-Buttons. „Alle" entfällt;
 // Spot kann später ergänzt werden.
 function setCategory(value) {
-    if (selectedTradeCategory.value === value) return
+    const onAccounts = pageId.value === 'accounts'
+    // Auf der Konten-Seite ist keine Trading-Kategorie aktiv → Klick auf
+    // Futures/Bot muss zurück zur Trading-Ansicht (Dashboard) führen, auch
+    // wenn die Kategorie unverändert bleibt.
+    if (selectedTradeCategory.value === value && !onAccounts) return
     selectedTradeCategory.value = value
     localStorage.setItem('selectedTradeCategory', value)
-    window.location.reload()
+    if (onAccounts) {
+        window.location.href = '/dashboard'
+    } else {
+        window.location.reload()
+    }
 }
 
 function goToDashboard() {
@@ -169,11 +177,16 @@ function goToDashboard() {
             <div class="sideMenuDivContent">
                 <label class="fw-lighter">{{ t('nav.tradeCategory') }}</label>
                 <div class="category-pills">
+                    <!-- Konten-Übersicht: immer sichtbar, links neben den Kategorie-Pillen. -->
+                    <a href="/accounts" :class="['cat-pill', 'acc-pill', pageId === 'accounts' ? 'active' : '']">
+                        <i class="uil uil-wallet me-1"></i>{{ t('nav.accounts') }}</a>
+                    <!-- Futures immer sichtbar; Bot nur bei Börsen mit Bot-API (Pionex).
+                         Auf der Konten-Seite ist keine Trading-Kategorie aktiv. -->
                     <button type="button"
-                        :class="['cat-pill', selectedTradeCategory !== 'bot' ? 'active' : '']"
+                        :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory !== 'bot') ? 'active' : '']"
                         @click="setCategory('futures')">Futures</button>
-                    <button type="button"
-                        :class="['cat-pill', selectedTradeCategory === 'bot' ? 'active' : '']"
+                    <button v-if="BOT_BROKERS.includes(selectedBroker)" type="button"
+                        :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory === 'bot') ? 'active' : '']"
                         @click="setCategory('bot')">Bot</button>
                 </div>
                 <SidebarFilters />
@@ -327,6 +340,12 @@ function goToDashboard() {
     border-color: var(--blue-color, #3b82f6);
     color: #fff;
     font-weight: 600;
+}
+/* Konten-Pille: Navigations-Link im Pillen-Stil (kein Unterstrich), dezenter Akzent. */
+.acc-pill {
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
 }
 
 /* Sidebar controls – shared style for broker + filter */

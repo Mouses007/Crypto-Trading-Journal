@@ -116,6 +116,20 @@ export async function getHistoryPositions(apiKey, secretKey, options = {}) {
 }
 
 /**
+ * Einzel-Fills (Ausführungen) eines Futures-Symbols. GET /uapi/v1/trade/fills
+ * `symbol` ist PFLICHT (sonst TRADE_PARAMETER_ERROR). Optional: startTime, endTime, limit.
+ * Response: data.fills[] = { id, orderId, symbol, side, role, price, size, fee, feeCoin, feeType, timestamp }.
+ */
+export async function getFills(apiKey, secretKey, options = {}) {
+    const params = {}
+    if (options.symbol) params.symbol = options.symbol
+    if (options.startTime) params.startTime = options.startTime
+    if (options.endTime) params.endTime = options.endTime
+    params.limit = options.limit || 100
+    return pionexRequest('GET', '/uapi/v1/trade/fills', apiKey, secretKey, params)
+}
+
+/**
  * Bot-Orders (Grid-Bots etc.). GET /api/v1/bot/orders
  * Params: status (running|finished), base, quote, pageToken, buOrderTypes[]
  * Response: data.results[] = { buOrderId, buOrderType, base, quote, createTime,
@@ -359,6 +373,15 @@ export async function testConnection(apiKey, secretKey) {
  * Normalisiert eine offene Pionex-Position auf das Frontend-Format
  * (positionId, symbol, side, entryPrice, qty, unrealizedPNL, markPrice, leverage).
  */
+/**
+ * Pionex-Futures-Symbol normalisieren: "MYX_USDT_PERP" → "MYXUSDT".
+ */
+function cleanPionexSymbol(s) {
+    const str = String(s || '')
+    if (!str) return ''
+    return str.replace(/_PERP$/i, '').replace(/_/g, '')
+}
+
 function normalizeOpenPosition(p) {
     if (!p) return null
     const positionId = String(p.positionId ?? p.id ?? '')
@@ -371,7 +394,7 @@ function normalizeOpenPosition(p) {
     return {
         ...p,
         positionId,
-        symbol: p.symbol ?? '',
+        symbol: cleanPionexSymbol(p.symbol),
         side,
         entryPrice: entry,
         avgOpenPrice: entry,
@@ -381,8 +404,78 @@ function normalizeOpenPosition(p) {
         unrealizedPNL: p.unrealizedPnL ?? p.unrealizedPnl ?? 0,
         liqPrice: p.liquidationPrice ?? 0,
         markPrice: p.markPrice ?? p.liquidationPrice ?? 0,
-        ctime: p.createTime ?? p.cTime ?? '',
-        mtime: p.updateTime ?? p.uTime ?? ''
+        // Marge: Pionex liefert sie als initialMargin (nicht `margin`) → für die
+        // Incoming-Karte (liest bitunixData.margin) explizit bereitstellen.
+        margin: parseFloat(p.initialMargin ?? p.margin ?? 0),
+        // Pionex nutzt createdTime/updatedTime (mit "d"); Frontend liest ctime/mtime.
+        ctime: p.createdTime ?? p.createTime ?? p.cTime ?? '',
+        mtime: p.updatedTime ?? p.updateTime ?? p.uTime ?? ''
+    }
+}
+
+/**
+ * Geschlossene reguläre Futures-Position aufbereiten.
+ * historyPositions liefert KEINEN fertigen PnL/Fee — nur amountShort (Open-Cashflow,
+ * +), amountLong (Close-Cashflow, −) und size. PnL/Preise werden daraus abgeleitet,
+ * Gebühren aus den passenden Fills summiert (live verifiziert gegen Wallet-Delta):
+ *   brutto = amountShort + amountLong   (vorzeichenrichtig für long & short)
+ *   fee    = Σ |fills.fee| (feeType TRADING) im Positions-Zeitfenster
+ *   netto  = brutto − fee
+ * Setzt die Feldnamen, die createTradeFromClosedPosition (Pionex-Zweig) konsumiert
+ * (totalRealizedProfit/totalFee/totalFundingFee, entryPrice/closePrice, createTime/updateTime).
+ */
+function normalizeFuturesHistoryPosition(p, fills = []) {
+    if (!p) return null
+    const positionId = String(p.positionId ?? p.id ?? '')
+    if (!positionId) return null
+
+    const side = String(p.positionSide || p.side || '').toUpperCase()  // LONG / SHORT
+    const size = Math.abs(parseFloat(p.sizeShort ?? p.sizeLong ?? p.netSize ?? 0)) || 0
+    const amtShort = parseFloat(p.amountShort ?? 0)
+    const amtLong = parseFloat(p.amountLong ?? 0)
+    const gross = amtShort + amtLong   // vorzeichenrichtig: Erlös + (−Kosten)
+
+    let entryPrice, closePrice
+    if (side === 'SHORT') {
+        entryPrice = size ? Math.abs(amtShort) / size : 0   // bei Eröffnung verkauft
+        closePrice = size ? Math.abs(amtLong) / size : 0    // zum Schließen gekauft
+    } else {
+        entryPrice = size ? Math.abs(amtLong) / size : 0    // bei Eröffnung gekauft
+        closePrice = size ? Math.abs(amtShort) / size : 0   // zum Schließen verkauft
+    }
+
+    const openMs = parseInt(p.createdTime ?? p.createTime ?? 0) || 0
+    const closeMs = parseInt(p.updatedTime ?? p.updateTime ?? 0) || 0
+    let tradingFee = 0
+    for (const f of (fills || [])) {
+        if (cleanPionexSymbol(f.symbol) !== cleanPionexSymbol(p.symbol)) continue
+        const ts = parseInt(f.timestamp ?? 0) || 0
+        if (openMs && closeMs && (ts < openMs - 3000 || ts > closeMs + 3000)) continue
+        if ((f.feeType || 'TRADING') === 'TRADING') tradingFee += Math.abs(parseFloat(f.fee ?? 0))
+    }
+    const fundingFee = 0   // in historyPositions/fills nicht enthalten; ggf. später ergänzen
+    const net = gross - tradingFee + fundingFee
+
+    return {
+        ...p,
+        positionId,
+        symbol: cleanPionexSymbol(p.symbol),
+        side,
+        positionSide: side,
+        entryPrice,
+        avgPrice: entryPrice,
+        closePrice,
+        leverage: parseFloat(p.leverage ?? 0),
+        maxQty: size,
+        // Felder für createTradeFromClosedPosition (Pionex-Zweig):
+        totalRealizedProfit: net,
+        totalFee: tradingFee,
+        totalFundingFee: fundingFee,
+        // Zeitstempel in den vom Frontend gelesenen Namen:
+        createTime: openMs,
+        updateTime: closeMs,
+        ctime: openMs,
+        mtime: closeMs,
     }
 }
 
@@ -398,6 +491,59 @@ async function getDecryptedPionexConfig() {
         apiKey: config.apiKey ? decrypt(config.apiKey) : '',
         secretKey: config.secretKey ? decrypt(config.secretKey) : ''
     }
+}
+
+/**
+ * Aggregierter Pionex-Kontostand: Spot (alle Coins in USDT) + laufende Bots
+ * (marginBalance) + unrealisierter Futures-PnL. Von /balance und
+ * /account-overview gemeinsam genutzt.
+ */
+async function computePionexBalance(apiKey, secretKey) {
+    // 1) Spot-Account
+    const balResult = await getBalances(apiKey, secretKey)
+    const balances = balResult.data?.balances || []
+    let spotUsdt = 0, usdtFree = 0
+    const breakdown = []
+    for (const b of balances) {
+        const coin = String(b.coin || '').toUpperCase()
+        const free = parseFloat(b.free || 0)
+        const frozen = parseFloat(b.frozen || 0)
+        const qty = free + frozen
+        if (!Number.isFinite(qty) || qty <= 0) continue
+        if (coin === 'USDT') {
+            spotUsdt += qty; usdtFree = free
+            breakdown.push({ coin, qty, price: 1, usdt: qty })
+        } else {
+            const price = await fetchTickerPrice(`${coin}_USDT`)
+            const usdt = qty * price
+            spotUsdt += usdt
+            breakdown.push({ coin, qty, price, usdt })
+        }
+    }
+    // 2) Laufende Bots: marginBalance = locked "Bot-Wallet"-Wert
+    let botEquity = 0
+    const runningBots = []
+    try {
+        const botRes = await getBotOrders(apiKey, secretKey, { status: 'running' })
+        for (const o of (botRes.data?.results || [])) {
+            const d = o.buOrderData || {}
+            const mb = parseFloat(d.marginBalance || 0)
+            const inv = parseFloat(d.initQuoteInvestment || 0)
+            const gp = parseFloat(d.gridProfit || 0)
+            const value = mb > 0 ? mb : (inv + gp)
+            botEquity += value
+            runningBots.push({ id: o.buOrderId, type: o.buOrderType, value })
+        }
+    } catch (e) { console.warn(' -> Pionex running bots fail:', e.message) }
+    // 3) Futures-Perp unrealisiert
+    let futUnrealized = 0
+    try {
+        const fr = await pionexRequest('GET', '/uapi/v1/account/positions', apiKey, secretKey)
+        for (const p of (fr.data?.positions || [])) futUnrealized += parseFloat(p.unrealizedPnL ?? p.unrealizedPnl ?? 0) || 0
+    } catch (_) { /* leer ist ok */ }
+
+    const balance = spotUsdt + botEquity + futUnrealized
+    return { balance, spotUsdt, botEquity, unrealizedPL: futUnrealized, available: usdtFree, breakdown, runningBots }
 }
 
 /**
@@ -482,73 +628,52 @@ export function setupPionexRoutes(app) {
             if (!config || !config.apiKey || !config.secretKey) {
                 return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
             }
-
-            // 1) Spot-Account
-            const balResult = await getBalances(config.apiKey, config.secretKey)
-            const balances = balResult.data?.balances || []
-            let spotUsdt = 0
-            let usdtFree = 0
-            const breakdown = []
-            for (const b of balances) {
-                const coin = String(b.coin || '').toUpperCase()
-                const free = parseFloat(b.free || 0)
-                const frozen = parseFloat(b.frozen || 0)
-                const qty = free + frozen
-                if (!Number.isFinite(qty) || qty <= 0) continue
-                if (coin === 'USDT') {
-                    spotUsdt += qty
-                    usdtFree = free
-                    breakdown.push({ coin, qty, price: 1, usdt: qty })
-                } else {
-                    const price = await fetchTickerPrice(`${coin}_USDT`)
-                    const usdt = qty * price
-                    spotUsdt += usdt
-                    breakdown.push({ coin, qty, price, usdt })
-                }
-            }
-
-            // 2) Laufende Bots: marginBalance ist der locked Margin-Anteil
-            //    (initInvestment + Profit + ggf. extra Margin). Das ist quasi
-            //    der "Bot-Wallet"-Wert. unrealizedPnL bei spot_grid steckt
-            //    bereits in gridProfit drin und ist Teil von marginBalance.
-            let botEquity = 0
-            const runningBots = []
-            try {
-                const botRes = await getBotOrders(config.apiKey, config.secretKey, { status: 'running' })
-                const bots = botRes.data?.results || []
-                for (const o of bots) {
-                    const d = o.buOrderData || {}
-                    // futures_grid hat marginBalance, spot_grid hat initInvestment+gridProfit
-                    const mb = parseFloat(d.marginBalance || 0)
-                    const inv = parseFloat(d.initQuoteInvestment || 0)
-                    const gp = parseFloat(d.gridProfit || 0)
-                    const value = mb > 0 ? mb : (inv + gp)
-                    botEquity += value
-                    runningBots.push({ id: o.buOrderId, type: o.buOrderType, value })
-                }
-            } catch (e) { console.warn(' -> Pionex running bots fail:', e.message) }
-
-            // 3) Futures-Perp (falls Nutzer kuenftig manuell tradet)
-            let futUnrealized = 0
-            try {
-                const fr = await pionexRequest('GET', '/uapi/v1/account/positions', config.apiKey, config.secretKey)
-                const pos = fr.data?.positions || []
-                for (const p of pos) futUnrealized += parseFloat(p.unrealizedPnL ?? p.unrealizedPnl ?? 0) || 0
-            } catch (_) { /* leer ist ok */ }
-
-            const balance = spotUsdt + botEquity + futUnrealized
-            res.json({
-                ok: true,
-                balance,
-                spotUsdt,
-                botEquity,
-                unrealizedPL: futUnrealized,
-                available: usdtFree,
-                breakdown,
-                runningBots
-            })
+            const snap = await computePionexBalance(config.apiKey, config.secretKey)
+            res.json({ ok: true, ...snap })
         } catch (error) {
             console.error(' -> Pionex balance error:', error.message)
+            res.status(500).json({ error: error.message })
+        }
+    })
+
+    // Aggregierte Kontoübersicht (Spot + Bots + Futures) für die Konten-Seite.
+    // Pionex-API bietet keine Ein-/Auszahlungs-History → Moneyflow nicht verfügbar.
+    app.get('/api/pionex/account-overview', async (req, res) => {
+        try {
+            const config = await getDecryptedPionexConfig()
+            if (!config || !config.apiKey || !config.secretKey) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+            const snap = await computePionexBalance(config.apiKey, config.secretKey)
+
+            // Futures-Wallet-Cash (USDT in Haupt- + isolierten Konten) — getrennt
+            // vom Spot-Wallet. computePionexBalance erfasst nur Spot+Bots+uPnL.
+            let futCash = 0
+            try {
+                const fb = await pionexRequest('GET', '/uapi/v1/account/balances', config.apiKey, config.secretKey)
+                const acct = fb.data || {}
+                const sumUsdt = (arr) => (arr || []).reduce((s, x) => String(x.coin).toUpperCase() === 'USDT' ? s + parseFloat(x.free || 0) + parseFloat(x.frozen || 0) : s, 0)
+                futCash = sumUsdt(acct.balances)
+                for (const iso of (acct.isolates || [])) futCash += sumUsdt(iso.balances)
+            } catch (_) { /* leeres Futures-Wallet ist ok */ }
+            const futuresUsd = futCash + snap.unrealizedPL
+
+            const wallets = []
+            wallets.push({
+                key: 'spot', label: 'Spot', usd: snap.spotUsdt,
+                assets: snap.breakdown.map(b => ({ coin: b.coin, amount: b.qty, usd: b.usdt })).sort((a, b) => b.usd - a.usd)
+            })
+            wallets.push({ key: 'bots', label: 'Trading Bots', usd: snap.botEquity, count: snap.runningBots.length })
+            if (futuresUsd) {
+                wallets.push({ key: 'futures', label: 'Futures (USDT-M)', usd: futuresUsd, fields: { available: futCash, unrealizedPL: snap.unrealizedPL } })
+            }
+            const totalUsd = snap.spotUsdt + snap.botEquity + futuresUsd
+            res.json({
+                ok: true, broker: 'pionex', currency: 'USDT', totalUsd, wallets,
+                moneyFlow: { supported: false, reason: 'Pionex-API bietet keine Ein-/Auszahlungs-History.', deposits: [], withdrawals: [] }
+            })
+        } catch (error) {
+            console.error(' -> Pionex account-overview error:', error.message)
             res.status(500).json({ error: error.message })
         }
     })
@@ -629,8 +754,35 @@ export function setupPionexRoutes(app) {
             const bots = await fetchAllFinishedBots(config.apiKey, config.secretKey, startTime)
             const positions = bots.map(normalizeBotOrder).filter(Boolean)
 
+            // Geschlossene reguläre Futures-Positionen seit letztem Scan.
+            // historyPositions liefert keine Gebühren → Fills je Symbol einmal holen.
+            let futCount = 0
+            try {
+                const hres = await getHistoryPositions(config.apiKey, config.secretKey, { startTime, endTime, limit: 100 })
+                const hlist = hres.data?.positions || []
+                const futPositions = []
+                for (const hp of hlist) {
+                    // Fills im Positions-Zeitfenster holen (Pionex lehnt zukünftige
+                    // endTime ab → auf "jetzt" deckeln). symbol ist Pflicht.
+                    let fills = []
+                    try {
+                        const fres = await getFills(config.apiKey, config.secretKey, {
+                            symbol: hp.symbol,
+                            startTime: (parseInt(hp.createdTime) || startTime) - 5000,
+                            endTime: Math.min((parseInt(hp.updatedTime) || endTime) + 5000, Date.now()),
+                            limit: 100
+                        })
+                        fills = fres.data?.fills || []
+                    } catch (e) { console.warn(` -> Pionex fills error (${hp.symbol}):`, e.message) }
+                    const np = normalizeFuturesHistoryPosition(hp, fills)
+                    if (np) futPositions.push(np)
+                }
+                positions.push(...futPositions)
+                futCount = futPositions.length
+            } catch (e) { console.warn(' -> Pionex futures history error:', e.message) }
+
             await knex('pionex_config').where('id', 1).update({ lastHistoryScan: endTime })
-            console.log(` -> Pionex History-Scan: ${positions.length} geschlossene Bots`)
+            console.log(` -> Pionex History-Scan: ${bots.length} geschlossene Bots + ${futCount} Futures`)
             res.json({ ok: true, positions, count: positions.length })
         } catch (error) {
             console.error(' -> Pionex recent closed error:', error.message)
@@ -688,6 +840,28 @@ export function setupPionexRoutes(app) {
                 token = result.data?.nextPageToken
                 if (!token) break
             }
+
+            // Nicht in Bots gefunden → reguläre Futures-History durchsuchen
+            // (positionId = langer Composite-String). Fills für Gebühren nachladen.
+            if (!pos) {
+                const lookback = Date.now() - 30 * 24 * 60 * 60 * 1000
+                const hres = await getHistoryPositions(config.apiKey, config.secretKey, { startTime: lookback, limit: 100 })
+                const match = (hres.data?.positions || []).find(p => String(p.positionId) === reqId)
+                if (match) {
+                    let fills = []
+                    try {
+                        const fres = await getFills(config.apiKey, config.secretKey, {
+                            symbol: match.symbol,
+                            startTime: (parseInt(match.createdTime) || lookback) - 5000,
+                            endTime: Math.min((parseInt(match.updatedTime) || Date.now()) + 5000, Date.now()),
+                            limit: 100
+                        })
+                        fills = fres.data?.fills || []
+                    } catch (e) { console.warn(' -> Pionex fills error:', e.message) }
+                    pos = normalizeFuturesHistoryPosition(match, fills)
+                }
+            }
+
             res.json({ ok: true, position: pos })
         } catch (error) {
             res.status(500).json({ error: error.message })

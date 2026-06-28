@@ -31,6 +31,16 @@ const router = createRouter({
             import('../views/Dashboard.vue')
     },
     {
+        path: '/accounts',
+        name: 'accounts',
+        meta: {
+            title: "Konten", titleKey: "nav.accounts",
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/Accounts.vue')
+    },
+    {
         path: '/calendar',
         name: 'calendar',
         meta: {

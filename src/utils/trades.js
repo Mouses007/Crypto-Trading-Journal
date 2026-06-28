@@ -184,7 +184,15 @@ export async function useGetFilteredTrades(param) {
                         // NUR der Konto-Filter (selectedAccounts) wird im Bot-Modus
                         // übersprungen: er ist Futures-orientiert (i.d.R.
                         // ["bitunix","bitget"]) und würde Bots sonst ausblenden.
-                        const accountMatch = cat === 'bot' || !selectedAccounts.value.length || selectedAccounts.value.includes(element.account)
+                        // Konto-Filter wird im Bot-Modus übersprungen. Zusätzlich darf
+                        // ein (evtl. veralteter) Konto-Multiselect Trades der aktuell
+                        // gewählten Börse NICHT ausblenden — die Börsen-Pille (brokerMatch)
+                        // scope't bereits. Sonst fehlen z.B. neue Pionex-Futures, wenn
+                        // 'pionex' noch nicht in selectedAccounts steht.
+                        const accountMatch = cat === 'bot'
+                            || !selectedAccounts.value.length
+                            || selectedAccounts.value.includes(element.account)
+                            || element.account === selectedBroker.value
                         const brokerMatch = !selectedBroker.value || element.broker === selectedBroker.value
 
                         if (brokerMatch && categoryMatch && (selectedRange.value.start === 0 && selectedRange.value.end === 0 ? element.td >= selectedRange.value.start : element.td >= selectedRange.value.start && element.td < selectedRange.value.end) && selectedPositions.value.includes(element.strategy) && accountMatch && tradeTagsSelected) {

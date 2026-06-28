@@ -712,4 +712,71 @@ export function setupBitgetRoutes(app) {
             res.status(500).json({ error: error.message })
         }
     })
+
+    // Aggregierte Kontoübersicht (Futures + Spot + Moneyflow) für die Konten-Seite
+    app.get('/api/bitget/account-overview', async (req, res) => {
+        try {
+            const config = await getDecryptedBitgetConfig()
+            if (!config || !config.apiKey || !config.secretKey || !config.passphrase) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+            const { apiKey, secretKey, passphrase } = config
+            const wallets = []
+
+            // --- Futures (USDT-M) ---
+            try {
+                const r = await bitgetRequest('GET', '/api/v2/mix/account/accounts', apiKey, secretKey, passphrase, { productType: 'USDT-FUTURES' })
+                const acc = (r.data || []).find(a => a.marginCoin === 'USDT') || (r.data || [])[0]
+                if (acc) {
+                    const available = parseFloat(acc.available || 0)
+                    const locked = parseFloat(acc.locked || 0)
+                    const unrealizedPL = parseFloat(acc.unrealizedPL || acc.crossedUnrealizedPL || 0)
+                    const eq = acc.usdtEquity ?? acc.accountEquity
+                    const usd = (eq != null && eq !== '') ? parseFloat(eq) : (available + locked + unrealizedPL)
+                    wallets.push({ key: 'futures', label: 'Futures (USDT-M)', usd, fields: { available, locked, unrealizedPL } })
+                }
+            } catch (e) { console.warn(' -> Bitget overview futures:', e.message) }
+
+            // --- Spot (alle Coins, USD-bewertet über öffentliche Tickers) ---
+            try {
+                const r = await bitgetRequest('GET', '/api/v2/spot/account/assets', apiKey, secretKey, passphrase, {})
+                const raw = (r.data || [])
+                    .map(a => ({ coin: String(a.coin || '').toUpperCase(), amount: parseFloat(a.available || 0) + parseFloat(a.frozen || 0) + parseFloat(a.locked || 0) }))
+                    .filter(a => a.amount > 0)
+                let priceMap = {}
+                if (raw.length) {
+                    try {
+                        const t = await bitgetRequest('GET', '/api/v2/spot/market/tickers', apiKey, secretKey, passphrase, {})
+                        for (const tk of (t.data || [])) priceMap[String(tk.symbol || '').toUpperCase()] = parseFloat(tk.lastPr || tk.close || 0)
+                    } catch (_) { /* Preise optional */ }
+                }
+                let spotUsd = 0
+                const assets = raw.map(a => {
+                    const price = a.coin === 'USDT' ? 1 : (priceMap[`${a.coin}USDT`] || 0)
+                    const usd = a.amount * price
+                    spotUsd += usd
+                    return { coin: a.coin, amount: a.amount, usd }
+                }).sort((x, y) => y.usd - x.usd)
+                wallets.push({ key: 'spot', label: 'Spot', usd: spotUsd, assets })
+            } catch (e) { console.warn(' -> Bitget overview spot:', e.message) }
+
+            // --- Moneyflow: Ein-/Auszahlungen (letzte 90 Tage) ---
+            const moneyFlow = { supported: true, deposits: [], withdrawals: [] }
+            const since = Date.now() - 90 * 24 * 3600 * 1000, now = Date.now()
+            try {
+                const r = await bitgetRequest('GET', '/api/v2/spot/wallet/deposit-records', apiKey, secretKey, passphrase, { startTime: since, endTime: now, limit: 100 })
+                moneyFlow.deposits = (r.data || []).map(d => ({ coin: String(d.coin || '').toUpperCase(), amount: parseFloat(d.size || d.amount || 0), status: d.status || '', time: parseInt(d.cTime || d.uTime || 0) || null }))
+            } catch (e) { console.warn(' -> Bitget deposits:', e.message) }
+            try {
+                const r = await bitgetRequest('GET', '/api/v2/spot/wallet/withdrawal-records', apiKey, secretKey, passphrase, { startTime: since, endTime: now, limit: 100 })
+                moneyFlow.withdrawals = (r.data || []).map(d => ({ coin: String(d.coin || '').toUpperCase(), amount: parseFloat(d.size || d.amount || 0), fee: parseFloat(d.fee || 0) || 0, status: d.status || '', time: parseInt(d.cTime || d.uTime || 0) || null }))
+            } catch (e) { console.warn(' -> Bitget withdrawals:', e.message) }
+
+            const totalUsd = wallets.reduce((s, w) => s + (w.usd || 0), 0)
+            res.json({ ok: true, broker: 'bitget', currency: 'USDT', totalUsd, wallets, moneyFlow })
+        } catch (error) {
+            console.error(' -> Bitget account-overview error:', error.message)
+            res.status(500).json({ error: error.message })
+        }
+    })
 }

@@ -216,6 +216,18 @@ export const selectedPlSatisfaction = typeof localStorage !== 'undefined' ? ref(
 export const selectedBroker = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedBroker')) : ref()
 // Trade-Kategorie-Filter: 'futures' | 'bot' (Pillen im Seitenmenü; 'all' entfällt)
 export const selectedTradeCategory = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedTradeCategory') || 'futures') : ref('futures')
+// Börsen mit echter Bot-API-Anbindung. Nur diese zeigen die Bot-Kategorie.
+// Bitunix & Bitget kapseln ihre Grid-Bots vollständig vom öffentlichen API ab
+// (eigene Strategy-Subsysteme, weder Position/Orders noch PnL abrufbar) →
+// nur Pionex (`/api/v1/bot/orders`) liefert Bot-Daten.
+export const BOT_BROKERS = ['pionex']
+// Bei Börsen ohne Bot-Support darf 'bot' nicht aktiv sein → auf 'futures'
+// normalisieren, damit niemand auf einer leeren Bot-Ansicht festhängt.
+// Flackerfrei bereits beim Store-Load.
+if (typeof localStorage !== 'undefined' && !BOT_BROKERS.includes(selectedBroker.value) && selectedTradeCategory.value === 'bot') {
+    selectedTradeCategory.value = 'futures'
+    localStorage.setItem('selectedTradeCategory', 'futures')
+}
 export const selectedDateRange = typeof localStorage !== 'undefined' ? ref(JSON.parse(localStorage.getItem('selectedDateRange'))) : ""
 export const selectedMonth = typeof localStorage !== 'undefined' ? ref(JSON.parse(localStorage.getItem('selectedMonth'))) : ""
 export const selectedMonthPreset = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedMonthPreset') || 'current') : ref('current')

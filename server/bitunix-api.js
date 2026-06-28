@@ -721,5 +721,38 @@ export function setupBitunixRoutes(app) {
         }
     })
 
+    // Aggregierte Kontoübersicht für die Konten-Seite. Bitunix bietet nur die
+    // Futures-API (fapi) — kein Spot, keine Ein-/Auszahlungs-History.
+    app.get('/api/bitunix/account-overview', async (req, res) => {
+        try {
+            const config = await getDecryptedConfig()
+            if (!config || !config.apiKey || !config.secretKey) {
+                return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
+            }
+            const wallets = []
+            try {
+                const result = await bitunixRequest('GET', '/api/v1/futures/account', config.apiKey, config.secretKey, { marginCoin: 'USDT' })
+                const account = Array.isArray(result.data) ? result.data[0] : result.data
+                if (account) {
+                    const available = parseFloat(account.available || 0)
+                    const margin = parseFloat(account.margin || 0)
+                    const unrealizedPL = parseFloat(account.crossUnrealizedPNL || 0) + parseFloat(account.isolationUnrealizedPNL || 0)
+                    const bonus = parseFloat(account.bonus || 0)
+                    const usd = available + margin + unrealizedPL - bonus
+                    wallets.push({ key: 'futures', label: 'Futures (USDT-M)', usd, fields: { available, margin, unrealizedPL, bonus } })
+                }
+            } catch (e) { console.warn(' -> Bitunix overview futures:', e.message) }
+
+            const totalUsd = wallets.reduce((s, w) => s + (w.usd || 0), 0)
+            res.json({
+                ok: true, broker: 'bitunix', currency: 'USDT', totalUsd, wallets,
+                moneyFlow: { supported: false, reason: 'Bitunix Futures-API liefert keine Spot-/Ein-/Auszahlungsdaten.', deposits: [], withdrawals: [] }
+            })
+        } catch (error) {
+            console.error(' -> Bitunix account-overview error:', error.message)
+            res.status(500).json({ error: error.message })
+        }
+    })
+
     console.log(' -> Bitunix API routes initialized')
 }

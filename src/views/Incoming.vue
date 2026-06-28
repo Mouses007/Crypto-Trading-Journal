@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
 import { spinnerLoadingPage, timeZoneTrade, expandedId } from '../stores/ui.js'
-import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker, selectedTradeCategory } from '../stores/filters.js'
+import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker, selectedTradeCategory, brokers } from '../stores/filters.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
 import { useFetchOpenPositions, useGetIncomingPositions, useUpdateIncomingPosition, useDeleteIncomingPosition, useTransferClosingMetadata } from '../utils/incoming'
@@ -766,11 +766,39 @@ function isBotPosition(pos) {
     return !!(pos?.historyData?.botType || pos?.bitunixData?.isBot || pos?.bitunixData?.botType)
 }
 
-// Im Futures-Modus keine Bot-Positionen (laufend oder pendent) anzeigen.
-const displayedPositions = computed(() => {
-    if (selectedTradeCategory.value === 'bot') return incomingPositions
-    return incomingPositions.filter(p => !isBotPosition(p))
+// Pendente Trades zeigen ALLE Börsen gleichzeitig, gruppiert je Börse mit
+// Futures zuerst, dann Bots — unabhängig vom Futures/Bot-Filter
+// (selectedTradeCategory wird hier bewusst ignoriert).
+const BROKER_ORDER = ['bitunix', 'bitget', 'pionex']
+const orderedPositions = computed(() => {
+    const present = [...new Set(incomingPositions.map(p => p.broker || 'unbekannt'))]
+    const ordered = [
+        ...BROKER_ORDER.filter(b => present.includes(b)),
+        ...present.filter(b => !BROKER_ORDER.includes(b)),
+    ]
+    const out = []
+    for (const b of ordered) {
+        const ofBroker = incomingPositions.filter(p => (p.broker || 'unbekannt') === b)
+        out.push(...ofBroker.filter(p => !isBotPosition(p)))   // Futures zuerst
+        out.push(...ofBroker.filter(p => isBotPosition(p)))    // dann Bots
+    }
+    return out
 })
+
+// Überschriften an Gruppengrenzen: vergleiche aktuelles mit vorherigem Element.
+function brokerLabelOf(b) { return brokers.find(x => x.value === b)?.label || b || 'Unbekannt' }
+function brokerHeaderAt(idx) {
+    const cur = orderedPositions.value[idx], prev = orderedPositions.value[idx - 1]
+    if (!cur) return null
+    return (!prev || (prev.broker || '') !== (cur.broker || '')) ? brokerLabelOf(cur.broker) : null
+}
+function sectionHeaderAt(idx) {
+    const cur = orderedPositions.value[idx], prev = orderedPositions.value[idx - 1]
+    if (!cur) return null
+    const curSec = isBotPosition(cur) ? 'bot' : 'futures'
+    const same = prev && (prev.broker || '') === (cur.broker || '') && (isBotPosition(prev) ? 'bot' : 'futures') === curSec
+    return same ? null : (curSec === 'bot' ? t('incoming.botsSection') : t('incoming.futuresSection'))
+}
 
 // Realisierter PnL einer geschlossenen Position für den Karten-Header.
 // Bots liefern kein realizedPNL (normalizeBotOrder) → Fallback auf
@@ -1213,10 +1241,13 @@ function getPositionDate(pos) {
             <div v-if="incomingError" class="alert alert-danger">{{ incomingError }}</div>
 
             <!-- No positions -->
-            <NoData v-if="displayedPositions.length === 0 && !incomingError" />
+            <NoData v-if="orderedPositions.length === 0 && !incomingError" />
 
-            <!-- Position cards -->
-            <div v-for="pos in displayedPositions" :key="pos.positionId" class="dailyCard incoming-card mb-2 p-2">
+            <!-- Position cards: gruppiert je Börse (Titel) → Futures, dann Bots -->
+            <template v-for="(pos, idx) in orderedPositions" :key="(pos.broker || '') + '_' + pos.positionId">
+            <h4 v-if="brokerHeaderAt(idx)" class="incoming-broker-title">{{ brokerHeaderAt(idx) }}</h4>
+            <h6 v-if="sectionHeaderAt(idx)" class="incoming-section-title">{{ sectionHeaderAt(idx) }}</h6>
+            <div class="dailyCard incoming-card mb-2 p-2">
                 <!-- Card header -->
                 <div class="row align-items-center pointerClass" @click="toggleExpand(pos.positionId)">
                     <div class="col-auto">
@@ -1872,6 +1903,7 @@ function getPositionDate(pos) {
                     </div>
                 </div>
             </div>
+            </template>
         </div>
 
         <SpinnerLoadingPage />
@@ -1879,6 +1911,27 @@ function getPositionDate(pos) {
 </template>
 
 <style scoped>
+/* Gruppen-Überschriften der pendenten Trades (je Börse + Futures/Bots) */
+.incoming-broker-title {
+    margin: 1.4rem 0 0.35rem;
+    font-weight: 700;
+    font-size: 1.25rem;
+    color: var(--white-87, rgba(255,255,255,0.87));
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--white-10, rgba(255,255,255,0.08));
+}
+.incoming-broker-title:first-child {
+    margin-top: 0;
+}
+.incoming-section-title {
+    margin: 0.6rem 0 0.45rem;
+    font-weight: 600;
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--grey-color, rgba(255,255,255,0.5));
+}
+
 .opening-eval-section {
     background: var(--black-bg-3, #1a1a2e);
     border: 1px solid var(--white-10, rgba(255,255,255,0.06));

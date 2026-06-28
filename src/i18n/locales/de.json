@@ -50,6 +50,7 @@
     "dashboard": "Dashboard",
     "dailyView": "Tages Ansicht",
     "calendar": "Kalender",
+    "accounts": "Konten",
     "reflect": "REFLEKTIEREN",
     "playbook": "Playbook",
     "evaluation": "Auswertung",
@@ -406,9 +407,25 @@
     "restartStep1": "Beende den aktuellen Server (Ctrl+C oder Fenster schließen)",
     "restartStep2": "Starte den Server erneut (Doppelklick auf Desktop-Verknüpfung)"
   },
+  "accounts": {
+    "totalEquity": "Gesamtvermögen",
+    "refresh": "Aktualisieren",
+    "noBrokers": "Keine Börse mit hinterlegtem API-Schlüssel.",
+    "loading": "Lädt …",
+    "runningBots": "laufende Bots",
+    "moneyFlow": "Moneyflow (90 Tage)",
+    "flowUnavailable": "Moneyflow über die API nicht verfügbar.",
+    "noFlow": "Keine Bewegungen in den letzten 90 Tagen.",
+    "deposit": "Einzahlung",
+    "withdrawal": "Auszahlung",
+    "more": "weitere",
+    "empty": "Leer"
+  },
   "incoming": {
     "lastUpdated": "Zuletzt aktualisiert:",
     "refresh": "Aktualisieren",
+    "futuresSection": "Futures",
+    "botsSection": "Bots",
     "closed": "Geschlossen",
     "entry": "Einstieg:",
     "realized": "Realisiert:",

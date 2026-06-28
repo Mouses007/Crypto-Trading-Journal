@@ -4,7 +4,7 @@ import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete, dbFindTradeIdByPositionI
 import { incomingPositions, incomingPollingActive, incomingLastFetched, pendingOpeningCount, pendingClosingCount, pendingOpeningByBroker, pendingClosingByBroker, evalNotificationShown, evalNotificationDismissed, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
 import { expandedId } from '../stores/ui.js'
 import { currentUser } from '../stores/settings.js'
-import { selectedBroker } from '../stores/filters.js'
+import { selectedBroker, brokers } from '../stores/filters.js'
 import { refreshAccountBalance } from '../stores/accountBalance.js'
 import i18n from '../i18n'
 
@@ -60,36 +60,64 @@ export async function useUpdatePendingCounts() {
 }
 
 /**
- * Fetch open positions from exchange API, sync with local DB,
- * detect closed positions and create trade records.
- * Uses selectedBroker to determine which API to call.
+ * Determine which brokers have an API configured (analog Nav.vue:loadConfiguredBrokers).
+ * Returns an array of broker value strings. Falls back to the currently selected
+ * broker if no API config is found (fresh install).
+ */
+async function getActiveBrokers() {
+    const result = []
+    for (const b of brokers) {
+        try {
+            const { data } = await axios.get(`/api/${b.value}/config`)
+            if (data && (data.apiKey || data.hasSecret)) result.push(b.value)
+        } catch (_) { /* Broker ohne Config-Endpoint/Key → überspringen */ }
+    }
+    return result.length ? result : [selectedBroker.value || 'bitunix']
+}
+
+/**
+ * Fetch open positions from ALL configured exchanges, sync with local DB,
+ * detect closed positions and create trade records. The "Pendente Trades"
+ * view shows every broker at once (grouped per exchange), so we no longer
+ * limit this to selectedBroker.
  */
 export async function useFetchOpenPositions() {
-    const broker = selectedBroker.value || 'bitunix'
-    console.log(` -> Fetching open positions from ${broker}`)
+    const activeBrokers = await getActiveBrokers()
+    console.log(` -> Fetching open positions from: ${activeBrokers.join(', ')}`)
     incomingPollingActive.value = true
 
+    const errors = []
     try {
-        const response = await axios.get(`/api/${broker}/open-positions`)
+        for (const broker of activeBrokers) {
+            try {
+                const response = await axios.get(`/api/${broker}/open-positions`)
 
-        if (!response.data.ok) {
-            throw new Error(response.data.error || i18n.global.t('incoming.errorFetchingPositions'))
+                if (!response.data.ok) {
+                    throw new Error(response.data.error || i18n.global.t('incoming.errorFetchingPositions'))
+                }
+
+                const apiPositions = response.data.positions || []
+                console.log(` -> ${apiPositions.length} offene Positionen von ${broker} erhalten`)
+
+                await syncPositionsWithDb(apiPositions, broker)
+                await fetchRecentlyClosed(broker)
+            } catch (error) {
+                console.warn(` -> Abrufen von ${broker} fehlgeschlagen:`, error?.message || error)
+                errors.push({ broker, error })
+            }
         }
 
-        const apiPositions = response.data.positions || []
-        console.log(` -> ${apiPositions.length} offene Positionen von API erhalten`)
+        // Wenn ALLE Börsen fehlschlugen, Fehler werfen, damit die Seite ihn anzeigt.
+        if (errors.length === activeBrokers.length) {
+            throw errors[0].error
+        }
 
-        await syncPositionsWithDb(apiPositions)
-        await fetchRecentlyClosed()
         await loadIncomingPositions()
 
         // Update counters after sync
         await useUpdatePendingCounts()
 
         incomingLastFetched.value = new Date()
-    } catch (error) {
-        console.error(' -> Fehler beim Abrufen:', error)
-        throw error
     } finally {
         incomingPollingActive.value = false
     }
@@ -101,8 +129,7 @@ export async function useFetchOpenPositions() {
  * - Existing positions → update unrealizedPNL, markPrice
  * - Missing positions → closed → handle transition to trades
  */
-async function syncPositionsWithDb(apiPositions) {
-    const broker = selectedBroker.value || 'bitunix'
+async function syncPositionsWithDb(apiPositions, broker) {
     // Normalize positionId to string everywhere (API may return number)
     const normalizeId = (p) => String(p?.positionId ?? p?.position_id ?? '')
 
@@ -114,7 +141,7 @@ async function syncPositionsWithDb(apiPositions) {
     const closedPositions = dbPositions.filter(p => !apiIds.has(String(p.positionId)))
     if (closedPositions.length > 0) {
         console.log(` -> ${closedPositions.length} Positionen geschlossen erkannt`)
-        await handleClosedPositions(closedPositions)
+        await handleClosedPositions(closedPositions, broker)
     }
 
     // 2. Update existing / create new
@@ -173,8 +200,7 @@ async function syncPositionsWithDb(apiPositions) {
  * Handle positions that have been closed on exchange.
  * For each: fetch history data → create trade record → link metadata → remove from incoming.
  */
-async function handleClosedPositions(closedPositions) {
-    const broker = selectedBroker.value || 'bitunix'
+async function handleClosedPositions(closedPositions, broker) {
     const popupsEnabled = currentUser.value?.showTradePopups !== 0
 
     for (const incoming of closedPositions) {
@@ -190,7 +216,7 @@ async function handleClosedPositions(closedPositions) {
             const histPos = histResponse.data.position
 
             // Create trade record (skip metadata transfer if popups enabled — pending evaluation handles it)
-            await createTradeFromClosedPosition(histPos, incoming, popupsEnabled)
+            await createTradeFromClosedPosition(histPos, incoming, popupsEnabled, incoming.broker || broker)
 
             if (incoming.skipEvaluation === 1) {
                 // Skip evaluation: just delete the incoming position, no notes/tags transfer
@@ -231,8 +257,7 @@ async function handleClosedPositions(closedPositions) {
  * and create incoming_positions + trade records for any that are new.
  * This catches positions that closed while the app was not monitoring.
  */
-async function fetchRecentlyClosed() {
-    const broker = selectedBroker.value || 'bitunix'
+async function fetchRecentlyClosed(broker) {
     try {
         const response = await axios.get(`/api/${broker}/recent-closed`)
 
@@ -282,7 +307,7 @@ async function fetchRecentlyClosed() {
             }
 
             // Create trade record (skipMetadata = true — no opening metadata yet)
-            await createTradeFromClosedPosition(histPos, incomingStub, true)
+            await createTradeFromClosedPosition(histPos, incomingStub, true, broker)
 
             if (popupsEnabled) {
                 try {
@@ -320,8 +345,8 @@ async function fetchRecentlyClosed() {
  * Uses the exact same ~40-field trade object format as quickImport.js.
  * Links metadata (playbook → notes, screenshotId → screenshot name).
  */
-async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = false) {
-    const broker = selectedBroker.value || 'bitunix'
+async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = false, broker = null) {
+    broker = broker || incoming?.broker || selectedBroker.value || 'bitunix'
     const isBitget = broker === 'bitget'
     const isPionex = broker === 'pionex'
 
@@ -628,14 +653,15 @@ const LOCAL_EDIT_FIELDS = [
 ]
 
 async function loadIncomingPositions() {
-    const broker = selectedBroker.value || 'bitunix'
-    // Load both open and pending_evaluation positions, filtered by broker
+    // Load both open and pending_evaluation positions across ALL brokers —
+    // the Pendente-Trades view groups them per exchange (jede Position trägt
+    // ihr eigenes broker-Feld).
     const openResults = await dbFind('incoming_positions', {
-        equalTo: { status: 'open', broker: broker },
+        equalTo: { status: 'open' },
         descending: 'id'
     })
     const pendingResults = await dbFind('incoming_positions', {
-        equalTo: { status: 'pending_evaluation', broker: broker },
+        equalTo: { status: 'pending_evaluation' },
         descending: 'id'
     })
 
@@ -922,7 +948,7 @@ export async function useTransferClosingMetadata(incoming, histPos, {
     // in denen der Cache zwischendurch stale geworden ist (Browser-Tab
     // lange offen, Broker-Wechsel, etc.).
     try {
-        const broker = selectedBroker.value || 'bitunix'
+        const broker = incoming.broker || selectedBroker.value || 'bitunix'
         await refreshAccountBalance({ broker, force: true })
     } catch (e) {
         console.log(' -> refreshAccountBalance nach Bewertung fehlgeschlagen:', e?.message)
