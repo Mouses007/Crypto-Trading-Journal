@@ -22,9 +22,13 @@ object ApiClient {
         .retryOnConnectionFailure(false)
         .build()
 
-    /** Returns the raw JSON body on success, or throws on network/HTTP error. */
+    /**
+     * Returns the raw JSON body on success, or throws on network/HTTP error.
+     * force=1 → das Widget zeigt immer den eigenen Zeitraum (all-time), unabhängig
+     * vom serverseitigen esp32Filter (der weiterhin die ESP-Displays steuert).
+     */
     fun fetch(host: String, port: String, key: String, filter: String): String {
-        val url = "http://$host:$port/api/esp32/display?filter=$filter"
+        val url = "http://$host:$port/api/esp32/display?filter=$filter&force=1"
         val req = Request.Builder()
             .url(url)
             .header("X-ESP32-Key", key)

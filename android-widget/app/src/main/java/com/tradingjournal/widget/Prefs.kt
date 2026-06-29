@@ -17,7 +17,7 @@ object Prefs {
     fun host(ctx: Context, id: Int): String = sp(ctx).getString("host_$id", "") ?: ""
     fun port(ctx: Context, id: Int): String = sp(ctx).getString("port_$id", "8080") ?: "8080"
     fun key(ctx: Context, id: Int): String = sp(ctx).getString("key_$id", "") ?: ""
-    fun filter(ctx: Context, id: Int): String = sp(ctx).getString("filter_$id", "month") ?: "month"
+    fun filter(ctx: Context, id: Int): String = sp(ctx).getString("filter_$id", "all") ?: "all"
 
     fun isConfigured(ctx: Context, id: Int): Boolean =
         host(ctx, id).isNotBlank() && key(ctx, id).isNotBlank()

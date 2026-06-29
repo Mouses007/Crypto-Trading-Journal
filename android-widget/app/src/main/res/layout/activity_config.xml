@@ -42,14 +42,6 @@
             android:hint="@string/cfg_key_hint"
             android:inputType="textNoSuggestions" />
 
-        <TextView style="@style/FieldLabel" android:text="@string/cfg_filter" />
-        <Spinner
-            android:id="@+id/in_filter"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:backgroundTint="@color/text_secondary" />
-
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

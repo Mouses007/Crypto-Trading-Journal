@@ -4,10 +4,8 @@ import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
-import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.tradingjournal.widget.model.DisplayData
@@ -21,8 +19,6 @@ class WidgetConfigActivity : AppCompatActivity() {
 
     private var widgetId = AppWidgetManager.INVALID_APPWIDGET_ID
 
-    private val filterValues = listOf("month", "week", "year", "all")
-    private val filterLabels = listOf("Monat", "Woche", "Jahr", "Gesamt")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,18 +34,12 @@ class WidgetConfigActivity : AppCompatActivity() {
         val host = findViewById<EditText>(R.id.in_host)
         val port = findViewById<EditText>(R.id.in_port)
         val key = findViewById<EditText>(R.id.in_key)
-        val filter = findViewById<Spinner>(R.id.in_filter)
         val status = findViewById<TextView>(R.id.status)
-
-        filter.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item, filterLabels
-        )
 
         // Prefill from any existing config.
         host.setText(Prefs.host(this, widgetId))
         if (Prefs.port(this, widgetId).isNotBlank()) port.setText(Prefs.port(this, widgetId))
         key.setText(Prefs.key(this, widgetId))
-        filter.setSelection(filterValues.indexOf(Prefs.filter(this, widgetId)).coerceAtLeast(0))
 
         findViewById<Button>(R.id.btn_test).setOnClickListener {
             val h = host.text.toString().trim()
@@ -58,11 +48,10 @@ class WidgetConfigActivity : AppCompatActivity() {
             if (h.isBlank() || k.isBlank()) {
                 status.text = getString(R.string.cfg_need_fields); return@setOnClickListener
             }
-            val f = filterValues[filter.selectedItemPosition]
             status.text = getString(R.string.cfg_testing)
             thread {
                 val msg = try {
-                    ApiClient.fetch(h, p, k, f)
+                    ApiClient.fetch(h, p, k, "all")
                     getString(R.string.cfg_test_ok)
                 } catch (e: Exception) {
                     getString(R.string.cfg_test_fail, e.message ?: "?")
@@ -78,8 +67,7 @@ class WidgetConfigActivity : AppCompatActivity() {
             if (h.isBlank() || k.isBlank()) {
                 status.text = getString(R.string.cfg_need_fields); return@setOnClickListener
             }
-            val f = filterValues[filter.selectedItemPosition]
-            Prefs.saveConfig(this, widgetId, h, p, k, f)
+            Prefs.saveConfig(this, widgetId, h, p, k, "all")
             status.text = getString(R.string.cfg_testing)
 
             // Daten gleich hier holen + cachen, damit das Widget sofort befüllt
@@ -87,7 +75,7 @@ class WidgetConfigActivity : AppCompatActivity() {
             // diesem Gerät zeitnah/überhaupt läuft (Akku-Restriktionen etc.).
             thread {
                 try {
-                    val json = ApiClient.fetch(h, p, k, f)
+                    val json = ApiClient.fetch(h, p, k, "all")
                     DisplayData.parse(json)
                     Prefs.saveCache(applicationContext, widgetId, json, System.currentTimeMillis())
                 } catch (e: Exception) {

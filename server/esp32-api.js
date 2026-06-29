@@ -100,9 +100,14 @@ export function setupEsp32Routes(app) {
             const todayStart = dayjs().tz(tz).startOf('day').unix()
             const todayEnd   = dayjs().tz(tz).endOf('day').unix()
 
-            // Server-side filter (settings.esp32Filter) takes priority over query param
-            // This allows the journal admin to control which period the ESP32 displays
-            const filter = settings?.esp32Filter || req.query.filter || 'month'
+            // Server-side filter (settings.esp32Filter) normally takes priority over the
+            // query param — so the journal admin controls which period the ESP32 displays.
+            // A client can opt out with ?force=1 and pick its own period (the Android
+            // widget uses force=1 + filter=all → always all-time, unabhängig vom ESP-Setting).
+            const forced = req.query.force === '1' || req.query.force === 'true'
+            const filter = forced
+                ? (req.query.filter || 'all')
+                : (settings?.esp32Filter || req.query.filter || 'month')
             let periodStart = 0
             if      (filter === 'month') periodStart = dayjs().tz(tz).startOf('month').unix()
             else if (filter === 'week')  periodStart = dayjs().tz(tz).startOf('week').unix()
