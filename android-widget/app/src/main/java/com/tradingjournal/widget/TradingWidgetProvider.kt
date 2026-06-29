@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.view.View
-import kotlin.concurrent.thread
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -16,6 +15,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.Constraints
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.tradingjournal.widget.model.DisplayData
@@ -37,18 +37,12 @@ class TradingWidgetProvider : AppWidgetProvider() {
         val awm = AppWidgetManager.getInstance(context)
         when (intent.action) {
             ACTION_REFRESH -> {
-                // Sofort-Feedback: Spinner an.
+                // Sofort-Feedback: Spinner an, dann Expedited-Job (läuft auch im
+                // Hintergrund mit Netz — anders als ein normaler Receiver/Worker, den
+                // der Pixel einfriert → Spinner drehte endlos).
                 val ids = awm.getAppWidgetIds(ComponentName(context, TradingWidgetProvider::class.java))
                 for (id in ids) setRefreshing(context, awm, id)
-                // Direkt im Receiver holen (goAsync) — NICHT über WorkManager, der auf
-                // manchen Geräten (z.B. Pixel) den Job nicht zeitnah ausführt → Spinner
-                // drehte endlos. refreshAllWidgets fängt Fehler ab → Spinner reset immer.
-                val pending = goAsync()
-                val appCtx = context.applicationContext
-                thread {
-                    try { RefreshWorker.refreshAllWidgets(appCtx) }
-                    finally { pending.finish() }
-                }
+                triggerRefresh(context)
             }
             ACTION_TOGGLE_BALANCE -> {
                 val id = intent.getIntExtra(
@@ -211,7 +205,9 @@ class TradingWidgetProvider : AppWidgetProvider() {
         // sofort, der Fetch hat selbst 10s Timeout, und updateWidget setzt den
         // Spinner danach IMMER zurück (zeigt sonst „⚠ offline").
         fun triggerRefresh(context: Context) {
-            val req = OneTimeWorkRequestBuilder<RefreshWorker>().build()
+            val req = OneTimeWorkRequestBuilder<RefreshWorker>()
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .build()
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(ONESHOT_WORK, ExistingWorkPolicy.REPLACE, req)
         }

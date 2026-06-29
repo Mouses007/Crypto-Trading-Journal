@@ -1,9 +1,15 @@
 package com.tradingjournal.widget
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.ServiceInfo
+import android.os.Build
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.tradingjournal.widget.model.DisplayData
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +25,25 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         refreshAllWidgets(applicationContext)
         Result.success()
+    }
+
+    // Für Expedited-Work: auf API <31 läuft der Job als kurzer Foreground-Service
+    // (braucht diese Notification, IMPORTANCE_MIN → praktisch unsichtbar). Ab API 31
+    // wird er als Expedited-Job ohne Notification ausgeführt.
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val channelId = "trading_refresh"
+        val nm = applicationContext.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(channelId, "Aktualisierung", NotificationManager.IMPORTANCE_MIN)
+        )
+        val notif: Notification = Notification.Builder(applicationContext, channelId)
+            .setSmallIcon(R.drawable.ic_refresh)
+            .setContentTitle(applicationContext.getString(R.string.app_name))
+            .setContentText(applicationContext.getString(R.string.w_refreshing))
+            .build()
+        return if (Build.VERSION.SDK_INT >= 34)
+            ForegroundInfo(42, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        else ForegroundInfo(42, notif)
     }
 
     companion object {

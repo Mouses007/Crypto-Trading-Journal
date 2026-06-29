@@ -12,8 +12,14 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        // Hartes Gesamt-Timeout über alle Phasen (Connect/Read/Retries) — bei einem
+        // nicht erreichbaren Host (z.B. Pixel ohne Route zum Server) endet der Call
+        // garantiert nach 10s statt zu hängen → der Refresh-Spinner setzt sich immer
+        // wieder zurück.
+        .callTimeout(10, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
         .build()
 
     /** Returns the raw JSON body on success, or throws on network/HTTP error. */
