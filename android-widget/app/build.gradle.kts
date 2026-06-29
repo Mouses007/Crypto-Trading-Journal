@@ -9,9 +9,9 @@ android {
 
     defaultConfig {
         applicationId = "com.tradingjournal.widget"
-        minSdk = 26
+        minSdk = 31
         targetSdk = 35
-        versionCode = 9
+        versionCode = 10
         versionName = "3.3.0"
     }
 

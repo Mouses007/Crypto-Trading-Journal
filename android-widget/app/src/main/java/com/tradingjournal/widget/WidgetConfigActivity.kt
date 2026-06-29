@@ -84,7 +84,6 @@ class WidgetConfigActivity : AppCompatActivity() {
                 runOnUiThread {
                     val awm = AppWidgetManager.getInstance(applicationContext)
                     TradingWidgetProvider.updateWidget(applicationContext, awm, widgetId)
-                    awm.notifyAppWidgetViewDataChanged(intArrayOf(widgetId), R.id.list)
                     TradingWidgetProvider.triggerRefresh(applicationContext)
                     setResult(Activity.RESULT_OK, Intent().putExtra(
                         AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))

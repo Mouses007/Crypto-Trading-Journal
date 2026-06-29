@@ -80,35 +80,15 @@ class TradingWidgetProvider : AppWidgetProvider() {
             awm.partiallyUpdateAppWidget(id, rv)
         }
 
-        /**
-         * Aktualisiert nur Kopf/KPIs/Spinner/Augen-Icon per Partial-Update — OHNE den
-         * Collection-Adapter (setRemoteAdapter) neu zu setzen. Wird nach einem Refresh
-         * benutzt; die Liste selbst lädt über notifyAppWidgetViewDataChanged neu. Setzt
-         * man stattdessen das volle updateWidget (Adapter neu), lädt die Liste nach dem
-         * Refresh oft NICHT neu (neue Positionen erscheinen erst beim nächsten Re-Bind).
-         */
-        fun refreshChrome(context: Context, awm: AppWidgetManager, id: Int) {
-            val rv = RemoteViews(context.packageName, R.layout.widget_main)
-            rv.setViewVisibility(R.id.refreshing, View.GONE)
-            rv.setViewVisibility(R.id.btn_refresh, View.VISIBLE)
-            rv.setImageViewResource(
-                R.id.btn_eye,
-                if (Prefs.hideBalance(context, id)) R.drawable.ic_eye_off else R.drawable.ic_eye
-            )
-            applyHeader(context, rv, id)
-            awm.partiallyUpdateAppWidget(id, rv)
-        }
 
         /** Builds + pushes the RemoteViews for one widget instance (header, KPIs, list adapter). */
         fun updateWidget(context: Context, awm: AppWidgetManager, id: Int) {
             val rv = RemoteViews(context.packageName, R.layout.widget_main)
 
-            // Collection adapter — unique data Uri per id so each widget gets its own factory.
-            val svc = Intent(context, PositionsRemoteViewsService::class.java).apply {
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
-                data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
-            }
-            rv.setRemoteAdapter(R.id.list, svc)
+            // Collection-Items DIREKT einbetten (RemoteCollectionItems, API 31+) — kein
+            // RemoteViewsService/Binding (das auf Pixel/Android 14+ durch App-Freezing
+            // minutenlang verzögert wurde → Liste lud nicht). Items kommen aus dem Cache.
+            rv.setRemoteAdapter(R.id.list, WidgetRows.build(context, id))
             rv.setEmptyView(R.id.list, R.id.empty)
 
             // Refresh button → broadcast back to this provider.
