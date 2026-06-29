@@ -24,8 +24,9 @@ const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 // 30 Tage in Sekunden
 // In-memory Auth-Konfiguration (aus settings geladen)
 let authConfig = { enabled: false, passwordHash: '' }
 
-// Routen, die ohne gültige Session erreichbar sein müssen (Login-Flow)
-const PUBLIC_API_PATHS = new Set(['/api/login', '/api/logout', '/api/auth/status'])
+// Routen, die ohne gültige Session erreichbar sein müssen (Login-Flow +
+// unkritischer Setup-Status, den der Router-Guard vor dem Login abfragt).
+const PUBLIC_API_PATHS = new Set(['/api/login', '/api/logout', '/api/auth/status', '/api/setup/status'])
 
 /**
  * Lädt die Auth-Konfiguration aus der settings-Tabelle. Nach DB-Init und nach

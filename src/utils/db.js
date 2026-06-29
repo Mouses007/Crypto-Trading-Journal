@@ -7,16 +7,24 @@ import axios from 'axios'
 
 // Central error handling for API responses
 axios.interceptors.response.use(
-    response => response,
+    response => {
+        // Erfolgreiche Antwort → Reload-Sperre zurücksetzen, damit eine spätere
+        // echte Session-Expiry wieder genau EINEN Reload auslösen darf.
+        try { sessionStorage.removeItem('ctjReloaded401') } catch (e) { /* ignore */ }
+        return response
+    },
     error => {
         if (error.response) {
             const status = error.response.status
             if (status === 401) {
                 console.error('[DB] Nicht autorisiert (401).')
-                // Einmal neu laden: ohne Passwort-Gate erneuert das das Session-Cookie,
-                // mit aktivem Gate zeigt App.vue dann den Login-Screen.
-                if (!window._dbSessionExpiredShown) {
-                    window._dbSessionExpiredShown = true
+                // Höchstens EIN Reload (über sessionStorage, übersteht den Reload):
+                // ohne Passwort-Gate erneuert das das Session-Cookie, mit aktivem
+                // Gate zeigt App.vue den Login-Screen. Kein Endlos-Reload mehr.
+                let already = false
+                try { already = !!sessionStorage.getItem('ctjReloaded401') } catch (e) { /* ignore */ }
+                if (!already) {
+                    try { sessionStorage.setItem('ctjReloaded401', '1') } catch (e) { /* ignore */ }
                     window.location.reload()
                 }
             } else if (status >= 500) {
