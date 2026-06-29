@@ -377,7 +377,8 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         let pnlClass = isProfit ? 'pnl-profit' : 'pnl-loss';
         let pnlText  = (isProfit ? '+' : '') + pnl.toFixed(dec) + ' ' + coin;
         let sideLower = (pos.side || '').toLowerCase();
-        let sideClass = (sideLower === 'long' || sideLower === 'buy') ? 'side-long' : 'side-short';
+        let sideClass = (sideLower === 'long' || sideLower === 'buy') ? 'side-long'
+                      : (sideLower === 'neutral') ? 'side-neutral' : 'side-short';
 
         let liq = pos.liqPrice;
         if (!liq && pos.bitunixData) {
@@ -424,7 +425,8 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         let pnlClass  = isProfit ? 'pnl-profit' : 'pnl-loss';
         let pnlText   = (isProfit ? '+' : '') + pnl.toFixed(2) + ' USDT';
         let sideLower = (pos.side || '').toLowerCase();
-        let sideClass = (sideLower === 'long' || sideLower === 'buy') ? 'side-long' : 'side-short';
+        let sideClass = (sideLower === 'long' || sideLower === 'buy') ? 'side-long'
+                      : (sideLower === 'neutral') ? 'side-neutral' : 'side-short';
 
         let markPrice = pos.markPrice;
         if (!markPrice && pos.bitunixData) {
