@@ -4,6 +4,7 @@ import org.json.JSONObject
 
 /** A single futures position as returned in openPositions[]. */
 data class Position(
+    val broker: String,
     val symbol: String,
     val side: String,
     val leverage: Double,
@@ -46,6 +47,7 @@ data class DisplayData(
                     val p = arr.getJSONObject(i)
                     positions.add(
                         Position(
+                            broker = p.optString("broker"),
                             symbol = p.optString("symbol"),
                             side = p.optString("side"),
                             leverage = p.optDouble("leverage", 0.0),

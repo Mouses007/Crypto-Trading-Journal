@@ -192,69 +192,55 @@ export function setupEsp32Routes(app) {
             const balance = startBalance > 0 ? startBalance + allTimePnL : null
             const balancePerf = startBalance > 0 ? ((balance / startBalance) - 1) * 100 : null
 
-            // Open positions — live vom primaryBroker (Bitunix oder Bitget)
+            // Offene Futures-Positionen ALLER konfigurierten Broker — je mit broker-Tag,
+            // damit Clients (Widget/Desklet) nach Börse gruppieren können. Pro Broker
+            // eigenes try/catch, damit ein Ausfall die anderen nicht blockiert.
             let openPositions = []
+            // --- Bitunix ---
             try {
-                if (primaryBroker === 'bitget') {
-                    const bCfg = await knex('bitget_config').where('id', 1).first()
-                    if (bCfg?.apiKey && bCfg?.secretKey && bCfg?.passphrase) {
-                        const apiKey     = decrypt(bCfg.apiKey)
-                        const secretKey  = decrypt(bCfg.secretKey)
-                        const passphrase = decrypt(bCfg.passphrase)
-                        const result = await getBitgetCurrentPositions(apiKey, secretKey, passphrase, {})
-                        if (String(result.code) === '00000') {
-                            const raw = Array.isArray(result.data) ? result.data : []
-                            openPositions = raw
-                                .filter(p => parseFloat(p.total || p.available || 0) > 0)
-                                .map(p => ({
-                                    symbol:        p.symbol || '',
-                                    side:          (p.holdSide || p.posSide || '').toLowerCase() === 'long' ? 'BUY' : 'SELL',
-                                    leverage:      parseFloat(p.leverage      || 0),
-                                    entryPrice:    parseFloat(p.openPriceAvg  ?? p.averageOpenPrice ?? 0),
-                                    markPrice:     parseFloat(p.markPrice     ?? 0),
-                                    qty:           parseFloat(p.total ?? p.available ?? 0),
-                                    unrealizedPNL: parseFloat(p.unrealizedPL  ?? 0),
-                                    realizedPNL:   parseFloat(p.achievedProfits ?? 0)
-                                }))
-                        }
+                const c = await knex('bitunix_config').where('id', 1).first()
+                if (c?.apiKey && c?.secretKey) {
+                    const result = await getPendingPositions(decrypt(c.apiKey), decrypt(c.secretKey), {})
+                    if (result.code === 0) {
+                        const raw = Array.isArray(result.data) ? result.data : (result.data?.positionList || [])
+                        for (const p of raw) openPositions.push({
+                            broker:        'bitunix',
+                            symbol:        p.symbol || '',
+                            side:          p.side   || '',
+                            leverage:      parseFloat(p.leverage     || 0),
+                            entryPrice:    parseFloat(p.entryPrice   ?? p.avgOpenPrice ?? p.avg_open_price ?? 0),
+                            markPrice:     parseFloat(p.markPrice    ?? p.mark_price ?? 0),
+                            qty:           parseFloat(p.qty ?? p.maxQty ?? 0),
+                            unrealizedPNL: parseFloat(p.unrealizedPNL ?? p.unrealized_pnl ?? 0),
+                            realizedPNL:   parseFloat(p.realizedPNL  ?? p.realized_pnl ?? 0)
+                        })
                     }
-                } else {
-                    const bCfg = await knex('bitunix_config').where('id', 1).first()
-                    if (bCfg?.apiKey && bCfg?.secretKey) {
-                        const apiKey    = decrypt(bCfg.apiKey)
-                        const secretKey = decrypt(bCfg.secretKey)
-                        const result = await getPendingPositions(apiKey, secretKey, {})
-                        if (result.code === 0) {
-                            const raw = Array.isArray(result.data) ? result.data : (result.data?.positionList || [])
-                            openPositions = raw.map(p => ({
+                }
+            } catch (e) { console.warn('ESP32 bitunix positions:', e.message) }
+            // --- Bitget ---
+            try {
+                const c = await knex('bitget_config').where('id', 1).first()
+                if (c?.apiKey && c?.secretKey && c?.passphrase) {
+                    const result = await getBitgetCurrentPositions(decrypt(c.apiKey), decrypt(c.secretKey), decrypt(c.passphrase), {})
+                    if (String(result.code) === '00000') {
+                        const raw = Array.isArray(result.data) ? result.data : []
+                        for (const p of raw) {
+                            if (parseFloat(p.total ?? p.available ?? 0) <= 0) continue
+                            openPositions.push({
+                                broker:        'bitget',
                                 symbol:        p.symbol || '',
-                                side:          p.side   || '',
-                                leverage:      parseFloat(p.leverage     || 0),
-                                entryPrice:    parseFloat(p.entryPrice   ?? p.avgOpenPrice ?? p.avg_open_price ?? 0),
-                                markPrice:     parseFloat(p.markPrice    ?? p.liqPrice ?? p.mark_price ?? 0),
-                                qty:           parseFloat(p.qty ?? p.maxQty ?? 0),
-                                unrealizedPNL: parseFloat(p.unrealizedPNL ?? p.unrealized_pnl ?? 0),
-                                realizedPNL:   parseFloat(p.realizedPNL  ?? p.realized_pnl ?? p.achievedProfits ?? 0)
-                            }))
+                                side:          (p.holdSide || p.posSide || '').toLowerCase() === 'long' ? 'BUY' : 'SELL',
+                                leverage:      parseFloat(p.leverage      || 0),
+                                entryPrice:    parseFloat(p.openPriceAvg  ?? p.averageOpenPrice ?? 0),
+                                markPrice:     parseFloat(p.markPrice     ?? 0),
+                                qty:           parseFloat(p.total ?? p.available ?? 0),
+                                unrealizedPNL: parseFloat(p.unrealizedPL  ?? 0),
+                                realizedPNL:   parseFloat(p.achievedProfits ?? 0)
+                            })
                         }
                     }
                 }
-            } catch (posErr) {
-                console.warn('ESP32 positions live fetch failed, fallback to DB:', posErr.message)
-                const rows = await knex('incoming_positions')
-                    .where('status', 'open')
-                    .select('symbol', 'side', 'unrealizedPNL', 'leverage', 'entryPrice', 'markPrice', 'quantity')
-                openPositions = rows.map(p => ({
-                    symbol:        p.symbol,
-                    side:          p.side,
-                    leverage:      parseFloat(p.leverage    || 0),
-                    entryPrice:    parseFloat(p.entryPrice  || 0),
-                    markPrice:     parseFloat(p.markPrice   || 0),
-                    qty:           parseFloat(p.quantity    || 0),
-                    unrealizedPNL: parseFloat(p.unrealizedPNL || 0),
-                    realizedPNL:   parseFloat(p.realizedPNL || 0)
-                }))
-            }
+            } catch (e) { console.warn('ESP32 bitget positions:', e.message) }
 
             // Laufende Pionex-Bots — eigenes Array (NICHT in openPositions mischen, damit
             // ältere Clients ohne Bot-Support unverändert weiterlaufen). PnL/Marge in der
@@ -262,6 +248,7 @@ export function setupEsp32Routes(app) {
             let bots = []
             try {
                 bots = (await getRunningBotPositions()).map(b => ({
+                    broker:        'pionex',
                     symbol:        b.symbol || '',
                     side:          b.side   || '',
                     leverage:      parseFloat(b.leverage      || 0),

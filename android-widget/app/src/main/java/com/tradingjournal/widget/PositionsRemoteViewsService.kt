@@ -50,13 +50,21 @@ private class PositionsFactory(
         val data = try { DisplayData.parse(json) } catch (e: Exception) { return emptyList() }
         val out = ArrayList<Row>()
 
+        // Futures nach Börse gruppieren — je eine Sektion (sortiert) mit Summen-PnL.
         if (data.positions.isNotEmpty()) {
-            val total = data.positions.sumOf { it.unrealizedPNL }
-            out.add(Row.Header(ctx.getString(R.string.w_futures), signed(total, 2) + " USDT"))
-            data.positions.forEach { out.add(Row.Future(it)) }
+            data.positions
+                .groupBy { it.broker.ifBlank { "?" } }
+                .toSortedMap()
+                .forEach { (broker, list) ->
+                    val total = list.sumOf { it.unrealizedPNL }
+                    out.add(Row.Header(brokerLabel(broker), signed(total, 2) + " USDT"))
+                    list.forEach { out.add(Row.Future(it)) }
+                }
         }
+        // Bots (Pionex) als eigene Sektion darunter.
         if (data.bots.isNotEmpty()) {
-            out.add(Row.Header(ctx.getString(R.string.w_bots), data.bots.size.toString()))
+            out.add(Row.Header(brokerLabel("pionex") + " " + ctx.getString(R.string.w_bots),
+                               data.bots.size.toString()))
             data.bots.forEach { out.add(Row.BotRow(it)) }
         }
         return out
@@ -109,6 +117,13 @@ private class PositionsFactory(
     // --- formatting helpers (mirror the desklet) ---
     private fun pnlColor(v: Double) =
         ContextCompat.getColor(ctx, if (v >= 0) R.color.profit else R.color.loss)
+
+    private fun brokerLabel(b: String): String = when (b.lowercase(Locale.ROOT)) {
+        "bitunix" -> "Bitunix"
+        "bitget"  -> "Bitget"
+        "pionex"  -> "Pionex"
+        else      -> b.replaceFirstChar { it.uppercase() }
+    }
 
     private fun sideLabel(side: String): String {
         val s = side.lowercase(Locale.ROOT)
