@@ -10,6 +10,7 @@ import android.widget.EditText
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.tradingjournal.widget.model.DisplayData
 import kotlin.concurrent.thread
 
 /**
@@ -79,15 +80,29 @@ class WidgetConfigActivity : AppCompatActivity() {
             }
             val f = filterValues[filter.selectedItemPosition]
             Prefs.saveConfig(this, widgetId, h, p, k, f)
+            status.text = getString(R.string.cfg_testing)
 
-            val awm = AppWidgetManager.getInstance(this)
-            TradingWidgetProvider.updateWidget(this, awm, widgetId)
-            TradingWidgetProvider.triggerRefresh(this)
-
-            setResult(Activity.RESULT_OK, Intent().putExtra(
-                AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId
-            ))
-            finish()
+            // Daten gleich hier holen + cachen, damit das Widget sofort befüllt
+            // ist — unabhängig davon, ob der WorkManager-Job (Hintergrund) auf
+            // diesem Gerät zeitnah/überhaupt läuft (Akku-Restriktionen etc.).
+            thread {
+                try {
+                    val json = ApiClient.fetch(h, p, k, f)
+                    DisplayData.parse(json)
+                    Prefs.saveCache(applicationContext, widgetId, json, System.currentTimeMillis())
+                } catch (e: Exception) {
+                    Prefs.saveError(applicationContext, widgetId, e.message ?: "Fehler")
+                }
+                runOnUiThread {
+                    val awm = AppWidgetManager.getInstance(applicationContext)
+                    TradingWidgetProvider.updateWidget(applicationContext, awm, widgetId)
+                    awm.notifyAppWidgetViewDataChanged(intArrayOf(widgetId), R.id.list)
+                    TradingWidgetProvider.triggerRefresh(applicationContext)
+                    setResult(Activity.RESULT_OK, Intent().putExtra(
+                        AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
+                    finish()
+                }
+            }
         }
     }
 }
