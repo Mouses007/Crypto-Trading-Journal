@@ -9,3 +9,5 @@
 .externalNativeBuild/
 .cxx/
 *.apk
+_build.log
+.kotlin/

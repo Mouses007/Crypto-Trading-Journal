@@ -48,10 +48,17 @@ object Prefs {
         sp(ctx).edit().putString("error_$id", message).apply()
     }
 
+    // --- Balance-Sichtbarkeit (Augen-Toggle, pro Widget) ---
+    fun hideBalance(ctx: Context, id: Int): Boolean = sp(ctx).getBoolean("hidebal_$id", false)
+    fun setHideBalance(ctx: Context, id: Int, hide: Boolean) {
+        sp(ctx).edit().putBoolean("hidebal_$id", hide).apply()
+    }
+
     fun clear(ctx: Context, id: Int) {
         sp(ctx).edit()
             .remove("host_$id").remove("port_$id").remove("key_$id").remove("filter_$id")
             .remove("cache_$id").remove("updated_$id").remove("error_$id")
+            .remove("hidebal_$id")
             .apply()
     }
 }

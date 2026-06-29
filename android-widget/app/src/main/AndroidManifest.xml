@@ -18,8 +18,9 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <!-- Custom action fired by the in-widget refresh button -->
+                <!-- Custom actions fired by the in-widget buttons -->
                 <action android:name="com.tradingjournal.widget.ACTION_REFRESH" />
+                <action android:name="com.tradingjournal.widget.ACTION_TOGGLE_BALANCE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

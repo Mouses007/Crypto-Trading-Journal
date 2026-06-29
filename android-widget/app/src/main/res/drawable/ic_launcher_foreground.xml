@@ -1,13 +1,6 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Simple candlestick / bars glyph centered in the adaptive-icon safe zone -->
-    <path android:fillColor="#26C281" android:pathData="M38,44h6v28h-6z" />
-    <path android:fillColor="#26C281" android:pathData="M39.5,36h3v8h-3z" />
-    <path android:fillColor="#26C281" android:pathData="M39.5,72h3v6h-3z" />
-    <path android:fillColor="#E5544B" android:pathData="M64,40h6v30h-6z" />
-    <path android:fillColor="#E5544B" android:pathData="M65.5,32h3v8h-3z" />
-    <path android:fillColor="#E5544B" android:pathData="M65.5,70h3v6h-3z" />
-</vector>
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Journal-Logo als Adaptive-Icon-Vordergrund. ~15% Inset, damit das runde
+     TJ-Emblem komplett innerhalb der Safe-Zone liegt (Rund-/Squircle-Mask). -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_logo"
+    android:inset="15%" />

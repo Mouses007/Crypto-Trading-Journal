@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -32,8 +33,22 @@ class TradingWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == ACTION_REFRESH) {
-            triggerRefresh(context)
+        val awm = AppWidgetManager.getInstance(context)
+        when (intent.action) {
+            ACTION_REFRESH -> {
+                // Sofort-Feedback: Spinner an + "Aktualisiere…", dann Worker.
+                val ids = awm.getAppWidgetIds(ComponentName(context, TradingWidgetProvider::class.java))
+                for (id in ids) setRefreshing(context, awm, id)
+                triggerRefresh(context)
+            }
+            ACTION_TOGGLE_BALANCE -> {
+                val id = intent.getIntExtra(
+                    AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                if (id != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                    Prefs.setHideBalance(context, id, !Prefs.hideBalance(context, id))
+                    updateWidget(context, awm, id)   // kein Netz nötig, nur Re-Render
+                }
+            }
         }
     }
 
@@ -49,8 +64,18 @@ class TradingWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_REFRESH = "com.tradingjournal.widget.ACTION_REFRESH"
+        const val ACTION_TOGGLE_BALANCE = "com.tradingjournal.widget.ACTION_TOGGLE_BALANCE"
         private const val PERIODIC_WORK = "trading_refresh_periodic"
         private const val ONESHOT_WORK = "trading_refresh_oneshot"
+
+        /** Zeigt sofort den Lade-Spinner + "Aktualisiere…" (Tap-Feedback). */
+        private fun setRefreshing(context: Context, awm: AppWidgetManager, id: Int) {
+            val rv = RemoteViews(context.packageName, R.layout.widget_main)
+            rv.setViewVisibility(R.id.btn_refresh, View.GONE)
+            rv.setViewVisibility(R.id.refreshing, View.VISIBLE)
+            rv.setTextViewText(R.id.updated, context.getString(R.string.w_refreshing))
+            awm.partiallyUpdateAppWidget(id, rv)
+        }
 
         /** Builds + pushes the RemoteViews for one widget instance (header, KPIs, list adapter). */
         fun updateWidget(context: Context, awm: AppWidgetManager, id: Int) {
@@ -74,6 +99,26 @@ class TradingWidgetProvider : AppWidgetProvider() {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
             )
+
+            // Eye toggle → broadcast (Saldo zensieren/zeigen), trägt die Widget-id mit.
+            val eyeIntent = Intent(context, TradingWidgetProvider::class.java)
+                .setAction(ACTION_TOGGLE_BALANCE)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                .setData(Uri.parse("tradingwidget://eye/$id"))
+            rv.setOnClickPendingIntent(
+                R.id.btn_eye,
+                PendingIntent.getBroadcast(
+                    context, id, eyeIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+            rv.setImageViewResource(
+                R.id.btn_eye,
+                if (Prefs.hideBalance(context, id)) R.drawable.ic_eye_off else R.drawable.ic_eye
+            )
+            // Refresh-Ruhezustand (Spinner aus) — setRefreshing() schaltet ihn beim Tap an.
+            rv.setViewVisibility(R.id.refreshing, View.GONE)
+            rv.setViewVisibility(R.id.btn_refresh, View.VISIBLE)
 
             // Title tap → (re)open the config screen for this widget.
             val cfg = Intent(context, WidgetConfigActivity::class.java).apply {
@@ -111,8 +156,9 @@ class TradingWidgetProvider : AppWidgetProvider() {
             if (json != null) {
                 val d = try { DisplayData.parse(json) } catch (e: Exception) { null }
                 if (d != null) {
-                    setKpi(context, rv, R.id.kpi_balance,
-                        d.balance?.let { fmt(it, 0) + " $" } ?: "–", null)
+                    val balText = if (Prefs.hideBalance(context, id)) "••••"
+                                  else d.balance?.let { fmt(it, 0) + " $" } ?: "–"
+                    setKpi(context, rv, R.id.kpi_balance, balText, null)
                     setKpi(context, rv, R.id.kpi_today, signed(d.todayPnL, 0), d.todayPnL)
                     setKpi(context, rv, R.id.kpi_total, signed(d.totalPnL, 0), d.totalPnL)
                     setKpi(context, rv, R.id.kpi_winrate,

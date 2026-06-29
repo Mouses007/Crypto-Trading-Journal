@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Trading Widget</string>
+    <string name="app_name">Trading Journal</string>
     <string name="widget_description">Offene Positionen &amp; Bots aus dem Crypto Trading Journal</string>
 
     <!-- Config screen -->
-    <string name="cfg_title">Trading Widget — Einstellungen</string>
+    <string name="cfg_title">Trading Journal — Einstellungen</string>
     <string name="cfg_host">Server-Host / IP</string>
     <string name="cfg_host_hint">z.B. 192.168.178.100</string>
     <string name="cfg_port">Port</string>
@@ -24,6 +24,8 @@
     <string name="w_futures">Futures</string>
     <string name="w_bots">Bots</string>
     <string name="w_updated">Aktualisiert %1$s</string>
+    <string name="w_refreshing">Aktualisiere…</string>
     <string name="w_offline">⚠ offline · Stand %1$s</string>
     <string name="w_tap_config">Tippen zum Einrichten</string>
+    <string name="w_toggle_balance">Saldo ein-/ausblenden</string>
 </resources>
