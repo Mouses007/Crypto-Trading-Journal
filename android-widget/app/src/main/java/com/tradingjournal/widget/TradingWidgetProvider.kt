@@ -168,18 +168,12 @@ class TradingWidgetProvider : AppWidgetProvider() {
                 }
             }
 
+            // Immer nur die Uhrzeit der letzten erfolgreichen Aktualisierung. Kein
+            // "offline"-Hinweis mehr (verwirrte nur) — bleibt ein Refresh erfolglos,
+            // steht einfach die alte Uhrzeit da, das sieht man am Timestamp.
             val ts = Prefs.updatedAt(context, id)
             val tstr = if (ts > 0) SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts)) else "–"
-            val err = Prefs.lastError(context, id)
-            // "offline" nur wenn die Daten WIRKLICH veraltet sind (kein Cache oder älter
-            // als 20 min). Ein einzelner fehlgeschlagener Refresh-Versuch bei frischen
-            // Daten soll nicht alarmieren — dann weiter "Aktualisiert HH:MM".
-            val stale = ts == 0L || (System.currentTimeMillis() - ts) > 20 * 60 * 1000
-            rv.setTextViewText(
-                R.id.updated,
-                if (err != null && stale) context.getString(R.string.w_offline, tstr)
-                else context.getString(R.string.w_updated, tstr)
-            )
+            rv.setTextViewText(R.id.updated, context.getString(R.string.w_updated, tstr))
         }
 
         private fun setKpi(context: Context, rv: RemoteViews, viewId: Int, text: String, signFor: Double?) {
