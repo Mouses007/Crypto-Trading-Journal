@@ -1,5 +1,6 @@
 package com.tradingjournal.widget
 
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
@@ -28,7 +29,7 @@ class TradingWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, awm: AppWidgetManager, ids: IntArray) {
         for (id in ids) updateWidget(context, awm, id)
-        enqueuePeriodic(context)
+        scheduleAlarm(context)
         triggerRefresh(context)
     }
 
@@ -52,12 +53,19 @@ class TradingWidgetProvider : AppWidgetProvider() {
                     updateWidget(context, awm, id)   // kein Netz nötig, nur Re-Render
                 }
             }
+            ACTION_ALARM -> {
+                // 15-min-Auto-Refresh: jetzt aktualisieren + nächsten Alarm planen
+                // (setAndAllowWhileIdle ist one-shot → muss neu gesetzt werden).
+                triggerRefresh(context)
+                scheduleAlarm(context)
+            }
         }
     }
 
-    override fun onEnabled(context: Context) = enqueuePeriodic(context)
+    override fun onEnabled(context: Context) = scheduleAlarm(context)
 
     override fun onDisabled(context: Context) {
+        cancelAlarm(context)
         WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK)
     }
 
@@ -68,8 +76,32 @@ class TradingWidgetProvider : AppWidgetProvider() {
     companion object {
         const val ACTION_REFRESH = "com.tradingjournal.widget.ACTION_REFRESH"
         const val ACTION_TOGGLE_BALANCE = "com.tradingjournal.widget.ACTION_TOGGLE_BALANCE"
+        const val ACTION_ALARM = "com.tradingjournal.widget.ACTION_ALARM"
         private const val PERIODIC_WORK = "trading_refresh_periodic"
         private const val ONESHOT_WORK = "trading_refresh_oneshot"
+        private const val REFRESH_INTERVAL_MS = 15 * 60 * 1000L
+
+        private fun alarmIntent(context: Context): PendingIntent {
+            val i = Intent(context, TradingWidgetProvider::class.java).setAction(ACTION_ALARM)
+            return PendingIntent.getBroadcast(
+                context, 99, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        /** Plant den nächsten Auto-Refresh in 15 min. setAndAllowWhileIdle feuert auch
+         *  im Doze (eine Wiederholung pro ~9–15 min) — zuverlässiger als WorkManager-
+         *  Periodic, ohne Notification/Extra-Berechtigung. One-shot → bei jedem Feuern neu. */
+        fun scheduleAlarm(context: Context) {
+            val am = context.getSystemService(AlarmManager::class.java) ?: return
+            am.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                System.currentTimeMillis() + REFRESH_INTERVAL_MS,
+                alarmIntent(context)
+            )
+        }
+
+        fun cancelAlarm(context: Context) {
+            context.getSystemService(AlarmManager::class.java)?.cancel(alarmIntent(context))
+        }
 
         /** Zeigt sofort den Lade-Spinner + "Aktualisiere…" (Tap-Feedback). */
         private fun setRefreshing(context: Context, awm: AppWidgetManager, id: Int) {
