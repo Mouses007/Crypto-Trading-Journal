@@ -329,6 +329,14 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         }
     }
 
+    // Side einheitlich LONG/SHORT/NEUTRAL (nicht BUY/SELL).
+    _displaySide(s) {
+        let u = (s || '').toString().toUpperCase();
+        if (u === 'BUY'  || u === 'LONG')  return 'LONG';
+        if (u === 'SELL' || u === 'SHORT') return 'SHORT';
+        return u || '-';
+    }
+
     _renderFuturesSection(positions, brokerLabel) {
         // Total PnL
         let totalPnl   = positions.reduce((sum, p) => sum + (parseFloat(p.unrealizedPNL) || 0), 0);
@@ -425,7 +433,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         let cw = this._colWidths;
         let cells = [
             { text: pos.symbol || '-', cls: 'symbol-cell',            width: cw.symbol },
-            { text: pos.side   || '-', cls: 'side-cell ' + sideClass, width: cw.side },
+            { text: this._displaySide(pos.side), cls: 'side-cell ' + sideClass, width: cw.side },
         ];
         if (this.showLeverage) cells.push({ text: (pos.leverage ? pos.leverage + 'x' : '-'), cls: 'leverage-cell', width: cw.leverage });
         cells.push({ text: fmt(pos.entryPrice), cls: 'price-cell', width: cw.price });
@@ -473,7 +481,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         let cw = this._colWidths;
         let cells = [
             { text: pos.symbol || '-', cls: 'symbol-cell',            width: cw.symbol },
-            { text: pos.side   || '-', cls: 'side-cell ' + sideClass, width: cw.side },
+            { text: this._displaySide(pos.side), cls: 'side-cell ' + sideClass, width: cw.side },
         ];
         if (this.showLeverage)  cells.push({ text: (pos.leverage ? pos.leverage + 'x' : '-'), cls: 'leverage-cell', width: cw.leverage });
         cells.push({ text: fmt(pos.entryPrice), cls: 'price-cell', width: cw.price });

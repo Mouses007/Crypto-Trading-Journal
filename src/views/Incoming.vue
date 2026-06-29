@@ -107,6 +107,15 @@ function getAvgEntryPrice(positionId, side) {
     return totalQty > 0 ? totalValue / totalQty : 0
 }
 
+// Side einheitlich als LONG/SHORT/NEUTRAL anzeigen (nicht BUY/SELL). Nur fürs Label
+// + Farbe — die rohe pos.side bleibt für die Logik (Fills/BE) unverändert.
+function displaySide(s) {
+    const u = (s || '').toString().toUpperCase()
+    if (u === 'BUY' || u === 'LONG') return 'LONG'
+    if (u === 'SELL' || u === 'SHORT') return 'SHORT'
+    return u || '—'
+}
+
 function getBreakevenPrice(positionId, side) {
     const fillData = getFillsForPosition(positionId)
     if (!fillData.trades || fillData.trades.length === 0) return 0
@@ -1252,8 +1261,8 @@ function getPositionDate(pos) {
                 <div class="row align-items-center pointerClass" @click="toggleExpand(pos.positionId)">
                     <div class="col-auto">
                         <strong class="fs-5">{{ pos.symbol }}</strong>
-                        <span class="ms-2 fw-bold" :class="pos.side === 'LONG' ? 'greenTrade' : (pos.side === 'NEUTRAL' ? 'text-muted' : 'redTrade')">
-                            {{ pos.side }}
+                        <span class="ms-2 fw-bold" :class="displaySide(pos.side) === 'LONG' ? 'greenTrade' : (displaySide(pos.side) === 'NEUTRAL' ? 'text-muted' : 'redTrade')">
+                            {{ displaySide(pos.side) }}
                         </span>
                         <span class="ms-2 incoming-info">{{ pos.leverage }}x</span>
                         <span v-if="pos.coinM" class="badge ms-2" style="background:rgba(245,158,11,0.18);color:#f59e0b;font-size:0.6rem;">COIN-M</span>
