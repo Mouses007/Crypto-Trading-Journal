@@ -89,8 +89,10 @@ export function sessionCookieMiddleware(req, res, next) {
  * Login-Routen sind ausgenommen, damit man sich überhaupt anmelden kann.
  */
 export function apiAuthMiddleware(req, res, next) {
-    // Login-Flow-Routen immer durchlassen
-    const basePath = req.path.split('?')[0]
+    // Login-Flow-Routen immer durchlassen.
+    // Hinweis: bei `app.use('/api', ...)` ist req.path ohne /api-Präfix, daher
+    // originalUrl verwenden, damit die Allowlist mit /api/... matcht.
+    const basePath = (req.originalUrl || req.url).split('?')[0]
     if (PUBLIC_API_PATHS.has(basePath)) return next()
 
     const token = parseCookieToken(req)
