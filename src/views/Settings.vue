@@ -383,7 +383,7 @@ async function loadEsp32Settings() {
 async function saveEsp32Filter() {
     try {
         await dbUpdateSettings({ esp32Filter: esp32Filter.value })
-        esp32SaveResult.value = { success: true, message: 'Filter gespeichert — ESP32 übernimmt beim nächsten Abruf.' }
+        esp32SaveResult.value = { success: true, message: 'Filter gespeichert — Anzeigen übernehmen beim nächsten Abruf.' }
         setTimeout(() => esp32SaveResult.value = null, 5000)
     } catch (e) {
         esp32SaveResult.value = { success: false, message: e.message }
@@ -2071,15 +2071,15 @@ onBeforeMount(async () => {
                 <!--=============== ESP32 DISPLAY ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="esp32Expanded = !esp32Expanded">
                     <i class="uil me-2" :class="esp32Expanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">ESP32 Display</p>
+                    <p class="fs-5 fw-bold mb-0">Externe Anzeigen · ESP32 / Widget / Desklet</p>
                     <span v-if="esp32KeySet" class="badge bg-success ms-2">aktiv</span>
                 </div>
                 <div v-show="esp32Expanded" class="mt-2 ms-3">
-                    <p class="fw-lighter">Zeige Trading-Daten auf einem ESP32 TFT-Display an. Firmware für beide unterstützten Boards liegt im Repo.</p>
+                    <p class="fw-lighter">Zeige deine Trading-Daten auf externen Anzeigen: ESP32-TFT-Displays, dem Android-Homescreen-Widget und dem Linux-Desklet. Alle nutzen denselben read-only Endpoint mit dem API-Key unten — sie funktionieren auch bei aktivem Passwortschutz.</p>
 
                     <!-- Hardware-Übersicht -->
                     <div class="mb-3 p-2" style="background: var(--black-bg-3, #1a1a2e); border-radius: var(--border-radius, 6px); font-size: 0.85rem;">
-                        <div class="fw-semibold mb-2" style="color: var(--white-75);">Unterstützte Hardware</div>
+                        <div class="fw-semibold mb-2" style="color: var(--white-75);">ESP32-Boards (Firmware im Repo)</div>
                         <table class="table table-dark table-sm mb-0" style="font-size:0.8rem;">
                             <thead>
                                 <tr>
@@ -2110,13 +2110,20 @@ onBeforeMount(async () => {
                         <div class="mt-2" style="color: var(--white-50);">
                             Flash-Anleitung: <code>cd &lt;firmware-ordner&gt;</code> → <code>pio run -e esp32dev --target upload</code>
                         </div>
+                        <div class="mt-2 pt-2" style="color: var(--white-75); border-top: 1px solid var(--black-bg-1, #2a2a3e);">
+                            Weitere Clients (gleicher Key):
+                            <span class="d-block mt-1" style="color: var(--white-50);">
+                                · <strong>Android-Widget</strong> — Homescreen-Widget (<code>android-widget/</code>)<br>
+                                · <strong>Linux-Desklet</strong> — Cinnamon-Desklet (<code>desklet/</code>)
+                            </span>
+                        </div>
                     </div>
 
                     <!-- API-Info -->
                     <div class="mb-3 p-2" style="background: var(--black-bg-3, #1a1a2e); border-radius: var(--border-radius, 6px); font-size: 0.85rem;">
                         <div><span style="color: var(--white-50);">Endpoint:</span> <code>GET /api/esp32/display</code></div>
                         <div><span style="color: var(--white-50);">Header:</span> <code>X-ESP32-Key: &lt;key&gt;</code></div>
-                        <div class="mt-1" style="color: var(--white-50);">Liefert: heutiger PnL, Gesamt-PnL, Win-Rate, offene Positionen</div>
+                        <div class="mt-1" style="color: var(--white-50);">Liefert: heutiger PnL, Gesamt-PnL, Win-Rate, offene Positionen, laufende Bots</div>
                     </div>
 
                     <div class="row align-items-center mt-2">
@@ -2141,7 +2148,7 @@ onBeforeMount(async () => {
                     <div class="row align-items-center mt-2">
                         <div class="col-12 col-md-4">
                             Zeitraum
-                            <small class="d-block text-muted" style="font-size:0.78rem;">ESP32 übernimmt automatisch</small>
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Anzeigen übernehmen automatisch</small>
                         </div>
                         <div class="col-12 col-md-8">
                             <div class="input-group">
