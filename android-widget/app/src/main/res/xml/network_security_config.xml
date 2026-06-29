@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Trading Journal server is self-hosted and reached over a private LAN / VPN
+  via plain HTTP (no TLS). Allow cleartext traffic. This is a personal, single-user
+  app talking only to the user's own server — not a public-facing client.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Trading Widget</string>
+    <string name="widget_description">Offene Positionen &amp; Bots aus dem Crypto Trading Journal</string>
+
+    <!-- Config screen -->
+    <string name="cfg_title">Trading Widget — Einstellungen</string>
+    <string name="cfg_host">Server-Host / IP</string>
+    <string name="cfg_host_hint">z.B. 192.168.178.100</string>
+    <string name="cfg_port">Port</string>
+    <string name="cfg_key">ESP32-API-Key</string>
+    <string name="cfg_key_hint">aus Journal → Einstellungen → ESP32 Display</string>
+    <string name="cfg_filter">Zeitraum</string>
+    <string name="cfg_test">Verbindung testen</string>
+    <string name="cfg_save">Speichern</string>
+    <string name="cfg_testing">Teste…</string>
+    <string name="cfg_test_ok">Verbindung OK</string>
+    <string name="cfg_test_fail">Fehlgeschlagen: %1$s</string>
+    <string name="cfg_need_fields">Host, Port und Key sind erforderlich.</string>
+
+    <!-- Widget -->
+    <string name="w_loading">Lade…</string>
+    <string name="w_no_positions">Keine offenen Positionen</string>
+    <string name="w_futures">Futures</string>
+    <string name="w_bots">Bots</string>
+    <string name="w_updated">Aktualisiert %1$s</string>
+    <string name="w_offline">⚠ offline · Stand %1$s</string>
+    <string name="w_tap_config">Tippen zum Einrichten</string>
+</resources>

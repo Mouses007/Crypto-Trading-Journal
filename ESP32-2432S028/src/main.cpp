@@ -32,7 +32,7 @@ XPT2046_Touchscreen ts(TOUCH_CS_PIN, TOUCH_IRQ_PIN);
 #define WIFI_TIMEOUT_MS     12000
 #define DISPLAY_ROTATION    3
 #define TFT_BL_PIN          21        // Backlight-Pin ESP32-2432S028 (CYD)
-#define FW_VERSION          "2.8.5-CYD"
+#define FW_VERSION          "3.3.0-CYD"
 
 // ── Farben RGB565 — Journal-Farbschema (ILI9341, korrektes Gamma) ────────
 #define COLOR_BG         0x0000   // #000000
@@ -120,6 +120,19 @@ struct Position {
   float  realizedPNL;
 };
 
+// Laufender Pionex-Bot. PnL/Marge in marginCoin (z.B. SOL bei Coin-M), nicht zwingend USDT.
+struct Bot {
+  String symbol;
+  String side;
+  String marginCoin;
+  float  leverage;
+  float  entryPrice;
+  float  markPrice;
+  float  unrealizedPNL;
+  float  liqPrice;
+  bool   coinM;
+};
+
 struct TradeData {
   float todayPnL    = 0;
   int   todayTrades = 0;
@@ -136,6 +149,7 @@ struct TradeData {
   long  volumeTotal = 0;
   bool  valid       = false;
   std::vector<Position> positions;
+  std::vector<Bot> bots;
 };
 TradeData data;
 
@@ -432,11 +446,12 @@ void drawScreen2() {
   tft.print("Trading Journal");
   tft.setTextColor(COLOR_GREY, COLOR_HEADER_BG);
   tft.setCursor(8, 16);
-  tft.print("Offene Positionen · Bitunix");
+  tft.print("Offene Positionen & Bots");
 
-  int n = data.positions.size();
+  int nFut = data.positions.size();
+  int nBot = data.bots.size();
 
-  if (n == 0) {
+  if (nFut == 0 && nBot == 0) {
     tft.setTextColor(COLOR_GREY, COLOR_BG);
     tft.setCursor(8, 110);
     tft.print("Keine offenen Positionen");
@@ -452,18 +467,22 @@ void drawScreen2() {
   tft.setCursor(4,   32); tft.print("Symbol");
   tft.setCursor(72,  32); tft.print("Side");
   tft.setCursor(104, 32); tft.print("Heb.");
-  tft.setCursor(140, 32); tft.print("unr. PnL");
-  tft.setCursor(228, 32); tft.print("real. PnL");
+  tft.setCursor(140, 32); tft.print("PnL");
+  tft.setCursor(228, 32); tft.print("real./Liq");
   tft.drawFastHLine(0, 44, 320, COLOR_GREY_DARK);
 
-  // ── Tabellenzeilen (ab y=47, 20px pro Zeile, max 7) ──
-  int maxRows = min((int)data.positions.size(), 7);
+  // Row-Budget (7 Slots): bei Bots je max 3 Datenzeilen + 1 Label-Zeile.
+  int futCap, botCap;
+  if      (nBot == 0) { futCap = min(nFut, 7); botCap = 0; }
+  else if (nFut == 0) { futCap = 0;            botCap = min(nBot, 7); }
+  else                { futCap = min(nFut, 3); botCap = min(nBot, 3); }
+
   int y = 47;
 
-  for (int i = 0; i < maxRows; i++) {
+  // ── Futures ───────────────────────────────────────
+  for (int i = 0; i < futCap; i++) {
     auto& p = data.positions[i];
 
-    // Symbol (ohne USDT-Suffix, max 7 Zeichen)
     tft.setTextColor(COLOR_WHITE, COLOR_BG);
     tft.setCursor(4, y);
     String sym = p.symbol;
@@ -471,26 +490,22 @@ void drawScreen2() {
     if (sym.length() > 7) sym = sym.substring(0, 7);
     tft.print(sym);
 
-    // Side
     tft.setTextColor(p.side == "BUY" || p.side == "LONG" ? COLOR_GREEN : COLOR_RED, COLOR_BG);
     tft.setCursor(72, y);
     tft.print(p.side.substring(0, 4));
 
-    // Hebel
     tft.setTextColor(COLOR_WHITE, COLOR_BG);
     tft.setCursor(104, y);
     char hebStr[8];
     snprintf(hebStr, sizeof(hebStr), "%dx", (int)p.leverage);
     tft.print(hebStr);
 
-    // unr. PnL
     tft.setTextColor(pnlColor(p.unrealizedPNL), COLOR_BG);
     tft.setCursor(140, y);
     char unrPnlStr[12];
     snprintf(unrPnlStr, sizeof(unrPnlStr), "%+.2f", p.unrealizedPNL);
     tft.print(unrPnlStr);
 
-    // real. PnL (nur anzeigen wenn != 0)
     if (p.realizedPNL != 0.0f) {
       tft.setTextColor(pnlColor(p.realizedPNL), COLOR_BG);
       tft.setCursor(228, y);
@@ -505,6 +520,64 @@ void drawScreen2() {
 
     tft.drawFastHLine(0, y + 15, 320, COLOR_GREY_DARK);
     y += 20;
+  }
+
+  // ── Bots (PnL/Marge in marginCoin) ────────────────
+  if (botCap > 0) {
+    tft.setTextColor(COLOR_BLUE, COLOR_BG);
+    tft.setCursor(4, y);
+    char botHdr[20];
+    snprintf(botHdr, sizeof(botHdr), "BOTS (%d)", nBot);
+    tft.print(botHdr);
+    tft.setTextColor(COLOR_GREY, COLOR_BG);
+    tft.setCursor(228, y); tft.print("Liq");
+    tft.drawFastHLine(0, y + 13, 320, COLOR_GREY_DARK);
+    y += 16;
+
+    for (int i = 0; i < botCap; i++) {
+      auto& b = data.bots[i];
+
+      tft.setTextColor(COLOR_WHITE, COLOR_BG);
+      tft.setCursor(4, y);
+      String sym = b.symbol;
+      if (sym.endsWith("USDT")) sym = sym.substring(0, sym.length() - 4);
+      if (sym.length() > 7) sym = sym.substring(0, 7);
+      tft.print(sym);
+
+      tft.setTextColor(b.side == "BUY" || b.side == "LONG" ? COLOR_GREEN : COLOR_RED, COLOR_BG);
+      tft.setCursor(72, y);
+      tft.print(b.side.substring(0, 4));
+
+      tft.setTextColor(COLOR_WHITE, COLOR_BG);
+      tft.setCursor(104, y);
+      char hebStr[8];
+      snprintf(hebStr, sizeof(hebStr), "%dx", (int)b.leverage);
+      tft.print(hebStr);
+
+      tft.setTextColor(pnlColor(b.unrealizedPNL), COLOR_BG);
+      tft.setCursor(140, y);
+      char botPnl[20];
+      if (b.marginCoin == "USDT")
+        snprintf(botPnl, sizeof(botPnl), "%+.2f", b.unrealizedPNL);
+      else
+        snprintf(botPnl, sizeof(botPnl), "%+.3f %s", b.unrealizedPNL, b.marginCoin.c_str());
+      tft.print(botPnl);
+
+      tft.setTextColor(COLOR_GREY, COLOR_BG);
+      tft.setCursor(228, y);
+      if (b.liqPrice > 0) {
+        char liqStr[14];
+        if      (b.liqPrice >= 1000) snprintf(liqStr, sizeof(liqStr), "%.0f", b.liqPrice);
+        else if (b.liqPrice >= 1)    snprintf(liqStr, sizeof(liqStr), "%.3f", b.liqPrice);
+        else                         snprintf(liqStr, sizeof(liqStr), "%.5f", b.liqPrice);
+        tft.print(liqStr);
+      } else {
+        tft.print("—");
+      }
+
+      tft.drawFastHLine(0, y + 15, 320, COLOR_GREY_DARK);
+      y += 20;
+    }
   }
 
   // ── Footer ────────────────────────────────────────
@@ -879,6 +952,23 @@ bool fetchData() {
     pos.unrealizedPNL = p["unrealizedPNL"] | 0.0f;
     pos.realizedPNL   = p["realizedPNL"]   | 0.0f;
     data.positions.push_back(pos);
+  }
+
+  // Laufende Pionex-Bots (eigenes Array; ältere Server ohne Feld → leer)
+  data.bots.clear();
+  JsonArray botArr = doc["bots"].as<JsonArray>();
+  for (JsonObject b : botArr) {
+    Bot bot;
+    bot.symbol        = b["symbol"]        | "";
+    bot.side          = b["side"]          | "";
+    bot.marginCoin    = b["marginCoin"]    | "USDT";
+    bot.leverage      = b["leverage"]      | 0.0f;
+    bot.entryPrice    = b["entryPrice"]    | 0.0f;
+    bot.markPrice     = b["markPrice"]     | 0.0f;
+    bot.unrealizedPNL = b["unrealizedPNL"] | 0.0f;
+    bot.liqPrice      = b["liqPrice"]      | 0.0f;
+    bot.coinM         = b["coinM"]         | false;
+    data.bots.push_back(bot);
   }
 
   data.valid = true;

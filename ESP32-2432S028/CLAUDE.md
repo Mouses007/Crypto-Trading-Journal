@@ -65,7 +65,7 @@ Filter (`month`/`week`/`year`/`all`) is **set in the Journal Web UI**, not on th
 ### Key Constants
 
 ```cpp
-#define FW_VERSION          "2.8.4-CYD"
+#define FW_VERSION          "3.3.0-CYD"
 #define ACTIVE_INTERVAL     10        // seconds between API fetches when active
 #define STANDBY_TIMEOUT     30        // seconds without touch → backlight off
 #define LIGHT_SLEEP_TIMEOUT 60        // seconds without touch → light sleep + WiFi off

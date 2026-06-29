@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cfg_title"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="20dp" />
+
+        <TextView style="@style/FieldLabel" android:text="@string/cfg_host" />
+        <EditText
+            android:id="@+id/in_host"
+            style="@style/Field"
+            android:hint="@string/cfg_host_hint"
+            android:inputType="textUri" />
+
+        <TextView style="@style/FieldLabel" android:text="@string/cfg_port" />
+        <EditText
+            android:id="@+id/in_port"
+            style="@style/Field"
+            android:text="8080"
+            android:inputType="number" />
+
+        <TextView style="@style/FieldLabel" android:text="@string/cfg_key" />
+        <EditText
+            android:id="@+id/in_key"
+            style="@style/Field"
+            android:hint="@string/cfg_key_hint"
+            android:inputType="textNoSuggestions" />
+
+        <TextView style="@style/FieldLabel" android:text="@string/cfg_filter" />
+        <Spinner
+            android:id="@+id/in_filter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:backgroundTint="@color/text_secondary" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_test"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/cfg_test" />
+
+            <Button
+                android:id="@+id/btn_save"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/cfg_save" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:text="" />
+    </LinearLayout>
+</ScrollView>

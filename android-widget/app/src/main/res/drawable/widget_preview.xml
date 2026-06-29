@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder preview shown in the widget picker. Replace with a real screenshot
+     (res/drawable-nodpi/widget_preview.png) anytime for a nicer picker thumbnail. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/widget_bg" />
+    <item
+        android:drawable="@drawable/ic_launcher_foreground"
+        android:gravity="center" />
+</layer-list>

@@ -104,7 +104,7 @@ Display runs in landscape rotation 3 (320×240 effective).
 ### Important Constants (top of main.cpp)
 
 ```cpp
-#define FW_VERSION          "2.8.4"
+#define FW_VERSION          "3.3.0-WS"
 #define ACTIVE_INTERVAL     10        // seconds between API fetches when active
 #define STANDBY_TIMEOUT     30        // seconds without touch → backlight off
 #define LIGHT_SLEEP_TIMEOUT 60        // seconds without touch → light sleep + WiFi off

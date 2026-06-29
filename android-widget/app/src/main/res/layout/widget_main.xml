@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="10dp">
+
+    <!-- Header row: title + refresh button -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/app_name"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/updated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text=""
+            android:textColor="@color/text_muted"
+            android:textSize="10sp" />
+
+        <ImageView
+            android:id="@+id/btn_refresh"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:padding="4dp"
+            android:src="@drawable/ic_refresh"
+            android:contentDescription="@string/cfg_test" />
+    </LinearLayout>
+
+    <!-- KPI strip: balance / today / total / winrate -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp"
+        android:baselineAligned="false">
+
+        <LinearLayout style="@style/KpiCell">
+            <TextView style="@style/KpiLabel" android:text="Saldo" />
+            <TextView android:id="@+id/kpi_balance" style="@style/KpiValue" android:text="–" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KpiCell">
+            <TextView style="@style/KpiLabel" android:text="Heute" />
+            <TextView android:id="@+id/kpi_today" style="@style/KpiValue" android:text="–" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KpiCell">
+            <TextView style="@style/KpiLabel" android:text="Gesamt" />
+            <TextView android:id="@+id/kpi_total" style="@style/KpiValue" android:text="–" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/KpiCell">
+            <TextView style="@style/KpiLabel" android:text="WinRate" />
+            <TextView android:id="@+id/kpi_winrate" style="@style/KpiValue" android:text="–" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="4dp"
+        android:background="@color/separator" />
+
+    <!-- Scrollable list of futures + bots (collection widget) -->
+    <ListView
+        android:id="@+id/list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:dividerHeight="0dp" />
+
+    <!-- Empty / error state -->
+    <TextView
+        android:id="@+id/empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="@string/w_loading"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp" />
+</LinearLayout>

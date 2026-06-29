@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark theme matching the Cinnamon desklet (background rgba(15,20,28)) -->
+    <color name="bg">#0F141C</color>
+    <color name="bg_card">#161D29</color>
+    <color name="bg_header">#1B2433</color>
+    <color name="row_alt">#121822</color>
+    <color name="separator">#2A3547</color>
+    <color name="text_primary">#E6EAF0</color>
+    <color name="text_secondary">#9AA7B8</color>
+    <color name="text_muted">#66758A</color>
+    <color name="profit">#26C281</color>
+    <color name="loss">#E5544B</color>
+    <color name="side_long">#26C281</color>
+    <color name="side_short">#E5544B</color>
+    <color name="accent">#3B82F6</color>
+</resources>
