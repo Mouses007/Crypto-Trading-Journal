@@ -1,10 +1,11 @@
 import fs from 'fs'
 import { getKnex } from './database.js'
-import { loadDbConfig, getConfigPath } from './db-config.js'
+import { loadDbConfig, getConfigPath, saveDbConfig } from './db-config.js'
 
 // Sensitive Felder die im Export redaktiert werden
 const REDACTED_SETTINGS_KEYS = [
-    'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek', 'fluxApiKey', 'geminiImageApiKey'
+    'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
+    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash'
 ]
 
 // Alle Tabellen die gesichert werden (Reihenfolge wichtig für Import: abhängige zuletzt)
@@ -72,6 +73,7 @@ export function setupBackupRoutes(app) {
             for (const configTable of ['bitunix_config', 'bitget_config']) {
                 if (tables[configTable]) {
                     for (const row of tables[configTable]) {
+                        if (row.apiKey) row.apiKey = '[REDACTED]'
                         if (row.secretKey) row.secretKey = '[REDACTED]'
                         if (row.passphrase) row.passphrase = '[REDACTED]'
                     }
@@ -108,7 +110,7 @@ export function setupBackupRoutes(app) {
 
     // ==================== IMPORT ====================
     app.post('/api/db-import', async (req, res) => {
-        const { tables, dbConfig: backupDbConfig } = req.body
+        const { tables, dbConfig: backupDbConfig, confirmDbConfigOverwrite } = req.body
         if (!tables || typeof tables !== 'object') {
             return res.status(400).json({ ok: false, error: 'Ungültiges Backup-Format: "tables" Objekt fehlt' })
         }
@@ -183,14 +185,21 @@ export function setupBackupRoutes(app) {
                 await fixSequencesAfterImport(knex)
             }
 
-            // 4. db-config.json wiederherstellen falls im Backup vorhanden
+            // 4. db-config.json wiederherstellen — NUR mit ausdrücklicher Bestätigung
+            //    und gültiger Struktur. Das Überschreiben der DB-Verbindung ist
+            //    sicherheitskritisch (kann die App auf eine fremde DB umleiten).
             if (backupDbConfig && typeof backupDbConfig === 'object') {
-                try {
-                    const configPath = getConfigPath()
-                    fs.writeFileSync(configPath, JSON.stringify(backupDbConfig, null, 2), 'utf-8')
-                    imported['db-config.json'] = 1
-                } catch (e) {
-                    console.warn('Backup import: db-config.json konnte nicht wiederhergestellt werden:', e.message)
+                if (confirmDbConfigOverwrite !== true) {
+                    imported['db-config.json'] = 'übersprungen (Bestätigung fehlt: confirmDbConfigOverwrite)'
+                } else if (!isValidDbConfig(backupDbConfig)) {
+                    imported['db-config.json'] = 'übersprungen (ungültige Struktur)'
+                } else {
+                    try {
+                        saveDbConfig(backupDbConfig)
+                        imported['db-config.json'] = 1
+                    } catch (e) {
+                        console.warn('Backup import: db-config.json konnte nicht wiederhergestellt werden:', e.message)
+                    }
                 }
             }
 
@@ -201,6 +210,22 @@ export function setupBackupRoutes(app) {
             res.status(500).json({ ok: false, error: e.message || 'Import fehlgeschlagen' })
         }
     })
+}
+
+/**
+ * Validiert die Struktur einer wiederhergestellten DB-Konfiguration, bevor sie
+ * db-config.json überschreibt. Erwartet die Kern-Verbindungsfelder.
+ */
+function isValidDbConfig(cfg) {
+    if (!cfg || typeof cfg !== 'object') return false
+    const host = cfg.host
+    const database = cfg.database
+    const user = cfg.user
+    const port = cfg.port
+    return typeof host === 'string' && host.length > 0
+        && typeof database === 'string' && database.length > 0
+        && typeof user === 'string' && user.length > 0
+        && (typeof port === 'number' || (typeof port === 'string' && port.length > 0))
 }
 
 /**

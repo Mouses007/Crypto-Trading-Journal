@@ -1,14 +1,31 @@
 import { getKnex } from './database.js'
 import { loadDbConfig, saveDbConfig } from './db-config.js'
 import { setupEsp32AdminRoutes } from './esp32-api.js'
+import { encrypt } from './crypto.js'
 
 const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions', 'share_card_templates']
 
-// Sensitive fields to strip from settings GET responses (encrypted API keys etc.)
-const SETTINGS_SENSITIVE_FIELDS = [
+// Sensitive fields to strip from settings responses (encrypted API keys etc.).
+// These are written ONLY via dedicated, encrypting endpoints (/api/ai/settings,
+// /api/flux/settings, /api/esp32/*, /api/auth/set-password) — never via the
+// generic settings PUT below.
+export const SETTINGS_SENSITIVE_FIELDS = [
     'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey'
+    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash'
 ]
+
+/** Strip sensitive fields from a settings row, exposing only `${field}Set` presence flags. */
+function redactSettings(parsed) {
+    if (!parsed) return parsed
+    const safe = { ...parsed }
+    for (const field of SETTINGS_SENSITIVE_FIELDS) {
+        if (safe[field]) {
+            safe[`${field}Set`] = true
+        }
+        delete safe[field]
+    }
+    return safe
+}
 
 // Whitelist of allowed settings keys (from schema + migrations)
 const VALID_SETTINGS_KEYS = [
@@ -113,15 +130,7 @@ export function setupApiRoutes(app) {
     app.get('/api/db/settings', async (req, res) => {
         try {
             const row = await knex('settings').where('id', 1).first()
-            const parsed = parseJsonColumns('settings', row)
-            // Strip sensitive fields, expose only presence flags
-            for (const field of SETTINGS_SENSITIVE_FIELDS) {
-                if (parsed[field]) {
-                    parsed[`${field}Set`] = true
-                    delete parsed[field]
-                }
-            }
-            res.json(parsed)
+            res.json(redactSettings(parseJsonColumns('settings', row)))
         } catch (error) {
             console.error('Settings read error:', error)
             res.status(500).json({ error: 'Internal server error' })
@@ -131,17 +140,19 @@ export function setupApiRoutes(app) {
     app.put('/api/db/settings', async (req, res) => {
         try {
             const data = stringifyJsonColumns('settings', req.body)
-            // Only allow known settings keys (whitelist)
+            // Only allow known settings keys (whitelist), and NEVER accept sensitive
+            // secrets here — those go through dedicated, encrypting endpoints.
+            const blocked = new Set(SETTINGS_SENSITIVE_FIELDS)
             const updateData = {}
             for (const key of VALID_SETTINGS_KEYS) {
-                if (data[key] !== undefined) updateData[key] = data[key]
+                if (!blocked.has(key) && data[key] !== undefined) updateData[key] = data[key]
             }
             if (Object.keys(updateData).length === 0) return res.json({ ok: true })
 
             updateData.updatedAt = knex.fn.now()
             await knex('settings').where('id', 1).update(updateData)
             const row = await knex('settings').where('id', 1).first()
-            res.json(parseJsonColumns('settings', row))
+            res.json(redactSettings(parseJsonColumns('settings', row)))
         } catch (error) {
             console.error('Settings update error:', error)
             res.status(500).json({ error: 'Internal server error' })
@@ -185,9 +196,10 @@ export function setupApiRoutes(app) {
     app.put('/api/db/bitunix_config', async (req, res) => {
         try {
             const updateData = { updatedAt: knex.fn.now() }
-            // Only update keys if explicitly provided (avoid accidental deletion)
-            if (req.body.apiKey !== undefined) updateData.apiKey = req.body.apiKey
-            if (req.body.secretKey !== undefined) updateData.secretKey = req.body.secretKey
+            // Only update keys if explicitly provided (avoid accidental deletion).
+            // Encrypt secrets at rest — analog zu bitunix-api.js.
+            if (req.body.apiKey !== undefined) updateData.apiKey = req.body.apiKey ? encrypt(req.body.apiKey) : ''
+            if (req.body.secretKey !== undefined) updateData.secretKey = req.body.secretKey ? encrypt(req.body.secretKey) : ''
             // Allow updating other safe fields
             if (req.body.lastHistoryScan !== undefined) updateData.lastHistoryScan = req.body.lastHistoryScan
             if (req.body.lastApiImport !== undefined) updateData.lastApiImport = req.body.lastApiImport

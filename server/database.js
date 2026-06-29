@@ -610,6 +610,11 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'esp32ApiKey', (t) => t.text('esp32ApiKey').defaultTo(''))
     await addColumnIfNotExists('settings', 'esp32Filter', (t) => t.text('esp32Filter').defaultTo('month'))
 
+    // ==================== SETTINGS: OPTIONALES PASSWORT-GATE ====================
+    // Optionaler Login-Schutz (Standard aus) für Betrieb hinter öffentlicher Bindung.
+    await addColumnIfNotExists('settings', 'authEnabled', (t) => t.integer('authEnabled').defaultTo(0))
+    await addColumnIfNotExists('settings', 'authPasswordHash', (t) => t.text('authPasswordHash').defaultTo(''))
+
     // ==================== SHARE CARD TEMPLATES ====================
     if (!(await knex.schema.hasTable('share_card_templates'))) {
         await knex.schema.createTable('share_card_templates', (t) => {

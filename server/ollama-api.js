@@ -10,7 +10,7 @@ const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
  * @param {string} url - Die zu prüfende URL
  * @returns {boolean} true wenn lokal/privat, false sonst
  */
-function isAllowedOllamaUrl(url) {
+export function isAllowedOllamaUrl(url) {
     try {
         const parsed = new URL(url)
         const host = parsed.hostname
@@ -19,6 +19,16 @@ function isAllowedOllamaUrl(url) {
         return isLocal || isPrivate
     } catch {
         return false
+    }
+}
+
+/**
+ * SSRF-Schutz: wirft, wenn die URL nicht auf einen lokalen/privaten Host zeigt.
+ * Vor jedem ausgehenden Ollama-Request aufrufen.
+ */
+export function assertAllowedOllamaUrl(url) {
+    if (!isAllowedOllamaUrl(url)) {
+        throw new Error('Nur lokale/private Hosts erlaubt für Ollama-URL')
     }
 }
 
@@ -1446,6 +1456,9 @@ async function generateDeepSeek(prompt, apiKey, model, temperature, maxTokens) {
 async function chatOllama(systemMsg, messages, model, temperature, maxTokens, ollamaUrl) {
     const url = ollamaUrl || await getOllamaUrl()
 
+    // SSRF-Schutz
+    assertAllowedOllamaUrl(url)
+
     // Ollama /api/chat Format: messages array mit role/content
     const ollamaMessages = [
         { role: 'system', content: systemMsg },
@@ -1628,6 +1641,10 @@ async function chatGemini(systemMsg, messages, apiKey, model, temperature, maxTo
 
 async function checkOllamaStatus(res, ollamaUrl, model = '') {
     const url = ollamaUrl || await getOllamaUrl()
+    // SSRF-Schutz: ungültige/externe URL → offline melden statt zu fetchen
+    if (!isAllowedOllamaUrl(url)) {
+        return res.json({ online: false, provider: 'ollama', model, models: [] })
+    }
     try {
         const response = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(3000) })
         if (response.ok) {

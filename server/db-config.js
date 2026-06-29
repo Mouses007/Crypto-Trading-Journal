@@ -53,9 +53,17 @@ export function loadDbConfig() {
 
 /**
  * Save DB config to db-config.json.
+ * Enthält das DB-Passwort im Klartext → Dateirechte auf 0600 (nur Owner)
+ * beschränken. Bevorzugt sollten DB-Credentials per Umgebungsvariablen
+ * gesetzt werden (werden bereits unterstützt) statt über diese Datei.
  */
 export function saveDbConfig(config) {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8')
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 })
+    try {
+        fs.chmodSync(CONFIG_PATH, 0o600)
+    } catch {
+        // chmod kann auf manchen FS (z.B. Windows) fehlschlagen — nicht fatal
+    }
 }
 
 /**

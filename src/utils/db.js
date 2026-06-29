@@ -12,11 +12,11 @@ axios.interceptors.response.use(
         if (error.response) {
             const status = error.response.status
             if (status === 401) {
-                console.error('[DB] Session abgelaufen (401). Bitte Seite neu laden.')
-                // Avoid spamming alerts — show once
+                console.error('[DB] Nicht autorisiert (401).')
+                // Einmal neu laden: ohne Passwort-Gate erneuert das das Session-Cookie,
+                // mit aktivem Gate zeigt App.vue dann den Login-Screen.
                 if (!window._dbSessionExpiredShown) {
                     window._dbSessionExpiredShown = true
-                    alert('Sitzung abgelaufen. Bitte Seite neu laden.')
                     window.location.reload()
                 }
             } else if (status >= 500) {

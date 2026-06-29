@@ -5,6 +5,7 @@
  * POST /api/update/install  → git fetch + reset + npm install + signal restart
  */
 import { execSync, spawn } from 'child_process'
+import crypto from 'crypto'
 import { readFileSync, existsSync, writeFileSync } from 'fs'
 import path from 'path'
 import os from 'os'
@@ -278,6 +279,41 @@ const CHECK_CACHE_MS = 5 * 60 * 1000 // 5 min cache
 // Rollback: Commit-Hash vor dem Update
 let preUpdateCommit = null
 
+// Bestätigungs-Token für destruktive Update-Aktionen.
+// Wird beim /check ausgegeben (kurzlebig) und von /install + /rollback verlangt.
+// Verhindert „Drive-by"/CSRF-Auslösung des Updates über eine geklaute Session.
+let confirmToken = null
+let confirmTokenExpires = 0
+const CONFIRM_TOKEN_TTL_MS = 5 * 60 * 1000 // 5 min
+
+function issueConfirmToken() {
+    confirmToken = crypto.randomBytes(16).toString('hex')
+    confirmTokenExpires = Date.now() + CONFIRM_TOKEN_TTL_MS
+    return confirmToken
+}
+
+/**
+ * Hartes Gate für destruktive Update-Routen:
+ * 1. Request muss von localhost stammen.
+ * 2. Gültiges, nicht abgelaufenes Bestätigungs-Token (aus /check) im Body.
+ * Bei Verstoß wird direkt geantwortet und false zurückgegeben.
+ */
+function guardDestructiveUpdate(req, res) {
+    if (!isLocalRequest(req)) {
+        res.status(403).json({ ok: false, error: 'Update nur von localhost erlaubt. Bitte führe das Update direkt auf dem Server-Host aus.' })
+        return false
+    }
+    const token = req.body && req.body.confirmToken
+    if (!token || token !== confirmToken || Date.now() > confirmTokenExpires) {
+        res.status(403).json({ ok: false, error: 'Ungültiges oder abgelaufenes Bestätigungs-Token. Bitte erst auf „Nach Updates suchen" klicken und dann bestätigen.' })
+        return false
+    }
+    // Einmalverwendung: Token nach erfolgreicher Prüfung entwerten
+    confirmToken = null
+    confirmTokenExpires = 0
+    return true
+}
+
 export function setupUpdateRoutes(app) {
 
     // ── Check for updates ──────────────────────────────────────────
@@ -288,7 +324,7 @@ export function setupUpdateRoutes(app) {
 
             // Return cached result if fresh (isDocker is computed per-request)
             if (!forceRefresh && lastCheck && (now - lastCheckTime) < CHECK_CACHE_MS) {
-                return res.json({ ...lastCheck, isDocker: effectiveIsDocker(req) })
+                return res.json({ ...lastCheck, isDocker: effectiveIsDocker(req), confirmToken: issueConfirmToken() })
             }
 
             const localVersion = getLocalVersion()
@@ -313,7 +349,7 @@ export function setupUpdateRoutes(app) {
             }
             lastCheckTime = now
 
-            res.json({ ...lastCheck, isDocker: effectiveIsDocker(req) })
+            res.json({ ...lastCheck, isDocker: effectiveIsDocker(req), confirmToken: issueConfirmToken() })
         } catch (err) {
             // If no releases exist yet, that's OK
             if (err.message && err.message.includes('Not Found')) {
@@ -329,7 +365,7 @@ export function setupUpdateRoutes(app) {
                     publishedAt: ''
                 }
                 lastCheckTime = Date.now()
-                return res.json({ ...lastCheck, isDocker: effectiveIsDocker(req) })
+                return res.json({ ...lastCheck, isDocker: effectiveIsDocker(req), confirmToken: issueConfirmToken() })
             }
             console.error('Update check failed:', err.message)
             res.status(500).json({ ok: false, error: err.message })
@@ -339,6 +375,9 @@ export function setupUpdateRoutes(app) {
     // ── Install update ─────────────────────────────────────────────
     app.post('/api/update/install', async (req, res) => {
         try {
+            // Hartes Gate: localhost + gültiges Bestätigungs-Token
+            if (!guardDestructiveUpdate(req, res)) return
+
             // Docker-Modus: neues Image pullen und Container via Helfer neu erstellen
             if (IS_DOCKER) {
                 return await installDockerUpdate(res)
@@ -434,6 +473,9 @@ export function setupUpdateRoutes(app) {
 
     // ── Rollback to previous version ────────────────────────────────
     app.post('/api/update/rollback', async (req, res) => {
+        // Hartes Gate: localhost + gültiges Bestätigungs-Token
+        if (!guardDestructiveUpdate(req, res)) return
+
         // Pruefen ob Git-Repository vorhanden ist
         if (!existsSync(path.join(PROJECT_ROOT, '.git'))) {
             return res.status(400).json({

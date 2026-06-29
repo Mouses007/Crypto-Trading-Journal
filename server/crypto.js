@@ -4,12 +4,18 @@ import os from 'os'
 // Verschlüsselungs-Key: bevorzugt aus ENV, Fallback auf maschinenspezifischen Seed
 const ENV_SECRET = process.env.CTJ_SECRET
 const MACHINE_SEED = `tradenote-${os.hostname()}-${os.userInfo().username}-v1`
-const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENV_SECRET || MACHINE_SEED).digest()
 const ALGORITHM = 'aes-256-gcm'
 
 if (!ENV_SECRET) {
+    // In Produktion ist ein vorhersehbarer Maschinen-Seed nicht akzeptabel:
+    // harter Abbruch statt unsicherem Fallback.
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('[CRYPTO] CTJ_SECRET ist in Produktion erforderlich (NODE_ENV=production). Setze CTJ_SECRET als Umgebungsvariable.')
+    }
     console.warn('[CRYPTO] Kein CTJ_SECRET gesetzt – verwende maschinenspezifischen Schlüssel. Für höhere Sicherheit CTJ_SECRET als Umgebungsvariable setzen.')
 }
+
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENV_SECRET || MACHINE_SEED).digest()
 
 /**
  * Verschlüsselt einen String mit AES-256-GCM
@@ -33,13 +39,13 @@ export function encrypt(text) {
  */
 export function decrypt(encryptedText) {
     if (!encryptedText) return ''
+    // Legacy-Klartext (Format ≠ iv:authTag:data) unverändert durchreichen —
+    // Abwärtskompatibilität für bereits unverschlüsselt gespeicherte Werte.
+    if (!isEncrypted(encryptedText)) {
+        return encryptedText
+    }
     try {
-        const parts = encryptedText.split(':')
-        if (parts.length !== 3) {
-            // Nicht verschlüsselt (Legacy-Klartext) — direkt zurückgeben
-            return encryptedText
-        }
-        const [ivHex, authTagHex, encrypted] = parts
+        const [ivHex, authTagHex, encrypted] = encryptedText.split(':')
         const iv = Buffer.from(ivHex, 'hex')
         const authTag = Buffer.from(authTagHex, 'hex')
         const decipher = crypto.createDecipheriv(ALGORITHM, ENCRYPTION_KEY, iv)
@@ -48,10 +54,10 @@ export function decrypt(encryptedText) {
         decrypted += decipher.final('utf8')
         return decrypted
     } catch (e) {
-        // Falls Entschlüsselung fehlschlägt (z.B. alter Klartext-Key),
-        // gib den Originaltext zurück (Abwärtskompatibilität)
-        console.warn('[CRYPTO] Entschlüsselung fehlgeschlagen — Klartext-Fallback:', e.message)
-        return encryptedText
+        // Der Wert war verschlüsselt, ließ sich aber nicht entschlüsseln
+        // (z.B. falscher Key). KEINEN Ciphertext als Klartext zurückgeben.
+        console.warn('[CRYPTO] Entschlüsselung fehlgeschlagen — leeren Wert zurückgeben:', e.message)
+        return ''
     }
 }
 

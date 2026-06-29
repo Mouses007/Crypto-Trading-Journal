@@ -13,10 +13,25 @@ import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
 import { setupEsp32Routes } from './server/esp32-api.js'
-import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString } from './server/auth.js'
+import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString, setupAuthRoutes, loadAuthConfig, isAuthEnabled } from './server/auth.js'
 
 const app = express();
+app.disable('x-powered-by')
 app.use(express.json({ limit: '50mb' }));
+
+// Security-Header (ohne zusätzliche Dependency). CSP bleibt bewusst aus, da
+// CDN-Ressourcen + inline-Styles/Skripte genutzt werden; SRI sichert die CDNs ab.
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('X-Frame-Options', 'DENY')
+    res.setHeader('Referrer-Policy', 'no-referrer')
+    // HSTS nur über HTTPS sinnvoll (sonst ignoriert / kontraproduktiv im LAN)
+    const xfp = req.headers['x-forwarded-proto']
+    if (req.secure || (typeof xfp === 'string' && xfp.split(',')[0].trim() === 'https')) {
+        res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains')
+    }
+    next()
+})
 
 // ESP32 display endpoint — registered BEFORE auth middleware (uses own key-based auth)
 setupEsp32Routes(app)
@@ -34,8 +49,12 @@ const startIndex = async () => {
     console.log("\nINITIALIZING DATABASE")
     await initDb()
 
+    // Auth-Konfiguration (optionales Passwort-Gate) aus settings laden
+    await loadAuthConfig()
+
     // Setup API routes
     console.log("\nRUNNING SERVER")
+    setupAuthRoutes(app);
     setupApiRoutes(app);
     setupBitunixRoutes(app);
     setupBitgetRoutes(app);
@@ -56,11 +75,13 @@ const startIndex = async () => {
             target: { host: 'localhost', port: PROXY_PORT },
         });
 
-        // Inject session cookie into ALL proxied responses (Vite dev server)
-        proxy.on('proxyRes', (proxyRes) => {
+        // Inject session cookie into proxied responses (Vite dev server) —
+        // außer wenn das Passwort-Gate aktiv ist (dann nur nach Login).
+        proxy.on('proxyRes', (proxyRes, req) => {
+            if (isAuthEnabled()) return
             const existing = proxyRes.headers['set-cookie'] || []
             const arr = Array.isArray(existing) ? existing : [existing].filter(Boolean)
-            arr.push(getSessionCookieString())
+            arr.push(getSessionCookieString(req))
             proxyRes.headers['set-cookie'] = arr
         })
 
@@ -103,8 +124,14 @@ const startIndex = async () => {
     await new Promise((resolve, reject) => {
         const server = app.listen(port, host, () => {
             console.log(` -> Crypto Trading Journal started on http://${host}:${port}`)
-            if (host === '127.0.0.1' || host === 'localhost') {
+            const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1'
+            if (isLoopback) {
                 console.log(' -> Server is only accessible locally (set CTJ_HOST=0.0.0.0 to allow network access)')
+            } else if (!isAuthEnabled()) {
+                console.warn('\n  ⚠️  WARNUNG: Server ist im Netzwerk erreichbar (CTJ_HOST=' + host + '),')
+                console.warn('      aber das Passwort-Gate ist NICHT aktiv. Jeder im Netzwerk hat vollen Zugriff.')
+                console.warn('      → Aktiviere den Passwortschutz in den Einstellungen ODER betreibe den')
+                console.warn('        Dienst hinter einem Reverse-Proxy mit HTTPS + Authentifizierung / VPN.\n')
             }
             resolve()
         });

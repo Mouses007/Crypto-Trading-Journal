@@ -37,6 +37,15 @@ async function checkForUpdate() {
     }
 }
 
+/**
+ * Holt ein frisches Bestätigungs-Token vom Server (kurzlebig, einmalig).
+ * Destruktive Update-Aktionen verlangen dieses Token + localhost.
+ */
+async function fetchConfirmToken() {
+    const { data } = await axios.get('/api/update/check', { params: { force: '1' } })
+    return data?.confirmToken || ''
+}
+
 async function installUpdate() {
     if (updateInstalling.value) return
 
@@ -54,7 +63,8 @@ async function installUpdate() {
     updateInstalling.value = true
     updateError.value = ''
     try {
-        const { data } = await axios.post('/api/update/install')
+        const confirmToken = await fetchConfirmToken()
+        const { data } = await axios.post('/api/update/install', { confirmToken })
         if (data.ok) {
             // Docker-Recreate dauert laenger als die git-basierte Variante.
             // Statt Fix-Timeout: pollen bis der Server wieder antwortet.
@@ -105,7 +115,8 @@ async function rollback() {
     rollbackInstalling.value = true
     updateError.value = ''
     try {
-        const { data } = await axios.post('/api/update/rollback')
+        const confirmToken = await fetchConfirmToken()
+        const { data } = await axios.post('/api/update/rollback', { confirmToken })
         if (data.ok) {
             setTimeout(() => window.location.reload(), 5000)
         }

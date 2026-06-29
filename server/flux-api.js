@@ -136,21 +136,24 @@ function buildOverlaySvg(trade, displayName, avatarDataUrl, width, height, opts 
     // Bottom left: "by CRYPTO TRADING JOURNAL"
     const byLine = 'by CRYPTO TRADING JOURNAL'
 
+    // Escape XML/SVG entities to prevent SVG injection / Defacement
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
     // Display name: positioned left of logo in top bar
     const nameSvg = name ? `
-  <text x="${logoX - 15}" y="${logoY + logoSize / 2 + 8}" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="bold" fill="#ffffff" text-anchor="end">${name}</text>` : ''
+  <text x="${logoX - 15}" y="${logoY + logoSize / 2 + 8}" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="bold" fill="#ffffff" text-anchor="end">${esc(name)}</text>` : ''
 
     // Strategy line: "Strategie: Tag1, Tag2" below symbol bar
     const tagNames = (showTags && Array.isArray(trade.tagNames) && trade.tagNames.length) ? trade.tagNames : []
     const strategyStr = tagNames.join(', ')
     const tagsSvg = strategyStr ? `
-  <text x="50" y="135" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="26" fill="#81d4fa"><tspan fill="#aaaaaa">Strategie: </tspan>${strategyStr}</text>` : ''
+  <text x="50" y="135" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="26" fill="#81d4fa"><tspan fill="#aaaaaa">Strategie: </tspan>${esc(strategyStr)}</text>` : ''
 
     // RRR: show next to leverage
     const rrr = (showRrr && trade.rrr) ? trade.rrr : ''
 
     // Sanitize comment for SVG (escape XML entities)
-    const safeComment = (comment || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    const safeComment = esc(comment || '')
 
     // Comment: word-wrap into lines of ~40 chars max, max 3 lines — BIGGER font (28px)
     const commentLines = []
@@ -203,9 +206,9 @@ function buildOverlaySvg(trade, displayName, avatarDataUrl, width, height, opts 
   ${nameSvg}
 
   <!-- Symbol + Direction + Leverage + RRR (with spacing) -->
-  <text x="50" y="95" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="42" font-weight="bold" fill="#ffffff" letter-spacing="1">${symbol}</text>
-  <text x="${dirStartX}" y="95" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="bold" fill="${dirColor}">${direction}</text>
-  <text x="${levStartX}" y="95" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="32" fill="#cccccc">${leverage}</text>
+  <text x="50" y="95" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="42" font-weight="bold" fill="#ffffff" letter-spacing="1">${esc(symbol)}</text>
+  <text x="${dirStartX}" y="95" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="32" font-weight="bold" fill="${dirColor}">${esc(direction)}</text>
+  <text x="${levStartX}" y="95" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="32" fill="#cccccc">${esc(leverage)}</text>
   ${rrrSvg}
 
   <!-- Tags (below symbol line) -->

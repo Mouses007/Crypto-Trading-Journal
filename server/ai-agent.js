@@ -9,6 +9,7 @@ import { getKnex } from './database.js'
 import { decrypt } from './crypto.js'
 import { logWarn, logError } from './logger.js'
 import { AGENT_TOOLS, executeTool } from './ai-agent-tools.js'
+import { assertAllowedOllamaUrl } from './ollama-api.js'
 
 const MAX_ITERATIONS = 10
 const MAX_TOKENS = 80000
@@ -319,6 +320,9 @@ async function callGeminiWithTools(messages, config) {
 
 async function callOllamaWithTools(messages, config) {
     const url = config.ollamaUrl || DEFAULT_OLLAMA_URL
+
+    // SSRF-Schutz
+    assertAllowedOllamaUrl(url)
 
     // Ollama: inject tools into system prompt
     const enrichedSystem = buildSystemPrompt() + '\n\n' + toolsToPromptText()
