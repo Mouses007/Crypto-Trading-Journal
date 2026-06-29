@@ -1252,7 +1252,7 @@ function getPositionDate(pos) {
                 <div class="row align-items-center pointerClass" @click="toggleExpand(pos.positionId)">
                     <div class="col-auto">
                         <strong class="fs-5">{{ pos.symbol }}</strong>
-                        <span class="ms-2 fw-bold" :class="pos.side === 'LONG' ? 'greenTrade' : 'redTrade'">
+                        <span class="ms-2 fw-bold" :class="pos.side === 'LONG' ? 'greenTrade' : (pos.side === 'NEUTRAL' ? 'text-muted' : 'redTrade')">
                             {{ pos.side }}
                         </span>
                         <span class="ms-2 incoming-info">{{ pos.leverage }}x</span>
