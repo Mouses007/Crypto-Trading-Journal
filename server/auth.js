@@ -81,9 +81,12 @@ function isHttps(req) {
  * `Secure` wird nur über HTTPS gesetzt (sonst würde der Browser das Cookie bei
  * Plain-HTTP-Betrieb im LAN verwerfen).
  */
-export function getSessionCookieString(req) {
+export function getSessionCookieString(req, remember = true) {
     const secure = isHttps(req) ? ' Secure;' : ''
-    return `${COOKIE_NAME}=${SESSION_TOKEN}; HttpOnly; SameSite=Strict; Max-Age=${COOKIE_MAX_AGE}; Path=/;${secure}`
+    // remember=true → persistentes Cookie (30 Tage). false → Session-Cookie ohne
+    // Max-Age (läuft ab, wenn der Browser geschlossen wird).
+    const maxAge = remember ? ` Max-Age=${COOKIE_MAX_AGE};` : ''
+    return `${COOKIE_NAME}=${SESSION_TOKEN}; HttpOnly; SameSite=Strict;${maxAge} Path=/;${secure}`
 }
 
 /** Cookie löschen (Logout). */
@@ -223,7 +226,10 @@ export function setupAuthRoutes(app) {
             return res.status(401).json({ error: 'Falsches Passwort.' })
         }
         clearFailures(ip)
-        res.setHeader('Set-Cookie', getSessionCookieString(req))
+        // „30 Tage angemeldet bleiben": Frontend kann { remember:false } senden für ein
+        // reines Session-Cookie. Fehlt das Feld → true → 30 Tage (bisheriges Verhalten).
+        const remember = req.body?.remember !== false
+        res.setHeader('Set-Cookie', getSessionCookieString(req, remember))
         res.json({ ok: true })
     })
 
