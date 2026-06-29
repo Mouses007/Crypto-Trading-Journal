@@ -71,8 +71,11 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
                 }
             }
 
-            for (id in ids) TradingWidgetProvider.updateWidget(ctx, awm, id)
+            // Liste über notify neu laden (Factory.onDataSetChanged liest neuen Cache),
+            // Kopf/KPIs per Partial-Update — NICHT volles updateWidget (würde den Adapter
+            // neu setzen → Liste lädt nicht zuverlässig neu).
             if (ids.isNotEmpty()) awm.notifyAppWidgetViewDataChanged(ids, R.id.list)
+            for (id in ids) TradingWidgetProvider.refreshChrome(ctx, awm, id)
         }
     }
 }

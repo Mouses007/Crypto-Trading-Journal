@@ -80,6 +80,25 @@ class TradingWidgetProvider : AppWidgetProvider() {
             awm.partiallyUpdateAppWidget(id, rv)
         }
 
+        /**
+         * Aktualisiert nur Kopf/KPIs/Spinner/Augen-Icon per Partial-Update — OHNE den
+         * Collection-Adapter (setRemoteAdapter) neu zu setzen. Wird nach einem Refresh
+         * benutzt; die Liste selbst lädt über notifyAppWidgetViewDataChanged neu. Setzt
+         * man stattdessen das volle updateWidget (Adapter neu), lädt die Liste nach dem
+         * Refresh oft NICHT neu (neue Positionen erscheinen erst beim nächsten Re-Bind).
+         */
+        fun refreshChrome(context: Context, awm: AppWidgetManager, id: Int) {
+            val rv = RemoteViews(context.packageName, R.layout.widget_main)
+            rv.setViewVisibility(R.id.refreshing, View.GONE)
+            rv.setViewVisibility(R.id.btn_refresh, View.VISIBLE)
+            rv.setImageViewResource(
+                R.id.btn_eye,
+                if (Prefs.hideBalance(context, id)) R.drawable.ic_eye_off else R.drawable.ic_eye
+            )
+            applyHeader(context, rv, id)
+            awm.partiallyUpdateAppWidget(id, rv)
+        }
+
         /** Builds + pushes the RemoteViews for one widget instance (header, KPIs, list adapter). */
         fun updateWidget(context: Context, awm: AppWidgetManager, id: Int) {
             val rv = RemoteViews(context.packageName, R.layout.widget_main)
