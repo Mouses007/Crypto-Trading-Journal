@@ -38,6 +38,18 @@
     "default": true,
     "description": "Mark-Preis anzeigen"
   },
+  "show-realized-pnl": {
+    "type": "checkbox",
+    "default": true,
+    "description": "Realisierten PnL anzeigen",
+    "tooltip": "Zeigt den bereits realisierten PnL der offenen Position (z.B. Funding-Fees)"
+  },
+  "show-bots": {
+    "type": "checkbox",
+    "default": true,
+    "description": "Pionex-Bots anzeigen",
+    "tooltip": "Zeigt laufende Pionex-Bots in einer eigenen Sektion (PnL/Marge in der jeweiligen Münze, z.B. SOL bei Coin-M)"
+  },
   "show-github-link": {
     "type": "checkbox",
     "default": true,
@@ -72,9 +84,9 @@
   },
   "min-width": {
     "type": "spinbutton",
-    "default": 400,
+    "default": 480,
     "min": 300,
-    "max": 800,
+    "max": 900,
     "step": 20,
     "units": "px",
     "description": "Breite"

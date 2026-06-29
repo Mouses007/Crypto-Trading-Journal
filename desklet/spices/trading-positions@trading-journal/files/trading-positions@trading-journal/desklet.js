@@ -21,7 +21,6 @@ try {
 }
 
 const UUID         = "trading-positions@trading-journal";
-const APP_VERSION  = "2.7.1";
 const APP_NAME     = "Crypto Trading Journal";
 
 class TradingPositionsDesklet extends Desklet.Desklet {
@@ -37,6 +36,8 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         this._settings.bind("refresh-interval", "refreshInterval", this._onSettingChanged.bind(this));
         this._settings.bind("show-leverage",    "showLeverage",    this._onSettingChanged.bind(this));
         this._settings.bind("show-mark-price",  "showMarkPrice",   this._onSettingChanged.bind(this));
+        this._settings.bind("show-realized-pnl","showRealizedPnl", this._onSettingChanged.bind(this));
+        this._settings.bind("show-bots",        "showBots",        this._onSettingChanged.bind(this));
         this._settings.bind("show-github-link", "showGithubLink",  this._onFooterChanged.bind(this));
         this._settings.bind("font-size",        "fontSize",        this._onStyleChanged.bind(this));
         this._settings.bind("font-size-ui",    "fontSizeUi",      this._onStyleChanged.bind(this));
@@ -45,6 +46,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
 
         this._cookieAcquired = false;
         this._timeoutId      = null;
+        this._appVersion     = null;
 
         this._initSoup();
         this._buildUI();
@@ -63,7 +65,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         let opacity = Math.max(0, Math.min(100, this.bgOpacity ?? 88)) / 100;
         let fs      = this.fontSize    ?? 12;
         let fsUi    = this.fontSizeUi  ?? 11;
-        let mw      = this.minWidth    ?? 400;
+        let mw      = this.minWidth    ?? 480;
         this._outer.set_style(
             `background-color: rgba(15,20,28,${opacity.toFixed(2)});` +
             `min-width: ${mw}px;`
@@ -75,7 +77,8 @@ class TradingPositionsDesklet extends Desklet.Desklet {
             side:     Math.round(55  * scale),
             leverage: Math.round(36  * scale),
             price:    Math.round(78  * scale),
-            pnl:     Math.round(95  * scale),
+            pnl:      Math.round(95  * scale),
+            realized: Math.round(85  * scale),
         };
         // Positionen
         this._posFs        = fs;
@@ -120,6 +123,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
                     let body   = bytes ? new TextDecoder().decode(bytes.get_data()) : '';
                     callback(status, body);
                 } catch(e) {
+                    global.logError('[' + UUID + '] soup GET ' + url + ': ' + e.message);
                     callback(0, '');
                 }
             });
@@ -155,7 +159,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         // Titel
         let titleBox = new St.BoxLayout({ vertical: true, style_class: 'desklet-title-box' });
         this._titleLabel    = new St.Label({ text: APP_NAME, style_class: 'desklet-title' });
-        this._subtitleLabel = new St.Label({ text: 'Offene Bitunix Futures', style_class: 'desklet-subtitle' });
+        this._subtitleLabel = new St.Label({ text: 'Offene Positionen & Bots', style_class: 'desklet-subtitle' });
         titleBox.add_child(this._titleLabel);
         titleBox.add_child(this._subtitleLabel);
         headerRow.add_child(titleBox);
@@ -216,6 +220,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         this._soupGet(this._baseUrl + '/', (status, _body) => {
             if (status > 0 && status < 500) {
                 this._cookieAcquired = true;
+                this._fetchVersion();
                 this._fetchPositions();
             } else {
                 this._showStatus("Server nicht erreichbar\n" + this.serverHost + ":" + this.serverPort);
@@ -223,8 +228,26 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         });
     }
 
+    _fetchVersion() {
+        // Nur einmal pro Session holen
+        if (this._appVersion) return;
+        this._soupGet(this._baseUrl + '/api/update/check', (status, body) => {
+            if (status !== 200) return;
+            try {
+                let data = JSON.parse(body);
+                if (data && data.localVersion) {
+                    this._appVersion = String(data.localVersion);
+                    this._updateFooterRight();
+                }
+            } catch(e) {
+                global.logError('[' + UUID + '] version parse: ' + e.message);
+            }
+        });
+    }
+
     _fetchPositions() {
-        this._soupGet(this._baseUrl + '/api/db/incoming_positions', (status, body) => {
+        // Live-Daten von Bitunix API via Server-Proxy
+        this._soupGet(this._baseUrl + '/api/bitunix/open-positions', (status, body) => {
             if (status === 401) {
                 // Token ungültig (Server neugestartet?) → neues Cookie holen
                 this._cookieAcquired = false;
@@ -236,13 +259,37 @@ class TradingPositionsDesklet extends Desklet.Desklet {
                 return;
             }
             try {
-                let all  = JSON.parse(body);
-                let open = all.filter(p => p.status === 'open');
-                this._renderPositions(open);
-                this._updateFooterTime();
+                let result = JSON.parse(body);
+                this._futures = result.positions || [];
             } catch(e) {
                 this._showStatus("Fehler beim Parsen:\n" + e.message);
+                return;
             }
+            // Danach optional die Pionex-Bots holen, dann beides zusammen rendern.
+            if (this.showBots !== false) {
+                this._fetchBots();
+            } else {
+                this._renderAll(this._futures, []);
+                this._updateFooterTime();
+            }
+        });
+    }
+
+    _fetchBots() {
+        // Laufende Pionex-Bots via Server-Proxy. Fehlt die Pionex-Config oder
+        // schlägt der Call fehl, werden einfach nur die Futures gerendert.
+        this._soupGet(this._baseUrl + '/api/pionex/open-positions', (status, body) => {
+            let bots = [];
+            if (status === 200) {
+                try {
+                    let result = JSON.parse(body);
+                    bots = (result.positions || []).filter(p => p && (p.isBot || p.botType));
+                } catch(e) {
+                    global.logError('[' + UUID + '] pionex parse: ' + e.message);
+                }
+            }
+            this._renderAll(this._futures || [], bots);
+            this._updateFooterTime();
         });
     }
 
@@ -258,9 +305,10 @@ class TradingPositionsDesklet extends Desklet.Desklet {
 
     _updateFooterRight() {
         if (!this._footerRight) return;
-        let text = `v${APP_VERSION}`;
+        let text = this._appVersion ? `v${this._appVersion}` : '';
         if (this.showGithubLink !== false) {
-            text += `  \u2022  github.com/Mouses007/Crypto-Trading-Journal`;
+            if (text) text += '  \u2022  ';
+            text += 'github.com/Mouses007/Crypto-Trading-Journal';
         }
         this._footerRight.set_text(text);
     }
@@ -271,16 +319,30 @@ class TradingPositionsDesklet extends Desklet.Desklet {
 
     // ------------------------------------------------------------------ Render
 
-    _renderPositions(positions) {
+    _renderAll(positions, bots) {
         this._content.destroy_all_children();
 
-        if (positions.length === 0) {
+        positions = positions || [];
+        bots      = bots || [];
+
+        if (positions.length === 0 && bots.length === 0) {
             this._content.add_child(
                 new St.Label({ text: "Keine offenen Positionen", style_class: 'no-positions-label' })
             );
             return;
         }
 
+        if (positions.length > 0) this._renderFuturesSection(positions);
+
+        if (bots.length > 0) {
+            if (positions.length > 0) {
+                this._content.add_child(new St.Label({ text: '─'.repeat(44), style_class: 'separator-thin' }));
+            }
+            this._renderBotSection(bots);
+        }
+    }
+
+    _renderFuturesSection(positions) {
         // Gesamt-PnL
         let totalPnl   = positions.reduce((sum, p) => sum + (parseFloat(p.unrealizedPNL) || 0), 0);
         let totalClass = totalPnl >= 0 ? 'pnl-profit' : 'pnl-loss';
@@ -304,6 +366,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         headerCells.push({ text: 'Entry', width: this._colWidths.price });
         if (this.showMarkPrice) headerCells.push({ text: 'Mark',  width: this._colWidths.price });
         headerCells.push({ text: 'unr. PnL', width: this._colWidths.pnl });
+        if (this.showRealizedPnl !== false) headerCells.push({ text: 'real. PnL', width: this._colWidths.realized });
         this._content.add_child(this._makeHeaderRow(headerCells));
 
         for (let pos of positions) {
@@ -311,19 +374,100 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         }
     }
 
+    // Eigene Sektion für laufende Pionex-Bots. PnL/Marge in der jeweiligen
+    // Margin-Münze (z.B. SOL bei Coin-M) — daher KEINE USDT-Gesamtsumme (Münzen
+    // wären nicht summierbar), stattdessen nur Anzahl + Liquidation je Bot.
+    _renderBotSection(bots) {
+        let titleRow = new St.BoxLayout({ style_class: 'total-row' });
+        let titleLbl = new St.Label({
+            text: `Bots:  ${bots.length} laufend${bots.length > 1 ? 'e' : ''}`,
+            style_class: 'total-label'
+        });
+        if (this._totalStyle) titleLbl.set_style(this._totalStyle);
+        titleRow.add_child(titleLbl);
+        this._content.add_child(titleRow);
+        this._content.add_child(new St.Label({ text: '─'.repeat(44), style_class: 'separator-thin' }));
+
+        let headerCells = [
+            { text: 'Symbol', width: this._colWidths.symbol },
+            { text: 'Side',   width: this._colWidths.side },
+        ];
+        if (this.showLeverage) headerCells.push({ text: 'Lvg', width: this._colWidths.leverage });
+        headerCells.push({ text: 'Ø Entry', width: this._colWidths.price });
+        headerCells.push({ text: 'Liq',     width: this._colWidths.price });
+        headerCells.push({ text: 'PnL',     width: this._colWidths.pnl });
+        this._content.add_child(this._makeHeaderRow(headerCells));
+
+        for (let bot of bots) {
+            this._content.add_child(this._makeBotRow(bot));
+        }
+    }
+
+    _makeBotRow(pos) {
+        let coin     = pos.marginCoin || 'USDT';
+        let dec      = coin === 'USDT' ? 2 : 4;
+        let pnl      = parseFloat(pos.unrealizedPNL) || 0;
+        let isProfit = pnl >= 0;
+        let pnlClass = isProfit ? 'pnl-profit' : 'pnl-loss';
+        let pnlText  = (isProfit ? '+' : '') + pnl.toFixed(dec) + ' ' + coin;
+        let sideLower = (pos.side || '').toLowerCase();
+        let sideClass = (sideLower === 'long' || sideLower === 'buy') ? 'side-long' : 'side-short';
+
+        let liq = pos.liqPrice;
+        if (!liq && pos.bitunixData) {
+            try {
+                let bd = typeof pos.bitunixData === 'string' ? JSON.parse(pos.bitunixData) : pos.bitunixData;
+                liq = bd.liqPrice || null;
+            } catch(e) {
+                global.logError('[' + UUID + '] bot bitunixData parse: ' + e.message);
+            }
+        }
+
+        let fmt = (v) => {
+            if (!v) return '-';
+            let n = parseFloat(v);
+            if (isNaN(n)) return '-';
+            return n >= 1000 ? n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
+                 : n >= 1    ? n.toFixed(4)
+                             : n.toFixed(6);
+        };
+
+        let cw = this._colWidths;
+        let cells = [
+            { text: pos.symbol || '-', cls: 'symbol-cell',            width: cw.symbol },
+            { text: pos.side   || '-', cls: 'side-cell ' + sideClass, width: cw.side },
+        ];
+        if (this.showLeverage) cells.push({ text: (pos.leverage ? pos.leverage + 'x' : '-'), cls: 'leverage-cell', width: cw.leverage });
+        cells.push({ text: fmt(pos.entryPrice), cls: 'price-cell', width: cw.price });
+        cells.push({ text: fmt(liq),            cls: 'price-cell', width: cw.price });
+        cells.push({ text: pnlText, cls: 'pnl-cell ' + pnlClass, width: cw.pnl });
+
+        let fs  = this._posFs || 12;
+        let row = new St.BoxLayout({ style_class: 'position-row' });
+        for (let c of cells) {
+            let lbl = new St.Label({ text: c.text, style_class: c.cls });
+            lbl.set_style(`font-size: ${fs}px; min-width: ${c.width}px;`);
+            row.add_child(lbl);
+        }
+        return row;
+    }
+
     _makePositionRow(pos) {
         let pnl       = parseFloat(pos.unrealizedPNL) || 0;
         let isProfit  = pnl >= 0;
         let pnlClass  = isProfit ? 'pnl-profit' : 'pnl-loss';
         let pnlText   = (isProfit ? '+' : '') + pnl.toFixed(2) + ' USDT';
-        let sideClass = pos.side === 'LONG' ? 'side-long' : 'side-short';
+        let sideLower = (pos.side || '').toLowerCase();
+        let sideClass = (sideLower === 'long' || sideLower === 'buy') ? 'side-long' : 'side-short';
 
         let markPrice = pos.markPrice;
         if (!markPrice && pos.bitunixData) {
             try {
                 let bd = typeof pos.bitunixData === 'string' ? JSON.parse(pos.bitunixData) : pos.bitunixData;
                 markPrice = bd.markPrice || bd.liqPrice || null;
-            } catch(_) {}
+            } catch(e) {
+                global.logError('[' + UUID + '] bitunixData parse: ' + e.message);
+            }
         }
 
         let fmt = (v) => {
@@ -344,6 +488,15 @@ class TradingPositionsDesklet extends Desklet.Desklet {
         cells.push({ text: fmt(pos.entryPrice), cls: 'price-cell', width: cw.price });
         if (this.showMarkPrice) cells.push({ text: fmt(markPrice), cls: 'price-cell', width: cw.price });
         cells.push({ text: pnlText, cls: 'pnl-cell ' + pnlClass, width: cw.pnl });
+
+        if (this.showRealizedPnl !== false) {
+            let realized = parseFloat(
+                pos.realizedPNL ?? pos.realized_pnl ?? pos.realizedPnl ?? pos.realizedPL ?? 0
+            ) || 0;
+            let realClass = realized >= 0 ? 'pnl-profit' : 'pnl-loss';
+            let realText  = (realized >= 0 ? '+' : '') + realized.toFixed(2) + ' USDT';
+            cells.push({ text: realText, cls: 'pnl-cell ' + realClass, width: cw.realized });
+        }
 
         let fs  = this._posFs || 12;
         let row = new St.BoxLayout({ style_class: 'position-row' });
@@ -375,6 +528,7 @@ class TradingPositionsDesklet extends Desklet.Desklet {
 
     _onSettingChanged() {
         this._cookieAcquired = false;
+        this._appVersion     = null;  // Server-Wechsel → Version neu holen
         this._startPolling();
     }
 
