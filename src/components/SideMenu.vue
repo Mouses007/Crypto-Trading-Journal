@@ -126,9 +126,27 @@ async function rollback() {
     }
 }
 
+// Passwort-Gate: Abmelden-Eintrag nur zeigen, wenn aktiv
+const authEnabled = ref(false)
+async function loadAuthStatus() {
+    try {
+        const { data } = await axios.get('/api/auth/status')
+        authEnabled.value = !!data.authEnabled
+    } catch (e) {
+        authEnabled.value = false
+    }
+}
+async function logout() {
+    try {
+        await axios.post('/api/logout')
+    } catch (e) { /* egal — danach neu laden */ }
+    window.location.reload()
+}
+
 onMounted(() => {
     checkForUpdate()
     checkRollbackStatus()
+    loadAuthStatus()
     // Migration: „Alle" gibt es nicht mehr → auf Futures normalisieren.
     if (selectedTradeCategory.value === 'all' || !selectedTradeCategory.value) {
         selectedTradeCategory.value = 'futures'
@@ -261,6 +279,9 @@ function goToDashboard() {
                 <a v-bind:class="[pageId === 'settings' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
                     href="/settings">
                     <i class="uil uil-setting me-2"></i>{{ t('nav.settings') }}
+                </a>
+                <a v-if="authEnabled" class="nav-link mb-2 pointerClass" @click="logout">
+                    <i class="uil uil-signout me-2"></i>Abmelden
                 </a>
             </div>
         </div>

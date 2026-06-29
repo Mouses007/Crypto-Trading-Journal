@@ -461,6 +461,13 @@ async function saveAuthPassword() {
     authSaveLoading.value = false
 }
 
+async function logout() {
+    try {
+        await axios.post('/api/logout')
+    } catch (e) { /* egal — danach neu laden */ }
+    window.location.reload()
+}
+
 async function disableAuth() {
     authSaveResult.value = null
     if (!confirm('Passwortschutz wirklich deaktivieren? Danach hat jeder mit Zugriff aufs Netzwerk vollen Zugang.')) return
@@ -2208,6 +2215,9 @@ onBeforeMount(async () => {
                         </button>
                         <button v-if="authEnabled" class="btn btn-outline-danger" @click="disableAuth" :disabled="authSaveLoading">
                             Deaktivieren
+                        </button>
+                        <button v-if="authEnabled" class="btn btn-outline-secondary ms-auto" @click="logout">
+                            <i class="uil uil-signout me-1"></i>Abmelden
                         </button>
                     </div>
 
