@@ -4,11 +4,14 @@ import axios from 'axios'
 
 const password = ref('')
 const error = ref('')
+const info = ref('')
 const loading = ref(false)
+const resetting = ref(false)
 
 async function submit() {
     if (loading.value) return
     error.value = ''
+    info.value = ''
     loading.value = true
     try {
         const { data } = await axios.post('/api/login', { password: password.value })
@@ -21,6 +24,28 @@ async function submit() {
         error.value = e.response?.data?.error || 'Anmeldung fehlgeschlagen.'
     } finally {
         loading.value = false
+    }
+}
+
+async function forgotPassword() {
+    if (resetting.value) return
+    if (!confirm('Passwortschutz zurücksetzen? Funktioniert nur, wenn du diese Seite direkt am Server (localhost) geöffnet hast.')) return
+    error.value = ''
+    info.value = ''
+    resetting.value = true
+    try {
+        const { data } = await axios.post('/api/auth/reset')
+        if (data.ok) {
+            info.value = 'Passwortschutz zurückgesetzt. Seite wird neu geladen…'
+            setTimeout(() => window.location.reload(), 1200)
+            return
+        }
+    } catch (e) {
+        error.value = e.response?.status === 403
+            ? 'Zurücksetzen nur direkt am Server (localhost) möglich.'
+            : (e.response?.data?.error || 'Zurücksetzen fehlgeschlagen.')
+    } finally {
+        resetting.value = false
     }
 }
 </script>
@@ -40,10 +65,14 @@ async function submit() {
                     autocomplete="current-password"
                 />
                 <div v-if="error" class="login-error">{{ error }}</div>
+                <div v-if="info" class="login-info">{{ info }}</div>
                 <button type="submit" class="btn btn-primary login-btn" :disabled="loading || !password">
                     {{ loading ? 'Anmelden…' : 'Anmelden' }}
                 </button>
             </form>
+            <button type="button" class="login-forgot" :disabled="resetting" @click="forgotPassword">
+                {{ resetting ? 'Zurücksetzen…' : 'Passwort vergessen?' }}
+            </button>
         </div>
     </div>
 </template>
@@ -83,5 +112,22 @@ async function submit() {
     color: #ff6b6b;
     font-size: 0.85rem;
     margin-bottom: 0.75rem;
+}
+.login-info {
+    color: #51cf66;
+    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
+}
+.login-forgot {
+    margin-top: 1rem;
+    background: none;
+    border: none;
+    color: var(--grey-color, #9aa0aa);
+    font-size: 0.8rem;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.login-forgot:hover {
+    color: var(--white-1, #e9e9e9);
 }
 </style>

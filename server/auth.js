@@ -15,6 +15,7 @@
  */
 import crypto from 'crypto'
 import { getKnex } from './database.js'
+import { isLocalRequest } from './update-api.js'
 
 // Generate a random session token at startup
 const SESSION_TOKEN = crypto.randomBytes(32).toString('hex')
@@ -26,7 +27,7 @@ let authConfig = { enabled: false, passwordHash: '' }
 
 // Routen, die ohne gültige Session erreichbar sein müssen (Login-Flow +
 // unkritischer Setup-Status, den der Router-Guard vor dem Login abfragt).
-const PUBLIC_API_PATHS = new Set(['/api/login', '/api/logout', '/api/auth/status', '/api/setup/status'])
+const PUBLIC_API_PATHS = new Set(['/api/login', '/api/logout', '/api/auth/status', '/api/setup/status', '/api/auth/reset'])
 
 /**
  * Lädt die Auth-Konfiguration aus der settings-Tabelle. Nach DB-Init und nach
@@ -48,6 +49,23 @@ export async function loadAuthConfig() {
 
 export function isAuthEnabled() {
     return authConfig.enabled
+}
+
+/**
+ * Notfall-Reset per Umgebungsvariable: Wird der Server mit CTJ_RESET_AUTH=1
+ * gestartet, wird der Passwortschutz einmalig deaktiviert (für den Fall, dass
+ * das Passwort verloren ging und kein localhost-Zugriff möglich ist).
+ * Beim Start VOR loadAuthConfig aufrufen. Danach Env-Variable wieder entfernen.
+ */
+export async function maybeResetAuthFromEnv() {
+    if (process.env.CTJ_RESET_AUTH !== '1') return
+    try {
+        const knex = getKnex()
+        await knex('settings').where('id', 1).update({ authEnabled: 0, authPasswordHash: '', updatedAt: knex.fn.now() })
+        console.warn('[AUTH] Passwortschutz via CTJ_RESET_AUTH zurückgesetzt. Bitte CTJ_RESET_AUTH wieder entfernen.')
+    } catch (e) {
+        console.error('[AUTH] CTJ_RESET_AUTH Reset fehlgeschlagen:', e.message)
+    }
 }
 
 /** True, wenn der Request über HTTPS kommt (auch hinter Reverse-Proxy). */
@@ -240,6 +258,27 @@ export function setupAuthRoutes(app) {
             res.json({ ok: true, authEnabled: true })
         } catch (e) {
             res.status(500).json({ error: e.message || 'Fehler beim Setzen des Passworts.' })
+        }
+    })
+
+    // Passwort vergessen / Reset (öffentlich, aber NUR von localhost).
+    // Kein aktuelles Passwort nötig — wer lokal am Server sitzt, gilt als
+    // Eigentümer (gleiches Vertrauensmodell wie Update/Restart).
+    app.post('/api/auth/reset', async (req, res) => {
+        if (!isLocalRequest(req)) {
+            return res.status(403).json({ error: 'Zurücksetzen nur direkt am Server (localhost) möglich.' })
+        }
+        try {
+            const knex = getKnex()
+            await knex('settings').where('id', 1).update({
+                authEnabled: 0,
+                authPasswordHash: '',
+                updatedAt: knex.fn.now()
+            })
+            await loadAuthConfig()
+            res.json({ ok: true, authEnabled: false })
+        } catch (e) {
+            res.status(500).json({ error: 'Zurücksetzen fehlgeschlagen.' })
         }
     })
 

@@ -13,7 +13,7 @@ import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
 import { setupEsp32Routes } from './server/esp32-api.js'
-import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString, setupAuthRoutes, loadAuthConfig, isAuthEnabled } from './server/auth.js'
+import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString, setupAuthRoutes, loadAuthConfig, isAuthEnabled, maybeResetAuthFromEnv } from './server/auth.js'
 
 const app = express();
 app.disable('x-powered-by')
@@ -49,7 +49,8 @@ const startIndex = async () => {
     console.log("\nINITIALIZING DATABASE")
     await initDb()
 
-    // Auth-Konfiguration (optionales Passwort-Gate) aus settings laden
+    // Notfall-Reset per CTJ_RESET_AUTH=1 (vor dem Laden), dann Auth-Konfig laden
+    await maybeResetAuthFromEnv()
     await loadAuthConfig()
 
     // Setup API routes
