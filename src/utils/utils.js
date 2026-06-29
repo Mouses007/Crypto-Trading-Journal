@@ -562,6 +562,16 @@ export function useToggleMobileMenu() {
     console.log("sideMenuMobileOut " + sideMenuMobileOut.value)
 }
 
+// Schließt das mobile Seitenmenü nur, wenn es offen ist (No-op auf Desktop).
+// Wird z.B. nach „Filter anwenden" aufgerufen, damit das Ergebnis sichtbar wird,
+// ohne dass der Nutzer extra auf den abgedunkelten Bereich tippen muss.
+export function useCloseMobileMenu() {
+    if (!sideMenuMobileOut.value) return
+    let element = document.getElementById("sideMenu");
+    if (element) element.classList.remove("toggleSideMenu");
+    sideMenuMobileOut.value = false
+}
+
 /* Formatter functions: see src/utils/formatters.js */
 
 export function returnToTop() {

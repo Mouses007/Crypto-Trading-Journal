@@ -7,7 +7,7 @@ import { periodRange, positions, timeFrames, ratios, grossNet, plSatisfaction, s
 import { tags, availableTags } from "../stores/trades.js"
 import { useECharts } from "../utils/charts.js"
 import { useRefreshScreenshot } from "../utils/screenshots"
-import { useInitTooltip } from "../utils/utils.js"
+import { useInitTooltip, useCloseMobileMenu } from "../utils/utils.js"
 import dayjs from '../utils/dayjs-setup.js'
 import { useI18n } from 'vue-i18n'
 
@@ -160,6 +160,9 @@ function inputMonth(param1) {
 function applyAndClose() {
     filtersOpen.value = false
     saveFilter()
+    // Auf Mobil zusätzlich das Seitenmenü schließen, damit das gefilterte
+    // Ergebnis sofort sichtbar ist (No-op auf Desktop).
+    useCloseMobileMenu()
 }
 
 async function saveFilter() {
