@@ -189,9 +189,14 @@ function normalizeBotOrder(o) {
 
     // Richtung: Coin-M ist invers (base=USDT.PERP) — short auf der USDT-Seite
     // (trend='short' bzw. initBaseAmount<0) = LONG der Coin. Linear: trend direkt.
-    const baseShort = (d.trend === 'short') ||
+    // Neutral-Grid-Bots (Pionex: trend='no_trend'/'neutral') haben keine Richtung.
+    const trend = String(d.trend || '').toLowerCase()
+    const isNeutral = trend === 'no_trend' || trend === 'neutral'
+    const baseShort = (trend === 'short') ||
         (parseFloat(d.initBaseAmount ?? d.baseAmount ?? d.position ?? 0) < 0)
-    const side = inst.coinM ? (baseShort ? 'LONG' : 'SHORT') : (baseShort ? 'SHORT' : 'LONG')
+    const side = isNeutral
+        ? 'NEUTRAL'
+        : (inst.coinM ? (baseShort ? 'LONG' : 'SHORT') : (baseShort ? 'SHORT' : 'LONG'))
 
     // USDT-Sekundärwerte. Coin-M ist invers → echter USD-PnL ist die Differenz
     // der USDT-Werte (Endwert − Einsatz), NICHT SOL-PnL × Kurs. Gegen Pionex
@@ -281,8 +286,14 @@ async function normalizeRunningBot(o) {
     // Richtung: linear folgt dem trend/Positionsvorzeichen. Coin-M ist invers
     // (base=USDT) → trend/position beziehen sich auf die USDT-Seite: short USDT
     // = LONG der Coin. Daher bei Coin-M invertieren (Pionex-UI bestätigt).
-    const baseShort = (d.trend === 'short' || position < 0)
-    const side = inst.coinM ? (baseShort ? 'LONG' : 'SHORT') : (baseShort ? 'SHORT' : 'LONG')
+    // Neutral-Grid-Bots haben keine Richtung (Pionex: trend='no_trend'/'neutral')
+    // → 'NEUTRAL' statt fälschlich LONG/SHORT.
+    const trend = String(d.trend || '').toLowerCase()
+    const isNeutral = trend === 'no_trend' || trend === 'neutral'
+    const baseShort = (trend === 'short' || position < 0)
+    const side = isNeutral
+        ? 'NEUTRAL'
+        : (inst.coinM ? (baseShort ? 'LONG' : 'SHORT') : (baseShort ? 'SHORT' : 'LONG'))
 
     const markPrice = await fetchTickerPrice(inst.tickerSymbol)   // USDT/Coin
 
