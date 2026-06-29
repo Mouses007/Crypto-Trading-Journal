@@ -196,12 +196,13 @@ class TradingWidgetProvider : AppWidgetProvider() {
                 .enqueueUniquePeriodicWork(PERIODIC_WORK, ExistingPeriodicWorkPolicy.KEEP, req)
         }
 
+        // Einmaliger Refresh (Tap / Add / Save) — BEWUSST OHNE Netz-Constraint:
+        // sonst wartet der Job bei fehlendem/instabilem Netz (z.B. VPN-Wechsel auf
+        // dem Pixel) ewig und der Spinner dreht endlos. Ohne Constraint läuft er
+        // sofort, der Fetch hat selbst 10s Timeout, und updateWidget setzt den
+        // Spinner danach IMMER zurück (zeigt sonst „⚠ offline").
         fun triggerRefresh(context: Context) {
-            val req = OneTimeWorkRequestBuilder<RefreshWorker>()
-                .setConstraints(
-                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-                )
-                .build()
+            val req = OneTimeWorkRequestBuilder<RefreshWorker>().build()
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(ONESHOT_WORK, ExistingWorkPolicy.REPLACE, req)
         }
