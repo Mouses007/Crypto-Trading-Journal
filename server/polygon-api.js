@@ -34,7 +34,20 @@ export function setupPolygonRoutes(app) {
                 return res.status(400).json({ error: 'ticker, from und to sind erforderlich' })
             }
 
-            const url = `${POLYGON_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/${interval}/${span}/${from}/${to}`
+            // Pfad-Parameter validieren (verhindert Pfad-Manipulation innerhalb der Polygon-API)
+            const SPANS = ['second', 'minute', 'hour', 'day', 'week', 'month', 'quarter', 'year']
+            const isDateOrTs = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d+$/.test(v)
+            if (!/^\d+$/.test(interval)) {
+                return res.status(400).json({ error: 'Ungültiges interval' })
+            }
+            if (!SPANS.includes(span)) {
+                return res.status(400).json({ error: 'Ungültige span' })
+            }
+            if (!isDateOrTs(from) || !isDateOrTs(to)) {
+                return res.status(400).json({ error: 'Ungültiges from/to (YYYY-MM-DD oder ms-Timestamp)' })
+            }
+
+            const url = `${POLYGON_BASE_URL}/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/${encodeURIComponent(interval)}/${encodeURIComponent(span)}/${encodeURIComponent(from)}/${encodeURIComponent(to)}`
             const response = await axios.get(url, {
                 params: { adjusted, sort, limit },
                 headers: { Authorization: `Bearer ${apiKey}` },
@@ -44,7 +57,10 @@ export function setupPolygonRoutes(app) {
             return res.json(response.data)
         } catch (error) {
             const status = error.response?.status || 500
-            const message = error.response?.data?.error || error.response?.data?.message || error.message
+            // Polygons eigene Fehlermeldung (hilft dem Nutzer) durchreichen, aber keinen
+            // internen error.message-Fallback nach außen geben.
+            const message = error.response?.data?.error || error.response?.data?.message
+                || (status >= 500 ? 'Interner Serverfehler' : 'Anfrage fehlgeschlagen')
             return res.status(status).json({ error: message })
         }
     })

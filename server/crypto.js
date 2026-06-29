@@ -69,3 +69,16 @@ export function isEncrypted(text) {
     const parts = text.split(':')
     return parts.length === 3 && parts[0].length === 32 && parts[1].length === 32
 }
+
+/**
+ * Maskiert einen (verschlüsselt gespeicherten) Key für die Anzeige:
+ * ersten 4 + Punkte + letzte 4 Zeichen. Gibt '' zurück, wenn kein Key.
+ * Liefert NIE den vollständigen Klartext aus.
+ */
+export function maskKey(encryptedKey) {
+    if (!encryptedKey) return ''
+    const key = decrypt(encryptedKey)
+    if (!key) return ''
+    if (key.length <= 8) return '•'.repeat(key.length)
+    return key.slice(0, 4) + '•'.repeat(Math.min(key.length - 8, 20)) + key.slice(-4)
+}

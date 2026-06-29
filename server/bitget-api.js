@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { getKnex } from './database.js'
-import { encrypt, decrypt } from './crypto.js'
+import { encrypt, decrypt, maskKey } from './crypto.js'
 
 const BASE_URL = 'https://api.bitget.com'
 
@@ -272,9 +272,8 @@ export function setupBitgetRoutes(app) {
             const knex = getKnex()
             const config = await knex('bitget_config').where('id', 1).first()
             if (config) {
-                const decryptedApiKey = config.apiKey ? decrypt(config.apiKey) : ''
                 res.json({
-                    apiKey: decryptedApiKey,
+                    apiKey: maskKey(config.apiKey),
                     hasSecret: !!config.secretKey,
                     hasPassphrase: !!config.passphrase,
                     apiImportStartDate: config.apiImportStartDate || ''
@@ -283,7 +282,7 @@ export function setupBitgetRoutes(app) {
                 res.json({ apiKey: '', hasSecret: false, hasPassphrase: false, apiImportStartDate: '' })
             }
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -296,9 +295,10 @@ export function setupBitgetRoutes(app) {
             const existing = await knex('bitget_config').where('id', 1).first()
             if (existing) {
                 const updates = {}
-                if (apiKey !== undefined) updates.apiKey = encrypt(apiKey.trim())
-                if (secretKey !== undefined) updates.secretKey = encrypt(secretKey.trim())
-                if (passphrase !== undefined) updates.passphrase = encrypt(passphrase.trim())
+                // Maskierte Werte (•) NICHT speichern
+                if (apiKey !== undefined && !apiKey.includes('•')) updates.apiKey = encrypt(apiKey.trim())
+                if (secretKey !== undefined && !secretKey.includes('•')) updates.secretKey = encrypt(secretKey.trim())
+                if (passphrase !== undefined && !passphrase.includes('•')) updates.passphrase = encrypt(passphrase.trim())
                 if (apiImportStartDate !== undefined) {
                     updates.apiImportStartDate = apiImportStartDate
                     // Reset lastApiImport so next quick-import fetches from the new start date
@@ -321,7 +321,7 @@ export function setupBitgetRoutes(app) {
 
             res.json({ ok: true })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -337,7 +337,7 @@ export function setupBitgetRoutes(app) {
             const result = await testConnection(config.apiKey, config.secretKey, config.passphrase)
             res.json({ ok: true, result })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -383,7 +383,7 @@ export function setupBitgetRoutes(app) {
             res.json({ code: 0, data: { positionList: allPositions } })
         } catch (error) {
             console.error(' -> Bitget positions error:', error.message)
-            res.status(500).json({ code: -1, msg: error.message })
+            res.status(500).json({ code: -1, msg: 'Interner Serverfehler' })
         }
     })
 
@@ -408,7 +408,7 @@ export function setupBitgetRoutes(app) {
             res.json({ ok: true, positions })
         } catch (error) {
             console.error(' -> Bitget open positions error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -419,7 +419,7 @@ export function setupBitgetRoutes(app) {
             const config = await knex('bitget_config').select('lastApiImport').where('id', 1).first()
             res.json({ lastApiImport: config?.lastApiImport || 0 })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -431,7 +431,7 @@ export function setupBitgetRoutes(app) {
             await knex('bitget_config').where('id', 1).update({ lastApiImport: timestamp })
             res.json({ ok: true })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -487,7 +487,7 @@ export function setupBitgetRoutes(app) {
             res.json({ ok: true, positions: allPositions, count: allPositions.length })
         } catch (error) {
             console.error(' -> Bitget recent closed positions error:', error.message)
-            res.status(500).json({ ok: false, error: error.message || 'Bitget History-Scan fehlgeschlagen', positions: [], count: 0 })
+            res.status(500).json({ ok: false, error: 'Bitget History-Scan fehlgeschlagen', positions: [], count: 0 })
         }
     })
 
@@ -550,7 +550,7 @@ export function setupBitgetRoutes(app) {
                 count: allPositions.length
             })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -605,7 +605,7 @@ export function setupBitgetRoutes(app) {
             }
             res.json({ ok: true, position: pos })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -631,7 +631,7 @@ export function setupBitgetRoutes(app) {
             res.json({ ok: true, trades: fills })
         } catch (error) {
             console.error(' -> Bitget fills error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -670,7 +670,7 @@ export function setupBitgetRoutes(app) {
             res.json({ ok: true, orders: mapped })
         } catch (error) {
             console.error(' -> Bitget TP/SL error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -709,7 +709,7 @@ export function setupBitgetRoutes(app) {
             res.json({ ok: true, balance, available, locked, unrealizedPL, usdtEquity })
         } catch (error) {
             console.error(' -> Bitget balance error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -776,7 +776,7 @@ export function setupBitgetRoutes(app) {
             res.json({ ok: true, broker: 'bitget', currency: 'USDT', totalUsd, wallets, moneyFlow })
         } catch (error) {
             console.error(' -> Bitget account-overview error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 }

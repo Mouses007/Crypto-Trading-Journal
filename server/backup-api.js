@@ -8,6 +8,13 @@ const REDACTED_SETTINGS_KEYS = [
     'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash'
 ]
 
+// Settings-Felder, die beim Import NIE aus dem Backup übernommen werden:
+// - die redigierten Secrets (Export enthält nur '[REDACTED]' → würde echte Keys
+//   zerstören bzw. via authPasswordHash den Eigentümer aussperren)
+// - die Auth-Schalter selbst (Schutz vor Manipulation per fremdem Backup)
+// Die bestehenden Werte bleiben stattdessen erhalten.
+const PRESERVE_SETTINGS_FIELDS = [...REDACTED_SETTINGS_KEYS, 'authEnabled']
+
 // Alle Tabellen die gesichert werden (Reihenfolge wichtig für Import: abhängige zuletzt)
 const BACKUP_TABLES = [
     'settings',
@@ -124,6 +131,15 @@ export function setupBackupRoutes(app) {
             // Alle Tabellen in einer Transaktion leeren und neu befüllen
             await knex.transaction(async (trx) => {
 
+                // 0. Sensible/Auth-Settings vor dem Leeren sichern → werden NICHT
+                //    aus dem Backup überschrieben (verhindert Lockout/Manipulation)
+                let preservedSettings = null
+                try {
+                    if (await trx.schema.hasTable('settings')) {
+                        preservedSettings = await trx('settings').where('id', 1).first()
+                    }
+                } catch (e) { /* ignore */ }
+
                 // 1. Tabellen in Abhängigkeitsreihenfolge leeren
                 for (const table of DELETE_ORDER) {
                     if (tables[table]) {
@@ -154,10 +170,13 @@ export function setupBackupRoutes(app) {
                         const columnInfo = await trx(table).columnInfo()
                         const validColumns = Object.keys(columnInfo)
 
-                        // Rows filtern: nur gültige Spalten behalten
+                        // Rows filtern: nur gültige Spalten behalten.
+                        // Bei settings: sensible/Auth-Felder NICHT aus dem Backup übernehmen.
+                        const skipCols = table === 'settings' ? new Set(PRESERVE_SETTINGS_FIELDS) : null
                         const cleanRows = rows.map(row => {
                             const clean = {}
                             for (const col of validColumns) {
+                                if (skipCols && skipCols.has(col)) continue
                                 if (row[col] !== undefined) {
                                     clean[col] = row[col]
                                 }
@@ -176,6 +195,17 @@ export function setupBackupRoutes(app) {
                     } catch (e) {
                         console.error(`Backup import: Fehler bei "${table}":`, e.message)
                         throw e // Transaktion abbrechen
+                    }
+                }
+
+                // 3. Gesicherte sensible/Auth-Settings wiederherstellen (nicht aus Backup)
+                if (preservedSettings) {
+                    const restore = {}
+                    for (const field of PRESERVE_SETTINGS_FIELDS) {
+                        if (preservedSettings[field] !== undefined) restore[field] = preservedSettings[field]
+                    }
+                    if (Object.keys(restore).length > 0) {
+                        await trx('settings').where('id', 1).update(restore)
                     }
                 }
             })

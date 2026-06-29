@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { getKnex } from './database.js'
-import { encrypt, decrypt } from './crypto.js'
+import { encrypt, decrypt, maskKey } from './crypto.js'
 
 const BASE_URL = 'https://fapi.bitunix.com'
 
@@ -184,14 +184,13 @@ export function setupBitunixRoutes(app) {
             const knex = getKnex()
             const config = await knex('bitunix_config').where('id', 1).first()
             if (config) {
-                // Decrypt apiKey for display, never expose secretKey
-                const decryptedApiKey = config.apiKey ? decrypt(config.apiKey) : ''
-                res.json({ apiKey: decryptedApiKey, hasSecret: !!config.secretKey, apiImportStartDate: config.apiImportStartDate || '' })
+                // Nur maskiert ausliefern — niemals Klartext-apiKey/secretKey
+                res.json({ apiKey: maskKey(config.apiKey), hasSecret: !!config.secretKey, apiImportStartDate: config.apiImportStartDate || '' })
             } else {
                 res.json({ apiKey: '', hasSecret: false, apiImportStartDate: '' })
             }
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -204,8 +203,9 @@ export function setupBitunixRoutes(app) {
             const existing = await knex('bitunix_config').where('id', 1).first()
             if (existing) {
                 const updates = {}
-                if (apiKey !== undefined) updates.apiKey = encrypt(apiKey)
-                if (secretKey !== undefined) updates.secretKey = encrypt(secretKey)
+                // Maskierte Werte (•) NICHT speichern — sonst wird die Maske als Key verschlüsselt
+                if (apiKey !== undefined && !apiKey.includes('•')) updates.apiKey = encrypt(apiKey)
+                if (secretKey !== undefined && !secretKey.includes('•')) updates.secretKey = encrypt(secretKey)
                 if (apiImportStartDate !== undefined) updates.apiImportStartDate = apiImportStartDate
                 if (Object.keys(updates).length > 0) {
                     await knex('bitunix_config').where('id', 1).update(updates)
@@ -221,7 +221,7 @@ export function setupBitunixRoutes(app) {
 
             res.json({ ok: true })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -374,7 +374,7 @@ export function setupBitunixRoutes(app) {
             })
         } catch (error) {
             console.error(' -> Fee-Fix v2.9.7 error:', error)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -390,7 +390,7 @@ export function setupBitunixRoutes(app) {
             const result = await testConnection(config.apiKey, config.secretKey)
             res.json({ ok: true, result })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -413,7 +413,7 @@ export function setupBitunixRoutes(app) {
             const result = await getHistoryPositions(config.apiKey, config.secretKey, options)
             res.json(result)
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -424,7 +424,7 @@ export function setupBitunixRoutes(app) {
             const config = await knex('bitunix_config').select('lastApiImport').where('id', 1).first()
             res.json({ lastApiImport: config?.lastApiImport || 0 })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -436,7 +436,7 @@ export function setupBitunixRoutes(app) {
             await knex('bitunix_config').where('id', 1).update({ lastApiImport: timestamp })
             res.json({ ok: true })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -493,7 +493,7 @@ export function setupBitunixRoutes(app) {
             res.json({ ok: true, positions: allPositions, count: allPositions.length })
         } catch (error) {
             console.error(' -> Recent closed positions error:', error.message)
-            res.json({ ok: false, error: error.message, positions: [], count: 0 })
+            res.json({ ok: false, error: 'Interner Serverfehler', positions: [], count: 0 })
         }
     })
 
@@ -558,7 +558,7 @@ export function setupBitunixRoutes(app) {
                 count: allPositions.length
             })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -587,7 +587,7 @@ export function setupBitunixRoutes(app) {
             res.json({ ok: true, positions })
         } catch (error) {
             console.error(' -> Bitunix open positions error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -615,7 +615,7 @@ export function setupBitunixRoutes(app) {
             }
             res.json({ ok: true, position: pos })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -640,7 +640,7 @@ export function setupBitunixRoutes(app) {
             console.log(` -> Position trades for ${req.params.positionId}: ${trades.length} fills`)
             res.json({ ok: true, trades })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -673,7 +673,7 @@ export function setupBitunixRoutes(app) {
             res.json({ ok: true, orders })
         } catch (error) {
             console.error(' -> TP/SL orders error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -717,7 +717,7 @@ export function setupBitunixRoutes(app) {
             res.json({ ok: true, balance, available, margin, crossUnrealizedPNL, isolationUnrealizedPNL, bonus })
         } catch (error) {
             console.error(' -> Bitunix balance error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -750,7 +750,7 @@ export function setupBitunixRoutes(app) {
             })
         } catch (error) {
             console.error(' -> Bitunix account-overview error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 

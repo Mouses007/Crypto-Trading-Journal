@@ -115,7 +115,9 @@ const startIndex = async () => {
     app.use((err, req, res, _next) => {
         console.error(`[ERROR] ${req.method} ${req.url}:`, err.message || err)
         if (!res.headersSent) {
-            res.status(err.status || 500).json({ error: err.message || 'Interner Serverfehler' })
+            const status = err.status || 500
+            // 500er nicht mit internen Details nach außen geben; 4xx-Meldungen sind gewollt
+            res.status(status).json({ error: status >= 500 ? 'Interner Serverfehler' : (err.message || 'Fehler') })
         }
     })
 

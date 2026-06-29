@@ -97,11 +97,19 @@ export function apiAuthMiddleware(req, res, next) {
     if (PUBLIC_API_PATHS.has(basePath)) return next()
 
     const token = parseCookieToken(req)
-    if (token === SESSION_TOKEN) {
+    if (isValidSessionToken(token)) {
         return next()
     }
 
     res.status(401).json({ error: 'Nicht autorisiert. Bitte lade die Seite im Browser neu.' })
+}
+
+/** Konstantzeitiger Vergleich des Session-Tokens (verhindert Timing-Leaks). */
+function isValidSessionToken(token) {
+    if (typeof token !== 'string') return false
+    const a = Buffer.from(token)
+    const b = Buffer.from(SESSION_TOKEN)
+    return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
 /**
@@ -177,7 +185,7 @@ function clearFailures(ip) {
 export function setupAuthRoutes(app) {
     // Status (öffentlich): zeigt ob Gate aktiv ist und ob man eingeloggt ist
     app.get('/api/auth/status', (req, res) => {
-        const loggedIn = !authConfig.enabled || parseCookieToken(req) === SESSION_TOKEN
+        const loggedIn = !authConfig.enabled || isValidSessionToken(parseCookieToken(req))
         res.json({ authEnabled: authConfig.enabled, loggedIn })
     })
 

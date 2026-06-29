@@ -20,6 +20,7 @@ import { getKnex } from './database.js'
 import { encrypt, decrypt } from './crypto.js'
 import { getPendingPositions } from './bitunix-api.js'
 import { getCurrentPositions as getBitgetCurrentPositions } from './bitget-api.js'
+import { getRunningBotPositions } from './pionex-api.js'
 import dayjs from 'dayjs'
 import dayjsUtc from 'dayjs/plugin/utc.js'
 import dayjsTimezone from 'dayjs/plugin/timezone.js'
@@ -250,6 +251,29 @@ export function setupEsp32Routes(app) {
                 }))
             }
 
+            // Laufende Pionex-Bots — eigenes Array (NICHT in openPositions mischen, damit
+            // ältere Clients ohne Bot-Support unverändert weiterlaufen). PnL/Marge in der
+            // jeweiligen marginCoin (z.B. SOL bei Coin-M), nicht zwingend USDT.
+            let bots = []
+            try {
+                bots = (await getRunningBotPositions()).map(b => ({
+                    symbol:        b.symbol || '',
+                    side:          b.side   || '',
+                    leverage:      parseFloat(b.leverage      || 0),
+                    entryPrice:    parseFloat(b.entryPrice    || 0),
+                    markPrice:     parseFloat(b.markPrice     || 0),
+                    qty:           parseFloat(b.qty           || 0),
+                    unrealizedPNL: parseFloat(b.unrealizedPNL || 0),
+                    marginCoin:    b.marginCoin || 'USDT',
+                    liqPrice:      parseFloat(b.liqPrice      || 0),
+                    coinM:         !!b.coinM,
+                    botType:       b.botType || '',
+                    isBot:         true
+                }))
+            } catch (botErr) {
+                console.warn('ESP32 bots live fetch failed:', botErr.message)
+            }
+
             const filterLabels = { month: 'Monat', week: 'Woche', year: 'Jahr', all: 'Gesamt' }
             res.json({
                 filter:       filter,
@@ -266,7 +290,8 @@ export function setupEsp32Routes(app) {
                 balancePerf:   balancePerf !== null ? Math.round(balancePerf * 10) / 10 : null,
                 volume30d:     Math.round(volume30d),
                 volumeTotal:   Math.round(volumeTotal),
-                openPositions: openPositions
+                openPositions: openPositions,
+                bots:          bots
             })
         } catch (e) {
             console.error('ESP32 display error:', e)
@@ -291,7 +316,7 @@ export function setupEsp32AdminRoutes(app) {
             res.json({ esp32ApiKeySet: !!(row?.esp32ApiKey) })
         } catch (e) {
             console.error('ESP32 settings GET error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -318,7 +343,7 @@ export function setupEsp32AdminRoutes(app) {
             res.json({ esp32ApiKeySet: true })
         } catch (e) {
             console.error('ESP32 settings POST error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -330,7 +355,7 @@ export function setupEsp32AdminRoutes(app) {
             res.json({ ok: true })
         } catch (e) {
             console.error('ESP32 key DELETE error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 }

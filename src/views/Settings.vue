@@ -539,9 +539,17 @@ async function saveDbConfig() {
 async function restartServer() {
     dbRestartLoading.value = true
     try {
-        await axios.post('/api/restart')
+        // Bestätigungs-Token holen (nur von localhost erlaubt) und mitsenden
+        const { data: tok } = await axios.get('/api/restart/token')
+        await axios.post('/api/restart', { confirmToken: tok?.token })
     } catch (e) {
-        // Connection will drop during restart — that's expected
+        // Connection will drop during restart — that's expected.
+        // 403 = nicht von localhost: Neustart muss lokal auf dem Server erfolgen.
+        if (e.response?.status === 403) {
+            dbRestartLoading.value = false
+            dbSaveResult.value = { ok: false, message: 'Neustart nur direkt auf dem Server (localhost) möglich.' }
+            return
+        }
     }
     // Wait for server to come back
     let retries = 0

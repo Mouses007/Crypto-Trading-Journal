@@ -1,7 +1,10 @@
+import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { loadDbConfig, saveDbConfig } from './db-config.js'
 import { setupEsp32AdminRoutes } from './esp32-api.js'
 import { encrypt } from './crypto.js'
+import { isLocalRequest } from './update-api.js'
+import { logError } from './logger.js'
 
 const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions', 'share_card_templates']
 
@@ -121,6 +124,17 @@ function safeParseQuery(value) {
     } catch {
         return null
     }
+}
+
+/**
+ * SSRF-Schutz für DB-Verbindungstests/-konfiguration: nur lokale/private Hosts.
+ * Verhindert Missbrauch als interner Port-Scanner. Deckt loopback + RFC1918 ab.
+ */
+function isAllowedDbHost(host) {
+    const h = String(host || '').toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+    if (!h) return false
+    if (['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(h)) return true
+    return h.startsWith('192.168.') || h.startsWith('10.') || /^172\.(1[6-9]|2\d|3[01])\./.test(h)
 }
 
 export function setupApiRoutes(app) {
@@ -244,6 +258,11 @@ export function setupApiRoutes(app) {
                 // Strip http:// or https:// from host if present
                 const cleanHost = (host || 'localhost').replace(/^https?:\/\//, '').replace(/\/+$/, '')
 
+                // SSRF-Schutz: nur lokale/private DB-Hosts zulassen
+                if (!isAllowedDbHost(cleanHost)) {
+                    return res.status(400).json({ error: 'Ungültiger DB-Host (nur lokale/private Adressen erlaubt).' })
+                }
+
                 // If no new password provided, keep the saved one
                 let savePassword = password || ''
                 if (!savePassword) {
@@ -276,6 +295,11 @@ export function setupApiRoutes(app) {
             // Strip http:// or https:// from host if present
             const cleanHost = (host || 'localhost').replace(/^https?:\/\//, '').replace(/\/+$/, '')
 
+            // SSRF-Schutz: nur lokale/private DB-Hosts testen lassen
+            if (!isAllowedDbHost(cleanHost)) {
+                return res.status(400).json({ ok: false, message: 'Ungültiger DB-Host (nur lokale/private Adressen erlaubt).' })
+            }
+
             // If no password provided, use the saved one from db-config.json
             let testPassword = password || ''
             if (!testPassword) {
@@ -302,12 +326,37 @@ export function setupApiRoutes(app) {
             await knexTest.destroy()
             res.json({ ok: true, message: 'Verbindung erfolgreich!' })
         } catch (error) {
-            res.json({ ok: false, message: `Verbindung fehlgeschlagen: ${error.message}` })
+            logError('api-routes', 'DB-Verbindungstest fehlgeschlagen', error)
+            res.json({ ok: false, message: 'Verbindung fehlgeschlagen. Details siehe Server-Log.' })
         }
     })
 
     // ==================== SERVER RESTART ====================
+    // Destruktiv (process.exit) → wie die Update-Routen mit localhost + Einmal-Token
+    // abgesichert. Verhindert DoS durch wiederholte Neustarts über eine Session/CSRF.
+    let restartToken = null
+    let restartTokenExpires = 0
+
+    app.get('/api/restart/token', (req, res) => {
+        if (!isLocalRequest(req)) {
+            return res.status(403).json({ error: 'Neustart nur von localhost erlaubt.' })
+        }
+        restartToken = crypto.randomBytes(16).toString('hex')
+        restartTokenExpires = Date.now() + 2 * 60 * 1000 // 2 min
+        res.json({ token: restartToken })
+    })
+
     app.post('/api/restart', async (req, res) => {
+        if (!isLocalRequest(req)) {
+            return res.status(403).json({ ok: false, error: 'Neustart nur von localhost erlaubt.' })
+        }
+        const token = req.body && req.body.confirmToken
+        if (!token || token !== restartToken || Date.now() > restartTokenExpires) {
+            return res.status(403).json({ ok: false, error: 'Ungültiges oder abgelaufenes Bestätigungs-Token.' })
+        }
+        restartToken = null
+        restartTokenExpires = 0
+
         res.json({ ok: true, message: 'Server wird neu gestartet...' })
         // Give the response time to be sent, then exit.
         // systemd / process manager will restart the process automatically.

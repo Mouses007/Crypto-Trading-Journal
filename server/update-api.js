@@ -71,7 +71,7 @@ function dockerApi(method, apiPath, body) {
  * locally (docker-compose on their own machine) while keeping the Watchtower
  * UI for remote access (e.g. NAS at 192.168.x.x).
  */
-function isLocalRequest(req) {
+export function isLocalRequest(req) {
     const host = String(req.hostname || '').toLowerCase()
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
     const ip = String(req.ip || '').replace('::ffff:', '')

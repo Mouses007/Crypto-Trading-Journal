@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { getKnex } from './database.js'
-import { encrypt, decrypt } from './crypto.js'
+import { encrypt, decrypt, maskKey } from './crypto.js'
 
 const BASE_URL = 'https://api.pionex.com'
 
@@ -338,6 +338,20 @@ async function normalizeRunningBot(o) {
     }
 }
 
+/**
+ * Liefert die laufenden Pionex-Bots als normalisierte Positions-Objekte.
+ * Kapselt getDecryptedPionexConfig + getBotOrders + normalizeRunningBot (async, Live-Preis).
+ * Gibt [] zurück, wenn keine Pionex-Config hinterlegt ist. Wird vom ESP32-Display-Endpoint
+ * und (optional) von /api/pionex/open-positions genutzt.
+ */
+export async function getRunningBotPositions() {
+    const config = await getDecryptedPionexConfig()
+    if (!config?.apiKey || !config?.secretKey) return []
+    const botRes = await getBotOrders(config.apiKey, config.secretKey, { status: 'running' })
+    const bots = botRes.data?.results || []
+    return (await Promise.all(bots.map(normalizeRunningBot))).filter(Boolean)
+}
+
 /** Holt alle finished Bot-Orders (paginiert) bis `sinceMs` (Close-/Create-Zeit). */
 async function fetchAllFinishedBots(apiKey, secretKey, sinceMs = 0) {
     let all = []
@@ -556,9 +570,8 @@ export function setupPionexRoutes(app) {
             const knex = getKnex()
             const config = await knex('pionex_config').where('id', 1).first()
             if (config) {
-                const decryptedApiKey = config.apiKey ? decrypt(config.apiKey) : ''
                 res.json({
-                    apiKey: decryptedApiKey,
+                    apiKey: maskKey(config.apiKey),
                     hasSecret: !!config.secretKey,
                     apiImportStartDate: config.apiImportStartDate || ''
                 })
@@ -566,7 +579,7 @@ export function setupPionexRoutes(app) {
                 res.json({ apiKey: '', hasSecret: false, apiImportStartDate: '' })
             }
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -579,8 +592,9 @@ export function setupPionexRoutes(app) {
             const existing = await knex('pionex_config').where('id', 1).first()
             if (existing) {
                 const updates = {}
-                if (apiKey !== undefined) updates.apiKey = encrypt(apiKey.trim())
-                if (secretKey !== undefined) updates.secretKey = encrypt(secretKey.trim())
+                // Maskierte Werte (•) NICHT speichern
+                if (apiKey !== undefined && !apiKey.includes('•')) updates.apiKey = encrypt(apiKey.trim())
+                if (secretKey !== undefined && !secretKey.includes('•')) updates.secretKey = encrypt(secretKey.trim())
                 if (apiImportStartDate !== undefined) {
                     updates.apiImportStartDate = apiImportStartDate
                     if (apiImportStartDate !== existing.apiImportStartDate) {
@@ -600,7 +614,7 @@ export function setupPionexRoutes(app) {
             }
             res.json({ ok: true })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -614,7 +628,7 @@ export function setupPionexRoutes(app) {
             const result = await testConnection(config.apiKey, config.secretKey)
             res.json({ ok: true, result })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -632,7 +646,7 @@ export function setupPionexRoutes(app) {
             res.json({ ok: true, ...snap })
         } catch (error) {
             console.error(' -> Pionex balance error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -674,7 +688,7 @@ export function setupPionexRoutes(app) {
             })
         } catch (error) {
             console.error(' -> Pionex account-overview error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -686,13 +700,10 @@ export function setupPionexRoutes(app) {
                 return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
             }
 
-            // Laufende Bots
+            // Laufende Bots (geteilter Helfer, identisch zum ESP32-Display-Endpoint)
             let botPositions = []
             try {
-                const botRes = await getBotOrders(config.apiKey, config.secretKey, { status: 'running' })
-                const bots = botRes.data?.results || []
-                // normalizeRunningBot ist async (holt Live-Marktpreis je Bot)
-                botPositions = (await Promise.all(bots.map(normalizeRunningBot))).filter(Boolean)
+                botPositions = await getRunningBotPositions()
             } catch (e) { console.warn(' -> Pionex running bots error:', e.message) }
 
             // Echte Futures-Positionen (für manuelles Futures-Trading)
@@ -708,7 +719,7 @@ export function setupPionexRoutes(app) {
             res.json({ ok: true, positions })
         } catch (error) {
             console.error(' -> Pionex open positions error:', error.message)
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -719,7 +730,7 @@ export function setupPionexRoutes(app) {
             const config = await knex('pionex_config').select('lastApiImport').where('id', 1).first()
             res.json({ lastApiImport: config?.lastApiImport || 0 })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -730,7 +741,7 @@ export function setupPionexRoutes(app) {
             await knex('pionex_config').where('id', 1).update({ lastApiImport: timestamp })
             res.json({ ok: true })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -786,7 +797,7 @@ export function setupPionexRoutes(app) {
             res.json({ ok: true, positions, count: positions.length })
         } catch (error) {
             console.error(' -> Pionex recent closed error:', error.message)
-            res.status(500).json({ ok: false, error: error.message, positions: [], count: 0 })
+            res.status(500).json({ ok: false, error: 'Interner Serverfehler', positions: [], count: 0 })
         }
     })
 
@@ -814,7 +825,7 @@ export function setupPionexRoutes(app) {
             await knex('pionex_config').where('id', 1).update({ lastApiImport: endTime })
             res.json({ ok: true, positions, startTime, endTime, count: positions.length })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -864,7 +875,7 @@ export function setupPionexRoutes(app) {
 
             res.json({ ok: true, position: pos })
         } catch (error) {
-            res.status(500).json({ error: error.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 

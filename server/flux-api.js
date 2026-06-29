@@ -185,7 +185,7 @@ function buildOverlaySvg(trade, displayName, avatarDataUrl, width, height, opts 
     // RRR after leverage
     const rrrStartX = leverage ? levStartX + leverage.length * 18 + 25 : levStartX
     const rrrSvg = rrr ? `
-  <text x="${rrrStartX}" y="95" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="bold" fill="#a78bfa">RRR 1:${rrr}</text>` : ''
+  <text x="${rrrStartX}" y="95" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="bold" fill="#a78bfa">RRR 1:${esc(rrr)}</text>` : ''
 
     return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}">
   <defs>
@@ -404,7 +404,7 @@ export async function setupFluxRoutes(app) {
             })
         } catch (e) {
             console.error('Load share card settings error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -438,7 +438,7 @@ export async function setupFluxRoutes(app) {
             res.json({ success: true })
         } catch (e) {
             console.error('Save share card settings error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -470,7 +470,7 @@ export async function setupFluxRoutes(app) {
             const balance = credits.credits ?? credits.remaining_credits ?? 'N/A'
             res.json({ success: true, message: `Verbunden! Credits: ${balance}` })
         } catch (e) {
-            res.json({ success: false, message: `Verbindungsfehler: ${e.message}` })
+            res.json({ success: false, message: 'Verbindungsfehler' })
         }
     })
 
@@ -494,7 +494,7 @@ export async function setupFluxRoutes(app) {
             const imageModels = (data.models || []).filter(m => m.name?.includes('image'))
             res.json({ success: true, message: `Verbunden! ${imageModels.length} Bild-Modelle verfügbar.` })
         } catch (e) {
-            res.json({ success: false, message: `Verbindungsfehler: ${e.message}` })
+            res.json({ success: false, message: 'Verbindungsfehler' })
         }
     })
 
@@ -548,7 +548,7 @@ export async function setupFluxRoutes(app) {
             res.json({ image: dataUrl, prompt, backgroundImage: backgroundBase64 })
         } catch (e) {
             console.error('Share card generate error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -599,7 +599,7 @@ export async function setupFluxRoutes(app) {
             res.json({ image: dataUrl, prompt: template.prompt, fromTemplate: true })
         } catch (e) {
             console.error('Generate from template error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 

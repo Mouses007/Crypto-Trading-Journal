@@ -195,7 +195,7 @@ export function setupOllamaRoutes(app) {
             }
             res.json({ success: false, message: 'Unbekannter Anbieter' })
         } catch (e) {
-            res.json({ success: false, message: e.message || 'Verbindungstest fehlgeschlagen' })
+            res.json({ success: false, message: 'Verbindungstest fehlgeschlagen' })
         }
     })
 
@@ -289,7 +289,7 @@ export function setupOllamaRoutes(app) {
             res.json({ report, provider, model: model || provider, data: reportData, tokenUsage, savedId })
         } catch (e) {
             console.error('AI report error:', e)
-            res.status(500).json({ error: e.message || 'Bericht-Generierung fehlgeschlagen' })
+            res.status(500).json({ error: 'Bericht-Generierung fehlgeschlagen' })
         }
     })
 
@@ -314,7 +314,7 @@ export function setupOllamaRoutes(app) {
             res.json({ report: result.text, model: ollamaModel, data: reportData })
         } catch (e) {
             console.error('Ollama report error:', e)
-            res.status(500).json({ error: e.message || 'Bericht-Generierung fehlgeschlagen' })
+            res.status(500).json({ error: 'Bericht-Generierung fehlgeschlagen' })
         }
     })
 
@@ -620,7 +620,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             })
         } catch (e) {
             console.error('Trade review error:', e)
-            res.status(500).json({ error: e.message || 'Trade-Bewertung fehlgeschlagen' })
+            res.status(500).json({ error: 'Trade-Bewertung fehlgeschlagen' })
         }
     })
 
@@ -640,7 +640,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             }
         } catch (e) {
             console.error('Load trade review error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -668,7 +668,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             await knex('ai_trade_messages').where('tradeId', tradeId).del()
             res.json({ success: true })
         } catch (e) {
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -761,7 +761,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             })
         } catch (e) {
             console.error('Trade review chat error:', e)
-            res.status(500).json({ error: e.message || 'Chat-Anfrage fehlgeschlagen' })
+            res.status(500).json({ error: 'Chat-Anfrage fehlgeschlagen' })
         }
     })
 
@@ -894,7 +894,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             })
         } catch (e) {
             console.error('Token stats error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -943,7 +943,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             res.json({ success: true })
         } catch (e) {
             console.error('Save AI settings error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -982,7 +982,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             })
         } catch (e) {
             console.error('Load AI settings error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -1011,7 +1011,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             res.json({ success: true, id })
         } catch (e) {
             console.error('Save report error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -1053,7 +1053,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             res.json({ success: true })
         } catch (e) {
             console.error('Delete report error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -1085,7 +1085,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             res.json({ success: true })
         } catch (e) {
             console.error('Delete chat messages error:', e)
-            res.status(500).json({ error: e.message })
+            res.status(500).json({ error: 'Interner Serverfehler' })
         }
     })
 
@@ -1179,7 +1179,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             })
         } catch (e) {
             console.error('Chat error:', e)
-            res.status(500).json({ error: e.message || 'Chat-Anfrage fehlgeschlagen' })
+            res.status(500).json({ error: 'Chat-Anfrage fehlgeschlagen' })
         }
     })
 }
