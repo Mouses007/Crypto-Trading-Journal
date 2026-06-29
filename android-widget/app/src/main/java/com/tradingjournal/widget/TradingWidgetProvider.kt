@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.view.View
+import kotlin.concurrent.thread
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -36,10 +37,18 @@ class TradingWidgetProvider : AppWidgetProvider() {
         val awm = AppWidgetManager.getInstance(context)
         when (intent.action) {
             ACTION_REFRESH -> {
-                // Sofort-Feedback: Spinner an + "Aktualisiere…", dann Worker.
+                // Sofort-Feedback: Spinner an.
                 val ids = awm.getAppWidgetIds(ComponentName(context, TradingWidgetProvider::class.java))
                 for (id in ids) setRefreshing(context, awm, id)
-                triggerRefresh(context)
+                // Direkt im Receiver holen (goAsync) — NICHT über WorkManager, der auf
+                // manchen Geräten (z.B. Pixel) den Job nicht zeitnah ausführt → Spinner
+                // drehte endlos. refreshAllWidgets fängt Fehler ab → Spinner reset immer.
+                val pending = goAsync()
+                val appCtx = context.applicationContext
+                thread {
+                    try { RefreshWorker.refreshAllWidgets(appCtx) }
+                    finally { pending.finish() }
+                }
             }
             ACTION_TOGGLE_BALANCE -> {
                 val id = intent.getIntExtra(
