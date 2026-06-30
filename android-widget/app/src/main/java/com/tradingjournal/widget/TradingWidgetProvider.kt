@@ -41,6 +41,7 @@ class TradingWidgetProvider : AppWidgetProvider() {
                 // Sofort-Feedback: Spinner an, dann Expedited-Job (läuft auch im
                 // Hintergrund mit Netz — anders als ein normaler Receiver/Worker, den
                 // der Pixel einfriert → Spinner drehte endlos).
+                android.util.Log.d("TJWidget", "↻ Tap → Refresh angestoßen")
                 val ids = awm.getAppWidgetIds(ComponentName(context, TradingWidgetProvider::class.java))
                 for (id in ids) setRefreshing(context, awm, id)
                 triggerRefresh(context)

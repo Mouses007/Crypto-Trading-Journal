@@ -57,8 +57,11 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
             val awm = AppWidgetManager.getInstance(ctx)
             val ids = awm.getAppWidgetIds(ComponentName(ctx, TradingWidgetProvider::class.java))
 
+            android.util.Log.d("TJWidget", "refreshAllWidgets: ${ids.size} Widget(s)")
             for (id in ids) {
-                if (!Prefs.isConfigured(ctx, id)) continue
+                if (!Prefs.isConfigured(ctx, id)) { android.util.Log.d("TJWidget", "  id=$id nicht konfiguriert → skip"); continue }
+                val t0 = System.currentTimeMillis()
+                android.util.Log.d("TJWidget", "  fetch id=$id → ${Prefs.host(ctx, id)}:${Prefs.port(ctx, id)}")
                 try {
                     val json = ApiClient.fetch(
                         Prefs.host(ctx, id), Prefs.port(ctx, id),
@@ -66,8 +69,10 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
                     )
                     DisplayData.parse(json)   // validate before caching
                     Prefs.saveCache(ctx, id, json, System.currentTimeMillis())
+                    android.util.Log.d("TJWidget", "  fetch OK id=$id (${json.length}B, ${System.currentTimeMillis() - t0}ms)")
                 } catch (e: Exception) {
                     Prefs.saveError(ctx, id, e.message ?: "Fehler")
+                    android.util.Log.w("TJWidget", "  fetch FAIL id=$id (${System.currentTimeMillis() - t0}ms): ${e.message}")
                 }
             }
 
@@ -75,6 +80,7 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
             // (RemoteCollectionItems) neu aus dem Cache → Liste aktualisiert ohne Service-
             // Binding (kein Freeze-Problem), Spinner wird zurückgesetzt.
             for (id in ids) TradingWidgetProvider.updateWidget(ctx, awm, id)
+            android.util.Log.d("TJWidget", "Widgets aktualisiert (${ids.size})")
         }
     }
 }

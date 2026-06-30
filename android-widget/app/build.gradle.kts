@@ -11,8 +11,8 @@ android {
         applicationId = "com.tradingjournal.widget"
         minSdk = 31
         targetSdk = 35
-        versionCode = 14
-        versionName = "3.3.0-14"
+        versionCode = 16
+        versionName = "3.3.0-16"
     }
 
     buildTypes {

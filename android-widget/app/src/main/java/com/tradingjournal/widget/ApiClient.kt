@@ -15,11 +15,13 @@ object ApiClient {
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         // Hartes Gesamt-Timeout über alle Phasen (Connect/Read/Retries) — bei einem
-        // nicht erreichbaren Host (z.B. Pixel ohne Route zum Server) endet der Call
-        // garantiert nach 10s statt zu hängen → der Refresh-Spinner setzt sich immer
-        // wieder zurück.
+        // nicht erreichbaren Host endet der Call garantiert nach 10s statt zu hängen.
         .callTimeout(10, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(false)
+        // MUSS true sein (Default): der Server schließt idle Keep-alive-Verbindungen,
+        // OkHttp greift dann eine tote Pool-Verbindung → "unexpected end of stream".
+        // Mit Retry holt OkHttp automatisch eine frische Verbindung. (false war die
+        // Ursache für die "Lotto"-Refreshes — ~jeder 2. Tap scheiterte nach 9ms.)
+        .retryOnConnectionFailure(true)
         .build()
 
     /**
