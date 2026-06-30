@@ -65,12 +65,23 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- Welche Börse die KPIs unten gerade zeigen (per Tap auf eine Börse umschaltbar) -->
+    <TextView
+        android:id="@+id/kpi_broker"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:text=""
+        android:textColor="@color/accent"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
     <!-- KPI strip: balance / today / total / winrate -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="3dp"
         android:baselineAligned="false">
 
         <LinearLayout style="@style/KpiCell">

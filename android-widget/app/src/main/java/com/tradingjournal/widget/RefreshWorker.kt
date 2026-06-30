@@ -69,6 +69,7 @@ class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
                     )
                     DisplayData.parse(json)   // validate before caching
                     Prefs.saveCache(ctx, id, json, System.currentTimeMillis())
+                    Prefs.clearSelectedBroker(ctx, id)   // nach Refresh → zurück auf Default-Börse
                     android.util.Log.d("TJWidget", "  fetch OK id=$id (${json.length}B, ${System.currentTimeMillis() - t0}ms)")
                 } catch (e: Exception) {
                     Prefs.saveError(ctx, id, e.message ?: "Fehler")

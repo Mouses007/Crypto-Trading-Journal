@@ -1,6 +1,8 @@
 package com.tradingjournal.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.content.Intent
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import com.tradingjournal.widget.model.Bot
@@ -34,28 +36,36 @@ object WidgetRows {
             data.positions.groupBy { it.broker.ifBlank { "?" } }.toSortedMap()
                 .forEach { (broker, list) ->
                     val total = list.sumOf { it.unrealizedPNL }
-                    builder.addItem(id++, header(ctx, brokerLabel(broker), signed(total, 2) + " USDT"))
-                    list.forEach { builder.addItem(id++, renderFuture(ctx, it)) }
+                    builder.addItem(id++, header(ctx, brokerLabel(broker), signed(total, 2) + " USDT", broker, widgetId))
+                    list.forEach { builder.addItem(id++, renderFuture(ctx, it, broker, widgetId)) }
                 }
             // Bots (Pionex) als eigene Sektion darunter.
             if (data.bots.isNotEmpty()) {
                 builder.addItem(id++, header(ctx,
                     brokerLabel("pionex") + " " + ctx.getString(R.string.w_bots),
-                    data.bots.size.toString()))
-                data.bots.forEach { builder.addItem(id++, renderBot(ctx, it)) }
+                    data.bots.size.toString(), "pionex", widgetId))
+                data.bots.forEach { builder.addItem(id++, renderBot(ctx, it, widgetId)) }
             }
         }
         return builder.build()
     }
 
-    private fun header(ctx: Context, title: String, total: String) =
+    // Fill-in-Intent: tippt man eine Zeile, wird die Kopf-KPI auf deren Börse umgeschaltet
+    // (über das setPendingIntentTemplate auf der Liste im Provider).
+    private fun selectFillIn(broker: String, widgetId: Int) = Intent()
+        .putExtra(TradingWidgetProvider.EXTRA_BROKER, broker)
+        .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+
+    private fun header(ctx: Context, title: String, total: String, broker: String, widgetId: Int) =
         RemoteViews(ctx.packageName, R.layout.widget_row_header).apply {
             setTextViewText(R.id.header_title, title)
             setTextViewText(R.id.header_total, total)
+            setOnClickFillInIntent(R.id.row_root, selectFillIn(broker, widgetId))
         }
 
-    private fun renderFuture(ctx: Context, p: Position): RemoteViews {
+    private fun renderFuture(ctx: Context, p: Position, broker: String, widgetId: Int): RemoteViews {
         val rv = RemoteViews(ctx.packageName, R.layout.widget_row_future)
+        rv.setOnClickFillInIntent(R.id.row_root, selectFillIn(broker, widgetId))
         rv.setTextViewText(R.id.row_symbol, p.symbol)
         rv.setTextViewText(R.id.row_sub,
             "${sideLabel(p.side)} · ${lev(p.leverage)} · @${price(p.entryPrice)} → ${price(p.markPrice)}")
@@ -65,8 +75,9 @@ object WidgetRows {
         return rv
     }
 
-    private fun renderBot(ctx: Context, b: Bot): RemoteViews {
+    private fun renderBot(ctx: Context, b: Bot, widgetId: Int): RemoteViews {
         val rv = RemoteViews(ctx.packageName, R.layout.widget_row_bot)
+        rv.setOnClickFillInIntent(R.id.row_root, selectFillIn("pionex", widgetId))
         rv.setTextViewText(R.id.row_symbol, b.symbol)
         val liq = if (b.liqPrice > 0) " · Liq ${price(b.liqPrice)}" else ""
         rv.setTextViewText(R.id.row_sub,

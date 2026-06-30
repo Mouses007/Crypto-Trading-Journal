@@ -18,17 +18,30 @@ object Prefs {
     fun port(ctx: Context, id: Int): String = sp(ctx).getString("port_$id", "8080") ?: "8080"
     fun key(ctx: Context, id: Int): String = sp(ctx).getString("key_$id", "") ?: ""
     fun filter(ctx: Context, id: Int): String = sp(ctx).getString("filter_$id", "all") ?: "all"
+    /** Welche Börse nach dem Aktualisieren oben steht. "auto" = Primär-Börse des Servers. */
+    fun defaultBroker(ctx: Context, id: Int): String = sp(ctx).getString("defbroker_$id", "auto") ?: "auto"
 
     fun isConfigured(ctx: Context, id: Int): Boolean =
         host(ctx, id).isNotBlank() && key(ctx, id).isNotBlank()
 
-    fun saveConfig(ctx: Context, id: Int, host: String, port: String, key: String, filter: String) {
+    fun saveConfig(ctx: Context, id: Int, host: String, port: String, key: String, filter: String, defaultBroker: String) {
         sp(ctx).edit()
             .putString("host_$id", host.trim())
             .putString("port_$id", port.trim().ifBlank { "8080" })
             .putString("key_$id", key.trim())
             .putString("filter_$id", filter)
+            .putString("defbroker_$id", defaultBroker)
             .apply()
+    }
+
+    // --- Transiente Börsen-Auswahl oben (per Tap auf eine Börse) ---
+    // Wird bei jeder Aktualisierung gelöscht → Kopf fällt auf defaultBroker zurück.
+    fun selectedBroker(ctx: Context, id: Int): String? = sp(ctx).getString("selbroker_$id", null)
+    fun setSelectedBroker(ctx: Context, id: Int, broker: String) {
+        sp(ctx).edit().putString("selbroker_$id", broker).apply()
+    }
+    fun clearSelectedBroker(ctx: Context, id: Int) {
+        sp(ctx).edit().remove("selbroker_$id").apply()
     }
 
     // --- Cache (last successful payload) ---
@@ -57,6 +70,7 @@ object Prefs {
     fun clear(ctx: Context, id: Int) {
         sp(ctx).edit()
             .remove("host_$id").remove("port_$id").remove("key_$id").remove("filter_$id")
+            .remove("defbroker_$id").remove("selbroker_$id")
             .remove("cache_$id").remove("updated_$id").remove("error_$id")
             .remove("hidebal_$id")
             .apply()

@@ -81,29 +81,21 @@ export function setupEsp32Routes(app) {
             const settings = await knex('settings').where('id', 1).select('timeZone', 'startBalance', 'balances', 'esp32Filter').first()
             const tz = settings?.timeZone || 'Europe/Berlin'
 
-            // Determine primary broker and start balance from settings
+            // Per-broker start balances from settings.balances; primary = default
+            let balances = {}
+            try { balances = typeof settings?.balances === 'string' ? JSON.parse(settings.balances) : (settings?.balances || {}) } catch {}
             let startBalance = parseFloat(settings?.startBalance || 0)
             let primaryBroker = 'bitunix'
-            try {
-                const balances = typeof settings?.balances === 'string'
-                    ? JSON.parse(settings.balances) : (settings?.balances || {})
-                if (balances.bitunix?.start) {
-                    startBalance = balances.bitunix.start
-                    primaryBroker = 'bitunix'
-                } else if (balances.bitget?.start) {
-                    startBalance = balances.bitget.start
-                    primaryBroker = 'bitget'
-                }
-            } catch {}
+            if (balances.bitunix?.start) { startBalance = balances.bitunix.start; primaryBroker = 'bitunix' }
+            else if (balances.bitget?.start) { startBalance = balances.bitget.start; primaryBroker = 'bitget' }
 
-            // Today's range in unix seconds
             const todayStart = dayjs().tz(tz).startOf('day').unix()
             const todayEnd   = dayjs().tz(tz).endOf('day').unix()
 
             // Server-side filter (settings.esp32Filter) normally takes priority over the
             // query param — so the journal admin controls which period the ESP32 displays.
             // A client can opt out with ?force=1 and pick its own period (the Android
-            // widget uses force=1 + filter=all → always all-time, unabhängig vom ESP-Setting).
+            // widget sends force=1 + its configured filter).
             const forced = req.query.force === '1' || req.query.force === 'true'
             const filter = forced
                 ? (req.query.filter || 'all')
@@ -113,84 +105,83 @@ export function setupEsp32Routes(app) {
             else if (filter === 'week')  periodStart = dayjs().tz(tz).startOf('week').unix()
             else if (filter === 'year')  periodStart = dayjs().tz(tz).startOf('year').unix()
 
-            // Always load ALL trades (for primary broker) — filter in-memory so balance/volume are never cut off
-            const allTrades = await knex('trades').where('broker', primaryBroker).select('dateUnix', 'pAndL', 'trades')
-
             const cutoff30d = dayjs().tz(tz).subtract(30, 'day').unix()
-            let todayPnL = 0, totalPnL = 0, allTimePnL = 0
-            let totalGrossWins = 0, totalTradeCount = 0
-            let totalNetWins = 0, totalNetLoss = 0
-            let totalNetWinsCount = 0, totalNetLossCount = 0
-            let volume30d = 0, volumeTotal = 0
-            let todayTradeCount = 0, todayWins = 0, todayLosses = 0
 
-            for (const row of allTrades) {
-                const ts = parseInt(row.dateUnix || 0)
-                const inPeriod = periodStart === 0 || ts >= periodStart
-                const isToday = ts >= todayStart && ts <= todayEnd
-
-                // pAndL for net proceeds and win counts (pre-aggregated per day)
-                let pl = {}
-                try { pl = typeof row.pAndL === 'string' ? JSON.parse(row.pAndL) : (row.pAndL || {}) } catch {}
-
-                // All-time PnL for balance (ignores filter)
-                allTimePnL += parseFloat(pl.netProceeds || 0)
-
-                // Volume from individual trades (all-time + rolling 30d, ignores filter)
-                let tradesArr = []
-                try { tradesArr = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch {}
-                for (const t of tradesArr) {
-                    const qty = Math.max(parseFloat(t.buyQuantity || 0), parseFloat(t.sellQuantity || 0))
-                    const vol = qty * parseFloat(t.entryPrice || 0)
-                    volumeTotal += vol
-                    if (ts >= cutoff30d) volume30d += vol
+            // KPIs für die Trade-Zeilen eines Brokers (Periode via periodStart aus dem Closure)
+            const statsForTrades = (rows, startBal) => {
+                let todayPnL = 0, totalPnL = 0, allTimePnL = 0
+                let totalGrossWins = 0, totalTradeCount = 0
+                let totalNetWins = 0, totalNetLoss = 0, totalNetWinsCount = 0, totalNetLossCount = 0
+                let volume30d = 0, volumeTotal = 0
+                let todayTradeCount = 0, todayWins = 0, todayLosses = 0
+                for (const row of rows) {
+                    const ts = parseInt(row.dateUnix || 0)
+                    const inPeriod = periodStart === 0 || ts >= periodStart
+                    const isToday = ts >= todayStart && ts <= todayEnd
+                    let pl = {}
+                    try { pl = typeof row.pAndL === 'string' ? JSON.parse(row.pAndL) : (row.pAndL || {}) } catch {}
+                    allTimePnL += parseFloat(pl.netProceeds || 0)
+                    let tradesArr = []
+                    try { tradesArr = typeof row.trades === 'string' ? JSON.parse(row.trades) : (row.trades || []) } catch {}
+                    for (const t of tradesArr) {
+                        const qty = Math.max(parseFloat(t.buyQuantity || 0), parseFloat(t.sellQuantity || 0))
+                        const vol = qty * parseFloat(t.entryPrice || 0)
+                        volumeTotal += vol
+                        if (ts >= cutoff30d) volume30d += vol
+                    }
+                    if (!inPeriod) continue
+                    const net = parseFloat(pl.netProceeds || 0)
+                    totalPnL += net
+                    if (isToday) {
+                        todayPnL += net
+                        const tw = parseInt(pl.grossWinsCount || 0)
+                        const tc = parseInt(pl.trades || 0)
+                        todayWins += tw; todayLosses += Math.max(0, tc - tw); todayTradeCount += tc
+                    }
+                    totalGrossWins  += parseInt(pl.grossWinsCount || 0)
+                    totalTradeCount += parseInt(pl.trades || 0)
+                    for (const t of tradesArr) {
+                        const tGross = parseFloat(t.grossProceeds || 0)
+                        if (tGross > 0) { totalNetWins += tGross; totalNetWinsCount++ }
+                        else if (tGross < 0) { totalNetLoss += Math.abs(tGross); totalNetLossCount++ }
+                    }
                 }
-
-                if (!inPeriod) continue
-
-                // Period-filtered PnL
-                const net = parseFloat(pl.netProceeds || 0)
-                totalPnL += net
-
-                // Today's stats
-                if (isToday) {
-                    todayPnL += net
-                    const tw = parseInt(pl.grossWinsCount || 0)
-                    const tc = parseInt(pl.trades || 0)
-                    todayWins    += tw
-                    todayLosses  += Math.max(0, tc - tw)
-                    todayTradeCount += tc
-                }
-
-                // Win rate: grossWinsCount / trades — matches journal formula exactly
-                totalGrossWins  += parseInt(pl.grossWinsCount || 0)
-                totalTradeCount += parseInt(pl.trades || 0)
-
-                // RRR: gross avg-win / gross avg-loss from individual trades (matches journal grossR)
-                for (const t of tradesArr) {
-                    const tGross = parseFloat(t.grossProceeds || 0)
-                    if (tGross > 0) { totalNetWins += tGross; totalNetWinsCount++ }
-                    else if (tGross < 0) { totalNetLoss += Math.abs(tGross); totalNetLossCount++ }
+                const winRate = totalTradeCount > 0 ? (totalGrossWins / totalTradeCount) * 100 : 0
+                const avgWin = totalNetWinsCount > 0 ? totalNetWins / totalNetWinsCount : 0
+                const avgLoss = totalNetLossCount > 0 ? totalNetLoss / totalNetLossCount : 0
+                const rrr = avgLoss > 0 ? avgWin / avgLoss : 0
+                const balance = startBal > 0 ? startBal + allTimePnL : null
+                const balancePerf = startBal > 0 ? ((balance / startBal) - 1) * 100 : null
+                const r2 = (x) => x == null ? null : Math.round(x * 100) / 100
+                const r1 = (x) => x == null ? null : Math.round(x * 10) / 10
+                return {
+                    balance: r2(balance), balancePerf: r1(balancePerf),
+                    todayPnL: r2(todayPnL), todayTrades: todayTradeCount, todayWins, todayLosses,
+                    totalPnL: r2(totalPnL), winRate: r1(winRate), rrr: r2(rrr),
+                    volume30d: Math.round(volume30d), volumeTotal: Math.round(volumeTotal)
                 }
             }
 
-            const winRate = totalTradeCount > 0
-                ? (totalGrossWins / totalTradeCount) * 100 : 0
+            // Pro Broker rechnen (nur die mit Trades oder Startsaldo aufnehmen)
+            const brokers = {}
+            for (const b of ['bitunix', 'bitget', 'pionex']) {
+                const startB = parseFloat(balances[b]?.start || 0)
+                const rows = await knex('trades').where('broker', b).select('dateUnix', 'pAndL', 'trades')
+                if (rows.length === 0 && !(startB > 0)) continue
+                brokers[b] = statsForTrades(rows, startB)
+            }
 
-            const avgWin = totalNetWinsCount > 0 ? totalNetWins / totalNetWinsCount : 0
-            const avgLoss = totalNetLossCount > 0 ? totalNetLoss / totalNetLossCount : 0
-            const rrr = avgLoss > 0 ? avgWin / avgLoss : 0
+            // Top-Level-KPIs = Primär-Broker (Backward-Compat für ältere Clients)
+            const primaryStats = brokers[primaryBroker] || statsForTrades([], startBalance)
+            const { balance, balancePerf, todayPnL, todayTrades: todayTradeCount, todayWins, todayLosses,
+                    totalPnL, winRate, rrr, volume30d, volumeTotal } = primaryStats
 
-            // Satisfaction — gefiltert nach Zeitraum (wie Journal)
+            // Satisfaction — global, gefiltert nach Zeitraum (wie Journal)
             const satsQuery = knex('satisfactions').select('satisfaction')
             if (periodStart > 0) satsQuery.where('dateUnix', '>=', periodStart)
             const sats = await satsQuery
             const satisfied = sats.filter(s => s.satisfaction == 1 || s.satisfaction == true).length
             const satisfaction = sats.length > 0 ? (satisfied / sats.length) * 100 : 0
-
-            // Balance always uses all-time PnL (not filtered), same broker as trade query
-            const balance = startBalance > 0 ? startBalance + allTimePnL : null
-            const balancePerf = startBalance > 0 ? ((balance / startBalance) - 1) * 100 : null
 
             // Offene Futures-Positionen ALLER konfigurierten Broker — je mit broker-Tag,
             // damit Clients (Widget/Desklet) nach Börse gruppieren können. Pro Broker
@@ -283,7 +274,11 @@ export function setupEsp32Routes(app) {
                 volume30d:     Math.round(volume30d),
                 volumeTotal:   Math.round(volumeTotal),
                 openPositions: openPositions,
-                bots:          bots
+                bots:          bots,
+                // KPIs je Börse (für Clients, die pro Börse umschalten — z.B. Android-Widget).
+                // Top-Level-Felder oben = primaryBroker (Backward-Compat für ältere Clients).
+                primaryBroker: primaryBroker,
+                brokers:       brokers
             })
         } catch (e) {
             console.error('ESP32 display error:', e)

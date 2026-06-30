@@ -54,6 +54,17 @@ class TradingWidgetProvider : AppWidgetProvider() {
                     updateWidget(context, awm, id)   // kein Netz nötig, nur Re-Render
                 }
             }
+            ACTION_SELECT_BROKER -> {
+                // Tap auf eine Börsen-Sektion/Position → Kopf-KPIs auf diese Börse
+                // umschalten (kein Netz, nur Re-Render). Hält bis zur nächsten Aktualisierung.
+                val id = intent.getIntExtra(
+                    AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                val broker = intent.getStringExtra(EXTRA_BROKER)
+                if (id != AppWidgetManager.INVALID_APPWIDGET_ID && !broker.isNullOrBlank()) {
+                    Prefs.setSelectedBroker(context, id, broker)
+                    updateWidget(context, awm, id)
+                }
+            }
             ACTION_ALARM -> {
                 // 15-min-Auto-Refresh: jetzt aktualisieren + nächsten Alarm planen
                 // (setAndAllowWhileIdle ist one-shot → muss neu gesetzt werden).
@@ -78,6 +89,8 @@ class TradingWidgetProvider : AppWidgetProvider() {
         const val ACTION_REFRESH = "com.tradingjournal.widget.ACTION_REFRESH"
         const val ACTION_TOGGLE_BALANCE = "com.tradingjournal.widget.ACTION_TOGGLE_BALANCE"
         const val ACTION_ALARM = "com.tradingjournal.widget.ACTION_ALARM"
+        const val ACTION_SELECT_BROKER = "com.tradingjournal.widget.ACTION_SELECT_BROKER"
+        const val EXTRA_BROKER = "broker"
         private const val PERIODIC_WORK = "trading_refresh_periodic"
         private const val ONESHOT_WORK = "trading_refresh_oneshot"
         private const val REFRESH_INTERVAL_MS = 15 * 60 * 1000L
@@ -123,6 +136,20 @@ class TradingWidgetProvider : AppWidgetProvider() {
             // minutenlang verzögert wurde → Liste lud nicht). Items kommen aus dem Cache.
             rv.setRemoteAdapter(R.id.list, WidgetRows.build(context, id))
             rv.setEmptyView(R.id.list, R.id.empty)
+
+            // Klick-Template für die Listen-Items: jede Zeile liefert per Fill-In-Intent
+            // ihre Börse → ACTION_SELECT_BROKER schaltet den Kopf um. MUTABLE, damit der
+            // Fill-In die Daten ergänzen kann.
+            val selTemplate = Intent(context, TradingWidgetProvider::class.java)
+                .setAction(ACTION_SELECT_BROKER)
+                .setData(Uri.parse("tradingwidget://select/$id"))
+            rv.setPendingIntentTemplate(
+                R.id.list,
+                PendingIntent.getBroadcast(
+                    context, id, selTemplate,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                )
+            )
 
             // Refresh button → broadcast back to this provider.
             val refreshIntent = Intent(context, TradingWidgetProvider::class.java)
@@ -178,6 +205,7 @@ class TradingWidgetProvider : AppWidgetProvider() {
             if (!Prefs.isConfigured(context, id)) {
                 rv.setTextViewText(R.id.empty, context.getString(R.string.w_tap_config))
                 rv.setTextViewText(R.id.updated, "")
+                rv.setTextViewText(R.id.kpi_broker, "")
                 setKpi(context, rv, R.id.kpi_balance, "–", null)
                 setKpi(context, rv, R.id.kpi_today, "–", null)
                 setKpi(context, rv, R.id.kpi_total, "–", null)
@@ -190,14 +218,25 @@ class TradingWidgetProvider : AppWidgetProvider() {
             val json = Prefs.cachedJson(context, id)
             if (json != null) {
                 val d = try { DisplayData.parse(json) } catch (e: Exception) { null }
-                if (d != null) {
+                if (d != null && d.brokers.isNotEmpty()) {
+                    val broker = resolveBroker(context, id, d)
+                    val k = d.brokers[broker]!!
+                    rv.setTextViewText(R.id.kpi_broker, brokerLabel(broker))
+
                     val balText = if (Prefs.hideBalance(context, id)) "••••"
-                                  else d.balance?.let { fmt(it, 0) + " $" } ?: "–"
+                                  else k.balance?.let { fmt(it, 0) + " $" } ?: "–"
                     setKpi(context, rv, R.id.kpi_balance, balText, null)
-                    setKpi(context, rv, R.id.kpi_today, signed(d.todayPnL, 0), d.todayPnL)
-                    setKpi(context, rv, R.id.kpi_total, signed(d.totalPnL, 0), d.totalPnL)
-                    setKpi(context, rv, R.id.kpi_winrate,
-                        fmt(d.winRate, 0) + "%", null)
+                    setKpi(context, rv, R.id.kpi_total, signed(k.totalPnL, 0), k.totalPnL)
+
+                    if (broker == "pionex") {
+                        // Bots: „Heute/WinRate" sind hier wenig aussagekräftig → ausblenden,
+                        // nur Saldo + Gesamt-PnL zeigen.
+                        setKpi(context, rv, R.id.kpi_today, "–", null)
+                        setKpi(context, rv, R.id.kpi_winrate, "–", null)
+                    } else {
+                        setKpi(context, rv, R.id.kpi_today, signed(k.todayPnL, 0), k.todayPnL)
+                        setKpi(context, rv, R.id.kpi_winrate, fmt(k.winRate, 0) + "%", null)
+                    }
                 }
             }
 
@@ -207,6 +246,23 @@ class TradingWidgetProvider : AppWidgetProvider() {
             val ts = Prefs.updatedAt(context, id)
             val tstr = if (ts > 0) SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts)) else "–"
             rv.setTextViewText(R.id.updated, context.getString(R.string.w_updated, tstr))
+        }
+
+        /** Welche Börse oben gezeigt wird: getippte (transient) → Default-Config → Primär → erste. */
+        private fun resolveBroker(context: Context, id: Int, d: DisplayData): String {
+            val sel = Prefs.selectedBroker(context, id)
+            if (sel != null && d.brokers.containsKey(sel)) return sel
+            val def = Prefs.defaultBroker(context, id)
+            if (def != "auto" && d.brokers.containsKey(def)) return def
+            if (d.brokers.containsKey(d.primaryBroker)) return d.primaryBroker
+            return d.brokers.keys.first()
+        }
+
+        private fun brokerLabel(b: String): String = when (b.lowercase(Locale.ROOT)) {
+            "bitunix" -> "Bitunix"
+            "bitget"  -> "Bitget"
+            "pionex"  -> "Pionex"
+            else      -> b.replaceFirstChar { it.uppercase() }
         }
 
         private fun setKpi(context: Context, rv: RemoteViews, viewId: Int, text: String, signFor: Double?) {

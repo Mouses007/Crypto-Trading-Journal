@@ -27,6 +27,14 @@ data class Bot(
     val coinM: Boolean
 )
 
+/** KPIs für eine einzelne Börse (aus dem brokers-Objekt des Endpoints). */
+data class BrokerKpis(
+    val balance: Double?,
+    val todayPnL: Double,
+    val totalPnL: Double,
+    val winRate: Double
+)
+
 /** Parsed payload of GET /api/esp32/display. */
 data class DisplayData(
     val balance: Double?,
@@ -34,7 +42,9 @@ data class DisplayData(
     val totalPnL: Double,
     val winRate: Double,
     val positions: List<Position>,
-    val bots: List<Bot>
+    val bots: List<Bot>,
+    val primaryBroker: String,
+    val brokers: Map<String, BrokerKpis>
 ) {
     companion object {
         fun parse(json: String): DisplayData {
@@ -80,13 +90,38 @@ data class DisplayData(
                 }
             }
 
+            val topToday = o.optDouble("todayPnL", 0.0)
+            val topTotal = o.optDouble("totalPnL", 0.0)
+            val topWin = o.optDouble("winRate", 0.0)
+            val primaryBroker = o.optString("primaryBroker", "bitunix")
+
+            // KPIs je Börse (Reihenfolge wie vom Server: bitunix, bitget, pionex)
+            val brokers = LinkedHashMap<String, BrokerKpis>()
+            o.optJSONObject("brokers")?.let { bo ->
+                val keys = bo.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val bk = bo.getJSONObject(k)
+                    brokers[k] = BrokerKpis(
+                        balance = if (bk.isNull("balance")) null else bk.optDouble("balance"),
+                        todayPnL = bk.optDouble("todayPnL", 0.0),
+                        totalPnL = bk.optDouble("totalPnL", 0.0),
+                        winRate = bk.optDouble("winRate", 0.0)
+                    )
+                }
+            }
+            // Fallback für ältere Server ohne brokers-Map: Top-Level als Primär-Börse.
+            if (brokers.isEmpty()) brokers[primaryBroker] = BrokerKpis(balance, topToday, topTotal, topWin)
+
             return DisplayData(
                 balance = balance,
-                todayPnL = o.optDouble("todayPnL", 0.0),
-                totalPnL = o.optDouble("totalPnL", 0.0),
-                winRate = o.optDouble("winRate", 0.0),
+                todayPnL = topToday,
+                totalPnL = topTotal,
+                winRate = topWin,
                 positions = positions,
-                bots = bots
+                bots = bots,
+                primaryBroker = primaryBroker,
+                brokers = brokers
             )
         }
     }

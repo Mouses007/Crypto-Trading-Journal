@@ -10,7 +10,8 @@
     <string name="cfg_port">Port</string>
     <string name="cfg_key">ESP32-API-Key</string>
     <string name="cfg_key_hint">aus Journal → Einstellungen → ESP32 Display</string>
-    <string name="cfg_filter">Zeitraum</string>
+    <string name="cfg_filter">Zeitraum (für „Heute/Gesamt")</string>
+    <string name="cfg_default_broker">Standard-Börse oben (nach Aktualisieren)</string>
     <string name="cfg_test">Verbindung testen</string>
     <string name="cfg_save">Speichern</string>
     <string name="cfg_testing">Teste…</string>
