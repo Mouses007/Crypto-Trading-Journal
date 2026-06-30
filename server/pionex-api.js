@@ -207,8 +207,12 @@ function normalizeBotOrder(o) {
     const marginBal = parseFloat(d.marginBalance ?? 0)
     let pnlUsdt, investUsdt
     if (inst.coinM) {
+        // PnL-Basis inkl. extraMargin (in „dynamische Marge" zurückgeführtes Kapital bei
+        // Hebel-/Margin-Änderung), sonst Phantom-Gewinn — wie bei laufenden Bots. Anzeige-
+        // Investment bleibt das aktuelle (ohne extra). extraMargin=0 → unverändert.
+        const investSolBase = investSol + parseFloat(d.extraMargin ?? 0)
         investUsdt = investSol * entryQuoteP
-        pnlUsdt = (marginBal && closeQuoteP) ? (marginBal * closeQuoteP - investSol * entryQuoteP) : 0
+        pnlUsdt = (marginBal && closeQuoteP) ? (marginBal * closeQuoteP - investSolBase * entryQuoteP) : 0
     } else {
         investUsdt = parseFloat(d.usdtInvestment ?? d.initUsdtInvestment ?? 0)
         pnlUsdt = parseFloat(d.totalRealizedProfit ?? d.realizedProfit ?? 0)   // linear: bereits USDT
@@ -304,7 +308,14 @@ async function normalizeRunningBot(o) {
     const startInv = inst.coinM
         ? parseFloat(d.quoteInvestment ?? d.initQuoteInvestment ?? 0)   // SOL
         : parseFloat(d.usdtInvestment ?? d.initUsdtInvestment ?? 0)     // USDT
-    const realized = parseFloat(d.marginBalance ?? 0) - startInv
+    // Bei Hebel-/Margin-Änderung führt Pionex freigewordene Margin in „dynamische
+    // Marge" (extraMargin) zurück: quoteInvestment SINKT, marginBalance bleibt aber
+    // inkl. extraMargin stehen. Für die PnL-Basis extraMargin mitzählen, sonst wird
+    // die zurückgeführte Marge als Gewinn verbucht (z.B. Hebel 30x→50x = +0,125 SOL
+    // Phantom-Gewinn; gegen Pionex verifiziert: mit extraMargin = echte −0,0004 SOL).
+    // Reine Aufstockung: extraMargin = 0 → unverändert korrekt.
+    const extraMargin = parseFloat(d.extraMargin ?? 0)
+    const realized = parseFloat(d.marginBalance ?? 0) - (startInv + extraMargin)
 
     let floating = 0
     if (markPrice && entry) {
