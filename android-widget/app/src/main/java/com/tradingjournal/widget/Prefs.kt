@@ -61,6 +61,13 @@ object Prefs {
         sp(ctx).edit().putString("error_$id", message).apply()
     }
 
+    // --- Auto-Refresh-Entprellung (global, gegen die onUpdate→Expedited-Work→
+    //     PackageChanged→APPWIDGET_UPDATE→onUpdate-Schleife) ---
+    fun lastAutoRefresh(ctx: Context): Long = sp(ctx).getLong("last_auto_refresh", 0L)
+    fun setLastAutoRefresh(ctx: Context, whenMs: Long) {
+        sp(ctx).edit().putLong("last_auto_refresh", whenMs).apply()
+    }
+
     // --- Balance-Sichtbarkeit (Augen-Toggle, pro Widget) ---
     fun hideBalance(ctx: Context, id: Int): Boolean = sp(ctx).getBoolean("hidebal_$id", false)
     fun setHideBalance(ctx: Context, id: Int, hide: Boolean) {

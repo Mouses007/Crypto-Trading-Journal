@@ -30,6 +30,10 @@ class TradingWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, awm: AppWidgetManager, ids: IntArray) {
         for (id in ids) updateWidget(context, awm, id)
         scheduleAlarm(context)
+        // ENTPRELLT: onUpdate wird vom System auch bei jeder Paket-Änderung neu gefeuert.
+        // Der Expedited-Refresh-Job schaltet aber intern eine WorkManager-Komponente
+        // an/aus → das IST eine Paket-Änderung → onUpdate → … Endlosschleife. Darum den
+        // Auto-Refresh entprellen; der manuelle Tap (ACTION_REFRESH) läuft weiter sofort.
         triggerRefresh(context)
     }
 
@@ -44,7 +48,7 @@ class TradingWidgetProvider : AppWidgetProvider() {
                 android.util.Log.d("TJWidget", "↻ Tap → Refresh angestoßen")
                 val ids = awm.getAppWidgetIds(ComponentName(context, TradingWidgetProvider::class.java))
                 for (id in ids) setRefreshing(context, awm, id)
-                triggerRefresh(context)
+                triggerRefresh(context, force = true)   // Nutzer-Tap: nie entprellen
             }
             ACTION_TOGGLE_BALANCE -> {
                 val id = intent.getIntExtra(
@@ -94,6 +98,8 @@ class TradingWidgetProvider : AppWidgetProvider() {
         private const val PERIODIC_WORK = "trading_refresh_periodic"
         private const val ONESHOT_WORK = "trading_refresh_oneshot"
         private const val REFRESH_INTERVAL_MS = 15 * 60 * 1000L
+        // Mindestabstand zwischen Auto-Refreshes (onUpdate/Alarm) — Loop-Schutz.
+        private const val AUTO_REFRESH_DEBOUNCE_MS = 5_000L
 
         private fun alarmIntent(context: Context): PendingIntent {
             val i = Intent(context, TradingWidgetProvider::class.java).setAction(ACTION_ALARM)
@@ -290,7 +296,17 @@ class TradingWidgetProvider : AppWidgetProvider() {
         // dem Pixel) ewig und der Spinner dreht endlos. Ohne Constraint läuft er
         // sofort, der Fetch hat selbst 10s Timeout, und updateWidget setzt den
         // Spinner danach IMMER zurück (zeigt sonst „⚠ offline").
-        fun triggerRefresh(context: Context) {
+        fun triggerRefresh(context: Context, force: Boolean = false) {
+            // Entprellung: Auto-Refreshes (onUpdate/Alarm) nur zulassen, wenn der letzte
+            // Auto-Refresh länger als AUTO_REFRESH_DEBOUNCE_MS her ist. Bricht die
+            // onUpdate→Expedited-Work→PackageChanged→onUpdate-Schleife (~1×/s), ohne
+            // legitime Refreshes (Widget-Add, 15-min-Alarm, Tap=force) zu behindern.
+            val now = System.currentTimeMillis()
+            if (!force && now - Prefs.lastAutoRefresh(context) < AUTO_REFRESH_DEBOUNCE_MS) {
+                android.util.Log.d("TJWidget", "Auto-Refresh entprellt")
+                return
+            }
+            Prefs.setLastAutoRefresh(context, now)
             val req = OneTimeWorkRequestBuilder<RefreshWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .build()
