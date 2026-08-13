@@ -72,9 +72,11 @@ function dockerApi(method, apiPath, body) {
  * UI for remote access (e.g. NAS at 192.168.x.x).
  */
 export function isLocalRequest(req) {
-    const host = String(req.hostname || '').toLowerCase()
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
-    const ip = String(req.ip || '').replace('::ffff:', '')
+    // Nur die echte Peer-IP der TCP-Verbindung zählt. req.hostname stammt aus dem
+    // client-kontrollierten Host-Header — ein LAN-Client könnte sonst
+    // "Host: localhost" senden und den localhost-Schutz aushebeln (z.B. das
+    // Passwort-Gate über /api/auth/reset ohne Anmeldung deaktivieren).
+    const ip = String(req.socket?.remoteAddress || req.ip || '').replace('::ffff:', '')
     return ip === '127.0.0.1' || ip === '::1'
 }
 function effectiveIsDocker(req) {

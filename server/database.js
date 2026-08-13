@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings']
     let fixed = 0
 
     for (const table of tables) {
@@ -610,6 +610,73 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'esp32ApiKey', (t) => t.text('esp32ApiKey').defaultTo(''))
     await addColumnIfNotExists('settings', 'esp32Filter', (t) => t.text('esp32Filter').defaultTo('month'))
 
+    // ==================== SETTINGS: LIVE-ANALYSE (Heatmap / Bookmap) ====================
+    await addColumnIfNotExists('settings', 'liveSymbol', (t) => t.text('liveSymbol').defaultTo(''))
+    await addColumnIfNotExists('settings', 'liveMarket', (t) => t.text('liveMarket').defaultTo('futures'))
+    await addColumnIfNotExists('settings', 'liveViewPct', (t) => t.float('liveViewPct').defaultTo(0.5))
+    await addColumnIfNotExists('settings', 'liveFrameMs', (t) => t.integer('liveFrameMs').defaultTo(500))
+    await addColumnIfNotExists('settings', 'liveHistoryMin', (t) => t.integer('liveHistoryMin').defaultTo(30))
+    await addColumnIfNotExists('settings', 'liveRamp', (t) => t.text('liveRamp').defaultTo('bookmap'))
+    await addColumnIfNotExists('settings', 'liveShowProfile', (t) => t.integer('liveShowProfile').defaultTo(0))
+    await addColumnIfNotExists('settings', 'livePauseInBackground', (t) => t.integer('livePauseInBackground').defaultTo(1))
+    // Farbskala: 'auto' normiert rollend aufs 95. Perzentil, 'fixed' nutzt liveColorRef
+    await addColumnIfNotExists('settings', 'liveColorMode', (t) => t.text('liveColorMode').defaultTo('auto'))
+    await addColumnIfNotExists('settings', 'liveColorRef', (t) => t.float('liveColorRef').defaultTo(0))
+    // Preisachse: 1 = folgt dem Mittelkurs, 0 = bleibt stehen (manuell zoom/pan)
+    await addColumnIfNotExists('settings', 'liveAutoFollow', (t) => t.integer('liveAutoFollow').defaultTo(1))
+    // Blendet Zellen unterhalb dieses Anteils der Farbskala aus (0 = alles zeigen)
+    await addColumnIfNotExists('settings', 'liveThreshold', (t) => t.float('liveThreshold').defaultTo(0))
+    await addColumnIfNotExists('settings', 'liveShowLiquidations', (t) => t.integer('liveShowLiquidations').defaultTo(1))
+    // Vorlauf aus der eigenen Aufzeichnung beim Öffnen (Minuten, 0 = aus)
+    await addColumnIfNotExists('settings', 'livePrefillMin', (t) => t.integer('livePrefillMin').defaultTo(15))
+
+    // ==================== SETTINGS: LIVE-RECORDER ====================
+    // Standardmässig AUS — ein Dauer-Stream darf nicht ungefragt laufen.
+    await addColumnIfNotExists('settings', 'liveRecordEnabled', (t) => t.integer('liveRecordEnabled').defaultTo(0))
+    await addColumnIfNotExists('settings', 'liveRecordSymbols', (t) => t.text('liveRecordSymbols').defaultTo(''))
+    await addColumnIfNotExists('settings', 'liveRecordDays', (t) => t.integer('liveRecordDays').defaultTo(14))
+    await addColumnIfNotExists('settings', 'liveRecordFrameMs', (t) => t.integer('liveRecordFrameMs').defaultTo(1000))
+    await addColumnIfNotExists('settings', 'liveRecordRows', (t) => t.integer('liveRecordRows').defaultTo(200))
+    await addColumnIfNotExists('settings', 'liveRecordRangePct', (t) => t.float('liveRecordRangePct').defaultTo(1))
+    await addColumnIfNotExists('settings', 'liveRecordAllLiq', (t) => t.integer('liveRecordAllLiq').defaultTo(0))
+    await addColumnIfNotExists('settings', 'liveDotStep', (t) => t.integer('liveDotStep').defaultTo(11))
+    await addColumnIfNotExists('settings', 'liveProfileW', (t) => t.integer('liveProfileW').defaultTo(74))
+    await addColumnIfNotExists('settings', 'liveShowVolumeBars', (t) => t.integer('liveShowVolumeBars').defaultTo(0))
+    await addColumnIfNotExists('settings', 'levMapTier', (t) => t.string('levMapTier').defaultTo('all'))
+    await addColumnIfNotExists('settings', 'levMapHours', (t) => t.integer('levMapHours').defaultTo(48))
+    await addColumnIfNotExists('settings', 'levMapSpanPct', (t) => t.float('levMapSpanPct').defaultTo(8))
+    await addColumnIfNotExists('settings', 'levMapMmr', (t) => t.float('levMapMmr').defaultTo(0.004))
+    await addColumnIfNotExists('settings', 'levMapWeights', (t) => t.string('levMapWeights').defaultTo('40,30,20,10'))
+    await addColumnIfNotExists('settings', 'levMapView', (t) => t.string('levMapView').defaultTo('dist'))
+    await addColumnIfNotExists('settings', 'levMapThreshold', (t) => t.float('levMapThreshold').defaultTo(0))
+    await addColumnIfNotExists('settings', 'levMapProfileW', (t) => t.integer('levMapProfileW').defaultTo(74))
+
+    // ==================== LIVE-AUFZEICHNUNGEN ====================
+    // Eine Zeile pro Symbol und Stunde. Der Blob ist gzip-komprimiert und
+    // enthält Kopfdaten + Basis-Buckets + die quantisierte Mengenmatrix.
+    // Postgres/SQLite statt Dateien, weil der Container bei jedem Update neu
+    // erstellt wird und Dateien ausserhalb eines Volumes verloren gingen.
+    if (!(await knex.schema.hasTable('live_recordings'))) {
+        await knex.schema.createTable('live_recordings', (t) => {
+            t.increments('id').primary()
+            t.string('symbol').notNullable()
+            t.string('market').notNullable()
+            t.string('kind').notNullable().defaultTo('heat')
+            t.bigInteger('hourStart').notNullable()
+            t.integer('frameMs').notNullable()
+            t.integer('rows').notNullable()
+            t.integer('cols').notNullable()
+            t.float('bucketSize').notNullable()
+            t.float('quantRef').notNullable()
+            t.integer('bytes').notNullable().defaultTo(0)
+            t.binary('payload')
+            t.bigInteger('createdAt')
+            t.unique(['symbol', 'market', 'kind', 'hourStart'])
+            t.index(['symbol', 'hourStart'])
+        })
+        console.log(' -> Created table: live_recordings')
+    }
+
     // ==================== SETTINGS: OPTIONALES PASSWORT-GATE ====================
     // Optionaler Login-Schutz (Standard aus) für Betrieb hinter öffentlicher Bindung.
     await addColumnIfNotExists('settings', 'authEnabled', (t) => t.integer('authEnabled').defaultTo(0))
@@ -1019,4 +1086,275 @@ async function runMigrations(knex, client) {
     } catch (e) {
         console.error(' -> Funding-Fix v2.9.9 migration error:', e.message)
     }
+
+    // ==================== STRATEGIE-AGENTEN ====================
+    // Modularer Auto-Trading-Unterbau. Bewusst strategie-agnostisch: die
+    // Strategie selbst steckt in server/strategies/<id>.js, hier stehen nur
+    // Instanzen (Parametersätze), erkannte Setups und die Ergebnisse.
+    // `double` statt `float`, weil float in Postgres nur 4 Byte (~7 Stellen)
+    // hat — zu wenig für Kurse wie 104532.75.
+
+    // Eine Instanz = eine Strategie mit einem Parametersatz auf n Symbolen.
+    // Kein Singleton: dieselbe Strategie kann mehrfach parallel laufen.
+    if (!(await knex.schema.hasTable('strategy_instances'))) {
+        await knex.schema.createTable('strategy_instances', (t) => {
+            t.increments('id').primary()
+            t.text('strategyId').notNullable()          // 'lsob'
+            t.text('name').defaultTo('')
+            t.integer('enabled').defaultTo(0)
+            t.text('mode').defaultTo('paper')           // paper | shadow | live
+            t.text('broker').defaultTo('bitunix')       // Ausführungsziel
+            t.text('market').defaultTo('futures')       // Kline-Markt
+            t.text('symbols').defaultTo('[]')           // JSON-Array
+            t.text('timeframe').defaultTo('15m')
+            t.text('params').defaultTo('{}')            // JSON, strategiespezifisch
+            t.text('risk').defaultTo('{}')              // JSON, strategie-unabhängig
+            t.text('agents').defaultTo('{}')            // JSON, LLM-Veto-Rollen
+            t.integer('paramsVersion').defaultTo(1)     // ++ bei jeder Param-Änderung
+            t.bigInteger('liveApprovedAt').defaultTo(0) // Live-Freigabe des Nutzers
+            t.bigInteger('lastRunAt').defaultTo(0)
+            t.text('lastError').defaultTo('')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index('strategyId', 'idx_strategy_instances_strategyId')
+        })
+        console.log(' -> Created table: strategy_instances')
+    }
+
+    // Lebenszyklus eines Setups über viele Kerzen hinweg:
+    // armed → waiting_retest → triggered → open → closed
+    //                        ↘ invalidated | expired | rejected
+    if (!(await knex.schema.hasTable('strategy_setups'))) {
+        await knex.schema.createTable('strategy_setups', (t) => {
+            t.increments('id').primary()
+            t.integer('instanceId').notNullable()
+            t.text('strategyId').defaultTo('')
+            t.text('symbol').notNullable()
+            t.text('timeframe').defaultTo('')
+            t.text('direction').defaultTo('')           // long | short
+            t.text('status').defaultTo('armed')
+            t.double('sweepLevel').defaultTo(0)         // gesweeptes Swing-Level
+            t.double('sweepPrice').defaultTo(0)         // Docht-Extrem des Sweeps
+            t.bigInteger('sweepCandleTime').defaultTo(0)
+            t.double('obHigh').defaultTo(0)
+            t.double('obLow').defaultTo(0)
+            t.bigInteger('obCandleTime').defaultTo(0)
+            t.bigInteger('watchFrom').defaultTo(0)      // ab hier wird auf den Retest gewartet
+            t.double('impulseExtreme').defaultTo(0)
+            t.double('entry').defaultTo(0)
+            t.double('stopLoss').defaultTo(0)
+            t.double('takeProfit').defaultTo(0)
+            t.double('rr').defaultTo(0)
+            t.text('confirmations').defaultTo('{}')     // JSON: fib786, rsi, rejection, htf
+            t.text('invalidReason').defaultTo('')
+            t.text('rejectReason').defaultTo('')
+            t.bigInteger('triggeredAt').defaultTo(0)
+            t.integer('paramsVersion').defaultTo(1)
+            t.integer('detectorVersion').defaultTo(1)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            // Verhindert, dass derselbe Order Block bei jedem Scan neu angelegt wird
+            t.unique(['instanceId', 'symbol', 'timeframe', 'direction', 'obCandleTime'], 'uq_strategy_setups_ob')
+            t.index(['instanceId', 'status'], 'idx_strategy_setups_instance_status')
+        })
+        console.log(' -> Created table: strategy_setups')
+    }
+
+    // Ein Eintrag je Entscheidungslauf — nur wenn ein Setup wirklich triggert.
+    if (!(await knex.schema.hasTable('strategy_runs'))) {
+        await knex.schema.createTable('strategy_runs', (t) => {
+            t.increments('id').primary()
+            t.integer('instanceId').notNullable()
+            t.integer('setupId').defaultTo(0)
+            t.text('sentimentOutput').defaultTo('{}')
+            t.text('portfolioOutput').defaultTo('{}')
+            t.text('riskOutput').defaultTo('{}')
+            t.text('executionOutput').defaultTo('{}')   // Order-Request/Response (Live-Protokoll)
+            t.text('finalAction').defaultTo('')         // execute | reject_agent | reject_risk | error
+            t.text('reason').defaultTo('')
+            t.text('provider').defaultTo('')
+            t.text('model').defaultTo('')
+            t.integer('totalTokens').defaultTo(0)
+            t.double('costUsd').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.index('instanceId', 'idx_strategy_runs_instanceId')
+            t.index('setupId', 'idx_strategy_runs_setupId')
+        })
+        console.log(' -> Created table: strategy_runs')
+    }
+
+    // Offene Positionen (Paper wie Live). `clientOrderId` ist unique und dient
+    // als Idempotenz-Schlüssel — ein Retry kann keine zweite Position öffnen.
+    if (!(await knex.schema.hasTable('strategy_positions'))) {
+        await knex.schema.createTable('strategy_positions', (t) => {
+            t.increments('id').primary()
+            t.integer('instanceId').notNullable()
+            t.integer('setupId').defaultTo(0)
+            t.text('mode').defaultTo('paper')
+            t.text('broker').defaultTo('')
+            t.text('symbol').notNullable()
+            t.text('timeframe').defaultTo('')
+            t.text('direction').defaultTo('')
+            t.double('qty').defaultTo(0)
+            t.double('entryPrice').defaultTo(0)
+            t.bigInteger('entryTime').defaultTo(0)
+            t.double('stopLoss').defaultTo(0)
+            t.double('initialStopLoss').defaultTo(0)    // Basis für R, überlebt Break-Even
+            t.double('takeProfit').defaultTo(0)
+            t.double('leverage').defaultTo(1)
+            t.double('notionalUsdt').defaultTo(0)
+            t.double('marginUsdt').defaultTo(0)
+            t.double('feeOpen').defaultTo(0)
+            t.text('clientOrderId').defaultTo('')
+            t.text('externalOrderId').defaultTo('')
+            t.double('maePrice').defaultTo(0)
+            t.double('mfePrice').defaultTo(0)
+            t.bigInteger('lastCandleTime').defaultTo(0) // bis hierher ausgewertet
+            t.integer('breakEvenDone').defaultTo(0)
+            t.text('status').defaultTo('open')          // open | closed
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.unique('clientOrderId', 'uq_strategy_positions_clientOrderId')
+            t.index(['instanceId', 'status'], 'idx_strategy_positions_instance_status')
+        })
+        console.log(' -> Created table: strategy_positions')
+    }
+
+    // Geschlossene Trades = Basis der Auswertungs-Rubrik und der Optimizer-Tools.
+    if (!(await knex.schema.hasTable('strategy_trades'))) {
+        await knex.schema.createTable('strategy_trades', (t) => {
+            t.increments('id').primary()
+            t.integer('instanceId').notNullable()
+            t.integer('setupId').defaultTo(0)
+            t.integer('positionId').defaultTo(0)
+            t.text('strategyId').defaultTo('')
+            t.text('mode').defaultTo('paper')
+            t.text('broker').defaultTo('')
+            t.text('symbol').notNullable()
+            t.text('timeframe').defaultTo('')
+            t.text('direction').defaultTo('')
+            t.double('qty').defaultTo(0)
+            t.double('notionalUsdt').defaultTo(0)
+            t.double('leverage').defaultTo(1)
+            t.double('entryPrice').defaultTo(0)
+            t.bigInteger('entryTime').defaultTo(0)
+            t.double('exitPrice').defaultTo(0)
+            t.bigInteger('exitTime').defaultTo(0)
+            t.double('stopLoss').defaultTo(0)           // initialer SL (R-Basis)
+            t.double('takeProfit').defaultTo(0)
+            t.double('grossPnl').defaultTo(0)
+            t.double('fees').defaultTo(0)
+            t.double('funding').defaultTo(0)
+            t.double('netPnl').defaultTo(0)
+            t.double('rMultiple').defaultTo(0)
+            t.text('exitReason').defaultTo('')          // tp | sl | be | manual | timeout | reverse
+            t.double('maeR').defaultTo(0)               // in R, für die MAE/MFE-Analyse
+            t.double('mfeR').defaultTo(0)
+            t.double('holdingMinutes').defaultTo(0)
+            t.integer('paramsVersion').defaultTo(1)
+            t.integer('journalTradeId').defaultTo(0)    // >0 = ins Journal übernommen
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.index(['instanceId', 'exitTime'], 'idx_strategy_trades_instance_exit')
+            t.index('exitTime', 'idx_strategy_trades_exitTime')
+        })
+        console.log(' -> Created table: strategy_trades')
+    }
+
+    // Gespeicherte Backtest-Läufe — die Agenten vergleichen dagegen, statt zu raten.
+    if (!(await knex.schema.hasTable('strategy_backtests'))) {
+        await knex.schema.createTable('strategy_backtests', (t) => {
+            t.increments('id').primary()
+            t.text('strategyId').notNullable()
+            t.integer('instanceId').defaultTo(0)
+            t.text('label').defaultTo('')
+            t.text('symbol').defaultTo('')
+            t.text('timeframe').defaultTo('')
+            t.text('market').defaultTo('futures')
+            t.bigInteger('fromTs').defaultTo(0)
+            t.bigInteger('toTs').defaultTo(0)
+            t.text('params').defaultTo('{}')
+            t.text('stats').defaultTo('{}')
+            t.text('trades').defaultTo('[]')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.index('strategyId', 'idx_strategy_backtests_strategyId')
+        })
+        console.log(' -> Created table: strategy_backtests')
+    }
+
+    // Verbesserungsvorschläge der Agenten. Werden NIE automatisch angewendet —
+    // erst nach Freigabe durch den Nutzer, dann paramsVersion++.
+    if (!(await knex.schema.hasTable('strategy_suggestions'))) {
+        await knex.schema.createTable('strategy_suggestions', (t) => {
+            t.increments('id').primary()
+            t.integer('instanceId').notNullable()
+            t.text('source').defaultTo('agent')          // agent | user
+            t.text('title').defaultTo('')
+            t.text('rationale').defaultTo('')
+            t.text('proposedParams').defaultTo('{}')
+            t.integer('backtestId').defaultTo(0)         // Beleg für den Vorschlag
+            t.text('status').defaultTo('pending')        // pending | accepted | rejected
+            t.bigInteger('decidedAt').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.index(['instanceId', 'status'], 'idx_strategy_suggestions_instance_status')
+        })
+        console.log(' -> Created table: strategy_suggestions')
+    }
+
+    // Strategie-Entwürfe aus dem Baukasten. Ein Entwurf ist NUR Beschreibung —
+    // er wird nie automatisch ausgeführt. Erst wenn daraus eine Moduldatei
+    // erzeugt und nach Prüfung registriert wird, kann er handeln.
+    if (!(await knex.schema.hasTable('strategy_drafts'))) {
+        await knex.schema.createTable('strategy_drafts', (t) => {
+            t.increments('id').primary()
+            t.text('title').defaultTo('')
+            t.text('slug').defaultTo('')            // Dateiname des erzeugten Entwurfs
+            t.text('sourceName').defaultTo('')      // hochgeladene Datei
+            t.text('status').defaultTo('draft')     // draft | generated
+            t.text('spec').defaultTo('{}')          // strukturierte Strategie-Beschreibung
+            t.text('messages').defaultTo('[]')      // Gesprächsverlauf
+            t.text('generatedPath').defaultTo('')
+            t.text('provider').defaultTo('')
+            t.text('model').defaultTo('')
+            t.double('costUsd').defaultTo(0)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+        })
+        console.log(' -> Created table: strategy_drafts')
+    }
+
+    // Selbst gebaute Strategien: reine Regelbeschreibungen, die der Interpreter
+    // ausführt. Kein Code — deshalb können sie gefahrlos aus der Oberfläche
+    // kommen und zur Laufzeit geladen werden.
+    if (!(await knex.schema.hasTable('rule_strategies'))) {
+        await knex.schema.createTable('rule_strategies', (t) => {
+            t.increments('id').primary()
+            t.text('strategyId').notNullable()      // Kurzname, in der Registry sichtbar
+            t.text('name').defaultTo('')
+            t.text('description').defaultTo('')
+            t.integer('enabled').defaultTo(1)
+            t.text('rules').defaultTo('{}')         // die geprüfte Beschreibung
+            t.text('source').defaultTo('user')      // user | draft | agent
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.unique('strategyId')
+        })
+        console.log(' -> Created table: rule_strategies')
+    }
+
+    // Nachträge für Installationen, bei denen die Tabellen schon existieren
+    await addColumnIfNotExists('strategy_positions', 'lastCandleTime', (t) => t.bigInteger('lastCandleTime').defaultTo(0))
+    await addColumnIfNotExists('strategy_positions', 'breakEvenDone', (t) => t.integer('breakEvenDone').defaultTo(0))
+    await addColumnIfNotExists('strategy_setups', 'watchFrom', (t) => t.bigInteger('watchFrom').defaultTo(0))
+
+    // Globale Schalter der Strategie-Agenten (Live-Freigabe und Not-Aus)
+    await addColumnIfNotExists('settings', 'strategyLiveEnabled', (t) => t.integer('strategyLiveEnabled').defaultTo(0))
+    await addColumnIfNotExists('settings', 'strategyKillSwitch', (t) => t.integer('strategyKillSwitch').defaultTo(0))
+    await addColumnIfNotExists('settings', 'strategyMaxLeverage', (t) => t.integer('strategyMaxLeverage').defaultTo(10))
+    await addColumnIfNotExists('settings', 'strategyMinPaperTrades', (t) => t.integer('strategyMinPaperTrades').defaultTo(20))
+    await addColumnIfNotExists('settings', 'strategyLlmBudgetUsd', (t) => t.float('strategyLlmBudgetUsd').defaultTo(1))
+    // Modell-Listen je Anbieter (JSON) — bearbeitbar statt fest im Frontend
+    await addColumnIfNotExists('settings', 'aiModels', (t) => t.text('aiModels'))
+    // Eigener, OpenAI-kompatibler Anbieter (Groq, OpenRouter, vLLM, LM Studio …)
+    await addColumnIfNotExists('settings', 'aiCustomUrl', (t) => t.text('aiCustomUrl'))
+    await addColumnIfNotExists('settings', 'aiKeyCustom', (t) => t.text('aiKeyCustom'))
 }

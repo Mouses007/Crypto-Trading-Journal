@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import axios from 'axios'
 import DashboardLayout from '../layouts/Dashboard.vue'
 import i18n from '../i18n'
+import { appMode } from '../stores/globals.js'
 
 const router = createRouter({
     history: createWebHistory(
@@ -152,10 +153,114 @@ const router = createRouter({
         name: 'settings',
         meta: {
             title: "Settings", titleKey: "nav.settings",
+            // Einstellungen sind aus jedem Modus erreichbar und wechseln ihn nicht
+            mode: 'any',
             layout: DashboardLayout
         },
         component: () =>
             import('../views/Settings.vue')
+    },
+    {
+        // Live-Analyse: Binance-Orderbuch-Heatmap / Bookmap.
+        // `mode` steuert, welches Seitenmenü gerendert wird; alle Routen ohne
+        // dieses Feld gelten als 'journal' (siehe beforeEach).
+        path: '/liquidity',
+        name: 'liquidity',
+        meta: {
+            title: "Live-Analyse", titleKey: "nav.liquidity",
+            mode: 'live',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/Liquidity.vue')
+    },
+    {
+        path: '/liquidations',
+        name: 'liquidations',
+        meta: {
+            title: "Liquidationskarte", titleKey: "nav.liquidations",
+            mode: 'live',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/Liquidations.vue')
+    },
+    {
+        path: '/openinterest',
+        name: 'openinterest',
+        meta: {
+            title: "Open Interest", titleKey: "nav.openInterest",
+            mode: 'live',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/OpenInterest.vue')
+    },
+    {
+        path: '/agent/strategies',
+        name: 'agentStrategies',
+        meta: {
+            title: "Strategien", titleKey: "nav.agentStrategies",
+            mode: 'agent',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/AgentStrategies.vue')
+    },
+    {
+        path: '/agent/setups',
+        name: 'agentSetups',
+        meta: {
+            title: "Setups", titleKey: "nav.agentSetups",
+            mode: 'agent',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/AgentSetups.vue')
+    },
+    {
+        path: '/agent/performance',
+        name: 'agentPerformance',
+        meta: {
+            title: "Agent-Auswertung", titleKey: "nav.agentPerformance",
+            mode: 'agent',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/AgentPerformance.vue')
+    },
+    {
+        path: '/agent/editor',
+        name: 'agentEditor',
+        meta: {
+            title: "Strategie-Editor", titleKey: "nav.agentEditor",
+            mode: 'agent',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/AgentEditor.vue')
+    },
+    {
+        path: '/agent/builder',
+        name: 'agentBuilder',
+        meta: {
+            title: "Neue Strategie", titleKey: "nav.agentBuilder",
+            mode: 'agent',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/AgentBuilder.vue')
+    },
+    {
+        path: '/agent/lab',
+        name: 'agentLab',
+        meta: {
+            title: "Labor", titleKey: "nav.agentLab",
+            mode: 'agent',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/AgentLab.vue')
     },
     {
         path: '/imports',
@@ -195,6 +300,15 @@ router.beforeEach(async (to, from, next) => {
     // Zum Setup weiterleiten wenn nicht abgeschlossen
     if (!setupComplete) {
         return next('/setup')
+    }
+
+    // Die Route bestimmt den Modus, nicht umgekehrt: ein Deep-Link auf
+    // /liquidity schaltet still auf 'live' um, damit das Seitenmenü schon beim
+    // ersten Paint stimmt. Routen ohne meta.mode gehören zum Journal.
+    const wantedMode = to.meta.mode === 'any' ? appMode.value : (to.meta.mode || 'journal')
+    if (appMode.value !== wantedMode) {
+        appMode.value = wantedMode
+        localStorage.setItem('appMode', wantedMode)
     }
 
     next()

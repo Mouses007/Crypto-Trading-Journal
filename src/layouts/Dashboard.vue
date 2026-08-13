@@ -5,13 +5,15 @@ import Screenshot from '../components/Screenshot.vue'
 import ReturnToTopButton from '../components/ReturnToTopButton.vue'
 import TradeEvalPopup from '../components/TradeEvalPopup.vue'
 import UpdateNoticeModal from '../components/UpdateNoticeModal.vue'
-import { onBeforeMount, onMounted, onUnmounted, watch } from 'vue'
+import { computed, onBeforeMount, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useCreatedDateFormat, useTimeFormat, useHourMinuteFormat } from '../utils/formatters.js'
 import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues } from '../utils/utils.js'
 import { screenType, sideMenuMobileOut, pageId, selectedScreenshotIndex } from '../stores/ui.js'
 import { getMore } from '../stores/filters.js'
 import { screenshots, selectedScreenshot, screenshot } from '../stores/trades.js'
 import { currentUser, aiReportGenerating, aiReportCountBefore, aiReportLabel } from '../stores/settings.js'
+import { hydrateLiveSettings } from '../stores/live.js'
 import { useSelectedScreenshotFunction } from '../utils/screenshots'
 import { useUpdatePendingCounts, useStartGlobalPolling, useStopGlobalPolling } from '../utils/incoming.js'
 import { useGetAvailableTags } from '../utils/daily.js'
@@ -23,6 +25,14 @@ import axios from 'axios'
 
 const _t = (key, named) => i18n.global.t(key, named)
 
+const route = useRoute()
+// Die Live-Analyse teilt sich das Layout mit dem Journal, braucht aber keine
+// Trade-Daten: Perioden, Tags, Pending-Counts und die Popups bleiben dort aus.
+const isJournal = computed(() => {
+  const mode = route.meta?.mode
+  return mode === undefined || mode === 'journal' || mode === 'any'
+})
+
 /*========================================
   Functions used on all Dashboard components
 ========================================*/
@@ -32,9 +42,16 @@ onBeforeMount(async () => {
   // Sync language from DB settings to i18n
   setLocale(currentUser.value?.language || 'de')
   useGetTimeZone()
+  useScreenType()
+  // Live-Analyse-Einstellungen aus den Settings übernehmen (auch im Journal —
+  // die Einstellungen-Seite zeigt sie dort)
+  hydrateLiveSettings()
+
+  // Ab hier nur noch Journal-Ballast (Trade-Filter, Bewertungs-Popups, Polling)
+  if (!isJournal.value) return
+
   await useGetPeriods()
   await useSetValues()
-  useScreenType()
 
   // Load available tags for evaluation popup
   await useGetAvailableTags()
@@ -57,7 +74,7 @@ onBeforeMount(async () => {
 // Re-sync dynamic period ranges (thisMonth/thisWeek/...) when the app
 // regains focus, so a month rollover while the tab was hidden is picked up.
 async function refreshPeriodsOnVisible() {
-  if (document.visibilityState !== 'visible') return
+  if (document.visibilityState !== 'visible' || !isJournal.value) return
   try {
     await useGetPeriods()
     await useSetValues()
@@ -87,7 +104,7 @@ onUnmounted(() => {
 let aiPollInterval = null
 let lastAiPollErrorTs = 0
 watch([aiReportGenerating, pageId], ([generating, page]) => {
-  if (generating && page !== 'kiAgent' && currentUser.value?.aiEnabled !== false && currentUser.value?.aiEnabled !== 0) {
+  if (generating && isJournal.value && page !== 'kiAgent' && currentUser.value?.aiEnabled !== false && currentUser.value?.aiEnabled !== 0) {
     // Polling starten (falls noch nicht aktiv)
     if (!aiPollInterval) {
       aiPollInterval = setInterval(async () => {
@@ -167,7 +184,7 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
     </div>
   </div>
   <!-- Trade Evaluation Popup -->
-  <TradeEvalPopup />
+  <TradeEvalPopup v-if="isJournal" />
   <!-- Einmaliger Pionex-API-Hinweis (nach Update / Erstnutzung) -->
-  <UpdateNoticeModal />
+  <UpdateNoticeModal v-if="isJournal" />
 </template>

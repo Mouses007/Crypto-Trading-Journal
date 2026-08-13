@@ -1,10 +1,13 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
-import { pageId, screenType } from "../stores/ui.js"
+import { pageId, screenType, appMode } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
 import { selectedBroker, brokers, selectedTradeCategory, BOT_BROKERS } from "../stores/filters.js"
+import { pagesForMode, modeHome } from "../config/menu.js"
 import SidebarFilters from './SidebarFilters.vue'
+import ModeSwitcher from './ModeSwitcher.vue'
+import LiveSymbolPicker from './LiveSymbolPicker.vue'
 import donateBtc from '../assets/donate-btc.png'
 import donatePaypal from '../assets/donate-paypal.jpg'
 
@@ -13,6 +16,17 @@ import { useToggleMobileMenu } from "../utils/utils";
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
+
+/**
+ * Welche Bedienelemente unter dem Symbolblock stehen — oder null, wenn die
+ * Seite gar keinen Picker braucht. Alle drei Live-Seiten teilen sich denselben
+ * Symbolblock, damit ein Symbolwechsel überall gilt.
+ */
+const livePickerVariant = computed(() => ({
+    liquidity: 'bookmap',
+    liquidations: 'levmap',
+    openinterest: 'oi',
+}[pageId.value] || null))
 const showDonateModal = ref(false)
 
 // ── Update System ──
@@ -178,11 +192,26 @@ function setCategory(value) {
     }
 }
 
+// Live- und Agent-Menü werden datengetrieben gerendert (eine Gruppe pro
+// `group`-Wert in menu.js). Das Journal-Menü bleibt bewusst handgeschriebenes
+// Markup — dort hängen Tour-Anker, bedingte Einträge und Sonderfälle dran.
+function gruppenFuer(mode) {
+    const groups = new Map()
+    for (const page of pagesForMode(mode)) {
+        if (!groups.has(page.group)) groups.set(page.group, [])
+        groups.get(page.group).push(page)
+    }
+    return [...groups.entries()].map(([group, items]) => ({ labelKey: 'nav.' + group, items }))
+}
+
+const liveGroups = computed(() => gruppenFuer('live'))
+const agentGroups = computed(() => gruppenFuer('agent'))
+
 function goToDashboard() {
     if (screenType.value === 'mobile') {
         useToggleMobileMenu()
     } else {
-        window.location.href = '/dashboard'
+        window.location.href = modeHome(appMode.value)
     }
 }
 
@@ -190,7 +219,7 @@ function goToDashboard() {
 
 <template>
     <div class="col-2 logoDiv">
-        <a class="logo-area pointerClass text-decoration-none" href="/dashboard" @click.prevent="goToDashboard">
+        <a class="logo-area pointerClass text-decoration-none" :href="modeHome(appMode)" @click.prevent="goToDashboard">
             <div class="d-flex align-items-center">
                 <span v-if="currentUser?.avatar"><img class="logoProfileImg me-2" v-bind:src="currentUser.avatar" /></span>
                 <span v-else><img class="logoProfileImg me-2" src="../assets/icon.png" /></span>
@@ -201,7 +230,10 @@ function goToDashboard() {
             </div>
         </a>
     </div>
+    <ModeSwitcher />
     <div id="step2" class="mt-2">
+        <!-- ===== JOURNAL ===== -->
+        <template v-if="appMode === 'journal'">
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
                 <label class="fw-lighter">{{ t('nav.tradeCategory') }}</label>
@@ -272,7 +304,40 @@ function goToDashboard() {
                 </a>
             </div>
         </div>
+        </template>
 
+        <!-- ===== LIVE-ANALYSE ===== -->
+        <template v-else-if="appMode === 'live'">
+            <div v-for="group in liveGroups" :key="group.labelKey" class="sideMenuDiv">
+                <div class="sideMenuDivContent">
+                    <label class="fw-lighter">{{ t(group.labelKey) }}</label>
+                    <a v-for="page in group.items" :key="page.id" :href="page.path"
+                        v-bind:class="[pageId === page.id ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
+                        <i v-bind:class="[page.icon, 'me-2']"></i>{{ t(page.titleKey) }}
+                    </a>
+                </div>
+            </div>
+            <div v-if="livePickerVariant" class="sideMenuDiv">
+                <div class="sideMenuDivContent">
+                    <LiveSymbolPicker :variant="livePickerVariant" />
+                </div>
+            </div>
+        </template>
+
+        <!-- ===== AGENT-TRADING ===== -->
+        <template v-else-if="appMode === 'agent'">
+            <div v-for="group in agentGroups" :key="group.labelKey" class="sideMenuDiv">
+                <div class="sideMenuDivContent">
+                    <label class="fw-lighter">{{ t(group.labelKey) }}</label>
+                    <a v-for="page in group.items" :key="page.id" :href="page.path"
+                        v-bind:class="[pageId === page.id ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
+                        <i v-bind:class="[page.icon, 'me-2']"></i>{{ t(page.titleKey) }}
+                    </a>
+                </div>
+            </div>
+        </template>
+
+        <!-- ===== modusübergreifend: Verwaltung + Footer ===== -->
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
                 <label class="fw-lighter">{{ t('nav.manage') }}</label>
@@ -378,41 +443,6 @@ function goToDashboard() {
     text-decoration: none;
     display: inline-flex;
     align-items: center;
-}
-
-/* Sidebar controls – shared style for broker + filter */
-.sidebar-control {
-    margin-bottom: 0.35rem;
-}
-
-.sidebar-select {
-    width: 100%;
-    background-color: var(--black-bg-7);
-    color: var(--white-87);
-    border: 1px solid var(--white-18);
-    border-radius: 8px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    padding: 0.4rem 0.5rem;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-
-.sidebar-select:hover {
-    background: var(--black-bg-12);
-    border-color: var(--white-38);
-}
-
-.sidebar-select:focus {
-    background-color: var(--black-bg-7);
-    color: var(--white-87);
-    border-color: var(--blue-color);
-    box-shadow: 0 0 0 0.1rem rgba(74, 158, 255, 0.15);
-}
-
-.sidebar-select option {
-    background-color: var(--black-bg-7);
-    color: var(--white-87);
 }
 
 /* Footer */

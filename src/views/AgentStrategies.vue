@@ -1,0 +1,419 @@
+<script setup>
+/**
+ * Strategie-Instanzen: anlegen, einstellen, starten, stoppen.
+ *
+ * Das Formular kennt keine einzige Strategie — es rendert das Schema, das der
+ * Server im Manifest mitliefert (StrategyParamForm). Eine weitere Strategie
+ * erscheint hier deshalb automatisch, sobald sie serverseitig registriert ist.
+ */
+import { ref, computed, onBeforeMount, onBeforeUnmount } from 'vue'
+import axios from 'axios'
+import { useI18n } from 'vue-i18n'
+import { spinnerLoadingPage } from '../stores/ui.js'
+import StrategyParamForm from '../components/StrategyParamForm.vue'
+import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
+import { useXDecCurrencyFormat } from '../utils/formatters.js'
+import { logError } from '../utils/logger.js'
+import { apiFehlerText } from '../utils/apiError.js'
+
+const { t } = useI18n()
+
+const registry = ref({ strategies: [], riskParams: [], riskDefaults: {}, agentDefaults: {}, modes: [] })
+const instanzen = ref([])
+const engine = ref({ killSwitch: false, liveEnabled: false, running: false })
+const meldung = ref('')
+const fehler = ref('')
+let pollTimer = null
+
+// ── Editor ──────────────────────────────────────────────────────────────
+const bearbeite = ref(null)          // null = Liste, sonst der Entwurf
+const istNeu = ref(false)
+const speichern = ref(false)
+const symbolEingabe = ref('')
+
+const gewaehlteStrategie = computed(
+    () => registry.value.strategies.find((s) => s.id === bearbeite.value?.strategyId) || null,
+)
+
+async function laden() {
+    try {
+        const [reg, inst, status] = await Promise.all([
+            axios.get('/api/strategies/registry'),
+            axios.get('/api/strategies/instances'),
+            axios.get('/api/strategies/engine/status'),
+        ])
+        registry.value = reg.data
+        instanzen.value = inst.data
+        engine.value = status.data
+    } catch (e) {
+        logError('AgentStrategies', 'Laden fehlgeschlagen', e)
+        fehler.value = t('strategies.loadFailed')
+    }
+}
+
+onBeforeMount(async () => {
+    spinnerLoadingPage.value = true
+    await laden()
+    spinnerLoadingPage.value = false
+    pollTimer = setInterval(laden, 30000)
+})
+onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
+
+function neu() {
+    const s = registry.value.strategies[0]
+    if (!s) return
+    istNeu.value = true
+    bearbeite.value = {
+        strategyId: s.id,
+        name: `${s.name} ${s.supportedTimeframes[1] || s.supportedTimeframes[0]}`,
+        mode: 'paper',
+        broker: 'bitunix',
+        market: 'futures',
+        timeframe: s.supportedTimeframes[1] || s.supportedTimeframes[0],
+        symbols: ['BTCUSDT'],
+        params: Object.fromEntries(s.params.map((p) => [p.key, p.default])),
+        risk: { ...registry.value.riskDefaults },
+    }
+}
+
+function bearbeiten(inst) {
+    istNeu.value = false
+    bearbeite.value = JSON.parse(JSON.stringify(inst))
+}
+
+/** Strategiewechsel im Editor: Parameter auf die Defaults der neuen Strategie. */
+function strategieGewechselt() {
+    const s = gewaehlteStrategie.value
+    if (!s) return
+    bearbeite.value.params = Object.fromEntries(s.params.map((p) => [p.key, p.default]))
+    if (!s.supportedTimeframes.includes(bearbeite.value.timeframe)) {
+        bearbeite.value.timeframe = s.supportedTimeframes[0]
+    }
+}
+
+function symbolHinzu() {
+    const roh = symbolEingabe.value.toUpperCase().trim()
+    if (!/^[A-Z0-9]{2,20}$/.test(roh)) return
+    if (!bearbeite.value.symbols.includes(roh)) bearbeite.value.symbols.push(roh)
+    symbolEingabe.value = ''
+}
+const symbolWeg = (s) => { bearbeite.value.symbols = bearbeite.value.symbols.filter((x) => x !== s) }
+
+async function sichern() {
+    speichern.value = true
+    fehler.value = ''
+    meldung.value = ''
+    try {
+        const daten = bearbeite.value
+        const antwort = istNeu.value
+            ? await axios.post('/api/strategies/instances', daten)
+            : await axios.put(`/api/strategies/instances/${daten.id}`, daten)
+
+        if (antwort.data.hinweise?.length) {
+            meldung.value = t('strategies.clamped', { keys: antwort.data.hinweise.join(', ') })
+        } else if (antwort.data.paramsVersionErhoeht) {
+            meldung.value = t('strategies.newParamsVersion', { v: antwort.data.paramsVersion })
+        } else {
+            meldung.value = t('strategies.saved')
+        }
+        bearbeite.value = null
+        await laden()
+    } catch (e) {
+        fehler.value = apiFehlerText(e, t('strategies.saveFailed'), t)
+    } finally {
+        speichern.value = false
+    }
+}
+
+async function umschalten(inst) {
+    fehler.value = ''
+    try {
+        await axios.post(`/api/strategies/instances/${inst.id}/enabled`, { enabled: !inst.enabled })
+        await laden()
+    } catch (e) {
+        fehler.value = apiFehlerText(e, t('strategies.toggleFailed'), t)
+    }
+}
+
+const loeschBestaetigung = ref(null)
+async function loeschen(inst) {
+    try {
+        await axios.delete(`/api/strategies/instances/${inst.id}`)
+        loeschBestaetigung.value = null
+        await laden()
+    } catch (e) {
+        fehler.value = apiFehlerText(e, t('strategies.deleteFailed'), t)
+    }
+}
+
+// ── Live-Freigabe ───────────────────────────────────────────────────────
+const freigabeFuer = ref(null)
+const freigabeText = ref('')
+async function freigeben() {
+    fehler.value = ''
+    try {
+        await axios.post(`/api/strategies/instances/${freigabeFuer.value.id}/approve-live`,
+            { confirm: freigabeText.value })
+        freigabeFuer.value = null
+        freigabeText.value = ''
+        meldung.value = t('strategies.liveApproved')
+        await laden()
+    } catch (e) {
+        fehler.value = apiFehlerText(e, t('strategies.approveFailed'), t)
+    }
+}
+
+async function jetztPruefen() {
+    meldung.value = t('strategies.running')
+    try {
+        await axios.post('/api/strategies/engine/run')
+        meldung.value = t('strategies.runDone')
+        await laden()
+    } catch (e) {
+        fehler.value = apiFehlerText(e, t('strategies.runFailed'), t)
+    }
+}
+
+const notAus = ref(false)
+async function notAusAusloesen(positionenSchliessen) {
+    try {
+        const r = await axios.post('/api/strategies/kill-switch', { closePositions: positionenSchliessen })
+        meldung.value = t('strategies.killDone', { n: r.data.geschlossen || 0 })
+        notAus.value = false
+        await laden()
+    } catch (e) {
+        fehler.value = apiFehlerText(e, t('strategies.killFailed'), t)
+    }
+}
+
+const modusFarbe = (m) => (m === 'live' ? 'bg-danger' : m === 'shadow' ? 'bg-warning text-dark' : 'bg-secondary')
+const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
+</script>
+
+<template>
+    <SpinnerLoadingPage />
+    <div v-show="!spinnerLoadingPage" class="row mt-3 ps-3 pe-3">
+        <div class="col-12 col-xl-11">
+
+            <!-- Kopfzeile -->
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <h5 class="mb-0 me-auto">{{ t('strategies.title') }}</h5>
+                <span v-if="engine.killSwitch" class="badge bg-danger">
+                    <i class="uil uil-exclamation-octagon me-1"></i>{{ t('strategies.killSwitchActive') }}
+                </span>
+                <span v-if="!engine.liveEnabled" class="badge bg-secondary">{{ t('strategies.liveOffGlobal') }}</span>
+                <button class="btn btn-sm btn-outline-secondary" @click="jetztPruefen">
+                    <i class="uil uil-sync me-1"></i>{{ t('strategies.runNow') }}
+                </button>
+                <button class="btn btn-sm btn-outline-danger" @click="notAus = true">
+                    <i class="uil uil-power me-1"></i>{{ t('strategies.killSwitch') }}
+                </button>
+                <button v-if="!bearbeite" class="btn btn-sm btn-success" @click="neu">
+                    <i class="uil uil-plus me-1"></i>{{ t('strategies.newInstance') }}
+                </button>
+            </div>
+
+            <div v-if="meldung" class="alert alert-info py-2">{{ meldung }}</div>
+            <div v-if="fehler" class="alert alert-danger py-2">{{ fehler }}</div>
+
+            <!-- Not-Aus -->
+            <div v-if="notAus" class="dailyCard p-3 mb-3 border border-danger">
+                <p class="mb-2"><strong>{{ t('strategies.killSwitchConfirm') }}</strong></p>
+                <p class="text-muted small mb-3">{{ t('strategies.killSwitchHint') }}</p>
+                <button class="btn btn-sm btn-danger me-2" @click="notAusAusloesen(true)">
+                    {{ t('strategies.killAndClose') }}
+                </button>
+                <button class="btn btn-sm btn-outline-danger me-2" @click="notAusAusloesen(false)">
+                    {{ t('strategies.killOnly') }}
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @click="notAus = false">{{ t('common.cancel') }}</button>
+            </div>
+
+            <!-- ══ Liste ══ -->
+            <template v-if="!bearbeite">
+                <div v-if="!instanzen.length" class="dailyCard p-4 text-center text-muted">
+                    {{ t('strategies.noInstances') }}
+                </div>
+
+                <div v-for="inst in instanzen" :key="inst.id" class="dailyCard p-3 mb-2">
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <span :class="['status-dot', inst.enabled ? 'on' : 'off']"></span>
+                        <strong>{{ inst.name }}</strong>
+                        <span class="badge" :class="modusFarbe(inst.mode)">{{ t('strategies.mode_' + inst.mode) }}</span>
+                        <span class="badge bg-dark">{{ inst.timeframe }}</span>
+                        <span class="badge bg-dark">v{{ inst.paramsVersion }}</span>
+                        <span v-for="s in inst.symbols" :key="s" class="badge bg-dark">{{ s }}</span>
+
+                        <div class="ms-auto d-flex align-items-center gap-3">
+                            <small class="text-muted">
+                                {{ t('strategies.openPositions') }}: <strong>{{ inst.openPositions }}</strong>
+                            </small>
+                            <small class="text-muted">
+                                {{ t('strategies.trades') }}: <strong>{{ inst.totalTrades }}</strong>
+                            </small>
+                            <small :class="inst.totalNetPnl >= 0 ? 'greenTrade' : 'redTrade'">
+                                {{ geld(inst.totalNetPnl) }}
+                            </small>
+                        </div>
+                    </div>
+
+                    <div v-if="inst.lastError" class="alert alert-warning py-1 px-2 mt-2 mb-0 small">
+                        {{ inst.lastError }}
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        <button class="btn btn-sm" :class="inst.enabled ? 'btn-outline-warning' : 'btn-outline-success'"
+                            @click="umschalten(inst)">
+                            <i :class="inst.enabled ? 'uil uil-pause' : 'uil uil-play'" class="me-1"></i>
+                            {{ inst.enabled ? t('strategies.stop') : t('strategies.start') }}
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary" @click="bearbeiten(inst)">
+                            <i class="uil uil-edit me-1"></i>{{ t('common.edit') }}
+                        </button>
+                        <button v-if="inst.mode === 'live' && !inst.liveApprovedAt"
+                            class="btn btn-sm btn-outline-danger"
+                            @click="freigabeFuer = inst; freigabeText = ''">
+                            <i class="uil uil-lock-open-alt me-1"></i>{{ t('strategies.approveLive') }}
+                        </button>
+                        <span v-else-if="inst.mode === 'live'" class="badge bg-success align-self-center">
+                            {{ t('strategies.liveApprovedBadge') }}
+                        </span>
+
+                        <template v-if="loeschBestaetigung === inst.id">
+                            <button class="btn btn-sm btn-danger" @click="loeschen(inst)">{{ t('common.yes') }}</button>
+                            <button class="btn btn-sm btn-outline-secondary"
+                                @click="loeschBestaetigung = null">{{ t('common.no') }}</button>
+                        </template>
+                        <button v-else class="btn btn-sm btn-outline-danger ms-auto"
+                            @click="loeschBestaetigung = inst.id">
+                            <i class="uil uil-trash-alt"></i>
+                        </button>
+                    </div>
+
+                    <!-- Live-Freigabe: verlangt den exakten Namen -->
+                    <div v-if="freigabeFuer?.id === inst.id" class="mt-3 p-3 border border-danger rounded">
+                        <p class="mb-2 small">{{ t('strategies.approveLiveWarning') }}</p>
+                        <p class="mb-2 small">{{ t('strategies.approveLiveType', { name: inst.name }) }}</p>
+                        <div class="d-flex gap-2">
+                            <input v-model="freigabeText" class="form-control form-control-sm" :placeholder="inst.name" />
+                            <button class="btn btn-sm btn-danger" :disabled="freigabeText !== inst.name"
+                                @click="freigeben">{{ t('strategies.approve') }}</button>
+                            <button class="btn btn-sm btn-outline-secondary"
+                                @click="freigabeFuer = null">{{ t('common.cancel') }}</button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- ══ Editor ══ -->
+            <template v-else>
+                <div class="dailyCard p-3">
+                    <div class="row mb-3">
+                        <div class="col-12 col-md-6 mb-2">
+                            <label class="form-label small">{{ t('strategies.strategy') }}</label>
+                            <select v-model="bearbeite.strategyId" class="form-select form-select-sm"
+                                :disabled="!istNeu" @change="strategieGewechselt">
+                                <option v-for="s in registry.strategies" :key="s.id" :value="s.id">{{ s.name }}</option>
+                            </select>
+                            <small v-if="gewaehlteStrategie" class="text-muted">{{ gewaehlteStrategie.description }}</small>
+                        </div>
+                        <div class="col-12 col-md-6 mb-2">
+                            <label class="form-label small">{{ t('strategies.name') }}</label>
+                            <input v-model="bearbeite.name" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-6 col-md-3 mb-2">
+                            <label class="form-label small">{{ t('strategies.modeLabel') }}</label>
+                            <select v-model="bearbeite.mode" class="form-select form-select-sm">
+                                <option v-for="m in registry.modes" :key="m" :value="m">{{ t('strategies.mode_' + m) }}</option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-3 mb-2">
+                            <label class="form-label small">{{ t('strategies.timeframe') }}</label>
+                            <select v-model="bearbeite.timeframe" class="form-select form-select-sm">
+                                <option v-for="tf in gewaehlteStrategie?.supportedTimeframes || []" :key="tf" :value="tf">
+                                    {{ tf }}
+                                </option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 mb-2">
+                            <label class="form-label small">{{ t('strategies.symbols') }}</label>
+                            <div class="d-flex gap-2 mb-1">
+                                <input v-model="symbolEingabe" class="form-control form-control-sm"
+                                    placeholder="BTCUSDT" @keydown.enter.prevent="symbolHinzu" />
+                                <button class="btn btn-sm btn-outline-primary" @click="symbolHinzu">
+                                    <i class="uil uil-plus"></i>
+                                </button>
+                            </div>
+                            <span v-for="s in bearbeite.symbols" :key="s"
+                                class="badge bg-dark me-1 pointerClass" @click="symbolWeg(s)">
+                                {{ s }} <i class="uil uil-times"></i>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div v-if="bearbeite.mode === 'live'" class="alert alert-danger py-2 small">
+                        <i class="uil uil-exclamation-triangle me-1"></i>{{ t('strategies.liveModeWarning') }}
+                    </div>
+                    <div v-else-if="bearbeite.mode === 'shadow'" class="alert alert-warning py-2 small">
+                        <i class="uil uil-eye me-1"></i>{{ t('strategies.shadowModeHint') }}
+                    </div>
+
+                    <ul class="nav nav-pills mb-3">
+                        <li class="nav-item"><a class="nav-link active" data-bs-toggle="pill" href="#tab-params">
+                            {{ t('strategies.strategyParams') }}</a></li>
+                        <li class="nav-item"><a class="nav-link" data-bs-toggle="pill" href="#tab-risk">
+                            {{ t('strategies.riskParams') }}</a></li>
+                    </ul>
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="tab-params">
+                            <StrategyParamForm v-model="bearbeite.params"
+                                :schema="gewaehlteStrategie?.params || []"
+                                :groups="gewaehlteStrategie?.paramGroups || []"
+                                :i18nPrefix="'strategies.' + bearbeite.strategyId" />
+                        </div>
+                        <div class="tab-pane fade" id="tab-risk">
+                            <StrategyParamForm v-model="bearbeite.risk"
+                                :schema="registry.riskParams" i18nPrefix="strategies.risk" />
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-sm btn-success" :disabled="speichern" @click="sichern">
+                            <i class="uil uil-save me-1"></i>{{ t('common.save') }}
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" @click="bearbeite = null">
+                            {{ t('common.cancel') }}
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</template>
+
+<style scoped>
+/* `.dailyCard` setzt global `height: 100%`. Das passt für Raster mit einer Karte
+   je Spalte, hier stehen die Karten aber gestapelt untereinander — dort zieht die
+   Regel jede einzelne Karte auf die Höhe der GESAMTEN Spalte und erzeugt riesige
+   Leerräume. Karten, die bewusst mitwachsen sollen, tragen `h-100` (mit
+   !important) und bleiben davon unberührt. */
+.dailyCard {
+    height: auto;
+}
+
+.status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.status-dot.on {
+    background: #48c78e;
+    box-shadow: 0 0 6px rgba(72, 199, 142, 0.8);
+}
+
+.status-dot.off {
+    background: rgba(255, 255, 255, 0.25);
+}
+</style>

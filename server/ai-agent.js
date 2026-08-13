@@ -9,7 +9,9 @@ import { getKnex } from './database.js'
 import { decrypt } from './crypto.js'
 import { logWarn, logError } from './logger.js'
 import { AGENT_TOOLS, executeTool } from './ai-agent-tools.js'
+import { resetBacktestKontingent } from './strategy-tools.js'
 import { assertAllowedOllamaUrl } from './ollama-api.js'
+import { samplingFelder, basisUrl } from './ai-models.js'
 
 const MAX_ITERATIONS = 10
 const MAX_TOKENS = 80000
@@ -24,12 +26,14 @@ async function loadAiSettings() {
     const knex = getKnex()
     const settings = await knex('settings')
         .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
-            'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+            'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
+            'aiCustomUrl', 'aiKeyCustom')
         .where('id', 1).first()
     if (!settings) throw new Error('No AI settings found')
 
     const provider = settings.aiProvider || 'ollama'
-    const keyMap = { openai: 'aiKeyOpenai', anthropic: 'aiKeyAnthropic', gemini: 'aiKeyGemini', deepseek: 'aiKeyDeepseek' }
+    const keyMap = { openai: 'aiKeyOpenai', anthropic: 'aiKeyAnthropic', gemini: 'aiKeyGemini',
+        deepseek: 'aiKeyDeepseek', custom: 'aiKeyCustom' }
     const col = keyMap[provider]
     let apiKey = ''
     if (col && settings[col]) {
@@ -44,7 +48,8 @@ async function loadAiSettings() {
         apiKey,
         temperature: settings.aiTemperature ?? 0.7,
         maxTokens: settings.aiMaxTokens || 4000,
-        ollamaUrl: settings.aiOllamaUrl || DEFAULT_OLLAMA_URL
+        ollamaUrl: settings.aiOllamaUrl || DEFAULT_OLLAMA_URL,
+        customUrl: settings.aiCustomUrl || ''
     }
 }
 
@@ -90,7 +95,33 @@ Tipps für Tool-Nutzung:
 - Für einzelne Trades: query_trades + query_notes
 - Für SL/TP-Analyse: analyze_sl_tp_patterns
 - Für Strategie-Analyse: query_tags + query_playbooks + compute_statistics
-- Für Risiko-Analyse: query_excursions + compute_statistics`
+- Für Risiko-Analyse: query_excursions + compute_statistics
+
+AUTOMATISCH GEHANDELTE STRATEGIEN (Agent-Modus):
+Neben dem manuellen Journal gibt es Strategie-Instanzen, die eigenständig
+handeln (Papier, Schatten oder Live). Ihre Trades stehen NICHT in query_trades,
+sondern in eigenen Tabellen — dafür gibt es eigene Tools.
+
+Wenn du eine solche Strategie verbessern sollst, halte diese Reihenfolge ein:
+1. get_strategy_config — aktuelle Parameter UND die erlaubten Wertebereiche.
+   Ein Vorschlag ausserhalb dieser Grenzen wird verworfen.
+2. get_strategy_performance — Kennzahlen und vor allem den Setup-Trichter.
+   Der grösste Posten unter "byInvalidReason" ist meist der beste Ansatzpunkt.
+3. run_backtest — deine Vermutung MESSEN, nicht behaupten. Erst den aktuellen
+   Parametersatz als Vergleichsbasis, dann die Änderung. Nur EINEN Parameter
+   je Lauf ändern, sonst weisst du nicht, was gewirkt hat.
+4. propose_param_change — mit backtestId als Beleg.
+
+Harte Regeln dabei:
+- Schlage NIE eine Änderung ohne Backtest-Beleg vor.
+- Unter etwa 30 Trades ist ein Backtest-Ergebnis nicht belastbar. Sage das,
+  statt einen Zufallstreffer als Verbesserung zu verkaufen.
+- Die wichtigste Kennzahl ist expectancyR (erwarteter Gewinn je Trade in R),
+  nicht die Trefferquote. Eine hohe Trefferquote mit negativem Erwartungswert
+  ist eine Verlust-Strategie.
+- Ein auffällig hoher Erwartungswert bei wenigen Trades ist ein Warnsignal,
+  kein Erfolg — prüfe dann die Einzeltrades auf Ausreisser.
+- Dein Vorschlag ändert nichts. Der User übernimmt ihn im Labor oder nicht.`
 }
 
 // ==================== TOOL FORMAT CONVERTERS ====================
@@ -161,7 +192,8 @@ async function callAnthropicWithTools(messages, config) {
             system: buildSystemPrompt(),
             messages,
             tools: toolsToAnthropic(),
-            temperature: config.temperature
+            // Neuere Modelle lehnen Sampling-Parameter mit 400 ab
+            ...samplingFelder(config.model, config.temperature)
         })
     })
 
@@ -420,6 +452,11 @@ async function callLLMWithTools(messages, config) {
             return callOpenAIWithTools(messages, config)
         case 'deepseek':
             return callOpenAIWithTools(messages, config, 'https://api.deepseek.com/v1/chat/completions')
+        case 'custom': {
+            const basis = basisUrl(config.customUrl)
+            if (!basis) throw new Error('Für den eigenen Anbieter ist keine Basis-URL hinterlegt')
+            return callOpenAIWithTools(messages, config, `${basis}/chat/completions`)
+        }
         case 'gemini':
             return callGeminiWithTools(messages, config)
         case 'ollama':
@@ -436,7 +473,7 @@ function buildProviderMessages(history, provider) {
     if (provider === 'anthropic') {
         return buildAnthropicMessages(history)
     }
-    if (provider === 'openai' || provider === 'deepseek') {
+    if (provider === 'openai' || provider === 'deepseek' || provider === 'custom') {
         return buildOpenAIMessages(history)
     }
     if (provider === 'gemini') {
@@ -670,6 +707,10 @@ export function setupAgentRoutes(app) {
         }
 
         agentRunning = true
+        // Backtests sind teuer und deshalb je Lauf gedeckelt. Ohne diesen
+        // Reset gälte das Kontingent für die gesamte Server-Laufzeit — nach
+        // fünf Backtests hätte der Agent nie wieder einen ausführen können.
+        resetBacktestKontingent()
         const knex = getKnex()
 
         try {

@@ -6,7 +6,22 @@ import { encrypt } from './crypto.js'
 import { isLocalRequest } from './update-api.js'
 import { logError } from './logger.js'
 
-const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions', 'incoming_positions', 'share_card_templates']
+const VALID_TABLES = [
+    'trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions',
+    'incoming_positions', 'share_card_templates',
+    // Strategie-Agenten: nur lesend über die generische Route (siehe READ_ONLY_TABLES)
+    'strategy_instances', 'strategy_setups', 'strategy_runs', 'strategy_positions',
+    'strategy_trades', 'strategy_backtests', 'strategy_suggestions', 'strategy_drafts', 'rule_strategies',
+]
+
+// Tabellen, die über die generische Route ausschliesslich GELESEN werden dürfen.
+// Geschrieben wird nur über /api/strategies/* — dort werden Parameter gegen das
+// Manifest-Schema validiert und paramsVersion gepflegt. Ohne diese Sperre könnte
+// die UI Instanzen mit ungültigen Parametern anlegen.
+const READ_ONLY_TABLES = [
+    'strategy_instances', 'strategy_setups', 'strategy_runs', 'strategy_positions',
+    'strategy_trades', 'strategy_backtests', 'strategy_suggestions', 'strategy_drafts', 'rule_strategies',
+]
 
 // Sensitive fields to strip from settings responses (encrypted API keys etc.).
 // These are written ONLY via dedicated, encrypting endpoints (/api/ai/settings,
@@ -14,7 +29,7 @@ const VALID_TABLES = ['trades', 'diaries', 'screenshots', 'satisfactions', 'tags
 // generic settings PUT below.
 export const SETTINGS_SENSITIVE_FIELDS = [
     'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash'
+    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash', 'aiKeyCustom'
 ]
 
 /** Strip sensitive fields from a settings row, exposing only `${field}Set` presence flags. */
@@ -41,7 +56,15 @@ const VALID_SETTINGS_KEYS = [
     'fluxApiKey', 'fluxModel', 'fluxDisplayName', 'fluxAvatar', 'fluxUseCustomAvatar',
     'shareCardProvider', 'geminiImageApiKey', 'geminiImageModel',
     'esp32ApiKey', 'esp32Filter',
-    'scalpMaxMinutes', 'daytradeMaxHours', 'feeFixMigrated'
+    'liveSymbol', 'liveMarket', 'liveViewPct', 'liveFrameMs', 'liveHistoryMin', 'liveRamp',
+    'liveShowProfile', 'livePauseInBackground', 'liveColorMode', 'liveColorRef', 'liveAutoFollow',
+    'liveThreshold', 'liveShowLiquidations', 'livePrefillMin', 'liveDotStep', 'liveProfileW', 'liveShowVolumeBars',
+    'levMapTier', 'levMapHours', 'levMapSpanPct', 'levMapMmr', 'levMapWeights', 'levMapView', 'levMapThreshold', 'levMapProfileW',
+    'liveRecordEnabled', 'liveRecordSymbols', 'liveRecordDays', 'liveRecordFrameMs',
+    'liveRecordRows', 'liveRecordRangePct', 'liveRecordAllLiq',
+    'scalpMaxMinutes', 'daytradeMaxHours', 'feeFixMigrated',
+    'strategyLiveEnabled', 'strategyKillSwitch', 'strategyMaxLeverage',
+    'strategyMinPaperTrades', 'strategyLlmBudgetUsd', 'aiModels', 'aiCustomUrl'
 ]
 
 // Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten
@@ -54,7 +77,16 @@ const TABLE_COLUMNS = {
     notes: ['id', 'dateUnix', 'tradeId', 'note', 'title', 'entryStressLevel', 'exitStressLevel', 'entryNote', 'feelings', 'playbook', 'timeframe', 'screenshotId', 'trendScreenshotId', 'emotionLevel', 'closingNote', 'closingScreenshotId', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingPlaybook', 'tradeType', 'closingTradeType', 'strategyFollowed', 'tradingMetadata', 'aiReview', 'aiReviewProvider', 'aiReviewModel', 'aiReviewPromptTokens', 'aiReviewCompletionTokens', 'aiReviewTotalTokens', 'createdAt', 'updatedAt'],
     excursions: ['id', 'dateUnix', 'tradeId', 'stopLoss', 'maePrice', 'mfePrice', 'createdAt', 'updatedAt'],
     incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType', 'closingTradeType', 'strategyFollowed', 'trendScreenshotId', 'tpslHistory'],
-    share_card_templates: ['id', 'name', 'prompt', 'imageBase64', 'category', 'createdAt', 'updatedAt']
+    share_card_templates: ['id', 'name', 'prompt', 'imageBase64', 'category', 'createdAt', 'updatedAt'],
+    strategy_instances: ['id', 'strategyId', 'name', 'enabled', 'mode', 'broker', 'market', 'symbols', 'timeframe', 'params', 'risk', 'agents', 'paramsVersion', 'liveApprovedAt', 'lastRunAt', 'lastError', 'createdAt', 'updatedAt'],
+    strategy_setups: ['id', 'instanceId', 'strategyId', 'symbol', 'timeframe', 'direction', 'status', 'sweepLevel', 'sweepPrice', 'sweepCandleTime', 'obHigh', 'obLow', 'obCandleTime', 'watchFrom', 'impulseExtreme', 'entry', 'stopLoss', 'takeProfit', 'rr', 'confirmations', 'invalidReason', 'rejectReason', 'triggeredAt', 'paramsVersion', 'detectorVersion', 'createdAt', 'updatedAt'],
+    strategy_runs: ['id', 'instanceId', 'setupId', 'sentimentOutput', 'portfolioOutput', 'riskOutput', 'executionOutput', 'finalAction', 'reason', 'provider', 'model', 'totalTokens', 'costUsd', 'createdAt'],
+    strategy_positions: ['id', 'instanceId', 'setupId', 'mode', 'broker', 'symbol', 'timeframe', 'direction', 'qty', 'entryPrice', 'entryTime', 'stopLoss', 'initialStopLoss', 'takeProfit', 'leverage', 'notionalUsdt', 'marginUsdt', 'feeOpen', 'clientOrderId', 'externalOrderId', 'maePrice', 'mfePrice', 'lastCandleTime', 'breakEvenDone', 'status', 'createdAt', 'updatedAt'],
+    strategy_trades: ['id', 'instanceId', 'setupId', 'positionId', 'strategyId', 'mode', 'broker', 'symbol', 'timeframe', 'direction', 'qty', 'notionalUsdt', 'leverage', 'entryPrice', 'entryTime', 'exitPrice', 'exitTime', 'stopLoss', 'takeProfit', 'grossPnl', 'fees', 'funding', 'netPnl', 'rMultiple', 'exitReason', 'maeR', 'mfeR', 'holdingMinutes', 'paramsVersion', 'journalTradeId', 'createdAt'],
+    strategy_backtests: ['id', 'strategyId', 'instanceId', 'label', 'symbol', 'timeframe', 'market', 'fromTs', 'toTs', 'params', 'stats', 'trades', 'createdAt'],
+    strategy_suggestions: ['id', 'instanceId', 'source', 'title', 'rationale', 'proposedParams', 'backtestId', 'status', 'decidedAt', 'createdAt'],
+    rule_strategies: ['id', 'strategyId', 'name', 'description', 'enabled', 'rules', 'source', 'createdAt', 'updatedAt'],
+    strategy_drafts: ['id', 'title', 'slug', 'sourceName', 'status', 'spec', 'messages', 'generatedPath', 'provider', 'model', 'costUsd', 'createdAt', 'updatedAt'],
 }
 
 // JSON columns per table that should be parsed on read and stringified on write
@@ -65,6 +97,13 @@ const JSON_COLUMNS = {
     settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'customTimeframes', 'balances'],
     incoming_positions: ['bitunixData', 'tags', 'closingTags', 'historyData', 'tpslHistory'],
     notes: ['tradingMetadata'],
+    strategy_instances: ['symbols', 'params', 'risk', 'agents'],
+    strategy_setups: ['confirmations'],
+    strategy_runs: ['sentimentOutput', 'portfolioOutput', 'riskOutput', 'executionOutput'],
+    strategy_backtests: ['params', 'stats', 'trades'],
+    strategy_suggestions: ['proposedParams'],
+    strategy_drafts: ['spec', 'messages'],
+    rule_strategies: ['rules'],
 }
 
 function parseJsonColumns(tableName, row) {
@@ -467,7 +506,7 @@ export function setupApiRoutes(app) {
 
     app.post('/api/db/:table', async (req, res) => {
         const { table } = req.params
-        if (!VALID_TABLES.includes(table)) {
+        if (!VALID_TABLES.includes(table) || READ_ONLY_TABLES.includes(table)) {
             return res.status(400).json({ error: 'Bad request' })
         }
         const columns = TABLE_COLUMNS[table]
@@ -500,7 +539,7 @@ export function setupApiRoutes(app) {
 
     app.put('/api/db/:table/:id', async (req, res) => {
         const { table, id } = req.params
-        if (!VALID_TABLES.includes(table)) {
+        if (!VALID_TABLES.includes(table) || READ_ONLY_TABLES.includes(table)) {
             return res.status(400).json({ error: 'Bad request' })
         }
         const columns = TABLE_COLUMNS[table]
@@ -530,7 +569,7 @@ export function setupApiRoutes(app) {
 
     app.delete('/api/db/:table/:id', async (req, res) => {
         const { table, id } = req.params
-        if (!VALID_TABLES.includes(table)) {
+        if (!VALID_TABLES.includes(table) || READ_ONLY_TABLES.includes(table)) {
             return res.status(400).json({ error: 'Bad request' })
         }
         try {
@@ -545,7 +584,7 @@ export function setupApiRoutes(app) {
 
     app.delete('/api/db/:table', async (req, res) => {
         const { table } = req.params
-        if (!VALID_TABLES.includes(table)) {
+        if (!VALID_TABLES.includes(table) || READ_ONLY_TABLES.includes(table)) {
             return res.status(400).json({ error: 'Bad request' })
         }
         try {

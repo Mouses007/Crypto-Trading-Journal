@@ -2,6 +2,8 @@
  * UI: General app state (user, limits, pagination, modals, misc).
  */
 export {
+    appMode,
+    APP_MODES,
     currentUser,
     timeZones,
     queryLimit,

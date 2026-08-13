@@ -8,11 +8,17 @@ import { setupPionexRoutes } from './server/pionex-api.js'
 import { setupBinanceRoutes } from './server/binance-api.js'
 import { setupPolygonRoutes } from './server/polygon-api.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
+import { setupAiModelRoutes } from './server/ai-models.js'
 import { setupAgentRoutes } from './server/ai-agent.js'
 import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
 import { setupEsp32Routes } from './server/esp32-api.js'
+import { setupLiveRecorder, stopLiveRecorder } from './server/live-recorder.js'
+import { setupStrategyRoutes, ladeAlleRegelStrategien } from './server/strategy-api.js'
+import { setupStrategyBuilderRoutes } from './server/strategy-builder.js'
+import { setupRuleBuilderRoutes } from './server/rule-builder.js'
+import { startStrategyEngine, stopStrategyEngine } from './server/strategy-engine.js'
 import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString, setupAuthRoutes, loadAuthConfig, isAuthEnabled, maybeResetAuthFromEnv } from './server/auth.js'
 
 const app = express();
@@ -63,11 +69,24 @@ const startIndex = async () => {
     setupBinanceRoutes(app);
     setupPolygonRoutes(app);
     setupOllamaRoutes(app);
+    setupAiModelRoutes(app);
     setupAgentRoutes(app);
     setupUpdateRoutes(app);
     setupBackupRoutes(app);
     await setupFluxRoutes(app);
+    setupLiveRecorder(app);
+    setupStrategyRoutes(app);
+    setupStrategyBuilderRoutes(app);
+    setupRuleBuilderRoutes(app);
+    // Eigene Regelstrategien aus der DB in die Registry holen — sie sind ab
+    // jetzt von eingebauten nicht mehr zu unterscheiden.
+    await ladeAlleRegelStrategien();
     console.log(" -> API routes initialized")
+
+    // Strategie-Engine: der Takt läuft immer, gearbeitet wird nur für Instanzen,
+    // die in der DB als aktiv markiert sind. Ein Neustart nimmt den Betrieb
+    // damit genau dort wieder auf, wo er unterbrochen wurde.
+    startStrategyEngine();
 
     if (process.env.NODE_ENV == 'dev') {
         // Proxy non-API routes to Vite dev server
@@ -140,6 +159,22 @@ const startIndex = async () => {
         });
         server.on('error', reject)
     })
+
+    // Beim Beenden die angefangene Aufzeichnungs-Stunde noch wegschreiben,
+    // sonst geht sie beim Container-Neustart verloren.
+    let shuttingDown = false
+    for (const signal of ['SIGTERM', 'SIGINT']) {
+        process.on(signal, async () => {
+            if (shuttingDown) return
+            shuttingDown = true
+            console.log(`\n${signal} — fahre herunter…`)
+            try { await stopLiveRecorder() } catch (e) { /* trotzdem beenden */ }
+            // Laufende Strategie-Durchgänge auslaufen lassen, damit keine
+            // halb ausgeführte Order zurückbleibt.
+            try { await stopStrategyEngine() } catch (e) { /* trotzdem beenden */ }
+            process.exit(0)
+        })
+    }
 
     console.log("\n Crypto Trading Journal ready!")
 }

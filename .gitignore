@@ -16,6 +16,11 @@ tradenote.db-shm
 *.json.bak
 db-config.json
 tradejournal-backup-*.json
+# Schlüssel-Sicherungen der Umschlüsselung: enthalten API-Keys im Klartext bzw.
+# unter altem Schlüssel — dürfen NIEMALS ins Repository (es ist öffentlich).
+_schluessel-sicherung-*.json
+# Analyse-/Prüfskripte, die gegen die Live-DB oder Live-APIs laufen
+_levmap-*.mjs
 Screenshots/
 .claude/
 REFACTORING-ANALYSE.md
@@ -27,3 +32,6 @@ _ctj_update.bat
 # PlatformIO build artifacts
 ESP32-Waveshare/.pio/
 ESP32-2432S028/.pio/
+
+# Erzeugte Share-Cards (die gepflegten Vorlagen heissen loss-*/win-*)
+server/templates/sharecard-*.png

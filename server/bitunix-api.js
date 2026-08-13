@@ -25,7 +25,7 @@ function generateNonce(length = 32) {
 /**
  * Make an authenticated request to Bitunix API.
  */
-async function bitunixRequest(method, path, apiKey, secretKey, params = {}, body = '') {
+export async function bitunixRequest(method, path, apiKey, secretKey, params = {}, body = '') {
     const timestamp = String(Date.now())
     const nonce = generateNonce()
 
@@ -162,7 +162,7 @@ function normalizeOpenPosition(p) {
 /**
  * Load and decrypt Bitunix config from DB.
  */
-async function getDecryptedConfig() {
+export async function getDecryptedConfig() {
     const knex = getKnex()
     const config = await knex('bitunix_config').where('id', 1).first()
     if (!config) return null

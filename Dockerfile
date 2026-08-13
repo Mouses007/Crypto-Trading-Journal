@@ -29,6 +29,8 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
 COPY server/ ./server/
+# Von Server und Frontend gemeinsam genutzte Logik (Orderbuch-Sync, Preis-Binning)
+COPY shared/ ./shared/
 COPY src/assets/icon.png ./src/assets/icon.png
 COPY index.mjs ./
 COPY docker-entrypoint.sh ./

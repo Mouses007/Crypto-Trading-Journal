@@ -5,7 +5,9 @@ import { useToggleMobileMenu, useExport } from '../utils/utils.js'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { useInitTooltip } from "../utils/utils.js";
-import { pageId, screenType } from "../stores/ui.js"
+import { useRoute } from 'vue-router'
+import { pageById } from "../config/menu.js"
+import { pageId, screenType, appMode } from "../stores/ui.js"
 import { currentUser, renderProfile } from "../stores/settings.js"
 import { version } from '../../package.json';
 import { selectedDateRange, selectedPeriodRange, selectedGrossNet, selectedPositions, selectedMonth, selectedBroker, brokers } from "../stores/filters.js"
@@ -108,6 +110,22 @@ const pages = computed(() => {
     return all.filter(p => p.id !== 'kiAgent' || aiActive.value)
 })
 
+const route = useRoute()
+
+// Seitentitel + Icon der aktuellen Seite. Fällt auf die zentrale Registry und
+// zuletzt auf route.meta zurück — sonst wirft jede Seite, die nicht im lokalen
+// `pages`-Array steht (z.B. /liquidity), beim Rendern einen TypeError.
+const currentPage = computed(() => {
+    const hit = pages.value.find(p => p.id === pageId.value)
+    if (hit) return hit
+    const reg = pageById(pageId.value)
+    return {
+        icon: reg?.icon || 'uil uil-file-alt',
+        name: reg?.titleKey ? t(reg.titleKey)
+            : (route.meta?.titleKey ? t(route.meta.titleKey) : (route.meta?.title || ''))
+    }
+})
+
 // ===== Börsen-Buttons (nur Börsen mit hinterlegter API) =====
 const configuredBrokers = ref([])
 
@@ -132,7 +150,8 @@ function switchBroker(value) {
 }
 
 onMounted(async () => {
-    await loadConfiguredBrokers()
+    // Börsen-Pillen gibt es nur im Journal — im Live-Modus spart das 3 API-Calls
+    if (appMode.value === 'journal') await loadConfiguredBrokers()
     await useInitTooltip()
 })
 
@@ -149,14 +168,12 @@ const navAdd = (param) => {
             <span v-if="screenType == 'mobile'" class="d-flex align-items-center">
                 <a v-on:click="useToggleMobileMenu" class="mobile-menu-toggle">
                     <i class="fa fa-bars me-2"></i>
-                    <i v-bind:class="pages.filter(item => item.id == pageId)[0].icon" class="me-1"></i>{{
-                        pages.filter(item => item.id == pageId)[0].name }}
+                    <i v-bind:class="currentPage.icon" class="me-1"></i>{{ currentPage.name }}
                     <span v-if="filterSummary" class="nav-filter-info">{{ filterSummary }}</span>
                 </a>
             </span>
             <span v-else>
-                <i v-bind:class="pages.filter(item => item.id == pageId)[0].icon" class="me-1"></i>{{
-                    pages.filter(item => item.id == pageId)[0].name }}
+                <i v-bind:class="currentPage.icon" class="me-1"></i>{{ currentPage.name }}
                 <span v-if="filterSummary" class="nav-filter-info">{{ filterSummary }}</span>
             </span>
         </div>
@@ -177,7 +194,8 @@ const navAdd = (param) => {
         </div>
     </div>
     <!-- Börsen-Buttons unter dem Seitentitel (nur Börsen mit hinterlegter API) -->
-    <div v-if="configuredBrokers.length > 1" class="broker-switch d-flex align-items-center gap-1 px-2 pt-1 pb-2">
+    <div v-if="appMode === 'journal' && configuredBrokers.length > 1"
+        class="broker-switch d-flex align-items-center gap-1 px-2 pt-1 pb-2">
         <button v-for="b in configuredBrokers" :key="b.value" type="button"
             @click="switchBroker(b.value)"
             :class="['btn', 'btn-sm', 'broker-pill', selectedBroker === b.value ? 'active' : '']">

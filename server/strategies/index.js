@@ -1,0 +1,229 @@
+/**
+ * Strategie-Registry.
+ *
+ * Eine Strategie ist ein Modul mit einem Manifest. Das Manifest beschreibt seine
+ * Parameter selbst (`params`), und aus dieser Beschreibung entstehen automatisch:
+ *   - das Einstellungsformular im Frontend (StrategyParamForm.vue)
+ *   - die serverseitige Validierung beim Speichern einer Instanz
+ *   - die Grenzen, innerhalb derer der Optimizer-Agent Vorschläge machen darf
+ *
+ * Dadurch kostet eine weitere Strategie genau eine Datei und null Zeilen Vue.
+ *
+ * Die Erkennungslogik (`detect`) muss eine REINE Funktion sein: gleiche Kerzen +
+ * gleiche Parameter = gleiches Ergebnis. Kein DB-Zugriff, kein Netzwerk, kein
+ * LLM, kein Date.now(). Nur so ist die Strategie backtestbar.
+ */
+
+import lsob from './lsob.js'
+import emaTouch from './ema_touch.js'
+import { alsManifest } from './rule-engine.js'
+import { pruefeRegeln } from './rule-validate.js'
+
+const registry = new Map()
+
+const PARAM_TYPES = ['number', 'integer', 'boolean', 'select', 'string']
+
+/**
+ * Risiko-Parameter sind strategie-UNABHÄNGIG und gelten für jede Instanz.
+ * Gleiches Schema-Format wie die Strategie-Parameter, damit das Frontend
+ * beide Blöcke mit derselben Komponente rendern kann.
+ */
+export const RISK_PARAMS = [
+    { key: 'startEquityUsdt', type: 'number', default: 1000, min: 10, max: 10000000, step: 10, group: 'size' },
+    { key: 'riskPerTradePct', type: 'number', default: 1.0, min: 0.05, max: 10, step: 0.05, group: 'size' },
+    { key: 'maxDailyLossPct', type: 'number', default: 3.0, min: 0.1, max: 25, step: 0.1, group: 'limits' },
+    { key: 'maxConcurrentPositions', type: 'integer', default: 2, min: 1, max: 20, step: 1, group: 'limits' },
+    { key: 'maxNotionalUsdt', type: 'number', default: 500, min: 5, max: 1000000, step: 5, group: 'limits' },
+    { key: 'leverage', type: 'number', default: 3, min: 1, max: 125, step: 1, group: 'size' },
+    { key: 'cooldownMinutes', type: 'integer', default: 60, min: 0, max: 10080, step: 5, group: 'limits' },
+    { key: 'minRR', type: 'number', default: 1.5, min: 0.1, max: 20, step: 0.1, group: 'quality' },
+    { key: 'feeBps', type: 'number', default: 6, min: 0, max: 100, step: 0.5, group: 'costs' },
+    { key: 'slippageBps', type: 'number', default: 2, min: 0, max: 100, step: 0.5, group: 'costs' },
+    { key: 'maxPriceDeviationPct', type: 'number', default: 0.5, min: 0.01, max: 10, step: 0.01, group: 'quality' },
+]
+
+/** Agent-Konfiguration je Rolle. Beide Rollen sind optional abschaltbar. */
+export const AGENT_DEFAULTS = {
+    sentiment: { enabled: false, provider: '', model: '', sources: { fearGreed: true, funding: true, news: false } },
+    portfolio: { enabled: false, provider: '', model: '' },
+    dailyBudgetUsd: 1.0,
+    onBudgetExceeded: 'skip_trade',   // skip_trade | trade_without_agents
+}
+
+/** Wirft, wenn ein Manifest nicht dem erwarteten Vertrag entspricht. */
+function assertManifest(m) {
+    if (!m || typeof m !== 'object') throw new Error('Strategie-Manifest fehlt')
+    if (!m.id || typeof m.id !== 'string') throw new Error('Strategie ohne id')
+    if (typeof m.detect !== 'function') throw new Error(`Strategie ${m.id}: detect() fehlt`)
+    if (!Array.isArray(m.params)) throw new Error(`Strategie ${m.id}: params-Schema fehlt`)
+    if (!Array.isArray(m.supportedTimeframes) || m.supportedTimeframes.length === 0) {
+        throw new Error(`Strategie ${m.id}: supportedTimeframes fehlt`)
+    }
+    const seen = new Set()
+    for (const p of m.params) {
+        if (!p.key) throw new Error(`Strategie ${m.id}: Parameter ohne key`)
+        if (seen.has(p.key)) throw new Error(`Strategie ${m.id}: doppelter Parameter ${p.key}`)
+        seen.add(p.key)
+        if (!PARAM_TYPES.includes(p.type)) {
+            throw new Error(`Strategie ${m.id}: Parameter ${p.key} hat unbekannten Typ ${p.type}`)
+        }
+        if (p.default === undefined) throw new Error(`Strategie ${m.id}: Parameter ${p.key} ohne default`)
+        if (p.type === 'select' && !Array.isArray(p.options)) {
+            throw new Error(`Strategie ${m.id}: Parameter ${p.key} ist select ohne options`)
+        }
+    }
+}
+
+export function registerStrategy(manifest) {
+    assertManifest(manifest)
+    registry.set(manifest.id, manifest)
+    return manifest
+}
+
+export function getStrategy(id) {
+    return registry.get(id) || null
+}
+
+/**
+ * Selbst gebaute Regelstrategien aus der DB in die Registry laden.
+ *
+ * Wird beim Start und nach jeder Änderung aufgerufen. Eingebaute Strategien
+ * bleiben unangetastet — sie lassen sich nicht durch eine gleichnamige
+ * Regelstrategie überschreiben, sonst könnte man LSOB aus der Oberfläche
+ * heraus ersetzen.
+ */
+export function ladeRegelStrategien(zeilen) {
+    // Erst alle bisherigen Regelstrategien entfernen, damit gelöschte
+    // verschwinden statt als Karteileiche weiterzuleben.
+    for (const [id, m] of [...registry]) {
+        if (m.istRegelStrategie) registry.delete(id)
+    }
+
+    const geladen = []
+    const fehlerhaft = []
+    for (const z of zeilen || []) {
+        if (EINGEBAUT.has(z.strategyId)) {
+            fehlerhaft.push({ strategyId: z.strategyId, fehler: ['Name ist von einer eingebauten Strategie belegt'] })
+            continue
+        }
+        let roh
+        try { roh = typeof z.rules === 'object' ? z.rules : JSON.parse(z.rules || '{}') }
+        catch { fehlerhaft.push({ strategyId: z.strategyId, fehler: ['Regelbeschreibung ist kein gültiges JSON'] }); continue }
+
+        const g = pruefeRegeln({ ...roh, id: z.strategyId, name: z.name, description: z.description })
+        if (!g.ok) { fehlerhaft.push({ strategyId: z.strategyId, fehler: g.fehler }); continue }
+
+        try {
+            registerStrategy(alsManifest(g.regeln))
+            geladen.push(z.strategyId)
+        } catch (e) {
+            fehlerhaft.push({ strategyId: z.strategyId, fehler: [e.message] })
+        }
+    }
+    return { geladen, fehlerhaft }
+}
+
+/** Manifeste ohne die Funktionen — genau das, was das Frontend braucht. */
+export function listStrategies() {
+    return [...registry.values()].map((m) => ({
+        id: m.id,
+        name: m.name || m.id,
+        description: m.description || '',
+        version: m.version || 1,
+        supportedTimeframes: m.supportedTimeframes,
+        warmupCandles: m.warmupCandles || 200,
+        params: m.params,
+        paramGroups: m.paramGroups || [],
+    }))
+}
+
+/** Defaults aus einem beliebigen Schema (Strategie-Params oder RISK_PARAMS). */
+export function defaultsFromSchema(schema) {
+    const out = {}
+    for (const p of schema) out[p.key] = p.default
+    return out
+}
+
+export function defaultParams(strategyId) {
+    const s = getStrategy(strategyId)
+    return s ? defaultsFromSchema(s.params) : {}
+}
+
+/**
+ * Validiert und normalisiert Parameter gegen ein Schema.
+ * Unbekannte Schlüssel fliegen raus, fehlende werden mit dem Default gefüllt,
+ * Zahlen werden auf [min, max] geklemmt. Gibt Werte UND Hinweise zurück, damit
+ * die UI zeigen kann, was korrigiert wurde.
+ *
+ * @returns {{ values: object, errors: string[], clamped: string[] }}
+ */
+export function validateAgainstSchema(schema, input) {
+    const values = {}
+    const errors = []
+    const clamped = []
+    const src = input && typeof input === 'object' ? input : {}
+
+    for (const p of schema) {
+        const raw = src[p.key]
+        if (raw === undefined || raw === null || raw === '') {
+            values[p.key] = p.default
+            continue
+        }
+
+        switch (p.type) {
+            case 'boolean':
+                values[p.key] = raw === true || raw === 1 || raw === '1' || raw === 'true'
+                break
+
+            case 'select':
+                if (!p.options.some((o) => (o?.value ?? o) === raw)) {
+                    errors.push(`${p.key}: "${raw}" ist keine gültige Option`)
+                    values[p.key] = p.default
+                } else {
+                    values[p.key] = raw
+                }
+                break
+
+            case 'string':
+                values[p.key] = String(raw).slice(0, p.maxLength || 200)
+                break
+
+            case 'number':
+            case 'integer': {
+                let n = Number(raw)
+                if (!Number.isFinite(n)) {
+                    errors.push(`${p.key}: "${raw}" ist keine Zahl`)
+                    values[p.key] = p.default
+                    break
+                }
+                if (p.type === 'integer') n = Math.round(n)
+                if (p.min !== undefined && n < p.min) { n = p.min; clamped.push(p.key) }
+                if (p.max !== undefined && n > p.max) { n = p.max; clamped.push(p.key) }
+                values[p.key] = n
+                break
+            }
+        }
+    }
+
+    return { values, errors, clamped }
+}
+
+/** Kurzform für Strategie-Parameter. */
+export function validateParams(strategyId, input) {
+    const s = getStrategy(strategyId)
+    if (!s) return { values: {}, errors: [`Unbekannte Strategie: ${strategyId}`], clamped: [] }
+    return validateAgainstSchema(s.params, input)
+}
+
+export function validateRisk(input) {
+    return validateAgainstSchema(RISK_PARAMS, input)
+}
+
+// ── Eingebaute Strategien ────────────────────────────────────────────────
+// Ihre Namen sind reserviert: eine selbst gebaute Strategie darf sie nicht
+// überschreiben.
+registerStrategy(lsob)
+registerStrategy(emaTouch)
+
+export const EINGEBAUT = new Set([...registry.keys()])
+export const istEingebaut = (id) => EINGEBAUT.has(id)

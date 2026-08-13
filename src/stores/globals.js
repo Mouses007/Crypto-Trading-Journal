@@ -214,6 +214,14 @@ export const selectedAccounts = typeof localStorage !== 'undefined' ? localStora
 export const selectedGrossNet = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedGrossNet')) : ""
 export const selectedPlSatisfaction = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedPlSatisfaction')) : ""
 export const selectedBroker = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedBroker')) : ref()
+// Top-Level-Modus der App: 'journal' (Nachbetrachtung) | 'live' (Live-Analyse) |
+// 'agent' (Agent-Trading, noch nicht gebaut). Steuert, welches Seitenmenü das
+// SideMenu rendert. Die Route ist die Wahrheit (meta.mode), dieser Ref nur das
+// Gedächtnis für den Umschalter.
+export const APP_MODES = ['journal', 'live', 'agent']
+export const appMode = typeof localStorage !== 'undefined'
+    ? ref(APP_MODES.includes(localStorage.getItem('appMode')) ? localStorage.getItem('appMode') : 'journal')
+    : ref('journal')
 // Trade-Kategorie-Filter: 'futures' | 'bot' (Pillen im Seitenmenü; 'all' entfällt)
 export const selectedTradeCategory = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedTradeCategory') || 'futures') : ref('futures')
 // Börsen mit echter Bot-API-Anbindung. Nur diese zeigen die Bot-Kategorie.

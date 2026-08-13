@@ -5,6 +5,7 @@
  */
 
 import { logWarn } from './logger.js'
+import { STRATEGY_TOOLS, STRATEGY_TOOL_IMPL } from './strategy-tools.js'
 
 // ==================== TOOL DEFINITIONS (for LLM) ====================
 
@@ -153,7 +154,10 @@ export const AGENT_TOOLS = [
             },
             required: ['screenshotId']
         }
-    }
+    },
+    // Werkzeuge der Strategie-Agenten — auch der KI-Coach darf die Auswertung
+    // der automatisch gehandelten Strategien lesen und Verbesserungen vorschlagen.
+    ...STRATEGY_TOOLS,
 ]
 
 // ==================== TOOL EXECUTION ====================
@@ -179,6 +183,9 @@ export async function executeTool(toolName, params, knex) {
         query_settings: toolQuerySettings,
         query_screenshots: toolQueryScreenshots,
         analyze_screenshot: toolAnalyzeScreenshot,
+        // Werkzeuge der Strategie-Agenten: Auswertung lesen, Hypothesen im
+        // Backtest messen, Parameteränderungen zur Freigabe vorschlagen.
+        ...STRATEGY_TOOL_IMPL,
     }
 
     const fn = tools[toolName]

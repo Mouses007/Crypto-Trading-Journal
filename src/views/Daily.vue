@@ -345,6 +345,60 @@ let ohlcArray = [] // array used for charts
 let ohlcv = [] // array used for MFE / excursion calculation (same as in addTrades.js)
 
 
+/* ===== Orderbuch zum Trade =====
+   Verlinkt in die Live-Analyse im Wiedergabe-Modus. Der Knopf bleibt aus,
+   wenn für Symbol und Zeitfenster nichts aufgezeichnet wurde — sonst klickt
+   man auf ein leeres Bild. */
+const replayVerfuegbar = ref(false)
+const replayGeprueft = ref(false)
+
+const modalTrade = computed(() => {
+    const day = filteredTrades[itemTradeIndex.value]
+    return day?.trades?.[tradeIndex.value] || null
+})
+
+/** Zeitfenster: Einstieg minus Vorlauf bis Ausstieg plus Nachlauf. */
+const replayFenster = computed(() => {
+    const trade = modalTrade.value
+    if (!trade?.symbol || !trade.entryTime) return null
+    const puffer = 5 * 60 * 1000
+    const von = trade.entryTime * 1000 - puffer
+    const bis = (trade.exitTime ? trade.exitTime * 1000 : trade.entryTime * 1000 + 15 * 60 * 1000) + puffer
+    return { von, bis, symbol: String(trade.symbol).toUpperCase() }
+})
+
+async function pruefeReplay() {
+    replayGeprueft.value = false
+    replayVerfuegbar.value = false
+    const fenster = replayFenster.value
+    if (!fenster) { replayGeprueft.value = true; return }
+    try {
+        const { data } = await axios.get('/api/live/recorder/available', {
+            params: { symbol: fenster.symbol, market: 'futures', from: fenster.von, to: fenster.bis }
+        })
+        replayVerfuegbar.value = (data.stunden || []).length > 0
+    } catch (e) {
+        replayVerfuegbar.value = false
+    } finally {
+        replayGeprueft.value = true
+    }
+}
+
+function oeffneOrderbuch() {
+    const fenster = replayFenster.value
+    if (!fenster || !replayVerfuegbar.value) return
+    const params = new URLSearchParams({
+        replay: '1', symbol: fenster.symbol, market: 'futures',
+        from: String(Math.round(fenster.von)), to: String(Math.round(fenster.bis)),
+        label: 'Trade ' + useTimeFormat(modalTrade.value.entryTime),
+    })
+    window.location.href = '/liquidity?' + params.toString()
+}
+
+watch([modalDailyTradeOpen, tradeIndex], () => {
+    if (modalDailyTradeOpen.value) pruefeReplay()
+})
+
 const candlestickChartFailureMessage = ref(null)
 const apiIndex = ref(-1)
 const apiKey = ref(null)
@@ -1476,6 +1530,18 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                     </div>
                     <div class="container mt-2 text-center" v-show="candlestickChartFailureMessage">{{
                         candlestickChartFailureMessage }}</div>
+
+                    <!-- Orderbuch-Heatmap zum Zeitfenster dieses Trades -->
+                    <div v-if="replayFenster" class="text-center mt-2">
+                        <button v-if="replayVerfuegbar" class="btn btn-sm btn-outline-primary"
+                            @click="oeffneOrderbuch">
+                            <i class="uil uil-chart-line me-1"></i>Orderbuch zum Trade
+                        </button>
+                        <span v-else-if="replayGeprueft" class="text-muted" style="font-size:0.8rem;"
+                            title="Aufzeichnung aktivierst du unter Einstellungen → Live-Aufzeichnung">
+                            <i class="uil uil-chart-line me-1"></i>Orderbuch nicht aufgezeichnet
+                        </span>
+                    </div>
 
                     <!-- *** Table *** -->
                     <div class="mt-3 table-responsive">

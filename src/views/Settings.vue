@@ -1,6 +1,7 @@
 <script setup>
 import { onBeforeMount, onMounted, ref, reactive, computed } from 'vue';
 import { useDateCalFormat } from '../utils/formatters.js';
+import ModelManager from '../components/ModelManager.vue'
 import { useCheckCurrentUser, useInitTooltip } from '../utils/utils';
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js';
 import { currentUser, renderProfile } from '../stores/settings.js';
@@ -16,6 +17,12 @@ import { useI18n } from 'vue-i18n'
 import { setLocale } from '../i18n'
 import { useGetPeriods } from '../utils/utils.js'
 import appLogoSrc from '../assets/icon.png'
+import {
+    liveMarket, liveViewPct, liveFrameMs, liveHistoryMin, liveRamp, liveShowProfile,
+    livePauseInBackground, liveColorMode, liveColorRef, liveAutoFollow, liveThreshold, liveDotStep,
+    liveShowLiquidations, livePrefillMin,
+    VIEW_PCT_OPTIONS, FRAME_MS_OPTIONS, HISTORY_MIN_OPTIONS,
+} from '../stores/live.js'
 
 const { t } = useI18n()
 
@@ -89,6 +96,7 @@ let aiProvider = ref('ollama')
 let aiModel = ref('')
 let aiKeys = reactive({ openai: '', anthropic: '', gemini: '', deepseek: '' })
 let aiOllamaUrl = ref('http://localhost:11434')
+let aiCustomUrl = ref('')
 let aiTemperature = ref(0.7)
 let aiMaxTokens = ref(1500)
 let aiScreenshots = ref(false)
@@ -128,22 +136,61 @@ const currentApiKey = computed({
     set: (val) => { aiKeys[aiProvider.value] = val }
 })
 
-const openaiModels = ['gpt-4o-mini', 'gpt-4o']
-const anthropicModels = ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001']
-const geminiModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro']
-const deepseekModels = ['deepseek-chat', 'deepseek-reasoner']
+// Modell-Listen kommen vom Server (Tabelle `settings`), damit neue Modelle
+// nachgetragen werden können, ohne den Quelltext anzufassen.
+const modellListen = ref({})
 
-const availableModels = {
-    ollama: () => ollamaModels.value,
-    openai: () => openaiModels,
-    anthropic: () => anthropicModels,
-    gemini: () => geminiModels,
-    deepseek: () => deepseekModels
+/**
+ * Die Einstellungen sind über 1500 Zeilen lang. Ohne Gliederung findet man
+ * nichts wieder — deshalb Bereiche statt einer Endlosliste. Die Wahl bleibt
+ * im localStorage, damit man nach dem Speichern nicht wieder oben landet.
+ */
+const BEREICHE = [
+    { id: 'allgemein', icon: 'uil uil-setting' },
+    { id: 'journal', icon: 'uil uil-book-alt' },
+    { id: 'ki', icon: 'uil uil-brain' },
+    { id: 'live', icon: 'uil uil-chart-line' },
+    { id: 'agent', icon: 'uil uil-robot' },
+]
+const bereich = ref(localStorage.getItem('settingsBereich') || 'allgemein')
+function bereichWechseln(id) {
+    bereich.value = id
+    localStorage.setItem('settingsBereich', id)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+async function loadModelLists() {
+    try {
+        const r = await axios.get('/api/ai/models')
+        modellListen.value = r.data.modelle || {}
+        ohneSampling.value = r.data.ohneSampling || []
+    } catch (e) {
+        modellListen.value = {}
+    }
 }
 
 function getModelsForProvider() {
-    const fn = availableModels[aiProvider.value]
-    return fn ? fn() : []
+    const liste = aiProvider.value === 'ollama'
+        ? ollamaModels.value
+        : (modellListen.value[aiProvider.value] || [])
+    // Ein gespeichertes Modell, das nicht (mehr) in der Liste steht, würde das
+    // Auswahlfeld leer erscheinen lassen — und beim nächsten Speichern still
+    // verschwinden. Also mit anzeigen, statt es zu verlieren.
+    if (aiModel.value && !liste.includes(aiModel.value)) return [aiModel.value, ...liste]
+    return liste
+}
+
+/** Modelle, die keine Sampling-Parameter annehmen (Server ist die Quelle). */
+const ohneSampling = ref([])
+const modellOhneTemperatur = computed(
+    () => ohneSampling.value.some((p) => String(aiModel.value || '').startsWith(p)),
+)
+
+/** Nach dem Bearbeiten der Liste: die Auswahl gültig halten. */
+function modelleGeaendert(liste) {
+    if (aiProvider.value === 'ollama') ollamaModels.value = liste
+    else modellListen.value = { ...modellListen.value, [aiProvider.value]: liste }
+    if (!liste.includes(aiModel.value)) aiModel.value = liste[0] || ''
 }
 
 async function loadOllamaModels() {
@@ -171,6 +218,7 @@ async function saveAiSettings() {
             aiProvider: aiProvider.value,
             aiModel: aiModel.value,
             aiOllamaUrl: aiOllamaUrl.value || 'http://localhost:11434',
+            aiCustomUrl: aiCustomUrl.value.trim(),
             aiTemperature: parseFloat(aiTemperature.value) || 0.7,
             aiMaxTokens: parseInt(aiMaxTokens.value) || 1500,
             aiScreenshots: aiScreenshots.value,
@@ -206,7 +254,8 @@ async function testAiConnection() {
             provider: aiProvider.value,
             apiKey: currentApiKey.value,
             model: aiModel.value,
-            ollamaUrl: aiOllamaUrl.value
+            ollamaUrl: aiOllamaUrl.value,
+            customUrl: aiCustomUrl.value.trim()
         })
         aiTestResult.value = res.data
         // Nach erfolgreichem Ollama-Test Modelle neu laden
@@ -228,6 +277,7 @@ function onProviderChange() {
     aiTestResult.value = null
     if (aiProvider.value === 'ollama') {
         loadOllamaModels()
+        loadModelLists()
     }
 }
 
@@ -238,6 +288,7 @@ async function loadAiSettings() {
         aiProvider.value = s.aiProvider || 'ollama'
         aiModel.value = s.aiModel || ''
         aiOllamaUrl.value = s.aiOllamaUrl || 'http://localhost:11434'
+        aiCustomUrl.value = s.aiCustomUrl || ''
         aiTemperature.value = s.aiTemperature ?? 0.7
         aiMaxTokens.value = s.aiMaxTokens || 1500
         aiScreenshots.value = s.aiScreenshots || false
@@ -359,6 +410,117 @@ function onFluxAvatarUpload(event) {
     }
     reader.readAsDataURL(file)
 }
+
+/* LIVE-ANALYSE (Heatmap / Bookmap) — Werte liegen im Live-Store und speichern
+   sich dort selbst in die settings-Tabelle. */
+let liveExpanded = ref(false)
+
+/* STRATEGIE-AGENTEN — globale Schutzschalter. Bewusst hier und nicht in der
+   Instanz-Konfiguration: sie stehen ÜBER jeder einzelnen Strategie, damit eine
+   fehlkonfigurierte Instanz sie nicht umgehen kann. */
+let agentExpanded = ref(false)
+let agentKillSwitch = ref(false)
+let agentLiveEnabled = ref(false)
+let agentMaxLeverage = ref(10)
+let agentMinPaperTrades = ref(20)
+let agentLlmBudget = ref(1)
+let agentSaving = ref(false)
+let agentResult = ref(null)
+
+function loadAgentSettings() {
+    const s = currentUser.value || {}
+    agentKillSwitch.value = !!Number(s.strategyKillSwitch)
+    agentLiveEnabled.value = !!Number(s.strategyLiveEnabled)
+    agentMaxLeverage.value = Number(s.strategyMaxLeverage) || 10
+    agentMinPaperTrades.value = Number(s.strategyMinPaperTrades) ?? 20
+    agentLlmBudget.value = Number(s.strategyLlmBudgetUsd) || 1
+}
+
+async function saveAgentSettings() {
+    agentSaving.value = true
+    agentResult.value = null
+    try {
+        const daten = {
+            strategyKillSwitch: agentKillSwitch.value ? 1 : 0,
+            strategyLiveEnabled: agentLiveEnabled.value ? 1 : 0,
+            strategyMaxLeverage: Math.min(Math.max(1, agentMaxLeverage.value || 1), 125),
+            strategyMinPaperTrades: Math.max(0, agentMinPaperTrades.value || 0),
+            strategyLlmBudgetUsd: Math.max(0, agentLlmBudget.value || 0),
+        }
+        await dbUpdateSettings(daten)
+        Object.assign(currentUser.value, daten)
+        agentResult.value = { success: true, message: 'Gespeichert.' }
+    } catch (e) {
+        agentResult.value = { success: false, message: e.response?.data?.error || e.message }
+    } finally {
+        agentSaving.value = false
+        setTimeout(() => agentResult.value = null, 6000)
+    }
+}
+
+/* LIVE-RECORDER — serverseitige Aufzeichnung, deshalb eigene Felder mit
+   explizitem Speichern (der Server übernimmt sie erst beim Neuabgleich). */
+let recExpanded = ref(false)
+let recEnabled = ref(false)
+let recSymbols = ref('')
+let recDays = ref(14)
+let recFrameMs = ref(1000)
+let recRows = ref(200)
+let recRangePct = ref(1)
+let recAllLiq = ref(false)
+let recSaving = ref(false)
+let recResult = ref(null)
+let recStatus = ref(null)
+
+function loadRecorderSettings() {
+    const s = currentUser.value || {}
+    recEnabled.value = !!Number(s.liveRecordEnabled)
+    recSymbols.value = s.liveRecordSymbols || ''
+    recDays.value = Number(s.liveRecordDays) || 14
+    recFrameMs.value = Number(s.liveRecordFrameMs) || 1000
+    recRows.value = Number(s.liveRecordRows) || 200
+    recRangePct.value = Number(s.liveRecordRangePct) || 1
+    recAllLiq.value = !!Number(s.liveRecordAllLiq)
+}
+
+async function loadRecorderStatus() {
+    try {
+        const { data } = await axios.get('/api/live/recorder/status')
+        recStatus.value = data
+    } catch (e) {
+        recStatus.value = null
+    }
+}
+
+async function saveRecorderSettings() {
+    recSaving.value = true
+    recResult.value = null
+    try {
+        await dbUpdateSettings({
+            liveRecordEnabled: recEnabled.value ? 1 : 0,
+            liveRecordSymbols: recSymbols.value.toUpperCase().replace(/\s+/g, ''),
+            liveRecordDays: recDays.value,
+            liveRecordFrameMs: recFrameMs.value,
+            liveRecordRows: recRows.value,
+            liveRecordRangePct: recRangePct.value,
+            liveRecordAllLiq: recAllLiq.value ? 1 : 0,
+        })
+        const { data } = await axios.post('/api/live/recorder/reload')
+        await loadRecorderStatus()
+        recResult.value = { success: true, message: `Gespeichert — ${data.laufend} Symbol(e) werden aufgezeichnet.` }
+    } catch (e) {
+        recResult.value = { success: false, message: e.response?.data?.error || e.message }
+    } finally {
+        recSaving.value = false
+        setTimeout(() => recResult.value = null, 6000)
+    }
+}
+
+const recBytesGesamt = computed(() =>
+    (recStatus.value?.gespeichert || []).reduce((sum, r) => sum + (r.bytes || 0), 0))
+
+const fmtBytes = (b) => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB'
+    : b >= 1024 ? (b / 1024).toFixed(0) + ' kB' : b + ' B'
 
 /* ESP32 DISPLAY SETTINGS */
 let esp32Expanded = ref(false)
@@ -1350,6 +1512,9 @@ onBeforeMount(async () => {
     await loadEsp32Settings()
     await loadAuthStatus()
     esp32Filter.value = currentUser.value?.esp32Filter || 'month'
+    loadRecorderSettings()
+    await loadRecorderStatus()
+    loadAgentSettings()
 
     // Query-Parameter: ?section=api → API-Sektion aufklappen
     const urlParams = new URLSearchParams(window.location.search)
@@ -1366,7 +1531,18 @@ onBeforeMount(async () => {
     <div class="row mt-2">
         <div class="row">
             <div class="col-12 col-md-10" style="padding-left: 2rem;">
+
+                <!-- Bereiche: die Seite ist zu lang, um sie am Stück zu lesen -->
+                <ul class="nav nav-tabs settings-nav mb-3">
+                    <li v-for="b in BEREICHE" :key="b.id" class="nav-item">
+                        <a class="nav-link" :class="{ active: bereich === b.id }"
+                            href="#" @click.prevent="bereichWechseln(b.id)">
+                            <i :class="b.icon" class="me-1"></i>{{ t('settings.area_' + b.id) }}
+                        </a>
+                    </li>
+                </ul>
                 <!--=============== Layout & Style ===============-->
+                <div v-show="bereich === 'allgemein'">
                 <div class="d-flex align-items-center pointerClass" @click="layoutExpanded = !layoutExpanded">
                     <i class="uil me-2" :class="layoutExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                     <p class="fs-5 fw-bold mb-0">{{ t('settings.layoutAndStyle') }}</p>
@@ -1413,6 +1589,8 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
+                </div>
+                <div v-show="bereich === 'journal'">
                 <hr />
 
                 <!--=============== KONTOSTAND ===============-->
@@ -1441,6 +1619,8 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
+                </div>
+                <div v-show="bereich === 'journal'">
                 <hr />
 
                 <!--=============== API ANBINDUNG ===============-->
@@ -1612,6 +1792,8 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
+                </div>
+                <div v-show="bereich === 'journal'">
                 <hr />
 
                 <!--=============== BEWERTUNG ===============-->
@@ -1760,6 +1942,8 @@ onBeforeMount(async () => {
                     </div><!-- /subPopupsExpanded -->
                 </div>
 
+                </div>
+                <div v-show="bereich === 'ki'">
                 <hr />
 
                 <!--=============== KI-AGENT ===============-->
@@ -1790,6 +1974,7 @@ onBeforeMount(async () => {
                                 <option value="anthropic">Anthropic (Claude)</option>
                                 <option value="gemini">Google Gemini</option>
                                 <option value="deepseek">DeepSeek</option>
+                                <option value="custom">{{ t('settings.customProvider') }}</option>
                             </select>
                         </div>
                     </div>
@@ -1803,6 +1988,16 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
+                    <!-- Basis-URL des eigenen Anbieters -->
+                    <div v-if="aiProvider === 'custom'" class="row mt-2">
+                        <div class="col-12 col-md-4">{{ t('settings.customUrl') }}</div>
+                        <div class="col-12 col-md-8">
+                            <input type="text" class="form-control" v-model="aiCustomUrl"
+                                placeholder="https://api.groq.com/openai/v1" />
+                            <small class="text-muted">{{ t('settings.customUrlHint') }}</small>
+                        </div>
+                    </div>
+
                     <!-- Modell -->
                     <div class="row mt-2">
                         <div class="col-12 col-md-4">{{ t('settings.model') }}</div>
@@ -1813,6 +2008,8 @@ onBeforeMount(async () => {
                             <small v-if="aiProvider === 'ollama' && ollamaModels.length === 0" class="text-warning">
                                 {{ t('settings.loadModelsHint') }}
                             </small>
+                            <ModelManager :provider="aiProvider" :ollama-url="aiOllamaUrl"
+                                @geaendert="modelleGeaendert" />
                         </div>
                     </div>
 
@@ -1843,10 +2040,14 @@ onBeforeMount(async () => {
                         <div class="col-12 col-md-4">{{ t('settings.creativity') }}</div>
                         <div class="col-12 col-md-8">
                             <div class="d-flex align-items-center gap-2">
-                                <input type="range" class="form-range flex-grow-1" v-model="aiTemperature" min="0" max="1" step="0.1" />
+                                <input type="range" class="form-range flex-grow-1" v-model="aiTemperature"
+                                    min="0" max="1" step="0.1" :disabled="modellOhneTemperatur" />
                                 <span class="badge bg-secondary" style="min-width: 40px;">{{ aiTemperature }}</span>
                             </div>
-                            <small class="text-muted">{{ t('settings.creativityFactual') }}</small>
+                            <small v-if="modellOhneTemperatur" class="text-warning">
+                                {{ t('settings.temperatureIgnored', { model: aiModel }) }}
+                            </small>
+                            <small v-else class="text-muted">{{ t('settings.creativityFactual') }}</small>
                         </div>
                     </div>
 
@@ -1925,6 +2126,8 @@ onBeforeMount(async () => {
                     </div><!-- /v-show aiEnabled -->
                 </div>
 
+                </div>
+                <div v-show="bereich === 'ki'">
                 <hr />
 
                 <!--=============== SHARE CARDS (FLUX.2 + Gemini) ===============-->
@@ -2066,6 +2269,422 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
+                </div>
+                <div v-show="bereich === 'agent'">
+                <hr />
+
+                <!--=============== STRATEGIE-AGENTEN ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="agentExpanded = !agentExpanded">
+                    <i class="uil me-2" :class="agentExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Strategie-Agenten</p>
+                    <span v-if="agentKillSwitch" class="ms-2 badge bg-danger" style="font-size: 0.65rem;">Not-Aus aktiv</span>
+                    <span v-else-if="agentLiveEnabled" class="ms-2 badge bg-warning text-dark" style="font-size: 0.65rem;">Live freigegeben</span>
+                </div>
+                <div v-show="agentExpanded" class="mt-2 ms-3">
+                    <p class="fw-lighter">
+                        Globale Schutzschalter für den Agent-Modus. Die Strategien selbst und ihre Parameter werden
+                        unter <a href="/agent/strategies">Agent → Strategien</a> eingestellt.
+                        Diese Schalter wirken übergeordnet: keine einzelne Instanz kann sie umgehen.
+                    </p>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">Not-Aus</div>
+                        <div class="col-12 col-md-8">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" v-model="agentKillSwitch" />
+                            </div>
+                            <small class="text-muted">Solange aktiv, wird nichts erkannt und keine Order ausgelöst.</small>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">Live-Handel global erlauben</div>
+                        <div class="col-12 col-md-8">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" v-model="agentLiveEnabled" />
+                            </div>
+                            <small class="text-muted">
+                                Ohne diesen Schalter bleibt jede Instanz im Papierbetrieb — unabhängig von ihrer
+                                eigenen Einstellung. Zusätzlich muss jede Live-Instanz einzeln freigegeben werden.
+                            </small>
+                        </div>
+                    </div>
+
+                    <div v-if="agentLiveEnabled" class="alert alert-danger py-2 mt-2">
+                        <i class="uil uil-exclamation-triangle me-1"></i>
+                        Live-Handel ist freigegeben. Freigegebene Instanzen können eigenständig echtes Geld einsetzen.
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">Hebel-Obergrenze</div>
+                        <div class="col-12 col-md-8">
+                            <input type="number" min="1" max="125" class="form-control" style="max-width: 10rem;"
+                                v-model.number="agentMaxLeverage" />
+                            <small class="text-muted">
+                                Deckelt den Hebel jeder Instanz. Bitunix erlaubt bis 125× — für eine automatisch
+                                handelnde Strategie sind 3–5× ein vernünftiger Rahmen.
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">Papier-Trades vor Live</div>
+                        <div class="col-12 col-md-8">
+                            <input type="number" min="0" max="1000" class="form-control" style="max-width: 10rem;"
+                                v-model.number="agentMinPaperTrades" />
+                            <small class="text-muted">
+                                So viele abgeschlossene Papier-Trades muss eine Instanz vorweisen, bevor sie live
+                                gehen darf. 0 schaltet die Prüfung ab.
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">KI-Budget pro Tag (USD)</div>
+                        <div class="col-12 col-md-8">
+                            <input type="number" min="0" step="0.1" class="form-control" style="max-width: 10rem;"
+                                v-model.number="agentLlmBudget" />
+                            <small class="text-muted">
+                                Obergrenze für die optionalen Sentiment-/Portfolio-Agenten. Ist sie erreicht, wird
+                                das Setup übersprungen statt ungeprüft gehandelt.
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <button class="btn btn-success" :disabled="agentSaving" @click="saveAgentSettings">
+                                Speichern
+                            </button>
+                            <span v-if="agentResult" class="ms-3"
+                                :class="agentResult.success ? 'text-success' : 'text-danger'">
+                                {{ agentResult.message }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                </div>
+                <div v-show="bereich === 'live'">
+                <hr />
+
+                <!--=============== LIVE-ANALYSE ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="liveExpanded = !liveExpanded">
+                    <i class="uil me-2" :class="liveExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Live-Analyse · Heatmap / Bookmap</p>
+                </div>
+                <div v-show="liveExpanded" class="mt-2 ms-3">
+                    <p class="fw-lighter">Standardwerte für die Live-Ansicht. Änderungen im Seitenmenü der Live-Analyse landen ebenfalls hier — beides schreibt in dieselben Einstellungen. Die Daten kommen live vom öffentlichen Binance-Marktdaten-Stream; es wird nichts aufgezeichnet, die Historie beginnt beim Öffnen der Seite.</p>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">Markt</div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model="liveMarket">
+                                <option value="futures">USDⓈ-M Futures (Perpetual)</option>
+                                <option value="spot">Spot</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Preisband
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Sichtbarer Bereich um den Mittelkurs</small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model.number="liveViewPct">
+                                <option v-for="p in VIEW_PCT_OPTIONS" :key="p" :value="p">± {{ p }} %</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Spaltentakt
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Zeit, die eine Pixelspalte abdeckt</small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model.number="liveFrameMs">
+                                <option v-for="f in FRAME_MS_OPTIONS" :key="f" :value="f">{{ f }} ms</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Historie im Speicher
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Länger = mehr Arbeitsspeicher</small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model.number="liveHistoryMin">
+                                <option v-for="h in HISTORY_MIN_OPTIONS" :key="h" :value="h">{{ h }} Minuten</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">Farbrampe</div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model="liveRamp">
+                                <option value="viridis">Viridis (violett → grün → gelb)</option>
+                                <option value="bookmap">Klassisch (blau → grün → gelb → rot)</option>
+                                <option value="journal">Journal (Blauton)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Farbskala
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Fest = Bilder über Zeit und Symbole vergleichbar</small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <div class="input-group">
+                                <select class="form-select" v-model="liveColorMode">
+                                    <option value="auto">Automatisch (95. Perzentil)</option>
+                                    <option value="fixed">Fester Sättigungswert</option>
+                                </select>
+                                <input v-if="liveColorMode === 'fixed'" class="form-control" type="number" min="0"
+                                    step="0.1" v-model.number="liveColorRef" placeholder="z.B. 50" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Vorlauf beim Öffnen
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Nur aus eigener Aufzeichnung — Binance liefert keine vergangene Orderbuch-Tiefe</small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model.number="livePrefillMin">
+                                <option :value="0">Aus (leer starten)</option>
+                                <option :value="5">5 Minuten</option>
+                                <option :value="15">15 Minuten</option>
+                                <option :value="30">30 Minuten</option>
+                                <option :value="60">60 Minuten</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Liquiditätsschwelle
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Blendet schwache Liquidität aus — nur die Wände bleiben</small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2">
+                            <input type="range" class="form-range" min="0" max="0.9" step="0.05"
+                                v-model.number="liveThreshold" />
+                            <span style="min-width:3rem;">{{ Math.round(liveThreshold * 100) }} %</span>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Punkte zusammenfassen
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Bündelt Handelspunkte zu Blasen und bestimmt zugleich deren Grösse. Ganz links bleibt jede Spalte einzeln — dann verschmelzen die Punkte zu einem Band.</small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2">
+                            <input type="range" class="form-range" min="1" max="30" step="1"
+                                v-model.number="liveDotStep" />
+                            <span style="min-width:4rem;">{{ liveDotStep === 1 ? 'aus' : liveDotStep + ' px' }}</span>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">Verhalten</div>
+                        <div class="col-12 col-md-8">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="liveAutoFollowChk"
+                                    v-model="liveAutoFollow" />
+                                <label class="form-check-label" for="liveAutoFollowChk">
+                                    Preisachse folgt dem Mittelkurs
+                                    <small class="d-block text-muted" style="font-size:0.78rem;">Aus = feste Achse, im Chart mit Ziehen verschiebbar</small>
+                                </label>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="liveProfileChk"
+                                    v-model="liveShowProfile" />
+                                <label class="form-check-label" for="liveProfileChk">Volumenprofil einblenden</label>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="liveLiqChk"
+                                    v-model="liveShowLiquidations" />
+                                <label class="form-check-label" for="liveLiqChk">
+                                    Zwangsliquidationen einzeichnen
+                                    <small class="d-block text-muted" style="font-size:0.78rem;">Nur Futures — tatsächlich ausgeführte Liquidationen als Rauten</small>
+                                </label>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="livePauseBgChk"
+                                    v-model="livePauseInBackground" />
+                                <label class="form-check-label" for="livePauseBgChk">
+                                    Im Hintergrund pausieren
+                                    <small class="d-block text-muted" style="font-size:0.78rem;">Empfohlen: der Browser drosselt versteckte Tabs, sonst verzerrt sich die Zeitachse</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                </div>
+                <div v-show="bereich === 'live'">
+                <hr />
+
+                <!--=============== LIVE-RECORDER ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="recExpanded = !recExpanded">
+                    <i class="uil me-2" :class="recExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Live-Aufzeichnung · Orderbuch mitschneiden</p>
+                    <span v-if="recStatus?.laufend?.length" class="badge bg-success ms-2">
+                        {{ recStatus.laufend.length }} aktiv
+                    </span>
+                </div>
+                <div v-show="recExpanded" class="mt-2 ms-3">
+                    <p class="fw-lighter">Der Server schneidet das Orderbuch der gewählten Symbole dauerhaft mit, damit du die Heatmap später zu einem abgeschlossenen Trade nochmal ansehen kannst. Läuft unabhängig vom Browser.</p>
+
+                    <div class="mb-3 p-2" style="background: var(--black-bg-3, #1a1a2e); border-radius: var(--border-radius, 6px); font-size: 0.85rem;">
+                        <div class="fw-semibold mb-1" style="color: var(--white-75);">Bevor du es einschaltest</div>
+                        <ul class="mb-0 ps-3">
+                            <li><b>Rückwirkend geht nichts.</b> Nur Symbole auf dieser Liste werden aufgezeichnet — für einen Trade in einem anderen Symbol gibt es keine Historie.</li>
+                            <li>Ein Container-Neustart (z.B. beim Update) reisst ein Loch in die Aufzeichnung.</li>
+                            <li>Platzbedarf: rund <b>7 MB pro Symbol und Tag</b> in der Datenbank.</li>
+                            <li>Aufgezeichnet wird immer <b>USDⓈ-M Futures</b>, unabhängig davon, welchen Markt du oben zum Anschauen gewählt hast.</li>
+                        </ul>
+                    </div>
+
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="recEnabledChk" v-model="recEnabled" />
+                        <label class="form-check-label" for="recEnabledChk">Aufzeichnung aktiv</label>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Symbole
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Kommagetrennt, max. 10</small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <input class="form-control" type="text" v-model="recSymbols" placeholder="BTCUSDT,SOLUSDT" />
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">Aufbewahrung</div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model.number="recDays">
+                                <option :value="3">3 Tage</option>
+                                <option :value="7">7 Tage</option>
+                                <option :value="14">14 Tage</option>
+                                <option :value="30">30 Tage</option>
+                                <option :value="90">90 Tage</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Auflösung
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Feiner = mehr Speicher</small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <div class="input-group">
+                                <select class="form-select" v-model.number="recFrameMs">
+                                    <option :value="500">500 ms / Spalte</option>
+                                    <option :value="1000">1 s / Spalte</option>
+                                    <option :value="2000">2 s / Spalte</option>
+                                </select>
+                                <select class="form-select" v-model.number="recRows">
+                                    <option :value="120">120 Zeilen</option>
+                                    <option :value="200">200 Zeilen</option>
+                                    <option :value="400">400 Zeilen</option>
+                                </select>
+                                <select class="form-select" v-model.number="recRangePct">
+                                    <option :value="0.5">± 0.5 %</option>
+                                    <option :value="1">± 1 %</option>
+                                    <option :value="2">± 2 %</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-3" style="border-color: var(--black-bg-3, #1a1a2e);" />
+
+                    <p class="fw-bold mb-1">Zwangsliquidationen sammeln</p>
+                    <p class="fw-lighter mb-2" style="font-size: 0.88rem;">
+                        Schneidet über <b>eine einzige Verbindung</b> die Zwangsliquidationen
+                        <b>aller</b> Futures-Symbole mit — unabhängig von der Symbolliste oben und
+                        unabhängig davon, ob die Orderbuch-Aufzeichnung läuft.
+                        Binance gibt Liquidationen nicht rückwirkend heraus: was nicht mitgeschrieben
+                        wird, ist endgültig weg. Sie dienen als Vergleichsmaterial, um berechnete
+                        Liquidationszonen gegen die Wirklichkeit prüfen zu können.
+                    </p>
+                    <p class="fw-lighter mb-2" style="font-size: 0.88rem;">
+                        Gemessen kommen rund <b>100 000 Ereignisse am Tag</b> über alle Symbole zusammen,
+                        das sind etwa <b>2–3 MB täglich</b> — ungefähr ein Drittel dessen, was ein
+                        <i>einzelnes</i> Symbol an Orderbuch kostet. Weil sie so klein und nicht
+                        nachbestellbar sind, werden sie <b>ein Jahr</b> aufbewahrt statt nur den oben
+                        eingestellten Zeitraum.
+                    </p>
+
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="recAllLiqChk" v-model="recAllLiq" />
+                        <label class="form-check-label" for="recAllLiqChk">Liquidationen aller Symbole mitschneiden</label>
+                    </div>
+
+                    <div v-if="recStatus?.sammelstrom" class="mb-2 p-2"
+                         style="background: var(--black-bg-3, #1a1a2e); border-radius: var(--border-radius, 6px); font-size: 0.85rem;">
+                        <span :class="recStatus.sammelstrom.verbunden ? 'text-success' : 'text-danger'">
+                            {{ recStatus.sammelstrom.verbunden ? 'verbunden' : 'getrennt' }}
+                        </span>
+                        · {{ recStatus.sammelstrom.ereignisse }} Ereignisse seit Serverstart
+                        <span v-if="recStatus.sammelstrom.letztes" class="text-muted">
+                            · zuletzt {{ new Date(recStatus.sammelstrom.letztes).toLocaleTimeString() }}
+                        </span>
+                    </div>
+
+                    <div class="mt-3 d-flex gap-2 align-items-center">
+                        <button class="btn btn-primary" @click="saveRecorderSettings" :disabled="recSaving">
+                            <span v-if="recSaving" class="spinner-border spinner-border-sm me-1"></span>
+                            Speichern &amp; übernehmen
+                        </button>
+                        <button class="btn btn-outline-secondary" @click="loadRecorderStatus">Status aktualisieren</button>
+                        <span v-if="recResult" :class="recResult.success ? 'text-success' : 'text-danger'">
+                            {{ recResult.message }}
+                        </span>
+                    </div>
+
+                    <div v-if="recStatus" class="mt-3">
+                        <table class="table table-dark table-sm" style="font-size:0.82rem;">
+                            <thead>
+                                <tr><th>Symbol</th><th>Verbindung</th><th>Aufgezeichnet</th><th>Speicher</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="r in recStatus.gespeichert" :key="r.symbol + r.market">
+                                    <td>{{ r.symbol }}</td>
+                                    <td>
+                                        <span v-if="recStatus.laufend.some(l => l.symbol === r.symbol)" class="text-success">läuft</span>
+                                        <span v-else class="text-muted">gestoppt</span>
+                                    </td>
+                                    <td>{{ r.stunden }} Stunde(n)</td>
+                                    <td>{{ fmtBytes(r.bytes) }}</td>
+                                </tr>
+                                <tr v-for="l in recStatus.laufend.filter(l => !recStatus.gespeichert.some(g => g.symbol === l.symbol))" :key="'l' + l.symbol">
+                                    <td>{{ l.symbol }}</td>
+                                    <td><span :class="l.synchron ? 'text-success' : 'text-warning'">{{ l.synchron ? 'läuft' : 'synchronisiert…' }}</span></td>
+                                    <td>läuft an</td>
+                                    <td>—</td>
+                                </tr>
+                                <tr v-if="!recStatus.gespeichert.length && !recStatus.laufend.length">
+                                    <td colspan="4" class="text-muted">Noch nichts aufgezeichnet</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div v-if="recBytesGesamt" class="text-muted" style="font-size:0.8rem;">
+                            Gesamt in der Datenbank: {{ fmtBytes(recBytesGesamt) }}
+                        </div>
+                    </div>
+                </div>
+
+                </div>
+                <div v-show="bereich === 'journal'">
                 <hr />
 
                 <!--=============== ESP32 DISPLAY ===============-->
@@ -2183,6 +2802,8 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
+                </div>
+                <div v-show="bereich === 'allgemein'">
                 <hr />
 
                 <!--=============== SICHERHEIT / PASSWORT-GATE ===============-->
@@ -2244,6 +2865,8 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
+                </div>
+                <div v-show="bereich === 'allgemein'">
                 <hr />
 
                 <!--=============== DATENBANK ===============-->
@@ -2389,6 +3012,8 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
+                </div>
+                <div v-show="bereich === 'journal'">
                 <hr />
 
                 <!--=============== OHLC-CHART ===============-->
@@ -2404,6 +3029,8 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
+                </div>
+                <div v-show="bereich === 'allgemein'">
                 <hr />
 
                 <!--=============== IMPORTE ===============-->
@@ -2501,6 +3128,7 @@ onBeforeMount(async () => {
                             </div>
                         </div>
                     </div>
+                </div>
                 </div>
 
             </div>

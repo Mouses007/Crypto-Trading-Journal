@@ -1838,7 +1838,16 @@ function buildStepData(steps, xLabels) {
     return result
 }
 
-export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, trade, initCandleChart) {
+/**
+ * Kerzenchart eines Trades mit Ein-/Ausstieg, SL/TP und Teilausführungen.
+ *
+ * `elementId` und `zonen` sind nachgerüstet und haben Vorgabewerte, damit der
+ * bestehende Aufruf aus Daily.vue unverändert weiterläuft. `zonen` erlaubt es,
+ * Bereiche zu hinterlegen (z. B. den Order Block einer Bot-Strategie):
+ *   [{ von, bis, farbe?, rand?, name? }]
+ */
+export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, trade, initCandleChart,
+    elementId = 'candlestickChart', zonen = null) {
     console.log(" -> creating candlestick chart")
     //console.log(" trade " + JSON.stringify(trade))
     let green = '#26a69a'
@@ -1929,7 +1938,7 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
         //console.log(" currentTD "+currentTD)
         //console.log(" trade.td "+trade.td)
         if (initCandleChart) {
-            const chartEl = document.getElementById("candlestickChart")
+            const chartEl = document.getElementById(elementId)
             if (!chartEl) {
                 reject(new Error("Candlestick chart container not found"))
                 return
@@ -2111,6 +2120,27 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
                 itemStyle: { color: exitMarkerColor, borderColor: '#FFFFFF', borderWidth: 1, opacity: 0.8 },
                 emphasis: { disabled: true }
             })
+        }
+
+        // Zonen (z. B. Order Block) hinter die Kerzen legen
+        if (Array.isArray(zonen) && zonen.length) {
+            option.series[0].markArea = {
+                silent: true,
+                data: zonen.map((z) => [
+                    {
+                        yAxis: Math.min(z.von, z.bis),
+                        itemStyle: {
+                            color: z.farbe || 'rgba(1, 180, 255, 0.10)',
+                            borderColor: z.rand || 'rgba(1, 180, 255, 0.45)',
+                            borderWidth: 1,
+                        },
+                        label: z.name
+                            ? { show: true, position: 'insideTopLeft', formatter: z.name, fontSize: 10, color: '#8ab4f8' }
+                            : { show: false },
+                    },
+                    { yAxis: Math.max(z.von, z.bis) },
+                ]),
+            }
         }
 
         // ===== TRADING METADATA ERWEITERUNGEN =====
@@ -3740,4 +3770,102 @@ export function useFeesChart(param) {
         myChart.setOption(option)
         resolve()
     })
+}
+/**
+ * Kerzenchart für ein Strategie-Setup: Kerzen plus die eingezeichnete
+ * Order-Block-Zone, das gesweepte Level und Einstieg/Stop/Ziel.
+ *
+ * Bewusst eine schlanke Schwester von `useCandlestickChart` statt einer
+ * Erweiterung: jene Funktion rendert hart in `#candlestickChart` und ist eng an
+ * die Trade-Objekte des Journals gebunden. Hier braucht es nur Kerzen und
+ * Preislinien — und eine frei wählbare Element-ID, weil mehrere Setups
+ * nebeneinander gezeichnet werden können.
+ *
+ * `markArea` wird im Projekt hier zum ersten Mal genutzt; die Zone ist der
+ * eigentliche Kern der Darstellung, ohne sie ist ein LSOB nicht zu beurteilen.
+ *
+ * @param {string} elementId  Ziel-Container
+ * @param {Array}  candles    [{ t, o, h, l, c }] aufsteigend
+ * @param {object} setup      { direction, obHigh, obLow, obCandleTime, sweepLevel, sweepCandleTime, entry, stopLoss, takeProfit }
+ */
+export function useSetupChart(elementId, candles, setup) {
+    const el = document.getElementById(elementId)
+    if (!el || !candles?.length) return null
+
+    const vorhanden = echarts.getInstanceByDom(el)
+    if (vorhanden) vorhanden.dispose()
+    const myChart = echarts.init(el)
+
+    const labels = candles.map(k => dayjs.unix(Math.floor(k.t / 1000)).tz(timeZoneTrade.value).format('DD.MM HH:mm'))
+    // ECharts erwartet [open, close, low, high]
+    const werte = candles.map(k => [k.o, k.c, k.l, k.h])
+
+    const zeitTexte = new Map(candles.map((k, i) => [k.t, labels[i]]))
+    const labelFuer = (t) => zeitTexte.get(Number(t)) || labels[0]
+
+    const istLong = setup?.direction === 'long'
+    const zonenFarbe = istLong ? 'rgba(72, 199, 142, 0.18)' : 'rgba(235, 87, 87, 0.18)'
+    const zonenRand = istLong ? greenColor : redColor
+
+    const linie = (wert, farbe, text) => ({
+        yAxis: wert,
+        lineStyle: { color: farbe, type: 'dashed', width: 1.2 },
+        label: { formatter: text, color: farbe, position: 'insideEndTop', fontSize: 10 },
+    })
+
+    const markLines = []
+    if (setup?.entry) markLines.push(linie(setup.entry, white87, _t('strategies.chartEntry')))
+    if (setup?.stopLoss) markLines.push(linie(setup.stopLoss, redColor, _t('strategies.chartStop')))
+    if (setup?.takeProfit) markLines.push(linie(setup.takeProfit, greenColor, _t('strategies.chartTarget')))
+    if (setup?.sweepLevel) markLines.push(linie(setup.sweepLevel, 'rgba(240, 196, 25, 0.9)', _t('strategies.chartSweep')))
+
+    const option = {
+        backgroundColor: 'transparent',
+        animation: false,
+        grid: { left: 8, right: 62, top: 16, bottom: 24, containLabel: true },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'cross' },
+            backgroundColor: blackbg5,
+            borderColor: 'rgba(255,255,255,0.15)',
+            textStyle: { color: white87, fontSize: 11 },
+        },
+        xAxis: {
+            type: 'category', data: labels,
+            axisLine: { lineStyle: { color: white38 } },
+            axisLabel: { color: cssColor60, fontSize: 10 },
+            splitLine: { show: false },
+        },
+        yAxis: {
+            scale: true, position: 'right',
+            axisLine: { show: false },
+            axisLabel: { color: cssColor60, fontSize: 10 },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
+        },
+        dataZoom: [{ type: 'inside' }],
+        series: [{
+            type: 'candlestick',
+            data: werte,
+            itemStyle: {
+                color: greenColor, color0: redColor,
+                borderColor: greenColor, borderColor0: redColor,
+            },
+            // Die Order-Block-Zone läuft vom Entstehen der Kerze bis zum
+            // rechten Rand — genau so, wie man sie im Chart einzeichnet.
+            markArea: {
+                silent: true,
+                itemStyle: { color: zonenFarbe, borderColor: zonenRand, borderWidth: 1 },
+                data: setup?.obHigh > setup?.obLow ? [[
+                    { xAxis: labelFuer(setup.obCandleTime), yAxis: setup.obLow,
+                      label: { show: true, position: 'insideTopLeft', color: zonenRand, fontSize: 10,
+                               formatter: _t('strategies.chartOrderBlock') } },
+                    { xAxis: labels[labels.length - 1], yAxis: setup.obHigh },
+                ]] : [],
+            },
+            markLine: { silent: true, symbol: 'none', data: markLines },
+        }],
+    }
+
+    myChart.setOption(option)
+    return myChart
 }

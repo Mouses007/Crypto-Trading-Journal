@@ -1,0 +1,571 @@
+/**
+ * Strategie-Engine — der Taktgeber.
+ *
+ * Aufbau nach dem bewährten `reconcile()`-Muster aus `live-recorder.js`: der
+ * Soll-Zustand steht in der DB, ein Timer gleicht ab. Änderungen an einer
+ * Instanz greifen dadurch sofort und überleben einen Neustart, ohne dass
+ * irgendwo eine Konfiguration im Code stünde.
+ *
+ * Getaktet wird auf KERZENSCHLUSS, nicht auf ein starres Intervall: ein Setup
+ * lebt über viele Kerzen (Sweep → Order Block → Impuls → Retest Stunden
+ * später). Ein reiner Intervall-Scan würde dasselbe Setup mehrfach erkennen
+ * oder den Retest verpassen.
+ *
+ * Reihenfolge je Takt — bewusst identisch zum Backtest:
+ *   1. offene Positionen mit den neuen Kerzen fortschreiben
+ *   2. erkennen (nur auf geschlossenen Kerzen)
+ *   3. getriggerte Setups durch Agenten-Veto und Risk-Engine schicken
+ *   4. ausführen
+ */
+
+import { getKnex } from './database.js'
+import { logError, logWarn } from './logger.js'
+import { getStrategy, validateParams, validateRisk, AGENT_DEFAULTS } from './strategies/index.js'
+import { getClosedCandles, getSymbolMeta, getLastPrice, timeframeMs, isValidTimeframe } from './market-data.js'
+import { evaluateRisk, startOfDayUtc, RISK_REASONS } from './risk-engine.js'
+import { openPaperPosition, stepPaperPositions, getPaperEquity, closePaperPositionManually } from './execution/paper.js'
+import { agentenVeto } from './strategy-agents.js'
+import { openLivePosition, getLiveEquity } from './execution/bitunix.js'
+
+const TICK_MS = 15000          // Prüfintervall; gearbeitet wird nur bei neuem Kerzenschluss
+const MAX_SYMBOLS = 20         // Deckel je Instanz, damit ein Tippfehler den Server nicht flutet
+
+let tickTimer = null
+let engineStopped = false
+
+/** instanceId → true, solange ein Lauf aktiv ist (Guard je Instanz, nicht global). */
+const running = new Map()
+/** `${instanceId}|${symbol}` → Zeit der zuletzt verarbeiteten Kerze. */
+const lastProcessed = new Map()
+/** Kurzstatistik für den Status-Endpunkt. */
+const stats = { ticks: 0, runs: 0, lastRunAt: 0, errors: 0 }
+
+/**
+ * Agenten-Veto. Standardmässig verdrahtet, greift aber nur, wenn eine Instanz
+ * mindestens eine Rolle aktiviert hat — ohne das läuft die Strategie rein
+ * deterministisch. Über `setAgentHook` austauschbar (Tests, Abschalten).
+ */
+let agentHook = agentenVeto
+export function setAgentHook(fn) { agentHook = fn }
+
+// ── Instanz laden ────────────────────────────────────────────────────────
+
+function parseJson(wert, fallback) {
+    if (wert === null || wert === undefined) return fallback
+    if (typeof wert === 'object') return wert
+    try { return JSON.parse(wert) } catch { return fallback }
+}
+
+/**
+ * DB-Zeile → benutzbare Instanz mit validierten Parametern.
+ * Gibt null zurück, wenn die Instanz unbrauchbar ist (unbekannte Strategie,
+ * ungültiger Timeframe) — solche Instanzen werden übersprungen, nicht geraten.
+ */
+export function ladeInstanz(row) {
+    const strategie = getStrategy(row.strategyId)
+    if (!strategie) return null
+    if (!isValidTimeframe(row.timeframe)) return null
+
+    const symbols = parseJson(row.symbols, []).filter(Boolean).slice(0, MAX_SYMBOLS)
+    const { values: params } = validateParams(row.strategyId, parseJson(row.params, {}))
+    const { values: risk } = validateRisk(parseJson(row.risk, {}))
+    const agents = { ...AGENT_DEFAULTS, ...parseJson(row.agents, {}) }
+
+    return {
+        id: row.id,
+        strategyId: row.strategyId,
+        name: row.name || row.strategyId,
+        enabled: Boolean(row.enabled),
+        mode: row.mode || 'paper',
+        broker: row.broker || 'bitunix',
+        market: row.market || 'futures',
+        timeframe: row.timeframe,
+        paramsVersion: Number(row.paramsVersion) || 1,
+        liveApprovedAt: Number(row.liveApprovedAt) || 0,
+        symbols, params, risk, agents, strategie,
+    }
+}
+
+/** Globale Schalter aus den Einstellungen. */
+async function ladeSchalter() {
+    const knex = getKnex()
+    const s = await knex('settings')
+        .select('strategyLiveEnabled', 'strategyKillSwitch', 'strategyMaxLeverage', 'strategyMinPaperTrades')
+        .where('id', 1).first()
+    return {
+        liveEnabled: Boolean(s?.strategyLiveEnabled),
+        killSwitch: Boolean(s?.strategyKillSwitch),
+        maxLeverage: Number(s?.strategyMaxLeverage) || 10,
+        minPaperTrades: Number(s?.strategyMinPaperTrades) || 0,
+    }
+}
+
+/**
+ * Darf diese Instanz echte Orders senden?
+ * Drei unabhängige Bedingungen — eine allein reicht nie.
+ */
+export async function darfLiveHandeln(instance, schalter) {
+    if (instance.mode !== 'live') return { ok: true }        // paper/shadow sind immer erlaubt
+    if (!schalter.liveEnabled) return { ok: false, reason: 'live_globally_disabled' }
+    if (!instance.liveApprovedAt) return { ok: false, reason: 'live_not_approved' }
+
+    if (schalter.minPaperTrades > 0) {
+        const knex = getKnex()
+        const row = await knex('strategy_trades')
+            .where({ instanceId: instance.id })
+            .whereIn('mode', ['paper', 'shadow'])
+            .count({ n: '*' }).first()
+        const n = Number(row?.n) || 0
+        if (n < schalter.minPaperTrades) {
+            return { ok: false, reason: 'not_enough_paper_trades', detail: `${n}/${schalter.minPaperTrades}` }
+        }
+    }
+    return { ok: true }
+}
+
+// ── Kontext für die Risikoprüfung ────────────────────────────────────────
+
+async function ladeRisikoKontext(instance, now) {
+    const knex = getKnex()
+    const tagesBeginn = startOfDayUtc(now)
+
+    const [offen, heute, letzte] = await Promise.all([
+        knex('strategy_positions').where({ instanceId: instance.id, status: 'open' }),
+        knex('strategy_trades')
+            .where({ instanceId: instance.id })
+            .where('exitTime', '>=', tagesBeginn)
+            .sum({ pnl: 'netPnl' }).first(),
+        knex('strategy_trades')
+            .where({ instanceId: instance.id })
+            .groupBy('symbol')
+            .select('symbol')
+            .max({ exitTime: 'exitTime' }),
+    ])
+
+    const lastExitBySymbol = {}
+    for (const r of letzte) lastExitBySymbol[r.symbol] = Number(r.exitTime) || 0
+
+    return {
+        openPositions: offen,
+        todayNetPnl: Number(heute?.pnl) || 0,
+        lastExitBySymbol,
+    }
+}
+
+/**
+ * Kontostand je nach Betriebsart. Live wird beim Broker erfragt — die
+ * Positionsgrösse muss sich am echten Kapital bemessen, nicht an einem
+ * simulierten Startwert.
+ */
+async function ladeKontostand(instance) {
+    if (instance.mode !== 'live') return getPaperEquity(instance)
+    return getLiveEquity()
+}
+
+// ── Ein Symbol verarbeiten ───────────────────────────────────────────────
+
+async function verarbeiteSymbol(instance, symbol, schalter) {
+    const knex = getKnex()
+    const p = instance.params
+    const costs = { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps }
+
+    const bedarf = (instance.strategie.warmupCandles || 200)
+        + (p.scanWindowCandles || 200)
+        + (p.retestMaxCandles || 40) + 10
+
+    const candles = await getClosedCandles(symbol, instance.timeframe, bedarf, { market: instance.market })
+    if (candles.length < 50) return { skipped: 'zu wenige Kerzen' }
+
+    const neueste = candles[candles.length - 1].t
+    const key = `${instance.id}|${symbol}`
+    if (lastProcessed.get(key) === neueste) return { skipped: 'keine neue Kerze' }
+
+    // ── 1. Offene Positionen fortschreiben ───────────────────────────────
+    const geschlossen = await stepPaperPositions({
+        instance, symbol, candles, costs,
+        breakEvenAtR: p.breakEvenAtR,
+        maxHoldMs: (p.maxHoldCandles || 0) * timeframeMs(instance.timeframe),
+    })
+
+    // ── 2. Erkennen ──────────────────────────────────────────────────────
+    const fensterStart = candles[0].t
+    const [offeneSetups, bekannte] = await Promise.all([
+        knex('strategy_setups')
+            .where({ instanceId: instance.id, symbol, timeframe: instance.timeframe })
+            .whereIn('status', ['armed', 'waiting_retest']),
+        // Statusunabhängig: sonst wird ein bereits abgeschlossenes Setup bei
+        // jedem Takt neu erzeugt, solange sein Sweep im Fenster liegt.
+        knex('strategy_setups')
+            .where({ instanceId: instance.id, symbol, timeframe: instance.timeframe })
+            .where('obCandleTime', '>=', fensterStart)
+            .select('direction', 'obCandleTime'),
+    ])
+
+    const openSetups = offeneSetups.map((r) => ({
+        ...r,
+        confirmations: parseJson(r.confirmations, {}),
+        obHigh: Number(r.obHigh), obLow: Number(r.obLow),
+        entry: Number(r.entry), stopLoss: Number(r.stopLoss), takeProfit: Number(r.takeProfit),
+        sweepPrice: Number(r.sweepPrice), impulseExtreme: Number(r.impulseExtreme),
+        watchFrom: Number(r.watchFrom) || Number(r.obCandleTime),
+    }))
+
+    const { setups, events } = instance.strategie.detect({
+        candles,
+        params: p,
+        openSetups,
+        knownSetupKeys: bekannte.map((r) => `${r.direction}|${r.obCandleTime}`),
+    })
+
+    // ── 3. Neue Setups sichern ───────────────────────────────────────────
+    if (setups.length) {
+        const zeilen = setups.map((s) => ({
+            instanceId: instance.id,
+            strategyId: instance.strategyId,
+            symbol,
+            timeframe: instance.timeframe,
+            direction: s.direction,
+            status: s.status,
+            sweepLevel: s.sweepLevel,
+            sweepPrice: s.sweepPrice,
+            sweepCandleTime: s.sweepCandleTime,
+            obHigh: s.obHigh,
+            obLow: s.obLow,
+            obCandleTime: s.obCandleTime,
+            watchFrom: s.watchFrom,
+            impulseExtreme: s.impulseExtreme,
+            entry: s.entry,
+            stopLoss: s.stopLoss,
+            takeProfit: s.takeProfit,
+            rr: s.rr,
+            confirmations: JSON.stringify(s.confirmations || {}),
+            paramsVersion: instance.paramsVersion,
+            detectorVersion: s.detectorVersion || 1,
+        }))
+        // Der Unique-Index ist der Rückfallschutz gegen Doppelanlagen
+        await knex('strategy_setups')
+            .insert(zeilen)
+            .onConflict(['instanceId', 'symbol', 'timeframe', 'direction', 'obCandleTime'])
+            .ignore()
+    }
+
+    // ── 4. Ereignisse anwenden ───────────────────────────────────────────
+    let ausgefuehrt = 0
+    for (const ev of events) {
+        const setup = openSetups.find((s) => s.id === ev.id)
+        if (!setup) continue
+
+        if (ev.status !== 'triggered') {
+            await knex('strategy_setups').where('id', ev.id).update({
+                status: ev.status,
+                invalidReason: ev.invalidReason || '',
+                updatedAt: knex.fn.now(),
+            })
+            continue
+        }
+
+        setup.symbol = symbol
+        setup.timeframe = instance.timeframe
+        setup.confirmations = ev.confirmations || {}
+
+        // Kursmarken aus dem Auslöser übernehmen. Bei manchen Strategien stehen
+        // sie schon beim Erkennen fest (LSOB: die Zone liegt fest), bei anderen
+        // ergeben sie sich erst beim Auslösen, weil sie an einem wandernden
+        // Indikator hängen. Ohne diese Übernahme würde mit veralteten Werten
+        // gehandelt — dem Stand von vor der Korrektur.
+        if (Number.isFinite(ev.entry) && ev.entry > 0) setup.entry = ev.entry
+        if (Number.isFinite(ev.stopLoss) && ev.stopLoss > 0) setup.stopLoss = ev.stopLoss
+        if (Number.isFinite(ev.takeProfit)) setup.takeProfit = ev.takeProfit
+        const risiko = Math.abs(setup.entry - setup.stopLoss)
+        setup.rr = setup.takeProfit > 0 && risiko > 0
+            ? Math.abs(setup.takeProfit - setup.entry) / risiko
+            : 0
+
+        const ergebnis = await fuehreAus({ instance, setup, ev, candles, schalter, costs })
+        await knex('strategy_setups').where('id', ev.id).update({
+            status: ergebnis.ok ? 'open' : 'rejected',
+            rejectReason: ergebnis.ok ? '' : (ergebnis.reason || ''),
+            triggeredAt: ev.triggeredAt || 0,
+            entry: setup.entry,
+            stopLoss: setup.stopLoss,
+            takeProfit: setup.takeProfit,
+            rr: setup.rr,
+            confirmations: JSON.stringify(setup.confirmations),
+            updatedAt: knex.fn.now(),
+        })
+        if (ergebnis.ok) ausgefuehrt++
+    }
+
+    lastProcessed.set(key, neueste)
+    return { candles: candles.length, neu: setups.length, events: events.length, ausgefuehrt, geschlossen: geschlossen.length }
+}
+
+/**
+ * Ein getriggertes Setup durch Veto, Risiko und Ausführung schicken.
+ * Jeder Ausgang — auch jede Ablehnung — landet in `strategy_runs`.
+ */
+async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
+    const knex = getKnex()
+    const now = ev.triggeredAt || Date.now()
+
+    const lauf = {
+        instanceId: instance.id,
+        setupId: setup.id,
+        sentimentOutput: '{}',
+        portfolioOutput: '{}',
+        riskOutput: '{}',
+        executionOutput: '{}',
+        finalAction: '',
+        reason: '',
+    }
+    /**
+     * Schreibt den Lauf fort und beendet ihn.
+     *
+     * `code` ist maschinenlesbar und wird am Setup gespeichert — die Auswertung
+     * gruppiert danach und die Oberfläche übersetzt ihn. `detail` ist Klartext
+     * für das Protokoll und darf frei formuliert sein. Beides zu vermischen
+     * würde die Gruppierung in der Auswertung zerstören.
+     *
+     * `extra` enthält ausschliesslich JSON-Spalten.
+     */
+    const beenden = async (action, code, detail = '', extra = {}) => {
+        const protokoll = detail ? `${code}: ${detail}` : String(code || '')
+        await knex('strategy_runs').insert({
+            ...lauf, ...extra, finalAction: action, reason: protokoll.slice(0, 400),
+        })
+        return { ok: action === 'execute', reason: code }
+    }
+
+    // (a) Not-Aus und Live-Freigabe
+    if (schalter.killSwitch) return beenden('reject_risk', RISK_REASONS.KILL_SWITCH)
+    const live = await darfLiveHandeln(instance, schalter)
+    if (!live.ok) return beenden('reject_risk', live.reason, live.detail)
+
+    // (a2) Veraltete Auslöser.
+    // Ein frisch erkanntes Setup wird ab seinem Impuls geprüft — der Retest kann
+    // deshalb Stunden zurückliegen, etwa beim ersten Lauf nach einem Neustart.
+    // Im Papierbetrieb ist das Nachspielen richtig und erwünscht (die Position
+    // wird anschliessend Kerze für Kerze nachbewertet). Eine ECHTE Order zu
+    // einem längst überholten Preis wäre dagegen ein Fehler — deshalb handelt
+    // live ausschliesslich auf der gerade geschlossenen Kerze.
+    const neuesteKerze = candles[candles.length - 1]?.t || 0
+    if (instance.mode !== 'paper' && ev.triggeredAt && ev.triggeredAt < neuesteKerze) {
+        const alter = Math.round((neuesteKerze - ev.triggeredAt) / timeframeMs(instance.timeframe))
+        return beenden('reject_risk', 'stale_trigger', `Auslöser ${alter} Kerzen alt`)
+    }
+
+    // (b) Agenten-Veto — optional, darf NUR ablehnen oder verkleinern
+    let sizeFactor = 1
+    if (agentHook) {
+        try {
+            const veto = await agentHook({ instance, setup, candles })
+            lauf.sentimentOutput = JSON.stringify(veto.sentiment || {})
+            lauf.portfolioOutput = JSON.stringify(veto.portfolio || {})
+            lauf.costUsd = Number(veto.costUsd) || 0
+            if (veto.action === 'reject') {
+                return beenden('reject_agent', 'agent_veto', veto.reason)
+            }
+            // Ein Faktor > 1 wäre eine Vergrösserung — das dürfen die Agenten nicht.
+            sizeFactor = Math.min(Math.max(Number(veto.sizeFactor) || 1, 0), 1)
+        } catch (e) {
+            // Ein Ausfall der optionalen Agenten darf den deterministischen Teil
+            // nicht kippen: die Strategie handelt dann ohne Veto weiter.
+            logWarn('strategy-engine', `Agenten-Veto fehlgeschlagen: ${e.message}`)
+        }
+    }
+
+    // (c) Risiko-Gates
+    const [equity, kontext, meta] = await Promise.all([
+        ladeKontostand(instance),
+        ladeRisikoKontext(instance, now),
+        getSymbolMeta(setup.symbol, { market: instance.market }).catch(() => null),
+    ])
+
+    let referencePrice = 0
+    if (instance.mode === 'live') {
+        referencePrice = await getLastPrice(setup.symbol, { market: instance.market }).catch(() => 0)
+    }
+
+    const risk = { ...instance.risk, leverage: Math.min(instance.risk.leverage, schalter.maxLeverage) }
+    const pruefung = evaluateRisk({
+        setup, risk, equity,
+        openPositions: kontext.openPositions,
+        todayNetPnl: kontext.todayNetPnl,
+        lastExitBySymbol: kontext.lastExitBySymbol,
+        now,
+        marketMeta: meta || {},
+        referencePrice,
+        killSwitch: schalter.killSwitch,
+    })
+    lauf.riskOutput = JSON.stringify({ equity, todayNetPnl: kontext.todayNetPnl, ...pruefung })
+    if (!pruefung.ok) return beenden('reject_risk', pruefung.reason, pruefung.detail)
+
+    // (d) Ausführung. Der Agenten-Faktor verkleinert die Größe, nie umgekehrt.
+    const size = { ...pruefung.size, qty: pruefung.size.qty * sizeFactor }
+    if (!(size.qty > 0)) return beenden('reject_risk', RISK_REASONS.SIZE_TOO_SMALL)
+
+    // Deterministische Order-Kennung: ein zweiter Versuch mit demselben Setup
+    // läuft in den Unique-Index und kann keine zweite Position öffnen.
+    const clientOrderId = `ctj-${instance.id}-${setup.id}`
+
+    // Live und Schatten gehen durch den Broker-Adapter. Im Schattenbetrieb baut
+    // er die Order vollständig, sendet sie aber nicht — genau dieser Body lässt
+    // sich vor dem Scharfschalten prüfen.
+    let brokerAntwort = null
+    if (instance.mode !== 'paper') {
+        brokerAntwort = await openLivePosition({
+            setup, size,
+            leverage: risk.leverage,
+            clientOrderId,
+            mode: instance.mode,
+        })
+        if (!brokerAntwort.ok) {
+            return beenden('error', brokerAntwort.reason || 'order_failed', brokerAntwort.detail || '', {
+                executionOutput: JSON.stringify({
+                    mode: instance.mode, clientOrderId,
+                    request: brokerAntwort.request, response: brokerAntwort.response,
+                    detail: brokerAntwort.detail,
+                }),
+            })
+        }
+    }
+
+    // Buchhaltung läuft in allen Betriebsarten über dieselben Tabellen: nur so
+    // sind Papier-, Schatten- und Live-Ergebnisse miteinander vergleichbar.
+    const eroeffnet = await openPaperPosition({
+        instance, setup, size,
+        entryPrice: setup.entry,
+        entryTime: now,
+        costs, clientOrderId,
+    })
+    if (!eroeffnet.ok) return beenden('error', eroeffnet.reason || 'open_failed', eroeffnet.detail || '')
+
+    if (brokerAntwort?.externalOrderId) {
+        await knex('strategy_positions').where('id', eroeffnet.positionId)
+            .update({ externalOrderId: brokerAntwort.externalOrderId })
+    }
+
+    return beenden('execute', '', '', {
+        executionOutput: JSON.stringify({
+            mode: instance.mode, clientOrderId,
+            qty: size.qty, entry: setup.entry, stopLoss: setup.stopLoss, takeProfit: setup.takeProfit,
+            sizeFactor,
+            // Im Schattenbetrieb ist das der Beleg, was gesendet WORDEN WÄRE
+            brokerRequest: brokerAntwort?.request || null,
+            gesendet: brokerAntwort?.geschickt ?? false,
+            externalOrderId: brokerAntwort?.externalOrderId || '',
+        }),
+    })
+}
+
+// ── Takt und Abgleich ────────────────────────────────────────────────────
+
+async function verarbeiteInstanz(row, schalter) {
+    const instance = ladeInstanz(row)
+    if (!instance || !instance.enabled || !instance.symbols.length) return
+
+    if (running.get(instance.id)) return          // Guard je Instanz
+    running.set(instance.id, true)
+
+    const knex = getKnex()
+    try {
+        for (const symbol of instance.symbols) {
+            await verarbeiteSymbol(instance, symbol, schalter)
+        }
+        await knex('strategy_instances').where('id', instance.id).update({
+            lastRunAt: Date.now(), lastError: '',
+        })
+        stats.runs++
+        stats.lastRunAt = Date.now()
+    } catch (e) {
+        stats.errors++
+        logError('strategy-engine', `Instanz ${instance.id} (${instance.name}) fehlgeschlagen`, e)
+        await knex('strategy_instances').where('id', instance.id)
+            .update({ lastError: String(e.message).slice(0, 500) })
+            .catch(() => {})
+    } finally {
+        running.delete(instance.id)
+    }
+}
+
+/** Ein Takt: alle aktiven Instanzen prüfen. Arbeit fällt nur bei neuer Kerze an. */
+export async function tick() {
+    if (engineStopped) return
+    stats.ticks++
+    const knex = getKnex()
+    const schalter = await ladeSchalter()
+
+    if (schalter.killSwitch) return   // Not-Aus: nichts erkennen, nichts ausführen
+
+    const rows = await knex('strategy_instances').where('enabled', 1)
+    for (const row of rows) {
+        await verarbeiteInstanz(row, schalter)
+    }
+}
+
+export function engineStatus() {
+    return {
+        running: !engineStopped && Boolean(tickTimer),
+        aktiveLaeufe: [...running.keys()],
+        verarbeitet: Object.fromEntries(lastProcessed),
+        ...stats,
+    }
+}
+
+/** Erzwingt beim nächsten Takt eine Neuauswertung (nach Parameteränderung). */
+export function resetSymbolCache(instanceId = null) {
+    if (instanceId === null) { lastProcessed.clear(); return }
+    for (const key of [...lastProcessed.keys()]) {
+        if (key.startsWith(`${instanceId}|`)) lastProcessed.delete(key)
+    }
+}
+
+export function startStrategyEngine() {
+    if (tickTimer) return
+    engineStopped = false
+    tick().catch((e) => logError('strategy-engine', 'Erster Takt fehlgeschlagen', e))
+    tickTimer = setInterval(() => {
+        tick().catch((e) => logError('strategy-engine', 'Takt fehlgeschlagen', e))
+    }, TICK_MS)
+    console.log(` -> Strategie-Engine gestartet (Takt ${TICK_MS / 1000}s)`)
+}
+
+export async function stopStrategyEngine() {
+    engineStopped = true
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null }
+    // Laufende Durchgänge auslaufen lassen, damit keine halbe Order zurückbleibt
+    const bis = Date.now() + 10000
+    while (running.size && Date.now() < bis) {
+        await new Promise((r) => setTimeout(r, 100))
+    }
+    running.clear()
+}
+
+/**
+ * Not-Aus: stoppt alle Instanzen. `closePositions` schliesst zusätzlich
+ * alle offenen Papier-Positionen zum letzten Kurs.
+ */
+export async function killSwitch({ closePositions = false } = {}) {
+    const knex = getKnex()
+    await knex('settings').where('id', 1).update({ strategyKillSwitch: 1 })
+    await knex('strategy_instances').update({ enabled: 0 })
+
+    let geschlossen = 0
+    if (closePositions) {
+        const offen = await knex('strategy_positions').where('status', 'open')
+        for (const row of offen) {
+            const instRow = await knex('strategy_instances').where('id', row.instanceId).first()
+            const instance = instRow ? ladeInstanz(instRow) : null
+            if (!instance) continue
+            const preis = await getLastPrice(row.symbol, { market: instance.market }).catch(() => Number(row.entryPrice))
+            await closePaperPositionManually({
+                instance, positionRow: row, price: preis, time: Date.now(),
+                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps },
+                reason: 'manual',
+            })
+            geschlossen++
+        }
+    }
+    resetSymbolCache()
+    return { geschlossen }
+}
