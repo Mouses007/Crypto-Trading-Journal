@@ -136,6 +136,44 @@ console.log('\nGuss-Bedingung (die zentrale Regel)')
 }
 
 {
+    // Die BERÜHRUNGSKERZE darf bullisch sein: sie beendet die Korrektur, ihre
+    // Farbe ist die Umkehr — genau deswegen steigt man ja ein (Audit-Befund:
+    // vorher wurde exakt dieser Einstieg verworfen).
+    const k = sinkend(117.8, 5)
+    // letzte Kerze berührt die EMA50 von oben und schliesst GRÜN
+    const tiefstand = 117.8 - 5 * 1.6
+    k.push([tiefstand, tiefstand + 2.2, tiefstand - 2.4, tiefstand + 2.0])
+    const { zweit } = lauf(fall(k))
+    const ev = zweit.events[0]
+    check('bullische Berührungskerze löst AUS statt zu verwerfen',
+        ev?.status === 'triggered', JSON.stringify(ev))
+}
+
+{
+    // Gegenkerzen-Logik aus dem GUSS-Indikator: eine kleine grüne Kerze wird
+    // toleriert, wenn maxGegenkerzen es erlaubt und der Körper klein bleibt.
+    const k = sinkend(117.8, 6)
+    k[2] = [k[2][0], k[2][0] + 0.15, k[2][0] - 0.2, k[2][0] + 0.05]   // Mini-Körper 0.05
+    const { zweit } = lauf(fall(k), { maxGegenkerzen: 1, maxGegenkerzenAtr: 0.5 })
+    const ev = zweit.events[0]
+    check('kleine Gegenkerze wird mit maxGegenkerzen=1 toleriert',
+        ev?.status === 'triggered', JSON.stringify(ev))
+}
+
+{
+    // Zu GROSSER Körper: trotz maxGegenkerzen=1 ungültig. Die Kerze liegt früh
+    // in der Korrektur und OHNE unteren Docht — sie darf die EMA50 nicht
+    // berühren, sonst greift (korrekt) die Berührungsregel statt der Guss-Prüfung.
+    const k = sinkend(117.8, 6)
+    k[1] = [k[1][0], k[1][0] + 3.5, k[1][0] - 0.05, k[1][0] + 3.2]    // grosser grüner Körper, kein Docht
+    const { zweit } = lauf(fall(k), { maxGegenkerzen: 1, maxGegenkerzenAtr: 0.5 })
+    const ev = zweit.events[0]
+    check('zu grosse Gegenkerze bleibt trotz Toleranz ungültig',
+        ev?.status === 'invalidated' && ev.invalidReason === INVALID_REASONS.BULLISH_CANDLE,
+        JSON.stringify(ev))
+}
+
+{
     // Dieselbe Korrektur, aber eine einzige grüne Kerze mittendrin
     // Muss VOR dem EMA-Kontakt liegen, sonst ist das Setup schon ausgelöst
     const k = sinkend(117.8, 6)

@@ -2609,24 +2609,22 @@ onBeforeMount(async () => {
 
                     <p class="fw-bold mb-1">Zwangsliquidationen sammeln</p>
                     <p class="fw-lighter mb-2" style="font-size: 0.88rem;">
-                        Schneidet über <b>eine einzige Verbindung</b> die Zwangsliquidationen
-                        <b>aller</b> Futures-Symbole mit — unabhängig von der Symbolliste oben und
-                        unabhängig davon, ob die Orderbuch-Aufzeichnung läuft.
+                        Schneidet über <b>eine einzige Verbindung</b> die Zwangsliquidationen der
+                        <b>Top-Symbole</b> mit (BTC, ETH, SOL, XRP, BNB) — unabhängig von der
+                        Symbolliste oben und unabhängig davon, ob die Orderbuch-Aufzeichnung läuft.
                         Binance gibt Liquidationen nicht rückwirkend heraus: was nicht mitgeschrieben
                         wird, ist endgültig weg. Sie dienen als Vergleichsmaterial, um berechnete
                         Liquidationszonen gegen die Wirklichkeit prüfen zu können.
                     </p>
                     <p class="fw-lighter mb-2" style="font-size: 0.88rem;">
-                        Gemessen kommen rund <b>100 000 Ereignisse am Tag</b> über alle Symbole zusammen,
-                        das sind etwa <b>2–3 MB täglich</b> — ungefähr ein Drittel dessen, was ein
-                        <i>einzelnes</i> Symbol an Orderbuch kostet. Weil sie so klein und nicht
-                        nachbestellbar sind, werden sie <b>ein Jahr</b> aufbewahrt statt nur den oben
-                        eingestellten Zeitraum.
+                        Der Speicherbedarf ist winzig (wenige Byte je Ereignis). Weil die Daten so
+                        klein und nicht nachbestellbar sind, werden sie <b>ein Jahr</b> aufbewahrt
+                        statt nur den oben eingestellten Zeitraum.
                     </p>
 
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="checkbox" id="recAllLiqChk" v-model="recAllLiq" />
-                        <label class="form-check-label" for="recAllLiqChk">Liquidationen aller Symbole mitschneiden</label>
+                        <label class="form-check-label" for="recAllLiqChk">Liquidationen der Top-Symbole mitschneiden</label>
                     </div>
 
                     <div v-if="recStatus?.sammelstrom" class="mb-2 p-2"

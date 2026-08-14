@@ -54,9 +54,15 @@ Indikatoren (Feld "type"): ${BAUSTEINE.indikatoren.join(', ')}
     ("session" = Rücksetzen zum UTC-Tageswechsel, "rolling" = gleitendes Fenster
     über "period"). vwapBand zusätzlich "mult" (Standardabweichungen,
     negativ = unteres Band).
+  - bollUpper/bollMiddle/bollLower: "period", "mult" (Standardabweichungen) und
+    optional "basis": ${BAUSTEINE.bollBasis.join(' oder ')} (Vorgabe sma)
+  - adx/plusDI/minusDI: "period" (Wilder)
+  - stochK/stochD: "period", optional "smoothK" und "smoothD" (Vorgabe je 3)
 Auslöser (signal.type): ${BAUSTEINE.signale.join(', ')}
   - pivotHigh/pivotLow: "left" und "right" (Kerzen links/rechts zur Bestätigung)
   - crossUp/crossDown: "a" und "b" (zwei Referenzen, die sich kreuzen)
+  - pattern: "pattern" (${BAUSTEINE.muster.join(', ')}), optional
+    "prevOpposite" = Anzahl Gegenkerzen unmittelbar davor (0 = kein Filter)
 Vergleiche (op): ${BAUSTEINE.vergleiche.join(', ')}
   - distancePctGt/distancePctLt brauchen zusätzlich "value" (Prozent)
   - isBullish/isBearish/higherThanPrevSignal/lowerThanPrevSignal haben KEINE

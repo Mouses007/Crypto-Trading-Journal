@@ -7,6 +7,7 @@
  * erscheint hier deshalb automatisch, sobald sie serverseitig registriert ist.
  */
 import { ref, computed, onBeforeMount, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { useI18n } from 'vue-i18n'
 import { spinnerLoadingPage } from '../stores/ui.js'
@@ -17,6 +18,7 @@ import { logError } from '../utils/logger.js'
 import { apiFehlerText } from '../utils/apiError.js'
 
 const { t } = useI18n()
+const router = useRouter()
 
 const registry = ref({ strategies: [], riskParams: [], riskDefaults: {}, agentDefaults: {}, modes: [] })
 const instanzen = ref([])
@@ -58,6 +60,67 @@ onBeforeMount(async () => {
     pollTimer = setInterval(laden, 30000)
 })
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
+
+// ── Parameter-Verlauf ────────────────────────────────────────────────────
+// Je Instanz aufklappbar: welche Version galt wann, WAS wurde geändert
+// (Diff zur Vorgängerversion) und was hat sie gebracht (Trades, ΣR).
+const verlaufOffen = ref(null)          // instanceId oder null
+const verlaufDaten = ref([])
+const verlaufLaedt = ref(false)
+
+async function verlaufAnzeigen(inst) {
+    if (verlaufOffen.value === inst.id) { verlaufOffen.value = null; return }
+    verlaufOffen.value = inst.id
+    verlaufLaedt.value = true
+    verlaufDaten.value = []
+    try {
+        const r = await axios.get(`/api/strategies/instances/${inst.id}/history`)
+        const zeilen = r.data
+        // Diff gegen die jeweils ÄLTERE Version (Liste kommt absteigend)
+        for (let i = 0; i < zeilen.length; i++) {
+            const aelter = zeilen[i + 1]
+            zeilen[i].diff = aelter ? parameterDiff(aelter, zeilen[i]) : []
+        }
+        verlaufDaten.value = zeilen
+    } catch (e) {
+        logError('AgentStrategies', 'Verlauf laden fehlgeschlagen', e)
+    } finally {
+        verlaufLaedt.value = false
+    }
+}
+
+/** Geänderte Schlüssel zweier Versionen als lesbare "key: alt → neu"-Liste. */
+function parameterDiff(alt, neu) {
+    const aus = []
+    for (const [bereich, a, b] of [['', alt.params, neu.params], ['risk.', alt.risk, neu.risk]]) {
+        const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})])
+        for (const k of keys) {
+            if (JSON.stringify(a?.[k]) !== JSON.stringify(b?.[k])) {
+                aus.push({ key: bereich + k, alt: a?.[k] ?? '–', neu: b?.[k] ?? '–' })
+            }
+        }
+    }
+    return aus
+}
+
+const verlaufQuelle = (q) => {
+    if (q === 'angelegt') return t('strategies.historySourceCreated')
+    if (q === 'manuell') return t('strategies.historySourceManual')
+    if (q === 'bestand') return t('strategies.historySourceBackfill')
+    if (String(q).startsWith('vorschlag')) return t('strategies.historySourceSuggestion') + ' ' + String(q).replace('vorschlag ', '')
+    return q
+}
+
+/**
+ * Übergibt die Instanz an den KI-Coach — derselbe Weg wie im Labor. Der Knopf
+ * steht bewusst auch hier: auf der Startseite des Modus war der Agent bisher
+ * unsichtbar, obwohl er das zentrale Werkzeug zur Verbesserung ist.
+ */
+function kiOptimieren(inst) {
+    router.push({ path: '/ki-coach', query: {
+        agentPrompt: t('strategies.optimizePrompt', { name: inst.name, id: inst.id }),
+    } })
+}
 
 function neu() {
     const s = registry.value.strategies[0]
@@ -261,6 +324,41 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                         {{ inst.lastError }}
                     </div>
 
+                    <div v-if="verlaufOffen === inst.id" class="mt-2 verlaufBox p-2">
+                        <div v-if="verlaufLaedt" class="text-muted small">
+                            <span class="spinner-border spinner-border-sm me-1"></span>{{ t('strategies.historyLoading') }}
+                        </div>
+                        <template v-else>
+                            <div v-for="z in verlaufDaten" :key="z.paramsVersion" class="verlaufZeile py-2">
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <span class="badge" :class="z.paramsVersion === inst.paramsVersion ? 'bg-info text-dark' : 'bg-dark'">
+                                        v{{ z.paramsVersion }}
+                                    </span>
+                                    <small class="text-muted">{{ new Date(z.createdAt).toLocaleString() }}</small>
+                                    <small class="text-muted">· {{ verlaufQuelle(z.source) }}</small>
+                                    <span class="ms-auto d-flex gap-3">
+                                        <small class="text-muted">{{ t('strategies.trades') }}: <strong>{{ z.trades }}</strong></small>
+                                        <small v-if="z.trades" :class="z.summeR >= 0 ? 'greenTrade' : 'redTrade'">
+                                            {{ z.summeR >= 0 ? '+' : '' }}{{ z.summeR.toFixed(2) }}R
+                                        </small>
+                                        <small v-if="z.trades" class="text-muted">
+                                            {{ t('strategies.kpiWinRate') }} {{ z.winRate?.toFixed(0) }}%
+                                        </small>
+                                    </span>
+                                </div>
+                                <div v-if="z.diff?.length" class="mt-1 d-flex flex-wrap gap-1">
+                                    <span v-for="d in z.diff" :key="d.key" class="badge diffBadge">
+                                        {{ d.key }}: {{ d.alt }} → {{ d.neu }}
+                                    </span>
+                                </div>
+                                <div v-else-if="z.diff" class="mt-1">
+                                    <small class="text-muted fst-italic">{{ t('strategies.historyNoDiff') }}</small>
+                                </div>
+                            </div>
+                            <div v-if="!verlaufDaten.length" class="text-muted small">{{ t('strategies.historyEmpty') }}</div>
+                        </template>
+                    </div>
+
                     <div class="d-flex flex-wrap gap-2 mt-2">
                         <button class="btn btn-sm" :class="inst.enabled ? 'btn-outline-warning' : 'btn-outline-success'"
                             @click="umschalten(inst)">
@@ -269,6 +367,15 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                         </button>
                         <button class="btn btn-sm btn-outline-primary" @click="bearbeiten(inst)">
                             <i class="uil uil-edit me-1"></i>{{ t('common.edit') }}
+                        </button>
+                        <button class="btn btn-sm btn-outline-info" :title="t('strategies.optimizeTitle')"
+                            @click="kiOptimieren(inst)">
+                            <i class="uil uil-robot me-1"></i>{{ t('strategies.aiOptimize') }}
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                            :class="{ active: verlaufOffen === inst.id }"
+                            @click="verlaufAnzeigen(inst)">
+                            <i class="uil uil-history me-1"></i>{{ t('strategies.historyBtn') }} (v{{ inst.paramsVersion }})
                         </button>
                         <button v-if="inst.mode === 'live' && !inst.liveApprovedAt"
                             class="btn btn-sm btn-outline-danger"
@@ -392,6 +499,23 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
 </template>
 
 <style scoped>
+.verlaufBox {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
+    border-radius: var(--border-radius, 6px);
+}
+
+.verlaufZeile + .verlaufZeile {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.diffBadge {
+    background: rgba(1, 180, 255, 0.12);
+    border: 1px solid rgba(1, 180, 255, 0.35);
+    color: var(--blue-color, #01B4FF);
+    font-weight: 500;
+}
+
 /* `.dailyCard` setzt global `height: 100%`. Das passt für Raster mit einer Karte
    je Spalte, hier stehen die Karten aber gestapelt untereinander — dort zieht die
    Regel jede einzelne Karte auf die Höhe der GESAMTEN Spalte und erzeugt riesige

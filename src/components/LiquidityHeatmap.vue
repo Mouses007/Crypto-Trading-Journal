@@ -103,6 +103,22 @@ const anchor = () => {
 }
 
 /**
+ * Wiedergabe: nur Spalten bis zum Scrub-Punkt gelten als vorhanden.
+ *
+ * Der Replay-Ring wird linear befüllt (head = 0), `count` ist also frei
+ * verfügbar, um das Ende der „bekannten" Daten zu markieren. Ohne diese
+ * Klemme rechnet colFrom() modulo über den ganzen Ring und holt beim
+ * Zurückspulen Spalten von NACH dem gewählten Zeitpunkt links ins Bild —
+ * Lookahead-Bias: bei Anker 2 und fünf sichtbaren Spalten erschienen die
+ * Ringindizes [7,8,9,0,1] statt nur [0,1].
+ */
+function syncReplayCount() {
+    const ring = replay?.ring
+    if (!ring) return
+    ring.count = anchor() ?? ring.cap
+}
+
+/**
  * Mid an der aktuellen Position. In einer Aufzeichnung können Spalten leer sein
  * (Recorder war aus) — dann rückwärts bis zur letzten belegten Spalte suchen,
  * statt das Sichtfenster gar nicht erst zu setzen.
@@ -227,6 +243,7 @@ async function startReplay() {
             return
         }
         replayPos.value = Math.min(1, (letzte + 1) / result.ring.cap)
+        syncReplayCount()
         updateView(true)
         if (view) renderer?.recalcNorm(replay.ring, view, anchor())
         updateReplayLabel()
@@ -397,6 +414,7 @@ watch([liveMode, replayFrom, replayTo], () => {
     isReplay() ? startReplay() : startFeed()
 })
 watch(replayPos, () => {
+    syncReplayCount()
     updateView()
     updateReplayLabel()
     dirtyHeat = true

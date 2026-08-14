@@ -287,8 +287,10 @@ const zweiLaeufe = (regeln, kerzen) => {
             ev.entry === kerzen[idx].o, `entry=${ev.entry} open=${kerzen[idx]?.o}`)
         check('Einstieg ist NICHT der Schluss der Auslösekerze',
             ev.entry !== kerzen[idx - 1]?.c, `entry=${ev.entry} vorheriger close=${kerzen[idx - 1]?.c}`)
-        check('Auslösung liegt genau eine Kerze vor dem Einstieg',
-            ev.triggeredAt === kerzen[idx - 1]?.t)
+        // Seit dem Audit-Fix: der Einstieg liegt auf der ERSTEN Kerze nach dem
+        // Signal (deren Eröffnung), nicht mehr eine Kerze später.
+        check('Auslösung und Einstieg liegen auf derselben Kerze',
+            ev.triggeredAt === ev.candleTime, `trig=${ev.triggeredAt} fill=${ev.candleTime}`)
         check('entryAtOpen ist gesetzt', ev.entryAtOpen === true, String(ev.entryAtOpen))
     }
 }

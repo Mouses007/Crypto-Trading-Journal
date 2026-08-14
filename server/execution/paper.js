@@ -35,7 +35,7 @@ export async function getPaperEquity(instance) {
  * Setup läuft in den Unique-Konflikt und öffnet keine zweite Position. Das ist
  * dieselbe Idempotenz-Zusage wie später im Live-Pfad.
  */
-export async function openPaperPosition({ instance, setup, size, entryPrice, entryTime, costs, clientOrderId }) {
+export async function openPaperPosition({ instance, setup, size, entryPrice, entryTime, costs, clientOrderId, status = 'open' }) {
     const knex = getKnex()
 
     const pos = createPosition({
@@ -52,6 +52,7 @@ export async function openPaperPosition({ instance, setup, size, entryPrice, ent
         timeframe: setup.timeframe,
         direction: pos.direction,
         qty: pos.qty,
+        initialQty: pos.initialQty,
         entryPrice: pos.entryPrice,
         entryTime: pos.entryTime,
         stopLoss: pos.stopLoss,
@@ -67,7 +68,9 @@ export async function openPaperPosition({ instance, setup, size, entryPrice, ent
         mfePrice: pos.mfePrice,
         lastCandleTime: entryTime,
         breakEvenDone: 0,
-        status: 'open',
+        // 'pending' = Reservierung VOR der Live-Order (Idempotenz zuerst),
+        // 'open' erst nach bestätigter Ausführung. Papier bucht direkt 'open'.
+        status,
     }
 
     const isPg = knex.client.config.client === 'pg'
@@ -105,6 +108,15 @@ function zuPosition(row) {
         maePrice: Number(row.maePrice),
         mfePrice: Number(row.mfePrice),
         breakEvenDone: Boolean(row.breakEvenDone),
+        // Teilausstieg aus der Zeile zurückholen. `initialQty` fällt bei alten
+        // Zeilen auf die aktuelle Menge zurück — dort gab es keinen Teilausstieg,
+        // also stimmt der Bezug für R weiterhin.
+        partialDone: Boolean(row.partialDone),
+        partialQty: Number(row.partialQty) || 0,
+        partialPrice: Number(row.partialPrice) || 0,
+        partialGross: Number(row.partialGross) || 0,
+        partialFee: Number(row.partialFee) || 0,
+        initialQty: Number(row.initialQty) || Number(row.qty),
         status: row.status,
     }
 }
@@ -118,10 +130,15 @@ function zuPosition(row) {
  *
  * @returns {Promise<Array>} die dabei geschlossenen Trades
  */
-export async function stepPaperPositions({ instance, symbol, candles, costs, breakEvenAtR, maxHoldMs = 0 }) {
+export async function stepPaperPositions({ instance, symbol, candles, costs, breakEvenAtR, maxHoldMs = 0, partialTpR = 0, partialTpPct = 0 }) {
     const knex = getKnex()
+    // NUR Papier und Schatten. Eine Live-Position hier fortzuschreiben würde
+    // sie in der DB schliessen, während sie an der Börse weiterläuft — der
+    // Simulator darf Live-Bestand niemals finalisieren. Live-Positionen werden
+    // erst wieder verwaltet, wenn eine echte Broker-Abstimmung existiert.
     const offen = await knex('strategy_positions')
         .where({ instanceId: instance.id, symbol, status: 'open' })
+        .whereIn('mode', ['paper', 'shadow'])
 
     const geschlossen = []
 
@@ -133,7 +150,7 @@ export async function stepPaperPositions({ instance, symbol, candles, costs, bre
 
         let exit = null
         for (const k of neue) {
-            const r = stepCandle(pos, k, { breakEvenAtR, maxHoldMs })
+            const r = stepCandle(pos, k, { breakEvenAtR, maxHoldMs, partialTpR, partialTpPct, costs })
             if (r.exit) { exit = r.exit; break }
         }
 
@@ -143,6 +160,13 @@ export async function stepPaperPositions({ instance, symbol, candles, costs, bre
                 maePrice: pos.maePrice,
                 mfePrice: pos.mfePrice,
                 breakEvenDone: pos.breakEvenDone ? 1 : 0,
+                // Teilausstieg muss einen Neustart überleben, sonst wird er doppelt genommen
+                qty: pos.qty,
+                partialDone: pos.partialDone ? 1 : 0,
+                partialQty: Number(pos.partialQty) || 0,
+                partialPrice: Number(pos.partialPrice) || 0,
+                partialGross: Number(pos.partialGross) || 0,
+                partialFee: Number(pos.partialFee) || 0,
                 lastCandleTime: neue[neue.length - 1].t,
                 updatedAt: knex.fn.now(),
             })
@@ -150,7 +174,12 @@ export async function stepPaperPositions({ instance, symbol, candles, costs, bre
         }
 
         const trade = closePosition(pos, exit, costs)
+        let doppelt = false
         await knex.transaction(async (trx) => {
+            const beansprucht = await trx('strategy_positions')
+                .where({ id: row.id, status: 'open' })
+                .update({ status: 'closed', updatedAt: trx.fn.now() })
+            if (!beansprucht) { doppelt = true; return }
             await trx('strategy_trades').insert({
                 instanceId: instance.id,
                 setupId: row.setupId,
@@ -182,7 +211,6 @@ export async function stepPaperPositions({ instance, symbol, candles, costs, bre
                 paramsVersion: instance.paramsVersion,
             })
             await trx('strategy_positions').where('id', row.id).update({
-                status: 'closed',
                 stopLoss: pos.stopLoss,
                 maePrice: pos.maePrice,
                 mfePrice: pos.mfePrice,
@@ -194,19 +222,35 @@ export async function stepPaperPositions({ instance, symbol, candles, costs, bre
             })
         })
 
-        geschlossen.push({ ...trade, positionId: row.id })
+        if (!doppelt) geschlossen.push({ ...trade, positionId: row.id })
     }
 
     return geschlossen
 }
 
 /** Schliesst eine offene Position von Hand (Kill-Switch, Nutzer-Eingriff). */
-export async function closePaperPositionManually({ instance, positionRow, price, time, costs, reason = 'manual' }) {
+export async function closePaperPositionManually({ instance, positionRow, price, time, costs, reason = 'manual', liveCloseBestaetigt = false }) {
+    // Eine Live-Position hier zu buchen wäre die gefährlichste Art von Fehler:
+    // im Journal stünde ein geschlossener Trade, während die Position an der
+    // Börse WEITERLÄUFT — ohne dass jemand sie noch beobachtet. Der Aufrufer
+    // muss zuerst die Börse schliessen (schliessePositionManuell) und das mit
+    // `liveCloseBestaetigt` bezeugen — sonst bliebe die Zeile für immer offen.
+    if (positionRow.mode === 'live' && !liveCloseBestaetigt) {
+        throw new Error('Live-Position kann nicht als Papier-Position geschlossen werden')
+    }
     const knex = getKnex()
     const pos = zuPosition(positionRow)
     const trade = closePosition(pos, { price, reason, time }, costs)
 
     await knex.transaction(async (trx) => {
+        // Atomarer Claim: nur wer die Zeile von 'open' wegbewegt, darf den
+        // Trade schreiben. HTTP-Route, Takt und Not-Aus können dieselbe
+        // Position parallel lesen — ohne den Claim buchte jeder von ihnen.
+        const beansprucht = await trx('strategy_positions')
+            .where({ id: positionRow.id, status: 'open' })
+            .update({ status: 'closed', updatedAt: trx.fn.now() })
+        if (!beansprucht) throw new Error('Position ist bereits geschlossen')
+
         await trx('strategy_trades').insert({
             instanceId: instance.id,
             setupId: positionRow.setupId,
@@ -236,9 +280,6 @@ export async function closePaperPositionManually({ instance, positionRow, price,
             mfeR: trade.mfeR,
             holdingMinutes: trade.holdingMinutes,
             paramsVersion: instance.paramsVersion,
-        })
-        await trx('strategy_positions').where('id', positionRow.id).update({
-            status: 'closed', updatedAt: knex.fn.now(),
         })
         await trx('strategy_setups').where('id', positionRow.setupId).update({
             status: 'closed', updatedAt: knex.fn.now(),

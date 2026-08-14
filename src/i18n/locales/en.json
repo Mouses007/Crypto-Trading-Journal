@@ -773,7 +773,8 @@
     "journal": "Journal",
     "live": "Live analysis",
     "agent": "Strategies",
-    "comingSoon": "Coming soon"
+    "comingSoon": "Coming soon",
+    "betaHint": "Unfinished — please use in paper mode only"
   },
   "live": {
     "symbol": "SYMBOL",
@@ -910,6 +911,12 @@
     "chartTarget": "Target",
     "chartSweep": "Sweep level",
     "chartOrderBlock": "Order block",
+    "chartExit": "Exit",
+    "timelineTitle": "What the agent drew",
+    "timelineHint": "Every detected zone and executed trade on the price chart. Solid = traded, faded dashed = discarded.",
+    "timelineDays": "Period",
+    "timelineNoData": "No candles available for this symbol in the selected period.",
+    "timelineNoSetups": "The agent did not detect anything on {symbol} in this period.",
     "status_armed": "armed",
     "status_waiting_retest": "waiting for retest",
     "status_triggered": "triggered",
@@ -1137,6 +1144,9 @@
       "entryMode": "Entry mode",
       "entryZoneTouch": "On touching the zone",
       "entryRejection": "Only after a rejection candle",
+      "entryDirection": "Only when the next candle closes in trade direction",
+      "slSweep": "Behind the sweep extreme",
+      "slRetestWick": "Behind the retest wick",
       "requireRejectionCandle": "Require a rejection candle",
       "useFib786": "Require the Fibonacci zone",
       "fibLevelValue": "Fibonacci level",
@@ -1185,7 +1195,10 @@
       "breakEvenAtR": "Break-even at (R)",
       "maxHoldCandles": "Max holding time (candles)",
       "exitEma21": "Trailing at the EMA 21",
-      "exitRr": "Fixed reward/risk"
+      "exitRr": "Fixed reward/risk",
+      "maxGegenkerzen": "Max. counter candles in a row (0 = strict)",
+      "maxGegenkerzenAtr": "Max. counter-candle body (in ATR)",
+      "atrLaenge": "ATR length (for counter candles)"
     },
     "risk": {
       "startEquityUsdt": "Starting equity (USDT)",
@@ -1211,7 +1224,45 @@
     "ind_macdHist": "MACD histogram",
     "macdFast": "fast",
     "macdSlow": "slow",
-    "macdSignalP": "signal"
+    "macdSignalP": "signal",
+    "matrixTitle": "Multi test",
+    "matrixHint": "The same parameter set across several symbols and two time windows: the first half of the period to optimise, the second to verify.",
+    "matrixSymbols": "Symbols (comma separated)",
+    "matrixDays": "Period (days)",
+    "matrixCompare": "Compare against the instance\\u2019s saved parameters",
+    "matrixStart": "Run matrix",
+    "matrixFailed": "The multi test failed.",
+    "matrixPassed": "Passed",
+    "matrixFailedVerdict": "Not passed",
+    "matrixScore": "better in {besser} of {felder} cells",
+    "matrixWindow": "Window",
+    "matrixWindowOpt": "Optimisation",
+    "matrixWindowCheck": "Verification",
+    "matrixBase": "Base (R)",
+    "matrixCandidate": "Candidate (R)",
+    "matrixWithoutBest": "without best (R)",
+    "matrixFootnote": "A candidate only counts when it is better in EVERY cell — otherwise it was chosen on one window and measured there. Below 30 trades a cell is not reliable (amber).",
+    "matrixIdentical": "Candidate and base are identical — change a parameter above first.",
+    "betaTitle": "Agent mode is under development",
+    "betaBody": "This area is unfinished and not meant for production use. It makes trading decisions on its own — check every number before you act on it. This is not investment advice.",
+    "betaPoint1": "Start in paper mode and let it run long enough for the results to mean something.",
+    "betaPoint2": "Live trading needs three separate approvals: the global switch, the per-instance approval and a minimum number of paper trades.",
+    "betaPoint3": "Backtest numbers are not a promise. A result only counts once it holds outside the period it was chosen on.",
+    "betaDismiss": "Hide for this session",
+    "aiOptimize": "Optimise with AI agent",
+    "sinceAth": "ATH",
+    "sinceAthTitle": "Sets \"from\" to the date of the highest high of the last ~3 years (daily candles) — e.g. to test a short strategy from the all-time high.",
+    "athFailed": "Could not determine the all-time high.",
+    "rangeInvalid": "The \"from\" date must be before the \"to\" date.",
+    "dateRange": "Dates",
+    "historyBtn": "History",
+    "historyLoading": "Loading history …",
+    "historyEmpty": "No history yet.",
+    "historyNoDiff": "no parameter change recorded",
+    "historySourceCreated": "created",
+    "historySourceManual": "changed manually",
+    "historySourceBackfill": "pre-existing (before history was introduced)",
+    "historySourceSuggestion": "AI suggestion"
   },
   "levmap": {
     "title": "Liquidation zones",
@@ -1261,10 +1312,10 @@
     "oiChange": "Open interest",
     "priceChange": "Price",
     "reading": "Reading",
-    "read_longAufbau": "Price and interest rising — new longs are carrying the move",
-    "read_shortAufbau": "Price falling, interest rising — new shorts",
-    "read_shortDeckung": "Price rising, interest falling — shorts covering, not fresh buying",
-    "read_longAufloesung": "Price and interest falling — longs unwinding",
+    "read_longAufbau": "Price and interest rising — suggests new longs (a reading: every contract has two sides)",
+    "read_shortAufbau": "Price falling, interest rising — suggests new shorts (a reading, not proof)",
+    "read_shortDeckung": "Price rising, interest falling — suggests shorts covering rather than fresh buying",
+    "read_longAufloesung": "Price and interest falling — suggests longs unwinding",
     "read_neutral": "no clear direction"
   },
   "info": {
@@ -1394,6 +1445,45 @@
       ],
       "caveat": "Open interest is a net figure. If a thousand positions open and nine hundred close, it shows only a hundred — actual turnover is always larger than the curve suggests."
     },
-    "button": "Info"
+    "button": "Info",
+    "agent": {
+      "title": "Strategies — how the workflow fits together",
+      "intro": "This area runs trading strategies automatically: on paper first, and only later — after several approvals — for real. The safe path is always the same: build → measure → observe → only then money.",
+      "sections": [
+        {
+          "h": "1 · Pick or build a strategy",
+          "p": "Under \"New strategy\" you will find ready-made templates (LSOB, MACD cloud, Bollinger+RSI and more) — adopting a template is the fastest start. Your own ideas are assembled from building blocks in the strategy editor, or described in plain words to the chat builder; both produce the same kind of rule set, not program code."
+        },
+        {
+          "h": "2 · Create an instance — always paper first",
+          "p": "An instance is a strategy with concrete settings: symbols, timeframe, parameters and risk (risk per trade, daily loss limit, minimum reward/risk). Always start in \"paper\" mode — the engine then trades simulated money, every 15 seconds, on closed candles."
+        },
+        {
+          "h": "3 · Measure in the lab before you start",
+          "p": "The backtest checks your settings against the past — with the same engine as paper trading, including fees and slippage. The most important number is the expectancy per trade in R; below roughly 30 trades a result is not reliable."
+        },
+        {
+          "h": "4 · The multi-test rule",
+          "p": "A setting that only looks good in the period you picked it in is worthless. The multi test therefore splits the period into two halves — optimisation and verification — and runs several symbols. Adopt a change only if it is better in EVERY cell."
+        },
+        {
+          "h": "5 · Let it run and watch",
+          "p": "After starting, \"Setups\" shows what the strategy detects and why setups get discarded (zone broken, reward/risk too low …). \"Performance\" shows the key figures, the setup funnel, and the timeline chart draws what the agent saw and traded on the price chart."
+        },
+        {
+          "h": "6 · Put the AI agent to work",
+          "p": "The \"Optimise with AI agent\" button (on the instances page and in the lab) hands an instance to the AI coach. It reads the performance data, tests counter-hypotheses in backtests and files an improvement suggestion. Suggestions NEVER change anything on their own — you accept or discard them in the lab."
+        },
+        {
+          "h": "7 · The road to real money",
+          "p": "Before live comes shadow mode: the full live path runs, but the order is only logged. Real trading requires three separate approvals — the global switch in settings, the per-instance approval and enough paper trades. Any trading-relevant change revokes the approval again."
+        },
+        {
+          "h": "8 · Emergency stop",
+          "p": "The red emergency stop on the instances page halts all instances immediately and can close open positions. While it is active no instance can be started — it is deliberately lifted only in settings, never by a start click."
+        }
+      ],
+      "caveat": "Beta: this area is under development and not investment advice. Backtest numbers are not a promise — a result only counts once it holds outside the period it was chosen on. Let a strategy run on paper long enough before even thinking about live."
+    }
   }
 }

@@ -39,8 +39,15 @@ let hist = null            // Verlaufsmatrix, nur im Heatmap-Modus
 let ro = null
 let resizeTimer = null
 
-const gewichte = computed(() =>
-    String(levMapWeights.value || '40,30,20,10').split(',').map(x => Number(x) || 0))
+// Auf Summe 1 normiert: die Gewichte gehen multiplikativ in Tooltip-Beträge
+// und Abdeckungs-% ein. Roh (Summe 100) wären alle absoluten Werte im Modus
+// „Alle" rund 100-fach überhöht — die Optik war davon nie betroffen (p98-
+// Normierung), nur die Zahlen.
+const gewichte = computed(() => {
+    const roh = String(levMapWeights.value || '40,30,20,10').split(',').map(x => Number(x) || 0)
+    const summe = roh.reduce((a, b) => a + b, 0)
+    return summe > 0 ? roh.map(x => x / summe) : roh.map(() => 1 / (roh.length || 1))
+})
 
 const zeitstempel = computed(() => (stand.value ? new Date(stand.value).toLocaleTimeString() : '—'))
 

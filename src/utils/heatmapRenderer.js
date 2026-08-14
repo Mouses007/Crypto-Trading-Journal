@@ -328,6 +328,12 @@ export class HeatmapRenderer {
         const rowH = this.plotH / rowsView
         const visible = Math.min(this.cols, ring.count)
         const tRight = ring.ts[ring.colFrom(head, 0)]
+        // Rechte Zeitgrenze: bei eingefrorener Ansicht laufen die Trade-Puffer
+        // weiter — Ereignisse NACH der letzten sichtbaren Spalte gehören nicht
+        // ins Bild, sonst sammeln sie sich am rechten Rand einer Vergangenheit,
+        // zu der sie nie gehörten. (+frameMs: die letzte Spalte deckt ihr
+        // volles Zeitfenster ab.)
+        const tMax = tRight + frameMs
 
         // Zelle für Bucket b belegt [ (hi-1-b)*rowH , (hi-b)*rowH ) — die -0.5
         // trifft deren Mitte, sonst läge die Mid-Linie eine halbe Zelle daneben.
@@ -404,6 +410,7 @@ export class HeatmapRenderer {
         for (let i = 0; i < trades.count; i++) {
             const idx = trades.idxFromEnd(i)
             const ts = trades.ts[idx]
+            if (ts >= tMax) continue      // neuer als die (ggf. eingefrorene) Ansicht
             if (ts < tLeft) break
             const x = Math.round(xForTs(ts) / dotStep) * dotStep
             if (x < 0) continue
@@ -453,9 +460,9 @@ export class HeatmapRenderer {
         }
 
         if (coverage) this._drawCoverage(ctx, coverage, yFor)
-        if (showLiquidations && liquidations) this._drawLiquidations(ctx, liquidations, { yFor, xForTs, tLeft })
-        if (showProfile) this._drawVolumeProfile(ctx, trades, { yFor, tLeft })
-        if (this.volumeH) this._drawVolumeBars(ctx, trades, { xForTs, tLeft, dotStep })
+        if (showLiquidations && liquidations) this._drawLiquidations(ctx, liquidations, { yFor, xForTs, tLeft, tMax })
+        if (showProfile) this._drawVolumeProfile(ctx, trades, { yFor, tLeft, tMax })
+        if (this.volumeH) this._drawVolumeBars(ctx, trades, { xForTs, tLeft, tMax, dotStep })
         this._drawLegend(ctx)
 
         this._drawAxes(ctx, { ring, view, bucketSize, rowH, visible, frameMs, tRight, formatTime, head })
@@ -509,12 +516,13 @@ export class HeatmapRenderer {
      * als die runden Trade-Punkte, damit man sie auch in einem Cluster erkennt.
      * `buy` = eine Short-Position wurde liquidiert (Kauf schliesst sie).
      */
-    _drawLiquidations(ctx, liquidations, { yFor, xForTs, tLeft }) {
+    _drawLiquidations(ctx, liquidations, { yFor, xForTs, tLeft, tMax }) {
         if (!liquidations.count) return
         const ref = liquidations.quantile(0.9) || 1
         for (let i = 0; i < liquidations.count; i++) {
             const idx = liquidations.idxFromEnd(i)
             const ts = liquidations.ts[idx]
+            if (ts >= tMax) continue
             if (ts < tLeft) break
             const x = xForTs(ts)
             const y = yFor(liquidations.price[idx])
@@ -575,7 +583,7 @@ export class HeatmapRenderer {
         }
     }
 
-    _drawVolumeProfile(ctx, trades, { yFor, tLeft }) {
+    _drawVolumeProfile(ctx, trades, { yFor, tLeft, tMax }) {
         if (!this.profileW) return
         const width = this.profileW - 8
         const x0 = this.plotW + 4
@@ -595,6 +603,7 @@ export class HeatmapRenderer {
         let max = 0
         for (let i = 0; i < trades.count; i++) {
             const idx = trades.idxFromEnd(i)
+            if (trades.ts[idx] >= tMax) continue
             if (trades.ts[idx] < tLeft) break
             const y = yFor(trades.price[idx])
             if (y < 0 || y > this.plotH) continue
@@ -760,7 +769,7 @@ export class HeatmapRenderer {
      * Verkäufer. Der Umschlag von grün auf rot ist genau das, was man in
      * Bookmap als Wechsel der Initiative liest.
      */
-    _drawVolumeBars(ctx, trades, { xForTs, tLeft, dotStep }) {
+    _drawVolumeBars(ctx, trades, { xForTs, tLeft, tMax, dotStep }) {
         const y0 = this.plotH
         const h = this.volumeH
 
@@ -779,6 +788,7 @@ export class HeatmapRenderer {
         for (let i = 0; i < trades.count; i++) {
             const idx = trades.idxFromEnd(i)
             const ts = trades.ts[idx]
+            if (ts >= tMax) continue
             if (ts < tLeft) break
             const x = Math.round(xForTs(ts) / step) * step
             if (x < 0) continue

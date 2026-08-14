@@ -21,8 +21,7 @@ import { pruefeRegeln } from './strategies/rule-validate.js'
 import { VORLAGEN } from './strategies/rule-templates.js'
 import { isValidTimeframe, timeframeMs, getLastPrice } from './market-data.js'
 import { runBacktest, berechneStatistik, MAX_BACKTEST_CANDLES, schaetzeKerzen } from './strategy-backtest.js'
-import { engineStatus, resetSymbolCache, killSwitch, ladeInstanz, tick } from './strategy-engine.js'
-import { closePaperPositionManually } from './execution/paper.js'
+import { engineStatus, resetSymbolCache, killSwitch, ladeInstanz, tick, schliessePositionManuell } from './strategy-engine.js'
 
 const MAX_SYMBOLS = 20
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
@@ -102,6 +101,20 @@ function pruefeInstanzEingabe(body, vorhanden = null) {
     }
 }
 
+/**
+ * Version in die Parameter-Historie schreiben. `onConflict`-frei gehalten:
+ * der Unique-Index fängt Doppelläufe ab, ein Konflikt ist dann kein Fehler.
+ */
+async function historieSchreiben(knexOderTrx, instanceId, paramsVersion, params, risk, source) {
+    try {
+        await knexOderTrx('strategy_param_history').insert({
+            instanceId, paramsVersion, params, risk, source,
+        })
+    } catch (e) {
+        if (!/unique|constraint/i.test(e.message)) throw e
+    }
+}
+
 export function setupStrategyRoutes(app) {
 
     // ── Registry: Manifeste treiben das gesamte Frontend-Formular ────────
@@ -168,6 +181,7 @@ export function setupStrategyRoutes(app) {
                 : (await knex('strategy_instances').insert(datensatz))[0]
 
             const row = await knex('strategy_instances').where('id', id).first()
+            await historieSchreiben(knex, id, 1, geprueft.werte.params, geprueft.werte.risk, 'angelegt')
             res.status(201).json({ ...instanzNachAussen(row), hinweise: geprueft.hinweise })
         } catch (e) {
             logError('strategy-api', 'Instanz anlegen fehlgeschlagen', e)
@@ -198,8 +212,23 @@ export function setupStrategyRoutes(app) {
             if (geprueft.werte.mode === 'live' && vorhanden.mode !== 'live') {
                 aktualisierung.liveApprovedAt = 0
             }
+            // Die Freigabe galt für einen KONKRETEN Handelszustand. Ändert sich
+            // etwas Handelsrelevantes (Parameter, Risiko, Symbole, Strategie,
+            // Zeiteinheit), muss neu freigegeben werden — sonst handelt eine
+            // "genehmigte" Instanz nachträglich völlig andere Logik.
+            const handelsrelevant = paramsGeaendert
+                || geprueft.werte.symbols !== vorhanden.symbols
+                || geprueft.werte.strategyId !== vorhanden.strategyId
+                || geprueft.werte.timeframe !== vorhanden.timeframe
+            if (handelsrelevant && vorhanden.liveApprovedAt) {
+                aktualisierung.liveApprovedAt = 0
+            }
 
             await knex('strategy_instances').where('id', req.params.id).update(aktualisierung)
+            if (paramsGeaendert) {
+                await historieSchreiben(knex, Number(req.params.id), aktualisierung.paramsVersion,
+                    geprueft.werte.params, geprueft.werte.risk, 'manuell')
+            }
             resetSymbolCache(Number(req.params.id))   // sofort neu auswerten
 
             const row = await knex('strategy_instances').where('id', req.params.id).first()
@@ -253,8 +282,14 @@ export function setupStrategyRoutes(app) {
                         return res.status(409).json({ error: 'Diese Instanz ist für Live nicht freigegeben' })
                     }
                 }
-                // Not-Aus aufheben, sonst startet nichts
-                await knex('settings').where('id', 1).update({ strategyKillSwitch: 0 })
+                // Der Not-Aus wird hier NICHT aufgehoben. Er ist eine bewusste
+                // Entscheidung und darf nur dort zurückgenommen werden, wo er
+                // gesetzt wurde — sonst hebt ein beiläufiger Start-Klick den
+                // Notfallzustand auf.
+                const schalterRow = await knex('settings').where('id', 1).select('strategyKillSwitch').first()
+                if (schalterRow?.strategyKillSwitch) {
+                    return res.status(409).json({ error: 'Not-Aus ist aktiv — zuerst in den Einstellungen aufheben' })
+                }
             }
 
             await knex('strategy_instances').where('id', id)
@@ -304,6 +339,9 @@ export function setupStrategyRoutes(app) {
             const symbol = String(b.symbol || '').toUpperCase()
             if (!SYMBOL_RE.test(symbol)) return res.status(400).json({ error: 'Ungültiges Symbol' })
             if (!isValidTimeframe(b.timeframe)) return res.status(400).json({ error: 'Ungültige Zeiteinheit' })
+            if (!strategie.supportedTimeframes.includes(b.timeframe)) {
+                return res.status(400).json({ error: `${strategie.name} unterstützt ${b.timeframe} nicht` })
+            }
 
             const toTs = Number(b.toTs) || Date.now()
             const fromTs = Number(b.fromTs) || (toTs - 90 * 86400000)
@@ -351,6 +389,123 @@ export function setupStrategyRoutes(app) {
         } catch (e) {
             logError('strategy-api', 'Backtest fehlgeschlagen', e)
             res.status(500).json({ error: `Backtest fehlgeschlagen: ${e.message}` })
+        }
+    })
+
+    /**
+     * Mehrfach-Test: ein Parametersatz über mehrere Symbole und über zwei
+     * Zeitfenster — die erste Hälfte des Zeitraums zum Optimieren, die zweite
+     * zum Prüfen.
+     *
+     * Der Sinn ist eine Regel, keine Bequemlichkeit: eine Einstellung, die nur
+     * in dem Fenster gut aussieht, in dem sie ausgewählt wurde, ist wertlos.
+     * Wer von Hand nacheinander testet, sieht das nicht — deshalb rechnet diese
+     * Route beides zusammen aus und stellt es nebeneinander.
+     *
+     * Optional wird ein Vergleichssatz (`baselineParams`) mitgerechnet; dann
+     * enthält die Antwort die Differenz je Feld und ein Urteil, in wie vielen
+     * Feldern der Kandidat besser ist.
+     *
+     * Ergebnisse werden NICHT gespeichert — sonst füllt ein Durchlauf mit vier
+     * Symbolen die Liste der Läufe mit sechzehn Zeilen.
+     */
+    app.post('/api/strategies/backtest-matrix', async (req, res) => {
+        try {
+            const b = req.body || {}
+            const strategie = getStrategy(b.strategyId)
+            if (!strategie) return res.status(400).json({ error: 'Unbekannte Strategie' })
+            if (!isValidTimeframe(b.timeframe)) return res.status(400).json({ error: 'Ungültige Zeiteinheit' })
+            if (!strategie.supportedTimeframes.includes(b.timeframe)) {
+                return res.status(400).json({ error: `${strategie.name} unterstützt ${b.timeframe} nicht` })
+            }
+
+            const symbole = [...new Set((Array.isArray(b.symbols) ? b.symbols : [])
+                .map((s) => String(s || '').toUpperCase()).filter((s) => SYMBOL_RE.test(s)))]
+            if (!symbole.length) return res.status(400).json({ error: 'Keine gültigen Symbole' })
+            // Jeder Lauf holt Kerzen und rechnet sie durch; ohne Deckel wartet
+            // der Nutzer minutenlang auf eine Antwort, die längst abgebrochen ist.
+            if (symbole.length > 6) return res.status(400).json({ error: 'Höchstens 6 Symbole je Durchlauf' })
+
+            const toTs = Number(b.toTs) || Date.now()
+            const fromTs = Number(b.fromTs) || (toTs - 360 * 86400000)
+            if (fromTs >= toTs) return res.status(400).json({ error: 'Zeitraum ist leer' })
+
+            const mitte = Math.floor((fromTs + toTs) / 2)
+            const fenster = [
+                { key: 'optimierung', von: fromTs, bis: mitte },
+                { key: 'pruefung', von: mitte, bis: toTs },
+            ]
+
+            const proFenster = schaetzeKerzen(fromTs, mitte, b.timeframe)
+            if (proFenster > MAX_BACKTEST_CANDLES) {
+                return res.status(400).json({
+                    error: `Zeitraum zu gross: ~${proFenster} Kerzen je Fenster, erlaubt sind ${MAX_BACKTEST_CANDLES}`,
+                })
+            }
+
+            const risk = b.risk || {}
+            const market = b.market === 'spot' ? 'spot' : 'futures'
+            const startEquity = Number(b.startEquity) || 1000
+
+            const lauf = async (params, symbol, f) => {
+                const e = await runBacktest({
+                    strategyId: b.strategyId, params, risk, symbol,
+                    timeframe: b.timeframe, market,
+                    fromTs: f.von, toTs: f.bis, startEquity,
+                })
+                // Erwartungswert ohne den grössten Gewinner: trennt eine echte
+                // Verbesserung von einem einzelnen Ausreisser, der sie trägt.
+                const rs = (e.trades || []).map((t) => Number(t.rMultiple))
+                    .filter((v) => Number.isFinite(v)).sort((x, y) => y - x)
+                const summe = rs.reduce((a, c) => a + c, 0)
+                return {
+                    trades: e.stats?.trades ?? 0,
+                    expectancyR: e.stats?.expectancyR ?? 0,
+                    ohneBestenR: rs.length > 1 ? (summe - rs[0]) / (rs.length - 1) : null,
+                    profitFactor: e.stats?.profitFactor ?? null,
+                    winRate: e.stats?.winRate ?? 0,
+                    returnPct: e.stats?.returnPct ?? 0,
+                    maxDrawdownPct: e.stats?.maxDrawdownPct ?? 0,
+                }
+            }
+
+            const zeilen = []
+            let besser = 0
+            let felder = 0
+            for (const symbol of symbole) {
+                for (const f of fenster) {
+                    const kandidat = await lauf(b.params || {}, symbol, f)
+                    const zeile = { symbol, fenster: f.key, von: f.von, bis: f.bis, kandidat }
+                    if (b.baselineParams) {
+                        zeile.basis = await lauf(b.baselineParams, symbol, f)
+                        zeile.deltaR = kandidat.expectancyR - zeile.basis.expectancyR
+                        felder++
+                        if (zeile.deltaR > 0) besser++
+                    }
+                    zeilen.push(zeile)
+                }
+            }
+
+            res.json({
+                strategyId: b.strategyId, timeframe: b.timeframe, market,
+                fenster, zeilen,
+                // Nur wenn verglichen wurde: das Urteil in einem Satz.
+                urteil: b.baselineParams
+                    ? {
+                        besser, felder,
+                        bestanden: felder > 0 && besser === felder,
+                        // Vergleicht jemand einen unveränderten Satz mit sich
+                        // selbst, sind alle Differenzen null. Ohne diesen
+                        // Hinweis liest sich das wie „durchgefallen".
+                        identisch: zeilen.every((z) => Math.abs(z.deltaR ?? 0) < 1e-9),
+                    }
+                    : null,
+                hinweis: 'Ein Kandidat zählt erst, wenn er in JEDEM Feld besser ist — '
+                    + 'sonst wurde er auf einem Fenster ausgewählt und dort gemessen.',
+            })
+        } catch (e) {
+            logError('strategy-api', 'Mehrfach-Test fehlgeschlagen', e)
+            res.status(500).json({ error: `Mehrfach-Test fehlgeschlagen: ${e.message}` })
         }
     })
 
@@ -447,6 +602,52 @@ export function setupStrategyRoutes(app) {
         }
     })
 
+    /**
+     * Parameter-Historie einer Instanz — mit der Leistung je Version.
+     *
+     * Der Diff zwischen den Versionen wird bewusst dem Frontend überlassen:
+     * dort steht das Manifest-Schema mit den Anzeigenamen, hier gäbe es nur
+     * rohe Schlüssel.
+     */
+    app.get('/api/strategies/instances/:id/history', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const id = Number(req.params.id)
+            const [zeilen, statistik] = await Promise.all([
+                knex('strategy_param_history').where('instanceId', id).orderBy('paramsVersion', 'desc'),
+                knex('strategy_trades').where('instanceId', id)
+                    .select('paramsVersion')
+                    .count({ trades: '*' })
+                    .sum({ summeR: 'rMultiple', netPnl: 'netPnl' })
+                    .groupBy('paramsVersion'),
+            ])
+            const statsJe = Object.fromEntries(statistik.map((s) => [s.paramsVersion, s]))
+            const gewinne = await knex('strategy_trades').where('instanceId', id)
+                .where('rMultiple', '>', 0)
+                .select('paramsVersion').count({ n: '*' }).groupBy('paramsVersion')
+            const gewinneJe = Object.fromEntries(gewinne.map((g) => [g.paramsVersion, Number(g.n)]))
+
+            res.json(zeilen.map((z) => {
+                const s = statsJe[z.paramsVersion]
+                const n = Number(s?.trades) || 0
+                return {
+                    paramsVersion: z.paramsVersion,
+                    source: z.source,
+                    createdAt: z.createdAt,
+                    params: parseJson(z.params, {}),
+                    risk: parseJson(z.risk, {}),
+                    trades: n,
+                    summeR: Number(s?.summeR) || 0,
+                    netPnl: Number(s?.netPnl) || 0,
+                    winRate: n > 0 ? ((gewinneJe[z.paramsVersion] || 0) / n) * 100 : null,
+                }
+            }))
+        } catch (e) {
+            logError('strategy-api', 'Historie laden fehlgeschlagen', e)
+            res.status(500).json({ error: 'Historie konnte nicht geladen werden' })
+        }
+    })
+
     // ── Positionen ───────────────────────────────────────────────────────
     app.post('/api/strategies/positions/:id/close', async (req, res) => {
         try {
@@ -459,14 +660,20 @@ export function setupStrategyRoutes(app) {
             const instance = ladeInstanz(instRow)
             if (!instance) return res.status(400).json({ error: 'Instanz ist nicht lauffähig' })
 
-            const preis = Number(req.body?.price)
-                || await getLastPrice(row.symbol, { market: instance.market }).catch(() => Number(row.entryPrice))
+            // Der Preis kommt ausschliesslich vom Kursfeed. Ein frei wählbarer
+            // Preis im Request würde die PnL-Statistik fälschbar machen — und
+            // auf ihr bauen Auswertung und Optimizer-Vorschläge auf.
+            const preis = await getLastPrice(row.symbol, { market: instance.market })
+                .catch(() => Number(row.entryPrice))
 
-            const trade = await closePaperPositionManually({
+            const r = await schliessePositionManuell({
                 instance, positionRow: row, price: preis, time: Date.now(),
                 costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps },
             })
-            res.json({ ok: true, trade })
+            if (!r.ok) {
+                return res.status(502).json({ error: `Position konnte an der Börse nicht geschlossen werden: ${r.reason}` })
+            }
+            res.json({ ok: true, trade: r.trade })
         } catch (e) {
             logError('strategy-api', 'Position schliessen fehlgeschlagen', e)
             res.status(500).json({ error: 'Position konnte nicht geschlossen werden' })
@@ -507,15 +714,18 @@ export function setupStrategyRoutes(app) {
             const geprueft = pruefeInstanzEingabe({ params: vorgeschlagen }, instanz)
             if (geprueft.fehler) return res.status(400).json({ error: geprueft.fehler.join('; ') })
 
+            const neueVersion = (Number(instanz.paramsVersion) || 1) + 1
             await knex.transaction(async (trx) => {
                 await trx('strategy_instances').where('id', instanz.id).update({
                     params: geprueft.werte.params,
-                    paramsVersion: (Number(instanz.paramsVersion) || 1) + 1,
+                    paramsVersion: neueVersion,
                     updatedAt: trx.fn.now(),
                 })
                 await trx('strategy_suggestions').where('id', vorschlag.id).update({
                     status: 'accepted', decidedAt: Date.now(),
                 })
+                await historieSchreiben(trx, instanz.id, neueVersion,
+                    geprueft.werte.params, instanz.risk, `vorschlag #${vorschlag.id}`)
             })
             resetSymbolCache(instanz.id)
             res.json({ ok: true, paramsVersion: (Number(instanz.paramsVersion) || 1) + 1 })
@@ -607,6 +817,18 @@ export function setupStrategyRoutes(app) {
             if (!row) return res.status(404).json({ error: 'Nicht gefunden' })
 
             const b = req.body || {}
+            // Deaktivieren nimmt die Strategie aus der Registry — Instanzen und
+            // offene Positionen darauf wären ab dann UNVERWALTET: kein Stop,
+            // kein Ziel, und der Not-Aus würde sie still überspringen.
+            if (b.enabled === false || b.enabled === 0) {
+                const benutzt = await knex('strategy_instances')
+                    .where('strategyId', row.strategyId).count({ n: '*' }).first()
+                if (Number(benutzt?.n) > 0) {
+                    return res.status(409).json({
+                        error: `${benutzt.n} Instanz(en) benutzen diese Strategie — erst dort entfernen`,
+                    })
+                }
+            }
             const g = pruefeRegeln({
                 ...(b.rules || parseJson(row.rules, {})),
                 id: row.strategyId,
@@ -703,8 +925,8 @@ export function setupStrategyRoutes(app) {
     /** Sofort einen Takt auslösen, statt bis zu 15 s zu warten. */
     app.post('/api/strategies/engine/run', async (req, res) => {
         try {
-            resetSymbolCache()
-            await tick()
+            const gestartet = await tick({ vorher: resetSymbolCache })
+            if (!gestartet) return res.status(409).json({ error: 'Ein Takt läuft bereits — gleich erneut versuchen' })
             res.json({ ok: true, ...engineStatus() })
         } catch (e) {
             logError('strategy-api', 'Manueller Takt fehlgeschlagen', e)

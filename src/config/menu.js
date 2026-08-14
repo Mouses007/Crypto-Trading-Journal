@@ -48,10 +48,11 @@ export const PAGES = [
 export const MODES = [
     { id: 'journal', titleKey: 'modes.journal', icon: 'uil uil-book-alt', home: '/dashboard', enabled: true },
     { id: 'live', titleKey: 'modes.live', icon: 'uil uil-chart-line', home: '/liquidity', enabled: true },
-    // Vorübergehend abgeschaltet: der Agent-Modus wird gerade gebaut und ist
-    // noch nicht vorzeigbar. Der Knopf bleibt sichtbar, aber inaktiv —
-    // `enabled: true` genügt, um ihn wieder freizugeben.
-    { id: 'agent', titleKey: 'modes.agent', icon: 'uil uil-robot', home: '/agent/strategies', enabled: false },
+    // Freigegeben als Beta. Der Modus handelt selbstständig, deshalb warnt
+    // `BetaHinweis.vue` auf jeder seiner Seiten, und der scharfe Betrieb hängt
+    // zusätzlich an der dreifachen Freigabekette (globaler Schalter, Freigabe je
+    // Instanz, Mindestzahl Papier-Trades).
+    { id: 'agent', titleKey: 'modes.agent', icon: 'uil uil-robot', home: '/agent/strategies', enabled: true, beta: true },
 ]
 
 export const pageById = (id) => PAGES.find(p => p.id === id) || null

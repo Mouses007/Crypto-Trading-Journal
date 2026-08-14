@@ -68,8 +68,20 @@ function schliessenBeiEsc(e) {
 </template>
 
 <style scoped>
-.infoBtn {
+/* Bernstein wie die Beta-Kennzeichnung: der Info-Knopf gehört zur selben
+   Familie „lies das, bevor du dich verlässt" — überall, auch in der
+   Live-Analyse. Doppelte Klasse, damit die Regel die globale Pill schlägt. */
+.ctl-pill.infoBtn {
     gap: 0.25rem;
+    background: rgba(240, 196, 25, 0.12);
+    border: 1px solid rgba(240, 196, 25, 0.45);
+    color: rgba(240, 196, 25, 0.95);
+}
+
+.ctl-pill.infoBtn:hover {
+    background: rgba(240, 196, 25, 0.22);
+    border-color: rgba(240, 196, 25, 0.7);
+    color: rgb(240, 196, 25);
 }
 
 .infoOverlay {

@@ -87,7 +87,10 @@ function leer() {
         rules: {
             timeframes: ['1h'], direction: 'long', warmupCandles: 300,
             params: [], indicators: [], signal: { type: 'pivotHigh', left: 5, right: 2 },
-            signalFilters: [], entry: { type: 'touch', anchor: '', from: 'above' },
+            // `signalPrice` als Vorgabe: ein frisches Regelwerk soll LAUFFÄHIG
+            // starten — ein leerer Anker begrüsste den Nutzer sonst mit einem
+            // kryptischen Validierungsfehler, bevor er irgendetwas getan hat.
+            signalFilters: [], entry: { type: 'touch', anchor: 'signalPrice', from: 'above' },
             invalidations: [{ type: 'timeout', code: 'zu_lang', candles: 20 }],
             stopLoss: { anchor: 'correctionLow', offsetPct: 0.3 },
             takeProfit: { mode: 'rr', rr: 2 },

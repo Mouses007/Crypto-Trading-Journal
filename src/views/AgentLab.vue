@@ -35,8 +35,67 @@ const fehler = ref('')
 
 const form = ref({
     strategyId: '', instanceId: '', symbol: 'BTCUSDT', timeframe: '1h',
-    tage: 90, startEquity: 1000, label: '',
+    // Zeitraum wahlweise als „Tage zurück" (der schnelle Alltagsfall) oder als
+    // festes von/bis-Datum — z.B. eine Short-Strategie gezielt ab dem letzten
+    // Allzeithoch. Beide Werte bleiben erhalten, der Schalter entscheidet.
+    zeitmodus: 'tage',
+    tage: 90,
+    von: dayjs().subtract(90, 'day').format('YYYY-MM-DD'),
+    bis: dayjs().format('YYYY-MM-DD'),
+    startEquity: 1000, label: '',
     params: {}, risk: {},
+})
+
+/** Zeitraum eines Formulars (Modus Tage oder Datum) → { fromTs, toTs } oder null. */
+function zeitraumVon(f) {
+    if (f.zeitmodus === 'tage') {
+        const toTs = Date.now()
+        return { fromTs: toTs - Number(f.tage) * 86400000, toTs }
+    }
+    const fromTs = dayjs(f.von).valueOf()
+    const toTs = Math.min(dayjs(f.bis).endOf('day').valueOf(), Date.now())
+    return fromTs < toTs ? { fromTs, toTs } : null
+}
+
+// Sucht das Allzeithoch in den Tageskerzen (~3 Jahre) und setzt „von" darauf.
+const athLaedt = ref(false)
+async function vonAufAth() {
+    athLaedt.value = true
+    try {
+        const r = await axios.get('/api/binance/klines', {
+            params: { symbol: form.value.symbol, interval: '1d', market: 'futures', limit: 1000 },
+        })
+        let hoch = -Infinity
+        let hochT = null
+        for (const k of r.data) {
+            const h = Number(k[2])
+            if (h > hoch) { hoch = h; hochT = Number(k[0]) }
+        }
+        if (hochT) {
+            form.value.von = dayjs(hochT).format('YYYY-MM-DD')
+            form.value.zeitmodus = 'datum'
+            fehler.value = ''
+        }
+    } catch (e) {
+        fehler.value = apiFehlerText(e, t('strategies.athFailed'), t)
+    } finally {
+        athLaedt.value = false
+    }
+}
+
+// Mehrfach-Test: derselbe Parametersatz über mehrere Symbole und über zwei
+// Zeitfenster. Die Trennung in Optimierungs- und Prüffenster ist der Kern —
+// eine Einstellung, die nur dort gut ist, wo sie ausgesucht wurde, taugt nichts.
+const matrix = ref({
+    symbole: 'BTCUSDT, ETHUSDT',
+    zeitmodus: 'tage',
+    tage: 360,
+    von: dayjs().subtract(360, 'day').format('YYYY-MM-DD'),
+    bis: dayjs().format('YYYY-MM-DD'),
+    gegenGespeicherte: true,
+    laeuft: false,
+    fehler: '',
+    ergebnis: null,
 })
 
 const strategie = computed(() => registry.value.strategies.find((s) => s.id === form.value.strategyId) || null)
@@ -101,8 +160,13 @@ async function starten() {
     fehler.value = ''
     ergebnis.value = null
     try {
-        const toTs = Date.now()
-        const fromTs = toTs - Number(form.value.tage) * 86400000
+        const zeitraum = zeitraumVon(form.value)
+        if (!zeitraum) {
+            fehler.value = t('strategies.rangeInvalid')
+            laueft.value = false
+            return
+        }
+        const { fromTs, toTs } = zeitraum
         const r = await axios.post('/api/strategies/backtest', {
             strategyId: form.value.strategyId,
             instanceId: Number(form.value.instanceId) || 0,
@@ -122,6 +186,49 @@ async function starten() {
         laueft.value = false
     }
 }
+
+/**
+ * Mehrfach-Test starten.
+ *
+ * Verglichen wird gegen die GESPEICHERTEN Parameter der gewählten Instanz —
+ * nur so beantwortet der Lauf die eigentliche Frage: „ist meine Änderung besser
+ * als das, was gerade läuft?" Ohne Instanz gibt es keinen Vergleich, dann zeigt
+ * die Matrix nur die Zahlen des aktuellen Satzes.
+ */
+async function matrixStarten() {
+    matrix.value.laeuft = true
+    matrix.value.fehler = ''
+    matrix.value.ergebnis = null
+    try {
+        const symbole = matrix.value.symbole.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean)
+        const inst = instanzen.value.find((i) => i.id === Number(form.value.instanceId))
+        const zeitraum = zeitraumVon(matrix.value)
+        if (!zeitraum) {
+            matrix.value.fehler = t('strategies.rangeInvalid')
+            matrix.value.laeuft = false
+            return
+        }
+        const { fromTs, toTs } = zeitraum
+        const r = await axios.post('/api/strategies/backtest-matrix', {
+            strategyId: form.value.strategyId,
+            timeframe: form.value.timeframe,
+            symbols: symbole,
+            fromTs,
+            toTs,
+            startEquity: Number(form.value.startEquity),
+            params: form.value.params,
+            baselineParams: (matrix.value.gegenGespeicherte && inst) ? inst.params : null,
+            risk: form.value.risk,
+        })
+        matrix.value.ergebnis = r.data
+    } catch (e) {
+        matrix.value.fehler = apiFehlerText(e, t('strategies.matrixFailed'), t)
+    } finally {
+        matrix.value.laeuft = false
+    }
+}
+
+const matrixZahl = (v, n = 3) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '–' : Number(v).toFixed(n))
 
 /**
  * Übergibt die gewählte Instanz an den KI-Coach. Der `?agentPrompt=`-Deep-Link
@@ -236,10 +343,15 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || '�
                             <button class="btn btn-sm btn-outline-primary" :disabled="!form.instanceId"
                                 :title="t('strategies.copyFromInstance')"
                                 @click="vonInstanz"><i class="uil uil-import"></i></button>
-                            <button class="btn btn-sm btn-outline-info" :disabled="!form.instanceId"
-                                :title="t('strategies.optimizeTitle')"
-                                @click="optimierenLassen"><i class="uil uil-robot"></i></button>
                         </div>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <label class="form-label small mb-1">&nbsp;</label>
+                        <button class="btn btn-sm btn-info w-100 d-block" :disabled="!form.instanceId"
+                            :title="t('strategies.optimizeTitle')"
+                            @click="optimierenLassen">
+                            <i class="uil uil-robot me-1"></i>{{ t('strategies.aiOptimize') }}
+                        </button>
                     </div>
                     <div class="col-6 col-md-2">
                         <label class="form-label small mb-1">{{ t('strategies.symbol') }}</label>
@@ -252,10 +364,35 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || '�
                         </select>
                     </div>
                     <div class="col-6 col-md-1">
+                        <label class="form-label small mb-1">{{ t('strategies.period') }}</label>
+                        <select v-model="form.zeitmodus" class="form-select form-select-sm">
+                            <option value="tage">{{ t('strategies.days') }}</option>
+                            <option value="datum">{{ t('strategies.dateRange') }}</option>
+                        </select>
+                    </div>
+                    <div v-if="form.zeitmodus === 'tage'" class="col-6 col-md-1">
                         <label class="form-label small mb-1">{{ t('strategies.days') }}</label>
                         <input v-model.number="form.tage" type="number" min="7" max="720"
                             class="form-control form-control-sm" />
                     </div>
+                    <template v-else>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small mb-1">{{ t('strategies.from') }}</label>
+                            <div class="d-flex gap-1">
+                                <input v-model="form.von" type="date" class="form-control form-control-sm" />
+                                <button class="btn btn-sm btn-outline-secondary flex-shrink-0"
+                                    :disabled="athLaedt" :title="t('strategies.sinceAthTitle')"
+                                    @click="vonAufAth">
+                                    <span v-if="athLaedt" class="spinner-border spinner-border-sm"></span>
+                                    <span v-else>{{ t('strategies.sinceAth') }}</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small mb-1">{{ t('strategies.to') }}</label>
+                            <input v-model="form.bis" type="date" class="form-control form-control-sm" />
+                        </div>
+                    </template>
                     <div class="col-6 col-md-1">
                         <button class="btn btn-sm btn-success w-100" :disabled="laueft" @click="starten">
                             <span v-if="laueft" class="spinner-border spinner-border-sm"></span>
@@ -281,6 +418,114 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || '�
                         </div>
                     </div>
                 </details>
+            </div>
+
+            <!-- ══ Mehrfach-Test ══ -->
+            <div class="dailyCard p-3 mb-3">
+                <div class="section-title mb-1">
+                    <i class="uil uil-apps me-1"></i>{{ t('strategies.matrixTitle') }}
+                </div>
+                <p class="text-muted small mb-2">{{ t('strategies.matrixHint') }}</p>
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-12 col-md-3">
+                        <label class="form-label small mb-1">{{ t('strategies.matrixSymbols') }}</label>
+                        <input v-model="matrix.symbole" type="text" class="form-control form-control-sm"
+                               placeholder="BTCUSDT, ETHUSDT" />
+                    </div>
+                    <div class="col-6 col-md-1">
+                        <label class="form-label small mb-1">{{ t('strategies.period') }}</label>
+                        <select v-model="matrix.zeitmodus" class="form-select form-select-sm">
+                            <option value="tage">{{ t('strategies.days') }}</option>
+                            <option value="datum">{{ t('strategies.dateRange') }}</option>
+                        </select>
+                    </div>
+                    <div v-if="matrix.zeitmodus === 'tage'" class="col-6 col-md-1">
+                        <label class="form-label small mb-1">{{ t('strategies.days') }}</label>
+                        <input v-model.number="matrix.tage" type="number" min="14" max="720"
+                            class="form-control form-control-sm" />
+                    </div>
+                    <template v-else>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small mb-1">{{ t('strategies.from') }}</label>
+                            <input v-model="matrix.von" type="date" class="form-control form-control-sm" />
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small mb-1">{{ t('strategies.to') }}</label>
+                            <input v-model="matrix.bis" type="date" class="form-control form-control-sm" />
+                        </div>
+                    </template>
+                    <div class="col-6 col-md-3">
+                        <div class="form-check">
+                            <input id="matrixVergleich" v-model="matrix.gegenGespeicherte"
+                                   class="form-check-input" type="checkbox" />
+                            <label class="form-check-label small" for="matrixVergleich">
+                                {{ t('strategies.matrixCompare') }}
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <button class="btn btn-sm greenBtn w-100" :disabled="matrix.laeuft || !form.strategyId"
+                                @click="matrixStarten">
+                            {{ matrix.laeuft ? t('strategies.running') : t('strategies.matrixStart') }}
+                        </button>
+                    </div>
+                </div>
+
+                <div v-if="matrix.fehler" class="text-danger small mb-2">{{ matrix.fehler }}</div>
+
+                <template v-if="matrix.ergebnis">
+                    <div v-if="matrix.ergebnis.urteil?.identisch" class="alert alert-secondary py-2 px-3 small mb-2">
+                        {{ t('strategies.matrixIdentical') }}
+                    </div>
+                    <div v-else-if="matrix.ergebnis.urteil"
+                         class="alert py-2 px-3 small mb-2"
+                         :class="matrix.ergebnis.urteil.bestanden ? 'alert-success' : 'alert-warning'">
+                        <strong>{{ matrix.ergebnis.urteil.bestanden
+                            ? t('strategies.matrixPassed') : t('strategies.matrixFailedVerdict') }}</strong>
+                        —
+                        {{ t('strategies.matrixScore', {
+                            besser: matrix.ergebnis.urteil.besser,
+                            felder: matrix.ergebnis.urteil.felder,
+                        }) }}
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-borderless mb-0 small">
+                            <thead>
+                                <tr class="text-muted">
+                                    <th>{{ t('strategies.symbol') }}</th>
+                                    <th>{{ t('strategies.matrixWindow') }}</th>
+                                    <th class="text-end">{{ t('strategies.kpiTrades') }}</th>
+                                    <th class="text-end" v-if="matrix.ergebnis.urteil">{{ t('strategies.matrixBase') }}</th>
+                                    <th class="text-end">{{ t('strategies.matrixCandidate') }}</th>
+                                    <th class="text-end" v-if="matrix.ergebnis.urteil">Δ</th>
+                                    <th class="text-end">{{ t('strategies.matrixWithoutBest') }}</th>
+                                    <th class="text-end">{{ t('strategies.kpiMaxDd') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(z, i) in matrix.ergebnis.zeilen" :key="i">
+                                    <td>{{ z.symbol }}</td>
+                                    <td>{{ z.fenster === 'optimierung'
+                                        ? t('strategies.matrixWindowOpt') : t('strategies.matrixWindowCheck') }}</td>
+                                    <td class="text-end" :class="{ 'text-warning': z.kandidat.trades < 30 }">
+                                        {{ z.kandidat.trades }}
+                                    </td>
+                                    <td class="text-end" v-if="matrix.ergebnis.urteil">
+                                        {{ matrixZahl(z.basis?.expectancyR) }}
+                                    </td>
+                                    <td class="text-end">{{ matrixZahl(z.kandidat.expectancyR) }}</td>
+                                    <td class="text-end" v-if="matrix.ergebnis.urteil"
+                                        :class="z.deltaR >= 0 ? 'greenTrade' : 'redTrade'">
+                                        {{ z.deltaR >= 0 ? '+' : '' }}{{ matrixZahl(z.deltaR) }}
+                                    </td>
+                                    <td class="text-end">{{ matrixZahl(z.kandidat.ohneBestenR) }}</td>
+                                    <td class="text-end">{{ matrixZahl(z.kandidat.maxDrawdownPct, 2) }} %</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="text-muted small mt-2 mb-0">{{ t('strategies.matrixFootnote') }}</p>
+                </template>
             </div>
 
             <!-- ══ Ergebnis ══ -->

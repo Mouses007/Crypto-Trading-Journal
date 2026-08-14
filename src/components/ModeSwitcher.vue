@@ -26,6 +26,9 @@ function switchMode(mode) {
             :title="m.enabled ? '' : t('modes.comingSoon')"
             :class="['mode-btn', appMode === m.id ? 'active' : '']" @click="switchMode(m)">
             <i :class="m.icon"></i><span>{{ t(m.titleKey) }}</span>
+            <!-- Der Punkt macht schon im Umschalter klar, dass der Modus
+                 unfertig ist — die ausführliche Warnung steht dann auf der Seite. -->
+            <span v-if="m.beta" class="beta-dot" :title="t('modes.betaHint')">Beta</span>
         </button>
     </div>
 </template>
@@ -41,6 +44,16 @@ function switchMode(mode) {
     border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
     border-radius: 999px;
     background: var(--black-bg-7);
+}
+
+.beta-dot {
+    font-size: 0.6rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0.12rem 0.3rem;
+    border-radius: 0.5rem;
+    background: rgba(240, 196, 25, 0.22);
+    color: rgba(240, 196, 25, 0.95);
 }
 
 .mode-btn {

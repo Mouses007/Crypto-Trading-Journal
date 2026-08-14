@@ -24,8 +24,9 @@ import { getStrategy, validateParams, validateRisk, AGENT_DEFAULTS } from './str
 import { getClosedCandles, getSymbolMeta, getLastPrice, timeframeMs, isValidTimeframe } from './market-data.js'
 import { evaluateRisk, startOfDayUtc, RISK_REASONS } from './risk-engine.js'
 import { openPaperPosition, stepPaperPositions, getPaperEquity, closePaperPositionManually } from './execution/paper.js'
+import { entryIsValid } from './fill-simulator.js'
 import { agentenVeto } from './strategy-agents.js'
-import { openLivePosition, getLiveEquity } from './execution/bitunix.js'
+import { openLivePosition, getLiveEquity, closeLivePosition, getLivePositionId } from './execution/bitunix.js'
 
 const TICK_MS = 15000          // Prüfintervall; gearbeitet wird nur bei neuem Kerzenschluss
 const MAX_SYMBOLS = 20         // Deckel je Instanz, damit ein Tippfehler den Server nicht flutet
@@ -183,8 +184,10 @@ async function verarbeiteSymbol(instance, symbol, schalter) {
     // ── 1. Offene Positionen fortschreiben ───────────────────────────────
     const geschlossen = await stepPaperPositions({
         instance, symbol, candles, costs,
-        breakEvenAtR: p.breakEvenAtR,
-        maxHoldMs: (p.maxHoldCandles || 0) * timeframeMs(instance.timeframe),
+        breakEvenAtR: p.breakEvenAtR ?? instance.strategie?.regeln?.breakEvenAtR ?? 0,
+        maxHoldMs: ((p.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(instance.timeframe),
+        partialTpR: p.partialTpR,
+        partialTpPct: p.partialTpPct,
     })
 
     // ── 2. Erkennen ──────────────────────────────────────────────────────
@@ -210,11 +213,27 @@ async function verarbeiteSymbol(instance, symbol, schalter) {
         watchFrom: Number(r.watchFrom) || Number(r.obCandleTime),
     }))
 
+    // Kerzen der höheren Zeiteinheit für den Trendfilter. Werden sie nicht
+    // übergeben, bleibt `htfBias` null und der Filter blockiert nie — er wäre
+    // eine Einstellung ohne Wirkung. Nur bei eingeschaltetem Filter holen,
+    // sonst kostet es bei jedem Takt einen Abruf ohne Nutzen.
+    let htfCandles = null
+    if (p.htfTrendFilter && p.htfTimeframe && p.htfTimeframe !== instance.timeframe) {
+        try {
+            htfCandles = await getClosedCandles(
+                symbol, p.htfTimeframe, (p.htfEmaPeriod || 50) + 20, { market: instance.market },
+            )
+        } catch (e) {
+            logWarn('strategy-engine', `HTF-Kerzen (${p.htfTimeframe}) nicht abrufbar — Filter greift diesen Takt nicht`)
+        }
+    }
+
     const { setups, events } = instance.strategie.detect({
         candles,
         params: p,
         openSetups,
         knownSetupKeys: bekannte.map((r) => `${r.direction}|${r.obCandleTime}`),
+        htfCandles,
     })
 
     // ── 3. Neue Setups sichern ───────────────────────────────────────────
@@ -349,7 +368,7 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
     // einem längst überholten Preis wäre dagegen ein Fehler — deshalb handelt
     // live ausschliesslich auf der gerade geschlossenen Kerze.
     const neuesteKerze = candles[candles.length - 1]?.t || 0
-    if (instance.mode !== 'paper' && ev.triggeredAt && ev.triggeredAt < neuesteKerze) {
+    if (instance.mode === 'live' && ev.triggeredAt && ev.triggeredAt < neuesteKerze) {
         const alter = Math.round((neuesteKerze - ev.triggeredAt) / timeframeMs(instance.timeframe))
         return beenden('reject_risk', 'stale_trigger', `Auslöser ${alter} Kerzen alt`)
     }
@@ -368,11 +387,28 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
             // Ein Faktor > 1 wäre eine Vergrösserung — das dürfen die Agenten nicht.
             sizeFactor = Math.min(Math.max(Number(veto.sizeFactor) || 1, 0), 1)
         } catch (e) {
-            // Ein Ausfall der optionalen Agenten darf den deterministischen Teil
-            // nicht kippen: die Strategie handelt dann ohne Veto weiter.
+            // Der Nutzer hat das Veto ausdrücklich eingeschaltet. Bei einem
+            // Ausfall trotzdem zu handeln hiesse, genau die Prüfung zu
+            // überspringen, auf die er sich verlässt — also kein Trade.
             logWarn('strategy-engine', `Agenten-Veto fehlgeschlagen: ${e.message}`)
+            return beenden('reject_agent', 'agent_error', String(e.message).slice(0, 200))
         }
     }
+
+    // (b2) Gleiche Einstiegsprüfung wie im Backtest: die Auslösekerze muss den
+    // Einstieg erreichbar gemacht haben, und der Stop darf nicht schon in ihr
+    // liegen. Ohne diese Prüfung war Paper/Live optimistischer als der Backtest.
+    const ausloeseKerze = candles.find((k) => k.t === ev.candleTime) || candles[candles.length - 1]
+    const einstiegOk = entryIsValid(setup, ausloeseKerze)
+    // 'entry_not_touched' ist endgültig. 'stop_in_entry_candle' dagegen wird im
+    // Papierbetrieb NICHT verworfen, sondern unten pessimistisch als Verlust
+    // gebucht — sonst verschwinden genau die schlechtesten Fills aus der
+    // Statistik und Trefferquote wie Erwartungswert sehen besser aus, als sie
+    // sind. Live/Schatten senden für so ein Setup schlicht keine Order.
+    if (!einstiegOk.ok && einstiegOk.reason !== 'stop_in_entry_candle') {
+        return beenden('reject_risk', einstiegOk.reason, '')
+    }
+    const sameBarStop = !einstiegOk.ok
 
     // (c) Risiko-Gates
     const [equity, kontext, meta] = await Promise.all([
@@ -408,18 +444,84 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
     // läuft in den Unique-Index und kann keine zweite Position öffnen.
     const clientOrderId = `ctj-${instance.id}-${setup.id}`
 
-    // Live und Schatten gehen durch den Broker-Adapter. Im Schattenbetrieb baut
-    // er die Order vollständig, sendet sie aber nicht — genau dieser Body lässt
-    // sich vor dem Scharfschalten prüfen.
+    // Same-Bar-Stop: kein Broker-Aufruf, sondern pessimistische Papier-Buchung
+    // (Einstieg an der Zonenkante, Ausstieg am Stop derselben Kerze).
+    if (sameBarStop) {
+        if (instance.mode !== 'paper') return beenden('reject_risk', 'stop_in_entry_candle', '')
+        const eroeff = await openPaperPosition({
+            instance, setup, size, entryPrice: setup.entry, entryTime: now, costs, clientOrderId,
+        }).catch(() => ({ ok: false }))
+        if (!eroeff.ok) return beenden('reject_risk', 'duplicate_order', '')
+        const zeile = await knex('strategy_positions').where('id', eroeff.positionId).first()
+        const gap = setup.direction === 'long'
+            ? Math.min(setup.stopLoss, ausloeseKerze.o)
+            : Math.max(setup.stopLoss, ausloeseKerze.o)
+        await closePaperPositionManually({ instance, positionRow: zeile, price: gap, time: now, costs, reason: 'sl' })
+        return beenden('execute', '', 'same_bar_stop')
+    }
+
+    // Frische Schalterprüfung: seit dem Taktbeginn können Sekunden vergangen
+    // sein (Marktdaten, LLM-Veto). Ein inzwischen gedrückter Not-Aus muss den
+    // Einstieg HIER noch stoppen — nicht erst beim nächsten Takt.
+    if (instance.mode !== 'paper') {
+        const frisch = await ladeSchalter()
+        if (frisch.killSwitch) return beenden('reject_risk', RISK_REASONS.KILL_SWITCH)
+        if (instance.mode === 'live' && !frisch.liveEnabled) {
+            return beenden('reject_risk', 'live_globally_disabled')
+        }
+    }
+
+    // ═ Reihenfolge ist hier die halbe Sicherheit ═
+    // ZUERST die Reservierung in der DB (Unique auf clientOrderId), DANN die
+    // Order. Andersherum kann ein Absturz zwischen Order und Insert beim
+    // nächsten Takt eine zweite Order auslösen — und der Duplikat-Zweig würde
+    // dann die Position glattstellen, die der ERSTE Versuch korrekt eröffnet
+    // hat. Genau dieser Ablauf stand hier bis zum Audit vom 14.08.
+    let eroeffnet
+    try {
+        eroeffnet = await openPaperPosition({
+            instance, setup, size,
+            entryPrice: setup.entry,
+            entryTime: now,
+            costs, clientOrderId,
+            status: instance.mode === 'paper' ? 'open' : 'pending',
+        })
+    } catch (err) {
+        eroeffnet = { ok: false, reason: 'open_failed', detail: err.message }
+    }
+    if (!eroeffnet.ok) {
+        // Duplikat heisst: ein früherer Versuch hat die Reservierung schon —
+        // hier wird NICHTS geschlossen und NICHTS erneut gesendet.
+        return beenden('reject_risk', eroeffnet.reason || 'open_failed', eroeffnet.detail || '')
+    }
+
     let brokerAntwort = null
     if (instance.mode !== 'paper') {
-        brokerAntwort = await openLivePosition({
-            setup, size,
-            leverage: risk.leverage,
-            clientOrderId,
-            mode: instance.mode,
-        })
+        try {
+            brokerAntwort = await openLivePosition({
+                setup, size,
+                leverage: risk.leverage,
+                clientOrderId,
+                mode: instance.mode,
+            })
+        } catch (err) {
+            brokerAntwort = { ok: false, reason: 'order_transport_error', detail: err.message, geschickt: true }
+        }
+
         if (!brokerAntwort.ok) {
+            if (brokerAntwort.geschickt && brokerAntwort.reason !== 'order_rejected') {
+                // Transportfehler NACH dem Senden: ob die Börse die Order hat,
+                // ist unbekannt. Blind schliessen könnte eine fremde Position
+                // treffen, blind löschen würde beim nächsten Takt neu senden.
+                // Also: Reservierung als 'unknown' stehen lassen — sie blockt
+                // jeden weiteren Versuch — und laut um Handprüfung bitten.
+                await knex('strategy_positions').where('id', eroeffnet.positionId)
+                    .update({ status: 'unknown', updatedAt: knex.fn.now() })
+                logError('strategy-engine', `Order-Zustand UNBEKANNT (${setup.symbol}, ${clientOrderId}) — an der Börse prüfen! Position steht auf 'unknown'.`)
+                return beenden('error', 'order_state_unknown', brokerAntwort.detail || '')
+            }
+            // Saubere Ablehnung durch die Börse: nichts steht, Reservierung weg.
+            await knex('strategy_positions').where('id', eroeffnet.positionId).del()
             return beenden('error', brokerAntwort.reason || 'order_failed', brokerAntwort.detail || '', {
                 executionOutput: JSON.stringify({
                     mode: instance.mode, clientOrderId,
@@ -428,21 +530,21 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
                 }),
             })
         }
-    }
 
-    // Buchhaltung läuft in allen Betriebsarten über dieselben Tabellen: nur so
-    // sind Papier-, Schatten- und Live-Ergebnisse miteinander vergleichbar.
-    const eroeffnet = await openPaperPosition({
-        instance, setup, size,
-        entryPrice: setup.entry,
-        entryTime: now,
-        costs, clientOrderId,
-    })
-    if (!eroeffnet.ok) return beenden('error', eroeffnet.reason || 'open_failed', eroeffnet.detail || '')
-
-    if (brokerAntwort?.externalOrderId) {
-        await knex('strategy_positions').where('id', eroeffnet.positionId)
-            .update({ externalOrderId: brokerAntwort.externalOrderId })
+        // Ausführung bestätigt → Reservierung wird zur offenen Position. Die
+        // POSITIONS-Kennung (nicht die Order-Kennung!) best effort dazu — sie
+        // macht ein gezieltes Schliessen möglich, statt das ganze Symbol zu
+        // treffen (siehe schliessePositionManuell).
+        let livePositionId = ''
+        if (instance.mode === 'live') {
+            livePositionId = await getLivePositionId(setup.symbol, setup.direction).catch(() => '')
+        }
+        await knex('strategy_positions').where('id', eroeffnet.positionId).update({
+            status: 'open',
+            externalOrderId: brokerAntwort.externalOrderId || '',
+            externalPositionId: livePositionId,
+            updatedAt: knex.fn.now(),
+        })
     }
 
     return beenden('execute', '', '', {
@@ -488,18 +590,85 @@ async function verarbeiteInstanz(row, schalter) {
     }
 }
 
-/** Ein Takt: alle aktiven Instanzen prüfen. Arbeit fällt nur bei neuer Kerze an. */
-export async function tick() {
-    if (engineStopped) return
-    stats.ticks++
+/**
+ * Offene Papier-/Schatten-Positionen fortschreiben — unabhängig davon, ob die
+ * Instanz noch aktiv ist. Ohne diesen Nachlauf würde der Not-Aus (der alle
+ * Instanzen deaktiviert) die offenen Positionen einfrieren: kein Stop, kein
+ * Ziel, kein Break-Even mehr. Ein Not-Aus, der laufende Ausstiege stoppt,
+ * wäre das Gegenteil von Sicherheit.
+ */
+async function pflegeOffenePositionen() {
     const knex = getKnex()
-    const schalter = await ladeSchalter()
+    const zeilen = await knex('strategy_positions')
+        .where('status', 'open').whereIn('mode', ['paper', 'shadow'])
+        .select('instanceId', 'symbol', 'lastCandleTime', 'entryTime')
+    const gruppen = new Map()
+    for (const z of zeilen) {
+        const key = `${z.instanceId}|${z.symbol}`
+        const ab = Number(z.lastCandleTime) || Number(z.entryTime) || Date.now()
+        gruppen.set(key, Math.min(gruppen.get(key) ?? Infinity, ab))
+    }
+    for (const [key, minAb] of gruppen) {
+        const [instanceId, symbol] = key.split('|')
+        try {
+            const row = await knex('strategy_instances').where('id', Number(instanceId)).first()
+            const instance = row ? ladeInstanz(row) : null
+            if (!instance) continue
+            // So viele Kerzen holen, dass die Lücke seit dem letzten Stand
+            // wirklich abgedeckt ist. Eine fixe Zahl würde nach längerem
+            // Ausfall `lastCandleTime` über die Lücke hinweg vorspulen — ein
+            // Stop IN der Lücke würde dann nie ausgewertet.
+            const tfMs = timeframeMs(instance.timeframe)
+            const bedarf = Math.min(990, Math.max(60, Math.ceil((Date.now() - minAb) / tfMs) + 3))
+            const candles = await getClosedCandles(symbol, instance.timeframe, bedarf, { market: instance.market })
+            if (!candles?.length) continue
+            if (candles[0].t > minAb + tfMs * 1.5) {
+                logWarn('strategy-engine', `Kerzenlücke ${symbol}: Abdeckung beginnt erst ${new Date(candles[0].t).toISOString()} — Nachlauf ausgesetzt, um keine Stops zu überspringen`)
+                continue
+            }
+            await stepPaperPositions({
+                instance, symbol, candles,
+                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps },
+                breakEvenAtR: instance.params.breakEvenAtR ?? instance.strategie?.regeln?.breakEvenAtR ?? 0,
+                maxHoldMs: ((instance.params.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(instance.timeframe),
+                partialTpR: instance.params.partialTpR,
+                partialTpPct: instance.params.partialTpPct,
+            })
+        } catch (e) {
+            logWarn('strategy-engine', `Positions-Nachlauf ${instanceId}/${symbol} fehlgeschlagen: ${e.message}`)
+        }
+    }
+}
 
-    if (schalter.killSwitch) return   // Not-Aus: nichts erkennen, nichts ausführen
+/** Ein Takt: alle aktiven Instanzen prüfen. Arbeit fällt nur bei neuer Kerze an. */
+let tickLaeuft = false
+export async function tick({ vorher = null } = {}) {
+    if (engineStopped) return false
+    // Ein Takt, der länger als das Intervall braucht, darf nicht vom nächsten
+    // überholt werden — sonst verarbeiten zwei Läufe dieselben Setups parallel.
+    if (tickLaeuft) return false
+    tickLaeuft = true
+    try {
+        // Erst NACH dem Guard, sonst leert ein abgewiesener manueller Takt den
+        // Kerzen-Cache und derselbe Schluss wird doppelt erkannt.
+        if (typeof vorher === 'function') vorher()
+        stats.ticks++
+        const knex = getKnex()
+        const schalter = await ladeSchalter()
 
-    const rows = await knex('strategy_instances').where('enabled', 1)
-    for (const row of rows) {
-        await verarbeiteInstanz(row, schalter)
+        // Ausstiege IMMER pflegen — auch bei Not-Aus und für deaktivierte
+        // Instanzen. Nur neue Einstiege hängen an den Schaltern.
+        await pflegeOffenePositionen()
+
+        if (schalter.killSwitch) return true   // Not-Aus: Takt lief (Nachlauf), nur nichts Neues
+
+        const rows = await knex('strategy_instances').where('enabled', 1)
+        for (const row of rows) {
+            await verarbeiteInstanz(row, schalter)
+        }
+        return true
+    } finally {
+        tickLaeuft = false
     }
 }
 
@@ -542,8 +711,55 @@ export async function stopStrategyEngine() {
 }
 
 /**
- * Not-Aus: stoppt alle Instanzen. `closePositions` schliesst zusätzlich
- * alle offenen Papier-Positionen zum letzten Kurs.
+ * Eine offene Position von Hand schliessen — für JEDE Betriebsart.
+ *
+ * Reihenfolge ist hier alles: bei `live` wird zuerst die Börse geschlossen und
+ * erst bei Erfolg lokal gebucht. Andersherum entstünde der schlimmste Zustand
+ * überhaupt — ein Trade, der im Journal abgeschlossen ist, während die Position
+ * an der Börse offen weiterläuft und niemand mehr auf sie schaut.
+ *
+ * Scheitert die Börse, bleibt die Position bewusst offen und der Fehler geht
+ * nach oben. Lieber eine Position, die noch da ist, als eine, die nur
+ * verschwunden scheint.
+ */
+export async function schliessePositionManuell({ instance, positionRow, price, time, costs, reason = 'manual' }) {
+    if (positionRow.mode === 'live') {
+        // Gezielt über die POSITIONS-Kennung. Fehlt sie (Abfrage nach der
+        // Eröffnung fehlgeschlagen), wird sie hier nachgeholt — das symbolweite
+        // Flash-Close bleibt der letzte Ausweg, denn es träfe auch Positionen,
+        // die der Nutzer von Hand hält.
+        let positionId = positionRow.externalPositionId || ''
+        if (!positionId) {
+            positionId = await getLivePositionId(positionRow.symbol, positionRow.direction).catch(() => '')
+        }
+        if (!positionId) {
+            logWarn('strategy-engine', `Keine Positions-Kennung für ${positionRow.symbol} — Flash-Close trifft das GANZE Symbol (auch manuelle Positionen)`)
+        }
+        const antwort = await closeLivePosition({
+            symbol: positionRow.symbol,
+            positionId: positionId || null,
+            direction: positionRow.direction,
+            mode: 'live',
+        }).catch((err) => ({ ok: false, reason: err.message }))
+
+        if (!antwort.ok) {
+            logError('strategy-engine', `Live-Position ${positionRow.id} konnte an der Börse nicht geschlossen werden: ${antwort.reason}`)
+            return { ok: false, reason: antwort.reason || 'close_failed', trade: null }
+        }
+    }
+
+    // `liveCloseBestaetigt`: die Börse hat das Close bestätigt, jetzt DARF und
+    // MUSS die Buchung folgen — sonst bliebe die Zeile für immer offen (C1).
+    const trade = await closePaperPositionManually({
+        instance, positionRow, price, time, costs, reason,
+        liveCloseBestaetigt: positionRow.mode === 'live',
+    })
+    return { ok: true, trade }
+}
+
+/**
+ * Not-Aus: stoppt alle Instanzen. `closePositions` schliesst zusätzlich alle
+ * offenen Positionen — bei Live-Instanzen zuerst an der Börse.
  */
 export async function killSwitch({ closePositions = false } = {}) {
     const knex = getKnex()
@@ -551,6 +767,7 @@ export async function killSwitch({ closePositions = false } = {}) {
     await knex('strategy_instances').update({ enabled: 0 })
 
     let geschlossen = 0
+    const fehlgeschlagen = []
     if (closePositions) {
         const offen = await knex('strategy_positions').where('status', 'open')
         for (const row of offen) {
@@ -558,14 +775,17 @@ export async function killSwitch({ closePositions = false } = {}) {
             const instance = instRow ? ladeInstanz(instRow) : null
             if (!instance) continue
             const preis = await getLastPrice(row.symbol, { market: instance.market }).catch(() => Number(row.entryPrice))
-            await closePaperPositionManually({
+            const r = await schliessePositionManuell({
                 instance, positionRow: row, price: preis, time: Date.now(),
                 costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps },
                 reason: 'manual',
-            })
-            geschlossen++
+            }).catch((err) => ({ ok: false, reason: err.message }))
+            if (r.ok) geschlossen++
+            // Eine Position, die nicht zu schliessen war, MUSS sichtbar bleiben —
+            // sonst wiegt der Not-Aus in falscher Sicherheit.
+            else fehlgeschlagen.push({ id: row.id, symbol: row.symbol, grund: r.reason })
         }
     }
     resetSymbolCache()
-    return { geschlossen }
+    return { geschlossen, fehlgeschlagen }
 }

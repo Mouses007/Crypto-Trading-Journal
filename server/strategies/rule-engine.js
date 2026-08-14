@@ -28,7 +28,7 @@
  */
 
 import {
-    ema, sma, rsi, atr, vwap, vwapBand, macd, mfi, pivotHighs, pivotLows,
+    ema, sma, rsi, atr, vwap, vwapBand, macd, mfi, bollinger, adx, stochastic, pivotHighs, pivotLows,
     isBull, isBear, bodySize, range,
     isHammer, isShootingStar, isBullishEngulfing, isBearishEngulfing, isAdvancingWick,
 } from './indicators.js'
@@ -38,9 +38,13 @@ export const RULE_ENGINE_VERSION = 1
 /** Was die Beschreibung überhaupt anbieten darf. Erweiterung nur hier. */
 export const BAUSTEINE = {
     indikatoren: ['ema', 'sma', 'rsi', 'atr', 'mfi', 'vwap', 'vwapBand',
-        'macd', 'macdSignal', 'macdHist'],
+        'macd', 'macdSignal', 'macdHist',
+        'bollUpper', 'bollMiddle', 'bollLower', 'adx', 'plusDI', 'minusDI',
+        'stochK', 'stochD'],
+    bollBasis: ['sma', 'ema'],
     vwapAnker: ['session', 'rolling'],
-    signale: ['pivotHigh', 'pivotLow', 'crossUp', 'crossDown'],
+    signale: ['pivotHigh', 'pivotLow', 'crossUp', 'crossDown', 'pattern'],
+    muster: ['bullishEngulfing', 'bearishEngulfing', 'hammer', 'shootingStar'],
     einstieg: ['touch', 'immediate'],
     vergleiche: [
         'gt', 'lt', 'gte', 'lte',
@@ -259,6 +263,37 @@ function baueIndikatoren(regeln, candles, params) {
                 })
                 break
             }
+            // Bollinger, ADX und Stochastik liefern jeweils mehrere Linien.
+            // Nach demselben Muster wie MACD bekommt jede Linie einen eigenen
+            // Typ, damit eine Regel immer genau eine Id referenziert.
+            case 'bollUpper':
+            case 'bollMiddle':
+            case 'bollLower': {
+                const b = bollinger(candles, {
+                    period: periode,
+                    mult: zahl(def.mult, params, 2),
+                    basis: def.basis === 'ema' ? 'ema' : 'sma',
+                })
+                out[def.id] = def.type === 'bollUpper' ? b.upper : def.type === 'bollLower' ? b.lower : b.middle
+                break
+            }
+            case 'adx':
+            case 'plusDI':
+            case 'minusDI': {
+                const a = adx(candles, periode)
+                out[def.id] = def.type === 'plusDI' ? a.plusDI : def.type === 'minusDI' ? a.minusDI : a.adx
+                break
+            }
+            case 'stochK':
+            case 'stochD': {
+                const s = stochastic(candles, {
+                    period: periode,
+                    smoothK: Math.max(1, Math.round(zahl(def.smoothK, params, 3))),
+                    smoothD: Math.max(1, Math.round(zahl(def.smoothD, params, 3))),
+                })
+                out[def.id] = def.type === 'stochK' ? s.k : s.d
+                break
+            }
             default: out[def.id] = new Array(candles.length).fill(null)
         }
     }
@@ -290,6 +325,36 @@ function findeSignale(regeln, ctx) {
             low: candles[p.index].l,
             prevPrice: n > 0 ? roh[n - 1].price : null,
         }))
+    }
+
+    // Kerzenmuster als Auslöser. `prevOpposite` verlangt zusätzlich N Kerzen der
+    // Gegenfarbe unmittelbar davor — das ist der Qualitätsfilter aus Rang 5
+    // („mindestens drei Gegenkerzen vor der Engulfing-Kerze"), ohne den das
+    // Muster in jeder Seitwärtsphase feuert.
+    if (s.type === 'pattern') {
+        const muster = String(s.pattern || '')
+        const davor = Math.max(0, Math.round(zahl(s.prevOpposite, ctx.params, 0)))
+        const bullisch = muster === 'bullishEngulfing' || muster === 'hammer'
+        const treffer = []
+        for (let i = 1; i < candles.length; i++) {
+            if (!pruefe({ op: `is${muster.charAt(0).toUpperCase()}${muster.slice(1)}`, value: s.value }, ctx, i)) continue
+            if (davor > 0) {
+                if (i - davor < 0) continue
+                let alleGegen = true
+                for (let j = i - davor; j < i; j++) {
+                    const g = candles[j]
+                    // Gegenfarbe zum Muster: vor einem Kaufsignal fallende Kerzen
+                    if (bullisch ? g.c >= g.o : g.c <= g.o) { alleGegen = false; break }
+                }
+                if (!alleGegen) continue
+            }
+            treffer.push({
+                index: i, price: candles[i].c,
+                high: candles[i].h, low: candles[i].l,
+                prevPrice: treffer.length ? treffer[treffer.length - 1].price : null,
+            })
+        }
+        return treffer
     }
 
     if (s.type === 'crossUp' || s.type === 'crossDown') {
@@ -464,26 +529,23 @@ export function detectMitRegeln(regeln, { candles, params, openSetups = [], know
             const e = regeln.entry || {}
             let ausgeloest = false
             let entryPreis = null
+            let fillAmOpen = false
 
             // Der Index der Kerze, an der tatsächlich eingestiegen wird —
             // bei `immediate` ist das nicht die Auslösekerze (siehe unten).
             let einstiegIdx = i
 
             if (e.type === 'immediate') {
-                // Ob die Bedingung erfüllt ist, steht erst mit dem SCHLUSS
-                // dieser Kerze fest. Zu diesem Schlusskurs einzusteigen wäre
-                // ein Blick in die Zukunft: im Livebetrieb taktet die Engine
-                // erst NACH dem Kerzenschluss und bekommt frühestens den
-                // nächsten Kurs. Im Backtest ist das die Eröffnung der
-                // Folgekerze — sonst laufen Backtest und Livebetrieb
-                // auseinander, und zwar zugunsten des Backtests.
-                const naechste = ctx.candles[i + 1]
-                // Noch keine Folgekerze: der nächste Takt entscheidet. Das
-                // Setup bleibt offen, es wird nichts verworfen.
-                if (!naechste) break
+                // Das Signal steht mit dem Schluss seiner Kerze fest; diese
+                // Schleife beginnt bei der ERSTEN Kerze danach. Deren Eröffnung
+                // ist der früheste ehrliche Einstieg — sie war der erste Kurs
+                // nach dem Signal. Vorher wurde stattdessen die Eröffnung der
+                // ÜBERnächsten Kerze genommen: eine Kerze zu spät, und
+                // Ordergültigkeiten von einer Kerze konnten nie greifen.
                 ausgeloest = true
-                entryPreis = naechste.o
-                einstiegIdx = i + 1
+                entryPreis = k.o
+                einstiegIdx = i
+                fillAmOpen = true
             } else {
                 const anker = loese(e.anchor, ctx, i)
                 if (anker !== null) {
@@ -541,7 +603,7 @@ export function detectMitRegeln(regeln, { candles, params, openSetups = [], know
                     // Sagt dem Backtest, dass der Einstieg auf der ERÖFFNUNG
                     // dieser Kerze liegt — ihr Verlauf muss deshalb noch
                     // gegen Stop und Ziel geprüft werden.
-                    entryAtOpen: einstiegIdx !== i,
+                    entryAtOpen: fillAmOpen,
                     confirmations: { waitedCandles: gewartet },
                 })
                 fertig = true; break

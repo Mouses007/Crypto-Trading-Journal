@@ -3869,3 +3869,177 @@ export function useSetupChart(elementId, candles, setup) {
     myChart.setOption(option)
     return myChart
 }
+
+/**
+ * Zeitstrahl eines Symbols: ALLE Setups und Trades des Agenten in einem Chart.
+ *
+ * `useSetupChart` beantwortet »was war bei diesem einen Setup los?«. Hier geht es
+ * um die andere Frage: »was hat der Bot über die letzten Tage überhaupt gesehen
+ * und getan?« — damit sich seine Zonen direkt neben denen eines fremden
+ * Indikators im Chart vergleichen lassen.
+ *
+ * Die Deckkraft der Zone kodiert den Ausgang, weil Farbe allein schon für die
+ * Richtung vergeben ist:
+ *   gehandelt (ausgelöst/offen/geschlossen) → kräftig, durchgezogener Rand
+ *   wartend                                 → mittel
+ *   verworfen (ungültig/abgelehnt/abgelaufen) → blass, gestrichelter Rand
+ *
+ * Eine Zone läuft bis zum Auslösezeitpunkt; verworfene Setups haben keinen
+ * gespeicherten Endzeitpunkt (die Tabelle kennt nur `triggeredAt`), sie laufen
+ * deshalb bis zum rechten Rand — blass genug, um nicht als aktiv zu gelten.
+ *
+ * @param {string} elementId  Ziel-Container
+ * @param {Array}  candles    [{ t, o, h, l, c }] aufsteigend
+ * @param {Array}  setups     Zeilen aus `strategy_setups`
+ * @param {Array}  trades     Zeilen aus `strategy_trades` (dürfen leer sein)
+ */
+export function useAgentTimelineChart(elementId, candles, setups = [], trades = []) {
+    const el = document.getElementById(elementId)
+    if (!el || !candles?.length) return null
+
+    const vorhanden = echarts.getInstanceByDom(el)
+    if (vorhanden) vorhanden.dispose()
+    const myChart = echarts.init(el)
+
+    const labels = candles.map(k => dayjs.unix(Math.floor(k.t / 1000)).tz(timeZoneTrade.value).format('DD.MM HH:mm'))
+    const werte = candles.map(k => [k.o, k.c, k.l, k.h])
+
+    // Zeitstempel auf die Kategorie-Achse abbilden: die letzte Kerze, die nicht
+    // nach dem gesuchten Zeitpunkt liegt. Ohne das säßen Marker zwischen zwei
+    // Kerzen und ECharts ließe sie stillschweigend weg.
+    const zeiten = candles.map(k => k.t)
+    const indexFuer = (t) => {
+        const ziel = Number(t)
+        if (!Number.isFinite(ziel)) return -1
+        if (ziel < zeiten[0] || ziel > zeiten[zeiten.length - 1]) return -1
+        let lo = 0, hi = zeiten.length - 1, treffer = -1
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1
+            if (zeiten[mid] <= ziel) { treffer = mid; lo = mid + 1 } else { hi = mid - 1 }
+        }
+        return treffer
+    }
+    const labelFuer = (t) => { const i = indexFuer(t); return i === -1 ? null : labels[i] }
+
+    const GEHANDELT = ['triggered', 'open', 'closed']
+    const zonen = []
+    for (const s of setups) {
+        if (!(s.obHigh > s.obLow)) continue
+        const start = labelFuer(s.obCandleTime) || labelFuer(s.sweepCandleTime)
+        if (!start) continue                    // Setup liegt vor dem Ausschnitt
+
+        const istLong = s.direction === 'long'
+        const gehandelt = GEHANDELT.includes(s.status)
+        const verworfen = !gehandelt && s.status !== 'waiting_retest' && s.status !== 'armed'
+        const deckkraft = gehandelt ? 0.24 : verworfen ? 0.07 : 0.16
+        const rand = istLong ? greenColor : redColor
+        const ende = (s.triggeredAt && labelFuer(s.triggeredAt)) || labels[labels.length - 1]
+
+        zonen.push([
+            {
+                xAxis: start, yAxis: s.obLow,
+                itemStyle: {
+                    color: istLong ? `rgba(72, 199, 142, ${deckkraft})` : `rgba(235, 87, 87, ${deckkraft})`,
+                    borderColor: rand,
+                    borderWidth: verworfen ? 0.8 : 1.2,
+                    borderType: verworfen ? 'dashed' : 'solid',
+                },
+                label: {
+                    show: true, position: 'insideTopLeft', fontSize: 9,
+                    color: verworfen ? white38 : rand,
+                    formatter: `${istLong ? '▲' : '▼'} ${s.rr ? Number(s.rr).toFixed(1) : ''}`,
+                },
+            },
+            { xAxis: ende, yAxis: s.obHigh },
+        ])
+    }
+
+    // Ein- und Ausstiege als eigene Punktreihen — so bleiben sie im Tooltip
+    // erklärbar, statt nur stumme Marker auf der Kerzenreihe zu sein.
+    const einstiege = []
+    const ausstiege = []
+    const verbindungen = []
+    for (const tr of trades) {
+        const iEin = indexFuer(tr.entryTime)
+        const iAus = indexFuer(tr.exitTime)
+        const r = Number(tr.rMultiple) || 0
+        const gewinn = r >= 0
+        if (iEin !== -1) {
+            einstiege.push({
+                value: [iEin, Number(tr.entryPrice)],
+                symbol: tr.direction === 'long' ? 'triangle' : 'pin',
+                symbolRotate: tr.direction === 'long' ? 0 : 180,
+                itemStyle: { color: tr.direction === 'long' ? greenColor : redColor },
+                name: `${_t('strategies.chartEntry')} ${tr.direction === 'long' ? '▲' : '▼'}`,
+            })
+        }
+        if (iAus !== -1) {
+            ausstiege.push({
+                value: [iAus, Number(tr.exitPrice)],
+                itemStyle: { color: gewinn ? greenColor : redColor },
+                name: `${tr.exitReason || ''} ${r >= 0 ? '+' : ''}${r.toFixed(2)}R`,
+            })
+        }
+        if (iEin !== -1 && iAus !== -1) {
+            verbindungen.push([
+                { coord: [iEin, Number(tr.entryPrice)] },
+                { coord: [iAus, Number(tr.exitPrice)] },
+            ])
+        }
+    }
+
+    myChart.setOption({
+        backgroundColor: 'transparent',
+        animation: false,
+        grid: { left: 8, right: 62, top: 16, bottom: 42, containLabel: true },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'cross' },
+            backgroundColor: blackbg5,
+            borderColor: 'rgba(255,255,255,0.15)',
+            textStyle: { color: white87, fontSize: 11 },
+        },
+        xAxis: {
+            type: 'category', data: labels,
+            axisLine: { lineStyle: { color: white38 } },
+            axisLabel: { color: cssColor60, fontSize: 10 },
+            splitLine: { show: false },
+        },
+        yAxis: {
+            scale: true, position: 'right',
+            axisLine: { show: false },
+            axisLabel: { color: cssColor60, fontSize: 10 },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
+        },
+        dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 6,
+                    borderColor: 'transparent', fillerColor: 'rgba(1,180,255,0.15)',
+                    handleStyle: { color: '#01B4FF' }, textStyle: { color: cssColor60, fontSize: 9 } }],
+        series: [
+            {
+                type: 'candlestick',
+                data: werte,
+                itemStyle: {
+                    color: greenColor, color0: redColor,
+                    borderColor: greenColor, borderColor0: redColor,
+                },
+                markArea: { silent: true, data: zonen },
+                markLine: {
+                    silent: true, symbol: ['none', 'none'],
+                    lineStyle: { color: white38, type: 'dotted', width: 1 },
+                    data: verbindungen,
+                },
+            },
+            {
+                type: 'scatter', name: _t('strategies.chartEntry'),
+                data: einstiege, symbolSize: 11, z: 5,
+                tooltip: { formatter: (p) => `${p.data.name}<br/>${p.data.value[1]}` },
+            },
+            {
+                type: 'scatter', name: _t('strategies.chartExit'),
+                data: ausstiege, symbol: 'diamond', symbolSize: 10, z: 5,
+                tooltip: { formatter: (p) => `${p.data.name}<br/>${p.data.value[1]}` },
+            },
+        ],
+    })
+    return myChart
+}

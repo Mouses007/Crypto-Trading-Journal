@@ -19,6 +19,8 @@ import { useUpdatePendingCounts, useStartGlobalPolling, useStopGlobalPolling } f
 import { useGetAvailableTags } from '../utils/daily.js'
 import { requestNotificationPermission, sendNotification } from '../utils/notify'
 import { logWarn } from '../utils/logger.js'
+import BetaHinweis from '../components/BetaHinweis.vue'
+import PageInfo from '../components/PageInfo.vue'
 import { setLocale } from '../i18n'
 import i18n from '../i18n'
 import axios from 'axios'
@@ -32,6 +34,11 @@ const isJournal = computed(() => {
   const mode = route.meta?.mode
   return mode === undefined || mode === 'journal' || mode === 'any'
 })
+
+// Der Agent-Modus handelt selbstständig — die Warnung gehört auf JEDE seiner
+// Seiten, nicht nur auf die Startseite. Wer über einen Direktlink im Labor
+// landet, muss sie genauso sehen.
+const isAgent = computed(() => route.meta?.mode === 'agent')
 
 /*========================================
   Functions used on all Dashboard components
@@ -146,6 +153,15 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
         <div v-show="sideMenuMobileOut" class="sideMenuMobileOut position-absolute" v-on:click="toggleMobileMenu"></div>
         <Nav />
         <main>
+          <div v-if="isAgent" class="ps-3 pe-3 pt-3">
+            <!-- Die Anleitung hängt am Layout statt an einer Seite: sie ist
+                 damit von JEDER Agent-Seite aus erreichbar — auch wenn der
+                 Beta-Hinweis für die Sitzung weggeklickt wurde. -->
+            <div class="d-flex justify-content-end mb-2">
+              <PageInfo section="info.agent" />
+            </div>
+            <BetaHinweis />
+          </div>
           <slot />
         </main>
       </div>

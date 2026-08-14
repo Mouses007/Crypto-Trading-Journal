@@ -24,6 +24,7 @@ import { bitunixRequest, getDecryptedConfig } from '../bitunix-api.js'
 import { logError, logWarn } from '../logger.js'
 
 const PFAD_ORDER = '/api/v1/futures/trade/place_order'
+const PFAD_POSITIONEN = '/api/v1/futures/position/get_pending_positions'
 const PFAD_FLASH_CLOSE = '/api/v1/futures/trade/flash_close_position'
 const PFAD_ACCOUNT = '/api/v1/futures/account'
 
@@ -126,6 +127,22 @@ export async function openLivePosition({ setup, size, leverage, clientOrderId, m
     }
 
     return { ok: true, externalOrderId: String(orderId), request: body, response: antwort, geschickt: true }
+}
+
+/**
+ * Positions-Kennung der offenen Position zu einem Symbol — best effort.
+ *
+ * Die Order-Antwort liefert nur die ORDER-Kennung; Flash-Close verlangt die
+ * POSITIONS-Kennung. Ohne sie bliebe nur das symbolweite Schliessen, und das
+ * träfe auch Positionen, die der Nutzer von Hand hält.
+ */
+export async function getLivePositionId(symbol, direction) {
+    const cfg = await keys()
+    const r = await bitunixRequest('GET', PFAD_POSITIONEN, cfg.apiKey, cfg.secretKey, { symbol })
+    const liste = Array.isArray(r?.data) ? r.data : []
+    const seite = direction === 'long' ? 'BUY' : 'SELL'
+    const treffer = liste.find((x) => x.symbol === symbol && (x.side === seite || liste.length === 1))
+    return treffer?.positionId ? String(treffer.positionId) : ''
 }
 
 /** Schliesst eine offene Position zum Marktpreis. */

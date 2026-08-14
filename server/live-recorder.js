@@ -34,6 +34,11 @@ const WS_BASE = {
 // forceOrder liegt auf der /market-Route, nicht auf /public
 const LIQ_WS_BASE = 'wss://fstream.binance.com/market/ws/'
 
+// Sammelstrom: nur diese Symbole werden gespeichert (deckungsgleich mit den
+// Favoriten der Live-Analyse). Symbole mit eigenem Orderbuch-Recorder werden
+// unabhängig davon immer mitgeschnitten.
+const COLLECT_LIQ_SYMBOLS = new Set(['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT'])
+
 const MAGIC = 'CTJ1'
 const HOUR_MS = 3600000
 const RECONCILE_MS = 60000
@@ -45,6 +50,12 @@ const RETENTION_MS = 6 * HOUR_MS
 // und nicht nachbestellbar (siehe runRetention).
 const LIQ_RETENTION_DAYS = 365
 const MAX_BACKOFF_MS = 60000
+// Halbtote Sockets (Standby, Netzwechsel) feuern kein close. depth@100ms
+// liefert praktisch pausenlos — längere Stille heisst toter Socket, der sonst
+// ein eingefrorenes Buch stundenlang als „aktuelle" Liquidität aufzeichnet.
+// Der Liquidations-Stream ist ausgenommen: dort ist Stille der Normalfall.
+const SILENCE_LIMIT_MS = 10000
+const WATCHDOG_INTERVAL_MS = 5000
 // Farbskala sättigt bei 4× dem Bezugswert — dieselbe Kennlinie wie im Renderer,
 // damit Aufzeichnung und Live-Ansicht gleich aussehen.
 const QUANT_SATURATION = 4
@@ -89,6 +100,13 @@ class SymbolRecorder {
         this.flushTimer = null
         this.reconnectTimer = null
         this.snapshotTimer = null
+        this.watchdogTimer = null
+        this.lastMsgTs = 0
+        // Fehlgeschlagene Upserts — beim nächsten Flush erneut versuchen
+        this.pendingRows = []
+        // Persistenz läuft seriell: Stundenwechsel-, Intervall- und Stop-Flush
+        // dürfen sich nicht überlappen (siehe _flush)
+        this._flushChain = Promise.resolve()
     }
 
     get isFutures() { return this.market === 'futures' }
@@ -102,18 +120,18 @@ class SymbolRecorder {
         // für die Wiedergabe und den Vorlauf unsichtbar, und ein Absturz würde
         // bis zu einer Stunde Aufzeichnung verlieren. Der Upsert schreibt die
         // Stunde jedes Mal komplett neu — idempotent und billig genug.
-        this.flushTimer = setInterval(() => {
-            this._flush().catch(e => logWarn('live-recorder', 'Zwischenspeichern fehlgeschlagen', e.message))
-        }, FLUSH_INTERVAL_MS)
+        this.flushTimer = setInterval(() => this._flush(), FLUSH_INTERVAL_MS)
+        this.watchdogTimer = setInterval(() => this._checkSilence(), WATCHDOG_INTERVAL_MS)
     }
 
     async stop() {
         this.stopped = true
         clearInterval(this.frameTimer)
         clearInterval(this.flushTimer)
+        clearInterval(this.watchdogTimer)
         clearTimeout(this.reconnectTimer)
         clearTimeout(this.snapshotTimer)
-        this.frameTimer = this.flushTimer = this.reconnectTimer = this.snapshotTimer = null
+        this.frameTimer = this.flushTimer = this.watchdogTimer = this.reconnectTimer = this.snapshotTimer = null
         clearTimeout(this.liqReconnect)
         this.liqReconnect = null
         for (const sock of [this.ws, this.liqWs]) {
@@ -175,9 +193,11 @@ class SymbolRecorder {
 
         this.ws.on('open', () => {
             this.attempt = 0
+            this.lastMsgTs = Date.now()
             this._beginSync()
         })
         this.ws.on('message', (raw) => {
+            this.lastMsgTs = Date.now()
             let msg
             try { msg = JSON.parse(raw) } catch (e) { return }
             const data = msg.data || msg
@@ -199,6 +219,20 @@ class SymbolRecorder {
             this.reconnectTimer = setTimeout(() => this._connect(), Math.round(delay))
         })
         this.ws.on('error', () => { try { this.ws?.close() } catch (e) { /* egal */ } })
+    }
+
+    /**
+     * Erkennt eingefrorene Verbindungen: kommt auf dem Depth-Stream zu lange
+     * nichts, wird der Socket hart beendet — das close löst Reconnect und
+     * Resync aus. Ohne das schriebe der Recorder ein eingefrorenes Buch
+     * beliebig lange als „aktuelle" Liquidität mit.
+     */
+    _checkSilence() {
+        if (this.stopped || !this.ws || this.ws.readyState !== WebSocket.OPEN) return
+        const stille = Date.now() - this.lastMsgTs
+        if (stille < SILENCE_LIMIT_MS) return
+        logWarn('live-recorder', `${this.symbol}: ${Math.round(stille / 1000)} s Stille auf dem Depth-Stream — Verbindung wird neu aufgebaut`)
+        try { this.ws.terminate() } catch (e) { /* egal */ }
     }
 
     _beginSync() {
@@ -246,8 +280,13 @@ class SymbolRecorder {
 
         const hour = Math.floor(slot / HOUR_MS) * HOUR_MS
         if (this.hourStart !== hour) {
-            // Stundengrenze: fertige Stunde wegschreiben, neuen Puffer öffnen
-            this._flush().catch(e => logError('live-recorder', 'Flush fehlgeschlagen', e))
+            // Stundengrenze: _flush() fängt den fertigen Zustand SYNCHRON ein
+            // (Kopie der Referenzen, bevor irgendein await läuft) — erst danach
+            // öffnet _openHour den neuen Puffer. Früher lief der asynchrone
+            // Flush-Teil NACH _openHour, sah written=0 und den frischen leeren
+            // Puffer, und die letzten Sekunden jeder Stunde gingen dauerhaft
+            // verloren.
+            this._flush()
             this._openHour(hour)
         }
         this._writeFrame(slot)
@@ -305,77 +344,129 @@ class SymbolRecorder {
         this.frames++
     }
 
-    /** Schreibt Heatmap- und Liquidations-Puffer der Stunde weg (per Upsert). */
-    async _flush() {
-        await this._flushLiquidations()
-        if (!this.data || !this.written) return
-        const knex = getKnex()
-        const payload = await gzip(serializeHour({
-            symbol: this.symbol, market: this.market, hourStart: this.hourStart,
-            frameMs: this.frameMs, rows: this.rows, cols: this.cols,
-            bucketSize: this.bucketSize, quantRef: this.quantRef,
-            base: this.base, mid: this.mid, data: this.data,
-        }))
-        const row = {
-            symbol: this.symbol, market: this.market, kind: 'heat',
-            hourStart: this.hourStart, frameMs: this.frameMs, rows: this.rows,
-            cols: this.cols, bucketSize: this.bucketSize, quantRef: this.quantRef,
-            bytes: payload.length, payload, createdAt: Date.now(),
-        }
-        try {
-            await knex('live_recordings')
-                .insert(row)
-                .onConflict(['symbol', 'market', 'kind', 'hourStart'])
-                .merge()
-            console.log(` -> [recorder] ${this.symbol} ${new Date(this.hourStart).toISOString().slice(0, 13)}h: ${this.written} Frames, ${(payload.length / 1024).toFixed(0)} kB`)
-        } catch (error) {
-            logError('live-recorder', `Speichern ${this.symbol} fehlgeschlagen`, error)
-        }
-        this.written = 0
+    /**
+     * Schreibt Heatmap- und Liquidations-Puffer weg (per Upsert).
+     *
+     * Der Zustand wird SYNCHRON eingefangen, bevor der erste await läuft —
+     * der Stundenwechsel in _tick() öffnet unmittelbar nach diesem Aufruf den
+     * neuen Puffer, und ohne Kopie schriebe der asynchrone Teil die frische,
+     * leere Stunde statt der fertigen. Persistiert wird seriell über eine
+     * Kette, damit sich Stundenwechsel-, Intervall- und Stop-Flush nicht
+     * überlappen. Fehlgeschlagene Upserts landen in pendingRows und werden
+     * beim nächsten Flush erneut versucht statt verworfen.
+     */
+    _flush() {
+        const heat = this._captureHeat()
+        const liq = this._captureLiquidations()
+        if (!heat && !liq && !this.pendingRows.length) return this._flushChain
+        this._flushChain = this._flushChain
+            .then(() => this._persist(heat, liq))
+            .catch(e => logError('live-recorder', `Flush ${this.symbol} fehlgeschlagen`, e))
+        return this._flushChain
     }
 
-    /**
-     * Liquidationen als gzip-JSON. Eigene Zeile mit `kind: 'liq'`, weil das
-     * Binärformat der Heatmap hier nichts taugt — es sind wenige Ereignisse,
-     * keine Matrix. Die Spalten rows/cols/bucketSize/quantRef sind für diese
-     * Sorte bedeutungslos und stehen auf 0.
-     */
-    async _flushLiquidations() {
-        if (!this.liqUnsaved || !this.hourStart) return
-        // Nur die Ereignisse dieser Stunde — ein Stundenwechsel kann zwischen
-        // zwei Flushes liegen, dann gehören ältere in die vorige Zeile.
-        const grenze = this.hourStart + HOUR_MS
-        const dieseStunde = this.liqEvents.filter(e => e[0] >= this.hourStart && e[0] < grenze)
-        this.liqUnsaved = 0
-        if (!dieseStunde.length) return
+    _captureHeat() {
+        if (!this.data || !this.written) return null
+        // Referenzen genügen: _openHour ersetzt die Arrays, statt sie zu
+        // leeren — die eingefangene Stunde bleibt damit unangetastet.
+        const heat = {
+            hourStart: this.hourStart, bucketSize: this.bucketSize,
+            quantRef: this.quantRef, base: this.base, mid: this.mid,
+            data: this.data, written: this.written,
+        }
+        this.written = 0
+        return heat
+    }
 
-        try {
-            const payload = await gzip(Buffer.from(JSON.stringify(dieseStunde), 'utf8'))
-            await getKnex()('live_recordings')
-                .insert({
-                    symbol: this.symbol, market: this.market, kind: 'liq',
-                    hourStart: this.hourStart, frameMs: 0, rows: 0, cols: dieseStunde.length,
-                    bucketSize: 0, quantRef: 0,
+    _captureLiquidations() {
+        if (!this.liqUnsaved || !this.hourStart) return null
+        this.liqUnsaved = 0
+        // Kompletten Bestand mitnehmen — _persist gruppiert nach Stunde. So
+        // gehen Ereignisse der Vorstunde nicht verloren, wenn der Stunden-
+        // wechsel zwischen zwei Flushes lag (der Upsert ist dedupliziert und
+        // damit idempotent).
+        return this.liqEvents.slice()
+    }
+
+    async _persist(heat, liq) {
+        const knex = getKnex()
+        const rows = []
+
+        if (liq?.length) {
+            // Nach Stunde gruppieren und mit dem DB-Bestand zusammenführen
+            // (Fingerprint-Dedup in buildLiqRow): ein Voll-Rewrite würde sonst
+            // Ereignisse überschreiben, die der Sammelstrom vor der Übernahme
+            // dieses Symbols bereits für dieselbe Stunde gespeichert hat.
+            const gruppen = new Map()
+            for (const e of liq) {
+                const stunde = hourFloor(e[0])
+                let g = gruppen.get(stunde)
+                if (!g) gruppen.set(stunde, g = [])
+                g.push(e)
+            }
+            for (const [stunde, events] of gruppen) {
+                try {
+                    rows.push(await buildLiqRow(knex, this.symbol, this.market, stunde, events))
+                } catch (error) {
+                    logWarn('live-recorder', `Liquidationen ${this.symbol} vorbereiten fehlgeschlagen`, error.message)
+                }
+            }
+        }
+
+        if (heat) {
+            try {
+                const payload = await gzip(serializeHour({
+                    symbol: this.symbol, market: this.market, hourStart: heat.hourStart,
+                    frameMs: this.frameMs, rows: this.rows, cols: this.cols,
+                    bucketSize: heat.bucketSize, quantRef: heat.quantRef,
+                    base: heat.base, mid: heat.mid, data: heat.data,
+                }))
+                rows.push({
+                    symbol: this.symbol, market: this.market, kind: 'heat',
+                    hourStart: heat.hourStart, frameMs: this.frameMs, rows: this.rows,
+                    cols: this.cols, bucketSize: heat.bucketSize, quantRef: heat.quantRef,
                     bytes: payload.length, payload, createdAt: Date.now(),
                 })
-                .onConflict(['symbol', 'market', 'kind', 'hourStart'])
-                .merge()
-        } catch (error) {
-            logError('live-recorder', `Liquidationen ${this.symbol} speichern fehlgeschlagen`, error)
+                console.log(` -> [recorder] ${this.symbol} ${new Date(heat.hourStart).toISOString().slice(0, 13)}h: ${heat.written} Frames, ${(payload.length / 1024).toFixed(0)} kB`)
+            } catch (error) {
+                logError('live-recorder', `Serialisieren ${this.symbol} fehlgeschlagen`, error)
+            }
         }
+
+        // Fehlgeschlagene Zeilen vom letzten Mal zuerst — neue Zeilen derselben
+        // Stunde folgen danach und tragen den volleren Stand.
+        const anstehend = [...this.pendingRows, ...rows]
+        this.pendingRows = []
+        for (const row of anstehend) {
+            try {
+                await knex('live_recordings')
+                    .insert(row)
+                    .onConflict(['symbol', 'market', 'kind', 'hourStart'])
+                    .merge()
+            } catch (error) {
+                this.pendingRows.push(row)
+                logError('live-recorder', `Speichern ${this.symbol} fehlgeschlagen — nächster Flush versucht es erneut`, error)
+            }
+        }
+        // Deckel gegen dauerhaft kaputte DB — die neuesten Zeilen behalten
+        if (this.pendingRows.length > 6) this.pendingRows = this.pendingRows.slice(-6)
     }
 }
 
 
 /**
- * Sammelstrom für Zwangsliquidationen ALLER Futures-Symbole über eine einzige
- * Verbindung (`!forceOrder@arr`).
+ * Sammelstrom für Zwangsliquidationen über eine einzige Verbindung
+ * (`!forceOrder@arr`) — gespeichert werden davon nur die Top-Symbole.
+ *
+ * Der Stream selbst lässt sich nicht filtern (Binance liefert immer alle
+ * Symbole), aber der Vollmitschnitt sammelte hunderte Kleinst-Symbole an,
+ * die niemand je ansieht — deshalb wird vor dem Puffern auf die Top-Liste
+ * gefiltert (Entscheid 14.08.2026).
  *
  * Warum getrennt vom SymbolRecorder: Liquidationen sind winzig (wenige Byte je
  * Ereignis), das Orderbuch dagegen kostet ~7 MB je Symbol und Tag. An den
- * Heatmap-Recorder gekoppelt müsste man also 20 Orderbücher mitschreiben, um
- * 20 Symbole Liquidationen zu bekommen. Entkoppelt liefert eine Verbindung
- * alle Symbole für ein paar MB am Tag.
+ * Heatmap-Recorder gekoppelt müsste man also fünf Orderbücher mitschreiben,
+ * um fünf Symbole Liquidationen zu bekommen.
  *
  * Der Zweck ist Vergleichsmaterial: Binance gibt Liquidationen nicht
  * rückwirkend heraus, wer ein Modell dagegen prüfen will, muss selbst sammeln.
@@ -423,8 +514,10 @@ class MarketLiquidationCollector {
                 const o = eintrag?.o
                 if (!o?.s) continue
                 const symbol = String(o.s).toUpperCase()
-                // Symbole mit eigenem Recorder gehören diesem — sonst würden sich
-                // die beiden Upserts auf derselben Zeile gegenseitig auslöschen.
+                // Nur Top-Symbole speichern — der Rest ist Tabellen-Müll
+                if (!COLLECT_LIQ_SYMBOLS.has(symbol)) continue
+                // Symbole mit eigenem Recorder gehören diesem — der schneidet
+                // denselben Stream ohnehin mit.
                 if (active.has(`${symbol}|futures`)) continue
 
                 const t = Number(o.T)
@@ -456,10 +549,13 @@ class MarketLiquidationCollector {
         const puffer = this.buffers
         this.buffers = new Map()
 
-        // (symbol, stunde) -> Ereignisse
+        // (symbol, stunde) -> Ereignisse. Bewusst KEIN Verwerfen für Symbole,
+        // die inzwischen ein eigener Recorder übernommen hat: die gepufferten
+        // Ereignisse stammen von VOR der Übernahme, und der Recorder merged
+        // seinerseits per buildLiqRow gegen den DB-Bestand — nichts geht
+        // verloren, nichts wird doppelt (Fingerprint-Dedup).
         const gruppen = new Map()
         for (const [symbol, events] of puffer) {
-            if (active.has(`${symbol}|futures`)) continue   // inzwischen übernommen
             for (const e of events) {
                 const stunde = hourFloor(e[0])
                 const key = `${symbol}|${stunde}`
@@ -475,31 +571,21 @@ class MarketLiquidationCollector {
         let bytes = 0
         for (const { symbol, stunde, events } of gruppen.values()) {
             try {
-                // Eine bereits geschriebene Stunde muss ergänzt werden, nicht
-                // ersetzt — ein Flush deckt nur 30 Sekunden ab.
-                const vorhanden = await knex('live_recordings')
-                    .where({ symbol, market: 'futures', kind: 'liq', hourStart: stunde })
-                    .first()
-                let alle = events
-                if (vorhanden?.payload) {
-                    const alt = JSON.parse((await gunzip(vorhanden.payload)).toString('utf8'))
-                    alle = alt.concat(events)
-                }
-                alle.sort((a, b) => a[0] - b[0])
-
-                const payload = await gzip(Buffer.from(JSON.stringify(alle), 'utf8'))
+                const row = await buildLiqRow(knex, symbol, 'futures', stunde, events)
                 await knex('live_recordings')
-                    .insert({
-                        symbol, market: 'futures', kind: 'liq', hourStart: stunde,
-                        frameMs: 0, rows: 0, cols: alle.length, bucketSize: 0, quantRef: 0,
-                        bytes: payload.length, payload, createdAt: Date.now(),
-                    })
+                    .insert(row)
                     .onConflict(['symbol', 'market', 'kind', 'hourStart'])
                     .merge()
                 zeilen++
-                bytes += payload.length
+                bytes += row.bytes
             } catch (error) {
-                logWarn('live-recorder', `Sammelstrom ${symbol} speichern fehlgeschlagen`, error.message)
+                // Nicht verwerfen: zurück in den Puffer, der nächste Flush
+                // versucht es erneut (Dedup macht das idempotent).
+                let zurueck = this.buffers.get(symbol)
+                if (!zurueck) this.buffers.set(symbol, zurueck = [])
+                zurueck.push(...events)
+                if (zurueck.length > 5000) zurueck.splice(0, zurueck.length - 5000)
+                logWarn('live-recorder', `Sammelstrom ${symbol} speichern fehlgeschlagen — wird erneut versucht`, error.message)
             }
         }
         if (zeilen) {
@@ -513,6 +599,50 @@ class MarketLiquidationCollector {
         clearTimeout(this.reconnect)
         try { this.ws?.close() } catch (e) { /* egal */ }
         await this._flush().catch(() => {})
+    }
+}
+
+/**
+ * Fingerprint-Dedup für Liquidations-Ereignisse. Binance vergibt für
+ * forceOrder keine eigene ID — Zeit|Preis|Menge|Seite ist das engste
+ * verfügbare Kennzeichen. Zwei ECHTE identische Ereignisse in derselben
+ * Millisekunde fielen damit zusammen; praktisch ausgeschlossen, da der
+ * Stream ohnehin auf 1 Ereignis/s/Symbol gedrosselt ist.
+ */
+function dedupLiquidations(events) {
+    const seen = new Set()
+    const out = []
+    for (const e of events) {
+        const key = `${e[0]}|${e[1]}|${e[2]}|${e[3]}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push(e)
+    }
+    return out
+}
+
+/**
+ * Liquidations-Zeile für (symbol, stunde) bauen: DB-Bestand lesen, neue
+ * Ereignisse dazulegen, deduplizieren, sortieren. Beide Schreiber
+ * (SymbolRecorder und Sammelstrom) gehen über diesen Weg — ein blinder
+ * Voll-Rewrite würde sonst die Ereignisse des jeweils anderen überschreiben.
+ */
+async function buildLiqRow(knex, symbol, market, stunde, events) {
+    const vorhanden = await knex('live_recordings')
+        .where({ symbol, market, kind: 'liq', hourStart: stunde })
+        .first()
+    let alle = events
+    if (vorhanden?.payload) {
+        const alt = JSON.parse((await gunzip(vorhanden.payload)).toString('utf8'))
+        alle = alt.concat(events)
+    }
+    alle = dedupLiquidations(alle)
+    alle.sort((a, b) => a[0] - b[0])
+    const payload = await gzip(Buffer.from(JSON.stringify(alle), 'utf8'))
+    return {
+        symbol, market, kind: 'liq', hourStart: stunde,
+        frameMs: 0, rows: 0, cols: alle.length, bucketSize: 0, quantRef: 0,
+        bytes: payload.length, payload, createdAt: Date.now(),
     }
 }
 

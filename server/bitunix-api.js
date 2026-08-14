@@ -55,10 +55,13 @@ export async function bitunixRequest(method, path, apiKey, secretKey, params = {
         'language': 'en-US'
     }
 
+    // Ohne harten Timeout kann ein hängender Aufruf Takt, Polling und sogar
+    // den Not-Aus blockieren — 15 s sind für eine REST-Antwort mehr als genug.
     const response = await fetch(url, {
         method,
         headers,
-        body: method !== 'GET' ? bodyString : undefined
+        body: method !== 'GET' ? bodyString : undefined,
+        signal: AbortSignal.timeout(15000),
     })
 
     if (!response.ok) {

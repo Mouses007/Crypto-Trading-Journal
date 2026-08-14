@@ -163,6 +163,9 @@ async function toolBacktest(knex, p) {
     const s = getStrategy(p.strategyId)
     if (!s) return { error: `Unbekannte Strategie: ${p.strategyId}` }
     if (!isValidTimeframe(p.timeframe)) return { error: `Ungültige Zeiteinheit: ${p.timeframe}` }
+    if (!s.supportedTimeframes.includes(p.timeframe)) {
+        return { error: `${s.name} unterstützt ${p.timeframe} nicht` }
+    }
 
     const tage = Math.min(Math.max(Number(p.days) || 90, 7), 720)
     const toTs = Date.now()

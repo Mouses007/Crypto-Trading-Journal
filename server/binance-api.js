@@ -62,18 +62,25 @@ const levMapCache = new Map()      // `${symbol}|${period}` -> { ts, payload }
 const levMapForce = new Map()      // symbol -> letzter erzwungener Abruf
 
 /**
- * Führt OI-Historie und Kerzen auf `openTime` zusammen. Fehlende Kerzen werden
- * übersprungen statt schief verknüpft — ein verschobener Join würde die
- * Sweep-Logik und die Long/Short-Aufteilung stillschweigend verfälschen.
+ * Führt OI-Historie und Kerzen zusammen. Fehlende Kerzen werden übersprungen
+ * statt schief verknüpft — ein verschobener Join würde die Sweep-Logik und die
+ * Long/Short-Aufteilung stillschweigend verfälschen.
+ *
+ * Zuordnung (empirisch verifiziert 14.08.2026): der OI-Wert ist ein
+ * Schnappschuss ZUM Zeitpunkt t. Die Veränderung gegenüber dem Vorpunkt
+ * entstand also in der Kerze, die bei t ENDET — openTime = t − period.
+ * Der frühere Join auf die bei t BEGINNENDE Kerze verschob Preisspanne und
+ * Taker-Volumen um eine ganze Periode in die Zukunft des ΔOI.
  */
-function mergeLeverageMapPoints(hist, klines) {
+function mergeLeverageMapPoints(hist, klines, periodMs) {
     const byTime = new Map(klines.map(k => [Number(k[0]), k]))
     const points = []
     for (const h of hist) {
-        const k = byTime.get(Number(h.timestamp))
+        const t = Number(h.timestamp)
+        const k = byTime.get(t - periodMs)
         if (!k) continue
         points.push({
-            t: Number(h.timestamp),
+            t,
             oi: Number(h.sumOpenInterest),
             oiUsd: Number(h.sumOpenInterestValue),
             o: +k[1], h: +k[2], l: +k[3], c: +k[4],
@@ -301,16 +308,19 @@ export function setupBinanceRoutes(app) {
                 return res.json(leer)
             }
 
+            // startTime eine Periode früher: jeder OI-Punkt braucht die bei
+            // seinem Zeitstempel ENDENDE Kerze (siehe mergeLeverageMapPoints)
             const { data: klines } = await axios.get(`${BASES.futures}/fapi/v1/klines`, {
-                params: { symbol, interval: period, startTime: Number(hist[0].timestamp), limit: hist.length + 2 },
+                params: { symbol, interval: period, startTime: Number(hist[0].timestamp) - periodMs, limit: hist.length + 2 },
                 timeout: HTTP_TIMEOUT,
             })
 
-            const points = mergeLeverageMapPoints(hist, klines)
+            const points = mergeLeverageMapPoints(hist, klines, periodMs)
             const letzte = points[points.length - 1]
-            // Die laufende Periode ist noch nicht abgeschlossen — ihr ΔOI ändert
-            // sich noch, das Modell lässt sie deshalb weg.
-            const unvollstaendig = !!letzte && (Date.now() - letzte.t) < periodMs
+            // Seit dem End-Join ist jede zugeordnete Kerze abgeschlossen (sie
+            // endet am OI-Zeitpunkt) — eine „laufende Periode" gibt es im
+            // Datensatz nicht mehr. Feld bleibt für die Client-Kompatibilität.
+            const unvollstaendig = false
 
             const payload = {
                 symbol, period,

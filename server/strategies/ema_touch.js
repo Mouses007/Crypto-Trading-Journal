@@ -38,7 +38,7 @@
  * detect() ist eine REINE Funktion: keine DB, kein Netz, kein Date.now().
  */
 
-import { pivotHighs, pivotLows, ema, isBull } from './indicators.js'
+import { pivotHighs, pivotLows, ema, isBull, atr } from './indicators.js'
 
 export const DETECTOR_VERSION = 1
 
@@ -74,6 +74,12 @@ const params = [
     // Körpern ist die Farbe reines Rauschen — dieser Wert erlaubt es, solche
     // Kerzen zu tolerieren, gemessen als Körper in % der Kerzenspanne.
     { key: 'bullishToleranceBodyPct', type: 'number', default: 0, min: 0, max: 50, step: 1, group: 'correction' },
+    // Gegenkerzen-Logik aus dem GUSS-Indikator (v7.4): die Korrektur darf bis
+    // zu N bullische Kerzen IN FOLGE enthalten, solange deren Körper klein
+    // bleibt (gemessen in ATR). 0 = strikt „in einem Guss" wie im PDF.
+    { key: 'maxGegenkerzen', type: 'integer', default: 0, min: 0, max: 5, step: 1, group: 'correction' },
+    { key: 'maxGegenkerzenAtr', type: 'number', default: 0.1, min: 0, max: 5, step: 0.05, group: 'correction' },
+    { key: 'atrLaenge', type: 'integer', default: 14, min: 2, max: 50, step: 1, group: 'correction' },
 
     // ── Fibonacci-Bestätigung ─────────────────────────────────
     { key: 'requireFib', type: 'boolean', default: false, group: 'fib' },
@@ -191,6 +197,8 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
     const emaFast = ema(candles, p.emaFast)
     const emaEntry = ema(candles, p.emaEntry)
     const emaSlow = p.useEma200Filter ? ema(candles, p.emaSlow) : []
+    // Für die Gegenkerzen-Toleranz: Körpergrösse wird in ATR gemessen
+    const atrSerie = p.maxGegenkerzen > 0 ? atr(candles, p.atrLaenge) : null
 
     const hochs = pivotHighs(candles, p.swingLookback, p.swingConfirmBars)
     const tiefs = pivotLows(candles, p.swingLookback, p.swingConfirmBars)
@@ -264,6 +272,7 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
         let gewartet = 0
         let korrekturTief = Infinity
         let erledigt = false
+        let gegenkerzenFolge = 0
 
         for (let i = start; i < candles.length && !erledigt; i++) {
             const k = candles[i]
@@ -274,10 +283,24 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
             gewartet++
             if (k.l < korrekturTief) korrekturTief = k.l
 
-            // (a) Die Guss-Bedingung: eine einzige bullische Kerze beendet alles
-            if (giltAlsBullisch(k, p.bullishToleranceBodyPct)) {
-                events.push({ id: s.id, status: 'invalidated', invalidReason: INVALID_REASONS.BULLISH_CANDLE, candleTime: k.t })
-                erledigt = true; break
+            // (a) Die Guss-Bedingung — aber NICHT auf der Berührungskerze:
+            //     die beendet die Korrektur, und die Umkehrkerze am Einstieg
+            //     ist naturgemäss oft bullisch. Sie hier zu verwerfen hiesse,
+            //     genau die gewollten Einstiege zu töten (Audit-Befund).
+            const beruehrt = k.l <= e
+            if (!beruehrt && giltAlsBullisch(k, p.bullishToleranceBodyPct)) {
+                gegenkerzenFolge++
+                // Toleranz nach GUSS-Indikator: bis zu N kleine Gegenkerzen in
+                // Folge. Zu viele — oder ein zu grosser Körper — beenden alles.
+                const koerperOk = !atrSerie || p.maxGegenkerzenAtr <= 0
+                    || !(atrSerie[i] > 0)
+                    || (k.c - k.o) <= p.maxGegenkerzenAtr * atrSerie[i]
+                if (gegenkerzenFolge > p.maxGegenkerzen || !koerperOk) {
+                    events.push({ id: s.id, status: 'invalidated', invalidReason: INVALID_REASONS.BULLISH_CANDLE, candleTime: k.t })
+                    erledigt = true; break
+                }
+            } else if (!beruehrt) {
+                gegenkerzenFolge = 0
             }
 
             // (b) Trend gebrochen
@@ -355,7 +378,7 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
 
 export default {
     id: 'ema_touch',
-    name: 'EMA Touch',
+    name: 'EMA Touch — „GUSS Sniperentry"',
     description: 'Höheres Hoch weit über der EMA21, danach Korrektur ohne eine einzige bullische Kerze bis zur EMA50 — dort der Einstieg.',
     version: DETECTOR_VERSION,
     supportedTimeframes: ['5m', '15m', '30m', '1h', '4h', '1d'],

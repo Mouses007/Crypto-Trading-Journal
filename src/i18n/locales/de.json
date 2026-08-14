@@ -773,7 +773,8 @@
     "journal": "Journal",
     "live": "Live-Analyse",
     "agent": "Strategien",
-    "comingSoon": "Kommt später"
+    "comingSoon": "Kommt später",
+    "betaHint": "Unfertig — bitte nur im Papierbetrieb verwenden"
   },
   "live": {
     "symbol": "SYMBOL",
@@ -910,6 +911,12 @@
     "chartTarget": "Ziel",
     "chartSweep": "Sweep-Level",
     "chartOrderBlock": "Order Block",
+    "chartExit": "Ausstieg",
+    "timelineTitle": "Was der Agent gezeichnet hat",
+    "timelineHint": "Alle erkannten Zonen und ausgeführten Trades im Kursverlauf. Kräftig = gehandelt, blass gestrichelt = verworfen.",
+    "timelineDays": "Zeitraum",
+    "timelineNoData": "Für dieses Symbol liegen im gewählten Zeitraum keine Kerzen vor.",
+    "timelineNoSetups": "In diesem Zeitraum hat der Agent auf {symbol} nichts erkannt.",
     "status_armed": "scharf",
     "status_waiting_retest": "wartet auf Rücklauf",
     "status_triggered": "ausgelöst",
@@ -1137,6 +1144,9 @@
       "entryMode": "Einstiegsart",
       "entryZoneTouch": "Bei Berührung der Zone",
       "entryRejection": "Erst nach Ablehnungskerze",
+      "entryDirection": "Erst wenn die Folgekerze in Handelsrichtung schliesst",
+      "slSweep": "Hinter dem Sweep-Extrem",
+      "slRetestWick": "Hinter dem Docht des Rücklaufs",
       "requireRejectionCandle": "Ablehnungskerze verlangen",
       "useFib786": "Fibonacci-Bereich verlangen",
       "fibLevelValue": "Fibonacci-Niveau",
@@ -1185,7 +1195,10 @@
       "breakEvenAtR": "Break-Even ab (R)",
       "maxHoldCandles": "Max. Haltedauer (Kerzen)",
       "exitEma21": "Trailing an der EMA 21",
-      "exitRr": "Festes Chance/Risiko"
+      "exitRr": "Festes Chance/Risiko",
+      "maxGegenkerzen": "Max. Gegenkerzen in Folge (0 = strikt)",
+      "maxGegenkerzenAtr": "Max. Gegenkerzenkörper (in ATR)",
+      "atrLaenge": "ATR-Länge (für Gegenkerzen)"
     },
     "risk": {
       "startEquityUsdt": "Startkapital (USDT)",
@@ -1211,7 +1224,45 @@
     "ind_macdHist": "MACD-Histogramm",
     "macdFast": "schnell",
     "macdSlow": "langsam",
-    "macdSignalP": "Signal"
+    "macdSignalP": "Signal",
+    "matrixTitle": "Mehrfach-Test",
+    "matrixHint": "Derselbe Parametersatz über mehrere Symbole und über zwei Zeitfenster: die erste Hälfte des Zeitraums zum Optimieren, die zweite zum Prüfen.",
+    "matrixSymbols": "Symbole (mit Komma getrennt)",
+    "matrixDays": "Zeitraum (Tage)",
+    "matrixCompare": "Gegen die gespeicherten Parameter der Instanz vergleichen",
+    "matrixStart": "Matrix rechnen",
+    "matrixFailed": "Der Mehrfach-Test ist fehlgeschlagen.",
+    "matrixPassed": "Bestanden",
+    "matrixFailedVerdict": "Nicht bestanden",
+    "matrixScore": "in {besser} von {felder} Feldern besser",
+    "matrixWindow": "Fenster",
+    "matrixWindowOpt": "Optimierung",
+    "matrixWindowCheck": "Prüfung",
+    "matrixBase": "Basis (R)",
+    "matrixCandidate": "Kandidat (R)",
+    "matrixWithoutBest": "ohne besten (R)",
+    "matrixFootnote": "Ein Kandidat zählt erst, wenn er in JEDEM Feld besser ist — sonst wurde er auf einem Fenster ausgewählt und dort gemessen. Unter 30 Trades ist ein Feld nicht belastbar (gelb).",
+    "matrixIdentical": "Kandidat und Basis sind identisch — ändere zuerst einen Parameter oben.",
+    "betaTitle": "Agent-Modus ist in Entwicklung",
+    "betaBody": "Dieser Bereich ist unfertig und nicht für den produktiven Einsatz gedacht. Er trifft eigenständig Handelsentscheidungen — prüfe jede Zahl, bevor du ihr folgst. Keine Anlageberatung.",
+    "betaPoint1": "Fang im Papierbetrieb an und lass ihn lange genug laufen, um Ergebnisse beurteilen zu können.",
+    "betaPoint2": "Der scharfe Betrieb braucht drei getrennte Freigaben: den globalen Schalter, die Freigabe der Instanz und eine Mindestzahl an Papier-Trades.",
+    "betaPoint3": "Backtest-Zahlen sind kein Versprechen. Ein Ergebnis zählt erst, wenn es auch ausserhalb des Zeitraums hält, in dem es ausgesucht wurde.",
+    "betaDismiss": "Für diese Sitzung ausblenden",
+    "aiOptimize": "Mit KI-Agent optimieren",
+    "sinceAth": "ATH",
+    "sinceAthTitle": "Setzt „von\" auf das Datum des höchsten Hochs der letzten ~3 Jahre (Tageskerzen) — z.B. um eine Short-Strategie ab dem Allzeithoch zu testen.",
+    "athFailed": "Allzeithoch konnte nicht ermittelt werden.",
+    "rangeInvalid": "Das „von\"-Datum muss vor dem „bis\"-Datum liegen.",
+    "dateRange": "Datum",
+    "historyBtn": "Verlauf",
+    "historyLoading": "Verlauf wird geladen …",
+    "historyEmpty": "Noch kein Verlauf vorhanden.",
+    "historyNoDiff": "keine Parameteränderung erfasst",
+    "historySourceCreated": "angelegt",
+    "historySourceManual": "von Hand geändert",
+    "historySourceBackfill": "Bestand (vor Einführung des Verlaufs)",
+    "historySourceSuggestion": "KI-Vorschlag"
   },
   "levmap": {
     "title": "Liquidationszonen",
@@ -1261,10 +1312,10 @@
     "oiChange": "Offenes Interesse",
     "priceChange": "Preis",
     "reading": "Lesart",
-    "read_longAufbau": "Preis und Bestand steigen — neue Long-Positionen tragen die Bewegung",
-    "read_shortAufbau": "Preis fällt, Bestand steigt — neue Short-Positionen",
-    "read_shortDeckung": "Preis steigt, Bestand fällt — Eindeckung von Shorts, nicht neue Käufe",
-    "read_longAufloesung": "Preis und Bestand fallen — Longs lösen sich auf",
+    "read_longAufbau": "Preis und Bestand steigen — spricht für Long-Aufbau (Deutung: jeder Kontrakt hat zwei Seiten)",
+    "read_shortAufbau": "Preis fällt, Bestand steigt — spricht für Short-Aufbau (Deutung, kein Beweis)",
+    "read_shortDeckung": "Preis steigt, Bestand fällt — spricht eher für Short-Eindeckung als neue Käufe",
+    "read_longAufloesung": "Preis und Bestand fallen — spricht für Long-Auflösung",
     "read_neutral": "keine klare Richtung"
   },
   "info": {
@@ -1394,6 +1445,45 @@
       ],
       "caveat": "Offenes Interesse ist ein Saldo. Wenn tausend Positionen öffnen und neunhundert schliessen, zeigt es nur hundert — der tatsächliche Umschlag ist immer grösser als die Kurve vermuten lässt."
     },
-    "button": "Info"
+    "button": "Info",
+    "agent": {
+      "title": "Strategien — so funktioniert der Ablauf",
+      "intro": "Dieser Bereich lässt Handelsstrategien automatisch laufen: erst auf dem Papier, später — nach mehreren Freigaben — echt. Der sichere Weg ist immer derselbe: bauen → messen → beobachten → erst dann Geld.",
+      "sections": [
+        {
+          "h": "1 · Strategie wählen oder bauen",
+          "p": "Unter „Neue Strategie\" liegen fertige Vorlagen (LSOB, MACD-Wolke, Bollinger+RSI u. a.) — eine Vorlage übernehmen ist der schnellste Start. Eigene Ideen baust du im Strategie-Editor aus Bausteinen zusammen oder beschreibst sie dem Chat-Baukasten in Worten; es entsteht dieselbe Art von Regelwerk, kein Programmcode."
+        },
+        {
+          "h": "2 · Instanz anlegen — immer zuerst Papier",
+          "p": "Eine Instanz ist eine Strategie mit konkreten Einstellungen: Symbole, Zeiteinheit, Parameter und Risiko (Risiko je Trade, Tagesverlust-Grenze, Mindest-Chance/Risiko). Betriebsart am Anfang immer „Papier\" — die Engine handelt dann mit simuliertem Geld, alle 15 Sekunden, auf geschlossenen Kerzen."
+        },
+        {
+          "h": "3 · Im Labor messen, bevor du startest",
+          "p": "Der Backtest prüft die Einstellungen gegen die Vergangenheit — mit derselben Engine wie im Papierbetrieb, inklusive Gebühren und Slippage. Wichtigste Zahl ist der Erwartungswert je Trade in R; unter etwa 30 Trades ist ein Ergebnis nicht belastbar."
+        },
+        {
+          "h": "4 · Die Mehrfach-Test-Regel",
+          "p": "Eine Einstellung, die nur in dem Zeitraum gut aussieht, in dem du sie ausgesucht hast, ist wertlos. Der Mehrfach-Test teilt den Zeitraum deshalb in zwei Hälften — Optimierung und Prüfung — und rechnet mehrere Symbole durch. Übernimm eine Änderung nur, wenn sie in JEDEM Feld besser ist."
+        },
+        {
+          "h": "5 · Laufen lassen und beobachten",
+          "p": "Nach dem Start siehst du unter „Setups\", was die Strategie erkennt und warum Setups verworfen werden (Zone durchbrochen, Chance/Risiko zu niedrig …). Die „Auswertung\" zeigt Kennzahlen, den Setup-Trichter und im Zeitstrahl-Chart, was der Agent im Kursverlauf gezeichnet und gehandelt hat."
+        },
+        {
+          "h": "6 · Den KI-Agenten arbeiten lassen",
+          "p": "Der Knopf „Mit KI-Agent optimieren\" (auf der Instanzen-Seite und im Labor) übergibt eine Instanz an den KI-Coach. Er liest die Auswertung, testet Gegenhypothesen im Backtest und legt einen Verbesserungsvorschlag an. Vorschläge ändern NIE etwas von selbst — du nimmst sie im Labor an oder verwirfst sie."
+        },
+        {
+          "h": "7 · Der Weg zu echtem Geld",
+          "p": "Vor Live steht der Schattenmodus: der komplette Live-Pfad läuft durch, die Order wird aber nur protokolliert. Echtes Handeln braucht drei getrennte Freigaben — den globalen Schalter in den Einstellungen, die Freigabe der einzelnen Instanz und genug Papier-Trades. Jede handelsrelevante Änderung löscht die Freigabe wieder."
+        },
+        {
+          "h": "8 · Not-Aus",
+          "p": "Der rote Not-Aus auf der Instanzen-Seite stoppt alle Instanzen sofort und kann offene Positionen schliessen. Solange er aktiv ist, lässt sich keine Instanz starten — aufgehoben wird er bewusst nur in den Einstellungen, nicht durch einen Start-Klick."
+        }
+      ],
+      "caveat": "Beta: Dieser Bereich ist in Entwicklung und keine Anlageberatung. Backtest-Zahlen sind kein Versprechen — ein Ergebnis zählt erst, wenn es auch ausserhalb des Zeitraums hält, in dem es ausgesucht wurde. Lass eine Strategie lange genug auf dem Papier laufen, bevor du auch nur an Live denkst."
+    }
   }
 }

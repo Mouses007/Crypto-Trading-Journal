@@ -66,7 +66,8 @@ const params = [
     {
         key: 'entryMode', type: 'select', default: 'zone_touch', group: 'entry',
         options: [{ value: 'zone_touch', labelKey: 'strategies.lsob.entryZoneTouch' },
-                  { value: 'rejection_confirmed', labelKey: 'strategies.lsob.entryRejection' }],
+                  { value: 'rejection_confirmed', labelKey: 'strategies.lsob.entryRejection' },
+                  { value: 'direction_confirmed', labelKey: 'strategies.lsob.entryDirection' }],
     },
 
     // ── Bestätigungen (optional) ──────────────────────────────
@@ -78,7 +79,6 @@ const params = [
     { key: 'rsiPeriod', type: 'integer', default: 14, min: 2, max: 100, step: 1, group: 'confirm' },
     { key: 'rsiOversold', type: 'number', default: 35, min: 1, max: 50, step: 1, group: 'confirm' },
     { key: 'rsiOverbought', type: 'number', default: 65, min: 50, max: 99, step: 1, group: 'confirm' },
-    { key: 'requireAllConfirmations', type: 'boolean', default: false, group: 'confirm' },
     { key: 'htfTrendFilter', type: 'boolean', default: false, group: 'confirm' },
     {
         key: 'htfTimeframe', type: 'select', default: '4h', group: 'confirm',
@@ -89,6 +89,15 @@ const params = [
     // ── Ausstieg ──────────────────────────────────────────────
     { key: 'slBufferPct', type: 'number', default: 0.1, min: 0, max: 5, step: 0.01, group: 'exit' },
     {
+        // Wohin der Stopp gehört. `sweep_extreme` sichert hinter der geholten
+        // Liquidität ab — sicher, aber weit. `retest_wick` legt ihn hinter den
+        // längsten Docht der Kerzen, die IM Block geschlossen haben: enger,
+        // dadurch mehr R je Trade, aber häufiger ausgestoppt.
+        key: 'slMode', type: 'select', default: 'sweep_extreme', group: 'exit',
+        options: [{ value: 'sweep_extreme', labelKey: 'strategies.lsob.slSweep' },
+                  { value: 'retest_wick', labelKey: 'strategies.lsob.slRetestWick' }],
+    },
+    {
         key: 'tpMode', type: 'select', default: 'lastSwing', group: 'exit',
         options: [{ value: 'lastSwing', labelKey: 'strategies.lsob.tpLastSwing' },
                   { value: 'rr', labelKey: 'strategies.lsob.tpRr' },
@@ -96,6 +105,11 @@ const params = [
     },
     { key: 'tpRR', type: 'number', default: 2, min: 0.5, max: 20, step: 0.1, group: 'exit' },
     { key: 'breakEvenAtR', type: 'number', default: 1, min: 0, max: 10, step: 0.1, group: 'exit' },
+    // Teilausstieg: bei `partialTpR` (in R) werden `partialTpPct` Prozent der
+    // Position geschlossen, der Rest läuft bis Ziel, Stopp oder Zeitausstieg.
+    // 0 schaltet ihn ab — Standard, damit bestehende Instanzen unverändert laufen.
+    { key: 'partialTpR', type: 'number', default: 0, min: 0, max: 10, step: 0.1, group: 'exit' },
+    { key: 'partialTpPct', type: 'number', default: 50, min: 0, max: 100, step: 5, group: 'exit' },
     // Zeitausstieg. Ohne ihn kann eine Position ohne Ziel (tpMode 'none')
     // unbegrenzt laufen und dabei das Symbol für alle weiteren Setups sperren.
     { key: 'maxHoldCandles', type: 'integer', default: 0, min: 0, max: 2000, step: 1, group: 'exit' },
@@ -171,7 +185,12 @@ function checkReaction(candles, sweepIdx, direction, p, atrSeries) {
     }
 
     // Impuls: spürbare Bewegung weg von der Zone, gemessen in ATR
-    const atrVal = atrSeries[sweepIdx] || 0
+    const atrVal = atrSeries[sweepIdx]
+    // Ohne eingeschwungenes ATR ist der Impuls-Filter nicht prüfbar. `|| 0`
+    // hätte ihn stillschweigend abgeschaltet — jeder Sweep hätte "Impuls".
+    if (p.impulseMinAtr > 0 && !(atrVal > 0)) {
+        return { ok: false, reason: INVALID_REASONS.NO_IMPULSE }
+    }
     const needed = atrVal * p.impulseMinAtr
     const startPrice = direction === 'short' ? candles[sweepIdx].l : candles[sweepIdx].h
 
@@ -253,8 +272,11 @@ function evaluateConfirmations({ candles, idx, direction, setup, p, rsiSeries, h
 function confirmationsBlock(conf, p) {
     if (p.requireRejectionCandle && conf.rejection === false) return true
     if (p.entryMode === 'rejection_confirmed' && conf.rejection === false) return true
-    if (!p.requireAllConfirmations) return false
-    // Strenger Modus: jede aktivierte Bestätigung muss zutreffen
+    // Jede AKTIVIERTE Bestätigung blockiert für sich, wenn sie fehlschlägt.
+    // Früher blockierten Fib/RSI/HTF nur zusammen mit `requireAllConfirmations`
+    // — wer einen der Filter einschaltete, glaubte gefiltert zu haben und hatte
+    // es nicht. `null` (nicht bestimmbar, z. B. RSI noch nicht eingeschwungen)
+    // blockiert bewusst nicht: fehlende Daten sind kein Gegensignal.
     return [conf.fib, conf.rsi, conf.htf].some((v) => v === false)
 }
 
@@ -420,6 +442,25 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
 
         let candlesWaited = 0
         let handled = false
+        // `direction_confirmed`: Index der Kerze, die die Zone berührt und das
+        // Setup damit scharf gestellt hat. Gehandelt wird erst danach.
+        let scharfAb = -1
+        // `slMode: retest_wick`: das äusserste Dochtende aller Kerzen, die IM
+        // Block geschlossen haben. Läuft mit — jede weitere Rücklaufkerze darf
+        // den Stopp nur weiter weg schieben, nie näher heran.
+        let retestExtrem = null
+
+        /**
+         * Stopp für den Auslöser. Ohne `retest_wick` oder ohne eine Kerze, die
+         * im Block geschlossen hat, bleibt es beim Stopp hinter dem Sweep —
+         * lieber der weite Stopp als gar keiner.
+         */
+        const stoppFuerAuslöser = () => {
+            if (p.slMode !== 'retest_wick' || retestExtrem === null) return s.stopLoss
+            return dir === 'short'
+                ? retestExtrem * (1 + p.slBufferPct / 100)
+                : retestExtrem * (1 - p.slBufferPct / 100)
+        }
 
         for (let i = idxStart; i < candles.length && !handled; i++) {
             const k = candles[i]
@@ -437,6 +478,43 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
                 })
                 handled = true
                 break
+            }
+
+            // (a2) `direction_confirmed`: ist das Setup scharf, entscheidet allein
+            //      die RICHTUNG der Folgekerze — nicht ihre Form und nicht, ob sie
+            //      die Zone noch einmal berührt. Eingestiegen wird zum Schlusskurs
+            //      dieser Kerze, nicht an der Zonenkante.
+            if (p.entryMode === 'direction_confirmed' && scharfAb !== -1 && i > scharfAb) {
+                const inRichtung = dir === 'short' ? k.c < k.o : k.c > k.o
+                if (inRichtung) {
+                    const conf = evaluateConfirmations({
+                        candles, idx: i, direction: dir, setup: s, p, rsiSeries, htfBias,
+                    })
+                    if (!confirmationsBlock(conf, p)) {
+                        const neuerStopp = stoppFuerAuslöser()
+                        // Ein RR-Ziel gehört zum EINSTIEG. Der liegt hier am
+                        // Schluss der Bestätigungskerze, nicht an der Zonenkante
+                        // — das Ziel muss deshalb neu gerechnet werden, sonst
+                        // gehören RR und minRR-Prüfung zu einem anderen Trade.
+                        let neuesZiel = s.takeProfit
+                        if (p.tpMode === 'rr') {
+                            const risiko = Math.abs(k.c - neuerStopp)
+                            neuesZiel = dir === 'short' ? k.c - risiko * p.tpRR : k.c + risiko * p.tpRR
+                        }
+                        events.push({
+                            id: s.id,
+                            status: 'triggered',
+                            triggeredAt: k.t,
+                            entry: k.c,
+                            stopLoss: neuerStopp,
+                            takeProfit: neuesZiel,
+                            confirmations: conf,
+                            candleTime: k.t,
+                        })
+                        handled = true
+                        break
+                    }
+                }
             }
 
             if (!touchesZone(k, zone)) continue
@@ -465,6 +543,24 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
                 break
             }
 
+            // (c1) Docht dieser Kerze merken, WENN sie im Block geschlossen hat —
+            //      daraus entsteht bei `slMode: retest_wick` der Stopp. Kerzen,
+            //      die nur hineinstechen und ausserhalb schliessen, zählen nicht:
+            //      sie haben den Block nicht angenommen.
+            if (closeInside) {
+                const docht = dir === 'short' ? k.h : k.l
+                retestExtrem = retestExtrem === null
+                    ? docht
+                    : (dir === 'short' ? Math.max(retestExtrem, docht) : Math.min(retestExtrem, docht))
+            }
+
+            // (c2) `direction_confirmed`: diese Berührung stellt nur scharf. Der
+            //      Einstieg fällt frühestens auf der nächsten Kerze (Fall a2).
+            if (p.entryMode === 'direction_confirmed') {
+                if (scharfAb === -1) scharfAb = i
+                continue
+            }
+
             // (d) Gültiger Retest → Bestätigungen prüfen
             const conf = evaluateConfirmations({
                 candles, idx: i, direction: dir, setup: s, p, rsiSeries, htfBias,
@@ -480,7 +576,7 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
                 status: 'triggered',
                 triggeredAt: k.t,
                 entry: s.entry,
-                stopLoss: s.stopLoss,
+                stopLoss: stoppFuerAuslöser(),
                 takeProfit: s.takeProfit,
                 confirmations: conf,
                 candleTime: k.t,

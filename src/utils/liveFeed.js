@@ -16,6 +16,9 @@ import { tickSizeFor } from './liveSymbols.js'
 import { loadReplay } from './replaySource.js'
 
 const PRUNE_INTERVAL_MS = 30000
+// Soviele Takte darf der Schreiber höchstens nachholen. Darüber wird eine
+// Lücke markiert statt das aktuelle Buch rückwirkend zu vervielfachen.
+const MAX_NACHHOLEN = 3
 const MAX_SNAPSHOT_RETRIES = 5
 
 export class LiveFeed {
@@ -46,7 +49,11 @@ export class LiveFeed {
 
         this.book = new OrderBook()
         this.ring = null           // erst nach dem ersten Snapshot (bucketSize!)
-        this.trades = new TradeRing(20000)
+        // 100k statt 20k: bei BTC unter Last (@trade, einzelne Fills) waren
+        // 20k Events in wenigen Minuten voll — Blasen und Volumenprofil
+        // deckten dann stillschweigend weniger Historie ab als die Heatmap
+        // zeigt. 100k ≈ 2 MB, das trägt auch 120-Minuten-Fenster.
+        this.trades = new TradeRing(100000)
         // Liquidationen sind selten (einzelne pro Symbol und Stunde) — ein
         // kleiner Ring reicht, und er lebt getrennt vom Orderbuch.
         this.liquidations = new TradeRing(2000)
@@ -67,6 +74,7 @@ export class LiveFeed {
         this.syncWatchdog = null
         this.nextSlot = 0
         this.stopped = false
+        this.prefilling = false    // Ticker pausiert, solange der Vorlauf lädt
         this._onVisibility = this._onVisibility.bind(this)
     }
 
@@ -77,6 +85,10 @@ export class LiveFeed {
         this._setState('connecting')
         document.addEventListener('visibilitychange', this._onVisibility)
         await this._loadTickSize()
+        // Während des Awaits kann stop() gelaufen sein (schneller
+        // Symbolwechsel) — ohne diese Prüfung liefen WebSocket und Timer
+        // eines toten Feeds verwaist weiter.
+        if (this.stopped) return
         this._openStream()
         this._startFrameTicker()
         this.pruneTimer = setInterval(() => {
@@ -103,6 +115,7 @@ export class LiveFeed {
     // ── Verbindung ──────────────────────────────────────────
 
     _openStream() {
+        if (this.stopped) return
         this.stream?.stop()
         this.snapshotTries = 0
         this.stream = new BinanceStream({
@@ -128,6 +141,7 @@ export class LiveFeed {
      * gemeinsamer Status und kein Resync.
      */
     _openLiquidationStream() {
+        if (this.stopped) return
         this.liqStream?.stop()
         this.liqStream = null
         const url = buildLiquidationUrl(this.symbol, this.market)
@@ -276,7 +290,18 @@ export class LiveFeed {
         // keine vergangene Orderbuch-Tiefe. Läuft der Recorder für dieses
         // Symbol, wird der Ring damit vorbelegt und der Live-Betrieb schliesst
         // nahtlos an.
-        if (this.prefillMs > 0) this._prefill().catch(() => { /* ohne Vorlauf weiter */ })
+        //
+        // Solange der Vorlauf lädt, schreibt der Ticker NICHT (siehe _tick):
+        // beide teilen sich denselben Ring, und der fertig geladene Vorlauf
+        // setzte früher head/count/nextSlot zurück — während des HTTP-Abrufs
+        // geschriebene Live-Spalten wurden dabei überschrieben bzw. mit
+        // Aufzeichnungsdaten vermischt.
+        if (this.prefillMs > 0) {
+            this.prefilling = true
+            this._prefill()
+                .catch(() => { /* ohne Vorlauf weiter */ })
+                .finally(() => { this.prefilling = false })
+        }
     }
 
     /**
@@ -369,7 +394,7 @@ export class LiveFeed {
     _tick() {
         // Erst schreiben, wenn das Buch nachweislich am Stream hängt — ein noch
         // nicht synchronisiertes Buch würde eine falsche Spalte hinterlassen.
-        if (this.stopped || !this.ring || this.buffering || !this.book.synced) {
+        if (this.stopped || !this.ring || this.buffering || this.prefilling || !this.book.synced) {
             // Slots weiterschieben, damit nach dem Sync keine Nachhol-Lawine kommt
             const now = Date.now()
             if (this.nextSlot < now - this.frameMs) {
@@ -379,17 +404,31 @@ export class LiveFeed {
             return
         }
         const now = Date.now()
+
+        // Wie viele Takte sind wir hinterher? Im Normalbetrieb null oder eins —
+        // der Ticker läuft mit dem halben Takt, ein Ausreisser ist normal.
+        // Ein grosser Rückstand heisst dagegen: der Browser hat gedrosselt,
+        // typisch für einen Tab im Hintergrund.
+        const rueckstand = Math.floor((now - this.nextSlot) / this.frameMs)
+
+        if (rueckstand > MAX_NACHHOLEN) {
+            // NICHT nachschreiben. Für die verpasste Zeit gibt es kein
+            // historisches Orderbuch — die Zwischenzustände wurden nie erfasst.
+            // Vierzig Kopien des aktuellen Buchs zu setzen sähe aus wie Daten,
+            // wäre aber erfunden: eine Minute Hintergrund würde zu einer Minute
+            // scheinbar ruhigem Markt. Eine sichtbare Lücke ist die ehrliche
+            // Antwort; echte Historie liefert nur der serverseitige Recorder.
+            this.nextSlot = Math.ceil(now / this.frameMs) * this.frameMs
+            this.gapPending = true
+            return
+        }
+
         let written = 0
-        while (this.nextSlot <= now && written < 40) {
+        while (this.nextSlot <= now && written <= MAX_NACHHOLEN) {
             this.ring.commit(this.book, this.nextSlot, this.gapPending)
             this.gapPending = false
             this.nextSlot += this.frameMs
             written++
-        }
-        if (this.nextSlot <= now) {
-            // Mehr als 40 Slots verpasst (Tab lange im Hintergrund) → Lücke markieren
-            this.nextSlot = Math.ceil(now / this.frameMs) * this.frameMs
-            this.gapPending = true
         }
         if (written) this.onFrame?.(now)
     }

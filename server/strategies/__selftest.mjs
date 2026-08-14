@@ -256,6 +256,45 @@ bothDirections('flacher Retest → Einstieg', [...shortBase(),
         JSON.stringify(ev))
 })
 
+bothDirections('direction_confirmed: Folgekerze in Richtung → Einstieg zum Schluss', [...shortBase(),
+    [102.5, 108.2, 102.0, 106.0],   // Berührung: stellt nur scharf
+    [106.0, 106.2, 104.0, 104.5],   // bärisch → Einstieg zu 104.5
+], (label, { second }, long) => {
+    const ev = second.events[0]
+    const erwartet = long ? MIRROR - 104.5 : 104.5
+    check(label, ev?.status === 'triggered' && Math.abs(ev.entry - erwartet) < 1e-9,
+        `Einstieg muss der Schluss der Bestätigungskerze sein — ${JSON.stringify(ev)}`)
+}, { entryMode: 'direction_confirmed' })
+
+bothDirections('direction_confirmed: Folgekerze gegen die Richtung → kein Einstieg', [...shortBase(),
+    [102.5, 108.2, 102.0, 106.0],   // Berührung: stellt nur scharf
+    [104.0, 106.0, 103.8, 105.8],   // bullisch → darf nicht auslösen
+], (label, { second }) => {
+    const ev = second.events[0]
+    check(label, !ev || ev.status !== 'triggered',
+        `nur die Richtung entscheidet — ${JSON.stringify(ev)}`)
+}, { entryMode: 'direction_confirmed' })
+
+bothDirections('slMode=retest_wick: Stopp hinter dem Rücklauf-Docht', [...shortBase(),
+    [102.5, 108.6, 102.0, 108.2],   // Docht 108.6, Schluss 108.2 IM Block (Zone 108–109, 20 % tief)
+    [108.2, 108.3, 105.0, 105.5],   // bärisch → Einstieg
+], (label, { second }, long) => {
+    const ev = second.events[0]
+    // Stopp muss aus 108.6 (+0,1 % Puffer) kommen, nicht aus dem Sweep-Extrem 111
+    const erwartet = long ? (MIRROR - 108.6) * (1 - 0.001) : 108.6 * 1.001
+    check(label, ev?.status === 'triggered' && Math.abs(ev.stopLoss - erwartet) < 1e-6,
+        `Stopp aus dem Docht der Kerze, die im Block schloss — ${JSON.stringify(ev)}`)
+}, { entryMode: 'direction_confirmed', slMode: 'retest_wick' })
+
+bothDirections('slMode=retest_wick ohne Schluss im Block → Sweep-Stopp bleibt', [...shortBase(),
+    [102.5, 108.9, 102.0, 107.5],   // Docht in den Block, Schluss DARUNTER
+], (label, { second, first }) => {
+    const ev = second.events[0]
+    const s = first.setups[0]
+    check(label, ev?.status === 'triggered' && Math.abs(ev.stopLoss - s.stopLoss) < 1e-9,
+        `ohne Schluss im Block darf der Stopp nicht enger werden — ${JSON.stringify(ev)}`)
+}, { slMode: 'retest_wick' })
+
 console.log('\nParameter greifen')
 
 bothDirections('maxRetestDepthPct=80 lässt tiefen Schluss zu', [...shortBase(),
@@ -281,7 +320,7 @@ bothDirections('RSI-Bestätigung blockiert bei falschem Wert', [...shortBase(),
     // Der Retest kommt nach einem Absturz — der RSI ist tief, also nicht
     // überkauft. Für einen Short muss die Bestätigung damit blockieren.
     check(label, second.events.length === 0, JSON.stringify(second.events))
-}, { useRsi: true, requireAllConfirmations: true, rsiOverbought: 65, rsiOversold: 35 })
+}, { useRsi: true, rsiOverbought: 65, rsiOversold: 35 })
 
 bothDirections('Richtungsschalter respektiert', [...shortBase(),
     [102.5, 108.2, 102.0, 106.0],

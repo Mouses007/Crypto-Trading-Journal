@@ -17,6 +17,7 @@ import * as echarts from 'echarts'
 import { spinnerLoadingPage } from '../stores/ui.js'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import { useXDecCurrencyFormat } from '../utils/formatters.js'
+import { useAgentTimelineChart } from '../utils/charts.js'
 import { logError } from '../utils/logger.js'
 import dayjs from '../utils/dayjs-setup.js'
 
@@ -28,6 +29,13 @@ const laden = ref(false)
 const filter = ref({ instanceId: '', mode: '', symbol: '', paramsVersion: '', from: '', to: '' })
 let equityChart = null
 let rChart = null
+let zeitstrahlChart = null
+
+// Zeitstrahl: was der Agent im Kursverlauf gesehen und getan hat
+const zsSymbol = ref('')
+const zsTage = ref(7)
+const zsMeldung = ref('')
+const zsLaedt = ref(false)
 
 const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
 const zahl = (v, n = 2) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '–' : Number(v).toFixed(n))
@@ -62,10 +70,63 @@ async function holen() {
         daten.value = r.data
         await nextTick()
         zeichne()
+        await zeitstrahlLaden()
     } catch (e) {
         logError('AgentPerformance', 'Auswertung laden fehlgeschlagen', e)
     } finally {
         laden.value = false
+    }
+}
+
+/** Zeiteinheit einer Instanz ('1h', '15m', '4h') in Minuten. */
+function tfMinuten(tf) {
+    const m = String(tf || '1h').match(/^(\d+)([mhd])$/)
+    if (!m) return 60
+    return Number(m[1]) * (m[2] === 'm' ? 1 : m[2] === 'h' ? 60 : 1440)
+}
+
+/**
+ * Kurs, Zonen und Trades eines Symbols zusammenführen.
+ *
+ * Bewusst NICHT an `kpi.trades` gebunden: gerade solange noch kein Trade
+ * abgeschlossen ist, ist die Frage »sieht der Agent überhaupt etwas?« am
+ * wichtigsten — dann zeigt der Chart eben nur Zonen.
+ */
+async function zeitstrahlLaden() {
+    const symbol = zsSymbol.value || filter.value.symbol || symbole.value[0] || ''
+    zsSymbol.value = symbol
+    zsMeldung.value = ''
+    if (!symbol) return
+
+    // Instanz, die dieses Symbol handelt — sie bestimmt Zeiteinheit und Markt.
+    const inst = instanzen.value.find((i) => (i.symbols || []).includes(symbol)) || instanzen.value[0]
+    const timeframe = inst?.timeframe || '1h'
+    const limit = Math.min(1000, Math.ceil((zsTage.value * 1440) / tfMinuten(timeframe)) + 5)
+
+    zsLaedt.value = true
+    try {
+        const [k, s] = await Promise.all([
+            axios.get('/api/binance/klines', {
+                params: { symbol, interval: timeframe, market: inst?.market || 'futures', limit },
+            }),
+            axios.get('/api/strategies/setups', {
+                params: { symbol, limit: 500, ...(filter.value.instanceId ? { instanceId: filter.value.instanceId } : {}) },
+            }),
+        ])
+        const candles = k.data.map((c) => ({ t: Number(c[0]), o: +c[1], h: +c[2], l: +c[3], c: +c[4] }))
+        if (!candles.length) { zsMeldung.value = t('strategies.timelineNoData'); return }
+
+        const trades = (daten.value?.trades || []).filter((x) => x.symbol === symbol)
+        if (!s.data.length && !trades.length) zsMeldung.value = t('strategies.timelineNoSetups', { symbol })
+
+        await nextTick()
+        zeitstrahlChart?.dispose()
+        zeitstrahlChart = useAgentTimelineChart('agentZeitstrahl', candles, s.data, trades)
+    } catch (e) {
+        logError('AgentPerformance', 'Zeitstrahl laden fehlgeschlagen', e)
+        zsMeldung.value = t('strategies.chartFailed')
+    } finally {
+        zsLaedt.value = false
     }
 }
 
@@ -76,6 +137,11 @@ onBeforeMount(async () => {
     } catch (e) { /* Filterliste ist optional */ }
     await holen()
     spinnerLoadingPage.value = false
+    // Gezeichnet wird noch hinter dem Ladebalken — der Inhalt hängt dort an
+    // `v-show`, ist also `display:none`, und ECharts misst dann eine Breite von
+    // null. Erst nach dem Einblenden stimmen die Masse.
+    await nextTick()
+    groesseAnpassen()
     window.addEventListener('resize', groesseAnpassen)
 })
 
@@ -83,11 +149,13 @@ onBeforeUnmount(() => {
     window.removeEventListener('resize', groesseAnpassen)
     equityChart?.dispose()
     rChart?.dispose()
+    zeitstrahlChart?.dispose()
 })
 
 function groesseAnpassen() {
     equityChart?.resize()
     rChart?.resize()
+    zeitstrahlChart?.resize()
 }
 
 const achse = { axisLine: { lineStyle: { color: 'rgba(255,255,255,0.38)' } },
@@ -209,6 +277,29 @@ const wochentag = (n) => t('strategies.weekday' + n)
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Zeitstrahl: Zonen und Trades des Agenten im Kursverlauf -->
+            <div class="dailyCard p-3 mb-3">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                    <span class="section-title mb-0">
+                        <i class="uil uil-chart-line me-1"></i>{{ t('strategies.timelineTitle') }}
+                    </span>
+                    <div class="ms-auto d-flex gap-2">
+                        <select v-model="zsSymbol" class="form-select form-select-sm w-auto" @change="zeitstrahlLaden">
+                            <option v-for="s in symbole" :key="s" :value="s">{{ s }}</option>
+                        </select>
+                        <select v-model.number="zsTage" class="form-select form-select-sm w-auto" @change="zeitstrahlLaden">
+                            <option :value="3">3 {{ t('strategies.days') }}</option>
+                            <option :value="7">7 {{ t('strategies.days') }}</option>
+                            <option :value="14">14 {{ t('strategies.days') }}</option>
+                            <option :value="30">30 {{ t('strategies.days') }}</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="text-muted small mb-2">{{ t('strategies.timelineHint') }}</p>
+                <div v-if="zsMeldung" class="text-muted small mb-2">{{ zsMeldung }}</div>
+                <div id="agentZeitstrahl" class="chartClass" style="height: 380px;"></div>
             </div>
 
             <div v-if="!kpi.trades" class="dailyCard p-4 text-center text-muted mb-3">

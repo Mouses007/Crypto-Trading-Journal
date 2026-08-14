@@ -38,13 +38,19 @@ export const RISK_REASONS = {
 export function computePositionSize({
     equity, riskPerTradePct, entry, stopLoss, leverage = 1,
     maxNotionalUsdt = Infinity, stepSize = 0, minQty = 0, minNotional = 0,
+    feeBps = 0, slippageBps = 0,
 }) {
     const abstand = Math.abs(entry - stopLoss)
     if (!(equity > 0)) return { qty: 0, reason: RISK_REASONS.NO_EQUITY }
     if (!(abstand > 0) || !(entry > 0)) return { qty: 0, reason: RISK_REASONS.BAD_LEVELS }
 
     const riskUsd = equity * (riskPerTradePct / 100)
-    let qty = riskUsd / abstand
+    // Der Verlust am Stop ist nicht nur der Kursabstand: Ein- und Ausstieg
+    // rutschen je einmal, und beide Seiten kosten Gebühr. Ohne diesen Anteil
+    // liegt das echte Risiko über dem eingestellten Prozentsatz — bei engen
+    // Stops um ein Vielfaches.
+    const kostenJeEinheit = entry * (2 * (Number(feeBps) + Number(slippageBps))) / 10000
+    let qty = riskUsd / (abstand + kostenJeEinheit)
     let capped = false
 
     // Notional-Deckel in USDT — wirkt unabhängig vom Prozent-Risiko und ist
@@ -114,6 +120,15 @@ export function evaluateRisk(ctx) {
         ? setup.stopLoss < setup.entry
         : setup.stopLoss > setup.entry
     if (!seiteOk) return { ok: false, reason: RISK_REASONS.BAD_LEVELS }
+    // Auch das Ziel muss auf der richtigen Seite liegen. Ein Long mit Ziel
+    // UNTER dem Einstieg würde fast sofort als 'tp' schliessen — mit Verlust,
+    // der in der Statistik als Treffer zählt.
+    if (setup.takeProfit > 0) {
+        const zielOk = setup.direction === 'long'
+            ? setup.takeProfit > setup.entry
+            : setup.takeProfit < setup.entry
+        if (!zielOk) return { ok: false, reason: RISK_REASONS.BAD_LEVELS }
+    }
 
     // Tagesverlust-Limit: gilt VOR jeder neuen Order, nicht erst danach
     const limit = equity * (risk.maxDailyLossPct / 100)
@@ -174,6 +189,8 @@ export function evaluateRisk(ctx) {
         stepSize: marketMeta.stepSize || 0,
         minQty: marketMeta.minQty || 0,
         minNotional: marketMeta.minNotional || 0,
+        feeBps: risk.feeBps,
+        slippageBps: risk.slippageBps,
     })
     if (!size.qty) return { ok: false, reason: size.reason || RISK_REASONS.SIZE_TOO_SMALL }
 

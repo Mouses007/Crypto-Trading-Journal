@@ -74,6 +74,10 @@ export class LeverageMapSource {
         this.stopped = false
         this.timer = null
         this.backoff = 60000
+        // Generationszähler wie `laufendeAnfrage` in OpenInterest.vue: eine
+        // späte Antwort des vorigen Symbols/Fensters darf den Zustand einer
+        // neueren Anfrage nicht überschreiben.
+        this.anfrage = 0
     }
 
     async start() {
@@ -84,6 +88,7 @@ export class LeverageMapSource {
 
     stop() {
         this.stopped = true
+        this.anfrage++   // laufende Antworten verfallen
         clearTimeout(this.timer)
         this.timer = null
     }
@@ -155,12 +160,14 @@ export class LeverageMapSource {
 
     async _fetch() {
         if (this.stopped) return
+        const meine = ++this.anfrage
         const { period } = pickPeriod(this.hours)
         try {
             this.onStatus?.('loading')
             const { data } = await axios.get('/api/binance/leverage-map', {
                 params: { symbol: this.symbol, period },
             })
+            if (this.stopped || meine !== this.anfrage) return
             // Die laufende Periode weglassen: ihr ΔOI ändert sich noch, sie
             // würde die jüngste — und damit sichtbarste — Schicht verfälschen.
             const punkte = Array.isArray(data.points) ? data.points.slice() : []
@@ -186,6 +193,7 @@ export class LeverageMapSource {
             this.rebuild()
             this.onStatus?.('ready')
         } catch (error) {
+            if (this.stopped || meine !== this.anfrage) return
             // /futures/data ist eigenständig gedrosselt — bei Fehlern langsamer
             // nachfragen statt stur weiterzuhämmern.
             this.backoff = Math.min(this.backoff * 2, 300000)

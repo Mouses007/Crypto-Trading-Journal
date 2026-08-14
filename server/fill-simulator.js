@@ -41,6 +41,7 @@ export function createPosition({ setup, qty, entryPrice, entryTime, leverage = 1
         timeframe: setup.timeframe || '',
         direction: setup.direction,
         qty,
+        initialQty: qty,          // Bezugsgrösse für R, überlebt Teilausstiege
         entryPrice: fill,
         entryTime,
         stopLoss: setup.stopLoss,
@@ -60,6 +61,36 @@ export function createPosition({ setup, qty, entryPrice, entryTime, leverage = 1
 /** Risiko in Preis-Einheiten (Basis für R). */
 export function riskPerUnit(pos) {
     return Math.abs(pos.entryPrice - pos.initialStopLoss)
+}
+
+/**
+ * Teilausstieg buchen: einen Anteil der Position zum erreichten Ziel schliessen,
+ * den Rest weiterlaufen lassen.
+ *
+ * Das Ergebnis wird auf der Position gespeichert statt sofort als Trade
+ * geschrieben — ein Setup soll EINE Zeile in `strategy_trades` ergeben, sonst
+ * zählt die Auswertung jeden Trade doppelt und die Trefferquote wird Unsinn.
+ * `initialQty` bleibt die Bezugsgrösse für R, damit ein Teilausstieg das
+ * eingegangene Risiko nicht nachträglich kleinrechnet.
+ */
+function bucheTeilausstieg(pos, price, anteilPct, costs, time) {
+    const anteil = Math.min(Math.max(anteilPct, 0), 100) / 100
+    const menge = pos.qty * anteil
+    if (menge <= 0) return
+
+    const fill = applySlippage(price, pos.direction, 'exit', costs?.slippageBps || 0)
+    const gebuehr = feeFor(fill, menge, costs?.feeBps || 0)
+    const brutto = pos.direction === 'long'
+        ? (fill - pos.entryPrice) * menge
+        : (pos.entryPrice - fill) * menge
+
+    pos.partialQty = menge
+    pos.partialPrice = fill
+    pos.partialTime = time
+    pos.partialGross = brutto
+    pos.partialFee = gebuehr
+    pos.partialDone = true
+    pos.qty = pos.qty - menge
 }
 
 /**
@@ -89,6 +120,23 @@ export function stepCandle(pos, candle, opts = {}) {
         const gap = long ? candle.o < pos.stopLoss : candle.o > pos.stopLoss
         const price = gap ? candle.o : pos.stopLoss
         return { exit: { price, reason: pos.breakEvenDone ? 'be' : 'sl', time: candle.t } }
+    }
+
+    // Teilausstieg VOR dem vollen Ziel prüfen: er liegt näher am Einstieg, wird
+    // also zwangsläufig zuerst erreicht. Erwischt eine Kerze beide Marken, wird
+    // erst der Teil gebucht und der Rest anschliessend am Ziel geschlossen.
+    const teilR = Number(opts.partialTpR) || 0
+    const teilPct = Number(opts.partialTpPct) || 0
+    if (teilR > 0 && teilPct > 0 && !pos.partialDone) {
+        const r = riskPerUnit(pos)
+        if (r > 0) {
+            const ziel = long ? pos.entryPrice + r * teilR : pos.entryPrice - r * teilR
+            const erreicht = long ? candle.h >= ziel : candle.l <= ziel
+            if (erreicht) {
+                const gap = long ? candle.o > ziel : candle.o < ziel
+                bucheTeilausstieg(pos, gap ? candle.o : ziel, teilPct, opts.costs || {}, candle.t)
+            }
+        }
     }
 
     if (pos.takeProfit > 0) {
@@ -130,16 +178,23 @@ export function stepCandle(pos, candle, opts = {}) {
 export function closePosition(pos, { price, reason, time }, costs, extra = {}) {
     const fill = applySlippage(price, pos.direction, 'exit', costs.slippageBps)
     const feeClose = feeFor(fill, pos.qty, costs.feeBps)
-    const fees = pos.feeOpen + feeClose
+    // Die Eröffnungsgebühr wurde auf die volle Menge gezahlt und bleibt deshalb
+    // ungeteilt; dazu kommen die Gebühren beider Ausstiege.
+    const fees = pos.feeOpen + feeClose + (Number(pos.partialFee) || 0)
 
-    const grossPnl = pos.direction === 'long'
+    const grossPnl = (pos.direction === 'long'
         ? (fill - pos.entryPrice) * pos.qty
-        : (pos.entryPrice - fill) * pos.qty
+        : (pos.entryPrice - fill) * pos.qty)
+        + (Number(pos.partialGross) || 0)
     const funding = Number(extra.funding) || 0
     const netPnl = grossPnl - fees + funding
 
     const r = riskPerUnit(pos)
-    const riskUsd = r * pos.qty
+    // Bezug ist die Menge BEIM EINSTIEG. Nach einem Teilausstieg ist `qty` nur
+    // noch der Rest — damit gerechnet käme ein zu grosses R heraus, weil das
+    // Ergebnis beider Teile durch das Risiko eines Teils geteilt würde.
+    const mengeAmEinstieg = Number(pos.initialQty) || (pos.qty + (Number(pos.partialQty) || 0))
+    const riskUsd = r * mengeAmEinstieg
     const rMultiple = riskUsd > 0 ? netPnl / riskUsd : 0
 
     // MAE/MFE in R — genau die Zahlen, aus denen die Auswertung später
@@ -152,7 +207,7 @@ export function closePosition(pos, { price, reason, time }, costs, extra = {}) {
         symbol: pos.symbol,
         timeframe: pos.timeframe,
         direction: pos.direction,
-        qty: pos.qty,
+        qty: mengeAmEinstieg,     // die gehandelte Menge, nicht der Rest nach dem Teilausstieg
         notionalUsdt: pos.notionalUsdt,
         leverage: pos.leverage,
         entryPrice: pos.entryPrice,

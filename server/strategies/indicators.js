@@ -315,19 +315,24 @@ export function vwapBand(candles, { anchor = 'session', period = 20, mult = 2 } 
         return out
     }
 
-    // Session: Abweichungen seit dem Tagesbeginn aufsummieren
-    let sw = 0
+    // Session: gewichtete Momente führen. Abweichungsquadrate gegen den
+    // jeweils WANDERNDEN Zwischen-VWAP aufzusummieren unterschätzt die
+    // Varianz systematisch (für 1,2,3 käme σ≈0,645 statt korrekt 0,816) —
+    // korrekt ist Var = Σwx²/Σw − VWAP², mit dem aktuellen Gesamt-VWAP.
     let sv = 0
+    let sx2 = 0
     let tag = null
     for (let i = 0; i < candles.length; i++) {
         const k = candles[i]
         const heute = Math.floor(k.t / 86400000)
-        if (tag === null || heute !== tag) { sw = 0; sv = 0; tag = heute }
+        if (tag === null || heute !== tag) { sv = 0; sx2 = 0; tag = heute }
         const v = k.v > 0 ? k.v : 1
-        const d = typischerPreis(k) - (linie[i] ?? typischerPreis(k))
-        sw += v * d * d
+        const x = typischerPreis(k)
         sv += v
-        out[i] = linie[i] === null || sv <= 0 ? null : linie[i] + mult * Math.sqrt(sw / sv)
+        sx2 += v * x * x
+        if (linie[i] === null || sv <= 0) { out[i] = null; continue }
+        const varianz = Math.max(0, sx2 / sv - linie[i] * linie[i])
+        out[i] = linie[i] + mult * Math.sqrt(varianz)
     }
     return out
 }
@@ -403,4 +408,151 @@ export function hasRejectionCandle(prev, cur, direction) {
         return isBullishEngulfing(prev, cur) || isHammer(cur) || isAdvancingWick(prev, cur, 'long')
     }
     return isBearishEngulfing(prev, cur) || isShootingStar(cur) || isAdvancingWick(prev, cur, 'short')
+}
+
+/**
+ * Bollinger-Bänder.
+ *
+ * Basis wahlweise SMA (Standard) oder EMA — Rang 21 der Kandidatenliste
+ * verlangt ausdrücklich eine EMA-Basis, und mit SMA käme eine andere Strategie
+ * heraus als beschrieben.
+ *
+ * Die Standardabweichung wird über dasselbe Fenster wie die Basis gerechnet und
+ * ist die der Grundgesamtheit (Nenner n), so wie es Handelsplattformen tun.
+ *
+ * @returns {{ middle: Array, upper: Array, lower: Array }} Arrays wie `candles`
+ */
+export function bollinger(candles, { period = 20, mult = 2, basis = 'sma' } = {}) {
+    const n = candles.length
+    const middle = basis === 'ema' ? ema(candles, period) : sma(candles, period)
+    const upper = new Array(n).fill(null)
+    const lower = new Array(n).fill(null)
+
+    for (let i = period - 1; i < n; i++) {
+        const m = middle[i]
+        if (m === null || m === undefined) continue
+        let quadrate = 0
+        for (let j = i - period + 1; j <= i; j++) {
+            const d = candles[j].c - m
+            quadrate += d * d
+        }
+        const sd = Math.sqrt(quadrate / period)
+        upper[i] = m + mult * sd
+        lower[i] = m - mult * sd
+    }
+    return { middle, upper, lower }
+}
+
+/**
+ * Average Directional Index nach Wilder, mit den Richtungsindikatoren.
+ *
+ * ADX misst die STÄRKE eines Trends, nicht seine Richtung — die steht in
+ * +DI/−DI. Beides wird gebraucht: Rang 6 filtert mit ADX und handelt in
+ * Richtung des dominanten DI.
+ *
+ * @returns {{ adx: Array, plusDI: Array, minusDI: Array }}
+ */
+export function adx(candles, period = 14) {
+    const n = candles.length
+    const out = { adx: new Array(n).fill(null), plusDI: new Array(n).fill(null), minusDI: new Array(n).fill(null) }
+    if (n <= period * 2) return out
+
+    const tr = new Array(n).fill(0)
+    const plusDM = new Array(n).fill(0)
+    const minusDM = new Array(n).fill(0)
+
+    for (let i = 1; i < n; i++) {
+        const hoch = candles[i].h - candles[i - 1].h
+        const tief = candles[i - 1].l - candles[i].l
+        plusDM[i] = hoch > tief && hoch > 0 ? hoch : 0
+        minusDM[i] = tief > hoch && tief > 0 ? tief : 0
+        const prevClose = candles[i - 1].c
+        tr[i] = Math.max(
+            candles[i].h - candles[i].l,
+            Math.abs(candles[i].h - prevClose),
+            Math.abs(candles[i].l - prevClose),
+        )
+    }
+
+    // Wilder-Glättung: erste Summe roh, danach fortlaufend
+    let trS = 0
+    let plusS = 0
+    let minusS = 0
+    for (let i = 1; i <= period; i++) { trS += tr[i]; plusS += plusDM[i]; minusS += minusDM[i] }
+
+    const dx = new Array(n).fill(null)
+    for (let i = period; i < n; i++) {
+        if (i > period) {
+            trS = trS - trS / period + tr[i]
+            plusS = plusS - plusS / period + plusDM[i]
+            minusS = minusS - minusS / period + minusDM[i]
+        }
+        if (trS === 0) continue
+        const pDI = (plusS / trS) * 100
+        const mDI = (minusS / trS) * 100
+        out.plusDI[i] = pDI
+        out.minusDI[i] = mDI
+        const summe = pDI + mDI
+        dx[i] = summe === 0 ? 0 : (Math.abs(pDI - mDI) / summe) * 100
+    }
+
+    // ADX = geglättetes DX, erster Wert als Mittel der ersten `period` DX-Werte
+    const ersterDx = period
+    const startAdx = ersterDx + period - 1
+    if (startAdx >= n) return out
+    let summe = 0
+    for (let i = ersterDx; i < ersterDx + period; i++) summe += dx[i] ?? 0
+    let wert = summe / period
+    out.adx[startAdx] = wert
+    for (let i = startAdx + 1; i < n; i++) {
+        wert = (wert * (period - 1) + (dx[i] ?? 0)) / period
+        out.adx[i] = wert
+    }
+    return out
+}
+
+/**
+ * Stochastik-Oszillator (%K/%D).
+ *
+ * `smoothK = 1` ergibt die schnelle Variante, `smoothK = 3` die übliche
+ * langsame. %D ist der gleitende Durchschnitt von %K.
+ *
+ * @returns {{ k: Array, d: Array }}
+ */
+export function stochastic(candles, { period = 14, smoothK = 3, smoothD = 3 } = {}) {
+    const n = candles.length
+    const rohK = new Array(n).fill(null)
+
+    for (let i = period - 1; i < n; i++) {
+        let hoch = -Infinity
+        let tief = Infinity
+        for (let j = i - period + 1; j <= i; j++) {
+            if (candles[j].h > hoch) hoch = candles[j].h
+            if (candles[j].l < tief) tief = candles[j].l
+        }
+        const spanne = hoch - tief
+        // Ohne Spanne gibt es keine Position im Bereich — 50 ist die neutrale
+        // Antwort und verhindert eine Division durch null.
+        rohK[i] = spanne === 0 ? 50 : ((candles[i].c - tief) / spanne) * 100
+    }
+
+    const glaetten = (reihe, laenge) => {
+        if (laenge <= 1) return reihe.slice()
+        const res = new Array(n).fill(null)
+        for (let i = 0; i < n; i++) {
+            if (i < laenge - 1) continue
+            let summe = 0
+            let zaehler = 0
+            for (let j = i - laenge + 1; j <= i; j++) {
+                if (reihe[j] === null) { zaehler = 0; break }
+                summe += reihe[j]; zaehler++
+            }
+            if (zaehler === laenge) res[i] = summe / laenge
+        }
+        return res
+    }
+
+    const k = glaetten(rohK, smoothK)
+    const d = glaetten(k, smoothD)
+    return { k, d }
 }

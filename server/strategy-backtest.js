@@ -69,6 +69,26 @@ export async function runBacktest(opts) {
         { market, maxCandles: MAX_BACKTEST_CANDLES },
     )
 
+    // Kerzen der höheren Zeiteinheit — nur laden, wenn der Filter auch an ist.
+    // Ohne sie lief `htfTrendFilter` bisher stillschweigend ins Leere: der
+    // Detector bekam kein `htfCandles`, `htfBias` blieb null und die
+    // Bestätigung hat nie blockiert. Ein Parameter, der nichts tut, ist
+    // schlimmer als keiner — er täuscht einen Filter vor.
+    let htfAlle = []
+    if (params.htfTrendFilter && params.htfTimeframe && params.htfTimeframe !== timeframe) {
+        try {
+            htfAlle = await getHistoricalCandles(
+                symbol, params.htfTimeframe, opts.fromTs, opts.toTs,
+                { market, maxCandles: MAX_BACKTEST_CANDLES },
+            )
+        } catch (e) {
+            htfAlle = []   // ohne HTF-Daten lieber ungefiltert als gar kein Lauf
+        }
+    }
+    let htfZeiger = 0
+    const htfMs = params.htfTimeframe ? timeframeMs(params.htfTimeframe) : 0
+    const ltfMs = timeframeMs(timeframe)
+
     const warmup = strategie.warmupCandles || 200
     if (candles.length <= warmup + 10) {
         return leeresErgebnis(`Zu wenige Kerzen (${candles.length}, mindestens ${warmup + 11} nötig)`)
@@ -81,8 +101,18 @@ export async function runBacktest(opts) {
 
     const costs = { feeBps: risk.feeBps, slippageBps: risk.slippageBps }
     // Zeitausstieg in Millisekunden — der Detector zählt in Kerzen
-    const maxHoldMs = (params.maxHoldCandles || 0) * timeframeMs(timeframe)
-    const schrittOpts = { breakEvenAtR: params.breakEvenAtR, maxHoldMs }
+    // Regelstrategien tragen Break-Even/Zeitausstieg in der Regelwurzel —
+    // dieselbe Auflösung wie in der Engine, sonst schliesst der Papierbetrieb
+    // Positionen, die der Backtest laufen lässt.
+    const maxHoldKerzen = params.maxHoldCandles ?? strategie.regeln?.maxHoldCandles ?? 0
+    const maxHoldMs = (maxHoldKerzen || 0) * timeframeMs(timeframe)
+    const schrittOpts = {
+        breakEvenAtR: params.breakEvenAtR ?? strategie.regeln?.breakEvenAtR ?? 0,
+        maxHoldMs,
+        partialTpR: params.partialTpR,
+        partialTpPct: params.partialTpPct,
+        costs,
+    }
     const funnel = emptyFunnel()
 
     let equity = startEquity
@@ -123,11 +153,19 @@ export async function runBacktest(opts) {
         // 2. Erkennung auf allem, was bis einschliesslich dieser Kerze geschlossen ist
         const von = Math.max(0, i + 1 - fenster)
         const sicht = candles.slice(von, i + 1)
+        // HTF-Ausschnitt bis zur aktuellen Kerze — der Zeiger wandert mit, ein
+        // Filter je Takt wäre bei Jahresläufen quadratisch. Nur abgeschlossene
+        // HTF-Kerzen zählen, sonst wäre es ein Blick in die Zukunft.
+        // Eine HTF-Kerze zählt erst, wenn sie GESCHLOSSEN ist, bevor die
+        // aktuelle LTF-Kerze schliesst. `t <= kerze.t` hätte die Bar
+        // mitgenommen, die gerade erst eröffnet — ihr Verlauf wäre Zukunft.
+        while (htfZeiger < htfAlle.length && htfAlle[htfZeiger].t + htfMs <= kerze.t + ltfMs) htfZeiger++
         const { setups, events, diagnostics } = strategie.detect({
             candles: sicht,
             params,
             openSetups: offeneSetups,
             knownSetupKeys: [...bekannteSchluessel],
+            htfCandles: htfZeiger > 0 ? htfAlle.slice(0, htfZeiger) : null,
         })
 
         // Ablehnungen nur EINMAL zählen: der Detector sieht denselben Sweep in
@@ -185,9 +223,15 @@ export async function runBacktest(opts) {
             const triggerIdx = triggerVersatz >= 0 ? von + triggerVersatz : i
             const triggerKerze = candles[triggerIdx]
 
-            // 3a. Fill überhaupt möglich?
+            // 3a. Fill überhaupt möglich? Ein nie berührter Einstieg wird
+            //     verworfen. Ein Stop in der Auslösekerze dagegen wird als
+            //     Verlust GEBUCHT — verwerfen würde genau die schlechtesten
+            //     Fills aus der Statistik löschen und sie schönen.
             const fill = entryIsValid(setup, triggerKerze)
-            if (!fill.ok) { bump(funnel.entrySkipped, fill.reason); continue }
+            if (!fill.ok && fill.reason === 'entry_not_touched') {
+                bump(funnel.entrySkipped, fill.reason); continue
+            }
+            const sameBarStop = !fill.ok
 
             // 3b. Risiko-Gates — dieselben wie im Live-Betrieb
             const heuteBeginn = startOfDayUtc(triggerKerze.t)
@@ -205,6 +249,20 @@ export async function runBacktest(opts) {
             if (!pruefung.ok) {
                 bump(funnel.riskRejected, pruefung.reason)
                 setup.rejectReason = pruefung.reason
+                continue
+            }
+
+            if (sameBarStop) {
+                const posSofort = createPosition({
+                    setup, qty: pruefung.size.qty, entryPrice: setup.entry,
+                    entryTime: triggerKerze.t, leverage: risk.leverage, costs,
+                })
+                const gap = setup.direction === 'long'
+                    ? Math.min(setup.stopLoss, triggerKerze.o)
+                    : Math.max(setup.stopLoss, triggerKerze.o)
+                abschliessen(posSofort, { price: gap, reason: 'sl', time: triggerKerze.t })
+                funnel.executed++
+                setup.status = 'closed'
                 continue
             }
 

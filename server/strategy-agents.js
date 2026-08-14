@@ -127,10 +127,13 @@ function beschreibeSetup(setup, instance) {
 
 /** Antwort des Modells auf das erlaubte Format eindampfen. */
 function normalisiere(json, rolle) {
+    // Fail-closed: der Nutzer hat diese Prüfung ausdrücklich eingeschaltet.
+    // Eine unverwertbare Antwort als "erlaubt" zu deuten hiesse, genau dann
+    // ungeprüft zu handeln, wenn die Prüfung versagt.
     if (!json || typeof json !== 'object') {
-        return { action: 'allow', sizeFactor: 1, confidence: 0, reason: `${rolle}: keine verwertbare Antwort`, unklar: true }
+        return { action: 'reject', sizeFactor: 0, confidence: 0, reason: `${rolle}: keine verwertbare Antwort`, unklar: true }
     }
-    const action = ERLAUBTE_AKTIONEN.includes(json.action) ? json.action : 'allow'
+    const action = ERLAUBTE_AKTIONEN.includes(json.action) ? json.action : 'reject'
     // Der Deckel bei 1 ist die technische Durchsetzung der Regel »nur bremsen«.
     let sizeFactor = Number(json.sizeFactor)
     if (!Number.isFinite(sizeFactor)) sizeFactor = 1
@@ -195,7 +198,7 @@ export async function agentenVeto({ instance, setup }) {
         } catch (e) {
             logWarn('strategy-agents', `Sentiment-Agent fehlgeschlagen: ${e.message}`)
             // Ausfall der Agenten darf den deterministischen Teil nicht kippen
-            ergebnis.sentiment = { action: 'allow', sizeFactor: 1, reason: `Fehler: ${e.message}`, fehler: true }
+            ergebnis.sentiment = { action: 'reject', sizeFactor: 0, reason: `Fehler: ${e.message}`, fehler: true }
         }
 
         if (ergebnis.sentiment.action === 'reject') {
@@ -224,7 +227,7 @@ export async function agentenVeto({ instance, setup }) {
             ergebnis.portfolio = { ...normalisiere(antwort.json, 'Portfolio'), usage: antwort.usage }
         } catch (e) {
             logWarn('strategy-agents', `Portfolio-Agent fehlgeschlagen: ${e.message}`)
-            ergebnis.portfolio = { action: 'allow', sizeFactor: 1, reason: `Fehler: ${e.message}`, fehler: true }
+            ergebnis.portfolio = { action: 'reject', sizeFactor: 0, reason: `Fehler: ${e.message}`, fehler: true }
         }
 
         if (ergebnis.portfolio.action === 'reject') {

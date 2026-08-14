@@ -458,7 +458,7 @@ export class LeverageMapRenderer {
         ctx.setLineDash([])
 
         this._drawAxis(ctx, { mid, lo, hi, yFor, y0 })
-        this._drawLegend(ctx, { map, tier, ref })
+        this._drawLegend(ctx, { map, tier, weights })
         this._drawCursor(ctx, { map, mid, lo, hi, yFor, y0, tier, weights, ref, maxLen, mitte })
     }
 
@@ -488,7 +488,7 @@ export class LeverageMapRenderer {
         ctx.fillText(mid.toFixed(dez), x, yFor(mid))
     }
 
-    _drawLegend(ctx, { map, tier, ref }) {
+    _drawLegend(ctx, { map, tier, weights }) {
         ctx.font = '11px system-ui, sans-serif'
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
@@ -505,8 +505,12 @@ export class LeverageMapRenderer {
         // kennt das Modell nicht. Der frühere Wert (gehalten/(gehalten+
         // abgeräumt)) sah dabei gut aus, obwohl die Karte fast leer war.
         const idx = tier === 'all' ? null : tier
+        // Bei „Alle": gewichteter MITTELWERT der Stufen-Szenarien (Gewichte
+        // sind auf Summe 1 normiert). Die Szenarien schlicht zu ADDIEREN
+        // zählte dieselbe Position bis zu viermal — die Abdeckung stand dann
+        // systematisch zu hoch und die „Fenster zu kurz"-Warnung griff nie.
         const gehalten = idx == null
-            ? map.mass.reduce((a, b) => a + b, 0)
+            ? map.mass.reduce((a, m, k) => a + m * (weights?.[k] ?? 1 / (map.mass.length || 1)), 0)
             : map.mass[idx]
         const abdeckung = map.oi > 0 ? gehalten / map.oi : 0
 

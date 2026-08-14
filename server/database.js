@@ -1345,6 +1345,50 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('strategy_positions', 'lastCandleTime', (t) => t.bigInteger('lastCandleTime').defaultTo(0))
     await addColumnIfNotExists('strategy_positions', 'breakEvenDone', (t) => t.integer('breakEvenDone').defaultTo(0))
     await addColumnIfNotExists('strategy_setups', 'watchFrom', (t) => t.bigInteger('watchFrom').defaultTo(0))
+    // Teilausstieg: muss auf der Position liegen, sonst nimmt ein Neustart ihn
+    // ein zweites Mal — die Fortschreibung erkennt sonst nicht, dass schon ein
+    // Anteil geschlossen wurde.
+    await addColumnIfNotExists('strategy_positions', 'partialDone', (t) => t.integer('partialDone').defaultTo(0))
+    await addColumnIfNotExists('strategy_positions', 'partialQty', (t) => t.double('partialQty').defaultTo(0))
+    await addColumnIfNotExists('strategy_positions', 'partialPrice', (t) => t.double('partialPrice').defaultTo(0))
+    await addColumnIfNotExists('strategy_positions', 'partialGross', (t) => t.double('partialGross').defaultTo(0))
+    await addColumnIfNotExists('strategy_positions', 'partialFee', (t) => t.double('partialFee').defaultTo(0))
+    await addColumnIfNotExists('strategy_positions', 'initialQty', (t) => t.double('initialQty').defaultTo(0))
+    // Positions-Kennung der Börse (≠ Order-Kennung) — nötig für gezieltes Close
+    await addColumnIfNotExists('strategy_positions', 'externalPositionId', (t) => t.text('externalPositionId').defaultTo(''))
+
+    // Parameter-Historie: OHNE sie ist `paramsVersion` nur eine Zahl — jede
+    // Änderung überschreibt die Werte, und niemand kann später nachsehen, WAS
+    // v2 eigentlich war. Erst mit der Historie lassen sich Versionen fachlich
+    // vergleichen (was wurde geändert, was hat es gebracht).
+    if (!(await knex.schema.hasTable('strategy_param_history'))) {
+        await knex.schema.createTable('strategy_param_history', (t) => {
+            t.increments('id').primary()
+            t.integer('instanceId').notNullable()
+            t.integer('paramsVersion').notNullable()
+            t.text('params').defaultTo('{}')
+            t.text('risk').defaultTo('{}')
+            t.text('source').defaultTo('manuell')      // angelegt | manuell | vorschlag | bestand
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.unique(['instanceId', 'paramsVersion'], 'uq_param_history_instance_version')
+        })
+        console.log(' -> Created table: strategy_param_history')
+    }
+    // Bestand nachtragen: für jede Instanz mindestens die AKTUELLE Version —
+    // idempotent, damit die Migration auf mehreren Containern laufen darf.
+    {
+        const instanzen = await knex('strategy_instances').select('id', 'paramsVersion', 'params', 'risk')
+        for (const i of instanzen) {
+            const da = await knex('strategy_param_history')
+                .where({ instanceId: i.id, paramsVersion: i.paramsVersion }).first()
+            if (!da) {
+                await knex('strategy_param_history').insert({
+                    instanceId: i.id, paramsVersion: i.paramsVersion,
+                    params: i.params, risk: i.risk, source: 'bestand',
+                })
+            }
+        }
+    }
 
     // Globale Schalter der Strategie-Agenten (Live-Freigabe und Not-Aus)
     await addColumnIfNotExists('settings', 'strategyLiveEnabled', (t) => t.integer('strategyLiveEnabled').defaultTo(0))

@@ -35,7 +35,10 @@ function pruefeRef(ref, indikatorIds, paramKeys, wo, fehler) {
     }
     const s = String(ref || '')
     if (BAUSTEINE.anker.includes(s) || indikatorIds.has(s)) return s
-    fehler.push(`${wo}: unbekannte Referenz "${s}"`)
+    // Leer heisst: noch nicht ausgefüllt — das ist eine Aufforderung, kein
+    // Rätsel. „unbekannte Referenz ‹›" hilft niemandem weiter.
+    if (!s) fehler.push(`${wo}: bitte einen Anker oder Indikator wählen`)
+    else fehler.push(`${wo}: unbekannte Referenz "${s}"`)
     return null
 }
 
@@ -147,6 +150,21 @@ export function pruefeRegeln(roh) {
                 fehler.push(`Indikator ${iid}: die schnelle Periode (${eintrag.fast}) muss kleiner sein als die langsame (${eintrag.slow})`)
             }
         }
+        // Bollinger: Faktor und Basis (SMA/EMA) gehören zur Definition
+        if (ind.type === 'bollUpper' || ind.type === 'bollMiddle' || ind.type === 'bollLower') {
+            eintrag.mult = (ind.mult && typeof ind.mult === 'object' && ind.mult.param !== undefined)
+                ? pruefeRef(ind.mult, indikatorIds, paramKeys, `Indikator ${iid}.mult`, fehler)
+                : (Number.isFinite(Number(ind.mult)) ? Number(ind.mult) : 2)
+            eintrag.basis = BAUSTEINE.bollBasis.includes(ind.basis) ? ind.basis : 'sma'
+        }
+        // Stochastik: zwei Glättungen zusätzlich zur Periode
+        if (ind.type === 'stochK' || ind.type === 'stochD') {
+            for (const [feld, vorgabe] of [['smoothK', 3], ['smoothD', 3]]) {
+                eintrag[feld] = (ind[feld] && typeof ind[feld] === 'object' && ind[feld].param !== undefined)
+                    ? pruefeRef(ind[feld], indikatorIds, paramKeys, `Indikator ${iid}.${feld}`, fehler)
+                    : Math.max(1, Math.round(Number(ind[feld]) || vorgabe))
+            }
+        }
         if (ind.type === 'vwapBand') {
             eintrag.mult = (ind.mult && typeof ind.mult === 'object' && ind.mult.param !== undefined)
                 ? pruefeRef(ind.mult, indikatorIds, paramKeys, `Indikator ${iid}.mult`, fehler)
@@ -169,6 +187,21 @@ export function pruefeRegeln(roh) {
     } else if (sig.type === 'crossUp' || sig.type === 'crossDown') {
         signal.a = pruefeRef(sig.a, indikatorIds, paramKeys, 'signal.a', fehler)
         signal.b = pruefeRef(sig.b, indikatorIds, paramKeys, 'signal.b', fehler)
+    } else if (sig.type === 'pattern') {
+        if (!BAUSTEINE.muster.includes(sig.pattern)) {
+            fehler.push(`Unbekanntes Kerzenmuster "${sig.pattern}"`)
+        }
+        signal.pattern = sig.pattern
+        // Wie viele Kerzen der Gegenfarbe unmittelbar vor dem Muster liegen
+        // müssen. 0 = kein Zusatzfilter.
+        signal.prevOpposite = (sig.prevOpposite && typeof sig.prevOpposite === 'object' && sig.prevOpposite.param !== undefined)
+            ? pruefeRef(sig.prevOpposite, indikatorIds, paramKeys, 'signal.prevOpposite', fehler)
+            : Math.max(0, Math.round(Number(sig.prevOpposite) || 0))
+        if (sig.value !== undefined) {
+            signal.value = (sig.value && typeof sig.value === 'object' && sig.value.param !== undefined)
+                ? pruefeRef(sig.value, indikatorIds, paramKeys, 'signal.value', fehler)
+                : Number(sig.value)
+        }
     }
 
     // ── Filter, Einstieg, Abbrüche ───────────────────────────────────

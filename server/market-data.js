@@ -61,6 +61,13 @@ export function isValidTimeframe(tf) {
 export function currentCandleOpen(tf, now = Date.now()) {
     const ms = timeframeMs(tf)
     if (!ms) return 0
+    // Binance-Wochenkerzen beginnen Montag 00:00 UTC. Der Unix-Epoch war ein
+    // DONNERSTAG — ohne Versatz gälte die laufende Wochenkerze ab Donnerstag
+    // als geschlossen, und Wochenregeln handelten auf einem repaintenden Wert.
+    if (tf === '1w') {
+        const MONTAG = 345600000   // Mo, 5. Jan 1970 00:00 UTC
+        return Math.floor((now - MONTAG) / ms) * ms + MONTAG
+    }
     return Math.floor(now / ms) * ms
 }
 
