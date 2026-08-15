@@ -18,6 +18,7 @@ import lsob from './lsob.js'
 import emaTouch from './ema_touch.js'
 import { alsManifest } from './rule-engine.js'
 import { pruefeRegeln } from './rule-validate.js'
+import { TIMEFRAME_MS } from '../market-data.js'
 
 const registry = new Map()
 
@@ -36,6 +37,13 @@ export const RISK_PARAMS = [
     { key: 'maxNotionalUsdt', type: 'number', default: 500, min: 5, max: 1000000, step: 5, group: 'limits' },
     { key: 'leverage', type: 'number', default: 3, min: 1, max: 125, step: 1, group: 'size' },
     { key: 'cooldownMinutes', type: 'integer', default: 60, min: 0, max: 10080, step: 5, group: 'limits' },
+    // Fährt eine Instanz mehrere Zeiteinheiten, konkurrieren sie um dasselbe
+    // Symbol: `symbol` (Standard, sicher) lässt nur EINE Position je Coin zu —
+    // die schnellste Zeiteinheit gewinnt und die langsameren kommen kaum zum
+    // Zug. `symbol_tf` erlaubt je Zeiteinheit eine eigene Position; für den
+    // Vergleich der Zeiteinheiten richtig, im Echtgeldbetrieb aber mehrfaches
+    // Risiko auf denselben Coin.
+    { key: 'duplicateScope', type: 'select', default: 'symbol', options: ['symbol', 'symbol_tf'], group: 'limits' },
     { key: 'minRR', type: 'number', default: 1.5, min: 0.1, max: 20, step: 0.1, group: 'quality' },
     { key: 'feeBps', type: 'number', default: 6, min: 0, max: 100, step: 0.5, group: 'costs' },
     { key: 'slippageBps', type: 'number', default: 2, min: 0, max: 100, step: 0.5, group: 'costs' },
@@ -217,6 +225,46 @@ export function validateParams(strategyId, input) {
 
 export function validateRisk(input) {
     return validateAgainstSchema(RISK_PARAMS, input)
+}
+
+/** Wie viele Zeiteinheiten eine Instanz höchstens gleichzeitig fahren darf. */
+export const MAX_TIMEFRAMES = 6
+
+/**
+ * Zeiteinheiten-Liste einer Instanz säubern.
+ *
+ * Eine Instanz darf dieselbe Strategie auf mehreren Zeiteinheiten gleichzeitig
+ * laufen lassen (15m-Setup wird auf 15m gehandelt, 1h-Setup auf 1h). Erlaubt
+ * ist nur, was die Strategie auch unterstützt; die Haupt-Zeiteinheit ist immer
+ * dabei und steht vorn. Doppelte fliegen raus, die Reihenfolge ist von fein
+ * nach grob — so wird bei knappem Risikobudget nicht zufällig entschieden,
+ * welche Zeiteinheit zuerst zum Zug kommt.
+ *
+ * @param {string|Array} roh     gespeicherte Liste (JSON-Text oder Array)
+ * @param {string} haupt         `timeframe` der Instanz
+ * @param {object} strategie     Manifest (für `supportedTimeframes`)
+ * @returns {string[]}           mindestens `[haupt]`
+ */
+export function normalisiereTimeframes(roh, haupt, strategie) {
+    let liste = roh
+    if (typeof liste === 'string') {
+        try { liste = JSON.parse(liste) } catch { liste = [] }
+    }
+    if (!Array.isArray(liste)) liste = []
+
+    const erlaubt = new Set(strategie?.supportedTimeframes || [])
+    const raus = []
+    for (const tf of [haupt, ...liste]) {
+        const s = String(tf || '').trim()
+        if (!s || raus.includes(s)) continue
+        if (!TIMEFRAME_MS[s]) continue
+        if (erlaubt.size && !erlaubt.has(s)) continue
+        raus.push(s)
+    }
+    if (!raus.length && haupt) raus.push(haupt)
+    // Erst kappen, dann sortieren: `haupt` steht vorn und überlebt die Grenze
+    // damit immer. Andersherum könnte die Haupt-Zeiteinheit herausfallen.
+    return raus.slice(0, MAX_TIMEFRAMES).sort((a, b) => TIMEFRAME_MS[a] - TIMEFRAME_MS[b])
 }
 
 // ── Eingebaute Strategien ────────────────────────────────────────────────

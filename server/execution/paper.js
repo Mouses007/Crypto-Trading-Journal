@@ -130,14 +130,19 @@ function zuPosition(row) {
  *
  * @returns {Promise<Array>} die dabei geschlossenen Trades
  */
-export async function stepPaperPositions({ instance, symbol, candles, costs, breakEvenAtR, maxHoldMs = 0, partialTpR = 0, partialTpPct = 0 }) {
+export async function stepPaperPositions({ instance, symbol, timeframe = '', candles, costs, breakEvenAtR, maxHoldMs = 0, partialTpR = 0, partialTpPct = 0 }) {
     const knex = getKnex()
     // NUR Papier und Schatten. Eine Live-Position hier fortzuschreiben würde
     // sie in der DB schliessen, während sie an der Börse weiterläuft — der
     // Simulator darf Live-Bestand niemals finalisieren. Live-Positionen werden
     // erst wieder verwaltet, wenn eine echte Broker-Abstimmung existiert.
+    // Eine Instanz kann mehrere Zeiteinheiten gleichzeitig fahren. Dann gehören
+    // die übergebenen Kerzen zu GENAU EINER davon — eine 1h-Position mit
+    // 15m-Kerzen fortzuschreiben hiesse, sie zweimal je Takt zu bewerten und
+    // ihren Zeitausstieg in der falschen Einheit zu messen.
     const offen = await knex('strategy_positions')
         .where({ instanceId: instance.id, symbol, status: 'open' })
+        .modify((q) => { if (timeframe) q.where('timeframe', timeframe) })
         .whereIn('mode', ['paper', 'shadow'])
 
     const geschlossen = []

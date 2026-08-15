@@ -314,6 +314,35 @@ const zweiLaeufe = (regeln, kerzen) => {
     }
 }
 
+{
+    // Ziel auf der falschen Seite (Anker unter dem Einstieg bei long).
+    // `berechneZiel` liefert dafür 0 — früher rutschte das am minRR-Gate
+    // vorbei und wurde OHNE Ziel gehandelt (Fall vwap_band, 15.08.2026):
+    // der Fill-Simulator kennt dann nur noch den Stop als Ausgang.
+    const mitZiel = (tp) => pruefeRegeln({
+        id: 'ziel_test', name: 'Ziel', timeframes: ['1h'], direction: 'long', warmupCandles: 50,
+        params: [], indicators: [], signal: { type: 'pivotLow', left: 3, right: 2 },
+        signalFilters: [], entry: { type: 'immediate' },
+        invalidations: [{ type: 'timeout', code: 'zu_lang', candles: 50 }],
+        stopLoss: { anchor: 'signalLow', offsetPct: 0.5 },
+        takeProfit: tp, breakEvenAtR: 0,
+    })
+    const kerzen = sofortKerzen()
+
+    const falsch = mitZiel({ mode: 'anchor', anchor: 'signalLow' })
+    check('Vorbedingung: Regeln mit Anker-Ziel sind gültig', falsch.ok, JSON.stringify(falsch.fehler))
+    const evF = zweiLaeufe(falsch.regeln, kerzen).events.filter((e) => ['triggered', 'rejected'].includes(e.status))
+    check('Ziel auf der falschen Seite wird abgelehnt statt zielfrei gehandelt',
+        evF.length === 1 && evF[0].status === 'rejected' && evF[0].invalidReason === 'no_target',
+        JSON.stringify(evF.map((e) => ({ st: e.status, grund: e.invalidReason, tp: e.takeProfit }))))
+
+    // Gegenprobe: eine bewusst zielfreie Regel darf weiterhin handeln.
+    const ohne = mitZiel({ mode: 'none' })
+    const evO = zweiLaeufe(ohne.regeln, kerzen).events.find((e) => e.status === 'triggered')
+    check('`mode: none` bleibt bewusst zielfrei handelbar', !!evO && evO.takeProfit === 0,
+        JSON.stringify(evO && { tp: evO.takeProfit }))
+}
+
 
 // ── Kerzenmuster als Bausteine ───────────────────────────────────────────
 //

@@ -20,7 +20,7 @@
 
 import { getKnex } from './database.js'
 import { logError, logWarn } from './logger.js'
-import { getStrategy, validateParams, validateRisk, AGENT_DEFAULTS } from './strategies/index.js'
+import { getStrategy, validateParams, validateRisk, AGENT_DEFAULTS, normalisiereTimeframes } from './strategies/index.js'
 import { getClosedCandles, getSymbolMeta, getLastPrice, timeframeMs, isValidTimeframe } from './market-data.js'
 import { evaluateRisk, startOfDayUtc, RISK_REASONS } from './risk-engine.js'
 import { openPaperPosition, stepPaperPositions, getPaperEquity, closePaperPositionManually } from './execution/paper.js'
@@ -36,7 +36,7 @@ let engineStopped = false
 
 /** instanceId → true, solange ein Lauf aktiv ist (Guard je Instanz, nicht global). */
 const running = new Map()
-/** `${instanceId}|${symbol}` → Zeit der zuletzt verarbeiteten Kerze. */
+/** `${instanceId}|${symbol}|${timeframe}` → Zeit der zuletzt verarbeiteten Kerze. */
 const lastProcessed = new Map()
 /** Kurzstatistik für den Status-Endpunkt. */
 const stats = { ticks: 0, runs: 0, lastRunAt: 0, errors: 0 }
@@ -81,6 +81,11 @@ export function ladeInstanz(row) {
         broker: row.broker || 'bitunix',
         market: row.market || 'futures',
         timeframe: row.timeframe,
+        // Eine Instanz kann dieselbe Strategie auf mehreren Zeiteinheiten
+        // gleichzeitig laufen lassen — jede für sich, aber unter EINEM
+        // Risikobudget. Leer/kaputt → nur die Haupt-Zeiteinheit, also der
+        // bisherige Betrieb.
+        timeframes: normalisiereTimeframes(row.timeframes, row.timeframe, strategie),
         paramsVersion: Number(row.paramsVersion) || 1,
         liveApprovedAt: Number(row.liveApprovedAt) || 0,
         symbols, params, risk, agents, strategie,
@@ -138,13 +143,20 @@ async function ladeRisikoKontext(instance, now) {
             .sum({ pnl: 'netPnl' }).first(),
         knex('strategy_trades')
             .where({ instanceId: instance.id })
-            .groupBy('symbol')
-            .select('symbol')
+            .groupBy('symbol', 'timeframe')
+            .select('symbol', 'timeframe')
             .max({ exitTime: 'exitTime' }),
     ])
 
+    // Zwei Schlüssel je Zeile: `BTCUSDT` für die symbolweite Sperrfrist,
+    // `BTCUSDT|15m` für die Variante je Zeiteinheit. Welcher gilt, entscheidet
+    // `duplicateScope` in der Risk-Engine.
     const lastExitBySymbol = {}
-    for (const r of letzte) lastExitBySymbol[r.symbol] = Number(r.exitTime) || 0
+    for (const r of letzte) {
+        const t = Number(r.exitTime) || 0
+        lastExitBySymbol[`${r.symbol}|${r.timeframe}`] = t
+        lastExitBySymbol[r.symbol] = Math.max(lastExitBySymbol[r.symbol] || 0, t)
+    }
 
     return {
         openPositions: offen,
@@ -165,7 +177,7 @@ async function ladeKontostand(instance) {
 
 // ── Ein Symbol verarbeiten ───────────────────────────────────────────────
 
-async function verarbeiteSymbol(instance, symbol, schalter) {
+async function verarbeiteSymbol(instance, symbol, timeframe, schalter) {
     const knex = getKnex()
     const p = instance.params
     const costs = { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps }
@@ -174,18 +186,21 @@ async function verarbeiteSymbol(instance, symbol, schalter) {
         + (p.scanWindowCandles || 200)
         + (p.retestMaxCandles || 40) + 10
 
-    const candles = await getClosedCandles(symbol, instance.timeframe, bedarf, { market: instance.market })
+    const candles = await getClosedCandles(symbol, timeframe, bedarf, { market: instance.market })
     if (candles.length < 50) return { skipped: 'zu wenige Kerzen' }
 
     const neueste = candles[candles.length - 1].t
-    const key = `${instance.id}|${symbol}`
+    const key = `${instance.id}|${symbol}|${timeframe}`
     if (lastProcessed.get(key) === neueste) return { skipped: 'keine neue Kerze' }
 
     // ── 1. Offene Positionen fortschreiben ───────────────────────────────
     const geschlossen = await stepPaperPositions({
-        instance, symbol, candles, costs,
+        instance, symbol, timeframe, candles, costs,
         breakEvenAtR: p.breakEvenAtR ?? instance.strategie?.regeln?.breakEvenAtR ?? 0,
-        maxHoldMs: ((p.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(instance.timeframe),
+        // Zeitausstieg zählt in Kerzen DIESER Zeiteinheit — bei mehreren
+        // Zeiteinheiten je Instanz wäre eine feste Umrechnung sonst für alle
+        // ausser einer falsch.
+        maxHoldMs: ((p.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(timeframe),
         partialTpR: p.partialTpR,
         partialTpPct: p.partialTpPct,
     })
@@ -194,12 +209,12 @@ async function verarbeiteSymbol(instance, symbol, schalter) {
     const fensterStart = candles[0].t
     const [offeneSetups, bekannte] = await Promise.all([
         knex('strategy_setups')
-            .where({ instanceId: instance.id, symbol, timeframe: instance.timeframe })
+            .where({ instanceId: instance.id, symbol, timeframe })
             .whereIn('status', ['armed', 'waiting_retest']),
         // Statusunabhängig: sonst wird ein bereits abgeschlossenes Setup bei
         // jedem Takt neu erzeugt, solange sein Sweep im Fenster liegt.
         knex('strategy_setups')
-            .where({ instanceId: instance.id, symbol, timeframe: instance.timeframe })
+            .where({ instanceId: instance.id, symbol, timeframe })
             .where('obCandleTime', '>=', fensterStart)
             .select('direction', 'obCandleTime'),
     ])
@@ -218,7 +233,7 @@ async function verarbeiteSymbol(instance, symbol, schalter) {
     // eine Einstellung ohne Wirkung. Nur bei eingeschaltetem Filter holen,
     // sonst kostet es bei jedem Takt einen Abruf ohne Nutzen.
     let htfCandles = null
-    if (p.htfTrendFilter && p.htfTimeframe && p.htfTimeframe !== instance.timeframe) {
+    if (p.htfTrendFilter && p.htfTimeframe && p.htfTimeframe !== timeframe) {
         try {
             htfCandles = await getClosedCandles(
                 symbol, p.htfTimeframe, (p.htfEmaPeriod || 50) + 20, { market: instance.market },
@@ -242,7 +257,7 @@ async function verarbeiteSymbol(instance, symbol, schalter) {
             instanceId: instance.id,
             strategyId: instance.strategyId,
             symbol,
-            timeframe: instance.timeframe,
+            timeframe,
             direction: s.direction,
             status: s.status,
             sweepLevel: s.sweepLevel,
@@ -284,7 +299,7 @@ async function verarbeiteSymbol(instance, symbol, schalter) {
         }
 
         setup.symbol = symbol
-        setup.timeframe = instance.timeframe
+        setup.timeframe = timeframe
         setup.confirmations = ev.confirmations || {}
 
         // Kursmarken aus dem Auslöser übernehmen. Bei manchen Strategien stehen
@@ -369,7 +384,7 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
     // live ausschliesslich auf der gerade geschlossenen Kerze.
     const neuesteKerze = candles[candles.length - 1]?.t || 0
     if (instance.mode === 'live' && ev.triggeredAt && ev.triggeredAt < neuesteKerze) {
-        const alter = Math.round((neuesteKerze - ev.triggeredAt) / timeframeMs(instance.timeframe))
+        const alter = Math.round((neuesteKerze - ev.triggeredAt) / (timeframeMs(setup.timeframe) || 1))
         return beenden('reject_risk', 'stale_trigger', `Auslöser ${alter} Kerzen alt`)
     }
 
@@ -571,8 +586,13 @@ async function verarbeiteInstanz(row, schalter) {
 
     const knex = getKnex()
     try {
-        for (const symbol of instance.symbols) {
-            await verarbeiteSymbol(instance, symbol, schalter)
+        // Zeiteinheit AUSSEN, Symbol innen: die Liste ist von fein nach grob
+        // sortiert, und bei knappem Risikobudget soll nicht die Reihenfolge der
+        // Symbole entscheiden, welche Zeiteinheit noch einen Platz bekommt.
+        for (const timeframe of instance.timeframes) {
+            for (const symbol of instance.symbols) {
+                await verarbeiteSymbol(instance, symbol, timeframe, schalter)
+            }
         }
         await knex('strategy_instances').where('id', instance.id).update({
             lastRunAt: Date.now(), lastError: '',
@@ -601,15 +621,18 @@ async function pflegeOffenePositionen() {
     const knex = getKnex()
     const zeilen = await knex('strategy_positions')
         .where('status', 'open').whereIn('mode', ['paper', 'shadow'])
-        .select('instanceId', 'symbol', 'lastCandleTime', 'entryTime')
+        .select('instanceId', 'symbol', 'timeframe', 'lastCandleTime', 'entryTime')
+    // Die Zeiteinheit gehört in den Schlüssel: eine Instanz kann mehrere
+    // gleichzeitig fahren, und jede Position muss mit IHREN Kerzen
+    // fortgeschrieben werden.
     const gruppen = new Map()
     for (const z of zeilen) {
-        const key = `${z.instanceId}|${z.symbol}`
+        const key = `${z.instanceId}|${z.symbol}|${z.timeframe}`
         const ab = Number(z.lastCandleTime) || Number(z.entryTime) || Date.now()
         gruppen.set(key, Math.min(gruppen.get(key) ?? Infinity, ab))
     }
     for (const [key, minAb] of gruppen) {
-        const [instanceId, symbol] = key.split('|')
+        const [instanceId, symbol, posTf] = key.split('|')
         try {
             const row = await knex('strategy_instances').where('id', Number(instanceId)).first()
             const instance = row ? ladeInstanz(row) : null
@@ -618,19 +641,23 @@ async function pflegeOffenePositionen() {
             // wirklich abgedeckt ist. Eine fixe Zahl würde nach längerem
             // Ausfall `lastCandleTime` über die Lücke hinweg vorspulen — ein
             // Stop IN der Lücke würde dann nie ausgewertet.
-            const tfMs = timeframeMs(instance.timeframe)
+            // Die Zeiteinheit der POSITION zählt, nicht die der Instanz: bei
+            // mehreren Zeiteinheiten je Instanz gehören die Kerzen sonst nicht
+            // zur Position, und ihr Zeitausstieg würde falsch gemessen.
+            const pflegeTf = isValidTimeframe(posTf) ? posTf : instance.timeframe
+            const tfMs = timeframeMs(pflegeTf)
             const bedarf = Math.min(990, Math.max(60, Math.ceil((Date.now() - minAb) / tfMs) + 3))
-            const candles = await getClosedCandles(symbol, instance.timeframe, bedarf, { market: instance.market })
+            const candles = await getClosedCandles(symbol, pflegeTf, bedarf, { market: instance.market })
             if (!candles?.length) continue
             if (candles[0].t > minAb + tfMs * 1.5) {
                 logWarn('strategy-engine', `Kerzenlücke ${symbol}: Abdeckung beginnt erst ${new Date(candles[0].t).toISOString()} — Nachlauf ausgesetzt, um keine Stops zu überspringen`)
                 continue
             }
             await stepPaperPositions({
-                instance, symbol, candles,
+                instance, symbol, timeframe: pflegeTf, candles,
                 costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps },
                 breakEvenAtR: instance.params.breakEvenAtR ?? instance.strategie?.regeln?.breakEvenAtR ?? 0,
-                maxHoldMs: ((instance.params.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(instance.timeframe),
+                maxHoldMs: ((instance.params.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(pflegeTf),
                 partialTpR: instance.params.partialTpR,
                 partialTpPct: instance.params.partialTpPct,
             })

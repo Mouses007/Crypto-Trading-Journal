@@ -133,6 +133,7 @@ function neu() {
         broker: 'bitunix',
         market: 'futures',
         timeframe: s.supportedTimeframes[1] || s.supportedTimeframes[0],
+        timeframes: [],
         symbols: ['BTCUSDT'],
         params: Object.fromEntries(s.params.map((p) => [p.key, p.default])),
         risk: { ...registry.value.riskDefaults },
@@ -152,6 +153,32 @@ function strategieGewechselt() {
     if (!s.supportedTimeframes.includes(bearbeite.value.timeframe)) {
         bearbeite.value.timeframe = s.supportedTimeframes[0]
     }
+    // Zeiteinheiten, welche die neue Strategie nicht kann, fallen weg — sonst
+    // würde die Instanz mit einer Einstellung gespeichert, die der Server
+    // ohnehin zurückweist.
+    bearbeite.value.timeframes = tfListe()
+        .filter((tf) => s.supportedTimeframes.includes(tf) && tf !== bearbeite.value.timeframe)
+}
+
+/**
+ * Zeiteinheiten der Instanz. Die Haupt-Zeiteinheit ist immer dabei und lässt
+ * sich nicht abwählen — sie bestimmt, was Auswertung und Backtest als
+ * Ausgangspunkt nehmen. Alle weiteren laufen gleichberechtigt daneben.
+ */
+const tfListe = () => (Array.isArray(bearbeite.value.timeframes) ? bearbeite.value.timeframes : [])
+const tfAktiv = (tf) => tf === bearbeite.value.timeframe || tfListe().includes(tf)
+
+function tfUmschalten(tf) {
+    if (tf === bearbeite.value.timeframe) return
+    const liste = tfListe().filter((x) => x !== bearbeite.value.timeframe)
+    bearbeite.value.timeframes = liste.includes(tf)
+        ? liste.filter((x) => x !== tf)
+        : [...liste, tf]
+}
+
+/** Wechselt die Haupt-Zeiteinheit, fliegt sie aus der Zusatzliste. */
+function tfHauptGewechselt() {
+    bearbeite.value.timeframes = tfListe().filter((x) => x !== bearbeite.value.timeframe)
 }
 
 function symbolHinzu() {
@@ -303,7 +330,7 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                         <span :class="['status-dot', inst.enabled ? 'on' : 'off']"></span>
                         <strong>{{ inst.name }}</strong>
                         <span class="badge" :class="modusFarbe(inst.mode)">{{ t('strategies.mode_' + inst.mode) }}</span>
-                        <span class="badge bg-dark">{{ inst.timeframe }}</span>
+                        <span class="badge bg-dark">{{ (inst.timeframes?.length ? inst.timeframes : [inst.timeframe]).join(' · ') }}</span>
                         <span class="badge bg-dark">v{{ inst.paramsVersion }}</span>
                         <span v-for="s in inst.symbols" :key="s" class="badge bg-dark">{{ s }}</span>
 
@@ -436,11 +463,29 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                         </div>
                         <div class="col-6 col-md-3 mb-2">
                             <label class="form-label small">{{ t('strategies.timeframe') }}</label>
-                            <select v-model="bearbeite.timeframe" class="form-select form-select-sm">
+                            <select v-model="bearbeite.timeframe" class="form-select form-select-sm"
+                                @change="tfHauptGewechselt">
                                 <option v-for="tf in gewaehlteStrategie?.supportedTimeframes || []" :key="tf" :value="tf">
                                     {{ tf }}
                                 </option>
                             </select>
+                        </div>
+                        <div class="col-12 mb-2">
+                            <label class="form-label small">
+                                {{ t('strategies.extraTimeframes') }}
+                                <i class="uil uil-info-circle text-muted" :title="t('strategies.extraTimeframesHint')"></i>
+                            </label>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button v-for="tf in gewaehlteStrategie?.supportedTimeframes || []" :key="tf"
+                                    type="button"
+                                    class="btn btn-sm"
+                                    :class="tfAktiv(tf) ? 'btn-primary' : 'btn-outline-secondary'"
+                                    :disabled="tf === bearbeite.timeframe"
+                                    @click="tfUmschalten(tf)">
+                                    {{ tf }}
+                                </button>
+                            </div>
+                            <small class="text-muted">{{ t('strategies.extraTimeframesHint') }}</small>
                         </div>
                         <div class="col-12 col-md-6 mb-2">
                             <label class="form-label small">{{ t('strategies.symbols') }}</label>

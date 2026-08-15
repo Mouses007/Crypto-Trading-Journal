@@ -585,10 +585,21 @@ export function detectMitRegeln(regeln, { candles, params, openSetups = [], know
                 }
 
                 const takeProfit = berechneZiel(regeln, ctx, i, richtung, entryPreis, stopLoss)
+                // Nur wenn die Regel überhaupt ein Ziel vorsieht, muss eines
+                // herauskommen. `mode: 'none'` ist bewusst zielfrei.
+                const zielGewollt = (regeln.takeProfit?.mode || 'none') !== 'none'
+                if (zielGewollt && !(takeProfit > 0)) {
+                    // Ein Anker auf der falschen Seite des Einstiegs liefert 0.
+                    // Das ist KEIN Freifahrtschein: gehandelt wäre die Position
+                    // ohne Ausgang nach oben — der Fill-Simulator prüft ein Ziel
+                    // nur bei `takeProfit > 0`, also bliebe allein der Stop.
+                    events.push({ id: s.id, status: 'rejected', invalidReason: 'no_target', candleTime: k.t })
+                    fertig = true; break
+                }
                 const risiko = Math.abs(entryPreis - stopLoss)
                 const rr = takeProfit > 0 && risiko > 0 ? Math.abs(takeProfit - entryPreis) / risiko : 0
                 const minRR = zahl(regeln.minRR, params, 0)
-                if (minRR > 0 && takeProfit > 0 && rr < minRR) {
+                if (minRR > 0 && zielGewollt && rr < minRR) {
                     events.push({ id: s.id, status: 'rejected', invalidReason: 'below_min_rr', candleTime: k.t })
                     fertig = true; break
                 }

@@ -130,7 +130,11 @@ export async function runBacktest(opts) {
         const trade = closePosition(pos, exit, costs, { symbol, timeframe })
         trades.push(trade)
         equity += trade.netPnl
+        // Beide Schlüssel wie in der Engine — der Backtest läuft zwar je
+        // Zeiteinheit einzeln, aber `duplicateScope: symbol_tf` würde sonst
+        // hier eine Sperrfrist von null sehen und anders messen als der Betrieb.
         lastExitBySymbol[symbol] = exit.time
+        lastExitBySymbol[`${symbol}|${timeframe}`] = exit.time
         equityCurve.push({ t: exit.time, equity })
     }
 

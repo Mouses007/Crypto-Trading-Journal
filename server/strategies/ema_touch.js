@@ -344,8 +344,15 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
                 }
 
                 const takeProfit = berechneZiel(p, entry, stopLoss, f)
-                const rr = takeProfit > 0 ? (takeProfit - entry) / (entry - stopLoss) : 0
-                if (p.minRR > 0 && takeProfit > 0 && rr < p.minRR) {
+                // `ema21` liefert 0, wenn die EMA21 unter dem Einstieg liegt.
+                // Ohne Ziel gäbe es nur noch den Stop als Ausgang — dann lieber
+                // gar nicht handeln (dieselbe Regel wie im Regel-Interpreter).
+                if (!(takeProfit > 0)) {
+                    events.push({ id: s.id, status: 'rejected', invalidReason: 'no_target', candleTime: k.t })
+                    erledigt = true; break
+                }
+                const rr = (takeProfit - entry) / (entry - stopLoss)
+                if (p.minRR > 0 && rr < p.minRR) {
                     events.push({ id: s.id, status: 'rejected', invalidReason: 'below_min_rr', candleTime: k.t })
                     erledigt = true; break
                 }

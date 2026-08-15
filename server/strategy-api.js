@@ -15,6 +15,7 @@ import {
     listStrategies, getStrategy, validateParams, validateRisk,
     defaultsFromSchema, RISK_PARAMS, AGENT_DEFAULTS,
     ladeRegelStrategien, istEingebaut,
+    normalisiereTimeframes, MAX_TIMEFRAMES,
 } from './strategies/index.js'
 import { BAUSTEINE } from './strategies/rule-engine.js'
 import { pruefeRegeln } from './strategies/rule-validate.js'
@@ -39,6 +40,7 @@ function instanzNachAussen(row) {
         objectId: String(row.id),
         enabled: Boolean(row.enabled),
         symbols: parseJson(row.symbols, []),
+        timeframes: parseJson(row.timeframes, []),
         params: parseJson(row.params, {}),
         risk: parseJson(row.risk, {}),
         agents: parseJson(row.agents, {}),
@@ -57,6 +59,27 @@ function pruefeInstanzEingabe(body, vorhanden = null) {
     else if (strategie && !strategie.supportedTimeframes.includes(timeframe)) {
         fehler.push(`${strategie.name} unterstützt ${timeframe} nicht`)
     }
+
+    // Mehrere Zeiteinheiten je Instanz: dieselbe Strategie läuft auf jeder für
+    // sich (15m-Setup wird auf 15m gehandelt, 1h-Setup auf 1h), aber unter EINEM
+    // Risikobudget. `timeframe` bleibt die Haupt-Zeiteinheit und ist immer dabei.
+    const rohTimeframes = body.timeframes !== undefined
+        ? body.timeframes
+        : parseJson(vorhanden?.timeframes, [])
+    if (Array.isArray(rohTimeframes)) {
+        for (const tf of rohTimeframes) {
+            const s = String(tf || '').trim()
+            if (!s || s === timeframe) continue
+            if (!isValidTimeframe(s)) fehler.push(`Ungültige Zeiteinheit: ${s}`)
+            else if (strategie && !strategie.supportedTimeframes.includes(s)) {
+                fehler.push(`${strategie.name} unterstützt ${s} nicht`)
+            }
+        }
+        if (rohTimeframes.length > MAX_TIMEFRAMES) {
+            fehler.push(`Höchstens ${MAX_TIMEFRAMES} Zeiteinheiten je Instanz`)
+        }
+    }
+    const timeframes = normalisiereTimeframes(rohTimeframes, timeframe, strategie)
 
     const rohSymbols = body.symbols !== undefined
         ? body.symbols
@@ -91,6 +114,7 @@ function pruefeInstanzEingabe(body, vorhanden = null) {
             broker: String(body.broker || vorhanden?.broker || 'bitunix'),
             market: body.market === 'spot' ? 'spot' : (vorhanden?.market || 'futures'),
             timeframe,
+            timeframes: JSON.stringify(timeframes),
             symbols: JSON.stringify(symbols),
             params: JSON.stringify(params.values),
             risk: JSON.stringify(risk.values),
@@ -220,6 +244,8 @@ export function setupStrategyRoutes(app) {
                 || geprueft.werte.symbols !== vorhanden.symbols
                 || geprueft.werte.strategyId !== vorhanden.strategyId
                 || geprueft.werte.timeframe !== vorhanden.timeframe
+                || geprueft.werte.timeframes !== JSON.stringify(normalisiereTimeframes(
+                    vorhanden.timeframes, vorhanden.timeframe, getStrategy(vorhanden.strategyId)))
             if (handelsrelevant && vorhanden.liveApprovedAt) {
                 aktualisierung.liveApprovedAt = 0
             }

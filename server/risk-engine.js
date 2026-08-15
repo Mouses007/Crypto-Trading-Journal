@@ -143,13 +143,27 @@ export function evaluateRisk(ctx) {
         return { ok: false, reason: RISK_REASONS.MAX_POSITIONS, detail: `${openPositions.length} offen` }
     }
 
-    // Nicht zweimal dasselbe Symbol — sonst wird aus 1 % Risiko unbemerkt 2 %
-    if (openPositions.some((p) => p.symbol === setup.symbol)) {
-        return { ok: false, reason: RISK_REASONS.DUPLICATE, detail: setup.symbol }
+    // Nicht zweimal dasselbe Symbol — sonst wird aus 1 % Risiko unbemerkt 2 %.
+    // Fährt die Instanz mehrere Zeiteinheiten, darf jede eine eigene Position
+    // halten, WENN das ausdrücklich eingestellt ist (`symbol_tf`): sonst
+    // verdrängt die schnellste Zeiteinheit dauerhaft die langsameren und der
+    // Vergleich zwischen ihnen misst nur noch, wer zuerst da war.
+    const jeZeiteinheit = risk.duplicateScope === 'symbol_tf'
+    const belegt = openPositions.some((p) => p.symbol === setup.symbol
+        && (!jeZeiteinheit || p.timeframe === setup.timeframe))
+    if (belegt) {
+        return {
+            ok: false, reason: RISK_REASONS.DUPLICATE,
+            detail: jeZeiteinheit ? `${setup.symbol} ${setup.timeframe}` : setup.symbol,
+        }
     }
 
     if (risk.cooldownMinutes > 0) {
-        const letzter = lastExitBySymbol[setup.symbol] || 0
+        // Die Sperrfrist folgt derselben Aufteilung: bei `symbol_tf` blockiert
+        // ein 15m-Ausstieg nicht mehr den 1h-Einstieg.
+        const letzter = (jeZeiteinheit
+            ? lastExitBySymbol[`${setup.symbol}|${setup.timeframe}`]
+            : lastExitBySymbol[setup.symbol]) || 0
         const wartet = (now - letzter) / 60000
         if (letzter && wartet < risk.cooldownMinutes) {
             return {

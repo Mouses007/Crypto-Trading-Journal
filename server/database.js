@@ -1357,6 +1357,12 @@ async function runMigrations(knex, client) {
     // Positions-Kennung der Börse (≠ Order-Kennung) — nötig für gezieltes Close
     await addColumnIfNotExists('strategy_positions', 'externalPositionId', (t) => t.text('externalPositionId').defaultTo(''))
 
+    // Mehrere Zeiteinheiten je Instanz: dieselbe Strategie läuft gleichzeitig
+    // auf 15m, 1h, 4h … — jede für sich, aber unter EINEM Risikobudget.
+    // `timeframe` bleibt die Haupt-Zeiteinheit; leer/`[]` = nur diese, also
+    // genau das bisherige Verhalten für alle bestehenden Instanzen.
+    await addColumnIfNotExists('strategy_instances', 'timeframes', (t) => t.text('timeframes').defaultTo('[]'))
+
     // Parameter-Historie: OHNE sie ist `paramsVersion` nur eine Zahl — jede
     // Änderung überschreibt die Werte, und niemand kann später nachsehen, WAS
     // v2 eigentlich war. Erst mit der Historie lassen sich Versionen fachlich
