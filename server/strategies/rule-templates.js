@@ -15,6 +15,7 @@ export const VORLAGEN = [
     {
         key: 'macd_wolke',
         titel: '„Optimierte MACD-Strategie" (Rang 19) — MACD-Kreuzung über der EMA-Wolke',
+        markt: 'Trend — im Seitwärtsmarkt Whipsaw-Gefahr (MACD kreuzt dauernd)',
         beschreibung: 'Kurs über EMA 20 und EMA 200, MACD kreuzt seine Signallinie nach oben — '
             + 'und zwar UNTERHALB der Nulllinie, also aus einer Korrektur heraus. Stop am letzten '
             + 'Swing-Tief, Ziel 2R, Break-Even ab 1R. Nachgebaut aus einer öffentlichen '
@@ -59,6 +60,7 @@ export const VORLAGEN = [
     {
         key: 'vwap_ruecklauf',
         titel: 'Rücklauf zur VWAP',
+        markt: 'Trend (intraday) — braucht klare Tagesrichtung',
         beschreibung: 'Der Kurs steht über der Tages-VWAP (Käufer im Vorteil), läuft nach einem '
             + 'Zwischenhoch dorthin zurück und wird an der Linie aufgenommen. Klassischer '
             + 'Intraday-Ansatz — die VWAP setzt zu jedem UTC-Tageswechsel zurück.',
@@ -95,6 +97,7 @@ export const VORLAGEN = [
     {
         key: 'vwap_band',
         titel: 'Überdehnung am VWAP-Band',
+        markt: 'Seitwärts — Mean-Reversion; an starken Trendtagen gefährlich',
         beschreibung: 'Der Kurs schiesst über das obere VWAP-Band hinaus und kehrt zurück. '
             + 'Gegen-den-Impuls-Ansatz mit Ziel an der VWAP selbst.',
         rules: {
@@ -126,6 +129,7 @@ export const VORLAGEN = [
     {
         key: 'ema_pullback',
         titel: '„GUSS Sniperentry" — Rücklauf an eine EMA',
+        markt: 'Trend — Fortsetzung nach Rücklauf; ohne Trend nur Rauschen',
         beschreibung: 'Höheres Hoch weit über der schnellen EMA, danach Korrektur ohne grüne Kerze '
             + 'bis zur langsameren EMA — dort der Einstieg. Baukasten-Fassung der eingebauten Strategie '
             + '„EMA Touch" (Kryptomano-PDF); die Eingebaute prüft die Guss-Bedingung vollständig.',
@@ -164,6 +168,7 @@ export const VORLAGEN = [
     {
         key: 'ema_kreuzung',
         titel: 'EMA-Kreuzung mit Rücklauf',
+        markt: 'Trend — Kreuzungssignale zerfasern im Seitwärtsmarkt',
         beschreibung: 'Die schnelle EMA kreuzt die langsame nach oben. Statt sofort zu kaufen, '
             + 'wird auf den Rücklauf zur schnellen EMA gewartet.',
         rules: {
@@ -195,6 +200,7 @@ export const VORLAGEN = [
     {
         key: 'rsi_umkehr',
         titel: 'Überverkaufter Rücksetzer',
+        markt: 'Bullentrend — im Abwärtstrend bleibt der RSI beliebig lange überverkauft',
         beschreibung: 'Ein Pivot-Tief bei überverkauftem RSI und intaktem übergeordnetem Trend. '
             + 'Einstieg sofort beim bestätigten Tief.',
         rules: {
@@ -228,6 +234,7 @@ export const VORLAGEN = [
     {
         key: 'holy_grail_adx',
         titel: '„Holy Grail" 2.0 (Rang 6) — ADX-Trend mit Rücklauf in die Bollinger-Zone',
+        markt: 'Trend — der ADX-Filter schaltet die Strategie im Seitwärtsmarkt selbst stumm',
         beschreibung: 'ADX über 25 zeigt einen tragfähigen Trend an; der Kurs läuft in eine enge '
             + 'Bollinger-Zone um den gleitenden Durchschnitt zurück und wird dort von einer '
             + 'Umkehrkerze aufgenommen. Einstieg per Stop-Order über dem Hoch der Signalkerze, '
@@ -276,6 +283,7 @@ export const VORLAGEN = [
     {
         key: 'engulfing_mfi',
         titel: '„Optimierte ChatGPT-Strategie" 2.0 (Rang 5) — Engulfing nach Gegenkerzen + Money Flow',
+        markt: 'Umkehrpunkte — Range-Kanten und überdehnte Bewegungen, auch seitwärts',
         beschreibung: 'Nach mindestens drei fallenden Kerzen verschlingt eine grüne Kerze ihre '
             + 'Vorgängerin, und der Money Flow Index steht unter der Mittellinie — Verkaufsdruck, '
             + 'der gerade kippt. Einstieg per Stop-Order über der Signalkerze, Order verfällt '
@@ -312,6 +320,7 @@ export const VORLAGEN = [
     {
         key: 'bollinger_rsi_trend',
         titel: '„Bollinger Bänder + RSI" 2.0 (Rang 21) — RSI-Umkehr im Bollinger-Trend',
+        markt: 'Trend mit Rücksetzern — braucht die Trendkomponente',
         beschreibung: 'Die weit gefassten Bollinger Bänder auf EMA-Basis dienen hier NICHT als '
             + 'Extrem-Indikator, sondern als Trendbestimmung: schliesst der Kurs darüber, gilt '
             + 'Aufwärtstrend. Der sehr kurze RSI kreuzt dann sein unteres Level nach oben — '
@@ -353,6 +362,7 @@ export const VORLAGEN = [
     {
         key: 'stochastik_dreiklang',
         titel: '„ChatGPT-Daytrading-Strategie" (Rang 49) — Stochastik-Umkehr im bestätigten Trend',
+        markt: 'Seitwärts/Range — die Stochastik klebt im starken Trend über-/verkauft',
         beschreibung: 'Drei Bedingungen müssen zusammenkommen: Kurs über dem SMA 50, RSI über 50 '
             + 'und die Stochastik verlässt den überverkauften Bereich nach oben. Stop am letzten '
             + 'Swing-Tief, Ziel 1,5R, kein Break-Even-Nachzug. Nachgebaut aus einer öffentlichen '

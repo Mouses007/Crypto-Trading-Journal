@@ -51,9 +51,20 @@ const params = [
 
     // ── Order Block ───────────────────────────────────────────
     { key: 'oppositeCandles', type: 'integer', default: 2, min: 1, max: 5, step: 1, group: 'orderblock' },
+    {
+        // Welche Kerze wird zum Order Block? `extreme` = die Kerze mit dem
+        // tiefsten Tief (Long) bzw. höchsten Hoch (Short) im Suchfenster — so
+        // ankert der originale GUSS/LSOB-Indikator seine Boxen, unabhängig von
+        // der Kerzenfarbe (User-Entscheid 15.08.26: Original ist Standard).
+        // `lastOpposite` = letzte gegenläufige Kerze vor dem Impuls (Referenz-PDF).
+        key: 'obCandle', type: 'select', default: 'extreme', group: 'orderblock',
+        options: [{ value: 'lastOpposite', labelKey: 'strategies.lsob.obLastOpposite' },
+                  { value: 'extreme', labelKey: 'strategies.lsob.obExtreme' }],
+    },
     { key: 'obSearchBack', type: 'integer', default: 3, min: 0, max: 10, step: 1, group: 'orderblock' },
     {
-        key: 'obSource', type: 'select', default: 'body', group: 'orderblock',
+        // `wick` = ganze Kerze inkl. Docht (Original-Indikator), `body` = nur Körper.
+        key: 'obSource', type: 'select', default: 'wick', group: 'orderblock',
         options: [{ value: 'body', labelKey: 'strategies.lsob.obSourceBody' },
                   { value: 'wick', labelKey: 'strategies.lsob.obSourceWick' }],
     },
@@ -162,9 +173,22 @@ function touchesZone(candle, zone) {
  * Für einen Short ist das die letzte bullische Kerze (das Kauflevel, das gleich
  * überrannt wird), für einen Long die letzte bärische.
  */
-function findOrderBlock(candles, sweepIdx, direction, searchBack) {
-    const wanted = direction === 'short' ? isBull : isBear
+function findOrderBlock(candles, sweepIdx, direction, searchBack, mode = 'lastOpposite') {
     const from = Math.max(0, sweepIdx - searchBack)
+
+    // `extreme`: die Kerze, die das Extrem geholt hat — Farbe egal. Meist ist
+    // das die Sweep-Kerze selbst, aber wenn mehrere Kerzen unter das Level
+    // gestochen haben, gewinnt die tiefste (bzw. höchste beim Short).
+    if (mode === 'extreme') {
+        let best = sweepIdx
+        for (let i = sweepIdx; i >= from; i--) {
+            if (direction === 'long' ? candles[i].l < candles[best].l
+                                     : candles[i].h > candles[best].h) best = i
+        }
+        return best
+    }
+
+    const wanted = direction === 'short' ? isBull : isBear
     for (let i = sweepIdx; i >= from; i--) {
         if (wanted(candles[i])) return i
     }
@@ -388,7 +412,7 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
                 const reaction = checkReaction(candles, i, direction, p, atrSeries)
                 if (!reaction.ok) { reject(reaction.reason, rkey); break }
 
-                const obIdx = findOrderBlock(candles, i, direction, p.obSearchBack)
+                const obIdx = findOrderBlock(candles, i, direction, p.obSearchBack, p.obCandle)
                 const zone = zoneOf(candles[obIdx], p.obSource)
                 if (!(zone.high > zone.low)) { reject(INVALID_REASONS.BAD_ZONE, rkey); break }
 

@@ -40,17 +40,23 @@ export function kerzenAufteilen(candles) {
 export function alsJournalTrade(botTrade) {
     if (!botTrade) return null
     const t = botTrade
-    const einstieg = Number(t.entryTime) || 0
+    // strategy_trades speichert Zeiten in Millisekunden, der Journal-Chart
+    // rechnet durchgehend in Sekunden.
+    const inSekunden = (wert) => {
+        const n = Number(wert) || 0
+        return n > 1e12 ? Math.floor(n / 1000) : n
+    }
+    const einstieg = inSekunden(t.entryTime)
 
     const trade = {
         entryPrice: Number(t.entryPrice),
         entryTime: einstieg,
         exitPrice: t.exitPrice === null || t.exitPrice === undefined ? null : Number(t.exitPrice),
-        exitTime: Number(t.exitTime) || 0,
+        exitTime: inSekunden(t.exitTime),
         // Der Chart färbt die Marker nach `strategy` — bei uns heisst das Feld
         // `direction`, die Werte sind dieselben.
         strategy: t.direction,
-        td: Math.floor(einstieg / 1000 / 86400) * 86400,
+        td: Math.floor(einstieg / 86400) * 86400,
         symbol: t.symbol,
         _tradingMeta: {},
     }
@@ -89,6 +95,6 @@ export function useBotTradeChart(elementId, candles, botTrade, setup = null) {
     if (!trade || !ohlcTimestamps.length) return Promise.resolve(null)
     return useCandlestickChart(
         ohlcTimestamps, ohlcPrices, ohlcVolumes, trade, true,
-        elementId, zoneAusSetup(setup),
+        elementId, zoneAusSetup(setup), true,
     )
 }

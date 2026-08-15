@@ -96,7 +96,11 @@ function mirror(candles) {
 function params(overrides = {}) {
     const p = {}
     for (const def of lsob.params) p[def.key] = def.default
-    return { ...p, tpMode: 'rr', tpRR: 2, ...overrides }
+    // Die Fixtures kodieren die PDF-Geometrie (letzte Gegenkerze, nur Körper).
+    // Der Manifest-Standard ist seit 15.08.26 die Indikator-Variante (extreme,
+    // ganze Kerze) — die Tests pinnen deshalb ihre Basis selbst; Fälle für die
+    // Indikator-Variante übersteuern gezielt per overrides.
+    return { ...p, tpMode: 'rr', tpRR: 2, obCandle: 'lastOpposite', obSource: 'body', ...overrides }
 }
 
 /**
@@ -159,6 +163,26 @@ bothDirections('Sweep-Kerze wird als Order Block gewählt', [...shortBase(),
     check(label, !!s && s.obCandleTime === candles[31].t,
         s ? `obCandleTime zeigt auf Index ${candles.findIndex((c) => c.t === s.obCandleTime)}` : 'kein Setup')
 })
+
+bothDirections('obCandle=extreme wählt die Extrem-Kerze statt der Gegenkerze', [
+    ...prefix(),
+    [104.5, 110.0, 104.2, 109.0],   // Pivot-Hoch 110
+    [109.0, 109.5, 107.0, 107.5],
+    [107.5, 108.0, 106.0, 106.5],
+    [106.5, 107.5, 105.5, 106.0],
+    [106.0, 108.0, 105.8, 107.5],
+    [107.5, 109.0, 107.0, 108.5],   // 30: bullisch → lastOpposite-Kandidat
+    [109.5, 111.0, 108.8, 109.0],   // 31: SWEEP, aber BÄRISCH (o>c) und Extrem 111
+    [109.0, 109.2, 106.0, 106.5],
+    [106.5, 106.8, 103.0, 103.5],
+    [103.5, 104.0, 100.0, 100.5],
+    [100.5, 103.0, 100.0, 102.5],
+    [102.5, 108.2, 102.0, 106.0],
+], (label, { first, candles }) => {
+    const s = first.setups[0]
+    check(label, !!s && s.obCandleTime === candles[31].t,
+        s ? `obKerze=Index ${candles.findIndex((c)=>c.t===s.obCandleTime)} (erwartet 31)` : 'kein Setup')
+}, { obCandle: 'extreme' })
 
 console.log('\nUngültig laut PDF')
 

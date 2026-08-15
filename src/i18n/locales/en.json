@@ -906,6 +906,7 @@
     "reasonLabel": "Reason",
     "observations": "Observations",
     "chartFailed": "The chart could not be loaded.",
+    "chartEnlarge": "Enlarge/shrink chart",
     "chartEntry": "Entry",
     "chartStop": "Stop",
     "chartTarget": "Target",
@@ -1168,7 +1169,9 @@
       "maxHoldCandles": "Max holding time (candles)",
       "allowLong": "Allow long setups",
       "allowShort": "Allow short setups",
-      "tpRr": "Fixed reward/risk"
+      "tpRr": "Fixed reward/risk",
+      "obLastOpposite": "Last opposite candle (PDF)",
+      "obExtreme": "Extreme candle (like indicator)"
     },
     "ema_touch": {
       "emaFast": "Fast EMA",

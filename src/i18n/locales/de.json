@@ -906,6 +906,7 @@
     "reasonLabel": "Grund",
     "observations": "Beobachtungen",
     "chartFailed": "Der Chart konnte nicht geladen werden.",
+    "chartEnlarge": "Chart vergrössern/verkleinern",
     "chartEntry": "Einstieg",
     "chartStop": "Stop",
     "chartTarget": "Ziel",
@@ -1168,7 +1169,9 @@
       "maxHoldCandles": "Max. Haltedauer (Kerzen)",
       "allowLong": "Long-Setups zulassen",
       "allowShort": "Short-Setups zulassen",
-      "tpRr": "Festes Chance/Risiko"
+      "tpRr": "Festes Chance/Risiko",
+      "obLastOpposite": "Letzte Gegenkerze (PDF)",
+      "obExtreme": "Extrem-Kerze (wie Indikator)"
     },
     "ema_touch": {
       "emaFast": "Schnelle EMA",

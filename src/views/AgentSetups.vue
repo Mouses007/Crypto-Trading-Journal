@@ -25,6 +25,7 @@ const setups = ref([])
 const positionen = ref([])
 const gewaehlt = ref(null)
 const chartFehler = ref('')
+const chartGross = ref(false)
 const gezeigterTrade = ref(null)
 const filter = ref({ instanceId: '', status: '' })
 let chart = null
@@ -117,6 +118,13 @@ async function anzeigen(setup) {
         logError('AgentSetups', 'Kerzen laden fehlgeschlagen', e)
         chartFehler.value = t('strategies.chartFailed')
     }
+}
+
+/** Chart zwischen Normal- und Grossansicht umschalten; ECharts braucht danach ein resize. */
+async function chartVergroessern() {
+    chartGross.value = !chartGross.value
+    await nextTick()
+    chart?.resize()
 }
 
 async function positionSchliessen(pos) {
@@ -212,11 +220,15 @@ const gruende = computed(() => {
                     <span v-if="gewaehlt.invalidReason" class="badge bg-dark">
                         {{ t('strategies.reason_' + gewaehlt.invalidReason) }}
                     </span>
-                    <button class="btn btn-sm btn-outline-secondary ms-auto py-0" @click="gewaehlt = null">
+                    <button class="btn btn-sm btn-outline-secondary ms-auto py-0" :title="t('strategies.chartEnlarge')"
+                        @click="chartVergroessern()">
+                        <i class="uil" :class="chartGross ? 'uil-compress' : 'uil-expand-arrows-alt'"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary py-0" @click="gewaehlt = null">
                         <i class="uil uil-times"></i>
                     </button>
                 </div>
-                <div id="setupChart" style="height: 340px;"></div>
+                <div id="setupChart" :style="{ height: chartGross ? '78vh' : '340px' }"></div>
                 <div v-if="chartFehler" class="text-muted small mt-2">{{ chartFehler }}</div>
                 <div class="d-flex flex-wrap gap-3 mt-2 small text-muted">
                     <span>{{ t('strategies.zone') }}: {{ zahl(gewaehlt.obLow) }} – {{ zahl(gewaehlt.obHigh) }}</span>

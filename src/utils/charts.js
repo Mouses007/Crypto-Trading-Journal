@@ -1847,7 +1847,7 @@ function buildStepData(steps, xLabels) {
  *   [{ von, bis, farbe?, rand?, name? }]
  */
 export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, trade, initCandleChart,
-    elementId = 'candlestickChart', zonen = null) {
+    elementId = 'candlestickChart', zonen = null, mitSlider = false) {
     console.log(" -> creating candlestick chart")
     //console.log(" trade " + JSON.stringify(trade))
     let green = '#26a69a'
@@ -1947,6 +1947,13 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
         }
 
         let decimals = 2
+        // Bot-Trades zeigen mehrere Tage in einem Chart; reine Uhrzeiten wiederholen
+        // sich dann und Marker/Zoom würden an der ersten passenden Stelle landen.
+        const einTag = ohlcTimestamps.length < 2
+            || dayjs(ohlcTimestamps[0]).tz(timeZoneTrade.value).isSame(dayjs(ohlcTimestamps[ohlcTimestamps.length - 1]).tz(timeZoneTrade.value), 'day')
+        const xLabels = ohlcTimestamps.map((ms) => einTag
+            ? useHourMinuteFormat(ms / 1000)
+            : dayjs(ms).tz(timeZoneTrade.value).format('DD.MM HH:mm'))
         const option = {
             backgroundColor: '#121212',
             tooltip: {
@@ -1977,13 +1984,23 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
                     type: 'inside',
                     startValue: '',
                     endValue: '',
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
                     preventDefaultMouseMove: false
                 },
+                // Bot-Charts umfassen mehrere Tage — dort hilft ein sichtbarer
+                // Zoom-Regler zum Schieben; der Journal-Tageschart bleibt wie er war.
+                ...(mitSlider ? [{
+                    type: 'slider', height: 22, bottom: 6,
+                    borderColor: 'rgba(255,255,255,0.15)',
+                    fillerColor: 'rgba(1, 180, 255, 0.15)',
+                    handleStyle: { color: '#01b4ff' },
+                    textStyle: { color: 'rgba(255,255,255,0.6)', fontSize: 10 },
+                }] : []),
             ],
+            ...(mitSlider ? { grid: { left: 8, right: 62, top: 16, bottom: 64, containLabel: true } } : {}),
             xAxis: {
-                data: ohlcTimestamps.map((dateInMilliseconds) => {
-                    return useHourMinuteFormat(dateInMilliseconds / 1000)
-                }),
+                data: xLabels,
                 min: 'dataMin',
                 max: 'dataMax',
 
@@ -2044,9 +2061,6 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
             ]
         };
 
-        // X-Achsen-Labels für Marker-Matching berechnen (bei >1m Kerzen stimmt der exakte Zeitpunkt nicht mit einer Kerze überein)
-        const xLabels = ohlcTimestamps.map(ms => useHourMinuteFormat(ms / 1000))
-
         // Finde die nächste Kerze (≤ Zeitpunkt)
         let entryXIndex = -1
         for (let i = 0; i < ohlcTimestamps.length; i++) {
@@ -2058,14 +2072,14 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
             if (ohlcTimestamps[i] / 1000 <= trade.exitTime) exitXIndex = i
             else break
         }
-        const entryXLabel = entryXIndex >= 0 ? xLabels[entryXIndex] : useHourMinuteFormat(trade.entryTime)
-        const exitXLabel = exitXIndex >= 0 ? xLabels[exitXIndex] : useHourMinuteFormat(trade.exitTime)
-
         // Marker-Richtung: Long → Entry unten △, Exit oben ▽ | Short → Entry oben ▽, Exit unten △
         const isLong = trade.strategy == 'long'
-        const chartDay = dayjs(ohlcTimestamps[0]).tz(timeZoneTrade.value)
-        const entryOnChart = dayjs.unix(trade.entryTime).tz(timeZoneTrade.value).isSame(chartDay, 'day')
-        const exitOnChart = dayjs.unix(trade.exitTime).tz(timeZoneTrade.value).isSame(chartDay, 'day')
+        // »Auf dem Chart« heisst: der Zeitpunkt fällt in den Kerzenbereich. Davor
+        // (Über-Nacht-Einstieg) bzw. dahinter (Ausstieg am Folgetag) zeigt ein
+        // Pfeil am Rand die Richtung an.
+        const kerzenSchritt = ohlcTimestamps.length > 1 ? (ohlcTimestamps[1] - ohlcTimestamps[0]) / 1000 : 60
+        const entryOnChart = entryXIndex >= 0
+        const exitOnChart = exitXIndex >= 0 && trade.exitTime <= ohlcTimestamps[ohlcTimestamps.length - 1] / 1000 + kerzenSchritt
 
         // Entry-Marker
         if (entryOnChart && entryXIndex >= 0) {
@@ -2075,11 +2089,11 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
                 symbolSize: 18,
                 symbolRotate: isLong ? 0 : 180,
                 symbolOffset: [0, isLong ? '150%' : '-150%'],
-                coord: [entryXLabel, trade.entryPrice],
+                coord: [entryXIndex, trade.entryPrice],
                 itemStyle: { color: entryMarkerColor, borderColor: '#FFFFFF', borderWidth: 1 },
                 emphasis: { disabled: true }
             })
-            option.dataZoom[0].startValue = useHourMinuteFormat(dataZoomStartUnix)
+            if (einTag) option.dataZoom[0].startValue = useHourMinuteFormat(dataZoomStartUnix)
         } else if (!entryOnChart && xLabels.length > 0) {
             // Über-Nacht-Trade: Entry am Vortag → Pfeil am linken Rand
             option.series[0].markPoint.data.push({
@@ -2087,7 +2101,7 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
                 symbol: 'arrow',
                 symbolSize: 16,
                 symbolRotate: 0,
-                coord: [xLabels[0], trade.entryPrice],
+                coord: [0, trade.entryPrice],
                 itemStyle: { color: entryMarkerColor, borderColor: '#FFFFFF', borderWidth: 1, opacity: 0.8 },
                 emphasis: { disabled: true }
             })
@@ -2101,11 +2115,11 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
                 symbolSize: 18,
                 symbolRotate: isLong ? 180 : 0,
                 symbolOffset: [0, isLong ? '-150%' : '150%'],
-                coord: [exitXLabel, trade.exitPrice],
+                coord: [exitXIndex, trade.exitPrice],
                 itemStyle: { color: exitMarkerColor, borderColor: '#FFFFFF', borderWidth: 1 },
                 emphasis: { disabled: true }
             })
-            option.dataZoom[0].endValue = useHourMinuteFormat(dataZoomEndUnix)
+            if (einTag) option.dataZoom[0].endValue = useHourMinuteFormat(dataZoomEndUnix)
             if (!entryOnChart) {
                 option.dataZoom[0].startValue = xLabels[0]
             }
@@ -2116,7 +2130,7 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
                 symbol: 'arrow',
                 symbolSize: 16,
                 symbolRotate: 180,
-                coord: [xLabels[xLabels.length - 1], trade.exitPrice],
+                coord: [xLabels.length - 1, trade.exitPrice],
                 itemStyle: { color: exitMarkerColor, borderColor: '#FFFFFF', borderWidth: 1, opacity: 0.8 },
                 emphasis: { disabled: true }
             })
@@ -2266,7 +2280,7 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
         }
 
         candlestickChart.setOption(option);
-        resolve()
+        resolve(candlestickChart)
     })
 }
 
@@ -3822,7 +3836,7 @@ export function useSetupChart(elementId, candles, setup) {
     const option = {
         backgroundColor: 'transparent',
         animation: false,
-        grid: { left: 8, right: 62, top: 16, bottom: 24, containLabel: true },
+        grid: { left: 8, right: 62, top: 16, bottom: 64, containLabel: true },
         tooltip: {
             trigger: 'axis',
             axisPointer: { type: 'cross' },
@@ -3842,7 +3856,16 @@ export function useSetupChart(elementId, candles, setup) {
             axisLabel: { color: cssColor60, fontSize: 10 },
             splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
         },
-        dataZoom: [{ type: 'inside' }],
+        dataZoom: [
+            { type: 'inside', zoomOnMouseWheel: true, moveOnMouseMove: true },
+            {
+                type: 'slider', height: 22, bottom: 6,
+                borderColor: 'rgba(255,255,255,0.15)',
+                fillerColor: 'rgba(1, 180, 255, 0.15)',
+                handleStyle: { color: '#01b4ff' },
+                textStyle: { color: 'rgba(255,255,255,0.6)', fontSize: 10 },
+            },
+        ],
         series: [{
             type: 'candlestick',
             data: werte,

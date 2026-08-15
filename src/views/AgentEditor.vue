@@ -68,6 +68,14 @@ const referenzen = computed(() => [
 
 const parameterNamen = computed(() => (entwurf.value?.rules.params || []).map((p) => p.key))
 
+/** Farbe der Marktphasen-Badge: Trend blau, Seitwärts gelb, Rest neutral. */
+function marktKlasse(markt) {
+    const m = String(markt || '').toLowerCase()
+    if (m.startsWith('seitwärts')) return 'marktSeitwaerts'
+    if (m.startsWith('trend') || m.startsWith('bullentrend')) return 'marktTrend'
+    return 'marktNeutral'
+}
+
 function ausVorlage(v) {
     istNeu.value = true
     entwurf.value = {
@@ -277,6 +285,11 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
                 <div v-for="v in vorlagen" :key="v.key" class="col-12 col-md-4">
                     <div class="dailyCard p-3 h-100 d-flex flex-column">
                         <strong>{{ v.titel }}</strong>
+                        <div v-if="v.markt" class="mt-1">
+                            <span class="badge marktBadge" :class="marktKlasse(v.markt)">
+                                <i class="uil uil-chart-line me-1"></i>{{ v.markt }}
+                            </span>
+                        </div>
                         <p class="small text-muted flex-grow-1 mt-1">{{ v.beschreibung }}</p>
                         <button class="btn btn-sm btn-outline-primary" @click="ausVorlage(v)">
                             {{ t('strategies.useTemplate') }}
@@ -726,6 +739,28 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
     border-top: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
     padding-top: 0.7rem;
     margin-top: 0.7rem;
+}
+
+/* Marktphasen-Badge auf den Vorlagen-Karten */
+.marktBadge {
+    font-weight: 500;
+    white-space: normal;
+    text-align: left;
+}
+.marktTrend {
+    background: rgba(1, 180, 255, 0.12);
+    border: 1px solid rgba(1, 180, 255, 0.45);
+    color: rgba(1, 180, 255, 0.95);
+}
+.marktSeitwaerts {
+    background: rgba(240, 196, 25, 0.12);
+    border: 1px solid rgba(240, 196, 25, 0.45);
+    color: rgba(240, 196, 25, 0.95);
+}
+.marktNeutral {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: rgba(255, 255, 255, 0.75);
 }
 
 .block-title {
