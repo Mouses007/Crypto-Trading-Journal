@@ -46,6 +46,25 @@ export class BinanceStream {
         if (this.stopped) return
         this.onStatus?.('connecting')
 
+        /*
+         * Den alten Socket abhängen, BEVOR ein neuer entsteht.
+         *
+         * Ohne das kann eine zweite Verbindung neben einer noch schliessenden
+         * laufen — etwa wenn der Watchdog einen Reconnect erzwingt, das
+         * `close()` aber noch im Zustand CLOSING hängt. Beide Sockets zeigen
+         * dann auf dasselbe `onmessage`, und dieselben Diffs kommen doppelt an.
+         * Das fällt nicht als Fehler auf: das Buch verarbeitet sie klaglos, nur
+         * die Mengen stimmen nicht mehr. Handler lösen, dann schliessen.
+         */
+        if (this.ws) {
+            this.ws.onopen = null
+            this.ws.onmessage = null
+            this.ws.onerror = null
+            this.ws.onclose = null
+            try { this.ws.close() } catch (e) { /* war schon zu */ }
+            this.ws = null
+        }
+
         this.ws = new WebSocket(this.url)
 
         this.ws.onopen = () => {
@@ -126,7 +145,19 @@ export class BinanceStream {
         try { this.ws?.close() } catch (e) { /* egal */ }
     }
 
+    /**
+     * Alle Timer abräumen — auch den Reconnect-Timer.
+     *
+     * Er fehlte hier, und das war gefährlicher als es klingt: `_forceReconnect`
+     * räumt auf und schliesst den Socket, worauf `onclose` einen neuen Versuch
+     * plant. Lief zu diesem Zeitpunkt bereits ein geplanter Versuch, blieb er
+     * bestehen — zwei Timer, zwei `connect()`, zwei Sockets. Alle Aufrufer
+     * räumen VOR dem Planen auf, das Abräumen kann also nichts Gewolltes
+     * zerstören.
+     */
     _clearTimers() {
+        clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = null
         clearInterval(this.watchdogTimer)
         this.watchdogTimer = null
         clearTimeout(this.lifetimeTimer)

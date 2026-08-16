@@ -53,6 +53,7 @@ export const INVALID_REASONS = {
     NO_HIGHER_HIGH: 'no_higher_high',
     NO_UPTREND: 'no_uptrend',
     NO_FIB_CONFLUENCE: 'no_fib_confluence',
+    ENTRY_BEFORE_CONFIRM: 'entry_before_confirm',
 }
 
 const params = [
@@ -255,8 +256,17 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
             rr: 0,
             confirmations: { overextensionPct: Number(ueberdehnung.toFixed(2)) },
             detectorVersion: DETECTOR_VERSION,
-            // Die Korrektur beginnt mit der Kerze nach dem Hoch
+            // Die Korrektur wird ab der Kerze nach dem Hoch BEOBACHTET — die
+            // Guss-Bedingung soll lückenlos gelten.
             watchFrom: candles[pivot.index].t,
+            // GEHANDELT werden darf aber erst NACH der Bestätigungskerze: ein
+            // Pivot mit `swingConfirmBars` Kerzen rechts ist erst so viele
+            // Kerzen später überhaupt erkennbar. Vorher einzusteigen hiesse,
+            // auf genau den Kerzen zu handeln, die das Hoch erst bestätigen —
+            // derselbe Fehler, den LSOB über `earliestSweep` vermeidet. Auch
+            // die Bestätigungskerze selbst ist erst mit ihrem Schluss bekannt,
+            // deshalb zählt sie noch nicht als handelbar.
+            tradeableFrom: candles[Math.min(pivot.index + p.swingConfirmBars, candles.length - 1)].t,
         })
         diagnostics.setupsCreated++
     }
@@ -268,6 +278,8 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
         const ab = Number(s.watchFrom || s.obCandleTime) || 0
         const start = candles.findIndex((c) => c.t > ab)
         if (start === -1) continue
+        // Bis einschliesslich dieser Kerze war das Hoch noch nicht bestätigt.
+        const handelbarAb = Number(s.tradeableFrom || 0) || 0
 
         let gewartet = 0
         let korrekturTief = Infinity
@@ -327,6 +339,13 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
 
             // (e) Berührung der Einstiegs-EMA → Einstieg
             if (k.l <= e) {
+                // Berührung vor der Bestätigung des Hochs: die Korrektur war
+                // schon an der EMA, bevor das Setup überhaupt existierte. Auf
+                // eine zweite Berührung zu warten wäre geschönt.
+                if (k.t <= handelbarAb) {
+                    events.push({ id: s.id, status: 'invalidated', invalidReason: INVALID_REASONS.ENTRY_BEFORE_CONFIRM, candleTime: k.t })
+                    erledigt = true; break
+                }
                 if (p.requireFib) {
                     const treffer = fibTrifft(e, s.impulseExtreme, s.sweepPrice, p, k.c)
                     if (!treffer.ok) {

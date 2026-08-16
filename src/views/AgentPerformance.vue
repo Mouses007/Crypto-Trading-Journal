@@ -49,6 +49,96 @@ const profitFaktor = (v, trades) => (v === null || v === undefined ? (trades > 0
 const profitFaktorGut = (v) => v === null || v === undefined || v >= 1
 
 const kpi = computed(() => daten.value?.kpis || {})
+
+// ── Brücke: vom Trade zurück zur Fassung, unter der er entstand ────────
+// `paramsVersion` steht am Trade, die Werte dazu in der Historie. Ohne diesen
+// Weg zeigt ein alter Trade auf eine Strategie, deren Einstellungen inzwischen
+// andere sind — und niemand kann mehr sagen, wonach gehandelt wurde.
+const kontextFuer = ref(null)
+const kontext = ref(null)
+const kontextLaedt = ref(false)
+
+async function kontextZeigen(tr) {
+    if (kontextFuer.value === tr.id) { kontextFuer.value = null; kontext.value = null; return }
+    kontextFuer.value = tr.id
+    kontext.value = null
+    kontextLaedt.value = true
+    try {
+        const r = await axios.get(`/api/strategies/trades/${tr.id}/context`)
+        kontext.value = r.data
+    } catch (e) {
+        logError('AgentPerformance', 'Kontext laden fehlgeschlagen', e)
+    } finally {
+        kontextLaedt.value = false
+    }
+}
+
+/** Die letzten Trades, neueste zuerst. */
+// ── Mehrfachauswahl: spiegeln und wieder entfernen ──────────────────────
+const gewaehlt = ref(new Set())
+const spiegelLaeuft = ref(false)
+const spiegelMeldung = ref('')
+
+const alleGewaehlt = computed(() =>
+    letzteTrades.value.length > 0 && letzteTrades.value.every((t) => gewaehlt.value.has(t.id)))
+
+function auswahlUmschalten(tr) {
+    const neu = new Set(gewaehlt.value)
+    if (neu.has(tr.id)) neu.delete(tr.id); else neu.add(tr.id)
+    gewaehlt.value = neu
+}
+
+function alleUmschalten() {
+    gewaehlt.value = alleGewaehlt.value ? new Set() : new Set(letzteTrades.value.map((t) => t.id))
+}
+
+/** Gewählte Trades ins Journal spiegeln — je Instanz, weil der Endpunkt daran hängt. */
+async function gewaehlteSpiegeln() {
+    const ids = [...gewaehlt.value]
+    if (!ids.length) return
+    spiegelLaeuft.value = true
+    spiegelMeldung.value = ''
+    try {
+        // Nach Instanz gruppieren: ein Trade gehört immer genau einer.
+        const proInstanz = new Map()
+        for (const tr of letzteTrades.value) {
+            if (!gewaehlt.value.has(tr.id)) continue
+            if (!proInstanz.has(tr.instanceId)) proInstanz.set(tr.instanceId, [])
+            proInstanz.get(tr.instanceId).push(tr.id)
+        }
+        let gespiegelt = 0
+        let uebersprungen = 0
+        for (const [instanceId, tradeIds] of proInstanz) {
+            const r = await axios.post(`/api/strategies/instances/${instanceId}/mirror-journal`, { tradeIds })
+            gespiegelt += r.data.gespiegelt || 0
+            uebersprungen += r.data.uebersprungen || 0
+        }
+        spiegelMeldung.value = t('strategies.mirrorDone', { n: gespiegelt, u: uebersprungen })
+    } catch (e) {
+        spiegelMeldung.value = apiFehlerText(e, t('strategies.saveFailed'), t)
+    } finally {
+        spiegelLaeuft.value = false
+    }
+}
+
+/** Gewählte wieder aus dem Journal nehmen. */
+async function gewaehlteEntfernen() {
+    const ids = [...gewaehlt.value]
+    if (!ids.length) return
+    spiegelLaeuft.value = true
+    spiegelMeldung.value = ''
+    try {
+        const r = await axios.post('/api/strategies/journal/unmirror', { tradeIds: ids })
+        spiegelMeldung.value = t('strategies.unmirrorDone', { n: r.data.entfernt || 0 })
+    } catch (e) {
+        spiegelMeldung.value = apiFehlerText(e, t('strategies.saveFailed'), t)
+    } finally {
+        spiegelLaeuft.value = false
+    }
+}
+
+const letzteTrades = computed(() => [...(daten.value?.trades || [])]
+    .sort((a, b) => Number(b.exitTime) - Number(a.exitTime)).slice(0, 60))
 const trichter = computed(() => daten.value?.funnel || {})
 
 /** Symbole aus den geladenen Instanzen — spart einen eigenen Endpunkt. */
@@ -312,6 +402,12 @@ const wochentag = (n) => t('strategies.weekday' + n)
                     <div class="col-6 col-md-3 col-xl-2" v-for="k in [
                         { l: t('strategies.kpiTrades'), v: kpi.trades },
                         { l: t('strategies.kpiWinRate'), v: zahl(kpi.winRate, 1) + ' %' },
+                        // Die Verliererseite gehört gleichberechtigt daneben: eine
+                        // Trefferquote allein sagt nichts darüber, wie die Verluste
+                        // aussahen — und genau dort entscheidet sich das Ergebnis.
+                        { l: t('strategies.kpiWinsLosses'), v: (kpi.wins ?? 0) + ' / ' + (kpi.losses ?? 0) },
+                        { l: t('strategies.kpiAvgWinLoss'),
+                          v: zahl(kpi.avgWinR) + ' / ' + zahl(kpi.avgLossR) + ' R' },
                         { l: t('strategies.kpiNetPnl'), v: geld(kpi.netPnl), farbe: kpi.netPnl >= 0 },
                         { l: t('strategies.kpiExpectancy'), v: zahl(kpi.expectancyR) + ' R', farbe: kpi.expectancyR >= 0 },
                         { l: t('strategies.kpiProfitFactor'), v: profitFaktor(kpi.profitFactor, kpi.trades),
@@ -397,6 +493,96 @@ const wochentag = (n) => t('strategies.weekday' + n)
                 </div>
             </div>
 
+            <!-- ══ Einzelne Trades ══
+                 Bisher zeigte die Auswertung nur Summen. Ein Trade, den man
+                 nicht anschauen kann, lässt sich auch nicht beurteilen. -->
+            <div v-if="letzteTrades.length" class="dailyCard p-3 mb-3">
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                    <div class="section-title mb-0">{{ t('strategies.tradeList') }}</div>
+                    <template v-if="gewaehlt.size">
+                        <span class="badge bg-primary">{{ t('strategies.selected', { n: gewaehlt.size }) }}</span>
+                        <button class="btn btn-sm btn-outline-primary py-0" :disabled="spiegelLaeuft"
+                            @click="gewaehlteSpiegeln">
+                            <i class="uil uil-import me-1"></i>{{ t('strategies.mirrorJournal') }}
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary py-0" :disabled="spiegelLaeuft"
+                            @click="gewaehlteEntfernen">
+                            <i class="uil uil-times me-1"></i>{{ t('strategies.unmirrorJournal') }}
+                        </button>
+                    </template>
+                    <span v-if="spiegelMeldung" class="small text-muted ms-auto">{{ spiegelMeldung }}</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-borderless mb-0">
+                        <thead>
+                            <tr class="text-muted small">
+                                <th style="width:2rem">
+                                    <input type="checkbox" class="form-check-input" :checked="alleGewaehlt"
+                                        :title="t('strategies.selectAll')" @change="alleUmschalten" />
+                                </th>
+                                <th>{{ t('strategies.exitTime') }}</th>
+                                <th>{{ t('strategies.symbol') }}</th>
+                                <th>{{ t('strategies.timeframe') }}</th>
+                                <th>{{ t('strategies.direction') }}</th>
+                                <th class="text-end">R</th>
+                                <th class="text-end">PnL</th>
+                                <th>{{ t('strategies.byExitReason') }}</th>
+                                <th class="text-end">{{ t('strategies.paramsVersion') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template v-for="tr in letzteTrades" :key="tr.id">
+                                <tr class="pointerClass" @click="kontextZeigen(tr)">
+                                    <td @click.stop>
+                                        <input type="checkbox" class="form-check-input"
+                                            :checked="gewaehlt.has(tr.id)" @change="auswahlUmschalten(tr)" />
+                                    </td>
+                                    <td class="small text-muted">{{ dayjs(Number(tr.exitTime)).format('DD.MM. HH:mm') }}</td>
+                                    <td class="small">{{ tr.symbol }}</td>
+                                    <td class="small">{{ tr.timeframe }}</td>
+                                    <td class="small">{{ tr.direction }}</td>
+                                    <td class="text-end small" :class="tr.rMultiple >= 0 ? 'greenTrade' : 'redTrade'">
+                                        {{ zahl(tr.rMultiple) }}
+                                    </td>
+                                    <td class="text-end small" :class="tr.netPnl >= 0 ? 'greenTrade' : 'redTrade'">
+                                        {{ geld(tr.netPnl) }}
+                                    </td>
+                                    <td class="small text-muted">{{ tr.exitReason }}</td>
+                                    <td class="text-end small">
+                                        <span class="badge bg-dark">v{{ tr.paramsVersion }}</span>
+                                    </td>
+                                </tr>
+                                <tr v-if="kontextFuer === tr.id">
+                                    <td colspan="9" class="kontextZelle">
+                                        <div v-if="kontextLaedt" class="small text-muted">…</div>
+                                        <div v-else-if="kontext">
+                                            <div class="small mb-2">
+                                                <strong>{{ t('strategies.contextTitle') }}</strong>
+                                                <span class="text-muted">
+                                                    — {{ kontext.instanz?.name }},
+                                                    {{ t('strategies.paramsVersion') }} {{ kontext.paramsVersion }}
+                                                    <template v-if="kontext.ruleVersion">· {{ t('strategies.ruleVersion') }} {{ kontext.ruleVersion }}</template>
+                                                </span>
+                                            </div>
+                                            <div v-if="kontext.saetze?.length" class="mb-2">
+                                                <div v-for="s in kontext.saetze" :key="s.titel" class="small">
+                                                    <span class="text-muted">{{ s.titel }}:</span> {{ s.text }}
+                                                </div>
+                                            </div>
+                                            <div v-if="kontext.params" class="small">
+                                                <span class="text-muted">{{ t('strategies.contextParams') }}:</span>
+                                                <span v-for="(v, k) in kontext.params" :key="k" class="paramChip">{{ k }}={{ v }}</span>
+                                            </div>
+                                            <div v-else class="small text-muted">{{ t('strategies.contextNoHistory') }}</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- ══ Aufschlüsselungen ══ -->
             <div v-if="kpi.trades" class="row g-3">
                 <div class="col-12 col-md-6 col-xl-3"
@@ -413,6 +599,7 @@ const wochentag = (n) => t('strategies.weekday' + n)
                                 <tr class="text-muted small">
                                     <th></th>
                                     <th class="text-end">n</th>
+                                    <th class="text-end" :title="t('strategies.kpiWinsLosses')">G/V</th>
                                     <th class="text-end">Ø R</th>
                                     <th class="text-end">PnL</th>
                                 </tr>
@@ -421,6 +608,9 @@ const wochentag = (n) => t('strategies.weekday' + n)
                                 <tr v-for="row in g.rows" :key="row.key">
                                     <td class="small">{{ row.key }}</td>
                                     <td class="text-end small">{{ row.trades }}</td>
+                                    <td class="text-end small">
+                                        <span class="greenTrade">{{ row.wins }}</span><span class="text-muted">/</span><span class="redTrade">{{ row.trades - row.wins }}</span>
+                                    </td>
                                     <td class="text-end small" :class="row.avgR >= 0 ? 'greenTrade' : 'redTrade'">
                                         {{ zahl(row.avgR) }}
                                     </td>

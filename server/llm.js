@@ -17,7 +17,10 @@
  */
 
 import { getKnex } from './database.js'
-import { samplingFelder, basisUrl } from './ai-models.js'
+import {
+    samplingFelder, ANBIETER_REG, KEY_SPALTEN, KI_URL_SPALTEN,
+    keySpalte, istOpenAiKompatibel, chatEndpunkt,
+} from './ai-models.js'
 import { decrypt } from './crypto.js'
 import { assertAllowedOllamaUrl } from './ollama-api.js'
 import { logWarn } from './logger.js'
@@ -27,14 +30,36 @@ const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
 /** Preise in USD je Million Token (Eingabe, Ausgabe). Nur zur Budgetschätzung. */
 const PREISE = {
-    'claude-opus': [15, 75],
+    'claude-fable': [10, 50],
+    'claude-opus': [5, 25],
     'claude-sonnet': [3, 15],
-    'claude-haiku': [0.8, 4],
+    'claude-haiku': [1, 5],
+    'gpt-5.6-sol': [5, 30],
+    'gpt-5.6-terra': [2, 12],
+    'gpt-5.6-luna': [0.2, 1.2],
     'gpt-4o-mini': [0.15, 0.6],
     'gpt-4o': [2.5, 10],
-    'gemini-2.0-flash': [0.1, 0.4],
-    'gemini-1.5-pro': [1.25, 5],
-    'gemini-1.5-flash': [0.075, 0.3],
+    // Längere Namen zuerst: der Treffer geht über `includes`, sonst würde
+    // `gemini-3.5-flash` auch `gemini-3.5-flash-lite` einfangen.
+    'gemini-3.5-flash-lite': [0.3, 2.5],
+    'gemini-3.1-flash-lite': [0.25, 1.5],
+    'gemini-2.5-flash-lite': [0.1, 0.4],
+    'gemini-3.1-pro': [2, 12],
+    'gemini-3.7-flash': [0.75, 3.75],
+    'gemini-3.6-flash': [0.75, 3.75],
+    'gemini-3.5-flash': [1.5, 9],
+    'gemini-3-flash': [0.5, 3],
+    'gemini-2.5-pro': [1.25, 10],
+    'gemini-2.5-flash': [0.3, 2.5],
+    'mistral-medium': [1.5, 7.5],
+    'mistral-large': [0.5, 1.5],
+    'mistral-small': [0.15, 0.6],
+    'grok-4': [4, 12],
+    'qwen3.7-max': [2, 6],          // Alibaba nennt keinen öffentlichen Listenpreis
+    'qwen3.7-plus': [0.5, 2],       // — Schätzwerte, nur für die Budget-Anzeige
+    'qwen3.6-flash': [0.15, 0.6],
+    'deepseek-v4-flash': [0.44, 1.32],
+    'deepseek-v4-pro': [1.32, 3.96],
     'deepseek-chat': [0.27, 1.1],
     'deepseek-reasoner': [0.55, 2.19],
 }
@@ -56,19 +81,20 @@ export async function ladeLlmConfig({ provider, model } = {}) {
     const knex = getKnex()
     const s = await knex('settings')
         .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
-            'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-            'aiCustomUrl', 'aiKeyCustom')
+            ...KEY_SPALTEN, ...KI_URL_SPALTEN)
         .where('id', 1).first()
     if (!s) throw new Error('Keine KI-Einstellungen gefunden')
 
     const gewaehlt = provider || s.aiProvider || 'ollama'
-    const keyMap = { openai: 'aiKeyOpenai', anthropic: 'aiKeyAnthropic', gemini: 'aiKeyGemini',
-        deepseek: 'aiKeyDeepseek', custom: 'aiKeyCustom' }
-    const spalte = keyMap[gewaehlt]
+    const spalte = keySpalte(gewaehlt)
 
     let apiKey = ''
     if (spalte && s[spalte]) apiKey = decrypt(s[spalte])
-    else if (s.aiApiKey) apiKey = decrypt(s.aiApiKey)
+    // Der alte Sammelschlüssel `aiApiKey` stammt aus der Zeit vor den
+    // Anbieter-Spalten und enthielt einen OpenAI-Schlüssel. Er darf NUR dort
+    // einspringen — sonst schickt das Journal einen OpenAI-Schlüssel an
+    // fremde Hosts.
+    else if (gewaehlt === 'openai' && s.aiApiKey) apiKey = decrypt(s.aiApiKey)
 
     return {
         provider: gewaehlt,
@@ -77,7 +103,7 @@ export async function ladeLlmConfig({ provider, model } = {}) {
         temperature: 0,                 // Entscheidungen sollen reproduzierbar sein
         maxTokens: 800,                 // eine JSON-Antwort braucht nicht mehr
         ollamaUrl: s.aiOllamaUrl || DEFAULT_OLLAMA_URL,
-        baseUrl: basisUrl(s.aiCustomUrl),
+        endpunkt: chatEndpunkt(gewaehlt, s),
     }
 }
 
@@ -110,18 +136,14 @@ export function parseJsonAntwort(text) {
 /**
  * Welcher Anbieter kann was? Bilder gehen fast überall, PDFs nur dort, wo der
  * Anbieter sie nativ versteht — das Projekt hat bewusst keine PDF-Bibliothek.
+ *
+ * Die Angaben stehen im Anbieter-Verzeichnis (`ANBIETER_REG`); hier bleibt nur
+ * die abgeleitete Sicht, weil `rule-builder` und `strategy-builder` sie unter
+ * diesem Namen importieren.
  */
-export const ANHANG_UNTERSTUETZUNG = {
-    anthropic: { image: true, pdf: true },
-    gemini: { image: true, pdf: true },
-    openai: { image: true, pdf: false },
-    deepseek: { image: false, pdf: false },
-    ollama: { image: true, pdf: false },
-    // Was ein eigener Endpunkt kann, weiss nur der Betreiber. Bilder werden
-    // im OpenAI-Format mitgeschickt; PDFs bleiben aussen vor, weil es dafür
-    // kein einheitliches Format gibt.
-    custom: { image: true, pdf: false },
-}
+export const ANHANG_UNTERSTUETZUNG = Object.fromEntries(
+    Object.entries(ANBIETER_REG).map(([id, reg]) => [id, reg.anhang]),
+)
 
 /**
  * Prüft Anhänge gegen den Anbieter.
@@ -209,7 +231,10 @@ async function openaiKompatibel(cfg, system, user, timeoutMs, endpoint, anhaenge
             model: cfg.model,
             ...samplingFelder(cfg.model, cfg.temperature),
             max_tokens: cfg.maxTokens,
-            response_format: { type: 'json_object' },
+            // Nicht jeder OpenAI-kompatible Anbieter nimmt `response_format` an
+            // (DashScope/Qwen etwa nicht) — und eine Ablehnung ist ein harter
+            // 400. `parseJsonAntwort` schneidet JSON notfalls aus Prosa.
+            ...(ANBIETER_REG[cfg.provider]?.jsonModus ? { response_format: { type: 'json_object' } } : {}),
             messages: [{ role: 'system', content: system }, { role: 'user', content: userInhalt }],
         }),
     }, timeoutMs)
@@ -308,19 +333,14 @@ export async function callLLMJson(cfg, { system, user, timeoutMs = DEFAULT_TIMEO
     }
 
     let antwort
-    switch (cfg.provider) {
-        case 'anthropic': antwort = await anthropic(cfg, system, user, timeoutMs, anhaenge); break
-        case 'openai': antwort = await openaiKompatibel(cfg, system, user, timeoutMs, 'https://api.openai.com/v1/chat/completions', anhaenge); break
-        case 'deepseek': antwort = await openaiKompatibel(cfg, system, user, timeoutMs, 'https://api.deepseek.com/v1/chat/completions', anhaenge); break
-        case 'gemini': antwort = await gemini(cfg, system, user, timeoutMs, anhaenge); break
-        case 'custom': {
-            if (!cfg.baseUrl) throw new Error('Für den eigenen Anbieter ist keine Basis-URL hinterlegt')
-            antwort = await openaiKompatibel(cfg, system, user, timeoutMs, `${cfg.baseUrl}/chat/completions`, anhaenge)
-            break
-        }
-        case 'ollama': antwort = await ollama(cfg, system, user, timeoutMs, anhaenge); break
-        default: throw new Error(`Unbekannter Provider: ${cfg.provider}`)
-    }
+    if (cfg.provider === 'anthropic') antwort = await anthropic(cfg, system, user, timeoutMs, anhaenge)
+    else if (cfg.provider === 'gemini') antwort = await gemini(cfg, system, user, timeoutMs, anhaenge)
+    else if (cfg.provider === 'ollama') antwort = await ollama(cfg, system, user, timeoutMs, anhaenge)
+    else if (istOpenAiKompatibel(cfg.provider)) {
+        // openai, mistral, xai, qwen, custom — und deepseek aus dem Altbestand
+        if (!cfg.endpunkt) throw new Error(`Für ${cfg.provider} ist keine Basis-URL hinterlegt`)
+        antwort = await openaiKompatibel(cfg, system, user, timeoutMs, cfg.endpunkt, anhaenge)
+    } else throw new Error(`Unbekannter Provider: ${cfg.provider}`)
 
     const json = parseJsonAntwort(antwort.text)
 

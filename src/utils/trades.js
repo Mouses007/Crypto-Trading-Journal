@@ -2,6 +2,7 @@ import { pageId, spinnerLoadingPage, queryLimit, timeZoneTrade, hasData, dailyPa
 import { selectedRange, selectedDateRange, selectedPositions, selectedAccounts, selectedTags, selectedBroker, selectedTradeCategory, daysBack } from "../stores/filters.js"
 import { filteredTrades, filteredTradesTrades, pAndL, blotter, totals, totalsByDate, groups, profitAnalysis, timeFrame, satisfactionArray, satisfactionTradeArray, tags, filteredTradesDaily, excursions, availableTags, imports } from "../stores/trades.js"
 import { useDateTimeFormat } from "./formatters.js";
+import { splitFunding } from "./funding.js";
 /* useRefreshTrades moved to mountOrchestration.js */
 import { useCreateBlotter, useCreatePnL } from "./addTrades.js"
 import { dbFind, dbFirst, dbDelete, dbDeleteWhere } from './db.js'
@@ -71,7 +72,33 @@ export async function useGetFilteredTrades(param) {
         }
 
         // Load tradeType from notes table
-        const allNotes = await dbFind("notes", {})
+        //
+        // Gebraucht wird hier genau EIN Feld (tradeType). Früher holte diese
+        // Zeile bei jedem Filterlauf sämtliche Notizen komplett — mit Fliesstext,
+        // Playbook und KI-Auswertung, also Kilobyte je Zeile. Jetzt: nur der
+        // Zeitraum, den die geladenen Trades abdecken, und ohne die Textfelder.
+        const notesQuery = {
+            exclude: ['note', 'title', 'entryNote', 'feelings', 'playbook',
+                'closingNote', 'closingFeelings', 'closingPlaybook', 'tradingMetadata',
+                'aiReview', 'aiReviewProvider', 'aiReviewModel']
+        }
+        if (trades.length > 0) {
+            // Den Ausschnitt aus den tatsächlich geladenen Trades ableiten statt
+            // aus selectedRange — die Imports-Seite lädt z.B. „letzte 20" ohne
+            // Zeitraum, da würde ein Filter auf selectedRange Notizen verschlucken.
+            let minD = Infinity, maxD = -Infinity
+            for (const row of trades) {
+                const d = Number(row.dateUnix)
+                if (!Number.isFinite(d)) continue
+                if (d < minD) minD = d
+                if (d > maxD) maxD = d
+            }
+            if (Number.isFinite(minD) && Number.isFinite(maxD)) {
+                notesQuery.greaterThanOrEqualTo = { dateUnix: minD }
+                notesQuery.lessThanOrEqualTo = { dateUnix: maxD }
+            }
+        }
+        const allNotes = await dbFind("notes", notesQuery)
         const tradeTypeByTradeId = new Map()
         for (const note of (allNotes || [])) {
             if (note.tradeType && note.tradeType !== '' && note.tradeId) {
@@ -127,7 +154,7 @@ export async function useGetFilteredTrades(param) {
                         // getaggt. Ein aktiver Tag-Filter (ohne "untagged"/t000t)
                         // würde sie sonst alle ausblenden → Bots vom Tag-Filter
                         // ausnehmen, damit sie immer sichtbar sind.
-                        if (element.botType) {
+                        if (element.botType || element.category === 'agent') {
                             tradeTagsSelected = true
                         }
 
@@ -173,10 +200,20 @@ export async function useGetFilteredTrades(param) {
 
                         const tradeSatisfaction = satisfactionByTradeId.get(String(element.id)) ?? null
 
-                        // Kategorie-Filter: Futures vs Bot (element.botType gesetzt → Bot)
+                        // Kategorie-Filter: Futures vs Bot vs Agent.
+                        //
+                        // Der Agent ist der heikle Fall. Seine Trades sind zum
+                        // grossen Teil PAPIER — sie dürfen unter keinen Umständen
+                        // in der normalen Ansicht auftauchen, sonst rechnet das
+                        // Dashboard simuliertes Geld in die echte Bilanz. Deshalb
+                        // ist er die einzige Kategorie, die auch bei „alle"
+                        // draussen bleibt: sichtbar NUR, wenn ausdrücklich gewählt.
                         const cat = selectedTradeCategory.value || 'all'
+                        const isAgentTrade = element.category === 'agent'
                         const isBotTrade = !!element.botType
-                        const categoryMatch = cat === 'all' || (cat === 'bot' ? isBotTrade : !isBotTrade)
+                        const categoryMatch = cat === 'agent'
+                            ? isAgentTrade
+                            : (!isAgentTrade && (cat === 'all' || (cat === 'bot' ? isBotTrade : !isBotTrade)))
 
                         // Broker-Filter (Börsen-Pille) IMMER anwenden — auch im
                         // Bot-Modus: so hat jede Börse ihre eigene Bot-Seite
@@ -470,8 +507,9 @@ export async function useTotalTrades() {
                 totalCommission += el.commission
                 totalFundingFees += (el.fundingFee || 0)
                 // Vorzeichen-Konvention: + = erhalten (erhöht Netto), − = bezahlt (senkt Netto).
-                if ((el.fundingFee || 0) > 0) totalFundingReceived += el.fundingFee
-                if ((el.fundingFee || 0) < 0) totalFundingPaid += Math.abs(el.fundingFee)
+                const fundingTotals = splitFunding(el.fundingFee)
+                totalFundingReceived += fundingTotals.received
+                totalFundingPaid += fundingTotals.paid
                 totalTradingFees += (el.tradingFee || 0)
                 totalOtherCommission += el.sec + el.taf + el.nscc + el.nasdaq
                 totalFees += el.commission + el.sec + el.taf + el.nscc + el.nasdaq
@@ -720,8 +758,11 @@ export async function useTotalTrades() {
                 sumSellQuantity += element.sellQuantity
                 sumCommission += element.commission
                 sumFundingFees += (element.fundingFee || 0)
-                if ((element.fundingFee || 0) > 0) sumFundingPaid += element.fundingFee
-                if ((element.fundingFee || 0) < 0) sumFundingReceived += Math.abs(element.fundingFee)
+                // War hier vertauscht (+ galt als bezahlt) — dieselbe Konvention
+                // wie in useCalculateTotals, jetzt aus einer Quelle.
+                const fundingTag = splitFunding(element.fundingFee)
+                sumFundingPaid += fundingTag.paid
+                sumFundingReceived += fundingTag.received
                 sumTradingFees += (element.tradingFee || 0)
                 sumSec += element.sec
                 sumTaf += element.taf

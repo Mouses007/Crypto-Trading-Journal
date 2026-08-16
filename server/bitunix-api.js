@@ -163,6 +163,56 @@ function normalizeOpenPosition(p) {
 }
 
 /**
+ * Alle handelbaren Futures-Paare — der einzige ÖFFENTLICHE Abruf hier.
+ *
+ * Alles andere in dieser Datei ist beglaubigt und braucht `bitunixRequest`;
+ * diese Liste liefert Bitunix ohne Schlüssel. Deshalb ein schlichtes `fetch`
+ * mit Zeitgrenze statt der Signatur-Maschinerie.
+ *
+ * Gefiltert wird auf das, was für einen Handel über die API wirklich in Frage
+ * kommt (Stand 16.08.2026: 713 Paare → 614):
+ *   - `symbolStatus !== 'OPEN'`   → ein Paar in der Vorschau ist noch nichts
+ *   - `isApiSupported === false`  → 58 Paare sind NUR in der Oberfläche
+ *                                   handelbar; ein Journal, das über die API
+ *                                   handelt, kann mit ihnen nichts anfangen
+ *   - `quote !== 'USDT'`          → 25 USDC- und 15 USD-Paare; alles andere im
+ *                                   Projekt rechnet in USDT
+ *
+ * `maxLeverage` und `minTradeVolume` kommen mit — ein Coin, den Bitunix nur mit
+ * 5× führt, ist eine andere Sache als einer mit 200×, und das gehört später in
+ * die Ergebniszeile der Rangliste.
+ */
+export async function holeBitunixPaare() {
+    const steuerung = new AbortController()
+    const wecker = setTimeout(() => steuerung.abort(), 15000)
+    try {
+        const antwort = await fetch(`${BASE_URL}/api/v1/futures/market/trading_pairs`,
+            { signal: steuerung.signal })
+        if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`)
+        const roh = await antwort.json()
+        if (Number(roh?.code) !== 0 || !Array.isArray(roh?.data)) {
+            throw new Error(roh?.msg || 'Unerwartete Antwort')
+        }
+        const paare = roh.data
+            .filter((p) => p.symbolStatus === 'OPEN'
+                && p.isApiSupported !== false
+                && p.quote === 'USDT')
+            .map((p) => ({
+                symbol: String(p.symbol).toUpperCase(),
+                basis: p.base,
+                maxLeverage: Number(p.maxLeverage) || 0,
+                minMenge: Number(p.minTradeVolume) || 0,
+            }))
+        // Eine leere Liste ist immer ein Fehler, nie ein Ergebnis: sie würde
+        // sonst als „nichts handelbar" durchgereicht und jede Rangliste leeren.
+        if (!paare.length) throw new Error('Keine handelbaren Paare in der Antwort')
+        return paare
+    } finally {
+        clearTimeout(wecker)
+    }
+}
+
+/**
  * Load and decrypt Bitunix config from DB.
  */
 export async function getDecryptedConfig() {

@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path'
+import { existsSync } from 'fs'
 import { initDb } from './server/database.js'
 import { setupApiRoutes } from './server/api-routes.js'
 import { setupBitunixRoutes } from './server/bitunix-api.js'
@@ -7,6 +8,9 @@ import { setupBitgetRoutes } from './server/bitget-api.js'
 import { setupPionexRoutes } from './server/pionex-api.js'
 import { setupBinanceRoutes } from './server/binance-api.js'
 import { setupPolygonRoutes } from './server/polygon-api.js'
+import { setupMarktradarRoutes, stopMarktradar } from './server/marktradar-api.js'
+import { setupKalenderRoutes, stopKalender } from './server/marktradar-kalender.js'
+import { setupNewsRoutes, startNewsTakt, stopNews } from './server/marktradar-news.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
 import { setupAiModelRoutes } from './server/ai-models.js'
 import { setupAgentRoutes } from './server/ai-agent.js'
@@ -19,11 +23,20 @@ import { setupStrategyRoutes, ladeAlleRegelStrategien } from './server/strategy-
 import { setupStrategyBuilderRoutes } from './server/strategy-builder.js'
 import { setupRuleBuilderRoutes } from './server/rule-builder.js'
 import { startStrategyEngine, stopStrategyEngine } from './server/strategy-engine.js'
-import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString, setupAuthRoutes, loadAuthConfig, isAuthEnabled, maybeResetAuthFromEnv } from './server/auth.js'
+import { setupRanglisteRoutes, startRanglisteTakt, stopRanglisteTakt } from './server/rangliste-api.js'
+import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString, setupAuthRoutes, loadAuthConfig, isAuthEnabled, maybeResetAuthFromEnv, istLoopbackHost, setzeBindungsModus, hostGuardMiddleware, hatGueltigeSession } from './server/auth.js'
 
 const app = express();
 app.disable('x-powered-by')
-app.use(express.json({ limit: '50mb' }));
+
+// Body-Limit nach Vertrauensstufe: die 50 MB braucht es nur für Screenshots
+// und Backup-Import — beides Routen HINTER der Session. Für alles ohne
+// gültiges Cookie (Login, Fremde im Netz) reichen 100 kB; vorher konnte jeder
+// Unangemeldete 50-MB-Bodies schicken, die Express brav parste, bevor die
+// Auth-Prüfung überhaupt lief.
+const kleinerBody = express.json({ limit: '100kb' })
+const grosserBody = express.json({ limit: '50mb' })
+app.use((req, res, next) => (hatGueltigeSession(req) ? grosserBody : kleinerBody)(req, res, next))
 
 // Security-Header (ohne zusätzliche Dependency). CSP bleibt bewusst aus, da
 // CDN-Ressourcen + inline-Styles/Skripte genutzt werden; SRI sichert die CDNs ab.
@@ -39,6 +52,11 @@ app.use((req, res, next) => {
     next()
 })
 
+// DNS-Rebinding-Schutz: eine fremde Domain, die auf 127.0.0.1 zeigt, kommt mit
+// lokaler Peer-IP an — erkennbar ist sie nur am Host-Header. Vor ALLEN Routen,
+// auch vor dem ESP32-Endpunkt (der Guard lässt Anfragen ohne Host-Header durch).
+app.use(hostGuardMiddleware)
+
 // ESP32 display endpoint — registered BEFORE auth middleware (uses own key-based auth)
 setupEsp32Routes(app)
 
@@ -50,6 +68,10 @@ const port = process.env.CTJ_PORT || process.env.PORT || 8080;
 const host = process.env.CTJ_HOST || '127.0.0.1'; // Default: nur lokal erreichbar
 const PROXY_PORT = 39482;
 
+// Wird im Entwicklungsbetrieb gesetzt; der Server unten hängt die
+// WebSocket-Weiterleitung daran, sobald er lauscht.
+let viteProxy = null
+
 const startIndex = async () => {
     // Initialize database (Knex — SQLite or PostgreSQL)
     console.log("\nINITIALIZING DATABASE")
@@ -58,6 +80,31 @@ const startIndex = async () => {
     // Notfall-Reset per CTJ_RESET_AUTH=1 (vor dem Laden), dann Auth-Konfig laden
     await maybeResetAuthFromEnv()
     await loadAuthConfig()
+
+    // Netzbetrieb ohne Passwort-Gate heisst: jeder im Netz bekommt beim ersten
+    // Seitenaufruf das Session-Cookie und damit Broker-Schlüssel, Live-Handel,
+    // Backup und Update-Knopf. Das war bisher nur eine Warnung im Log, die man
+    // im Container-Betrieb nie sieht — deshalb jetzt Abbruch.
+    //
+    // AUSSER im Container: dort ist CTJ_HOST=0.0.0.0 kein Entscheid des
+    // Nutzers, sondern Voraussetzung, damit das Port-Mapping überhaupt
+    // funktioniert — über die Erreichbarkeit entscheidet das Mapping
+    // (127.0.0.1:8080:8080 vs. 0.0.0.0). Ein Abbruch hier würde jede frische
+    // Installation töten, BEVOR man das Passwort überhaupt setzen kann.
+    const inDocker = existsSync('/.dockerenv')
+    // Container zählt als „lokal": auch die Cookie-Sperre und die
+    // Abschalt-Sperre des Gates dürfen eine frische Installation nicht
+    // blockieren, bevor das Passwort gesetzt werden konnte.
+    setzeBindungsModus(istLoopbackHost(host) || inDocker)
+    if (!istLoopbackHost(host) && !isAuthEnabled() && !inDocker && process.env.CTJ_ALLOW_INSECURE !== '1') {
+        console.error('\n  ⛔  ABBRUCH: Der Dienst soll im Netzwerk lauschen (CTJ_HOST=' + host + '),')
+        console.error('      aber der Passwortschutz ist nicht aktiv. Dann hätte jeder im Netz')
+        console.error('      vollen Zugriff auf API-Schlüssel, Handel und Backup.')
+        console.error('      → Passwortschutz in den Einstellungen aktivieren (dazu einmal lokal')
+        console.error('        starten: CTJ_HOST=127.0.0.1), oder')
+        console.error('      → bewusst offen betreiben: CTJ_ALLOW_INSECURE=1\n')
+        process.exit(1)
+    }
 
     // Setup API routes
     console.log("\nRUNNING SERVER")
@@ -68,6 +115,10 @@ const startIndex = async () => {
     setupPionexRoutes(app);
     setupBinanceRoutes(app);
     setupPolygonRoutes(app);
+    setupMarktradarRoutes(app);
+    setupKalenderRoutes(app);
+    setupNewsRoutes(app);
+    startNewsTakt();
     setupOllamaRoutes(app);
     setupAiModelRoutes(app);
     setupAgentRoutes(app);
@@ -78,6 +129,7 @@ const startIndex = async () => {
     setupStrategyRoutes(app);
     setupStrategyBuilderRoutes(app);
     setupRuleBuilderRoutes(app);
+    setupRanglisteRoutes(app);
     // Eigene Regelstrategien aus der DB in die Registry holen — sie sind ab
     // jetzt von eingebauten nicht mehr zu unterscheiden.
     await ladeAlleRegelStrategien();
@@ -86,13 +138,48 @@ const startIndex = async () => {
     // Strategie-Engine: der Takt läuft immer, gearbeitet wird nur für Instanzen,
     // die in der DB als aktiv markiert sind. Ein Neustart nimmt den Betrieb
     // damit genau dort wieder auf, wo er unterbrochen wurde.
-    startStrategyEngine();
+    //
+    // ABSCHALTBAR mit CTJ_NO_ENGINE=1. Nötig, weil der Guard gegen doppelte
+    // Läufe prozesslokal ist: zeigen zwei Prozesse auf dieselbe Datenbank —
+    // etwa ein Entwicklungsserver neben dem Produktivcontainer — takten BEIDE
+    // dieselben Instanzen und können dasselbe Setup gleichzeitig ausführen.
+    // Für Oberflächenarbeit an einer laufenden Papier-Datenbank ist das der
+    // sichere Weg. (Die dauerhafte Lösung wäre eine Sperre in der Datenbank.)
+    if (process.env.CTJ_NO_ENGINE === '1') {
+        console.log(" -> Strategie-Engine deaktiviert (CTJ_NO_ENGINE=1)")
+    } else {
+        startStrategyEngine();
+    }
+
+    // Der Takt der Coin-Rangliste läuft AUCH mit CTJ_NO_ENGINE=1: er handelt
+    // nicht, sondern rechnet nur — und der Entwicklungsrechner ist genau die
+    // Maschine, an der jemand sitzt und einen Lauf startet. Dass trotzdem nur
+    // einer arbeitet, sichert die Führungssperre in der Datenbank.
+    startRanglisteTakt();
 
     if (process.env.NODE_ENV == 'dev') {
-        // Proxy non-API routes to Vite dev server
+        // Vite ZUERST starten, dann den Proxy auf den Port richten, den es
+        // wirklich bekommen hat.
+        //
+        // Vorher stand hier eine feste Zahl auf beiden Seiten. Läuft schon ein
+        // zweiter Entwicklungsserver auf derselben Maschine, weicht Vite auf
+        // einen freien Port aus — der Proxy zeigte aber weiter auf den festen.
+        // Ergebnis: der eigene Server lieferte die Oberfläche der FREMDEN
+        // Vite-Instanz aus, samt totem WebSocket und leerem Inhalt. Der Fehler
+        // sieht wie ein kaputtes Frontend aus und ist keiner.
+        const Vite = await import('vite')
+        const gewuenscht = Number(process.env.CTJ_VITE_PORT) || PROXY_PORT
+        const vite = await Vite.createServer({ server: { port: gewuenscht } });
+        await vite.listen();
+        const vitePort = vite.httpServer?.address()?.port || gewuenscht
+        if (vitePort !== gewuenscht) {
+            console.log(` -> Vite weicht auf Port ${vitePort} aus (${gewuenscht} belegt)`)
+        }
+        console.log(` -> Running vite dev server (Port ${vitePort})`);
+
         const { default: Proxy } = await import('http-proxy')
         const proxy = new Proxy.createProxyServer({
-            target: { host: 'localhost', port: PROXY_PORT },
+            target: { host: 'localhost', port: vitePort },
         });
 
         // Inject session cookie into proxied responses (Vite dev server) —
@@ -118,10 +205,11 @@ const startIndex = async () => {
             proxy.web(req, res);
         });
 
-        const Vite = await import('vite')
-        const vite = await Vite.createServer({ server: { port: PROXY_PORT } });
-        vite.listen();
-        console.log(" -> Running vite dev server");
+        // Vites heisses Neuladen läuft über einen WebSocket. Ohne diese
+        // Weiterleitung endet er am Express-Server, der Browser meldet
+        // „WebSocket connection failed" und man muss jede Änderung von Hand
+        // neu laden — im Entwicklungsbetrieb genau das, was HMR abnehmen soll.
+        viteProxy = proxy
     } else {
         // Production: static files
         app.use(express.static('dist'));
@@ -146,17 +234,27 @@ const startIndex = async () => {
     await new Promise((resolve, reject) => {
         const server = app.listen(port, host, () => {
             console.log(` -> Crypto Trading Journal started on http://${host}:${port}`)
-            const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1'
-            if (isLoopback) {
+            if (istLoopbackHost(host)) {
                 console.log(' -> Server is only accessible locally (set CTJ_HOST=0.0.0.0 to allow network access)')
             } else if (!isAuthEnabled()) {
+                // Hierher kommt man nur im Container (Erreichbarkeit regelt
+                // dort das Port-Mapping) oder mit CTJ_ALLOW_INSECURE=1 — der
+                // Startcheck oben bricht sonst ab.
                 console.warn('\n  ⚠️  WARNUNG: Server ist im Netzwerk erreichbar (CTJ_HOST=' + host + '),')
-                console.warn('      aber das Passwort-Gate ist NICHT aktiv. Jeder im Netzwerk hat vollen Zugriff.')
-                console.warn('      → Aktiviere den Passwortschutz in den Einstellungen ODER betreibe den')
-                console.warn('        Dienst hinter einem Reverse-Proxy mit HTTPS + Authentifizierung / VPN.\n')
+                console.warn('      aber das Passwort-Gate ist NICHT aktiv. Jeder, der den Port erreicht,')
+                console.warn('      hat vollen Zugriff auf Schlüssel, Handel und Backup.')
+                console.warn('      → Passwortschutz in den Einstellungen aktivieren.\n')
             }
             resolve()
         });
+        // Vites heisses Neuladen braucht den WebSocket-Upgrade — ohne diese
+        // Zeile endet er hier statt bei Vite, und jede Änderung müsste von Hand
+        // neu geladen werden.
+        server.on('upgrade', (req, socket, head) => {
+            if (viteProxy) viteProxy.ws(req, socket, head)
+            else socket.destroy()
+        })
+
         server.on('error', reject)
     })
 
@@ -172,6 +270,11 @@ const startIndex = async () => {
             // Laufende Strategie-Durchgänge auslaufen lassen, damit keine
             // halb ausgeführte Order zurückbleibt.
             try { await stopStrategyEngine() } catch (e) { /* trotzdem beenden */ }
+            // Ein laufender Rangliste-Lauf braucht kein Auslaufen: jeder Coin
+            // ist einzeln gesichert, der nächste Start nimmt ihn wieder auf.
+            try { stopRanglisteTakt() } catch (e) { /* trotzdem beenden */ }
+            try { stopMarktradar() } catch (e) { /* trotzdem beenden */ }
+            try { stopKalender(); stopNews() } catch (e) { /* trotzdem beenden */ }
             process.exit(0)
         })
     }

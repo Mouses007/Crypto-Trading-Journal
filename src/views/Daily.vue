@@ -1309,7 +1309,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                             <span class="stats-divider">|</span>
                                             <span class="stats-item"><span class="stats-label">Fees</span> {{ useTwoDecCurrencyFormat(itemTrade.pAndL.fees) }}</span>
                                             <span class="stats-divider">|</span>
-                                            <span class="stats-item"><span class="stats-label">PnL(g)</span> <span :class="itemTrade.pAndL.grossProceeds > 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(itemTrade.pAndL.grossProceeds) }}</span></span>
+                                            <span class="stats-item"><span class="stats-label">PnL(g)</span> <span :class="itemTrade.pAndL.grossProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(itemTrade.pAndL.grossProceeds) }}</span></span>
                                         </div>
                                     </div>
 
@@ -1434,7 +1434,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                                             <!--P&L-->
                                                             <td>
                                                                 <span v-if="trade.tradesCount == 0"></span><span v-else
-                                                                    v-bind:class="[trade.netProceeds > 0 ? 'greenTrade' : 'redTrade']">
+                                                                    v-bind:class="[trade.netProceeds >= 0 ? 'greenTrade' : 'redTrade']">
                                                                     {{ useTwoDecCurrencyFormat(trade.netProceeds)
                                                                     }}</span>
                                                             </td>
@@ -1477,7 +1477,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                                             <td>{{ useDecimalsArithmetic(blot.buyQuantity,
                                                                 blot.sellQuantity) }}</td>
                                                             <td
-                                                                v-bind:class="[blot.grossProceeds > 0 ? 'greenTrade' : 'redTrade']">
+                                                                v-bind:class="[blot.grossProceeds >= 0 ? 'greenTrade' : 'redTrade']">
                                                                 {{ useTwoDecCurrencyFormat(blot.grossProceeds) }}</td>
                                                             <td>{{ useTwoDecCurrencyFormat(blot.fees) }}</td>
                                                             <td
@@ -1651,7 +1651,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                     <td><span
                                             v-if="filteredTrades[itemTradeIndex].trades[tradeIndex].tradesCount == 0"></span><span
                                             v-else
-                                            v-bind:class="[filteredTrades[itemTradeIndex].trades[tradeIndex].netProceeds > 0 ? 'greenTrade' : 'redTrade']">
+                                            v-bind:class="[filteredTrades[itemTradeIndex].trades[tradeIndex].netProceeds >= 0 ? 'greenTrade' : 'redTrade']">
                                             {{
                                                 useTwoDecCurrencyFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].netProceeds)
                                             }}</span>

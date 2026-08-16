@@ -46,12 +46,16 @@ export class OrderBook {
         for (const [price, qty] of snapshot.bids || []) {
             const q = +qty
             const p = +price
+            // Gleiche Prüfung wie im Diff-Pfad: ein NaN-Preis mit gültiger
+            // Menge käme sonst durch — `q > 0` fängt nur kaputte MENGEN ab
+            if (!Number.isFinite(p) || !Number.isFinite(q) || p <= 0) continue
             if (p < lo) lo = p
             if (q > 0) this.bids.set(p, q)
         }
         for (const [price, qty] of snapshot.asks || []) {
             const q = +qty
             const p = +price
+            if (!Number.isFinite(p) || !Number.isFinite(q) || p <= 0) continue
             if (p > hi) hi = p
             if (q > 0) this.asks.set(p, q)
         }
@@ -98,8 +102,22 @@ export class OrderBook {
         let bestAsk = Infinity
         for (const price of this.bids.keys()) if (price > bestBid) bestBid = price
         for (const price of this.asks.keys()) if (price < bestAsk) bestAsk = price
-        const valid = bestBid > -Infinity && bestAsk < Infinity
-        return { bestBid, bestAsk, mid: valid ? (bestBid + bestAsk) / 2 : 0 }
+        /*
+         * Ein gekreuztes Buch (Gebot über Brief) ist kein Marktzustand, sondern
+         * ein Zeichen dafür, dass Snapshot und Diffs auseinandergelaufen sind.
+         * Der Mittelwert daraus sähe plausibel aus und wäre falsch — das ist
+         * schlimmer als gar kein Wert, weil sich das ganze Preisraster daran
+         * ausrichtet. Also: kein Mid, und die Lage nach aussen melden, damit
+         * der Aufrufer neu abgleichen kann.
+         */
+        const beideDa = bestBid > -Infinity && bestAsk < Infinity
+        const gekreuzt = beideDa && bestBid >= bestAsk
+        return {
+            bestBid,
+            bestAsk,
+            gekreuzt,
+            mid: beideDa && !gekreuzt ? (bestBid + bestAsk) / 2 : 0,
+        }
     }
 
     /**
@@ -121,6 +139,24 @@ function applySide(map, levels) {
     for (let i = 0; i < levels.length; i++) {
         const price = +levels[i][0]
         const qty = +levels[i][1]
+
+        /*
+         * Kaputte Level überspringen statt einzutragen.
+         *
+         * Zwei verschiedene Schäden drohen, und der harmlosere ist der
+         * auffälligere: Ein NaN-PREIS kann nie „bester Preis" werden, weil
+         * jeder Vergleich mit NaN falsch ist — er bliebe aber für immer in der
+         * Map liegen, denn auch `prune()` vergleicht ihn nur weg, wenn er
+         * kleiner oder grösser als eine Grenze ist, und das ist er nie.
+         * Eine NaN-MENGE dagegen wandert ungehindert in die Volumensummen und
+         * macht aus einer Heatmap-Spalte still einen leeren Fleck.
+         *
+         * Negative Preise oder Mengen gibt es an keiner Börse; wenn sie
+         * ankommen, ist die Nachricht defekt.
+         */
+        if (!Number.isFinite(price) || !Number.isFinite(qty)) continue
+        if (price <= 0 || qty < 0) continue
+
         if (qty === 0) map.delete(price)   // Menge 0 = Level entfernen
         else map.set(price, qty)
     }

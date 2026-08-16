@@ -10,7 +10,7 @@
  */
 
 import { detectMitRegeln, alsManifest, zahl } from './rule-engine.js'
-import { pruefeRegeln } from './rule-validate.js'
+import { pruefeRegeln, regelnUnterscheidenSich } from './rule-validate.js'
 import emaTouch from './ema_touch.js'
 
 const TF_MS = 900000
@@ -75,11 +75,18 @@ console.log('Prüfung der Beschreibung')
 console.log('\nBausteine')
 
 {
-    // Steigender Markt mit einem Hügel — erzeugt Pivot-Hoch und -Tief
+    // Steigender Markt mit einem Hügel — erzeugt Pivot-Hoch und -Tief.
+    //
+    // Die drei zähen Kerzen direkt nach dem Hoch sind Absicht: das Pivot mit
+    // `right: 2` ist erst zwei Kerzen später bekannt, und ein Setup, dessen
+    // Anker schon in dieser Lücke berührt wird, gilt seither als nie handelbar
+    // (`entry_before_confirm`). Hier soll die Stop-/Ziel-Rechnung geprüft
+    // werden, nicht diese Grenze — also bleibt der Kurs so lange oben.
     const rows = []
     for (let i = 0; i < 40; i++) { const b = 100 + i * 0.3; rows.push([b, b + 0.15, b - 0.1, b + 0.12]) }
-    for (let i = 0; i < 10; i++) { const b = 112 - i * 0.4; rows.push([b, b + 0.05, b - 0.45, b - 0.4]) }
-    for (let i = 0; i < 30; i++) { const b = 108 + i * 0.3; rows.push([b, b + 0.15, b - 0.1, b + 0.12]) }
+    for (let i = 0; i < 3; i++) { const b = 112 - i * 0.05; rows.push([b, b + 0.05, b - 0.08, b - 0.04]) }
+    for (let i = 0; i < 10; i++) { const b = 111.8 - i * 0.5; rows.push([b, b + 0.05, b - 0.55, b - 0.5]) }
+    for (let i = 0; i < 30; i++) { const b = 107 + i * 0.3; rows.push([b, b + 0.15, b - 0.1, b + 0.12]) }
     const candles = series(rows)
 
     const basis = {
@@ -296,21 +303,35 @@ const zweiLaeufe = (regeln, kerzen) => {
 }
 
 {
-    // Der Randfall: die Auslösekerze ist die LETZTE bekannte. Dann gibt es
-    // keinen Kurs, zu dem man einsteigen könnte — es darf nichts passieren.
-    // Die Kerzen werden dafür exakt am Auslöser abgeschnitten, statt eine
-    // Länge zu raten.
+    // Der Randfall: es fehlt die Kerze, auf der eingestiegen würde.
+    //
+    // Das Signal ist ein Pivot-Tief mit `right: 2` — bekannt ist es also erst
+    // mit dem Schluss der zweiten Bestätigungskerze. Erst die Kerze DANACH
+    // eröffnet zu einem Kurs, den man in dem Moment auch bekommen hätte.
+    // Schneidet man die Serie an der Bestätigungskerze ab, gibt es diesen Kurs
+    // noch nicht: dann darf nichts ausgelöst werden, und das Setup muss offen
+    // bleiben statt verworfen zu werden.
+    //
+    // Früher schnitt dieser Test am Auslöser ab und war damit grün, weil das
+    // Pivot in der gekürzten Serie schlicht nicht mehr auffindbar war — er
+    // prüfte also gar nicht, was sein Name sagt.
     const g = sofortRegeln('sofort_rand')
     const voll = sofortKerzen()
     const ev = zweiLaeufe(g.regeln, voll).events.find((e) => e.status === 'triggered')
     check('Vorbedingung: mit allen Kerzen löst es aus', !!ev)
     if (ev) {
-        const bisAusloeser = voll.slice(0, voll.findIndex((c) => c.t === ev.triggeredAt) + 1)
-        const ohne = zweiLaeufe(g.regeln, bisAusloeser).events.filter((e) => e.status === 'triggered')
-        check('kein Auslöser, wenn die Folgekerze fehlt', ohne.length === 0,
-            JSON.stringify(ohne.map((e) => ({ t: e.triggeredAt, c: e.candleTime, entry: e.entry }))))
+        const einstiegIdx = voll.findIndex((c) => c.t === ev.candleTime)
+        const bisBestaetigung = voll.slice(0, einstiegIdx)
+        const lauf = zweiLaeufe(g.regeln, bisBestaetigung)
+        check('kein Auslöser, wenn die Einstiegskerze fehlt',
+            lauf.events.filter((e) => e.status === 'triggered').length === 0,
+            JSON.stringify(lauf.events.map((e) => ({ s: e.status, t: e.triggeredAt }))))
         check('das Setup bleibt dabei offen statt verworfen zu werden',
-            !zweiLaeufe(g.regeln, bisAusloeser).events.some((e) => ['invalidated', 'expired', 'rejected'].includes(e.status)))
+            !lauf.events.some((e) => ['invalidated', 'expired', 'rejected'].includes(e.status)))
+        // Und die Kehrseite: mit dieser einen Kerze mehr löst es aus.
+        const mit = zweiLaeufe(g.regeln, voll.slice(0, einstiegIdx + 1))
+        check('mit der Einstiegskerze löst es aus',
+            mit.events.some((e) => e.status === 'triggered'))
     }
 }
 
@@ -474,6 +495,32 @@ console.log('\nMACD und MFI')
         JSON.stringify(verdreht.fehler))
 }
 
+
+// ── Ändert sich das HANDELN oder nur der Titel? ──────────────────────────
+// An dieser Frage hängen Strategie-Version, `paramsVersion` aller Instanzen
+// darauf und das Erlöschen der Live-Freigabe. Ein roher Textvergleich lag hier
+// zuerst falsch, weil `pruefeRegeln` Name und Beschreibung mit hineinschreibt.
+{
+    const basis = (tpRR, name = 'Test') => pruefeRegeln({
+        id: 'ver_test', name, description: 'egal', timeframes: ['1h'], direction: 'long',
+        warmupCandles: 300, params: [], indicators: [],
+        signal: { type: 'pivotLow', left: 5, right: 2 },
+        signalFilters: [], entry: { type: 'immediate' },
+        invalidations: [{ type: 'timeout', code: 'zu_lang', candles: 20 }],
+        stopLoss: { anchor: 'signalLow', offsetPct: 0.3 },
+        takeProfit: { mode: 'rr', rr: tpRR }, breakEvenAtR: 1,
+    }).regeln
+
+    check('identische Regeln gelten als unverändert',
+        regelnUnterscheidenSich(basis(2), basis(2)) === false)
+    check('geändertes Ziel gilt als Änderung',
+        regelnUnterscheidenSich(basis(2), basis(3)) === true)
+    check('nur ein anderer Name ist KEINE Änderung',
+        regelnUnterscheidenSich(basis(2), basis(2, 'Anderer Name')) === false,
+        'sonst kostet ein Tippfehler im Titel die Live-Freigabe')
+    check('leere Eingaben kippen nicht um',
+        regelnUnterscheidenSich(null, null) === false && regelnUnterscheidenSich(null, basis(2)) === true)
+}
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
 if (fehlgeschlagen) { console.log(`\nFehlgeschlagen:\n  ${fehler.join('\n  ')}\n`); process.exit(1) }

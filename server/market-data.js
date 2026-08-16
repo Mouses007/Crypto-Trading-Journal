@@ -15,6 +15,7 @@
 
 import axios from 'axios'
 import { logWarn } from './logger.js'
+import { notiereGewicht, melde429, warteAufGewicht, istWiederholbar, WIEDERHOLUNGEN } from './binance-takt.js'
 
 const BASES = {
     spot: 'https://api.binance.com',
@@ -108,10 +109,24 @@ async function fetchKlines({ symbol, interval, market, limit, startTime, endTime
         params.startTime = startTime
         params.endTime = endTime
     }
-    const { data } = await axios.get(`${BASES[market]}${KLINE_PATHS[market]}`, {
-        params, timeout: HTTP_TIMEOUT,
-    })
-    return normalizeKlines(Array.isArray(data) ? data : [])
+    try {
+        const antwort = await axios.get(`${BASES[market]}${KLINE_PATHS[market]}`, {
+            params, timeout: HTTP_TIMEOUT,
+        })
+        // Binance meldet den Verbrauch der GANZEN IP im Antwortkopf. Auch die
+        // Abrufe des Livebetriebs zahlen darauf ein — deshalb wird hier
+        // notiert, nicht erst im gebremsten Historienpfad. Ohne diese Zeile
+        // kennt die Bremse nur ihren eigenen Anteil und lässt zu viel durch.
+        notiereGewicht(antwort.headers)
+        return normalizeKlines(Array.isArray(antwort.data) ? antwort.data : [])
+    } catch (e) {
+        const status = e?.response?.status
+        // 429 (zu schnell) und 418 (gesperrt) betreffen die ganze IP, nicht nur
+        // diesen Abruf. Die Bremse muss davon erfahren, sonst rennt der nächste
+        // Historienlauf ungebremst in dieselbe Wand.
+        if (status === 429 || status === 418) melde429(status, e.response.headers)
+        throw e
+    }
 }
 
 /**
@@ -196,6 +211,37 @@ export async function getClosedCandles(symbol, interval, limit = 300, opts = {})
  *
  * @returns {Promise<Array>} lückenlos aufsteigend sortiert, ohne laufende Kerze
  */
+/**
+ * Einen Historienabruf wiederholen, wenn es sich lohnt.
+ *
+ * Ein Zeitüberschritt oder ein 5xx ist vorübergehend — beim nächsten Versuch
+ * klappt es meistens. Ein 400 („Invalid symbol") dagegen ist endgültig, und ihn
+ * dreimal zu erfragen hält nur die 99 anderen Coins auf.
+ *
+ * Ohne diese Schleife schrieb ein einziger 10-Sekunden-Zeitüberschritt einen
+ * Coin als Fehlerzeile ab (gesehen bei ONDOUSDT am 16.08.2026) — obwohl der
+ * Abruf eine Sekunde später fehlerfrei durchlief.
+ */
+async function mitWiederholung(abruf, was) {
+    let letzter
+    for (let versuch = 0; versuch <= WIEDERHOLUNGEN.length; versuch++) {
+        try {
+            return await abruf()
+        } catch (e) {
+            letzter = e
+            const status = e?.response?.status
+            if (!istWiederholbar(status) || versuch === WIEDERHOLUNGEN.length) throw e
+            const pause = WIEDERHOLUNGEN[versuch]
+            logWarn('market-data', `${was}: ${e.message} — Versuch ${versuch + 2} in ${pause / 1000}s`)
+            await new Promise((f) => setTimeout(f, pause))
+            // Nach der Pause erneut anstehen: die Bremse könnte inzwischen
+            // wegen einer Strafe zugemacht haben.
+            await warteAufGewicht()
+        }
+    }
+    throw letzter
+}
+
 export async function getHistoricalCandles(symbol, interval, fromTs, toTs, opts = {}) {
     const market = opts.market === 'spot' ? 'spot' : 'futures'
     const sym = String(symbol || '').toUpperCase()
@@ -214,10 +260,14 @@ export async function getHistoricalCandles(symbol, interval, fromTs, toTs, opts 
 
     while (cursor < end && out.length < maxCandles) {
         if (++guard > 500) break   // Sicherheitsnetz gegen Endlosschleifen
-        const rows = await fetchKlines({
+        // NUR hier wird gewartet: Historie ist Laborarbeit und darf sich
+        // gedulden. `getClosedCandles` — der Weg des Livebetriebs — bleibt
+        // ungebremst und überholt jederzeit.
+        await warteAufGewicht()
+        const rows = await mitWiederholung(() => fetchKlines({
             symbol: sym, interval, market,
             limit: pageSize, startTime: cursor, endTime: end,
-        })
+        }), `${sym} ${interval}`)
         if (!rows.length) break
 
         for (const k of rows) {

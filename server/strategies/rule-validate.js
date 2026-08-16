@@ -79,6 +79,23 @@ function pruefeBedingung(b, indikatorIds, paramKeys, wo, fehler) {
 /**
  * @returns {{ ok: boolean, fehler: string[], regeln?: object }}
  */
+/**
+ * Unterscheiden sich zwei Regelwerke im HANDELN?
+ *
+ * Name und Beschreibung liegen mit in der Regelbeschreibung, ein roher
+ * Textvergleich würde also jedes Umbenennen als inhaltliche Änderung lesen.
+ * Das ist teuer: an dieser Frage hängen die Version der Strategie, die
+ * `paramsVersion` aller Instanzen darauf und das Erlöschen der Live-Freigabe.
+ * Ein Tippfehler im Titel darf das nicht auslösen.
+ */
+export function regelnUnterscheidenSich(a, b) {
+    const kern = (r) => {
+        const { name, description, ...rest } = r || {}
+        return JSON.stringify(rest)
+    }
+    return kern(a) !== kern(b)
+}
+
 export function pruefeRegeln(roh) {
     const fehler = []
     if (!roh || typeof roh !== 'object') return { ok: false, fehler: ['Keine Regelbeschreibung'] }

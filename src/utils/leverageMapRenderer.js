@@ -12,14 +12,16 @@
  * legt, soll nicht umdenken müssen.
  */
 
-const AXIS_W = 78          // Preisachse rechts
+// Breiter als früher (78): die Achsenschrift ist von 10 auf 12 px gewachsen,
+// und rechts vom Preis steht noch der Abstand zum Mittelkurs in Prozent.
+const AXIS_W = 92          // Preisachse rechts
 const LEGEND_H = 64        // Kopfzeile mit Massstab und Kennzahlen
 const PAD_L = 10
 
 const COLORS = {
     bg: 'rgba(0,0,0,0)',
     grid: 'rgba(255,255,255,0.08)',
-    axisText: 'rgba(255,255,255,0.60)',
+    axisText: 'rgba(255,255,255,0.78)',
     midLine: 'rgba(255,255,255,0.85)',
     // Long-Liquidation drückt den Preis (Zwangsverkauf) → rot
     long: 'rgb(255,95,86)',
@@ -205,7 +207,7 @@ export class LeverageMapRenderer {
         this._drawAxis(ctx, { mid, lo, hi, yFor, y0 })
 
         // ── Zeitachse ───────────────────────────────────────────
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.fillStyle = COLORS.axisText
         ctx.textAlign = 'center'
         ctx.textBaseline = 'top'
@@ -218,10 +220,10 @@ export class LeverageMapRenderer {
 
         // ── Kopfzeile ───────────────────────────────────────────
         ctx.textAlign = 'left'
-        ctx.font = '11px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.fillStyle = 'rgba(255,255,255,0.87)'
         ctx.fillText(`${this.labels.title} — ${this.labels.history}`, PAD_L, 8)
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.fillStyle = COLORS.axisText
         const stunden = ((hist.ts[hist.cols - 1] - hist.ts[0]) / 3600000).toFixed(1)
         let lebend = 0
@@ -321,7 +323,7 @@ export class LeverageMapRenderer {
         ]
         if (ab > 0) zeilen.push(`${this.labels.swept} ${usd(ab)}`)
 
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.textAlign = 'left'
         ctx.textBaseline = 'alphabetic'
         const w = Math.max(...zeilen.map(z => ctx.measureText(z).width)) + 14
@@ -464,7 +466,7 @@ export class LeverageMapRenderer {
 
     _drawAxis(ctx, { mid, lo, hi, yFor, y0 }) {
         const x = PAD_L + this.plotW + 6
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.textAlign = 'left'
         ctx.textBaseline = 'middle'
         const dez = mid > 1000 ? 0 : mid > 10 ? 2 : 5
@@ -480,8 +482,10 @@ export class LeverageMapRenderer {
             ctx.fillStyle = COLORS.axisText
             ctx.fillText(price.toFixed(dez), x, y)
             const pct = ((price - mid) / mid) * 100
-            ctx.fillStyle = 'rgba(255,255,255,0.35)'
-            ctx.fillText(`${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`, x + 44, y)
+            // Abstand 50 statt 44: bei 12 px ist „9.99999" rund 44 px breit und
+            // lief sonst in die Prozentangabe hinein.
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'
+            ctx.fillText(`${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`, x + 50, y)
         }
         // Mid hervorheben
         ctx.fillStyle = COLORS.midLine
@@ -489,7 +493,7 @@ export class LeverageMapRenderer {
     }
 
     _drawLegend(ctx, { map, tier, weights }) {
-        ctx.font = '11px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
 
@@ -514,7 +518,7 @@ export class LeverageMapRenderer {
             : map.mass[idx]
         const abdeckung = map.oi > 0 ? gehalten / map.oi : 0
 
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.fillStyle = COLORS.axisText
         const stunden = (map.spanMs / 3600000).toFixed(1)
         ctx.fillText(
@@ -565,7 +569,7 @@ export class LeverageMapRenderer {
             `${this.labels.long}  ${l > 0 ? usd(l) : '—'}${map.isSwept(r, 'long') ? '  (' + this.labels.swept + ')' : ''}`,
             `${this.labels.short} ${s > 0 ? usd(s) : '—'}${map.isSwept(r, 'short') ? '  (' + this.labels.swept + ')' : ''}`,
         ]
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.textAlign = 'left'
         ctx.textBaseline = 'alphabetic'
         const w = Math.max(...zeilen.map(z => ctx.measureText(z).width)) + 14

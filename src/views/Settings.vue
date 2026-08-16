@@ -94,9 +94,12 @@ let dbMigrationResult = ref(null)
 /* KI-AGENT SETTINGS */
 let aiProvider = ref('ollama')
 let aiModel = ref('')
-let aiKeys = reactive({ openai: '', anthropic: '', gemini: '', deepseek: '' })
+// Schlüssel je Anbieter — die Schlüssel selbst kommen maskiert vom Server und
+// werden nur zurückgeschickt, wenn sie tatsächlich geändert wurden.
+let aiKeys = reactive({})
 let aiOllamaUrl = ref('http://localhost:11434')
 let aiCustomUrl = ref('')
+let aiQwenUrl = ref('')
 let aiTemperature = ref(0.7)
 let aiMaxTokens = ref(1500)
 let aiScreenshots = ref(false)
@@ -148,8 +151,8 @@ const modellListen = ref({})
 const BEREICHE = [
     { id: 'allgemein', icon: 'uil uil-setting' },
     { id: 'journal', icon: 'uil uil-book-alt' },
-    { id: 'ki', icon: 'uil uil-brain' },
     { id: 'live', icon: 'uil uil-chart-line' },
+    { id: 'ki', icon: 'uil uil-brain' },
     { id: 'agent', icon: 'uil uil-robot' },
 ]
 const bereich = ref(localStorage.getItem('settingsBereich') || 'allgemein')
@@ -159,20 +162,64 @@ function bereichWechseln(id) {
     window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+/**
+ * Anbieterliste vom Server — Name, Schlüssel-Bezugsquelle und ob der Anbieter
+ * ein eigenes Adressfeld braucht. Vorher stand all das ein zweites Mal fest im
+ * Template; die beiden Listen sind dabei zuverlässig auseinandergelaufen.
+ * Die Rückfallliste greift nur, wenn der Aufruf scheitert — ohne sie stünde
+ * die Auswahl leer da.
+ */
+const anbieterListe = ref([
+    { id: 'ollama', name: 'Ollama (lokal)', keyUrl: '', brauchtKey: false, urlSpalte: '' },
+    { id: 'anthropic', name: 'Anthropic (Claude)', keyUrl: '', brauchtKey: true, urlSpalte: '' },
+])
+
 async function loadModelLists() {
     try {
         const r = await axios.get('/api/ai/models')
         modellListen.value = r.data.modelle || {}
         ohneSampling.value = r.data.ohneSampling || []
+        if (Array.isArray(r.data.anbieter) && r.data.anbieter.length) {
+            anbieterListe.value = r.data.anbieter
+        }
     } catch (e) {
         modellListen.value = {}
     }
 }
 
-function getModelsForProvider() {
-    const liste = aiProvider.value === 'ollama'
+/** Angaben zum gewählten Anbieter (Name, Key-Quelle, Adressfeld). */
+const aktuellerAnbieter = computed(
+    () => anbieterListe.value.find((a) => a.id === aiProvider.value) || null,
+)
+
+/**
+ * Adressfeld des gewählten Anbieters. Zwei Anbieter haben eines: der eigene
+ * (dort Pflicht) und Qwen (dort nur eine Vorbelegung, weil Alibaba
+ * internationalen Konten arbeitsbereichs-eigene Hosts vergibt).
+ */
+const anbieterUrl = computed({
+    get() {
+        const feld = aktuellerAnbieter.value?.urlSpalte
+        if (feld === 'aiQwenUrl') return aiQwenUrl.value
+        if (feld === 'aiCustomUrl') return aiCustomUrl.value
+        return ''
+    },
+    set(wert) {
+        const feld = aktuellerAnbieter.value?.urlSpalte
+        if (feld === 'aiQwenUrl') aiQwenUrl.value = wert
+        else if (feld === 'aiCustomUrl') aiCustomUrl.value = wert
+    },
+})
+
+/** Die Liste des Anbieters, ohne Zutaten. */
+function providerListe() {
+    return aiProvider.value === 'ollama'
         ? ollamaModels.value
         : (modellListen.value[aiProvider.value] || [])
+}
+
+function getModelsForProvider() {
+    const liste = providerListe()
     // Ein gespeichertes Modell, das nicht (mehr) in der Liste steht, würde das
     // Auswahlfeld leer erscheinen lassen — und beim nächsten Speichern still
     // verschwinden. Also mit anzeigen, statt es zu verlieren.
@@ -219,17 +266,16 @@ async function saveAiSettings() {
             aiModel: aiModel.value,
             aiOllamaUrl: aiOllamaUrl.value || 'http://localhost:11434',
             aiCustomUrl: aiCustomUrl.value.trim(),
+            aiQwenUrl: aiQwenUrl.value.trim(),
             aiTemperature: parseFloat(aiTemperature.value) || 0.7,
             aiMaxTokens: parseInt(aiMaxTokens.value) || 1500,
             aiScreenshots: aiScreenshots.value,
             aiChatEnabled: aiChatEnabled.value,
             aiReportPrompt: aiReportPrompt.value,
-            keys: {
-                openai: aiKeys.openai,
-                anthropic: aiKeys.anthropic,
-                gemini: aiKeys.gemini,
-                deepseek: aiKeys.deepseek
-            }
+            // Alle bekannten Anbieter mitschicken — der Server ignoriert
+            // maskierte Werte. Vorher war die Liste hier fest verdrahtet, und
+            // der Schlüssel des eigenen Anbieters kam nie an.
+            keys: { ...aiKeys },
         })
         currentUser.value.aiProvider = aiProvider.value
         currentUser.value.aiModel = aiModel.value
@@ -255,7 +301,8 @@ async function testAiConnection() {
             apiKey: currentApiKey.value,
             model: aiModel.value,
             ollamaUrl: aiOllamaUrl.value,
-            customUrl: aiCustomUrl.value.trim()
+            // Erlaubt den Test einer noch nicht gespeicherten Adresse.
+            basisUrl: anbieterUrl.value.trim(),
         })
         aiTestResult.value = res.data
         // Nach erfolgreichem Ollama-Test Modelle neu laden
@@ -272,7 +319,10 @@ async function testAiConnection() {
 }
 
 function onProviderChange() {
-    const models = getModelsForProvider()
+    // Bewusst die rohe Liste: `getModelsForProvider()` stellt das gespeicherte
+    // Modell voran, und das gehört zum ALTEN Anbieter — sonst stünde nach dem
+    // Wechsel auf DeepSeek weiterhin ein Claude-Modell im Feld.
+    const models = providerListe()
     aiModel.value = models.length > 0 ? models[0] : ''
     aiTestResult.value = null
     if (aiProvider.value === 'ollama') {
@@ -289,6 +339,7 @@ async function loadAiSettings() {
         aiModel.value = s.aiModel || ''
         aiOllamaUrl.value = s.aiOllamaUrl || 'http://localhost:11434'
         aiCustomUrl.value = s.aiCustomUrl || ''
+        aiQwenUrl.value = s.aiQwenUrl || ''
         aiTemperature.value = s.aiTemperature ?? 0.7
         aiMaxTokens.value = s.aiMaxTokens || 1500
         aiScreenshots.value = s.aiScreenshots || false
@@ -304,11 +355,9 @@ async function loadAiSettings() {
         } else {
             aiReportPromptPreset.value = 'custom'
         }
+        // Anbieter-unabhängig: der Server bestimmt, welche Schlüssel es gibt.
         if (s.keys) {
-            aiKeys.openai = s.keys.openai || ''
-            aiKeys.anthropic = s.keys.anthropic || ''
-            aiKeys.gemini = s.keys.gemini || ''
-            aiKeys.deepseek = s.keys.deepseek || ''
+            for (const [id, wert] of Object.entries(s.keys)) aiKeys[id] = wert || ''
         }
     } catch (e) {
         console.error('Fehler beim Laden der KI-Settings:', e)
@@ -337,9 +386,23 @@ const fluxModels = [
 
 const geminiImageModels = [
     { value: 'gemini-2.5-flash-image', label: 'Nano Banana (Gemini 2.5 Flash)' },
-    { value: 'gemini-3.1-flash-image-preview', label: 'Nano Banana 2 (Gemini 3.1 Flash)' },
-    { value: 'gemini-3-pro-image-preview', label: 'Nano Banana Pro (Gemini 3 Pro)' }
+    { value: 'gemini-3.1-flash-lite-image', label: 'Nano Banana 2 Lite (Gemini 3.1 Flash Lite)' },
+    { value: 'gemini-3.1-flash-image', label: 'Nano Banana 2 (Gemini 3.1 Flash)' },
+    { value: 'gemini-3-pro-image', label: 'Nano Banana Pro (Gemini 3 Pro)' }
 ]
+
+/**
+ * Gespeicherten Namen auf einen Eintrag der Auswahl bringen.
+ *
+ * Die Vorschau-Namen sind inzwischen allgemein verfügbar (ohne `-preview`), und
+ * das alte `gemini-2.0-flash-preview-image-generation` gibt es bei Google gar
+ * nicht mehr. Ohne Abgleich stünde das Feld leer da, obwohl in der Datenbank
+ * etwas hinterlegt ist.
+ */
+function gueltigesBildmodell(m) {
+    const s = String(m || '').replace(/-preview$/, '')
+    return geminiImageModels.some((e) => e.value === s) ? s : 'gemini-2.5-flash-image'
+}
 
 async function loadFluxSettings() {
     try {
@@ -351,7 +414,7 @@ async function loadFluxSettings() {
         fluxAvatar.value = res.data.fluxAvatar || ''
         fluxUseCustomAvatar.value = !!res.data.fluxUseCustomAvatar
         geminiImageApiKey.value = res.data.geminiImageApiKey || ''
-        geminiImageModel.value = res.data.geminiImageModel || 'gemini-2.5-flash-image'
+        geminiImageModel.value = gueltigesBildmodell(res.data.geminiImageModel)
     } catch (e) {
         console.error('Fehler beim Laden der Share-Card-Settings:', e)
     }
@@ -455,6 +518,221 @@ async function saveAgentSettings() {
     } finally {
         agentSaving.value = false
         setTimeout(() => agentResult.value = null, 6000)
+    }
+}
+
+/* MARKTRADAR — betrifft nur, was serverseitig gerechnet wird. Sichtbarkeit,
+   Reihenfolge und Grösse der Kacheln stehen bewusst NICHT hier: die liegen je
+   Gerät im localStorage und werden direkt auf der Seite eingestellt. */
+let radarExpanded = ref(false)
+let radarRsiSymbols = ref('')
+let radarKalenderLaender = ref('')
+let radarKalenderImpact = ref('medium')
+let radarHolt = ref(false)
+let radarMeldung = ref('')
+let radarNewsAuto = ref(true)
+let radarNewsStunde = ref(12)
+let radarNewsVideos = ref(3)
+let radarNewsModel = ref('')
+/* Leer = Vorgabe des Projekts bzw. der allgemein eingestellte Anbieter. So
+   steht im Feld nie ein Modellname, der beim nächsten Katalogwechsel veraltet. */
+let radarNewsAufloesung = ref('niedrig')
+let radarNewsBerichtProvider = ref('')
+let radarNewsBerichtModell = ref('')
+let radarPicycleAlarm = ref(true)
+let radarPicycleSchwelle = ref(0)
+let berichtLaeuft = ref(false)
+let berichtMeldung = ref('')
+let berichtFehler = ref(false)
+
+/**
+ * Was ein Lauf ungefähr kostet — aus den tatsächlich eingestellten Werten,
+ * nicht als feste Zahl im Text. Grundlage: Claude-Bericht rund 6 000 Token
+ * ein und 900 aus; Video bei Gemini rund 100 Token je Sekunde in niedriger
+ * und 300 in Standardauflösung, angenommene 20 Minuten Länge.
+ *
+ * Bewusst eine Spanne und ein „ungefähr": Videolängen schwanken zwischen fünf
+ * und sechzig Minuten, und eine auf den Rappen genaue Zahl wäre hier gelogen.
+ */
+const kostenSchaetzung = computed(() => {
+    const bericht = 0.05                       // Opus 4.6: 6k ein + 900 aus
+    const proSekunde = radarNewsAufloesung.value === 'standard' ? 300 : 100
+    const proVideo = (20 * 60 * proSekunde / 1e6) * 0.30   // Gemini 0,30 $/Mio.
+    const videos = Math.max(0, Math.min(10, Number(radarNewsVideos.value) || 0))
+    return { gesamt: bericht + videos * proVideo, proVideo, bericht, videos }
+})
+
+let radarArschlochfilter = ref(true)
+
+/* Nachrichtenquellen — serverseitige Liste, deshalb eigene Endpunkte statt
+   der generischen Tabellen-Route: die URL kommt vom Nutzer und muss vor dem
+   Speichern gegen interne Ziele geprüft werden (server/net-guard.js). */
+let newsQuellen = ref([])
+let newsVorschlaege = ref([])
+let neueQuelle = ref({ art: 'youtube', name: '', url: '' })
+let newsMeldung = ref('')
+let newsFehler = ref(false)
+let newsTestet = ref(false)
+
+function loadRadarSettings() {
+    const s = currentUser.value || {}
+    radarRsiSymbols.value = s.radarRsiSymbols || ''
+    radarKalenderLaender.value = s.radarKalenderLaender || 'USD,JPY'
+    radarKalenderImpact.value = s.radarKalenderImpact || 'medium'
+    radarArschlochfilter.value = Number(s.radarArschlochfilter ?? 1) === 1
+    radarNewsAuto.value = Number(s.radarNewsAuto ?? 1) === 1
+    radarNewsStunde.value = Number(s.radarNewsStunde ?? 12)
+    radarNewsVideos.value = Number(s.radarNewsVideos ?? 3)
+    radarNewsModel.value = s.radarNewsModel || ''
+    radarNewsAufloesung.value = s.radarNewsAufloesung || 'niedrig'
+    radarNewsBerichtProvider.value = s.radarNewsBerichtProvider || ''
+    radarNewsBerichtModell.value = s.radarNewsBerichtModell || ''
+    radarPicycleAlarm.value = Number(s.radarPicycleAlarm ?? 1) === 1
+    radarPicycleSchwelle.value = Number(s.radarPicycleSchwelle ?? 0)
+    ladeNewsQuellen()
+}
+
+/**
+ * Speichert GENAU EIN Feld.
+ *
+ * Vorher schrieb diese Funktion die ganze Gruppe auf einmal — mit der Folge,
+ * dass eine Änderung an der Länderliste den Arschlochfilter mit dem Stand
+ * überschrieb, den die Seite beim Laden gesehen hatte. Stand die Seite länger
+ * offen oder wurde der Wert anderswo geändert, kippte er stillschweigend
+ * zurück. Ein Feld, ein Schreibvorgang.
+ */
+async function radarSpeichern(feld) {
+    const alle = {
+        radarRsiSymbols: radarRsiSymbols.value.toUpperCase().replace(/\s+/g, ''),
+        radarKalenderLaender: radarKalenderLaender.value.toUpperCase().replace(/\s+/g, ''),
+        radarKalenderImpact: radarKalenderImpact.value,
+        radarArschlochfilter: radarArschlochfilter.value ? 1 : 0,
+        radarNewsAuto: radarNewsAuto.value ? 1 : 0,
+        radarNewsStunde: radarNewsStunde.value,
+        radarNewsModel: radarNewsModel.value.trim(),
+        radarNewsAufloesung: radarNewsAufloesung.value,
+        radarNewsBerichtProvider: radarNewsBerichtProvider.value,
+        radarNewsBerichtModell: radarNewsBerichtModell.value.trim(),
+        radarPicycleAlarm: radarPicycleAlarm.value ? 1 : 0,
+        radarPicycleSchwelle: Math.max(0, Math.min(50, Number(radarPicycleSchwelle.value) || 0)),
+        // Hart begrenzen, nicht bloss im Eingabefeld: der Server deckelt
+        // ohnehin bei zehn, und eine Zahl anzuzeigen, die nie gilt, wäre gelogen
+        radarNewsVideos: Math.max(0, Math.min(10, Number(radarNewsVideos.value) || 0)),
+    }
+    const daten = feld ? { [feld]: alle[feld] } : alle
+    await dbUpdateSettings(daten)
+    // Den lokalen Stand nachziehen, sonst schreibt der nächste Speichervorgang
+    // wieder gegen einen veralteten currentUser
+    if (currentUser.value) Object.assign(currentUser.value, daten)
+    radarMeldung.value = 'Gespeichert.'
+    setTimeout(() => { radarMeldung.value = '' }, 2500)
+}
+
+/* Der Bericht kostet Geld — deshalb ausschliesslich auf ausdrücklichen
+   Knopfdruck, mit sichtbarer Rückmeldung darüber, was er verbraucht hat. */
+async function berichtJetzt() {
+    berichtLaeuft.value = true
+    berichtMeldung.value = ''
+    berichtFehler.value = false
+    try {
+        const { data } = await axios.post('/api/marktradar/lagebericht/erzeugen')
+        if (data.uebersprungen) {
+            berichtMeldung.value = 'Zuletzt vor Kurzem erzeugt — höchstens alle fünf Minuten.'
+        } else if (data.fehler) {
+            berichtMeldung.value = data.fehler
+            berichtFehler.value = true
+        } else {
+            berichtMeldung.value = `Fertig: ${data.beitraege} Beiträge, ${data.videos} Video(s), `
+                + `${data.tokens} Token via ${data.provider}/${data.modell}`
+                + (data.kostenUsd ? ` — ${data.kostenUsd.toFixed(4)} USD` : '')
+                + (data.geminiFehler ? ` · Gemini: ${data.geminiFehler}` : '')
+        }
+    } catch (e) {
+        berichtMeldung.value = e.response?.data?.error || e.message
+        berichtFehler.value = true
+    } finally {
+        berichtLaeuft.value = false
+    }
+}
+
+async function ladeNewsQuellen() {
+    try {
+        const { data } = await axios.get('/api/marktradar/news/sources')
+        newsQuellen.value = data.quellen || []
+        // Vorschläge nur zeigen, solange sie nicht schon eingetragen sind
+        const vorhanden = new Set(newsQuellen.value.map(q => q.url))
+        newsVorschlaege.value = (data.vorschlaege || []).filter(v => !vorhanden.has(v.url))
+    } catch (e) {
+        newsQuellen.value = []
+    }
+}
+
+function meldung(text, fehler = false) {
+    newsMeldung.value = text
+    newsFehler.value = fehler
+    setTimeout(() => { newsMeldung.value = '' }, 6000)
+}
+
+async function quelleTesten() {
+    newsTestet.value = true
+    try {
+        const { data } = await axios.post('/api/marktradar/news/test', { url: neueQuelle.value.url })
+        meldung(`${data.anzahl} Einträge gefunden — z.B. „${(data.beispiel[0] || '').slice(0, 60)}"`)
+    } catch (e) {
+        meldung(e.response?.data?.error || e.message, true)
+    } finally {
+        newsTestet.value = false
+    }
+}
+
+async function quelleAnlegen() {
+    try {
+        await axios.post('/api/marktradar/news/sources', neueQuelle.value)
+        neueQuelle.value = { art: 'youtube', name: '', url: '' }
+        await ladeNewsQuellen()
+        meldung('Quelle hinzugefügt.')
+    } catch (e) {
+        meldung(e.response?.data?.error || e.message, true)
+    }
+}
+
+async function quelleAendern(q, felder) {
+    try {
+        await axios.put(`/api/marktradar/news/sources/${q.id}`, felder)
+        await ladeNewsQuellen()
+    } catch (e) {
+        meldung(e.response?.data?.error || e.message, true)
+    }
+}
+
+async function quelleLoeschen(q) {
+    if (!confirm(`Quelle „${q.name || q.url}" mitsamt ihren Beiträgen löschen?`)) return
+    try {
+        await axios.delete(`/api/marktradar/news/sources/${q.id}`)
+        await ladeNewsQuellen()
+    } catch (e) {
+        meldung(e.response?.data?.error || e.message, true)
+    }
+}
+
+async function vorschlagUebernehmen(v) {
+    neueQuelle.value = { art: v.art, name: v.name, url: v.url, laerm: v.laerm }
+    await quelleAnlegen()
+}
+
+async function kalenderHolen() {
+    radarHolt.value = true
+    radarMeldung.value = ''
+    try {
+        const { data } = await axios.post('/api/marktradar/kalender/holen')
+        radarMeldung.value = data.uebersprungen
+            // Der Feed ist gedrosselt — ein „zu früh" ist kein Fehler
+            ? 'Zuletzt vor Kurzem geholt — der Feed wird höchstens alle paar Minuten gefragt.'
+            : `${data.gesehen} Termine gesehen, ${data.neu} neu.`
+    } catch (e) {
+        radarMeldung.value = e.response?.data?.error || e.message
+    } finally {
+        radarHolt.value = false
     }
 }
 
@@ -1490,8 +1768,12 @@ onBeforeMount(async () => {
         }
         currentBalance.value = ''
     }
-    // KI-Settings über verschlüsselten Endpoint laden
-    await Promise.all([loadAiSettings(), loadAiTokenStats()])
+    // KI-Settings über verschlüsselten Endpoint laden.
+    // `loadModelLists()` MUSS hier mitlaufen: ohne die Listen zeigt das
+    // Auswahlfeld nur das gespeicherte Modell, und die Auswahl ist praktisch
+    // tot (Anbieter wechseln half nicht — die Listen wurden nur für Ollama
+    // nachgeladen).
+    await Promise.all([loadAiSettings(), loadAiTokenStats(), loadModelLists()])
     if (aiProvider.value === 'ollama') {
         await loadOllamaModels()
     }
@@ -1513,6 +1795,7 @@ onBeforeMount(async () => {
     await loadAuthStatus()
     esp32Filter.value = currentUser.value?.esp32Filter || 'month'
     loadRecorderSettings()
+    loadRadarSettings()
     await loadRecorderStatus()
     loadAgentSettings()
 
@@ -1969,12 +2252,12 @@ onBeforeMount(async () => {
                         <div class="col-12 col-md-4">{{ t('settings.provider') }}</div>
                         <div class="col-12 col-md-8">
                             <select class="form-select" v-model="aiProvider" @change="onProviderChange">
-                                <option value="ollama">{{ t('settings.ollamaLocal') }}</option>
-                                <option value="openai">OpenAI</option>
-                                <option value="anthropic">Anthropic (Claude)</option>
-                                <option value="gemini">Google Gemini</option>
-                                <option value="deepseek">DeepSeek</option>
-                                <option value="custom">{{ t('settings.customProvider') }}</option>
+                                <option v-for="a in anbieterListe" :key="a.id" :value="a.id">{{ a.name }}</option>
+                                <!-- Ein gespeicherter, nicht mehr angebotener Anbieter würde das
+                                     Feld sonst leer erscheinen lassen. -->
+                                <option v-if="aiProvider && !aktuellerAnbieter" :value="aiProvider">
+                                    {{ aiProvider }} ({{ t('settings.providerRetired') }})
+                                </option>
                             </select>
                         </div>
                     </div>
@@ -1988,13 +2271,17 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
-                    <!-- Basis-URL des eigenen Anbieters -->
-                    <div v-if="aiProvider === 'custom'" class="row mt-2">
+                    <!-- Basis-URL: eigener Anbieter (Pflicht) und Qwen (Vorbelegung) -->
+                    <div v-if="aktuellerAnbieter?.urlSpalte" class="row mt-2">
                         <div class="col-12 col-md-4">{{ t('settings.customUrl') }}</div>
                         <div class="col-12 col-md-8">
-                            <input type="text" class="form-control" v-model="aiCustomUrl"
-                                placeholder="https://api.groq.com/openai/v1" />
-                            <small class="text-muted">{{ t('settings.customUrlHint') }}</small>
+                            <input type="text" class="form-control" v-model="anbieterUrl"
+                                :placeholder="aiProvider === 'qwen'
+                                    ? 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
+                                    : 'https://api.groq.com/openai/v1'" />
+                            <small class="text-muted">
+                                {{ aiProvider === 'qwen' ? t('settings.qwenUrlHint') : t('settings.customUrlHint') }}
+                            </small>
                         </div>
                     </div>
 
@@ -2027,10 +2314,7 @@ onBeforeMount(async () => {
                             </div>
                             <small class="text-muted">
                                 <i class="uil uil-lock me-1"></i>{{ t('settings.encryptedStored') }}
-                                <span v-if="aiProvider === 'openai'"> Von platform.openai.com/api-keys</span>
-                                <span v-else-if="aiProvider === 'anthropic'"> Von console.anthropic.com/settings/keys</span>
-                                <span v-else-if="aiProvider === 'gemini'"> Von aistudio.google.com/apikey</span>
-                                <span v-else-if="aiProvider === 'deepseek'"> Von platform.deepseek.com/api_keys</span>
+                                <span v-if="aktuellerAnbieter?.keyUrl"> {{ t('settings.keyFrom') }} {{ aktuellerAnbieter.keyUrl }}</span>
                             </small>
                         </div>
                     </div>
@@ -2528,6 +2812,348 @@ onBeforeMount(async () => {
 
                 </div>
                 <div v-show="bereich === 'live'">
+                <hr />
+
+                <!--=============== MARKTRADAR ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="radarExpanded = !radarExpanded">
+                    <i class="uil me-2" :class="radarExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Marktradar · Kacheln</p>
+                </div>
+                <div v-show="radarExpanded" class="mt-2 ms-3">
+                    <p class="fw-lighter">Betrifft die Kacheln auf der Seite „Marktradar". Was sichtbar ist, wie gross und in welcher Reihenfolge, stellst du direkt dort ein — das bleibt je Gerät gespeichert.</p>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            RSI-Symbole
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Leer lassen: die Kachel nimmt die umsatzstärksten Märkte oder deine eigenen Trades.
+                                Eine Liste hier (z.B. <code>BTCUSDT, ETHUSDT</code>) sticht beides.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <input type="text" class="form-control" v-model="radarRsiSymbols"
+                                placeholder="BTCUSDT, ETHUSDT, SOLUSDT" @change="radarSpeichern('radarRsiSymbols')" />
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            Pi-Cycle-Alarm
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Meldet sich, wenn die 111-Tage-Linie die doppelte 350-Tage-Linie kreuzt.
+                                Das ist historisch nahe am Zyklushoch passiert — aber dreimal in
+                                fünfzehn Jahren, also keine Statistik, sondern ein Hinweis.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
+                            <label class="switch mb-0">
+                                <input type="checkbox" v-model="radarPicycleAlarm" @change="radarSpeichern('radarPicycleAlarm')">
+                                <span class="slider round"></span>
+                            </label>
+                            <select class="form-select form-select-sm" style="max-width:20rem;"
+                                v-model.number="radarPicycleSchwelle" :disabled="!radarPicycleAlarm"
+                                @change="radarSpeichern('radarPicycleSchwelle')">
+                                <option :value="0">Nur bei der Kreuzung selbst</option>
+                                <option :value="3">Auch schon bei 3 % Abstand</option>
+                                <option :value="5">Auch schon bei 5 % Abstand</option>
+                                <option :value="10">Auch schon bei 10 % Abstand</option>
+                                <option :value="20">Auch schon bei 20 % Abstand</option>
+                            </select>
+                        </div>
+                    </div>
+                    <p class="fw-lighter" style="font-size:0.8rem;">
+                        Die Kreuzung selbst zu melden kommt genau genommen zu spät — sie <em>ist</em> das
+                        Signal. Mit einer Schwelle bekommst du Vorlauf: der Alarm meldet sich schon,
+                        wenn die kurze Linie bis auf den eingestellten Abstand herangelaufen ist.
+                        Aktuell liegt der Abstand bei rund −59 %.
+                    </p>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            Kalender · Länder
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Währungskürzel des Wirtschaftskalenders, z.B. <code>USD, JPY, EUR</code>.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <input type="text" class="form-control" v-model="radarKalenderLaender"
+                                placeholder="USD, JPY" @change="radarSpeichern('radarKalenderLaender')" />
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            Kalender · ab welcher Wirkung
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                „Mittel" schliesst hohe Wirkung mit ein — es ist eine Untergrenze.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select" v-model="radarKalenderImpact" @change="radarSpeichern('radarKalenderImpact')">
+                                <option value="all">Alle Termine</option>
+                                <option value="medium">Mittel und hoch</option>
+                                <option value="high">Nur hohe Wirkung</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button class="btn btn-outline-primary btn-sm" :disabled="radarHolt" @click="kalenderHolen">
+                            <span v-if="radarHolt" class="spinner-border spinner-border-sm me-2"></span>
+                            Kalender jetzt holen
+                        </button>
+                        <span v-if="radarMeldung" class="ms-2 small text-muted">{{ radarMeldung }}</span>
+                    </div>
+
+                    <!--=============== NACHRICHTENQUELLEN ===============-->
+                    <hr class="mt-4" />
+                    <p class="fw-bold mb-1">Nachrichtenquellen</p>
+                    <p class="fw-lighter">
+                        YouTube-Kanäle und RSS-Adressen für die Nachrichten-Kachel. Was du als
+                        <strong>Lärm</strong> markierst, blendet der „Arschlochfilter" aus — und holt es gar nicht
+                        erst ab. Es werden nur Titel, Verweis und Zeitpunkt gespeichert, keine Volltexte.
+                    </p>
+                    <p class="fw-lighter" style="font-size:0.82rem;">
+                        <strong>Zu X:</strong> Seit dem Wegfall der freien API gibt es dafür keine brauchbare
+                        öffentliche Quelle mehr — geprüft am 16.08.2026: von sechs bekannten Nitter-Instanzen
+                        antworteten zwei mit 403, zwei mit einer Fehlerseite, eine gar nicht, und die letzte
+                        liefert nur „RSS reader not yet whitelisted". Die Art „X" ist deshalb nur nützlich,
+                        wenn du eine eigene Instanz oder eine bezahlte Brücke hast. Der Test-Knopf erkennt
+                        solche Sperrantworten und meldet sie, statt sie als Erfolg auszugeben.
+                    </p>
+
+                    <div class="row align-items-center mb-2">
+                        <div class="col-12 col-md-3">
+                            <label class="fw-lighter">Arschlochfilter</label>
+                        </div>
+                        <div class="col-12 col-md-9">
+                            <label class="switch">
+                                <input type="checkbox" v-model="radarArschlochfilter" @change="radarSpeichern('radarArschlochfilter')">
+                                <span class="slider round"></span>
+                            </label>
+                            <span class="ms-2 small text-muted">
+                                {{ radarArschlochfilter ? 'An — als Lärm markierte Quellen bleiben aussen vor' : 'Aus — alle aktiven Quellen werden geholt' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <table class="table table-sm align-middle" v-if="newsQuellen.length">
+                        <thead>
+                            <tr>
+                                <th style="width:6rem;">Art</th>
+                                <th>Name</th>
+                                <th>Adresse</th>
+                                <th style="width:5rem;" class="text-center">Aktiv</th>
+                                <th style="width:5rem;" class="text-center">Lärm</th>
+                                <th style="width:5rem;" class="text-center" title="Nur YouTube: sollen die Videos dieser Quelle an Gemini gehen? Jedes kostet 3–10 Rappen.">Videos</th>
+                                <th style="width:7rem;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="q in newsQuellen" :key="q.id">
+                                <td class="text-muted">{{ q.art }}</td>
+                                <td>{{ q.name || '—' }}</td>
+                                <td class="text-truncate" style="max-width:22rem;">
+                                    <span :title="q.url">{{ q.url }}</span>
+                                    <div v-if="q.letzterFehler" class="small" style="color:rgb(250,190,60);">
+                                        {{ q.letzterFehler }}
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <input type="checkbox" :checked="!!q.enabled"
+                                        @change="quelleAendern(q, { enabled: $event.target.checked ? 1 : 0 })">
+                                </td>
+                                <td class="text-center">
+                                    <input type="checkbox" :checked="!!q.laerm"
+                                        @change="quelleAendern(q, { laerm: $event.target.checked ? 1 : 0 })">
+                                </td>
+                                <td class="text-center">
+                                    <!-- Nur bei YouTube sinnvoll: alles andere hat keine Videos -->
+                                    <input v-if="q.art === 'youtube'" type="checkbox"
+                                        :checked="Number(q.videoAnalyse ?? 1) === 1"
+                                        @change="quelleAendern(q, { videoAnalyse: $event.target.checked ? 1 : 0 })">
+                                    <span v-else class="text-muted">—</span>
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-outline-danger btn-sm" @click="quelleLoeschen(q)">
+                                        <i class="uil uil-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="row g-2 align-items-center">
+                        <div class="col-6 col-md-2">
+                            <select class="form-select form-select-sm" v-model="neueQuelle.art">
+                                <option value="youtube">YouTube</option>
+                                <option value="rss">RSS</option>
+                                <option value="truth">Truth Social</option>
+                                <option value="x">X (eigene Quelle)</option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <input class="form-control form-control-sm" v-model="neueQuelle.name" placeholder="Name">
+                        </div>
+                        <div class="col-12 col-md-5">
+                            <input class="form-control form-control-sm" v-model="neueQuelle.url"
+                                placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=…">
+                        </div>
+                        <div class="col-12 col-md-2 d-flex gap-1">
+                            <button class="btn btn-outline-secondary btn-sm" :disabled="newsTestet"
+                                @click="quelleTesten">Test</button>
+                            <button class="btn btn-outline-primary btn-sm" @click="quelleAnlegen">Hinzufügen</button>
+                        </div>
+                    </div>
+                    <div v-if="newsMeldung" class="small mt-2" :class="newsFehler ? 'text-danger' : 'text-muted'">
+                        {{ newsMeldung }}
+                    </div>
+
+                    <div v-if="newsVorschlaege.length" class="mt-2 small">
+                        <span class="text-muted me-2">Vorschläge:</span>
+                        <button v-for="v in newsVorschlaege" :key="v.url"
+                            class="btn btn-outline-secondary btn-sm me-1 mb-1" @click="vorschlagUebernehmen(v)">
+                            {{ v.name }}<span v-if="v.laerm" class="ms-1 text-muted">(Lärm)</span>
+                        </button>
+                    </div>
+
+                    <!--=============== LAGEBERICHT ===============-->
+                    <hr class="mt-4" />
+                    <p class="fw-bold mb-1">Lagebericht · KI</p>
+                    <p class="fw-lighter">
+                        Aus den gesammelten Beiträgen schreibt die KI <strong>einen</strong> Bericht auf Deutsch —
+                        nicht je Beitrag eine Zusammenfassung, sondern das Gesamtbild.
+                    </p>
+                    <p class="fw-lighter">
+                        Der Ablauf hat zwei Stufen mit zwei Anbietern:
+                        <strong>Gemini sieht sich zuerst die YouTube-Videos an</strong> (es ist der einzige
+                        Anbieter, der eine Video-Adresse selbst öffnet — mit eigenem Schlüssel, unabhängig
+                        vom Standard-Anbieter). Was dabei herauskommt, geht zusammen mit den Text-Meldungen
+                        an deinen eingestellten Anbieter
+                        (<code>{{ currentUser?.aiProvider || '—' }} / {{ currentUser?.aiModel || '—' }}</code>),
+                        der daraus den Bericht schreibt. Fällt Gemini aus, entsteht der Bericht trotzdem —
+                        dann ohne Videoinhalte.
+                    </p>
+                    <p class="fw-lighter">
+                        <strong>Das Video ist der teure Teil</strong>, nicht der Text: abgerechnet wird nach
+                        Videolänge. Untertitel wären billiger, aber YouTube liefert sie an nicht angemeldete
+                        Zugriffe seit Kurzem nicht mehr aus (geprüft am 16.08.2026, auch mit yt-dlp) —
+                        deshalb führt kein Weg an der Videoanalyse vorbei.
+                    </p>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            Täglich automatisch
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Ein Bericht pro Tag zur eingestellten Stunde. Aus: nur noch per Knopf.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2">
+                            <label class="switch mb-0">
+                                <input type="checkbox" v-model="radarNewsAuto" @change="radarSpeichern('radarNewsAuto')">
+                                <span class="slider round"></span>
+                            </label>
+                            <select class="form-select form-select-sm" style="max-width:8rem;"
+                                v-model.number="radarNewsStunde" :disabled="!radarNewsAuto" @change="radarSpeichern('radarNewsStunde')">
+                                <option v-for="h in 24" :key="h - 1" :value="h - 1">
+                                    {{ String(h - 1).padStart(2, '0') }}:00
+                                </option>
+                            </select>
+                            <span class="small text-muted">{{ currentUser?.timeZone || 'lokale Zeit' }}</span>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            Videos je Lauf an Gemini
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Video ist der teuerste Eingabetyp — abgerechnet nach Länge. 0 = keine Videos ansehen,
+                                dann nutzt der Bericht nur Titel und Videobeschreibung.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2">
+                            <input type="number" class="form-control" style="max-width:6rem;" min="0" max="10"
+                                v-model.number="radarNewsVideos" @change="radarSpeichern('radarNewsVideos')" />
+                            <!-- Aus dem Modellkatalog des Projekts statt freies
+                                 Textfeld: ein Tippfehler hier fiele erst beim
+                                 ersten Videolauf auf, und der kostet Geld. -->
+                            <select class="form-select" style="max-width:16rem;"
+                                v-model="radarNewsModel" @change="radarSpeichern('radarNewsModel')">
+                                <option value="">Gemini-Vorgabe</option>
+                                <!-- Ein gespeichertes Modell, das der Katalog nicht (mehr) führt,
+                                     bleibt wählbar — sonst stünde das Feld leer da und der
+                                     nächste Speichervorgang hätte die Einstellung gelöscht. -->
+                                <option v-if="radarNewsModel && !(modellListen.gemini || []).includes(radarNewsModel)"
+                                    :value="radarNewsModel">{{ radarNewsModel }} (nicht im Katalog)</option>
+                                <option v-for="m in (modellListen.gemini || [])" :key="m" :value="m">{{ m }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            Modell für den Bericht
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Leer = dein allgemein eingestellter Anbieter. Der Bericht ist reine
+                                Textarbeit — ein günstigeres Modell tut es hier oft genauso.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
+                            <select class="form-select form-select-sm" style="max-width:10rem;"
+                                v-model="radarNewsBerichtProvider" @change="radarSpeichern('radarNewsBerichtProvider')">
+                                <option value="">Standard-Anbieter</option>
+                                <option v-for="(liste, anbieter) in modellListen" :key="anbieter" :value="anbieter">
+                                    {{ anbieter }}
+                                </option>
+                            </select>
+                            <select class="form-select form-select-sm" style="max-width:16rem;"
+                                v-model="radarNewsBerichtModell" @change="radarSpeichern('radarNewsBerichtModell')">
+                                <option value="">Standard-Modell</option>
+                                <option v-for="m in (modellListen[radarNewsBerichtProvider] || [])" :key="m" :value="m">
+                                    {{ m }}
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            Videoauflösung
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Niedrig kostet rund 100 Token je Videosekunde, Standard rund 300 —
+                                also das Dreifache. Für gesprochene Marktkommentare reicht niedrig,
+                                weil die Tonspur den Inhalt trägt.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select form-select-sm" style="max-width:22rem;"
+                                v-model="radarNewsAufloesung" @change="radarSpeichern('radarNewsAufloesung')">
+                                <option value="niedrig">Niedrig — ~0,04 $ je 20-Minuten-Video</option>
+                                <option value="standard">Standard — ~0,11 $ je 20-Minuten-Video</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button class="btn btn-outline-primary btn-sm" :disabled="berichtLaeuft" @click="berichtJetzt">
+                            <span v-if="berichtLaeuft" class="spinner-border spinner-border-sm me-2"></span>
+                            Lagebericht jetzt erzeugen
+                        </button>
+                        <span class="ms-2 small text-muted">
+                            kostet ungefähr <strong>{{ (kostenSchaetzung.gesamt * 0.8).toFixed(2) }} CHF</strong> je Lauf
+                            <span v-if="kostenSchaetzung.videos">
+                                — davon {{ (kostenSchaetzung.bericht * 0.8).toFixed(2) }} für den Text,
+                                {{ kostenSchaetzung.videos }} × {{ (kostenSchaetzung.proVideo * 0.8).toFixed(2) }}
+                                für die Videos (bei 20 Minuten Länge)
+                            </span>
+                            <span v-else>— ohne Videos</span>
+                        </span>
+                        <div v-if="berichtMeldung" class="small mt-2" :class="berichtFehler ? 'text-danger' : 'text-muted'">
+                            {{ berichtMeldung }}
+                        </div>
+                    </div>
+                </div>
+
                 <hr />
 
                 <!--=============== LIVE-RECORDER ===============-->

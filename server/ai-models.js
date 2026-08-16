@@ -11,32 +11,175 @@
  */
 
 import { getKnex } from './database.js'
-import { isAllowedOllamaUrl } from './ollama-api.js'
+import { isAllowedOllamaUrl } from './ollama-url.js'
 import { decrypt } from './crypto.js'
 import { logError, logWarn } from './logger.js'
 
 /**
- * Ausgangslisten. Bewusst kurz gehalten: was fehlt, trägt man selbst nach —
- * eine lange Liste zu pflegen, die trotzdem immer hinterherhinkt, hilft
- * niemandem.
+ * Anbieter-Verzeichnis — die einzige Wahrheit über KI-Anbieter.
+ *
+ * Vorher standen Anbietername, Adresse, Schlüsselspalte und Fähigkeiten an rund
+ * einem Dutzend Stellen verteilt, jede für sich gepflegt. Wer einen Anbieter
+ * ergänzte, musste sechs `else if`-Ketten und ebenso viele Spaltenlisten
+ * treffen — und übersah zuverlässig eine davon.
+ *
+ * Felder:
+ *   art        'openai' = spricht die OpenAI-Schnittstelle (ein gemeinsamer
+ *              Code-Pfad), sonst eigener Zweig
+ *   basisUrl   feste Adresse ODER
+ *   urlSpalte  Einstellungsfeld, aus dem die Adresse kommt (Betreiber-abhängig)
+ *   anhang     was der Anbieter an Anhängen versteht (Bilder/PDF)
+ *   jsonModus  ob `response_format: json_object` akzeptiert wird
+ *   katalog    ob sich die Modellliste beim Anbieter abrufen lässt
+ *   abgekuendigt  nicht mehr wählbar, aber zur Laufzeit weiter bedient
+ *
+ * Modell-Listen bewusst kurz: was fehlt, trägt man in den Einstellungen nach.
+ * Stand 16.08.2026, gegen die Anbieter-Seiten geprüft.
  */
-export const STANDARD_MODELLE = {
-    anthropic: [
-        'claude-opus-5',
-        'claude-sonnet-5',
-        'claude-fable-5',
-        'claude-haiku-4-5',
-    ],
-    openai: ['gpt-4o', 'gpt-4o-mini'],
-    gemini: ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro'],
-    deepseek: ['deepseek-chat', 'deepseek-reasoner'],
-    // Eigener Endpunkt: welche Modelle es gibt, weiss nur der Betreiber.
-    custom: [],
-    // Ollama-Modelle kommen vom Server selbst, nicht aus einer Liste.
-    ollama: [],
+export const ANBIETER_REG = {
+    ollama: {
+        name: 'Ollama (lokal)', art: 'ollama', keySpalte: '',
+        anhang: { image: true, pdf: false }, jsonModus: false, katalog: false,
+        modelle: [],   // kommen vom Ollama-Server selbst
+    },
+    anthropic: {
+        name: 'Anthropic (Claude)', art: 'anthropic', keySpalte: 'aiKeyAnthropic',
+        keyUrl: 'console.anthropic.com/settings/keys',
+        anhang: { image: true, pdf: true }, jsonModus: false, katalog: true,
+        modelle: ['claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'claude-haiku-4-5'],
+    },
+    openai: {
+        name: 'OpenAI', art: 'openai', keySpalte: 'aiKeyOpenai',
+        basisUrl: 'https://api.openai.com/v1', keyUrl: 'platform.openai.com/api-keys',
+        anhang: { image: true, pdf: false }, jsonModus: true, katalog: true,
+        modelle: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+    },
+    gemini: {
+        name: 'Google Gemini', art: 'gemini', keySpalte: 'aiKeyGemini',
+        keyUrl: 'aistudio.google.com/apikey',
+        anhang: { image: true, pdf: true }, jsonModus: false, katalog: true,
+        // `gemini-2.x` fehlt bewusst: Google antwortet darauf mit 404
+        // („no longer available to new users").
+        modelle: [
+            'gemini-3.7-flash',        // neuestes Flash; im Gratis-Kontingent oft 503
+            'gemini-3.6-flash',
+            'gemini-3.5-flash',
+            'gemini-3.5-flash-lite',
+            'gemini-3.1-flash-lite',
+            'gemini-3.1-pro-preview',  // Pro-Modelle brauchen ein Abrechnungskonto
+        ],
+    },
+    mistral: {
+        name: 'Mistral', art: 'openai', keySpalte: 'aiKeyMistral',
+        basisUrl: 'https://api.mistral.ai/v1', keyUrl: 'console.mistral.ai/api-keys',
+        anhang: { image: false, pdf: false },   // ungetestet, siehe unten
+        jsonModus: true, katalog: true,
+        modelle: ['mistral-medium-2508', 'mistral-large-2411', 'mistral-small-2506'],
+    },
+    xai: {
+        name: 'xAI (Grok)', art: 'openai', keySpalte: 'aiKeyXai',
+        basisUrl: 'https://api.x.ai/v1', keyUrl: 'console.x.ai',
+        anhang: { image: false, pdf: false },   // ungetestet, siehe unten
+        jsonModus: true, katalog: true,
+        modelle: ['grok-4.6', 'grok-4.5', 'grok-4.3'],
+    },
+    qwen: {
+        name: 'Qwen (Alibaba)', art: 'openai', keySpalte: 'aiKeyQwen',
+        // Alibaba vergibt internationalen Konten arbeitsbereichs-eigene Hosts,
+        // deshalb überschreibbar. `basisUrl` ist nur die Vorbelegung.
+        basisUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+        urlSpalte: 'aiQwenUrl', keyUrl: 'bailian.console.alibabacloud.com',
+        anhang: { image: false, pdf: false },
+        // DashScope nimmt `response_format` nicht durchgängig an — ein 400
+        // legt sonst die Strategie-Agenten lahm.
+        jsonModus: false, katalog: false,
+        modelle: ['qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash'],
+    },
+    custom: {
+        name: 'Eigener Anbieter (OpenAI-kompatibel)', art: 'openai', keySpalte: 'aiKeyCustom',
+        urlSpalte: 'aiCustomUrl', pflichtUrl: true,
+        // Was ein eigener Endpunkt kann, weiss nur der Betreiber. Bilder gehen
+        // im OpenAI-Format mit; PDFs bleiben aussen vor, weil es dafür kein
+        // einheitliches Format gibt.
+        anhang: { image: true, pdf: false }, jsonModus: false, katalog: true,
+        modelle: [],
+    },
+    // Abgekündigt: nicht mehr wählbar, aber weiter bedient — es gibt Berichte
+    // und Agent-Läufe mit `provider='deepseek'`, und ein gespeicherter
+    // Anbieter darf nicht zur Laufzeit ins Leere laufen.
+    deepseek: {
+        name: 'DeepSeek', art: 'openai', keySpalte: 'aiKeyDeepseek',
+        basisUrl: 'https://api.deepseek.com/v1', keyUrl: 'platform.deepseek.com/api_keys',
+        anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
+        modelle: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+        abgekuendigt: true,
+    },
 }
 
-export const ANBIETER = Object.keys(STANDARD_MODELLE)
+/** Auswählbare Anbieter — ohne die abgekündigten. */
+export const ANBIETER = Object.keys(ANBIETER_REG).filter((p) => !ANBIETER_REG[p].abgekuendigt)
+
+/** Ausgangslisten je auswählbarem Anbieter (Rückfallebene für `ladeModelle`). */
+export const STANDARD_MODELLE = Object.fromEntries(
+    ANBIETER.map((p) => [p, [...ANBIETER_REG[p].modelle]]),
+)
+
+/** Schlüsselspalte eines Anbieters, '' wenn er keine hat (Ollama). */
+export function keySpalte(provider) {
+    return ANBIETER_REG[provider]?.keySpalte || ''
+}
+
+/** Alle Schlüsselspalten — für die `select`-Listen, damit keine vergessen wird. */
+export const KEY_SPALTEN = [...new Set(
+    Object.values(ANBIETER_REG).map((r) => r.keySpalte).filter(Boolean),
+)]
+
+/** Alle Adress-Spalten (`aiCustomUrl`, `aiQwenUrl` …). */
+export const KI_URL_SPALTEN = [...new Set(
+    Object.values(ANBIETER_REG).map((r) => r.urlSpalte).filter(Boolean),
+)]
+
+/** Spricht der Anbieter die OpenAI-Schnittstelle? */
+export function istOpenAiKompatibel(provider) {
+    return ANBIETER_REG[provider]?.art === 'openai'
+}
+
+/** Darf der Anbieter Bilder (Screenshots) mitgeschickt bekommen? */
+export function kannBilder(provider) {
+    return !!ANBIETER_REG[provider]?.anhang?.image
+}
+
+/** Erstes Standardmodell eines Anbieters — Rückfall, wenn keines gewählt ist. */
+export function standardModell(provider) {
+    return ANBIETER_REG[provider]?.modelle?.[0] || ''
+}
+
+/**
+ * Basis-URL eines Anbieters: Einstellungsfeld schlägt feste Adresse.
+ * @param {string} provider
+ * @param {object} settings  gelesene settings-Zeile
+ */
+export function anbieterBasis(provider, settings = {}) {
+    const reg = ANBIETER_REG[provider]
+    if (!reg) return ''
+    const ausFeld = reg.urlSpalte ? basisUrl(settings[reg.urlSpalte]) : ''
+    return ausFeld || (reg.pflichtUrl ? '' : (reg.basisUrl || ''))
+}
+
+/** Vollständiger Chat-Endpunkt oder '' wenn keine Adresse ermittelbar ist. */
+export function chatEndpunkt(provider, settings = {}) {
+    const basis = anbieterBasis(provider, settings)
+    return basis ? `${basis}/chat/completions` : ''
+}
+
+/**
+ * Rückfall-Modell, wenn ein Aufruf kein Gemini-Modell mitgibt.
+ *
+ * Bewusst günstig, allgemein verfügbar und auch im Gratis-Kontingent
+ * erreichbar — ein Rückfall, der am Kontingent scheitert, ist keiner.
+ * Hier stand lange `gemini-2.0-flash`; das kennt Google nicht mehr.
+ */
+export const GEMINI_STANDARDMODELL = 'gemini-3.5-flash-lite'
 
 /**
  * Modelle, die Sampling-Parameter (`temperature`, `top_p`, `top_k`) mit einem
@@ -140,6 +283,16 @@ export function setupAiModelRoutes(app) {
                 modelle,
                 standard: STANDARD_MODELLE,
                 ohneSampling: OHNE_SAMPLING,
+                // Damit die Oberfläche Auswahl, Schlüssel-Hinweis und Adressfeld
+                // nicht ein zweites Mal fest verdrahten muss.
+                anbieter: ANBIETER.map((id) => ({
+                    id,
+                    name: ANBIETER_REG[id].name,
+                    keyUrl: ANBIETER_REG[id].keyUrl || '',
+                    brauchtKey: !!ANBIETER_REG[id].keySpalte,
+                    urlSpalte: ANBIETER_REG[id].urlSpalte || '',
+                    katalog: !!ANBIETER_REG[id].katalog,
+                })),
             })
         } catch (e) {
             logError('ai-models', 'Laden fehlgeschlagen', e)
@@ -180,35 +333,37 @@ export function setupAiModelRoutes(app) {
      */
     app.get('/api/ai/models/available', async (req, res) => {
         const anbieter = String(req.query.provider || '')
-        if (!ANBIETER.includes(anbieter) || anbieter === 'ollama') {
-            return res.status(400).json({ error: 'Unbekannter oder nicht abfragbarer Anbieter' })
+        const reg = ANBIETER_REG[anbieter]
+        if (!reg) {
+            return res.status(400).json({ error: `Unbekannter Anbieter: ${anbieter}` })
+        }
+        if (reg.abgekuendigt) {
+            return res.status(400).json({ error: `${reg.name} wird nicht mehr angeboten.` })
+        }
+        if (!reg.katalog) {
+            return res.status(400).json({
+                error: `${reg.name} führt keinen abrufbaren Modell-Katalog — Modelle bitte von Hand eintragen.`,
+            })
         }
         try {
             const knex = getKnex()
-            const spalte = {
-                openai: 'aiKeyOpenai', anthropic: 'aiKeyAnthropic',
-                gemini: 'aiKeyGemini', deepseek: 'aiKeyDeepseek', custom: 'aiKeyCustom',
-            }[anbieter]
-            const s = await knex('settings').select(spalte, 'aiApiKey', 'aiCustomUrl').where('id', 1).first()
-            const apiKey = decrypt(s?.[spalte] || '') || decrypt(s?.aiApiKey || '')
+            const spalte = reg.keySpalte
+            const s = await knex('settings').select(spalte, 'aiApiKey', ...KI_URL_SPALTEN).where('id', 1).first()
+            // Der alte Sammelschlüssel greift nur noch dort, wo er herkam.
+            const apiKey = decrypt(s?.[spalte] || '') || (anbieter === 'openai' ? decrypt(s?.aiApiKey || '') : '')
             if (!apiKey) {
                 return res.status(400).json({ error: 'Für diesen Anbieter ist kein API-Key hinterlegt.' })
+            }
+
+            const basis = anbieterBasis(anbieter, s)
+            if (reg.art === 'openai' && !basis) {
+                return res.status(400).json({ error: `Für ${reg.name} ist keine gültige Basis-URL hinterlegt.` })
             }
 
             const abfrage = {
                 anthropic: {
                     url: 'https://api.anthropic.com/v1/models?limit=100',
                     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-                    lies: (d) => (d.data || []).map((m) => m.id),
-                },
-                openai: {
-                    url: 'https://api.openai.com/v1/models',
-                    headers: { Authorization: `Bearer ${apiKey}` },
-                    lies: (d) => (d.data || []).map((m) => m.id),
-                },
-                deepseek: {
-                    url: 'https://api.deepseek.com/models',
-                    headers: { Authorization: `Bearer ${apiKey}` },
                     lies: (d) => (d.data || []).map((m) => m.id),
                 },
                 gemini: {
@@ -218,15 +373,11 @@ export function setupAiModelRoutes(app) {
                     headers: { 'x-goog-api-key': apiKey },
                     lies: (d) => (d.models || []).map((m) => String(m.name).replace(/^models\//, '')),
                 },
-                custom: {
-                    url: `${basisUrl(s?.aiCustomUrl)}/models`,
-                    headers: { Authorization: `Bearer ${apiKey}` },
-                    lies: (d) => (d.data || []).map((m) => m.id),
-                },
-            }[anbieter]
-
-            if (anbieter === 'custom' && !basisUrl(s?.aiCustomUrl)) {
-                return res.status(400).json({ error: 'Für den eigenen Anbieter ist keine gültige Basis-URL hinterlegt.' })
+            }[anbieter] || {
+                // Alle OpenAI-kompatiblen Anbieter teilen sich eine Abfrage.
+                url: `${basis}/models`,
+                headers: { Authorization: `Bearer ${apiKey}` },
+                lies: (d) => (d.data || []).map((m) => m.id),
             }
 
             const r = await fetch(abfrage.url, {

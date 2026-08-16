@@ -1,37 +1,26 @@
 import { getKnex } from './database.js'
 import { encrypt, decrypt } from './crypto.js'
 import { logWarn, logError } from './logger.js'
-import { samplingFelder, basisUrl } from './ai-models.js'
+import { isAllowedOllamaUrl, pruefeKiEndpunkt } from './ollama-url.js'
+import {
+    samplingFelder, basisUrl, GEMINI_STANDARDMODELL,
+    ANBIETER_REG, KEY_SPALTEN, KI_URL_SPALTEN,
+    keySpalte, istOpenAiKompatibel, kannBilder, standardModell,
+    anbieterBasis, chatEndpunkt,
+} from './ai-models.js'
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
 /**
- * SSRF-Schutz: Prüft ob eine URL auf einen lokalen/privaten Host zeigt.
- * Erlaubt: localhost, 127.0.0.1, ::1, 0.0.0.0, 192.168.x.x, 10.x.x.x, 172.16-31.x.x
- * @param {string} url - Die zu prüfende URL
- * @returns {boolean} true wenn lokal/privat, false sonst
+ * Zeitgrenze für Anbieter-Aufrufe. Grosszügig, weil ein ausführlicher Bericht
+ * mit Bildern und langem Kontext dauern darf — aber endlich, damit ein
+ * hängender Fremdhost die Anfrage nicht unbegrenzt blockiert.
  */
-export function isAllowedOllamaUrl(url) {
-    try {
-        const parsed = new URL(url)
-        const host = parsed.hostname
-        const isLocal = ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(host)
-        const isPrivate = host.startsWith('192.168.') || host.startsWith('10.') || host.match(/^172\.(1[6-9]|2\d|3[01])\./)
-        return isLocal || isPrivate
-    } catch {
-        return false
-    }
-}
+const ANFRAGE_TIMEOUT_MS = 180000
 
-/**
- * SSRF-Schutz: wirft, wenn die URL nicht auf einen lokalen/privaten Host zeigt.
- * Vor jedem ausgehenden Ollama-Request aufrufen.
- */
-export function assertAllowedOllamaUrl(url) {
-    if (!isAllowedOllamaUrl(url)) {
-        throw new Error('Nur lokale/private Hosts erlaubt für Ollama-URL')
-    }
-}
+// Der SSRF-Schutz liegt in `ollama-url.js` und wird hier nur weitergereicht:
+// bestehende Importeure (`llm.js`, `index.mjs`) sollen sich nicht ändern müssen.
+export { isAllowedOllamaUrl, assertAllowedOllamaUrl } from './ollama-url.js'
 
 /** Parse and validate a numeric ID from request params. Returns the integer or sends 400 and returns null. */
 function parseId(param, res, paramName = 'id') {
@@ -51,22 +40,52 @@ const PROMPT_PRESETS = {
     'Lege besonderen Fokus auf die psychologischen Aspekte: Stress, Emotionen, Disziplin, Overtrading. Analysiere Verhaltensmuster und emotionale Trigger.': 'Psychologie-Fokus',
 }
 
+/**
+ * Alle KI-Spalten in einem Rutsch.
+ *
+ * Vorher pflegte jede der sechs Routen ihre eigene `select`-Liste — wer einen
+ * Anbieter ergänzte, vergaß zuverlässig eine davon, und der Schlüssel war dann
+ * still leer. Eine Obermenge zu lesen kostet nichts: es ist dieselbe eine Zeile.
+ */
+const KI_SPALTEN = [
+    'aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens',
+    'aiOllamaUrl', 'aiScreenshots', 'aiReportPrompt', 'aiChatEnabled',
+    ...KEY_SPALTEN, ...KI_URL_SPALTEN,
+]
+
+/**
+ * Fehlertext eines Anbieters herausziehen.
+ *
+ * Jeder verpackt ihn anders: OpenAI `{error:{message}}`, xAI `{error:"…"}`,
+ * Mistral `{detail:"…"}`. Ohne diese Fallunterscheidung steht in der
+ * Oberfläche nur „Antwort 400" — und der Nutzer sucht den Fehler bei sich.
+ */
+function anbieterFehlertext(err) {
+    if (!err) return ''
+    if (typeof err.error === 'string') return err.error
+    if (err.error?.message) return err.error.message
+    if (typeof err.detail === 'string') return err.detail
+    if (Array.isArray(err.detail)) return err.detail.map((d) => d?.msg || '').filter(Boolean).join('; ')
+    return err.message || ''
+}
+
 // Hilfsfunktion: API-Key für den aktuellen Provider lesen (entschlüsselt)
 function getApiKeyForProvider(settings, provider) {
-    const keyMap = { openai: 'aiKeyOpenai', anthropic: 'aiKeyAnthropic', gemini: 'aiKeyGemini', deepseek: 'aiKeyDeepseek' }
-    const col = keyMap[provider]
+    const col = keySpalte(provider)
     if (col && settings[col]) {
         return decrypt(settings[col])
     }
-    // Fallback: altes aiApiKey-Feld
-    return settings.aiApiKey ? decrypt(settings.aiApiKey) : ''
+    // Der alte Sammelschlüssel `aiApiKey` enthielt einen OpenAI-Schlüssel und
+    // darf nur dort einspringen — sonst ginge er an fremde Hosts.
+    if (provider === 'openai' && settings.aiApiKey) return decrypt(settings.aiApiKey)
+    return ''
 }
 
-/** Basis-URL des eigenen, OpenAI-kompatiblen Anbieters aus den Einstellungen. */
-async function getCustomUrl() {
+/** Basis-URL eines Anbieters aus den gespeicherten Einstellungen. */
+async function anbieterBasisAusDb(provider) {
     try {
-        const row = await getKnex()('settings').select('aiCustomUrl').where('id', 1).first()
-        return row?.aiCustomUrl || ''
+        const row = await getKnex()('settings').select(KI_URL_SPALTEN).where('id', 1).first()
+        return anbieterBasis(provider, row || {})
     } catch { return '' }
 }
 
@@ -87,7 +106,7 @@ export function setupOllamaRoutes(app) {
         try {
             const knex = getKnex()
             const settings = await knex('settings')
-                .select('aiProvider', 'aiModel', 'aiApiKey', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .select(KI_SPALTEN)
                 .where('id', 1).first()
             const provider = settings?.aiProvider || 'ollama'
             const model = settings?.aiModel || ''
@@ -95,24 +114,16 @@ export function setupOllamaRoutes(app) {
 
             if (provider === 'ollama') {
                 return await checkOllamaStatus(res, settings?.aiOllamaUrl, model)
-            } else if (provider === 'openai') {
-                return await checkOpenAIStatus(apiKey, res, model)
             } else if (provider === 'anthropic') {
                 return await checkAnthropicStatus(apiKey, res, model)
             } else if (provider === 'gemini') {
                 return await checkGeminiStatus(apiKey, res, model)
-            } else if (provider === 'deepseek') {
-                return await checkDeepseekStatus(apiKey, res, model)
-            }
-            else if (provider === 'custom') {
-                const basis = basisUrl(req.query.customUrl || await getCustomUrl())
-                if (!basis) return res.json({ online: false, provider, model, error: 'Keine Basis-URL' })
-                try {
-                    const r = await fetch(`${basis}/models`, {
-                        headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10000),
-                    })
-                    return res.json({ online: r.ok, provider, model })
-                } catch (e) { return res.json({ online: false, provider, model, error: e.message }) }
+            } else if (istOpenAiKompatibel(provider)) {
+                // openai, mistral, xai, qwen, custom — und deepseek aus dem Altbestand
+                const basis = req.query.customUrl
+                    ? basisUrl(req.query.customUrl)
+                    : anbieterBasis(provider, settings)
+                return await checkOpenAiKompatibelStatus(apiKey, res, model, provider, basis)
             }
             res.json({ online: false, provider, model })
         } catch (e) {
@@ -138,7 +149,7 @@ export function setupOllamaRoutes(app) {
             try {
                 const knex = getKnex()
                 const settings = await knex('settings')
-                    .select('aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek', 'aiApiKey')
+                    .select(KI_SPALTEN)
                     .where('id', 1).first()
                 apiKey = getApiKeyForProvider(settings, provider)
             } catch (e) {
@@ -157,17 +168,6 @@ export function setupOllamaRoutes(app) {
                     return res.json({ success: true, message: 'Ollama ist erreichbar' })
                 }
                 return res.json({ success: false, message: 'Ollama nicht erreichbar unter ' + url })
-            } else if (provider === 'openai') {
-                if (!apiKey) return res.json({ success: false, message: 'API-Key fehlt' })
-                const response = await fetch('https://api.openai.com/v1/models', {
-                    headers: { 'Authorization': `Bearer ${apiKey}` },
-                    signal: AbortSignal.timeout(10000)
-                })
-                if (response.ok) {
-                    return res.json({ success: true, message: 'OpenAI Verbindung erfolgreich' })
-                }
-                const err = await response.json().catch(() => ({}))
-                return res.json({ success: false, message: err.error?.message || 'OpenAI Fehler' })
             } else if (provider === 'anthropic') {
                 if (!apiKey) return res.json({ success: false, message: 'API-Key fehlt' })
                 const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -200,21 +200,14 @@ export function setupOllamaRoutes(app) {
                 }
                 const err = await response.json().catch(() => ({}))
                 return res.json({ success: false, message: err.error?.message || 'Gemini Fehler' })
-            } else if (provider === 'deepseek') {
-                if (!apiKey) return res.json({ success: false, message: 'API-Key fehlt' })
-                const response = await fetch('https://api.deepseek.com/v1/models', {
-                    headers: { 'Authorization': `Bearer ${apiKey}` },
-                    signal: AbortSignal.timeout(10000)
-                })
-                if (response.ok) {
-                    return res.json({ success: true, message: 'DeepSeek Verbindung erfolgreich' })
-                }
-                const err = await response.json().catch(() => ({}))
-                return res.json({ success: false, message: err.error?.message || 'DeepSeek Fehler' })
-            } else if (provider === 'custom') {
-                // Eigener, OpenAI-kompatibler Endpunkt: erreichbar ist er, wenn
-                // er einen Modellkatalog liefert.
-                const basis = basisUrl(req.body.customUrl || await getCustomUrl())
+            } else if (istOpenAiKompatibel(provider)) {
+                // openai, mistral, xai, qwen, custom — erreichbar ist ein
+                // OpenAI-kompatibler Endpunkt, wenn er einen Katalog liefert.
+                const name = ANBIETER_REG[provider]?.name || provider
+                // `basisUrl` aus dem Rumpf erlaubt den Test einer noch nicht
+                // gespeicherten Adresse (Qwen-Arbeitsbereich, eigener Anbieter).
+                const roh = req.body.basisUrl || req.body.customUrl
+                const basis = roh ? basisUrl(roh) : await anbieterBasisAusDb(provider)
                 if (!basis) return res.json({ success: false, message: 'Basis-URL fehlt oder ist ungültig' })
                 if (!apiKey) return res.json({ success: false, message: 'API-Key fehlt' })
                 const response = await fetch(`${basis}/models`, {
@@ -222,10 +215,11 @@ export function setupOllamaRoutes(app) {
                     signal: AbortSignal.timeout(15000)
                 })
                 if (response.ok) {
-                    return res.json({ success: true, message: 'Verbindung erfolgreich' })
+                    return res.json({ success: true, message: `${name} Verbindung erfolgreich` })
                 }
                 const err = await response.json().catch(() => ({}))
-                return res.json({ success: false, message: err.error?.message || `Antwort ${response.status}` })
+                const text = anbieterFehlertext(err)
+                return res.json({ success: false, message: text || `${name}: Antwort ${response.status}` })
             }
             res.json({ success: false, message: 'Unbekannter Anbieter' })
         } catch (e) {
@@ -243,7 +237,7 @@ export function setupOllamaRoutes(app) {
         try {
             const knex = getKnex()
             const settings = await knex('settings')
-                .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiScreenshots', 'aiReportPrompt', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .select(KI_SPALTEN)
                 .where('id', 1).first()
             const provider = settings?.aiProvider || 'ollama'
             const model = settings?.aiModel || ''
@@ -263,7 +257,7 @@ export function setupOllamaRoutes(app) {
 
             // Screenshots sammeln (nur für Online-Provider wenn aktiviert)
             let screenshots = []
-            if (screenshotsEnabled && provider !== 'ollama' && provider !== 'deepseek') {
+            if (screenshotsEnabled && provider !== 'ollama' && kannBilder(provider)) {
                 screenshots = await collectScreenshots(knex, startDate, endDate, 4)
                 reportData.screenshots = screenshots // Für Prompt-Hinweis
             }
@@ -276,26 +270,20 @@ export function setupOllamaRoutes(app) {
                 const result = await generateOllama(prompt, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
                 report = result.text
                 tokenUsage = result.usage
-            } else if (provider === 'openai') {
-                const result = await generateOpenAI(prompt, apiKey, model || 'gpt-4o-mini', temperature, maxTokens, screenshots)
-                report = result.text
-                tokenUsage = result.usage
             } else if (provider === 'anthropic') {
                 const result = await generateAnthropic(prompt, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens, screenshots)
                 report = result.text
                 tokenUsage = result.usage
             } else if (provider === 'gemini') {
-                const result = await generateGemini(prompt, apiKey, model || 'gemini-2.0-flash', temperature, maxTokens, screenshots)
+                const result = await generateGemini(prompt, apiKey, model || GEMINI_STANDARDMODELL, temperature, maxTokens, screenshots)
                 report = result.text
                 tokenUsage = result.usage
-            } else if (provider === 'deepseek') {
-                const result = await generateDeepSeek(prompt, apiKey, model || 'deepseek-chat', temperature, maxTokens)
-                report = result.text
-                tokenUsage = result.usage
-            } else if (provider === 'custom') {
-                const basis = basisUrl(await getCustomUrl())
-                if (!basis) return res.status(400).json({ error: 'Keine Basis-URL für den eigenen Anbieter' })
-                const result = await generateOpenAI(prompt, apiKey, model, temperature, maxTokens, screenshots, `${basis}/chat/completions`)
+            } else if (istOpenAiKompatibel(provider)) {
+                // openai, mistral, xai, qwen, custom — und deepseek aus dem Altbestand
+                const endpunkt = chatEndpunkt(provider, settings)
+                if (!endpunkt) return res.status(400).json({ error: `Keine Basis-URL für ${provider}` })
+                const result = await generateOpenAI(prompt, apiKey, model || standardModell(provider),
+                    temperature, maxTokens, screenshots, endpunkt)
                 report = result.text
                 tokenUsage = result.usage
             } else {
@@ -371,7 +359,7 @@ export function setupOllamaRoutes(app) {
             // KI-Settings + Trade-Metadaten parallel laden (4 unabhängige Queries)
             const [settings, noteRecord, satRecord, tagRecord] = await Promise.all([
                 knex('settings')
-                    .select('aiProvider', 'aiModel', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                    .select(KI_SPALTEN)
                     .where('id', 1).first(),
                 knex('notes').where('tradeId', tradeId).first(),
                 knex('satisfactions').where('tradeId', tradeId).first(),
@@ -444,7 +432,7 @@ export function setupOllamaRoutes(app) {
                 }
             }
 
-            const hasScreenshot = screenshotData.length > 0 && provider !== 'ollama' && provider !== 'deepseek'
+            const hasScreenshot = screenshotData.length > 0 && provider !== 'ollama' && kannBilder(provider)
 
             // Trading-Metadaten laden (SL/TP, Fills, BE etc.)
             let tradingMeta = null
@@ -617,18 +605,15 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             let result
             if (provider === 'ollama') {
                 result = await generateOllama(reviewPrompt, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
-            } else if (provider === 'openai') {
-                result = await generateOpenAI(reviewPrompt, apiKey, model || 'gpt-4o-mini', temperature, maxTokens, screenshots)
             } else if (provider === 'anthropic') {
                 result = await generateAnthropic(reviewPrompt, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens, screenshots)
             } else if (provider === 'gemini') {
-                result = await generateGemini(reviewPrompt, apiKey, model || 'gemini-2.0-flash', temperature, maxTokens, screenshots)
-            } else if (provider === 'deepseek') {
-                result = await generateDeepSeek(reviewPrompt, apiKey, model || 'deepseek-chat', temperature, maxTokens)
-            } else if (provider === 'custom') {
-                const basis = basisUrl(await getCustomUrl())
-                if (!basis) return res.status(400).json({ error: 'Keine Basis-URL für den eigenen Anbieter' })
-                result = await generateOpenAI(reviewPrompt, apiKey, model, temperature, maxTokens, screenshots, `${basis}/chat/completions`)
+                result = await generateGemini(reviewPrompt, apiKey, model || GEMINI_STANDARDMODELL, temperature, maxTokens, screenshots)
+            } else if (istOpenAiKompatibel(provider)) {
+                const endpunkt = chatEndpunkt(provider, settings)
+                if (!endpunkt) return res.status(400).json({ error: `Keine Basis-URL für ${provider}` })
+                result = await generateOpenAI(reviewPrompt, apiKey, model || standardModell(provider),
+                    temperature, maxTokens, screenshots, endpunkt)
             } else {
                 return res.status(400).json({ error: 'Unbekannter KI-Anbieter: ' + provider })
             }
@@ -735,7 +720,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
 
             // KI-Settings laden
             const settings = await knex('settings')
-                .select('aiProvider', 'aiModel', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .select(KI_SPALTEN)
                 .where('id', 1).first()
             const provider = settings?.aiProvider || 'ollama'
             const model = settings?.aiModel || ''
@@ -763,18 +748,14 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             let result
             if (provider === 'ollama') {
                 result = await chatOllama(systemMsg, messages, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
-            } else if (provider === 'openai') {
-                result = await chatOpenAI(systemMsg, messages, apiKey, model || 'gpt-4o-mini', temperature, maxTokens)
             } else if (provider === 'anthropic') {
                 result = await chatAnthropic(systemMsg, messages, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens)
             } else if (provider === 'gemini') {
-                result = await chatGemini(systemMsg, messages, apiKey, model || 'gemini-2.0-flash', temperature, maxTokens)
-            } else if (provider === 'deepseek') {
-                result = await chatOpenAI(systemMsg, messages, apiKey, model || 'deepseek-chat', temperature, maxTokens, 'https://api.deepseek.com/v1/chat/completions')
-            } else if (provider === 'custom') {
-                const basis = basisUrl(await getCustomUrl())
-                if (!basis) return res.status(400).json({ error: 'Keine Basis-URL für den eigenen Anbieter' })
-                result = await chatOpenAI(systemMsg, messages, apiKey, model, temperature, maxTokens, `${basis}/chat/completions`)
+                result = await chatGemini(systemMsg, messages, apiKey, model || GEMINI_STANDARDMODELL, temperature, maxTokens)
+            } else if (istOpenAiKompatibel(provider)) {
+                const endpunkt = chatEndpunkt(provider, settings)
+                if (!endpunkt) return res.status(400).json({ error: `Keine Basis-URL für ${provider}` })
+                result = await chatOpenAI(systemMsg, messages, apiKey, model || standardModell(provider), temperature, maxTokens, endpunkt)
             } else {
                 return res.status(400).json({ error: 'Unbekannter KI-Anbieter: ' + provider })
             }
@@ -952,7 +933,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
     app.post('/api/ai/settings', async (req, res) => {
         try {
             const knex = getKnex()
-            const { aiProvider, aiModel, aiOllamaUrl, aiCustomUrl, aiTemperature, aiMaxTokens, aiScreenshots, aiReportPrompt, aiChatEnabled, keys } = req.body
+            const { aiProvider, aiModel, aiOllamaUrl, aiCustomUrl, aiQwenUrl, aiTemperature, aiMaxTokens, aiScreenshots, aiReportPrompt, aiChatEnabled, keys } = req.body
 
             // SSRF-Schutz: Ollama-URL validieren bevor sie in die DB geht
             const sanitizedOllamaUrl = aiOllamaUrl || 'http://localhost:11434'
@@ -966,12 +947,28 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             if (aiCustomUrl && !sauberCustom) {
                 return res.status(400).json({ error: 'Die Basis-URL des eigenen Anbieters ist ungültig (nur http/https).' })
             }
+            const sauberQwen = basisUrl(aiQwenUrl)
+            if (aiQwenUrl && !sauberQwen) {
+                return res.status(400).json({ error: 'Die Qwen-Basis-URL ist ungültig (nur http/https).' })
+            }
+            // Über das Protokoll hinaus: keine Zugangsdaten in der Adresse und
+            // kein Metadaten-Dienst als „Modell-Endpunkt". Ein Ziel im eigenen
+            // Netz bleibt erlaubt — dafür sind diese Felder da.
+            for (const [feld, wert] of [['Die Basis-URL des eigenen Anbieters', sauberCustom], ['Die Qwen-Basis-URL', sauberQwen]]) {
+                if (!wert) continue
+                try {
+                    await pruefeKiEndpunkt(wert)
+                } catch (e) {
+                    return res.status(400).json({ error: `${feld} wurde abgelehnt: ${e.message}` })
+                }
+            }
 
             await knex('settings').where('id', 1).update({
                 aiProvider: aiProvider || 'ollama',
                 aiModel: aiModel || '',
                 aiOllamaUrl: sanitizedOllamaUrl,
                 aiCustomUrl: sauberCustom,
+                ...(aiQwenUrl !== undefined ? { aiQwenUrl: sauberQwen } : {}),
                 aiTemperature: aiTemperature ?? 0.7,
                 aiMaxTokens: aiMaxTokens || 1500,
                 aiScreenshots: aiScreenshots ? 1 : 0,
@@ -979,22 +976,18 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                 aiChatEnabled: aiChatEnabled !== undefined ? (aiChatEnabled ? 1 : 0) : 1
             })
 
-            // API-Keys verschlüsselt speichern (nur wenn nicht maskiert)
+            // API-Keys verschlüsselt speichern (nur wenn nicht maskiert).
+            // Über die Registry statt fester Zweige: ein neuer Anbieter wird
+            // damit automatisch mitgespeichert.
             if (keys) {
-                if (keys.openai !== undefined && !keys.openai.includes('•')) {
-                    await knex('settings').where('id', 1).update({ aiKeyOpenai: keys.openai ? encrypt(keys.openai) : '' })
+                const aenderungen = {}
+                for (const [id, reg] of Object.entries(ANBIETER_REG)) {
+                    const wert = keys[id]
+                    if (!reg.keySpalte || wert === undefined || wert.includes('•')) continue
+                    aenderungen[reg.keySpalte] = wert ? encrypt(wert) : ''
                 }
-                if (keys.anthropic !== undefined && !keys.anthropic.includes('•')) {
-                    await knex('settings').where('id', 1).update({ aiKeyAnthropic: keys.anthropic ? encrypt(keys.anthropic) : '' })
-                }
-                if (keys.gemini !== undefined && !keys.gemini.includes('•')) {
-                    await knex('settings').where('id', 1).update({ aiKeyGemini: keys.gemini ? encrypt(keys.gemini) : '' })
-                }
-                if (keys.deepseek !== undefined && !keys.deepseek.includes('•')) {
-                    await knex('settings').where('id', 1).update({ aiKeyDeepseek: keys.deepseek ? encrypt(keys.deepseek) : '' })
-                }
-                if (keys.custom !== undefined && !keys.custom.includes('•')) {
-                    await knex('settings').where('id', 1).update({ aiKeyCustom: keys.custom ? encrypt(keys.custom) : '' })
+                if (Object.keys(aenderungen).length) {
+                    await knex('settings').where('id', 1).update(aenderungen)
                 }
             }
 
@@ -1010,7 +1003,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
         try {
             const knex = getKnex()
             const settings = await knex('settings')
-                .select('aiProvider', 'aiModel', 'aiOllamaUrl', 'aiCustomUrl', 'aiTemperature', 'aiMaxTokens', 'aiScreenshots', 'aiReportPrompt', 'aiChatEnabled', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek', 'aiKeyCustom')
+                .select(KI_SPALTEN)
                 .where('id', 1).first()
 
             // Keys maskieren: "sk-abc...xyz" → "sk-a•••xyz"
@@ -1027,18 +1020,17 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                 aiModel: settings?.aiModel || '',
                 aiOllamaUrl: settings?.aiOllamaUrl || 'http://localhost:11434',
                 aiCustomUrl: settings?.aiCustomUrl || '',
+                aiQwenUrl: settings?.aiQwenUrl || '',
                 aiTemperature: settings?.aiTemperature ?? 0.7,
                 aiMaxTokens: settings?.aiMaxTokens || 1500,
                 aiScreenshots: settings?.aiScreenshots === 1,
                 aiReportPrompt: settings?.aiReportPrompt || '',
                 aiChatEnabled: settings?.aiChatEnabled !== 0,
-                keys: {
-                    openai: maskKey(settings?.aiKeyOpenai),
-                    anthropic: maskKey(settings?.aiKeyAnthropic),
-                    gemini: maskKey(settings?.aiKeyGemini),
-                    deepseek: maskKey(settings?.aiKeyDeepseek),
-                    custom: maskKey(settings?.aiKeyCustom)
-                }
+                // Maskiert je Anbieter aus der Registry — inklusive der
+                // abgekündigten, damit ein Altbestand sichtbar bleibt.
+                keys: Object.fromEntries(Object.entries(ANBIETER_REG)
+                    .filter(([, reg]) => reg.keySpalte)
+                    .map(([id, reg]) => [id, maskKey(settings?.[reg.keySpalte])])),
             })
         } catch (e) {
             console.error('Load AI settings error:', e)
@@ -1169,7 +1161,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
 
             // KI-Settings laden
             const settings = await knex('settings')
-                .select('aiProvider', 'aiModel', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek')
+                .select(KI_SPALTEN)
                 .where('id', 1).first()
             const provider = settings?.aiProvider || 'ollama'
             const model = settings?.aiModel || ''
@@ -1197,18 +1189,14 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             let result
             if (provider === 'ollama') {
                 result = await chatOllama(systemMsg, messages, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
-            } else if (provider === 'openai') {
-                result = await chatOpenAI(systemMsg, messages, apiKey, model || 'gpt-4o-mini', temperature, maxTokens)
             } else if (provider === 'anthropic') {
                 result = await chatAnthropic(systemMsg, messages, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens)
             } else if (provider === 'gemini') {
-                result = await chatGemini(systemMsg, messages, apiKey, model || 'gemini-2.0-flash', temperature, maxTokens)
-            } else if (provider === 'deepseek') {
-                result = await chatOpenAI(systemMsg, messages, apiKey, model || 'deepseek-chat', temperature, maxTokens, 'https://api.deepseek.com/v1/chat/completions')
-            } else if (provider === 'custom') {
-                const basis = basisUrl(await getCustomUrl())
-                if (!basis) return res.status(400).json({ error: 'Keine Basis-URL für den eigenen Anbieter' })
-                result = await chatOpenAI(systemMsg, messages, apiKey, model, temperature, maxTokens, `${basis}/chat/completions`)
+                result = await chatGemini(systemMsg, messages, apiKey, model || GEMINI_STANDARDMODELL, temperature, maxTokens)
+            } else if (istOpenAiKompatibel(provider)) {
+                const endpunkt = chatEndpunkt(provider, settings)
+                if (!endpunkt) return res.status(400).json({ error: `Keine Basis-URL für ${provider}` })
+                result = await chatOpenAI(systemMsg, messages, apiKey, model || standardModell(provider), temperature, maxTokens, endpunkt)
             } else {
                 return res.status(400).json({ error: 'Unbekannter KI-Anbieter: ' + provider })
             }
@@ -1353,7 +1341,10 @@ async function generateOpenAI(prompt, apiKey, model, temperature, maxTokens, scr
             ],
             ...samplingFelder(model, temperature),
             max_tokens: maxTokens
-        })
+        }),
+        // Ohne Zeitgrenze hängt die Anfrage unbegrenzt, wenn der Anbieter
+        // nicht antwortet — bei fremden Hosts keine theoretische Sorge.
+        signal: AbortSignal.timeout(ANFRAGE_TIMEOUT_MS)
     })
 
     if (!response.ok) {
@@ -1482,41 +1473,6 @@ async function generateGemini(prompt, apiKey, model, temperature, maxTokens, scr
     }
 }
 
-async function generateDeepSeek(prompt, apiKey, model, temperature, maxTokens) {
-    // DeepSeek API ist OpenAI-kompatibel, aber KEIN Multimodal-Support
-    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            model,
-            messages: [
-                { role: 'system', content: 'Du bist ein erfahrener Trading-Analyst und Coach. Antworte auf Deutsch. Verwende Markdown-Formatierung.' },
-                { role: 'user', content: prompt }
-            ],
-            temperature,
-            max_tokens: maxTokens
-        })
-    })
-
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error('DeepSeek-Fehler: ' + (err.error?.message || response.statusText))
-    }
-
-    const data = await response.json()
-    return {
-        text: data.choices?.[0]?.message?.content || '',
-        usage: {
-            promptTokens: data.usage?.prompt_tokens || 0,
-            completionTokens: data.usage?.completion_tokens || 0,
-            totalTokens: data.usage?.total_tokens || 0
-        }
-    }
-}
-
 // --- Chat-Funktionen (Multi-Turn Konversation) ---
 
 async function chatOllama(systemMsg, messages, model, temperature, maxTokens, ollamaUrl) {
@@ -1603,9 +1559,10 @@ async function chatOpenAI(systemMsg, messages, apiKey, model, temperature, maxTo
         body: JSON.stringify({
             model,
             messages: apiMessages,
-            temperature,
+            ...samplingFelder(model, temperature),
             max_tokens: maxTokens
-        })
+        }),
+        signal: AbortSignal.timeout(ANFRAGE_TIMEOUT_MS)
     })
 
     if (!response.ok) {
@@ -1724,16 +1681,18 @@ async function checkOllamaStatus(res, ollamaUrl, model = '') {
     }
 }
 
-async function checkOpenAIStatus(apiKey, res, model = '') {
-    if (!apiKey) return res.json({ online: false, provider: 'openai', model, message: 'Kein API-Key konfiguriert' })
+/** Status aller OpenAI-kompatiblen Anbieter — sie alle führen `GET /models`. */
+async function checkOpenAiKompatibelStatus(apiKey, res, model, provider, basis) {
+    if (!apiKey) return res.json({ online: false, provider, model, message: 'Kein API-Key konfiguriert' })
+    if (!basis) return res.json({ online: false, provider, model, error: 'Keine Basis-URL' })
     try {
-        const response = await fetch('https://api.openai.com/v1/models', {
+        const response = await fetch(`${basis}/models`, {
             headers: { 'Authorization': `Bearer ${apiKey}` },
             signal: AbortSignal.timeout(5000)
         })
-        return res.json({ online: response.ok, provider: 'openai', model })
+        return res.json({ online: response.ok, provider, model })
     } catch (e) {
-        return res.json({ online: false, provider: 'openai', model })
+        return res.json({ online: false, provider, model, error: e.message })
     }
 }
 
@@ -1752,19 +1711,6 @@ async function checkGeminiStatus(apiKey, res, model = '') {
         return res.json({ online: response.ok, provider: 'gemini', model })
     } catch (e) {
         return res.json({ online: false, provider: 'gemini', model })
-    }
-}
-
-async function checkDeepseekStatus(apiKey, res, model = '') {
-    if (!apiKey) return res.json({ online: false, provider: 'deepseek', model, message: 'Kein API-Key konfiguriert' })
-    try {
-        const response = await fetch('https://api.deepseek.com/v1/models', {
-            headers: { 'Authorization': `Bearer ${apiKey}` },
-            signal: AbortSignal.timeout(5000)
-        })
-        return res.json({ online: response.ok, provider: 'deepseek', model })
-    } catch (e) {
-        return res.json({ online: false, provider: 'deepseek', model })
     }
 }
 

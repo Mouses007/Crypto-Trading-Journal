@@ -115,7 +115,17 @@ const statusLabel = {
     /* Höhe füllt den Inhaltsbereich; die Canvas-Grösse kommt aus dem
        ResizeObserver, nicht aus einer festen Pixelangabe. */
     height: calc(100vh - 7.5rem);
+    /* dvh folgt der ein- und ausfahrenden Browserleiste auf dem Handy — mit
+       reinem vh ragt der Chart unter die Adressleiste. */
+    height: calc(100dvh - 7.5rem);
     min-height: 340px;
+}
+
+@media (max-width: 767.98px) {
+    .liveWrap {
+        height: calc(100dvh - 6.5rem);
+        min-height: 300px;
+    }
 }
 
 
@@ -168,6 +178,11 @@ const statusLabel = {
 
 .liveCanvasWrap {
     position: relative;
+    /* Eigener Stapelkontext: die Canvas-Ebenen darin haben z-index 1–4 und
+       lagen sonst im Wurzelkontext — auf dem Handy schoben sie sich damit
+       über das ausgefahrene Seitenmenü. */
+    z-index: 0;
+    isolation: isolate;
     flex: 1;
     min-height: 0;
     border: 1px solid var(--white-18);

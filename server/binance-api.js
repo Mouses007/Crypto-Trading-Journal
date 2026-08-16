@@ -8,6 +8,10 @@
  */
 
 import axios from 'axios'
+// Gemeinsame Gewichtsbremse: dieser Proxy und die Kerzen-Abrufe teilen
+// sich EINE Binance-IP. Zählte der Proxy nicht mit, träfe ein 429 als
+// Erstes den Live-Stream — also genau das, was am wenigsten warten kann.
+import { notiereGewicht, melde429 } from './binance-takt.js'
 
 const BASES = {
     spot: 'https://api.binance.com',
@@ -44,6 +48,10 @@ function sendBinanceError(res, error, what) {
     }
     const status = error.response?.status || 500
     if (status === 429 || status === 418) {
+        // Die Strafe gilt der IP, nicht diesem Endpunkt. Ohne diese Meldung
+        // liefen die Kerzen-Abrufe munter weiter und holten sich die nächste —
+        // die gemeinsame Bremse erfährt es sonst nie.
+        melde429(status, error.response?.headers)
         return res.status(429).json({ error: 'Binance-Rate-Limit erreicht. Bitte kurz warten.' })
     }
     res.status(status).json({ error: error.response?.data?.msg || `${what} fehlgeschlagen: ${error.message}` })
@@ -168,6 +176,7 @@ export function setupBinanceRoutes(app) {
             console.log(` -> Binance klines (${market}): ${params.symbol} ${params.interval} ${fenster}`)
 
             const response = await axios.get(`${BASES[market]}${PATHS[market].klines}`, { params, timeout: HTTP_TIMEOUT })
+            notiereGewicht(response.headers)
             res.json(response.data)
 
         } catch (error) {
@@ -200,10 +209,12 @@ export function setupBinanceRoutes(app) {
             const wanted = parseInt(req.query.limit, 10) || allowed[allowed.length - 1]
             const limit = allowed.reduce((best, v) => Math.abs(v - wanted) < Math.abs(best - wanted) ? v : best, allowed[0])
 
-            const { data } = await axios.get(`${BASES[market]}${PATHS[market].depth}`, {
+            const antwort = await axios.get(`${BASES[market]}${PATHS[market].depth}`, {
                 params: { symbol, limit },
                 timeout: HTTP_TIMEOUT
             })
+            notiereGewicht(antwort.headers)
+            const { data } = antwort
 
             // Snapshots sind sekundengenau relevant — nichts zwischenspeichern
             res.setHeader('Cache-Control', 'no-store')

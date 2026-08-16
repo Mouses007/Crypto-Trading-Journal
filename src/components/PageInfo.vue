@@ -10,7 +10,7 @@
  * Die Abschnitte kommen als Übersetzungs-Array (`tm`), damit der Text nicht
  * im Markup klebt und beide Sprachen dieselbe Struktur teilen.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
@@ -20,15 +20,31 @@ const props = defineProps({
 
 const { t, tm, rt } = useI18n()
 const offen = ref(false)
+const overlayEl = ref(null)
+
+/**
+ * Ohne den Fokus läuft die Escape-Taste ins Leere — der Tastendruck landet
+ * beim Body und nicht bei der Überlagerung. Gleicher Kniff wie in
+ * `RadarOverlay.vue`.
+ */
+async function oeffnen() {
+    offen.value = true
+    await nextTick()
+    overlayEl.value?.focus()
+}
 
 /**
  * `tm` liefert die rohen Nachrichten-Knoten; `rt` macht daraus Text. Ohne
  * diesen Umweg bekäme man bei Arrays Objekte statt Zeichenketten.
+ *
+ * Optionales `g` setzt vor den Abschnitt eine Gruppenüberschrift. Nötig, seit
+ * die längeren Tafeln (Marktradar, Nachrichten) zwanzig Abschnitte haben —
+ * ohne Zwischenüberschriften scrollt man durch eine Wand aus Absätzen.
  */
 const abschnitte = computed(() => {
     const roh = tm(`${props.section}.sections`)
     if (!Array.isArray(roh)) return []
-    return roh.map(a => ({ h: rt(a.h), p: rt(a.p) }))
+    return roh.map(a => ({ g: a.g ? rt(a.g) : '', h: rt(a.h), p: rt(a.p) }))
 })
 
 function schliessenBeiEsc(e) {
@@ -38,12 +54,12 @@ function schliessenBeiEsc(e) {
 
 <template>
     <button type="button" class="ctl-pill infoBtn" :title="t('info.buttonTitle')"
-        @click="offen = true">
+        @click="oeffnen">
         <i class="uil uil-info-circle"></i>{{ t('info.button') }}
     </button>
 
     <Teleport to="body">
-        <div v-if="offen" class="infoOverlay" tabindex="0"
+        <div v-if="offen" ref="overlayEl" class="infoOverlay" tabindex="0"
             @click.self="offen = false" @keydown="schliessenBeiEsc">
             <div class="infoBox">
                 <div class="infoHead">
@@ -56,10 +72,13 @@ function schliessenBeiEsc(e) {
 
                 <p class="infoIntro">{{ t(`${section}.intro`) }}</p>
 
-                <div v-for="(a, i) in abschnitte" :key="i" class="infoSection">
-                    <div class="infoSectionTitle">{{ a.h }}</div>
-                    <p>{{ a.p }}</p>
-                </div>
+                <template v-for="(a, i) in abschnitte" :key="i">
+                    <div v-if="a.g" class="infoGroup">{{ a.g }}</div>
+                    <div class="infoSection">
+                        <div class="infoSectionTitle">{{ a.h }}</div>
+                        <p>{{ a.p }}</p>
+                    </div>
+                </template>
 
                 <p class="infoCaveat">{{ t(`${section}.caveat`) }}</p>
             </div>
@@ -104,16 +123,24 @@ function schliessenBeiEsc(e) {
     width: 100%;
     max-height: 84vh;
     overflow-y: auto;
-    padding: 1.1rem 1.3rem 1.3rem;
+    /* Oben kein Polster: das übernimmt der mitlaufende Kopf, sonst scrollt
+       Text durch den Spalt über ihm hindurch. */
+    padding: 0 1.3rem 1.3rem;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
 }
 
+/* Bleibt beim Scrollen stehen — die längeren Tafeln sind mehrere Bildschirme
+   hoch, ohne das wäre der Schliessen-Knopf nach dem ersten Absatz weg. */
 .infoHead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--black-bg-2, #14141f);
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    margin-bottom: 0.5rem;
+    padding: 1.1rem 0 0.5rem;
 }
 
 .infoHead h5 {
@@ -143,6 +170,26 @@ function schliessenBeiEsc(e) {
 
 .infoSection {
     margin-bottom: 0.9rem;
+}
+
+/* Gruppenüberschrift: trennt Bedienung, Inhalt und Praxis voneinander. Linie
+   statt Kasten — die Tafel soll ruhig bleiben, nicht gegliedert wirken wie
+   ein Formular. */
+.infoGroup {
+    margin: 1.4rem 0 0.8rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--white-12, rgba(255, 255, 255, 0.12));
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.infoGroup:first-of-type {
+    margin-top: 0.2rem;
+    padding-top: 0;
+    border-top: none;
 }
 
 .infoSectionTitle {

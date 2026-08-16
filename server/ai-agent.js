@@ -1,6 +1,7 @@
 /**
  * ai-agent.js — Autonomous KI-Agent with Tool Use / Function Calling.
- * Supports: Anthropic (native), OpenAI/DeepSeek (native), Gemini (native), Ollama (prompt-based fallback).
+ * Supports: Anthropic (native), Gemini (native), Ollama (prompt-based fallback)
+ * and every OpenAI-compatible provider from ANBIETER_REG (OpenAI, Mistral, xAI, Qwen, custom).
  * Agent loop: LLM calls tools → server executes → results fed back → LLM decides next step.
  * Communication: SSE streaming for live tool-step updates to frontend.
  */
@@ -11,7 +12,10 @@ import { logWarn, logError } from './logger.js'
 import { AGENT_TOOLS, executeTool } from './ai-agent-tools.js'
 import { resetBacktestKontingent } from './strategy-tools.js'
 import { assertAllowedOllamaUrl } from './ollama-api.js'
-import { samplingFelder, basisUrl } from './ai-models.js'
+import {
+    samplingFelder, KEY_SPALTEN, KI_URL_SPALTEN,
+    keySpalte, istOpenAiKompatibel, chatEndpunkt,
+} from './ai-models.js'
 
 const MAX_ITERATIONS = 10
 const MAX_TOKENS = 80000
@@ -26,19 +30,18 @@ async function loadAiSettings() {
     const knex = getKnex()
     const settings = await knex('settings')
         .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
-            'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-            'aiCustomUrl', 'aiKeyCustom')
+            ...KEY_SPALTEN, ...KI_URL_SPALTEN)
         .where('id', 1).first()
     if (!settings) throw new Error('No AI settings found')
 
     const provider = settings.aiProvider || 'ollama'
-    const keyMap = { openai: 'aiKeyOpenai', anthropic: 'aiKeyAnthropic', gemini: 'aiKeyGemini',
-        deepseek: 'aiKeyDeepseek', custom: 'aiKeyCustom' }
-    const col = keyMap[provider]
+    const col = keySpalte(provider)
     let apiKey = ''
     if (col && settings[col]) {
         apiKey = decrypt(settings[col])
-    } else if (settings.aiApiKey) {
+    } else if (provider === 'openai' && settings.aiApiKey) {
+        // Sammelschlüssel nur dort, wo er herkam — sonst ginge ein
+        // OpenAI-Schlüssel an einen fremden Host.
         apiKey = decrypt(settings.aiApiKey)
     }
 
@@ -49,7 +52,7 @@ async function loadAiSettings() {
         temperature: settings.aiTemperature ?? 0.7,
         maxTokens: settings.aiMaxTokens || 4000,
         ollamaUrl: settings.aiOllamaUrl || DEFAULT_OLLAMA_URL,
-        customUrl: settings.aiCustomUrl || ''
+        endpunkt: chatEndpunkt(provider, settings)
     }
 }
 
@@ -445,25 +448,15 @@ async function callOllamaWithTools(messages, config) {
 // ==================== UNIFIED LLM CALL ====================
 
 async function callLLMWithTools(messages, config) {
-    switch (config.provider) {
-        case 'anthropic':
-            return callAnthropicWithTools(messages, config)
-        case 'openai':
-            return callOpenAIWithTools(messages, config)
-        case 'deepseek':
-            return callOpenAIWithTools(messages, config, 'https://api.deepseek.com/v1/chat/completions')
-        case 'custom': {
-            const basis = basisUrl(config.customUrl)
-            if (!basis) throw new Error('Für den eigenen Anbieter ist keine Basis-URL hinterlegt')
-            return callOpenAIWithTools(messages, config, `${basis}/chat/completions`)
-        }
-        case 'gemini':
-            return callGeminiWithTools(messages, config)
-        case 'ollama':
-            return callOllamaWithTools(messages, config)
-        default:
-            throw new Error(`Unsupported provider: ${config.provider}`)
+    if (config.provider === 'anthropic') return callAnthropicWithTools(messages, config)
+    if (config.provider === 'gemini') return callGeminiWithTools(messages, config)
+    if (config.provider === 'ollama') return callOllamaWithTools(messages, config)
+    if (istOpenAiKompatibel(config.provider)) {
+        // openai, mistral, xai, qwen, custom — und deepseek aus dem Altbestand
+        if (!config.endpunkt) throw new Error(`Für ${config.provider} ist keine Basis-URL hinterlegt`)
+        return callOpenAIWithTools(messages, config, config.endpunkt)
     }
+    throw new Error(`Unsupported provider: ${config.provider}`)
 }
 
 // ==================== MESSAGE FORMAT HELPERS ====================
@@ -473,7 +466,7 @@ function buildProviderMessages(history, provider) {
     if (provider === 'anthropic') {
         return buildAnthropicMessages(history)
     }
-    if (provider === 'openai' || provider === 'deepseek' || provider === 'custom') {
+    if (istOpenAiKompatibel(provider)) {
         return buildOpenAIMessages(history)
     }
     if (provider === 'gemini') {
@@ -577,7 +570,7 @@ function buildGeminiMessages(history) {
  * @param {Function} sendSSE - Function to send SSE events
  * @returns {Promise<object>} { answer, totalTokens, promptTokens, completionTokens, totalToolCalls, messages }
  */
-async function runAgentLoop(userMessage, conversationHistory, config, sendSSE) {
+async function runAgentLoop(userMessage, conversationHistory, config, sendSSE, istAbgebrochen = () => false) {
     const knex = getKnex()
     const history = [...conversationHistory]
     history.push({ role: 'user', content: userMessage })
@@ -589,6 +582,10 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE) {
     let finalAnswer = ''
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
+        // Hat der Browser die Verbindung gekappt (Seitenwechsel, Reload), hört
+        // niemand mehr zu — jede weitere Runde wäre bezahlte Rechenzeit für
+        // eine Antwort, die nirgends ankommt.
+        if (istAbgebrochen()) break
         sendSSE({ type: 'thinking', iteration: i + 1 })
 
         // Build provider-specific messages
@@ -621,6 +618,7 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE) {
 
         // Execute each tool call
         for (const call of response.toolCalls) {
+            if (istAbgebrochen()) break
             totalToolCalls++
             sendSSE({ type: 'tool_call', name: call.name, params: call.params })
 
@@ -702,7 +700,13 @@ export function setupAgentRoutes(app) {
             'X-Accel-Buffering': 'no'
         })
 
+        // Bricht der Client ab, läuft der Lauf sonst bis zum Ende weiter und
+        // schreibt in eine tote Verbindung — bezahlt wird er trotzdem.
+        let abgebrochen = false
+        req.on('close', () => { abgebrochen = true })
+
         const sendSSE = (data) => {
+            if (abgebrochen || res.writableEnded) return
             res.write(`data: ${JSON.stringify(data)}\n\n`)
         }
 
@@ -784,7 +788,7 @@ export function setupAgentRoutes(app) {
             })
 
             // Run agent loop
-            const result = await runAgentLoop(message, conversationHistory, config, sendSSE)
+            const result = await runAgentLoop(message, conversationHistory, config, sendSSE, () => abgebrochen)
 
             // Save assistant answer
             if (result.answer) {

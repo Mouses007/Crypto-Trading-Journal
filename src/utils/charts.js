@@ -3,6 +3,7 @@ import { amountCase, selectedTimeFrame, selectedRatio, selectedGrossNet } from "
 import { totals, totalsByDate, groups, filteredTrades, filteredTradesTrades, satisfactionArray, satisfactionTradeArray, availableTags } from "../stores/trades.js"
 import { profitAnalysis } from "../stores/trades.js"
 import { useOneDecPercentFormat, useChartFormat, useThousandCurrencyFormat, useTwoDecCurrencyFormat, useTimeFormat, useHourMinuteFormat, useCapitalizeFirstLetter, useXDecCurrencyFormat, useXDecFormat } from "./formatters.js"
+import { splitFunding } from "./funding.js"
 import dayjs from './dayjs-setup.js'
 import * as echarts from 'echarts';
 import i18n from '../i18n'
@@ -3632,25 +3633,23 @@ export function useFeesChart(param) {
         let hasReceivedFunding = false
         trades.forEach(trade => {
             const symbol = trade.symbol || 'Unbekannt'
-            if (!feesBySymbol[symbol]) feesBySymbol[symbol] = { trading: 0, fundingPaid: 0, fundingReceived: 0, total: 0 }
+            if (!feesBySymbol[symbol]) feesBySymbol[symbol] = { trading: 0, fundingPaid: 0, fundingReceived: 0 }
             const tradingFee = Math.abs(trade.tradingFee || 0)
-            const fundingFee = trade.fundingFee || 0  // Vorzeichen beibehalten
+            const fundingFee = trade.fundingFee || 0  // signiert: + erhalten, − bezahlt
             const totalFee = trade.commission || 0
             // Wenn tradingFee oder fundingFee vorhanden, nutze sie; sonst alles als Trading
             if (tradingFee > 0 || fundingFee !== 0) {
                 feesBySymbol[symbol].trading += tradingFee
-                if (fundingFee > 0) {
-                    feesBySymbol[symbol].fundingPaid += fundingFee
-                    hasFundingData = true
-                } else if (fundingFee < 0) {
-                    feesBySymbol[symbol].fundingReceived += Math.abs(fundingFee)
-                    hasFundingData = true
-                    hasReceivedFunding = true
-                }
+                // War hier vertauscht: positives Funding (= erhalten) wurde als
+                // „bezahlt" in die Kostenbalken gerechnet.
+                const { paid, received } = splitFunding(fundingFee)
+                feesBySymbol[symbol].fundingPaid += paid
+                feesBySymbol[symbol].fundingReceived += received
+                if (fundingFee !== 0) hasFundingData = true
+                if (received > 0) hasReceivedFunding = true
             } else if (Math.abs(totalFee) > 0) {
                 feesBySymbol[symbol].trading += Math.abs(totalFee)
             }
-            feesBySymbol[symbol].total += tradingFee + Math.max(0, fundingFee) // Netto-Kosten (ohne erhaltene Funding)
         })
 
         // Nach Gebühren sortieren (höchste oben im horizontalen Chart)

@@ -20,6 +20,7 @@ import { getKnex } from './database.js'
 import { OrderBook } from '../shared/orderbook.js'
 import { pickBucketSize, inferTickSize } from '../shared/priceBins.js'
 import { logWarn, logError } from './logger.js'
+import { notiereGewicht } from './binance-takt.js'
 
 const gzip = promisify(zlib.gzip)
 const gunzip = promisify(zlib.gunzip)
@@ -100,6 +101,7 @@ class SymbolRecorder {
         this.flushTimer = null
         this.reconnectTimer = null
         this.snapshotTimer = null
+        this.snapshotVersuche = 0
         this.watchdogTimer = null
         this.lastMsgTs = 0
         // Fehlgeschlagene Upserts — beim nächsten Flush erneut versuchen
@@ -247,11 +249,16 @@ class SymbolRecorder {
     async _fetchSnapshot() {
         if (this.stopped) return
         try {
-            const { data } = await axios.get(`${REST_BASE[this.market]}${REST_PATH[this.market]}`, {
+            const antwort = await axios.get(`${REST_BASE[this.market]}${REST_PATH[this.market]}`, {
                 params: { symbol: this.symbol, limit: 1000 },
                 timeout: 10000,
             })
+            const { data } = antwort
             if (this.stopped) return
+            // Der Snapshot mit limit=1000 wiegt bei Binance 20 Punkte — er
+            // gehört ins gemeinsame Budget, sonst zahlt der Live-Stream dafür
+            notiereGewicht(antwort.headers)
+            this.snapshotVersuche = 0
             this.book.applySnapshot(data)
             if (!this.tickSize) {
                 const { mid } = this.book.bestPrices()
@@ -264,8 +271,23 @@ class SymbolRecorder {
             this.buffering = false
         } catch (error) {
             if (this.stopped) return
-            logWarn('live-recorder', `Snapshot ${this.symbol} fehlgeschlagen`, error.message)
-            this.snapshotTimer = setTimeout(() => this._fetchSnapshot(), 3000)
+            /*
+             * Wachsender Abstand statt starrer drei Sekunden.
+             *
+             * Der Snapshot wiegt 20 Gewichtspunkte. Scheitert er dauerhaft —
+             * etwa weil Binance die IP gerade sperrt —, war das alte Verhalten
+             * ein Dauerfeuer von zwanzig Punkten alle drei Sekunden: Es
+             * verlängerte genau die Sperre, aus der es herauswollte. Jetzt
+             * verdoppelt sich der Abstand bis zu einer Minute; aufgegeben wird
+             * nicht, denn ohne Snapshot gibt es keine Aufzeichnung.
+             */
+            const n = ++this.snapshotVersuche
+            const wartezeit = Math.min(3000 * 2 ** (n - 1), 60000)
+            if (n === 1 || n % 10 === 0) {
+                logWarn('live-recorder', `Snapshot ${this.symbol} fehlgeschlagen `
+                    + `(Versuch ${n}, nächster in ${Math.round(wartezeit / 1000)} s)`, error.message)
+            }
+            this.snapshotTimer = setTimeout(() => this._fetchSnapshot(), wartezeit)
         }
     }
 

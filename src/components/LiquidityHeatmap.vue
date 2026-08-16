@@ -306,14 +306,58 @@ function unfreeze() {
 
 // ── Interaktion ─────────────────────────────────────────────
 
+/**
+ * Bedient wird mit Zeiger-Ereignissen statt Maus-Ereignissen: dieselbe Logik
+ * trägt Maus, Stift und Finger. Auf dem Handy gibt es kein Hover und kein
+ * Mausrad — dort ersetzen ein Finger (Schieben + Fadenkreuz), zwei Finger
+ * (Zoom) und Doppeltippen (Auto-Achse) die Maus.
+ */
+const zeiger = new Map()   // pointerId → {x, y} in Bildschirmkoordinaten
+let pinch = null           // { dist, index } beim Ansetzen des zweiten Fingers
+let letzterTipp = 0
+
+const fingerAbstand = () => {
+    const [a, b] = [...zeiger.values()]
+    return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+const viewPctIndex = () => {
+    const index = VIEW_PCT_OPTIONS.indexOf(liveViewPct.value)
+    return index >= 0 ? index : VIEW_PCT_OPTIONS.findIndex(v => v >= liveViewPct.value)
+}
+
+function setViewPctIndex(index) {
+    const next = Math.max(0, Math.min(VIEW_PCT_OPTIONS.length - 1, index))
+    liveViewPct.value = VIEW_PCT_OPTIONS[next]
+}
+
 function onPointerMove(event) {
     if (!wrapEl.value) return
+    if (zeiger.has(event.pointerId)) zeiger.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+    // Zwei Finger: Auseinanderziehen holt das Preisband enger heran
+    if (pinch && zeiger.size >= 2) {
+        const ratio = fingerAbstand() / pinch.dist
+        if (ratio > 0) setViewPctIndex(pinch.index - Math.round(Math.log2(ratio) * 2))
+        return
+    }
+
     // getBoundingClientRect statt offsetX: bleibt bei Transformationen korrekt
     const rect = wrapEl.value.getBoundingClientRect()
     const x = event.clientX - rect.left
     const y = event.clientY - rect.top
 
-    if (drag && feed?.ring && view) {
+    // currentRing() statt feed: in der Wiedergabe gibt es keinen Feed, geschoben
+    // werden darf dort trotzdem
+    if (drag && currentRing() && view && renderer) {
+        // Erst ab ein paar Pixeln wird aus dem Antippen ein Schieben — sonst
+        // schaltet schon ein Tipp aufs Fadenkreuz die Auto-Achse ab.
+        if (!drag.aktiv) {
+            if (Math.abs(y - drag.y) < 4) { cursor = { x, y }; dirtyUi = true; return }
+            drag.aktiv = true
+            // Ziehen heisst: der Nutzer will selbst bestimmen, wo die Achse steht
+            if (liveAutoFollow.value) liveAutoFollow.value = false
+        }
         const rowsView = view.hi - view.lo
         const rowH = renderer.plotH / rowsView
         const shift = Math.round((y - drag.y) / rowH)
@@ -326,29 +370,50 @@ function onPointerMove(event) {
 }
 
 function onPointerDown(event) {
-    if (event.button !== 0 || !view) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    zeiger.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    // Zeiger einfangen, damit Schieben auch ausserhalb der Fläche weiterläuft
+    try { wrapEl.value?.setPointerCapture(event.pointerId) } catch { /* egal */ }
+
+    if (zeiger.size === 2) {
+        drag = null
+        pinch = { dist: fingerAbstand(), index: viewPctIndex() }
+        return
+    }
+    if (!view) return
     const rect = wrapEl.value.getBoundingClientRect()
-    drag = { y: event.clientY - rect.top, lo: view.lo, hi: view.hi }
-    // Ziehen heisst: der Nutzer will selbst bestimmen, wo die Achse steht
-    if (liveAutoFollow.value) liveAutoFollow.value = false
+    drag = { y: event.clientY - rect.top, lo: view.lo, hi: view.hi, aktiv: false }
+    // Ohne Hover braucht der Finger sofort ein Fadenkreuz
+    cursor = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    dirtyUi = true
 }
 
-function onPointerUp() {
+function onPointerUp(event) {
+    if (event?.pointerId !== undefined) zeiger.delete(event.pointerId)
+    else zeiger.clear()
+    if (zeiger.size < 2) pinch = null
+
+    // Doppeltippen ersetzt den Doppelklick — der wird auf Touch nicht überall
+    // erzeugt, und ohne ihn käme man aus der festen Preisachse nicht heraus.
+    if (event?.pointerType && event.pointerType !== 'mouse' && drag && !drag.aktiv) {
+        const jetzt = Date.now()
+        if (jetzt - letzterTipp < 320) { onDoubleClick(); letzterTipp = 0 }
+        else letzterTipp = jetzt
+    }
     drag = null
 }
 
-function onPointerLeave() {
-    drag = null
+function onPointerLeave(event) {
+    // Beim Loslassen eines Fingers meldet der Browser ebenfalls „leave" —
+    // dann ist der Zustand schon in onPointerUp aufgeräumt.
+    if (event?.pointerType === 'mouse') drag = null
     cursor = null
     dirtyUi = true
 }
 
 function onWheel(event) {
     event.preventDefault()
-    const index = VIEW_PCT_OPTIONS.indexOf(liveViewPct.value)
-    const current = index >= 0 ? index : VIEW_PCT_OPTIONS.findIndex(v => v >= liveViewPct.value)
-    const next = Math.max(0, Math.min(VIEW_PCT_OPTIONS.length - 1, current + (event.deltaY > 0 ? 1 : -1)))
-    liveViewPct.value = VIEW_PCT_OPTIONS[next]
+    setViewPctIndex(viewPctIndex() + (event.deltaY > 0 ? 1 : -1))
 }
 
 function onDoubleClick() {
@@ -389,7 +454,7 @@ onMounted(async () => {
         liveAutoRefValue.value = renderer.currentRef
     }, 1000)
 
-    window.addEventListener('mouseup', onPointerUp)
+    window.addEventListener('pointerup', onPointerUp)
     loop()
     await (isReplay() ? startReplay() : startFeed())
 })
@@ -401,7 +466,7 @@ onBeforeUnmount(() => {
     ro = null
     clearTimeout(resizeTimer)
     clearInterval(normTimer)
-    window.removeEventListener('mouseup', onPointerUp)
+    window.removeEventListener('pointerup', onPointerUp)
     stopFeed()
     renderer = null
     view = null
@@ -454,8 +519,9 @@ watch(liveFrozen, (frozen) => {
 </script>
 
 <template>
-    <div ref="wrapEl" class="heatWrap" @mousemove="onPointerMove" @mousedown="onPointerDown"
-        @mouseleave="onPointerLeave" @wheel="onWheel" @dblclick="onDoubleClick"
+    <div ref="wrapEl" class="heatWrap" @pointermove="onPointerMove" @pointerdown="onPointerDown"
+        @pointerup="onPointerUp" @pointercancel="onPointerUp" @pointerleave="onPointerLeave"
+        @wheel="onWheel" @dblclick="onDoubleClick"
         :class="{ dragging: !!drag }">
         <canvas ref="heatEl" class="layer layerHeat"></canvas>
         <canvas ref="overlayEl" class="layer layerOverlay"></canvas>
@@ -490,6 +556,9 @@ watch(liveFrozen, (frozen) => {
     position: absolute;
     inset: 0;
     cursor: crosshair;
+    /* Der Finger schiebt die Preisachse und zoomt — die Geste darf nicht
+       vorher als Seitenscroll oder Browser-Zoom abgefangen werden. */
+    touch-action: none;
 }
 
 .heatWrap.dragging {

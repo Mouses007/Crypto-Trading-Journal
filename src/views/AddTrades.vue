@@ -261,8 +261,10 @@ async function importFromApi() {
             const entryTime = dayjs.utc(row.EntryDateUTC).unix()
             const exitTime = dayjs.utc(row.DateUTC).unix()
 
-            const isGrossWin = row.GrossProceeds > 0
-            const isNetWin = row.NetProceeds > 0
+            // Kanon im Journal: 0 = kein Verlust, zählt als Gewinner (wie
+            // addTrades.js beim Import und die Dashboard-Färbung).
+            const isGrossWin = row.GrossProceeds >= 0
+            const isNetWin = row.NetProceeds >= 0
 
             const tradeObj = {
                 id: `t${dateUnix}_${i}_${row.TrxId || i}`,
@@ -495,10 +497,10 @@ async function importFromApi() {
                     <tbody>
                         <tr v-for="blot in blotter[index]">
                             <td>{{ blot.symbol }}</td>
-                            <td v-bind:class="[blot.grossProceeds > 0 ? 'greenTrade' : 'redTrade']">
+                            <td v-bind:class="[blot.grossProceeds >= 0 ? 'greenTrade' : 'redTrade']">
                                 {{ (blot.grossProceeds).toFixed(2) }}</td>
                             <td>{{ (blot.fees).toFixed(2) }}</td>
-                            <td v-bind:class="[blot.netProceeds > 0 ? 'greenTrade' : 'redTrade']">
+                            <td v-bind:class="[blot.netProceeds >= 0 ? 'greenTrade' : 'redTrade']">
                                 {{ (blot.netProceeds).toFixed(2) }}</td>
                             <td>{{ blot.grossWinsCount }}</td>
                             <td>{{ blot.grossLossCount }}</td>
@@ -506,10 +508,10 @@ async function importFromApi() {
                         </tr>
                         <tr v-if="index != null" class="sumRow">
                             <td>{{ t('common.total') }}</td>
-                            <td v-bind:class="[pAndL[index].grossProceeds > 0 ? 'greenTrade' : 'redTrade']">
+                            <td v-bind:class="[pAndL[index].grossProceeds >= 0 ? 'greenTrade' : 'redTrade']">
                                 {{ (pAndL[index].grossProceeds).toFixed(2) }}</td>
                             <td>{{ (pAndL[index].fees).toFixed(2) }}</td>
-                            <td v-bind:class="[pAndL[index].netProceeds > 0 ? 'greenTrade' : 'redTrade']">
+                            <td v-bind:class="[pAndL[index].netProceeds >= 0 ? 'greenTrade' : 'redTrade']">
                                 {{ (pAndL[index].netProceeds).toFixed(2) }}</td>
                             <td>{{ pAndL[index].grossWinsCount }}</td>
                             <td>{{ pAndL[index].grossLossCount }}</td>

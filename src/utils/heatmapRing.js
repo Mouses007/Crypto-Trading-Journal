@@ -56,7 +56,21 @@ export class HeatmapRing {
         this.data.fill(0, offset, offset + this.rows)
 
         const { mid } = book.bestPrices()
-        const midBucket = Math.round(mid / bs)
+
+        /*
+         * Kein gültiges Mid — leere Seite oder gekreuztes Buch (seit der
+         * Prüfung in `bestPrices` liefert auch Letzteres 0). Dann darf der Ring
+         * NICHT um den Preis 0 aufgebaut werden: die Spalte bekäme eine Achse,
+         * die mit dem Markt nichts zu tun hat, und die Ansicht würde springen.
+         * Stattdessen die letzte gültige Achse beibehalten und die Spalte als
+         * Lücke führen — dieselbe Behandlung wie ein Aussetzer im Feed, denn
+         * fachlich ist es dasselbe: für diesen Takt gibt es kein Bild.
+         */
+        const letzterMid = this.count ? this.mid[this.colFrom(this.head, 0)] : 0
+        const achsenMid = mid > 0 ? mid : letzterMid
+        const luecke = isGap || mid <= 0
+
+        const midBucket = Math.round(achsenMid / bs)
         const base = midBucket - (this.rows >> 1)   // Zeile 0 = unterster erfasster Bucket
 
         if (mid > 0) {
@@ -71,9 +85,9 @@ export class HeatmapRing {
         }
 
         this.base[col] = base
-        this.mid[col] = mid
+        this.mid[col] = achsenMid
         this.ts[col] = ts
-        this.flags[col] = isGap ? 1 : 0
+        this.flags[col] = luecke ? 1 : 0
         this.head = (col + 1) % this.cap
         if (this.count < this.cap) this.count++
         return mid

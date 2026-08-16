@@ -10,7 +10,7 @@
  */
 
 import { getKnex } from './database.js'
-import { logError } from './logger.js'
+import { logError, logWarn } from './logger.js'
 import {
     listStrategies, getStrategy, validateParams, validateRisk,
     defaultsFromSchema, RISK_PARAMS, AGENT_DEFAULTS,
@@ -18,14 +18,24 @@ import {
     normalisiereTimeframes, MAX_TIMEFRAMES,
 } from './strategies/index.js'
 import { BAUSTEINE } from './strategies/rule-engine.js'
-import { pruefeRegeln } from './strategies/rule-validate.js'
+import { pruefeRegeln, regelnUnterscheidenSich } from './strategies/rule-validate.js'
+import { regelnAlsSaetze } from './strategies/rule-text.js'
 import { VORLAGEN } from './strategies/rule-templates.js'
 import { isValidTimeframe, timeframeMs, getLastPrice } from './market-data.js'
 import { runBacktest, berechneStatistik, MAX_BACKTEST_CANDLES, schaetzeKerzen } from './strategy-backtest.js'
+import { monteCarlo, parameterStabilitaet, stabilitaetsMatrix, walkForward, MAX_STUFEN } from './robustness.js'
 import { engineStatus, resetSymbolCache, killSwitch, ladeInstanz, tick, schliessePositionManuell } from './strategy-engine.js'
+import { bewerteGates } from './live-gates.js'
+import { spiegleInsJournal, entferneAusJournal } from './journal-bridge.js'
 
 const MAX_SYMBOLS = 20
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
+
+// Kennung der Austauschdatei. Ohne sie wäre jede beliebige JSON-Datei ein
+// Importversuch — mit ihr gibt es eine verständliche Fehlermeldung statt eines
+// Validierungsfehlers über Bausteine, die der Nutzer nie geschrieben hat.
+const PAKET_FORMAT = 'ctj-strategie'
+const PAKET_VERSION = 1
 
 function parseJson(wert, fallback) {
     if (wert === null || wert === undefined) return fallback
@@ -137,6 +147,32 @@ async function historieSchreiben(knexOderTrx, instanceId, paramsVersion, params,
     } catch (e) {
         if (!/unique|constraint/i.test(e.message)) throw e
     }
+}
+
+/**
+ * Reifegrad einer Instanz aus den gespeicherten Daten.
+ *
+ * Zusammengetragen wird nur, was ohnehin vorliegt: die Backtests dieser Instanz
+ * (oder ihrer Strategie), die Zahl abgeschlossener Papier-Trades und die
+ * Mindestzahl aus den Einstellungen.
+ */
+async function ladeReifegrad(row) {
+    const knex = getKnex()
+    const [laeufe, papier, s] = await Promise.all([
+        knex('strategy_backtests')
+            .where(function () { this.where('instanceId', row.id).orWhere('strategyId', row.strategyId) })
+            .select('stats', 'risk', 'entscheidung').orderBy('id', 'desc').limit(200),
+        knex('strategy_trades').where({ instanceId: row.id })
+            .whereIn('mode', ['paper', 'shadow']).count({ n: '*' }).first(),
+        knex('settings').select('strategyMinPaperTrades').where('id', 1).first(),
+    ])
+    return bewerteGates({
+        laeufe: laeufe.map((l) => ({
+            stats: parseJson(l.stats, {}), risk: parseJson(l.risk, {}), entscheidung: l.entscheidung,
+        })),
+        paperTrades: Number(papier?.n) || 0,
+        minPaperTrades: Number(s?.strategyMinPaperTrades) || 0,
+    })
 }
 
 export function setupStrategyRoutes(app) {
@@ -332,6 +368,18 @@ export function setupStrategyRoutes(app) {
      * Live-Freigabe je Instanz. Verlangt den ausgeschriebenen Instanznamen als
      * Bestätigung — ein versehentlicher Klick reicht damit nicht aus.
      */
+    /** Reifegrad einer Instanz — welche Nachweise fehlen noch für den scharfen Betrieb? */
+    app.get('/api/strategies/instances/:id/readiness', async (req, res) => {
+        try {
+            const row = await getKnex()('strategy_instances').where('id', req.params.id).first()
+            if (!row) return res.status(404).json({ error: 'Instanz nicht gefunden' })
+            res.json(await ladeReifegrad(row))
+        } catch (e) {
+            logError('strategy-api', 'Reifegrad fehlgeschlagen', e)
+            res.status(500).json({ error: 'Reifegrad konnte nicht ermittelt werden' })
+        }
+    })
+
     app.post('/api/strategies/instances/:id/approve-live', async (req, res) => {
         try {
             const knex = getKnex()
@@ -346,12 +394,326 @@ export function setupStrategyRoutes(app) {
                 return res.status(409).json({ error: 'Live ist global nicht freigegeben (Einstellungen)' })
             }
 
+            // Die Belege. Ohne sie ist die Freigabe eine Absichtserklärung —
+            // eine Strategie mit sieben Trades, ohne Gebühren gerechnet, deren
+            // Ergebnis an einem Ausreisser hängt, käme sonst durch.
+            const reife = await ladeReifegrad(row)
+            if (!reife.bereit) {
+                return res.status(409).json({
+                    error: `Noch nicht freigabereif — offene Nachweise: ${reife.offen.join(', ')}`,
+                    tore: reife.tore, offen: reife.offen,
+                })
+            }
+
             await knex('strategy_instances').where('id', row.id)
                 .update({ liveApprovedAt: Date.now(), updatedAt: knex.fn.now() })
             res.json({ ok: true })
         } catch (e) {
             logError('strategy-api', 'Live-Freigabe fehlgeschlagen', e)
             res.status(500).json({ error: 'Freigabe fehlgeschlagen' })
+        }
+    })
+
+    /**
+     * Entscheidung zu einem Lauf festhalten.
+     *
+     * Ohne diesen Schritt bleibt die Liste der Durchläufe eine Sammlung von
+     * Zahlen, aus der niemand mehr herausliest, was daraus folgte — und in vier
+     * Wochen ist die Antwort auf „warum haben wir 15m verworfen?" ein
+     * Gesprächsverlauf statt ein Eintrag.
+     */
+    app.post('/api/strategies/backtests/:id/decision', async (req, res) => {
+        try {
+            const erlaubt = ['offen', 'uebernommen', 'verworfen']
+            const entscheidung = String(req.body?.entscheidung || '')
+            if (!erlaubt.includes(entscheidung)) {
+                return res.status(400).json({ error: `Entscheidung muss eine von ${erlaubt.join(', ')} sein` })
+            }
+            const knex = getKnex()
+            const treffer = await knex('strategy_backtests').where('id', Number(req.params.id)).update({
+                entscheidung,
+                notiz: String(req.body?.notiz || '').slice(0, 500),
+                // „offen" nimmt die Entscheidung zurück — dann gehört auch der
+                // Zeitstempel weg, sonst behauptet die Zeile etwas Falsches.
+                entschiedenAm: entscheidung === 'offen' ? 0 : Date.now(),
+            })
+            if (!treffer) return res.status(404).json({ error: 'Lauf nicht gefunden' })
+            res.json({ ok: true, entscheidung })
+        } catch (e) {
+            logError('strategy-api', 'Entscheidung fehlgeschlagen', e)
+            res.status(500).json({ error: 'Entscheidung konnte nicht gespeichert werden' })
+        }
+    })
+
+    /**
+     * Geschlossene Trades einer Instanz ins Journal spiegeln.
+     *
+     * Sie landen dort in einer EIGENEN Kategorie („Agent") und sind nur
+     * sichtbar, wenn man sie ausdrücklich wählt — die normale Ansicht und die
+     * Bilanz bleiben unberührt. Ohne diese Trennung würde simuliertes Geld in
+     * echte Kennzahlen laufen.
+     *
+     * Der Aufruf ist wiederholbar: bereits gespiegelte Trades werden erkannt.
+     */
+    app.post('/api/strategies/instances/:id/mirror-journal', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const inst = await knex('strategy_instances').where('id', req.params.id).first()
+            if (!inst) return res.status(404).json({ error: 'Instanz nicht gefunden' })
+
+            // Auswahl ist der Normalfall, „alle" die Ausnahme: wer 500 Trades
+            // hat, will selten alle spiegeln.
+            const auswahl = Array.isArray(req.body?.tradeIds)
+                ? req.body.tradeIds.map(Number).filter(Number.isFinite) : []
+            const trades = await knex('strategy_trades')
+                .where({ instanceId: inst.id })
+                .whereNot('exitTime', 0)
+                .modify((q) => { if (auswahl.length) q.whereIn('id', auswahl) })
+                .orderBy('exitTime')
+            if (!trades.length) return res.json({ gespiegelt: 0, uebersprungen: 0, tage: 0 })
+
+            // Kontoname macht im Journal sichtbar, WOHER die Trades stammen und
+            // dass sie nicht echt sind.
+            const account = `agent-${inst.mode}`
+            const ergebnis = await spiegleInsJournal(knex, trades, { account })
+
+            // Rückverweis setzen: `journalTradeId` stand seit jeher im Schema
+            // („>0 = ins Journal übernommen") und wurde nie gefüllt.
+            if (ergebnis.gespiegelt > 0) {
+                await knex('strategy_trades').where({ instanceId: inst.id })
+                    .whereNot('exitTime', 0)
+                    .modify((q) => { if (auswahl.length) q.whereIn('id', auswahl) })
+                    .update({ journalTradeId: 1 })
+            }
+            res.json({ ...ergebnis, account })
+        } catch (e) {
+            logError('strategy-api', 'Spiegeln ins Journal fehlgeschlagen', e)
+            res.status(500).json({ error: `Spiegeln fehlgeschlagen: ${e.message}` })
+        }
+    })
+
+    /**
+     * Gespiegelte Trades wieder aus dem Journal nehmen.
+     *
+     * Ohne Auswahl werden ALLE Agenten-Trades entfernt — auch die anderer
+     * Instanzen. Das ist Absicht: „aufräumen" soll aufräumen. Mit `tradeIds`
+     * trifft es genau die genannten.
+     */
+    app.post('/api/strategies/journal/unmirror', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const ids = Array.isArray(req.body?.tradeIds)
+                ? req.body.tradeIds.map(Number).filter(Number.isFinite) : []
+            const ergebnis = await entferneAusJournal(knex, ids)
+            if (ids.length) await knex('strategy_trades').whereIn('id', ids).update({ journalTradeId: 0 })
+            else await knex('strategy_trades').update({ journalTradeId: 0 })
+            res.json(ergebnis)
+        } catch (e) {
+            logError('strategy-api', 'Entspiegeln fehlgeschlagen', e)
+            res.status(500).json({ error: `Entfernen fehlgeschlagen: ${e.message}` })
+        }
+    })
+
+    /**
+     * Ein Trade und die Fassung, unter der er entstand.
+     *
+     * Das ist die Brücke zurück: `paramsVersion` steht am Trade, die Werte
+     * dazu in der Parameter-Historie, die Regeln in der Regel-Historie. Ohne
+     * diesen Weg zeigt ein alter Trade auf eine Strategie, deren Einstellungen
+     * inzwischen andere sind — und niemand kann mehr sagen, wonach er gehandelt
+     * wurde.
+     */
+    app.get('/api/strategies/trades/:id/context', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const trade = await knex('strategy_trades').where('id', Number(req.params.id)).first()
+            if (!trade) return res.status(404).json({ error: 'Trade nicht gefunden' })
+
+            const instanz = await knex('strategy_instances').where('id', trade.instanceId).first()
+            const stand = await knex('strategy_param_history')
+                .where({ instanceId: trade.instanceId, paramsVersion: trade.paramsVersion }).first()
+
+            // Regelfassung: die zum Zeitpunkt des Trades jüngste, die nicht
+            // NACH ihm entstanden ist. Eine spätere Fassung hat ihn nicht erzeugt.
+            let regelStand = null
+            const regelZeilen = await knex('rule_strategy_history')
+                .where('strategyId', trade.strategyId).orderBy('version', 'desc')
+            regelStand = regelZeilen.find((z) => Number(z.createdAt) <= Number(trade.createdAt || Date.now()))
+                || regelZeilen[regelZeilen.length - 1] || null
+
+            const regeln = regelStand ? parseJson(regelStand.rules, null) : getStrategy(trade.strategyId)?.regeln
+            res.json({
+                trade: { ...trade, objectId: String(trade.id) },
+                instanz: instanz ? { id: instanz.id, name: instanz.name, mode: instanz.mode } : null,
+                paramsVersion: trade.paramsVersion,
+                params: stand ? parseJson(stand.params, {}) : null,
+                risk: stand ? parseJson(stand.risk, {}) : null,
+                quelle: stand?.source || null,
+                ruleVersion: regelStand ? Number(regelStand.version) : null,
+                saetze: regeln ? regelnAlsSaetze(regeln) : [],
+            })
+        } catch (e) {
+            logError('strategy-api', 'Trade-Kontext fehlgeschlagen', e)
+            res.status(500).json({ error: 'Kontext konnte nicht geladen werden' })
+        }
+    })
+
+    // ── Robustheit ───────────────────────────────────────────────────────
+    // Drei Stufen zwischen „guter Backtest" und „belastbar". Alle rechnen auf
+    // demselben Simulator wie der Backtest — eine Prüfung mit eigenen Regeln
+    // würde etwas anderes messen als das, was sie beurteilen soll.
+
+    /** Gemeinsame Eingabeprüfung: Strategie, Symbol, Zeitraum. */
+    /**
+     * Der globale Hebeldeckel aus den Einstellungen — derselbe, den die Engine
+     * in JEDER Betriebsart anwendet. Das Labor muss ihn kennen, sonst misst es
+     * Positionsgrössen, die der Papierbetrieb nie eingehen würde.
+     * Bei Fehlern lieber ungekappt rechnen als den Lauf verweigern; die Zahl
+     * steht im Ergebnis (`leverageEffektiv`), also fällt es auf.
+     */
+    async function globalerHebelDeckel() {
+        try {
+            const s = await getKnex()('settings').select('strategyMaxLeverage').where('id', 1).first()
+            return Number(s?.strategyMaxLeverage) || 10
+        } catch (e) {
+            logWarn('strategy-api', 'Hebeldeckel nicht lesbar — Lauf rechnet ohne Kappung')
+            return 0
+        }
+    }
+
+    async function robustBasis(b) {
+        const strategie = getStrategy(b.strategyId)
+        if (!strategie) return { fehler: `Unbekannte Strategie: ${b.strategyId}` }
+        if (!isValidTimeframe(b.timeframe)) return { fehler: 'Ungültige Zeiteinheit' }
+        if (!strategie.supportedTimeframes.includes(b.timeframe)) {
+            return { fehler: `${strategie.name} unterstützt ${b.timeframe} nicht` }
+        }
+        const symbol = String(b.symbol || '').toUpperCase()
+        if (!SYMBOL_RE.test(symbol)) return { fehler: 'Ungültiges Symbol' }
+        const toTs = Number(b.toTs) || Date.now()
+        const fromTs = Number(b.fromTs) || (toTs - 180 * 86400000)
+        if (fromTs >= toTs) return { fehler: 'Zeitraum ist leer' }
+        return {
+            basis: {
+                strategyId: b.strategyId, params: b.params || {}, risk: b.risk || {},
+                symbol, timeframe: b.timeframe,
+                market: b.market === 'spot' ? 'spot' : 'futures',
+                fromTs, toTs, startEquity: Number(b.startEquity) || 1000,
+                // Der Deckel wird bei jedem Robustheitslauf mitgegeben, sonst
+                // rechnen Monte Carlo, Stabilität und Walk-forward mit einem
+                // Hebel, den der Betrieb gar nicht zulässt.
+                maxLeverage: await globalerHebelDeckel(),
+            },
+        }
+    }
+
+    /**
+     * Monte Carlo auf einem frisch gerechneten Backtest. Zeigt, wie schlimm es
+     * zwischendurch aussehen konnte — die Frage, die ein Erwartungswert nicht
+     * beantwortet.
+     */
+    app.post('/api/strategies/robustness/montecarlo', async (req, res) => {
+        try {
+            const b = req.body || {}
+            const { basis, fehler } = await robustBasis(b)
+            if (fehler) return res.status(400).json({ error: fehler })
+            const geschaetzt = schaetzeKerzen(basis.fromTs, basis.toTs, basis.timeframe)
+            if (geschaetzt > MAX_BACKTEST_CANDLES) {
+                return res.status(400).json({ error: `Zeitraum zu gross: ~${geschaetzt} Kerzen` })
+            }
+            const lauf = await runBacktest(basis)
+            res.json({
+                stats: lauf.stats,
+                monteCarlo: monteCarlo(lauf.trades, {
+                    startEquity: basis.startEquity,
+                    laeufe: Number(b.laeufe) || 1000,
+                    aussaat: Number(b.aussaat) || 1,
+                }),
+            })
+        } catch (e) {
+            logError('strategy-api', 'Monte Carlo fehlgeschlagen', e)
+            res.status(500).json({ error: `Monte Carlo fehlgeschlagen: ${e.message}` })
+        }
+    })
+
+    /**
+     * Parameterstabilität: einen Wert in Stufen durchfahren und die Nachbarschaft
+     * zeigen. Ein Gipfel zwischen Abstürzen ist Zufall, kein Ergebnis.
+     */
+    app.post('/api/strategies/robustness/stability', async (req, res) => {
+        try {
+            const b = req.body || {}
+            const { basis, fehler } = await robustBasis(b)
+            if (fehler) return res.status(400).json({ error: fehler })
+
+            const werte = Array.isArray(b.werte) ? b.werte.slice(0, MAX_STUFEN) : []
+            if (werte.length < 3) return res.status(400).json({ error: 'Mindestens drei Werte angeben' })
+            const geschaetzt = schaetzeKerzen(basis.fromTs, basis.toTs, basis.timeframe)
+            if (geschaetzt * werte.length > MAX_BACKTEST_CANDLES * 10) {
+                return res.status(400).json({ error: 'Zeitraum × Stufen zu gross — Zeitraum kürzen oder weniger Stufen' })
+            }
+            res.json(await parameterStabilitaet(basis, String(b.paramKey || ''), werte))
+        } catch (e) {
+            logError('strategy-api', 'Stabilitätslauf fehlgeschlagen', e)
+            res.status(500).json({ error: `Stabilitätslauf fehlgeschlagen: ${e.message}` })
+        }
+    })
+
+    /**
+     * Stabilität über mehrere Symbole UND beide Zeitfenster.
+     *
+     * Die ehrlichere Fassung von `/stability`: eine einzelne Kurve auf einem
+     * Symbol verleitet dazu, ein Zufallsplateau für eine Eigenschaft der
+     * Strategie zu halten — genau das ist am 16.08.2026 passiert.
+     */
+    app.post('/api/strategies/robustness/stability-matrix', async (req, res) => {
+        try {
+            const b = req.body || {}
+            const { basis, fehler } = await robustBasis(b)
+            if (fehler) return res.status(400).json({ error: fehler })
+            const werte = Array.isArray(b.werte) ? b.werte.slice(0, MAX_STUFEN) : []
+            if (werte.length < 3) return res.status(400).json({ error: 'Mindestens drei Werte angeben' })
+
+            const symbole = (Array.isArray(b.symbole) ? b.symbole : [])
+                .map((x) => String(x).toUpperCase().trim()).filter((x) => SYMBOL_RE.test(x)).slice(0, 8)
+            const geschaetzt = schaetzeKerzen(basis.fromTs, basis.toTs, basis.timeframe)
+            if (geschaetzt * werte.length * Math.max(1, symbole.length) > MAX_BACKTEST_CANDLES * 40) {
+                return res.status(400).json({ error: 'Zeitraum × Stufen × Symbole zu gross — bitte eingrenzen' })
+            }
+            res.json(await stabilitaetsMatrix(basis, String(b.paramKey || ''), werte, { symbole }))
+        } catch (e) {
+            logError('strategy-api', 'Stabilitätsmatrix fehlgeschlagen', e)
+            res.status(500).json({ error: `Stabilitätsmatrix fehlgeschlagen: ${e.message}` })
+        }
+    })
+
+    /**
+     * Walk-forward: rollend auswählen, immer auf dem folgenden ungesehenen
+     * Abschnitt prüfen. Die Summe der Prüfabschnitte ist die Kurve, die man
+     * damals wirklich gehandelt hätte.
+     */
+    app.post('/api/strategies/robustness/walkforward', async (req, res) => {
+        try {
+            const b = req.body || {}
+            const { basis, fehler } = await robustBasis(b)
+            if (fehler) return res.status(400).json({ error: fehler })
+            const werte = Array.isArray(b.werte) ? b.werte.slice(0, MAX_STUFEN) : []
+            if (werte.length < 2) return res.status(400).json({ error: 'Mindestens zwei Werte angeben' })
+
+            // Derselbe Deckel wie bei /stability — er fehlte hier, obwohl
+            // Walk-forward MEHR rechnet: je Fenster ein Backtest pro Stufe plus
+            // einer zur Prüfung. Die Optimierungsabschnitte sind zusammen etwa
+            // so breit wie der ganze Zeitraum, also kostet der Lauf grob
+            // Zeitraum × Stufen Kerzen. Ohne Grenze blockiert ein Laborlauf den
+            // Hauptprozess — und damit auch Live-Takt und Not-Aus.
+            const geschaetzt = schaetzeKerzen(basis.fromTs, basis.toTs, basis.timeframe)
+            if (geschaetzt * werte.length > MAX_BACKTEST_CANDLES * 10) {
+                return res.status(400).json({ error: 'Zeitraum × Stufen zu gross — Zeitraum kürzen oder weniger Stufen' })
+            }
+            res.json(await walkForward(basis, String(b.paramKey || ''), werte, { fenster: Number(b.fenster) || 4 }))
+        } catch (e) {
+            logError('strategy-api', 'Walk-forward fehlgeschlagen', e)
+            res.status(500).json({ error: `Walk-forward fehlgeschlagen: ${e.message}` })
         }
     })
 
@@ -388,6 +750,7 @@ export function setupStrategyRoutes(app) {
                 market: b.market === 'spot' ? 'spot' : 'futures',
                 fromTs, toTs,
                 startEquity: Number(b.startEquity) || 1000,
+                maxLeverage: await globalerHebelDeckel(),
             })
 
             // Ergebnis sichern, damit ein Optimizer-Vorschlag darauf zeigen kann
@@ -395,6 +758,11 @@ export function setupStrategyRoutes(app) {
             if (b.save !== false && ergebnis.trades.length >= 0) {
                 const knex = getKnex()
                 const isPg = knex.client.config.client === 'pg'
+                // Fassung der Regelstrategie festhalten: ohne sie zeigt ein alter
+                // Lauf auf eine Strategie, deren Regeln inzwischen andere sind.
+                const regelZeile = await knex('rule_strategies')
+                    .where('strategyId', b.strategyId).select('version').first()
+
                 const datensatz = {
                     strategyId: b.strategyId,
                     instanceId: Number(b.instanceId) || 0,
@@ -403,6 +771,12 @@ export function setupStrategyRoutes(app) {
                     market: b.market === 'spot' ? 'spot' : 'futures',
                     fromTs, toTs,
                     params: JSON.stringify(ergebnis.meta?.params || {}),
+                    // Das Kostenmodell gehört zum Ergebnis, nicht zur Umgebung:
+                    // dieselben Regeln mit 2 statt 6 Basispunkten sind ein anderer
+                    // Test. Ohne diese Zeile war kein Lauf reproduzierbar.
+                    risk: JSON.stringify(ergebnis.meta?.risk || {}),
+                    ruleVersion: Number(regelZeile?.version) || 0,
+                    variantenGeprueft: Math.max(1, Math.min(Number(b.variantenGeprueft) || 1, 10000)),
                     stats: JSON.stringify({ ...ergebnis.stats, funnel: ergebnis.funnel }),
                     trades: JSON.stringify(ergebnis.trades.slice(0, 500)),
                 }
@@ -472,12 +846,13 @@ export function setupStrategyRoutes(app) {
             const risk = b.risk || {}
             const market = b.market === 'spot' ? 'spot' : 'futures'
             const startEquity = Number(b.startEquity) || 1000
+            const maxLeverage = await globalerHebelDeckel()
 
             const lauf = async (params, symbol, f) => {
                 const e = await runBacktest({
                     strategyId: b.strategyId, params, risk, symbol,
                     timeframe: b.timeframe, market,
-                    fromTs: f.von, toTs: f.bis, startEquity,
+                    fromTs: f.von, toTs: f.bis, startEquity, maxLeverage,
                 })
                 // Erwartungswert ohne den grössten Gewinner: trennt eine echte
                 // Verbesserung von einem einzelnen Ausreisser, der sie trägt.
@@ -539,11 +914,15 @@ export function setupStrategyRoutes(app) {
         try {
             const knex = getKnex()
             let q = knex('strategy_backtests')
-                .select('id', 'strategyId', 'instanceId', 'label', 'symbol', 'timeframe', 'fromTs', 'toTs', 'stats', 'createdAt')
+                .select('id', 'strategyId', 'instanceId', 'label', 'symbol', 'timeframe', 'fromTs', 'toTs',
+                    'stats', 'risk', 'ruleVersion', 'entscheidung', 'entschiedenAm', 'notiz', 'variantenGeprueft', 'createdAt')
                 .orderBy('id', 'desc').limit(Math.min(Number(req.query.limit) || 50, 200))
             if (req.query.instanceId) q = q.where('instanceId', Number(req.query.instanceId))
             const rows = await q
-            res.json(rows.map((r) => ({ ...r, objectId: String(r.id), stats: parseJson(r.stats, {}) })))
+            res.json(rows.map((r) => ({
+                ...r, objectId: String(r.id),
+                stats: parseJson(r.stats, {}), risk: parseJson(r.risk, {}),
+            })))
         } catch (e) {
             logError('strategy-api', 'Backtests laden fehlgeschlagen', e)
             res.status(500).json({ error: 'Backtests konnten nicht geladen werden' })
@@ -694,7 +1073,7 @@ export function setupStrategyRoutes(app) {
 
             const r = await schliessePositionManuell({
                 instance, positionRow: row, price: preis, time: Date.now(),
-                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps },
+                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps, fundingBpsPer8h: instance.risk.fundingBpsPer8h },
             })
             if (!r.ok) {
                 return res.status(502).json({ error: `Position konnte an der Börse nicht geschlossen werden: ${r.reason}` })
@@ -777,8 +1156,115 @@ export function setupStrategyRoutes(app) {
     // ── Eigene Regelstrategien ───────────────────────────────────────────
 
     /** Bausteine und Vorlagen für den Editor. */
-    app.get('/api/strategies/rules/blocks', (req, res) => {
-        res.json({ bausteine: BAUSTEINE, vorlagen: VORLAGEN })
+    app.get('/api/strategies/rules/blocks', async (req, res) => {
+        // Ausgeblendete Vorlagen fliegen aus der Auswahl, bleiben aber im Code:
+        // Ausblenden ist eine Ansichtssache, kein Datenverlust. Die Liste der
+        // ausgeblendeten Schlüssel geht mit, damit die Oberfläche „wieder
+        // einblenden" anbieten kann.
+        let versteckt = []
+        try {
+            const row = await getKnex()('settings').select('strategyHiddenTemplates').where('id', 1).first()
+            versteckt = parseJson(row?.strategyHiddenTemplates, [])
+            if (!Array.isArray(versteckt)) versteckt = []
+        } catch { versteckt = [] }
+        res.json({
+            bausteine: BAUSTEINE,
+            vorlagen: VORLAGEN.filter((v) => !versteckt.includes(v.key)),
+            versteckteVorlagen: versteckt,
+        })
+    })
+
+    /**
+     * Strategie als weitergebbares Paket. Enthält die geprüfte Beschreibung,
+     * nicht den Zustand: Instanzen, Trades und Freigaben bleiben ausdrücklich
+     * draussen — importiert wird eine Idee, kein Handelsverlauf.
+     */
+    app.get('/api/strategies/rules/:id/export', async (req, res) => {
+        try {
+            const row = await getKnex()('rule_strategies').where('id', req.params.id).first()
+            if (!row) return res.status(404).json({ error: 'Nicht gefunden' })
+            res.json({
+                format: PAKET_FORMAT,
+                formatVersion: PAKET_VERSION,
+                exportiertAm: Date.now(),
+                strategie: {
+                    strategyId: row.strategyId,
+                    name: row.name,
+                    description: row.description,
+                    version: Number(row.version) || 1,
+                    rules: parseJson(row.rules, {}),
+                },
+            })
+        } catch (e) {
+            logError('strategy-api', 'Export fehlgeschlagen', e)
+            res.status(500).json({ error: 'Export fehlgeschlagen' })
+        }
+    })
+
+    /**
+     * Paket einlesen. Es durchläuft dieselbe Prüfung wie eine von Hand gebaute
+     * Strategie — ein fremdes Paket bekommt keinen kürzeren Weg. Der Kurzname
+     * wird bei Kollision hochgezählt, damit ein Import nie etwas überschreibt.
+     */
+    app.post('/api/strategies/rules/import', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const paket = req.body?.paket ?? req.body
+            if (!paket || typeof paket !== 'object') {
+                return res.status(400).json({ error: 'Kein lesbares Paket' })
+            }
+            if (paket.format !== PAKET_FORMAT) {
+                return res.status(400).json({
+                    error: 'Das ist kein Strategie-Paket dieser Anwendung (Feld "format" fehlt oder passt nicht).',
+                })
+            }
+            if (Number(paket.formatVersion) > PAKET_VERSION) {
+                return res.status(400).json({
+                    error: `Das Paket stammt aus einer neueren Fassung (Format ${paket.formatVersion}, hier ${PAKET_VERSION}).`,
+                })
+            }
+            const s = paket.strategie || {}
+            const roh = s.rules
+            if (!roh || typeof roh !== 'object') return res.status(400).json({ error: 'Paket enthält keine Regeln' })
+
+            // Wunschname säubern; bei Kollision hochzählen statt überschreiben.
+            let ziel = String(req.body?.strategyId || s.strategyId || 'import')
+                .toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 40) || 'import'
+            if (istEingebaut(ziel)) ziel = `${ziel}_import`
+            const basis = ziel
+            for (let n = 2; await knex('rule_strategies').where('strategyId', ziel).first(); n++) {
+                ziel = `${basis}_${n}`
+                if (n > 50) return res.status(409).json({ error: 'Zu viele gleichnamige Strategien' })
+            }
+
+            const g = pruefeRegeln({ ...roh, id: ziel, name: s.name || ziel, description: s.description || '' })
+            if (!g.ok) {
+                return res.status(400).json({
+                    error: `Das Paket ist nicht gültig: ${g.fehler.join('; ')}`, fehler: g.fehler,
+                })
+            }
+
+            const isPg = knex.client.config.client === 'pg'
+            const datensatz = {
+                strategyId: ziel, name: g.regeln.name, description: g.regeln.description,
+                enabled: 1, rules: JSON.stringify(g.regeln), source: 'import', version: 1,
+            }
+            const id = isPg
+                ? (await knex('rule_strategies').insert(datensatz).returning('id'))[0]?.id
+                : (await knex('rule_strategies').insert(datensatz))[0]
+
+            await knex('rule_strategy_history').insert({
+                strategyId: ziel, version: 1, name: g.regeln.name, description: g.regeln.description,
+                rules: JSON.stringify(g.regeln), source: `import (Quelle ${s.strategyId || '?'} v${s.version || '?'})`,
+                createdAt: Date.now(),
+            }).catch(() => {})
+
+            await ladeAlleRegelStrategien()
+            res.status(201).json({ id, strategyId: ziel, umbenannt: ziel !== (s.strategyId || ''), hinweise: g.hinweise })
+        } catch (e) {
+            logError('strategy-api', 'Import fehlgeschlagen', e)
+            res.status(500).json({ error: 'Import fehlgeschlagen' })
+        }
     })
 
     app.get('/api/strategies/rules', async (req, res) => {
@@ -798,7 +1284,13 @@ export function setupStrategyRoutes(app) {
     /** Prüft eine Beschreibung, ohne sie zu speichern — für die Live-Rückmeldung im Editor. */
     app.post('/api/strategies/rules/validate', (req, res) => {
         const g = pruefeRegeln(req.body?.rules || {})
-        res.json({ ok: g.ok, fehler: g.fehler, hinweise: g.hinweise, regeln: g.regeln })
+        // Die Sätze kommen mit der Prüfung: sie beschreiben, was der Interpreter
+        // aus der Eingabe gemacht HAT — nicht, was der Nutzer gemeint haben
+        // könnte. Genau deshalb sind sie eine Kontrolle und keine Verzierung.
+        res.json({
+            ok: g.ok, fehler: g.fehler, hinweise: g.hinweise, regeln: g.regeln,
+            saetze: g.regeln ? regelnAlsSaetze(g.regeln) : [],
+        })
     })
 
     app.post('/api/strategies/rules', async (req, res) => {
@@ -828,8 +1320,14 @@ export function setupStrategyRoutes(app) {
                 }
                 throw e
             }
+            // Version 1 gleich in die Historie — sonst fehlt später ausgerechnet
+            // die Fassung, mit der alles angefangen hat.
+            await knex('rule_strategy_history').insert({
+                strategyId, version: 1, name: g.regeln.name, description: g.regeln.description,
+                rules: JSON.stringify(g.regeln), source: 'angelegt', createdAt: Date.now(),
+            }).catch(() => {})
             await ladeAlleRegelStrategien()
-            res.status(201).json({ id, strategyId, hinweise: g.hinweise })
+            res.status(201).json({ id, strategyId, version: 1, hinweise: g.hinweise })
         } catch (e) {
             logError('strategy-api', 'Regelstrategie anlegen fehlgeschlagen', e)
             res.status(500).json({ error: 'Regelstrategie konnte nicht angelegt werden' })
@@ -863,16 +1361,80 @@ export function setupStrategyRoutes(app) {
             })
             if (!g.ok) return res.status(400).json({ error: g.fehler.join('; '), fehler: g.fehler })
 
+            // Nur eine echte Regeländerung zählt als neue Version. Umbenennen
+            // oder die Beschreibung anzupassen ändert nichts am Handeln und darf
+            // deshalb weder die Historie aufblähen noch eine Live-Freigabe kosten.
+            //
+            // `pruefeRegeln` legt Name und Beschreibung MIT in die Beschreibung,
+            // ein roher Textvergleich würde also jedes Umbenennen als Änderung
+            // lesen — gemessen und behoben, nicht vermutet.
+            const neueRegeln = JSON.stringify(g.regeln)
+            const regelnGeaendert = regelnUnterscheidenSich(g.regeln, parseJson(row.rules, {}))
+            const version = (Number(row.version) || 1) + (regelnGeaendert ? 1 : 0)
+
             await knex('rule_strategies').where('id', row.id).update({
                 name: g.regeln.name, description: g.regeln.description,
                 enabled: b.enabled === undefined ? row.enabled : (b.enabled ? 1 : 0),
-                rules: JSON.stringify(g.regeln), updatedAt: knex.fn.now(),
+                rules: neueRegeln, version, updatedAt: knex.fn.now(),
             })
+
+            let betroffeneInstanzen = 0
+            if (regelnGeaendert) {
+                await knex('rule_strategy_history').insert({
+                    strategyId: row.strategyId, version,
+                    name: g.regeln.name, description: g.regeln.description,
+                    rules: neueRegeln, source: 'manuell', createdAt: Date.now(),
+                }).catch((e) => { if (!/unique|constraint/i.test(e.message)) throw e })
+
+                // Instanzen auf dieser Strategie erben die Änderung, ohne dass
+                // jemand sie dort angefasst hätte. Ihre `paramsVersion` muss
+                // deshalb mitwandern — sonst landen Trades von vorher und nachher
+                // in derselben Schublade und niemand kann sie mehr trennen.
+                // Und die Live-Freigabe galt für die ALTE Logik: sie erlischt.
+                const instanzen = await knex('strategy_instances')
+                    .where('strategyId', row.strategyId)
+                    .select('id', 'paramsVersion', 'params', 'risk')
+                for (const inst of instanzen) {
+                    const neueVersion = (Number(inst.paramsVersion) || 1) + 1
+                    await knex('strategy_instances').where('id', inst.id).update({
+                        paramsVersion: neueVersion, liveApprovedAt: 0, updatedAt: knex.fn.now(),
+                    })
+                    await historieSchreiben(knex, inst.id, neueVersion,
+                        typeof inst.params === 'string' ? inst.params : JSON.stringify(inst.params || {}),
+                        typeof inst.risk === 'string' ? inst.risk : JSON.stringify(inst.risk || {}),
+                        `regeländerung v${version}`)
+                    resetSymbolCache(inst.id)
+                    betroffeneInstanzen++
+                }
+            }
+
             await ladeAlleRegelStrategien()
-            res.json({ ok: true, hinweise: g.hinweise })
+            res.json({ ok: true, hinweise: g.hinweise, version, regelnGeaendert, betroffeneInstanzen })
         } catch (e) {
             logError('strategy-api', 'Regelstrategie ändern fehlgeschlagen', e)
             res.status(500).json({ error: 'Regelstrategie konnte nicht geändert werden' })
+        }
+    })
+
+    /**
+     * Fassungen einer Regelstrategie. Erst damit ist ein alter Trade wieder
+     * erklärbar: welche Regeln galten, als er entstand?
+     */
+    app.get('/api/strategies/rules/:id/history', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const row = await knex('rule_strategies').where('id', req.params.id).first()
+            if (!row) return res.status(404).json({ error: 'Nicht gefunden' })
+            const fassungen = await knex('rule_strategy_history')
+                .where('strategyId', row.strategyId).orderBy('version', 'desc')
+            res.json({
+                strategyId: row.strategyId,
+                aktuelleVersion: Number(row.version) || 1,
+                fassungen: fassungen.map((f) => ({ ...f, rules: parseJson(f.rules, {}) })),
+            })
+        } catch (e) {
+            logError('strategy-api', 'Regel-Historie fehlgeschlagen', e)
+            res.status(500).json({ error: 'Historie konnte nicht geladen werden' })
         }
     })
 
@@ -921,8 +1483,13 @@ export function setupStrategyRoutes(app) {
             const id = isPg
                 ? (await knex('rule_strategies').insert(datensatz).returning('id'))[0]?.id
                 : (await knex('rule_strategies').insert(datensatz))[0]
+            await knex('rule_strategy_history').insert({
+                strategyId: neueId, version: 1, name: g.regeln.name, description: row.description,
+                rules: JSON.stringify(g.regeln), source: `kopie von ${row.strategyId} v${row.version || 1}`,
+                createdAt: Date.now(),
+            }).catch(() => {})
             await ladeAlleRegelStrategien()
-            res.status(201).json({ id, strategyId: neueId })
+            res.status(201).json({ id, strategyId: neueId, version: 1 })
         } catch (e) {
             logError('strategy-api', 'Kopieren fehlgeschlagen', e)
             res.status(500).json({ error: 'Kopie konnte nicht angelegt werden' })
@@ -952,7 +1519,20 @@ export function setupStrategyRoutes(app) {
     app.post('/api/strategies/engine/run', async (req, res) => {
         try {
             const gestartet = await tick({ vorher: resetSymbolCache })
-            if (!gestartet) return res.status(409).json({ error: 'Ein Takt läuft bereits — gleich erneut versuchen' })
+            if (!gestartet) {
+                // Zwei Gründe, aus denen ein Takt nicht anläuft — sie brauchen
+                // verschiedene Antworten. „Läuft schon" löst sich von selbst,
+                // „ein anderer Prozess führt" nicht: dort muss der Nutzer wissen,
+                // dass dieser Server gar nicht der taktende ist.
+                const status = engineStatus()
+                if (!status.fuehrung) {
+                    return res.status(409).json({
+                        error: 'Ein anderer Prozess führt die Engine (z. B. der NAS-Container). '
+                            + 'Dieser Server taktet nicht — sonst liefen zwei Engines auf derselben Datenbank.',
+                    })
+                }
+                return res.status(409).json({ error: 'Ein Takt läuft bereits — gleich erneut versuchen' })
+            }
             res.json({ ok: true, ...engineStatus() })
         } catch (e) {
             logError('strategy-api', 'Manueller Takt fehlgeschlagen', e)
@@ -1002,6 +1582,11 @@ export async function ladePerformance(filter = {}) {
     let equity = startEquity
     const equityCurve = []
     for (const t of trades) {
+        // Dieselbe Menge wie in den Kennzahlen: `berechneStatistik` klammert
+        // am Stichtag bewertete Positionen aus, also darf die Kurve sie auch
+        // nicht enthalten. Im Betrieb entstehen solche Zeilen zwar nicht —
+        // aber die Rechnung soll nicht davon abhängen, dass das so bleibt.
+        if (t.exitReason === 'open_at_end') continue
         equity += Number(t.netPnl) || 0
         equityCurve.push({ t: Number(t.exitTime), equity })
     }

@@ -26,6 +26,23 @@ A local, privacy-focused trading journal for **crypto futures trading** — Bitu
 - **Trading Volume** — 30-day and lifetime volume tracking
 - **Card Visibility Toggle** — show/hide individual dashboard cards
 
+### Nachrichten (Live-Analyse)
+
+- **AI briefing**: one German report from all sources — not one summary per post. Written by your configured provider; YouTube videos are watched by Gemini first (the only provider that opens a video URL). Every point opens up to the posts it is based on, so nothing is unverifiable.
+- **Sources**: YouTube channels, RSS feeds and public Telegram channels. An "idiot filter" hides sources you marked as noise — and does not even fetch them.
+- **Economic calendar**: adjustable range, impact and currency areas. ForexFactory covers the current week; the Fed's own calendar adds its meeting dates months ahead.
+- Costs are shown before you press: the briefing estimates its own price from your settings.
+
+### Marktradar (Live-Analyse)
+
+- Tile grid with the market situation at a glance — show/hide, drag to reorder, drag the corner to resize, click to enlarge (all stored per device)
+- **Fear & Greed** with full history, **BTC dominance** (TradingView chart + own daily recording), **funding rates** (your markets first), **long/short + open interest**, **RSI scatter** over the top 10/50/100 markets or your own traded symbols
+- **Market overview** as bubbles or treemap, **rainbow chart** with self-computed regression bands, **Pi Cycle Top** with an adjustable alarm (on the crossing itself, or already at a set distance)
+- **24h liquidations** from the journal's own recording — no paid third party involved
+- **Your trades × market regime**: your win rate and P&L grouped by the Fear & Greed value of each entry day
+- **BTC dominance** with six years of history for Bitcoin, Ethereum and everything else — from our own stored data, no third-party embed
+- Only crypto: Binance perpetuals are filtered to actual coins, so tokenised equities and commodities never show up
+
 ### Calendar & Daily View
 - **Calendar Heatmap** — visual overview of daily P&L across months
 - **Daily Summary** — per-day performance with candlestick charts (OHLCV)

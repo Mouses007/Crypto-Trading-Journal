@@ -197,6 +197,33 @@ const router = createRouter({
             import('../views/OpenInterest.vue')
     },
     {
+        // Marktradar: Kachelraster mit Stimmung, Positionierung und eigenen
+        // Kennzahlen — der Blick auf die Marktlage, bevor man in die Tiefe geht.
+        path: '/marktradar',
+        name: 'marktradar',
+        meta: {
+            title: "Marktradar", titleKey: "nav.marktradar",
+            mode: 'live',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/Marktradar.vue')
+    },
+    {
+        // Nachrichten: Lagebericht, Wirtschaftskalender und Beiträge. Bewusst
+        // eine eigene Seite — Text liest man anders als Zahlen, und der
+        // Wirtschaftskalender ist eine Nachricht mit Datum, keine Kennzahl.
+        path: '/nachrichten',
+        name: 'nachrichten',
+        meta: {
+            title: "Nachrichten", titleKey: "nav.nachrichten",
+            mode: 'live',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/Nachrichten.vue')
+    },
+    {
         path: '/agent/strategies',
         name: 'agentStrategies',
         meta: {
@@ -261,6 +288,17 @@ const router = createRouter({
         },
         component: () =>
             import('../views/AgentLab.vue')
+    },
+    {
+        path: '/agent/rangliste',
+        name: 'coinRangliste',
+        meta: {
+            title: "Coin-Rangliste", titleKey: "nav.coinRangliste",
+            mode: 'agent',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/CoinRangliste.vue')
     },
     {
         path: '/imports',

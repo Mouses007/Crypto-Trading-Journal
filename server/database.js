@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events']
     let fixed = 0
 
     for (const table of tables) {
@@ -90,6 +90,19 @@ async function fixPostgresSequences(knex) {
     }
 }
 
+/**
+ * Schema-Stand dieses CODES. Bei jeder Strukturänderung um 1 erhöhen.
+ *
+ * Hintergrund: NAS-Container und Dev-Rechner laufen mit verschiedenen
+ * Codeständen gegen DIESELBE Postgres. Startet ein älterer Codestand gegen ein
+ * neueres Schema, fehlen ihm Spaltenkenntnisse — das fällt sonst erst als
+ * stiller Folgefehler auf. Der Anker macht es beim Start sichtbar.
+ *
+ * Bewusst nur eine WARNUNG, kein Abbruch: ein harter Stopp würde den
+ * NAS-Container lahmlegen, sobald der Dev-Rechner die Version gehoben hat.
+ */
+const SCHEMA_VERSION = 1
+
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
 
@@ -100,6 +113,20 @@ async function runMigrations(knex, client) {
             await knex.schema.alterTable(table, (t) => {
                 buildCol(t)
             })
+        }
+    }
+
+    /**
+     * Index nachrüsten. Indizes in createTable() greifen nur bei NEUEN
+     * Datenbanken — bestehende Installationen brauchen diesen Weg.
+     * `CREATE INDEX IF NOT EXISTS` können SQLite und PostgreSQL beide.
+     */
+    async function addIndexIfNotExists(table, column, name) {
+        if (!(await knex.schema.hasTable(table))) return
+        try {
+            await knex.raw(`CREATE INDEX IF NOT EXISTS ${name} ON ${isPg ? `"${table}"` : `\`${table}\``} (${isPg ? `"${column}"` : `\`${column}\``})`)
+        } catch (e) {
+            console.warn(`[DB] Index ${name} konnte nicht angelegt werden: ${e.message}`)
         }
     }
 
@@ -229,6 +256,7 @@ async function runMigrations(knex, client) {
             t.timestamp('createdAt').defaultTo(knex.fn.now())
             t.timestamp('updatedAt').defaultTo(knex.fn.now())
             t.index('tradeId', 'idx_notes_tradeId')
+            t.index('dateUnix', 'idx_notes_dateUnix')
         })
     }
 
@@ -244,6 +272,7 @@ async function runMigrations(knex, client) {
             t.timestamp('createdAt').defaultTo(knex.fn.now())
             t.timestamp('updatedAt').defaultTo(knex.fn.now())
             t.index('tradeId', 'idx_excursions_tradeId')
+            t.index('dateUnix', 'idx_excursions_dateUnix')
         })
     }
 
@@ -469,7 +498,17 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'aiKeyOpenai', (t) => t.text('aiKeyOpenai').defaultTo(''))
     await addColumnIfNotExists('settings', 'aiKeyAnthropic', (t) => t.text('aiKeyAnthropic').defaultTo(''))
     await addColumnIfNotExists('settings', 'aiKeyGemini', (t) => t.text('aiKeyGemini').defaultTo(''))
+    // `aiKeyDeepseek` bleibt bestehen, obwohl DeepSeek nicht mehr auswählbar ist:
+    // die Spalte wird weiter aus dem Backup-Export redigiert, und alte Berichte
+    // tragen `provider='deepseek'`.
     await addColumnIfNotExists('settings', 'aiKeyDeepseek', (t) => t.text('aiKeyDeepseek').defaultTo(''))
+    // Weitere OpenAI-kompatible Anbieter
+    await addColumnIfNotExists('settings', 'aiKeyMistral', (t) => t.text('aiKeyMistral').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiKeyXai', (t) => t.text('aiKeyXai').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiKeyQwen', (t) => t.text('aiKeyQwen').defaultTo(''))
+    // Qwen/DashScope: der Endpunkt hängt bei internationalen Konten am Arbeitsbereich,
+    // deshalb überschreibbar statt fest im Code.
+    await addColumnIfNotExists('settings', 'aiQwenUrl', (t) => t.text('aiQwenUrl').defaultTo('https://dashscope-intl.aliyuncs.com/compatible-mode/v1'))
 
     // notes additions
     await addColumnIfNotExists('notes', 'title', (t) => t.text('title').defaultTo(''))
@@ -491,6 +530,11 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('notes', 'closingFeelings', (t) => t.text('closingFeelings').defaultTo(''))
     await addColumnIfNotExists('notes', 'closingTimeframe', (t) => t.text('closingTimeframe').defaultTo(''))
     await addColumnIfNotExists('notes', 'closingPlaybook', (t) => t.text('closingPlaybook').defaultTo(''))
+
+    // Beide Tabellen werden nach Tag abgefragt (Notizen/Excursions zu den
+    // geladenen Trades), hatten aber nur einen Index auf tradeId.
+    await addIndexIfNotExists('notes', 'dateUnix', 'idx_notes_dateUnix')
+    await addIndexIfNotExists('excursions', 'dateUnix', 'idx_excursions_dateUnix')
 
     // Trade type (scalp, day, swing) — opening + closing separate
     await addColumnIfNotExists('notes', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
@@ -604,7 +648,7 @@ async function runMigrations(knex, client) {
     // ==================== SETTINGS: GEMINI IMAGE GENERATION ====================
     await addColumnIfNotExists('settings', 'shareCardProvider', (t) => t.text('shareCardProvider').defaultTo('flux'))
     await addColumnIfNotExists('settings', 'geminiImageApiKey', (t) => t.text('geminiImageApiKey').defaultTo(''))
-    await addColumnIfNotExists('settings', 'geminiImageModel', (t) => t.text('geminiImageModel').defaultTo('gemini-2.0-flash-preview-image-generation'))
+    await addColumnIfNotExists('settings', 'geminiImageModel', (t) => t.text('geminiImageModel').defaultTo('gemini-2.5-flash-image'))
 
     // ==================== SETTINGS: ESP32 DISPLAY ====================
     await addColumnIfNotExists('settings', 'esp32ApiKey', (t) => t.text('esp32ApiKey').defaultTo(''))
@@ -1140,6 +1184,7 @@ async function runMigrations(knex, client) {
             t.double('obLow').defaultTo(0)
             t.bigInteger('obCandleTime').defaultTo(0)
             t.bigInteger('watchFrom').defaultTo(0)      // ab hier wird auf den Retest gewartet
+            t.bigInteger('tradeableFrom').defaultTo(0)  // ab hier ist ein Einstieg ehrlich (Signal bestätigt)
             t.double('impulseExtreme').defaultTo(0)
             t.double('entry').defaultTo(0)
             t.double('stopLoss').defaultTo(0)
@@ -1247,7 +1292,7 @@ async function runMigrations(knex, client) {
             t.double('funding').defaultTo(0)
             t.double('netPnl').defaultTo(0)
             t.double('rMultiple').defaultTo(0)
-            t.text('exitReason').defaultTo('')          // tp | sl | be | manual | timeout | reverse
+            t.text('exitReason').defaultTo('')          // tp | sl | be | liquidation | manual | timeout | reverse
             t.double('maeR').defaultTo(0)               // in R, für die MAE/MFE-Analyse
             t.double('mfeR').defaultTo(0)
             t.double('holdingMinutes').defaultTo(0)
@@ -1345,6 +1390,7 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('strategy_positions', 'lastCandleTime', (t) => t.bigInteger('lastCandleTime').defaultTo(0))
     await addColumnIfNotExists('strategy_positions', 'breakEvenDone', (t) => t.integer('breakEvenDone').defaultTo(0))
     await addColumnIfNotExists('strategy_setups', 'watchFrom', (t) => t.bigInteger('watchFrom').defaultTo(0))
+    await addColumnIfNotExists('strategy_setups', 'tradeableFrom', (t) => t.bigInteger('tradeableFrom').defaultTo(0))
     // Teilausstieg: muss auf der Position liegen, sonst nimmt ein Neustart ihn
     // ein zweites Mal — die Fortschreibung erkennt sonst nicht, dass schon ein
     // Anteil geschlossen wurde.
@@ -1356,6 +1402,66 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('strategy_positions', 'initialQty', (t) => t.double('initialQty').defaultTo(0))
     // Positions-Kennung der Börse (≠ Order-Kennung) — nötig für gezieltes Close
     await addColumnIfNotExists('strategy_positions', 'externalPositionId', (t) => t.text('externalPositionId').defaultTo(''))
+
+    // Spiegelt diese Instanz ihre geschlossenen Trades ins Journal? Bewusst je
+    // Instanz und standardmässig AUS: es sind Papier-Trades, und ob sie im
+    // Journal auftauchen sollen, ist eine Entscheidung des Nutzers.
+    await addColumnIfNotExists('strategy_instances', 'journalSpiegeln', (t) => t.integer('journalSpiegeln').defaultTo(0))
+
+    // Experiment-Registry: ein gespeicherter Backtest muss REPRODUZIERBAR und
+    // ENTSCHEIDBAR sein. Bisher fehlte beides — das Kostenmodell (Gebühren,
+    // Slippage, Hebel) wurde gar nicht mitgeschrieben, also liess sich ein Lauf
+    // nachträglich nicht nachstellen; und was aus ihm folgte, stand nirgends.
+    await addColumnIfNotExists('strategy_backtests', 'risk', (t) => t.text('risk').defaultTo('{}'))
+    // Fassung der Regelstrategie zum Zeitpunkt des Laufs (0 = eingebaute Strategie)
+    await addColumnIfNotExists('strategy_backtests', 'ruleVersion', (t) => t.integer('ruleVersion').defaultTo(0))
+    // offen | uebernommen | verworfen — und warum
+    await addColumnIfNotExists('strategy_backtests', 'entscheidung', (t) => t.text('entscheidung').defaultTo('offen'))
+    await addColumnIfNotExists('strategy_backtests', 'entschiedenAm', (t) => t.bigInteger('entschiedenAm').defaultTo(0))
+    await addColumnIfNotExists('strategy_backtests', 'notiz', (t) => t.text('notiz').defaultTo(''))
+    // Wie viele Varianten wurden für DIESES Ergebnis durchprobiert? Ein Treffer
+    // aus 30 Versuchen ist etwas anderes als ein Treffer aus einem — ohne diese
+    // Zahl liest sich beides gleich gut.
+    await addColumnIfNotExists('strategy_backtests', 'variantenGeprueft', (t) => t.integer('variantenGeprueft').defaultTo(1))
+
+    // Regelstrategien versionieren. Ohne das überschreibt jede Änderung die
+    // Regeln an Ort und Stelle: die Trades von gestern zeigen weiter auf die
+    // Strategie, aber die Logik, die sie erzeugt hat, ist unwiederbringlich weg.
+    // Bei den Instanzen ist das über `paramsVersion` längst gelöst — hier fehlte
+    // es. `version` beginnt bei 1, damit Bestand als Version 1 gilt.
+    await addColumnIfNotExists('rule_strategies', 'version', (t) => t.integer('version').defaultTo(1))
+
+    if (!(await knex.schema.hasTable('rule_strategy_history'))) {
+        await knex.schema.createTable('rule_strategy_history', (t) => {
+            t.increments('id').primary()
+            t.text('strategyId').notNullable()
+            t.integer('version').notNullable()
+            t.text('name').defaultTo('')
+            t.text('description').defaultTo('')
+            t.text('rules').defaultTo('{}')       // vollständige Fassung DIESER Version
+            t.text('source').defaultTo('manuell')
+            t.bigInteger('createdAt').defaultTo(0)
+            t.unique(['strategyId', 'version'], 'uniq_rule_history_version')
+            t.index('strategyId', 'idx_rule_history_strategyId')
+        })
+        console.log(' -> Created table: rule_strategy_history')
+    }
+
+    // Bestand nachtragen: der aktuelle Stand jeder Regelstrategie wird als ihre
+    // Version 1 hinterlegt. Idempotent — ein zweiter Start ändert nichts.
+    if (await knex.schema.hasTable('rule_strategies')) {
+        const vorhandene = await knex('rule_strategies').select('strategyId', 'name', 'description', 'rules', 'version')
+        for (const r of vorhandene) {
+            const da = await knex('rule_strategy_history')
+                .where({ strategyId: r.strategyId, version: r.version || 1 }).first()
+            if (da) continue
+            await knex('rule_strategy_history').insert({
+                strategyId: r.strategyId, version: r.version || 1,
+                name: r.name, description: r.description, rules: r.rules,
+                source: 'bestand', createdAt: Date.now(),
+            }).catch(() => {})
+        }
+    }
 
     // Mehrere Zeiteinheiten je Instanz: dieselbe Strategie läuft gleichzeitig
     // auf 15m, 1h, 4h … — jede für sich, aber unter EINEM Risikobudget.
@@ -1399,6 +1505,11 @@ async function runMigrations(knex, client) {
     // Globale Schalter der Strategie-Agenten (Live-Freigabe und Not-Aus)
     await addColumnIfNotExists('settings', 'strategyLiveEnabled', (t) => t.integer('strategyLiveEnabled').defaultTo(0))
     await addColumnIfNotExists('settings', 'strategyKillSwitch', (t) => t.integer('strategyKillSwitch').defaultTo(0))
+    // Ausgeblendete Startvorlagen. Die Vorlagen selbst stehen im Code und sind
+    // nicht löschbar — wer eine nie benutzt, soll sie aber aus der Auswahl
+    // nehmen können, ohne dass sie jemand anderem fehlt. Rein kosmetisch,
+    // deshalb eine Liste von Schlüsseln statt gelöschter Daten.
+    await addColumnIfNotExists('settings', 'strategyHiddenTemplates', (t) => t.text('strategyHiddenTemplates').defaultTo('[]'))
     await addColumnIfNotExists('settings', 'strategyMaxLeverage', (t) => t.integer('strategyMaxLeverage').defaultTo(10))
     await addColumnIfNotExists('settings', 'strategyMinPaperTrades', (t) => t.integer('strategyMinPaperTrades').defaultTo(20))
     await addColumnIfNotExists('settings', 'strategyLlmBudgetUsd', (t) => t.float('strategyLlmBudgetUsd').defaultTo(1))
@@ -1407,4 +1518,331 @@ async function runMigrations(knex, client) {
     // Eigener, OpenAI-kompatibler Anbieter (Groq, OpenRouter, vLLM, LM Studio …)
     await addColumnIfNotExists('settings', 'aiCustomUrl', (t) => t.text('aiCustomUrl'))
     await addColumnIfNotExists('settings', 'aiKeyCustom', (t) => t.text('aiKeyCustom'))
+
+    // ==================== MARKTRADAR ====================
+
+    // Tagesschnappschüsse von Kennzahlen, für die es keine kostenlose Historie
+    // gibt (BTC-Dominanz, Gesamtmarktkapitalisierung). Einmal verpasst ist ein
+    // Tag endgültig weg — deshalb schreibt der Takt lieber öfter als zu selten,
+    // `unique(kind, dayUnix)` hält die Zeilen trotzdem eindeutig.
+    if (!(await knex.schema.hasTable('market_snapshots'))) {
+        await knex.schema.createTable('market_snapshots', (t) => {
+            t.increments('id').primary()
+            t.string('kind').notNullable()
+            t.bigInteger('dayUnix').notNullable()   // UTC-Mitternacht in ms
+            t.float('value').notNullable()
+            t.text('extra').defaultTo('{}')
+            t.bigInteger('createdAt').defaultTo(0)
+            t.unique(['kind', 'dayUnix'])
+            t.index(['kind', 'dayUnix'], 'idx_msnap_kind_day')
+        })
+        console.log(' -> Created table: market_snapshots')
+    }
+
+    // Leer = die Symbole der RSI-Heatmap werden aus den eigenen Trades der
+    // letzten 90 Tage abgeleitet. Eine eingetragene Liste sticht die Ableitung.
+    await addColumnIfNotExists('settings', 'radarRsiSymbols', (t) => t.text('radarRsiSymbols').defaultTo(''))
+    await addColumnIfNotExists('settings', 'radarRsiTfs', (t) => t.text('radarRsiTfs').defaultTo(''))
+
+    // Wirtschaftstermine. Der Feed führt immer nur die LAUFENDE Woche — was
+    // einmal hier steht, bleibt deshalb erhalten, sonst gäbe es weder Rückblick
+    // noch Vorschau. `extId` ist ein Fingerabdruck aus Land, Titel und Zeit;
+    // Prognose- und Ist-Werte werden im Wochenverlauf nachgetragen.
+    if (!(await knex.schema.hasTable('calendar_events'))) {
+        await knex.schema.createTable('calendar_events', (t) => {
+            t.increments('id').primary()
+            t.string('extId').notNullable()
+            t.text('titel').defaultTo('')
+            t.string('land').defaultTo('')
+            t.string('impact').defaultTo('')
+            t.bigInteger('dateUnix').notNullable()
+            t.text('forecast').defaultTo('')
+            t.text('previous').defaultTo('')
+            t.text('actual').defaultTo('')
+            t.string('quelle').defaultTo('')
+            t.bigInteger('fetchedAt').defaultTo(0)
+            t.bigInteger('updatedAt').defaultTo(0)
+            t.unique(['extId'])
+            t.index(['dateUnix'], 'idx_calendar_date')
+        })
+        console.log(' -> Created table: calendar_events')
+    }
+
+    await addColumnIfNotExists('settings', 'radarKalenderLaender', (t) => t.text('radarKalenderLaender').defaultTo('USD,JPY'))
+    await addColumnIfNotExists('settings', 'radarKalenderImpact', (t) => t.text('radarKalenderImpact').defaultTo('medium'))
+
+    // Nachrichtenquellen. `laerm` markiert, was der Nutzer als Lärm einstuft —
+    // der Sammelschalter („Arschlochfilter") blendet genau diese Quellen aus
+    // und holt sie erst gar nicht ab.
+    if (!(await knex.schema.hasTable('news_sources'))) {
+        await knex.schema.createTable('news_sources', (t) => {
+            t.increments('id').primary()
+            t.string('art').defaultTo('rss')        // youtube | rss | truth | x
+            t.text('name').defaultTo('')
+            t.text('url').defaultTo('')
+            t.integer('enabled').defaultTo(1)
+            t.integer('laerm').defaultTo(0)
+            t.bigInteger('letzterAbruf').defaultTo(0)
+            t.text('letzterFehler').defaultTo('')
+            t.integer('fehlerZaehler').defaultTo(0)
+            t.bigInteger('createdAt').defaultTo(0)
+            t.bigInteger('updatedAt').defaultTo(0)
+        })
+        console.log(' -> Created table: news_sources')
+    }
+
+    // Beiträge. Gespeichert werden Titel, Verweis und Zeitpunkt — plus später
+    // eine SELBST erzeugte Zusammenfassung. Keine Volltextkopien fremder
+    // Inhalte; deshalb steht diese Tabelle auch nicht im Backup.
+    if (!(await knex.schema.hasTable('news_items'))) {
+        await knex.schema.createTable('news_items', (t) => {
+            t.increments('id').primary()
+            t.integer('sourceId').notNullable()
+            t.string('extId').notNullable()
+            t.text('titel').defaultTo('')
+            t.text('url').defaultTo('')
+            t.text('inhalt').defaultTo('')
+            t.text('bild').defaultTo('')
+            t.text('zusammenfassung').defaultTo('')
+            t.bigInteger('publishedAt').defaultTo(0)
+            t.integer('tokens').defaultTo(0)
+            t.string('aiModel').defaultTo('')
+            t.bigInteger('aiStand').defaultTo(0)
+            t.string('status').defaultTo('neu')     // neu | zusammengefasst | fehler
+            t.text('fehler').defaultTo('')
+            t.integer('versuche').defaultTo(0)
+            t.bigInteger('createdAt').defaultTo(0)
+            t.unique(['sourceId', 'extId'])
+            t.index(['publishedAt'], 'idx_news_published')
+        })
+        console.log(' -> Created table: news_items')
+    }
+
+    // Vorgabe AN: wer den Schalter nicht kennt, soll den Lärm nicht sehen
+    await addColumnIfNotExists('settings', 'radarArschlochfilter', (t) => t.integer('radarArschlochfilter').defaultTo(1))
+
+    // Lageberichte. Ein Bericht je Lauf — nicht je Beitrag: die Frage ist
+    // „was ist heute wichtig", nicht „was stand in Beitrag 7".
+    if (!(await knex.schema.hasTable('news_digests'))) {
+        await knex.schema.createTable('news_digests', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('erstelltAm').notNullable()
+            t.string('provider').defaultTo('')
+            t.string('modell').defaultTo('')
+            t.text('ueberschrift').defaultTo('')
+            t.text('lage').defaultTo('')
+            t.text('punkte').defaultTo('[]')     // JSON: [{titel,text,quelle,url,wichtigkeit}]
+            t.integer('beitraege').defaultTo(0)
+            t.integer('videos').defaultTo(0)
+            t.integer('tokens').defaultTo(0)
+            t.float('kostenUsd').defaultTo(0)
+            t.string('ausloeser').defaultTo('auto')   // auto | manuell
+            // Alle Beiträge, aus denen der Bericht entstand — als JSON.
+            // Nötig, damit auch ein Punkt ohne Einzelbeleg auf echte Verweise
+            // zeigen kann statt nur einen Quellennamen zu behaupten.
+            t.text('beitraegeListe').defaultTo('[]')
+            t.index(['erstelltAm'], 'idx_digest_zeit')
+        })
+        console.log(' -> Created table: news_digests')
+    }
+
+    // Zeitplan des Lageberichts. 12:00 in der eingestellten Zeitzone; 0 = aus.
+    await addColumnIfNotExists('settings', 'radarNewsAuto', (t) => t.integer('radarNewsAuto').defaultTo(1))
+    await addColumnIfNotExists('settings', 'radarNewsStunde', (t) => t.integer('radarNewsStunde').defaultTo(12))
+    // Wie viele Videos je Lauf an Gemini gehen dürfen — Video ist der teuerste
+    // Eingabetyp, deshalb eine harte Obergrenze statt eines guten Vorsatzes.
+    await addColumnIfNotExists('settings', 'radarNewsVideos', (t) => t.integer('radarNewsVideos').defaultTo(3))
+    // Nur Gemini liest YouTube-Adressen direkt — daher eigenes Modellfeld,
+    // unabhängig vom Standard-Anbieter des Journals
+    await addColumnIfNotExists('settings', 'radarNewsModel', (t) => t.text('radarNewsModel').defaultTo(''))
+    // Auflösung der Videoanalyse. 'niedrig' kostet rund 100 Token je
+    // Videosekunde, 'standard' rund 300 — der teuerste Regler im Aufbau.
+    // Für gesprochene Marktkommentare reicht niedrig, weil die Tonspur den
+    // Inhalt trägt; Standard lohnt nur, wenn Zahlen im Bild abgelesen werden.
+    await addColumnIfNotExists('settings', 'radarNewsAufloesung', (t) => t.text('radarNewsAufloesung').defaultTo('niedrig'))
+    // Wer den Lagebericht schreibt. Leer = der allgemein eingestellte Anbieter.
+    await addColumnIfNotExists('settings', 'radarNewsBerichtProvider', (t) => t.text('radarNewsBerichtProvider').defaultTo(''))
+    await addColumnIfNotExists('settings', 'radarNewsBerichtModell', (t) => t.text('radarNewsBerichtModell').defaultTo(''))
+    // Pi-Cycle-Alarm. Die Kreuzung selbst zu melden kommt per Definition zu
+    // spät — sie IST das Signal. Die Schwelle gibt Vorlauf: 0 = nur bei der
+    // Kreuzung, 5 = auch schon, wenn die kurze Linie bis auf 5 % heran ist.
+    await addColumnIfNotExists('settings', 'radarPicycleAlarm', (t) => t.integer('radarPicycleAlarm').defaultTo(1))
+    await addColumnIfNotExists('settings', 'radarPicycleSchwelle', (t) => t.integer('radarPicycleSchwelle').defaultTo(0))
+    // Vorschaubild je Beitrag. Nachträglich, weil news_items zuerst ohne
+    // gebaut wurde — die Spalte muss also auch bestehenden Tabellen wachsen.
+    await addColumnIfNotExists('news_items', 'bild', (t) => t.text('bild').defaultTo(''))
+    await addColumnIfNotExists('news_digests', 'beitraegeListe', (t) => t.text('beitraegeListe').defaultTo('[]'))
+    // Was mit den Videos passiert ist — sichtbar, nicht nur als Zahl.
+    // Ein Video kostet bis zu zehn Rappen; blieb es ungenutzt oder scheiterte
+    // es, muss der Grund im Bericht stehen und nicht nur im Serverlog.
+    await addColumnIfNotExists('news_digests', 'videosListe', (t) => t.text('videosListe').defaultTo('[]'))
+    await addColumnIfNotExists('news_digests', 'hinweis', (t) => t.text('hinweis').defaultTo(''))
+    // `videos` zählt, was in den Bericht einfloss, `videosNeu` nur das in DIESEM
+    // Lauf bezahlte. Ohne die Trennung meldete der Bericht „0 Videos", obwohl
+    // vier bezahlte Zusammenfassungen darin steckten — nur eben aus einem
+    // früheren Lauf.
+    await addColumnIfNotExists('news_digests', 'videosNeu', (t) => t.integer('videosNeu').defaultTo(0))
+    // Je Quelle steuerbar, ob ihre Videos analysiert werden. Ohne das ginge das
+    // Videobudget an den erstbesten Kanal — und der ist nicht zwingend der,
+    // dessen Inhalt im Bericht gebraucht wird.
+    await addColumnIfNotExists('news_sources', 'videoAnalyse', (t) => t.integer('videoAnalyse').defaultTo(1))
+
+    // Anspruch auf periodische Aufgaben. Alle übrigen Sperren im Projekt sind
+    // prozesslokal; NAS-Container und Entwicklungsserver teilen sich aber
+    // dieselbe Datenbank. Hierüber schreibt nur einer von beiden.
+    if (!(await knex.schema.hasTable('radar_fetch_state'))) {
+        await knex.schema.createTable('radar_fetch_state', (t) => {
+            t.string('key').primary()
+            t.bigInteger('fetchedAt').defaultTo(0)
+            t.text('claimedBy').defaultTo('')
+            t.text('lastError').defaultTo('')
+            t.bigInteger('updatedAt').defaultTo(0)
+        })
+        console.log(' -> Created table: radar_fetch_state')
+    }
+
+    // ── Coin-Rangliste ───────────────────────────────────────────────────
+
+    // Welche Münzen kommen für einen Rangliste-Lauf in Frage.
+    //
+    // `bitunix` und `top` speichern BEWUSST keine Symbolliste: sie wird bei
+    // jedem Laufstart neu aufgelöst. Eine gespeicherte Liste würde still
+    // veralten, und niemand merkte, dass die „Top 100" von vor drei Monaten
+    // gemeint sind. Nur von Hand gepflegte und von der KI vorgeschlagene Listen
+    // sind echte Inhalte — sie stehen deshalb auch als einzige im Backup.
+    if (!(await knex.schema.hasTable('coin_universen'))) {
+        await knex.schema.createTable('coin_universen', (t) => {
+            t.increments('id').primary()
+            t.text('name').notNullable()
+            t.text('art').defaultTo('manuell')       // bitunix | top | manuell | ki
+            t.integer('n').defaultTo(0)              // nur art='top': wie viele nach Marktkapitalisierung
+            t.text('symbole').defaultTo('[]')        // JSON, nur manuell/ki
+            t.text('thema').defaultTo('')            // nur ki: „RWA", „Meme"
+            t.text('begruendung').defaultTo('')      // nur ki: warum diese Auswahl
+            t.text('provider').defaultTo('')
+            t.text('modell').defaultTo('')
+            t.double('kostenUsd').defaultTo(0)
+            // 1 = nur Coins, die auf Bitunix auch handelbar sind (Vorgabe).
+            // 0 = auch reine Vergleichswerte mit Historie, aber ohne Markt.
+            t.integer('nurHandelbar').defaultTo(1)
+            t.bigInteger('createdAt').defaultTo(0)
+            t.bigInteger('updatedAt').defaultTo(0)
+        })
+        console.log(' -> Created table: coin_universen')
+    }
+
+    // Ein Rangliste-Lauf: eine Strategie über viele Coins.
+    //
+    // Der Lauf dauert Minuten und überlebt Neustarts — deshalb liegt sein
+    // gesamter Zustand hier und nicht im Speicher. `symbole` ist die zum
+    // STARTZEITPUNKT aufgelöste Liste: ohne diese Kopie wäre ein alter Lauf
+    // nicht mehr erklärbar, sobald sich das Universum ändert. Aus demselben
+    // Grund werden Parameter, Hebeldeckel und die Begründung der Zeiteinheit
+    // mitgeschrieben statt später nachgeschlagen.
+    if (!(await knex.schema.hasTable('rangliste_laeufe'))) {
+        await knex.schema.createTable('rangliste_laeufe', (t) => {
+            t.increments('id').primary()
+            t.text('strategyId').notNullable()
+            t.integer('instanceId').defaultTo(0)
+            t.integer('ruleVersion').defaultTo(0)
+            t.integer('universumId').defaultTo(0)
+            t.text('universumName').defaultTo('')
+            t.text('symbole').defaultTo('[]')          // JSON, aufgelöst beim Start
+            t.text('timeframe').defaultTo('')
+            t.text('timeframeQuelle').defaultTo('')    // uebernommen | bestanden | instanz | hand
+            t.text('timeframeBegruendung').defaultTo('')
+            t.text('market').defaultTo('futures')
+            t.bigInteger('fromTs').defaultTo(0)
+            t.bigInteger('mitteTs').defaultTo(0)       // Grenze zwischen Rang- und Prüfhälfte
+            t.bigInteger('toTs').defaultTo(0)
+            t.text('params').defaultTo('{}')
+            t.text('risk').defaultTo('{}')
+            t.double('maxLeverage').defaultTo(0)
+            t.double('startEquity').defaultTo(1000)
+            // wartet | laeuft | pausiert | fertig | abgebrochen | fehler
+            t.text('status').defaultTo('wartet')
+            t.integer('fortschritt').defaultTo(0)
+            t.integer('gesamt').defaultTo(0)
+            // Der Nutzer setzt es, die Schleife liest es nach jedem Coin.
+            t.integer('abbruchGewuenscht').defaultTo(0)
+            t.text('gehaltenVon').defaultTo('')        // INSTANZ_ID des Bearbeiters
+            t.text('letzterFehler').defaultTo('')
+            t.integer('abrufeGesamt').defaultTo(0)
+            t.integer('gewichtGesamt').defaultTo(0)
+            t.text('nullverteilung').defaultTo('')     // JSON, einmal am Ende
+            t.bigInteger('gestartetAm').defaultTo(0)
+            t.bigInteger('beendetAm').defaultTo(0)
+            t.bigInteger('createdAt').defaultTo(0)
+            t.index('status', 'idx_rangliste_status')
+            t.index('strategyId', 'idx_rangliste_strategyId')
+        })
+        console.log(' -> Created table: rangliste_laeufe')
+    }
+
+    // Ein Coin innerhalb eines Laufs — beide Hälften nebeneinander.
+    //
+    // `unique(laufId, symbol)` ist der WIEDERAUFNAHME-Schlüssel: geschrieben
+    // wird mit `onConflict(...).merge()`, und „was fehlt noch?" ist damit
+    // schlicht „welche Symbole haben keine Zeile". Stirbt der Prozess mitten im
+    // Lauf, nimmt der nächste Takt genau dort wieder auf, ohne eine einzige
+    // Sonderbehandlung.
+    //
+    // `rReiheA` trägt die R-Werte der Rang-Hälfte. Sie sind die Grundlage der
+    // Nullverteilung — der Frage, wie gut die Rangliste allein durch Zufall
+    // ausgesehen hätte. Ohne sie müsste man dafür alles neu rechnen.
+    if (!(await knex.schema.hasTable('rangliste_zeilen'))) {
+        await knex.schema.createTable('rangliste_zeilen', (t) => {
+            t.increments('id').primary()
+            t.integer('laufId').notNullable()
+            t.text('symbol').notNullable()
+            // belastbar | zu_wenig_trades | datenluecke | ohne_daten | fehler
+            t.text('klasse').defaultTo('')
+            t.integer('rangA').defaultTo(0)
+
+            t.integer('aTrades').defaultTo(0)
+            t.double('aWinRate').defaultTo(0)
+            t.double('aExpectancyR').defaultTo(0)
+            t.double('aOhneTopR').defaultTo(0)
+            t.double('aProfitFactor').nullable()
+            t.double('aReturnPct').defaultTo(0)
+            t.double('aMaxDdPct').defaultTo(0)
+
+            t.integer('bTrades').defaultTo(0)
+            t.double('bWinRate').defaultTo(0)
+            t.double('bExpectancyR').defaultTo(0)
+            t.double('bOhneTopR').defaultTo(0)
+            t.double('bProfitFactor').nullable()
+            t.double('bReturnPct').defaultTo(0)
+            t.double('bMaxDdPct').defaultTo(0)
+
+            t.integer('bestaetigt').defaultTo(0)
+            t.integer('kerzen').defaultTo(0)
+            t.double('abdeckungPct').defaultTo(0)
+            t.text('fehlend').defaultTo('[]')          // JSON: ['Anfang'] = spätes Listing
+            t.bigInteger('historieAb').defaultTo(0)
+            t.integer('handelbar').defaultTo(1)
+            t.integer('bitunixMaxLeverage').defaultTo(0)
+            t.text('rReiheA').defaultTo('[]')          // JSON, auf 300 Werte gekappt
+            t.text('fehler').defaultTo('')
+            t.integer('dauerMs').defaultTo(0)
+            t.bigInteger('createdAt').defaultTo(0)
+            t.unique(['laufId', 'symbol'])
+            t.index('laufId', 'idx_rangliste_zeilen_lauf')
+        })
+        console.log(' -> Created table: rangliste_zeilen')
+    }
+
+    // ==================== SCHEMA-ANKER ====================
+    // Ganz am Ende, damit die Version erst steht, wenn alle Checks durch sind.
+    await addColumnIfNotExists('settings', 'schemaVersion', (t) => t.integer('schemaVersion').defaultTo(0))
+    const versRow = await knex('settings').select('schemaVersion').where('id', 1).first()
+    const dbVersion = Number(versRow?.schemaVersion) || 0
+    if (dbVersion > SCHEMA_VERSION) {
+        console.warn('\n  ⚠️  WARNUNG: Die Datenbank ist auf Schema-Stand v' + dbVersion + ',')
+        console.warn('      dieser Code kennt aber nur v' + SCHEMA_VERSION + '. Ein neuerer Prozess (NAS oder')
+        console.warn('      Dev-Rechner) hat das Schema bereits weiterentwickelt — dieser ältere')
+        console.warn('      Codestand kann Spalten falsch behandeln. Bitte diesen Stand aktualisieren.\n')
+    } else if (dbVersion < SCHEMA_VERSION) {
+        await knex('settings').where('id', 1).update({ schemaVersion: SCHEMA_VERSION })
+    }
 }

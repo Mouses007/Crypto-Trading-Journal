@@ -27,9 +27,30 @@ import { openPaperPosition, stepPaperPositions, getPaperEquity, closePaperPositi
 import { entryIsValid } from './fill-simulator.js'
 import { agentenVeto } from './strategy-agents.js'
 import { openLivePosition, getLiveEquity, closeLivePosition, getLivePositionId } from './execution/bitunix.js'
+import { beansprucheFuehrung, verlaengereFuehrung, gibFuehrungFrei } from './db-claim.js'
 
 const TICK_MS = 15000          // Prüfintervall; gearbeitet wird nur bei neuem Kerzenschluss
 const MAX_SYMBOLS = 20         // Deckel je Instanz, damit ein Tippfehler den Server nicht flutet
+
+/**
+ * Führungs-Sperre über die Datenbank.
+ *
+ * Ohne sie schützt nichts gegen zwei Engines: `tickLaeuft` und `running` leben
+ * beide IM Prozess, während NAS-Container und Entwicklungsrechner auf dieselbe
+ * PostgreSQL zeigen. Am 16.08.2026 lief genau das eine Stunde lang — ohne
+ * Schaden, aber nur weil in dem Fenster zufällig kein Setup auslöste.
+ *
+ * Die TTL ist die Nachsicht-Frist nach einem Absturz: so lange bleibt die
+ * Führung blockiert, bevor ein anderer Prozess übernehmen darf. Sie muss
+ * deutlich über der Dauer eines Takts liegen — ein Durchgang holt Kerzen für
+ * mehrere Symbole und Zeiteinheiten über das Netz.
+ *
+ * Verlassen wird sich dabei auf die Uhr des jeweiligen Prozesses. Gemessen am
+ * 16.08.2026 liegt der Versatz zwischen Entwicklungsrechner und Datenbank bei
+ * ±7 ms; erst ein Versatz GRÖSSER als die TTL könnte zwei Führungen erlauben.
+ */
+const FUEHRUNG_KEY = 'strategy_engine'
+const FUEHRUNG_TTL_MS = 120000
 
 let tickTimer = null
 let engineStopped = false
@@ -38,8 +59,10 @@ let engineStopped = false
 const running = new Map()
 /** `${instanceId}|${symbol}|${timeframe}` → Zeit der zuletzt verarbeiteten Kerze. */
 const lastProcessed = new Map()
+/** Hält DIESER Prozess gerade die Führung? Nur zur Anzeige. */
+let hatFuehrung = false
 /** Kurzstatistik für den Status-Endpunkt. */
-const stats = { ticks: 0, runs: 0, lastRunAt: 0, errors: 0 }
+const stats = { ticks: 0, runs: 0, lastRunAt: 0, errors: 0, fremdgefuehrt: 0 }
 
 /**
  * Agenten-Veto. Standardmässig verdrahtet, greift aber nur, wenn eine Instanz
@@ -180,7 +203,7 @@ async function ladeKontostand(instance) {
 async function verarbeiteSymbol(instance, symbol, timeframe, schalter) {
     const knex = getKnex()
     const p = instance.params
-    const costs = { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps }
+    const costs = { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps, fundingBpsPer8h: instance.risk.fundingBpsPer8h }
 
     const bedarf = (instance.strategie.warmupCandles || 200)
         + (p.scanWindowCandles || 200)
@@ -203,6 +226,7 @@ async function verarbeiteSymbol(instance, symbol, timeframe, schalter) {
         maxHoldMs: ((p.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(timeframe),
         partialTpR: p.partialTpR,
         partialTpPct: p.partialTpPct,
+        maintenanceMarginPct: instance.risk.maintenanceMarginPct,
     })
 
     // ── 2. Erkennen ──────────────────────────────────────────────────────
@@ -226,20 +250,37 @@ async function verarbeiteSymbol(instance, symbol, timeframe, schalter) {
         entry: Number(r.entry), stopLoss: Number(r.stopLoss), takeProfit: Number(r.takeProfit),
         sweepPrice: Number(r.sweepPrice), impulseExtreme: Number(r.impulseExtreme),
         watchFrom: Number(r.watchFrom) || Number(r.obCandleTime),
+        tradeableFrom: Number(r.tradeableFrom) || 0,
     }))
 
     // Kerzen der höheren Zeiteinheit für den Trendfilter. Werden sie nicht
     // übergeben, bleibt `htfBias` null und der Filter blockiert nie — er wäre
     // eine Einstellung ohne Wirkung. Nur bei eingeschaltetem Filter holen,
     // sonst kostet es bei jedem Takt einen Abruf ohne Nutzen.
+    //
+    // Scheitert der Abruf, wird der Takt ÜBERSPRUNGEN statt ungefiltert
+    // gehandelt. Im Backtest ist ein ungefilterter Lauf nur eine falsche Zahl;
+    // hier wäre er eine Position, die der Nutzer ausdrücklich ausgeschlossen
+    // hat. Ein verpasster Einstieg ist der günstigere Fehler.
     let htfCandles = null
     if (p.htfTrendFilter && p.htfTimeframe && p.htfTimeframe !== timeframe) {
+        const noetig = (p.htfEmaPeriod || 50) + 5
         try {
             htfCandles = await getClosedCandles(
                 symbol, p.htfTimeframe, (p.htfEmaPeriod || 50) + 20, { market: instance.market },
             )
         } catch (e) {
-            logWarn('strategy-engine', `HTF-Kerzen (${p.htfTimeframe}) nicht abrufbar — Filter greift diesen Takt nicht`)
+            htfCandles = null
+        }
+        if (!htfCandles || htfCandles.length < noetig) {
+            logWarn('strategy-engine',
+                `HTF-Kerzen (${p.htfTimeframe}) fehlen oder reichen nicht (${htfCandles?.length || 0}/${noetig}) — `
+                + `Takt für ${symbol} ${timeframe} übersprungen, statt den Trendfilter stillschweigend auszulassen`)
+            // Bewusst VOR `lastProcessed.set` — dieselbe Kerze wird beim
+            // nächsten Takt erneut versucht, sobald die Daten wieder da sind.
+            // Offene Positionen sind oben (Schritt 1) bereits fortgeschrieben
+            // worden; übersprungen wird nur das Erkennen neuer Setups.
+            return { skipped: 'HTF-Kerzen fehlen' }
         }
     }
 
@@ -267,6 +308,7 @@ async function verarbeiteSymbol(instance, symbol, timeframe, schalter) {
             obLow: s.obLow,
             obCandleTime: s.obCandleTime,
             watchFrom: s.watchFrom,
+            tradeableFrom: s.tradeableFrom || 0,
             impulseExtreme: s.impulseExtreme,
             entry: s.entry,
             stopLoss: s.stopLoss,
@@ -660,6 +702,7 @@ async function pflegeOffenePositionen() {
                 maxHoldMs: ((instance.params.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(pflegeTf),
                 partialTpR: instance.params.partialTpR,
                 partialTpPct: instance.params.partialTpPct,
+                maintenanceMarginPct: instance.risk.maintenanceMarginPct,
             })
         } catch (e) {
             logWarn('strategy-engine', `Positions-Nachlauf ${instanceId}/${symbol} fehlgeschlagen: ${e.message}`)
@@ -676,6 +719,19 @@ export async function tick({ vorher = null } = {}) {
     if (tickLaeuft) return false
     tickLaeuft = true
     try {
+        // Führung holen, BEVOR irgendetwas geschrieben wird. Auch der
+        // Positions-Nachlauf schliesst Positionen und bucht Trades — er gehört
+        // deshalb mit hinein, nicht nur die Einstiege.
+        if (!(await beansprucheFuehrung(FUEHRUNG_KEY, FUEHRUNG_TTL_MS))) {
+            if (hatFuehrung) {
+                logWarn('strategy-engine', 'Führung verloren — ein anderer Prozess taktet jetzt')
+            }
+            hatFuehrung = false
+            stats.fremdgefuehrt++
+            return false
+        }
+        hatFuehrung = true
+
         // Erst NACH dem Guard, sonst leert ein abgewiesener manueller Takt den
         // Kerzen-Cache und derselbe Schluss wird doppelt erkannt.
         if (typeof vorher === 'function') vorher()
@@ -691,6 +747,14 @@ export async function tick({ vorher = null } = {}) {
 
         const rows = await knex('strategy_instances').where('enabled', 1)
         for (const row of rows) {
+            // Zwischen den Instanzen verlängern: ein Durchgang über mehrere
+            // Symbole und Zeiteinheiten kann die TTL sonst überschreiten, und
+            // dann übernähme ein zweiter Prozess MITTEN im Takt.
+            if (!(await verlaengereFuehrung(FUEHRUNG_KEY))) {
+                hatFuehrung = false
+                logWarn('strategy-engine', 'Führung während des Takts verloren — Durchgang abgebrochen')
+                return false
+            }
             await verarbeiteInstanz(row, schalter)
         }
         return true
@@ -702,6 +766,11 @@ export async function tick({ vorher = null } = {}) {
 export function engineStatus() {
     return {
         running: !engineStopped && Boolean(tickTimer),
+        // Damit niemand rätselt, warum eine aktive Instanz nichts tut: der
+        // Schalter steht in der Umgebung des Prozesses, nicht in der Datenbank.
+        abgeschaltet: process.env.CTJ_NO_ENGINE === '1',
+        // Zweiter Grund für „läuft, tut aber nichts": ein anderer Prozess führt.
+        fuehrung: hatFuehrung,
         aktiveLaeufe: [...running.keys()],
         verarbeitet: Object.fromEntries(lastProcessed),
         ...stats,
@@ -735,6 +804,12 @@ export async function stopStrategyEngine() {
         await new Promise((r) => setTimeout(r, 100))
     }
     running.clear()
+    // Führung zurückgeben, damit ein anderer Prozess sofort übernehmen kann
+    // statt die volle Nachsicht-Frist abzuwarten.
+    if (hatFuehrung) {
+        await gibFuehrungFrei(FUEHRUNG_KEY)
+        hatFuehrung = false
+    }
 }
 
 /**

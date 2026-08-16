@@ -79,13 +79,16 @@
     "agentSetups": "Setups",
     "agentPerformance": "Performance",
     "agentLab": "Lab",
+    "coinRangliste": "Coin ranking",
     "liveAnalyze": "VIEWS",
     "liquidity": "Bookmap",
     "agentBuilder": "New strategy",
     "agentEditor": "Strategy editor",
     "agentBuild": "CREATE",
     "liquidations": "Liquidation map",
-    "openInterest": "Open interest"
+    "openInterest": "Open interest",
+    "marktradar": "Market radar",
+    "nachrichten": "News"
   },
   "filters": {
     "periodRange": "Time period of displayed trades",
@@ -283,10 +286,10 @@
     "enablePopups": "Enable evaluation popups",
     "browserNotifications": "Browser Notifications",
     "browserNotificationsHint": "Desktop notification when an AI report is ready or an API import is complete (only when tab is not focused).",
-    "kiAgent": "AI Coach",
+    "kiAgent": "AI settings",
     "aiEnabled": "AI features enabled",
     "aiEnabledHint": "Hides AI Agent from menu and dashboard. Settings are preserved.",
-    "kiDescription": "Configure the AI provider for automatic report generation. Ollama (local, free) or Online AI (OpenAI/Anthropic/Gemini/DeepSeek, requires API key).",
+    "kiDescription": "Configure the AI provider for automatic report generation. Ollama (local, free) or Online AI (OpenAI/Anthropic/Gemini/Mistral/Grok/Qwen, requires API key).",
     "provider": "Provider",
     "ollamaLocal": "Ollama (local)",
     "ollamaUrl": "Ollama URL",
@@ -420,7 +423,10 @@
     "deleteFailed": "Deleting failed.",
     "customProvider": "Custom provider (OpenAI-compatible)",
     "customUrl": "Base URL",
-    "customUrlHint": "The part before /chat/completions — usually ending in /v1. Works with anything speaking the OpenAI API: Groq, OpenRouter, Together, vLLM, LM Studio."
+    "customUrlHint": "The part before /chat/completions — usually ending in /v1. Works with anything speaking the OpenAI API: Groq, OpenRouter, Together, vLLM, LM Studio.",
+    "qwenUrlHint": "Alibaba assigns international accounts their own per-workspace address. If the default does not fit, the correct one is in the Model Studio console.",
+    "providerRetired": "no longer offered",
+    "keyFrom": "From"
   },
   "setup": {
     "welcome": "Welcome!",
@@ -962,6 +968,132 @@
     "kpiExpectancy": "Expectancy",
     "kpiProfitFactor": "Profit factor",
     "kpiNetPnl": "Net result",
+    "kpiExpectancyOhneTop": "Expectancy w/o top",
+    "nichtBelastbar": "Only {trades} trades — below {mindest} single trades decide the outcome. The numbers are not wrong, they just carry no weight.",
+    "abdeckungLuecke": "Incomplete data: {vorhanden} of ~{erwartet} candles ({prozent} %). The result covers a shorter period than requested.",
+    "abdeckungFehlt": "missing at the {rand}",
+    "bollPeriod": "Band length",
+    "bollMult": "Standard deviations",
+    "bollBasis": "Basis line (SMA/EMA)",
+    "stochPeriod": "Stochastic length",
+    "stochSmoothK": "Smoothing %K",
+    "stochSmoothD": "Smoothing %D",
+    "periodLabel": "Period",
+    "fromParamShort": "Bind to a parameter",
+    "chatTitle": "Build by conversation",
+    "chatShow": "open",
+    "chatHide": "collapse",
+    "chatHint": "Describe your strategy in your own words. The AI fills in the fields below, asks about what is missing, and tells you what the building blocks cannot express. Your manual edits are kept.",
+    "chatPlaceholder": "e.g.: Enter on a pullback to the EMA 50, but only while RSI is above 50. Stop below the last low.",
+    "chatSend": "Send",
+    "chatOpenQuestions": "Follow-up questions — click to answer",
+    "chatNotExpressible": "The building blocks cannot express this:",
+    "chatChanged": "{n} sections changed",
+    "exportTitle": "Save as file",
+    "exported": "\"{name}\" saved as a file.",
+    "exportFailed": "Export failed",
+    "importStrategy": "Import strategy",
+    "imported": "Imported as \"{id}\".",
+    "importedRenamed": "Imported as \"{id}\" — the short name was taken, nothing was overwritten.",
+    "importFailed": "Import failed",
+    "importNoJson": "The file is not readable JSON.",
+    "templateHide": "Hide template",
+    "templatesHidden": "{n} template(s) hidden.",
+    "templatesRestore": "Show again",
+    "robustTitle": "Robustness",
+    "robustHint": "Three checks between \"good backtest\" and \"trustworthy\". They use the strategy, symbol, period and parameters of the backtest above.",
+    "robustParam": "Sweep parameter",
+    "robustFrom": "from",
+    "robustTo": "to",
+    "robustStep": "step",
+    "robustSteps": "{n} steps",
+    "robustStability": "Parameter stability",
+    "robustMonteCarlo": "Monte Carlo",
+    "robustWalkForward": "Walk-forward",
+    "robustRuns": "runs",
+    "robustWindows": "windows",
+    "robustValue": "Value",
+    "robustPlateau": "supporting zone: {werte}",
+    "robustLossShare": "In {p} % of {n} runs the strategy ends below the starting equity.",
+    "verdict_plateau": "Plateau — the neighbours hold too",
+    "verdict_nadel": "Spike — only this single value holds",
+    "verdict_nichts_positiv": "no value positive",
+    "verdict_zu_wenig_daten": "not enough data",
+    "mcEndP5": "Final equity (bad 5 %)",
+    "mcEndP50": "Final equity (median)",
+    "mcEndP95": "Final equity (good 5 %)",
+    "mcDdP95": "Drawdown (95 %)",
+    "wfSegment": "Test segment",
+    "wfChosen": "chosen",
+    "wfOos": "on unseen data",
+    "wfStable": "selection stable",
+    "wfUnstable": "selection jumps",
+    "wfTotal": "Unseen segments only: {trades} trades, expectancy {expR} R, return {rendite} %, max drawdown {dd} %.",
+    "offenAmEnde": "{anzahl} position(s) were still open at the end of the period (value at the closing price: {wert}). They are excluded from every metric — a trade only counts once it is finished.",
+    "htfFilterInaktiv": "The higher-timeframe trend filter on {tf} was switched on but did NOT take effect — only {kerzen} candles of that timeframe were available. This result is unfiltered and cannot be compared with filtered runs.",
+    "kpiSharpe": "Sharpe (daily, ann.)",
+    "fundingNichtModelliert": "Funding costs are NOT included in this run (the assumption is set to 0). It matters for positions held longer — the assumption can be set under Risk.",
+    "fundingKosten": "Funding (assumption {bps} bp per 8 h): {betrag}",
+    "hebelGekappt": "The run used leverage {hebel} — the global cap from Settings applies, exactly as in operation.",
+    "kpiReturn": "Return",
+    "robustMatrix": "Stability across symbols and windows",
+    "robustMatrixHint": "\"Holds\" means: positive in at least 60 % of cells AND a positive median. The median is deliberately not a mean — a single outlier must not decide the verdict.",
+    "robustSymbols": "Symbols for the matrix (comma separated)",
+    "robustCells": "{n} cells — {s}, each with an optimisation and a test window",
+    "mcolHolds": "positive in",
+    "mcolMedian": "Median",
+    "mcolWorst": "worst cell",
+    "mcolBest": "best cell",
+    "mHolds": "holds",
+    "mverdict_plateau": "Plateau — several values hold throughout",
+    "mverdict_schmal": "narrow — only one or two values hold",
+    "mverdict_uneinig": "inconsistent — the cells contradict each other",
+    "mverdict_nichts_positiv": "no value holds",
+    "kpiWinsLosses": "Winners / losers",
+    "kpiAvgWinLoss": "Avg win / avg loss",
+    "regCosts": "Costs / version",
+    "regCostsHint": "Fee + slippage in basis points, followed by the rule strategy version. Without both a run cannot be reproduced.",
+    "regDecision": "Decision",
+    "regVariants": "{n} variants",
+    "regVariantsHint": "How many variants were tried for this result. A hit out of 30 attempts weighs less than one out of one.",
+    "regNotePrompt": "Why? (optional, but worth gold in four weeks)",
+    "dec_uebernommen": "adopted",
+    "dec_verworfen": "rejected",
+    "dec_offen": "open",
+    "gatesTitle": "Evidence required for live trading",
+    "gatesReady": "complete",
+    "gatesOpen": "{n} open",
+    "gate_lauf_mit_kosten": "backtest calculated with fees",
+    "gate_stichprobe": "enough trades to mean anything",
+    "gate_daten_vollstaendig": "period fully covered by data",
+    "gate_erwartung_positiv": "positive expectancy",
+    "gate_ohne_ausreisser": "positive even without the biggest winner",
+    "gate_entscheidung_dokumentiert": "one run explicitly adopted",
+    "gate_papier_erfahrung": "enough paper trades collected",
+    "modeSimple": "Simple",
+    "modeExpert": "Expert",
+    "modeSimpleHint": "Sentences and dials — the building blocks stay hidden.",
+    "modeExpertHint": "All building blocks individually.",
+    "rulesInWords": "What this strategy does",
+    "rulesInWordsHint": "Describes what the interpreter made of your input — not what you meant. If a sentence differs from your intention, the rule is wrong.",
+    "tradeList": "Individual trades",
+    "exitTime": "Exit",
+    "contextTitle": "Traded under this version",
+    "contextParams": "Parameters at the time",
+    "contextNoHistory": "No parameter history for this version — the trade predates the recording.",
+    "ruleVersion": "Rule version",
+    "robustGaps": "{n} cell(s) with data gaps — not counted",
+    "chartTitle": "Where the rule fired",
+    "chartHint": "Solid = traded, faint dashed = detected and discarded. The discarded ones show where the strategy fails.",
+    "chartSetups": "{n} setups",
+    "chartNothingFound": "Nothing detected in this period — signal or filters are too strict.",
+    "agentCategoryHint": "Strategy agent trades — mostly paper. They appear only here, never in the overall balance.",
+    "mirrorJournal": "Mirror into journal",
+    "mirrorDone": "{n} trades mirrored into the journal ({u} were already there) — visible under the \"Agent\" pill.",
+    "selected": "{n} selected",
+    "selectAll": "Select all",
+    "unmirrorJournal": "Remove from journal",
+    "unmirrorDone": "{n} trades removed from the journal again.",
     "kpiMaxDd": "Max drawdown",
     "equityCurve": "Equity curve",
     "rDistribution": "Distribution of R multiples",
@@ -1059,7 +1191,7 @@
     "blockParams": "Adjustable values",
     "blockParamsHint": "Numbers you can tune later in the form — the backtest varies exactly these.",
     "blockIndicators": "Compute lines",
-    "blockIndicatorsHint": "EMA, SMA, RSI, ATR or VWAP. The name is used as a reference below.",
+    "blockIndicatorsHint": "EMA, SMA, RSI, ATR, MFI, VWAP, MACD, Bollinger, ADX or stochastic. The name is used as a reference below.",
     "blockSignal": "What triggers it?",
     "blockSignalHint": "The trigger creates a setup — not yet an entry.",
     "blockFilters": "What must hold?",
@@ -1083,6 +1215,7 @@
     "signal_pivotLow": "Swing low",
     "signal_crossUp": "Cross up",
     "signal_crossDown": "Cross down",
+    "signal_pattern": "Candle pattern",
     "entry_touch": "On touch",
     "entry_immediate": "Immediately",
     "tp_rr": "Fixed reward/risk",
@@ -1218,6 +1351,7 @@
       "minRR": "Minimum reward/risk",
       "feeBps": "Fee per side (basis points)",
       "slippageBps": "Slippage per side (basis points)",
+      "fundingBpsPer8h": "Funding per 8 h (basis points, 0 = not modelled)",
       "maxPriceDeviationPct": "Max price deviation from reference (%)"
     },
     "op_isHammer": "is a hammer candle",
@@ -1229,6 +1363,14 @@
     "ind_macd": "MACD line",
     "ind_macdSignal": "MACD signal line",
     "ind_macdHist": "MACD histogram",
+    "ind_bollUpper": "Bollinger upper",
+    "ind_bollMiddle": "Bollinger middle",
+    "ind_bollLower": "Bollinger lower",
+    "ind_adx": "ADX (trend strength)",
+    "ind_plusDI": "+DI (upward pressure)",
+    "ind_minusDI": "−DI (downward pressure)",
+    "ind_stochK": "Stochastic %K",
+    "ind_stochD": "Stochastic %D",
     "macdFast": "fast",
     "macdSlow": "slow",
     "macdSignalP": "signal",
@@ -1325,13 +1467,294 @@
     "read_longAufloesung": "Price and interest falling — suggests longs unwinding",
     "read_neutral": "no clear direction"
   },
+  "marktradar": {
+    "title": "Market radar",
+    "cards": "Cards",
+    "refreshAll": "Refresh all",
+    "refresh": "Refresh",
+    "enlarge": "Show large",
+    "drag": "Drag to reorder",
+    "resize": "Drag to resize · double-click resets",
+    "asOf": "As of {zeit}",
+    "never": "not loaded yet",
+    "retry": "Try again",
+    "allHidden": "All cards hidden — switch them back on under \"Cards\".",
+    "status_idle": "Ready",
+    "status_loading": "Loading",
+    "status_ready": "Current",
+    "status_veraltet": "Stale data",
+    "status_error": "Error",
+    "fng": {
+      "title": "Fear & Greed",
+      "yesterday": "Yesterday",
+      "vsYesterday": "vs. yesterday",
+      "avg30": "30-day average",
+      "low": "Low",
+      "high": "High",
+      "days": "{n} days",
+      "source": "Source: alternative.me — sentiment index built from volatility, volume, surveys and search trends. It measures mood, not price.",
+      "class_extremeFear": "Extreme fear",
+      "class_fear": "Fear",
+      "class_neutral": "Neutral",
+      "class_greed": "Greed",
+      "class_extremeGreed": "Extreme greed"
+    },
+    "dom": {
+      "title": "BTC dominance",
+      "vs7d": "vs. 7 days ago",
+      "totalMcap": "Total market",
+      "building": "Own recording: {n} of {ziel} days",
+      "noHistory": "Own curve starts today · full history in the large view",
+      "ownSeries": "Own record since {seit} · {n} days",
+      "ownSeriesEmpty": "The own recording starts today. The curve above comes from TradingView.",
+      "source": "Curve and current value from our own record; imported once from CoinMarketCap and updated daily from the same source. Dominance says which share of the crypto market sits in Bitcoin — if it rises while prices fall, money is fleeing altcoins into BTC rather than entering the market.",
+      "rest": "Others",
+      "range": {
+        "d30": "30 days",
+        "y1": "1 year",
+        "all": "All"
+      }
+    },
+    "funding": {
+      "title": "Funding rates",
+      "yours": "Your markets",
+      "longsPay": "Longs pay",
+      "shortsPay": "Shorts pay",
+      "symbol": "Symbol",
+      "rate": "Rate",
+      "annual": "p.a.",
+      "volume": "24h volume",
+      "next": "Next",
+      "source": "Binance USDⓈ-M perpetuals, {n} markets with at least 20m USD of 24h volume. The rate is charged every 8 hours; \"p.a.\" annualises it. Positive means longs pay shorts — a crowded long side. Clicking a row sets the symbol for the live views."
+    },
+    "lsoi": {
+      "title": "Long/short + open interest",
+      "ratio": "Account ratio",
+      "oiDelta": "OI 24h",
+      "priceDelta": "Price 24h",
+      "source": "Binance account ratio for {symbol} (hourly, 48 hours). It counts ACCOUNTS, not capital — a whale weighs the same as a tiny account. Together with open interest and price it yields the reading below."
+    },
+    "rsi": {
+      "title": "RSI heatmap",
+      "source": "Wilder RSI(14) from closed Binance candles. Each dot is one market, ordered left to right by 24h volume. The dashed line is the average — it shows whether a reading fits the market or fights it. Clicking a dot sets the symbol for the live views.",
+      "derived": "Markets come from your trades over the last 90 days; you can enter your own list in the settings.",
+      "top": "By volume",
+      "own": "My trades",
+      "count": "{n} markets",
+      "average": "avg",
+      "zone_overbought": "Overbought",
+      "zone_strong": "Strong",
+      "zone_neutral": "Neutral",
+      "zone_weak": "Weak",
+      "zone_oversold": "Oversold",
+      "topHint": "The highest-volume crypto perpetuals on Binance — how many is set on the right",
+      "ownHint": "Only the markets you traded yourself over the last 90 days"
+    },
+    "markt": {
+      "title": "Market overview",
+      "bubbles": "Bubbles",
+      "tiles": "Tiles",
+      "count": "{n} coins",
+      "change": "Change",
+      "mcap": "Market cap",
+      "source": "CoinGecko, top 100 by market cap without stablecoins. In the bubble view the area is the SIZE of the move — so a small coin doing 30% still stands out. In the tile view the area is market cap — so you can see whether a move carries any weight. Clicking sets the symbol for the live views (as a USDT pair).",
+      "area_bewegung": "Move",
+      "area_mcap": "Market cap",
+      "area_gleich": "Equal",
+      "areaHint": "What the area is based on",
+      "noPerp": "No Binance perpetual — cannot be selected as symbol"
+    },
+    "rainbow": {
+      "title": "Rainbow (BTC)",
+      "band_blase": "Bubble, definitely",
+      "band_verkaufen": "Sell?",
+      "band_fomo": "FOMO everywhere",
+      "band_teuer": "Expensive",
+      "band_fair": "Fairly valued",
+      "band_guenstig": "Still cheap",
+      "band_kaufen": "Buying opportunity",
+      "band_ausverkauf": "Fire sale",
+      "band_grund": "Basement",
+      "caveat": "This is a curve fitted to the past, not a forecast. The bands shift with every new price — what reads as \"cheap\" today may be the middle in a year. Useful as a multi-year mood gauge, not as a trading signal.",
+      "params": "ln(price) ≈ {a} · ln(days since genesis) + {b}, residual spread {s}, {n} points"
+    },
+    "top": "Top",
+    "liq": {
+      "title": "Liquidations 24h",
+      "long": "Longs liquidated",
+      "short": "Shorts liquidated",
+      "events": "Events",
+      "perSymbol": "Per symbol",
+      "biggest": "Largest single events",
+      "since": "Recorded since {zeit}.",
+      "inactive": "Liquidations are not being recorded right now. Without the recording there is nothing to show here — no free third-party source for aggregated liquidations exists.",
+      "activate": "Enable in settings",
+      "source": "From this journal's own recording of the Binance liquidation stream — no third party. Red means a LONG was closed out (price fell), green a SHORT. Amounts are price × size of the single event."
+    },
+    "regime": {
+      "title": "Your trades × market regime",
+      "b_extremeFear": "Extreme fear",
+      "b_fear": "Fear",
+      "b_neutral": "Neutral",
+      "b_greed": "Greed",
+      "b_extremeGreed": "Extreme greed",
+      "kurz_extremeFear": "Ext. fear",
+      "kurz_fear": "Fear",
+      "kurz_neutral": "Neutral",
+      "kurz_greed": "Greed",
+      "kurz_extremeGreed": "Ext. greed",
+      "phase": "Market mood",
+      "trades": "Trades",
+      "winrate": "Win rate",
+      "sum": "Total",
+      "avg": "Average",
+      "pf": "Profit factor",
+      "longShare": "Long share",
+      "result": "Result",
+      "best": "Best phase: {phase} ({summe} from {n} trades).",
+      "leastBad": "Least lost in {phase}: {summe} from {n} trades. Every phase is negative.",
+      "source": "{n} of your own trades over the last {tage} days, each matched to the Fear & Greed value of its entry day. Bot trades are excluded. Figures are net of fees, as everywhere else in the journal.",
+      "missing": "{n} trades have no sentiment value (the index starts in 2018).",
+      "thin": "Phases with fewer than {n} trades are drawn faded — nothing can be concluded from them."
+    },
+    "picycle": {
+      "title": "Pi Cycle Top (BTC)",
+      "ma111": "111-day MA",
+      "ma350": "350-day MA × 2",
+      "distance": "Gap between the short and the long line",
+      "triggered": "Crossover triggered",
+      "crossings": "Past crossovers",
+      "caveat": "Three hits on three occasions (2013, 2017, 2021) are an observation, not proof — no rule can be derived from that statistically. The name comes from 350 divided by 111 being roughly π; that too is numerology, not a mechanism. Useful as a multi-year mood gauge, not as an exit signal.",
+      "alarm": "Crossover on {datum}: the 111-day line crossed above the doubled 350-day line.",
+      "vorwarnung": "Early warning: the short line is only {pct} % below the long one (threshold {schwelle} %)."
+    },
+    "altseason": {
+      "title": "Altcoin season index",
+      "window": "Window",
+      "state_altcoin": "Altcoin season",
+      "state_bitcoin": "Bitcoin season",
+      "state_gemischt": "Mixed",
+      "best": "Strongest",
+      "worst": "Weakest",
+      "summary": "{besser} of {n} large altcoins beat Bitcoin over {tage} days. BTC itself: {btc}.",
+      "source": "Computed from Binance daily candles of the largest coins with a perpetual market, measured against BTC over the same window. The 25 and 75 thresholds come from the original index — they are set, not derived. Clicking a row sets the symbol for the live views."
+    },
+    "kalender": {
+      "title": "Economic calendar",
+      "empty": "No events stored yet. The feed only ever carries the current week — the first fetch fills it.",
+      "fetchNow": "Fetch now",
+      "until": "Stored through {datum}.",
+      "source": "Source: ForexFactory weekly feed, collected server-side. The feed only carries the CURRENT week; whatever was fetched stays here — so the preview only grows over time. Times in your timezone. Red = high expected impact, amber = medium.",
+      "filteredOut": "{n} events fall in this period, but none reach the selected impact or country."
+    },
+    "news": {
+      "title": "News",
+      "filter": "Idiot filter",
+      "filterHint": "Hides sources you marked as noise — and does not even fetch them. Which ones is set per source in the settings.",
+      "fetchNow": "Fetch now",
+      "hidden": "{n} source(s) hidden",
+      "noSources": "No sources yet. YouTube channels and RSS addresses go into the settings.",
+      "toSettings": "Open settings",
+      "noItems": "No posts from the last three days.",
+      "aiMark": "AI, unverified",
+      "source": "Only title, link and timestamp are stored — no full-text copies. Every entry links the original.",
+      "noAi": "Summaries are not enabled yet: the tile shows titles and links without spending any AI quota."
+    }
+  },
   "info": {
     "buttonTitle": "How to read this view",
+    "marktradar": {
+      "title": "Market radar — the lay of the land before you dig in",
+      "intro": "This page answers a single question: what shape is the market in right now? It is deliberately coarse. For the detailed view there are Bookmap, the liquidation map and open interest.",
+      "sections": [
+        {
+          "g": "Operating the page",
+          "h": "SHOWING AND HIDING CARDS",
+          "p": "Use \"Cards\" to decide what you see. Hidden cards are not loaded at all — they cost neither space nor requests to the data sources. The selection is per device: a lean view on the phone, the full set on the desktop."
+        },
+        {
+          "h": "ARRANGING AND SIZING",
+          "p": "The handle in the top left drags a card somewhere else. The bottom right corner makes it wider or taller, and a double click on that corner restores the default size. Order, size and visibility live in the browser of each device, not in the database. The page may therefore look different on the phone than on the desktop, and a fresh browser starts with the default arrangement."
+        },
+        {
+          "h": "ENLARGING A CARD",
+          "p": "Clicking the magnifier opens the same card in the full window — the same component with the same data, only with more room. It costs no extra request. Enlarged, many cards show more than they do small: longer history, tables instead of just the headline figure, extra switches. The source of the numbers is always stated at the bottom. Esc or a click beside the card closes it again."
+        },
+        {
+          "h": "TIMESTAMP AND DOT COLOUR",
+          "p": "The top right of every card says when the numbers are from. The dot next to it is green for fresh data and amber when the source could not be reached — you then keep seeing the last good state instead of an empty card. Red means nothing is available at all. The dot in the page header summarises all cards; if it is amber, some card below is showing a stale state."
+        },
+        {
+          "h": "HOW OFTEN DATA IS RELOADED",
+          "p": "Each card has its own cadence, matched to its source: funding, RSI and liquidations every minute, market overview and long/short every five, Fear & Greed every fifteen, rainbow and Pi Cycle only twice a day. Asking more often would change nothing there, because those sources themselves only produce daily or weekly values. \"Refresh all\" at the top right forces a pass; the arrow on a card reloads just that one."
+        },
+        {
+          "h": "SETTING THE SYMBOL FROM THE RADAR",
+          "p": "In funding, the RSI heatmap, the market overview and altcoin season, clicking a row or a dot sets the symbol for the whole live analysis. Bookmap, liquidation map and open interest then show exactly that market. That is how the page is meant to be used: something stands out here, you examine it in detail there."
+        },
+        {
+          "g": "The individual cards",
+          "h": "FEAR & GREED",
+          "p": "A sentiment index by alternative.me, built from volatility, volume, surveys and search trends. It measures mood, not price, and changes once a day. Next to the value you get yesterday's reading, the 30-day average and the low and high of the selected period. Extreme readings are more interesting than the middle — but \"extreme fear\" is not a buy signal, only the description of a state, and that state can stay extreme for weeks. Mostly useful as an input to position size and in comparison with the regime card further down."
+        },
+        {
+          "h": "BTC DOMINANCE",
+          "p": "What share of the entire crypto market belongs to Bitcoin. The curve comes from the TradingView widget, the spot value from CoinGecko, and the journal additionally records one value per day — that own series only grows with time. Reading: rising dominance with falling prices means a flight out of altcoins into BTC; falling dominance with rising prices means fresh money is spreading out. In practice: an altcoin long against rising dominance is swimming upstream, however good the coin's chart looks."
+        },
+        {
+          "h": "FUNDING RATES",
+          "p": "The payment between longs and shorts on Binance perpetuals, due every eight hours; \"p.a.\" extrapolates it to a year so you can judge the magnitude. Positive means longs pay shorts — the long side is crowded. The card shows the extremes on both sides and, below, your own markets. Two things to take away: funding is a real cost — at +100 % p.a. holding eats into your margin — and an extreme reading tells you where the crowd sits, not when it will turn."
+        },
+        {
+          "h": "LONG/SHORT + OPEN INTEREST",
+          "p": "The Binance account ratio for the selected symbol, hourly over 48 hours, together with the 24-hour change in open interest and price. Important: it counts ACCOUNTS, not capital — a whale weighs the same as a tiny account, so the ratio mostly pictures retail. The combination is what matters: a lopsided ratio plus growing open interest means one side is loading up — then look at the liquidation map to see where the other side keeps its stops."
+        },
+        {
+          "h": "RSI HEATMAP",
+          "p": "Wilder's RSI(14) from closed Binance candles, one dot per market, sorted left to right by turnover. The dashed line is the average of all shown markets — and that is the real value of this card: an oversold coin while the average is equally low is nothing of its own, just the market. What stands out is whatever deviates from the average. Switchable between the highest-turnover markets and the markets you traded yourself over the last 90 days."
+        },
+        {
+          "h": "MARKET OVERVIEW",
+          "p": "The top 100 by market capitalisation without stablecoins, from CoinGecko. In bubble mode the area is the STRENGTH of the move — so a small coin doing 30 % stands out too. In tile mode the area is market capitalisation — so you can see whether the move carries any weight. The question answered here: is the whole market running, or just one corner of it? Not every coin has a Binance perpetual; where none exists, the symbol cannot be set."
+        },
+        {
+          "h": "LIQUIDATIONS 24 H",
+          "p": "Forced liquidations of the last 24 hours from the journal's own recording of the Binance stream — there is no usable free third-party source, so the recording has to be switched on in the settings and only starts from then. Red means a LONG was closed out, green a SHORT. Binance sends at most one event per second per symbol, so these numbers are a sample, not a full count — ratios and spikes are meaningful, absolute totals are too low."
+        },
+        {
+          "h": "ALTCOIN SEASON INDEX",
+          "p": "How many of the large altcoins with a perpetual market beat Bitcoin over the selected window, calculated from Binance daily candles. Above 75 is altcoin season, below 25 Bitcoin season — both thresholds come from the original index; they are set, not derived. The window changes the verdict considerably; when in doubt compare two windows before drawing a conclusion."
+        },
+        {
+          "h": "RAINBOW (BTC)",
+          "p": "A logarithmic curve fitted to Bitcoin's entire price history, with bands from \"fire sale\" to \"bubble\". The thing to understand: the bands shift with every new price because the fit is recalculated — what counts as \"cheap\" today can be the middle band a year from now. A usable mood gauge across years, far too coarse for a trading decision."
+        },
+        {
+          "h": "PI CYCLE TOP (BTC)",
+          "p": "When the 111-day moving average crosses the doubled 350-day average from below, that historically landed close to a cycle top. The card shows the distance between the two lines and whether a crossing has triggered. Three hits in three opportunities is an observation, not a rule — treat it as an early warning to be careful with leverage, not as an exit signal."
+        },
+        {
+          "h": "YOUR TRADES × MARKET REGIME",
+          "p": "The only card that is about you rather than the market: your own trades are grouped by the Fear & Greed value of their entry day, calculated on net results after fees, bot trades excluded. Per phase you get count, hit rate, total, average, profit factor and long share. Faded phases have too few trades to mean anything. If, across many trades, you consistently lose in a particular market state, that is the most concrete rule this whole page can give you."
+        },
+        {
+          "g": "In daily use",
+          "h": "A ROUTINE THAT WORKS",
+          "p": "News first — what is scheduled today. Then the radar — what shape is the market in, and does that fit what I intend to do. Then set a symbol and go into detail in bookmap, liquidation map or open interest. The reverse order — chart first, justification afterwards — reliably ends with you hunting for the card that agrees with the opinion you already had."
+        },
+        {
+          "h": "WHAT NEVER BECOMES AN ENTRY",
+          "p": "None of these cards is a signal. They answer what tailwind you are travelling with, not when to click. Used sensibly they change position size, holding time and the question of whether to trade against the market at all today — the trigger still comes from your strategy."
+        }
+      ],
+      "caveat": "Every number here comes from third parties who promise nothing. If a source fails you see the last known state with its timestamp — check that date before you act on it. And remember: extreme readings can stay extreme. Sentiment, funding and dominance tell you where the market stands, not where it goes next."
+    },
     "bookmap": {
       "title": "Bookmap — order book and trading in real time",
       "intro": "This view shows only MEASURED data: the actual Binance order book and actually executed trades. Nothing here is calculated or estimated.",
       "sections": [
         {
+          "g": "What you are looking at",
           "h": "THE COLOURED CELLS",
           "p": "Each horizontal cell is resting liquidity — limit orders waiting at that price. Bright means a lot. A continuous bright band is a large order sitting there over time, and such bands often act as resistance because price has to work through them."
         },
@@ -1366,6 +1789,40 @@
         {
           "h": "LIMIT OF MEASUREMENT",
           "p": "The dashed \"snapshot reach\" line marks how deep the fetched order book goes. Above and below it the picture is incomplete, not empty — orders do exist there, we just cannot see them."
+        },
+        {
+          "g": "Operating the view",
+          "h": "MARKET AND SYMBOL",
+          "p": "Both live in the side menu on the left. At the top you choose futures (perpetual) or spot, below that you search for the symbol. The choice applies to the whole live analysis: the liquidation map and open interest follow the same symbol, and a click in the market radar sets it too. Perp and spot have separate order books — for the same coin they look different, and that is not a bug."
+        },
+        {
+          "h": "WINDOW AND CADENCE",
+          "p": "\"Price band\" sets how far the map reaches above and below the mid price: tight shows the inner workings of the book, wide shows the big blocks. \"ms per column\" sets how much time goes into one pixel, and therefore the length of the visible window — 1000 ms is twenty minutes across 1200 pixels, 250 ms is five. Small values for execution, large ones for the overview."
+        },
+        {
+          "h": "COLOUR SCALE AND THRESHOLD",
+          "p": "Top right switches the palette (Viridis, Classic, Journal) — pure taste. More important is the scale in the side menu: \"Automatic\" adjusts brightness continuously so there is always something to see; \"Fixed value\" makes pictures comparable over time, because the same quantity always gets the same colour. The small button beside it adopts the current automatic value as a starting point. The \"liquidity threshold\" hides everything below a given share — turn it up until only the clumps remain."
+        },
+        {
+          "h": "DOTS AND EXTRA LANES",
+          "p": "\"Group trade dots\" bundles trades into bubbles and controls spacing and size at once: small means many fine dots, precise in time; large means few fat bubbles and a coarser picture. Separately switchable are the volume profile on the right including its lane width, the liquidation diamonds (futures only) and the volume bars below. If you want recording to continue while the tab is in the background, switch off \"pause in background\" — that keeps the connection open permanently and costs CPU time."
+        },
+        {
+          "h": "PAUSE, AUTO AXIS, ZOOM",
+          "p": "\"Pause\" freezes the display only; recording continues — useful to study something without it scrolling away to the left. \"Auto axis\" makes the price axis follow the mid price; a double click in the chart resets it if you got lost while dragging."
+        },
+        {
+          "h": "REPLAYING OLD TRADES",
+          "p": "In the journal, a trade in the daily view can open the order book at its entry time, provided a recording exists for that window. The view then switches to replay mode: the slider at the bottom moves through the recorded window, the header shows the period, and \"leave replay\" takes you back to the live picture. That is how you find out after the fact what was actually resting in the book when you entered."
+        },
+        {
+          "g": "In daily use",
+          "h": "WHAT THE VIEW IS FOR",
+          "p": "Not for finding ideas, but for executing them. The idea comes from the chart or the strategy: \"I want to go long at this level\". Bookmap then tells you whether anything is actually resting there, whether it holds while being traded against, and whether it gets swept or pulled. The same for exits: a thick band in front of your target is a reason to leave early rather than hope it breaks."
+        },
+        {
+          "h": "COMMON MISREADINGS",
+          "p": "Three that everyone makes once. First: treating a large band as a promise — it can vanish the moment price arrives. Second: reading colour as an absolute while the scale is on \"Automatic\" and keeps rescaling; comparing pictures requires a fixed value. Third: mistaking the gap after a background pause for a quiet market — the grey stripe means \"not measured\", not \"nothing happened\"."
         }
       ],
       "caveat": "What you see can change in seconds: limit orders can be pulled at any time. A large band is a statement of intent, not a promise — it may vanish as soon as price approaches."
@@ -1375,6 +1832,7 @@
       "intro": "This view is a MODEL, not a measurement. Binance does not publish position data. All that is known is how many contracts are open in total — from that, likely liquidation prices are estimated.",
       "sections": [
         {
+          "g": "How the map is built",
           "h": "HOW IT IS CALCULATED",
           "p": "For each candle the change in open interest is examined. If it rises, positions were opened — somewhere within that candle's price range, so the increase is spread evenly across it rather than placed at a point. If it falls, positions were closed and the existing stock is thinned proportionally."
         },
@@ -1383,6 +1841,7 @@
           "p": "Whether an increase was long or short is decided by the candle's aggressive buy volume. If buyers dominate, the increase counts mostly as long. This is an approximation — nobody but the exchange knows the actual split."
         },
         {
+          "g": "What you are looking at",
           "h": "DISTRIBUTION",
           "p": "The snapshot: long zones to the left, short zones to the right, centre line at the current price. Bar length is the value in dollars, linearly normalised — twice as long means twice as much."
         },
@@ -1395,20 +1854,43 @@
           "p": "Once price has run through a zone it turns grey — retroactively across its whole history. Only what still stands today, and could still trigger, stays coloured. Without this recolouring every zone ever created would glow forever and the map would become unreadable over time."
         },
         {
-          "h": "LEVERAGE TIERS",
-          "p": "\"All\" mixes them weighted. A single tier is a what-if: if everyone used this leverage, the zones would sit here. 100x hugs the price, 10x sits about ten percent away."
+          "g": "Operating the view",
+          "h": "SWITCHING THE VIEW",
+          "p": "The controls sit in the side menu on the left. At the top you switch between \"distribution\" and \"history\": distribution answers \"where does it sit now\", history answers \"how did it build up and what has already been swept\". For a decision in the moment the distribution is enough; to understand a move you need the history."
         },
         {
-          "h": "COVERAGE",
-          "p": "The most important number in the legend: what share of the actual open interest is represented in the map at all. Positions opened before the time window are unknown to the model. Below twenty percent a warning appears — the map then shows only a fraction."
+          "h": "LEVERAGE TIERS",
+          "p": "\"All\" mixes them weighted. A single tier is a what-if: if everyone used this leverage, the zones would sit here. 100x hugs the price, 10x sits about ten percent away. Useful when you want to know which part of a clump comes from short-term leverage and which from patient positions further out."
+        },
+        {
+          "h": "TIME WINDOW AND SPAN",
+          "p": "The time window decides how far back positions are attributed — it is the control with the greatest effect on the map. Short windows are current but cover little; long windows cover more but drag along zones whose holders left long ago. The span below sets the price range shown around the current price; in the chart the mouse wheel zooms continuously."
+        },
+        {
+          "h": "ZONE THRESHOLD AND PROFILE",
+          "p": "In the history view the zone threshold hides weak zones — turn it up until only the clumps remain, because those are the point of the map. The profile width controls the distribution lane on the right edge; at 0 it disappears and the history gets the full area."
         },
         {
           "h": "MARGIN RATE",
-          "p": "The share of the position the exchange requires to remain as collateral. At 100x leverage and a 0.4 percent rate you may only lose 0.6 percent, not one percent — which is why 100x liquidates at minus 0.6 percent. Binance only releases the real values with an API key; 0.004 is BTCUSDT tier 1. For small coins it is more like one to two and a half percent."
+          "p": "The share of the position the exchange requires to remain as collateral. At 100x leverage and a 0.4 percent rate you may only lose 0.6 percent, not one percent — which is why 100x liquidates at minus 0.6 percent. Binance only releases the real values with an API key; 0.004 is BTCUSDT tier 1. For small coins it is more like one to two and a half percent — leave the default in place there and every zone sits too close to the price."
+        },
+        {
+          "g": "How far to trust it",
+          "h": "COVERAGE",
+          "p": "The most important number in the legend: what share of the actual open interest is represented in the map at all. Positions opened before the time window are unknown to the model. Below twenty percent a warning appears — the map then shows only a fraction. The first response to low coverage is always: enlarge the time window."
         },
         {
           "h": "HOW RELIABLE",
           "p": "Measured against 9,734 recorded real liquidations: the map marks about thirteen percent of the visited price range and catches roughly twenty percent of actual events within it. That is a factor of 1.54 over chance — measurably better than guessing, but four out of five liquidations happen elsewhere."
+        },
+        {
+          "g": "In daily use",
+          "h": "WHAT THE MAP IS FOR",
+          "p": "Two questions. First: where is the fuel? A thick clump above the price is a reason not to sell an advance too early — once touched, forced buying accelerates the move. Second: where do I NOT put my own stop? Sitting right behind a thick clump means being stopped out together with the crowd. A little further back costs slightly more risk and avoids the standard trap."
+        },
+        {
+          "h": "WHAT A CLUMP IS NOT",
+          "p": "Neither a price target nor a schedule. Many zones are never touched; others are cleared in seconds without the expected move following. After a sweep the zone turns grey — anyone still waiting for \"the liquidations above\" is waiting for something that already happened. And because the model only estimates the side, the left-right split is the least certain thing on the whole map."
         }
       ],
       "caveat": "The biggest fiction: every contract has two sides, and the model assumes only one of each pair is leveraged. It also cannot see cross margin or added collateral. Read the map as \"where is a lot compared to the surroundings\", not as a price target."
@@ -1418,6 +1900,7 @@
       "intro": "Open interest is the total of all open contracts. It does not say whether the market is bullish or bearish — it says how much is on the table at all. Only together with price does it become meaningful.",
       "sections": [
         {
+          "g": "What you are looking at",
           "h": "TOP: INTEREST AND PRICE",
           "p": "The blue area is open interest, the white line is price. They share the time axis but have separate scales — what matters is direction, not absolute levels."
         },
@@ -1426,6 +1909,11 @@
           "p": "The bars show how much was added or removed per time slice. Green means build-up, red means unwinding. The stock itself drifts slowly; the change shows when something actually happened."
         },
         {
+          "h": "THE THREE CARDS ON TOP",
+          "p": "Above the chart you get the change in open interest, the change in price and, derived from both, the reading in plain words. That is the short form of the four cases below — if you are in a hurry, that line is enough."
+        },
+        {
+          "g": "The four cases",
           "h": "PRICE UP, INTEREST UP",
           "p": "New long positions are carrying the move. This counts as a solid advance — fresh money is flowing in rather than old positions merely unwinding."
         },
@@ -1442,15 +1930,67 @@
           "p": "Longs unwinding. Often seen at the end of a decline, when the last holders give up."
         },
         {
-          "h": "RELATION TO THE LIQUIDATION MAP",
-          "p": "Both pages use the same data. What appears here as an increase is distributed across prices there and converted into liquidation zones. A strong build-up without price movement means, for the map, that closely spaced zones are forming."
+          "g": "Operating the view",
+          "h": "SYMBOL AND TIME WINDOW",
+          "p": "The symbol comes from the side menu and applies to the whole live analysis — change it here and bookmap and the liquidation map change too. Below it sits the only other control on this page: the time window. Short windows use five-minute resolution and reach back about 41 hours; longer ones step up to coarser periods automatically. The span actually achieved is shown in the header — it can be shorter than selected if the exchange does not serve data that far back."
         },
         {
-          "h": "TIME WINDOW",
-          "p": "Short windows use five-minute resolution and reach back about 41 hours; longer ones step up to coarser periods automatically. The span actually achieved is shown in the header."
+          "g": "In daily use",
+          "h": "RELATION TO THE LIQUIDATION MAP",
+          "p": "Both pages use the same data. What appears here as an increase is distributed across prices there and converted into liquidation zones. A strong build-up without price movement means, for the map, that closely spaced zones are forming — and those later get cleared together."
+        },
+        {
+          "h": "HOW TO USE THE PAGE",
+          "p": "As a cross-check, not as a trigger. You have a move on the chart and want to know whether it is carried: if open interest rises with it, new money is involved; if it falls, positions are merely unwinding and the move often ends where the unwinding ends. The second occasion is a quiet market with strongly growing interest — that is the setup where a jump comes later, because both sides have loaded up."
         }
       ],
       "caveat": "Open interest is a net figure. If a thousand positions open and nine hundred close, it shows only a hundred — actual turnover is always larger than the curve suggests."
+    },
+    "nachrichten": {
+      "title": "News — what is coming up and what was said",
+      "intro": "Three parts, in the order you need them in the morning: the digest summarises, the calendar tells you when it gets rough, and the posts are the raw sources to read up on. This page does not replace a news service — it makes sure you do not trade into a release unaware.",
+      "sections": [
+        {
+          "g": "The three parts",
+          "h": "THE DIGEST",
+          "p": "At the top is what the AI distilled from the posts of the last 36 hours: an assessment of the situation and below it the individual points with their source, important ones highlighted. It is generated automatically once at midday, or on demand by button (at most every five minutes). The footer states how many posts were read, which model was used and what it consumed. The \"AI, unverified\" mark is meant literally: this is a summary, not an established fact — for anything you put money on, click through to the original source beside it."
+        },
+        {
+          "h": "THE CALENDAR",
+          "p": "Economic events grouped by day. Each entry shows the time in your time zone, the currency area, the impact level plus forecast, actual and previous values. Yesterday deliberately stays visible so you can read the actual value of releases that already happened — how the market reacted to the last number is often more informative than the next forecast."
+        },
+        {
+          "h": "THE POSTS",
+          "p": "The raw sources, newest first, each linking to the original. The source row lets you hide individual providers — that affects the display only, they are still fetched; switching them off for good happens in the settings. How many items are loaded is set beside it; the digest always reads the last 36 hours regardless."
+        },
+        {
+          "g": "Operating the page",
+          "h": "THE TWO BUTTONS ON TOP",
+          "p": "\"Fetch posts\" queries the sources immediately instead of waiting for the next scheduled pass (pressing it repeatedly hits a throttle — that is intentional, not a fault). \"Generate digest\" writes a new report using the AI model chosen in the settings; depending on the provider that costs quota or compute time."
+        },
+        {
+          "h": "FILTERING THE CALENDAR",
+          "p": "Three filters, all remembered per device. The period sets how far ahead you look. Impact is a LOWER BOUND: \"medium and up\" includes the high ones, \"high only\" leaves a handful of events in a typical week, \"all\" around a hundred. For currency areas, \"none selected\" means all — anyone trading mainly crypto gets a long way with USD and JPY."
+        },
+        {
+          "h": "SPLIT AND HEIGHTS",
+          "p": "The vertical divider between calendar and posts can be dragged, as can the bottom edge of both lists; a double click on the handle resets the height. This too lives in the device's browser — on a phone the columns stack anyway."
+        },
+        {
+          "h": "WHY THE CALENDAR GROWS OVER TIME",
+          "p": "The feed only ever carries the current week. The journal therefore collects every event it sees permanently instead of passing it through. Consequence: your own stock only reaches as far into the future as the source has switched over so far — the line below the list says until when. An empty second week means \"not collected yet\", not \"nothing scheduled\"."
+        },
+        {
+          "g": "In daily use",
+          "h": "HOW TO HANDLE RELEASES",
+          "p": "Around a high-impact event the problem is not direction but execution: the spread widens and single candles take out stops that would otherwise never be reached. Two sane stances: be flat beforehand, or keep the position small enough and the stop wide enough that the spike cannot catch you. You can always join later — what remains fifteen to thirty minutes after the number is usually the real move."
+        },
+        {
+          "h": "WHERE IT SITS IN THE ROUTINE",
+          "p": "This page comes before the market radar. First: is there any reason to be careful today? Then: what shape is the market in, and finally the detail on one symbol. Done the other way round, you read the calendar after the stop has already been hit."
+        }
+      ],
+      "caveat": "Summaries are produced by a language model and can be wrong or leave out something important — always check the original source before deciding. Event times and impact levels come from a third-party feed, get rescheduled at short notice and are equally unverified. None of this is investment advice."
     },
     "button": "Info",
     "agent": {
@@ -1492,5 +2032,117 @@
       ],
       "caveat": "Beta: this area is under development and not investment advice. Backtest numbers are not a promise — a result only counts once it holds outside the period it was chosen on. Let a strategy run on paper long enough before even thinking about live."
     }
+  },
+  "news": {
+    "fetchNow": "Fetch posts",
+    "makeDigest": "Write briefing",
+    "working": "Writing …",
+    "asOf": "as of {zeit}",
+    "posts": "Posts",
+    "calendar": "Events",
+    "nextIn": "next in {zeit}",
+    "hidden": "{n} source(s) hidden",
+    "forecast": "Forecast",
+    "actual": "Actual",
+    "noDigest": "No briefing yet. The first one is written automatically at 12:00 — or now, at the push of a button.",
+    "noPosts": "No posts from the last three days.",
+    "calEmpty": "No events in this period.",
+    "calFiltered": "{n} events in this period, but none reach the selected impact or country.",
+    "aiMark": "AI, unverified",
+    "digestFooter": "From {n} posts · {v} video(s) used, {nv} newly analysed · {modell} · {tok} tokens",
+    "digestDone": "Done: {n} posts, {v} video(s), {tok} tokens via {modell}",
+    "digestThrottled": "Written recently — at most every five minutes.",
+    "throttled": "Fetched recently.",
+    "fetched": "{gesehen} posts seen, {neu} new.",
+    "range": {
+      "today": "Today",
+      "d3": "3 days",
+      "w1": "1 week",
+      "w2": "2 weeks",
+      "m1": "1 month"
+    },
+    "rangeHint": "How far ahead the preview reaches. The past day always stays visible so released events still show their actual value.",
+    "stockUntil": "Our own record reaches to {datum}. The source only ever carries the current week — later events accumulate once it rolls over.",
+    "impact": {
+      "high": "high only",
+      "medium": "medium+",
+      "all": "all"
+    },
+    "impactHint": "Impact as rated by the source. „medium+\" includes high. This week: high only 8, medium+ 21, all 96 events.",
+    "countryHint": "Toggle currency areas. With none selected, all are shown.",
+    "previous": "Previous",
+    "resizeHint": "Drag to resize · double-click resets",
+    "splitHint": "Drag to change column width",
+    "sourceHint": "Show or hide this source. It is still fetched — switch it off permanently in the settings.",
+    "allHidden": "All sources hidden.",
+    "countHint": "How many posts are loaded. Affects the list only — the briefing always reads the last 36 hours.",
+    "showing": "{n} of {gesamt} shown",
+    "briefing": "Briefing",
+    "important": "key",
+    "noEvidence": "No individual source given — reported from: {quelle}",
+    "evidence": "Posts this point is based on ({n})",
+    "evidenceSource": "Links lead to the original",
+    "evidenceDerived": "Posts from {quelle} in this briefing",
+    "delete": "Discard briefing",
+    "deleteConfirm": "Delete this briefing? Posts and already-paid video summaries are kept.",
+    "deleted": "Briefing deleted ({n} left).",
+    "videosHeader": "Videos used",
+    "noVideos": "No videos analysed — either none in the window, or video analysis is switched off.",
+    "videoReused": "paid earlier"
+  },
+  "rangliste": {
+    "title": "Coin ranking",
+    "hint": "Run a finished strategy across many coins — and see which ones it holds up on. The period is split: the first half sets the rank, the second checks it on data nobody saw during selection.",
+    "strategie": "Strategy",
+    "zeitraum": "Period (days)",
+    "zeiteinheit": "Timeframe",
+    "vorschlag": "Suggestion",
+    "gesperrt": "locked",
+    "knapp": "thin",
+    "universum": "Coin universe",
+    "artBitunix": "Everything tradable on Bitunix",
+    "artTop": "Top N by market cap",
+    "artManuell": "Own list",
+    "artKi": "AI suggestion",
+    "quellen": "{handelbar} pairs are tradable on Bitunix via API. {testbar} of them have Binance candle history. {beides} are both — only those can be tested. {nurHandelbar} are tradable but have no history; {nurTestbar} have history but are not tradable on Bitunix.",
+    "nurHandelbar": "Only coins I can actually trade",
+    "anzahl": "Count",
+    "symbole": "Symbols (comma separated)",
+    "pruefen": "Check universe",
+    "gefunden": "{n} coins will run.",
+    "ausgeschlossen": "Excluded: {ohneHistorie} without Binance history, {ohneMarkt} without a Binance market, {nichtHandelbar} not tradable on Bitunix.",
+    "aufwand": "Estimated {abrufe} Binance requests, about {minuten} minutes.",
+    "starten": "Start ranking",
+    "abbrechen": "Cancel",
+    "fortschritt": "Coin {fertig} of {gesamt}",
+    "st_wartet": "waiting",
+    "st_laeuft": "running",
+    "st_pausiert": "paused (Binance limit)",
+    "st_fertig": "done",
+    "st_abgebrochen": "cancelled",
+    "st_fehler": "error",
+    "beurteilung": "What this ranking is worth",
+    "rang": "Rank",
+    "symbol": "Symbol",
+    "trades": "Trades",
+    "ohneTop": "without best",
+    "erwartung": "Expectancy",
+    "maxDd": "max drawdown",
+    "pruefhaelfte": "Check half",
+    "bestaetigt": "confirmed",
+    "duenn": "too few trades in the check half",
+    "gekippt": "did not hold",
+    "k_belastbar": "Reliable",
+    "k_zu_wenig_trades": "Too few trades",
+    "k_datenluecke": "Data gap",
+    "k_ohne_daten": "No data",
+    "k_fehler": "Error",
+    "unterTrennlinie": "These coins get no rank — they are not zero, just not reliable.",
+    "keineLaeufe": "No ranking computed yet.",
+    "laeufe": "Earlier runs",
+    "loeschen": "Delete",
+    "kiThema": "Topic (e.g. RWA, meme, AI coins)",
+    "kiVorschlagen": "Suggest a list",
+    "kiVerworfen": "{n} of {gesamt} suggestions are not testable and were removed."
   }
 }

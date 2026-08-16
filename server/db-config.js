@@ -18,6 +18,17 @@ const DB_PATH = path.join(__dirname, '..', 'tradenote.db')
  * Returns knex connection config object.
  */
 export function loadDbConfig() {
+    // Testbetrieb: eine ausdrücklich benannte Wegwerf-Datenbank schlägt ALLES.
+    // Ohne diesen Ausweg liefe jeder Selbsttest, der initDb() braucht, gegen
+    // die in db-config.json konfigurierte echte Datenbank.
+    if (process.env.CTJ_DB_FILE) {
+        return {
+            client: 'better-sqlite3',
+            connection: { filename: process.env.CTJ_DB_FILE },
+            useNullAsDefault: true
+        }
+    }
+
     let config = null
     try {
         if (fs.existsSync(CONFIG_PATH)) {

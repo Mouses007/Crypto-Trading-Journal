@@ -11,19 +11,68 @@
  * Passwort anmelden. Gedacht für Betrieb hinter öffentlicher Bindung
  * (CTJ_HOST=0.0.0.0). Zusätzlich wird HTTPS via Reverse-Proxy empfohlen.
  *
- * Das Token wird bei jedem Server-Neustart neu erzeugt (keine persistente Session).
+ * Das Token überlebt einen Neustart, WENN `CTJ_SECRET` gesetzt ist — siehe unten.
  */
 import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { isLocalRequest } from './update-api.js'
 
-// Generate a random session token at startup
-const SESSION_TOKEN = crypto.randomBytes(32).toString('hex')
+/**
+ * Sitzungs-Token.
+ *
+ * Es lebt im Prozess, nicht in der Datenbank. Wurde es bei jedem Start neu
+ * gewürfelt, meldete JEDER Neustart alle Geräte ab, die auf diesen Server
+ * zeigen — beim NAS also nach jedem Container-Update Desktop, Handy und Tablet
+ * gleichzeitig. Ein Update ist kein Sicherheitsereignis, das rechtfertigt das
+ * nicht.
+ *
+ * Ist `CTJ_SECRET` gesetzt, wird das Token daraus ABGELEITET statt gewürfelt.
+ * Damit überlebt die Anmeldung einen Neustart. Die Angriffsfläche wächst
+ * dadurch nicht: `CTJ_SECRET` ist ohnehin das Hauptgeheimnis der Installation,
+ * aus ihm werden bereits die API-Schlüssel entschlüsselt.
+ *
+ * Der Preis, bewusst in Kauf genommen: ein einmal abgegriffenes Cookie bleibt
+ * gültig, bis `CTJ_SECRET` gewechselt wird — vorher half ein Neustart. Wer ein
+ * Token für verbrannt hält, ändert `CTJ_SECRET` (oder setzt es ab, dann wird
+ * wieder gewürfelt).
+ *
+ * Ohne `CTJ_SECRET` bleibt es beim alten Verhalten: zufällig je Start. Ein aus
+ * dem Maschinennamen abgeleiteter Ersatz wäre erratbar und damit schlechter als
+ * eine lästige Neuanmeldung.
+ */
+const SESSION_TOKEN = process.env.CTJ_SECRET
+    ? crypto.createHmac('sha256', String(process.env.CTJ_SECRET)).update('tn_session_v1').digest('hex')
+    : crypto.randomBytes(32).toString('hex')
 const COOKIE_NAME = 'tn_session'
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 // 30 Tage in Sekunden
 
 // In-memory Auth-Konfiguration (aus settings geladen)
 let authConfig = { enabled: false, passwordHash: '' }
+
+// Auf welcher Adresse der Server lauscht. Ohne Passwort-Gate wird das Cookie
+// jedem Besucher zugeteilt — das ist nur vertretbar, solange ausschliesslich
+// der eigene Rechner den Dienst erreicht. Standard `true`, damit Werkzeuge, die
+// dieses Modul ohne laufenden Server laden, ihr Verhalten nicht ändern.
+let bindNurLokal = true
+
+/** Lauscht der Server ausschliesslich auf der Loopback-Adresse? */
+export function istLoopbackHost(host) {
+    const h = String(host ?? '').trim().toLowerCase().replace(/^\[|\]$/g, '')
+    return h === 'localhost' || h === '::1' || h.startsWith('127.')
+}
+
+/** Beim Start aufrufen, sobald die Bind-Adresse feststeht. */
+export function setzeBindungsModus(nurLokal) {
+    bindNurLokal = !!nurLokal
+}
+
+/**
+ * Darf der Dienst ohne Passwort-Gate betrieben werden? Nur lokal — oder wenn
+ * der Betreiber es mit CTJ_ALLOW_INSECURE=1 ausdrücklich in Kauf nimmt.
+ */
+export function offenerBetriebErlaubt() {
+    return bindNurLokal || process.env.CTJ_ALLOW_INSECURE === '1'
+}
 
 // Routen, die ohne gültige Session erreichbar sein müssen (Login-Flow +
 // unkritischer Setup-Status, den der Router-Guard vor dem Login abfragt).
@@ -95,12 +144,86 @@ function getClearCookieString(req) {
     return `${COOKIE_NAME}=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/;${secure}`
 }
 
+// ==================== DNS-Rebinding ====================
+//
+// Der ganze localhost-Vertrauensbau hängt an der Peer-IP: „kommt von 127.0.0.1,
+// also ist es der Nutzer selbst". Eine Rebinding-Seite bricht genau das. Sie
+// lässt ihren eigenen Namen (evil.tld) kurz auf 127.0.0.1 zeigen; der Browser
+// des Nutzers schickt die Anfrage dann brav an den eigenen Rechner — mit
+// lokaler Peer-IP, aber mit `Host: evil.tld`. Damit stünde `/api/auth/reset`
+// offen (schaltet das Passwort-Gate ab), und der nächste Seitenaufruf liefert
+// das Session-Cookie an die fremde Domain.
+//
+// Der Host-Header ist die einzige Stelle, an der man das sieht — deshalb wird
+// er hier geprüft. Kein Ersatz für die Peer-IP-Prüfung, sondern ihr Gegenstück.
+
+/** Private IPv4-Bereiche, unter denen der Dienst im eigenen Netz erreichbar ist. */
+const PRIVATE_V4 = [
+    /^192\.168\.\d{1,3}\.\d{1,3}$/,
+    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,
+    /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/,
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$/,   // CGNAT (Tailscale)
+]
+
+/** Zusätzlich erlaubte Namen aus der Umgebung (Komma-getrennt). */
+function zusatzHosts() {
+    return String(process.env.CTJ_ALLOWED_HOSTS || '')
+        .split(',')
+        .map((h) => h.trim().toLowerCase())
+        .filter(Boolean)
+}
+
+/**
+ * Darf unter diesem Host-Header zugegriffen werden?
+ *
+ * Erlaubt sind Loopback, private IP-Adressen und was in CTJ_ALLOWED_HOSTS
+ * steht. Registrierbare Domains sind es nicht — genau die braucht ein
+ * Rebinding-Angriff.
+ *
+ * @param {string} rawHost Inhalt des Host-Headers (mit oder ohne Port)
+ */
+export function istErlaubterHost(rawHost) {
+    // Kein Host-Header: HTTP/1.0-Klienten wie das ESP-Display oder curl. Ein
+    // Rebinding-Angriff läuft immer über einen Browser, und der schickt den
+    // Header immer — hier gibt es also nichts zu erkennen und nichts zu sperren.
+    if (rawHost === undefined || rawHost === null || rawHost === '') return true
+
+    let host = String(rawHost).trim().toLowerCase().replace(/\.$/, '')
+    // IPv6 steht in eckigen Klammern und enthält selbst Doppelpunkte — erst die
+    // Klammer abtrennen, sonst zerlegt die Port-Abtrennung die Adresse.
+    if (host.startsWith('[')) host = host.slice(1, host.indexOf(']') > 0 ? host.indexOf(']') : undefined)
+    else host = host.split(':')[0]
+
+    if (istLoopbackHost(host)) return true
+    if (PRIVATE_V4.some((r) => r.test(host))) return true
+    // IPv6: eindeutig lokale (fc00::/7) und verbindungslokale (fe80::/10) Adressen
+    if (host.includes(':')) {
+        const kopf = parseInt(host.split(':')[0] || '0', 16)
+        if ((kopf & 0xfe00) === 0xfc00 || (kopf & 0xffc0) === 0xfe80) return true
+    }
+    return zusatzHosts().includes(host)
+}
+
+/** Middleware-Fassung: weist unbekannte Hosts mit 421 ab. */
+export function hostGuardMiddleware(req, res, next) {
+    if (istErlaubterHost(req.headers?.host)) return next()
+    res.status(421).type('text/plain').send(
+        'Unbekannter Host. Der Dienst ist nur über localhost oder eine private '
+        + 'Netzadresse erreichbar (sonst CTJ_ALLOWED_HOSTS setzen).'
+    )
+}
+
 /**
  * Middleware: set session cookie on any non-API request.
  * Im Passwort-Gate-Modus wird KEIN Cookie automatisch gesetzt — nur nach Login.
+ *
+ * Und: im Netzbetrieb ohne Gate ebenfalls nicht. Der Startcheck in index.mjs
+ * fängt diesen Zustand normalerweise ab; er kann aber im Betrieb entstehen,
+ * wenn jemand den Passwortschutz nachträglich abschaltet. Dann lieber
+ * verschlossen als jedem im LAN das Cookie in die Hand drücken.
  */
 export function sessionCookieMiddleware(req, res, next) {
-    if (!req.url.startsWith('/api/') && !authConfig.enabled) {
+    if (!req.url.startsWith('/api/') && !authConfig.enabled && offenerBetriebErlaubt()) {
         res.setHeader('Set-Cookie', getSessionCookieString(req))
     }
     next()
@@ -126,6 +249,11 @@ export function apiAuthMiddleware(req, res, next) {
 }
 
 /** Konstantzeitiger Vergleich des Session-Tokens (verhindert Timing-Leaks). */
+/** Trägt die Anfrage ein gültiges Session-Cookie? (Für das Body-Limit in index.mjs.) */
+export function hatGueltigeSession(req) {
+    return isValidSessionToken(parseCookieToken(req))
+}
+
 function isValidSessionToken(token) {
     if (typeof token !== 'string') return false
     const a = Buffer.from(token)
@@ -188,6 +316,12 @@ function isRateLimited(ip) {
 }
 
 function registerFailure(ip) {
+    // Abgelaufene Einträge gleich mit auskehren — die Map wüchse sonst um eine
+    // Zeile je jemals gesehener IP und würde nie wieder kleiner.
+    const verfallen = Date.now() - 60 * 60 * 1000
+    for (const [altIp, altRec] of loginAttempts) {
+        if (altRec.lockUntil && altRec.lockUntil < verfallen) loginAttempts.delete(altIp)
+    }
     const rec = loginAttempts.get(ip) || { count: 0, lockUntil: 0 }
     rec.count += 1
     if (rec.count >= LOGIN_MAX_ATTEMPTS) {
@@ -291,6 +425,14 @@ export function setupAuthRoutes(app) {
     // Gate deaktivieren (geschützt) — aktuelles Passwort erforderlich
     app.post('/api/auth/disable', async (req, res) => {
         try {
+            // Im Netzbetrieb wäre das Abschalten gleichbedeutend mit „Tür auf
+            // für alle im LAN". Wer das wirklich will, startet mit
+            // CTJ_ALLOW_INSECURE=1 — dann greift diese Sperre nicht.
+            if (!offenerBetriebErlaubt()) {
+                return res.status(403).json({
+                    error: 'Der Dienst ist im Netzwerk erreichbar. Ohne Passwortschutz hätte dann jeder im Netz vollen Zugriff. Zum Abschalten den Dienst nur lokal binden (CTJ_HOST=127.0.0.1) oder mit CTJ_ALLOW_INSECURE=1 starten.'
+                })
+            }
             if (authConfig.enabled) {
                 const { currentPassword } = req.body || {}
                 if (!verifyPassword(currentPassword || '', authConfig.passwordHash)) {

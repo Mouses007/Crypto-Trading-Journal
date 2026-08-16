@@ -77,7 +77,7 @@ function zeichne() {
             trigger: 'axis', axisPointer: { type: 'cross' },
             backgroundColor: 'rgba(18,18,18,0.94)',
             borderColor: 'rgba(255,255,255,0.18)',
-            textStyle: { color: 'rgba(255,255,255,0.87)', fontSize: 11 },
+            textStyle: { color: 'rgba(255,255,255,0.87)', fontSize: 12 },
         },
         axisPointer: { link: [{ xAxisIndex: 'all' }] },
         xAxis: [
@@ -89,7 +89,7 @@ function zeichne() {
             {
                 type: 'category', data: zeiten, gridIndex: 1, boundaryGap: false,
                 axisLabel: {
-                    color: 'rgba(255,255,255,0.5)', fontSize: 10,
+                    color: 'rgba(255,255,255,0.72)', fontSize: 12,
                     formatter: (v) => new Date(Number(v)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 },
                 axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } },
@@ -97,20 +97,20 @@ function zeichne() {
         ],
         yAxis: [
             {
-                gridIndex: 0, scale: true, name: t('oi.oi'), nameTextStyle: { color: 'rgba(255,255,255,0.5)', fontSize: 10 },
-                axisLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 10 },
+                gridIndex: 0, scale: true, name: t('oi.oi'), nameTextStyle: { color: 'rgba(255,255,255,0.72)', fontSize: 12 },
+                axisLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 12 },
                 splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
             },
             {
                 gridIndex: 0, scale: true, position: 'right', name: t('oi.price'),
-                nameTextStyle: { color: 'rgba(255,255,255,0.5)', fontSize: 10 },
-                axisLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 10 },
+                nameTextStyle: { color: 'rgba(255,255,255,0.72)', fontSize: 12 },
+                axisLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 12 },
                 splitLine: { show: false },
             },
             {
                 gridIndex: 1, scale: true, name: t('oi.delta'),
-                nameTextStyle: { color: 'rgba(255,255,255,0.5)', fontSize: 10 },
-                axisLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 10 },
+                nameTextStyle: { color: 'rgba(255,255,255,0.72)', fontSize: 12 },
+                axisLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 12 },
                 splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
             },
         ],
@@ -267,12 +267,12 @@ watch(levMapHours, () => lade())
 }
 
 .oiLabel {
-    font-size: 0.7rem;
-    color: var(--white-50, rgba(255, 255, 255, 0.5));
+    font-size: 0.78rem;
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
 }
 
 .oiValue {
-    font-size: 0.95rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--white-87, rgba(255, 255, 255, 0.87));
 }
@@ -288,7 +288,7 @@ watch(levMapHours, () => lade())
 
 .oiHint {
     padding-top: 0.4rem;
-    font-size: 0.74rem;
+    font-size: 0.8rem;
     color: rgb(250, 190, 60);
 }
 </style>

@@ -79,13 +79,16 @@
     "agentSetups": "Setups",
     "agentPerformance": "Auswertung",
     "agentLab": "Labor",
+    "coinRangliste": "Coin-Rangliste",
     "liveAnalyze": "ANSICHTEN",
     "liquidity": "Bookmap",
     "agentBuilder": "Neue Strategie",
     "agentEditor": "Strategie-Editor",
     "agentBuild": "ERSTELLEN",
     "liquidations": "Liquidationskarte",
-    "openInterest": "Open Interest"
+    "openInterest": "Open Interest",
+    "marktradar": "Marktradar",
+    "nachrichten": "Nachrichten"
   },
   "filters": {
     "periodRange": "Zeitraum der angezeigten Trades",
@@ -283,10 +286,10 @@
     "enablePopups": "Bewertungs-Popups aktivieren",
     "browserNotifications": "Browser-Benachrichtigungen",
     "browserNotificationsHint": "Desktop-Benachrichtigung wenn ein KI-Bericht fertig ist oder ein API-Import abgeschlossen wurde (nur wenn Tab nicht im Fokus).",
-    "kiAgent": "KI-Coach",
+    "kiAgent": "KI-Einstellungen",
     "aiEnabled": "KI-Funktionen aktiviert",
     "aiEnabledHint": "Blendet KI-Agent aus Menü und Dashboard aus. Einstellungen bleiben gespeichert.",
-    "kiDescription": "Konfiguriere den KI-Anbieter für die automatische Berichterstellung. Ollama (lokal, kostenlos) oder Online-KI (OpenAI/Anthropic/Gemini/DeepSeek, benötigt API-Key).",
+    "kiDescription": "Konfiguriere den KI-Anbieter für die automatische Berichterstellung. Ollama (lokal, kostenlos) oder Online-KI (OpenAI/Anthropic/Gemini/Mistral/Grok/Qwen, benötigt API-Key).",
     "provider": "Anbieter",
     "ollamaLocal": "Ollama (lokal)",
     "ollamaUrl": "Ollama URL",
@@ -420,7 +423,10 @@
     "deleteFailed": "Löschen fehlgeschlagen.",
     "customProvider": "Eigener Anbieter (OpenAI-kompatibel)",
     "customUrl": "Basis-URL",
-    "customUrlHint": "Der Teil vor /chat/completions — meist mit /v1 am Ende. Funktioniert mit allem, was die OpenAI-Schnittstelle spricht: Groq, OpenRouter, Together, vLLM, LM Studio."
+    "customUrlHint": "Der Teil vor /chat/completions — meist mit /v1 am Ende. Funktioniert mit allem, was die OpenAI-Schnittstelle spricht: Groq, OpenRouter, Together, vLLM, LM Studio.",
+    "qwenUrlHint": "Alibaba vergibt internationalen Konten eigene Adressen je Arbeitsbereich. Passt die Vorbelegung nicht, steht die richtige Adresse in der Model-Studio-Konsole.",
+    "providerRetired": "nicht mehr angeboten",
+    "keyFrom": "Von"
   },
   "setup": {
     "welcome": "Willkommen!",
@@ -962,6 +968,132 @@
     "kpiExpectancy": "Erwartungswert",
     "kpiProfitFactor": "Profit-Faktor",
     "kpiNetPnl": "Netto-Ergebnis",
+    "kpiExpectancyOhneTop": "Erwartung ohne Top",
+    "nichtBelastbar": "Nur {trades} Trades — unter {mindest} entscheiden Einzeltrades. Die Zahlen sind nicht falsch, sie tragen nur nichts.",
+    "abdeckungLuecke": "Unvollständige Daten: {vorhanden} von ~{erwartet} Kerzen ({prozent} %). Das Ergebnis gilt für einen kürzeren Zeitraum als eingestellt.",
+    "abdeckungFehlt": "es fehlt am {rand}",
+    "bollPeriod": "Länge der Bänder",
+    "bollMult": "Standardabweichungen",
+    "bollBasis": "Basislinie (SMA/EMA)",
+    "stochPeriod": "Stochastik-Länge",
+    "stochSmoothK": "Glättung %K",
+    "stochSmoothD": "Glättung %D",
+    "periodLabel": "Periode",
+    "fromParamShort": "An einen Parameter binden",
+    "chatTitle": "Im Gespräch bauen",
+    "chatShow": "öffnen",
+    "chatHide": "einklappen",
+    "chatHint": "Beschreibe deine Strategie in eigenen Worten. Die KI füllt die Felder darunter aus, fragt nach, was ihr fehlt, und sagt dir, was sich mit den Bausteinen nicht ausdrücken lässt. Deine Änderungen von Hand bleiben erhalten.",
+    "chatPlaceholder": "z. B.: Einstieg beim Rücklauf an die EMA 50, aber nur wenn der RSI über 50 steht. Stop unter das letzte Tief.",
+    "chatSend": "Senden",
+    "chatOpenQuestions": "Rückfragen — anklicken zum Beantworten",
+    "chatNotExpressible": "Das lässt sich mit den Bausteinen nicht ausdrücken:",
+    "chatChanged": "{n} Abschnitte geändert",
+    "exportTitle": "Als Datei sichern",
+    "exported": "„{name}“ als Datei gesichert.",
+    "exportFailed": "Export fehlgeschlagen",
+    "importStrategy": "Strategie einlesen",
+    "imported": "Eingelesen als „{id}“.",
+    "importedRenamed": "Eingelesen als „{id}“ — der Kurzname war schon vergeben, nichts wurde überschrieben.",
+    "importFailed": "Einlesen fehlgeschlagen",
+    "importNoJson": "Die Datei ist kein lesbares JSON.",
+    "templateHide": "Vorlage ausblenden",
+    "templatesHidden": "{n} Vorlage(n) ausgeblendet.",
+    "templatesRestore": "Wieder einblenden",
+    "robustTitle": "Robustheit",
+    "robustHint": "Drei Prüfungen zwischen „guter Backtest“ und „belastbar“. Sie benutzen Strategie, Symbol, Zeitraum und Parameter des Backtests darüber.",
+    "robustParam": "Parameter durchfahren",
+    "robustFrom": "von",
+    "robustTo": "bis",
+    "robustStep": "Schritt",
+    "robustSteps": "{n} Stufen",
+    "robustStability": "Parameterstabilität",
+    "robustMonteCarlo": "Monte Carlo",
+    "robustWalkForward": "Walk-forward",
+    "robustRuns": "Läufe",
+    "robustWindows": "Fenster",
+    "robustValue": "Wert",
+    "robustPlateau": "tragende Zone: {werte}",
+    "robustLossShare": "In {p} % von {n} Durchgängen endet die Strategie unter dem Startkapital.",
+    "verdict_plateau": "Plateau — auch die Nachbarn tragen",
+    "verdict_nadel": "Nadel — nur dieser eine Wert trägt",
+    "verdict_nichts_positiv": "kein Wert positiv",
+    "verdict_zu_wenig_daten": "zu wenig Daten",
+    "mcEndP5": "Endstand (schlechte 5 %)",
+    "mcEndP50": "Endstand (Mitte)",
+    "mcEndP95": "Endstand (gute 5 %)",
+    "mcDdP95": "Rückgang (95 %)",
+    "wfSegment": "Prüfabschnitt",
+    "wfChosen": "gewählt",
+    "wfOos": "auf ungesehenen Daten",
+    "wfStable": "Auswahl stabil",
+    "wfUnstable": "Auswahl springt",
+    "wfTotal": "Nur die ungesehenen Abschnitte: {trades} Trades, Erwartung {expR} R, Rendite {rendite} %, grösster Rückgang {dd} %.",
+    "offenAmEnde": "Am Ende des Zeitraums waren noch {anzahl} Position(en) offen (Wert zum Schlusskurs: {wert}). Sie sind in keiner Kennzahl enthalten — ein Trade zählt erst, wenn er zu Ende ist.",
+    "htfFilterInaktiv": "Der Trendfilter auf {tf} war eingeschaltet, hat aber NICHT gegriffen — es lagen nur {kerzen} Kerzen dieser Zeiteinheit vor. Dieses Ergebnis ist ungefiltert und nicht mit gefilterten Läufen vergleichbar.",
+    "kpiSharpe": "Sharpe (Tag, p.a.)",
+    "fundingNichtModelliert": "Finanzierungskosten sind in diesem Lauf NICHT enthalten (Annahme steht auf 0). Bei länger gehaltenen Positionen fällt das ins Gewicht — die Annahme lässt sich unter Risiko einstellen.",
+    "fundingKosten": "Finanzierung (Annahme {bps} bp je 8 h): {betrag}",
+    "hebelGekappt": "Gerechnet wurde mit Hebel {hebel} — der globale Deckel aus den Einstellungen greift, genau wie im Betrieb.",
+    "kpiReturn": "Rendite",
+    "robustMatrix": "Stabilität über Symbole und Fenster",
+    "robustMatrixHint": "„Trägt“ heisst: in mindestens 60 % der Zellen positiv UND mit positivem Median. Der Median ist bewusst kein Mittelwert — ein einzelner Ausreisser darf das Urteil nicht kippen.",
+    "robustSymbols": "Symbole für die Matrix (mit Komma getrennt)",
+    "robustCells": "{n} Zellen — {s}, je Optimierungs- und Prüffenster",
+    "mcolHolds": "positiv in",
+    "mcolMedian": "Median",
+    "mcolWorst": "schlechteste Zelle",
+    "mcolBest": "beste Zelle",
+    "mHolds": "trägt",
+    "mverdict_plateau": "Plateau — mehrere Werte tragen durchgehend",
+    "mverdict_schmal": "schmal — nur ein bis zwei Werte tragen",
+    "mverdict_uneinig": "uneinig — die Zellen widersprechen sich",
+    "mverdict_nichts_positiv": "kein Wert trägt",
+    "kpiWinsLosses": "Gewinner / Verlierer",
+    "kpiAvgWinLoss": "Ø Gewinn / Ø Verlust",
+    "regCosts": "Kosten / Fassung",
+    "regCostsHint": "Gebühr + Slippage in Basispunkten, dahinter die Fassung der Regelstrategie. Ohne beides lässt sich ein Lauf nicht nachstellen.",
+    "regDecision": "Entscheidung",
+    "regVariants": "{n} Varianten",
+    "regVariantsHint": "So viele Varianten wurden für dieses Ergebnis durchprobiert. Ein Treffer aus 30 Versuchen wiegt weniger als einer aus einem.",
+    "regNotePrompt": "Warum? (freiwillig, aber in vier Wochen Gold wert)",
+    "dec_uebernommen": "übernommen",
+    "dec_verworfen": "verworfen",
+    "dec_offen": "offen",
+    "gatesTitle": "Nachweise für den scharfen Betrieb",
+    "gatesReady": "vollständig",
+    "gatesOpen": "{n} offen",
+    "gate_lauf_mit_kosten": "Backtest mit Gebühren gerechnet",
+    "gate_stichprobe": "genug Trades für eine Aussage",
+    "gate_daten_vollstaendig": "Zeitraum lückenlos abgedeckt",
+    "gate_erwartung_positiv": "Erwartungswert positiv",
+    "gate_ohne_ausreisser": "auch ohne den grössten Gewinner positiv",
+    "gate_entscheidung_dokumentiert": "ein Lauf ausdrücklich übernommen",
+    "gate_papier_erfahrung": "genug Papier-Trades gesammelt",
+    "modeSimple": "Einfach",
+    "modeExpert": "Experte",
+    "modeSimpleHint": "Sätze und Stellschrauben — die Bausteine bleiben verborgen.",
+    "modeExpertHint": "Alle Bausteine einzeln.",
+    "rulesInWords": "Was diese Strategie tut",
+    "rulesInWordsHint": "Beschreibt, was der Interpreter aus der Eingabe gemacht hat — nicht, was gemeint war. Weicht ein Satz von deiner Absicht ab, stimmt die Regel nicht.",
+    "tradeList": "Einzelne Trades",
+    "exitTime": "Ausstieg",
+    "contextTitle": "Gehandelt nach dieser Fassung",
+    "contextParams": "Parameter damals",
+    "contextNoHistory": "Keine Parameter-Historie zu dieser Fassung — der Trade stammt aus der Zeit vor der Aufzeichnung.",
+    "ruleVersion": "Regelfassung",
+    "robustGaps": "{n} Zelle(n) mit Datenlücke — nicht mitgezählt",
+    "chartTitle": "Wo die Regel angesprungen ist",
+    "chartHint": "Kräftig = gehandelt, blass gestrichelt = erkannt und verworfen. Gerade die verworfenen zeigen, woran die Strategie scheitert.",
+    "chartSetups": "{n} Setups",
+    "chartNothingFound": "Im Zeitraum wurde nichts erkannt — Signal oder Filter greifen zu streng.",
+    "agentCategoryHint": "Trades der Strategie-Agenten — überwiegend Papier. Sie erscheinen nur hier und nie in der Gesamtbilanz.",
+    "mirrorJournal": "Ins Journal spiegeln",
+    "mirrorDone": "{n} Trades ins Journal gespiegelt ({u} waren schon da) — sichtbar unter der Pille „Agent“.",
+    "selected": "{n} gewählt",
+    "selectAll": "Alle wählen",
+    "unmirrorJournal": "Aus Journal entfernen",
+    "unmirrorDone": "{n} Trades wieder aus dem Journal entfernt.",
     "kpiMaxDd": "Max. Rückgang",
     "equityCurve": "Kapitalkurve",
     "rDistribution": "Verteilung der R-Vielfachen",
@@ -1059,7 +1191,7 @@
     "blockParams": "Einstellbare Werte",
     "blockParamsHint": "Zahlen, die du später am Formular drehen kannst — der Backtest variiert genau diese.",
     "blockIndicators": "Linien berechnen",
-    "blockIndicatorsHint": "EMA, SMA, RSI, ATR oder VWAP. Der Name wird darunter als Bezugspunkt verwendet.",
+    "blockIndicatorsHint": "EMA, SMA, RSI, ATR, MFI, VWAP, MACD, Bollinger, ADX oder Stochastik. Der Name wird darunter als Bezugspunkt verwendet.",
     "blockSignal": "Was löst aus?",
     "blockSignalHint": "Der Auslöser erzeugt ein Setup — noch keinen Einstieg.",
     "blockFilters": "Was muss dabei stimmen?",
@@ -1083,6 +1215,7 @@
     "signal_pivotLow": "Swing-Tief",
     "signal_crossUp": "Kreuzung nach oben",
     "signal_crossDown": "Kreuzung nach unten",
+    "signal_pattern": "Kerzenmuster",
     "entry_touch": "Bei Berührung",
     "entry_immediate": "Sofort",
     "tp_rr": "Festes Chance/Risiko",
@@ -1218,6 +1351,7 @@
       "minRR": "Mindest-Chance/Risiko",
       "feeBps": "Gebühr je Seite (Basispunkte)",
       "slippageBps": "Slippage je Seite (Basispunkte)",
+      "fundingBpsPer8h": "Finanzierung je 8 h (Basispunkte, 0 = nicht gerechnet)",
       "maxPriceDeviationPct": "Max. Preisabweichung zur Referenz (%)"
     },
     "op_isHammer": "ist Hammer-Kerze",
@@ -1229,6 +1363,14 @@
     "ind_macd": "MACD-Linie",
     "ind_macdSignal": "MACD-Signallinie",
     "ind_macdHist": "MACD-Histogramm",
+    "ind_bollUpper": "Bollinger oben",
+    "ind_bollMiddle": "Bollinger Mitte",
+    "ind_bollLower": "Bollinger unten",
+    "ind_adx": "ADX (Trendstärke)",
+    "ind_plusDI": "+DI (Aufwärtsdruck)",
+    "ind_minusDI": "−DI (Abwärtsdruck)",
+    "ind_stochK": "Stochastik %K",
+    "ind_stochD": "Stochastik %D",
     "macdFast": "schnell",
     "macdSlow": "langsam",
     "macdSignalP": "Signal",
@@ -1325,13 +1467,294 @@
     "read_longAufloesung": "Preis und Bestand fallen — spricht für Long-Auflösung",
     "read_neutral": "keine klare Richtung"
   },
+  "marktradar": {
+    "title": "Marktradar",
+    "cards": "Kacheln",
+    "refreshAll": "Alle aktualisieren",
+    "refresh": "Aktualisieren",
+    "enlarge": "Gross anzeigen",
+    "drag": "Zum Umsortieren ziehen",
+    "resize": "Grösse ziehen · Doppelklick setzt zurück",
+    "asOf": "Stand {zeit}",
+    "never": "noch nicht geladen",
+    "retry": "Erneut versuchen",
+    "allHidden": "Alle Kacheln ausgeblendet — über „Kacheln\" wieder einschalten.",
+    "status_idle": "Bereit",
+    "status_loading": "Lädt",
+    "status_ready": "Aktuell",
+    "status_veraltet": "Veralteter Stand",
+    "status_error": "Fehler",
+    "fng": {
+      "title": "Fear & Greed",
+      "yesterday": "Gestern",
+      "vsYesterday": "zu gestern",
+      "avg30": "30-Tage-Mittel",
+      "low": "Tief",
+      "high": "Hoch",
+      "days": "{n} Tage",
+      "source": "Quelle: alternative.me — Stimmungsindex aus Volatilität, Handelsvolumen, Umfragen und Suchtrends. Er misst Stimmung, nicht Kurse.",
+      "class_extremeFear": "Extreme Angst",
+      "class_fear": "Angst",
+      "class_neutral": "Neutral",
+      "class_greed": "Gier",
+      "class_extremeGreed": "Extreme Gier"
+    },
+    "dom": {
+      "title": "BTC-Dominanz",
+      "vs7d": "zu vor 7 Tagen",
+      "totalMcap": "Gesamtmarkt",
+      "building": "Eigene Aufzeichnung: {n} von {ziel} Tagen",
+      "noHistory": "Eigene Kurve beginnt heute · volle Historie in der Gross-Ansicht",
+      "ownSeries": "Eigener Bestand seit {seit} · {n} Tage",
+      "ownSeriesEmpty": "Die eigene Aufzeichnung beginnt heute. Die Kurve oben kommt von TradingView.",
+      "source": "Kurve und Momentwert aus dem eigenen Bestand; einmalig von CoinMarketCap eingelagert, täglich aus derselben Quelle nachgeführt. Die Dominanz sagt, welcher Anteil des Kryptomarkts auf Bitcoin entfällt — steigt sie bei fallenden Kursen, wird eher aus Altcoins in BTC geflüchtet als neues Geld investiert.",
+      "rest": "Rest",
+      "range": {
+        "d30": "30 Tage",
+        "y1": "1 Jahr",
+        "all": "Alles"
+      }
+    },
+    "funding": {
+      "title": "Funding-Raten",
+      "yours": "Deine Märkte",
+      "longsPay": "Longs zahlen",
+      "shortsPay": "Shorts zahlen",
+      "symbol": "Symbol",
+      "rate": "Rate",
+      "annual": "p.a.",
+      "volume": "24h-Umsatz",
+      "next": "Nächste",
+      "source": "Binance USDⓈ-M Perpetuals, {n} Märkte mit mindestens 20 Mio. USD 24h-Umsatz. Die Rate wird alle 8 Stunden fällig; „p.a.\" rechnet sie aufs Jahr hoch. Positiv heisst: Longs zahlen an Shorts — eine überfüllte Long-Seite. Klick auf eine Zeile setzt das Symbol der Live-Analyse."
+    },
+    "lsoi": {
+      "title": "Long/Short + Offenes Interesse",
+      "ratio": "Kontenquote",
+      "oiDelta": "OI 24h",
+      "priceDelta": "Preis 24h",
+      "source": "Binance-Kontenquote für {symbol} (Stundenraster, 48 Stunden). Gezählt werden KONTEN, nicht Kapital — ein Grosskonto wiegt so viel wie ein Kleinstkonto. Zusammen mit offenem Interesse und Preis ergibt sich die Lesart darunter."
+    },
+    "rsi": {
+      "title": "RSI-Heatmap",
+      "source": "RSI(14) nach Wilder aus geschlossenen Binance-Kerzen. Jeder Punkt ist ein Markt, von links nach rechts nach 24h-Umsatz. Die gestrichelte Linie ist der Durchschnitt — daran sieht man, ob ein Ausschlag zum Markt passt oder gegen ihn läuft. Klick auf einen Punkt setzt das Symbol der Live-Analyse.",
+      "derived": "Die Märkte kommen aus deinen Trades der letzten 90 Tage; eine eigene Liste kannst du in den Einstellungen eintragen.",
+      "top": "Nach Umsatz",
+      "own": "Meine Trades",
+      "count": "{n} Märkte",
+      "average": "Ø",
+      "zone_overbought": "Überkauft",
+      "zone_strong": "Stark",
+      "zone_neutral": "Neutral",
+      "zone_weak": "Schwach",
+      "zone_oversold": "Überverkauft",
+      "topHint": "Die umsatzstärksten Krypto-Perpetuals von Binance — wie viele, steht rechts daneben",
+      "ownHint": "Nur die Märkte, die du in den letzten 90 Tagen selbst gehandelt hast"
+    },
+    "markt": {
+      "title": "Marktübersicht",
+      "bubbles": "Blasen",
+      "tiles": "Kacheln",
+      "count": "{n} Coins",
+      "change": "Veränderung",
+      "mcap": "Marktkapitalisierung",
+      "source": "CoinGecko, Top 100 nach Marktkapitalisierung ohne Stablecoins. In der Blasenansicht ist die Fläche die STÄRKE der Bewegung — so fällt auch ein kleiner Wert auf, der 30 % macht. In der Kachelansicht ist die Fläche die Marktkapitalisierung — so sieht man, ob die Bewegung überhaupt Gewicht hat. Klick setzt das Symbol der Live-Analyse (als USDT-Paar).",
+      "area_bewegung": "Bewegung",
+      "area_mcap": "Marktkap.",
+      "area_gleich": "Gleich",
+      "areaHint": "Wonach sich die Fläche bemisst",
+      "noPerp": "Kein Binance-Perpetual — nicht als Symbol wählbar"
+    },
+    "rainbow": {
+      "title": "Regenbogen (BTC)",
+      "band_blase": "Blase, ganz sicher",
+      "band_verkaufen": "Verkaufen?",
+      "band_fomo": "FOMO überall",
+      "band_teuer": "Teuer",
+      "band_fair": "Fair bewertet",
+      "band_guenstig": "Noch günstig",
+      "band_kaufen": "Kaufgelegenheit",
+      "band_ausverkauf": "Ausverkauf",
+      "band_grund": "Grundrauschen",
+      "caveat": "Das ist eine Kurvenanpassung an die Vergangenheit, keine Prognose. Die Bänder verschieben sich mit jedem neuen Kurs — was heute „günstig\" heisst, kann in einem Jahr die Mitte sein. Als Stimmungsmesser über Jahre brauchbar, als Handelssignal nicht.",
+      "params": "ln(Preis) ≈ {a} · ln(Tage seit Genesis) + {b}, Reststreuung {s}, {n} Stützpunkte"
+    },
+    "top": "Top",
+    "liq": {
+      "title": "Liquidationen 24 h",
+      "long": "Longs liquidiert",
+      "short": "Shorts liquidiert",
+      "events": "Ereignisse",
+      "perSymbol": "Je Symbol",
+      "biggest": "Grösste Einzelereignisse",
+      "since": "Erfasst seit {zeit}.",
+      "inactive": "Liquidationen werden gerade nicht aufgezeichnet. Ohne Aufzeichnung gibt es hier nichts zu zeigen — eine freie Fremdquelle für aggregierte Liquidationen existiert nicht.",
+      "activate": "In den Einstellungen einschalten",
+      "source": "Aus der eigenen Aufzeichnung des Binance-Liquidationsstroms — keine Fremdquelle. Rot heisst: ein LONG wurde glattgestellt (Kurs fiel), grün: ein SHORT. Beträge sind Preis × Menge des einzelnen Ereignisses."
+    },
+    "regime": {
+      "title": "Deine Trades × Marktregime",
+      "b_extremeFear": "Extreme Angst",
+      "b_fear": "Angst",
+      "b_neutral": "Neutral",
+      "b_greed": "Gier",
+      "b_extremeGreed": "Extreme Gier",
+      "kurz_extremeFear": "Ext. Angst",
+      "kurz_fear": "Angst",
+      "kurz_neutral": "Neutral",
+      "kurz_greed": "Gier",
+      "kurz_extremeGreed": "Ext. Gier",
+      "phase": "Marktlage",
+      "trades": "Trades",
+      "winrate": "Trefferquote",
+      "sum": "Summe",
+      "avg": "Schnitt",
+      "pf": "Profitfaktor",
+      "longShare": "Long-Anteil",
+      "result": "Ergebnis",
+      "best": "Beste Phase: {phase} ({summe} aus {n} Trades).",
+      "leastBad": "Am wenigsten verloren in {phase}: {summe} aus {n} Trades. Alle Phasen sind im Minus.",
+      "source": "{n} eigene Trades der letzten {tage} Tage, jeder dem Fear-&-Greed-Wert seines Einstiegstags zugeordnet. Bot-Trades bleiben draussen. Gerechnet wird mit Netto-Ergebnissen nach Gebühren, wie im übrigen Journal.",
+      "missing": "Für {n} Trades gibt es keinen Stimmungswert (der Index beginnt 2018).",
+      "thin": "Phasen mit weniger als {n} Trades sind blass gezeichnet — daraus lässt sich nichts ableiten."
+    },
+    "picycle": {
+      "title": "Pi-Cycle-Top (BTC)",
+      "ma111": "111-Tage-Linie",
+      "ma350": "350-Tage-Linie × 2",
+      "distance": "Abstand der kurzen zur langen Linie",
+      "triggered": "Kreuzung ausgelöst",
+      "crossings": "Bisherige Kreuzungen",
+      "caveat": "Drei Treffer bei drei Gelegenheiten (2013, 2017, 2021) sind kein Beweis, sondern eine Beobachtung — statistisch lässt sich daraus keine Regel ableiten. Der Name kommt daher, dass 350 geteilt durch 111 ungefähr π ergibt; auch das ist Zahlenspielerei und kein Mechanismus. Als Stimmungsmesser über Jahre brauchbar, als Ausstiegssignal nicht.",
+      "alarm": "Kreuzung am {datum}: Die 111-Tage-Linie hat die doppelte 350-Tage-Linie von unten geschnitten.",
+      "vorwarnung": "Vorwarnung: Die kurze Linie ist nur noch {pct} % von der langen entfernt (Schwelle {schwelle} %)."
+    },
+    "altseason": {
+      "title": "Altcoin-Season-Index",
+      "window": "Fenster",
+      "state_altcoin": "Altcoin-Saison",
+      "state_bitcoin": "Bitcoin-Saison",
+      "state_gemischt": "Gemischt",
+      "best": "Stärkste",
+      "worst": "Schwächste",
+      "summary": "{besser} von {n} grossen Altcoins haben Bitcoin über {tage} Tage geschlagen. BTC selbst: {btc}.",
+      "source": "Gerechnet aus Binance-Tageskerzen der grössten Coins mit Perpetual-Markt, gemessen gegen BTC über dasselbe Fenster. Die Schwellen 25 und 75 stammen vom ursprünglichen Index — sie sind gesetzt, nicht hergeleitet. Klick auf eine Zeile setzt das Symbol der Live-Analyse."
+    },
+    "kalender": {
+      "title": "Wirtschaftskalender",
+      "empty": "Noch keine Termine im Bestand. Der Feed führt immer nur die laufende Woche — der erste Abruf füllt ihn.",
+      "fetchNow": "Jetzt holen",
+      "until": "Bestand reicht bis {datum}.",
+      "source": "Quelle: ForexFactory-Wochenfeed, serverseitig gesammelt. Der Feed führt nur die LAUFENDE Woche; was einmal geholt wurde, bleibt hier stehen — deshalb wächst die Vorschau erst mit der Zeit. Zeiten in deiner Zeitzone. Rot = hohe erwartete Wirkung, gelb = mittlere.",
+      "filteredOut": "Im Zeitraum liegen {n} Termine, aber keiner erreicht die eingestellte Wirkung oder das gewählte Land."
+    },
+    "news": {
+      "title": "Nachrichten",
+      "filter": "Arschlochfilter",
+      "filterHint": "Blendet Quellen aus, die du als Lärm markiert hast — und holt sie gar nicht erst ab. Welche das sind, stellst du in den Einstellungen je Quelle ein.",
+      "fetchNow": "Jetzt holen",
+      "hidden": "{n} Quelle(n) ausgeblendet",
+      "noSources": "Noch keine Quellen eingetragen. YouTube-Kanäle und RSS-Adressen kommen in die Einstellungen.",
+      "toSettings": "Zu den Einstellungen",
+      "noItems": "Keine Beiträge der letzten drei Tage.",
+      "aiMark": "KI, ungeprüft",
+      "source": "Gespeichert werden Titel, Verweis und Zeitpunkt — keine Volltextkopien. Jeder Eintrag verlinkt das Original.",
+      "noAi": "Zusammenfassungen sind noch nicht eingeschaltet: die Kachel zeigt Titel und Verweise, ohne KI-Kontingent zu verbrauchen."
+    }
+  },
   "info": {
     "buttonTitle": "Wie ist diese Ansicht zu lesen?",
+    "marktradar": {
+      "title": "Marktradar — die Lage, bevor man in die Tiefe geht",
+      "intro": "Diese Seite beantwortet eine einzige Frage: In welcher Verfassung ist der Markt gerade? Sie ist bewusst grob. Für den Blick ins Detail gibt es Bookmap, Liquidationskarte und Open Interest.",
+      "sections": [
+        {
+          "g": "Bedienung",
+          "h": "KACHELN EIN- UND AUSBLENDEN",
+          "p": "Über „Kacheln\" bestimmst du, was du siehst. Ausgeblendete Kacheln werden auch nicht geladen — sie kosten also weder Platz noch Anfragen bei den Datenquellen. Die Auswahl gilt je Gerät: am Handy kannst du eine schlanke Ansicht haben und am Rechner die volle."
+        },
+        {
+          "h": "ANORDNEN UND GRÖSSE",
+          "p": "Am Griff links oben ziehst du eine Kachel an eine andere Stelle. An der rechten unteren Ecke ziehst du sie breiter oder höher, ein Doppelklick auf die Ecke setzt sie auf die Standardgrösse zurück. Reihenfolge, Grösse und Sichtbarkeit liegen im Browser des jeweiligen Geräts — nicht in der Datenbank. Die Seite darf am Handy also anders aussehen als am Rechner, und ein neuer Browser fängt mit der Standardanordnung an."
+        },
+        {
+          "h": "GROSS ANZEIGEN",
+          "p": "Ein Klick auf das Lupensymbol öffnet dieselbe Kachel im ganzen Fenster — dieselbe Komponente mit denselben Daten, nur mit mehr Platz. Das kostet keine zusätzliche Abfrage. Gross zeigen viele Kacheln mehr als klein: längere Historie, Tabellen statt nur der Kennzahl, zusätzliche Umschalter. Unten steht immer, woher die Zahlen kommen. Esc oder ein Klick daneben schliesst wieder."
+        },
+        {
+          "h": "STAND UND PUNKTFARBE",
+          "p": "Rechts oben in jeder Kachel steht, von wann die Zahlen sind. Der Punkt daneben ist grün, wenn die Daten frisch sind, und gelb, wenn die Quelle gerade nicht erreichbar war — dann siehst du den letzten guten Stand weiter, statt eine leere Kachel. Rot heisst: es liegt überhaupt nichts vor. Der Punkt oben im Seitenkopf fasst alle Kacheln zusammen; steht er auf Gelb, ist irgendwo unten ein veralteter Stand."
+        },
+        {
+          "h": "WIE OFT NACHGELADEN WIRD",
+          "p": "Jede Kachel hat ihren eigenen Takt, passend zur Quelle: Funding, RSI und Liquidationen im Minutentakt, Marktübersicht und Long/Short alle fünf Minuten, Fear & Greed alle fünfzehn, Regenbogen und Pi-Cycle nur zweimal am Tag. Häufiger zu fragen würde dort nichts bringen, weil die Quellen selbst nur täglich oder wöchentlich neue Werte liefern. „Alle aktualisieren\" oben rechts erzwingt einen Durchlauf, das Pfeilsymbol in der Kachel lädt nur diese eine neu."
+        },
+        {
+          "h": "SYMBOL AUS DEM RADAR SETZEN",
+          "p": "In Funding, RSI-Heatmap, Marktübersicht und Altcoin-Season setzt ein Klick auf eine Zeile oder einen Punkt das Symbol der ganzen Live-Analyse. Bookmap, Liquidationskarte und Open Interest zeigen danach genau diesen Markt. Genau so ist die Seite gedacht: hier fällt etwas auf, dort schaust du es dir im Detail an."
+        },
+        {
+          "g": "Die einzelnen Kacheln",
+          "h": "FEAR & GREED",
+          "p": "Ein Stimmungsindex von alternative.me, zusammengesetzt aus Volatilität, Handelsvolumen, Umfragen und Suchtrends. Er misst Stimmung, nicht Kurse, und wechselt einmal täglich. Neben dem Wert stehen der gestrige Stand, das 30-Tage-Mittel sowie Tief und Hoch im gewählten Zeitraum. Extreme Werte sind interessanter als die Mitte — aber „extreme Angst\" ist kein Kaufsignal, sondern nur die Beschreibung eines Zustands, und der kann wochenlang extrem bleiben. Brauchbar vor allem als Grösse für die Positionsgrösse und im Vergleich mit der Regime-Kachel weiter unten."
+        },
+        {
+          "h": "BTC-DOMINANZ",
+          "p": "Welcher Anteil des gesamten Kryptomarkts auf Bitcoin entfällt. Die Kurve stammt vom TradingView-Widget, der Momentwert von CoinGecko, zusätzlich zeichnet das Journal einen eigenen Tageswert auf — diese eigene Reihe wächst erst mit der Laufzeit. Lesart: steigende Dominanz bei fallenden Kursen heisst Flucht aus Altcoins in BTC, fallende Dominanz bei steigenden Kursen heisst, dass frisches Geld in die Breite geht. Praktisch: ein Altcoin-Long gegen steigende Dominanz schwimmt gegen den Strom, auch wenn der Chart des Coins gut aussieht."
+        },
+        {
+          "h": "FUNDING-RATEN",
+          "p": "Die Ausgleichszahlung zwischen Longs und Shorts auf Binance-Perpetuals, alle acht Stunden fällig; „p.a.\" rechnet sie aufs Jahr hoch, damit man die Grössenordnung einschätzen kann. Positiv heisst: Longs zahlen an Shorts, die Long-Seite ist voll. Gezeigt werden die Extreme beider Richtungen und darunter deine eigenen Märkte. Zwei Dinge zum Mitnehmen: Funding ist ein echter Kostenposten — bei +100 % p.a. frisst das Halten deine Marge —, und ein extremer Wert sagt, wo die Menge sitzt, aber nicht wann sie umkippt."
+        },
+        {
+          "h": "LONG/SHORT + OFFENES INTERESSE",
+          "p": "Die Binance-Kontenquote für das gewählte Symbol im Stundenraster über 48 Stunden, dazu die Veränderung von offenem Interesse und Preis in 24 Stunden. Wichtig: gezählt werden KONTEN, nicht Kapital — ein Grosskonto wiegt darin so viel wie ein Kleinstkonto, die Quote ist deshalb eher ein Bild der Kleinanleger. Interessant ist die Kombination: schiefe Quote plus wachsendes offenes Interesse heisst, dass sich eine Seite auflädt — dann lohnt der Blick in die Liquidationskarte, wo die Gegenseite ihre Stopps hat."
+        },
+        {
+          "h": "RSI-HEATMAP",
+          "p": "RSI(14) nach Wilder aus geschlossenen Binance-Kerzen, ein Punkt je Markt, von links nach rechts nach Umsatz sortiert. Die gestrichelte Linie ist der Durchschnitt aller gezeigten Märkte — sie ist der eigentliche Wert dieser Kachel: ein überverkaufter Coin bei ebenfalls tiefem Durchschnitt ist nichts Eigenes, sondern nur der Markt. Auffällig ist, wer vom Durchschnitt abweicht. Umschaltbar zwischen den umsatzstärksten Märkten und den Märkten, die du in den letzten 90 Tagen selbst gehandelt hast."
+        },
+        {
+          "h": "MARKTÜBERSICHT",
+          "p": "Die Top 100 nach Marktkapitalisierung ohne Stablecoins, von CoinGecko. In der Blasenansicht bemisst sich die Fläche an der STÄRKE der Bewegung — so fällt auch ein kleiner Wert auf, der 30 % macht. In der Kachelansicht ist die Fläche die Marktkapitalisierung — so siehst du, ob die Bewegung überhaupt Gewicht hat. Die Frage, die man hier beantwortet: läuft der ganze Markt oder nur eine Ecke davon? Nicht jeder Coin hat einen Binance-Perpetual; wo keiner existiert, lässt sich das Symbol nicht setzen."
+        },
+        {
+          "h": "LIQUIDATIONEN 24 H",
+          "p": "Zwangsliquidationen der letzten 24 Stunden aus der eigenen Aufzeichnung des Binance-Datenstroms — es gibt dafür keine brauchbare freie Fremdquelle, also muss die Aufzeichnung in den Einstellungen eingeschaltet sein und läuft erst ab dann. Rot heisst, ein LONG wurde glattgestellt, grün ein SHORT. Binance schickt je Symbol höchstens ein Ereignis pro Sekunde, die Zahlen sind also eine Stichprobe und keine Vollerhebung — Verhältnisse und Ausschläge stimmen, absolute Summen sind zu niedrig."
+        },
+        {
+          "h": "ALTCOIN-SEASON-INDEX",
+          "p": "Wie viele der grossen Altcoins mit Perpetual-Markt Bitcoin über das gewählte Fenster geschlagen haben, gerechnet aus Binance-Tageskerzen. Über 75 heisst Altcoin-Saison, unter 25 Bitcoin-Saison — diese beiden Schwellen stammen aus dem ursprünglichen Index, sie sind gesetzt und nicht hergeleitet. Das Fenster verändert die Aussage stark; vergleiche im Zweifel zwei Fenster, bevor du daraus eine Lage ableitest."
+        },
+        {
+          "h": "REGENBOGEN (BTC)",
+          "p": "Eine logarithmische Kurvenanpassung an die gesamte Preisgeschichte von Bitcoin, mit Bändern von „Ausverkauf\" bis „Blase\". Wichtig zu verstehen: die Bänder verschieben sich mit jedem neuen Kurs, weil die Anpassung neu gerechnet wird — was heute „günstig\" heisst, kann in einem Jahr die Mitte sein. Über Jahre ein brauchbarer Stimmungsmesser, für eine Handelsentscheidung zu grob."
+        },
+        {
+          "h": "PI-CYCLE-TOP (BTC)",
+          "p": "Schneidet die 111-Tage-Linie die doppelte 350-Tage-Linie von unten, lag das in der Vergangenheit nahe an einem Zyklushoch. Die Kachel zeigt den Abstand beider Linien und ob eine Kreuzung ausgelöst hat. Drei Treffer bei drei Gelegenheiten sind eine Beobachtung, keine Regel — behandle das Ding als Frühwarnung für „Vorsicht mit Hebel\", nicht als Ausstiegssignal."
+        },
+        {
+          "h": "DEINE TRADES × MARKTREGIME",
+          "p": "Die einzige Kachel, die von dir handelt und nicht vom Markt: Deine eigenen Trades werden dem Fear-&-Greed-Wert ihres Einstiegstags zugeordnet, gerechnet mit Netto-Ergebnissen nach Gebühren, Bot-Trades bleiben draussen. Je Phase siehst du Anzahl, Trefferquote, Summe, Schnitt, Profitfaktor und Long-Anteil. Blass gezeichnete Phasen haben zu wenige Trades, um etwas zu bedeuten. Wenn sich über viele Trades zeigt, dass du in einer bestimmten Marktlage regelmässig verlierst, ist das die konkreteste Regel, die diese ganze Seite hergibt."
+        },
+        {
+          "g": "Im Alltag",
+          "h": "EINE ROUTINE, DIE FUNKTIONIERT",
+          "p": "Erst Nachrichten — was steht heute an. Dann der Radar — in welcher Verfassung ist der Markt und passt das zu dem, was ich vorhabe. Dann ein Symbol setzen und in Bookmap, Liquidationskarte oder Open Interest ins Detail gehen. Der umgekehrte Weg — erst der Chart, dann die Rechtfertigung — führt zuverlässig dazu, dass man die Kachel sucht, die zur schon gefassten Meinung passt."
+        },
+        {
+          "h": "WORAUS KEIN EINSTIEG WIRD",
+          "p": "Keine dieser Kacheln ist ein Signal. Sie beantworten, mit welchem Rückenwind du unterwegs bist, nicht wann du klickst. Sinnvoll eingesetzt verändern sie die Positionsgrösse, die Haltedauer und die Frage, ob man heute überhaupt gegen die Marktrichtung handelt — den Auslöser liefert weiterhin deine Strategie."
+        }
+      ],
+      "caveat": "Alle Zahlen hier stammen von fremden Anbietern, die nichts versprechen. Fällt eine Quelle aus, siehst du den letzten bekannten Stand mit Zeitangabe — prüfe im Zweifel das Datum, bevor du danach handelst. Und: extreme Werte können extrem bleiben. Stimmung, Funding und Dominanz sagen, wo der Markt steht, nicht wohin er als Nächstes geht."
+    },
     "bookmap": {
       "title": "Bookmap — Orderbuch und Handel in Echtzeit",
       "intro": "Diese Ansicht zeigt ausschliesslich GEMESSENE Daten: das tatsächliche Orderbuch von Binance und tatsächlich ausgeführte Geschäfte. Nichts davon ist gerechnet oder geschätzt.",
       "sections": [
         {
+          "g": "Was du siehst",
           "h": "DIE FARBFLÄCHEN",
           "p": "Jede waagerechte Zelle ist ruhende Liquidität — Limit-Orders, die an diesem Preis warten. Hell heisst viel. Ein durchgehendes helles Band ist eine grosse Order, die über längere Zeit liegen bleibt. Solche Bänder wirken oft wie Widerstand, weil der Preis sie erst durcharbeiten muss."
         },
@@ -1366,6 +1789,40 @@
         {
           "h": "GRENZE DER MESSUNG",
           "p": "Die gestrichelte Linie „Snapshot-Reichweite\" markiert, wie tief das abgerufene Orderbuch reicht. Darüber und darunter ist die Darstellung unvollständig, nicht leer — dort liegen durchaus Orders, wir sehen sie nur nicht."
+        },
+        {
+          "g": "Bedienung",
+          "h": "MARKT UND SYMBOL",
+          "p": "Beides steht im Seitenmenü links. Oben wählst du zwischen Futures (Perpetual) und Spot, darunter suchst du das Symbol. Die Wahl gilt für die ganze Live-Analyse: Liquidationskarte und Open Interest folgen demselben Symbol, und ein Klick im Marktradar setzt es ebenfalls. Perp und Spot haben getrennte Orderbücher — bei denselben Coins sehen sie unterschiedlich aus, das ist kein Fehler."
+        },
+        {
+          "h": "AUSSCHNITT UND TAKT",
+          "p": "„Preisband\" bestimmt, wie weit die Karte über und unter dem Mittelkurs reicht: eng zeigt das Innenleben des Orderbuchs, weit zeigt die grossen Blöcke. „ms je Spalte\" bestimmt, wie viel Zeit auf ein Pixel geht, und damit die Länge des sichtbaren Fensters — 1000 ms sind zwanzig Minuten auf 1200 Pixel, 250 ms sind fünf. Kleine Werte für die Ausführung, grosse für den Überblick."
+        },
+        {
+          "h": "FARBSKALA UND SCHWELLE",
+          "p": "Oben rechts stellst du die Farbpalette um (Viridis, Klassisch, Journal) — reine Geschmacksfrage. Wichtiger ist im Seitenmenü die Skala: „Automatisch\" passt die Helligkeit laufend an, so dass immer etwas zu sehen ist; „Fester Wert\" macht Bilder über die Zeit vergleichbar, weil dieselbe Menge immer dieselbe Farbe hat. Der kleine Knopf daneben übernimmt den aktuellen Automatikwert als Startpunkt. Die „Liquiditätsschwelle\" blendet alles unterhalb eines Anteils aus — hochdrehen, bis nur noch die Klumpen stehen bleiben."
+        },
+        {
+          "h": "PUNKTE UND ZUSATZSPUREN",
+          "p": "„Punkte zusammenfassen\" bündelt Handelspunkte zu Blasen und steuert Abstand und Grösse gleichzeitig: klein heisst viele feine Punkte und zeitlich genau, gross heisst wenige fette Blasen und gröber. Getrennt zuschaltbar sind das Volumenprofil rechts samt Spurbreite, die Liquidationsrauten (nur Futures) und die Volumensäulen unten. Wer die Aufzeichnung im Hintergrund weiterlaufen lassen will, schaltet „Im Hintergrund pausieren\" aus — das hält die Verbindung dauerhaft offen und kostet Rechenzeit."
+        },
+        {
+          "h": "PAUSE, AUTO-ACHSE, ZOOM",
+          "p": "„Pause\" friert nur die Anzeige ein, die Aufzeichnung läuft weiter — gut, um in Ruhe etwas anzuschauen, ohne dass es nach links wegwandert. „Auto-Achse\" lässt die Preisachse dem Mittelkurs folgen; ein Doppelklick im Chart setzt sie zurück, wenn du dich beim Ziehen verlaufen hast."
+        },
+        {
+          "h": "WIEDERGABE ALTER TRADES",
+          "p": "Im Journal öffnet ein Trade in der Tagesansicht das Orderbuch zum Einstiegszeitpunkt, sofern für dieses Fenster eine Aufzeichnung vorliegt. Die Ansicht schaltet dann in den Wiedergabemodus: unten fährst du mit dem Regler durch das aufgezeichnete Fenster, oben steht der Zeitraum, und „Wiedergabe verlassen\" bringt dich zurück zum Live-Bild. So lässt sich nachträglich sehen, was zum Zeitpunkt des Einstiegs tatsächlich im Buch lag."
+        },
+        {
+          "g": "Im Alltag",
+          "h": "WOFÜR MAN DIE ANSICHT NUTZT",
+          "p": "Nicht zum Finden von Ideen, sondern zum Ausführen. Die Idee kommt aus dem Chart oder der Strategie: „Ich will an dieser Marke long\". Die Bookmap sagt dann, ob an der Marke überhaupt etwas liegt, ob es hält, während dagegen gehandelt wird, und ob es abgeräumt oder zurückgezogen wird. Für Ausstiege dasselbe: ein dickes Band vor dem Ziel ist ein Grund, früher rauszugehen, statt darauf zu hoffen, dass es durchbrochen wird."
+        },
+        {
+          "h": "TYPISCHE FEHLLESUNGEN",
+          "p": "Drei, die jeder einmal macht. Erstens: ein grosses Band für eine Zusage halten — es kann in dem Moment verschwinden, in dem der Preis ankommt. Zweitens: Farbe absolut lesen, obwohl die Skala auf „Automatisch\" steht und sich laufend nachjustiert; wer Bilder vergleichen will, braucht einen festen Wert. Drittens: die Lücke nach einer Pause im Hintergrund für Ruhe im Markt halten — der graue Streifen heisst „nicht gemessen\", nicht „nichts passiert\"."
         }
       ],
       "caveat": "Was hier steht, kann sich in Sekunden ändern: Limit-Orders lassen sich jederzeit zurückziehen. Ein grosses Band ist eine Absichtserklärung, keine Zusage — es kann verschwinden, sobald der Preis näherkommt."
@@ -1375,6 +1832,7 @@
       "intro": "Diese Ansicht ist ein MODELL, keine Messung. Binance veröffentlicht keine Positionsdaten. Bekannt ist nur, wie viele Kontrakte insgesamt offen sind — daraus wird geschätzt, wo Liquidationspreise liegen dürften.",
       "sections": [
         {
+          "g": "Wie die Karte entsteht",
           "h": "WIE GERECHNET WIRD",
           "p": "Je Kerze wird die Veränderung des offenen Interesses betrachtet. Nimmt es zu, wurden Positionen eröffnet — irgendwo in der Preisspanne dieser Kerze, deshalb wird der Zuwachs gleichmässig darüber verteilt statt auf einen Punkt gesetzt. Nimmt es ab, wurde geschlossen, und der Altbestand wird anteilig ausgedünnt."
         },
@@ -1383,6 +1841,7 @@
           "p": "Ob ein Zuwachs Long oder Short war, entscheidet das aggressive Kaufvolumen der Kerze. Überwiegen Käufer, gilt der Zuwachs überwiegend als Long. Das ist eine Näherung — die tatsächliche Aufteilung kennt niemand ausser der Börse."
         },
         {
+          "g": "Was du siehst",
           "h": "VERTEILUNG",
           "p": "Die Momentaufnahme: Long-Zonen nach links, Short-Zonen nach rechts, Mittellinie beim aktuellen Kurs. Die Balkenlänge ist der Gegenwert in Dollar, linear normiert — doppelt so lang heisst doppelt so viel."
         },
@@ -1395,20 +1854,43 @@
           "p": "Sobald der Preis eine Zone durchlaufen hat, wird sie grau — und zwar rückwirkend über ihre ganze Vorgeschichte. Farbig bleibt nur, was heute noch steht und auslösen könnte. Ohne diese Umfärbung würde jede je entstandene Zone für immer leuchten und die Karte mit der Zeit unlesbar."
         },
         {
-          "h": "HEBELSTUFEN",
-          "p": "„Alle\" mischt gewichtet. Eine einzelne Stufe ist ein Was-wäre-wenn: hätten alle diesen Hebel, lägen die Zonen hier. 100x klebt eng am Kurs, 10x liegt rund zehn Prozent entfernt."
+          "g": "Bedienung",
+          "h": "ANSICHT UMSCHALTEN",
+          "p": "Die Bedienelemente sitzen im Seitenmenü links. Ganz oben schaltest du zwischen „Verteilung\" und „Verlauf\" um: die Verteilung beantwortet „wo liegt es jetzt\", der Verlauf „wie ist es entstanden und was wurde schon abgeräumt\". Für eine Entscheidung im Moment reicht die Verteilung, für das Verständnis einer Bewegung brauchst du den Verlauf."
         },
         {
-          "h": "ABDECKUNG",
-          "p": "Der wichtigste Wert in der Legende: welcher Anteil des tatsächlichen offenen Interesses überhaupt in der Karte steht. Positionen, die vor dem Zeitfenster eröffnet wurden, kennt das Modell nicht. Unter zwanzig Prozent erscheint eine Warnung — dann zeigt die Karte nur einen Bruchteil."
+          "h": "HEBELSTUFEN",
+          "p": "„Alle\" mischt gewichtet. Eine einzelne Stufe ist ein Was-wäre-wenn: hätten alle diesen Hebel, lägen die Zonen hier. 100x klebt eng am Kurs, 10x liegt rund zehn Prozent entfernt. Nützlich, wenn du wissen willst, welcher Teil eines Klumpens von den kurzfristig Gehebelten kommt und welcher von den geduldigen Positionen weiter draussen."
+        },
+        {
+          "h": "ZEITFENSTER UND SPANNE",
+          "p": "Das Zeitfenster bestimmt, wie weit zurück Positionen zugeordnet werden — es ist der Hebel mit der grössten Wirkung auf die Karte. Kurze Fenster sind aktuell, decken aber wenig ab; lange Fenster decken mehr ab, schleppen dafür Zonen mit, deren Halter längst weg sind. Die Spanne darunter setzt den gezeigten Preisbereich um den aktuellen Kurs; im Chart zoomt das Mausrad stufenlos."
+        },
+        {
+          "h": "ZONEN-SCHWELLE UND PROFIL",
+          "p": "Im Verlauf blendet die Zonen-Schwelle schwache Zonen aus — hochdrehen, bis nur die Klumpen übrig bleiben, denn genau die sind der Zweck der Karte. Die Profil-Breite steuert die Verteilungsspur am rechten Rand; auf 0 verschwindet sie und der Verlauf bekommt die ganze Fläche."
         },
         {
           "h": "MARGIN-RATE",
-          "p": "Der Anteil der Position, den die Börse als Sicherheit stehen sehen will. Bei 100x Hebel und 0,4 Prozent Rate darfst du nur 0,6 Prozent verlieren, nicht ein Prozent — deshalb liquidiert 100x schon bei minus 0,6 Prozent. Binance gibt die echten Werte nur mit API-Schlüssel heraus; 0,004 ist die BTCUSDT-Stufe 1. Bei kleinen Coins liegt sie eher bei ein bis zweieinhalb Prozent."
+          "p": "Der Anteil der Position, den die Börse als Sicherheit stehen sehen will. Bei 100x Hebel und 0,4 Prozent Rate darfst du nur 0,6 Prozent verlieren, nicht ein Prozent — deshalb liquidiert 100x schon bei minus 0,6 Prozent. Binance gibt die echten Werte nur mit API-Schlüssel heraus; 0,004 ist die BTCUSDT-Stufe 1. Bei kleinen Coins liegt sie eher bei ein bis zweieinhalb Prozent — trägst du dort den Standardwert weiter, liegen alle Zonen zu nah am Kurs."
+        },
+        {
+          "g": "Wie weit man ihr trauen darf",
+          "h": "ABDECKUNG",
+          "p": "Der wichtigste Wert in der Legende: welcher Anteil des tatsächlichen offenen Interesses überhaupt in der Karte steht. Positionen, die vor dem Zeitfenster eröffnet wurden, kennt das Modell nicht. Unter zwanzig Prozent erscheint eine Warnung — dann zeigt die Karte nur einen Bruchteil. Erste Reaktion auf eine niedrige Abdeckung ist immer: Zeitfenster vergrössern."
         },
         {
           "h": "WIE VERLÄSSLICH",
           "p": "Gemessen an 9 734 aufgezeichneten echten Liquidationen: Die Karte markiert rund dreizehn Prozent des besuchten Preisbereichs und trifft darin etwa zwanzig Prozent der tatsächlichen Ereignisse. Das ist Faktor 1,54 gegenüber Zufall — messbar besser als Raten, aber vier von fünf Liquidationen passieren woanders."
+        },
+        {
+          "g": "Im Alltag",
+          "h": "WOFÜR MAN DIE KARTE NUTZT",
+          "p": "Für zwei Fragen. Erstens: Wo liegt Treibstoff? Ein dicker Klumpen über dem Kurs ist ein Grund, eine Aufwärtsbewegung nicht zu früh zu verkaufen — wird er berührt, beschleunigt das Erzwungene die Bewegung. Zweitens: Wo lege ich meinen eigenen Stopp NICHT hin? Direkt hinter einen dicken Klumpen zu gehen heisst, mit der Menge zusammen ausgestoppt zu werden. Ein Stück dahinter kostet etwas mehr Risiko und erspart die Standardfalle."
+        },
+        {
+          "h": "WAS EIN KLUMPEN NICHT IST",
+          "p": "Kein Preisziel und kein Termin. Zonen werden oft nie berührt, andere werden in Sekunden geräumt, ohne dass die erwartete Bewegung folgt. Nach einer Räumung wird die Zone grau — wer dann noch auf „die Liquidationen darüber\" wartet, wartet auf etwas, das schon passiert ist. Und weil das Modell die Seite nur schätzt, ist die Links-Rechts-Aufteilung die unsicherste Angabe der ganzen Karte."
         }
       ],
       "caveat": "Die grösste Fiktion: Jeder Kontrakt hat zwei Seiten, und das Modell unterstellt, dass je Paar nur eine davon gehebelt ist. Cross-Margin und Nachschuss sieht es ebenfalls nicht. Lies die Karte als „wo ist viel im Vergleich zur Umgebung\", nicht als Preisziel."
@@ -1418,6 +1900,7 @@
       "intro": "Offenes Interesse ist die Summe aller offenen Kontrakte. Es sagt nicht, ob der Markt bullisch oder bärisch ist — es sagt, wie viel überhaupt auf dem Tisch liegt. Erst zusammen mit dem Preis wird es aussagekräftig.",
       "sections": [
         {
+          "g": "Was du siehst",
           "h": "OBEN: BESTAND UND PREIS",
           "p": "Die blaue Fläche ist das offene Interesse, die weisse Linie der Preis. Beide teilen sich die Zeitachse, haben aber eigene Skalen — es geht um die Richtung, nicht um absolute Höhen."
         },
@@ -1426,6 +1909,11 @@
           "p": "Die Säulen zeigen, wie viel je Zeitabschnitt dazugekommen oder verschwunden ist. Grün heisst Aufbau, rot Abbau. Der Bestand selbst driftet langsam; die Veränderung zeigt, wann tatsächlich etwas passiert ist."
         },
         {
+          "h": "DIE DREI KARTEN OBEN",
+          "p": "Über dem Chart stehen die Veränderung des offenen Interesses, die Veränderung des Preises und daraus abgeleitet die Deutung im Klartext. Das ist die Kurzfassung der vier Fälle darunter — wenn du es eilig hast, reicht diese Zeile."
+        },
+        {
+          "g": "Die vier Fälle",
           "h": "PREIS RAUF, BESTAND RAUF",
           "p": "Neue Long-Positionen tragen die Bewegung. Das gilt als belastbarer Anstieg — es fliesst frisches Geld hinein, statt dass nur alte Positionen aufgelöst werden."
         },
@@ -1442,15 +1930,67 @@
           "p": "Longs lösen sich auf. Oft am Ende einer Abwärtsbewegung zu sehen, wenn die letzten Halter aufgeben."
         },
         {
-          "h": "ZUSAMMENHANG MIT DER LIQUIDATIONSKARTE",
-          "p": "Beide Seiten nutzen dieselben Daten. Was hier als Zuwachs erscheint, wird dort auf Preise verteilt und in Liquidationszonen umgerechnet. Ein starker Aufbau ohne Preisbewegung bedeutet für die Karte: es entstehen dicht beieinanderliegende Zonen."
+          "g": "Bedienung",
+          "h": "SYMBOL UND ZEITFENSTER",
+          "p": "Das Symbol kommt aus dem Seitenmenü und gilt für die ganze Live-Analyse — wechselst du es hier, wechseln auch Bookmap und Liquidationskarte. Darunter steht das einzige weitere Bedienelement dieser Seite: das Zeitfenster. Kurze Fenster nutzen Fünf-Minuten-Auflösung und reichen rund 41 Stunden zurück, längere schalten automatisch auf gröbere Perioden hoch. Die tatsächlich erreichte Spanne steht in der Kopfzeile — sie kann kürzer sein als gewählt, wenn die Börse nicht weiter zurückliefert."
         },
         {
-          "h": "ZEITFENSTER",
-          "p": "Kurze Fenster nutzen Fünf-Minuten-Auflösung und reichen rund 41 Stunden zurück, längere schalten automatisch auf gröbere Perioden hoch. Die tatsächlich erreichte Spanne steht in der Kopfzeile."
+          "g": "Im Alltag",
+          "h": "ZUSAMMENHANG MIT DER LIQUIDATIONSKARTE",
+          "p": "Beide Seiten nutzen dieselben Daten. Was hier als Zuwachs erscheint, wird dort auf Preise verteilt und in Liquidationszonen umgerechnet. Ein starker Aufbau ohne Preisbewegung bedeutet für die Karte: es entstehen dicht beieinanderliegende Zonen — und genau die räumen sich später gemeinsam."
+        },
+        {
+          "h": "SO NUTZT MAN DIE SEITE",
+          "p": "Als Gegenprobe, nicht als Auslöser. Du hast eine Bewegung im Chart und willst wissen, ob sie getragen wird: steigt das offene Interesse mit, ist neues Geld dabei; fällt es, wird nur aufgelöst und die Bewegung endet oft dort, wo die Auflösung endet. Zweiter Anlass ist ein ruhiger Markt mit stark wachsendem Bestand — das ist die Lage, in der später ein Sprung kommt, weil sich beide Seiten aufgeladen haben."
         }
       ],
       "caveat": "Offenes Interesse ist ein Saldo. Wenn tausend Positionen öffnen und neunhundert schliessen, zeigt es nur hundert — der tatsächliche Umschlag ist immer grösser als die Kurve vermuten lässt."
+    },
+    "nachrichten": {
+      "title": "Nachrichten — was ansteht und was gesagt wurde",
+      "intro": "Drei Teile in der Reihenfolge, in der man sie morgens braucht: der Lagebericht fasst zusammen, die Termine sagen, wann es unruhig wird, und die Beiträge sind die Rohquellen zum Nachlesen. Diese Seite ersetzt keinen Newsdienst — sie sorgt dafür, dass du nicht ahnungslos in eine Zahl hineinhandelst.",
+      "sections": [
+        {
+          "g": "Die drei Teile",
+          "h": "DER LAGEBERICHT",
+          "p": "Ganz oben steht, was die KI aus den Beiträgen der letzten 36 Stunden destilliert hat: eine Einordnung der Lage und darunter die einzelnen Punkte mit Quelle, wichtige hervorgehoben. Er entsteht automatisch einmal am Mittag oder auf Knopfdruck (höchstens alle fünf Minuten). In der Fusszeile stehen die Zahl der gelesenen Beiträge, das Modell und der Verbrauch. Die Marke „KI, ungeprüft\" ist wörtlich gemeint: das ist eine Zusammenfassung, keine Faktenlage — bei allem, worauf du etwas setzt, klick auf die Originalquelle daneben."
+        },
+        {
+          "h": "DIE TERMINE",
+          "p": "Der Wirtschaftskalender, nach Tagen gruppiert. Je Termin siehst du Uhrzeit in deiner Zeitzone, Währungsraum, Wirkungsstufe sowie Prognose, Ist-Wert und den vorherigen Wert. Der gestrige Tag bleibt bewusst stehen, damit du bei bereits veröffentlichten Terminen den Ist-Wert nachlesen kannst — die Reaktion des Markts auf die letzte Zahl ist oft aufschlussreicher als die nächste Prognose."
+        },
+        {
+          "h": "DIE BEITRÄGE",
+          "p": "Die Rohquellen, neueste zuerst, jeweils mit Verweis auf das Original. Über die Quellenzeile blendest du einzelne Anbieter aus — das betrifft nur die Anzeige, geholt werden sie weiterhin; dauerhaft abschalten geht in den Einstellungen. Wie viele Meldungen geladen werden, stellst du daneben ein; der Lagebericht liest unabhängig davon immer die letzten 36 Stunden."
+        },
+        {
+          "g": "Bedienung",
+          "h": "DIE BEIDEN KNÖPFE OBEN",
+          "p": "„Beiträge holen\" fragt die Quellen sofort ab, statt auf den nächsten Durchlauf zu warten (kurz nacheinander gedrückt bremst eine Sperre — das ist Absicht, nicht ein Fehler). „Lagebericht erzeugen\" schreibt einen neuen Bericht mit dem in den Einstellungen gewählten KI-Modell; das kostet Kontingent beziehungsweise Rechenzeit, je nach Anbieter."
+        },
+        {
+          "h": "TERMINE FILTERN",
+          "p": "Drei Filter, alle je Gerät gemerkt. Der Zeitraum bestimmt, wie weit die Vorausschau reicht. Die Wirkung ist eine UNTERGRENZE: „ab mittel\" schliesst die hohen mit ein, „nur hoch\" lässt in einer typischen Woche eine Handvoll Termine übrig, „alle\" rund hundert. Bei den Währungsräumen heisst „keiner gewählt\" alle — wer hauptsächlich Krypto handelt, kommt mit USD und JPY sehr weit."
+        },
+        {
+          "h": "AUFTEILUNG UND HÖHEN",
+          "p": "Die senkrechte Trennlinie zwischen Terminen und Beiträgen lässt sich ziehen, ebenso die Unterkante beider Listen; ein Doppelklick auf den Griff setzt die Höhe zurück. Auch das liegt im Browser des Geräts — am Handy stapeln sich die Spalten ohnehin untereinander."
+        },
+        {
+          "h": "WARUM DER KALENDER MITWÄCHST",
+          "p": "Die Feed-Quelle führt immer nur die laufende Woche. Das Journal sammelt deshalb jeden gesehenen Termin dauerhaft ein, statt ihn durchzureichen. Folge: Der eigene Bestand reicht nur so weit in die Zukunft, wie die Quelle bisher umgeschaltet hat — unter der Liste steht, bis wann. Eine leere zweite Woche heisst also „noch nicht eingesammelt\", nicht „nichts los\"."
+        },
+        {
+          "g": "Im Alltag",
+          "h": "WIE MAN MIT TERMINEN UMGEHT",
+          "p": "Um einen Termin mit hoher Wirkung herum ist nicht die Richtung das Problem, sondern die Ausführung: die Spanne zwischen Kauf und Verkauf reisst auf, einzelne Kerzen holen Stopps ab, die sonst nie erreicht würden. Vernünftig sind zwei Haltungen — vorher flach sein, oder die Position so klein und den Stopp so weit haben, dass der Ausschlag dich nicht erwischt. Nachziehen kann man immer noch: was fünfzehn bis dreissig Minuten nach der Zahl übrig bleibt, ist meist die eigentliche Bewegung."
+        },
+        {
+          "h": "DER PLATZ IM ABLAUF",
+          "p": "Diese Seite kommt vor dem Marktradar. Zuerst: gibt es heute überhaupt einen Grund, vorsichtig zu sein? Dann erst: in welcher Verfassung ist der Markt, und schliesslich ins Detail bei einem Symbol. Umgekehrt liest man den Kalender erst, wenn der Stopp schon gerissen ist."
+        }
+      ],
+      "caveat": "Zusammenfassungen stammen von einem Sprachmodell und können daneben liegen oder etwas Wichtiges weglassen — vor einer Entscheidung immer die Originalquelle. Termine, Uhrzeiten und Wirkungsstufen kommen aus einem fremden Feed, werden kurzfristig verschoben und sind ebenfalls ungeprüft. Nichts davon ist Anlageberatung."
     },
     "button": "Info",
     "agent": {
@@ -1492,5 +2032,117 @@
       ],
       "caveat": "Beta: Dieser Bereich ist in Entwicklung und keine Anlageberatung. Backtest-Zahlen sind kein Versprechen — ein Ergebnis zählt erst, wenn es auch ausserhalb des Zeitraums hält, in dem es ausgesucht wurde. Lass eine Strategie lange genug auf dem Papier laufen, bevor du auch nur an Live denkst."
     }
+  },
+  "news": {
+    "fetchNow": "Beiträge holen",
+    "makeDigest": "Lagebericht erzeugen",
+    "working": "Schreibt …",
+    "asOf": "Stand {zeit}",
+    "posts": "Beiträge",
+    "calendar": "Termine",
+    "nextIn": "nächster in {zeit}",
+    "hidden": "{n} Quelle(n) ausgeblendet",
+    "forecast": "Prognose",
+    "actual": "Ist-Wert",
+    "noDigest": "Noch kein Lagebericht. Der erste entsteht automatisch um 12:00 — oder jetzt per Knopf.",
+    "noPosts": "Keine Beiträge der letzten drei Tage.",
+    "calEmpty": "Keine Termine im Zeitraum.",
+    "calFiltered": "{n} Termine im Zeitraum, aber keiner erreicht die eingestellte Wirkung oder das gewählte Land.",
+    "aiMark": "KI, ungeprüft",
+    "digestFooter": "Aus {n} Beiträgen · {v} Video(s) verwendet, davon {nv} neu analysiert · {modell} · {tok} Token",
+    "digestDone": "Fertig: {n} Beiträge, {v} Video(s), {tok} Token via {modell}",
+    "digestThrottled": "Zuletzt vor Kurzem erzeugt — höchstens alle fünf Minuten.",
+    "throttled": "Zuletzt vor Kurzem geholt.",
+    "fetched": "{gesehen} Beiträge gesehen, {neu} neu.",
+    "range": {
+      "today": "Heute",
+      "d3": "3 Tage",
+      "w1": "1 Woche",
+      "w2": "2 Wochen",
+      "m1": "1 Monat"
+    },
+    "rangeHint": "Wie weit die Vorausschau reicht. Der gestrige Tag bleibt immer sichtbar, damit du bei bereits veröffentlichten Terminen den Ist-Wert siehst.",
+    "stockUntil": "Der eigene Bestand reicht bis {datum}. Die Quelle führt immer nur die laufende Woche — was danach kommt, sammelt sich erst an, sobald sie umschaltet.",
+    "impact": {
+      "high": "nur hoch",
+      "medium": "ab mittel",
+      "all": "alle"
+    },
+    "impactHint": "Wirkung laut Quelle. „ab mittel\" schliesst hohe mit ein. In dieser Woche: nur hoch 8, ab mittel 21, alle 96 Termine.",
+    "countryHint": "Währungsräume an- und abwählen. Ist keiner gewählt, werden alle gezeigt.",
+    "previous": "Vorher",
+    "resizeHint": "Höhe ziehen · Doppelklick setzt zurück",
+    "splitHint": "Spaltenbreite ziehen",
+    "sourceHint": "Quelle ein- oder ausblenden. Geholt wird sie weiterhin — dauerhaft abschalten geht in den Einstellungen.",
+    "allHidden": "Alle Quellen ausgeblendet.",
+    "countHint": "Wie viele Meldungen geladen werden. Betrifft nur die Liste — der Lagebericht liest immer die letzten 36 Stunden.",
+    "showing": "{n} von {gesamt} sichtbar",
+    "briefing": "Lagebericht",
+    "important": "wichtig",
+    "noEvidence": "Ohne Einzelbeleg — laut Bericht aus: {quelle}",
+    "evidence": "Beiträge, auf denen dieser Punkt beruht ({n})",
+    "evidenceSource": "Verweise führen zum Original",
+    "evidenceDerived": "Beiträge von {quelle} in diesem Bericht",
+    "delete": "Bericht verwerfen",
+    "deleteConfirm": "Diesen Lagebericht löschen? Die Beiträge und die bereits bezahlten Videozusammenfassungen bleiben erhalten.",
+    "deleted": "Bericht gelöscht ({n} verbleiben).",
+    "videosHeader": "Verwendete Videos",
+    "noVideos": "Keine Videos analysiert — entweder war keins im Zeitfenster, oder die Videoanalyse ist ausgeschaltet.",
+    "videoReused": "früher bezahlt"
+  },
+  "rangliste": {
+    "title": "Coin-Rangliste",
+    "hint": "Eine fertige Strategie über viele Münzen laufen lassen — und sehen, auf welchen sie trägt. Der Zeitraum wird geteilt: die erste Hälfte bestimmt den Rang, die zweite prüft ihn auf Daten, die bei der Auswahl niemand gesehen hat.",
+    "strategie": "Strategie",
+    "zeitraum": "Zeitraum (Tage)",
+    "zeiteinheit": "Zeiteinheit",
+    "vorschlag": "Vorschlag",
+    "gesperrt": "gesperrt",
+    "knapp": "knapp",
+    "universum": "Coin-Universum",
+    "artBitunix": "Alle auf Bitunix handelbaren",
+    "artTop": "Top-N nach Marktkapitalisierung",
+    "artManuell": "Eigene Liste",
+    "artKi": "KI-Vorschlag",
+    "quellen": "{handelbar} Paare kannst du auf Bitunix per API handeln. {testbar} davon liefert Binance als Kerzenhistorie. {beides} sind beides — nur die lassen sich testen. {nurHandelbar} sind handelbar, aber ohne Historie nicht backtestbar; {nurTestbar} haben Historie, sind auf Bitunix aber nicht handelbar.",
+    "nurHandelbar": "Nur Coins, die ich auch handeln kann",
+    "anzahl": "Anzahl",
+    "symbole": "Symbole (kommagetrennt)",
+    "pruefen": "Universum prüfen",
+    "gefunden": "{n} Coins laufen mit.",
+    "ausgeschlossen": "Nicht dabei: {ohneHistorie} ohne Binance-Historie, {ohneMarkt} ohne Binance-Markt, {nichtHandelbar} auf Bitunix nicht handelbar.",
+    "aufwand": "Geschätzt {abrufe} Abrufe bei Binance, rund {minuten} Minuten.",
+    "starten": "Rangliste starten",
+    "abbrechen": "Abbrechen",
+    "fortschritt": "Coin {fertig} von {gesamt}",
+    "st_wartet": "wartet",
+    "st_laeuft": "läuft",
+    "st_pausiert": "pausiert (Binance-Grenze)",
+    "st_fertig": "fertig",
+    "st_abgebrochen": "abgebrochen",
+    "st_fehler": "Fehler",
+    "beurteilung": "Was die Rangliste wert ist",
+    "rang": "Rang",
+    "symbol": "Symbol",
+    "trades": "Trades",
+    "ohneTop": "ohne Bestes",
+    "erwartung": "Erwartung",
+    "maxDd": "max. Rückgang",
+    "pruefhaelfte": "Prüfhälfte",
+    "bestaetigt": "bestätigt",
+    "duenn": "zu wenige Trades in der Prüfhälfte",
+    "gekippt": "hielt nicht",
+    "k_belastbar": "Belastbar",
+    "k_zu_wenig_trades": "Zu wenige Trades",
+    "k_datenluecke": "Datenlücke",
+    "k_ohne_daten": "Keine Daten",
+    "k_fehler": "Fehler",
+    "unterTrennlinie": "Diese Coins bekommen keinen Rang — sie sind aber nicht null, sondern nur nicht belastbar.",
+    "keineLaeufe": "Noch keine Rangliste gerechnet.",
+    "laeufe": "Frühere Läufe",
+    "loeschen": "Löschen",
+    "kiThema": "Thema (z.B. RWA, Meme, KI-Coins)",
+    "kiVorschlagen": "Liste vorschlagen lassen",
+    "kiVerworfen": "{n} von {gesamt} Vorschlägen sind nicht testbar und wurden entfernt."
   }
 }

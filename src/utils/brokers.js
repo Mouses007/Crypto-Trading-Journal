@@ -1,18 +1,20 @@
-
 import { timeZoneTrade } from "../stores/ui.js"
 import { tradesData } from "../stores/trades.js"
 import { selectedBroker } from "../stores/filters.js"
 
 /* MODULES */
-import dayjs from './dayjs-setup.js'
 import Papa from 'papaparse'
 import i18n from '../i18n'
+import { parseBitunixRows, parseBitgetRows } from './brokers-kern.js'
 
 /**
  * Parse Bitunix CSV export.
  * CSV Format: Date (UTC),Label,Outgoing Asset,Outgoing Amount,Incoming Asset,Incoming Amount,Fee Asset,Fee Amount,Trx. ID,Comment
  * Only processes "Futures Profit" and "Futures Loss" rows.
  * Each row becomes a completed trade entry in tradesData.
+ *
+ * Die Zeilen-Logik liegt in `brokers-kern.js` (dort testbar, ohne Vue-Globals);
+ * dieser Wrapper macht nur noch CSV-Parsing und das Befüllen von tradesData.
  */
 export async function useBrokerBitunix(csvInput) {
     return new Promise((resolve, reject) => {
@@ -26,54 +28,12 @@ export async function useBrokerBitunix(csvInput) {
 
             tradesData.length = 0
 
-            const relevantRows = parsed.data.filter(row => {
-                const label = (row.Label || '').trim()
-                return label === 'Futures Profit' || label === 'Futures Loss'
-            })
-
-            if (relevantRows.length === 0) {
+            const { trades } = parseBitunixRows(parsed.data)
+            if (trades.length === 0) {
                 reject("No 'Futures Profit' or 'Futures Loss' rows found in CSV")
                 return
             }
-
-            relevantRows.forEach(row => {
-                const label = row.Label.trim()
-                const isProfit = label === 'Futures Profit'
-
-                // Bitunix CSV amounts are already NET (after fees).
-                // "Incoming Amount" for profits = net profit received.
-                // "Outgoing Amount" for losses = net loss paid (including fees).
-                let netPL = 0
-                if (isProfit) {
-                    netPL = parseFloat(row['Incoming Amount'] || 0)
-                } else {
-                    netPL = -Math.abs(parseFloat(row['Outgoing Amount'] || 0))
-                }
-
-                const fee = Math.abs(parseFloat(row['Fee Amount'] || 0))
-                // Reconstruct true gross by adding fees back
-                const grossPL = netPL + fee
-
-                // Extract symbol from Comment if available
-                const comment = (row.Comment || '').trim()
-                const symbol = comment || 'FUTURES'
-
-                // Parse date - CSV dates are in UTC
-                const dateStr = (row['Date (UTC)'] || '').trim()
-
-                tradesData.push({
-                    Account: 'bitunix',
-                    DateUTC: dateStr,
-                    Symbol: symbol,
-                    Type: 'futures',
-                    GrossProceeds: grossPL,
-                    Fee: fee,
-                    NetProceeds: netPL,
-                    TrxId: (row['Trx. ID'] || '').trim(),
-                    IncomingAsset: (row['Incoming Asset'] || '').trim(),
-                    OutgoingAsset: (row['Outgoing Asset'] || '').trim(),
-                })
-            })
+            tradesData.push(...trades)
 
             console.log(" -> Parsed " + tradesData.length + " Bitunix trades")
             resolve()
@@ -106,87 +66,21 @@ export async function useBrokerBitget(csvInput) {
                 return
             }
 
-            // Detect columns — Bitget CSV can have various headers
-            const headers = Object.keys(parsed.data[0])
-            const findCol = (...names) => headers.find(h => names.some(n => h.toLowerCase().includes(n.toLowerCase())))
+            const { trades, unbekannteSides } = parseBitgetRows(parsed.data)
 
-            const colSymbol = findCol('symbol', 'Symbol', 'Pair')
-            const colSide = findCol('holdSide', 'side', 'Side', 'Direction')
-            const colOpenPrice = findCol('openAvgPrice', 'Open Price', 'Entry Price', 'openPrice', 'Avg Open')
-            const colClosePrice = findCol('closeAvgPrice', 'Close Price', 'Exit Price', 'closePrice', 'Avg Close')
-            const colPnl = findCol('pnl', 'PnL', 'Profit', 'realizedPnl', 'Realized PnL')
-            const colNetProfit = findCol('netProfit', 'Net Profit', 'Net PnL')
-            const colOpenFee = findCol('openFee', 'Open Fee')
-            const colCloseFee = findCol('closeFee', 'Close Fee')
-            const colFunding = findCol('totalFunding', 'Funding', 'funding')
-            const colFee = findCol('Fee', 'fee', 'Fee Amount')
-            const colQuantity = findCol('closeTotalPos', 'openTotalPos', 'Quantity', 'Size', 'qty')
-            const colTime = findCol('uTime', 'cTime', 'Time', 'Date', 'Close Time', 'closeTime')
-            const colOpenTime = findCol('cTime', 'openTime', 'Open Time')
-            const colTrxId = findCol('positionId', 'Position ID', 'TradeId', 'Trx')
-
-            parsed.data.forEach(row => {
-                const grossPL = parseFloat(row[colPnl] || 0)
-                if (grossPL === 0 && !row[colPnl]) return // skip empty rows
-
-                // commission = NUR Trading-Fee (Open + Close). Funding NICHT
-                // einrechnen — identisch zur API-Import- und Bitunix-Semantik.
-                // Funding ist (sofern vorhanden) bereits in netProfit enthalten.
-                let tradingFee = 0
-                let fundingFee = 0
-                if (colOpenFee && colCloseFee) {
-                    tradingFee = Math.abs(parseFloat(row[colOpenFee] || 0)) + Math.abs(parseFloat(row[colCloseFee] || 0))
-                    if (colFunding) fundingFee = parseFloat(row[colFunding] || 0)  // signiert
-                } else if (colFee) {
-                    tradingFee = Math.abs(parseFloat(row[colFee] || 0))
-                }
-                const fee = tradingFee
-
-                // netProfit ist der echte Wallet-Delta (auch 0 = gueltiges Break-even).
-                const hasNet = colNetProfit && row[colNetProfit] !== undefined && row[colNetProfit] !== ''
-                const netPL = hasNet ? parseFloat(row[colNetProfit]) : (grossPL - tradingFee + fundingFee)
-
-                // Parse side
-                const rawSide = (row[colSide] || '').toLowerCase()
-                let side = 'SS' // default short
-                if (rawSide === 'long' || rawSide === 'buy' || rawSide === 'b') side = 'B'
-
-                // Parse dates — could be timestamp (ms) or date string
-                let dateStr = row[colTime] || ''
-                if (/^\d{13}$/.test(dateStr)) {
-                    dateStr = dayjs(parseInt(dateStr)).utc().format('YYYY-MM-DD HH:mm:ss')
-                }
-                let entryDateStr = row[colOpenTime] || dateStr
-                if (/^\d{13}$/.test(entryDateStr)) {
-                    entryDateStr = dayjs(parseInt(entryDateStr)).utc().format('YYYY-MM-DD HH:mm:ss')
-                }
-
-                tradesData.push({
-                    Account: 'bitget',
-                    Broker: 'bitget',
-                    DateUTC: dateStr,
-                    EntryDateUTC: entryDateStr,
-                    Symbol: row[colSymbol] || 'FUTURES',
-                    Type: 'futures',
-                    GrossProceeds: grossPL,
-                    Fee: fee,
-                    NetProceeds: netPL,
-                    TrxId: row[colTrxId] || '',
-                    Side: side,
-                    EntryPrice: parseFloat(row[colOpenPrice] || 0),
-                    ClosePrice: parseFloat(row[colClosePrice] || 0),
-                    Quantity: parseFloat(row[colQuantity] || 1),
-                    IncomingAsset: 'USDT',
-                    OutgoingAsset: 'USDT',
-                })
-            })
-
-            if (tradesData.length === 0) {
+            if (trades.length === 0) {
                 reject(i18n.global.t('addTrades.noValidBitgetTrades'))
                 return
             }
+            tradesData.push(...trades)
 
             console.log(" -> Parsed " + tradesData.length + " Bitget trades")
+            if (unbekannteSides > 0) {
+                // Sichtbar machen statt still raten: der Import läuft durch,
+                // aber der Nutzer erfährt, dass die Richtung geraten wurde.
+                console.warn(` -> ${unbekannteSides} Zeile(n) ohne erkennbare Richtung — als Short importiert`)
+                alert(`${unbekannteSides} von ${tradesData.length} Zeilen hatten keine erkennbare Richtung (Long/Short) und wurden als Short importiert. Bitte Long/Short-Statistik prüfen.`)
+            }
             resolve()
         } catch (error) {
             reject("Error parsing Bitget CSV: " + error.message)

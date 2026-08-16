@@ -25,9 +25,15 @@ export const PAGES = [
     { id: 'setup', mode: 'journal', path: '/setup', icon: 'uil uil-rocket', titleKey: 'nav.setup', group: null },
 
     // ── Live-Analyse ────────────────────────────────────────
+    // Reihenfolge nach Nutzerwunsch: vom Überblick ins Detail. Der Marktradar
+    // steht vorn und ist zugleich die Startseite des Modus (siehe MODES unten) —
+    // er beantwortet in einem Blick, in welcher Lage man sitzt. Danach die
+    // Nachrichten, dann die Werkzeuge, die einen einzelnen Markt sezieren.
+    { id: 'marktradar', mode: 'live', path: '/marktradar', icon: 'uil uil-dashboard', titleKey: 'nav.marktradar', group: 'liveAnalyze' },
+    { id: 'nachrichten', mode: 'live', path: '/nachrichten', icon: 'uil uil-newspaper', titleKey: 'nav.nachrichten', group: 'liveAnalyze' },
+    { id: 'openinterest', mode: 'live', path: '/openinterest', icon: 'uil uil-layer-group', titleKey: 'nav.openInterest', group: 'liveAnalyze' },
     { id: 'liquidity', mode: 'live', path: '/liquidity', icon: 'uil uil-chart-line', titleKey: 'nav.liquidity', group: 'liveAnalyze' },
     { id: 'liquidations', mode: 'live', path: '/liquidations', icon: 'uil uil-fire', titleKey: 'nav.liquidations', group: 'liveAnalyze' },
-    { id: 'openinterest', mode: 'live', path: '/openinterest', icon: 'uil uil-layer-group', titleKey: 'nav.openInterest', group: 'liveAnalyze' },
 
     // ── Agent-Trading ───────────────────────────────────────
     { id: 'agentStrategies', mode: 'agent', path: '/agent/strategies', icon: 'uil uil-processor', titleKey: 'nav.agentStrategies', group: 'agentRun' },
@@ -36,6 +42,9 @@ export const PAGES = [
     { id: 'agentBuilder', mode: 'agent', path: '/agent/builder', icon: 'uil uil-file-alt', titleKey: 'nav.agentBuilder', group: 'agentBuild' },
     { id: 'agentPerformance', mode: 'agent', path: '/agent/performance', icon: 'uil uil-chart-pie', titleKey: 'nav.agentPerformance', group: 'agentReview' },
     { id: 'agentLab', mode: 'agent', path: '/agent/lab', icon: 'uil uil-flask', titleKey: 'nav.agentLab', group: 'agentReview' },
+    // Die Coin-Rangliste ist eine Auswertung, kein Labor: sie testet eine
+    // fertige Strategie gegen viele Münzen, statt an ihr zu schrauben.
+    { id: 'coinRangliste', mode: 'agent', path: '/agent/rangliste', icon: 'uil uil-list-ol-alt', titleKey: 'nav.coinRangliste', group: 'agentReview' },
 
     // ── modusübergreifend ───────────────────────────────────
     { id: 'settings', mode: null, path: '/settings', icon: 'uil uil-sliders-v-alt', titleKey: 'nav.settings', group: null },
@@ -47,7 +56,7 @@ export const PAGES = [
  */
 export const MODES = [
     { id: 'journal', titleKey: 'modes.journal', icon: 'uil uil-book-alt', home: '/dashboard', enabled: true },
-    { id: 'live', titleKey: 'modes.live', icon: 'uil uil-chart-line', home: '/liquidity', enabled: true },
+    { id: 'live', titleKey: 'modes.live', icon: 'uil uil-chart-line', home: '/marktradar', enabled: true },
     // Freigegeben als Beta. Der Modus handelt selbstständig, deshalb warnt
     // `BetaHinweis.vue` auf jeder seiner Seiten, und der scharfe Betrieb hängt
     // zusätzlich an der dreifachen Freigabekette (globaler Schalter, Freigabe je

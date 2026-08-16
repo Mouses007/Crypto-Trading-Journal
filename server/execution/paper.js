@@ -130,7 +130,7 @@ function zuPosition(row) {
  *
  * @returns {Promise<Array>} die dabei geschlossenen Trades
  */
-export async function stepPaperPositions({ instance, symbol, timeframe = '', candles, costs, breakEvenAtR, maxHoldMs = 0, partialTpR = 0, partialTpPct = 0 }) {
+export async function stepPaperPositions({ instance, symbol, timeframe = '', candles, costs, breakEvenAtR, maxHoldMs = 0, partialTpR = 0, partialTpPct = 0, maintenanceMarginPct }) {
     const knex = getKnex()
     // NUR Papier und Schatten. Eine Live-Position hier fortzuschreiben würde
     // sie in der DB schliessen, während sie an der Börse weiterläuft — der
@@ -155,7 +155,7 @@ export async function stepPaperPositions({ instance, symbol, timeframe = '', can
 
         let exit = null
         for (const k of neue) {
-            const r = stepCandle(pos, k, { breakEvenAtR, maxHoldMs, partialTpR, partialTpPct, costs })
+            const r = stepCandle(pos, k, { breakEvenAtR, maxHoldMs, partialTpR, partialTpPct, maintenanceMarginPct, costs })
             if (r.exit) { exit = r.exit; break }
         }
 

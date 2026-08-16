@@ -184,7 +184,10 @@ export async function dbDeleteWhere(className, options = {}) {
  */
 export async function dbFindTradeIdByPositionId(dateUnix, positionId) {
     try {
-        const rows = await dbFind('trades', { equalTo: { td: dateUnix } })
+        // `td` ist ein Feld INNERHALB der Trade-Objekte, keine Tabellenspalte —
+        // der Server verwarf den Filter still und lieferte die ganze Tabelle.
+        // Die Tagesspalte heisst dateUnix.
+        const rows = await dbFind('trades', { equalTo: { dateUnix } })
         for (const row of rows) {
             const trades = row.trades || []
             const match = trades.find(t => t.id && String(t.id).endsWith('_' + positionId))

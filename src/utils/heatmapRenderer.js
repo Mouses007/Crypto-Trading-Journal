@@ -15,8 +15,10 @@
 
 import { decimalsFor } from '../../shared/priceBins.js'
 
-export const AXIS_W = 66      // Preisachse rechts
-export const AXIS_H = 22      // Zeitachse unten
+// Breiter als früher (66), weil die Achsenschrift von 10 auf 12 px gewachsen
+// ist: „112345.67" braucht bei 12 px rund 62 px plus Innenabstand.
+export const AXIS_W = 78      // Preisachse rechts
+export const AXIS_H = 24      // Zeitachse unten
 export const VOLUME_H = 56    // Spur mit gehandeltem Volumen je Zeitabschnitt
 export const PROFILE_W = 74   // Vorgabebreite der Volumenprofil-Spur
 // Rasterbreite der Handelspunkte in Pixeln (über setDotStep einstellbar).
@@ -29,7 +31,7 @@ const DOT_STEP_DEFAULT = 11
 
 const COLORS = {
     grid: 'rgba(255,255,255,0.10)',
-    axisText: 'rgba(255,255,255,0.60)',
+    axisText: 'rgba(255,255,255,0.78)',
     midLine: 'rgba(255,255,255,0.75)',
     accent: '#01B4FF',
     // Handelsblasen: deckend statt additiv überblendet, dazu ein dunkler Rand.
@@ -110,6 +112,7 @@ export class HeatmapRenderer {
         this.plotW = 0
         this.plotH = 0
         this.profileW = 0
+        this.axisW = AXIS_W
         this.axisX = 0
         this.cols = 0
 
@@ -185,9 +188,6 @@ export class HeatmapRenderer {
      */
     setProfileVisible(visible) {
         this.profileVisible = !!visible
-        const wanted = visible ? this.profileWanted : 0
-        if (this.profileW === wanted) return
-        this.profileW = wanted
         if (this.cssW) this.resize(this.cssW, this.cssH)
     }
 
@@ -211,8 +211,6 @@ export class HeatmapRenderer {
     setProfileWidth(px) {
         this.profileWanted = Math.max(40, Math.min(320, Math.round(Number(px)) || PROFILE_W))
         if (!this.profileVisible) return
-        if (this.profileW === this.profileWanted) return
-        this.profileW = this.profileWanted
         if (this.cssW) this.resize(this.cssW, this.cssH)
     }
 
@@ -225,7 +223,14 @@ export class HeatmapRenderer {
         const dpr = Math.min(window.devicePixelRatio || 1, 2)
         this.cssW = cssW
         this.cssH = cssH
-        this.plotW = Math.max(50, Math.floor(cssW - AXIS_W - this.profileW))
+        // Auf dem Handy sind Achse und Profilspur zusammen breiter als die
+        // Heatmap selbst. Beide werden deshalb an der verfügbaren Breite
+        // gemessen statt an festen Vorgaben — die Spalten bleiben lesbar.
+        this.axisW = cssW < 520 ? 64 : AXIS_W
+        this.profileW = this.profileVisible
+            ? Math.max(36, Math.min(this.profileWanted, Math.floor(cssW * 0.22)))
+            : 0
+        this.plotW = Math.max(50, Math.floor(cssW - this.axisW - this.profileW))
         this.plotH = Math.max(50, Math.floor(cssH - AXIS_H - this.volumeH))
         this.axisX = this.plotW + this.profileW
         this.cols = this.plotW
@@ -496,7 +501,7 @@ export class HeatmapRenderer {
             // Die Beschriftung liegt über der Heatmap und war ohne Unterlage
             // je nach Untergrund kaum zu lesen — dunkles Plättchen dahinter.
             ctx.setLineDash([])
-            ctx.font = '11px system-ui, sans-serif'
+            ctx.font = '12px system-ui, sans-serif'
             ctx.textAlign = 'left'
             ctx.textBaseline = 'bottom'
             const text = this.labels.coverage
@@ -565,7 +570,7 @@ export class HeatmapRenderer {
         ctx.lineWidth = 1
         ctx.strokeRect(x + 0.5, y + 0.5, w, h)
 
-        ctx.font = '9px system-ui, sans-serif'
+        ctx.font = '11px system-ui, sans-serif'
         ctx.fillStyle = COLORS.axisText
         ctx.textAlign = 'left'
         ctx.textBaseline = 'middle'
@@ -634,7 +639,7 @@ export class HeatmapRenderer {
         }
         // Beschriftung, damit klar ist, dass hier gehandeltes Volumen steht —
         // nicht ruhende Liquidität wie in der Heatmap
-        ctx.font = '9px system-ui, sans-serif'
+        ctx.font = '11px system-ui, sans-serif'
         ctx.fillStyle = COLORS.axisText
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
@@ -643,12 +648,12 @@ export class HeatmapRenderer {
 
     _drawAxes(ctx, { ring, view, bucketSize, rowH, visible, frameMs, tRight, formatTime, head }) {
         const decimals = decimalsFor(bucketSize)
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.textBaseline = 'middle'
 
         // Preisachse rechts
         ctx.fillStyle = 'rgba(0,0,0,0.35)'
-        ctx.fillRect(this.axisX, 0, AXIS_W, this.plotH)
+        ctx.fillRect(this.axisX, 0, this.axisW, this.plotH)
         const targetLines = Math.max(2, Math.floor(this.plotH / 46))
         const step = Math.max(1, Math.round((view.hi - view.lo) / targetLines))
         ctx.textAlign = 'left'
@@ -670,7 +675,7 @@ export class HeatmapRenderer {
             const y = (view.hi - mid / bucketSize - 0.5) * rowH
             if (y > 0 && y < this.plotH) {
                 ctx.fillStyle = COLORS.accent
-                ctx.fillRect(this.axisX, y - 8, AXIS_W, 16)
+                ctx.fillRect(this.axisX, y - 8, this.axisW, 16)
                 ctx.fillStyle = '#001018'
                 ctx.fillText(mid.toFixed(decimals), this.axisX + 5, y)
             }
@@ -749,9 +754,9 @@ export class HeatmapRenderer {
             ].filter(Boolean)
             : [price.toFixed(decimals), this.labels.noRecording]
 
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         const boxW = Math.max(...lines.map(l => ctx.measureText(l).width)) + 14
-        const boxH = lines.length * 13 + 8
+        const boxH = lines.length * 15 + 8
         const bx = Math.min(x + 12, this.plotW - boxW)
         const by = Math.min(y + 12, this.plotH - boxH)
         ctx.fillStyle = COLORS.tooltipBg
@@ -809,7 +814,7 @@ export class HeatmapRenderer {
             ctx.fillRect(x - breite / 2, y0 + h - bh, breite, bh)
         }
 
-        ctx.font = '9px system-ui, sans-serif'
+        ctx.font = '11px system-ui, sans-serif'
         ctx.fillStyle = COLORS.axisText
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
@@ -849,11 +854,11 @@ export class HeatmapRenderer {
             `${this.labels.buyerShare} ${anteil} %`,
         ].filter(Boolean)
 
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.textAlign = 'left'
         ctx.textBaseline = 'alphabetic'
         const boxW = Math.max(...lines.map(l => ctx.measureText(l).width)) + 14
-        const boxH = lines.length * 13 + 8
+        const boxH = lines.length * 15 + 8
         // Über der Spur aufklappen — darunter ist die Zeitachse
         const tx = Math.max(4, Math.min(x + 12, this.plotW - boxW))
         const ty = Math.max(4, this.plotH - boxH - 4)
@@ -894,11 +899,11 @@ export class HeatmapRenderer {
             `${this.labels.sum} ${formatQty(kauf + verkauf)} ${einheit}${wert(kauf + verkauf)}`,
         ]
 
-        ctx.font = '10px system-ui, sans-serif'
+        ctx.font = '12px system-ui, sans-serif'
         ctx.textAlign = 'left'
         ctx.textBaseline = 'alphabetic'
         const boxW = Math.max(...lines.map(l => ctx.measureText(l).width)) + 14
-        const boxH = lines.length * 13 + 8
+        const boxH = lines.length * 15 + 8
         // Nach links aufklappen — rechts ist die Preisachse im Weg
         const bx = Math.max(4, Math.min(x - boxW - 10, this.cssW - boxW - 4))
         const by = Math.min(Math.max(0, y - boxH / 2), this.plotH - boxH)

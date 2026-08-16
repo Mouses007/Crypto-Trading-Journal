@@ -215,9 +215,18 @@ export function setupRuleBuilderRoutes(app) {
             }
             // Die bereits erarbeitete Beschreibung mitgeben, sonst fängt jede
             // Folgefrage („mach das Ziel auf 3R") wieder bei null an.
-            const bisher = parseJson(vorhanden?.spec, null)
+            //
+            // Aus dem Editor kommt der aktuelle Stand direkt mit: dort ändert
+            // der Nutzer Felder von Hand, und die Fassung im Entwurf wäre dann
+            // veraltet. Das Modell würde seine eigene alte Beschreibung
+            // fortschreiben und die Handänderungen stillschweigend zurücknehmen.
+            const ausEditor = req.body?.rules && typeof req.body.rules === 'object' ? req.body.rules : null
+            const bisher = ausEditor || parseJson(vorhanden?.spec, null)
             if (bisher) {
-                teile.push('Bisher erarbeitete Beschreibung:\n' + JSON.stringify(bisher))
+                teile.push((ausEditor
+                    ? 'Aktueller Stand im Editor (kann vom Nutzer von Hand geändert worden sein — '
+                        + 'darauf aufbauen, nicht neu anfangen):\n'
+                    : 'Bisher erarbeitete Beschreibung:\n') + JSON.stringify(bisher))
             }
             for (const t of textDateien) {
                 const inhalt = Buffer.from(t.base64, 'base64').toString('utf8').slice(0, 60000)

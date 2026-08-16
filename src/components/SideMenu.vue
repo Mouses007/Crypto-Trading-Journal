@@ -244,11 +244,18 @@ function goToDashboard() {
                     <!-- Futures immer sichtbar; Bot nur bei Börsen mit Bot-API (Pionex).
                          Auf der Konten-Seite ist keine Trading-Kategorie aktiv. -->
                     <button type="button"
-                        :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory !== 'bot') ? 'active' : '']"
+                        :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory !== 'bot' && selectedTradeCategory !== 'agent') ? 'active' : '']"
                         @click="setCategory('futures')">Futures</button>
                     <button v-if="BOT_BROKERS.includes(selectedBroker)" type="button"
                         :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory === 'bot') ? 'active' : '']"
                         @click="setCategory('bot')">Bot</button>
+                    <!-- Agent: eigene Pille, weil seine Trades zum grossen Teil
+                         Papier sind. Sie erscheinen NUR hier — nie unter Futures
+                         und nie in der Gesamtbilanz. -->
+                    <button type="button"
+                        :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory === 'agent') ? 'active' : '']"
+                        :title="t('strategies.agentCategoryHint')"
+                        @click="setCategory('agent')">Agent</button>
                 </div>
                 <SidebarFilters />
             </div>

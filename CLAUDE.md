@@ -30,16 +30,29 @@ npm install          # Install dependencies
 npm run build        # Vite production build (output to dist/)
 npm start            # Start production server (node index.mjs)
 npm run dev          # Start dev server with Vite HMR
+npm run test:self    # Run all self-tests (scripts/run-selftests.mjs)
 ```
 
-There are **no tests, no linter, and no CI/CD pipeline** configured.
+There is **no test framework, no linter, and no CI/CD pipeline** configured.
+What does exist are 24 standalone self-test files (`server/**/__selftest*.mjs`,
+`src/utils/__selftest*.mjs`, ~680 assertions) covering the strategy layer
+(detectors, fill simulation incl. liquidation, look-ahead, live gates,
+statistics, robustness, journal bridge, coin ranking) plus session-cookie
+handling and the funding sign convention.
+`npm run test:self` runs each in its own process and prints one summary; run it
+after touching anything under `server/strategies/`, `server/fill-simulator.js`,
+`server/strategy-*.js` or `server/live-gates.js`.
+
+Not covered: CSV import (`brokers.js`/`addTrades.js`), journal P&L
+(`src/utils/trades.js`), the REST CRUD layer, and anything rendered in the
+frontend.
 
 ## Architecture
 
 ### Server
 
 - **`index.mjs`** — Entry point: Express server + DB init (Knex) + API routes. Session cookie set for all non-API requests; all `/api/*` require valid session. In dev mode (`NODE_ENV=dev`), proxies non-API requests to Vite dev server on port 39482. In production, serves static files from `dist/`. Default bind: `127.0.0.1` (override with `CTJ_HOST`).
-- **`server/database.js`** — Knex setup: **`initDb()`** / **`getKnex()`**. Schema and migrations in code. Default: SQLite (**`tradenote.db`** in project root, WAL mode). Optional PostgreSQL via **`server/db-config.js`** and `db-config.json`. Tables: settings, trades, diaries, screenshots, playbooks, satisfactions, tags, notes, excursions, bitunix_config, bitget_config, incoming_positions, ai_reports, ai_report_messages, etc.
+- **`server/database.js`** — Knex setup: **`initDb()`** / **`getKnex()`**. Schema and migrations in code. Default: SQLite (**`tradenote.db`** in project root, WAL mode). Optional PostgreSQL via **`server/db-config.js`** and `db-config.json`. Tables: settings, trades, diaries, screenshots, playbooks, satisfactions, tags, notes, excursions, bitunix_config, bitget_config, incoming_positions, ai_reports, ai_report_messages, market_snapshots (daily snapshots of values without free history, e.g. BTC dominance), radar_fetch_state (claims for periodic tasks), calendar_events, etc.
 - **`server/auth.js`** — Session cookie (`tn_session`) for API auth; token generated at startup.
 - **`server/api-routes.js`** — Generic REST CRUD (`GET/POST/PUT/DELETE /api/db/{table}`) using Knex; table/column whitelist; settings and bitunix_config endpoints (bitunix_config response omits secretKey).
 - **`server/bitunix-api.js`** — Bitunix API client (SHA256 double-hash auth); encrypt/decrypt for API keys; proxy endpoints for positions.
@@ -53,6 +66,11 @@ There are **no tests, no linter, and no CI/CD pipeline** configured.
 - **`server/backup-api.js`** — JSON export/import of all DB tables. Redacts sensitive keys (AI keys, etc.) on export. Handles import order to respect FK constraints.
 - **`server/update-api.js`** — Checks GitHub releases (`GET /api/update/check`) and performs one-click update via git fetch+reset+npm install (`POST /api/update/install`). Repo: `Mouses007/Crypto-Trading-Journal`.
 - **`server/polygon-api.js`** — Polygon.io proxy (e.g. market data).
+- **`server/marktradar-api.js`** — Marktradar tiles: Fear & Greed, BTC dominance, funding rates, long/short + OI, RSI scatter, market overview (CoinGecko), rainbow chart, 24h liquidations (from own recordings), trades × market regime, altcoin season, Pi Cycle Top. One endpoint per tile under `/api/marktradar/*`, each with its own TTL cache, in-flight de-duplication and **stale-fallback** (`veraltet: true` instead of an empty tile). Binance markets are filtered to `underlyingType === 'COIN'`. The dominance series (BTC/ETH/total, ~6 years) is imported once from CoinMarketCap's public web endpoint into `market_snapshots` and refreshed daily — the curve is drawn from our own data, no third-party embed (content blockers killed the previous TradingView widget).
+- **`server/marktradar-kalender.js`** — Economic calendar. The ForexFactory feed only ever carries the *current* week, so events are collected into `calendar_events` (deduped by a `sha1(country|title|time)` fingerprint). A second source adds reach: the Fed publishes its own calendar as JSON months ahead (FOMC, Beige Book) — those are imported for dates **beyond** the current week so the two sources never overlap.
+- **`server/marktradar-news.js`** — News sources (YouTube/RSS/Telegram/Truth), fetching, retention, and the AI briefing. Two providers on purpose: the briefing is written by the *configured* provider (Claude), while YouTube videos go to Gemini first — it is the only one that opens a video URL itself. Caps: videos per run, low media resolution by default, one run per day.
+- **`server/net-guard.js`** / **`server/feed-parser.js`** — SSRF guard for user-entered feed URLs (public hosts only, no private ranges, redirects re-checked) and a slim reader for RSS, Atom and public Telegram channel pages.
+- **`server/db-claim.js`** — Database-backed throttle for periodic work. `beansprucheAufgabe(key, ttl)` for "once per interval", `beansprucheFuehrung/verlaengereFuehrung/gibFuehrungFrei` for a renewable leader lock. Needed because every other guard in the project is process-local while NAS container and dev server share one PostgreSQL.
 - **`server/logger.js`** — Shared logging utility (`logWarn`, `logError`) used across server modules.
 
 ### Key Backend Patterns
@@ -95,6 +113,9 @@ View initialization follows a pattern in `src/utils/utils.js`:
 - `charts.js` — ECharts configuration and rendering
 
 ### Key Views
+
+- `Marktradar.vue` — Tile grid in the "Live-Analyse" mode (`/marktradar`, also the mode's landing page). The **page fetches, the tile draws**: the enlarged view is a second instance of the same component fed the same data. Hidden tiles are not loaded at all. Visibility, order and per-tile size live in `localStorage`; tiles are registered in `src/config/marktradar.js` and implemented under `src/components/radar/`. Eleven tiles — news and the calendar moved to their own page.
+- `Nachrichten.vue` — News page (`/nachrichten`): AI briefing at the top (each point opens in an overlay showing the posts it is based on), economic calendar with adjustable range/impact/countries, and the raw posts with thumbnails. YouTube is excluded from the list on purpose (a video title says nothing) but feeds the briefing.
 
 - `KiAgent.vue` — Frontend for the autonomous KI-Agent (SSE-based streaming, tool-call visualization)
 - `Incoming.vue` — Live open positions from Bitunix API

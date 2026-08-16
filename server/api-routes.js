@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { loadDbConfig, saveDbConfig } from './db-config.js'
 import { setupEsp32AdminRoutes } from './esp32-api.js'
-import { encrypt } from './crypto.js'
+import { encrypt, maskKey } from './crypto.js'
 import { isLocalRequest } from './update-api.js'
 import { logError } from './logger.js'
 
@@ -29,6 +29,7 @@ const READ_ONLY_TABLES = [
 // generic settings PUT below.
 export const SETTINGS_SENSITIVE_FIELDS = [
     'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
+    'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen',
     'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash', 'aiKeyCustom'
 ]
 
@@ -52,6 +53,7 @@ const VALID_SETTINGS_KEYS = [
     'tradeTimeframes', 'customTimeframes', 'enableBinanceChart',
     'aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
     'aiScreenshots', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
+    'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen', 'aiQwenUrl',
     'aiEnabled', 'aiReportPrompt', 'aiChatEnabled', 'browserNotifications', 'setupComplete', 'balances', 'language',
     'fluxApiKey', 'fluxModel', 'fluxDisplayName', 'fluxAvatar', 'fluxUseCustomAvatar',
     'shareCardProvider', 'geminiImageApiKey', 'geminiImageModel',
@@ -63,8 +65,9 @@ const VALID_SETTINGS_KEYS = [
     'liveRecordEnabled', 'liveRecordSymbols', 'liveRecordDays', 'liveRecordFrameMs',
     'liveRecordRows', 'liveRecordRangePct', 'liveRecordAllLiq',
     'scalpMaxMinutes', 'daytradeMaxHours', 'feeFixMigrated',
-    'strategyLiveEnabled', 'strategyKillSwitch', 'strategyMaxLeverage',
-    'strategyMinPaperTrades', 'strategyLlmBudgetUsd', 'aiModels', 'aiCustomUrl'
+    'strategyLiveEnabled', 'strategyKillSwitch', 'strategyMaxLeverage', 'strategyHiddenTemplates',
+    'strategyMinPaperTrades', 'strategyLlmBudgetUsd', 'aiModels', 'aiCustomUrl',
+    'radarRsiSymbols', 'radarRsiTfs', 'radarKalenderLaender', 'radarKalenderImpact', 'radarArschlochfilter', 'radarNewsAuto', 'radarNewsStunde', 'radarNewsVideos', 'radarNewsModel', 'radarNewsAufloesung', 'radarNewsBerichtProvider', 'radarNewsBerichtModell', 'radarPicycleAlarm', 'radarPicycleSchwelle'
 ]
 
 // Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten
@@ -79,7 +82,7 @@ const TABLE_COLUMNS = {
     incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType', 'closingTradeType', 'strategyFollowed', 'trendScreenshotId', 'tpslHistory'],
     share_card_templates: ['id', 'name', 'prompt', 'imageBase64', 'category', 'createdAt', 'updatedAt'],
     strategy_instances: ['id', 'strategyId', 'name', 'enabled', 'mode', 'broker', 'market', 'symbols', 'timeframe', 'timeframes', 'params', 'risk', 'agents', 'paramsVersion', 'liveApprovedAt', 'lastRunAt', 'lastError', 'createdAt', 'updatedAt'],
-    strategy_setups: ['id', 'instanceId', 'strategyId', 'symbol', 'timeframe', 'direction', 'status', 'sweepLevel', 'sweepPrice', 'sweepCandleTime', 'obHigh', 'obLow', 'obCandleTime', 'watchFrom', 'impulseExtreme', 'entry', 'stopLoss', 'takeProfit', 'rr', 'confirmations', 'invalidReason', 'rejectReason', 'triggeredAt', 'paramsVersion', 'detectorVersion', 'createdAt', 'updatedAt'],
+    strategy_setups: ['id', 'instanceId', 'strategyId', 'symbol', 'timeframe', 'direction', 'status', 'sweepLevel', 'sweepPrice', 'sweepCandleTime', 'obHigh', 'obLow', 'obCandleTime', 'watchFrom', 'tradeableFrom', 'impulseExtreme', 'entry', 'stopLoss', 'takeProfit', 'rr', 'confirmations', 'invalidReason', 'rejectReason', 'triggeredAt', 'paramsVersion', 'detectorVersion', 'createdAt', 'updatedAt'],
     strategy_runs: ['id', 'instanceId', 'setupId', 'sentimentOutput', 'portfolioOutput', 'riskOutput', 'executionOutput', 'finalAction', 'reason', 'provider', 'model', 'totalTokens', 'costUsd', 'createdAt'],
     strategy_positions: ['id', 'instanceId', 'setupId', 'mode', 'broker', 'symbol', 'timeframe', 'direction', 'qty', 'entryPrice', 'entryTime', 'stopLoss', 'initialStopLoss', 'takeProfit', 'leverage', 'notionalUsdt', 'marginUsdt', 'feeOpen', 'clientOrderId', 'externalOrderId', 'maePrice', 'mfePrice', 'lastCandleTime', 'breakEvenDone', 'status', 'createdAt', 'updatedAt'],
     strategy_trades: ['id', 'instanceId', 'setupId', 'positionId', 'strategyId', 'mode', 'broker', 'symbol', 'timeframe', 'direction', 'qty', 'notionalUsdt', 'leverage', 'entryPrice', 'entryTime', 'exitPrice', 'exitTime', 'stopLoss', 'takeProfit', 'grossPnl', 'fees', 'funding', 'netPnl', 'rMultiple', 'exitReason', 'maeR', 'mfeR', 'holdingMinutes', 'paramsVersion', 'journalTradeId', 'createdAt'],
@@ -94,7 +97,7 @@ const JSON_COLUMNS = {
     trades: ['executions', 'trades', 'blotter', 'pAndL', 'cashJournal'],
     screenshots: ['maState'],
     tags: ['tags', 'closingTags'],
-    settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'customTimeframes', 'balances'],
+    settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'customTimeframes', 'balances', 'strategyHiddenTemplates'],
     incoming_positions: ['bitunixData', 'tags', 'closingTags', 'historyData', 'tpslHistory'],
     notes: ['tradingMetadata'],
     strategy_instances: ['symbols', 'timeframes', 'params', 'risk', 'agents'],
@@ -238,9 +241,10 @@ export function setupApiRoutes(app) {
         try {
             const row = await knex('bitunix_config').where('id', 1).first()
             if (!row) return res.json({})
-            // Kein secretKey in Antwort ausliefern
-            const { secretKey, ...safe } = row
-            res.json({ ...safe, hasSecret: !!secretKey })
+            // Weder secretKey noch apiKey im Klartext (bzw. als Geheimtext)
+            // ausliefern — genau wie /api/bitunix/config, das hier maskiert.
+            const { secretKey, apiKey, ...safe } = row
+            res.json({ ...safe, apiKey: maskKey(apiKey), hasSecret: !!secretKey })
         } catch (error) {
             res.status(500).json({ error: 'Internal server error' })
         }
@@ -251,7 +255,11 @@ export function setupApiRoutes(app) {
             const updateData = { updatedAt: knex.fn.now() }
             // Only update keys if explicitly provided (avoid accidental deletion).
             // Encrypt secrets at rest — analog zu bitunix-api.js.
-            if (req.body.apiKey !== undefined) updateData.apiKey = req.body.apiKey ? encrypt(req.body.apiKey) : ''
+            // Ein maskierter Wert kommt aus der eigenen GET-Antwort zurück und
+            // darf den echten Schlüssel nicht überschreiben (wie in bitunix-api.js).
+            if (req.body.apiKey !== undefined && !String(req.body.apiKey).includes('•')) {
+                updateData.apiKey = req.body.apiKey ? encrypt(req.body.apiKey) : ''
+            }
             if (req.body.secretKey !== undefined) updateData.secretKey = req.body.secretKey ? encrypt(req.body.secretKey) : ''
             // Allow updating other safe fields
             if (req.body.lastHistoryScan !== undefined) updateData.lastHistoryScan = req.body.lastHistoryScan
@@ -260,8 +268,8 @@ export function setupApiRoutes(app) {
 
             await knex('bitunix_config').where('id', 1).update(updateData)
             const row = await knex('bitunix_config').where('id', 1).first()
-            const { secretKey: _s, ...safe } = row || {}
-            res.json({ ...safe, hasSecret: !!_s })
+            const { secretKey: _s, apiKey: _a, ...safe } = row || {}
+            res.json({ ...safe, apiKey: maskKey(_a), hasSecret: !!_s })
         } catch (error) {
             res.status(500).json({ error: 'Internal server error' })
         }
@@ -475,9 +483,16 @@ export function setupApiRoutes(app) {
                 query = req.query.descending ? query.orderBy(orderCol, 'desc') : query.orderBy(orderCol, 'asc')
             }
 
+            // Ohne Angabe wurde bisher die GANZE Tabelle geliefert. Ein Default
+            // bremst das ab, ist aber bewusst so hoch gewählt wie das Limit, das
+            // das Frontend ohnehin mitschickt (queryLimit) — ein kleinerer Wert
+            // würde Dashboards still um Trades kürzen statt sie zu schützen.
+            const DEFAULT_API_LIMIT = 50000
             const MAX_API_LIMIT = 100000
             const limit = parseInt(req.query.limit, 10)
-            if (Number.isInteger(limit) && limit > 0) query = query.limit(Math.min(limit, MAX_API_LIMIT))
+            query = (Number.isInteger(limit) && limit > 0)
+                ? query.limit(Math.min(limit, MAX_API_LIMIT))
+                : query.limit(DEFAULT_API_LIMIT)
             const skip = parseInt(req.query.skip, 10)
             if (Number.isInteger(skip) && skip >= 0) query = query.offset(skip)
 

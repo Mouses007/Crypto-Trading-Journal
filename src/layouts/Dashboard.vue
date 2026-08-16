@@ -8,7 +8,7 @@ import UpdateNoticeModal from '../components/UpdateNoticeModal.vue'
 import { computed, onBeforeMount, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCreatedDateFormat, useTimeFormat, useHourMinuteFormat } from '../utils/formatters.js'
-import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues } from '../utils/utils.js'
+import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues, useCloseMobileMenu } from '../utils/utils.js'
 import { screenType, sideMenuMobileOut, pageId, selectedScreenshotIndex } from '../stores/ui.js'
 import { getMore } from '../stores/filters.js'
 import { screenshots, selectedScreenshot, screenshot } from '../stores/trades.js'
@@ -150,7 +150,9 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
         <SideMenu />
       </div>
       <div class="col-12 col-lg-10 position-relative">
-        <div v-show="sideMenuMobileOut" class="sideMenuMobileOut position-absolute" v-on:click="toggleMobileMenu"></div>
+        <!-- Tippen neben das ausgefahrene Menü schliesst es. Vorher stand hier
+             ein Name, den es im Setup nie gab — der Klick lief ins Leere. -->
+        <div v-show="sideMenuMobileOut" class="sideMenuMobileOut position-absolute" v-on:click="useCloseMobileMenu"></div>
         <Nav />
         <main>
           <div v-if="isAgent" class="ps-3 pe-3 pt-3">

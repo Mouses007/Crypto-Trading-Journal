@@ -47,6 +47,21 @@ export const RISK_PARAMS = [
     { key: 'minRR', type: 'number', default: 1.5, min: 0.1, max: 20, step: 0.1, group: 'quality' },
     { key: 'feeBps', type: 'number', default: 6, min: 0, max: 100, step: 0.5, group: 'costs' },
     { key: 'slippageBps', type: 'number', default: 2, min: 0, max: 100, step: 0.5, group: 'costs' },
+    // Finanzierungskosten je 8-Stunden-Abrechnung, in Basispunkten des
+    // Nominalwerts. 0 = nicht modelliert (bisheriges Verhalten).
+    //
+    // Bewusst KEINE echten historischen Sätze: die müsste man je Symbol und
+    // Zeitpunkt laden, und ein halb geladener Satz wäre schlimmer als eine
+    // offen genannte Annahme. Wer den Wert setzt, trifft eine Annahme, die im
+    // Ergebnis ausgewiesen wird. Gerechnet wird sie als KOSTEN für beide
+    // Richtungen — welche Seite zahlt, hängt vom Vorzeichen des echten Satzes
+    // ab, und das ist ohne Daten unbekannt. Im Zweifel pessimistisch, wie im
+    // Rest der Ausführungs-Simulation.
+    { key: 'fundingBpsPer8h', type: 'number', default: 0, min: 0, max: 50, step: 0.1, group: 'costs' },
+    // Wartungsmarge in Prozent des Nominalwerts — bestimmt, ab wann die Börse
+    // zwangsschliesst. Greift nur, wenn der Hebel so hoch ist, dass die Marge
+    // vor dem Stop aufgebraucht wäre; bei moderatem Hebel ändert sie nichts.
+    { key: 'maintenanceMarginPct', type: 'number', default: 0.5, min: 0, max: 5, step: 0.1, group: 'costs' },
     { key: 'maxPriceDeviationPct', type: 'number', default: 0.5, min: 0.01, max: 10, step: 0.01, group: 'quality' },
 ]
 

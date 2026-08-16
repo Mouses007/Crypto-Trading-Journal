@@ -140,6 +140,16 @@ function neu() {
     }
 }
 
+// ── Reifegrad: welche Nachweise fehlen für den scharfen Betrieb? ────────
+const reife = ref({})
+
+async function reifeLaden(inst) {
+    try {
+        const r = await axios.get(`/api/strategies/instances/${inst.id}/readiness`)
+        reife.value = { ...reife.value, [inst.id]: r.data }
+    } catch { /* Anzeige ist Beiwerk — ein Fehler hier darf die Liste nicht stören */ }
+}
+
 function bearbeiten(inst) {
     istNeu.value = false
     bearbeite.value = JSON.parse(JSON.stringify(inst))
@@ -239,6 +249,13 @@ async function loeschen(inst) {
 // ── Live-Freigabe ───────────────────────────────────────────────────────
 const freigabeFuer = ref(null)
 const freigabeText = ref('')
+/** Öffnet den Freigabe-Dialog und holt vorher die Nachweise. */
+function freigabeOeffnen(inst) {
+    freigabeFuer.value = inst
+    freigabeText.value = ''
+    reifeLaden(inst)
+}
+
 async function freigeben() {
     fehler.value = ''
     try {
@@ -406,7 +423,7 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                         </button>
                         <button v-if="inst.mode === 'live' && !inst.liveApprovedAt"
                             class="btn btn-sm btn-outline-danger"
-                            @click="freigabeFuer = inst; freigabeText = ''">
+                            @click="freigabeOeffnen(inst)">
                             <i class="uil uil-lock-open-alt me-1"></i>{{ t('strategies.approveLive') }}
                         </button>
                         <span v-else-if="inst.mode === 'live'" class="badge bg-success align-self-center">
@@ -427,10 +444,30 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                     <!-- Live-Freigabe: verlangt den exakten Namen -->
                     <div v-if="freigabeFuer?.id === inst.id" class="mt-3 p-3 border border-danger rounded">
                         <p class="mb-2 small">{{ t('strategies.approveLiveWarning') }}</p>
+
+                        <!-- Die Nachweise. Sie stehen VOR dem Eingabefeld, weil der
+                             Nutzer sonst den Namen tippt und erst danach erfährt,
+                             dass es ohnehin nicht geht. -->
+                        <div v-if="reife[inst.id]" class="mb-3">
+                            <div class="small mb-1">
+                                <strong>{{ t('strategies.gatesTitle') }}</strong>
+                                <span class="badge ms-1" :class="reife[inst.id].bereit ? 'bg-success' : 'bg-warning text-dark'">
+                                    {{ reife[inst.id].bereit ? t('strategies.gatesReady')
+                                        : t('strategies.gatesOpen', { n: reife[inst.id].offen.length }) }}
+                                </span>
+                            </div>
+                            <div v-for="tor in reife[inst.id].tore" :key="tor.id" class="small torZeile">
+                                <i :class="tor.erfuellt ? 'uil uil-check-circle torJa' : 'uil uil-times-circle torNein'"></i>
+                                <span :class="tor.erfuellt ? '' : 'text-muted'">{{ t('strategies.gate_' + tor.id) }}</span>
+                                <span class="text-muted">— {{ tor.detail }}</span>
+                            </div>
+                        </div>
+
                         <p class="mb-2 small">{{ t('strategies.approveLiveType', { name: inst.name }) }}</p>
                         <div class="d-flex gap-2">
                             <input v-model="freigabeText" class="form-control form-control-sm" :placeholder="inst.name" />
-                            <button class="btn btn-sm btn-danger" :disabled="freigabeText !== inst.name"
+                            <button class="btn btn-sm btn-danger"
+                                :disabled="freigabeText !== inst.name || reife[inst.id]?.bereit === false"
                                 @click="freigeben">{{ t('strategies.approve') }}</button>
                             <button class="btn btn-sm btn-outline-secondary"
                                 @click="freigabeFuer = null">{{ t('common.cancel') }}</button>
@@ -569,6 +606,16 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
 .dailyCard {
     height: auto;
 }
+
+.torZeile {
+    display: flex;
+    gap: 0.4rem;
+    align-items: baseline;
+    padding: 0.1rem 0;
+}
+
+.torJa { color: var(--green-color, #27ae60); }
+.torNein { color: var(--red-color, #e74c3c); }
 
 .status-dot {
     width: 9px;

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onBeforeMount, computed } from 'vue'
+import { ref, reactive, onBeforeMount, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
@@ -92,32 +92,49 @@ async function loadGlobalTokenStats() {
 // Geschätzte Kosten pro Provider (basierend auf bekannten Preisen pro 1M Tokens)
 // Preise in USD pro 1M Tokens: [input, output]
 const MODEL_PRICES = {
-    // OpenAI
-    'gpt-4o':           [2.50, 10.00],
+    // OpenAI (Stand 16.08.2026)
+    'gpt-5.6-sol':      [5.00, 30.00],
+    'gpt-5.6-terra':    [2.00, 12.00],
+    'gpt-5.6-luna':     [0.20, 1.20],
     'gpt-4o-mini':      [0.15, 0.60],
-    'gpt-4-turbo':      [10.00, 30.00],
-    'gpt-4':            [30.00, 60.00],
-    'gpt-3.5-turbo':    [0.50, 1.50],
-    'o1':               [15.00, 60.00],
-    'o1-mini':          [3.00, 12.00],
+    'gpt-4o':           [2.50, 10.00],
     'o3-mini':          [1.10, 4.40],
-    // Anthropic
+    // Anthropic — Fable zuerst, sonst greift kein Eintrag für claude-fable-5
+    'claude-fable-5':    [10.00, 50.00],
+    'claude-opus-5':     [5.00, 25.00],
+    'claude-opus-4-8':   [5.00, 25.00],
+    'claude-opus-4-7':   [5.00, 25.00],
     'claude-opus-4-6':   [5.00, 25.00],
+    'claude-opus-4':     [15.00, 75.00],
+    'claude-sonnet-5':   [3.00, 15.00],
     'claude-sonnet-4-6': [3.00, 15.00],
     'claude-sonnet-4-5': [3.00, 15.00],
-    'claude-opus-4-0':   [15.00, 75.00],
-    'claude-opus-4':     [15.00, 75.00],
     'claude-haiku-4-5':  [1.00, 5.00],
-    'claude-haiku-3-5':  [0.80, 4.00],
-    'claude-3-5-sonnet': [3.00, 15.00],
-    'claude-3-haiku':    [0.25, 1.25],
-    'claude-3-opus':     [15.00, 75.00],
     // Gemini
-    'gemini-2.0-flash':  [0.10, 0.40],
-    'gemini-1.5-flash':  [0.075, 0.30],
-    'gemini-1.5-pro':    [1.25, 5.00],
-    'gemini-2.0-pro':    [1.25, 10.00],
-    // DeepSeek
+    // Längere Namen zuerst, sonst schluckt "gemini-3.5-flash" die Lite-Variante
+    'gemini-3.5-flash-lite': [0.30, 2.50],
+    'gemini-3.1-flash-lite': [0.25, 1.50],
+    'gemini-2.5-flash-lite': [0.10, 0.40],
+    'gemini-3.1-pro':    [2.00, 12.00],
+    'gemini-3.7-flash':  [0.75, 3.75],
+    'gemini-3.6-flash':  [0.75, 3.75],
+    'gemini-3.5-flash':  [1.50, 9.00],
+    'gemini-3-flash':    [0.50, 3.00],
+    'gemini-2.5-pro':    [1.25, 10.00],
+    'gemini-2.5-flash':  [0.30, 2.50],
+    // Mistral / xAI / Qwen — Qwen-Werte sind Schätzungen, Alibaba nennt
+    // keinen öffentlichen Listenpreis
+    'mistral-medium':    [1.50, 7.50],
+    'mistral-large':     [0.50, 1.50],
+    'mistral-small':     [0.15, 0.60],
+    'grok-4':            [4.00, 12.00],
+    'qwen3.7-max':       [2.00, 6.00],
+    'qwen3.7-plus':      [0.50, 2.00],
+    'qwen3.6-flash':     [0.15, 0.60],
+    // DeepSeek — abgekündigt, Preise bleiben für alte Berichte
+    // (Spitzenzeit-Preise; ausserhalb der Spitze die Hälfte)
+    'deepseek-v4-flash': [0.44, 1.32],
+    'deepseek-v4-pro':   [1.32, 3.96],
     'deepseek-chat':     [0.14, 0.28],
     'deepseek-reasoner': [0.55, 2.19],
 }
@@ -167,9 +184,6 @@ const totalEstimatedCost = computed(() => {
     return AI_COST_OFFSET + Object.values(estimatedCostByProvider.value).reduce((sum, c) => sum + c, 0)
 })
 
-const providerColors = { ollama: '#6c757d', openai: '#10a37f', anthropic: '#7c5cfc', gemini: '#4285f4', deepseek: '#0066ff' }
-const providerNames = { ollama: 'Ollama', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepseek: 'DeepSeek' }
-
 // Zeitraum als Unix berechnen
 const dateRange = computed(() => {
     const type = periodType.value
@@ -215,11 +229,15 @@ const dateRange = computed(() => {
     }
 })
 
-// Provider-Label
-const providerLabel = computed(() => {
-    const labels = { ollama: 'Ollama', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini', deepseek: 'DeepSeek' }
-    return labels[aiProvider.value] || aiProvider.value
-})
+// Provider-Label. `deepseek` steht bewusst noch drin: der Anbieter ist nicht
+// mehr wählbar, aber alte Berichte tragen ihn — ohne Eintrag stünde dort der
+// rohe Schlüssel.
+const PROVIDER_LABELS = {
+    ollama: 'Ollama', openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini',
+    mistral: 'Mistral', xai: 'Grok (xAI)', qwen: 'Qwen', custom: 'Eigener Anbieter',
+    deepseek: 'DeepSeek',
+}
+const providerLabel = computed(() => PROVIDER_LABELS[aiProvider.value] || aiProvider.value)
 
 // Modell-Label (kurzer Name für Badge)
 const modelLabel = computed(() => {
@@ -454,6 +472,16 @@ async function deleteAgentSession(sessionId) {
     }
 }
 
+// Läuft gerade ein Agentenlauf, hängt daran ein offener Datenstrom. Verlässt
+// man die Seite, muss er abgebrochen werden — sonst liest der Reader in eine
+// Ansicht, die es nicht mehr gibt, und der Server schreibt in eine tote
+// Verbindung, während der Lauf (und die Modellkosten) weiterlaufen.
+let agentAbbruch = null
+
+onBeforeUnmount(() => {
+    if (agentAbbruch) agentAbbruch.abort()
+})
+
 async function sendAgentMessage() {
     const msg = agentInput.value.trim()
     if (!msg || agentLoading.value) return
@@ -466,10 +494,12 @@ async function sendAgentMessage() {
     // Add user message to UI immediately
     agentMessages.push({ role: 'user', content: msg, createdAt: new Date().toISOString() })
 
+    agentAbbruch = new AbortController()
     try {
         const response = await fetch('/api/ai/agent/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: agentAbbruch.signal,
             body: JSON.stringify({
                 sessionId: agentCurrentSessionId.value,
                 message: msg
@@ -497,9 +527,11 @@ async function sendAgentMessage() {
             }
         }
     } catch (err) {
-        agentError.value = 'Agent-Fehler: ' + err.message
+        // Ein Abbruch beim Seitenwechsel ist kein Fehler, den man melden müsste.
+        if (err.name !== 'AbortError') agentError.value = 'Agent-Fehler: ' + err.message
     } finally {
         agentLoading.value = false
+        agentAbbruch = null
     }
 }
 

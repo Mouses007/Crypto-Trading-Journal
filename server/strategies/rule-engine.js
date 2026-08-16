@@ -442,6 +442,13 @@ export function detectMitRegeln(regeln, { candles, params, openSetups = [], know
     const scanFenster = Math.round(zahl(regeln.scanWindowCandles, params, 200))
     const scanAb = Math.max(0, candles.length - scanFenster)
 
+    // Wie viele Kerzen braucht das Signal zur Bestätigung? Nur Pivots brauchen
+    // welche — eine Kreuzung oder ein Kerzenmuster steht mit ihrer Kerze fest.
+    const istPivot = regeln.signal?.type === 'pivotHigh' || regeln.signal?.type === 'pivotLow'
+    const bestaetigungsKerzen = istPivot
+        ? Math.max(1, Math.round(zahl(regeln.signal?.right, params, 2)))
+        : 0
+
     for (const sig of findeSignale(regeln, ctx)) {
         if (sig.index < scanAb) continue
         const key = `${richtung}|${candles[sig.index].t}`
@@ -475,7 +482,20 @@ export function detectMitRegeln(regeln, { candles, params, openSetups = [], know
             entry: 0, stopLoss: 0, takeProfit: 0, rr: 0,
             confirmations: {},
             detectorVersion: RULE_ENGINE_VERSION,
+            // BEOBACHTET wird ab der Signalkerze — die Abbruchbedingungen
+            // sollen lückenlos greifen, auch während der Bestätigung.
             watchFrom: candles[sig.index].t,
+            // GEHANDELT wird erst NACH der Bestätigungskerze.
+            //
+            // Ein Pivot mit `right: 2` ist erst zwei Kerzen später überhaupt als
+            // Pivot erkennbar — vorher weiss niemand, dass das Hoch hält. Ohne
+            // diese Grenze stieg Phase B auf genau den Kerzen ein, die das
+            // Signal erst bestätigen: ein Blick in die Zukunft, der jeden
+            // Backtest zu optimistisch macht. Auch die Bestätigungskerze
+            // selbst ist erst mit ihrem Schluss bekannt — der erste ehrliche
+            // Einstieg liegt eine Kerze später. Das ist dieselbe Grenze, die
+            // LSOB seit jeher zieht (`pivot.index + swingConfirmBars + 1`).
+            tradeableFrom: candles[Math.min(sig.index + bestaetigungsKerzen, candles.length - 1)].t,
             // Für Phase B mitgeben — das Setup wird in der DB abgelegt und
             // später ohne den ursprünglichen Kontext wieder geladen.
             signalPrice: sig.price, signalHigh: sig.high, signalLow: sig.low,
@@ -494,6 +514,9 @@ export function detectMitRegeln(regeln, { candles, params, openSetups = [], know
         const ab = Number(s.watchFrom || s.obCandleTime) || 0
         const start = candles.findIndex((c) => c.t > ab)
         if (start === -1) continue
+        // Bis einschliesslich dieser Kerze war das Signal noch nicht bestätigt —
+        // beobachten ja, handeln nein.
+        const handelbarAb = Number(s.tradeableFrom || 0) || 0
 
         ctx.setup = {
             signalPrice: Number(s.signalPrice ?? s.sweepPrice),
@@ -561,6 +584,24 @@ export function detectMitRegeln(regeln, { candles, params, openSetups = [], know
                         fertig = true; break
                     }
                     if (beruehrt) { ausgeloest = true; entryPreis = anker }
+                }
+            }
+
+            if (ausgeloest && k.t <= handelbarAb) {
+                if (e.type === 'immediate') {
+                    // „Sofort" heisst: sobald das Signal feststeht. Bei einem
+                    // Pivot steht es erst mit der Bestätigung fest — also hier
+                    // noch warten, nicht verwerfen.
+                    ausgeloest = false
+                    entryPreis = null
+                } else {
+                    // Eine Berührung vor der Bestätigung lag in der
+                    // Vergangenheit des Signals und war nie handelbar. Sie zu
+                    // überspringen und auf eine zweite Berührung zu hoffen wäre
+                    // geschönt — das Setup wird verworfen und taucht im
+                    // Trichter auf.
+                    events.push({ id: s.id, status: 'invalidated', invalidReason: 'entry_before_confirm', candleTime: k.t })
+                    fertig = true; break
                 }
             }
 

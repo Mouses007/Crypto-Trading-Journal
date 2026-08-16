@@ -5,6 +5,7 @@ import { loadDbConfig, getConfigPath, saveDbConfig } from './db-config.js'
 // Sensitive Felder die im Export redaktiert werden
 const REDACTED_SETTINGS_KEYS = [
     'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
+    'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen', 'aiKeyCustom',
     'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash'
 ]
 
@@ -31,10 +32,70 @@ const BACKUP_TABLES = [
     'bitget_config',
     'ai_reports',
     'ai_report_messages',
+    // Tagesschnappschüsse des Marktradars (BTC-Dominanz, Gesamtmarkt). Winzig,
+    // aber NICHT nachbestellbar: für die Dominanz gibt es keine kostenlose
+    // Historie. Einmal verloren ist der Bestand endgültig weg — deshalb steht
+    // sie im Backup, während die viel grösseren live_recordings draussen
+    // bleiben (die sind ein Mitschnitt, kein Original).
+    'market_snapshots',
+    // Vergangene Wochen liefert der Feed nicht mehr — einmal verloren, weg
+    'calendar_events',
+    // ── Strategie-Sektion ───────────────────────────────────────────────
+    // Selbst gebaute Regelstrategien existieren NIRGENDWO sonst — sie sind
+    // Handarbeit des Nutzers, kein Mitschnitt. Ohne sie wäre der
+    // Versionsverlauf darunter sinnlos: Fassungen von Strategien, die es nach
+    // dem Rückspielen nicht mehr gibt.
+    'rule_strategies',
+    'rule_strategy_history',
+    // Instanzen sind Konfiguration (winzig), die Parameter-Historie erklärt
+    // alte Trades, und die Trades selbst sind das Ergebnis eines Laufs, der
+    // sich nicht wiederholen lässt — er hing an echten Kursen zu echten Zeiten.
+    'strategy_instances',
+    'strategy_param_history',
+    'strategy_trades',
+    // ── Marktradar-Nachrichten ──────────────────────────────────────────
+    // Die Kanalliste ist Handarbeit des Nutzers. Die Lageberichte sind der
+    // eigentliche Grund: sie haben KI-Kontingent gekostet und lassen sich nicht
+    // nachbestellen — die Beiträge, aus denen sie entstanden, werden nach 30
+    // Tagen gelöscht, ein zweiter Lauf ergäbe nie denselben Bericht.
+    // `news_items` bleibt bewusst draussen: wächst schnell, jederzeit neu
+    // holbar, und es sind fremde Inhalte, die nicht in eine Datei gehören, die
+    // der Nutzer womöglich weitergibt. Dieselbe Linie wie bei live_recordings.
+    'news_sources',
+    'news_digests',
+    // ── Coin-Rangliste ──────────────────────────────────────────────────
+    // Von Hand gepflegte Listen sind Handarbeit, KI-Vorschläge haben Kontingent
+    // gekostet — beides existiert nirgendwo sonst. Die LÄUFE bleiben draussen:
+    // sie sind jederzeit neu rechenbar und tragen je Coin eine R-Reihe im JSON,
+    // die die Sicherungsdatei dominieren würde (dieselbe Begründung wie bei
+    // `strategy_backtests` weiter unten).
+    'coin_universen',
 ]
+
+/**
+ * Bewusst NICHT im Backup: `strategy_setups`, `strategy_positions`,
+ * `strategy_runs`, `strategy_backtests`, `rangliste_laeufe` und
+ * `rangliste_zeilen`. Die ersten drei sind Zwischenstände
+ * in grosser Zahl — aus Instanzen und Kerzen jederzeit neu erzeugbar. Backtests
+ * sind zwar die Experiment-Registry, tragen aber je Lauf bis zu 500 Trades im
+ * JSON; sie würden die Sicherungsdatei dominieren. Wer sie braucht, exportiert
+ * die Strategie einzeln (`/api/strategies/rules/:id/export`).
+ */
 
 // Beim Import: abhängige Tabellen zuerst löschen
 const DELETE_ORDER = [
+    'coin_universen',
+    'news_digests',
+    'news_sources',
+    // Abhängige zuerst: die Historie zeigt (fachlich, nicht per Fremdschlüssel)
+    // auf `rule_strategies`, die Trades auf `strategy_instances`.
+    'rule_strategy_history',
+    'strategy_trades',
+    'strategy_param_history',
+    'strategy_instances',
+    'rule_strategies',
+    'calendar_events',
+    'market_snapshots',
     'ai_report_messages',
     'ai_reports',
     'excursions',
