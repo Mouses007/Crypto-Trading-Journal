@@ -161,6 +161,30 @@ console.log('\nWarnfenster nur bei echtem Termin')
         ereignisse: [{ dateUnix: ms('2026-08-17 14:00'), impact: 'high', titel: 'FOMC' }],
     })
     check('14:05 ET mit FOMC-Termin: Warnung da', warnIds(fomc).includes('fomc'))
+
+    // Dieselbe Regel gilt für die Countdown-Liste: die FOMC-Marke stand sonst
+    // JEDEN Tag als „nächste Marke" da, auch ohne Sitzung.
+    const markenOhne = lageZu(ms('2026-08-17 13:00')).naechste.map(n => n.id)
+    check('13:00 ET ohne Kalender: keine FOMC-Marke im Countdown',
+        !markenOhne.includes('fomc1400'), markenOhne.join(','))
+    check('13:00 ET ohne Kalender: keine Makro-Marke im Countdown',
+        !markenOhne.includes('makro830'), markenOhne.join(','))
+
+    const markenMit = lageZu(ms('2026-08-17 13:00'), {
+        ereignisse: [{ dateUnix: ms('2026-08-17 14:00'), impact: 'high', titel: 'FOMC' }],
+    }).naechste.map(n => n.id)
+    check('13:00 ET mit FOMC-Termin: Marke erscheint im Countdown',
+        markenMit.includes('fomc1400'), markenMit.join(','))
+
+    const markenLow = lageZu(ms('2026-08-17 13:00'), {
+        ereignisse: [{ dateUnix: ms('2026-08-17 14:00'), impact: 'low', titel: 'Rede' }],
+    }).naechste.map(n => n.id)
+    check('Low-Impact-Termin bringt die Marke nicht zurück',
+        !markenLow.includes('fomc1400'), markenLow.join(','))
+
+    // Marken ohne Ereignis-Bindung bleiben unberührt
+    check('Kassaschluss steht weiterhin ohne Kalender im Countdown',
+        markenOhne.includes('kassaZu'), markenOhne.join(','))
 }
 
 // ── Terminmarkt: Wochenende und tägliche Pause ───────────────────────────

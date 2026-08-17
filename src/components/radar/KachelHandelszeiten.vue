@@ -13,12 +13,16 @@
  * `shared/handelszeiten.js`, damit Server und Browser dieselbe Rechnung
  * benutzen — und damit sie einen Selbsttest haben kann.
  *
- * Kalendertermine kommen später von aussen dazu (Kachel „Termine"); solange
- * keine da sind, bleiben die kalendergebundenen Warnfenster stumm, statt jeden
- * Werktag um 8:30 grundlos zu leuchten.
+ * Kalendertermine holt die Kachel selbst, leise und selten (alle 10 Minuten
+ * aus dem eigenen Bestand, serverseitig 60 s gecacht): FOMC- und Makro-Marke
+ * erscheinen NUR, wenn der Kalender wirklich einen Termin führt — vorher stand
+ * jeden Tag „FOMC-Fenster (14:00 ET)" im Countdown. Scheitert der Abruf,
+ * bleiben die kalendergebundenen Marken und Warnfenster stumm, statt jeden
+ * Werktag grundlos zu leuchten — die Uhr selbst braucht keine Daten.
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
+import axios from 'axios'
 import dayjs from '../../utils/dayjs-setup.js'
 import { lageZu } from '../../../shared/handelszeiten.js'
 
@@ -32,6 +36,28 @@ const { t } = useI18n()
 
 const jetzt = ref(Date.now())
 let takt = null
+let kalenderTakt = null
+
+/** US-Termine der nächsten 24 h — Zusatzwissen, kein Muss. */
+const kalender = ref({ ereignisse: null, feiertage: null })
+
+async function holeTermine() {
+    try {
+        // `impact: 'all'`, damit auch Feiertage (impact 'holiday') mitkommen —
+        // die Wichtig-Filterung macht handelszeiten.js selbst.
+        const { data } = await axios.get('/api/livetrading/kalender-countdown', {
+            params: { stunden: 24, laender: 'USD', impact: 'all' },
+        })
+        const alle = data?.ereignisse || []
+        kalender.value = {
+            ereignisse: alle,
+            feiertage: alle.filter((e) => String(e.impact || '').toLowerCase() === 'holiday'),
+        }
+    } catch {
+        // Kalender ist Zusatz — ohne ihn bleibt die Uhr die Uhr, und die
+        // kalendergebundenen Marken bleiben stumm.
+    }
+}
 
 /**
  * Sekundentakt, aber nur solange die Seite sichtbar ist. Ein Countdown im
@@ -45,16 +71,19 @@ function tick() {
 onMounted(() => {
     takt = setInterval(tick, 1000)
     document.addEventListener('visibilitychange', tick)
+    holeTermine()
+    kalenderTakt = setInterval(holeTermine, 10 * 60 * 1000)
 })
 onBeforeUnmount(() => {
     clearInterval(takt)
+    clearInterval(kalenderTakt)
     document.removeEventListener('visibilitychange', tick)
 })
 
-/** Termine und Feiertage reicht die Seite durch, sobald es sie gibt. */
+/** Termine: von der Seite durchgereicht oder selbst geholt — was da ist. */
 const lage = computed(() => lageZu(jetzt.value, {
-    ereignisse: props.daten?.ereignisse || null,
-    feiertage: props.daten?.feiertage || null,
+    ereignisse: props.daten?.ereignisse || kalender.value.ereignisse,
+    feiertage: props.daten?.feiertage || kalender.value.feiertage,
 }))
 
 const warnung = computed(() => {

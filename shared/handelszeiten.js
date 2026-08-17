@@ -85,6 +85,18 @@ export const WARNFENSTER = [
     { id: 'cme', marke: 'cmePause', vorMin: 0, nachMin: 0, stufe: 'mittel' },
 ]
 
+/**
+ * Marken, die ohne passenden Kalendertermin gar nicht erst angezeigt werden —
+ * abgeleitet aus den Warnfenstern mit `nurWennEreignis`. Die Warnungen waren
+ * schon still, aber die Countdown-Liste zeigte trotzdem jeden Tag
+ * „FOMC-Fenster (14:00 ET)", auch wenn weit und breit keine Sitzung ist.
+ * Eine Marke, die immer da steht, sagt genauso wenig wie eine Warnung, die
+ * immer leuchtet.
+ */
+const MARKEN_NUR_MIT_EREIGNIS = new Set(
+    WARNFENSTER.filter((w) => w.nurWennEreignis).map((w) => w.marke)
+)
+
 /** Wie weit um eine Marke herum ein Kalendertermin noch als „dieser Termin" gilt. */
 const EREIGNIS_TOLERANZ_MS = 20 * MINUTE
 
@@ -255,7 +267,12 @@ export function lageZu(jetztMs, opt = {}) {
         if (s.von > jetztMs) naechste.push({ id: s.id, art: 'sitzung', tMs: s.von, inMs: s.von - jetztMs })
     }
     for (const m of markenAktiv) {
-        if (m.t > jetztMs) naechste.push({ id: m.id, art: 'marke', tMs: m.t, inMs: m.t - jetztMs })
+        if (m.t <= jetztMs) continue
+        // FOMC-/Makro-Marke nur mit tatsächlichem Kalendertermin anzeigen —
+        // ohne übergebene Termine bleibt sie stumm (gleiche Linie wie bei den
+        // Warnfenstern: lieber nichts behaupten als täglich falsch warnen).
+        if (MARKEN_NUR_MIT_EREIGNIS.has(m.id) && !ereignisNahe(m.t, ereignisse)) continue
+        naechste.push({ id: m.id, art: 'marke', tMs: m.t, inMs: m.t - jetztMs })
     }
     naechste.sort((a, b) => a.tMs - b.tMs)
 

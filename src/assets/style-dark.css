@@ -3,6 +3,34 @@
     display: none;
 }
 
+/* Dunkle Rollbalken überall — die hellen System-Balken rissen Löcher ins
+   dunkle Thema (Notizfeld der Sitzungsleiste, scrollende Kacheln, Overlays).
+   Firefox über scrollbar-color, Chromium über die ::-webkit-Pseudoelemente.
+   Punktuelle Sonderfälle (Seitenmenü) bleiben spezifischer und gewinnen. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: hsla(0, 0%, 100%, 0.22) transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: hsla(0, 0%, 100%, 0.18);
+    border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: hsla(0, 0%, 100%, 0.32);
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
 :root {
     --grey-color: #6c757d;
     --blue-active-color: #2ea2d9;

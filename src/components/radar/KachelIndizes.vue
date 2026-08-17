@@ -291,6 +291,13 @@ watch(() => props.daten, zeichne)
     width: 100%;
 }
 
+/* Gross-Ansicht: der Overlay-Körper hat KEINE feste Höhe (er wächst mit dem
+   Inhalt), damit kollabiert `flex: 1` auf 0 und der Chart verschwand komplett.
+   Eigene Mindesthöhe wie bei den anderen Chart-Kacheln (KachelLsOi: 44vh). */
+.ixWrap.gross .ixChart {
+    min-height: 52vh;
+}
+
 .ixHinweis {
     font-size: 0.7rem;
     color: #ffc93c;
