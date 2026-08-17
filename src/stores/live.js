@@ -32,7 +32,8 @@ export const liveShowVolumeBars = ref(false)  // Volumen-Säulen unter dem Chart
 export const levMapTier = ref('all')          // 'all' | Index in LEVERAGE_TIERS
 export const levMapHours = ref(48)            // gewünschtes Zeitfenster
 export const levMapSpanPct = ref(8)           // Preisspanne um den Mid, einseitig
-export const levMapMmr = ref(0.004)           // Maintenance-Margin-Rate (ohne Key nicht abrufbar)
+export const levMapMmr = ref(0.004)           // Maintenance-Margin-Rate, Stufe 1
+export const levMapMmrQuelle = ref('binance') // 'binance' | 'bybit' | 'manuell'
 export const levMapProfileW = ref(74)         // Breite der Profilspur im Verlauf
 export const levMapThreshold = ref(0)         // blendet schwache Zonen aus (0..0.9)
 export const levMapView = ref('dist')         // 'dist' = Verteilung | 'history' = Verlauf
@@ -45,6 +46,29 @@ export const liveMode = ref('live')
 export const replayFrom = ref(0)
 export const replayTo = ref(0)
 export const replayLabel = ref('')
+/**
+ * Ein- und Ausstieg des Trades, für die Sprungknöpfe. 0 = unbekannt (etwa bei
+ * einer von Hand gebauten URL). Zustand einer Navigation, deshalb bewusst
+ * nicht in FIELDS — das hier gehört nicht in die Einstellungen.
+ */
+export const replayEntry = ref(0)
+export const replayExit = ref(0)
+/** Worauf die Wiedergabe zeigt: 'all' = ganzer Trade | 'entry' | 'exit'. */
+export const replayFokus = ref('all')
+/**
+ * Zoomstufe als Bruchteil der Gesamtspanne (1 = alles). Die Stufen sind
+ * bewusst relativ und nicht in Minuten: der Server verdichtet auf die
+ * Plotbreite, dadurch füllt jede Stufe das Bild exakt aus. Feste Minutenwerte
+ * würden auf breiten Bildschirmen eine halb leere Fläche erzeugen.
+ */
+export const replayZoom = ref(1)
+export const REPLAY_ZOOM_OPTIONS = [
+    { wert: 1, label: 'Ganz' },
+    { wert: 0.5, label: '1/2' },
+    { wert: 0.25, label: '1/4' },
+    { wert: 0.1, label: '1/10' },
+    { wert: 0, label: 'Feinste' },   // 0 = native Auflösung, eine Spalte je Pixel
+]
 /** Aktueller Auto-Normierungswert, damit die Einstellungen ihn übernehmen können. */
 export const liveAutoRefValue = ref(0)
 
@@ -52,7 +76,7 @@ const FIELDS = {
     liveSymbol, liveMarket, liveViewPct, liveFrameMs, liveHistoryMin, liveRamp,
     liveShowProfile, livePauseInBackground, liveColorMode, liveColorRef, liveAutoFollow,
     liveThreshold, liveShowLiquidations, livePrefillMin, liveDotStep, liveProfileW, liveShowVolumeBars,
-    levMapTier, levMapHours, levMapSpanPct, levMapMmr, levMapWeights, levMapView,
+    levMapTier, levMapHours, levMapSpanPct, levMapMmr, levMapMmrQuelle, levMapWeights, levMapView,
     levMapThreshold, levMapProfileW,
 }
 const BOOLEAN_FIELDS = ['liveShowProfile', 'livePauseInBackground', 'liveAutoFollow', 'liveShowLiquidations', 'liveShowVolumeBars']
@@ -61,12 +85,23 @@ let hydrated = false
 let saveTimer = null
 let dirty = {}
 
+/**
+ * In der Wiedergabe kommen Symbol und Markt aus der URL, nicht aus den
+ * Einstellungen. Die Reihenfolge macht das nötig: das Layout hydriert erst,
+ * wenn die Settings aus der DB da sind — also NACH dem Mounten der Seite, die
+ * die URL ausgewertet hat. Ohne diese Ausnahme überschreibt der gespeicherte
+ * Standard den Trade, den man gerade ansehen will.
+ */
+const NICHT_IN_WIEDERGABE = ['liveSymbol', 'liveMarket']
+
 /** Werte aus den geladenen Settings übernehmen (einmal pro Seitenaufruf). */
 export function hydrateLiveSettings() {
     const settings = currentUser.value
     if (!settings) return
     hydrated = false   // Watcher während des Befüllens stumm schalten
+    const wiedergabe = liveMode.value === 'replay'
     for (const [key, target] of Object.entries(FIELDS)) {
+        if (wiedergabe && NICHT_IN_WIEDERGABE.includes(key)) continue
         const value = settings[key]
         if (value === undefined || value === null || value === '') continue
         target.value = BOOLEAN_FIELDS.includes(key) ? !!Number(value) : value

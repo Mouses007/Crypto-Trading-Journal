@@ -28,8 +28,8 @@ A local, privacy-focused trading journal for **crypto futures trading** — Bitu
 
 ### Nachrichten (Live-Analyse)
 
-- **AI briefing**: one German report from all sources — not one summary per post. Written by your configured provider; YouTube videos are watched by Gemini first (the only provider that opens a video URL). Every point opens up to the posts it is based on, so nothing is unverifiable.
-- **Sources**: YouTube channels, RSS feeds and public Telegram channels. An "idiot filter" hides sources you marked as noise — and does not even fetch them.
+- **AI briefing**: one German report from all sources — not one summary per post, styled like a newspaper article with a chapter per selected topic (crypto / finance / tech), selectable length (short/medium/long) and a daily or weekly rhythm (weekday selectable). The crypto chapter opens with the journal's own Marktradar measurements (Fear & Greed, dominance, funding, long/short). Written by your configured provider; YouTube videos are watched by Gemini first (the only provider that opens a video URL) and summarized as bullet points; with a Perplexity key the report additionally researches each topic on the web, with an xAI key X accounts are fetched via Grok. Every point opens up to the posts it is based on, so nothing is unverifiable. Reports are archived — browse, reopen and delete old ones.
+- **Sources**: YouTube channels, RSS feeds (e.g. Yahoo Finance), public Telegram channels and X accounts (via Grok). "Temporär ausschliessen" hides sources you marked — and does not even fetch them. The keyword-based "Arschlochfilter" additionally drops Truth Social automatically plus any post containing your keywords (e.g. a person's name), from both the list and the briefing.
 - **Economic calendar**: adjustable range, impact and currency areas. ForexFactory covers the current week; the Fed's own calendar adds its meeting dates months ahead.
 - Costs are shown before you press: the briefing estimates its own price from your settings.
 
@@ -41,7 +41,55 @@ A local, privacy-focused trading journal for **crypto futures trading** — Bitu
 - **24h liquidations** from the journal's own recording — no paid third party involved
 - **Your trades × market regime**: your win rate and P&L grouped by the Fear & Greed value of each entry day
 - **BTC dominance** with six years of history for Bitcoin, Ethereum and everything else — from our own stored data, no third-party embed
+- **Overall picture (AI)**: one button turns everything the other tiles currently show into a five-line read — a market state, three to four points, the contradictions between the tiles and what to watch. The AI only ever sees the readings from the tiles (they are listed under "Basis" in the enlarged view), it looks nothing up and gives no trading recommendation. Nothing is generated without pressing the button.
 - Only crypto: Binance perpetuals are filtered to actual coins, so tokenised equities and commodities never show up
+
+### Live-Trading window (Live-Analyse)
+
+A second tile grid, separate from the Marktradar — the workspace for the two to
+four hours actually spent trading. Its own layout, its own tile selection, a
+three-second check interval instead of thirty.
+
+Starting a session opens it in **its own browser window**, without side menu and
+without navigation, with a button for real fullscreen. During a session nothing
+else should be one mouse move away — that is the same idea as writing the plan
+down beforehand. **Desktop only**: eleven tiles, an order book and a candle
+chart cannot be operated on a phone, and a tool that only half works leads to
+decisions on half the information. Can be switched off entirely under
+Settings → Live; then the start button, the menu entry and the page all
+disappear.
+
+- **Trading hours** — which session is running (Asia / London / US pre-market / cash / after-hours), a countdown to the next mark, and an explicit red band for the windows that are *bad* to trade: five minutes before to fifteen after the US cash open, the macro-data and FOMC slots (only when the calendar actually carries an event), the close, and the daily CME break. Every session is computed in its own time zone — the US and EU switch to summer time weeks apart, so a fixed local time is wrong two to three times a year.
+- **Indices intraday** — ES, NQ and the dollar index as five-minute candles with the previous close and a marker on the US open. Futures, not cash indices: the cash index stands still exactly when you are trading crypto.
+- **Liquidations (live)** — the last few minutes rather than the last 24 hours, from the journal's own recording, Binance and Bybit shown separately. Binance throttles to one event per second per symbol, so those numbers are a sample; Bybit does not. If the recording is switched off, the tile says so — an empty ticker must never look like a quiet market.
+- **Events** — only what is due in the next hours, with a countdown. If your country and impact filter removes everything, the tile says how many events it hid instead of showing an empty list.
+- **Positions & plan** — open positions, realised and unrealised P&L kept strictly apart, and two bars showing how much of your plan is used up. The bars count the **realised** loss only; a floating drawdown must not throw you out of a position that is still turning.
+- **Bookmap and liquidation map as tiles** — the same components as their own pages, embedded. No enlarging here: the enlarged view would be a second instance and therefore a second market-data connection, so there is a "full page" link instead. The liquidation map runs on a daytrading setting (24 h instead of the page's own window) without touching what you configured on the page itself.
+- **Coin selector centred in the header** — the symbol drives the whole page: bookmap, liquidation map, mechanics, long/short and the AI read all follow it. It may change during a session; every switch is recorded in the session log.
+
+### Trading sessions — archive and evaluation
+
+Before a session you write down what you intend: maximum loss, maximum number
+of trades, and an intent in one line. During the session the plan stays visible
+but locked. At the end you add a verdict, and the journal freezes which trades
+were closed inside the window, what they made, and whether the plan held.
+
+The point is the last part. A winning session that broke its loss limit was
+luck; a losing one that stayed inside its limits was good work — and no other
+view in the journal makes that difference visible. Sessions survive a reload and
+a server restart, only one can run at a time, and a forgotten one can be closed
+without being evaluated. Where an order-book recording covers the window, one
+click replays the Bookmap over exactly that period.
+
+Old sessions can be archived rather than deleted. They drop out of the list but
+stay in the tally — a discipline figure you could improve by tidying up would
+not be worth reading.
+
+The **evaluation** page asks four questions of those sessions, building on each
+other: do I keep my plan and am I improving, does the plan help at all, at which
+times of day and week do I trade well, and does it turn with session length or
+trade count. Groups with fewer than four sessions are greyed out rather than
+presented as a finding — three sessions on a Tuesday are noise.
 
 ### Calendar & Daily View
 - **Calendar Heatmap** — visual overview of daily P&L across months

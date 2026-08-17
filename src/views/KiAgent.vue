@@ -300,7 +300,7 @@ async function generateReport() {
         }
 
         // Browser-Benachrichtigung
-        sendNotification(t('kiAgent.reportReady'), t('kiAgent.reportCreated', { label }))
+        sendNotification('kiBerichtFertig', t('kiAgent.reportReady'), t('kiAgent.reportCreated', { label }))
     } catch (e) {
         // Server hat evtl. schon gespeichert bevor der Frontend-Request abbrach
         try {

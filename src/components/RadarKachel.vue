@@ -21,6 +21,22 @@ const props = defineProps({
     fehler: { type: String, default: '' },
     /** Hat die Kachel Daten? Steuert, ob der Inhalt oder ein Platzhalter kommt. */
     hatDaten: { type: Boolean, default: false },
+    /**
+     * Kachel versorgt sich selbst (rechnet im Browser oder hängt an einem
+     * eigenen Strom) und hat deshalb nie eine `daten`-Nutzlast. Ohne dieses
+     * Kennzeichen bliebe sie für immer im Ladezustand stehen. Die Stand-Zeit
+     * entfällt dann ebenfalls — „Stand 15:12" wäre bei einer Kachel, die
+     * sekündlich selbst rechnet, eine Falschaussage.
+     */
+    eigenstaendig: { type: Boolean, default: false },
+    /**
+     * Der Inhalt wird bedient (geschoben, gezoomt, angetippt). Dann darf ein
+     * Klick in den Körper NICHT die Gross-Ansicht öffnen — bei einem Canvas,
+     * das man mit der Maus schiebt, wäre das unbenutzbar. Die Lupe entfällt
+     * ebenfalls, denn eine zweite Instanz würde eine zweite Datenverbindung
+     * aufbauen.
+     */
+    interaktiv: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['gross', 'neuladen', 'groesseStart', 'groesseZurueck'])
@@ -41,17 +57,19 @@ const standText = computed(() => {
             <i v-if="icon" :class="[icon, 'radarCardIcon']"></i>
             <span class="radarCardTitle">{{ titel }}</span>
             <span :class="['liveDot', 'dot-' + zustand]" :title="t('marktradar.status_' + zustand)"></span>
-            <span class="radarCardStand">{{ standText }}</span>
+            <span v-if="!eigenstaendig" class="radarCardStand">{{ standText }}</span>
+            <span v-else class="radarCardStand"></span>
             <button type="button" class="radarCardBtn" :title="t('marktradar.refresh')" @click="emit('neuladen')">
                 <i class="uil uil-sync"></i>
             </button>
-            <button type="button" class="radarCardBtn" :title="t('marktradar.enlarge')" @click="emit('gross')">
+            <button v-if="!interaktiv" type="button" class="radarCardBtn" :title="t('marktradar.enlarge')"
+                @click="emit('gross')">
                 <i class="uil uil-expand-arrows-alt"></i>
             </button>
         </div>
 
-        <div class="radarCardBody" @click="hatDaten && emit('gross')">
-            <slot v-if="hatDaten"></slot>
+        <div class="radarCardBody" @click="!interaktiv && (hatDaten || eigenstaendig) && emit('gross')">
+            <slot v-if="hatDaten || eigenstaendig"></slot>
 
             <div v-else-if="zustand === 'error'" class="radarLeer">
                 <i class="uil uil-exclamation-triangle mb-1"></i>

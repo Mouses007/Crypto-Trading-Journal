@@ -170,6 +170,18 @@ function optionBlasen() {
     }
 }
 
+/**
+ * Rohdaten eines Treemap-Knotens — oder `null`, wenn keine dranhängen.
+ *
+ * `roh` hängt nur an den selbst gebauten Knoten. ECharts legt darum aber einen
+ * eigenen Wurzelknoten, und der ist in den Fugen zwischen den Kacheln und am
+ * Rand der Zeichenfläche tatsächlich mit der Maus zu treffen — dort lief
+ * vorher der Zugriff auf `roh` ins Leere.
+ */
+function rohVon(p) {
+    return p?.data?.roh || null
+}
+
 function optionKacheln() {
     return {
         backgroundColor: 'transparent',
@@ -178,7 +190,10 @@ function optionKacheln() {
             backgroundColor: 'rgba(18,18,18,0.94)',
             borderColor: 'rgba(255,255,255,0.18)',
             textStyle: { color: 'rgba(255,255,255,0.87)', fontSize: 12 },
-            formatter: (p) => tooltipText(p.data.roh),
+            // Ohne Rohdaten gibt es nichts zu erzählen: `null` lässt ECharts
+            // den Kasten ganz weg, ein leerer Text liesse ein leeres Kästchen
+            // an der Maus kleben.
+            formatter: (p) => (rohVon(p) ? tooltipText(rohVon(p)) : null),
         },
         series: [{
             type: 'treemap',
@@ -191,10 +206,16 @@ function optionKacheln() {
             label: {
                 show: true, fontSize: props.gross ? 12 : 11, color: '#fff',
                 overflow: 'truncate', ellipsis: '',
-                formatter: (p) => `${p.data.name}\n${proz(p.data.roh[fenster.value])}`,
+                // Ohne Rohdaten bleibt der Name — sonst stünde dort eine
+                // unbeschriftete Fläche
+                formatter: (p) => {
+                    const m = rohVon(p)
+                    const name = p.data?.name || ''
+                    return m ? `${name}\n${proz(m[fenster.value])}` : name
+                },
             },
-            // Kacheln unter 6 px Kantenlänge werden zusammengefasst — sonst
-            // entsteht am Rand ein Streifen aus unlesbaren Splittern
+            // Kacheln unter 300 px² Fläche lässt ECharts weg — sonst entsteht
+            // am Rand ein Streifen aus unlesbaren Splittern
             visibleMin: 300,
             // Fläche folgt der gewählten Skalierung: nach Marktkapitalisierung
             // (gedämpft), nach Stärke der Bewegung oder gleich gross

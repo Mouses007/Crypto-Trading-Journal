@@ -9,7 +9,21 @@ import {
     anbieterBasis, chatEndpunkt,
 } from './ai-models.js'
 
+// Kreis-Import mit llm.js (llm.js holt sich hier den SSRF-Schutz) — unkritisch,
+// weil beide Seiten nur Funktionen zur Laufzeit aufrufen, nichts beim Laden.
+import { istGuthabenFehler, merkeKiGuthaben } from './llm.js'
+
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
+
+/** Guthaben-Fehler im Routen-Catch vermerken — Anbieter aus den Einstellungen. */
+async function merkeGuthabenAusFehler(e) {
+    if (!istGuthabenFehler(e?.message)) return false
+    try {
+        const s = await getKnex()('settings').select('aiProvider').where('id', 1).first()
+        if (s?.aiProvider) await merkeKiGuthaben(s.aiProvider, e.message)
+    } catch { /* Status ist kein Blocker */ }
+    return true
+}
 
 /**
  * Zeitgrenze für Anbieter-Aufrufe. Grosszügig, weil ein ausführlicher Bericht
@@ -50,8 +64,35 @@ const PROMPT_PRESETS = {
 const KI_SPALTEN = [
     'aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens',
     'aiOllamaUrl', 'aiScreenshots', 'aiReportPrompt', 'aiChatEnabled',
+    'aiBerichtProvider', 'aiBerichtModell', 'aiAgentProvider', 'aiAgentModell',
+    'aiStrategieProvider', 'aiStrategieModell',
     ...KEY_SPALTEN, ...KI_URL_SPALTEN,
 ]
+
+/**
+ * Anbieter und Modell für eine bestimmte KI-Funktion.
+ *
+ * Jede Funktion darf ihren eigenen Anbieter haben; leer heisst „nimm den
+ * global eingestellten". Ein Modell ohne Anbieter zu übernehmen wäre falsch —
+ * `claude-sonnet-5` bei Perplexity gibt es nicht —, deshalb zählt das Modell
+ * nur, wenn auch ein eigener Anbieter dasteht.
+ *
+ * @param {object} settings  Zeile aus `settings` (mindestens KI_SPALTEN)
+ * @param {string} bereich   '' = global, sonst 'Bericht' | 'Agent' | 'Strategie'
+ */
+export function waehleAnbieter(settings, bereich = '') {
+    const eigen = bereich ? String(settings?.[`ai${bereich}Provider`] || '').trim() : ''
+    if (!eigen) {
+        return {
+            provider: settings?.aiProvider || 'ollama',
+            model: settings?.aiModel || '',
+        }
+    }
+    return {
+        provider: eigen,
+        model: String(settings?.[`ai${bereich}Modell`] || '').trim() || standardModell(eigen) || '',
+    }
+}
 
 /**
  * Fehlertext eines Anbieters herausziehen.
@@ -201,8 +242,7 @@ export function setupOllamaRoutes(app) {
                 const err = await response.json().catch(() => ({}))
                 return res.json({ success: false, message: err.error?.message || 'Gemini Fehler' })
             } else if (istOpenAiKompatibel(provider)) {
-                // openai, mistral, xai, qwen, custom — erreichbar ist ein
-                // OpenAI-kompatibler Endpunkt, wenn er einen Katalog liefert.
+                // openai, mistral, xai, qwen, perplexity, custom
                 const name = ANBIETER_REG[provider]?.name || provider
                 // `basisUrl` aus dem Rumpf erlaubt den Test einer noch nicht
                 // gespeicherten Adresse (Qwen-Arbeitsbereich, eigener Anbieter).
@@ -210,10 +250,54 @@ export function setupOllamaRoutes(app) {
                 const basis = roh ? basisUrl(roh) : await anbieterBasisAusDb(provider)
                 if (!basis) return res.json({ success: false, message: 'Basis-URL fehlt oder ist ungültig' })
                 if (!apiKey) return res.json({ success: false, message: 'API-Key fehlt' })
-                const response = await fetch(`${basis}/models`, {
-                    headers: { Authorization: `Bearer ${apiKey}` },
-                    signal: AbortSignal.timeout(15000)
-                })
+
+                /**
+                 * Zwei Prüfwege, weil „OpenAI-kompatibel" nur den Chat meint.
+                 *
+                 * Der Katalog (`/models`) ist der billigere Test — er kostet
+                 * nichts. Aber nicht jeder Anbieter hat einen: Perplexity
+                 * antwortet dort mit 404 (sein Katalog liegt unter `/v1/models`,
+                 * der Chat dagegen unter `/chat/completions` — eine gemeinsame
+                 * Basis-URL gibt es also nicht), Qwen führt gar keinen. Der Test
+                 * meldete deshalb „Antwort 404" bei völlig gesundem Schlüssel
+                 * und schickte die Fehlersuche zum Schlüssel statt zum Pfad.
+                 *
+                 * Wo `katalog: false` steht, wird stattdessen der Chat selbst
+                 * angeklopft — mit dem eingestellten Modell, denn ein Tippfehler
+                 * darin soll hier auffallen und nicht erst beim ersten Bericht.
+                 * Das kostet den Bruchteil eines Rappens und passiert nur auf
+                 * ausdrücklichen Knopfdruck. Ein 404 aus dem Katalog fällt
+                 * ebenfalls auf diesen Weg zurück: verschwindet er still, soll
+                 * der Test trotzdem die Wahrheit sagen.
+                 */
+                const kannKatalog = ANBIETER_REG[provider]?.katalog !== false
+                let response = kannKatalog
+                    ? await fetch(`${basis}/models`, {
+                        headers: { Authorization: `Bearer ${apiKey}` },
+                        signal: AbortSignal.timeout(15000),
+                    })
+                    : null
+
+                if (!response || response.status === 404) {
+                    response = await fetch(`${basis}/chat/completions`, {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${apiKey}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            // 16 statt 1: Perplexity lehnt kleinere Werte mit
+                            // „max_tokens must be at least 16" ab — und ein
+                            // Test, der an der eigenen Sparsamkeit scheitert,
+                            // meldet einen Fehler, den es gar nicht gibt.
+                            model: model || standardModell(provider),
+                            max_tokens: 16,
+                            messages: [{ role: 'user', content: 'Hi' }],
+                        }),
+                        signal: AbortSignal.timeout(20000),
+                    })
+                }
+
                 if (response.ok) {
                     return res.json({ success: true, message: `${name} Verbindung erfolgreich` })
                 }
@@ -239,8 +323,8 @@ export function setupOllamaRoutes(app) {
             const settings = await knex('settings')
                 .select(KI_SPALTEN)
                 .where('id', 1).first()
-            const provider = settings?.aiProvider || 'ollama'
-            const model = settings?.aiModel || ''
+            // Eigener Anbieter für Berichte/Bewertungen; leer = global
+            const { provider, model } = waehleAnbieter(settings, 'Bericht')
             const temperature = settings?.aiTemperature ?? 0.7
             const maxTokens = settings?.aiMaxTokens || 1500
             const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
@@ -317,7 +401,12 @@ export function setupOllamaRoutes(app) {
             res.json({ report, provider, model: model || provider, data: reportData, tokenUsage, savedId })
         } catch (e) {
             console.error('AI report error:', e)
-            res.status(500).json({ error: 'Bericht-Generierung fehlgeschlagen' })
+            const guthabenLeer = await merkeGuthabenAusFehler(e)
+            res.status(500).json({
+                error: guthabenLeer
+                    ? 'Bericht-Generierung fehlgeschlagen: das Guthaben des KI-Anbieters ist aufgebraucht.'
+                    : 'Bericht-Generierung fehlgeschlagen',
+            })
         }
     })
 
@@ -366,8 +455,8 @@ export function setupOllamaRoutes(app) {
                 knex('tags').where('tradeId', tradeId).first(),
             ])
 
-            const provider = settings?.aiProvider || 'ollama'
-            const model = settings?.aiModel || ''
+            // Eigener Anbieter für Berichte/Bewertungen; leer = global
+            const { provider, model } = waehleAnbieter(settings, 'Bericht')
             const temperature = settings?.aiTemperature ?? 0.7
             const maxTokens = settings?.aiMaxTokens || 1500
             const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
@@ -722,8 +811,8 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             const settings = await knex('settings')
                 .select(KI_SPALTEN)
                 .where('id', 1).first()
-            const provider = settings?.aiProvider || 'ollama'
-            const model = settings?.aiModel || ''
+            // Eigener Anbieter für Berichte/Bewertungen; leer = global
+            const { provider, model } = waehleAnbieter(settings, 'Bericht')
             const temperature = settings?.aiTemperature ?? 0.7
             const maxTokens = settings?.aiMaxTokens || 1500
             const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
@@ -879,11 +968,41 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                 } catch (e2) { /* Tabellen existieren evtl. noch nicht */ }
             }
 
+            // 7. news_digests (Lagebericht) — fehlte bisher komplett. Ein
+            //    täglicher Bericht ist der regelmässigste KI-Verbraucher
+            //    überhaupt; ihn nicht mitzuzählen liess die Übersicht kleiner
+            //    aussehen als die tatsächliche Rechnung.
+            let lageberichte = []
+            try {
+                const roh = await knex('news_digests')
+                    .select('provider', 'modell', 'tokens')
+                    .where('tokens', '>', 0)
+                lageberichte = roh.map(d => ({
+                    provider: d.provider, model: d.modell,
+                    // `news_digests` führt nur die Summe — die Aufteilung wäre
+                    // erfunden, deshalb steht sie ehrlich nur im Gesamtwert.
+                    promptTokens: 0, completionTokens: 0, totalTokens: d.tokens || 0,
+                }))
+            } catch (e) { /* Tabelle existiert evtl. noch nicht */ }
+
+            // 8. strategy_runs (Veto-Agenten der Strategien)
+            let strategieLaeufe = []
+            try {
+                const roh = await knex('strategy_runs')
+                    .select('provider', 'model', 'totalTokens')
+                    .where('totalTokens', '>', 0)
+                strategieLaeufe = roh.map(r => ({
+                    provider: r.provider, model: r.model,
+                    promptTokens: 0, completionTokens: 0, totalTokens: r.totalTokens || 0,
+                }))
+            } catch (e) { /* Tabelle existiert evtl. noch nicht */ }
+
             // Aggregieren
             const byProvider = {}
             let totalPrompt = 0, totalCompletion = 0, totalAll = 0
 
-            const allEntries = [...reports, ...messages, ...reviews, ...screenshotReviews, ...tradeChat, ...agentSessions]
+            const allEntries = [...reports, ...messages, ...reviews, ...screenshotReviews,
+                ...tradeChat, ...agentSessions, ...lageberichte, ...strategieLaeufe]
             for (const entry of allEntries) {
                 const p = entry.provider || 'unknown'
                 const pt = entry.promptTokens || 0
@@ -918,7 +1037,9 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                     chatMessages: messages.length,
                     tradeReviews: reviews.length,
                     screenshotReviews: screenshotReviews.length,
-                    agentSessions: agentSessions.length
+                    agentSessions: agentSessions.length,
+                    lageberichte: lageberichte.length,
+                    strategieLaeufe: strategieLaeufe.length
                 }
             })
         } catch (e) {
@@ -1163,8 +1284,8 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             const settings = await knex('settings')
                 .select(KI_SPALTEN)
                 .where('id', 1).first()
-            const provider = settings?.aiProvider || 'ollama'
-            const model = settings?.aiModel || ''
+            // Eigener Anbieter für Berichte/Bewertungen; leer = global
+            const { provider, model } = waehleAnbieter(settings, 'Bericht')
             const temperature = settings?.aiTemperature ?? 0.7
             const maxTokens = settings?.aiMaxTokens || 1500
             const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL
@@ -1231,7 +1352,56 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             })
         } catch (e) {
             console.error('Chat error:', e)
-            res.status(500).json({ error: 'Chat-Anfrage fehlgeschlagen' })
+            const guthabenLeer = await merkeGuthabenAusFehler(e)
+            res.status(500).json({
+                error: guthabenLeer
+                    ? 'Chat-Anfrage fehlgeschlagen: das Guthaben des KI-Anbieters ist aufgebraucht.'
+                    : 'Chat-Anfrage fehlgeschlagen',
+            })
+        }
+    })
+
+    /**
+     * Guthaben-Übersicht je Anbieter.
+     *
+     * Ehrlichkeit vor Schein-Genauigkeit: Kein grosser Anbieter verrät sein
+     * Restguthaben über den normalen API-Key (xAI nur per separatem
+     * Management-Key, Perplexity/OpenAI/Anthropic/Gemini gar nicht). Gezeigt
+     * wird deshalb, was der Server WEISS: ob ein Schlüssel hinterlegt ist, ob
+     * der letzte Aufruf an fehlendem Guthaben scheiterte (mit Meldung und
+     * Zeitpunkt) und wann zuletzt einer gelang.
+     */
+    app.get('/api/ai/guthaben', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const s = await knex('settings')
+                .select('aiQuotaStatus', 'aiProvider', ...KEY_SPALTEN)
+                .where('id', 1).first()
+            let status = {}
+            try { status = JSON.parse(s?.aiQuotaStatus || '{}') } catch { /* Altbestand */ }
+
+            const anbieter = Object.entries(ANBIETER_REG)
+                // Abgekündigte nur zeigen, wenn noch ein Schlüssel liegt
+                .filter(([, reg]) => !reg.abgekuendigt || (reg.keySpalte && s?.[reg.keySpalte]))
+                .map(([id, reg]) => {
+                    const st = status[id] || {}
+                    const keySet = !reg.keySpalte || Boolean(s?.[reg.keySpalte])
+                    return {
+                        id,
+                        name: reg.name,
+                        keySet,
+                        keyUrl: reg.keyUrl || '',
+                        aktiv: s?.aiProvider === id,
+                        leer: Boolean(st.leer),
+                        meldung: st.meldung || '',
+                        seit: st.seit || null,
+                        okSeit: st.okSeit || null,
+                    }
+                })
+            res.json({ anbieter })
+        } catch (e) {
+            logError('ai-guthaben', e.message)
+            res.status(500).json({ error: 'Guthaben-Status nicht lesbar' })
         }
     })
 }

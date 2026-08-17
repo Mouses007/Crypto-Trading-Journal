@@ -235,7 +235,17 @@ watch(levMapHours, () => lade())
     display: flex;
     flex-direction: column;
     height: calc(100vh - 90px);
+    /* dvh folgt der ein- und ausfahrenden Browserleiste auf dem Handy — mit
+       reinem vh ragt der Chart unter die Adressleiste (wie in Liquidity.vue) */
+    height: calc(100dvh - 90px);
     min-height: 420px;
+}
+
+@media (max-width: 767.98px) {
+    .oiWrap {
+        height: calc(100dvh - 6.5rem);
+        min-height: 300px;
+    }
 }
 
 .oiChart {

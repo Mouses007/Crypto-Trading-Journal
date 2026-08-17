@@ -2,6 +2,7 @@
 import { onBeforeMount, onMounted, ref, reactive, computed } from 'vue';
 import { useDateCalFormat } from '../utils/formatters.js';
 import ModelManager from '../components/ModelManager.vue'
+import AnbieterWahl from '../components/AnbieterWahl.vue'
 import { useCheckCurrentUser, useInitTooltip } from '../utils/utils';
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js';
 import { currentUser, renderProfile } from '../stores/settings.js';
@@ -12,6 +13,7 @@ import dayjs from 'dayjs'
 import { requestNotificationPermission } from '../utils/notify'
 import { logWarn } from '../utils/logger.js'
 import { useQuickApiImport } from '../utils/quickImport.js'
+import { loadSymbolMeta } from '../utils/liveSymbols.js'
 import { sendNotification } from '../utils/notify.js'
 import { useI18n } from 'vue-i18n'
 import { setLocale } from '../i18n'
@@ -24,7 +26,7 @@ import {
     VIEW_PCT_OPTIONS, FRAME_MS_OPTIONS, HISTORY_MIN_OPTIONS,
 } from '../stores/live.js'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 let selectedLanguage = ref('de')
 
@@ -58,20 +60,17 @@ let scalpMaxMinutes = ref(15)
 let daytradeMaxHours = ref(24)
 let enableBinanceChart = ref(false)
 let browserNotifications = ref(true)
-let languageExpanded = ref(false)
 let importsExpanded = ref(false)
 let layoutExpanded = ref(false)
 let balanceExpanded = ref(false)
-let timeframesExpanded = ref(false)
 let apiExpanded = ref(false)
-let tagsExpanded = ref(false)
 let bewertungExpanded = ref(false)
 let subTagsExpanded = ref(false)
 let subTimeframesExpanded = ref(false)
 let subTradeTypeExpanded = ref(false)
 let subPopupsExpanded = ref(false)
 let chartExpanded = ref(false)
-let kiExpanded = ref(false)
+let kiExpanded = ref(true)   // eigener Unter-Reiter: offen starten
 let dbExpanded = ref(false)
 let pgProvidersExpanded = ref(false)
 
@@ -118,12 +117,16 @@ async function loadAiTokenStats() {
     } catch (e) { /* silent */ }
 }
 
+/* Beschriftung UND Prompt-Text kommen aus der Übersetzung. Vorher war nur die
+   Beschriftung übersetzt, der Prompt selbst stand als deutscher Klartext da —
+   ein englischer Nutzer wählte „Strict coach" und bekam eine deutsche
+   Anweisung an die KI geschickt. */
 const promptPresets = computed(() => [
     { value: 'custom', label: t('settings.promptCustom'), prompt: '' },
-    { value: 'kurz', label: t('settings.promptShort'), prompt: 'Halte den Bericht kurz und prägnant. Maximal 3-4 Sätze pro Abschnitt. Fokussiere dich auf die wichtigsten Erkenntnisse.' },
-    { value: 'standard', label: t('settings.promptStandard'), prompt: 'Erstelle einen ausgewogenen Trading-Bericht mit allen wichtigen Kennzahlen, Stärken, Schwächen und konkreten Verbesserungsvorschlägen. Nutze eine sachliche, professionelle Sprache.' },
-    { value: 'coach', label: t('settings.promptCoach'), prompt: 'Sei sehr direkt und kritisch. Beschönige nichts. Sprich Schwächen und Fehler klar an. Gib konkrete Verbesserungsvorschläge wie ein strenger Trading-Coach.' },
-    { value: 'psychologie', label: t('settings.promptPsychology'), prompt: 'Lege besonderen Fokus auf die psychologischen Aspekte: Stress, Emotionen, Disziplin, Overtrading. Analysiere Verhaltensmuster und emotionale Trigger.' }
+    { value: 'kurz', label: t('settings.promptShort'), prompt: t('settings.promptTextShort') },
+    { value: 'standard', label: t('settings.promptStandard'), prompt: t('settings.promptTextStandard') },
+    { value: 'coach', label: t('settings.promptCoach'), prompt: t('settings.promptTextCoach') },
+    { value: 'psychologie', label: t('settings.promptPsychology'), prompt: t('settings.promptTextPsychology') },
 ])
 
 function onPromptPresetChange() {
@@ -153,13 +156,38 @@ const BEREICHE = [
     { id: 'journal', icon: 'uil uil-book-alt' },
     { id: 'live', icon: 'uil uil-chart-line' },
     { id: 'ki', icon: 'uil uil-brain' },
-    { id: 'agent', icon: 'uil uil-robot' },
+    { id: 'benachrichtigungen', icon: 'uil uil-bell' },
 ]
 const bereich = ref(localStorage.getItem('settingsBereich') || 'allgemein')
 function bereichWechseln(id) {
     bereich.value = id
     localStorage.setItem('settingsBereich', id)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+/**
+ * Zweite Reiter-Ebene im KI-Bereich.
+ *
+ * Die KI-Einstellungen lagen über drei obere Reiter verstreut: Zugang und
+ * Berichte unter „KI", die Strategie-Agenten unter „Agent", der ganze
+ * Lagebericht unter „Live" beim Marktradar. Wer einen Schlüssel eintrug und
+ * dann den Bericht einstellen wollte, suchte zwei Bildschirme weiter.
+ *
+ * Jetzt: ein Ort, darin je Funktion ein Reiter. Der frühere obere Reiter
+ * „Agent" ist deshalb entfallen.
+ */
+const KI_BEREICHE = [
+    { id: 'allgemein', icon: 'uil uil-key-skeleton' },
+    { id: 'berichte', icon: 'uil uil-file-alt' },
+    { id: 'nachrichten', icon: 'uil uil-newspaper' },
+    { id: 'agent', icon: 'uil uil-robot' },
+    { id: 'strategie', icon: 'uil uil-chart-line' },
+    { id: 'bilder', icon: 'uil uil-image' },
+]
+const kiBereich = ref(localStorage.getItem('settingsKiBereich') || 'allgemein')
+function kiBereichWechseln(id) {
+    kiBereich.value = id
+    localStorage.setItem('settingsKiBereich', id)
 }
 
 /**
@@ -331,6 +359,69 @@ function onProviderChange() {
     }
 }
 
+/* Anbieter und Modell je KI-Funktion. Leer = der global eingestellte Anbieter.
+   Gespeichert wird feldweise wie im Marktradar — ein Sammel-Speichern hat dort
+   schon einmal einen Schalter mit veraltetem Stand überschrieben. */
+let aiBerichtProvider = ref('')
+let aiBerichtModell = ref('')
+let aiAgentProvider = ref('')
+let aiAgentModell = ref('')
+let aiStrategieProvider = ref('')
+let aiStrategieModell = ref('')
+let radarNewsRechercheModell = ref('sonar')
+
+/* Wochentage und Themennamen aus der Übersetzung — als computed, damit ein
+   Sprachwechsel sie sofort mitzieht. */
+const wochentagNamen = computed(() => [1, 2, 3, 4, 5, 6, 7].map(i => t('settings.ki.news.wd' + i)))
+const themenNamen = computed(() => ({
+    crypto: t('settings.ki.news.topicCrypto'),
+    finanzen: t('settings.ki.news.topicFinance'),
+    tech: t('settings.ki.news.topicTech'),
+}))
+
+async function kiSpeichern(feld, wert) {
+    await dbUpdateSettings({ [feld]: wert })
+    if (currentUser.value) currentUser.value[feld] = wert
+}
+
+/** Anbieter+Modell eines Bereichs setzen und sofort sichern. */
+function setzeFunktionsAnbieter(providerRef, modellRef, providerFeld, modellFeld) {
+    return {
+        anbieter: (w) => { providerRef.value = w; kiSpeichern(providerFeld, w); modellRef.value = ''; kiSpeichern(modellFeld, '') },
+        modell: (w) => { modellRef.value = w; kiSpeichern(modellFeld, w) },
+    }
+}
+
+/* Guthaben-Status je Anbieter. Die Anbieter verraten ihr Restguthaben nicht
+   über den API-Key — gezeigt wird, was der Server weiss: hinterlegter
+   Schlüssel, letzter Guthaben-Fehler, letzter Erfolg. */
+let guthabenListe = ref([])
+
+/* Anbietername in der Sprache der Oberfläche. Die Namen kommen aus dem
+   Anbieter-Register des Servers und sind dort deutsch beschriftet; nur die
+   zwei generischen Einträge brauchen eine Übersetzung — „Anthropic (Claude)"
+   heisst überall gleich. */
+function anbieterName(a) {
+    if (a?.id === 'ollama') return t('settings.ki.provOllama')
+    if (a?.id === 'custom') return t('settings.ki.provCustom')
+    return a?.name || ''
+}
+
+/* Zeitpunkt in der Sprache der Oberfläche. Vorher stand hier fest 'de-CH' —
+   auf Englisch gestellt blieb das Datum trotzdem schweizerdeutsch formatiert. */
+function zeitpunkt(ms) {
+    return new Date(ms).toLocaleString(locale.value === 'en' ? 'en-GB' : 'de-CH',
+        { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+async function ladeGuthaben() {
+    try {
+        const { data } = await axios.get('/api/ai/guthaben')
+        guthabenListe.value = data.anbieter || []
+    } catch (e) {
+        guthabenListe.value = []
+    }
+}
+
 async function loadAiSettings() {
     try {
         const res = await axios.get('/api/ai/settings')
@@ -359,12 +450,23 @@ async function loadAiSettings() {
         if (s.keys) {
             for (const [id, wert] of Object.entries(s.keys)) aiKeys[id] = wert || ''
         }
+        // Wahl je Funktion kommt aus den allgemeinen Einstellungen, nicht aus
+        // /api/ai/settings — dort liegen nur Zugang und globale Vorgaben.
+        const cu = currentUser.value || {}
+        aiBerichtProvider.value = cu.aiBerichtProvider || ''
+        aiBerichtModell.value = cu.aiBerichtModell || ''
+        aiAgentProvider.value = cu.aiAgentProvider || ''
+        aiAgentModell.value = cu.aiAgentModell || ''
+        aiStrategieProvider.value = cu.aiStrategieProvider || ''
+        aiStrategieModell.value = cu.aiStrategieModell || ''
+        radarNewsRechercheModell.value = cu.radarNewsRechercheModell || 'sonar'
+        ladeGuthaben()
     } catch (e) {
         console.error('Fehler beim Laden der KI-Settings:', e)
     }
 }
 /* SHARE CARD SETTINGS (FLUX.2 + Gemini) */
-let fluxExpanded = ref(false)
+let fluxExpanded = ref(true) // eigener Unter-Reiter: offen starten
 let shareCardProvider = ref('flux')
 let fluxApiKey = ref('')
 let fluxModel = ref('flux-2-pro')
@@ -477,11 +579,16 @@ function onFluxAvatarUpload(event) {
 /* LIVE-ANALYSE (Heatmap / Bookmap) — Werte liegen im Live-Store und speichern
    sich dort selbst in die settings-Tabelle. */
 let liveExpanded = ref(false)
+let livetradingExpanded = ref(false)
+/* Vorgabe an — die Seite kostet nichts, solange man sie nicht öffnet. Wer nur
+   beobachtet und nicht handelt, schaltet sie hier weg; dann verschwinden auch
+   der Startknopf auf dem Marktradar und der Menüeintrag. */
+let livetradingAn = ref(true)
 
 /* STRATEGIE-AGENTEN — globale Schutzschalter. Bewusst hier und nicht in der
    Instanz-Konfiguration: sie stehen ÜBER jeder einzelnen Strategie, damit eine
    fehlkonfigurierte Instanz sie nicht umgehen kann. */
-let agentExpanded = ref(false)
+let agentExpanded = ref(true) // eigener Unter-Reiter: offen starten
 let agentKillSwitch = ref(false)
 let agentLiveEnabled = ref(false)
 let agentMaxLeverage = ref(10)
@@ -539,8 +646,22 @@ let radarNewsModel = ref('')
 let radarNewsAufloesung = ref('niedrig')
 let radarNewsBerichtProvider = ref('')
 let radarNewsBerichtModell = ref('')
-let radarPicycleAlarm = ref(true)
+/* Zuschnitt des Berichts: Rhythmus (täglich/wöchentlich + Wochentag), Themen
+   als Kapitel und Länge. Themen als Array — gespeichert wird CSV. */
+let radarNewsRhythmus = ref('taeglich')
+let radarNewsWochentag = ref(1)
+let radarNewsThemen = ref(['crypto'])
+let radarNewsLaenge = ref('mittel')
+let radarNewsXModell = ref('grok-4.6')
+// radarPicycleAlarm gibt es nicht mehr als eigenen Schalter — ob gemeldet wird,
+// steht in der Kanalwahl unter „Meldungen". Die Spalte bleibt in der Datenbank
+// stehen, wird aber nicht mehr gelesen oder geschrieben.
 let radarPicycleSchwelle = ref(0)
+let radarFundingDivergenz = ref(15)
+/* Welche Märkte der Divergenz-Alarm beobachtet. Leer = die eigenen Märkte,
+   wie vor der Auswahl — die Vorgabe darf nicht stillschweigend auf „keine"
+   kippen, sonst schweigt ein bestehender Alarm nach dem Update. */
+let radarDivergenzSymbole = ref('')
 let berichtLaeuft = ref(false)
 let berichtMeldung = ref('')
 let berichtFehler = ref(false)
@@ -563,6 +684,11 @@ const kostenSchaetzung = computed(() => {
 })
 
 let radarArschlochfilter = ref(true)
+/* Der NEUE Arschlochfilter: Truth Social automatisch + Stichwörter (eine je
+   Zeile). Der alte Sammelschalter oben drüber heisst jetzt „Temporär
+   ausschliessen" — gleiche Technik, ehrlicherer Name. */
+let radarArschlochAn = ref(true)
+let radarArschlochWoerter = ref('')
 
 /* Nachrichtenquellen — serverseitige Liste, deshalb eigene Endpunkte statt
    der generischen Tabellen-Route: die URL kommt vom Nutzer und muss vor dem
@@ -580,6 +706,7 @@ function loadRadarSettings() {
     radarKalenderLaender.value = s.radarKalenderLaender || 'USD,JPY'
     radarKalenderImpact.value = s.radarKalenderImpact || 'medium'
     radarArschlochfilter.value = Number(s.radarArschlochfilter ?? 1) === 1
+    livetradingAn.value = Number(s.livetradingAn ?? 1) === 1
     radarNewsAuto.value = Number(s.radarNewsAuto ?? 1) === 1
     radarNewsStunde.value = Number(s.radarNewsStunde ?? 12)
     radarNewsVideos.value = Number(s.radarNewsVideos ?? 3)
@@ -587,8 +714,18 @@ function loadRadarSettings() {
     radarNewsAufloesung.value = s.radarNewsAufloesung || 'niedrig'
     radarNewsBerichtProvider.value = s.radarNewsBerichtProvider || ''
     radarNewsBerichtModell.value = s.radarNewsBerichtModell || ''
-    radarPicycleAlarm.value = Number(s.radarPicycleAlarm ?? 1) === 1
+    radarNewsRhythmus.value = s.radarNewsRhythmus === 'woechentlich' ? 'woechentlich' : 'taeglich'
+    radarNewsWochentag.value = Math.max(1, Math.min(7, Number(s.radarNewsWochentag ?? 1)))
+    radarNewsThemen.value = String(s.radarNewsThemen || 'crypto').split(',')
+        .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech'].includes(t))
+    if (!radarNewsThemen.value.length) radarNewsThemen.value = ['crypto']
+    radarNewsLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
+    radarNewsXModell.value = s.radarNewsXModell || 'grok-4.6'
+    radarArschlochAn.value = Number(s.radarArschlochAn ?? 1) === 1
+    radarArschlochWoerter.value = s.radarArschlochWoerter ?? 'Donald Trump'
     radarPicycleSchwelle.value = Number(s.radarPicycleSchwelle ?? 0)
+    radarFundingDivergenz.value = Number(s.radarFundingDivergenz ?? 15)
+    radarDivergenzSymbole.value = s.radarDivergenzSymbole || ''
     ladeNewsQuellen()
 }
 
@@ -607,14 +744,24 @@ async function radarSpeichern(feld) {
         radarKalenderLaender: radarKalenderLaender.value.toUpperCase().replace(/\s+/g, ''),
         radarKalenderImpact: radarKalenderImpact.value,
         radarArschlochfilter: radarArschlochfilter.value ? 1 : 0,
+        livetradingAn: livetradingAn.value ? 1 : 0,
         radarNewsAuto: radarNewsAuto.value ? 1 : 0,
         radarNewsStunde: radarNewsStunde.value,
         radarNewsModel: radarNewsModel.value.trim(),
         radarNewsAufloesung: radarNewsAufloesung.value,
         radarNewsBerichtProvider: radarNewsBerichtProvider.value,
         radarNewsBerichtModell: radarNewsBerichtModell.value.trim(),
-        radarPicycleAlarm: radarPicycleAlarm.value ? 1 : 0,
+        radarNewsRhythmus: radarNewsRhythmus.value,
+        radarNewsWochentag: Math.max(1, Math.min(7, Number(radarNewsWochentag.value) || 1)),
+        // Reihenfolge festnageln, damit die Kapitel immer gleich sortiert sind
+        radarNewsThemen: ['crypto', 'finanzen', 'tech'].filter(t => radarNewsThemen.value.includes(t)).join(','),
+        radarNewsLaenge: radarNewsLaenge.value,
+        radarNewsXModell: radarNewsXModell.value.trim() || 'grok-4.6',
+        radarArschlochAn: radarArschlochAn.value ? 1 : 0,
+        radarArschlochWoerter: radarArschlochWoerter.value,
         radarPicycleSchwelle: Math.max(0, Math.min(50, Number(radarPicycleSchwelle.value) || 0)),
+        radarFundingDivergenz: Math.max(0, Math.min(100, Number(radarFundingDivergenz.value) || 0)),
+        radarDivergenzSymbole: radarDivergenzSymbole.value,
         // Hart begrenzen, nicht bloss im Eingabefeld: der Server deckelt
         // ohnehin bei zehn, und eine Zahl anzuzeigen, die nie gilt, wäre gelogen
         radarNewsVideos: Math.max(0, Math.min(10, Number(radarNewsVideos.value) || 0)),
@@ -676,8 +823,12 @@ function meldung(text, fehler = false) {
 async function quelleTesten() {
     newsTestet.value = true
     try {
-        const { data } = await axios.post('/api/marktradar/news/test', { url: neueQuelle.value.url })
-        meldung(`${data.anzahl} Einträge gefunden — z.B. „${(data.beispiel[0] || '').slice(0, 60)}"`)
+        // `art` mitschicken: Telegram braucht den anderen Leser, X wird nur
+        // auf Handle-Form geprüft (jede echte Suche kostet)
+        const { data } = await axios.post('/api/marktradar/news/test', {
+            url: neueQuelle.value.url, art: neueQuelle.value.art,
+        })
+        meldung(data.hinweis || `${data.anzahl} Einträge gefunden — z.B. „${(data.beispiel[0] || '').slice(0, 60)}"`)
     } catch (e) {
         meldung(e.response?.data?.error || e.message, true)
     } finally {
@@ -1072,6 +1223,7 @@ let editGroupColor = ref('')
 
 onMounted(async () => {
     await useInitTooltip()
+    await ladeBenachrichtigungen()
 })
 
 /* PROFILE */
@@ -1193,13 +1345,13 @@ async function saveBitgetConfig() {
             try {
                 const result = await useQuickApiImport('bitget')
                 if (result.count > 0) {
-                    sendNotification('Bitget Import', result.message || t('messages.importCount', { count: result.count }))
+                    sendNotification('importFertig', 'Bitget Import', result.message || t('messages.importCount', { count: result.count }))
                 } else {
-                    sendNotification('Bitget Import', result.message || t('messages.noNewTrades'))
+                    sendNotification('importFertig', 'Bitget Import', result.message || t('messages.noNewTrades'))
                 }
             } catch (importError) {
                 console.log(' -> Bitget auto-import error:', importError.message)
-                sendNotification('Bitget Import', t('messages.importFailed') + (importError.response?.data?.error || importError.message))
+                sendNotification('importFertig', 'Bitget Import', t('messages.importFailed') + (importError.response?.data?.error || importError.message))
             }
             bitgetImporting.value = false
         }
@@ -1267,13 +1419,13 @@ async function savePionexConfig() {
             try {
                 const result = await useQuickApiImport('pionex')
                 if (result.count > 0) {
-                    sendNotification('Pionex Import', result.message || t('messages.importCount', { count: result.count }))
+                    sendNotification('importFertig', 'Pionex Import', result.message || t('messages.importCount', { count: result.count }))
                 } else {
-                    sendNotification('Pionex Import', result.message || t('messages.noNewTrades'))
+                    sendNotification('importFertig', 'Pionex Import', result.message || t('messages.noNewTrades'))
                 }
             } catch (importError) {
                 console.log(' -> Pionex auto-import error:', importError.message)
-                sendNotification('Pionex Import', t('messages.importFailed') + (importError.response?.data?.error || importError.message))
+                sendNotification('importFertig', 'Pionex Import', t('messages.importFailed') + (importError.response?.data?.error || importError.message))
             }
             pionexImporting.value = false
         }
@@ -1596,6 +1748,208 @@ async function saveNotificationSetting() {
     } catch (error) {
         console.error(' -> Fehler beim Speichern der Benachrichtigungs-Einstellung:', error)
     }
+}
+
+/* ================= BENACHRICHTIGUNGEN ================= */
+/*
+ * Das Register kommt vom Server (`/api/benachrichtigungen/typen`) — genau wie
+ * die Modell-Liste. So muss ein neuer Meldungstyp nur dort eingetragen werden
+ * und taucht hier automatisch auf, statt in zwei Listen gepflegt zu werden,
+ * die zuverlässig auseinanderlaufen.
+ */
+const meldeTypen = ref([])
+const kanalWahl = ref({})
+
+/** Reihenfolge der Gruppen in der Anzeige. */
+const MELDE_GRUPPEN = ['markt', 'handel', 'system']
+const typenNachGruppe = computed(() => MELDE_GRUPPEN
+    .map(g => ({ id: g, typen: meldeTypen.value.filter(t => t.gruppe === g) }))
+    .filter(g => g.typen.length))
+
+/** Schwelle je Ereignis — die beiden, die eine haben, hängen an eigenen Spalten. */
+const SCHWELLEN = {
+    picycleVorwarnung: {
+        ref: () => radarPicycleSchwelle,
+        spalte: 'radarPicycleSchwelle',
+        optionen: [[0, 'Nur bei der Kreuzung'], [3, 'ab 3 % Abstand'], [5, 'ab 5 % Abstand'],
+        [10, 'ab 10 % Abstand'], [20, 'ab 20 % Abstand']],
+    },
+    fundingDivergenz: {
+        ref: () => radarFundingDivergenz,
+        spalte: 'radarFundingDivergenz',
+        optionen: [[0, 'Aus'], [10, 'ab 10 Punkten p.a.'], [15, 'ab 15 Punkten p.a.'],
+        [25, 'ab 25 Punkten p.a.'], [50, 'ab 50 Punkten p.a.']],
+    },
+}
+
+/* ── Divergenz-Alarm: welche Märkte ──────────────────────────────────────
+ *
+ * Gespeichert wird eine Symbolliste, ausgewählt wird sie aber aus den Märkten,
+ * die Binance wirklich führt: ein getipptes Symbol, das es nicht gibt, meldet
+ * sich nie — und niemand käme darauf, dass ein Tippfehler der Grund ist.
+ *
+ * Leere Auswahl heisst „deine Märkte" und nicht „keine". Der Alarm hatte vor
+ * der Auswahl genau dieses Verhalten; wer nichts anfasst, soll nichts merken.
+ */
+const divergenzOffen = ref(false)
+const divergenzSuche = ref('')
+const divergenzMaerkte = ref([])
+const divergenzLaedt = ref(false)
+
+/** Höchstens so viele Märkte — der Server nimmt ohnehin nicht mehr an. */
+const DIVERGENZ_MAX = 40
+
+const divergenzGewaehlt = computed(() => String(radarDivergenzSymbole.value || '')
+    .split(/[,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean))
+
+/** BTCUSDT → BTC. Das USDT dahinter trägt keine Information, kostet aber Platz. */
+const kurzCoin = (s) => String(s).replace(/USDT$/, '')
+
+const divergenzLabel = computed(() => divergenzGewaehlt.value.map(kurzCoin).join(', '))
+
+/**
+ * Die Liste unter dem Suchfeld. Gewählte Märkte stehen oben — sonst sucht man
+ * nach dem Abwählen quer durch tausend Zeilen nach dem, was man gerade
+ * angehakt hatte.
+ */
+const divergenzTreffer = computed(() => {
+    const q = divergenzSuche.value.trim().toUpperCase()
+    const gewaehlt = divergenzGewaehlt.value
+    const passt = (s) => !q || s.includes(q)
+    const rest = divergenzMaerkte.value.filter(s => passt(s) && !gewaehlt.includes(s))
+    return [...gewaehlt.filter(passt), ...rest].slice(0, 60)
+})
+
+async function divergenzOeffnen() {
+    divergenzOffen.value = !divergenzOffen.value
+    if (!divergenzOffen.value || divergenzMaerkte.value.length) return
+    divergenzLaedt.value = true
+    try {
+        const meta = await loadSymbolMeta('futures')
+        divergenzMaerkte.value = meta
+            .map(m => String(m.symbol || '').toUpperCase())
+            .filter(s => s.endsWith('USDT'))
+            .sort()
+    } catch (e) {
+        console.error(' -> Marktliste nicht ladbar:', e)
+    } finally {
+        divergenzLaedt.value = false
+    }
+}
+
+async function divergenzUmschalten(symbol) {
+    const gewaehlt = divergenzGewaehlt.value
+    const neu = gewaehlt.includes(symbol)
+        ? gewaehlt.filter(s => s !== symbol)
+        : [...gewaehlt, symbol].slice(0, DIVERGENZ_MAX)
+    radarDivergenzSymbole.value = neu.join(',')
+    await radarSpeichern('radarDivergenzSymbole')
+}
+
+async function divergenzLeeren() {
+    radarDivergenzSymbole.value = ''
+    await radarSpeichern('radarDivergenzSymbole')
+}
+
+function kanalAn(id, kanal) {
+    const e = kanalWahl.value[id] || {}
+    // Ohne gespeicherte Wahl: Browser an, E-Mail aus — E-Mail ist immer eine
+    // bewusste Entscheidung, sonst verschickt ein Update ungefragt Post.
+    return e[kanal] !== undefined ? Boolean(e[kanal]) : kanal === 'browser'
+}
+
+async function setzeKanal(id, kanal, wert) {
+    // Beim Einschalten des Browser-Kanals gleich die Erlaubnis holen —
+    // sonst hakt man etwas an, das der Browser stumm verwirft.
+    if (kanal === 'browser' && wert) await requestNotificationPermission()
+    kanalWahl.value = {
+        ...kanalWahl.value,
+        [id]: { ...(kanalWahl.value[id] || {}), [kanal]: Boolean(wert) },
+    }
+    try {
+        await dbUpdateSettings({ benachrichtigungen: kanalWahl.value })
+        if (currentUser.value) currentUser.value.benachrichtigungen = kanalWahl.value
+    } catch (e) {
+        console.error(' -> Kanalwahl nicht gespeichert:', e)
+    }
+}
+
+// ── E-Mail-Zugang ────────────────────────────────────────────────────────
+const mail = ref({
+    mailAktiv: 0, mailHost: '', mailPort: 587, mailSicherheit: 'starttls',
+    mailUser: '', mailVon: '', mailAn: '', mailPasswort: '', mailPasswortSet: false,
+})
+const mailTestLaeuft = ref(false)
+const mailMeldung = ref('')
+const mailFehler = ref(false)
+
+/**
+ * Vorlagen für die verbreiteten Anbieter. Port und Verschlüsselung zu
+ * verwechseln ist der häufigste Grund, warum ein SMTP-Zugang „einfach nicht
+ * geht" — die Knöpfe nehmen das Raten heraus.
+ */
+const MAIL_VORLAGEN = [
+    { name: 'Gmail', mailHost: 'smtp.gmail.com', mailPort: 465, mailSicherheit: 'tls' },
+    { name: 'Outlook', mailHost: 'smtp-mail.outlook.com', mailPort: 587, mailSicherheit: 'starttls' },
+    { name: 'GMX', mailHost: 'mail.gmx.net', mailPort: 587, mailSicherheit: 'starttls' },
+]
+
+function mailVorlage(v) {
+    mail.value.mailHost = v.mailHost
+    mail.value.mailPort = v.mailPort
+    mail.value.mailSicherheit = v.mailSicherheit
+}
+
+async function ladeMailKonfig() {
+    try {
+        const { data } = await axios.get('/api/mail/settings')
+        mail.value = { ...data, mailPasswort: data.mailPasswortSet ? '••••••••' : '' }
+    } catch (e) {
+        console.error(' -> Mail-Einstellungen nicht ladbar:', e)
+    }
+}
+
+async function speichereMail() {
+    mailMeldung.value = ''
+    try {
+        await axios.post('/api/mail/settings', mail.value)
+        mailFehler.value = false
+        mailMeldung.value = 'Gespeichert.'
+        await ladeMailKonfig()
+    } catch (e) {
+        mailFehler.value = true
+        mailMeldung.value = e.response?.data?.error || e.message
+    }
+}
+
+async function testeMail() {
+    mailTestLaeuft.value = true
+    mailMeldung.value = ''
+    try {
+        // Erst speichern: sonst testet der Server eine ältere Konfiguration
+        // als die, die auf dem Bildschirm steht.
+        await axios.post('/api/mail/settings', mail.value)
+        await axios.post('/api/mail/test')
+        mailFehler.value = false
+        mailMeldung.value = 'Testmail verschickt — schau ins Postfach.'
+    } catch (e) {
+        mailFehler.value = true
+        mailMeldung.value = e.response?.data?.error || e.message
+    } finally {
+        mailTestLaeuft.value = false
+    }
+}
+
+async function ladeBenachrichtigungen() {
+    try {
+        const { data } = await axios.get('/api/benachrichtigungen/typen')
+        meldeTypen.value = data.typen || []
+    } catch (e) {
+        console.error(' -> Meldungs-Register nicht ladbar:', e)
+    }
+    const roh = currentUser.value?.benachrichtigungen
+    kanalWahl.value = roh && typeof roh === 'object' && !Array.isArray(roh) ? { ...roh } : {}
+    await ladeMailKonfig()
 }
 
 // Load imports on mount
@@ -2217,19 +2571,28 @@ onBeforeMount(async () => {
                         <input class="form-check-input" type="checkbox" id="popupToggle" v-model="showTradePopups" @change="savePopupSetting">
                         <label class="form-check-label" for="popupToggle">{{ t('settings.enablePopups') }}</label>
                     </div>
-                    <div class="form-check form-switch mt-3">
-                        <input class="form-check-input" type="checkbox" id="notificationToggle" v-model="browserNotifications" @change="saveNotificationSetting">
-                        <label class="form-check-label" for="notificationToggle">{{ t('settings.browserNotifications') }}</label>
-                    </div>
-                    <small class="text-muted">{{ t('settings.browserNotificationsHint') }}</small>
+                    <!-- Der Hauptschalter für Benachrichtigungen steht jetzt im
+                         eigenen Bereich „Benachrichtigungen", zusammen mit der
+                         Kanalwahl je Ereignis und dem E-Mail-Versand. -->
                     </div><!-- /subPopupsExpanded -->
                 </div>
 
                 </div>
                 <div v-show="bereich === 'ki'">
-                <hr />
 
-                <!--=============== KI-AGENT ===============-->
+                <!-- Zweite Reiter-Ebene: je KI-Funktion ein Bereich. Vorher lag
+                     das über drei obere Reiter verstreut. -->
+                <ul class="nav nav-tabs settings-nav mb-3">
+                    <li v-for="b in KI_BEREICHE" :key="b.id" class="nav-item">
+                        <a class="nav-link" :class="{ active: kiBereich === b.id }"
+                            href="#" @click.prevent="kiBereichWechseln(b.id)">
+                            <i :class="b.icon" class="me-1"></i>{{ t('settings.ki.tab_' + b.id) }}
+                        </a>
+                    </li>
+                </ul>
+
+                <!--=============== ALLGEMEIN: Zugang ===============-->
+                <div v-show="kiBereich === 'allgemein'">
                 <div class="d-flex align-items-center pointerClass" @click="kiExpanded = !kiExpanded">
                     <i class="uil me-2" :class="kiExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
                     <p class="fs-5 fw-bold mb-0">{{ t('settings.kiAgent') }}</p>
@@ -2252,7 +2615,7 @@ onBeforeMount(async () => {
                         <div class="col-12 col-md-4">{{ t('settings.provider') }}</div>
                         <div class="col-12 col-md-8">
                             <select class="form-select" v-model="aiProvider" @change="onProviderChange">
-                                <option v-for="a in anbieterListe" :key="a.id" :value="a.id">{{ a.name }}</option>
+                                <option v-for="a in anbieterListe" :key="a.id" :value="a.id">{{ anbieterName(a) }}</option>
                                 <!-- Ein gespeicherter, nicht mehr angebotener Anbieter würde das
                                      Feld sonst leer erscheinen lassen. -->
                                 <option v-if="aiProvider && !aktuellerAnbieter" :value="aiProvider">
@@ -2302,20 +2665,101 @@ onBeforeMount(async () => {
 
                     <!-- API Key (nur bei Online-Providern) -->
                     <div v-if="aiProvider !== 'ollama'" class="row mt-2">
-                        <div class="col-12 col-md-4">{{ t('settings.apiKeyLabel') }}</div>
-                        <div class="col-12 col-md-8">
-                            <div class="input-group">
-                                <input type="password" class="form-control" v-model="currentApiKey" :placeholder="t('settings.apiKeyInputPlaceholder')"
-                                       @focus="e => { if (currentApiKey.includes('•')) e.target.select() }" />
-                                <button v-if="currentApiKey" class="btn btn-outline-secondary" type="button"
-                                        @click="currentApiKey = ''" :title="t('settings.deleteKey')">
-                                    <i class="uil uil-times"></i>
-                                </button>
-                            </div>
-                            <small class="text-muted">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.apiKeyLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
                                 <i class="uil uil-lock me-1"></i>{{ t('settings.encryptedStored') }}
-                                <span v-if="aktuellerAnbieter?.keyUrl"> {{ t('settings.keyFrom') }} {{ aktuellerAnbieter.keyUrl }}</span>
+                                {{ t('settings.ki.keysHint') }}
                             </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <!-- Alle Anbieter auf einmal statt nur der gerade gewählte.
+                                 Vorher hing das Feld am Anbieter-Auswahlfeld: Wer einen
+                                 zweiten Schlüssel eintragen wollte, musste dafür den
+                                 Anbieter umstellen — und beim Speichern wurde der
+                                 Hauptanbieter gleich mit umgestellt. Genau so ist hier
+                                 schon einmal versehentlich Perplexity zum Hauptanbieter
+                                 geworden. -->
+                            <table class="table table-sm align-middle mb-1">
+                                <tbody>
+                                    <tr v-for="a in anbieterListe.filter(x => x.brauchtKey !== false && x.id !== 'ollama')"
+                                        :key="a.id">
+                                        <td style="width:11rem;">
+                                            {{ anbieterName(a) }}
+                                            <span v-if="a.id === aiProvider" class="badge bg-secondary ms-1">
+                                                {{ t('settings.ki.mainProvider') }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <input type="password" class="form-control" v-model="aiKeys[a.id]"
+                                                    :placeholder="t('settings.apiKeyInputPlaceholder')"
+                                                    @focus="e => { if ((aiKeys[a.id] || '').includes('•')) e.target.select() }" />
+                                                <button v-if="aiKeys[a.id]" class="btn btn-outline-secondary" type="button"
+                                                    @click="aiKeys[a.id] = ''" :title="t('settings.deleteKey')">
+                                                    <i class="uil uil-times"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td class="text-end" style="width:8rem;">
+                                            <a v-if="a.keyUrl" :href="'https://' + a.keyUrl" target="_blank"
+                                                rel="noopener noreferrer" class="small">
+                                                {{ t('settings.ki.console') }} <i class="uil uil-external-link-alt"></i>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Guthaben-Status: kein Anbieter verrät sein Restguthaben über
+                         den API-Key. Gezeigt wird, was der Server WEISS — scheiterte
+                         ein Aufruf an fehlendem Guthaben, steht das hier, bis wieder
+                         einer gelingt. Der Konsole-Link führt zum echten Kontostand. -->
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.quotaTitle') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.quotaHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <table v-if="guthabenListe.length" class="table table-sm align-middle mb-1">
+                                <tbody>
+                                    <tr v-for="g in guthabenListe.filter(x => x.keySet && x.id !== 'ollama')" :key="g.id">
+                                        <td>
+                                            {{ anbieterName(g) }}
+                                            <span v-if="g.aktiv" class="badge bg-secondary ms-1">
+                                                {{ t('settings.ki.mainProvider') }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span v-if="g.leer" class="text-danger" :title="g.meldung">
+                                                <i class="uil uil-exclamation-triangle"></i>
+                                                {{ t('settings.ki.quotaEmpty') }}
+                                                <small v-if="g.seit">{{ t('settings.ki.quotaSince', { zeit: zeitpunkt(g.seit) }) }}</small>
+                                            </span>
+                                            <span v-else-if="g.okSeit" class="text-success">
+                                                <i class="uil uil-check-circle"></i>
+                                                {{ t('settings.ki.quotaOk') }}
+                                                <small class="text-muted">{{ t('settings.ki.quotaLast', { zeit: zeitpunkt(g.okSeit) }) }}</small>
+                                            </span>
+                                            <span v-else class="text-muted">{{ t('settings.ki.quotaNone') }}</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <a v-if="g.keyUrl" :href="'https://' + g.keyUrl" target="_blank"
+                                                rel="noopener noreferrer" class="small">
+                                                {{ t('settings.ki.console') }} <i class="uil uil-external-link-alt"></i>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <span v-else class="small text-muted">{{ t('settings.ki.noKeys') }}</span>
+                            <button class="btn btn-outline-secondary btn-sm" @click="ladeGuthaben">
+                                <i class="uil uil-sync"></i> {{ t('settings.ki.refresh') }}
+                            </button>
                         </div>
                     </div>
 
@@ -2341,30 +2785,6 @@ onBeforeMount(async () => {
                         <div class="col-12 col-md-8">
                             <input type="number" class="form-control" v-model="aiMaxTokens" min="500" max="4000" step="100" />
                             <small class="text-muted">{{ t('settings.maxTokensHint') }}</small>
-                        </div>
-                    </div>
-
-                    <!-- Bericht-Prompt -->
-                    <div class="row mt-3">
-                        <div class="col-12 col-md-4">{{ t('settings.reportStyle') }}</div>
-                        <div class="col-12 col-md-8">
-                            <select class="form-select mb-2" v-model="aiReportPromptPreset" @change="onPromptPresetChange">
-                                <option v-for="p in promptPresets" :key="p.value" :value="p.value">{{ p.label }}</option>
-                            </select>
-                            <textarea class="form-control" v-model="aiReportPrompt" rows="3" :placeholder="t('settings.reportPromptPlaceholder')"></textarea>
-                            <small class="text-muted">{{ t('settings.reportPromptHint') }}</small>
-                        </div>
-                    </div>
-
-                    <!-- Chat/Rückfragen -->
-                    <div class="row mt-3">
-                        <div class="col-12 col-md-4">{{ t('settings.reportChat') }}</div>
-                        <div class="col-12 col-md-8">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="aiChatToggle" v-model="aiChatEnabled">
-                                <label class="form-check-label" for="aiChatToggle">{{ t('settings.enableChat') }}</label>
-                            </div>
-                            <small class="text-muted">{{ t('settings.enableChatHint') }}</small>
                         </div>
                     </div>
 
@@ -2400,7 +2820,9 @@ onBeforeMount(async () => {
                                         {{ t('kiAgent.reports') }}: {{ aiTokenStats?.counts?.reports || 0 }} ·
                                         {{ t('kiAgent.chatMessages') }}: {{ aiTokenStats?.counts?.chatMessages || 0 }} ·
                                         {{ t('kiAgent.tradeReviews') }}: {{ aiTokenStats?.counts?.tradeReviews || 0 }} ·
-                                        Agent: {{ aiTokenStats?.counts?.agentSessions || 0 }}
+                                        Agent: {{ aiTokenStats?.counts?.agentSessions || 0 }} ·
+                                        {{ t('settings.ki.tab_nachrichten') }}: {{ aiTokenStats?.counts?.lageberichte || 0 }} ·
+                                        {{ t('settings.ki.tab_strategie') }}: {{ aiTokenStats?.counts?.strategieLaeufe || 0 }}
                                     </td>
                                     <td></td>
                                 </tr>
@@ -2409,9 +2831,106 @@ onBeforeMount(async () => {
                     </div>
                     </div><!-- /v-show aiEnabled -->
                 </div>
+                </div><!-- /kiBereich allgemein -->
 
+                <!--=============== BERICHTE ===============-->
+                <div v-show="kiBereich === 'berichte'">
+                    <p class="fs-5 fw-bold mb-1">{{ t('settings.ki.tab_berichte') }}</p>
+                    <p class="fw-lighter">{{ t('settings.ki.berichteHint') }}</p>
+
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.providerFor') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.providerForHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <AnbieterWahl :provider="aiBerichtProvider" :modell="aiBerichtModell"
+                                :modell-listen="modellListen" :global-provider="aiProvider" :global-modell="aiModel"
+                                @update:provider="w => { aiBerichtProvider = w; aiBerichtModell = ''; kiSpeichern('aiBerichtProvider', w); kiSpeichern('aiBerichtModell', '') }"
+                                @update:modell="w => { aiBerichtModell = w; kiSpeichern('aiBerichtModell', w) }" />
+                        </div>
+                    </div>
+
+                    <!-- Bericht-Prompt -->
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">{{ t('settings.reportStyle') }}</div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select mb-2" v-model="aiReportPromptPreset" @change="onPromptPresetChange">
+                                <option v-for="p in promptPresets" :key="p.value" :value="p.value">{{ p.label }}</option>
+                            </select>
+                            <textarea class="form-control" v-model="aiReportPrompt" rows="3" :placeholder="t('settings.reportPromptPlaceholder')"></textarea>
+                            <small class="text-muted">{{ t('settings.reportPromptHint') }}</small>
+                        </div>
+                    </div>
+
+                    <!-- Chat/Rückfragen -->
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">{{ t('settings.reportChat') }}</div>
+                        <div class="col-12 col-md-8">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="aiChatToggle" v-model="aiChatEnabled">
+                                <label class="form-check-label" for="aiChatToggle">{{ t('settings.enableChat') }}</label>
+                            </div>
+                            <small class="text-muted">{{ t('settings.enableChatHint') }}</small>
+                        </div>
+                    </div>
+
+                    <!-- Screenshots: das Feld wurde gespeichert und gelesen, hatte
+                         aber seit Längerem gar kein Bedienelement mehr — der
+                         Schalter war unsichtbar auf seinem letzten Stand eingefroren. -->
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.screenshots') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.screenshotsHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="aiScreenshotsToggle"
+                                    v-model="aiScreenshots">
+                                <label class="form-check-label" for="aiScreenshotsToggle">
+                                    {{ t('settings.ki.screenshotsLabel') }}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="button" @click="saveAiSettings" class="btn btn-success">{{ t('common.save') }}</button>
+                        <span v-if="aiTestResult" class="ms-2" :class="aiTestResult.success ? 'text-success' : 'text-danger'">
+                            {{ aiTestResult.message }}
+                        </span>
+                    </div>
                 </div>
-                <div v-show="bereich === 'ki'">
+
+                <!--=============== AGENT ===============-->
+                <div v-show="kiBereich === 'agent'">
+                    <p class="fs-5 fw-bold mb-1">{{ t('settings.ki.tab_agent') }}</p>
+                    <p class="fw-lighter">{{ t('settings.ki.agentHint') }}</p>
+
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.providerFor') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.agentProviderHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <AnbieterWahl :provider="aiAgentProvider" :modell="aiAgentModell"
+                                :modell-listen="modellListen" :global-provider="aiProvider" :global-modell="aiModel"
+                                @update:provider="w => { aiAgentProvider = w; aiAgentModell = ''; kiSpeichern('aiAgentProvider', w); kiSpeichern('aiAgentModell', '') }"
+                                @update:modell="w => { aiAgentModell = w; kiSpeichern('aiAgentModell', w) }" />
+                            <router-link to="/ki-agent" class="btn btn-outline-secondary btn-sm mt-2">
+                                <i class="uil uil-robot me-1"></i>{{ t('settings.ki.openAgent') }}
+                            </router-link>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-show="kiBereich === 'bilder'">
                 <hr />
 
                 <!--=============== SHARE CARDS (FLUX.2 + Gemini) ===============-->
@@ -2553,84 +3072,94 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
+                </div><!-- /kiBereich bilder -->
+
+                <!--=============== STRATEGIE ===============-->
+                <div v-show="kiBereich === 'strategie'">
+
+                <div class="row mb-3">
+                    <div class="col-12 col-md-4">
+                        {{ t('settings.ki.providerFor') }}
+                        <small class="d-block text-muted" style="font-size:0.78rem;">
+                            {{ t('settings.ki.strategieProviderHint') }}
+                        </small>
+                    </div>
+                    <div class="col-12 col-md-8">
+                        <AnbieterWahl :provider="aiStrategieProvider" :modell="aiStrategieModell"
+                            :modell-listen="modellListen" :global-provider="aiProvider" :global-modell="aiModel"
+                            @update:provider="w => { aiStrategieProvider = w; aiStrategieModell = ''; kiSpeichern('aiStrategieProvider', w); kiSpeichern('aiStrategieModell', '') }"
+                            @update:modell="w => { aiStrategieModell = w; kiSpeichern('aiStrategieModell', w) }" />
+                    </div>
                 </div>
-                <div v-show="bereich === 'agent'">
-                <hr />
 
                 <!--=============== STRATEGIE-AGENTEN ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="agentExpanded = !agentExpanded">
                     <i class="uil me-2" :class="agentExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Strategie-Agenten</p>
-                    <span v-if="agentKillSwitch" class="ms-2 badge bg-danger" style="font-size: 0.65rem;">Not-Aus aktiv</span>
-                    <span v-else-if="agentLiveEnabled" class="ms-2 badge bg-warning text-dark" style="font-size: 0.65rem;">Live freigegeben</span>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.ki.strat.title') }}</p>
+                    <span v-if="agentKillSwitch" class="ms-2 badge bg-danger" style="font-size: 0.65rem;">{{ t('settings.ki.strat.killActive') }}</span>
+                    <span v-else-if="agentLiveEnabled" class="ms-2 badge bg-warning text-dark" style="font-size: 0.65rem;">{{ t('settings.ki.strat.liveOn') }}</span>
                 </div>
                 <div v-show="agentExpanded" class="mt-2 ms-3">
                     <p class="fw-lighter">
-                        Globale Schutzschalter für den Agent-Modus. Die Strategien selbst und ihre Parameter werden
-                        unter <a href="/agent/strategies">Agent → Strategien</a> eingestellt.
-                        Diese Schalter wirken übergeordnet: keine einzelne Instanz kann sie umgehen.
+                        {{ t('settings.ki.strat.intro') }} <a href="/agent/strategies">{{ t('settings.ki.strat.link') }}</a>. {{ t('settings.ki.strat.intro2') }}
                     </p>
 
                     <div class="row align-items-center mt-3">
-                        <div class="col-12 col-md-4">Not-Aus</div>
+                        <div class="col-12 col-md-4">{{ t('settings.ki.strat.kill') }}</div>
                         <div class="col-12 col-md-8">
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" v-model="agentKillSwitch" />
                             </div>
-                            <small class="text-muted">Solange aktiv, wird nichts erkannt und keine Order ausgelöst.</small>
+                            <small class="text-muted">{{ t('settings.ki.strat.killHint') }}</small>
                         </div>
                     </div>
 
                     <div class="row align-items-center mt-3">
-                        <div class="col-12 col-md-4">Live-Handel global erlauben</div>
+                        <div class="col-12 col-md-4">{{ t('settings.ki.strat.allowLive') }}</div>
                         <div class="col-12 col-md-8">
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" v-model="agentLiveEnabled" />
                             </div>
                             <small class="text-muted">
-                                Ohne diesen Schalter bleibt jede Instanz im Papierbetrieb — unabhängig von ihrer
-                                eigenen Einstellung. Zusätzlich muss jede Live-Instanz einzeln freigegeben werden.
+                                {{ t('settings.ki.strat.allowLiveHint') }}
                             </small>
                         </div>
                     </div>
 
                     <div v-if="agentLiveEnabled" class="alert alert-danger py-2 mt-2">
                         <i class="uil uil-exclamation-triangle me-1"></i>
-                        Live-Handel ist freigegeben. Freigegebene Instanzen können eigenständig echtes Geld einsetzen.
+                        {{ t('settings.ki.strat.liveWarn') }}
                     </div>
 
                     <div class="row align-items-center mt-3">
-                        <div class="col-12 col-md-4">Hebel-Obergrenze</div>
+                        <div class="col-12 col-md-4">{{ t('settings.ki.strat.maxLev') }}</div>
                         <div class="col-12 col-md-8">
                             <input type="number" min="1" max="125" class="form-control" style="max-width: 10rem;"
                                 v-model.number="agentMaxLeverage" />
                             <small class="text-muted">
-                                Deckelt den Hebel jeder Instanz. Bitunix erlaubt bis 125× — für eine automatisch
-                                handelnde Strategie sind 3–5× ein vernünftiger Rahmen.
+                                {{ t('settings.ki.strat.maxLevHint') }}
                             </small>
                         </div>
                     </div>
 
                     <div class="row align-items-center mt-3">
-                        <div class="col-12 col-md-4">Papier-Trades vor Live</div>
+                        <div class="col-12 col-md-4">{{ t('settings.ki.strat.minPaper') }}</div>
                         <div class="col-12 col-md-8">
                             <input type="number" min="0" max="1000" class="form-control" style="max-width: 10rem;"
                                 v-model.number="agentMinPaperTrades" />
                             <small class="text-muted">
-                                So viele abgeschlossene Papier-Trades muss eine Instanz vorweisen, bevor sie live
-                                gehen darf. 0 schaltet die Prüfung ab.
+                                {{ t('settings.ki.strat.minPaperHint') }}
                             </small>
                         </div>
                     </div>
 
                     <div class="row align-items-center mt-3">
-                        <div class="col-12 col-md-4">KI-Budget pro Tag (USD)</div>
+                        <div class="col-12 col-md-4">{{ t('settings.ki.strat.budget') }}</div>
                         <div class="col-12 col-md-8">
                             <input type="number" min="0" step="0.1" class="form-control" style="max-width: 10rem;"
                                 v-model.number="agentLlmBudget" />
                             <small class="text-muted">
-                                Obergrenze für die optionalen Sentiment-/Portfolio-Agenten. Ist sie erreicht, wird
-                                das Setup übersprungen statt ungeprüft gehandelt.
+                                {{ t('settings.ki.strat.budgetHint') }}
                             </small>
                         </div>
                     </div>
@@ -2638,7 +3167,7 @@ onBeforeMount(async () => {
                     <div class="row mt-3">
                         <div class="col-12">
                             <button class="btn btn-success" :disabled="agentSaving" @click="saveAgentSettings">
-                                Speichern
+                                {{ t('common.save') }}
                             </button>
                             <span v-if="agentResult" class="ms-3"
                                 :class="agentResult.success ? 'text-success' : 'text-danger'">
@@ -2648,8 +3177,203 @@ onBeforeMount(async () => {
                     </div>
                 </div>
 
-                </div>
+                </div><!-- /kiBereich strategie -->
+
+                <!--=============== NACHRICHTEN ===============-->
+                <div v-show="kiBereich === 'nachrichten'">
+                    <p class="fw-lighter">{{ t('settings.ki.nachrichtenHint') }}</p>
+                    <!--=============== LAGEBERICHT ===============-->
+                    <hr class="mt-4" />
+                    <p class="fw-bold mb-1">{{ t('settings.ki.news.title') }}</p>
+                    <p class="fw-lighter">{{ t('settings.ki.news.intro1') }}</p>
+                    <p class="fw-lighter">
+                        {{ t('settings.ki.news.intro2') }}
+                        <code>{{ currentUser?.aiProvider || '—' }} / {{ currentUser?.aiModel || '—' }}</code>
+                        {{ t('settings.ki.news.intro2b') }}
+                    </p>
+                    <p class="fw-lighter">{{ t('settings.ki.news.intro3') }}</p>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.autoLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.autoHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
+                            <!-- Bootstrap-Schalter wie im Rest der KI-Sektion; der
+                                 eigene `.switch` bleibt dem Marktradar vorbehalten. -->
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="radarNewsAutoToggle"
+                                    v-model="radarNewsAuto" @change="radarSpeichern('radarNewsAuto')">
+                            </div>
+                            <select class="form-select form-select-sm" style="max-width:8.5rem;"
+                                v-model="radarNewsRhythmus" :disabled="!radarNewsAuto" @change="radarSpeichern('radarNewsRhythmus')">
+                                <option value="taeglich">{{ t('settings.ki.news.daily') }}</option>
+                                <option value="woechentlich">{{ t('settings.ki.news.weekly') }}</option>
+                            </select>
+                            <select v-if="radarNewsRhythmus === 'woechentlich'" class="form-select form-select-sm" style="max-width:8.5rem;"
+                                v-model.number="radarNewsWochentag" :disabled="!radarNewsAuto" @change="radarSpeichern('radarNewsWochentag')">
+                                <option v-for="(tag, i) in wochentagNamen" :key="i" :value="i + 1">{{ tag }}</option>
+                            </select>
+                            <select class="form-select form-select-sm" style="max-width:8rem;"
+                                v-model.number="radarNewsStunde" :disabled="!radarNewsAuto" @change="radarSpeichern('radarNewsStunde')">
+                                <option v-for="h in 24" :key="h - 1" :value="h - 1">
+                                    {{ String(h - 1).padStart(2, '0') }}:00
+                                </option>
+                            </select>
+                            <span class="small text-muted">
+                                {{ currentUser?.timeZone || t('settings.ki.news.localTime') }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.topicsLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.topicsHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-3 flex-wrap">
+                            <label v-for="(bez, th) in themenNamen" :key="th"
+                                class="d-flex align-items-center gap-1 mb-0">
+                                <input type="checkbox" :value="th" v-model="radarNewsThemen"
+                                    :disabled="radarNewsThemen.length === 1 && radarNewsThemen.includes(th)"
+                                    @change="radarSpeichern('radarNewsThemen')">
+                                <span>{{ bez }}</span>
+                            </label>
+                            <select class="form-select form-select-sm" style="max-width:10rem;"
+                                v-model="radarNewsLaenge" @change="radarSpeichern('radarNewsLaenge')">
+                                <option value="kurz">{{ t('news.len.kurz') }}</option>
+                                <option value="mittel">{{ t('news.len.mittel') }}</option>
+                                <option value="lang">{{ t('news.len.lang') }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.researchLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.researchHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
+                            <span class="small text-muted">{{ t('settings.ki.news.grokModel') }}</span>
+                            <input class="form-control form-control-sm" style="max-width:12rem;"
+                                v-model="radarNewsXModell" @change="radarSpeichern('radarNewsXModell')">
+                            <span class="small text-muted">{{ t('settings.ki.news.perplexityModel') }}</span>
+                            <select class="form-select form-select-sm" style="max-width:10rem;"
+                                v-model="radarNewsRechercheModell"
+                                @change="kiSpeichern('radarNewsRechercheModell', radarNewsRechercheModell)">
+                                <option value="sonar">sonar</option>
+                                <option value="sonar-pro">sonar-pro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.videosLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.videosHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2">
+                            <input type="number" class="form-control" style="max-width:6rem;" min="0" max="10"
+                                v-model.number="radarNewsVideos" @change="radarSpeichern('radarNewsVideos')" />
+                            <!-- Aus dem Modellkatalog des Projekts statt freies
+                                 Textfeld: ein Tippfehler hier fiele erst beim
+                                 ersten Videolauf auf, und der kostet Geld. -->
+                            <select class="form-select" style="max-width:16rem;"
+                                v-model="radarNewsModel" @change="radarSpeichern('radarNewsModel')">
+                                <option value="">{{ t('settings.ki.news.geminiDefault') }}</option>
+                                <!-- Ein gespeichertes Modell, das der Katalog nicht (mehr) führt,
+                                     bleibt wählbar — sonst stünde das Feld leer da und der
+                                     nächste Speichervorgang hätte die Einstellung gelöscht. -->
+                                <option v-if="radarNewsModel && !(modellListen.gemini || []).includes(radarNewsModel)"
+                                    :value="radarNewsModel">
+                                    {{ radarNewsModel }} {{ t('settings.ki.news.notInCatalog') }}
+                                </option>
+                                <option v-for="m in (modellListen.gemini || [])" :key="m" :value="m">{{ m }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.reportModelLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.reportModelHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <AnbieterWahl :provider="radarNewsBerichtProvider" :modell="radarNewsBerichtModell"
+                                :modell-listen="modellListen" :global-provider="aiProvider" :global-modell="aiModel"
+                                @update:provider="w => { radarNewsBerichtProvider = w; radarNewsBerichtModell = ''; radarSpeichern('radarNewsBerichtProvider'); radarSpeichern('radarNewsBerichtModell') }"
+                                @update:modell="w => { radarNewsBerichtModell = w; radarSpeichern('radarNewsBerichtModell') }" />
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.resolutionLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.resolutionHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select form-select-sm" style="max-width:22rem;"
+                                v-model="radarNewsAufloesung" @change="radarSpeichern('radarNewsAufloesung')">
+                                <option value="niedrig">{{ t('settings.ki.news.resolutionLow') }}</option>
+                                <option value="standard">{{ t('settings.ki.news.resolutionStd') }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button class="btn btn-outline-primary btn-sm" :disabled="berichtLaeuft" @click="berichtJetzt">
+                            <span v-if="berichtLaeuft" class="spinner-border spinner-border-sm me-2"></span>
+                            {{ t('settings.ki.news.generateNow') }}
+                        </button>
+                        <span class="ms-2 small text-muted">
+                            {{ t('settings.ki.news.costAbout') }}
+                            <strong>{{ (kostenSchaetzung.gesamt * 0.8).toFixed(2) }} CHF</strong>
+                            <span v-if="kostenSchaetzung.videos">
+                                {{ t('settings.ki.news.costSplit', {
+                                    text: (kostenSchaetzung.bericht * 0.8).toFixed(2),
+                                    n: kostenSchaetzung.videos,
+                                    proVideo: (kostenSchaetzung.proVideo * 0.8).toFixed(2),
+                                }) }}
+                            </span>
+                            <span v-else>{{ t('settings.ki.news.costNoVideos') }}</span>
+                        </span>
+                        <div v-if="berichtMeldung" class="small mt-2" :class="berichtFehler ? 'text-danger' : 'text-muted'">
+                            {{ berichtMeldung }}
+                        </div>
+                    </div>
+                </div><!-- /kiBereich nachrichten -->
+
+                </div><!-- /bereich ki -->
                 <div v-show="bereich === 'live'">
+                <hr />
+
+                <!--=============== LIVE-TRADING-FENSTER ===============-->
+                <div class="d-flex align-items-center pointerClass" @click="livetradingExpanded = !livetradingExpanded">
+                    <i class="uil me-2" :class="livetradingExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                    <p class="fs-5 fw-bold mb-0">Live-Trading-Fenster</p>
+                </div>
+                <div v-show="livetradingExpanded" class="mt-2 ms-3">
+                    <p class="fw-lighter">Ein eigener Arbeitsplatz für die Stunden, in denen du tatsächlich handelst — Kachelraster mit eigenem Layout, unabhängig vom Marktradar. Wer nur beobachtet, schaltet die Seite hier ab; dann verschwinden auch der Startknopf auf dem Marktradar und der Menüeintrag.</p>
+
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" id="livetradingToggle"
+                            v-model="livetradingAn" @change="radarSpeichern('livetradingAn')">
+                        <label class="form-check-label" for="livetradingToggle">Live-Trading-Fenster anzeigen</label>
+                    </div>
+                </div>
+
                 <hr />
 
                 <!--=============== LIVE-ANALYSE ===============-->
@@ -2836,37 +3560,9 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
-                    <div class="row align-items-center mt-3">
-                        <div class="col-12 col-md-4">
-                            Pi-Cycle-Alarm
-                            <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Meldet sich, wenn die 111-Tage-Linie die doppelte 350-Tage-Linie kreuzt.
-                                Das ist historisch nahe am Zyklushoch passiert — aber dreimal in
-                                fünfzehn Jahren, also keine Statistik, sondern ein Hinweis.
-                            </small>
-                        </div>
-                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
-                            <label class="switch mb-0">
-                                <input type="checkbox" v-model="radarPicycleAlarm" @change="radarSpeichern('radarPicycleAlarm')">
-                                <span class="slider round"></span>
-                            </label>
-                            <select class="form-select form-select-sm" style="max-width:20rem;"
-                                v-model.number="radarPicycleSchwelle" :disabled="!radarPicycleAlarm"
-                                @change="radarSpeichern('radarPicycleSchwelle')">
-                                <option :value="0">Nur bei der Kreuzung selbst</option>
-                                <option :value="3">Auch schon bei 3 % Abstand</option>
-                                <option :value="5">Auch schon bei 5 % Abstand</option>
-                                <option :value="10">Auch schon bei 10 % Abstand</option>
-                                <option :value="20">Auch schon bei 20 % Abstand</option>
-                            </select>
-                        </div>
-                    </div>
-                    <p class="fw-lighter" style="font-size:0.8rem;">
-                        Die Kreuzung selbst zu melden kommt genau genommen zu spät — sie <em>ist</em> das
-                        Signal. Mit einer Schwelle bekommst du Vorlauf: der Alarm meldet sich schon,
-                        wenn die kurze Linie bis auf den eingestellten Abstand herangelaufen ist.
-                        Aktuell liegt der Abstand bei rund −59 %.
-                    </p>
+                    <!-- Pi-Cycle- und Funding-Divergenz-Alarm stehen jetzt unter
+                         Einstellungen → Benachrichtigungen, zusammen mit allen
+                         übrigen Meldungen und der Wahl zwischen Browser und E-Mail. -->
 
                     <div class="row align-items-center mt-3">
                         <div class="col-12 col-md-4">
@@ -2909,22 +3605,22 @@ onBeforeMount(async () => {
                     <hr class="mt-4" />
                     <p class="fw-bold mb-1">Nachrichtenquellen</p>
                     <p class="fw-lighter">
-                        YouTube-Kanäle und RSS-Adressen für die Nachrichten-Kachel. Was du als
-                        <strong>Lärm</strong> markierst, blendet der „Arschlochfilter" aus — und holt es gar nicht
-                        erst ab. Es werden nur Titel, Verweis und Zeitpunkt gespeichert, keine Volltexte.
+                        YouTube-Kanäle, RSS-Adressen, Telegram-Kanäle und X-Accounts für die Nachrichten-Seite.
+                        Was du als <strong>Ausschluss</strong> markierst, blendet „Temporär ausschliessen" aus —
+                        und holt es gar nicht erst ab. Es werden nur Titel, Verweis und Zeitpunkt gespeichert,
+                        keine Volltexte.
                     </p>
                     <p class="fw-lighter" style="font-size:0.82rem;">
-                        <strong>Zu X:</strong> Seit dem Wegfall der freien API gibt es dafür keine brauchbare
-                        öffentliche Quelle mehr — geprüft am 16.08.2026: von sechs bekannten Nitter-Instanzen
-                        antworteten zwei mit 403, zwei mit einer Fehlerseite, eine gar nicht, und die letzte
-                        liefert nur „RSS reader not yet whitelisted". Die Art „X" ist deshalb nur nützlich,
-                        wenn du eine eigene Instanz oder eine bezahlte Brücke hast. Der Test-Knopf erkennt
-                        solche Sperrantworten und meldet sie, statt sie als Erfolg auszugeben.
+                        <strong>Zu X:</strong> läuft über die bezahlte Grok-Suche (xAI) — als Adresse genügt der
+                        Handle, z.B. <code>@saylor</code>. Alle X-Quellen zusammen kosten EINE Suche je Abruflauf
+                        (rund 0,5 Rappen plus Token), gedrosselt auf höchstens eine Suche alle vier Stunden.
+                        Voraussetzung ist ein xAI-Schlüssel unter „KI-Einstellungen". Gratis-Umwege (Nitter-Spiegel)
+                        sind tot — geprüft am 16.08.2026.
                     </p>
 
                     <div class="row align-items-center mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Arschlochfilter</label>
+                            <label class="fw-lighter">Temporär ausschliessen</label>
                         </div>
                         <div class="col-12 col-md-9">
                             <label class="switch">
@@ -2932,8 +3628,32 @@ onBeforeMount(async () => {
                                 <span class="slider round"></span>
                             </label>
                             <span class="ms-2 small text-muted">
-                                {{ radarArschlochfilter ? 'An — als Lärm markierte Quellen bleiben aussen vor' : 'Aus — alle aktiven Quellen werden geholt' }}
+                                {{ radarArschlochfilter ? 'An — als Ausschluss markierte Quellen bleiben aussen vor' : 'Aus — alle aktiven Quellen werden geholt' }}
                             </span>
+                        </div>
+                    </div>
+
+                    <!-- Der NEUE Arschlochfilter: automatisch Truth Social, dazu
+                         Stichwörter. Wirkt auf Liste UND Berichtsgrundlage —
+                         gespeichert bleibt alles, eine geänderte Liste greift
+                         also auch rückwirkend. -->
+                    <div class="row mb-2">
+                        <div class="col-12 col-md-3">
+                            <label class="fw-lighter">Arschlochfilter</label>
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Filtert Truth Social automatisch. Beiträge, die eines der Stichwörter
+                                enthalten (ein Begriff je Zeile), verschwinden aus Liste und Lagebericht.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-9">
+                            <label class="switch">
+                                <input type="checkbox" v-model="radarArschlochAn" @change="radarSpeichern('radarArschlochAn')">
+                                <span class="slider round"></span>
+                            </label>
+                            <textarea class="form-control form-control-sm mt-2" rows="3" style="max-width:26rem;"
+                                v-model="radarArschlochWoerter" :disabled="!radarArschlochAn"
+                                placeholder="Donald Trump&#10;Michael Saylor"
+                                @change="radarSpeichern('radarArschlochWoerter')"></textarea>
                         </div>
                     </div>
 
@@ -2944,7 +3664,9 @@ onBeforeMount(async () => {
                                 <th>Name</th>
                                 <th>Adresse</th>
                                 <th style="width:5rem;" class="text-center">Aktiv</th>
-                                <th style="width:5rem;" class="text-center">Lärm</th>
+                                <th style="width:6rem;" class="text-center"
+                                    title="Temporär ausschliessen: Quelle wird weder geholt noch angezeigt, solange der Schalter oben an ist.">
+                                    Ausschluss</th>
                                 <th style="width:5rem;" class="text-center" title="Nur YouTube: sollen die Videos dieser Quelle an Gemini gehen? Jedes kostet 3–10 Rappen.">Videos</th>
                                 <th style="width:7rem;"></th>
                             </tr>
@@ -2988,8 +3710,9 @@ onBeforeMount(async () => {
                             <select class="form-select form-select-sm" v-model="neueQuelle.art">
                                 <option value="youtube">YouTube</option>
                                 <option value="rss">RSS</option>
+                                <option value="telegram">Telegram</option>
                                 <option value="truth">Truth Social</option>
-                                <option value="x">X (eigene Quelle)</option>
+                                <option value="x">X (via Grok)</option>
                             </select>
                         </div>
                         <div class="col-6 col-md-3">
@@ -2997,7 +3720,9 @@ onBeforeMount(async () => {
                         </div>
                         <div class="col-12 col-md-5">
                             <input class="form-control form-control-sm" v-model="neueQuelle.url"
-                                placeholder="https://www.youtube.com/feeds/videos.xml?channel_id=…">
+                                :placeholder="neueQuelle.art === 'x' ? '@handle'
+                                    : neueQuelle.art === 'telegram' ? 'https://t.me/s/kanalname'
+                                        : 'https://www.youtube.com/feeds/videos.xml?channel_id=…'">
                         </div>
                         <div class="col-12 col-md-2 d-flex gap-1">
                             <button class="btn btn-outline-secondary btn-sm" :disabled="newsTestet"
@@ -3009,6 +3734,13 @@ onBeforeMount(async () => {
                         {{ newsMeldung }}
                     </div>
 
+                    <p class="fw-lighter mt-3" style="font-size:0.82rem;">
+                        <i class="uil uil-brain me-1"></i>
+                        Rhythmus, Themen, Länge und die Modellwahl des Lageberichts stehen jetzt unter
+                        <a href="#" @click.prevent="bereichWechseln('ki'); kiBereichWechseln('nachrichten')">
+                            KI · Nachrichten</a>.
+                    </p>
+
                     <div v-if="newsVorschlaege.length" class="mt-2 small">
                         <span class="text-muted me-2">Vorschläge:</span>
                         <button v-for="v in newsVorschlaege" :key="v.url"
@@ -3017,141 +3749,6 @@ onBeforeMount(async () => {
                         </button>
                     </div>
 
-                    <!--=============== LAGEBERICHT ===============-->
-                    <hr class="mt-4" />
-                    <p class="fw-bold mb-1">Lagebericht · KI</p>
-                    <p class="fw-lighter">
-                        Aus den gesammelten Beiträgen schreibt die KI <strong>einen</strong> Bericht auf Deutsch —
-                        nicht je Beitrag eine Zusammenfassung, sondern das Gesamtbild.
-                    </p>
-                    <p class="fw-lighter">
-                        Der Ablauf hat zwei Stufen mit zwei Anbietern:
-                        <strong>Gemini sieht sich zuerst die YouTube-Videos an</strong> (es ist der einzige
-                        Anbieter, der eine Video-Adresse selbst öffnet — mit eigenem Schlüssel, unabhängig
-                        vom Standard-Anbieter). Was dabei herauskommt, geht zusammen mit den Text-Meldungen
-                        an deinen eingestellten Anbieter
-                        (<code>{{ currentUser?.aiProvider || '—' }} / {{ currentUser?.aiModel || '—' }}</code>),
-                        der daraus den Bericht schreibt. Fällt Gemini aus, entsteht der Bericht trotzdem —
-                        dann ohne Videoinhalte.
-                    </p>
-                    <p class="fw-lighter">
-                        <strong>Das Video ist der teure Teil</strong>, nicht der Text: abgerechnet wird nach
-                        Videolänge. Untertitel wären billiger, aber YouTube liefert sie an nicht angemeldete
-                        Zugriffe seit Kurzem nicht mehr aus (geprüft am 16.08.2026, auch mit yt-dlp) —
-                        deshalb führt kein Weg an der Videoanalyse vorbei.
-                    </p>
-
-                    <div class="row align-items-center mt-2">
-                        <div class="col-12 col-md-4">
-                            Täglich automatisch
-                            <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Ein Bericht pro Tag zur eingestellten Stunde. Aus: nur noch per Knopf.
-                            </small>
-                        </div>
-                        <div class="col-12 col-md-8 d-flex align-items-center gap-2">
-                            <label class="switch mb-0">
-                                <input type="checkbox" v-model="radarNewsAuto" @change="radarSpeichern('radarNewsAuto')">
-                                <span class="slider round"></span>
-                            </label>
-                            <select class="form-select form-select-sm" style="max-width:8rem;"
-                                v-model.number="radarNewsStunde" :disabled="!radarNewsAuto" @change="radarSpeichern('radarNewsStunde')">
-                                <option v-for="h in 24" :key="h - 1" :value="h - 1">
-                                    {{ String(h - 1).padStart(2, '0') }}:00
-                                </option>
-                            </select>
-                            <span class="small text-muted">{{ currentUser?.timeZone || 'lokale Zeit' }}</span>
-                        </div>
-                    </div>
-
-                    <div class="row align-items-center mt-3">
-                        <div class="col-12 col-md-4">
-                            Videos je Lauf an Gemini
-                            <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Video ist der teuerste Eingabetyp — abgerechnet nach Länge. 0 = keine Videos ansehen,
-                                dann nutzt der Bericht nur Titel und Videobeschreibung.
-                            </small>
-                        </div>
-                        <div class="col-12 col-md-8 d-flex align-items-center gap-2">
-                            <input type="number" class="form-control" style="max-width:6rem;" min="0" max="10"
-                                v-model.number="radarNewsVideos" @change="radarSpeichern('radarNewsVideos')" />
-                            <!-- Aus dem Modellkatalog des Projekts statt freies
-                                 Textfeld: ein Tippfehler hier fiele erst beim
-                                 ersten Videolauf auf, und der kostet Geld. -->
-                            <select class="form-select" style="max-width:16rem;"
-                                v-model="radarNewsModel" @change="radarSpeichern('radarNewsModel')">
-                                <option value="">Gemini-Vorgabe</option>
-                                <!-- Ein gespeichertes Modell, das der Katalog nicht (mehr) führt,
-                                     bleibt wählbar — sonst stünde das Feld leer da und der
-                                     nächste Speichervorgang hätte die Einstellung gelöscht. -->
-                                <option v-if="radarNewsModel && !(modellListen.gemini || []).includes(radarNewsModel)"
-                                    :value="radarNewsModel">{{ radarNewsModel }} (nicht im Katalog)</option>
-                                <option v-for="m in (modellListen.gemini || [])" :key="m" :value="m">{{ m }}</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="row align-items-center mt-3">
-                        <div class="col-12 col-md-4">
-                            Modell für den Bericht
-                            <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Leer = dein allgemein eingestellter Anbieter. Der Bericht ist reine
-                                Textarbeit — ein günstigeres Modell tut es hier oft genauso.
-                            </small>
-                        </div>
-                        <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
-                            <select class="form-select form-select-sm" style="max-width:10rem;"
-                                v-model="radarNewsBerichtProvider" @change="radarSpeichern('radarNewsBerichtProvider')">
-                                <option value="">Standard-Anbieter</option>
-                                <option v-for="(liste, anbieter) in modellListen" :key="anbieter" :value="anbieter">
-                                    {{ anbieter }}
-                                </option>
-                            </select>
-                            <select class="form-select form-select-sm" style="max-width:16rem;"
-                                v-model="radarNewsBerichtModell" @change="radarSpeichern('radarNewsBerichtModell')">
-                                <option value="">Standard-Modell</option>
-                                <option v-for="m in (modellListen[radarNewsBerichtProvider] || [])" :key="m" :value="m">
-                                    {{ m }}
-                                </option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="row align-items-center mt-3">
-                        <div class="col-12 col-md-4">
-                            Videoauflösung
-                            <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Niedrig kostet rund 100 Token je Videosekunde, Standard rund 300 —
-                                also das Dreifache. Für gesprochene Marktkommentare reicht niedrig,
-                                weil die Tonspur den Inhalt trägt.
-                            </small>
-                        </div>
-                        <div class="col-12 col-md-8">
-                            <select class="form-select form-select-sm" style="max-width:22rem;"
-                                v-model="radarNewsAufloesung" @change="radarSpeichern('radarNewsAufloesung')">
-                                <option value="niedrig">Niedrig — ~0,04 $ je 20-Minuten-Video</option>
-                                <option value="standard">Standard — ~0,11 $ je 20-Minuten-Video</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="mt-3">
-                        <button class="btn btn-outline-primary btn-sm" :disabled="berichtLaeuft" @click="berichtJetzt">
-                            <span v-if="berichtLaeuft" class="spinner-border spinner-border-sm me-2"></span>
-                            Lagebericht jetzt erzeugen
-                        </button>
-                        <span class="ms-2 small text-muted">
-                            kostet ungefähr <strong>{{ (kostenSchaetzung.gesamt * 0.8).toFixed(2) }} CHF</strong> je Lauf
-                            <span v-if="kostenSchaetzung.videos">
-                                — davon {{ (kostenSchaetzung.bericht * 0.8).toFixed(2) }} für den Text,
-                                {{ kostenSchaetzung.videos }} × {{ (kostenSchaetzung.proVideo * 0.8).toFixed(2) }}
-                                für die Videos (bei 20 Minuten Länge)
-                            </span>
-                            <span v-else>— ohne Videos</span>
-                        </span>
-                        <div v-if="berichtMeldung" class="small mt-2" :class="berichtFehler ? 'text-danger' : 'text-muted'">
-                            {{ berichtMeldung }}
-                        </div>
-                    </div>
                 </div>
 
                 <hr />
@@ -3755,8 +4352,234 @@ onBeforeMount(async () => {
                 </div>
                 </div>
 
+                <!--=============== BENACHRICHTIGUNGEN ===============-->
+                <div v-show="bereich === 'benachrichtigungen'">
+                <hr />
+                <p class="fs-5 fw-bold mb-1">{{ t('settings.benachrichtigungen.titel') }}</p>
+                <p class="fw-lighter" style="font-size:0.85rem;">
+                    {{ t('settings.benachrichtigungen.einleitung') }}
+                </p>
+
+                <!-- Hauptschalter: ohne ihn ist der ganze Browser-Kanal stumm -->
+                <div class="form-check form-switch mt-3">
+                    <input class="form-check-input" type="checkbox" id="notificationToggle"
+                        v-model="browserNotifications" @change="saveNotificationSetting">
+                    <label class="form-check-label" for="notificationToggle">
+                        {{ t('settings.browserNotifications') }}
+                    </label>
+                </div>
+                <small class="text-muted">{{ t('settings.browserNotificationsHint') }}</small>
+
+                <!-- Matrix: je Ereignis eine Zeile, je Kanal ein Häkchen -->
+                <div class="table-responsive mt-4">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="min-width:15rem;">{{ t('settings.benachrichtigungen.ereignis') }}</th>
+                                <th class="text-center" style="width:7rem;">{{ t('settings.benachrichtigungen.browser') }}</th>
+                                <th class="text-center" style="width:7rem;">{{ t('settings.benachrichtigungen.email') }}</th>
+                                <th style="min-width:13rem;">{{ t('settings.benachrichtigungen.schwelle') }}</th>
+                                <th style="min-width:13rem;">{{ t('settings.benachrichtigungen.maerkte') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody v-for="g in typenNachGruppe" :key="g.id">
+                            <tr>
+                                <td colspan="5" class="fw-bold text-muted pt-3" style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.04em;">
+                                    {{ t('settings.benachrichtigungen.gruppe_' + g.id) }}
+                                </td>
+                            </tr>
+                            <tr v-for="typ in g.typen" :key="typ.id">
+                                <td>
+                                    {{ t('settings.benachrichtigungen.typ_' + typ.id) }}
+                                    <small class="d-block text-muted" style="font-size:0.76rem;">
+                                        {{ t('settings.benachrichtigungen.hinweis_' + typ.id) }}
+                                    </small>
+                                </td>
+                                <td class="text-center">
+                                    <input class="form-check-input" type="checkbox"
+                                        :checked="kanalAn(typ.id, 'browser')" :disabled="!browserNotifications"
+                                        @change="setzeKanal(typ.id, 'browser', $event.target.checked)">
+                                </td>
+                                <td class="text-center">
+                                    <input v-if="typ.email" class="form-check-input" type="checkbox"
+                                        :checked="kanalAn(typ.id, 'email')" :disabled="!mail.mailAktiv"
+                                        @change="setzeKanal(typ.id, 'email', $event.target.checked)">
+                                    <span v-else class="text-muted" :title="t('settings.benachrichtigungen.nurBrowser')">—</span>
+                                </td>
+                                <td>
+                                    <select v-if="SCHWELLEN[typ.id]" class="form-select form-select-sm"
+                                        v-model.number="SCHWELLEN[typ.id].ref().value"
+                                        @change="radarSpeichern(SCHWELLEN[typ.id].spalte)">
+                                        <option v-for="[wert, text] in SCHWELLEN[typ.id].optionen"
+                                            :key="wert" :value="wert">{{ text }}</option>
+                                    </select>
+                                </td>
+                                <!-- Märkte: bisher nur die Divergenz beobachtet
+                                     einzelne Coins. Leer = die eigenen Märkte. -->
+                                <td>
+                                    <div v-if="typ.id === 'fundingDivergenz'" class="position-relative">
+                                        <button type="button" class="form-select form-select-sm text-start divWahlKnopf"
+                                            :disabled="!radarFundingDivergenz" @click="divergenzOeffnen">
+                                            <span v-if="divergenzGewaehlt.length">{{ divergenzLabel }}</span>
+                                            <span v-else class="text-muted">{{ t('settings.benachrichtigungen.divergenzEigene') }}</span>
+                                        </button>
+                                        <template v-if="divergenzOffen">
+                                            <div class="divWahlHinter" @click="divergenzOffen = false"></div>
+                                            <div class="divWahl">
+                                                <input type="text" class="form-control form-control-sm mb-2"
+                                                    v-model="divergenzSuche" :placeholder="t('settings.benachrichtigungen.divergenzSuche')" />
+                                                <div class="divWahlZeile" @click="divergenzLeeren">
+                                                    <i class="uil me-2" :class="divergenzGewaehlt.length ? 'uil-square-full text-muted' : 'uil-check-square text-success'"></i>
+                                                    {{ t('settings.benachrichtigungen.divergenzEigene') }}
+                                                </div>
+                                                <div v-if="divergenzLaedt" class="text-muted px-1 py-2" style="font-size:0.8rem;">
+                                                    {{ t('settings.benachrichtigungen.divergenzLaedt') }}
+                                                </div>
+                                                <div v-for="s in divergenzTreffer" :key="s" class="divWahlZeile"
+                                                    @click="divergenzUmschalten(s)">
+                                                    <i class="uil me-2" :class="divergenzGewaehlt.includes(s) ? 'uil-check-square text-success' : 'uil-square-full text-muted'"></i>
+                                                    {{ kurzCoin(s) }}
+                                                </div>
+                                                <div class="text-muted px-1 pt-2" style="font-size:0.75rem;">
+                                                    {{ t('settings.benachrichtigungen.divergenzAnzahl', { n: divergenzGewaehlt.length, max: DIVERGENZ_MAX }) }}
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <small class="d-block text-muted mt-1" style="font-size:0.72rem;">
+                                            {{ t('settings.benachrichtigungen.divergenzHinweis') }}
+                                        </small>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="fw-lighter mt-2" style="font-size:0.8rem;">
+                    {{ t('settings.benachrichtigungen.kanalHinweis') }}
+                </p>
+
+                <!--=============== E-MAIL ===============-->
+                <hr class="mt-4" />
+                <p class="fs-5 fw-bold mb-1">{{ t('settings.benachrichtigungen.mailTitel') }}</p>
+                <p class="fw-lighter" style="font-size:0.85rem;">
+                    {{ t('settings.benachrichtigungen.mailEinleitung') }}
+                </p>
+
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" id="mailAktivToggle"
+                        :checked="mail.mailAktiv === 1"
+                        @change="mail.mailAktiv = $event.target.checked ? 1 : 0; speichereMail()">
+                    <label class="form-check-label" for="mailAktivToggle">
+                        {{ t('settings.benachrichtigungen.mailAktiv') }}
+                    </label>
+                </div>
+
+                <div class="d-flex align-items-center gap-2 flex-wrap mt-3">
+                    <span class="text-muted" style="font-size:0.8rem;">{{ t('settings.benachrichtigungen.vorlage') }}</span>
+                    <button v-for="v in MAIL_VORLAGEN" :key="v.name" type="button"
+                        class="btn btn-sm btn-outline-secondary" @click="mailVorlage(v)">{{ v.name }}</button>
+                </div>
+
+                <div class="row align-items-center mt-3">
+                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.host') }}</div>
+                    <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
+                        <input type="text" class="form-control" style="max-width:18rem;"
+                            v-model="mail.mailHost" placeholder="smtp.example.com" />
+                        <input type="number" class="form-control" style="max-width:7rem;"
+                            v-model.number="mail.mailPort" placeholder="587" />
+                        <select class="form-select" style="max-width:11rem;" v-model="mail.mailSicherheit">
+                            <option value="tls">TLS (465)</option>
+                            <option value="starttls">STARTTLS (587)</option>
+                            <option value="keine">ohne</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row align-items-center mt-2">
+                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.zugang') }}</div>
+                    <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
+                        <input type="text" class="form-control" style="max-width:18rem;"
+                            v-model="mail.mailUser" :placeholder="t('settings.benachrichtigungen.benutzer')" />
+                        <input type="password" class="form-control" style="max-width:14rem;"
+                            v-model="mail.mailPasswort" :placeholder="t('settings.benachrichtigungen.passwort')" />
+                    </div>
+                </div>
+
+                <div class="row align-items-center mt-2">
+                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.adressen') }}</div>
+                    <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
+                        <input type="email" class="form-control" style="max-width:18rem;"
+                            v-model="mail.mailVon" :placeholder="t('settings.benachrichtigungen.von')" />
+                        <input type="email" class="form-control" style="max-width:18rem;"
+                            v-model="mail.mailAn" :placeholder="t('settings.benachrichtigungen.an')" />
+                    </div>
+                </div>
+
+                <div class="d-flex align-items-center gap-2 flex-wrap mt-3">
+                    <button type="button" class="btn btn-sm btn-primary" @click="speichereMail">
+                        {{ t('settings.benachrichtigungen.speichern') }}
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-primary"
+                        :disabled="mailTestLaeuft" @click="testeMail">
+                        {{ mailTestLaeuft ? t('settings.benachrichtigungen.testLaeuft') : t('settings.benachrichtigungen.test') }}
+                    </button>
+                    <span v-if="mailMeldung" :class="mailFehler ? 'text-danger' : 'text-success'"
+                        style="font-size:0.85rem;">{{ mailMeldung }}</span>
+                </div>
+                <p class="fw-lighter mt-2" style="font-size:0.8rem;">
+                    {{ t('settings.benachrichtigungen.passwortHinweis') }}
+                </p>
+                </div>
+
             </div>
         </div>
 
     </div>
 </template>
+
+<style scoped>
+/* Coin-Auswahl des Divergenz-Alarms. Eigenes Aufklappfeld statt eines
+   <select multiple>: aus über 500 Perps sucht man ohne Suchfeld nicht, und
+   ein mehrzeiliges Auswahlfeld sprengt die Tabellenzeile. */
+.divWahlKnopf {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Fängt den Klick daneben ab — sonst bliebe die Liste offen stehen. */
+.divWahlHinter {
+    position: fixed;
+    inset: 0;
+    z-index: 1040;
+}
+
+.divWahl {
+    position: absolute;
+    z-index: 1050;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    width: 15rem;
+    max-height: 18rem;
+    overflow-y: auto;
+    padding: 0.5rem;
+    border-radius: var(--border-radius, 0.5rem);
+    background: var(--black-bg-3, #1e1e2f);
+    border: 1px solid var(--white-38, rgba(255, 255, 255, 0.15));
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.3));
+}
+
+.divWahlZeile {
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    font-size: 0.82rem;
+    white-space: nowrap;
+    color: var(--white-87, rgba(255, 255, 255, 0.87));
+    user-select: none;
+}
+
+.divWahlZeile:hover {
+    background: var(--white-38, rgba(255, 255, 255, 0.08));
+}
+</style>

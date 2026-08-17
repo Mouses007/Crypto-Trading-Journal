@@ -24,7 +24,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { getKnex } from './database.js'
 import { logError } from './logger.js'
-import { ladeLlmConfig, callLLMJson, pruefeAnhaenge } from './llm.js'
+import { ladeStrategieLlmConfig, callLLMJson, pruefeAnhaenge } from './llm.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const STRATEGIEN_VERZEICHNIS = path.join(__dirname, 'strategies')
@@ -349,7 +349,7 @@ export function setupStrategyBuilderRoutes(app) {
     /** Welche Anhänge kann der eingestellte Anbieter? Steuert die UI. */
     app.get('/api/strategies/builder/capabilities', async (req, res) => {
         try {
-            const cfg = await ladeLlmConfig()
+            const cfg = await ladeStrategieLlmConfig()
             const { ok } = pruefeAnhaenge(cfg.provider, [{ kind: 'pdf' }])
             const { ok: bilder } = pruefeAnhaenge(cfg.provider, [{ kind: 'image' }])
             res.json({ provider: cfg.provider, model: cfg.model, pdf: ok, image: bilder, text: true })
@@ -401,7 +401,7 @@ export function setupStrategyBuilderRoutes(app) {
             const vorhanden = draftId ? await knex('strategy_drafts').where('id', draftId).first() : null
             const verlauf = vorhanden ? parseJson(vorhanden.messages, []) : []
 
-            const cfg = await ladeLlmConfig()
+            const cfg = await ladeStrategieLlmConfig()
             const pruefung = pruefeAnhaenge(cfg.provider, modellAnhaenge)
             if (!pruefung.ok) {
                 return res.status(400).json({

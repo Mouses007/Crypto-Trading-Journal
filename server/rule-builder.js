@@ -21,7 +21,7 @@
  */
 
 import { getKnex } from './database.js'
-import { ladeLlmConfig, callLLMJson, pruefeAnhaenge } from './llm.js'
+import { ladeStrategieLlmConfig, callLLMJson, pruefeAnhaenge } from './llm.js'
 import { BAUSTEINE } from './strategies/rule-engine.js'
 import { pruefeRegeln } from './strategies/rule-validate.js'
 import { VORLAGEN } from './strategies/rule-templates.js'
@@ -51,9 +51,18 @@ Halte dich exakt an dieses Vokabular. Alles andere wird abgelehnt:
 Indikatoren (Feld "type"): ${BAUSTEINE.indikatoren.join(', ')}
   - ema, sma, rsi, atr brauchen "period" (Zahl oder {"param":"name"})
   - vwap und vwapBand brauchen "anchor": ${BAUSTEINE.vwapAnker.join(' oder ')}
-    ("session" = Rücksetzen zum UTC-Tageswechsel, "rolling" = gleitendes Fenster
-    über "period"). vwapBand zusätzlich "mult" (Standardabweichungen,
+    ("session" = Rücksetzen zum UTC-Tageswechsel, "week"/"month" = Wochen-/
+    Monatswechsel, "ath"/"atl" = Neuverankerung bei jedem neuen Hoch/Tief der
+    geladenen Historie, "swingHigh"/"swingLow" = verankert am letzten
+    bestätigten markanten Pivot, "rolling" = gleitendes Fenster über "period").
+    Bei swingHigh/swingLow zusätzlich "pivot" (Pivot-Stärke, Vorgabe 20), "nth"
+    (1-3, welche Fächerlinie, Vorgabe 1) und "minSepAtr" (Mindestabstand der
+    Anker in ATR, Vorgabe 1). vwapBand zusätzlich "mult" (Standardabweichungen,
     negativ = unteres Band).
+  - volSma: "period" — gleitender Durchschnitt des VOLUMENS. Im Vergleich mit
+    dem Anker "volume" ergibt das die Vektorkerzen-Bedingung: Volumen über dem
+    Zweifachen (Climax) bzw. 1,5-fachen (Rising) des Durchschnitts.
+  - dayOpen: braucht nichts — Eröffnungskurs des laufenden UTC-Tages.
   - bollUpper/bollMiddle/bollLower: "period", "mult" (Standardabweichungen) und
     optional "basis": ${BAUSTEINE.bollBasis.join(' oder ')} (Vorgabe sma)
   - adx/plusDI/minusDI: "period" (Wilder)
@@ -63,8 +72,18 @@ Auslöser (signal.type): ${BAUSTEINE.signale.join(', ')}
   - crossUp/crossDown: "a" und "b" (zwei Referenzen, die sich kreuzen)
   - pattern: "pattern" (${BAUSTEINE.muster.join(', ')}), optional
     "prevOpposite" = Anzahl Gegenkerzen unmittelbar davor (0 = kein Filter)
+  - levelTouch: "line" (die Linie, die halten soll) und "minPrevTouches" —
+    wie oft sie VORHER schon gehalten haben muss. minPrevTouches 2 heisst also:
+    gehandelt wird die DRITTE Berührung. Optional "window" (Rückblick in
+    Kerzen, Vorgabe 200) und "separation" (Mindestabstand zweier gezählter
+    Berührungen in Kerzen, Vorgabe 3). Eine Berührung zählt nur, wenn der Docht
+    die Linie erreicht UND die Kerze auf der Handelsseite schliesst.
 Vergleiche (op): ${BAUSTEINE.vergleiche.join(', ')}
   - distancePctGt/distancePctLt brauchen zusätzlich "value" (Prozent)
+  - priorTouchesGte hat nur "left" (die Linie) und "value" (Mindestanzahl
+    früherer Berührungen), optional "window" und "separation" wie bei
+    levelTouch. Damit lässt sich die Berührungszahl auch als FILTER zu einem
+    anderen Auslöser verlangen.
   - isBullish/isBearish/higherThanPrevSignal/lowerThanPrevSignal haben KEINE
     "left"/"right"-Seiten
 Referenzen (überall wo left/right/anchor/a/b steht):
@@ -88,8 +107,14 @@ Verstehe das Zielsystem:
   die Regel — nur Parameter kann der Backtest später variieren.
 - Risiko, Positionsgrösse, Gebühren und Hebel regelt das System zentral.
   Lass sie weg.
-- "direction" ist long ODER short, nicht beides. Für beide Richtungen braucht es
-  zwei Strategien.
+- "direction" ist long, short oder both. Bei "both" läuft die Erkennung je
+  Richtung einmal: was als Ablehnung gilt, wohin der Stop-Puffer zeigt und
+  welcher Docht bestätigt, dreht sich dabei mit. Nimm "both" nur, wenn die Idee
+  wirklich symmetrisch ist — sonst zwei Strategien.
+- Verankerte VWAPs brauchen ihren Anker im Sichtfenster. Monats-Anker auf 5m/15m
+  und ATH/ATL sind im Backtest möglich, im Live-Betrieb hält die Engine das
+  Fenster nicht — dort bleibt die Linie leer. Sag das, wenn du so einen Anker
+  vorschlägst.
 
 Antworte ausschliesslich mit JSON in genau dieser Form:
 {
@@ -199,7 +224,7 @@ export function setupRuleBuilderRoutes(app) {
             const vorhanden = draftId ? await knex('strategy_drafts').where('id', draftId).first() : null
             const verlauf = vorhanden ? parseJson(vorhanden.messages, []) : []
 
-            const cfg = await ladeLlmConfig()
+            const cfg = await ladeStrategieLlmConfig()
             const pruefung = pruefeAnhaenge(cfg.provider, modellAnhaenge)
             if (!pruefung.ok) {
                 return res.status(400).json({

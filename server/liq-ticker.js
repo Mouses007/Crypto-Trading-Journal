@@ -1,0 +1,142 @@
+/**
+ * Rollender Speicher der letzten Liquidationen — für den Live-Ticker.
+ *
+ * ## Warum es diesen Puffer zusätzlich gibt
+ *
+ * Der Aufzeichner (`live-recorder.js`) hat die Ströme von Binance und Bybit
+ * bereits offen, schreibt sie aber gebündelt: alle 30 Sekunden wandert der
+ * Puffer als gzip-Blob in die Datenbank und wird geleert. Ein Abruf aus der
+ * Datenbank hinkt damit bis zu einer halben Minute nach — für „was ist gerade
+ * passiert" unbrauchbar.
+ *
+ * Deshalb liegt hier ein zweiter, winziger Speicher im Arbeitsspeicher, der
+ * neben dem Schreibpuffer mitgefüllt wird. Er ersetzt die Aufzeichnung nicht,
+ * er beantwortet nur eine andere Frage.
+ *
+ * ## Was hier NICHT passiert
+ *
+ * **Die Seiten-Konvention wird nicht angefasst.** Projektweit gilt
+ * `seite 1 = SHORT liquidiert, 0 = LONG liquidiert`; Bybit meldet es
+ * umgekehrt und wird in `bybit-liq.js` normalisiert. An allen drei
+ * Einhängepunkten im Aufzeichner ist der Wert bereits richtig. Würde hier noch
+ * einmal gedreht, gäbe es die Umrechnung ein viertes Mal im Baum — und beim
+ * nächsten Lesen wüsste niemand mehr, welche Stelle gilt.
+ *
+ * Reines Modul: kein Netz, keine Datenbank. Selbsttest:
+ * `server/__selftest-liq-ticker.mjs`.
+ */
+
+/** Behaltenes Zeitfenster. Doppelt so gross wie die grösste Abfrage. */
+const FENSTER_MS = 30 * 60 * 1000
+
+/**
+ * Harte Obergrenze. Bei einem Ausschlag können in Sekunden tausende Ereignisse
+ * kommen; ohne Deckel wächst der Speicher unbegrenzt, weil die Zeitgrenze dann
+ * noch gar nicht greift.
+ */
+const MAX_EREIGNISSE = 20000
+
+/** [zeitMs, preis, menge, seite, boerse] — Array statt Objekt, es sind viele. */
+let ring = []
+
+/** Welche Börsen überhaupt schon etwas geliefert haben. */
+const boersen = new Set()
+
+/**
+ * Ein Liquidationsereignis vormerken.
+ *
+ * Wird direkt neben dem Schreibpuffer des Aufzeichners aufgerufen. Ungültige
+ * Werte werden verworfen statt zu werfen — ein kaputtes Ereignis darf den
+ * Datenstrom nicht abreissen.
+ *
+ * @param {string} boerse 'binance' | 'bybit'
+ * @param {string} symbol z.B. 'BTCUSDT'
+ * @param {number} t      Zeitpunkt in ms
+ * @param {number} preis
+ * @param {number} menge  in Basiswährung (nicht USD)
+ * @param {number} seite  1 = Short liquidiert, 0 = Long liquidiert
+ */
+export function merkeLiq(boerse, symbol, t, preis, menge, seite) {
+    const zeit = Number(t)
+    const p = Number(preis)
+    const m = Number(menge)
+    if (!Number.isFinite(zeit) || !Number.isFinite(p) || !Number.isFinite(m)) return
+    if (p <= 0 || m <= 0 || !symbol) return
+
+    boersen.add(boerse)
+    ring.push([zeit, p, m, seite === 1 ? 1 : 0, boerse, String(symbol).toUpperCase()])
+
+    // Verdrängung beim Schreiben statt per Zeitgeber: ein Timer, der auch dann
+    // läuft, wenn gar nichts kommt, wäre reine Beschäftigung.
+    if (ring.length > MAX_EREIGNISSE) ring = ring.slice(-MAX_EREIGNISSE)
+    const grenze = zeit - FENSTER_MS
+    if (ring.length && ring[0][0] < grenze) {
+        ring = ring.filter(e => e[0] >= grenze)
+    }
+}
+
+/**
+ * Auswertung der letzten `minuten`.
+ *
+ * @param {object} [opt]
+ * @param {number} [opt.minuten=15]
+ * @param {string} [opt.symbol]  nur dieses Symbol; leer = alle
+ * @param {number} [opt.jetzt]   Bezugszeitpunkt (für den Selbsttest)
+ */
+export function lies({ minuten = 15, symbol = null, jetzt = Date.now() } = {}) {
+    const spanne = Math.max(1, Math.min(30, Number(minuten) || 15)) * 60 * 1000
+    const von = jetzt - spanne
+    const sym = symbol ? String(symbol).toUpperCase() : null
+
+    const treffer = ring.filter(e => e[0] >= von && (!sym || e[5] === sym))
+
+    let longUsd = 0
+    let shortUsd = 0
+    const jeMinuteMap = new Map()
+    const jeSymbolMap = new Map()
+
+    for (const [t, preis, menge, seite, boerse, s] of treffer) {
+        const usd = preis * menge
+        if (seite === 1) shortUsd += usd; else longUsd += usd
+
+        const minute = Math.floor(t / 60000) * 60000
+        let mEintrag = jeMinuteMap.get(minute)
+        if (!mEintrag) jeMinuteMap.set(minute, mEintrag = { t: minute, longUsd: 0, shortUsd: 0, anzahl: 0 })
+        if (seite === 1) mEintrag.shortUsd += usd; else mEintrag.longUsd += usd
+        mEintrag.anzahl++
+
+        let sEintrag = jeSymbolMap.get(s)
+        if (!sEintrag) jeSymbolMap.set(s, sEintrag = { symbol: s, longUsd: 0, shortUsd: 0, anzahl: 0 })
+        if (seite === 1) sEintrag.shortUsd += usd; else sEintrag.longUsd += usd
+        sEintrag.anzahl++
+
+        void boerse
+    }
+
+    const alsEreignis = (e) => ({
+        t: e[0], preis: e[1], menge: e[2], seite: e[3], boerse: e[4], symbol: e[5],
+        usd: e[1] * e[2],
+    })
+
+    return {
+        fensterMinuten: spanne / 60000,
+        von,
+        bis: jetzt,
+        gesamt: { longUsd, shortUsd, anzahl: treffer.length },
+        jeMinute: [...jeMinuteMap.values()].sort((a, b) => a.t - b.t),
+        jeSymbol: [...jeSymbolMap.values()].sort((a, b) => (b.longUsd + b.shortUsd) - (a.longUsd + a.shortUsd)),
+        // Die grössten Einzelereignisse — die erzählen mehr als die Summe
+        groesste: treffer.map(alsEreignis).sort((a, b) => b.usd - a.usd).slice(0, 10),
+        // Das Band: neueste zuerst, damit die Kachel von oben lesen kann
+        letzte: treffer.map(alsEreignis).sort((a, b) => b.t - a.t).slice(0, 50),
+        quellen: { binance: boersen.has('binance'), bybit: boersen.has('bybit') },
+    }
+}
+
+/** Nur für den Selbsttest — im Betrieb gibt es keinen Grund, zu leeren. */
+export function _leere() {
+    ring = []
+    boersen.clear()
+}
+
+export const _grenzen = { FENSTER_MS, MAX_EREIGNISSE }

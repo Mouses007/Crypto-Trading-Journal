@@ -522,6 +522,285 @@ console.log('\nMACD und MFI')
         regelnUnterscheidenSich(null, null) === false && regelnUnterscheidenSich(null, basis(2)) === true)
 }
 
+// ── Berührungszähler und Level-Auslöser ──────────────────────────────────
+//
+// „Bei der dritten Berührung" ist die Regel, an der das Vokabular vorher
+// scheiterte. Geprüft wird deshalb nicht nur, dass es läuft, sondern WANN es
+// auslöst: eine Kerze zu früh wäre eine andere Strategie.
+console.log('\nBerührungen eines Levels')
+{
+    const { BAUSTEINE } = await import('./rule-engine.js')
+    check('Level-Auslöser und Berührungszähler stehen im Vokabular',
+        BAUSTEINE.signale.includes('levelTouch') && BAUSTEINE.vergleiche.includes('priorTouchesGte'))
+
+    // Eine waagerechte Testlinie bei 100 (feste Zahl als Referenz), damit die
+    // Berührungen von Hand nachzählbar sind.
+    const LINIE = { value: 100 }
+    const ruhe = [105, 106, 104, 105]        // Tief 104 — berührt nicht
+    const halt = [104, 106, 99, 103]         // sticht durch 100 und schliesst darüber
+    const bruch = [104, 106, 99, 98]         // sticht durch und schliesst DARUNTER
+    const zeilen = []
+    const setzeAuf = (i, was) => { while (zeilen.length < i) zeilen.push(ruhe); zeilen[i] = was }
+    for (const i of [5, 10, 15, 20]) setzeAuf(i, halt)
+    setzeAuf(25, bruch)
+    while (zeilen.length < 40) zeilen.push(ruhe)
+    const kerzen = series(zeilen)
+
+    const regeln = (extra = {}) => pruefeRegeln({
+        id: 'level_test', name: 'Level', timeframes: ['15m'], direction: 'long',
+        warmupCandles: 50, scanWindowCandles: 200, params: [], indicators: [],
+        signal: { type: 'levelTouch', line: LINIE, minPrevTouches: 2, separation: 3, window: 200, ...extra },
+        signalFilters: [], entry: { type: 'immediate' },
+        invalidations: [{ type: 'timeout', code: 'zu_spaet', candles: 2 }],
+        stopLoss: { anchor: 'low', offsetPct: 0.5 },
+        takeProfit: { mode: 'rr', rr: 3 }, breakEvenAtR: 0,
+    })
+
+    const g = regeln()
+    check('Level-Auslöser wird angenommen', g.ok, JSON.stringify(g.fehler))
+
+    const zeiten = (r) => detectMitRegeln(r, { candles: kerzen, params: {} })
+        .setups.map((s) => kerzen.findIndex((k) => k.t === s.sweepCandleTime))
+
+    if (g.ok) {
+        check('erst die dritte Berührung löst aus',
+            JSON.stringify(zeiten(g.regeln)) === JSON.stringify([15, 20]),
+            JSON.stringify(zeiten(g.regeln)))
+    }
+
+    const alle = pruefeRegeln({ ...g.regeln, signal: { ...g.regeln.signal, minPrevTouches: 0 } })
+    check('minPrevTouches 0 löst bei jeder Berührung aus',
+        JSON.stringify(zeiten(alle.regeln)) === JSON.stringify([5, 10, 15, 20]),
+        JSON.stringify(zeiten(alle.regeln)))
+
+    // Der Durchbruch bei 25 schliesst unter der Linie — er ist keine Ablehnung
+    check('ein Schluss unter der Linie zählt nicht als Berührung',
+        !zeiten(alle.regeln).includes(25))
+
+    {
+        // Zwei Berührungen direkt hintereinander: mit Abstand 3 zählt nur die erste
+        const dicht = series([...zeilen.slice(0, 30), halt, halt, ...Array(8).fill(ruhe)])
+        const r = pruefeRegeln({ ...g.regeln, signal: { ...g.regeln.signal, minPrevTouches: 0 } }).regeln
+        const idx = detectMitRegeln(r, { candles: dicht, params: {} })
+            .setups.map((s) => dicht.findIndex((k) => k.t === s.sweepCandleTime))
+        check('Kerzen, die an der Linie kleben, zählen nur einmal',
+            idx.includes(30) && !idx.includes(31), JSON.stringify(idx))
+    }
+
+    {
+        // Fenster 6 Kerzen: bei Berührung 20 liegen 15 und 10 zu weit zurück
+        const eng = pruefeRegeln({ ...g.regeln, signal: { ...g.regeln.signal, window: 6 } }).regeln
+        check('ein kurzer Rückblick verwirft alte Berührungen',
+            zeiten(eng).length === 0, JSON.stringify(zeiten(eng)))
+    }
+
+    {
+        // Derselbe Zähler als FILTER zu einem anderen Auslöser
+        const alsFilter = pruefeRegeln({
+            ...g.regeln,
+            signal: { type: 'pivotLow', left: 2, right: 2 },
+            signalFilters: [{ left: LINIE, op: 'priorTouchesGte', value: 2, separation: 3, window: 200, code: 'zu_wenig_gehalten' }],
+        })
+        check('priorTouchesGte wird als Filter angenommen', alsFilter.ok, JSON.stringify(alsFilter.fehler))
+        if (alsFilter.ok) {
+            const b = alsFilter.regeln.signalFilters[0]
+            check('der Filter braucht keine rechte Seite',
+                b.right === undefined && b.value === 2 && b.window === 200 && b.separation === 3,
+                JSON.stringify(b))
+            const d = detectMitRegeln(alsFilter.regeln, { candles: kerzen, params: {} })
+            check('vor der zweiten Berührung lehnt der Filter jedes Signal ab',
+                (d.diagnostics.rejected.zu_wenig_gehalten || 0) > 0,
+                JSON.stringify(d.diagnostics.rejected))
+        }
+    }
+
+    {
+        // Short: dieselbe Linie, aber gehalten heisst jetzt „schliesst darunter"
+        const kurz = pruefeRegeln({ ...g.regeln, id: 'level_short', direction: 'short',
+            signal: { ...g.regeln.signal, minPrevTouches: 0 },
+            stopLoss: { anchor: 'high', offsetPct: 0.5 } }).regeln
+        const idx = detectMitRegeln(kurz, { candles: kerzen, params: {} })
+            .setups.map((s) => kerzen.findIndex((k) => k.t === s.sweepCandleTime))
+        check('bei Short zählt nur die Berührung mit Schluss unter der Linie',
+            JSON.stringify(idx) === JSON.stringify([25]), JSON.stringify(idx))
+    }
+}
+
+// ── Neue VWAP-Anker im Regelwerk ─────────────────────────────────────────
+console.log('\nVWAP-Anker im Regelwerk')
+{
+    const { BAUSTEINE } = await import('./rule-engine.js')
+    const anker = ['session', 'week', 'month', 'ath', 'atl', 'swingHigh', 'swingLow', 'rolling']
+    check('alle acht Anker stehen im Vokabular',
+        anker.every((a) => BAUSTEINE.vwapAnker.includes(a)),
+        anker.filter((a) => !BAUSTEINE.vwapAnker.includes(a)).join(', '))
+
+    const mit = (ind) => pruefeRegeln({
+        id: 'anker_test', name: 'Anker', timeframes: ['15m'], direction: 'long',
+        warmupCandles: 50, params: [], indicators: [ind],
+        signal: { type: 'pivotLow', left: 3, right: 2 },
+        signalFilters: [{ left: 'close', op: 'gt', right: ind.id, code: 'unter_der_linie' }],
+        entry: { type: 'immediate' },
+        invalidations: [{ type: 'timeout', code: 'zu_spaet', candles: 2 }],
+        stopLoss: { anchor: 'signalLow', offsetPct: 0.5 },
+        takeProfit: { mode: 'rr', rr: 3 }, breakEvenAtR: 0,
+    })
+
+    for (const a of anker) {
+        const g = mit({ id: 'linie', type: 'vwap', anchor: a })
+        check(`Anker "${a}" wird angenommen`, g.ok && g.regeln.indicators[0].anchor === a,
+            JSON.stringify(g.fehler))
+    }
+
+    check('unbekannter Anker fällt auf den Tagesanker zurück',
+        mit({ id: 'linie', type: 'vwap', anchor: 'zauberei' }).regeln.indicators[0].anchor === 'session')
+
+    {
+        const g = mit({ id: 'linie', type: 'vwap', anchor: 'swingHigh', pivot: 12, nth: 9, minSepAtr: 1.5 })
+        const ind = g.regeln.indicators[0]
+        check('Swing-Anker behält Pivot-Stärke und Mindestabstand',
+            ind.pivot === 12 && ind.minSepAtr === 1.5, JSON.stringify(ind))
+        check('nth wird auf die drei Fächerlinien begrenzt', ind.nth === 3, String(ind.nth))
+    }
+
+    {
+        const g = mit({ id: 'volumen', type: 'volSma', period: 10 })
+        check('Volumen-SMA und der Anker "volume" sind im Vokabular',
+            g.ok && BAUSTEINE.anker.includes('volume'), JSON.stringify(g.fehler))
+        // Vektorkerzen-Bedingung: Volumen über dem Zweifachen des Durchschnitts
+        const climax = pruefeRegeln({
+            ...g.regeln,
+            signalFilters: [{ left: 'volume', op: 'distancePctGt', right: 'volumen', value: 100, code: 'kein_climax' }],
+        })
+        check('Climax-Bedingung (Volumen > 2× Durchschnitt) ist formulierbar',
+            climax.ok, JSON.stringify(climax.fehler))
+    }
+}
+
+// ── Beide Richtungen in einem Regelwerk ──────────────────────────────────
+//
+// Der Interpreter läuft dafür zweimal. Der Test prüft nicht nur, dass beide
+// Seiten Setups liefern, sondern auch, dass sie sich nicht vermischen: die
+// Ablehnungsdefinition dreht sich mit der Richtung.
+console.log('\nBeide Richtungen')
+{
+    const LINIE = { value: 100 }
+    const ruhe = [105, 106, 104, 105]
+    const haltLong = [104, 106, 99, 103]     // durchsticht 100, schliesst darüber
+    const haltShort = [104, 106, 99, 98]     // durchsticht 100, schliesst darunter
+    // Die Spitzen bei 8 und 18 sind nötig, damit es überhaupt ein Pivot-HOCH
+    // gibt: in einer Reihe gleich hoher Kerzen findet `pivotHighs` keins, der
+    // Short-Stop (`lastSwingHigh`) hätte keinen Anker und der Test würde die
+    // Spiegelung nur scheinbar prüfen.
+    const spitze = [105, 112, 104, 105]
+    const zeilen = Array.from({ length: 40 }, (_, i) => {
+        if ([5, 10, 15].includes(i)) return haltLong
+        if ([20, 25, 30].includes(i)) return haltShort
+        if ([8, 18].includes(i)) return spitze
+        return ruhe
+    })
+    const kerzen = series(zeilen)
+
+    const bau = (richtung) => pruefeRegeln({
+        id: 'beide_test', name: 'Beide', timeframes: ['15m'], direction: richtung,
+        warmupCandles: 50, scanWindowCandles: 200, params: [], indicators: [],
+        signal: { type: 'levelTouch', line: LINIE, minPrevTouches: 0, separation: 3, window: 200 },
+        signalFilters: [], entry: { type: 'immediate' },
+        invalidations: [{ type: 'timeout', code: 'zu_spaet', candles: 2 }],
+        stopLoss: { anchor: 'lastSwingLow', offsetPct: 0.5 },
+        takeProfit: { mode: 'rr', rr: 3 }, breakEvenAtR: 0,
+    })
+
+    const beide = bau('both')
+    check('"both" wird als Richtung angenommen',
+        beide.ok && beide.regeln.direction === 'both', JSON.stringify(beide.fehler))
+    check('… mit einem Hinweis auf die doppelte Rechenzeit',
+        beide.hinweise.some((h) => /zweimal/.test(h)), JSON.stringify(beide.hinweise))
+
+    const idx = (r) => detectMitRegeln(r, { candles: kerzen, params: {} })
+        .setups.map((s) => ({ i: kerzen.findIndex((k) => k.t === s.sweepCandleTime), d: s.direction }))
+
+    const nurLong = idx(bau('long').regeln).map((x) => x.i)
+    const nurShort = idx(bau('short').regeln).map((x) => x.i)
+    const gemischt = idx(beide.regeln)
+
+    check('Long allein findet nur die Kerzen mit Schluss über der Linie',
+        JSON.stringify(nurLong) === JSON.stringify([5, 10, 15]), JSON.stringify(nurLong))
+    check('Short allein findet nur die mit Schluss darunter',
+        JSON.stringify(nurShort) === JSON.stringify([20, 25, 30]), JSON.stringify(nurShort))
+    check('"both" findet die Vereinigung — und nichts dazu',
+        gemischt.length === nurLong.length + nurShort.length
+        && gemischt.filter((x) => x.d === 'long').every((x) => nurLong.includes(x.i))
+        && gemischt.filter((x) => x.d === 'short').every((x) => nurShort.includes(x.i)),
+        JSON.stringify(gemischt))
+    check('jedes Setup trägt seine eigene Richtung',
+        gemischt.some((x) => x.d === 'long') && gemischt.some((x) => x.d === 'short'))
+
+    // Phase B darf Setups nicht kreuzen: ein offenes Long-Setup gehört in den
+    // Long-Durchlauf, sonst würde der Short-Stop darauf gerechnet.
+    // Mindestens 30 Kerzen, sonst kehrt detect() sofort um und der Test wäre
+    // eine Attrappe (offen bliebe leer).
+    const offen = detectMitRegeln(beide.regeln, { candles: kerzen.slice(0, 34), params: {} })
+        .setups.map((s, n) => ({ ...s, id: n + 1 }))
+    const zweiter = detectMitRegeln(beide.regeln, {
+        candles: kerzen, params: {}, openSetups: offen,
+        knownSetupKeys: offen.map((s) => `${s.direction}|${s.obCandleTime}`),
+    })
+    const zuOffenen = zweiter.events.filter((e) => offen.some((s) => s.id === e.id))
+    const ausgeloest = zuOffenen.filter((e) => e.status === 'triggered')
+    check('offene Setups beider Richtungen werden fortgeschrieben',
+        offen.some((s) => s.direction === 'long') && offen.some((s) => s.direction === 'short')
+        && ausgeloest.length > 0,
+        `${offen.length} offen, ${ausgeloest.length} ausgelöst`)
+    // Der entscheidende Punkt: der Short-Stop liegt ÜBER dem Einstieg. Ohne die
+    // Spiegelung der Anker wäre jedes Short-Setup `invalid_stop` gewesen und die
+    // Strategie hätte unbemerkt nur long gehandelt.
+    check('Stop liegt je Richtung auf der richtigen Seite (Anker gespiegelt)',
+        ausgeloest.every((e) => {
+            const s = offen.find((x) => x.id === e.id)
+            return s.direction === 'long' ? e.stopLoss < e.entry : e.stopLoss > e.entry
+        }),
+        JSON.stringify(ausgeloest.map((e) => ({ d: offen.find((x) => x.id === e.id)?.direction, entry: e.entry, sl: e.stopLoss }))))
+    check('… und beide Richtungen sind darunter',
+        ausgeloest.some((e) => offen.find((x) => x.id === e.id)?.direction === 'long')
+        && ausgeloest.some((e) => offen.find((x) => x.id === e.id)?.direction === 'short'),
+        JSON.stringify(zuOffenen.map((e) => `${offen.find((x) => x.id === e.id)?.direction}:${e.status}`)))
+}
+
+// ── Angeschnittene Historie ──────────────────────────────────────────────
+console.log('\nAngeschnittene Historie')
+{
+    const { sichtBedarfKerzen } = await import('./rule-engine.js')
+    const regeln = (anchor) => pruefeRegeln({
+        id: 'schnitt_test', name: 'Schnitt', timeframes: ['15m'], direction: 'long',
+        warmupCandles: 50, params: [], indicators: [{ id: 'linie', type: 'vwap', anchor }],
+        signal: { type: 'levelTouch', line: 'linie', minPrevTouches: 0, separation: 3, window: 200 },
+        signalFilters: [], entry: { type: 'immediate' },
+        invalidations: [{ type: 'timeout', code: 'zu_spaet', candles: 2 }],
+        stopLoss: { anchor: 'low', offsetPct: 0.5 },
+        takeProfit: { mode: 'rr', rr: 3 },
+    }).regeln
+
+    check('Sichtbedarf: Monatsanker verlangt mehr als das Standardfenster',
+        sichtBedarfKerzen(regeln('month'), 900000) > 3000)
+    check('Sichtbedarf: ATH verlangt die ganze Historie',
+        sichtBedarfKerzen(regeln('ath'), 900000) === Infinity)
+    check('Sichtbedarf: gleitender Anker verlangt nichts',
+        sichtBedarfKerzen(regeln('rolling'), 900000) === 0)
+
+    // Reihe mit Berührungen einer ATH-verankerten Linie; im Ausschnitt darf
+    // daraus KEIN Signal entstehen.
+    const rows = Array.from({ length: 60 }, (_, i) => ([5, 15, 25].includes(i)
+        ? [104, 106, 99, 103] : [105, 106, 104, 105]))
+    const kerzen = series(rows)
+    const voll = detectMitRegeln(regeln('ath'), { candles: kerzen, params: {} })
+    const schnitt = detectMitRegeln(regeln('ath'), { candles: kerzen, params: {}, historieVerkuerzt: true })
+    check('ATH-Anker: mit voller Historie entstehen Setups',
+        voll.setups.length > 0, String(voll.setups.length))
+    check('ATH-Anker: im Ausschnitt entsteht keins (statt eines auf falscher Linie)',
+        schnitt.setups.length === 0, String(schnitt.setups.length))
+}
+
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
 if (fehlgeschlagen) { console.log(`\nFehlgeschlagen:\n  ${fehler.join('\n  ')}\n`); process.exit(1) }
 console.log('')

@@ -231,25 +231,198 @@ export function mfi(candles, period = 14) {
 /** Typischer Preis einer Kerze — die übliche Grundlage für VWAP. */
 const typischerPreis = (k) => (k.h + k.l + k.c) / 3
 
+const tagIndex = (t) => Math.floor(t / 86400000)
+// Epoch-Tag 0 war ein Donnerstag; +3 verschiebt den Wochenbeginn auf Montag —
+// dieselbe Woche, die TradingView bei `timeframe.change("W")` meint.
+const wochenIndex = (t) => Math.floor((tagIndex(t) + 3) / 7)
+const monatIndex = (t) => {
+    const d = new Date(t)
+    return d.getUTCFullYear() * 12 + d.getUTCMonth()
+}
+
+/** Extremwert der `laenge` Kerzen, die auf `ende` (einschliesslich) enden. */
+function extremBis(candles, ende, laenge, hoch) {
+    let res = hoch ? -Infinity : Infinity
+    for (let j = Math.max(0, ende - laenge + 1); j <= ende; j++) {
+        const v = hoch ? candles[j].h : candles[j].l
+        if (hoch ? v > res : v < res) res = v
+    }
+    return res
+}
+
+/**
+ * Ankerpunkte des Swing-VWAP-Fächers, Kerze für Kerze.
+ *
+ * Nachbau der Leiter-Logik aus dem Pine-Indikator „Mo's VWAP Vector": Anker
+ * sind markante Pivots, und ältere Anker müssen strukturell HÖHER (Hochs) bzw.
+ * TIEFER (Tiefs) liegen als der jüngste. Wer das weglässt, bekommt drei fast
+ * deckungsgleiche Linien statt eines Fächers.
+ *
+ * „Markant" heisst wie dort: der Pivot ist zusätzlich das Extrem der letzten
+ * 3 × Pivot-Stärke Kerzen — das filtert unbedeutende Zwischenhochs weg.
+ *
+ * Entscheidend für den Backtest: ein Anker wird erst gültig, wenn seine
+ * Bestätigungskerzen geschlossen sind (`index + stärke`). Vorher weiss niemand,
+ * dass der Pivot hält. Im Chart darf die Linie rückwirkend erscheinen, im Test
+ * wäre genau das ein Blick in die Zukunft.
+ *
+ * @returns {Array<number|null>} je Kerze der Kerzenindex des `nth`-ten Ankers
+ */
+export function swingAnker(candles, { seite = 'high', staerke = 20, nth = 1, minSepAtr = 1 } = {}) {
+    const n = candles.length
+    const out = new Array(n).fill(null)
+    if (!n) return out
+
+    const hoch = seite === 'high'
+    const s = Math.max(1, Math.round(staerke))
+    const pivots = hoch ? pivotHighs(candles, s, s) : pivotLows(candles, s, s)
+    const a = atr(candles, 14)
+
+    // Bestätigungskerze → Pivot, damit die Bar-Schleife nur nachschlagen muss
+    const jePivot = new Map()
+    for (const p of pivots) {
+        const markant = hoch
+            ? p.price >= extremBis(candles, p.index, s * 3, true)
+            : p.price <= extremBis(candles, p.index, s * 3, false)
+        if (!markant) continue
+        const c = p.index + s
+        if (c < n) jePivot.set(c, p)
+    }
+
+    // Höchstens drei Anker je Seite, [0] ist der jüngste
+    let slots = []
+    for (let i = 0; i < n; i++) {
+        const p = jePivot.get(i)
+        if (p) {
+            const minSep = (a[i] ?? 0) * (minSepAtr > 0 ? minSepAtr : 0)
+            // Alte Anker verwerfen, solange sie nicht deutlich über (Hochs)
+            // bzw. unter (Tiefs) dem neuen liegen
+            while (slots.length
+                && (hoch ? slots[0].price <= p.price + minSep : slots[0].price >= p.price - minSep)) {
+                slots.shift()
+            }
+            slots = [p, ...slots].slice(0, 3)
+        }
+        const slot = slots[Math.max(1, Math.round(nth)) - 1]
+        out[i] = slot ? slot.index : null
+    }
+    return out
+}
+
+/** Beginnt genau an diesem Zeitstempel ein neuer Tag/eine Woche/ein Monat (UTC)? */
+function istPeriodenanfang(t, anchor) {
+    if (t % 86400000 !== 0) return false          // nicht einmal ein Tagesanfang
+    if (anchor === 'session') return true
+    const d = new Date(t)
+    if (anchor === 'week') return d.getUTCDay() === 1        // Montag
+    return d.getUTCDate() === 1                              // Monatserster
+}
+
+/**
+ * Startkerze des laufenden VWAP-Abschnitts, Kerze für Kerze.
+ *
+ * Alle Anker ausser 'rolling' sind dasselbe Verfahren mit unterschiedlicher
+ * Rücksetzbedingung — genau wie `f_avwap(resetCond)` im Pine-Indikator.
+ *
+ * `null` heisst: KEIN gültiger Anker. Das ist der wichtige Teil. Backtest und
+ * Engine rufen den Detektor mit einem gleitenden AUSSCHNITT auf, nicht mit der
+ * ganzen Historie. Fängt der Ausschnitt mitten in einem Monat an, ist der
+ * Monatsanker nicht bekannt — eine Linie, die dann am Ausschnittrand neu
+ * beginnt, hiesse „Monats-VWAP" und wäre ein Ausschnitts-VWAP. Lieber keine
+ * Linie als eine erfundene: mit `null` findet die Strategie kein Signal, statt
+ * auf der falschen Linie zu handeln.
+ *
+ * @param {object} opts
+ * @param {boolean} opts.verkuerzt  Der Aufrufer weiss, dass links Historie fehlt
+ *                                  (Ausschnitt). Dann sind ATH/ATL nicht
+ *                                  bestimmbar — das Extrem kann davor liegen.
+ * @returns {Array<number|null>}
+ */
+export function ankerStarts(candles, { anchor = 'session', pivot = 20, nth = 1, minSepAtr = 1, verkuerzt = false } = {}) {
+    const n = candles.length
+    if (!n) return []
+    if (anchor === 'swingHigh' || anchor === 'swingLow') {
+        // Swing-Anker sind unkritisch: der Pivot liegt im Ausschnitt, sonst
+        // gäbe es ihn nicht — die Summe ab dem Pivot ist also vollständig.
+        return swingAnker(candles, {
+            seite: anchor === 'swingHigh' ? 'high' : 'low',
+            staerke: pivot, nth, minSepAtr,
+        })
+    }
+
+    const out = new Array(n).fill(0)
+    if (anchor === 'ath' || anchor === 'atl') {
+        // Im Ausschnitt wäre „ATH" nur das Extrem dieses Ausschnitts.
+        if (verkuerzt) return new Array(n).fill(null)
+        const hoch = anchor === 'ath'
+        let extrem = hoch ? -Infinity : Infinity
+        let start = 0
+        for (let i = 0; i < n; i++) {
+            const v = hoch ? candles[i].h : candles[i].l
+            if (hoch ? v > extrem : v < extrem) { extrem = v; start = i }
+            out[i] = start
+        }
+        return out
+    }
+
+    const periode = anchor === 'week' ? wochenIndex : anchor === 'month' ? monatIndex : tagIndex
+    // Der erste Abschnitt ist nur vollständig, wenn die Reihe genau auf einem
+    // Perioden-Anfang beginnt. Bei Kerzen von der Börse ist das exakt prüfbar.
+    const ersterGueltig = istPeriodenanfang(candles[0].t, anchor)
+    let letzte = null
+    let start = 0
+    for (let i = 0; i < n; i++) {
+        const p = periode(candles[i].t)
+        if (letzte === null || p !== letzte) { letzte = p; start = i }
+        out[i] = (start === 0 && !ersterGueltig) ? null : start
+    }
+    return out
+}
+
+/**
+ * Wie viele Kerzen braucht ein Anker, damit seine Linie vollständig ist?
+ *
+ * Backtest und Engine bemessen ihr Sichtfenster nach Warmup und Scan-Fenster —
+ * das weiss nichts von Wochen und Monaten. Ohne diese Zahl bekäme ein
+ * Monats-VWAP auf 15m ein Fenster von ein paar Hundert Kerzen und wäre
+ * dauerhaft `null`. `Infinity` heisst: nur mit der vollen geladenen Historie.
+ *
+ * @returns {number} Kerzen, `Infinity` bei ATH/ATL, 0 wenn belanglos
+ */
+export function ankerSichtKerzen(anchor, timeframeMs) {
+    if (!timeframeMs || timeframeMs <= 0) return 0
+    if (anchor === 'ath' || anchor === 'atl') return Infinity
+    // Grosszügig eine Periode plus Reserve, damit auch ein Fenster, das mitten
+    // in der Periode endet, den Anfang noch enthält.
+    const tage = anchor === 'month' ? 32 : anchor === 'week' ? 8 : anchor === 'session' ? 2 : 0
+    return tage ? Math.ceil((tage * 86400000) / timeframeMs) : 0
+}
+
 /**
  * Volumengewichteter Durchschnittspreis (VWAP).
  *
- * Zwei Betriebsarten, die sich grundlegend unterscheiden:
+ * Der Anker entscheidet, wo die Summe zurückgesetzt wird:
  *
- *   'session'  Setzt zu jedem UTC-Tageswechsel zurück. Das ist der VWAP, den
- *              Trader meinen, wenn sie „die VWAP" sagen — eine Linie, die am
- *              Tagesanfang beim Preis startet und im Tagesverlauf träger wird.
- *   'rolling'  Gleitendes Fenster über `period` Kerzen, verhält sich wie ein
- *              gleitender Durchschnitt mit Volumengewicht.
+ *   'session'    UTC-Tageswechsel — der VWAP, den Trader meinen, wenn sie
+ *                „die VWAP" sagen: startet am Tagesanfang beim Preis und wird
+ *                im Tagesverlauf träger.
+ *   'week'       Wochenwechsel (Montag, UTC)
+ *   'month'      Monatswechsel (UTC)
+ *   'ath'/'atl'  Neuverankerung bei jedem neuen Hoch bzw. Tief
+ *   'swingHigh'  Verankert am letzten bestätigten markanten Pivot-Hoch
+ *   'swingLow'   dito am Pivot-Tief; `nth` 1–3 wählt die Fächerlinie
+ *   'rolling'    Gleitendes Fenster über `period` Kerzen — verhält sich wie ein
+ *                gleitender Durchschnitt mit Volumengewicht (kennt TradingView
+ *                so nicht, ist aber im Backtest handlich)
  *
  * Ohne Volumen (v = 0) fällt die Gewichtung auf 1 je Kerze zurück; sonst wären
  * ganze Abschnitte NaN, statt wenigstens den Durchschnittspreis zu liefern.
  *
  * @param {Array}  candles
- * @param {object} opts { anchor: 'session'|'rolling', period }
+ * @param {object} opts { anchor, period, pivot, nth, minSepAtr }
  * @returns {Array<number|null>}
  */
-export function vwap(candles, { anchor = 'session', period = 20 } = {}) {
+export function vwap(candles, { anchor = 'session', period = 20, pivot = 20, nth = 1, minSepAtr = 1, verkuerzt = false } = {}) {
     const out = new Array(candles.length).fill(null)
     if (!candles.length) return out
 
@@ -272,17 +445,31 @@ export function vwap(candles, { anchor = 'session', period = 20 } = {}) {
         return out
     }
 
-    // 'session': Rücksetzen beim UTC-Tageswechsel
+    // Abschnittsweise: die Summen laufen fortlaufend weiter und werden nur beim
+    // Ankerwechsel neu gebildet. Beim Swing-Anker liegt der neue Anker in der
+    // VERGANGENHEIT (der Pivot selbst), deshalb wird dort über die Kerzen seit
+    // dem Pivot nachgerechnet — dieselben paar Kerzen wie in der Pine-Fassung.
+    const starts = ankerStarts(candles, { anchor, pivot, nth, minSepAtr, verkuerzt })
+    let aktuell = -1
     let summePV = 0
     let summeV = 0
-    let tag = null
     for (let i = 0; i < candles.length; i++) {
-        const k = candles[i]
-        const heute = Math.floor(k.t / 86400000)
-        if (tag === null || heute !== tag) { summePV = 0; summeV = 0; tag = heute }
-        const v = k.v > 0 ? k.v : 1
-        summePV += typischerPreis(k) * v
-        summeV += v
+        const start = starts[i]
+        if (start === null || start === undefined) { aktuell = -1; continue }
+        if (start !== aktuell) {
+            aktuell = start
+            summePV = 0
+            summeV = 0
+            for (let j = start; j <= i; j++) {
+                const v = candles[j].v > 0 ? candles[j].v : 1
+                summePV += typischerPreis(candles[j]) * v
+                summeV += v
+            }
+        } else {
+            const v = candles[i].v > 0 ? candles[i].v : 1
+            summePV += typischerPreis(candles[i]) * v
+            summeV += v
+        }
         out[i] = summeV > 0 ? summePV / summeV : null
     }
     return out
@@ -293,8 +480,8 @@ export function vwap(candles, { anchor = 'session', period = 20 } = {}) {
  * Negatives `mult` ergibt das untere Band. Bänder sind bei VWAP-Strategien
  * meist wichtiger als die Linie selbst — dort liegen Überdehnung und Umkehr.
  */
-export function vwapBand(candles, { anchor = 'session', period = 20, mult = 2 } = {}) {
-    const linie = vwap(candles, { anchor, period })
+export function vwapBand(candles, { anchor = 'session', period = 20, mult = 2, pivot = 20, nth = 1, minSepAtr = 1, verkuerzt = false } = {}) {
+    const linie = vwap(candles, { anchor, period, pivot, nth, minSepAtr, verkuerzt })
     const out = new Array(candles.length).fill(null)
     if (!candles.length) return out
 
@@ -315,24 +502,73 @@ export function vwapBand(candles, { anchor = 'session', period = 20, mult = 2 } 
         return out
     }
 
-    // Session: gewichtete Momente führen. Abweichungsquadrate gegen den
-    // jeweils WANDERNDEN Zwischen-VWAP aufzusummieren unterschätzt die
-    // Varianz systematisch (für 1,2,3 käme σ≈0,645 statt korrekt 0,816) —
-    // korrekt ist Var = Σwx²/Σw − VWAP², mit dem aktuellen Gesamt-VWAP.
+    // Gewichtete Momente führen. Abweichungsquadrate gegen den jeweils
+    // WANDERNDEN Zwischen-VWAP aufzusummieren unterschätzt die Varianz
+    // systematisch (für 1,2,3 käme σ≈0,645 statt korrekt 0,816) — korrekt ist
+    // Var = Σwx²/Σw − VWAP², mit dem aktuellen Gesamt-VWAP.
+    const starts = ankerStarts(candles, { anchor, pivot, nth, minSepAtr, verkuerzt })
+    let aktuell = -1
     let sv = 0
     let sx2 = 0
-    let tag = null
     for (let i = 0; i < candles.length; i++) {
-        const k = candles[i]
-        const heute = Math.floor(k.t / 86400000)
-        if (tag === null || heute !== tag) { sv = 0; sx2 = 0; tag = heute }
-        const v = k.v > 0 ? k.v : 1
-        const x = typischerPreis(k)
-        sv += v
-        sx2 += v * x * x
+        const start = starts[i]
+        if (start === null || start === undefined) { aktuell = -1; continue }
+        if (start !== aktuell) {
+            aktuell = start
+            sv = 0
+            sx2 = 0
+            for (let j = start; j <= i; j++) {
+                const v = candles[j].v > 0 ? candles[j].v : 1
+                const x = typischerPreis(candles[j])
+                sv += v
+                sx2 += v * x * x
+            }
+        } else {
+            const v = candles[i].v > 0 ? candles[i].v : 1
+            const x = typischerPreis(candles[i])
+            sv += v
+            sx2 += v * x * x
+        }
         if (linie[i] === null || sv <= 0) { out[i] = null; continue }
         const varianz = Math.max(0, sx2 / sv - linie[i] * linie[i])
         out[i] = linie[i] + mult * Math.sqrt(varianz)
+    }
+    return out
+}
+
+/**
+ * Gleitender Durchschnitt des VOLUMENS.
+ *
+ * Grundlage der PVSRA-Vektorkerzen: „Climax" heisst Volumen über dem
+ * Zweifachen dieses Durchschnitts, „Rising" über dem 1,5-fachen. Als
+ * Vergleichslinie zum Anker `volume` macht das die Vektorkerzen-Bedingung im
+ * Regelwerk formulierbar.
+ */
+export function volumeSma(candles, period = 10) {
+    const out = new Array(candles.length).fill(null)
+    const n = Math.max(1, Math.round(period))
+    if (candles.length < n) return out
+    let summe = 0
+    for (let i = 0; i < candles.length; i++) {
+        summe += candles[i].v > 0 ? candles[i].v : 0
+        if (i >= n) summe -= candles[i - n].v > 0 ? candles[i - n].v : 0
+        if (i >= n - 1) out[i] = summe / n
+    }
+    return out
+}
+
+/**
+ * Eröffnungskurs des laufenden UTC-Tages als Linie.
+ * Im Krypto-Handel eine der meistbeachteten Marken des Tages.
+ */
+export function dayOpen(candles) {
+    const out = new Array(candles.length).fill(null)
+    let tag = null
+    let wert = null
+    for (let i = 0; i < candles.length; i++) {
+        const heute = tagIndex(candles[i].t)
+        if (tag === null || heute !== tag) { tag = heute; wert = candles[i].o }
+        out[i] = wert
     }
     return out
 }

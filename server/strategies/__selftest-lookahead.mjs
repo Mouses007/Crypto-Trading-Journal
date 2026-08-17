@@ -308,6 +308,68 @@ console.log('\nEMA Touch — Guss-Bedingung gilt auch in der Bestätigungslücke
         s ? `${s.status}/${s.invalidReason || '-'}` : 'kein Setup erzeugt')
 }
 
+// ── 4. Level-Berührung und Swing-VWAP ────────────────────────────────────
+//
+// Beide sind neu und beide könnten still in die Zukunft schauen: der
+// Level-Auslöser, indem er auf der Berührungskerze selbst handelt, der
+// Swing-VWAP, indem er seinen Anker rückwirkend setzt (im Chart erlaubt, im
+// Backtest nicht). Geprüft wird gegen das wachsende Fenster, nicht gegen
+// Augenmass.
+console.log('\nLevel-Berührung — Einstieg erst nach der Auslösekerze')
+{
+    const level = {
+        id: 'level_lookahead', timeframes: ['15m'], params: [], indicators: [],
+        direction: 'long', warmupCandles: 50, scanWindowCandles: 1000,
+        signal: { type: 'levelTouch', line: { value: 100 }, minPrevTouches: 2, window: 200, separation: 3 },
+        signalFilters: [], entry: { type: 'immediate' },
+        invalidations: [{ type: 'timeout', candles: 3, code: 'timeout' }],
+        stopLoss: { anchor: 'low', offsetPct: 0.5 },
+        takeProfit: { mode: 'rr', rr: 3 },
+    }
+    const ruhe = [105, 106, 104, 105]
+    const halt = [104, 106, 99, 103]
+    const rows = Array.from({ length: 60 }, (_, i) => ([5, 15, 25, 35, 45].includes(i) ? halt : ruhe))
+    const serie = series(rows)
+
+    const r = replay((ctx) => detectMitRegeln(level, ctx), serie, {}, 30)
+    const trig = r.filter((s) => s.status === 'triggered')
+    check('Level-Auslöser handelt überhaupt', trig.length > 0, `${r.length} Setups`)
+    check('Einstieg nie auf der Berührungskerze selbst',
+        trig.every((s) => Number(s.candleTime) === Number(s.sweepCandleTime) + TF_MS),
+        trig.length ? `Signal ${trig[0].sweepCandleTime} → Einstieg ${trig[0].candleTime}` : '')
+    check('Einstieg zur Eröffnung der Folgekerze',
+        trig.every((s) => {
+            const k = serie.find((x) => x.t === Number(s.candleTime))
+            return k && Math.abs(Number(s.entry) - k.o) < 1e-9
+        }))
+}
+
+console.log('\nSwing-VWAP — Signale ändern sich nicht rückwirkend')
+{
+    const swing = {
+        id: 'swing_vwap_lookahead', timeframes: ['15m'], params: [],
+        indicators: [{ id: 'svwap', type: 'vwap', anchor: 'swingHigh', pivot: 5, nth: 1, minSepAtr: 0 }],
+        direction: 'long', warmupCandles: 50, scanWindowCandles: 1000,
+        signal: { type: 'crossUp', a: 'close', b: 'svwap' },
+        signalFilters: [], entry: { type: 'immediate' },
+        invalidations: [{ type: 'timeout', candles: 5, code: 'timeout' }],
+        stopLoss: { anchor: 'low', offsetPct: 0.5 },
+        takeProfit: { mode: 'rr', rr: 2 },
+    }
+    for (const seed of [42, 1337]) {
+        const serie = zufallsSerie(300, seed)
+        // Was der Backtest Kerze für Kerze findet …
+        const kausal = replay((ctx) => detectMitRegeln(swing, ctx), serie, {}, 30)
+            .map((s) => Number(s.sweepCandleTime)).sort((a, b) => a - b)
+        // … muss dasselbe sein wie der Blick auf die fertige Historie.
+        const gesamt = detectMitRegeln(swing, { candles: serie, params: {} })
+            .setups.map((s) => Number(s.sweepCandleTime)).sort((a, b) => a - b)
+        check(`Swing-VWAP (Seed ${seed}) — ${gesamt.length} Signale, kausal identisch`,
+            gesamt.length > 0 && JSON.stringify(kausal) === JSON.stringify(gesamt),
+            `kausal ${kausal.length} / gesamt ${gesamt.length}`)
+    }
+}
+
 // ── Ergebnis ─────────────────────────────────────────────────────────────
 console.log(`\n${fehlgeschlagen === 0 ? '\x1b[32m' : '\x1b[31m'}${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen\x1b[0m`)
 if (fehlgeschlagen) { console.log('Fehlgeschlagen:'); for (const f of fehler) console.log(`  · ${f}`) }

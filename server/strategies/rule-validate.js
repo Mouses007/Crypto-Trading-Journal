@@ -55,6 +55,23 @@ function pruefeBedingung(b, indikatorIds, paramKeys, wo, fehler) {
     // Diese Vergleiche brauchen keine Seiten
     const ohneSeiten = ['isBullish', 'isBearish', 'higherThanPrevSignal', 'lowerThanPrevSignal',
         'isHammer', 'isShootingStar', 'isBullishEngulfing', 'isBearishEngulfing', 'isAdvancingWick']
+    // Der Berührungszähler braucht nur die LINIE — eine rechte Seite hätte hier
+    // keine Bedeutung, und ein leeres Feld dürfte die Bedingung nicht kippen.
+    if (b.op === 'priorTouchesGte') {
+        raus.left = pruefeRef(b.left, indikatorIds, paramKeys, `${wo}.left`, fehler)
+        if (raus.left === null) return null
+        for (const [feld, vorgabe] of [['window', 200], ['separation', 3]]) {
+            raus[feld] = (b[feld] && typeof b[feld] === 'object' && b[feld].param !== undefined)
+                ? pruefeRef(b[feld], indikatorIds, paramKeys, `${wo}.${feld}`, fehler)
+                : Math.max(1, Math.round(Number(b[feld]) || vorgabe))
+        }
+        // 0 ist hier ein gültiger Wert („jede Berührung zählt") — deshalb keine
+        // ||-Vorgabe, die die Null verschluckt.
+        raus.value = (b.value && typeof b.value === 'object' && b.value.param !== undefined)
+            ? pruefeRef(b.value, indikatorIds, paramKeys, `${wo}.value`, fehler)
+            : Math.max(0, Math.round(Number.isFinite(Number(b.value)) ? Number(b.value) : 2))
+        return raus
+    }
     if (!ohneSeiten.includes(b.op)) {
         raus.left = pruefeRef(b.left, indikatorIds, paramKeys, `${wo}.left`, fehler)
         raus.right = pruefeRef(b.right, indikatorIds, paramKeys, `${wo}.right`, fehler)
@@ -152,6 +169,18 @@ export function pruefeRegeln(roh) {
         // VWAP braucht einen Anker; das Band zusätzlich den Faktor.
         if (ind.type === 'vwap' || ind.type === 'vwapBand') {
             eintrag.anchor = BAUSTEINE.vwapAnker.includes(ind.anchor) ? ind.anchor : 'session'
+            // Die Swing-Anker hängen an einem Pivot: Stärke, Fächerlinie und
+            // Mindestabstand gehören zur Definition der Linie.
+            if (eintrag.anchor === 'swingHigh' || eintrag.anchor === 'swingLow') {
+                for (const [feld, vorgabe, min, max] of [['pivot', 20, 1, 200], ['nth', 1, 1, 3]]) {
+                    eintrag[feld] = (ind[feld] && typeof ind[feld] === 'object' && ind[feld].param !== undefined)
+                        ? pruefeRef(ind[feld], indikatorIds, paramKeys, `Indikator ${iid}.${feld}`, fehler)
+                        : Math.min(max, Math.max(min, Math.round(Number(ind[feld]) || vorgabe)))
+                }
+                eintrag.minSepAtr = (ind.minSepAtr && typeof ind.minSepAtr === 'object' && ind.minSepAtr.param !== undefined)
+                    ? pruefeRef(ind.minSepAtr, indikatorIds, paramKeys, `Indikator ${iid}.minSepAtr`, fehler)
+                    : (Number.isFinite(Number(ind.minSepAtr)) ? Math.max(0, Number(ind.minSepAtr)) : 1)
+            }
         }
         // MACD braucht drei Perioden statt einer
         if (ind.type === 'macd' || ind.type === 'macdSignal' || ind.type === 'macdHist') {
@@ -201,6 +230,17 @@ export function pruefeRegeln(roh) {
         signal.right = (sig.right && typeof sig.right === 'object')
             ? pruefeRef(sig.right, indikatorIds, paramKeys, 'signal.right', fehler)
             : Math.max(1, Math.round(Number(sig.right) || 2))
+    } else if (sig.type === 'levelTouch') {
+        // Die Linie, die halten soll — plus die drei Zahlen, die entscheiden,
+        // was als Berührung zählt.
+        signal.line = pruefeRef(sig.line, indikatorIds, paramKeys, 'signal.line', fehler)
+        for (const [feld, vorgabe] of [['minPrevTouches', 2], ['window', 200], ['separation', 3]]) {
+            const roh = Number(sig[feld])
+            signal[feld] = (sig[feld] && typeof sig[feld] === 'object' && sig[feld].param !== undefined)
+                ? pruefeRef(sig[feld], indikatorIds, paramKeys, `signal.${feld}`, fehler)
+                : Math.max(feld === 'minPrevTouches' ? 0 : 1,
+                    Math.round(Number.isFinite(roh) ? roh : vorgabe))
+        }
     } else if (sig.type === 'crossUp' || sig.type === 'crossDown') {
         signal.a = pruefeRef(sig.a, indikatorIds, paramKeys, 'signal.a', fehler)
         signal.b = pruefeRef(sig.b, indikatorIds, paramKeys, 'signal.b', fehler)
@@ -256,6 +296,8 @@ export function pruefeRegeln(roh) {
         }
     }
 
+    const direction = ['short', 'both'].includes(roh.direction) ? roh.direction : 'long'
+
     // ── Kursmarken ───────────────────────────────────────────────────
     const sl = roh.stopLoss || {}
     const stopLoss = {
@@ -281,13 +323,44 @@ export function pruefeRegeln(roh) {
     const hinweise = []
     if (!signalFilters.length) hinweise.push('Ohne Signalfilter entsteht bei jedem Signal ein Setup.')
     if (!invalidations.length) hinweise.push('Ohne Abbruchbedingung wartet ein Setup unbegrenzt auf den Einstieg.')
+    // Lange Anker brauchen ein Sichtfenster, das die Engine im Live-Betrieb
+    // nicht immer aufbringt. Das gehört gesagt, BEVOR jemand sich über eine
+    // Strategie wundert, die im Backtest handelt und live schweigt.
+    const anker = indicators.filter((i) => i.type === 'vwap' || i.type === 'vwapBand').map((i) => i.anchor)
+    if (anker.some((a) => a === 'ath' || a === 'atl')) {
+        hinweise.push('ATH/ATL-Anker: im Backtest über die geladene Historie; im Live-Betrieb hält die '
+            + 'Engine nur ein begrenztes Kerzenfenster, dort bleibt die Linie leer und es entstehen keine Signale.')
+    }
+    if (anker.includes('month') && timeframes.some((tf) => ['1m', '3m', '5m'].includes(tf))) {
+        hinweise.push('Monats-Anker auf kleinen Zeiteinheiten: ein Monat sind dort mehrere Tausend Kerzen. '
+            + 'Der Backtest lädt sie, der Live-Betrieb kann sie nicht halten — dort bleibt die Linie leer.')
+    }
+    if (direction === 'both') {
+        hinweise.push('Beide Richtungen: die Erkennung läuft zweimal (long und short) und braucht '
+            + 'entsprechend doppelt so lange. Pro Symbol bleibt trotzdem nur eine Position offen. '
+            + 'Stop- und Zielanker werden für Short automatisch gespiegelt (Swing-Tief ↔ Swing-Hoch).')
+        // Ein einseitiger Auslöser macht aus „beide Richtungen" eine Attrappe:
+        // die Short-Seite prüft dann dieselbe Bedingung wie die Long-Seite.
+        const einseitig = { pivotHigh: 'ein Pivot-HOCH', pivotLow: 'ein Pivot-TIEF',
+            crossUp: 'eine Kreuzung nach OBEN', crossDown: 'eine Kreuzung nach UNTEN',
+            pattern: 'ein bestimmtes Kerzenmuster' }[signal.type]
+        if (einseitig) {
+            hinweise.push(`Achtung: der Auslöser ist ${einseitig} — er benennt eine Seite und wird `
+                + 'NICHT gespiegelt. Beide Durchläufe suchen dasselbe Signal. Symmetrisch ist nur '
+                + '"Berührung einer Linie"; für gespiegelte Auslöser oder Filter bitte zwei Strategien.')
+        }
+        if (signalFilters.length || entryFilters.length) {
+            hinweise.push('Signal- und Einstiegsfilter werden ebenfalls nicht gespiegelt: '
+                + '"Schlusskurs über EMA" bleibt auch im Short-Durchlauf "über".')
+        }
+    }
 
     const regeln = {
         id,
         name: String(roh.name || id).slice(0, 120),
         description: String(roh.description || '').slice(0, 500),
         timeframes,
-        direction: roh.direction === 'short' ? 'short' : 'long',
+        direction,
         warmupCandles: Math.min(Math.max(Number(roh.warmupCandles) || 300, 50), 2000),
         scanWindowCandles: Math.min(Math.max(Number(roh.scanWindowCandles) || 200, 30), 1000),
         params, indicators, signal, signalFilters, entryFilters, entry, invalidations,

@@ -3,6 +3,7 @@ import { selectedRange, selectedDateRange, selectedPositions, selectedAccounts, 
 import { filteredTrades, filteredTradesTrades, pAndL, blotter, totals, totalsByDate, groups, profitAnalysis, timeFrame, satisfactionArray, satisfactionTradeArray, tags, filteredTradesDaily, excursions, availableTags, imports } from "../stores/trades.js"
 import { useDateTimeFormat } from "./formatters.js";
 import { splitFunding } from "./funding.js";
+import { neueSummen, summiereTrade, leiteKennzahlenAb } from "./totals-kern.js";
 /* useRefreshTrades moved to mountOrchestration.js */
 import { useCreateBlotter, useCreatePnL } from "./addTrades.js"
 import { dbFind, dbFirst, dbDelete, dbDeleteWhere } from './db.js'
@@ -423,248 +424,58 @@ export async function useTotalTrades() {
         temp2 = {}
         temp3 = {}
 
-        var totalQuantity = 0
-
-        var totalCommission = 0
-        var totalFundingFees = 0
-        var totalFundingPaid = 0
-        var totalFundingReceived = 0
-        var totalTradingFees = 0
-        var totalOtherCommission = 0
-        var totalFees = 0
         var totalLocateFees = 0
         var totalSoftwareFees = 0
         var totalBankingFees = 0
 
-        var totalGrossProceeds = 0
-        var totalGrossWins = 0
-        var totalGrossLoss = 0
-        var totalGrossSharePL = 0
-        var totalGrossSharePLWins = 0
-        var totalGrossSharePLLoss = 0
-        var highGrossSharePLWin = 0
-        var highGrossSharePLLoss = 0
-
-        var totalNetProceeds = 0
-        var totalNetWins = 0
-        var totalNetLoss = 0
-        var totalNetSharePL = 0
-        var totalNetSharePLWins = 0
-        var totalNetSharePLLoss = 0
-        var highNetSharePLWin = 0
-        var highNetSharePLLoss = 0
-
-        var totalExecutions = 0
-        var totalTrades = 0
-
-        var totalGrossWinsQuantity = 0
-        var totalGrossLossQuantity = 0
-        var totalGrossWinsCount = 0
-        var totalGrossLossCount = 0
-
-        var totalNetWinsQuantity = 0
-        var totalNetLossQuantity = 0
-        var totalNetWinsCount = 0
-        var totalNetLossCount = 0
-        var financials = 0
-
-        //console.log("filtered trades "+JSON.stringify(filteredTrades[0].trades))
-
-
-
         /*============= 1- CREATING GENERAL TOTALS =============
-    
+
         * needed for dashboard
         * we start by iterating trades to created totals
         * Note: during iteration, we will also push to create a list of trades needed for grouping
         * Then we prepare a json that we push to totals
         */
 
-        /* 1a - In each filtered trade, we will iterate trade to create totals */
-        //console.log("filteredTrades  "+JSON.stringify(filteredTrades))
+        /* 1a - In each filtered trade, we will iterate trade to create totals.
+         * Die eigentliche Summierung lebt NaN-fest und getestet in
+         * totals-kern.js — hier wird nur noch gesammelt. */
+        const summe = neueSummen()
         filteredTrades.forEach((element, index) => {
             // Other fees
             if (element.cashJournal != undefined && Object.keys(element.cashJournal).length > 0) {
-                //console.log("cash journal " + JSON.stringify(element.cashJournal))
                 totalLocateFees += element.cashJournal.locate || 0
                 totalSoftwareFees += element.cashJournal.software || 0
                 totalBankingFees += element.cashJournal?.banking?.fee || 0
-                //console.log("totalLocateFees" + totalLocateFees)
             }
 
             element.trades.forEach(el => {
                 /*============= NOTE - Creating list of trades =============
-    
+
                 * at the same time, we will push each trade inside trades
-                * way.value we have a list of trades that we can group 
+                * way.value we have a list of trades that we can group
                 * according to grouping need (per date but also entry, strategy, etc.)
                 */
                 temp1.push(el)
-
-                /******************** */
-
-                totalQuantity += el.buyQuantity + el.sellQuantity
-                totalCommission += el.commission
-                totalFundingFees += (el.fundingFee || 0)
-                // Vorzeichen-Konvention: + = erhalten (erhöht Netto), − = bezahlt (senkt Netto).
-                const fundingTotals = splitFunding(el.fundingFee)
-                totalFundingReceived += fundingTotals.received
-                totalFundingPaid += fundingTotals.paid
-                totalTradingFees += (el.tradingFee || 0)
-                totalOtherCommission += el.sec + el.taf + el.nscc + el.nasdaq
-                totalFees += el.commission + el.sec + el.taf + el.nscc + el.nasdaq
-
-                totalGrossProceeds += el.grossProceeds //Total amount of proceeds
-                totalGrossWins += el.grossWins
-                totalGrossLoss += el.grossLoss
-                totalGrossSharePL += el.grossSharePL
-                //console.log(" totalGrossProceeds "+totalGrossProceeds)
-
-                totalGrossSharePLWins += el.grossSharePLWins
-                totalGrossSharePLLoss += el.grossSharePLLoss
-
-                if (el.grossSharePL >= 0) {
-                    if (el.grossSharePL > highGrossSharePLWin) {
-                        highGrossSharePLWin = el.grossSharePL
-                    }
-                }
-                if (el.grossSharePL < 0) {
-                    if (el.grossSharePL < highGrossSharePLLoss) {
-                        highGrossSharePLLoss = el.grossSharePL
-                    }
-
-                }
-
-                totalNetProceeds += el.netProceeds
-                totalNetWins += el.netWins
-                totalNetLoss += el.netLoss
-                totalNetSharePL += el.netSharePL
-                totalNetSharePLWins += el.netSharePLWins
-                totalNetSharePLLoss += el.netSharePLLoss
-                //el.highNetSharePLWin > highNetSharePLWin ? highNetSharePLWin = el.highNetSharePLWin : highNetSharePLWin = highNetSharePLWin
-                //el.highNetSharePLLoss < highNetSharePLLoss ? highNetSharePLLoss = el.highNetSharePLLoss : highNetSharePLLoss = highNetSharePLLoss
-                if (el.netSharePL >= 0) {
-                    if (el.netSharePL > highNetSharePLWin) {
-                        highNetSharePLWin = el.netSharePL
-                    }
-
-                }
-                if (el.netSharePL < 0) {
-                    if (el.netSharePL < highNetSharePLLoss) {
-                        highNetSharePLLoss = el.netSharePL
-                    }
-
-                }
-
-                totalExecutions += el.executionsCount
-                totalTrades += el.tradesCount
-                totalGrossWinsQuantity += el.grossWinsQuantity
-                totalGrossLossQuantity += el.grossLossQuantity
-                totalGrossWinsCount += el.grossWinsCount //Total number/count of gross winning trades
-                totalGrossLossCount += el.grossLossCount //Total number/count of gross losing trades
-
-                totalNetWinsQuantity += el.netWinsQuantity
-                totalNetLossQuantity += el.netLossQuantity
-                totalNetWinsCount += el.netWinsCount //Total number/count of net winning trades
-                totalNetLossCount += el.netLossCount //Total number/count of net losing trades
-                financials += el.financials //Total number/count of net losing trades
-
+                summiereTrade(summe, el)
             })
-
-
         })
 
-        /* 1b - Create a json that we push to totals */
+        /* 1b - Create a json that we push to totals: Summenfelder aus dem
+         * Kern, abgeleitete Kennzahlen (Winrate, Durchschnitte) ebenso. */
+        temp2 = { ...summe, ...leiteKennzahlenAb(summe) }
+        temp2.quantity = summe.buyQuantity + summe.sellQuantity
 
         /*******************
-         * Info
+         * Other fees (leben auf Tagesebene, nicht im Trade — daher hier)
          *******************/
-        temp2.quantity = totalQuantity
-
-        /*******************
-         * Commissions and fees
-         *******************/
-        temp2.commission = totalCommission
-        temp2.fundingFees = totalFundingFees
-        temp2.fundingPaid = totalFundingPaid
-        temp2.fundingReceived = totalFundingReceived
-        temp2.tradingFees = totalTradingFees
-        temp2.otherCommission = totalOtherCommission
-        temp2.fees = totalFees
         temp2.locateFees = totalLocateFees
         temp2.softwareFees = totalSoftwareFees
         temp2.bankingFees = totalBankingFees
         temp2.otherFees = totalLocateFees + totalSoftwareFees + totalBankingFees
-
-        /*******************
-         * Gross proceeds and P&L
-         *******************/
-        temp2.grossProceeds = totalGrossProceeds
-        temp2.grossWins = totalGrossWins
-        temp2.grossLoss = totalGrossLoss
-        temp2.grossSharePL = totalGrossSharePL
-        /*totalGrossWinsQuantity == 0 ? temp2.grossSharePLWins = 0 : temp2.grossSharePLWins = (totalGrossWins / totalGrossWinsQuantity)
-        totalGrossLossQuantity == 0 ? temp2.grossSharePLLoss = 0 : temp2.grossSharePLLoss = totalGrossLoss / totalGrossLossQuantity*/
-        temp2.grossSharePLWins = totalGrossSharePLWins
-        temp2.grossSharePLLoss = totalGrossSharePLLoss
-        temp2.highGrossSharePLWin = highGrossSharePLWin
-        temp2.highGrossSharePLLoss = highGrossSharePLLoss
-
-
-        /*******************
-         * Net proceeds and P&L
-         *******************/
-        temp2.netProceeds = totalNetProceeds
-        temp2.netFeesProceeds = totalNetProceeds - temp2.otherFees
-        temp2.netWins = totalNetWins
-        temp2.netLoss = totalNetLoss
-        temp2.netSharePL = totalNetSharePL
-        /*totalNetWinsQuantity == 0 ? temp2.netSharePLWins = 0 : temp2.netSharePLWins = totalNetWins / totalNetWinsQuantity
-        totalNetLossQuantity == 0 ? temp2.netSharePLLoss = 0 : temp2.netSharePLLoss = totalNetLoss / totalNetLossQuantity*/
-        temp2.netSharePLWins = totalNetSharePLWins
-        temp2.netSharePLLoss = totalNetSharePLLoss
-        temp2.highNetSharePLWin = highNetSharePLWin
-        temp2.highNetSharePLLoss = highNetSharePLLoss
+        temp2.netFeesProceeds = summe.netProceeds - temp2.otherFees
         temp2.netProceedsEstimations = 0
         temp2.netWinsEstimations = 0
         temp2.netLossEstimations = 0
-
-
-        /*******************
-         * Counts
-         *******************/
-        temp2.executions = totalExecutions
-        temp2.trades = totalTrades
-
-        temp2.grossWinsQuantity = totalGrossWinsQuantity
-        temp2.grossLossQuantity = totalGrossLossQuantity
-        temp2.grossWinsCount = totalGrossWinsCount
-        temp2.grossLossCount = totalGrossLossCount
-
-        temp2.netWinsQuantity = totalNetWinsQuantity
-        temp2.netLossQuantity = totalNetLossQuantity
-        temp2.netWinsCount = totalNetWinsCount
-        temp2.netLossCount = totalNetLossCount
-
-        //temp2.netSharePLWins = totalNetSharePLWins
-        //temp2.netSharePLLoss = totalNetSharePLLoss
-
-        //Needed for Dashboard
-        temp2.probGrossWins = totalTrades ? (totalGrossWinsCount / totalTrades) : 0
-        temp2.probGrossLoss = totalTrades ? (totalGrossLossCount / totalTrades) : 0
-        temp2.probNetWins = totalTrades ? (totalNetWinsCount / totalTrades) : 0
-        temp2.probNetLoss = totalTrades ? (totalNetLossCount / totalTrades) : 0
-        //console.log("prob net win "+temp2.probNetWins+" and loss "+temp2.probNetLoss)
-
-        temp2.avgGrossWins = totalGrossWinsCount ? (totalGrossWins / totalGrossWinsCount) : 0
-        temp2.avgGrossLoss = totalGrossLossCount ? -(totalGrossLoss / totalGrossLossCount) : 0
-        temp2.avgNetWins = totalNetWinsCount ? (totalNetWins / totalNetWinsCount) : 0
-        temp2.avgNetLoss = totalNetLossCount ? -(totalNetLoss / totalNetLossCount) : 0
-
-        temp2.avgGrossSharePLWins = totalGrossWinsCount ? (totalGrossSharePLWins / totalGrossWinsCount) : 0
-        temp2.avgGrossSharePLLoss = totalGrossLossCount ? -(totalGrossSharePLLoss / totalGrossLossCount) : 0
-        temp2.avgNetSharePLWins = totalNetWinsCount ? (totalNetSharePLWins / totalNetWinsCount) : 0
-        temp2.avgNetSharePLLoss = totalNetLossCount ? -(totalNetSharePLLoss / totalNetLossCount) : 0
         for (let key in totals) delete totals[key]
         Object.assign(totals, temp2)
         //console.log(" -> TOTALS " + JSON.stringify(totals))
@@ -685,222 +496,20 @@ export async function useTotalTrades() {
         const keys3 = Object.keys(objectY);
         //console.log(" keys 3 "+keys3)
         for (const key3 of keys3) {
-            //console.log("key 3 " + key3)
-            //console.log("z "+JSON.stringify(z))
             var tempTrades = objectY[key3]
-            //console.log("tempTrades " + JSON.stringify(tempTrades));
-            temp3[key3] = {};
+
+            // Dieselbe Summierung wie bei den globalen Totalen — bewusst aus
+            // EINER Quelle (totals-kern.js), damit Totale und Tagesgruppen
+            // nicht mehr auseinanderdriften können (daher kam der Funding-Bug).
+            const tag = neueSummen()
+            tempTrades.forEach(element => summiereTrade(tag, element))
+            temp3[key3] = { ...tag }
 
             /*******************
-             * Info
-             *******************/
-            var sumBuyQuantity = 0
-            var sumSellQuantity = 0
-
-            /*******************
-             * Commissions and fees
-             *******************/
-            var sumCommission = 0
-            var sumFundingFees = 0
-            var sumFundingPaid = 0
-            var sumFundingReceived = 0
-            var sumTradingFees = 0
-            var sumSec = 0
-            var sumTaf = 0
-            var sumNscc = 0
-            var sumNasdaq = 0
-            var sumOtherCommission = 0
-            var sumFees = 0
-
-            /*******************
-             * Gross proceeds and P&L
-             *******************/
-            var sumGrossProceeds = 0
-            var sumGrossWins = 0
-            var sumGrossLoss = 0
-            var sumGrossSharePL = 0 //On a trade level, it's Proceeds per share traded. But as we blotter and create global P&L, it is a cumulative number (like proceeds). way.value we can calculate estimations. If we need and average per share, it's a different calculation
-            var sumGrossSharePLWins = 0
-            var sumGrossSharePLLoss = 0
-            var highGrossSharePLWin = 0
-            var highGrossSharePLLoss = 0
-
-
-            /*******************
-             * Net proceeds and P&L
-             *******************/
-            var sumNetProceeds = 0
-            var sumNetWins = 0
-            var sumNetLoss = 0
-            var sumNetSharePL = 0
-            var sumNetSharePLWins = 0
-            var sumNetSharePLLoss = 0
-            var highNetSharePLWin = 0
-            var highNetSharePLLoss = 0
-
-            /*******************
-             * Counts
-             *******************/
-            var sumExecutions = 0
-            var sumTrades = 0
-            var sumGrossWinsQuantity = 0
-            var sumGrossLossQuantity = 0
-            var sumGrossWinsCount = 0
-            var sumGrossLossCount = 0
-            var sumNetWinsQuantity = 0
-            var sumNetLossQuantity = 0
-            var sumNetWinsCount = 0
-            var sumNetLossCount = 0
-
-
-
-            tempTrades.forEach(element => {
-                sumBuyQuantity += element.buyQuantity
-                sumSellQuantity += element.sellQuantity
-                sumCommission += element.commission
-                sumFundingFees += (element.fundingFee || 0)
-                // War hier vertauscht (+ galt als bezahlt) — dieselbe Konvention
-                // wie in useCalculateTotals, jetzt aus einer Quelle.
-                const fundingTag = splitFunding(element.fundingFee)
-                sumFundingPaid += fundingTag.paid
-                sumFundingReceived += fundingTag.received
-                sumTradingFees += (element.tradingFee || 0)
-                sumSec += element.sec
-                sumTaf += element.taf
-                sumNscc += element.nscc
-                sumNasdaq += element.nasdaq
-                sumOtherCommission += element.sec + element.taf + element.nscc + element.nasdaq
-                sumFees += element.commission + element.sec + element.taf + element.nscc + element.nasdaq
-
-                sumGrossProceeds += element.grossProceeds
-                sumGrossWins += element.grossWins
-                sumGrossLoss += element.grossLoss
-                sumGrossSharePL += element.grossSharePL
-                sumGrossSharePLWins += element.grossSharePLWins
-                sumGrossSharePLLoss += element.grossSharePLLoss
-                if (element.grossSharePL >= 0) {
-                    if (element.grossSharePL > highGrossSharePLWin) {
-                        highGrossSharePLWin = element.grossSharePL
-                    }
-                }
-                if (element.grossSharePL < 0) {
-                    if (element.grossSharePL < highGrossSharePLLoss) {
-                        highGrossSharePLLoss = element.grossSharePL
-                    }
-
-                }
-
-                sumNetProceeds += element.netProceeds
-                sumNetWins += element.netWins
-                sumNetLoss += element.netLoss
-                sumNetSharePL += element.netSharePL
-                sumNetSharePLWins += element.netSharePLWins
-                sumNetSharePLLoss += element.netSharePLLoss
-                if (element.netSharePL >= 0) {
-                    if (element.netSharePL > highNetSharePLWin) {
-                        highNetSharePLWin = element.netSharePL
-                    }
-
-                }
-                if (element.netSharePL < 0) {
-                    if (element.netSharePL < highNetSharePLLoss) {
-                        highNetSharePLLoss = element.netSharePL
-                    }
-
-                }
-
-
-                sumExecutions += element.executionsCount
-                sumGrossWinsQuantity += element.grossWinsQuantity
-                sumGrossLossQuantity += element.grossLossQuantity
-                sumGrossWinsCount += element.grossWinsCount
-
-                sumNetWinsQuantity += element.netWinsQuantity
-                sumNetLossQuantity += element.netLossQuantity
-                sumNetWinsCount += element.netWinsCount
-                sumGrossLossCount += element.grossLossCount
-                sumNetLossCount += element.netLossCount
-                sumTrades += element.tradesCount
-
-            })
-
-            /*******************
-             * Info
-             *******************/
-            //temp3[key3].symbol = key3;
-            temp3[key3].buyQuantity = sumBuyQuantity
-            temp3[key3].sellQuantity = sumSellQuantity
-
-            /*******************
-             * Commissions and fees
-             *******************/
-            temp3[key3].commission = sumCommission;
-            temp3[key3].fundingFees = sumFundingFees;
-            temp3[key3].fundingPaid = sumFundingPaid;
-            temp3[key3].fundingReceived = sumFundingReceived;
-            temp3[key3].tradingFees = sumTradingFees;
-            temp3[key3].sec = sumSec
-            temp3[key3].taf = sumTaf
-            temp3[key3].nscc = sumNscc
-            temp3[key3].nasdaq = sumNasdaq
-            temp3[key3].otherCommission = sumOtherCommission;
-            temp3[key3].fees = sumFees;
-            //console.log("totalLocateFees" + JSON.stringify(temp2))
-
-            /*******************
-             * Gross proceeds and P&L
-             *******************/
-            temp3[key3].grossProceeds = sumGrossProceeds;
-            temp3[key3].grossWins = sumGrossWins;
-            temp3[key3].grossLoss = sumGrossLoss;
-            temp3[key3].grossSharePL = sumGrossSharePL
-            //temp3[key3].grossSharePL = sumGrossProceeds / sumBuyQuantity
-
-            /*sumGrossWinsQuantity == 0 ? temp3[key3].grossSharePLWins = 0 : temp3[key3].grossSharePLWins = sumGrossWins / sumGrossWinsQuantity
-            sumGrossLossQuantity == 0 ? temp3[key3].grossSharePLLoss = 0 : temp3[key3].grossSharePLLoss = sumGrossLoss / sumGrossLossQuantity*/
-            temp3[key3].grossSharePLWins = sumGrossSharePLWins
-            temp3[key3].grossSharePLLoss = sumGrossSharePLLoss
-            temp3[key3].highGrossSharePLWin = highGrossSharePLWin;
-            temp3[key3].highGrossSharePLLoss = highGrossSharePLLoss;
-
-            /*******************
-             * Net proceeds and P&L
-             *******************/
-            temp3[key3].netProceeds = sumNetProceeds;
-            temp3[key3].netWins = sumNetWins;
-            temp3[key3].netLoss = sumNetLoss;
-            temp3[key3].netSharePL = sumNetSharePL
-            //temp3[key3].netSharePL = sumNetProceeds / sumBuyQuantity
-
-            /*sumNetWinsQuantity == 0 ? temp3[key3].netSharePLWins = 0 : temp3[key3].netSharePLWins = sumNetWins / sumNetWinsQuantity
-            sumNetLossQuantity == 0 ? temp3[key3].netSharePLLoss = 0 : temp3[key3].netSharePLLoss = sumNetLoss / sumNetLossQuantity*/
-            temp3[key3].netSharePLWins = sumNetSharePLWins
-            temp3[key3].netSharePLLoss = sumNetSharePLLoss
-            temp3[key3].highNetSharePLWin = highNetSharePLWin;
-            temp3[key3].highNetSharePLLoss = highNetSharePLLoss;
-
-            /*******************
-             * Counts
-             *******************/
-            temp3[key3].executions = sumExecutions;
-            temp3[key3].trades = sumTrades;
-
-            temp3[key3].grossWinsQuantity = sumGrossWinsQuantity;
-            temp3[key3].grossLossQuantity = sumGrossLossQuantity;
-            temp3[key3].grossWinsCount = sumGrossWinsCount;
-            temp3[key3].grossLossCount = sumGrossLossCount;
-
-            temp3[key3].netWinsQuantity = sumNetWinsQuantity;
-            temp3[key3].netLossQuantity = sumNetLossQuantity;
-            temp3[key3].netWinsCount = sumNetWinsCount;
-            temp3[key3].netLossCount = sumNetLossCount;
-
-            /*******************
-             * Financials
+             * Financials — Tagesgruppen tragen den Wert der ersten Zeile,
+             * nicht die Summe (bisheriges Verhalten)
              *******************/
             temp3[key3].financials = tempTrades[0].financials
-
-
-
         }
         //console.log(" temp 3 " + JSON.stringify(temp3))
         for (let key in totalsByDate) delete totalsByDate[key]

@@ -7,10 +7,14 @@ import { setupBitunixRoutes } from './server/bitunix-api.js'
 import { setupBitgetRoutes } from './server/bitget-api.js'
 import { setupPionexRoutes } from './server/pionex-api.js'
 import { setupBinanceRoutes } from './server/binance-api.js'
+import { setupMarginRateRoutes } from './server/margin-rates.js'
 import { setupPolygonRoutes } from './server/polygon-api.js'
 import { setupMarktradarRoutes, stopMarktradar } from './server/marktradar-api.js'
 import { setupKalenderRoutes, stopKalender } from './server/marktradar-kalender.js'
+import { setupLivetradingRoutes } from './server/livetrading-api.js'
+import { setupLageRoutes } from './server/marktradar-lage.js'
 import { setupNewsRoutes, startNewsTakt, stopNews } from './server/marktradar-news.js'
+import { setupBenachrichtigungsRoutes, startBenachrichtigungsTakt, stopBenachrichtigungen } from './server/benachrichtigungen.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
 import { setupAiModelRoutes } from './server/ai-models.js'
 import { setupAgentRoutes } from './server/ai-agent.js'
@@ -86,24 +90,34 @@ const startIndex = async () => {
     // Backup und Update-Knopf. Das war bisher nur eine Warnung im Log, die man
     // im Container-Betrieb nie sieht — deshalb jetzt Abbruch.
     //
-    // AUSSER im Container: dort ist CTJ_HOST=0.0.0.0 kein Entscheid des
-    // Nutzers, sondern Voraussetzung, damit das Port-Mapping überhaupt
-    // funktioniert — über die Erreichbarkeit entscheidet das Mapping
-    // (127.0.0.1:8080:8080 vs. 0.0.0.0). Ein Abbruch hier würde jede frische
-    // Installation töten, BEVOR man das Passwort überhaupt setzen kann.
+    // Der Container zählt dabei NICHT als „lokal": CTJ_HOST=0.0.0.0 ist dort
+    // zwar Voraussetzung fürs Port-Mapping, aber das Compose-Default published
+    // den Port auf allen Host-Interfaces — jeder im LAN wäre drin. Abbrechen
+    // darf der Container trotzdem nicht (eine frische Installation könnte das
+    // Passwort sonst nie setzen). Er startet stattdessen GESPERRT: ohne
+    // Passwort werden keine Session-Cookies mehr verteilt
+    // (sessionCookieMiddleware prüft offenerBetriebErlaubt), die API antwortet
+    // 401, und das Frontend verlangt zuerst „Passwort festlegen"
+    // (setupRequired in /api/auth/status; das erste Passwort darf ohne Session
+    // gesetzt werden). Bestehende Geräte bleiben angemeldet, weil das Token
+    // aus CTJ_SECRET abgeleitet ist. Wer bewusst offen fahren will:
+    // CTJ_ALLOW_INSECURE=1.
     const inDocker = existsSync('/.dockerenv')
-    // Container zählt als „lokal": auch die Cookie-Sperre und die
-    // Abschalt-Sperre des Gates dürfen eine frische Installation nicht
-    // blockieren, bevor das Passwort gesetzt werden konnte.
-    setzeBindungsModus(istLoopbackHost(host) || inDocker)
-    if (!istLoopbackHost(host) && !isAuthEnabled() && !inDocker && process.env.CTJ_ALLOW_INSECURE !== '1') {
-        console.error('\n  ⛔  ABBRUCH: Der Dienst soll im Netzwerk lauschen (CTJ_HOST=' + host + '),')
-        console.error('      aber der Passwortschutz ist nicht aktiv. Dann hätte jeder im Netz')
-        console.error('      vollen Zugriff auf API-Schlüssel, Handel und Backup.')
-        console.error('      → Passwortschutz in den Einstellungen aktivieren (dazu einmal lokal')
-        console.error('        starten: CTJ_HOST=127.0.0.1), oder')
-        console.error('      → bewusst offen betreiben: CTJ_ALLOW_INSECURE=1\n')
-        process.exit(1)
+    setzeBindungsModus(istLoopbackHost(host))
+    if (!istLoopbackHost(host) && !isAuthEnabled() && process.env.CTJ_ALLOW_INSECURE !== '1') {
+        if (inDocker) {
+            console.warn('\n  ⚠️  Netzbindung ohne Passwortschutz (Container).')
+            console.warn('      Der Dienst startet GESPERRT: erst nach „Passwort festlegen" im')
+            console.warn('      Browser ist die API nutzbar. Bewusst offen: CTJ_ALLOW_INSECURE=1\n')
+        } else {
+            console.error('\n  ⛔  ABBRUCH: Der Dienst soll im Netzwerk lauschen (CTJ_HOST=' + host + '),')
+            console.error('      aber der Passwortschutz ist nicht aktiv. Dann hätte jeder im Netz')
+            console.error('      vollen Zugriff auf API-Schlüssel, Handel und Backup.')
+            console.error('      → Passwortschutz in den Einstellungen aktivieren (dazu einmal lokal')
+            console.error('        starten: CTJ_HOST=127.0.0.1), oder')
+            console.error('      → bewusst offen betreiben: CTJ_ALLOW_INSECURE=1\n')
+            process.exit(1)
+        }
     }
 
     // Setup API routes
@@ -114,11 +128,20 @@ const startIndex = async () => {
     setupBitgetRoutes(app);
     setupPionexRoutes(app);
     setupBinanceRoutes(app);
+    setupMarginRateRoutes(app);
     setupPolygonRoutes(app);
     setupMarktradarRoutes(app);
+    // Eigene Datei statt in setupMarktradarRoutes: das Lagebild greift auf die
+    // Kachel-Funktionen zu — die umgekehrte Richtung wäre ein Ringschluss
+    setupLageRoutes(app);
     setupKalenderRoutes(app);
+    // Nach dem Kalender: die Termin-Kachel des Live-Fensters liest über
+    // `leseKalender` mit, statt eine zweite Abfrage aufzubauen.
+    setupLivetradingRoutes(app);
     setupNewsRoutes(app);
     startNewsTakt();
+    setupBenachrichtigungsRoutes(app);
+    startBenachrichtigungsTakt();
     setupOllamaRoutes(app);
     setupAiModelRoutes(app);
     setupAgentRoutes(app);
@@ -274,7 +297,7 @@ const startIndex = async () => {
             // ist einzeln gesichert, der nächste Start nimmt ihn wieder auf.
             try { stopRanglisteTakt() } catch (e) { /* trotzdem beenden */ }
             try { stopMarktradar() } catch (e) { /* trotzdem beenden */ }
-            try { stopKalender(); stopNews() } catch (e) { /* trotzdem beenden */ }
+            try { stopKalender(); stopNews(); stopBenachrichtigungen() } catch (e) { /* trotzdem beenden */ }
             process.exit(0)
         })
     }

@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions']
     let fixed = 0
 
     for (const table of tables) {
@@ -101,7 +101,10 @@ async function fixPostgresSequences(knex) {
  * Bewusst nur eine WARNUNG, kein Abbruch: ein harter Stopp würde den
  * NAS-Container lahmlegen, sobald der Dev-Rechner die Version gehoben hat.
  */
-const SCHEMA_VERSION = 1
+// v2: Tabelle `live_sessions` für das Live-Trading-Fenster. Rein additiv —
+// ein älterer Codestand ignoriert die Tabelle und läuft weiter; er meldet nur,
+// dass die Datenbank ihm voraus ist.
+const SCHEMA_VERSION = 2
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -113,6 +116,48 @@ async function runMigrations(knex, client) {
             await knex.schema.alterTable(table, (t) => {
                 buildCol(t)
             })
+        }
+    }
+
+    /**
+     * Bestehende Alarm-Schalter in die neue Kanalwahl übernehmen.
+     *
+     * Vor der Zusammenführung steuerten drei einzelne Spalten, ob überhaupt
+     * gemeldet wird. Wer die abgeschaltet hatte, soll nach dem Umbau nicht
+     * plötzlich wieder Meldungen bekommen — deshalb wird der alte Stand einmal
+     * in die JSON-Spalte gespiegelt. Läuft nur, solange dort nichts steht;
+     * eine spätere Änderung des Nutzers wird nie überschrieben.
+     */
+    async function uebernehmeAlteAlarmSchalter() {
+        try {
+            const s = await knex('settings').where('id', 1).first()
+            if (!s) return
+            const roh = String(s.benachrichtigungen || '').trim()
+            if (roh && roh !== '{}') return
+
+            /*
+             * NUR die ereignis-eigenen Schalter übernehmen.
+             *
+             * Der Hauptschalter `browserNotifications` bleibt bewusst aussen
+             * vor: er wird in `src/utils/notify.js` weiterhin zuerst geprüft.
+             * Ihn zusätzlich in jedes Ereignis zu schreiben wäre nicht nur
+             * doppelt gemoppelt — es wäre eine Falle: wer den Hauptschalter
+             * später wieder einschaltet, bekäme trotzdem nichts, weil jedes
+             * Ereignis einzeln auf „aus" stünde, ohne erkennbaren Grund.
+             */
+            const wahl = {}
+            if (Number(s.radarPicycleAlarm ?? 1) !== 1) {
+                wahl.picycleKreuzung = { browser: false, email: false }
+                wahl.picycleVorwarnung = { browser: false, email: false }
+            }
+            if (Number(s.radarFundingDivergenz ?? 15) === 0) {
+                wahl.fundingDivergenz = { browser: false, email: false }
+            }
+            if (!Object.keys(wahl).length) return
+            await knex('settings').where('id', 1).update({ benachrichtigungen: JSON.stringify(wahl) })
+            console.log(' -> Alarm-Schalter in die Benachrichtigungs-Kanalwahl übernommen')
+        } catch (e) {
+            console.warn(`[DB] Übernahme der Alarm-Schalter fehlgeschlagen: ${e.message}`)
         }
     }
 
@@ -690,6 +735,10 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'levMapHours', (t) => t.integer('levMapHours').defaultTo(48))
     await addColumnIfNotExists('settings', 'levMapSpanPct', (t) => t.float('levMapSpanPct').defaultTo(8))
     await addColumnIfNotExists('settings', 'levMapMmr', (t) => t.float('levMapMmr').defaultTo(0.004))
+    // Woher die Wartungsmarge kommt: 'binance' | 'bybit' | 'manuell'. Vorgabe
+    // ist die Börse, auf der die Karte rechnet — die alte feste 0,004 stimmte
+    // nur für BTC/ETH und lag bei allen anderen Coins deutlich zu tief.
+    await addColumnIfNotExists('settings', 'levMapMmrQuelle', (t) => t.string('levMapMmrQuelle').defaultTo('binance'))
     await addColumnIfNotExists('settings', 'levMapWeights', (t) => t.string('levMapWeights').defaultTo('40,30,20,10'))
     await addColumnIfNotExists('settings', 'levMapView', (t) => t.string('levMapView').defaultTo('dist'))
     await addColumnIfNotExists('settings', 'levMapThreshold', (t) => t.float('levMapThreshold').defaultTo(0))
@@ -1571,6 +1620,15 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'radarKalenderLaender', (t) => t.text('radarKalenderLaender').defaultTo('USD,JPY'))
     await addColumnIfNotExists('settings', 'radarKalenderImpact', (t) => t.text('radarKalenderImpact').defaultTo('medium'))
 
+    /*
+     * Live-Trading-Fenster. Wer nur beobachtet und nicht handelt, braucht die
+     * Seite nicht — dann sollen auch der Startknopf auf dem Marktradar und der
+     * Menüeintrag verschwinden, statt als toter Weg herumzustehen. Vorgabe an:
+     * die Seite kostet nichts, solange man sie nicht öffnet (unsichtbare
+     * Kacheln werden gar nicht erst geladen).
+     */
+    await addColumnIfNotExists('settings', 'livetradingAn', (t) => t.integer('livetradingAn').defaultTo(1))
+
     // Nachrichtenquellen. `laerm` markiert, was der Nutzer als Lärm einstuft —
     // der Sammelschalter („Arschlochfilter") blendet genau diese Quellen aus
     // und holt sie erst gar nicht ab.
@@ -1668,6 +1726,52 @@ async function runMigrations(knex, client) {
     // Kreuzung, 5 = auch schon, wenn die kurze Linie bis auf 5 % heran ist.
     await addColumnIfNotExists('settings', 'radarPicycleAlarm', (t) => t.integer('radarPicycleAlarm').defaultTo(1))
     await addColumnIfNotExists('settings', 'radarPicycleSchwelle', (t) => t.integer('radarPicycleSchwelle').defaultTo(0))
+    // Funding-Divergenz zwischen Börsen, in Prozentpunkten der Jahresrate.
+    // 0 = kein Alarm. Arbitrage hält die Raten normalerweise auf wenige Punkte
+    // zusammen; 15 lässt das Grundrauschen (beobachtet 2–4 Punkte) durch und
+    // meldet nur echtes Auseinanderlaufen.
+    await addColumnIfNotExists('settings', 'radarFundingDivergenz', (t) => t.integer('radarFundingDivergenz').defaultTo(15))
+    // Welche Märkte der Divergenz-Alarm beobachtet, als Liste von Symbolen.
+    // Leer = die eigenen Märkte (radarRsiSymbols bzw. die selbst gehandelten
+    // Coins), wie vor der Auswahl. Getrennt von radarRsiSymbols, weil eine
+    // Divergenz ein Grund ist, sich einen Markt ANZUSEHEN — man muss ihn dafür
+    // nicht schon handeln, und umgekehrt will nicht jeder eigene Markt melden.
+    await addColumnIfNotExists('settings', 'radarDivergenzSymbole', (t) => t.text('radarDivergenzSymbole').defaultTo(''))
+
+    /*
+     * Benachrichtigungen: welcher Kanal für welches Ereignis.
+     *
+     * EINE JSON-Spalte statt zwei Spalten je Meldungstyp — sonst wächst das
+     * Schema mit jedem neuen Ereignis um zwei Spalten und drei Whitelist-
+     * Einträge. Form: { [id]: { browser: bool, email: bool } }. Fehlt ein
+     * Eintrag, gilt „Browser an, E-Mail aus"; die Vorgabe steht im Register
+     * (server/benachrichtigungen.js), nicht hier.
+     *
+     * Die Schwellen bleiben bewusst eigene Spalten (radarPicycleSchwelle,
+     * radarFundingDivergenz): das sind Parameter des Ereignisses, keine
+     * Kanalwahl.
+     */
+    await addColumnIfNotExists('settings', 'benachrichtigungen', (t) => t.text('benachrichtigungen').defaultTo('{}'))
+    await uebernehmeAlteAlarmSchalter()
+
+    /*
+     * SMTP-Zugang für den E-Mail-Versand.
+     *
+     * Browser-Benachrichtigungen erreichen nur, wer die Seite offen hat. E-Mail
+     * ist der Weg zu allem anderen — deshalb serverseitig und mit eigenem
+     * Zugang. `mailPasswort` wird verschlüsselt abgelegt (server/crypto.js) und
+     * ist in api-routes.js als sensibel eingetragen: es verlässt den Server nie
+     * wieder, weder über die Settings-Antwort noch über den Backup-Export.
+     */
+    await addColumnIfNotExists('settings', 'mailAktiv', (t) => t.integer('mailAktiv').defaultTo(0))
+    await addColumnIfNotExists('settings', 'mailHost', (t) => t.text('mailHost').defaultTo(''))
+    await addColumnIfNotExists('settings', 'mailPort', (t) => t.integer('mailPort').defaultTo(587))
+    await addColumnIfNotExists('settings', 'mailSicherheit', (t) => t.text('mailSicherheit').defaultTo('starttls'))
+    await addColumnIfNotExists('settings', 'mailUser', (t) => t.text('mailUser').defaultTo(''))
+    await addColumnIfNotExists('settings', 'mailPasswort', (t) => t.text('mailPasswort').defaultTo(''))
+    await addColumnIfNotExists('settings', 'mailVon', (t) => t.text('mailVon').defaultTo(''))
+    await addColumnIfNotExists('settings', 'mailAn', (t) => t.text('mailAn').defaultTo(''))
+
     // Vorschaubild je Beitrag. Nachträglich, weil news_items zuerst ohne
     // gebaut wurde — die Spalte muss also auch bestehenden Tabellen wachsen.
     await addColumnIfNotExists('news_items', 'bild', (t) => t.text('bild').defaultTo(''))
@@ -1686,6 +1790,46 @@ async function runMigrations(knex, client) {
     // Videobudget an den erstbesten Kanal — und der ist nicht zwingend der,
     // dessen Inhalt im Bericht gebraucht wird.
     await addColumnIfNotExists('news_sources', 'videoAnalyse', (t) => t.integer('videoAnalyse').defaultTo(1))
+
+    // Berichts-Rhythmus und -Zuschnitt. Der Lagebericht ist konfigurierbar:
+    // täglich oder wöchentlich (mit Wochentag), Themen als Kapitel, Länge.
+    await addColumnIfNotExists('settings', 'radarNewsRhythmus', (t) => t.text('radarNewsRhythmus').defaultTo('taeglich'))
+    await addColumnIfNotExists('settings', 'radarNewsWochentag', (t) => t.integer('radarNewsWochentag').defaultTo(1))   // 1=Mo … 7=So
+    await addColumnIfNotExists('settings', 'radarNewsThemen', (t) => t.text('radarNewsThemen').defaultTo('crypto'))     // CSV: crypto,finanzen,tech
+    await addColumnIfNotExists('settings', 'radarNewsLaenge', (t) => t.text('radarNewsLaenge').defaultTo('mittel'))     // kurz|mittel|lang
+    // Der neue Arschlochfilter: Truth Social automatisch plus frei wählbare
+    // Stichwörter (eines je Zeile). Er wirkt auf Liste UND Berichtsgrundlage,
+    // aber nicht beim Abruf — die Beiträge bleiben gespeichert, damit eine
+    // geänderte Wörterliste rückwirkend greift. Der alte Sammelschalter
+    // `radarArschlochfilter` heisst in der Oberfläche fortan
+    // „Temporär ausschliessen" und bleibt unverändert bestehen.
+    await addColumnIfNotExists('settings', 'radarArschlochAn', (t) => t.integer('radarArschlochAn').defaultTo(1))
+    await addColumnIfNotExists('settings', 'radarArschlochWoerter', (t) => t.text('radarArschlochWoerter').defaultTo('Donald Trump\nMichael Saylor'))
+    // X-Suche läuft über die xAI Responses API — Modellname drifted, daher Feld.
+    // Grok holt die X-Posts nur ab, zusammengefasst wird hier — dafür reicht das
+    // günstigere Modell (1,25 statt 2 USD je Mio. Eingabe-Token).
+    await addColumnIfNotExists('settings', 'radarNewsXModell', (t) => t.text('radarNewsXModell').defaultTo('grok-4.3'))
+    // Guthaben-Status je KI-Anbieter (JSON, nur der Server schreibt hier):
+    // „letzter Aufruf scheiterte an fehlendem Guthaben" — mehr geben die
+    // Anbieter über den normalen API-Key nicht her.
+    await addColumnIfNotExists('settings', 'aiQuotaStatus', (t) => t.text('aiQuotaStatus').defaultTo('{}'))
+    // Anbieter und Modell je KI-Funktion. Leer = der global eingestellte
+    // Anbieter. Vorher hatte nur der Lagebericht diese Wahl, alles andere hing
+    // am globalen Feld — wer den Agenten auf ein günstiges Modell stellen
+    // wollte, musste damit auch die Trade-Berichte umstellen.
+    await addColumnIfNotExists('settings', 'aiBerichtProvider', (t) => t.text('aiBerichtProvider').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiBerichtModell', (t) => t.text('aiBerichtModell').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiAgentProvider', (t) => t.text('aiAgentProvider').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiAgentModell', (t) => t.text('aiAgentModell').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiStrategieProvider', (t) => t.text('aiStrategieProvider').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiStrategieModell', (t) => t.text('aiStrategieModell').defaultTo(''))
+    // Perplexity-Modell der Themen-Recherche; stand vorher hart im Quelltext.
+    await addColumnIfNotExists('settings', 'radarNewsRechercheModell', (t) => t.text('radarNewsRechercheModell').defaultTo('sonar'))
+    await addColumnIfNotExists('settings', 'aiKeyPerplexity', (t) => t.text('aiKeyPerplexity').defaultTo(''))
+    // Kapitel je Thema; `punkte` bleibt als flache Liste für Altleser bestehen.
+    await addColumnIfNotExists('news_digests', 'kapitel', (t) => t.text('kapitel').defaultTo('[]'))
+    await addColumnIfNotExists('news_digests', 'themen', (t) => t.text('themen').defaultTo(''))
+    await addColumnIfNotExists('news_digests', 'laenge', (t) => t.text('laenge').defaultTo(''))
 
     // Anspruch auf periodische Aufgaben. Alle übrigen Sperren im Projekt sind
     // prozesslokal; NAS-Container und Entwicklungsserver teilen sich aber
@@ -1830,6 +1974,83 @@ async function runMigrations(knex, client) {
             t.index('laufId', 'idx_rangliste_zeilen_lauf')
         })
         console.log(' -> Created table: rangliste_zeilen')
+    }
+
+    /*
+     * ==================== LIVE-SITZUNGEN ====================
+     *
+     * Eine Zeile je Handelssitzung im Live-Trading-Fenster: wann, welcher
+     * Markt, welcher Plan — und hinterher, was daraus geworden ist.
+     *
+     * `trades` wird beim Beenden EINGEFROREN statt zur Lesezeit aus dem
+     * Journal geholt. Journal-Trades liegen als Tageszeilen mit JSON-Array;
+     * ein Zeitfenster dagegen zu schneiden ist brüchig, und ein erneuter
+     * Import aus Bitunix verschiebt die Zahlen nachträglich. Der Schnappschuss
+     * bewahrt, WAS MAN DAMALS SAH. `startUnix`/`endUnix` bleiben trotzdem
+     * stehen — daraus lässt sich jederzeit neu rechnen und der Link in die
+     * Wiedergabe der Bookmap bauen.
+     */
+    if (!(await knex.schema.hasTable('live_sessions'))) {
+        await knex.schema.createTable('live_sessions', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('startUnix').notNullable()
+            t.bigInteger('endUnix').defaultTo(0)          // 0 = läuft noch
+            t.string('symbol').defaultTo('')
+            t.string('market').defaultTo('futures')
+            t.string('status').defaultTo('laufend')       // laufend | beendet | abgebrochen
+            // Der Plan wird VOR der Sitzung gefasst — das ist der ganze Sinn
+            t.float('planMaxVerlustUsd').defaultTo(0)
+            t.integer('planMaxTrades').defaultTo(0)
+            t.text('planNotiz').defaultTo('')
+            t.text('notizen').defaultTo('')
+            t.text('fazit').defaultTo('')
+            t.text('protokoll').defaultTo('[]')           // JSON [{t, art, text, daten}]
+            t.text('kacheln').defaultTo('{}')             // JSON: Layout-Schnappschuss
+            t.text('trades').defaultTo('[]')              // JSON, beim Beenden eingefroren
+            t.float('pnlUsd').defaultTo(0)
+            t.integer('tradeAnzahl').defaultTo(0)
+            t.integer('planVerletzt').defaultTo(0)
+            // ZWINGEND `timestamp`, nicht bigInteger: die generische CRUD-Route
+            // setzt `updatedAt` beim Schreiben auf CURRENT_TIMESTAMP. Gegen eine
+            // bigint-Spalte lehnt PostgreSQL das ab (42804) — jedes Speichern
+            // schlägt fehl. Alle anderen Tabellen an dieser Route halten es so.
+            // Die fachlichen Zeitpunkte stehen weiter in startUnix/endUnix.
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.index(['startUnix'], 'idx_livesession_start')
+            t.index(['status'], 'idx_livesession_status')
+        })
+        console.log(' -> Created table: live_sessions')
+    }
+
+    /*
+     * Archiv. Nach ein paar Wochen sind es zu viele Sitzungen, um die letzten
+     * fünf noch zu finden — aber löschen will man sie nicht: die Bilanz über die
+     * Disziplin lebt davon, dass alle drinstehen. Deshalb ein Schalter statt
+     * eines Papierkorbs. Archivierte Sitzungen zählen weiter in die Bilanz, sie
+     * sind nur aus der Liste geräumt.
+     */
+    await addColumnIfNotExists('live_sessions', 'archiviert', (t) => t.integer('archiviert').defaultTo(0))
+
+    /*
+     * Nachzug für Datenbanken, die die erste Fassung dieser Tabelle bekommen
+     * haben: dort waren createdAt/updatedAt als bigInteger angelegt, wodurch
+     * jedes Speichern am Typkonflikt scheiterte (siehe oben). Nur die beiden
+     * Spalten werden getauscht — die Sitzungsdaten selbst bleiben stehen.
+     */
+    if (await knex.schema.hasTable('live_sessions')) {
+        const spalten = await knex('live_sessions').columnInfo()
+        if (spalten.updatedAt && /int/i.test(String(spalten.updatedAt.type))) {
+            await knex.schema.alterTable('live_sessions', (t) => {
+                t.dropColumn('createdAt')
+                t.dropColumn('updatedAt')
+            })
+            await knex.schema.alterTable('live_sessions', (t) => {
+                t.timestamp('createdAt').defaultTo(knex.fn.now())
+                t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            })
+            console.log(' -> live_sessions: createdAt/updatedAt auf timestamp umgestellt')
+        }
     }
 
     // ==================== SCHEMA-ANKER ====================

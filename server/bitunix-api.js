@@ -626,7 +626,12 @@ export function setupBitunixRoutes(app) {
 
             const result = await getPendingPositions(config.apiKey, config.secretKey, {})
 
-            console.log(' -> Bitunix pending positions raw response:', JSON.stringify(result).substring(0, 500))
+            // Rohantwort nur auf Wunsch: das Live-Trading-Fenster fragt die
+            // Positionen im Sekundentakt ab, und diese Zeile ersäufte damit
+            // jedes andere Protokoll. Mit CTJ_DEBUG_BITUNIX=1 kommt sie zurück.
+            if (process.env.CTJ_DEBUG_BITUNIX === '1') {
+                console.log(' -> Bitunix pending positions raw response:', JSON.stringify(result).substring(0, 500))
+            }
 
             if (result.code !== 0) {
                 throw new Error(result.msg || 'Bitunix API Fehler')

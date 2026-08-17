@@ -29,6 +29,7 @@
 
 import {
     ema, sma, rsi, atr, vwap, vwapBand, macd, mfi, bollinger, adx, stochastic, pivotHighs, pivotLows,
+    volumeSma, dayOpen, ankerSichtKerzen,
     isBull, isBear, bodySize, range,
     isHammer, isShootingStar, isBullishEngulfing, isBearishEngulfing, isAdvancingWick,
 } from './indicators.js'
@@ -40,10 +41,10 @@ export const BAUSTEINE = {
     indikatoren: ['ema', 'sma', 'rsi', 'atr', 'mfi', 'vwap', 'vwapBand',
         'macd', 'macdSignal', 'macdHist',
         'bollUpper', 'bollMiddle', 'bollLower', 'adx', 'plusDI', 'minusDI',
-        'stochK', 'stochD'],
+        'stochK', 'stochD', 'volSma', 'dayOpen'],
     bollBasis: ['sma', 'ema'],
-    vwapAnker: ['session', 'rolling'],
-    signale: ['pivotHigh', 'pivotLow', 'crossUp', 'crossDown', 'pattern'],
+    vwapAnker: ['session', 'week', 'month', 'ath', 'atl', 'swingHigh', 'swingLow', 'rolling'],
+    signale: ['pivotHigh', 'pivotLow', 'crossUp', 'crossDown', 'pattern', 'levelTouch'],
     muster: ['bullishEngulfing', 'bearishEngulfing', 'hammer', 'shootingStar'],
     einstieg: ['touch', 'immediate'],
     vergleiche: [
@@ -57,8 +58,12 @@ export const BAUSTEINE = {
         'isHammer', 'isShootingStar', 'isBullishEngulfing', 'isBearishEngulfing',
         'isAdvancingWick',
         'higherThanPrevSignal', 'lowerThanPrevSignal',
+        // Wie oft eine Linie in der Vergangenheit schon gehalten hat. Nur
+        // Kerzen VOR der aktuellen zählen — kein Blick nach vorn.
+        'priorTouchesGte',
     ],
-    anker: ['close', 'open', 'high', 'low', 'signalPrice', 'signalHigh', 'signalLow',
+    anker: ['close', 'open', 'high', 'low', 'volume',
+        'signalPrice', 'signalHigh', 'signalLow',
         'correctionLow', 'correctionHigh', 'entryPrice',
         // Letztes bestätigtes Swing-Hoch/-Tief VOR der aktuellen Kerze — der
         // übliche Ort für einen Stop. Nicht dasselbe wie `signalLow`: das ist
@@ -111,6 +116,58 @@ function letzterSwing(ctx, i, art) {
 }
 
 /**
+ * Kerzen, an denen eine Linie GEHALTEN hat — als Liste von Kerzenindizes.
+ *
+ * Das ist der Baustein, der „bei der dritten Berührung" überhaupt erst
+ * formulierbar macht. Eine Berührung zählt, wenn der Docht die Linie erreicht
+ * (`low ≤ Linie ≤ high`) und die Kerze auf der Handelsseite schliesst — bei
+ * Long also über der Linie: angetestet und abgewiesen. Ein Schluss auf der
+ * anderen Seite ist ein Durchbruch, keine Ablehnung, und zählt nicht.
+ *
+ * `abstand` ist der Grund, warum das Ergebnis brauchbar ist: ohne ihn zählen
+ * zehn Kerzen, die an der Linie kleben, als zehn Berührungen. Erst nach so
+ * vielen Kerzen kann eine weitere Berührung gezählt werden.
+ *
+ * Die Liste wird EINMAL je Linie und Einstellung gebildet und im Kontext
+ * behalten. Sie ist kausal: jeder Eintrag entsteht nur aus seiner eigenen und
+ * früheren Kerzen, deshalb darf sie beim Auswerten von Kerze `i` auch für
+ * frühere Kerzen benutzt werden.
+ */
+function beruehrungen(ctx, ref, abstand) {
+    const key = `${typeof ref === 'object' ? JSON.stringify(ref) : ref}|${abstand}|${ctx.richtung}`
+    if (!ctx._beruehrungen) ctx._beruehrungen = {}
+    if (ctx._beruehrungen[key]) return ctx._beruehrungen[key]
+
+    const long = ctx.richtung !== 'short'
+    const liste = []
+    let letzte = -Infinity
+    for (let j = 0; j < ctx.candles.length; j++) {
+        const linie = loese(ref, ctx, j)
+        if (linie === null) continue
+        const k = ctx.candles[j]
+        if (k.l > linie || k.h < linie) continue          // nicht berührt
+        if (long ? k.c <= linie : k.c >= linie) continue  // durchgefallen, nicht gehalten
+        if (j - letzte < abstand) continue                // zu dicht an der vorigen
+        liste.push(j)
+        letzte = j
+    }
+    ctx._beruehrungen[key] = liste
+    return liste
+}
+
+/** Wie viele gezählte Berührungen liegen VOR Kerze `i` (innerhalb `fenster`)? */
+function fruehereBeruehrungen(ctx, ref, i, fenster, abstand) {
+    const liste = beruehrungen(ctx, ref, abstand)
+    const ab = i - fenster
+    let n = 0
+    for (const j of liste) {
+        if (j >= i) break
+        if (j >= ab) n++
+    }
+    return n
+}
+
+/**
  * Eine Referenz zu einem Zahlenwert an Kerze `i` auflösen.
  * Referenzen sind Zeichenketten (Anker oder Indikator-Id) oder `{value}`/`{param}`.
  */
@@ -129,6 +186,9 @@ function loese(ref, ctx, i) {
         case 'open': return k.o
         case 'high': return k.h
         case 'low': return k.l
+        // Rohes Volumen der Kerze — im Vergleich mit `volSma` ergibt das die
+        // Climax-/Rising-Bedingung der PVSRA-Vektorkerzen.
+        case 'volume': return Number.isFinite(k.v) ? k.v : null
         case 'signalPrice': return ctx.setup?.signalPrice ?? null
         case 'signalHigh': return ctx.setup?.signalHigh ?? null
         case 'signalLow': return ctx.setup?.signalLow ?? null
@@ -186,6 +246,13 @@ function pruefe(bed, ctx, i) {
         case 'lowerThanPrevSignal':
             return ctx.setup?.prevSignalPrice != null
                 && ctx.setup.signalPrice < ctx.setup.prevSignalPrice
+
+        case 'priorTouchesGte': {
+            const n = fruehereBeruehrungen(ctx, bed.left, i,
+                Math.max(1, Math.round(zahl(bed.window, ctx.params, 200))),
+                Math.max(1, Math.round(zahl(bed.separation, ctx.params, 3))))
+            return n >= Math.max(0, Math.round(zahl(bed.value, ctx.params, 2)))
+        }
     }
 
     const a = loese(bed.left, ctx, i)
@@ -227,7 +294,7 @@ const alleErfuellt = (liste, ctx, i) => (liste || []).every((b) => pruefe(b, ctx
 
 // ── Indikatoren ──────────────────────────────────────────────────────────
 
-function baueIndikatoren(regeln, candles, params) {
+function baueIndikatoren(regeln, candles, params, verkuerzt = false) {
     const out = {}
     for (const def of regeln.indicators || []) {
         const periode = Math.max(1, Math.round(zahl(def.period, params, 14)))
@@ -236,17 +303,28 @@ function baueIndikatoren(regeln, candles, params) {
             case 'sma': out[def.id] = sma(candles, periode); break
             case 'rsi': out[def.id] = rsi(candles, periode); break
             case 'atr': out[def.id] = atr(candles, periode); break
-            // VWAP kennt zusätzlich einen Anker (Tagesreset oder gleitend) und
-            // beim Band einen Faktor für die Standardabweichung.
+            // VWAP kennt zusätzlich einen Anker (Tag/Woche/Monat/ATH/ATL/Swing
+            // oder gleitend) und beim Band einen Faktor für die
+            // Standardabweichung. Die Swing-Anker brauchen die Pivot-Stärke,
+            // die Fächerlinie (`nth`) und den Mindestabstand in ATR.
             case 'vwap':
-                out[def.id] = vwap(candles, { anchor: def.anchor || 'session', period: periode })
-                break
-            case 'vwapBand':
-                out[def.id] = vwapBand(candles, {
+            case 'vwapBand': {
+                const opts = {
                     anchor: def.anchor || 'session', period: periode,
-                    mult: zahl(def.mult, params, 2),
-                })
+                    pivot: Math.max(1, Math.round(zahl(def.pivot, params, 20))),
+                    nth: Math.min(3, Math.max(1, Math.round(zahl(def.nth, params, 1)))),
+                    minSepAtr: Math.max(0, zahl(def.minSepAtr, params, 1)),
+                    // Fehlt links Historie, kann ATH/ATL nicht bestimmt werden —
+                    // die Linie bleibt dann leer statt falsch.
+                    verkuerzt,
+                }
+                out[def.id] = def.type === 'vwap'
+                    ? vwap(candles, opts)
+                    : vwapBand(candles, { ...opts, mult: zahl(def.mult, params, 2) })
                 break
+            }
+            case 'volSma': out[def.id] = volumeSma(candles, periode); break
+            case 'dayOpen': out[def.id] = dayOpen(candles); break
             case 'mfi': out[def.id] = mfi(candles, periode); break
             // MACD besteht aus drei Linien. Statt eines Indikators mit drei
             // Ausgängen gibt es drei Typen — so bleibt die Regel bei einer
@@ -357,6 +435,28 @@ function findeSignale(regeln, ctx) {
         return treffer
     }
 
+    // Berührung einer Linie, die vorher schon gehalten hat. Der Auslöser ist
+    // die Kerze der Berührung selbst — sie ist mit ihrem Schluss vollständig
+    // bekannt, es braucht keine Bestätigungskerzen. `minPrevTouches: 2` heisst
+    // also: gehandelt wird die DRITTE Berührung.
+    if (s.type === 'levelTouch') {
+        const fenster = Math.max(1, Math.round(zahl(s.window, ctx.params, 200)))
+        const abstand = Math.max(1, Math.round(zahl(s.separation, ctx.params, 3)))
+        const mindestens = Math.max(0, Math.round(zahl(s.minPrevTouches, ctx.params, 2)))
+        const liste = beruehrungen(ctx, s.line, abstand)
+        const treffer = []
+        for (const i of liste) {
+            if (fruehereBeruehrungen(ctx, s.line, i, fenster, abstand) < mindestens) continue
+            const preis = loese(s.line, ctx, i)
+            treffer.push({
+                index: i, price: preis,
+                high: candles[i].h, low: candles[i].l,
+                prevPrice: treffer.length ? treffer[treffer.length - 1].price : null,
+            })
+        }
+        return treffer
+    }
+
     if (s.type === 'crossUp' || s.type === 'crossDown') {
         const op = s.type === 'crossUp' ? 'crossesAbove' : 'crossesBelow'
         const treffer = []
@@ -406,13 +506,94 @@ function berechneZiel(regeln, ctx, i, richtung, entry, stopLoss) {
 // ── detect ───────────────────────────────────────────────────────────────
 
 /**
+ * Anker, die eine Seite benennen — und ihr Gegenstück.
+ *
+ * Ein Stop „unter dem letzten Swing-Tief" ist die Long-Fassung von „über dem
+ * letzten Swing-Hoch". Bei `direction: 'both'` MUSS das gespiegelt werden:
+ * sonst läge der Short-Stop unter dem Einstieg, der Interpreter verwürfe jedes
+ * Short-Setup mit `invalid_stop`, und die Strategie handelte klammheimlich nur
+ * long. Gespiegelt werden ausdrücklich NUR Stop und Ziel — Auslöser und Filter
+ * bleiben, wie sie dastehen (siehe Hinweis in der Prüfung).
+ */
+const SPIEGEL = {
+    low: 'high', high: 'low',
+    signalLow: 'signalHigh', signalHigh: 'signalLow',
+    correctionLow: 'correctionHigh', correctionHigh: 'correctionLow',
+    lastSwingLow: 'lastSwingHigh', lastSwingHigh: 'lastSwingLow',
+}
+
+/** Stop- und Zielanker für den Short-Durchlauf spiegeln. */
+function spiegleMarken(regeln) {
+    const raus = {}
+    const sl = regeln.stopLoss
+    if (sl && SPIEGEL[sl.anchor]) raus.stopLoss = { ...sl, anchor: SPIEGEL[sl.anchor] }
+    const tp = regeln.takeProfit
+    if (tp?.mode === 'anchor' && SPIEGEL[tp.anchor]) raus.takeProfit = { ...tp, anchor: SPIEGEL[tp.anchor] }
+    return raus
+}
+
+/**
+ * Wie viele Kerzen muss der Aufrufer mindestens zeigen, damit alle Linien
+ * dieses Regelwerks vollständig sind?
+ *
+ * Backtest und Engine bemessen ihr Sichtfenster nach Warmup und Scan-Fenster.
+ * Ein Monats-VWAP braucht auf 15m aber gut 2900 Kerzen — ohne diese Auskunft
+ * bekäme er ein Fenster von ein paar Hundert und bliebe dauerhaft leer.
+ *
+ * @returns {number} Kerzen; `Infinity` heisst „die ganze geladene Historie"
+ */
+export function sichtBedarfKerzen(regeln, timeframeMs) {
+    let bedarf = 0
+    for (const def of regeln?.indicators || []) {
+        if (def.type !== 'vwap' && def.type !== 'vwapBand') continue
+        const n = ankerSichtKerzen(def.anchor || 'session', timeframeMs)
+        if (n > bedarf) bedarf = n
+    }
+    return bedarf
+}
+
+/**
  * Wendet eine Regelbeschreibung auf Kerzen an.
  *
  * @param {object} regeln   validierte Regelbeschreibung
- * @param {object} input    { candles, params, openSetups, knownSetupKeys }
+ * @param {object} input    { candles, params, openSetups, knownSetupKeys,
+ *                            historieVerkuerzt }
+ *   `historieVerkuerzt` sagt, dass links Historie fehlt (gleitender
+ *   Ausschnitt). Nur der Aufrufer weiss das; ohne die Information müsste der
+ *   Interpreter bei ATH/ATL raten.
  * @returns {{ setups, events, diagnostics }}
  */
-export function detectMitRegeln(regeln, { candles, params, openSetups = [], knownSetupKeys = [] }) {
+export function detectMitRegeln(regeln, eingabe) {
+    // Beide Richtungen: zweimal derselbe Durchlauf mit fester Richtung. Die
+    // Setup-Schlüssel enthalten die Richtung (`long|zeit`), sie können sich
+    // also nicht in die Quere kommen; jeder Durchlauf sieht nur seine eigenen
+    // offenen Setups. Der Preis ist doppelte Rechenzeit — dafür braucht eine
+    // symmetrische Idee nicht zwei getrennte Strategien.
+    if (regeln.direction === 'both') {
+        const offene = eingabe.openSetups || []
+        const lauf = (richtung) => detectMitRegeln(
+            { ...regeln, direction: richtung, ...(richtung === 'short' ? spiegleMarken(regeln) : {}) },
+            { ...eingabe, openSetups: offene.filter((s) => s.direction === richtung) },
+        )
+        const a = lauf('long')
+        const b = lauf('short')
+        const zusammen = { sweepsFound: 0, setupsCreated: 0, rejected: {}, rejections: [] }
+        for (const d of [a.diagnostics, b.diagnostics]) {
+            zusammen.sweepsFound += d.sweepsFound
+            zusammen.setupsCreated += d.setupsCreated
+            zusammen.rejections.push(...d.rejections)
+            for (const [grund, n] of Object.entries(d.rejected)) {
+                zusammen.rejected[grund] = (zusammen.rejected[grund] || 0) + n
+            }
+        }
+        return {
+            setups: [...a.setups, ...b.setups],
+            events: [...a.events, ...b.events],
+            diagnostics: zusammen,
+        }
+    }
+
+    const { candles, params, openSetups = [], knownSetupKeys = [], historieVerkuerzt = false } = eingabe
     const setups = []
     const events = []
     const diagnostics = { sweepsFound: 0, setupsCreated: 0, rejected: {}, rejections: [] }
@@ -427,7 +608,7 @@ export function detectMitRegeln(regeln, { candles, params, openSetups = [], know
         return { setups, events, diagnostics }
     }
 
-    const indikatoren = baueIndikatoren(regeln, candles, params)
+    const indikatoren = baueIndikatoren(regeln, candles, params, historieVerkuerzt)
     const ctx = { candles, params, indikatoren, setup: null, laufend: null,
         richtung: regeln.direction || 'long',
         // Für `lastSwingLow`/`lastSwingHigh`: dieselbe Pivot-Definition wie

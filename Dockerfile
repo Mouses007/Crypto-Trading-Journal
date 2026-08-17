@@ -38,6 +38,10 @@ RUN chmod +x docker-entrypoint.sh
 
 ENV CTJ_HOST=0.0.0.0
 ENV CTJ_PORT=8080
+# Erzwingt CTJ_SECRET (server/crypto.js bricht sonst ab): ohne gesetztes
+# Secret wären die verschlüsselten API-Schlüssel an einen ableitbaren
+# Maschinen-Fallback gebunden.
+ENV NODE_ENV=production
 EXPOSE 8080
 
 ENTRYPOINT ["./docker-entrypoint.sh"]

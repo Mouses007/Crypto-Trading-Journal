@@ -34,22 +34,29 @@ export const FESTE_HOSTS = new Set([
 ])
 
 /** Netzbereiche, die niemals Ziel eines Abrufs sein dürfen. */
-function istPrivatV4(ip) {
+export function istPrivatV4(ip) {
     const t = ip.split('.').map(Number)
     if (t.length !== 4 || t.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return true
-    const [a, b] = t
+    const [a, b, c] = t
     if (a === 0 || a === 10 || a === 127) return true
     if (a === 169 && b === 254) return true          // Cloud-Metadaten
     if (a === 172 && b >= 16 && b <= 31) return true
     if (a === 192 && b === 168) return true
-    if (a === 192 && b === 0) return true            // Protokollzuweisungen
+    // 192.0.0.0/24 sind die IETF-Protokollzuweisungen, 192.0.2.0/24 ist
+    // TEST-NET-1 — beide je ein /24, NICHT das ganze 192.0.0.0/16. Vorher stand
+    // hier `b === 0` ohne dritten Block und sperrte damit 254 reguläre
+    // öffentliche Netze mit: `192.0.66.0/24` gehört Automattic und beherbergt
+    // TechCrunch samt allem, was auf WordPress.com VIP liegt. Der Abruf schlug
+    // mit „zeigt auf eine interne Adresse" fehl, was die Fehlersuche in die
+    // völlig falsche Richtung schickte.
+    if (a === 192 && b === 0 && (c === 0 || c === 2)) return true
     if (a === 100 && b >= 64 && b <= 127) return true // CGNAT / Tailscale
     if (a === 198 && (b === 18 || b === 19)) return true
     if (a >= 224) return true                         // Multicast und reserviert
     return false
 }
 
-function istPrivatV6(ip) {
+export function istPrivatV6(ip) {
     const s = ip.toLowerCase()
     if (s === '::' || s === '::1') return true
     // In IPv6 eingebettete IPv4-Adresse mitprüfen

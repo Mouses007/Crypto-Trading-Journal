@@ -141,6 +141,12 @@ export function parseBitgetRows(rows) {
             GrossProceeds: grossPL,
             Fee: fee,
             NetProceeds: netPL,
+            // Getrennt mitgeben — addTrades.js liest row.TradingFee und
+            // row.FundingFee ins Trade-Objekt. Ohne diese Felder zeigte das
+            // Journal Funding=0, obwohl die CSV es hatte (es steckte nur
+            // unsichtbar im Netto-Fallback oben).
+            TradingFee: tradingFee,
+            FundingFee: fundingFee,
             TrxId: row[colTrxId] || '',
             Side: side,
             EntryPrice: parseFloat(row[colOpenPrice] || 0),

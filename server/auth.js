@@ -240,6 +240,13 @@ export function apiAuthMiddleware(req, res, next) {
     const basePath = (req.originalUrl || req.url).split('?')[0]
     if (PUBLIC_API_PATHS.has(basePath)) return next()
 
+    // Erst-Einrichtung: solange KEIN Passwort existiert, darf das erste ohne
+    // Session gesetzt werden. Ohne diese Ausnahme käme ein netzgebundener
+    // Container nie aus dem gesperrten Zustand heraus — er verteilt ja keine
+    // Cookies mehr, und Passwort-Setzen bräuchte eines (Henne-Ei). Sobald das
+    // Gate aktiv ist, gilt wieder die volle Session-Pflicht.
+    if (basePath === '/api/auth/set-password' && !authConfig.enabled) return next()
+
     const token = parseCookieToken(req)
     if (isValidSessionToken(token)) {
         return next()
@@ -341,7 +348,13 @@ export function setupAuthRoutes(app) {
     // Status (öffentlich): zeigt ob Gate aktiv ist und ob man eingeloggt ist
     app.get('/api/auth/status', (req, res) => {
         const loggedIn = !authConfig.enabled || isValidSessionToken(parseCookieToken(req))
-        res.json({ authEnabled: authConfig.enabled, loggedIn })
+        // setupRequired: netzgebunden (oder Container) ohne Passwort — der
+        // Server verteilt dann keine Cookies, das Frontend muss zuerst ein
+        // Passwort setzen lassen. Wer schon ein gültiges Cookie trägt (Token
+        // überlebt via CTJ_SECRET), arbeitet normal weiter.
+        const setupRequired = !authConfig.enabled && !offenerBetriebErlaubt()
+            && !isValidSessionToken(parseCookieToken(req))
+        res.json({ authEnabled: authConfig.enabled, loggedIn, setupRequired })
     })
 
     // Login (öffentlich): Passwort prüfen, bei Erfolg Session-Cookie setzen
@@ -387,6 +400,7 @@ export function setupAuthRoutes(app) {
                     return res.status(401).json({ error: 'Aktuelles Passwort ist falsch.' })
                 }
             }
+            const warErstEinrichtung = !authConfig.enabled
             const knex = getKnex()
             await knex('settings').where('id', 1).update({
                 authEnabled: 1,
@@ -394,6 +408,10 @@ export function setupAuthRoutes(app) {
                 updatedAt: knex.fn.now()
             })
             await loadAuthConfig()
+            // Erst-Einrichtung: wer das erste Passwort setzt, hat sich damit
+            // als Eigentümer ausgewiesen — Cookie gleich mitgeben, sonst müsste
+            // er sich direkt danach mit demselben Passwort noch einmal anmelden.
+            if (warErstEinrichtung) res.setHeader('Set-Cookie', getSessionCookieString(req))
             // Aktuelle Session bleibt gültig (Token unverändert)
             res.json({ ok: true, authEnabled: true })
         } catch (e) {

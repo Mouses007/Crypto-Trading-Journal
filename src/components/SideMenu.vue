@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import { pageId, screenType, appMode } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
+import { useIstTelefon } from '../utils/geraet.js'
 import { selectedBroker, brokers, selectedTradeCategory, BOT_BROKERS } from "../stores/filters.js"
 import { pagesForMode, modeHome } from "../config/menu.js"
 import SidebarFilters from './SidebarFilters.vue'
@@ -198,11 +199,22 @@ function setCategory(value) {
 function gruppenFuer(mode) {
     const groups = new Map()
     for (const page of pagesForMode(mode)) {
+        // Abschaltbare Seiten: `flag` nennt die Einstellungsspalte. Fehlt der
+        // Wert (frisch angelegte Datenbank, Einstellungen noch nicht geladen),
+        // gilt die Seite als an — sonst verschwände sie beim ersten Aufruf
+        // kurz aus dem Menü und tauchte dann wieder auf.
+        if (page.flag && Number(currentUser.value?.[page.flag] ?? 1) === 0) continue
+        // Nur-Desktop-Seiten erscheinen am Telefon gar nicht. Bewusst nicht an
+        // `screenType`: das misst nur die Breite, und ein Desktop-Browser in
+        // einem schmalen Fenster soll seine Einträge behalten.
+        if (page.nurDesktop && istTelefon.value) continue
         if (!groups.has(page.group)) groups.set(page.group, [])
         groups.get(page.group).push(page)
     }
     return [...groups.entries()].map(([group, items]) => ({ labelKey: 'nav.' + group, items }))
 }
+
+const istTelefon = useIstTelefon()
 
 const liveGroups = computed(() => gruppenFuer('live'))
 const agentGroups = computed(() => gruppenFuer('agent'))

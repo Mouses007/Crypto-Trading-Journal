@@ -12,6 +12,7 @@ import PageInfo from '../components/PageInfo.vue'
 import {
     liveSymbol, liveMarket, liveRamp, liveFrozen, liveAutoFollow,
     liveMode, replayFrom, replayTo, replayLabel, RAMP_OPTIONS,
+    replayEntry, replayExit, replayFokus, replayZoom, REPLAY_ZOOM_OPTIONS,
 } from '../stores/live.js'
 import dayjs from '../utils/dayjs-setup.js'
 
@@ -29,12 +30,16 @@ const replaySpanne = computed(() => {
 function zurueckZuLive() {
     liveMode.value = 'live'
     replayLabel.value = ''
+    replayEntry.value = 0
+    replayExit.value = 0
+    replayFokus.value = 'all'
+    replayZoom.value = 1
     // Query-Parameter entfernen, damit ein Reload nicht wieder in die Wiedergabe springt
     window.history.replaceState({}, '', '/liquidity')
 }
 
 /**
- * Einstieg aus dem Journal: /liquidity?replay=1&symbol=…&from=…&to=…
+ * Einstieg aus dem Journal: /liquidity?replay=1&symbol=…&from=…&to=…&entry=…&exit=…
  * Der Knopf im Trade-Modal baut genau diesen Link.
  */
 onMounted(() => {
@@ -46,9 +51,28 @@ onMounted(() => {
     if (p.get('market')) liveMarket.value = p.get('market')
     replayFrom.value = from
     replayTo.value = to
+    // Ein-/Ausstieg sind optional: eine von Hand gebaute URL hat sie nicht,
+    // dann fehlen nur die Sprungknöpfe.
+    const entry = Number(p.get('entry')), exit = Number(p.get('exit'))
+    replayEntry.value = Number.isFinite(entry) ? entry : 0
+    replayExit.value = Number.isFinite(exit) ? exit : 0
+    replayFokus.value = 'all'
+    replayZoom.value = 1
     replayLabel.value = p.get('label') || ''
     liveMode.value = 'replay'
 })
+
+const hatSprungziele = computed(() => !!(replayEntry.value || replayExit.value))
+
+/**
+ * Sprung auf einen Moment. „Ganz" zeigt den kompletten Trade, die beiden
+ * anderen zoomen auf die feinste Stufe — sonst wäre der Sprung wirkungslos,
+ * weil bei voller Spanne ohnehin alles im Bild ist.
+ */
+function springeZu(ziel) {
+    replayFokus.value = ziel
+    replayZoom.value = ziel === 'all' ? 1 : 0
+}
 
 const statusLabel = {
     idle: 'Bereit', connecting: 'Verbinde', syncing: 'Synchronisiere',
@@ -66,10 +90,27 @@ const statusLabel = {
                 <span :class="['liveDot', 'dot-' + status]"></span>
                 <span class="liveState">{{ statusLabel[status] || status }}</span>
                 <span v-if="isReplay" class="replayInfo">
-                    {{ replayLabel ? replayLabel + ' · ' : '' }}{{ replaySpanne }}
+                    {{ replayLabel ? replayLabel + ' · ' : '' }}{{ heatmapRef?.replayFensterLabel || replaySpanne }}
+                    <template v-if="heatmapRef?.replayAufloesung"> · {{ heatmapRef.replayAufloesung }}</template>
                 </span>
             </div>
             <div class="liveActions">
+                <template v-if="isReplay">
+                    <button v-if="hatSprungziele" type="button"
+                        :class="['ctl-pill', replayFokus === 'all' ? 'active' : '']"
+                        title="Ganzer Trade auf einem Bild" @click="springeZu('all')">Ganz</button>
+                    <button v-if="hatSprungziele && replayEntry" type="button"
+                        :class="['ctl-pill', replayFokus === 'entry' ? 'active' : '']"
+                        title="Auf den Einstieg zoomen" @click="springeZu('entry')">Einstieg</button>
+                    <button v-if="hatSprungziele && replayExit" type="button"
+                        :class="['ctl-pill', replayFokus === 'exit' ? 'active' : '']"
+                        title="Auf den Ausstieg zoomen" @click="springeZu('exit')">Ausstieg</button>
+                    <select v-model.number="replayZoom" class="ctl-select"
+                        title="Ausschnitt: Anteil der Gesamtspanne (die Auflösung passt sich an)">
+                        <option v-for="z in REPLAY_ZOOM_OPTIONS" :key="z.wert" :value="z.wert">{{ z.label }}</option>
+                    </select>
+                    <span class="ctl-sep"></span>
+                </template>
                 <button v-if="isReplay" type="button" class="ctl-pill active-warn" @click="zurueckZuLive">
                     <i class="uil uil-history"></i>Wiedergabe verlassen
                 </button>

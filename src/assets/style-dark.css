@@ -313,6 +313,16 @@ input:checked+.slider:before {
     transition: var(--transition-fast);
 }
 
+/* Bootstrap färbt deaktivierte Felder hellgrau ein. Auf dunklem Grund wird das
+   Feld dadurch weiss und die helle Schrift darin unlesbar — betraf u. a. die
+   Modellwahl in den KI-Einstellungen, solange „Globaler Anbieter" gilt. */
+.form-select:disabled,
+.form-select[readonly] {
+    background-color: var(--black-bg-5);
+    color: var(--white-60);
+    opacity: 1;
+}
+
 .dropdown-menu {
     background-color: #2f2f2f;
     color: var(--white-87);
@@ -2658,6 +2668,22 @@ h4 {
     font-size: 1.2rem;
     line-height: 1;
     cursor: pointer;
+    /* Bei hohen Kacheln (Funding, Liquidationen) füllt der Kasten fast den
+       ganzen Schirm — dann bleibt kein Hintergrund mehr zum Danebentippen und
+       dieser Knopf ist der EINZIGE Weg hinaus. Er muss deshalb ein
+       vollwertiges Tippziel sein, nicht nur ein 31×21-Kreuzchen.
+       Negativer Rand, damit die Kopfzeile davon nicht höher wird. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: -0.5rem -0.4rem -0.5rem 0;
+    border-radius: var(--border-radius, 6px);
+}
+
+.radarOverlayClose:active {
+    background: var(--white-12, rgba(255, 255, 255, 0.12));
 }
 
 .radarOverlayClose:hover {
@@ -2680,7 +2706,12 @@ h4 {
 
 @media (max-width: 767.98px) {
     .radarGrid {
-        grid-template-columns: 1fr;
+        /* minmax(0, 1fr) statt 1fr: „1fr" heisst minmax(auto, 1fr), und dieses
+           auto ist die MIN-CONTENT-Breite. Ein Kind, das kurzzeitig zu breit
+           ist — etwa ein Chart-Canvas, der nach dem Drehen noch die alte
+           Pixelbreite trägt —, sprengt damit die Spalte und die ganze Seite
+           läuft waagerecht über. Mit 0 als Minimum kann das nicht passieren. */
+        grid-template-columns: minmax(0, 1fr);
     }
 
     /* Auf einer Spalte gibt es nichts zu überspannen — ohne diese Klemme

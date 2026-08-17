@@ -13,6 +13,7 @@
  */
 
 import { getStrategy, validateParams, validateRisk } from './strategies/index.js'
+import { sichtBedarfKerzen } from './strategies/rule-engine.js'
 import { getHistoricalCandles, timeframeMs, currentCandleOpen } from './market-data.js'
 import { evaluateRisk, startOfDayUtc } from './risk-engine.js'
 import { createPosition, stepCandle, closePosition, entryIsValid } from './fill-simulator.js'
@@ -202,7 +203,19 @@ export async function runBacktest(opts) {
     // Gleitendes Fenster statt der kompletten Historie: der Detector schaut
     // ohnehin nur `scanWindowCandles` zurück, und ein volles Slice je Kerze
     // wäre bei Jahresläufen quadratisch.
-    const fenster = warmup + (params.scanWindowCandles || 200) + (params.retestMaxCandles || 40) + 10
+    //
+    // ABER: verankerte Linien brauchen ihren Anker. Ein Monats-VWAP auf 15m
+    // liegt knapp 2900 Kerzen zurück — mit dem Standardfenster von ein paar
+    // Hundert wäre seine Linie unbekannt, und der Interpreter liefert dann
+    // bewusst `null` statt einer erfundenen Linie. Deshalb fragt der Backtest
+    // das Regelwerk, wie weit es zurücksehen muss. `Infinity` (ATH/ATL) heisst:
+    // die ganze geladene Historie, also kein Ausschnitt.
+    const ankerBedarf = strategie.regeln ? sichtBedarfKerzen(strategie.regeln, ltfMs) : 0
+    const volleHistorie = ankerBedarf === Infinity
+    const fenster = Math.max(
+        warmup + (params.scanWindowCandles || 200) + (params.retestMaxCandles || 40) + 10,
+        volleHistorie ? 0 : ankerBedarf,
+    )
 
     const costs = { feeBps: risk.feeBps, slippageBps: risk.slippageBps, fundingBpsPer8h: risk.fundingBpsPer8h }
     // Zeitausstieg in Millisekunden — der Detector zählt in Kerzen
@@ -281,7 +294,7 @@ export async function runBacktest(opts) {
         }
 
         // 2. Erkennung auf allem, was bis einschliesslich dieser Kerze geschlossen ist
-        const von = Math.max(0, i + 1 - fenster)
+        const von = volleHistorie ? 0 : Math.max(0, i + 1 - fenster)
         const sicht = candles.slice(von, i + 1)
         // HTF-Ausschnitt bis zur aktuellen Kerze — der Zeiger wandert mit, ein
         // Filter je Takt wäre bei Jahresläufen quadratisch. Nur abgeschlossene
@@ -296,6 +309,9 @@ export async function runBacktest(opts) {
             openSetups: offeneSetups,
             knownSetupKeys: [...bekannteSchluessel],
             htfCandles: htfZeiger > 0 ? htfAlle.slice(0, htfZeiger) : null,
+            // Links fehlt Historie: ATH/ATL sind dann nicht bestimmbar und
+            // bleiben leer, statt das Extrem des Ausschnitts vorzutäuschen.
+            historieVerkuerzt: von > 0,
         })
 
         // Ablehnungen nur EINMAL zählen: der Detector sieht denselben Sweep in

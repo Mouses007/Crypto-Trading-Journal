@@ -5,7 +5,7 @@ import Screenshot from '../components/Screenshot.vue'
 import ReturnToTopButton from '../components/ReturnToTopButton.vue'
 import TradeEvalPopup from '../components/TradeEvalPopup.vue'
 import UpdateNoticeModal from '../components/UpdateNoticeModal.vue'
-import { computed, onBeforeMount, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, onBeforeMount, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCreatedDateFormat, useTimeFormat, useHourMinuteFormat } from '../utils/formatters.js'
 import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues, useCloseMobileMenu } from '../utils/utils.js'
@@ -19,6 +19,8 @@ import { useUpdatePendingCounts, useStartGlobalPolling, useStopGlobalPolling } f
 import { useGetAvailableTags } from '../utils/daily.js'
 import { requestNotificationPermission, sendNotification } from '../utils/notify'
 import { logWarn } from '../utils/logger.js'
+import { ebeneAuf, ebeneZu } from '../composables/useZurueckGeste.js'
+import { useImVollbild } from '../utils/geraet.js'
 import BetaHinweis from '../components/BetaHinweis.vue'
 import PageInfo from '../components/PageInfo.vue'
 import { setLocale } from '../i18n'
@@ -39,6 +41,34 @@ const isJournal = computed(() => {
 // Seiten, nicht nur auf die Startseite. Wer über einen Direktlink im Labor
 // landet, muss sie genauso sehen.
 const isAgent = computed(() => route.meta?.mode === 'agent')
+
+/**
+ * Cockpit-Modus: das Live-Trading-Fenster in einem eigenen Browserfenster.
+ *
+ * Seitenmenü und Navigation fallen weg — sie wären dort nur Wege zurück ins
+ * Journal, also genau die Ablenkung, gegen die eine Handelssitzung mit festem
+ * Plan gedacht ist. Der Inhalt bekommt dafür die ganze Breite.
+ *
+ * Bewusst an der URL (`?cockpit=1`) und nicht an einer Einstellung: dasselbe
+ * Fenster soll sich auch neu laden lassen und dabei Cockpit bleiben.
+ */
+const istCockpit = computed(() => String(route.query?.cockpit || '') === '1')
+
+/**
+ * Vollbild räumt dieselbe Umgebung weg wie das Cockpit.
+ *
+ * Ich hatte das zuerst getrennt gehalten mit dem Argument, im Vollbild
+ * verschwinde ohnehin nur die Browserleiste. Das ist zwar richtig, aber es geht
+ * am Zweck vorbei: wer Vollbild drückt, will die Fläche für die Kacheln — und
+ * ein Seitenmenü, das im Vollbild als Einziges stehen bleibt, ist genau der
+ * Rand, den man loswerden wollte.
+ *
+ * Der Weg zurück bleibt immer offen: Esc verlässt das Vollbild, und die
+ * Kopfzeile des Live-Fensters trägt weiterhin ihren eigenen Knopf.
+ */
+const imVollbild = useImVollbild()
+const chromeAus = computed(() => istCockpit.value || imVollbild.value)
+
 
 /*========================================
   Functions used on all Dashboard components
@@ -104,6 +134,16 @@ onUnmounted(() => {
   useStopGlobalPolling()
 })
 
+/**
+ * Zurück-Geste schliesst das ausgefahrene Handy-Menü, statt die Seite zu
+ * verlassen. Auf dem Desktop läuft das nie an, weil das Menü dort nicht
+ * ausfährt und `sideMenuMobileOut` false bleibt.
+ */
+watch(sideMenuMobileOut, (offen) => {
+  if (offen) ebeneAuf(useCloseMobileMenu)
+  else ebeneZu(useCloseMobileMenu)
+})
+
 // KI-Bericht Polling: Wenn ein Bericht generiert wird und der User NICHT auf der KI-Agent-Seite ist,
 // pollen wir ob der Server den Bericht schon gespeichert hat und senden eine Benachrichtigung.
 // Wir watchen BEIDE Refs: aiReportGenerating UND pageId — damit das Polling auch startet,
@@ -119,7 +159,7 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
           const res = await axios.get('/api/ai/reports')
           if (res.data.length > aiReportCountBefore.value) {
             // Neuer Report gefunden — Benachrichtigung senden und Polling stoppen
-            sendNotification(_t('notifications.reportReady'), _t('notifications.reportCreated', { label: aiReportLabel.value || 'Zeitraum' }))
+            sendNotification('kiBerichtFertig', _t('notifications.reportReady'), _t('notifications.reportCreated', { label: aiReportLabel.value || 'Zeitraum' }))
             aiReportGenerating.value = false
             clearInterval(aiPollInterval)
             aiPollInterval = null
@@ -144,16 +184,16 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
   <ReturnToTopButton />
   <div v-cloak class="container-fluid g-0">
     <div class="row g-0">
-      <div id="sideMenu" v-bind:class="'min-vh-100 ' +
+      <div v-if="!chromeAus" id="sideMenu" v-bind:class="'min-vh-100 ' +
         (screenType == 'computer' ? 'sideMenu col-2' : 'sideMenuMobile')
         ">
         <SideMenu />
       </div>
-      <div class="col-12 col-lg-10 position-relative">
+      <div :class="[chromeAus ? 'col-12' : 'col-12 col-lg-10', 'position-relative']">
         <!-- Tippen neben das ausgefahrene Menü schliesst es. Vorher stand hier
              ein Name, den es im Setup nie gab — der Klick lief ins Leere. -->
         <div v-show="sideMenuMobileOut" class="sideMenuMobileOut position-absolute" v-on:click="useCloseMobileMenu"></div>
-        <Nav />
+        <Nav v-if="!chromeAus" />
         <main>
           <div v-if="isAgent" class="ps-3 pe-3 pt-3">
             <!-- Die Anleitung hängt am Layout statt an einer Seite: sie ist

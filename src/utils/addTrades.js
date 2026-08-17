@@ -163,6 +163,7 @@ async function createBitunixTrades() {
         if (!tradeAccounts.includes(broker)) tradeAccounts.push(broker)
 
         // Group tradesData by day
+        let zeilenOhneSide = 0
         tradesData.forEach((row, i) => {
             // Parse date from UTC string to UTC day boundary
             let dateUnix
@@ -175,11 +176,19 @@ async function createBitunixTrades() {
             if (!trades[dateUnix]) trades[dateUnix] = []
             if (!executions[dateUnix]) executions[dateUnix] = []
 
-            const isGrossWin = row.GrossProceeds > 0
-            const isNetWin = row.NetProceeds > 0
+            // Break-even (0) zählt als GEWINNER — Journal-Kanon, dokumentiert
+            // in server/journal-bridge.js. Vorher stand hier `> 0`, womit
+            // dieselbe 0-Zeile beim Import als Verlust gezählt, in den Views
+            // aber grün gefärbt wurde (Winrate-Drift zwischen Import und
+            // Dashboard). Number-Guard, damit eine Zeile ohne Feld nicht als
+            // Gewinn durchrutscht, sondern als 0 gezählt wird.
+            const isGrossWin = (Number(row.GrossProceeds) || 0) >= 0
+            const isNetWin = (Number(row.NetProceeds) || 0) >= 0
 
             // Determine side: Bitget CSV provides Side field, Bitunix CSV does not.
-            // For Bitunix we default to 'SS'/short as a placeholder.
+            // For Bitunix we default to 'SS'/short as a placeholder — but count
+            // the guesses and tell the user (same as the Bitget path does).
+            if (!row.Side) zeilenOhneSide++
             const side = row.Side || 'SS'
             const strategy = (side === 'B' || side === 'S') ? 'long' : 'short'
 
@@ -243,6 +252,13 @@ async function createBitunixTrades() {
         })
 
         console.log(" -> Created trades for " + Object.keys(trades).length + " days")
+        if (zeilenOhneSide > 0) {
+            // Sichtbar machen statt still raten (Gegenstück zum Bitget-Alert in
+            // brokers.js): die Bitunix-CSV trägt keine Richtung, alle Zeilen
+            // landen als Short in der Long/Short-Statistik.
+            console.warn(` -> ${zeilenOhneSide} Zeile(n) ohne Richtung — als Short importiert`)
+            alert(`${zeilenOhneSide} von ${tradesData.length} Zeilen hatten keine Richtungsangabe (Long/Short) und wurden als Short importiert. Die Long/Short-Statistik ist für diese Trades nicht aussagekräftig.`)
+        }
         resolve()
     })
 }

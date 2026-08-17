@@ -57,6 +57,120 @@ export async function beansprucheAufgabe(key, ttlMs) {
 }
 
 /**
+ * Anspruch für eine Aufgabe, die EINMAL AM TAG gelingen soll.
+ *
+ * `beansprucheAufgabe` mit rollender Frist reicht dafür nicht, und das ist
+ * teuer aufgefallen: Der Lagebericht lief mit 20 Stunden Abstand. Ein abends
+ * von Hand erzeugter Bericht schob die Frist damit über den Mittagslauf des
+ * Folgetags — und weil der Stempel VOR der Arbeit gesetzt wird, sperrte auch
+ * jeder gescheiterte Versuch die vollen 20 Stunden. Ergebnis: einen ganzen Tag
+ * kein Bericht, ohne eine einzige Meldung.
+ *
+ * Hier zählt deshalb der Kalendertag, nicht ein Zeitabstand:
+ *   - noch kein Lauf heute                                   → darf laufen
+ *   - letzter Lauf heute ist GESCHEITERT und `wiederholungMs`
+ *     ist seither vergangen                                  → darf nochmal
+ *   - sonst                                                  → fertig für heute
+ *
+ * Ob der letzte Lauf scheiterte, steht in `lastError` — gesetzt von
+ * `merkeAufgabenFehler`, geleert bei Erfolg. Beides bleibt ein einziges
+ * bedingtes UPDATE, damit NAS und Entwicklungsrechner sich nicht in die Quere
+ * kommen.
+ *
+ * @param {string} key
+ * @param {{tagesbeginn: number, wiederholungMs?: number}} opt
+ *        `tagesbeginn` in der Zeitzone des Journals, nicht der des Servers.
+ */
+export async function beansprucheTagesaufgabe(key, { tagesbeginn, wiederholungMs = 60 * 60 * 1000 } = {}) {
+    const jetzt = Date.now()
+    try {
+        const knex = getKnex()
+        await knex('radar_fetch_state').insert({ key, fetchedAt: 0, updatedAt: jetzt })
+            .onConflict('key').ignore()
+
+        const treffer = await knex('radar_fetch_state')
+            .where('key', key)
+            .andWhere(function () {
+                this.where('fetchedAt', '<', tagesbeginn)
+                    .orWhere(function () {
+                        this.whereNotNull('lastError')
+                            .andWhereNot('lastError', '')
+                            .andWhere('fetchedAt', '<', jetzt - wiederholungMs)
+                    })
+            })
+            .update({ fetchedAt: jetzt, claimedBy: INSTANZ_ID, updatedAt: jetzt })
+
+        return treffer === 1
+    } catch (e) {
+        logWarn('db-claim', `Tages-Anspruch auf "${key}" fehlgeschlagen: ${e.message}`)
+        return false
+    }
+}
+
+/**
+ * Anspruch zurückgeben, ohne ihn zu verbrauchen.
+ *
+ * Für den Fall „es gab schlicht nichts zu tun" (keine Quellen, keine neuen
+ * Beiträge): Das ist kein Fehler, soll aber den Tag nicht verbrennen — sobald
+ * Material da ist, darf der nächste Takt es versuchen.
+ */
+export async function gibAufgabeFrei(key) {
+    try {
+        await getKnex()('radar_fetch_state')
+            .where({ key, claimedBy: INSTANZ_ID })
+            .update({ fetchedAt: 0, lastError: '', updatedAt: Date.now() })
+    } catch (e) {
+        logWarn('db-claim', `Freigabe von "${key}" fehlgeschlagen: ${e.message}`)
+    }
+}
+
+/**
+ * Ergebnis eines Laufs vermerken. Leerer Text = gelungen.
+ *
+ * Der Text ist doppelt nützlich: `beansprucheTagesaufgabe` liest ihn, um einen
+ * Wiederholungsversuch zu erlauben, und die Oberfläche zeigt ihn an. Ein
+ * stiller Fehlschlag war der eigentliche Schaden am alten Aufbau.
+ */
+export async function merkeAufgabenFehler(key, text = '') {
+    try {
+        await getKnex()('radar_fetch_state')
+            .where('key', key)
+            .update({ lastError: String(text).slice(0, 500), updatedAt: Date.now() })
+    } catch (e) {
+        logWarn('db-claim', `Fehlervermerk für "${key}" fehlgeschlagen: ${e.message}`)
+    }
+}
+
+/**
+ * Aufgabe als „jetzt erledigt" stempeln.
+ *
+ * Nötig, weil ein Lauf von Hand denselben Tag abschliessen soll wie der
+ * automatische — sonst käme mittags ein zweiter Bericht über dieselben
+ * Beiträge, obwohl gerade eben einer erzeugt wurde.
+ */
+export async function stempleAufgabe(key) {
+    const jetzt = Date.now()
+    try {
+        const knex = getKnex()
+        await knex('radar_fetch_state').insert({ key, fetchedAt: jetzt, claimedBy: INSTANZ_ID, updatedAt: jetzt })
+            .onConflict('key').merge(['fetchedAt', 'claimedBy', 'updatedAt'])
+        await knex('radar_fetch_state').where('key', key).update({ lastError: '' })
+    } catch (e) {
+        logWarn('db-claim', `Stempel für "${key}" fehlgeschlagen: ${e.message}`)
+    }
+}
+
+/** Stand einer Aufgabe lesen — für die Anzeige. */
+export async function leseAufgabenStand(key) {
+    try {
+        const z = await getKnex()('radar_fetch_state').where('key', key).first()
+        return z ? { zeit: Number(z.fetchedAt) || 0, fehler: z.lastError || '' } : null
+    } catch {
+        return null
+    }
+}
+
+/**
  * Führungs-Sperre für Arbeit, die LÄNGER dauern kann als ihr eigener Takt.
  *
  * Unterschied zu `beansprucheAufgabe`: hier gewinnt auch, wer die Zeile bereits

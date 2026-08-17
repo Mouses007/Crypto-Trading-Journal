@@ -23,6 +23,12 @@ import { getKnex } from './database.js'
 import { beansprucheAufgabe, meldeFehler } from './db-claim.js'
 import { getClosedCandles, getHistoricalCandles } from './market-data.js'
 import { rsi } from './strategies/indicators.js'
+import { bewerteMechanik, FENSTER } from './marktmechanik.js'
+import {
+    reiheAusChart, deltaAusReihe, korrelationAusReihen, deuteKorrelation,
+    stableFluss, waehleDominanzPunkte, zerlegeDominanz,
+} from './makro.js'
+import { ladeLlmConfig, callLLMJson } from './llm.js'
 
 const HTTP_TIMEOUT = 10000
 
@@ -41,6 +47,11 @@ const inFlight = new Map()
  */
 export const TOP_N = [10, 50, 100]
 const topN = (v) => (TOP_N.includes(Number(v)) ? Number(v) : 50)
+
+/** Auf Stellen runden; alles Unbrauchbare wird null statt NaN oder 0. */
+const rundeAuf = (v, stellen = 2) => (Number.isFinite(v)
+    ? Math.round(v * 10 ** stellen) / 10 ** stellen
+    : null)
 
 /** Abruf mit Zeitgrenze. `fetch` allein kennt keinen Timeout. */
 export async function holeJson(url, timeout = HTTP_TIMEOUT) {
@@ -192,7 +203,7 @@ const TAG_MS = 24 * 60 * 60 * 1000
 const tagesBeginn = (ms) => Math.floor(ms / TAG_MS) * TAG_MS
 
 /** Momentaufnahme des Gesamtmarkts. CoinGecko gibt hier keine Historie heraus. */
-async function holeGlobal() {
+export async function holeGlobal() {
     return ausCache('global', 3 * 60 * 1000, async () => {
         const d = await holeJson(COINGECKO_GLOBAL_URL)
         const pct = Number(d?.data?.market_cap_percentage?.btc)
@@ -301,7 +312,7 @@ export async function holeDominanzRueckblick() {
     return r
 }
 
-async function holeDominanz() {
+export async function holeDominanz() {
     let historie = []
     let ethReihe = []
     let quelle = 'coinmarketcap'
@@ -401,26 +412,210 @@ async function holeVolumen() {
 }
 
 /**
- * Funding über die N umsatzstärksten Coin-Märkte.
+ * Kanon für Funding-Jahresraten.
+ *
+ * Eine Funding-Rate gilt IMMER je Zahlungsintervall, und das Intervall ist
+ * nicht überall gleich — acht Stunden ist nur der Normalfall. Wer stur
+ * dreimal täglich rechnet, bekommt bei einem 4h-Markt genau die halbe
+ * Jahresrate und merkt es nicht, weil die Zahl plausibel aussieht. Genau so
+ * ist am 17.08.2026 eine Divergenz-Mail entstanden, die LAB als Grenzfall
+ * meldete, obwohl es der auffälligste Markt der Liste war.
+ *
+ * Deshalb steht die Umrechnung einmal hier statt viermal ausgeschrieben.
+ */
+export const FUNDING_STANDARD_H = 8
+
+export function jahresRateAus(rate, intervallStunden = FUNDING_STANDARD_H) {
+    // Bewusst typstreng: `Number(null)` ist 0, und eine fehlende Rate als
+    // „0 % Funding" durchzureichen wäre schlimmer als eine Lücke.
+    if (typeof rate !== 'number' || !Number.isFinite(rate)) return null
+    const h = Number(intervallStunden)
+    const takt = Number.isFinite(h) && h > 0 ? h : FUNDING_STANDARD_H
+    return Number(rate) * (24 / takt) * 365
+}
+
+const BITUNIX_FAPI = 'https://fapi.bitunix.com'
+
+/**
+ * Bitunix-Funding für die eigenen Märkte — die Rate, die eine eigene Position
+ * WIRKLICH zahlt (gehandelt wird auf Bitunix, nicht auf Binance).
+ *
+ * Bitunix meldet die Rate in PROZENT, nicht als Dezimalbruch wie Binance —
+ * verifiziert am 17.08.2026 über fünf Symbole (BTC 0.0088 gegen Binance
+ * 0.0000875). Das Zahlungsintervall kommt als `fundingInterval` (Stunden) mit
+ * und geht in die Jahresrate ein, statt stur 3×365 zu rechnen.
+ *
+ * Ein Abruf je Symbol; es gibt keinen Sammel-Endpunkt. Bei den höchstens
+ * acht eigenen Märkten ist das verkraftbar, ein eigener Cache-Schlüssel
+ * verhindert, dass jede n/rang-Variante der Kachel erneut abruft. Fehler je
+ * Symbol werden geschluckt — eine fehlende Bitunix-Zeile darf die Kachel
+ * nicht leeren.
+ */
+async function holeBitunixFunding(symbole) {
+    if (!symbole.length) return {}
+    const key = `bitunixFunding|${[...symbole].sort().join(',')}`
+    const { map } = await ausCache(key, 60 * 1000, async () => {
+        const paare = await Promise.all(symbole.map(async (sym) => {
+            try {
+                const r = await holeJson(`${BITUNIX_FAPI}/api/v1/futures/market/funding_rate?symbol=${sym}`)
+                const prozent = Number(r?.data?.fundingRate)
+                if (!Number.isFinite(prozent)) return null
+                const intervall = Number(r?.data?.fundingInterval) || FUNDING_STANDARD_H
+                const rate = prozent / 100
+                return [sym, {
+                    rate,
+                    jahresRate: jahresRateAus(rate, intervall),
+                    intervallStunden: intervall,
+                    naechsteZahlung: Number(r?.data?.nextFundingTime) || null,
+                }]
+            } catch {
+                return null
+            }
+        }))
+        return { map: Object.fromEntries(paare.filter(Boolean)) }
+    })
+    return map || {}
+}
+
+/**
+ * Zahlungsintervalle der Binance-Perps (Stunden).
+ *
+ * `premiumIndex` liefert die Rate, aber nicht den Takt. Der steht in
+ * `/fapi/v1/fundingInfo` — und zwar NUR für Märkte mit abweichender
+ * Einstellung; im Abruf vom 17.08.2026 waren das 445 Perps, fast alle auf
+ * vier Stunden (u. a. AERO und LAB). Wer im Endpunkt fehlt, zahlt im
+ * Standardtakt.
+ *
+ * Fällt der Abruf aus, rechnet alles im Standardtakt weiter — dieselbe
+ * Notlösung wie bei Bybit. Sie liefert für die 4h-Märkte zu kleine Werte,
+ * aber eine leere Funding-Kachel wäre schlechter als eine vorsichtige.
+ * Der Takt ändert sich praktisch nie, deshalb 12h-Cache.
+ */
+async function holeBinanceIntervalle() {
+    const { stunden } = await ausCache('binanceIntervalle', 12 * 60 * 60 * 1000, async () => {
+        const r = await holeJson(`${FAPI}/fapi/v1/fundingInfo`)
+        const stunden = {}
+        for (const x of r || []) {
+            const h = Number(x.fundingIntervalHours)
+            if (Number.isFinite(h) && h > 0) stunden[x.symbol] = h
+        }
+        return { stunden }
+    }).catch(() => ({ stunden: {} }))
+    return stunden || {}
+}
+
+const BYBIT_API = 'https://api.bybit.com'
+
+/**
+ * Ab wie viel Abweichung (Jahresrate, als Dezimalbruch) gilt eine Bybit-Rate
+ * als Divergenz? 10 Prozentpunkte p.a.: BTC/ETH liegen börsenübergreifend
+ * wenige Punkte auseinander (Arbitrage), echte einseitige Positionierung auf
+ * EINER Börse reisst die Schwelle deutlich.
+ */
+const DIVERGENZ_PP = 0.10
+
+/** Mehr als so viele Märkte darf der Divergenz-Alarm nicht beobachten. */
+const DIVERGENZ_MAX_SYMBOLE = 40
+
+/**
+ * Welche Märkte der Divergenz-Alarm beobachtet.
+ *
+ * Leer = die eigenen Märkte, wie bisher. Eine Liste in den Einstellungen
+ * sticht das: eine auseinanderlaufende Funding-Rate ist ein Grund, sich einen
+ * Markt ANZUSEHEN — man muss ihn dafür nicht schon handeln. Umgekehrt will
+ * nicht jeder eigene Markt eine Meldung.
+ */
+async function divergenzSymbole() {
+    const s = await getKnex()('settings').where('id', 1).first().catch(() => null)
+    return String(s?.radarDivergenzSymbole || '').split(/[,\s]+/)
+        .map(x => x.trim().toUpperCase()).filter(x => SYMBOL_RE.test(x))
+        .slice(0, DIVERGENZ_MAX_SYMBOLE)
+}
+
+/**
+ * Bybit als Vergleichsbörse: Jahresrate je Symbol aus EINEM Ticker-Abruf.
+ *
+ * Anders als Bitunix meldet Bybit die Rate als Dezimalbruch wie Binance
+ * (verifiziert 17.08.2026: BTC 0.000063 gegen Binance 0.0000875). Das
+ * Zahlungsintervall steht NICHT im Ticker, sondern in instruments-info
+ * (Minuten, alle 821 Instrumente in einem Abruf) — ohne Intervall wären die
+ * p.a.-Werte der 4h/1h-Märkte glatt falsch. Die Intervalle ändern sich
+ * praktisch nie, deshalb 12h-Cache.
+ */
+async function holeBybitFunding() {
+    const { map } = await ausCache('bybitFunding', 60 * 1000, async () => {
+        const [ticker, intervalle] = await Promise.all([
+            holeJson(`${BYBIT_API}/v5/market/tickers?category=linear`),
+            ausCache('bybitIntervalle', 12 * 60 * 60 * 1000, async () => {
+                const r = await holeJson(`${BYBIT_API}/v5/market/instruments-info?category=linear&limit=1000`)
+                const stunden = {}
+                for (const x of r?.result?.list || []) {
+                    const min = Number(x.fundingInterval)
+                    if (Number.isFinite(min) && min > 0) stunden[x.symbol] = min / 60
+                }
+                return { stunden }
+            }).catch(() => ({ stunden: {} })),
+        ])
+        const map = {}
+        for (const t of ticker?.result?.list || []) {
+            const rate = Number(t.fundingRate)
+            if (!Number.isFinite(rate)) continue
+            const intervall = intervalle.stunden[t.symbol] || FUNDING_STANDARD_H
+            map[t.symbol] = jahresRateAus(rate, intervall)
+        }
+        return { map }
+    })
+    return map || {}
+}
+
+/**
+ * Funding über die Top-N-Coin-Märkte — wahlweise nach 24h-Umsatz (Vorgabe)
+ * oder nach Marktkapitalisierung.
  *
  * Die Auswahl läuft über eine Rangliste statt über eine Umsatzschwelle: „Top 50"
  * ist eine Aussage, die jeder sofort versteht, „ab 20 Mio. USD" nicht — und die
  * Zahl der Märkte hinter einer festen Schwelle schwankt mit der Marktlage.
+ * Umsatz zeigt, WO gerade gehandelt wird (auch kleine Coins im Pump), die
+ * Marktkapitalisierung die dauerhaft grossen Werte — beides sind berechtigte
+ * Blickwinkel, deshalb der Umschalter.
  */
-async function holeFunding(anzahl = 50) {
+export async function holeFunding(anzahl = 50, rang = 'volumen') {
     const n = topN(anzahl)
+    const nachMcap = rang === 'mcap'
     const meine = await eigeneSymbole().catch(() => [])
-    return ausCache(`funding|${n}|${meine.join(',')}`, 60 * 1000, async () => {
+    const gewaehlt = await divergenzSymbole().catch(() => [])
+    const schluessel = `funding|${n}|${nachMcap ? 'mcap' : 'vol'}|${meine.join(',')}|${gewaehlt.join(',')}`
+    return ausCache(schluessel, 60 * 1000, async () => {
         // premiumIndex ohne Symbol liefert ALLE Perps in einem Abruf (Gewicht 10)
-        const [roh, vol] = await Promise.all([
+        const [roh, vol, bitunix, bybit, taktBinance] = await Promise.all([
             holeJson(`${FAPI}/fapi/v1/premiumIndex`),
             holeVolumen().catch(() => ({ map: {} })),
+            holeBitunixFunding(meine).catch(() => ({})),
+            holeBybitFunding().catch(() => ({})),
+            holeBinanceIntervalle(),
         ])
 
+        // Ohne Umsatzliste gibt es keine Rangliste und keine einzige Zeile.
+        // Das Weiterreichen einer leeren Liste als frischen Stand widerspräche
+        // Regel 1 dieser Datei — beobachtet beim Startsturm, als der Abruf
+        // einmal danebenging und die Kachel „—" statt Zahlen zeigte. Werfen
+        // heisst: `ausCache` liefert den letzten guten Stand mit `veraltet`.
+        if (!Object.keys(vol.map).length) throw new Error('Umsatzliste leer')
+
         // Nur Coin-Märkte (vol.map ist bereits gefiltert) und davon die N
-        // umsatzstärksten
-        const rangliste = new Set(Object.entries(vol.map)
-            .sort((a, b) => b[1] - a[1]).slice(0, n).map(([s]) => s))
+        // umsatzstärksten — oder, auf Wunsch, die N grössten Coins nach
+        // Marktkapitalisierung. Die CoinGecko-Rangliste liefert das
+        // Binance-Symbol (`perp`) gleich mit; Coins ohne Perp werden
+        // übersprungen, damit „Top 10" auch zehn HANDELBARE Märkte zeigt.
+        let rangliste
+        if (nachMcap) {
+            const markt = await holeMarkt(250)
+            rangliste = new Set((markt.muenzen || [])
+                .filter(m => m.perp).slice(0, n).map(m => m.perp))
+        } else {
+            rangliste = new Set(Object.entries(vol.map)
+                .sort((a, b) => b[1] - a[1]).slice(0, n).map(([s]) => s))
+        }
 
         const alleZeilen = roh
             .filter(r => vol.map[r.symbol] !== undefined)
@@ -432,9 +627,29 @@ async function holeFunding(anzahl = 50) {
                 volumen24h: vol.map[r.symbol] || 0,
             }))
             .filter(r => Number.isFinite(r.rate))
-            // Binance zahlt dreimal täglich — hochgerechnet auf ein Jahr wird
-            // aus einer unscheinbaren Zahl eine begreifbare Grösse
-            .map(r => ({ ...r, jahresRate: r.rate * 3 * 365 }))
+            // Hochgerechnet auf ein Jahr wird aus einer unscheinbaren Zahl eine
+            // begreifbare Grösse — mit dem Takt des jeweiligen Marktes, nicht
+            // mit pauschal dreimal täglich (siehe `holeBinanceIntervalle`).
+            .map(r => {
+                const intervallStunden = taktBinance[r.symbol] || FUNDING_STANDARD_H
+                return { ...r, intervallStunden, jahresRate: jahresRateAus(r.rate, intervallStunden) }
+            })
+            // Bybit danebenhalten. Arbitrage hält die Raten normalerweise
+            // zusammen; wo sie AUSEINANDERLAUFEN, sitzt die überfüllte Seite
+            // auf einer Börse allein — dort zündet eine Auflösung zuerst.
+            // Nur die Abweichung wird gemeldet, nicht jede zweite Rate: die
+            // Liste soll ruhig bleiben und erst dann sprechen, wenn es etwas
+            // zu sagen gibt.
+            .map(r => {
+                const by = bybit[r.symbol]
+                if (!Number.isFinite(by)) return r
+                const delta = r.jahresRate - by
+                return {
+                    ...r,
+                    bybitJahresRate: by,
+                    divergenz: Math.abs(delta) >= DIVERGENZ_PP ? delta : null,
+                }
+            })
             .sort((a, b) => b.rate - a.rate)
 
         // Die Extreme des Gesamtmarkts sitzen fast immer in Mikro-Werten, die
@@ -444,12 +659,68 @@ async function holeFunding(anzahl = 50) {
         const nachSymbol = new Map(alleZeilen.map(r => [r.symbol, r]))
 
         return {
-            eigene: meine.map(s => nachSymbol.get(s)).filter(Boolean),
+            // Je eigener Markt beide Blickwinkel: die Binance-Zeile für die
+            // Marktbreite, daneben die Bitunix-Rate der eigenen Börse. Ein
+            // Markt, den Binance nicht führt, bleibt dank Bitunix trotzdem
+            // sichtbar — vorher fiel er stumm aus der Liste.
+            eigene: meine.map(s => {
+                const z = nachSymbol.get(s)
+                const bu = bitunix[s] || null
+                if (!z && !bu) return null
+                return {
+                    symbol: s, rate: null, jahresRate: null,
+                    naechsteZahlung: null, volumen24h: 0,
+                    ...(z || {}), bitunix: bu,
+                }
+            }).filter(Boolean),
             oben: zeilen.slice(0, 8),
             unten: zeilen.slice(-8).reverse(),
             alle: zeilen,
             gezaehlt: zeilen.length,
             n,
+            rang: nachMcap ? 'mcap' : 'volumen',
+            // Die stärksten Börsen-Abweichungen, für Marker und Alarm. Bewusst
+            // aus der RANGLISTE gezogen: bei Mikro-Werten weichen die Raten
+            // ständig ab, ohne dass es jemanden betrifft.
+            divergenzen: zeilen
+                .filter(r => r.divergenz !== null && r.divergenz !== undefined)
+                .sort((a, b) => Math.abs(b.divergenz) - Math.abs(a.divergenz))
+                .slice(0, 5)
+                .map(r => ({
+                    symbol: r.symbol,
+                    binance: r.jahresRate,
+                    bybit: r.bybitJahresRate,
+                    delta: r.divergenz,
+                })),
+            divergenzSchwelle: DIVERGENZ_PP,
+            /*
+             * Die Märkte, die der Alarm beobachtet — mit ihrer aktuellen
+             * Abweichung, sonst nichts. Browser und Takt-Mail lesen beide von
+             * hier, damit „welche Coins" an EINER Stelle entschieden wird und
+             * nicht zweimal leicht verschieden.
+             *
+             * Bewusst aus `alleZeilen` und nicht aus der Rangliste: ein
+             * ausgewählter Markt soll melden, auch wenn er nicht unter den Top
+             * N liegt — genau das ist der Sinn der Auswahl. Ohne eigene Liste
+             * sind es die eigenen Märkte, wie vorher.
+             *
+             * Märkte OHNE Abweichung stehen mit `delta: null` trotzdem drin:
+             * die Entprellung im Browser löscht ihren Merker erst, wenn sie
+             * eine Zeile sehen, die unter der Schwelle liegt. Liesse man sie
+             * weg, bliebe der Merker stehen und ein wieder auflodernder Markt
+             * meldete sich nie erneut.
+             */
+            divergenzMaerkte: (gewaehlt.length ? gewaehlt : meine).map(s => {
+                const z = nachSymbol.get(s)
+                if (!z) return null
+                return {
+                    symbol: s,
+                    binance: z.jahresRate ?? null,
+                    bybit: z.bybitJahresRate ?? null,
+                    delta: z.divergenz ?? null,
+                }
+            }).filter(Boolean),
+            divergenzEigene: !gewaehlt.length,
         }
     })
 }
@@ -458,7 +729,7 @@ async function holeFunding(anzahl = 50) {
 
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
 
-async function holeLsOi(symbol, stunden = 48) {
+export async function holeLsOi(symbol, stunden = 48) {
     const sym = String(symbol || 'BTCUSDT').toUpperCase()
     if (!SYMBOL_RE.test(sym)) throw new Error('Ungültiges Symbol')
     const limit = Math.max(6, Math.min(200, Number(stunden) || 48))
@@ -587,7 +858,7 @@ async function topSymbole(n = 50) {
  * @param {string} tf      Zeiteinheit
  * @param {string} quelle  'top' (Umsatz-Rangliste) | 'eigene' (eigene Trades) | 'liste'
  */
-async function holeRsi(tf = '1h', quelle = 'top', anzahl = 50) {
+export async function holeRsi(tf = '1h', quelle = 'top', anzahl = 50) {
     const n = topN(anzahl)
     const zeiteinheit = RSI_TFS_ERLAUBT.includes(String(tf)) ? String(tf) : '1h'
     const knex = getKnex()
@@ -665,10 +936,14 @@ const stundenBeginn = (ms) => Math.floor(ms / 3600000) * 3600000
  * ohnehin mit, 365 Tage lang. Ist er aus, sagt die Kachel das — statt „0
  * Liquidationen" zu behaupten, was etwas völlig anderes bedeutet.
  *
+ * Seit dem Bybit-Sammelstrom fliessen zwei Börsen ein: Binance ist eine
+ * gedrosselte Stichprobe (1 Ereignis/s/Symbol), Bybit ungedrosselt — Bybit
+ * wird deshalb meist dominieren, das ist kein Fehler.
+ *
  * ACHTUNG bei der Seite: `seite = 1` heisst, die Börse hat GEKAUFT, also wurde
  * ein SHORT glattgestellt. Wer das dreht, färbt die ganze Kachel falsch.
  */
-async function holeLiquidationen(stunden = 24) {
+export async function holeLiquidationen(stunden = 24) {
     const h = Math.max(1, Math.min(72, Number(stunden) || 24))
     return ausCache(`liq|${h}`, 60 * 1000, async () => {
         const { promisify } = await import('util')
@@ -679,13 +954,17 @@ async function holeLiquidationen(stunden = 24) {
         const s = await knex('settings').where('id', 1).first().catch(() => null)
         const von = Date.now() - h * 3600000
 
+        // 'liq' = Binance forceOrder (gedrosselte Stichprobe), 'liqB' = Bybit
+        // allLiquidation (ungedrosselt). Beide zusammen ergeben das Bild;
+        // die Seiten-Konvention ist beim Schreiben bereits vereinheitlicht.
         const zeilen = await knex('live_recordings')
-            .where('kind', 'liq')
+            .whereIn('kind', ['liq', 'liqB'])
             .andWhere('hourStart', '>=', stundenBeginn(von))
             .orderBy('hourStart')
 
         const jeSymbol = new Map()
         const jeStunde = new Map()
+        const jeBoerse = new Map()
         const groesste = []
         let longUsd = 0, shortUsd = 0, anzahl = 0
         let frueheste = null
@@ -699,6 +978,7 @@ async function holeLiquidationen(stunden = 24) {
                 logWarn('marktradar', `Liq-Zeile ${zeile.symbol}/${zeile.hourStart} unlesbar: ${e.message}`)
                 continue
             }
+            const boerseId = zeile.kind === 'liqB' ? 'bybit' : 'binance'
             for (const [t, preis, menge, seite] of roh) {
                 if (t < von) continue
                 const usd = preis * menge
@@ -708,6 +988,11 @@ async function holeLiquidationen(stunden = 24) {
                 anzahl++
                 if (istShort) shortUsd += usd; else longUsd += usd
                 if (frueheste === null || t < frueheste) frueheste = t
+
+                const bo = jeBoerse.get(boerseId) || { id: boerseId, longUsd: 0, shortUsd: 0, anzahl: 0 }
+                bo[istShort ? 'shortUsd' : 'longUsd'] += usd
+                bo.anzahl++
+                jeBoerse.set(boerseId, bo)
 
                 const sym = jeSymbol.get(zeile.symbol) || { symbol: zeile.symbol, longUsd: 0, shortUsd: 0, anzahl: 0 }
                 sym[istShort ? 'shortUsd' : 'longUsd'] += usd
@@ -719,7 +1004,7 @@ async function holeLiquidationen(stunden = 24) {
                 st[istShort ? 'shortUsd' : 'longUsd'] += usd
                 jeStunde.set(stunde, st)
 
-                groesste.push({ t, symbol: zeile.symbol, usd, seite: istShort ? 'short' : 'long' })
+                groesste.push({ t, symbol: zeile.symbol, usd, seite: istShort ? 'short' : 'long', boerse: boerseId })
             }
         }
 
@@ -735,6 +1020,398 @@ async function holeLiquidationen(stunden = 24) {
             verlauf: [...jeStunde.values()].sort((a, b) => a.t - b.t),
             groesste: groesste.slice(0, 10),
             gesamt: { longUsd, shortUsd, anzahl },
+            boersen: [...jeBoerse.values()].sort((a, b) => (b.longUsd + b.shortUsd) - (a.longUsd + a.shortUsd)),
+        }
+    })
+}
+
+// ── Kachel: Marktmechanik ────────────────────────────────────────────────
+
+/**
+ * Liquidationen EINES Symbols im Zeitfenster plus 24-h-Referenz für den
+ * Spike-Vergleich — beides in einem Durchlauf aus denselben Stundenzeilen
+ * der eigenen Aufzeichnung (Binance + Bybit, Seiten-Konvention beim
+ * Schreiben bereits vereinheitlicht: seite 1 = Short liquidiert).
+ */
+async function liesLiqFenster(symbol, vonMs, bisMs) {
+    const { promisify } = await import('util')
+    const zlib = await import('zlib')
+    const gunzip = promisify(zlib.gunzip)
+
+    const refVon = bisMs - 24 * 3600000
+    const zeilen = await getKnex()('live_recordings')
+        .whereIn('kind', ['liq', 'liqB'])
+        .andWhere('symbol', symbol)
+        .andWhere('hourStart', '>=', stundenBeginn(refVon))
+        .orderBy('hourStart')
+
+    let fensterLong = 0
+    let fensterShort = 0
+    let fensterAnzahl = 0
+    let refUsd = 0
+    for (const zeile of zeilen) {
+        if (!zeile.payload) continue
+        let roh
+        try {
+            roh = JSON.parse((await gunzip(zeile.payload)).toString('utf8'))
+        } catch (e) {
+            logWarn('marktradar', `Liq-Zeile ${zeile.symbol}/${zeile.hourStart} unlesbar: ${e.message}`)
+            continue
+        }
+        for (const [t, preis, menge, seite] of roh) {
+            if (t < refVon || t > bisMs) continue
+            const usd = preis * menge
+            if (!Number.isFinite(usd)) continue
+            refUsd += usd
+            if (t >= vonMs) {
+                fensterAnzahl++
+                if (seite === 1) fensterShort += usd; else fensterLong += usd
+            }
+        }
+    }
+    // verfuegbar unterscheidet „nicht aufgezeichnet" von „ruhige 24 h":
+    // gibt es überhaupt Zeilen, wird gesammelt — auch wenn im Fenster nichts lag
+    return { verfuegbar: zeilen.length > 0, fensterLong, fensterShort, fensterAnzahl, refUsd }
+}
+
+// Kerzen-/OI-Raster je Fenster: n Punkte im Abstand tf decken das Fenster ab,
+// der erste Punkt ist die Vergleichsbasis (Delta = letzter vs. erster).
+const MECHANIK_RASTER = {
+    '15m': { tf: '5m', n: 4 },
+    '1h': { tf: '15m', n: 5 },
+    '4h': { tf: '1h', n: 5 },
+}
+
+/**
+ * Marktmechanik: Faktoren beschaffen, Urteil fällen. Das Urteil selbst liegt
+ * in marktmechanik.js (rein, selbstgetestet) — hier steht nur, WOHER die
+ * Zahlen kommen. Antwort enthält Schlüssel statt Texte; übersetzt wird im
+ * Frontend (marktradar.mechanik.state_*).
+ */
+export async function holeMechanik(symbol, fenster) {
+    const sym = String(symbol || 'BTCUSDT').toUpperCase()
+    if (!SYMBOL_RE.test(sym)) {
+        const e = new Error('Ungültiges Symbol')
+        e.status = 400
+        throw e
+    }
+    const f = Object.hasOwn(FENSTER, String(fenster)) ? String(fenster) : '1h'
+
+    return ausCache(`mechanik|${sym}|${f}`, 60 * 1000, async () => {
+        const jetzt = Date.now()
+        const fensterMs = FENSTER[f].ms
+        const { tf, n } = MECHANIK_RASTER[f]
+
+        // Vier Quellen parallel; jede darf einzeln ausfallen — das Regelwerk
+        // degradiert dann und `fehlend` benennt die Lücke, statt dass die
+        // ganze Kachel an einer Teilquelle stirbt.
+        const [kerzen, oiHist, premium, fundingHist, liq, taktBinance] = await Promise.all([
+            getClosedCandles(sym, tf, n).catch(() => []),
+            holeJson(`${FAPI}/futures/data/openInterestHist?symbol=${sym}&period=${tf}&limit=${n}`).catch(() => null),
+            holeJson(`${FAPI}/fapi/v1/premiumIndex?symbol=${sym}`).catch(() => null),
+            holeJson(`${FAPI}/fapi/v1/fundingRate?symbol=${sym}&limit=1`).catch(() => null),
+            liesLiqFenster(sym, jetzt - fensterMs, jetzt).catch(() => null),
+            holeBinanceIntervalle(),
+        ])
+
+        const preisDeltaPct = kerzen.length >= 2 && kerzen[0].c > 0
+            ? ((kerzen[kerzen.length - 1].c - kerzen[0].c) / kerzen[0].c) * 100
+            : null
+
+        let oiDeltaPct = null
+        let oiJetzt = null
+        if (Array.isArray(oiHist) && oiHist.length >= 2) {
+            const erster = Number(oiHist[0].sumOpenInterest)
+            const letzter = Number(oiHist[oiHist.length - 1].sumOpenInterest)
+            if (erster > 0 && Number.isFinite(letzter)) {
+                oiJetzt = letzter
+                oiDeltaPct = ((letzter - erster) / erster) * 100
+            }
+        }
+
+        // Binance liefert die Rate als Bruch (0.0001 = 0,01 %); das Regelwerk
+        // rechnet in % je 8 h — deshalb ×100
+        const rohRate = Number(premium?.lastFundingRate)
+        const fundingRate = Number.isFinite(rohRate) ? rohRate * 100 : null
+        // Die Schwellen in marktmechanik.js sind auf den 8h-Takt geeicht
+        // („+0,03 % je 8 h ≈ +33 % p.a."). Ein 4h-Markt zahlt bei gleicher
+        // Rate das Doppelte — ohne Umrechnung müsste er die doppelten
+        // Jahreskosten erreichen, bevor „Funding hoch" überhaupt anspringt.
+        // Also wird für das URTEIL auf 8h-Äquivalent normiert; gemeldet wird
+        // weiter die echte Rate.
+        const taktStunden = taktBinance[sym] || FUNDING_STANDARD_H
+        const fundingRate8h = fundingRate === null
+            ? null
+            : fundingRate * (FUNDING_STANDARD_H / taktStunden)
+        const abgerechnet = Array.isArray(fundingHist) && fundingHist.length
+            ? Number(fundingHist[fundingHist.length - 1].fundingRate) * 100
+            : null
+        const fundingTrend = fundingRate !== null && Number.isFinite(abgerechnet)
+            ? Math.sign(fundingRate - abgerechnet)
+            : 0
+
+        let liqLongUsd = null
+        let liqShortUsd = null
+        let liqSpikeFaktor = null
+        const liqVerfuegbar = !!liq?.verfuegbar
+        if (liqVerfuegbar) {
+            liqLongUsd = liq.fensterLong
+            liqShortUsd = liq.fensterShort
+            // Spike = Fenster-Volumen gegen einen durchschnittlich gleich
+            // langen Abschnitt der letzten 24 h
+            const erwartet = liq.refUsd * (fensterMs / (24 * 3600000))
+            liqSpikeFaktor = erwartet > 0 ? (liq.fensterLong + liq.fensterShort) / erwartet : null
+        }
+
+        const faktoren = {
+            preisDeltaPct, oiDeltaPct, fundingRate: fundingRate8h, fundingTrend,
+            liqLongUsd, liqShortUsd, liqSpikeFaktor, liqVerfuegbar,
+        }
+        const urteil = bewerteMechanik(faktoren, f)
+
+        return {
+            symbol: sym,
+            fenster: f,
+            state: urteil.state,
+            gruende: urteil.gruende,
+            fehlend: urteil.fehlend,
+            faktoren: {
+                preisDeltaPct: rundeAuf(preisDeltaPct),
+                oiDeltaPct: rundeAuf(oiDeltaPct),
+                oiJetzt,
+                fundingRate: rundeAuf(fundingRate, 4),
+                // Im Takt DIESES Marktes aufs Jahr hochgerechnet — dieselbe
+                // Grösse wie in der Funding-Kachel
+                fundingIntervallStunden: taktStunden,
+                fundingJahresRate: rundeAuf(jahresRateAus(fundingRate, taktStunden), 1),
+                fundingTrend,
+                liqVerfuegbar,
+                liqLongUsd: rundeAuf(liqLongUsd, 0),
+                liqShortUsd: rundeAuf(liqShortUsd, 0),
+                liqSpikeFaktor: rundeAuf(liqSpikeFaktor, 1),
+                liqAnzahl: liqVerfuegbar ? liq.fensterAnzahl : null,
+            },
+        }
+    })
+}
+
+/**
+ * KI-Einordnung des Marktmechanik-Zustands — die KI ERKLÄRT, sie bestimmt
+ * nicht. Sie bekommt nur den regelbasiert ermittelten Zustand plus die
+ * Messwerte dahinter (STATE + DATA) und darf keine Empfehlung geben.
+ *
+ * Wird nur per Knopf in der Gross-Ansicht aufgerufen, nie im Poll. Der Cache
+ * hängt am Zustand: solange (Symbol, Fenster, Zustand) gleich bleiben, kommt
+ * derselbe Text zurück und es wird kein zweites Mal bezahlt. Kein
+ * `beansprucheAufgabe` nötig — der Aufruf ist nutzergetrieben.
+ */
+const erklaerungCache = new Map()   // "SYM|fenster|STATE" -> { ts, payload }
+const ERKLAERUNG_TTL_MS = 30 * 60 * 1000
+const ERKLAERUNG_MAX = 50
+
+async function holeMechanikErklaerung(symbol, fenster) {
+    const mech = await holeMechanik(symbol, fenster)
+    const key = `${mech.symbol}|${mech.fenster}|${mech.state}`
+    const alt = erklaerungCache.get(key)
+    if (alt && Date.now() - alt.ts < ERKLAERUNG_TTL_MS) {
+        return { ...alt.payload, cached: true }
+    }
+
+    const cfg = await ladeLlmConfig()
+    cfg.maxTokens = 300
+
+    const s = await getKnex()('settings').select('language').where('id', 1).first().catch(() => null)
+    const englisch = s?.language === 'en'
+
+    const fx = mech.faktoren
+    const system = (englisch
+        ? 'You are a sober market observer. You receive a rule-derived market state and the measurements behind it. '
+        + 'Explain in at most 80 words what this constellation means mechanically. Name contradictions between the '
+        + 'factors explicitly. NO trading recommendation, no price targets, no "one should". Respond in English.'
+        : 'Du bist ein nüchterner Marktbeobachter. Du bekommst einen regelbasiert bestimmten Marktzustand und die '
+        + 'Messwerte dahinter. Erkläre in höchstens 80 Wörtern, was diese Konstellation mechanisch bedeutet. Benenne '
+        + 'Widersprüche zwischen den Faktoren ausdrücklich. KEINE Handelsempfehlung, keine Kursziele, kein „sollte '
+        + 'man". Antworte auf Deutsch.')
+        + ' JSON: {"text": "…"}'
+
+    const user = [
+        `STATE: ${mech.state}`,
+        `SYMBOL: ${mech.symbol}, Fenster: ${mech.fenster}`,
+        'DATA:',
+        `  Preis: ${fx.preisDeltaPct ?? 'n/a'} %`,
+        `  Open Interest: ${fx.oiDeltaPct ?? 'n/a'} %`,
+        `  Funding: ${fx.fundingRate ?? 'n/a'} % je 8h (${fx.fundingJahresRate ?? 'n/a'} % p.a.), Trend ${fx.fundingTrend}`,
+        fx.liqLongUsd === null
+            ? '  Liquidationen: keine Aufzeichnung für dieses Symbol'
+            : `  Liquidationen: Longs ${Math.round(fx.liqLongUsd)} USD, Shorts ${Math.round(fx.liqShortUsd)} USD, Spike-Faktor ${fx.liqSpikeFaktor ?? 'n/a'}`,
+        mech.fehlend.length ? `  Fehlende Faktoren: ${mech.fehlend.join(', ')}` : '',
+    ].filter(Boolean).join('\n')
+
+    let antwort = await callLLMJson(cfg, { system, user, timeoutMs: 60000 })
+    if (!antwort.json && antwort.abgeschnitten) {
+        // Token-Budget zu klein, nicht der Prompt kaputt — einmal nachlegen
+        cfg.maxTokens = 600
+        antwort = await callLLMJson(cfg, { system, user, timeoutMs: 60000 })
+    }
+    const text = String(antwort.json?.text || '').trim()
+    if (!text) throw new Error('Die KI hat keine verwertbare Einordnung geliefert')
+
+    const payload = { text, state: mech.state, model: cfg.model, costUsd: antwort.costUsd }
+    erklaerungCache.set(key, { ts: Date.now(), payload })
+    // Deckel: älteste Einträge fallen raus, sonst sammelt jeder Symbolwechsel an
+    while (erklaerungCache.size > ERKLAERUNG_MAX) {
+        erklaerungCache.delete(erklaerungCache.keys().next().value)
+    }
+    return { ...payload, cached: false }
+}
+
+// ── Kachel: Makro-Umfeld ─────────────────────────────────────────────────
+
+const YAHOO_CHART = 'https://query1.finance.yahoo.com/v8/finance/chart'
+const CG_COIN_CHART = 'https://api.coingecko.com/api/v3/coins'
+
+/**
+ * Bewusst die FUTURES, nicht die Kassa-Indizes: der S&P-500-Index steht
+ * nachts und am Wochenende still (beim Bau dieser Kachel war sein letzter
+ * Kurs 62 Stunden alt), der Future läuft fast rund um die Uhr — nur so ist
+ * der Vergleich mit dem durchlaufenden Krypto-Markt ehrlich.
+ */
+const MAKRO_MAERKTE = [
+    { id: 'sp500', ticker: 'ES=F' },
+    { id: 'nasdaq', ticker: 'NQ=F' },
+    // Dollar-Index: kein Future, aber als Index rund um die Uhr fortgeschrieben
+    { id: 'dxy', ticker: 'DX-Y.NYB' },
+]
+
+const STABLE_COINS = ['tether', 'usd-coin']
+
+// Ab dieser Stille gilt die Börse als geschlossen (Wochenendlücke der Futures
+// ist gut eine Stunde am Tag plus Freitagabend bis Sonntagabend).
+const MAKRO_STILL_MS = 90 * 60 * 1000
+
+/**
+ * Makro-Umfeld: Aktien-Futures, Dollar-Index, Kopplung zu Krypto und
+ * Stablecoin-Fluss.
+ *
+ * Die Kopplung ist der eigentliche Inhalt: „Nasdaq −1 %" allein sagt nichts,
+ * solange offen ist, ob der Krypto-Markt gerade daran hängt. Deshalb wird die
+ * Korrelation der Tagesrenditen über 30 Tage mitgerechnet und mitgeliefert.
+ */
+export async function holeMakro() {
+    return ausCache('makro', 5 * 60 * 1000, async () => {
+        const [charts, btcKerzen, stableReihen] = await Promise.all([
+            Promise.all(MAKRO_MAERKTE.map(m => holeJson(
+                `${YAHOO_CHART}/${encodeURIComponent(m.ticker)}?range=3mo&interval=1d`, 12000,
+            ).catch(() => null))),
+            getClosedCandles('BTCUSDT', '1d', 95).catch(() => []),
+            Promise.all(STABLE_COINS.map(id => holeJson(
+                `${CG_COIN_CHART}/${id}/market_chart?vs_currency=usd&days=30&interval=daily`, 12000,
+            ).then(d => d?.market_caps || null).catch(() => null))),
+        ])
+
+        const jetzt = Date.now()
+        const maerkte = []
+        const reihen = {}
+        for (let i = 0; i < MAKRO_MAERKTE.length; i++) {
+            const def = MAKRO_MAERKTE[i]
+            if (!charts[i]) { maerkte.push({ id: def.id, verfuegbar: false }); continue }
+            const a = reiheAusChart(charts[i])
+            reihen[def.id] = a.reihe
+            const still = a.zeit ? jetzt - a.zeit : null
+            maerkte.push({
+                id: def.id,
+                verfuegbar: a.reihe.length > 0,
+                preis: a.preis,
+                deltaPct: rundeAuf(deltaAusReihe(a.reihe), 2),
+                zeit: a.zeit,
+                // Ehrlich anschreiben statt einen eingefrorenen Kurs als
+                // aktuell zu verkaufen — Krypto läuft weiter, die Börse nicht
+                offen: still === null ? null : still < MAKRO_STILL_MS,
+            })
+        }
+
+        // Krypto-Tagesreihe im selben Format wie die Yahoo-Reihen
+        const btcReihe = (btcKerzen || []).map(k => ({
+            tag: new Date(k.t).toISOString().slice(0, 10), close: k.c,
+        }))
+
+        // Korrelation nur über die letzten ~30 gemeinsamen Handelstage: über ein
+        // ganzes Quartal gemittelt verwischt genau der Regimewechsel, auf den es
+        // ankommt (Kopplung springt in Risk-off-Phasen).
+        const letzte = (r, n) => (r || []).slice(-n)
+        const korrNasdaq = korrelationAusReihen(letzte(btcReihe, 45), letzte(reihen.nasdaq, 32))
+        const korrDxy = korrelationAusReihen(letzte(btcReihe, 45), letzte(reihen.dxy, 32))
+
+        const gueltigeStable = stableReihen.filter(Boolean)
+        const stable = stableFluss(gueltigeStable, 30)
+
+        // Stablecoin-Menge je Tag — nur Tage, an denen ALLE Coins einen Wert
+        // haben, sonst springt die Summe an einer Datenlücke wie ein Abfluss
+        const stableNachTag = new Map()
+        if (gueltigeStable.length) {
+            const zaehler = new Map()
+            for (const reihe of gueltigeStable) {
+                for (const [ts, wert] of reihe) {
+                    if (!Number.isFinite(wert) || wert <= 0) continue
+                    const tag = new Date(ts).toISOString().slice(0, 10)
+                    const e = zaehler.get(tag) || { summe: 0, n: 0 }
+                    e.summe += wert
+                    e.n++
+                    zaehler.set(tag, e)
+                }
+            }
+            for (const [tag, e] of zaehler) {
+                if (e.n === gueltigeStable.length) stableNachTag.set(tag, e.summe)
+            }
+        }
+
+        // Gesamtmarkt-Historie aus den eigenen Tagesschnappschüssen. Die Menge
+        // kommt von CoinGecko, der Gesamtmarkt aus der CoinMarketCap-Reihe —
+        // der absolute Dominanz-WERT trägt dadurch einen kleinen Versatz, die
+        // Zerlegung der VERÄNDERUNG bleibt davon unberührt.
+        let totalNachTag = new Map()
+        try {
+            const snaps = await getKnex()('market_snapshots')
+                .where('kind', 'domMcap')
+                .andWhere('dayUnix', '>=', Date.now() - 45 * 86400000)
+                .orderBy('dayUnix')
+            totalNachTag = new Map(snaps.map(r => [
+                new Date(Number(r.dayUnix)).toISOString().slice(0, 10), Number(r.value),
+            ]))
+        } catch (e) {
+            logWarn('marktradar', `Gesamtmarkt-Historie für die Dominanz-Zerlegung fehlt: ${e.message}`)
+        }
+
+        const punkte = waehleDominanzPunkte(stableNachTag, totalNachTag, 30)
+        const zerlegt = punkte ? zerlegeDominanz(punkte) : null
+
+        return {
+            maerkte,
+            korrelation: {
+                nasdaq: rundeAuf(korrNasdaq.r, 2),
+                dxy: rundeAuf(korrDxy.r, 2),
+                punkte: korrNasdaq.punkte,
+                deutung: deuteKorrelation(korrNasdaq.r),
+            },
+            stablecoins: {
+                jetztUsd: stable.jetztUsd,
+                deltaUsd: stable.deltaUsd,
+                deltaPct: rundeAuf(stable.deltaPct, 2),
+                tage: stable.tage,
+                verfuegbar: stable.jetztUsd !== null,
+            },
+            // Dominanz nur ZERLEGT — die blosse Zahl wäre nicht deutbar, weil
+            // sie schon steigt, wenn nur die Kurse fallen
+            dominanz: zerlegt ? {
+                vorherPct: rundeAuf(zerlegt.vorherPct, 2),
+                jetztPct: rundeAuf(zerlegt.jetztPct, 2),
+                deltaPunkte: rundeAuf(zerlegt.deltaPunkte, 2),
+                mengePunkte: rundeAuf(zerlegt.mengePunkte, 2),
+                kursPunkte: rundeAuf(zerlegt.kursPunkte, 2),
+                tage: punkte.tage,
+                von: punkte.tagVon,
+                bis: punkte.tagBis,
+            } : null,
         }
     })
 }
@@ -760,7 +1437,7 @@ const REGIME_BUCKETS = [
  * Bot-Trades bleiben draussen: sie laufen nach eigener Mechanik weiter,
  * unabhängig davon, wie der Markt gestimmt ist.
  */
-async function holeRegime(tage = 365) {
+export async function holeRegime(tage = 365) {
     const t = Math.max(30, Math.min(3000, Number(tage) || 365))
     const fng = await holeFearGreed(t + 10)
 
@@ -884,7 +1561,7 @@ function regression(punkte) {
     return { a, b, s: Math.sqrt(ss / Math.max(1, n - 2)), n }
 }
 
-async function holeRainbow() {
+export async function holeRainbow() {
     return ausCache('rainbow', 12 * 60 * 60 * 1000, async () => {
         let punkte = []
         let quelle = 'blockchain.info'
@@ -957,7 +1634,7 @@ function gleitend(werte, n) {
  * eine Regel ableiten kann. Der Name kommt daher, dass 350/111 ≈ π ist; auch
  * das ist Zahlenmystik und kein Mechanismus.
  */
-async function holePiCycle() {
+export async function holePiCycle() {
     return ausCache('picycle', 12 * 60 * 60 * 1000, async () => {
         let reihe = []
         let quelle = 'blockchain.info'
@@ -1047,7 +1724,7 @@ async function holePiCycle() {
  * ist nachvollziehbar, WELCHE Coins die Aussage tragen, und die Auswahl folgt
  * derselben Krypto-Filterung wie überall sonst hier.
  */
-async function holeAltseason(tage = 90) {
+export async function holeAltseason(tage = 90) {
     const fenster = [30, 90].includes(Number(tage)) ? Number(tage) : 90
     const roh = await holeMarkt(100)
     const kandidaten = (roh.muenzen || [])
@@ -1227,7 +1904,7 @@ export function setupMarktradarRoutes(app) {
     app.get('/api/marktradar/funding', async (req, res) => {
         try {
             if (req.query.force === '1') verwerfeCache('funding|')
-            sendeRadar(res, await holeFunding(req.query.n))
+            sendeRadar(res, await holeFunding(req.query.n, req.query.rang))
         } catch (e) {
             sendRadarError(res, e, 'Funding-Raten')
         }
@@ -1257,6 +1934,36 @@ export function setupMarktradarRoutes(app) {
             sendeRadar(res, await holeLiquidationen(req.query.stunden))
         } catch (e) {
             sendRadarError(res, e, 'Liquidationen')
+        }
+    })
+
+    app.get('/api/marktradar/mechanik', async (req, res) => {
+        try {
+            if (req.query.force === '1') verwerfeCache('mechanik|')
+            sendeRadar(res, await holeMechanik(req.query.symbol, req.query.fenster))
+        } catch (e) {
+            sendRadarError(res, e, 'Marktmechanik')
+        }
+    })
+
+    app.get('/api/marktradar/makro', async (req, res) => {
+        try {
+            if (req.query.force === '1') verwerfeCache('makro')
+            sendeRadar(res, await holeMakro())
+        } catch (e) {
+            sendRadarError(res, e, 'Makro-Umfeld')
+        }
+    })
+
+    app.get('/api/marktradar/mechanik-erklaerung', async (req, res) => {
+        try {
+            res.json(await holeMechanikErklaerung(req.query.symbol, req.query.fenster))
+        } catch (e) {
+            const msg = e?.message || 'Einordnung fehlgeschlagen'
+            // Fehlender Schlüssel/Modell ist ein Konfigurationsproblem des
+            // Nutzers (400), alles andere ein Ausfall dahinter (502)
+            const konfig = /Schlüssel|Modell|Einstellungen/i.test(msg)
+            res.status(konfig ? 400 : 502).json({ error: msg })
         }
     })
 

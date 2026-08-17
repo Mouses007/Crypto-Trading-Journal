@@ -54,7 +54,17 @@ const PREISE = {
     'mistral-medium': [1.5, 7.5],
     'mistral-large': [0.5, 1.5],
     'mistral-small': [0.15, 0.6],
-    'grok-4': [4, 12],
+    // Längere Namen zuerst (Treffer über `includes`). Stand 17.08.2026 laut
+    // docs.x.ai/developers/pricing; vorher stand hier pauschal `grok-4: [4,12]`
+    // und rechnete damit rund das Doppelte des tatsächlichen Preises.
+    'grok-4.6': [2, 6],
+    'grok-4.5': [2, 6],
+    'grok-4.3': [1.25, 2.5],
+    'grok-build': [1, 2],
+    'grok-4': [2, 6],
+    // Längerer Name zuerst, sonst fängt `sonar` auch `sonar-pro` ein.
+    'sonar-pro': [3, 15],
+    'sonar': [1, 1],
     'qwen3.7-max': [2, 6],          // Alibaba nennt keinen öffentlichen Listenpreis
     'qwen3.7-plus': [0.5, 2],       // — Schätzwerte, nur für die Budget-Anzeige
     'qwen3.6-flash': [0.15, 0.6],
@@ -70,6 +80,84 @@ export function schaetzeKosten(model, promptTokens, completionTokens) {
     if (!treffer) return 0
     const [ein, aus] = PREISE[treffer]
     return (promptTokens / 1e6) * ein + (completionTokens / 1e6) * aus
+}
+
+// ── Guthaben-Status ──────────────────────────────────────────────────────
+//
+// Kein grosser Anbieter verrät sein Restguthaben über den normalen API-Key
+// (xAI nur per separatem Management-Key, der Rest gar nicht). Was sich ehrlich
+// sagen lässt, ist deshalb: „der letzte Aufruf scheiterte an fehlendem
+// Guthaben" — die Anbieter melden das mit eindeutigen Fehlertexten. Das wird
+// je Anbieter in `settings.aiQuotaStatus` festgehalten und beim nächsten
+// erfolgreichen Aufruf wieder gelöscht.
+
+/** Sieht diese Fehlermeldung nach aufgebrauchtem Guthaben/Kontingent aus? */
+export function istGuthabenFehler(text) {
+    return /insufficient[_ ]quota|insufficient[_ ]credits?|credit balance|balance is too low|out of credits|no credits|payment required|billing hard limit|purchase (more )?credits|HTTP 402|\b402\b|exceeded your current quota/i
+        .test(String(text || ''))
+}
+
+/**
+ * Guthaben-Status eines Anbieters festhalten.
+ * `fehler` gesetzt → als leer markieren (mit Meldung und Zeitpunkt);
+ * ohne `fehler` → Erfolg: Leer-Flag löschen, „zuletzt ok" höchstens stündlich
+ * schreiben, damit nicht jeder Aufruf einen Schreibzugriff kostet.
+ */
+export async function merkeKiGuthaben(provider, fehler = null) {
+    try {
+        const knex = getKnex()
+        const s = await knex('settings').where('id', 1).select('aiQuotaStatus').first()
+        let status = {}
+        try { status = JSON.parse(s?.aiQuotaStatus || '{}') } catch { /* Altbestand */ }
+
+        const alt = status[provider] || {}
+        if (fehler) {
+            status[provider] = {
+                leer: true,
+                meldung: String(fehler).slice(0, 200),
+                seit: alt.leer ? (alt.seit || Date.now()) : Date.now(),
+            }
+            // Nur beim Kippen melden, nicht bei jedem weiteren Fehlschlag:
+            // sonst schickt eine Fehlersalve eine Mail je Aufruf.
+            if (!alt.leer) {
+                const { melde } = await import('./benachrichtigungen.js')
+                melde('kiGuthabenLeer', {
+                    betreff: `KI-Guthaben aufgebraucht: ${provider}`,
+                    text: `Der Anbieter ${provider} nimmt keine Anfragen mehr an — `
+                        + 'das deutet auf ein leeres Guthaben oder ein erreichtes Limit hin.\n\n'
+                        + `Meldung: ${String(fehler).slice(0, 300)}\n\n`
+                        + 'Solange das anhält, fallen Lagebericht, KI-Berichte und Agentenläufe '
+                        + 'aus, die auf diesen Anbieter eingestellt sind.',
+                    schluessel: String(provider),
+                }).catch(() => { })
+            }
+        } else {
+            if (!alt.leer && alt.okSeit && Date.now() - alt.okSeit < 60 * 60 * 1000) return
+            status[provider] = { leer: false, okSeit: Date.now() }
+        }
+        await knex('settings').where('id', 1).update({ aiQuotaStatus: JSON.stringify(status) })
+    } catch (e) {
+        logWarn('llm', `Guthaben-Status nicht gespeichert: ${e.message}`)
+    }
+}
+
+/**
+ * Zugangsdaten für die Strategie- und Regel-Baukästen.
+ *
+ * Eigener Einstieg statt `ladeLlmConfig()` ohne Argumente: Die Baukästen
+ * schreiben Code-nahe Strukturen und profitieren von einem starken Modell,
+ * während die Routine-Arbeit anderswo billiger laufen darf. Leer eingestellt
+ * heisst weiterhin: der globale Anbieter.
+ */
+export async function ladeStrategieLlmConfig() {
+    const s = await getKnex()('settings')
+        .select('aiStrategieProvider', 'aiStrategieModell').where('id', 1).first()
+    const provider = String(s?.aiStrategieProvider || '').trim()
+    // Modell nur zusammen mit eigenem Anbieter — ein Modellname aus einem
+    // anderen Haus wäre bei jedem Aufruf ein 404.
+    return ladeLlmConfig(provider
+        ? { provider, model: String(s?.aiStrategieModell || '').trim() || undefined }
+        : {})
 }
 
 /**
@@ -333,14 +421,21 @@ export async function callLLMJson(cfg, { system, user, timeoutMs = DEFAULT_TIMEO
     }
 
     let antwort
-    if (cfg.provider === 'anthropic') antwort = await anthropic(cfg, system, user, timeoutMs, anhaenge)
-    else if (cfg.provider === 'gemini') antwort = await gemini(cfg, system, user, timeoutMs, anhaenge)
-    else if (cfg.provider === 'ollama') antwort = await ollama(cfg, system, user, timeoutMs, anhaenge)
-    else if (istOpenAiKompatibel(cfg.provider)) {
-        // openai, mistral, xai, qwen, custom — und deepseek aus dem Altbestand
-        if (!cfg.endpunkt) throw new Error(`Für ${cfg.provider} ist keine Basis-URL hinterlegt`)
-        antwort = await openaiKompatibel(cfg, system, user, timeoutMs, cfg.endpunkt, anhaenge)
-    } else throw new Error(`Unbekannter Provider: ${cfg.provider}`)
+    try {
+        if (cfg.provider === 'anthropic') antwort = await anthropic(cfg, system, user, timeoutMs, anhaenge)
+        else if (cfg.provider === 'gemini') antwort = await gemini(cfg, system, user, timeoutMs, anhaenge)
+        else if (cfg.provider === 'ollama') antwort = await ollama(cfg, system, user, timeoutMs, anhaenge)
+        else if (istOpenAiKompatibel(cfg.provider)) {
+            // openai, mistral, xai, qwen, custom — und deepseek aus dem Altbestand
+            if (!cfg.endpunkt) throw new Error(`Für ${cfg.provider} ist keine Basis-URL hinterlegt`)
+            antwort = await openaiKompatibel(cfg, system, user, timeoutMs, cfg.endpunkt, anhaenge)
+        } else throw new Error(`Unbekannter Provider: ${cfg.provider}`)
+    } catch (e) {
+        if (istGuthabenFehler(e.message)) await merkeKiGuthaben(cfg.provider, e.message)
+        throw e
+    }
+    // Erfolg vermerken — bewusst ohne await, der Status ist kein Blocker
+    merkeKiGuthaben(cfg.provider).catch(() => { })
 
     const json = parseJsonAntwort(antwort.text)
 

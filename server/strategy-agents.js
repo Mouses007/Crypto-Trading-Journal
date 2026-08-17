@@ -166,7 +166,16 @@ export async function agentenVeto({ instance, setup }) {
 
     // Budget zuerst — ein überschrittenes Budget darf nicht dazu führen, dass
     // ungeprüft gehandelt wird, es sei denn, das ist ausdrücklich gewünscht.
-    const budget = Number(konf.dailyBudgetUsd) || 0
+    //
+    // Die Instanz schlägt die globale Vorgabe. Ohne den Rückfall war der
+    // Schieberegler „LLM-Budget" in den Einstellungen wirkungslos: gespeichert
+    // wurde er, gelesen hat ihn niemand — wer ihn auf 1 USD stellte, handelte
+    // trotzdem unbegrenzt weiter.
+    let budget = Number(konf.dailyBudgetUsd) || 0
+    if (!budget) {
+        const s = await getKnex()('settings').select('strategyLlmBudgetUsd').where('id', 1).first()
+        budget = Number(s?.strategyLlmBudgetUsd) || 0
+    }
     if (budget > 0 && (await heutigeKosten()) >= budget) {
         if (konf.onBudgetExceeded === 'trade_without_agents') {
             ergebnis.reason = 'KI-Budget erschöpft — ohne Agentenprüfung gehandelt'

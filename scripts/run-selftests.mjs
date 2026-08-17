@@ -13,8 +13,8 @@
  * Zählerstände im Modulzustand halten — im selben Prozess würde der erste
  * Fehlschlag den Rest verschlucken.
  *
- * Keine DB, kein Netz: Dateien, die eine laufende Datenbank brauchen, sind in
- * AUSGENOMMEN aufgeführt.
+ * Keine DB, kein Netz: sollte je eine Datei eine laufende Datenbank brauchen,
+ * gehört sie in AUSGENOMMEN (derzeit leer).
  */
 
 import { spawn } from 'node:child_process'
@@ -25,9 +25,9 @@ import { fileURLToPath } from 'node:url'
 const wurzel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 /** Verzeichnisse, in denen Selbsttests liegen (nicht rekursiv gesucht). */
-const ORTE = ['server', 'server/strategies', 'src/utils']
+const ORTE = ['server', 'server/execution', 'server/strategies', 'src/utils', 'shared']
 
-/** Dateien, die hier nicht hingehören (z.B. weil sie eine DB brauchen). */
+/** Dateien, die hier nicht hingehören (z.B. weil sie eine DB brauchen — derzeit keine). */
 const AUSGENOMMEN = new Set([])
 
 const gruen = (s) => `\x1b[32m${s}\x1b[0m`

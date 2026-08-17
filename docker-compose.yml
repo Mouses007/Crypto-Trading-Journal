@@ -3,6 +3,11 @@ services:
     image: mouses007/trading-journal:latest
     container_name: crypto-trading-journal
     ports:
+      # ACHTUNG: ohne "127.0.0.1:"-Präfix ist der Port im ganzen LAN erreichbar.
+      # Das ist eine bewusste Freigabe und setzt das Passwort-Gate voraus —
+      # ohne Passwort startet der Container gesperrt (erst „Passwort festlegen"
+      # im Browser schaltet die API frei; bewusst offen: CTJ_ALLOW_INSECURE=1).
+      # Nur lokal am Host: - "127.0.0.1:${CTJ_PORT:-8080}:8080"
       - "${CTJ_PORT:-8080}:8080"
     environment:
       - CTJ_SECRET=${CTJ_SECRET}
@@ -17,9 +22,11 @@ services:
       # den Helfer-Container, damit compose das richtige Projekt findet.
       - CTJ_HOST_COMPOSE_DIR=${CTJ_HOST_COMPOSE_DIR}
     volumes:
-      # Read-only Docker-Socket — ermoeglicht Klick-Update aus der App heraus.
-      # Entferne den Mount, wenn du Updates nur manuell via
-      # "docker compose pull && docker compose up -d" machen willst.
+      # Docker-Socket — ermoeglicht Klick-Update aus der App heraus. Der Mount
+      # ist NICHT read-only (das Update startet einen Helper-Container) und
+      # damit Root-aequivalent auf dem Host. Entferne den Mount, wenn du
+      # Updates nur manuell via "docker compose pull && docker compose up -d"
+      # machen willst.
       - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env

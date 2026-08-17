@@ -8,7 +8,7 @@ import { logError } from './logger.js'
 
 const VALID_TABLES = [
     'trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions',
-    'incoming_positions', 'share_card_templates',
+    'incoming_positions', 'share_card_templates', 'live_sessions',
     // Strategie-Agenten: nur lesend über die generische Route (siehe READ_ONLY_TABLES)
     'strategy_instances', 'strategy_setups', 'strategy_runs', 'strategy_positions',
     'strategy_trades', 'strategy_backtests', 'strategy_suggestions', 'strategy_drafts', 'rule_strategies',
@@ -29,8 +29,10 @@ const READ_ONLY_TABLES = [
 // generic settings PUT below.
 export const SETTINGS_SENSITIVE_FIELDS = [
     'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-    'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen',
-    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash', 'aiKeyCustom'
+    'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen', 'aiKeyPerplexity',
+    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash', 'aiKeyCustom',
+    // SMTP-Passwort: geschrieben nur über /api/mail/settings (verschlüsselt)
+    'mailPasswort'
 ]
 
 /** Strip sensitive fields from a settings row, exposing only `${field}Set` presence flags. */
@@ -61,13 +63,22 @@ const VALID_SETTINGS_KEYS = [
     'liveSymbol', 'liveMarket', 'liveViewPct', 'liveFrameMs', 'liveHistoryMin', 'liveRamp',
     'liveShowProfile', 'livePauseInBackground', 'liveColorMode', 'liveColorRef', 'liveAutoFollow',
     'liveThreshold', 'liveShowLiquidations', 'livePrefillMin', 'liveDotStep', 'liveProfileW', 'liveShowVolumeBars',
-    'levMapTier', 'levMapHours', 'levMapSpanPct', 'levMapMmr', 'levMapWeights', 'levMapView', 'levMapThreshold', 'levMapProfileW',
+    'levMapTier', 'levMapHours', 'levMapSpanPct', 'levMapMmr', 'levMapMmrQuelle', 'levMapWeights', 'levMapView', 'levMapThreshold', 'levMapProfileW',
     'liveRecordEnabled', 'liveRecordSymbols', 'liveRecordDays', 'liveRecordFrameMs',
     'liveRecordRows', 'liveRecordRangePct', 'liveRecordAllLiq',
     'scalpMaxMinutes', 'daytradeMaxHours', 'feeFixMigrated',
     'strategyLiveEnabled', 'strategyKillSwitch', 'strategyMaxLeverage', 'strategyHiddenTemplates',
     'strategyMinPaperTrades', 'strategyLlmBudgetUsd', 'aiModels', 'aiCustomUrl',
-    'radarRsiSymbols', 'radarRsiTfs', 'radarKalenderLaender', 'radarKalenderImpact', 'radarArschlochfilter', 'radarNewsAuto', 'radarNewsStunde', 'radarNewsVideos', 'radarNewsModel', 'radarNewsAufloesung', 'radarNewsBerichtProvider', 'radarNewsBerichtModell', 'radarPicycleAlarm', 'radarPicycleSchwelle'
+    'radarRsiSymbols', 'radarRsiTfs', 'radarKalenderLaender', 'radarKalenderImpact', 'radarArschlochfilter', 'radarNewsAuto', 'radarNewsStunde', 'radarNewsVideos', 'radarNewsModel', 'radarNewsAufloesung', 'radarNewsBerichtProvider', 'radarNewsBerichtModell', 'radarPicycleAlarm', 'radarPicycleSchwelle', 'radarFundingDivergenz', 'radarDivergenzSymbole',
+    'radarNewsRhythmus', 'radarNewsWochentag', 'radarNewsThemen', 'radarNewsLaenge', 'radarArschlochAn', 'radarArschlochWoerter', 'radarNewsXModell',
+    'radarNewsRechercheModell',
+    'livetradingAn',
+    // Anbieter/Modell je KI-Funktion; leer = global
+    'aiBerichtProvider', 'aiBerichtModell', 'aiAgentProvider', 'aiAgentModell',
+    'aiStrategieProvider', 'aiStrategieModell',
+    // Kanalwahl je Meldungstyp. Der SMTP-Zugang läuft NICHT hierüber, sondern
+    // über /api/mail/settings — dort wird das Passwort verschlüsselt.
+    'benachrichtigungen'
 ]
 
 // Bekannte Spalten pro Tabelle (Whitelist gegen SQL-Injection); ergänzt um Migrations-Spalten
@@ -81,6 +92,7 @@ const TABLE_COLUMNS = {
     excursions: ['id', 'dateUnix', 'tradeId', 'stopLoss', 'maePrice', 'mfePrice', 'createdAt', 'updatedAt'],
     incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType', 'closingTradeType', 'strategyFollowed', 'trendScreenshotId', 'tpslHistory'],
     share_card_templates: ['id', 'name', 'prompt', 'imageBase64', 'category', 'createdAt', 'updatedAt'],
+    live_sessions: ['id', 'startUnix', 'endUnix', 'symbol', 'market', 'status', 'planMaxVerlustUsd', 'planMaxTrades', 'planNotiz', 'notizen', 'fazit', 'protokoll', 'kacheln', 'trades', 'pnlUsd', 'tradeAnzahl', 'planVerletzt', 'archiviert', 'createdAt', 'updatedAt'],
     strategy_instances: ['id', 'strategyId', 'name', 'enabled', 'mode', 'broker', 'market', 'symbols', 'timeframe', 'timeframes', 'params', 'risk', 'agents', 'paramsVersion', 'liveApprovedAt', 'lastRunAt', 'lastError', 'createdAt', 'updatedAt'],
     strategy_setups: ['id', 'instanceId', 'strategyId', 'symbol', 'timeframe', 'direction', 'status', 'sweepLevel', 'sweepPrice', 'sweepCandleTime', 'obHigh', 'obLow', 'obCandleTime', 'watchFrom', 'tradeableFrom', 'impulseExtreme', 'entry', 'stopLoss', 'takeProfit', 'rr', 'confirmations', 'invalidReason', 'rejectReason', 'triggeredAt', 'paramsVersion', 'detectorVersion', 'createdAt', 'updatedAt'],
     strategy_runs: ['id', 'instanceId', 'setupId', 'sentimentOutput', 'portfolioOutput', 'riskOutput', 'executionOutput', 'finalAction', 'reason', 'provider', 'model', 'totalTokens', 'costUsd', 'createdAt'],
@@ -97,7 +109,7 @@ const JSON_COLUMNS = {
     trades: ['executions', 'trades', 'blotter', 'pAndL', 'cashJournal'],
     screenshots: ['maState'],
     tags: ['tags', 'closingTags'],
-    settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'customTimeframes', 'balances', 'strategyHiddenTemplates'],
+    settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'customTimeframes', 'balances', 'strategyHiddenTemplates', 'benachrichtigungen'],
     incoming_positions: ['bitunixData', 'tags', 'closingTags', 'historyData', 'tpslHistory'],
     notes: ['tradingMetadata'],
     strategy_instances: ['symbols', 'timeframes', 'params', 'risk', 'agents'],
@@ -107,6 +119,7 @@ const JSON_COLUMNS = {
     strategy_suggestions: ['proposedParams'],
     strategy_drafts: ['spec', 'messages'],
     rule_strategies: ['rules'],
+    live_sessions: ['protokoll', 'kacheln', 'trades'],
 }
 
 function parseJsonColumns(tableName, row) {
@@ -260,7 +273,13 @@ export function setupApiRoutes(app) {
             if (req.body.apiKey !== undefined && !String(req.body.apiKey).includes('•')) {
                 updateData.apiKey = req.body.apiKey ? encrypt(req.body.apiKey) : ''
             }
-            if (req.body.secretKey !== undefined) updateData.secretKey = req.body.secretKey ? encrypt(req.body.secretKey) : ''
+            // Die GET-Antwort liefert den secretKey zwar nicht maskiert aus
+            // (nur hasSecret), aber die Maskenprüfung gehört trotzdem an beide
+            // Schlüssel — ein Client, der ein maskiertes Secret zurückschreibt,
+            // würde sonst den echten Schlüssel überschreiben.
+            if (req.body.secretKey !== undefined && !String(req.body.secretKey).includes('•')) {
+                updateData.secretKey = req.body.secretKey ? encrypt(req.body.secretKey) : ''
+            }
             // Allow updating other safe fields
             if (req.body.lastHistoryScan !== undefined) updateData.lastHistoryScan = req.body.lastHistoryScan
             if (req.body.lastApiImport !== undefined) updateData.lastApiImport = req.body.lastApiImport

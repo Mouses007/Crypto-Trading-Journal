@@ -86,6 +86,14 @@ console.log('\nBitget-Verlauf\n')
     // Fallback-Formel: 5 − 0,2 + (−0,2) = 4,6
     check('ohne netProfit: netto = brutto − Fee + Funding (signiert)', nah(trades[2].NetProceeds, 4.6), String(trades[2].NetProceeds))
 
+    // Funding und Trading-Fee dürfen nicht nur in den Netto-Fallback fliessen,
+    // sondern müssen als eigene Felder im Trade landen — addTrades.js liest
+    // row.FundingFee/row.TradingFee, und ohne die Felder zeigte das Journal
+    // Funding=0, obwohl die CSV es hatte.
+    check('FundingFee steht signiert im Trade-Objekt', nah(trades[0].FundingFee, 0.03) && nah(trades[2].FundingFee, -0.2),
+        JSON.stringify({ p1: trades[0].FundingFee, p3: trades[2].FundingFee }))
+    check('TradingFee steht getrennt im Trade-Objekt', nah(trades[0].TradingFee, 0.63), String(trades[0].TradingFee))
+
     // 1754040000000 ms = 2025-08-01 09:20:00 UTC
     check('13-stelliger Zeitstempel wird zu UTC-Datum', trades[0].DateUTC === '2025-08-01 09:20:00', trades[0].DateUTC)
     check('Datums-Text bleibt unangetastet', trades[2].DateUTC === '2026-08-01 10:00:00')

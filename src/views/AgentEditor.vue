@@ -23,7 +23,11 @@ import { useAgentTimelineChart } from '../utils/charts.js'
 
 const { t } = useI18n()
 
-const bausteine = ref({ indikatoren: [], signale: [], einstieg: [], vergleiche: [], anker: [], ziele: [] })
+const bausteine = ref({ indikatoren: [], signale: [], einstieg: [], vergleiche: [], anker: [], ziele: [],
+    vwapAnker: [], muster: [] })
+
+/** VWAP-Anker als Klartext. Schlüssel: vwapAnchorSession, vwapAnchorSwingHigh, … */
+const ankerLabel = (a) => t('strategies.vwapAnchor' + a.charAt(0).toUpperCase() + a.slice(1))
 const vorlagen = ref([])
 const liste = ref([])
 const meldung = ref('')
@@ -543,6 +547,10 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
                             <select v-model="entwurf.rules.direction" class="form-select form-select-sm" @change="pruefen">
                                 <option value="long">Long</option>
                                 <option value="short">Short</option>
+                                <!-- Beide: die Erkennung läuft je Richtung einmal.
+                                     Kostet doppelte Rechenzeit, spart die
+                                     Zwillingsstrategie. -->
+                                <option value="both">{{ t('strategies.directionBoth') }}</option>
                             </select>
                         </div>
                     </div>
@@ -695,11 +703,22 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
                                 <template v-if="['vwap','vwapBand'].includes(ind.type)">
                                     <div class="d-flex gap-1">
                                         <select v-model="ind.anchor" class="form-select form-select-sm" @change="pruefen">
-                                            <option value="session">{{ t('strategies.vwapAnchorSession') }}</option>
-                                            <option value="rolling">{{ t('strategies.vwapAnchorRolling') }}</option>
+                                            <option v-for="a in (bausteine.vwapAnker || [])" :key="a" :value="a">
+                                                {{ ankerLabel(a) }}
+                                            </option>
                                         </select>
                                         <input v-if="ind.anchor === 'rolling'" v-model.number="ind.period" type="number" min="2"
                                             class="form-control form-control-sm" style="max-width:5rem" @change="pruefen" />
+                                        <!-- Swing-Anker: Pivot-Stärke und welche Fächerlinie gemeint ist.
+                                             Ohne diese Felder hinge die Linie stumm auf ihren Vorgaben. -->
+                                        <template v-if="['swingHigh','swingLow'].includes(ind.anchor)">
+                                            <ZahlOderParam :ziel="ind" feld="pivot" :standard="20"
+                                                :titel="t('strategies.vwapPivot')" :params="parameterNamen" @aendern="pruefen" />
+                                            <select v-model.number="ind.nth" class="form-select form-select-sm"
+                                                style="max-width:5rem" :title="t('strategies.vwapNth')" @change="pruefen">
+                                                <option v-for="n in [1,2,3]" :key="n" :value="n">{{ n }}.</option>
+                                            </select>
+                                        </template>
                                         <select v-if="ind.type === 'vwapBand'" class="form-select form-select-sm"
                                             style="max-width:7rem" :value="refText(ind.mult)"
                                             :title="t('strategies.vwapMultHint')"
@@ -708,6 +727,11 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
                                             <option v-for="pk in parameterNamen" :key="pk" :value="'param:' + pk">{{ pk }}</option>
                                         </select>
                                     </div>
+                                </template>
+                                <!-- Die Tageseröffnung hat keine Einstellung — ein
+                                     Periodenfeld daneben wäre eine Lüge. -->
+                                <template v-else-if="ind.type === 'dayOpen'">
+                                    <span class="text-muted small">{{ t('strategies.noSetting') }}</span>
                                 </template>
                                 <!-- MACD, Bollinger und Stochastik haben eigene
                                      Kennzahlen. Die Engine liest sie längst
@@ -777,6 +801,43 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
                                         :placeholder="t('strategies.rightBars')" @change="pruefen" />
                                 </div>
                             </template>
+                            <!-- Berührung einer Linie, die vorher schon gehalten hat:
+                                 Linie + wie oft vorher. „2" heisst dritte Berührung. -->
+                            <template v-else-if="entwurf.rules.signal.type === 'levelTouch'">
+                                <div class="col-4">
+                                    <select class="form-select form-select-sm" :value="refText(entwurf.rules.signal.line)"
+                                        :title="t('strategies.touchLine')"
+                                        @change="refSetzen(entwurf.rules.signal, 'line', $event.target.value)">
+                                        <option value="">–</option>
+                                        <option v-for="x in referenzen" :key="x" :value="x">{{ x }}</option>
+                                    </select>
+                                </div>
+                                <div class="col-4">
+                                    <ZahlOderParam :ziel="entwurf.rules.signal" feld="minPrevTouches" :standard="2"
+                                        :titel="t('strategies.touchPrev')" :params="parameterNamen" @aendern="pruefen" />
+                                </div>
+                                <div class="col-4 offset-4 mt-1 d-flex gap-1">
+                                    <ZahlOderParam :ziel="entwurf.rules.signal" feld="separation" :standard="3"
+                                        :titel="t('strategies.touchSeparation')" :params="parameterNamen" @aendern="pruefen" />
+                                    <ZahlOderParam :ziel="entwurf.rules.signal" feld="window" :standard="200"
+                                        :titel="t('strategies.touchWindow')" :params="parameterNamen" @aendern="pruefen" />
+                                </div>
+                            </template>
+                            <!-- Kerzenmuster als Auslöser: Muster + Gegenkerzen davor.
+                                 Die Engine liest beides längst, im Formular fehlten sie. -->
+                            <template v-else-if="entwurf.rules.signal.type === 'pattern'">
+                                <div class="col-4">
+                                    <select v-model="entwurf.rules.signal.pattern" class="form-select form-select-sm" @change="pruefen">
+                                        <option v-for="m in (bausteine.muster || [])" :key="m" :value="m">
+                                            {{ t('strategies.muster_' + m) }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="col-4">
+                                    <ZahlOderParam :ziel="entwurf.rules.signal" feld="prevOpposite" :standard="0"
+                                        :titel="t('strategies.prevOpposite')" :params="parameterNamen" @aendern="pruefen" />
+                                </div>
+                            </template>
                             <template v-else>
                                 <div class="col-4">
                                     <select class="form-select form-select-sm" :value="refText(entwurf.rules.signal.a)"
@@ -814,14 +875,23 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
                                 </select>
                             </div>
                             <div class="col-3">
-                                <select class="form-select form-select-sm" :value="refText(b.right)"
+                                <!-- Der Berührungszähler hat keine rechte Seite — nur die Linie links. -->
+                                <select v-if="b.op !== 'priorTouchesGte'" class="form-select form-select-sm" :value="refText(b.right)"
                                     @change="refSetzen(b, 'right', $event.target.value)">
                                     <option v-for="x in referenzen" :key="x" :value="x">{{ x }}</option>
                                     <option v-for="pk in parameterNamen" :key="pk" :value="'param:' + pk">{{ t('strategies.fromParam', { name: pk }) }}</option>
                                 </select>
+                                <div v-else class="d-flex gap-1">
+                                    <ZahlOderParam :ziel="b" feld="separation" :standard="3"
+                                        :titel="t('strategies.touchSeparation')" :params="parameterNamen" @aendern="pruefen" />
+                                    <ZahlOderParam :ziel="b" feld="window" :standard="200"
+                                        :titel="t('strategies.touchWindow')" :params="parameterNamen" @aendern="pruefen" />
+                                </div>
                             </div>
                             <div class="col-2">
-                                <select v-if="['distancePctGt','distancePctLt','isBullish','isBearish'].includes(b.op)"
+                                <ZahlOderParam v-if="b.op === 'priorTouchesGte'" :ziel="b" feld="value" :standard="2"
+                                    :titel="t('strategies.touchPrev')" :params="parameterNamen" @aendern="pruefen" />
+                                <select v-else-if="['distancePctGt','distancePctLt','isBullish','isBearish'].includes(b.op)"
                                     class="form-select form-select-sm" :value="refText(b.value)"
                                     @change="refSetzen(b, 'value', $event.target.value)">
                                     <option v-for="n in [0,0.5,1,2,2.5,5,10]" :key="n" :value="String(n)">{{ n }}</option>
@@ -896,7 +966,9 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
                                     </select>
                                 </div>
                                 <div class="col-2">
-                                    <select class="form-select form-select-sm" :value="refText(v.when.right)"
+                                    <ZahlOderParam v-if="v.when.op === 'priorTouchesGte'" :ziel="v.when" feld="value" :standard="2"
+                                        :titel="t('strategies.touchPrev')" :params="parameterNamen" @aendern="pruefen" />
+                                    <select v-else class="form-select form-select-sm" :value="refText(v.when.right)"
                                         @change="refSetzen(v.when, 'right', $event.target.value)">
                                         <option v-for="x in referenzen" :key="x" :value="x">{{ x }}</option>
                                     </select>

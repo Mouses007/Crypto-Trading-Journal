@@ -96,6 +96,13 @@ export async function openLivePosition({ setup, size, leverage, clientOrderId, m
         return { ok: true, externalOrderId: '', request: body, response: null, geschickt: false }
     }
 
+    // Ohne Stop wird gar nicht erst gesendet. Numerisch geprüft, weil
+    // stopLoss=0 als String '0' truthy wäre und die Prüfung nach dem Senden
+    // sonst still passieren liesse.
+    if (!Number(body.slPrice)) {
+        return { ok: false, reason: 'no_stop_loss', request: body, response: null, geschickt: false }
+    }
+
     const cfg = await keys()
     let antwort
     try {
@@ -139,9 +146,21 @@ export async function openLivePosition({ setup, size, leverage, clientOrderId, m
 export async function getLivePositionId(symbol, direction) {
     const cfg = await keys()
     const r = await bitunixRequest('GET', PFAD_POSITIONEN, cfg.apiKey, cfg.secretKey, { symbol })
-    const liste = Array.isArray(r?.data) ? r.data : []
+    return findePositionsId(Array.isArray(r?.data) ? r.data : [], symbol, direction)
+}
+
+/**
+ * Reiner Kern der Positions-Suche: Symbol UND Seite müssen stimmen.
+ *
+ * Kein Rückfall auf „es gibt ja nur eine" — genau eine offene Position kann
+ * auch eine handgehaltene GEGENposition sein, und ein Flash-Close darauf würde
+ * sie schliessen. Lieber keine Kennung liefern (der Aufrufer bricht dann ab),
+ * als die falsche.
+ */
+export function findePositionsId(liste, symbol, direction) {
     const seite = direction === 'long' ? 'BUY' : 'SELL'
-    const treffer = liste.find((x) => x.symbol === symbol && (x.side === seite || liste.length === 1))
+    const treffer = (Array.isArray(liste) ? liste : [])
+        .find((x) => x?.symbol === symbol && x?.side === seite)
     return treffer?.positionId ? String(treffer.positionId) : ''
 }
 

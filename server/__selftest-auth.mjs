@@ -14,7 +14,7 @@
  * genau der Fall, den diese Prüfungen brauchen.
  */
 
-import { istLoopbackHost, setzeBindungsModus, offenerBetriebErlaubt, sessionCookieMiddleware, istErlaubterHost } from './auth.js'
+import { istLoopbackHost, setzeBindungsModus, offenerBetriebErlaubt, sessionCookieMiddleware, apiAuthMiddleware, istErlaubterHost } from './auth.js'
 import { pruefeKiEndpunkt } from './ollama-url.js'
 
 let bestanden = 0
@@ -79,6 +79,30 @@ console.log('\nCookie-Vergabe ohne Passwortschutz\n')
     if (alt === undefined) delete process.env.CTJ_ALLOW_INSECURE
     else process.env.CTJ_ALLOW_INSECURE = alt
     setzeBindungsModus(true)
+}
+
+console.log('\nErst-Einrichtung (gesperrter Netzbetrieb)\n')
+
+{
+    // Attrappe für die API-Auth: prüft nur, ob die Middleware durchlässt.
+    const apiLauf = (url) => {
+        let weiter = false
+        let status = 0
+        apiAuthMiddleware(
+            { originalUrl: url, url, headers: {} },
+            { status: (s) => { status = s; return { json: () => {} } } },
+            () => { weiter = true },
+        )
+        return { weiter, status }
+    }
+
+    // Gate ist aus (authConfig ohne loadAuthConfig = { enabled: false }):
+    // das ERSTE Passwort darf ohne Session gesetzt werden — sonst käme ein
+    // netzgebundener Container (keine Cookie-Vergabe) nie aus der Sperre.
+    const setzen = apiLauf('/api/auth/set-password')
+    check('Gate aus: /api/auth/set-password geht ohne Session durch', setzen.weiter === true)
+    check('andere API-Routen bleiben ohne Session gesperrt', apiLauf('/api/db/trades').status === 401)
+    check('Login-Flow-Routen bleiben öffentlich', apiLauf('/api/auth/status').weiter === true)
 }
 
 console.log('\nHost-Header (DNS-Rebinding)\n')

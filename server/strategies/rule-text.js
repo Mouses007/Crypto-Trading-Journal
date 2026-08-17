@@ -19,6 +19,7 @@ const ANKER = {
     open: 'die Eröffnung',
     high: 'das Hoch',
     low: 'das Tief',
+    volume: 'das Volumen',
     signalPrice: 'der Auslöserpreis',
     signalHigh: 'das Hoch der Auslöserkerze',
     signalLow: 'das Tief der Auslöserkerze',
@@ -39,6 +40,7 @@ const ANKER_DATIV = {
     open: 'der Eröffnung',
     high: 'dem Hoch',
     low: 'dem Tief',
+    volume: 'dem Volumen',
     signalPrice: 'dem Auslöserpreis',
     signalHigh: 'dem Hoch der Auslöserkerze',
     signalLow: 'dem Tief der Auslöserkerze',
@@ -49,12 +51,21 @@ const ANKER_DATIV = {
     lastSwingHigh: 'dem letzten Swing-Hoch',
 }
 
+/** Dieselben Paare wie im Interpreter — bei „beide Richtungen" gespiegelt. */
+const SPIEGEL = {
+    low: 'high', high: 'low',
+    signalLow: 'signalHigh', signalHigh: 'signalLow',
+    correctionLow: 'correctionHigh', correctionHigh: 'correctionLow',
+    lastSwingLow: 'lastSwingHigh', lastSwingHigh: 'lastSwingLow',
+}
+
 const SIGNAL = {
     pivotHigh: 'ein Swing-Hoch',
     pivotLow: 'ein Swing-Tief',
     crossUp: 'eine Kreuzung nach oben',
     crossDown: 'eine Kreuzung nach unten',
     pattern: 'ein Kerzenmuster',
+    levelTouch: 'eine Berührung einer Linie, die vorher schon gehalten hat',
 }
 
 const MUSTER = {
@@ -98,6 +109,10 @@ function wert(v, dativ = false) {
 function bedingung(b) {
     if (!b || !b.op) return null
     if (OP1[b.op]) return OP1[b.op]
+    if (b.op === 'priorTouchesGte') {
+        return `${wert(b.left)} vorher schon mindestens ${wert(b.value)}× gehalten hat`
+            + ` (innerhalb ${wert(b.window)} Kerzen, mindestens ${wert(b.separation)} Kerzen auseinander)`
+    }
     const links = wert(b.left)
     const rechts = wert(b.right)
     const wie = OP2[b.op] || b.op
@@ -115,12 +130,15 @@ export function regelnAlsSaetze(regeln) {
     if (!regeln || typeof regeln !== 'object') return []
     const r = regeln
     const saetze = []
-    const richtung = r.direction === 'short' ? 'Short' : 'Long'
+    const beide = r.direction === 'both'
+    const richtung = beide ? 'Long und Short' : r.direction === 'short' ? 'Short' : 'Long'
 
     saetze.push({
         titel: 'Richtung',
-        text: `Gehandelt wird ausschliesslich ${richtung}`
-            + (Array.isArray(r.timeframes) && r.timeframes.length ? ` auf ${r.timeframes.join(', ')}.` : '.'),
+        text: `Gehandelt wird ${beide ? 'in beiden Richtungen' : `ausschliesslich ${richtung}`}`
+            + (Array.isArray(r.timeframes) && r.timeframes.length ? ` auf ${r.timeframes.join(', ')}.` : '.')
+            + (beide ? ' Jede Bedingung wird je Richtung getrennt geprüft — bei Short zählt als'
+                + ' Ablehnung ein Schluss UNTER der Linie, und der Stop liegt darüber.' : ''),
     })
 
     // Auslöser
@@ -130,6 +148,15 @@ export function regelnAlsSaetze(regeln) {
         ausloeser += ` (${wert(sig.left)} Kerzen links, ${wert(sig.right)} rechts)`
     } else if (sig.type === 'pattern') {
         ausloeser = MUSTER[sig.pattern] || ausloeser
+    } else if (sig.type === 'levelTouch') {
+        // Bei einer festen Zahl lässt sich die Berührung mitzählen; hängt sie an
+        // einem Parameter, muss der Name stehen bleiben — sonst verschwindet die
+        // wichtigste Zahl der Strategie aus dem Klartext.
+        const n = Number(sig.minPrevTouches)
+        ausloeser = `eine Berührung von ${wert(sig.line)}, nachdem die Linie dort schon `
+            + (Number.isFinite(n)
+                ? `${n}× gehalten hat (gehandelt wird also die ${n + 1}. Berührung)`
+                : `${wert(sig.minPrevTouches)}× gehalten hat`)
     } else if (sig.type === 'crossUp' || sig.type === 'crossDown') {
         // Die Prüfung legt die beiden Linien als `a`/`b` ab, nicht als
         // left/right — mit den falschen Feldern stand hier „? über ?".
@@ -160,7 +187,13 @@ export function regelnAlsSaetze(regeln) {
     const sl = r.stopLoss || {}
     saetze.push({
         titel: 'Stop',
-        text: `Der Stop liegt ${wert(sl.offsetPct)} % ${r.direction === 'short' ? 'über' : 'unter'} ${wert(sl.anchor, true)}.`,
+        // Bei beiden Richtungen spiegelt der Interpreter den Anker (Swing-Tief
+        // ↔ Swing-Hoch). Der Satz muss BEIDE nennen, sonst liest man einen
+        // Short-Stop unter dem Einstieg heraus.
+        text: `Der Stop liegt ${wert(sl.offsetPct)} % `
+            + (beide
+                ? `unter ${wert(sl.anchor, true)} (Long) bzw. über ${wert(SPIEGEL[sl.anchor] || sl.anchor, true)} (Short).`
+                : `${r.direction === 'short' ? 'über' : 'unter'} ${wert(sl.anchor, true)}.`),
     })
 
     // Ziel

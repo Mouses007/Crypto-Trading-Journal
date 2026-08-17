@@ -25,10 +25,16 @@ function switchMode(mode) {
         <button v-for="m in MODES" :key="m.id" type="button" :disabled="!m.enabled"
             :title="m.enabled ? '' : t('modes.comingSoon')"
             :class="['mode-btn', appMode === m.id ? 'active' : '']" @click="switchMode(m)">
-            <i :class="m.icon"></i><span>{{ t(m.titleKey) }}</span>
-            <!-- Der Punkt macht schon im Umschalter klar, dass der Modus
-                 unfertig ist — die ausführliche Warnung steht dann auf der Seite. -->
-            <span v-if="m.beta" class="beta-dot" :title="t('modes.betaHint')">Beta</span>
+            <!-- Kein Symbol: bei 72 px je Feld frassen Symbol und Abstand 19 px,
+                 und dann passte „Live-Analyse" nicht mehr hinein. Die drei
+                 Beschriftungen sind eindeutig genug, und die aktive Fläche ist
+                 ohnehin farbig hervorgehoben. -->
+            <span class="mode-label" :title="t(m.titleKey)">{{ t(m.titleKey) }}</span>
+            <!-- Ein PUNKT, kein Wort: „Beta" ausgeschrieben machte diesen Knopf
+                 rund 30 px breiter als die anderen beiden und schob den
+                 Umschalter über die Seitenleiste hinaus. Die Bedeutung trägt
+                 der Titel, die ausführliche Warnung steht auf der Seite. -->
+            <span v-if="m.beta" class="beta-dot" :title="t('modes.betaHint')"></span>
         </button>
     </div>
 </template>
@@ -38,7 +44,7 @@ function switchMode(mode) {
 .mode-switch {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 0.25rem;
+    gap: 0.15rem;
     margin: 0.6rem 0 0.2rem;
     padding: 0.2rem;
     border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
@@ -46,23 +52,25 @@ function switchMode(mode) {
     background: var(--black-bg-7);
 }
 
+/* Fester kleiner Punkt: er darf die Breite des Knopfes nicht beeinflussen. */
 .beta-dot {
-    font-size: 0.6rem;
-    font-weight: 600;
-    line-height: 1;
-    padding: 0.12rem 0.3rem;
-    border-radius: 0.5rem;
-    background: rgba(240, 196, 25, 0.22);
-    color: rgba(240, 196, 25, 0.95);
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(240, 196, 25, 0.95);
 }
 
 .mode-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.3rem;
-    font-size: 0.74rem;
-    padding: 0.22rem 0.3rem;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    /* Waagrecht knapp: „Live-Analyse" ist die längste Beschriftung und lag mit
+       0.2rem Innenabstand genau 1 px über dem Platz. Ein Pixel Reserve ist
+       keine Reserve — bei anderer Schriftglättung kürzt es doch. */
+    padding: 0.22rem 0.1rem;
     border: none;
     border-radius: 999px;
     background: transparent;
@@ -71,10 +79,25 @@ function switchMode(mode) {
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
+    /*
+     * ENTSCHEIDEND: Rasterelemente haben von Haus aus `min-width: auto` und
+     * schrumpfen deshalb nie unter ihre Inhaltsbreite. Zusammen mit `nowrap`
+     * ergaben die drei Knöpfe 294 px in einem 234 px breiten Behälter — der
+     * dritte ragte über die Seitenleiste hinaus. Mit `min-width: 0` gilt `1fr`
+     * wirklich, und die Beschriftung kürzt sich zur Not selbst.
+     */
+    min-width: 0;
+    overflow: hidden;
+}
+
+.mode-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .mode-btn i {
     font-size: 0.9rem;
+    flex: 0 0 auto;
 }
 
 .mode-btn:hover:not(:disabled) {

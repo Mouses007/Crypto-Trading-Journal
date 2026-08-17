@@ -11,7 +11,7 @@ import { decrypt } from './crypto.js'
 import { logWarn, logError } from './logger.js'
 import { AGENT_TOOLS, executeTool } from './ai-agent-tools.js'
 import { resetBacktestKontingent } from './strategy-tools.js'
-import { assertAllowedOllamaUrl } from './ollama-api.js'
+import { assertAllowedOllamaUrl, waehleAnbieter } from './ollama-api.js'
 import {
     samplingFelder, KEY_SPALTEN, KI_URL_SPALTEN,
     keySpalte, istOpenAiKompatibel, chatEndpunkt,
@@ -30,11 +30,15 @@ async function loadAiSettings() {
     const knex = getKnex()
     const settings = await knex('settings')
         .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
+            'aiAgentProvider', 'aiAgentModell',
             ...KEY_SPALTEN, ...KI_URL_SPALTEN)
         .where('id', 1).first()
     if (!settings) throw new Error('No AI settings found')
 
-    const provider = settings.aiProvider || 'ollama'
+    // Eigener Anbieter für den Agenten; leer = der global eingestellte.
+    // Der Agent ist der teuerste Verbraucher (Werkzeugschleife über mehrere
+    // Runden), deshalb lohnt hier eine eigene Wahl besonders.
+    const { provider, model } = waehleAnbieter(settings, 'Agent')
     const col = keySpalte(provider)
     let apiKey = ''
     if (col && settings[col]) {
@@ -47,7 +51,7 @@ async function loadAiSettings() {
 
     return {
         provider,
-        model: settings.aiModel || '',
+        model,
         apiKey,
         temperature: settings.aiTemperature ?? 0.7,
         maxTokens: settings.aiMaxTokens || 4000,

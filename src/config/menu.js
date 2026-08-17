@@ -7,6 +7,16 @@
  * `id` === route.name === pageId. `group: null` heisst: Seite existiert, taucht
  * aber nicht als Menüeintrag auf (Konten hat eine eigene Pille, /setup und
  * /imports sind Sonderfälle).
+ *
+ * `flag` nennt eine Einstellungsspalte, die die Seite ein- und ausschaltet.
+ * Fehlt das Feld, ist die Seite immer da. Bewusst nur ein Spaltenname und kein
+ * Vorgang: dieses Modul bleibt frei von Vue und von Datenbankwissen — wer die
+ * Liste rendert, schlägt den Wert in den Einstellungen nach.
+ *
+ * `nurDesktop` blendet die Seite auf Telefonen aus. Kein Geschmacksurteil,
+ * sondern eine Platzfrage: ein Arbeitsplatz aus elf Kacheln, Orderbuch und
+ * Kerzenchart lässt sich auf 375 Pixeln nicht bedienen, und ein Werkzeug, das
+ * dort nur halb funktioniert, ist schlimmer als eines, das gar nicht erscheint.
  */
 
 export const PAGES = [
@@ -34,6 +44,14 @@ export const PAGES = [
     { id: 'openinterest', mode: 'live', path: '/openinterest', icon: 'uil uil-layer-group', titleKey: 'nav.openInterest', group: 'liveAnalyze' },
     { id: 'liquidity', mode: 'live', path: '/liquidity', icon: 'uil uil-chart-line', titleKey: 'nav.liquidity', group: 'liveAnalyze' },
     { id: 'liquidations', mode: 'live', path: '/liquidations', icon: 'uil uil-fire', titleKey: 'nav.liquidations', group: 'liveAnalyze' },
+    // Eigene Gruppe, weil Handeln etwas anderes ist als Analysieren: die
+    // Seiten darüber beantworten „wie steht der Markt", diese hier begleitet
+    // die Stunden, in denen man tatsächlich Geld riskiert.
+    { id: 'livetrading', mode: 'live', path: '/livetrading', icon: 'uil uil-crosshairs', titleKey: 'nav.livetrading', group: 'liveTrade', flag: 'livetradingAn', nurDesktop: true },
+    // Archiv und Auswertung sind bewusst NICHT `nurDesktop`: nachlesen und
+    // auswerten geht am Telefon, nur das Handeln selbst braucht Platz.
+    { id: 'liveSessions', mode: 'live', path: '/live-sessions', icon: 'uil uil-history', titleKey: 'nav.liveSessions', group: 'liveTrade', flag: 'livetradingAn' },
+    { id: 'liveAuswertung', mode: 'live', path: '/live-auswertung', icon: 'uil uil-chart-pie', titleKey: 'nav.liveAuswertung', group: 'liveTrade', flag: 'livetradingAn' },
 
     // ── Agent-Trading ───────────────────────────────────────
     { id: 'agentStrategies', mode: 'agent', path: '/agent/strategies', icon: 'uil uil-processor', titleKey: 'nav.agentStrategies', group: 'agentRun' },

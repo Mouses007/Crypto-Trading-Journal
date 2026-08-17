@@ -20,7 +20,11 @@ import { getKnex } from './database.js'
 import { OrderBook } from '../shared/orderbook.js'
 import { pickBucketSize, inferTickSize } from '../shared/priceBins.js'
 import { logWarn, logError } from './logger.js'
+import { melde } from './benachrichtigungen.js'
 import { notiereGewicht } from './binance-takt.js'
+import { BYBIT_LIQ_WS, BYBIT_PING_MS, BYBIT_PONG_LIMIT_MS, bybitSubscribeMsg, normalisiereBybitLiq } from './bybit-liq.js'
+import { merkeLiq } from './liq-ticker.js'
+import { beansprucheFuehrung, gibFuehrungFrei } from './db-claim.js'
 
 const gzip = promisify(zlib.gzip)
 const gunzip = promisify(zlib.gunzip)
@@ -56,10 +60,26 @@ const MAX_BACKOFF_MS = 60000
 // ein eingefrorenes Buch stundenlang als „aktuelle" Liquidität aufzeichnet.
 // Der Liquidations-Stream ist ausgenommen: dort ist Stille der Normalfall.
 const SILENCE_LIMIT_MS = 10000
+/**
+ * Ab dem wievielten Neuaufbau in Folge gemeldet wird. Bei 10 s Stillefrist
+ * und 5 s Wachhund-Takt entspricht 6 gut einer Minute ohne jede Nachricht —
+ * lange genug, dass es kein Schluckauf mehr ist.
+ */
+const STILLE_MELDEN_AB = 6
 const WATCHDOG_INTERVAL_MS = 5000
 // Farbskala sättigt bei 4× dem Bezugswert — dieselbe Kennlinie wie im Renderer,
 // damit Aufzeichnung und Live-Ansicht gleich aussehen.
 const QUANT_SATURATION = 4
+/**
+ * Grenzen der Wiedergabe. Die Spanne war früher auf 6 Stunden gedeckelt, was
+ * längere Trades unabrufbar machte; seit der Verdichtung (siehe sliceRange)
+ * bestimmt nicht mehr die Spanne die Datenmenge, sondern `maxCols`. Die
+ * Spannengrenze bleibt trotzdem stehen, damit eine unsinnige URL nicht Tage an
+ * Stundenblöcken auspackt.
+ */
+const REPLAY_MAX_SPAN_MS = 48 * HOUR_MS
+const REPLAY_MAX_COLS_DEFAULT = 1500
+const REPLAY_MAX_COLS_HARD = 4000
 
 /** Ein Recorder je Symbol. Hält Verbindung, Buch und den Stundenpuffer. */
 class SymbolRecorder {
@@ -104,6 +124,10 @@ class SymbolRecorder {
         this.snapshotVersuche = 0
         this.watchdogTimer = null
         this.lastMsgTs = 0
+        // Wie oft der Wachhund hintereinander wegen Stille neu aufbauen
+        // musste. Ein einzelner Neuaufbau ist Alltag und heilt sich selbst —
+        // erst eine Serie heisst, dass wirklich keine Daten mehr kommen.
+        this.stilleSerie = 0
         // Fehlgeschlagene Upserts — beim nächsten Flush erneut versuchen
         this.pendingRows = []
         // Persistenz läuft seriell: Stundenwechsel-, Intervall- und Stop-Flush
@@ -173,12 +197,16 @@ class SymbolRecorder {
             const o = (msg.data || msg).o
             if (!o) return
             // Kompakt als Array: Zeit, Preis, Menge, Seite (1 = Short liquidiert)
-            this.liqEvents.push([
+            const eintrag = [
                 Number(o.T),
                 +(o.ap || o.p),
                 +(o.l || o.q),
                 o.S === 'BUY' ? 1 : 0,
-            ])
+            ]
+            this.liqEvents.push(eintrag)
+            // Zweites Ziel: der Ringpuffer für den Live-Ticker. Der Schreibpuffer
+            // hier wird alle 30 s geleert, taugt also nicht für „gerade jetzt".
+            merkeLiq('binance', this.symbol, eintrag[0], eintrag[1], eintrag[2], eintrag[3])
             this.liqUnsaved++
         })
         this.liqWs.on('close', () => {
@@ -232,8 +260,27 @@ class SymbolRecorder {
     _checkSilence() {
         if (this.stopped || !this.ws || this.ws.readyState !== WebSocket.OPEN) return
         const stille = Date.now() - this.lastMsgTs
-        if (stille < SILENCE_LIMIT_MS) return
+        if (stille < SILENCE_LIMIT_MS) {
+            this.stilleSerie = 0
+            return
+        }
         logWarn('live-recorder', `${this.symbol}: ${Math.round(stille / 1000)} s Stille auf dem Depth-Stream — Verbindung wird neu aufgebaut`)
+        this.stilleSerie++
+        // Erst nach mehreren erfolglosen Anläufen melden: dann steht fest,
+        // dass der Neuaufbau das Problem nicht löst und Aufzeichnungsdaten
+        // fehlen, ohne dass es jemand bemerkt.
+        if (this.stilleSerie === STILLE_MELDEN_AB) {
+            melde('aufzeichnungStumm', {
+                betreff: `Aufzeichnung stumm: ${this.symbol}`,
+                text: `Auf dem Depth-Stream von ${this.symbol} (${this.market}) kommen seit `
+                    + `mehreren Anläufen keine Daten mehr an.\n\n`
+                    + `Neuaufbauten in Folge: ${this.stilleSerie}\n`
+                    + `Letzte Nachricht: ${this.lastMsgTs ? new Date(this.lastMsgTs).toLocaleString('de-CH') : 'keine'}\n\n`
+                    + 'Solange das anhält, fehlen Aufzeichnungsdaten für dieses Symbol — '
+                    + 'Bookmap, Liquidationskarte und Wiedergabe bleiben dort leer.',
+                schluessel: `${this.symbol}|${this.market}`,
+            }).catch(() => { })
+        }
         try { this.ws.terminate() } catch (e) { /* egal */ }
     }
 
@@ -508,6 +555,10 @@ class MarketLiquidationCollector {
         this.gesamt = 0
         this.seitStart = Date.now()
         this.letztes = 0
+        // Plausibilitäts-Zähler: nach einem scharfen Move müssen Binance- und
+        // Bybit-Strom dieselbe Dominanz zeigen (Dump → beide long-lastig).
+        // Weichen sie gegensätzlich ab, stimmt eine Seiten-Konvention nicht.
+        this.seiten = { long: 0, short: 0 }
     }
 
     start() {
@@ -549,7 +600,10 @@ class MarketLiquidationCollector {
 
                 let puffer = this.buffers.get(symbol)
                 if (!puffer) this.buffers.set(symbol, puffer = [])
-                puffer.push([t, preis, menge, o.S === 'BUY' ? 1 : 0])
+                const seite = o.S === 'BUY' ? 1 : 0
+                puffer.push([t, preis, menge, seite])
+                merkeLiq('binance', symbol, t, preis, menge, seite)
+                if (seite === 1) this.seiten.short++; else this.seiten.long++
                 this.gesamt++
                 this.letztes = t
             }
@@ -625,11 +679,160 @@ class MarketLiquidationCollector {
 }
 
 /**
+ * Zweiter Sammelstrom: Bybit `allLiquidation` für dieselben Top-Symbole.
+ *
+ * Warum eine zweite Börse: Binance drosselt forceOrder auf 1 Ereignis/s/Symbol
+ * — unsere Binance-Sammlung ist nur eine Stichprobe (~24k/Tag real). Bybit
+ * pusht ungedrosselt alle 500 ms und macht das 24h-Liquidations-Bild deutlich
+ * vollständiger. Gespeichert wird unter eigener Sorte `kind: 'liqB'`, damit
+ * (a) die Fingerprint-Dedup venue-getrennt bleibt, (b) die Hebelkarten-
+ * Kalibrierung (_levmap-backtest.mjs, liest 'liq') Binance-only bleibt und
+ * (c) keine Migration nötig ist — der Unique-Key (symbol, market, kind,
+ * hourStart) deckt die neue Sorte ab.
+ *
+ * Anders als bei Binance ist hier ein eigener Ping PFLICHT: Bybit trennt
+ * Verbindungen nach 10 min ohne Aktivität, der Client muss alle ~20 s
+ * `{"op":"ping"}` senden. Der Ping ersetzt zugleich den Watchdog — bleibt der
+ * Pong länger als BYBIT_PONG_LIMIT_MS aus, ist der Socket halbtot und wird
+ * hart geschlossen (terminate → close-Handler → Reconnect).
+ */
+class BybitLiquidationCollector {
+    constructor() {
+        this.ws = null
+        this.stopped = false
+        this.reconnect = null
+        this.flushTimer = null
+        this.pingTimer = null
+        this.lastPong = 0
+        this.buffers = new Map()   // SYMBOL -> [[t, preis, menge, seite], …]
+        this.gesamt = 0
+        this.seitStart = Date.now()
+        this.letztes = 0
+        this.seiten = { long: 0, short: 0 }   // Gegenprobe zur Binance-Zählung
+    }
+
+    start() {
+        this.stopped = false
+        this._connect()
+        this.flushTimer = setInterval(() => this._flush().catch(() => {}), FLUSH_INTERVAL_MS)
+    }
+
+    _connect() {
+        if (this.stopped) return
+        this.ws = new WebSocket(BYBIT_LIQ_WS)
+
+        this.ws.on('open', () => {
+            console.log(' -> [recorder] Bybit-Sammelstrom Liquidationen verbunden')
+            this.lastPong = Date.now()
+            try { this.ws.send(bybitSubscribeMsg(COLLECT_LIQ_SYMBOLS)) } catch (e) { /* close folgt */ }
+            clearInterval(this.pingTimer)
+            this.pingTimer = setInterval(() => {
+                if (Date.now() - this.lastPong > BYBIT_PONG_LIMIT_MS) {
+                    // Halbtoter Socket (Standby, Netzwechsel) — feuert kein close
+                    logWarn('live-recorder', 'Bybit-Sammelstrom: Pong bleibt aus — Verbindung wird neu aufgebaut')
+                    try { this.ws?.terminate() } catch (e) { /* egal */ }
+                    return
+                }
+                try { this.ws?.send('{"op":"ping"}') } catch (e) { /* egal */ }
+            }, BYBIT_PING_MS)
+        })
+        this.ws.on('message', (raw) => {
+            let msg
+            try { msg = JSON.parse(raw) } catch (e) { return }
+            if (msg?.op === 'pong' || msg?.ret_msg === 'pong') { this.lastPong = Date.now(); return }
+            if (msg?.op === 'subscribe' && msg?.success === false) {
+                logWarn('live-recorder', 'Bybit-Sammelstrom: Subscribe abgelehnt', msg?.ret_msg)
+                return
+            }
+            const proSymbol = normalisiereBybitLiq(msg, COLLECT_LIQ_SYMBOLS)
+            if (!proSymbol) return
+            // Jede Datennachricht beweist eine lebende Verbindung — nicht nur Pongs
+            this.lastPong = Date.now()
+            for (const [symbol, events] of proSymbol) {
+                let puffer = this.buffers.get(symbol)
+                if (!puffer) this.buffers.set(symbol, puffer = [])
+                for (const e of events) {
+                    puffer.push(e)
+                    // Seite ist in `normalisiereBybitLiq` bereits auf die
+                    // Projektkonvention gedreht — hier NICHT noch einmal.
+                    merkeLiq('bybit', symbol, e[0], e[1], e[2], e[3])
+                    if (e[3] === 1) this.seiten.short++; else this.seiten.long++
+                    this.gesamt++
+                    this.letztes = e[0]
+                }
+            }
+        })
+        this.ws.on('close', () => {
+            clearInterval(this.pingTimer)
+            if (this.stopped) return
+            this.reconnect = setTimeout(() => this._connect(), 5000 + Math.random() * 5000)
+        })
+        this.ws.on('error', () => { try { this.ws?.close() } catch (e) { /* egal */ } })
+    }
+
+    /** Wie beim Binance-Kollektor: je (Symbol, Stunde) eine Zeile, Sorte 'liqB'. */
+    async _flush() {
+        if (!this.buffers.size) return
+        const puffer = this.buffers
+        this.buffers = new Map()
+
+        const gruppen = new Map()
+        for (const [symbol, events] of puffer) {
+            for (const e of events) {
+                const stunde = hourFloor(e[0])
+                const key = `${symbol}|${stunde}`
+                let g = gruppen.get(key)
+                if (!g) gruppen.set(key, g = { symbol, stunde, events: [] })
+                g.events.push(e)
+            }
+        }
+        if (!gruppen.size) return
+
+        const knex = getKnex()
+        let zeilen = 0
+        let bytes = 0
+        for (const { symbol, stunde, events } of gruppen.values()) {
+            try {
+                const row = await buildLiqRow(knex, symbol, 'futures', stunde, events, 'liqB')
+                await knex('live_recordings')
+                    .insert(row)
+                    .onConflict(['symbol', 'market', 'kind', 'hourStart'])
+                    .merge()
+                zeilen++
+                bytes += row.bytes
+            } catch (error) {
+                let zurueck = this.buffers.get(symbol)
+                if (!zurueck) this.buffers.set(symbol, zurueck = [])
+                zurueck.push(...events)
+                if (zurueck.length > 5000) zurueck.splice(0, zurueck.length - 5000)
+                logWarn('live-recorder', `Bybit-Sammelstrom ${symbol} speichern fehlgeschlagen — wird erneut versucht`, error.message)
+            }
+        }
+        if (zeilen) {
+            console.log(` -> [recorder] Bybit-Sammelstrom: ${zeilen} Symbol-Stunden aktualisiert, ${(bytes / 1024).toFixed(0)} kB`)
+        }
+    }
+
+    async stop() {
+        this.stopped = true
+        clearInterval(this.flushTimer)
+        clearInterval(this.pingTimer)
+        clearTimeout(this.reconnect)
+        try { this.ws?.close() } catch (e) { /* egal */ }
+        await this._flush().catch(() => {})
+    }
+}
+
+/**
  * Fingerprint-Dedup für Liquidations-Ereignisse. Binance vergibt für
  * forceOrder keine eigene ID — Zeit|Preis|Menge|Seite ist das engste
  * verfügbare Kennzeichen. Zwei ECHTE identische Ereignisse in derselben
  * Millisekunde fielen damit zusammen; praktisch ausgeschlossen, da der
  * Stream ohnehin auf 1 Ereignis/s/Symbol gedrosselt ist.
+ *
+ * Bybit (kind 'liqB') liegt in eigenen Zeilen — die Dedup läuft dadurch immer
+ * nur innerhalb EINER Börse und kann nie ein echtes Bybit-Ereignis verwerfen,
+ * das zufällig einem Binance-Ereignis gleicht.
  */
 function dedupLiquidations(events) {
     const seen = new Set()
@@ -649,9 +852,9 @@ function dedupLiquidations(events) {
  * (SymbolRecorder und Sammelstrom) gehen über diesen Weg — ein blinder
  * Voll-Rewrite würde sonst die Ereignisse des jeweils anderen überschreiben.
  */
-async function buildLiqRow(knex, symbol, market, stunde, events) {
+async function buildLiqRow(knex, symbol, market, stunde, events, kind = 'liq') {
     const vorhanden = await knex('live_recordings')
-        .where({ symbol, market, kind: 'liq', hourStart: stunde })
+        .where({ symbol, market, kind, hourStart: stunde })
         .first()
     let alle = events
     if (vorhanden?.payload) {
@@ -662,7 +865,7 @@ async function buildLiqRow(knex, symbol, market, stunde, events) {
     alle.sort((a, b) => a[0] - b[0])
     const payload = await gzip(Buffer.from(JSON.stringify(alle), 'utf8'))
     return {
-        symbol, market, kind: 'liq', hourStart: stunde,
+        symbol, market, kind, hourStart: stunde,
         frameMs: 0, rows: 0, cols: alle.length, bucketSize: 0, quantRef: 0,
         bytes: payload.length, payload, createdAt: Date.now(),
     }
@@ -720,20 +923,35 @@ const hourFloor = (ts) => Math.floor(ts / HOUR_MS) * HOUR_MS
  * Damit der Client eine einheitliche Skala bekommt, werden spätere Blöcke auf
  * den Bezug des ersten umgerechnet. Unterschiedliche Bucket-Grössen lassen sich
  * dagegen nicht zusammenführen — dort bricht die Ausgabe ab und meldet das.
+ *
+ * Verdichtung: Die Anzeige kann nur so viele Spalten zeigen, wie sie Pixel hat
+ * (im Renderer gilt `cols = plotW`). Ein mehrstündiger Trade passte deshalb nie
+ * aufs Bild. Statt im Client zu zoomen, faltet der Server `k` Quellspalten zu
+ * einer Ausgabespalte, so dass nie mehr als `maxCols` herauskommen — der
+ * Zeitraum bestimmt die Zoomstufe, die Auflösung folgt automatisch.
  */
-async function sliceRange(rows, from, to) {
+export async function sliceRange(rows, from, to, maxCols = REPLAY_MAX_COLS_DEFAULT) {
     const first = await decodeRecording(rows[0].payload)
     const frameMs = first.frameMs
     const rowCount = first.rows
     const bucketSize = first.bucketSize
     const quantRef = first.quantRef
     const startTs = Math.floor(from / frameMs) * frameMs
-    const cols = Math.min(Math.ceil((to - startTs) / frameMs), 6 * HOUR_MS / frameMs)
+
+    const spanCols = Math.max(1, Math.ceil((to - startTs) / frameMs))
+    const grenze = Math.max(1, Math.min(Math.round(maxCols) || 0, REPLAY_MAX_COLS_HARD))
+    const k = Math.max(1, Math.ceil(spanCols / grenze))
+    const cols = Math.ceil(spanCols / k)
 
     const data = new Uint8Array(cols * rowCount)
     const base = new Int32Array(cols)
     const mid = new Float64Array(cols)
     let truncated = false
+
+    // Nur beim Verdichten nötig: Mengen summieren sich linear, die gespeicherten
+    // Bytes sind aber log-quantisiert — Bytes mitteln wäre schlicht falsch.
+    const summe = k > 1 ? new Float64Array(cols * rowCount) : null
+    const beitraege = k > 1 ? new Uint32Array(cols) : null
 
     for (const row of rows) {
         const hour = row.hourStart === rows[0].hourStart ? first : await decodeRecording(row.payload)
@@ -745,38 +963,92 @@ async function sliceRange(rows, from, to) {
         const scale = hour.quantRef / quantRef
         for (let c = 0; c < hour.cols; c++) {
             const ts = Number(row.hourStart) + c * frameMs
-            const target = Math.round((ts - startTs) / frameMs)
-            if (target < 0 || target >= cols) continue
+            const quelle = Math.round((ts - startTs) / frameMs)
+            if (quelle < 0 || quelle >= spanCols) continue
             if (!hour.mid[c]) continue
-            base[target] = hour.base[c]
-            mid[target] = hour.mid[c]
+            const target = k === 1 ? quelle : Math.floor(quelle / k)
             const src = c * rowCount
             const dst = target * rowCount
-            if (scale === 1) {
-                data.set(hour.data.subarray(src, src + rowCount), dst)
-            } else {
-                for (let r = 0; r < rowCount; r++) {
-                    const v = hour.data[src + r]
-                    data[dst + r] = v ? requantize(v, scale) : 0
+
+            if (k === 1) {
+                base[target] = hour.base[c]
+                mid[target] = hour.mid[c]
+                if (scale === 1) {
+                    data.set(hour.data.subarray(src, src + rowCount), dst)
+                } else {
+                    for (let r = 0; r < rowCount; r++) {
+                        const v = hour.data[src + r]
+                        data[dst + r] = v ? requantize(v, scale) : 0
+                    }
                 }
+                continue
+            }
+
+            // Die erste Spalte eines Eimers setzt Preisanker und Mid-Wert; alle
+            // weiteren werden um die Basisdifferenz verschoben, damit über
+            // denselben PREIS gemittelt wird und nicht über dieselbe Zeile.
+            // Anker und Mid kommen bewusst aus derselben Spalte — sonst könnte
+            // die Mid-Linie aus dem angezeigten Band fallen. Driftet der Kurs
+            // innerhalb des Eimers stark, fällt am Rand etwas heraus; über
+            // 1–60 s ist das klein gegen die 200 Zeilen des Bandes.
+            if (!beitraege[target]) {
+                base[target] = hour.base[c]
+                mid[target] = hour.mid[c]
+            }
+            const shift = hour.base[c] - base[target]
+            for (let r = 0; r < rowCount; r++) {
+                const v = hour.data[src + r]
+                if (!v) continue
+                const z = r + shift
+                if (z < 0 || z >= rowCount) continue
+                summe[dst + z] += dequantize(v, scale)
+            }
+            beitraege[target]++
+        }
+    }
+
+    if (k > 1) {
+        for (let o = 0; o < cols; o++) {
+            // Nur tatsächlich vorhandene Quellspalten teilen — Lücken in der
+            // Aufzeichnung dürfen echte Daten nicht abdunkeln.
+            const n = beitraege[o]
+            if (!n) continue
+            const dst = o * rowCount
+            for (let r = 0; r < rowCount; r++) {
+                const s = summe[dst + r]
+                if (s > 0) data[dst + r] = quantize(s / n)
             }
         }
     }
-    return { startTs, frameMs, rows: rowCount, cols, bucketSize, quantRef, base, mid, data, truncated }
+
+    return {
+        startTs, frameMs: frameMs * k, quellFrameMs: frameMs, verdichtet: k,
+        rows: rowCount, cols, bucketSize, quantRef, base, mid, data, truncated,
+    }
+}
+
+/** Uint8 → Menge, normiert auf den Bezugswert (mit `scale` auf einen fremden). */
+function dequantize(value, scale = 1) {
+    return Math.expm1((value / 255) * Math.log1p(QUANT_SATURATION)) * scale
+}
+
+/** Normierte Menge → Uint8. Gegenstück zu dequantize, gleiche Kennlinie wie im Recorder. */
+function quantize(qty) {
+    if (qty <= 0) return 0
+    const t = Math.log1p(qty) / Math.log1p(QUANT_SATURATION)
+    return t >= 1 ? 255 : Math.max(1, (t * 255) | 0)
 }
 
 /** Uint8 mit fremdem Bezugswert auf den Zielbezug umrechnen. */
 function requantize(value, scale) {
-    const logMax = Math.log1p(QUANT_SATURATION)
-    const qty = Math.expm1((value / 255) * logMax) * scale
-    const t = Math.log1p(qty) / logMax
-    return t >= 1 ? 255 : Math.max(1, (t * 255) | 0)
+    return quantize(dequantize(value, scale))
 }
 
 // ── Verwaltung ──────────────────────────────────────────────
 
 const active = new Map()   // "SYMBOL|market" -> SymbolRecorder
 let collector = null       // MarketLiquidationCollector, wenn eingeschaltet
+let bybitCollector = null  // BybitLiquidationCollector — an dieselbe Flagge gekoppelt
 let reconcileTimer = null
 let retentionTimer = null
 
@@ -805,12 +1077,42 @@ async function readConfig() {
 }
 
 /**
+ * Führungs-Sperre über die Datenbank: NAS-Container und Entwicklungsrechner
+ * zeigen auf dieselbe PostgreSQL. Ohne die Sperre zeichneten beide auf —
+ * doppelte Binance-Sockets, und weil der Heat-Flush die komplette Stunde als
+ * Voll-Overwrite schreibt, überschrieben sich die Stände gegenseitig
+ * (Last-Writer-Wins auf `live_recordings`). Gleiche Mechanik wie in
+ * rangliste-api.js; der Abgleich alle RECONCILE_MS wirkt als Verlängerung.
+ */
+const FUEHRUNG_KEY = 'live_recorder'
+const FUEHRUNG_TTL_MS = 3 * RECONCILE_MS
+let hatFuehrung = false
+
+/**
  * Gleicht die laufenden Recorder mit den Einstellungen ab. Läuft periodisch,
  * damit eine Änderung in den Einstellungen ohne Neustart greift.
  */
 async function reconcile() {
     let config
     try { config = await readConfig() } catch (e) { return }
+
+    // Führung nur holen (und halten), wenn es Arbeit gibt — sonst blockierte
+    // ein Prozess mit abgeschalteter Aufzeichnung den, der sie führen soll.
+    const arbeit = (config.enabled && config.symbols.length > 0) || config.allLiq
+    if (arbeit) {
+        const vorher = hatFuehrung
+        hatFuehrung = await beansprucheFuehrung(FUEHRUNG_KEY, FUEHRUNG_TTL_MS)
+        if (!hatFuehrung) {
+            if (vorher) console.log(' -> [recorder] Führung verloren — Aufzeichnung übernimmt ein anderer Prozess')
+            // Nicht-Führer zeichnet nichts auf: unten wird alles Laufende gestoppt.
+            config = { ...config, enabled: false, allLiq: false, symbols: [] }
+        } else if (!vorher) {
+            console.log(' -> [recorder] Führung übernommen — dieser Prozess zeichnet auf')
+        }
+    } else if (hatFuehrung) {
+        await gibFuehrungFrei(FUEHRUNG_KEY)
+        hatFuehrung = false
+    }
 
     const wanted = new Map()
     if (config.enabled) {
@@ -846,6 +1148,19 @@ async function reconcile() {
         await alt.stop()
         console.log(' -> [recorder] Sammelstrom Liquidationen gestoppt')
     }
+
+    // Bybit hängt an derselben Flagge: wer „alle Liquidationen aufzeichnen"
+    // will, will das vollständigste Bild — eine zweite Flagge wäre nur ein
+    // weiterer Schalter, den niemand versteht.
+    if (config.allLiq && !bybitCollector) {
+        bybitCollector = new BybitLiquidationCollector()
+        bybitCollector.start()
+    } else if (!config.allLiq && bybitCollector) {
+        const alt = bybitCollector
+        bybitCollector = null
+        await alt.stop()
+        console.log(' -> [recorder] Bybit-Sammelstrom Liquidationen gestoppt')
+    }
 }
 
 async function runRetention() {
@@ -865,7 +1180,7 @@ async function runRetention() {
         // sie endgültig weg. Deshalb eine eigene, viel längere Aufbewahrung.
         const liqCutoff = Date.now() - LIQ_RETENTION_DAYS * 24 * HOUR_MS
         const liqDeleted = await knex('live_recordings')
-            .where('hourStart', '<', liqCutoff).andWhere('kind', 'liq').del()
+            .where('hourStart', '<', liqCutoff).whereIn('kind', ['liq', 'liqB']).del()
         if (liqDeleted) console.log(` -> [recorder] ${liqDeleted} alte Liquidations-Stunden gelöscht (älter als ${LIQ_RETENTION_DAYS} Tage)`)
     } catch (error) {
         logWarn('live-recorder', 'Aufräumen fehlgeschlagen', error.message)
@@ -902,6 +1217,18 @@ export function setupLiveRecorder(app) {
                     symbole: collector.buffers.size,
                     seit: collector.seitStart,
                     letztes: collector.letztes || null,
+                    seiten: { ...collector.seiten },
+                } : null,
+                // Gegenprobe zur Seiten-Konvention: nach einem scharfen Move
+                // müssen beide Ströme dieselbe Dominanz zeigen (Dump → beide
+                // long-lastig). Gegensätzliche Dominanz = Konvention falsch.
+                bybitSammelstrom: bybitCollector ? {
+                    verbunden: bybitCollector.ws?.readyState === WebSocket.OPEN,
+                    ereignisse: bybitCollector.gesamt,
+                    symbole: bybitCollector.buffers.size,
+                    seit: bybitCollector.seitStart,
+                    letztes: bybitCollector.letztes || null,
+                    seiten: { ...bybitCollector.seiten },
                 } : null,
                 gespeichert: rows.map(r => ({
                     symbol: r.symbol, market: r.market,
@@ -962,9 +1289,12 @@ export function setupLiveRecorder(app) {
             if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) {
                 return res.status(400).json({ error: 'from und to müssen gültige Zeitstempel (ms) sein, from < to' })
             }
-            if (to - from > 6 * HOUR_MS) {
-                return res.status(400).json({ error: 'Zeitfenster zu gross (max. 6 Stunden)' })
+            if (to - from > REPLAY_MAX_SPAN_MS) {
+                return res.status(400).json({ error: `Zeitfenster zu gross (max. ${REPLAY_MAX_SPAN_MS / HOUR_MS} Stunden)` })
             }
+            // Der Client schickt seine Plotbreite in Pixeln — mehr Spalten als
+            // Pixel kann er ohnehin nicht zeigen.
+            const maxCols = Number(req.query.maxCols) || REPLAY_MAX_COLS_DEFAULT
 
             const rows = await getKnex()('live_recordings')
                 .where({ symbol, market, kind: 'heat' })
@@ -974,7 +1304,7 @@ export function setupLiveRecorder(app) {
 
             if (!rows.length) return res.json({ symbol, market, cols: 0, hinweis: 'Für diesen Zeitraum wurde nichts aufgezeichnet' })
 
-            const block = await sliceRange(rows, from, to)
+            const block = await sliceRange(rows, from, to, maxCols)
             // Die Matrix ist zum grössten Teil leer und damit extrem gut
             // komprimierbar — roh wären es cols × rows Bytes plus ein Drittel
             // Base64-Aufschlag. Der Browser packt sie per DecompressionStream aus.
@@ -983,6 +1313,7 @@ export function setupLiveRecorder(app) {
             res.json({
                 symbol, market,
                 startTs: block.startTs, frameMs: block.frameMs, rows: block.rows, cols: block.cols,
+                quellFrameMs: block.quellFrameMs, verdichtet: block.verdichtet,
                 bucketSize: block.bucketSize, quantRef: block.quantRef, saturation: QUANT_SATURATION,
                 base: Array.from(block.base),
                 mid: Array.from(block.mid),
@@ -1012,8 +1343,12 @@ export function setupLiveRecorder(app) {
                 return res.status(400).json({ error: 'from und to müssen gültige Zeitstempel (ms) sein, from < to' })
             }
 
+            // Standard bleibt Binance ('liq') — die Hebelkarten-Prüfung ist
+            // auf den gedrosselten Binance-Strom kalibriert. Bybit auf Wunsch
+            // per ?venue=bybit (ungültige Werte fallen auf Binance zurück).
+            const kind = req.query.venue === 'bybit' ? 'liqB' : 'liq'
             const rows = await getKnex()('live_recordings')
-                .where({ symbol, market, kind: 'liq' })
+                .where({ symbol, market, kind })
                 .andWhere('hourStart', '>=', hourFloor(from))
                 .andWhere('hourStart', '<=', hourFloor(to))
                 .orderBy('hourStart')
@@ -1055,4 +1390,8 @@ export async function stopLiveRecorder() {
     for (const recorder of active.values()) await recorder.stop()
     active.clear()
     if (collector) { const alt = collector; collector = null; await alt.stop() }
+    if (bybitCollector) { const alt = bybitCollector; bybitCollector = null; await alt.stop() }
+    // Führung sofort zurückgeben, damit der andere Prozess ohne TTL-Wartezeit
+    // übernehmen kann (z.B. NAS-Container nach einem Dev-Server-Stopp).
+    if (hatFuehrung) { hatFuehrung = false; await gibFuehrungFrei(FUEHRUNG_KEY).catch(() => {}) }
 }

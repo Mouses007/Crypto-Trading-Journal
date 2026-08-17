@@ -95,6 +95,15 @@ export const ANBIETER_REG = {
         jsonModus: false, katalog: false,
         modelle: ['qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash'],
     },
+    perplexity: {
+        name: 'Perplexity (Sonar)', art: 'openai', keySpalte: 'aiKeyPerplexity',
+        basisUrl: 'https://api.perplexity.ai', keyUrl: 'perplexity.ai/settings/api',
+        // Sonar ist eine Such-KI: jede Antwort kommt mit Web-Zitaten. Primär
+        // für die Themen-Recherche des Lageberichts gedacht; als Chat-Anbieter
+        // wählbar, aber ohne Anhänge und ohne festen JSON-Modus.
+        anhang: { image: false, pdf: false }, jsonModus: false, katalog: false,
+        modelle: ['sonar', 'sonar-pro'],
+    },
     custom: {
         name: 'Eigener Anbieter (OpenAI-kompatibel)', art: 'openai', keySpalte: 'aiKeyCustom',
         urlSpalte: 'aiCustomUrl', pflichtUrl: true,

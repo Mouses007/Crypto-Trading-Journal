@@ -127,6 +127,51 @@ export const VORLAGEN = [
         },
     },
     {
+        key: 'vwap_dritte_beruehrung',
+        titel: 'Dritte Berührung eines VWAP-Levels',
+        markt: 'Alle — lebt davon, dass ein Level schon zweimal gehalten hat',
+        beschreibung: 'Ein VWAP-Level (hier der Wochen-VWAP) hat mindestens zweimal als Unterstützung '
+            + 'gehalten; bei der dritten Berührung wird in Richtung der Ablehnung eingestiegen. '
+            + 'Stop am letzten Swing-Tief, Ziel 3R. Der Anker ist im Feld daneben umstellbar: '
+            + 'Tag, Woche, Monat, ATH/ATL oder der letzte markante Swing. Für Short dieselbe '
+            + 'Vorlage kopieren und die Richtung umstellen — dann zählt eine Berührung, bei der '
+            + 'die Kerze UNTER der Linie schliesst. Signalfilter bleiben absichtlich leer: was als '
+            + 'Ablehnung gilt, steckt schon im Auslöser. Achtung beim Anker ATH/ATL: gemeint ist '
+            + 'das Extrem der geladenen Testhistorie, nicht das echte Allzeithoch.',
+        rules: {
+            timeframes: ['5m', '15m', '30m', '1h', '4h'],
+            direction: 'long',
+            warmupCandles: 400,
+            params: [
+                { key: 'beruehrungen', type: 'integer', label: 'Frühere Berührungen (vor dem Einstieg)', default: 2, min: 1, max: 5, step: 1,
+                  hint: '2 heisst: gehandelt wird die dritte Berührung.' },
+                { key: 'abstand', type: 'integer', label: 'Mindestabstand zweier Berührungen (Kerzen)', default: 3, min: 1, max: 30, step: 1,
+                  hint: 'Ohne diesen Abstand zählen Kerzen, die an der Linie kleben, als viele Berührungen.' },
+                { key: 'fenster', type: 'integer', label: 'Rückblick (Kerzen)', default: 300, min: 20, max: 1000, step: 10,
+                  hint: 'Wie weit zurück frühere Berührungen noch zählen.' },
+                { key: 'stopPuffer', type: 'number', label: 'Stop-Puffer unter dem Swing-Tief (%)', default: 0.2, min: 0.01, max: 3, step: 0.05 },
+                { key: 'ziel', type: 'number', label: 'Chance/Risiko-Ziel', default: 3, min: 0.5, max: 15, step: 0.5 },
+            ],
+            indicators: [
+                { id: 'vwapLevel', type: 'vwap', anchor: 'week' },
+            ],
+            signal: {
+                type: 'levelTouch', line: 'vwapLevel',
+                minPrevTouches: { param: 'beruehrungen' },
+                window: { param: 'fenster' },
+                separation: { param: 'abstand' },
+            },
+            signalFilters: [],
+            entry: { type: 'immediate' },
+            invalidations: [
+                { type: 'timeout', code: 'zu_spaet', candles: 2 },
+            ],
+            stopLoss: { anchor: 'lastSwingLow', offsetPct: { param: 'stopPuffer' } },
+            takeProfit: { mode: 'rr', rr: { param: 'ziel' } },
+            breakEvenAtR: 0,
+        },
+    },
+    {
         key: 'ema_pullback',
         titel: '„GUSS Sniperentry" — Rücklauf an eine EMA',
         markt: 'Trend — Fortsetzung nach Rücklauf; ohne Trend nur Rauschen',

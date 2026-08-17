@@ -5,17 +5,25 @@
  * der Live-Feed benutzt — der Renderer merkt keinen Unterschied und braucht
  * keinen zweiten Zeichenpfad.
  *
- * Was fehlt: Trades und Liquidationen werden noch nicht mitgeschnitten, in der
- * Wiedergabe gibt es also nur Liquidität und Mid-Kurve.
+ * `maxCols` ist die Plotbreite in Pixeln. Der Server faltet so viele
+ * Quellspalten zusammen, dass die Antwort nie breiter ist — dadurch passt auch
+ * ein mehrstündiger Trade auf ein Bild, und die Auflösung ergibt sich aus dem
+ * angefragten Zeitraum statt aus einem Zoomregler.
+ *
+ * Was fehlt: aggTrades werden nicht mitgeschnitten. Handelspunkte,
+ * Volumenprofil und Volumen-Säulen bleiben in der Wiedergabe deshalb leer;
+ * Liquidität, Mid-Kurve und Liquidationen sind da.
  */
 import axios from 'axios'
 import { HeatmapRing } from './heatmapRing.js'
+import { TradeRing } from './tradeRing.js'
 
 /**
- * @returns {Promise<{ring: HeatmapRing, startTs: number, frameMs: number, cols: number, hinweis?: string}>}
+ * @returns {Promise<{ring: HeatmapRing, startTs: number, frameMs: number, cols: number,
+ *   quellFrameMs: number, verdichtet: number, hinweis?: string}>}
  */
-export async function loadReplay({ symbol, market, from, to }) {
-    const { data } = await axios.get('/api/live/replay', { params: { symbol, market, from, to } })
+export async function loadReplay({ symbol, market, from, to, maxCols }) {
+    const { data } = await axios.get('/api/live/replay', { params: { symbol, market, from, to, maxCols } })
     if (!data.cols) return { ring: null, cols: 0, hinweis: data.hinweis || 'Keine Aufzeichnung für diesen Zeitraum' }
 
     const raw = await unpack(data)
@@ -48,9 +56,29 @@ export async function loadReplay({ symbol, market, from, to }) {
         ring,
         startTs: data.startTs,
         frameMs: data.frameMs,
+        quellFrameMs: data.quellFrameMs || data.frameMs,
+        verdichtet: data.verdichtet || 1,
         cols: data.cols,
         hinweis: data.abgeschnitten || undefined,
     }
+}
+
+/**
+ * Aufgezeichnete Zwangsliquidationen als TradeRing — dieselbe Struktur, die der
+ * Live-Feed füllt, damit der Renderer keinen zweiten Pfad braucht.
+ *
+ * Achtung bei der Deutung: Binance drosselt `forceOrder` auf ein Ereignis pro
+ * Sekunde und Symbol. Was hier ankommt, ist eine Stichprobe, keine Vollzählung.
+ */
+export async function loadReplayLiquidations({ symbol, market, from, to }) {
+    const { data } = await axios.get('/api/live/liquidations', { params: { symbol, market, from, to } })
+    const events = data.events || []
+    if (!events.length) return null
+    const ring = new TradeRing(Math.max(16, events.length))
+    // Der Server liefert bereits nach Zeit sortiert — der Ring erwartet das,
+    // weil er von hinten gelesen wird.
+    for (const e of events) ring.push(e.t, e.price, e.qty, e.isBuy)
+    return ring
 }
 
 /** Welche Stunden liegen für ein Symbol vor? */

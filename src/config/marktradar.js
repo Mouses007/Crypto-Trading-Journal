@@ -2,8 +2,9 @@
  * Registry der Marktradar-Kacheln.
  *
  * Reines Datenmodul ohne Vue-Abhängigkeit — dasselbe Prinzip wie
- * `src/config/menu.js`. Reihenfolge hier ist die Vorgabe; der Nutzer kann sie
- * per Ziehen ändern, seine Anordnung liegt im localStorage.
+ * `src/config/menu.js`. Die Vorgabe-Reihenfolge steht in
+ * `STANDARD_REIHENFOLGE`; der Nutzer kann sie per Ziehen ändern, seine
+ * Anordnung liegt im localStorage.
  *
  * Felder:
  *   id          — Schlüssel in Sichtbarkeit, Reihenfolge und Datenspeicher
@@ -15,7 +16,28 @@
  *   quelle      — kurze Herkunftsangabe für die Fusszeile der Gross-Ansicht
  */
 
-export const KACHELN = [
+import { baueKachelListe, macheSortierer } from './kachel-registry.js'
+
+/**
+ * Standardanordnung für Geräte, auf denen noch nichts gezogen wurde.
+ *
+ * Bewusst getrennt von den Definitionen: die Reihenfolge ist eine
+ * Geschmacksfrage und ändert sich öfter als die Kacheln selbst — so ist eine
+ * Umsortierung eine Zeile statt eines Verschiebens ganzer Blöcke. Ids, die
+ * hier fehlen, hängen hinten an (siehe `sortiereKacheln`), gehen also nie
+ * verloren.
+ *
+ * Stand 17.08.2026: Wunsch-Layout des Nutzers vom Desktop übernommen.
+ */
+export const STANDARD_REIHENFOLGE = [
+    'mechanik', 'funding', 'lsoi', 'liq24', 'fng', 'dom',
+    'picycle', 'altseason', 'markt', 'rainbow', 'regime', 'rsi', 'makro',
+    // Die Zusammenfassung steht am Ende: sie liest die anderen Kacheln, also
+    // gehört sie hinter sie — und nachrückende Ids landen ohnehin dort.
+    'lage',
+]
+
+const DEFINITIONEN = [
     {
         id: 'fng',
         titleKey: 'marktradar.fng.title',
@@ -47,6 +69,82 @@ export const KACHELN = [
         quelle: 'Binance USDⓈ-M Futures',
     },
     {
+        id: 'lsoi',
+        titleKey: 'marktradar.lsoi.title',
+        icon: 'uil uil-balance-scale',
+        endpunkt: '/api/marktradar/ls-oi',
+        params: { stunden: 48 },
+        // Folgt der Symbolwahl im Seitenmenü, damit sie überall dieselbe ist
+        symbolAbhaengig: true,
+        intervallMs: 5 * 60 * 1000,
+        spalten: 1,
+        quelle: 'Binance USDⓈ-M Futures',
+    },
+    {
+        id: 'mechanik',
+        titleKey: 'marktradar.mechanik.title',
+        icon: 'uil uil-processor',
+        endpunkt: '/api/marktradar/mechanik',
+        params: { fenster: '1h' },
+        // Folgt der Symbolwahl im Seitenmenü wie die Long/Short-Kachel
+        symbolAbhaengig: true,
+        intervallMs: 60 * 1000,
+        spalten: 1,
+        quelle: 'Binance USDⓈ-M Futures · eigene Liquidations-Aufzeichnung (Binance + Bybit)',
+    },
+    {
+        id: 'liq24',
+        titleKey: 'marktradar.liq.title',
+        icon: 'uil uil-fire',
+        endpunkt: '/api/marktradar/liquidationen',
+        params: { stunden: 24 },
+        intervallMs: 60 * 1000,
+        spalten: 1,
+        quelle: 'eigene Aufzeichnung (Binance + Bybit)',
+    },
+    {
+        id: 'makro',
+        titleKey: 'marktradar.makro.title',
+        icon: 'uil uil-globe',
+        endpunkt: '/api/marktradar/makro',
+        // Futures laufen fast durch, aber ein Minutentakt brächte nichts —
+        // die Kopplung ändert sich in Tagen, nicht in Minuten
+        intervallMs: 5 * 60 * 1000,
+        spalten: 1,
+        quelle: 'Yahoo Finance (ES/NQ-Futures, DXY) · CoinGecko · Binance-Tageskerzen',
+    },
+    {
+        id: 'picycle',
+        titleKey: 'marktradar.picycle.title',
+        icon: 'uil uil-chart-growth',
+        endpunkt: '/api/marktradar/picycle',
+        // Tageskerzen — häufiger nachzufragen ändert nichts
+        intervallMs: 12 * 60 * 60 * 1000,
+        spalten: 1,
+        quelle: 'blockchain.info · Binance',
+    },
+    {
+        id: 'altseason',
+        titleKey: 'marktradar.altseason.title',
+        icon: 'uil uil-exchange',
+        endpunkt: '/api/marktradar/altseason',
+        params: { tage: 90 },
+        intervallMs: 30 * 60 * 1000,
+        spalten: 1,
+        quelle: 'Binance-Tageskerzen · CoinGecko-Rangliste',
+    },
+    {
+        id: 'markt',
+        titleKey: 'marktradar.markt.title',
+        icon: 'uil uil-circle-layer',
+        endpunkt: '/api/marktradar/markt',
+        params: { n: 50 },
+        intervallMs: 5 * 60 * 1000,
+        // Blasen und Treemap brauchen Fläche, sonst wird jede Beschriftung Brei
+        spalten: 2,
+        quelle: 'CoinGecko',
+    },
+    {
         id: 'rainbow',
         titleKey: 'marktradar.rainbow.title',
         icon: 'uil uil-rainbow',
@@ -67,47 +165,20 @@ export const KACHELN = [
         quelle: 'eigene Trades × alternative.me',
     },
     {
-        id: 'liq24',
-        titleKey: 'marktradar.liq.title',
-        icon: 'uil uil-fire',
-        endpunkt: '/api/marktradar/liquidationen',
-        params: { stunden: 24 },
-        intervallMs: 60 * 1000,
-        spalten: 1,
-        quelle: 'eigene Aufzeichnung',
-    },
-    {
-        id: 'lsoi',
-        titleKey: 'marktradar.lsoi.title',
-        icon: 'uil uil-balance-scale',
-        endpunkt: '/api/marktradar/ls-oi',
-        params: { stunden: 48 },
-        // Folgt der Symbolwahl im Seitenmenü, damit sie überall dieselbe ist
+        id: 'lage',
+        titleKey: 'marktradar.lage.title',
+        icon: 'uil uil-robot',
+        // Der Endpunkt LIEST nur, was schon erzeugt wurde — erzeugt wird per
+        // Knopf in der Kachel (POST). Sonst würde „Alle aktualisieren" jedes
+        // Mal eine KI-Anfrage bezahlen.
+        endpunkt: '/api/marktradar/lage',
+        // Mechanik und Long/Short in der Zusammenfassung sollen denselben Markt
+        // meinen wie der Rest der Seite
         symbolAbhaengig: true,
+        // Nur ein Blick in den Speicher des Servers; nichts Fremdes daran
         intervallMs: 5 * 60 * 1000,
         spalten: 1,
-        quelle: 'Binance USDⓈ-M Futures',
-    },
-    {
-        id: 'markt',
-        titleKey: 'marktradar.markt.title',
-        icon: 'uil uil-circle-layer',
-        endpunkt: '/api/marktradar/markt',
-        params: { n: 50 },
-        intervallMs: 5 * 60 * 1000,
-        // Blasen und Treemap brauchen Fläche, sonst wird jede Beschriftung Brei
-        spalten: 2,
-        quelle: 'CoinGecko',
-    },
-    {
-        id: 'altseason',
-        titleKey: 'marktradar.altseason.title',
-        icon: 'uil uil-exchange',
-        endpunkt: '/api/marktradar/altseason',
-        params: { tage: 90 },
-        intervallMs: 30 * 60 * 1000,
-        spalten: 1,
-        quelle: 'Binance-Tageskerzen · CoinGecko-Rangliste',
+        quelle: 'die übrigen Kacheln dieser Seite · Einordnung durch die eingestellte KI',
     },
     {
         id: 'rsi',
@@ -120,25 +191,17 @@ export const KACHELN = [
         spalten: 2,
         quelle: 'Binance-Kerzen · RSI(14) nach Wilder',
     },
-    {
-        id: 'picycle',
-        titleKey: 'marktradar.picycle.title',
-        icon: 'uil uil-chart-growth',
-        endpunkt: '/api/marktradar/picycle',
-        // Tageskerzen — häufiger nachzufragen ändert nichts
-        intervallMs: 12 * 60 * 60 * 1000,
-        spalten: 1,
-        quelle: 'blockchain.info · Binance',
-    },
 ]
 
-export const kachelById = (id) => KACHELN.find(k => k.id === id) || null
+/**
+ * Die Kacheln in der Standardanordnung. Kacheln ohne Eintrag in
+ * `STANDARD_REIHENFOLGE` hängen hinten an — eine vergessene Id kostet damit
+ * die Wunschposition, aber nie die Kachel.
+ *
+ * Die Mechanik dahinter teilt sich diese Registry mit dem Live-Trading-Fenster
+ * (`src/config/kachel-registry.js`); die Exporte hier bleiben unverändert,
+ * damit keine Importstelle angefasst werden muss.
+ */
+export const KACHELN = baueKachelListe(DEFINITIONEN, STANDARD_REIHENFOLGE)
 
-/** Reihenfolge aus dem localStorage auf die bekannten Kacheln abbilden. */
-export function sortiereKacheln(reihenfolge) {
-    if (!Array.isArray(reihenfolge) || !reihenfolge.length) return [...KACHELN]
-    const rest = KACHELN.filter(k => !reihenfolge.includes(k.id))
-    const bekannt = reihenfolge.map(id => kachelById(id)).filter(Boolean)
-    // Neue Kacheln aus einer neueren Version hängen hinten an, statt zu verschwinden
-    return [...bekannt, ...rest]
-}
+export const { kachelById, sortiereKacheln } = macheSortierer(KACHELN)

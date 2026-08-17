@@ -242,9 +242,10 @@ const tradeTypeStats = computed(() => {
         trades.forEach(t => {
             const pnl = t.netProceeds || 0
             totalPnl += pnl
-            if (pnl > 0) { wins++; grossWins += pnl }
-            else if (pnl < 0) { losses++; grossLoss += Math.abs(pnl) }
-            // pnl === 0 → break-even, weder Win noch Loss
+            // Break-even (0) zählt als Gewinner — Journal-Kanon
+            // (server/journal-bridge.js), gleiche Regel wie Import und Views.
+            if (pnl >= 0) { wins++; grossWins += pnl }
+            else { losses++; grossLoss += Math.abs(pnl) }
         })
 
         const count = trades.length

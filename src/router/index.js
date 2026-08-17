@@ -106,6 +106,30 @@ const router = createRouter({
             import('../views/Auswertung.vue')
     },
     {
+        // Archiv und Auswertung stehen im Live-Modus unter „Handeln", nicht im
+        // Journal: alles zum Live-Trading an einem Ort, ein Weg zu einer Sache.
+        path: '/live-sessions',
+        name: 'liveSessions',
+        meta: {
+            title: "Archiv", titleKey: "nav.liveSessions",
+            mode: 'live',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/LiveSessions.vue')
+    },
+    {
+        path: '/live-auswertung',
+        name: 'liveAuswertung',
+        meta: {
+            title: "Auswertung", titleKey: "nav.liveAuswertung",
+            mode: 'live',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/LiveAuswertung.vue')
+    },
+    {
         path: '/ki-coach',
         name: 'kiAgent',
         meta: {
@@ -208,6 +232,25 @@ const router = createRouter({
         },
         component: () =>
             import('../views/Marktradar.vue')
+    },
+    {
+        // Live-Trading-Fenster: der Arbeitsplatz für die Stunden, in denen
+        // tatsächlich gehandelt wird. Eigenes Kachelraster mit eigenem Layout,
+        // damit der Marktradar seine Übersicht behält.
+        //
+        // Abschaltbar über `livetradingAn`. Die Prüfung sitzt in der Seite und
+        // NICHT hier: beim ersten Aufruf eines Deep-Links sind die
+        // Einstellungen unter Umständen noch nicht geladen, und ein
+        // Router-Guard würde dann fälschlich umleiten.
+        path: '/livetrading',
+        name: 'livetrading',
+        meta: {
+            title: "Live-Trading", titleKey: "nav.livetrading",
+            mode: 'live',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/Livetrading.vue')
     },
     {
         // Nachrichten: Lagebericht, Wirtschaftskalender und Beiträge. Bewusst

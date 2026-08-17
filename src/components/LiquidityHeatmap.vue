@@ -14,7 +14,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LiveFeed } from '../utils/liveFeed.js'
 import { HeatmapRenderer } from '../utils/heatmapRenderer.js'
-import { loadReplay } from '../utils/replaySource.js'
+import { loadReplay, loadReplayLiquidations } from '../utils/replaySource.js'
 import { TradeRing } from '../utils/tradeRing.js'
 import { followMid } from '../../shared/priceBins.js'
 import { timeZoneTrade } from '../stores/ui.js'
@@ -23,6 +23,7 @@ import {
     liveShowProfile, livePauseInBackground, liveColorMode, liveColorRef,
     liveAutoFollow, liveFrozen, liveAutoRefValue, liveThreshold, liveShowLiquidations, liveDotStep, liveProfileW, liveShowVolumeBars,
     liveMode, replayFrom, replayTo, livePrefillMin, VIEW_PCT_OPTIONS,
+    replayEntry, replayExit, replayFokus, replayZoom,
 } from '../stores/live.js'
 import dayjs from '../utils/dayjs-setup.js'
 
@@ -54,12 +55,30 @@ const statusDetail = ref('')
 const replayPos = ref(1)
 const replayCols = ref(0)
 const replayTimeLabel = ref('')
+/** Auflösung der geladenen Wiedergabe, für die Beschriftung in der Kopfzeile. */
+const replayAufloesung = ref('')
+/**
+ * Tatsächlich geladener Ausschnitt. Nicht dasselbe wie replayFrom/replayTo —
+ * beim Zoomen auf Ein- oder Ausstieg ist er ein Teilstück davon, und die
+ * Kopfzeile soll zeigen, was man sieht.
+ */
+const replayFensterLabel = ref('')
 
-defineExpose({ replayPos, replayCols, replayTimeLabel })
+defineExpose({ replayPos, replayCols, replayTimeLabel, replayAufloesung, replayFensterLabel })
 
 // Nicht-reaktiver Zustand
 let feed = null
 let replay = null          // { ring, frameMs, cols } im Wiedergabe-Modus
+let replayLiqRing = null   // aufgezeichnete Liquidationen zum selben Fenster
+let replayLauf = 0         // Zähler gegen verspätete Antworten alter Läufe
+let replayBreite = 0       // Plotbreite, mit der die Wiedergabe geladen wurde
+// Zuletzt angefragte Kombination. Beim Einstieg aus dem Journal laufen Mount,
+// Watcher und die erste Grössenmessung fast gleichzeitig los — ohne diesen
+// Schlüssel holt jede davon dieselben (grossen) Daten erneut.
+let replaySchluessel = ''
+// Takt der Aufzeichnung (nicht der Live-Einstellung). Erst nach dem ersten
+// Laden sicher bekannt, der Standard der Aufzeichnung ist 1 s.
+let quellTaktMs = 1000
 let emptyTrades = new TradeRing(1)
 let renderer = null
 let ro = null
@@ -84,9 +103,18 @@ const formatTime = (ms) => dayjs(ms).tz(timeZoneTrade.value || dayjs.tz.guess())
 // Live-Feed und Wiedergabe füllen denselben Ringtyp — der Renderer bekommt
 // deshalb in beiden Fällen dieselben Argumente.
 const isReplay = () => liveMode.value === 'replay'
+/**
+ * Das Volumenprofil speist sich aus aggTrades, die nicht mitgeschnitten werden.
+ * In der Wiedergabe bleibt die Spur deshalb aus — sonst reservierte sie
+ * Plotbreite für eine leere Fläche.
+ */
+const profilAktiv = () => liveShowProfile.value && !isReplay()
 const currentRing = () => (isReplay() ? replay?.ring : feed?.ring)
 const currentTrades = () => (isReplay() ? emptyTrades : feed?.trades)
-const currentLiquidations = () => (isReplay() ? emptyTrades : feed?.liquidations)
+// Liquidationen liegen als eigene Sorte in der Aufzeichnung und werden zum
+// Fenster nachgeladen; aggTrades dagegen schneiden wir nicht mit, deshalb
+// bleiben die Handelspunkte in der Wiedergabe leer.
+const currentLiquidations = () => (isReplay() ? (replayLiqRing || emptyTrades) : feed?.liquidations)
 const currentFrameMs = () => (isReplay() ? (replay?.frameMs || liveFrameMs.value) : liveFrameMs.value)
 
 /**
@@ -190,8 +218,8 @@ function loop() {
         renderer.drawOverlay({
             ring, trades: currentTrades(), liquidations: currentLiquidations(),
             view, anchor: head, frameMs, bucketSize: ring.bucketSize,
-            formatTime, showProfile: liveShowProfile.value,
-            showLiquidations: liveShowLiquidations.value && !isReplay(),
+            formatTime, showProfile: profilAktiv(),
+            showLiquidations: liveShowLiquidations.value,
             // Nur live bekannt — in der Aufzeichnung ist die Reichweite nicht mitgespeichert
             coverage: !isReplay() && feed?.book?.coverLo
                 ? { lo: feed.book.coverLo, hi: feed.book.coverHi }
@@ -215,26 +243,117 @@ function applySize() {
     if (rect.width < 10 || rect.height < 10) return
     renderer.resize(rect.width, rect.height)
     dirtyHeat = true
+    // Die Verdichtung der Wiedergabe hängt an der Plotbreite — die steht beim
+    // ersten Laden noch nicht immer fest (Layout, ausgeklapptes Seitenmenü).
+    // Bei nennenswerter Abweichung neu holen, sonst zeigt die Karte weniger
+    // oder gröber als der Platz hergibt. Die Totzone hält das Ziehen am
+    // Fensterrand ruhig.
+    if (isReplay() && renderer.cols && Math.abs(renderer.cols - replayBreite) > 40) startReplay()
+}
+
+/**
+ * Zeitfenster der Wiedergabe: das Basisfenster (ganzer Trade plus Puffer),
+ * zugeschnitten auf Fokus und Zoomstufe.
+ *
+ * Die Stufen sind Bruchteile der Gesamtspanne, keine festen Minutenwerte —
+ * der Server verdichtet auf die Plotbreite, also füllt jede Stufe das Bild.
+ * Die feinste sinnvolle Stufe ist genau eine Quellspalte je Pixel; enger
+ * gefasst bliebe nur Leerfläche am Rand übrig.
+ */
+function replayFenster() {
+    const von = replayFrom.value
+    const bis = replayTo.value
+    const spanne = bis - von
+    if (!(spanne > 0)) return { von, bis }
+
+    const feinste = (renderer?.cols || 1200) * quellTaktMs
+    const wunsch = replayZoom.value > 0
+        ? Math.max(feinste, Math.round(spanne * replayZoom.value))
+        : feinste
+    // Auf ganze Quellspalten runden. Ohne das ragt ein angebrochener Takt über
+    // die Spaltengrenze hinaus, der Server muss zwei Spalten falten und die
+    // feinste Stufe wäre plötzlich halb so fein.
+    const laenge = Math.max(quellTaktMs, Math.floor(Math.min(spanne, wunsch) / quellTaktMs) * quellTaktMs)
+    if (laenge >= spanne) return { von, bis }
+
+    const fokus = replayFokus.value === 'entry' ? replayEntry.value
+        : replayFokus.value === 'exit' ? replayExit.value
+            : 0
+    const mitte = fokus || (von + spanne / 2)
+    // Am Rand nicht über das Basisfenster hinauslaufen
+    const start = Math.max(von, Math.min(Math.round(mitte - laenge / 2), bis - laenge))
+    // Auch der Anfang muss auf einem Takt sitzen, sonst zählt der Server eine
+    // angebrochene Spalte am Rand mit.
+    const ausgerichtet = Math.floor(start / quellTaktMs) * quellTaktMs
+    return { von: ausgerichtet, bis: ausgerichtet + laenge }
+}
+
+/** „49 s / Spalte (verdichtet aus 1 s)" für die Kopfzeile. */
+function beschreibeAufloesung({ frameMs, quellFrameMs, verdichtet }) {
+    const takt = (ms) => (ms >= 1000 ? `${Math.round(ms / 1000)} s` : `${ms} ms`)
+    if (!verdichtet || verdichtet <= 1) return `${takt(frameMs)} / Spalte`
+    return `${takt(frameMs)} / Spalte (verdichtet aus ${takt(quellFrameMs)})`
 }
 
 /** Wiedergabe: Zeitraum laden, Ring füllen, ans Ende springen. */
 async function startReplay() {
+    // Erst prüfen, dann verwerfen: die Wächter unten dürfen keinen bereits
+    // geladenen Zustand hinterlassen haben, sonst bliebe die Karte leer.
+    const { von, bis } = replayFenster()
+    // Symbol und Markt einmal festhalten: zwischen den beiden Abrufen liegt ein
+    // await, und die Einstellungen können in der Zwischenzeit hydrieren.
+    const symbol = liveSymbol.value
+    const market = liveMarket.value
+    // Mehr Spalten als Pixel kann die Anzeige nicht zeigen; der Server faltet
+    // die Aufzeichnung auf genau diese Breite zusammen. Steht die Breite noch
+    // nicht fest, wird nicht auf Verdacht geladen — applySize() holt nach,
+    // sobald gemessen ist. Sonst ginge der erste (grosse) Abruf ins Leere.
+    if (renderer && !renderer.cols) return
+    const breite = renderer?.cols || 0
+
+    const schluessel = `${symbol}|${market}|${von}|${bis}|${breite}`
+    if (schluessel === replaySchluessel) return
+
     stopFeed()
     replay = null
+    replayLiqRing = null
     view = null
     replayCols.value = 0
+    replayAufloesung.value = ''
+    replayFensterLabel.value = ''
     setStatus('loading')
+    if (!(bis > von)) { setStatus('empty', 'Kein gültiges Zeitfenster'); return }
+    replaySchluessel = schluessel
+    replayBreite = breite
+    const tag = dayjs(von).tz(timeZoneTrade.value || dayjs.tz.guess()).format('DD.MM.')
+    replayFensterLabel.value = `${tag} ${formatTime(von)} – ${formatTime(bis)}`
+    // Späte Antworten eines vorherigen Laufs dürfen den aktuellen nicht
+    // überschreiben — beim Durchklicken der Stufen passiert genau das sonst.
+    const lauf = ++replayLauf
     try {
         const result = await loadReplay({
-            symbol: liveSymbol.value, market: liveMarket.value,
-            from: replayFrom.value, to: replayTo.value,
+            symbol, market, from: von, to: bis,
+            maxCols: replayBreite || undefined,
         })
+        if (lauf !== replayLauf) return
         if (!result.ring) {
             setStatus('empty', result.hinweis)
             return
         }
         replay = result
         replayCols.value = result.cols
+        quellTaktMs = result.quellFrameMs || quellTaktMs
+        replayAufloesung.value = beschreibeAufloesung(result)
+
+        // Liquidationen zum selben Fenster nachladen. Sie sind Beiwerk — ein
+        // Fehler hier darf die Heatmap nicht mitreissen.
+        loadReplayLiquidations({ symbol, market, from: von, to: bis })
+            .then((ring) => {
+                if (lauf !== replayLauf) return
+                replayLiqRing = ring
+                dirtyOverlay = true
+            })
+            .catch(() => {})
         // Ans Ende der tatsächlich vorhandenen Daten springen, nicht ans Ende
         // des angefragten Fensters — das kann grösstenteils leer sein.
         const letzte = letzteDatenSpalte(result.ring)
@@ -250,6 +369,9 @@ async function startReplay() {
         dirtyHeat = true
         setStatus('replay', result.hinweis)
     } catch (error) {
+        // Schlüssel freigeben, sonst blockiert der Wächter jeden neuen Versuch
+        // mit denselben Werten.
+        replaySchluessel = ''
         setStatus('error', error.response?.data?.error || error.message)
     }
 }
@@ -264,6 +386,10 @@ function updateReplayLabel() {
 async function startFeed() {
     stopFeed()
     replay = null
+    replayLiqRing = null
+    // Beim Verlassen der Wiedergabe vergessen, damit ein erneuter Einstieg in
+    // dasselbe Fenster wieder lädt.
+    replaySchluessel = ''
     view = null
     frozenHead = null
     liveFrozen.value = false
@@ -434,7 +560,7 @@ onMounted(async () => {
     renderer.setLabels(canvasLabels())
     renderer.setProfileWidth(liveProfileW.value)
     renderer.setVolumeBarsVisible(liveShowVolumeBars.value)
-    renderer.setProfileVisible(liveShowProfile.value)
+    renderer.setProfileVisible(profilAktiv())
     await nextTick()
     applySize()
 
@@ -476,8 +602,12 @@ watch([liveSymbol, liveMarket, liveFrameMs, liveHistoryMin], () => {
     if (!isReplay()) startFeed()
 })
 watch([liveMode, replayFrom, replayTo], () => {
+    renderer?.setProfileVisible(profilAktiv())
     isReplay() ? startReplay() : startFeed()
 })
+// Fokus und Zoomstufe ändern das angefragte Fenster — die Auflösung entsteht
+// im Server, es muss also neu geladen werden.
+watch([replayFokus, replayZoom], () => { if (isReplay()) startReplay() })
 watch(replayPos, () => {
     syncReplayCount()
     updateView()
@@ -498,9 +628,9 @@ watch(liveProfileW, (value) => { renderer?.setProfileWidth(value); dirtyHeat = t
 // Säulen nehmen Höhe vom Chart → Heatmap muss neu
 watch(liveShowVolumeBars, (v) => { renderer?.setVolumeBarsVisible(v); dirtyHeat = true })
 watch(liveViewPct, () => { updateView(); dirtyHeat = true })
-watch(liveShowProfile, (visible) => {
+watch(liveShowProfile, () => {
     // Die Spur ändert die Plotbreite → Heatmap muss komplett neu gezeichnet werden
-    renderer?.setProfileVisible(visible)
+    renderer?.setProfileVisible(profilAktiv())
     dirtyHeat = true
 })
 watch(liveShowLiquidations, () => { dirtyOverlay = true })

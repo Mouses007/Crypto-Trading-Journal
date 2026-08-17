@@ -123,6 +123,12 @@ watch(() => props.daten, zeichne)
 <template>
     <div v-if="daten" class="lsWrap" :class="{ gross }">
         <div class="lsKopf">
+            <!-- Die Kachel folgt der Symbolwahl (Klick in Funding/RSI/Marktübersicht
+                 /Altseason) — ohne diesen Chip weiss man nicht, WEN man ansieht -->
+            <div class="lsZahl">
+                <span class="lsLabel">{{ t('marktradar.symbol') }}</span>
+                <b class="lsSymbol">{{ daten.symbol?.replace(/USDT$/, '') }}</b>
+            </div>
             <div class="lsZahl">
                 <span class="lsLabel">{{ t('marktradar.lsoi.ratio') }}</span>
                 <b>{{ jetzt?.ratio?.toFixed(2) ?? '—' }}</b>
@@ -173,6 +179,10 @@ watch(() => props.daten, zeichne)
 .lsZahl {
     display: flex;
     flex-direction: column;
+}
+
+.lsSymbol {
+    color: rgb(90, 156, 255);
 }
 
 .lsLabel {

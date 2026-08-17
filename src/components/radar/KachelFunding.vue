@@ -42,6 +42,15 @@ function sortiere(feld) {
 
 const proz = (v) => `${(v * 100).toFixed(3)} %`
 const jahr = (v) => `${(v * 100).toFixed(1)} %`
+// Für die eigenen Märkte: Binance-, Bybit- oder Bitunix-Wert kann fehlen
+const pa = (v) => (v === null || v === undefined ? '—' : jahr(v))
+const farbe = (v) => (v === null || v === undefined ? 'muted' : v >= 0 ? 'hoch' : 'tief')
+
+/** Erklärung am Divergenz-Marker — sonst steht dort ein Δ ohne Sinn. */
+const divTitel = (r) => t('marktradar.funding.divergenzHinweis', {
+    binance: jahr(r.jahresRate),
+    bybit: jahr(r.bybitJahresRate),
+})
 const vol = (v) => (v >= 1e9 ? `${(v / 1e9).toFixed(1)} Mrd` : `${Math.round(v / 1e6)} Mio`)
 
 /** Countdown bis zur nächsten Zahlung — die Rate wird erst dann fällig. */
@@ -62,18 +71,31 @@ function bisZahlung(ms) {
             <button v-for="n in TOP_N" :key="n" type="button"
                 :class="['ctl-pill', daten.n === n ? 'active' : '']"
                 @click.stop="emit('params', { n })">{{ n }}</button>
+            <span class="fLeisteTrenner"></span>
+            <button type="button"
+                :class="['ctl-pill', (daten.rang || 'volumen') === 'volumen' ? 'active' : '']"
+                @click.stop="emit('params', { rang: 'volumen' })">{{ t('marktradar.funding.byVolume') }}</button>
+            <button type="button"
+                :class="['ctl-pill', daten.rang === 'mcap' ? 'active' : '']"
+                @click.stop="emit('params', { rang: 'mcap' })">{{ t('marktradar.funding.byMcap') }}</button>
         </div>
         <!-- Klein: zuerst DEINE Märkte. Die Extreme des Gesamtmarkts sitzen
              fast immer in Mikro-Werten, die niemand handelt — die stehen
              deshalb kleiner darunter. -->
         <div v-if="!gross" class="fKlein">
             <template v-if="(daten.eigene || []).length">
-                <div class="fKopf">{{ t('marktradar.funding.yours') }}</div>
+                <div class="fKopf">
+                    <span>{{ t('marktradar.funding.yours') }}</span>
+                    <span class="fLegende">Binance · Bitunix</span>
+                </div>
                 <div class="fEigene">
                     <div v-for="r in (daten.eigene || []).slice(0, 8)" :key="r.symbol" class="fZeile"
                         @click.stop="liveSymbol = r.symbol">
                         <span class="fSym">{{ kurz(r.symbol) }}</span>
-                        <span class="fWert" :class="r.rate >= 0 ? 'hoch' : 'tief'">{{ jahr(r.jahresRate) }}</span>
+                        <span class="fWerte">
+                            <span class="fWert" :class="farbe(r.jahresRate)">{{ pa(r.jahresRate) }}</span>
+                            <span class="fWert" :class="farbe(r.bitunix?.jahresRate)">{{ pa(r.bitunix?.jahresRate) }}</span>
+                        </span>
                     </div>
                 </div>
             </template>
@@ -98,6 +120,37 @@ function bisZahlung(ms) {
 
         <!-- Gross: die volle Liste, nach jeder Spalte sortierbar -->
         <div v-else class="fTabelleWrap">
+            <!-- Deine Märkte mit beiden Börsen: Binance zeigt die Marktbreite,
+                 Bitunix die Rate, die die eigene Position wirklich zahlt -->
+            <div v-if="(daten.eigene || []).length" class="fEigeneGross">
+                <div class="fKopf"><span>{{ t('marktradar.funding.yours') }}</span></div>
+                <table class="fTabelle">
+                    <thead>
+                        <tr>
+                            <th>{{ t('marktradar.funding.symbol') }}</th>
+                            <th class="r">Binance {{ t('marktradar.funding.annual') }}</th>
+                            <th class="r">Bybit {{ t('marktradar.funding.annual') }}</th>
+                            <th class="r">Bitunix {{ t('marktradar.funding.annual') }}</th>
+                            <th class="r">{{ t('marktradar.funding.interval') }}</th>
+                            <th class="r">{{ t('marktradar.funding.next') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="r in daten.eigene" :key="'eigene-' + r.symbol" @click="liveSymbol = r.symbol">
+                            <td>
+                                {{ kurz(r.symbol) }}
+                                <span v-if="r.divergenz != null" class="fDiv" :title="divTitel(r)">Δ</span>
+                            </td>
+                            <td class="r" :class="farbe(r.jahresRate)">{{ pa(r.jahresRate) }}</td>
+                            <td class="r" :class="farbe(r.bybitJahresRate)">{{ pa(r.bybitJahresRate) }}</td>
+                            <td class="r" :class="farbe(r.bitunix?.jahresRate)">{{ pa(r.bitunix?.jahresRate) }}</td>
+                            <td class="r muted">{{ r.bitunix ? `${r.bitunix.intervallStunden} h` : '—' }}</td>
+                            <td class="r muted">{{ bisZahlung(r.bitunix?.naechsteZahlung || r.naechsteZahlung) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="fQuelle fEigeneNote">{{ t('marktradar.funding.yoursNote') }}</p>
+            </div>
             <table class="fTabelle">
                 <thead>
                     <tr>
@@ -110,7 +163,10 @@ function bisZahlung(ms) {
                 </thead>
                 <tbody>
                     <tr v-for="r in liste" :key="r.symbol" @click="liveSymbol = r.symbol">
-                        <td>{{ kurz(r.symbol) }}</td>
+                        <td>
+                            {{ kurz(r.symbol) }}
+                            <span v-if="r.divergenz != null" class="fDiv" :title="divTitel(r)">Δ</span>
+                        </td>
                         <td class="r" :class="r.rate >= 0 ? 'hoch' : 'tief'">{{ proz(r.rate) }}</td>
                         <td class="r" :class="r.rate >= 0 ? 'hoch' : 'tief'">{{ jahr(r.jahresRate) }}</td>
                         <td class="r muted">{{ vol(r.volumen24h) }}</td>
@@ -118,7 +174,7 @@ function bisZahlung(ms) {
                     </tr>
                 </tbody>
             </table>
-            <p class="fQuelle">{{ t('marktradar.funding.source', { n: daten.gezaehlt }) }}</p>
+            <p class="fQuelle">{{ t(daten.rang === 'mcap' ? 'marktradar.funding.sourceMcap' : 'marktradar.funding.source', { n: daten.gezaehlt }) }}</p>
         </div>
     </div>
 </template>
@@ -147,6 +203,13 @@ function bisZahlung(ms) {
     font-size: 0.72rem;
     color: var(--white-60);
     margin-right: 0.15rem;
+}
+
+.fLeisteTrenner {
+    width: 1px;
+    align-self: stretch;
+    margin: 0.1rem 0.25rem;
+    background: var(--white-12, rgba(255, 255, 255, 0.12));
 }
 
 .fKlein {
@@ -196,10 +259,52 @@ function bisZahlung(ms) {
 }
 
 .fKopf {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
     font-size: 0.74rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-bottom: 0.25rem;
+}
+
+.fLegende {
+    font-size: 0.66rem;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--white-60);
+}
+
+.fWerte {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.fWerte .fWert {
+    min-width: 3.4rem;
+    text-align: right;
+}
+
+.fEigeneGross {
+    margin-bottom: 0.9rem;
+}
+
+.fEigeneNote {
+    margin-top: 0.35rem;
+}
+
+/* Divergenz-Marker: fällt auf, ohne die Zahlen zu übertönen — die Zeile bleibt
+   lesbar, das Δ ist nur der Hinweis „hier lohnt der zweite Blick". */
+.fDiv {
+    display: inline-block;
+    margin-left: 0.3rem;
+    padding: 0 0.22rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgb(240, 180, 60);
+    background: rgba(240, 180, 60, 0.14);
+    cursor: help;
 }
 
 .fZeile {

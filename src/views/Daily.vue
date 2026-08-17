@@ -357,14 +357,27 @@ const modalTrade = computed(() => {
     return day?.trades?.[tradeIndex.value] || null
 })
 
-/** Zeitfenster: Einstieg minus Vorlauf bis Ausstieg plus Nachlauf. */
+/**
+ * Zeitfenster: Einstieg minus Vorlauf bis Ausstieg plus Nachlauf.
+ *
+ * Der Server nimmt höchstens 48 Stunden am Stück an. Sehr lange Positionen
+ * werden deshalb ab dem Einstieg gekappt — lieber der Anfang des Trades als
+ * eine Fehlermeldung.
+ */
+const REPLAY_MAX_SPANNE_MS = 48 * 60 * 60 * 1000
+
 const replayFenster = computed(() => {
     const trade = modalTrade.value
     if (!trade?.symbol || !trade.entryTime) return null
-    const puffer = 5 * 60 * 1000
-    const von = trade.entryTime * 1000 - puffer
-    const bis = (trade.exitTime ? trade.exitTime * 1000 : trade.entryTime * 1000 + 15 * 60 * 1000) + puffer
-    return { von, bis, symbol: String(trade.symbol).toUpperCase() }
+    // 15 Minuten Vor- und Nachlauf: die feinste Zoomstufe zeigt etwa eine
+    // Bildschirmbreite in Sekunden (~16–28 min). Mit weniger Puffer klebt der
+    // Einstieg am linken Rand, statt in der Mitte zu stehen.
+    const puffer = 15 * 60 * 1000
+    const einstieg = trade.entryTime * 1000
+    const ausstieg = trade.exitTime ? trade.exitTime * 1000 : einstieg + 15 * 60 * 1000
+    const von = einstieg - puffer
+    const bis = Math.min(ausstieg + puffer, von + REPLAY_MAX_SPANNE_MS)
+    return { von, bis, einstieg, ausstieg, symbol: String(trade.symbol).toUpperCase() }
 })
 
 async function pruefeReplay() {
@@ -390,6 +403,9 @@ function oeffneOrderbuch() {
     const params = new URLSearchParams({
         replay: '1', symbol: fenster.symbol, market: 'futures',
         from: String(Math.round(fenster.von)), to: String(Math.round(fenster.bis)),
+        // Ein- und Ausstieg getrennt mitgeben: die Wiedergabe bietet damit
+        // Sprungknöpfe auf genau diese beiden Momente an.
+        entry: String(Math.round(fenster.einstieg)), exit: String(Math.round(fenster.ausstieg)),
         label: 'Trade ' + useTimeFormat(modalTrade.value.entryTime),
     })
     window.location.href = '/liquidity?' + params.toString()
@@ -1426,7 +1442,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                                                 <span v-if="trade.tradesCount == 0"></span><span
                                                                     v-else-if="trade.type == 'forex'">-</span><span
                                                                     v-else
-                                                                    v-bind:class="[trade.grossSharePL > 0 ? 'greenTrade' : 'redTrade']">{{
+                                                                    v-bind:class="[trade.grossSharePL >= 0 ? 'greenTrade' : 'redTrade']">{{
                                                                         useTwoDecCurrencyFormat(trade.grossSharePL)
                                                                     }}</span>
                                                             </td>

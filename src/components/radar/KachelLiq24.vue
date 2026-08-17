@@ -148,6 +148,14 @@ watch(() => props.daten, zeichne)
                         </div>
                     </div>
                 </div>
+                <!-- Bybit dominiert hier fast immer: Binance ist eine gedrosselte
+                     Stichprobe (1 Ereignis/s/Symbol), Bybit ungedrosselt. -->
+                <div v-if="daten.boersen?.length > 1" class="lqBoersen">
+                    <span v-for="b in daten.boersen" :key="b.id" class="lqBoerse">
+                        {{ b.id === 'bybit' ? 'Bybit' : 'Binance' }}
+                        {{ Math.round((b.longUsd + b.shortUsd) / (summe || 1) * 100) }} %
+                    </span>
+                </div>
                 <p class="lqQuelle">
                     {{ t('marktradar.liq.source') }}
                     <span v-if="daten.seit"> {{ t('marktradar.liq.since', { zeit: dayjs(daten.seit).format('DD.MM. HH:mm') }) }}</span>
@@ -256,5 +264,14 @@ watch(() => props.daten, zeichne)
     margin: 0.7rem 0 0;
     font-size: 0.78rem;
     color: var(--white-60);
+}
+
+.lqBoersen {
+    display: flex;
+    gap: 0.8rem;
+    margin-top: 0.6rem;
+    font-size: 0.78rem;
+    color: var(--white-60);
+    font-variant-numeric: tabular-nums;
 }
 </style>

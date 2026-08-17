@@ -467,3 +467,24 @@ onBeforeUnmount(stopPolling)
     </div>
 </div>
 </template>
+
+<style scoped>
+/*
+ * `.dailyCard` trägt global `height: 100%` (style-dark.css). Das ist dort
+ * richtig, wo Karten NEBENEINANDER in einer Zeile stehen und gleich hoch sein
+ * sollen — Dashboard und Auswertung leben davon.
+ *
+ * Hier stehen die sechs Karten aber UNTEREINANDER in einer einzigen `.col-12`.
+ * Die ist ein Flex-Element von `.row` und bekommt dadurch eine feste Höhe;
+ * jede Karte nahm sich daraufhin die volle Höhe. Gemessen: sechs Karten à
+ * 3796 px und eine 23 325 px hohe Seite — die Rangliste stand dann irgendwo
+ * weit unten hinter riesigen Löchern.
+ *
+ * Nachgemessen betrifft das ausschliesslich diese Seite; alle anderen
+ * dailyCard-Seiten haben unauffällige Höhen. Deshalb hier heilen und nicht
+ * global.
+ */
+.dailyCard {
+    height: auto;
+}
+</style>

@@ -175,10 +175,10 @@ async function importFromApi() {
     if (isPionex.value) {
         try {
             const result = await useQuickApiImport('pionex')
-            sendNotification('Pionex Import', result.message || t('messages.importCount', { count: result.count || 0 }))
+            sendNotification('importFertig', 'Pionex Import', result.message || t('messages.importCount', { count: result.count || 0 }))
         } catch (error) {
             apiImportError.value = error.response?.data?.error || error.message || t('addTrades.importFailed')
-            sendNotification('Pionex Import', t('messages.importFailed') + (error.message || ''))
+            sendNotification('importFertig', 'Pionex Import', t('messages.importFailed') + (error.message || ''))
         }
         apiImportLoading.value = false
         return
@@ -230,7 +230,7 @@ async function importFromApi() {
 
         if (allPositions.length === 0) {
             apiImportError.value = t('addTrades.noPositionsFound')
-            sendNotification(`${brokerLabel.value} Import`, t('addTrades.noPositionsFound'))
+            sendNotification('importFertig', `${brokerLabel.value} Import`, t('addTrades.noPositionsFound'))
             apiImportLoading.value = false
             return
         }
@@ -334,7 +334,7 @@ async function importFromApi() {
         // Check if anything left to import
         if (Object.keys(trades).length === 0) {
             apiImportError.value = t('addTrades.allAlreadyImported')
-            sendNotification(`${brokerLabel.value} Import`, t('messages.noNewTrades'))
+            sendNotification('importFertig', `${brokerLabel.value} Import`, t('messages.noNewTrades'))
             spinnerLoadingPage.value = false
             apiImportLoading.value = false
             return
@@ -349,11 +349,11 @@ async function importFromApi() {
 
         spinnerLoadingPage.value = false
         console.log(` -> Imported ${allPositions.length} positions from ${brokerLabel.value} API (${Object.keys(trades).length} new days)`)
-        sendNotification(`${brokerLabel.value} Import`, t('messages.positionsImported', { count: allPositions.length, days: Object.keys(trades).length }))
+        sendNotification('importFertig', `${brokerLabel.value} Import`, t('messages.positionsImported', { count: allPositions.length, days: Object.keys(trades).length }))
 
     } catch (error) {
         apiImportError.value = error.message || t('addTrades.importFailed')
-        sendNotification(`${brokerLabel.value} Import`, t('messages.importFailed') + (error.message || t('common.error')))
+        sendNotification('importFertig', `${brokerLabel.value} Import`, t('messages.importFailed') + (error.message || t('common.error')))
         spinnerLoadingPage.value = false
     }
 

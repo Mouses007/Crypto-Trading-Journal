@@ -316,59 +316,66 @@ function guardDestructiveUpdate(req, res) {
     return true
 }
 
+/**
+ * Versionsstand ermitteln — ohne Express, damit auch der
+ * Benachrichtigungs-Takt die Prüfung nutzen kann, statt die GitHub-Abfrage
+ * ein zweites Mal zu schreiben.
+ *
+ * Der Zwischenspeicher ist derselbe wie für die Route: zwei Abfragen kurz
+ * hintereinander sollen GitHub nicht doppelt belasten.
+ *
+ * @param {boolean} forceRefresh Zwischenspeicher übergehen
+ */
+export async function pruefeAufUpdate(forceRefresh = false) {
+    const now = Date.now()
+    if (!forceRefresh && lastCheck && (now - lastCheckTime) < CHECK_CACHE_MS) return lastCheck
+
+    const localVersion = getLocalVersion()
+    try {
+        const release = await httpsGetJson(
+            `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
+        )
+        const remoteVersion = (release.tag_name || '').replace(/^v/, '')
+        lastCheck = {
+            ok: true,
+            localVersion,
+            remoteVersion,
+            updateAvailable: compareSemver(remoteVersion, localVersion) > 0,
+            releaseName: release.name || '',
+            releaseNotes: release.body || '',
+            releaseUrl: release.html_url || '',
+            publishedAt: release.published_at || ''
+        }
+        lastCheckTime = now
+        return lastCheck
+    } catch (err) {
+        // Noch kein Release veröffentlicht ist kein Fehler
+        if (err.message && err.message.includes('Not Found')) {
+            lastCheck = {
+                ok: true,
+                localVersion,
+                remoteVersion: localVersion,
+                updateAvailable: false,
+                releaseName: '',
+                releaseNotes: '',
+                releaseUrl: '',
+                publishedAt: ''
+            }
+            lastCheckTime = Date.now()
+            return lastCheck
+        }
+        throw err
+    }
+}
+
 export function setupUpdateRoutes(app) {
 
     // ── Check for updates ──────────────────────────────────────────
     app.get('/api/update/check', async (req, res) => {
         try {
-            const now = Date.now()
-            const forceRefresh = req.query.force === '1'
-
-            // Return cached result if fresh (isDocker is computed per-request)
-            if (!forceRefresh && lastCheck && (now - lastCheckTime) < CHECK_CACHE_MS) {
-                return res.json({ ...lastCheck, isDocker: effectiveIsDocker(req), confirmToken: issueConfirmToken() })
-            }
-
-            const localVersion = getLocalVersion()
-
-            // Fetch latest release from GitHub
-            const release = await httpsGetJson(
-                `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`
-            )
-
-            const remoteVersion = (release.tag_name || '').replace(/^v/, '')
-            const updateAvailable = compareSemver(remoteVersion, localVersion) > 0
-
-            lastCheck = {
-                ok: true,
-                localVersion,
-                remoteVersion,
-                updateAvailable,
-                releaseName: release.name || '',
-                releaseNotes: release.body || '',
-                releaseUrl: release.html_url || '',
-                publishedAt: release.published_at || ''
-            }
-            lastCheckTime = now
-
-            res.json({ ...lastCheck, isDocker: effectiveIsDocker(req), confirmToken: issueConfirmToken() })
+            const stand = await pruefeAufUpdate(req.query.force === '1')
+            res.json({ ...stand, isDocker: effectiveIsDocker(req), confirmToken: issueConfirmToken() })
         } catch (err) {
-            // If no releases exist yet, that's OK
-            if (err.message && err.message.includes('Not Found')) {
-                const localVersion = getLocalVersion()
-                lastCheck = {
-                    ok: true,
-                    localVersion,
-                    remoteVersion: localVersion,
-                    updateAvailable: false,
-                    releaseName: '',
-                    releaseNotes: '',
-                    releaseUrl: '',
-                    publishedAt: ''
-                }
-                lastCheckTime = Date.now()
-                return res.json({ ...lastCheck, isDocker: effectiveIsDocker(req), confirmToken: issueConfirmToken() })
-            }
             console.error('Update check failed:', err.message)
             res.status(500).json({ ok: false, error: err.message })
         }

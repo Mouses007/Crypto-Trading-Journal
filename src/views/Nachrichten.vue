@@ -20,7 +20,9 @@ import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
 import { timeZoneTrade } from '../stores/ui.js'
-import { spinnerLoadingPage } from '../stores/globals.js'
+import { spinnerLoadingPage, currentUser } from '../stores/globals.js'
+import { dbUpdateSettings } from '../utils/db.js'
+import { sendNotification } from '../utils/notify.js'
 // Dasselbe Overlay wie im Marktradar — ein Muster für beide Seiten
 import RadarOverlay from '../components/RadarOverlay.vue'
 import PageInfo from '../components/PageInfo.vue'
@@ -94,6 +96,14 @@ function videosUmschalten() {
 
 const bericht = ref(null)
 const verlauf = ref([])
+/** Der jüngste Bericht — Rückkehrpunkt, wenn im Archiv geblättert wurde. */
+const aktuellerBericht = ref(null)
+/** Archivliste ein-/ausgeklappt. */
+const archivOffen = ref(false)
+/** Zwei-Klick-Löschen im Archiv: merkt sich, welche Zeile bestätigt werden muss. */
+const archivLoeschId = ref(0)
+/** Aufgeklappte Video-Stichpunkte in der Beitragsliste (Beitrags-IDs). */
+const aufgeklappt = ref([])
 const beitraege = ref([])
 const termine = ref([])
 const kalenderInfo = ref({})
@@ -109,6 +119,139 @@ const laeuft = ref(false)
 const offenerPunkt = ref(-1)
 const punktImFenster = computed(() =>
     offenerPunkt.value >= 0 ? (bericht.value?.punkte || [])[offenerPunkt.value] || null : null)
+
+/** Kapitel des Berichts — leer bei Berichten aus der Zeit vor den Kapiteln. */
+const kapitelListe = computed(() =>
+    (bericht.value?.kapitel || []).filter(k => k && (k.lage || k.punkte?.length)))
+
+/** Zeigt die Seite gerade einen alten Bericht aus dem Archiv? */
+const zeigtArchiv = computed(() =>
+    Boolean(bericht.value && aktuellerBericht.value && bericht.value.id !== aktuellerBericht.value.id))
+
+const THEMA_NAME = { crypto: 'Crypto', finanzen: 'Finanzen', tech: 'Tech' }
+
+/** Einen Bericht aus dem Archiv in die Ansicht holen. */
+async function oeffneAusArchiv(id) {
+    try {
+        const { data } = await axios.get('/api/marktradar/lagebericht/' + id)
+        bericht.value = data.bericht
+        offenerPunkt.value = -1
+        archivOffen.value = false
+    } catch (e) {
+        meldung.value = e.response?.data?.error || e.message
+        fehler.value = true
+    }
+}
+
+function zurueckZumAktuellen() {
+    bericht.value = aktuellerBericht.value
+    offenerPunkt.value = -1
+}
+
+/**
+ * Löschen aus dem Archiv — zweistufig wie bei den gespeicherten KI-Berichten:
+ * erster Klick fragt, zweiter löscht. Ein `confirm()` je Zeile wäre lästig.
+ */
+async function archivLoeschen(id) {
+    if (archivLoeschId.value !== id) {
+        archivLoeschId.value = id
+        setTimeout(() => { if (archivLoeschId.value === id) archivLoeschId.value = 0 }, 4000)
+        return
+    }
+    archivLoeschId.value = 0
+    try {
+        const { data } = await axios.delete('/api/marktradar/lagebericht/' + id)
+        meldung.value = t('news.deleted', { n: data.verbleibend })
+        // Stand der gelöschte Bericht gerade in der Ansicht, zurück zum jüngsten
+        if (bericht.value?.id === id) {
+            bericht.value = null
+            offenerPunkt.value = -1
+        }
+        await ladeAlles()
+    } catch (e) {
+        meldung.value = e.response?.data?.error || e.message
+        fehler.value = true
+    }
+}
+
+/** Video-Stichpunkte einer Zeile auf- oder zuklappen. */
+function klappeUm(id) {
+    const i = aufgeklappt.value.indexOf(id)
+    if (i >= 0) aufgeklappt.value.splice(i, 1)
+    else aufgeklappt.value.push(id)
+}
+
+// ── Schnell-Einstellungen des Berichts ───────────────────────────────────
+// Die wichtigsten Regler direkt auf der Seite statt nur in den Einstellungen:
+// Rhythmus, Themen, Länge. Gespeichert wird serverseitig (ein Feld je Klick,
+// gleiche Vorsicht wie `radarSpeichern` in den Einstellungen) — sie gelten
+// für den NÄCHSTEN Bericht, der bestehende bleibt stehen.
+const nRhythmus = ref('taeglich')
+const nThemen = ref(['crypto'])
+const nLaenge = ref('mittel')
+
+function ladeBerichtOptionen() {
+    const s = currentUser.value || {}
+    nRhythmus.value = s.radarNewsRhythmus === 'woechentlich' ? 'woechentlich' : 'taeglich'
+    nThemen.value = String(s.radarNewsThemen || 'crypto').split(',')
+        .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech'].includes(t))
+    if (!nThemen.value.length) nThemen.value = ['crypto']
+    nLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
+}
+
+async function speichereOption(feld, wert) {
+    await dbUpdateSettings({ [feld]: wert })
+    if (currentUser.value) currentUser.value[feld] = wert
+}
+
+function setzeRhythmus(w) {
+    if (nRhythmus.value === w) return
+    nRhythmus.value = w
+    speichereOption('radarNewsRhythmus', w)
+}
+
+function toggleThema(t) {
+    const i = nThemen.value.indexOf(t)
+    if (i >= 0) {
+        if (nThemen.value.length === 1) return   // mindestens ein Thema
+        nThemen.value.splice(i, 1)
+    } else nThemen.value.push(t)
+    // Reihenfolge festnageln — die Kapitel sollen immer gleich sortiert sein
+    const geordnet = ['crypto', 'finanzen', 'tech'].filter(x => nThemen.value.includes(x))
+    nThemen.value = geordnet
+    speichereOption('radarNewsThemen', geordnet.join(','))
+}
+
+function setzeLaenge(w) {
+    if (nLaenge.value === w) return
+    nLaenge.value = w
+    speichereOption('radarNewsLaenge', w)
+}
+
+// ── KI-Guthaben ──────────────────────────────────────────────────────────
+// Scheiterte ein Aufruf an fehlendem Guthaben, steht das serverseitig fest —
+// hier wird es sichtbar gemacht: Banner über dem Bericht, dazu höchstens alle
+// zwölf Stunden eine Browser-Benachrichtigung (sofern erlaubt).
+const guthabenLeer = ref([])
+/** Letzter gescheiterter Berichtslauf — kommt aus dem Anspruchs-Vermerk. */
+const letzterFehlschlag = ref(null)
+
+async function pruefeGuthaben() {
+    try {
+        const { data } = await axios.get('/api/ai/guthaben')
+        guthabenLeer.value = (data.anbieter || []).filter(a => a.keySet && a.leer)
+    } catch { guthabenLeer.value = [] }
+    if (!guthabenLeer.value.length) return
+
+    // Höchstens alle zwölf Stunden. Ob überhaupt gemeldet wird, entscheidet
+    // sendNotification anhand der Kanalwahl — vorher stand diese Prüfung hier
+    // von Hand nachgebaut und ging dabei am Hauptschalter vorbei.
+    const zuletzt = Number(localStorage.getItem('nachrichten_guthaben_notif')) || 0
+    if (Date.now() - zuletzt < 12 * 60 * 60 * 1000) return
+    localStorage.setItem('nachrichten_guthaben_notif', String(Date.now()))
+    sendNotification('kiGuthabenLeer', t('news.quotaTitle'),
+        guthabenLeer.value.map(a => a.name).join(', '))
+}
 
 /**
  * Verweise zum Punkt. Erste Wahl sind die Einzelbelege, die das Modell
@@ -259,7 +402,7 @@ async function ladeAlles() {
         const [b, n, alleN, k] = await Promise.allSettled([
             axios.get('/api/marktradar/lagebericht'),
             axios.get('/api/marktradar/news', { params: { limit: menge.value } }),
-            axios.get('/api/marktradar/news', { params: { limit: 100, mitVideos: 1 } }),
+            axios.get('/api/marktradar/news', { params: { limit: 100 } }),
             axios.get('/api/marktradar/kalender', {
                 params: {
                     // Der Rückblick ist bewusst fest: Termine von heute Morgen
@@ -274,8 +417,12 @@ async function ladeAlles() {
             }),
         ])
         if (b.status === 'fulfilled') {
-            bericht.value = b.value.data.bericht
+            aktuellerBericht.value = b.value.data.bericht
+            // Wer gerade im Archiv liest, wird vom Zehn-Minuten-Takt nicht
+            // zurück auf den jüngsten Bericht geworfen
+            if (!zeigtArchiv.value) bericht.value = b.value.data.bericht
             verlauf.value = b.value.data.verlauf || []
+            letzterFehlschlag.value = b.value.data.letzterFehlschlag || null
         }
         if (n.status === 'fulfilled') {
             beitraege.value = n.value.data.beitraege || []
@@ -391,6 +538,7 @@ async function berichtLoeschen() {
     try {
         const { data } = await axios.delete('/api/marktradar/lagebericht/' + (bericht.value.id || ''))
         meldung.value = t('news.deleted', { n: data.verbleibend })
+        bericht.value = null
         offenerPunkt.value = -1
         await ladeAlles()
     } catch (e) {
@@ -416,6 +564,9 @@ async function berichtErzeugen() {
                 modell: `${data.provider}/${data.modell}`,
             }) + (data.kostenUsd ? ` · ${data.kostenUsd.toFixed(4)} USD` : '')
                 + (data.geminiFehler ? ` · Gemini: ${data.geminiFehler}` : '')
+            // Frisch erzeugt heisst: den neuen Bericht zeigen, auch wenn
+            // vorher im Archiv geblättert wurde
+            bericht.value = null
         }
         await ladeAlles()
     } catch (e) {
@@ -423,12 +574,17 @@ async function berichtErzeugen() {
         fehler.value = true
     } finally {
         laeuft.value = false
+        // Ein gescheiterter Lauf ist der Moment, in dem ein leeres Guthaben
+        // sichtbar wird — direkt nachsehen statt auf den nächsten Seitenaufruf warten
+        pruefeGuthaben()
     }
 }
 
 let takt = null
 onMounted(() => {
     ladeAlles()
+    ladeBerichtOptionen()
+    pruefeGuthaben()
     // Zehn Minuten reichen: Feeds ändern sich langsamer als Kurse
     takt = setInterval(() => { if (!document.hidden) ladeAlles() }, 10 * 60 * 1000)
 })
@@ -456,24 +612,102 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
             </div>
         </div>
 
+        <!-- Die wichtigsten Berichts-Regler direkt auf der Seite. Sie gelten
+             für den nächsten Bericht; der angezeigte bleibt unverändert. -->
+        <div class="nwSchnell" :title="t('news.quickHint')">
+            <button v-for="r in ['taeglich', 'woechentlich']" :key="r" type="button"
+                class="ctl-pill klein" :class="{ active: nRhythmus === r }" @click="setzeRhythmus(r)">
+                {{ r === 'taeglich' ? t('news.daily') : t('news.weekly') }}
+            </button>
+            <span class="nwTrenner"></span>
+            <button v-for="(bez, th) in THEMA_NAME" :key="th" type="button"
+                class="ctl-pill klein" :class="{ active: nThemen.includes(th) }" @click="toggleThema(th)">
+                {{ bez }}
+            </button>
+            <span class="nwTrenner"></span>
+            <button v-for="l in ['kurz', 'mittel', 'lang']" :key="l" type="button"
+                class="ctl-pill klein" :class="{ active: nLaenge === l }" @click="setzeLaenge(l)">
+                {{ t('news.len.' + l) }}
+            </button>
+        </div>
+
         <p v-if="meldung" class="nwMeldung" :class="{ fehler }">{{ meldung }}</p>
 
+        <!-- KI-Guthaben aufgebraucht: ohne diesen Hinweis sieht ein leerer
+             Anbieter wie ein kaputter Bericht aus. -->
+        <p v-if="guthabenLeer.length" class="nwWarnung nwGuthaben">
+            <i class="uil uil-exclamation-triangle"></i>
+            {{ t('news.quotaEmpty', { liste: guthabenLeer.map(a => a.name).join(', ') }) }}
+        </p>
+
+        <!-- Gescheiterter Berichtslauf. Vorher stand so etwas nur im Serverlog —
+             ein ausgefallener Tagesbericht sah aus wie „heute nichts passiert". -->
+        <p v-if="letzterFehlschlag" class="nwWarnung nwGuthaben">
+            <i class="uil uil-exclamation-triangle"></i>
+            {{ t('news.lastFailure', {
+                zeit: dayjs(letzterFehlschlag.zeit).tz(zone()).format('DD.MM. HH:mm'),
+                text: letzterFehlschlag.text,
+            }) }}
+        </p>
+
         <!--=============== LAGEBERICHT ===============-->
-        <section class="nwKarte nwBericht">
+        <section class="nwKarte nwBericht nwZeitung">
             <template v-if="bericht">
                 <div class="nwBerichtKopf">
                     <span class="nwMarke">{{ t('news.briefing') }}</span>
                     <span class="nwZeitpunkt">{{ dayjs(bericht.erstelltAm).format('DD.MM.YYYY, HH:mm') }}</span>
+                    <span v-for="th in String(bericht.themen || '').split(',').filter(Boolean)"
+                        :key="th" class="nwThema">{{ THEMA_NAME[th] || th }}</span>
+                    <span v-if="zeigtArchiv" class="nwArchivMarke">{{ t('news.fromArchive') }}</span>
+                    <button v-if="zeigtArchiv" type="button" class="ctl-pill klein" style="margin-left:auto;"
+                        @click="zurueckZumAktuellen">
+                        <i class="uil uil-arrow-left"></i>{{ t('news.backToCurrent') }}
+                    </button>
+                    <button type="button" class="ctl-pill klein" :style="zeigtArchiv ? {} : { marginLeft: 'auto' }"
+                        :class="{ active: archivOffen }" @click="archivOffen = !archivOffen">
+                        <i class="uil uil-archive"></i>{{ t('news.archive') }}
+                        <span class="nwAnzahl">{{ verlauf.length }}</span>
+                    </button>
                     <button type="button" class="nwLoeschen" :title="t('news.delete')" @click="berichtLoeschen">
                         <i class="uil uil-trash-alt"></i>
+                    </button>
+                </div>
+
+                <!-- Archiv: die letzten Berichte, öffnen und löschen je Zeile.
+                     Löschen zweistufig — erster Klick fragt, zweiter löscht. -->
+                <div v-if="archivOffen" class="nwArchiv">
+                    <div v-if="!verlauf.length" class="nwLeer klein"><span>{{ t('news.archiveEmpty') }}</span></div>
+                    <button v-for="v in verlauf" :key="v.id" type="button" class="nwArchivZeile"
+                        :class="{ aktiv: bericht && bericht.id === v.id }" @click="oeffneAusArchiv(v.id)">
+                        <span class="nwArchivDatum">{{ dayjs(v.erstelltAm).format('DD.MM.YYYY HH:mm') }}</span>
+                        <span class="nwArchivTitel">{{ v.ueberschrift || '—' }}</span>
+                        <span class="nwArchivMeta">
+                            {{ v.beitraege }} · {{ v.ausloeser }}
+                            <template v-if="v.kostenUsd"> · {{ (v.kostenUsd * 0.8).toFixed(2) }} CHF</template>
+                        </span>
+                        <span class="nwArchivLoeschen" :class="{ scharf: archivLoeschId === v.id }"
+                            :title="t('news.delete')" @click.stop="archivLoeschen(v.id)">
+                            <i class="uil" :class="archivLoeschId === v.id ? 'uil-question-circle' : 'uil-trash-alt'"></i>
+                            <template v-if="archivLoeschId === v.id">{{ t('news.confirmDelete') }}</template>
+                        </span>
                     </button>
                 </div>
 
                 <h2 class="nwUeberschrift">{{ bericht.ueberschrift }}</h2>
                 <p class="nwLage">{{ bericht.lage }}</p>
 
-                <!-- Kacheln, zwei Spalten. Wichtige Punkte nehmen beide —
-                     die Rangfolge ist dann ohne Beschriftung zu sehen. -->
+                <!-- Zeitungsteil: je Thema ein Kapitel mit Spaltensatz. Alte
+                     Berichte ohne Kapitel zeigen wie bisher nur die Lage. -->
+                <div v-for="(k, ki) in kapitelListe" :key="ki" class="nwKapitel">
+                    <div class="nwKapitelKopf">
+                        <span class="nwKapitelThema">{{ THEMA_NAME[k.thema] || k.thema }}</span>
+                        <h3 class="nwKapitelTitel">{{ k.ueberschrift }}</h3>
+                    </div>
+                    <p class="nwKapitelText" :class="{ erste: ki === 0 }">{{ k.lage }}</p>
+                </div>
+
+                <!-- Kacheln, drei Spalten — kompakter als früher; der volle
+                     Text steht im Fenster. -->
                 <div class="nwPunkte">
                     <article v-for="(p, i) in bericht.punkte" :key="i" class="nwPunkt"
                         :class="{ hoch: p.wichtigkeit === 'hoch', offen: offenerPunkt === i }">
@@ -487,6 +721,7 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                             <span class="nwPunktKopf">
                                 <span class="nwRang">{{ i + 1 }}</span>
                                 <span class="nwPunktTitel">{{ p.titel }}</span>
+                                <span v-if="p.thema" class="nwThema klein">{{ THEMA_NAME[p.thema] || p.thema }}</span>
                                 <span v-if="p.wichtigkeit === 'hoch'" class="nwWichtig">
                                     {{ t('news.important') }}
                                 </span>
@@ -690,6 +925,10 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                     <span v-if="newsInfo.ausgeblendet && newsInfo.filterAn" class="nwCountdown">
                         {{ t('news.hidden', { n: newsInfo.ausgeblendet }) }}
                     </span>
+                    <span v-if="newsInfo.stichwortGefiltert" class="nwCountdown"
+                        :title="t('news.filteredHint')">
+                        {{ t('news.filtered', { n: newsInfo.stichwortGefiltert }) }}
+                    </span>
                 </h3>
 
                 <div class="nwFilter">
@@ -729,13 +968,24 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                     <div class="nwBeitragKopf">
                         <i :class="ART_ICON[b.art] || ART_ICON.rss"></i>
                         <span class="nwQuelle">{{ b.quelle }}</span>
+                        <span v-if="b.art === 'youtube'" class="nwVideoMarke">{{ t('news.video') }}</span>
                         <span class="nwZeit">{{ dayjs(b.publishedAt).tz(zone()).format('DD.MM. HH:mm') }}</span>
                     </div>
                     <div class="nwBeitragTitel">{{ b.titel }}</div>
-                    <div v-if="b.zusammenfassung" class="nwBeitragFassung">
+                    <!-- Video-Stichpunkte: zusammengeklappt zwei Zeilen, der
+                         Pfeil klappt auf — der Link daneben öffnet weiter das
+                         Original. Ohne Stichpunkte (noch nicht angesehen)
+                         bleibt nur der Titel. -->
+                    <div v-if="b.zusammenfassung" class="nwBeitragFassung"
+                        :class="{ zu: !aufgeklappt.includes(b.id) }">
                         <span class="nwKiMarke">{{ t('news.aiMark') }}</span>{{ b.zusammenfassung }}
                     </div>
                     <div v-else-if="b.auszug" class="nwVorschau">{{ b.auszug }}</div>
+                    <button v-if="b.zusammenfassung && b.zusammenfassung.length > 120" type="button"
+                        class="nwKlappe" @click.prevent="klappeUm(b.id)">
+                        <i class="uil" :class="aufgeklappt.includes(b.id) ? 'uil-angle-up' : 'uil-angle-down'"></i>
+                        {{ aufgeklappt.includes(b.id) ? t('news.collapse') : t('news.expand') }}
+                    </button>
                 </a>
                 </div>
 
@@ -760,6 +1010,23 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
 
 .nwMeldung.fehler {
     color: rgb(250, 140, 130);
+}
+
+/* Schnell-Einstellungen des Berichts: Rhythmus · Themen · Länge */
+.nwSchnell {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: 0 0 0.7rem;
+}
+
+.nwGuthaben {
+    margin: 0 0 0.7rem;
+    padding: 0.45rem 0.7rem;
+    border-radius: var(--border-radius, 6px);
+    background: rgba(250, 190, 60, 0.1);
+    border: 1px solid rgba(250, 190, 60, 0.35);
 }
 
 .nwKarte {
@@ -809,9 +1076,9 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
     color: var(--white-75, rgba(255, 255, 255, 0.75));
 }
 
-/* Genau zwei Spalten ab 900 px, darunter eine. Bewusst fest statt `auto-fill`:
-   das hätte am breiten Bildschirm drei oder vier Streifen ergeben, und ein
-   Absatz von fünf Sätzen liest sich in einer schmalen Spalte schlecht. */
+/* Drei Spalten ab 900 px, zwei ab 600, darunter eine. Die Kacheln sind seit
+   dem Zeitungsteil die Kurzfassung — der volle Text steht oben im Artikel
+   und im Fenster, deshalb dürfen sie schmaler sein als früher. */
 .nwPunkte {
     display: grid;
     grid-template-columns: 1fr;
@@ -819,10 +1086,204 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
     gap: 0.6rem;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 600px) {
     .nwPunkte {
         grid-template-columns: 1fr 1fr;
     }
+}
+
+@media (min-width: 900px) {
+    .nwPunkte {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* ── Zeitungsoptik des Berichts ──
+   Serifen-Schlagzeile, feine Doppellinie unter dem Kopf, Kapitel mit
+   Spitzmarke und Spaltensatz — gelesen werden soll er wie ein Artikel,
+   nicht wie ein Dashboard. */
+.nwZeitung .nwBerichtKopf {
+    padding-bottom: 0.5rem;
+    border-bottom: 3px double var(--white-30, rgba(255, 255, 255, 0.3));
+    flex-wrap: wrap;
+}
+
+.nwZeitung .nwUeberschrift {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.7rem;
+    line-height: 1.25;
+    margin: 0.8rem 0 0.4rem;
+}
+
+.nwZeitung .nwLage {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.02rem;
+    font-style: italic;
+    color: var(--white-75, rgba(255, 255, 255, 0.78));
+    border-bottom: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    padding-bottom: 0.8rem;
+}
+
+.nwThema {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(90, 150, 250, 0.14);
+    color: #7aa8f0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.nwThema.klein {
+    font-size: 0.62rem;
+    padding: 0.05rem 0.4rem;
+}
+
+.nwArchivMarke {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(232, 163, 61, 0.16);
+    color: #e8a33d;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.nwKapitel {
+    margin: 0.9rem 0 0;
+}
+
+.nwKapitelKopf {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin-bottom: 0.35rem;
+}
+
+.nwKapitelThema {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #7aa8f0;
+}
+
+.nwKapitelTitel {
+    margin: 0;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--white-87);
+    line-height: 1.3;
+}
+
+/* Spaltensatz wie im Blatt: zwei Textspalten mit feiner Trennlinie. Nur am
+   breiten Bildschirm — auf dem Telefon liest sich eine Spalte besser. */
+.nwKapitelText {
+    margin: 0 0 0.6rem;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: var(--white-75, rgba(255, 255, 255, 0.78));
+    text-align: justify;
+    hyphens: auto;
+}
+
+@media (min-width: 900px) {
+    .nwKapitelText {
+        columns: 2;
+        column-gap: 2rem;
+        column-rule: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    }
+}
+
+/* Initiale im ersten Kapitel — das eine Zeitungs-Detail, das sofort wirkt. */
+.nwKapitelText.erste::first-letter {
+    float: left;
+    font-size: 3.1em;
+    line-height: 0.85;
+    padding: 0.06em 0.12em 0 0;
+    font-weight: 700;
+    color: var(--white-87);
+}
+
+/* ── Archivliste ── */
+.nwArchiv {
+    margin: 0.6rem 0 0.2rem;
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    border-radius: var(--border-radius, 6px);
+    overflow: hidden;
+}
+
+.nwArchivZeile {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    width: 100%;
+    padding: 0.45rem 0.7rem;
+    background: none;
+    border: 0;
+    border-bottom: 1px solid var(--white-12, rgba(255, 255, 255, 0.06));
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+    font-size: 0.82rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.nwArchivZeile:last-child {
+    border-bottom: 0;
+}
+
+.nwArchivZeile:hover,
+.nwArchivZeile.aktiv {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--white-87);
+}
+
+.nwArchivDatum {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    color: var(--white-60);
+}
+
+.nwArchivTitel {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.nwArchivMeta {
+    flex: 0 0 auto;
+    color: var(--white-60);
+    font-size: 0.74rem;
+    white-space: nowrap;
+}
+
+.nwArchivLoeschen {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    color: var(--white-60);
+}
+
+.nwArchivLoeschen:hover {
+    color: rgb(255, 120, 110);
+    background: rgba(255, 95, 86, 0.12);
+}
+
+.nwArchivLoeschen.scharf {
+    color: rgb(255, 120, 110);
+    background: rgba(255, 95, 86, 0.12);
+    font-size: 0.74rem;
 }
 
 .nwPunkt {
@@ -862,11 +1323,12 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
 }
 
 /* Das Bild sitzt bündig in der Kachel, oberhalb des Textes. Feste Höhe,
-   damit ein Hochformat-Bild die Kachel nicht in die Länge zieht. */
+   damit ein Hochformat-Bild die Kachel nicht in die Länge zieht — seit den
+   drei Spalten flacher als früher. */
 .nwPunktBild {
     width: calc(100% + 1.6rem);
     margin: -0.7rem -0.8rem 0.2rem;
-    height: 150px;
+    height: 90px;
     object-fit: cover;
     display: block;
 }
@@ -1045,13 +1507,12 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
     line-height: 1.35;
 }
 
-/* Der ganze Absatz steht in der Kachel — abgeschnitten wird erst, wenn ein
-   Punkt aus dem Rahmen fällt (zehn Zeilen), damit eine einzelne Ausreisser-
-   Antwort das Raster nicht auseinanderzieht. Der volle Text steht im Fenster. */
+/* Fünf Zeilen je Kachel — sie ist seit dem Zeitungsteil der Anriss, nicht
+   mehr der ganze Absatz. Der volle Text steht im Fenster. */
 .nwPunktText {
     display: -webkit-box;
-    -webkit-line-clamp: 10;
-    line-clamp: 10;
+    -webkit-line-clamp: 5;
+    line-clamp: 5;
     -webkit-box-orient: vertical;
     overflow: hidden;
     margin: 0;
@@ -1397,7 +1858,7 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
 .nwBeitrag {
     display: grid;
     grid-template-columns: auto 1fr;
-    grid-template-areas: 'bild kopf' 'bild titel' 'bild text';
+    grid-template-areas: 'bild kopf' 'bild titel' 'bild text' 'bild klappe';
     column-gap: 0.6rem;
     padding: 0.45rem 0;
     border-bottom: 1px solid var(--white-12, rgba(255, 255, 255, 0.07));
@@ -1463,6 +1924,47 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
     font-size: 0.84rem;
     line-height: 1.45;
     color: var(--white-70, rgba(255, 255, 255, 0.7));
+    /* Stichpunkte der Videoanalyse: die Zeilenumbrüche sind der Inhalt */
+    white-space: pre-line;
+}
+
+/* Zugeklappt: zwei Zeilen Anriss, der Rest hinter dem Pfeil */
+.nwBeitragFassung.zu {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.nwKlappe {
+    grid-area: klappe;
+    justify-self: start;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin-top: 0.15rem;
+    padding: 0;
+    background: none;
+    border: 0;
+    font-size: 0.74rem;
+    color: var(--white-60);
+    cursor: pointer;
+}
+
+.nwKlappe:hover {
+    color: var(--white-87);
+}
+
+.nwVideoMarke {
+    padding: 0.02rem 0.35rem;
+    border-radius: 3px;
+    background: rgba(255, 95, 86, 0.14);
+    color: rgb(255, 140, 130);
+    font-size: 0.66rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
 .nwHinweis {

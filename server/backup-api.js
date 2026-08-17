@@ -2,11 +2,14 @@ import fs from 'fs'
 import { getKnex } from './database.js'
 import { loadDbConfig, getConfigPath, saveDbConfig } from './db-config.js'
 
-// Sensitive Felder die im Export redaktiert werden
+// Sensitive Felder die im Export redaktiert werden.
+// Muss SETTINGS_SENSITIVE_FIELDS in api-routes.js decken — aiKeyPerplexity
+// fehlte hier und ging unredigiert ins Backup.
 const REDACTED_SETTINGS_KEYS = [
     'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-    'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen', 'aiKeyCustom',
-    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash'
+    'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen', 'aiKeyPerplexity', 'aiKeyCustom',
+    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash',
+    'mailPasswort'
 ]
 
 // Settings-Felder, die beim Import NIE aus dem Backup übernommen werden:
@@ -40,6 +43,11 @@ const BACKUP_TABLES = [
     'market_snapshots',
     // Vergangene Wochen liefert der Feed nicht mehr — einmal verloren, weg
     'calendar_events',
+    // Handelssitzungen aus dem Live-Trading-Fenster: Plan, Notizen und Fazit
+    // sind Handarbeit und stehen nirgendwo sonst. Der eingefrorene Trade-Stand
+    // darin liesse sich zwar aus dem Journal neu rechnen — aber nicht mehr so,
+    // wie er am Ende der Sitzung aussah.
+    'live_sessions',
     // ── Strategie-Sektion ───────────────────────────────────────────────
     // Selbst gebaute Regelstrategien existieren NIRGENDWO sonst — sie sind
     // Handarbeit des Nutzers, kein Mitschnitt. Ohne sie wäre der
@@ -94,6 +102,7 @@ const DELETE_ORDER = [
     'strategy_param_history',
     'strategy_instances',
     'rule_strategies',
+    'live_sessions',
     'calendar_events',
     'market_snapshots',
     'ai_report_messages',

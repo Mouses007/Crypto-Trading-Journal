@@ -7,8 +7,9 @@
  * Bewusst kein Bootstrap-Modal — dessen Einblend-Animation ändert die Breite
  * nachträglich, und ein ECharts-Chart darin wäre beim ersten Zeichnen zu schmal.
  */
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ebeneAuf, ebeneZu } from '../composables/useZurueckGeste.js'
 
 defineProps({
     titel: { type: String, default: '' },
@@ -25,7 +26,20 @@ function beiTaste(e) {
     if (e.key === 'Escape') emit('schliessen')
 }
 
-onMounted(() => boxEl.value?.focus())
+/**
+ * Am Handy gibt es kein Esc — dort ist die Zurück-Geste der übliche Weg
+ * hinaus. Ohne das hier verliesse sie die ganze Seite.
+ */
+const schliesseDurchGeste = () => emit('schliessen')
+
+onMounted(() => {
+    boxEl.value?.focus()
+    ebeneAuf(schliesseDurchGeste)
+})
+
+// Läuft auch, wenn über Knopf, Hintergrund oder Esc geschlossen wurde —
+// dann wird der eigene Verlaufseintrag wieder abgeräumt.
+onBeforeUnmount(() => ebeneZu(schliesseDurchGeste))
 </script>
 
 <template>

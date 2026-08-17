@@ -2,7 +2,14 @@
 import { ref } from 'vue'
 import axios from 'axios'
 
+// setup=true: Erst-Einrichtung im Netzbetrieb — es existiert noch kein
+// Passwort, der Server verteilt keine Cookies. Statt „Anmelden" wird hier das
+// erste Passwort festgelegt (der Server lässt das ohne Session zu, solange
+// das Gate aus ist).
+const props = defineProps({ setup: { type: Boolean, default: false } })
+
 const password = ref('')
+const passwordWdh = ref('')
 const error = ref('')
 const info = ref('')
 const loading = ref(false)
@@ -14,6 +21,20 @@ async function submit() {
     info.value = ''
     loading.value = true
     try {
+        if (props.setup) {
+            if (password.value !== passwordWdh.value) {
+                error.value = 'Die Passwörter stimmen nicht überein.'
+                return
+            }
+            const { data } = await axios.post('/api/auth/set-password', { newPassword: password.value })
+            if (data.ok) {
+                info.value = 'Passwort gesetzt. Seite wird neu geladen…'
+                setTimeout(() => window.location.reload(), 800)
+                return
+            }
+            error.value = 'Passwort setzen fehlgeschlagen.'
+            return
+        }
         const { data } = await axios.post('/api/login', { password: password.value })
         if (data.ok) {
             window.location.reload()
@@ -21,7 +42,7 @@ async function submit() {
         }
         error.value = 'Anmeldung fehlgeschlagen.'
     } catch (e) {
-        error.value = e.response?.data?.error || 'Anmeldung fehlgeschlagen.'
+        error.value = e.response?.data?.error || (props.setup ? 'Passwort setzen fehlgeschlagen.' : 'Anmeldung fehlgeschlagen.')
     } finally {
         loading.value = false
     }
@@ -54,23 +75,32 @@ async function forgotPassword() {
     <div class="login-gate">
         <div class="login-card">
             <h3 class="mb-1">Crypto Trading Journal</h3>
-            <p class="login-sub">Passwortgeschützt</p>
+            <p v-if="setup" class="login-sub">Der Dienst ist im Netzwerk erreichbar — lege zuerst ein Passwort fest.</p>
+            <p v-else class="login-sub">Passwortgeschützt</p>
             <form @submit.prevent="submit">
                 <input
                     v-model="password"
                     type="password"
                     class="form-control login-input"
-                    placeholder="Passwort"
+                    :placeholder="setup ? 'Neues Passwort (min. 6 Zeichen)' : 'Passwort'"
                     autofocus
-                    autocomplete="current-password"
+                    :autocomplete="setup ? 'new-password' : 'current-password'"
+                />
+                <input
+                    v-if="setup"
+                    v-model="passwordWdh"
+                    type="password"
+                    class="form-control login-input"
+                    placeholder="Passwort wiederholen"
+                    autocomplete="new-password"
                 />
                 <div v-if="error" class="login-error">{{ error }}</div>
                 <div v-if="info" class="login-info">{{ info }}</div>
                 <button type="submit" class="btn btn-primary login-btn" :disabled="loading || !password">
-                    {{ loading ? 'Anmelden…' : 'Anmelden' }}
+                    {{ loading ? (setup ? 'Speichern…' : 'Anmelden…') : (setup ? 'Passwort festlegen' : 'Anmelden') }}
                 </button>
             </form>
-            <button type="button" class="login-forgot" :disabled="resetting" @click="forgotPassword">
+            <button v-if="!setup" type="button" class="login-forgot" :disabled="resetting" @click="forgotPassword">
                 {{ resetting ? 'Zurücksetzen…' : 'Passwort vergessen?' }}
             </button>
         </div>
