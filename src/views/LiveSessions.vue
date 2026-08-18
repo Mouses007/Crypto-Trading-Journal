@@ -11,15 +11,9 @@
  * sondern Glück; und eine verlorene, die sich an die Grenzen gehalten hat, war
  * gute Arbeit. Genau diesen Unterschied macht das Journal sonst nirgends
  * sichtbar.
- *
- * Der Wiedergabe-Knopf wird erst freigeschaltet, wenn für Symbol und Zeitraum
- * tatsächlich eine Aufzeichnung vorliegt — sonst landete man auf einer leeren
- * Bookmap und suchte den Fehler bei sich. Dieselbe Prüfung nutzt schon die
- * Tages-Ansicht.
  */
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import axios from 'axios'
 import PageInfo from '../components/PageInfo.vue'
 import dayjs from '../utils/dayjs-setup.js'
 import { dbFind, dbUpdate, dbDelete } from '../utils/db.js'
@@ -37,8 +31,6 @@ const offenesProtokoll = ref(null)
  * archivierte Sitzungen zählen weiter mit.
  */
 const archivZeigen = ref(false)
-/** Sitzungs-Id → true, wenn eine Aufzeichnung für ihr Fenster vorliegt. */
-const replayDa = ref({})
 /** Zwei-Klick-Löschen wie im Nachrichtenarchiv: erst fragen, dann löschen. */
 const loeschFrage = ref(null)
 
@@ -47,47 +39,11 @@ async function lade() {
     fehler.value = ''
     try {
         sitzungen.value = await dbFind('live_sessions', { descending: 'startUnix', limit: 200 })
-        pruefeReplays()
     } catch (e) {
         fehler.value = e.response?.data?.error || e.message
     } finally {
         laedt.value = false
     }
-}
-
-/**
- * Für jede beendete Sitzung prüfen, ob die Bookmap-Aufzeichnung ihr Fenster
- * abdeckt. Nacheinander statt parallel: es sind kleine Abfragen, und ein Schwung
- * von zwanzig gleichzeitig bringt nichts ausser Last.
- */
-async function pruefeReplays() {
-    for (const s of sitzungen.value) {
-        if (!s.symbol || !Number(s.endUnix)) continue
-        try {
-            const { data } = await axios.get('/api/live/recorder/available', {
-                params: {
-                    symbol: String(s.symbol).toUpperCase(), market: s.market || 'futures',
-                    from: Number(s.startUnix), to: Number(s.endUnix),
-                },
-            })
-            replayDa.value = { ...replayDa.value, [s.objectId]: (data.stunden || []).length > 0 }
-        } catch {
-            replayDa.value = { ...replayDa.value, [s.objectId]: false }
-        }
-    }
-}
-
-function oeffneWiedergabe(s) {
-    if (!replayDa.value[s.objectId]) return
-    const p = new URLSearchParams({
-        replay: '1',
-        symbol: String(s.symbol).toUpperCase(),
-        market: s.market || 'futures',
-        from: String(Math.round(Number(s.startUnix))),
-        to: String(Math.round(Number(s.endUnix))),
-        label: t('liveSessions.replayLabel', { zeit: dayjs(Number(s.startUnix)).format('DD.MM. HH:mm') }),
-    })
-    window.location.href = '/liquidity?' + p.toString()
 }
 
 /**
@@ -112,7 +68,7 @@ async function archivieren(s, wert) {
     try {
         await dbUpdate('live_sessions', s.objectId, { archiviert: wert ? 1 : 0 })
         // Nur im Speicher nachziehen statt neu zu laden: sonst springt die Liste
-        // unter dem Finger weg, und die Replay-Prüfung liefe für alle erneut.
+        // unter dem Finger weg.
         s.archiviert = wert ? 1 : 0
     } catch (e) {
         fehler.value = e.response?.data?.error || e.message
@@ -256,12 +212,6 @@ onMounted(lade)
                 <button v-if="s.status === 'laufend'" type="button" class="ctl-pill"
                     @click="schliesseVergessene(s)">
                     {{ t('liveSessions.schliessen') }}
-                </button>
-                <button v-if="Number(s.endUnix)" type="button" class="ctl-pill"
-                    :disabled="!replayDa[s.objectId]"
-                    :title="replayDa[s.objectId] ? '' : t('liveSessions.keineAufzeichnung')"
-                    @click="oeffneWiedergabe(s)">
-                    <i class="uil uil-play-circle"></i>{{ t('liveSessions.nachspielen') }}
                 </button>
                 <button type="button" class="ctl-pill"
                     @click="offenesProtokoll = offenesProtokoll === s.objectId ? null : s.objectId">
