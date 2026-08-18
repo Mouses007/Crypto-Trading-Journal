@@ -293,8 +293,90 @@ export async function laufeNewsAbruf({ manuell = false } = {}) {
  * Video ist der teuerste Eingabetyp überhaupt — abgerechnet nach Videolänge.
  * Darum die harte Obergrenze je Lauf und die Beschränkung auf frische Beiträge.
  */
-async function fasseVideoZusammen(videoUrl, cfg, aufloesung = 'niedrig') {
+/**
+ * Wie ausführlich ein Video beschrieben wird.
+ *
+ * Bisher gab es nur eine Stufe — fünf bis acht Zeilen à zwölf Wörter. Das
+ * reicht, um ein Video in den Bericht einfliessen zu lassen, aber nicht, um
+ * eines zu LESEN statt anzusehen. Wer 40 Minuten Livestream nicht schaut, will
+ * mehr als acht Schlagworte; wer nur Belegmaterial braucht, will nicht dafür
+ * zahlen. Deshalb drei Stufen mit eigenem Auftrag und eigenem Token-Deckel.
+ *
+ * Der Deckel begrenzt nur die AUSGABE. Der Preis eines Videos entsteht fast
+ * vollständig auf der Eingabeseite (Länge × Auflösung) — „ausführlich" kostet
+ * also spürbar weniger extra, als die Zahlen vermuten lassen.
+ */
+export const VIDEO_TIEFEN = {
+    knapp: {
+        tokens: 250,
+        auftrag: 'Fasse dieses Video in drei bis fünf Stichpunkten auf Deutsch zusammen. '
+            + 'Jede Zeile beginnt mit "- " und hat höchstens zwölf Wörter.',
+    },
+    normal: {
+        tokens: 400,
+        auftrag: 'Fasse dieses Video in fünf bis acht Stichpunkten auf Deutsch zusammen. '
+            + 'Jede Zeile beginnt mit "- " und hat höchstens zwölf Wörter.',
+    },
+    ausfuehrlich: {
+        tokens: 1200,
+        auftrag: 'Beschreibe dieses Video ausführlich auf Deutsch, so dass man es nicht '
+            + 'ansehen muss. Beginne mit zwei bis drei Sätzen: worum es geht und welche '
+            + 'These vertreten wird. Danach acht bis zwölf Zeilen, jede mit "- " beginnend '
+            + '— die genannten Zahlen, Kursniveaus, Fristen und Ereignisse, jeweils MIT '
+            + 'ihrem Zusammenhang und nicht als Stichwort. Zahlen wörtlich so nennen, wie '
+            + 'sie im Video fallen. Wird eine Aussage begründet, nenne die Begründung mit.',
+    },
+}
+
+/** Stufe samt Token-Deckel auflösen; `deckel > 0` schlägt die Stufe. */
+export function videoTiefeAus(tiefe, deckel) {
+    const stufe = VIDEO_TIEFEN[tiefe] || VIDEO_TIEFEN.normal
+    const eigen = Math.max(0, Number(deckel) || 0)
+    return { ...stufe, tokens: eigen ? Math.min(4000, Math.max(80, eigen)) : stufe.tokens }
+}
+
+/**
+ * Ist das ein Livestream (laufend oder als Aufzeichnung)?
+ *
+ * Gemini kann eine laufende Übertragung nicht als Datei öffnen und antwortet
+ * mit `403 PERMISSION_DENIED` — genau der Fehler, an dem der Videoschritt am
+ * 18.08. hängenblieb. Die AUFZEICHNUNG eines Streams nimmt es zwar an, aber die
+ * läuft oft mehrere Stunden, und abgerechnet wird nach Videolänge: ein einziger
+ * Vier-Stunden-Stream kostet mehr als ein ganzer Monat normaler Videos.
+ *
+ * Deshalb fliegen beide raus. `isLiveContent` steht im eingebetteten JSON der
+ * Videoseite und ist bei Stream und Aufzeichnung gesetzt — der Abruf braucht
+ * keinen Schlüssel und kostet nichts.
+ *
+ * Rein und ohne Netz prüfbar: `istLiveSeite` bekommt den fertigen HTML-Text.
+ */
+export function istLiveSeite(html) {
+    const t = String(html || '')
+    return /"isLiveContent"\s*:\s*true/.test(t)
+        || /"isLiveNow"\s*:\s*true/.test(t)
+        || /"liveBroadcastDetails"\s*:\s*\{/.test(t)
+}
+
+async function istLivestream(videoUrl) {
+    try {
+        const html = await holeText(videoUrl, { timeout: 15000 })
+        return istLiveSeite(html)
+    } catch (e) {
+        // Nicht erreichbar heisst nicht „Livestream" — im Zweifel weitermachen
+        // und Gemini entscheiden lassen. Ein 403 kostet nichts.
+        logWarn('news', `Live-Prüfung ${videoUrl}: ${e.message}`)
+        return false
+    }
+}
+
+/** Ein 403 ist endgültig, kein Fehlversuch — erneutes Probieren ändert nichts. */
+export function istEndgueltig(fehlertext) {
+    return /HTTP 403|PERMISSION_DENIED/i.test(String(fehlertext || ''))
+}
+
+async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe = 'normal', deckel = 0 } = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent`
+    const stufe = videoTiefeAus(tiefe, deckel)
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 120000)   // Video braucht länger als Text
     try {
@@ -306,8 +388,7 @@ async function fasseVideoZusammen(videoUrl, cfg, aufloesung = 'niedrig') {
                 contents: [{
                     parts: [
                         {
-                            text: 'Fasse dieses Video in fünf bis acht Stichpunkten auf Deutsch zusammen. '
-                                + 'Jede Zeile beginnt mit "- " und hat höchstens zwölf Wörter. '
+                            text: stufe.auftrag + ' '
                                 + 'Nur was für die Marktlage relevant ist: Thesen, Zahlen, genannte Ereignisse. '
                                 + 'Lass Eigenwerbung, Sponsoren und Aufrufe zum Abonnieren weg. '
                                 + 'Keine Handelsempfehlung, keine Kursziele, keine Spekulation. '
@@ -322,7 +403,7 @@ async function fasseVideoZusammen(videoUrl, cfg, aufloesung = 'niedrig') {
                 // mitzulaufen kostet nichts und spart die nächste Überraschung.
                 generationConfig: {
                     ...samplingFelder(cfg.model, 0.2),
-                    maxOutputTokens: 400,
+                    maxOutputTokens: stufe.tokens,
                     // Der teuerste Regler im ganzen Aufbau: Standard kostet
                     // rund 300 Token je Videosekunde, niedrig rund 100.
                     mediaResolution: aufloesung === 'standard'
@@ -357,6 +438,36 @@ const LAENGEN = {
 }
 
 /**
+ * Token-Budget der Berichtsantwort — Erstversuch und Nachschlag.
+ *
+ * Die Werte oben sind Erfahrungswerte für ein Kapitel; bei drei Kapiteln und
+ * ausgeschriebenen Absätzen liegt der Bedarf schnell woanders. Wer sparen will,
+ * setzt den Deckel tiefer und nimmt kürzere Punkte in Kauf; wer alle drei
+ * Themen ausführlich will, setzt ihn höher, statt am Abbruch „Antwort war
+ * abgeschnitten" hängen zu bleiben.
+ *
+ * `budget = 0` heisst weiterhin: die Vorgabe der gewählten Länge. Der zweite
+ * Versuch ist immer das Doppelte — er kostet nur Text, und ein abgebrochener
+ * Lauf wirft die bereits bezahlte Videoanalyse weg.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ */
+export function budgetsAus(laenge, budget) {
+    const eigen = Math.max(0, Number(budget) || 0)
+    if (!eigen) return (LAENGEN[laenge] || LAENGEN.mittel).budgets
+    const erst = Math.min(60000, Math.max(1000, eigen))
+    return [erst, Math.min(120000, erst * 2)]
+}
+
+/** Punkte je Kapitel: eigene Zahl schlägt die Vorgabe der Länge. */
+export function punkteVorgabe(laenge, anzahl) {
+    const n = Math.max(0, Number(anzahl) || 0)
+    if (!n) return (LAENGEN[laenge] || LAENGEN.mittel).punkte
+    const k = Math.min(12, Math.max(1, n))
+    return k === 1 ? 'genau einen Punkt' : `genau ${k} Punkte`
+}
+
+/**
  * System-Prompt des Lageberichts.
  *
  * Aus der früheren Konstante wurde ein Builder: Themen, Länge und Rhythmus
@@ -364,8 +475,9 @@ const LAENGEN = {
  * vorgeben, das der Leser gewählt hat — ein Kapitel je Thema, nicht mehr.
  * Exportiert, damit der Selbsttest die Varianten ohne Netz prüfen kann.
  */
-export function bauLagePrompt({ themen = ['crypto'], laenge = 'mittel', rhythmus = 'taeglich' } = {}) {
-    const l = LAENGEN[laenge] || LAENGEN.mittel
+export function bauLagePrompt({ themen = ['crypto'], laenge = 'mittel', rhythmus = 'taeglich',
+    punkte = 0 } = {}) {
+    const l = { ...(LAENGEN[laenge] || LAENGEN.mittel), punkte: punkteVorgabe(laenge, punkte) }
     const zeitraum = rhythmus === 'woechentlich' ? 'der vergangenen Woche' : 'der letzten 36 Stunden'
     const kapitelListe = themen.map(t => `- "${t}": ${THEMEN_NAMEN[t] || t}`).join('\n')
 
@@ -585,7 +697,16 @@ async function baueLagebericht(s, { manuell = false } = {}) {
         .whereIn('sourceId', erlaubt.map(q => q.id))
         .where('publishedAt', '>=', seit)
         .orderBy('publishedAt', 'desc')
-        .limit(rhythmus === 'woechentlich' ? 80 : 30)
+        /*
+         * 60 statt 30 für den Tagesbericht.
+         *
+         * Die 30 stammen aus der Zeit vor den grossen Nachrichtenfeeds (CNBC,
+         * Investing, Ars Technica, TechCrunch, The Verge, Hacker News). Mit
+         * denen reichten 30 Beiträge nur noch rund DREI Stunden zurück — der
+         * „Tagesbericht" war faktisch ein Drei-Stunden-Bericht und bestand
+         * überwiegend aus dem, was gerade am lautesten getickert hat.
+         */
+        .limit(rhythmus === 'woechentlich' ? 80 : 60)
 
     // Arschlochfilter: wirkt auf die Berichtsgrundlage, nicht auf den Bestand —
     // die Beiträge bleiben gespeichert, eine geänderte Wörterliste greift
@@ -605,6 +726,8 @@ async function baueLagebericht(s, { manuell = false } = {}) {
     let geminiFehler = ''
     /** Was mit jedem angefassten Video geschah — inklusive Token und Kosten. */
     const videoLog = []
+    /** Die in DIESEM Lauf analysierten Videobeiträge — kommen unten in `beitraege`. */
+    const videoAnalysiert = []
     const maxVideos = Math.max(0, Math.min(10, Number(s?.radarNewsVideos ?? 3)))
     if (maxVideos > 0) {
         try {
@@ -623,21 +746,61 @@ async function baueLagebericht(s, { manuell = false } = {}) {
              * nie wieder, auch nachdem die Ursache behoben war — der Bericht
              * meldete stumm „0 Videos angesehen".
              */
-            const videos = beitraege.filter(b =>
-                nachId.get(b.sourceId)?.art === 'youtube'
-                && Number(nachId.get(b.sourceId)?.videoAnalyse ?? 1) === 1
-                && (b.status === 'neu' || (b.status === 'fehler' && Number(b.versuche || 0) < 3))
-                && /youtube\.com|youtu\.be/.test(b.url))
-            for (const v of videos.slice(0, maxVideos)) {
+            /*
+             * Videos werden EIGENS geholt, nicht aus `beitraege` gefischt.
+             *
+             * Vorher standen sie unter denselben 30 neuesten Beiträgen wie der
+             * Text — und seit die grossen Nachrichtenfeeds dazukamen, reichen
+             * 30 Beiträge nur noch rund drei Stunden zurück. Videos sind fast
+             * immer älter als das. Folge: NIE wieder ein Video im Bericht, ohne
+             * jede Fehlermeldung, weil gar nichts erst versucht wurde.
+             *
+             * Jetzt zählt für Videos allein das Zeitfenster. Was analysiert
+             * wird, kommt unten zusätzlich in die Berichtsgrundlage — sonst
+             * hätte man den Inhalt bezahlt und nicht verwendet.
+             */
+            const videoKandidaten = (await knex('news_items')
+                .whereIn('sourceId', erlaubt.filter(q => q.art === 'youtube'
+                    && Number(q.videoAnalyse ?? 1) === 1).map(q => q.id))
+                .where('publishedAt', '>=', seit)
+                .orderBy('publishedAt', 'desc')
+                .limit(maxVideos * 4))     // Luft für Livestreams, die wir überspringen
+                .filter(b => (b.status === 'neu' || (b.status === 'fehler' && Number(b.versuche || 0) < 3))
+                    && /youtube\.com|youtu\.be/.test(b.url))
+
+            const videos = []
+            for (const v of videoKandidaten) {
+                if (videos.length >= maxVideos) break
+                // Livestreams gar nicht erst anfassen: laufende lehnt Gemini ab,
+                // Aufzeichnungen kosten nach Länge ein Vermögen.
+                if (await istLivestream(v.url)) {
+                    await knex('news_items').where('id', v.id).update({
+                        status: 'uebersprungen', fehler: 'Livestream — nicht analysiert',
+                    })
+                    videoLog.push({
+                        titel: v.titel, url: v.url,
+                        quelle: nachId.get(v.sourceId)?.name || '',
+                        tokens: 0, kostenUsd: 0, ergebnis: 'Livestream', text: '',
+                    })
+                    continue
+                }
+                videos.push(v)
+            }
+
+            for (const v of videos) {
                 try {
-                    const { text, tokens } = await fasseVideoZusammen(
-                        v.url, geminiCfg, s?.radarNewsAufloesung || 'niedrig')
+                    const { text, tokens } = await fasseVideoZusammen(v.url, geminiCfg, {
+                        aufloesung: s?.radarNewsAufloesung || 'niedrig',
+                        tiefe: s?.radarNewsVideoTiefe || 'normal',
+                        deckel: s?.radarNewsVideoTokens,
+                    })
                     await knex('news_items').where('id', v.id).update({
                         zusammenfassung: istOhneInhalt(text) ? '' : text,
                         aiModel: geminiCfg.model, aiStand: Date.now(), tokens,
                         status: 'zusammengefasst', fehler: '',
                     })
                     v.zusammenfassung = istOhneInhalt(text) ? '' : text
+                    if (v.zusammenfassung) videoAnalysiert.push(v)
                     videosGesehen++
                     videoLog.push({
                         titel: v.titel, url: v.url,
@@ -646,10 +809,21 @@ async function baueLagebericht(s, { manuell = false } = {}) {
                         // Gemini 2.5/3.x Flash: 0,30 $ je Million Eingabe-Token
                         kostenUsd: Math.round((tokens / 1e6) * 0.30 * 10000) / 10000,
                         ergebnis: istOhneInhalt(text) ? 'ohne Inhalt' : 'ok',
+                        // Die Beschreibung SELBST — bisher wurde sie nur in
+                        // `news_items` abgelegt und war im Bericht nirgends zu
+                        // sehen: Titel, Preis und ein Haken, aber nicht das,
+                        // wofür bezahlt wurde. Ohne dieses Feld hat die
+                        // Videokachel nichts anzuzeigen.
+                        text: istOhneInhalt(text) ? '' : text,
                     })
                 } catch (e) {
+                    // Ein 403 ist keine Panne, sondern ein Nein: dieses Video
+                    // wird das Modell nie ansehen. Als Fehlversuch gezählt käme
+                    // es zweimal wieder und verbrennte jedes Mal einen der drei
+                    // Plätze — vor einem Video, das funktioniert hätte.
+                    const endgueltig = istEndgueltig(e.message)
                     await knex('news_items').where('id', v.id).update({
-                        status: 'fehler',
+                        status: endgueltig ? 'uebersprungen' : 'fehler',
                         fehler: String(e.message).slice(0, 300),
                         versuche: Number(v.versuche || 0) + 1,
                     })
@@ -681,6 +855,19 @@ async function baueLagebericht(s, { manuell = false } = {}) {
      * aussehen, als sei der Videoinhalt gar nicht drin. Jetzt steht beides da:
      * neu analysiert (mit Preis) und übernommen (gratis).
      */
+    /*
+     * Die eben analysierten Videos gehören in die Berichtsgrundlage.
+     *
+     * Sie wurden ausserhalb des Beitragsdeckels geholt, stehen also nicht
+     * automatisch in `beitraege` — ohne diesen Schritt hätte man die
+     * Videoanalyse bezahlt und dem Modell dann vorenthalten.
+     */
+    for (const v of videoAnalysiert) {
+        if (!v.zusammenfassung) continue
+        if (beitraege.some(b => b.id === v.id)) continue
+        beitraege.push(v)
+    }
+
     for (const b of beitraege) {
         if (!b.zusammenfassung) continue
         if (videoLog.some(v => v.url === b.url)) continue
@@ -688,6 +875,7 @@ async function baueLagebericht(s, { manuell = false } = {}) {
             titel: b.titel, url: b.url,
             quelle: nachId.get(b.sourceId)?.name || '',
             tokens: 0, kostenUsd: 0, ergebnis: 'übernommen',
+            text: b.zusammenfassung,
         })
     }
     const videosVerwendet = videoLog.filter(v => v.ergebnis === 'ok' || v.ergebnis === 'übernommen').length
@@ -777,8 +965,8 @@ async function baueLagebericht(s, { manuell = false } = {}) {
      * Umfangs. Ausgabe-Token kosten hier wenige Rappen — ein abgebrochener
      * Lauf kostet den ganzen Bericht.
      */
-    const budgets = LAENGEN[laenge].budgets
-    const system = bauLagePrompt({ themen, laenge, rhythmus })
+    const budgets = budgetsAus(laenge, s?.radarNewsTokenBudget)
+    const system = bauLagePrompt({ themen, laenge, rhythmus, punkte: s?.radarNewsPunkte })
     let antwort = null
     for (const budget of budgets) {
         cfg.maxTokens = budget

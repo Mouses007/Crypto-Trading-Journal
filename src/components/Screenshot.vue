@@ -1,11 +1,13 @@
 <script setup>
-import { selectedItem, modalDailyTradeOpen, pageId } from '../stores/ui.js';
+import { selectedItem, modalDailyTradeOpen, pageId, kopiertesBild } from '../stores/ui.js';
 import { tags } from '../stores/trades.js';
 import { useSetupMarkerArea, useSelectedScreenshotFunction } from '../utils/screenshots';
 import { useHourMinuteFormat, useTimeFormat, useCreatedDateFormat } from '../utils/formatters.js';
 import { useEditItem } from '../utils/utils';
 import { useGetTagInfo } from '../utils/daily';
 
+
+import { ref } from 'vue'
 
 const props = defineProps({
     screenshotData: Object,
@@ -14,8 +16,50 @@ const props = defineProps({
     index: Number
 })
 
-//console.log(" -> Source " + props.source)
-//console.log(" props "+JSON.stringify(props))
+// Kopieren/Speichern: das (annotierte) Bild als Datei bzw. in die Zwischenablage,
+// damit man es in der Trade-Bewertung (Playbook) per Strg/Cmd+V einfügen kann.
+const kopierStatus = ref('')  // '' | 'ok' | 'fehler'
+
+function bildDatenUrl() {
+    return props.screenshotData?.annotatedBase64 || props.screenshotData?.originalBase64 || ''
+}
+
+// Data-URL (auch JPEG) über ein Canvas nach PNG wandeln — die Zwischenablage
+// akzeptiert bei Bildern nur PNG.
+function alsPngBlob(dataUrl) {
+    return new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => {
+            const c = document.createElement('canvas')
+            c.width = img.naturalWidth
+            c.height = img.naturalHeight
+            c.getContext('2d').drawImage(img, 0, 0)
+            c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob leer')), 'image/png')
+        }
+        img.onerror = reject
+        img.src = dataUrl
+    })
+}
+
+async function inZwischenablage() {
+    const url = bildDatenUrl()
+    if (!url) return
+    // App-interne Zwischenablage füllen — funktioniert IMMER (auch über HTTP).
+    // Nur die ID merken (+ sessionStorage, übersteht den Seitenwechsel); das
+    // Bild holt das Playbook beim Einfügen frisch aus der DB.
+    const merk = { objectId: props.screenshotData?.objectId, name: props.screenshotData?.name || 'screenshot' }
+    kopiertesBild.value = merk
+    try { sessionStorage.setItem('kopiertesBild', JSON.stringify(merk)) } catch (e) { /* ignore */ }
+    kopierStatus.value = 'ok'
+    // Bonus: zusätzlich die Browser-Zwischenablage versuchen (nur HTTPS/localhost).
+    try {
+        if (navigator.clipboard && window.ClipboardItem && window.isSecureContext) {
+            const blob = await alsPngBlob(url)
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        }
+    } catch (e) { /* egal — die App-interne Ablage reicht */ }
+    setTimeout(() => { kopierStatus.value = '' }, 1500)
+}
 
 </script>
 
@@ -76,6 +120,12 @@ const props = defineProps({
                     <!-- Annotate -->
                     <i class="uil uil-image-edit pointerClass me-3"
                         v-on:click="useSetupMarkerArea(props.source, props.screenshotData)"></i>
+
+                    <!-- In Zwischenablage kopieren (zum Einfügen in die Trade-Bewertung) -->
+                    <i v-if="props.screenshotData.objectId"
+                        :class="['uil', 'pointerClass', 'me-3', kopierStatus === 'ok' ? 'uil-check text-success' : kopierStatus === 'fehler' ? 'uil-times text-danger' : 'uil-copy']"
+                        :title="kopierStatus === 'ok' ? 'Kopiert!' : 'In Zwischenablage kopieren'"
+                        v-on:click="inZwischenablage()"></i>
 
                     <!-- Edit -->
                     <i v-if="props.source == 'screenshots'" class="uil uil-edit-alt pointerClass me-4"

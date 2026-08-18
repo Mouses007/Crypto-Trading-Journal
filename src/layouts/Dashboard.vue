@@ -9,7 +9,8 @@ import { computed, ref, onBeforeMount, onMounted, onUnmounted, watch } from 'vue
 import { useRoute } from 'vue-router'
 import { useCreatedDateFormat, useTimeFormat, useHourMinuteFormat } from '../utils/formatters.js'
 import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues, useCloseMobileMenu } from '../utils/utils.js'
-import { screenType, sideMenuMobileOut, pageId, selectedScreenshotIndex } from '../stores/ui.js'
+import { screenType, sideMenuMobileOut, pageId, selectedScreenshotIndex, appMode, privacyMode } from '../stores/ui.js'
+import { starteZensur } from '../utils/privacy.js'
 import { getMore } from '../stores/filters.js'
 import { screenshots, selectedScreenshot, screenshot } from '../stores/trades.js'
 import { currentUser, aiReportGenerating, aiReportCountBefore, aiReportLabel } from '../stores/settings.js'
@@ -68,6 +69,24 @@ const istCockpit = computed(() => String(route.query?.cockpit || '') === '1')
  */
 const imVollbild = useImVollbild()
 const chromeAus = computed(() => istCockpit.value || imVollbild.value)
+
+// ── Datenschutz-/Zensur-Modus ──
+// Blendet Zahlen/Kontostände im Journal-Inhalt unkenntlich aus. Nur im Journal:
+// im Live-Modus wären verwischte Kurse sinnlos.
+const mainEl = ref(null)
+let stopZensur = null
+function aktualisiereZensur() {
+    const an = privacyMode.value && appMode.value === 'journal' && !!mainEl.value
+    if (an && !stopZensur) {
+        stopZensur = starteZensur(mainEl.value)
+    } else if (!an && stopZensur) {
+        stopZensur()
+        stopZensur = null
+    }
+}
+watch([privacyMode, appMode], aktualisiereZensur)
+onMounted(aktualisiereZensur)
+onUnmounted(() => { if (stopZensur) { stopZensur(); stopZensur = null } })
 
 
 /*========================================
@@ -194,7 +213,7 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
              ein Name, den es im Setup nie gab — der Klick lief ins Leere. -->
         <div v-show="sideMenuMobileOut" class="sideMenuMobileOut position-absolute" v-on:click="useCloseMobileMenu"></div>
         <Nav v-if="!chromeAus" />
-        <main>
+        <main ref="mainEl">
           <div v-if="isAgent" class="ps-3 pe-3 pt-3">
             <!-- Die Anleitung hängt am Layout statt an einer Seite: sie ist
                  damit von JEDER Agent-Seite aus erreichbar — auch wenn der

@@ -11,9 +11,18 @@ import { reactive, ref } from 'vue'
  * unter demselben Namen), damit vorhandene Einträge weiter gelten. Die
  * Reihenfolge kommt als zweiter Eintrag `<key>_order` dazu.
  *
+ * `standardVersteckt` belegt die Ausblend-Menge beim ERSTEN Aufruf vor (solange
+ * unter `storageKey` noch nichts gespeichert ist). Gedacht für Seiten mit
+ * grossem Katalog, die aufgeräumt starten sollen (Startseite): dort sind fünf
+ * Kacheln sichtbar, der Rest wartet im Zahnrad. Sobald der Nutzer einmal
+ * umschaltet, gilt ausschliesslich sein localStorage — die Vorgabe drängt sich
+ * nie ein zweites Mal auf. Marktradar/Live-Trading rufen ohne das Argument auf
+ * und starten damit wie bisher mit allen Kacheln sichtbar.
+ *
  * @param {string} storageKey z.B. 'marktradar_hidden_cards'
+ * @param {string[]} [standardVersteckt=[]] beim Erststart ausgeblendete Ids
  */
-export function useHiddenCards(storageKey) {
+export function useHiddenCards(storageKey, standardVersteckt = []) {
     const orderKey = `${storageKey}_order`
 
     const lies = (key, vorgabe) => {
@@ -29,7 +38,10 @@ export function useHiddenCards(storageKey) {
 
     const sizeKey = `${storageKey}_size`
 
-    const hiddenCards = reactive(new Set(lies(storageKey, [])))
+    // Fehlt der Eintrag (Erststart), gilt `standardVersteckt`; sobald einmal
+    // gespeichert wurde (auch ein leeres Array durch „alle zeigen"), gewinnt der
+    // gespeicherte Stand.
+    const hiddenCards = reactive(new Set(lies(storageKey, standardVersteckt)))
     const reihenfolge = ref(lies(orderKey, []))
 
     // id → { spalten, hoehe } aus dem Ziehen am Eckanfasser

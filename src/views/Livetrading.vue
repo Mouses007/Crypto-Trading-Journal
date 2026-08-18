@@ -41,6 +41,7 @@ import { currentUser } from '../stores/globals.js'
 import { useIstTelefon, useImVollbild } from '../utils/geraet.js'
 import { oeffneLivetradingFenster } from '../utils/livetradingFenster.js'
 import { speichereCockpitFoto } from '../utils/cockpitFoto.js'
+import { kopiertesBild } from '../stores/ui.js'
 import { aktiveSitzung, merkeSymbol, protokolliere } from '../stores/livetrading.js'
 import { KACHELN, sortiereKacheln } from '../config/livetrading.js'
 import { useKachelRaster } from '../composables/useKachelRaster.js'
@@ -191,8 +192,16 @@ async function cockpitFoto() {
     fotoZustand.value = 'laeuft'
     fotoMeldung.value = ''
     try {
-        const { name } = await speichereCockpitFoto(liveSymbol.value)
+        const { objectId, name } = await speichereCockpitFoto(liveSymbol.value)
         protokolliere('foto', name)
+        // Direkt in die interne Zwischenablage legen: so kann man ohne Umweg über
+        // die Galerie gleich zu „Pendente Trades" gehen und „Kopiertes Bild
+        // einfügen" drücken.
+        if (objectId) {
+            const merk = { objectId, name }
+            kopiertesBild.value = merk
+            try { sessionStorage.setItem('kopiertesBild', JSON.stringify(merk)) } catch (e) { /* ignore */ }
+        }
         fotoZustand.value = 'ok'
         setTimeout(() => { if (fotoZustand.value === 'ok') fotoZustand.value = '' }, 2500)
     } catch (e) {

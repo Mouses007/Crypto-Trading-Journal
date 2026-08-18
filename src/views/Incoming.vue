@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
-import { spinnerLoadingPage, timeZoneTrade, expandedId } from '../stores/ui.js'
+import { spinnerLoadingPage, timeZoneTrade, expandedId, kopiertesBild } from '../stores/ui.js'
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker, selectedTradeCategory, brokers } from '../stores/filters.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
 import { currentUser } from '../stores/settings.js'
@@ -861,8 +861,67 @@ function updateSatisfaction(pos, val) {
 
 // ===== SCREENSHOT HANDLERS =====
 
+// Nimmt ein Input-Event ODER direkt eine Datei (Drag&Drop / Zwischenablage).
+function dateiAus(evtOderDatei) {
+    return evtOderDatei?.target?.files ? evtOderDatei.target.files[0] : evtOderDatei
+}
+function ersteBilddatei(list) {
+    return [...(list || [])].find(f => f && f.type && f.type.startsWith('image/')) || null
+}
+// Base64-Daten-URL → File, damit die Upload-Handler sie annehmen.
+function dataUrlZuDatei(dataUrl, name) {
+    const [meta, b64] = String(dataUrl).split(',')
+    const mime = (meta.match(/:(.*?);/) || [, 'image/png'])[1]
+    const bin = atob(b64)
+    const arr = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+    return new File([arr], (name || 'screenshot') + '.png', { type: mime })
+}
+// Legt die Datei in den passenden Handler je Feld (entry/trend/closing).
+function screenshotAusDatei(file, pos, slot) {
+    if (!file || !pos) return
+    if (slot === 'entry') handleEntryScreenshotUpload(file, pos)
+    else if (slot === 'trend') handleTrendScreenshotUpload(file, pos)
+    else if (slot === 'closing') handleClosingScreenshotUpload(file, pos)
+}
+const dragSlot = ref('')  // '<positionId>:<slot>' der überzogenen Zone
+function onDropScreenshot(e, pos, slot) {
+    dragSlot.value = ''
+    screenshotAusDatei(ersteBilddatei(e.dataTransfer?.files), pos, slot)
+}
+// „Kopiertes Bild einfügen": holt das auf der Screenshots-Seite kopierte Bild
+// frisch aus der DB (gemerkt ist nur die ID) und legt es ins Feld.
+async function kopiertesBildEinfuegen(pos, slot) {
+    const merk = kopiertesBild.value
+    if (!merk?.objectId) return
+    let b64 = ''
+    try {
+        const src = await dbGet('screenshots', merk.objectId)
+        b64 = src?.annotatedBase64 || src?.originalBase64 || ''
+    } catch (e) { /* nicht gefunden */ }
+    if (!b64) return
+    screenshotAusDatei(dataUrlZuDatei(b64, merk.name), pos, slot)
+}
+// Einfügen (Strg/Cmd+V): geht an die gerade aufgeklappte Position, erstes freies
+// Feld (Einstieg → Trend → Abschluss).
+function onPasteIncoming(e) {
+    if (!expandedId.value) return
+    const imgItem = [...(e.clipboardData?.items || [])].find(it => it.type && it.type.startsWith('image/'))
+    if (!imgItem) return
+    const file = imgItem.getAsFile()
+    if (!file) return
+    const pos = incomingPositions.find(p => p.positionId === expandedId.value)
+    if (!pos) return
+    e.preventDefault()
+    if (!pos.entryScreenshotId) screenshotAusDatei(file, pos, 'entry')
+    else if (!pos.trendScreenshotId) screenshotAusDatei(file, pos, 'trend')
+    else if (!pos.closingScreenshotId) screenshotAusDatei(file, pos, 'closing')
+}
+onMounted(() => { window.addEventListener('paste', onPasteIncoming) })
+onBeforeUnmount(() => { window.removeEventListener('paste', onPasteIncoming) })
+
 async function handleEntryScreenshotUpload(event, pos) {
-    const file = event.target.files[0]
+    const file = dateiAus(event)
     if (!file) return
 
     const reader = new FileReader()
@@ -898,7 +957,7 @@ async function removeEntryScreenshot(pos) {
 }
 
 async function handleTrendScreenshotUpload(event, pos) {
-    const file = event.target.files[0]
+    const file = dateiAus(event)
     if (!file) return
 
     const reader = new FileReader()
@@ -958,7 +1017,7 @@ async function loadScreenshotPreviews(pos) {
 }
 
 async function handleClosingScreenshotUpload(event, pos) {
-    const file = event.target.files[0]
+    const file = dateiAus(event)
     if (!file) return
 
     const reader = new FileReader()
@@ -1632,9 +1691,22 @@ function getPositionDate(pos) {
                                 <i class="uil uil-times-circle screenshot-remove" @click.stop="removeTrendScreenshot(pos)"></i>
                             </div>
                         </div>
-                        <!-- Upload (sichtbar solange weniger als 2 Screenshots) -->
-                        <input v-if="!pos.entryScreenshotId || !pos.trendScreenshotId" type="file" accept="image/*" class="form-control form-control-sm"
-                            @change="!pos.entryScreenshotId ? handleEntryScreenshotUpload($event, pos) : handleTrendScreenshotUpload($event, pos)" />
+                        <!-- Upload (sichtbar solange weniger als 2 Screenshots) —
+                             jetzt auch Drag&Drop und Einfügen (Strg/Cmd+V). -->
+                        <label v-if="!pos.entryScreenshotId || !pos.trendScreenshotId"
+                            class="pb-drop" :class="{ 'pb-drop-over': dragSlot === pos.positionId + ':open' }"
+                            @dragover.prevent="dragSlot = pos.positionId + ':open'" @dragenter.prevent="dragSlot = pos.positionId + ':open'"
+                            @dragleave.prevent="dragSlot = ''"
+                            @drop.prevent="onDropScreenshot($event, pos, pos.entryScreenshotId ? 'trend' : 'entry')">
+                            <input type="file" accept="image/*" class="pb-drop-input"
+                                @change="!pos.entryScreenshotId ? handleEntryScreenshotUpload($event, pos) : handleTrendScreenshotUpload($event, pos)" />
+                            <i class="uil uil-image-plus me-1"></i>Bild wählen, hierher ziehen oder einfügen (Strg/Cmd+V)
+                        </label>
+                        <button v-if="kopiertesBild && (!pos.entryScreenshotId || !pos.trendScreenshotId)"
+                            type="button" class="btn btn-sm btn-outline-primary mt-2"
+                            @click.stop="kopiertesBildEinfuegen(pos, pos.entryScreenshotId ? 'trend' : 'entry')">
+                            <i class="uil uil-clipboard-notes me-1"></i>Kopiertes Bild einfügen
+                        </button>
                     </div>
 
                     </div><!-- /opening-eval-section -->
@@ -1751,8 +1823,20 @@ function getPositionDate(pos) {
                                     <i class="uil uil-times-circle screenshot-remove" @click.stop="removeClosingScreenshot(pos)"></i>
                                 </div>
                             </div>
-                            <input v-else type="file" accept="image/*" class="form-control form-control-sm"
-                                @change="handleClosingScreenshotUpload($event, pos)" />
+                            <label v-else class="pb-drop"
+                                :class="{ 'pb-drop-over': dragSlot === pos.positionId + ':closing' }"
+                                @dragover.prevent="dragSlot = pos.positionId + ':closing'" @dragenter.prevent="dragSlot = pos.positionId + ':closing'"
+                                @dragleave.prevent="dragSlot = ''"
+                                @drop.prevent="onDropScreenshot($event, pos, 'closing')">
+                                <input type="file" accept="image/*" class="pb-drop-input"
+                                    @change="handleClosingScreenshotUpload($event, pos)" />
+                                <i class="uil uil-image-plus me-1"></i>Bild wählen, hierher ziehen oder einfügen (Strg/Cmd+V)
+                            </label>
+                            <button v-if="kopiertesBild && !pos.closingScreenshotId"
+                                type="button" class="btn btn-sm btn-outline-primary mt-2"
+                                @click.stop="kopiertesBildEinfuegen(pos, 'closing')">
+                                <i class="uil uil-clipboard-notes me-1"></i>Kopiertes Bild einfügen
+                            </button>
                         </div>
 
                         <!-- Satisfaction -->
@@ -1984,4 +2068,32 @@ function getPositionDate(pos) {
 .screenshot-remove:hover {
     color: #ff4040;
 }
+
+/* Drag&Drop-Zone für Screenshots (Klick öffnet Dateiwahl). */
+.pb-drop {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1.5px dashed var(--white-18, rgba(255, 255, 255, 0.2));
+    border-radius: 8px;
+    background: var(--black-bg-7, rgba(255, 255, 255, 0.03));
+    color: var(--white-60, rgba(255, 255, 255, 0.6));
+    font-size: 0.78rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.pb-drop:hover {
+    border-color: var(--white-38, rgba(255, 255, 255, 0.38));
+    color: var(--white-87, rgba(255, 255, 255, 0.87));
+}
+.pb-drop-over {
+    border-color: var(--blue-color, #01B4FF);
+    background: rgba(1, 180, 255, 0.08);
+    color: var(--white-87, rgba(255, 255, 255, 0.87));
+}
+.pb-drop-input { display: none; }
 </style>

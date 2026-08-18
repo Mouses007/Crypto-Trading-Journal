@@ -20,6 +20,12 @@
  */
 
 export const PAGES = [
+    // ── Start ───────────────────────────────────────────────
+    // Landing-Page der App, eigener Modus. `group: null` → kein Seitenmenü-
+    // Eintrag: die Kacheln sind die Navigation. Der Eintrag existiert trotzdem,
+    // damit Nav.vue Titel und Icon der Seite findet.
+    { id: 'startseite', mode: 'start', path: '/startseite', icon: 'uil uil-estate', titleKey: 'nav.startseite', group: null },
+
     // ── Journal ─────────────────────────────────────────────
     { id: 'dashboard', mode: 'journal', path: '/dashboard', icon: 'uil uil-apps', titleKey: 'nav.dashboard', group: 'analyze' },
     { id: 'daily', mode: 'journal', path: '/daily', icon: 'uil uil-signal-alt-3', titleKey: 'nav.dailyView', group: 'analyze' },
@@ -47,7 +53,9 @@ export const PAGES = [
     // Eigene Gruppe, weil Handeln etwas anderes ist als Analysieren: die
     // Seiten darüber beantworten „wie steht der Markt", diese hier begleitet
     // die Stunden, in denen man tatsächlich Geld riskiert.
-    { id: 'livetrading', mode: 'live', path: '/livetrading', icon: 'uil uil-crosshairs', titleKey: 'nav.livetrading', group: 'liveTrade', flag: 'livetradingAn', nurDesktop: true },
+    // `mobilFlag`: Nur-Desktop-Sperre lässt sich per Einstellung fürs Telefon
+    // aufheben (Layout & Stil → „Live-Trading auf dem Handy").
+    { id: 'livetrading', mode: 'live', path: '/livetrading', icon: 'uil uil-crosshairs', titleKey: 'nav.livetrading', group: 'liveTrade', flag: 'livetradingAn', nurDesktop: true, mobilFlag: 'livetradingMobil' },
     // Archiv und Auswertung sind bewusst NICHT `nurDesktop`: nachlesen und
     // auswerten geht am Telefon, nur das Handeln selbst braucht Platz.
     { id: 'liveSessions', mode: 'live', path: '/live-sessions', icon: 'uil uil-history', titleKey: 'nav.liveSessions', group: 'liveTrade', flag: 'livetradingAn' },
@@ -72,14 +80,26 @@ export const PAGES = [
  * Top-Level-Modi. `home` = Startseite beim Umschalten.
  * `enabled: false` → Button sichtbar, aber deaktiviert.
  */
+/**
+ * `shortKey` ist das Label im Umschalter: die Tabs sind bei fünf Modi nur
+ * ~45px breit, „Live-Analyse" und „Strategien" passen dort nicht mehr rein.
+ * Ohne shortKey gilt titleKey.
+ */
+// `versteckbar: true` → wird von der Einstellung „Beta-Funktionen ausblenden"
+// (Layout & Stil) aus dem Umschalter entfernt. Momentan Strategien und Research.
 export const MODES = [
+    // Landing-Page der App: frei konfigurierbares Kachelraster (Kontostand,
+    // Marktlage, News-Zusammenfassung …).
+    { id: 'start', titleKey: 'modes.start', icon: 'uil uil-estate', home: '/startseite', enabled: true },
     { id: 'journal', titleKey: 'modes.journal', icon: 'uil uil-book-alt', home: '/dashboard', enabled: true },
-    { id: 'live', titleKey: 'modes.live', icon: 'uil uil-chart-line', home: '/marktradar', enabled: true },
+    { id: 'live', titleKey: 'modes.live', shortKey: 'modes.liveShort', icon: 'uil uil-chart-line', home: '/marktradar', enabled: true },
     // Freigegeben als Beta. Der Modus handelt selbstständig, deshalb warnt
     // `BetaHinweis.vue` auf jeder seiner Seiten, und der scharfe Betrieb hängt
     // zusätzlich an der dreifachen Freigabekette (globaler Schalter, Freigabe je
     // Instanz, Mindestzahl Papier-Trades).
-    { id: 'agent', titleKey: 'modes.agent', icon: 'uil uil-robot', home: '/agent/strategies', enabled: true, beta: true },
+    { id: 'agent', titleKey: 'modes.agent', shortKey: 'modes.agentShort', icon: 'uil uil-robot', home: '/agent/strategies', enabled: true, beta: true, versteckbar: true },
+    // Platzhalter wie Start.
+    { id: 'research', titleKey: 'modes.research', icon: 'uil uil-telescope', home: '/dashboard', enabled: false, versteckbar: true },
 ]
 
 export const pageById = (id) => PAGES.find(p => p.id === id) || null

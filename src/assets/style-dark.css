@@ -531,8 +531,8 @@ input:checked+.slider:before {
     width: 100%;
     /* Abstand Linie → ART um 4mm verringert */
     margin-bottom: calc(2.69rem - 4mm);
-    /* Linie unter dem Logo: 8mm tiefer, dann wieder 0.2rem + 4px hoch */
-    padding: 0.75rem 0.75rem calc(0.55rem + 8mm - 4px);
+    /* Oben 6px mehr Luft zur Oberkante; Linie unten wie gehabt. */
+    padding: calc(0.75rem + 6px) 0.75rem calc(0.55rem + 8mm - 4px);
     border-bottom: 1px solid var(--white-18);
 }
 
@@ -937,6 +937,27 @@ img.logo {
     height: 63px;
     margin-top: 42px;
     box-shadow: none;
+}
+
+/* Datenschutz-/Zensur-Modus: einzelne Zahlen-Werte verwischen (siehe
+   utils/privacy.js). Blur genügt — der Wert bleibt an Ort und Grösse, nur eben
+   unlesbar; Kopieren/Markieren wird zusätzlich unterbunden. */
+.tj-censor {
+    filter: blur(7px) !important;
+    -webkit-filter: blur(7px) !important;
+    user-select: none;
+    pointer-events: none;
+    transition: filter 0.12s ease;
+}
+
+/* Diagramme rendert ECharts auf Canvas — dort erreicht die Text-Zensur die
+   Zahlen (PnL-Achsen, Datenpunkte) nicht. Im Zensur-Modus deshalb das ganze
+   Diagramm verwischen — AUSSER den kleinen Quoten-Donuts (Win-Rate,
+   Satisfaction, RRR, Klasse `chartIdCardClass`): die zeigen Prozente/Verhältnisse,
+   keine Geldwerte, und sollen sichtbar bleiben. */
+body.privacy-on [_echarts_instance_]:not(.chartIdCardClass) {
+    filter: blur(9px);
+    transition: filter 0.12s ease;
 }
 
 .mobile-menu-toggle {
@@ -2455,7 +2476,8 @@ h4 {
     gap: 0.3rem;
     font-size: 0.8rem;
     padding: 0.15rem 0.7rem;
-    border-radius: 999px;
+    /* Rundung wie die Menü-Buttons (8px). */
+    border-radius: 8px;
     border: 1px solid var(--white-18);
     background: transparent;
     color: var(--white-70);
@@ -2822,7 +2844,7 @@ h4 {
     background: var(--black-bg-3);
     color: var(--white-87);
     border: 1px solid var(--white-18);
-    border-radius: 999px;
+    border-radius: 8px;
     padding: 0.15rem 0.6rem;
     font-size: 0.8rem;
     cursor: pointer;

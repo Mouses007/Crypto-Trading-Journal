@@ -1628,6 +1628,13 @@ async function runMigrations(knex, client) {
      * Kacheln werden gar nicht erst geladen).
      */
     await addColumnIfNotExists('settings', 'livetradingAn', (t) => t.integer('livetradingAn').defaultTo(1))
+    // Layout & Stil: Beta-Modi (Strategien/Research) im Umschalter ausblenden,
+    // und das Live-Trading-Fenster auch auf dem Telefon zeigen (sonst nur Desktop).
+    await addColumnIfNotExists('settings', 'betaAusblenden', (t) => t.integer('betaAusblenden').defaultTo(0))
+    await addColumnIfNotExists('settings', 'livetradingMobil', (t) => t.integer('livetradingMobil').defaultTo(0))
+    // Startseite (konfigurierbares Kachelraster) als Landing-Page + Modus-Tab.
+    // Standard an; aus = die App startet wie früher direkt im Journal.
+    await addColumnIfNotExists('settings', 'startseiteAn', (t) => t.integer('startseiteAn').defaultTo(1))
 
     // Nachrichtenquellen. `laerm` markiert, was der Nutzer als Lärm einstuft —
     // der Sammelschalter („Arschlochfilter") blendet genau diese Quellen aus
@@ -1826,6 +1833,18 @@ async function runMigrations(knex, client) {
     // Perplexity-Modell der Themen-Recherche; stand vorher hart im Quelltext.
     await addColumnIfNotExists('settings', 'radarNewsRechercheModell', (t) => t.text('radarNewsRechercheModell').defaultTo('sonar'))
     await addColumnIfNotExists('settings', 'aiKeyPerplexity', (t) => t.text('aiKeyPerplexity').defaultTo(''))
+    /*
+     * Stellschrauben des Lageberichts, die vorher fest im Quelltext standen.
+     * Überall bedeutet 0 bzw. leer: „wie bisher" — die Vorgabe der gewählten
+     * Länge gilt weiter, niemand muss etwas einstellen, damit es läuft.
+     */
+    await addColumnIfNotExists('settings', 'radarNewsTokenBudget', (t) => t.integer('radarNewsTokenBudget').defaultTo(0))
+    await addColumnIfNotExists('settings', 'radarNewsPunkte', (t) => t.integer('radarNewsPunkte').defaultTo(0))
+    await addColumnIfNotExists('settings', 'radarNewsVideoTiefe', (t) => t.text('radarNewsVideoTiefe').defaultTo('normal'))   // knapp|normal|ausfuehrlich
+    await addColumnIfNotExists('settings', 'radarNewsVideoTokens', (t) => t.integer('radarNewsVideoTokens').defaultTo(0))
+    // kombiniert = Aufmacher als Kachel + Rest als Artikel · artikel = reine
+    // Zeitung ohne Kacheln · kacheln = alles als Karte, wie vor dem Umbau
+    await addColumnIfNotExists('settings', 'radarNewsLayout', (t) => t.text('radarNewsLayout').defaultTo('kombiniert'))
     // Kapitel je Thema; `punkte` bleibt als flache Liste für Altleser bestehen.
     await addColumnIfNotExists('news_digests', 'kapitel', (t) => t.text('kapitel').defaultTo('[]'))
     await addColumnIfNotExists('news_digests', 'themen', (t) => t.text('themen').defaultTo(''))

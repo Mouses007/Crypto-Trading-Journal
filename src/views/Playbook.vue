@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed, onBeforeMount, nextTick } from 'vue'
+import { ref, computed, onBeforeMount, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
 import { spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js'
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js'
+import { kopiertesBild } from '../stores/ui.js'
 import { availableTags } from '../stores/trades.js'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
 import { useCreatedDateFormat } from '../utils/formatters.js'
@@ -660,8 +661,13 @@ function closeFullscreen() {
 }
 
 // --- Screenshot Upload / Remove ---
+// Nimmt ein Input-Event ODER direkt eine Datei (Drag&Drop / Zwischenablage).
+function dateiAus(evtOderDatei) {
+    return evtOderDatei?.target?.files ? evtOderDatei.target.files[0] : evtOderDatei
+}
+
 async function handleEntryScreenshotUpload(event, entry) {
-    const file = event.target.files[0]
+    const file = dateiAus(event)
     if (!file) return
     const reader = new FileReader()
     reader.onloadend = async () => {
@@ -720,7 +726,7 @@ async function removeEntryScreenshot(entry) {
 }
 
 async function handleTrendScreenshotUpload(event, entry) {
-    const file = event.target.files[0]
+    const file = dateiAus(event)
     if (!file) return
     const reader = new FileReader()
     reader.onloadend = async () => {
@@ -775,7 +781,7 @@ async function removeTrendScreenshot(entry) {
 }
 
 async function handleClosingScreenshotUpload(event, entry) {
-    const file = event.target.files[0]
+    const file = dateiAus(event)
     if (!file) return
     const reader = new FileReader()
     reader.onloadend = async () => {
@@ -833,6 +839,72 @@ async function removeClosingScreenshot(entry) {
         }
     }
 }
+
+// ── Drag & Drop + Zwischenablage für die Bewertungs-Screenshots ──
+const dragSlot = ref('')  // '<tradeId>:<slot>' der gerade überzogenen Zone
+
+function ersteBilddatei(list) {
+    return [...(list || [])].find(f => f && f.type && f.type.startsWith('image/')) || null
+}
+
+// Legt die Datei in den passenden Handler je Feld (entry/trend/closing).
+function screenshotAusDatei(file, entry, slot) {
+    if (!file || !entry) return
+    if (slot === 'entry') handleEntryScreenshotUpload(file, entry)
+    else if (slot === 'trend') handleTrendScreenshotUpload(file, entry)
+    else if (slot === 'closing') handleClosingScreenshotUpload(file, entry)
+}
+
+function onDropScreenshot(e, entry, slot) {
+    dragSlot.value = ''
+    const file = ersteBilddatei(e.dataTransfer?.files)
+    screenshotAusDatei(file, entry, slot)
+}
+
+// Base64-Daten-URL → File, damit die vorhandenen Upload-Handler sie annehmen.
+function dataUrlZuDatei(dataUrl, name) {
+    const [meta, b64] = String(dataUrl).split(',')
+    const mime = (meta.match(/:(.*?);/) || [, 'image/png'])[1]
+    const bin = atob(b64)
+    const arr = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+    return new File([arr], (name || 'screenshot') + '.png', { type: mime })
+}
+
+// Fügt das auf der Screenshots-Seite kopierte Bild in ein Feld ein. Das Bild
+// kommt frisch aus der DB (gemerkt ist nur die ID).
+async function kopiertesBildEinfuegen(entry, slot) {
+    const merk = kopiertesBild.value
+    if (!merk?.objectId) return
+    let b64 = ''
+    try {
+        const src = await dbGet('screenshots', merk.objectId)
+        b64 = src?.annotatedBase64 || src?.originalBase64 || ''
+    } catch (e) { /* nicht gefunden */ }
+    if (!b64) return
+    const file = dataUrlZuDatei(b64, merk.name)
+    screenshotAusDatei(file, entry, slot)
+}
+
+// Einfügen (Strg/Cmd+V): geht an den gerade bearbeiteten Trade, in das erste
+// noch leere Feld (Einstieg → Trend → Abschluss).
+function onPastePlaybook(e) {
+    if (!editingId.value) return
+    const items = e.clipboardData?.items || []
+    const imgItem = [...items].find(it => it.type && it.type.startsWith('image/'))
+    if (!imgItem) return
+    const file = imgItem.getAsFile()
+    if (!file) return
+    const entry = playbookEntries.value.find(x => x.tradeId === editingId.value)
+    if (!entry) return
+    e.preventDefault()
+    if (!(entry.screenshotId || getEntryScreenshot(entry))) screenshotAusDatei(file, entry, 'entry')
+    else if (!(entry.trendScreenshotId || getTrendScreenshot(entry))) screenshotAusDatei(file, entry, 'trend')
+    else if (!(entry.closingScreenshotId || getClosingScreenshot(entry))) screenshotAusDatei(file, entry, 'closing')
+}
+
+onMounted(() => { window.addEventListener('paste', onPastePlaybook) })
+onUnmounted(() => { window.removeEventListener('paste', onPastePlaybook) })
 
 // --- Strip HTML ---
 function stripHtml(html) {
@@ -1464,10 +1536,23 @@ async function saveEntry(entry) {
                             <span v-else class="badge bg-success">{{ t('incoming.screenshotLinked') }}</span>
                             <i class="uil uil-times pointerClass text-danger" @click.stop="removeTrendScreenshot(entry)"></i>
                         </div>
-                        <!-- Upload sichtbar bis 2 Screenshots vorhanden -->
-                        <input v-if="!(entry.screenshotId || getEntryScreenshot(entry)) || !(entry.trendScreenshotId || getTrendScreenshot(entry))"
-                            type="file" accept="image/*" class="form-control form-control-sm"
-                            @change="!(entry.screenshotId || getEntryScreenshot(entry)) ? handleEntryScreenshotUpload($event, entry) : handleTrendScreenshotUpload($event, entry)" />
+                        <!-- Upload sichtbar bis 2 Screenshots vorhanden — jetzt auch
+                             per Drag&Drop und Einfügen (Strg/Cmd+V). -->
+                        <label v-if="!(entry.screenshotId || getEntryScreenshot(entry)) || !(entry.trendScreenshotId || getTrendScreenshot(entry))"
+                            class="pb-drop" :class="{ 'pb-drop-over': dragSlot === entry.tradeId + ':open' }"
+                            @dragover.prevent="dragSlot = entry.tradeId + ':open'" @dragenter.prevent="dragSlot = entry.tradeId + ':open'"
+                            @dragleave.prevent="dragSlot = ''"
+                            @drop.prevent="onDropScreenshot($event, entry, (entry.screenshotId || getEntryScreenshot(entry)) ? 'trend' : 'entry')">
+                            <input type="file" accept="image/*" class="pb-drop-input"
+                                @change="!(entry.screenshotId || getEntryScreenshot(entry)) ? handleEntryScreenshotUpload($event, entry) : handleTrendScreenshotUpload($event, entry)" />
+                            <i class="uil uil-image-plus me-1"></i>Bild wählen, hierher ziehen oder einfügen (Strg/Cmd+V)
+                        </label>
+                        <!-- Auf der Screenshots-Seite kopiertes Bild einfügen. -->
+                        <button v-if="kopiertesBild && (!(entry.screenshotId || getEntryScreenshot(entry)) || !(entry.trendScreenshotId || getTrendScreenshot(entry)))"
+                            type="button" class="btn btn-sm btn-outline-primary mt-2"
+                            @click.stop="kopiertesBildEinfuegen(entry, (entry.screenshotId || getEntryScreenshot(entry)) ? 'trend' : 'entry')">
+                            <i class="uil uil-clipboard-notes me-1"></i>Kopiertes Bild einfügen
+                        </button>
                     </div>
 
                     <!-- ===== ABSCHLUSSBEWERTUNG (Edit) ===== -->
@@ -1542,8 +1627,20 @@ async function saveEntry(entry) {
                                     </button>
                                 </div>
                             </div>
-                            <input v-else type="file" accept="image/*" class="form-control form-control-sm"
-                                @change="handleClosingScreenshotUpload($event, entry)" />
+                            <label v-else class="pb-drop"
+                                :class="{ 'pb-drop-over': dragSlot === entry.tradeId + ':closing' }"
+                                @dragover.prevent="dragSlot = entry.tradeId + ':closing'" @dragenter.prevent="dragSlot = entry.tradeId + ':closing'"
+                                @dragleave.prevent="dragSlot = ''"
+                                @drop.prevent="onDropScreenshot($event, entry, 'closing')">
+                                <input type="file" accept="image/*" class="pb-drop-input"
+                                    @change="handleClosingScreenshotUpload($event, entry)" />
+                                <i class="uil uil-image-plus me-1"></i>Bild wählen, hierher ziehen oder einfügen (Strg/Cmd+V)
+                            </label>
+                            <button v-if="kopiertesBild && !(entry.closingScreenshotId || getClosingScreenshot(entry))"
+                                type="button" class="btn btn-sm btn-outline-primary mt-2"
+                                @click.stop="kopiertesBildEinfuegen(entry, 'closing')">
+                                <i class="uil uil-clipboard-notes me-1"></i>Kopiertes Bild einfügen
+                            </button>
                         </div>
 
                         <!-- Zufriedenheit -->
@@ -1662,4 +1759,32 @@ async function saveEntry(entry) {
     display: flex;
     align-items: center;
 }
+
+/* Drag&Drop-Zone für Bewertungs-Screenshots (Klick öffnet Dateiwahl). */
+.pb-drop {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1.5px dashed var(--white-18, rgba(255, 255, 255, 0.2));
+    border-radius: 8px;
+    background: var(--black-bg-7, rgba(255, 255, 255, 0.03));
+    color: var(--white-60, rgba(255, 255, 255, 0.6));
+    font-size: 0.78rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.pb-drop:hover {
+    border-color: var(--white-38, rgba(255, 255, 255, 0.38));
+    color: var(--white-87, rgba(255, 255, 255, 0.87));
+}
+.pb-drop-over {
+    border-color: var(--blue-color, #01B4FF);
+    background: rgba(1, 180, 255, 0.08);
+    color: var(--white-87, rgba(255, 255, 255, 0.87));
+}
+.pb-drop-input { display: none; }
 </style>

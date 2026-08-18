@@ -107,7 +107,7 @@ onBeforeUnmount(() => document.removeEventListener('click', beiKlickAussen))
     gap: 0.3rem;
     background: rgba(255, 255, 255, 0.07);
     border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 999px;
+    border-radius: 8px;
     color: var(--white-87);
     padding: 0.12rem 0.55rem;
     font-size: 0.9rem;
@@ -145,7 +145,7 @@ onBeforeUnmount(() => document.removeEventListener('click', beiKlickAussen))
 .swPille {
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: 8px;
     color: var(--white-60);
     font-size: 0.74rem;
     padding: 0.08rem 0.4rem;

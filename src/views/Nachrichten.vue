@@ -15,7 +15,7 @@
  * Der Wirtschaftskalender gehört hierher und nicht in den Marktradar: ein
  * FOMC-Protokoll ist eine Nachricht mit Datum, keine Kennzahl.
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
@@ -67,6 +67,7 @@ const SPEICHER_HOEHE = 'nachrichten_hoehen'
 const SPEICHER_QUELLEN = 'nachrichten_quellen_aus'
 const SPEICHER_MENGE = 'nachrichten_menge'
 const SPEICHER_VIDEOS = 'nachrichten_videos_offen'
+const SPEICHER_SCHNELL = 'nachrichten_schnell_offen'
 /** Wie viele Meldungen die Liste führt. Mehr als 200 lässt der Server nicht zu. */
 const MENGEN = [20, 40, 100, 200]
 
@@ -123,6 +124,86 @@ const punktImFenster = computed(() =>
 /** Kapitel des Berichts — leer bei Berichten aus der Zeit vor den Kapiteln. */
 const kapitelListe = computed(() =>
     (bericht.value?.kapitel || []).filter(k => k && (k.lage || k.punkte?.length)))
+
+/**
+ * Zeitung statt Kachelwand.
+ *
+ * Vorher standen ALLE Punkte als gleich grosse Kacheln in drei Spalten unter
+ * dem Bericht — bei drei Kapiteln à fünf Punkten sind das fünfzehn Karten, die
+ * jede Gewichtung einebnen und den Zeitungssatz darüber zur Dekoration machen.
+ * Jetzt gilt die Aufteilung einer echten Seite: ein paar Top-Meldungen oben, der
+ * Rest als Artikel in seinem Kapitel.
+ *
+ * `wichtigkeit` liefert das Modell ohnehin schon mit — es wurde bislang nur
+ * für einen farbigen Rahmen benutzt.
+ *
+ * Der Index in die FLACHE Liste wird mitgeführt: das Belegfenster adressiert
+ * Punkte darüber, und die Kapitel-Punkte sind dieselben Objekte.
+ *
+ * Drei Modi, weil zwei zu wenig waren:
+ *
+ *   kombiniert — Top-Meldungen als Kachel, der Rest als Artikel (Vorgabe)
+ *   artikel    — reine Zeitung, gar keine Kacheln
+ *   kacheln    — alles als Kachel, wie vor dem Umbau
+ *
+ * Ein unbekannter Wert (etwa das kurzzeitig gespeicherte „zeitung") fällt auf
+ * `kombiniert` zurück — das ist die Ansicht, die derselbe Wert vorher erzeugt hat.
+ */
+const LAYOUTS = ['kombiniert', 'artikel', 'kacheln']
+const LAYOUT_ICON = {
+    kombiniert: 'uil-newspaper',
+    artikel: 'uil-align-left',
+    kacheln: 'uil-apps',
+}
+
+const layoutModus = computed(() => {
+    const l = currentUser.value?.radarNewsLayout
+    return LAYOUTS.includes(l) ? l : 'kombiniert'
+})
+
+const punkteMitIndex = computed(() =>
+    (bericht.value?.punkte || []).map((p, i) => ({ p, i })))
+
+/** Top-Meldungen (intern „Aufmacher“): die als „hoch" markierten Punkte, höchstens drei. */
+const aufmacher = computed(() => {
+    if (layoutModus.value === 'kacheln') return punkteMitIndex.value
+    if (layoutModus.value === 'artikel') return []
+    return punkteMitIndex.value.filter(({ p }) => p.wichtigkeit === 'hoch').slice(0, 3)
+})
+
+/** Alles, was keine Top-Meldung ist — nach Kapitel getrennt, in Berichtsreihenfolge. */
+function artikelZuThema(thema) {
+    if (layoutModus.value === 'kacheln') return []
+    const oben = new Set(aufmacher.value.map(a => a.i))
+    return punkteMitIndex.value.filter(({ p, i }) => !oben.has(i) && (p.thema || '') === thema)
+}
+
+/**
+ * Punkte ohne Kapitelzuordnung — Altbestand und der Fall, dass das Modell ein
+ * `thema` vergisst. Ohne diesen Auffang verschwänden sie spurlos aus der
+ * Ansicht, und das wäre schlimmer als ein Punkt an der falschen Stelle.
+ */
+const artikelOhneKapitel = computed(() => {
+    if (layoutModus.value === 'kacheln') return []
+    const bekannt = new Set(kapitelListe.value.map(k => k.thema))
+    const oben = new Set(aufmacher.value.map(a => a.i))
+    return punkteMitIndex.value.filter(({ p, i }) => !oben.has(i) && !bekannt.has(p.thema || ''))
+})
+
+/**
+ * Videobeschreibung in Absatz und Stichpunkte zerlegen.
+ *
+ * Die ausführliche Stufe liefert erst zwei bis drei Sätze, dann Zeilen mit
+ * „- ". Beides als ein Textblock zu zeigen, wäre eine Wand; als reine Liste
+ * ginge die Einordnung verloren.
+ */
+function videoText(text) {
+    const zeilen = String(text || '').split('\n').map(z => z.trim()).filter(Boolean)
+    return {
+        absatz: zeilen.filter(z => !z.startsWith('-')).join(' '),
+        punkte: zeilen.filter(z => z.startsWith('-')).map(z => z.replace(/^-\s*/, '')),
+    }
+}
 
 /** Zeigt die Seite gerade einen alten Bericht aus dem Archiv? */
 const zeigtArchiv = computed(() =>
@@ -189,6 +270,10 @@ function klappeUm(id) {
 const nRhythmus = ref('taeglich')
 const nThemen = ref(['crypto'])
 const nLaenge = ref('mittel')
+const nLayout = ref('kombiniert')
+const nVideoTiefe = ref('normal')
+const nBudget = ref(0)
+const nPunkte = ref(0)
 
 function ladeBerichtOptionen() {
     const s = currentUser.value || {}
@@ -197,6 +282,71 @@ function ladeBerichtOptionen() {
         .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech'].includes(t))
     if (!nThemen.value.length) nThemen.value = ['crypto']
     nLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
+    nLayout.value = LAYOUTS.includes(s.radarNewsLayout) ? s.radarNewsLayout : 'kombiniert'
+    nVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
+        ? s.radarNewsVideoTiefe : 'normal'
+    nBudget.value = Number(s.radarNewsTokenBudget) || 0
+    nPunkte.value = Number(s.radarNewsPunkte) || 0
+}
+
+/*
+ * Die Reglerreihe ist zugeklappt, bis man sie braucht.
+ *
+ * Mit ausgeschriebenen Beschriftungen sind es acht Gruppen — dauerhaft
+ * ausgeklappt schöben sie den Bericht unter die Bildschirmkante. Zugeklappt
+ * steht dieselbe Auskunft in einer Zeile Klartext: was eingestellt ist, sieht
+ * man immer, nur ändern kostet einen Klick.
+ *
+ * Muster wie bei `videosOffen` in derselben Datei: Zustand im localStorage,
+ * weil er zum Gerät gehört und nicht in die Datenbank.
+ */
+const schnellOffen = ref(localStorage.getItem(SPEICHER_SCHNELL) === '1')
+
+function schnellUmschalten() {
+    schnellOffen.value = !schnellOffen.value
+    localStorage.setItem(SPEICHER_SCHNELL, schnellOffen.value ? '1' : '0')
+}
+
+/** Die Einstellungen als ein Satz — „täglich · Crypto + Finanzen · Mittel · …". */
+const schnellZusammenfassung = computed(() => {
+    const teile = [
+        nRhythmus.value === 'woechentlich' ? t('news.weekly') : t('news.daily'),
+        nThemen.value.map(th => THEMA_NAME[th] || th).join(' + '),
+        // Eine eigene Meldungszahl setzt die Länge ausser Kraft — dann steht
+        // sie hier auch nicht mehr, sonst widerspricht die Zeile sich selbst.
+        nPunkte.value ? `${nPunkte.value} ${t('news.points')}` : t('news.len.' + nLaenge.value),
+        t('news.layout.' + nLayout.value),
+        `${t('news.quickVideos')} ${t('news.depth.' + nVideoTiefe.value).toLowerCase()}`,
+    ]
+    if (nBudget.value) teile.push(`${nBudget.value} ${t('news.budget')}`)
+    return teile.join(' · ')
+})
+
+/**
+ * Zahlenregler speichern.
+ *
+ * 0 heisst überall „Vorgabe der Länge" — deshalb wird eine geleerte Eingabe zu
+ * 0 und nicht zu NaN. Die Grenzen sind dieselben wie auf dem Server; sie hier
+ * zu wiederholen ist Absicht: der Server muss ihnen trauen können, ohne dass
+ * die Oberfläche vorher Unsinn schickt.
+ *
+ * Bewusst zwei getrennte Funktionen statt einer, der man die Ref mitgibt: im
+ * Template entpackt Vue Refs automatisch, eine übergebene `nPunkte` käme dort
+ * als blosse Zahl an und `ref.value = n` liefe wirkungslos ins Leere — der Wert
+ * landete in der Datenbank, aber die Ansicht bliebe stehen.
+ */
+function grenze(wert, max) {
+    return Math.max(0, Math.min(max, Math.round(Number(wert) || 0)))
+}
+
+function setzeBudget(wert) {
+    nBudget.value = grenze(wert, 60000)
+    speichereOption('radarNewsTokenBudget', nBudget.value)
+}
+
+function setzePunkte(wert) {
+    nPunkte.value = grenze(wert, 12)
+    speichereOption('radarNewsPunkte', nPunkte.value)
 }
 
 async function speichereOption(feld, wert) {
@@ -580,10 +730,24 @@ async function berichtErzeugen() {
     }
 }
 
+/*
+ * Die Einstellungen kommen asynchron.
+ *
+ * `ladeBerichtOptionen()` allein in `onMounted` lief zu früh: `currentUser` war
+ * dann meist noch leer, die Regler behielten ihre Vorgabewerte und zeigten
+ * nach jedem Neuladen „täglich · Crypto · Mittel", egal was gespeichert war.
+ * Aufgefallen ist es erst, seit die Zusammenfassungszeile den Zustand
+ * ausschreibt — die Pillen sahen mit den Vorgaben zufällig richtig aus.
+ *
+ * Bewusst flach beobachtet: `speichereOption` ändert eine EIGENSCHAFT von
+ * `currentUser`, das löst hier nichts aus. Sonst würde jede Änderung sofort
+ * wieder überschrieben.
+ */
+watch(currentUser, ladeBerichtOptionen, { immediate: true })
+
 let takt = null
 onMounted(() => {
     ladeAlles()
-    ladeBerichtOptionen()
     pruefeGuthaben()
     // Zehn Minuten reichen: Feeds ändern sich langsamer als Kurse
     takt = setInterval(() => { if (!document.hidden) ladeAlles() }, 10 * 60 * 1000)
@@ -614,7 +778,21 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
 
         <!-- Die wichtigsten Berichts-Regler direkt auf der Seite. Sie gelten
              für den nächsten Bericht; der angezeigte bleibt unverändert. -->
-        <div class="nwSchnell" :title="t('news.quickHint')">
+        <!-- Zugeklappt steht hier eine Zeile Klartext: man sieht, was eingestellt
+             ist, ohne dass acht Reglergruppen Platz fressen. -->
+        <div class="nwSchnellKopf">
+            <button type="button" class="ctl-pill klein nwSchnellKnopf"
+                :class="{ active: schnellOffen }" :aria-expanded="schnellOffen"
+                :title="schnellOffen ? t('news.quickClose') : t('news.quickOpen')"
+                @click="schnellUmschalten">
+                <i class="uil" :class="schnellOffen ? 'uil-angle-down' : 'uil-setting'"></i>
+            </button>
+            <span v-if="!schnellOffen" class="nwSchnellZeile" @click="schnellUmschalten">
+                {{ schnellZusammenfassung }}
+            </span>
+        </div>
+
+        <div v-if="schnellOffen" class="nwSchnell" :title="t('news.quickHint')">
             <button v-for="r in ['taeglich', 'woechentlich']" :key="r" type="button"
                 class="ctl-pill klein" :class="{ active: nRhythmus === r }" @click="setzeRhythmus(r)">
                 {{ r === 'taeglich' ? t('news.daily') : t('news.weekly') }}
@@ -625,10 +803,50 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                 {{ bez }}
             </button>
             <span class="nwTrenner"></span>
+            <!-- Zweizeilige Pillen: das Wort allein („Mittel", „Knapp") sagt
+                 niemandem, was sich ändert — die Zeile darunter schon. -->
             <button v-for="l in ['kurz', 'mittel', 'lang']" :key="l" type="button"
-                class="ctl-pill klein" :class="{ active: nLaenge === l }" @click="setzeLaenge(l)">
-                {{ t('news.len.' + l) }}
+                class="ctl-pill klein zwei" :class="{ active: nLaenge === l }" @click="setzeLaenge(l)">
+                <b>{{ t('news.len.' + l) }}</b>
+                <!-- Sobald „Meldungen" auf einem eigenen Wert steht, gilt die
+                     Zahl der Länge nicht mehr — dann wäre sie schlicht gelogen. -->
+                <small>{{ nPunkte ? t('news.ownValue') : t('news.lenSub.' + l) }}</small>
             </button>
+            <span class="nwTrenner"></span>
+            <!-- Darstellung. Wirkt sofort, auch auf den angezeigten Bericht —
+                 es ist reine Anzeige, der Bericht selbst ändert sich nicht. -->
+            <button v-for="l in LAYOUTS" :key="l" type="button"
+                class="ctl-pill klein zwei" :class="{ active: nLayout === l }"
+                @click="nLayout = l; speichereOption('radarNewsLayout', l)">
+                <b><i class="uil" :class="LAYOUT_ICON[l]"></i>
+                    {{ t('news.layout.' + l) }}</b>
+                <small>{{ t('news.layoutSub.' + l) }}</small>
+            </button>
+            <span class="nwTrenner"></span>
+            <!-- Videotiefe: der einzige Regler hier, der Geld je Lauf kostet. -->
+            <button v-for="v in ['knapp', 'normal', 'ausfuehrlich']" :key="v" type="button"
+                class="ctl-pill klein zwei" :class="{ active: nVideoTiefe === v }"
+                :title="t('news.videoDepthHint')"
+                @click="nVideoTiefe = v; speichereOption('radarNewsVideoTiefe', v)">
+                <b><i class="uil uil-youtube"></i>{{ t('news.depth.' + v) }}</b>
+                <small>{{ t('news.depthSub.' + v) }}</small>
+            </button>
+            <span class="nwTrenner"></span>
+            <!-- Zahlenregler. 0 ist kein Wert, sondern „Vorgabe der Länge" —
+                 deshalb steht dann „auto" im Feld statt einer nackten Null. -->
+            <label class="nwZahlFeld" :title="t('news.budgetHint')">
+                <span>{{ t('news.budget') }}</span>
+                <input type="number" min="0" max="60000" step="500"
+                    :value="nBudget || ''" :placeholder="t('news.auto')"
+                    @change="setzeBudget($event.target.value)" />
+            </label>
+            <label class="nwZahlFeld" :title="t('news.pointsHint')">
+                <span>{{ t('news.points') }}</span>
+                <input type="number" min="0" max="12" step="1"
+                    :value="nPunkte || ''" :placeholder="t('news.auto')"
+                    @change="setzePunkte($event.target.value)" />
+            </label>
+            <p class="nwSchnellFuss">{{ t('news.moreInSettings') }}</p>
         </div>
 
         <p v-if="meldung" class="nwMeldung" :class="{ fehler }">{{ meldung }}</p>
@@ -696,20 +914,11 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                 <h2 class="nwUeberschrift">{{ bericht.ueberschrift }}</h2>
                 <p class="nwLage">{{ bericht.lage }}</p>
 
-                <!-- Zeitungsteil: je Thema ein Kapitel mit Spaltensatz. Alte
-                     Berichte ohne Kapitel zeigen wie bisher nur die Lage. -->
-                <div v-for="(k, ki) in kapitelListe" :key="ki" class="nwKapitel">
-                    <div class="nwKapitelKopf">
-                        <span class="nwKapitelThema">{{ THEMA_NAME[k.thema] || k.thema }}</span>
-                        <h3 class="nwKapitelTitel">{{ k.ueberschrift }}</h3>
-                    </div>
-                    <p class="nwKapitelText" :class="{ erste: ki === 0 }">{{ k.lage }}</p>
-                </div>
-
-                <!-- Kacheln, drei Spalten — kompakter als früher; der volle
-                     Text steht im Fenster. -->
-                <div class="nwPunkte">
-                    <article v-for="(p, i) in bericht.punkte" :key="i" class="nwPunkt"
+                <!-- Top-Meldungen: nur die als „hoch" markierten Punkte, höchstens
+                     drei. Im Kachel-Layout stehen hier wie früher alle. Der
+                     volle Text samt Belegen steht im Fenster. -->
+                <div v-if="aufmacher.length" class="nwPunkte" :class="{ aufmacher: layoutModus !== 'kacheln' }">
+                    <article v-for="{ p, i } in aufmacher" :key="i" class="nwPunkt"
                         :class="{ hoch: p.wichtigkeit === 'hoch', offen: offenerPunkt === i }">
                         <button type="button" class="nwPunktKnopf" @click="offenerPunkt = i">
                             <!-- Bild nur, wenn ein Beleg selbst eines mitbringt
@@ -746,6 +955,54 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                     </article>
                 </div>
 
+                <!-- Zeitungsteil: je Thema ein Kapitel mit Spaltensatz. Alte
+                     Berichte ohne Kapitel zeigen wie bisher nur die Lage. -->
+                <div v-for="(k, ki) in kapitelListe" :key="ki" class="nwKapitel">
+                    <div class="nwKapitelKopf">
+                        <span class="nwKapitelThema">{{ THEMA_NAME[k.thema] || k.thema }}</span>
+                        <h3 class="nwKapitelTitel">{{ k.ueberschrift }}</h3>
+                    </div>
+                    <p class="nwKapitelText" :class="{ erste: ki === 0 }">{{ k.lage }}</p>
+
+                    <!-- Die Punkte des Kapitels als Artikel im laufenden Satz.
+                         Anklickbar wie die Kacheln vorher: das Belegfenster ist
+                         der Ort, an dem nachgeschlagen wird, nicht die Ansicht. -->
+                    <article v-for="{ p, i } in artikelZuThema(k.thema)" :key="i" class="nwArtikel"
+                        @click="offenerPunkt = i">
+                        <h4 class="nwArtikelTitel">{{ p.titel }}</h4>
+                        <p class="nwArtikelText">{{ p.text }}</p>
+                        <p v-if="p.kennzahlen && p.kennzahlen.length" class="nwArtikelZahlen">
+                            <span v-for="(z, n) in p.kennzahlen.slice(0, 3)" :key="n" class="nwZahl">
+                                <b>{{ z.wert }}</b><span>{{ z.was }}</span>
+                            </span>
+                        </p>
+                        <p class="nwArtikelFuss">
+                            <span class="nwPunktQuelle">{{ p.quelle }}</span>
+                            <span v-if="p.belege && p.belege.length" class="nwBelegZahl">
+                                <i class="uil uil-link"></i>{{ p.belege.length }}
+                            </span>
+                        </p>
+                    </article>
+                </div>
+
+                <!-- Punkte, deren Thema zu keinem Kapitel passt (Altbestand,
+                     oder das Modell hat die Kennung vergessen). Lieber unter
+                     einer neutralen Überschrift als gar nicht. -->
+                <div v-if="artikelOhneKapitel.length" class="nwKapitel">
+                    <div class="nwKapitelKopf">
+                        <span class="nwKapitelThema">{{ t('news.misc') }}</span>
+                    </div>
+                    <article v-for="{ p, i } in artikelOhneKapitel" :key="i" class="nwArtikel"
+                        @click="offenerPunkt = i">
+                        <h4 class="nwArtikelTitel">{{ p.titel }}</h4>
+                        <p class="nwArtikelText">{{ p.text }}</p>
+                        <p class="nwArtikelFuss">
+                            <span class="nwPunktQuelle">{{ p.quelle }}</span>
+                        </p>
+                    </article>
+                </div>
+
+
                 <!-- Was mit den Videos geschah. Eine blosse „0" liess offen, ob
                      keine da waren, keine analysiert werden durften oder die
                      Analyse scheiterte — bei bis zu zehn Rappen je Video ist
@@ -757,20 +1014,33 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                         {{ t('news.videosHeader') }}
                         <span class="nwVideosZahl">{{ bericht.videos_liste.length }}</span>
                     </button>
-                    <a v-for="(vi, k) in (videosOffen ? bericht.videos_liste : [])" :key="k" class="nwVideo"
-                        :href="vi.url" target="_blank" rel="noopener noreferrer">
-                        <i class="uil uil-youtube"></i>
-                        <span class="nwBelegQuelle">{{ vi.quelle }}</span>
-                        <span class="nwBelegTitel">{{ vi.titel }}</span>
-                        <!-- Drei Zustände, die man auseinanderhalten muss:
-                             heute bezahlt, früher bezahlt (gratis wiederverwendet),
-                             gescheitert. Nur so sieht man, wofür Geld floss. -->
-                        <span class="nwVideoErgebnis"
-                            :class="vi.ergebnis === 'ok' ? 'ok' : (vi.ergebnis === 'übernommen' ? 'alt' : 'schlecht')">
-                            {{ vi.ergebnis === 'ok' ? ((vi.kostenUsd * 0.8).toFixed(2) + ' CHF')
-                                : (vi.ergebnis === 'übernommen' ? t('news.videoReused') : vi.ergebnis) }}
-                        </span>
-                    </a>
+                    <div v-for="(vi, k) in (videosOffen ? bericht.videos_liste : [])" :key="k"
+                        class="nwVideoEintrag">
+                        <a class="nwVideo" :href="vi.url" target="_blank" rel="noopener noreferrer">
+                            <i class="uil uil-youtube"></i>
+                            <span class="nwBelegQuelle">{{ vi.quelle }}</span>
+                            <span class="nwBelegTitel">{{ vi.titel }}</span>
+                            <!-- Drei Zustände, die man auseinanderhalten muss:
+                                 heute bezahlt, früher bezahlt (gratis wiederverwendet),
+                                 gescheitert. Nur so sieht man, wofür Geld floss. -->
+                            <span class="nwVideoErgebnis"
+                                :class="vi.ergebnis === 'ok' ? 'ok' : (vi.ergebnis === 'übernommen' ? 'alt' : 'schlecht')">
+                                {{ vi.ergebnis === 'ok' ? ((vi.kostenUsd * 0.8).toFixed(2) + ' CHF')
+                                    : (vi.ergebnis === 'übernommen' ? t('news.videoReused') : vi.ergebnis) }}
+                            </span>
+                        </a>
+                        <!-- Wofür bezahlt wurde: die Beschreibung selbst. Bis
+                             v3.7.1 stand hier nur der Preis — man sah, DASS ein
+                             Video angesehen wurde, aber nie, was drinstand.
+                             Ältere Berichte haben kein `text`, dort bleibt es
+                             wie bisher bei der Zeile darüber. -->
+                        <div v-if="vi.text" class="nwVideoText">
+                            <p v-if="videoText(vi.text).absatz">{{ videoText(vi.text).absatz }}</p>
+                            <ul v-if="videoText(vi.text).punkte.length">
+                                <li v-for="(z, n) in videoText(vi.text).punkte" :key="n">{{ z }}</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
                 <p v-else-if="!bericht.videos" class="nwHinweis">{{ t('news.noVideos') }}</p>
 
@@ -1015,10 +1285,98 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
 /* Schnell-Einstellungen des Berichts: Rhythmus · Themen · Länge */
 .nwSchnell {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     flex-wrap: wrap;
     gap: 0.3rem;
     margin: 0 0 0.7rem;
+}
+
+/* Zugeklappter Zustand: Zahnrad plus eine Zeile Klartext. */
+.nwSchnellKopf {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.5rem;
+}
+
+.nwSchnellZeile {
+    font-size: 0.76rem;
+    color: var(--white-60, rgba(255, 255, 255, 0.6));
+    cursor: pointer;
+}
+
+.nwSchnellZeile:hover {
+    color: var(--white-87);
+}
+
+.nwSchnellFuss {
+    flex-basis: 100%;
+    margin: 0.15rem 0 0;
+    font-size: 0.7rem;
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+}
+
+/* Zweizeilige Pille: fettes Schlagwort, darunter was es bewirkt. */
+.ctl-pill.zwei {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.05rem;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.ctl-pill.zwei small {
+    font-size: 0.62rem;
+    opacity: 0.7;
+}
+
+/*
+ * Die Zahlenfelder. Ohne diese Regeln erben die `input[type=number]` die
+ * Vorgabe des Browsers und stehen weiss in der dunklen Leiste — genau das war
+ * der Fall, seit die Felder eingebaut wurden.
+ */
+.nwZahlFeld {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0.15rem 0.5rem 0.15rem 0.7rem;
+    border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
+    border-radius: 999px;
+    font-size: 0.72rem;
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+    white-space: nowrap;
+}
+
+.nwZahlFeld input {
+    width: 4.2rem;
+    padding: 0.1rem 0.35rem;
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    border-radius: 6px;
+    background: var(--black-bg-7, rgba(0, 0, 0, 0.25));
+    color: var(--white-87);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    /* Die Pfeilchen fressen die halbe Feldbreite und werden hier nie benutzt. */
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.nwZahlFeld input::-webkit-outer-spin-button,
+.nwZahlFeld input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.nwZahlFeld input:focus {
+    outline: none;
+    border-color: var(--blue-color, #01B4FF);
+}
+
+.nwZahlFeld input::placeholder {
+    color: var(--white-40, rgba(255, 255, 255, 0.4));
+    font-style: italic;
 }
 
 .nwGuthaben {
@@ -1198,6 +1556,86 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
         column-gap: 2rem;
         column-rule: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
     }
+}
+
+/*
+ * Die Punkte als Artikel im Spaltensatz — der eigentliche Zeitungsteil.
+ *
+ * `break-inside: avoid` ist hier nicht Kosmetik: ohne die Regel reisst der
+ * Spaltenumbruch einen Artikel mitten im Absatz auseinander, und die
+ * Zwischenüberschrift steht am Fuss der linken Spalte über dem Text, der
+ * rechts oben weitergeht. Genau das lässt Spaltensatz billig aussehen.
+ */
+@media (min-width: 900px) {
+    .nwKapitel {
+        columns: 2;
+        column-gap: 2rem;
+        column-rule: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    }
+
+    /* Kopf und Vorspann laufen über die volle Breite, erst danach bricht es. */
+    .nwKapitelKopf {
+        column-span: all;
+    }
+
+    /* Der Vorspann bringt seinen eigenen Spaltensatz schon mit — im nun
+       ebenfalls spaltigen Kapitel ergäbe das vier Spalten. */
+    .nwKapitelText {
+        columns: auto;
+        column-span: all;
+    }
+}
+
+.nwArtikel {
+    break-inside: avoid;
+    margin: 0 0 1.1rem;
+    cursor: pointer;
+}
+
+.nwArtikelTitel {
+    margin: 0 0 0.25rem;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--white-87);
+}
+
+.nwArtikel:hover .nwArtikelTitel {
+    color: var(--blue-color, #01B4FF);
+}
+
+.nwArtikelText {
+    margin: 0;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+    text-align: justify;
+    hyphens: auto;
+}
+
+.nwArtikelZahlen {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.7rem;
+    margin: 0.4rem 0 0;
+}
+
+.nwArtikelFuss {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.3rem 0 0;
+    font-family: system-ui, sans-serif;
+    font-size: 0.66rem;
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+}
+
+/* Top-Meldungen: höchstens drei, deshalb nie mehr als drei Spalten — und auf dem
+   Telefon nebeneinander unlesbar, dort bleibt es beim Stapel aus `.nwPunkte`. */
+.nwPunkte.aufmacher {
+    margin-bottom: 1.4rem;
 }
 
 /* Initiale im ersten Kapitel — das eine Zeitungs-Detail, das sofort wirkt. */
@@ -1588,6 +2026,37 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
 
 .nwVideo:hover {
     color: var(--white-87);
+}
+
+/*
+ * Die Videobeschreibung. Eingerückt und abgesetzt, damit die Zeile darüber
+ * weiterhin als Kostenzeile lesbar bleibt — bei „ausführlich" sind das schnell
+ * zwölf Stichpunkte, die sonst mit der nächsten Videozeile verschmelzen.
+ */
+.nwVideoEintrag {
+    padding: 0.15rem 0;
+}
+
+.nwVideoText {
+    margin: 0.1rem 0 0.5rem 1.35rem;
+    padding-left: 0.7rem;
+    border-left: 2px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--white-60, rgba(255, 255, 255, 0.62));
+}
+
+.nwVideoText p {
+    margin: 0 0 0.35rem;
+}
+
+.nwVideoText ul {
+    margin: 0;
+    padding-left: 1rem;
+}
+
+.nwVideoText li {
+    margin: 0.1rem 0;
 }
 
 .nwVideoErgebnis {

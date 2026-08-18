@@ -4,6 +4,8 @@
 export {
     appMode,
     APP_MODES,
+    privacyMode,
+    kopiertesBild,
     currentUser,
     timeZones,
     queryLimit,

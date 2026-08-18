@@ -1,11 +1,11 @@
 <script setup>
-import { onBeforeMount } from 'vue';
+import { onBeforeMount, onMounted, onUnmounted, ref } from 'vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Screenshot from '../components/Screenshot.vue'
 import { currentDate, dateScreenshotEdited, editingScreenshot, itemToEditId, spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js';
 import { selectedTagIndex } from '../stores/filters.js';
 import { screenshot, tradeTags, tagInput, showTagsList, availableTags, tags } from '../stores/trades.js';
-import { useSaveScreenshot, useSetupImageUpload } from '../utils/screenshots';
+import { useSaveScreenshot, useSetupImageUpload, useSetupImageFile } from '../utils/screenshots';
 import { useDatetimeLocalFormat } from '../utils/formatters.js';
 import { useGetSelectedRange } from '../utils/mountOrchestration.js';
 import { useFilterSuggestions, useTradeTagsChange, useFilterTags, useToggleTagsDropdown, useGetTags, useGetAvailableTags, useGetTagInfo } from '../utils/daily';
@@ -23,6 +23,33 @@ onBeforeMount(async () => {
     await (spinnerLoadingPage.value = false)
 })
 currentDate.value = dayjs().tz(timeZoneTrade.value).format("YYYY-MM-DD HH:mm")
+
+// ── Drag & Drop + Zwischenablage ──
+// Erstes Bild aus Drop bzw. Paste an dieselbe Verarbeitung wie der Datei-Upload.
+const dragOver = ref(false)
+
+function ersteBilddatei(list) {
+    return [...(list || [])].find(f => f && f.type && f.type.startsWith('image/')) || null
+}
+
+function onDrop(e) {
+    dragOver.value = false
+    const file = ersteBilddatei(e.dataTransfer?.files)
+    if (file) useSetupImageFile(file)
+}
+
+function onPaste(e) {
+    const items = e.clipboardData?.items || []
+    for (const it of items) {
+        if (it.type && it.type.startsWith('image/')) {
+            const file = it.getAsFile()
+            if (file) { useSetupImageFile(file); e.preventDefault(); return }
+        }
+    }
+}
+
+onMounted(() => { window.addEventListener('paste', onPaste) })
+onUnmounted(() => { window.removeEventListener('paste', onPaste) })
 //console.log(" current page id " + pageId.value)
 //console.log(" screenshot "+JSON.stringify(screenshot))
 let setupType = [{
@@ -181,7 +208,19 @@ async function getScreenshotToEdit(param) {
             </div>
         </div>
         <div class="mt-3">
-            <input type="file" @change="useSetupImageUpload" />
+            <!-- Datei-Upload + Drag&Drop-Zone + Einfügen aus Zwischenablage (Strg/Cmd+V).
+                 Als <label>: Klick irgendwo in der Zone öffnet die Dateiwahl; der
+                 eigene @drop-Handler nimmt gezogene Bilder. -->
+            <label class="ss-dropzone" :class="{ 'ss-dropzone-over': dragOver }"
+                @dragover.prevent="dragOver = true" @dragenter.prevent="dragOver = true"
+                @dragleave.prevent="dragOver = false" @drop.prevent="onDrop">
+                <i class="uil uil-image-upload ss-dropzone-icon"></i>
+                <div class="ss-dropzone-text">
+                    <strong>Bild hierher ziehen oder auswählen</strong>
+                    <span>oder aus der Zwischenablage einfügen (Strg/Cmd + V)</span>
+                </div>
+                <input type="file" accept="image/*" @change="useSetupImageUpload" class="ss-dropzone-input" />
+            </label>
         </div>
         <Screenshot v-if="screenshot.originalBase64" :screenshot-data="screenshot" source="addScreenshot" />
 
@@ -198,3 +237,43 @@ async function getScreenshotToEdit(param) {
         </div>
     </div>
 </template>
+
+<style scoped>
+.ss-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 1.4rem 1rem;
+    border: 2px dashed var(--white-18, rgba(255, 255, 255, 0.2));
+    border-radius: 10px;
+    background: var(--black-bg-7, rgba(255, 255, 255, 0.03));
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.ss-dropzone:hover { border-color: var(--white-38, rgba(255, 255, 255, 0.38)); }
+.ss-dropzone-over {
+    border-color: var(--blue-color, #01B4FF);
+    background: rgba(1, 180, 255, 0.08);
+    color: var(--white-87);
+}
+.ss-dropzone-icon {
+    font-size: 1.8rem;
+    color: var(--blue-color, #01B4FF);
+}
+.ss-dropzone-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    line-height: 1.3;
+}
+.ss-dropzone-text strong { font-size: 0.9rem; font-weight: 600; }
+.ss-dropzone-text span { font-size: 0.78rem; color: var(--white-60, rgba(255, 255, 255, 0.6)); }
+/* Input versteckt — die Zone ist ein <label>, Klick öffnet die Dateiwahl. */
+.ss-dropzone-input {
+    display: none;
+}
+</style>

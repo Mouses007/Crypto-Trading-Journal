@@ -9,7 +9,26 @@ const router = createRouter({
         import.meta.env.BASE_URL),
     routes: [{
         path: '/',
-        redirect: '/dashboard'
+        // Landing-Page: normalerweise die Startseite. Ist sie in den
+        // Einstellungen abgeschaltet (`startseiteAn = 0`), landet man wie früher
+        // im Journal. Der Wert wird beim App-Start nach localStorage gespiegelt
+        // (siehe useInitApp), damit hier synchron entschieden werden kann.
+        redirect: () => (localStorage.getItem('startseiteAn') === '0' ? '/dashboard' : '/startseite'),
+    },
+    {
+        // Startseite: frei konfigurierbares Kachelraster, die Landing-Page der
+        // App. Eigener Modus `start` (siehe menu.js) — deshalb lädt das
+        // Dashboard-Layout hier KEINE Journal-Daten; die Seite versorgt ihre
+        // Journal-Kacheln selbst.
+        path: '/startseite',
+        name: 'startseite',
+        meta: {
+            title: "Start", titleKey: "nav.startseite",
+            mode: 'start',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/Startseite.vue')
     },
     {
         path: '/setup',

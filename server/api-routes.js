@@ -72,7 +72,8 @@ const VALID_SETTINGS_KEYS = [
     'radarRsiSymbols', 'radarRsiTfs', 'radarKalenderLaender', 'radarKalenderImpact', 'radarArschlochfilter', 'radarNewsAuto', 'radarNewsStunde', 'radarNewsVideos', 'radarNewsModel', 'radarNewsAufloesung', 'radarNewsBerichtProvider', 'radarNewsBerichtModell', 'radarPicycleAlarm', 'radarPicycleSchwelle', 'radarFundingDivergenz', 'radarDivergenzSymbole',
     'radarNewsRhythmus', 'radarNewsWochentag', 'radarNewsThemen', 'radarNewsLaenge', 'radarArschlochAn', 'radarArschlochWoerter', 'radarNewsXModell',
     'radarNewsRechercheModell',
-    'livetradingAn',
+    'radarNewsTokenBudget', 'radarNewsPunkte', 'radarNewsVideoTiefe', 'radarNewsVideoTokens', 'radarNewsLayout',
+    'livetradingAn', 'betaAusblenden', 'livetradingMobil', 'startseiteAn',
     // Anbieter/Modell je KI-Funktion; leer = global
     'aiBerichtProvider', 'aiBerichtModell', 'aiAgentProvider', 'aiAgentModell',
     'aiStrategieProvider', 'aiStrategieModell',

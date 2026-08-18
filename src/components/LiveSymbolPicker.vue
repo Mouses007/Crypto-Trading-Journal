@@ -414,7 +414,8 @@ onMounted(async () => {
 .cat-pill {
     font-size: 0.75rem;
     padding: 0.15rem 0.7rem;
-    border-radius: 999px;
+    /* Rundung wie die Menü-Buttons (8px). */
+    border-radius: 8px;
     border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
     background: transparent;
     color: var(--white-70);

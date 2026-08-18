@@ -7,7 +7,6 @@ import { useIstTelefon } from '../utils/geraet.js'
 import { selectedBroker, brokers, selectedTradeCategory, BOT_BROKERS } from "../stores/filters.js"
 import { pagesForMode, modeHome } from "../config/menu.js"
 import SidebarFilters from './SidebarFilters.vue'
-import ModeSwitcher from './ModeSwitcher.vue'
 import LiveSymbolPicker from './LiveSymbolPicker.vue'
 import donateBtc from '../assets/donate-btc.png'
 import donatePaypal from '../assets/donate-paypal.jpg'
@@ -29,6 +28,31 @@ const livePickerVariant = computed(() => ({
     openinterest: 'oi',
 }[pageId.value] || null))
 const showDonateModal = ref(false)
+
+// ── Börsen-Auswahl (nur Journal) ──
+// Steht jetzt in der Seitenleiste wie die Filter, nicht mehr als Pillen über
+// dem Seitentitel. Nur Börsen mit hinterlegter API erscheinen.
+const configuredBrokers = ref([])
+
+async function loadConfiguredBrokers() {
+    const result = []
+    for (const b of brokers) {
+        try {
+            const { data } = await axios.get(`/api/${b.value}/config`)
+            if (data && (data.apiKey || data.hasSecret)) result.push(b)
+        } catch (_) { /* Broker ohne Config-Endpoint/Key → überspringen */ }
+    }
+    // Fallback: ist gar keine API hinterlegt, zeige trotzdem alle, damit man
+    // nicht festsitzt (z.B. frische Installation).
+    configuredBrokers.value = result.length ? result : brokers.slice()
+}
+
+function switchBroker(value) {
+    if (selectedBroker.value === value) return
+    selectedBroker.value = value
+    localStorage.setItem('selectedBroker', value)
+    window.location.reload()
+}
 
 // ── Update System ──
 const updateAvailable = ref(false)
@@ -162,8 +186,11 @@ onMounted(() => {
     checkForUpdate()
     checkRollbackStatus()
     loadAuthStatus()
-    // Migration: „Alle" gibt es nicht mehr → auf Futures normalisieren.
-    if (selectedTradeCategory.value === 'all' || !selectedTradeCategory.value) {
+    // Börsen-Auswahl gibt es nur im Journal — im Live-Modus die 3 API-Calls sparen.
+    if (appMode.value === 'journal') loadConfiguredBrokers()
+    // Migration: „Alle" gibt es nicht mehr, und „Agent" hat keine Pille mehr —
+    // wer die Kategorie noch gespeichert hat, säße sonst unsichtbar fest.
+    if (['all', 'agent'].includes(selectedTradeCategory.value) || !selectedTradeCategory.value) {
         selectedTradeCategory.value = 'futures'
         localStorage.setItem('selectedTradeCategory', 'futures')
     }
@@ -207,7 +234,12 @@ function gruppenFuer(mode) {
         // Nur-Desktop-Seiten erscheinen am Telefon gar nicht. Bewusst nicht an
         // `screenType`: das misst nur die Breite, und ein Desktop-Browser in
         // einem schmalen Fenster soll seine Einträge behalten.
-        if (page.nurDesktop && istTelefon.value) continue
+        // Ausnahme: `mobilFlag` nennt eine Einstellung, mit der man die Seite
+        // fürs Telefon doch freischaltet (Layout & Stil → Live-Trading am Handy).
+        if (page.nurDesktop && istTelefon.value) {
+            const mobilFrei = page.mobilFlag && Number(currentUser.value?.[page.mobilFlag] ?? 0) === 1
+            if (!mobilFrei) continue
+        }
         if (!groups.has(page.group)) groups.set(page.group, [])
         groups.get(page.group).push(page)
     }
@@ -230,6 +262,8 @@ function goToDashboard() {
 </script>
 
 <template>
+    <!-- Der Modus-Umschalter sitzt auf jedem Bildschirm zuoberst im Inhalt
+         (Nav.vue), nicht mehr in der Seitenleiste. -->
     <div class="col-2 logoDiv">
         <a class="logo-area pointerClass text-decoration-none" :href="modeHome(appMode)" @click.prevent="goToDashboard">
             <div class="d-flex align-items-center">
@@ -242,32 +276,37 @@ function goToDashboard() {
             </div>
         </a>
     </div>
-    <ModeSwitcher />
     <div id="step2" class="mt-2">
         <!-- ===== JOURNAL ===== -->
         <template v-if="appMode === 'journal'">
+        <!-- Börsen-Auswahl wie ein Filter: nur Börsen mit hinterlegter API. -->
+        <div v-if="configuredBrokers.length > 1" class="sideMenuDiv">
+            <div class="sideMenuDivContent">
+                <label class="fw-lighter">{{ t('nav.exchange') }}</label>
+                <div class="category-pills broker-pills">
+                    <button v-for="b in configuredBrokers" :key="b.value" type="button"
+                        :class="['cat-pill', selectedBroker === b.value ? 'active' : '']"
+                        @click="switchBroker(b.value)">{{ b.label }}</button>
+                </div>
+            </div>
+        </div>
         <div class="sideMenuDiv">
             <div class="sideMenuDivContent">
-                <label class="fw-lighter">{{ t('nav.tradeCategory') }}</label>
                 <div class="category-pills">
                     <!-- Konten-Übersicht: immer sichtbar, links neben den Kategorie-Pillen. -->
                     <a href="/accounts" :class="['cat-pill', 'acc-pill', pageId === 'accounts' ? 'active' : '']">
                         <i class="uil uil-wallet me-1"></i>{{ t('nav.accounts') }}</a>
                     <!-- Futures immer sichtbar; Bot nur bei Börsen mit Bot-API (Pionex).
-                         Auf der Konten-Seite ist keine Trading-Kategorie aktiv. -->
+                         Auf der Konten-Seite ist keine Trading-Kategorie aktiv.
+                         Die Agent-Pille ist ausgeblendet, solange das
+                         Agent-Trading nicht scharf ist — die Kategorie samt
+                         setCategory('agent') bleibt für die Rückkehr bestehen. -->
                     <button type="button"
-                        :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory !== 'bot' && selectedTradeCategory !== 'agent') ? 'active' : '']"
+                        :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory !== 'bot') ? 'active' : '']"
                         @click="setCategory('futures')">Futures</button>
                     <button v-if="BOT_BROKERS.includes(selectedBroker)" type="button"
                         :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory === 'bot') ? 'active' : '']"
                         @click="setCategory('bot')">Bot</button>
-                    <!-- Agent: eigene Pille, weil seine Trades zum grossen Teil
-                         Papier sind. Sie erscheinen NUR hier — nie unter Futures
-                         und nie in der Gesamtbilanz. -->
-                    <button type="button"
-                        :class="['cat-pill', (pageId !== 'accounts' && selectedTradeCategory === 'agent') ? 'active' : '']"
-                        :title="t('strategies.agentCategoryHint')"
-                        @click="setCategory('agent')">Agent</button>
                 </div>
                 <SidebarFilters />
             </div>
@@ -436,10 +475,15 @@ function goToDashboard() {
     margin-bottom: calc(3mm + 0.4rem);
     flex-wrap: wrap;
 }
+/* Börsen-Reihe: 10px weniger Abstand nach unten zur Trennlinie. */
+.broker-pills {
+    margin-bottom: calc(3mm + 0.4rem - 10px);
+}
 .cat-pill {
     font-size: 0.78rem;
     padding: 0.2rem 0.8rem;
-    border-radius: 999px;
+    /* Rundung wie die Menü-Buttons (8px), nicht mehr vollrund. */
+    border-radius: 8px;
     border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
     background: transparent;
     color: var(--white-70, rgba(255, 255, 255, 0.7));

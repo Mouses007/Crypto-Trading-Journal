@@ -23,6 +23,7 @@
 import dayjs from './dayjs-setup.js'
 import { dbCreate } from './db.js'
 import { timeZoneTrade } from '../stores/ui.js'
+import { selectedBroker } from '../stores/filters.js'
 
 /** JPEG statt PNG: ein voller Bildschirm als PNG-Base64 wird schnell 5+ MB. */
 const JPEG_QUALITAET = 0.85
@@ -91,13 +92,15 @@ export async function fangeFensterBild() {
  */
 export async function speichereCockpitFoto(symbol) {
     let base64
-    try {
+    // Nutzerwunsch: den Auswahl-DIALOG (echte Bildschirm-/Fensteraufnahme) als
+    // ersten Weg. Der Browser liefert damit ein pixelgenaues Bild inklusive der
+    // Live-Charts (WebGL/Canvas), die das DOM-Rendering nicht sauber einfängt.
+    // Nur wenn die API fehlt (HTTP übers LAN, kein sicherer Kontext), fällt es
+    // auf das DOM-Rendering zurück.
+    if (navigator.mediaDevices?.getDisplayMedia) {
+        base64 = await fangeFensterBild()
+    } else {
         base64 = await fangeSeitenBild()
-    } catch (e) {
-        // DOM-Rendering gescheitert (exotisches CSS, Speichergrenze) — wenn
-        // der Kontext die Screen-Capture-API hergibt, darf sie übernehmen.
-        if (navigator.mediaDevices?.getDisplayMedia) base64 = await fangeFensterBild()
-        else throw e
     }
     const jetzt = dayjs().tz(timeZoneTrade.value)
     const dateUnix = jetzt.unix()
@@ -106,6 +109,7 @@ export async function speichereCockpitFoto(symbol) {
         name,
         symbol: symbol || '',
         side: '',
+        broker: selectedBroker.value || '',
         originalBase64: base64,
         annotatedBase64: base64,
         markersOnly: true,

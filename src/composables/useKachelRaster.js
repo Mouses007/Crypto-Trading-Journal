@@ -29,6 +29,8 @@
  * @param {number}   [opt.standardHoehe=270]
  * @param {number}   [opt.taktMs=30000] Prüfintervall; je Kachel entscheidet `intervallMs`
  * @param {number}   [opt.startVersatzMs=250] Versatz beim Erststart
+ * @param {string[]} [opt.standardVersteckt=[]] beim Erststart ausgeblendete Ids
+ *   (für Seiten mit grossem Katalog, die aufgeräumt starten — z.B. die Startseite)
  */
 
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
@@ -46,9 +48,10 @@ export function useKachelRaster({
     standardHoehe = 270,
     taktMs = 30000,
     startVersatzMs = 250,
+    standardVersteckt = [],
 }) {
     const { hiddenCards, reihenfolge, groessen, toggleCard, isVisible, zeigeAlle,
-        setzeReihenfolge, setzeGroesse } = useHiddenCards(storageKey)
+        setzeReihenfolge, setzeGroesse } = useHiddenCards(storageKey, standardVersteckt)
 
     /*
      * Es gab hier eine Vorbelegung, die schwere Kacheln auf Telefonen vorab

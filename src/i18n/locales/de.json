@@ -49,6 +49,7 @@
     "tradeCategory": "ART",
     "categoryAll": "Alle",
     "analyze": "ANALYSIEREN",
+    "startseite": "Startseite",
     "dashboard": "Dashboard",
     "dailyView": "Tages Ansicht",
     "calendar": "Kalender",
@@ -249,6 +250,12 @@
     "language": "Sprache",
     "languageLabel": "App-Sprache",
     "layoutAndStyle": "Layout & Stil",
+    "startpageOn": "Startseite anzeigen",
+    "startpageOnHint": "Zeigt die konfigurierbare Startseite als Landing-Page und eigenen Modus-Tab. Aus: die App startet direkt im Journal.",
+    "hideBeta": "Beta-Funktionen ausblenden",
+    "hideBetaHint": "Blendet die noch unfertigen Modi (Strategien, Research) aus der Navigation aus.",
+    "livetradingMobile": "Live-Trading auf dem Handy",
+    "livetradingMobileHint": "Zeigt das Live-Trading-Fenster auch auf dem Telefon. Standardmässig nur am Desktop, weil das Kachelraster viel Platz braucht.",
     "username": "Benutzername",
     "usernamePlaceholder": "Dein Name...",
     "profilePicture": "Profilbild",
@@ -389,7 +396,14 @@
         "generateNow": "Lagebericht jetzt erzeugen",
         "costAbout": "kostet ungefähr",
         "costSplit": "je Lauf — davon {text} für den Text, {n} × {proVideo} für die Videos (bei 20 Minuten Länge)",
-        "costNoVideos": "je Lauf — ohne Videos"
+        "costNoVideos": "je Lauf — ohne Videos",
+        "layoutLabel": "Darstellung des Berichts",
+        "layoutHint": "Kombiniert stellt die wichtigsten Meldungen als Kachel nach oben („Top-Meldungen“, höchstens drei) und setzt den Rest als Artikel in sein Kapitel. Zeitung verzichtet ganz auf Kacheln, Kacheln zeigt wie früher alles als gleich grosse Karte. Welche Meldungen oben landen, entscheidet die KI beim Schreiben — markiert keine als wichtig, bleibt die Kachelreihe leer.",
+        "scopeLabel": "Umfang je Kapitel",
+        "scopeHint": "Meldungen sind die einzelnen Punkte eines Kapitels — im Zeitungslayout je ein Artikel mit Überschrift, Absatz und Belegen. Der Token-Deckel begrenzt, wie lang die Antwort der KI werden darf; er legt die Kosten nicht fest, sondern deckelt sie.",
+        "scopeAuto": "leer = die gewählte Länge entscheidet",
+        "videoDepthLabel": "Ausführlichkeit der Videobeschreibung",
+        "videoTokensHint": "eigener Ausgabe-Deckel, leer = nach Stufe"
       }
     },
     "aiEnabled": "KI-Funktionen aktiviert",
@@ -938,9 +952,13 @@
     "reportCreated": "Bericht für {label} wurde erstellt."
   },
   "modes": {
+    "start": "Start",
     "journal": "Journal",
     "live": "Live-Analyse",
+    "liveShort": "Live",
     "agent": "Strategien",
+    "agentShort": "Strategie",
+    "research": "Research",
     "comingSoon": "Kommt später",
     "betaHint": "Unfertig — bitte nur im Papierbetrieb verwenden"
   },
@@ -1669,6 +1687,75 @@
     "read_shortDeckung": "Preis steigt, Bestand fällt — spricht eher für Short-Eindeckung als neue Käufe",
     "read_longAufloesung": "Preis und Bestand fallen — spricht für Long-Auflösung",
     "read_neutral": "keine klare Richtung"
+  },
+  "startseite": {
+    "title": "Startseite",
+    "kontostand": {
+      "title": "Kontostand",
+      "start": "Start",
+      "bonus": "Bonus",
+      "broker": "Börse",
+      "leer": "Kein Startguthaben hinterlegt — unter Konten eintragen."
+    },
+    "offeneTrades": {
+      "title": "Offene Trades",
+      "keine": "Keine offenen Positionen"
+    },
+    "winrate": {
+      "title": "Winrate",
+      "wins": "Gewinner",
+      "losses": "Verlierer",
+      "trades": "Trades",
+      "basis_net": "netto · gesamt",
+      "basis_gross": "brutto · gesamt",
+      "leer": "Noch keine Trades erfasst."
+    },
+    "kapitalkurve": {
+      "title": "Kapitalkurve",
+      "kumuliert": "kumuliert · gesamt",
+      "leer": "Noch keine Trades erfasst."
+    },
+    "kennzahlen": {
+      "title": "Kennzahlen",
+      "netto": "Netto-PnL",
+      "profitFaktor": "Profit-Faktor",
+      "erwartung": "Erwartung/Trade",
+      "avgWin": "Ø Gewinn",
+      "avgLoss": "Ø Verlust",
+      "gebuehren": "Gebühren",
+      "funding": "Funding",
+      "leer": "Noch keine Trades erfasst."
+    },
+    "heatmap": {
+      "title": "Kalender-Heatmap",
+      "leer": "Noch keine Trades erfasst."
+    },
+    "performance": {
+      "title": "Performance",
+      "modus_wochentag": "Wochentag",
+      "modus_dauer": "Dauer",
+      "modus_symbol": "Symbol",
+      "tag_mo": "Mo",
+      "tag_di": "Di",
+      "tag_mi": "Mi",
+      "tag_do": "Do",
+      "tag_fr": "Fr",
+      "tag_sa": "Sa",
+      "tag_so": "So",
+      "dauer_lt5m": "<5m",
+      "dauer_lt30m": "5–30m",
+      "dauer_lt4h": "30m–4h",
+      "dauer_lt1d": "4–24h",
+      "dauer_gt1d": ">1d",
+      "leer": "Noch keine Trades erfasst."
+    },
+    "news": {
+      "label": "Marktbericht",
+      "mehr": "Zu den Nachrichten",
+      "zurSeite": "Zur Nachrichten-Seite",
+      "ohneTitel": "Aktueller Marktbericht",
+      "leer": "Noch kein Bericht generiert. Auf der Nachrichten-Seite erstellen."
+    }
   },
   "marktradar": {
     "title": "Marktradar",
@@ -2483,6 +2570,7 @@
     "videosHeader": "Verwendete Videos",
     "noVideos": "Keine Videos analysiert — entweder war keins im Zeitfenster, oder die Videoanalyse ist ausgeschaltet.",
     "videoReused": "früher bezahlt",
+    "misc": "Vermischtes",
     "archive": "Archiv",
     "archiveEmpty": "Noch keine Berichte im Archiv.",
     "fromArchive": "Archiv",
@@ -2503,7 +2591,43 @@
     "quickHint": "Rhythmus, Themen und Länge des Lageberichts — gilt ab dem nächsten Bericht. Wochentag und alles Weitere in den Einstellungen.",
     "quotaTitle": "KI-Guthaben aufgebraucht",
     "quotaEmpty": "KI-Guthaben aufgebraucht: {liste}. Bericht, Recherche oder Videoanalyse können scheitern, bis Guthaben nachgeladen ist (Einstellungen → KI zeigt Details).",
-    "lastFailure": "Letzter Berichtslauf ({zeit}) gescheitert: {text} — es wird stündlich erneut versucht."
+    "lastFailure": "Letzter Berichtslauf ({zeit}) gescheitert: {text} — es wird stündlich erneut versucht.",
+    "layout": {
+      "kombiniert": "Kombiniert",
+      "artikel": "Zeitung",
+      "kacheln": "Kacheln"
+    },
+    "depth": {
+      "knapp": "Knapp",
+      "normal": "Normal",
+      "ausfuehrlich": "Ausführlich"
+    },
+    "videoDepthHint": "Wie ausführlich Gemini die Videos beschreibt. Kostet nur Ausgabe-Token — der Preis eines Videos entsteht fast ganz auf der Eingabeseite, „Ausführlich\" ist deshalb kaum teurer.",
+    "budget": "Token-Deckel",
+    "budgetHint": "Obergrenze für die Länge der Berichtsantwort. „auto\" = die gewählte Länge entscheidet. Reicht der erste Versuch nicht, wird einmal mit dem doppelten Deckel nachgelegt — ein abgebrochener Bericht wirft die bereits bezahlte Videoanalyse weg.",
+    "points": "Meldungen",
+    "pointsHint": "Wie viele einzelne Meldungen ein Kapitel bekommt — im Zeitungslayout je ein Artikel mit Überschrift, Absatz und Belegen. „auto\" = die gewählte Länge entscheidet.",
+    "lenSub": {
+      "kurz": "2–3 Meldungen",
+      "mittel": "4–5 Meldungen",
+      "lang": "6–8 Meldungen"
+    },
+    "layoutSub": {
+      "kombiniert": "Top-Meldungen + Artikel",
+      "artikel": "alles als Artikel",
+      "kacheln": "alles als Karte"
+    },
+    "depthSub": {
+      "knapp": "3–5 Stichpunkte",
+      "normal": "5–8 Stichpunkte",
+      "ausfuehrlich": "Absatz + 8–12 Punkte"
+    },
+    "ownValue": "nach eigener Vorgabe",
+    "auto": "auto",
+    "quickOpen": "Berichts-Einstellungen aufklappen",
+    "quickClose": "Einstellungen zuklappen",
+    "quickVideos": "Videos",
+    "moreInSettings": "Wochentag, Modelle und Videoauflösung stehen in den Einstellungen unter KI → Nachrichten."
   },
   "rangliste": {
     "title": "Coin-Rangliste",
@@ -2659,8 +2783,8 @@
     "zumJournal": "Zum Journal",
     "foto": {
       "knopf": "Schnappschuss",
-      "gespeichert": "Gespeichert",
-      "hinweis": "Fenster als Screenshot ins Journal legen (Setup-Galerie, Tagesansicht)",
+      "gespeichert": "Gespeichert · bereit zum Einfügen",
+      "hinweis": "Fenster als Screenshot ins Journal legen (Setup-Galerie, Tagesansicht) und direkt zum Einfügen in Pendente Trades bereitstellen",
       "fehler": "Aufnahme fehlgeschlagen"
     }
   },
@@ -2672,15 +2796,12 @@
     "trades": "{n} Trades",
     "protokoll": "Protokoll",
     "protokollLeer": "Kein Protokoll",
-    "nachspielen": "Nachspielen",
-    "keineAufzeichnung": "Für diesen Zeitraum liegt keine Orderbuch-Aufzeichnung vor",
     "schliessen": "Sitzung schliessen",
     "wirklich": "Wirklich?",
     "planGehalten": "Plan eingehalten",
     "planVerletzt": "Plan überschritten",
     "bilanzAnzahl": "{n} beendete Sitzungen",
     "bilanzDisziplin": "Plan eingehalten in {gehalten} von {von}",
-    "replayLabel": "Sitzung {zeit}",
     "archivieren": "Archivieren",
     "hervorholen": "Zurückholen",
     "archivZeigen": "Archiv ({n})",

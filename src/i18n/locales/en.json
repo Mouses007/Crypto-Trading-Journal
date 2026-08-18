@@ -49,6 +49,7 @@
     "tradeCategory": "TYPE",
     "categoryAll": "All",
     "analyze": "ANALYZE",
+    "startseite": "Home",
     "dashboard": "Dashboard",
     "dailyView": "Daily View",
     "calendar": "Calendar",
@@ -249,6 +250,12 @@
     "language": "Language",
     "languageLabel": "App Language",
     "layoutAndStyle": "Layout & Style",
+    "startpageOn": "Show home page",
+    "startpageOnHint": "Shows the configurable home page as landing page and its own mode tab. Off: the app starts directly in the journal.",
+    "hideBeta": "Hide beta features",
+    "hideBetaHint": "Removes the unfinished modes (Strategies, Research) from the navigation.",
+    "livetradingMobile": "Live trading on mobile",
+    "livetradingMobileHint": "Shows the live trading window on phones too. Desktop-only by default because the tile grid needs a lot of space.",
     "username": "Username",
     "usernamePlaceholder": "Your name...",
     "profilePicture": "Profile Picture",
@@ -389,7 +396,14 @@
         "generateNow": "Generate briefing now",
         "costAbout": "costs roughly",
         "costSplit": "per run — of which {text} for the text, {n} × {proVideo} for the videos (at 20 minutes each)",
-        "costNoVideos": "per run — without videos"
+        "costNoVideos": "per run — without videos",
+        "layoutLabel": "Report layout",
+        "layoutHint": "Combined puts the most important items on top as cards (“top items”, at most three) and sets the rest as articles inside their chapter. Newspaper drops cards entirely, Tiles shows everything as equally sized cards, as before. Which items go on top is decided by the AI as it writes — if it marks none as important, the card row stays empty.",
+        "scopeLabel": "Scope per chapter",
+        "scopeHint": "Items are the individual points of a chapter — in the newspaper layout, one article each with headline, paragraph and sources. The token cap bounds how long the AI answer may get; it caps the cost rather than setting it.",
+        "scopeAuto": "empty = the chosen length decides",
+        "videoDepthLabel": "Detail of the video description",
+        "videoTokensHint": "own output cap, empty = per level"
       }
     },
     "aiEnabled": "AI features enabled",
@@ -938,9 +952,13 @@
     "reportCreated": "Report for {label} has been created."
   },
   "modes": {
+    "start": "Home",
     "journal": "Journal",
     "live": "Live analysis",
+    "liveShort": "Live",
     "agent": "Strategies",
+    "agentShort": "Strategy",
+    "research": "Research",
     "comingSoon": "Coming soon",
     "betaHint": "Unfinished — please use in paper mode only"
   },
@@ -1669,6 +1687,75 @@
     "read_shortDeckung": "Price rising, interest falling — suggests shorts covering rather than fresh buying",
     "read_longAufloesung": "Price and interest falling — suggests longs unwinding",
     "read_neutral": "no clear direction"
+  },
+  "startseite": {
+    "title": "Home",
+    "kontostand": {
+      "title": "Account balance",
+      "start": "Start",
+      "bonus": "Bonus",
+      "broker": "Exchange",
+      "leer": "No starting balance set — add it under Accounts."
+    },
+    "offeneTrades": {
+      "title": "Open trades",
+      "keine": "No open positions"
+    },
+    "winrate": {
+      "title": "Win rate",
+      "wins": "wins",
+      "losses": "losses",
+      "trades": "trades",
+      "basis_net": "net · all-time",
+      "basis_gross": "gross · all-time",
+      "leer": "No trades recorded yet."
+    },
+    "kapitalkurve": {
+      "title": "Equity curve",
+      "kumuliert": "cumulative · all-time",
+      "leer": "No trades recorded yet."
+    },
+    "kennzahlen": {
+      "title": "Key figures",
+      "netto": "Net PnL",
+      "profitFaktor": "Profit factor",
+      "erwartung": "Expectancy/trade",
+      "avgWin": "Avg win",
+      "avgLoss": "Avg loss",
+      "gebuehren": "Fees",
+      "funding": "Funding",
+      "leer": "No trades recorded yet."
+    },
+    "heatmap": {
+      "title": "Calendar heatmap",
+      "leer": "No trades recorded yet."
+    },
+    "performance": {
+      "title": "Performance",
+      "modus_wochentag": "Weekday",
+      "modus_dauer": "Duration",
+      "modus_symbol": "Symbol",
+      "tag_mo": "Mon",
+      "tag_di": "Tue",
+      "tag_mi": "Wed",
+      "tag_do": "Thu",
+      "tag_fr": "Fri",
+      "tag_sa": "Sat",
+      "tag_so": "Sun",
+      "dauer_lt5m": "<5m",
+      "dauer_lt30m": "5–30m",
+      "dauer_lt4h": "30m–4h",
+      "dauer_lt1d": "4–24h",
+      "dauer_gt1d": ">1d",
+      "leer": "No trades recorded yet."
+    },
+    "news": {
+      "label": "Market report",
+      "mehr": "Go to news",
+      "zurSeite": "Go to the news page",
+      "ohneTitel": "Current market report",
+      "leer": "No report generated yet. Create one on the news page."
+    }
   },
   "marktradar": {
     "title": "Market radar",
@@ -2483,6 +2570,7 @@
     "videosHeader": "Videos used",
     "noVideos": "No videos analysed — either none in the window, or video analysis is switched off.",
     "videoReused": "paid earlier",
+    "misc": "Miscellaneous",
     "archive": "Archive",
     "archiveEmpty": "No briefings archived yet.",
     "fromArchive": "Archive",
@@ -2503,7 +2591,43 @@
     "quickHint": "Rhythm, topics and length of the briefing — applies from the next briefing on. Weekday and everything else in Settings.",
     "quotaTitle": "AI credits exhausted",
     "quotaEmpty": "AI credits exhausted: {liste}. Briefing, research or video analysis may fail until credits are topped up (Settings → AI shows details).",
-    "lastFailure": "Last briefing run ({zeit}) failed: {text} — it retries every hour."
+    "lastFailure": "Last briefing run ({zeit}) failed: {text} — it retries every hour.",
+    "layout": {
+      "kombiniert": "Combined",
+      "artikel": "Newspaper",
+      "kacheln": "Tiles"
+    },
+    "depth": {
+      "knapp": "Brief",
+      "normal": "Normal",
+      "ausfuehrlich": "Detailed"
+    },
+    "videoDepthHint": "How thoroughly Gemini describes the videos. Costs output tokens only — a video is priced almost entirely on the input side, so \"Detailed\" is barely more expensive.",
+    "budget": "Token cap",
+    "budgetHint": "Upper bound on the length of the report answer. \"auto\" = the chosen length decides. If the first attempt is cut off, one retry runs at double the cap — an aborted report throws away video analysis you already paid for.",
+    "points": "Items",
+    "pointsHint": "How many individual items each chapter gets — in the newspaper layout, one article each with headline, paragraph and sources. \"auto\" = the chosen length decides.",
+    "lenSub": {
+      "kurz": "2–3 items",
+      "mittel": "4–5 items",
+      "lang": "6–8 items"
+    },
+    "layoutSub": {
+      "kombiniert": "top items + articles",
+      "artikel": "everything as articles",
+      "kacheln": "everything as cards"
+    },
+    "depthSub": {
+      "knapp": "3–5 bullets",
+      "normal": "5–8 bullets",
+      "ausfuehrlich": "paragraph + 8–12 bullets"
+    },
+    "ownValue": "your own setting",
+    "auto": "auto",
+    "quickOpen": "Show report settings",
+    "quickClose": "Hide settings",
+    "quickVideos": "Videos",
+    "moreInSettings": "Weekday, models and video resolution live in Settings under AI → News."
   },
   "rangliste": {
     "title": "Coin ranking",
@@ -2659,8 +2783,8 @@
     "zumJournal": "To journal",
     "foto": {
       "knopf": "Snapshot",
-      "gespeichert": "Saved",
-      "hinweis": "Capture this window as a screenshot into the journal (setups gallery, daily view)",
+      "gespeichert": "Saved · ready to paste",
+      "hinweis": "Capture this window as a screenshot into the journal (setups gallery, daily view) and make it ready to insert in Pending Trades",
       "fehler": "Capture failed"
     }
   },
@@ -2672,15 +2796,12 @@
     "trades": "{n} trades",
     "protokoll": "Log",
     "protokollLeer": "No log",
-    "nachspielen": "Replay",
-    "keineAufzeichnung": "No order book recording exists for this period",
     "schliessen": "Close session",
     "wirklich": "Really?",
     "planGehalten": "Plan kept",
     "planVerletzt": "Plan exceeded",
     "bilanzAnzahl": "{n} completed sessions",
     "bilanzDisziplin": "Plan kept in {gehalten} of {von}",
-    "replayLabel": "Session {zeit}",
     "archivieren": "Archive",
     "hervorholen": "Restore",
     "archivZeigen": "Archive ({n})",

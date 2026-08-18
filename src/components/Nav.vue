@@ -1,16 +1,16 @@
 <script setup>
-import { onMounted, computed, ref } from 'vue';
-import axios from 'axios'
+import { onMounted, computed } from 'vue';
 import { useToggleMobileMenu, useExport } from '../utils/utils.js'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { useInitTooltip } from "../utils/utils.js";
 import { useRoute } from 'vue-router'
 import { pageById } from "../config/menu.js"
-import { pageId, screenType, appMode } from "../stores/ui.js"
+import ModeSwitcher from './ModeSwitcher.vue'
+import { pageId, screenType, appMode, privacyMode } from "../stores/ui.js"
 import { currentUser, renderProfile } from "../stores/settings.js"
 import { version } from '../../package.json';
-import { selectedDateRange, selectedPeriodRange, selectedGrossNet, selectedPositions, selectedMonth, selectedBroker, brokers } from "../stores/filters.js"
+import { selectedDateRange, selectedPeriodRange, selectedGrossNet, selectedPositions, selectedMonth } from "../stores/filters.js"
 import { filteredTradesTrades } from "../stores/trades.js"
 import { useDateCalFormat } from "../utils/formatters.js"
 import dayjs from '../utils/dayjs-setup.js'
@@ -126,34 +126,15 @@ const currentPage = computed(() => {
     }
 })
 
-// ===== Börsen-Buttons (nur Börsen mit hinterlegter API) =====
-const configuredBrokers = ref([])
-
-async function loadConfiguredBrokers() {
-    const result = []
-    for (const b of brokers) {
-        try {
-            const { data } = await axios.get(`/api/${b.value}/config`)
-            if (data && (data.apiKey || data.hasSecret)) result.push(b)
-        } catch (_) { /* Broker ohne Config-Endpoint/Key → überspringen */ }
-    }
-    // Fallback: ist gar keine API hinterlegt, zeige trotzdem alle, damit man
-    // nicht festsitzt (z.B. frische Installation).
-    configuredBrokers.value = result.length ? result : brokers.slice()
-}
-
-function switchBroker(value) {
-    if (selectedBroker.value === value) return
-    selectedBroker.value = value
-    localStorage.setItem('selectedBroker', value)
-    window.location.reload()
-}
-
 onMounted(async () => {
-    // Börsen-Pillen gibt es nur im Journal — im Live-Modus spart das 3 API-Calls
-    if (appMode.value === 'journal') await loadConfiguredBrokers()
     await useInitTooltip()
 })
+
+// Datenschutz-/Zensur-Modus: verbirgt Kontostände und Zahlen im Journal.
+function togglePrivacy() {
+    privacyMode.value = !privacyMode.value
+    localStorage.setItem('privacyMode', privacyMode.value ? '1' : '0')
+}
 
 const navAdd = (param) => {
     window.location.href = "/" + param;
@@ -163,8 +144,9 @@ const navAdd = (param) => {
 </script>
 
 <template>
+    <!-- Titel oben, Modus-Navigation darunter. -->
     <div class="justify-content-between navbar nav-pull-up">
-        <div class="col-6">
+        <div class="col-9 d-flex align-items-center">
             <span v-if="screenType == 'mobile'" class="d-flex align-items-center">
                 <a v-on:click="useToggleMobileMenu" class="mobile-menu-toggle">
                     <i class="fa fa-bars me-2"></i>
@@ -172,12 +154,19 @@ const navAdd = (param) => {
                     <span v-if="filterSummary" class="nav-filter-info">{{ filterSummary }}</span>
                 </a>
             </span>
-            <span v-else>
+            <span v-else class="d-flex align-items-center">
                 <i v-bind:class="currentPage.icon" class="me-1"></i>{{ currentPage.name }}
                 <span v-if="filterSummary" class="nav-filter-info">{{ filterSummary }}</span>
             </span>
         </div>
-        <div class="col-6 ms-auto text-end">
+        <div class="col-3 ms-auto text-end d-flex align-items-center justify-content-end gap-2">
+            <!-- Zensur-Modus: verbirgt Kontostände und Zahlen (für Screenshots). -->
+            <button v-if="appMode === 'journal'" type="button"
+                :class="['btn', 'btn-sm', 'privacy-toggle', privacyMode ? 'active' : '']"
+                :title="privacyMode ? 'Zahlen wieder anzeigen' : 'Zahlen verbergen'"
+                @click="togglePrivacy">
+                <i :class="privacyMode ? 'fa fa-eye-slash' : 'fa fa-eye'"></i>
+            </button>
             <span v-if="pageId === 'dashboard'">
                 <button class="btn btn-secondary btn-sm dropdown-toggle" type="button"
                     data-bs-toggle="dropdown" aria-expanded="false">Export
@@ -193,56 +182,39 @@ const navAdd = (param) => {
             </span>
         </div>
     </div>
-    <!-- Börsen-Buttons unter dem Seitentitel (nur Börsen mit hinterlegter API) -->
-    <div v-if="appMode === 'journal' && configuredBrokers.length > 1"
-        class="broker-switch d-flex align-items-center gap-1 px-2 pt-1 pb-2">
-        <button v-for="b in configuredBrokers" :key="b.value" type="button"
-            @click="switchBroker(b.value)"
-            :class="['btn', 'btn-sm', 'broker-pill', selectedBroker === b.value ? 'active' : '']">
-            {{ b.label }}
-        </button>
-    </div>
+    <!-- Breite Modus-Leiste unter dem Titel: Icon + Text nebeneinander. -->
+    <ModeSwitcher variant="wide" />
 </template>
 
 <style scoped>
-.broker-switch {
-    flex-wrap: wrap;
-    /* Pillen sitzen jetzt unter dem Titel → nur leichter Abstand nach oben */
-    margin-top: -0.1rem;
-}
-
-/* Trennlinie unter die Pillen ziehen (statt unter die Navbar), damit
-   die Börsen-Buttons zwischen Titel und Linie liegen. */
-.navbar:has(+ .broker-switch) {
-    border-bottom: none;
-}
-.broker-switch {
-    border-bottom: 1px solid var(--white-18);
-    padding-bottom: calc(0.55rem + 15px) !important;
-}
-
-/* Seitentitel oben, mit etwas Abstand nach oben. */
+/* Seitentitel mit etwas Abstand nach oben. */
 .nav-pull-up {
-    margin-top: 0.85rem;
+    margin-top: 16px;
 }
-.broker-pill {
-    font-size: 0.78rem;
-    padding: 0.15rem 0.7rem;
-    border-radius: 999px;
-    border: 1px solid var(--white-10, rgba(255, 255, 255, 0.15));
+
+/* Augen-Button (Zensur-Modus) links neben Export. */
+.privacy-toggle {
+    border: 1px solid var(--white-18);
     background: transparent;
-    color: var(--white-70, rgba(255, 255, 255, 0.7));
-    line-height: 1.4;
+    color: var(--white-70);
+    padding: 0.28rem 0.6rem;
+    border-radius: 8px;
+    line-height: 1;
     transition: all 0.15s ease;
 }
-.broker-pill:hover {
-    border-color: var(--blue-color, #3b82f6);
-    color: var(--white-87, rgba(255, 255, 255, 0.9));
+.privacy-toggle:hover {
+    color: var(--white-87);
+    border-color: var(--blue-color, #01B4FF);
 }
-.broker-pill.active {
-    background: var(--blue-color, #3b82f6);
-    border-color: var(--blue-color, #3b82f6);
+.privacy-toggle.active {
+    background: var(--blue-color, #01B4FF);
+    border-color: var(--blue-color, #01B4FF);
     color: #fff;
-    font-weight: 600;
+}
+
+/* Keine Linie zwischen Titel und Modus-Leiste — die einzige Trennlinie sitzt
+   UNTER den Buttons (in ModeSwitcher). */
+.navbar {
+    border-bottom: none;
 }
 </style>

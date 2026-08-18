@@ -39,6 +39,10 @@ async function changeLanguage(lang) {
 
 let profileAvatar = null
 let username = ref('')
+// Layout & Stil
+let betaAusblenden = ref(false)      // Strategien/Research aus dem Umschalter nehmen
+let livetradingMobil = ref(false)    // Live-Trading-Fenster auch am Telefon zeigen
+let startseiteAn = ref(true)         // Startseite als Landing-Page + Modus-Tab
 let startBalance = ref(0)
 let currentBalance = ref(0)
 let bitunixApiKey = ref('')
@@ -384,6 +388,18 @@ async function kiSpeichern(feld, wert) {
     if (currentUser.value) currentUser.value[feld] = wert
 }
 
+/**
+ * Startseiten-Schalter speichern. Zusätzlich zum DB-Wert wird der Zustand nach
+ * localStorage gespiegelt, damit der Root-Redirect (`/`) beim nächsten Start
+ * synchron weiß, ob er auf die Startseite oder ins Journal leiten soll.
+ */
+async function startseiteSpeichern(an) {
+    try {
+        localStorage.setItem('startseiteAn', an ? '1' : '0')
+    } catch (_) { /* privater Modus / kein localStorage */ }
+    await kiSpeichern('startseiteAn', an ? 1 : 0)
+}
+
 /** Anbieter+Modell eines Bereichs setzen und sofort sichern. */
 function setzeFunktionsAnbieter(providerRef, modellRef, providerFeld, modellFeld) {
     return {
@@ -653,6 +669,22 @@ let radarNewsWochentag = ref(1)
 let radarNewsThemen = ref(['crypto'])
 let radarNewsLaenge = ref('mittel')
 let radarNewsXModell = ref('grok-4.6')
+/* Umfangs- und Darstellungsregler. Überall heisst 0 bzw. leer „Vorgabe der
+   gewählten Länge" — wer nichts einstellt, bekommt exakt das bisherige
+   Verhalten. Dieselben Werte stehen auch in der Schnellleiste auf
+   /nachrichten; beide schreiben in dieselben Spalten. */
+let radarNewsLayout = ref('kombiniert')
+let radarNewsPunkte = ref(0)
+let radarNewsTokenBudget = ref(0)
+let radarNewsVideoTiefe = ref('normal')
+let radarNewsVideoTokens = ref(0)
+
+/* 0 ist kein Wert, sondern „Vorgabe der Länge" — deshalb zeigen die Felder
+   dann „auto" statt einer nackten Null, wie in der Schnellleiste auf
+   /nachrichten auch. Dafür kein `v-model`, sondern Wert und Änderung getrennt. */
+function grenzeZahl(wert, max) {
+    return Math.max(0, Math.min(max, Math.round(Number(wert) || 0)))
+}
 // radarPicycleAlarm gibt es nicht mehr als eigenen Schalter — ob gemeldet wird,
 // steht in der Kanalwahl unter „Meldungen". Die Spalte bleibt in der Datenbank
 // stehen, wird aber nicht mehr gelesen oder geschrieben.
@@ -721,6 +753,17 @@ function loadRadarSettings() {
     if (!radarNewsThemen.value.length) radarNewsThemen.value = ['crypto']
     radarNewsLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
     radarNewsXModell.value = s.radarNewsXModell || 'grok-4.6'
+    // Grenzen wie auf dem Server (budgetsAus/punkteVorgabe/videoTiefeAus in
+    // server/marktradar-news.js) — die Oberfläche soll ihm keinen Unsinn schicken.
+    // Unbekannt (auch das kurzzeitig gespeicherte „zeitung") → kombiniert:
+    // das ist genau die Ansicht, die dieser Wert vorher erzeugt hat.
+    radarNewsLayout.value = ['kombiniert', 'artikel', 'kacheln'].includes(s.radarNewsLayout)
+        ? s.radarNewsLayout : 'kombiniert'
+    radarNewsPunkte.value = Math.max(0, Math.min(12, Number(s.radarNewsPunkte) || 0))
+    radarNewsTokenBudget.value = Math.max(0, Math.min(60000, Number(s.radarNewsTokenBudget) || 0))
+    radarNewsVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
+        ? s.radarNewsVideoTiefe : 'normal'
+    radarNewsVideoTokens.value = Math.max(0, Math.min(4000, Number(s.radarNewsVideoTokens) || 0))
     radarArschlochAn.value = Number(s.radarArschlochAn ?? 1) === 1
     radarArschlochWoerter.value = s.radarArschlochWoerter ?? 'Donald Trump'
     radarPicycleSchwelle.value = Number(s.radarPicycleSchwelle ?? 0)
@@ -765,6 +808,11 @@ async function radarSpeichern(feld) {
         // Hart begrenzen, nicht bloss im Eingabefeld: der Server deckelt
         // ohnehin bei zehn, und eine Zahl anzuzeigen, die nie gilt, wäre gelogen
         radarNewsVideos: Math.max(0, Math.min(10, Number(radarNewsVideos.value) || 0)),
+        radarNewsLayout: radarNewsLayout.value,
+        radarNewsPunkte: Math.max(0, Math.min(12, Number(radarNewsPunkte.value) || 0)),
+        radarNewsTokenBudget: Math.max(0, Math.min(60000, Number(radarNewsTokenBudget.value) || 0)),
+        radarNewsVideoTiefe: radarNewsVideoTiefe.value,
+        radarNewsVideoTokens: Math.max(0, Math.min(4000, Number(radarNewsVideoTokens.value) || 0)),
     }
     const daten = feld ? { [feld]: alle[feld] } : alle
     await dbUpdateSettings(daten)
@@ -2097,6 +2145,9 @@ onBeforeMount(async () => {
         daytradeMaxHours.value = settings.daytradeMaxHours ?? 24
         enableBinanceChart.value = settings.enableBinanceChart === 1
         selectedLanguage.value = settings.language || 'de'
+        betaAusblenden.value = Number(settings.betaAusblenden ?? 0) === 1
+        livetradingMobil.value = Number(settings.livetradingMobil ?? 0) === 1
+        startseiteAn.value = Number(settings.startseiteAn ?? 1) === 1
         browserNotifications.value = settings.browserNotifications !== 0
         // Timeframes laden
         const saved = settings.tradeTimeframes || []
@@ -2219,6 +2270,36 @@ onBeforeMount(async () => {
                             </button>
                         </div>
                         <input type="file" @change="uploadProfileAvatar" />
+                    </div>
+
+                    <!-- Startseite ein-/ausschalten (Landing-Page + Modus-Tab) -->
+                    <div class="col-12 mt-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="startseiteAnToggle"
+                                v-model="startseiteAn" @change="startseiteSpeichern(startseiteAn)">
+                            <label class="form-check-label" for="startseiteAnToggle">{{ t('settings.startpageOn') }}</label>
+                        </div>
+                        <p class="fw-lighter small mb-0">{{ t('settings.startpageOnHint') }}</p>
+                    </div>
+
+                    <!-- Beta-Funktionen ausblenden (Strategien/Research) -->
+                    <div class="col-12 mt-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="betaAusblendenToggle"
+                                v-model="betaAusblenden" @change="kiSpeichern('betaAusblenden', betaAusblenden ? 1 : 0)">
+                            <label class="form-check-label" for="betaAusblendenToggle">{{ t('settings.hideBeta') }}</label>
+                        </div>
+                        <p class="fw-lighter small mb-0">{{ t('settings.hideBetaHint') }}</p>
+                    </div>
+
+                    <!-- Live-Trading-Fenster auf dem Handy zeigen -->
+                    <div class="col-12 mt-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="livetradingMobilToggle"
+                                v-model="livetradingMobil" @change="kiSpeichern('livetradingMobil', livetradingMobil ? 1 : 0)">
+                            <label class="form-check-label" for="livetradingMobilToggle">{{ t('settings.livetradingMobile') }}</label>
+                        </div>
+                        <p class="fw-lighter small mb-0">{{ t('settings.livetradingMobileHint') }}</p>
                     </div>
 
                     <div class="col-12 mt-3 mb-3">
@@ -3245,10 +3326,54 @@ onBeforeMount(async () => {
                             </label>
                             <select class="form-select form-select-sm" style="max-width:10rem;"
                                 v-model="radarNewsLaenge" @change="radarSpeichern('radarNewsLaenge')">
-                                <option value="kurz">{{ t('news.len.kurz') }}</option>
-                                <option value="mittel">{{ t('news.len.mittel') }}</option>
-                                <option value="lang">{{ t('news.len.lang') }}</option>
+                                <option value="kurz">{{ t('news.len.kurz') }} — {{ t('news.lenSub.kurz') }}</option>
+                                <option value="mittel">{{ t('news.len.mittel') }} — {{ t('news.lenSub.mittel') }}</option>
+                                <option value="lang">{{ t('news.len.lang') }} — {{ t('news.lenSub.lang') }}</option>
                             </select>
+                        </div>
+                    </div>
+
+                    <!-- Darstellung des fertigen Berichts. Wirkt sofort, auch auf
+                         bereits erzeugte Berichte — es ist reine Anzeige. -->
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.layoutLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.layoutHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-3 flex-wrap">
+                            <label v-for="l in ['kombiniert', 'artikel', 'kacheln']" :key="l"
+                                class="d-flex align-items-center gap-1 mb-0">
+                                <input type="radio" :value="l" v-model="radarNewsLayout"
+                                    @change="radarSpeichern('radarNewsLayout')">
+                                <span>{{ t('news.layout.' + l) }}
+                                    <small class="text-muted">— {{ t('news.layoutSub.' + l) }}</small></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Umfang: Meldungen je Kapitel und der Token-Deckel. Beide
+                         leer/0 = die oben gewählte Länge entscheidet. -->
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.scopeLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.scopeHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
+                            <span class="small">{{ t('news.points') }}</span>
+                            <input type="number" min="0" max="12" step="1" class="form-control form-control-sm"
+                                style="max-width:6rem;" :placeholder="t('news.auto')"
+                                :value="radarNewsPunkte || ''"
+                                @change="radarNewsPunkte = grenzeZahl($event.target.value, 12); radarSpeichern('radarNewsPunkte')" />
+                            <span class="small ms-2">{{ t('news.budget') }}</span>
+                            <input type="number" min="0" max="60000" step="500" class="form-control form-control-sm"
+                                style="max-width:7rem;" :placeholder="t('news.auto')"
+                                :value="radarNewsTokenBudget || ''"
+                                @change="radarNewsTokenBudget = grenzeZahl($event.target.value, 60000); radarSpeichern('radarNewsTokenBudget')" />
+                            <span class="small text-muted">{{ t('settings.ki.news.scopeAuto') }}</span>
                         </div>
                     </div>
 
@@ -3298,6 +3423,32 @@ onBeforeMount(async () => {
                                 </option>
                                 <option v-for="m in (modellListen.gemini || [])" :key="m" :value="m">{{ m }}</option>
                             </select>
+                        </div>
+                    </div>
+
+                    <!-- Wie ausführlich Gemini beschreibt. Der Token-Deckel dahinter
+                         begrenzt nur die AUSGABE — der Preis eines Videos entsteht
+                         auf der Eingabeseite (Länge × Auflösung). -->
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.videoDepthLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('news.videoDepthHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
+                            <select class="form-select form-select-sm" style="max-width:18rem;"
+                                v-model="radarNewsVideoTiefe" @change="radarSpeichern('radarNewsVideoTiefe')">
+                                <option v-for="v in ['knapp', 'normal', 'ausfuehrlich']" :key="v" :value="v">
+                                    {{ t('news.depth.' + v) }} — {{ t('news.depthSub.' + v) }}
+                                </option>
+                            </select>
+                            <span class="small ms-2">{{ t('news.budget') }}</span>
+                            <input type="number" min="0" max="4000" step="100" class="form-control form-control-sm"
+                                style="max-width:6.5rem;" :placeholder="t('news.auto')"
+                                :value="radarNewsVideoTokens || ''"
+                                @change="radarNewsVideoTokens = grenzeZahl($event.target.value, 4000); radarSpeichern('radarNewsVideoTokens')" />
+                            <span class="small text-muted">{{ t('settings.ki.news.videoTokensHint') }}</span>
                         </div>
                     </div>
 

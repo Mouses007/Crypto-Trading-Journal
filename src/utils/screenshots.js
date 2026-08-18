@@ -83,6 +83,12 @@ export async function useGetScreenshots(param1, param2) {
                         if (el.name && brokerTradeIds.has(el.name)) return true
                         // Match by dateUnixDay (screenshot belongs to a day with broker trades)
                         if (el.dateUnixDay && brokerDateUnixDays.has(el.dateUnixDay)) return true
+                        // Explizit dieser Börse zugeordnet.
+                        if (el.broker && el.broker === broker) return true
+                        // Roh-Schnappschüsse (kein Broker, keine Trade-Zuordnung) gehören
+                        // keiner Börse — z.B. Live-Analyse-Aufnahmen an Tagen ohne Trade.
+                        // Sie dürfen nicht durch den Broker-Filter verschwinden.
+                        if (!el.broker) return true
                         return false
                     })
                 }
@@ -201,7 +207,12 @@ async function imgFileReader(param) {
     })
 }
 
-export async function useSetupImageUpload(event, param1, param2, param3) {
+/**
+ * Verarbeitet EINE Bilddatei (aus Datei-Auswahl, Drag&Drop oder Zwischenablage).
+ * Der eigentliche Kern; `useSetupImageUpload` ist nur noch der Event-Adapter.
+ */
+export async function useSetupImageFile(file, param1, param2, param3) {
+    if (!file) return
     tradeScreenshotChanged.value = true
     if (pageId.value == "daily") {
         saveButton.value = true
@@ -212,16 +223,18 @@ export async function useSetupImageUpload(event, param1, param2, param3) {
         screenshot.side = param3
 
     }
-    const file = event.target.files[0];
     /* We convert to base64 so we can read src in markerArea */
-
     await imgFileReader(file).then(() => {
         if (resizeCompressImg.value) {
             const originalImage = document.querySelector("#screenshotDiv");
             compressImage(originalImage);
         }
     })
+}
 
+export async function useSetupImageUpload(event, param1, param2, param3) {
+    const file = event.target.files[0];
+    await useSetupImageFile(file, param1, param2, param3)
 }
 
 let originalWidth
@@ -546,7 +559,16 @@ export async function useDeleteScreenshot(param1, param2) {
     await dbDelete("screenshots", selectedItem.value)
     console.log('  --> Deleted screenshot with id ' + selectedItem.value)
     if (pageId.value == 'screenshots') {
-        await useRefreshScreenshot()
+        // Nur das gelöschte Bild aus der Liste nehmen — NICHT die ganze Seite
+        // neu laden. Der frühere Reload (useRefreshScreenshot) setzte die
+        // Paginierung auf die ersten 4 zurück (der Rest verschwand) UND die neu
+        // gerenderten Karten hatten kein initialisiertes Lösch-Popover mehr,
+        // sodass sich danach nichts mehr löschen liess.
+        const idx = screenshots.findIndex(o => o.objectId == selectedItem.value)
+        if (idx !== -1) screenshots.splice(idx, 1)
+        // Skip mitziehen, damit der nächste Nachlade-Schritt kein Bild überspringt.
+        if (screenshotsPagination.value > 0) screenshotsPagination.value = Math.max(0, screenshotsPagination.value - 1)
+        selectedItem.value = null
     }
     if (pageId.value == 'daily') {
         let index = screenshots.findIndex(obj => obj.objectId == selectedItem.value)

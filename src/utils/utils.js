@@ -157,6 +157,12 @@ export function useInitApp() {
         try {
             const settings = await dbGetSettings()
             currentUser.value = settings
+            // Startseite-Schalter nach localStorage spiegeln, damit der Root-
+            // Redirect (`/`) synchron entscheiden kann, ohne auf das Laden der
+            // Einstellungen zu warten.
+            try {
+                localStorage.setItem('startseiteAn', Number(settings.startseiteAn ?? 1) === 1 ? '1' : '0')
+            } catch (_) { /* privater Modus / kein localStorage */ }
             // Timeframes aus Settings laden
             selectedTradeTimeframes.splice(0)
             const tfs = settings.tradeTimeframes || []
