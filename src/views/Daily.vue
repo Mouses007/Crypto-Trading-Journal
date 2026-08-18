@@ -1590,20 +1590,20 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                     <td>
                                         <span
                                             v-if="filteredTrades[itemTradeIndex].trades[tradeIndex].tradesCount == 0"><span
-                                                v-if="filteredTrades[itemTradeIndex].trades[tradeIndex].openPosition">Offen<i
+                                                v-if="filteredTrades[itemTradeIndex].trades[tradeIndex].openPosition">{{ t('daily.open') }}<i
                                                     class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip"
                                                     data-bs-html="true"
-                                                    v-bind:data-bs-title="'Swing trade opened on ' + useDateCalFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime)"></i></span><span
-                                                v-else>Geschlossen<i class="ps-1 uil uil-info-circle"
+                                                    v-bind:data-bs-title="t('daily.swingOpenedOn', { date: useDateCalFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime) })"></i></span><span
+                                                v-else>{{ t('daily.closed') }}<i class="ps-1 uil uil-info-circle"
                                                     data-bs-toggle="tooltip" data-bs-html="true"
-                                                    v-bind:data-bs-title="'Swing trade closed on ' + useDateCalFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].exitTime)"></i></span></span><span
+                                                    v-bind:data-bs-title="t('daily.swingClosedOn', { date: useDateCalFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].exitTime) })"></i></span></span><span
                                             v-else>{{
                                                 useTimeFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime)
                                             }}<span
                                                 v-if="checkDate(filteredTrades[itemTradeIndex].trades[tradeIndex].td, filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime) == false"><i
                                                     class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip"
                                                     data-bs-html="true"
-                                                    v-bind:data-bs-title="'Swing trade from ' + useDateCalFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime)"></i></span></span>
+                                                    v-bind:data-bs-title="t('daily.swingFrom', { date: useDateCalFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime) })"></i></span></span>
                                     </td>
 
                                     <!--Entry Price-->
@@ -1617,7 +1617,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                                 v-if="checkDate(filteredTrades[itemTradeIndex].trades[tradeIndex].td, filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime) == false"><i
                                                     class="ps-1 uil uil-info-circle" data-bs-toggle="tooltip"
                                                     data-bs-html="true"
-                                                    v-bind:data-bs-title="'Swing trade from ' + useDateCalFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime)"></i></span></span>
+                                                    v-bind:data-bs-title="t('daily.swingFrom', { date: useDateCalFormat(filteredTrades[itemTradeIndex].trades[tradeIndex].entryTime) })"></i></span></span>
                                     </td>
 
                                     <!--Exit-->

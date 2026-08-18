@@ -56,7 +56,7 @@ const DEFINITIONEN = [
         endpunkt: '/api/marktradar/btc-dominanz',
         intervallMs: 3 * 60 * 1000,
         spalten: 1,
-        quelle: 'TradingView (CRYPTOCAP:BTC.D) · CoinGecko',
+        quelle: 'CoinMarketCap (eigener Bestand) · CoinGecko',
     },
     {
         id: 'funding',

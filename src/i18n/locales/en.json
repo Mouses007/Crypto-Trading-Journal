@@ -1986,11 +1986,11 @@
         },
         {
           "h": "BTC DOMINANCE",
-          "p": "What share of the entire crypto market belongs to Bitcoin. The curve comes from the TradingView widget, the spot value from CoinGecko, and the journal additionally records one value per day — that own series only grows with time. Reading: rising dominance with falling prices means a flight out of altcoins into BTC; falling dominance with rising prices means fresh money is spreading out. In practice: an altcoin long against rising dominance is swimming upstream, however good the coin's chart looks."
+          "p": "What share of the entire crypto market belongs to Bitcoin. The curve comes from our own store — about six years of history, imported once from CoinMarketCap and updated daily; three series are shown: Bitcoin, Ethereum and all the rest. The spot value comes from the same series, with CoinGecko only as a fallback. Reading: rising dominance with falling prices means a flight out of altcoins into BTC; falling dominance with rising prices means fresh money is spreading out. In practice: an altcoin long against rising dominance is swimming upstream, however good the coin's chart looks."
         },
         {
           "h": "FUNDING RATES",
-          "p": "The payment between longs and shorts on Binance perpetuals, due every eight hours; \"p.a.\" extrapolates it to a year so you can judge the magnitude. Positive means longs pay shorts — the long side is crowded. The card shows the extremes on both sides and, below, your own markets. Two things to take away: funding is a real cost — at +100 % p.a. holding eats into your margin — and an extreme reading tells you where the crowd sits, not when it will turn."
+          "p": "The payment between longs and shorts on Binance perpetuals. The payment interval is not the same everywhere — eight hours is the norm, but many markets pay every four hours; \"p.a.\" extrapolates using each market's actual interval so you can judge the magnitude. Positive means longs pay shorts — the long side is crowded. The card shows the extremes on both sides and, below, your own markets. Two things to take away: funding is a real cost — at +100 % p.a. holding eats into your margin — and an extreme reading tells you where the crowd sits, not when it will turn."
         },
         {
           "h": "LONG/SHORT + OPEN INTEREST",
@@ -2331,9 +2331,101 @@
       ],
       "caveat": "Beta: this area is under development and not investment advice. Backtest numbers are not a promise — a result only counts once it holds outside the period it was chosen on. Let a strategy run on paper long enough before even thinking about live."
     },
-    "livetrading": "The workspace for the hours you actually trade. Its own tile grid with its own layout — what is visible here, how large and in which order, is independent of the market radar. The check interval is three seconds instead of thirty so fast tiles refresh on time. Can be switched off under Settings → Live.",
-    "liveSessions": "What became of your intentions. The key figure is not P&L but whether the plan held: a winning session that broke its loss limit is luck, a losing one within limits was good work. The replay button is only active when an order book recording exists for that symbol and period.",
-    "liveAuswertung": "Four questions about your trading sessions, building on each other: do I keep my plan and am I improving, does the plan help at all, at which times do I trade well, and does it turn with duration or trade count. Archived sessions are included — a rate you could improve by tidying up would be worthless. Groups with fewer than four sessions are greyed out: that is noise, not a finding."
+    "livetrading": {
+      "title": "Live trading — the workspace during a session",
+      "intro": "The tile grid for the hours you actually trade. Its own layout, independent of the market radar, and a check interval of three seconds instead of thirty so fast tiles refresh on time. Desktop only — an order book and a candle chart cannot be operated on 375 pixels. Can be switched off under Settings → Live.",
+      "sections": [
+        {
+          "g": "How a session runs",
+          "h": "PLAN BEFORE STARTING",
+          "p": "Above the tile area sits the session bar: maximum loss, maximum number of trades and your intent are entered BEFORE starting and cannot be changed afterwards — deliberately, because a plan you can revise mid-trade is no plan at all."
+        },
+        {
+          "h": "OWN WINDOW, FULLSCREEN",
+          "p": "Starting opens the page in its own window in cockpit state (no side menu, no navigation, full width) so nothing else is within reach during a session. True fullscreen is a button, not an automatism — the browser only allows it after a click inside the new window. If a popup blocker intervenes, it continues in the current tab."
+        },
+        {
+          "h": "TILES, LAYOUT, INTERVAL",
+          "p": "Same mechanics as the market radar: drag by the handle top-left, resize at the bottom-right corner, double-click to reset. Visibility, order and size live in the device's browser. Each tile has its own interval (the liquidation ticker five seconds, positions ten, indices and calendar one minute); every three seconds it checks whether one is due."
+        },
+        {
+          "g": "The individual tiles",
+          "h": "TRADING HOURS",
+          "p": "Computed in the browser from the stored time zones, with no fetch: which session (Asia, Europe, US) is currently running, the countdown to the next market mark, and the volatility windows. Each session carries its own zone as wall-clock time, because the US and Europe switch to summer time weeks apart."
+        },
+        {
+          "h": "MARKET MECHANICS & LIQUIDATION TICKER",
+          "p": "Market mechanics is the same rule-based tile as in the market radar, here on a 15-minute window. The liquidation ticker shows the latest forced liquidations from our own recording, out of an in-memory ring buffer — that shows \"what just happened\", while the database is only written every 30 seconds."
+        },
+        {
+          "h": "POSITIONS & CALENDAR COUNTDOWN",
+          "p": "The positions tile reads the open and closed positions of the running session from Bitunix and computes the session state against the plan limits — realised and unrealised stay separate, and the limits count only against the realised part. The calendar countdown shows the next economic events of the coming hours from our own calendar store."
+        },
+        {
+          "h": "INDICES, FUNDING, LONG/SHORT, MACRO",
+          "p": "Indices shows ES=F, NQ=F and the dollar index as intraday candles from Yahoo. Funding, long/short + open interest and the macro environment are the same tiles as in the market radar — funding and long/short follow the symbol choice."
+        },
+        {
+          "h": "BOOKMAP & LEVERAGE MAP",
+          "p": "The two large work surfaces: the bookmap on Binance's live order-book stream, the leverage map as a model based on our own recording. Neither has an enlarged view — that would be a second connection — and both need at least two columns of width. Full explanations live in the dedicated \"Order book\" and \"Liquidation map\" views."
+        },
+        {
+          "h": "OVERALL SITUATION (AI)",
+          "p": "The same AI tile as in the market radar: it reads the current state of the other tiles and interprets it. It is generated by button only — the three-second interval never triggers an AI request, otherwise every session would cost a fortune."
+        }
+      ],
+      "caveat": "The third-party figures (indices, funding, calendar) promise nothing and can go stale — the dot on the tile tells you how fresh they are. The leverage map is a model, not a measurement. This page is a tool, not a signal generator: your strategy still supplies the trigger."
+    },
+    "liveSessions": {
+      "title": "Session archive — what became of your intentions",
+      "intro": "Every finished trading session as its own entry. The key figure is not P&L but whether the plan held: a winning session that broke its loss limit is luck, a losing one within limits was good work.",
+      "sections": [
+        {
+          "h": "DISCIPLINE OVER P&L",
+          "p": "The headline number is the share of sessions in which the plan held — not the sum of profits. Judging by P&L alone rewards luck and punishes good execution that met bad luck."
+        },
+        {
+          "h": "ARCHIVE INSTEAD OF DELETE",
+          "p": "Sessions can be archived instead of deleted. The discipline rate deliberately keeps counting archived ones — a number you could improve by tidying up would be worthless."
+        },
+        {
+          "h": "A SESSION IS A PERIOD",
+          "p": "Not a market but a span of time: the symbol may change during the session, every switch lands in the log, and the session follows the last symbol picked — that is what the replay needs."
+        },
+        {
+          "h": "REPLAY",
+          "p": "The replay button only becomes active once an order-book recording actually exists for that symbol and period. Then the book from the session can be stepped through again frame by frame."
+        }
+      ],
+      "caveat": "The archive shows how you traded, not whether a strategy is any good — that is what the evaluation is for. Without recording switched on there is no replay."
+    },
+    "liveAuswertung": {
+      "title": "Session evaluation — four questions that build on each other",
+      "intro": "Four questions about your trading sessions that build on each other: do I keep my plan and am I improving, does the plan help at all, at which times do I trade well, and does it turn with duration or trade count.",
+      "sections": [
+        {
+          "h": "1 · PLAN ADHERENCE OVER TIME",
+          "p": "Do I keep my plan, and does the rate improve over time? The first and most important question — everything else builds on it."
+        },
+        {
+          "h": "2 · DOES THE PLAN HELP?",
+          "p": "Do sessions with a held plan actually do better than those that broke it? Only if yes is the plan more than a ritual."
+        },
+        {
+          "h": "3 · GOOD AND BAD TIMES",
+          "p": "At which times of day do I trade well? Grouped by session start, so systematically bad windows show up."
+        },
+        {
+          "h": "4 · DURATION AND TRADE COUNT",
+          "p": "Does the result turn the longer a session lasts or the more trades it contains? The classic over-trading question."
+        },
+        {
+          "h": "THIN GROUPS ARE GREYED OUT",
+          "p": "Groups with fewer than four sessions are greyed out: three sessions on a Tuesday are noise, not a finding. The computation lives in its own network-free module and is covered by a self-test."
+        }
+      ],
+      "caveat": "An evaluation is only as good as the number of sessions behind it — greyed-out groups are not yet a statement. It describes your behaviour; it is not investment advice."
+    }
   },
   "news": {
     "fetchNow": "Fetch posts",

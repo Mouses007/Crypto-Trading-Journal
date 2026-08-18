@@ -1986,11 +1986,11 @@
         },
         {
           "h": "BTC-DOMINANZ",
-          "p": "Welcher Anteil des gesamten Kryptomarkts auf Bitcoin entfällt. Die Kurve stammt vom TradingView-Widget, der Momentwert von CoinGecko, zusätzlich zeichnet das Journal einen eigenen Tageswert auf — diese eigene Reihe wächst erst mit der Laufzeit. Lesart: steigende Dominanz bei fallenden Kursen heisst Flucht aus Altcoins in BTC, fallende Dominanz bei steigenden Kursen heisst, dass frisches Geld in die Breite geht. Praktisch: ein Altcoin-Long gegen steigende Dominanz schwimmt gegen den Strom, auch wenn der Chart des Coins gut aussieht."
+          "p": "Welcher Anteil des gesamten Kryptomarkts auf Bitcoin entfällt. Die Kurve stammt aus dem eigenen Bestand — rund sechs Jahre Historie, einmalig von CoinMarketCap eingelagert und täglich nachgeführt; gezeigt werden drei Reihen: Bitcoin, Ethereum und der ganze Rest. Der Momentwert kommt aus derselben Reihe, CoinGecko dient nur als Rückfall. Lesart: steigende Dominanz bei fallenden Kursen heisst Flucht aus Altcoins in BTC, fallende Dominanz bei steigenden Kursen heisst, dass frisches Geld in die Breite geht. Praktisch: ein Altcoin-Long gegen steigende Dominanz schwimmt gegen den Strom, auch wenn der Chart des Coins gut aussieht."
         },
         {
           "h": "FUNDING-RATEN",
-          "p": "Die Ausgleichszahlung zwischen Longs und Shorts auf Binance-Perpetuals, alle acht Stunden fällig; „p.a.\" rechnet sie aufs Jahr hoch, damit man die Grössenordnung einschätzen kann. Positiv heisst: Longs zahlen an Shorts, die Long-Seite ist voll. Gezeigt werden die Extreme beider Richtungen und darunter deine eigenen Märkte. Zwei Dinge zum Mitnehmen: Funding ist ein echter Kostenposten — bei +100 % p.a. frisst das Halten deine Marge —, und ein extremer Wert sagt, wo die Menge sitzt, aber nicht wann sie umkippt."
+          "p": "Die Ausgleichszahlung zwischen Longs und Shorts auf Binance-Perpetuals. Das Zahlungsintervall ist nicht überall gleich — acht Stunden ist der Normalfall, viele Märkte zahlen aber alle vier Stunden; „p.a.\" rechnet mit dem tatsächlichen Intervall je Markt aufs Jahr hoch, damit man die Grössenordnung einschätzen kann. Positiv heisst: Longs zahlen an Shorts, die Long-Seite ist voll. Gezeigt werden die Extreme beider Richtungen und darunter deine eigenen Märkte. Zwei Dinge zum Mitnehmen: Funding ist ein echter Kostenposten — bei +100 % p.a. frisst das Halten deine Marge —, und ein extremer Wert sagt, wo die Menge sitzt, aber nicht wann sie umkippt."
         },
         {
           "h": "LONG/SHORT + OFFENES INTERESSE",
@@ -2331,9 +2331,101 @@
       ],
       "caveat": "Beta: Dieser Bereich ist in Entwicklung und keine Anlageberatung. Backtest-Zahlen sind kein Versprechen — ein Ergebnis zählt erst, wenn es auch ausserhalb des Zeitraums hält, in dem es ausgesucht wurde. Lass eine Strategie lange genug auf dem Papier laufen, bevor du auch nur an Live denkst."
     },
-    "livetrading": "Der Arbeitsplatz für die Stunden, in denen du tatsächlich handelst. Eigenes Kachelraster mit eigenem Layout — was hier sichtbar ist, wie gross und in welcher Reihenfolge, ist unabhängig vom Marktradar. Der Prüftakt liegt bei drei Sekunden statt dreissig, damit schnelle Kacheln pünktlich nachladen. Abschaltbar unter Einstellungen → Live.",
-    "liveSessions": "Was aus deinen Vorsätzen geworden ist. Die wichtigste Angabe ist nicht die P&L, sondern ob der Plan gehalten hat: eine gewonnene Sitzung mit gerissener Verlustgrenze ist Glück, eine verlorene innerhalb der Grenzen war gute Arbeit. Der Wiedergabe-Knopf ist nur aktiv, wenn für Symbol und Zeitraum eine Orderbuch-Aufzeichnung vorliegt.",
-    "liveAuswertung": "Vier Fragen an deine Handelssitzungen, aufeinander aufbauend: halte ich meinen Plan ein und werde ich besser, nützt der Plan überhaupt etwas, zu welchen Zeiten handle ich gut, und kippt es mit der Dauer oder der Zahl der Trades. Archivierte Sitzungen zählen mit — eine Quote, die sich durch Aufräumen verbessern liesse, wäre wertlos. Gruppen mit weniger als vier Sitzungen stehen grau: das ist Rauschen, kein Befund."
+    "livetrading": {
+      "title": "Live-Trading — der Arbeitsplatz während der Sitzung",
+      "intro": "Das Kachelraster für die Stunden, in denen du tatsächlich handelst. Eigenes Layout, unabhängig vom Marktradar, und ein Prüftakt von drei Sekunden statt dreissig, damit schnelle Kacheln pünktlich nachladen. Nur am Rechner — ein Orderbuch und ein Kerzenchart lassen sich auf 375 Pixeln nicht bedienen. Abschaltbar unter Einstellungen → Live.",
+      "sections": [
+        {
+          "g": "Ablauf einer Sitzung",
+          "h": "PLAN VOR DEM START",
+          "p": "Über der Kachelfläche steht die Sitzungsleiste: maximaler Verlust, maximale Zahl an Trades und die Absicht werden VOR dem Start eingetragen und sind danach nicht mehr änderbar — das ist Absicht, ein Plan, den man mitten im Trade nachbessern kann, ist keiner."
+        },
+        {
+          "h": "EIGENES FENSTER, VOLLBILD",
+          "p": "Der Start öffnet die Seite in einem eigenen Fenster im Cockpit-Zustand (ohne Seitenmenü und Navigation, volle Breite), damit während der Sitzung nichts anderes in Reichweite ist. Echtes Vollbild ist ein Knopf und kein Automatismus — der Browser lässt Vollbild nur nach einem Klick im neuen Fenster zu. Springt ein Popup-Blocker dazwischen, läuft es im aktuellen Tab weiter."
+        },
+        {
+          "h": "KACHELN, ANORDNUNG, TAKT",
+          "p": "Gleiche Mechanik wie im Marktradar: am Griff links oben verschieben, an der rechten unteren Ecke grösser ziehen, Doppelklick setzt zurück. Sichtbarkeit, Reihenfolge und Grösse liegen im Browser des Geräts. Jede Kachel hat ihren eigenen Takt (der Liquidations-Ticker fünf Sekunden, Positionen zehn, Indizes und Kalender eine Minute); geprüft wird alle drei Sekunden, ob eine fällig ist."
+        },
+        {
+          "g": "Die einzelnen Kacheln",
+          "h": "HANDELSZEITEN",
+          "p": "Rechnet im Browser aus den hinterlegten Zeitzonen, ohne Abruf: welche Sitzung (Asien, Europa, US) gerade läuft, der Countdown bis zur nächsten Markt-Marke und die Volatilitätsfenster. Jede Sitzung trägt ihre eigene Zeitzone als Wandzeit, weil die USA und Europa Wochen versetzt auf Sommerzeit umstellen."
+        },
+        {
+          "h": "MARKTMECHANIK & LIQUIDATIONS-TICKER",
+          "p": "Die Marktmechanik ist dieselbe regelbasierte Kachel wie im Marktradar, hier im 15-Minuten-Fenster. Der Liquidations-Ticker zeigt die letzten Zwangsliquidationen aus der eigenen Aufzeichnung, aus einem Ringpuffer im Arbeitsspeicher — der zeigt „was gerade eben passiert ist\", während die Datenbank nur alle 30 Sekunden geschrieben wird."
+        },
+        {
+          "h": "POSITIONEN & KALENDER-COUNTDOWN",
+          "p": "Die Positionskachel liest die offenen und geschlossenen Positionen der laufenden Sitzung von Bitunix und rechnet den Sitzungsstand gegen die Plangrenzen — realisiert und unrealisiert bleiben getrennt, die Grenzen zählen nur gegen den realisierten Teil. Der Kalender-Countdown zeigt die nächsten Wirtschaftstermine der kommenden Stunden aus dem eigenen Kalenderbestand."
+        },
+        {
+          "h": "INDIZES, FUNDING, LONG/SHORT, MAKRO",
+          "p": "Indizes zeigt ES=F, NQ=F und den Dollar-Index als Intraday-Kerzen von Yahoo. Funding, Long/Short + offenes Interesse und Makro-Umfeld sind dieselben Kacheln wie im Marktradar — Funding und Long/Short folgen der Symbolwahl."
+        },
+        {
+          "h": "BOOKMAP & HEBELKARTE",
+          "p": "Die beiden grossen Arbeitsflächen: die Bookmap am Orderbuchstrom von Binance in Echtzeit, die Hebelkarte als Modell auf Basis der eigenen Aufzeichnung. Beide haben keine Gross-Ansicht — die wäre eine zweite Verbindung — und brauchen mindestens zwei Spalten Breite. Ausführliche Erklärungen stehen in den eigenen Ansichten „Orderbuch\" und „Liquidationskarte\"."
+        },
+        {
+          "h": "GESAMTLAGE (KI)",
+          "p": "Dieselbe KI-Kachel wie im Marktradar: sie liest den aktuellen Stand der übrigen Kacheln und ordnet ihn ein. Erzeugt wird ausschliesslich per Knopf — der Drei-Sekunden-Takt löst keine KI-Anfrage aus, sonst würde jede Sitzung ein Vermögen kosten."
+        }
+      ],
+      "caveat": "Die Zahlen der Fremdquellen (Indizes, Funding, Kalender) versprechen nichts und können veralten — der Punkt in der Kachel sagt, wie frisch sie sind. Die Hebelkarte ist ein Modell, kein Messwert. Diese Seite ist Werkzeug, kein Signalgeber: den Auslöser liefert weiterhin deine Strategie."
+    },
+    "liveSessions": {
+      "title": "Sitzungs-Archiv — was aus deinen Vorsätzen geworden ist",
+      "intro": "Jede beendete Handelssitzung als eigener Eintrag. Die wichtigste Angabe ist nicht die P&L, sondern ob der Plan gehalten hat: eine gewonnene Sitzung mit gerissener Verlustgrenze ist Glück, eine verlorene innerhalb der Grenzen war gute Arbeit.",
+      "sections": [
+        {
+          "h": "DISZIPLIN STATT P&L",
+          "p": "Die Kopfzahl ist die Quote der Sitzungen, in denen der Plan gehalten hat — nicht die Summe der Gewinne. Wer nur auf die P&L schaut, belohnt Glück und bestraft gute Ausführung mit Pech."
+        },
+        {
+          "h": "ARCHIVIEREN STATT LÖSCHEN",
+          "p": "Sitzungen lassen sich archivieren statt löschen. Die Disziplin-Quote zählt archivierte bewusst weiter mit — eine Zahl, die sich durch Aufräumen verbessern liesse, wäre wertlos."
+        },
+        {
+          "h": "EINE SITZUNG IST EIN ZEITRAUM",
+          "p": "Kein Markt, sondern eine Zeitspanne: das Symbol darf während der Sitzung wechseln, jeder Wechsel landet im Protokoll, und die Sitzung folgt dem zuletzt gewählten Symbol — das braucht die Wiedergabe."
+        },
+        {
+          "h": "WIEDERGABE",
+          "p": "Der Wiedergabe-Knopf wird erst aktiv, wenn für Symbol und Zeitraum tatsächlich eine Orderbuch-Aufzeichnung vorliegt. Dann lässt sich das Buch aus der Sitzung Bild für Bild noch einmal durchfahren."
+        }
+      ],
+      "caveat": "Das Archiv zeigt, wie du gehandelt hast, nicht ob eine Strategie taugt — dafür ist die Auswertung da. Ohne eingeschaltete Aufzeichnung gibt es keine Wiedergabe."
+    },
+    "liveAuswertung": {
+      "title": "Sitzungs-Auswertung — vier aufeinander aufbauende Fragen",
+      "intro": "Vier Fragen an deine Handelssitzungen, die aufeinander aufbauen: halte ich meinen Plan ein und werde ich besser, nützt der Plan überhaupt etwas, zu welchen Zeiten handle ich gut, und kippt es mit der Dauer oder der Zahl der Trades.",
+      "sections": [
+        {
+          "h": "1 · PLANTREUE ÜBER DIE ZEIT",
+          "p": "Halte ich meinen Plan ein, und wird die Quote mit der Zeit besser? Die erste und wichtigste Frage — alles andere baut darauf auf."
+        },
+        {
+          "h": "2 · NÜTZT DER PLAN?",
+          "p": "Schneiden Sitzungen mit gehaltenem Plan tatsächlich besser ab als die mit gerissenem? Erst wenn ja, ist der Plan mehr als ein Ritual."
+        },
+        {
+          "h": "3 · GUTE UND SCHLECHTE ZEITEN",
+          "p": "Zu welchen Tageszeiten handle ich gut? Gruppiert nach Sitzungsbeginn, damit sich systematisch schlechte Fenster zeigen."
+        },
+        {
+          "h": "4 · DAUER UND ZAHL DER TRADES",
+          "p": "Kippt das Ergebnis, je länger eine Sitzung dauert oder je mehr Trades sie enthält? Die klassische Übertrading-Frage."
+        },
+        {
+          "h": "DÜNNE GRUPPEN STEHEN GRAU",
+          "p": "Gruppen mit weniger als vier Sitzungen sind ausgegraut: drei Sitzungen an einem Dienstag sind Rauschen, kein Befund. Die Rechnung liegt in einem eigenen, netzfreien Modul und ist durch einen Selbsttest gedeckt."
+        }
+      ],
+      "caveat": "Eine Auswertung ist nur so gut wie die Zahl der Sitzungen dahinter — ausgegraute Gruppen sind noch keine Aussage. Sie beschreibt dein Verhalten, sie ist keine Anlageberatung."
+    }
   },
   "news": {
     "fetchNow": "Beiträge holen",
