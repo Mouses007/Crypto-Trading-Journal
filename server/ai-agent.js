@@ -706,8 +706,14 @@ export function setupAgentRoutes(app) {
 
         // Bricht der Client ab, läuft der Lauf sonst bis zum Ende weiter und
         // schreibt in eine tote Verbindung — bezahlt wird er trotzdem.
+        // ACHTUNG: 'close' auf dem REQUEST feuert schon, sobald der POST-Body
+        // vollständig gelesen ist (also ~sofort), nicht erst beim echten
+        // Abbruch — dann stünde abgebrochen bereits vor dem ersten LLM-Aufruf
+        // auf true und der Agent schwiege. Das RESPONSE-'close' feuert erst,
+        // wenn die Antwortverbindung endet; writableFinished trennt den
+        // normalen Abschluss vom vorzeitigen Client-Abbruch.
         let abgebrochen = false
-        req.on('close', () => { abgebrochen = true })
+        res.on('close', () => { if (!res.writableFinished) abgebrochen = true })
 
         const sendSSE = (data) => {
             if (abgebrochen || res.writableEnded) return

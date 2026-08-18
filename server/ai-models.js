@@ -477,8 +477,11 @@ export function setupAiModelRoutes(app) {
             }
 
             // Der Client kann abbrechen — dann den Download nicht weiterlesen.
+            // REQUEST-'close' feuert schon nach dem Lesen des POST-Bodys (also
+            // sofort) und würde die Schleife nie starten lassen; RESPONSE-'close'
+            // markiert den echten Verbindungsabbruch (writableFinished=false).
             let abgebrochen = false
-            req.on('close', () => { abgebrochen = true })
+            res.on('close', () => { if (!res.writableFinished) abgebrochen = true })
 
             const leser = r.body.getReader()
             const decoder = new TextDecoder()
