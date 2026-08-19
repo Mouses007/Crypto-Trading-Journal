@@ -2638,7 +2638,8 @@
     "quickOpen": "Berichts-Einstellungen aufklappen",
     "quickClose": "Einstellungen zuklappen",
     "quickVideos": "Videos",
-    "moreInSettings": "Wochentag, Modelle und Videoauflösung stehen in den Einstellungen unter KI → Nachrichten."
+    "moreInSettings": "Wochentag, Modelle und Videoauflösung stehen in den Einstellungen unter KI → Nachrichten.",
+    "openArticle": "Artikel öffnen"
   },
   "rangliste": {
     "title": "Coin-Rangliste",
@@ -2800,6 +2801,8 @@
     }
   },
   "liveSessions": {
+    "planMaxVerlust": "max. −{betrag}",
+    "planMaxTrades": "max. {anzahl} Trades",
     "title": "Handelssitzungen",
     "keine": "Noch keine Sitzung aufgezeichnet.",
     "laufend": "läuft noch",

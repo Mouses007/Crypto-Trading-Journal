@@ -136,7 +136,31 @@ export async function laufeNewsAbruf({ manuell = false } = {}) {
      *  Liefert 1 für neu, 0 für bekannt. Ersetzt die frühere Zählweise über
      *  zwei `count(*)` je Eintrag, die bei 200 Beiträgen 400 Vollzählungen
      *  kostete; der Blick auf die Unique-Spalten selbst ist billiger. */
+    /**
+     * URL aus einer Fremdquelle säubern.
+     *
+     * Feeds werden vom Nutzer eingetragen, ihr Inhalt kommt aber von fremden
+     * Servern und wird in der Nachrichtenseite als `href` und `src` gerendert.
+     * Ein kompromittierter Feed könnte `javascript:…` liefern; der Klick liefe
+     * dann im Ursprung der App, mit ihrem Sitzungs-Cookie.
+     * `target="_blank" rel="noopener"` entschärft das weitgehend, ist aber
+     * kein Sicherheitsmechanismus. Erlaubt sind nur http und https.
+     */
+    function sichereUrl(roh) {
+        const text = String(roh || '').slice(0, 500)
+        if (!text) return ''
+        try {
+            const u = new URL(text)
+            return (u.protocol === 'http:' || u.protocol === 'https:') ? text : ''
+        } catch {
+            return ''
+        }
+    }
+
     async function speichereEintrag(zeile) {
+        // Eine Stelle für alle Quellen (RSS, Telegram, X, Truth, YouTube):
+        // Liste, Belege und Videolinks hängen alle an diesen beiden Feldern.
+        zeile = { ...zeile, url: sichereUrl(zeile.url), bild: sichereUrl(zeile.bild) }
         const da = await knex('news_items')
             .where({ sourceId: zeile.sourceId, extId: zeile.extId }).select('id').first()
         if (da) {
@@ -381,10 +405,12 @@ async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 120000)   // Video braucht länger als Text
     try {
-        const r = await fetch(`${url}?key=${encodeURIComponent(cfg.apiKey)}`, {
+        // Schlüssel im Kopf, nicht in der Query: URLs landen leichter in Logs,
+        // Fehlermeldungen und Proxy-Aufzeichnungen als Kopfzeilen.
+        const r = await fetch(url, {
             method: 'POST',
             signal: ctrl.signal,
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.apiKey },
             body: JSON.stringify({
                 contents: [{
                     parts: [
@@ -779,15 +805,13 @@ async function baueLagebericht(s, { manuell = false } = {}) {
             for (const v of videoKandidaten) {
                 if (videos.length >= maxVideos) break
                 // Livestreams gar nicht erst anfassen: laufende lehnt Gemini ab,
-                // Aufzeichnungen kosten nach Länge ein Vermögen.
+                // Aufzeichnungen kosten nach Länge ein Vermögen. Bewusst OHNE
+                // videoLog-Eintrag — sie sollen in der Videoliste des Berichts
+                // gar nicht erst auftauchen (Nutzerwunsch), nur die DB merkt
+                // sich das Überspringen gegen erneute Prüfungen.
                 if (await istLivestream(v.url)) {
                     await knex('news_items').where('id', v.id).update({
                         status: 'uebersprungen', fehler: 'Livestream — nicht analysiert',
-                    })
-                    videoLog.push({
-                        titel: v.titel, url: v.url,
-                        quelle: nachId.get(v.sourceId)?.name || '',
-                        tokens: 0, kostenUsd: 0, ergebnis: 'Livestream', text: '',
                     })
                     continue
                 }

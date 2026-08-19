@@ -2638,7 +2638,8 @@
     "quickOpen": "Show report settings",
     "quickClose": "Hide settings",
     "quickVideos": "Videos",
-    "moreInSettings": "Weekday, models and video resolution live in Settings under AI → News."
+    "moreInSettings": "Weekday, models and video resolution live in Settings under AI → News.",
+    "openArticle": "Open article"
   },
   "rangliste": {
     "title": "Coin ranking",
@@ -2800,6 +2801,8 @@
     }
   },
   "liveSessions": {
+    "planMaxVerlust": "max. −{betrag}",
+    "planMaxTrades": "max. {anzahl} trades",
     "title": "Trading sessions",
     "keine": "No session recorded yet.",
     "laufend": "still running",

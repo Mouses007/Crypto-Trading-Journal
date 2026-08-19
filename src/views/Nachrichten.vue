@@ -96,6 +96,13 @@ function videosUmschalten() {
 }
 
 const bericht = ref(null)
+
+// Videoliste des Berichts ohne Livestreams: die sollen gar nicht erwähnt
+// werden (Nutzerwunsch). Neue Berichte loggen sie serverseitig nicht mehr;
+// der Filter hier räumt auch die Altbestände in schon gespeicherten
+// Berichten weg.
+const sichtbareVideos = computed(() =>
+    (bericht.value?.videos_liste || []).filter(v => v.ergebnis !== 'Livestream'))
 const verlauf = ref([])
 /** Der jüngste Bericht — Rückkehrpunkt, wenn im Archiv geblättert wurde. */
 const aktuellerBericht = ref(null)
@@ -745,14 +752,27 @@ async function berichtErzeugen() {
  */
 watch(currentUser, ladeBerichtOptionen, { immediate: true })
 
+// ── Chart-Bilder gross ansehen ───────────────────────────────────────────
+// Klick auf ein Chart-Bild der Chartanalyse öffnet es bildschirmfüllend;
+// der Link zum Quell-Artikel wandert in die Fusszeile des Overlays.
+const grossesBild = ref(null)   // {url, quelle} oder null
+
+function schliesseBildBeiEsc(e) {
+    if (e.key === 'Escape') grossesBild.value = null
+}
+
 let takt = null
 onMounted(() => {
     ladeAlles()
     pruefeGuthaben()
     // Zehn Minuten reichen: Feeds ändern sich langsamer als Kurse
     takt = setInterval(() => { if (!document.hidden) ladeAlles() }, 10 * 60 * 1000)
+    window.addEventListener('keydown', schliesseBildBeiEsc)
 })
-onBeforeUnmount(() => { if (takt) clearInterval(takt) })
+onBeforeUnmount(() => {
+    if (takt) clearInterval(takt)
+    window.removeEventListener('keydown', schliesseBildBeiEsc)
+})
 </script>
 
 <template>
@@ -965,14 +985,13 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                     <p class="nwKapitelText" :class="{ erste: ki === 0 }">{{ k.lage }}</p>
 
                     <!-- Chart-Grafiken aus den recherchierten Analysen (nur
-                         Chartanalyse-Kapitel). Klick öffnet den Artikel, aus
-                         dem das Bild stammt; tote Bild-URLs verschwinden still. -->
+                         Chartanalyse-Kapitel). Klick öffnet das Bild gross im
+                         Overlay; tote Bild-URLs verschwinden still. -->
                     <div v-if="k.bilder && k.bilder.length" class="nwChartBilder">
-                        <a v-for="(b, bi) in k.bilder" :key="bi" :href="b.quelle || b.url"
-                            target="_blank" rel="noopener">
-                            <img :src="b.url" loading="lazy" referrerpolicy="no-referrer"
-                                @error="e => { e.target.closest('a').style.display = 'none' }" />
-                        </a>
+                        <img v-for="(b, bi) in k.bilder" :key="bi" :src="b.url"
+                            loading="lazy" referrerpolicy="no-referrer" class="pointerClass"
+                            @click="grossesBild = b"
+                            @error="e => { e.target.style.display = 'none' }" />
                     </div>
 
                     <!-- Die Punkte des Kapitels als Artikel im laufenden Satz.
@@ -1018,14 +1037,14 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                      keine da waren, keine analysiert werden durften oder die
                      Analyse scheiterte — bei bis zu zehn Rappen je Video ist
                      das der Unterschied zwischen sparsam und kaputt. -->
-                <div v-if="bericht.videos_liste && bericht.videos_liste.length" class="nwVideos">
+                <div v-if="sichtbareVideos.length" class="nwVideos">
                     <button type="button" class="nwVideosKopf" :aria-expanded="videosOffen"
                         @click="videosUmschalten">
                         <i class="uil" :class="videosOffen ? 'uil-angle-down' : 'uil-angle-right'"></i>
                         {{ t('news.videosHeader') }}
-                        <span class="nwVideosZahl">{{ bericht.videos_liste.length }}</span>
+                        <span class="nwVideosZahl">{{ sichtbareVideos.length }}</span>
                     </button>
-                    <div v-for="(vi, k) in (videosOffen ? bericht.videos_liste : [])" :key="k"
+                    <div v-for="(vi, k) in (videosOffen ? sichtbareVideos : [])" :key="k"
                         class="nwVideoEintrag">
                         <a class="nwVideo" :href="vi.url" target="_blank" rel="noopener noreferrer">
                             <i class="uil uil-youtube"></i>
@@ -1275,6 +1294,23 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                     @dblclick="hoeheZuruecksetzen('beitraege')"></div>
             </section>
         </div>
+
+        <!-- Chart-Bild in gross. Teleport nach body, damit kein Vorfahre mit
+             transform/overflow das Overlay einfängt. Klick daneben schliesst,
+             Escape ebenso (Listener im Setup). -->
+        <Teleport to="body">
+            <div v-if="grossesBild" class="nwBildOverlay" @click.self="grossesBild = null">
+                <button type="button" class="nwBildZu" @click="grossesBild = null">
+                    <i class="uil uil-times"></i>
+                </button>
+                <img :src="grossesBild.url" referrerpolicy="no-referrer" @click.stop />
+                <a v-if="grossesBild.quelle" class="nwBildQuelle" :href="grossesBild.quelle"
+                    target="_blank" rel="noopener" @click.stop>
+                    <i class="uil uil-external-link-alt"></i>
+                    {{ grossesBild.quelle.replace(/^https?:\/\//, '').split('/')[0] }} — {{ t('news.openArticle') }}
+                </a>
+            </div>
+        </Teleport>
     </div>
 </template>
 
@@ -2491,5 +2527,56 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
 .nwLeer i {
     font-size: 1.8rem;
     opacity: 0.45;
+}
+</style>
+
+<!-- Unscoped: das Bild-Overlay wird per Teleport nach body gerendert,
+     ausserhalb des Scoped-Bereichs dieser Komponente. -->
+<style>
+.nwBildOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.88);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.7rem;
+    padding: 2rem;
+    cursor: zoom-out;
+}
+.nwBildOverlay img {
+    max-width: min(96vw, 1700px);
+    max-height: 82vh;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 10px 50px rgba(0, 0, 0, 0.7);
+    cursor: default;
+}
+.nwBildZu {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #fff;
+    border-radius: 8px;
+    font-size: 1.15rem;
+    line-height: 1;
+    padding: 0.35rem 0.55rem;
+    cursor: pointer;
+}
+.nwBildZu:hover {
+    background: rgba(255, 255, 255, 0.22);
+}
+.nwBildQuelle {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+.nwBildQuelle:hover {
+    color: #fff;
+    text-decoration: underline;
 }
 </style>
