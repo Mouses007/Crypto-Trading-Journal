@@ -1306,45 +1306,69 @@ function zeichne() {
         },
         xAxis: {
             type: 'value', min: 0, max: 100, name: t('hype.achseX'), nameLocation: 'middle', nameGap: 28,
-            nameTextStyle: { color: '#9aa0a6', fontSize: 11 },
-            axisLabel: { color: '#9aa0a6', fontSize: 10 },
-            splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } },
+            nameTextStyle: { color: '#9aa0a6', fontSize: 12 },
+            axisLabel: { color: '#b3b8bd', fontSize: 12 },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,.09)' } },
         },
         yAxis: {
             type: 'value', min: 0, max: 100, name: t('hype.achseY'), nameLocation: 'middle', nameGap: 35,
-            nameTextStyle: { color: '#9aa0a6', fontSize: 11 },
-            axisLabel: { color: '#9aa0a6', fontSize: 10 },
-            splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } },
+            nameTextStyle: { color: '#9aa0a6', fontSize: 12 },
+            axisLabel: { color: '#b3b8bd', fontSize: 12 },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,.09)' } },
         },
         series: [
             {
-                // Der Hintergrund: alles, was unter der Schwelle blieb. Ohne
-                // dieses Feld hätte der Quadrant an manchen Tagen zwei Punkte
-                // und zeigte nichts, wovon sich etwas abheben könnte.
+                /*
+                 * Der Hintergrund: alles, was unter der Schwelle blieb. Ohne
+                 * dieses Feld hätte der Quadrant an manchen Tagen zwei Punkte
+                 * und zeigte nichts, wovon sich etwas abheben könnte.
+                 *
+                 * Er darf gedämpft sein, aber nicht unsichtbar: bei 30 %
+                 * Deckkraft auf sechs Pixeln war auf schwarzem Grund kaum noch
+                 * etwas zu erkennen. Der dunkle Ring trennt zusätzlich die
+                 * Punkte, die sich am rechten Rand stapeln.
+                 */
                 type: 'scatter', name: t('hype.unterSchwelle'), data: neutral,
-                symbolSize: 6, itemStyle: { color: 'rgba(120,140,170,.30)' },
+                symbolSize: 9,
+                itemStyle: {
+                    color: 'rgba(150,170,200,.6)',
+                    borderColor: 'rgba(0,0,0,.7)', borderWidth: 1,
+                },
+                emphasis: { scale: 1.6 },
             },
             {
                 type: 'scatter', name: t('hype.verworfen'), data: schlecht,
-                symbolSize: 8, itemStyle: { color: 'rgba(239,83,80,.35)' },
+                symbolSize: 11,
+                itemStyle: {
+                    color: 'rgba(239,83,80,.7)',
+                    borderColor: 'rgba(0,0,0,.7)', borderWidth: 1,
+                },
+                emphasis: { scale: 1.5 },
             },
             {
                 type: 'scatter', name: t('hype.bestanden'), data: gut,
-                symbolSize: (v) => 10 + (Number(v[2]) || 0) / 8,
+                symbolSize: (v) => 13 + (Number(v[2]) || 0) / 7,
                 itemStyle: {
                     color: (p) => {
                         const s = Number(p.value[2]) || 0
                         return s >= 70 ? '#4caf50' : (s >= 40 ? '#ffb300' : '#ef5350')
                     },
+                    // Heller Ring: Diese Punkte sind die Aussage des Bildes und
+                    // sollen sich auch dann abheben, wenn sie auf einem Nachbarn
+                    // liegen.
+                    borderColor: 'rgba(255,255,255,.85)', borderWidth: 1.5,
+                    shadowBlur: 8, shadowColor: 'rgba(0,0,0,.6)',
                 },
+                emphasis: { scale: 1.4 },
                 label: {
                     show: true, formatter: (p) => p.value[3], position: 'top',
-                    color: '#c9cdd2', fontSize: 9,
+                    color: '#e6e8ea', fontSize: 11, fontWeight: 600,
+                    textBorderColor: 'rgba(0,0,0,.9)', textBorderWidth: 3,
                 },
                 // Die Trennlinien machen die vier Felder erst lesbar.
                 markLine: {
                     silent: true, symbol: 'none',
-                    lineStyle: { color: 'rgba(255,255,255,.15)', type: 'dashed' },
+                    lineStyle: { color: 'rgba(255,255,255,.22)', type: 'dashed' },
                     label: { show: false },
                     data: [{ xAxis: 50 }, { yAxis: 50 }],
                 },
@@ -1353,7 +1377,7 @@ function zeichne() {
                     itemStyle: { color: 'rgba(255,179,0,.05)' },
                     label: {
                         show: true, position: 'insideTop',
-                        color: '#9aa0a6', fontSize: 10,
+                        color: '#b3b8bd', fontSize: 12,
                     },
                     data: [[
                         { name: t('hype.quadrantObenLinks'), xAxis: 0, yAxis: 50 },
