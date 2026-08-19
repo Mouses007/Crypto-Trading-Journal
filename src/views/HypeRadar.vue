@@ -34,6 +34,99 @@
 
         <!-- ══ Dashboard ═════════════════════════════════════════════ -->
         <div v-show="reiter === 'dashboard'" class="mt-3">
+
+            <!-- ── Favoriten ─────────────────────────────────────── -->
+            <div v-if="favoriten.length" class="hypFavLeiste">
+                <span class="hypFavTitel"><i class="uil uil-star me-1"></i>{{ t('hype.favoriten') }}</span>
+                <button v-for="f in favoriten" :key="f.id" class="hypFavChip"
+                    :class="{ aktiv: liveOffen?.favorit?.id === f.id }"
+                    @click="liveOeffnen(f)">
+                    {{ f.symbol }}<span class="hypFavKette">{{ f.chain }}</span>
+                </button>
+            </div>
+
+            <!-- Kachel-Detail eines Favoriten: Livedaten -->
+            <div v-if="liveOffen" class="hypLive">
+                <div class="hypLiveKopf">
+                    <strong>{{ liveOffen.favorit.symbol }}</strong>
+                    <span v-if="liveOffen.favorit.name" class="hypKandidatName">{{ liveOffen.favorit.name }}</span>
+                    <span class="hypKette">{{ liveOffen.favorit.chain }}</span>
+                    <span v-if="liveLaedt" class="spinner-border spinner-border-sm ms-2"></span>
+                    <span v-else class="hypLiveStand">{{ t('hype.liveStand', { z: zeitpunkt(liveOffen.stand) }) }}</span>
+                    <span class="ms-auto"></span>
+                    <a v-if="liveOffen.dexUrl" class="hypLink me-3" :href="liveOffen.dexUrl"
+                        target="_blank" rel="noopener noreferrer">DexScreener ↗</a>
+                    <button class="btn btn-sm btn-outline-danger py-0 me-2"
+                        :title="t('hype.favEntfernen')" @click="favEntfernen(liveOffen.favorit)">
+                        <i class="uil uil-star-half-alt"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary py-0" @click="liveSchliessen">
+                        <i class="uil uil-times"></i>
+                    </button>
+                </div>
+
+                <div class="hypLiveGrid">
+                    <div class="hypLiveKachel">
+                        <div class="hypLiveWert">{{ preis(liveOffen.markt?.preisUsd) }}</div>
+                        <div class="hypLiveLabel">{{ t('hype.livePreis') }}</div>
+                        <div class="hypLiveExtra" :class="(liveOffen.markt?.aenderung24h ?? 0) >= 0 ? 'text-success' : 'text-danger'"
+                            v-if="liveOffen.markt?.aenderung24h != null">
+                            {{ liveOffen.markt.aenderung24h >= 0 ? '+' : '' }}{{ liveOffen.markt.aenderung24h.toFixed(1) }} % / 24h
+                        </div>
+                    </div>
+                    <div class="hypLiveKachel">
+                        <div class="hypLiveWert">{{ geld(liveOffen.markt?.liquiditaetUsd) }}</div>
+                        <div class="hypLiveLabel">{{ t('hype.spalteLiq') }} (USD)</div>
+                    </div>
+                    <div class="hypLiveKachel">
+                        <div class="hypLiveWert">{{ geld(liveOffen.markt?.volumen24h) }}</div>
+                        <div class="hypLiveLabel">{{ t('hype.liveVol24') }}</div>
+                        <div class="hypLiveExtra" v-if="liveOffen.markt?.volumen1h">
+                            {{ geld(liveOffen.markt.volumen1h) }} {{ t('hype.liveLetzteStunde') }}
+                        </div>
+                    </div>
+                    <div class="hypLiveKachel">
+                        <div class="hypLiveWert">{{ kv(liveOffen.markt?.kaufVerkaufVerhaeltnis) }}</div>
+                        <div class="hypLiveLabel">{{ t('hype.liveKV') }}</div>
+                        <div class="hypLiveExtra" v-if="liveOffen.markt?.transaktionen24h">
+                            {{ liveOffen.markt.transaktionen24h.toLocaleString() }} {{ t('hype.liveTrades') }}
+                        </div>
+                    </div>
+                    <div class="hypLiveKachel">
+                        <div class="hypLiveWert">{{ alter(liveOffen.markt?.paarAlterStunden) }}</div>
+                        <div class="hypLiveLabel">{{ t('hype.spalteAlter') }}</div>
+                        <div class="hypLiveExtra" v-if="liveOffen.markt?.dex">{{ liveOffen.markt.dex }}</div>
+                    </div>
+                    <div class="hypLiveKachel">
+                        <div class="hypLiveWert hypLiveBoersen">
+                            <template v-if="liveOffen.listungen?.length">
+                                <span v-for="l in liveOffen.listungen" :key="l.boerse || l" class="hypBoerse"
+                                    :title="listungText(l)">{{ listungKuerzel(l) }}</span>
+                            </template>
+                            <span v-else class="text-muted">—</span>
+                        </div>
+                        <div class="hypLiveLabel">{{ t('hype.spalteHandelbar') }}</div>
+                        <div class="hypLiveExtra" v-if="liveOffen.listungUnbekannt?.length">
+                            {{ t('hype.listungUnbekannt', { b: liveOffen.listungUnbekannt.join(', ') }) }}
+                        </div>
+                    </div>
+                    <div v-if="liveOffen.letzterLauf" class="hypLiveKachel">
+                        <div class="hypLiveWert">
+                            {{ liveOffen.letzterLauf.hypeScore }}
+                            <span class="hypLiveTrenn">/</span>
+                            <span :class="liveOffen.letzterLauf.safetyScore >= 70 ? 'text-success' : 'text-warning'">
+                                {{ liveOffen.letzterLauf.status === 'verworfen' ? '—' : liveOffen.letzterLauf.safetyScore }}
+                            </span>
+                        </div>
+                        <div class="hypLiveLabel">{{ t('hype.liveNoten') }}</div>
+                        <div class="hypLiveExtra">{{ t('hype.liveGeprueft', { z: zeitpunkt(liveOffen.letzterLauf.erstelltAm) }) }}</div>
+                    </div>
+                </div>
+                <div v-if="liveOffen.letzterLauf?.hinweise?.length" class="hypLiveHinweise">
+                    <i class="uil uil-shield-exclamation me-1"></i>{{ liveOffen.letzterLauf.hinweise.join(' · ') }}
+                </div>
+            </div>
+
             <div class="hypKennzahlen">
                 <div class="hypZelle">
                     <div class="hypWert">{{ kandidaten.length }}</div>
@@ -96,6 +189,9 @@
                             <template v-for="k in gefiltert" :key="k.id">
                                 <tr class="hypZeile" @click="offen = offen === k.id ? null : k.id">
                                     <td>
+                                        <i class="uil hypStern" :class="istFav(k) ? 'uil-favorite aktiv' : 'uil-star'"
+                                            :title="istFav(k) ? t('hype.favEntfernen') : t('hype.favHinzu')"
+                                            @click.stop="favUmschalten(k)"></i>
                                         <strong>{{ k.symbol }}</strong>
                                         <span class="hypKette">{{ k.chain }}</span>
                                     </td>
@@ -110,8 +206,8 @@
                                     <td class="text-end">{{ alter(k.marktDaten?.paarAlterStunden) }}</td>
                                     <td>
                                         <span v-if="k.marktDaten?.dex" class="hypDex">{{ k.marktDaten.dex }}</span>
-                                        <span v-for="b in (k.marktDaten?.listungen || [])" :key="b"
-                                            class="hypBoerse" :title="t('hype.gelistetAuf', { b })">{{ BOERSEN_KUERZEL[b] || b }}</span>
+                                        <span v-for="(l, i) in (k.marktDaten?.listungen || [])" :key="i"
+                                            class="hypBoerse" :title="listungText(l)">{{ listungKuerzel(l) }}</span>
                                         <span v-if="!k.marktDaten?.dex && !(k.marktDaten?.listungen || []).length"
                                             class="text-muted">—</span>
                                     </td>
@@ -394,6 +490,125 @@ const HINWEIS_RUECKFALL = 'Keine Anlageberatung. Frühphasen-Token sind hochrisk
 // Kürzel der eigenen Börsen — kurz genug für eine Tabellenzelle, eindeutig
 // genug zum Wiedererkennen. Der volle Name steht im Title-Text.
 const BOERSEN_KUERZEL = { bitunix: 'BX', bitget: 'BG', pionex: 'PX' }
+
+/*
+ * Eine Listung kommt in zwei Formen an: alte Läufe speicherten den blossen
+ * Börsennamen ('bitunix'), neue ein Objekt mit Marktart ({boerse, spot,
+ * futures}). Beide müssen sich zeichnen lassen — die alten Zeilen bleiben ja
+ * in der Datenbank stehen.
+ */
+function listungKuerzel(l) {
+    if (typeof l === 'string') return BOERSEN_KUERZEL[l] || l
+    const kuerzel = BOERSEN_KUERZEL[l.boerse] || l.boerse
+    const art = [l.futures ? 'F' : '', l.spot ? 'S' : ''].filter(Boolean).join('·')
+    return art ? `${kuerzel} ${art}` : kuerzel
+}
+
+function listungText(l) {
+    if (typeof l === 'string') return t('hype.gelistetAuf', { b: l })
+    const teile = []
+    if (l.futures) teile.push(t('hype.marktFutures'))
+    if (l.spot) teile.push(t('hype.marktSpot'))
+    return `${l.boerse}: ${teile.join(' + ') || '—'}`
+}
+
+// ── Favoriten & Livedaten ───────────────────────────────────────────────
+const favoriten = ref([])
+const liveOffen = ref(null)
+const liveLaedt = ref(false)
+let liveTakt = null
+
+const favSchluessel = (k) => `${k.symbol}|${k.chain || ''}`
+const favNach = computed(() => new Map(favoriten.value.map((f) => [favSchluessel(f), f])))
+const istFav = (k) => favNach.value.has(favSchluessel(k))
+
+async function ladeFavoriten() {
+    try {
+        const r = await axios.get('/api/hype-radar/favoriten')
+        favoriten.value = r.data || []
+    } catch (e) {
+        logWarn('hype-radar', 'Favoriten konnten nicht geladen werden', e)
+    }
+}
+
+async function favUmschalten(k) {
+    const vorhanden = favNach.value.get(favSchluessel(k))
+    try {
+        if (vorhanden) {
+            await axios.delete(`/api/hype-radar/favoriten/${vorhanden.id}`)
+            if (liveOffen.value?.favorit?.id === vorhanden.id) liveSchliessen()
+        } else {
+            await axios.post('/api/hype-radar/favoriten', {
+                symbol: k.symbol,
+                name: k.name,
+                chain: k.chain,
+                contractAddress: k.contractAddress,
+                pairAddress: k.pairAddress,
+                narrative: k.narrative,
+            })
+        }
+        await ladeFavoriten()
+    } catch (e) {
+        logWarn('hype-radar', 'Favorit konnte nicht umgeschaltet werden', e)
+    }
+}
+
+async function favEntfernen(f) {
+    try {
+        await axios.delete(`/api/hype-radar/favoriten/${f.id}`)
+        liveSchliessen()
+        await ladeFavoriten()
+    } catch (e) {
+        logWarn('hype-radar', 'Favorit konnte nicht entfernt werden', e)
+    }
+}
+
+async function liveOeffnen(f) {
+    // Zweiter Klick auf denselben Chip schliesst.
+    if (liveOffen.value?.favorit?.id === f.id) { liveSchliessen(); return }
+    liveSchliessen()
+    liveLaedt.value = true
+    // Sofort ein Gerüst zeigen, damit der Klick sichtbar ankommt.
+    liveOffen.value = { favorit: f, stand: 0, markt: null, listungen: [], letzterLauf: null }
+    await liveNachladen(f.id)
+    /*
+     * Alle 60 s nachladen, solange die Ansicht offen ist — im Takt des
+     * Server-Zwischenspeichers. Öfter zu fragen brächte nur denselben Stand.
+     */
+    liveTakt = setInterval(() => liveNachladen(f.id), 60000)
+}
+
+async function liveNachladen(id) {
+    try {
+        const r = await axios.get(`/api/hype-radar/live/${id}`)
+        // Nur übernehmen, wenn die Ansicht noch zu diesem Favoriten gehört.
+        if (liveOffen.value?.favorit?.id === id) liveOffen.value = r.data
+    } catch (e) {
+        logWarn('hype-radar', 'Livedaten konnten nicht geladen werden', e)
+    } finally {
+        liveLaedt.value = false
+    }
+}
+
+function liveSchliessen() {
+    liveOffen.value = null
+    if (liveTakt) { clearInterval(liveTakt); liveTakt = null }
+}
+
+const preis = (p) => {
+    const z = Number(p)
+    if (!Number.isFinite(z) || z === 0) return '—'
+    // Kleinstpreise brauchen mehr Stellen, sonst steht da nur „0.00".
+    if (z < 0.01) return '$' + z.toPrecision(3)
+    if (z < 1000) return '$' + z.toFixed(2)
+    return '$' + Math.round(z).toLocaleString()
+}
+
+const kv = (v) => {
+    const z = Number(v)
+    if (!Number.isFinite(z)) return '—'
+    return z.toFixed(2)
+}
 
 const REITER = [
     { id: 'dashboard', icon: 'uil uil-dashboard' },
@@ -762,13 +977,15 @@ const beiGroesse = () => diagramm?.resize()
 
 onMounted(async () => {
     window.addEventListener('resize', beiGroesse)
-    await Promise.all([ladeKandidaten(), ladeBerichte(), ladeEinstellungen()])
+    await Promise.all([ladeKandidaten(), ladeBerichte(), ladeEinstellungen(), ladeFavoriten()])
 })
 
 onBeforeUnmount(() => {
     window.removeEventListener('resize', beiGroesse)
     strom?.abort()
     diagramm?.dispose()
+    // Der Takt der Livedaten darf die Seite nicht überleben.
+    if (liveTakt) clearInterval(liveTakt)
 })
 
 watch(locale, () => zeichne())
@@ -914,6 +1131,135 @@ watch(locale, () => zeichne())
     font-size: .7rem;
     color: var(--grey-color, #9aa0a6);
     margin-right: .35rem;
+}
+
+.hypStern {
+    cursor: pointer;
+    margin-right: .35rem;
+    color: var(--grey-color, #9aa0a6);
+    opacity: .45;
+    font-size: .85rem;
+}
+
+.hypStern:hover {
+    opacity: 1;
+}
+
+.hypStern.aktiv {
+    color: #ffb300;
+    opacity: 1;
+}
+
+/* ── Favoriten & Livedaten ──────────────────────────────── */
+.hypFavLeiste {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .4rem;
+    margin-bottom: .9rem;
+}
+
+.hypFavTitel {
+    font-size: .78rem;
+    color: var(--grey-color, #9aa0a6);
+    margin-right: .3rem;
+}
+
+.hypFavChip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .76rem;
+    font-weight: 600;
+    padding: .2rem .6rem;
+    border-radius: 999px;
+    background: var(--black-bg-2, rgba(255, 255, 255, .05));
+    border: 1px solid transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.hypFavChip:hover {
+    border-color: var(--grey-color, #9aa0a6);
+}
+
+.hypFavChip.aktiv {
+    border-color: var(--blue-color, #4da3ff);
+    color: var(--blue-color, #4da3ff);
+}
+
+.hypFavKette {
+    font-weight: 400;
+    font-size: .64rem;
+    opacity: .6;
+    margin-left: .3rem;
+}
+
+.hypLive {
+    background: var(--black-bg-2, rgba(255, 255, 255, .03));
+    border: 1px solid var(--blue-color, #4da3ff);
+    border-radius: var(--border-radius, 8px);
+    padding: .8rem 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.hypLiveKopf {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    flex-wrap: wrap;
+    margin-bottom: .7rem;
+}
+
+.hypLiveStand {
+    font-size: .7rem;
+    color: var(--grey-color, #9aa0a6);
+    margin-left: .5rem;
+}
+
+.hypLiveGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: .6rem;
+}
+
+.hypLiveKachel {
+    background: rgba(0, 0, 0, .18);
+    border-radius: 6px;
+    padding: .55rem .7rem;
+}
+
+.hypLiveWert {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1.05rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.25;
+}
+
+.hypLiveBoersen .hypBoerse {
+    font-size: .68rem;
+}
+
+.hypLiveTrenn {
+    opacity: .4;
+    font-weight: 400;
+}
+
+.hypLiveLabel {
+    font-size: .68rem;
+    color: var(--grey-color, #9aa0a6);
+    margin-top: .1rem;
+}
+
+.hypLiveExtra {
+    font-size: .7rem;
+    color: var(--grey-color, #9aa0a6);
+    margin-top: .1rem;
+}
+
+.hypLiveHinweise {
+    margin-top: .6rem;
+    font-size: .74rem;
+    color: var(--orange-color, #ffb300);
 }
 
 /* Kürzel der eigenen Börsen: gefüllt, damit „hier handelbar" sich von der

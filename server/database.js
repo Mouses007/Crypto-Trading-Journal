@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten']
     let fixed = 0
 
     for (const table of tables) {
@@ -108,7 +108,8 @@ async function fixPostgresSequences(knex) {
 // additiv: ein älterer Codestand schreibt sie nicht, liest sie nicht und läuft
 // unverändert weiter; ihm fehlen nur die Zeilen seiner eigenen Läufe.
 // v4: Tabellen des Hype-Radars. Wieder rein additiv.
-const SCHEMA_VERSION = 4
+// v5: `hype_favoriten` — angeheftete Funde. Rein additiv.
+const SCHEMA_VERSION = 5
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2214,6 +2215,28 @@ async function runMigrations(knex, client) {
             t.bigInteger('aktualisiertAm').defaultTo(0)
         })
         console.log(' -> Created table: hype_settings')
+    }
+
+    /*
+     * Favoriten. Ein Fund verschwindet mit dem nächsten Lauf aus der Liste —
+     * wer einen Coin im Auge behalten will, heftet ihn hier an. Gespeichert
+     * wird die Identität (Symbol, Kette, Vertrag), nicht der damalige Stand:
+     * die Livedaten holt die Detailansicht bei jedem Öffnen frisch, ein
+     * eingefrorener Preis von letzter Woche wäre schlimmer als keiner.
+     */
+    if (!(await knex.schema.hasTable('hype_favoriten'))) {
+        await knex.schema.createTable('hype_favoriten', (t) => {
+            t.increments('id').primary()
+            t.string('symbol').notNullable()
+            t.text('name').defaultTo('')
+            t.string('chain').defaultTo('')
+            t.string('contractAddress').defaultTo('')
+            t.string('pairAddress').defaultTo('')
+            t.string('narrative').defaultTo('')
+            t.bigInteger('erstelltAm').defaultTo(0)
+            t.unique(['symbol', 'chain'], 'uq_hype_fav')
+        })
+        console.log(' -> Created table: hype_favoriten')
     }
 
     /*

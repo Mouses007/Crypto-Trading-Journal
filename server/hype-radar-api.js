@@ -17,6 +17,8 @@ import { logWarn } from './logger.js'
 import { beansprucheAufgabe, meldeFehler } from './db-claim.js'
 import { leseEinstellungen, schreibeEinstellungen, schreibeSchluessel, maskiere } from './hype-radar/einstellungen.js'
 import { scanne, scanneUndBerichte } from './hype-radar/lauf.js'
+import { dexDetails } from './hype-radar/quellen.js'
+import { ladeListungen, pruefeListung } from './hype-radar/listungen.js'
 import { stufenNach, benoetigteAnbieter } from './hype-radar/stufen.js'
 import { keySpalte } from './ai-models.js'
 
@@ -144,10 +146,115 @@ export function setupHypeRadarRoutes(app) {
         }
     })
 
+    // ── Favoriten ───────────────────────────────────────────────────────
+    app.get('/api/hype-radar/favoriten', async (req, res) => {
+        try {
+            const zeilen = await getKnex()('hype_favoriten').select('*').orderBy('erstelltAm', 'desc')
+            res.json(zeilen)
+        } catch (e) {
+            res.status(500).json({ error: 'Favoriten konnten nicht geladen werden' })
+        }
+    })
+
+    app.post('/api/hype-radar/favoriten', async (req, res) => {
+        try {
+            const { symbol, name, chain, contractAddress, pairAddress, narrative } = req.body || {}
+            const s = String(symbol || '').trim().toUpperCase()
+            if (!s) return res.status(400).json({ error: 'Symbol fehlt' })
+            const knex = getKnex()
+            // Doppelklick auf den Stern darf keine zweite Zeile anlegen.
+            const vorhanden = await knex('hype_favoriten')
+                .where({ symbol: s, chain: String(chain || '') }).first()
+            if (vorhanden) return res.json(vorhanden)
+            const [eingefuegt] = await knex('hype_favoriten').insert({
+                symbol: s,
+                name: String(name || '').slice(0, 120),
+                chain: String(chain || ''),
+                contractAddress: String(contractAddress || ''),
+                pairAddress: String(pairAddress || ''),
+                narrative: String(narrative || ''),
+                erstelltAm: Date.now(),
+            }).returning('id')
+            const id = typeof eingefuegt === 'object' ? eingefuegt.id : eingefuegt
+            res.json(await knex('hype_favoriten').where('id', id).first())
+        } catch (e) {
+            logWarn('hype-radar', `Favorit anlegen: ${e.message}`)
+            res.status(500).json({ error: 'Favorit konnte nicht gespeichert werden' })
+        }
+    })
+
+    app.delete('/api/hype-radar/favoriten/:id', async (req, res) => {
+        try {
+            await getKnex()('hype_favoriten').where('id', Number(req.params.id)).del()
+            res.json({ ok: true })
+        } catch (e) {
+            res.status(500).json({ error: 'Favorit konnte nicht entfernt werden' })
+        }
+    })
+
+    /*
+     * Livedaten zu einem Favoriten — für die Kachel-Detailansicht.
+     *
+     * Frisch von DexScreener (Preis, Liquidität, Volumen, Kauf/Verkauf) plus
+     * die Börsenlistung und der letzte gespeicherte Prüfstand. 60 s
+     * Zwischenspeicher je Vertrag: die Ansicht fragt beim Öffnen und dann im
+     * Takt — jede Anfrage bis zur Fremdquelle durchzureichen hiesse, deren
+     * Ratengrenze mit einem einzigen offenen Fenster zu belegen.
+     */
+    app.get('/api/hype-radar/live/:id', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const fav = await knex('hype_favoriten').where('id', Number(req.params.id)).first()
+            if (!fav) return res.status(404).json({ error: 'Favorit nicht gefunden' })
+
+            const schluessel = `live:${fav.contractAddress || fav.symbol}`
+            const alt = liveCache.get(schluessel)
+            if (alt && Date.now() - alt.ts < 60000) return res.json(alt.payload)
+
+            const [details, listen, letzter] = await Promise.all([
+                fav.contractAddress ? dexDetails(fav.contractAddress).catch(() => null) : null,
+                ladeListungen(),
+                knex('hype_candidates')
+                    .where({ symbol: fav.symbol, chain: fav.chain })
+                    .orderBy('erstelltAm', 'desc').first(),
+            ])
+            const listung = pruefeListung(fav.symbol, listen)
+
+            const payload = {
+                favorit: fav,
+                stand: Date.now(),
+                markt: details?.markt || null,
+                dexUrl: details?.url || '',
+                listungen: listung.liste,
+                listungUnbekannt: listung.unbekannt,
+                // Der letzte Prüfstand aus dem Lauf — Noten sind keine Livedaten,
+                // sie stammen aus der letzten Prüfung und werden so beschriftet.
+                letzterLauf: letzter ? {
+                    hypeScore: letzter.hypeScore,
+                    safetyScore: letzter.safetyScore,
+                    status: letzter.status,
+                    verworfenGrund: letzter.verworfenGrund,
+                    erstelltAm: Number(letzter.erstelltAm),
+                    hinweise: sicherParse(letzter.sicherheitsDaten, {})?.hinweise || [],
+                } : null,
+            }
+            liveCache.set(schluessel, { ts: Date.now(), payload })
+            // Deckel gegen Anwachsen über Monate
+            if (liveCache.size > 200) liveCache.delete(liveCache.keys().next().value)
+            res.json(payload)
+        } catch (e) {
+            logWarn('hype-radar', `Livedaten: ${e.message}`)
+            res.status(500).json({ error: 'Livedaten konnten nicht geladen werden' })
+        }
+    })
+
     // ── Lauf ────────────────────────────────────────────────────────────
     app.post('/api/hype-radar/scan', (req, res) => laufRoute(req, res, false))
     app.post('/api/hype-radar/bericht', (req, res) => laufRoute(req, res, true))
 }
+
+/** 60-s-Zwischenspeicher der Livedaten, je Vertrag. */
+const liveCache = new Map()
 
 /** Beide Lauf-Routen unterscheiden sich nur darin, ob Stufe 4 mitläuft. */
 async function laufRoute(req, res, mitBericht) {
