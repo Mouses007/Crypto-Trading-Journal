@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings']
     let fixed = 0
 
     for (const table of tables) {
@@ -110,7 +110,8 @@ async function fixPostgresSequences(knex) {
 // v4: Tabellen des Hype-Radars. Wieder rein additiv.
 // v5: `hype_favoriten` — angeheftete Funde. Rein additiv.
 // v6: `hype_alarme` + Wachhund-Spalten an den Favoriten. Rein additiv.
-const SCHEMA_VERSION = 6
+// v7: Coin-Radar — Läufe, Zeilen, Einstellungen; `quelle` an den Favoriten.
+const SCHEMA_VERSION = 7
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2093,6 +2094,87 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'waehrungCode', (t) => t.text('waehrungCode').defaultTo('CHF'))
     await addColumnIfNotExists('settings', 'waehrungFaktor', (t) => t.double('waehrungFaktor').defaultTo(0.8))
 
+    // ── Coin-Radar ───────────────────────────────────────────────────────
+
+    /*
+     * Ein Lauf: das ganze handelbare Universum einmal durchgesehen.
+     *
+     * Der Zustand steht in der Datenbank und nicht im Speicher — ein Lauf
+     * dauert Minuten und muss einen Neustart überleben. Dasselbe Muster wie
+     * bei der Coin-Rangliste, aus demselben Grund.
+     */
+    if (!(await knex.schema.hasTable('coinradar_laeufe'))) {
+        await knex.schema.createTable('coinradar_laeufe', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('erstelltAm').notNullable()
+            t.bigInteger('beendetAm').defaultTo(0)
+            t.string('status').defaultTo('wartet')   // wartet|laeuft|fertig|abgebrochen|fehler
+            t.string('ausloeser').defaultTo('auto')  // auto | manuell
+            t.text('zeiteinheiten').defaultTo('[]')  // JSON, z.B. ["1h","15m"]
+            t.integer('gesamt').defaultTo(0)         // Symbole nach den Hürden
+            t.integer('fortschritt').defaultTo(0)
+            t.integer('geprueft').defaultTo(0)       // Symbole im Universum
+            t.integer('verworfenHuerde').defaultTo(0)
+            /*
+             * Die ehrliche Gegenprobe: Wie gut sagte der vorige Lauf diesen
+             * voraus? Nahe null heisst, die Rangfolge ist Rauschen — und dann
+             * soll die Seite das sagen, statt eine Liste zu zeigen, die
+             * überzeugend aussieht.
+             */
+            t.double('rangkorrelation').defaultTo(0)
+            t.integer('vergleichslauf').defaultTo(0)
+            t.text('einordnung').defaultTo('')       // kurzer KI-Text
+            t.double('kostenUsd').defaultTo(0)
+            t.text('quellenStand').defaultTo('{}')   // JSON
+            t.text('fehler').defaultTo('')
+            t.index(['erstelltAm'], 'idx_coinradar_zeit')
+        })
+        console.log(' -> Created table: coinradar_laeufe')
+    }
+
+    /*
+     * Ein Coin je Lauf. `unique(laufId, symbol)` ist nicht bloss Hygiene,
+     * sondern die Wiederaufnahme: „was fehlt noch" heisst „welches Symbol hat
+     * keine Zeile". Ein abgebrochener Lauf setzt damit dort fort, wo er stand.
+     */
+    if (!(await knex.schema.hasTable('coinradar_zeilen'))) {
+        await knex.schema.createTable('coinradar_zeilen', (t) => {
+            t.increments('id').primary()
+            t.integer('laufId').notNullable()
+            t.string('symbol').notNullable()
+            t.integer('note').defaultTo(0)           // 0–100
+            t.integer('rang').defaultTo(0)
+            t.string('status').defaultTo('bewertet') // bewertet | huerde
+            t.text('huerdeGrund').defaultTo('')      // umsatz_zu_klein | spread_zu_weit …
+            // Rohwerte — damit die Note nachrechenbar bleibt
+            t.double('umsatz24h').defaultTo(0)
+            t.double('spreadBp').defaultTo(0)
+            t.double('tiefeUsd').defaultTo(0)
+            t.double('fundingJahresRate').defaultTo(0)
+            t.double('atrPct').defaultTo(0)
+            t.double('rvol').defaultTo(0)
+            t.double('adx').defaultTo(0)
+            t.text('jeZeiteinheit').defaultTo('{}')  // JSON: Kennzahlen je Zeiteinheit
+            t.text('teilnoten').defaultTo('{}')      // JSON: bewegung/imSpiel/trend/kosten
+            t.bigInteger('erstelltAm').defaultTo(0)
+            t.unique(['laufId', 'symbol'], 'uq_coinradar_zeile')
+            t.index(['laufId'], 'idx_coinradar_lauf')
+        })
+        console.log(' -> Created table: coinradar_zeilen')
+    }
+
+    /* Einstellungen als Schlüssel-Wert, wie beim Hype-Radar und aus demselben
+     * Grund: Gewichte, Hürden und Zeiteinheiten sind Listen und Objekte. */
+    if (!(await knex.schema.hasTable('coinradar_settings'))) {
+        await knex.schema.createTable('coinradar_settings', (t) => {
+            t.increments('id').primary()
+            t.string('schluessel').notNullable().unique()
+            t.text('wert').defaultTo('')
+            t.bigInteger('aktualisiertAm').defaultTo(0)
+        })
+        console.log(' -> Created table: coinradar_settings')
+    }
+
     // ── KI-Verbrauch ─────────────────────────────────────────────────────
 
     /*
@@ -2268,6 +2350,16 @@ async function runMigrations(knex, client) {
     // Stumm heisst: beobachten ja, melden nein. Der Favorit bleibt in der
     // Leiste, nur die Alarme schweigen.
     await addColumnIfNotExists('hype_favoriten', 'stumm', (t) => t.integer('stumm').defaultTo(0))
+
+    /*
+     * Favoriten dienen beiden Radaren. Der Wachhund muss unterscheiden können,
+     * woher ein Coin kommt: für einen Fund vom dezentralen Markt gibt es ein
+     * Handelspaar zum Nachschlagen, für ein Bitunix-Symbol nicht.
+     *
+     * Steht hier und nicht im Coin-Radar-Block: dieser läuft weiter oben, und
+     * auf einer frischen Datenbank gibt es die Tabelle dort noch gar nicht.
+     */
+    await addColumnIfNotExists('hype_favoriten', 'quelle', (t) => t.string('quelle').defaultTo('hype'))
 
     /*
      * Schlüssel der Zusatzquellen. GoPlus, DexScreener und GeckoTerminal

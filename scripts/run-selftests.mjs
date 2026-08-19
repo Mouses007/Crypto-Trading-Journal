@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 const wurzel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 /** Verzeichnisse, in denen Selbsttests liegen (nicht rekursiv gesucht). */
-const ORTE = ['server', 'server/execution', 'server/strategies', 'server/hype-radar', 'src/utils', 'shared']
+const ORTE = ['server', 'server/execution', 'server/strategies', 'server/hype-radar', 'server/coin-radar', 'src/utils', 'shared']
 
 /** Dateien, die hier nicht hingehören (z.B. weil sie eine DB brauchen — derzeit keine). */
 const AUSGENOMMEN = new Set([])
