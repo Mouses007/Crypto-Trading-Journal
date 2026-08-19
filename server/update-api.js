@@ -77,7 +77,34 @@ export function isLocalRequest(req) {
     // "Host: localhost" senden und den localhost-Schutz aushebeln (z.B. das
     // Passwort-Gate über /api/auth/reset ohne Anmeldung deaktivieren).
     const ip = String(req.socket?.remoteAddress || req.ip || '').replace('::ffff:', '')
-    return ip === '127.0.0.1' || ip === '::1'
+    if (ip !== '127.0.0.1' && ip !== '::1') return false
+
+    /*
+     * Die Peer-IP allein reicht NICHT. Läuft ein Reverse-Proxy (nginx, Caddy,
+     * Traefik, Synology-Portalweiterleitung) auf demselben Rechner und
+     * verbindet über Loopback zur App, dann trägt JEDE Anfrage aus dem Internet
+     * die Peer-IP 127.0.0.1. Damit gälte ein wildfremder Client als „lokal" —
+     * und `/api/auth/reset` ist öffentlich erreichbar und schaltet das
+     * Passwort-Gate ab. Anschliessend darf sich der Aufrufer als
+     * „Ersteinrichtung" ein eigenes Passwort setzen und bekommt sofort das
+     * Sitzungs-Cookie. Aus „nur von diesem Rechner" wird so „von überall".
+     *
+     * Ein echter Aufruf vom selben Rechner trägt keine Weiterleitungs-Header;
+     * ein durchgereichter Aufruf trägt sie praktisch immer. Sind sie da, ist
+     * die Verbindung nicht das, wofür sie sich ausgibt.
+     *
+     * Bewusst KEIN `trust proxy`: das würde der App erlauben, der vom Proxy
+     * behaupteten Client-IP zu glauben. Für ein Einzelplatz-Journal ist die
+     * strengere Antwort die richtige — im Zweifel nicht lokal.
+     */
+    const weiterleitungsHinweise = [
+        'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto',
+        'x-real-ip', 'forwarded', 'cf-connecting-ip',
+    ]
+    for (const kopf of weiterleitungsHinweise) {
+        if (req.headers?.[kopf]) return false
+    }
+    return true
 }
 function effectiveIsDocker(req) {
     return IS_DOCKER && !isLocalRequest(req)

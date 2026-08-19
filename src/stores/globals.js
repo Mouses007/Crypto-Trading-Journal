@@ -259,7 +259,15 @@ export const selectedMonthPreset = typeof localStorage !== 'undefined' ? ref(loc
 export const selectedPeriodRange = typeof localStorage !== 'undefined' ? ref(JSON.parse(localStorage.getItem('selectedPeriodRange'))) : ""
 export const selectedDashTab = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedDashTab')) : ""
 
-export const amountCase = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedGrossNet')) : ""
+/*
+ * `localStorage.getItem` liefert bei frischer Installation `null`. Ungeprüft
+ * wurde daraus `pAndL['nullWinsCount']` — also `undefined / n` = NaN, und zwar
+ * für JEDEN Tag, bis der Nutzer den Filter einmal anfasst. Deshalb hier eine
+ * Vorgabe statt eines rohen Speicherwerts. Nur 'gross' und 'net' sind gültig.
+ */
+const GUELTIGE_BETRAGSART = new Set(['gross', 'net'])
+const gespeicherteBetragsart = typeof localStorage !== 'undefined' ? localStorage.getItem('selectedGrossNet') : null
+export const amountCase = ref(GUELTIGE_BETRAGSART.has(gespeicherteBetragsart) ? gespeicherteBetragsart : 'gross')
 export const amountCapital = ref()
 
 /**************************************

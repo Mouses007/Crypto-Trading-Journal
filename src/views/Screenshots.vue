@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onBeforeMount, onMounted } from 'vue'
+import { ref, reactive, computed, onBeforeMount, onMounted, onBeforeUnmount } from 'vue'
 import NoData from '../components/NoData.vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Screenshot from '../components/Screenshot.vue';
@@ -35,21 +35,28 @@ onBeforeMount(async () => {
 
 })
 
+/*
+ * Benannt statt anonym — siehe Diary.vue. Ohne Abmeldung stapelte jeder Besuch
+ * der Seite einen weiteren Endlos-Scroll am `window`.
+ */
+function beiScrollNachladen() {
+    const scrollFromTop = window.scrollY
+    const visibleScreen = (window.innerHeight + 200) // 200 Puffer: lädt schon vor dem Ende
+    const documentHeight = document.documentElement.scrollHeight
+    const difference = documentHeight - (scrollFromTop + visibleScreen)
+    if (difference > 0) return
+    if (!spinnerLoadMore.value && !spinnerLoadingPage.value && !endOfList.value && expandedScreenshot.value == null) {
+        useLoadMore()
+    }
+}
+
 onMounted(async () => {
     await useMountScreenshots()
-    window.addEventListener('scroll', () => {
-        let scrollFromTop = window.scrollY
-        let visibleScreen = (window.innerHeight + 200) // adding 200 so that loads before getting to bottom
-        let documentHeight = document.documentElement.scrollHeight
-        let difference = documentHeight - (scrollFromTop + visibleScreen)
-        if (difference <= 0) {
-            if (!spinnerLoadMore.value && !spinnerLoadingPage.value && !endOfList.value && expandedScreenshot.value == null) {
-                useLoadMore()
-            }
-        }
-    })
+    window.addEventListener('scroll', beiScrollNachladen, { passive: true })
     useCheckVisibleScreen()
 })
+
+onBeforeUnmount(() => window.removeEventListener('scroll', beiScrollNachladen))
 
 </script>
 

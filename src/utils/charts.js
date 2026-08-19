@@ -7,6 +7,24 @@ import { splitFunding } from "./funding.js"
 import dayjs from './dayjs-setup.js'
 import * as echarts from 'echarts';
 import i18n from '../i18n'
+
+/**
+ * Ein Diagramm auf diesem Element holen — vorhandenes wiederverwenden, sonst
+ * anlegen.
+ *
+ * `echarts.init` auf einem DOM-Knoten, der schon eine Instanz trägt, wirft in
+ * ECharts 5. Auf dem Dashboard passiert genau das bei jedem Filterwechsel: die
+ * Views werden nicht am Leben gehalten, die Knoten aber wiederverwendet. Je
+ * nach Reihenfolge blieb ein Diagramm dann leer oder die alte Instanz hing als
+ * Leiche im Speicher, samt ihrer Resize-Beobachter.
+ *
+ * Die neueren Kachel-Helfer machten es längst richtig; das Altinventar nicht.
+ * Diese Funktion vereinheitlicht beides.
+ */
+function holeChart(el) {
+    if (!el) return null
+    return echarts.getInstanceByDom(el) || echarts.init(el)
+}
 const _t = (key, named) => i18n.global.t(key, named)
 
 const cssColor87 = "rgba(255, 255, 255, 0.87)"
@@ -50,7 +68,7 @@ export async function useECharts(param) {
         //console.log("chartId " + chartId)
         if (param == "clear") {
             var clearEl = document.getElementById(chartId)
-            if (clearEl) echarts.init(clearEl).clear()
+            if (clearEl) echarts.getInstanceByDom(clearEl)?.clear()
         }
 
         if (param == "init") {
@@ -94,7 +112,7 @@ export async function useECharts(param) {
         let elements = document.querySelectorAll(`[id^="${prefix}"]`);
         elements.forEach(element => {
             if (param == "clear") {
-                echarts.init(element).clear();
+                echarts.getInstanceByDom(element)?.clear();
             }
             if (param == "init" || param == prefix) {
                 // Nicht initialisieren wenn Element versteckt ist (Bootstrap-Tab)
@@ -154,10 +172,30 @@ export function useRenderDoubleLineChart() {
 
 export function useRenderPieChart() {
     return new Promise(async (resolve, reject) => {
+        /*
+         * Zwei Löcher steckten in den beiden Zeilen unten:
+         *
+         * 1. `pAndL` ist ein ungetypter Vertrag mit drei Schreibpfaden, und der
+         *    Live-Abgleich schreibt kein `netWinsCount`/`netLossCount`. Beim
+         *    Umschalten auf „Netto" wurde dort `undefined / n` gerechnet.
+         * 2. `amountCase` war bei frischer Installation `null` (jetzt oben
+         *    behoben) — dann wurde `pAndL['nullWinsCount']` gelesen.
+         *
+         * Beides ergab NaN und damit einen kaputten Ring statt einer sichtbaren
+         * Lücke. Fehlt die Zählung, ist das KEINE Quote von 0 % — eine 0 würde
+         * behaupten, es habe an dem Tag keine Gewinner gegeben. Der leere Ring
+         * sagt „unbekannt", und das ist die ehrliche Aussage.
+         */
+        const art = amountCase.value === 'net' ? 'net' : 'gross'
         filteredTrades.forEach(el => {
             var chartId = "pieChart" + el.dateUnix
-            var probWins = el.pAndL.trades ? (el.pAndL[amountCase.value + 'WinsCount'] / el.pAndL.trades) : 0
-            var probLoss = el.pAndL.trades ? (el.pAndL[amountCase.value + 'LossCount'] / el.pAndL.trades) : 0
+            const pl = el.pAndL || {}
+            const anzahl = Number(pl.trades) || 0
+            const wins = Number(pl[art + 'WinsCount'])
+            const loss = Number(pl[art + 'LossCount'])
+            const bekannt = anzahl > 0 && Number.isFinite(wins) && Number.isFinite(loss)
+            var probWins = bekannt ? wins / anzahl : 0
+            var probLoss = bekannt ? loss / anzahl : 0
             //var probNetWins = (el.pAndL.netWinsCount / el.pAndL.trades)
             //var probNetLoss = (el.pAndL.netLossCount / el.pAndL.trades)
             //console.log("prob net win " + probNetWins + " and loss " + probNetLoss)
@@ -170,7 +208,7 @@ export function useRenderPieChart() {
 export function useLineChart(param) { //chartID, chartDataGross, chartDataNet, chartCategories
     console.log("  --> " + param)
     return new Promise((resolve, reject) => {
-        var myChart = echarts.init(document.getElementById(param));
+        var myChart = holeChart(document.getElementById(param));
         var chartData = []
         var chartXAxis = []
         var wins = 0
@@ -332,7 +370,7 @@ export function useDoubleLineChart(param1, param2, param3, param4) { //chartID, 
         //console.log("param1 "+param1)
         var el = document.getElementById(param1);
         if (!el) { resolve(); return; }
-        var myChart = echarts.init(el);
+        var myChart = holeChart(el);
         const option = {
             tooltip: {
                 trigger: 'axis',
@@ -426,7 +464,7 @@ export function useDoubleLineChart(param1, param2, param3, param4) { //chartID, 
 export function useLineBarChart(param) {
     //console.log("  --> " + param)
     return new Promise((resolve, reject) => {
-        var myChart = echarts.init(document.getElementById(param));
+        var myChart = holeChart(document.getElementById(param));
         var chartData = []
         var chartBarData = []
         var chartXAxis = []
@@ -644,7 +682,7 @@ export function usePieChart(param1, param2, param3) { //chart ID, green, red, pa
         //console.log("para 2 " + param2 + " and 3 " + param3)
         var el = document.getElementById(param1);
         if (!el) { resolve(); return; }
-        let myChart = echarts.init(el);
+        let myChart = holeChart(el);
         let green = param2
         let red = param3
         const option = {
@@ -1042,7 +1080,7 @@ export function useBarChart(param1) {
 
 
         }
-        var myChart = echarts.init(document.getElementById(param1));
+        var myChart = holeChart(document.getElementById(param1));
         const option = {
             xAxis: {
                 type: 'category',
@@ -1512,7 +1550,7 @@ export function useBarChartNegative(param1) {
         };
 
         if (series.length > 0) {
-            var myChart = echarts.init(document.getElementById(param1));
+            var myChart = holeChart(document.getElementById(param1));
             myChart.setOption(option);
         }
         resolve()
@@ -1523,7 +1561,7 @@ export function useBoxPlotChart() {
     //console.log("  --> boxPlotChart")
     return new Promise((resolve, reject) => {
         //console.log("totals "+JSON.stringify(filteredTrades))
-        var myChart = echarts.init(document.getElementById('boxPlotChart1'));
+        var myChart = holeChart(document.getElementById('boxPlotChart1'));
         var dataArray = []
         var dateArray = []
 
@@ -1716,7 +1754,7 @@ export function useScatterChart(param1) { //chart ID, green, red, page
     return new Promise((resolve, reject) => {
         //console.log("  --> " + param1)
         //console.log("para 2 " + param2 + " and 3 " + param3)
-        let myChart = echarts.init(document.getElementById(param1));
+        let myChart = holeChart(document.getElementById(param1));
         let dataArray = []
 
         filteredTrades.forEach(element => {
@@ -1944,7 +1982,7 @@ export function useCandlestickChart(ohlcTimestamps, ohlcPrices, ohlcVolumes, tra
                 reject(new Error("Candlestick chart container not found"))
                 return
             }
-            candlestickChart = echarts.init(chartEl)
+            candlestickChart = holeChart(chartEl)
         }
 
         let decimals = 2
@@ -2300,7 +2338,7 @@ export function useGaugeChart(elementId, value, title, colorStops) {
     return new Promise((resolve, reject) => {
         let el = document.getElementById(elementId)
         if (!el) { resolve(); return }
-        let myChart = echarts.getInstanceByDom(el) || echarts.init(el)
+        let myChart = echarts.getInstanceByDom(el) || holeChart(el)
 
         const defaultColorStops = [
             [0.3, redColor],
@@ -2387,7 +2425,7 @@ export function useHorizontalBarChart(elementId, categories, values, colors) {
     return new Promise((resolve, reject) => {
         let el = document.getElementById(elementId)
         if (!el) { resolve(); return }
-        let myChart = echarts.getInstanceByDom(el) || echarts.init(el)
+        let myChart = echarts.getInstanceByDom(el) || holeChart(el)
 
         const barData = values.map((val, idx) => ({
             value: val,
@@ -2460,7 +2498,7 @@ export function useSplitBarChart(elementId, categories, wins, losses) {
     return new Promise((resolve) => {
         let el = document.getElementById(elementId)
         if (!el) { resolve(); return }
-        let myChart = echarts.getInstanceByDom(el) || echarts.init(el)
+        let myChart = echarts.getInstanceByDom(el) || holeChart(el)
 
         // Maximalen Wert für symmetrische Achse berechnen
         const maxVal = Math.max(
@@ -2568,7 +2606,7 @@ export function useStressLineChart(elementId, dates, stressValues, options = {})
     return new Promise((resolve, reject) => {
         let el = document.getElementById(elementId)
         if (!el) { resolve(); return }
-        let myChart = echarts.getInstanceByDom(el) || echarts.init(el)
+        let myChart = echarts.getInstanceByDom(el) || holeChart(el)
 
         const maxVal = options.max || 5
         const lineColor = options.color || 'rgba(255, 167, 38, 0.85)'
@@ -2639,7 +2677,7 @@ export function useRadarChart(elementId, indicators, values) {
     return new Promise((resolve, reject) => {
         let el = document.getElementById(elementId)
         if (!el) { resolve(); return }
-        let myChart = echarts.init(el)
+        let myChart = holeChart(el)
 
         const option = {
             radar: {
@@ -2695,7 +2733,7 @@ export function usePerfChart(param) {
         ensureResizeListener()
         var el = document.getElementById(param)
         if (!el) { resolve(); return }
-        var myChart = echarts.init(el)
+        var myChart = holeChart(el)
 
         // Trades nach Datum sortiert (aufsteigend)
         let trades = [...filteredTradesTrades].sort((a, b) => a.td - b.td)
@@ -2893,7 +2931,7 @@ export function usePositionChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
         if (!el) { resolve(); return }
-        var myChart = echarts.init(el)
+        var myChart = holeChart(el)
 
         const keyObject = groups.position
         if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
@@ -2984,7 +3022,7 @@ export function useStrategyChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
         if (!el) { resolve(); return }
-        var myChart = echarts.init(el)
+        var myChart = holeChart(el)
 
         // Nur Tags aus der ersten Tag-Gruppe (Strategie) anzeigen
         const stratGroup = availableTags.length > 0 ? availableTags[0] : null
@@ -3088,7 +3126,7 @@ export function useWeekdayChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
         if (!el) { resolve(); return }
-        var myChart = echarts.init(el)
+        var myChart = holeChart(el)
 
         const keyObject = groups.day
         if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
@@ -3182,7 +3220,7 @@ export function useEntryTimeChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
         if (!el) { resolve(); return }
-        var myChart = echarts.init(el)
+        var myChart = holeChart(el)
 
         const keyObject = groups.timeframe
         if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
@@ -3274,7 +3312,7 @@ export function useDurationChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
         if (!el) { resolve(); return }
-        var myChart = echarts.init(el)
+        var myChart = holeChart(el)
 
         const keyObject = groups.duration
         if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
@@ -3379,7 +3417,7 @@ export function useSymbolChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
         if (!el) { resolve(); return }
-        var myChart = echarts.init(el)
+        var myChart = holeChart(el)
 
         const keyObject = groups.symbols
         if (!keyObject || Object.keys(keyObject).length === 0) { resolve(); return }
@@ -3488,7 +3526,7 @@ export function useHeatmapChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
         if (!el || el.clientWidth === 0) { resolve(); return }
-        var myChart = echarts.init(el)
+        var myChart = holeChart(el)
 
         if (!filteredTradesTrades || filteredTradesTrades.length === 0) { resolve(); return }
 
@@ -3622,7 +3660,7 @@ export function useFeesChart(param) {
     return new Promise((resolve, reject) => {
         var el = document.getElementById(param)
         if (!el) { resolve(); return }
-        var myChart = echarts.init(el)
+        var myChart = holeChart(el)
 
         let trades = [...filteredTradesTrades]
         if (trades.length === 0) { resolve(); return }
@@ -3807,7 +3845,7 @@ export function useSetupChart(elementId, candles, setup) {
 
     const vorhanden = echarts.getInstanceByDom(el)
     if (vorhanden) vorhanden.dispose()
-    const myChart = echarts.init(el)
+    const myChart = holeChart(el)
 
     const labels = candles.map(k => dayjs.unix(Math.floor(k.t / 1000)).tz(timeZoneTrade.value).format('DD.MM HH:mm'))
     // ECharts erwartet [open, close, low, high]
@@ -3921,7 +3959,7 @@ export function useAgentTimelineChart(elementId, candles, setups = [], trades = 
 
     const vorhanden = echarts.getInstanceByDom(el)
     if (vorhanden) vorhanden.dispose()
-    const myChart = echarts.init(el)
+    const myChart = holeChart(el)
 
     const labels = candles.map(k => dayjs.unix(Math.floor(k.t / 1000)).tz(timeZoneTrade.value).format('DD.MM HH:mm'))
     const werte = candles.map(k => [k.o, k.c, k.l, k.h])

@@ -310,62 +310,66 @@ export async function useInitQuill(param) {
 }
 
 
+/*
+ * Der Klick-Handler hängt am `document` und überlebt jedes Unmount. Vorher
+ * hängte JEDER Aufruf einen weiteren an — und aufgerufen wird beim Mount von
+ * Daily, Screenshots, Imports und Diary. Nach drei Navigationen lief
+ * `useDeleteTrade()` bei einem einzigen Klick auf „Ja" dreimal: der erste
+ * Durchlauf löschte, die folgenden fanden nichts mehr und warfen einen
+ * Fehlerdialog — oder sie fanden an einem Tag mit zwei Börsenzeilen die
+ * ZWEITE und löschten die gleich mit.
+ *
+ * Genau ein Handler für die Lebensdauer des Tabs. Die Popover-Instanzen selbst
+ * werden weiter bei jedem Aufruf aufgebaut, weil die Auslöse-Elemente wechseln
+ * — aber nur, wenn es noch keine gibt.
+ */
+let popoverHandlerAktiv = false
+let zuletztGeklickterLoeschKnopf = null
+
+async function behandlePopoverKlick(e) {
+    const ziel = e.target
+    if (ziel.classList.contains('popoverDelete')) {
+        zuletztGeklickterLoeschKnopf = ziel
+        document.querySelectorAll('.popoverDelete').forEach(function (popDelete) {
+            if (popDelete !== ziel) bootstrap.Popover.getInstance(popDelete)?.hide()
+        })
+        return
+    }
+
+    const bestaetigt = ziel.classList.contains('popoverYes')
+    const abgelehnt = ziel.classList.contains('popoverNo')
+    if (!bestaetigt && !abgelehnt) return
+
+    if (zuletztGeklickterLoeschKnopf) {
+        bootstrap.Popover.getInstance(zuletztGeklickterLoeschKnopf)?.hide()
+    }
+
+    if (abgelehnt) {
+        selectedItem.value = null
+        return
+    }
+
+    if (pageId.value == "screenshots" || pageId.value == "daily") {
+        useDeleteScreenshot()
+    }
+    if (pageId.value === "imports") {
+        await useDeleteTrade()
+        await useDeleteExcursions()
+    }
+}
+
 export function useInitPopover() {
     console.log(" -> Init Popover");
 
-    var popoverTriggerList
-
-    const getTriggerList = () => {
-        popoverTriggerList = document.querySelectorAll('[data-bs-toggle="popover"]');
-        popoverTriggerList.forEach(function (popoverTriggerEl) {
-
-            new bootstrap.Popover(popoverTriggerEl);
-        });
-    }
-
-    getTriggerList()
-
-    var popDel;
-
-    document.addEventListener('click', async function (e) {
-        if (e.target.classList.contains('popoverDelete')) {
-            popDel = e.target;
-            document.querySelectorAll('.popoverDelete').forEach(function (popDelete) {
-                if (popDelete !== popDel) {
-                    const popoverInstance = bootstrap.Popover.getInstance(popDelete);
-                    if (popoverInstance) {
-                        popoverInstance.hide();
-                    }
-                }
-            });
-        }
-
-        if (e.target.classList.contains('popoverYes')) {
-            document.querySelectorAll('.popoverDelete').forEach(function (popDelete) {
-                if (popDelete === popDel) {
-                    bootstrap.Popover.getInstance(popDelete).hide();
-                }
-            });
-            if (pageId.value == "screenshots" || pageId.value == "daily") {
-                useDeleteScreenshot();
-            }
-            if (pageId.value === "imports") {
-                await useDeleteTrade()
-                await useDeleteExcursions()
-            }
-        }
-
-        if (e.target.classList.contains('popoverNo')) {
-            document.querySelectorAll('.popoverDelete').forEach(function (popDelete) {
-                if (popDelete === popDel) {
-                    //console.log(" popDelete " + popDelete.classList)
-                    //console.log(" popDel " + popDel.classList)
-                    bootstrap.Popover.getInstance(popDelete).hide();
-                }
-            });
-            selectedItem.value = null;
-        }
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (popoverTriggerEl) {
+        // Ohne diese Prüfung stapeln sich auch die Popover-Instanzen selbst.
+        if (!bootstrap.Popover.getInstance(popoverTriggerEl)) new bootstrap.Popover(popoverTriggerEl)
     });
+
+    if (!popoverHandlerAktiv) {
+        document.addEventListener('click', behandlePopoverKlick)
+        popoverHandlerAktiv = true
+    }
 }
 
 export function useInitTooltip() {

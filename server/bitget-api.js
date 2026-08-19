@@ -2,6 +2,11 @@ import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { encrypt, decrypt, maskKey } from './crypto.js'
 
+// Rohantworten der Börsen enthalten Positionen, Kontostände, PnL und IDs.
+// Standardmässig NICHT ins Log — Logs landen in Container-Ausgaben, Backups und
+// Fehlerberichten. Zum Nachstellen: CTJ_DEBUG_BROKER=1 setzen.
+const BROKER_DEBUG = process.env.CTJ_DEBUG_BROKER === '1'
+
 const BASE_URL = 'https://api.bitget.com'
 
 /**
@@ -398,7 +403,7 @@ export function setupBitgetRoutes(app) {
 
             const result = await getCurrentPositions(config.apiKey, config.secretKey, config.passphrase)
 
-            console.log(' -> Bitget open positions raw response:', JSON.stringify(result).substring(0, 500))
+            if (BROKER_DEBUG) console.log(' -> Bitget open positions raw response:', JSON.stringify(result).substring(0, 500))
 
             // Bitget all-position: data is an array of position objects
             const raw = Array.isArray(result.data) ? result.data : []

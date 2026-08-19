@@ -5,6 +5,22 @@
  */
 import axios from 'axios'
 
+/*
+ * Ein hartes Zeitlimit für ALLE Anfragen des Frontends.
+ *
+ * Axios wartet ohne `timeout` unbegrenzt. Hängt der Server (oder eine
+ * Drittquelle dahinter), bleibt die Anfrage für immer offen: der Spinner dreht,
+ * die Kachel meldet nie „veraltet", und beim Kachelraster blockiert die
+ * laufende Anfrage den nächsten Takt. 20 Sekunden sind grosszügig genug für
+ * den langsamsten regulären Endpunkt und kurz genug, dass ein Hänger als
+ * Fehler sichtbar wird statt als Stillstand.
+ *
+ * Einzelne Aufrufe dürfen kürzer setzen — der Orderbuch-Snapshot im LiveFeed
+ * tut das mit 8 Sekunden, weil dort jede Sekunde Verzögerung ein veraltetes
+ * Buch bedeutet.
+ */
+axios.defaults.timeout = 20000
+
 // Central error handling for API responses
 axios.interceptors.response.use(
     response => {

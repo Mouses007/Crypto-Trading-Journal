@@ -2,6 +2,11 @@ import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { encrypt, decrypt, maskKey } from './crypto.js'
 
+// Rohantworten der Börsen enthalten Positionen, Kontostände, PnL und IDs.
+// Standardmässig NICHT ins Log — Logs landen in Container-Ausgaben, Backups und
+// Fehlerberichten. Zum Nachstellen: CTJ_DEBUG_BROKER=1 setzen.
+const BROKER_DEBUG = process.env.CTJ_DEBUG_BROKER === '1'
+
 const BASE_URL = 'https://fapi.bitunix.com'
 
 /**
@@ -630,7 +635,7 @@ export function setupBitunixRoutes(app) {
             // Positionen im Sekundentakt ab, und diese Zeile ersäufte damit
             // jedes andere Protokoll. Mit CTJ_DEBUG_BITUNIX=1 kommt sie zurück.
             if (process.env.CTJ_DEBUG_BITUNIX === '1') {
-                console.log(' -> Bitunix pending positions raw response:', JSON.stringify(result).substring(0, 500))
+                if (BROKER_DEBUG) console.log(' -> Bitunix pending positions raw response:', JSON.stringify(result).substring(0, 500))
             }
 
             if (result.code !== 0) {
@@ -744,7 +749,7 @@ export function setupBitunixRoutes(app) {
             }
 
             const result = await bitunixRequest('GET', '/api/v1/futures/account', config.apiKey, config.secretKey, { marginCoin: 'USDT' })
-            console.log(' -> Bitunix account raw:', JSON.stringify(result).substring(0, 500))
+            if (BROKER_DEBUG) console.log(' -> Bitunix account raw:', JSON.stringify(result).substring(0, 500))
 
             if (result.code !== 0) {
                 return res.status(400).json({ error: result.msg || 'Bitunix API Fehler' })

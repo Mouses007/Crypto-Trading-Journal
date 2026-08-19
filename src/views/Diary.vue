@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeMount } from 'vue'
+import { onMounted, onBeforeMount, onBeforeUnmount } from 'vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import NoData from '../components/NoData.vue';
 import { spinnerLoadingPage, selectedItem, spinnerLoadMore, endOfList } from '../stores/ui.js';
@@ -16,6 +16,23 @@ onBeforeMount(async () => {
 
 })
 
+/*
+ * Benannt statt anonym, damit er beim Verlassen der Seite wieder abgehängt
+ * werden kann. Der Router hält die Views nicht am Leben (`keep-alive` ist
+ * nirgends gesetzt), der Listener am `window` überlebt das Unmount aber
+ * trotzdem — jeder erneute Besuch stapelte einen weiteren Endlos-Scroll.
+ */
+function beiScrollNachladen() {
+    const scrollTop = window.scrollY
+    const visibleScreen = window.innerHeight
+    const documentHeight = document.documentElement.scrollHeight
+    const difference = documentHeight - (scrollTop + visibleScreen)
+    if (difference > 0) return
+    // Nicht mehrfach feuern: nicht beim Erstladen und nicht, solange schon
+    // nachgeladen wird.
+    if (!spinnerLoadMore.value && !spinnerLoadingPage.value && !endOfList.value) useLoadMore()
+}
+
 onMounted(async () => {
     // Reset state for fresh load
     diaries.length = 0
@@ -25,20 +42,11 @@ onMounted(async () => {
     await useGetDiaries(true)
     await Promise.all([useGetTags(), useGetAvailableTags(), useGetSatisfactions()])
     useInitPopover()
-    window.addEventListener('scroll', () => {
-        let scrollTop = window.scrollY
-        let visibleScreen = window.innerHeight
-        let documentHeight = document.documentElement.scrollHeight
-        let difference = documentHeight - (scrollTop + visibleScreen)
-
-        if (difference <= 0) {
-            if (!spinnerLoadMore.value && !spinnerLoadingPage.value && !endOfList.value) { //To avoid firing multiple times, make sure it's not loadin for the first time and that there is not already a loading more (spinner)
-                useLoadMore()
-            }
-        }
-    })
+    window.addEventListener('scroll', beiScrollNachladen, { passive: true })
     useCheckVisibleScreen()
 })
+
+onBeforeUnmount(() => window.removeEventListener('scroll', beiScrollNachladen))
 </script>
 
 <template>

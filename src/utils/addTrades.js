@@ -645,32 +645,60 @@ export const useGetMFEPrices = (tempExec, initEntryTime, initEntryPrice, trde, o
         //console.log(" ohlcvSymbol " + JSON.stringify(ohlcvSymbol))
 
         if (ohlcvSymbol != undefined) {
-            //findIndex gets the first value. So, for entry, if equal, we take next candle. For exit, if equal, we use that candle
-            let tempStartIndex = ohlcvSymbol.findIndex(n => n.t >= initEntryTime * 1000)
-            let tempEndIndex = ohlcvSymbol.findIndex(n => n.t >= trde.exitTime * 1000) //findIndex returns the first element
-            let tempStartTime = ohlcvSymbol[tempStartIndex]
-            let tempEndTime = ohlcvSymbol[tempEndIndex]
+            /*
+             * findIndex liefert die ERSTE Kerze ab dem Zeitpunkt. Gewollt ist:
+             * liegt der Einstieg exakt auf einer Kerzengrenze, gehört diese
+             * Kerze noch zum Einstieg und wird übersprungen; liegt der Ausstieg
+             * exakt auf einer Grenze, zählt diese Kerze mit.
+             *
+             * Genau das tat der Code NICHT. Verglichen wurde das Kerzenobjekt
+             * (`ohlcvSymbol[i]`) mit einer Sekundenzahl — nie gleich, also lief
+             * immer der else-Zweig: die Einstiegskerze floss trotz Absicht mit
+             * ein, die Ausstiegskerze fiel trotz Absicht heraus. Beide Grenzen
+             * waren um eine Kerze verschoben, und da MFE das MAXIMUM über das
+             * Fenster ist, verschob das die Kennzahl systematisch.
+             *
+             * `endTime` bekam im nie erreichten Zweig zudem das Objekt statt
+             * `.t` zugewiesen — repariert man nur den Vergleich, landet ein
+             * Objekt in `dayjs()`. Deshalb hier beides.
+             */
+            const entryMs = initEntryTime * 1000
+            const exitMs = trde.exitTime * 1000
+            let tempStartIndex = ohlcvSymbol.findIndex(n => n.t >= entryMs)
+            let tempEndIndex = ohlcvSymbol.findIndex(n => n.t >= exitMs)
+
+            // Liegt der Trade ganz ausserhalb der geladenen Historie, gibt es
+            // nichts zu messen. Vorher lief das in `ohlcvSymbol[-1].t`.
+            if (tempStartIndex < 0 || tempEndIndex < 0) {
+                return resolve(mfePrices)
+            }
 
             let startIndex
             let endIndex
             let startTime
             let endTime
 
-            if (tempStartTime == initEntryTime) {
+            if (ohlcvSymbol[tempStartIndex].t === entryMs) {
                 startIndex = tempStartIndex + 1
-                startTime = ohlcvSymbol[startIndex].t
             } else {
                 startIndex = tempStartIndex
-                startTime = ohlcvSymbol[tempStartIndex].t
             }
 
-            if (tempEndTime == trde.exitTime) {
+            if (ohlcvSymbol[tempEndIndex].t === exitMs) {
                 endIndex = tempEndIndex
-                endTime = tempEndTime
             } else {
                 endIndex = tempEndIndex - 1
-                endTime = ohlcvSymbol[tempEndIndex - 1].t
             }
+
+            // Nach dem Verschieben können die Grenzen aus dem Array laufen oder
+            // sich kreuzen (Ein- und Ausstieg in derselben Kerze). Der Aufrufer
+            // unten fängt `endTime < startTime` als Sonderfall ab — dafür
+            // müssen beide Werte aber existieren.
+            if (!ohlcvSymbol[startIndex] || !ohlcvSymbol[endIndex]) {
+                return resolve(mfePrices)
+            }
+            startTime = ohlcvSymbol[startIndex].t
+            endTime = ohlcvSymbol[endIndex].t
 
             //console.log("   ----> Temp Start index " + tempStartIndex + ", temp end index " + tempEndIndex)
             //console.log("   ----> EntryTime " + initEntryTime + " and start time " + startTime)
@@ -1866,68 +1894,79 @@ export async function useUploadTrades(param99, param0) {
     spinnerLoadingPage.value = true
     //spinnerLoadingPageText.value = "Uploading and storing trades(s) ..."
 
-    let numberOfDates = 0
-    let i = 0
     //Function uplaod trades to parse
-    const uploadToParse = async (param1, param2, param3) => {
-        return new Promise(async (resolve, reject) => {
-            let data = {
-                date: dayjs.unix(param1).format("YYYY-MM-DD"),
-                dateUnix: Number(param1),
-                openPositions: param3
-            }
-            if (param2 == "trades") {
-                data.executions = executions[param1]
-                data.trades = trades[param1]
-                data.blotter = blotter[param1]
-                data.pAndL = pAndL[param1]
-            }
+    /*
+     * Fehlgeschlagene Tage werden gesammelt, nicht verschluckt. Der Aufrufer
+     * zeigt sie am Ende an — vorher sah ein halber Import aus wie ein ganzer.
+     */
+    const fehlgeschlageneTage = []
 
-            try {
-                const result = await dbCreate(param2, data)
-                console.log(" -> Added new " + param2 + " with id " + result.objectId)
-                i++
-                if (i == numberOfDates) {
-                    resolve("resolve")
-                } else {
-                    resolve()
-                }
-            } catch (error) {
-                console.log('Failed to create new trade: ' + error.message);
-                spinnerLoadingPage.value = false
-            }
-        })
+    const uploadToParse = async (param1, param2, param3) => {
+        let data = {
+            date: dayjs.unix(param1).format("YYYY-MM-DD"),
+            dateUnix: Number(param1),
+            openPositions: param3,
+            /*
+             * Die Tageszeile MUSS den Broker tragen. Ohne ihn greift die
+             * Vorgabe der Spalte, und ein Bitget-CSV landete als
+             * Bitunix-Tag. Gefiltert wird auf Zeilenebene — Kontostand je
+             * Börse, Winrate-Kachel, ESP32-Anzeige und vor allem die
+             * Duplikatsprüfung des Schnellimports lesen dieses Feld. Der
+             * falsch beschriftete Tag war für den Bitget-Schnellimport
+             * unsichtbar und wurde ein zweites Mal angelegt.
+             */
+            broker: selectedBroker.value || 'bitunix',
+        }
+        if (param2 == "trades") {
+            data.executions = executions[param1]
+            data.trades = trades[param1]
+            data.blotter = blotter[param1]
+            data.pAndL = pAndL[param1]
+        }
+
+        try {
+            const result = await dbCreate(param2, data)
+            console.log(" -> Added new " + param2 + " with id " + result.objectId)
+            return { ok: true }
+        } catch (error) {
+            /*
+             * Hier stand ein `new Promise(async …)`, dessen catch-Zweig WEDER
+             * auflöste noch ablehnte. Das await darauf kehrte nie zurück: die
+             * Schleife blieb stehen, der Import brach still mitten drin ab, und
+             * weil der Spinner vorher schon abgeschaltet wurde, sah die Seite
+             * fertig aus. MFE-Preise, Positionsabgleich und Weiterleitung
+             * passierten nie.
+             *
+             * Ein async-Executor kann seinen Fehler ohnehin nicht nach aussen
+             * werfen — der Promise-Konstruktor verschluckt ihn. Der Wrapper ist
+             * deshalb ersatzlos entfallen; die Funktion war bereits `async`.
+             */
+            console.log('Failed to create new trade: ' + error.message)
+            fehlgeschlageneTage.push({ tag: data.date, grund: error?.message || String(error) })
+            return { ok: false }
+        }
     }
 
 
+    /*
+     * Auch hier ist der Promise-Wrapper weg. Er löste NUR auf, wenn der Zähler
+     * am Ende die Zahl der Tage traf — ein einziger Fehlschlag verhinderte das
+     * dauerhaft, und der Aufrufer wartete für immer.
+     */
     const uploadFunction = async (param) => {
-        //console.log(" -> Upload function for "+param)
-        return new Promise(async (resolve, reject) => {
-            let keys
-            i = 0
-            numberOfDates = 0
+        let keys = []
+        if (param == "trades") keys = Object.keys(executions)
+        if (param == "cashJournals") keys = Object.keys(cashJournals.value)
+        console.log("num of dates " + keys.length)
 
-            if (param == "trades") {
-                keys = Object.keys(executions)
-                numberOfDates = Object.keys(executions).length
-            }
-            if (param == "cashJournals") {
-                keys = Object.keys(cashJournals.value)
-                numberOfDates = Object.keys(cashJournals.value).length
-            }
-            console.log("num of dates " + numberOfDates)
-            for (const key of keys) {
-                //console.log(" key "+key)
-                //console.log(" trades "+JSON.stringify(trades[key]))
-                let checkIfOpenPositions = trades[key].findIndex(x => x.openPosition == true)
-                //console.log(" checkIfOpenPositions "+checkIfOpenPositions)
-
-                checkIfOpenPositions != -1 ? checkIfOpenPositions = true : checkIfOpenPositions = false
-                const promise = await uploadToParse(key, param, checkIfOpenPositions)
-                //console.log("promise " + JSON.stringify(promise))
-                if (promise == "resolve") resolve()
-            }
-        })
+        let geschrieben = 0
+        for (const key of keys) {
+            let checkIfOpenPositions = trades[key]?.findIndex(x => x.openPosition == true)
+            checkIfOpenPositions != -1 ? checkIfOpenPositions = true : checkIfOpenPositions = false
+            const r = await uploadToParse(key, param, checkIfOpenPositions)
+            if (r.ok) geschrieben++
+        }
+        return { geschrieben, fehler: fehlgeschlageneTage }
     }
 
     const checkTradeAccounts = async () => {
@@ -2044,7 +2083,15 @@ export async function useUploadTrades(param99, param0) {
         })
     }
 
-    if (Object.keys(executions).length > 0) await uploadFunction("trades")
+    if (Object.keys(executions).length > 0) {
+        const bilanz = await uploadFunction("trades")
+        // Der Nutzer erfährt, was NICHT ankam. Vorher blieb der Import beim
+        // ersten Fehler stumm stehen und die Seite sah fertig aus.
+        if (bilanz.fehler.length > 0) {
+            alert(`${bilanz.geschrieben} Handelstag(e) importiert, ${bilanz.fehler.length} fehlgeschlagen:\n`
+                + bilanz.fehler.map(f => `${f.tag}: ${f.grund}`).join('\n'))
+        }
+    }
     if (Object.keys(executions).length > 0 && mfePrices.length > 0) await useUpdateMfePrices(param99, param0)
     if (openPositionsParse.length > 0) {
         await loopOpenPositionsParse()
