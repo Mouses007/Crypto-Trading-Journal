@@ -32,6 +32,7 @@ import { getKnex } from './database.js'
 import { decrypt, encrypt } from './crypto.js'
 import { beansprucheAufgabe, gibAufgabeFrei, merkeAufgabenFehler } from './db-claim.js'
 import { logWarn, logError } from './logger.js'
+import { baueMail, logoAnhang } from './mail-vorlage.js'
 
 /**
  * Alle Meldungstypen der App.
@@ -43,22 +44,28 @@ import { logWarn, logError } from './logger.js'
  *
  * `schwelleSpalte` verweist auf die Einstellungsspalte, die den Auslösepunkt
  * bestimmt. Die Kanalwahl steht getrennt davon in `settings.benachrichtigungen`.
+ *
+ * `symbol`, `ton` und `bereich` sind die Gestaltung der Mail (siehe
+ * `mail-vorlage.js`). Sie stehen hier und nicht dort, damit ein neuer
+ * Meldungstyp weiterhin an EINER Stelle vollständig beschrieben ist.
+ * Der `ton` folgt der Dringlichkeit, nicht der Gruppe: der Not-Aus ist rot,
+ * obwohl er in derselben Gruppe sitzt wie eine ausgeführte Order.
  */
 export const REGISTER = [
     // ── Markt ────────────────────────────────────────────────────────────
-    { id: 'picycleKreuzung', gruppe: 'markt', email: true },
-    { id: 'picycleVorwarnung', gruppe: 'markt', email: true, schwelleSpalte: 'radarPicycleSchwelle' },
-    { id: 'fundingDivergenz', gruppe: 'markt', email: true, schwelleSpalte: 'radarFundingDivergenz' },
+    { id: 'picycleKreuzung', gruppe: 'markt', email: true, symbol: '\u{1F53A}', ton: 'warnung', bereich: 'Markt · Pi-Cycle' },
+    { id: 'picycleVorwarnung', gruppe: 'markt', email: true, schwelleSpalte: 'radarPicycleSchwelle', symbol: '\u{1F441}\uFE0F', ton: 'info', bereich: 'Markt · Pi-Cycle' },
+    { id: 'fundingDivergenz', gruppe: 'markt', email: true, schwelleSpalte: 'radarFundingDivergenz', symbol: '\u2696\uFE0F', ton: 'info', bereich: 'Markt · Funding' },
     // ── Handel ───────────────────────────────────────────────────────────
-    { id: 'strategieOrderUnbekannt', gruppe: 'handel', email: true },
-    { id: 'strategieKillSwitch', gruppe: 'handel', email: true },
+    { id: 'strategieOrderUnbekannt', gruppe: 'handel', email: true, symbol: '\u2757', ton: 'gefahr', bereich: 'Handel · Strategie' },
+    { id: 'strategieKillSwitch', gruppe: 'handel', email: true, symbol: '\u{1F6D1}', ton: 'gefahr', bereich: 'Handel · Not-Aus' },
     // ── System ───────────────────────────────────────────────────────────
-    { id: 'lageberichtFertig', gruppe: 'system', email: true },
-    { id: 'kiBerichtFertig', gruppe: 'system', email: false },
-    { id: 'kiGuthabenLeer', gruppe: 'system', email: true },
-    { id: 'neueVersion', gruppe: 'system', email: true },
-    { id: 'aufzeichnungStumm', gruppe: 'system', email: true },
-    { id: 'importFertig', gruppe: 'system', email: false },
+    { id: 'lageberichtFertig', gruppe: 'system', email: true, symbol: '\u{1F4F0}', ton: 'gut', bereich: 'System · Nachrichten' },
+    { id: 'kiBerichtFertig', gruppe: 'system', email: false, symbol: '\u{1F4C4}', ton: 'gut', bereich: 'System · KI' },
+    { id: 'kiGuthabenLeer', gruppe: 'system', email: true, symbol: '\u{1F4B3}', ton: 'warnung', bereich: 'System · KI' },
+    { id: 'neueVersion', gruppe: 'system', email: true, symbol: '\u{1F195}', ton: 'gut', bereich: 'System · Update' },
+    { id: 'aufzeichnungStumm', gruppe: 'system', email: true, symbol: '\u{1F4E1}', ton: 'warnung', bereich: 'System · Aufzeichnung' },
+    { id: 'importFertig', gruppe: 'system', email: false, symbol: '\u{1F4E5}', ton: 'gut', bereich: 'System · Import' },
 ]
 
 const NACH_ID = new Map(REGISTER.map(e => [e.id, e]))
@@ -130,8 +137,12 @@ export function mailKonfigVollstaendig(s) {
  * Mail verschicken. Kein Transport-Zwischenspeicher: der Versand ist selten,
  * die Konfiguration darf sich jederzeit ändern, und ein veralteter Transport
  * wäre ein Fehler, den niemand findet.
+ *
+ * `html` und `anhaenge` sind freiwillig: ohne sie geht die Mail als reiner
+ * Text raus, wie vorher. Mit ihnen sieht jedes Postfach die gestaltete
+ * Fassung — und Textleser (oder ein Client, der HTML sperrt) den `text`.
  */
-async function sendeMail(s, { betreff, text }) {
+async function sendeMail(s, { betreff, text, html, anhaenge }) {
     const sicherheit = String(s.mailSicherheit || 'starttls')
     let passwort = ''
     if (s.mailPasswort) {
@@ -164,14 +175,40 @@ async function sendeMail(s, { betreff, text }) {
 
     try {
         await transport.sendMail({
-            from: String(s.mailVon),
+            // Anzeigename statt nackter Adresse — im Postfach steht dann die
+            // App und nicht „noreply@…".
+            from: { name: 'Crypto Trading Journal', address: String(s.mailVon) },
             to: String(s.mailAn),
             subject: betreff,
             text,
+            ...(html ? { html } : {}),
+            ...(anhaenge?.length ? { attachments: anhaenge } : {}),
         })
     } finally {
         transport.close()
     }
+}
+
+/**
+ * Aus Betreff und Text die fertige Mail bauen.
+ *
+ * Alles Ereignisabhängige (Sinnbild, Ton, Rubrik) kommt aus dem REGISTER,
+ * alles Absenderabhängige (Profilbild, Name) aus den Einstellungen — die
+ * Meldestellen selbst schicken weiterhin nur Betreff und Text.
+ */
+function gestalteteMail(s, id, { betreff, text }) {
+    const eintrag = NACH_ID.get(id) || {}
+    const logo = logoAnhang(s)
+    const mail = baueMail({
+        titel: betreff,
+        text,
+        symbol: eintrag.symbol,
+        ton: eintrag.ton,
+        bereich: eintrag.bereich,
+        nutzer: s?.username || '',
+        mitLogo: Boolean(logo),
+    })
+    return { ...mail, anhaenge: logo ? [logo] : [] }
 }
 
 /**
@@ -228,7 +265,7 @@ export async function melde(id, { betreff, text, schluessel = '', ttlMs = 12 * 6
         }
 
         try {
-            await sendeMail(s, { betreff, text })
+            await sendeMail(s, gestalteteMail(s, id, { betreff, text }))
         } catch (e) {
             /*
              * Ansprüche sind gesetzt, die Mail aber nie angekommen. Ohne
@@ -542,12 +579,21 @@ export function setupBenachrichtigungsRoutes(app) {
             if (!s?.mailHost || !s?.mailVon || !s?.mailAn) {
                 return res.status(400).json({ error: 'SMTP-Server, Absender und Empfänger müssen ausgefüllt sein.' })
             }
-            await sendeMail(s, {
-                betreff: 'Testmail aus dem Trading Journal',
+            const logo = logoAnhang(s)
+            const mail = baueMail({
+                titel: 'Testmail aus dem Trading Journal',
                 text: 'Wenn diese Nachricht ankommt, ist der E-Mail-Versand richtig eingerichtet.\n\n'
                     + `SMTP-Server: ${s.mailHost}:${s.mailPort} (${s.mailSicherheit})\n`
-                    + `Absender: ${s.mailVon}\nEmpfänger: ${s.mailAn}`,
+                    + `Absender: ${s.mailVon}\nEmpfänger: ${s.mailAn}\n\n`
+                    + 'So sehen ab jetzt alle Benachrichtigungen aus. Sinnbild und Farbe '
+                    + 'wechseln je nach Ereignis — rot bei Not-Aus, gelb bei Warnungen.',
+                symbol: '\u2705',
+                ton: 'gut',
+                bereich: 'System · Test',
+                nutzer: s?.username || '',
+                mitLogo: Boolean(logo),
             })
+            await sendeMail(s, { ...mail, anhaenge: logo ? [logo] : [] })
             res.json({ success: true })
         } catch (e) {
             // Kein 500: die Konfiguration ist falsch, nicht der Server kaputt
