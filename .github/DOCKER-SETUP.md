@@ -10,6 +10,9 @@ und `arm64`, gleichzeitig auf Docker Hub und in der GitHub-Registry.
 
 ## 1. Docker-Hub-Token anlegen (einmalig)
 
+✅ **Am 19.08.2026 erledigt** — beide Geheimnisse liegen im Repo, die Anmeldung
+läuft, `:edge` steht auf Docker Hub mit `amd64` **und** `arm64`.
+
 Ein Zugriffstoken statt des Kontopassworts, damit es einzeln widerrufbar bleibt.
 
 1. Docker Hub → **Account Settings → Personal access tokens → Generate new token**
@@ -26,6 +29,12 @@ New repository secret** zwei Einträge anlegen:
 
 Fehlen die beiden, läuft der Workflow trotzdem durch und veröffentlicht nur
 nach `ghcr.io` — er bricht nicht ab, warnt aber im Protokoll.
+
+⚠ Die Namen sind **feste Suchbegriffe** aus dem Workflow, keine frei wählbaren
+Bezeichnungen. Steht oben etwas anderes (`MOUSES007`, `DOCKERHUB_TOK`, …),
+findet der Workflow nichts, der Lauf wird trotzdem grün und überspringt Docker
+Hub stillschweigend — sichtbar nur an der Warnung unter „Annotations" und daran,
+dass der Schritt „Bei Docker Hub anmelden" auf *skipped* steht.
 
 ## 2. Testlauf — am 19.08.2026 bereits durchgeführt
 
