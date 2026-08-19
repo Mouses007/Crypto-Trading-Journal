@@ -53,6 +53,44 @@ Vue 3 + Express, SQLite or PostgreSQL, GPL-3.0.
 - **Overall picture (AI)**: one button turns everything the other tiles currently show into a five-line read — a market state, three to four points, the contradictions between the tiles and what to watch. The AI only ever sees the readings from the tiles (they are listed under "Basis" in the enlarged view), it looks nothing up and gives no trading recommendation. Nothing is generated without pressing the button.
 - Only crypto: Binance perpetuals are filtered to actual coins, so tokenised equities and commodities never show up
 
+### Hype-Radar and Coin-Radar (Entdecken)
+
+Two radars asking opposite questions, sharing one watchlist.
+
+**Hype-Radar — what is new out there, and what of it has substance?** Collects young
+coin projects from CoinGecko, DexScreener and GeckoTerminal, scores them from five
+sub-scores, then filters hard for scam patterns (GoPlus, RugCheck on Solana:
+honeypot, mint authority, holder concentration) *before* an AI writes a report about
+the few survivors. The number of independent sources weighs heaviest — a paid
+campaign fills one source, rarely three. A divergence quadrant plots attention
+against market confirmation, so bought noise becomes visible where a sorted list
+would hide it. Searching is free; the report costs a few cents to about a franc.
+
+**Coin-Radar — which of the tradable coins can be traded best right now?** Walks the
+~500 pairs that are tradable on Bitunix and measurable on Binance and ranks them by
+**ATR %** (does it move enough), **RVOL** (is something going on, measured against
+the coin's *own* average), **ADX** (trending or chopping) and **funding**
+(annualised, inverted — expensive holding costs points). Liquidity is a **gate, not
+a sub-score**: below 10M USD turnover or above 5 basis points spread a coin never
+enters the ranking, because high movement in an illiquid pair only means every order
+moves the price itself. Typically seventy to eighty pairs survive.
+
+The page states plainly what it does *not* claim: direction. It carries into the
+present because volatility is persistent — it comes in phases lasting weeks to
+months — while direction is not. Every run therefore also reports its own rank
+correlation with the previous run: near 1 the list holds, near 0 it is noise, and
+then the page says so. A run takes about half a minute and costs nothing; only the
+short AI paragraph above the table costs about a cent and can be switched off.
+Automation is off out of the box.
+
+**Shared favourites and watchdog** — the star in either list feeds the same watchlist,
+checked on its own schedule (default every 15 minutes) and delivered via the in-app
+alarm list, ntfy, Telegram or a webhook (e.g. Home Assistant, to flash a light). The
+rules differ by origin: for hype finds price jump, daily move, liquidity drain and a
+newly failing safety check; for Coin-Radar favourites price jump, daily move,
+turnover collapse, widening spread and extreme funding — a Bitunix perpetual has no
+liquidity pool that could drain.
+
 ### Live-Trading window (Live-Analyse)
 
 A second tile grid, separate from the Marktradar — the workspace for the two to

@@ -23,7 +23,7 @@ Oben in der Leiste wird zwischen den Modi umgeschaltet:
 - **Journal** — das eigentliche Trading-Journal: Dashboard, Tages-Ansicht, Kalender, Playbook, Auswertung, KI-Coach, Screenshots, Import.
 - **Live-Analyse** — Marktradar (Kachelraster mit Marktdaten), Nachrichten, Open Interest, Liquidität (Bookmap), Liquidationen sowie das Live-Trading-Fenster mit Session-Archiv und -Auswertung.
 - **Strategien (Beta)** — automatisch handelnde Strategie-Instanzen: Strategien, Setups, Editor, Baukasten, Performance, Labor, Coin-Rangliste. Über „Beta-Funktionen ausblenden" (Einstellungen → Layout & Stil) abschaltbar.
-- **Research** — Platzhalter, noch ohne Funktion.
+- **Entdecken (Research)** — zwei Radare mit gegensätzlichen Fragen: Hype-Radar („was ist neu draussen") und Coin-Radar („was lässt sich heute handeln"). Siehe Thema "entdecken".
 
 Links im Seitenmenü: Börsen-Umschalter (Bitunix/Bitget/Pionex), Pille „Kontoübersicht", darunter die Seiten des aktiven Modus. Die Einstellungen sind modusübergreifend immer erreichbar. Oben rechts sitzt der Augen-Button (Zensur-Modus: verbirgt Kontostände und Beträge, z.B. für Screenshots) und daneben der Roboter-Button als Schnellzugriff auf den KI-Agenten.`,
     },
@@ -60,6 +60,30 @@ Nach dem Import lassen sich Trades in der Tages-Ansicht mit Notizen, Tags, Playb
 - **Live-Trading** — siehe Thema "livetrading".
 
 Für aktuelle Werte der Kacheln kann der KI-Agent das Werkzeug query_marktradar nutzen.`,
+    },
+    entdecken: {
+        titel: 'Entdecken: Hype-Radar und Coin-Radar',
+        text: `Der Modus „Entdecken" enthält zwei Radare. Sie stellen gegensätzliche Fragen und teilen sich eine Favoritenliste.
+
+**Hype-Radar** — „was ist neu draussen, und was davon hat Substanz?" Er durchsucht CoinGecko, DexScreener und GeckoTerminal nach jungen Coin-Projekten, rechnet eine Hype-Note aus fünf Teilnoten (wie stark geredet wird, ob der Handel mitzieht, aus wie vielen unabhängigen Quellen der Fund stammt, ob er in ein laufendes Thema passt, wie jung das Handelspaar ist), prüft jeden Kandidaten hart auf Betrugsmuster (GoPlus, bei Solana RugCheck: Honeypot, Mint-Rechte, Halterkonzentration) und lässt erst danach ein Sprachmodell einen Bericht über die wenigen Übriggebliebenen schreiben.
+- „Nur suchen" kostet nichts; „Suchen & Bericht" hängt die KI dran (wenige Cent bis etwa ein Franken je Lauf, je nach gewählter Stufe).
+- Die Zahl der unabhängigen Quellen wiegt am schwersten: eine bezahlte Kampagne füllt eine Quelle, selten drei.
+- Der Divergenz-Quadrant zeigt Aufmerksamkeit gegen Marktbestätigung — oben links sitzt gekaufter Lärm, den eine sortierte Liste nicht sichtbar macht.
+- Zu jedem Fund steht, ob und wo er handelbar ist (Bitunix/Bitget/Pionex, getrennt nach Spot und Futures).
+
+**Coin-Radar** — „welcher der handelbaren Coins lässt sich gerade am besten handeln?" Er geht die Coins durch, die auf Bitunix handelbar und bei Binance messbar sind (rund 500 Paare), und ordnet sie nach vier gemessenen Grössen:
+- **ATR %** — wie stark sich der Coin bewegt, im Verhältnis zum Preis. Bewegt er sich zu wenig, frisst die Ausführung die Spanne.
+- **RVOL** — Volumen der letzten Kerze gegen den Schnitt der zwanzig davor. Verglichen wird der Coin mit SICH SELBST; über 2,0 gilt als „im Spiel".
+- **ADX** — trendet es (über 25) oder sägt es seitwärts (unter 20).
+- **Funding** — auf ein Jahr hochgerechnet, INVERTIERT: teures Halten kostet Punkte.
+Liquidität ist dabei eine HÜRDE und keine Teilnote: Umsatz unter 10 Mio USD oder Spread über 5 Basispunkte fliegt raus, bevor überhaupt gerechnet wird. Von rund 500 Paaren bleiben typisch siebzig bis achtzig übrig; wer woran gescheitert ist, zeigt „An den Hürden gescheitert".
+
+Wichtig: Der Coin-Radar sagt NICHTS über die Richtung. Er trägt in die Gegenwart, weil Volatilität beharrlich ist (sie kommt in Phasen über Wochen bis Monate) — die Richtung ist es nicht. Eine hohe Note heisst „dieser Coin lässt sich derzeit handeln", nicht „er steigt".
+- Ein Lauf dauert rund eine halbe Minute und kostet kein Geld; nur die kurze KI-Einordnung über der Tabelle kostet etwa einen Rappen und ist abschaltbar. Die Automatik ist ab Werk aus.
+- Der Reiter „Verlauf" zeigt die Rangkorrelation zum vorigen Lauf: nahe 1 hält die Liste, nahe 0 ist sie Rauschen — und dann sagt sie über die nächsten Stunden nichts.
+- Jede Note lässt sich aufklappen: vier Teilnoten als Balken plus die Rohwerte je Zeiteinheit (Vorgabe 1h trägt die Note, 15m bestätigt oder widerspricht).
+
+**Gemeinsame Favoriten und Wachhund** — der Stern in beiden Listen führt in dieselbe Beobachtungsliste. Ein Wachhund prüft sie im eigenen Takt (Vorgabe alle 15 Minuten) und meldet über die Alarm-Liste sowie optional ntfy, Telegram oder einen Webhook. Die Regeln unterscheiden sich nach Herkunft: bei Hype-Funden Preissprung, Tagesbewegung, Liquiditätsabfluss und eine erneut fehlschlagende Sicherheitsprüfung; bei Coin-Radar-Favoriten Preissprung, Tagesbewegung, Umsatzeinbruch, aufgehender Spread und extremes Funding — ein Bitunix-Perp hat keinen Liquiditätspool, der abfliessen könnte. Alle Schwellen stehen im Einstellungs-Reiter des Hype-Radars.`,
     },
     livetrading: {
         titel: 'Live-Trading: Sessions, Cockpit, Archiv, Auswertung',
