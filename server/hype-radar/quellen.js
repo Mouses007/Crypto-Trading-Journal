@@ -316,29 +316,55 @@ export async function ausGeckoTerminal(ketten = ['solana', 'eth', 'base', 'bsc']
     const funde = []
     for (const kette of ketten) {
         try {
-            const j = await holeJson(`https://api.geckoterminal.com/api/v2/networks/${kette}/trending_pools`)
+            /*
+             * `include=base_token` liefert den Basis-Token als eigenes Objekt.
+             *
+             * Vorher entstand das Symbol aus `poolName.split('/')[0]` — also
+             * aus einer Zeichenkette, die zufällig so aussieht wie ein Symbol.
+             * Zwei Folgen: Bei einem Pool wie „USDC / MEME" wurde die
+             * Gegenwährung zum Fund, und es gab NIE eine Vertragsadresse.
+             * Ohne Adresse kann weder der Detailabruf noch die
+             * Sicherheitsprüfung etwas ausrichten — jeder GeckoTerminal-Fund
+             * landete zwangsläufig bei „ungeprüft" und war damit von vornherein
+             * chancenlos. Die Beziehung stand die ganze Zeit in derselben
+             * Antwort.
+             */
+            const j = await holeJson(
+                `https://api.geckoterminal.com/api/v2/networks/${kette}/trending_pools?include=base_token`)
             const liste = Array.isArray(j?.data) ? j.data : []
+            const tokens = new Map((Array.isArray(j?.included) ? j.included : [])
+                .filter((t) => t?.type === 'token')
+                .map((t) => [t.id, t.attributes || {}]))
+
             liste.slice(0, 15).forEach((p, i) => {
-                /*
-                 * Der Poolname lautet „WETH / USDC" — er nennt beide Seiten.
-                 * Übernommen wird nur die erste: sonst erbt jeder Pool, der
-                 * gegen USDC handelt, das Stichwort „usd" und landet im Thema
-                 * Stablecoin-Zahlungen. Im Livelauf traf das WETH, WBTC und
-                 * SHIB gleichermassen — allesamt falsch einsortiert.
-                 */
-                const poolName = String(p?.attributes?.name || '')
-                const symbol = poolName.split('/')[0]
+                const basisId = p?.relationships?.base_token?.data?.id
+                const basis = tokens.get(basisId) || {}
+                // Notfalls die erste Seite des Poolnamens — aber nur, wenn die
+                // Beziehung fehlt; sie ist die verlässliche Quelle.
+                const symbol = basis.symbol || String(p?.attributes?.name || '').split('/')[0]
+                const a = p?.attributes || {}
                 funde.push(fund({
                     symbol,
-                    name: symbol.trim(),
+                    name: basis.name || String(symbol).trim(),
                     chain: kette,
-                    pair: p?.attributes?.address || '',
+                    contract: basis.address || '',
+                    pair: a.address || '',
                     quelle: 'geckoterminal',
                     rang: i + 1,
                     markt: {
-                        preisUsd: Number(p?.attributes?.base_token_price_usd) || null,
-                        volumen24h: Number(p?.attributes?.volume_usd?.h24) || 0,
-                        liquiditaetUsd: Number(p?.attributes?.reserve_in_usd) || 0,
+                        preisUsd: Number(a.base_token_price_usd) || null,
+                        volumen24h: Number(a.volume_usd?.h24) || 0,
+                        liquiditaetUsd: Number(a.reserve_in_usd) || 0,
+                        // Ebenfalls in derselben Antwort und bisher liegen
+                        // gelassen: Alter und Bewertung tragen unmittelbar in
+                        // die Neuheits- und Sicherheitsnote.
+                        fdv: Number(a.fdv_usd) || 0,
+                        marktkapitalisierung: Number(a.market_cap_usd) || 0,
+                        aenderung24h: zahlOderNull(a.price_change_percentage?.h24),
+                        aenderung1h: zahlOderNull(a.price_change_percentage?.h1),
+                        paarAlterStunden: a.pool_created_at
+                            ? Math.max(0, (Date.now() - new Date(a.pool_created_at).getTime()) / 3600000)
+                            : null,
                     },
                 }))
             })

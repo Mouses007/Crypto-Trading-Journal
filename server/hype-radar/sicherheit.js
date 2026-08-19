@@ -137,6 +137,23 @@ export function pruefe(goplus, markt = {}, regeln = STANDARD_SICHERHEIT) {
                 flaggen, hinweise)
         }
     } else if (r.lpMussGesperrtSein) {
+        /*
+         * Unbekannt ist nicht bestanden.
+         *
+         * Bis zum Audit vom 19.08.2026 stand hier nur ein Hinweis — die
+         * Einstellung versprach einen harten Filter und lieferte eine
+         * Fussnote. Gemessen kamen dadurch vier von zehn Kandidaten, die
+         * diese Prüfung überhaupt erreichten, mit Sicherheitsnote 100 durch,
+         * ohne dass die Sperre je geprüft worden wäre.
+         *
+         * Dieselbe Linie wie ein paar Zeilen weiter oben bei fehlender
+         * GoPlus-Antwort: „ungeprüft wird nicht empfohlen". Wer die Sperre
+         * nicht zur Pflicht macht, bekommt weiterhin nur den Hinweis.
+         */
+        return verworfen('lp_unbekannt',
+            'Zur Liquiditätssperre liegen keine Angaben vor — ungeprüft wird nicht empfohlen',
+            flaggen, hinweise)
+    } else {
         hinweise.push('Zur Liquiditätssperre liegen keine Angaben vor')
     }
 
@@ -281,6 +298,35 @@ export async function holeGoPlus(chain, contract) {
          * auf dieselben Felder abgebildet, damit `pruefe` nur eine Sprache
          * sprechen muss.
          */
+        /*
+         * Die Liquiditätssperre muss von RugCheck kommen — auch wenn GoPlus
+         * geantwortet hat.
+         *
+         * Gemessen am 19.08.2026: Die Solana-Antwort von GoPlus kennt das Feld
+         * `lp_holders` NICHT (es ist EVM-Sprache). RugCheck kennt es sehr wohl
+         * und meldete für DPG `lpLockedPct: 100`. Da der Ausweichpfad nur bei
+         * einem GoPlus-AUSFALL griff, wurde die Angabe nie geholt — und weil
+         * fehlende Angaben nur einen Hinweis erzeugten, kam jeder Solana-Fund
+         * mit voller Sicherheitsnote durch die Sperr-Pflicht.
+         *
+         * Ein zusätzlicher Abruf je Solana-Kandidat, höchstens vierzig pro
+         * Lauf. Das ist der Preis dafür, dass die Einstellung „LP muss
+         * gesperrt sein" auf Solana überhaupt etwas bedeutet.
+         */
+        let lpHolders = (d?.lp_holders || []).map((h) => ({
+            percent: Number(h?.percent) || 0,
+            is_locked: h?.is_locked,
+            address: h?.address,
+        }))
+        if (!lpHolders.length) {
+            try {
+                const rc = await holeJson(`https://api.rugcheck.xyz/v1/tokens/${encodeURIComponent(contract)}/report`)
+                lpHolders = ausRugCheck(rc)?.lp_holders || []
+            } catch {
+                // Bleibt leer — und „unbekannt" ist ab jetzt ein echter Befund.
+            }
+        }
+
         return {
             is_honeypot: d?.non_transferable === '1' ? 1 : 0,
             is_mintable: d?.mintable?.status === '1' ? 1 : 0,
@@ -288,11 +334,7 @@ export async function holeGoPlus(chain, contract) {
             transfer_pausable: d?.transfer_hook?.length ? 1 : 0,
             holder_count: Number(d?.holder_count) || 0,
             holders: (d?.holders || []).map((h) => ({ percent: Number(h?.percent) || 0 })),
-            lp_holders: (d?.lp_holders || []).map((h) => ({
-                percent: Number(h?.percent) || 0,
-                is_locked: h?.is_locked,
-                address: h?.address,
-            })),
+            lp_holders: lpHolders,
             sell_tax: 0,
             is_proxy: 0,
         }

@@ -79,6 +79,28 @@ const lpVerbrannt = pruefe(
 p('verbrannte Liquidität zählt als gesperrt',
     lpVerbrannt.status === 'bestanden', lpVerbrannt.grund)
 
+/*
+ * Der Befund des Audits vom 19.08.2026: Fehlten die LP-Angaben vollständig,
+ * erzeugte die aktivierte Pflicht nur einen Hinweis — die Einstellung
+ * versprach einen harten Filter und lieferte eine Fussnote. Gemessen kamen
+ * dadurch vier von zehn Kandidaten, die diese Prüfung überhaupt erreichten,
+ * mit Sicherheitsnote 100 durch, ohne dass je eine Sperre geprüft wurde.
+ */
+const lpFehlt = pruefe({ ...sauber(), lp_holders: [] }, marktOk())
+p('fehlende LP-Angabe wird bei Pflicht verworfen',
+    lpFehlt.status === 'verworfen' && lpFehlt.grund === 'lp_unbekannt',
+    `${lpFehlt.status}/${lpFehlt.grund}`)
+p('und bekommt keine Sicherheitsnote geschenkt', lpFehlt.safetyScore === 0)
+
+// Ohne Pflicht bleibt es ein Hinweis — wer die Sperre nicht verlangt, soll
+// nicht plötzlich strenger geprüft werden als vorher.
+const lpFehltOhnePflicht = pruefe({ ...sauber(), lp_holders: [] }, marktOk(),
+    { ...STANDARD_SICHERHEIT, lpMussGesperrtSein: false })
+p('ohne Pflicht bleibt die fehlende Angabe ein Hinweis',
+    lpFehltOhnePflicht.status === 'bestanden'
+    && lpFehltOhnePflicht.hinweise.some((h) => /Liquiditätssperre/.test(h)),
+    `${lpFehltOhnePflicht.status} | ${JSON.stringify(lpFehltOhnePflicht.hinweise)}`)
+
 const zuKlein = pruefe(sauber(), { ...marktOk(), liquiditaetUsd: 5000 })
 p('zu wenig Liquidität wird verworfen', zuKlein.grund === 'liquiditaet_zu_klein')
 
