@@ -449,8 +449,17 @@ const einst = ref({
 let strom = null
 
 // ── Anzeige-Helfer ──────────────────────────────────────────────────────
-const n = (w, s = 2) => (Number.isFinite(Number(w)) ? Number(w).toFixed(s) : '—')
-const mio = (w) => (Number(w) ? `${(Number(w) / 1e6).toFixed(0)}` : '—')
+/*
+ * `null` heisst unbekannt und muss als Strich erscheinen, nicht als Null.
+ *
+ * `Number(null)` ist 0 und damit endlich — die alte Fassung zeigte für einen
+ * Wert, zu dem gar keine Quelle geantwortet hatte, brav „0.00". Bei Funding
+ * las sich das als gemessene Kostenfreiheit, bei Spread als perfekter Markt.
+ * Beides das Gegenteil dessen, was der Fall war.
+ */
+const fehlt = (w) => w === null || w === undefined || w === ''
+const n = (w, s = 2) => (!fehlt(w) && Number.isFinite(Number(w)) ? Number(w).toFixed(s) : '—')
+const mio = (w) => (!fehlt(w) && Number(w) ? `${(Number(w) / 1e6).toFixed(0)}` : '—')
 /** BTCUSDT liest sich als BTC — das Quotepaar ist bei allen dasselbe. */
 const kurz = (s) => String(s || '').replace(/USDT$/, '')
 
@@ -499,8 +508,11 @@ const bewertete = computed(() => zeilen.value.filter((z) => z.status === 'bewert
 const imSpielAnzahl = computed(() => bewertete.value.filter((z) => Number(z.rvol) >= 2).length)
 const trendendAnzahl = computed(() => bewertete.value.filter((z) => Number(z.adx) >= 25).length)
 const mittelAtr = computed(() => {
-    const w = bewertete.value.map((z) => Number(z.atrPct)).filter(Number.isFinite)
-    return w.length ? (w.reduce((a, b) => a + b, 0) / w.length).toFixed(2) : '—'
+    // Fehlwerte RAUS, nicht als 0 mitgemittelt: `Number(null)` ist 0 und
+    // besteht `Number.isFinite` — ein Coin ohne Messung hätte den Schnitt
+    // nach unten gezogen, als bewegte er sich gar nicht.
+    const w = bewertete.value.map((z) => z.atrPct).filter((x) => !fehlt(x) && Number.isFinite(Number(x)))
+    return w.length ? (w.reduce((a, b) => a + Number(b), 0) / w.length).toFixed(2) : '—'
 })
 
 /*

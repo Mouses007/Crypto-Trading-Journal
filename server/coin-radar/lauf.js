@@ -40,6 +40,19 @@ import {
 const MAX_VERMESSEN = 200
 
 /**
+ * Die Kennzahlen, die es nur für BEWERTETE Zeilen gibt.
+ *
+ * Ein an einer Hürde gescheiterter Coin hat keine Kerzen gesehen — für ihn
+ * wurde nichts davon gerechnet. Weggelassen würden die Spalten über ihren
+ * Vorgabewert zu 0, und die Datenbank behauptete eine Messung, die nie
+ * stattfand. Im ersten Anlauf des Audit-Fixes war genau das übrig geblieben:
+ * 412 von 494 Zeilen trugen „ATR 0", kein einziges `null`.
+ */
+const UNGEMESSEN = {
+    note: null, fundingJahresRate: null, atrPct: null, rvol: null, adx: null,
+}
+
+/**
  * Einen Lauf durchführen.
  *
  * @param {object} lauf   Zeile aus `coinradar_laeufe`
@@ -109,9 +122,14 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
         symbol: g.symbol,
         status: 'huerde',
         huerdeGrund: g.grund,
-        umsatz24h: g.roh.umsatz24h || 0,
-        spreadBp: Number.isFinite(g.roh.spreadBp) ? g.roh.spreadBp : 0,
-        tiefeUsd: g.roh.tiefeUsd || 0,
+        umsatz24h: zahlOderNull(g.roh.umsatz24h),
+        spreadBp: zahlOderNull(g.roh.spreadBp),
+        tiefeUsd: zahlOderNull(g.roh.tiefeUsd),
+        // AUSDRÜCKLICH null, nicht weggelassen: Die Spalten tragen
+        // `defaultTo(0)`, und ein weggelassenes Feld wird damit zur gemessenen
+        // Null. Für einen Coin, der an der Liquiditätshürde scheiterte, wurde
+        // nie eine Kerze geholt — „ATR 0" wäre eine Behauptung.
+        ...UNGEMESSEN,
         erstelltAm: jetzt,
     })))
 
@@ -155,9 +173,10 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
                 zeilen.push({
                     laufId: lauf.id, symbol: a.symbol, status: 'huerde',
                     huerdeGrund: 'keine_kerzen',
-                    umsatz24h: a.roh.umsatz24h || 0,
-                    spreadBp: a.roh.spreadBp || 0,
-                    tiefeUsd: a.roh.tiefeUsd || 0,
+                    umsatz24h: zahlOderNull(a.roh.umsatz24h),
+                    spreadBp: zahlOderNull(a.roh.spreadBp),
+                    tiefeUsd: zahlOderNull(a.roh.tiefeUsd),
+                    ...UNGEMESSEN,
                     erstelltAm: jetzt,
                 })
                 continue
@@ -171,13 +190,13 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
                 symbol: a.symbol,
                 status: 'bewertet',
                 note: b.note,
-                umsatz24h: a.roh.umsatz24h || 0,
-                spreadBp: a.roh.spreadBp || 0,
-                tiefeUsd: a.roh.tiefeUsd || 0,
-                fundingJahresRate: jahresRate ?? 0,
-                atrPct: ze[haupt].atrPct ?? 0,
-                rvol: ze[haupt].rvol ?? 0,
-                adx: ze[haupt].adx ?? 0,
+                umsatz24h: zahlOderNull(a.roh.umsatz24h),
+                spreadBp: zahlOderNull(a.roh.spreadBp),
+                tiefeUsd: zahlOderNull(a.roh.tiefeUsd),
+                fundingJahresRate: zahlOderNull(jahresRate),
+                atrPct: zahlOderNull(ze[haupt].atrPct),
+                rvol: zahlOderNull(ze[haupt].rvol),
+                adx: zahlOderNull(ze[haupt].adx),
                 jeZeiteinheit: JSON.stringify({ ...ze, hinweise: b.hinweise, bestaetigt: b.bestaetigt }),
                 teilnoten: JSON.stringify(b.teilnoten),
                 erstelltAm: jetzt,
@@ -218,7 +237,7 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
         status: 'fertig',
         beendetAm: Date.now(),
         fortschritt: alleZeilen.length,
-        rangkorrelation: vergleich.wert ?? 0,
+        rangkorrelation: vergleich.wert,
         vergleichslauf: vergleich.laufId || 0,
     })
 
@@ -230,6 +249,21 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
         rangkorrelation: vergleich,
     }
 }
+
+/**
+ * Eine Zahl — oder `null`, wenn sie fehlt.
+ *
+ * Vor dem Audit vom 19.08.2026 stand hier überall `|| 0`. Die Bewertung
+ * behandelte „unbekannt" korrekt (mittlere Punktzahl plus Hinweis), die
+ * SPEICHERUNG warf die Unterscheidung weg — und die Oberfläche zeigte
+ * anschliessend gemessene Kostenfreiheit und einen Spread von null, wo in
+ * Wahrheit gar keine Quelle geantwortet hatte.
+ *
+ * Die Spalten sind seit jeher nullable (`defaultTo(0)` greift nur beim
+ * Weglassen), es braucht also keine Migration. Altbestand bleibt bei 0 —
+ * rückwirkend lässt sich „unbekannt" von „gemessen null" nicht mehr trennen.
+ */
+const zahlOderNull = (w) => (Number.isFinite(Number(w)) && w !== null && w !== '' ? Number(w) : null)
 
 /**
  * Zeilen in Stücken schreiben — SQLite deckelt die Platzhalter je Anweisung.
