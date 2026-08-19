@@ -142,6 +142,11 @@
                         <div class="crLabel">{{ t('coinradar.kzMittelAtr') }}</div>
                         <div class="crExtra">{{ hauptZe }}</div>
                     </div>
+                    <div class="crZelle">
+                        <div class="crWert">{{ medianRundlauf }}<span class="crEinheit"> bp</span></div>
+                        <div class="crLabel">{{ t('coinradar.kzRundlauf') }}</div>
+                        <div class="crExtra">{{ t('coinradar.kzRundlaufExtra') }}</div>
+                    </div>
                     <!-- Die ehrliche Gegenprobe steht gleichberechtigt neben
                          den anderen Zahlen, nicht im Kleingedruckten. -->
                     <div class="crZelle" :class="beharrlichKlasse">
@@ -213,6 +218,17 @@
                             <span class="crPaar"><b>ADX</b> {{ n(z.adx, 0) }}</span>
                             <span class="crPaar"><b>Funding</b> {{ n(z.fundingJahresRate, 0) }} %</span>
                         </div>
+                        <!-- Am Telefon in eigener Zeile: die Ausführung ist die
+                             zweite Aussage und soll nicht zwischen den anderen
+                             untergehen. -->
+                        <div v-if="z.status === 'bewertet' && z.noteAusfuehrung !== null" class="crKarteZeile">
+                            <span class="crPaar">
+                                <b>{{ t('coinradar.spalteAusfuehrung') }}</b>
+                                <span class="crNote" :class="noteKlasse(z.noteAusfuehrung)">{{ z.noteAusfuehrung }}</span>
+                            </span>
+                            <span class="crPaar"><b>{{ t('coinradar.spRund') }}</b> {{ n(z.rundlaufBp, 1) }} bp</span>
+                            <span v-if="z.besteBoerse" class="crBoerse">{{ boerseKurz(z.besteBoerse) }}</span>
+                        </div>
                         <div v-if="offen === z.id && z.status === 'bewertet'" class="crKarteDetail">
                             <div v-for="(wert, feld) in z.teilnoten" :key="feld" class="crNoteZeile">
                                 <span class="crNoteName">{{ t('coinradar.note_' + feld) }}</span>
@@ -242,11 +258,21 @@
                             <tr v-else>
                                 <th class="text-end crSchmal">#</th>
                                 <th @click="sortiere('symbol')">{{ t('coinradar.spalteSymbol') }}</th>
-                                <th class="text-end" @click="sortiere('note')">{{ t('coinradar.spalteNote') }}</th>
+                                <!-- Die zwei Achsen stehen nebeneinander und werden nie
+                                     verrechnet: „bewegt sich viel" und „lässt sich günstig
+                                     handeln" sind zwei Fragen. -->
+                                <th class="text-end" @click="sortiere('note')"
+                                    :title="t('coinradar.spalteNoteHilfe')">{{ t('coinradar.spalteNote') }}</th>
+                                <th class="text-end" @click="sortiere('noteAusfuehrung')"
+                                    :title="t('coinradar.spalteAusfuehrungHilfe')">{{ t('coinradar.spalteAusfuehrung') }}</th>
                                 <th class="text-end" @click="sortiere('atrPct')">{{ t('coinradar.spalteAtr') }}</th>
                                 <th class="text-end" @click="sortiere('rvol')">{{ t('coinradar.spalteRvol') }}</th>
                                 <th class="text-end" @click="sortiere('adx')">{{ t('coinradar.spalteAdx') }}</th>
-                                <th class="text-end" @click="sortiere('spreadBp')">{{ t('coinradar.spalteSpread') }}</th>
+                                <!-- Rundlauf statt Spread: Der Spread ist darin enthalten,
+                                     aber allein sagt er nichts über eine Order, die tiefer
+                                     ins Buch greift. -->
+                                <th class="text-end" @click="sortiere('rundlaufBp')"
+                                    :title="t('coinradar.spalteRundlaufHilfe')">{{ t('coinradar.spalteRundlauf') }}</th>
                                 <th class="text-end" @click="sortiere('fundingJahresRate')">{{ t('coinradar.spalteFunding') }}</th>
                                 <th class="text-end" @click="sortiere('umsatz24h')">{{ t('coinradar.spalteUmsatz') }}</th>
                                 <th></th>
@@ -280,10 +306,20 @@
                                     <td class="text-end">
                                         <span class="crNote" :class="noteKlasse(z.note)">{{ z.note }}</span>
                                     </td>
+                                    <td class="text-end">
+                                        <span v-if="z.noteAusfuehrung !== null" class="crNote"
+                                            :class="noteKlasse(z.noteAusfuehrung)">{{ z.noteAusfuehrung }}</span>
+                                        <span v-else class="text-muted">—</span>
+                                        <!-- Wo es günstiger ist. Die Unterschiede sind gross
+                                             genug, dass die Börse an die Zeile gehört und
+                                             nicht ins Aufklappen. -->
+                                        <span v-if="z.besteBoerse" class="crBoerse"
+                                            :title="t('coinradar.besteBoerseHilfe')">{{ boerseKurz(z.besteBoerse) }}</span>
+                                    </td>
                                     <td class="text-end crZahl">{{ n(z.atrPct, 2) }}</td>
                                     <td class="text-end crZahl" :class="{ 'crStark': z.rvol >= 2 }">{{ n(z.rvol, 2) }}</td>
                                     <td class="text-end crZahl" :class="{ 'crStark': z.adx >= 25 }">{{ n(z.adx, 0) }}</td>
-                                    <td class="text-end crZahl">{{ n(z.spreadBp, 2) }}</td>
+                                    <td class="text-end crZahl" :class="rundlaufKlasse(z.rundlaufBp)">{{ n(z.rundlaufBp, 1) }}</td>
                                     <td class="text-end crZahl" :class="fundingKlasse(z.fundingJahresRate)">
                                         {{ n(z.fundingJahresRate, 1) }}
                                     </td>
@@ -293,7 +329,7 @@
                                     </td>
                                 </tr>
                                 <tr v-if="offen === z.id && !zeigeHuerden" :key="z.id + '-d'">
-                                    <td colspan="10" class="crDetail">
+                                    <td colspan="11" class="crDetail">
                                         <div class="crDetailGrid">
                                             <div>
                                                 <div class="crDetailTitel">{{ t('coinradar.teilnoten') }}</div>
@@ -321,12 +357,43 @@
                                                     {{ hinweise(z).join(' · ') }}
                                                 </p>
                                             </div>
+                                            <!-- Was eine Order über 5 000 USD wirklich kostet, je
+                                                 Börse. Kauf und Verkauf getrennt: Ein Buch, das den
+                                                 Einstieg billig und den Ausstieg teuer macht, ist
+                                                 eine Falle, die kein Durchschnitt zeigt. -->
+                                            <div v-if="Object.keys(jeBoerse(z)).length">
+                                                <div class="crDetailTitel">{{ t('coinradar.ausfuehrung5k') }}</div>
+                                                <table class="crZeTabelle">
+                                                    <tr>
+                                                        <th></th>
+                                                        <th>{{ t('coinradar.spKauf') }}</th>
+                                                        <th>{{ t('coinradar.spVerkauf') }}</th>
+                                                        <th>{{ t('coinradar.spRund') }}</th>
+                                                        <th>{{ t('coinradar.spTiefe25') }}</th>
+                                                    </tr>
+                                                    <tr v-for="(v, b) in jeBoerse(z)" :key="b"
+                                                        :class="{ crBeste: b === z.besteBoerse }">
+                                                        <td><b>{{ boerseKurz(b) }}</b></td>
+                                                        <td>{{ n(v.slippageKaufBp, 1) }}</td>
+                                                        <td>{{ n(v.slippageVerkaufBp, 1) }}</td>
+                                                        <td>{{ n(v.rundlaufBp, 1) }}</td>
+                                                        <td>{{ geld(v.tiefe25Bp) }}</td>
+                                                    </tr>
+                                                </table>
+                                                <p class="crHinweise mb-0 mt-2">
+                                                    <template v-for="(v, b) in jeBoerse(z)" :key="b + 'p'">
+                                                        <span v-if="!v.passt5k" class="d-block">
+                                                            {{ t('coinradar.passtNicht', { b: boerseKurz(b) }) }}
+                                                        </span>
+                                                    </template>
+                                                </p>
+                                            </div>
                                         </div>
                                     </td>
                                 </tr>
                             </template>
                             <tr v-if="!gefiltert.length">
-                                <td :colspan="zeigeHuerden ? 6 : 10" class="text-center text-muted py-3">
+                                <td :colspan="zeigeHuerden ? 6 : 11" class="text-center text-muted py-3">
                                     {{ t('coinradar.keineTreffer') }}
                                 </td>
                             </tr>
@@ -473,6 +540,22 @@ let strom = null
 const fehlt = (w) => w === null || w === undefined || w === ''
 const n = (w, s = 2) => (!fehlt(w) && Number.isFinite(Number(w)) ? Number(w).toFixed(s) : '—')
 const mio = (w) => (!fehlt(w) && Number(w) ? `${(Number(w) / 1e6).toFixed(0)}` : '—')
+
+/**
+ * Ein Geldbetrag mit passender Einheit.
+ *
+ * `mio()` ist für die Umsatzspalte gedacht, wo alles in Millionen liegt. Auf
+ * die Orderbuchtiefe angewandt ergab sie „0": ein mittelgrosser Coin hat
+ * zwanzig- bis fünfzigtausend Dollar innerhalb von 25 Basispunkten, und
+ * 32'714 / 1e6 rundet auf null. Eine Null dort behauptet ein leeres Buch.
+ */
+function geld(w) {
+    if (fehlt(w) || !Number.isFinite(Number(w))) return '—'
+    const z = Number(w)
+    if (z >= 1e6) return `${(z / 1e6).toFixed(1)} M`
+    if (z >= 1e3) return `${(z / 1e3).toFixed(0)} k`
+    return String(Math.round(z))
+}
 /** BTCUSDT liest sich als BTC — das Quotepaar ist bei allen dasselbe. */
 const kurz = (s) => String(s || '').replace(/USDT$/, '')
 
@@ -483,6 +566,38 @@ function zeitpunkt(ms) {
 }
 
 const noteKlasse = (w) => (w >= 60 ? 'gut' : (w >= 40 ? 'mittel' : 'schwach'))
+
+/** Börsennamen kurz — in einer Tabellenzelle zählt jedes Zeichen. */
+const BOERSE_KURZ = { bitunix: 'BX', bitget: 'BG', pionex: 'PX' }
+const boerseKurz = (b) => BOERSE_KURZ[b] || b
+
+/**
+ * Die Messwerte je Börse, beste zuerst.
+ *
+ * Sortiert nach Rundlauf, damit die günstigste oben steht — bei zwei Zeilen
+ * scheint das übertrieben, aber die Reihenfolge ist die Aussage, und eine
+ * dritte Börse würde sie sonst zufällig einsortieren.
+ */
+function jeBoerse(z) {
+    let roh = {}
+    try { roh = typeof z.jeBoerse === 'string' ? JSON.parse(z.jeBoerse || '{}') : (z.jeBoerse || {}) } catch { roh = {} }
+    return Object.fromEntries(Object.entries(roh)
+        .sort((a, b) => (a[1].rundlaufBp ?? 1e9) - (b[1].rundlaufBp ?? 1e9)))
+}
+
+/*
+ * Der Rundlauf in Farbe. Die Anker stammen aus derselben Messung wie die Note
+ * in `ausfuehrung.js`: unter 5 bp ist ausgezeichnet, ab 30 wird es teuer, ab 60
+ * geht ein Scalp nicht mehr auf.
+ */
+const rundlaufKlasse = (w) => {
+    const x = Number(w)
+    if (!Number.isFinite(x) || fehlt(w)) return ''
+    if (x <= 5) return 'crStark'
+    if (x >= 30) return 'text-danger'
+    if (x >= 15) return 'text-warning'
+    return ''
+}
 const fundingKlasse = (w) => {
     const z = Number(w)
     if (!Number.isFinite(z) || Math.abs(z) < 25) return ''
@@ -520,6 +635,21 @@ const hauptZe = computed(() => einst.value.zeiteinheiten?.[0] || '1h')
 const bewertete = computed(() => zeilen.value.filter((z) => z.status === 'bewertet'))
 const imSpielAnzahl = computed(() => bewertete.value.filter((z) => Number(z.rvol) >= 2).length)
 const trendendAnzahl = computed(() => bewertete.value.filter((z) => Number(z.adx) >= 25).length)
+/*
+ * Der mittlere Rundlauf des Laufs — die Antwort auf „wie teuer ist das Feld
+ * heute". Median statt Mittelwert: Ein einzelner Coin mit fünfzig Basispunkten
+ * verzerrt einen Schnitt, und die Frage lautet nicht „was kostet der teuerste",
+ * sondern „was kostet der typische".
+ */
+const medianRundlauf = computed(() => {
+    const w = bewertete.value.map((z) => z.rundlaufBp)
+        .filter((x) => !fehlt(x) && Number.isFinite(Number(x))).map(Number)
+        .sort((a, b) => a - b)
+    if (!w.length) return '—'
+    const m = Math.floor(w.length / 2)
+    return (w.length % 2 ? w[m] : (w[m - 1] + w[m]) / 2).toFixed(1)
+})
+
 const mittelAtr = computed(() => {
     // Fehlwerte RAUS, nicht als 0 mitgemittelt: `Number(null)` ist 0 und
     // besteht `Number.isFinite` — ein Coin ohne Messung hätte den Schnitt
@@ -1075,6 +1205,21 @@ onBeforeUnmount(() => {
 .crStern.aktiv {
     color: #ffb300;
     opacity: 1;
+}
+
+.crBoerse {
+    display: inline-block;
+    margin-left: .35rem;
+    padding: 0 .3rem;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, .08);
+    color: var(--grey-color, #9aa0a6);
+    font-size: .69rem;
+    letter-spacing: .03em;
+}
+
+.crZeTabelle tr.crBeste {
+    color: var(--green-color, #4caf50);
 }
 
 .crBestaetigt {
