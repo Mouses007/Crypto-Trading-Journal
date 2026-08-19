@@ -19,6 +19,7 @@ import { setupOllamaRoutes } from './server/ollama-api.js'
 import { setupAiModelRoutes } from './server/ai-models.js'
 import { setupAgentRoutes } from './server/ai-agent.js'
 import { setupAiUebersichtRoutes } from './server/ai-uebersicht.js'
+import { setupHypeRadarRoutes, startHypeTakt } from './server/hype-radar-api.js'
 import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
@@ -141,12 +142,14 @@ const startIndex = async () => {
     setupLivetradingRoutes(app);
     setupNewsRoutes(app);
     startNewsTakt();
+    startHypeTakt();
     setupBenachrichtigungsRoutes(app);
     startBenachrichtigungsTakt();
     setupOllamaRoutes(app);
     setupAiModelRoutes(app);
     setupAgentRoutes(app);
     setupAiUebersichtRoutes(app);
+    setupHypeRadarRoutes(app);
     setupUpdateRoutes(app);
     setupBackupRoutes(app);
     await setupFluxRoutes(app);
