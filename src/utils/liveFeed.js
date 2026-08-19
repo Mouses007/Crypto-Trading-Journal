@@ -108,6 +108,10 @@ export class LiveFeed {
         clearInterval(this.pruneTimer)
         clearTimeout(this.snapshotTimer)
         clearTimeout(this.syncWatchdog)
+        // Die laufende Snapshot-Anfrage mitnehmen: `stopped` verhindert nur die
+        // Auswertung, die HTTP-Verbindung selbst bliebe sonst offen stehen.
+        this._snapshotAbbruch?.abort()
+        this._snapshotAbbruch = null
         this.frameTimer = this.pruneTimer = this.snapshotTimer = this.syncWatchdog = null
         this._setState('idle')
     }
@@ -180,9 +184,24 @@ export class LiveFeed {
 
     async _fetchSnapshot() {
         if (this.stopped) return
+        /*
+         * Timeout und Abbruch sind hier keine Feinheit, sondern der Unterschied
+         * zwischen „kaputt" und „kaputt und still". Axios wartet ohne `timeout`
+         * unbegrenzt. Hängt der Depth-Proxy, kommt der Snapshot nie an — und
+         * weil der Sync-Wächter erst NACH einem eingetroffenen Snapshot scharf
+         * wird, greift auch der nicht. Der Zustand bleibt `syncing`, der
+         * Diff-Puffer läuft bis 5000 Ereignisse voll und rotiert.
+         *
+         * Die Heatmap zeigt dann ein totes Buch, ohne es zu sagen. Der Recorder
+         * auf dem Server macht es seit je richtig (`timeout: 10000`).
+         */
+        this._snapshotAbbruch?.abort()
+        this._snapshotAbbruch = typeof AbortController !== 'undefined' ? new AbortController() : null
         try {
             const { data } = await axios.get('/api/binance/depth', {
-                params: { symbol: this.symbol, market: this.market, limit: 1000 }
+                params: { symbol: this.symbol, market: this.market, limit: 1000 },
+                timeout: 8000,
+                signal: this._snapshotAbbruch?.signal,
             })
             if (this.stopped) return
 
@@ -218,12 +237,18 @@ export class LiveFeed {
 
         } catch (error) {
             if (this.stopped) return
+            // Ein selbst ausgelöster Abbruch (Symbolwechsel, stop()) ist kein
+            // Fehlversuch — sonst verbraucht ein Klick das Wiederholbudget.
+            if (error.code === 'ERR_CANCELED' || error.name === 'CanceledError') return
             const message = error.response?.data?.error || error.message
             if (++this.snapshotTries >= MAX_SNAPSHOT_RETRIES) {
                 this._setState('error', message)
                 return
             }
-            this.snapshotTimer = setTimeout(() => this._fetchSnapshot(), 1000)
+            // Steigend statt starr: hängt der Proxy, hämmert der Browser sonst
+            // fünfmal im Sekundentakt gegen dieselbe tote Verbindung.
+            const wartezeit = Math.min(1000 * 2 ** (this.snapshotTries - 1), 15000)
+            this.snapshotTimer = setTimeout(() => this._fetchSnapshot(), wartezeit)
         }
     }
 

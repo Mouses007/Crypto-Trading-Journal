@@ -75,6 +75,29 @@ const MAX_BACKOFF_MS = 60000
 function wartezeitFuerVersuch(versuch) {
     return Math.min(MAX_BACKOFF_MS, 5000 * 2 ** Math.min(versuch, 4)) + Math.random() * 1000
 }
+
+/**
+ * Einen Socket endgültig loslösen: erst die Handler ab, dann schliessen.
+ *
+ * Ohne das kann eine zweite Verbindung neben einer noch schliessenden laufen —
+ * etwa wenn der Wächter einen Neuaufbau erzwingt, das `close()` aber noch in
+ * CLOSING hängt. Beide Sockets zeigen dann auf dasselbe `message`, und dieselben
+ * Diffs kommen doppelt an. Das fällt NICHT als Fehler auf: das Buch verarbeitet
+ * sie klaglos, nur die aufgezeichneten Mengen stimmen nicht mehr — und eine
+ * Aufzeichnung, der man nicht trauen kann, ist wertlos.
+ *
+ * Der Browser-Stream (`src/utils/binanceStream.js`) hat genau diese Sperre seit
+ * dem Audit vom 16.08.2026; der Recorder hatte sie nie. Zweiter Grund: jedes
+ * verspätete `close` eines Altsockets plante bisher einen weiteren Neuaufbau —
+ * Richtung Binances Verbindungsgrenze von ~300 je 5 Minuten.
+ */
+function loeseSocket(sock) {
+    if (!sock) return
+    sock.removeAllListeners()
+    try { sock.terminate() } catch (e) {
+        try { sock.close() } catch (e2) { /* war schon zu */ }
+    }
+}
 // Halbtote Sockets (Standby, Netzwechsel) feuern kein close. depth@100ms
 // liefert praktisch pausenlos — längere Stille heisst toter Socket, der sonst
 // ein eingefrorenes Buch stundenlang als „aktuelle" Liquidität aufzeichnet.
@@ -207,13 +230,19 @@ class SymbolRecorder {
      */
     _connectLiquidations() {
         if (this.stopped || !this.isFutures) return   // Spot kennt keine Liquidationen
-        this.liqWs = new WebSocket(`${LIQ_WS_BASE}${this.symbol.toLowerCase()}@forceOrder`)
+        clearTimeout(this.liqReconnect)
+        this.liqReconnect = null
+        loeseSocket(this.liqWs)
+        const liqWs = new WebSocket(`${LIQ_WS_BASE}${this.symbol.toLowerCase()}@forceOrder`)
+        this.liqWs = liqWs
 
-        this.liqWs.on('open', () => {
+        liqWs.on('open', () => {
+            if (this.liqWs !== liqWs) return
             this.liqAttempt = 0
             console.log(` -> [recorder] ${this.symbol}: Liquidations-Stream verbunden`)
         })
-        this.liqWs.on('message', (raw) => {
+        liqWs.on('message', (raw) => {
+            if (this.liqWs !== liqWs) return
             let msg
             try { msg = JSON.parse(raw) } catch (e) { return }
             const o = (msg.data || msg).o
@@ -236,24 +265,34 @@ class SymbolRecorder {
             merkeLiq('binance', this.symbol, eintrag[0], eintrag[1], eintrag[2], eintrag[3])
             this.liqUnsaved++
         })
-        this.liqWs.on('close', () => {
-            if (this.stopped) return
+        liqWs.on('close', () => {
+            // Nur der AKTUELLE Socket darf einen Neuaufbau planen. Sonst legt
+            // das verspätete close eines Vorgängers einen zweiten Timer an.
+            if (this.stopped || this.liqWs !== liqWs) return
             this.liqReconnect = setTimeout(() => this._connectLiquidations(), wartezeitFuerVersuch(this.liqAttempt++))
         })
-        this.liqWs.on('error', () => { try { this.liqWs?.close() } catch (e) { /* egal */ } })
+        liqWs.on('error', () => { try { liqWs.close() } catch (e) { /* egal */ } })
     }
 
     _connect() {
         if (this.stopped) return
+        clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = null
+        loeseSocket(this.ws)
         const stream = `${this.symbol.toLowerCase()}@depth@100ms`
-        this.ws = new WebSocket(WS_BASE[this.market] + stream)
+        const ws = new WebSocket(WS_BASE[this.market] + stream)
+        this.ws = ws
 
-        this.ws.on('open', () => {
+        ws.on('open', () => {
+            if (this.ws !== ws) return
             this.attempt = 0
             this.lastMsgTs = Date.now()
             this._beginSync()
         })
-        this.ws.on('message', (raw) => {
+        ws.on('message', (raw) => {
+            // Ein Altsocket darf das Buch nicht mehr anfassen — sonst laufen
+            // dieselben Diffs zweimal hinein und die Mengen verdoppeln sich.
+            if (this.ws !== ws) return
             this.lastMsgTs = Date.now()
             let msg
             try { msg = JSON.parse(raw) } catch (e) { return }
@@ -269,13 +308,13 @@ class SymbolRecorder {
             else if (result === 'skip') this.skipped++
             else { this.resyncs++; this._beginSync() }
         })
-        this.ws.on('close', () => {
-            if (this.stopped) return
+        ws.on('close', () => {
+            if (this.stopped || this.ws !== ws) return
             this.buffering = true
             const delay = Math.min(1000 * 2 ** this.attempt++, MAX_BACKOFF_MS) * (0.5 + Math.random())
             this.reconnectTimer = setTimeout(() => this._connect(), Math.round(delay))
         })
-        this.ws.on('error', () => { try { this.ws?.close() } catch (e) { /* egal */ } })
+        ws.on('error', () => { try { ws.close() } catch (e) { /* egal */ } })
     }
 
     /**
@@ -619,13 +658,21 @@ class MarketLiquidationCollector {
      */
     _connect() {
         if (this.stopped) return
-        this.ws = new WebSocket(`${LIQ_WS_BASE}!forceOrder@arr`)
+        clearTimeout(this.reconnect)
+        this.reconnect = null
+        loeseSocket(this.ws)
+        const ws = new WebSocket(`${LIQ_WS_BASE}!forceOrder@arr`)
+        this.ws = ws
 
-        this.ws.on('open', () => {
+        ws.on('open', () => {
+            if (this.ws !== ws) return
             this.attempt = 0
             console.log(' -> [recorder] Sammelstrom Liquidationen (alle Symbole) verbunden')
         })
-        this.ws.on('message', (raw) => {
+        ws.on('message', (raw) => {
+            // Doppelt gezählte Liquidationen wären hier besonders tückisch: die
+            // Long/Short-Bilanz ist genau das, was die Kachel auswertet.
+            if (this.ws !== ws) return
             let msg
             try { msg = JSON.parse(raw) } catch (e) { return }
             // Der Sammelstrom liefert je nach Route ein Einzelobjekt oder ein Array
@@ -655,11 +702,11 @@ class MarketLiquidationCollector {
                 this.letztes = t
             }
         })
-        this.ws.on('close', () => {
-            if (this.stopped) return
+        ws.on('close', () => {
+            if (this.stopped || this.ws !== ws) return
             this.reconnect = setTimeout(() => this._connect(), wartezeitFuerVersuch(this.attempt++))
         })
-        this.ws.on('error', () => { try { this.ws?.close() } catch (e) { /* egal */ } })
+        ws.on('error', () => { try { ws.close() } catch (e) { /* egal */ } })
     }
 
     /**
@@ -720,7 +767,10 @@ class MarketLiquidationCollector {
         this.stopped = true
         clearInterval(this.flushTimer)
         clearTimeout(this.reconnect)
-        try { this.ws?.close() } catch (e) { /* egal */ }
+        // Handler ABHÄNGEN, nicht nur schliessen — sonst plant das close-Ereignis
+        // des gerade geschlossenen Sockets noch einen Neuaufbau.
+        loeseSocket(this.ws)
+        this.ws = null
         await this._flush().catch(() => {})
     }
 }
@@ -767,13 +817,18 @@ class BybitLiquidationCollector {
 
     _connect() {
         if (this.stopped) return
-        this.ws = new WebSocket(BYBIT_LIQ_WS)
+        clearTimeout(this.reconnect)
+        this.reconnect = null
+        loeseSocket(this.ws)
+        const ws = new WebSocket(BYBIT_LIQ_WS)
+        this.ws = ws
 
-        this.ws.on('open', () => {
+        ws.on('open', () => {
+            if (this.ws !== ws) return
             console.log(' -> [recorder] Bybit-Sammelstrom Liquidationen verbunden')
             this.attempt = 0
             this.lastPong = Date.now()
-            try { this.ws.send(bybitSubscribeMsg(COLLECT_LIQ_SYMBOLS)) } catch (e) { /* close folgt */ }
+            try { ws.send(bybitSubscribeMsg(COLLECT_LIQ_SYMBOLS)) } catch (e) { /* close folgt */ }
             clearInterval(this.pingTimer)
             this.pingTimer = setInterval(() => {
                 if (Date.now() - this.lastPong > BYBIT_PONG_LIMIT_MS) {
@@ -782,10 +837,13 @@ class BybitLiquidationCollector {
                     try { this.ws?.terminate() } catch (e) { /* egal */ }
                     return
                 }
-                try { this.ws?.send('{"op":"ping"}') } catch (e) { /* egal */ }
+                // An DIESEN Socket pingen: nach einem Neuaufbau zeigt `this.ws`
+                // sonst auf den neuen, und der alte Takt hält ihn mit am Leben.
+                try { ws.send('{"op":"ping"}') } catch (e) { /* egal */ }
             }, BYBIT_PING_MS)
         })
-        this.ws.on('message', (raw) => {
+        ws.on('message', (raw) => {
+            if (this.ws !== ws) return
             let msg
             try { msg = JSON.parse(raw) } catch (e) { return }
             if (msg?.op === 'pong' || msg?.ret_msg === 'pong') { this.lastPong = Date.now(); return }
@@ -817,12 +875,12 @@ class BybitLiquidationCollector {
                 }
             }
         })
-        this.ws.on('close', () => {
+        ws.on('close', () => {
             clearInterval(this.pingTimer)
-            if (this.stopped) return
+            if (this.stopped || this.ws !== ws) return
             this.reconnect = setTimeout(() => this._connect(), wartezeitFuerVersuch(this.attempt++))
         })
-        this.ws.on('error', () => { try { this.ws?.close() } catch (e) { /* egal */ } })
+        ws.on('error', () => { try { ws.close() } catch (e) { /* egal */ } })
     }
 
     /** Wie beim Binance-Kollektor: je (Symbol, Stunde) eine Zeile, Sorte 'liqB'. */
@@ -873,7 +931,10 @@ class BybitLiquidationCollector {
         clearInterval(this.flushTimer)
         clearInterval(this.pingTimer)
         clearTimeout(this.reconnect)
-        try { this.ws?.close() } catch (e) { /* egal */ }
+        // Handler ABHÄNGEN, nicht nur schliessen — sonst plant das close-Ereignis
+        // des gerade geschlossenen Sockets noch einen Neuaufbau.
+        loeseSocket(this.ws)
+        this.ws = null
         await this._flush().catch(() => {})
     }
 }

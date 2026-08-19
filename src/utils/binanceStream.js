@@ -108,6 +108,12 @@ export class BinanceStream {
         clearTimeout(this.reconnectTimer)
         this.reconnectTimer = null
         if (this.ws) {
+            // Alle VIER lösen, wie es `connect()` beim Ersetzen schon tut.
+            // `onopen` fehlte hier: liegt der Socket beim Beenden noch in
+            // CONNECTING, feuert er danach trotzdem und ruft `onOpen` auf einem
+            // längst für tot erklärten Feed — `stopped` schützt `connect()`,
+            // nicht einen bereits gesetzten Handler.
+            this.ws.onopen = null
             this.ws.onclose = null
             this.ws.onerror = null
             this.ws.onmessage = null
