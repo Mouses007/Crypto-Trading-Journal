@@ -47,6 +47,14 @@ export const VORGABEN = {
      * wird — nicht die Aufmerksamkeit. 35 lässt das obere Drittel durch.
      */
     minHypeScore: 35,
+    /*
+     * Nur Funde behalten, die Bitunix, Bitget oder Pionex führen.
+     *
+     * Aus als Vorgabe: der Radar soll zuerst zeigen, was draussen passiert —
+     * gerade das noch nirgends Gelistete ist oft das Früheste. Wer nur
+     * handeln will, was das eigene Konto hergibt, schaltet den Filter ein.
+     */
+    nurBoersen: false,
     berichtTopN: 7,
     llmStufe: 'gruendlich-mittel',
     llmModus: 'gruendlich',

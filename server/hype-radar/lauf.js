@@ -17,6 +17,7 @@ import { sammle, dexDetails, fuehreZusammen } from './quellen.js'
 import { bewerte, STANDARD_GEWICHTE, STANDARD_NARRATIVE } from './bewertung.js'
 import { pruefe, holeGoPlus, STANDARD_SICHERHEIT } from './sicherheit.js'
 import { erzeugeBericht } from './bericht.js'
+import { ladeListungen, pruefeListung } from './listungen.js'
 
 /** Wie viele Kandidaten überhaupt bis zur Sicherheitsprüfung kommen. */
 const MAX_PRUEFUNGEN = 40
@@ -93,13 +94,45 @@ export async function scanne(einst, melde = () => {}) {
     const uebrige = roh.filter((k) => !angereichertePaare.has(k.contract || `${k.symbol}|${k.chain}`))
     const vereint = fuehreZusammen([...angereichert, ...uebrige])
 
+    /*
+     * Listung an den eigenen Börsen.
+     *
+     * Für jeden Fund wird vermerkt, ob Bitunix, Bitget oder Pionex ihn führen
+     * — der Unterschied zwischen „kann ich handeln" und „kann ich nur
+     * beobachten" gehört an jede Zeile. Drei Set-Abfragen je Fund, die
+     * Listen selbst kommen einmal je Lauf (und sind 12 h zwischengespeichert).
+     */
+    melde({ schritt: 'listungen' })
+    const listen = await ladeListungen()
+
     // ── Stufe 2, endgültig ──────────────────────────────────────────────
     const bewertet = vereint
-        .map((k) => ({ ...k, ...bewerte(k, gewichte, narrative) }))
+        .map((k) => {
+            const { liste, unbekannt } = pruefeListung(k.symbol, listen)
+            return {
+                ...k,
+                ...bewerte(k, gewichte, narrative),
+                markt: { ...k.markt, listungen: liste, listungUnbekannt: unbekannt },
+            }
+        })
         .sort((a, b) => b.hypeScore - a.hypeScore)
 
+    /*
+     * Auf Wunsch zählt nur, was handelbar ist.
+     *
+     * Der Filter lässt auch durch, was UNGEKLÄRT ist (eine Börsenliste war
+     * nicht abrufbar): mit „unbekannt = weg" würde ein Netzaussetzer bei
+     * Bitget den ganzen Lauf leeren, und niemand sähe warum.
+     */
+    const gefiltert = einst.nurBoersen
+        ? bewertet.filter((k) => k.markt.listungen.length > 0 || k.markt.listungUnbekannt.length > 0)
+        : bewertet
+    if (einst.nurBoersen) {
+        melde({ schritt: 'boersenfilter', anzahl: gefiltert.length, entfernt: bewertet.length - gefiltert.length })
+    }
+
     const schwelle = Number(einst.minHypeScore) || 0
-    const zurPruefung = bewertet.filter((k) => k.hypeScore >= schwelle)
+    const zurPruefung = gefiltert.filter((k) => k.hypeScore >= schwelle)
     /*
      * Was die Schwelle reisst, ist nicht „verworfen" im Sinne der Prüfung —
      * es war schlicht nicht interessant genug. Diese Funde tauchen im Bericht
@@ -111,7 +144,10 @@ export async function scanne(einst, melde = () => {}) {
      * die Schwelle — ein Streudiagramm mit einem Punkt beantwortet keine
      * Frage. Erst neben den vielen unauffälligen wird sichtbar, was heraussticht.
      */
-    const unterSchwelle = bewertet.filter((k) => k.hypeScore < schwelle)
+    // Aus `gefiltert`, nicht `bewertet`: mit dem Börsenfilter an sollen auch
+    // im Hintergrundfeld nur handelbare Funde stehen — der Filter gilt dem
+    // ganzen Lauf, nicht nur der Prüfliste.
+    const unterSchwelle = gefiltert.filter((k) => k.hypeScore < schwelle)
     melde({ schritt: 'bewertet', anzahl: zurPruefung.length, verworfenSchwelle: unterSchwelle.length })
 
     // ── Stufe 3 ─────────────────────────────────────────────────────────

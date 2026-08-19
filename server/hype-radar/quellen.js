@@ -249,6 +249,11 @@ export async function dexDetails(contract) {
         pair: p?.pairAddress || '',
         url: p?.url || '',
         markt: {
+            // Der Handelsplatz selbst (raydium, uniswap, pancakeswap …) — die
+            // Antwort auf „wo läuft das eigentlich", die sonst erst ein Klick
+            // auf DexScreener beantwortet hätte. In `markt`, weil die
+            // Zusammenführung nur diese Felder überträgt.
+            dex: String(p?.dexId || ''),
             preisUsd: Number(p?.priceUsd) || null,
             liquiditaetUsd: Number(p?.liquidity?.usd) || 0,
             volumen24h: Number(p?.volume?.h24) || 0,

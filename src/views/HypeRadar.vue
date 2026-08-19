@@ -87,6 +87,7 @@
                                 <th>{{ t('hype.spalteNarrativ') }}</th>
                                 <th class="text-end">{{ t('hype.spalteLiq') }}</th>
                                 <th class="text-end">{{ t('hype.spalteAlter') }}</th>
+                                <th>{{ t('hype.spalteHandelbar') }}</th>
                                 <th>{{ t('hype.spalteStatus') }}</th>
                                 <th></th>
                             </tr>
@@ -108,6 +109,13 @@
                                     <td class="text-end">{{ geld(k.marktDaten?.liquiditaetUsd) }}</td>
                                     <td class="text-end">{{ alter(k.marktDaten?.paarAlterStunden) }}</td>
                                     <td>
+                                        <span v-if="k.marktDaten?.dex" class="hypDex">{{ k.marktDaten.dex }}</span>
+                                        <span v-for="b in (k.marktDaten?.listungen || [])" :key="b"
+                                            class="hypBoerse" :title="t('hype.gelistetAuf', { b })">{{ BOERSEN_KUERZEL[b] || b }}</span>
+                                        <span v-if="!k.marktDaten?.dex && !(k.marktDaten?.listungen || []).length"
+                                            class="text-muted">—</span>
+                                    </td>
+                                    <td>
                                         <span v-if="k.status === 'verworfen'" class="badge bg-danger hypBadge"
                                             :title="k.verworfenGrund">{{ t('hype.grund_' + k.verworfenGrund) !== 'hype.grund_' + k.verworfenGrund ? t('hype.grund_' + k.verworfenGrund) : k.verworfenGrund }}</span>
                                         <span v-else-if="k.status === 'berichtet'" class="badge bg-primary hypBadge">{{ t('hype.imBericht') }}</span>
@@ -119,7 +127,7 @@
                                     </td>
                                 </tr>
                                 <tr v-if="offen === k.id" :key="k.id + '-d'">
-                                    <td colspan="8" class="hypDetail">
+                                    <td colspan="9" class="hypDetail">
                                         <div class="hypDetailGrid">
                                             <div>
                                                 <div class="hypDetailTitel">{{ t('hype.teilnoten') }}</div>
@@ -153,7 +161,7 @@
                                 </tr>
                             </template>
                             <tr v-if="!gefiltert.length">
-                                <td colspan="8" class="text-center text-muted py-3">{{ t('hype.nochKeinScan') }}</td>
+                                <td colspan="9" class="text-center text-muted py-3">{{ t('hype.nochKeinScan') }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -305,6 +313,15 @@
                     <label class="form-check-label small" for="hypLp">{{ t('hype.lpPflicht') }}</label>
                 </div>
 
+                <!-- Börsenfilter -->
+                <h6 class="hypTitel mt-4">{{ t('hype.boersenTitel') }}</h6>
+                <div class="form-check form-switch">
+                    <input id="hypBoersen" class="form-check-input" type="checkbox"
+                        v-model="einst.nurBoersen" @change="speichern">
+                    <label class="form-check-label small" for="hypBoersen">{{ t('hype.nurBoersen') }}</label>
+                    <div class="hypHinweis">{{ t('hype.nurBoersenHinweis') }}</div>
+                </div>
+
                 <!-- Quellen -->
                 <h6 class="hypTitel mt-4">{{ t('hype.quellenTitel') }}</h6>
                 <div class="hypQuellen">
@@ -373,6 +390,10 @@ import { logWarn } from '../utils/logger.js'
 const { t, locale } = useI18n()
 
 const HINWEIS_RUECKFALL = 'Keine Anlageberatung. Frühphasen-Token sind hochriskant.'
+
+// Kürzel der eigenen Börsen — kurz genug für eine Tabellenzelle, eindeutig
+// genug zum Wiedererkennen. Der volle Name steht im Title-Text.
+const BOERSEN_KUERZEL = { bitunix: 'BX', bitget: 'BG', pionex: 'PX' }
 
 const REITER = [
     { id: 'dashboard', icon: 'uil uil-dashboard' },
@@ -886,6 +907,28 @@ watch(locale, () => zeichne())
     font-size: .68rem;
     color: var(--grey-color, #9aa0a6);
     margin-left: .4rem;
+}
+
+.hypDex {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .7rem;
+    color: var(--grey-color, #9aa0a6);
+    margin-right: .35rem;
+}
+
+/* Kürzel der eigenen Börsen: gefüllt, damit „hier handelbar" sich von der
+   blossen Herkunftsangabe des DEX abhebt. */
+.hypBoerse {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .62rem;
+    font-weight: 600;
+    padding: .06rem .3rem;
+    border-radius: 4px;
+    background: var(--blue-color, #4da3ff);
+    color: #fff;
+    margin-right: .25rem;
+    vertical-align: middle;
 }
 
 .hypBadge {
