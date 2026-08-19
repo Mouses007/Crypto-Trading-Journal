@@ -56,10 +56,15 @@
                         <tr v-for="f in daten.funktionen" :key="f.id">
                             <td>{{ t(f.titelKey) }}</td>
                             <td>
-                                <span class="kuModell">{{ f.provider || '—' }}<template v-if="f.modell">/{{ f.modell }}</template></span>
-                                <span v-if="f.folgtGlobal" class="badge bg-secondary ms-2 kuBadge">
-                                    {{ t('kiUebersicht.folgtGlobal') }}
-                                </span>
+                                <!-- Die Sammelzeile hat kein Modell, sondern die Schlüssel,
+                                     unter denen gebucht wurde — sonst stünde dort nur „—". -->
+                                <span v-if="f.schluessel" class="kuModell">{{ f.schluessel.join(', ') }}</span>
+                                <template v-else>
+                                    <span class="kuModell">{{ f.provider || '—' }}<template v-if="f.modell">/{{ f.modell }}</template></span>
+                                    <span v-if="f.folgtGlobal" class="badge bg-secondary ms-2 kuBadge">
+                                        {{ t('kiUebersicht.folgtGlobal') }}
+                                    </span>
+                                </template>
                             </td>
                             <td class="text-end">
                                 <template v-if="f.verbrauch30.laeufe">
@@ -69,7 +74,7 @@
                                 <span v-else class="text-muted">—</span>
                             </td>
                             <td class="text-end">
-                                <a href="#" class="kuLink" @click.prevent="$emit('gehe-zu', f.bereich)">
+                                <a v-if="f.bereich" href="#" class="kuLink" @click.prevent="$emit('gehe-zu', f.bereich)">
                                     {{ t('kiUebersicht.einstellen') }}
                                 </a>
                             </td>

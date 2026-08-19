@@ -59,7 +59,7 @@ function switchMode(mode) {
 <template>
     <div :class="['mode-switch', variant]" :style="{ '--mode-count': sichtbareModi.length }">
         <button v-for="m in sichtbareModi" :key="m.id" type="button" :disabled="!m.enabled"
-            :title="m.enabled ? (m.beta ? t('modes.betaHint') : '') : t('modes.comingSoon')"
+            :title="m.enabled ? (m.beta ? t(m.betaHintKey || 'modes.betaHint') : '') : t('modes.comingSoon')"
             :class="['mode-btn', appMode === m.id ? 'active' : '']" @click="switchMode(m)">
             <i :class="m.icon"></i>
             <span class="mode-label">{{ labelFor(m) }}</span>

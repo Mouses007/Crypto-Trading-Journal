@@ -476,13 +476,13 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
 
             <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                 <h5 class="mb-0 me-auto">{{ t('strategies.editorTitle') }}</h5>
-                <button class="btn btn-sm btn-outline-secondary" @click="leer">
+                <button type="button" class="ctl-pill" @click="leer">
                     <i class="uil uil-plus me-1"></i>{{ t('strategies.emptyStrategy') }}
                 </button>
                 <!-- Import über ein verstecktes Dateifeld: ein Klick, kein Dialog. -->
                 <input ref="importFeld" type="file" accept="application/json,.json"
                     class="d-none" @change="importDatei" />
-                <button class="btn btn-sm btn-outline-secondary" @click="importFeld?.click()">
+                <button type="button" class="ctl-pill" @click="importFeld?.click()">
                     <i class="uil uil-upload-alt me-1"></i>{{ t('strategies.importStrategy') }}
                 </button>
             </div>

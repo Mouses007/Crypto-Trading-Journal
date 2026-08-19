@@ -2497,6 +2497,49 @@ h4 {
     font-weight: 600;
 }
 
+/*
+ * Die betonte Pille: der eine Knopf einer Leiste, der etwas auslöst.
+ *
+ * `accent` wurde in `Nachrichten.vue` schon benutzt, war aber nirgends
+ * definiert — der Knopf sah aus wie jeder andere. Hier steht die Regel jetzt
+ * einmal, damit Research und Live-Ansichten dieselbe Leiste zeigen.
+ */
+.ctl-pill.accent {
+    background: var(--blue-color);
+    border-color: var(--blue-color);
+    color: #fff;
+    font-weight: 600;
+}
+
+.ctl-pill.accent:hover {
+    color: #fff;
+    filter: brightness(1.1);
+}
+
+.ctl-pill:disabled,
+.ctl-pill[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/*
+ * Die warnende Pille: Abbruch, Not-Aus, Löschen.
+ *
+ * Ohne sie hätte die Vereinheitlichung dem Not-Aus im Strategie-Modus die
+ * Signalfarbe genommen — ein Knopf, der Positionen schliesst, darf nicht
+ * aussehen wie „Ansicht wechseln".
+ */
+.ctl-pill.warn {
+    border-color: rgba(220, 53, 69, 0.55);
+    color: #ff8a94;
+}
+
+.ctl-pill.warn:hover {
+    border-color: #dc3545;
+    color: #fff;
+    background: rgba(220, 53, 69, 0.18);
+}
+
 .ctl-pill.active-warn {
     background: #ffc107;
     border-color: #ffc107;

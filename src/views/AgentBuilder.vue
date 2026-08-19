@@ -215,7 +215,7 @@ async function entwurfLoeschen(d) {
                 <h5 class="mb-0 me-auto">{{ t('strategies.builderTitle') }}</h5>
                 <span class="badge bg-dark">{{ faehigkeiten.provider }} · {{ faehigkeiten.model }}</span>
                 <span v-if="kosten > 0" class="badge bg-secondary">${{ kosten.toFixed(4) }}</span>
-                <button class="btn btn-sm btn-outline-secondary" @click="neuerEntwurf">
+                <button type="button" class="ctl-pill accent" @click="neuerEntwurf">
                     <i class="uil uil-plus me-1"></i>{{ t('strategies.newDraft') }}
                 </button>
             </div>

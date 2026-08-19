@@ -309,13 +309,13 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                     <i class="uil uil-exclamation-octagon me-1"></i>{{ t('strategies.killSwitchActive') }}
                 </span>
                 <span v-if="!engine.liveEnabled" class="badge bg-secondary">{{ t('strategies.liveOffGlobal') }}</span>
-                <button class="btn btn-sm btn-outline-secondary" @click="jetztPruefen">
+                <button type="button" class="ctl-pill" @click="jetztPruefen">
                     <i class="uil uil-sync me-1"></i>{{ t('strategies.runNow') }}
                 </button>
-                <button class="btn btn-sm btn-outline-danger" @click="notAus = true">
+                <button type="button" class="ctl-pill warn" @click="notAus = true">
                     <i class="uil uil-power me-1"></i>{{ t('strategies.killSwitch') }}
                 </button>
-                <button v-if="!bearbeite" class="btn btn-sm btn-success" @click="neu">
+                <button v-if="!bearbeite" type="button" class="ctl-pill accent" @click="neu">
                     <i class="uil uil-plus me-1"></i>{{ t('strategies.newInstance') }}
                 </button>
             </div>

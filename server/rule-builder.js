@@ -173,7 +173,16 @@ export async function frageModell(cfg, { system, user, anhaenge }, aufruf = call
     for (let n = 1; n <= MAX_VERSUCHE; n++) {
         const antwort = await aufruf(
             { ...cfg, maxTokens: 16000 },
-            { system, user: eingabe, anhaenge, timeoutMs: 180000 },
+            {
+                system, user: eingabe, anhaenge, timeoutMs: 180000,
+                // Ohne `zweck` bucht `callLLMJson` bewusst nicht — und genau
+                // das fehlte hier: der Regel-Baukasten lief mit 16 000 Token
+                // Budget und bis zu drei Anläufen komplett an der Auswertung
+                // vorbei, während die Übersicht ihn als Funktion aufführte und
+                // dort ewig 0 stehen blieb. Jeder Anlauf wird einzeln gebucht;
+                // bezahlt ist auch der verworfene.
+                zweck: 'regel-baukasten', ausloeser: 'manuell',
+            },
         )
         letzte = antwort
         if (!antwort.json) return { antwort, regeln: null, fehler: [], versuche }

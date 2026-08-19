@@ -1321,10 +1321,10 @@ function getPositionDate(pos) {
                     </small>
                 </div>
                 <div class="col-auto d-flex align-items-center gap-2">
-                    <PageInfo section="info.pendente" />
                     <button class="btn btn-sm btn-outline-primary" @click="manualRefresh" :disabled="incomingPollingActive">
                         <i class="uil uil-sync me-1"></i>{{ t('incoming.refresh') }}
                     </button>
+                    <PageInfo section="info.pendente" />
                 </div>
             </div>
 

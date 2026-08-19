@@ -269,6 +269,31 @@ export function setupAiUebersichtRoutes(app) {
                 verbrauch30: summe(dreissig, f.funktionen),
             }))
 
+            /*
+             * Sammelzeile für alles, was die Registry oben nicht kennt.
+             *
+             * Ohne sie zählten die Zeilen nicht auf die Summe darüber: am
+             * 19.08.2026 buchten `coin-radar` und `hype-bericht` zusammen
+             * 0,169 der 0,341 USD des Tages — die Hälfte, sichtbar nur in der
+             * Gesamtzahl. Eine Sammelzeile statt zweier neuer Einträge, weil
+             * der nächste neue Verbraucher sonst wieder durchs Raster fällt:
+             * hier taucht er von selbst auf, benannt mit seinem Schlüssel.
+             */
+            const bekannt = new Set(KI_FUNKTIONEN.flatMap((f) => f.funktionen))
+            const uebrig = [...dreissig.keys()].filter((k) => !bekannt.has(k))
+            if (uebrig.length) {
+                funktionen.push({
+                    id: 'uebrige',
+                    titelKey: 'kiUebersicht.fn.uebrige',
+                    bereich: null,
+                    schluessel: uebrig.sort(),
+                    provider: '',
+                    modell: '',
+                    folgtGlobal: false,
+                    verbrauch30: summe(dreissig, uebrig),
+                })
+            }
+
             let engine = null
             try { engine = engineStatus() } catch { /* Engine nicht geladen */ }
 
