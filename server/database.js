@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage']
     let fixed = 0
 
     for (const table of tables) {
@@ -104,7 +104,10 @@ async function fixPostgresSequences(knex) {
 // v2: Tabelle `live_sessions` für das Live-Trading-Fenster. Rein additiv —
 // ein älterer Codestand ignoriert die Tabelle und läuft weiter; er meldet nur,
 // dass die Datenbank ihm voraus ist.
-const SCHEMA_VERSION = 2
+// v3: Tabelle `ai_usage` — der KI-Verbrauch an einer Stelle. Ebenfalls rein
+// additiv: ein älterer Codestand schreibt sie nicht, liest sie nicht und läuft
+// unverändert weiter; ihm fehlen nur die Zeilen seiner eigenen Läufe.
+const SCHEMA_VERSION = 3
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2075,6 +2078,50 @@ async function runMigrations(knex, client) {
             })
             console.log(' -> live_sessions: createdAt/updatedAt auf timestamp umgestellt')
         }
+    }
+
+    // ── KI-Verbrauch ─────────────────────────────────────────────────────
+
+    /*
+     * Eine Zeile je KI-Aufruf — die einzige Stelle, an der Verbrauch vollständig
+     * steht.
+     *
+     * Vorher lagen Token und Kosten in acht Tabellen mit drei verschiedenen
+     * Namen (`totalTokens`/`tokens`/`aiReviewTotalTokens`, `costUsd`/`kostenUsd`),
+     * und nur sechs der siebzehn Verbraucher schrieben überhaupt Kosten: alles,
+     * was nicht über `callLLMJson` lief, kannte nur Token. Die Frage „was kostet
+     * mich die KI diesen Monat" war damit nicht zu beantworten — nicht schwer,
+     * sondern unmöglich.
+     *
+     * Die alten Spalten bleiben, wo sie sind: sie hängen an ihren Fachobjekten
+     * (ein Bericht kennt seine Token) und sind die Historie. Diese Tabelle ist
+     * die Buchhaltung daneben, nicht ihr Ersatz.
+     *
+     * `funktion` ist bewusst eine freie Zeichenkette und keine Fremdschlüssel-
+     * beziehung: sie benennt einen Vorgang im Haus („lagebericht", „agent"),
+     * und ein neuer Verbraucher soll eine Zeile schreiben können, ohne dass
+     * vorher ein Schema wächst.
+     */
+    if (!(await knex.schema.hasTable('ai_usage'))) {
+        await knex.schema.createTable('ai_usage', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('erstelltAm').notNullable()
+            t.string('funktion').notNullable()       // bericht | agent | lagebericht | video …
+            t.string('ausloeser').defaultTo('auto')  // auto | manuell
+            t.string('provider').defaultTo('')
+            t.string('modell').defaultTo('')
+            t.integer('promptTokens').defaultTo(0)
+            t.integer('completionTokens').defaultTo(0)
+            t.integer('totalTokens').defaultTo(0)
+            // Bilderzeugung hat keine Token, aber sehr wohl einen Preis —
+            // deshalb steht die Kostenspalte nicht von Token abhängig da.
+            t.double('kostenUsd').defaultTo(0)
+            t.string('bezugTyp').defaultTo('')       // bericht | instanz | digest …
+            t.string('bezugId').defaultTo('')
+            t.index(['erstelltAm'], 'idx_aiusage_zeit')
+            t.index(['funktion'], 'idx_aiusage_funktion')
+        })
+        console.log(' -> Created table: ai_usage')
     }
 
     // ==================== SCHEMA-ANKER ====================
