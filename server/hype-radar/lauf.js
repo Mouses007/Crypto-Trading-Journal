@@ -200,7 +200,11 @@ export async function scanne(einst, melde = () => {}) {
             narrative: k.narrativ || '',
             quellen: k.quellen || [],
             marktDaten: k.markt || {},
-            sozialDaten: { ...(k.sozial || {}), teilnoten: k.teilnoten, quellenAnzahl: k.quellenAnzahl, trittbrett: k.trittbrett || null },
+            sozialDaten: { ...(k.sozial || {}), teilnoten: k.teilnoten, quellenAnzahl: k.quellenAnzahl,
+            // Welche Belegarten — nicht nur wie viele. Ohne sie liesse sich
+            // eine Quellenzahl von 1 bei zwei Anbietern nicht erklären.
+            evidenzDomaenen: k.evidenzDomaenen || [], anbieterAnzahl: k.anbieterAnzahl || 0,
+            trittbrett: k.trittbrett || null },
             sicherheitsDaten: { flaggen: urteil.flaggen, hinweise: urteil.hinweise, roh: goplus ? true : false },
             hypeScore: k.hypeScore,
             safetyScore: urteil.safetyScore,
@@ -226,7 +230,11 @@ export async function scanne(einst, melde = () => {}) {
         narrative: k.narrativ || '',
         quellen: k.quellen || [],
         marktDaten: k.markt || {},
-        sozialDaten: { ...(k.sozial || {}), teilnoten: k.teilnoten, quellenAnzahl: k.quellenAnzahl, trittbrett: k.trittbrett || null },
+        sozialDaten: { ...(k.sozial || {}), teilnoten: k.teilnoten, quellenAnzahl: k.quellenAnzahl,
+            // Welche Belegarten — nicht nur wie viele. Ohne sie liesse sich
+            // eine Quellenzahl von 1 bei zwei Anbietern nicht erklären.
+            evidenzDomaenen: k.evidenzDomaenen || [], anbieterAnzahl: k.anbieterAnzahl || 0,
+            trittbrett: k.trittbrett || null },
         sicherheitsDaten: {},
         hypeScore: k.hypeScore,
         safetyScore: 0,

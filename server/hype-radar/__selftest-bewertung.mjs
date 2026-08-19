@@ -12,7 +12,7 @@ import {
     bewerte, noteSozial, noteVolumen, noteQuellen, noteNarrativ, noteNeuheit, istTrittbrettfahrer, BOOST_DECKEL,
     STANDARD_GEWICHTE,
 } from './bewertung.js'
-import { fuehreZusammen, normSymbol, normChain } from './quellen.js'
+import { fuehreZusammen, evidenzDomaenen, normSymbol, normChain } from './quellen.js'
 
 let fehler = 0
 let bestanden = 0
@@ -155,7 +155,45 @@ pruefe('bei zwei möglichen Verträgen wird NICHT geraten', mehrdeutigeAdresse.l
 pruefe('und niemand bekommt eine fremde Quelle zugerechnet',
     mehrdeutigeAdresse.every((k) => k.quellenAnzahl === 1))
 
-// ── Volumen ─────────────────────────────────────────────────────────────
+/*
+ * Der Befund R-08: DexScreener und GeckoTerminal lesen DIESELBEN On-chain-
+ * Pools. Bis zum Audit vom 19.08.2026 zählten sie als zwei unabhängige
+ * Bestätigungen — ein einzelner Pump löste beide zugleich aus und sah damit
+ * aus wie zwei Quellen. Da diese Zahl der stärkste Einzelfaktor gegen
+ * gekauften Lärm ist, war das die teuerste Lücke der Bewertung.
+ */
+const zweiAggregatoren = fuehreZusammen([
+    { symbol: 'A', chain: 'base', contract: '0x1', quelle: { quelle: 'dexscreener' }, markt: {}, sozial: {} },
+    { symbol: 'A', chain: 'base', contract: '0x1', quelle: { quelle: 'geckoterminal' }, markt: {}, sozial: {} },
+])
+pruefe('zwei On-chain-Aggregatoren sind EIN Beleg',
+    zweiAggregatoren[0].quellenAnzahl === 1, JSON.stringify(zweiAggregatoren[0].evidenzDomaenen))
+pruefe('die Anbieterzahl bleibt trotzdem sichtbar',
+    zweiAggregatoren[0].anbieterAnzahl === 2, String(zweiAggregatoren[0].anbieterAnzahl))
+
+// Verschiedene Domänen zählen dagegen einzeln — das ist der Sinn der Zahl.
+const dreiDomaenen = fuehreZusammen([
+    { symbol: 'B', chain: 'base', contract: '0x2', quelle: { quelle: 'geckoterminal' }, markt: {}, sozial: {} },
+    { symbol: 'B', chain: 'base', contract: '0x2', quelle: { quelle: 'coingecko' }, markt: {}, sozial: {} },
+    { symbol: 'B', chain: 'base', contract: '0x2', quelle: { quelle: 'reddit-x' }, markt: {}, sozial: {} },
+])
+pruefe('Handel, Entdeckung und Gerede sind drei Belege',
+    dreiDomaenen[0].quellenAnzahl === 3, JSON.stringify(dreiDomaenen[0].evidenzDomaenen))
+
+/*
+ * Bezahlte Sichtbarkeit ist ausdrücklich KEIN Handelsbeleg. Wer sich einen
+ * Boost kauft und dadurch in der Trendliste steht, hat damit nicht bewiesen,
+ * dass gehandelt wird — sonst liesse sich der wichtigste Faktor der Bewertung
+ * schlicht erwerben.
+ */
+pruefe('Boost zählt zur Entdeckung, nicht zum Handel',
+    evidenzDomaenen([{ quelle: 'dexscreener-boost' }]).join() === 'discovery',
+    evidenzDomaenen([{ quelle: 'dexscreener-boost' }]).join())
+pruefe('gekaufte Sichtbarkeit plus Suchinteresse bleibt EIN Beleg',
+    evidenzDomaenen([{ quelle: 'dexscreener-boost' }, { quelle: 'coingecko' }]).length === 1)
+pruefe('unbekannte Quelle zählt gar nicht', evidenzDomaenen([{ quelle: 'irgendwas' }]).length === 0)
+
+
 pruefe('ohne Handel keine Note', noteVolumen({ markt: { volumen24h: 0 } }) === 0)
 // 24 h = 2400, Mittel je Stunde = 100. Letzte Stunde 100 → Faktor 1 → 25.
 pruefe('Handel wie üblich gibt 25',

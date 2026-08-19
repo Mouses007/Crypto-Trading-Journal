@@ -7,7 +7,7 @@
  *
  * Aufruf: node server/hype-radar/__selftest-sicherheit.mjs
  */
-import { pruefe, summeTop10, ausRugCheck, STANDARD_SICHERHEIT } from './sicherheit.js'
+import { pruefe, summeTop10, top10Ausgeschlossen, ausRugCheck, STANDARD_SICHERHEIT } from './sicherheit.js'
 
 let fehler = 0
 let bestanden = 0
@@ -151,6 +151,49 @@ p('Anteile als 0..100 werden erkannt',
     Math.round(summeTop10([{ percent: '25' }, { percent: '15' }])) === 40)
 p('leere Halterliste ergibt null', summeTop10([]) === null)
 p('fehlende Halterliste ergibt null', summeTop10(undefined) === null)
+
+/*
+ * Der Befund R-09: Bis zum Audit vom 19.08.2026 wurden die zehn grössten
+ * Halter roh addiert. Verbrannte Anteile, gesperrte Tranchen, Börsen-
+ * Sammeladressen und die Liquiditätspools selbst zählten mit — ausgerechnet
+ * eine saubere Aufsetzung wirkte dadurch riskant.
+ */
+const gemischt = [
+    { percent: '30', address: '0x0000000000000000000000000000000000000000', tag: '', is_locked: 0 },
+    { percent: '20', address: '0xAAA', tag: 'Binance', is_locked: 0 },
+    { percent: '15', address: '0xBBB', tag: '', is_locked: 1 },
+    { percent: '10', address: '0xCCC', tag: '', is_locked: 0 },
+    { percent: '5', address: '0xDDD', tag: '', is_locked: 0 },
+]
+p('verbrannt, benannt und gesperrt zählen nicht mit',
+    Math.round(summeTop10(gemischt)) === 15, String(summeTop10(gemischt)))
+p('die rohe Summe bleibt abrufbar',
+    Math.round(summeTop10(gemischt, { roh: true })) === 80, String(summeTop10(gemischt, { roh: true })))
+p('unbekannte Adressen bleiben verdächtig',
+    Math.round(summeTop10([{ percent: '40', address: '0xEEE', tag: '', is_locked: 0 }])) === 40)
+
+const weg = top10Ausgeschlossen(gemischt)
+p('drei Halter werden ausgewiesen', weg.length === 3, JSON.stringify(weg.map((x) => x.grund)))
+p('die Gründe sind benannt',
+    weg.some((x) => x.grund === 'verbrannt') && weg.some((x) => x.grund === 'gesperrt')
+    && weg.some((x) => /Binance/i.test(x.grund)), JSON.stringify(weg))
+
+// Alles verbrannt heisst 0 % Konzentration — eine Aussage, keine Lücke.
+p('vollständig verbrannt ergibt 0, nicht null',
+    summeTop10([{ percent: '100', address: '0x000000000000000000000000000000000000dEaD' }]) === 0)
+
+/*
+ * Die Wirkung dort, wo sie zählt: Ein Token, dessen Grossteil verbrannt und
+ * bei einer Börse liegt, darf dafür keinen Abzug bekommen.
+ */
+const sauberVerteilt = pruefe({ ...sauber(), holders: gemischt }, marktOk())
+const rohGerechnet = pruefe({ ...sauber(), holders: [{ percent: '80', address: '0xFFF' }] }, marktOk())
+p('bereinigte Verteilung schneidet besser ab als eine echte Ballung',
+    sauberVerteilt.safetyScore > rohGerechnet.safetyScore,
+    `${sauberVerteilt.safetyScore} vs ${rohGerechnet.safetyScore}`)
+p('und die Bereinigung wird im Hinweis genannt',
+    sauberVerteilt.hinweise.some((h) => /nicht mitgezählt/.test(h)),
+    JSON.stringify(sauberVerteilt.hinweise))
 
 // Verkaufssteuer ebenso: „0.05" ist 5 %, „5" auch.
 const steuerAnteil = pruefe({ ...sauber(), sell_tax: '0.05' }, marktOk())

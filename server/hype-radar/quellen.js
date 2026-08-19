@@ -639,13 +639,66 @@ export function fuehreZusammen(funde) {
         (sl) => sl.startsWith('s:') && sl.endsWith('|?'),
         (k, k2) => k2.symbol === k.symbol && k2.chain && k2.chain !== '?')
 
-    return [...nachSchluessel.values()].map((k) => ({
-        ...k,
-        // Die entscheidende Zahl: aus wie vielen UNABHÄNGIGEN Quellen stammt
-        // der Fund. Die beiden DexScreener-Endpunkte zählen als einer, sonst
-        // liesse sich Bestätigung durch einen einzigen Anbieter vortäuschen.
-        quellenAnzahl: new Set(k.quellen.map((q) => String(q.quelle).split('-')[0])).size,
-    }))
+    return [...nachSchluessel.values()].map((k) => {
+        const domaenen = evidenzDomaenen(k.quellen)
+        return {
+            ...k,
+            /*
+             * Die entscheidende Zahl: aus wie vielen unabhängigen EVIDENZ-
+             * DOMÄNEN stammt der Fund — nicht aus wie vielen Anbietern.
+             *
+             * Bis zum Audit vom 19.08.2026 wurden Anbieter gezählt (die beiden
+             * DexScreener-Endpunkte immerhin schon als einer). Nur lesen
+             * DexScreener und GeckoTerminal DIESELBEN On-chain-Pools: ein
+             * einzelner Pump löst beide zugleich aus und sah damit aus wie
+             * zwei unabhängige Bestätigungen. Da diese Zahl der stärkste
+             * Einzelfaktor gegen gekauften Lärm ist, war das die teuerste
+             * Lücke der Bewertung.
+             *
+             * Mehrere Anbieter derselben Domäne erhöhen die Datenqualität,
+             * nicht die Bestätigung.
+             */
+            quellenAnzahl: domaenen.length,
+            evidenzDomaenen: domaenen,
+            // Die Anbieterzahl bleibt sichtbar: sie erklärt, warum eine Zahl
+            // kleiner ausfällt als die Liste der Quellen vermuten liesse.
+            anbieterAnzahl: new Set(k.quellen.map((q) => String(q.quelle).split('-')[0])).size,
+        }
+    })
+}
+
+/**
+ * Welcher Quelle welche Art von Beleg zuzurechnen ist.
+ *
+ * `discovery`  jemand hat den Fund in eine Liste gestellt (Suchinteresse,
+ *              bezahlte Sichtbarkeit, neues Profil) — sagt nichts über Handel
+ * `onchain`    tatsächlicher Handel in einem Pool. DexScreener und
+ *              GeckoTerminal aggregieren dieselben Pools; zwei Anbieter, EIN
+ *              Beleg.
+ * `social`     Menschen reden darüber
+ * `news`       redaktionelle Erwähnung
+ */
+const QUELL_DOMAENE = {
+    coingecko: 'discovery',
+    'dexscreener-boost': 'discovery',    // bezahlt — ausdrücklich kein Handelsbeleg
+    'dexscreener-neu': 'discovery',      // frisch eingereichtes Profil
+    dexscreener: 'onchain',
+    geckoterminal: 'onchain',
+    reddit: 'social',
+    lunarcrush: 'social',
+    cryptopanic: 'news',
+}
+
+/** Die belegten Domänen eines Kandidaten, ohne Wiederholung. */
+export function evidenzDomaenen(quellen = []) {
+    const raus = new Set()
+    for (const q of quellen) {
+        const name = String(q?.quelle || '')
+        // Erst der volle Name (`dexscreener-boost`), dann der Anbieter.
+        const d = QUELL_DOMAENE[name] || QUELL_DOMAENE[name.split('-')[0]]
+        if (d) raus.add(d)
+    }
+    return [...raus]
 }
 
 /**

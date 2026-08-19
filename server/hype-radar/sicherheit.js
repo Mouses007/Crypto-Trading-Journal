@@ -162,6 +162,20 @@ export function pruefe(goplus, markt = {}, regeln = STANDARD_SICHERHEIT) {
 
     const top10 = summeTop10(goplus.holders)
     flaggen.top10Prozent = top10
+    /*
+     * Beide Zahlen bleiben stehen: die bereinigte entscheidet, die rohe macht
+     * die Bereinigung überprüfbar. Weichen sie stark ab, war viel verbrannt
+     * oder gesperrt — das ist eine gute Nachricht und soll auch so aussehen.
+     */
+    flaggen.top10ProzentRoh = summeTop10(goplus.holders, { roh: true })
+    const raus = top10Ausgeschlossen(goplus.holders)
+    if (raus.length) {
+        flaggen.top10Ausgeschlossen = raus
+        const anteil = raus.reduce((a, x) => a + x.anteil, 0)
+        hinweise.push(`${raus.length} der zehn grössten Halter nicht mitgezählt `
+            + `(${raus.map((x) => x.grund).join(', ')})`)
+        if (anteil > 0) flaggen.top10AusgeschlossenAnteil = anteil
+    }
     if (top10 !== null) {
         if (top10 > r.maxTop10Prozent) {
             // Kein K.o., aber der schwerste Abzug: wenige Halter können den
@@ -222,14 +236,69 @@ function verworfen(grund, text, flaggen, hinweise) {
 }
 
 /** Anteil der zehn grössten Halter in Prozent, oder null. */
-export function summeTop10(halter) {
+/** Adressen, hinter denen niemand steht, der verkaufen könnte. */
+const VERBRANNT = [/^0x0{40}$/i, /^0x0*dead$/i, /^1n[cC]1nerator/, /^11111111111111111111111111111111$/]
+
+/**
+ * Stichwörter in GoPlus-Tags, die eine Adresse als Systemadresse ausweisen.
+ * GoPlus benennt bekannte Adressen selbst — das ist verlässlicher als jede
+ * eigene Liste, die man pflegen müsste.
+ */
+const SYSTEM_TAGS = /burn|null|dead|lock|vest|team|foundation|treasury|binance|coinbase|okx|bybit|kraken|bitget|gate|kucoin|uniswap|pancake|raydium|orca|meteora|pool|router/i
+
+/** Ist dieser Halter jemand, der den Markt überrollen könnte? */
+function istGefahr(h) {
+    const adresse = String(h?.address || '')
+    if (VERBRANNT.some((r) => r.test(adresse))) return false
+    // Gesperrt heisst: kann in der Sperrfrist nicht verkaufen.
+    if (jaNein(h?.is_locked)) return false
+    if (SYSTEM_TAGS.test(String(h?.tag || ''))) return false
+    return true
+}
+
+/**
+ * Anteil der zehn grössten Halter in Prozent — BEREINIGT.
+ *
+ * Vor dem Audit vom 19.08.2026 wurden die ersten zehn `percent` roh addiert.
+ * Verbrannte Anteile, gesperrte Tranchen, Börsen-Sammeladressen und die
+ * Liquiditätspools selbst zählten mit — und damit wirkte ausgerechnet eine
+ * saubere Aufsetzung riskant. Umgekehrt half das niemandem: Wer die Verteilung
+ * wirklich kontrolliert, verteilt sie auf mehrere Wallets, und dagegen hilft
+ * kein Summieren.
+ *
+ * Ausgeschlossen wird nur, was nachweislich nicht verkaufen KANN oder wem der
+ * Anbieter selbst einen Namen gegeben hat. Eine unbekannte Adresse bleibt
+ * verdächtig — das ist die Linie des Hauses.
+ *
+ * @param {Array} halter
+ * @param {object} opts  `{roh: true}` liefert die unbereinigte Summe
+ * @returns {number|null} Prozent, oder null wenn nichts zu rechnen war
+ */
+export function summeTop10(halter, opts = {}) {
     if (!Array.isArray(halter) || !halter.length) return null
-    const anteile = halter
-        .slice(0, 10)
-        .map((h) => Number(h?.percent) || 0)
-    const summe = anteile.reduce((a, b) => a + b, 0)
+    const genommen = halter.slice(0, 10).filter((h) => opts.roh || istGefahr(h))
+    const summe = genommen.reduce((a, h) => a + (Number(h?.percent) || 0), 0)
+    // Kein Halter mehr übrig heisst: alles verbrannt, gesperrt oder benannt.
+    // Das ist eine Aussage (0 %), keine fehlende Messung.
+    if (!genommen.length) return halter.length ? 0 : null
     if (summe <= 0) return null
+    // GoPlus gibt Anteile als 0..1 ODER 0..100 — beides kommt vor.
     return summe <= 1 ? summe * 100 : summe
+}
+
+/**
+ * Welche der zehn grössten Halter warum nicht mitgezählt wurden.
+ * Für die Anzeige: Ein Abzug, dessen Herkunft man nicht sieht, ist eine
+ * Behauptung.
+ */
+export function top10Ausgeschlossen(halter) {
+    if (!Array.isArray(halter)) return []
+    return halter.slice(0, 10).filter((h) => !istGefahr(h)).map((h) => ({
+        adresse: String(h?.address || '').slice(0, 10),
+        anteil: Number(h?.percent) || 0,
+        grund: jaNein(h?.is_locked) ? 'gesperrt'
+            : (VERBRANNT.some((r) => r.test(String(h?.address || ''))) ? 'verbrannt' : String(h?.tag || 'benannt')),
+    }))
 }
 
 /**
@@ -254,7 +323,15 @@ export function ausRugCheck(j) {
         holder_count: Number(j?.totalHolders) || 0,
         // RugCheck gibt Prozentwerte 0..100 — `summeTop10` erkennt das selbst.
         holders: (Array.isArray(j?.topHolders) ? j.topHolders : [])
-            .map((h) => ({ percent: Number(h?.pct) || 0 })),
+            .map((h) => ({
+                percent: Number(h?.pct) || 0,
+                address: String(h?.address || h?.owner || ''),
+                // RugCheck kennt keine Tags, aber `insider` — die Antwort auf
+                // dieselbe Frage aus der anderen Richtung.
+                tag: h?.insider ? 'insider' : '',
+                is_locked: 0,
+                is_contract: 0,
+            })),
         lp_holders: Number.isFinite(lpGesperrtPct)
             ? [{ percent: lpGesperrtPct, is_locked: 1, address: 'rugcheck' }]
             : [],
@@ -333,7 +410,23 @@ export async function holeGoPlus(chain, contract) {
             owner_address: d?.mintable?.authority?.[0]?.address || '',
             transfer_pausable: d?.transfer_hook?.length ? 1 : 0,
             holder_count: Number(d?.holder_count) || 0,
-            holders: (d?.holders || []).map((h) => ({ percent: Number(h?.percent) || 0 })),
+            /*
+             * Die Merkmale bleiben erhalten.
+             *
+             * Bis zum Audit vom 19.08.2026 wurde hier alles ausser `percent`
+             * weggeworfen — und damit genau das, was einen grossen Halter
+             * einordnet: `is_locked` (Sperrfrist), `tag` (GoPlus benennt
+             * bekannte Adressen wie Börsen oder Null-Adresse) und
+             * `is_contract`. Ohne sie wirkte eine saubere Verteilung riskant,
+             * weil verbrannte und gesperrte Anteile mitzählten.
+             */
+            holders: (d?.holders || []).map((h) => ({
+                percent: Number(h?.percent) || 0,
+                address: String(h?.address || ''),
+                tag: String(h?.tag || ''),
+                is_locked: h?.is_locked,
+                is_contract: h?.is_contract,
+            })),
             lp_holders: lpHolders,
             sell_tax: 0,
             is_proxy: 0,
