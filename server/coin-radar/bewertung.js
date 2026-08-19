@@ -28,11 +28,32 @@ export const STANDARD_GEWICHTE = {
     kosten: 15,     // Funding — was kostet das Halten
 }
 
-/** Vorgabe-Hürden. Wer sie reisst, kommt nicht in die Rangliste. */
+/**
+ * Vorgabe-Hürden. Wer sie reisst, kommt nicht in die Rangliste.
+ *
+ * Die Zahlen sind an den echten 494 Bitunix∩Binance-Paaren GEMESSEN, nicht
+ * geschätzt. Das ist kein Detail: Der erste Entwurf setzte `minTiefeUsd` auf
+ * 5000, weil die Zahl plausibel klang — durchgekommen sind damit zwölf Coins,
+ * und zwar genau die grössten. Eine Seite, die jeden Tag BTC, ETH und SOL
+ * zeigt, beantwortet die Frage nicht, für die sie gebaut wurde.
+ */
 export const STANDARD_HUERDEN = {
-    minUmsatz24hUsd: 10_000_000,   // Praxisschwelle gegen Rutschverluste
-    maxSpreadBp: 5,                // 5 Basispunkte = 0,05 %
-    minTiefeUsd: 5_000,            // was an der Spitze wirklich liegt
+    // Praxisschwelle gegen Rutschverluste. Gemessen bleiben 97 von 494 übrig
+    // — der Median liegt bei 1,9 Mio., das Feld ist also sehr schief.
+    minUmsatz24hUsd: 10_000_000,
+    // 5 Basispunkte = 0,05 %. Gemessener Median: 4,4 bp, es bleiben 276.
+    maxSpreadBp: 5,
+    /*
+     * Was GANZ VORNE im Buch liegt — `bookTicker` liefert nur die beste Bid-
+     * und Ask-Menge, nicht die Markttiefe. Der gemessene Median über alle
+     * Paare sind 80 Dollar; 5000 hätten 479 von 494 erschlagen.
+     *
+     * Der Wert ist deshalb kein Liquiditätsmass, sondern eine Rauchprobe gegen
+     * das eine Muster, das ein enger Spread allein nicht verrät: eine Spitze,
+     * hinter der nichts steht. 200 Dollar liegt beim gemessenen p75 — wer
+     * darunter liegt, hat einen Spread, der bei der ersten Order verschwindet.
+     */
+    minTiefeUsd: 200,
     minKerzen: 30,                 // ohne Historie keine belastbare Kennzahl
 }
 
@@ -40,16 +61,21 @@ export const STANDARD_HUERDEN = {
  * Kennwerte, ab denen eine Teilnote voll ausschlägt.
  *
  * Bewusst als Konstanten mit Begründung statt als magische Zahlen im Code:
- * Wer sie später verschiebt, soll sehen, woher sie kamen.
+ * Wer sie später verschiebt, soll sehen, woher sie kamen. In Klammern jeweils
+ * der gemessene Rang unter den 120 umsatzstärksten Paaren (19.08.2026) — eine
+ * volle Punktzahl, die die Hälfte des Feldes erreicht, wäre keine Auszeichnung.
  */
 export const ANKER = {
     // 3 % ATR auf Stundenbasis ist für einen Perp schon lebhaft; darüber
-    // steigt vor allem das Risiko, nicht die Gelegenheit.
+    // steigt vor allem das Risiko, nicht die Gelegenheit. (gemessen p77;
+    // Median 1,29 %, p90 4,95 %)
     atrPctVoll: 3,
     // 2,0 gilt in der Praxis als „im Spiel"; 4 ist ein deutlicher Ausbruch.
+    // (gemessen: 2,0 ≈ p80, 4,0 ≈ p95)
     rvolVoll: 4,
     rvolSchwelle: 2,
     // Unter 20 ist Seitwärts, ab 25 trendet es, 40 ist ein starker Trend.
+    // (gemessen: Median 23, p75 33, p90 41)
     adxUnten: 20,
     adxVoll: 40,
     // Ab 50 % Jahresrate ist Funding ein ernsthafter Kostenfaktor.

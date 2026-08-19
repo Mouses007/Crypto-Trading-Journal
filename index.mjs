@@ -20,6 +20,7 @@ import { setupAiModelRoutes } from './server/ai-models.js'
 import { setupAgentRoutes } from './server/ai-agent.js'
 import { setupAiUebersichtRoutes } from './server/ai-uebersicht.js'
 import { setupHypeRadarRoutes, startHypeTakt, startWachhundTakt } from './server/hype-radar-api.js'
+import { setupCoinRadarRoutes, startCoinRadarTakt } from './server/coin-radar-api.js'
 import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
@@ -144,6 +145,7 @@ const startIndex = async () => {
     startNewsTakt();
     startHypeTakt();
     startWachhundTakt();
+    startCoinRadarTakt();
     setupBenachrichtigungsRoutes(app);
     startBenachrichtigungsTakt();
     setupOllamaRoutes(app);
@@ -151,6 +153,7 @@ const startIndex = async () => {
     setupAgentRoutes(app);
     setupAiUebersichtRoutes(app);
     setupHypeRadarRoutes(app);
+    setupCoinRadarRoutes(app);
     setupUpdateRoutes(app);
     setupBackupRoutes(app);
     await setupFluxRoutes(app);
