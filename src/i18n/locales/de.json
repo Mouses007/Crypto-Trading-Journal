@@ -559,7 +559,7 @@
     "qwenUrlHint": "Alibaba vergibt internationalen Konten eigene Adressen je Arbeitsbereich. Passt die Vorbelegung nicht, steht die richtige Adresse in der Model-Studio-Konsole.",
     "providerRetired": "nicht mehr angeboten",
     "keyFrom": "Von",
-    "area_benachrichtigungen": "Meldungen",
+    "area_benachrichtigungen": "Benachrichtigungen",
     "benachrichtigungen": {
       "titel": "Benachrichtigungen",
       "einleitung": "Hier steht, worüber die App Bescheid gibt — und auf welchem Weg. Browser-Meldungen erscheinen nur, solange die Seite offen ist; E-Mail erreicht dich auch bei geschlossener App.",

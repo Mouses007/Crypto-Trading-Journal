@@ -116,17 +116,22 @@ export const MODES = [
     { id: 'start', titleKey: 'modes.start', icon: 'uil uil-estate', home: '/startseite', enabled: true },
     { id: 'journal', titleKey: 'modes.journal', icon: 'uil uil-book-alt', home: '/dashboard', enabled: true },
     { id: 'live', titleKey: 'modes.live', shortKey: 'modes.liveShort', icon: 'uil uil-chart-line', home: '/marktradar', enabled: true },
+    /*
+     * Entdecken: was es noch nicht ins Journal geschafft hat. Bislang ein
+     * Platzhalter, jetzt vom Hype-Radar bewohnt. Bleibt versteckbar — wer nur
+     * sein Journal führt, braucht den Modus nicht.
+     *
+     * Ebenfalls Beta, aber aus anderem Grund als der Strategie-Modus: hier
+     * handelt niemand selbstständig, die Funde sind bloss noch jung und wenig
+     * erprobt. Deshalb ein eigener Hinweistext — „nur im Papierbetrieb
+     * verwenden" ergäbe für einen Radar keinen Sinn.
+     */
+    { id: 'research', titleKey: 'modes.research', icon: 'uil uil-telescope', home: '/hype-radar', enabled: true, beta: true, betaHintKey: 'modes.betaHintResearch', versteckbar: true },
     // Freigegeben als Beta. Der Modus handelt selbstständig, deshalb warnt
     // `BetaHinweis.vue` auf jeder seiner Seiten, und der scharfe Betrieb hängt
     // zusätzlich an der dreifachen Freigabekette (globaler Schalter, Freigabe je
     // Instanz, Mindestzahl Papier-Trades).
     { id: 'agent', titleKey: 'modes.agent', shortKey: 'modes.agentShort', icon: 'uil uil-robot', home: '/agent/strategies', enabled: true, beta: true, versteckbar: true },
-    /*
-     * Entdecken: was es noch nicht ins Journal geschafft hat. Bislang ein
-     * Platzhalter, jetzt vom Hype-Radar bewohnt. Bleibt versteckbar — wer nur
-     * sein Journal führt, braucht den Modus nicht.
-     */
-    { id: 'research', titleKey: 'modes.research', icon: 'uil uil-telescope', home: '/hype-radar', enabled: true, versteckbar: true },
 ]
 
 export const pageById = (id) => PAGES.find(p => p.id === id) || null
