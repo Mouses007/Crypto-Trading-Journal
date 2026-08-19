@@ -2080,6 +2080,16 @@ async function runMigrations(knex, client) {
         }
     }
 
+    /*
+     * Anzeigewährung für KI-Kosten. Die Anbieter rechnen in USD; angezeigt
+     * wurde CHF mit einem Faktor, der an sechs Stellen im Quelltext stand.
+     * Bewusst ein fester Faktor und kein Kursdienst: die Beträge sind ohnehin
+     * Schätzungen aus Listenpreisen, ein tagesaktueller Kurs wäre
+     * Scheingenauigkeit. Faktor 0 oder leer heisst „in USD anzeigen".
+     */
+    await addColumnIfNotExists('settings', 'waehrungCode', (t) => t.text('waehrungCode').defaultTo('CHF'))
+    await addColumnIfNotExists('settings', 'waehrungFaktor', (t) => t.double('waehrungFaktor').defaultTo(0.8))
+
     // ── KI-Verbrauch ─────────────────────────────────────────────────────
 
     /*

@@ -12,7 +12,8 @@ import {
 // Kreis-Import mit llm.js (llm.js holt sich hier den SSRF-Schutz) — unkritisch,
 // weil beide Seiten nur Funktionen zur Laufzeit aufrufen, nichts beim Laden.
 import { istGuthabenFehler, merkeKiGuthaben } from './llm.js'
-import { merkeVerbrauch } from './ai-usage.js'
+import { merkeVerbrauch, verbrauchJeFunktion } from './ai-usage.js'
+import { PREISE, BILD_PREISE } from './ai-preise.js'
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
@@ -904,6 +905,17 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
         }
     })
 
+    /**
+     * Die Preisliste, damit die Oberfläche nicht ihre eigene führen muss.
+     *
+     * Genau dafür gab es sie vorher zweimal — im Frontend mit anderen Zahlen
+     * für DeepSeek und Grok als hier. Wer eine Kostenanzeige baut, holt sie
+     * ab hier.
+     */
+    app.get('/api/ai/preise', (req, res) => {
+        res.json({ preise: PREISE, bildPreise: BILD_PREISE })
+    })
+
     // --- Aggregierte Token-Statistiken ---
     app.get('/api/ai/token-stats', async (req, res) => {
         try {
@@ -936,16 +948,15 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                 }))
             } catch (e) { /* Spalten fehlen noch */ }
 
-            let screenshotReviews = []
-            try {
-                const ssRaw = await knex('screenshots')
-                    .select('aiReviewProvider', 'aiReviewModel', 'aiReviewPromptTokens', 'aiReviewCompletionTokens', 'aiReviewTotalTokens')
-                    .where('aiReviewTotalTokens', '>', 0)
-                screenshotReviews = ssRaw.map(r => ({
-                    provider: r.aiReviewProvider, model: r.aiReviewModel,
-                    promptTokens: r.aiReviewPromptTokens, completionTokens: r.aiReviewCompletionTokens, totalTokens: r.aiReviewTotalTokens
-                }))
-            } catch (e) { /* Spalten fehlen noch */ }
+            /*
+             * `screenshots.aiReview*` wurde hier früher mitgelesen. Die Spalten
+             * gibt es, geschrieben hat sie nie jemand: eine Einzelbewertung je
+             * Screenshot ist nie gebaut worden — Screenshots gehen als Anhang
+             * in die Trade-Analyse, und deren Verbrauch steht bei `notes`.
+             * Die Abfrage lieferte damit garantiert nichts und behauptete eine
+             * Quelle, die es nicht gibt. Die Spalten bleiben unangetastet,
+             * falls die Bewertung je kommt.
+             */
 
             // 5. ai_trade_messages (Trade-Review Chat)
             let tradeChat = []
@@ -1022,7 +1033,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             const byProvider = {}
             let totalPrompt = 0, totalCompletion = 0, totalAll = 0
 
-            const allEntries = [...reports, ...messages, ...reviews, ...screenshotReviews,
+            const allEntries = [...reports, ...messages, ...reviews,
                 ...tradeChat, ...agentSessions, ...lageberichte, ...strategieLaeufe]
             for (const entry of allEntries) {
                 const p = entry.provider || 'unknown'
@@ -1057,7 +1068,6 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                     reports: reports.length,
                     chatMessages: messages.length,
                     tradeReviews: reviews.length,
-                    screenshotReviews: screenshotReviews.length,
                     agentSessions: agentSessions.length,
                     lageberichte: lageberichte.length,
                     strategieLaeufe: strategieLaeufe.length

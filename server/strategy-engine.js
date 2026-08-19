@@ -468,6 +468,13 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
             lauf.sentimentOutput = JSON.stringify(veto.sentiment || {})
             lauf.portfolioOutput = JSON.stringify(veto.portfolio || {})
             lauf.costUsd = Number(veto.costUsd) || 0
+            // Diese drei Spalten blieben bisher leer, obwohl sie seit jeher in
+            // der Tabelle stehen — die Token-Statistik filtert auf
+            // `totalTokens > 0` und übersprang die Strategie-Läufe damit
+            // vollständig.
+            lauf.totalTokens = Number(veto.totalTokens) || 0
+            lauf.provider = veto.provider || ''
+            lauf.model = veto.model || ''
             if (veto.action === 'reject') {
                 return beenden('reject_agent', 'agent_veto', veto.reason)
             }

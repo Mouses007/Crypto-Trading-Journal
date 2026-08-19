@@ -158,6 +158,10 @@ export async function agentenVeto({ instance, setup }) {
     const ergebnis = {
         action: 'allow', sizeFactor: 1, reason: '',
         sentiment: {}, portfolio: {}, costUsd: 0,
+        // Wer geantwortet hat und wie viel es war. Die Spalten dafür gab es in
+        // `strategy_runs` schon lange, gefüllt wurden sie nie — die Auswertung
+        // filterte deshalb auf `totalTokens > 0` und fand grundsätzlich nichts.
+        totalTokens: 0, provider: '', model: '',
     }
 
     const sentimentAn = konf.sentiment?.enabled
@@ -205,6 +209,9 @@ export async function agentenVeto({ instance, setup }) {
                 bezug: { typ: 'instanz', id: instance?.id },
             })
             ergebnis.costUsd += antwort.costUsd
+            ergebnis.totalTokens += antwort.usage?.totalTokens || 0
+            ergebnis.provider = cfg.provider
+            ergebnis.model = cfg.model
             ergebnis.sentiment = { ...normalisiere(antwort.json, 'Sentiment'), daten: sentimentDaten, usage: antwort.usage }
         } catch (e) {
             logWarn('strategy-agents', `Sentiment-Agent fehlgeschlagen: ${e.message}`)
@@ -237,6 +244,11 @@ export async function agentenVeto({ instance, setup }) {
                 bezug: { typ: 'instanz', id: instance?.id },
             })
             ergebnis.costUsd += antwort.costUsd
+            ergebnis.totalTokens += antwort.usage?.totalTokens || 0
+            // Beide Rollen dürfen verschiedene Anbieter haben. Steht schon
+            // einer da, bleibt er: eine Zeile kann nur einen nennen, und der
+            // Sentiment-Agent läuft zuerst.
+            if (!ergebnis.provider) { ergebnis.provider = cfg.provider; ergebnis.model = cfg.model }
             ergebnis.portfolio = { ...normalisiere(antwort.json, 'Portfolio'), usage: antwort.usage }
         } catch (e) {
             logWarn('strategy-agents', `Portfolio-Agent fehlgeschlagen: ${e.message}`)

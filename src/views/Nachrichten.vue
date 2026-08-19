@@ -22,6 +22,7 @@ import dayjs from '../utils/dayjs-setup.js'
 import { timeZoneTrade } from '../stores/ui.js'
 import { spinnerLoadingPage, currentUser } from '../stores/globals.js'
 import { dbUpdateSettings } from '../utils/db.js'
+import { useKostenAnzeige } from '../utils/formatters.js'
 import { sendNotification } from '../utils/notify.js'
 // Dasselbe Overlay wie im Marktradar — ein Muster für beide Seiten
 import RadarOverlay from '../components/RadarOverlay.vue'
@@ -921,7 +922,7 @@ onBeforeUnmount(() => {
                         <span class="nwArchivTitel">{{ v.ueberschrift || '—' }}</span>
                         <span class="nwArchivMeta">
                             {{ v.beitraege }} · {{ v.ausloeser }}
-                            <template v-if="v.kostenUsd"> · {{ (v.kostenUsd * 0.8).toFixed(2) }} CHF</template>
+                            <template v-if="v.kostenUsd"> · {{ useKostenAnzeige(v.kostenUsd) }}</template>
                         </span>
                         <span class="nwArchivLoeschen" :class="{ scharf: archivLoeschId === v.id }"
                             :title="t('news.delete')" @click.stop="archivLoeschen(v.id)">
@@ -1055,7 +1056,7 @@ onBeforeUnmount(() => {
                                  gescheitert. Nur so sieht man, wofür Geld floss. -->
                             <span class="nwVideoErgebnis"
                                 :class="vi.ergebnis === 'ok' ? 'ok' : (vi.ergebnis === 'übernommen' ? 'alt' : 'schlecht')">
-                                {{ vi.ergebnis === 'ok' ? ((vi.kostenUsd * 0.8).toFixed(2) + ' CHF')
+                                {{ vi.ergebnis === 'ok' ? useKostenAnzeige(vi.kostenUsd)
                                     : (vi.ergebnis === 'übernommen' ? t('news.videoReused') : vi.ergebnis) }}
                             </span>
                         </a>
@@ -1084,7 +1085,7 @@ onBeforeUnmount(() => {
                         n: bericht.beitraege, v: bericht.videos, nv: bericht.videosNeu || 0,
                         modell: `${bericht.provider}/${bericht.modell}`, tok: bericht.tokens,
                     }) }}
-                    <span v-if="bericht.kostenUsd"> · {{ (bericht.kostenUsd * 0.8).toFixed(2) }} CHF</span>
+                    <span v-if="bericht.kostenUsd"> · {{ useKostenAnzeige(bericht.kostenUsd) }}</span>
                 </p>
             </template>
 

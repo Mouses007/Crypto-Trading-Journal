@@ -169,69 +169,35 @@ async function loadGlobalTokenStats() {
     }
 }
 
-// Geschätzte Kosten pro Provider (basierend auf bekannten Preisen pro 1M Tokens)
-// Preise in USD pro 1M Tokens: [input, output]
-const MODEL_PRICES = {
-    // OpenAI (Stand 16.08.2026)
-    'gpt-5.6-sol':      [5.00, 30.00],
-    'gpt-5.6-terra':    [2.00, 12.00],
-    'gpt-5.6-luna':     [0.20, 1.20],
-    'gpt-4o-mini':      [0.15, 0.60],
-    'gpt-4o':           [2.50, 10.00],
-    'o3-mini':          [1.10, 4.40],
-    // Anthropic — Fable zuerst, sonst greift kein Eintrag für claude-fable-5
-    'claude-fable-5':    [10.00, 50.00],
-    'claude-opus-5':     [5.00, 25.00],
-    'claude-opus-4-8':   [5.00, 25.00],
-    'claude-opus-4-7':   [5.00, 25.00],
-    'claude-opus-4-6':   [5.00, 25.00],
-    'claude-opus-4':     [15.00, 75.00],
-    'claude-sonnet-5':   [3.00, 15.00],
-    'claude-sonnet-4-6': [3.00, 15.00],
-    'claude-sonnet-4-5': [3.00, 15.00],
-    'claude-haiku-4-5':  [1.00, 5.00],
-    // Gemini
-    // Längere Namen zuerst, sonst schluckt "gemini-3.5-flash" die Lite-Variante
-    'gemini-3.5-flash-lite': [0.30, 2.50],
-    'gemini-3.1-flash-lite': [0.25, 1.50],
-    'gemini-2.5-flash-lite': [0.10, 0.40],
-    'gemini-3.1-pro':    [2.00, 12.00],
-    'gemini-3.7-flash':  [0.75, 3.75],
-    'gemini-3.6-flash':  [0.75, 3.75],
-    'gemini-3.5-flash':  [1.50, 9.00],
-    'gemini-3-flash':    [0.50, 3.00],
-    'gemini-2.5-pro':    [1.25, 10.00],
-    'gemini-2.5-flash':  [0.30, 2.50],
-    // Mistral / xAI / Qwen — Qwen-Werte sind Schätzungen, Alibaba nennt
-    // keinen öffentlichen Listenpreis
-    'mistral-medium':    [1.50, 7.50],
-    'mistral-large':     [0.50, 1.50],
-    'mistral-small':     [0.15, 0.60],
-    'grok-4':            [4.00, 12.00],
-    'qwen3.7-max':       [2.00, 6.00],
-    'qwen3.7-plus':      [0.50, 2.00],
-    'qwen3.6-flash':     [0.15, 0.60],
-    // DeepSeek — abgekündigt, Preise bleiben für alte Berichte
-    // (Spitzenzeit-Preise; ausserhalb der Spitze die Hälfte)
-    'deepseek-v4-flash': [0.44, 1.32],
-    'deepseek-v4-pro':   [1.32, 3.96],
-    'deepseek-chat':     [0.14, 0.28],
-    'deepseek-reasoner': [0.55, 2.19],
+/*
+ * Preise kommen vom Server.
+ *
+ * Hier stand eine zweite Preistabelle neben der in `server/ai-preise.js` — und
+ * die beiden widersprachen sich: DeepSeek und Grok waren hier anders
+ * ausgezeichnet als dort, das Journal nannte also je nach Blickwinkel zwei
+ * verschiedene Kosten für denselben Lauf. Eine Liste, ein Preis.
+ */
+const preise = ref({})
+
+async function ladePreise() {
+    try {
+        const res = await axios.get('/api/ai/preise')
+        preise.value = res.data?.preise || {}
+    } catch (e) {
+        logWarn('ki-agent', 'Preisliste konnte nicht geladen werden', e)
+    }
 }
 
-// Preis für ein Modell finden (fuzzy match)
-function getModelPrice(model) {
-    if (!model) return null
-    const m = model.toLowerCase()
-    // Exakter Match
-    for (const [key, price] of Object.entries(MODEL_PRICES)) {
-        if (m === key || m.startsWith(key)) return price
-    }
-    // Teilmatch (z.B. "claude-sonnet-4-5-20250929" → "claude-sonnet-4-5")
-    for (const [key, price] of Object.entries(MODEL_PRICES)) {
-        if (m.includes(key)) return price
-    }
-    return null
+/**
+ * Preis eines Modells, gleiche Regel wie auf dem Server: Treffer über
+ * `includes`, längere Schlüssel zuerst. Unbekannt heisst 0 und nicht
+ * „irgendwas" — vorher stand hier ein Rückfall auf 5/15 $, der jedem lokal
+ * gerechneten Ollama-Modell Kosten andichtete, die es nie gab.
+ */
+function modellPreis(model) {
+    const m = String(model || '')
+    const treffer = Object.keys(preise.value).find((k) => m.includes(k))
+    return treffer ? preise.value[treffer] : null
 }
 
 // Gesamtkosten berechnen (aus globalTokenStats — alle Quellen inkl. Agent)
@@ -240,28 +206,25 @@ const estimatedCostByProvider = computed(() => {
     const bp = globalTokenStats.value?.byProvider || {}
     for (const [provider, data] of Object.entries(bp)) {
         let cost = 0
-        // Versuche modellbasierte Berechnung
         for (const [model, mData] of Object.entries(data.models || {})) {
-            const price = getModelPrice(model)
-            if (price) {
-                cost += (mData.promptTokens || 0) / 1_000_000 * price[0]
-                cost += (mData.completionTokens || 0) / 1_000_000 * price[1]
-            } else {
-                // Fallback: Durchschnittspreis schätzen (Input $5, Output $15 pro 1M — Claude-Sonnet-Niveau)
-                cost += (mData.promptTokens || 0) / 1_000_000 * 5
-                cost += (mData.completionTokens || 0) / 1_000_000 * 15
-            }
+            const price = modellPreis(model)
+            if (!price) continue
+            cost += (mData.promptTokens || 0) / 1_000_000 * price[0]
+            cost += (mData.completionTokens || 0) / 1_000_000 * price[1]
         }
         if (cost > 0) result[provider] = cost
     }
     return result
 })
 
-// Offsets: bisheriger Verbrauch vor Token-Tracking (≈58K Tokens / ~$0.50 vor Implementierung)
-const AI_TOKEN_OFFSET = 58000
-const AI_COST_OFFSET = 0.50
+/*
+ * Ohne Aufschlag. Hier lagen pauschal 58 000 Token und 0,50 $ obendrauf —
+ * gedacht als Nachtrag für die Zeit vor der Zählung, in der Wirkung aber ein
+ * Betrag, den niemand mehr zuordnen konnte und der jede kleine Rechnung
+ * verfälschte. Gezeigt wird, was gemessen wurde.
+ */
 const totalEstimatedCost = computed(() => {
-    return AI_COST_OFFSET + Object.values(estimatedCostByProvider.value).reduce((sum, c) => sum + c, 0)
+    return Object.values(estimatedCostByProvider.value).reduce((sum, c) => sum + c, 0)
 })
 
 // Zeitraum als Unix berechnen
@@ -690,7 +653,7 @@ onBeforeMount(async () => {
     document.body.style.removeProperty('padding-right')
 
     await Promise.all([checkStatus(), loadChatSetting()])
-    await Promise.all([loadReports(), loadGlobalTokenStats(), loadAgentSessions()])
+    await Promise.all([loadReports(), loadGlobalTokenStats(), loadAgentSessions(), ladePreise()])
 
     // Auto-start agent after data is loaded (use setTimeout for DOM readiness)
     if (pendingAgentPrompt) {
@@ -730,7 +693,7 @@ onBeforeMount(async () => {
                 </h5>
                 <div class="d-flex align-items-center gap-2">
                     <span class="text-muted small" :title="t('kiAgent.totalTokensHint')">
-                        <i class="uil uil-processor me-1"></i>{{ (AI_TOKEN_OFFSET + (globalTokenStats?.total?.totalTokens || Object.values(tokensByProvider).reduce((s, v) => s + v, 0) || 0)).toLocaleString() }} {{ t('kiAgent.tokens') }}
+                        <i class="uil uil-processor me-1"></i>{{ (globalTokenStats?.total?.totalTokens || Object.values(tokensByProvider).reduce((s, v) => s + v, 0) || 0).toLocaleString() }} {{ t('kiAgent.tokens') }}
                     </span>
                     <span v-if="totalEstimatedCost > 0" class="ki-cost-badge" :title="t('kiAgent.estimatedCostTitle', { cost: totalEstimatedCost.toFixed(4) })">
                         <i class="uil uil-dollar-sign"></i>~{{ totalEstimatedCost < 0.01 ? totalEstimatedCost.toFixed(4) : totalEstimatedCost.toFixed(2) }}

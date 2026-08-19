@@ -50,7 +50,7 @@ function redactSettings(parsed) {
 
 // Whitelist of allowed settings keys (from schema + migrations)
 const VALID_SETTINGS_KEYS = [
-    'timeZone', 'accounts', 'tags', 'apis', 'layoutStyle', 'avatar',
+    'timeZone', 'waehrungCode', 'waehrungFaktor', 'accounts', 'tags', 'apis', 'layoutStyle', 'avatar',
     'showTradePopups', 'username', 'startBalance', 'startBalanceDate', 'currentBalance',
     'tradeTimeframes', 'customTimeframes', 'enableBinanceChart',
     'aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',

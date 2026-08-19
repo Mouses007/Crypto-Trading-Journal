@@ -1,6 +1,6 @@
 <script setup>
 import { onBeforeMount, onMounted, ref, reactive, computed } from 'vue';
-import { useDateCalFormat } from '../utils/formatters.js';
+import { useDateCalFormat, useKostenAnzeige, useKostenZahl } from '../utils/formatters.js';
 import ModelManager from '../components/ModelManager.vue'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
 import { useCheckCurrentUser, useInitTooltip } from '../utils/utils';
@@ -3507,12 +3507,12 @@ onBeforeMount(async () => {
                         </button>
                         <span class="ms-2 small text-muted">
                             {{ t('settings.ki.news.costAbout') }}
-                            <strong>{{ (kostenSchaetzung.gesamt * 0.8).toFixed(2) }} CHF</strong>
+                            <strong>{{ useKostenAnzeige(kostenSchaetzung.gesamt) }}</strong>
                             <span v-if="kostenSchaetzung.videos">
                                 {{ t('settings.ki.news.costSplit', {
-                                    text: (kostenSchaetzung.bericht * 0.8).toFixed(2),
+                                    text: useKostenZahl(kostenSchaetzung.bericht),
                                     n: kostenSchaetzung.videos,
-                                    proVideo: (kostenSchaetzung.proVideo * 0.8).toFixed(2),
+                                    proVideo: useKostenZahl(kostenSchaetzung.proVideo),
                                 }) }}
                             </span>
                             <span v-else>{{ t('settings.ki.news.costNoVideos') }}</span>
