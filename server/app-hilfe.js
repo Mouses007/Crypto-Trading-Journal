@@ -76,7 +76,11 @@ Für aktuelle Werte der Kacheln kann der KI-Agent das Werkzeug query_marktradar 
 - **RVOL** — Volumen der letzten Kerze gegen den Schnitt der zwanzig davor. Verglichen wird der Coin mit SICH SELBST; über 2,0 gilt als „im Spiel".
 - **ADX** — trendet es (über 25) oder sägt es seitwärts (unter 20).
 - **Funding** — auf ein Jahr hochgerechnet, INVERTIERT: teures Halten kostet Punkte.
-Liquidität ist dabei eine HÜRDE und keine Teilnote: Umsatz unter 10 Mio USD oder Spread über 5 Basispunkte fliegt raus, bevor überhaupt gerechnet wird. Von rund 500 Paaren bleiben typisch siebzig bis achtzig übrig; wer woran gescheitert ist, zeigt „An den Hürden gescheitert".
+Liquidität ist dabei eine HÜRDE und keine Teilnote: Umsatz unter 10 Mio USD oder Spread über 5 Basispunkte fliegt raus, bevor überhaupt gerechnet wird. Von rund 500 Paaren bleiben typisch siebzig bis neunzig übrig; wer woran gescheitert ist, zeigt „An den Hürden gescheitert".
+
+Dazu eine ZWEITE, getrennte Note: die **Ausführungsgüte**. Für jeden übriggebliebenen Coin wird das echte Orderbuch von Bitunix UND Bitget geholt und ausgerechnet, was eine Order über 5 000 USD kostet — Kauf und Verkauf getrennt, denn ein Buch, das den Einstieg billig und den Ausstieg teuer macht, ist eine Falle, die kein Durchschnitt zeigt. Angezeigt wird auch, auf welcher der beiden Börsen es günstiger ist; die Unterschiede sind gross (im Testlauf: TREE 5 Basispunkte auf Bitunix, 54 auf Bitget). Beide Noten stehen NEBENEINANDER und werden nicht verrechnet — „bewegt sich viel" und „lässt sich günstig handeln" sind zwei Fragen. Pionex fehlt in dieser Messung, weil es 405 Spot-Märkte und keine Perpetuals führt.
+
+**Erfolgskontrolle:** Zu den zwanzig Spitzenplätzen jedes Laufs wird festgehalten, was danach wirklich geschah (nach 15 Minuten, 1 Stunde, 4 Stunden), beim Hype-Radar nach 1, 7 und 30 Tagen. Gemessen wird die Spanne zwischen bestem und schlechtestem Punkt — die Seite verspricht Bewegung, nicht Richtung — und verglichen mit der unteren Hälfte der Liste. Ohne diesen Vergleich sähe an einem bewegten Tag auch eine gewürfelte Rangfolge glänzend aus.
 
 Wichtig: Der Coin-Radar sagt NICHTS über die Richtung. Er trägt in die Gegenwart, weil Volatilität beharrlich ist (sie kommt in Phasen über Wochen bis Monate) — die Richtung ist es nicht. Eine hohe Note heisst „dieser Coin lässt sich derzeit handeln", nicht „er steigt".
 - Ein Lauf dauert rund eine halbe Minute und kostet kein Geld; nur die kurze KI-Einordnung über der Tabelle kostet etwa einen Rappen und ist abschaltbar. Die Automatik ist ab Werk aus.

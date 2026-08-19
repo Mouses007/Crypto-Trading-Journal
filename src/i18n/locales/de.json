@@ -2885,7 +2885,7 @@
     },
     "coinRadar": {
       "title": "Coin-Radar — welche der handelbaren Coins sich gerade handeln lassen",
-      "intro": "Der Coin-Radar geht die Coins durch, die auf Bitunix handelbar und bei Binance messbar sind, und ordnet sie nach messbaren Zustandsgrössen: Wie stark bewegt sich ein Coin, ist gerade etwas los, läuft es sauber oder sägt es, und was kostet das Halten. Es ist eine Zustandsbeschreibung, keine Prognose — wohin ein Kurs geht, steht hier nirgends.",
+      "intro": "Der Coin-Radar geht die Coins durch, die auf Bitunix handelbar und bei Binance messbar sind, und beantwortet ZWEI getrennte Fragen: Wie viel ist gerade los (Gelegenheit — ATR, RVOL, ADX, Funding), und was kostet eine Order wirklich (Ausführung — Slippage, Tiefe, Spread, gemessen an den echten Orderbüchern von Bitunix und Bitget). Es ist eine Zustandsbeschreibung, keine Prognose — wohin ein Kurs geht, steht hier nirgends.",
       "sections": [
         {
           "g": "DER WICHTIGSTE SATZ ZUERST",
@@ -2930,6 +2930,24 @@
         {
           "h": "ZWEI ZEITEINHEITEN, EINE NOTE",
           "p": "Die gröbere Zeiteinheit (Vorgabe 1 h) trägt die Note, die feinere (15 m) bestätigt sie. Sind beide „im Spiel“, gibt es einen Zuschlag und ein Häkchen an der Zeile. Widersprechen sie sich, wird das als Hinweis angezeigt statt zu einem Mittelwert verrechnet: „nur auf 15m im Spiel“ heisst kurzfristiger Ausschlag, „auf 15m bereits abgeflaut“ heisst, die Bewegung ist vorbei. Beides ist eine Information, die ein Durchschnitt vernichtet hätte."
+        },
+        {
+          "g": "DIE ZWEITE ACHSE",
+          "h": "WAS EINE ORDER WIRKLICH KOSTET",
+          "p": "Bewegung allein sagt nicht, ob sich der Coin handeln lässt. Deshalb wird für jeden Überlebenden das echte Orderbuch geholt und ausgerechnet, was eine Order über 5 000 USD kostet — für Kauf und Verkauf GETRENNT, denn ein Buch, das den Einstieg billig und den Ausstieg teuer macht, ist eine Falle, die kein Durchschnittswert zeigt. Der „Rundlauf\" ist die Summe aus beidem und damit die Zahl, die ein Trade tatsächlich zahlt. Zum Vergleich: BTC kostet rund 0,01 Basispunkte, ein dünner Coin über 45 — fast ein halbes Prozent, nur um hinein und wieder heraus zu kommen."
+        },
+        {
+          "h": "AUSDRÜCKLICH ZWEI ZAHLEN, NICHT EINE",
+          "p": "Gelegenheit und Ausführung werden nicht verrechnet. In eine Note gepresst sähe ein wilder Coin mit teurem Buch aus wie ein ruhiger mit billigem — und genau diese Verwechslung kostet Geld. Passt der Betrag gar nicht ins Buch, ist die Ausführungsnote NULL statt eines Abzugs: Wer nicht herauskommt, hat kein Ausführungsproblem, sondern gar keine Ausführung."
+        },
+        {
+          "h": "UND AUF WELCHER BÖRSE",
+          "p": "Gemessen wird auf Bitunix und Bitget; angezeigt wird, wo es günstiger ist. Die Unterschiede sind gross — im Testlauf kostete TREE auf Bitunix 5 Basispunkte und auf Bitget 54, also das Zehnfache. Pionex fehlt bewusst: Die Börse führt 405 Spot-Märkte und KEINE Perpetuals, und der Coin-Radar rankt Perpetuals. Dort ist schlicht nichts zu messen."
+        },
+        {
+          "g": "TAUGT DIE LISTE ETWAS?",
+          "h": "DIE ERFOLGSKONTROLLE",
+          "p": "Zu jedem der zwanzig Spitzenplätze wird festgehalten, was danach wirklich geschah — nach 15 Minuten, einer Stunde und vier Stunden. Gemessen wird die SPANNE zwischen bestem und schlechtestem Punkt, nicht die Rendite: Die Seite verspricht Bewegung, nicht Richtung. Entscheidend ist der Vergleich mit der unteren Hälfte der Liste — an einem bewegten Tag bewegt sich alles, und ohne Kontrollgruppe sähe auch eine gewürfelte Rangfolge glänzend aus. Die Gewichte werden NICHT automatisch darauf optimiert; das wäre die bequemste Art, sich selbst zu belügen."
         },
         {
           "g": "BEDIENUNG",

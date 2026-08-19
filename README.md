@@ -73,13 +73,30 @@ the coin's *own* average), **ADX** (trending or chopping) and **funding**
 (annualised, inverted — expensive holding costs points). Liquidity is a **gate, not
 a sub-score**: below 10M USD turnover or above 5 basis points spread a coin never
 enters the ranking, because high movement in an illiquid pair only means every order
-moves the price itself. Typically seventy to eighty pairs survive.
+moves the price itself. Typically seventy to ninety pairs survive.
+
+A **second, separate score** answers the other half: execution quality. For every
+survivor the real order book is fetched from Bitunix **and** Bitget and the cost
+of a 5,000 USD order computed — buy and sell separately, because a book that
+makes entry cheap and exit expensive is a trap no average reveals. The cheaper
+venue is named per coin, and the differences are large (measured: TREE cost 5
+basis points on Bitunix and 54 on Bitget). The two scores sit side by side and
+are never merged — "moves a lot" and "trades cheaply" are two questions. Pionex
+is absent from this measurement because it lists 405 spot markets and no
+perpetuals.
+
+**Outcome tracking**: for the top twenty of every run, what actually happened
+afterwards is recorded — 15m/1h/4h for the Coin Radar, 1/7/30 days for the Hype
+Radar. What is measured is the span between best and worst point, not the
+return, and it is compared against the bottom half of the list. Without that
+control group, on a busy day even a random ranking looks brilliant. The weights
+are not auto-optimised against it.
 
 The page states plainly what it does *not* claim: direction. It carries into the
 present because volatility is persistent — it comes in phases lasting weeks to
 months — while direction is not. Every run therefore also reports its own rank
 correlation with the previous run: near 1 the list holds, near 0 it is noise, and
-then the page says so. A run takes about half a minute and costs nothing; only the
+then the page says so. A run takes about forty seconds and costs nothing; only the
 short AI paragraph above the table costs about a cent and can be switched off.
 Automation is off out of the box.
 

@@ -2885,7 +2885,7 @@
     },
     "coinRadar": {
       "title": "Coin Radar — which of the tradable coins can be traded right now",
-      "intro": "The Coin Radar walks the coins that are tradable on Bitunix and measurable on Binance, and ranks them by measurable state: how much a coin moves, whether something is going on right now, whether it runs cleanly or chops, and what holding it costs. It is a description of state, not a forecast — where a price is headed appears nowhere on this page.",
+      "intro": "The Coin Radar walks the coins that are tradable on Bitunix and measurable on Binance and answers TWO separate questions: how much is going on right now (opportunity — ATR, RVOL, ADX, funding), and what an order actually costs (execution — slippage, depth, spread, measured against the real order books of Bitunix and Bitget). It is a description of state, not a forecast.",
       "sections": [
         {
           "g": "THE MOST IMPORTANT SENTENCE FIRST",
@@ -2930,6 +2930,24 @@
         {
           "h": "TWO TIMEFRAMES, ONE SCORE",
           "p": "The coarser timeframe (1h by default) carries the score, the finer one (15m) confirms it. If both are \"in play\", there is a bonus and a check mark on the row. If they contradict each other, that is shown as a hint rather than averaged away: \"only in play on 15m\" means a short-lived spike, \"already fading on 15m\" means the move is over. Both are information an average would have destroyed."
+        },
+        {
+          "g": "THE SECOND AXIS",
+          "h": "WHAT AN ORDER REALLY COSTS",
+          "p": "Movement alone does not say whether a coin can be traded. So for every survivor the real order book is fetched and the cost of a 5,000 USD order computed — separately for buy and sell, because a book that makes entry cheap and exit expensive is a trap no average reveals. The \"round trip\" is the sum of both. For scale: BTC costs about 0.01 basis points, a thin coin over 45 — nearly half a percent just to get in and out again."
+        },
+        {
+          "h": "TWO NUMBERS, DELIBERATELY NOT ONE",
+          "p": "Opportunity and execution are not merged. Pressed into one score, a wild coin with an expensive book looks like a calm one with a cheap book — and that confusion costs money. If the amount does not fit the book at all, the execution score is ZERO rather than a deduction: someone who cannot get out has no execution problem, they have no execution."
+        },
+        {
+          "h": "AND ON WHICH EXCHANGE",
+          "p": "Measured on Bitunix and Bitget; the cheaper one is shown. The differences are large — in the test run TREE cost 5 basis points on Bitunix and 54 on Bitget, ten times as much. Pionex is deliberately absent: it lists 405 spot markets and NO perpetuals, and the Coin Radar ranks perpetuals. There is nothing to measure there."
+        },
+        {
+          "g": "IS THE LIST ANY GOOD?",
+          "h": "OUTCOME TRACKING",
+          "p": "For each of the top twenty, what actually happened afterwards is recorded — after 15 minutes, one hour and four hours. What is measured is the SPAN between best and worst point, not the return: the page promises movement, not direction. What matters is the comparison with the bottom half — on a busy day everything moves, and without a control group even a random ranking would look brilliant. The weights are NOT auto-optimised against this; that would be the most comfortable way to fool yourself."
         },
         {
           "g": "USING IT",
