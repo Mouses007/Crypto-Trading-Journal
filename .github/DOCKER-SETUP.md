@@ -27,27 +27,40 @@ New repository secret** zwei Einträge anlegen:
 Fehlen die beiden, läuft der Workflow trotzdem durch und veröffentlicht nur
 nach `ghcr.io` — er bricht nicht ab, warnt aber im Protokoll.
 
-## 2. Testlauf, bevor ein Release davon abhängt
+## 2. Testlauf — am 19.08.2026 bereits durchgeführt
 
 **Actions → Docker publish → Run workflow.** Der manuelle Start baut
 ausschliesslich den Tag `:edge` und fasst `:latest` nicht an. Damit lässt sich
 prüfen, ob Anmeldung und Build stimmen, ohne dass eine laufende Installation
 etwas davon merkt.
 
-Im Protokoll auf die Dauer des Schritts **„Bauen und veröffentlichen"** achten:
-`arm64` wird per QEMU emuliert. Bleibt der Schritt unter etwa 25 Minuten, ist
-alles gut. Dauert er deutlich länger, kompiliert `npm ci` native Module
-(`better-sqlite3`, `sharp`) aus dem Quellcode — dann lohnt der Umbau auf native
-ARM-Runner: den Build als Matrix über `ubuntu-latest` und `ubuntu-24.04-arm`
-laufen lassen und die beiden Ergebnisse mit `docker buildx imagetools create`
-zusammenführen. Für öffentliche Repos sind die ARM-Runner kostenlos. Erst
-messen, dann umbauen.
+Der erste Lauf ([32218211937](https://github.com/Mouses007/Crypto-Trading-Journal/actions/runs/32218211937))
+war grün. Gemessen:
+
+| | |
+|---|---|
+| Schritt „Bauen und veröffentlichen" | **4 min 47 s** für beide Architekturen |
+| Gesamtlauf | ~5 min |
+| Ergebnis | Manifest-Liste `sha256:cc54fdb8…` als `ghcr.io/mouses007/crypto-trading-journal:edge` |
+| Docker Hub | übersprungen (kein Token hinterlegt) — wie vorgesehen |
+
+Damit ist die QEMU-Sorge erledigt: `npm ci` zieht für `arm64` fertige Binärdateien
+für `better-sqlite3` und `sharp` und kompiliert nichts. Ein Umbau auf native
+ARM-Runner (`ubuntu-24.04-arm`) lohnt **nicht** — er würde nur Komplexität
+bringen. Erst wenn dieser Schritt einmal über ~25 Minuten steigt, wieder ansehen.
 
 ## 3. GHCR-Paket auf öffentlich stellen
 
-Nach dem ersten Lauf ist das Paket in der GitHub-Registry **privat**. Einmalig:
-Profil → **Packages → crypto-trading-journal → Package settings → Change
-visibility → Public**. Ohne diesen Schritt kann niemand ausser dir es ziehen.
+Das Paket existiert seit dem Testlauf, ist aber **privat** — so legt GitHub es an.
+Einmalig: Profil → **Packages → crypto-trading-journal → Package settings →
+Change visibility → Public**. Ohne diesen Schritt kann niemand ausser dir es
+ziehen. Danach lässt sich von aussen gegenprüfen:
+
+```bash
+docker buildx imagetools inspect ghcr.io/mouses007/crypto-trading-journal:edge
+```
+
+Erwartet werden zwei Einträge, `linux/amd64` und `linux/arm64`.
 
 ## 4. ⚠️ Beim ersten echten Release auf die Synology achten
 
