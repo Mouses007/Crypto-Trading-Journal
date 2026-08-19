@@ -6,6 +6,7 @@ Vue 3 + Express, SQLite or PostgreSQL, GPL-3.0.
 
 ![GitHub release](https://img.shields.io/github/v/release/Mouses007/Crypto-Trading-Journal) ![License](https://img.shields.io/github/license/Mouses007/Crypto-Trading-Journal) ![Last commit](https://img.shields.io/github/last-commit/Mouses007/Crypto-Trading-Journal)
 
+> Available in Linux Mint: **System Settings → Desklets → Download → "Trading Positions"**
 > The user interface is available in **German** (default) and **English**.
 
 ## Screenshots
@@ -165,7 +166,7 @@ presented as a finding — three sessions on a Tuesday are noise.
 Your open positions outside the browser — all three companions live in this repo:
 
 - **Android home-screen widget** ([android-widget/](android-widget/)) — open positions and P&L on your phone, per-exchange KPIs, configurable refresh. Built with Gradle; see its README for the build script.
-- **Linux Mint / Cinnamon desklet** ([desklet/](desklet/)) — positions directly on the desktop; `desklet/install.sh` installs it locally.
+- **Linux Mint / Cinnamon desklet** ([desklet/](desklet/)) — positions directly on the desktop. Published in the official [Cinnamon Spices](https://cinnamon-spices.linuxmint.com/desklets) repository: install it from **System Settings → Desklets → Download → "Trading Positions"**. The copy in this repo is the source; `desklet/install.sh` installs it locally for development.
 - **ESP32 hardware displays** ([ESP32-2432S028/](ESP32-2432S028/), [ESP32-Waveshare/](ESP32-Waveshare/)) — a cheap always-on display next to your monitor, fed by a read-only endpoint protected with its own API key (PlatformIO projects).
 
 ---
