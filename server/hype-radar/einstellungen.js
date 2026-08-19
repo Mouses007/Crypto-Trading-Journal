@@ -134,22 +134,28 @@ export async function leseSchluessel() {
     }
 }
 
-/** Einstellungen schreiben. Nur bekannte Schlüssel, damit nichts einsickert. */
+/**
+ * Einstellungen schreiben. Nur bekannte Schlüssel, damit nichts einsickert.
+ *
+ * In EINER Anweisung statt in einer Schleife: der erste Entwurf fragte je
+ * Schlüssel erst nach, ob die Zeile existiert, und schrieb dann — bei den
+ * gut siebzehn Einstellungen also rund vierunddreissig Rundreisen zur
+ * Datenbank. Über das Netz zur NAS-Postgres dauerte ein einziges Speichern
+ * damit mehrere Sekunden, und wer zwei Schalter kurz nacheinander umlegte,
+ * sah den zweiten scheinbar nicht wirken. `onConflict().merge()` macht daraus
+ * einen Aufruf.
+ */
 export async function schreibeEinstellungen(neu = {}) {
-    const knex = getKnex()
     const jetzt = Date.now()
+    const zeilen = Object.entries(neu)
+        .filter(([k]) => k in VORGABEN)
+        .map(([schluessel, v]) => ({ schluessel, wert: JSON.stringify(v), aktualisiertAm: jetzt }))
+    if (!zeilen.length) return
 
-    for (const [k, v] of Object.entries(neu)) {
-        if (!(k in VORGABEN)) continue
-        const wert = JSON.stringify(v)
-        const vorhanden = await knex('hype_settings').where('schluessel', k).first()
-        if (vorhanden) {
-            await knex('hype_settings').where('schluessel', k)
-                .update({ wert, aktualisiertAm: jetzt })
-        } else {
-            await knex('hype_settings').insert({ schluessel: k, wert, aktualisiertAm: jetzt })
-        }
-    }
+    await getKnex()('hype_settings')
+        .insert(zeilen)
+        .onConflict('schluessel')
+        .merge(['wert', 'aktualisiertAm'])
 }
 
 /**

@@ -576,8 +576,14 @@
                 </div>
                 <div class="hypStufen">
                     <label v-for="s in stufen" :key="s.id" class="hypStufe"
-                        :class="{ aktiv: einst.llmStufe === s.id }">
-                        <input type="radio" :value="s.id" v-model="einst.llmStufe" @change="stufeGewaehlt(s)">
+                        :class="{ aktiv: !manuell && einst.llmStufe === s.id }">
+                        <!-- Gemeinsames `name`: ohne das bildet jeder Knopf seine
+                             eigene Gruppe, bleibt nach dem ersten Klick angehakt,
+                             und ein erneuter Klick löst kein `change` mehr aus —
+                             die Wahl liesse sich dann nicht zurücknehmen. -->
+                        <input type="radio" name="hypStufe" :value="s.id"
+                            :checked="!manuell && einst.llmStufe === s.id"
+                            @change="stufeGewaehlt(s)">
                         <div class="hypStufeKopf">
                             <strong>{{ t('hype.modus_' + s.modus) }} · {{ t('hype.profil_' + s.profil) }}</strong>
                             <span v-if="s.empfohlen" class="badge bg-primary hypBadge ms-2">{{ t('hype.empfohlen') }}</span>
@@ -588,6 +594,37 @@
                             · {{ t('hype.redakteur') }}: {{ s.rollen.editor.provider }}/{{ s.rollen.editor.modell }}
                         </div>
                     </label>
+
+                    <!-- Manuell: die drei Rollen einzeln belegen -->
+                    <label class="hypStufe" :class="{ aktiv: manuell }">
+                        <input type="radio" name="hypStufe" :checked="manuell" @change="manuellWaehlen">
+                        <div class="hypStufeKopf">
+                            <strong>{{ t('hype.manuell') }}</strong>
+                            <span class="ms-auto hypStufePreis">{{ t('hype.manuellPreis') }}</span>
+                        </div>
+                        <div class="hypStufeModelle">{{ t('hype.manuellHinweis') }}</div>
+                    </label>
+                </div>
+
+                <div v-if="manuell" class="hypRollen">
+                    <div v-for="r in ROLLEN" :key="r.id" class="hypRolle">
+                        <div class="hypRolleKopf">
+                            <strong>{{ t('hype.rolle_' + r.id) }}</strong>
+                            <span class="hypHinweisKlein">{{ t('hype.rolleHinweis_' + r.id) }}</span>
+                        </div>
+                        <AnbieterWahl
+                            :provider="einst.llmRollen?.[r.id]?.provider || ''"
+                            :modell="einst.llmRollen?.[r.id]?.modell || ''"
+                            :modell-listen="modellListen"
+                            :global-provider="globalKi.provider"
+                            :global-modell="globalKi.modell"
+                            @update:provider="w => rolleSetzen(r.id, 'provider', w)"
+                            @update:modell="w => rolleSetzen(r.id, 'modell', w)" />
+                    </div>
+                    <p v-if="fehlendeSchluessel.length" class="hypHinweis mb-0 mt-2 text-warning">
+                        <i class="uil uil-exclamation-triangle me-1"></i>
+                        {{ t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) }}
+                    </p>
                 </div>
             </div>
         </div>
@@ -613,6 +650,7 @@ import axios from 'axios'
 import * as echarts from 'echarts'
 import { useKostenAnzeige } from '../utils/formatters.js'
 import { logWarn } from '../utils/logger.js'
+import AnbieterWahl from '../components/AnbieterWahl.vue'
 
 const { t, locale } = useI18n()
 
@@ -802,6 +840,36 @@ const REITER = [
     { id: 'berichte', icon: 'uil uil-file-alt' },
     { id: 'einstellungen', icon: 'uil uil-setting' },
 ]
+
+/** Die drei Rollen in der Reihenfolge, in der sie im Lauf vorkommen. */
+const ROLLEN = [
+    { id: 'helper' },
+    { id: 'research' },
+    { id: 'editor' },
+]
+
+// Modell-Listen und globaler Anbieter — dieselben Quellen, aus denen sich
+// auch die KI-Einstellungen bedienen.
+const modellListen = ref({})
+const globalKi = ref({ provider: '', modell: '' })
+
+async function ladeKiQuellen() {
+    try {
+        const [listen, allgemein] = await Promise.all([
+            axios.get('/api/ai/models'),
+            axios.get('/api/ai/settings'),
+        ])
+        // `/api/ai/models` antwortet mit {modelle, standard, ohneSampling,
+        // anbieter}; `AnbieterWahl` erwartet die Listen je Anbieter.
+        modellListen.value = listen.data?.modelle || {}
+        globalKi.value = {
+            provider: allgemein.data?.aiProvider || '',
+            modell: allgemein.data?.aiModel || '',
+        }
+    } catch (e) {
+        logWarn('hype-radar', 'KI-Modelle konnten nicht geladen werden', e)
+    }
+}
 const reiter = ref(localStorage.getItem('hypeReiter') || 'dashboard')
 function reiterWechseln(id) {
     reiter.value = id
@@ -989,9 +1057,46 @@ function ordnungWechseln(o) {
 }
 
 function stufeGewaehlt(s) {
+    einst.value.llmStufe = s.id
     // Die Stufe legt auch die Betriebsart fest — sonst stünde „gründlich"
     // in der Auswahl und der Lauf machte trotzdem einen einzelnen Aufruf.
     einst.value.llmModus = s.modus
+    /*
+     * Eine Stufe zu wählen hebt die Handbelegung auf. Ohne das bliebe die
+     * alte Rollenwahl bestehen und schlüge die Stufe still — der Nutzer sähe
+     * eine Stufe markiert und bekäme die Modelle von vorgestern.
+     */
+    einst.value.llmRollen = {}
+    speichern()
+}
+
+/*
+ * Manuell ist kein eigener Schalter, sondern eine Folge: sobald eine Rolle
+ * ausdrücklich belegt ist, schlägt sie die Stufe (so löst der Server auf).
+ * Der Zustand wird deshalb abgeleitet und nicht doppelt gespeichert.
+ */
+const manuell = computed(() =>
+    Object.values(einst.value?.llmRollen || {}).some((r) => r?.provider))
+
+function manuellWaehlen() {
+    // Beim Umschalten die aktuelle Stufe als Ausgangspunkt übernehmen —
+    // ein leeres Formular wäre ein Rückschritt gegenüber dem, was gerade gilt.
+    const s = stufen.value.find((x) => x.id === einst.value.llmStufe) || stufen.value[0]
+    if (!s) return
+    einst.value.llmRollen = JSON.parse(JSON.stringify(s.rollen))
+    einst.value.llmModus = s.modus
+    speichern()
+}
+
+function rolleSetzen(rolle, feld, wert) {
+    const rollen = { ...(einst.value.llmRollen || {}) }
+    const eintrag = { ...(rollen[rolle] || {}) }
+    eintrag[feld] = wert
+    // Anbieterwechsel verwirft das Modell — `AnbieterWahl` meldet beides,
+    // aber die Reihenfolge der Ereignisse ist nicht zugesichert.
+    if (feld === 'provider') eintrag.modell = ''
+    rollen[rolle] = eintrag
+    einst.value.llmRollen = rollen
     speichern()
 }
 
@@ -1168,7 +1273,10 @@ const beiGroesse = () => diagramm?.resize()
 
 onMounted(async () => {
     window.addEventListener('resize', beiGroesse)
-    await Promise.all([ladeKandidaten(), ladeBerichte(), ladeEinstellungen(), ladeFavoriten(), ladeAlarme()])
+    await Promise.all([
+        ladeKandidaten(), ladeBerichte(), ladeEinstellungen(),
+        ladeFavoriten(), ladeAlarme(), ladeKiQuellen(),
+    ])
     // Der Wachhund läuft serverseitig weiter — die Liste holt seine Funde in
     // gemächlichem Takt nach, solange die Seite offen ist.
     alarmTakt = setInterval(ladeAlarme, 60000)
@@ -1834,5 +1942,29 @@ watch(locale, () => zeichne())
     font-size: .7rem;
     color: var(--grey-color, #9aa0a6);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.hypRollen {
+    max-width: 40rem;
+    margin-top: .6rem;
+    padding: .75rem .9rem;
+    background: var(--black-bg-2, rgba(255, 255, 255, .03));
+    border-radius: var(--border-radius, 8px);
+}
+
+.hypRolle {
+    margin-bottom: .7rem;
+}
+
+.hypRolle:last-of-type {
+    margin-bottom: 0;
+}
+
+.hypRolleKopf {
+    display: flex;
+    align-items: baseline;
+    gap: .5rem;
+    font-size: .82rem;
+    margin-bottom: .2rem;
 }
 </style>
