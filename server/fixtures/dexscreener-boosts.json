@@ -1,0 +1,63 @@
+[
+ {
+  "url": "https://dexscreener.com/solana/2ukkazisyxfwuylt4eqcgvev6knaxqwkhu49htqppump",
+  "chainId": "solana",
+  "tokenAddress": "2UKkazisyXfWUyLT4eqCgvEV6KNaxqwkHU49htQppump",
+  "description": "$ANSEMBULL — THE GOLDEN BULL IS HERE 🐂⚡️\nANSEMBULL is a community-powered token inspired by the unstoppable strength, confidence, and momentum of the bull market. Built for traders, believers, and crypto enthusiasts who are always searching for the next big move, $ANSEMBULL represents the mindset of charging forward no matter what stands in the way.\nThe golden bull symbolizes power, ambition, prosperity, and momentum — the spirit behind the ANSEMBULL community.\n🐂 Join the herd. Feel the momentum. Charge together.\nNo fear. No hesitation. Eyes on the market and horns pointed forward.\n$ANSEMBULL — STRENGTH. MOMENTUM. PROSPERITY. 📈🔥",
+  "icon": "V-R5jOwRe54434Lv",
+  "header": "https://cdn.dexscreener.com/cms/images/zeStzXhCBPTJecT_?width=900&height=300&fit=crop&quality=95&format=auto",
+  "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/2UKkazisyXfWUyLT4eqCgvEV6KNaxqwkHU49htQppump?timestamp=1787176800000",
+  "links": [
+   {
+    "url": "https://ansemthebull.fun"
+   },
+   {
+    "type": "twitter",
+    "url": "https://x.com/ansemthebullsol"
+   }
+  ],
+  "totalAmount": 500
+ },
+ {
+  "url": "https://dexscreener.com/solana/9hneutczloo6gzwqtmagvvbtmlgv1mder8x3hwtooyxt",
+  "chainId": "solana",
+  "tokenAddress": "9HNEutCZLoo6GZWQTmAgVvbtmLGV1mdeR8X3HWTooYXt",
+  "description": "First golden coin on Ansem's launchpad (23.500$ burned)",
+  "icon": "3HXIC8sQdtNQ2yvE",
+  "header": "https://cdn.dexscreener.com/cms/images/ZpVqGizM4CdS2xcF?width=900&height=300&fit=crop&quality=95&format=auto",
+  "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/9HNEutCZLoo6GZWQTmAgVvbtmLGV1mdeR8X3HWTooYXt?timestamp=1787176800000",
+  "links": [
+   {
+    "type": "twitter",
+    "url": "https://x.com/BabyAnsemio"
+   },
+   {
+    "url": "https://ansem.io/launch/coin/9HNEutCZLoo6GZWQTmAgVvbtmLGV1mdeR8X3HWTooYXt"
+   }
+  ],
+  "totalAmount": 500
+ },
+ {
+  "url": "https://dexscreener.com/solana/hbpnf11udttd8n3myse8k3v9vqzjmyukxpo6v8xfpump",
+  "chainId": "solana",
+  "tokenAddress": "HBpNF11UdtTD8n3MySe8K3v9VQZJmYUkxpo6V8xFpump",
+  "description": "Trade Memecoins.\nGet Funded.\n- MemeFund -",
+  "icon": "s6rNADAt2ZaTpqom",
+  "header": "https://cdn.dexscreener.com/cms/images/iXK1fEM2dTstlylK?width=900&height=300&fit=crop&quality=95&format=auto",
+  "openGraph": "https://cdn.dexscreener.com/token-images/og/solana/HBpNF11UdtTD8n3MySe8K3v9VQZJmYUkxpo6V8xFpump?timestamp=1787176800000",
+  "links": [
+   {
+    "url": "https://www.memefund.me/"
+   },
+   {
+    "type": "twitter",
+    "url": "https://x.com/memefundme"
+   },
+   {
+    "type": "telegram",
+    "url": "https://t.me/memefundme"
+   }
+  ],
+  "totalAmount": 500
+ }
+]

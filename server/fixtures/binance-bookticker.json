@@ -1,0 +1,20 @@
+[
+ {
+  "symbol": "BTCUSDT",
+  "bidPrice": "69664.90",
+  "bidQty": "10.024",
+  "askPrice": "69665.00",
+  "askQty": "6.710",
+  "time": 1787176758726,
+  "lastUpdateId": 11325573902973
+ },
+ {
+  "symbol": "ETHUSDT",
+  "bidPrice": "2283.20",
+  "bidQty": "74.807",
+  "askPrice": "2283.21",
+  "askQty": "72.521",
+  "time": 1787176759193,
+  "lastUpdateId": 11325573929866
+ }
+]

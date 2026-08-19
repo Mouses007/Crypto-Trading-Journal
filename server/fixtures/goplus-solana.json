@@ -1,0 +1,146 @@
+{
+ "code": 1,
+ "message": "ok",
+ "result": {
+  "LFEJTxJ9yi6ojGDFpjbGfABLbH55Fc3oEK8syJJpump": {
+   "balance_mutable_authority": {
+    "authority": [],
+    "status": "0"
+   },
+   "closable": {
+    "authority": [],
+    "status": "0"
+   },
+   "creators": [],
+   "default_account_state": "1",
+   "default_account_state_upgradable": {
+    "authority": [],
+    "status": "0"
+   },
+   "freezable": {
+    "authority": [],
+    "status": "0"
+   },
+   "holder_count": "10872",
+   "holders": [
+    {
+     "account": "8TbYi38UqcedfptvjN2rURLbGbGub3itp2hgLvvS35hY",
+     "balance": "14389763.413768",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0149",
+     "tag": "",
+     "token_account": "9Wk6kmBxiHYfETPKrUxAhzWy82zLBn42GG8Cz5zzACrN"
+    },
+    {
+     "account": "8L3fD2kkXeKWcnHkurSQ4SfZrQYTCQbJ2f27VFW5cotW",
+     "balance": "2345814.115219",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0024",
+     "tag": "",
+     "token_account": "DkY3vcL42guiRwWNP2iaiGdsyTdqqzJg5mwaaoZ2VFWU"
+    },
+    {
+     "account": "DdiCeBVodRW3kbHMAnRAdEs4ERDMg5YeoxZbav5FfYuK",
+     "balance": "2077281.103784",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0022",
+     "tag": "",
+     "token_account": "7XcGcsTfsXoUJ6dAizLZV2nzDExAhhRVBXgKLCJS74D6"
+    },
+    {
+     "account": "CLLnpNGSXCW1qJkN9aiSN25F8LEN6tkuYkzvA1HxvJbJ",
+     "balance": "1792594.189783",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0019",
+     "tag": "",
+     "token_account": "37i78YLMDrUTJvMmGnb5n4gC5uAURq3RDbp93ZoFeyWP"
+    },
+    {
+     "account": "EyW7uck2YsegtzaNUyuGNnQDewbh2jCmqa5fxumxYb8K",
+     "balance": "1610954.435501",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0017",
+     "tag": "",
+     "token_account": "EbrLAgv8wniG4jFzrWxiNBmw4f9HnB1EQw8iB9Cu6yAd"
+    },
+    {
+     "account": "BBaQZ6ZCmhJdeonvAqRYYC7gzxG8C1q6y4h4TwMadPjG",
+     "balance": "1443146.982078",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0015",
+     "tag": "",
+     "token_account": "95gVbSnibLb5FX9CsXrARoVFPZpphNM36xEtp4Pb5mHU"
+    },
+    {
+     "account": "7piwDom8pMyFF12yFsP3ZCUXJztW48QtsN5JUNKxS6Kd",
+     "balance": "1273568.343911",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0013",
+     "tag": "",
+     "token_account": "5HfqnVJaqZB1uwV4DsRMLFSbEVtu6jRnysQYPWxGwzWi"
+    },
+    {
+     "account": "5FUFLdwoMmPJs3A8G3NGipepY85mEtymRsv67CZaFQGJ",
+     "balance": "1223460.065672",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0013",
+     "tag": "",
+     "token_account": "HpVdsE1Yj7fDtzjd7TekNFD8mUdr7gYhd6L27HxkHzww"
+    },
+    {
+     "account": "5V6wdhMEHbUkEjskLMHCzi6UaNUTjVRn5Td2WHTmBV1m",
+     "balance": "1182128.745228",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0012",
+     "tag": "",
+     "token_account": "ATTqrSgtLhvbLuiue7gTrVXArbQ5tGPNvDiAx5p9J9Xy"
+    },
+    {
+     "account": "47MKTfVSu81u14mBKyhamw6GZ8aGxqLZ2bbSyQi7R5uo",
+     "balance": "1164963.468754",
+     "is_locked": 0,
+     "locked_detail": [],
+     "percent": "0.0012",
+     "tag": "",
+     "token_account": "BMZXVLC1uFC2jRdCSo8gcwyZeDTykS4rhQ1RyVmsHdKu"
+    }
+   ],
+   "metadata": {
+    "description": "",
+    "name": "Dumb Phone Gang",
+    "symbol": "DPG",
+    "uri": "https://ipfs.io/ipfs/bafkreibr64het3xiqtvli4d73rapx3x3d3m64pccau55upga6yijp3iugi"
+   },
+   "metadata_mutable": {
+    "metadata_upgrade_authority": [],
+    "status": "0"
+   },
+   "mintable": {
+    "authority": [],
+    "status": "0"
+   },
+   "non_transferable": "0",
+   "total_supply": "963820773.142044",
+   "transfer_fee": {},
+   "transfer_fee_upgradable": {
+    "authority": [],
+    "status": "0"
+   },
+   "transfer_hook": [],
+   "transfer_hook_upgradable": {
+    "authority": [],
+    "status": "0"
+   },
+   "trusted_token": 0
+  }
+ }
+}

@@ -1,0 +1,26 @@
+{
+ "data": [
+  {
+   "symbol": "ALABUSDT",
+   "markPrice": "290.4",
+   "lastPrice": "290.42",
+   "open": "301.74",
+   "last": "290.4",
+   "quoteVol": "129271.365",
+   "baseVol": "437.54",
+   "high": "309.12",
+   "low": "278.68"
+  },
+  {
+   "symbol": "SUSHIUSDT",
+   "markPrice": "0.173",
+   "lastPrice": "0.173",
+   "open": "0.1603",
+   "last": "0.173",
+   "quoteVol": "253820.4126",
+   "baseVol": "1555614",
+   "high": "0.1747",
+   "low": "0.1588"
+  }
+ ]
+}

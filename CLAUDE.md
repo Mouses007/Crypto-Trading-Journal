@@ -31,6 +31,8 @@ npm run build        # Vite production build (output to dist/)
 npm start            # Start production server (node index.mjs)
 npm run dev          # Start dev server with Vite HMR
 npm run test:self    # Run all self-tests (scripts/run-selftests.mjs)
+node scripts/fixtures-auffrischen.mjs   # compare stored API fixtures against live
+node scripts/fixtures-auffrischen.mjs --schreiben   # …and update them
 ```
 
 There is **no test framework, no linter, and no CI/CD pipeline** configured.
@@ -48,6 +50,17 @@ after touching anything under `server/strategies/`, `server/fill-simulator.js`,
 `server/sitzung-rechnung.js`, `server/makro.js` or `shared/handelszeiten.js`.
 Directories are listed in `ORTE` in `scripts/run-selftests.mjs` — a new one has
 to be added there or its tests are silently skipped.
+
+`server/__selftest-datenvertrag.mjs` is a different kind of test: it asserts
+which FIELDS of the third-party responses the code depends on, running against
+captured real answers in `server/fixtures/`. Every other test checks
+mathematics — which is exactly why the GoPlus gap went unnoticed for months
+(`lp_holders` is absent from the Solana response; the arithmetic was correct,
+it just computed with nothing). On its first run it found two more: the code
+read `cannot_sell_all`, a field GoPlus v1 does not have at all, and an empty
+`sell_tax` became 0 % via `Number('')`. `scripts/fixtures-auffrischen.mjs`
+re-fetches and reports **disappeared** fields; it is deliberately not part of
+`npm run test:self`, because that must work without network.
 
 Not covered: CSV import (`brokers.js`/`addTrades.js`), journal P&L
 (`src/utils/trades.js`), the REST CRUD layer, and anything rendered in the

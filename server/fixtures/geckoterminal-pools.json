@@ -1,0 +1,321 @@
+{
+ "data": [
+  {
+   "id": "solana_HMzvsEEmtzHhvZNw9uwbaG85HCTmFnkbhzUx16cy7ca3",
+   "type": "pool",
+   "attributes": {
+    "base_token_price_usd": "0.015599040800768924456509887604706942774125380938951352048833679",
+    "base_token_price_native_currency": "0.000180305252844271",
+    "quote_token_price_usd": "86.531959449102970700590130902314946180687583545",
+    "quote_token_price_native_currency": "1.0",
+    "base_token_price_quote_token": "0.0001803052528",
+    "quote_token_price_base_token": "5546.15012167",
+    "address": "HMzvsEEmtzHhvZNw9uwbaG85HCTmFnkbhzUx16cy7ca3",
+    "name": "CATE / SOL",
+    "pool_created_at": "2026-07-26T16:32:43Z",
+    "fdv_usd": "15150088.0389273",
+    "market_cap_usd": "15153366.578455",
+    "price_change_percentage": {
+     "m5": "0.349",
+     "m15": "0.494",
+     "m30": "1.011",
+     "h1": "12.943",
+     "h6": "25.398",
+     "h24": "28.767"
+    },
+    "transactions": {
+     "m5": {
+      "buys": 15,
+      "sells": 13,
+      "buyers": 9,
+      "sellers": 12
+     },
+     "m15": {
+      "buys": 103,
+      "sells": 75,
+      "buyers": 58,
+      "sellers": 67
+     },
+     "m30": {
+      "buys": 275,
+      "sells": 223,
+      "buyers": 179,
+      "sellers": 201
+     },
+     "h1": {
+      "buys": 930,
+      "sells": 820,
+      "buyers": 638,
+      "sellers": 560
+     },
+     "h6": {
+      "buys": 4703,
+      "sells": 4206,
+      "buyers": 2440,
+      "sellers": 2339
+     },
+     "h24": {
+      "buys": 8670,
+      "sells": 7874,
+      "buyers": 3727,
+      "sellers": 4168
+     }
+    },
+    "volume_usd": {
+     "m5": "2966.1757843135",
+     "m15": "17468.4981851804",
+     "m30": "42262.6141664362",
+     "h1": "179792.224168441",
+     "h6": "1297615.6842154",
+     "h24": "2172052.48340899"
+    },
+    "reserve_in_usd": "892481.4696"
+   },
+   "relationships": {
+    "base_token": {
+     "data": {
+      "id": "solana_Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump",
+      "type": "token"
+     }
+    },
+    "quote_token": {
+     "data": {
+      "id": "solana_So11111111111111111111111111111111111111112",
+      "type": "token"
+     }
+    },
+    "dex": {
+     "data": {
+      "id": "pumpswap",
+      "type": "dex"
+     }
+    }
+   }
+  },
+  {
+   "id": "solana_EfZSY5rEbGymT6zfBiovR6ty9GosqjEs6bs6hmTkrv1c",
+   "type": "pool",
+   "attributes": {
+    "base_token_price_usd": "0.0000033529216679005269068004868227646314879416916437210417131557702",
+    "base_token_price_native_currency": "0.0000000385421853366986",
+    "quote_token_price_usd": "86.982979381901956568236980625154195759545335215",
+    "quote_token_price_native_currency": "1.0",
+    "base_token_price_quote_token": "0.00000003854218534",
+    "quote_token_price_base_token": "25945596.786071",
+    "address": "EfZSY5rEbGymT6zfBiovR6ty9GosqjEs6bs6hmTkrv1c",
+    "name": "ANSEMSZN / SOL",
+    "pool_created_at": "2026-08-18T12:41:29Z",
+    "fdv_usd": "3333.6191234219",
+    "market_cap_usd": null,
+    "price_change_percentage": {
+     "m5": "0",
+     "m15": "0.537",
+     "m30": "0.537",
+     "h1": "0.537",
+     "h6": "5.266",
+     "h24": "-98.443"
+    },
+    "transactions": {
+     "m5": {
+      "buys": 1,
+      "sells": 0,
+      "buyers": 1,
+      "sellers": 0
+     },
+     "m15": {
+      "buys": 2,
+      "sells": 0,
+      "buyers": 1,
+      "sellers": 0
+     },
+     "m30": {
+      "buys": 2,
+      "sells": 0,
+      "buyers": 1,
+      "sellers": 0
+     },
+     "h1": {
+      "buys": 2,
+      "sells": 0,
+      "buyers": 1,
+      "sellers": 0
+     },
+     "h6": {
+      "buys": 10,
+      "sells": 21,
+      "buyers": 9,
+      "sellers": 21
+     },
+     "h24": {
+      "buys": 57233,
+      "sells": 43174,
+      "buyers": 8543,
+      "sellers": 8708
+     }
+    },
+    "volume_usd": {
+     "m5": "0.2143859925",
+     "m15": "0.3423458708",
+     "m30": "0.3423458708",
+     "h1": "0.3423458708",
+     "h6": "169.2789209007",
+     "h24": "1794791.15735038"
+    },
+    "reserve_in_usd": "4097.725"
+   },
+   "relationships": {
+    "base_token": {
+     "data": {
+      "id": "solana_5gkuTAKAskEhhc1D6ACtF6mmstfCg2Ldm5qT4C84pump",
+      "type": "token"
+     }
+    },
+    "quote_token": {
+     "data": {
+      "id": "solana_So11111111111111111111111111111111111111112",
+      "type": "token"
+     }
+    },
+    "dex": {
+     "data": {
+      "id": "pumpswap",
+      "type": "dex"
+     }
+    }
+   }
+  },
+  {
+   "id": "solana_G8kgi7aUpeX8EVR8VMkrth9SKEv5BietWC33UjAiiMGh",
+   "type": "pool",
+   "attributes": {
+    "base_token_price_usd": "0.00115131496633974758023737299557822142567819200607648598326920095",
+    "base_token_price_native_currency": "0.0000134855125566557",
+    "quote_token_price_usd": "86.509661906589071111201868797900400557581914335",
+    "quote_token_price_native_currency": "1.0",
+    "base_token_price_quote_token": "0.00001348551256",
+    "quote_token_price_base_token": "74153.651616783",
+    "address": "G8kgi7aUpeX8EVR8VMkrth9SKEv5BietWC33UjAiiMGh",
+    "name": "CYBERLEEK / SOL",
+    "pool_created_at": "2026-08-15T21:07:26Z",
+    "fdv_usd": "1175647.44204831",
+    "market_cap_usd": "0.0",
+    "price_change_percentage": {
+     "m5": "0.388",
+     "m15": "-0.56",
+     "m30": "-5.723",
+     "h1": "-15.957",
+     "h6": "-30.245",
+     "h24": "-31.901"
+    },
+    "transactions": {
+     "m5": {
+      "buys": 17,
+      "sells": 19,
+      "buyers": 16,
+      "sellers": 19
+     },
+     "m15": {
+      "buys": 188,
+      "sells": 101,
+      "buyers": 138,
+      "sellers": 89
+     },
+     "m30": {
+      "buys": 472,
+      "sells": 342,
+      "buyers": 298,
+      "sellers": 272
+     },
+     "h1": {
+      "buys": 740,
+      "sells": 606,
+      "buyers": 438,
+      "sellers": 504
+     },
+     "h6": {
+      "buys": 7815,
+      "sells": 5844,
+      "buyers": 3110,
+      "sellers": 3027
+     },
+     "h24": {
+      "buys": 32271,
+      "sells": 24811,
+      "buyers": 11893,
+      "sellers": 10132
+     }
+    },
+    "volume_usd": {
+     "m5": "1597.6778829809",
+     "m15": "73187.4681178067",
+     "m30": "197176.771491453",
+     "h1": "281434.043998007",
+     "h6": "2378715.05612341",
+     "h24": "8309939.66762837"
+    },
+    "reserve_in_usd": "347400.1342"
+   },
+   "relationships": {
+    "base_token": {
+     "data": {
+      "id": "solana_ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg",
+      "type": "token"
+     }
+    },
+    "quote_token": {
+     "data": {
+      "id": "solana_So11111111111111111111111111111111111111112",
+      "type": "token"
+     }
+    },
+    "dex": {
+     "data": {
+      "id": "raydium",
+      "type": "dex"
+     }
+    }
+   }
+  }
+ ],
+ "included": [
+  {
+   "id": "solana_Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump",
+   "type": "token",
+   "attributes": {
+    "address": "Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump",
+    "name": "Catecoin",
+    "symbol": "CATE",
+    "decimals": 6,
+    "image_url": "https://assets.geckoterminal.com/a0g5k3pvfiamtkx7olvnchrdsa4e",
+    "banner_image_url": null,
+    "coingecko_coin_id": null
+   }
+  },
+  {
+   "id": "solana_5gkuTAKAskEhhc1D6ACtF6mmstfCg2Ldm5qT4C84pump",
+   "type": "token",
+   "attributes": {
+    "address": "5gkuTAKAskEhhc1D6ACtF6mmstfCg2Ldm5qT4C84pump",
+    "name": "Ansem Season",
+    "symbol": "ANSEMSZN",
+    "decimals": 6,
+    "image_url": "https://assets.geckoterminal.com/g3w8zjgd7v01gs1p4gkcx6dsc0wx",
+    "banner_image_url": null,
+    "coingecko_coin_id": null
+   }
+  },
+  {
+   "id": "solana_ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg",
+   "type": "token",
+   "attributes": {
+    "address": "ApZuxdpzMrbEYTGEzeY9afh5pj9d6qPRJCTgQYiipbKg",
+    "name": "CyberLeek",
+    "symbol": "CYBERLEEK",
+    "decimals": 9,
+    "image_url": null,
+    "banner_image_url": null,
+    "coingecko_coin_id": "cyberleek"
+   }
+  }
+ ]
+}

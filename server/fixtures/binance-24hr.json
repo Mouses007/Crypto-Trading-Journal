@@ -1,0 +1,38 @@
+[
+ {
+  "closeTime": 1787176746613,
+  "count": 338835,
+  "firstId": 289825061,
+  "highPrice": "0.0818800",
+  "lastId": 290163918,
+  "lastPrice": "0.0815900",
+  "lastQty": "203",
+  "lowPrice": "0.0746900",
+  "openPrice": "0.0751400",
+  "openTime": 1787090340000,
+  "priceChange": "0.0064500",
+  "priceChangePercent": "8.584",
+  "quoteVolume": "21655392.9992300",
+  "symbol": "XPLUSDT",
+  "volume": "277854107",
+  "weightedAvgPrice": "0.0779380"
+ },
+ {
+  "closeTime": 1787176746432,
+  "count": 922450,
+  "firstId": 24700465,
+  "highPrice": "253.66000",
+  "lastId": 25623233,
+  "lastPrice": "226.75000",
+  "lastQty": "2.12",
+  "lowPrice": "214.19000",
+  "openPrice": "247.32000",
+  "openTime": 1787090340000,
+  "priceChange": "-20.57000",
+  "priceChangePercent": "-8.317",
+  "quoteVolume": "226755828.14360",
+  "symbol": "NBISUSDT",
+  "volume": "985527.95",
+  "weightedAvgPrice": "230.08564"
+ }
+]

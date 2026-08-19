@@ -43,6 +43,15 @@ const jaNein = (w) => w === true || w === 1 || w === '1'
 
 /** Prozentzahl aus einem Feld, das auch „0.05" (=5 %) sein kann. */
 function prozent(roh) {
+    /*
+     * Die leere Zeichenkette ist der Normalfall, wenn GoPlus die Steuer nicht
+     * ermitteln konnte — und `Number('')` ist 0. Bis zum 20.08.2026 galt ein
+     * Token mit unbekannter Verkaufssteuer damit als steuerfrei und bestand
+     * die Prüfung. Dieselbe Falle wie bei `Number(null)` an vier anderen
+     * Stellen dieses Hauses; hier ist sie am teuersten, weil eine hohe
+     * Verkaufssteuer genau das Muster ist, gegen das die Stufe gebaut wurde.
+     */
+    if (roh === '' || roh === null || roh === undefined) return null
     const z = Number(roh)
     if (!Number.isFinite(z)) return null
     // GoPlus liefert Steuern als Anteil (0.05), nicht als Prozent.
@@ -96,7 +105,19 @@ export function pruefe(goplus, markt = {}, regeln = STANDARD_SICHERHEIT) {
         return verworfen('honeypot', 'Verkauf ist gesperrt (Honeypot)', flaggen, hinweise)
     }
 
-    flaggen.verkaufSperrbar = jaNein(goplus.cannot_sell_all) || jaNein(goplus.transfer_pausable)
+    /*
+     * `cannot_sell_all` stand hier bis zum 20.08.2026 mit in der Prüfung — und
+     * existiert in der GoPlus-v1-Antwort GAR NICHT. Neununddreissig Felder,
+     * keines heisst so; `jaNein(undefined)` ist immer falsch, die halbe
+     * Bedingung war seit jeher tot. Gefunden hat das der Datenvertrags-Test,
+     * nicht die Rechnung — die war korrekt, sie rechnete nur mit nichts.
+     *
+     * `transfer_pausable` gibt es wirklich und trägt die Prüfung allein;
+     * `cannot_buy` kommt als zweites echtes Feld dazu: Wer nicht kaufen kann,
+     * sitzt zwar nicht fest, aber der Markt ist manipulierbar.
+     */
+    flaggen.verkaufSperrbar = jaNein(goplus.transfer_pausable)
+    flaggen.kaufGesperrt = jaNein(goplus.cannot_buy)
     if (flaggen.verkaufSperrbar) {
         return verworfen('verkauf_sperrbar',
             'Übertragung kann angehalten oder der Verkauf begrenzt werden', flaggen, hinweise)
@@ -108,6 +129,9 @@ export function pruefe(goplus, markt = {}, regeln = STANDARD_SICHERHEIT) {
         return verworfen('verkaufssteuer_hoch',
             `Verkaufssteuer ${verkaufssteuer.toFixed(1)} % über ${r.maxVerkaufssteuerProzent} %`, flaggen, hinweise)
     }
+    // Unbekannt ist nicht steuerfrei. Kein K.o. — die Angabe fehlt bei GoPlus
+    // regelmässig auch für unauffällige Token —, aber sichtbar muss es sein.
+    if (verkaufssteuer === null) hinweise.push('Verkaufssteuer unbekannt')
 
     flaggen.praegbar = jaNein(goplus.is_mintable)
     flaggen.eigentuemerAktiv = Boolean(goplus.owner_address)
@@ -159,6 +183,14 @@ export function pruefe(goplus, markt = {}, regeln = STANDARD_SICHERHEIT) {
 
     // ── Abzüge ──────────────────────────────────────────────────────────
     let note = 100
+
+    if (flaggen.kaufGesperrt) {
+        // Kein K.o.: Wer nicht kaufen kann, sitzt nicht fest. Aber ein Markt,
+        // in den man nicht hineinkommt, ist auch keiner.
+        note -= 25
+        hinweise.push('Kauf ist derzeit gesperrt')
+    }
+    if (verkaufssteuer === null) note -= 5
 
     const top10 = summeTop10(goplus.holders)
     flaggen.top10Prozent = top10
