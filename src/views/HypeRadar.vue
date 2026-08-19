@@ -923,9 +923,16 @@ const REITER = [
     { id: 'einstellungen', icon: 'uil uil-setting' },
 ]
 
-/** Die drei Rollen in der Reihenfolge, in der sie im Lauf vorkommen. */
+/*
+ * Die Rollen in der Reihenfolge, in der sie im Lauf vorkommen.
+ *
+ * `helper` stand hier bis zum 19.08.2026 und war die schlimmere Hälfte des
+ * Befunds: Die Auswahl liess sich bedienen, ein Modell wählen und speichern —
+ * gerufen wurde sie nie. Wer ein teures Modell dafür einstellte, bezahlte
+ * nichts und bekam nichts; wer den Schlüssel dafür nicht hatte, konnte gar
+ * keinen Bericht mehr erzeugen.
+ */
 const ROLLEN = [
-    { id: 'helper' },
     { id: 'research' },
     { id: 'editor' },
 ]

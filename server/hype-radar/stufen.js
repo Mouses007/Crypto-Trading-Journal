@@ -3,9 +3,9 @@
  *
  * Warum das als eigene Tabelle existiert: Die Wahl „welches Modell schreibt
  * meinen Bericht" ist für den Nutzer keine Modellwahl, sondern eine Abwägung
- * zwischen Kosten und Tiefe. Drei Rollen einzeln zu belegen setzt voraus, dass
- * man die Anbieterlandschaft kennt. Sechs benannte Stufen mit Preisschild
- * setzen das nicht voraus.
+ * zwischen Kosten und Tiefe. Rollen einzeln zu belegen setzt voraus, dass man
+ * die Anbieterlandschaft kennt. Sechs benannte Stufen mit Preisschild setzen
+ * das nicht voraus.
  *
  * Die Beträge sind Schätzungen für einen Lauf mit sieben Kandidaten, gerechnet
  * aus den Listenpreisen in `ai-preise.js` (Stand August 2026). Was ein Lauf
@@ -21,13 +21,23 @@
  */
 
 /**
- * Die drei Rollen.
+ * Die zwei Rollen.
  *
- * `helper`  billig und schnell, Qualität zweitrangig (Entdopplung, Zuordnung)
  * `research` pro Kandidat eine Web-Recherche — Zuverlässigkeit zählt
  * `editor`  schreibt den Bericht; hier entsteht die Qualität
+ *
+ * Es gab eine dritte, `helper`, gedacht für Entdopplung und Zuordnung. Sie ist
+ * am 19.08.2026 entfernt worden, weil sie nie gerufen wurde: Diese Arbeit
+ * erledigt `fuehreZusammen` deterministisch — nachrechenbar, kostenlos und
+ * ohne Lauf-zu-Lauf-Schwankung. Ein Sprachmodell wäre dafür die schlechtere
+ * Lösung gewesen.
+ *
+ * Stehen bleiben durfte sie trotzdem nicht: `benoetigteAnbieter` verlangte
+ * einen Schlüssel für sie, und ein fehlender DeepSeek-Schlüssel blockierte
+ * damit manuelle wie automatische Berichte — für eine Rolle, die nichts tut.
+ * Zusätzlich bot die Oberfläche eine Modellwahl dafür an, die folgenlos blieb.
  */
-export const ROLLEN = ['helper', 'research', 'editor']
+export const ROLLEN = ['research', 'editor']
 
 /**
  * Belegung je Profil.
@@ -38,17 +48,14 @@ export const ROLLEN = ['helper', 'research', 'editor']
  */
 export const PROFILE = {
     guenstig: {
-        helper: { provider: 'deepseek', modell: 'deepseek-v4-flash' },
         research: { provider: 'deepseek', modell: 'deepseek-v4-flash' },
         editor: { provider: 'deepseek', modell: 'deepseek-v4-pro' },
     },
     mittel: {
-        helper: { provider: 'deepseek', modell: 'deepseek-v4-flash' },
         research: { provider: 'moonshot', modell: 'kimi-k2.6' },
         editor: { provider: 'anthropic', modell: 'claude-sonnet-5' },
     },
     teuer: {
-        helper: { provider: 'deepseek', modell: 'deepseek-v4-flash' },
         research: { provider: 'zai', modell: 'glm-5.2' },
         editor: { provider: 'anthropic', modell: 'claude-opus-5' },
     },
