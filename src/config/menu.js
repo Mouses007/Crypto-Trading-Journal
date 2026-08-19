@@ -13,6 +13,14 @@
  * Vorgang: dieses Modul bleibt frei von Vue und von Datenbankwissen — wer die
  * Liste rendert, schlägt den Wert in den Einstellungen nach.
  *
+ * `menuKey` / `menuIcon` überschreiben Beschriftung und Symbol NUR im
+ * Seitenmenü. Nötig, seit ein Menüeintrag nicht mehr zwingend eine eigene
+ * Route ist: Hype- und Coin-Radar haben je zwei Einträge auf einer Route
+ * (`/hype-radar` und `/hype-radar/berichte`), und dort soll im Menü unter der
+ * Gruppenüberschrift „Übersicht" stehen, im Seitenkopf aber weiterhin
+ * „Hype-Radar". Der zweite Eintrag trägt deshalb auch eine `id`, die kein
+ * Routenname ist — das Menü hebt nach `path` hervor, nicht nach `pageId`.
+ *
  * `nurDesktop` blendet die Seite auf Telefonen aus. Kein Geschmacksurteil,
  * sondern eine Platzfrage: ein Arbeitsplatz aus elf Kacheln, Orderbuch und
  * Kerzenchart lässt sich auf 375 Pixeln nicht bedienen, und ein Werkzeug, das
@@ -74,7 +82,8 @@ export const PAGES = [
      * hiesse, unterwegs gar nichts zu sehen; und unterwegs ist genau die Zeit,
      * in der ein Liquiditätsabfluss auffallen soll.
      */
-    { id: 'hypeRadar', mode: 'research', path: '/hype-radar', icon: 'uil uil-telescope', titleKey: 'nav.hypeRadar', group: 'discover' },
+    { id: 'hypeRadar', mode: 'research', path: '/hype-radar', icon: 'uil uil-telescope', titleKey: 'nav.hypeRadar', menuKey: 'hype.tab_dashboard', menuIcon: 'uil uil-dashboard', group: 'hypeGruppe' },
+    { id: 'hypeBerichte', mode: 'research', path: '/hype-radar/berichte', icon: 'uil uil-file-alt', titleKey: 'hype.tab_berichte', group: 'hypeGruppe' },
     /*
      * Der Coin-Radar steht daneben und nicht darunter: Es sind zwei Fragen,
      * nicht eine Frage mit zwei Ansichten. Der Hype-Radar sucht draussen nach
@@ -82,7 +91,8 @@ export const PAGES = [
      * Ebenfalls nicht `nurDesktop` — eine Rangliste mit Kennzahlen liest sich
      * auf 375 Pixeln als Kartenliste einwandfrei.
      */
-    { id: 'coinRadar', mode: 'research', path: '/coin-radar', icon: 'uil uil-chart-line', titleKey: 'nav.coinRadar', group: 'discover' },
+    { id: 'coinRadar', mode: 'research', path: '/coin-radar', icon: 'uil uil-chart-line', titleKey: 'nav.coinRadar', menuKey: 'coinradar.tab_rangliste', menuIcon: 'uil uil-list-ol-alt', group: 'coinGruppe' },
+    { id: 'coinVerlauf', mode: 'research', path: '/coin-radar/verlauf', icon: 'uil uil-history', titleKey: 'coinradar.tab_verlauf', group: 'coinGruppe' },
 
     // ── Agent-Trading ───────────────────────────────────────
     { id: 'agentStrategies', mode: 'agent', path: '/agent/strategies', icon: 'uil uil-processor', titleKey: 'nav.agentStrategies', group: 'agentRun' },

@@ -911,7 +911,21 @@
     "webhookPayload": "Der Webhook schickt JSON mit regel, schwere, symbol, meldung und daten — eine Home-Assistant-Automation filtert auf trigger.json.schwere == 'kritisch' und lässt blinken.",
     "webhookUrl": "Webhook-Adresse (https://…/api/webhook/…)",
     "zeigerAbheften": "⭑ Angeheftet — klicken zum Entfernen",
-    "zeigerAnheften": "⭑ Klicken, um anzuheften"
+    "zeigerAnheften": "⭑ Klicken, um anzuheften",
+    "eAuf": "Einstellungen zeigen",
+    "eZu": "Einstellungen ausblenden",
+    "zAlle": "alle {n} h",
+    "zManuell": "nur von Hand",
+    "zMinHype": "ab Hype {n}",
+    "zTop": "Top {n} in den Bericht",
+    "zQuellen": "Quellen: {q}",
+    "zKeineQuellen": "keine Quelle aktiv",
+    "zKanaele": "Alarme an {k}",
+    "zKeineKanaele": "keine Alarmzustellung",
+    "favMehr": "+{n} mehr",
+    "favWeniger": "weniger zeigen",
+    "alarmeMehr": "{n} ältere anzeigen",
+    "alarmeWeniger": "nur die neuesten zeigen"
   },
   "kiUebersicht": {
     "laedt": "Übersicht wird geladen …",

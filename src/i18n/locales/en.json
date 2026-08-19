@@ -911,7 +911,21 @@
     "webhookPayload": "The webhook posts JSON with regel, schwere, symbol, meldung and daten — a Home Assistant automation filters on trigger.json.schwere == 'kritisch' and starts the lights.",
     "webhookUrl": "Webhook address (https://…/api/webhook/…)",
     "zeigerAbheften": "⭑ Pinned — click to remove",
-    "zeigerAnheften": "⭑ Click to pin"
+    "zeigerAnheften": "⭑ Click to pin",
+    "eAuf": "Show settings",
+    "eZu": "Hide settings",
+    "zAlle": "every {n} h",
+    "zManuell": "manual only",
+    "zMinHype": "hype {n}+",
+    "zTop": "top {n} in the report",
+    "zQuellen": "Sources: {q}",
+    "zKeineQuellen": "no source active",
+    "zKanaele": "alerts to {k}",
+    "zKeineKanaele": "no alert delivery",
+    "favMehr": "+{n} more",
+    "favWeniger": "show fewer",
+    "alarmeMehr": "show {n} older",
+    "alarmeWeniger": "show newest only"
   },
   "kiUebersicht": {
     "laedt": "Loading overview …",

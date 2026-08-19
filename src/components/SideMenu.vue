@@ -1,11 +1,12 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import axios from 'axios'
 import { pageId, screenType, appMode } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
 import { useIstTelefon } from '../utils/geraet.js'
 import { selectedBroker, brokers, selectedTradeCategory, BOT_BROKERS } from "../stores/filters.js"
-import { pagesForMode, modeHome } from "../config/menu.js"
+import { PAGES, pagesForMode, modeHome } from "../config/menu.js"
 import SidebarFilters from './SidebarFilters.vue'
 import LiveSymbolPicker from './LiveSymbolPicker.vue'
 import donateBtc from '../assets/donate-btc.png'
@@ -249,6 +250,26 @@ function gruppenFuer(mode) {
 
 const istTelefon = useIstTelefon()
 
+const route = useRoute()
+const menuPfade = new Set(PAGES.map(p => p.path))
+
+/**
+ * Welcher Eintrag ist hervorgehoben?
+ *
+ * Nach dem **Pfad**, nicht nach `pageId`: Seit Hype- und Coin-Radar ihre
+ * früheren Reiter als Menüeinträge führen, teilen sich zwei Einträge einen
+ * Routennamen (`/hype-radar` und `/hype-radar/berichte`). Über `pageId` wären
+ * beide gleichzeitig aktiv.
+ *
+ * Unterseiten ohne eigenen Eintrag (ein Pfad, den das Menü nicht kennt) fallen
+ * auf `pageId` zurück — sonst stünde man dort in einem Menü ganz ohne Markierung.
+ */
+function istAktiv(page) {
+    if (route.path === page.path) return true
+    if (menuPfade.has(route.path)) return false
+    return pageId.value === page.id
+}
+
 const liveGroups = computed(() => gruppenFuer('live'))
 const agentGroups = computed(() => gruppenFuer('agent'))
 /*
@@ -379,8 +400,8 @@ function goToDashboard() {
                 <div class="sideMenuDivContent">
                     <label class="fw-lighter">{{ t(group.labelKey) }}</label>
                     <a v-for="page in group.items" :key="page.id" :href="page.path"
-                        v-bind:class="[pageId === page.id ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
-                        <i v-bind:class="[page.icon, 'me-2']"></i>{{ t(page.titleKey) }}
+                        v-bind:class="[istAktiv(page) ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
+                        <i v-bind:class="[page.menuIcon || page.icon, 'me-2']"></i>{{ t(page.menuKey || page.titleKey) }}
                     </a>
                 </div>
             </div>
@@ -397,8 +418,8 @@ function goToDashboard() {
                 <div class="sideMenuDivContent">
                     <label class="fw-lighter">{{ t(group.labelKey) }}</label>
                     <a v-for="page in group.items" :key="page.id" :href="page.path"
-                        v-bind:class="[pageId === page.id ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
-                        <i v-bind:class="[page.icon, 'me-2']"></i>{{ t(page.titleKey) }}
+                        v-bind:class="[istAktiv(page) ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
+                        <i v-bind:class="[page.menuIcon || page.icon, 'me-2']"></i>{{ t(page.menuKey || page.titleKey) }}
                     </a>
                 </div>
             </div>
@@ -410,8 +431,8 @@ function goToDashboard() {
                 <div class="sideMenuDivContent">
                     <label class="fw-lighter">{{ t(group.labelKey) }}</label>
                     <a v-for="page in group.items" :key="page.id" :href="page.path"
-                        v-bind:class="[pageId === page.id ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
-                        <i v-bind:class="[page.icon, 'me-2']"></i>{{ t(page.titleKey) }}
+                        v-bind:class="[istAktiv(page) ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
+                        <i v-bind:class="[page.menuIcon || page.icon, 'me-2']"></i>{{ t(page.menuKey || page.titleKey) }}
                     </a>
                 </div>
             </div>

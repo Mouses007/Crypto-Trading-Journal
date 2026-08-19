@@ -242,7 +242,14 @@ const router = createRouter({
     {
         // Hype-Radar: was gerade neu gehypt wird — gesammelt, bewertet und
         // hart auf Betrugsmuster gefiltert, bevor es überhaupt angezeigt wird.
-        path: '/hype-radar',
+        //
+        // Der optionale Abschnitt ist der frühere Seiten-Reiter: Übersicht und
+        // Berichte stehen jetzt als eigene Einträge im Seitenmenü. Bewusst ein
+        // Parameter und keine zweite Route — derselbe Routen-Eintrag heisst,
+        // dass die Seite beim Wechsel NICHT neu aufgebaut wird: ein laufender
+        // Scan (SSE-Strom) überlebt den Wechsel, die Kandidatentabelle behält
+        // Filter und aufgeklappte Zeilen.
+        path: '/hype-radar/:reiter?',
         name: 'hypeRadar',
         meta: {
             title: "Hype-Radar", titleKey: "nav.hypeRadar",
@@ -256,7 +263,10 @@ const router = createRouter({
         // Coin-Radar: Geschwister des Hype-Radars mit der umgekehrten Frage —
         // nicht „was ist neu", sondern „welcher der handelbaren Coins lässt
         // sich gerade am besten handeln".
-        path: '/coin-radar',
+        // Abschnitt wie beim Hype-Radar: Rangliste und Verlauf sind
+        // Menüeinträge, teilen sich aber einen Routen-Eintrag und damit die
+        // geladene Rangliste.
+        path: '/coin-radar/:reiter?',
         name: 'coinRadar',
         meta: {
             title: "Coin-Radar", titleKey: "nav.coinRadar",

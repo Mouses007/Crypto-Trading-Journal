@@ -2,26 +2,34 @@
     <div class="hyp">
         <!-- ── Kopf ──────────────────────────────────────────────────── -->
         <div class="hypKopf">
-            <ul class="nav nav-tabs hypNav">
-                <li v-for="r in REITER" :key="r.id" class="nav-item">
-                    <a class="nav-link" :class="{ active: reiter === r.id }"
-                        href="#" @click.prevent="reiterWechseln(r.id)">
-                        <i :class="r.icon" class="me-1"></i>{{ t('hype.tab_' + r.id) }}
-                    </a>
-                </li>
-            </ul>
+            <!-- Übersicht und Berichte stehen als eigene Einträge im
+                 Seitenmenü. Was bleibt, sind die Einstellungen — und die
+                 verhalten sich wie in den Nachrichten: ein Zahnrad und eine
+                 Zeile Klartext. Zugeklappt sieht man, wonach gesucht wird,
+                 ohne dass ein langes Formular die Funde nach unten schiebt. -->
+            <div class="hypEinstKopf">
+                <button type="button" class="ctl-pill klein" :class="{ active: einstOffen }"
+                    :aria-expanded="einstOffen"
+                    :title="einstOffen ? t('hype.eZu') : t('hype.eAuf')"
+                    @click="einstUmschalten">
+                    <i class="uil" :class="einstOffen ? 'uil-angle-down' : 'uil-setting'"></i>
+                </button>
+                <span v-if="!einstOffen" class="hypEinstZeile" @click="einstUmschalten">
+                    {{ einstZusammenfassung }}
+                </span>
+            </div>
             <div class="hypKnoepfe">
                 <span v-if="laeuft" class="hypFortschritt">{{ fortschrittText }}</span>
-                <PageInfo section="info.hypeRadar" />
-                <button class="btn btn-sm btn-outline-secondary" :disabled="laeuft" @click="starte(false)">
+                <button type="button" class="ctl-pill" :disabled="laeuft" @click="starte(false)">
                     <i class="uil uil-search me-1"></i>{{ t('hype.nurScannen') }}
                 </button>
-                <button class="btn btn-sm btn-primary" :disabled="laeuft || fehlendeSchluessel.length"
+                <button type="button" class="ctl-pill accent" :disabled="laeuft || fehlendeSchluessel.length"
                     :title="fehlendeSchluessel.length ? t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) : ''"
                     @click="starte(true)">
                     <span v-if="laeuft" class="spinner-border spinner-border-sm me-1"></span>
                     <i v-else class="uil uil-file-alt me-1"></i>{{ t('hype.scannenUndBericht') }}
                 </button>
+                <PageInfo section="info.hypeRadar" />
             </div>
         </div>
 
@@ -33,17 +41,321 @@
             {{ t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) }}
         </div>
 
+        <!-- ══ Einstellungen ═════════════════════════════════════════ -->
+        <div v-if="einstOffen" class="mt-3">
+            <div v-if="einst" class="hypEinst">
+                <div class="form-check form-switch mb-3">
+                    <input id="hypAktiv" class="form-check-input" type="checkbox"
+                        v-model="einst.aktiv" @change="speichern">
+                    <label class="form-check-label" for="hypAktiv">{{ t('hype.autoAn') }}</label>
+                    <div class="hypHinweis">{{ t('hype.autoHinweis') }}</div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.intervall') }}</label>
+                        <select v-model.number="einst.intervallStunden" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option :value="1">{{ t('hype.stunde1') }}</option>
+                            <option :value="3">{{ t('hype.stundeN', { n: 3 }) }}</option>
+                            <option :value="6">{{ t('hype.stundeN', { n: 6 }) }}</option>
+                            <option :value="12">{{ t('hype.stundeN', { n: 12 }) }}</option>
+                            <option :value="24">{{ t('hype.taeglich') }}</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.minHype') }}</label>
+                        <input v-model.number="einst.minHypeScore" type="number" min="0" max="100"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.topN') }}</label>
+                        <input v-model.number="einst.berichtTopN" type="number" min="1" max="20"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+
+                <!-- Gewichte -->
+                <h6 class="hypTitel">{{ t('hype.gewichteTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.gewichteHinweis') }}</p>
+                <div class="hypRegler">
+                    <div v-for="(_, feld) in einst.gewichte" :key="feld" class="hypReglerZeile">
+                        <label>{{ t('hype.note_' + feld) }}</label>
+                        <input type="range" min="0" max="50" v-model.number="einst.gewichte[feld]"
+                            class="form-range" @change="speichern">
+                        <span class="hypReglerWert">{{ einst.gewichte[feld] }}</span>
+                    </div>
+                    <div class="hypSumme" :class="{ falsch: gewichtSumme !== 100 }">
+                        {{ t('hype.summe') }}: {{ gewichtSumme }}
+                        <span v-if="gewichtSumme !== 100">— {{ t('hype.summeHinweis') }}</span>
+                    </div>
+                </div>
+
+                <!-- Sicherheit -->
+                <h6 class="hypTitel mt-4">{{ t('hype.sicherheitTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.sicherheitHinweis') }}</p>
+                <div class="row g-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.minLiq') }}</label>
+                        <input v-model.number="einst.sicherheit.minLiquiditaetUsd" type="number"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.maxTop10') }}</label>
+                        <input v-model.number="einst.sicherheit.maxTop10Prozent" type="number"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.minAlter') }}</label>
+                        <input v-model.number="einst.sicherheit.minPaarAlterStunden" type="number"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.maxSteuer') }}</label>
+                        <input v-model.number="einst.sicherheit.maxVerkaufssteuerProzent" type="number"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <input id="hypLp" class="form-check-input" type="checkbox"
+                        v-model="einst.sicherheit.lpMussGesperrtSein" @change="speichern">
+                    <label class="form-check-label small" for="hypLp">{{ t('hype.lpPflicht') }}</label>
+                </div>
+
+                <!-- Börsenfilter -->
+                <h6 class="hypTitel mt-4">{{ t('hype.boersenTitel') }}</h6>
+                <div class="form-check form-switch">
+                    <input id="hypBoersen" class="form-check-input" type="checkbox"
+                        v-model="einst.nurBoersen" @change="speichern">
+                    <label class="form-check-label small" for="hypBoersen">{{ t('hype.nurBoersen') }}</label>
+                    <div class="hypHinweis">{{ t('hype.nurBoersenHinweis') }}</div>
+                </div>
+
+                <!-- Quellen -->
+                <h6 class="hypTitel mt-4">{{ t('hype.quellenTitel') }}</h6>
+                <div class="hypQuellen">
+                    <div v-for="(_, q) in einst.quellen" :key="q" class="form-check form-switch">
+                        <input :id="'hypQ' + q" class="form-check-input" type="checkbox"
+                            v-model="einst.quellen[q]" @change="speichern">
+                        <label class="form-check-label small" :for="'hypQ' + q">
+                            {{ q }}
+                            <span v-if="q === 'reddit'" class="hypHinweisKlein">{{ t('hype.redditHinweis') }}</span>
+                            <span v-else-if="['cryptopanic', 'lunarcrush'].includes(q)" class="hypHinweisKlein">
+                                {{ t('hype.brauchtSchluessel') }}
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Wachhund & Alarme -->
+                <h6 class="hypTitel mt-4">{{ t('hype.wachhundTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.wachhundHinweis') }}</p>
+                <div class="row g-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.wachhundTakt') }}</label>
+                        <select v-model.number="einst.wachhundIntervallMin" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option :value="5">5 min</option>
+                            <option :value="15">15 min</option>
+                            <option :value="30">30 min</option>
+                            <option :value="60">60 min</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelPreisSprung') }}</label>
+                        <input v-model.number="einst.alarmRegeln.preisSprungPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelPreis24h') }}</label>
+                        <input v-model.number="einst.alarmRegeln.preisSturz24hPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelLiqAbfluss') }}</label>
+                        <input v-model.number="einst.alarmRegeln.liqAbflussPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+
+                <!-- Börsen-Favoriten: eigene Schwellen, weil sie eigene Grössen
+                     messen. Ein Bitunix-Perp hat keinen Liquiditätspool, der
+                     abfliessen könnte — dort zählen Umsatz, Spread und Funding. -->
+                <p class="hypHinweis mt-3 mb-1">{{ t('hype.regelnBoerse') }}</p>
+                <div class="row g-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelUmsatzEinbruch') }}</label>
+                        <input v-model.number="einst.alarmRegeln.umsatzEinbruchPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelSpreadWarn') }}</label>
+                        <input v-model.number="einst.alarmRegeln.spreadWarnBp" type="number" min="1" step="0.5"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelFundingExtrem') }}</label>
+                        <input v-model.number="einst.alarmRegeln.fundingExtremPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+
+                <!-- Zustellkanäle -->
+                <h6 class="hypTitel mt-4">{{ t('hype.kanaeleTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.kanaeleHinweis') }}</p>
+
+                <div class="hypKanal">
+                    <div class="form-check form-switch">
+                        <input id="hypKanNtfy" class="form-check-input" type="checkbox"
+                            v-model="einst.alarmKanaele.ntfy.an" @change="speichern">
+                        <label class="form-check-label" for="hypKanNtfy"><strong>ntfy</strong></label>
+                    </div>
+                    <div v-if="einst.alarmKanaele.ntfy.an" class="hypKanalFelder">
+                        <input v-model="einst.alarmKanaele.ntfy.url" class="form-control form-control-sm"
+                            :placeholder="t('hype.ntfyUrl')" @change="speichern">
+                        <input v-model="einst.alarmKanaele.ntfy.topic" class="form-control form-control-sm"
+                            placeholder="Topic" @change="speichern">
+                        <input v-model="einst.schluessel.ntfyToken" type="password" class="form-control form-control-sm"
+                            :placeholder="t('hype.tokenOptional')" @change="speichern">
+                        <select v-model="einst.alarmKanaele.ntfy.minSchwere" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option value="info">{{ t('hype.abInfo') }}</option>
+                            <option value="warnung">{{ t('hype.abWarnung') }}</option>
+                            <option value="kritisch">{{ t('hype.abKritisch') }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="hypKanal">
+                    <div class="form-check form-switch">
+                        <input id="hypKanTg" class="form-check-input" type="checkbox"
+                            v-model="einst.alarmKanaele.telegram.an" @change="speichern">
+                        <label class="form-check-label" for="hypKanTg"><strong>Telegram</strong></label>
+                    </div>
+                    <div v-if="einst.alarmKanaele.telegram.an" class="hypKanalFelder">
+                        <input v-model="einst.schluessel.telegramToken" type="password" class="form-control form-control-sm"
+                            :placeholder="t('hype.botToken')" @change="speichern">
+                        <input v-model="einst.alarmKanaele.telegram.chatId" class="form-control form-control-sm"
+                            placeholder="Chat-ID" @change="speichern">
+                        <select v-model="einst.alarmKanaele.telegram.minSchwere" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option value="info">{{ t('hype.abInfo') }}</option>
+                            <option value="warnung">{{ t('hype.abWarnung') }}</option>
+                            <option value="kritisch">{{ t('hype.abKritisch') }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="hypKanal">
+                    <div class="form-check form-switch">
+                        <input id="hypKanWh" class="form-check-input" type="checkbox"
+                            v-model="einst.alarmKanaele.webhook.an" @change="speichern">
+                        <label class="form-check-label" for="hypKanWh">
+                            <strong>Webhook</strong>
+                            <span class="hypHinweisKlein">{{ t('hype.webhookHa') }}</span>
+                        </label>
+                    </div>
+                    <div v-if="einst.alarmKanaele.webhook.an" class="hypKanalFelder">
+                        <input v-model="einst.schluessel.webhookUrl" type="password" class="form-control form-control-sm hypBreit"
+                            :placeholder="t('hype.webhookUrl')" @change="speichern">
+                        <select v-model="einst.alarmKanaele.webhook.minSchwere" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option value="info">{{ t('hype.abInfo') }}</option>
+                            <option value="warnung">{{ t('hype.abWarnung') }}</option>
+                            <option value="kritisch">{{ t('hype.abKritisch') }}</option>
+                        </select>
+                        <div class="hypHinweis mb-0" style="flex-basis: 100%">{{ t('hype.webhookPayload') }}</div>
+                    </div>
+                </div>
+
+                <button class="btn btn-sm btn-outline-secondary mt-2" :disabled="testLaeuft" @click="kanaeleTesten">
+                    <span v-if="testLaeuft" class="spinner-border spinner-border-sm me-1"></span>
+                    {{ t('hype.kanaeleTesten') }}
+                </button>
+                <span v-if="testErgebnis" class="ms-2 small">{{ testErgebnis }}</span>
+
+                <!-- KI-Stufe -->
+                <h6 class="hypTitel mt-4">{{ t('hype.kiTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.kiHinweis') }}</p>
+                <div class="btn-group btn-group-sm mb-2">
+                    <button class="btn" :class="ordnung === 'preis' ? 'btn-primary' : 'btn-outline-secondary'"
+                        @click="ordnungWechseln('preis')">{{ t('hype.nachPreis') }}</button>
+                    <button class="btn" :class="ordnung === 'guete' ? 'btn-primary' : 'btn-outline-secondary'"
+                        @click="ordnungWechseln('guete')">{{ t('hype.nachGuete') }}</button>
+                </div>
+                <div class="hypStufen">
+                    <label v-for="s in stufen" :key="s.id" class="hypStufe"
+                        :class="{ aktiv: !manuell && einst.llmStufe === s.id }">
+                        <!-- Gemeinsames `name`: ohne das bildet jeder Knopf seine
+                             eigene Gruppe, bleibt nach dem ersten Klick angehakt,
+                             und ein erneuter Klick löst kein `change` mehr aus —
+                             die Wahl liesse sich dann nicht zurücknehmen. -->
+                        <input type="radio" name="hypStufe" :value="s.id"
+                            :checked="!manuell && einst.llmStufe === s.id"
+                            @change="stufeGewaehlt(s)">
+                        <div class="hypStufeKopf">
+                            <strong>{{ t('hype.modus_' + s.modus) }} · {{ t('hype.profil_' + s.profil) }}</strong>
+                            <span v-if="s.empfohlen" class="badge bg-primary hypBadge ms-2">{{ t('hype.empfohlen') }}</span>
+                            <span class="ms-auto hypStufePreis">~{{ s.usdProMonat[0] }}–{{ s.usdProMonat[1] }} $/{{ t('hype.monat') }}</span>
+                        </div>
+                        <div class="hypStufeModelle">
+                            {{ t('hype.recherche') }}: {{ s.rollen.research.provider }}/{{ s.rollen.research.modell }}
+                            · {{ t('hype.redakteur') }}: {{ s.rollen.editor.provider }}/{{ s.rollen.editor.modell }}
+                        </div>
+                    </label>
+
+                    <!-- Manuell: die drei Rollen einzeln belegen -->
+                    <label class="hypStufe" :class="{ aktiv: manuell }">
+                        <input type="radio" name="hypStufe" :checked="manuell" @change="manuellWaehlen">
+                        <div class="hypStufeKopf">
+                            <strong>{{ t('hype.manuell') }}</strong>
+                            <span class="ms-auto hypStufePreis">{{ t('hype.manuellPreis') }}</span>
+                        </div>
+                        <div class="hypStufeModelle">{{ t('hype.manuellHinweis') }}</div>
+                    </label>
+                </div>
+
+                <div v-if="manuell" class="hypRollen">
+                    <div v-for="r in ROLLEN" :key="r.id" class="hypRolle">
+                        <div class="hypRolleKopf">
+                            <strong>{{ t('hype.rolle_' + r.id) }}</strong>
+                            <span class="hypHinweisKlein">{{ t('hype.rolleHinweis_' + r.id) }}</span>
+                        </div>
+                        <AnbieterWahl
+                            :provider="einst.llmRollen?.[r.id]?.provider || ''"
+                            :modell="einst.llmRollen?.[r.id]?.modell || ''"
+                            :modell-listen="modellListen"
+                            :global-provider="globalKi.provider"
+                            :global-modell="globalKi.modell"
+                            @update:provider="w => rolleSetzen(r.id, 'provider', w)"
+                            @update:modell="w => rolleSetzen(r.id, 'modell', w)" />
+                    </div>
+                    <p v-if="fehlendeSchluessel.length" class="hypHinweis mb-0 mt-2 text-warning">
+                        <i class="uil uil-exclamation-triangle me-1"></i>
+                        {{ t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) }}
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <!-- ══ Dashboard ═════════════════════════════════════════════ -->
         <div v-show="reiter === 'dashboard'" class="mt-3">
 
             <!-- ── Favoriten ─────────────────────────────────────── -->
             <div v-if="favoriten.length" class="hypFavLeiste">
                 <span class="hypFavTitel"><i class="uil uil-star me-1"></i>{{ t('hype.favoriten') }}</span>
-                <button v-for="f in favoriten" :key="f.id" class="hypFavChip"
+                <button v-for="f in sichtbareFavoriten" :key="f.id" class="hypFavChip"
                     :class="{ aktiv: liveOffen?.favorit?.id === f.id, stumm: f.stumm }"
                     @click="liveOeffnen(f)">
                     <i v-if="f.stumm" class="uil uil-bell-slash me-1"></i>{{ f.symbol }}<span class="hypFavKette">{{ f.chain }}</span>
                     <span v-if="ungelesenJeFavorit[f.id]" class="hypAlarmZahl">{{ ungelesenJeFavorit[f.id] }}</span>
+                </button>
+                <!-- Der Rest steckt hinter einem Knopf. Die Zahl darauf ist
+                     die der ungelesenen Alarme in den verborgenen Favoriten —
+                     sonst verschwände mit dem Chip auch dessen Alarmzähler. -->
+                <button v-if="versteckteFavoriten" class="hypFavChip hypFavMehr" @click="favAlleUmschalten">
+                    {{ favAlleZeigen ? t('hype.favWeniger') : t('hype.favMehr', { n: versteckteFavoriten }) }}
+                    <span v-if="!favAlleZeigen && verstecktUngelesen" class="hypAlarmZahl">{{ verstecktUngelesen }}</span>
                 </button>
             </div>
 
@@ -58,13 +370,21 @@
                         @click="alarmeGelesen">{{ t('hype.alleGelesen') }}</button>
                 </div>
                 <div class="hypAlarmListe">
-                    <div v-for="a in alarme.slice(0, 12)" :key="a.id" class="hypAlarm"
+                    <div v-for="a in sichtbareAlarme" :key="a.id" class="hypAlarm"
                         :class="[a.schwere, { gelesen: a.gelesen }]">
                         <span class="hypAlarmSchwere">{{ t('hype.schwere_' + a.schwere) }}</span>
                         <span class="hypAlarmText">{{ a.meldung }}</span>
                         <span class="hypAlarmZeit">{{ zeitpunkt(a.erstelltAm) }}</span>
                     </div>
                 </div>
+                <!-- Die älteren sind geladen, nur nicht gezeigt: vorher waren
+                     sie hart abgeschnitten und der Zähler oben zählte trotzdem
+                     mit — man sah eine Zahl ohne die zugehörige Zeile. -->
+                <button v-if="alarme.length > ALARM_SICHTBAR" class="btn btn-sm btn-outline-secondary py-0 mt-2"
+                    @click="alarmeAlleZeigen = !alarmeAlleZeigen">
+                    {{ alarmeAlleZeigen ? t('hype.alarmeWeniger')
+                        : t('hype.alarmeMehr', { n: alarme.length - ALARM_SICHTBAR }) }}
+                </button>
             </div>
 
             <!-- Kachel-Detail eines Favoriten: Livedaten -->
@@ -412,302 +732,6 @@
             </div>
         </div>
 
-        <!-- ══ Einstellungen ═════════════════════════════════════════ -->
-        <div v-show="reiter === 'einstellungen'" class="mt-3">
-            <div v-if="einst" class="hypEinst">
-                <div class="form-check form-switch mb-3">
-                    <input id="hypAktiv" class="form-check-input" type="checkbox"
-                        v-model="einst.aktiv" @change="speichern">
-                    <label class="form-check-label" for="hypAktiv">{{ t('hype.autoAn') }}</label>
-                    <div class="hypHinweis">{{ t('hype.autoHinweis') }}</div>
-                </div>
-
-                <div class="row g-3 mb-3">
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.intervall') }}</label>
-                        <select v-model.number="einst.intervallStunden" class="form-select form-select-sm"
-                            @change="speichern">
-                            <option :value="1">{{ t('hype.stunde1') }}</option>
-                            <option :value="3">{{ t('hype.stundeN', { n: 3 }) }}</option>
-                            <option :value="6">{{ t('hype.stundeN', { n: 6 }) }}</option>
-                            <option :value="12">{{ t('hype.stundeN', { n: 12 }) }}</option>
-                            <option :value="24">{{ t('hype.taeglich') }}</option>
-                        </select>
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.minHype') }}</label>
-                        <input v-model.number="einst.minHypeScore" type="number" min="0" max="100"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.topN') }}</label>
-                        <input v-model.number="einst.berichtTopN" type="number" min="1" max="20"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                </div>
-
-                <!-- Gewichte -->
-                <h6 class="hypTitel">{{ t('hype.gewichteTitel') }}</h6>
-                <p class="hypHinweis">{{ t('hype.gewichteHinweis') }}</p>
-                <div class="hypRegler">
-                    <div v-for="(_, feld) in einst.gewichte" :key="feld" class="hypReglerZeile">
-                        <label>{{ t('hype.note_' + feld) }}</label>
-                        <input type="range" min="0" max="50" v-model.number="einst.gewichte[feld]"
-                            class="form-range" @change="speichern">
-                        <span class="hypReglerWert">{{ einst.gewichte[feld] }}</span>
-                    </div>
-                    <div class="hypSumme" :class="{ falsch: gewichtSumme !== 100 }">
-                        {{ t('hype.summe') }}: {{ gewichtSumme }}
-                        <span v-if="gewichtSumme !== 100">— {{ t('hype.summeHinweis') }}</span>
-                    </div>
-                </div>
-
-                <!-- Sicherheit -->
-                <h6 class="hypTitel mt-4">{{ t('hype.sicherheitTitel') }}</h6>
-                <p class="hypHinweis">{{ t('hype.sicherheitHinweis') }}</p>
-                <div class="row g-3">
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.minLiq') }}</label>
-                        <input v-model.number="einst.sicherheit.minLiquiditaetUsd" type="number"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.maxTop10') }}</label>
-                        <input v-model.number="einst.sicherheit.maxTop10Prozent" type="number"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.minAlter') }}</label>
-                        <input v-model.number="einst.sicherheit.minPaarAlterStunden" type="number"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.maxSteuer') }}</label>
-                        <input v-model.number="einst.sicherheit.maxVerkaufssteuerProzent" type="number"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                </div>
-                <div class="form-check form-switch mt-2">
-                    <input id="hypLp" class="form-check-input" type="checkbox"
-                        v-model="einst.sicherheit.lpMussGesperrtSein" @change="speichern">
-                    <label class="form-check-label small" for="hypLp">{{ t('hype.lpPflicht') }}</label>
-                </div>
-
-                <!-- Börsenfilter -->
-                <h6 class="hypTitel mt-4">{{ t('hype.boersenTitel') }}</h6>
-                <div class="form-check form-switch">
-                    <input id="hypBoersen" class="form-check-input" type="checkbox"
-                        v-model="einst.nurBoersen" @change="speichern">
-                    <label class="form-check-label small" for="hypBoersen">{{ t('hype.nurBoersen') }}</label>
-                    <div class="hypHinweis">{{ t('hype.nurBoersenHinweis') }}</div>
-                </div>
-
-                <!-- Quellen -->
-                <h6 class="hypTitel mt-4">{{ t('hype.quellenTitel') }}</h6>
-                <div class="hypQuellen">
-                    <div v-for="(_, q) in einst.quellen" :key="q" class="form-check form-switch">
-                        <input :id="'hypQ' + q" class="form-check-input" type="checkbox"
-                            v-model="einst.quellen[q]" @change="speichern">
-                        <label class="form-check-label small" :for="'hypQ' + q">
-                            {{ q }}
-                            <span v-if="q === 'reddit'" class="hypHinweisKlein">{{ t('hype.redditHinweis') }}</span>
-                            <span v-else-if="['cryptopanic', 'lunarcrush'].includes(q)" class="hypHinweisKlein">
-                                {{ t('hype.brauchtSchluessel') }}
-                            </span>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Wachhund & Alarme -->
-                <h6 class="hypTitel mt-4">{{ t('hype.wachhundTitel') }}</h6>
-                <p class="hypHinweis">{{ t('hype.wachhundHinweis') }}</p>
-                <div class="row g-3">
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.wachhundTakt') }}</label>
-                        <select v-model.number="einst.wachhundIntervallMin" class="form-select form-select-sm"
-                            @change="speichern">
-                            <option :value="5">5 min</option>
-                            <option :value="15">15 min</option>
-                            <option :value="30">30 min</option>
-                            <option :value="60">60 min</option>
-                        </select>
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.regelPreisSprung') }}</label>
-                        <input v-model.number="einst.alarmRegeln.preisSprungPct" type="number" min="1"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.regelPreis24h') }}</label>
-                        <input v-model.number="einst.alarmRegeln.preisSturz24hPct" type="number" min="1"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.regelLiqAbfluss') }}</label>
-                        <input v-model.number="einst.alarmRegeln.liqAbflussPct" type="number" min="1"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                </div>
-
-                <!-- Börsen-Favoriten: eigene Schwellen, weil sie eigene Grössen
-                     messen. Ein Bitunix-Perp hat keinen Liquiditätspool, der
-                     abfliessen könnte — dort zählen Umsatz, Spread und Funding. -->
-                <p class="hypHinweis mt-3 mb-1">{{ t('hype.regelnBoerse') }}</p>
-                <div class="row g-3">
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.regelUmsatzEinbruch') }}</label>
-                        <input v-model.number="einst.alarmRegeln.umsatzEinbruchPct" type="number" min="1"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.regelSpreadWarn') }}</label>
-                        <input v-model.number="einst.alarmRegeln.spreadWarnBp" type="number" min="1" step="0.5"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                    <div class="col-auto">
-                        <label class="form-label small">{{ t('hype.regelFundingExtrem') }}</label>
-                        <input v-model.number="einst.alarmRegeln.fundingExtremPct" type="number" min="1"
-                            class="form-control form-control-sm hypZahl" @change="speichern">
-                    </div>
-                </div>
-
-                <!-- Zustellkanäle -->
-                <h6 class="hypTitel mt-4">{{ t('hype.kanaeleTitel') }}</h6>
-                <p class="hypHinweis">{{ t('hype.kanaeleHinweis') }}</p>
-
-                <div class="hypKanal">
-                    <div class="form-check form-switch">
-                        <input id="hypKanNtfy" class="form-check-input" type="checkbox"
-                            v-model="einst.alarmKanaele.ntfy.an" @change="speichern">
-                        <label class="form-check-label" for="hypKanNtfy"><strong>ntfy</strong></label>
-                    </div>
-                    <div v-if="einst.alarmKanaele.ntfy.an" class="hypKanalFelder">
-                        <input v-model="einst.alarmKanaele.ntfy.url" class="form-control form-control-sm"
-                            :placeholder="t('hype.ntfyUrl')" @change="speichern">
-                        <input v-model="einst.alarmKanaele.ntfy.topic" class="form-control form-control-sm"
-                            placeholder="Topic" @change="speichern">
-                        <input v-model="einst.schluessel.ntfyToken" type="password" class="form-control form-control-sm"
-                            :placeholder="t('hype.tokenOptional')" @change="speichern">
-                        <select v-model="einst.alarmKanaele.ntfy.minSchwere" class="form-select form-select-sm"
-                            @change="speichern">
-                            <option value="info">{{ t('hype.abInfo') }}</option>
-                            <option value="warnung">{{ t('hype.abWarnung') }}</option>
-                            <option value="kritisch">{{ t('hype.abKritisch') }}</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="hypKanal">
-                    <div class="form-check form-switch">
-                        <input id="hypKanTg" class="form-check-input" type="checkbox"
-                            v-model="einst.alarmKanaele.telegram.an" @change="speichern">
-                        <label class="form-check-label" for="hypKanTg"><strong>Telegram</strong></label>
-                    </div>
-                    <div v-if="einst.alarmKanaele.telegram.an" class="hypKanalFelder">
-                        <input v-model="einst.schluessel.telegramToken" type="password" class="form-control form-control-sm"
-                            :placeholder="t('hype.botToken')" @change="speichern">
-                        <input v-model="einst.alarmKanaele.telegram.chatId" class="form-control form-control-sm"
-                            placeholder="Chat-ID" @change="speichern">
-                        <select v-model="einst.alarmKanaele.telegram.minSchwere" class="form-select form-select-sm"
-                            @change="speichern">
-                            <option value="info">{{ t('hype.abInfo') }}</option>
-                            <option value="warnung">{{ t('hype.abWarnung') }}</option>
-                            <option value="kritisch">{{ t('hype.abKritisch') }}</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="hypKanal">
-                    <div class="form-check form-switch">
-                        <input id="hypKanWh" class="form-check-input" type="checkbox"
-                            v-model="einst.alarmKanaele.webhook.an" @change="speichern">
-                        <label class="form-check-label" for="hypKanWh">
-                            <strong>Webhook</strong>
-                            <span class="hypHinweisKlein">{{ t('hype.webhookHa') }}</span>
-                        </label>
-                    </div>
-                    <div v-if="einst.alarmKanaele.webhook.an" class="hypKanalFelder">
-                        <input v-model="einst.schluessel.webhookUrl" type="password" class="form-control form-control-sm hypBreit"
-                            :placeholder="t('hype.webhookUrl')" @change="speichern">
-                        <select v-model="einst.alarmKanaele.webhook.minSchwere" class="form-select form-select-sm"
-                            @change="speichern">
-                            <option value="info">{{ t('hype.abInfo') }}</option>
-                            <option value="warnung">{{ t('hype.abWarnung') }}</option>
-                            <option value="kritisch">{{ t('hype.abKritisch') }}</option>
-                        </select>
-                        <div class="hypHinweis mb-0" style="flex-basis: 100%">{{ t('hype.webhookPayload') }}</div>
-                    </div>
-                </div>
-
-                <button class="btn btn-sm btn-outline-secondary mt-2" :disabled="testLaeuft" @click="kanaeleTesten">
-                    <span v-if="testLaeuft" class="spinner-border spinner-border-sm me-1"></span>
-                    {{ t('hype.kanaeleTesten') }}
-                </button>
-                <span v-if="testErgebnis" class="ms-2 small">{{ testErgebnis }}</span>
-
-                <!-- KI-Stufe -->
-                <h6 class="hypTitel mt-4">{{ t('hype.kiTitel') }}</h6>
-                <p class="hypHinweis">{{ t('hype.kiHinweis') }}</p>
-                <div class="btn-group btn-group-sm mb-2">
-                    <button class="btn" :class="ordnung === 'preis' ? 'btn-primary' : 'btn-outline-secondary'"
-                        @click="ordnungWechseln('preis')">{{ t('hype.nachPreis') }}</button>
-                    <button class="btn" :class="ordnung === 'guete' ? 'btn-primary' : 'btn-outline-secondary'"
-                        @click="ordnungWechseln('guete')">{{ t('hype.nachGuete') }}</button>
-                </div>
-                <div class="hypStufen">
-                    <label v-for="s in stufen" :key="s.id" class="hypStufe"
-                        :class="{ aktiv: !manuell && einst.llmStufe === s.id }">
-                        <!-- Gemeinsames `name`: ohne das bildet jeder Knopf seine
-                             eigene Gruppe, bleibt nach dem ersten Klick angehakt,
-                             und ein erneuter Klick löst kein `change` mehr aus —
-                             die Wahl liesse sich dann nicht zurücknehmen. -->
-                        <input type="radio" name="hypStufe" :value="s.id"
-                            :checked="!manuell && einst.llmStufe === s.id"
-                            @change="stufeGewaehlt(s)">
-                        <div class="hypStufeKopf">
-                            <strong>{{ t('hype.modus_' + s.modus) }} · {{ t('hype.profil_' + s.profil) }}</strong>
-                            <span v-if="s.empfohlen" class="badge bg-primary hypBadge ms-2">{{ t('hype.empfohlen') }}</span>
-                            <span class="ms-auto hypStufePreis">~{{ s.usdProMonat[0] }}–{{ s.usdProMonat[1] }} $/{{ t('hype.monat') }}</span>
-                        </div>
-                        <div class="hypStufeModelle">
-                            {{ t('hype.recherche') }}: {{ s.rollen.research.provider }}/{{ s.rollen.research.modell }}
-                            · {{ t('hype.redakteur') }}: {{ s.rollen.editor.provider }}/{{ s.rollen.editor.modell }}
-                        </div>
-                    </label>
-
-                    <!-- Manuell: die drei Rollen einzeln belegen -->
-                    <label class="hypStufe" :class="{ aktiv: manuell }">
-                        <input type="radio" name="hypStufe" :checked="manuell" @change="manuellWaehlen">
-                        <div class="hypStufeKopf">
-                            <strong>{{ t('hype.manuell') }}</strong>
-                            <span class="ms-auto hypStufePreis">{{ t('hype.manuellPreis') }}</span>
-                        </div>
-                        <div class="hypStufeModelle">{{ t('hype.manuellHinweis') }}</div>
-                    </label>
-                </div>
-
-                <div v-if="manuell" class="hypRollen">
-                    <div v-for="r in ROLLEN" :key="r.id" class="hypRolle">
-                        <div class="hypRolleKopf">
-                            <strong>{{ t('hype.rolle_' + r.id) }}</strong>
-                            <span class="hypHinweisKlein">{{ t('hype.rolleHinweis_' + r.id) }}</span>
-                        </div>
-                        <AnbieterWahl
-                            :provider="einst.llmRollen?.[r.id]?.provider || ''"
-                            :modell="einst.llmRollen?.[r.id]?.modell || ''"
-                            :modell-listen="modellListen"
-                            :global-provider="globalKi.provider"
-                            :global-modell="globalKi.modell"
-                            @update:provider="w => rolleSetzen(r.id, 'provider', w)"
-                            @update:modell="w => rolleSetzen(r.id, 'modell', w)" />
-                    </div>
-                    <p v-if="fehlendeSchluessel.length" class="hypHinweis mb-0 mt-2 text-warning">
-                        <i class="uil uil-exclamation-triangle me-1"></i>
-                        {{ t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) }}
-                    </p>
-                </div>
-            </div>
-        </div>
     </div>
 </template>
 
@@ -725,6 +749,7 @@
  * Kandidat nicht allein wegen seiner Lage interessant aussieht.
  */
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import * as echarts from 'echarts'
@@ -859,6 +884,38 @@ const ungelesenJeFavorit = computed(() => {
     return zaehler
 })
 
+/*
+ * Favoritenleiste und Alarmliste sind gedeckelt.
+ *
+ * Beide wuchsen vorher ungebremst: zwanzig Favoriten umbrachen am Telefon in
+ * sieben bis zehn Zeilen und schoben Alarme und Quadrant unter die
+ * Bildschirmkante. Der Deckel ist keine Beschränkung der Sache, nur der
+ * Ansicht — ausgeklappt steht alles da.
+ */
+const FAV_SICHTBAR = 8
+const ALARM_SICHTBAR = 12
+
+// Die Leiste gehört zum Gerät (kleiner Bildschirm = eher zugeklappt), deshalb
+// localStorage. Die Alarmliste dagegen ist ein Blick auf „was gerade war" und
+// startet bewusst jedes Mal bei den neuesten zwölf.
+const favAlleZeigen = ref(localStorage.getItem('hypeFavAlle') === '1')
+const alarmeAlleZeigen = ref(false)
+
+function favAlleUmschalten() {
+    favAlleZeigen.value = !favAlleZeigen.value
+    localStorage.setItem('hypeFavAlle', favAlleZeigen.value ? '1' : '0')
+}
+
+const sichtbareFavoriten = computed(() =>
+    (favAlleZeigen.value ? favoriten.value : favoriten.value.slice(0, FAV_SICHTBAR)))
+/** Wie viele Chips der Deckel verbirgt — auch ausgeklappt, sonst verschwände der Knopf. */
+const versteckteFavoriten = computed(() => Math.max(0, favoriten.value.length - FAV_SICHTBAR))
+const verstecktUngelesen = computed(() => favoriten.value.slice(FAV_SICHTBAR)
+    .reduce((n, f) => n + (ungelesenJeFavorit.value[f.id] || 0), 0))
+
+const sichtbareAlarme = computed(() =>
+    (alarmeAlleZeigen.value ? alarme.value : alarme.value.slice(0, ALARM_SICHTBAR)))
+
 async function ladeAlarme() {
     try {
         const r = await axios.get('/api/hype-radar/alarme')
@@ -917,12 +974,6 @@ const kv = (v) => {
     return z.toFixed(2)
 }
 
-const REITER = [
-    { id: 'dashboard', icon: 'uil uil-dashboard' },
-    { id: 'berichte', icon: 'uil uil-file-alt' },
-    { id: 'einstellungen', icon: 'uil uil-setting' },
-]
-
 /*
  * Die Rollen in der Reihenfolge, in der sie im Lauf vorkommen.
  *
@@ -966,12 +1017,57 @@ async function ladeKiQuellen() {
  */
 const istTelefon = useIstTelefon()
 
-const reiter = ref(localStorage.getItem('hypeReiter') || 'dashboard')
-function reiterWechseln(id) {
-    reiter.value = id
-    localStorage.setItem('hypeReiter', id)
-    if (id === 'dashboard') nextTick(zeichne)
+/*
+ * Welche Ansicht gilt, sagt die Adresse: `/hype-radar` ist die Übersicht,
+ * `/hype-radar/berichte` sind die Berichte. Beide teilen sich einen
+ * Routen-Eintrag — die Seite wird beim Wechsel also nicht neu aufgebaut, ein
+ * laufender Scan samt Fortschrittsstrom überlebt ihn.
+ */
+const route = useRoute()
+const router = useRouter()
+const reiter = computed(() => (route.params.reiter === 'berichte' ? 'berichte' : 'dashboard'))
+
+/*
+ * Der Quadrant hängt an ECharts und misst beim Zeichnen die Breite seines
+ * Containers. Zurück auf der Übersicht ist der wieder sichtbar, also neu
+ * zeichnen — vorher stand das in `reiterWechseln`.
+ */
+watch(reiter, (r) => {
+    if (r === 'dashboard') nextTick(zeichne)
+})
+
+/*
+ * Einstellungen auf- und zugeklappt, wie die Schnell-Einstellungen der
+ * Nachrichten. Der Zustand gehört zum Gerät und nicht in die Datenbank.
+ */
+const einstOffen = ref(localStorage.getItem('hypeEinstOffen') === '1')
+
+function einstUmschalten() {
+    einstOffen.value = !einstOffen.value
+    localStorage.setItem('hypeEinstOffen', einstOffen.value ? '1' : '0')
 }
+
+/**
+ * Die Einstellungen als ein Satz — „alle 6 h · ab Hype 60 · Top 10 · …".
+ *
+ * Zugeklappt ist das die einzige Auskunft darüber, wie die Funde zustande
+ * kamen. Deshalb stehen hier Takt, Schwelle und Quellen und nicht die
+ * Gewichte: sie entscheiden, was überhaupt in der Liste landet.
+ */
+const einstZusammenfassung = computed(() => {
+    const e = einst.value
+    if (!e) return ''
+    const quellen = Object.entries(e.quellen || {}).filter(([, an]) => an).map(([q]) => q)
+    const kanaele = Object.entries(e.alarmKanaele || {}).filter(([, k]) => k?.an).map(([k]) => k)
+    const teile = [
+        e.aktiv ? t('hype.zAlle', { n: e.intervallStunden || 1 }) : t('hype.zManuell'),
+        t('hype.zMinHype', { n: e.minHypeScore ?? 0 }),
+        t('hype.zTop', { n: e.berichtTopN ?? 0 }),
+        quellen.length ? t('hype.zQuellen', { q: quellen.join(' + ') }) : t('hype.zKeineQuellen'),
+        kanaele.length ? t('hype.zKanaele', { k: kanaele.join(', ') }) : t('hype.zKeineKanaele'),
+    ]
+    return teile.join(' · ')
+})
 
 const kandidaten = ref([])
 const berichte = ref([])
@@ -1272,7 +1368,7 @@ function verarbeite(e, mitBericht) {
     if (mitBericht) {
         meldung.value = t('hype.berichtFertig', { n: e.bericht?.kandidaten?.length || 0 }) + teil
         ladeBerichte()
-        reiterWechseln('berichte')
+        if (reiter.value !== 'berichte') router.push('/hype-radar/berichte')
     } else {
         meldung.value = t('hype.scanFertig', { b: e.bestanden, v: e.verworfen }) + teil
     }
@@ -1561,9 +1657,23 @@ watch(locale, () => zeichne())
     flex-wrap: wrap;
 }
 
-.hypNav {
+/* Zahnrad + Klartextzeile stehen da, wo vorher die Reiter standen. */
+.hypEinstKopf {
     flex: 1 1 auto;
-    border-bottom: 1px solid rgba(255, 255, 255, .1);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding-bottom: .35rem;
+}
+
+.hypEinstZeile {
+    font-size: .76rem;
+    color: var(--white-60, rgba(255, 255, 255, .6));
+    cursor: pointer;
+}
+
+.hypEinstZeile:hover {
+    color: var(--white-87);
 }
 
 .hypKnoepfe {
@@ -1762,6 +1872,17 @@ watch(locale, () => zeichne())
     opacity: .55;
 }
 
+/* „+12 mehr" ist ein Knopf und kein Symbol — deshalb ohne Monospace. */
+.hypFavMehr {
+    font-family: inherit;
+    font-weight: 500;
+    opacity: .8;
+}
+
+.hypFavMehr:hover {
+    opacity: 1;
+}
+
 /* ── Kartenliste am Telefon ─────────────────────────────── */
 .hypKarten {
     display: grid;
@@ -1899,6 +2020,7 @@ watch(locale, () => zeichne())
     color: var(--grey-color, #9aa0a6);
     flex: none;
 }
+
 
 .hypKanal {
     padding: .5rem 0;
