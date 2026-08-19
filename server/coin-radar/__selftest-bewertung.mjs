@@ -90,8 +90,16 @@ p('zu wenig Umsatz fällt durch',
     pruefeHuerden({ ...gut, umsatz24h: 1e6 }).grund === 'umsatz_zu_klein')
 p('zu weiter Spread fällt durch',
     pruefeHuerden({ ...gut, spreadBp: 40 }).grund === 'spread_zu_weit')
-p('zu wenig Tiefe fällt durch',
-    pruefeHuerden({ ...gut, tiefeUsd: 100 }).grund === 'zu_wenig_tiefe')
+/*
+ * Die Tiefen-Hürde ist ab Werk AUS, weil sie an echten Daten Coins mit
+ * hunderten Millionen Umsatz erschlagen hat (siehe Begründung an
+ * STANDARD_HUERDEN). Geprüft wird deshalb beides: dass sie ausgeschaltet
+ * niemanden aussperrt — und dass sie eingeschaltet greift.
+ */
+p('Tiefen-Hürde ab Werk aus: dünne Spitze kommt durch',
+    pruefeHuerden({ ...gut, tiefeUsd: 5 }).ok)
+p('eingeschaltet fällt zu wenig Tiefe durch',
+    pruefeHuerden({ ...gut, tiefeUsd: 100 }, { minTiefeUsd: 500 }).grund === 'zu_wenig_tiefe')
 
 /*
  * Der wichtigste Hürdenfall: KEIN Spread bekannt. Ungeprüft darf nicht in

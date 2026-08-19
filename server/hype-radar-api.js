@@ -160,7 +160,7 @@ export function setupHypeRadarRoutes(app) {
 
     app.post('/api/hype-radar/favoriten', async (req, res) => {
         try {
-            const { symbol, name, chain, contractAddress, pairAddress, narrative } = req.body || {}
+            const { symbol, name, chain, contractAddress, pairAddress, narrative, quelle } = req.body || {}
             const s = String(symbol || '').trim().toUpperCase()
             if (!s) return res.status(400).json({ error: 'Symbol fehlt' })
             const knex = getKnex()
@@ -175,6 +175,14 @@ export function setupHypeRadarRoutes(app) {
                 contractAddress: String(contractAddress || ''),
                 pairAddress: String(pairAddress || ''),
                 narrative: String(narrative || ''),
+                /*
+                 * Woher der Coin kommt. Der Wachhund braucht das: für einen
+                 * Fund vom dezentralen Markt gibt es ein Handelspaar zum
+                 * Nachschlagen, für ein Bitunix-Symbol nicht — die Datenwege
+                 * sind verschieden, und ohne das Merkmal würde der eine still
+                 * am anderen scheitern.
+                 */
+                quelle: quelle === 'coinradar' ? 'coinradar' : 'hype',
                 erstelltAm: Date.now(),
             }).returning('id')
             const id = typeof eingefuegt === 'object' ? eingefuegt.id : eingefuegt

@@ -75,6 +75,14 @@ export const PAGES = [
      * in der ein Liquiditätsabfluss auffallen soll.
      */
     { id: 'hypeRadar', mode: 'research', path: '/hype-radar', icon: 'uil uil-telescope', titleKey: 'nav.hypeRadar', group: 'discover' },
+    /*
+     * Der Coin-Radar steht daneben und nicht darunter: Es sind zwei Fragen,
+     * nicht eine Frage mit zwei Ansichten. Der Hype-Radar sucht draussen nach
+     * Neuem, der Coin-Radar misst, was das eigene Konto ohnehin handeln kann.
+     * Ebenfalls nicht `nurDesktop` — eine Rangliste mit Kennzahlen liest sich
+     * auf 375 Pixeln als Kartenliste einwandfrei.
+     */
+    { id: 'coinRadar', mode: 'research', path: '/coin-radar', icon: 'uil uil-chart-line', titleKey: 'nav.coinRadar', group: 'discover' },
 
     // ── Agent-Trading ───────────────────────────────────────
     { id: 'agentStrategies', mode: 'agent', path: '/agent/strategies', icon: 'uil uil-processor', titleKey: 'nav.agentStrategies', group: 'agentRun' },

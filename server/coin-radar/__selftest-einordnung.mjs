@@ -87,12 +87,39 @@ const zeile = (o) => ({
 
     for (const satz of [
         'BTC dürfte weiter steigen.',
-        'Hier lohnt es sich, ETH zu kaufen.',
         'Kursziel 80 000 Dollar.',
-        'Bei SOL würde ich long gehen.',
+        'Voraussichtlich bleibt es ruhig.',
+        'Der Markt wird wohl weiter fallen.',
     ]) {
         const u = pruefeEinordnung({ text: satz })
-        p(`Prognose abgelehnt: „${satz}"`, !u.ok && u.grund === 'prognose')
+        p(`Prognose abgelehnt: „${satz}"`, !u.ok && u.grund === 'prognose', u.grund)
+    }
+
+    for (const satz of [
+        'Hier lohnt es sich, ETH zu kaufen.',
+        'Bei SOL würde ich long gehen.',
+        'In diese Lage sollte man einsteigen.',
+    ]) {
+        const u = pruefeEinordnung({ text: satz })
+        p(`Empfehlung abgelehnt: „${satz}"`, !u.ok && u.grund === 'empfehlung', u.grund)
+    }
+
+    /*
+     * Die andere Richtung, und sie ist die teurere: Der erste Wächter verwarf
+     * jedes „steigen" und „fallen" — und traf damit ganz gewöhnliche
+     * Beschreibungen. Ein bezahlter, völlig sachlicher Absatz verschwand
+     * wortlos. Diese Sätze MÜSSEN durchkommen.
+     */
+    for (const satz of [
+        'In diese Gruppe fallen 20 Coins.',
+        'Auffallend ist das hohe Volumen bei BTC.',
+        'Steigende Trendstärke bei drei Werten.',
+        'Zwölf Coins fallen unter die Umsatzschwelle.',
+        'Das Kauf-Verkaufs-Verhältnis liegt bei 1,2.',
+        'Die Bewegung hat gegenüber gestern nachgelassen.',
+    ]) {
+        const u = pruefeEinordnung({ text: satz })
+        p(`sachliche Beschreibung kommt durch: „${satz}"`, u.ok, u.grund)
     }
 
     const lang = pruefeEinordnung({ text: 'Ruhig. '.repeat(400) })

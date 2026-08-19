@@ -253,6 +253,20 @@ const router = createRouter({
             import('../views/HypeRadar.vue')
     },
     {
+        // Coin-Radar: Geschwister des Hype-Radars mit der umgekehrten Frage —
+        // nicht „was ist neu", sondern „welcher der handelbaren Coins lässt
+        // sich gerade am besten handeln".
+        path: '/coin-radar',
+        name: 'coinRadar',
+        meta: {
+            title: "Coin-Radar", titleKey: "nav.coinRadar",
+            mode: 'research',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/CoinRadar.vue')
+    },
+    {
         // Marktradar: Kachelraster mit Stimmung, Positionierung und eigenen
         // Kennzahlen — der Blick auf die Marktlage, bevor man in die Tiefe geht.
         path: '/marktradar',

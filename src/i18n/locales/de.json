@@ -91,6 +91,7 @@
     "openInterest": "Open Interest",
     "marktradar": "Marktradar",
     "hypeRadar": "Hype-Radar",
+    "coinRadar": "Coin-Radar",
     "discover": "ENTDECKEN",
     "nachrichten": "Nachrichten",
     "livetrading": "Live-Trading",
@@ -2847,6 +2848,69 @@
         }
       ]
     },
+    "coinRadar": {
+      "title": "Coin-Radar — welche der handelbaren Coins sich gerade handeln lassen",
+      "intro": "Der Coin-Radar geht die Coins durch, die auf Bitunix handelbar und bei Binance messbar sind, und ordnet sie nach messbaren Zustandsgrössen: Wie stark bewegt sich ein Coin, ist gerade etwas los, läuft es sauber oder sägt es, und was kostet das Halten. Es ist eine Zustandsbeschreibung, keine Prognose — wohin ein Kurs geht, steht hier nirgends.",
+      "sections": [
+        {
+          "g": "DER WICHTIGSTE SATZ ZUERST",
+          "h": "BEWEGUNG HÄLT AN, RICHTUNG NICHT",
+          "p": "Dass diese Seite überhaupt Sinn ergibt, hängt an einer einzigen Beobachtung: Volatilität in Krypto ist beharrlich. Sie kommt in Phasen, die Wochen bis Monate anhalten — was sich gestern bewegt hat, bewegt sich morgen mit hoher Wahrscheinlichkeit wieder. Die RICHTUNG ist nicht beharrlich. Eine Rangfolge nach Bewegung trägt deshalb in die Gegenwart; eine Rangfolge danach, wer steigt, wäre Kaffeesatz. Genau deshalb steht auf dieser Seite kein einziger Pfeil nach oben."
+        },
+        {
+          "h": "DIE BEHARRLICHKEIT PRÜFT SICH SELBST",
+          "p": "Bei den Kennzahlen steht, wie gut der vorige Lauf diesen vorausgesagt hat (Rangkorrelation nach Spearman, gerechnet nur über Coins, die in beiden Läufen bewertet wurden). Nahe 1 heisst: die Liste hält, man kann sich darauf beziehen. Nahe 0 heisst: sie ist Rauschen, und dann sagt sie über die nächsten Stunden nichts. Die Zahl steht bewusst gleichberechtigt neben den anderen und nicht im Kleingedruckten — eine Rangliste, die ihre eigene Aussagekraft verschweigt, ist gefährlicher als gar keine."
+        },
+        {
+          "g": "DIE VIER KENNZAHLEN",
+          "h": "ATR % — LOHNT SICH DER EINSTIEG ÜBERHAUPT",
+          "p": "Die durchschnittliche Spanne der letzten 14 Kerzen, geteilt durch den Kurs. Im Verhältnis zum Preis, weil absolute Werte nichts sagen: zwei Dollar Schwankung sind bei Bitcoin nichts und bei einem Cent-Coin alles. Ein Coin mit 0,2 % ATR auf Stundenbasis bewegt sich für einen Einstieg mit Stopp schlicht zu wenig — die Kosten fressen die Spanne."
+        },
+        {
+          "h": "RVOL — IST GERADE ETWAS LOS",
+          "p": "Das Volumen der letzten Kerze im Verhältnis zum Schnitt der zwanzig davor. Verglichen wird der Coin mit SICH SELBST, nicht mit anderen: Ein Kleinstwert-Coin mit dem Zehnfachen seines Normalvolumens ist eine Beobachtung, dieselbe absolute Zahl bei Bitcoin ist ein ruhiger Nachmittag. Über 2,0 gilt branchenübergreifend als „im Spiel“. Gerechnet wird gegen die VORIGEN Kerzen — läge die aktuelle im Vergleichsschnitt, dämpfte ein Ausbruch seinen eigenen Massstab."
+        },
+        {
+          "h": "ADX — LÄUFT ES SAUBER ODER SÄGT ES",
+          "p": "Trendstärke ohne Richtungsaussage: über 25 läuft eine Bewegung durch, unter 20 sägt der Kurs seitwärts. Das entscheidet, welche Art Handel überhaupt passt — dieselbe Bewegung ist im Trend ein Mitlaufen und im Seitwärtsband ein Verlustgeschäft. Coins unter 20 bekommen den Hinweis „sägt seitwärts“."
+        },
+        {
+          "h": "FUNDING — WAS DAS HALTEN KOSTET",
+          "p": "Die Finanzierungsrate, hochgerechnet aufs Jahr. 0,01 % je acht Stunden klingt nach nichts und sind knapp 11 % im Jahr. Sie geht INVERTIERT ein: teuer heisst wenige Punkte. Ein Coin, dessen Haltekosten den Vorteil auffressen, ist kein guter Kandidat, auch wenn er sich prächtig bewegt. Fehlt die Rate, gibt es die Mitte und einen Hinweis — unbekannt ist nicht dasselbe wie kostenlos."
+        },
+        {
+          "g": "WARUM SO VIELE COINS RAUSFLIEGEN",
+          "h": "LIQUIDITÄT IST EINE HÜRDE, KEINE NOTE",
+          "p": "Von rund 500 Paaren bleiben typisch vierzig bis fünfzig übrig. Das ist Absicht: Umsatz und Spread sind K.-o.-Kriterien und keine Teilnoten. Als Teilnote liesse sich Illiquidität von den anderen überstimmen — und dann stünde ein Coin oben, bei dem hohe Bewegung nur bedeutet, dass jede Order den Kurs selbst bewegt. Die Menge an der Orderbuchspitze wird zwar erhoben und angezeigt, sperrt aber ab Werk niemanden aus: sie hängt an der Tickgrösse und hat beim Nachmessen Paare mit über 500 Mio Tagesumsatz erschlagen. Wer wissen will, wer woran gescheitert ist, klappt „An den Hürden gescheitert“ auf."
+        },
+        {
+          "h": "UNBEKANNT WIRD NIE ALS GUT GEWERTET",
+          "p": "Fehlt zu einem Coin der Spread, fliegt er raus — nicht weil er schlecht wäre, sondern weil er ungeprüft ist, und Ungeprüftes gehört nicht in eine Liste, die „hier kommst du gut rein und raus“ behauptet. Dasselbe beim Funding: keine Daten heisst mittlere Punktzahl plus Hinweis, nicht volle Punktzahl für „günstig“."
+        },
+        {
+          "g": "DIE NOTE",
+          "h": "JEDE ZAHL ZEIGT IHRE HERKUNFT",
+          "p": "Die Gesamtnote von 0 bis 100 ist der gewichtete Schnitt der vier Teilnoten; die Gewichte sind in den Einstellungen frei. Jede Teilnote steht im Aufklappen als eigener Balken, dazu die Rohwerte je Zeiteinheit. Eine Kennzahl ohne Herleitung ist genau die, der man am Ende blind folgt — deshalb ist hier jede Note aufklappbar und nachrechenbar."
+        },
+        {
+          "h": "ZWEI ZEITEINHEITEN, EINE NOTE",
+          "p": "Die gröbere Zeiteinheit (Vorgabe 1 h) trägt die Note, die feinere (15 m) bestätigt sie. Sind beide „im Spiel“, gibt es einen Zuschlag und ein Häkchen an der Zeile. Widersprechen sie sich, wird das als Hinweis angezeigt statt zu einem Mittelwert verrechnet: „nur auf 15m im Spiel“ heisst kurzfristiger Ausschlag, „auf 15m bereits abgeflaut“ heisst, die Bewegung ist vorbei. Beides ist eine Information, die ein Durchschnitt vernichtet hätte."
+        },
+        {
+          "g": "BEDIENUNG",
+          "h": "EIN LAUF KOSTET NICHTS, DIE EINORDNUNG EINEN RAPPEN",
+          "p": "„Jetzt messen“ braucht rund fünfzehn Sekunden und einen kleinen Teil des Binance-Kontingents — kein Geld. Nur die kurze KI-Einordnung über der Tabelle kostet etwa einen Rappen je Lauf und lässt sich in den Einstellungen abschalten. Der Automatik-Schalter ist ab Werk aus."
+        },
+        {
+          "h": "STERNE TEILEN SICH MIT DEM HYPE-RADAR",
+          "p": "Ein angehefteter Coin landet in derselben Favoritenliste wie ein Fund des Hype-Radars und wird vom selben Wachhund überwacht. Das ist der Sinn der zwei Seiten unter einem Dach: dieselbe Beobachtungsliste, egal ob ein Coin über die Neuheit oder über die Handelbarkeit dazugekommen ist."
+        },
+        {
+          "h": "UND WAS DIE SEITE NICHT IST",
+          "p": "Keine Kaufempfehlung und keine Aussage über Richtung. Eine hohe Note heisst: dieser Coin lässt sich derzeit handeln — er bewegt sich, es ist etwas los, man kommt rein und raus. Ob nach oben oder nach unten, steht hier nirgends und lässt sich aus diesen Zahlen auch nicht ableiten."
+        }
+      ]
+    },
     "pendente": {
       "title": "Pendente Trades — was gerade offen ist",
       "intro": "Alle offenen Positionen der angebundenen Börsen, im Takt abgefragt. Die Seite ist die Brücke zwischen Börse und Journal: Was du hier an Notizen, Bewertungen und Merkmalen hinterlegst, wandert beim Schliessen automatisch in den fertigen Journal-Eintrag.",
@@ -3203,5 +3267,105 @@
     "zeitHinweis": "Ausgegraut heisst: weniger als {n} Sitzungen in dieser Gruppe — noch keine Aussage.",
     "dauer": "Nach Dauer",
     "tradeZahl": "Nach Trade-Zahl"
+  },
+  "coinradar": {
+    "abgebrochen": "Lauf abgebrochen.",
+    "ausloeser_auto": "automatisch",
+    "ausloeser_manuell": "von Hand",
+    "beharrlichHoch": "Rangfolge hält gut",
+    "beharrlichKeinVorlauf": "kein Vorlauf zum Vergleich",
+    "beharrlichMittel": "Rangfolge hält teilweise",
+    "beharrlichNiedrig": "Rangfolge ist grösstenteils Rauschen",
+    "bestaetigtHilfe": "Auf beiden Zeiteinheiten im Spiel — nicht nur ein kurzfristiger Ausschlag.",
+    "dauerhaftHinweis": "Wie oft ein Coin in den letzten Läufen unter den ersten zehn stand. Was mehrere Läufe übersteht, ist mehr als ein Ausschlag.",
+    "dauerhaftTitel": "Wer hält sich oben",
+    "eAktiv": "Regelmässig von selbst messen",
+    "eAktivHinweis": "Aus als Vorgabe. Ein Lauf kostet nichts ausser einem kleinen Teil des Binance-Kontingents — aber ungefragt sollte er nicht laufen.",
+    "eAutomatik": "Automatik",
+    "eEinordnung": "Kurze KI-Einordnung je Lauf",
+    "eEinordnungHinweis": "Ein Absatz über die Gesamtlage, rund einen Rappen je Lauf. Die Zahlen stehen ohnehin da; der Satz sagt, was sie zusammen bedeuten.",
+    "eGewichte": "Gewichte",
+    "eGewichteHinweis": "Wie stark jede Teilnote in die Gesamtnote eingeht. Die Summe muss nicht 100 ergeben — normiert wird ohnehin —, aber 100 liest sich als Prozent.",
+    "eHauptZe": "{ze} trägt die Note.",
+    "eHuerden": "Hürden",
+    "eHuerdenHinweis": "Wer sie reisst, kommt gar nicht erst in die Rangliste. Liquidität ist eine Hürde und keine Teilnote — sonst könnte ein illiquider Zappelcoin die anderen Noten überstimmen.",
+    "eIntervall": "Abstand zwischen den Läufen",
+    "eMaxSpread": "Höchster Spread",
+    "eMinTiefe": "Mindestens an der Spitze (0 = aus)",
+    "eMinUmsatz": "Mindestumsatz 24 h",
+    "eSumme": "Summe: {n}",
+    "eSummeHinweis": "(wird auf 100 normiert)",
+    "eTiefeHinweis": "Ab Werk aus, und das mit Absicht: Die Spitze ist nur die beste Bid- und Ask-Menge, nicht die Markttiefe — wie gross sie ausfällt, hängt an der Tickgrösse. An echten Daten hat diese Hürde Paare mit über 500 Mio Tagesumsatz und 0,5 bp Spread aussortiert, weil vorne 5 Dollar lagen. Umsatz und Spread leisten die Arbeit; der Wert wird trotzdem erhoben und angezeigt.",
+    "eZeiteinheiten": "Zeiteinheiten",
+    "eZeiteinheitenHinweis": "Zwei Ebenen: Die gröbere trägt die Note, die feinere bestätigt sie oder widerspricht. Ein Widerspruch wird angezeigt statt verrechnet.",
+    "einordnungQuelle": "Von einem Sprachmodell aus den obenstehenden Zahlen geschrieben — keine Prognose, keine Handelsempfehlung.",
+    "fBewerten": "Bewerten: {n} / {g}",
+    "fEinordnung": "KI-Einordnung wird geschrieben …",
+    "fGesiebt": "{n} Anwärter, {v} an den Hürden gescheitert",
+    "fKerzen": "Kerzen {ze}: {n} / {g}",
+    "fLaeuft": "läuft …",
+    "fMarktweit": "Marktdaten werden geholt …",
+    "fUniversum": "Universum wird bestimmt … {n}",
+    "favEntfernen": "Aus den Favoriten entfernen",
+    "favHinzu": "Zu den Favoriten",
+    "filter_alle": "Alle",
+    "filter_bestaetigt": "Auf beiden Zeiteinheiten",
+    "filter_imSpiel": "Im Spiel",
+    "filter_trendend": "Trendend",
+    "grund_keine_kerzen": "keine Kerzen",
+    "grund_keine_marktdaten": "keine Marktdaten",
+    "grund_spread_unbekannt": "Spread unbekannt",
+    "grund_spread_zu_weit": "Spread zu weit",
+    "grund_umsatz_zu_klein": "zu wenig Umsatz",
+    "grund_zu_wenig_tiefe": "zu dünne Spitze",
+    "jeZeiteinheit": "Je Zeiteinheit",
+    "jetztMessen": "Jetzt messen",
+    "keineLaeufe": "Noch keine Läufe.",
+    "keineTreffer": "Kein Coin passt zum Filter.",
+    "kerzen": "Kerzen",
+    "kzBeharrlich": "Beharrlichkeit",
+    "kzBewertet": "Bewertet",
+    "kzImSpiel": "Im Spiel",
+    "kzMittelAtr": "Mittlere Bewegung",
+    "kzStand": "Stand",
+    "kzTrendend": "Trendend",
+    "kzVonGeprueft": "von {n} geprüft",
+    "laufFertig": "Fertig: {n} Coins bewertet, {v} an den Hürden gescheitert.",
+    "mioUsd": "Mio USD",
+    "nochNichts": "Noch keine Messung",
+    "nochNichtsHinweis": "„Jetzt messen“ geht das handelbare Universum einmal durch — rund eine Viertelminute, ohne Kosten.",
+    "note_bewegung": "Bewegung",
+    "note_imSpiel": "Im Spiel",
+    "note_kosten": "Haltekosten",
+    "note_trend": "Trendqualität",
+    "quellenAusgefallen": "Ausgefallene Quellen: {q}.",
+    "spalteAdx": "ADX",
+    "spalteAtr": "ATR %",
+    "spalteBeharrlich": "Beharrlichkeit",
+    "spalteBewertet": "Bewertet",
+    "spalteFunding": "Funding % p.a.",
+    "spalteGrund": "Grund",
+    "spalteKosten": "Kosten",
+    "spalteNote": "Note",
+    "spalteRvol": "RVOL",
+    "spalteSpread": "Spread bp",
+    "spalteStatus": "Zustand",
+    "spalteSymbol": "Coin",
+    "spalteTiefe": "Tiefe USD",
+    "spalteUmsatz": "Umsatz Mio",
+    "spalteVerworfen": "Verworfen",
+    "spalteZeit": "Zeitpunkt",
+    "status_abgebrochen": "abgebrochen",
+    "status_fehler": "Fehler",
+    "status_fertig": "fertig",
+    "status_laeuft": "läuft",
+    "status_wartet": "wartet",
+    "stunden": "Stunden",
+    "tab_einstellungen": "Einstellungen",
+    "tab_rangliste": "Rangliste",
+    "tab_verlauf": "Verlauf",
+    "teilnoten": "Teilnoten",
+    "verlaufHinweis": "Jeder Lauf vergleicht seine Rangfolge mit der des vorigen. Nahe 1 heisst, die Liste hält; nahe 0 heisst, sie ist Rauschen — und dann sagt sie über morgen nichts.",
+    "zeigeHuerden": "An den Hürden gescheitert ({n})"
   }
 }

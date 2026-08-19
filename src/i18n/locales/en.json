@@ -91,6 +91,7 @@
     "openInterest": "Open interest",
     "marktradar": "Market radar",
     "hypeRadar": "Hype radar",
+    "coinRadar": "Coin Radar",
     "discover": "DISCOVER",
     "nachrichten": "News",
     "livetrading": "Live trading",
@@ -2847,6 +2848,69 @@
         }
       ]
     },
+    "coinRadar": {
+      "title": "Coin Radar — which of the tradable coins can be traded right now",
+      "intro": "The Coin Radar walks the coins that are tradable on Bitunix and measurable on Binance, and ranks them by measurable state: how much a coin moves, whether something is going on right now, whether it runs cleanly or chops, and what holding it costs. It is a description of state, not a forecast — where a price is headed appears nowhere on this page.",
+      "sections": [
+        {
+          "g": "THE MOST IMPORTANT SENTENCE FIRST",
+          "h": "MOVEMENT PERSISTS, DIRECTION DOES NOT",
+          "p": "That this page makes sense at all rests on a single observation: volatility in crypto is persistent. It comes in phases lasting weeks to months — what moved yesterday will very likely move again tomorrow. DIRECTION is not persistent. A ranking by movement therefore carries into the present; a ranking by who will rise would be tea leaves. That is exactly why there is not a single up-arrow on this page."
+        },
+        {
+          "h": "PERSISTENCE CHECKS ITSELF",
+          "p": "Among the headline figures is how well the previous run predicted this one (Spearman rank correlation, computed only over coins scored in both runs). Near 1 means the list holds and can be relied on. Near 0 means it is noise, and then it says nothing about the coming hours. The number sits deliberately beside the others rather than in the fine print — a ranking that hides its own predictive power is more dangerous than none."
+        },
+        {
+          "g": "THE FOUR METRICS",
+          "h": "ATR % — IS AN ENTRY WORTH IT AT ALL",
+          "p": "The average range of the last 14 candles, divided by price. Relative to price, because absolute values say nothing: two dollars of swing is nothing for Bitcoin and everything for a cent coin. A coin with 0.2 % hourly ATR simply does not move enough for an entry with a stop — costs eat the range."
+        },
+        {
+          "h": "RVOL — IS SOMETHING GOING ON",
+          "p": "The last candle's volume relative to the average of the twenty before it. The coin is compared with ITSELF, not with others: a micro-cap at ten times its usual volume is an observation; the same absolute number for Bitcoin is a quiet afternoon. Above 2.0 counts as \"in play\" across the industry. It is computed against the PRECEDING candles — were the current one included in the baseline, a breakout would damp its own yardstick."
+        },
+        {
+          "h": "ADX — CLEAN RUN OR CHOP",
+          "p": "Trend strength without a direction claim: above 25 a move runs through, below 20 the price saws sideways. That decides which kind of trade fits at all — the same move is a trend ride in one regime and a losing game in a range. Coins below 20 get the hint \"sawing sideways\"."
+        },
+        {
+          "h": "FUNDING — WHAT HOLDING COSTS",
+          "p": "The funding rate, annualised. 0.01 % per eight hours sounds like nothing and is nearly 11 % a year. It enters INVERTED: expensive means few points. A coin whose holding cost eats the edge is not a good candidate, however handsomely it moves. If the rate is missing, it gets the middle and a hint — unknown is not the same as free."
+        },
+        {
+          "g": "WHY SO MANY COINS DROP OUT",
+          "h": "LIQUIDITY IS A GATE, NOT A SCORE",
+          "p": "Of roughly 500 pairs, forty to fifty typically remain. That is intended: turnover and spread are knock-out criteria, not sub-scores. As a sub-score, illiquidity could be outvoted by the others — and then a coin would rank top where high movement only means every order moves the price itself. The size at the top of the book is collected and displayed but gates nobody by default: it depends on tick size and, when measured, rejected pairs with over 500M daily turnover. To see who failed on what, open \"Failed the gates\"."
+        },
+        {
+          "h": "UNKNOWN IS NEVER SCORED AS GOOD",
+          "p": "If a coin's spread is missing it drops out — not because it is bad, but because it is unchecked, and unchecked does not belong in a list claiming \"you can get in and out here\". Same for funding: no data means a middling score plus a hint, not full marks for \"cheap\"."
+        },
+        {
+          "g": "THE SCORE",
+          "h": "EVERY NUMBER SHOWS ITS ORIGIN",
+          "p": "The total score from 0 to 100 is the weighted average of the four sub-scores; the weights are free in the settings. Each sub-score appears in the expanded row as its own bar, along with the raw values per timeframe. A metric without a derivation is exactly the one people end up following blindly — which is why every score here can be opened and recomputed."
+        },
+        {
+          "h": "TWO TIMEFRAMES, ONE SCORE",
+          "p": "The coarser timeframe (1h by default) carries the score, the finer one (15m) confirms it. If both are \"in play\", there is a bonus and a check mark on the row. If they contradict each other, that is shown as a hint rather than averaged away: \"only in play on 15m\" means a short-lived spike, \"already fading on 15m\" means the move is over. Both are information an average would have destroyed."
+        },
+        {
+          "g": "USING IT",
+          "h": "A RUN IS FREE, THE SUMMARY COSTS A CENT",
+          "p": "\"Measure now\" takes about fifteen seconds and a small slice of the Binance budget — no money. Only the short AI summary above the table costs about a cent per run and can be switched off in the settings. The automation switch is off out of the box."
+        },
+        {
+          "h": "STARS ARE SHARED WITH THE HYPE RADAR",
+          "p": "A pinned coin lands in the same favourites list as a Hype Radar find and is watched by the same watchdog. That is the point of two pages under one roof: one watchlist, whether a coin arrived via novelty or via tradability."
+        },
+        {
+          "h": "AND WHAT THIS PAGE IS NOT",
+          "p": "Not a buy recommendation and not a claim about direction. A high score means: this coin can currently be traded — it moves, something is going on, you can get in and out. Whether up or down appears nowhere here, and cannot be derived from these numbers either."
+        }
+      ]
+    },
     "pendente": {
       "title": "Pending trades — what is open right now",
       "intro": "All open positions from the connected exchanges, polled on a schedule. This page is the bridge between exchange and journal: notes, ratings and attributes you record here move into the finished journal entry automatically when the position closes.",
@@ -3203,5 +3267,105 @@
     "zeitHinweis": "Greyed out means: fewer than {n} sessions in this group — not yet a finding.",
     "dauer": "By duration",
     "tradeZahl": "By trade count"
+  },
+  "coinradar": {
+    "abgebrochen": "Run cancelled.",
+    "ausloeser_auto": "automatic",
+    "ausloeser_manuell": "manual",
+    "beharrlichHoch": "ranking holds well",
+    "beharrlichKeinVorlauf": "no previous run to compare",
+    "beharrlichMittel": "ranking partly holds",
+    "beharrlichNiedrig": "ranking is mostly noise",
+    "bestaetigtHilfe": "In play on both timeframes — not just a short-lived spike.",
+    "dauerhaftHinweis": "How often a coin was in the top ten across recent runs. What survives several runs is more than a spike.",
+    "dauerhaftTitel": "Who stays on top",
+    "eAktiv": "Measure regularly on its own",
+    "eAktivHinweis": "Off by default. A run costs nothing but a small slice of the Binance budget — still, it should not run unasked.",
+    "eAutomatik": "Automation",
+    "eEinordnung": "Short AI summary per run",
+    "eEinordnungHinweis": "One paragraph on the overall picture, about a cent per run. The numbers are there anyway; the sentence says what they mean together.",
+    "eGewichte": "Weights",
+    "eGewichteHinweis": "How strongly each sub-score enters the total. The sum need not be 100 — it is normalised anyway — but 100 reads as percent.",
+    "eHauptZe": "{ze} carries the score.",
+    "eHuerden": "Gates",
+    "eHuerdenHinweis": "Fail one and the coin never enters the ranking. Liquidity is a gate, not a sub-score — otherwise an illiquid jitterbug could outvote the other scores.",
+    "eIntervall": "Interval between runs",
+    "eMaxSpread": "Maximum spread",
+    "eMinTiefe": "Minimum at top of book (0 = off)",
+    "eMinUmsatz": "Minimum 24h turnover",
+    "eSumme": "Sum: {n}",
+    "eSummeHinweis": "(normalised to 100)",
+    "eTiefeHinweis": "Off by default, deliberately: top of book is only the best bid and ask size, not market depth — how large it is depends on tick size. Against real data this gate rejected pairs with over 500M daily turnover and 0.5 bp spread because 5 dollars sat at the front. Turnover and spread do the work; the value is still collected and displayed.",
+    "eZeiteinheiten": "Timeframes",
+    "eZeiteinheitenHinweis": "Two levels: the coarser one carries the score, the finer one confirms or contradicts it. A contradiction is shown, not averaged away.",
+    "einordnungQuelle": "Written by a language model from the numbers above — not a forecast, not trading advice.",
+    "fBewerten": "Scoring: {n} / {g}",
+    "fEinordnung": "Writing AI summary …",
+    "fGesiebt": "{n} candidates, {v} failed the gates",
+    "fKerzen": "Candles {ze}: {n} / {g}",
+    "fLaeuft": "running …",
+    "fMarktweit": "Fetching market data …",
+    "fUniversum": "Determining universe … {n}",
+    "favEntfernen": "Remove from favourites",
+    "favHinzu": "Add to favourites",
+    "filter_alle": "All",
+    "filter_bestaetigt": "On both timeframes",
+    "filter_imSpiel": "In play",
+    "filter_trendend": "Trending",
+    "grund_keine_kerzen": "no candles",
+    "grund_keine_marktdaten": "no market data",
+    "grund_spread_unbekannt": "spread unknown",
+    "grund_spread_zu_weit": "spread too wide",
+    "grund_umsatz_zu_klein": "turnover too low",
+    "grund_zu_wenig_tiefe": "top of book too thin",
+    "jeZeiteinheit": "Per timeframe",
+    "jetztMessen": "Measure now",
+    "keineLaeufe": "No runs yet.",
+    "keineTreffer": "No coin matches the filter.",
+    "kerzen": "Candles",
+    "kzBeharrlich": "Persistence",
+    "kzBewertet": "Scored",
+    "kzImSpiel": "In play",
+    "kzMittelAtr": "Average movement",
+    "kzStand": "As of",
+    "kzTrendend": "Trending",
+    "kzVonGeprueft": "of {n} checked",
+    "laufFertig": "Done: {n} coins scored, {v} failed the gates.",
+    "mioUsd": "M USD",
+    "nochNichts": "No measurement yet",
+    "nochNichtsHinweis": "\"Measure now\" walks the tradable universe once — about fifteen seconds, at no cost.",
+    "note_bewegung": "Movement",
+    "note_imSpiel": "In play",
+    "note_kosten": "Holding cost",
+    "note_trend": "Trend quality",
+    "quellenAusgefallen": "Failed sources: {q}.",
+    "spalteAdx": "ADX",
+    "spalteAtr": "ATR %",
+    "spalteBeharrlich": "Persistence",
+    "spalteBewertet": "Scored",
+    "spalteFunding": "Funding % p.a.",
+    "spalteGrund": "Reason",
+    "spalteKosten": "Cost",
+    "spalteNote": "Score",
+    "spalteRvol": "RVOL",
+    "spalteSpread": "Spread bp",
+    "spalteStatus": "State",
+    "spalteSymbol": "Coin",
+    "spalteTiefe": "Depth USD",
+    "spalteUmsatz": "Turnover M",
+    "spalteVerworfen": "Rejected",
+    "spalteZeit": "Time",
+    "status_abgebrochen": "cancelled",
+    "status_fehler": "error",
+    "status_fertig": "done",
+    "status_laeuft": "running",
+    "status_wartet": "waiting",
+    "stunden": "hours",
+    "tab_einstellungen": "Settings",
+    "tab_rangliste": "Ranking",
+    "tab_verlauf": "History",
+    "teilnoten": "Sub-scores",
+    "verlaufHinweis": "Every run compares its ranking with the previous one. Near 1 means the list holds; near 0 means it is noise — and then it says nothing about tomorrow.",
+    "zeigeHuerden": "Failed the gates ({n})"
   }
 }

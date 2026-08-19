@@ -44,16 +44,28 @@ export const STANDARD_HUERDEN = {
     // 5 Basispunkte = 0,05 %. Gemessener Median: 4,4 bp, es bleiben 276.
     maxSpreadBp: 5,
     /*
-     * Was GANZ VORNE im Buch liegt — `bookTicker` liefert nur die beste Bid-
-     * und Ask-Menge, nicht die Markttiefe. Der gemessene Median über alle
-     * Paare sind 80 Dollar; 5000 hätten 479 von 494 erschlagen.
+     * AUS (0) — und das ist der interessanteste Wert hier.
      *
-     * Der Wert ist deshalb kein Liquiditätsmass, sondern eine Rauchprobe gegen
-     * das eine Muster, das ein enger Spread allein nicht verrät: eine Spitze,
-     * hinter der nichts steht. 200 Dollar liegt beim gemessenen p75 — wer
-     * darunter liegt, hat einen Spread, der bei der ersten Order verschwindet.
+     * Die Absicht war eine Rauchprobe gegen das eine Muster, das ein enger
+     * Spread allein nicht verrät: eine Spitze, hinter der nichts steht. Erst
+     * standen 5000 hier, dann der gemessene p75 von 200. Beim Nachmessen an
+     * den echten Ablehnungen kam heraus, dass die Hürde etwas anderes misst
+     * als gedacht:
+     *
+     *   ACEUSDT   559 Mio Umsatz, 0,49 bp Spread — 5 USD an der Spitze
+     *   BTWUSDT   892 Mio Umsatz, 1,77 bp Spread — 29 USD an der Spitze
+     *
+     * Ein Paar mit einer halben Milliarde Tagesumsatz ist nicht illiquide.
+     * `bookTicker` liefert die beste Bid- und Ask-MENGE, und wie gross die
+     * ausfällt, hängt an der Tickgrösse und daran, wie der Market Maker
+     * quotet — nicht daran, wie viel Kapital im Buch steht. Als Hürde hat
+     * der Wert deshalb genau die Coins erschlagen, die er schützen sollte.
+     *
+     * Umsatz und Spread leisten die Arbeit bereits. Die Zahl bleibt erhoben
+     * und wird angezeigt, aber sie sperrt niemanden mehr aus; wer sie doch
+     * als Hürde will, setzt sie in den Einstellungen hoch.
      */
-    minTiefeUsd: 200,
+    minTiefeUsd: 0,
     minKerzen: 30,                 // ohne Historie keine belastbare Kennzahl
 }
 

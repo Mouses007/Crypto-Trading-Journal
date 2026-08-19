@@ -96,8 +96,21 @@ export function pruefeEinordnung(roh) {
     if (!text) return { ok: false, text: '', grund: 'leer' }
     if (text.length > 1200) return { ok: true, text: `${text.slice(0, 1200)}…`, grund: 'gekürzt' }
 
-    const prognose = /(dürfte|wird wohl|steigen|fallen|kaufen|verkaufen|long gehen|short gehen|kursziel)/i
+    /*
+     * Zwei getrennte Muster, und beide bewusst eng.
+     *
+     * Der erste Entwurf verwarf jedes Vorkommen von „steigen" und „fallen" —
+     * und traf damit „in diese Gruppe fallen 20 Coins", „auffallen" und
+     * „steigende Trendstärke". Ein bezahlter, völlig sachlicher Absatz
+     * verschwand so wortlos. Eine Prognose steckt nicht im Verb, sondern in
+     * der Zukunftsform: es braucht ein „dürfte", ein „wird … steigen", ein
+     * Kursziel. Danach wird gesucht.
+     */
+    const prognose = /\b(dürfte[nst]?|wird\s+(?:wohl\s+)?(?:weiter\s+)?(?:steigen|fallen|klettern|sinken)|werden\s+(?:wohl\s+)?(?:steigen|fallen)|ist\s+zu\s+erwarten|kursziel|prognose|voraussichtlich)/i
+    const rat = /\b(kaufen|verkaufen|long\s+gehen|short\s+gehen|einsteigen|empfehl|sollte\s+man)/i
+
     if (prognose.test(text)) return { ok: false, text, grund: 'prognose' }
+    if (rat.test(text)) return { ok: false, text, grund: 'empfehlung' }
 
     return { ok: true, text, grund: '' }
 }
@@ -144,7 +157,10 @@ export async function erzeugeEinordnung(bewertet, meta = {}, laufId = 0) {
 
         const geprueft = pruefeEinordnung(antwort?.json)
         if (!geprueft.ok) {
-            logWarn('coin-radar', `Einordnung verworfen (${geprueft.grund})`)
+            // Den Text mitloggen: Ein verworfener Absatz ist bezahlt, und ohne
+            // ihn lässt sich nicht unterscheiden, ob das Modell entgleist ist
+            // oder der Wächter zu scharf steht.
+            logWarn('coin-radar', `Einordnung verworfen (${geprueft.grund}): ${geprueft.text.slice(0, 200)}`)
             return null
         }
         /*
