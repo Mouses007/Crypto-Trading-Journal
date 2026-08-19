@@ -102,10 +102,10 @@
                                     {{ t('kiUebersicht.aus') }}
                                 </span>
                             </td>
-                            <td>
-                                {{ t(a.taktKey) }}
-                                <span v-if="a.zeitplan" class="kuExtra d-block">{{ zeitplanText(a.zeitplan) }}</span>
-                            </td>
+                            <!-- Wo ein Zeitplan steht, ersetzt er den Takt: „täglich"
+                                 und „täglich ab 12 Uhr" untereinander sagt zweimal
+                                 dasselbe, einmal davon unvollständig. -->
+                            <td>{{ a.zeitplan ? zeitplanText(a.zeitplan) : t(a.taktKey) }}</td>
                             <td>
                                 <span v-if="a.letzterLauf">{{ zeitpunkt(a.letzterLauf) }}</span>
                                 <span v-else class="text-muted">{{ t('kiUebersicht.nochNie') }}</span>
