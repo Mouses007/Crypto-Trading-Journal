@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings']
     let fixed = 0
 
     for (const table of tables) {
@@ -107,7 +107,8 @@ async function fixPostgresSequences(knex) {
 // v3: Tabelle `ai_usage` — der KI-Verbrauch an einer Stelle. Ebenfalls rein
 // additiv: ein älterer Codestand schreibt sie nicht, liest sie nicht und läuft
 // unverändert weiter; ihm fehlen nur die Zeilen seiner eigenen Läufe.
-const SCHEMA_VERSION = 3
+// v4: Tabellen des Hype-Radars. Wieder rein additiv.
+const SCHEMA_VERSION = 4
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2133,6 +2134,101 @@ async function runMigrations(knex, client) {
         })
         console.log(' -> Created table: ai_usage')
     }
+
+    // ── Hype-Radar ───────────────────────────────────────────────────────
+
+    /*
+     * Kandidaten eines Suchlaufs.
+     *
+     * Ein Kandidat ist ein Fund, keine Empfehlung: gesammelt in Stufe 1,
+     * bewertet in Stufe 2, in Stufe 3 hart auf Betrugsmuster geprüft. Die
+     * verworfenen bleiben bewusst stehen — „warum kam der nicht in den
+     * Bericht" ist die Frage, die Vertrauen schafft, und ohne gespeicherten
+     * Grund ist sie nicht zu beantworten.
+     *
+     * Roh-, Bewertungs- und Sicherheitsdaten stehen getrennt, damit die
+     * Oberfläche jede Teilnote einzeln aufschlüsseln kann.
+     */
+    if (!(await knex.schema.hasTable('hype_candidates'))) {
+        await knex.schema.createTable('hype_candidates', (t) => {
+            t.increments('id').primary()
+            t.string('symbol').notNullable()
+            t.text('name').defaultTo('')
+            t.string('chain').defaultTo('')          // solana | ethereum | base | bsc …
+            t.string('contractAddress').defaultTo('')
+            t.string('pairAddress').defaultTo('')    // für spätere Nachschläge
+            t.string('narrative').defaultTo('')      // ai-agents | rwa | depin | meme …
+            t.text('quellen').defaultTo('[]')        // JSON: [{quelle,rang,url,geholtAm}]
+            t.text('marktDaten').defaultTo('{}')     // JSON: preis, vol24h, liq, fdv, pairAlter
+            t.text('sozialDaten').defaultTo('{}')    // JSON: erwaehnungen, velocity, Teilnoten
+            t.text('sicherheitsDaten').defaultTo('{}') // JSON: GoPlus-Rohdaten + Flags
+            t.integer('hypeScore').defaultTo(0)      // 0–100
+            t.integer('safetyScore').defaultTo(0)    // 0–100
+            t.string('status').defaultTo('neu')      // neu | bewertet | bestanden | verworfen | berichtet
+            t.text('verworfenGrund').defaultTo('')   // honeypot | lp_offen | liq_zu_klein …
+            t.bigInteger('erstelltAm').defaultTo(0)
+            t.bigInteger('aktualisiertAm').defaultTo(0)
+            t.index(['contractAddress'], 'idx_hype_contract')
+            t.index(['erstelltAm'], 'idx_hype_kand_zeit')
+        })
+        console.log(' -> Created table: hype_candidates')
+    }
+
+    /*
+     * Berichte. Wie beim Lagebericht strukturiert statt als Textblock: die
+     * Oberfläche zeichnet daraus Karten, und ein Markdown-Klumpen liesse sich
+     * später weder filtern noch nachrechnen. `aussortiert` gehört fest dazu —
+     * ein Bericht, der nur die Treffer zeigt, verschweigt die halbe Arbeit.
+     */
+    if (!(await knex.schema.hasTable('hype_reports'))) {
+        await knex.schema.createTable('hype_reports', (t) => {
+            t.increments('id').primary()
+            t.bigInteger('erstelltAm').notNullable()
+            t.text('ueberschrift').defaultTo('')
+            t.text('marktkontext').defaultTo('')     // 2–3 Sätze: welche Narrative laufen
+            t.text('kandidaten').defaultTo('[]')     // JSON: Top-N mit Urteil und Belegen
+            t.text('aussortiert').defaultTo('[]')    // JSON: [{symbol,grund}]
+            t.text('meta').defaultTo('{}')           // JSON: Modelle, Token, Quellen-Zustand
+            t.integer('anzahlKandidaten').defaultTo(0)
+            t.integer('anzahlAussortiert').defaultTo(0)
+            t.double('kostenUsd').defaultTo(0)
+            t.string('ausloeser').defaultTo('auto')  // auto | manuell
+            t.index(['erstelltAm'], 'idx_hype_bericht_zeit')
+        })
+        console.log(' -> Created table: hype_reports')
+    }
+
+    /*
+     * Einstellungen als Schlüssel-Wert-Paare statt als dreissig Spalten.
+     *
+     * Die Stellschrauben sind Listen und Objekte (Gewichte, Schwellen,
+     * Narrative, Rollen-Zuordnung) und ändern sich, solange das Feature reift.
+     * Jede davon als Spalte anzulegen hiesse, für jede neue Schraube eine
+     * Schema-Änderung zu fahren.
+     */
+    if (!(await knex.schema.hasTable('hype_settings'))) {
+        await knex.schema.createTable('hype_settings', (t) => {
+            t.increments('id').primary()
+            t.string('schluessel').notNullable().unique()
+            t.text('wert').defaultTo('')             // JSON-kodiert
+            t.bigInteger('aktualisiertAm').defaultTo(0)
+        })
+        console.log(' -> Created table: hype_settings')
+    }
+
+    /*
+     * Schlüssel der Zusatzquellen. GoPlus, DexScreener und GeckoTerminal
+     * brauchen keinen — sie stehen hier deshalb nicht. Verschlüsselt wie die
+     * KI-Schlüssel; die Oberfläche bekommt sie nur maskiert zurück.
+     */
+    await addColumnIfNotExists('settings', 'hypeKeyCryptopanic', (t) => t.text('hypeKeyCryptopanic').defaultTo(''))
+    await addColumnIfNotExists('settings', 'hypeKeyLunarcrush', (t) => t.text('hypeKeyLunarcrush').defaultTo(''))
+    await addColumnIfNotExists('settings', 'hypeKeyCoingecko', (t) => t.text('hypeKeyCoingecko').defaultTo(''))
+
+    // Schlüsselspalten der neu aufgenommenen KI-Anbieter (siehe ANBIETER_REG).
+    await addColumnIfNotExists('settings', 'aiKeyMoonshot', (t) => t.text('aiKeyMoonshot').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiKeyZai', (t) => t.text('aiKeyZai').defaultTo(''))
+    await addColumnIfNotExists('settings', 'aiKeyMinimax', (t) => t.text('aiKeyMinimax').defaultTo(''))
 
     // ==================== SCHEMA-ANKER ====================
     // Ganz am Ende, damit die Version erst steht, wenn alle Checks durch sind.

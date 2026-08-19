@@ -114,15 +114,43 @@ export const ANBIETER_REG = {
         anhang: { image: true, pdf: false }, jsonModus: false, katalog: true,
         modelle: [],
     },
-    // Abgekündigt: nicht mehr wählbar, aber weiter bedient — es gibt Berichte
-    // und Agent-Läufe mit `provider='deepseek'`, und ein gespeicherter
-    // Anbieter darf nicht zur Laufzeit ins Leere laufen.
+    /*
+     * DeepSeek war abgekündigt und ist wieder wählbar.
+     *
+     * Grund für die Rückkehr: Der Hype-Radar braucht ein billiges Modell für
+     * seine Hilfsarbeiten (Entdopplung, Einordnung unklarer Kandidaten), und
+     * DeepSeek ist mit Abstand das günstigste — bei Aufgaben, für die
+     * Urteilskraft zweitrangig ist, zählt genau das.
+     */
     deepseek: {
         name: 'DeepSeek', art: 'openai', keySpalte: 'aiKeyDeepseek',
         basisUrl: 'https://api.deepseek.com/v1', keyUrl: 'platform.deepseek.com/api_keys',
         anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
         modelle: ['deepseek-v4-flash', 'deepseek-v4-pro'],
-        abgekuendigt: true,
+    },
+    /*
+     * Die drei Neuen sind alle OpenAI-kompatibel und teilen sich damit den
+     * bestehenden Code-Pfad — es braucht je nur diesen Eintrag und eine
+     * Schlüsselspalte. Anhänge sind überall aus: ungetestet, und ein still
+     * verworfener Screenshot wäre schlimmer als eine klare Absage.
+     */
+    moonshot: {
+        name: 'Moonshot (Kimi)', art: 'openai', keySpalte: 'aiKeyMoonshot',
+        basisUrl: 'https://api.moonshot.ai/v1', keyUrl: 'platform.moonshot.ai/console/api-keys',
+        anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
+        modelle: ['kimi-k2.6', 'kimi-k2.7'],
+    },
+    zai: {
+        name: 'Z.ai (GLM)', art: 'openai', keySpalte: 'aiKeyZai',
+        basisUrl: 'https://api.z.ai/api/paas/v4', keyUrl: 'z.ai/manage-apikey/apikey-list',
+        anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
+        modelle: ['glm-5.2', 'glm-5.1'],
+    },
+    minimax: {
+        name: 'MiniMax', art: 'openai', keySpalte: 'aiKeyMinimax',
+        basisUrl: 'https://api.minimax.io/v1', keyUrl: 'platform.minimax.io/user-center/basic-information',
+        anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
+        modelle: ['minimax-m3', 'minimax-m2.7'],
     },
 }
 

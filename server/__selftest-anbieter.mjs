@@ -27,12 +27,19 @@ const pruefe = (name, bedingung, zusatz = '') => {
 
 console.log('Anbieter-Verzeichnis')
 
-// 1) Auswahl: abgekündigte Anbieter dürfen nicht wählbar sein, zur Laufzeit
-//    aber weiter bedient werden.
-pruefe('DeepSeek ist nicht mehr wählbar', !ANBIETER.includes('deepseek'))
+// 1) Auswahl. DeepSeek war abgekündigt und ist wieder da — der Hype-Radar
+//    braucht ein billiges Modell für Hilfsarbeiten. Die Mechanik für
+//    abgekündigte Anbieter bleibt geprüft: `ANBIETER` filtert sie heraus,
+//    zur Laufzeit werden sie weiter bedient.
+pruefe('DeepSeek ist wieder wählbar', ANBIETER.includes('deepseek'))
 pruefe('DeepSeek bleibt zur Laufzeit bedienbar', istOpenAiKompatibel('deepseek'))
+pruefe('abgekündigte Anbieter fallen aus der Auswahl',
+    Object.entries(ANBIETER_REG).filter(([, r]) => r.abgekuendigt)
+        .every(([id]) => !ANBIETER.includes(id)))
 pruefe('Mistral/xAI/Qwen sind wählbar',
     ['mistral', 'xai', 'qwen'].every((p) => ANBIETER.includes(p)))
+pruefe('die neuen Anbieter sind wählbar',
+    ['moonshot', 'zai', 'minimax'].every((p) => ANBIETER.includes(p)))
 pruefe('STANDARD_MODELLE deckt genau die Auswahl ab',
     JSON.stringify(Object.keys(STANDARD_MODELLE)) === JSON.stringify(ANBIETER))
 
@@ -88,7 +95,7 @@ for (const [id, erwartet] of Object.entries(VORHER)) {
         JSON.stringify(ANHANG_UNTERSTUETZUNG[id]))
 }
 pruefe('Screenshot-Gate schliesst die ungetesteten Neuen aus',
-    !kannBilder('mistral') && !kannBilder('xai') && !kannBilder('qwen'))
+    ['mistral', 'xai', 'qwen', 'moonshot', 'zai', 'minimax'].every((p) => !kannBilder(p)))
 
 // 7) Rückfallmodelle sind gesetzt, wo es sie geben muss.
 for (const p of ['openai', 'anthropic', 'gemini', 'mistral', 'xai', 'qwen']) {

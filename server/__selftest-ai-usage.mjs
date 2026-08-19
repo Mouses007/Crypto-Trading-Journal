@@ -10,6 +10,7 @@
  */
 import { baueVerbrauchZeile, merkeVerbrauch, FUNKTIONEN } from './ai-usage.js'
 import { schaetzeKosten } from './llm.js'
+import { ANBIETER, STANDARD_MODELLE } from './ai-models.js'
 
 let fehler = 0
 let bestanden = 0
@@ -120,7 +121,23 @@ try {
 pruefe('Buchung ohne Datenbank wirft nicht', !geworfen)
 pruefe('Buchung ohne Datenbank meldet false', ergebnis === false)
 
-// 9) Die Funktionsnamen selbst: doppelte Werte würden zwei Vorgänge in der
+/*
+ * 9) Jedes wählbare Modell braucht einen Preis.
+ *
+ * Die Falle ist unauffällig: ein neu aufgenommener Anbieter ohne Eintrag in
+ * `PREISE` wird mit 0 verbucht, und die Übersicht zeigt ihn als Anbieter, der
+ * angeblich nichts kostet — man merkt es erst auf der Rechnung. Ollama ist
+ * ausgenommen: dort stimmt die 0.
+ */
+for (const anbieter of ANBIETER) {
+    if (anbieter === 'ollama' || anbieter === 'custom') continue
+    for (const modell of STANDARD_MODELLE[anbieter] || []) {
+        pruefe(`Preis hinterlegt: ${modell}`,
+            schaetzeKosten(modell, 1e6, 1e6) > 0)
+    }
+}
+
+// 10) Die Funktionsnamen selbst: doppelte Werte würden zwei Vorgänge in der
 //    Auswertung zu einem verschmelzen.
 const werte = Object.values(FUNKTIONEN)
 pruefe('Funktionsnamen sind doppelfrei', new Set(werte).size === werte.length)

@@ -62,6 +62,15 @@ export const PREISE = {
     'deepseek-v4-pro': [1.32, 3.96],
     'deepseek-chat': [0.27, 1.1],
     'deepseek-reasoner': [0.55, 2.19],
+    // Kimi, GLM und MiniMax — Listenpreise Stand August 2026. Ohne Eintrag
+    // würde ihr Verbrauch mit 0 verbucht, und die Übersicht zeigte einen
+    // Anbieter, der angeblich nichts kostet.
+    'kimi-k2.7': [0.6, 2.5],
+    'kimi-k2.6': [0.5, 1.5],
+    'glm-5.2': [0.6, 2.2],
+    'glm-5.1': [0.6, 2],
+    'minimax-m3': [0.3, 1.2],
+    'minimax-m2.7': [1, 3],
 }
 
 /**
