@@ -251,6 +251,13 @@ const istTelefon = useIstTelefon()
 
 const liveGroups = computed(() => gruppenFuer('live'))
 const agentGroups = computed(() => gruppenFuer('agent'))
+/*
+ * Der Entdecken-Modus bekam bisher kein Menü: Er bestand aus einer einzigen
+ * Seite, und die war seine Startseite — man landete dort ohnehin. Mit dem
+ * Coin-Radar sind es zwei, und ohne Menü liesse sich zwischen ihnen nur über
+ * die Adresszeile wechseln.
+ */
+const researchGroups = computed(() => gruppenFuer('research'))
 
 function goToDashboard() {
     if (screenType.value === 'mobile') {
@@ -387,6 +394,19 @@ function goToDashboard() {
         <!-- ===== AGENT-TRADING ===== -->
         <template v-else-if="appMode === 'agent'">
             <div v-for="group in agentGroups" :key="group.labelKey" class="sideMenuDiv">
+                <div class="sideMenuDivContent">
+                    <label class="fw-lighter">{{ t(group.labelKey) }}</label>
+                    <a v-for="page in group.items" :key="page.id" :href="page.path"
+                        v-bind:class="[pageId === page.id ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
+                        <i v-bind:class="[page.icon, 'me-2']"></i>{{ t(page.titleKey) }}
+                    </a>
+                </div>
+            </div>
+        </template>
+
+        <!-- ===== ENTDECKEN ===== -->
+        <template v-else-if="appMode === 'research'">
+            <div v-for="group in researchGroups" :key="group.labelKey" class="sideMenuDiv">
                 <div class="sideMenuDivContent">
                     <label class="fw-lighter">{{ t(group.labelKey) }}</label>
                     <a v-for="page in group.items" :key="page.id" :href="page.path"

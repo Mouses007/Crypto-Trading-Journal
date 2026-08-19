@@ -55,7 +55,14 @@ export function baueEinordnungsBasis(bewertet = [], meta = {}) {
     const zahl = (w, n = 1) => (Number.isFinite(w) ? w.toFixed(n) : '—')
     const zeilen = [
         `Bewertet: ${kennzahlen.bewertet} Coins, an den Liquiditätshürden gescheitert: ${kennzahlen.verworfen}.`,
-        `Im Spiel (RVOL ≥ ${ANKER.rvolSchwelle}): ${kennzahlen.imSpiel}. Trendend (ADX ≥ 25): ${kennzahlen.trendend}.`,
+        /*
+         * „Im Spiel" ausgeschrieben. Mit der blossen Abkürzung las das Modell
+         * es als Liquiditätsmass und schrieb, so viele Coins „erfüllen die
+         * Liquiditätsschwelle" — die haben aber ALLE bewerteten erfüllt, sonst
+         * stünden sie nicht in der Liste.
+         */
+        `Mit erhöhtem Volumen gegenüber dem eigenen Schnitt (RVOL ≥ ${ANKER.rvolSchwelle}): `
+        + `${kennzahlen.imSpiel} Coins. Trendend (ADX ≥ 25): ${kennzahlen.trendend}.`,
         `Mittleres ATR: ${zahl(kennzahlen.mittelAtrPct, 2)} %. Mittleres RVOL: ${zahl(kennzahlen.mittelRvol, 2)}.`,
         `Teures Funding (≥ ${ANKER.fundingTeuer} % p. a.): ${kennzahlen.teuresFunding} Coins.`,
         '',

@@ -219,8 +219,18 @@ async function laufeMitZustand(einst, ausloeser, melde, istAbgebrochen = () => f
         let einordnung = ''
         if (einst.einordnungAn) {
             melde({ schritt: 'einordnung' })
+            /*
+             * ALLE bewerteten Zeilen, nicht die besten fünfzig.
+             *
+             * Mit einem Deckel von 50 stimmten die Kennzahlen im Anstoss nicht
+             * mehr mit dem Lauf überein — das Modell schrieb pflichtbewusst
+             * „von 50 bewerteten Coins", während es 80 waren. Namentlich sieht
+             * es ohnehin nur die obersten zehn; die Kennzahlen darüber müssen
+             * aber den ganzen Lauf beschreiben, sonst steht eine falsche Zahl
+             * im Text.
+             */
             const zeilen = await knex('coinradar_zeilen')
-                .where({ laufId, status: 'bewertet' }).orderBy('rang', 'asc').limit(50)
+                .where({ laufId, status: 'bewertet' }).orderBy('rang', 'asc')
             const e = await erzeugeEinordnung(zeilen, {
                 verworfen: ergebnis.verworfen,
                 ausloeser,
