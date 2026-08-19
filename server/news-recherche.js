@@ -159,13 +159,21 @@ export const THEMEN_NAMEN = {
     crypto: 'Kryptomarkt (Bitcoin, Ether, Altcoins, ETFs, Regulierung)',
     finanzen: 'Finanzmärkte (Aktien, Zinsen, Notenbanken, Rohstoffe, Devisen)',
     tech: 'Tech-Branche (KI, Chips, Grosskonzerne, Start-ups)',
+    chartanalyse: 'Technische Chartanalyse der fünf grössten Coins nach Marktkapitalisierung',
 }
 
 /**
  * Eine Suchfrage je Berichtsthema an Perplexity Sonar.
- * @returns {{text: string, citations: string[], tokens: number, kostenUsd: number}}
+ *
+ * `frage` ersetzt die Standardfrage (die Chartanalyse nennt ihre Coins zur
+ * Laufzeit), `mitBildern` bittet Perplexity um die Bilder der gefundenen
+ * Seiten — dort stecken die Chart-Grafiken der Analysten, die wir bewusst
+ * nicht selbst zeichnen. Kommen keine (Funktion ist an die Nutzungsstufe des
+ * Schlüssels gebunden), bleibt die Liste einfach leer.
+ *
+ * @returns {{text: string, citations: string[], bilder: Array<{url: string, quelle: string}>, tokens: number, kostenUsd: number}}
  */
-export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'sonar', timeoutMs = 60000 }) {
+export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'sonar', timeoutMs = 60000, frage = '', mitBildern = false }) {
     if (!apiKey) throw new Error('Kein Perplexity-Schlüssel hinterlegt')
     const was = THEMEN_NAMEN[thema] || thema
 
@@ -176,10 +184,12 @@ export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'so
             model: modell,
             messages: [{
                 role: 'user',
-                content: `Was sind die wichtigsten Nachrichten der letzten ${zeitraumText} zum Thema ${was}? `
-                    + 'Nüchtern und faktisch, für einen Krypto-Futures-Händler. Nenne Zahlen, wo welche '
-                    + 'berichtet werden. Keine Anlageberatung, keine Prognosen, keine Aufzählung von Meinungen.',
+                content: frage
+                    || (`Was sind die wichtigsten Nachrichten der letzten ${zeitraumText} zum Thema ${was}? `
+                        + 'Nüchtern und faktisch, für einen Krypto-Futures-Händler. Nenne Zahlen, wo welche '
+                        + 'berichtet werden. Keine Anlageberatung, keine Prognosen, keine Aufzählung von Meinungen.'),
             }],
+            ...(mitBildern ? { return_images: true } : {}),
         }),
     }, timeoutMs)
     if (!r.ok) throw new Error(`Perplexity HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`)
@@ -189,11 +199,19 @@ export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'so
     // Zitate liegen top-level; neuere API-Stände nennen sie `search_results`.
     const citations = Array.isArray(j?.citations) ? j.citations.filter((u) => typeof u === 'string')
         : (Array.isArray(j?.search_results) ? j.search_results.map((s) => s?.url).filter(Boolean) : [])
+    // Bilder je nach API-Stand als Objekt {image_url, origin_url} oder blanke URL.
+    const bilder = !mitBildern ? [] : (Array.isArray(j?.images) ? j.images : [])
+        .map((b) => (typeof b === 'string'
+            ? { url: b, quelle: '' }
+            : { url: b?.image_url || b?.url || '', quelle: b?.origin_url || '' }))
+        .filter((b) => /^https:\/\//.test(b.url))
+        .slice(0, 10)
     const promptTokens = Number(j?.usage?.prompt_tokens) || 0
     const completionTokens = Number(j?.usage?.completion_tokens) || 0
     return {
         text,
         citations,
+        bilder,
         tokens: promptTokens + completionTokens,
         kostenUsd: SONAR_ANFRAGE_USD + schaetzeKosten(modell, promptTokens, completionTokens),
     }

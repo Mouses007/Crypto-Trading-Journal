@@ -28,6 +28,7 @@ import { holeText, pruefeOeffentlicheUrl } from './net-guard.js'
 import { leseFeed, leseTelegram, telegramUrl } from './feed-parser.js'
 import {
     sendRadarError, holeFearGreed, holeGlobal, holeFunding, holeLsOi, holeAltseason,
+    holeMarkt,
 } from './marktradar-api.js'
 import { ladeLlmConfig, callLLMJson, istGuthabenFehler, merkeKiGuthaben } from './llm.js'
 import { samplingFelder, GEMINI_STANDARDMODELL } from './ai-models.js'
@@ -422,7 +423,7 @@ async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe
 }
 
 /** Gültige Themen des Berichts — Reihenfolge ist die Kapitelreihenfolge. */
-const THEMEN = ['crypto', 'finanzen', 'tech']
+const THEMEN = ['crypto', 'finanzen', 'tech', 'chartanalyse']
 
 /** Themen-Einstellung (CSV) in eine gültige, geordnete Liste übersetzen. */
 export function leseThemen(text) {
@@ -498,6 +499,12 @@ ${themen.includes('crypto') ? `Im Krypto-Kapitel zählt, in dieser Reihenfolge:
 3. Regulierung, soweit sie den Handel betrifft
 Der Marktdaten-Block (Fear & Greed, Dominanz, Funding …) gehört in die Lage
 dieses Kapitels — als gemessener Ist-Zustand, gegen den die Meldungen laufen.
+` : ''}${themen.includes('chartanalyse') ? `Das Kapitel "chartanalyse" beruht AUSSCHLIESSLICH
+auf dem Rechercheergebnis zur technischen Chartanalyse: je Coin EIN Punkt, in der
+Reihenfolge der Recherche. Jeder Punkt nennt Trend, die berichteten Unterstützungen
+und Widerstände als Kennzahlen und die genannten Chartmuster/Indikatoren. Du gibst
+NUR wieder, was die recherchierten Analysen schreiben — keine eigene Chartdeutung,
+und Beiträge aus den News-Quellen gehören nicht in dieses Kapitel.
 ` : ''}REGELN:
 - Keine Handelsempfehlungen, keine Kursziele, keine Prognosen.
 - Nichts erfinden. Was nicht in den Quellen steht, steht nicht im Bericht.
@@ -887,15 +894,40 @@ async function baueLagebericht(s, { manuell = false } = {}) {
     let rechercheKostenUsd = 0
     let rechercheTokens = 0
     const rechercheZitate = []     // werden hinter den Beiträgen durchnummeriert
+    let taBilder = []              // Chart-Grafiken aus den Analyse-Artikeln (Perplexity-Bilder)
     try {
         const pCfg = await ladeLlmConfig({ provider: 'perplexity' })
         if (pCfg.apiKey) {
             for (const thema of themen) {
                 try {
+                    // Chartanalyse: eigene Frage mit den ECHTEN Top 5 nach
+                    // Marktkapitalisierung (holeMarkt filtert Stablecoins und
+                    // tokenisierte Realwerte bereits raus) und der Bitte um die
+                    // Bilder der gefundenen Analysen. Wir tragen zusammen, was
+                    // Analysten publizieren — gerechnet wird hier nichts.
+                    let extra = {}
+                    if (thema === 'chartanalyse') {
+                        let coins = ['Bitcoin', 'Ethereum', 'XRP', 'BNB', 'Solana']  // Rückfall
+                        try {
+                            const m = await holeMarkt(5)
+                            if (m?.muenzen?.length >= 3) coins = m.muenzen.map(c => `${c.name} (${c.symbol})`)
+                        } catch (e) { logWarn('news', `Top-5 für Chartanalyse nicht abrufbar: ${e.message}`) }
+                        extra = {
+                            mitBildern: true,
+                            frage: `Wie lautet die aktuelle technische Chartanalyse für ${coins.join(', ')} `
+                                + 'laut Analysten und Fachmedien? Je Coin: Trend, wichtige Unterstützungen und '
+                                + 'Widerstände mit konkreten Kursmarken, auffällige Chartmuster und Indikatoren — '
+                                + 'so, wie sie in aktuellen veröffentlichten Analysen genannt werden, mit Quellenbezug. '
+                                + 'Nüchtern und faktisch. Keine eigene Analyse, keine Anlageberatung, keine Kursziele '
+                                + 'ohne Quelle.',
+                        }
+                    }
                     const r = await rechercheThema({
                         thema, zeitraumText, apiKey: pCfg.apiKey,
                         modell: s?.radarNewsRechercheModell || undefined,
+                        ...extra,
                     })
+                    if (thema === 'chartanalyse' && r.bilder?.length) taBilder = r.bilder
                     if (r.text) {
                         recherchen.push({ thema, text: r.text })
                         for (const url of r.citations.slice(0, 8)) {
@@ -1024,6 +1056,13 @@ async function baueLagebericht(s, { manuell = false } = {}) {
             lage: String(k.lage || '').slice(0, 4000),
             punkte: loesePunkte(k.punkte, THEMEN.includes(k.thema) ? k.thema : ''),
         }))
+    // Chart-Grafiken der recherchierten Analysen ans Chartanalyse-Kapitel
+    // hängen — sie wandern mit dem Kapitel-JSON in die Datenbank und werden
+    // in der Zeitungsansicht als Bilderleiste gezeigt.
+    if (taBilder.length) {
+        const kTa = kapitel.find(k => k.thema === 'chartanalyse')
+        if (kTa) kTa.bilder = taBilder.slice(0, 8)
+    }
     const flachePunkte = kapitel.length
         ? kapitel.flatMap(k => k.punkte).slice(0, 24)
         : loesePunkte(daten?.punkte).slice(0, 12)   // Rückfall: Modell ohne Kapitel

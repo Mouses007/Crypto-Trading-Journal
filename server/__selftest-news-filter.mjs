@@ -50,7 +50,9 @@ pruefe('leseThemen wirft Unbekanntes raus',
 pruefe('leseThemen fällt auf crypto zurück',
     JSON.stringify(leseThemen('')) === JSON.stringify(['crypto']))
 pruefe('Jedes Thema hat einen Namen für den Prompt',
-    ['crypto', 'finanzen', 'tech'].every(t => THEMEN_NAMEN[t]))
+    ['crypto', 'finanzen', 'tech', 'chartanalyse'].every(t => THEMEN_NAMEN[t]))
+pruefe('Chartanalyse ist wählbar und steht am Schluss',
+    JSON.stringify(leseThemen('chartanalyse,crypto')) === JSON.stringify(['crypto', 'chartanalyse']))
 
 // 4) Prompt-Builder: Kapitel, Längen, Rhythmus.
 const p1 = bauLagePrompt({ themen: ['crypto', 'tech'], laenge: 'kurz', rhythmus: 'taeglich' })
@@ -69,6 +71,10 @@ pruefe('ohne Krypto keine Krypto-Rangfolge', !p2.includes('ETF-Flüsse'))
 const p3 = bauLagePrompt()
 pruefe('Vorgabe ist mittel/täglich/crypto',
     p3.includes('vier bis fünf Punkte') && p3.includes('36 Stunden') && p3.includes('"crypto"'))
+
+const p4 = bauLagePrompt({ themen: ['crypto', 'chartanalyse'], laenge: 'kurz' })
+pruefe('Chartanalyse-Kapitel verbietet eigene Deutung', p4.includes('keine eigene Chartdeutung'))
+pruefe('ohne Chartanalyse keine Chartanalyse-Anweisung', !p1.includes('Chartdeutung'))
 
 console.log(fehler === 0 ? '  ✓ alle Prüfungen bestanden' : `  ${fehler} Fehler`)
 process.exit(fehler === 0 ? 0 : 1)

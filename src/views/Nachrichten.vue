@@ -209,7 +209,7 @@ function videoText(text) {
 const zeigtArchiv = computed(() =>
     Boolean(bericht.value && aktuellerBericht.value && bericht.value.id !== aktuellerBericht.value.id))
 
-const THEMA_NAME = { crypto: 'Crypto', finanzen: 'Finanzen', tech: 'Tech' }
+const THEMA_NAME = { crypto: 'Crypto', finanzen: 'Finanzen', tech: 'Tech', chartanalyse: 'Chartanalyse' }
 
 /** Einen Bericht aus dem Archiv in die Ansicht holen. */
 async function oeffneAusArchiv(id) {
@@ -279,7 +279,7 @@ function ladeBerichtOptionen() {
     const s = currentUser.value || {}
     nRhythmus.value = s.radarNewsRhythmus === 'woechentlich' ? 'woechentlich' : 'taeglich'
     nThemen.value = String(s.radarNewsThemen || 'crypto').split(',')
-        .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech'].includes(t))
+        .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech', 'chartanalyse'].includes(t))
     if (!nThemen.value.length) nThemen.value = ['crypto']
     nLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
     nLayout.value = LAYOUTS.includes(s.radarNewsLayout) ? s.radarNewsLayout : 'kombiniert'
@@ -367,7 +367,7 @@ function toggleThema(t) {
         nThemen.value.splice(i, 1)
     } else nThemen.value.push(t)
     // Reihenfolge festnageln — die Kapitel sollen immer gleich sortiert sein
-    const geordnet = ['crypto', 'finanzen', 'tech'].filter(x => nThemen.value.includes(x))
+    const geordnet = ['crypto', 'finanzen', 'tech', 'chartanalyse'].filter(x => nThemen.value.includes(x))
     nThemen.value = geordnet
     speichereOption('radarNewsThemen', geordnet.join(','))
 }
@@ -964,6 +964,17 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
                     </div>
                     <p class="nwKapitelText" :class="{ erste: ki === 0 }">{{ k.lage }}</p>
 
+                    <!-- Chart-Grafiken aus den recherchierten Analysen (nur
+                         Chartanalyse-Kapitel). Klick öffnet den Artikel, aus
+                         dem das Bild stammt; tote Bild-URLs verschwinden still. -->
+                    <div v-if="k.bilder && k.bilder.length" class="nwChartBilder">
+                        <a v-for="(b, bi) in k.bilder" :key="bi" :href="b.quelle || b.url"
+                            target="_blank" rel="noopener">
+                            <img :src="b.url" loading="lazy" referrerpolicy="no-referrer"
+                                @error="e => { e.target.closest('a').style.display = 'none' }" />
+                        </a>
+                    </div>
+
                     <!-- Die Punkte des Kapitels als Artikel im laufenden Satz.
                          Anklickbar wie die Kacheln vorher: das Belegfenster ist
                          der Ort, an dem nachgeschlagen wird, nicht die Ansicht. -->
@@ -1548,6 +1559,24 @@ onBeforeUnmount(() => { if (takt) clearInterval(takt) })
     color: var(--white-75, rgba(255, 255, 255, 0.78));
     text-align: justify;
     hyphens: auto;
+}
+
+/* Bilderleiste der Chartanalyse: Grafiken aus den recherchierten Artikeln,
+   seitlich scrollbar statt das Zeitungslayout zu sprengen. */
+.nwChartBilder {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    margin: 0.2rem 0 0.9rem;
+    padding-bottom: 0.25rem;
+}
+.nwChartBilder img {
+    height: 140px;
+    max-width: 260px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
+    display: block;
 }
 
 @media (min-width: 900px) {
