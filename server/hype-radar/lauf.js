@@ -105,8 +105,14 @@ export async function scanne(einst, melde = () => {}) {
      * es war schlicht nicht interessant genug. Diese Funde tauchen im Bericht
      * gar nicht auf; die Aussortiert-Liste ist der Sicherheitsprüfung
      * vorbehalten, sonst ertränkt sie die eigentlichen Warnungen.
+     *
+     * Gespeichert werden sie trotzdem: die Übersicht lebt davon, das ganze
+     * Feld zu zeigen. Im ersten Lauf gegen echte Daten kam genau EIN Fund über
+     * die Schwelle — ein Streudiagramm mit einem Punkt beantwortet keine
+     * Frage. Erst neben den vielen unauffälligen wird sichtbar, was heraussticht.
      */
-    melde({ schritt: 'bewertet', anzahl: zurPruefung.length, verworfenSchwelle: bewertet.length - zurPruefung.length })
+    const unterSchwelle = bewertet.filter((k) => k.hypeScore < schwelle)
+    melde({ schritt: 'bewertet', anzahl: zurPruefung.length, verworfenSchwelle: unterSchwelle.length })
 
     // ── Stufe 3 ─────────────────────────────────────────────────────────
     melde({ schritt: 'sicherheit', gesamt: zurPruefung.length })
@@ -144,24 +150,55 @@ export async function scanne(einst, melde = () => {}) {
 
     // ── Speichern ───────────────────────────────────────────────────────
     const jetzt = Date.now()
-    const zeilen = [...bestanden, ...verworfen].map((z) => ({
-        symbol: z.symbol,
-        name: z.name,
-        chain: z.chain,
-        contractAddress: z.contractAddress,
-        pairAddress: z.pairAddress,
-        narrative: z.narrative,
-        quellen: JSON.stringify(z.quellen),
-        marktDaten: JSON.stringify(z.marktDaten),
-        sozialDaten: JSON.stringify(z.sozialDaten),
-        sicherheitsDaten: JSON.stringify(z.sicherheitsDaten),
-        hypeScore: z.hypeScore,
-        safetyScore: z.safetyScore,
-        status: z.status,
-        verworfenGrund: z.verworfenGrund,
-        erstelltAm: jetzt,
-        aktualisiertAm: jetzt,
+
+    // Auch die unter der Schwelle — sie sind der Hintergrund, vor dem sich
+    // ein auffälliger Fund überhaupt abhebt. Status `bewertet`: weder
+    // sicherheitsgeprüft noch verworfen.
+    const nurBewertet = unterSchwelle.map((k) => ({
+        symbol: k.symbol,
+        name: k.name,
+        chain: k.chain,
+        contractAddress: k.contract,
+        pairAddress: k.pair,
+        narrative: k.narrativ || '',
+        quellen: k.quellen || [],
+        marktDaten: k.markt || {},
+        sozialDaten: { ...(k.sozial || {}), teilnoten: k.teilnoten, quellenAnzahl: k.quellenAnzahl },
+        sicherheitsDaten: {},
+        hypeScore: k.hypeScore,
+        safetyScore: 0,
+        status: 'bewertet',
+        verworfenGrund: '',
     }))
+
+    /*
+     * Funde ohne Symbol fallen hier heraus.
+     *
+     * Es sind Adressen von DexScreener, deren Detailabruf nichts ergab — im
+     * ersten Lauf gegen echte Daten waren das 41 von 129. Anzeigen liessen sie
+     * sich nicht (eine Zeile ohne Namen sagt niemandem etwas), nachschlagen
+     * auch nicht; sie blähten nur die Zahlen auf.
+     */
+    const zeilen = [...bestanden, ...verworfen, ...nurBewertet]
+        .filter((z) => z.symbol)
+        .map((z) => ({
+            symbol: z.symbol,
+            name: z.name,
+            chain: z.chain,
+            contractAddress: z.contractAddress,
+            pairAddress: z.pairAddress,
+            narrative: z.narrative,
+            quellen: JSON.stringify(z.quellen),
+            marktDaten: JSON.stringify(z.marktDaten),
+            sozialDaten: JSON.stringify(z.sozialDaten),
+            sicherheitsDaten: JSON.stringify(z.sicherheitsDaten),
+            hypeScore: z.hypeScore,
+            safetyScore: z.safetyScore,
+            status: z.status,
+            verworfenGrund: z.verworfenGrund,
+            erstelltAm: jetzt,
+            aktualisiertAm: jetzt,
+        }))
     if (zeilen.length) {
         // In Stücken einfügen: SQLite hat eine Grenze für Platzhalter je Anweisung.
         for (let i = 0; i < zeilen.length; i += 25) {

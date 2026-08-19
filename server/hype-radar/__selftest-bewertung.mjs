@@ -132,6 +132,16 @@ pruefe('Meme wird erkannt',
 pruefe('ohne Treffer keine Zuordnung',
     noteNarrativ({ symbol: 'ZZZZ', name: 'qqqq' }).note === 0)
 
+/*
+ * Die Gegenwährung darf nicht einordnen. GeckoTerminal liefert Poolnamen wie
+ * „WETH / USDC"; wer den ganzen Namen prüft, hält jeden Pool, der gegen USDC
+ * handelt, für ein Stablecoin-Projekt. Im Livelauf traf das WETH, WBTC und
+ * SHIB. Deshalb kommt hier nur noch die erste Seite des Paars an.
+ */
+pruefe('Gegenwährung im Namen ordnet nicht ein',
+    noteNarrativ({ symbol: 'WETH', name: 'WETH' }).narrativ === '',
+    noteNarrativ({ symbol: 'WETH', name: 'WETH' }).narrativ)
+
 // ── Sozial ──────────────────────────────────────────────────────────────
 pruefe('ohne Signale keine Note', noteSozial({ sozial: {} }) === 0)
 const wenig = noteSozial({ sozial: { stimmen: 10 } })

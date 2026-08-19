@@ -1,0 +1,1173 @@
+<template>
+    <div class="hyp">
+        <!-- ── Kopf ──────────────────────────────────────────────────── -->
+        <div class="hypKopf">
+            <ul class="nav nav-tabs hypNav">
+                <li v-for="r in REITER" :key="r.id" class="nav-item">
+                    <a class="nav-link" :class="{ active: reiter === r.id }"
+                        href="#" @click.prevent="reiterWechseln(r.id)">
+                        <i :class="r.icon" class="me-1"></i>{{ t('hype.tab_' + r.id) }}
+                    </a>
+                </li>
+            </ul>
+            <div class="hypKnoepfe">
+                <span v-if="laeuft" class="hypFortschritt">{{ fortschrittText }}</span>
+                <button class="btn btn-sm btn-outline-secondary" :disabled="laeuft" @click="starte(false)">
+                    <i class="uil uil-search me-1"></i>{{ t('hype.nurScannen') }}
+                </button>
+                <button class="btn btn-sm btn-primary" :disabled="laeuft || fehlendeSchluessel.length"
+                    :title="fehlendeSchluessel.length ? t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) : ''"
+                    @click="starte(true)">
+                    <span v-if="laeuft" class="spinner-border spinner-border-sm me-1"></span>
+                    <i v-else class="uil uil-file-alt me-1"></i>{{ t('hype.scannenUndBericht') }}
+                </button>
+            </div>
+        </div>
+
+        <div v-if="meldung" class="alert py-2 small mt-2" :class="meldungFehler ? 'alert-danger' : 'alert-info'">
+            {{ meldung }}
+        </div>
+        <div v-if="fehlendeSchluessel.length" class="alert alert-warning py-2 small mt-2">
+            <i class="uil uil-exclamation-triangle me-1"></i>
+            {{ t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) }}
+        </div>
+
+        <!-- ══ Dashboard ═════════════════════════════════════════════ -->
+        <div v-show="reiter === 'dashboard'" class="mt-3">
+            <div class="hypKennzahlen">
+                <div class="hypZelle">
+                    <div class="hypWert">{{ kandidaten.length }}</div>
+                    <div class="hypLabel">{{ t('hype.kandidaten') }}</div>
+                </div>
+                <div class="hypZelle">
+                    <div class="hypWert text-success">{{ bestanden.length }}</div>
+                    <div class="hypLabel">{{ t('hype.bestanden') }}</div>
+                </div>
+                <div class="hypZelle">
+                    <div class="hypWert text-danger">{{ verworfen.length }}</div>
+                    <div class="hypLabel">{{ t('hype.verworfen') }}</div>
+                    <div class="hypLabel hypKlein">{{ t('hype.unterSchwelleN', { n: nurBewertet.length }) }}</div>
+                </div>
+                <div class="hypZelle">
+                    <div class="hypWert">{{ heissestesNarrativ || '—' }}</div>
+                    <div class="hypLabel">{{ t('hype.heissestesNarrativ') }}</div>
+                </div>
+            </div>
+
+            <!-- Divergenz-Quadrant -->
+            <div class="hypBlock">
+                <h6 class="hypTitel">{{ t('hype.quadrantTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.quadrantHinweis') }}</p>
+                <div v-if="bestanden.length || verworfen.length" ref="quadrantEl" class="hypQuadrant"></div>
+                <p v-else class="text-muted small">{{ t('hype.nochKeinScan') }}</p>
+            </div>
+
+            <!-- Kandidatentabelle -->
+            <div class="hypBlock">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <h6 class="hypTitel mb-0 me-2">{{ t('hype.tabelleTitel') }}</h6>
+                    <span v-for="n in narrativeInDaten" :key="n"
+                        class="hypChip" :class="{ aktiv: filterNarrativ === n }"
+                        @click="filterNarrativ = filterNarrativ === n ? '' : n">{{ n }}</span>
+                    <select v-model="filterStatus" class="form-select form-select-sm hypAuswahl ms-auto">
+                        <option value="">{{ t('hype.alleStatus') }}</option>
+                        <option value="bestanden">{{ t('hype.bestanden') }}</option>
+                        <option value="verworfen">{{ t('hype.verworfen') }}</option>
+                        <option value="bewertet">{{ t('hype.unterSchwelle') }}</option>
+                    </select>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle hypTabelle">
+                        <thead>
+                            <tr>
+                                <th @click="sortiere('symbol')">{{ t('hype.spalteSymbol') }}</th>
+                                <th @click="sortiere('hypeScore')" class="text-end">{{ t('hype.spalteHype') }}</th>
+                                <th @click="sortiere('safetyScore')" class="text-end">{{ t('hype.spalteSafety') }}</th>
+                                <th>{{ t('hype.spalteNarrativ') }}</th>
+                                <th class="text-end">{{ t('hype.spalteLiq') }}</th>
+                                <th class="text-end">{{ t('hype.spalteAlter') }}</th>
+                                <th>{{ t('hype.spalteStatus') }}</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template v-for="k in gefiltert" :key="k.id">
+                                <tr class="hypZeile" @click="offen = offen === k.id ? null : k.id">
+                                    <td>
+                                        <strong>{{ k.symbol }}</strong>
+                                        <span class="hypKette">{{ k.chain }}</span>
+                                    </td>
+                                    <td class="text-end">{{ k.hypeScore }}</td>
+                                    <td class="text-end">
+                                        <span :class="k.safetyScore >= 70 ? 'text-success' : (k.safetyScore >= 40 ? 'text-warning' : 'text-danger')">
+                                            {{ k.status === 'verworfen' ? '—' : k.safetyScore }}
+                                        </span>
+                                    </td>
+                                    <td><span v-if="k.narrative" class="hypChip klein">{{ k.narrative }}</span></td>
+                                    <td class="text-end">{{ geld(k.marktDaten?.liquiditaetUsd) }}</td>
+                                    <td class="text-end">{{ alter(k.marktDaten?.paarAlterStunden) }}</td>
+                                    <td>
+                                        <span v-if="k.status === 'verworfen'" class="badge bg-danger hypBadge"
+                                            :title="k.verworfenGrund">{{ t('hype.grund_' + k.verworfenGrund) !== 'hype.grund_' + k.verworfenGrund ? t('hype.grund_' + k.verworfenGrund) : k.verworfenGrund }}</span>
+                                        <span v-else-if="k.status === 'berichtet'" class="badge bg-primary hypBadge">{{ t('hype.imBericht') }}</span>
+                                        <span v-else-if="k.status === 'bewertet'" class="badge bg-secondary hypBadge">{{ t('hype.unterSchwelle') }}</span>
+                                        <span v-else class="badge bg-success hypBadge">{{ t('hype.bestanden') }}</span>
+                                    </td>
+                                    <td class="text-end">
+                                        <i class="uil" :class="offen === k.id ? 'uil-angle-up' : 'uil-angle-down'"></i>
+                                    </td>
+                                </tr>
+                                <tr v-if="offen === k.id" :key="k.id + '-d'">
+                                    <td colspan="8" class="hypDetail">
+                                        <div class="hypDetailGrid">
+                                            <div>
+                                                <div class="hypDetailTitel">{{ t('hype.teilnoten') }}</div>
+                                                <div v-for="(wert, feld) in (k.sozialDaten?.teilnoten || {})" :key="feld" class="hypNote">
+                                                    <span class="hypNoteName">{{ t('hype.note_' + feld) }}</span>
+                                                    <span class="hypBalken"><i :style="{ width: Math.round(wert) + '%' }"></i></span>
+                                                    <span class="hypNoteWert">{{ Math.round(wert) }}</span>
+                                                </div>
+                                                <div class="hypNoteName mt-1">
+                                                    {{ t('hype.quellenAnzahl', { n: k.sozialDaten?.quellenAnzahl || 0 }) }}:
+                                                    {{ (k.quellen || []).map(q => q.quelle).join(', ') }}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div class="hypDetailTitel">{{ t('hype.sicherheitsbefunde') }}</div>
+                                                <ul v-if="k.sicherheitsDaten?.hinweise?.length" class="hypListe">
+                                                    <li v-for="(h, i) in k.sicherheitsDaten.hinweise" :key="i">{{ h }}</li>
+                                                </ul>
+                                                <p v-else class="text-muted small mb-1">{{ t('hype.keineBefunde') }}</p>
+                                                <div class="mt-2">
+                                                    <a v-if="k.contractAddress" class="hypLink"
+                                                        :href="'https://dexscreener.com/' + k.chain + '/' + k.contractAddress"
+                                                        target="_blank" rel="noopener noreferrer">DexScreener ↗</a>
+                                                    <a v-if="k.contractAddress" class="hypLink ms-2"
+                                                        :href="'https://www.geckoterminal.com/' + k.chain + '/pools/' + (k.pairAddress || k.contractAddress)"
+                                                        target="_blank" rel="noopener noreferrer">GeckoTerminal ↗</a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr v-if="!gefiltert.length">
+                                <td colspan="8" class="text-center text-muted py-3">{{ t('hype.nochKeinScan') }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ Berichte ══════════════════════════════════════════════ -->
+        <div v-show="reiter === 'berichte'" class="mt-3">
+            <div v-if="!berichte.length" class="text-muted small">{{ t('hype.keineBerichte') }}</div>
+            <div class="hypBerichtListe">
+                <div v-for="b in berichte" :key="b.id" class="hypBerichtKarte"
+                    :class="{ aktiv: offenerBericht?.id === b.id }" @click="berichtOeffnen(b.id)">
+                    <div class="hypBerichtDatum">{{ zeitpunkt(b.erstelltAm) }}</div>
+                    <div class="hypBerichtTitel">{{ b.ueberschrift || '—' }}</div>
+                    <div class="hypBerichtMeta">
+                        {{ t('hype.berichtMeta', { n: b.anzahlKandidaten, v: b.anzahlAussortiert }) }}
+                        <span v-if="b.kostenUsd"> · {{ useKostenAnzeige(b.kostenUsd) }}</span>
+                    </div>
+                    <span class="hypLoeschen" :class="{ scharf: loeschId === b.id }"
+                        :title="t('hype.loeschen')" @click.stop="berichtLoeschen(b.id)">
+                        <i class="uil uil-trash-alt"></i>
+                    </span>
+                </div>
+            </div>
+
+            <div v-if="offenerBericht" class="hypBericht">
+                <h4 class="hypBerichtUeberschrift">{{ offenerBericht.ueberschrift }}</h4>
+                <p class="hypMarktkontext">{{ offenerBericht.marktkontext }}</p>
+
+                <div v-for="k in offenerBericht.kandidaten" :key="k.symbol" class="hypKandidat">
+                    <div class="hypKandidatKopf">
+                        <strong>{{ k.symbol }}</strong>
+                        <span v-if="k.name" class="hypKandidatName">{{ k.name }}</span>
+                        <span class="hypKette">{{ k.chain }}</span>
+                        <span class="ms-auto hypNoten">
+                            {{ t('hype.spalteHype') }} {{ k.hypeScore }} · {{ t('hype.spalteSafety') }} {{ k.safetyScore }}
+                        </span>
+                        <span class="badge hypBadge ms-2"
+                            :class="{ 'bg-success': k.vertrauen === 'hoch', 'bg-secondary': k.vertrauen === 'mittel', 'bg-warning text-dark': k.vertrauen === 'niedrig' }">
+                            {{ t('hype.vertrauen_' + k.vertrauen) }}
+                        </span>
+                    </div>
+                    <dl class="hypAbschnitte">
+                        <dt>{{ t('hype.einordnung') }}</dt><dd>{{ k.einordnung }}</dd>
+                        <dt>{{ t('hype.substanz') }}</dt><dd>{{ k.substanz }}</dd>
+                        <dt>{{ t('hype.risiken') }}</dt><dd>{{ k.risiken }}</dd>
+                    </dl>
+                    <div v-if="k.belege?.length" class="hypBelege">
+                        <a v-for="(b, i) in k.belege.slice(0, 6)" :key="i" :href="b"
+                            target="_blank" rel="noopener noreferrer">[{{ i + 1 }}]</a>
+                    </div>
+                </div>
+
+                <div v-if="offenerBericht.aussortiert?.length" class="hypAussortiert">
+                    <h6 class="hypTitel">{{ t('hype.aussortiertTitel') }}</h6>
+                    <table class="table table-sm hypTabelle">
+                        <tbody>
+                            <tr v-for="(a, i) in offenerBericht.aussortiert" :key="i">
+                                <td style="width: 8rem"><strong>{{ a.symbol }}</strong></td>
+                                <td>{{ t('hype.grund_' + a.grund) !== 'hype.grund_' + a.grund ? t('hype.grund_' + a.grund) : a.grund }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="hypDisclaimer">{{ offenerBericht.hinweis || HINWEIS_RUECKFALL }}</p>
+            </div>
+        </div>
+
+        <!-- ══ Einstellungen ═════════════════════════════════════════ -->
+        <div v-show="reiter === 'einstellungen'" class="mt-3">
+            <div v-if="einst" class="hypEinst">
+                <div class="form-check form-switch mb-3">
+                    <input id="hypAktiv" class="form-check-input" type="checkbox"
+                        v-model="einst.aktiv" @change="speichern">
+                    <label class="form-check-label" for="hypAktiv">{{ t('hype.autoAn') }}</label>
+                    <div class="hypHinweis">{{ t('hype.autoHinweis') }}</div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.intervall') }}</label>
+                        <select v-model.number="einst.intervallStunden" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option :value="1">{{ t('hype.stunde1') }}</option>
+                            <option :value="3">{{ t('hype.stundeN', { n: 3 }) }}</option>
+                            <option :value="6">{{ t('hype.stundeN', { n: 6 }) }}</option>
+                            <option :value="12">{{ t('hype.stundeN', { n: 12 }) }}</option>
+                            <option :value="24">{{ t('hype.taeglich') }}</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.minHype') }}</label>
+                        <input v-model.number="einst.minHypeScore" type="number" min="0" max="100"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.topN') }}</label>
+                        <input v-model.number="einst.berichtTopN" type="number" min="1" max="20"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+
+                <!-- Gewichte -->
+                <h6 class="hypTitel">{{ t('hype.gewichteTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.gewichteHinweis') }}</p>
+                <div class="hypRegler">
+                    <div v-for="(_, feld) in einst.gewichte" :key="feld" class="hypReglerZeile">
+                        <label>{{ t('hype.note_' + feld) }}</label>
+                        <input type="range" min="0" max="50" v-model.number="einst.gewichte[feld]"
+                            class="form-range" @change="speichern">
+                        <span class="hypReglerWert">{{ einst.gewichte[feld] }}</span>
+                    </div>
+                    <div class="hypSumme" :class="{ falsch: gewichtSumme !== 100 }">
+                        {{ t('hype.summe') }}: {{ gewichtSumme }}
+                        <span v-if="gewichtSumme !== 100">— {{ t('hype.summeHinweis') }}</span>
+                    </div>
+                </div>
+
+                <!-- Sicherheit -->
+                <h6 class="hypTitel mt-4">{{ t('hype.sicherheitTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.sicherheitHinweis') }}</p>
+                <div class="row g-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.minLiq') }}</label>
+                        <input v-model.number="einst.sicherheit.minLiquiditaetUsd" type="number"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.maxTop10') }}</label>
+                        <input v-model.number="einst.sicherheit.maxTop10Prozent" type="number"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.minAlter') }}</label>
+                        <input v-model.number="einst.sicherheit.minPaarAlterStunden" type="number"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.maxSteuer') }}</label>
+                        <input v-model.number="einst.sicherheit.maxVerkaufssteuerProzent" type="number"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+                <div class="form-check form-switch mt-2">
+                    <input id="hypLp" class="form-check-input" type="checkbox"
+                        v-model="einst.sicherheit.lpMussGesperrtSein" @change="speichern">
+                    <label class="form-check-label small" for="hypLp">{{ t('hype.lpPflicht') }}</label>
+                </div>
+
+                <!-- Quellen -->
+                <h6 class="hypTitel mt-4">{{ t('hype.quellenTitel') }}</h6>
+                <div class="hypQuellen">
+                    <div v-for="(_, q) in einst.quellen" :key="q" class="form-check form-switch">
+                        <input :id="'hypQ' + q" class="form-check-input" type="checkbox"
+                            v-model="einst.quellen[q]" @change="speichern">
+                        <label class="form-check-label small" :for="'hypQ' + q">
+                            {{ q }}
+                            <span v-if="q === 'reddit'" class="hypHinweisKlein">{{ t('hype.redditHinweis') }}</span>
+                            <span v-else-if="['cryptopanic', 'lunarcrush'].includes(q)" class="hypHinweisKlein">
+                                {{ t('hype.brauchtSchluessel') }}
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- KI-Stufe -->
+                <h6 class="hypTitel mt-4">{{ t('hype.kiTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.kiHinweis') }}</p>
+                <div class="btn-group btn-group-sm mb-2">
+                    <button class="btn" :class="ordnung === 'preis' ? 'btn-primary' : 'btn-outline-secondary'"
+                        @click="ordnungWechseln('preis')">{{ t('hype.nachPreis') }}</button>
+                    <button class="btn" :class="ordnung === 'guete' ? 'btn-primary' : 'btn-outline-secondary'"
+                        @click="ordnungWechseln('guete')">{{ t('hype.nachGuete') }}</button>
+                </div>
+                <div class="hypStufen">
+                    <label v-for="s in stufen" :key="s.id" class="hypStufe"
+                        :class="{ aktiv: einst.llmStufe === s.id }">
+                        <input type="radio" :value="s.id" v-model="einst.llmStufe" @change="stufeGewaehlt(s)">
+                        <div class="hypStufeKopf">
+                            <strong>{{ t('hype.modus_' + s.modus) }} · {{ t('hype.profil_' + s.profil) }}</strong>
+                            <span v-if="s.empfohlen" class="badge bg-primary hypBadge ms-2">{{ t('hype.empfohlen') }}</span>
+                            <span class="ms-auto hypStufePreis">~{{ s.usdProMonat[0] }}–{{ s.usdProMonat[1] }} $/{{ t('hype.monat') }}</span>
+                        </div>
+                        <div class="hypStufeModelle">
+                            {{ t('hype.recherche') }}: {{ s.rollen.research.provider }}/{{ s.rollen.research.modell }}
+                            · {{ t('hype.redakteur') }}: {{ s.rollen.editor.provider }}/{{ s.rollen.editor.modell }}
+                        </div>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script setup>
+/**
+ * Hype-Radar.
+ *
+ * Drei Reiter: das Dashboard zeigt den letzten Lauf, „Berichte" die
+ * geschriebenen Zusammenfassungen, „Einstellungen" die Stellschrauben.
+ *
+ * Das Herzstück ist der Divergenz-Quadrant. Er trägt Marktbestätigung gegen
+ * Aufmerksamkeit auf: oben links steht, worüber geredet wird, ohne dass der
+ * Handel mitzieht — der Fall, den man sehen muss und den eine sortierte Liste
+ * nicht zeigt. Die Farbe ist die Sicherheitsnote, damit ein auffälliger
+ * Kandidat nicht allein wegen seiner Lage interessant aussieht.
+ */
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import axios from 'axios'
+import * as echarts from 'echarts'
+import { useKostenAnzeige } from '../utils/formatters.js'
+import { logWarn } from '../utils/logger.js'
+
+const { t, locale } = useI18n()
+
+const HINWEIS_RUECKFALL = 'Keine Anlageberatung. Frühphasen-Token sind hochriskant.'
+
+const REITER = [
+    { id: 'dashboard', icon: 'uil uil-dashboard' },
+    { id: 'berichte', icon: 'uil uil-file-alt' },
+    { id: 'einstellungen', icon: 'uil uil-setting' },
+]
+const reiter = ref(localStorage.getItem('hypeReiter') || 'dashboard')
+function reiterWechseln(id) {
+    reiter.value = id
+    localStorage.setItem('hypeReiter', id)
+    if (id === 'dashboard') nextTick(zeichne)
+}
+
+const kandidaten = ref([])
+const berichte = ref([])
+const offenerBericht = ref(null)
+const einst = ref(null)
+const stufen = ref([])
+const fehlendeSchluessel = ref([])
+const ordnung = ref(localStorage.getItem('hypeOrdnung') || 'preis')
+
+const laeuft = ref(false)
+const meldung = ref('')
+const meldungFehler = ref(false)
+const fortschritt = ref(null)
+const offen = ref(null)
+const loeschId = ref(null)
+const filterNarrativ = ref('')
+const filterStatus = ref('')
+const sortFeld = ref('hypeScore')
+const sortAb = ref(true)
+
+const quadrantEl = ref(null)
+let diagramm = null
+let strom = null
+
+/*
+ * Drei Zustände, nicht zwei. `bewertet` heisst: unter der Schwelle geblieben
+ * und deshalb gar nicht sicherheitsgeprüft — das ist etwas anderes als
+ * „geprüft und durchgefallen" und darf nicht als bestanden gelten.
+ */
+const bestanden = computed(() =>
+    kandidaten.value.filter((k) => k.status === 'bestanden' || k.status === 'berichtet'))
+const verworfen = computed(() => kandidaten.value.filter((k) => k.status === 'verworfen'))
+const nurBewertet = computed(() => kandidaten.value.filter((k) => k.status === 'bewertet'))
+
+const narrativeInDaten = computed(() =>
+    [...new Set(kandidaten.value.map((k) => k.narrative).filter(Boolean))].sort())
+
+const heissestesNarrativ = computed(() => {
+    const zaehler = {}
+    for (const k of bestanden.value) {
+        if (k.narrative) zaehler[k.narrative] = (zaehler[k.narrative] || 0) + 1
+    }
+    return Object.entries(zaehler).sort((a, b) => b[1] - a[1])[0]?.[0] || ''
+})
+
+const gefiltert = computed(() => {
+    let liste = kandidaten.value
+    if (filterNarrativ.value) liste = liste.filter((k) => k.narrative === filterNarrativ.value)
+    if (filterStatus.value === 'verworfen') liste = liste.filter((k) => k.status === 'verworfen')
+    else if (filterStatus.value === 'bewertet') liste = liste.filter((k) => k.status === 'bewertet')
+    else if (filterStatus.value === 'bestanden') {
+        liste = liste.filter((k) => k.status === 'bestanden' || k.status === 'berichtet')
+    }
+    const f = sortFeld.value
+    return [...liste].sort((a, b) => {
+        const av = a[f] ?? 0
+        const bv = b[f] ?? 0
+        const cmp = typeof av === 'string' ? String(av).localeCompare(String(bv)) : av - bv
+        return sortAb.value ? -cmp : cmp
+    })
+})
+
+const gewichtSumme = computed(() =>
+    Object.values(einst.value?.gewichte || {}).reduce((a, b) => a + (Number(b) || 0), 0))
+
+const fortschrittText = computed(() => {
+    const f = fortschritt.value
+    if (!f) return ''
+    const s = t('hype.schritt_' + f.schritt)
+    if (f.fertig && f.gesamt) return `${s} ${f.fertig}/${f.gesamt}`
+    if (f.anzahl !== undefined) return `${s}: ${f.anzahl}`
+    if (f.gesamt) return `${s} (${f.gesamt})`
+    return s
+})
+
+const geld = (n) => {
+    const z = Number(n)
+    if (!Number.isFinite(z) || z === 0) return '—'
+    if (z >= 1e6) return `${(z / 1e6).toFixed(1)} M`
+    if (z >= 1e3) return `${Math.round(z / 1e3)} k`
+    return String(Math.round(z))
+}
+
+const alter = (stunden) => {
+    const h = Number(stunden)
+    if (!Number.isFinite(h)) return '—'
+    if (h < 48) return `${Math.round(h)} h`
+    return `${Math.round(h / 24)} d`
+}
+
+const zeitpunkt = (ms) => new Date(Number(ms)).toLocaleString(
+    locale.value === 'en' ? 'en-GB' : 'de-CH',
+    { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+
+function sortiere(feld) {
+    if (sortFeld.value === feld) sortAb.value = !sortAb.value
+    else { sortFeld.value = feld; sortAb.value = true }
+}
+
+// ── Laden ───────────────────────────────────────────────────────────────
+async function ladeKandidaten() {
+    try {
+        const r = await axios.get('/api/hype-radar/kandidaten')
+        kandidaten.value = r.data || []
+        await nextTick()
+        zeichne()
+    } catch (e) {
+        logWarn('hype-radar', 'Kandidaten konnten nicht geladen werden', e)
+    }
+}
+
+async function ladeBerichte() {
+    try {
+        const r = await axios.get('/api/hype-radar/berichte')
+        berichte.value = r.data || []
+        if (berichte.value.length && !offenerBericht.value) await berichtOeffnen(berichte.value[0].id)
+    } catch (e) {
+        logWarn('hype-radar', 'Berichte konnten nicht geladen werden', e)
+    }
+}
+
+async function berichtOeffnen(id) {
+    try {
+        const r = await axios.get(`/api/hype-radar/berichte/${id}`)
+        offenerBericht.value = r.data
+    } catch (e) {
+        logWarn('hype-radar', 'Bericht konnte nicht geöffnet werden', e)
+    }
+}
+
+async function berichtLoeschen(id) {
+    // Zwei Klicks: der erste schärft, der zweite löscht.
+    if (loeschId.value !== id) {
+        loeschId.value = id
+        setTimeout(() => { if (loeschId.value === id) loeschId.value = null }, 4000)
+        return
+    }
+    loeschId.value = null
+    try {
+        await axios.delete(`/api/hype-radar/berichte/${id}`)
+        if (offenerBericht.value?.id === id) offenerBericht.value = null
+        await ladeBerichte()
+    } catch (e) {
+        logWarn('hype-radar', 'Bericht konnte nicht gelöscht werden', e)
+    }
+}
+
+async function ladeEinstellungen() {
+    try {
+        const r = await axios.get(`/api/hype-radar/einstellungen?ordnung=${ordnung.value}`)
+        const { stufen: st, fehlendeSchluessel: fs, ...rest } = r.data
+        einst.value = rest
+        stufen.value = st || []
+        fehlendeSchluessel.value = fs || []
+    } catch (e) {
+        logWarn('hype-radar', 'Einstellungen konnten nicht geladen werden', e)
+    }
+}
+
+async function speichern() {
+    if (!einst.value) return
+    try {
+        const { schluessel, ...rest } = einst.value
+        const r = await axios.put('/api/hype-radar/einstellungen', rest)
+        fehlendeSchluessel.value = r.data?.fehlendeSchluessel || []
+    } catch (e) {
+        logWarn('hype-radar', 'Einstellungen konnten nicht gespeichert werden', e)
+    }
+}
+
+function ordnungWechseln(o) {
+    ordnung.value = o
+    localStorage.setItem('hypeOrdnung', o)
+    ladeEinstellungen()
+}
+
+function stufeGewaehlt(s) {
+    // Die Stufe legt auch die Betriebsart fest — sonst stünde „gründlich"
+    // in der Auswahl und der Lauf machte trotzdem einen einzelnen Aufruf.
+    einst.value.llmModus = s.modus
+    speichern()
+}
+
+// ── Lauf ────────────────────────────────────────────────────────────────
+async function starte(mitBericht) {
+    if (laeuft.value) return
+    laeuft.value = true
+    meldung.value = ''
+    meldungFehler.value = false
+    fortschritt.value = { schritt: 'sammeln' }
+
+    strom = new AbortController()
+    try {
+        const antwort = await fetch(`/api/hype-radar/${mitBericht ? 'bericht' : 'scan'}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+            signal: strom.signal,
+        })
+        if (!antwort.ok) {
+            const j = await antwort.json().catch(() => ({}))
+            throw new Error(j.error || `HTTP ${antwort.status}`)
+        }
+
+        // Zeilenweise lesen — dasselbe Muster wie beim KI-Agenten.
+        const leser = antwort.body.getReader()
+        const dekoder = new TextDecoder()
+        let puffer = ''
+        while (true) {
+            const { done, value } = await leser.read()
+            if (done) break
+            puffer += dekoder.decode(value, { stream: true })
+            const zeilen = puffer.split('\n')
+            puffer = zeilen.pop() || ''
+            for (const z of zeilen) {
+                if (!z.startsWith('data: ')) continue
+                let e
+                try { e = JSON.parse(z.slice(6)) } catch { continue }
+                verarbeite(e, mitBericht)
+            }
+        }
+    } catch (e) {
+        if (e.name !== 'AbortError') {
+            meldung.value = e.message
+            meldungFehler.value = true
+        }
+    } finally {
+        laeuft.value = false
+        fortschritt.value = null
+        strom = null
+    }
+}
+
+function verarbeite(e, mitBericht) {
+    if (e.type === 'fortschritt') { fortschritt.value = e; return }
+    if (e.type === 'fehler') {
+        meldung.value = e.fehler
+        meldungFehler.value = true
+        return
+    }
+    if (e.type !== 'fertig') return
+
+    const ausgefallen = Object.entries(e.quellenStand || {})
+        .filter(([, s]) => !s.ok).map(([n]) => n)
+    const teil = ausgefallen.length ? ' ' + t('hype.quellenAusgefallen', { q: ausgefallen.join(', ') }) : ''
+
+    if (mitBericht) {
+        meldung.value = t('hype.berichtFertig', { n: e.bericht?.kandidaten?.length || 0 }) + teil
+        ladeBerichte()
+        reiterWechseln('berichte')
+    } else {
+        meldung.value = t('hype.scanFertig', { b: e.bestanden, v: e.verworfen }) + teil
+    }
+    ladeKandidaten()
+}
+
+// ── Quadrant ────────────────────────────────────────────────────────────
+function zeichne() {
+    if (!quadrantEl.value || reiter.value !== 'dashboard') return
+    if (!kandidaten.value.length) return
+
+    /*
+     * X: Marktbestätigung (Volumen-Teilnote), Y: Aufmerksamkeit (Sozial- und
+     * Quellen-Teilnote). Verworfene bleiben drin, aber grau — sie zeigen, wie
+     * viel Lärm es gab, ohne dass sie mit einer Sicherheitsfarbe geadelt
+     * würden, die sie nicht haben.
+     */
+    const punkt = (k) => {
+        const tn = k.sozialDaten?.teilnoten || {}
+        const aufmerksamkeit = ((Number(tn.sozial) || 0) + (Number(tn.quellen) || 0)) / 2
+        return [Number(tn.volumen) || 0, aufmerksamkeit, k.safetyScore, k.symbol, k.status]
+    }
+
+    const gut = bestanden.value.map(punkt)
+    const schlecht = verworfen.value.map(punkt)
+    const neutral = nurBewertet.value.map(punkt)
+
+    diagramm?.dispose()
+    diagramm = echarts.init(quadrantEl.value)
+    diagramm.setOption({
+        grid: { left: 55, right: 20, top: 30, bottom: 45 },
+        tooltip: {
+            trigger: 'item',
+            formatter: (p) => `<strong>${p.value[3]}</strong><br>`
+                + `${t('hype.achseX')}: ${Math.round(p.value[0])}<br>`
+                + `${t('hype.achseY')}: ${Math.round(p.value[1])}<br>`
+                + `${t('hype.spalteSafety')}: ${p.value[4] === 'verworfen' ? '—' : Math.round(p.value[2])}`,
+        },
+        xAxis: {
+            type: 'value', min: 0, max: 100, name: t('hype.achseX'), nameLocation: 'middle', nameGap: 28,
+            nameTextStyle: { color: '#9aa0a6', fontSize: 11 },
+            axisLabel: { color: '#9aa0a6', fontSize: 10 },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } },
+        },
+        yAxis: {
+            type: 'value', min: 0, max: 100, name: t('hype.achseY'), nameLocation: 'middle', nameGap: 35,
+            nameTextStyle: { color: '#9aa0a6', fontSize: 11 },
+            axisLabel: { color: '#9aa0a6', fontSize: 10 },
+            splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } },
+        },
+        series: [
+            {
+                // Der Hintergrund: alles, was unter der Schwelle blieb. Ohne
+                // dieses Feld hätte der Quadrant an manchen Tagen zwei Punkte
+                // und zeigte nichts, wovon sich etwas abheben könnte.
+                type: 'scatter', name: t('hype.unterSchwelle'), data: neutral,
+                symbolSize: 6, itemStyle: { color: 'rgba(120,140,170,.30)' },
+            },
+            {
+                type: 'scatter', name: t('hype.verworfen'), data: schlecht,
+                symbolSize: 8, itemStyle: { color: 'rgba(239,83,80,.35)' },
+            },
+            {
+                type: 'scatter', name: t('hype.bestanden'), data: gut,
+                symbolSize: (v) => 10 + (Number(v[2]) || 0) / 8,
+                itemStyle: {
+                    color: (p) => {
+                        const s = Number(p.value[2]) || 0
+                        return s >= 70 ? '#4caf50' : (s >= 40 ? '#ffb300' : '#ef5350')
+                    },
+                },
+                label: {
+                    show: true, formatter: (p) => p.value[3], position: 'top',
+                    color: '#c9cdd2', fontSize: 9,
+                },
+                // Die Trennlinien machen die vier Felder erst lesbar.
+                markLine: {
+                    silent: true, symbol: 'none',
+                    lineStyle: { color: 'rgba(255,255,255,.15)', type: 'dashed' },
+                    label: { show: false },
+                    data: [{ xAxis: 50 }, { yAxis: 50 }],
+                },
+                markArea: {
+                    silent: true,
+                    itemStyle: { color: 'rgba(255,179,0,.05)' },
+                    label: {
+                        show: true, position: 'insideTop',
+                        color: '#9aa0a6', fontSize: 10,
+                    },
+                    data: [[
+                        { name: t('hype.quadrantObenLinks'), xAxis: 0, yAxis: 50 },
+                        { xAxis: 50, yAxis: 100 },
+                    ], [
+                        { name: t('hype.quadrantObenRechts'), xAxis: 50, yAxis: 50, itemStyle: { color: 'rgba(76,175,80,.06)' } },
+                        { xAxis: 100, yAxis: 100 },
+                    ]],
+                },
+            },
+        ],
+    })
+}
+
+const beiGroesse = () => diagramm?.resize()
+
+onMounted(async () => {
+    window.addEventListener('resize', beiGroesse)
+    await Promise.all([ladeKandidaten(), ladeBerichte(), ladeEinstellungen()])
+})
+
+onBeforeUnmount(() => {
+    window.removeEventListener('resize', beiGroesse)
+    strom?.abort()
+    diagramm?.dispose()
+})
+
+watch(locale, () => zeichne())
+</script>
+
+<style scoped>
+.hyp {
+    padding: .5rem 0;
+}
+
+.hypKopf {
+    display: flex;
+    align-items: flex-end;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.hypNav {
+    flex: 1 1 auto;
+    border-bottom: 1px solid rgba(255, 255, 255, .1);
+}
+
+.hypKnoepfe {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding-bottom: .35rem;
+}
+
+.hypFortschritt {
+    font-size: .78rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypKennzahlen {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: .75rem;
+    margin-bottom: 1.25rem;
+}
+
+.hypZelle {
+    background: var(--black-bg-2, rgba(255, 255, 255, .03));
+    border-radius: var(--border-radius, 8px);
+    padding: .7rem .85rem;
+}
+
+.hypWert {
+    font-size: 1.3rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.hypLabel {
+    font-size: .76rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypKlein {
+    font-size: .68rem;
+    opacity: .75;
+}
+
+.hypBlock {
+    margin-bottom: 1.75rem;
+}
+
+.hypTitel {
+    font-size: .95rem;
+    font-weight: 600;
+    margin-bottom: .15rem;
+}
+
+.hypHinweis {
+    font-size: .78rem;
+    color: var(--grey-color, #9aa0a6);
+    margin-bottom: .6rem;
+}
+
+.hypHinweisKlein {
+    font-size: .7rem;
+    color: var(--grey-color, #9aa0a6);
+    margin-left: .35rem;
+}
+
+.hypQuadrant {
+    width: 100%;
+    height: 360px;
+}
+
+.hypChip {
+    font-size: .72rem;
+    padding: .1rem .5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .06);
+    cursor: pointer;
+    user-select: none;
+}
+
+.hypChip.aktiv {
+    background: var(--blue-color, #4da3ff);
+    color: #fff;
+}
+
+.hypChip.klein {
+    cursor: default;
+    font-size: .68rem;
+}
+
+.hypAuswahl {
+    width: auto;
+    min-width: 9rem;
+}
+
+.hypTabelle {
+    font-size: .82rem;
+}
+
+.hypTabelle th {
+    font-weight: 600;
+    color: var(--grey-color, #9aa0a6);
+    font-size: .74rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.hypZeile {
+    cursor: pointer;
+}
+
+.hypZeile:hover {
+    background: rgba(255, 255, 255, .03);
+}
+
+.hypKette {
+    font-size: .68rem;
+    color: var(--grey-color, #9aa0a6);
+    margin-left: .4rem;
+}
+
+.hypBadge {
+    font-size: .62rem;
+    font-weight: 500;
+}
+
+.hypDetail {
+    background: rgba(255, 255, 255, .02);
+}
+
+.hypDetailGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.25rem;
+    padding: .35rem .25rem;
+}
+
+.hypDetailTitel {
+    font-size: .74rem;
+    font-weight: 600;
+    margin-bottom: .35rem;
+}
+
+.hypNote {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .74rem;
+    margin-bottom: .15rem;
+}
+
+.hypNoteName {
+    width: 5.5rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypBalken {
+    flex: 1;
+    height: 5px;
+    background: rgba(255, 255, 255, .07);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.hypBalken i {
+    display: block;
+    height: 100%;
+    background: var(--blue-color, #4da3ff);
+}
+
+.hypNoteWert {
+    width: 2rem;
+    text-align: right;
+}
+
+.hypListe {
+    font-size: .76rem;
+    padding-left: 1.1rem;
+    margin-bottom: .25rem;
+}
+
+.hypLink {
+    font-size: .74rem;
+    text-decoration: none;
+}
+
+/* ── Berichte ───────────────────────────────────────────────────── */
+.hypBerichtListe {
+    display: flex;
+    gap: .6rem;
+    overflow-x: auto;
+    padding-bottom: .4rem;
+    margin-bottom: 1.25rem;
+}
+
+.hypBerichtKarte {
+    position: relative;
+    min-width: 15rem;
+    background: var(--black-bg-2, rgba(255, 255, 255, .03));
+    border-radius: var(--border-radius, 8px);
+    padding: .6rem .8rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.hypBerichtKarte.aktiv {
+    border-color: var(--blue-color, #4da3ff);
+}
+
+.hypBerichtDatum {
+    font-size: .7rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypBerichtTitel {
+    font-size: .85rem;
+    font-weight: 600;
+    margin: .1rem 0;
+}
+
+.hypBerichtMeta {
+    font-size: .7rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypLoeschen {
+    position: absolute;
+    top: .4rem;
+    right: .5rem;
+    font-size: .8rem;
+    opacity: .35;
+}
+
+.hypLoeschen:hover {
+    opacity: 1;
+}
+
+.hypLoeschen.scharf {
+    color: var(--red-color, #e06c75);
+    opacity: 1;
+}
+
+.hypBericht {
+    max-width: 62rem;
+}
+
+.hypBerichtUeberschrift {
+    font-size: 1.35rem;
+    font-weight: 700;
+}
+
+.hypMarktkontext {
+    font-size: .92rem;
+    color: var(--grey-color, #c9cdd2);
+    margin-bottom: 1.25rem;
+}
+
+.hypKandidat {
+    background: var(--black-bg-2, rgba(255, 255, 255, .03));
+    border-radius: var(--border-radius, 8px);
+    padding: .8rem 1rem;
+    margin-bottom: .75rem;
+}
+
+.hypKandidatKopf {
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    flex-wrap: wrap;
+    margin-bottom: .5rem;
+}
+
+.hypKandidatName {
+    font-size: .8rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypNoten {
+    font-size: .74rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypAbschnitte {
+    margin: 0;
+    font-size: .84rem;
+}
+
+.hypAbschnitte dt {
+    font-size: .72rem;
+    color: var(--grey-color, #9aa0a6);
+    font-weight: 600;
+    margin-top: .4rem;
+}
+
+.hypAbschnitte dd {
+    margin: 0 0 .2rem;
+}
+
+.hypBelege a {
+    font-size: .72rem;
+    margin-right: .3rem;
+    text-decoration: none;
+}
+
+.hypAussortiert {
+    margin-top: 1.5rem;
+}
+
+.hypDisclaimer {
+    margin-top: 1.5rem;
+    padding: .6rem .8rem;
+    border-left: 3px solid var(--grey-color, #9aa0a6);
+    font-size: .78rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+/* ── Einstellungen ──────────────────────────────────────────────── */
+.hypEinst {
+    max-width: 46rem;
+}
+
+.hypZahl {
+    width: 8rem;
+}
+
+.hypRegler {
+    max-width: 26rem;
+}
+
+.hypReglerZeile {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: .2rem;
+}
+
+.hypReglerZeile label {
+    width: 6rem;
+    font-size: .78rem;
+}
+
+.hypReglerWert {
+    width: 2rem;
+    text-align: right;
+    font-size: .78rem;
+}
+
+.hypSumme {
+    font-size: .76rem;
+    color: var(--grey-color, #9aa0a6);
+    margin-top: .3rem;
+}
+
+.hypSumme.falsch {
+    color: var(--orange-color, #ffb300);
+}
+
+.hypQuellen {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: .2rem 1rem;
+    max-width: 40rem;
+}
+
+.hypStufen {
+    display: grid;
+    gap: .4rem;
+    max-width: 40rem;
+}
+
+.hypStufe {
+    display: block;
+    background: var(--black-bg-2, rgba(255, 255, 255, .03));
+    border: 1px solid transparent;
+    border-radius: var(--border-radius, 8px);
+    padding: .5rem .75rem;
+    cursor: pointer;
+}
+
+.hypStufe.aktiv {
+    border-color: var(--blue-color, #4da3ff);
+}
+
+.hypStufe input {
+    display: none;
+}
+
+.hypStufeKopf {
+    display: flex;
+    align-items: center;
+    font-size: .82rem;
+}
+
+.hypStufePreis {
+    font-size: .74rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypStufeModelle {
+    font-size: .7rem;
+    color: var(--grey-color, #9aa0a6);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+</style>

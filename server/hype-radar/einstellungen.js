@@ -37,7 +37,16 @@ export const VORGABEN = {
     gewichte: STANDARD_GEWICHTE,
     narrative: STANDARD_NARRATIVE,
     sicherheit: STANDARD_SICHERHEIT,
-    minHypeScore: 55,
+    /*
+     * Schwelle für die Sicherheitsprüfung.
+     *
+     * Das Konzept schlug 55 vor; im ersten Lauf gegen echte Quellen kam damit
+     * genau EIN Fund von 129 durch. Grund: ohne erkanntes Thema deckelt die
+     * Rechnung bei rund 40, ein Einzelquellen-Fund liegt typisch bei 35–45.
+     * Bei 55 entschied faktisch das Stichwortverzeichnis darüber, was geprüft
+     * wird — nicht die Aufmerksamkeit. 35 lässt das obere Drittel durch.
+     */
+    minHypeScore: 35,
     berichtTopN: 7,
     llmStufe: 'gruendlich-mittel',
     llmModus: 'gruendlich',

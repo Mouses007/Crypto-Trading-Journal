@@ -83,11 +83,15 @@ export function setupHypeRadarRoutes(app) {
             const knex = getKnex()
             let q = knex('hype_candidates').select('*')
             if (req.query.status) q = q.where('status', String(req.query.status))
-            // Vorgabe: der letzte Lauf. Alles zu zeigen hiesse, dieselben
-            // Symbole aus zehn Läufen übereinanderzustapeln.
+            /*
+             * Vorgabe: der letzte Lauf, und zwar genau er. Alle Zeilen eines
+             * Laufs tragen denselben Zeitstempel, deshalb reicht Gleichheit —
+             * ein Zeitfenster fasste zwei kurz aufeinanderfolgende Läufe
+             * zusammen und zeigte dieselben Symbole doppelt.
+             */
             if (req.query.alle !== '1') {
                 const letzter = await knex('hype_candidates').max({ m: 'erstelltAm' }).first()
-                if (letzter?.m) q = q.where('erstelltAm', '>=', Number(letzter.m) - 5 * 60 * 1000)
+                if (letzter?.m) q = q.where('erstelltAm', Number(letzter.m))
             }
             const zeilen = await q.orderBy('hypeScore', 'desc').limit(300)
             res.json(zeilen.map((z) => ({

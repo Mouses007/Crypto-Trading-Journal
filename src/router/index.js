@@ -240,6 +240,19 @@ const router = createRouter({
             import('../views/OpenInterest.vue')
     },
     {
+        // Hype-Radar: was gerade neu gehypt wird — gesammelt, bewertet und
+        // hart auf Betrugsmuster gefiltert, bevor es überhaupt angezeigt wird.
+        path: '/hype-radar',
+        name: 'hypeRadar',
+        meta: {
+            title: "Hype-Radar", titleKey: "nav.hypeRadar",
+            mode: 'research',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/HypeRadar.vue')
+    },
+    {
         // Marktradar: Kachelraster mit Stimmung, Positionierung und eigenen
         // Kennzahlen — der Blick auf die Marktlage, bevor man in die Tiefe geht.
         path: '/marktradar',

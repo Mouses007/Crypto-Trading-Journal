@@ -273,11 +273,18 @@ export async function ausGeckoTerminal(ketten = ['solana', 'eth', 'base', 'bsc']
             const j = await holeJson(`https://api.geckoterminal.com/api/v2/networks/${kette}/trending_pools`)
             const liste = Array.isArray(j?.data) ? j.data : []
             liste.slice(0, 15).forEach((p, i) => {
-                const name = String(p?.attributes?.name || '')
-                const symbol = name.split('/')[0]
+                /*
+                 * Der Poolname lautet „WETH / USDC" — er nennt beide Seiten.
+                 * Übernommen wird nur die erste: sonst erbt jeder Pool, der
+                 * gegen USDC handelt, das Stichwort „usd" und landet im Thema
+                 * Stablecoin-Zahlungen. Im Livelauf traf das WETH, WBTC und
+                 * SHIB gleichermassen — allesamt falsch einsortiert.
+                 */
+                const poolName = String(p?.attributes?.name || '')
+                const symbol = poolName.split('/')[0]
                 funde.push(fund({
                     symbol,
-                    name,
+                    name: symbol.trim(),
                     chain: kette,
                     pair: p?.attributes?.address || '',
                     quelle: 'geckoterminal',

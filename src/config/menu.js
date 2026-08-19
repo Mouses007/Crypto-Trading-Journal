@@ -61,6 +61,12 @@ export const PAGES = [
     { id: 'liveSessions', mode: 'live', path: '/live-sessions', icon: 'uil uil-history', titleKey: 'nav.liveSessions', group: 'liveTrade', flag: 'livetradingAn' },
     { id: 'liveAuswertung', mode: 'live', path: '/live-auswertung', icon: 'uil uil-chart-pie', titleKey: 'nav.liveAuswertung', group: 'liveTrade', flag: 'livetradingAn' },
 
+    // ── Entdecken ───────────────────────────────────────────
+    // Der Quadrant und die Kandidatentabelle brauchen Breite: beide leben
+    // davon, viele Punkte nebeneinander zu zeigen. Auf 375 px bliebe ein
+    // Diagramm übrig, aus dem sich nichts ablesen lässt.
+    { id: 'hypeRadar', mode: 'research', path: '/hype-radar', icon: 'uil uil-telescope', titleKey: 'nav.hypeRadar', group: 'discover', nurDesktop: true },
+
     // ── Agent-Trading ───────────────────────────────────────
     { id: 'agentStrategies', mode: 'agent', path: '/agent/strategies', icon: 'uil uil-processor', titleKey: 'nav.agentStrategies', group: 'agentRun' },
     { id: 'agentSetups', mode: 'agent', path: '/agent/setups', icon: 'uil uil-crosshairs', titleKey: 'nav.agentSetups', group: 'agentRun' },
@@ -98,8 +104,12 @@ export const MODES = [
     // zusätzlich an der dreifachen Freigabekette (globaler Schalter, Freigabe je
     // Instanz, Mindestzahl Papier-Trades).
     { id: 'agent', titleKey: 'modes.agent', shortKey: 'modes.agentShort', icon: 'uil uil-robot', home: '/agent/strategies', enabled: true, beta: true, versteckbar: true },
-    // Platzhalter wie Start.
-    { id: 'research', titleKey: 'modes.research', icon: 'uil uil-telescope', home: '/dashboard', enabled: false, versteckbar: true },
+    /*
+     * Entdecken: was es noch nicht ins Journal geschafft hat. Bislang ein
+     * Platzhalter, jetzt vom Hype-Radar bewohnt. Bleibt versteckbar — wer nur
+     * sein Journal führt, braucht den Modus nicht.
+     */
+    { id: 'research', titleKey: 'modes.research', icon: 'uil uil-telescope', home: '/hype-radar', enabled: true, versteckbar: true },
 ]
 
 export const pageById = (id) => PAGES.find(p => p.id === id) || null
