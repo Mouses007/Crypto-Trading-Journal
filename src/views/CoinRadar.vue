@@ -820,12 +820,12 @@ onBeforeUnmount(() => {
 }
 
 .crFortschritt {
-    font-size: .78rem;
+    font-size: .897rem;
     color: var(--grey-color, #9aa0a6);
 }
 
 .crLeerIcon {
-    font-size: 2.4rem;
+    font-size: 2.76rem;
     opacity: .3;
     display: block;
     margin-bottom: .5rem;
@@ -850,30 +850,30 @@ onBeforeUnmount(() => {
 }
 
 .crWert {
-    font-size: 1.3rem;
+    font-size: 1.495rem;
     font-weight: 600;
     line-height: 1.2;
     font-variant-numeric: tabular-nums;
 }
 
 .crWertKlein {
-    font-size: .95rem;
+    font-size: 1.092rem;
     padding-top: .3rem;
 }
 
 .crLabel {
-    font-size: .76rem;
+    font-size: .874rem;
     color: var(--grey-color, #9aa0a6);
 }
 
 .crExtra {
-    font-size: .68rem;
+    font-size: .782rem;
     opacity: .6;
     margin-top: .15rem;
 }
 
 .crEinheit {
-    font-size: .8rem;
+    font-size: .92rem;
     opacity: .6;
     margin-left: .3rem;
 }
@@ -888,12 +888,12 @@ onBeforeUnmount(() => {
     border-radius: var(--border-radius, 8px);
     padding: .7rem .9rem;
     margin-bottom: 1.1rem;
-    font-size: .85rem;
+    font-size: .977rem;
     line-height: 1.5;
 }
 
 .crQuelle {
-    font-size: .68rem;
+    font-size: .782rem;
     color: var(--grey-color, #9aa0a6);
     display: block;
     margin-top: .3rem;
@@ -909,7 +909,7 @@ onBeforeUnmount(() => {
 }
 
 .crChip {
-    font-size: .72rem;
+    font-size: .828rem;
     padding: .15rem .6rem;
     border-radius: 999px;
     border: 0;
@@ -926,13 +926,13 @@ onBeforeUnmount(() => {
 
 /* ── Tabelle ────────────────────────────────────────────── */
 .crTabelle {
-    font-size: .82rem;
+    font-size: .943rem;
 }
 
 .crTabelle th {
     font-weight: 600;
     color: var(--grey-color, #9aa0a6);
-    font-size: .74rem;
+    font-size: .851rem;
     cursor: pointer;
     white-space: nowrap;
 }
@@ -985,7 +985,7 @@ onBeforeUnmount(() => {
 }
 
 .crBadge {
-    font-size: .62rem;
+    font-size: .713rem;
     font-weight: 500;
 }
 
@@ -994,7 +994,7 @@ onBeforeUnmount(() => {
     margin-right: .35rem;
     color: var(--grey-color, #9aa0a6);
     opacity: .45;
-    font-size: .85rem;
+    font-size: .977rem;
 }
 
 .crStern:hover {
@@ -1008,7 +1008,7 @@ onBeforeUnmount(() => {
 
 .crBestaetigt {
     color: var(--green-color, #4caf50);
-    font-size: .8rem;
+    font-size: .92rem;
     margin-left: .3rem;
 }
 
@@ -1025,7 +1025,7 @@ onBeforeUnmount(() => {
 }
 
 .crDetailTitel {
-    font-size: .7rem;
+    font-size: .805rem;
     color: var(--grey-color, #9aa0a6);
     text-transform: uppercase;
     letter-spacing: .04em;
@@ -1040,7 +1040,7 @@ onBeforeUnmount(() => {
 }
 
 .crNoteName {
-    font-size: .74rem;
+    font-size: .851rem;
     min-width: 5.5rem;
 }
 
@@ -1063,14 +1063,14 @@ onBeforeUnmount(() => {
 }
 
 .crNoteWert {
-    font-size: .74rem;
+    font-size: .851rem;
     min-width: 1.8rem;
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
 .crZeTabelle {
-    font-size: .74rem;
+    font-size: .851rem;
     width: 100%;
 }
 
@@ -1093,7 +1093,7 @@ onBeforeUnmount(() => {
 }
 
 .crHinweise {
-    font-size: .72rem;
+    font-size: .828rem;
     color: var(--orange-color, #ffb300);
 }
 
@@ -1114,11 +1114,11 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     gap: .1rem;
-    font-size: .9rem;
+    font-size: 1.035rem;
 }
 
 .crRang {
-    font-size: .7rem;
+    font-size: .805rem;
     color: var(--grey-color, #9aa0a6);
     min-width: 1.5rem;
     font-variant-numeric: tabular-nums;
@@ -1129,7 +1129,7 @@ onBeforeUnmount(() => {
     flex-wrap: wrap;
     gap: .75rem;
     margin-top: .35rem;
-    font-size: .72rem;
+    font-size: .828rem;
     color: var(--grey-color, #9aa0a6);
 }
 
@@ -1151,19 +1151,19 @@ onBeforeUnmount(() => {
 }
 
 .crTitel {
-    font-size: .95rem;
+    font-size: 1.092rem;
     font-weight: 600;
     margin-bottom: .15rem;
 }
 
 .crHinweis {
-    font-size: .78rem;
+    font-size: .897rem;
     color: var(--grey-color, #9aa0a6);
     margin-bottom: .6rem;
 }
 
 .crKlein {
-    font-size: .68rem;
+    font-size: .782rem;
     opacity: .75;
 }
 
@@ -1176,7 +1176,7 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     gap: .6rem;
-    font-size: .8rem;
+    font-size: .92rem;
 }
 
 .crDauerSymbol {
@@ -1185,7 +1185,7 @@ onBeforeUnmount(() => {
 }
 
 .crDauerWert {
-    font-size: .74rem;
+    font-size: .851rem;
     color: var(--grey-color, #9aa0a6);
     font-variant-numeric: tabular-nums;
 }
@@ -1200,7 +1200,7 @@ onBeforeUnmount(() => {
     align-items: center;
     gap: .6rem;
     margin-top: .6rem;
-    font-size: .84rem;
+    font-size: .966rem;
 }
 
 .crFeld>span:first-child {
@@ -1220,7 +1220,7 @@ onBeforeUnmount(() => {
 
 .crReglerName {
     min-width: 8rem;
-    font-size: .84rem;
+    font-size: .966rem;
 }
 
 .crRegler .form-range {
@@ -1230,12 +1230,12 @@ onBeforeUnmount(() => {
 .crReglerWert {
     min-width: 2rem;
     text-align: right;
-    font-size: .84rem;
+    font-size: .966rem;
     font-variant-numeric: tabular-nums;
 }
 
 .crSumme {
-    font-size: .78rem;
+    font-size: .897rem;
     color: var(--grey-color, #9aa0a6);
     margin-top: .5rem;
 }

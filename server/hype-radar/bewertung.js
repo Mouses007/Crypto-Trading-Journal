@@ -41,7 +41,8 @@ const NARRATIV_WOERTER = {
     'prediction-markets': ['predict', 'forecast', 'bet', 'odds', 'market'],
     restaking: ['restake', 'stake', 'validator', 'yield', 'liquid'],
     zk: ['zk', 'zero knowledge', 'privacy', 'private', 'anon', 'proof'],
-    meme: ['dog', 'inu', 'shib', 'pepe', 'cat', 'wojak', 'moon', 'elon', 'trump', 'frog'],
+    meme: ['dog', 'inu', 'shib', 'pepe', 'cat', 'wojak', 'moon', 'elon', 'trump', 'frog',
+        'meme', 'bonk', 'wif', 'floki', 'chad', 'baby', 'zilla', 'ape'],
     gaming: ['game', 'play', 'metaverse', 'nft', 'quest', 'guild'],
     defi: ['swap', 'dex', 'lend', 'borrow', 'vault', 'farm', 'liquidity'],
 }
@@ -136,15 +137,74 @@ export function noteNarrativ(k, narrative = STANDARD_NARRATIVE) {
 
     let bestes = ''
     let treffer = 0
+    let laengster = 0
     for (const n of narrative) {
         const woerter = NARRATIV_WOERTER[n] || [n]
-        const zahl = woerter.filter((w) => text.includes(w)).length
-        if (zahl > treffer) { treffer = zahl; bestes = n }
+        const passende = woerter.filter((w) => passt(text, w))
+        if (!passende.length) continue
+        const laenge = Math.max(...passende.map((w) => w.length))
+        /*
+         * Gleichstand wird über die LÄNGE des Treffers entschieden, nicht über
+         * die Reihenfolge der Themenliste.
+         *
+         * Vorher gewann bei Gleichstand schlicht das erste Thema — und das ist
+         * `ai-agents`. PEPECOIN („Make Memes Great Again") traf `pepe` und
+         * gleichzeitig `ai`, und landete deshalb unter KI-Agenten. Ein
+         * Vier-Zeichen-Treffer ist ein stärkerer Beleg als ein Zwei-Zeichen-
+         * Treffer, und danach wird jetzt entschieden.
+         */
+        if (passende.length > treffer || (passende.length === treffer && laenge > laengster)) {
+            treffer = passende.length
+            laengster = laenge
+            bestes = n
+        }
     }
     if (!treffer) return { note: 0, narrativ: '' }
     // Ein Treffer reicht für die Zuordnung; mehrere machen sie sicherer.
-    return { note: klemme(60 + treffer * 20), narrativ: bestes }
+    return { note: klemme((60 + treffer * 20) * (NARRATIV_FAKTOR[bestes] ?? 1)), narrativ: bestes }
 }
+
+/*
+ * Nicht jedes erkannte Thema ist gleich viel wert.
+ *
+ * Der Radar sucht Neues MIT SUBSTANZ. „Gehört zu den Memes" ist eine
+ * Einordnung, aber kein Beleg für eine Idee — anders als RWA, DePIN oder
+ * Restaking, wo das Thema eine Aussage über das Vorhaben macht. Ohne diesen
+ * Faktor stand ein Meme-Klon trotz Trittbrett-Abzug HÖHER als ein neutraler
+ * Fund ohne Thema, weil die Themen-Teilnote den Abzug überwog.
+ */
+const NARRATIV_FAKTOR = { meme: 0.5 }
+
+/**
+ * Stichwort-Treffer mit Wortanfang statt blosser Teilzeichenkette.
+ *
+ * `text.includes('ai')` traf „Ag-ai-n", „N-ai" und „S-ai-lor" — und weil `ai`
+ * zum ersten Thema der Liste gehört, wurden daraus reihenweise KI-Projekte,
+ * die Meme-Münzen waren. Dasselbe drohte bei `bot` in „robot", `usd` in
+ * beliebigen Bezeichnern und `stake` in „mistake".
+ *
+ * Der Anker sitzt am Wortanfang und nicht auch am Ende: „dogezilla" soll über
+ * `dog` gefunden werden und „pepecoin" über `pepe`. Mehrwortbegriffe („real
+ * world") werden unverändert als Zeichenkette gesucht.
+ */
+function passt(text, wort) {
+    if (wort.includes(' ')) return text.includes(wort)
+    if (!ANKER_WOERTER.has(wort)) return text.includes(wort)
+    const escaped = wort.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`(^|[^a-z0-9])${escaped}`, 'i').test(text)
+}
+
+/*
+ * Nur DIESE Stichwörter müssen am Wortanfang stehen.
+ *
+ * Der Anker pauschal für alle war zu scharf: „SOLCAT" und „RobinhoodCat"
+ * verloren dadurch ihre Meme-Einordnung, weil `cat` mitten im Wort steht —
+ * und zusammengesetzte Namen sind in dieser Ecke die Regel, nicht die
+ * Ausnahme. Gebraucht wird der Anker dort, wo ein Treffer in der Wortmitte
+ * nichts bedeutet: `ai` in „Again", `bot` in „robot", `stake` in „mistake",
+ * `ape` in „escape", `play` in „display".
+ */
+const ANKER_WOERTER = new Set(['ai', 'zk', 'rwa', 'bot', 'usd', 'pay', 'stake', 'node', 'play', 'ape'])
 
 /**
  * Wie jung ist das Paar.
@@ -163,9 +223,71 @@ export function noteNeuheit(k) {
 }
 
 /**
+ * Namen, von denen sich Trittbrettfahrer bedienen.
+ *
+ * Bewusst nur etablierte Meme-Marken und keine Fachbegriffe: „DOGEZILLA",
+ * „PEPECOIN", „SOLCAT", „CYBERTRUMP" und „CHARIZARD" leihen sich einen
+ * bekannten Namen und hoffen auf die Verwechslung. Das ist kein neues
+ * Projekt, sondern ein Aufguss.
+ */
+/*
+ * Namen bestehender KRYPTO-Marken. Hier ist der exakte Name das Original und
+ * kein Aufguss: „DOGE" ist DOGE, erst „DOGEZILLA" fährt mit.
+ */
+const KRYPTO_MARKEN = [
+    'pepe', 'doge', 'shib', 'inu', 'bonk', 'wif', 'floki',
+    'safemoon', 'wojak', 'bitcoin', 'ethereum', 'solana', 'btc', 'eth',
+]
+
+/*
+ * Fremde Marken und Figuren. Hier ist SCHON der exakte Name geborgt — es gibt
+ * keinen legitimen „Charizard-Coin", von dem sich ein anderer abheben müsste.
+ * Genau daran ist der erste Entwurf gescheitert: „CHARIZARD" entkam dem
+ * Abzug, weil der Schutz fürs Original auch für geliehene Namen galt.
+ */
+const FREMD_MARKEN = [
+    'elon', 'trump', 'moon', 'baby', 'mini', 'chad',
+    'pikachu', 'charizard', 'pokemon', 'mario', 'sonic', 'garfield', 'grok',
+]
+
+/**
+ * Fährt der Fund auf einem fremden Namen mit?
+ *
+ * Der Radar soll neue Projekte MIT SUBSTANZ finden. Ein Name, der einen
+ * etablierten enthält und noch etwas anhängt, ist das Gegenteil davon: Er
+ * bringt keine eigene Idee mit, sondern die Hoffnung auf eine Verwechslung.
+ * Diese Funde bekommen einen Abzug und ein sichtbares Kennzeichen — sie
+ * verschwinden nicht, denn manchmal läuft so ein Aufguss trotzdem, und das
+ * still zu verschweigen wäre eine andere Art zu lügen.
+ *
+ * Der Name muss LÄNGER sein als das Vorbild: „DOGE" selbst ist kein
+ * Trittbrettfahrer, „DOGEZILLA" schon.
+ *
+ * @returns {{ja:boolean, vorbild:string}}
+ */
+export function istTrittbrettfahrer(k) {
+    const symbol = String(k?.symbol || '').toLowerCase()
+    const name = String(k?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const felder = [symbol, name].filter(Boolean)
+
+    // Fremde Marken: schon die blosse Verwendung ist geliehen.
+    for (const v of FREMD_MARKEN) {
+        if (felder.some((f) => f.includes(v))) return { ja: true, vorbild: v }
+    }
+    // Krypto-Marken: nur, wenn noch etwas drangehängt wurde.
+    for (const v of KRYPTO_MARKEN) {
+        if (felder.some((f) => f !== v && f.includes(v))) return { ja: true, vorbild: v }
+    }
+    return { ja: false, vorbild: '' }
+}
+
+/** Wie stark ein Aufguss abgewertet wird (Prozent der Gesamtnote). */
+export const TRITTBRETT_ABZUG = 35
+
+/**
  * Gesamtnote eines Kandidaten.
  *
- * @returns {{hypeScore:number, teilnoten:object, narrativ:string}}
+ * @returns {{hypeScore:number, teilnoten:object, narrativ:string, trittbrett:object}}
  */
 export function bewerte(kandidat, gewichte = STANDARD_GEWICHTE, narrative = STANDARD_NARRATIVE) {
     const g = { ...STANDARD_GEWICHTE, ...(gewichte || {}) }
@@ -186,10 +308,20 @@ export function bewerte(kandidat, gewichte = STANDARD_GEWICHTE, narrative = STAN
     const gewichtet = Object.entries(teilnoten)
         .reduce((acc, [feld, note]) => acc + note * (Number(g[feld]) || 0), 0)
 
+    /*
+     * Der Abzug greift NACH der Gewichtung und nicht als sechste Teilnote:
+     * „fährt auf einem fremden Namen mit" ist kein Merkmal, das sich gegen
+     * die anderen aufrechnen liesse — es entwertet den ganzen Fund.
+     */
+    const tritt = istTrittbrettfahrer(kandidat)
+    const roh = klemme(gewichtet / summe)
+    const note = tritt.ja ? roh * (1 - TRITTBRETT_ABZUG / 100) : roh
+
     return {
-        hypeScore: Math.round(klemme(gewichtet / summe)),
+        hypeScore: Math.round(klemme(note)),
         teilnoten,
         narrativ: narr.narrativ,
+        trittbrett: tritt,
     }
 }
 

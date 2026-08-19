@@ -9,7 +9,7 @@
  * Aufruf: node server/hype-radar/__selftest-bewertung.mjs
  */
 import {
-    bewerte, noteSozial, noteVolumen, noteQuellen, noteNarrativ, noteNeuheit,
+    bewerte, noteSozial, noteVolumen, noteQuellen, noteNarrativ, noteNeuheit, istTrittbrettfahrer,
     STANDARD_GEWICHTE,
 } from './bewertung.js'
 import { fuehreZusammen, normSymbol, normChain } from './quellen.js'
@@ -141,6 +141,98 @@ pruefe('ohne Treffer keine Zuordnung',
 pruefe('Gegenwährung im Namen ordnet nicht ein',
     noteNarrativ({ symbol: 'WETH', name: 'WETH' }).narrativ === '',
     noteNarrativ({ symbol: 'WETH', name: 'WETH' }).narrativ)
+
+/*
+ * Teilzeichenketten mitten im Wort.
+ *
+ * Im Livelauf stand PEPECOIN („Make Memes Great Again") unter KI-Agenten: `ai`
+ * traf in „Ag-ai-n", und weil `ai-agents` das erste Thema der Liste ist, gewann
+ * es den Gleichstand gegen `pepe`. NIUNAI („Niu Nai", chinesisch für Milch)
+ * traf aus demselben Grund. Beide Fehler — Wortmitte und Reihenfolge — werden
+ * hier einzeln festgehalten.
+ */
+for (const [k, erwartet] of [
+    [{ symbol: 'PEPECOIN', name: 'Make Memes Great Again' }, 'meme'],
+    [{ symbol: 'NIUNAI', name: 'Niu Nai' }, ''],
+    [{ symbol: 'SAILOR', name: 'Sailor Moon' }, 'meme'],
+    [{ symbol: 'MISTAKE', name: 'Mistake' }, ''],
+    [{ symbol: 'ROBOT', name: 'Robot' }, ''],
+]) {
+    const got = noteNarrativ(k).narrativ
+    pruefe(`„${k.name}" wird nicht über eine Wortmitte eingeordnet`, got === erwartet, `war „${got}"`)
+}
+pruefe('Wortanfang trifft weiterhin', noteNarrativ({ symbol: 'AIDOG', name: 'AI Dog' }).narrativ !== '')
+
+/*
+ * Die Gegenrichtung, im Livelauf gemessen: Der Anker pauschal für ALLE
+ * Stichwörter war zu scharf — „SOLCAT" und „RobinhoodCat" verloren ihre
+ * Meme-Einordnung, weil `cat` mitten im Wort steht. Zusammengesetzte Namen
+ * sind hier die Regel.
+ */
+for (const k of [
+    { symbol: 'SOLCAT', name: 'SOLCAT' },
+    { symbol: 'RHCAT', name: 'RobinhoodCat' },
+    { symbol: 'PANTS', name: 'dogwifpants' },
+]) {
+    pruefe(`zusammengesetzter Meme-Name wird erkannt: ${k.name}`,
+        noteNarrativ(k).narrativ === 'meme', noteNarrativ(k).narrativ || 'leer')
+}
+pruefe('längerer Treffer schlägt kürzeren bei Gleichstand',
+    noteNarrativ({ symbol: 'PEPE', name: 'AI Pepe' }).narrativ === 'meme',
+    noteNarrativ({ symbol: 'PEPE', name: 'AI Pepe' }).narrativ)
+
+// ── Trittbrettfahrer ────────────────────────────────────────────────────
+/*
+ * Der Radar soll neue Projekte MIT SUBSTANZ finden. Ein Name, der einen
+ * etablierten enthält und etwas anhängt, bringt keine eigene Idee mit — er
+ * hofft auf die Verwechslung.
+ */
+for (const k of [
+    { symbol: 'PEPECOIN', name: 'Make Memes Great Again' },
+    { symbol: 'DOGEZILL', name: 'Dogezilla' },
+    { symbol: 'MOONCOIN', name: 'MoonCoin' },
+    { symbol: 'CYBERTRUMP', name: 'CyberTrump' },
+    { symbol: 'ZARD', name: 'CHARIZARD' },
+    { symbol: 'BABYDOGE', name: 'Baby Doge' },
+]) {
+    pruefe(`Aufguss erkannt: ${k.symbol}`, istTrittbrettfahrer(k).ja, JSON.stringify(istTrittbrettfahrer(k)))
+}
+for (const k of [
+    // Das Original selbst ist kein Trittbrettfahrer.
+    { symbol: 'DOGE', name: 'doge' },
+    { symbol: 'PEPE', name: 'Pepe' },
+    // Und ein eigenständiger Name erst recht nicht.
+    { symbol: 'CGX', name: 'CryptoGDEX' },
+    { symbol: 'UTANG', name: 'UTANG' },
+]) {
+    pruefe(`kein Aufguss: ${k.symbol}`, !istTrittbrettfahrer(k).ja, JSON.stringify(istTrittbrettfahrer(k)))
+}
+
+{
+    /*
+     * Gleiches Thema, einmal eigenständig und einmal geliehen — sonst misst
+     * der Vergleich die Themen-Teilnote statt den Abzug. Genau daran ist der
+     * erste Anlauf gescheitert: Der Klon stand mit 22 zu 18 HÖHER, weil
+     * „meme" als erkanntes Thema mehr einbrachte als der Abzug wegnahm.
+     */
+    const basis = { symbol: 'CATTO', name: 'Catto', markt: { paarAlterStunden: 24 }, quellenAnzahl: 2 }
+    const klon = { ...basis, symbol: 'DOGEZILLA', name: 'Dogezilla' }
+    const a = bewerte(basis)
+    const b = bewerte(klon)
+    pruefe('beide tragen dasselbe Thema', a.narrativ === 'meme' && b.narrativ === 'meme')
+    pruefe('Aufguss wird abgewertet', b.hypeScore < a.hypeScore, `${a.hypeScore} vs ${b.hypeScore}`)
+    pruefe('Abzug wird ausgewiesen', b.trittbrett.ja && b.trittbrett.vorbild === 'doge')
+    pruefe('sauberer Fund behält seine Note', a.trittbrett.ja === false)
+
+    /*
+     * Und die Aussage, um die es dem Nutzer ging: Ein Sachthema muss einen
+     * Meme-Klon schlagen, sonst füllt sich die Liste weiter mit Aufgüssen.
+     */
+    const sache = { symbol: 'VLTX', name: 'Vaulteryx Restaking', markt: { paarAlterStunden: 24 }, quellenAnzahl: 2 }
+    pruefe('Sachthema schlägt Meme-Klon',
+        bewerte(sache).hypeScore > b.hypeScore,
+        `${bewerte(sache).hypeScore} vs ${b.hypeScore}`)
+}
 
 // ── Sozial ──────────────────────────────────────────────────────────────
 pruefe('ohne Signale keine Note', noteSozial({ sozial: {} }) === 0)
