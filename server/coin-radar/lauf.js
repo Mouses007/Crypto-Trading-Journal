@@ -12,17 +12,21 @@
  *   1. Universum — nur was auf Bitunix handelbar UND bei Binance messbar ist
  *   2. Marktweite Hürden — drei Abrufe für alle, Umsatz und Spread sieben aus
  *   3. Kerzen und Kennzahlen — nur noch für die Übriggebliebenen
- *   4. Bewertung und Rangfolge
+ *  3b. Ausführungsgüte — Orderbücher von Bitunix und Bitget, nur für dieselben
+ *   4. Bewertung und Rangfolge (ZWEI Achsen: Gelegenheit und Ausführung)
  *   5. Beharrlichkeit gegen den Vorlauf
  *
  * Stufe 2 vor Stufe 3 ist keine Sparmassnahme, sondern der Grund, warum ein
  * Lauf über sechshundert Coins in einer Minute durch ist statt in zwanzig.
+ * Für Stufe 3b gilt dasselbe doppelt: ein Orderbuch je Symbol UND Börse ist
+ * der teuerste Abruf des ganzen Laufs.
  */
 
 import { getKnex } from '../database.js'
 import { logWarn } from '../logger.js'
 import { holeHandelbar, holeTestbar } from '../coin-universum.js'
 import { holeMarktweit, holeKerzenGebremst } from './daten.js'
+import { holeAusfuehrungGebremst } from './boersen.js'
 import { rechneAlle, fundingJahresRate } from './kennzahlen.js'
 import {
     bewerte, pruefeHuerden, vergibRaenge, rangkorrelation,
@@ -50,6 +54,8 @@ const MAX_VERMESSEN = 200
  */
 const UNGEMESSEN = {
     note: null, fundingJahresRate: null, atrPct: null, rvol: null, adx: null,
+    noteAusfuehrung: null, rundlaufBp: null,
+    slippageKaufBp: null, slippageVerkaufBp: null, tiefe25Bp: null,
 }
 
 /**
@@ -149,6 +155,33 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
         )
     }
 
+    /*
+     * ── Stufe 3b: Ausführungsgüte ───────────────────────────────────────
+     *
+     * Was eine Order WIRKLICH kostet — Slippage über 5 000 USD, getrennt für
+     * Kauf und Verkauf, auf jeder Börse, die den Coin führt. Erst hier, nach
+     * den Hürden: ein Orderbuch je Symbol und Börse ist der teuerste Abruf des
+     * Laufs, und für die 400 Aussortierten wäre er verschenkt.
+     *
+     * Das beantwortet die Frage, die der Coin-Radar im Namen trägt und bisher
+     * nur ungefähr traf: nicht „bewegt sich viel", sondern „hier komme ich zu
+     * einem vertretbaren Preis hinein und wieder heraus — und zwar dort".
+     */
+    let ausfuehrung = new Map()
+    if (!abbruch()) {
+        melde({ schritt: 'ausfuehrung', gesamt: offen.length })
+        try {
+            ausfuehrung = await holeAusfuehrungGebremst(
+                offen.map((a) => a.symbol),
+                (f) => melde({ schritt: 'ausfuehrung', ...f }),
+            )
+        } catch (e) {
+            // Ohne Ausführungsdaten bleibt die Gelegenheits-Note stehen — sie
+            // ist die ältere und für sich genommen brauchbare Aussage.
+            logWarn('coin-radar', `Ausführungsgüte nicht messbar: ${e.message}`)
+        }
+    }
+
     // ── Stufe 4: Bewertung ──────────────────────────────────────────────
     melde({ schritt: 'bewerten', gesamt: offen.length })
     const gewichte = { ...STANDARD_GEWICHTE, ...(einst.gewichte || {}) }
@@ -197,6 +230,8 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
                 atrPct: zahlOderNull(ze[haupt].atrPct),
                 rvol: zahlOderNull(ze[haupt].rvol),
                 adx: zahlOderNull(ze[haupt].adx),
+                // Die zweite Achse — bewusst NICHT mit `note` verrechnet.
+                ...ausfuehrungsFelder(ausfuehrung.get(a.symbol)),
                 jeZeiteinheit: JSON.stringify({ ...ze, hinweise: b.hinweise, bestaetigt: b.bestaetigt }),
                 teilnoten: JSON.stringify(b.teilnoten),
                 erstelltAm: jetzt,
@@ -247,6 +282,33 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
         verworfen: gescheitert.length,
         quellenStand,
         rangkorrelation: vergleich,
+    }
+}
+
+/**
+ * Die Ausführungsfelder einer Zeile.
+ *
+ * Fehlt die Messung, bleibt alles `null` — nicht 0. Eine Null hiesse
+ * „denkbar schlechte Ausführung", und das wäre eine Behauptung über einen
+ * Coin, dessen Buch wir nie gesehen haben (siehe R-10).
+ */
+function ausfuehrungsFelder(a) {
+    if (!a?.beste) {
+        return {
+            noteAusfuehrung: null, besteBoerse: '', rundlaufBp: null,
+            slippageKaufBp: null, slippageVerkaufBp: null, tiefe25Bp: null,
+            jeBoerse: JSON.stringify(a?.jeBoerse || {}),
+        }
+    }
+    const b = a.jeBoerse[a.beste.boerse]
+    return {
+        noteAusfuehrung: Math.round(a.beste.note),
+        besteBoerse: a.beste.boerse,
+        rundlaufBp: zahlOderNull(a.beste.rundlaufBp),
+        slippageKaufBp: zahlOderNull(b?.slippageKaufBp),
+        slippageVerkaufBp: zahlOderNull(b?.slippageVerkaufBp),
+        tiefe25Bp: zahlOderNull(b?.tiefe25Bp),
+        jeBoerse: JSON.stringify(a.jeBoerse),
     }
 }
 

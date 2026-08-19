@@ -92,7 +92,8 @@
     "marktradar": "Marktradar",
     "hypeRadar": "Hype-Radar",
     "coinRadar": "Coin-Radar",
-    "discover": "ENTDECKEN",
+    "hypeGruppe": "HYPE-RADAR",
+    "coinGruppe": "COIN-RADAR",
     "nachrichten": "Nachrichten",
     "livetrading": "Live-Trading",
     "liveTrade": "HANDELN",
@@ -409,7 +410,11 @@
         "scopeAuto": "leer = die gewählte Länge entscheidet",
         "videoDepthLabel": "Ausführlichkeit der Videobeschreibung",
         "videoTokensHint": "eigener Ausgabe-Deckel, leer = nach Stufe",
-        "topicChartanalyse": "Technische Chartanalyse Top 5 (aus Quellen, mit Bildern)"
+        "topicChartanalyse": "Technische Chartanalyse Top 5 (aus Quellen, mit Bildern)",
+        "customLabel": "Eigene Anweisungen an die KI",
+        "customHint": "Ton, Schwerpunkte und Ausschlüsse für den Lagebericht — gilt ab dem nächsten Lauf. Leer = wie bisher.",
+        "customPlaceholder": "z. B.: Schreib knapper und ohne Füllsätze. Nenne bei jedem Punkt die Uhrzeit der Meldung. Regulierungsthemen interessieren mich nur, wenn sie Futures betreffen. Ether ausführlicher als Altcoins.",
+        "customLimits": "{n} von {max} Zeichen. Die Grundregeln bleiben in Kraft: keine Handelsempfehlungen, keine Kursziele, keine Prognosen, nichts Erfundenes. Jedes Zeichen kostet bei jedem Lauf Token mit."
       },
       "agentBudget": "Token-Budget je Lauf",
       "agentBudgetHint": "Obergrenze für einen Agenten-Lauf über alle Denkrunden (Eingabe + Ausgabe). Ist sie erreicht, fasst der Agent die bis dahin gesammelten Ergebnisse zusammen. Mehr Budget = tiefere Analysen, aber höhere Kosten je Frage."
@@ -949,7 +954,8 @@
       "video": "Nachrichten: Videoanalyse",
       "strategie": "Strategie: Veto-Agenten und Baukästen",
       "radar": "Live-Analyse: Lage, Mechanik, Rangliste",
-      "bild": "Bilder (Share-Karten)"
+      "bild": "Bilder (Share-Karten)",
+      "uebrige": "Übrige (noch ohne eigene Zeile)"
     },
     "auto": {
       "newsAbruf": "Nachrichten abrufen",
@@ -1205,7 +1211,8 @@
     "agentShort": "Strategie",
     "research": "Research",
     "comingSoon": "Kommt später",
-    "betaHint": "Unfertig — bitte nur im Papierbetrieb verwenden"
+    "betaHint": "Unfertig — bitte nur im Papierbetrieb verwenden",
+    "betaHintResearch": "Jung und wenig erprobt — die Funde sind Hinweise, keine geprüften Daten"
   },
   "live": {
     "symbol": "SYMBOL",
@@ -3034,7 +3041,8 @@
     "layout": {
       "kombiniert": "Kombiniert",
       "artikel": "Zeitung",
-      "kacheln": "Kacheln"
+      "kacheln": "Kacheln",
+      "dossier": "Dossier"
     },
     "depth": {
       "knapp": "Knapp",
@@ -3054,7 +3062,8 @@
     "layoutSub": {
       "kombiniert": "Top-Meldungen + Artikel",
       "artikel": "alles als Artikel",
-      "kacheln": "alles als Karte"
+      "kacheln": "alles als Karte",
+      "dossier": "Tabellen, Zahlen, Bilder"
     },
     "depthSub": {
       "knapp": "3–5 Stichpunkte",
@@ -3067,7 +3076,28 @@
     "quickClose": "Einstellungen zuklappen",
     "quickVideos": "Videos",
     "moreInSettings": "Wochentag, Modelle und Videoauflösung stehen in den Einstellungen unter KI → Nachrichten.",
-    "openArticle": "Artikel öffnen"
+    "openArticle": "Artikel öffnen",
+    "marketState": "Marktstand zum Bericht",
+    "marketStateHint": "Eigene Messung im Moment des Berichts — nicht der Stand von jetzt.",
+    "measure": "Messwert",
+    "level": "Stand",
+    "reading": "Einordnung",
+    "upcoming": "Was noch ansteht",
+    "upcomingHint": "Nächste 36 Stunden, mit der unten eingestellten Auswahl. Stand: jetzt.",
+    "time": "Zeit",
+    "event": "Ereignis",
+    "figure": "Wert",
+    "figureWhat": "Wofür",
+    "figureFrom": "Aus der Meldung",
+    "balance": {
+      "dafuer": "Was dafür spricht",
+      "dagegen": "Was dagegen spricht",
+      "offen": "Woran es sich entscheidet"
+    },
+    "tag": {
+      "fakt": "Fakt",
+      "einschaetzung": "Einschätzung"
+    }
   },
   "rangliste": {
     "title": "Coin-Rangliste",
@@ -3307,6 +3337,7 @@
     "eZeiteinheiten": "Zeiteinheiten",
     "eZeiteinheitenHinweis": "Zwei Ebenen: Die gröbere trägt die Note, die feinere bestätigt sie oder widerspricht. Ein Widerspruch wird angezeigt statt verrechnet.",
     "einordnungQuelle": "Von einem Sprachmodell aus den obenstehenden Zahlen geschrieben — keine Prognose, keine Handelsempfehlung.",
+    "fAusfuehrung": "Orderbücher: {n} / {g}",
     "fBewerten": "Bewerten: {n} / {g}",
     "fEinordnung": "KI-Einordnung wird geschrieben …",
     "fGesiebt": "{n} Anwärter, {v} an den Hürden gescheitert",
@@ -3374,6 +3405,14 @@
     "tab_verlauf": "Verlauf",
     "teilnoten": "Teilnoten",
     "verlaufHinweis": "Jeder Lauf vergleicht seine Rangfolge mit der des vorigen. Nahe 1 heisst, die Liste hält; nahe 0 heisst, sie ist Rauschen — und dann sagt sie über morgen nichts.",
-    "zeigeHuerden": "An den Hürden gescheitert ({n})"
+    "zeigeHuerden": "An den Hürden gescheitert ({n})",
+    "eAuf": "Einstellungen zeigen",
+    "eZu": "Einstellungen ausblenden",
+    "eZAlle": "alle {n} h",
+    "eZManuell": "nur von Hand",
+    "eZUmsatz": "ab {n} Mio USD",
+    "eZSpread": "max {n} bp",
+    "eZEinordnung": "mit Einordnung",
+    "eZOhne": "ohne Einordnung"
   }
 }

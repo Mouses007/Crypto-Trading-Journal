@@ -111,7 +111,9 @@ async function fixPostgresSequences(knex) {
 // v5: `hype_favoriten` — angeheftete Funde. Rein additiv.
 // v6: `hype_alarme` + Wachhund-Spalten an den Favoriten. Rein additiv.
 // v7: Coin-Radar — Läufe, Zeilen, Einstellungen; `quelle` an den Favoriten.
-const SCHEMA_VERSION = 7
+// v8: Ausführungsgüte am Coin-Radar (Slippage, Tiefe, beste Börse). Additiv;
+//     ein älterer Codestand ignoriert die Spalten und läuft weiter.
+const SCHEMA_VERSION = 8
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -1854,11 +1856,24 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'radarNewsPunkte', (t) => t.integer('radarNewsPunkte').defaultTo(0))
     await addColumnIfNotExists('settings', 'radarNewsVideoTiefe', (t) => t.text('radarNewsVideoTiefe').defaultTo('normal'))   // knapp|normal|ausfuehrlich
     await addColumnIfNotExists('settings', 'radarNewsVideoTokens', (t) => t.integer('radarNewsVideoTokens').defaultTo(0))
-    // kombiniert = Aufmacher als Kachel + Rest als Artikel · artikel = reine
-    // Zeitung ohne Kacheln · kacheln = alles als Karte, wie vor dem Umbau
-    await addColumnIfNotExists('settings', 'radarNewsLayout', (t) => t.text('radarNewsLayout').defaultTo('kombiniert'))
+    // dossier = Tabellen, Kennzahlen und Bilder (Vorgabe) · kombiniert =
+    // Aufmacher als Kachel + Rest als Artikel · artikel = reine Zeitung ohne
+    // Kacheln · kacheln = alles als Karte, wie vor dem Umbau
+    await addColumnIfNotExists('settings', 'radarNewsLayout', (t) => t.text('radarNewsLayout').defaultTo('dossier'))
+    // Eigene Anweisungen an die Berichts-KI (Ton, Schwerpunkte, Ausschlüsse).
+    // Leer = Bericht wie gehabt; der Server deckelt bei ZUSATZ_MAX Zeichen.
+    await addColumnIfNotExists('settings', 'radarNewsPromptZusatz', (t) => t.text('radarNewsPromptZusatz').defaultTo(''))
     // Kapitel je Thema; `punkte` bleibt als flache Liste für Altleser bestehen.
     await addColumnIfNotExists('news_digests', 'kapitel', (t) => t.text('kapitel').defaultTo('[]'))
+    // Marktstand zum Zeitpunkt des Berichts (Fear&Greed, Dominanz, Funding …)
+    // als JSON-Zeilen. Der Bericht bekam diese Zahlen schon immer in den
+    // Prompt; gespeichert werden sie, damit die Dossier-Ansicht sie als
+    // Tabelle zeigen kann — und zwar den Stand von damals, nicht den von jetzt.
+    await addColumnIfNotExists('news_digests', 'marktBlock', (t) => t.text('marktBlock').defaultTo('[]'))
+    // Abwägung des Berichts: was stützt, was belastet, woran es sich
+    // entscheidet — je Zeile mit der Marke Fakt/Einschätzung. Leer bei
+    // Berichten aus der Zeit davor.
+    await addColumnIfNotExists('news_digests', 'lagebild', (t) => t.text('lagebild').defaultTo(''))
     await addColumnIfNotExists('news_digests', 'themen', (t) => t.text('themen').defaultTo(''))
     await addColumnIfNotExists('news_digests', 'laenge', (t) => t.text('laenge').defaultTo(''))
 
@@ -2156,6 +2171,21 @@ async function runMigrations(knex, client) {
             t.double('adx').defaultTo(0)
             t.text('jeZeiteinheit').defaultTo('{}')  // JSON: Kennzahlen je Zeiteinheit
             t.text('teilnoten').defaultTo('{}')      // JSON: bewegung/imSpiel/trend/kosten
+            /*
+             * Zwei Achsen statt einer Note (Audit R-07).
+             *
+             * „Gut ausführbar" und „interessante Marktphase" sind zwei Fragen.
+             * In eine Zahl gepresst sieht ein wilder Coin mit teurem Buch aus
+             * wie ein ruhiger mit billigem — und genau die Verwechslung kostet
+             * Geld. `note` bleibt die Gelegenheit; die Ausführung steht daneben.
+             */
+            t.integer('noteAusfuehrung')            // 0–100, null = nicht gemessen
+            t.string('besteBoerse').defaultTo('')   // wo die Ausführung am besten ist
+            t.double('rundlaufBp')                  // Ein- und Ausstieg zusammen
+            t.double('slippageKaufBp')
+            t.double('slippageVerkaufBp')
+            t.double('tiefe25Bp')                   // USD im Buch innerhalb ±25 bp
+            t.text('jeBoerse').defaultTo('{}')      // JSON: Messwerte je Börse
             t.bigInteger('erstelltAm').defaultTo(0)
             t.unique(['laufId', 'symbol'], 'uq_coinradar_zeile')
             t.index(['laufId'], 'idx_coinradar_lauf')
@@ -2174,6 +2204,20 @@ async function runMigrations(knex, client) {
         })
         console.log(' -> Created table: coinradar_settings')
     }
+
+    /*
+     * Ausführungsgüte — nachgereicht für Datenbanken, die vor dem Audit vom
+     * 19.08.2026 angelegt wurden. Bewusst OHNE Vorgabewert: `null` heisst hier
+     * „nicht gemessen", und eine 0 wäre die Behauptung, die Ausführung sei
+     * denkbar schlecht (siehe R-10).
+     */
+    await addColumnIfNotExists('coinradar_zeilen', 'noteAusfuehrung', (t) => t.integer('noteAusfuehrung'))
+    await addColumnIfNotExists('coinradar_zeilen', 'besteBoerse', (t) => t.string('besteBoerse').defaultTo(''))
+    await addColumnIfNotExists('coinradar_zeilen', 'rundlaufBp', (t) => t.double('rundlaufBp'))
+    await addColumnIfNotExists('coinradar_zeilen', 'slippageKaufBp', (t) => t.double('slippageKaufBp'))
+    await addColumnIfNotExists('coinradar_zeilen', 'slippageVerkaufBp', (t) => t.double('slippageVerkaufBp'))
+    await addColumnIfNotExists('coinradar_zeilen', 'tiefe25Bp', (t) => t.double('tiefe25Bp'))
+    await addColumnIfNotExists('coinradar_zeilen', 'jeBoerse', (t) => t.text('jeBoerse').defaultTo('{}'))
 
     // ── KI-Verbrauch ─────────────────────────────────────────────────────
 

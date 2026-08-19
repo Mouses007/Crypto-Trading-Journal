@@ -92,7 +92,8 @@
     "marktradar": "Market radar",
     "hypeRadar": "Hype radar",
     "coinRadar": "Coin Radar",
-    "discover": "DISCOVER",
+    "hypeGruppe": "HYPE RADAR",
+    "coinGruppe": "COIN RADAR",
     "nachrichten": "News",
     "livetrading": "Live trading",
     "liveTrade": "TRADING",
@@ -409,7 +410,11 @@
         "scopeAuto": "empty = the chosen length decides",
         "videoDepthLabel": "Detail of the video description",
         "videoTokensHint": "own output cap, empty = per level",
-        "topicChartanalyse": "Technical chart analysis top 5 (from sources, with images)"
+        "topicChartanalyse": "Technical chart analysis top 5 (from sources, with images)",
+        "customLabel": "Own instructions for the AI",
+        "customHint": "Tone, focus and exclusions for the briefing — applies from the next run. Empty = unchanged.",
+        "customPlaceholder": "e.g.: Write more tersely, no filler. Give the time of each item. Regulation only matters to me when it affects futures. More detail on Ether than on altcoins.",
+        "customLimits": "{n} of {max} characters. The ground rules stay in force: no trade recommendations, no price targets, no forecasts, nothing invented. Every character costs tokens on every run."
       },
       "agentBudget": "Token budget per run",
       "agentBudgetHint": "Upper limit for one agent run across all reasoning rounds (input + output). When reached, the agent summarises what it has found so far. More budget = deeper analyses, but higher cost per question."
@@ -949,7 +954,8 @@
       "video": "News: video analysis",
       "strategie": "Strategy: veto agents and builders",
       "radar": "Live analysis: situation, mechanics, ranking",
-      "bild": "Images (share cards)"
+      "bild": "Images (share cards)",
+      "uebrige": "Other (no dedicated row yet)"
     },
     "auto": {
       "newsAbruf": "Fetch news",
@@ -1205,7 +1211,8 @@
     "agentShort": "Strategy",
     "research": "Research",
     "comingSoon": "Coming soon",
-    "betaHint": "Unfinished — please use in paper mode only"
+    "betaHint": "Unfinished — please use in paper mode only",
+    "betaHintResearch": "Young and lightly tested — findings are hints, not verified data"
   },
   "live": {
     "symbol": "SYMBOL",
@@ -3034,7 +3041,8 @@
     "layout": {
       "kombiniert": "Combined",
       "artikel": "Newspaper",
-      "kacheln": "Tiles"
+      "kacheln": "Tiles",
+      "dossier": "Dossier"
     },
     "depth": {
       "knapp": "Brief",
@@ -3054,7 +3062,8 @@
     "layoutSub": {
       "kombiniert": "top items + articles",
       "artikel": "everything as articles",
-      "kacheln": "everything as cards"
+      "kacheln": "everything as cards",
+      "dossier": "tables, figures, images"
     },
     "depthSub": {
       "knapp": "3–5 bullets",
@@ -3067,7 +3076,28 @@
     "quickClose": "Hide settings",
     "quickVideos": "Videos",
     "moreInSettings": "Weekday, models and video resolution live in Settings under AI → News.",
-    "openArticle": "Open article"
+    "openArticle": "Open article",
+    "marketState": "Market state at report time",
+    "marketStateHint": "Own measurement at the moment of the report — not the current state.",
+    "measure": "Measure",
+    "level": "Level",
+    "reading": "Reading",
+    "upcoming": "Coming up",
+    "upcomingHint": "Next 36 hours, using the selection set below. As of now.",
+    "time": "Time",
+    "event": "Event",
+    "figure": "Value",
+    "figureWhat": "What for",
+    "figureFrom": "From the item",
+    "balance": {
+      "dafuer": "What supports it",
+      "dagegen": "What speaks against it",
+      "offen": "What will decide it"
+    },
+    "tag": {
+      "fakt": "Fact",
+      "einschaetzung": "Assessment"
+    }
   },
   "rangliste": {
     "title": "Coin ranking",
@@ -3307,6 +3337,7 @@
     "eZeiteinheiten": "Timeframes",
     "eZeiteinheitenHinweis": "Two levels: the coarser one carries the score, the finer one confirms or contradicts it. A contradiction is shown, not averaged away.",
     "einordnungQuelle": "Written by a language model from the numbers above — not a forecast, not trading advice.",
+    "fAusfuehrung": "Order books: {n} / {g}",
     "fBewerten": "Scoring: {n} / {g}",
     "fEinordnung": "Writing AI summary …",
     "fGesiebt": "{n} candidates, {v} failed the gates",
@@ -3374,6 +3405,14 @@
     "tab_verlauf": "History",
     "teilnoten": "Sub-scores",
     "verlaufHinweis": "Every run compares its ranking with the previous one. Near 1 means the list holds; near 0 means it is noise — and then it says nothing about tomorrow.",
-    "zeigeHuerden": "Failed the gates ({n})"
+    "zeigeHuerden": "Failed the gates ({n})",
+    "eAuf": "Show settings",
+    "eZu": "Hide settings",
+    "eZAlle": "every {n} h",
+    "eZManuell": "manual only",
+    "eZUmsatz": "from {n}M USD",
+    "eZSpread": "max {n} bp",
+    "eZEinordnung": "with commentary",
+    "eZOhne": "no commentary"
   }
 }

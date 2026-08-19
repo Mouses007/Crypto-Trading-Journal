@@ -2,21 +2,107 @@
     <div class="cr">
         <!-- ── Kopf ──────────────────────────────────────────────────── -->
         <div class="crKopf">
-            <ul class="nav nav-tabs crNav">
-                <li v-for="r in REITER" :key="r.id" class="nav-item">
-                    <a class="nav-link" :class="{ active: reiter === r.id }"
-                        href="#" @click.prevent="reiter = r.id">
-                        <i :class="r.icon" class="me-1"></i>{{ t('coinradar.tab_' + r.id) }}
-                    </a>
-                </li>
-            </ul>
+            <!-- Rangliste und Verlauf stehen als eigene Einträge im
+                 Seitenmenü. Was bleibt, sind die Einstellungen — und die
+                 verhalten sich wie in den Nachrichten: ein Zahnrad und eine
+                 Zeile Klartext. Zugeklappt sieht man, was eingestellt ist,
+                 ohne dass ein Formular die Rangliste nach unten schiebt. -->
+            <div class="crEinstKopf">
+                <button type="button" class="ctl-pill klein" :class="{ active: einstOffen }"
+                    :aria-expanded="einstOffen"
+                    :title="einstOffen ? t('coinradar.eZu') : t('coinradar.eAuf')"
+                    @click="einstUmschalten">
+                    <i class="uil" :class="einstOffen ? 'uil-angle-down' : 'uil-setting'"></i>
+                </button>
+                <span v-if="!einstOffen" class="crEinstZeile" @click="einstUmschalten">
+                    {{ einstZusammenfassung }}
+                </span>
+            </div>
             <div class="crKnoepfe">
                 <span v-if="laeuft" class="crFortschritt">{{ fortschrittText }}</span>
-                <PageInfo section="info.coinRadar" />
-                <button class="btn btn-sm btn-primary" :disabled="laeuft" @click="starte">
+                <button type="button" class="ctl-pill accent" :disabled="laeuft" @click="starte">
                     <span v-if="laeuft" class="spinner-border spinner-border-sm me-1"></span>
                     <i v-else class="uil uil-sync me-1"></i>{{ t('coinradar.jetztMessen') }}
                 </button>
+                <PageInfo section="info.coinRadar" />
+            </div>
+        </div>
+
+        <!-- ══ Einstellungen ═════════════════════════════════════════ -->
+        <div v-if="einstOffen" class="mt-3 crEinst">
+            <div class="crBlock">
+                <h6 class="crTitel">{{ t('coinradar.eAutomatik') }}</h6>
+                <div class="form-check form-switch">
+                    <input id="crAktiv" class="form-check-input" type="checkbox"
+                        v-model="einst.aktiv" @change="speichern">
+                    <label class="form-check-label" for="crAktiv">{{ t('coinradar.eAktiv') }}</label>
+                </div>
+                <p class="crHinweis">{{ t('coinradar.eAktivHinweis') }}</p>
+                <label class="crFeld">
+                    <span>{{ t('coinradar.eIntervall') }}</span>
+                    <input class="form-control form-control-sm crZahlFeld" type="number" min="1" max="24"
+                        v-model.number="einst.intervallStunden" @change="speichern">
+                    <span class="crEinheit">{{ t('coinradar.stunden') }}</span>
+                </label>
+                <div class="form-check form-switch mt-3">
+                    <input id="crEinordnung" class="form-check-input" type="checkbox"
+                        v-model="einst.einordnungAn" @change="speichern">
+                    <label class="form-check-label" for="crEinordnung">{{ t('coinradar.eEinordnung') }}</label>
+                </div>
+                <p class="crHinweis">{{ t('coinradar.eEinordnungHinweis') }}</p>
+            </div>
+
+            <div class="crBlock">
+                <h6 class="crTitel">{{ t('coinradar.eHuerden') }}</h6>
+                <p class="crHinweis">{{ t('coinradar.eHuerdenHinweis') }}</p>
+                <label class="crFeld">
+                    <span>{{ t('coinradar.eMinUmsatz') }}</span>
+                    <input class="form-control form-control-sm crZahlFeld" type="number" min="0" step="1"
+                        v-model.number="umsatzMio" @change="speichern">
+                    <span class="crEinheit">{{ t('coinradar.mioUsd') }}</span>
+                </label>
+                <label class="crFeld">
+                    <span>{{ t('coinradar.eMaxSpread') }}</span>
+                    <input class="form-control form-control-sm crZahlFeld" type="number" min="0.1" step="0.1"
+                        v-model.number="einst.huerden.maxSpreadBp" @change="speichern">
+                    <span class="crEinheit">bp</span>
+                </label>
+                <label class="crFeld">
+                    <span>{{ t('coinradar.eMinTiefe') }}</span>
+                    <input class="form-control form-control-sm crZahlFeld" type="number" min="0" step="50"
+                        v-model.number="einst.huerden.minTiefeUsd" @change="speichern">
+                    <span class="crEinheit">USD</span>
+                </label>
+                <p class="crHinweis mt-2">{{ t('coinradar.eTiefeHinweis') }}</p>
+            </div>
+
+            <div class="crBlock">
+                <h6 class="crTitel">{{ t('coinradar.eGewichte') }}</h6>
+                <p class="crHinweis">{{ t('coinradar.eGewichteHinweis') }}</p>
+                <div v-for="feld in GEWICHT_FELDER" :key="feld" class="crRegler">
+                    <span class="crReglerName">{{ t('coinradar.note_' + feld) }}</span>
+                    <input class="form-range" type="range" min="0" max="60" step="5"
+                        v-model.number="einst.gewichte[feld]" @change="speichern">
+                    <span class="crReglerWert">{{ einst.gewichte[feld] }}</span>
+                </div>
+                <p class="crSumme" :class="{ warn: gewichtSumme !== 100 }">
+                    {{ t('coinradar.eSumme', { n: gewichtSumme }) }}
+                    <span v-if="gewichtSumme !== 100" class="crKlein">{{ t('coinradar.eSummeHinweis') }}</span>
+                </p>
+            </div>
+
+            <div class="crBlock">
+                <h6 class="crTitel">{{ t('coinradar.eZeiteinheiten') }}</h6>
+                <p class="crHinweis">{{ t('coinradar.eZeiteinheitenHinweis') }}</p>
+                <div class="crFilter">
+                    <button v-for="ze in ZE_AUSWAHL" :key="ze" class="crChip"
+                        :class="{ aktiv: einst.zeiteinheiten.includes(ze) }" @click="zeUmschalten(ze)">
+                        {{ ze }}
+                    </button>
+                </div>
+                <p class="crHinweis mt-2">
+                    {{ t('coinradar.eHauptZe', { ze: einst.zeiteinheiten[0] || '—' }) }}
+                </p>
             </div>
         </div>
 
@@ -304,83 +390,6 @@
             </div>
         </div>
 
-        <!-- ══ Einstellungen ═════════════════════════════════════════ -->
-        <div v-show="reiter === 'einstellungen'" class="mt-3 crEinst">
-            <div class="crBlock">
-                <h6 class="crTitel">{{ t('coinradar.eAutomatik') }}</h6>
-                <div class="form-check form-switch">
-                    <input id="crAktiv" class="form-check-input" type="checkbox"
-                        v-model="einst.aktiv" @change="speichern">
-                    <label class="form-check-label" for="crAktiv">{{ t('coinradar.eAktiv') }}</label>
-                </div>
-                <p class="crHinweis">{{ t('coinradar.eAktivHinweis') }}</p>
-                <label class="crFeld">
-                    <span>{{ t('coinradar.eIntervall') }}</span>
-                    <input class="form-control form-control-sm crZahlFeld" type="number" min="1" max="24"
-                        v-model.number="einst.intervallStunden" @change="speichern">
-                    <span class="crEinheit">{{ t('coinradar.stunden') }}</span>
-                </label>
-                <div class="form-check form-switch mt-3">
-                    <input id="crEinordnung" class="form-check-input" type="checkbox"
-                        v-model="einst.einordnungAn" @change="speichern">
-                    <label class="form-check-label" for="crEinordnung">{{ t('coinradar.eEinordnung') }}</label>
-                </div>
-                <p class="crHinweis">{{ t('coinradar.eEinordnungHinweis') }}</p>
-            </div>
-
-            <div class="crBlock">
-                <h6 class="crTitel">{{ t('coinradar.eHuerden') }}</h6>
-                <p class="crHinweis">{{ t('coinradar.eHuerdenHinweis') }}</p>
-                <label class="crFeld">
-                    <span>{{ t('coinradar.eMinUmsatz') }}</span>
-                    <input class="form-control form-control-sm crZahlFeld" type="number" min="0" step="1"
-                        v-model.number="umsatzMio" @change="speichern">
-                    <span class="crEinheit">{{ t('coinradar.mioUsd') }}</span>
-                </label>
-                <label class="crFeld">
-                    <span>{{ t('coinradar.eMaxSpread') }}</span>
-                    <input class="form-control form-control-sm crZahlFeld" type="number" min="0.1" step="0.1"
-                        v-model.number="einst.huerden.maxSpreadBp" @change="speichern">
-                    <span class="crEinheit">bp</span>
-                </label>
-                <label class="crFeld">
-                    <span>{{ t('coinradar.eMinTiefe') }}</span>
-                    <input class="form-control form-control-sm crZahlFeld" type="number" min="0" step="50"
-                        v-model.number="einst.huerden.minTiefeUsd" @change="speichern">
-                    <span class="crEinheit">USD</span>
-                </label>
-                <p class="crHinweis mt-2">{{ t('coinradar.eTiefeHinweis') }}</p>
-            </div>
-
-            <div class="crBlock">
-                <h6 class="crTitel">{{ t('coinradar.eGewichte') }}</h6>
-                <p class="crHinweis">{{ t('coinradar.eGewichteHinweis') }}</p>
-                <div v-for="feld in GEWICHT_FELDER" :key="feld" class="crRegler">
-                    <span class="crReglerName">{{ t('coinradar.note_' + feld) }}</span>
-                    <input class="form-range" type="range" min="0" max="60" step="5"
-                        v-model.number="einst.gewichte[feld]" @change="speichern">
-                    <span class="crReglerWert">{{ einst.gewichte[feld] }}</span>
-                </div>
-                <p class="crSumme" :class="{ warn: gewichtSumme !== 100 }">
-                    {{ t('coinradar.eSumme', { n: gewichtSumme }) }}
-                    <span v-if="gewichtSumme !== 100" class="crKlein">{{ t('coinradar.eSummeHinweis') }}</span>
-                </p>
-            </div>
-
-            <div class="crBlock">
-                <h6 class="crTitel">{{ t('coinradar.eZeiteinheiten') }}</h6>
-                <p class="crHinweis">{{ t('coinradar.eZeiteinheitenHinweis') }}</p>
-                <div class="crFilter">
-                    <button v-for="ze in ZE_AUSWAHL" :key="ze" class="crChip"
-                        :class="{ aktiv: einst.zeiteinheiten.includes(ze) }" @click="zeUmschalten(ze)">
-                        {{ ze }}
-                    </button>
-                </div>
-                <p class="crHinweis mt-2">
-                    {{ t('coinradar.eHauptZe', { ze: einst.zeiteinheiten[0] || '—' }) }}
-                </p>
-            </div>
-        </div>
     </div>
 </template>
 
@@ -408,6 +417,7 @@
  * einen Zustand.
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import PageInfo from '../components/PageInfo.vue'
@@ -418,16 +428,19 @@ import { logWarn } from '../utils/logger.js'
 const { t } = useI18n()
 const istTelefon = useIstTelefon()
 
-const REITER = [
-    { id: 'rangliste', icon: 'uil uil-list-ol-alt' },
-    { id: 'verlauf', icon: 'uil uil-history' },
-    { id: 'einstellungen', icon: 'uil uil-setting' },
-]
 const FILTER = [{ id: 'alle' }, { id: 'imSpiel' }, { id: 'trendend' }, { id: 'bestaetigt' }]
 const GEWICHT_FELDER = ['bewegung', 'imSpiel', 'trend', 'kosten']
 const ZE_AUSWAHL = ['5m', '15m', '1h', '4h']
 
-const reiter = ref('rangliste')
+/*
+ * Welche Ansicht gilt, sagt die Adresse: `/coin-radar` ist die Rangliste,
+ * `/coin-radar/verlauf` der Verlauf. Beide teilen sich einen Routen-Eintrag,
+ * die Seite wird beim Wechsel also nicht neu aufgebaut — die geladene
+ * Rangliste bleibt stehen, ein laufender Lauf ebenfalls.
+ */
+const route = useRoute()
+const router = useRouter()
+const reiter = computed(() => (route.params.reiter === 'verlauf' ? 'verlauf' : 'rangliste'))
 const laeuft = ref(false)
 const fortschritt = ref(null)
 const meldung = ref('')
@@ -656,6 +669,37 @@ async function favUmschalten(z) {
 }
 
 // ── Einstellungen ───────────────────────────────────────────────────────
+/*
+ * Auf- und zugeklappt wie die Schnell-Einstellungen der Nachrichten. Der
+ * Zustand gehört zum Gerät und nicht in die Datenbank, deshalb localStorage.
+ */
+const einstOffen = ref(localStorage.getItem('crEinstOffen') === '1')
+
+function einstUmschalten() {
+    einstOffen.value = !einstOffen.value
+    localStorage.setItem('crEinstOffen', einstOffen.value ? '1' : '0')
+}
+
+/**
+ * Die Einstellungen als ein Satz — „alle 1 h · ab 10 Mio USD · max 5 bp · …".
+ *
+ * Zugeklappt ist das die einzige Auskunft darüber, wonach gemessen wurde;
+ * deshalb stehen hier die Hürden und nicht die Gewichte: eine Hürde entscheidet,
+ * ob ein Coin überhaupt in der Liste auftaucht.
+ */
+const einstZusammenfassung = computed(() => {
+    const e = einst.value || {}
+    const h = e.huerden || {}
+    const teile = [
+        e.aktiv ? t('coinradar.eZAlle', { n: e.intervallStunden || 1 }) : t('coinradar.eZManuell'),
+        t('coinradar.eZUmsatz', { n: Math.round((Number(h.minUmsatz24hUsd) || 0) / 1e6) }),
+        t('coinradar.eZSpread', { n: n(h.maxSpreadBp, 1) }),
+        (e.zeiteinheiten || []).join(' + ') || '—',
+        e.einordnungAn ? t('coinradar.eZEinordnung') : t('coinradar.eZOhne'),
+    ]
+    return teile.join(' · ')
+})
+
 const gewichtSumme = computed(() =>
     GEWICHT_FELDER.reduce((a, f) => a + (Number(einst.value.gewichte?.[f]) || 0), 0))
 
@@ -707,6 +751,7 @@ const fortschrittText = computed(() => {
     if (f.schritt === 'marktweit') return t('coinradar.fMarktweit')
     if (f.schritt === 'gesiebt') return t('coinradar.fGesiebt', { n: f.anzahl, v: f.verworfen })
     if (f.schritt === 'kerzen') return t('coinradar.fKerzen', { ze: f.zeiteinheit, n: f.fertig ?? 0, g: f.gesamt ?? 0 })
+    if (f.schritt === 'ausfuehrung') return t('coinradar.fAusfuehrung', { n: f.fertig ?? 0, g: f.gesamt ?? 0 })
     if (f.schritt === 'bewerten') return t('coinradar.fBewerten', { n: f.fertig ?? 0, g: f.gesamt ?? 0 })
     if (f.schritt === 'einordnung') return t('coinradar.fEinordnung')
     return t('coinradar.fLaeuft')
@@ -786,7 +831,7 @@ function laufOeffnen(l) {
     if (l.status !== 'fertig') return
     zeigeHuerden.value = false
     ladeZeilen(l.id)
-    reiter.value = 'rangliste'
+    if (reiter.value !== 'rangliste') router.push('/coin-radar')
 }
 
 function huerdenUmschalten() {
@@ -819,9 +864,23 @@ onBeforeUnmount(() => {
     flex-wrap: wrap;
 }
 
-.crNav {
+/* Zahnrad + Klartextzeile stehen da, wo vorher die Reiter standen. */
+.crEinstKopf {
     flex: 1 1 auto;
-    border-bottom: 1px solid rgba(255, 255, 255, .1);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding-bottom: .35rem;
+}
+
+.crEinstZeile {
+    font-size: .76rem;
+    color: var(--white-60, rgba(255, 255, 255, .6));
+    cursor: pointer;
+}
+
+.crEinstZeile:hover {
+    color: var(--white-87);
 }
 
 .crKnoepfe {

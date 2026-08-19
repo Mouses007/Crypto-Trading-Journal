@@ -158,3 +158,72 @@ export async function holeAlleTicker(namen = Object.keys(BOERSEN)) {
     })
     return { jeBoerse, stand }
 }
+
+/**
+ * Ausführungsgüte vieler Symbole auf allen Börsen — gebremst.
+ *
+ * Das ist der teure Teil: ein Orderbuch je Symbol UND Börse. Bei achtzig
+ * Überlebenden und zwei Börsen sind das hundertsechzig Abrufe, und genau
+ * deshalb passiert er erst NACH den Hürden — dieselbe Trichter-Logik, die den
+ * Kerzenabruf billig hält.
+ *
+ * In Häppchen mit kurzer Pause statt alles parallel: Die öffentlichen
+ * Orderbuch-Endpunkte nennen keine harte Grenze, und hundertsechzig Anfragen
+ * in einer Sekunde sind der zuverlässigste Weg, eine kennenzulernen.
+ *
+ * @param {string[]} symbole
+ * @param {function} melde  Fortschritt
+ * @returns {Promise<Map<string, object>>} Symbol → { jeBoerse, beste }
+ */
+export async function holeAusfuehrungGebremst(symbole, melde = () => {}) {
+    const { ausfuehrungsGuete, noteAusfuehrung } = await import('./ausfuehrung.js')
+    const raus = new Map()
+    const HAEPPCHEN = 4
+    const PAUSE_MS = 120
+
+    for (let i = 0; i < symbole.length; i += HAEPPCHEN) {
+        const teil = symbole.slice(i, i + HAEPPCHEN)
+        await Promise.all(teil.map(async (symbol) => {
+            const jeBoerse = {}
+            for (const [name, b] of Object.entries(BOERSEN)) {
+                try {
+                    const g = ausfuehrungsGuete(await b.holeTiefe(symbol))
+                    if (!g) continue
+                    jeBoerse[name] = {
+                        spreadBp: g.spreadBp,
+                        rundlaufBp: g.rundlaufBp,
+                        slippageKaufBp: g.kauf[5000]?.slippageBp ?? null,
+                        slippageVerkaufBp: g.verkauf[5000]?.slippageBp ?? null,
+                        passt5k: Boolean(g.kauf[5000]?.vollstaendig && g.verkauf[5000]?.vollstaendig),
+                        tiefe25Bp: g.tiefe[25],
+                        note: noteAusfuehrung(g),
+                    }
+                } catch (e) {
+                    // Ein Symbol, das eine Börse nicht führt, ist kein Fehler —
+                    // es ist die Antwort „hier nicht handelbar".
+                    logWarn('coin-radar', `Buch ${name}/${symbol}: ${e.message}`)
+                }
+            }
+            if (Object.keys(jeBoerse).length) raus.set(symbol, { jeBoerse, beste: besteBoerse(jeBoerse) })
+        }))
+        melde({ fertig: Math.min(i + HAEPPCHEN, symbole.length), gesamt: symbole.length })
+        if (i + HAEPPCHEN < symbole.length) await new Promise((r) => setTimeout(r, PAUSE_MS))
+    }
+    return raus
+}
+
+/**
+ * Wo eine Order über 5 000 USD am günstigsten ausgeführt wird.
+ *
+ * Entscheidend ist der RUNDLAUF, nicht der Spread: Ein Buch, das den Einstieg
+ * billig und den Ausstieg teuer macht, sieht am Spread gut aus und ist es
+ * nicht. Börsen, in deren Buch der Betrag gar nicht passt, kommen nicht in
+ * Frage — dort gibt es keine Ausführung, nicht bloss eine teure.
+ */
+export function besteBoerse(jeBoerse = {}) {
+    const kandidaten = Object.entries(jeBoerse)
+        .filter(([, v]) => v.passt5k && Number.isFinite(v.rundlaufBp))
+    if (!kandidaten.length) return null
+    const [name, wert] = kandidaten.reduce((a, b) => (b[1].rundlaufBp < a[1].rundlaufBp ? b : a))
+    return { boerse: name, rundlaufBp: wert.rundlaufBp, note: wert.note }
+}
