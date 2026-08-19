@@ -62,10 +62,19 @@ export const PAGES = [
     { id: 'liveAuswertung', mode: 'live', path: '/live-auswertung', icon: 'uil uil-chart-pie', titleKey: 'nav.liveAuswertung', group: 'liveTrade', flag: 'livetradingAn' },
 
     // ── Entdecken ───────────────────────────────────────────
-    // Der Quadrant und die Kandidatentabelle brauchen Breite: beide leben
-    // davon, viele Punkte nebeneinander zu zeigen. Auf 375 px bliebe ein
-    // Diagramm übrig, aus dem sich nichts ablesen lässt.
-    { id: 'hypeRadar', mode: 'research', path: '/hype-radar', icon: 'uil uil-telescope', titleKey: 'nav.hypeRadar', group: 'discover', nurDesktop: true },
+    /*
+     * Bewusst NICHT `nurDesktop` — nach demselben Gedanken wie beim
+     * Live-Trading, wo Archiv und Auswertung am Telefon erlaubt sind und nur
+     * das Handeln selbst Platz braucht.
+     *
+     * Der Quadrant und die breite Kandidatentabelle brauchen Breite, das
+     * bleibt wahr; die Seite blendet sie am Telefon selbst aus. Was zählt —
+     * die beobachteten Coins mit ihren Livedaten und die Alarme des Wachhunds
+     * — funktioniert auf 375 Pixeln einwandfrei. Die ganze Seite zu sperren
+     * hiesse, unterwegs gar nichts zu sehen; und unterwegs ist genau die Zeit,
+     * in der ein Liquiditätsabfluss auffallen soll.
+     */
+    { id: 'hypeRadar', mode: 'research', path: '/hype-radar', icon: 'uil uil-telescope', titleKey: 'nav.hypeRadar', group: 'discover' },
 
     // ── Agent-Trading ───────────────────────────────────────
     { id: 'agentStrategies', mode: 'agent', path: '/agent/strategies', icon: 'uil uil-processor', titleKey: 'nav.agentStrategies', group: 'agentRun' },

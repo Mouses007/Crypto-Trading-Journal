@@ -173,8 +173,9 @@
                 </div>
             </div>
 
-            <!-- Divergenz-Quadrant -->
-            <div class="hypBlock">
+            <!-- Divergenz-Quadrant — nur wo Breite da ist. Auf 375 px bliebe
+                 ein Diagramm übrig, aus dem sich nichts ablesen lässt. -->
+            <div v-if="!istTelefon" class="hypBlock">
                 <h6 class="hypTitel">{{ t('hype.quadrantTitel') }}</h6>
                 <p class="hypHinweis">{{ t('hype.quadrantHinweis') }}</p>
                 <div v-if="bestanden.length || verworfen.length" ref="quadrantEl" class="hypQuadrant"></div>
@@ -196,7 +197,49 @@
                     </select>
                 </div>
 
-                <div class="table-responsive">
+                <!-- Am Telefon eine Karte je Fund: neun Spalten auf 375 px
+                     wären eine waagerechte Rollleiste, in der man mehr sucht
+                     als liest. Gezeigt wird, was die Entscheidung trägt —
+                     Noten, Thema, Liquidität, Ausgang. -->
+                <div v-if="istTelefon" class="hypKarten">
+                    <div v-for="k in gefiltert.slice(0, 40)" :key="k.id" class="hypKarte"
+                        @click="offen = offen === k.id ? null : k.id">
+                        <div class="hypKarteKopf">
+                            <i class="uil hypStern" :class="istFav(k) ? 'uil-favorite aktiv' : 'uil-star'"
+                                @click.stop="favUmschalten(k)"></i>
+                            <strong>{{ k.symbol }}</strong>
+                            <span class="hypKette">{{ k.chain }}</span>
+                            <span class="ms-auto hypKarteNoten">
+                                {{ k.hypeScore }}<span class="hypLiveTrenn"> / </span>
+                                <span :class="k.safetyScore >= 70 ? 'text-success' : 'text-warning'">
+                                    {{ k.status === 'verworfen' ? '—' : k.safetyScore }}
+                                </span>
+                            </span>
+                        </div>
+                        <div class="hypKarteZeile">
+                            <span v-if="k.narrative" class="hypChip klein">{{ k.narrative }}</span>
+                            <span class="hypKarteWert">{{ geld(k.marktDaten?.liquiditaetUsd) }} USD</span>
+                            <span class="hypKarteWert">{{ alter(k.marktDaten?.paarAlterStunden) }}</span>
+                            <span v-for="(l, i) in (k.marktDaten?.listungen || [])" :key="i"
+                                class="hypBoerse">{{ listungKuerzel(l) }}</span>
+                        </div>
+                        <div class="hypKarteZeile">
+                            <span v-if="k.status === 'verworfen'" class="badge bg-danger hypBadge">
+                                {{ t('hype.grund_' + k.verworfenGrund) !== 'hype.grund_' + k.verworfenGrund ? t('hype.grund_' + k.verworfenGrund) : k.verworfenGrund }}
+                            </span>
+                            <span v-else-if="k.status === 'bewertet'" class="badge bg-secondary hypBadge">{{ t('hype.unterSchwelle') }}</span>
+                            <span v-else class="badge bg-success hypBadge">{{ t('hype.bestanden') }}</span>
+                        </div>
+                        <div v-if="offen === k.id && k.sicherheitsDaten?.hinweise?.length" class="hypKarteHinweise">
+                            {{ k.sicherheitsDaten.hinweise.join(' · ') }}
+                        </div>
+                    </div>
+                    <p v-if="!gefiltert.length" class="text-muted small text-center py-3 mb-0">
+                        {{ t('hype.nochKeinScan') }}
+                    </p>
+                </div>
+
+                <div v-else class="table-responsive">
                     <table class="table table-sm align-middle hypTabelle">
                         <thead>
                             <tr>
@@ -651,6 +694,7 @@ import * as echarts from 'echarts'
 import { useKostenAnzeige } from '../utils/formatters.js'
 import { logWarn } from '../utils/logger.js'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
+import { useIstTelefon } from '../utils/geraet.js'
 
 const { t, locale } = useI18n()
 
@@ -870,6 +914,13 @@ async function ladeKiQuellen() {
         logWarn('hype-radar', 'KI-Modelle konnten nicht geladen werden', e)
     }
 }
+/*
+ * Am Telefon entfallen Quadrant und breite Tabelle. Der Helfer verlangt
+ * gemessene Schmalheit UND einen groben Zeiger — ein halb breites
+ * Desktop-Fenster gilt also nicht als Telefon.
+ */
+const istTelefon = useIstTelefon()
+
 const reiter = ref(localStorage.getItem('hypeReiter') || 'dashboard')
 function reiterWechseln(id) {
     reiter.value = id
@@ -1498,6 +1549,90 @@ watch(locale, () => zeichne())
 
 .hypFavChip.stumm {
     opacity: .55;
+}
+
+/* ── Kartenliste am Telefon ─────────────────────────────── */
+.hypKarten {
+    display: grid;
+    gap: .4rem;
+}
+
+.hypKarte {
+    background: var(--black-bg-2, rgba(255, 255, 255, .03));
+    border-radius: var(--border-radius, 8px);
+    padding: .55rem .7rem;
+}
+
+.hypKarteKopf {
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .9rem;
+}
+
+.hypKarteNoten {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .82rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.hypKarteZeile {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem;
+    margin-top: .3rem;
+}
+
+.hypKarteWert {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .72rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypKarteHinweise {
+    margin-top: .4rem;
+    font-size: .72rem;
+    color: var(--orange-color, #ffb300);
+}
+
+/* ── Schmale Fenster ────────────────────────────────────── */
+@media (max-width: 767px) {
+    /* Der Kopf stapelt: Reiter über den Knöpfen, damit beide voll
+       antippbar bleiben statt sich die Zeile zu teilen. */
+    .hypKopf {
+        align-items: stretch;
+    }
+
+    .hypKnoepfe {
+        padding-bottom: 0;
+        padding-top: .5rem;
+    }
+
+    .hypKnoepfe .btn {
+        flex: 1;
+    }
+
+    /* Eingabefelder der Zustellkanäle dürfen die Seite nicht breiter
+       machen als das Fenster. */
+    .hypKanalFelder {
+        padding-left: 0;
+    }
+
+    .hypKanalFelder .form-control,
+    .hypKanalFelder .form-select,
+    .hypKanalFelder .hypBreit {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .hypZahl {
+        width: 100%;
+    }
+
+    .hypBerichtKarte {
+        min-width: 12rem;
+    }
 }
 
 .hypAlarmZahl {
