@@ -1533,6 +1533,28 @@ async function generateOpenAI(prompt, apiKey, model, temperature, maxTokens, scr
     }
 }
 
+/**
+ * Text aus einer Anthropic-Antwort ziehen — ALLE Text-Blöcke, nicht content[0].
+ *
+ * Die Claude-5-Modelle denken standardmässig (adaptives Thinking, auch ohne
+ * `thinking`-Parameter): der erste Content-Block ist dann ein thinking-Block,
+ * und `content[0].text` wäre leer, obwohl die Antwort dahinter steht.
+ */
+function anthropicText(data) {
+    return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n')
+}
+
+/**
+ * `max_tokens` deckelt bei den Claude-5-Modellen Denken UND Antwort zusammen.
+ * Ist das Budget zu knapp, frisst der Denkschritt alles auf und es kommt kein
+ * einziger Text-Block — bezahlt und trotzdem leer (so entstand am 19.08. ein
+ * Bericht ohne Text bei exakt 3000 Antwort-Tokens). Deshalb: bei leerem Text
+ * mit stop_reason max_tokens EINMAL mit deutlich mehr Budget nachlegen.
+ */
+function anthropicNachschlag(maxTokens) {
+    return Math.max(maxTokens * 2, 8000)
+}
+
 async function generateAnthropic(prompt, apiKey, model, temperature, maxTokens, screenshots = []) {
     // Multimodal content aufbauen
     const userContent = []
@@ -1556,34 +1578,46 @@ async function generateAnthropic(prompt, apiKey, model, temperature, maxTokens, 
     // Prompt als Text
     userContent.push({ type: 'text', text: prompt })
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            model,
-            max_tokens: maxTokens,
-            system: 'Du bist ein erfahrener Trading-Analyst und Coach. Antworte auf Deutsch. Verwende Markdown-Formatierung.',
-            messages: [{ role: 'user', content: screenshots.length > 0 ? userContent : prompt }],
-            // Neuere Modelle lehnen Sampling-Parameter mit 400 ab
-            ...samplingFelder(model, temperature)
+    const anfrage = async (budget) => {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model,
+                max_tokens: budget,
+                system: 'Du bist ein erfahrener Trading-Analyst und Coach. Antworte auf Deutsch. Verwende Markdown-Formatierung.',
+                messages: [{ role: 'user', content: screenshots.length > 0 ? userContent : prompt }],
+                // Neuere Modelle lehnen Sampling-Parameter mit 400 ab
+                ...samplingFelder(model, temperature)
+            })
         })
-    })
 
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error('Anthropic-Fehler: ' + (err.error?.message || response.statusText))
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}))
+            throw new Error('Anthropic-Fehler: ' + (err.error?.message || response.statusText))
+        }
+        return response.json()
     }
 
-    const data = await response.json()
+    let data = await anfrage(maxTokens)
+    let text = anthropicText(data)
+    if (!text && data.stop_reason === 'max_tokens') {
+        logWarn('ollama-api', `Anthropic-Antwort ohne Text (max_tokens ${maxTokens} im Denkschritt erreicht) — wiederhole mit ${anthropicNachschlag(maxTokens)}`)
+        data = await anfrage(anthropicNachschlag(maxTokens))
+        text = anthropicText(data)
+        if (!text) {
+            throw new Error(`Die Antwort bestand nur aus Denk-Blöcken — max_tokens (${anthropicNachschlag(maxTokens)}) reichte nicht für Text. „Max Tokens" in den KI-Einstellungen erhöhen.`)
+        }
+    }
     return {
-        text: data.content?.[0]?.text || '',
+        text,
         usage: {
-            promptTokens: data.usage?.input_tokens || 0,
-            completionTokens: data.usage?.output_tokens || 0,
+            promptTokens: (data.usage?.input_tokens || 0),
+            completionTokens: (data.usage?.output_tokens || 0),
             totalTokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0)
         }
     }
@@ -1753,30 +1787,42 @@ async function chatOpenAI(systemMsg, messages, apiKey, model, temperature, maxTo
 
 async function chatAnthropic(systemMsg, messages, apiKey, model, temperature, maxTokens) {
     // Anthropic: system als separater Parameter, messages array
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            model,
-            max_tokens: maxTokens,
-            system: systemMsg,
-            messages,
-            ...samplingFelder(model, temperature)
+    const anfrage = async (budget) => {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model,
+                max_tokens: budget,
+                system: systemMsg,
+                messages,
+                ...samplingFelder(model, temperature)
+            })
         })
-    })
 
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error('Chat-Fehler: ' + (err.error?.message || response.statusText))
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}))
+            throw new Error('Chat-Fehler: ' + (err.error?.message || response.statusText))
+        }
+        return response.json()
     }
 
-    const data = await response.json()
+    let data = await anfrage(maxTokens)
+    let text = anthropicText(data)
+    if (!text && data.stop_reason === 'max_tokens') {
+        logWarn('ollama-api', `Anthropic-Chat ohne Text (max_tokens ${maxTokens} im Denkschritt erreicht) — wiederhole mit ${anthropicNachschlag(maxTokens)}`)
+        data = await anfrage(anthropicNachschlag(maxTokens))
+        text = anthropicText(data)
+        if (!text) {
+            throw new Error(`Die Antwort bestand nur aus Denk-Blöcken — max_tokens (${anthropicNachschlag(maxTokens)}) reichte nicht für Text. „Max Tokens" in den KI-Einstellungen erhöhen.`)
+        }
+    }
     return {
-        text: data.content?.[0]?.text || '',
+        text,
         usage: {
             promptTokens: data.usage?.input_tokens || 0,
             completionTokens: data.usage?.output_tokens || 0,
