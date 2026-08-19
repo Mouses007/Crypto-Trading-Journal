@@ -15,6 +15,8 @@
  * Alle Funktionen sind rein: Kerze rein, Ergebnis raus, kein Zustand aussen.
  */
 
+import { liqPreis } from '../shared/liquidation.js'
+
 const BPS = 10000
 
 /** Ein- bzw. Ausstiegspreis nach Slippage — immer zu unseren Ungunsten. */
@@ -97,23 +99,31 @@ export function riskPerUnit(pos) {
     return Math.abs(pos.entryPrice - pos.initialStopLoss)
 }
 
-/** Standard-Wartungsmarge in Prozent des Nominalwerts (Stufe 1 der Börsen). */
-export const WARTUNGSMARGE_PCT = 0.5
+/**
+ * Standard-Wartungsmarge in PROZENT des Nominalwerts (Stufe 1 der Börsen).
+ *
+ * 0,4 % ist der Binance-Satz für BTCUSDT und gilt nur für eine Handvoll
+ * Symbole; Alt-Coins liegen bei 1–5 %. Deshalb ist das nur der Rückfall:
+ * Backtest und Paper-Handel holen die Rate je Symbol über
+ * `server/margin-rates.js` (`holeMarginRate`). Der bisherige Wert 0,5 war eine
+ * gerundete Pauschale ohne Quelle und wich zusätzlich von der Hebelkarte ab.
+ */
+export const WARTUNGSMARGE_PCT = 0.4
 
 /**
  * Preis, bei dem die Börse die Position zwangsweise schliesst (isolierte Marge).
  *
- * Herleitung: liquidiert wird, wenn die hinterlegte Marge bis auf die
- * Wartungsmarge aufgebraucht ist.
- *   Marge = Nominal / Hebel,  Verlust(P) = |Einstieg − P| · Menge
- *   Marge − Verlust = Wartungssatz · Nominal
- *   ⇒ P = Einstieg · (1 ∓ (1/Hebel − Wartungssatz))
+ * Die Formel selbst steht seit dem Audit vom 19.08.2026 in
+ * `shared/liquidation.js` — dieselbe, die auch die Hebelkarte zeichnet.
+ * Hier bleibt nur die Umrechnung Prozent → Bruch, und zwar GENAU EINMAL:
+ * `wartungsmargePct` ist ein Prozentwert (0,4 = 0,4 %). Wer hier 0.004
+ * hineinsteckt, schaltet die Wartungsmarge faktisch ab.
  *
  * Ohne diese Rechnung endete jeder Hochhebel-Backtest brav am Stop, auch wenn
  * das Konto längst weg gewesen wäre — die Erwartung war dadurch zu gut.
  *
  * @param {object} pos              Position aus createPosition()
- * @param {number} wartungsmargePct Wartungsmarge in PROZENT (Standard 0,5 %)
+ * @param {number} wartungsmargePct Wartungsmarge in PROZENT (Rückfall 0,4 %)
  * @returns {number} Liquidationspreis (Long < Einstieg, Short > Einstieg)
  */
 export function liquidationPrice(pos, wartungsmargePct = WARTUNGSMARGE_PCT) {
@@ -121,11 +131,7 @@ export function liquidationPrice(pos, wartungsmargePct = WARTUNGSMARGE_PCT) {
     const wartung = Math.max(0, Number(wartungsmargePct) || 0) / 100
     const einstieg = Number(pos.entryPrice) || 0
     if (!(einstieg > 0) || !(hebel > 0)) return 0
-    const puffer = 1 / hebel - wartung
-    // Puffer ≤ 0 heisst: der Hebel ist so hoch, dass die Marge die Wartungs-
-    // marge nicht einmal beim Einstieg deckt — dann ist sofort Schluss.
-    if (puffer <= 0) return einstieg
-    return pos.direction === 'long' ? einstieg * (1 - puffer) : einstieg * (1 + puffer)
+    return liqPreis(einstieg, hebel, wartung, pos.direction)
 }
 
 /**

@@ -47,6 +47,12 @@ export function parseBitunixRows(rows) {
             GrossProceeds: grossPL,
             Fee: fee,
             NetProceeds: netPL,
+            // Auch getrennt mitgeben, wie im Bitget-Pfad weiter unten: sonst
+            // steht im Trade `tradingFee: 0`, obwohl die Gebühr in der CSV
+            // steht — `totals.tradingFees` zählte CSV-Trades dadurch nicht mit.
+            // Kein Doppelzählen: die Summe `fees` rechnet mit `commission`,
+            // `tradingFees` ist eine eigene Kennzahl daneben.
+            TradingFee: fee,
             TrxId: (row['Trx. ID'] || '').trim(),
             IncomingAsset: (row['Incoming Asset'] || '').trim(),
             OutgoingAsset: (row['Outgoing Asset'] || '').trim(),

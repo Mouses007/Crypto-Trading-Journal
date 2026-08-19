@@ -243,8 +243,13 @@ console.log('\nFinanzierungskosten')
 console.log('\nZwangsliquidation')
 
 {
-    // Einstieg 100, Stopp 90, Hebel 20, Wartungsmarge 0,5 %
-    //   Puffer = 1/20 − 0,005 = 0,045 → Liquidation bei 95,50
+    // Einstieg 100, Stopp 90, Hebel 20, Wartungsmarge 0,4 % (Vorgabe).
+    // Börsenformel (Wartungsmarge auf das MARK-Nominal, `shared/liquidation.js`):
+    //   Long:  100 · (1 − 1/20) / (1 − 0,004) = 95 / 0,996 = 95,3815…
+    //   Short: 100 · (1 + 1/20) / (1 + 0,004) = 105 / 1,004 = 104,5817…
+    // Vor dem Audit vom 19.08.2026 stand hier die Näherung 95,50 / 104,50
+    // (Wartungsmarge aufs EINSTIEGS-Nominal, Vorgabe 0,5 %) — die Sollwerte
+    // haben also die alte, abweichende Formel festgeschrieben.
     const hebelLong = () => createPosition({
         setup: { direction: 'long', symbol: 'X', timeframe: '1h', stopLoss: 90, takeProfit: 130 },
         qty: 10, entryPrice: 100, entryTime: 0, leverage: 20, costs,
@@ -254,32 +259,37 @@ console.log('\nZwangsliquidation')
         qty: 10, entryPrice: 100, entryTime: 0, leverage: 20, costs,
     })
 
-    check('Liquidationspreis Long = Einstieg · (1 − (1/Hebel − Wartungssatz))',
-        Math.abs(liquidationPrice(hebelLong()) - 95.5) < 1e-9,
+    const liqLong = 95 / 0.996
+    const liqShort = 105 / 1.004
+    check('Liquidationspreis Long = Einstieg · (1 − 1/Hebel) / (1 − Wartungssatz)',
+        Math.abs(liquidationPrice(hebelLong()) - liqLong) < 1e-9,
         String(liquidationPrice(hebelLong())))
     check('Liquidationspreis Short spiegelt den Long',
-        Math.abs(liquidationPrice(hebelShort()) - 104.5) < 1e-9,
+        Math.abs(liquidationPrice(hebelShort()) - liqShort) < 1e-9,
         String(liquidationPrice(hebelShort())))
 
-    // Kerze fällt bis 95, also unter 95,50 — aber NICHT bis zum Stopp bei 90.
+    // Kerze fällt bis 95, also unter den Liquidationspreis — aber NICHT bis
+    // zum Stopp bei 90.
     const posL = hebelLong()
     const eL = stepCandle(posL, k(100, 101, 95, 96, 1), { costs })
     check('Long: Marge weg vor dem Stopp → liquidation statt sl',
-        eL.exit?.reason === 'liquidation' && Math.abs(eL.exit.price - 95.5) < 1e-9,
+        eL.exit?.reason === 'liquidation' && Math.abs(eL.exit.price - liqLong) < 1e-9,
         JSON.stringify(eL.exit))
 
     const posS = hebelShort()
     const eS = stepCandle(posS, k(100, 105, 99, 104, 1), { costs })
     check('Short: gespiegelt',
-        eS.exit?.reason === 'liquidation' && Math.abs(eS.exit.price - 104.5) < 1e-9,
+        eS.exit?.reason === 'liquidation' && Math.abs(eS.exit.price - liqShort) < 1e-9,
         JSON.stringify(eS.exit))
 
-    // Der Verlust ist die Marge abzüglich der stehen gebliebenen Wartungsmarge:
-    // Nominal 1000, Hebel 20 → Marge 50; 0,5 % von 1000 = 5 → −45.
+    // Der Verlust ist die Marge abzüglich der stehen gebliebenen Wartungsmarge.
+    // Marge = Nominal/Hebel = 1000/20 = 50; stehen bleibt 0,4 % des Nominals
+    // ZUM LIQUIDATIONSPREIS (Börsenformel), also 0,004 · 95,3815 · 10 = 3,8153.
+    const restMarge = 0.004 * liqLong * 10
     const tL = closePosition(posL, eL.exit, costs)
-    check('Liquidation kostet praktisch die ganze Marge',
-        Math.abs(tL.grossPnl + 45) < 1e-9 && tL.exitReason === 'liquidation',
-        `gross=${tL.grossPnl} grund=${tL.exitReason}`)
+    check('Liquidation kostet die Marge bis auf die Wartungsmarge',
+        Math.abs(tL.grossPnl + (50 - restMarge)) < 1e-9 && tL.exitReason === 'liquidation',
+        `gross=${tL.grossPnl} erwartet=${-(50 - restMarge)} grund=${tL.exitReason}`)
 
     // Absturzkerze: eröffnet bereits unter dem Liquidationspreis → Fill zur
     // Eröffnung, nicht zum rechnerischen Liquidationspreis.
@@ -293,7 +303,7 @@ console.log('\nZwangsliquidation')
     check('Wartungsmarge 0 setzt die Liquidation auf den Margen-Aufbrauch',
         Math.abs(liquidationPrice(pos0, 0) - 95) < 1e-9, String(liquidationPrice(pos0, 0)))
 
-    // Hebel so hoch, dass die Marge die Wartungsmarge nicht deckt (1/300 < 0,5 %).
+    // Hebel so hoch, dass die Marge die Wartungsmarge nicht deckt (1/300 < 0,4 %).
     const irr = createPosition({
         setup: { direction: 'long', symbol: 'X', timeframe: '1h', stopLoss: 90, takeProfit: 130 },
         qty: 10, entryPrice: 100, entryTime: 0, leverage: 300, costs,

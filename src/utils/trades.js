@@ -963,22 +963,10 @@ export async function useCalculateProfitAnalysis(param) {
 
 }
 
-async function calculateSatisfaction(param) {
-    console.log("\nCALCULATING SATISFACTION")
-    console.log(" -> Getting Satisfactions")
-    let satOptions = {
-        ascending: "order",
-        limit: queryLimit.value
-    }
-    // "Gesamt" filter: start=0, end=0 means all — skip date filters
-    if (!(selectedDateRange.value.start === 0 && selectedDateRange.value.end === 0)) {
-        satOptions.greaterThanOrEqualTo = { dateUnix: selectedDateRange.value.start }
-        satOptions.lessThanOrEqualTo = { dateUnix: selectedDateRange.value.end }
-    }
-    const results = await dbFind("satisfactions", satOptions)
-    mfePricesArray = []
-    mfePricesArray = [...results]
-}
+// `calculateSatisfaction` stand hier bis zum Audit vom 19.08.2026: nirgends
+// aufgerufen, und die Funktion wies einer nicht deklarierten Variablen
+// (`mfePricesArray`) zu — ein Aufruf hätte im Strict-Modus einen
+// ReferenceError geworfen. Ersatzlos entfernt.
 
 /* useRefreshTrades moved to src/utils/mountOrchestration.js */
 

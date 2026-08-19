@@ -20,26 +20,25 @@
  *  5. Cross Margin und Nachschuss verschieben echte Liquidationspreise beliebig.
  */
 
+import { liqPreisLong, liqPreisShort, hebelHaltbar } from '../../shared/liquidation.js'
+
 export const LEVERAGE_TIERS = [10, 25, 50, 100]
 
-/** Liquidationspreis einer Long-Position (isoliert, linear, USDⓈ-M). */
-export function liqPriceLong(entry, leverage, mmr) {
-    return entry * (1 - 1 / leverage) / (1 - mmr)
-}
-
-/** Liquidationspreis einer Short-Position. */
-export function liqPriceShort(entry, leverage, mmr) {
-    return entry * (1 + 1 / leverage) / (1 + mmr)
-}
+/*
+ * Die Formeln stehen seit dem Audit vom 19.08.2026 in `shared/liquidation.js`
+ * — dieselbe Datei, die auch der Backtest benutzt. Hier bleiben nur die
+ * bisherigen Namen als Durchreiche, damit die Karte und ihr Prüfskript
+ * unverändert weiterlaufen. `mmr` ist ein BRUCH.
+ */
+export const liqPriceLong = liqPreisLong
+export const liqPriceShort = liqPreisShort
 
 /**
  * Bei `1/Hebel <= Margin-Rate` bleibt kein Puffer — die Position wäre im
  * Moment der Eröffnung liquidiert. Solche Stufen existieren bei dieser
  * Margin-Rate schlicht nicht und dürfen kein Band erzeugen.
  */
-export function tierPossible(leverage, mmr) {
-    return 1 / leverage > mmr
-}
+export const tierPossible = hebelHaltbar
 
 export class LeverageMap {
     constructor({ bucketSize, rows, base, tiers }) {

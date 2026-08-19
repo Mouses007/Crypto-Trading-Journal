@@ -92,6 +92,15 @@ export function useKachelRaster({
     let timer = null
     let sortable = null
     const laufendeAnfrage = {}     // id → Zähler, damit alte Antworten nicht gewinnen
+    /*
+     * Wann WIR eine Kachel zuletzt gefragt haben — nicht zu verwechseln mit
+     * `stand`, dem Datenstand des Servers. Die Fälligkeit muss an der eigenen
+     * Empfangszeit hängen: liefert der Server einen Altstand (`veraltet:
+     * true`), ist `stand` der ALTE Zeitstempel, die Kachel gilt sofort wieder
+     * als fällig und der Client hämmert die gestörte Quelle im Prüftakt nach.
+     */
+    const abgefragt = {}
+    const offeneAnfrage = {}       // id → true, solange eine Anfrage läuft
 
     const alleKacheln = computed(() => sortiere(reihenfolge.value))
     const sichtbareKacheln = computed(() => alleKacheln.value.filter(k => isVisible(k.id)))
@@ -115,6 +124,8 @@ export function useKachelRaster({
         if (!kachel || !kachel.endpunkt) return
 
         const meine = (laufendeAnfrage[id] = (laufendeAnfrage[id] || 0) + 1)
+        offeneAnfrage[id] = true
+        abgefragt[id] = Date.now()
         zustand[id] = daten[id] ? zustand[id] : 'loading'
         try {
             const { data } = await axios.get(kachel.endpunkt, {
@@ -137,6 +148,11 @@ export function useKachelRaster({
             fehler[id] = e.response?.data?.error || e.message
             // Vorhandene Daten stehen lassen — ein Aussetzer soll die Kachel nicht leeren
             zustand[id] = daten[id] ? 'veraltet' : 'error'
+        } finally {
+            // Auch im Fehlerfall: der Versuch zählt, sonst wäre die Kachel
+            // sofort wieder fällig und der Fehler würde im Prüftakt wiederholt.
+            abgefragt[id] = Date.now()
+            if (meine === laufendeAnfrage[id]) offeneAnfrage[id] = false
         }
     }
 
@@ -144,9 +160,22 @@ export function useKachelRaster({
         if (document.hidden) return
         const jetzt = Date.now()
         for (const kachel of sichtbareKacheln.value) {
-            const alter = jetzt - (stand[kachel.id] || 0)
+            // Läuft die Anfrage noch, nicht nachlegen: eine langsame Quelle
+            // (bis 10 s) bekäme sonst im Prüftakt weitere Anfragen derselben
+            // Kachel parallel obendrauf.
+            if (offeneAnfrage[kachel.id] && !erzwingen) continue
+            const alter = jetzt - (abgefragt[kachel.id] || 0)
             if (erzwingen || alter > kachel.intervallMs) ladeKachel(kachel.id, erzwingen)
         }
+    }
+
+    /*
+     * Rückkehr auf den Reiter: sofort abgleichen. Der Takt pausiert bei
+     * `document.hidden`, also stünden nach Stunden im Hintergrund bis zu einem
+     * ganzen Prüftakt lang kommentarlos alte Zahlen auf dem Schirm.
+     */
+    function beiSichtbarkeit() {
+        if (!document.hidden) ladeFaellige(false)
     }
 
     /** Kachel wird eingeblendet → sofort laden, sie hat noch nichts. */
@@ -326,6 +355,7 @@ export function useKachelRaster({
 
     onMounted(async () => {
         document.addEventListener('click', onClickOutside)
+        document.addEventListener('visibilitychange', beiSichtbarkeit)
         // Kacheln ohne Endpunkt versorgen sich selbst. Ohne diese Zeile blieben
         // sie auf 'idle' stehen und zögen den Zustandspunkt der ganzen Seite
         // mit herunter, obwohl bei ihnen nichts fehlt.
@@ -345,6 +375,7 @@ export function useKachelRaster({
 
     onBeforeUnmount(() => {
         document.removeEventListener('click', onClickOutside)
+        document.removeEventListener('visibilitychange', beiSichtbarkeit)
         endeGroesse()
         clearInterval(timer)
         sortable?.destroy()

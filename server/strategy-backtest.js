@@ -16,6 +16,7 @@ import { getStrategy, validateParams, validateRisk } from './strategies/index.js
 import { sichtBedarfKerzen } from './strategies/rule-engine.js'
 import { getHistoricalCandles, timeframeMs, currentCandleOpen } from './market-data.js'
 import { evaluateRisk, startOfDayUtc } from './risk-engine.js'
+import { wartungsmargePctFuer } from './margin-rates.js'
 import { createPosition, stepCandle, closePosition, entryIsValid } from './fill-simulator.js'
 
 /** Obergrenze, damit ein versehentlicher 5-Jahres-Lauf den Server nicht blockiert. */
@@ -218,6 +219,10 @@ export async function runBacktest(opts) {
     )
 
     const costs = { feeBps: risk.feeBps, slippageBps: risk.slippageBps, fundingBpsPer8h: risk.fundingBpsPer8h }
+    // Wartungsmarge je Symbol von der Börse, sofern nicht bewusst überschrieben.
+    // Eine Pauschale für alle Coins liess Alt-Coin-Positionen im Backtest weit
+    // über den Punkt hinaus laufen, an dem die Börse geschlossen hätte.
+    const wartungsmargePct = await wartungsmargePctFuer(symbol, risk.maintenanceMarginPct)
     // Zeitausstieg in Millisekunden — der Detector zählt in Kerzen
     // Regelstrategien tragen Break-Even/Zeitausstieg in der Regelwurzel —
     // dieselbe Auflösung wie in der Engine, sonst schliesst der Papierbetrieb
@@ -229,7 +234,7 @@ export async function runBacktest(opts) {
         maxHoldMs,
         partialTpR: params.partialTpR,
         partialTpPct: params.partialTpPct,
-        maintenanceMarginPct: risk.maintenanceMarginPct,
+        maintenanceMarginPct: wartungsmargePct,
         costs,
     }
     const funnel = emptyFunnel()
@@ -486,7 +491,10 @@ export async function runBacktest(opts) {
             fundingBpsPer8h: Number(risk.fundingBpsPer8h) || 0,
             // Mit welcher Wartungsmarge wurde die Zwangsliquidation gerechnet?
             // Auch das ist eine Annahme und gehört ausgewiesen.
-            wartungsmargePct: Number(risk.maintenanceMarginPct) || 0,
+            wartungsmargePct,
+            // Kam die Zahl aus dem Formular oder von der Börse? Eine Annahme
+            // ohne ihre Herkunft ist im Nachhinein nicht mehr zu beurteilen.
+            wartungsmargeQuelle: Number(risk.maintenanceMarginPct) > 0 ? 'vorgabe' : 'boerse',
             unrealisiertPnl: unrealisiert,
             endEquityMitOffenen: equity + unrealisiert,
             // Gehört zu den Kennzahlen, nicht in die Metadaten: ein Ergebnis zu

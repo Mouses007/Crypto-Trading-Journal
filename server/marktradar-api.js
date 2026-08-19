@@ -22,6 +22,7 @@ import { logWarn } from './logger.js'
 import { getKnex } from './database.js'
 import { beansprucheAufgabe, meldeFehler } from './db-claim.js'
 import { getClosedCandles, getHistoricalCandles } from './market-data.js'
+import { notiereGewicht, melde429 } from './binance-takt.js'
 import { rsi } from './strategies/indicators.js'
 import { bewerteMechanik, FENSTER } from './marktmechanik.js'
 import {
@@ -39,6 +40,41 @@ const COINGECKO_GLOBAL_URL = 'https://api.coingecko.com/api/v3/global'
 const cache = new Map()
 // key -> Promise  (parallele Anfragen desselben Schlüssels teilen einen Abruf)
 const inFlight = new Map()
+// key -> { ts, anzahl }  — letzter Fehlschlag je Schlüssel
+const fehlschlag = new Map()
+
+/**
+ * Sperrfenster nach Fehlschlägen.
+ *
+ * Ohne das hämmert der Client eine gestörte Fremdquelle im PRÜFTAKT nach (3 s
+ * im Live-Trading, 30 s im Marktradar) statt im Kachel-Intervall: `ausCache`
+ * legt nur Erfolge ab, also ist nach einem Fehlschlag sofort wieder alles
+ * fällig. Wer wegen zu vieler Anfragen gesperrt wurde, verlängert damit die
+ * eigene Sperre. Der Altstand wird während der Sperre weiter geliefert.
+ */
+function darfNeuVersuchen(key, ttlMs) {
+    const f = fehlschlag.get(key)
+    if (!f) return true
+    // 30 s, 60 s, 120 s … gedeckelt auf die TTL der Kachel (kürzere Kacheln
+    // dürfen häufiger nachsehen, eine Tageskachel nicht öfter als täglich)
+    const sperre = Math.min(Math.max(ttlMs, 30000), 30000 * 2 ** Math.min(f.anzahl - 1, 4))
+    return Date.now() - f.ts > sperre
+}
+
+/**
+ * Alte Einträge wegräumen.
+ *
+ * Der Cache wuchs bisher unbegrenzt: Schlüssel mit rotierenden Anteilen
+ * (Symbollisten, Zeitfenster) legen laufend neue Einträge an, gelöscht wurde
+ * nur auf Knopfdruck. Auf dem NAS läuft der Prozess wochenlang.
+ */
+const RAEUM_ALTER_MS = 60 * 60 * 1000
+let raeumZaehler = 0
+function raeumeAbgelaufene() {
+    const grenze = Date.now() - RAEUM_ALTER_MS
+    for (const [k, v] of cache) if (v.ts < grenze) cache.delete(k)
+    for (const [k, v] of fehlschlag) if (v.ts < grenze) fehlschlag.delete(k)
+}
 
 /**
  * Erlaubte Ranglisten-Grössen. Bewusst nur drei Stufen: mehr Auswahl heisst
@@ -53,15 +89,30 @@ const rundeAuf = (v, stellen = 2) => (Number.isFinite(v)
     ? Math.round(v * 10 ** stellen) / 10 ** stellen
     : null)
 
-/** Abruf mit Zeitgrenze. `fetch` allein kennt keinen Timeout. */
+/**
+ * Abruf mit Zeitgrenze. `fetch` allein kennt keinen Timeout.
+ *
+ * Antworten von Binance-Futures-Hosts werden zusätzlich an die gemeinsame
+ * Bremse gemeldet (`server/binance-takt.js`): Der Verbrauch gilt für die
+ * GANZE IP, also zahlen die Radar-Kacheln auf dasselbe Kontingent ein wie
+ * Rangliste und Historienläufe. Ohne die Meldung lösten die Kacheln ein 429
+ * aus und die gebremsten Pfade feuerten trotzdem weiter, weil `gesperrtBis`
+ * nie gesetzt wurde.
+ */
 export async function holeJson(url, timeout = HTTP_TIMEOUT) {
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), timeout)
+    const binance = /(^|\.)binance\.com$/.test(hostVon(url))
     try {
         const r = await fetch(url, {
             signal: ctrl.signal,
             headers: { 'User-Agent': 'CryptoTradingJournal', Accept: 'application/json' },
         })
+        if (binance) {
+            // Beide Funktionen kommen mit `Headers` (get) wie mit Objekten klar
+            if (r.status === 429 || r.status === 418) melde429(r.status, r.headers)
+            else notiereGewicht(r.headers)
+        }
         if (!r.ok) {
             const e = new Error(`HTTP ${r.status}`)
             e.status = r.status
@@ -73,6 +124,12 @@ export async function holeJson(url, timeout = HTTP_TIMEOUT) {
     }
 }
 
+/** Host einer URL, ohne bei Unsinn zu werfen. */
+function hostVon(url) {
+    try { return new URL(url).hostname.toLowerCase() } catch { return '' }
+}
+
+
 /**
  * Zwischenspeicher mit Zeitgrenze, Mehrfachabruf-Bündelung und Altstand-Rückfall.
  *
@@ -81,6 +138,7 @@ export async function holeJson(url, timeout = HTTP_TIMEOUT) {
  * @param {Function} holen  async () => Nutzlast
  */
 export async function ausCache(key, ttlMs, holen) {
+    if (++raeumZaehler % 100 === 0) raeumeAbgelaufene()
     const alt = cache.get(key)
     if (alt && Date.now() - alt.ts < ttlMs) {
         // _cache wird von sendeRadar() in einen Kopf umgezogen und nie mitgesendet
@@ -103,8 +161,14 @@ export async function ausCache(key, ttlMs, holen) {
         }
     }
 
+    // Fremdquelle ist gerade gestört: nicht schon wieder hinlaufen
+    if (alt && !darfNeuVersuchen(key, ttlMs)) {
+        return { ...alt.payload, stand: alt.ts, veraltet: true, hinweis: 'Quelle gestört, warte vor dem nächsten Versuch', _cache: 'BACKOFF' }
+    }
+
     const p = holen().then((wert) => {
         cache.set(key, { ts: Date.now(), payload: wert })
+        fehlschlag.delete(key)
         return wert
     })
     inFlight.set(key, p)
@@ -112,6 +176,8 @@ export async function ausCache(key, ttlMs, holen) {
         const payload = await p
         return { ...payload, stand: cache.get(key).ts, veraltet: false, _cache: 'MISS' }
     } catch (e) {
+        const f = fehlschlag.get(key)
+        fehlschlag.set(key, { ts: Date.now(), anzahl: (f?.anzahl || 0) + 1 })
         if (alt) {
             logWarn('marktradar', `${key}: Abruf fehlgeschlagen, liefere Altstand — ${e.message}`)
             return { ...alt.payload, stand: alt.ts, veraltet: true, hinweis: e.message, _cache: 'STALE' }
@@ -133,6 +199,17 @@ export function sendeRadar(res, payload) {
 /** Cache-Eintrag verwerfen — für „Jetzt aktualisieren". */
 export function verwerfeCache(prefix) {
     for (const key of cache.keys()) if (key.startsWith(prefix)) cache.delete(key)
+    // Auch die Sperre lösen: „Jetzt aktualisieren" ist eine bewusste Ansage
+    // des Nutzers, keine automatische Wiederholung.
+    for (const key of fehlschlag.keys()) if (key.startsWith(prefix)) fehlschlag.delete(key)
+}
+
+/** Nur für Selftests: Zustand des Zwischenspeichers zurücksetzen. */
+export function _cacheZuruecksetzen() {
+    cache.clear()
+    inFlight.clear()
+    fehlschlag.clear()
+    raeumZaehler = 0
 }
 
 /** Fehlerabbildung wie in binance-api.js: der Grund soll am Statuscode ablesbar sein. */

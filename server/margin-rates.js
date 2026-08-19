@@ -167,6 +167,30 @@ export async function holeMarginRate(symbol, quelle = 'binance') {
     return null
 }
 
+/**
+ * Wartungsmarge in PROZENT für Backtest und Paper-Handel.
+ *
+ * `override` (aus `risk.maintenanceMarginPct`) schlägt alles: wer bewusst eine
+ * Zahl einträgt, bekommt sie. Sonst die echte Stufe-1-Rate der Börse, und erst
+ * wenn beide Börsen schweigen, die Vorgabe. Vor dem Audit vom 19.08.2026 stand
+ * hier pauschal 0,5 % für jedes Symbol — bei einem Alt-Coin mit 1 % liess der
+ * Backtest die Position rund 50 % weiter laufen als die Börse.
+ *
+ * Prozent, nicht Bruch: die Schnittstelle zum Simulator rechnet in Prozent
+ * (siehe Einheiten-Kanon in `shared/liquidation.js`).
+ */
+export async function wartungsmargePctFuer(symbol, override = 0) {
+    const eigen = Number(override)
+    if (Number.isFinite(eigen) && eigen > 0) return eigen
+    try {
+        const treffer = await holeMarginRate(symbol)
+        if (treffer?.mmr > 0) return treffer.mmr * 100
+    } catch (fehler) {
+        logWarn('margin-rates', `Wartungsmarge ${symbol} nicht abrufbar: ${fehler.message}`)
+    }
+    return MMR_VORGABE * 100
+}
+
 export function setupMarginRateRoutes(app) {
     /**
      * GET /api/margin-rate

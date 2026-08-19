@@ -225,7 +225,13 @@ export function setupLivetradingRoutes(app) {
             // Der Plan gehört NICHT in den Cache-Schlüssel: er ändert nur, wie
             // dieselben Zahlen bewertet werden, und würde sonst bei jeder
             // Planänderung eine neue Bitunix-Anfrage auslösen.
-            const key = `lt_session|${von}|${Math.floor(bis / 5000)}`
+            // KEIN Zeit-Eimer im Schlüssel: die 5-s-Frist von `ausCache` regelt
+            // die Frische bereits. Ein rotierender Schlüssel legte alle 5 s
+            // einen neuen Cache-Eintrag an (~720 je Stunde, mit Positionslisten
+            // daran) und der Altstand-Rückfall fand nie einen Vorgänger — bei
+            // einem Bitunix-Aussetzer flog der Fehler bis zur Kachel durch,
+            // statt den letzten Stand mit `veraltet: true` zu zeigen.
+            const key = `lt_session|${von}`
             const roh = await ausCache(key, 5000, async () => {
                 const config = await getDecryptedConfig()
                 if (!config?.apiKey || !config?.secretKey) {

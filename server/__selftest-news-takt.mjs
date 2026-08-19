@@ -14,8 +14,12 @@
 import { sollBerichtLaufen, tagesbeginn, istOhneInhalt } from './marktradar-news.js'
 
 let fehler = 0
+// Auch die bestandenen zählen: `scripts/run-selftests.mjs` liest das Zahlenpaar
+// aus der Schlussmeldung. Ohne es zählte die ganze Datei als EINE Prüfung —
+// die Gesamtsumme des Sammellaufs war dadurch deutlich zu niedrig.
+let bestanden = 0
 const pruefe = (name, bedingung, zusatz = '') => {
-    if (bedingung) return
+    if (bedingung) { bestanden++; return }
     fehler++
     console.error(`  ✗ ${name}${zusatz ? ' — ' + zusatz : ''}`)
 }
@@ -91,5 +95,5 @@ for (const t of ['- Bitcoin faellt unter 60k', 'Ohne Zweifel ein starker Bericht
     pruefe(`„${t}" gilt als Inhalt`, istOhneInhalt(t) === false)
 }
 
-console.log(fehler === 0 ? '  ✓ alle Prüfungen bestanden' : `  ${fehler} Fehler`)
+console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

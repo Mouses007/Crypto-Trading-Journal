@@ -61,7 +61,11 @@ export const RISK_PARAMS = [
     // Wartungsmarge in Prozent des Nominalwerts — bestimmt, ab wann die Börse
     // zwangsschliesst. Greift nur, wenn der Hebel so hoch ist, dass die Marge
     // vor dem Stop aufgebraucht wäre; bei moderatem Hebel ändert sie nichts.
-    { key: 'maintenanceMarginPct', type: 'number', default: 0.5, min: 0, max: 5, step: 0.1, group: 'costs' },
+    // 0 = je Symbol von der Börse holen (Stufe 1, `server/margin-rates.js`).
+    // Vorher stand hier pauschal 0,5 für jedes Symbol; das stimmt für eine
+    // Handvoll Coins, Alt-Coins liegen bei 1–5 % und wurden im Backtest
+    // deutlich zu spät liquidiert. Ein eingetragener Wert gilt als Vorrang.
+    { key: 'maintenanceMarginPct', type: 'number', default: 0, min: 0, max: 5, step: 0.1, group: 'costs' },
     { key: 'maxPriceDeviationPct', type: 'number', default: 0.5, min: 0.01, max: 10, step: 0.01, group: 'quality' },
 ]
 

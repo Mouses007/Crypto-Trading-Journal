@@ -152,6 +152,19 @@ console.log('\nRobustheit')
         schreib.realisiertUsd === 8 && schreib.unrealisiertUsd === 3,
         `${schreib.realisiertUsd}/${schreib.unrealisiertUsd}`)
 
+    /*
+     * Break-even zählt als GEWINNER — derselbe Kanon wie im Journal
+     * (`totals-kern.js`). Vorher fiel ein 0-Trade durch beide Raster: die
+     * Sitzung zeigte eine andere Trefferquote als das Journal desselben Tages,
+     * ohne dass irgendwo ein Trade gefehlt hätte.
+     */
+    const be = berechneSitzung({ geschlossen: [zu('0'), zu('5'), zu('-3')] })
+    check('Break-even zählt als Gewinner, nicht als drittes Ergebnis',
+        be.gewinner === 2 && be.verlierer === 1,
+        `gewinner=${be.gewinner} verlierer=${be.verlierer}`)
+    check('Break-even zählt trotzdem als Trade',
+        be.tradeAnzahl === 3, String(be.tradeAnzahl))
+
     check('keine Listen übergeben wirft nicht',
         (() => {
             try { berechneSitzung({ offen: null, geschlossen: 'nein' }); return true }

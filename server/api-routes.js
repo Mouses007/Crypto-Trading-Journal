@@ -487,7 +487,10 @@ export function setupApiRoutes(app) {
                 for (const field of fields) {
                     if (!allowedColumn(table, field)) continue
                     query = query.where(function () {
-                        this.whereNull(field).orWhere(field, '').orWhere(field, '0')
+                        // Kein `orWhere(field, '0')`: bei einer Zahlenspalte
+                        // gälte damit der Wert null als „fehlt". Fehlend ist
+                        // NULL oder leerer Text, nicht die Zahl 0.
+                        this.whereNull(field).orWhere(field, '')
                     })
                 }
             }
@@ -525,13 +528,27 @@ export function setupApiRoutes(app) {
         }
     })
 
+/**
+ * Numerische Id aus dem Pfad prüfen.
+ *
+ * Unter PostgreSQL bricht `where('id', 'abc')` mit einem Cast-Fehler ab und
+ * die Route antwortet 500 — ein Serverfehler für eine kaputte Eingabe. SQLite
+ * schluckt es still und liefert nichts. Beide sollen 400 sagen.
+ */
+function numerischeId(id) {
+    const n = Number(id)
+    return Number.isInteger(n) && n > 0 ? n : null
+}
+
     app.get('/api/db/:table/:id', async (req, res) => {
         const { table, id } = req.params
         if (!VALID_TABLES.includes(table)) {
             return res.status(400).json({ error: 'Bad request' })
         }
+        const nr = numerischeId(id)
+        if (!nr) return res.status(400).json({ error: 'Invalid id' })
         try {
-            const row = await knex(table).where('id', id).first()
+            const row = await knex(table).where('id', nr).first()
             if (!row) return res.status(404).json({ error: 'Not found' })
             res.json(parseJsonColumns(table, row))
         } catch (error) {
@@ -578,6 +595,8 @@ export function setupApiRoutes(app) {
         if (!VALID_TABLES.includes(table) || READ_ONLY_TABLES.includes(table)) {
             return res.status(400).json({ error: 'Bad request' })
         }
+        const nr = numerischeId(id)
+        if (!nr) return res.status(400).json({ error: 'Invalid id' })
         const columns = TABLE_COLUMNS[table]
         if (!columns) return res.status(400).json({ error: 'Invalid table' })
 
@@ -593,9 +612,9 @@ export function setupApiRoutes(app) {
                 return res.status(400).json({ error: 'No data provided' })
             }
             data.updatedAt = knex.fn.now()
-            const count = await knex(table).where('id', id).update(data)
+            const count = await knex(table).where('id', nr).update(data)
             if (count === 0) return res.status(404).json({ error: 'Not found' })
-            const row = await knex(table).where('id', id).first()
+            const row = await knex(table).where('id', nr).first()
             res.json(parseJsonColumns(table, row))
         } catch (error) {
             console.error('DB update error:', error)
@@ -608,8 +627,10 @@ export function setupApiRoutes(app) {
         if (!VALID_TABLES.includes(table) || READ_ONLY_TABLES.includes(table)) {
             return res.status(400).json({ error: 'Bad request' })
         }
+        const nr = numerischeId(id)
+        if (!nr) return res.status(400).json({ error: 'Invalid id' })
         try {
-            const count = await knex(table).where('id', id).delete()
+            const count = await knex(table).where('id', nr).delete()
             if (count === 0) return res.status(404).json({ error: 'Not found' })
             res.json({ ok: true, deleted: id })
         } catch (error) {

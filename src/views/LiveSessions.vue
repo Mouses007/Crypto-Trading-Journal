@@ -98,10 +98,16 @@ const farbe = (v) => (Number(v) || 0) >= 0 ? 'greenTrade' : 'redTrade'
 
 const hatPlan = (s) => Number(s.planMaxVerlustUsd) > 0 || Number(s.planMaxTrades) > 0
 
+// Der Plan als Text. Beträge bleiben in Dollar — das Journal rechnet
+// durchgehend in USDT —, aber „Trades" ist Sprache und gehört übersetzt.
 const planText = (s) => {
     const teile = []
-    if (Number(s.planMaxVerlustUsd) > 0) teile.push(`max. −${Number(s.planMaxVerlustUsd).toFixed(0)} $`)
-    if (Number(s.planMaxTrades) > 0) teile.push(`max. ${s.planMaxTrades} Trades`)
+    if (Number(s.planMaxVerlustUsd) > 0) {
+        teile.push(t('liveSessions.planMaxVerlust', { betrag: `${Number(s.planMaxVerlustUsd).toFixed(0)} $` }))
+    }
+    if (Number(s.planMaxTrades) > 0) {
+        teile.push(t('liveSessions.planMaxTrades', { anzahl: s.planMaxTrades }))
+    }
     return teile.join(' · ')
 }
 

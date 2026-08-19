@@ -15,8 +15,12 @@ import {
 import { ANHANG_UNTERSTUETZUNG } from './llm.js'
 
 let fehler = 0
+// Auch die bestandenen zählen: `scripts/run-selftests.mjs` liest das Zahlenpaar
+// aus der Schlussmeldung. Ohne es zählte die ganze Datei als EINE Prüfung —
+// die Gesamtsumme des Sammellaufs war dadurch deutlich zu niedrig.
+let bestanden = 0
 const pruefe = (name, bedingung, zusatz = '') => {
-    if (bedingung) return
+    if (bedingung) { bestanden++; return }
     fehler++
     console.error(`  ✗ ${name}${zusatz ? ' — ' + zusatz : ''}`)
 }
@@ -92,5 +96,5 @@ for (const p of ['openai', 'anthropic', 'gemini', 'mistral', 'xai', 'qwen']) {
 }
 pruefe('eigener Anbieter hat bewusst keines', standardModell('custom') === '')
 
-console.log(fehler === 0 ? '  ✓ alle Prüfungen bestanden' : `  ${fehler} Fehler`)
+console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

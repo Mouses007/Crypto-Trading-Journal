@@ -29,6 +29,26 @@ import { logWarn } from './logger.js'
 const INSTANZ_ID = `${os.hostname()}/${process.pid}/${crypto.randomBytes(3).toString('hex')}`
 
 /**
+ * „Jetzt" in Millisekunden — als SQL-Ausdruck, gerechnet von der DATENBANK.
+ *
+ * Vorher verglich jeder Prozess Zeitstempel mit seiner EIGENEN Uhr. NAS und
+ * Entwicklungsrechner teilen aber nur die Datenbank, nicht die Uhr: läuft die
+ * eine mehr als die TTL vor (Aufzeichner: 180 s, Verlängerung alle 60 s, also
+ * ab rund zwei Minuten NTP-Drift), hält sie jede fremde Führung für abgelaufen
+ * und übernimmt sie mitten in einer laufenden Aufzeichnung — zwei Sockets,
+ * letzter Schreiber gewinnt. Die Datenbank ist die einzige gemeinsame Uhr, die
+ * beide Maschinen sicher haben.
+ *
+ * SQLite rechnet nur sekundengenau; bei Fristen von Minuten ist das belanglos,
+ * und im SQLite-Betrieb läuft ohnehin nur ein Prozess.
+ */
+function jetztSql(knex) {
+    return knex.client.config.client === 'pg'
+        ? '(EXTRACT(EPOCH FROM now()) * 1000)::bigint'
+        : "(CAST(strftime('%s', 'now') AS INTEGER) * 1000)"
+}
+
+/**
  * @param {string} key    Name der Aufgabe, z.B. 'snap_global'
  * @param {number} ttlMs  Mindestabstand zwischen zwei Läufen
  * @returns {Promise<boolean>} true = dieser Prozess darf laufen
@@ -42,10 +62,11 @@ export async function beansprucheAufgabe(key, ttlMs) {
         await knex('radar_fetch_state').insert({ key, fetchedAt: 0, updatedAt: jetzt })
             .onConflict('key').ignore()
 
+        const nun = jetztSql(knex)
         const treffer = await knex('radar_fetch_state')
             .where('key', key)
-            .andWhere('fetchedAt', '<', jetzt - ttlMs)
-            .update({ fetchedAt: jetzt, claimedBy: INSTANZ_ID, updatedAt: jetzt })
+            .andWhereRaw(`fetchedAt < ${nun} - ?`, [ttlMs])
+            .update({ fetchedAt: knex.raw(nun), claimedBy: INSTANZ_ID, updatedAt: knex.raw(nun) })
 
         return treffer === 1
     } catch (e) {
@@ -88,17 +109,20 @@ export async function beansprucheTagesaufgabe(key, { tagesbeginn, wiederholungMs
         await knex('radar_fetch_state').insert({ key, fetchedAt: 0, updatedAt: jetzt })
             .onConflict('key').ignore()
 
+        const nun = jetztSql(knex)
         const treffer = await knex('radar_fetch_state')
             .where('key', key)
             .andWhere(function () {
+                // Die Tagesgrenze kommt bewusst weiter von aussen: sie gilt in
+                // der Zeitzone des Journals, nicht in der der Datenbank.
                 this.where('fetchedAt', '<', tagesbeginn)
                     .orWhere(function () {
                         this.whereNotNull('lastError')
                             .andWhereNot('lastError', '')
-                            .andWhere('fetchedAt', '<', jetzt - wiederholungMs)
+                            .andWhereRaw(`fetchedAt < ${nun} - ?`, [wiederholungMs])
                     })
             })
-            .update({ fetchedAt: jetzt, claimedBy: INSTANZ_ID, updatedAt: jetzt })
+            .update({ fetchedAt: knex.raw(nun), claimedBy: INSTANZ_ID, updatedAt: knex.raw(nun) })
 
         return treffer === 1
     } catch (e) {
@@ -149,10 +173,10 @@ export async function merkeAufgabenFehler(key, text = '') {
  * Beiträge, obwohl gerade eben einer erzeugt wurde.
  */
 export async function stempleAufgabe(key) {
-    const jetzt = Date.now()
     try {
         const knex = getKnex()
-        await knex('radar_fetch_state').insert({ key, fetchedAt: jetzt, claimedBy: INSTANZ_ID, updatedAt: jetzt })
+        const nun = jetztSql(knex)
+        await knex('radar_fetch_state').insert({ key, fetchedAt: knex.raw(nun), claimedBy: INSTANZ_ID, updatedAt: knex.raw(nun) })
             .onConflict('key').merge(['fetchedAt', 'claimedBy', 'updatedAt'])
         await knex('radar_fetch_state').where('key', key).update({ lastError: '' })
     } catch (e) {
@@ -194,13 +218,14 @@ export async function beansprucheFuehrung(key, ttlMs) {
         await knex('radar_fetch_state').insert({ key, fetchedAt: 0, updatedAt: jetzt })
             .onConflict('key').ignore()
 
+        const nun = jetztSql(knex)
         const treffer = await knex('radar_fetch_state')
             .where('key', key)
             .andWhere(function () {
                 // frei (abgelaufen) ODER bereits von diesem Prozess gehalten
-                this.where('fetchedAt', '<', jetzt - ttlMs).orWhere('claimedBy', INSTANZ_ID)
+                this.whereRaw(`fetchedAt < ${nun} - ?`, [ttlMs]).orWhere('claimedBy', INSTANZ_ID)
             })
-            .update({ fetchedAt: jetzt, claimedBy: INSTANZ_ID, updatedAt: jetzt })
+            .update({ fetchedAt: knex.raw(nun), claimedBy: INSTANZ_ID, updatedAt: knex.raw(nun) })
 
         return treffer === 1
     } catch (e) {
@@ -211,11 +236,12 @@ export async function beansprucheFuehrung(key, ttlMs) {
 
 /** Halten verlängern. Liefert false, wenn inzwischen ein anderer die Zeile hat. */
 export async function verlaengereFuehrung(key) {
-    const jetzt = Date.now()
     try {
-        const treffer = await getKnex()('radar_fetch_state')
+        const knex = getKnex()
+        const nun = jetztSql(knex)
+        const treffer = await knex('radar_fetch_state')
             .where({ key, claimedBy: INSTANZ_ID })
-            .update({ fetchedAt: jetzt, updatedAt: jetzt })
+            .update({ fetchedAt: knex.raw(nun), updatedAt: knex.raw(nun) })
         return treffer === 1
     } catch (e) {
         logWarn('db-claim', `Verlängern von "${key}" fehlgeschlagen: ${e.message}`)

@@ -13,8 +13,11 @@
 import { parseBinanceKlammern, parseBybitRisikolimit } from './margin-rates.js'
 
 let fehler = 0
+// Auch die bestandenen zählen: `scripts/run-selftests.mjs` liest das Zahlenpaar
+// aus der Schlussmeldung. Ohne es zählte die ganze Datei als EINE Prüfung.
+let bestanden = 0
 const pruefe = (name, bedingung, zusatz = '') => {
-    if (bedingung) return
+    if (bedingung) { bestanden++; return }
     fehler++
     console.error(`  ✗ ${name}${zusatz ? ' — ' + zusatz : ''}`)
 }
@@ -93,8 +96,5 @@ pruefe('Rate 0 ergibt null', parseBybitRisikolimit({ result: { list: [{ riskLimi
 // Steht hier als Merkposten: wer hier später mitteln will, bricht diesen Test.
 pruefe('Binance und Bybit weichen bei BTC ab', tabelle.get('BTCUSDT').mmr !== 0.005)
 
-if (fehler) {
-    console.error(`\n${fehler} Fehler`)
-    process.exit(1)
-}
-console.log('  ✓ alle Prüfungen bestanden')
+console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
+if (fehler) process.exit(1)

@@ -54,7 +54,27 @@ const RETENTION_MS = 6 * HOUR_MS
 // Liquidationen werden viel länger aufgehoben als Orderbücher — sie sind winzig
 // und nicht nachbestellbar (siehe runRetention).
 const LIQ_RETENTION_DAYS = 365
+/**
+ * Obergrenze des ungeschriebenen Liquidations-Puffers je Symbol.
+ *
+ * 5000 Ereignisse sind bei Binances Drossel (höchstens eines je Sekunde und
+ * Symbol) über eine Stunde Aufzeichnung nicht zu erreichen — der Deckel greift
+ * also nur, wenn das Wegschreiben dauerhaft scheitert. Genau dafür ist er da.
+ */
+const LIQ_PUFFER_MAX = 5000
 const MAX_BACKOFF_MS = 60000
+/**
+ * Wartezeit vor dem nächsten Verbindungsversuch.
+ *
+ * Die Liquidations-Sockets bauten fest alle 5–10 s neu auf. Zehn Symbole plus
+ * zwei Sammelströme sind damit rund 480 Versuche in fünf Minuten — über
+ * Binances Verbindungsgrenze (~300 je 5 min und IP). Wer wegen zu vieler
+ * Verbindungen gesperrt wird, verlängert die Sperre so aktiv, und der
+ * Orderbuch-Reconnect derselben IP wird gleich mit ausgesperrt.
+ */
+function wartezeitFuerVersuch(versuch) {
+    return Math.min(MAX_BACKOFF_MS, 5000 * 2 ** Math.min(versuch, 4)) + Math.random() * 1000
+}
 // Halbtote Sockets (Standby, Netzwechsel) feuern kein close. depth@100ms
 // liefert praktisch pausenlos — längere Stille heisst toter Socket, der sonst
 // ein eingefrorenes Buch stundenlang als „aktuelle" Liquidität aufzeichnet.
@@ -98,6 +118,7 @@ class SymbolRecorder {
         this.liqUnsaved = 0
         this.liqTotal = 0
         this.liqReconnect = null
+        this.liqAttempt = 0
         this.pending = []
         this.buffering = true
         this.tickSize = null
@@ -189,6 +210,7 @@ class SymbolRecorder {
         this.liqWs = new WebSocket(`${LIQ_WS_BASE}${this.symbol.toLowerCase()}@forceOrder`)
 
         this.liqWs.on('open', () => {
+            this.liqAttempt = 0
             console.log(` -> [recorder] ${this.symbol}: Liquidations-Stream verbunden`)
         })
         this.liqWs.on('message', (raw) => {
@@ -204,6 +226,11 @@ class SymbolRecorder {
                 o.S === 'BUY' ? 1 : 0,
             ]
             this.liqEvents.push(eintrag)
+            // Harte Obergrenze: bleibt das Wegschreiben dauerhaft hängen, soll
+            // der Prozess nicht am Speicher sterben. Das älteste Ereignis wird
+            // geopfert, nicht das neueste — der Live-Ticker interessiert sich
+            // für das, was gerade passiert.
+            if (this.liqEvents.length > LIQ_PUFFER_MAX) this.liqEvents.shift()
             // Zweites Ziel: der Ringpuffer für den Live-Ticker. Der Schreibpuffer
             // hier wird alle 30 s geleert, taugt also nicht für „gerade jetzt".
             merkeLiq('binance', this.symbol, eintrag[0], eintrag[1], eintrag[2], eintrag[3])
@@ -211,7 +238,7 @@ class SymbolRecorder {
         })
         this.liqWs.on('close', () => {
             if (this.stopped) return
-            this.liqReconnect = setTimeout(() => this._connectLiquidations(), 5000 + Math.random() * 5000)
+            this.liqReconnect = setTimeout(() => this._connectLiquidations(), wartezeitFuerVersuch(this.liqAttempt++))
         })
         this.liqWs.on('error', () => { try { this.liqWs?.close() } catch (e) { /* egal */ } })
     }
@@ -447,14 +474,32 @@ class SymbolRecorder {
         return heat
     }
 
+    /*
+     * BEWUSST OHNE Bedingung auf `hourStart`: die stand hier, weil die
+     * Heatmap-Stunde daran hängt — die Liquidationen brauchen sie nicht,
+     * `_persist` gruppiert selbst nach `hourFloor`. Mit der Bedingung ging
+     * genau der schlimmste Fall schief: `hourStart` entsteht nur in
+     * `_openHour` ← `_tick`, und `_tick` bricht ab, solange das Orderbuch
+     * nicht synchron ist. Scheiterte der Depth-Schnappschuss dauerhaft, wuchs
+     * `liqEvents` unbegrenzt und wurde beim ersten `_openHour` ungeschrieben
+     * verworfen — ausgerechnet die Daten, die man nirgends nachbestellen kann.
+     */
     _captureLiquidations() {
-        if (!this.liqUnsaved || !this.hourStart) return null
+        if (!this.liqUnsaved) return null
         this.liqUnsaved = 0
         // Kompletten Bestand mitnehmen — _persist gruppiert nach Stunde. So
         // gehen Ereignisse der Vorstunde nicht verloren, wenn der Stunden-
         // wechsel zwischen zwei Flushes lag (der Upsert ist dedupliziert und
         // damit idempotent).
-        return this.liqEvents.slice()
+        const alle = this.liqEvents.slice()
+        // Abgeschlossene Stunden sind jetzt übergeben und dürfen weg. Ohne das
+        // beschnitte nur `_openHour` den Puffer — und das läuft ohne synchrones
+        // Orderbuch nie. Doppelt gezählt wird nichts: `_openHour` findet danach
+        // keine alten Einträge mehr.
+        const stunde = hourFloor(Date.now())
+        this.liqTotal += this.liqEvents.filter(e => e[0] < stunde).length
+        this.liqEvents = this.liqEvents.filter(e => e[0] >= stunde)
+        return alle
     }
 
     async _persist(heat, liq) {
@@ -550,6 +595,7 @@ class MarketLiquidationCollector {
         this.ws = null
         this.stopped = false
         this.reconnect = null
+        this.attempt = 0
         this.flushTimer = null
         this.buffers = new Map()   // SYMBOL -> [[t, preis, menge, seite], …]
         this.gesamt = 0
@@ -576,6 +622,7 @@ class MarketLiquidationCollector {
         this.ws = new WebSocket(`${LIQ_WS_BASE}!forceOrder@arr`)
 
         this.ws.on('open', () => {
+            this.attempt = 0
             console.log(' -> [recorder] Sammelstrom Liquidationen (alle Symbole) verbunden')
         })
         this.ws.on('message', (raw) => {
@@ -610,7 +657,7 @@ class MarketLiquidationCollector {
         })
         this.ws.on('close', () => {
             if (this.stopped) return
-            this.reconnect = setTimeout(() => this._connect(), 5000 + Math.random() * 5000)
+            this.reconnect = setTimeout(() => this._connect(), wartezeitFuerVersuch(this.attempt++))
         })
         this.ws.on('error', () => { try { this.ws?.close() } catch (e) { /* egal */ } })
     }
@@ -704,6 +751,7 @@ class BybitLiquidationCollector {
         this.flushTimer = null
         this.pingTimer = null
         this.lastPong = 0
+        this.attempt = 0
         this.buffers = new Map()   // SYMBOL -> [[t, preis, menge, seite], …]
         this.gesamt = 0
         this.seitStart = Date.now()
@@ -723,6 +771,7 @@ class BybitLiquidationCollector {
 
         this.ws.on('open', () => {
             console.log(' -> [recorder] Bybit-Sammelstrom Liquidationen verbunden')
+            this.attempt = 0
             this.lastPong = Date.now()
             try { this.ws.send(bybitSubscribeMsg(COLLECT_LIQ_SYMBOLS)) } catch (e) { /* close folgt */ }
             clearInterval(this.pingTimer)
@@ -741,7 +790,13 @@ class BybitLiquidationCollector {
             try { msg = JSON.parse(raw) } catch (e) { return }
             if (msg?.op === 'pong' || msg?.ret_msg === 'pong') { this.lastPong = Date.now(); return }
             if (msg?.op === 'subscribe' && msg?.success === false) {
-                logWarn('live-recorder', 'Bybit-Sammelstrom: Subscribe abgelehnt', msg?.ret_msg)
+                // Nicht nur melden: ohne Subscribe kommt nie wieder ein Ereignis,
+                // der Ping-Takt hält den Socket aber am Leben und der Status
+                // meldet weiter `verbunden: true`. Eine taube, „gesunde"
+                // Verbindung ist schlimmer als eine abgerissene — abreissen
+                // lassen, der Reconnect-Pfad meldet sich neu an.
+                logWarn('live-recorder', 'Bybit-Sammelstrom: Subscribe abgelehnt, Verbindung wird neu aufgebaut', msg?.ret_msg)
+                try { this.ws?.terminate() } catch (e) { /* egal */ }
                 return
             }
             const proSymbol = normalisiereBybitLiq(msg, COLLECT_LIQ_SYMBOLS)
@@ -765,7 +820,7 @@ class BybitLiquidationCollector {
         this.ws.on('close', () => {
             clearInterval(this.pingTimer)
             if (this.stopped) return
-            this.reconnect = setTimeout(() => this._connect(), 5000 + Math.random() * 5000)
+            this.reconnect = setTimeout(() => this._connect(), wartezeitFuerVersuch(this.attempt++))
         })
         this.ws.on('error', () => { try { this.ws?.close() } catch (e) { /* egal */ } })
     }

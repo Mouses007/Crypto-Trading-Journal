@@ -39,8 +39,15 @@ const MAX_EREIGNISSE = 20000
 /** [zeitMs, preis, menge, seite, boerse] — Array statt Objekt, es sind viele. */
 let ring = []
 
-/** Welche Börsen überhaupt schon etwas geliefert haben. */
-const boersen = new Set()
+/**
+ * Börse → Zeitpunkt des zuletzt gelieferten Ereignisses.
+ *
+ * Vorher war das ein Set: „hat je geliefert". Ein toter Bybit-Strom blieb
+ * damit für die Lebensdauer des Prozesses als Quelle gemeldet, obwohl seit
+ * Stunden nichts mehr kam — die Kachel zeigte eine Quelle an, die nichts
+ * beiträgt. Mit dem Zeitstempel kann der Aufrufer selbst urteilen.
+ */
+const boersen = new Map()
 
 /**
  * Ein Liquidationsereignis vormerken.
@@ -63,7 +70,7 @@ export function merkeLiq(boerse, symbol, t, preis, menge, seite) {
     if (!Number.isFinite(zeit) || !Number.isFinite(p) || !Number.isFinite(m)) return
     if (p <= 0 || m <= 0 || !symbol) return
 
-    boersen.add(boerse)
+    boersen.set(boerse, zeit)
     ring.push([zeit, p, m, seite === 1 ? 1 : 0, boerse, String(symbol).toUpperCase()])
 
     // Verdrängung beim Schreiben statt per Zeitgeber: ein Timer, der auch dann
@@ -129,7 +136,20 @@ export function lies({ minuten = 15, symbol = null, jetzt = Date.now() } = {}) {
         groesste: treffer.map(alsEreignis).sort((a, b) => b.usd - a.usd).slice(0, 10),
         // Das Band: neueste zuerst, damit die Kachel von oben lesen kann
         letzte: treffer.map(alsEreignis).sort((a, b) => b.t - a.t).slice(0, 50),
-        quellen: { binance: boersen.has('binance'), bybit: boersen.has('bybit') },
+        /*
+         * Je Börse: hat sie je geliefert, und wann zuletzt. `aktiv` misst am
+         * angefragten Fenster — was ausserhalb liegt, zählt in dieser Antwort
+         * ohnehin nicht mit.
+         */
+        quellen: {
+            binance: boersen.has('binance'),
+            bybit: boersen.has('bybit'),
+            zuletzt: { binance: boersen.get('binance') || 0, bybit: boersen.get('bybit') || 0 },
+            aktiv: {
+                binance: (boersen.get('binance') || 0) >= von,
+                bybit: (boersen.get('bybit') || 0) >= von,
+            },
+        },
     }
 }
 

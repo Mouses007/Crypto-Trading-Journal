@@ -1,16 +1,17 @@
 import fs from 'fs'
 import { getKnex } from './database.js'
 import { loadDbConfig, getConfigPath, saveDbConfig } from './db-config.js'
+import { SETTINGS_SENSITIVE_FIELDS } from './api-routes.js'
 
-// Sensitive Felder die im Export redaktiert werden.
-// Muss SETTINGS_SENSITIVE_FIELDS in api-routes.js decken — aiKeyPerplexity
-// fehlte hier und ging unredigiert ins Backup.
-const REDACTED_SETTINGS_KEYS = [
-    'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-    'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen', 'aiKeyPerplexity', 'aiKeyCustom',
-    'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash',
-    'mailPasswort'
-]
+/*
+ * Sensible Felder, die im Export unkenntlich gemacht werden.
+ *
+ * IMPORTIERT statt abgeschrieben: die Kopie hier hinkte der Liste in
+ * `api-routes.js` hinterher, `aiKeyPerplexity` fehlte und ging im Klartext ins
+ * Backup. Genau diese Fehlerklasse soll ein Import ausschliessen — ein neuer
+ * Schlüssel wird an einer Stelle eingetragen und ist hier automatisch dabei.
+ */
+const REDACTED_SETTINGS_KEYS = [...SETTINGS_SENSITIVE_FIELDS]
 
 // Settings-Felder, die beim Import NIE aus dem Backup übernommen werden:
 // - die redigierten Secrets (Export enthält nur '[REDACTED]' → würde echte Keys

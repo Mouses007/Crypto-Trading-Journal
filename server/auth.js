@@ -323,16 +323,26 @@ function isRateLimited(ip) {
 }
 
 function registerFailure(ip) {
-    // Abgelaufene Einträge gleich mit auskehren — die Map wüchse sonst um eine
-    // Zeile je jemals gesehener IP und würde nie wieder kleiner.
-    const verfallen = Date.now() - 60 * 60 * 1000
+    const jetzt = Date.now()
+    /*
+     * Abgelaufene Einträge auskehren — ALLE, nicht nur gesperrte.
+     *
+     * Vorher wurden nur Zeilen mit `lockUntil` geräumt: wer ein- bis viermal
+     * daneben tippte, blieb für immer in der Map stehen. Mit IPv6-Privacy-
+     * Adressen (die sich regelmässig ändern) wuchs sie damit unbegrenzt.
+     * Jetzt zählt der letzte Versuch: eine Stunde ohne neuen Fehlversuch und
+     * der Eintrag ist ohnehin bedeutungslos.
+     */
+    const verfallen = jetzt - 60 * 60 * 1000
     for (const [altIp, altRec] of loginAttempts) {
-        if (altRec.lockUntil && altRec.lockUntil < verfallen) loginAttempts.delete(altIp)
+        const aktiv = altRec.lockUntil && altRec.lockUntil > jetzt
+        if (!aktiv && (altRec.zuletzt || 0) < verfallen) loginAttempts.delete(altIp)
     }
     const rec = loginAttempts.get(ip) || { count: 0, lockUntil: 0 }
     rec.count += 1
+    rec.zuletzt = jetzt
     if (rec.count >= LOGIN_MAX_ATTEMPTS) {
-        rec.lockUntil = Date.now() + LOGIN_LOCK_MS
+        rec.lockUntil = jetzt + LOGIN_LOCK_MS
         rec.count = 0
     }
     loginAttempts.set(ip, rec)

@@ -14,8 +14,12 @@
 import { istPrivatV4, istPrivatV6 } from './net-guard.js'
 
 let fehler = 0
+// Auch die bestandenen zählen: `scripts/run-selftests.mjs` liest das Zahlenpaar
+// aus der Schlussmeldung. Ohne es zählte die ganze Datei als EINE Prüfung —
+// die Gesamtsumme des Sammellaufs war dadurch deutlich zu niedrig.
+let bestanden = 0
 const pruefe = (name, bedingung, zusatz = '') => {
-    if (bedingung) return
+    if (bedingung) { bestanden++; return }
     fehler++
     console.error(`  ✗ ${name}${zusatz ? ' — ' + zusatz : ''}`)
 }
@@ -62,5 +66,5 @@ for (const ip of ['2001:4860:4860::8888', '2606:4700:4700::1111', '::ffff:1.1.1.
     pruefe(`${ip} kommt durch`, istPrivatV6(ip) === false)
 }
 
-console.log(fehler === 0 ? '  ✓ alle Prüfungen bestanden' : `  ${fehler} Fehler`)
+console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

@@ -22,7 +22,10 @@ import {
     keySpalte, istOpenAiKompatibel, chatEndpunkt,
 } from './ai-models.js'
 import { decrypt } from './crypto.js'
-import { assertAllowedOllamaUrl } from './ollama-api.js'
+// Direkt aus `ollama-url.js`, nicht über `ollama-api.js`: dort wird die
+// Funktion nur durchgereicht, und der Umweg war der einzige Import-Zyklus im
+// Server (`ollama-api.js` holt sich seinerseits Guthaben-Helfer von hier).
+import { assertAllowedOllamaUrl } from './ollama-url.js'
 import { logWarn } from './logger.js'
 
 const DEFAULT_TIMEOUT_MS = 30000

@@ -30,6 +30,7 @@ import { entryIsValid } from './fill-simulator.js'
 import { agentenVeto } from './strategy-agents.js'
 import { openLivePosition, getLiveEquity, closeLivePosition, getLivePositionId } from './execution/bitunix.js'
 import { beansprucheFuehrung, verlaengereFuehrung, gibFuehrungFrei } from './db-claim.js'
+import { wartungsmargePctFuer } from './margin-rates.js'
 
 const TICK_MS = 15000          // Prüfintervall; gearbeitet wird nur bei neuem Kerzenschluss
 const MAX_SYMBOLS = 20         // Deckel je Instanz, damit ein Tippfehler den Server nicht flutet
@@ -238,7 +239,9 @@ async function verarbeiteSymbol(instance, symbol, timeframe, schalter) {
         maxHoldMs: ((p.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(timeframe),
         partialTpR: p.partialTpR,
         partialTpPct: p.partialTpPct,
-        maintenanceMarginPct: instance.risk.maintenanceMarginPct,
+        // Wartungsmarge je Symbol (0 in der Instanz = von der Börse holen),
+        // damit Papierbetrieb und Backtest denselben Liquidationspreis rechnen.
+        maintenanceMarginPct: await wartungsmargePctFuer(symbol, instance.risk.maintenanceMarginPct),
     })
 
     // ── 2. Erkennen ──────────────────────────────────────────────────────
@@ -745,7 +748,7 @@ async function pflegeOffenePositionen() {
                 maxHoldMs: ((instance.params.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(pflegeTf),
                 partialTpR: instance.params.partialTpR,
                 partialTpPct: instance.params.partialTpPct,
-                maintenanceMarginPct: instance.risk.maintenanceMarginPct,
+                maintenanceMarginPct: await wartungsmargePctFuer(symbol, instance.risk.maintenanceMarginPct),
             })
         } catch (e) {
             logWarn('strategy-engine', `Positions-Nachlauf ${instanceId}/${symbol} fehlgeschlagen: ${e.message}`)

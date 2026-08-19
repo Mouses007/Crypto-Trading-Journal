@@ -486,7 +486,8 @@ export async function setupFluxRoutes(app) {
             if (!apiKey) {
                 return res.json({ success: false, message: 'Kein API-Key konfiguriert' })
             }
-            const testRes = await fetch(`${GEMINI_API_BASE}/models?key=${apiKey}`)
+            // Schlüssel im Kopf statt in der Query — siehe marktradar-news.js
+            const testRes = await fetch(`${GEMINI_API_BASE}/models`, { headers: { 'x-goog-api-key': apiKey } })
             if (!testRes.ok) {
                 return res.json({ success: false, message: `API-Fehler: ${testRes.status}` })
             }

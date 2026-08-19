@@ -165,8 +165,34 @@ export async function holeText(rawUrl, { timeout = HTTP_TIMEOUT } = {}) {
         const laenge = Number(antwort.headers.get('content-length') || 0)
         if (laenge > MAX_BYTES) throw new Error(`Antwort zu gross (${Math.round(laenge / 1024)} kB)`)
 
-        const text = await antwort.text()
-        if (text.length > MAX_BYTES) throw new Error('Antwort zu gross')
+        /*
+         * Strömend lesen und beim Überschreiten abbrechen.
+         *
+         * Der `content-length`-Kopf allein genügt nicht: bei chunked Transfer
+         * fehlt er, und `antwort.text()` liest dann ERST alles in den Speicher
+         * und prüft danach. Ein bösartiger Feed-Host kann in den zehn Sekunden
+         * Zeitgrenze hunderte MB schicken — auf dem NAS-Container reicht das
+         * für einen Speicher-Engpass.
+         */
+        if (!antwort.body) return ''
+        const leser = antwort.body.getReader()
+        const dekoder = new TextDecoder('utf-8')
+        let text = ''
+        let bytes = 0
+        try {
+            for (;;) {
+                const { done, value } = await leser.read()
+                if (done) break
+                bytes += value.byteLength
+                if (bytes > MAX_BYTES) {
+                    throw new Error(`Antwort zu gross (über ${Math.round(MAX_BYTES / 1024)} kB)`)
+                }
+                text += dekoder.decode(value, { stream: true })
+            }
+        } finally {
+            try { await leser.cancel() } catch { /* Strom schon zu */ }
+        }
+        text += dekoder.decode()
         return text
     }
 

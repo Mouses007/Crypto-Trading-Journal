@@ -83,6 +83,10 @@ frontend.
 - **`server/sitzung-rechnung.js`** — Pure calculation of a running session: realised and unrealised P&L stay **separate** (a floating book gain is not a result), and the plan limits count against the **realised** part only — otherwise the bar breaks on every pullback.
 - **`shared/handelszeiten.js`** — Trading sessions, market marks and volatility windows. Each session carries its own zone as wall-clock time, because the US and EU switch to summer time weeks apart; a fixed offset is wrong two to three times a year. Shared between browser (per-second countdown) and server. Holidays and calendar events are passed in from outside so the module stays net-free.
 - **`server/db-claim.js`** — Database-backed throttle for periodic work. `beansprucheAufgabe(key, ttl)` for "once per interval", `beansprucheFuehrung/verlaengereFuehrung/gibFuehrungFrei` for a renewable leader lock. Needed because every other guard in the project is process-local while NAS container and dev server share one PostgreSQL.
+- **`server/llm.js`** — Single transport for one-shot LLM calls (`ladeLlmConfig`, `callLLMJson`): one function per provider, plus credit/key error bookkeeping. Used by the news briefing, the "Gesamtlage" tile and the strategy layer. Reports/chat (`ollama-api.js`) and the agent loop (`ai-agent.js`) still carry their own HTTP paths — consolidating them onto this module is the open item from the 19.08.2026 audit.
+- **`server/ai-models.js`** — Registry of providers and models: which key column, which endpoint, which sampling fields a model still accepts (`samplingFelder` — the Claude 5 models reject `temperature` with a 400). Registry only, no transport.
+- **`server/benachrichtigungen.js`** — Notification channels per event type (mail, push), including the "nothing happened" guard.
+- **`shared/liquidation.js`** — The one liquidation formula (exchange formula, maintenance margin as a fraction), imported by the backtest and the leverage map. Canon since the 19.08.2026 audit; the maintenance rate itself comes per symbol from `server/margin-rates.js`.
 - **`server/logger.js`** — Shared logging utility (`logWarn`, `logError`) used across server modules.
 
 ### Key Backend Patterns
@@ -112,7 +116,7 @@ All DB operations go through `src/utils/db.js` which calls the Express REST API 
 
 ### Mount Orchestration
 
-View initialization follows a pattern in `src/utils/utils.js`:
+View initialization follows a pattern in `src/utils/mountOrchestration.js`:
 - `useMountDashboard()` — sequential + parallel promise chains: fetch data → filter → calculate totals → group → render charts
 - `useMountDaily()`, `useMountCalendar()`, `useMountScreenshots()` — similar patterns per view
 - Each manages spinner state (`spinnerLoadingPage.value`) and mounted flags

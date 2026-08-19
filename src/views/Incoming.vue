@@ -155,13 +155,31 @@ function getBreakevenPrice(positionId, side) {
     }
 }
 
+/**
+ * Liegen Stop und Ziel überhaupt auf der richtigen Seite des Einstiegs?
+ *
+ * Ohne diese Prüfung liefert `Math.abs` auch für einen Stop auf der GEWINN-
+ * seite ein plausibles „RRR 1:x" — die Zahl sieht dann gesund aus, obwohl die
+ * Positionierung Unsinn ist. Die Backtest-Seite prüft das seit jeher
+ * (`server/risk-engine.js`), die Anzeige der offenen Positionen nicht.
+ */
+function levelsPlausibel(entry, sl, tp, side) {
+    const isShort = side === 'SHORT' || side === 'SELL'
+    const slOk = isShort ? sl > entry : sl < entry
+    const tpOk = isShort ? tp < entry : tp > entry
+    return slOk && tpOk
+}
+
 function getRRR(positionId, side) {
     const tpsl = getTpSlForPosition(positionId)
     if (!tpsl.sl || !tpsl.tp) return null
     const entry = getAvgEntryPrice(positionId, side)
     if (entry <= 0) return null
-    const riskDist = Math.abs(entry - parseFloat(tpsl.sl))
-    const rewardDist = Math.abs(entry - parseFloat(tpsl.tp))
+    const sl = parseFloat(tpsl.sl)
+    const tp = parseFloat(tpsl.tp)
+    if (!levelsPlausibel(entry, sl, tp, side)) return null
+    const riskDist = Math.abs(entry - sl)
+    const rewardDist = Math.abs(entry - tp)
     if (riskDist <= 0) return null
     return (rewardDist / riskDist).toFixed(1)
 }
@@ -347,6 +365,9 @@ function trackTpSlChanges(positionId, newSl, newTp, slQty = 0, tpQty = 0, posQty
         if (!effectiveSl || !effectiveTp) return null
         const entry = getAvgEntryPrice(positionId, side)
         if (entry <= 0) return null
+        // Gleiche Seitenprüfung wie in getRRR: eine Kennzahl aus vertauschten
+        // Marken ist schlimmer als gar keine.
+        if (!levelsPlausibel(entry, effectiveSl, effectiveTp, side)) return null
         const riskDist = Math.abs(entry - effectiveSl)
         const rewardDist = Math.abs(entry - effectiveTp)
         if (riskDist <= 0) return null
