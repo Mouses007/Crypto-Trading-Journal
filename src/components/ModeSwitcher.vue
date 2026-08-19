@@ -63,8 +63,9 @@ function switchMode(mode) {
             :class="['mode-btn', appMode === m.id ? 'active' : '']" @click="switchMode(m)">
             <i :class="m.icon"></i>
             <span class="mode-label">{{ labelFor(m) }}</span>
-            <!-- Ein PUNKT, kein Wort: „Beta" ausgeschrieben sprengt die Pille. -->
-            <span v-if="m.beta" class="beta-dot"></span>
+            <!-- Klein ausgeschrieben statt nur ein Punkt: macht den Beta-Status
+                 lesbar; die ausführliche Warnung steht dann auf der Seite. -->
+            <span v-if="m.beta" class="beta-dot">Beta</span>
         </button>
     </div>
 </template>
@@ -119,8 +120,6 @@ function switchMode(mode) {
 
 .mode-switch.wide .beta-dot {
     position: static;
-    width: 6px;
-    height: 6px;
     flex: 0 0 auto;
 }
 
@@ -186,10 +185,13 @@ function switchMode(mode) {
 .beta-dot {
     position: absolute;
     top: 2px;
-    right: 6px;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: rgba(240, 196, 25, 0.95);
+    right: 4px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0.12rem 0.3rem;
+    border-radius: 0.5rem;
+    background: rgba(240, 196, 25, 0.22);
+    color: rgba(240, 196, 25, 0.95);
 }
 </style>

@@ -295,7 +295,7 @@ function goToDashboard() {
                 <div class="category-pills">
                     <!-- Konten-Übersicht: immer sichtbar, links neben den Kategorie-Pillen. -->
                     <a href="/accounts" :class="['cat-pill', 'acc-pill', pageId === 'accounts' ? 'active' : '']">
-                        <i class="uil uil-wallet me-1"></i>{{ t('nav.accounts') }}</a>
+                        <i class="uil uil-wallet me-1"></i>{{ t('nav.accountsOverview') }}</a>
                     <!-- Futures immer sichtbar; Bot nur bei Börsen mit Bot-API (Pionex).
                          Auf der Konten-Seite ist keine Trading-Kategorie aktiv.
                          Die Agent-Pille ist ausgeblendet, solange das
