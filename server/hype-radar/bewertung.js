@@ -80,13 +80,29 @@ export function noteSozial(k) {
     if (Number(s.panicScore) > 0) {
         punkte = Math.max(punkte, klemme(Math.log10(Number(s.panicScore) + 1) * 40))
     }
-    // Bezahlte Hervorhebung ist Aufmerksamkeit, aber gekaufte — sie zählt
-    // ausdrücklich schwächer als organische Zustimmung.
-    if (Number(s.boostGesamt) > 0) {
-        punkte = Math.max(punkte, klemme(Math.log10(Number(s.boostGesamt) + 1) * 20))
+    /*
+     * Bezahlte Hervorhebung ist Aufmerksamkeit, aber gekaufte.
+     *
+     * Zwei Quellen desselben Signals: `boostGesamt` stammt aus der Bestenliste
+     * der Boosts und erreicht nur die obersten; `markt.boosts` steht am
+     * einzelnen Paar und deckt jeden Fund ab, den wir im Detail nachschlagen.
+     * Der grössere Wert gewinnt — es ist derselbe Sachverhalt, nur
+     * unterschiedlich vollständig erfasst.
+     *
+     * GEDECKELT bei 30: Wer sich Reichweite kauft, soll dafür nicht in die
+     * obere Hälfte kommen. Ohne diesen Deckel liessen sich mit einem
+     * Hunderter-Boost rund vierzig Punkte kaufen — und genau das ist das
+     * Muster, gegen das der ganze Radar gebaut ist.
+     */
+    const gekauft = Math.max(Number(s.boostGesamt) || 0, Number(k?.markt?.boosts) || 0)
+    if (gekauft > 0) {
+        punkte = Math.max(punkte, Math.min(BOOST_DECKEL, klemme(Math.log10(gekauft + 1) * 20)))
     }
     return klemme(punkte)
 }
+
+/** Höchstens so viel Aufmerksamkeit lässt sich kaufen. */
+export const BOOST_DECKEL = 30
 
 /**
  * Zieht der Handel an.

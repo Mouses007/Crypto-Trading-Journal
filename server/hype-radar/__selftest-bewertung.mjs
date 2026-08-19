@@ -9,7 +9,7 @@
  * Aufruf: node server/hype-radar/__selftest-bewertung.mjs
  */
 import {
-    bewerte, noteSozial, noteVolumen, noteQuellen, noteNarrativ, noteNeuheit, istTrittbrettfahrer,
+    bewerte, noteSozial, noteVolumen, noteQuellen, noteNarrativ, noteNeuheit, istTrittbrettfahrer, BOOST_DECKEL,
     STANDARD_GEWICHTE,
 } from './bewertung.js'
 import { fuehreZusammen, normSymbol, normChain } from './quellen.js'
@@ -236,6 +236,24 @@ for (const k of [
 
 // ── Sozial ──────────────────────────────────────────────────────────────
 pruefe('ohne Signale keine Note', noteSozial({ sozial: {} }) === 0)
+
+/*
+ * Gekaufte Sichtbarkeit. DexScreener nennt sie am Paar (`markt.boosts`) und
+ * in einer Bestenliste (`sozial.boostGesamt`) — dieselbe Sache, unterschiedlich
+ * vollständig erfasst. Beide müssen ankommen, und beide gedeckelt: Wer sich
+ * Reichweite kauft, darf damit nicht in die obere Hälfte gelangen. Genau
+ * dieses Muster ist der Grund, warum es den Radar gibt.
+ */
+pruefe('Boosts am Paar zählen mit', noteSozial({ markt: { boosts: 100 } }) > 0)
+pruefe('Boosts aus der Bestenliste zählen mit', noteSozial({ sozial: { boostGesamt: 100 } }) > 0)
+pruefe('gekaufte Aufmerksamkeit ist gedeckelt',
+    noteSozial({ markt: { boosts: 100000 } }) <= BOOST_DECKEL,
+    String(noteSozial({ markt: { boosts: 100000 } })))
+pruefe('und reicht nie in die obere Hälfte', BOOST_DECKEL < 50)
+pruefe('echte Zustimmung schlägt gekaufte',
+    noteSozial({ sozial: { stimmen: 5000 } }) > noteSozial({ markt: { boosts: 100000 } }))
+pruefe('der Deckel gilt nur für den gekauften Anteil',
+    noteSozial({ sozial: { galaxyScore: 80 }, markt: { boosts: 100000 } }) === 80)
 const wenig = noteSozial({ sozial: { stimmen: 10 } })
 const viel = noteSozial({ sozial: { stimmen: 1000 } })
 pruefe('mehr Zustimmung gibt mehr Note', viel > wenig)

@@ -261,14 +261,54 @@ export async function dexDetails(contract) {
             volumen6h: Number(p?.volume?.h6) || 0,
             volumen1h: Number(p?.volume?.h1) || 0,
             fdv: Number(p?.fdv) || 0,
-            aenderung24h: Number(p?.priceChange?.h24) ?? null,
+            marktkapitalisierung: Number(p?.marketCap) || 0,
+            aenderung24h: zahlOderNull(p?.priceChange?.h24),
+            /*
+             * Die kurzen Fenster sind das eigentliche Frühsignal.
+             *
+             * Bisher wurde nur die Tagesveränderung behalten — bei einem Coin,
+             * der in der letzten Stunde um 238 % gestiegen ist, sagt die aber
+             * nichts über das, was gerade passiert. DexScreener liefert alle
+             * vier Fenster im selben Abruf; sie wegzuwerfen war schlicht
+             * verschenkt.
+             */
+            aenderung6h: zahlOderNull(p?.priceChange?.h6),
+            aenderung1h: zahlOderNull(p?.priceChange?.h1),
+            aenderung5m: zahlOderNull(p?.priceChange?.m5),
             paarAlterStunden: p?.pairCreatedAt
                 ? Math.max(0, (Date.now() - Number(p.pairCreatedAt)) / 3600000)
                 : null,
             kaufVerkaufVerhaeltnis: verkaeufe > 0 ? kaeufe / verkaeufe : (kaeufe > 0 ? 99 : null),
             transaktionen24h: kaeufe + verkaeufe,
+            transaktionen1h: (Number(p?.txns?.h1?.buys) || 0) + (Number(p?.txns?.h1?.sells) || 0),
+            kaufVerkauf1h: verhaeltnis(p?.txns?.h1),
+            /*
+             * BEZAHLTE SICHTBARKEIT — der Wert, um den es hier eigentlich geht.
+             *
+             * Ein „Boost" ist ein gekaufter Platz in den DexScreener-Listen.
+             * Der Radar warnt an mehreren Stellen vor gekauftem Lärm und hat
+             * ihn bisher nur aus dem Missverhältnis zwischen Gerede und Handel
+             * ERSCHLOSSEN — dabei steht er hier als Zahl. Wer sich Reichweite
+             * kauft, soll dafür keine Aufmerksamkeitspunkte bekommen.
+             */
+            boosts: Number(p?.boosts?.active) || 0,
+            // Vorhandensein von Seite und Kanälen: kein Beweis für Substanz,
+            // aber ihr Fehlen ist ein Hinweis. Nur die Anzahl, keine Adressen —
+            // die Anzeige verlinkt ohnehin auf DexScreener.
+            webseiten: (p?.info?.websites || []).length,
+            kanaele: (p?.info?.socials || []).length,
+            bild: p?.info?.imageUrl || '',
         },
     }
+}
+
+const zahlOderNull = (w) => (Number.isFinite(Number(w)) ? Number(w) : null)
+
+const verhaeltnis = (t) => {
+    const k = Number(t?.buys) || 0
+    const v = Number(t?.sells) || 0
+    if (v > 0) return k / v
+    return k > 0 ? 99 : null
 }
 
 /** GeckoTerminal: was on-chain gerade läuft, je Kette. */

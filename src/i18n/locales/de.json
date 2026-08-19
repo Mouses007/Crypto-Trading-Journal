@@ -757,6 +757,7 @@
     "berichtMeta": "{n} Kandidaten · {v} aussortiert",
     "bestanden": "bestanden",
     "boersenTitel": "Eigene Börsen",
+    "boostHinweis": "Bezahlte Sichtbarkeit auf DexScreener ({n} Boosts) — die Aufmerksamkeit ist zum Teil gekauft.",
     "botToken": "Bot-Token",
     "brauchtSchluessel": "braucht einen Schlüssel",
     "einordnung": "Warum wird darüber geredet",
@@ -825,7 +826,7 @@
     "profil_guenstig": "günstig",
     "profil_mittel": "mittel",
     "profil_teuer": "teuer",
-    "quadrantHinweis": "Oben rechts zieht der Handel mit. Oben links wird geredet, ohne dass der Markt folgt — dort sitzt der gekaufte Lärm. Farbe und Grösse zeigen die Sicherheitsnote, graue Punkte sind aussortiert.",
+    "quadrantHinweis": "Oben rechts zieht der Handel mit. Oben links wird geredet, ohne dass der Markt folgt — dort sitzt der gekaufte Lärm. Beschriftet sind die geprüften Funde: grün ab Sicherheitsnote 70, gelb ab 40, rot darunter, rot mit Namen sind die verworfenen. Die grauen blieben unter der Schwelle und wurden gar nicht erst geprüft — ihren Namen zeigt der Zeiger.",
     "quadrantObenLinks": "Gerede ohne Markt",
     "quadrantObenRechts": "echtes Momentum",
     "quadrantTitel": "Aufmerksamkeit gegen Marktbestätigung",
@@ -905,7 +906,9 @@
     "wachhundTitel": "Wachhund",
     "webhookHa": "z. B. Home Assistant",
     "webhookPayload": "Der Webhook schickt JSON mit regel, schwere, symbol, meldung und daten — eine Home-Assistant-Automation filtert auf trigger.json.schwere == 'kritisch' und lässt blinken.",
-    "webhookUrl": "Webhook-Adresse (https://…/api/webhook/…)"
+    "webhookUrl": "Webhook-Adresse (https://…/api/webhook/…)",
+    "zeigerAbheften": "⭑ Angeheftet — klicken zum Entfernen",
+    "zeigerAnheften": "⭑ Klicken, um anzuheften"
   },
   "kiUebersicht": {
     "laedt": "Übersicht wird geladen …",

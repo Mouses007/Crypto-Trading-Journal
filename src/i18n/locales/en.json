@@ -757,6 +757,7 @@
     "berichtMeta": "{n} candidates · {v} rejected",
     "bestanden": "passed",
     "boersenTitel": "Own exchanges",
+    "boostHinweis": "Paid visibility on DexScreener ({n} boosts) — part of this attention was bought.",
     "botToken": "Bot token",
     "brauchtSchluessel": "needs a key",
     "einordnung": "Why people talk about it",
@@ -825,7 +826,7 @@
     "profil_guenstig": "cheap",
     "profil_mittel": "medium",
     "profil_teuer": "premium",
-    "quadrantHinweis": "Top right means trading follows the talk. Top left means people talk but the market does not follow — that is where bought noise sits. Colour and size show the safety score; grey dots were rejected.",
+    "quadrantHinweis": "Top right, trading is following along. Top left, there is talk the market does not follow — that is where bought noise sits. Labelled are the checked finds: green from a safety score of 70, amber from 40, red below; red with a name are the rejected ones. The grey ones stayed under the threshold and were never checked — hover to see their name.",
     "quadrantObenLinks": "talk without market",
     "quadrantObenRechts": "real momentum",
     "quadrantTitel": "Attention versus market confirmation",
@@ -905,7 +906,9 @@
     "wachhundTitel": "Watchdog",
     "webhookHa": "e.g. Home Assistant",
     "webhookPayload": "The webhook posts JSON with regel, schwere, symbol, meldung and daten — a Home Assistant automation filters on trigger.json.schwere == 'kritisch' and starts the lights.",
-    "webhookUrl": "Webhook address (https://…/api/webhook/…)"
+    "webhookUrl": "Webhook address (https://…/api/webhook/…)",
+    "zeigerAbheften": "⭑ Pinned — click to remove",
+    "zeigerAnheften": "⭑ Click to pin"
   },
   "kiUebersicht": {
     "laedt": "Loading overview …",

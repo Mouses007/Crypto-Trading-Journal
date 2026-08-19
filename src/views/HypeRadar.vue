@@ -1272,6 +1272,80 @@ function verarbeite(e, mitBericht) {
     ladeKandidaten()
 }
 
+/** Ein Wert mit Beschriftung — leere Werte fallen ganz weg. */
+function zeile(label, wert) {
+    if (wert === null || wert === undefined || wert === '' || wert === '—') return ''
+    return `<div style="display:flex;gap:.6rem;justify-content:space-between">`
+        + `<span style="opacity:.65">${label}</span><span>${wert}</span></div>`
+}
+
+/**
+ * Was der Zeiger über einen Punkt sagt.
+ *
+ * Vorher standen dort die zwei Achsenwerte und die Sicherheitsnote — also
+ * genau das, was die Position und die Farbe ohnehin schon zeigten. Alles
+ * Übrige (Thema, Liquidität, Alter, Handelsplatz, Verwerfungsgrund) lag im
+ * Kandidaten bereit und wurde nicht genutzt.
+ */
+function zeigerText(k, value = []) {
+    const symbol = k?.symbol || value[3] || '?'
+    const m = k?.marktDaten || {}
+    const tritt = k?.sozialDaten?.trittbrett
+
+    const kopf = `<strong style="font-size:1.05em">${symbol}</strong>`
+        + (k?.chain ? `<span style="opacity:.6;margin-left:.4rem">${k.chain}</span>` : '')
+        + (k?.name && k.name !== symbol ? `<div style="opacity:.7;font-size:.9em">${k.name}</div>` : '')
+
+    const noten = zeile(t('hype.spalteHype'), k?.hypeScore)
+        + zeile(t('hype.spalteSafety'), k?.status === 'verworfen' ? '—' : k?.safetyScore)
+        + zeile(t('hype.achseX'), Math.round(Number(value[0]) || 0))
+        + zeile(t('hype.achseY'), Math.round(Number(value[1]) || 0))
+
+    const pct = (w) => (Number.isFinite(Number(w))
+        ? `<span style="color:${Number(w) >= 0 ? '#4caf50' : '#ef5350'}">`
+            + `${Number(w) >= 0 ? '+' : ''}${Number(w).toFixed(1)} %</span>`
+        : null)
+
+    const markt = zeile(t('hype.spalteNarrativ'), k?.narrative)
+        + zeile(t('hype.spalteLiq'), geld(m.liquiditaetUsd))
+        + zeile(t('hype.liveVol24'), geld(m.volumen24h))
+        // Die kurzen Fenster zuerst: bei einem frischen Fund sagt die letzte
+        // Stunde mehr über das, was gerade läuft, als der Tagesschnitt.
+        + zeile('1 h', pct(m.aenderung1h))
+        + zeile('6 h', pct(m.aenderung6h))
+        + zeile('24 h', pct(m.aenderung24h))
+        + zeile(t('hype.spalteAlter'), alter(m.paarAlterStunden))
+        + zeile(t('hype.quellenAnzahl', { n: k?.sozialDaten?.quellenAnzahl ?? 0 }),
+            (k?.quellen || []).map((q) => q.quelle).join(', '))
+        + zeile(t('hype.spalteHandelbar'),
+            [m.dex, ...(m.listungen || []).map(listungKuerzel)].filter(Boolean).join(' · '))
+
+    let fuss = ''
+    // Gekaufte Sichtbarkeit ist der wichtigste Vorbehalt zu einer hohen
+    // Aufmerksamkeit — sie gehört deshalb sichtbar an den Fund, nicht in eine
+    // Fussnote der Rechnung.
+    if (Number(m.boosts) > 0) {
+        fuss += `<div style="color:#ffb300;margin-top:.35rem">`
+            + `${t('hype.boostHinweis', { n: m.boosts })}</div>`
+    }
+    if (k?.status === 'verworfen') {
+        const g = t('hype.grund_' + k.verworfenGrund)
+        fuss += `<div style="color:#ef5350;margin-top:.35rem">✕ `
+            + `${g === 'hype.grund_' + k.verworfenGrund ? k.verworfenGrund : g}</div>`
+    }
+    if (tritt?.ja) {
+        fuss += `<div style="color:#ffb300;margin-top:.2rem">`
+            + `${t('hype.trittbrettHilfeEinzeln', { v: tritt.vorbild })}</div>`
+    }
+    // Der Hinweis auf den Klick gehört hierher: ohne ihn fände niemand
+    // heraus, dass sich ein Fund direkt aus dem Bild anheften lässt.
+    fuss += `<div style="opacity:.55;margin-top:.4rem;font-size:.9em">`
+        + `${istFav(k || {}) ? t('hype.zeigerAbheften') : t('hype.zeigerAnheften')}</div>`
+
+    const trenner = '<div style="border-top:1px solid rgba(255,255,255,.12);margin:.35rem 0"></div>'
+    return kopf + trenner + noten + (markt ? trenner + markt : '') + fuss
+}
+
 // ── Quadrant ────────────────────────────────────────────────────────────
 function zeichne() {
     if (!quadrantEl.value || reiter.value !== 'dashboard') return
@@ -1283,10 +1357,19 @@ function zeichne() {
      * viel Lärm es gab, ohne dass sie mit einer Sicherheitsfarbe geadelt
      * würden, die sie nicht haben.
      */
+    /*
+     * Der ganze Kandidat hängt am Punkt, nicht nur die fünf Zahlen fürs
+     * Zeichnen. Der Zeiger zeigte vorher vier Werte, obwohl zu jedem Fund ein
+     * Dutzend vorliegt — und ohne den Kandidaten liesse sich aus dem Diagramm
+     * heraus auch nichts anheften.
+     */
     const punkt = (k) => {
         const tn = k.sozialDaten?.teilnoten || {}
         const aufmerksamkeit = ((Number(tn.sozial) || 0) + (Number(tn.quellen) || 0)) / 2
-        return [Number(tn.volumen) || 0, aufmerksamkeit, k.safetyScore, k.symbol, k.status]
+        return {
+            value: [Number(tn.volumen) || 0, aufmerksamkeit, k.safetyScore, k.symbol, k.status],
+            k,
+        }
     }
 
     const gut = bestanden.value.map(punkt)
@@ -1295,14 +1378,38 @@ function zeichne() {
 
     diagramm?.dispose()
     diagramm = echarts.init(quadrantEl.value)
+    /*
+     * Klick auf einen Punkt heftet an oder ab — dieselbe Wirkung wie der Stern
+     * in der Tabelle. Ohne das müsste man einen auffälligen Punkt erst in
+     * einer Liste von hundert Zeilen wiederfinden.
+     */
+    diagramm.on('click', (p) => { if (p?.data?.k) favUmschalten(p.data.k) })
+    diagramm.getZr().on('mousemove', (e) => {
+        diagramm.getZr().setCursorStyle(e.target ? 'pointer' : 'default')
+    })
     diagramm.setOption({
-        grid: { left: 55, right: 20, top: 30, bottom: 45 },
+        /*
+         * Rechts mehr Luft: Die stärksten Funde liegen bei 100 auf der
+         * Marktbestätigung, und ihr Namensschild ragte über den Rand hinaus.
+         * Oben Platz für die Legende.
+         */
+        grid: { left: 55, right: 65, top: 46, bottom: 45 },
+        /*
+         * Die Legende erklärt das Farbschema, statt es erraten zu lassen.
+         * Ohne sie musste man aus den Punkten schliessen, dass Grün „hat die
+         * Sicherheitsprüfung bestanden" heisst — und die Farbe ist hier der
+         * einzige Träger dieser Information.
+         */
+        legend: {
+            top: 4, right: 0, icon: 'circle', itemGap: 18,
+            textStyle: { color: '#b3b8bd', fontSize: 12 },
+            inactiveColor: '#5a5f66',
+        },
         tooltip: {
             trigger: 'item',
-            formatter: (p) => `<strong>${p.value[3]}</strong><br>`
-                + `${t('hype.achseX')}: ${Math.round(p.value[0])}<br>`
-                + `${t('hype.achseY')}: ${Math.round(p.value[1])}<br>`
-                + `${t('hype.spalteSafety')}: ${p.value[4] === 'verworfen' ? '—' : Math.round(p.value[2])}`,
+            confine: true,
+            extraCssText: 'max-width:320px;white-space:normal;line-height:1.5;',
+            formatter: (p) => zeigerText(p.data?.k, p.value),
         },
         xAxis: {
             type: 'value', min: 0, max: 100, name: t('hype.achseX'), nameLocation: 'middle', nameGap: 28,
@@ -1344,6 +1451,20 @@ function zeichne() {
                     borderColor: 'rgba(0,0,0,.7)', borderWidth: 1,
                 },
                 emphasis: { scale: 1.5 },
+                /*
+                 * Auch die Verworfenen bekommen ihren Namen — es sind wenige
+                 * (typisch fünf bis fünfzehn), und gerade bei ihnen ist die
+                 * Frage „welcher war das?" naheliegend. Die neunzig unter der
+                 * Schwelle bleiben unbeschriftet: Namen an jedem Punkt wären
+                 * ein Buchstabenbrei, in dem man nichts mehr fände. Für sie
+                 * nennt der Zeiger den Namen.
+                 */
+                label: {
+                    show: true, formatter: (p) => p.value[3], position: 'top',
+                    color: '#c9a0a0', fontSize: 10,
+                    textBorderColor: 'rgba(0,0,0,.9)', textBorderWidth: 3,
+                },
+                labelLayout: { hideOverlap: true, moveOverlap: 'shiftY' },
             },
             {
                 type: 'scatter', name: t('hype.bestanden'), data: gut,
@@ -1365,6 +1486,10 @@ function zeichne() {
                     color: '#e6e8ea', fontSize: 11, fontWeight: 600,
                     textBorderColor: 'rgba(0,0,0,.9)', textBorderWidth: 3,
                 },
+                // Schilder weichen einander aus statt sich zu überlagern; was
+                // dann immer noch kollidiert, wird lieber weggelassen als
+                // unlesbar übereinandergelegt.
+                labelLayout: { hideOverlap: true, moveOverlap: 'shiftY' },
                 // Die Trennlinien machen die vier Felder erst lesbar.
                 markLine: {
                     silent: true, symbol: 'none',
