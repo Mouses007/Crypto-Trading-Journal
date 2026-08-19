@@ -18,6 +18,7 @@ import { setupBenachrichtigungsRoutes, startBenachrichtigungsTakt, stopBenachric
 import { setupOllamaRoutes } from './server/ollama-api.js'
 import { setupAiModelRoutes } from './server/ai-models.js'
 import { setupAgentRoutes } from './server/ai-agent.js'
+import { setupAiUebersichtRoutes } from './server/ai-uebersicht.js'
 import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
@@ -145,6 +146,7 @@ const startIndex = async () => {
     setupOllamaRoutes(app);
     setupAiModelRoutes(app);
     setupAgentRoutes(app);
+    setupAiUebersichtRoutes(app);
     setupUpdateRoutes(app);
     setupBackupRoutes(app);
     await setupFluxRoutes(app);
