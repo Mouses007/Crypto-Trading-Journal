@@ -12,6 +12,7 @@ import {
 // Kreis-Import mit llm.js (llm.js holt sich hier den SSRF-Schutz) — unkritisch,
 // weil beide Seiten nur Funktionen zur Laufzeit aufrufen, nichts beim Laden.
 import { istGuthabenFehler, merkeKiGuthaben } from './llm.js'
+import { merkeVerbrauch } from './ai-usage.js'
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
@@ -398,6 +399,14 @@ export function setupOllamaRoutes(app) {
                 console.error('Auto-save report error:', saveErr)
             }
 
+            // Immer verbucht — auch wenn das Speichern oben scheiterte: bezahlt
+            // ist der Lauf so oder so.
+            merkeVerbrauch({
+                funktion: 'bericht', ausloeser: 'manuell',
+                provider, modell: model || provider,
+                usage: tokenUsage, bezug: { typ: 'bericht', id: savedId },
+            })
+
             res.json({ report, provider, model: model || provider, data: reportData, tokenUsage, savedId })
         } catch (e) {
             console.error('AI report error:', e)
@@ -730,6 +739,12 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                 })
             }
 
+            merkeVerbrauch({
+                funktion: 'trade-analyse', ausloeser: 'manuell',
+                provider, modell: model || provider,
+                usage: result.usage, bezug: { typ: 'trade', id: tradeId },
+            })
+
             res.json({
                 review: result.text,
                 provider,
@@ -871,6 +886,12 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                 promptTokens: result.usage?.promptTokens || 0,
                 completionTokens: result.usage?.completionTokens || 0,
                 totalTokens: result.usage?.totalTokens || 0
+            })
+
+            merkeVerbrauch({
+                funktion: 'trade-chat', ausloeser: 'manuell',
+                provider, modell: model || '',
+                usage: result.usage, bezug: { typ: 'trade', id: tradeId },
             })
 
             res.json({
@@ -1344,6 +1365,12 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                 promptTokens: result.usage?.promptTokens || 0,
                 completionTokens: result.usage?.completionTokens || 0,
                 totalTokens: result.usage?.totalTokens || 0
+            })
+
+            merkeVerbrauch({
+                funktion: 'coach-chat', ausloeser: 'manuell',
+                provider, modell: model || '',
+                usage: result.usage, bezug: { typ: 'bericht', id: reportId },
             })
 
             res.json({

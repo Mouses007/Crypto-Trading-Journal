@@ -30,7 +30,8 @@ import {
     sendRadarError, holeFearGreed, holeGlobal, holeFunding, holeLsOi, holeAltseason,
     holeMarkt,
 } from './marktradar-api.js'
-import { ladeLlmConfig, callLLMJson, istGuthabenFehler, merkeKiGuthaben } from './llm.js'
+import { ladeLlmConfig, callLLMJson, istGuthabenFehler, merkeKiGuthaben, schaetzeKosten } from './llm.js'
+import { merkeVerbrauch } from './ai-usage.js'
 import { samplingFelder, GEMINI_STANDARDMODELL } from './ai-models.js'
 import {
     sucheXPosts, rechercheThema, istGefiltert, zerlegeWoerter, THEMEN_NAMEN,
@@ -833,12 +834,30 @@ async function baueLagebericht(s, { manuell = false } = {}) {
                     v.zusammenfassung = istOhneInhalt(text) ? '' : text
                     if (v.zusammenfassung) videoAnalysiert.push(v)
                     videosGesehen++
+                    /*
+                     * Video ist fast nur Eingabe: die Bildspur zählt als
+                     * Eingabe-Token, die Antwort sind ein paar Stichpunkte.
+                     * Deshalb alles als Eingabe rechnen und die Ausgabe mit 0
+                     * ansetzen. Der Preis kommt aus der zentralen Liste statt
+                     * als feste Zahl — hier stand `0.30`, was zufällig dem
+                     * Eingabepreis von `gemini-3.5-flash-lite` entspricht und
+                     * bei jedem anderen eingestellten Modell falsch war.
+                     */
+                    const videoKosten = Math.round(schaetzeKosten(geminiCfg.model, tokens, 0) * 10000) / 10000
+                    merkeVerbrauch({
+                        funktion: 'video',
+                        ausloeser: manuell ? 'manuell' : 'auto',
+                        provider: geminiCfg.provider,
+                        modell: geminiCfg.model,
+                        usage: { promptTokens: tokens, completionTokens: 0, totalTokens: tokens },
+                        kostenUsd: videoKosten,
+                        bezug: { typ: 'video', id: v.id },
+                    })
                     videoLog.push({
                         titel: v.titel, url: v.url,
                         quelle: nachId.get(v.sourceId)?.name || '',
                         tokens,
-                        // Gemini 2.5/3.x Flash: 0,30 $ je Million Eingabe-Token
-                        kostenUsd: Math.round((tokens / 1e6) * 0.30 * 10000) / 10000,
+                        kostenUsd: videoKosten,
                         ergebnis: istOhneInhalt(text) ? 'ohne Inhalt' : 'ok',
                         // Die Beschreibung SELBST — bisher wurde sie nur in
                         // `news_items` abgelegt und war im Bericht nirgends zu
@@ -1030,6 +1049,10 @@ async function baueLagebericht(s, { manuell = false } = {}) {
             system,
             user: teile.join('\n\n'),
             timeoutMs: 180000,
+            // Jeder Anlauf wird verbucht: ein abgeschnittener Bericht ist
+            // wertlos, bezahlt ist er trotzdem.
+            zweck: 'lagebericht',
+            ausloeser: manuell ? 'manuell' : 'auto',
         })
         if (!antwort.abgeschnitten && antwort.json) break
         logWarn('news', `Bericht mit ${budget} Token abgeschnitten — `

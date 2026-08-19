@@ -429,7 +429,10 @@ export function setupStrategyBuilderRoutes(app) {
             // im JSON abgeschnitten und ist dann unbrauchbar.
             const antwort = await callLLMJson(
                 { ...cfg, maxTokens: 16000 },
-                { system: SYSTEM, user: teile.join('\n\n'), anhaenge: modellAnhaenge, timeoutMs: 180000 },
+                {
+                    system: SYSTEM, user: teile.join('\n\n'), anhaenge: modellAnhaenge, timeoutMs: 180000,
+                    zweck: 'strategie-baukasten', ausloeser: 'manuell',
+                },
             )
             if (!antwort.json) {
                 // Den Grund benennen statt achselzuckend abzubrechen.

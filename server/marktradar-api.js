@@ -1324,11 +1324,13 @@ async function holeMechanikErklaerung(symbol, fenster) {
         mech.fehlend.length ? `  Fehlende Faktoren: ${mech.fehlend.join(', ')}` : '',
     ].filter(Boolean).join('\n')
 
-    let antwort = await callLLMJson(cfg, { system, user, timeoutMs: 60000 })
+    const buchung = { zweck: 'mechanik', ausloeser: 'manuell', bezug: { typ: 'symbol', id: symbol } }
+    let antwort = await callLLMJson(cfg, { system, user, timeoutMs: 60000, ...buchung })
     if (!antwort.json && antwort.abgeschnitten) {
-        // Token-Budget zu klein, nicht der Prompt kaputt — einmal nachlegen
+        // Token-Budget zu klein, nicht der Prompt kaputt — einmal nachlegen.
+        // Der erste Versuch wird trotzdem verbucht: bezahlt ist er.
         cfg.maxTokens = 600
-        antwort = await callLLMJson(cfg, { system, user, timeoutMs: 60000 })
+        antwort = await callLLMJson(cfg, { system, user, timeoutMs: 60000, ...buchung })
     }
     const text = String(antwort.json?.text || '').trim()
     if (!text) throw new Error('Die KI hat keine verwertbare Einordnung geliefert')

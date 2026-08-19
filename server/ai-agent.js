@@ -30,6 +30,17 @@ const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 // Concurrency guard — only one agent run at a time
 let agentRunning = false
 
+/**
+ * Läuft gerade ein Agentendurchgang?
+ *
+ * Prozesslokal wie der Wächter selbst — die Antwort gilt für DIESEN Server,
+ * nicht für den NAS-Container nebenan. Für die KI-Übersicht reicht das: sie
+ * fragt denselben Prozess, der die Anfrage beantwortet.
+ */
+export function istAgentAktiv() {
+    return agentRunning
+}
+
 // ==================== HELPER: Load AI settings ====================
 
 async function loadAiSettings() {
@@ -736,6 +747,22 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE, i
         history.push({ role: 'assistant', content: finalAnswer })
         sendSSE({ type: 'answer', content: finalAnswer })
     }
+
+    /*
+     * Eine Zeile je Lauf, nicht je Runde.
+     *
+     * Der Agent dreht bis zu zehn Schleifen mit Werkzeugaufrufen; einzeln
+     * verbucht stünden zehn Posten in der Auswertung, wo der Nutzer eine Frage
+     * gestellt hat. Gebucht wird auch nach Abbruch — die Runden bis dahin sind
+     * gerechnet und bezahlt.
+     */
+    merkeVerbrauch({
+        funktion: 'agent',
+        ausloeser: 'manuell',
+        provider: config.provider,
+        modell: config.model,
+        usage: { promptTokens, completionTokens, totalTokens },
+    })
 
     return { answer: finalAnswer, totalTokens, promptTokens, completionTokens, totalToolCalls, messages: history }
 }

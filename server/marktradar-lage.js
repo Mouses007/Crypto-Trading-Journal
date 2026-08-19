@@ -235,11 +235,13 @@ export async function erzeugeLage(symbol, erzwingen = false) {
         ].join('\n')
 
         // Guthaben- und Schlüsselfehler vermerkt `callLLMJson` selbst
-        let antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000 })
+        const buchung = { zweck: 'lage', ausloeser: 'manuell', bezug: { typ: 'symbol', id: sym } }
+        let antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000, ...buchung })
         if (!antwort.json && antwort.abgeschnitten) {
-            // Budget zu klein, nicht der Prompt kaputt — einmal nachlegen
+            // Budget zu klein, nicht der Prompt kaputt — einmal nachlegen.
+            // Der erste Versuch wird trotzdem verbucht: bezahlt ist er.
             cfg.maxTokens = 6000
-            antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000 })
+            antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000, ...buchung })
         }
 
         const einordnung = normalisiereAntwort(antwort.json)

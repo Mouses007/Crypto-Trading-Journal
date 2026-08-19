@@ -18,7 +18,10 @@
  */
 
 import { getKnex } from './database.js'
-import { schaetzeKosten } from './llm.js'
+// Direkt aus `ai-preise.js`, nicht über `llm.js`: dort wird die Funktion nur
+// durchgereicht, und `llm.js` verbucht seinerseits über dieses Modul — der
+// Umweg wäre ein Import-Zyklus.
+import { schaetzeKosten } from './ai-preise.js'
 import { logWarn } from './logger.js'
 
 /**

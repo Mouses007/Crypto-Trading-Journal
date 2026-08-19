@@ -4,6 +4,8 @@
  */
 import { getKnex } from './database.js'
 import { encrypt, decrypt } from './crypto.js'
+import { merkeVerbrauch } from './ai-usage.js'
+import { schaetzeBildKosten } from './ai-preise.js'
 import sharp from 'sharp'
 import { readFile } from 'fs/promises'
 import { fileURLToPath } from 'url'
@@ -356,12 +358,24 @@ async function callGeminiApi(apiKey, model, prompt) {
 // ============================================================
 
 async function generateBackgroundImage(provider, settings, prompt) {
+    // Erst nach erfolgreicher Erzeugung verbuchen: ein abgelehnter Aufruf
+    // (fehlender Schlüssel, Fehler beim Anbieter) kostet nichts.
+    const verbuche = (modell) => merkeVerbrauch({
+        funktion: 'bild',
+        ausloeser: 'manuell',
+        provider,
+        modell,
+        kostenUsd: schaetzeBildKosten(modell),
+    })
+
     if (provider === 'gemini') {
         const apiKey = settings.geminiImageApiKey ? decrypt(settings.geminiImageApiKey) : ''
         if (!apiKey) throw new Error('Kein Gemini API-Key konfiguriert. Bitte in den Einstellungen hinterlegen.')
         const model = settings.geminiImageModel || 'gemini-2.5-flash-image'
         console.log(` -> Gemini generating share card (${model})...`)
-        return await callGeminiApi(apiKey, model, prompt)
+        const bild = await callGeminiApi(apiKey, model, prompt)
+        verbuche(model)
+        return bild
     } else {
         const apiKey = settings.fluxApiKey ? decrypt(settings.fluxApiKey) : ''
         if (!apiKey) throw new Error('Kein FLUX API-Key konfiguriert. Bitte in den Einstellungen hinterlegen.')
@@ -370,6 +384,7 @@ async function generateBackgroundImage(provider, settings, prompt) {
         const imageUrl = await callFluxApi(apiKey, model, prompt, 1080, 1080)
         const imgRes = await fetch(imageUrl)
         if (!imgRes.ok) throw new Error('Failed to download generated image')
+        verbuche(model)
         return Buffer.from(await imgRes.arrayBuffer())
     }
 }

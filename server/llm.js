@@ -27,63 +27,19 @@ import { decrypt } from './crypto.js'
 // Server (`ollama-api.js` holt sich seinerseits Guthaben-Helfer von hier).
 import { assertAllowedOllamaUrl } from './ollama-url.js'
 import { logWarn } from './logger.js'
+import { schaetzeKosten } from './ai-preise.js'
+import { merkeVerbrauch } from './ai-usage.js'
 
 const DEFAULT_TIMEOUT_MS = 30000
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
-/** Preise in USD je Million Token (Eingabe, Ausgabe). Nur zur Budgetschätzung. */
-const PREISE = {
-    'claude-fable': [10, 50],
-    'claude-opus': [5, 25],
-    'claude-sonnet': [3, 15],
-    'claude-haiku': [1, 5],
-    'gpt-5.6-sol': [5, 30],
-    'gpt-5.6-terra': [2, 12],
-    'gpt-5.6-luna': [0.2, 1.2],
-    'gpt-4o-mini': [0.15, 0.6],
-    'gpt-4o': [2.5, 10],
-    // Längere Namen zuerst: der Treffer geht über `includes`, sonst würde
-    // `gemini-3.5-flash` auch `gemini-3.5-flash-lite` einfangen.
-    'gemini-3.5-flash-lite': [0.3, 2.5],
-    'gemini-3.1-flash-lite': [0.25, 1.5],
-    'gemini-2.5-flash-lite': [0.1, 0.4],
-    'gemini-3.1-pro': [2, 12],
-    'gemini-3.7-flash': [0.75, 3.75],
-    'gemini-3.6-flash': [0.75, 3.75],
-    'gemini-3.5-flash': [1.5, 9],
-    'gemini-3-flash': [0.5, 3],
-    'gemini-2.5-pro': [1.25, 10],
-    'gemini-2.5-flash': [0.3, 2.5],
-    'mistral-medium': [1.5, 7.5],
-    'mistral-large': [0.5, 1.5],
-    'mistral-small': [0.15, 0.6],
-    // Längere Namen zuerst (Treffer über `includes`). Stand 17.08.2026 laut
-    // docs.x.ai/developers/pricing; vorher stand hier pauschal `grok-4: [4,12]`
-    // und rechnete damit rund das Doppelte des tatsächlichen Preises.
-    'grok-4.6': [2, 6],
-    'grok-4.5': [2, 6],
-    'grok-4.3': [1.25, 2.5],
-    'grok-build': [1, 2],
-    'grok-4': [2, 6],
-    // Längerer Name zuerst, sonst fängt `sonar` auch `sonar-pro` ein.
-    'sonar-pro': [3, 15],
-    'sonar': [1, 1],
-    'qwen3.7-max': [2, 6],          // Alibaba nennt keinen öffentlichen Listenpreis
-    'qwen3.7-plus': [0.5, 2],       // — Schätzwerte, nur für die Budget-Anzeige
-    'qwen3.6-flash': [0.15, 0.6],
-    'deepseek-v4-flash': [0.44, 1.32],
-    'deepseek-v4-pro': [1.32, 3.96],
-    'deepseek-chat': [0.27, 1.1],
-    'deepseek-reasoner': [0.55, 2.19],
-}
-
-/** Grobe Kosten eines Aufrufs. Unbekannte Modelle (z. B. Ollama) kosten 0. */
-export function schaetzeKosten(model, promptTokens, completionTokens) {
-    const treffer = Object.keys(PREISE).find((k) => String(model || '').includes(k))
-    if (!treffer) return 0
-    const [ein, aus] = PREISE[treffer]
-    return (promptTokens / 1e6) * ein + (completionTokens / 1e6) * aus
-}
+// Die Preistabelle liegt in `ai-preise.js` — reine Daten, ohne Abhängigkeiten.
+// Sie muss auch von der Verbrauchserfassung erreichbar sein, und die wiederum
+// wird von hier aus beschrieben; über die Preise verbunden wären beide Module
+// im Kreis verbunden. Eingeführt UND weitergereicht, damit die bestehenden
+// Importe aus `llm.js` gültig bleiben (`export … from` allein liesse die
+// Funktion hier drin unbekannt).
+export { schaetzeKosten }
 
 // ── Guthaben-Status ──────────────────────────────────────────────────────
 //
@@ -406,7 +362,10 @@ async function ollama(cfg, system, user, timeoutMs, anhaenge = []) {
  *   Aufrufer muss diesen Fall behandeln — im Handel ist eine unverständliche
  *   Antwort ein Grund zum Aussetzen, nicht zum Raten.
  */
-export async function callLLMJson(cfg, { system, user, timeoutMs = DEFAULT_TIMEOUT_MS, anhaenge = [] }) {
+export async function callLLMJson(cfg, {
+    system, user, timeoutMs = DEFAULT_TIMEOUT_MS, anhaenge = [],
+    zweck = '', ausloeser = 'auto', bezug = null,
+}) {
     if (!cfg.model) throw new Error('Kein Modell konfiguriert')
     if (cfg.provider !== 'ollama' && !cfg.apiKey) {
         throw new Error(`Kein API-Schlüssel für ${cfg.provider} hinterlegt`)
@@ -458,12 +417,37 @@ export async function callLLMJson(cfg, { system, user, timeoutMs = DEFAULT_TIMEO
         completionTokens: antwort.completionTokens,
         totalTokens: antwort.promptTokens + antwort.completionTokens,
     }
+    const costUsd = schaetzeKosten(cfg.model, usage.promptTokens, usage.completionTokens)
+
+    /*
+     * Verbuchen, sobald der Aufruf durch ist.
+     *
+     * Ohne `zweck` wird NICHT gebucht: eine Zeile, die keinen Vorgang benennt,
+     * stünde als namenloser Posten in der Auswertung und wäre schlimmer als
+     * keine. Aufrufer, die noch keinen Zweck mitgeben, fehlen damit sichtbar,
+     * statt die Zahlen still zu verwässern.
+     *
+     * Bewusst ohne `await`: der Aufrufer wartet auf seine Antwort, nicht auf die
+     * Buchhaltung. `merkeVerbrauch` schluckt seine Fehler ohnehin selbst.
+     */
+    if (zweck) {
+        merkeVerbrauch({
+            funktion: zweck,
+            ausloeser,
+            provider: cfg.provider,
+            modell: cfg.model,
+            usage,
+            kostenUsd: costUsd,
+            bezug,
+        })
+    }
+
     return {
         json,
         text: antwort.text,
         stopReason: antwort.stopReason,
         abgeschnitten,
         usage,
-        costUsd: schaetzeKosten(cfg.model, usage.promptTokens, usage.completionTokens),
+        costUsd,
     }
 }

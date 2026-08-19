@@ -201,6 +201,8 @@ export async function agentenVeto({ instance, setup }) {
             const antwort = await callLLMJson(cfg, {
                 system: SYSTEM_SENTIMENT,
                 user: `Setup:\n${beschreibeSetup(setup, instance)}\n\nMarktumfeld:\n${JSON.stringify(sentimentDaten, null, 1)}`,
+                zweck: 'strategie-veto',
+                bezug: { typ: 'instanz', id: instance?.id },
             })
             ergebnis.costUsd += antwort.costUsd
             ergebnis.sentiment = { ...normalisiere(antwort.json, 'Sentiment'), daten: sentimentDaten, usage: antwort.usage }
@@ -231,6 +233,8 @@ export async function agentenVeto({ instance, setup }) {
                     `Bewertung des Sentiment-Agenten:\n${JSON.stringify(ergebnis.sentiment || {}, null, 1)}`,
                     `Offene Positionen dieser Strategie:\n${JSON.stringify(offene, null, 1)}`,
                 ].join('\n\n'),
+                zweck: 'strategie-veto',
+                bezug: { typ: 'instanz', id: instance?.id },
             })
             ergebnis.costUsd += antwort.costUsd
             ergebnis.portfolio = { ...normalisiere(antwort.json, 'Portfolio'), usage: antwort.usage }

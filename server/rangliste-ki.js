@@ -80,6 +80,8 @@ export async function schlageUniversumVor(thema, opts = {}) {
         system: SYSTEM,
         user: `Thema: ${t}\n\nVerfügbare Symbole (${topf.length}):\n${topf.join(' ')}`,
         timeoutMs: 90000,
+        zweck: 'rangliste',
+        ausloeser: 'manuell',
     })
 
     const daten = antwort?.json

@@ -15,6 +15,7 @@
  */
 
 import { schaetzeKosten } from './llm.js'
+import { merkeVerbrauch } from './ai-usage.js'
 import { logWarn } from './logger.js'
 
 // Pauschale je Suchaufruf laut Anbieter-Preisliste (5 $ je 1000). Die Token
@@ -150,6 +151,20 @@ export async function sucheXPosts({ handles, vonIso, bisIso, modell, apiKey, tim
     const kostenUsd = suchen * X_SUCHE_USD
         + schaetzeKosten(modell || X_STANDARDMODELL, Number(j?.usage?.input_tokens) || 0, Number(j?.usage?.output_tokens) || 0)
 
+    // Die Suchpauschale ist der grössere Posten — deshalb der fertige Preis
+    // statt einer Tokenrechnung, die ihn unterschlagen würde.
+    merkeVerbrauch({
+        funktion: 'x-suche',
+        provider: 'xai',
+        modell: modell || X_STANDARDMODELL,
+        usage: {
+            promptTokens: Number(j?.usage?.input_tokens) || 0,
+            completionTokens: Number(j?.usage?.output_tokens) || 0,
+            totalTokens: tokens,
+        },
+        kostenUsd,
+    })
+
     if (!posts.length && text) logWarn('news-recherche', `X-Suche ohne verwertbare Posts (${text.slice(0, 120)})`)
     return { posts, tokens, kostenUsd }
 }
@@ -208,12 +223,24 @@ export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'so
         .slice(0, 10)
     const promptTokens = Number(j?.usage?.prompt_tokens) || 0
     const completionTokens = Number(j?.usage?.completion_tokens) || 0
+    // Anfragepauschale plus Token — die Pauschale fällt je Frage an, unabhängig
+    // davon, wie kurz die Antwort ausfällt.
+    const kostenUsd = SONAR_ANFRAGE_USD + schaetzeKosten(modell, promptTokens, completionTokens)
+
+    merkeVerbrauch({
+        funktion: 'recherche',
+        provider: 'perplexity',
+        modell,
+        usage: { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens },
+        kostenUsd,
+    })
+
     return {
         text,
         citations,
         bilder,
         tokens: promptTokens + completionTokens,
-        kostenUsd: SONAR_ANFRAGE_USD + schaetzeKosten(modell, promptTokens, completionTokens),
+        kostenUsd,
     }
 }
 
