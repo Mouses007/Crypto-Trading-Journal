@@ -17,6 +17,7 @@ import {
     keySpalte, istOpenAiKompatibel, chatEndpunkt,
 } from './ai-models.js'
 import { beobachteAbbruch, sseSender } from './sse.js'
+import { merkeVerbrauch } from './ai-usage.js'
 
 const MAX_ITERATIONS = 10
 // Voreinstellung des Token-Budgets je Lauf — überschreibbar in den
