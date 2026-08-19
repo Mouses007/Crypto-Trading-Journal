@@ -14,6 +14,7 @@ import { getKnex } from './database.js'
 import { isAllowedOllamaUrl } from './ollama-url.js'
 import { decrypt } from './crypto.js'
 import { logError, logWarn } from './logger.js'
+import { beobachteAbbruch } from './sse.js'
 
 /**
  * Anbieter-Verzeichnis — die einzige Wahrheit über KI-Anbieter.
@@ -477,16 +478,13 @@ export function setupAiModelRoutes(app) {
             }
 
             // Der Client kann abbrechen — dann den Download nicht weiterlesen.
-            // REQUEST-'close' feuert schon nach dem Lesen des POST-Bodys (also
-            // sofort) und würde die Schleife nie starten lassen; RESPONSE-'close'
-            // markiert den echten Verbindungsabbruch (writableFinished=false).
-            let abgebrochen = false
-            res.on('close', () => { if (!res.writableFinished) abgebrochen = true })
+            // Warum die Erkennung an der ANTWORT hängt: siehe `server/sse.js`.
+            const istAbgebrochen = beobachteAbbruch(res)
 
             const leser = r.body.getReader()
             const decoder = new TextDecoder()
             let rest = ''
-            while (!abgebrochen) {
+            while (!istAbgebrochen()) {
                 const { done, value } = await leser.read()
                 if (done) break
                 rest += decoder.decode(value, { stream: true })
@@ -504,7 +502,7 @@ export function setupAiModelRoutes(app) {
                     })
                 }
             }
-            if (!abgebrochen) sende({ fertigGesamt: true })
+            if (!istAbgebrochen()) sende({ fertigGesamt: true })
             res.end()
         } catch (e) {
             logError('ai-models', 'Ollama-Pull fehlgeschlagen', e)

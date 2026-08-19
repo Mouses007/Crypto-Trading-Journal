@@ -113,6 +113,11 @@ export function hilfeUebersicht() {
 
 /** Text zu einem Thema oder `null`, wenn es das Thema nicht gibt. */
 export function hilfeThema(thema) {
-    const t = HILFE_THEMEN[String(thema || '').toLowerCase().trim()]
-    return t ? { titel: t.titel, text: t.text } : null
+    // `Object.hasOwn`, nicht bloss ein Zugriff: `HILFE_THEMEN['constructor']`
+    // wäre sonst wahr und lieferte ein Thema mit `titel: undefined`, statt die
+    // Themenliste zurückzugeben. Das Modell darf beliebige Strings schicken.
+    const schluessel = String(thema || '').toLowerCase().trim()
+    if (!Object.hasOwn(HILFE_THEMEN, schluessel)) return null
+    const t = HILFE_THEMEN[schluessel]
+    return { titel: t.titel, text: t.text }
 }

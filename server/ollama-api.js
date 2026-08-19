@@ -1605,21 +1605,24 @@ async function generateAnthropic(prompt, apiKey, model, temperature, maxTokens, 
 
     let data = await anfrage(maxTokens)
     let text = anthropicText(data)
+    // Der erste Lauf ist bezahlt, auch wenn er nur Denk-Blöcke lieferte —
+    // seine Token gehören in die Abrechnung, sonst zeigt die Verbrauchsanzeige
+    // weniger an, als auf der Rechnung steht.
+    let promptTokens = data.usage?.input_tokens || 0
+    let completionTokens = data.usage?.output_tokens || 0
     if (!text && data.stop_reason === 'max_tokens') {
         logWarn('ollama-api', `Anthropic-Antwort ohne Text (max_tokens ${maxTokens} im Denkschritt erreicht) — wiederhole mit ${anthropicNachschlag(maxTokens)}`)
         data = await anfrage(anthropicNachschlag(maxTokens))
         text = anthropicText(data)
+        promptTokens += data.usage?.input_tokens || 0
+        completionTokens += data.usage?.output_tokens || 0
         if (!text) {
             throw new Error(`Die Antwort bestand nur aus Denk-Blöcken — max_tokens (${anthropicNachschlag(maxTokens)}) reichte nicht für Text. „Max Tokens" in den KI-Einstellungen erhöhen.`)
         }
     }
     return {
         text,
-        usage: {
-            promptTokens: (data.usage?.input_tokens || 0),
-            completionTokens: (data.usage?.output_tokens || 0),
-            totalTokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0)
-        }
+        usage: { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens }
     }
 }
 
@@ -1813,6 +1816,9 @@ async function chatAnthropic(systemMsg, messages, apiKey, model, temperature, ma
 
     let data = await anfrage(maxTokens)
     let text = anthropicText(data)
+    // Erster Lauf ist bezahlt — Token mitzählen (siehe generateAnthropic)
+    let ersterPrompt = data.usage?.input_tokens || 0
+    let ersterCompletion = data.usage?.output_tokens || 0
     if (!text && data.stop_reason === 'max_tokens') {
         logWarn('ollama-api', `Anthropic-Chat ohne Text (max_tokens ${maxTokens} im Denkschritt erreicht) — wiederhole mit ${anthropicNachschlag(maxTokens)}`)
         data = await anfrage(anthropicNachschlag(maxTokens))
@@ -1820,13 +1826,16 @@ async function chatAnthropic(systemMsg, messages, apiKey, model, temperature, ma
         if (!text) {
             throw new Error(`Die Antwort bestand nur aus Denk-Blöcken — max_tokens (${anthropicNachschlag(maxTokens)}) reichte nicht für Text. „Max Tokens" in den KI-Einstellungen erhöhen.`)
         }
+    } else {
+        ersterPrompt = 0
+        ersterCompletion = 0
     }
     return {
         text,
         usage: {
-            promptTokens: data.usage?.input_tokens || 0,
-            completionTokens: data.usage?.output_tokens || 0,
-            totalTokens: (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0)
+            promptTokens: ersterPrompt + (data.usage?.input_tokens || 0),
+            completionTokens: ersterCompletion + (data.usage?.output_tokens || 0),
+            totalTokens: ersterPrompt + ersterCompletion + (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0)
         }
     }
 }

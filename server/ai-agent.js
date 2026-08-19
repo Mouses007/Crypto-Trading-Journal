@@ -16,6 +16,7 @@ import {
     samplingFelder, KEY_SPALTEN, KI_URL_SPALTEN,
     keySpalte, istOpenAiKompatibel, chatEndpunkt,
 } from './ai-models.js'
+import { beobachteAbbruch, sseSender } from './sse.js'
 
 const MAX_ITERATIONS = 10
 // Voreinstellung des Token-Budgets je Lauf — überschreibbar in den
@@ -212,6 +213,9 @@ async function callAnthropicWithTools(messages, config) {
             system: buildSystemPrompt(),
             messages,
             tools: toolsToAnthropic(),
+            // Werkzeuge bleiben im Request (die Historie enthält tool_use-Blöcke,
+            // ohne `tools` lehnt Anthropic sie ab), aber der Aufruf wird gesperrt.
+            ...(config.ohneTools ? { tool_choice: { type: 'none' } } : {}),
             // Neuere Modelle lehnen Sampling-Parameter mit 400 ab
             ...samplingFelder(config.model, config.temperature)
         })
@@ -260,6 +264,7 @@ async function callOpenAIWithTools(messages, config, endpoint = 'https://api.ope
             model: config.model,
             messages: apiMessages,
             tools: toolsToOpenAI(),
+            ...(config.ohneTools ? { tool_choice: 'none' } : {}),
             temperature: config.temperature,
             max_tokens: config.maxTokens
         })
@@ -335,6 +340,7 @@ async function callGeminiWithTools(messages, config) {
             systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
             contents,
             tools: toolsToGemini(),
+            ...(config.ohneTools ? { toolConfig: { functionCallingConfig: { mode: 'NONE' } } } : {}),
             generationConfig: {
                 temperature: config.temperature,
                 maxOutputTokens: config.maxTokens
@@ -377,7 +383,7 @@ async function callOllamaWithTools(messages, config) {
     assertAllowedOllamaUrl(url)
 
     // Ollama: inject tools into system prompt
-    const enrichedSystem = buildSystemPrompt() + '\n\n' + toolsToPromptText()
+    const enrichedSystem = config.ohneTools ? buildSystemPrompt() : buildSystemPrompt() + '\n\n' + toolsToPromptText()
     const ollamaMessages = [
         { role: 'system', content: enrichedSystem },
         ...messages.map(m => {
@@ -597,6 +603,9 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE, i
     let completionTokens = 0
     let totalToolCalls = 0
     let finalAnswer = ''
+    // Antwort kam leer zurück, weil das Antwortbudget schon im Denkschritt
+    // aufgebraucht war — das ist etwas anderes als „Rechenbudget erschöpft".
+    let budgetZuKlein = false
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
         // Hat der Browser die Verbindung gekappt (Seitenwechsel, Reload), hört
@@ -616,6 +625,17 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE, i
 
         // If no tool calls — this is the final answer
         if (!response.toolCalls || response.toolCalls.length === 0) {
+            // Leerer Text ist keine Antwort: die Claude-5-Modelle denken
+            // standardmässig, und `max_tokens` deckelt Denken UND Antwort
+            // zusammen. Reicht das Budget nur fürs Denken, kommt ein Block
+            // ohne Text zurück (derselbe Fehler wie beim leeren KI-Bericht).
+            // Früher wurde der leere String als Antwort gesendet und der
+            // Nutzer bekam anschliessend die irreführende Meldung, sein
+            // Rechenbudget sei aufgebraucht.
+            if (!response.text) {
+                budgetZuKlein = true
+                break
+            }
             finalAnswer = response.text
             history.push({ role: 'assistant', content: response.text })
             sendSSE({ type: 'answer', content: response.text })
@@ -687,7 +707,12 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE, i
     // bezahlt, der Nutzer bekam trotzdem nichts. Jetzt baut ein letzter
     // Aufruf aus dem, was bereits vorliegt, eine echte Antwort. Die Bitte
     // wandert NICHT in die gespeicherte Historie, nur die Antwort.
-    if (!finalAnswer && !istAbgebrochen()) {
+    if (budgetZuKlein && !istAbgebrochen()) {
+        finalAnswer = `Das Modell hat sein Antwortbudget (Max Tokens: ${config.maxTokens}) bereits im Denkschritt aufgebraucht — es kam kein Text zurück. `
+            + 'Erhöhe „Max Tokens" in den KI-Einstellungen (für die denkenden Modelle mindestens 8000).'
+        history.push({ role: 'assistant', content: finalAnswer })
+        sendSSE({ type: 'answer', content: finalAnswer })
+    } else if (!finalAnswer && !istAbgebrochen()) {
         const bitte = {
             role: 'user',
             content: 'Das Rechenbudget für diese Frage ist aufgebraucht. Rufe KEINE weiteren Tools auf. '
@@ -696,7 +721,9 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE, i
                 + 'was offen bleiben musste.'
         }
         try {
-            const abschluss = await callLLMWithTools(buildProviderMessages([...history, bitte], config.provider), config)
+            // `ohneTools`: die Bitte allein hält das Modell nicht davon ab, noch
+            // eine Runde Werkzeuge zu rufen — dann käme wieder keine Antwort.
+            const abschluss = await callLLMWithTools(buildProviderMessages([...history, bitte], config.provider), { ...config, ohneTools: true })
             totalTokens += abschluss.usage.totalTokens
             promptTokens += abschluss.usage.promptTokens || 0
             completionTokens += abschluss.usage.completionTokens || 0
@@ -746,20 +773,12 @@ export function setupAgentRoutes(app) {
         })
 
         // Bricht der Client ab, läuft der Lauf sonst bis zum Ende weiter und
-        // schreibt in eine tote Verbindung — bezahlt wird er trotzdem.
-        // ACHTUNG: 'close' auf dem REQUEST feuert schon, sobald der POST-Body
-        // vollständig gelesen ist (also ~sofort), nicht erst beim echten
-        // Abbruch — dann stünde abgebrochen bereits vor dem ersten LLM-Aufruf
-        // auf true und der Agent schwiege. Das RESPONSE-'close' feuert erst,
-        // wenn die Antwortverbindung endet; writableFinished trennt den
-        // normalen Abschluss vom vorzeitigen Client-Abbruch.
-        let abgebrochen = false
-        res.on('close', () => { if (!res.writableFinished) abgebrochen = true })
-
-        const sendSSE = (data) => {
-            if (abgebrochen || res.writableEnded) return
-            res.write(`data: ${JSON.stringify(data)}\n\n`)
-        }
+        // schreibt in eine tote Verbindung — bezahlt wird er trotzdem. Warum
+        // die Erkennung an der ANTWORT hängen muss und nicht an der Anfrage,
+        // steht in `server/sse.js`; der Fehler hat den Agenten einmal komplett
+        // stummgeschaltet.
+        const istAbgebrochen = beobachteAbbruch(res)
+        const sendSSE = sseSender(res, istAbgebrochen)
 
         agentRunning = true
         // Backtests sind teuer und deshalb je Lauf gedeckelt. Ohne diesen
@@ -839,7 +858,7 @@ export function setupAgentRoutes(app) {
             })
 
             // Run agent loop
-            const result = await runAgentLoop(message, conversationHistory, config, sendSSE, () => abgebrochen)
+            const result = await runAgentLoop(message, conversationHistory, config, sendSSE, istAbgebrochen)
 
             // Save assistant answer
             if (result.answer) {
@@ -898,7 +917,17 @@ export function setupAgentRoutes(app) {
     app.get('/api/ai/agent/sessions', async (req, res) => {
         try {
             const knex = getKnex()
+            // Nach Archiv-Zustand filtern, BEVOR das 50er-Limit greift:
+            // ohne Filter teilen sich Archiv und Standardansicht dieselben
+            // 50 Zeilen — wer 50 Chats archiviert, sieht in der Standardliste
+            // nichts mehr, obwohl dort welche liegen.
+            const archiv = req.query.archiviert === '1'
             const sessions = await knex('ai_agent_sessions')
+                .where(function () {
+                    if (archiv) this.where('archiviert', 1)
+                    // Zeilen von vor der Migration können NULL tragen
+                    else this.where('archiviert', 0).orWhereNull('archiviert')
+                })
                 .orderBy('updatedAt', 'desc')
                 .limit(50)
             res.json(sessions.map(s => ({ ...s, objectId: String(s.id) })))

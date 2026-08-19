@@ -7,7 +7,7 @@
 import { logWarn } from './logger.js'
 import { STRATEGY_TOOLS, STRATEGY_TOOL_IMPL } from './strategy-tools.js'
 import { hilfeUebersicht, hilfeThema, HILFE_THEMEN } from './app-hilfe.js'
-import { sammleKacheln } from './marktradar-lage.js'
+import { sammleKacheln, normSymbol } from './marktradar-lage.js'
 import { baueZeilen } from './lagebild.js'
 
 // ==================== TOOL DEFINITIONS (for LLM) ====================
@@ -245,7 +245,10 @@ async function toolQueryAppHelp(knex, params) {
 // zusätzlichen Fremdabruf. Textzeilen statt Rohzahlen, damit die Einheiten
 // gleich dabeistehen.
 async function toolQueryMarktradar(knex, params) {
-    const symbol = String(params.symbol || 'BTCUSDT').toUpperCase()
+    // Über normSymbol, nicht bloss `toUpperCase()`: das Symbol wandert
+    // ungekodiert in die Binance-Abfragen (`?symbol=…`) und in Cache-Schlüssel.
+    // Was das Modell schickt, ist ungeprüfte Eingabe.
+    const symbol = normSymbol(params.symbol)
     const kacheln = await sammleKacheln(symbol)
     const zeilen = baueZeilen(kacheln)
     if (zeilen.length === 0) return { error: 'Keine Marktradar-Kachel liefert gerade Daten.' }

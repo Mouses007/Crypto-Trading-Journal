@@ -107,6 +107,14 @@ async function loescheAusgewaehlte() {
     bulkLoeschBestaetigung.value = false
 }
 
+// Ansicht wechseln heisst neu laden: die Liste kommt gefiltert vom Server.
+async function wechsleArchivAnsicht() {
+    zeigeArchiv.value = !zeigeArchiv.value
+    ausgewaehlteSessions.clear()
+    bulkLoeschBestaetigung.value = false
+    await loadAgentSessions()
+}
+
 async function archiviereAusgewaehlte() {
     // In der Archiv-Ansicht kehrt derselbe Knopf die Richtung um (wiederherstellen).
     const ziel = zeigeArchiv.value ? 0 : 1
@@ -120,6 +128,8 @@ async function archiviereAusgewaehlte() {
         }
     }
     ausgewaehlteSessions.clear()
+    // Die verschobenen Chats gehören jetzt in die andere Ansicht
+    await loadAgentSessions()
 }
 
 // Chat-Verlauf ans Ende scrollen, sobald etwas dazukommt (eigene Eingabe,
@@ -501,7 +511,9 @@ function markdownToHtml(md) {
 
 async function loadAgentSessions() {
     try {
-        const { data } = await axios.get('/api/ai/agent/sessions')
+        // Der Server filtert nach Archiv-Zustand, sonst teilen sich beide
+        // Ansichten dasselbe 50er-Limit.
+        const { data } = await axios.get('/api/ai/agent/sessions', { params: { archiviert: zeigeArchiv.value ? 1 : 0 } })
         agentSessions.splice(0, agentSessions.length, ...data)
     } catch (err) {
         logWarn('KiAgent', 'Failed to load agent sessions: ' + err.message)
@@ -980,7 +992,7 @@ onBeforeMount(async () => {
                                         <i class="uil uil-check-square"></i>
                                     </span>
                                     <span class="agent-list-btn" :class="{ active: zeigeArchiv }"
-                                        :title="t('kiAgent.archivAnzeigen')" @click="zeigeArchiv = !zeigeArchiv; ausgewaehlteSessions.clear()">
+                                        :title="t('kiAgent.archivAnzeigen')" @click="wechsleArchivAnsicht">
                                         <i class="uil uil-archive"></i>
                                     </span>
                                 </div>

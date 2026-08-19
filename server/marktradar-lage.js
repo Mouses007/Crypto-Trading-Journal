@@ -46,7 +46,7 @@ const laufend = new Map()
 
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
 
-function normSymbol(symbol) {
+export function normSymbol(symbol) {
     const s = String(symbol || 'BTCUSDT').toUpperCase()
     return SYMBOL_RE.test(s) ? s : 'BTCUSDT'
 }
