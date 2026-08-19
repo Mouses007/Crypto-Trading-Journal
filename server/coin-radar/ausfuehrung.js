@@ -129,11 +129,21 @@ export function ausfuehrungsGuete(buch, betraege = BETRAEGE_USD) {
 }
 
 function rundlauf(kauf, verkauf, betrag) {
-    const k = kauf[betrag]?.slippageBp
-    const v = verkauf[betrag]?.slippageBp
-    if (!Number.isFinite(k) || !Number.isFinite(v)) return null
+    const k = kauf[betrag]
+    const v = verkauf[betrag]
+    if (!Number.isFinite(k?.slippageBp) || !Number.isFinite(v?.slippageBp)) return null
+    /*
+     * Passt der Betrag nicht ins Buch, ist der Slippage-Wert die Kostenrate für
+     * den TEIL, der noch gefüllt wurde — nicht für den Auftrag. Als Rundlauf
+     * gedruckt sähe ein zu dünnes Buch damit billig aus, und zwar umso
+     * billiger, je weniger davon ausführbar war.
+     *
+     * Die Note ist in dem Fall schon 0. Die Detailzahl muss dieselbe Sprache
+     * sprechen: lieber „—" als eine Zahl, die nach Messung aussieht.
+     */
+    if (!k.vollstaendig || !v.vollstaendig) return null
     // Beide Richtungen sind als Kosten positiv gemessen.
-    return k + v
+    return k.slippageBp + v.slippageBp
 }
 
 /**

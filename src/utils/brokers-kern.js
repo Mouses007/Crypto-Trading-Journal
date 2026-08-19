@@ -62,8 +62,27 @@ export function parseBitunixRows(rows) {
     return { trades, uebersprungen }
 }
 
-/** Spaltensuche über mehrere mögliche Schreibweisen (Bitget exportiert bunt). */
+/**
+ * Spaltensuche über mehrere mögliche Schreibweisen (Bitget exportiert bunt).
+ *
+ * ZWEI Durchgänge, und die Reihenfolge ist der ganze Punkt. Die reine
+ * Teilstringsuche verwechselte Spalten: gesucht wird die Brutto-PnL unter
+ * anderem als `'Profit'` — und `netProfit` enthält „profit". Stand `netProfit`
+ * in der Kopfzeile VOR `pnl`, landete die NETTO-Spalte im Bruttowert. Brutto
+ * und netto waren dann identisch, die Gebühren verschwanden spurlos aus der
+ * Bruttorechnung, und weil beide Zahlen für sich plausibel aussahen, fiel es
+ * im Journal nicht auf.
+ *
+ * Erst exakt (normalisiert, ohne Trenn- und Sonderzeichen), dann als
+ * Teilstring. Der zweite Durchgang bleibt, weil echte Exporte Spalten wie
+ * `Realized PnL (USDT)` tragen — ohne ihn wären alte Dateien nicht mehr
+ * lesbar.
+ */
 export function findeSpalte(headers, ...namen) {
+    const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '')
+    const gesucht = new Set(namen.map(norm))
+    const exakt = headers.find((h) => gesucht.has(norm(h)))
+    if (exakt) return exakt
     return headers.find((h) => namen.some((n) => h.toLowerCase().includes(n.toLowerCase())))
 }
 

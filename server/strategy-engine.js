@@ -750,7 +750,7 @@ async function pflegeOffenePositionen() {
             }
             await stepPaperPositions({
                 instance, symbol, timeframe: pflegeTf, candles,
-                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps },
+                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps, fundingBpsPer8h: instance.risk.fundingBpsPer8h },
                 breakEvenAtR: instance.params.breakEvenAtR ?? instance.strategie?.regeln?.breakEvenAtR ?? 0,
                 maxHoldMs: ((instance.params.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(pflegeTf),
                 partialTpR: instance.params.partialTpR,
@@ -932,7 +932,7 @@ export async function killSwitch({ closePositions = false } = {}) {
             const preis = await getLastPrice(row.symbol, { market: instance.market }).catch(() => Number(row.entryPrice))
             const r = await schliessePositionManuell({
                 instance, positionRow: row, price: preis, time: Date.now(),
-                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps },
+                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps, fundingBpsPer8h: instance.risk.fundingBpsPer8h },
                 reason: 'manual',
             }).catch((err) => ({ ok: false, reason: err.message }))
             if (r.ok) geschlossen++

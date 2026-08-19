@@ -887,13 +887,29 @@ export async function useCalculateProfitAnalysis(param) {
                             //console.log(" Entry price " + tradeEntryPrice + " | MFE Price " + element.mfePrice)
                             let entryMfeDiff
                             trade.strategy == "long" ? entryMfeDiff = (element.mfePrice - tradeEntryPrice) : entryMfeDiff = (tradeEntryPrice - element.mfePrice)
-                            // Convert price difference to dollar P&L (critical for crypto where qty != 1)
-                            let qty = trade.buyQuantity || trade.sellQuantity || 1
-                            let mfeDollar = entryMfeDiff * qty
-                            let grossMfeR = profitAnalysis.grossAvLossPerShare ? (mfeDollar / profitAnalysis.grossAvLossPerShare) : 0
-                            //console.log("  --> Strategy "+trade.strategy+", entry price : "+tradeEntryPrice+", mfe price "+element.mfePrice+", diff "+entryMfeDiff+", mfeDollar "+mfeDollar+" and grosmfe R "+grossMfeR)
+                            /*
+                             * Zähler und Nenner MÜSSEN dieselbe Einheit haben.
+                             * `grossAvLossPerShare` stammt aus `grossSharePL =
+                             * grossProceeds / buyQuantity`, ist also ein Wert
+                             * JE STÜCK — und `entryMfeDiff` ist eine
+                             * Kursdifferenz, ebenfalls je Stück. Damit geht die
+                             * Division auf und R ist mengenunabhängig.
+                             *
+                             * Hier stand vorher `entryMfeDiff * qty`, mit dem
+                             * Kommentar, das sei für Krypto nötig, weil die
+                             * Menge selten 1 ist. Das war der Fehler: ein
+                             * Dollarbetrag geteilt durch einen Stückwert. R
+                             * wuchs dadurch proportional zur Positionsgrösse —
+                             * derselbe Trade mit zehnfacher Menge zeigte das
+                             * zehnfache R. Beispiel: Verlustbasis 2 USD/Stück,
+                             * MFE 3 USD/Stück, Menge 10 ergab 15R statt 1,5R.
+                             * Auf dieser Zahl beruhen die Take-Profit-
+                             * Empfehlungen im Journal.
+                             */
+                            let grossMfeR = profitAnalysis.grossAvLossPerShare ? (entryMfeDiff / profitAnalysis.grossAvLossPerShare) : 0
+                            //console.log("  --> Strategy "+trade.strategy+", entry price : "+tradeEntryPrice+", mfe price "+element.mfePrice+", diff "+entryMfeDiff+" and gross mfe R "+grossMfeR)
                             grossMfeRArray.push(grossMfeR)
-                            let netMfeR = profitAnalysis.netAvLossPerShare ? (mfeDollar / profitAnalysis.netAvLossPerShare) : 0
+                            let netMfeR = profitAnalysis.netAvLossPerShare ? (entryMfeDiff / profitAnalysis.netAvLossPerShare) : 0
                             netMfeRArray.push(netMfeR)
                         }
                     }
@@ -906,9 +922,31 @@ export async function useCalculateProfitAnalysis(param) {
             let netWin = totals.probNetWins
             //console.log("  --> Gross win "+grossWin+" and net win "+netWin)
 
+            /*
+             * Erwartungswert in R — MIT dem Verlustfall.
+             *
+             * Hier stand `Trefferquote × Gewinn-R`. Das ist kein
+             * Erwartungswert, sondern nur dessen positive Hälfte: der Fall,
+             * in dem das Ziel NICHT erreicht wird, kam gar nicht vor. Die
+             * Folge war sichtbar und irreführend — `winRate × R` wächst fast
+             * immer mit R, also gewann in der Zielsuche unten stets die
+             * grösste angebotene Stufe. Die Kennzahl „MFE P/L Ratio" zeigte
+             * deshalb konstant 20,00: den oberen Rand der Stufenliste, nicht
+             * ein gemessenes Optimum.
+             *
+             * Angenommen wird ein Stopp bei -1R. Das ist die Konvention, auf
+             * der die ganze R-Rechnung dieses Journals beruht (R = Ø Gewinn je
+             * Stück / Ø Verlust je Stück). Bei Teilausstiegen oder
+             * nachgezogenen Stopps ist die tatsächliche Verlustverteilung
+             * breiter — dann ist diese Zahl eine Näherung, aber eine
+             * konservative statt einer schmeichelnden.
+             */
+            const VERLUST_R = 1
+            const erwartungswertR = (trefferquote, zielR) => trefferquote * zielR - (1 - trefferquote) * VERLUST_R
+
             //console.log(" -> Calculating gross and net current expected return")
-            let grossCurrExpectReturn = profitAnalysis.grossR * grossWin
-            let netCurrExpectReturn = profitAnalysis.netR * netWin
+            let grossCurrExpectReturn = erwartungswertR(grossWin, profitAnalysis.grossR)
+            let netCurrExpectReturn = erwartungswertR(netWin, profitAnalysis.netR)
             //console.log("  --> Gross current expected return "+grossCurrExpectReturn+" and net "+netCurrExpectReturn)
 
             //console.log(" -> Calculating mfe expected return")
@@ -921,8 +959,12 @@ export async function useCalculateProfitAnalysis(param) {
             let profitTakingAnalysis = []
             let grossMfeRArrayLength = grossMfeRArray.length
             let netMfeRArrayLength = netMfeRArray.length
-            let previousGrossExpectReturn = 0
-            let previousNetExpectReturn = 0
+            // Startwert -Infinity statt 0: mit dem Verlustterm können ALLE Stufen
+            // einen negativen Erwartungswert haben. Bei Start auf 0 bliebe die
+            // Kennzahl dann leer, obwohl das Ergebnis „kein Ziel lohnt sich"
+            // die interessanteste Auskunft von allen ist.
+            let previousGrossExpectReturn = -Infinity
+            let previousNetExpectReturn = -Infinity
             let tempGrossMfeR
             let tempGrossExpectedReturn = 0
             let tempNetMfeR
@@ -933,9 +975,9 @@ export async function useCalculateProfitAnalysis(param) {
                 let occurenceNet = netMfeRArray.filter(x => x >= element).length
                 temp.rLevel = element
                 temp.winRateGross = grossMfeRArrayLength ? (occurenceGross / grossMfeRArrayLength) : 0
-                temp.grossExpectReturn = temp.winRateGross * element
+                temp.grossExpectReturn = erwartungswertR(temp.winRateGross, element)
                 temp.winRateNet = netMfeRArrayLength ? (occurenceNet / netMfeRArrayLength) : 0
-                temp.netExpectReturn = temp.winRateNet * element
+                temp.netExpectReturn = erwartungswertR(temp.winRateNet, element)
                 if (temp.grossExpectReturn > previousGrossExpectReturn) {
                     previousGrossExpectReturn = temp.grossExpectReturn
                     tempGrossMfeR = element
@@ -974,15 +1016,53 @@ export async function useCalculateProfitAnalysis(param) {
 * IMPORTS
 ***************************************/
 
+/**
+ * Einen Handelstag löschen — mitsamt allem, was daran hängt.
+ *
+ * Zwei Fehler waren hier drin:
+ *
+ * 1. Gesucht wurde NUR über `dateUnix`, ohne Börse. An einem Tag, an dem zwei
+ *    Börsen gehandelt wurden, entschied die Zeilenreihenfolge der Datenbank,
+ *    welcher Tag stirbt — und anschliessend wurde `lastApiImport` DIESER Börse
+ *    auf 0 gesetzt, womöglich also die einer Börse, die der Nutzer gar nicht
+ *    angefasst hat. Deren gesamter Importzeitraum wurde dann neu gescannt.
+ *    `Settings.vue` machte es an seiner eigenen Löschstelle längst richtig.
+ *
+ * 2. Aufgeräumt wurde ausschliesslich `excursions`. Notizen, Tags und
+ *    Bewertungen blieben als Waisen liegen — sie belegen nicht nur Platz,
+ *    sondern kommen bei einem Neuimport desselben Tages auch nicht wieder ans
+ *    richtige Trade, weil der Laufindex in der `tradeId` sich ändert.
+ *
+ * Screenshots werden bewusst NICHT gelöscht: sie sind eigenständige Dokumente
+ * und oft mehreren Tagen zugeordnet. Sie behalten ihre Zuordnung; ein Bild
+ * ohne Handelstag ist ein Bild, kein Müll.
+ */
 export const useDeleteTrade = async () => {
-    const existing = await dbFirst("trades", {
-        equalTo: { dateUnix: selectedItem.value }
+    const broker = selectedBroker.value || 'bitunix'
+    // Erst mit Börse suchen. Findet sich nichts, kann es ein Altbestand ohne
+    // gesetzten Filter sein — dann der bisherige Weg, aber bewusst als zweite
+    // Wahl statt als Regel.
+    let existing = await dbFirst("trades", {
+        equalTo: { dateUnix: selectedItem.value, broker }
     })
+    if (!existing) {
+        existing = await dbFirst("trades", { equalTo: { dateUnix: selectedItem.value } })
+    }
 
     if (existing) {
         const broker = existing.broker || 'bitunix'
         await dbDelete("trades", existing.objectId)
         console.log('  --> Deleted trade with id ' + existing.objectId + ' (broker: ' + broker + ')')
+
+        // Anhänge desselben Tages mitnehmen. Einzeln abgesichert: bleibt eine
+        // Tabelle stehen, sollen die anderen trotzdem aufgeräumt werden.
+        for (const tabelle of ['notes', 'tags', 'satisfactions']) {
+            try {
+                await dbDeleteWhere(tabelle, { equalTo: { dateUnix: selectedItem.value } })
+            } catch (e) {
+                console.log(`  --> ${tabelle} für Tag ${selectedItem.value} nicht gelöscht:`, e?.message)
+            }
+        }
 
         // Reset lastApiImport so deleted trades can be re-imported
         try {

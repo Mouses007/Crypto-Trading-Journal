@@ -118,8 +118,22 @@ const BACKUP_TABLES = [
  * die Strategie einzeln (`/api/strategies/rules/:id/export`).
  */
 
-// Beim Import: abhängige Tabellen zuerst löschen
+// Beim Import: abhängige Tabellen zuerst löschen.
+// ACHTUNG: Jede Tabelle aus BACKUP_TABLES MUSS hier stehen. Fehlt eine, wird
+// sie exportiert und wieder eingespielt, ohne vorher geleert zu werden — bei
+// gleichen IDs scheitert der Import am Schlüsselkonflikt und die Transaktion
+// rollt die GANZE Rücksicherung zurück. Der Selbsttest `__selftest-backup.mjs`
+// hält beide Listen deckungsgleich.
 const DELETE_ORDER = [
+    // Radar-Tabellen: Zeilen vor Läufen, Alarme vor Favoriten.
+    'coinradar_zeilen',
+    'coinradar_laeufe',
+    'coinradar_settings',
+    'hype_alarme',
+    'hype_favoriten',
+    'hype_reports',
+    'hype_settings',
+    'ai_usage',
     'coin_universen',
     'news_digests',
     'news_sources',
