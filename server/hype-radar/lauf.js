@@ -13,13 +13,13 @@
 
 import { getKnex } from '../database.js'
 import { logWarn } from '../logger.js'
-import { sammle, dexDetails, fuehreZusammen } from './quellen.js'
+import { sammle, dexDetailsViele, fuehreZusammen } from './quellen.js'
 import { bewerte, STANDARD_GEWICHTE, STANDARD_NARRATIVE } from './bewertung.js'
 import { pruefe, holeGoPlus, STANDARD_SICHERHEIT } from './sicherheit.js'
 import { erzeugeBericht } from './bericht.js'
 import { ladeListungen, pruefeListung } from './listungen.js'
 
-/** Wie viele Kandidaten überhaupt bis zur Sicherheitsprüfung kommen. */
+/** Wie viele Kandidaten in die (teure) Sicherheitsprüfung gehen. */
 const MAX_PRUEFUNGEN = 40
 
 /**
@@ -41,40 +41,49 @@ export async function scanne(einst, melde = () => {}) {
     })
     melde({ schritt: 'gesammelt', anzahl: roh.length })
 
-    // ── Stufe 2, erster Durchgang ───────────────────────────────────────
-    // Ohne Detaildaten, nur um die Reihenfolge zu bestimmen: welche Funde
-    // lohnen den Nachschlag überhaupt.
-    const gewichte = einst.gewichte || STANDARD_GEWICHTE
-    const narrative = einst.narrative || STANDARD_NARRATIVE
-    const vorsortiert = roh
-        .map((k) => ({ ...k, ...bewerte(k, gewichte, narrative) }))
-        .sort((a, b) => b.hypeScore - a.hypeScore)
-        .slice(0, MAX_PRUEFUNGEN)
+    /*
+     * ── Detaildaten VOR der Vorsortierung ───────────────────────────────
+     *
+     * Die Reihenfolge war das Problem. Vorher wurde erst bewertet, dann auf
+     * vierzig gekürzt und erst danach nachgeschlagen — nur bringen die
+     * DexScreener-Trendlisten nichts mit als eine Adresse. Diese Funde
+     * bekamen Volumen 0, Neuheit 0 und Narrativ 0 und fielen bei rund zehn
+     * Punkten heraus, BEVOR die Daten geholt wurden, die sie bewertbar
+     * gemacht hätten. Ausgerechnet die frischesten Funde traf das.
+     *
+     * Der Sammelabruf nimmt dreissig Adressen auf einmal: rund sechzig Funde
+     * in zwei Anfragen statt vierzig einzelnen. Damit ist es billiger, ALLE
+     * anzureichern, als vorher zu sieben — und die Rangfolge entsteht zum
+     * ersten Mal auf vergleichbarer Grundlage.
+     */
+    const mitVertrag = roh.filter((k) => k.contract)
+    melde({ schritt: 'details', gesamt: mitVertrag.length })
+    let detailKarte = new Map()
+    try {
+        detailKarte = await dexDetailsViele(mitVertrag.map((k) => k.contract))
+    } catch (e) {
+        logWarn('hype-radar', `Sammelabruf der Details: ${e.message}`)
+    }
+    melde({ schritt: 'details', fertig: detailKarte.size, gesamt: mitVertrag.length })
 
-    // ── Detaildaten ─────────────────────────────────────────────────────
-    // Erst hier gibt es Liquidität, Alter und Volumenverlauf — die Zahlen, auf
-    // denen sowohl die endgültige Note als auch die Sicherheitsprüfung beruhen.
-    melde({ schritt: 'details', gesamt: vorsortiert.length })
-    const angereichert = []
-    for (const [i, k] of vorsortiert.entries()) {
-        let d = null
-        if (k.contract) {
-            try {
-                d = await dexDetails(k.contract)
-            } catch (e) {
-                logWarn('hype-radar', `Details zu ${k.symbol}: ${e.message}`)
-            }
-        }
-        angereichert.push({
+    const angereichert = roh.map((k) => {
+        const d = k.contract ? detailKarte.get(String(k.contract).toLowerCase()) : null
+        return {
             ...k,
             symbol: d?.symbol || k.symbol,
             name: d?.name || k.name,
             chain: d?.chain || k.chain,
             pair: d?.pair || k.pair,
+            // Steht der Fund auf der Gegenseite seines Paars, gehören Preis
+            // und Volumen nicht ihm — der Vermerk wandert mit.
+            seite: d?.seite || 'base',
             markt: { ...k.markt, ...(d?.markt || {}) },
-        })
-        if ((i + 1) % 5 === 0) melde({ schritt: 'details', fertig: i + 1, gesamt: vorsortiert.length })
-    }
+        }
+    })
+
+    // ── Stufe 2 ─────────────────────────────────────────────────────────
+    const gewichte = einst.gewichte || STANDARD_GEWICHTE
+    const narrative = einst.narrative || STANDARD_NARRATIVE
 
     /*
      * Zweiter Durchgang der Zusammenführung.
@@ -85,14 +94,11 @@ export async function scanne(einst, melde = () => {}) {
      * und die Quellenzahl blieb ausnahmslos 1. Da sie der wichtigste Faktor
      * gegen gekauften Lärm ist, war die Bewertung damit praktisch blind.
      *
-     * Mitgegeben werden auch die NICHT angereicherten Funde: ein Coin, den
-     * CoinGecko nennt, steht dort ohne Handelsdaten und landet deshalb selten
-     * unter den ersten vierzig — als Bestätigung für einen DexScreener-Fund
-     * ist er trotzdem bares Gold.
+     * Seit der Sammelabruf ALLE Funde anreichert, ist das hier die vollständige
+     * Menge. Vorher musste an dieser Stelle noch nachgeholt werden, was die
+     * Vorsortierung abgeschnitten hatte.
      */
-    const angereichertePaare = new Set(angereichert.map((k) => k.contract || `${k.symbol}|${k.chain}`))
-    const uebrige = roh.filter((k) => !angereichertePaare.has(k.contract || `${k.symbol}|${k.chain}`))
-    const vereint = fuehreZusammen([...angereichert, ...uebrige])
+    const vereint = fuehreZusammen(angereichert)
 
     /*
      * Listung an den eigenen Börsen.
@@ -132,7 +138,19 @@ export async function scanne(einst, melde = () => {}) {
     }
 
     const schwelle = Number(einst.minHypeScore) || 0
-    const zurPruefung = gefiltert.filter((k) => k.hypeScore >= schwelle)
+    /*
+     * Der Deckel sitzt jetzt HIER und nicht mehr vor dem Detailabruf.
+     *
+     * Vorher begrenzte der Top-40-Schnitt beides zugleich: die Detailabrufe
+     * und — als Nebenwirkung — die Sicherheitsprüfungen. Seit der Sammelabruf
+     * alle Funde anreichert, gäbe es ohne diese Zeile gar keine Grenze mehr,
+     * und jeder Kandidat über der Schwelle kostete einen GoPlus- bzw.
+     * RugCheck-Aufruf. Die Sicherheitsprüfung ist die teuerste Stufe vor der
+     * KI — sie gehört gedeckelt, die Anreicherung nicht.
+     */
+    const zurPruefung = gefiltert
+        .filter((k) => k.hypeScore >= schwelle)
+        .slice(0, MAX_PRUEFUNGEN)
     /*
      * Was die Schwelle reisst, ist nicht „verworfen" im Sinne der Prüfung —
      * es war schlicht nicht interessant genug. Diese Funde tauchen im Bericht
@@ -144,10 +162,19 @@ export async function scanne(einst, melde = () => {}) {
      * die Schwelle — ein Streudiagramm mit einem Punkt beantwortet keine
      * Frage. Erst neben den vielen unauffälligen wird sichtbar, was heraussticht.
      */
-    // Aus `gefiltert`, nicht `bewertet`: mit dem Börsenfilter an sollen auch
-    // im Hintergrundfeld nur handelbare Funde stehen — der Filter gilt dem
-    // ganzen Lauf, nicht nur der Prüfliste.
-    const unterSchwelle = gefiltert.filter((k) => k.hypeScore < schwelle)
+    /*
+     * Alles, was NICHT in die Prüfung ging — nicht bloss das unter der
+     * Schwelle. Seit dem Deckel gibt es einen dritten Fall: über der Schwelle,
+     * aber jenseits von Platz vierzig. Ohne diese Fassung fiele er durch beide
+     * Listen und verschwände aus der Übersicht, obwohl er zu den besseren
+     * gehört.
+     *
+     * Aus `gefiltert`, nicht `bewertet`: mit dem Börsenfilter an sollen auch
+     * im Hintergrundfeld nur handelbare Funde stehen — der Filter gilt dem
+     * ganzen Lauf, nicht nur der Prüfliste.
+     */
+    const inPruefung = new Set(zurPruefung)
+    const unterSchwelle = gefiltert.filter((k) => !inPruefung.has(k))
     melde({ schritt: 'bewertet', anzahl: zurPruefung.length, verworfenSchwelle: unterSchwelle.length })
 
     // ── Stufe 3 ─────────────────────────────────────────────────────────

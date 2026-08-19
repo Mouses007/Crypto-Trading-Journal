@@ -236,19 +236,101 @@ export async function ausDexScreener() {
  * auf denen Bewertung und Sicherheitsprüfung beruhen.
  */
 export async function dexDetails(contract) {
-    const j = await holeJson(`https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(contract)}`)
-    const paare = Array.isArray(j?.pairs) ? j.pairs : []
-    if (!paare.length) return null
-    // Das liquideste Paar ist das aussagekräftigste: dort findet der Handel statt.
-    const p = paare.reduce((a, b) => (Number(b?.liquidity?.usd) || 0) > (Number(a?.liquidity?.usd) || 0) ? b : a)
+    const karte = await dexDetailsViele([contract])
+    return karte.get(String(contract).toLowerCase()) || null
+}
+
+/** Wie viele Adressen DexScreener je Abruf annimmt. */
+const SAMMEL_GROESSE = 30
+
+/**
+ * Detaildaten für VIELE Verträge — in Häppchen zu dreissig.
+ *
+ * Der Grund ist nicht Geschwindigkeit, sondern Reihenfolge. Die
+ * DexScreener-Trendlisten liefern nur Adressen: kein Symbol, kein Alter, kein
+ * Volumen. In der Vorsortierung bekamen diese Funde deshalb Volumen 0,
+ * Neuheit 0 und Narrativ 0 — sie fielen bei rund zehn Punkten aus den besten
+ * vierzig, BEVOR die Daten geholt wurden, die sie überhaupt bewertbar machen.
+ * Ausgerechnet die frischesten Funde wurden so systematisch aussortiert.
+ *
+ * Mit dem Sammelabruf sind alle sechzig in zwei Anfragen angereichert, und die
+ * Rangfolge entsteht zum ersten Mal auf vergleichbarer Grundlage.
+ *
+ * @param {string[]} contracts
+ * @returns {Promise<Map<string, object>>} Adresse (klein) → Details
+ */
+export async function dexDetailsViele(contracts = []) {
+    const raus = new Map()
+    const liste = [...new Set(contracts.filter(Boolean).map(String))]
+
+    for (let i = 0; i < liste.length; i += SAMMEL_GROESSE) {
+        const teil = liste.slice(i, i + SAMMEL_GROESSE)
+        let paare = []
+        try {
+            const j = await holeJson(
+                `https://api.dexscreener.com/latest/dex/tokens/${teil.map(encodeURIComponent).join(',')}`)
+            paare = Array.isArray(j?.pairs) ? j.pairs : []
+        } catch (e) {
+            // Ein Häppchen, das klemmt, darf die übrigen nicht mitnehmen.
+            logWarn('hype-radar', `DexScreener-Sammelabruf: ${e.message}`)
+            continue
+        }
+
+        /*
+         * Jedes Paar der angefragten Adresse zuordnen — und zwar auf DER
+         * SEITE, auf der sie steht.
+         *
+         * `dexDetails` las früher immer `baseToken`. Live geprüft: Für drei
+         * angefragte Adressen kamen vier verschiedene Basis-Token zurück, weil
+         * eine der Adressen in ihrem Paar die GEGENWÄHRUNG ist. Wer blind die
+         * Basisseite nimmt, schreibt einem Fund Symbol, Name und Marktwerte
+         * eines fremden Tokens zu — bei jungen Token ein Vertrauensbruch.
+         */
+        const gesucht = new Map(teil.map((a) => [a.toLowerCase(), a]))
+        for (const p of paare) {
+            const basis = String(p?.baseToken?.address || '').toLowerCase()
+            const gegen = String(p?.quoteToken?.address || '').toLowerCase()
+            const seite = gesucht.has(basis) ? 'base' : (gesucht.has(gegen) ? 'quote' : null)
+            if (!seite) continue
+            const schluessel = seite === 'base' ? basis : gegen
+
+            // Das liquideste Paar ist das aussagekräftigste: dort findet der
+            // Handel statt.
+            const bisher = raus.get(schluessel)
+            const liqNeu = Number(p?.liquidity?.usd) || 0
+            if (bisher && bisher._liq >= liqNeu) continue
+            raus.set(schluessel, { ...ausPaar(p, seite), _liq: liqNeu })
+        }
+    }
+
+    for (const d of raus.values()) delete d._liq
+    return raus
+}
+
+/**
+ * Ein DexScreener-Paar in unsere Form bringen.
+ *
+ * @param {object} p      das Paar
+ * @param {string} seite  'base' oder 'quote' — auf welcher Seite der gesuchte
+ *                        Token steht. Davon hängt ab, wessen Symbol und Name
+ *                        übernommen werden.
+ */
+function ausPaar(p, seite = 'base') {
+    const token = seite === 'quote' ? p?.quoteToken : p?.baseToken
     const kaeufe = Number(p?.txns?.h24?.buys) || 0
     const verkaeufe = Number(p?.txns?.h24?.sells) || 0
     return {
-        symbol: normSymbol(p?.baseToken?.symbol),
-        name: p?.baseToken?.name || '',
+        symbol: normSymbol(token?.symbol),
+        name: token?.name || '',
         chain: normChain(p?.chainId),
         pair: p?.pairAddress || '',
         url: p?.url || '',
+        /*
+         * Steht der gesuchte Token auf der Gegenseite, beziehen sich Preis,
+         * Volumen und Liquidität des Paars NICHT auf ihn. Der Hinweis bleibt
+         * am Fund, statt still falsche Zahlen zu übernehmen.
+         */
+        seite,
         markt: {
             // Der Handelsplatz selbst (raydium, uniswap, pancakeswap …) — die
             // Antwort auf „wo läuft das eigentlich", die sonst erst ein Klick
