@@ -612,8 +612,8 @@ async function holeMarktdatenBlock() {
 }
 
 /** Anspruchs-Schlüssel: der Tageslauf und die Bremse für den Knopf. */
-const BERICHT_SCHLUESSEL = 'news_lagebericht'
-const BERICHT_MANUELL = 'news_lagebericht_manuell'
+export const BERICHT_SCHLUESSEL = 'news_lagebericht'
+export const BERICHT_MANUELL = 'news_lagebericht_manuell'
 /** Nach einem echten Fehlschlag frühestens so bald wieder versuchen. */
 const WIEDERHOLUNG_MS = 60 * 60 * 1000
 
@@ -686,20 +686,44 @@ export async function erzeugeLagebericht({ manuell = false } = {}) {
 
     try {
         const ergebnis = await baueLagebericht(s, { manuell })
-        if (ergebnis?.fehler) {
-            // „Keine Quellen", „keine Beiträge" — kein Fehlschlag, nur nichts zu
-            // tun. Der Tag bleibt offen, damit ein späterer Takt es nachholt,
-            // und der Knopf ist nicht fünf Minuten lang tot.
-            await gibAufgabeFrei(manuell ? BERICHT_MANUELL : BERICHT_SCHLUESSEL)
-        } else {
-            await stempleAufgabe(BERICHT_SCHLUESSEL)
-        }
+        const nach = anspruchsNachlauf({ manuell, ohneInhalt: !!ergebnis?.fehler })
+        if (nach.freigeben) await gibAufgabeFrei(nach.freigeben)
+        if (nach.stempeln) await stempleAufgabe(nach.stempeln)
         return ergebnis
     } catch (e) {
-        await merkeAufgabenFehler(BERICHT_SCHLUESSEL, e.message)
+        const nach = anspruchsNachlauf({ manuell, geworfen: true })
+        await merkeAufgabenFehler(nach.fehlerAn, e.message)
         logWarn('news', `Lagebericht gescheitert: ${e.message}`)
         throw e
     }
+}
+
+/**
+ * Was ein beendeter Lauf am Anspruch hinterlässt.
+ *
+ * Der Grundsatz steht eine Ebene höher schon als Kommentar — „ein Bericht von
+ * Hand darf den automatischen NICHT blockieren" —, wurde hier aber gebrochen:
+ * der Stempel ging bei JEDEM gelungenen Lauf auf den Tages-Schlüssel, also
+ * auch beim Knopfdruck. Wer morgens von Hand einen Bericht erzeugte, bekam am
+ * Mittag keinen mehr, ohne Meldung und ohne erkennbaren Grund (gesehen am
+ * 19.08.2026: Lauf von Hand um 06:18, Mittagslauf still übersprungen).
+ * Dasselbe galt für den Fehlervermerk — ein gescheiterter Handlauf schrieb
+ * ihn auf den Tages-Schlüssel und erlaubte damit sogar einen Lauf zu viel.
+ *
+ * Die Regel als reine Funktion, damit sie ohne Datenbank prüfbar ist:
+ *
+ *   gelungen, automatisch → Tag erledigt (stempeln)
+ *   gelungen, von Hand    → nichts; der Mittagslauf ist davon unberührt
+ *   nichts zu berichten   → eigenen Anspruch zurück, kein verbrannter Tag
+ *   echter Fehler         → Vermerk am EIGENEN Schlüssel
+ *
+ * @returns {{freigeben: string|null, stempeln: string|null, fehlerAn: string|null}}
+ */
+export function anspruchsNachlauf({ manuell = false, ohneInhalt = false, geworfen = false } = {}) {
+    const eigener = manuell ? BERICHT_MANUELL : BERICHT_SCHLUESSEL
+    if (geworfen) return { freigeben: null, stempeln: null, fehlerAn: eigener }
+    if (ohneInhalt) return { freigeben: eigener, stempeln: null, fehlerAn: null }
+    return { freigeben: null, stempeln: manuell ? null : BERICHT_SCHLUESSEL, fehlerAn: null }
 }
 
 /**

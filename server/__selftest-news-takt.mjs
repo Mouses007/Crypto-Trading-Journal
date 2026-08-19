@@ -11,7 +11,10 @@
  *
  * Aufruf: node server/__selftest-news-takt.mjs
  */
-import { sollBerichtLaufen, tagesbeginn, istOhneInhalt } from './marktradar-news.js'
+import {
+    sollBerichtLaufen, tagesbeginn, istOhneInhalt,
+    anspruchsNachlauf, BERICHT_SCHLUESSEL, BERICHT_MANUELL,
+} from './marktradar-news.js'
 
 let fehler = 0
 // Auch die bestandenen zählen: `scripts/run-selftests.mjs` liest das Zahlenpaar
@@ -93,6 +96,38 @@ for (const t of ['OHNE INHALT', '- OHNE INHALT', '  -   ohne inhalt', '• Ohne 
 for (const t of ['- Bitcoin faellt unter 60k', 'Ohne Zweifel ein starker Bericht',
     '- Ohne klare Richtung, aber hohes Volumen', '', null]) {
     pruefe(`„${t}" gilt als Inhalt`, istOhneInhalt(t) === false)
+}
+
+// ── 5) Was ein beendeter Lauf am Anspruch hinterlässt ────────────────────
+// Kern: der Bericht von Hand darf den Mittagslauf nicht abwürgen. Vorher
+// stempelte JEDER gelungene Lauf den Tages-Schlüssel — ein Bericht um 06:18
+// von Hand liess den 12-Uhr-Lauf still ausfallen (gesehen am 19.08.2026).
+{
+    const auto = anspruchsNachlauf({ manuell: false })
+    pruefe('automatisch + gelungen → Tag erledigt', auto.stempeln === BERICHT_SCHLUESSEL, JSON.stringify(auto))
+    pruefe('automatisch + gelungen → nichts freigeben', auto.freigeben === null)
+
+    const hand = anspruchsNachlauf({ manuell: true })
+    pruefe('von Hand + gelungen → Tages-Schlüssel bleibt unberührt', hand.stempeln === null, JSON.stringify(hand))
+    pruefe('von Hand + gelungen → kein Fehlervermerk', hand.fehlerAn === null)
+
+    const autoLeer = anspruchsNachlauf({ manuell: false, ohneInhalt: true })
+    pruefe('nichts zu berichten → Tag bleibt offen', autoLeer.freigeben === BERICHT_SCHLUESSEL && autoLeer.stempeln === null)
+
+    const handLeer = anspruchsNachlauf({ manuell: true, ohneInhalt: true })
+    pruefe('nichts zu berichten von Hand → nur die Knopfbremse zurück',
+        handLeer.freigeben === BERICHT_MANUELL && handLeer.stempeln === null)
+
+    const autoFehler = anspruchsNachlauf({ manuell: false, geworfen: true })
+    pruefe('Fehler automatisch → Vermerk am Tages-Schlüssel', autoFehler.fehlerAn === BERICHT_SCHLUESSEL)
+
+    const handFehler = anspruchsNachlauf({ manuell: true, geworfen: true })
+    pruefe('Fehler von Hand → Vermerk NICHT am Tages-Schlüssel', handFehler.fehlerAn === BERICHT_MANUELL,
+        'sonst erlaubt ein gescheiterter Handlauf einen Lauf zu viel')
+    pruefe('Fehler → weder stempeln noch freigeben',
+        handFehler.stempeln === null && handFehler.freigeben === null && autoFehler.stempeln === null)
+
+    pruefe('die beiden Schlüssel sind verschieden', BERICHT_SCHLUESSEL !== BERICHT_MANUELL)
 }
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
