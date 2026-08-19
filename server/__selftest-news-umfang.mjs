@@ -15,7 +15,7 @@
  */
 import {
     budgetsAus, punkteVorgabe, videoTiefeAus, VIDEO_TIEFEN, bauLagePrompt,
-    istLiveSeite, istEndgueltig,
+    istLiveSeite, istEndgueltig, leseLagebild, eigeneAnweisungen, ZUSATZ_MAX,
 } from './marktradar-news.js'
 
 let fehler = 0
@@ -69,6 +69,69 @@ const prompt = bauLagePrompt({ themen: ['crypto'], laenge: 'kurz', punkte: 6 })
 p('Prompt trägt die eigene Punktzahl', prompt.includes('genau 6 Punkte'))
 p('Prompt ohne Eigenwert trägt die Vorgabe',
     bauLagePrompt({ themen: ['crypto'], laenge: 'kurz' }).includes('zwei bis drei Punkte'))
+
+// ── Eigene Anweisungen aus den Einstellungen ─────────────────────────────
+// Leer muss WIRKLICH leer bleiben: sonst zahlt jeder Lauf für einen Block,
+// der nichts sagt, und der Bestandsbericht ändert sich ohne Zutun.
+p('leerer Zusatz ergibt nichts', eigeneAnweisungen('') === '')
+p('nur Leerzeichen ergeben nichts', eigeneAnweisungen('   \n  ') === '')
+p('undefined ergibt nichts', eigeneAnweisungen(undefined) === '')
+
+const zus = eigeneAnweisungen('  Schreib knapper.  ')
+p('Text taucht auf', zus.includes('Schreib knapper.'))
+p('Text ist getrimmt', !zus.includes('  Schreib knapper.'))
+p('Text steht in Klammern', zus.includes('<<<') && zus.includes('>>>'))
+// Der springende Punkt: Der Kasten darf Ton und Auswahl steuern, aber die
+// Regeln nicht aushebeln — sonst genügt ein Satz, um aus dem Bericht eine
+// Handelsempfehlung zu machen.
+p('Regeln werden nachgereicht', zus.includes('keine Handelsempfehlungen'))
+p('Format wird nachgereicht', zus.includes('JSON'))
+p('Deckel greift', eigeneAnweisungen('y'.repeat(ZUSATZ_MAX + 500)).includes('y'.repeat(ZUSATZ_MAX))
+    && !eigeneAnweisungen('y'.repeat(ZUSATZ_MAX + 500)).includes('y'.repeat(ZUSATZ_MAX + 1)))
+
+// Im Prompt: der Block steht VOR dem Schnittmuster, nie dahinter — sonst ist
+// das Letzte, was das Modell liest, nicht mehr das Antwortformat.
+const mitZusatz = bauLagePrompt({ themen: ['crypto'], zusatz: 'Nur Bitcoin.' })
+p('Prompt trägt den Zusatz', mitZusatz.includes('Nur Bitcoin.'))
+p('Zusatz steht vor dem JSON-Schnittmuster',
+    mitZusatz.indexOf('Nur Bitcoin.') < mitZusatz.indexOf('Antworte NUR mit JSON'))
+p('Prompt ohne Zusatz bleibt unverändert',
+    !bauLagePrompt({ themen: ['crypto'] }).includes('EIGENE ANWEISUNGEN'))
+
+// ── Lagebild: dafür / dagegen / offen, mit Fakt-Marke ────────────────────
+// Der wunde Punkt ist die Marke. Fehlt sie oder steht Unsinn drin, MUSS
+// „einschaetzung" herauskommen — eine als Fakt ausgegebene Deutung ist der
+// einzige Fehler in diesem Bericht, den der Leser nicht mehr erkennen kann.
+p('Lagebild ohne Eingabe ist null', leseLagebild(undefined) === null)
+p('leere Listen ergeben null', leseLagebild({ dafuer: [], dagegen: [], offen: [] }) === null)
+p('Unsinn ergibt null', leseLagebild('kaputt') === null)
+p('leere Texte zählen nicht', leseLagebild({ dafuer: [{ art: 'fakt', text: '   ' }] }) === null)
+
+const lb = leseLagebild({
+    dafuer: [{ art: 'fakt', text: 'ES hält 7.714.' }, { art: 'FAKT ', text: 'DXY fällt.' }],
+    dagegen: [{ art: 'einschaetzung', text: 'Der Long ist nicht sauber.' },
+        { text: 'Ohne Marke.' }, { art: 'quatsch', text: 'Falsche Marke.' }],
+    offen: ['Nackter Satz ohne Objekt.'],
+})
+p('dafür übernommen', lb.dafuer.length === 2)
+p('Fakt bleibt Fakt', lb.dafuer[0].art === 'fakt')
+p('Fakt auch mit Grossschrift und Leerzeichen', lb.dafuer[1].art === 'fakt')
+p('fehlende Marke wird Einschätzung', lb.dagegen[1].art === 'einschaetzung')
+p('unbekannte Marke wird Einschätzung', lb.dagegen[2].art === 'einschaetzung')
+p('nackter Satz wird übernommen', lb.offen[0].text === 'Nackter Satz ohne Objekt.')
+p('nackter Satz ist Einschätzung', lb.offen[0].art === 'einschaetzung')
+
+// Deckel: fünf Einträge je Spalte reichen für eine Abwägung; alles darüber ist
+// eine Liste, keine Abwägung mehr.
+const viele = leseLagebild({ dafuer: Array.from({ length: 9 }, (_, i) => ({ art: 'fakt', text: 'Satz ' + i })) })
+p('höchstens fünf je Spalte', viele.dafuer.length === 5)
+p('leere Spalten bleiben leer', viele.dagegen.length === 0 && viele.offen.length === 0)
+p('Text wird gekürzt', leseLagebild({ offen: [{ text: 'x'.repeat(900) }] }).offen[0].text.length === 400)
+
+// Der Prompt muss das Feld auch verlangen — sonst liefert das Modell es nie.
+const promptLb = bauLagePrompt({ themen: ['crypto'], laenge: 'mittel' })
+p('Prompt verlangt das Lagebild', promptLb.includes('"lagebild"'))
+p('Prompt verbietet Empfehlungen im Lagebild', promptLb.includes('keine Empfehlung'))
 
 // ── Videotiefe ───────────────────────────────────────────────────────────
 p('drei Stufen vorhanden', Object.keys(VIDEO_TIEFEN).join(',') === 'knapp,normal,ausfuehrlich')

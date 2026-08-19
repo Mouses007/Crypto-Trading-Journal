@@ -496,6 +496,46 @@ export function punkteVorgabe(laenge, anzahl) {
 }
 
 /**
+ * Wie lang eigene Anweisungen sein dürfen.
+ *
+ * 2000 Zeichen sind rund 500 Token — die zahlt man bei JEDEM Lauf mit, und
+ * jenseits davon fängt ein zweiter Prompt an, der mit dem ersten streitet.
+ */
+export const ZUSATZ_MAX = 2000
+
+/**
+ * Eigene Anweisungen des Lesers als Prompt-Block.
+ *
+ * Der Kasten in den Einstellungen darf den Bericht in Ton, Schwerpunkt und
+ * Auswahl steuern — aber nicht die drei Dinge aushebeln, an denen seine
+ * Brauchbarkeit hängt: keine Empfehlungen, nichts Erfundenes, und das
+ * Antwortformat. Deshalb steht der Block VOR dem JSON-Schnittmuster und sagt
+ * ausdrücklich, was er nicht kann; sonst genügt ein hingeworfenes „schreib
+ * mir, was ich kaufen soll", um den Bericht in etwas zu verwandeln, das er
+ * nicht sein darf.
+ *
+ * Die Anweisungen stehen in Klammern `<<< >>>`, damit das Modell sie als
+ * Zitat erkennt und nicht als Teil der Aufgabenbeschreibung liest.
+ *
+ * Leer heisst leer: kein Block, kein Token, kein Verhalten geändert.
+ *
+ * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
+ */
+export function eigeneAnweisungen(zusatz) {
+    const text = String(zusatz || '').trim().slice(0, ZUSATZ_MAX)
+    if (!text) return ''
+    return `EIGENE ANWEISUNGEN DES LESERS — sie gehen bei Ton, Schwerpunkt und Auswahl
+vor, hebeln die REGELN oben aber NICHT aus:
+<<<
+${text}
+>>>
+Auch damit gilt weiter: keine Handelsempfehlungen, keine Kursziele, keine
+Prognosen, nichts erfinden — und die Antwort bleibt genau das JSON unten.
+
+`
+}
+
+/**
  * System-Prompt des Lageberichts.
  *
  * Aus der früheren Konstante wurde ein Builder: Themen, Länge und Rhythmus
@@ -504,10 +544,11 @@ export function punkteVorgabe(laenge, anzahl) {
  * Exportiert, damit der Selbsttest die Varianten ohne Netz prüfen kann.
  */
 export function bauLagePrompt({ themen = ['crypto'], laenge = 'mittel', rhythmus = 'taeglich',
-    punkte = 0 } = {}) {
+    punkte = 0, zusatz = '' } = {}) {
     const l = { ...(LAENGEN[laenge] || LAENGEN.mittel), punkte: punkteVorgabe(laenge, punkte) }
     const zeitraum = rhythmus === 'woechentlich' ? 'der vergangenen Woche' : 'der letzten 36 Stunden'
     const kapitelListe = themen.map(t => `- "${t}": ${THEMEN_NAMEN[t] || t}`).join('\n')
+    const eigene = eigeneAnweisungen(zusatz)
 
     return `Du bist Marktbeobachter für einen **Krypto-Futures-Händler**.
 
@@ -544,9 +585,23 @@ ausgeschriebener Absatz von drei bis fünf Sätzen — was geschehen ist, welche
 Zahlen dazu genannt werden und wie es zusammenhängt. Sagen zwei Quellen
 dasselbe, schreibe EINEN Punkt und nenne beide Belege.
 
-Antworte NUR mit JSON:
+LAGEBILD: Zusätzlich wägst du ab, was die Lage STÜTZT ("dafuer"), was sie
+BELASTET ("dagegen") und WORAN SIE SICH ENTSCHEIDET ("offen"). Je zwei bis vier
+Einträge, jeder ein Satz. "offen" nennt beobachtbare Bedingungen — was man in
+den nächsten Stunden oder Tagen sehen wird, das die Frage beantwortet. KEINE
+Richtung, kein Kursziel, kein Einstieg, keine Empfehlung; „ob die ETF-Abflüsse
+enden" ist erlaubt, „über 66.000 kaufen" nicht.
+Jeder Eintrag trägt "art": "fakt" NUR, wenn der Satz eine gemessene oder in den
+Quellen genannte Tatsache wiedergibt — alles Gedeutete, Verknüpfte, Gewichtete
+ist "einschaetzung". Im Zweifel "einschaetzung": eine als Fakt ausgegebene
+Meinung ist der teuerste Fehler in diesem Bericht.
+
+${eigene}Antworte NUR mit JSON:
 {"ueberschrift": "Schlagzeile über alles",
  "lage": "zwei bis vier Sätze Gesamtbild über alle Kapitel",
+ "lagebild": {"dafuer": [{"art": "fakt", "text": "ein Satz"}],
+              "dagegen": [{"art": "einschaetzung", "text": "ein Satz"}],
+              "offen": [{"art": "einschaetzung", "text": "ein Satz"}]},
  "kapitel": [{"thema": "crypto",
               "ueberschrift": "Kapitel-Schlagzeile",
               "lage": "${l.lage}",
@@ -563,52 +618,114 @@ erfundene oder gerundete Zahlen sind schlimmer als gar keine.`
 }
 
 /**
- * Ist-Zustand des Markts als kompakter Textblock für den Bericht.
+ * Das Lagebild des Modells in eine verlässliche Form bringen.
+ *
+ * Drei Listen — was stützt, was belastet, woran es sich entscheidet — mit je
+ * einer Marke „Fakt" oder „Einschätzung". Die Marke ist der Punkt der ganzen
+ * Übung: Ein Bericht, der Gemessenes und Gedeutetes im selben Absatz mischt,
+ * lässt sich nicht prüfen. Deshalb ist der Rückfall hier immer
+ * `einschaetzung` — eine als Fakt ausgegebene Meinung wäre der teuerste
+ * Fehler, den dieser Bericht machen kann, und ein vergessenes Feld darf ihn
+ * nicht herbeiführen.
+ *
+ * Gibt `null` zurück, wenn nichts Brauchbares dabei war (auch der Normalfall
+ * für Berichte aus der Zeit vor dem Lagebild) — dann zeigt die Oberfläche den
+ * Kasten gar nicht erst.
+ *
+ * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
+ */
+export function leseLagebild(roh) {
+    const teil = (liste) => (Array.isArray(liste) ? liste : [])
+        // Manche Modelle liefern statt {art,text} nur den nackten Satz
+        .map(e => (typeof e === 'string' ? { art: '', text: e } : e))
+        .filter(e => e && typeof e === 'object' && String(e.text || '').trim())
+        .slice(0, 5)
+        .map(e => ({
+            art: /^fakt/i.test(String(e.art || '').trim()) ? 'fakt' : 'einschaetzung',
+            text: String(e.text).trim().slice(0, 400),
+        }))
+    const lb = roh && typeof roh === 'object' ? roh : {}
+    const gebaut = { dafuer: teil(lb.dafuer), dagegen: teil(lb.dagegen), offen: teil(lb.offen) }
+    return (gebaut.dafuer.length || gebaut.dagegen.length || gebaut.offen.length) ? gebaut : null
+}
+
+/**
+ * Ist-Zustand des Markts — als Zeilen für den Prompt UND als Tabelle für die Anzeige.
  *
  * Alles aus den eigenen Radar-Funktionen — die laufen über `ausCache`, ein
  * Berichtslauf löst also keine zusätzlichen Fremdabrufe aus. Jeder Wert in
  * seinem eigenen try/catch: ein ausgefallener Feed darf höchstens eine Zeile
  * kosten, nie den Bericht.
+ *
+ * Die Werte werden zusätzlich strukturiert zurückgegeben und mit dem Bericht
+ * gespeichert. Grund: Die Dossier-Ansicht zeigt sie als Tabelle, und ein
+ * gespeicherter Bericht muss den Marktstand von DAMALS zeigen — die Kacheln
+ * des Marktradars zeigen den von jetzt, und beides nebeneinander wäre eine
+ * stille Lüge.
+ *
+ * `skala` (0–100) tragen nur die Werte, die tatsächlich eine feste Spanne
+ * haben; daraus zeichnet die Anzeige einen Balken. Erfunden wird keine.
  */
 async function holeMarktdatenBlock() {
-    const zeilen = []
+    const werte = []
     try {
         const f = await holeFearGreed(35)
-        zeilen.push(`Fear & Greed: ${f.aktuell.wert} (${f.aktuell.klasse}), 30-Tage-Mittel ${f.mittel30}`)
+        werte.push({
+            was: 'Fear & Greed', wert: `${f.aktuell.wert} (${f.aktuell.klasse})`,
+            zusatz: `30-Tage-Mittel ${f.mittel30}`, skala: Number(f.aktuell.wert),
+        })
     } catch (e) { logWarn('news', `Marktdaten Fear&Greed: ${e.message}`) }
     try {
         const g = await holeGlobal()
-        zeilen.push(`BTC-Dominanz: ${g.pct} %` + (g.mcapUsd
-            ? `, Gesamtmarkt ${(g.mcapUsd / 1e12).toFixed(2)} Bio. USD` : ''))
+        werte.push({
+            was: 'BTC-Dominanz', wert: `${g.pct} %`,
+            zusatz: g.mcapUsd ? `Gesamtmarkt ${(g.mcapUsd / 1e12).toFixed(2)} Bio. USD` : '',
+            skala: Number(g.pct),
+        })
     } catch (e) { logWarn('news', `Marktdaten Dominanz: ${e.message}`) }
     try {
         const fu = await holeFunding(30)
         const fmt = r => `${r.symbol} ${(r.rate * 100).toFixed(3)} %`
         if (fu.oben?.length || fu.unten?.length) {
-            zeilen.push(`Funding-Extreme (8h): oben ${fu.oben.slice(0, 3).map(fmt).join(', ') || '—'}; `
-                + `unten ${fu.unten.slice(0, 3).map(fmt).join(', ') || '—'}`)
+            werte.push({
+                was: 'Funding-Extreme (8h)',
+                wert: `oben ${fu.oben.slice(0, 3).map(fmt).join(', ') || '—'}`,
+                zusatz: `unten ${fu.unten.slice(0, 3).map(fmt).join(', ') || '—'}`,
+            })
         }
     } catch (e) { logWarn('news', `Marktdaten Funding: ${e.message}`) }
     try {
         const ls = await holeLsOi('BTCUSDT', 48)
         const p = ls.punkte?.[ls.punkte.length - 1]
         if (p) {
-            zeilen.push(`BTC Long/Short-Konten: ${p.longPct} % long / ${p.shortPct} % short`
-                + (ls.oiDelta !== null && ls.oiDelta !== undefined
-                    ? `, Open Interest 24h ${ls.oiDelta > 0 ? '+' : ''}${Number(ls.oiDelta).toFixed(1)} %` : '')
-                + (ls.deutung && ls.deutung !== 'neutral' ? ` (${ls.deutung})` : ''))
+            werte.push({
+                was: 'BTC Long/Short-Konten', wert: `${p.longPct} % long / ${p.shortPct} % short`,
+                zusatz: [
+                    ls.oiDelta !== null && ls.oiDelta !== undefined
+                        ? `Open Interest 24h ${ls.oiDelta > 0 ? '+' : ''}${Number(ls.oiDelta).toFixed(1)} %` : '',
+                    ls.deutung && ls.deutung !== 'neutral' ? ls.deutung : '',
+                ].filter(Boolean).join(', '),
+                skala: Number(p.longPct),
+            })
         }
     } catch (e) { logWarn('news', `Marktdaten Long/Short: ${e.message}`) }
     try {
         const a = await holeAltseason(90)
         if (a.index !== null) {
-            zeilen.push(`Altcoin-Season-Index (90 T): ${a.index} — ${a.lage === 'altcoin'
-                ? 'Altcoin-Saison' : a.lage === 'bitcoin' ? 'Bitcoin-Saison' : 'gemischt'}`)
+            werte.push({
+                was: 'Altcoin-Season-Index (90 T)', wert: String(a.index),
+                zusatz: a.lage === 'altcoin' ? 'Altcoin-Saison'
+                    : a.lage === 'bitcoin' ? 'Bitcoin-Saison' : 'gemischt',
+                skala: Number(a.index),
+            })
         }
     } catch (e) { logWarn('news', `Marktdaten Altseason: ${e.message}`) }
-    return zeilen.length
-        ? 'MARKTDATEN (eigene Messung, Stand jetzt):\n' + zeilen.map(z => `- ${z}`).join('\n')
+
+    const text = werte.length
+        ? 'MARKTDATEN (eigene Messung, Stand jetzt):\n'
+        + werte.map(w => `- ${w.was}: ${w.wert}${w.zusatz ? ' — ' + w.zusatz : ''}`).join('\n')
         : ''
+    return { text, werte }
 }
 
 /** Anspruchs-Schlüssel: der Tageslauf und die Bremse für den Knopf. */
@@ -1018,7 +1135,7 @@ async function baueLagebericht(s, { manuell = false } = {}) {
     }
 
     // ── Schritt 1c: Marktdaten aus dem eigenen Radar ─────────────────────
-    const marktdaten = await holeMarktdatenBlock().catch(() => '')
+    const marktdaten = await holeMarktdatenBlock().catch(() => ({ text: '', werte: [] }))
 
     // ── Schritt 2: Bericht schreiben (eingestellter Anbieter = Claude) ───
     // Durchnummeriert, damit das Modell seine Belege benennen kann. Die
@@ -1035,7 +1152,7 @@ async function baueLagebericht(s, { manuell = false } = {}) {
         zeilen.push(`[${beitraege.length + j + 1}] Recherche-Quelle: ${z.url}\n`)
     }
     const teile = []
-    if (marktdaten) teile.push(marktdaten)
+    if (marktdaten.text) teile.push(marktdaten.text)
     for (const r of recherchen) {
         teile.push(`RECHERCHE zum Thema ${THEMEN_NAMEN[r.thema] || r.thema} `
             + `(Perplexity, Belege siehe nummerierte Recherche-Quellen):\n${r.text}`)
@@ -1065,7 +1182,11 @@ async function baueLagebericht(s, { manuell = false } = {}) {
      * Lauf kostet den ganzen Bericht.
      */
     const budgets = budgetsAus(laenge, s?.radarNewsTokenBudget)
-    const system = bauLagePrompt({ themen, laenge, rhythmus, punkte: s?.radarNewsPunkte })
+    const system = bauLagePrompt({
+        themen, laenge, rhythmus,
+        punkte: s?.radarNewsPunkte,
+        zusatz: s?.radarNewsPromptZusatz,
+    })
     let antwort = null
     for (const budget of budgets) {
         cfg.maxTokens = budget
@@ -1138,6 +1259,9 @@ async function baueLagebericht(s, { manuell = false } = {}) {
         ? kapitel.flatMap(k => k.punkte).slice(0, 24)
         : loesePunkte(daten?.punkte).slice(0, 12)   // Rückfall: Modell ohne Kapitel
 
+    // Abwägung „dafür/dagegen/offen" — null, wenn das Modell nichts lieferte
+    const abwaegung = leseLagebild(daten?.lagebild)
+
     const kostenUsd = (Number(antwort.costUsd) || 0) + rechercheKostenUsd + letzteXKostenUsd
     letzteXKostenUsd = 0   // abgeholt — nicht doppelt verbuchen
 
@@ -1162,6 +1286,13 @@ async function baueLagebericht(s, { manuell = false } = {}) {
         videosListe: JSON.stringify(videoLog),
         hinweis: geminiFehler ? `Videoanalyse: ${String(geminiFehler).slice(0, 200)}` : '',
         beitraegeListe: JSON.stringify(belegBasis),
+        // Marktstand zum Zeitpunkt des Berichts — die Dossier-Ansicht zeigt
+        // ihn als Tabelle. Mitgespeichert und nicht live nachgeladen, sonst
+        // stünden neben einem Bericht von gestern die Zahlen von heute.
+        marktBlock: JSON.stringify(marktdaten.werte || []),
+        // Abwägung über alle Kapitel, mit Fakt/Einschätzung je Zeile. Leer,
+        // wenn das Modell nichts Brauchbares lieferte — dann fehlt der Kasten.
+        lagebild: abwaegung ? JSON.stringify(abwaegung) : '',
     }
     const [id] = await knex('news_digests').insert(zeile).returning('id')
     const digestId = typeof id === 'object' ? id.id : id
@@ -1391,11 +1522,20 @@ export function setupNewsRoutes(app) {
         if (!zeile) return null
         let kapitel = []
         try { kapitel = JSON.parse(zeile.kapitel || '[]') } catch { /* Altbestand */ }
+        // Marktstand als Liste; ältere Berichte haben keinen — dann bleibt die
+        // Tabelle im Dossier weg, statt den Stand von heute vorzutäuschen.
+        let markt = []
+        try { markt = JSON.parse(zeile.marktBlock || '[]') } catch { /* Altbestand */ }
+        let lagebild = null
+        try { lagebild = leseLagebild(JSON.parse(zeile.lagebild || 'null')) } catch { /* Altbestand */ }
+        const { marktBlock, ...rest } = zeile
         return {
-            ...zeile,
+            ...rest,
             erstelltAm: Number(zeile.erstelltAm),
             punkte: JSON.parse(zeile.punkte || '[]'),
             kapitel,
+            markt,
+            lagebild,
             beitraege_liste: JSON.parse(zeile.beitraegeListe || '[]'),
             videos_liste: JSON.parse(zeile.videosListe || '[]'),
         }

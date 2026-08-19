@@ -73,6 +73,7 @@ const VALID_SETTINGS_KEYS = [
     'radarNewsRhythmus', 'radarNewsWochentag', 'radarNewsThemen', 'radarNewsLaenge', 'radarArschlochAn', 'radarArschlochWoerter', 'radarNewsXModell',
     'radarNewsRechercheModell',
     'radarNewsTokenBudget', 'radarNewsPunkte', 'radarNewsVideoTiefe', 'radarNewsVideoTokens', 'radarNewsLayout',
+    'radarNewsPromptZusatz',
     'livetradingAn', 'betaAusblenden', 'livetradingMobil', 'startseiteAn',
     // Anbieter/Modell je KI-Funktion; leer = global
     'aiBerichtProvider', 'aiBerichtModell', 'aiAgentProvider', 'aiAgentModell',

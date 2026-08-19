@@ -148,25 +148,43 @@ const kapitelListe = computed(() =>
  * Der Index in die FLACHE Liste wird mitgeführt: das Belegfenster adressiert
  * Punkte darüber, und die Kapitel-Punkte sind dieselben Objekte.
  *
- * Drei Modi, weil zwei zu wenig waren:
+ * Vier Modi, weil drei zu wenig waren:
  *
  *   kombiniert — Top-Meldungen als Kachel, der Rest als Artikel (Vorgabe)
  *   artikel    — reine Zeitung, gar keine Kacheln
  *   kacheln    — alles als Kachel, wie vor dem Umbau
+ *   dossier    — Tabellen, Kennzahlen und Bilder statt Fliesstext
  *
- * Ein unbekannter Wert (etwa das kurzzeitig gespeicherte „zeitung") fällt auf
- * `kombiniert` zurück — das ist die Ansicht, die derselbe Wert vorher erzeugt hat.
+ * Das Dossier ist keine vierte Anordnung derselben Absätze, sondern eine andere
+ * Frage an denselben Bericht: nicht „lies mich", sondern „überflieg mich". Es
+ * zeigt zuerst das Nachschlagbare — den gemessenen Marktstand, die Termine der
+ * nächsten Stunden, die wörtlichen Kennzahlen je Kapitel — und erst darunter
+ * die Meldungen, jede mit Bild, Kennzahlen und Belegzahl in einer Zeile. Alles
+ * daraus liegt bereits vor; erfunden oder nachgeladen wird nichts.
+ *
+ * Vorgabe ist `dossier`. Ein unbekannter Wert (etwa das kurzzeitig gespeicherte
+ * „zeitung") fällt ebenfalls darauf zurück.
  */
-const LAYOUTS = ['kombiniert', 'artikel', 'kacheln']
+const LAYOUTS = ['dossier', 'kombiniert', 'artikel', 'kacheln']
+/** Was gilt, solange nichts gewählt wurde — und wohin ein unbekannter Wert fällt. */
+const LAYOUT_VORGABE = 'dossier'
+/** Sinnbild je Spalte der Abwägung — Richtung, nicht Wertung. */
+const WAAGE_ICON = {
+    dafuer: 'uil-arrow-growth',
+    dagegen: 'uil-chart-down',
+    offen: 'uil-question-circle',
+}
+
 const LAYOUT_ICON = {
     kombiniert: 'uil-newspaper',
     artikel: 'uil-align-left',
     kacheln: 'uil-apps',
+    dossier: 'uil-table',
 }
 
 const layoutModus = computed(() => {
     const l = currentUser.value?.radarNewsLayout
-    return LAYOUTS.includes(l) ? l : 'kombiniert'
+    return LAYOUTS.includes(l) ? l : LAYOUT_VORGABE
 })
 
 const punkteMitIndex = computed(() =>
@@ -175,13 +193,13 @@ const punkteMitIndex = computed(() =>
 /** Top-Meldungen (intern „Aufmacher“): die als „hoch" markierten Punkte, höchstens drei. */
 const aufmacher = computed(() => {
     if (layoutModus.value === 'kacheln') return punkteMitIndex.value
-    if (layoutModus.value === 'artikel') return []
+    if (layoutModus.value === 'artikel' || layoutModus.value === 'dossier') return []
     return punkteMitIndex.value.filter(({ p }) => p.wichtigkeit === 'hoch').slice(0, 3)
 })
 
 /** Alles, was keine Top-Meldung ist — nach Kapitel getrennt, in Berichtsreihenfolge. */
 function artikelZuThema(thema) {
-    if (layoutModus.value === 'kacheln') return []
+    if (layoutModus.value === 'kacheln' || layoutModus.value === 'dossier') return []
     const oben = new Set(aufmacher.value.map(a => a.i))
     return punkteMitIndex.value.filter(({ p, i }) => !oben.has(i) && (p.thema || '') === thema)
 }
@@ -192,11 +210,84 @@ function artikelZuThema(thema) {
  * Ansicht, und das wäre schlimmer als ein Punkt an der falschen Stelle.
  */
 const artikelOhneKapitel = computed(() => {
-    if (layoutModus.value === 'kacheln') return []
+    if (layoutModus.value === 'kacheln' || layoutModus.value === 'dossier') return []
     const bekannt = new Set(kapitelListe.value.map(k => k.thema))
     const oben = new Set(aufmacher.value.map(a => a.i))
     return punkteMitIndex.value.filter(({ p, i }) => !oben.has(i) && !bekannt.has(p.thema || ''))
 })
+
+/**
+ * Die Abwägung des Berichts: was stützt, was belastet, woran es sich entscheidet.
+ *
+ * Steht in JEDER Darstellung ganz oben — sie ist keine Frage des Layouts,
+ * sondern der schnellste Weg zu der Frage, wegen der man den Bericht überhaupt
+ * öffnet. Berichte von vor dem Umbau haben sie nicht; dann fehlt der Kasten,
+ * statt mit leeren Spalten Vollständigkeit vorzutäuschen.
+ */
+const lagebild = computed(() => {
+    const l = bericht.value?.lagebild
+    if (!l) return null
+    const spalten = [
+        { key: 'dafuer', eintraege: l.dafuer || [] },
+        { key: 'dagegen', eintraege: l.dagegen || [] },
+        { key: 'offen', eintraege: l.offen || [] },
+    ].filter(s => s.eintraege.length)
+    return spalten.length ? spalten : null
+})
+
+/**
+ * Kapitel für die Dossier-Ansicht — mit ALLEN ihren Punkten.
+ *
+ * Anders als in der Zeitung wird hier nichts nach oben gezogen: Ein Dossier,
+ * das seine wichtigste Meldung an zwei Stellen führt, lässt den Leser zweimal
+ * dasselbe lesen. Die Wichtigkeit steht stattdessen als Marke an der Zeile.
+ *
+ * Punkte ohne bekanntes Kapitel bekommen ein letztes, namenloses Kapitel —
+ * derselbe Auffang wie in der Zeitungsansicht, aus demselben Grund.
+ */
+const dossierKapitel = computed(() => {
+    if (layoutModus.value !== 'dossier') return []
+    const bekannt = new Set(kapitelListe.value.map(k => k.thema))
+    const liste = kapitelListe.value.map(k => ({
+        ...k,
+        eintraege: punkteMitIndex.value.filter(({ p }) => (p.thema || '') === k.thema),
+    }))
+    const rest = punkteMitIndex.value.filter(({ p }) => !bekannt.has(p.thema || ''))
+    if (rest.length) liste.push({ thema: '', ueberschrift: '', lage: '', eintraege: rest })
+    return liste
+})
+
+/**
+ * Balkenbreite eines Marktwerts — leer, wenn er keine feste Spanne hat.
+ *
+ * Nur Werte, die von Haus aus zwischen 0 und 100 liegen (Fear & Greed,
+ * Dominanz, Long-Anteil, Altseason-Index), tragen serverseitig eine `skala`.
+ * Einen Balken für eine Fundingrate zu zeichnen hiesse, eine Obergrenze zu
+ * erfinden, die es nicht gibt.
+ */
+function balken(w) {
+    const v = Number(w?.skala)
+    return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) + '%' : ''
+}
+
+/**
+ * Die wörtlichen Zahlen eines Kapitels als Tabellenzeilen.
+ *
+ * Sie stehen im Dossier zusätzlich zur Meldung, nicht statt ihrer: In der
+ * Meldung sind sie Teil eines Satzes, hier lassen sie sich untereinander
+ * vergleichen — und das ist der einzige Teil des Berichts, den man nachrechnen
+ * kann. Woher jede Zahl stammt, bleibt über den Meldungstitel sichtbar; ein
+ * Klick öffnet dieselbe Belegansicht wie überall sonst.
+ */
+function kennzahlenZeilen(eintraege) {
+    const zeilen = []
+    for (const { p, i } of eintraege || []) {
+        for (const z of (p.kennzahlen || []).slice(0, 3)) {
+            if (z && z.wert) zeilen.push({ wert: z.wert, was: z.was || '', titel: p.titel, i })
+        }
+    }
+    return zeilen.slice(0, 12)
+}
 
 /**
  * Videobeschreibung in Absatz und Stichpunkte zerlegen.
@@ -278,7 +369,7 @@ function klappeUm(id) {
 const nRhythmus = ref('taeglich')
 const nThemen = ref(['crypto'])
 const nLaenge = ref('mittel')
-const nLayout = ref('kombiniert')
+const nLayout = ref(LAYOUT_VORGABE)
 const nVideoTiefe = ref('normal')
 const nBudget = ref(0)
 const nPunkte = ref(0)
@@ -290,7 +381,7 @@ function ladeBerichtOptionen() {
         .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech', 'chartanalyse'].includes(t))
     if (!nThemen.value.length) nThemen.value = ['crypto']
     nLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
-    nLayout.value = LAYOUTS.includes(s.radarNewsLayout) ? s.radarNewsLayout : 'kombiniert'
+    nLayout.value = LAYOUTS.includes(s.radarNewsLayout) ? s.radarNewsLayout : LAYOUT_VORGABE
     nVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
         ? s.radarNewsVideoTiefe : 'normal'
     nBudget.value = Number(s.radarNewsTokenBudget) || 0
@@ -500,6 +591,19 @@ const bestandKuerzer = computed(() => {
 
 /** Der nächste Termin bekommt einen Countdown — alles andere nur die Uhrzeit. */
 const naechsterTermin = computed(() => termine.value.find(e => e.dateUnix >= jetzt) || null)
+
+/**
+ * Was in den nächsten Stunden ansteht — die Kopfzeile des Dossiers.
+ *
+ * Bewusst aus dem LIVE geladenen Kalender und nicht aus dem Bericht: ein Termin
+ * ist erst dann interessant, wenn er noch bevorsteht, und ein Bericht von heute
+ * Mittag weiss um 20 Uhr nichts mehr über den Abend. Es gilt dieselbe Auswahl
+ * (Wirkung, Länder), die unten in der Terminliste eingestellt ist — zwei
+ * Filtergedanken auf einer Seite wären einer zu viel.
+ */
+const naechsteTermine = computed(() => termine.value
+    .filter(e => e.dateUnix >= jetzt && e.dateUnix < jetzt + 36 * 60 * 60 * 1000)
+    .slice(0, 6))
 
 /** Welche Quellen liefern gerade Beiträge? Reihenfolge nach Menge. */
 const quellenListe = computed(() => {
@@ -935,6 +1039,158 @@ onBeforeUnmount(() => {
                 <h2 class="nwUeberschrift">{{ bericht.ueberschrift }}</h2>
                 <p class="nwLage">{{ bericht.lage }}</p>
 
+                <!-- Abwägung: dafür / dagegen / woran es sich entscheidet.
+                     Jede Zeile sagt, ob sie eine Tatsache aus den Quellen ist
+                     oder eine Deutung — ohne diese Marke wäre der Kasten nur
+                     eine hübschere Meinung. Gilt für alle Darstellungen. -->
+                <section v-if="lagebild" class="nwWaage">
+                    <div v-for="sp in lagebild" :key="sp.key" class="nwWaageSpalte" :class="sp.key">
+                        <h3 class="nwWaageKopf">
+                            <i class="uil" :class="WAAGE_ICON[sp.key]"></i>{{ t('news.balance.' + sp.key) }}
+                        </h3>
+                        <ul class="nwWaageListe">
+                            <li v-for="(e, ei) in sp.eintraege" :key="ei">
+                                <span class="nwArt" :class="e.art">{{ t('news.tag.' + e.art) }}</span>
+                                <span class="nwWaageText">{{ e.text }}</span>
+                            </li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!--=============== DOSSIER ===============-->
+                <!-- Nachschlagen statt lesen: oben das Messbare als Tabelle,
+                     darunter je Kapitel die Zahlen und die Meldungen. Klick auf
+                     eine Zeile öffnet dasselbe Belegfenster wie überall sonst. -->
+                <div v-if="layoutModus === 'dossier'" class="nwDossier">
+                    <div class="nwDoKopfzeile">
+                        <!-- Der gemessene Marktstand VON DAMALS. Ältere Berichte
+                             haben ihn nicht gespeichert — dann fehlt die Tabelle,
+                             statt hier die Zahlen von heute zu zeigen. -->
+                        <section v-if="bericht.markt && bericht.markt.length" class="nwDoBlock">
+                            <h3 class="nwDoTitel">
+                                <i class="uil uil-chart-line"></i>{{ t('news.marketState') }}
+                            </h3>
+                            <table class="nwDoTab">
+                                <thead>
+                                    <tr>
+                                        <th>{{ t('news.measure') }}</th>
+                                        <th>{{ t('news.level') }}</th>
+                                        <th>{{ t('news.reading') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(w, wi) in bericht.markt" :key="wi">
+                                        <td class="nwDoWas">{{ w.was }}</td>
+                                        <td class="nwDoWert">
+                                            <b>{{ w.wert }}</b>
+                                            <span v-if="balken(w)" class="nwDoBalken">
+                                                <i :style="{ width: balken(w) }"></i>
+                                            </span>
+                                        </td>
+                                        <td class="nwDoZusatz">{{ w.zusatz || '—' }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p class="nwDoFuss">{{ t('news.marketStateHint') }}</p>
+                        </section>
+
+                        <!-- Was noch bevorsteht — live aus dem Kalender, mit der
+                             Auswahl, die unten in der Terminliste eingestellt ist. -->
+                        <section v-if="naechsteTermine.length" class="nwDoBlock">
+                            <h3 class="nwDoTitel">
+                                <i class="uil uil-calendar-alt"></i>{{ t('news.upcoming') }}
+                            </h3>
+                            <table class="nwDoTab">
+                                <thead>
+                                    <tr>
+                                        <th>{{ t('news.time') }}</th>
+                                        <th>{{ t('news.event') }}</th>
+                                        <th>{{ t('news.forecast') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="e in naechsteTermine" :key="e.extId">
+                                        <td class="nwDoZeit">
+                                            <i class="nwPunktFarbe" :style="{ background: IMPACT_FARBE[e.impact] }"></i>
+                                            {{ zeit(e.dateUnix) }}
+                                            <span class="nwLand">{{ e.land }}</span>
+                                        </td>
+                                        <td>{{ e.titel }}</td>
+                                        <td class="nwDoWert">
+                                            <b v-if="e.forecast">{{ e.forecast }}</b>
+                                            <span v-else>—</span>
+                                            <span v-if="e.previous" class="nwDoVor">{{ e.previous }}</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p class="nwDoFuss">{{ t('news.upcomingHint') }}</p>
+                        </section>
+                    </div>
+
+                    <section v-for="(k, ki) in dossierKapitel" :key="'do' + ki" class="nwDoKapitel">
+                        <div class="nwDoKapitelKopf">
+                            <span class="nwDoNummer">{{ ki + 1 }}</span>
+                            <span class="nwThema klein">{{ THEMA_NAME[k.thema] || k.thema || t('news.misc') }}</span>
+                            <h3 v-if="k.ueberschrift">{{ k.ueberschrift }}</h3>
+                        </div>
+                        <p v-if="k.lage" class="nwDoLage">{{ k.lage }}</p>
+
+                        <!-- Charts der recherchierten Analysen, wie in der
+                             Zeitungsansicht; Klick öffnet sie gross. -->
+                        <div v-if="k.bilder && k.bilder.length" class="nwChartBilder">
+                            <img v-for="(b, bi) in k.bilder" :key="bi" :src="b.url"
+                                loading="lazy" referrerpolicy="no-referrer" class="pointerClass"
+                                @click="grossesBild = b"
+                                @error="e => { e.target.style.display = 'none' }" />
+                        </div>
+
+                        <!-- Die wörtlichen Zahlen des Kapitels, untereinander
+                             vergleichbar. Klick springt zur Meldung dahinter. -->
+                        <table v-if="kennzahlenZeilen(k.eintraege).length" class="nwDoTab nwDoZahlen">
+                            <thead>
+                                <tr>
+                                    <th>{{ t('news.figure') }}</th>
+                                    <th>{{ t('news.figureWhat') }}</th>
+                                    <th>{{ t('news.figureFrom') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(z, zi) in kennzahlenZeilen(k.eintraege)" :key="zi"
+                                    class="pointerClass" @click="offenerPunkt = z.i">
+                                    <td class="nwDoWert"><b>{{ z.wert }}</b></td>
+                                    <td>{{ z.was }}</td>
+                                    <td class="nwDoHer">{{ z.titel }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <article v-for="{ p, i } in k.eintraege" :key="i" class="nwDoMeldung"
+                            :class="{ hoch: p.wichtigkeit === 'hoch' }" @click="offenerPunkt = i">
+                            <img v-if="punktBild(p)" class="nwDoBild" :src="punktBild(p)" alt=""
+                                loading="lazy" referrerpolicy="no-referrer"
+                                @error="$event.target.style.display = 'none'" />
+                            <div class="nwDoInhalt">
+                                <h4 class="nwDoMeldungTitel">
+                                    {{ p.titel }}
+                                    <span v-if="p.wichtigkeit === 'hoch'" class="nwWichtig">
+                                        {{ t('news.important') }}
+                                    </span>
+                                </h4>
+                                <p class="nwDoMeldungText">{{ p.text }}</p>
+                                <p class="nwDoMeldungFuss">
+                                    <span class="nwPunktQuelle">{{ p.quelle }}</span>
+                                    <span v-for="(z, zi) in (p.kennzahlen || []).slice(0, 3)" :key="zi"
+                                        class="nwZahl"><b>{{ z.wert }}</b><span>{{ z.was }}</span></span>
+                                    <span v-if="p.belege && p.belege.length" class="nwBelegZahl">
+                                        <i class="uil uil-link"></i>{{ p.belege.length }}
+                                    </span>
+                                </p>
+                            </div>
+                        </article>
+                    </section>
+                </div>
+
                 <!-- Top-Meldungen: nur die als „hoch" markierten Punkte, höchstens
                      drei. Im Kachel-Layout stehen hier wie früher alle. Der
                      volle Text samt Belegen steht im Fenster. -->
@@ -978,7 +1234,8 @@ onBeforeUnmount(() => {
 
                 <!-- Zeitungsteil: je Thema ein Kapitel mit Spaltensatz. Alte
                      Berichte ohne Kapitel zeigen wie bisher nur die Lage. -->
-                <div v-for="(k, ki) in kapitelListe" :key="ki" class="nwKapitel">
+                <div v-for="(k, ki) in (layoutModus === 'dossier' ? [] : kapitelListe)" :key="ki"
+                    class="nwKapitel">
                     <div class="nwKapitelKopf">
                         <span class="nwKapitelThema">{{ THEMA_NAME[k.thema] || k.thema }}</span>
                         <h3 class="nwKapitelTitel">{{ k.ueberschrift }}</h3>
@@ -1134,7 +1391,8 @@ onBeforeUnmount(() => {
             </div>
         </RadarOverlay>
 
-        <div class="nwSpalten" :style="{ gridTemplateColumns: teilung + 'fr ' + (100 - teilung) + 'fr' }">
+        <div class="nwSpalten"
+            :style="{ gridTemplateColumns: `minmax(0, ${teilung}fr) minmax(0, ${100 - teilung}fr)` }">
             <!--=============== TERMINE ===============-->
             <section class="nwKarte">
                 <h3 class="nwAbschnitt">
@@ -1435,7 +1693,11 @@ onBeforeUnmount(() => {
     border: 1px solid rgba(250, 190, 60, 0.35);
 }
 
+/* Ohne `min-width: 0` besteht ein Grid-Element auf seiner Min-Content-Breite —
+   die Spur darf dann schrumpfen, der Inhalt nicht, und die Seite wird breiter
+   als der Bildschirm. Die Terminzeilen kürzen stattdessen mit Auslassungspunkten. */
 .nwKarte {
+    min-width: 0;
     background: var(--black-bg-2, #16161d);
     border-radius: var(--border-radius, 8px);
     box-shadow: var(--shadow-sm);
@@ -1712,6 +1974,441 @@ onBeforeUnmount(() => {
     padding: 0.06em 0.12em 0 0;
     font-weight: 700;
     color: var(--white-87);
+}
+
+/*
+ * ── Abwägung „dafür / dagegen / offen" ───────────────────────────────────
+ *
+ * Drei Spalten, farblich nur an der Kante unterschieden. Ganze Spalten grün
+ * und rot einzufärben würde die Abwägung zur Ampel machen — sie ist aber
+ * genau das Gegenteil: eine Gegenüberstellung, die der Leser selbst gewichtet.
+ */
+.nwWaage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.7rem;
+    margin: 0 0 1.2rem;
+}
+
+@media (min-width: 820px) {
+    .nwWaage {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+}
+
+.nwWaageSpalte {
+    min-width: 0;
+    padding: 0.6rem 0.75rem 0.7rem;
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    border-top: 2px solid var(--white-18, rgba(255, 255, 255, 0.2));
+    border-radius: var(--border-radius, 8px);
+    background: rgba(255, 255, 255, 0.022);
+}
+
+.nwWaageSpalte.dafuer {
+    border-top-color: #4caf7d;
+}
+
+.nwWaageSpalte.dagegen {
+    border-top-color: #ff5f56;
+}
+
+.nwWaageSpalte.offen {
+    border-top-color: #7aa8f0;
+}
+
+.nwWaageKopf {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--white-60);
+}
+
+.nwWaageSpalte.dafuer .nwWaageKopf i {
+    color: #4caf7d;
+}
+
+.nwWaageSpalte.dagegen .nwWaageKopf i {
+    color: #ff5f56;
+}
+
+.nwWaageSpalte.offen .nwWaageKopf i {
+    color: #7aa8f0;
+}
+
+.nwWaageListe {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.nwWaageListe li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.84rem;
+    line-height: 1.5;
+    color: var(--white-75, rgba(255, 255, 255, 0.75));
+}
+
+.nwWaageListe li:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.nwWaageText {
+    flex: 1 1 150px;
+    min-width: 0;
+}
+
+/* Fakt oder Einschätzung — die Marke, die den Kasten überhaupt erst brauchbar
+   macht. „Fakt" bewusst nüchtern und nicht grün: es ist eine Herkunftsangabe,
+   kein Gütesiegel. */
+.nwArt {
+    flex: 0 0 auto;
+    padding: 0.05rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+}
+
+.nwArt.fakt {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: var(--white-18, rgba(255, 255, 255, 0.18));
+    color: var(--white-87);
+}
+
+.nwArt.einschaetzung {
+    background: transparent;
+    border-color: var(--white-12, rgba(255, 255, 255, 0.14));
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+}
+
+/*
+ * ── Dossier ──────────────────────────────────────────────────────────────
+ *
+ * Die vierte Darstellung. Sie verzichtet auf den Zeitungssatz (Serifen,
+ * Spalten, Initiale) und setzt stattdessen auf das, was sich überfliegen
+ * lässt: Tabellen mit rechtsbündigen Zahlen, Bilder links neben der Meldung,
+ * eine Marke für „wichtig". Serifen wären hier falsch — sie laden zum Lesen
+ * ein, und das Dossier will nachgeschlagen werden.
+ */
+.nwDossier {
+    margin-top: 0.4rem;
+}
+
+/* Marktstand und Termine nebeneinander, ab 1000 px. Darunter untereinander:
+   eine Tabelle mit vier Spalten auf 375 px ist keine Tabelle mehr. */
+.nwDoKopfzeile {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.9rem;
+    margin-bottom: 1.2rem;
+}
+
+@media (min-width: 1000px) {
+    .nwDoKopfzeile {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+}
+
+.nwDoBlock {
+    min-width: 0;
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    border-radius: var(--border-radius, 8px);
+    background: rgba(255, 255, 255, 0.022);
+    padding: 0.7rem 0.8rem 0.5rem;
+    overflow-x: auto;
+}
+
+.nwDoTitel {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--white-60);
+}
+
+.nwDoTitel i {
+    color: var(--blue-color, #01B4FF);
+    font-size: 0.95rem;
+}
+
+.nwDoTab {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    /* Zahlen mit gleicher Ziffernbreite — sonst tanzen die Spalten */
+    font-variant-numeric: tabular-nums;
+}
+
+.nwDoTab th {
+    padding: 0 0.5rem 0.35rem 0;
+    text-align: left;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+    border-bottom: 1px solid var(--white-12, rgba(255, 255, 255, 0.12));
+    white-space: nowrap;
+}
+
+.nwDoTab td {
+    padding: 0.4rem 0.5rem 0.4rem 0;
+    vertical-align: top;
+    color: var(--white-75, rgba(255, 255, 255, 0.75));
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    line-height: 1.35;
+}
+
+.nwDoTab tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.nwDoTab tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.nwDoWas {
+    color: var(--white-87);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.nwDoWert b {
+    color: var(--white-87);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.nwDoZusatz,
+.nwDoHer {
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+    font-size: 0.78rem;
+}
+
+/* Balken hinter den Werten mit fester Spanne (0–100). Bewusst dünn und
+   einfarbig: er zeigt die Lage in der Spanne, keine Wertung. */
+.nwDoBalken {
+    display: block;
+    height: 3px;
+    margin-top: 0.28rem;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.09);
+    overflow: hidden;
+}
+
+.nwDoBalken i {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--blue-color, #01B4FF);
+}
+
+.nwDoZeit {
+    white-space: nowrap;
+    color: var(--white-87);
+    font-weight: 600;
+}
+
+.nwDoZeit .nwLand {
+    margin-left: 0.35rem;
+    font-weight: 500;
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+}
+
+/* Der Vorwert in Klammern hinter der Prognose — ohne ihn sagt „0,5 %" nichts. */
+.nwDoVor {
+    margin-left: 0.35rem;
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+    font-size: 0.76rem;
+}
+
+.nwDoVor::before {
+    content: '(';
+}
+
+.nwDoVor::after {
+    content: ')';
+}
+
+.nwDoFuss {
+    margin: 0.45rem 0 0;
+    font-size: 0.68rem;
+    color: var(--white-50, rgba(255, 255, 255, 0.45));
+}
+
+/* ── Kapitel im Dossier ── */
+.nwDoKapitel {
+    margin: 0 0 1.6rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+}
+
+.nwDoKapitelKopf {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.nwDoKapitelKopf h3 {
+    flex: 1 1 100%;
+    margin: 0.1rem 0 0;
+    font-size: 1.08rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--white-87);
+}
+
+.nwDoNummer {
+    flex: 0 0 auto;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 4px;
+    background: rgba(90, 150, 250, 0.16);
+    color: #7aa8f0;
+    font-size: 0.74rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nwDoLage {
+    margin: 0 0 0.8rem;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+}
+
+/* Kennzahlentabelle des Kapitels: eigener Rahmen, damit sie sich von den
+   Meldungen darunter absetzt — sie ist ein Nachschlagewerk, kein Text. */
+.nwDoZahlen {
+    margin: 0 0 1rem;
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    border-radius: var(--border-radius, 8px);
+    background: rgba(255, 255, 255, 0.022);
+}
+
+.nwDoZahlen th:first-child,
+.nwDoZahlen td:first-child {
+    padding-left: 0.7rem;
+}
+
+.nwDoZahlen th:last-child,
+.nwDoZahlen td:last-child {
+    padding-right: 0.7rem;
+}
+
+.nwDoZahlen th {
+    padding-top: 0.5rem;
+}
+
+/* ── Meldung: Bild links, Text rechts ── */
+.nwDoMeldung {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.7rem;
+    padding: 0.7rem 0.75rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.09));
+    border-left: 3px solid transparent;
+    border-radius: var(--border-radius, 8px);
+    background: rgba(255, 255, 255, 0.018);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.nwDoMeldung:hover {
+    background: rgba(255, 255, 255, 0.045);
+    border-color: var(--white-18, rgba(255, 255, 255, 0.2));
+}
+
+/* „Wichtig" nur als Kante plus Marke — eine ganze Karte einzufärben macht
+   drei wichtige Meldungen zur Wand. */
+.nwDoMeldung.hoch {
+    border-left-color: #e8a33d;
+}
+
+@media (min-width: 700px) {
+    .nwDoMeldung {
+        grid-template-columns: 132px minmax(0, 1fr);
+        align-items: start;
+    }
+
+    /* Ohne Bild darf der Text die ganze Breite haben */
+    .nwDoMeldung:not(:has(> .nwDoBild)) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.nwDoBild {
+    width: 100%;
+    height: 88px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.12));
+    display: block;
+}
+
+.nwDoInhalt {
+    min-width: 0;
+}
+
+.nwDoMeldungTitel {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0 0 0.3rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--white-87);
+}
+
+.nwDoMeldung:hover .nwDoMeldungTitel {
+    color: var(--blue-color, #01B4FF);
+}
+
+.nwDoMeldungText {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.55;
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+}
+
+.nwDoMeldungFuss {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.6rem;
+    margin: 0.5rem 0 0;
+    font-size: 0.68rem;
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+}
+
+.nwDoMeldungFuss .nwPunktQuelle {
+    flex: 0 1 auto;
+    max-width: 40%;
 }
 
 /* ── Archivliste ── */
@@ -2160,9 +2857,12 @@ onBeforeUnmount(() => {
 }
 
 /* ── Zwei Spalten, auf schmalem Schirm untereinander ── */
+/* `minmax(0, 1fr)` statt `1fr`: eine fr-Spur ist sonst mindestens so breit wie
+   ihr Inhalt, und die Terminzeilen (Uhrzeit, Land, Titel ohne Umbruch) kommen
+   auf gut 450 px. Auf dem Telefon schob das die ganze Seite waagerecht weg. */
 .nwSpalten {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 1rem;
     align-items: start;
     position: relative;
@@ -2229,7 +2929,7 @@ onBeforeUnmount(() => {
     /* Auf schmalem Schirm untereinander — dann ist eine Spaltenteilung
        gegenstandslos, und der Teiler würde nur im Weg liegen */
     .nwSpalten {
-        grid-template-columns: 1fr !important;
+        grid-template-columns: minmax(0, 1fr) !important;
     }
 
     .nwTeiler {

@@ -680,7 +680,9 @@ let radarNewsXModell = ref('grok-4.6')
    gewählten Länge" — wer nichts einstellt, bekommt exakt das bisherige
    Verhalten. Dieselben Werte stehen auch in der Schnellleiste auf
    /nachrichten; beide schreiben in dieselben Spalten. */
-let radarNewsLayout = ref('kombiniert')
+let radarNewsLayout = ref('dossier')
+/** Eigene Anweisungen an die Berichts-KI. Leer = Bericht wie gehabt. */
+let radarNewsPromptZusatz = ref('')
 let radarNewsPunkte = ref(0)
 let radarNewsTokenBudget = ref(0)
 let radarNewsVideoTiefe = ref('normal')
@@ -762,10 +764,10 @@ function loadRadarSettings() {
     radarNewsXModell.value = s.radarNewsXModell || 'grok-4.6'
     // Grenzen wie auf dem Server (budgetsAus/punkteVorgabe/videoTiefeAus in
     // server/marktradar-news.js) — die Oberfläche soll ihm keinen Unsinn schicken.
-    // Unbekannt (auch das kurzzeitig gespeicherte „zeitung") → kombiniert:
-    // das ist genau die Ansicht, die dieser Wert vorher erzeugt hat.
-    radarNewsLayout.value = ['kombiniert', 'artikel', 'kacheln'].includes(s.radarNewsLayout)
-        ? s.radarNewsLayout : 'kombiniert'
+    // Unbekannt (auch das kurzzeitig gespeicherte „zeitung") → dossier, die Vorgabe.
+    radarNewsLayout.value = ['dossier', 'kombiniert', 'artikel', 'kacheln'].includes(s.radarNewsLayout)
+        ? s.radarNewsLayout : 'dossier'
+    radarNewsPromptZusatz.value = s.radarNewsPromptZusatz || ''
     radarNewsPunkte.value = Math.max(0, Math.min(12, Number(s.radarNewsPunkte) || 0))
     radarNewsTokenBudget.value = Math.max(0, Math.min(60000, Number(s.radarNewsTokenBudget) || 0))
     radarNewsVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
@@ -816,6 +818,9 @@ async function radarSpeichern(feld) {
         // ohnehin bei zehn, und eine Zahl anzuzeigen, die nie gilt, wäre gelogen
         radarNewsVideos: Math.max(0, Math.min(10, Number(radarNewsVideos.value) || 0)),
         radarNewsLayout: radarNewsLayout.value,
+        // Gleicher Deckel wie der Server (ZUSATZ_MAX in marktradar-news.js) —
+        // ein Feld, das mehr annimmt als gilt, belügt den Schreibenden
+        radarNewsPromptZusatz: radarNewsPromptZusatz.value.trim().slice(0, 2000),
         radarNewsPunkte: Math.max(0, Math.min(12, Number(radarNewsPunkte.value) || 0)),
         radarNewsTokenBudget: Math.max(0, Math.min(60000, Number(radarNewsTokenBudget.value) || 0)),
         radarNewsVideoTiefe: radarNewsVideoTiefe.value,
@@ -3369,13 +3374,37 @@ onBeforeMount(async () => {
                             </small>
                         </div>
                         <div class="col-12 col-md-8 d-flex align-items-center gap-3 flex-wrap">
-                            <label v-for="l in ['kombiniert', 'artikel', 'kacheln']" :key="l"
+                            <label v-for="l in ['dossier', 'kombiniert', 'artikel', 'kacheln']" :key="l"
                                 class="d-flex align-items-center gap-1 mb-0">
                                 <input type="radio" :value="l" v-model="radarNewsLayout"
                                     @change="radarSpeichern('radarNewsLayout')">
                                 <span>{{ t('news.layout.' + l) }}
                                     <small class="text-muted">— {{ t('news.layoutSub.' + l) }}</small></span>
                             </label>
+                        </div>
+                    </div>
+
+                    <!-- Eigene Anweisungen an die Berichts-KI. Bewusst NUR hier
+                         und nicht auf der Nachrichtenseite: Das ist nichts, was
+                         man zwischen zwei Berichten umwirft, und ein Prompt-Feld
+                         neben dem Erzeugen-Knopf lädt genau dazu ein. -->
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.customLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.customHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <textarea class="form-control form-control-sm" rows="4" maxlength="2000"
+                                v-model="radarNewsPromptZusatz"
+                                :placeholder="t('settings.ki.news.customPlaceholder')"
+                                @change="radarSpeichern('radarNewsPromptZusatz')"></textarea>
+                            <small class="d-block text-muted mt-1" style="font-size:0.75rem;">
+                                {{ t('settings.ki.news.customLimits', {
+                                    n: radarNewsPromptZusatz.length, max: 2000,
+                                }) }}
+                            </small>
                         </div>
                     </div>
 
