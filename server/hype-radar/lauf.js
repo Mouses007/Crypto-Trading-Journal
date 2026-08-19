@@ -13,7 +13,7 @@
 
 import { getKnex } from '../database.js'
 import { logWarn } from '../logger.js'
-import { sammle, dexDetails } from './quellen.js'
+import { sammle, dexDetails, fuehreZusammen } from './quellen.js'
 import { bewerte, STANDARD_GEWICHTE, STANDARD_NARRATIVE } from './bewertung.js'
 import { pruefe, holeGoPlus, STANDARD_SICHERHEIT } from './sicherheit.js'
 import { erzeugeBericht } from './bericht.js'
@@ -75,8 +75,26 @@ export async function scanne(einst, melde = () => {}) {
         if ((i + 1) % 5 === 0) melde({ schritt: 'details', fertig: i + 1, gesamt: vorsortiert.length })
     }
 
+    /*
+     * Zweiter Durchgang der Zusammenführung.
+     *
+     * Erst jetzt haben die Funde von DexScreener ihr echtes Symbol — die
+     * Trend-Endpunkte nennen nur Adressen. Vorher konnte sich ein Fund von
+     * DexScreener nie mit demselben Coin von CoinGecko oder Reddit treffen,
+     * und die Quellenzahl blieb ausnahmslos 1. Da sie der wichtigste Faktor
+     * gegen gekauften Lärm ist, war die Bewertung damit praktisch blind.
+     *
+     * Mitgegeben werden auch die NICHT angereicherten Funde: ein Coin, den
+     * CoinGecko nennt, steht dort ohne Handelsdaten und landet deshalb selten
+     * unter den ersten vierzig — als Bestätigung für einen DexScreener-Fund
+     * ist er trotzdem bares Gold.
+     */
+    const angereichertePaare = new Set(angereichert.map((k) => k.contract || `${k.symbol}|${k.chain}`))
+    const uebrige = roh.filter((k) => !angereichertePaare.has(k.contract || `${k.symbol}|${k.chain}`))
+    const vereint = fuehreZusammen([...angereichert, ...uebrige])
+
     // ── Stufe 2, endgültig ──────────────────────────────────────────────
-    const bewertet = angereichert
+    const bewertet = vereint
         .map((k) => ({ ...k, ...bewerte(k, gewichte, narrative) }))
         .sort((a, b) => b.hypeScore - a.hypeScore)
 

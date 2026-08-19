@@ -27,10 +27,12 @@ export const VORGABEN = {
     intervallStunden: 6,
     ketten: ['solana', 'eth', 'base', 'bsc'],
     quellen: {
-        coingecko: true, dexscreener: true, geckoterminal: true, reddit: true,
-        // Aus, weil sie einen Schlüssel brauchen. Ein Schalter, der ohne
+        coingecko: true, dexscreener: true, geckoterminal: true,
+        // Aus, weil sie Zugangsdaten brauchen. Ein Schalter, der ohne
         // Zugangsdaten „an" steht, erzeugt nur Fehlermeldungen.
-        cryptopanic: false, lunarcrush: false,
+        // Reddit gehört seit dem OAuth-Zwang in diese Gruppe (siehe
+        // `ausReddit` in quellen.js) — der freie Zugang ist zu.
+        reddit: false, cryptopanic: false, lunarcrush: false,
     },
     gewichte: STANDARD_GEWICHTE,
     narrative: STANDARD_NARRATIVE,

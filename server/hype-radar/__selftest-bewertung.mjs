@@ -64,6 +64,46 @@ const nurDex = fuehreZusammen([
 pruefe('zwei Endpunkte eines Anbieters zählen als eine Quelle',
     nurDex[0].quellenAnzahl === 1, String(nurDex[0].quellenAnzahl))
 
+/*
+ * Der Fehler, der im ersten Livetest auffiel: Funde ohne Kettenangabe
+ * (CoinGecko nennt nur Symbole) trafen nie auf denselben Coin mit Kette, und
+ * die Quellenzahl blieb ausnahmslos 1 — der wichtigste Faktor gegen gekauften
+ * Lärm war damit wirkungslos.
+ */
+const ohneKette = fuehreZusammen([
+    { symbol: 'PEPE', chain: 'solana', contract: '', quelle: { quelle: 'geckoterminal' }, markt: { volumen24h: 5 }, sozial: {} },
+    { symbol: 'PEPE', chain: '', contract: '', quelle: { quelle: 'coingecko' }, markt: {}, sozial: { stimmen: 7 } },
+])
+pruefe('Fund ohne Kette schliesst sich dem mit Kette an', ohneKette.length === 1,
+    JSON.stringify(ohneKette.map((k) => `${k.symbol}|${k.chain}`)))
+pruefe('und wird als zweite Quelle gezählt', ohneKette[0]?.quellenAnzahl === 2)
+pruefe('die Kette bleibt erhalten', ohneKette[0]?.chain === 'solana')
+pruefe('Sozialdaten werden übernommen', ohneKette[0]?.sozial?.stimmen === 7)
+
+/*
+ * Aber nur bei Eindeutigkeit: „PEPE" gibt es auf vier Ketten. Ein falsch
+ * verschmolzener Kandidat wäre schlimmer als ein doppelter — er trüge die
+ * Quellenzahl eines anderen Coins.
+ */
+const mehrdeutig = fuehreZusammen([
+    { symbol: 'PEPE', chain: 'solana', contract: '', quelle: { quelle: 'geckoterminal' }, markt: {}, sozial: {} },
+    { symbol: 'PEPE', chain: 'ethereum', contract: '', quelle: { quelle: 'dexscreener' }, markt: {}, sozial: {} },
+    { symbol: 'PEPE', chain: '', contract: '', quelle: { quelle: 'coingecko' }, markt: {}, sozial: {} },
+])
+pruefe('bei zwei möglichen Ketten wird NICHT geraten', mehrdeutig.length === 3,
+    String(mehrdeutig.length))
+pruefe('und niemand bekommt eine fremde Quelle zugerechnet',
+    mehrdeutig.every((k) => k.quellenAnzahl === 1))
+
+// Der zweite Durchgang bekommt bereits zusammengeführte Kandidaten herein.
+const zweiterDurchgang = fuehreZusammen([
+    { symbol: 'ABC', chain: 'base', contract: '0xC', quellen: [{ quelle: 'dexscreener' }], markt: {}, sozial: {} },
+    { symbol: 'ABC', chain: 'base', contract: '', quellen: [{ quelle: 'coingecko' }], markt: {}, sozial: {} },
+])
+pruefe('bereits zusammengeführte Kandidaten lassen sich erneut vereinen',
+    zweiterDurchgang.length === 1 && zweiterDurchgang[0].quellenAnzahl === 2,
+    JSON.stringify(zweiterDurchgang.map((k) => k.quellenAnzahl)))
+
 // ── Volumen ─────────────────────────────────────────────────────────────
 pruefe('ohne Handel keine Note', noteVolumen({ markt: { volumen24h: 0 } }) === 0)
 // 24 h = 2400, Mittel je Stunde = 100. Letzte Stunde 100 → Faktor 1 → 25.

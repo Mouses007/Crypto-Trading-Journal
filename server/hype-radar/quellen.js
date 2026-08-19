@@ -198,7 +198,10 @@ export async function ausDexScreener() {
     if (boosts.status === 'fulfilled') {
         const liste = Array.isArray(boosts.value) ? boosts.value : []
         liste.slice(0, 30).forEach((b, i) => funde.push(fund({
-            symbol: b?.tokenAddress?.slice(0, 6) || '',   // wird unten aufgelöst
+            // Kein Symbol: die Trend-Endpunkte nennen nur die Adresse. Es
+            // aus ihr zu basteln wäre ein Platzhalter, der später als echtes
+            // Symbol gälte und jede Zusammenführung verhinderte.
+            symbol: '',
             chain: b?.chainId,
             contract: b?.tokenAddress,
             quelle: 'dexscreener-boost',
@@ -210,7 +213,7 @@ export async function ausDexScreener() {
     if (profile.status === 'fulfilled') {
         const liste = Array.isArray(profile.value) ? profile.value : []
         liste.slice(0, 30).forEach((p, i) => funde.push(fund({
-            symbol: p?.tokenAddress?.slice(0, 6) || '',
+            symbol: '',
             chain: p?.chainId,
             contract: p?.tokenAddress,
             quelle: 'dexscreener-neu',
@@ -301,6 +304,14 @@ export async function ausGeckoTerminal(ketten = ['solana', 'eth', 'base', 'bsc']
  * Aus Titeln werden Kürzel („$PEPE") und Vertragsadressen gefischt. Die
  * Zustimmung je Beitrag zählt als Stärke — nicht die blosse Erwähnung, sonst
  * wöge ein ignorierter Beitrag so viel wie ein vieldiskutierter.
+ *
+ * ACHTUNG: Standardmässig ABGESCHALTET. Der schlüsselfreie JSON-Zugang, den es
+ * jahrelang gab, ist zu. Geprüft am 19.08.2026 gegen `www.reddit.com`,
+ * `old.reddit.com` und die `.json`-Variante des Unterforums — alle drei
+ * antworten mit 403, unabhängig von der Kennung. Reddit verlangt inzwischen
+ * OAuth. Der Code bleibt stehen, weil er mit einem Zugangstoken sofort wieder
+ * trägt; eingeschaltet würde er nur bei jedem Lauf eine Fehlermeldung
+ * erzeugen.
  */
 export async function ausReddit(unterforen = ['CryptoMoonShots', 'CryptoCurrency']) {
     const funde = []
@@ -389,9 +400,24 @@ export function fuehreZusammen(funde) {
     const nachSchluessel = new Map()
 
     for (const f of funde) {
-        const schluessel = f.contract
-            ? `c:${f.contract.toLowerCase()}`
-            : `s:${f.symbol}|${f.chain || '?'}`
+        /*
+         * Ein Kandidat wird über SYMBOL+KETTE geführt, nicht über die
+         * Vertragsadresse.
+         *
+         * Der erste Anlauf tat das Gegenteil, und damit fand nie eine
+         * Zusammenführung statt: DexScreener liefert Adressen ohne Symbol,
+         * CoinGecko Symbole ohne Adresse — die Schlüssel trafen sich nie, und
+         * die Quellenzahl blieb im Livetest ausnahmslos 1. Damit wäre der
+         * wichtigste Faktor gegen gekauften Lärm wirkungslos gewesen.
+         *
+         * Die Adresse bleibt der genauere Schlüssel und wird zusätzlich
+         * geführt (siehe `verschmelzeUeberVertrag` unten), sobald sie für
+         * beide Seiten bekannt ist.
+         */
+        const schluessel = f.symbol
+            ? `s:${f.symbol}|${f.chain || '?'}`
+            : `c:${String(f.contract || '').toLowerCase()}`
+        if (!schluessel || schluessel === 'c:') continue
         if (!nachSchluessel.has(schluessel)) {
             nachSchluessel.set(schluessel, {
                 symbol: f.symbol,
@@ -405,7 +431,13 @@ export function fuehreZusammen(funde) {
             })
         }
         const k = nachSchluessel.get(schluessel)
-        k.quellen.push(f.quelle)
+        // Nimmt beide Formen an: einen frischen Fund (`quelle`) und einen
+        // bereits zusammengeführten Kandidaten (`quellen`). Der zweite
+        // Durchgang nach dem Detailabruf braucht das — dort haben die
+        // DexScreener-Funde endlich ihr echtes Symbol und treffen auf die
+        // symbolbasierten Einträge der übrigen Quellen.
+        if (Array.isArray(f.quellen)) k.quellen.push(...f.quellen)
+        if (f.quelle) k.quellen.push(f.quelle)
         // Erste brauchbare Angabe gewinnt; spätere füllen nur Lücken.
         if (!k.name && f.name) k.name = f.name
         if (!k.chain && f.chain) k.chain = f.chain
@@ -419,6 +451,38 @@ export function fuehreZusammen(funde) {
             // alles andere überschreiben.
             k.sozial[feld] = typeof wert === 'number' ? (k.sozial[feld] || 0) + wert : wert
         }
+    }
+
+    /*
+     * Nachlese: Einträge ohne bekannte Kette anschliessen.
+     *
+     * CoinGecko nennt nur Symbole, DexScreener kennt die Kette erst nach dem
+     * Detailabruf. „PEPE ohne Kette" und „PEPE auf solana" sind mit hoher
+     * Wahrscheinlichkeit derselbe Fund — solange es GENAU EINEN Kandidaten mit
+     * diesem Symbol und bekannter Kette gibt. Bei mehreren bliebe es Raten,
+     * und ein falsch verschmolzener Kandidat wäre schlimmer als ein doppelter:
+     * er trüge die Quellenzahl eines anderen Coins.
+     */
+    for (const [schluessel, k] of [...nachSchluessel.entries()]) {
+        if (!schluessel.startsWith('s:') || !schluessel.endsWith('|?')) continue
+        const symbol = k.symbol
+        const passende = [...nachSchluessel.entries()].filter(([s2, k2]) =>
+            s2 !== schluessel && k2.symbol === symbol && k2.chain && k2.chain !== '?')
+        if (passende.length !== 1) continue
+
+        const [, ziel] = passende[0]
+        ziel.quellen.push(...k.quellen)
+        if (!ziel.name && k.name) ziel.name = k.name
+        if (!ziel.contract && k.contract) ziel.contract = k.contract
+        for (const [feld, wert] of Object.entries(k.markt)) {
+            if (ziel.markt[feld] === undefined) ziel.markt[feld] = wert
+        }
+        for (const [feld, wert] of Object.entries(k.sozial)) {
+            ziel.sozial[feld] = typeof wert === 'number'
+                ? (ziel.sozial[feld] || 0) + wert
+                : wert
+        }
+        nachSchluessel.delete(schluessel)
     }
 
     return [...nachSchluessel.values()].map((k) => ({
