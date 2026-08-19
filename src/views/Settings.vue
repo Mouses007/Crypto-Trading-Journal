@@ -3,6 +3,7 @@ import { onBeforeMount, onMounted, ref, reactive, computed } from 'vue';
 import { useDateCalFormat, useKostenAnzeige, useKostenZahl } from '../utils/formatters.js';
 import ModelManager from '../components/ModelManager.vue'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
+import KiUebersicht from '../components/ki/KiUebersicht.vue'
 import { useCheckCurrentUser, useInitTooltip } from '../utils/utils';
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js';
 import { currentUser, renderProfile } from '../stores/settings.js';
@@ -181,6 +182,9 @@ function bereichWechseln(id) {
  * „Agent" ist deshalb entfallen.
  */
 const KI_BEREICHE = [
+    // Ganz vorn: die Frage „was läuft hier eigentlich und was kostet es" kommt
+    // vor jeder einzelnen Einstellung.
+    { id: 'uebersicht', icon: 'uil uil-eye' },
     { id: 'allgemein', icon: 'uil uil-key-skeleton' },
     { id: 'berichte', icon: 'uil uil-file-alt' },
     { id: 'nachrichten', icon: 'uil uil-newspaper' },
@@ -2674,6 +2678,11 @@ onBeforeMount(async () => {
                         </a>
                     </li>
                 </ul>
+
+                <!--=============== ÜBERSICHT ===============-->
+                <div v-show="kiBereich === 'uebersicht'">
+                    <KiUebersicht v-if="kiBereich === 'uebersicht'" @gehe-zu="kiBereichWechseln" />
+                </div>
 
                 <!--=============== ALLGEMEIN: Zugang ===============-->
                 <div v-show="kiBereich === 'allgemein'">
