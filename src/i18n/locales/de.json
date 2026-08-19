@@ -2748,6 +2748,104 @@
         }
       ],
       "caveat": "Eine Auswertung ist nur so gut wie die Zahl der Sitzungen dahinter — ausgegraute Gruppen sind noch keine Aussage. Sie beschreibt dein Verhalten, sie ist keine Anlageberatung."
+    },
+    "hypeRadar": {
+      "title": "Hype-Radar — was gerade neu gehypt wird, und was davon Substanz hat",
+      "intro": "Der Radar durchsucht mehrere Quellen nach jungen Coin-Projekten, bewertet sie nach festen Regeln und prüft sie hart auf Betrugsmuster — erst danach schreibt ein Sprachmodell einen Bericht über die wenigen, die übrig bleiben. Alles hier ist Recherche, keine Kaufempfehlung.",
+      "sections": [
+        {
+          "g": "SO ARBEITET DER RADAR",
+          "h": "VIER STUFEN, DAS MODELL ZULETZT",
+          "p": "Stufe 1 sammelt Funde bei CoinGecko, DexScreener und GeckoTerminal. Stufe 2 rechnet daraus eine Hype-Note. Stufe 3 prüft jeden Kandidaten auf Betrugsmuster. Erst Stufe 4 ruft ein Sprachmodell — und nur für die besten paar. Fünfhundert rohe Funde von einer KI einschätzen zu lassen wäre langsam, teuer und bei jedem Lauf ein bisschen anders; eine gerechnete Rangfolge lässt sich dagegen nachprüfen."
+        },
+        {
+          "h": "SUCHEN KOSTET NICHTS, DER BERICHT SCHON",
+          "p": "„Nur suchen\" führt die Stufen 1 bis 3 aus und kostet keinen Rappen. „Suchen & Bericht\" hängt die KI dran — je nach gewählter Stufe wenige Cent bis etwa einen Franken pro Lauf. Findet die Sicherheitsprüfung keinen einzigen brauchbaren Kandidaten, wird gar kein Modell gerufen."
+        },
+        {
+          "h": "WAS DIE HYPE-NOTE AUSMACHT",
+          "p": "Fünf Teilnoten: wie stark geredet wird, ob der Handel mitzieht, aus wie vielen unabhängigen Quellen der Fund stammt, ob er in ein laufendes Thema passt, und wie jung das Handelspaar ist. Die Gewichtung ist in den Einstellungen frei; die Teilnoten stehen bei jedem Fund im Aufklappen, damit die Zahl nachvollziehbar bleibt."
+        },
+        {
+          "h": "DIE ZAHL DER QUELLEN IST DER WICHTIGSTE FAKTOR",
+          "p": "Eine bezahlte Werbekampagne füllt eine Quelle, selten drei voneinander unabhängige. Deshalb wiegt Mehrfachbestätigung schwer — und gekaufte Sichtbarkeit (etwa ein bezahlter Platz bei DexScreener) zählt ausdrücklich weniger als echte Zustimmung. Sonst könnte man sich in den Bericht kaufen."
+        },
+        {
+          "g": "DER QUADRANT",
+          "h": "AUFMERKSAMKEIT GEGEN MARKTBESTÄTIGUNG",
+          "p": "Waagerecht steht, ob der Handel anzieht; senkrecht, wie stark geredet wird. Oben rechts ziehen beide mit — echtes Momentum. Oben links wird geredet, ohne dass der Markt folgt: dort sitzt der gekaufte Lärm, und das ist das Feld, das eine sortierte Liste nicht zeigen kann. Farbe und Form zeigen den Prüfausgang, damit die Unterscheidung nicht allein an der Farbe hängt."
+        },
+        {
+          "h": "DER GRAUE HINTERGRUND GEHÖRT DAZU",
+          "p": "Die kleinen blassen Punkte sind Funde unter der Mindest-Note — sie wurden gar nicht erst geprüft. Sie stehen bewusst da: erst vor diesem Feld sieht man, ob ein Kandidat wirklich heraussticht. An manchen Tagen kommt nur eine Handvoll über die Schwelle."
+        },
+        {
+          "g": "SICHERHEIT",
+          "h": "DIE STUFE, DIE ÜBER DEN NUTZEN ENTSCHEIDET",
+          "p": "Täglich starten Tausende Token, und ein erheblicher Teil ist darauf angelegt, Käufer nicht wieder herauszulassen. Geprüft werden Verkaufssperren, Nachprägbarkeit, Verkaufssteuern, die Sperrung der Liquidität und die Verteilung der grössten Halter — über GoPlus, bei Solana ersatzweise über RugCheck."
+        },
+        {
+          "h": "K.-O. ODER ABZUG",
+          "p": "Harte Kriterien verwerfen sofort, unabhängig von der Hype-Note: ein Token, aus dem man nicht wieder herauskommt, wird nicht dadurch besser, dass alle darüber reden. Weiche Befunde senken nur die Sicherheitsnote. Wichtig: Lassen sich keine Daten holen, gilt der Fund als ungeprüft und damit als verworfen — ungeprüft ist kein Freibrief."
+        },
+        {
+          "h": "AUCH VIELE KÄUFE KÖNNEN EIN WARNZEICHEN SEIN",
+          "p": "Kommen auf einen Verkauf zwanzig Käufe, sieht das nach Kaufdruck aus — es ist aber auch die Signatur einer Falle, aus der niemand herauskommt. Deshalb gibt ein sehr einseitiges Handelsmuster Abzug statt Bonus."
+        },
+        {
+          "h": "WARUM DIE AUSSORTIERTEN SICHTBAR BLEIBEN",
+          "p": "Zu jedem verworfenen Fund wird der Grund gespeichert und im Bericht gezeigt. Ohne ihn liesse sich nicht beantworten, warum ein vielbesprochener Coin nicht auftaucht — und genau diese Frage entscheidet, ob man dem Radar traut."
+        },
+        {
+          "g": "FAVORITEN & WACHHUND",
+          "h": "ANHEFTEN, WAS MAN IM AUGE BEHALTEN WILL",
+          "p": "Ein Fund verschwindet mit dem nächsten Lauf aus der Liste. Der Stern heftet ihn an; der Chip darüber öffnet die Live-Kacheln mit Preis, Liquidität, Volumen und Kauf/Verkauf-Verhältnis, frisch geholt und im Minutentakt nachgeladen. Die Noten daneben stammen aus dem letzten Lauf und sind ausdrücklich so beschriftet — sie sind keine Livedaten."
+        },
+        {
+          "h": "DER WACHHUND SCHAUT HIN, WENN DU ES NICHT TUST",
+          "p": "Im eingestellten Takt vergleicht er jeden Favoriten mit dem letzten Stand: Preissprung, Tagesbewegung, Liquiditätsabfluss und die Sicherheitsprüfung. Der Anlass war ein echter Fall — ein Fund sah beim Scan mit 44 000 USD Liquidität passabel aus und hatte beim nächsten Blick noch 2 400. Zwischen zwei Blicken auf die Seite kann ein Fund sterben."
+        },
+        {
+          "h": "NUR DER ABFLUSS IST EIN ALARM",
+          "p": "Zufliessende Liquidität ist erfreulich, aber kein Handlungsdruck. Und die Sicherheitsregel meldet nur den Übergang von „bestanden\" zu „verworfen\" — wer einen bereits verworfenen Fund anheftet, weiss das, und Wiederholung wäre Lärm ohne Neuigkeit."
+        },
+        {
+          "h": "SPERRFRISTEN UND STUMMSCHALTEN",
+          "p": "Dieselbe Regel meldet sich frühestens nach einer Stunde (kritisch) beziehungsweise vier Stunden erneut, sonst würde ein schwankender Meme-Coin zur Sirene. Einzelne Favoriten lassen sich stummschalten: sie werden weiter beobachtet, melden sich aber nicht."
+        },
+        {
+          "g": "ZUSTELLUNG",
+          "h": "DIE LISTE IST IMMER DA",
+          "p": "Alarme stehen in jedem Fall in der App. Zusätzlich lassen sich ntfy, Telegram und ein Webhook einschalten — jeder mit eigener Mindest-Schwere, damit nicht jeder Preishüpfer nachts das Handy weckt. Der Test-Knopf schickt eine harmlose Meldung über alle eingeschalteten Kanäle."
+        },
+        {
+          "h": "WEBHOOK FÜR DIE HAUSAUTOMATISIERUNG",
+          "p": "Der Webhook schickt ein JSON mit Regel, Schwere, Symbol und Meldung — gedacht für einen Webhook-Auslöser in Home Assistant. Eine Automation filtert dort auf die Schwere „kritisch\" und macht daraus, was sie will: eine Push-Nachricht, eine Ansage oder ein rotes Licht."
+        },
+        {
+          "g": "HANDELBARKEIT",
+          "h": "WO LÄUFT DAS, UND KANN ICH ES ÜBERHAUPT HANDELN",
+          "p": "Zu jedem Fund steht der dezentrale Handelsplatz (etwa Raydium oder Uniswap) und, ob Bitunix, Bitget oder Pionex ihn führen — mit der Marktart: F für Futures, S für Spot. Ein Coin, den es nur am Kassamarkt gibt, lässt sich weder hebeln noch shorten. Auf Wunsch filtert ein Schalter den ganzen Lauf auf Handelbares."
+        },
+        {
+          "h": "DIE 1000er-SCHREIBWEISE",
+          "p": "Terminbörsen bündeln Kleinstpreis-Coins zu Tausenderpaketen (1000PEPE, 1000SHIB). Die Prüfung berücksichtigt das — sonst gälten genau die Meme-Coins als nicht handelbar, um die es hier meistens geht."
+        },
+        {
+          "g": "KOSTEN & MODELLE",
+          "h": "SECHS STUFEN ODER HANDBELEGUNG",
+          "p": "Die Stufen belegen drei Rollen auf einmal: ein billiges Modell für Hilfsarbeiten, eines für die Web-Recherche je Kandidat, und eines für den Bericht — dort entsteht die Qualität. Wichtig: „Gründlich\" schlägt „Einfach\" bei gleichem Profil meist in der Tiefe UND im Preis, weil jeder Recherche-Auftrag kurz ist statt eines langen Sammelkontexts. Unter „Manuell\" lassen sich die drei Rollen einzeln wählen, dort auch ein lokales Ollama-Modell."
+        },
+        {
+          "h": "FEHLT EIN SCHLÜSSEL, WIRD BLOCKIERT",
+          "p": "Ist für eine gewählte Rolle kein Zugang hinterlegt, bleibt der Bericht-Knopf gesperrt und die Seite sagt warum. Ein stiller Ausweich auf einen anderen Anbieter wäre schlimmer: man wundert sich später über Qualität oder Rechnung und findet den Grund nicht. Was jeder Lauf tatsächlich gekostet hat, steht unter Einstellungen → KI → Übersicht."
+        },
+        {
+          "g": "AM TELEFON",
+          "h": "WENIGER BILD, GLEICHE SUBSTANZ",
+          "p": "Auf schmalen Geräten entfallen Quadrant und breite Tabelle — ein Streudiagramm auf 375 Pixeln ist nicht lesbar. Stattdessen erscheint eine Karte je Fund mit Noten, Thema, Liquidität, Alter, Börsen und Ausgang. Favoriten, Live-Kacheln, Alarme und Berichte funktionieren unverändert."
+        }
+      ]
     }
   },
   "news": {

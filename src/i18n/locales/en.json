@@ -2748,6 +2748,104 @@
         }
       ],
       "caveat": "An evaluation is only as good as the number of sessions behind it — greyed-out groups are not yet a statement. It describes your behaviour; it is not investment advice."
+    },
+    "hypeRadar": {
+      "title": "Hype radar — what is being hyped right now, and what of it has substance",
+      "intro": "The radar searches several sources for young coin projects, scores them by fixed rules and checks them hard for fraud patterns — only then does a language model write a report about the few that survive. Everything here is research, not investment advice.",
+      "sections": [
+        {
+          "g": "HOW THE RADAR WORKS",
+          "h": "FOUR STAGES, THE MODEL LAST",
+          "p": "Stage 1 collects finds from CoinGecko, DexScreener and GeckoTerminal. Stage 2 computes a hype score. Stage 3 checks every candidate for fraud patterns. Only stage 4 calls a language model — and only for the best few. Having an AI judge five hundred raw finds would be slow, expensive and slightly different every run; a computed ranking can be checked."
+        },
+        {
+          "h": "SCANNING IS FREE, THE REPORT IS NOT",
+          "p": "\"Scan only\" runs stages 1 to 3 and costs nothing. \"Scan & report\" adds the AI — a few cents to about a franc per run, depending on the chosen tier. If the safety check leaves no usable candidate, no model is called at all."
+        },
+        {
+          "h": "WHAT MAKES UP THE HYPE SCORE",
+          "p": "Five sub-scores: how much is being said, whether trading follows, how many independent sources the find came from, whether it fits a current theme, and how young the trading pair is. Weighting is configurable; the sub-scores are shown per find so the number stays traceable."
+        },
+        {
+          "h": "THE NUMBER OF SOURCES MATTERS MOST",
+          "p": "A paid campaign fills one source, rarely three independent ones. So multi-source confirmation weighs heavily — and bought visibility (such as a paid slot on DexScreener) counts explicitly less than genuine engagement. Otherwise you could buy your way into the report."
+        },
+        {
+          "g": "THE QUADRANT",
+          "h": "ATTENTION VERSUS MARKET CONFIRMATION",
+          "p": "Horizontally: is trading picking up. Vertically: how much is being said. Top right both move together — real momentum. Top left people talk but the market does not follow: that is where bought noise sits, and it is the field a sorted list cannot show. Colour and shape show the check result, so the distinction never rests on colour alone."
+        },
+        {
+          "h": "THE GREY BACKGROUND BELONGS THERE",
+          "p": "The small pale dots are finds below the minimum score — never checked. They are shown on purpose: only against that field can you see whether a candidate really stands out. On many days only a handful clear the threshold."
+        },
+        {
+          "g": "SAFETY",
+          "h": "THE STAGE THAT DECIDES WHETHER THIS IS USEFUL",
+          "p": "Thousands of tokens launch daily, and a sizeable share is built so buyers cannot get out again. Checked are sell locks, mintability, sell taxes, whether liquidity is locked, and the distribution of the largest holders — via GoPlus, and via RugCheck as a fallback on Solana."
+        },
+        {
+          "h": "HARD REJECT OR SOFT DEDUCTION",
+          "p": "Hard criteria reject immediately, regardless of hype: a token you cannot exit does not get better because everyone talks about it. Soft findings only lower the safety score. Important: if no data can be fetched, the find counts as unverified and therefore rejected — unverified is not a free pass."
+        },
+        {
+          "h": "EVEN MANY BUYS CAN BE A WARNING",
+          "p": "Twenty buys per sell looks like buying pressure — but it is also the signature of a trap nobody exits. So a very one-sided trading pattern gives a deduction, not a bonus."
+        },
+        {
+          "h": "WHY THE REJECTED STAY VISIBLE",
+          "p": "Every rejected find keeps its reason, shown in the report. Without it you could not answer why a much-discussed coin is missing — and that question decides whether you trust the radar."
+        },
+        {
+          "g": "FAVOURITES & WATCHDOG",
+          "h": "PIN WHAT YOU WANT TO KEEP AN EYE ON",
+          "p": "A find disappears with the next run. The star pins it; the chip above opens live tiles with price, liquidity, volume and buy/sell ratio, fetched fresh and reloaded periodically. The scores next to them come from the last run and are labelled as such — they are not live data."
+        },
+        {
+          "h": "THE WATCHDOG LOOKS WHILE YOU DO NOT",
+          "p": "On a schedule it compares every favourite against its last state: price move, daily move, liquidity outflow and the safety check. The trigger was a real case — a find looked passable at 44,000 USD liquidity during the scan and had 2,400 left at the next look. Between two glances at the page, a find can die."
+        },
+        {
+          "h": "ONLY OUTFLOW IS AN ALERT",
+          "p": "Incoming liquidity is pleasant but not a call to act. And the safety rule only reports the transition from \"passed\" to \"rejected\" — pinning an already rejected find is a known state, and repeating it would be noise without news."
+        },
+        {
+          "h": "COOLDOWNS AND MUTING",
+          "p": "The same rule fires again after an hour at the earliest (critical) or four hours otherwise, else a volatile meme coin becomes a siren. Individual favourites can be muted: still watched, but silent."
+        },
+        {
+          "g": "DELIVERY",
+          "h": "THE LIST IS ALWAYS THERE",
+          "p": "Alerts always appear in the app. In addition ntfy, Telegram and a webhook can be enabled — each with its own minimum severity, so not every price hop wakes the phone at night. The test button sends a harmless message through every enabled channel."
+        },
+        {
+          "h": "WEBHOOK FOR HOME AUTOMATION",
+          "p": "The webhook posts JSON with rule, severity, symbol and message — meant for a webhook trigger in Home Assistant. An automation there filters on severity \"critical\" and does whatever it likes: a push, an announcement, or a red light."
+        },
+        {
+          "g": "TRADEABILITY",
+          "h": "WHERE DOES IT RUN, AND CAN I TRADE IT AT ALL",
+          "p": "Every find shows its decentralised venue (such as Raydium or Uniswap) and whether Bitunix, Bitget or Pionex list it — including the market type: F for futures, S for spot. A coin that only exists on spot can neither be leveraged nor shorted. A switch can filter the whole run to what is tradeable."
+        },
+        {
+          "h": "THE 1000x NOTATION",
+          "p": "Futures exchanges bundle micro-priced coins into thousand-packs (1000PEPE, 1000SHIB). The check accounts for that — otherwise exactly the meme coins this is mostly about would count as unlisted."
+        },
+        {
+          "g": "COST & MODELS",
+          "h": "SIX TIERS OR MANUAL ASSIGNMENT",
+          "p": "The tiers assign three roles at once: a cheap model for helper tasks, one for per-candidate web research, and one for the report — that is where quality comes from. Note: \"Thorough\" usually beats \"Simple\" at the same profile in both depth AND price, because each research prompt is short instead of one long combined context. Under \"Manual\" the three roles can be set individually, including a local Ollama model."
+        },
+        {
+          "h": "A MISSING KEY BLOCKS THE START",
+          "p": "If a chosen role has no credentials, the report button stays disabled and the page says why. Silently falling back to another provider would be worse: you would wonder about quality or the bill later and never find the reason. What each run actually cost is under Settings → AI → Overview."
+        },
+        {
+          "g": "ON THE PHONE",
+          "h": "LESS PICTURE, SAME SUBSTANCE",
+          "p": "On narrow devices the quadrant and the wide table are dropped — a scatter plot at 375 pixels is unreadable. Instead each find appears as a card with scores, theme, liquidity, age, exchanges and outcome. Favourites, live tiles, alerts and reports work unchanged."
+        }
+      ]
     }
   },
   "news": {

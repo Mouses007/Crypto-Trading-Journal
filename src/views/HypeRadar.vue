@@ -12,6 +12,7 @@
             </ul>
             <div class="hypKnoepfe">
                 <span v-if="laeuft" class="hypFortschritt">{{ fortschrittText }}</span>
+                <PageInfo section="info.hypeRadar" />
                 <button class="btn btn-sm btn-outline-secondary" :disabled="laeuft" @click="starte(false)">
                     <i class="uil uil-search me-1"></i>{{ t('hype.nurScannen') }}
                 </button>
@@ -694,6 +695,7 @@ import * as echarts from 'echarts'
 import { useKostenAnzeige } from '../utils/formatters.js'
 import { logWarn } from '../utils/logger.js'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
+import PageInfo from '../components/PageInfo.vue'
 import { useIstTelefon } from '../utils/geraet.js'
 
 const { t, locale } = useI18n()
