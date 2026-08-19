@@ -7,7 +7,7 @@
  *
  * Aufruf: node server/hype-radar/__selftest-wachhund.mjs
  */
-import { pruefeRegeln, STANDARD_ALARM_REGELN, SPERRFRIST_MS } from './wachhund.js'
+import { pruefeRegeln, pruefeRegelnBoerse, STANDARD_ALARM_REGELN, SPERRFRIST_MS } from './wachhund.js'
 import { erreichtSchwere } from './zustellung.js'
 
 let fehler = 0
@@ -93,6 +93,66 @@ p('kritisch erreicht jede Mindest-Schwere',
 p('info erreicht warnung nicht', !erreichtSchwere('info', 'warnung'))
 p('kritische Sperrfrist ist kürzer als die informative',
     SPERRFRIST_MS.kritisch < SPERRFRIST_MS.info)
+
+// ════════════════════════════════════════════════════════════════════════
+// Börsenpfad — Coin-Radar-Favoriten
+//
+// Eigene Regeln, weil ein Bitunix-Perp keinen Liquiditätspool hat, der
+// abfliessen könnte. Wichtigster Prüfpunkt hier: Spread und Funding melden
+// beim ÜBERSCHREITEN und nicht, solange sie darüber liegen — sonst würde aus
+// einem dauerhaft teuren Coin ein Dauerpiepen.
+// ════════════════════════════════════════════════════════════════════════
+const bx = { symbol: 'HEIUSDT' }
+const bAlt = { preis: 100, umsatz: 50e6, spreadBp: 2, funding: 10 }
+const bNeu = { preisUsd: 100, aenderung24h: 1, umsatz24h: 50e6, spreadBp: 2, fundingJahresRate: 10 }
+const regelnVon = (l) => pruefeRegelnBoerse(bx, bAlt, { ...bNeu, ...l }).map((a) => a.regel)
+
+p('ruhiger Börsen-Coin löst nichts aus', pruefeRegelnBoerse(bx, bAlt, bNeu).length === 0)
+
+p('Preissprung schlägt an', regelnVon({ preisUsd: 120 }).includes('preisSprung'))
+p('Tagessicht schlägt an', regelnVon({ aenderung24h: -45 }).includes('preis24h'))
+
+p('Umsatzeinbruch schlägt an', regelnVon({ umsatz24h: 20e6 }).includes('umsatzEinbruch'))
+// Zufluss ist kein Handlungsdruck — Alarme sind für das, was einen zwingt.
+p('Umsatzanstieg schlägt NICHT an', !regelnVon({ umsatz24h: 200e6 }).includes('umsatzEinbruch'))
+
+p('Spread-Überschreitung schlägt an', regelnVon({ spreadBp: 15 }).includes('spreadWeit'))
+p('dauerhaft weiter Spread piept nicht weiter',
+    !pruefeRegelnBoerse(bx, { ...bAlt, spreadBp: 15 }, { ...bNeu, spreadBp: 16 })
+        .some((a) => a.regel === 'spreadWeit'))
+
+p('Funding-Überschreitung schlägt an', regelnVon({ fundingJahresRate: 80 }).includes('fundingExtrem'))
+p('negatives Extrem schlägt ebenfalls an', regelnVon({ fundingJahresRate: -80 }).includes('fundingExtrem'))
+p('dauerhaft teures Funding piept nicht weiter',
+    !pruefeRegelnBoerse(bx, { ...bAlt, funding: 80 }, { ...bNeu, fundingJahresRate: 90 })
+        .some((a) => a.regel === 'fundingExtrem'))
+p('Funding-Meldung nennt, wer zahlt',
+    pruefeRegelnBoerse(bx, bAlt, { ...bNeu, fundingJahresRate: 80 })
+        .find((a) => a.regel === 'fundingExtrem').meldung.includes('Long zahlt'))
+
+/*
+ * Der teuerste Fehler wäre hier ein STUMMER: fehlende Werte dürfen weder
+ * einen Alarm erfinden noch einen Vergleich mit NaN erzeugen, der immer
+ * falsch ist und damit für immer schweigt.
+ */
+p('erster Blick ohne Vergleichsbasis erfindet nichts',
+    pruefeRegelnBoerse(bx, {}, { preisUsd: 100, umsatz24h: 50e6, spreadBp: 2 }).length === 0)
+p('unbekannter Spread meldet nichts',
+    !pruefeRegelnBoerse(bx, bAlt, { ...bNeu, spreadBp: null }).some((a) => a.regel === 'spreadWeit'))
+p('unbekanntes Funding meldet nichts',
+    !pruefeRegelnBoerse(bx, bAlt, { ...bNeu, fundingJahresRate: null }).some((a) => a.regel === 'fundingExtrem'))
+p('unbekannter Spread beim ERSTEN Blick meldet trotzdem, wenn er weit ist',
+    pruefeRegelnBoerse(bx, {}, { ...bNeu, spreadBp: 20 }).some((a) => a.regel === 'spreadWeit'))
+p('Textwerte erzeugen keinen Alarm',
+    pruefeRegelnBoerse(bx, { preis: 'x', umsatz: 'y' },
+        { preisUsd: 'z', umsatz24h: null, spreadBp: undefined, fundingJahresRate: 'a' }).length === 0)
+
+p('das USDT im Symbol steht nicht in der Meldung',
+    !pruefeRegelnBoerse(bx, bAlt, { ...bNeu, preisUsd: 130 })[0].meldung.includes('USDT'))
+
+p('eigene Schwelle greift auch hier',
+    pruefeRegelnBoerse(bx, bAlt, { ...bNeu, umsatz24h: 45e6 },
+        { ...STANDARD_ALARM_REGELN, umsatzEinbruchPct: 5 }).some((a) => a.regel === 'umsatzEinbruch'))
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

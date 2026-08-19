@@ -63,7 +63,14 @@ export async function holeMarktweit() {
         for (const t of umsatz.value) {
             const e = hole(t.symbol)
             e.umsatz24h = Number(t.quoteVolume) || 0
-            e.preisAenderung24h = Number(t.priceChangePercent) ?? null
+            /*
+             * `??` fängt nur null und undefined — `Number(undefined)` ist aber
+             * NaN und rutscht durch. Ein NaN wäre hier nicht harmlos: der
+             * Wachhund vergleicht diesen Wert gegen eine Schwelle, und jeder
+             * Vergleich mit NaN ist falsch, also stumm.
+             */
+            const aend = Number(t.priceChangePercent)
+            e.preisAenderung24h = Number.isFinite(aend) ? aend : null
             e.trades24h = Number(t.count) || 0
         }
         quellenStand.umsatz = { ok: true, anzahl: umsatz.value.length }

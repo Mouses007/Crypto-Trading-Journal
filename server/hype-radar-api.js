@@ -19,7 +19,7 @@ import { leseEinstellungen, schreibeEinstellungen, schreibeSchluessel, maskiere 
 import { scanne, scanneUndBerichte } from './hype-radar/lauf.js'
 import { dexDetails } from './hype-radar/quellen.js'
 import { ladeListungen, pruefeListung } from './hype-radar/listungen.js'
-import { wachhundLauf } from './hype-radar/wachhund.js'
+import { wachhundLauf, STANDARD_ALARM_REGELN } from './hype-radar/wachhund.js'
 import { testZustellung } from './hype-radar/zustellung.js'
 import { stufenNach, benoetigteAnbieter } from './hype-radar/stufen.js'
 import { keySpalte } from './ai-models.js'
@@ -54,6 +54,10 @@ export function setupHypeRadarRoutes(app) {
             const e = await leseEinstellungen()
             res.json({
                 ...e,
+                // Die Alarmschwellen leben neben ihren Regeln in `wachhund.js`
+                // und werden erst hier aufgefüllt — eine zweite Vorgabenliste
+                // in den Einstellungen wäre eine zweite Wahrheit.
+                alarmRegeln: { ...STANDARD_ALARM_REGELN, ...(e.alarmRegeln || {}) },
                 schluessel: maskiere(e.schluessel),      // nie im Klartext hinaus
                 stufen: stufenNach(req.query.ordnung === 'guete' ? 'guete' : 'preis'),
                 fehlendeSchluessel: await fehlendeSchluessel(e),
@@ -72,6 +76,7 @@ export function setupHypeRadarRoutes(app) {
             const e = await leseEinstellungen()
             res.json({
                 ...e,
+                alarmRegeln: { ...STANDARD_ALARM_REGELN, ...(e.alarmRegeln || {}) },
                 schluessel: maskiere(e.schluessel),
                 fehlendeSchluessel: await fehlendeSchluessel(e),
             })

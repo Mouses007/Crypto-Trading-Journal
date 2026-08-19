@@ -66,12 +66,17 @@ export const VORGABEN = {
      * `settings` und NICHT hier.
      */
     wachhundIntervallMin: 15,
-    alarmRegeln: {
-        preisSprungPct: 15,
-        preisSturz24hPct: 40,
-        liqAbflussPct: 30,
-        sicherheitsIntervallH: 6,
-    },
+    /*
+     * Bewusst LEER, nicht mit Zahlen gefüllt.
+     *
+     * Die Schwellen stehen in `STANDARD_ALARM_REGELN` neben den Regeln, die
+     * sie benutzen. Sie hier ein zweites Mal aufzuschreiben hiesse, zwei
+     * Wahrheiten zu pflegen — und beim Hinzufügen der Börsenschwellen wäre
+     * genau das passiert: der Server hätte sie gekannt, die Oberfläche nicht.
+     * Direkt importieren geht nicht, weil `wachhund.js` diese Datei braucht;
+     * deshalb füllt die Route die Vorgaben auf, bevor sie antwortet.
+     */
+    alarmRegeln: {},
     alarmKanaele: {
         ntfy: { an: false, url: '', topic: 'hype-radar', minSchwere: 'info' },
         telegram: { an: false, chatId: '', minSchwere: 'warnung' },

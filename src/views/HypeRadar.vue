@@ -535,6 +535,28 @@
                     </div>
                 </div>
 
+                <!-- Börsen-Favoriten: eigene Schwellen, weil sie eigene Grössen
+                     messen. Ein Bitunix-Perp hat keinen Liquiditätspool, der
+                     abfliessen könnte — dort zählen Umsatz, Spread und Funding. -->
+                <p class="hypHinweis mt-3 mb-1">{{ t('hype.regelnBoerse') }}</p>
+                <div class="row g-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelUmsatzEinbruch') }}</label>
+                        <input v-model.number="einst.alarmRegeln.umsatzEinbruchPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelSpreadWarn') }}</label>
+                        <input v-model.number="einst.alarmRegeln.spreadWarnBp" type="number" min="1" step="0.5"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelFundingExtrem') }}</label>
+                        <input v-model.number="einst.alarmRegeln.fundingExtremPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+
                 <!-- Zustellkanäle -->
                 <h6 class="hypTitel mt-4">{{ t('hype.kanaeleTitel') }}</h6>
                 <p class="hypHinweis">{{ t('hype.kanaeleHinweis') }}</p>
