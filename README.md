@@ -272,14 +272,13 @@ docker compose ps              # Status
 
 #### NAS Deployment (Synology etc.)
 
-Build and export the image on your development machine, then import it on the NAS:
+The image is published on Docker Hub, so the NAS pulls it directly — no build step:
 
 ```bash
-docker compose build
-docker save journal-journal:latest | gzip > journal-image.tar.gz
+docker compose pull && docker compose up -d
 ```
 
-Copy `journal-image.tar.gz` and a compose file (without `build:`) to your NAS, import the image, and create a project in Container Manager. See [DOCKER.md](DOCKER.md) for details.
+Copy `docker-compose.yml` and your `.env` to the NAS and create a project in Container Manager. See [DOCKER.md](DOCKER.md) for details.
 
 ---
 

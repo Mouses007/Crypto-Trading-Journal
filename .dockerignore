@@ -23,3 +23,7 @@ docs/
 ANLEITUNG-INSTALLATION.txt
 _ctj_update.bat
 server_neustart.sh
+
+# Interne Audits/Berichte gehoeren nicht in den Build-Kontext
+internal
+_audit-*.md
