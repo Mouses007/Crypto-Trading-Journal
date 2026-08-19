@@ -163,7 +163,7 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
                 continue
             }
 
-            const jahresRate = fundingJahresRate(a.roh.fundingRate, 8)
+            const jahresRate = fundingJahresRate(a.roh.fundingRate, a.roh.fundingIntervallH)
             const b = bewerte({ ...a.roh, fundingJahresRate: jahresRate }, ze, gewichte, haupt)
 
             zeilen.push({
@@ -189,23 +189,42 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
         if ((i + 1) % 20 === 0) melde({ schritt: 'bewerten', fertig: i + 1, gesamt: offen.length })
     }
 
-    vergibRaenge(zeilen)
-    await schreibeZeilen(knex, lauf.id, zeilen)
+    /*
+     * Bei einer Wiederaufnahme liegen bereits bewertete Zeilen in der
+     * Datenbank. Nur die neuen zu ranken hiesse, zweimal einen Rang 1 zu
+     * vergeben — die Rangfolge gilt für den LAUF, nicht für den Durchgang.
+     * Deshalb kommen die alten dazu, werden gemeinsam geordnet und alle
+     * zurückgeschrieben.
+     */
+    const schon = (await knex('coinradar_zeilen')
+        .where({ laufId: lauf.id, status: 'bewertet' })
+        .whereNotIn('symbol', zeilen.length ? zeilen.map((z) => z.symbol) : ['']))
+        // Die eigene `id` muss weg: sie zurückzuschreiben würde den
+        // Schlüssel setzen wollen, den die Datenbank selbst vergibt.
+        .map(({ id, ...rest }) => rest)
+
+    const alleZeilen = [...zeilen, ...schon]
+    vergibRaenge(alleZeilen)
+    await schreibeZeilen(knex, lauf.id, alleZeilen)
+
+    const bewertet = alleZeilen.filter((z) => z.status === 'bewertet')
 
     // ── Stufe 5: Beharrlichkeit ─────────────────────────────────────────
-    const vergleich = await beharrlichkeit(knex, lauf.id, zeilen)
+    // Über ALLE Zeilen des Laufs, nicht nur die dieses Durchgangs — sonst
+    // vergliche eine Wiederaufnahme eine halbe Rangfolge mit einer ganzen.
+    const vergleich = await beharrlichkeit(knex, lauf.id, alleZeilen)
 
     await knex('coinradar_laeufe').where('id', lauf.id).update({
         status: 'fertig',
         beendetAm: Date.now(),
-        fortschritt: zeilen.length,
+        fortschritt: alleZeilen.length,
         rangkorrelation: vergleich.wert ?? 0,
         vergleichslauf: vergleich.laufId || 0,
     })
 
-    melde({ schritt: 'fertig', bewertet: zeilen.filter((z) => z.status === 'bewertet').length })
+    melde({ schritt: 'fertig', bewertet: bewertet.length })
     return {
-        bewertet: zeilen.filter((z) => z.status === 'bewertet').length,
+        bewertet: bewertet.length,
         verworfen: gescheitert.length,
         quellenStand,
         rangkorrelation: vergleich,

@@ -16,7 +16,7 @@
  * ansehen. Ein Lauf über das ganze Universum bleibt so unter einer Minute.
  */
 
-import { holeJson } from '../marktradar-api.js'
+import { holeJson, holeBinanceIntervalle } from '../marktradar-api.js'
 import { getClosedCandles } from '../market-data.js'
 import { warteAufGewicht } from '../binance-takt.js'
 import { logWarn } from '../logger.js'
@@ -46,11 +46,23 @@ export const KERZEN_ANZAHL = 200
  * @returns {Promise<{jeSymbol: Map<string, object>, quellenStand: object}>}
  */
 export async function holeMarktweit() {
-    const [umsatz, buch, funding] = await Promise.allSettled([
+    const [umsatz, buch, funding, intervalle] = await Promise.allSettled([
         holeJson(`${FAPI}/fapi/v1/ticker/24hr`),
         holeJson(`${FAPI}/fapi/v1/ticker/bookTicker`),
         holeJson(`${FAPI}/fapi/v1/premiumIndex`),
+        /*
+         * Der Funding-TAKT je Symbol — acht Stunden sind nur der Normalfall.
+         *
+         * Ohne ihn wurde jede Rate pauschal dreimal täglich hochgerechnet, und
+         * bei den zahlreichen 4h-Märkten kam damit die halbe Jahresrate heraus.
+         * Das Haus hat diesen Fehler im August schon einmal behoben (siehe
+         * `jahresRateAus`); der Coin-Radar ist daran vorbeigelaufen. Der Abruf
+         * ist über zwölf Stunden zwischengespeichert und kostet praktisch
+         * nichts.
+         */
+        holeBinanceIntervalle(),
     ])
+    const takt = intervalle.status === 'fulfilled' ? (intervalle.value || {}) : {}
 
     const quellenStand = {}
     const jeSymbol = new Map()
@@ -113,6 +125,9 @@ export async function holeMarktweit() {
             // wer die beiden verwechselt, rechnet um den Faktor hundert falsch.
             const rate = Number(f.lastFundingRate)
             e.fundingRate = Number.isFinite(rate) ? rate * 100 : null
+            // Der Takt gehört an die Rate: getrennt gespeichert wäre jede
+            // spätere Hochrechnung wieder eine Gelegenheit, ihn zu vergessen.
+            e.fundingIntervallH = Number(takt[f.symbol]) || 8
             e.naechsteZahlung = Number(f.nextFundingTime) || null
             if (!e.preis) e.preis = Number(f.markPrice) || null
         }

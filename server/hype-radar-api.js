@@ -23,6 +23,9 @@ import { wachhundLauf, STANDARD_ALARM_REGELN } from './hype-radar/wachhund.js'
 import { testZustellung } from './hype-radar/zustellung.js'
 import { stufenNach, benoetigteAnbieter } from './hype-radar/stufen.js'
 import { keySpalte } from './ai-models.js'
+// Börsenfavoriten (Coin-Radar) brauchen den anderen Datenweg — siehe `boersenLive`.
+import { holeMarktweit } from './coin-radar/daten.js'
+import { fundingJahresRate } from './coin-radar/kennzahlen.js'
 
 /** Prozesslokal wie beim Agenten — gegen den Doppelklick, nicht gegen den NAS. */
 let laufAktiv = false
@@ -286,6 +289,21 @@ export function setupHypeRadarRoutes(app) {
             const alt = liveCache.get(schluessel)
             if (alt && Date.now() - alt.ts < 60000) return res.json(alt.payload)
 
+            /*
+             * Börsenfavoriten gehen einen anderen Weg.
+             *
+             * Ein Coin-Radar-Favorit ist ein Bitunix-Symbol ohne
+             * Vertragsadresse — der DEX-Detailpfad findet für ihn nichts und
+             * lieferte eine leere Kachel. Der Wachhund hatte diesen zweiten
+             * Weg schon, die Anzeige nicht.
+             */
+            if (fav.quelle === 'coinradar') {
+                const payload = await boersenLive(knex, fav)
+                liveCache.set(schluessel, { ts: Date.now(), payload })
+                if (liveCache.size > 200) liveCache.delete(liveCache.keys().next().value)
+                return res.json(payload)
+            }
+
             const [details, listen, letzter] = await Promise.all([
                 fav.contractAddress ? dexDetails(fav.contractAddress).catch(() => null) : null,
                 ladeListungen(),
@@ -330,6 +348,51 @@ export function setupHypeRadarRoutes(app) {
 
 /** 60-s-Zwischenspeicher der Livedaten, je Vertrag. */
 const liveCache = new Map()
+
+/**
+ * Livedaten eines Börsenfavoriten (Coin-Radar).
+ *
+ * Dieselbe Form wie der DEX-Pfad, damit die Kachel nicht zwei Fassungen
+ * braucht — nur eben aus Börsendaten: Preis und Umsatz aus dem marktweiten
+ * Abruf, dazu die letzte Zeile aus der Coin-Radar-Rangliste als Prüfstand.
+ * `liquiditaetUsd` bleibt bewusst leer statt auf 0 gesetzt: Ein Perp hat
+ * keinen Liquiditätspool, und eine Null dort behauptete eine Messung.
+ */
+async function boersenLive(knex, fav) {
+    const [{ jeSymbol }, letzte] = await Promise.all([
+        holeMarktweit().catch(() => ({ jeSymbol: new Map() })),
+        knex('coinradar_zeilen').where({ symbol: fav.symbol, status: 'bewertet' })
+            .orderBy('id', 'desc').first().catch(() => null),
+    ])
+    const roh = jeSymbol.get(fav.symbol) || null
+
+    return {
+        favorit: fav,
+        stand: Date.now(),
+        boerse: true,
+        markt: roh ? {
+            preisUsd: roh.preis,
+            aenderung24h: roh.preisAenderung24h,
+            volumen24h: roh.umsatz24h,
+            spreadBp: roh.spreadBp,
+            fundingJahresRate: fundingJahresRate(roh.fundingRate, roh.fundingIntervallH),
+            transaktionen24h: roh.trades24h,
+            dex: 'bitunix',
+        } : null,
+        dexUrl: '',
+        listungen: [], listungUnbekannt: false,
+        letzterLauf: letzte ? {
+            hypeScore: letzte.note,
+            safetyScore: null,
+            status: 'bewertet',
+            verworfenGrund: '',
+            erstelltAm: Number(letzte.erstelltAm),
+            hinweise: sicherParse(letzte.jeZeiteinheit, {})?.hinweise || [],
+            rang: letzte.rang,
+            atrPct: letzte.atrPct, rvol: letzte.rvol, adx: letzte.adx,
+        } : null,
+    }
+}
 
 /** Beide Lauf-Routen unterscheiden sich nur darin, ob Stufe 4 mitläuft. */
 async function laufRoute(req, res, mitBericht) {

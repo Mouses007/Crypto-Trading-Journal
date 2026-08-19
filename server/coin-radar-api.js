@@ -196,13 +196,41 @@ export function setupCoinRadarRoutes(app) {
  */
 async function laufeMitZustand(einst, ausloeser, melde, istAbgebrochen = () => false, fertigMelden = () => {}) {
     const knex = getKnex()
-    const [eingefuegt] = await knex('coinradar_laeufe').insert({
-        erstelltAm: Date.now(),
-        status: 'laeuft',
-        ausloeser,
-        zeiteinheiten: JSON.stringify(einst.zeiteinheiten || []),
-    }).returning('id')
-    const laufId = typeof eingefuegt === 'object' ? eingefuegt.id : eingefuegt
+
+    /*
+     * Erst nachsehen, ob ein Lauf liegen geblieben ist.
+     *
+     * Der Lauf überspringt Symbole, die für seine `laufId` schon eine Zeile
+     * haben — das ist die Wiederaufnahme, und sie war bis zum Audit vom
+     * 19.08.2026 UNERREICHBAR: Jeder Start legte eine neue Laufzeile an, also
+     * fand die Prüfung nie etwas. Das Versprechen stand im Kommentar, im
+     * Schema und in CLAUDE.md, nur nicht im Ablauf.
+     *
+     * Der Altersfilter ist die Sicherung: Nur ein Lauf, der älter ist als die
+     * Führungssperre, gilt als verwaist. Ein gerade laufender Durchgang auf
+     * dem anderen Rechner wird so nie übernommen — dort hält jemand die
+     * Führung, und die wäre sonst umsonst.
+     */
+    const verwaist = await knex('coinradar_laeufe')
+        .where('status', 'laeuft')
+        .andWhere('erstelltAm', '<', Date.now() - FUEHRUNG_TTL_MS)
+        .orderBy('id', 'desc').first()
+
+    let laufId
+    if (verwaist) {
+        laufId = verwaist.id
+        const schon = await knex('coinradar_zeilen').where('laufId', laufId).count({ n: '*' }).first()
+        melde({ schritt: 'wiederaufnahme', laufId, zeilen: Number(schon?.n) || 0 })
+        logWarn('coin-radar', `Lauf ${laufId} wird fortgesetzt (${schon?.n || 0} Zeilen vorhanden)`)
+    } else {
+        const [eingefuegt] = await knex('coinradar_laeufe').insert({
+            erstelltAm: Date.now(),
+            status: 'laeuft',
+            ausloeser,
+            zeiteinheiten: JSON.stringify(einst.zeiteinheiten || []),
+        }).returning('id')
+        laufId = typeof eingefuegt === 'object' ? eingefuegt.id : eingefuegt
+    }
 
     try {
         const ergebnis = await fuehreLaufAus({ id: laufId }, einst, melde, istAbgebrochen)

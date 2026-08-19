@@ -79,6 +79,33 @@ const BACKUP_TABLES = [
     // die die Sicherungsdatei dominieren würde (dieselbe Begründung wie bei
     // `strategy_backtests` weiter unten).
     'coin_universen',
+    // ── Research: Hype-Radar und Coin-Radar ─────────────────────────────
+    /*
+     * Bis zum Audit vom 19.08.2026 stand hier NICHTS davon — ein Restore
+     * hätte jeden Favoriten, jeden Alarm, beide Einstellungssätze und die
+     * gesamte KI-Verbrauchserfassung verloren.
+     *
+     * Aufgenommen wird, was Handarbeit ist oder Geld gekostet hat:
+     * Favoriten und ihre Alarme (die Beobachtungsliste des Nutzers), die
+     * Einstellungen beider Radare, die KI-Berichte (Kontingent verbraucht,
+     * nicht nachbestellbar) und die Coin-Radar-Läufe mit ihren Zeilen — ohne
+     * sie gäbe es nach dem Rückspielen keine Rangkorrelation mehr, weil der
+     * Vergleichslauf fehlte.
+     *
+     * `hype_candidates` bleibt draussen: wächst je Lauf um rund hundert
+     * Zeilen, ist in sechs Stunden neu geholt, und es sind fremde Inhalte —
+     * dieselbe Linie wie bei `news_items` und `live_recordings`.
+     */
+    'hype_favoriten',
+    'hype_alarme',
+    'hype_settings',
+    'hype_reports',
+    'coinradar_settings',
+    'coinradar_laeufe',
+    'coinradar_zeilen',
+    // Der Verbrauchsnachweis: Wer nachvollziehen will, was die KI gekostet
+    // hat, kann das nach einem Restore ohne diese Tabelle nie wieder.
+    'ai_usage',
 ]
 
 /**

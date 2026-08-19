@@ -296,7 +296,7 @@ export async function wachhundLauf() {
                     aenderung24h: roh.preisAenderung24h,
                     umsatz24h: roh.umsatz24h,
                     spreadBp: roh.spreadBp,
-                    fundingJahresRate: fundingJahresRate(roh.fundingRate, 8),
+                    fundingJahresRate: fundingJahresRate(roh.fundingRate, roh.fundingIntervallH),
                 }
 
                 const alarmeB = fav.stumm ? [] : pruefeRegelnBoerse(fav, altB, neuB, regeln)

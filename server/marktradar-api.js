@@ -568,7 +568,13 @@ async function holeBitunixFunding(symbole) {
  * aber eine leere Funding-Kachel wäre schlechter als eine vorsichtige.
  * Der Takt ändert sich praktisch nie, deshalb 12h-Cache.
  */
-async function holeBinanceIntervalle() {
+/*
+ * Exportiert, weil der Coin-Radar denselben Takt braucht: Er rechnete Funding
+ * pauschal auf acht Stunden hoch und halbierte damit die Jahreskosten aller
+ * 4h-Märkte — genau der Fehler, gegen den dieser Helfer im August gebaut
+ * wurde. Ein zweiter Abruf dafür wäre Verschwendung, der Cache hält 12 h.
+ */
+export async function holeBinanceIntervalle() {
     const { stunden } = await ausCache('binanceIntervalle', 12 * 60 * 60 * 1000, async () => {
         const r = await holeJson(`${FAPI}/fapi/v1/fundingInfo`)
         const stunden = {}
