@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import NoData from '../components/NoData.vue'
+import PageInfo from '../components/PageInfo.vue'
 import { spinnerLoadingPage, timeZoneTrade, expandedId, kopiertesBild } from '../stores/ui.js'
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker, selectedTradeCategory, brokers } from '../stores/filters.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
@@ -1319,7 +1320,8 @@ function getPositionDate(pos) {
                         <span v-if="incomingPollingActive" class="spinner-border spinner-border-sm ms-2" role="status"></span>
                     </small>
                 </div>
-                <div class="col-auto">
+                <div class="col-auto d-flex align-items-center gap-2">
+                    <PageInfo section="info.pendente" />
                     <button class="btn btn-sm btn-outline-primary" @click="manualRefresh" :disabled="incomingPollingActive">
                         <i class="uil uil-sync me-1"></i>{{ t('incoming.refresh') }}
                     </button>

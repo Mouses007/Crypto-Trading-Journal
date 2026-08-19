@@ -1306,7 +1306,7 @@
     "resetToDefault": "Auf Standard zurücksetzen",
     "approve": "Freigeben",
     "approveLive": "Für den scharfen Betrieb freigeben",
-    "approveLiveType": "Tippe SCHARF, um zu bestätigen",
+    "approveLiveType": "Zur Bestätigung den Namen der Instanz eingeben: {name}",
     "approveLiveWarning": "Ab dann werden echte Orders an die Börse gesendet. Vorher: genug Papier-Trades und ein Lauf im Schatten-Modus.",
     "approveFailed": "Freigabe fehlgeschlagen.",
     "liveApproved": "Für den scharfen Betrieb freigegeben.",
@@ -2844,6 +2844,39 @@
           "g": "AM TELEFON",
           "h": "WENIGER BILD, GLEICHE SUBSTANZ",
           "p": "Auf schmalen Geräten entfallen Quadrant und breite Tabelle — ein Streudiagramm auf 375 Pixeln ist nicht lesbar. Stattdessen erscheint eine Karte je Fund mit Noten, Thema, Liquidität, Alter, Börsen und Ausgang. Favoriten, Live-Kacheln, Alarme und Berichte funktionieren unverändert."
+        }
+      ]
+    },
+    "pendente": {
+      "title": "Pendente Trades — was gerade offen ist",
+      "intro": "Alle offenen Positionen der angebundenen Börsen, im Takt abgefragt. Die Seite ist die Brücke zwischen Börse und Journal: Was du hier an Notizen, Bewertungen und Merkmalen hinterlegst, wandert beim Schliessen automatisch in den fertigen Journal-Eintrag.",
+      "sections": [
+        {
+          "g": "WOHER DIE ZAHLEN KOMMEN",
+          "h": "DIREKT VON DER BÖRSE",
+          "p": "Position, Einstand, Hebel, Marge und Liquidationspreis stammen unverändert von der Börse — sie werden nicht nachgerechnet. Weicht etwas von der Börsen-Oberfläche ab, liegt es an der Abfragezeit, nicht an einer eigenen Formel."
+        },
+        {
+          "h": "IM TAKT AKTUALISIERT",
+          "p": "Die Ansicht fragt regelmässig nach, solange sie offen ist. Sie ist damit ein Beobachtungsfenster, kein Handelsplatz: Ein- und Ausstiege macht die Börse oder das Live-Trading-Fenster."
+        },
+        {
+          "h": "NACHKÄUFE WERDEN AUFGELÖST",
+          "p": "Zu jeder Position lassen sich die einzelnen Ausführungen aufklappen. Nötig, weil eine aufgestockte Position an der Börse als eine Zeile mit Durchschnittspreis erscheint — im Journal will man aber wissen, zu welchen Kursen tatsächlich gekauft wurde."
+        },
+        {
+          "g": "WAS INS JOURNAL WANDERT",
+          "h": "VORHER SCHREIBEN, NICHT NACHHER ERFINDEN",
+          "p": "Notizen, Merkmale und die Bewertung des Setups gehören vor den Ausgang. Danach erinnert man einen Verlust anders als davor — genau deshalb ist der Platz dafür hier und nicht erst im Journal."
+        },
+        {
+          "h": "ÜBERNAHME BEIM SCHLIESSEN",
+          "p": "Sobald die Position geschlossen ist und der Trade importiert wird, übernimmt das Journal die hinterlegten Angaben automatisch — Eröffnungs- und Abschlussnotiz, Merkmale, Zufriedenheit, Stress und ob der Plan gehalten hat."
+        },
+        {
+          "g": "BOTS",
+          "h": "BOT-POSITIONEN STEHEN GETRENNT",
+          "p": "Grid- und Strategie-Bots erscheinen als eigene Gruppe, nicht zwischen den Handpositionen. Sie folgen anderen Regeln: Bei ihnen ist die gemeldete Menge bereits der Gesamtumsatz, weshalb sie anders gerechnet werden müssen als eine gewöhnliche Position."
         }
       ]
     }

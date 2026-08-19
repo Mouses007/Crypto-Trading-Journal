@@ -1306,7 +1306,7 @@
     "resetToDefault": "Reset to default",
     "approve": "Approve",
     "approveLive": "Approve for live trading",
-    "approveLiveType": "Type LIVE to confirm",
+    "approveLiveType": "Type the instance name to confirm: {name}",
     "approveLiveWarning": "From then on real orders go to the exchange. Before that: enough paper trades and a run in shadow mode.",
     "approveFailed": "Approval failed.",
     "liveApproved": "Approved for live trading.",
@@ -2844,6 +2844,39 @@
           "g": "ON THE PHONE",
           "h": "LESS PICTURE, SAME SUBSTANCE",
           "p": "On narrow devices the quadrant and the wide table are dropped — a scatter plot at 375 pixels is unreadable. Instead each find appears as a card with scores, theme, liquidity, age, exchanges and outcome. Favourites, live tiles, alerts and reports work unchanged."
+        }
+      ]
+    },
+    "pendente": {
+      "title": "Pending trades — what is open right now",
+      "intro": "All open positions from the connected exchanges, polled on a schedule. This page is the bridge between exchange and journal: notes, ratings and attributes you record here move into the finished journal entry automatically when the position closes.",
+      "sections": [
+        {
+          "g": "WHERE THE NUMBERS COME FROM",
+          "h": "STRAIGHT FROM THE EXCHANGE",
+          "p": "Position, entry, leverage, margin and liquidation price come from the exchange unchanged — they are not recomputed. If something differs from the exchange's own screen, it is the polling moment, not a formula of ours."
+        },
+        {
+          "h": "UPDATED ON A SCHEDULE",
+          "p": "The view polls regularly while open. It is a watch window, not a trading desk: entries and exits happen at the exchange or in the live-trading window."
+        },
+        {
+          "h": "ADD-ONS ARE BROKEN OUT",
+          "p": "Individual fills can be expanded per position. Needed because a scaled-in position shows at the exchange as one line with an average price — but the journal wants to know at which prices you actually bought."
+        },
+        {
+          "g": "WHAT MOVES INTO THE JOURNAL",
+          "h": "WRITE BEFORE, DO NOT INVENT AFTER",
+          "p": "Notes, attributes and the setup rating belong before the outcome. Afterwards you remember a loss differently than before — which is exactly why the place for them is here and not in the journal."
+        },
+        {
+          "h": "HANDOVER ON CLOSE",
+          "p": "Once the position is closed and the trade is imported, the journal picks up what you recorded automatically — opening and closing note, attributes, satisfaction, stress and whether the plan held."
+        },
+        {
+          "g": "BOTS",
+          "h": "BOT POSITIONS ARE LISTED SEPARATELY",
+          "p": "Grid and strategy bots appear as their own group, not among manual positions. They follow different rules: for them the reported quantity is already the total turnover, so they must be computed differently from an ordinary position."
         }
       ]
     }
