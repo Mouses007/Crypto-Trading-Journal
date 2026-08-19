@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme']
     let fixed = 0
 
     for (const table of tables) {
@@ -109,7 +109,8 @@ async function fixPostgresSequences(knex) {
 // unverändert weiter; ihm fehlen nur die Zeilen seiner eigenen Läufe.
 // v4: Tabellen des Hype-Radars. Wieder rein additiv.
 // v5: `hype_favoriten` — angeheftete Funde. Rein additiv.
-const SCHEMA_VERSION = 5
+// v6: `hype_alarme` + Wachhund-Spalten an den Favoriten. Rein additiv.
+const SCHEMA_VERSION = 6
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2240,6 +2241,35 @@ async function runMigrations(knex, client) {
     }
 
     /*
+     * Alarme auf Favoriten. Der Wachhund vergleicht in seinem Takt den
+     * Livestand mit dem letzten und schreibt hier hinein, was auffiel — eine
+     * Zeile je Auslösung. Die Zustellung (ntfy/Telegram/Webhook) hängt daran,
+     * aber die In-App-Liste ist der Kanal, der nie ausfallen kann.
+     */
+    if (!(await knex.schema.hasTable('hype_alarme'))) {
+        await knex.schema.createTable('hype_alarme', (t) => {
+            t.increments('id').primary()
+            t.integer('favoritId').notNullable()
+            t.string('regel').notNullable()          // preisSprung | liqAbfluss | sicherheit …
+            t.string('schwere').defaultTo('info')    // info | warnung | kritisch
+            t.text('meldung').defaultTo('')
+            t.text('daten').defaultTo('{}')          // JSON: vorher/nachher
+            t.integer('gelesen').defaultTo(0)
+            t.bigInteger('erstelltAm').defaultTo(0)
+            t.index(['favoritId'], 'idx_hypal_fav')
+            t.index(['erstelltAm'], 'idx_hypal_zeit')
+        })
+        console.log(' -> Created table: hype_alarme')
+    }
+
+    // Was der Wachhund je Favorit zuletzt gesehen hat — die Vergleichsbasis.
+    await addColumnIfNotExists('hype_favoriten', 'letzteDaten', (t) => t.text('letzteDaten').defaultTo('{}'))
+    await addColumnIfNotExists('hype_favoriten', 'sicherheitsStand', (t) => t.text('sicherheitsStand').defaultTo('{}'))
+    // Stumm heisst: beobachten ja, melden nein. Der Favorit bleibt in der
+    // Leiste, nur die Alarme schweigen.
+    await addColumnIfNotExists('hype_favoriten', 'stumm', (t) => t.integer('stumm').defaultTo(0))
+
+    /*
      * Schlüssel der Zusatzquellen. GoPlus, DexScreener und GeckoTerminal
      * brauchen keinen — sie stehen hier deshalb nicht. Verschlüsselt wie die
      * KI-Schlüssel; die Oberfläche bekommt sie nur maskiert zurück.
@@ -2247,6 +2277,11 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'hypeKeyCryptopanic', (t) => t.text('hypeKeyCryptopanic').defaultTo(''))
     await addColumnIfNotExists('settings', 'hypeKeyLunarcrush', (t) => t.text('hypeKeyLunarcrush').defaultTo(''))
     await addColumnIfNotExists('settings', 'hypeKeyCoingecko', (t) => t.text('hypeKeyCoingecko').defaultTo(''))
+    // Zustellgeheimnisse des Wachhunds. Die Webhook-Adresse zählt dazu — bei
+    // Home Assistant ist die Adresse selbst das Geheimnis.
+    await addColumnIfNotExists('settings', 'hypeAlarmNtfyToken', (t) => t.text('hypeAlarmNtfyToken').defaultTo(''))
+    await addColumnIfNotExists('settings', 'hypeAlarmTelegramToken', (t) => t.text('hypeAlarmTelegramToken').defaultTo(''))
+    await addColumnIfNotExists('settings', 'hypeAlarmWebhookUrl', (t) => t.text('hypeAlarmWebhookUrl').defaultTo(''))
 
     // Schlüsselspalten der neu aufgenommenen KI-Anbieter (siehe ANBIETER_REG).
     await addColumnIfNotExists('settings', 'aiKeyMoonshot', (t) => t.text('aiKeyMoonshot').defaultTo(''))

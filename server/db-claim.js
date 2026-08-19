@@ -65,7 +65,7 @@ export async function beansprucheAufgabe(key, ttlMs) {
         const nun = jetztSql(knex)
         const treffer = await knex('radar_fetch_state')
             .where('key', key)
-            .andWhereRaw(`fetchedAt < ${nun} - ?`, [ttlMs])
+            .andWhereRaw(`?? < ${nun} - ?`, ['fetchedAt', ttlMs])
             .update({ fetchedAt: knex.raw(nun), claimedBy: INSTANZ_ID, updatedAt: knex.raw(nun) })
 
         return treffer === 1
@@ -119,7 +119,7 @@ export async function beansprucheTagesaufgabe(key, { tagesbeginn, wiederholungMs
                     .orWhere(function () {
                         this.whereNotNull('lastError')
                             .andWhereNot('lastError', '')
-                            .andWhereRaw(`fetchedAt < ${nun} - ?`, [wiederholungMs])
+                            .andWhereRaw(`?? < ${nun} - ?`, ['fetchedAt', wiederholungMs])
                     })
             })
             .update({ fetchedAt: knex.raw(nun), claimedBy: INSTANZ_ID, updatedAt: knex.raw(nun) })
@@ -223,7 +223,7 @@ export async function beansprucheFuehrung(key, ttlMs) {
             .where('key', key)
             .andWhere(function () {
                 // frei (abgelaufen) ODER bereits von diesem Prozess gehalten
-                this.whereRaw(`fetchedAt < ${nun} - ?`, [ttlMs]).orWhere('claimedBy', INSTANZ_ID)
+                this.whereRaw(`?? < ${nun} - ?`, ['fetchedAt', ttlMs]).orWhere('claimedBy', INSTANZ_ID)
             })
             .update({ fetchedAt: knex.raw(nun), claimedBy: INSTANZ_ID, updatedAt: knex.raw(nun) })
 

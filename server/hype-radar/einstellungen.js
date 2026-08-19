@@ -20,6 +20,11 @@ const SCHLUESSEL_SPALTEN = {
     cryptopanic: 'hypeKeyCryptopanic',
     lunarcrush: 'hypeKeyLunarcrush',
     coingecko: 'hypeKeyCoingecko',
+    // Zustellgeheimnisse des Wachhunds. Die Webhook-Adresse gehört dazu:
+    // bei Home Assistant IST die Adresse das Geheimnis.
+    ntfyToken: 'hypeAlarmNtfyToken',
+    telegramToken: 'hypeAlarmTelegramToken',
+    webhookUrl: 'hypeAlarmWebhookUrl',
 }
 
 export const VORGABEN = {
@@ -55,6 +60,23 @@ export const VORGABEN = {
      * handeln will, was das eigene Konto hergibt, schaltet den Filter ein.
      */
     nurBoersen: false,
+    /*
+     * Der Wachhund. Regeln und Kanäle für die Alarme auf Favoriten; die
+     * Zustellgeheimnisse (Tokens, Webhook-Adresse) liegen verschlüsselt in
+     * `settings` und NICHT hier.
+     */
+    wachhundIntervallMin: 15,
+    alarmRegeln: {
+        preisSprungPct: 15,
+        preisSturz24hPct: 40,
+        liqAbflussPct: 30,
+        sicherheitsIntervallH: 6,
+    },
+    alarmKanaele: {
+        ntfy: { an: false, url: '', topic: 'hype-radar', minSchwere: 'info' },
+        telegram: { an: false, chatId: '', minSchwere: 'warnung' },
+        webhook: { an: false, minSchwere: 'info' },
+    },
     berichtTopN: 7,
     llmStufe: 'gruendlich-mittel',
     llmModus: 'gruendlich',

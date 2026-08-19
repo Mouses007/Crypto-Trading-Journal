@@ -19,6 +19,8 @@ import { leseEinstellungen, schreibeEinstellungen, schreibeSchluessel, maskiere 
 import { scanne, scanneUndBerichte } from './hype-radar/lauf.js'
 import { dexDetails } from './hype-radar/quellen.js'
 import { ladeListungen, pruefeListung } from './hype-radar/listungen.js'
+import { wachhundLauf } from './hype-radar/wachhund.js'
+import { testZustellung } from './hype-radar/zustellung.js'
 import { stufenNach, benoetigteAnbieter } from './hype-radar/stufen.js'
 import { keySpalte } from './ai-models.js'
 
@@ -185,10 +187,70 @@ export function setupHypeRadarRoutes(app) {
 
     app.delete('/api/hype-radar/favoriten/:id', async (req, res) => {
         try {
-            await getKnex()('hype_favoriten').where('id', Number(req.params.id)).del()
+            const knex = getKnex()
+            const id = Number(req.params.id)
+            await knex('hype_favoriten').where('id', id).del()
+            // Verwaiste Alarme sagen ohne ihren Favoriten nichts mehr aus.
+            await knex('hype_alarme').where('favoritId', id).del()
             res.json({ ok: true })
         } catch (e) {
             res.status(500).json({ error: 'Favorit konnte nicht entfernt werden' })
+        }
+    })
+
+    // Stumm: beobachten ja, melden nein.
+    app.patch('/api/hype-radar/favoriten/:id', async (req, res) => {
+        try {
+            const stumm = req.body?.stumm ? 1 : 0
+            await getKnex()('hype_favoriten').where('id', Number(req.params.id)).update({ stumm })
+            res.json({ ok: true, stumm })
+        } catch (e) {
+            res.status(500).json({ error: 'Favorit konnte nicht geändert werden' })
+        }
+    })
+
+    // ── Alarme ──────────────────────────────────────────────────────────
+    app.get('/api/hype-radar/alarme', async (req, res) => {
+        try {
+            const knex = getKnex()
+            let q = knex('hype_alarme as a')
+                .leftJoin('hype_favoriten as f', 'f.id', 'a.favoritId')
+                .select('a.*', 'f.symbol', 'f.chain')
+                .orderBy('a.erstelltAm', 'desc')
+                .limit(Math.min(200, Number(req.query.limit) || 50))
+            if (req.query.ungelesen === '1') q = q.where('a.gelesen', 0)
+            const zeilen = await q
+            res.json(zeilen.map((z) => ({ ...z, daten: sicherParse(z.daten, {}) })))
+        } catch (e) {
+            res.status(500).json({ error: 'Alarme konnten nicht geladen werden' })
+        }
+    })
+
+    app.patch('/api/hype-radar/alarme/gelesen', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const ids = req.body?.ids
+            if (ids === 'alle') await knex('hype_alarme').update({ gelesen: 1 })
+            else if (Array.isArray(ids) && ids.length) {
+                await knex('hype_alarme').whereIn('id', ids.map(Number)).update({ gelesen: 1 })
+            }
+            res.json({ ok: true })
+        } catch (e) {
+            res.status(500).json({ error: 'Alarme konnten nicht markiert werden' })
+        }
+    })
+
+    /*
+     * Test-Knopf: eine harmlose Meldung über die ECHTEN Kanäle. Wer ntfy oder
+     * den Home-Assistant-Webhook einrichtet, will sofort wissen, ob der Draht
+     * steht — nicht erst beim ersten echten Absturz eines Coins.
+     */
+    app.post('/api/hype-radar/alarme/test', async (req, res) => {
+        try {
+            const einst = await leseEinstellungen()
+            res.json(await testZustellung(einst))
+        } catch (e) {
+            res.status(500).json({ error: 'Test fehlgeschlagen' })
         }
     })
 
@@ -363,6 +425,44 @@ export function startHypeTakt() {
     }, TAKT_MS)
 
     // Der Takt darf den Prozess nicht am Beenden hindern.
+    uhr.unref?.()
+    return () => clearInterval(uhr)
+}
+
+/**
+ * Der Wachhund-Takt — getrennt vom Scan-Takt.
+ *
+ * Beobachtung braucht Frische (Viertelstunden), Berichte brauchen sie nicht
+ * (Stunden). Ein gemeinsamer Takt müsste sich für eine der beiden Fristen
+ * entscheiden und wäre für die andere falsch. Der DB-Anspruch verhindert wie
+ * überall den Doppellauf von NAS und Entwicklungsrechner — doppelt getaktete
+ * Alarme wären doppelt zugestellte Alarme.
+ */
+export function startWachhundTakt() {
+    const TAKT_MS = 5 * 60 * 1000
+    let laeuft = false
+
+    const uhr = setInterval(async () => {
+        if (laeuft) return
+        try {
+            const einst = await leseEinstellungen()
+            const minuten = Math.max(5, Number(einst.wachhundIntervallMin) || 15)
+            if (!(await beansprucheAufgabe('hype_wachhund', minuten * 60 * 1000))) return
+
+            laeuft = true
+            try {
+                const { geprueft, ausgeloest } = await wachhundLauf()
+                if (ausgeloest) console.log(` -> Hype-Wachhund: ${ausgeloest} Alarm(e) bei ${geprueft} Favoriten`)
+            } finally {
+                laeuft = false
+            }
+        } catch (e) {
+            laeuft = false
+            logWarn('hype-radar', `Wachhund-Takt: ${e.message}`)
+            await meldeFehler('hype_wachhund', e.message).catch(() => {})
+        }
+    }, TAKT_MS)
+
     uhr.unref?.()
     return () => clearInterval(uhr)
 }

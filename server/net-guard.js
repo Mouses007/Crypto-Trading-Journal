@@ -122,12 +122,65 @@ export async function pruefeOeffentlicheUrl(rawUrl) {
 }
 
 /**
+ * Antwortstatus, bei denen sich ein zweiter Anlauf lohnt.
+ *
+ * Dass hier **404** steht, sieht falsch aus und ist es nicht: YouTube liefert
+ * für `feeds/videos.xml` in etwa der Hälfte aller Abrufe einen 404, dessen
+ * Rumpf Googles allgemeine Fehlerseite mit dem Titel „Error 500 (Server
+ * Error)" enthält — ein Fehler ihrer Zustellschicht, kein „gibt es nicht".
+ * Gemessen am 19.08.2026: zehn Abrufe desselben, gültigen Kanals ergaben
+ * 200/500/200/404/404/404/200/200/200/404, unabhängig vom User-Agent.
+ * Ein einzelner Anlauf liess deshalb reihum Quellen als kaputt erscheinen,
+ * die es nicht sind.
+ *
+ * Nicht dabei sind 401/403/410: ein fehlender Zugang oder eine gelöschte
+ * Adresse wird durch Wiederholen nicht besser, sie kostet nur Zeit.
+ */
+const WIEDERHOLBAR = new Set([404, 408, 425, 429, 500, 502, 503, 504])
+
+/**
+ * Wartezeiten zwischen den Anläufen; der letzte Wert gilt für alle weiteren.
+ *
+ * Nicht kürzer: die Fehlschläge kommen in Serie, nicht unabhängig voneinander
+ * (vermutlich derselbe Endpunkt über dieselbe offene Verbindung). Gemessen am
+ * YouTube-Feed bei 50 % Fehlerquote je Einzelabruf — mit 400/1200 ms kamen
+ * 18 von 22 Abrufen durch, mit längeren Pausen 12 von 12. Beide Stichproben
+ * sind klein; deshalb die Mitte statt der Bestwert-Einstellung.
+ */
+const WARTEN_MS = [800, 2500]
+
+/**
  * Text abrufen — mit Prüfung, eigener Umleitungsverfolgung und Grössengrenze.
+ *
+ * Vorübergehende Fehler werden bis zu `versuche` Mal wiederholt (siehe
+ * `WIEDERHOLBAR`). Endgültiges — gesperrtes Ziel, zu grosse Antwort, 403 —
+ * fliegt sofort, ohne zweiten Anlauf.
+ */
+export async function holeText(rawUrl, { timeout = HTTP_TIMEOUT, versuche = 3 } = {}) {
+    const anlaeufe = Math.max(1, Number(versuche) || 1)
+    let letzter
+    for (let versuch = 0; versuch < anlaeufe; versuch++) {
+        if (versuch) {
+            const warten = WARTEN_MS[versuch - 1] ?? WARTEN_MS[WARTEN_MS.length - 1]
+            await new Promise(r => setTimeout(r, warten))
+        }
+        try {
+            return await einAbruf(rawUrl, timeout)
+        } catch (e) {
+            if (!e.wiederholbar) throw e
+            letzter = e
+        }
+    }
+    throw letzter
+}
+
+/**
+ * Ein einzelner Anlauf.
  *
  * Die Umleitungen werden selbst verfolgt, weil `fetch` sonst still einer
  * Weiterleitung auf 127.0.0.1 folgen würde und die Prüfung damit umgangen wäre.
  */
-export async function holeText(rawUrl, { timeout = HTTP_TIMEOUT } = {}) {
+async function einAbruf(rawUrl, timeout) {
     let ziel = String(rawUrl || '').trim()
 
     for (let sprung = 0; sprung <= MAX_UMLEITUNGEN; sprung++) {
@@ -145,6 +198,11 @@ export async function holeText(rawUrl, { timeout = HTTP_TIMEOUT } = {}) {
                     Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
                 },
             })
+        } catch (e) {
+            // Abbruch durch die Zeitgrenze und Netzfehler sind beide
+            // vorübergehend — der nächste Anlauf darf sie sehen.
+            e.wiederholbar = true
+            throw e
         } finally {
             clearTimeout(timer)
         }
@@ -159,6 +217,7 @@ export async function holeText(rawUrl, { timeout = HTTP_TIMEOUT } = {}) {
         if (!antwort.ok) {
             const e = new Error(`HTTP ${antwort.status}`)
             e.status = antwort.status
+            e.wiederholbar = WIEDERHOLBAR.has(antwort.status)
             throw e
         }
 

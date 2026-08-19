@@ -39,10 +39,31 @@
             <div v-if="favoriten.length" class="hypFavLeiste">
                 <span class="hypFavTitel"><i class="uil uil-star me-1"></i>{{ t('hype.favoriten') }}</span>
                 <button v-for="f in favoriten" :key="f.id" class="hypFavChip"
-                    :class="{ aktiv: liveOffen?.favorit?.id === f.id }"
+                    :class="{ aktiv: liveOffen?.favorit?.id === f.id, stumm: f.stumm }"
                     @click="liveOeffnen(f)">
-                    {{ f.symbol }}<span class="hypFavKette">{{ f.chain }}</span>
+                    <i v-if="f.stumm" class="uil uil-bell-slash me-1"></i>{{ f.symbol }}<span class="hypFavKette">{{ f.chain }}</span>
+                    <span v-if="ungelesenJeFavorit[f.id]" class="hypAlarmZahl">{{ ungelesenJeFavorit[f.id] }}</span>
                 </button>
+            </div>
+
+            <!-- ── Alarme ────────────────────────────────────────── -->
+            <div v-if="alarme.length" class="hypBlock">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <h6 class="hypTitel mb-0">
+                        <i class="uil uil-bell me-1"></i>{{ t('hype.alarmeTitel') }}
+                        <span v-if="ungeleseneAlarme.length" class="badge bg-danger hypBadge ms-1">{{ ungeleseneAlarme.length }}</span>
+                    </h6>
+                    <button v-if="ungeleseneAlarme.length" class="btn btn-sm btn-outline-secondary py-0 ms-auto"
+                        @click="alarmeGelesen">{{ t('hype.alleGelesen') }}</button>
+                </div>
+                <div class="hypAlarmListe">
+                    <div v-for="a in alarme.slice(0, 12)" :key="a.id" class="hypAlarm"
+                        :class="[a.schwere, { gelesen: a.gelesen }]">
+                        <span class="hypAlarmSchwere">{{ t('hype.schwere_' + a.schwere) }}</span>
+                        <span class="hypAlarmText">{{ a.meldung }}</span>
+                        <span class="hypAlarmZeit">{{ zeitpunkt(a.erstelltAm) }}</span>
+                    </div>
+                </div>
             </div>
 
             <!-- Kachel-Detail eines Favoriten: Livedaten -->
@@ -56,6 +77,11 @@
                     <span class="ms-auto"></span>
                     <a v-if="liveOffen.dexUrl" class="hypLink me-3" :href="liveOffen.dexUrl"
                         target="_blank" rel="noopener noreferrer">DexScreener ↗</a>
+                    <button class="btn btn-sm py-0 me-2"
+                        :class="liveOffen.favorit.stumm ? 'btn-warning' : 'btn-outline-secondary'"
+                        :title="t('hype.stummHinweis')" @click="stummUmschalten(liveOffen.favorit)">
+                        <i class="uil" :class="liveOffen.favorit.stumm ? 'uil-bell-slash' : 'uil-bell'"></i>
+                    </button>
                     <button class="btn btn-sm btn-outline-danger py-0 me-2"
                         :title="t('hype.favEntfernen')" @click="favEntfernen(liveOffen.favorit)">
                         <i class="uil uil-star-half-alt"></i>
@@ -434,6 +460,111 @@
                     </div>
                 </div>
 
+                <!-- Wachhund & Alarme -->
+                <h6 class="hypTitel mt-4">{{ t('hype.wachhundTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.wachhundHinweis') }}</p>
+                <div class="row g-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.wachhundTakt') }}</label>
+                        <select v-model.number="einst.wachhundIntervallMin" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option :value="5">5 min</option>
+                            <option :value="15">15 min</option>
+                            <option :value="30">30 min</option>
+                            <option :value="60">60 min</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelPreisSprung') }}</label>
+                        <input v-model.number="einst.alarmRegeln.preisSprungPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelPreis24h') }}</label>
+                        <input v-model.number="einst.alarmRegeln.preisSturz24hPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.regelLiqAbfluss') }}</label>
+                        <input v-model.number="einst.alarmRegeln.liqAbflussPct" type="number" min="1"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+
+                <!-- Zustellkanäle -->
+                <h6 class="hypTitel mt-4">{{ t('hype.kanaeleTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.kanaeleHinweis') }}</p>
+
+                <div class="hypKanal">
+                    <div class="form-check form-switch">
+                        <input id="hypKanNtfy" class="form-check-input" type="checkbox"
+                            v-model="einst.alarmKanaele.ntfy.an" @change="speichern">
+                        <label class="form-check-label" for="hypKanNtfy"><strong>ntfy</strong></label>
+                    </div>
+                    <div v-if="einst.alarmKanaele.ntfy.an" class="hypKanalFelder">
+                        <input v-model="einst.alarmKanaele.ntfy.url" class="form-control form-control-sm"
+                            :placeholder="t('hype.ntfyUrl')" @change="speichern">
+                        <input v-model="einst.alarmKanaele.ntfy.topic" class="form-control form-control-sm"
+                            placeholder="Topic" @change="speichern">
+                        <input v-model="einst.schluessel.ntfyToken" type="password" class="form-control form-control-sm"
+                            :placeholder="t('hype.tokenOptional')" @change="speichern">
+                        <select v-model="einst.alarmKanaele.ntfy.minSchwere" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option value="info">{{ t('hype.abInfo') }}</option>
+                            <option value="warnung">{{ t('hype.abWarnung') }}</option>
+                            <option value="kritisch">{{ t('hype.abKritisch') }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="hypKanal">
+                    <div class="form-check form-switch">
+                        <input id="hypKanTg" class="form-check-input" type="checkbox"
+                            v-model="einst.alarmKanaele.telegram.an" @change="speichern">
+                        <label class="form-check-label" for="hypKanTg"><strong>Telegram</strong></label>
+                    </div>
+                    <div v-if="einst.alarmKanaele.telegram.an" class="hypKanalFelder">
+                        <input v-model="einst.schluessel.telegramToken" type="password" class="form-control form-control-sm"
+                            :placeholder="t('hype.botToken')" @change="speichern">
+                        <input v-model="einst.alarmKanaele.telegram.chatId" class="form-control form-control-sm"
+                            placeholder="Chat-ID" @change="speichern">
+                        <select v-model="einst.alarmKanaele.telegram.minSchwere" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option value="info">{{ t('hype.abInfo') }}</option>
+                            <option value="warnung">{{ t('hype.abWarnung') }}</option>
+                            <option value="kritisch">{{ t('hype.abKritisch') }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="hypKanal">
+                    <div class="form-check form-switch">
+                        <input id="hypKanWh" class="form-check-input" type="checkbox"
+                            v-model="einst.alarmKanaele.webhook.an" @change="speichern">
+                        <label class="form-check-label" for="hypKanWh">
+                            <strong>Webhook</strong>
+                            <span class="hypHinweisKlein">{{ t('hype.webhookHa') }}</span>
+                        </label>
+                    </div>
+                    <div v-if="einst.alarmKanaele.webhook.an" class="hypKanalFelder">
+                        <input v-model="einst.schluessel.webhookUrl" type="password" class="form-control form-control-sm hypBreit"
+                            :placeholder="t('hype.webhookUrl')" @change="speichern">
+                        <select v-model="einst.alarmKanaele.webhook.minSchwere" class="form-select form-select-sm"
+                            @change="speichern">
+                            <option value="info">{{ t('hype.abInfo') }}</option>
+                            <option value="warnung">{{ t('hype.abWarnung') }}</option>
+                            <option value="kritisch">{{ t('hype.abKritisch') }}</option>
+                        </select>
+                        <div class="hypHinweis mb-0" style="flex-basis: 100%">{{ t('hype.webhookPayload') }}</div>
+                    </div>
+                </div>
+
+                <button class="btn btn-sm btn-outline-secondary mt-2" :disabled="testLaeuft" @click="kanaeleTesten">
+                    <span v-if="testLaeuft" class="spinner-border spinner-border-sm me-1"></span>
+                    {{ t('hype.kanaeleTesten') }}
+                </button>
+                <span v-if="testErgebnis" class="ms-2 small">{{ testErgebnis }}</span>
+
                 <!-- KI-Stufe -->
                 <h6 class="hypTitel mt-4">{{ t('hype.kiTitel') }}</h6>
                 <p class="hypHinweis">{{ t('hype.kiHinweis') }}</p>
@@ -593,6 +724,62 @@ async function liveNachladen(id) {
 function liveSchliessen() {
     liveOffen.value = null
     if (liveTakt) { clearInterval(liveTakt); liveTakt = null }
+}
+
+// ── Alarme ──────────────────────────────────────────────────────────────
+const alarme = ref([])
+const testLaeuft = ref(false)
+const testErgebnis = ref('')
+let alarmTakt = null
+
+const ungeleseneAlarme = computed(() => alarme.value.filter((a) => !a.gelesen))
+const ungelesenJeFavorit = computed(() => {
+    const zaehler = {}
+    for (const a of ungeleseneAlarme.value) zaehler[a.favoritId] = (zaehler[a.favoritId] || 0) + 1
+    return zaehler
+})
+
+async function ladeAlarme() {
+    try {
+        const r = await axios.get('/api/hype-radar/alarme')
+        alarme.value = r.data || []
+    } catch (e) {
+        logWarn('hype-radar', 'Alarme konnten nicht geladen werden', e)
+    }
+}
+
+async function alarmeGelesen() {
+    try {
+        await axios.patch('/api/hype-radar/alarme/gelesen', { ids: 'alle' })
+        await ladeAlarme()
+    } catch (e) {
+        logWarn('hype-radar', 'Alarme konnten nicht markiert werden', e)
+    }
+}
+
+async function stummUmschalten(f) {
+    try {
+        const r = await axios.patch(`/api/hype-radar/favoriten/${f.id}`, { stumm: !f.stumm })
+        f.stumm = r.data.stumm
+        await ladeFavoriten()
+        if (liveOffen.value?.favorit?.id === f.id) liveOffen.value.favorit.stumm = r.data.stumm
+    } catch (e) {
+        logWarn('hype-radar', 'Stumm-Schalter fehlgeschlagen', e)
+    }
+}
+
+async function kanaeleTesten() {
+    testLaeuft.value = true
+    testErgebnis.value = ''
+    try {
+        const r = await axios.post('/api/hype-radar/alarme/test')
+        testErgebnis.value = Object.entries(r.data)
+            .map(([kanal, stand]) => `${kanal}: ${stand}`).join(' · ')
+    } catch (e) {
+        testErgebnis.value = t('hype.testFehlgeschlagen')
+    } finally {
+        testLaeuft.value = false
+    }
 }
 
 const preis = (p) => {
@@ -783,8 +970,12 @@ async function ladeEinstellungen() {
 async function speichern() {
     if (!einst.value) return
     try {
-        const { schluessel, ...rest } = einst.value
-        const r = await axios.put('/api/hype-radar/einstellungen', rest)
+        /*
+         * Die Geheimnisse gehen MIT: der Server übernimmt nur Werte ohne
+         * Maskierungspunkte — ein unangetastetes Feld überschreibt also nie
+         * den gespeicherten Schlüssel, ein neu eingetipptes schon.
+         */
+        const r = await axios.put('/api/hype-radar/einstellungen', einst.value)
         fehlendeSchluessel.value = r.data?.fehlendeSchluessel || []
     } catch (e) {
         logWarn('hype-radar', 'Einstellungen konnten nicht gespeichert werden', e)
@@ -977,15 +1168,19 @@ const beiGroesse = () => diagramm?.resize()
 
 onMounted(async () => {
     window.addEventListener('resize', beiGroesse)
-    await Promise.all([ladeKandidaten(), ladeBerichte(), ladeEinstellungen(), ladeFavoriten()])
+    await Promise.all([ladeKandidaten(), ladeBerichte(), ladeEinstellungen(), ladeFavoriten(), ladeAlarme()])
+    // Der Wachhund läuft serverseitig weiter — die Liste holt seine Funde in
+    // gemächlichem Takt nach, solange die Seite offen ist.
+    alarmTakt = setInterval(ladeAlarme, 60000)
 })
 
 onBeforeUnmount(() => {
     window.removeEventListener('resize', beiGroesse)
     strom?.abort()
     diagramm?.dispose()
-    // Der Takt der Livedaten darf die Seite nicht überleben.
+    // Die Takte dürfen die Seite nicht überleben.
     if (liveTakt) clearInterval(liveTakt)
+    if (alarmTakt) clearInterval(alarmTakt)
 })
 
 watch(locale, () => zeichne())
@@ -1191,6 +1386,87 @@ watch(locale, () => zeichne())
     font-size: .64rem;
     opacity: .6;
     margin-left: .3rem;
+}
+
+.hypFavChip.stumm {
+    opacity: .55;
+}
+
+.hypAlarmZahl {
+    display: inline-block;
+    min-width: 1.1rem;
+    padding: 0 .25rem;
+    margin-left: .35rem;
+    border-radius: 999px;
+    background: var(--red-color, #e06c75);
+    color: #fff;
+    font-size: .62rem;
+    text-align: center;
+}
+
+.hypAlarmListe {
+    display: grid;
+    gap: .3rem;
+}
+
+.hypAlarm {
+    display: flex;
+    align-items: baseline;
+    gap: .6rem;
+    padding: .4rem .6rem;
+    border-radius: 6px;
+    background: var(--black-bg-2, rgba(255, 255, 255, .03));
+    border-left: 3px solid var(--grey-color, #9aa0a6);
+    font-size: .8rem;
+}
+
+.hypAlarm.warnung { border-left-color: var(--orange-color, #ffb300); }
+.hypAlarm.kritisch { border-left-color: var(--red-color, #e06c75); }
+.hypAlarm.gelesen { opacity: .55; }
+
+.hypAlarmSchwere {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .64rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--grey-color, #9aa0a6);
+    flex: none;
+    width: 4.5rem;
+}
+
+.hypAlarm.kritisch .hypAlarmSchwere { color: var(--red-color, #e06c75); }
+.hypAlarm.warnung .hypAlarmSchwere { color: var(--orange-color, #ffb300); }
+
+.hypAlarmText { flex: 1; }
+
+.hypAlarmZeit {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .68rem;
+    color: var(--grey-color, #9aa0a6);
+    flex: none;
+}
+
+.hypKanal {
+    padding: .5rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, .06);
+}
+
+.hypKanalFelder {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-top: .4rem;
+    padding-left: 2.4rem;
+}
+
+.hypKanalFelder .form-control,
+.hypKanalFelder .form-select {
+    width: auto;
+    min-width: 9rem;
+}
+
+.hypKanalFelder .hypBreit {
+    min-width: 22rem;
 }
 
 .hypLive {
