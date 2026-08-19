@@ -67,7 +67,7 @@ export async function closeDb() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse']
     let fixed = 0
 
     for (const table of tables) {
@@ -113,7 +113,8 @@ async function fixPostgresSequences(knex) {
 // v7: Coin-Radar — Läufe, Zeilen, Einstellungen; `quelle` an den Favoriten.
 // v8: Ausführungsgüte am Coin-Radar (Slippage, Tiefe, beste Börse). Additiv;
 //     ein älterer Codestand ignoriert die Spalten und läuft weiter.
-const SCHEMA_VERSION = 8
+// v9: `radar_ergebnisse` — Erfolgskontrolle beider Radare. Rein additiv.
+const SCHEMA_VERSION = 9
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2218,6 +2219,59 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('coinradar_zeilen', 'slippageVerkaufBp', (t) => t.double('slippageVerkaufBp'))
     await addColumnIfNotExists('coinradar_zeilen', 'tiefe25Bp', (t) => t.double('tiefe25Bp'))
     await addColumnIfNotExists('coinradar_zeilen', 'jeBoerse', (t) => t.text('jeBoerse').defaultTo('{}'))
+
+    /*
+     * Erfolgskontrolle beider Radare (Audit R-06).
+     *
+     * Der bisher ehrlichste Wert des Coin-Radars ist die Rangkorrelation zum
+     * Vorlauf — nur misst die BEHARRLICHKEIT, nicht Nutzen. Eine stabile
+     * Rangfolge kann stabil falsch sein, und alle Gewichte und Schwellen
+     * beruhen bis heute auf plausiblen Regeln plus Querschnittsmessungen.
+     *
+     * Diese Tabelle schliesst die Lücke: Zu jedem bewerteten Coin wird
+     * festgehalten, was danach WIRKLICH geschah. Erst damit lässt sich fragen,
+     * ob die Note etwas taugt — und erst dann ist jede weitere Feinjustierung
+     * mehr als Geschmackssache.
+     *
+     * Bewusst eine Zeile je Horizont statt einer breiten Zeile: Die Messungen
+     * fallen zu verschiedenen Zeiten an, und eine offene Zeile ist der
+     * einfachste Auftrag für den Takt.
+     */
+    if (!(await knex.schema.hasTable('radar_ergebnisse'))) {
+        await knex.schema.createTable('radar_ergebnisse', (t) => {
+            t.increments('id').primary()
+            t.string('art').notNullable()            // coinradar | hype
+            t.integer('laufId').defaultTo(0)
+            t.string('symbol').notNullable()
+            t.string('chain').defaultTo('')          // nur beim Hype-Radar
+            t.string('contract').defaultTo('')
+            // Was die Seite BEHAUPTET hat — eingefroren, damit ein späterer
+            // Gewichtswechsel die Vergangenheit nicht umschreibt.
+            t.integer('rang').defaultTo(0)
+            t.integer('note')
+            t.integer('noteAusfuehrung')
+            t.integer('safetyScore')
+            t.string('horizont').notNullable()       // 15m | 1h | 4h | 1d | 7d | 30d
+            t.bigInteger('erstelltAm').notNullable() // Zeitpunkt der Aussage
+            t.bigInteger('faelligAm').notNullable()  // wann gemessen werden soll
+            t.bigInteger('gemessenAm').defaultTo(0)
+            t.string('status').defaultTo('offen')    // offen | gemessen | fehlgeschlagen
+            // Was danach geschah. Alles nullable — „nicht gemessen" ist eine
+            // eigene Aussage und darf nicht als 0 erscheinen (siehe R-10).
+            t.double('preisStart')
+            t.double('preisEnde')
+            t.double('renditePct')
+            t.double('maePct')                       // schlechtester Punkt dazwischen
+            t.double('mfePct')                       // bester Punkt dazwischen
+            t.double('liquiditaetStart')
+            t.double('liquiditaetEnde')
+            t.integer('nochHandelbar')               // 1/0/null
+            t.text('fehler').defaultTo('')
+            t.unique(['art', 'laufId', 'symbol', 'horizont'], 'uq_radar_erg')
+            t.index(['status', 'faelligAm'], 'idx_radar_erg_faellig')
+        })
+        console.log(' -> Created table: radar_ergebnisse')
+    }
 
     // ── KI-Verbrauch ─────────────────────────────────────────────────────
 

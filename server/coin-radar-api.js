@@ -16,6 +16,8 @@ import { beansprucheAufgabe, beansprucheFuehrung, gibFuehrungFrei, meldeFehler }
 import { leseEinstellungen, schreibeEinstellungen, VORGABEN } from './coin-radar/einstellungen.js'
 import { fuehreLaufAus } from './coin-radar/lauf.js'
 import { erzeugeEinordnung } from './coin-radar/einordnung.js'
+import { legeAnCoinRadar } from './radar-ergebnisse.js'
+import { werteAus } from './radar-guete.js'
 
 /** Gegen den Doppelklick im selben Prozess. */
 let laufAktiv = false
@@ -135,6 +137,31 @@ export function setupCoinRadarRoutes(app) {
         }
     })
 
+    /**
+     * Erfolgskontrolle: taugt die Rangfolge überhaupt etwas?
+     *
+     * Die Rangkorrelation zum Vorlauf misst Beharrlichkeit; DIESE Zahlen
+     * messen Nutzen. Sie stehen bewusst als eigener Endpunkt und nicht neben
+     * der Rangliste — wer sie liest, soll die Absicht dahinter mitbekommen.
+     */
+    app.get('/api/coin-radar/guete', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const seit = Date.now() - (Number(req.query.tage) || 7) * 24 * 3600e3
+            const zeilen = await knex('radar_ergebnisse')
+                .where('art', 'coinradar').andWhere('erstelltAm', '>=', seit)
+            const horizonte = [...new Set(zeilen.map((z) => z.horizont))]
+            res.json({
+                seit,
+                gesamt: zeilen.length,
+                jeHorizont: horizonte.map((h) => werteAus(zeilen.filter((z) => z.horizont === h), h)),
+            })
+        } catch (e) {
+            logWarn('coin-radar', `Güte lesen: ${e.message}`)
+            res.status(500).json({ error: 'Erfolgskontrolle konnte nicht geladen werden' })
+        }
+    })
+
     // ── Lauf starten ────────────────────────────────────────────────────
     app.post('/api/coin-radar/lauf', async (req, res) => {
         if (laufAktiv) {
@@ -241,6 +268,17 @@ async function laufeMitZustand(einst, ausloeser, melde, istAbgebrochen = () => f
             fertigMelden({ laufId, abgebrochen: true })
             return { laufId, abgebrochen: true }
         }
+
+        /*
+         * Erfolgskontrolle anmelden (R-06).
+         *
+         * Muss VOR der KI-Einordnung passieren und darf nichts kosten: Die
+         * Aufträge halten fest, was die Seite gerade behauptet hat. Schlägt es
+         * fehl, ist der Lauf trotzdem gültig — die Kontrolle ist eine
+         * Beobachtung über den Lauf, nicht Teil von ihm.
+         */
+        await legeAnCoinRadar(laufId).catch((e) =>
+            logWarn('coin-radar', `Erfolgskontrolle nicht angemeldet: ${e.message}`))
 
         // Die Einordnung NACH dem Abschluss: Sie kostet, und die Rangliste ist
         // das Produkt. Scheitert sie, steht der Lauf trotzdem als „fertig" da.

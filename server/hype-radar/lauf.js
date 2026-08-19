@@ -18,6 +18,7 @@ import { bewerte, STANDARD_GEWICHTE, STANDARD_NARRATIVE } from './bewertung.js'
 import { pruefe, holeGoPlus, STANDARD_SICHERHEIT } from './sicherheit.js'
 import { erzeugeBericht } from './bericht.js'
 import { ladeListungen, pruefeListung } from './listungen.js'
+import { legeAnHype } from '../radar-ergebnisse.js'
 
 /** Wie viele Kandidaten in die (teure) Sicherheitsprüfung gehen. */
 const MAX_PRUEFUNGEN = 40
@@ -276,6 +277,20 @@ export async function scanne(einst, melde = () => {}) {
             await knex('hype_candidates').insert(zeilen.slice(i, i + 25))
         }
     }
+
+    /*
+     * Erfolgskontrolle anmelden (R-06).
+     *
+     * Nur die Funde, die die Sicherheitsprüfung BESTANDEN haben — das sind
+     * die, über die der Radar eine Aussage macht. Nach 1, 7 und 30 Tagen wird
+     * nachgesehen, was daraus wurde: Preis, Liquidität, und die einzige Frage,
+     * die bei jungen Token wirklich zählt — gibt es das Paar überhaupt noch.
+     *
+     * Schlägt es fehl, bleibt der Lauf gültig: Die Kontrolle ist eine
+     * Beobachtung ÜBER den Lauf, nicht Teil von ihm.
+     */
+    await legeAnHype(jetzt).catch((e) =>
+        logWarn('hype-radar', `Erfolgskontrolle nicht angemeldet: ${e.message}`))
 
     melde({ schritt: 'fertig', bestanden: bestanden.length, verworfen: verworfen.length })
     return { bestanden, verworfen, quellenStand }
