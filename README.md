@@ -6,11 +6,15 @@ A local, privacy-focused trading journal for **crypto futures trading** — Bitu
 
 ## Screenshots
 
-![Dashboard](docs/dashboard.png)
+![Dashboard — P&L overview, win rate, fees](assets/screenshots/dashboard.png)
 
-![Daily View](docs/daily.png)
+![Trading performance charts with MFE analysis](assets/screenshots/performance.png)
 
-![Incoming Positions](docs/incoming.png)
+![Marktradar — live market tiles: Fear & Greed, funding rates, liquidations](assets/screenshots/marktradar.png)
+
+![Live trading window — bookmap, liquidation map, session plan](assets/screenshots/livetrading.png)
+
+![Incoming positions — live position monitoring with SL/TP protocol](assets/screenshots/incoming.png)
 
 ---
 

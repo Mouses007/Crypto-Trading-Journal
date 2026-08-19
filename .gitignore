@@ -24,8 +24,9 @@ _levmap-*.mjs
 Screenshots/
 .claude/
 REFACTORING-ANALYSE.md
-docs/ARCHITECTURE-AUDIT.md
-docs/TEST-ANALYSE.md
+# Interne Audits/Berichte — nie ins öffentliche Repo
+internal/
+_audit-*.md
 ANLEITUNG-INSTALLATION.txt
 _ctj_update.bat
 
