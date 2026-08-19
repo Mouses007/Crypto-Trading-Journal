@@ -1026,9 +1026,18 @@ const stundenBeginn = (ms) => Math.floor(ms / 3600000) * 3600000
  * ACHTUNG bei der Seite: `seite = 1` heisst, die Börse hat GEKAUFT, also wurde
  * ein SHORT glattgestellt. Wer das dreht, färbt die ganze Kachel falsch.
  */
-export async function holeLiquidationen(stunden = 24) {
+/**
+ * @param {number} stunden Zeitfenster
+ * @param {string} [symbol] Nur dieses Symbol. Leer/fehlend = marktweit — das
+ *   ist die Vorgabe und der eigentliche Zweck der Kachel; die Einengung ist ein
+ *   Knopf in der Kachel, keine automatische Folge der Symbolwahl. Gefiltert
+ *   wird in der Abfrage, nicht nach dem Auspacken: sonst würde für ein Symbol
+ *   trotzdem jede Stundenzeile des ganzen Marktes entpackt.
+ */
+export async function holeLiquidationen(stunden = 24, symbol = '') {
     const h = Math.max(1, Math.min(72, Number(stunden) || 24))
-    return ausCache(`liq|${h}`, 60 * 1000, async () => {
+    const sym = String(symbol || '').trim().toUpperCase() || null
+    return ausCache(`liq|${h}|${sym || '*'}`, 60 * 1000, async () => {
         const { promisify } = await import('util')
         const zlib = await import('zlib')
         const gunzip = promisify(zlib.gunzip)
@@ -1040,10 +1049,11 @@ export async function holeLiquidationen(stunden = 24) {
         // 'liq' = Binance forceOrder (gedrosselte Stichprobe), 'liqB' = Bybit
         // allLiquidation (ungedrosselt). Beide zusammen ergeben das Bild;
         // die Seiten-Konvention ist beim Schreiben bereits vereinheitlicht.
-        const zeilen = await knex('live_recordings')
+        const abfrage = knex('live_recordings')
             .whereIn('kind', ['liq', 'liqB'])
             .andWhere('hourStart', '>=', stundenBeginn(von))
-            .orderBy('hourStart')
+        if (sym) abfrage.andWhere('symbol', sym)
+        const zeilen = await abfrage.orderBy('hourStart')
 
         const jeSymbol = new Map()
         const jeStunde = new Map()
@@ -1098,6 +1108,8 @@ export async function holeLiquidationen(stunden = 24) {
             // tatsächlich Daten im Fenster liegen
             aktiv: Number(s?.liveRecordAllLiq) === 1 || anzahl > 0,
             stunden: h,
+            // null = marktweit. Die Kachel liest daran ab, welcher Knopf leuchtet.
+            symbol: sym,
             seit: frueheste,
             symbole: [...jeSymbol.values()].sort((a, b) => (b.longUsd + b.shortUsd) - (a.longUsd + a.shortUsd)),
             verlauf: [...jeStunde.values()].sort((a, b) => a.t - b.t),
@@ -2016,7 +2028,7 @@ export function setupMarktradarRoutes(app) {
     app.get('/api/marktradar/liquidationen', async (req, res) => {
         try {
             if (req.query.force === '1') verwerfeCache('liq|')
-            sendeRadar(res, await holeLiquidationen(req.query.stunden))
+            sendeRadar(res, await holeLiquidationen(req.query.stunden, req.query.symbol))
         } catch (e) {
             sendRadarError(res, e, 'Liquidationen')
         }

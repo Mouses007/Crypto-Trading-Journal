@@ -2012,6 +2012,7 @@
   "marktradar": {
     "title": "Marktradar",
     "symbol": "Symbol",
+    "symbolHinweis": "Gilt für Marktmechanik, Long/Short + OI und Gesamtlage — die übrigen Kacheln sind marktweit",
     "cards": "Kacheln",
     "refreshAll": "Alle aktualisieren",
     "refresh": "Aktualisieren",
@@ -2137,6 +2138,9 @@
       "short": "Shorts liquidiert",
       "events": "Ereignisse",
       "perSymbol": "Je Symbol",
+      "scope": "Umfang",
+      "scopeMarket": "Markt",
+      "empty": "Für {symbol} liegt im Zeitraum keine Aufzeichnung vor.",
       "biggest": "Grösste Einzelereignisse",
       "since": "Erfasst seit {zeit}.",
       "inactive": "Liquidationen werden gerade nicht aufgezeichnet. Ohne Aufzeichnung gibt es hier nichts zu zeigen — eine freie Fremdquelle für aggregierte Liquidationen existiert nicht.",

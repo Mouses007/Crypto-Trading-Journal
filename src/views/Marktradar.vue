@@ -14,6 +14,7 @@ import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PageInfo from '../components/PageInfo.vue'
 import RadarKachel from '../components/RadarKachel.vue'
+import SymbolWahl from '../components/livetrading/SymbolWahl.vue'
 import RadarOverlay from '../components/RadarOverlay.vue'
 import KachelFearGreed from '../components/radar/KachelFearGreed.vue'
 import KachelDominanz from '../components/radar/KachelDominanz.vue'
@@ -238,6 +239,18 @@ watch(() => daten.funding, (d) => {
                 <span :class="['liveDot', 'dot-' + gesamtZustand]"></span>
                 <span class="liveState">{{ t('marktradar.status_' + gesamtZustand) }}</span>
             </div>
+            <!-- Symbolwahl. Sie steuert nur die Kacheln mit
+                 `symbolAbhaengig` (Marktmechanik, Long/Short + OI, Gesamtlage) —
+                 Fear & Greed, Dominanz, Regenbogen und Co. sind marktweit und
+                 kennen gar keinen Coin. Dieselbe Komponente und derselbe
+                 `liveSymbol`-Wert wie im Live-Trading-Fenster: ein Wechsel hier
+                 gilt auch dort. Bisher gab es die Auswahl nur im Seitenmenü der
+                 drei Live-Seiten, der Radar lief also stumm auf dem zuletzt
+                 woanders gewählten Symbol. -->
+            <div class="ltSymbolMitte" :title="t('marktradar.symbolHinweis')">
+                <SymbolWahl />
+            </div>
+
             <div class="liveActions">
                 <div ref="configRef" class="position-relative">
                     <button type="button" class="ctl-pill" @click="showConfigDropdown = !showConfigDropdown">
@@ -307,5 +320,24 @@ watch(() => daten.funding, (d) => {
     /* Anders als die Chart-Seiten hat der Radar keine feste Höhe: das Raster
        darf wachsen und die Seite scrollen. */
     min-height: 300px;
+}
+
+/* Wortgleich zu `.ltSymbolMitte` in Livetrading.vue — der Picker soll auf
+   beiden Seiten an derselben Stelle stehen, sonst springt er beim Wechsel.
+   Absolut zentriert statt per Flex: links der Titel, rechts die Knöpfe, beide
+   verschieden breit; mit `flex: 1` sässe das Symbol optisch daneben. */
+.ltSymbolMitte {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+}
+
+@media (max-width: 991.98px) {
+    /* Kein Platz für drei Blöcke nebeneinander — dann läuft es mit. */
+    .ltSymbolMitte {
+        position: static;
+        transform: none;
+    }
 }
 </style>

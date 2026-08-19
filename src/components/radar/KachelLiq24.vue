@@ -12,6 +12,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
 import dayjs from '../../utils/dayjs-setup.js'
+import { liveSymbol } from '../../stores/live.js'
 
 const props = defineProps({
     daten: { type: Object, default: null },
@@ -19,6 +20,36 @@ const props = defineProps({
 })
 
 const { t } = useI18n()
+const emit = defineEmits(['params'])
+
+/**
+ * Umfang: marktweit oder nur der gewählte Coin.
+ *
+ * Bewusst ein Knopf und nicht `symbolAbhaengig` in der Registry: der Wert
+ * dieser Kachel ist gerade das Marktbild — 500 Mio $ liquidierte Shorts sagen
+ * etwas, das man bei einem einzelnen Coin nie sieht. Wer sie stumm auf das
+ * gewählte Symbol umstellte, nähme ihr genau das und liesse es aussehen, als
+ * sei über Nacht nichts passiert.
+ *
+ * `daten.symbol` (null = marktweit) ist die Wahrheit darüber, was gerade
+ * angezeigt wird — nicht ein zweiter Zustand hier, der davon abdriften könnte.
+ */
+const nurSymbol = computed(() => Boolean(props.daten?.symbol))
+const kurzSymbol = computed(() => String(liveSymbol.value || '').replace(/USDT$/, ''))
+
+function setzeUmfang(einzeln) {
+    emit('params', { symbol: einzeln ? liveSymbol.value : '' })
+}
+
+/**
+ * Steht die Kachel auf einem Coin und wechselt die Symbolwahl der Seite, zieht
+ * sie mit. Der Vergleich gegen `daten.symbol` fängt auch den Fall ab, dass die
+ * gespeicherte Kachel-Einstellung beim Seitenaufruf auf einem alten Coin steht.
+ */
+watch([liveSymbol, () => props.daten?.symbol], () => {
+    const gezeigt = props.daten?.symbol
+    if (gezeigt && liveSymbol.value && gezeigt !== liveSymbol.value) setzeUmfang(true)
+})
 const chartEl = ref(null)
 let chart = null
 let ro = null
@@ -107,6 +138,20 @@ watch(() => props.daten, zeichne)
         </div>
 
         <template v-else>
+            <div class="lqLeiste">
+                <span class="lqLeisteLabel">{{ t('marktradar.liq.scope') }}</span>
+                <button type="button" :class="['ctl-pill', nurSymbol ? '' : 'active']"
+                    @click.stop="setzeUmfang(false)">{{ t('marktradar.liq.scopeMarket') }}</button>
+                <button type="button" :class="['ctl-pill', nurSymbol ? 'active' : '']"
+                    @click.stop="setzeUmfang(true)">{{ kurzSymbol }}</button>
+            </div>
+
+            <!-- Kein Fehler, sondern eine leere Menge: für diesen Coin liegt im
+                 Fenster nichts vor. Ohne den Satz stünden nur Nullen da. -->
+            <p v-if="nurSymbol && !gesamt.anzahl" class="lqLeer">
+                {{ t('marktradar.liq.empty', { symbol: kurz(daten.symbol) }) }}
+            </p>
+
             <div class="lqKopf">
                 <div class="lqZahl">
                     <span class="lqLabel">{{ t('marktradar.liq.long') }}</span>
@@ -130,8 +175,10 @@ watch(() => props.daten, zeichne)
             <div ref="chartEl" class="lqChart"></div>
 
             <template v-if="gross">
-                <div class="lqTabellen">
-                    <div>
+                <div class="lqTabellen" :class="{ einspaltig: nurSymbol }">
+                    <!-- Auf einen Coin eingeengt hätte die Rangliste je Symbol
+                         genau eine Zeile — die Zahl steht schon oben. -->
+                    <div v-if="!nurSymbol">
                         <div class="lqTitel">{{ t('marktradar.liq.perSymbol') }}</div>
                         <div v-for="s in daten.symbole" :key="s.symbol" class="lqZeile">
                             <span>{{ kurz(s.symbol) }}</span>
@@ -195,6 +242,30 @@ watch(() => props.daten, zeichne)
     max-width: 22rem;
 }
 
+.lqLeiste {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding-bottom: 0.35rem;
+}
+
+.lqLeiste .ctl-pill {
+    padding: 0.05rem 0.45rem;
+    font-size: 0.74rem;
+}
+
+.lqLeisteLabel {
+    font-size: 0.72rem;
+    color: var(--white-60);
+    margin-right: 0.15rem;
+}
+
+.lqLeer {
+    margin: 0.2rem 0 0;
+    font-size: 0.8rem;
+    color: var(--white-60);
+}
+
 .lqKopf {
     display: flex;
     gap: 1.2rem;
@@ -241,6 +312,10 @@ watch(() => props.daten, zeichne)
     grid-template-columns: 1fr 1fr;
     gap: 1.2rem;
     margin-top: 0.8rem;
+}
+
+.lqTabellen.einspaltig {
+    grid-template-columns: 1fr;
 }
 
 .lqTitel {

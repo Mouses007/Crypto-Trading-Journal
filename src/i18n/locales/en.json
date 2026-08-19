@@ -2012,6 +2012,7 @@
   "marktradar": {
     "title": "Market radar",
     "symbol": "Symbol",
+    "symbolHinweis": "Applies to market mechanics, long/short + OI and the overall picture — the other cards are market-wide",
     "cards": "Cards",
     "refreshAll": "Refresh all",
     "refresh": "Refresh",
@@ -2137,6 +2138,9 @@
       "short": "Shorts liquidated",
       "events": "Events",
       "perSymbol": "Per symbol",
+      "scope": "Scope",
+      "scopeMarket": "Market",
+      "empty": "No recording for {symbol} in this window.",
       "biggest": "Largest single events",
       "since": "Recorded since {zeit}.",
       "inactive": "Liquidations are not being recorded right now. Without the recording there is nothing to show here — no free third-party source for aggregated liquidations exists.",
