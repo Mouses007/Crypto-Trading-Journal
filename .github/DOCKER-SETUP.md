@@ -51,16 +51,23 @@ bringen. Erst wenn dieser Schritt einmal über ~25 Minuten steigt, wieder ansehe
 
 ## 3. GHCR-Paket auf öffentlich stellen
 
-Das Paket existiert seit dem Testlauf, ist aber **privat** — so legt GitHub es an.
-Einmalig: Profil → **Packages → crypto-trading-journal → Package settings →
-Change visibility → Public**. Ohne diesen Schritt kann niemand ausser dir es
-ziehen. Danach lässt sich von aussen gegenprüfen:
+✅ **Am 19.08.2026 erledigt** — das Paket ist öffentlich, `linux/amd64` und
+`linux/arm64` von aussen bestätigt.
+
+GitHub legt ein neues Paket immer **privat** an; einmalig umzustellen unter
+Profil → **Packages → crypto-trading-journal → Package settings → Change
+visibility → Public**. Ohne diesen Schritt kann niemand ausser dir es ziehen.
+
+Gegenprobe ohne Anmeldung — funktioniert auch ohne das `buildx`-Zusatzmodul,
+das nicht auf jedem Rechner installiert ist:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/mouses007/crypto-trading-journal:edge
+curl -s -H "Authorization: Bearer $(curl -s 'https://ghcr.io/token?scope=repository:mouses007/crypto-trading-journal:pull&service=ghcr.io' | grep -o '"token":"[^"]*' | cut -d'"' -f4)" -H 'Accept: application/vnd.oci.image.index.v1+json' https://ghcr.io/v2/mouses007/crypto-trading-journal/manifests/edge | grep -o '"architecture":"[^"]*'
 ```
 
-Erwartet werden zwei Einträge, `linux/amd64` und `linux/arm64`.
+Erwartet werden `amd64` und `arm64` (dazu je ein `unknown` — das sind die
+Herkunftsnachweise, die buildx mitschreibt, kein Fehler). Kommt stattdessen
+`DENIED`, ist das Paket noch privat.
 
 ## 4. ⚠️ Beim ersten echten Release auf die Synology achten
 
