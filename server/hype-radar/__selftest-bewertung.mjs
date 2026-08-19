@@ -104,6 +104,57 @@ pruefe('bereits zusammengeführte Kandidaten lassen sich erneut vereinen',
     zweiterDurchgang.length === 1 && zweiterDurchgang[0].quellenAnzahl === 2,
     JSON.stringify(zweiterDurchgang.map((k) => k.quellenAnzahl)))
 
+/*
+ * Der Befund R-04: Zwei VERSCHIEDENE Verträge mit demselben Kürzel auf
+ * derselben Kette. Bis zum Audit vom 19.08.2026 führte `symbol+kette` — die
+ * beiden wurden zu EINEM Kandidaten, der Quellenzahl, Marktdaten und später
+ * das Sicherheitsurteil des jeweils anderen erbte. „PEPE" gibt es hundertfach
+ * als Nachahmung; bei jungen Token ist das kein Schönheitsfehler.
+ */
+const klone = fuehreZusammen([
+    { symbol: 'PEPE', chain: 'solana', contract: '0xAAA', quelle: { quelle: 'dexscreener' }, markt: { liquiditaetUsd: 500000 }, sozial: {} },
+    { symbol: 'PEPE', chain: 'solana', contract: '0xBBB', quelle: { quelle: 'geckoterminal' }, markt: { liquiditaetUsd: 900 }, sozial: {} },
+])
+pruefe('zwei Verträge mit gleichem Kürzel bleiben getrennt', klone.length === 2,
+    JSON.stringify(klone.map((k) => `${k.symbol}|${k.contract}|${k.markt.liquiditaetUsd}`)))
+pruefe('und keiner erbt die Quelle des anderen', klone.every((k) => k.quellenAnzahl === 1))
+pruefe('die Liquidität bleibt beim richtigen Vertrag',
+    klone.find((k) => k.contract === '0xAAA').markt.liquiditaetUsd === 500000
+    && klone.find((k) => k.contract === '0xBBB').markt.liquiditaetUsd === 900)
+
+// Derselbe Vertrag in verschiedener Schreibweise bleibt EIN Kandidat.
+const gleich = fuehreZusammen([
+    { symbol: 'ABC', chain: 'base', contract: '0xCaFe', quelle: { quelle: 'dexscreener' }, markt: {}, sozial: {} },
+    { symbol: 'ABC', chain: 'base', contract: '0xcafe', quelle: { quelle: 'coingecko' }, markt: {}, sozial: {} },
+])
+pruefe('Grossschreibung der Adresse trennt nicht', gleich.length === 1 && gleich[0].quellenAnzahl === 2,
+    JSON.stringify(gleich.map((k) => k.quellenAnzahl)))
+
+/*
+ * Die Gegenrichtung, und sie ist die teurere: Ein Fund OHNE Adresse muss sich
+ * weiterhin dem mit Adresse anschliessen — sonst bliebe die Quellenzahl wieder
+ * bei 1, und genau daran ist der erste Entwurf gescheitert.
+ */
+const ohneAdresse = fuehreZusammen([
+    { symbol: 'XYZ', chain: 'solana', contract: '0xD', quelle: { quelle: 'dexscreener' }, markt: { volumen24h: 5 }, sozial: {} },
+    { symbol: 'XYZ', chain: 'solana', contract: '', quelle: { quelle: 'coingecko' }, markt: {}, sozial: { stimmen: 9 } },
+])
+pruefe('Fund ohne Adresse schliesst sich dem mit Adresse an', ohneAdresse.length === 1,
+    JSON.stringify(ohneAdresse.map((k) => k.contract)))
+pruefe('und wird als zweite Quelle gezählt', ohneAdresse[0]?.quellenAnzahl === 2)
+pruefe('Sozialdaten wandern mit', ohneAdresse[0]?.sozial?.stimmen === 9)
+
+// Aber nur bei Eindeutigkeit: zwei Verträge, gleiches Kürzel, einer ohne.
+const mehrdeutigeAdresse = fuehreZusammen([
+    { symbol: 'DUP', chain: 'bsc', contract: '0xE1', quelle: { quelle: 'dexscreener' }, markt: {}, sozial: {} },
+    { symbol: 'DUP', chain: 'bsc', contract: '0xE2', quelle: { quelle: 'geckoterminal' }, markt: {}, sozial: {} },
+    { symbol: 'DUP', chain: 'bsc', contract: '', quelle: { quelle: 'coingecko' }, markt: {}, sozial: {} },
+])
+pruefe('bei zwei möglichen Verträgen wird NICHT geraten', mehrdeutigeAdresse.length === 3,
+    String(mehrdeutigeAdresse.length))
+pruefe('und niemand bekommt eine fremde Quelle zugerechnet',
+    mehrdeutigeAdresse.every((k) => k.quellenAnzahl === 1))
+
 // ── Volumen ─────────────────────────────────────────────────────────────
 pruefe('ohne Handel keine Note', noteVolumen({ markt: { volumen24h: 0 } }) === 0)
 // 24 h = 2400, Mittel je Stunde = 100. Letzte Stunde 100 → Faktor 1 → 25.

@@ -562,23 +562,29 @@ export function fuehreZusammen(funde) {
 
     for (const f of funde) {
         /*
-         * Ein Kandidat wird über SYMBOL+KETTE geführt, nicht über die
-         * Vertragsadresse.
+         * Die VERTRAGSADRESSE führt, das Symbol ist der Notbehelf.
          *
-         * Der erste Anlauf tat das Gegenteil, und damit fand nie eine
-         * Zusammenführung statt: DexScreener liefert Adressen ohne Symbol,
-         * CoinGecko Symbole ohne Adresse — die Schlüssel trafen sich nie, und
-         * die Quellenzahl blieb im Livetest ausnahmslos 1. Damit wäre der
-         * wichtigste Faktor gegen gekauften Lärm wirkungslos gewesen.
+         * Bis zum Audit vom 19.08.2026 war es umgekehrt — und der
+         * Kopfkommentar dieser Funktion behauptete schon damals das Richtige,
+         * ohne dass der Code es tat. Der Grund für die Umkehrung ist im
+         * Kommentar von damals nachlesbar und war für seine Zeit korrekt:
+         * DexScreener lieferte Adressen ohne Symbol, CoinGecko Symbole ohne
+         * Adresse, die Schlüssel trafen sich nie und die Quellenzahl blieb 1.
          *
-         * Die Adresse bleibt der genauere Schlüssel und wird zusätzlich
-         * geführt (siehe `verschmelzeUeberVertrag` unten), sobald sie für
-         * beide Seiten bekannt ist.
+         * Seit R-03 (Sammelanreicherung vor der Vorsortierung) haben die
+         * DexScreener-Funde ihr Symbol, bevor zusammengeführt wird — der Grund
+         * ist damit weg. Geblieben war nur die Gefahr: „PEPE" gibt es auf vier
+         * Ketten und hundertfach als Nachahmung. Zwei verschiedene Verträge
+         * mit gleichem Kürzel wurden zu EINEM Kandidaten, der die Quellenzahl,
+         * die Marktdaten und das Sicherheitsurteil des jeweils anderen erbte.
+         * Bei jungen Token ist das kein Schönheitsfehler.
          */
-        const schluessel = f.symbol
-            ? `s:${f.symbol}|${f.chain || '?'}`
-            : `c:${String(f.contract || '').toLowerCase()}`
-        if (!schluessel || schluessel === 'c:') continue
+        const vertrag = String(f.contract || '').toLowerCase()
+        const schluessel = vertrag
+            ? `c:${f.chain || '?'}|${vertrag}`
+            : (f.symbol ? `s:${f.symbol}|${f.chain || '?'}` : '')
+        if (!schluessel) continue
+
         if (!nachSchluessel.has(schluessel)) {
             nachSchluessel.set(schluessel, {
                 symbol: f.symbol,
@@ -594,12 +600,11 @@ export function fuehreZusammen(funde) {
         const k = nachSchluessel.get(schluessel)
         // Nimmt beide Formen an: einen frischen Fund (`quelle`) und einen
         // bereits zusammengeführten Kandidaten (`quellen`). Der zweite
-        // Durchgang nach dem Detailabruf braucht das — dort haben die
-        // DexScreener-Funde endlich ihr echtes Symbol und treffen auf die
-        // symbolbasierten Einträge der übrigen Quellen.
+        // Durchgang nach dem Detailabruf braucht das.
         if (Array.isArray(f.quellen)) k.quellen.push(...f.quellen)
         if (f.quelle) k.quellen.push(f.quelle)
         // Erste brauchbare Angabe gewinnt; spätere füllen nur Lücken.
+        if (!k.symbol && f.symbol) k.symbol = f.symbol
         if (!k.name && f.name) k.name = f.name
         if (!k.chain && f.chain) k.chain = f.chain
         if (!k.contract && f.contract) k.contract = f.contract
@@ -615,36 +620,24 @@ export function fuehreZusammen(funde) {
     }
 
     /*
-     * Nachlese: Einträge ohne bekannte Kette anschliessen.
-     *
-     * CoinGecko nennt nur Symbole, DexScreener kennt die Kette erst nach dem
-     * Detailabruf. „PEPE ohne Kette" und „PEPE auf solana" sind mit hoher
-     * Wahrscheinlichkeit derselbe Fund — solange es GENAU EINEN Kandidaten mit
-     * diesem Symbol und bekannter Kette gibt. Bei mehreren bliebe es Raten,
-     * und ein falsch verschmolzener Kandidat wäre schlimmer als ein doppelter:
-     * er trüge die Quellenzahl eines anderen Coins.
+     * Zwei Nachlesen, beide nach derselben Regel: Ein ungenauerer Eintrag
+     * schliesst sich einem genaueren an — aber NUR, wenn es genau einen
+     * passenden gibt. Bei mehreren bliebe es Raten, und ein falsch
+     * verschmolzener Kandidat ist schlimmer als ein doppelter: er trüge die
+     * Quellenzahl und das Sicherheitsurteil eines anderen Coins.
      */
-    for (const [schluessel, k] of [...nachSchluessel.entries()]) {
-        if (!schluessel.startsWith('s:') || !schluessel.endsWith('|?')) continue
-        const symbol = k.symbol
-        const passende = [...nachSchluessel.entries()].filter(([s2, k2]) =>
-            s2 !== schluessel && k2.symbol === symbol && k2.chain && k2.chain !== '?')
-        if (passende.length !== 1) continue
+    // 1. Symbol samt Kette, aber ohne Adresse → Eintrag mit Adresse.
+    //    Betrifft CoinGecko und Reddit, die keine Adresse nennen.
+    schliesseAn(nachSchluessel,
+        (sl, k) => sl.startsWith('s:') && k.chain && k.chain !== '?',
+        (k, k2) => k2.contract && k2.symbol === k.symbol && k2.chain === k.chain)
 
-        const [, ziel] = passende[0]
-        ziel.quellen.push(...k.quellen)
-        if (!ziel.name && k.name) ziel.name = k.name
-        if (!ziel.contract && k.contract) ziel.contract = k.contract
-        for (const [feld, wert] of Object.entries(k.markt)) {
-            if (ziel.markt[feld] === undefined) ziel.markt[feld] = wert
-        }
-        for (const [feld, wert] of Object.entries(k.sozial)) {
-            ziel.sozial[feld] = typeof wert === 'number'
-                ? (ziel.sozial[feld] || 0) + wert
-                : wert
-        }
-        nachSchluessel.delete(schluessel)
-    }
+    // 2. Symbol ohne Kette → irgendein Eintrag mit diesem Symbol.
+    //    „PEPE ohne Kette" und „PEPE auf solana" sind mit hoher
+    //    Wahrscheinlichkeit derselbe Fund — solange es nur einen gibt.
+    schliesseAn(nachSchluessel,
+        (sl) => sl.startsWith('s:') && sl.endsWith('|?'),
+        (k, k2) => k2.symbol === k.symbol && k2.chain && k2.chain !== '?')
 
     return [...nachSchluessel.values()].map((k) => ({
         ...k,
@@ -653,6 +646,38 @@ export function fuehreZusammen(funde) {
         // liesse sich Bestätigung durch einen einzigen Anbieter vortäuschen.
         quellenAnzahl: new Set(k.quellen.map((q) => String(q.quelle).split('-')[0])).size,
     }))
+}
+
+/**
+ * Einen ungenaueren Eintrag einem genaueren anschliessen — nur bei
+ * Eindeutigkeit.
+ *
+ * @param {Map} karte     Schlüssel → Kandidat
+ * @param {function} istVage   (schluessel, kandidat) → ist das ein Anwärter?
+ * @param {function} passt     (vager, anderer) → gehören sie zusammen?
+ */
+function schliesseAn(karte, istVage, passt) {
+    for (const [schluessel, k] of [...karte.entries()]) {
+        if (!karte.has(schluessel) || !istVage(schluessel, k)) continue
+        const treffer = [...karte.entries()]
+            .filter(([s2, k2]) => s2 !== schluessel && passt(k, k2))
+        if (treffer.length !== 1) continue
+
+        const [, ziel] = treffer[0]
+        ziel.quellen.push(...k.quellen)
+        if (!ziel.name && k.name) ziel.name = k.name
+        if (!ziel.contract && k.contract) ziel.contract = k.contract
+        if (!ziel.pair && k.pair) ziel.pair = k.pair
+        for (const [feld, wert] of Object.entries(k.markt)) {
+            if (ziel.markt[feld] === undefined) ziel.markt[feld] = wert
+        }
+        for (const [feld, wert] of Object.entries(k.sozial)) {
+            ziel.sozial[feld] = typeof wert === 'number'
+                ? (ziel.sozial[feld] || 0) + wert
+                : wert
+        }
+        karte.delete(schluessel)
+    }
 }
 
 /**
