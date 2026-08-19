@@ -1,8 +1,12 @@
 # Crypto Trading Journal
 
-A local, privacy-focused trading journal for **crypto futures trading** — Bitunix and Bitget. No cloud, no accounts, no subscriptions. Run it on your machine or in Docker.
+A self-hosted, open-source trading journal for **crypto futures** on **Bitunix**, **Bitget** and **Pionex**.
+Runs locally or via Docker — no cloud, no account, no subscription.
+Vue 3 + Express, SQLite or PostgreSQL, GPL-3.0.
 
-> **Hinweis:** Die Benutzeroberfläche ist komplett auf **Deutsch** (optional Englisch).
+![GitHub release](https://img.shields.io/github/v/release/Mouses007/Crypto-Trading-Journal) ![License](https://img.shields.io/github/license/Mouses007/Crypto-Trading-Journal) ![Last commit](https://img.shields.io/github/last-commit/Mouses007/Crypto-Trading-Journal)
+
+> The user interface is available in **German** (default) and **English**.
 
 ## Screenshots
 
@@ -142,6 +146,7 @@ presented as a finding — three sessions on a Tuesday are noise.
 ### Import & Broker Support
 - **Bitunix** — CSV export + API integration (positions, balance, trades)
 - **Bitget** — CSV + API integration (positions, balance, fills)
+- **Pionex** — API integration (futures and grid-bot trades)
 - **Encrypted API Keys** — AES-256-GCM encryption at rest
 - **Auto-Deduplication** — prevents duplicate trade entries on re-import
 
@@ -151,6 +156,16 @@ presented as a finding — three sessions on a Tuesday are noise.
 - **Rollback** — revert to previous version if needed
 - **First-Run Setup** — guided initial configuration wizard
 - **Multi-Language** — German (default) and English
+
+---
+
+## Companion apps
+
+Your open positions outside the browser — all three companions live in this repo:
+
+- **Android home-screen widget** ([android-widget/](android-widget/)) — open positions and P&L on your phone, per-exchange KPIs, configurable refresh. Built with Gradle; see its README for the build script.
+- **Linux Mint / Cinnamon desklet** ([desklet/](desklet/)) — positions directly on the desktop; `desklet/install.sh` installs it locally.
+- **ESP32 hardware displays** ([ESP32-2432S028/](ESP32-2432S028/), [ESP32-Waveshare/](ESP32-Waveshare/)) — a cheap always-on display next to your monitor, fed by a read-only endpoint protected with its own API key (PlatformIO projects).
 
 ---
 
