@@ -7,7 +7,7 @@
  *
  * Aufruf: node server/hype-radar/__selftest-sicherheit.mjs
  */
-import { pruefe, summeTop10, STANDARD_SICHERHEIT } from './sicherheit.js'
+import { pruefe, summeTop10, ausRugCheck, STANDARD_SICHERHEIT } from './sicherheit.js'
 
 let fehler = 0
 let bestanden = 0
@@ -155,6 +155,53 @@ const allesSchlecht = pruefe(
 p('gehäufte Abzüge bleiben bei mindestens 0',
     allesSchlecht.safetyScore >= 0 && allesSchlecht.safetyScore <= 100,
     String(allesSchlecht.safetyScore))
+
+/*
+ * ── RugCheck-Übersetzung ────────────────────────────────────────────────
+ * Die zweite Solana-Quelle muss die Sprache der ersten sprechen. Geprüft
+ * werden die Fälle, in denen eine falsche Übersetzung gefährlich wäre.
+ */
+const sauberRc = {
+    token: { mintAuthority: null, freezeAuthority: null },
+    rugged: false, totalHolders: 3659,
+    topHolders: [{ pct: 8.7 }, { pct: 5.0 }, { pct: 5.0 }],
+    markets: [{ lp: { lpLockedPct: 100 } }],
+    risks: [],
+}
+const rcGut = pruefe(ausRugCheck(sauberRc), marktOk())
+p('sauberer RugCheck-Befund besteht', rcGut.status === 'bestanden', rcGut.grund)
+
+// Bereits gezogener Teppich = Honeypot-Behandlung, nicht Fussnote.
+const rcWeg = pruefe(ausRugCheck({ ...sauberRc, rugged: true }), marktOk())
+p('rugged wird wie Honeypot verworfen', rcWeg.grund === 'honeypot')
+
+// Freeze-Authority kann jede Übertragung anhalten.
+const rcFrost = pruefe(ausRugCheck({
+    ...sauberRc, token: { ...sauberRc.token, freezeAuthority: 'Fr33z3…' },
+}), marktOk())
+p('gesetzte Freeze-Authority wird verworfen', rcFrost.grund === 'verkauf_sperrbar')
+
+// Mint-Authority gesetzt = nachprägbar mit aktivem Eigentümer.
+const rcMint = pruefe(ausRugCheck({
+    ...sauberRc, token: { ...sauberRc.token, mintAuthority: 'M1nt…' },
+}), marktOk())
+p('gesetzte Mint-Authority wird verworfen', rcMint.grund === 'praegbar')
+
+// Offene Liquidität fällt durch, gesperrte nicht.
+const rcOffen = pruefe(ausRugCheck({
+    ...sauberRc, markets: [{ lp: { lpLockedPct: 10 } }],
+}), marktOk())
+p('kaum gesperrte LP wird verworfen', rcOffen.grund === 'lp_offen', JSON.stringify(rcOffen.flaggen))
+
+// Konzentrierter Besitz gibt Abzug — die 0..100-Prozente kommen richtig an.
+const rcDick = pruefe(ausRugCheck({
+    ...sauberRc, topHolders: [{ pct: 60 }, { pct: 5 }],
+}), marktOk())
+p('RugCheck-Halterprozente werden als 0..100 gelesen',
+    rcDick.status === 'bestanden' && rcDick.safetyScore < rcGut.safetyScore,
+    JSON.stringify(rcDick.flaggen))
+
+p('leere RugCheck-Antwort ergibt null (= ungeprüft)', ausRugCheck(null) === null)
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

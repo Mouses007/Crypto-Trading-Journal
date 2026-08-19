@@ -172,22 +172,25 @@ export async function erzeugeBericht(bestanden, verworfen, einstellungen = {}, m
     if (modus === 'gruendlich') {
         melde({ schritt: 'recherche', gesamt: auswahl.length })
         /*
-         * Höchstens drei Recherchen gleichzeitig: Sonar und die übrigen
-         * Anbieter drosseln bei parallelen Anfragen, und ein 429 mitten im
-         * Lauf kostet mehr Zeit, als die Nebenläufigkeit einspart.
+         * Nacheinander, nicht parallel.
+         *
+         * Der erste Plan liess drei Recherchen gleichzeitig laufen — Perplexity
+         * beantwortete im Livetest zwei der drei sofort mit 429. Zwei von drei
+         * Recherchen zu verlieren kostet mehr Berichtsqualität, als die
+         * Parallelität an Zeit spart; der ganze Lauf dauert ohnehin Minuten.
+         * Bei einer Drosselung wird nach kurzer Pause genau einmal wiederholt.
          */
-        const grenze = 3
-        for (let i = 0; i < auswahl.length; i += grenze) {
-            const teil = auswahl.slice(i, i + grenze)
-            const ergebnisse = await Promise.allSettled(
-                teil.map((k) => recherchiere(k, einstellungen)))
-            ergebnisse.forEach((e, j) => {
-                const k = teil[j]
-                const wert = e.status === 'fulfilled' ? e.value : { ok: false, fehler: String(e.reason) }
-                recherchen.set(k.symbol, wert)
-                meta.recherchen[k.symbol] = wert.ok ? 'ok' : (wert.fehler || 'fehlgeschlagen')
-            })
-            melde({ schritt: 'recherche', fertig: Math.min(i + grenze, auswahl.length), gesamt: auswahl.length })
+        for (const [i, k] of auswahl.entries()) {
+            let wert = await recherchiere(k, einstellungen)
+            if (!wert.ok && /429/.test(String(wert.fehler || ''))) {
+                await new Promise((r) => setTimeout(r, 5000))
+                wert = await recherchiere(k, einstellungen)
+            }
+            recherchen.set(k.symbol, wert)
+            meta.recherchen[k.symbol] = wert.ok ? 'ok' : (wert.fehler || 'fehlgeschlagen')
+            melde({ schritt: 'recherche', fertig: i + 1, gesamt: auswahl.length })
+            // Kurzer Abstand auch zwischen erfolgreichen Anfragen.
+            if (i < auswahl.length - 1) await new Promise((r) => setTimeout(r, 1200))
         }
     }
 

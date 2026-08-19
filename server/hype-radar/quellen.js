@@ -37,6 +37,7 @@ export const ERLAUBTE_HOSTS = new Set([
     'api.dexscreener.com',
     'api.geckoterminal.com',
     'api.gopluslabs.io',
+    'api.rugcheck.xyz',
     'www.reddit.com',
     'cryptopanic.com',
     'lunarcrush.com',

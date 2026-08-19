@@ -216,7 +216,43 @@ export function summeTop10(halter) {
 }
 
 /**
- * GoPlus abfragen. Getrennt vom Urteil, damit dieses prüfbar bleibt.
+ * RugCheck-Antwort auf die GoPlus-Form bringen — rein, ohne Netz.
+ *
+ * `pruefe` spricht eine Sprache (die GoPlus-Felder); eine zweite Quelle muss
+ * sich ihr anpassen, nicht umgekehrt. Getrennt exportiert, damit die
+ * Übersetzung mit festen Beispieldaten prüfbar ist.
+ *
+ * Solana-Eigenheiten: `rugged` heisst, der Teppich ist BEREITS gezogen — das
+ * wird wie ein Honeypot behandelt. Eine gesetzte Freeze-Authority kann jede
+ * Übertragung anhalten; eine gesetzte Mint-Authority kann nachprägen.
+ */
+export function ausRugCheck(j) {
+    if (!j || typeof j !== 'object') return null
+    const lpGesperrtPct = Number(j?.markets?.[0]?.lp?.lpLockedPct)
+    return {
+        is_honeypot: j?.rugged ? 1 : 0,
+        transfer_pausable: j?.token?.freezeAuthority ? 1 : 0,
+        is_mintable: j?.token?.mintAuthority ? 1 : 0,
+        owner_address: j?.token?.mintAuthority || '',
+        holder_count: Number(j?.totalHolders) || 0,
+        // RugCheck gibt Prozentwerte 0..100 — `summeTop10` erkennt das selbst.
+        holders: (Array.isArray(j?.topHolders) ? j.topHolders : [])
+            .map((h) => ({ percent: Number(h?.pct) || 0 })),
+        lp_holders: Number.isFinite(lpGesperrtPct)
+            ? [{ percent: lpGesperrtPct, is_locked: 1, address: 'rugcheck' }]
+            : [],
+        sell_tax: 0,     // kennt Solana nicht
+        is_proxy: 0,
+    }
+}
+
+/**
+ * Sicherheitsdaten abfragen. Getrennt vom Urteil, damit dieses prüfbar bleibt.
+ *
+ * Solana hat zwei Quellen: GoPlus zuerst, bei Ausfall RugCheck. Der Grund ist
+ * kein Misstrauen gegen GoPlus, sondern ein 504 im Test vom 19.08.2026 — und
+ * fast alle Meme-Funde leben auf Solana. Hinge der ganze Trichter an einem
+ * einzigen wackligen Endpunkt, wäre „ungeprüft → verworfen" der Normalzustand.
  *
  * @returns {Promise<object|null>} null, wenn die Kette nicht unterstützt wird
  *   oder nichts zu holen war — der Aufrufer behandelt das als „ungeprüft".
@@ -226,10 +262,19 @@ export async function holeGoPlus(chain, contract) {
     const adresse = String(contract).toLowerCase()
 
     if (chain === 'solana') {
-        const j = await holeJson(
-            `https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=${encodeURIComponent(contract)}`)
-        const d = j?.result?.[contract] || j?.result?.[adresse]
-        if (!d) return null
+        let d = null
+        try {
+            const j = await holeJson(
+                `https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=${encodeURIComponent(contract)}`)
+            d = j?.result?.[contract] || j?.result?.[adresse]
+        } catch {
+            // GoPlus klemmt — RugCheck übernimmt.
+        }
+        if (!d) {
+            const r = await holeJson(
+                `https://api.rugcheck.xyz/v1/tokens/${encodeURIComponent(contract)}/report`)
+            return ausRugCheck(r)
+        }
         /*
          * Solana kennt keine Verkaufssteuer und keinen Eigentümer im
          * EVM-Sinn; stattdessen entscheiden die Vollmachten. Sie werden hier
