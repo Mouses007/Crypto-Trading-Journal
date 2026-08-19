@@ -257,6 +257,35 @@ export function setupHypeRadarRoutes(app) {
     })
 
     /*
+     * Gelesen ist nicht dasselbe wie erledigt: ein abgearbeiteter Alarm soll
+     * auch aus der Liste verschwinden dürfen. Ohne `ids` wird alles geleert —
+     * dieselbe Form wie beim Markieren, damit die Route nicht neu zu lernen ist.
+     */
+    app.delete('/api/hype-radar/alarme', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const ids = req.body?.ids
+            if (Array.isArray(ids) && ids.length) {
+                await knex('hype_alarme').whereIn('id', ids.map(Number)).del()
+            } else {
+                await knex('hype_alarme').del()
+            }
+            res.json({ ok: true })
+        } catch (e) {
+            res.status(500).json({ error: 'Alarme konnten nicht gelöscht werden' })
+        }
+    })
+
+    app.delete('/api/hype-radar/alarme/:id', async (req, res) => {
+        try {
+            await getKnex()('hype_alarme').where('id', Number(req.params.id)).del()
+            res.json({ ok: true })
+        } catch (e) {
+            res.status(500).json({ error: 'Alarm konnte nicht gelöscht werden' })
+        }
+    })
+
+    /*
      * Test-Knopf: eine harmlose Meldung über die ECHTEN Kanäle. Wer ntfy oder
      * den Home-Assistant-Webhook einrichtet, will sofort wissen, ob der Draht
      * steht — nicht erst beim ersten echten Absturz eines Coins.

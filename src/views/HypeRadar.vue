@@ -368,6 +368,11 @@
                     </h6>
                     <button v-if="ungeleseneAlarme.length" class="btn btn-sm btn-outline-secondary py-0 ms-auto"
                         @click="alarmeGelesen">{{ t('hype.alleGelesen') }}</button>
+                    <button class="btn btn-sm btn-outline-secondary py-0"
+                        :class="[ungeleseneAlarme.length ? '' : 'ms-auto', { hypScharf: alarmAlleScharf }]"
+                        :title="t('hype.loeschen')" @click="alarmeAlleLoeschen">
+                        {{ alarmAlleScharf ? t('hype.alarmeAlleLoeschenScharf') : t('hype.alarmeAlleLoeschen') }}
+                    </button>
                 </div>
                 <div class="hypAlarmListe">
                     <div v-for="a in sichtbareAlarme" :key="a.id" class="hypAlarm"
@@ -375,6 +380,10 @@
                         <span class="hypAlarmSchwere">{{ t('hype.schwere_' + a.schwere) }}</span>
                         <span class="hypAlarmText">{{ a.meldung }}</span>
                         <span class="hypAlarmZeit">{{ zeitpunkt(a.erstelltAm) }}</span>
+                        <span class="hypAlarmWeg" :class="{ scharf: alarmLoeschId === a.id }"
+                            :title="t('hype.loeschen')" @click.stop="alarmLoeschen(a.id)">
+                            <i class="uil uil-trash-alt"></i>
+                        </span>
                     </div>
                 </div>
                 <!-- Die älteren sind geladen, nur nicht gezeigt: vorher waren
@@ -931,6 +940,44 @@ async function alarmeGelesen() {
         await ladeAlarme()
     } catch (e) {
         logWarn('hype-radar', 'Alarme konnten nicht markiert werden', e)
+    }
+}
+
+/*
+ * Löschen: zwei Klicks wie bei den Berichten — der erste schärft, der zweite
+ * löscht. Ein eigener Merker je Zeile und einer für „alle", damit das Schärfen
+ * einer einzelnen Zeile nicht am Sammelknopf hängenbleibt.
+ */
+const alarmLoeschId = ref(null)
+const alarmAlleScharf = ref(false)
+
+async function alarmLoeschen(id) {
+    if (alarmLoeschId.value !== id) {
+        alarmLoeschId.value = id
+        setTimeout(() => { if (alarmLoeschId.value === id) alarmLoeschId.value = null }, 4000)
+        return
+    }
+    alarmLoeschId.value = null
+    try {
+        await axios.delete(`/api/hype-radar/alarme/${id}`)
+        alarme.value = alarme.value.filter((a) => a.id !== id)
+    } catch (e) {
+        logWarn('hype-radar', 'Alarm konnte nicht gelöscht werden', e)
+    }
+}
+
+async function alarmeAlleLoeschen() {
+    if (!alarmAlleScharf.value) {
+        alarmAlleScharf.value = true
+        setTimeout(() => { alarmAlleScharf.value = false }, 4000)
+        return
+    }
+    alarmAlleScharf.value = false
+    try {
+        await axios.delete('/api/hype-radar/alarme')
+        alarme.value = []
+    } catch (e) {
+        logWarn('hype-radar', 'Alarme konnten nicht gelöscht werden', e)
     }
 }
 
@@ -2021,6 +2068,25 @@ watch(locale, () => zeichne())
     flex: none;
 }
 
+.hypAlarmWeg {
+    flex: none;
+    font-size: .92rem;
+    opacity: .35;
+    cursor: pointer;
+}
+
+.hypAlarmWeg:hover { opacity: 1; }
+
+.hypAlarmWeg.scharf {
+    color: var(--red-color, #e06c75);
+    opacity: 1;
+}
+
+/* Geschärfter Sammelknopf: der zweite Klick löscht wirklich alles. */
+.btn.hypScharf {
+    color: var(--red-color, #e06c75);
+    border-color: var(--red-color, #e06c75);
+}
 
 .hypKanal {
     padding: .5rem 0;

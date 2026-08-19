@@ -754,6 +754,8 @@
     "achseY": "Aufmerksamkeit",
     "alarmeTitel": "Alarme",
     "alleGelesen": "alle gelesen",
+    "alarmeAlleLoeschen": "alle löschen",
+    "alarmeAlleLoeschenScharf": "wirklich löschen?",
     "alleStatus": "Alle",
     "aussortiertTitel": "Aussortiert",
     "autoAn": "Von selbst laufen lassen",

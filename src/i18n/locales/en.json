@@ -754,6 +754,8 @@
     "achseY": "Attention",
     "alarmeTitel": "Alerts",
     "alleGelesen": "mark all read",
+    "alarmeAlleLoeschen": "delete all",
+    "alarmeAlleLoeschenScharf": "really delete?",
     "alleStatus": "All",
     "aussortiertTitel": "Rejected",
     "autoAn": "Run on a schedule",
