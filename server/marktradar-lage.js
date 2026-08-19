@@ -96,7 +96,7 @@ function mitFrist(aufgabe, name) {
  * kostet eine Zeile in der Grundlage — nie die ganze Einordnung. Parallel, weil
  * die Wartezeit sonst die Summe aller Kacheln wäre.
  */
-async function sammleKacheln(symbol) {
+export async function sammleKacheln(symbol) {
     const [
         mechanik, fng, dom, funding, lsoi, liq24, rsi, markt,
         altseason, picycle, rainbow, makro, regime,

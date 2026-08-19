@@ -6,6 +6,9 @@
 
 import { logWarn } from './logger.js'
 import { STRATEGY_TOOLS, STRATEGY_TOOL_IMPL } from './strategy-tools.js'
+import { hilfeUebersicht, hilfeThema, HILFE_THEMEN } from './app-hilfe.js'
+import { sammleKacheln } from './marktradar-lage.js'
+import { baueZeilen } from './lagebild.js'
 
 // ==================== TOOL DEFINITIONS (for LLM) ====================
 
@@ -155,6 +158,26 @@ export const AGENT_TOOLS = [
             required: ['screenshotId']
         }
     },
+    {
+        name: 'query_app_help',
+        description: 'Read the built-in documentation of THIS software (Crypto Trading Journal). Use this for any question about how to use the app: where a setting lives, what a page or tile does, how import/export works, what the Live-Analyse, Livetrading or Strategien mode offers. Without a topic it returns the list of available topics. Answer software questions ONLY from this documentation, never from general knowledge.',
+        parameters: {
+            type: 'object',
+            properties: {
+                topic: { type: 'string', enum: Object.keys(HILFE_THEMEN), description: 'Help topic to read. Omit to get the topic list first.' }
+            }
+        }
+    },
+    {
+        name: 'query_marktradar',
+        description: 'Fetch the CURRENT readings of the Live-Analyse market dashboard (Marktradar): Fear & Greed, BTC dominance, funding rates, long/short ratio + open interest, 24h liquidations, RSI breadth, market overview, altcoin season, Pi Cycle, rainbow chart, macro (index futures, DXY, correlation), market mechanics state and the user\'s own results per market regime. Returns one text line per tile — the same numbers shown on screen. Use ONLY these numbers, never invent market data, and give no trading recommendations.',
+        parameters: {
+            type: 'object',
+            properties: {
+                symbol: { type: 'string', description: 'Symbol for the symbol-specific tiles (mechanics, long/short). Default BTCUSDT.' }
+            }
+        }
+    },
     // Werkzeuge der Strategie-Agenten — auch der KI-Coach darf die Auswertung
     // der automatisch gehandelten Strategien lesen und Verbesserungen vorschlagen.
     ...STRATEGY_TOOLS,
@@ -183,6 +206,8 @@ export async function executeTool(toolName, params, knex) {
         query_settings: toolQuerySettings,
         query_screenshots: toolQueryScreenshots,
         analyze_screenshot: toolAnalyzeScreenshot,
+        query_app_help: toolQueryAppHelp,
+        query_marktradar: toolQueryMarktradar,
         // Werkzeuge der Strategie-Agenten: Auswertung lesen, Hypothesen im
         // Backtest messen, Parameteränderungen zur Freigabe vorschlagen.
         ...STRATEGY_TOOL_IMPL,
@@ -202,6 +227,35 @@ export async function executeTool(toolName, params, knex) {
 }
 
 // ==================== TOOL IMPLEMENTATIONS ====================
+
+// Bedienungsfragen zur Software — Antwort ausschliesslich aus der eingebauten
+// Doku, damit der Agent nicht aus Allgemeinwissen über eine App rät, die es
+// nur hier gibt.
+async function toolQueryAppHelp(knex, params) {
+    if (params.topic) {
+        const t = hilfeThema(params.topic)
+        if (t) return t
+        return { error: `Unknown topic: ${params.topic}`, verfuegbareThemen: hilfeUebersicht() }
+    }
+    return { hinweis: 'Wähle ein Thema und rufe query_app_help erneut mit topic auf.', themen: hilfeUebersicht() }
+}
+
+// Aktuelle Messwerte der Marktradar-Kacheln — dieselben `hole*`-Funktionen wie
+// die Seite selbst, also im Regelfall aus deren Zwischenspeicher ohne einen
+// zusätzlichen Fremdabruf. Textzeilen statt Rohzahlen, damit die Einheiten
+// gleich dabeistehen.
+async function toolQueryMarktradar(knex, params) {
+    const symbol = String(params.symbol || 'BTCUSDT').toUpperCase()
+    const kacheln = await sammleKacheln(symbol)
+    const zeilen = baueZeilen(kacheln)
+    if (zeilen.length === 0) return { error: 'Keine Marktradar-Kachel liefert gerade Daten.' }
+    return {
+        symbol,
+        stand: new Date().toISOString(),
+        hinweis: 'Eine Zeile je Kachel; fehlende Kacheln waren gerade nicht erreichbar. Keine Handelsempfehlungen ableiten.',
+        messwerte: zeilen.map(z => z.text),
+    }
+}
 
 async function toolQueryTrades(knex, params) {
     const limit = Math.min(params.limit || 50, 200)

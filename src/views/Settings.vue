@@ -370,6 +370,7 @@ let aiBerichtProvider = ref('')
 let aiBerichtModell = ref('')
 let aiAgentProvider = ref('')
 let aiAgentModell = ref('')
+let aiAgentTokenBudget = ref(80000)
 let aiStrategieProvider = ref('')
 let aiStrategieModell = ref('')
 let radarNewsRechercheModell = ref('sonar')
@@ -381,6 +382,7 @@ const themenNamen = computed(() => ({
     crypto: t('settings.ki.news.topicCrypto'),
     finanzen: t('settings.ki.news.topicFinance'),
     tech: t('settings.ki.news.topicTech'),
+    chartanalyse: t('settings.ki.news.topicChartanalyse'),
 }))
 
 async function kiSpeichern(feld, wert) {
@@ -473,6 +475,7 @@ async function loadAiSettings() {
         aiBerichtModell.value = cu.aiBerichtModell || ''
         aiAgentProvider.value = cu.aiAgentProvider || ''
         aiAgentModell.value = cu.aiAgentModell || ''
+        aiAgentTokenBudget.value = Number(cu.aiAgentTokenBudget) || 80000
         aiStrategieProvider.value = cu.aiStrategieProvider || ''
         aiStrategieModell.value = cu.aiStrategieModell || ''
         radarNewsRechercheModell.value = cu.radarNewsRechercheModell || 'sonar'
@@ -749,7 +752,7 @@ function loadRadarSettings() {
     radarNewsRhythmus.value = s.radarNewsRhythmus === 'woechentlich' ? 'woechentlich' : 'taeglich'
     radarNewsWochentag.value = Math.max(1, Math.min(7, Number(s.radarNewsWochentag ?? 1)))
     radarNewsThemen.value = String(s.radarNewsThemen || 'crypto').split(',')
-        .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech'].includes(t))
+        .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech', 'chartanalyse'].includes(t))
     if (!radarNewsThemen.value.length) radarNewsThemen.value = ['crypto']
     radarNewsLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
     radarNewsXModell.value = s.radarNewsXModell || 'grok-4.6'
@@ -797,7 +800,7 @@ async function radarSpeichern(feld) {
         radarNewsRhythmus: radarNewsRhythmus.value,
         radarNewsWochentag: Math.max(1, Math.min(7, Number(radarNewsWochentag.value) || 1)),
         // Reihenfolge festnageln, damit die Kapitel immer gleich sortiert sind
-        radarNewsThemen: ['crypto', 'finanzen', 'tech'].filter(t => radarNewsThemen.value.includes(t)).join(','),
+        radarNewsThemen: ['crypto', 'finanzen', 'tech', 'chartanalyse'].filter(t => radarNewsThemen.value.includes(t)).join(','),
         radarNewsLaenge: radarNewsLaenge.value,
         radarNewsXModell: radarNewsXModell.value.trim() || 'grok-4.6',
         radarArschlochAn: radarArschlochAn.value ? 1 : 0,
@@ -3007,6 +3010,20 @@ onBeforeMount(async () => {
                             <router-link to="/ki-agent" class="btn btn-outline-secondary btn-sm mt-2">
                                 <i class="uil uil-robot me-1"></i>{{ t('settings.ki.openAgent') }}
                             </router-link>
+                        </div>
+                    </div>
+
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.agentBudget') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.agentBudgetHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <input type="number" class="form-control" style="max-width: 180px;"
+                                min="10000" step="10000" v-model.number="aiAgentTokenBudget"
+                                @change="kiSpeichern('aiAgentTokenBudget', Math.max(10000, Number(aiAgentTokenBudget) || 80000))" />
                         </div>
                     </div>
                 </div>

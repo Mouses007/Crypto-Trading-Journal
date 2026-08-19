@@ -1828,6 +1828,11 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'aiBerichtModell', (t) => t.text('aiBerichtModell').defaultTo(''))
     await addColumnIfNotExists('settings', 'aiAgentProvider', (t) => t.text('aiAgentProvider').defaultTo(''))
     await addColumnIfNotExists('settings', 'aiAgentModell', (t) => t.text('aiAgentModell').defaultTo(''))
+    // Token-Budget je Agent-Lauf (Summe über alle Runden). Stand vorher hart
+    // auf 80000 im Quelltext — wer tiefere Analysen will, zahlt bewusst mehr.
+    await addColumnIfNotExists('settings', 'aiAgentTokenBudget', (t) => t.integer('aiAgentTokenBudget').defaultTo(80000))
+    // Agent-Chats archivieren statt löschen — wie bei den Live-Sessions.
+    await addColumnIfNotExists('ai_agent_sessions', 'archiviert', (t) => t.integer('archiviert').defaultTo(0))
     await addColumnIfNotExists('settings', 'aiStrategieProvider', (t) => t.text('aiStrategieProvider').defaultTo(''))
     await addColumnIfNotExists('settings', 'aiStrategieModell', (t) => t.text('aiStrategieModell').defaultTo(''))
     // Perplexity-Modell der Themen-Recherche; stand vorher hart im Quelltext.

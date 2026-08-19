@@ -49,7 +49,7 @@
     "tradeCategory": "TYPE",
     "categoryAll": "All",
     "analyze": "ANALYZE",
-    "startseite": "Home",
+    "startseite": "Overview",
     "dashboard": "Dashboard",
     "dailyView": "Daily View",
     "calendar": "Calendar",
@@ -404,8 +404,11 @@
         "scopeHint": "Items are the individual points of a chapter — in the newspaper layout, one article each with headline, paragraph and sources. The token cap bounds how long the AI answer may get; it caps the cost rather than setting it.",
         "scopeAuto": "empty = the chosen length decides",
         "videoDepthLabel": "Detail of the video description",
-        "videoTokensHint": "own output cap, empty = per level"
-      }
+        "videoTokensHint": "own output cap, empty = per level",
+        "topicChartanalyse": "Technical chart analysis top 5 (from sources, with images)"
+      },
+      "agentBudget": "Token budget per run",
+      "agentBudgetHint": "Upper limit for one agent run across all reasoning rounds (input + output). When reached, the agent summarises what it has found so far. More budget = deeper analyses, but higher cost per question."
     },
     "aiEnabled": "AI features enabled",
     "aiEnabledHint": "Hides AI Agent from menu and dashboard. Settings are preserved.",
@@ -808,7 +811,14 @@
     "qaBestWorst": "Best & Worst",
     "qaPlaybooks": "Playbook Performance",
     "weekLabel": "CW {range}",
-    "reportStyle": "Style"
+    "reportStyle": "Style",
+    "auswahl": "Select",
+    "archivAnzeigen": "Show archive",
+    "archivLeer": "No archived chats.",
+    "archivieren": "Archive",
+    "wiederherstellen": "Restore",
+    "loeschen": "Delete",
+    "wirklichLoeschen": "Really delete?"
   },
   "imports": {
     "deleteWarning": "Deleting an import will also delete excursions. Screenshots, tags, notes and satisfaction ratings are preserved.",
@@ -953,7 +963,7 @@
     "reportCreated": "Report for {label} has been created."
   },
   "modes": {
-    "start": "Home",
+    "start": "Overview",
     "journal": "Journal",
     "live": "Live analysis",
     "liveShort": "Live",
@@ -1690,7 +1700,7 @@
     "read_neutral": "no clear direction"
   },
   "startseite": {
-    "title": "Home",
+    "title": "Overview",
     "kontostand": {
       "title": "Account balance",
       "start": "Start",

@@ -186,8 +186,9 @@ onMounted(() => {
     checkForUpdate()
     checkRollbackStatus()
     loadAuthStatus()
-    // Börsen-Auswahl gibt es nur im Journal — im Live-Modus die 3 API-Calls sparen.
-    if (appMode.value === 'journal') loadConfiguredBrokers()
+    // Börsen-Auswahl gibt es nur im Journal-Menü (auch auf der Übersicht
+    // sichtbar) — im Live-Modus die 3 API-Calls sparen.
+    if (appMode.value === 'journal' || appMode.value === 'start') loadConfiguredBrokers()
     // Migration: „Alle" gibt es nicht mehr, und „Agent" hat keine Pille mehr —
     // wer die Kategorie noch gespeichert hat, säße sonst unsichtbar fest.
     if (['all', 'agent'].includes(selectedTradeCategory.value) || !selectedTradeCategory.value) {
@@ -277,8 +278,9 @@ function goToDashboard() {
         </a>
     </div>
     <div id="step2" class="mt-2">
-        <!-- ===== JOURNAL ===== -->
-        <template v-if="appMode === 'journal'">
+        <!-- ===== JOURNAL (auch auf der Übersicht/Startseite: von dort will
+             man direkt ins Journal springen können, ohne Modus-Wechsel) ===== -->
+        <template v-if="appMode === 'journal' || appMode === 'start'">
         <!-- Börsen-Auswahl wie ein Filter: nur Börsen mit hinterlegter API. -->
         <div v-if="configuredBrokers.length > 1" class="sideMenuDiv">
             <div class="sideMenuDivContent">

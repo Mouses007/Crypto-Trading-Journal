@@ -66,7 +66,8 @@ frontend.
 - **`server/binance-api.js`** — Binance public klines proxy (no API key needed, CORS bypass).
 - **`server/ollama-api.js`** — AI: Ollama, OpenAI, Anthropic, Gemini, DeepSeek (reports + chat).
 - **`server/ai-agent.js`** — Autonomous KI-Agent with tool use / function calling. Supports Anthropic (native), OpenAI/DeepSeek (native), Gemini (native), Ollama (prompt-based fallback). Agent loop runs via SSE streaming; max 10 iterations; concurrency-guarded (one run at a time).
-- **`server/ai-agent-tools.js`** — Tool definitions and `executeTool()` for the agent loop (DB queries, trade analysis, etc.).
+- **`server/ai-agent-tools.js`** — Tool definitions and `executeTool()` for the agent loop (DB queries, trade analysis, etc.). Also `query_app_help` (answers about the software itself, sourced from `server/app-hilfe.js`) and `query_marktradar` (current Marktradar tile readings via `sammleKacheln`/`baueZeilen` — same cached `hole*` functions the tiles use).
+- **`server/app-hilfe.js`** — Built-in German usage documentation of the app, one section per topic. Single source the KI-Agent may quote about the software; describes the UI, not the implementation.
 - **`server/flux-api.js`** — Share Card API: generates stylized trade share images using FLUX.2 (Black Forest Labs) AI backgrounds + SVG overlay. Uses `sharp` for image processing. Admin: `/api/flux/*`.
 - **`server/esp32-api.js`** — Read-only endpoint for ESP32-2432S028 (CYD) hardware display. Auth via static API key in `X-ESP32-Key` header (key stored encrypted in `settings.esp32ApiKey`). `/api/esp32/display` is public (no session); admin routes behind session.
 - **`server/backup-api.js`** — JSON export/import of all DB tables. Redacts sensitive keys (AI keys, etc.) on export. Handles import order to respect FK constraints.

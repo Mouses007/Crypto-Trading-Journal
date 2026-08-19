@@ -18,7 +18,12 @@ import {
 } from './ai-models.js'
 
 const MAX_ITERATIONS = 10
-const MAX_TOKENS = 80000
+// Voreinstellung des Token-Budgets je Lauf — überschreibbar in den
+// Einstellungen (KI → Agent), gespeichert in `settings.aiAgentTokenBudget`.
+const DEFAULT_TOKEN_BUDGET = 80000
+// Untergrenze: darunter schafft der Agent nicht einmal eine Runde mit
+// Tool-Ergebnis + Antwort und würde nur noch Abschluss-Zusammenfassungen liefern.
+const MIN_TOKEN_BUDGET = 10000
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
 // Concurrency guard — only one agent run at a time
@@ -30,7 +35,7 @@ async function loadAiSettings() {
     const knex = getKnex()
     const settings = await knex('settings')
         .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
-            'aiAgentProvider', 'aiAgentModell',
+            'aiAgentProvider', 'aiAgentModell', 'aiAgentTokenBudget',
             ...KEY_SPALTEN, ...KI_URL_SPALTEN)
         .where('id', 1).first()
     if (!settings) throw new Error('No AI settings found')
@@ -55,6 +60,7 @@ async function loadAiSettings() {
         apiKey,
         temperature: settings.aiTemperature ?? 0.7,
         maxTokens: settings.aiMaxTokens || 4000,
+        tokenBudget: Math.max(MIN_TOKEN_BUDGET, Number(settings.aiAgentTokenBudget) || DEFAULT_TOKEN_BUDGET),
         ollamaUrl: settings.aiOllamaUrl || DEFAULT_OLLAMA_URL,
         endpunkt: chatEndpunkt(provider, settings)
     }
@@ -87,6 +93,13 @@ Deine Aufgabe:
 - Analysiere Muster, Risiken und Performance
 - Gib konkrete, datenbasierte Empfehlungen
 - Zeige Stärken und Schwächen auf
+- Beantworte auch Fragen zur Bedienung dieser Software (Seiten, Einstellungen,
+  Import, Live-Analyse, Live-Trading, Strategien-Modus) — dafür gibt es
+  query_app_help mit der eingebauten Doku. Antworte zur Software NUR aus
+  dieser Doku, nie aus Allgemeinwissen; steht etwas nicht darin, sage das.
+- Fragen zur aktuellen Marktlage (Fear & Greed, Dominanz, Funding, Long/Short,
+  Liquidationen, Makro …) beantwortest du mit query_marktradar — nur die
+  gelieferten Zahlen nennen, keine Handelsempfehlung daraus machen.
 
 Regeln:
 - Nutze immer zuerst die passenden Tools, bevor du antwortest
@@ -661,12 +674,40 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE, i
         }
 
         // Token budget check
-        if (totalTokens > MAX_TOKENS) {
-            sendSSE({ type: 'warning', content: 'Token-Budget erreicht, beende Agent-Loop.' })
-            // One more call without tools to get a summary
-            finalAnswer = 'Token-Budget erreicht. Hier ist eine Zusammenfassung der bisherigen Ergebnisse.'
+        if (totalTokens > config.tokenBudget) {
+            sendSSE({ type: 'warning', content: `Token-Budget erreicht (${config.tokenBudget.toLocaleString('de-CH')}), beende Agent-Loop.` })
             break
         }
+    }
+
+    // Loop ohne fertige Antwort verlassen — Budget erreicht oder alle
+    // Iterationen mit Tool-Aufrufen verbraucht. Früher stand hier nur der
+    // statische Satz „Hier ist eine Zusammenfassung der bisherigen
+    // Ergebnisse" — ohne Zusammenfassung dahinter: die Tool-Ergebnisse waren
+    // bezahlt, der Nutzer bekam trotzdem nichts. Jetzt baut ein letzter
+    // Aufruf aus dem, was bereits vorliegt, eine echte Antwort. Die Bitte
+    // wandert NICHT in die gespeicherte Historie, nur die Antwort.
+    if (!finalAnswer && !istAbgebrochen()) {
+        const bitte = {
+            role: 'user',
+            content: 'Das Rechenbudget für diese Frage ist aufgebraucht. Rufe KEINE weiteren Tools auf. '
+                + 'Fasse aus den bereits vorliegenden Tool-Ergebnissen zusammen, was du herausgefunden hast, '
+                + 'beantworte die ursprüngliche Frage damit so gut wie möglich und nenne am Ende kurz, '
+                + 'was offen bleiben musste.'
+        }
+        try {
+            const abschluss = await callLLMWithTools(buildProviderMessages([...history, bitte], config.provider), config)
+            totalTokens += abschluss.usage.totalTokens
+            promptTokens += abschluss.usage.promptTokens || 0
+            completionTokens += abschluss.usage.completionTokens || 0
+            finalAnswer = abschluss.text
+                || 'Das Token-Budget ist erreicht, bevor eine Antwort fertig wurde. Bitte stelle die Frage enger (kürzerer Zeitraum, ein Symbol), dann reicht das Budget.'
+        } catch (e) {
+            logWarn('ai-agent', 'Abschluss-Zusammenfassung nach Budget/Iterationsende fehlgeschlagen: ' + e.message)
+            finalAnswer = 'Das Token-Budget ist erreicht und die Abschluss-Zusammenfassung schlug fehl (' + e.message + '). Bitte stelle die Frage enger.'
+        }
+        history.push({ role: 'assistant', content: finalAnswer })
+        sendSSE({ type: 'answer', content: finalAnswer })
     }
 
     return { answer: finalAnswer, totalTokens, promptTokens, completionTokens, totalToolCalls, messages: history }
@@ -885,6 +926,21 @@ export function setupAgentRoutes(app) {
                 objectId: String(session.id),
                 messages: messages.map(m => ({ ...m, objectId: String(m.id) }))
             })
+        } catch (err) {
+            res.status(500).json({ error: err.message })
+        }
+    })
+
+    // POST /api/ai/agent/sessions/:id/archiv — Session archivieren/wiederherstellen
+    app.post('/api/ai/agent/sessions/:id/archiv', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const id = parseInt(req.params.id, 10)
+            if (!id) return res.status(400).json({ error: 'Invalid session ID' })
+            const archiviert = req.body?.archiviert ? 1 : 0
+            const n = await knex('ai_agent_sessions').where('id', id).update({ archiviert })
+            if (!n) return res.status(404).json({ error: 'Session not found' })
+            res.json({ success: true, archiviert })
         } catch (err) {
             res.status(500).json({ error: err.message })
         }

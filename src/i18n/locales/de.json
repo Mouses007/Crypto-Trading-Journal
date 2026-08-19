@@ -49,7 +49,7 @@
     "tradeCategory": "ART",
     "categoryAll": "Alle",
     "analyze": "ANALYSIEREN",
-    "startseite": "Startseite",
+    "startseite": "Übersicht",
     "dashboard": "Dashboard",
     "dailyView": "Tages Ansicht",
     "calendar": "Kalender",
@@ -404,8 +404,11 @@
         "scopeHint": "Meldungen sind die einzelnen Punkte eines Kapitels — im Zeitungslayout je ein Artikel mit Überschrift, Absatz und Belegen. Der Token-Deckel begrenzt, wie lang die Antwort der KI werden darf; er legt die Kosten nicht fest, sondern deckelt sie.",
         "scopeAuto": "leer = die gewählte Länge entscheidet",
         "videoDepthLabel": "Ausführlichkeit der Videobeschreibung",
-        "videoTokensHint": "eigener Ausgabe-Deckel, leer = nach Stufe"
-      }
+        "videoTokensHint": "eigener Ausgabe-Deckel, leer = nach Stufe",
+        "topicChartanalyse": "Technische Chartanalyse Top 5 (aus Quellen, mit Bildern)"
+      },
+      "agentBudget": "Token-Budget je Lauf",
+      "agentBudgetHint": "Obergrenze für einen Agenten-Lauf über alle Denkrunden (Eingabe + Ausgabe). Ist sie erreicht, fasst der Agent die bis dahin gesammelten Ergebnisse zusammen. Mehr Budget = tiefere Analysen, aber höhere Kosten je Frage."
     },
     "aiEnabled": "KI-Funktionen aktiviert",
     "aiEnabledHint": "Blendet KI-Agent aus Menü und Dashboard aus. Einstellungen bleiben gespeichert.",
@@ -808,7 +811,14 @@
     "qaSlTpAnalysis": "SL/TP Analyse",
     "qaBestWorst": "Beste & Schlechteste",
     "qaPlaybooks": "Playbook-Performance",
-    "reportStyle": "Stil"
+    "reportStyle": "Stil",
+    "auswahl": "Auswählen",
+    "archivAnzeigen": "Archiv anzeigen",
+    "archivLeer": "Keine archivierten Gespräche.",
+    "archivieren": "Archivieren",
+    "wiederherstellen": "Wiederherstellen",
+    "loeschen": "Löschen",
+    "wirklichLoeschen": "Wirklich löschen?"
   },
   "imports": {
     "deleteWarning": "Beim Löschen eines Imports werden auch die Exkursionen gelöscht. Screenshots, Tags, Notizen und Zufriedenheitsbewertungen bleiben erhalten.",
@@ -953,7 +963,7 @@
     "reportCreated": "Bericht für {label} wurde erstellt."
   },
   "modes": {
-    "start": "Start",
+    "start": "Übersicht",
     "journal": "Journal",
     "live": "Live-Analyse",
     "liveShort": "Live",
@@ -1690,7 +1700,7 @@
     "read_neutral": "keine klare Richtung"
   },
   "startseite": {
-    "title": "Startseite",
+    "title": "Übersicht",
     "kontostand": {
       "title": "Kontostand",
       "start": "Start",

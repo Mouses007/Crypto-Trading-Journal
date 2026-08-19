@@ -139,6 +139,7 @@ presented as a finding — three sessions on a Tuesday are noise.
 - **Multiple Providers** — Ollama (local), OpenAI, Anthropic, Google Gemini, DeepSeek
 - **Report Generation** — monthly, weekly, custom date range with preset templates
 - **Trade Review Chat** — per-trade AI follow-up questions in Daily view
+- **Autonomous Agent** — chat agent that queries your journal data on its own, reads the current Marktradar readings, and answers questions about using the app itself (built-in documentation); quick-access button in the top navigation
 - **Screenshot Analysis** — include chart images in AI analysis
 - **Token Statistics** — track usage and estimated costs per provider
 - **Global AI Toggle** — enable/disable all AI features at once

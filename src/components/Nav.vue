@@ -4,7 +4,7 @@ import { useToggleMobileMenu, useExport } from '../utils/utils.js'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { useInitTooltip } from "../utils/utils.js";
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { pageById } from "../config/menu.js"
 import ModeSwitcher from './ModeSwitcher.vue'
 import { pageId, screenType, appMode, privacyMode } from "../stores/ui.js"
@@ -130,6 +130,13 @@ onMounted(async () => {
     await useInitTooltip()
 })
 
+// Schnellzugriff auf den KI-Agenten (Chat-Reiter des KI-Coachs) — von jeder
+// Seite aus, damit eine Frage an den Agenten keinen Umweg über das Menü braucht.
+const router = useRouter()
+function openAgent() {
+    router.push({ path: '/ki-coach', query: { tab: 'agent' } })
+}
+
 // Datenschutz-/Zensur-Modus: verbirgt Kontostände und Zahlen im Journal.
 function togglePrivacy() {
     privacyMode.value = !privacyMode.value
@@ -167,6 +174,13 @@ const navAdd = (param) => {
                 @click="togglePrivacy">
                 <i :class="privacyMode ? 'fa fa-eye-slash' : 'fa fa-eye'"></i>
             </button>
+            <!-- Schnellzugriff: KI-Agent (Chat) direkt öffnen. route.name statt
+                 pageId, weil pageId erst beim Mount der Zielseite gesetzt wird
+                 und bei SPA-Navigation einen Tick hinterherhinkt. -->
+            <button v-if="aiActive && route.name !== 'kiAgent'" type="button" class="btn btn-sm privacy-toggle"
+                :title="t('nav.kiAgent')" @click="openAgent">
+                <i class="uil uil-robot"></i>
+            </button>
             <span v-if="pageId === 'dashboard'">
                 <button class="btn btn-secondary btn-sm dropdown-toggle" type="button"
                     data-bs-toggle="dropdown" aria-expanded="false">Export
@@ -192,7 +206,7 @@ const navAdd = (param) => {
     margin-top: 16px;
 }
 
-/* Augen-Button (Zensur-Modus) links neben Export. */
+/* Icon-Buttons rechts (Zensur-Modus, KI-Agent) links neben Export. */
 .privacy-toggle {
     border: 1px solid var(--white-18);
     background: transparent;

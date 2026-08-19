@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onBeforeMount, onBeforeUnmount, computed } from 'vue'
+import { ref, reactive, onBeforeMount, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
@@ -64,6 +64,76 @@ const agentError = ref('')
 const agentSteps = reactive([]) // Live SSE steps during agent run
 const agentExpandedTools = reactive(new Set())
 const agentDeleteConfirmId = ref(null)
+
+// Mehrfachauswahl + Archiv der Session-Liste. Archivierte Chats verschwinden
+// aus der Standardansicht, bleiben aber erhalten — Löschen ist endgültig.
+const auswahlModus = ref(false)
+const zeigeArchiv = ref(false)
+const ausgewaehlteSessions = reactive(new Set())
+const bulkLoeschBestaetigung = ref(false)
+
+const sichtbareSessions = computed(() => agentSessions.filter(s => !!s.archiviert === zeigeArchiv.value))
+
+function toggleAuswahlModus() {
+    auswahlModus.value = !auswahlModus.value
+    ausgewaehlteSessions.clear()
+    bulkLoeschBestaetigung.value = false
+}
+
+function toggleAuswahl(id) {
+    if (ausgewaehlteSessions.has(id)) ausgewaehlteSessions.delete(id)
+    else ausgewaehlteSessions.add(id)
+    bulkLoeschBestaetigung.value = false
+}
+
+// Zwei Klicks wie beim Einzel-Löschen: der erste macht aus dem Knopf die
+// Rückfrage, erst der zweite löscht wirklich.
+async function loescheAusgewaehlte() {
+    if (!bulkLoeschBestaetigung.value) {
+        bulkLoeschBestaetigung.value = true
+        return
+    }
+    for (const id of [...ausgewaehlteSessions]) {
+        try {
+            await axios.delete(`/api/ai/agent/sessions/${id}`)
+            const idx = agentSessions.findIndex(s => s.id === id)
+            if (idx >= 0) agentSessions.splice(idx, 1)
+            if (agentCurrentSessionId.value === id) startNewAgentSession()
+        } catch (err) {
+            agentError.value = 'Löschen fehlgeschlagen: ' + err.message
+        }
+    }
+    ausgewaehlteSessions.clear()
+    bulkLoeschBestaetigung.value = false
+}
+
+async function archiviereAusgewaehlte() {
+    // In der Archiv-Ansicht kehrt derselbe Knopf die Richtung um (wiederherstellen).
+    const ziel = zeigeArchiv.value ? 0 : 1
+    for (const id of [...ausgewaehlteSessions]) {
+        try {
+            await axios.post(`/api/ai/agent/sessions/${id}/archiv`, { archiviert: ziel })
+            const s = agentSessions.find(x => x.id === id)
+            if (s) s.archiviert = ziel
+        } catch (err) {
+            agentError.value = 'Archivieren fehlgeschlagen: ' + err.message
+        }
+    }
+    ausgewaehlteSessions.clear()
+}
+
+// Chat-Verlauf ans Ende scrollen, sobald etwas dazukommt (eigene Eingabe,
+// Werkzeugschritte während des Laufs, Antwort, Sessionwechsel). Ohne das
+// verschwindet die Antwort unterhalb des sichtbaren Bereichs und man scrollt
+// nach jeder Frage von Hand hinterher.
+const agentChatEl = ref(null)
+watch(
+    [() => agentMessages.length, () => agentSteps.length, agentCurrentSessionId, agentLoading],
+    async () => {
+        await nextTick()
+        if (agentChatEl.value) agentChatEl.value.scrollTop = agentChatEl.value.scrollHeight
+    }
+)
 
 // Token-Verbrauch pro Provider (nur Reports auf dieser Seite)
 const tokensByProvider = computed(() => {
@@ -585,17 +655,19 @@ const vueRouter = useRouter()
 
 // Capture agent prompt from query param BEFORE any async work
 const pendingAgentPrompt = route.query.agentPrompt || null
+// ?tab=agent: Schnellzugriff aus der Navigationsleiste landet direkt im Chat.
+const pendingTab = route.query.tab || null
 
 onBeforeMount(async () => {
     spinnerLoadingPage.value = false
 
     // Switch tab immediately if agent prompt is pending
-    if (pendingAgentPrompt) {
+    if (pendingAgentPrompt || pendingTab === 'agent') {
         currentTab.value = 'agent'
     }
 
     // Clean URL immediately (remove query param so it doesn't retrigger)
-    if (route.query.agentPrompt) {
+    if (route.query.agentPrompt || route.query.tab) {
         vueRouter.replace({ path: route.path })
     }
 
@@ -900,27 +972,56 @@ onBeforeMount(async () => {
                     <!-- Session-Liste (links) -->
                     <div class="col-12 col-md-3 mb-3">
                         <div class="dailyCard" style="height: auto; max-height: 70vh; overflow-y: auto; padding: 0.5em;">
-                            <div class="small fw-bold mb-2"><i class="uil uil-history me-1"></i>{{ t('kiAgent.sessions') }}</div>
-                            <div v-if="agentSessions.length === 0" class="text-muted small text-center py-2">
-                                {{ t('kiAgent.noSessions') }}
-                            </div>
-                            <div v-for="s in agentSessions" :key="s.id"
-                                class="agent-session-item p-2 mb-1 rounded pointerClass"
-                                :class="{ 'agent-session-active': agentCurrentSessionId === s.id }"
-                                @click="loadAgentSession(s.id)">
-                                <div class="small fw-bold text-truncate" style="max-width: 100%;">{{ s.title || 'Session ' + s.id }}</div>
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <span class="text-muted" style="font-size: 0.65rem;">{{ formatDate(s.updatedAt || s.createdAt) }}</span>
-                                    <span v-if="agentDeleteConfirmId !== s.id"
-                                        class="text-danger" style="font-size: 0.7rem; cursor: pointer;"
-                                        @click.stop="agentDeleteConfirmId = s.id">
-                                        <i class="uil uil-trash-alt"></i>
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <div class="small fw-bold"><i class="uil uil-history me-1"></i>{{ t('kiAgent.sessions') }}</div>
+                                <div class="d-flex gap-1">
+                                    <span class="agent-list-btn" :class="{ active: auswahlModus }"
+                                        :title="t('kiAgent.auswahl')" @click="toggleAuswahlModus">
+                                        <i class="uil uil-check-square"></i>
                                     </span>
-                                    <span v-else class="d-flex gap-1" @click.stop>
-                                        <button class="btn btn-danger" style="font-size: 0.6rem; padding: 0 0.3rem;" @click="deleteAgentSession(s.id)">{{ t('common.yes') }}</button>
-                                        <button class="btn btn-outline-secondary" style="font-size: 0.6rem; padding: 0 0.3rem;" @click="agentDeleteConfirmId = null">{{ t('common.no') }}</button>
+                                    <span class="agent-list-btn" :class="{ active: zeigeArchiv }"
+                                        :title="t('kiAgent.archivAnzeigen')" @click="zeigeArchiv = !zeigeArchiv; ausgewaehlteSessions.clear()">
+                                        <i class="uil uil-archive"></i>
                                     </span>
                                 </div>
+                            </div>
+                            <div v-if="sichtbareSessions.length === 0" class="text-muted small text-center py-2">
+                                {{ zeigeArchiv ? t('kiAgent.archivLeer') : t('kiAgent.noSessions') }}
+                            </div>
+                            <div v-for="s in sichtbareSessions" :key="s.id"
+                                class="agent-session-item p-2 mb-1 rounded pointerClass"
+                                :class="{ 'agent-session-active': agentCurrentSessionId === s.id }"
+                                @click="auswahlModus ? toggleAuswahl(s.id) : loadAgentSession(s.id)">
+                                <div class="d-flex align-items-center gap-2">
+                                    <input v-if="auswahlModus" type="checkbox" class="form-check-input mt-0 flex-shrink-0"
+                                        :checked="ausgewaehlteSessions.has(s.id)" @click.stop="toggleAuswahl(s.id)" />
+                                    <div class="small fw-bold text-truncate" style="min-width: 0;">{{ s.title || 'Session ' + s.id }}</div>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="text-muted" style="font-size: 0.65rem;">{{ formatDate(s.updatedAt || s.createdAt) }}</span>
+                                    <template v-if="!auswahlModus">
+                                        <span v-if="agentDeleteConfirmId !== s.id"
+                                            class="text-danger" style="font-size: 0.7rem; cursor: pointer;"
+                                            @click.stop="agentDeleteConfirmId = s.id">
+                                            <i class="uil uil-trash-alt"></i>
+                                        </span>
+                                        <span v-else class="d-flex gap-1" @click.stop>
+                                            <button class="btn btn-danger" style="font-size: 0.6rem; padding: 0 0.3rem;" @click="deleteAgentSession(s.id)">{{ t('common.yes') }}</button>
+                                            <button class="btn btn-outline-secondary" style="font-size: 0.6rem; padding: 0 0.3rem;" @click="agentDeleteConfirmId = null">{{ t('common.no') }}</button>
+                                        </span>
+                                    </template>
+                                </div>
+                            </div>
+                            <!-- Aktionen auf die Auswahl -->
+                            <div v-if="auswahlModus" class="d-flex flex-column gap-1 mt-2">
+                                <button class="btn btn-sm btn-outline-secondary" :disabled="ausgewaehlteSessions.size === 0"
+                                    @click="archiviereAusgewaehlte">
+                                    <i class="uil uil-archive me-1"></i>{{ zeigeArchiv ? t('kiAgent.wiederherstellen') : t('kiAgent.archivieren') }} ({{ ausgewaehlteSessions.size }})
+                                </button>
+                                <button class="btn btn-sm" :class="bulkLoeschBestaetigung ? 'btn-danger' : 'btn-outline-danger'"
+                                    :disabled="ausgewaehlteSessions.size === 0" @click="loescheAusgewaehlte">
+                                    <i class="uil uil-trash-alt me-1"></i>{{ bulkLoeschBestaetigung ? t('kiAgent.wirklichLoeschen') : t('kiAgent.loeschen') }} ({{ ausgewaehlteSessions.size }})
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -930,7 +1031,7 @@ onBeforeMount(async () => {
                         <div class="dailyCard" style="height: auto; min-height: 50vh; display: flex; flex-direction: column; padding: 0.8em;">
 
                             <!-- Chat-Verlauf -->
-                            <div class="agent-chat-messages flex-grow-1 mb-3" style="overflow-y: auto; max-height: 60vh;">
+                            <div ref="agentChatEl" class="agent-chat-messages flex-grow-1 mb-3" style="overflow-y: auto; max-height: 60vh;">
                                 <div v-if="agentMessages.length === 0 && !agentLoading" class="text-center text-muted py-5">
                                     <i class="uil uil-brain" style="font-size: 3rem; opacity: 0.3;"></i>
                                     <p class="mt-2 mb-0">{{ t('kiAgent.agentWelcome') }}</p>
@@ -1144,6 +1245,21 @@ onBeforeMount(async () => {
 .agent-session-active {
     background: rgba(74, 144, 217, 0.15) !important;
     border-color: var(--blue-color, #4a90d9) !important;
+}
+
+/* Kopfzeilen-Knöpfe der Session-Liste (Auswahlmodus, Archiv) */
+.agent-list-btn {
+    cursor: pointer;
+    color: var(--white-38, rgba(255, 255, 255, 0.4));
+    font-size: 0.9rem;
+    padding: 0 0.2rem;
+    transition: color 0.15s;
+}
+.agent-list-btn:hover {
+    color: var(--white-87, rgba(255, 255, 255, 0.9));
+}
+.agent-list-btn.active {
+    color: var(--blue-color, #4a90d9);
 }
 
 /* Agent Tool Steps */

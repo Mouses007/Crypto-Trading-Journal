@@ -76,6 +76,7 @@ const VALID_SETTINGS_KEYS = [
     'livetradingAn', 'betaAusblenden', 'livetradingMobil', 'startseiteAn',
     // Anbieter/Modell je KI-Funktion; leer = global
     'aiBerichtProvider', 'aiBerichtModell', 'aiAgentProvider', 'aiAgentModell',
+    'aiAgentTokenBudget',
     'aiStrategieProvider', 'aiStrategieModell',
     // Kanalwahl je Meldungstyp. Der SMTP-Zugang läuft NICHT hierüber, sondern
     // über /api/mail/settings — dort wird das Passwort verschlüsselt.
