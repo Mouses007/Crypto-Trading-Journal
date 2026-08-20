@@ -9,7 +9,12 @@
  *   - Liegen Stop und Ziel in derselben Kerze, zählt der STOP. Innerhalb einer
  *     Kerze ist die Reihenfolge unbekannt; die optimistische Annahme würde
  *     Ergebnisse systematisch schönrechnen.
- *   - Ein- und Ausstieg bekommen Slippage in die jeweils ungünstige Richtung.
+ *   - MARKTORDERS bekommen Slippage in die jeweils ungünstige Richtung. Eine
+ *     Limit-Order füllt zum Limitpreis oder gar nicht und rutscht deshalb
+ *     nicht — dafür trägt sie das Risiko, überhaupt nicht gefüllt zu werden,
+ *     was auf Kerzenbasis nicht abbildbar ist.
+ *   - Gebühren nach Ordersorte: Ziel und Einstieg liegen als Limit im Buch
+ *     (Maker), Stop, Liquidation und Zeitausstieg reissen ab (Taker).
  *   - Break-Even wird erst am Kerzenschluss nachgezogen, nie rückwirkend.
  *
  * Alle Funktionen sind rein: Kerze rein, Ergebnis raus, kein Zustand aussen.
@@ -29,6 +34,121 @@ export function applySlippage(price, direction, side, slippageBps) {
 
 export function feeFor(price, qty, feeBps) {
     return Math.abs(price * qty) * (feeBps / BPS)
+}
+
+/**
+ * Ordersorte einer Füllung. `limit` liegt im Buch und wird zum Maker-Satz
+ * abgerechnet, `market` nimmt Liquidität und zahlt Taker.
+ */
+export const LIMIT = 'limit'
+export const MARKT = 'market'
+
+/**
+ * Welche Ausstiegsgründe sind Marktorders?
+ *
+ * Das Ziel liegt als Limit im Buch, alles andere reisst ab: der Stop ist eine
+ * Stop-Market, die Liquidation macht die Börse, Zeit- und Handausstieg gehen
+ * zum Marktpreis. Der Unterschied ist nicht kosmetisch — bei einem Stopabstand
+ * von 0,34 % (5m-Instanz) entscheidet die Differenz Maker/Taker über rund ein
+ * Sechstel des eingegangenen Risikos JE TRADE.
+ */
+const MARKT_AUSSTIEG = new Set(['sl', 'be', 'liquidation', 'timeout', 'manual', 'reverse'])
+
+export function ordersorte(reason) {
+    return MARKT_AUSSTIEG.has(reason) ? MARKT : LIMIT
+}
+
+/**
+ * Zahl oder `undefined` — NICHT `Number(x) || 0`.
+ *
+ * `Number(null)` ist 0, und eine fehlende Gebühr als 0 zu lesen ist genau der
+ * Fehler, den dieser Umbau beheben soll: er fällt nirgends auf, die Zahl ist
+ * bloss zu gut.
+ */
+function zahl(v) {
+    if (v === undefined || v === null || v === '') return undefined
+    const n = Number(v)
+    return Number.isFinite(n) ? n : undefined
+}
+
+/**
+ * Kostensätze für EINE Füllung, je nach Ordersorte.
+ *
+ * Slippage gibt es nur bei Marktorders. Eine Limit-Order füllt zum Limitpreis
+ * oder gar nicht — sie kann nicht „ungünstig rutschen".
+ *
+ * (Die andere Seite derselben Medaille wird hier NICHT modelliert: eine
+ * Limit-Order an der Zone füllt bevorzugt dann, wenn der Kurs durchmarschiert.
+ * Diese Vorauswahl ist real und macht das Limit-Modell optimistisch — sie
+ * lässt sich auf Kerzenbasis aber nicht ehrlich abbilden, und eine erfundene
+ * Zahl wäre schlimmer als eine offen genannte Lücke.)
+ *
+ * `feeBps` bleibt als Rückfall lesbar: alte Instanzen und alte gespeicherte
+ * Läufe tragen nur diesen einen Satz.
+ */
+export function satzFuer(costs, sorte) {
+    const c = costs || {}
+    const alt = zahl(c.feeBps)
+    const maker = zahl(c.feeMakerBps) ?? alt ?? 0
+    const taker = zahl(c.feeTakerBps) ?? alt ?? 0
+    return {
+        feeBps: sorte === LIMIT ? maker : taker,
+        slippageBps: sorte === LIMIT ? 0 : (zahl(c.slippageBps) ?? 0),
+    }
+}
+
+/**
+ * Kostenobjekt aus den Risiko-Parametern einer Instanz.
+ *
+ * EINE Stelle statt fünf. Vorher baute jeder Aufrufer (Engine, Backtest, API,
+ * Nachlauf, Not-Aus) sein `costs` von Hand, und beim Nachrüsten von
+ * `fundingBpsPer8h` wurden drei davon vergessen — der Fehler fiel nie auf,
+ * weil `Number(undefined) || 0` sauber 0 ergibt und die Zahlen bloss zu gut
+ * waren. `__selftest-kostenweitergabe.mjs` bewacht, dass es bei einer Stelle
+ * bleibt.
+ */
+export function kostenAus(risk) {
+    const r = risk || {}
+    return {
+        feeMakerBps: r.feeMakerBps,
+        feeTakerBps: r.feeTakerBps,
+        // Rückfall für alte gespeicherte Läufe, die nur einen Satz kennen.
+        feeBps: r.feeBps,
+        slippageBps: r.slippageBps,
+        fundingBpsPer8h: r.fundingBpsPer8h,
+        entryOrder: r.entryOrder,
+        // Reist im Kostenobjekt mit, statt durch drei weitere Signaturen
+        // gefädelt zu werden: es IST eine Kostenentscheidung, und jede
+        // zusätzliche Weitergabe ist eine Stelle, an der sie fehlen kann.
+        breakEvenCoversCosts: r.breakEvenCoversCosts,
+    }
+}
+
+/** Ordersorte des Einstiegs. Vorgabe Limit — siehe `entryOrder` in RISK_PARAMS. */
+export function einstiegsSorte(costs) {
+    return (costs || {}).entryOrder === MARKT ? MARKT : LIMIT
+}
+
+/**
+ * Was ein Ausstieg zum Einstiegspreis KOSTET, in Preis-Einheiten je Stück.
+ *
+ * Ein Stop auf dem Einstiegskurs ist kein Break-Even: Ein- und Ausstiegsgebühr
+ * sind bezahlt, der Stop rutscht als Marktorder. Gemessen an den 62 Papier-
+ * Trades vom 20.08.2026 endete deshalb JEDER der zwölf „Break-Even"-Ausstiege
+ * im Minus, im Schnitt bei −0,45 R.
+ *
+ * Der bezahlte Einstiegssatz wird aus `feeOpen` zurückgerechnet statt neu
+ * angenommen — so stimmt der Aufschlag auch dann noch, wenn die Gebührenstufe
+ * sich geändert hat, seit die Position eröffnet wurde.
+ */
+export function breakEvenAufschlag(pos, costs) {
+    const bezug = Math.abs(Number(pos.entryPrice) * (Number(pos.initialQty) || Number(pos.qty)))
+    const gezahlt = bezug > 0 ? (Number(pos.feeOpen) || 0) / bezug * BPS : NaN
+    const einBps = Number.isFinite(gezahlt) && gezahlt >= 0
+        ? gezahlt
+        : satzFuer(costs, einstiegsSorte(costs)).feeBps
+    const aus = satzFuer(costs, MARKT)
+    return Number(pos.entryPrice) * (einBps + aus.feeBps + aus.slippageBps) / BPS
 }
 
 /** Abrechnungszeitpunkte für Finanzierungskosten: 00:00, 08:00, 16:00 UTC. */
@@ -67,10 +187,11 @@ export function fundingFor(notional, entryTime, exitTime, fundingBpsPer8h) {
 
 /**
  * Legt eine simulierte Position an.
- * `costs` = { feeBps, slippageBps }
+ * `costs` = { feeMakerBps, feeTakerBps, slippageBps, entryOrder, fundingBpsPer8h }
  */
 export function createPosition({ setup, qty, entryPrice, entryTime, leverage = 1, costs }) {
-    const fill = applySlippage(entryPrice, setup.direction, 'entry', costs.slippageBps)
+    const ein = satzFuer(costs, einstiegsSorte(costs))
+    const fill = applySlippage(entryPrice, setup.direction, 'entry', ein.slippageBps)
     return {
         setupId: setup.id ?? 0,
         symbol: setup.symbol || '',
@@ -86,7 +207,7 @@ export function createPosition({ setup, qty, entryPrice, entryTime, leverage = 1
         leverage,
         notionalUsdt: fill * qty,
         marginUsdt: (fill * qty) / (leverage || 1),
-        feeOpen: feeFor(fill, qty, costs.feeBps),
+        feeOpen: feeFor(fill, qty, ein.feeBps),
         maePrice: fill,
         mfePrice: fill,
         breakEvenDone: false,
@@ -149,8 +270,10 @@ function bucheTeilausstieg(pos, price, anteilPct, costs, time) {
     const menge = pos.qty * anteil
     if (menge <= 0) return
 
-    const fill = applySlippage(price, pos.direction, 'exit', costs?.slippageBps || 0)
-    const gebuehr = feeFor(fill, menge, costs?.feeBps || 0)
+    // Das Teilziel liegt als Limit im Buch — wie das volle Ziel.
+    const satz = satzFuer(costs, LIMIT)
+    const fill = applySlippage(price, pos.direction, 'exit', satz.slippageBps)
+    const gebuehr = feeFor(fill, menge, satz.feeBps)
     const brutto = pos.direction === 'long'
         ? (fill - pos.entryPrice) * menge
         : (pos.entryPrice - fill) * menge
@@ -249,7 +372,21 @@ export function stepCandle(pos, candle, opts = {}) {
                 ? candle.c >= pos.entryPrice + r * breakEvenAtR
                 : candle.c <= pos.entryPrice - r * breakEvenAtR
             if (erreicht) {
-                pos.stopLoss = pos.entryPrice
+                // Ohne Aufschlag ist der Stop auf dem Einstiegskurs ein
+                // garantierter kleiner Verlust (Gebühren beider Seiten).
+                const aufschlag = opts.costs?.breakEvenCoversCosts
+                    ? breakEvenAufschlag(pos, opts.costs)
+                    : 0
+                const neu = long ? pos.entryPrice + aufschlag : pos.entryPrice - aufschlag
+                // Sicherung: der nachgezogene Stop darf nicht schon jenseits
+                // des aktuellen Schlusskurses liegen, sonst löst er in
+                // derselben Kerze aus, in der er gesetzt wird. Bei einem
+                // Auslöser ab 1 R und einem Aufschlag im Bereich 0,03–0,2 R
+                // kann das praktisch nicht passieren — wenn doch, gilt der
+                // Einstiegskurs, der gegenüber dem Ursprungsstop immer noch
+                // die Verbesserung ist.
+                const zuNah = long ? neu >= candle.c : neu <= candle.c
+                pos.stopLoss = zuNah ? pos.entryPrice : neu
                 pos.breakEvenDone = true
             }
         }
@@ -263,8 +400,9 @@ export function stepCandle(pos, candle, opts = {}) {
  * (Feldnamen wie in der Tabelle `strategy_trades`).
  */
 export function closePosition(pos, { price, reason, time }, costs, extra = {}) {
-    const fill = applySlippage(price, pos.direction, 'exit', costs.slippageBps)
-    const feeClose = feeFor(fill, pos.qty, costs.feeBps)
+    const satz = satzFuer(costs, ordersorte(reason))
+    const fill = applySlippage(price, pos.direction, 'exit', satz.slippageBps)
+    const feeClose = feeFor(fill, pos.qty, satz.feeBps)
     // Die Eröffnungsgebühr wurde auf die volle Menge gezahlt und bleibt deshalb
     // ungeteilt; dazu kommen die Gebühren beider Ausstiege.
     const fees = pos.feeOpen + feeClose + (Number(pos.partialFee) || 0)

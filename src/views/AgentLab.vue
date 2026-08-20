@@ -1069,7 +1069,13 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || '�
                                 <!-- Kostenmodell und Regelfassung: ohne beides ist
                                      ein alter Lauf nicht nachstellbar. -->
                                 <td class="small text-muted" style="white-space: nowrap;">
-                                    <template v-if="l.risk && l.risk.feeBps !== undefined">
+                                    <!-- Läufe von vor der Maker/Taker-Aufteilung tragen
+                                         nur einen Satz — der wird als solcher gezeigt,
+                                         nicht in zwei erfundene Zahlen aufgeteilt. -->
+                                    <template v-if="l.risk && l.risk.feeTakerBps !== undefined">
+                                        {{ l.risk.feeMakerBps }}/{{ l.risk.feeTakerBps }}+{{ l.risk.slippageBps }} bp
+                                    </template>
+                                    <template v-else-if="l.risk && l.risk.feeBps !== undefined">
                                         {{ l.risk.feeBps }}+{{ l.risk.slippageBps }} bp
                                     </template>
                                     <template v-else>–</template>

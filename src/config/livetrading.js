@@ -111,7 +111,7 @@ const DEFINITIONEN = [
         intervallMs: 60 * 1000,
         // Ein Kerzenchart braucht Breite, sonst klebt jede Kerze an der nächsten
         spalten: 2,
-        quelle: 'Yahoo Finance (ES=F, NQ=F, DX-Y.NYB)',
+        quelle: 'Yahoo Finance (ES=F, NQ=F, RTY=F, DX-Y.NYB)',
     },
     {
         id: 'funding',

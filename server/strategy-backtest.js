@@ -17,7 +17,7 @@ import { sichtBedarfKerzen } from './strategies/rule-engine.js'
 import { getHistoricalCandles, timeframeMs, currentCandleOpen } from './market-data.js'
 import { evaluateRisk, startOfDayUtc } from './risk-engine.js'
 import { wartungsmargePctFuer } from './margin-rates.js'
-import { createPosition, stepCandle, closePosition, entryIsValid } from './fill-simulator.js'
+import { createPosition, stepCandle, closePosition, entryIsValid, kostenAus } from './fill-simulator.js'
 
 /** Obergrenze, damit ein versehentlicher 5-Jahres-Lauf den Server nicht blockiert. */
 export const MAX_BACKTEST_CANDLES = 20000
@@ -218,7 +218,7 @@ export async function runBacktest(opts) {
         volleHistorie ? 0 : ankerBedarf,
     )
 
-    const costs = { feeBps: risk.feeBps, slippageBps: risk.slippageBps, fundingBpsPer8h: risk.fundingBpsPer8h }
+    const costs = kostenAus(risk)
     // Wartungsmarge je Symbol von der Börse, sofern nicht bewusst überschrieben.
     // Eine Pauschale für alle Coins liess Alt-Coin-Positionen im Backtest weit
     // über den Punkt hinaus laufen, an dem die Börse geschlossen hätte.

@@ -180,11 +180,12 @@ export function baueZeilen(d = {}) {
 
     // ── Makro ───────────────────────────────────────────────────────────
     if (d.makro?.maerkte?.length) {
-        const namen = { sp500: 'S&P 500', nasdaq: 'Nasdaq 100', dxy: 'Dollar-Index' }
+        const namen = { sp500: 'S&P 500', nasdaq: 'Nasdaq 100', russell: 'Russell 2000', dxy: 'Dollar-Index' }
         const teile = d.makro.maerkte.filter(m => m.verfuegbar).map(m =>
             `${namen[m.id] || m.id} ${pz(m.deltaPct, 2)}${m.offen === false ? ' (Börse zu)' : ''}`)
         const k = d.makro.korrelation
         if (k && nz(k.nasdaq)) teile.push(`Korrelation BTC↔Nasdaq ${k.nasdaq} (${k.deutung})`)
+        if (k && nz(k.russell)) teile.push(`Korrelation BTC↔Russell 2000 ${k.russell}`)
         const s = d.makro.stablecoins
         if (s?.verfuegbar) teile.push(`Stablecoin-Menge ${s.tage} T ${pz(s.deltaPct, 2)} (${geld(Math.abs(s.deltaUsd))} ${s.deltaUsd < 0 ? 'abgeflossen' : 'zugeflossen'})`)
         if (teile.length) dazu('makro', `Makro: ${teile.join('; ')}`)

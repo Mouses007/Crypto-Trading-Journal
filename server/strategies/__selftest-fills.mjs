@@ -7,11 +7,16 @@
  *
  *   node server/strategies/__selftest-fills.mjs
  *
- * Alle Fälle laufen ohne Gebühren und Slippage, damit die erwarteten Beträge
- * exakt aufgehen; die Kostenrechnung ist an anderer Stelle abgedeckt.
+ * Die Fälle zum Teilausstieg laufen ohne Gebühren und Slippage, damit die
+ * erwarteten Beträge exakt aufgehen. Die beiden letzten Blöcke prüfen genau
+ * das Gegenteil: dass Maker und Taker auseinandergehalten werden und der
+ * Break-Even-Stopp die Kosten beider Seiten deckt.
  */
 
-import { createPosition, stepCandle, closePosition, riskPerUnit, fundingFor, liquidationPrice } from '../fill-simulator.js'
+import {
+    createPosition, stepCandle, closePosition, riskPerUnit, fundingFor, liquidationPrice,
+    satzFuer, ordersorte, breakEvenAufschlag, LIMIT, MARKT,
+} from '../fill-simulator.js'
 
 let passed = 0
 let failed = 0
@@ -337,6 +342,81 @@ console.log('\nZwangsliquidation')
     const e = stepCandle(pos, k(111, 112, 94, 95, 2), { breakEvenAtR: 1, costs })
     check('nachgezogener Stopp schlägt die Liquidation',
         e.exit?.reason === 'be' && e.exit.price === 100, JSON.stringify(e.exit))
+}
+
+// ── Gebühren nach Ordersorte ──────────────────────────────────────────────
+// Bis zum 20.08.2026 galt EIN Satz für jede Füllung. Gemessen an den 62
+// Papier-Trades verzerrte das die Bilanz um 16 R — genug, um das Vorzeichen
+// der 5m- und 15m-Instanz zu drehen. Deshalb hier festgenagelt.
+{
+    const c = { feeMakerBps: 1.4, feeTakerBps: 4.2, slippageBps: 2 }
+    check('Limit zahlt Maker', satzFuer(c, LIMIT).feeBps === 1.4)
+    check('Markt zahlt Taker', satzFuer(c, MARKT).feeBps === 4.2)
+    check('Limit rutscht nicht', satzFuer(c, LIMIT).slippageBps === 0)
+    check('Markt rutscht', satzFuer(c, MARKT).slippageBps === 2)
+
+    check('Ziel ist eine Limit-Order', ordersorte('tp') === LIMIT)
+    for (const grund of ['sl', 'be', 'liquidation', 'timeout', 'manual', 'reverse']) {
+        check(`${grund} ist eine Marktorder`, ordersorte(grund) === MARKT)
+    }
+
+    // Rückfall: alte Instanzen und gespeicherte Läufe kennen nur `feeBps`.
+    const alt = { feeBps: 6, slippageBps: 2 }
+    check('alter Einzelsatz gilt für beide Sorten',
+        satzFuer(alt, LIMIT).feeBps === 6 && satzFuer(alt, MARKT).feeBps === 6)
+    // `Number(null)` ist 0 — eine fehlende Gebühr darf nicht als Nulltarif
+    // durchgehen, ohne dass es jemand merkt.
+    check('fehlende Sätze ergeben 0, aber nachvollziehbar',
+        satzFuer({}, MARKT).feeBps === 0 && satzFuer(null, LIMIT).feeBps === 0)
+    check('null wird nicht als 0 missverstanden, sondern fällt auf feeBps zurück',
+        satzFuer({ feeMakerBps: null, feeBps: 3 }, LIMIT).feeBps === 3)
+}
+
+// ── Break-Even deckt die Kosten ───────────────────────────────────────────
+{
+    const c = { feeMakerBps: 1.4, feeTakerBps: 4.2, slippageBps: 2, entryOrder: LIMIT }
+    const pos = createPosition({
+        setup: { direction: 'long', symbol: 'X', timeframe: '1h', stopLoss: 90, takeProfit: 130 },
+        qty: 10, entryPrice: 100, entryTime: 0, leverage: 1, costs: c,
+    })
+    // Einstieg als Limit: kein Rutschen, Maker-Gebühr auf 100 × 10.
+    check('Limit-Einstieg füllt zum Limitpreis', pos.entryPrice === 100)
+    check('Limit-Einstieg zahlt Maker', Math.abs(pos.feeOpen - 100 * 10 * 1.4 / 10000) < 1e-12)
+
+    // Aufschlag = Einstieg (1,4) + Ausstieg Taker (4,2) + Slippage (2) = 7,6 bp
+    const auf = breakEvenAufschlag(pos, c)
+    check('Break-Even-Aufschlag deckt beide Seiten',
+        Math.abs(auf - 100 * 7.6 / 10000) < 1e-9, `bekommen: ${auf}`)
+
+    // …und der Trade schliesst damit tatsächlich bei ~0 statt im Minus.
+    stepCandle(pos, k(100, 112, 99, 111, 1), { breakEvenAtR: 1, costs: { ...c, breakEvenCoversCosts: true } })
+    check('Stopp liegt über dem Einstieg', pos.stopLoss > 100 && pos.breakEvenDone)
+    const e = stepCandle(pos, k(111, 112, 100, 100, 2), { breakEvenAtR: 1, costs: { ...c, breakEvenCoversCosts: true } })
+    check('Rückläufer löst den BE-Stopp aus', e.exit?.reason === 'be')
+    const trade = closePosition(pos, e.exit, { ...c, breakEvenCoversCosts: true })
+    check('Break-Even ist wirklich break-even (netto ≈ 0, nicht negativ)',
+        Math.abs(trade.netPnl) < 0.02 && trade.netPnl > -0.02,
+        `netPnl ${trade.netPnl}`)
+
+    // Gegenprobe: ohne den Schalter bleibt es der garantierte Kleinverlust,
+    // den die 12 BE-Ausstiege vom 20.08.2026 gezeigt haben.
+    const pos2 = createPosition({
+        setup: { direction: 'long', symbol: 'X', timeframe: '1h', stopLoss: 90, takeProfit: 130 },
+        qty: 10, entryPrice: 100, entryTime: 0, leverage: 1, costs: c,
+    })
+    stepCandle(pos2, k(100, 112, 99, 111, 1), { breakEvenAtR: 1, costs: c })
+    check('ohne Schalter bleibt der Stopp auf dem Einstieg', pos2.stopLoss === 100)
+    const e2 = stepCandle(pos2, k(111, 112, 99, 99, 2), { breakEvenAtR: 1, costs: c })
+    const trade2 = closePosition(pos2, e2.exit, c)
+    check('…und kostet dann Gebühren', trade2.netPnl < 0, `netPnl ${trade2.netPnl}`)
+
+    // Short gespiegelt: der Aufschlag muss NACH UNTEN gehen.
+    const kurz = createPosition({
+        setup: { direction: 'short', symbol: 'X', timeframe: '1h', stopLoss: 110, takeProfit: 70 },
+        qty: 10, entryPrice: 100, entryTime: 0, leverage: 1, costs: c,
+    })
+    stepCandle(kurz, k(100, 101, 88, 89, 1), { breakEvenAtR: 1, costs: { ...c, breakEvenCoversCosts: true } })
+    check('Short zieht den BE-Stopp nach unten', kurz.stopLoss < 100 && kurz.breakEvenDone)
 }
 
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen\n`)

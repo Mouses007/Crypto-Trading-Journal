@@ -45,8 +45,32 @@ export const RISK_PARAMS = [
     // Risiko auf denselben Coin.
     { key: 'duplicateScope', type: 'select', default: 'symbol', options: ['symbol', 'symbol_tf'], group: 'limits' },
     { key: 'minRR', type: 'number', default: 1.5, min: 0.1, max: 20, step: 0.1, group: 'quality' },
-    { key: 'feeBps', type: 'number', default: 6, min: 0, max: 100, step: 0.5, group: 'costs' },
-    { key: 'slippageBps', type: 'number', default: 2, min: 0, max: 100, step: 0.5, group: 'costs' },
+    // Maker und Taker sind NICHT dasselbe, und die Strategien nutzen beide:
+    // der Einstieg liegt als Limit an der Zone, das Ziel als Limit im Buch,
+    // nur der Stop reisst ab. Ein einziger Satz für alles hat die 62 Papier-
+    // Trades vom 20.08.2026 um 16 R zu schlecht gerechnet — genug, um das
+    // Vorzeichen der 5m- und 15m-Instanz umzudrehen.
+    //
+    // Vorgabe ist der Bitunix-Standardsatz (0,02 % / 0,06 %). Die eigene Stufe
+    // steht im Konto unter „Gebühren" und ist mit dem Handelsvolumen niedriger
+    // — deshalb `step: 0.01` statt 0,5: 1,4 und 4,2 müssen eingebbar sein.
+    { key: 'feeMakerBps', type: 'number', default: 2, min: 0, max: 100, step: 0.01, group: 'costs' },
+    { key: 'feeTakerBps', type: 'number', default: 6, min: 0, max: 100, step: 0.01, group: 'costs' },
+    // Gilt nur für Marktorders — eine Limit-Order füllt zum Limitpreis.
+    { key: 'slippageBps', type: 'number', default: 2, min: 0, max: 100, step: 0.01, group: 'costs' },
+    // Ordersorte des Einstiegs. Alle heutigen Strategien steigen auf einem
+    // vorher berechneten Kursniveau ein (`setup.entry`), also als Limit — auch
+    // die bestätigten Varianten, die nur später scharf schalten. Eine Strategie,
+    // die zum Kerzenschluss kauft, müsste hier auf `market` gestellt werden.
+    {
+        key: 'entryOrder', type: 'select', default: 'limit', group: 'costs',
+        options: [{ value: 'limit', labelKey: 'strategies.risk.entryOrderLimit' },
+                  { value: 'market', labelKey: 'strategies.risk.entryOrderMarket' }],
+    },
+    // Zieht den Break-Even-Stop um die Kosten beider Seiten vom Einstieg weg,
+    // damit „Break-Even" auch eins ist. Ohne das ist der Stop auf dem
+    // Einstiegskurs ein garantierter Verlust in Höhe der Gebühren.
+    { key: 'breakEvenCoversCosts', type: 'boolean', default: true, group: 'costs' },
     // Finanzierungskosten je 8-Stunden-Abrechnung, in Basispunkten des
     // Nominalwerts. 0 = nicht modelliert (bisheriges Verhalten).
     //

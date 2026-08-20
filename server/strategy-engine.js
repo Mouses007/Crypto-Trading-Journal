@@ -26,7 +26,7 @@ import { getClosedCandles, getSymbolMeta, getLastPrice, timeframeMs, isValidTime
 import { sichtBedarfKerzen } from './strategies/rule-engine.js'
 import { evaluateRisk, startOfDayUtc, RISK_REASONS } from './risk-engine.js'
 import { openPaperPosition, stepPaperPositions, getPaperEquity, closePaperPositionManually } from './execution/paper.js'
-import { entryIsValid } from './fill-simulator.js'
+import { entryIsValid, kostenAus } from './fill-simulator.js'
 import { agentenVeto } from './strategy-agents.js'
 import { openLivePosition, getLiveEquity, closeLivePosition, getLivePositionId } from './execution/bitunix.js'
 import { beansprucheFuehrung, verlaengereFuehrung, gibFuehrungFrei } from './db-claim.js'
@@ -157,21 +157,72 @@ export async function darfLiveHandeln(instance, schalter) {
 
 // ── Kontext für die Risikoprüfung ────────────────────────────────────────
 
-async function ladeRisikoKontext(instance, now) {
-    const knex = getKnex()
+/**
+ * Die drei Abfragen des Risiko-Kontexts, als Builder — damit ein Selbsttest
+ * ihr SQL prüfen kann, ohne eine Datenbank zu brauchen.
+ *
+ * ALLE DREI SIND ZUM ZEITPUNKT `now` GESTELLT, nicht „jetzt gerade".
+ *
+ * `now` ist die Kerzenzeit des Auslösers (`ev.triggeredAt`), nicht die
+ * Systemzeit. Beim ersten Lauf über ein Symbol wertet die Strategie ihr ganzes
+ * Scan-Fenster aus — bei LSOB 200 Kerzen, auf 4h also fünf Wochen — und löst
+ * dabei Setups auf Kerzen aus, die längst vergangen sind. Die Abfragen lasen
+ * dagegen den JETZIGEN Stand. Drei Folgen, alle in dieselbe Richtung:
+ *
+ *   1. Sperrfrist: `max(exitTime)` konnte NACH `now` liegen. Die Wartezeit
+ *      wurde negativ, und aus 60 Minuten Sperre wurden Meldungen wie „noch
+ *      34380 min". Am 20.08.2026 waren 76 von 79 Sperrfrist-Ablehnungen von
+ *      dieser Sorte — der häufigste Ablehnungsgrund überhaupt, und er traf
+ *      nicht zufällig, sondern bevorzugt überlappende Setups.
+ *   2. Tagesverlust: die Summe zählte Trades mit, die zum Zeitpunkt der
+ *      Entscheidung noch gar nicht geschlossen waren. Ein Blick in die
+ *      Zukunft, der das Tageslimit mal zu früh, mal zu spät greifen liess.
+ *   3. Offene Positionen: eine im Rücklauf längst geschlossene Position galt
+ *      als zu. Ohne (3) würde (1) allein den Rücklauf bloss durchlässiger
+ *      machen — zwei gleichzeitige Positionen auf demselben Symbol wären dann
+ *      möglich, ohne dass ein Tor es merkt.
+ *
+ * Im laufenden Betrieb ist `now` die Gegenwart; dann sind alle drei Schranken
+ * wirkungslos und es ändert sich nichts. Der Fix betrifft ausschliesslich den
+ * Rücklauf — dort aber die Datenbasis, auf der später Optimierungen fussen.
+ */
+export function risikoKontextAbfragen(knex, instanceId, now) {
     const tagesBeginn = startOfDayUtc(now)
-
-    const [offen, heute, letzte] = await Promise.all([
-        knex('strategy_positions').where({ instanceId: instance.id, status: 'open' }),
-        knex('strategy_trades')
-            .where({ instanceId: instance.id })
-            .where('exitTime', '>=', tagesBeginn)
+    return {
+        // Offen ZUM ZEITPUNKT now = eingestiegen bis dahin und bis dahin nicht
+        // wieder geschlossen. `whereNotExists` statt Join, damit eine Position
+        // nicht doppelt in der Liste landet.
+        //
+        // `pending` bleibt draussen wie bisher: das ist die Reservierung VOR
+        // der Live-Order, keine Position.
+        offen: knex('strategy_positions')
+            .where({ instanceId })
+            .whereIn('status', ['open', 'closed'])
+            .where('entryTime', '<=', now)
+            .whereNotExists((q) => q
+                .select(knex.raw('1'))
+                .from('strategy_trades')
+                // Bezeichner über ?? binden, nicht blank in whereRaw:
+                // PostgreSQL faltet ungequotetes camelCase zu Kleinbuchstaben.
+                .whereRaw('?? = ??', ['strategy_trades.positionId', 'strategy_positions.id'])
+                .where('strategy_trades.exitTime', '<=', now)),
+        heute: knex('strategy_trades')
+            .where({ instanceId })
+            .whereBetween('exitTime', [tagesBeginn, now])
             .sum({ pnl: 'netPnl' }).first(),
-        knex('strategy_trades')
-            .where({ instanceId: instance.id })
+        letzte: knex('strategy_trades')
+            .where({ instanceId })
+            .where('exitTime', '<=', now)
             .groupBy('symbol', 'timeframe')
             .select('symbol', 'timeframe')
             .max({ exitTime: 'exitTime' }),
+    }
+}
+
+async function ladeRisikoKontext(instance, now) {
+    const abfragen = risikoKontextAbfragen(getKnex(), instance.id, now)
+    const [offen, heute, letzte] = await Promise.all([
+        abfragen.offen, abfragen.heute, abfragen.letzte,
     ])
 
     // Zwei Schlüssel je Zeile: `BTCUSDT` für die symbolweite Sperrfrist,
@@ -206,7 +257,7 @@ async function ladeKontostand(instance) {
 async function verarbeiteSymbol(instance, symbol, timeframe, schalter) {
     const knex = getKnex()
     const p = instance.params
-    const costs = { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps, fundingBpsPer8h: instance.risk.fundingBpsPer8h }
+    const costs = kostenAus(instance.risk)
 
     // Verankerte Linien brauchen ihren Anker im Sichtfenster (Wochen-VWAP auf
     // 15m ≈ 700 Kerzen). Ohne diesen Aufschlag bliebe die Linie im Betrieb leer,
@@ -750,7 +801,7 @@ async function pflegeOffenePositionen() {
             }
             await stepPaperPositions({
                 instance, symbol, timeframe: pflegeTf, candles,
-                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps, fundingBpsPer8h: instance.risk.fundingBpsPer8h },
+                costs: kostenAus(instance.risk),
                 breakEvenAtR: instance.params.breakEvenAtR ?? instance.strategie?.regeln?.breakEvenAtR ?? 0,
                 maxHoldMs: ((instance.params.maxHoldCandles ?? instance.strategie?.regeln?.maxHoldCandles ?? 0) || 0) * timeframeMs(pflegeTf),
                 partialTpR: instance.params.partialTpR,
@@ -932,7 +983,7 @@ export async function killSwitch({ closePositions = false } = {}) {
             const preis = await getLastPrice(row.symbol, { market: instance.market }).catch(() => Number(row.entryPrice))
             const r = await schliessePositionManuell({
                 instance, positionRow: row, price: preis, time: Date.now(),
-                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps, fundingBpsPer8h: instance.risk.fundingBpsPer8h },
+                costs: kostenAus(instance.risk),
                 reason: 'manual',
             }).catch((err) => ({ ok: false, reason: err.message }))
             if (r.ok) geschlossen++

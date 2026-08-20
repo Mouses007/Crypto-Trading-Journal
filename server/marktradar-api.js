@@ -1376,6 +1376,10 @@ const CG_COIN_CHART = 'https://api.coingecko.com/api/v3/coins'
 const MAKRO_MAERKTE = [
     { id: 'sp500', ticker: 'ES=F' },
     { id: 'nasdaq', ticker: 'NQ=F' },
+    // Nebenwerte als Gegenprobe zur Nasdaq: laufen NQ und RTY zusammen, ist es
+    // eine Liquiditäts- oder Zinsbewegung und betrifft Krypto mit; läuft nur
+    // NQ, ist es Rotation in wenige grosse Werte und trägt selten hierher.
+    { id: 'russell', ticker: 'RTY=F' },
     // Dollar-Index: kein Future, aber als Index rund um die Uhr fortgeschrieben
     { id: 'dxy', ticker: 'DX-Y.NYB' },
 ]
@@ -1437,6 +1441,7 @@ export async function holeMakro() {
         // ankommt (Kopplung springt in Risk-off-Phasen).
         const letzte = (r, n) => (r || []).slice(-n)
         const korrNasdaq = korrelationAusReihen(letzte(btcReihe, 45), letzte(reihen.nasdaq, 32))
+        const korrRussell = korrelationAusReihen(letzte(btcReihe, 45), letzte(reihen.russell, 32))
         const korrDxy = korrelationAusReihen(letzte(btcReihe, 45), letzte(reihen.dxy, 32))
 
         const gueltigeStable = stableReihen.filter(Boolean)
@@ -1486,6 +1491,7 @@ export async function holeMakro() {
             maerkte,
             korrelation: {
                 nasdaq: rundeAuf(korrNasdaq.r, 2),
+                russell: rundeAuf(korrRussell.r, 2),
                 dxy: rundeAuf(korrDxy.r, 2),
                 punkte: korrNasdaq.punkte,
                 deutung: deuteKorrelation(korrNasdaq.r),

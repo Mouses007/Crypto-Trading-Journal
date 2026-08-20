@@ -2167,6 +2167,7 @@
       "title": "Makro-Umfeld",
       "sp500": "S&P 500 (Future)",
       "nasdaq": "Nasdaq 100 (Future)",
+      "russell": "Russell 2000 (Future)",
       "dxy": "Dollar-Index",
       "closed": "zu",
       "closedHint": "Börse geschlossen — der Wert steht still, während Krypto weiterläuft.",
@@ -2177,6 +2178,7 @@
       "corr_starkGegen": "Krypto läuft gegen die Nasdaq",
       "corr_unbekannt": "Kopplung noch nicht bestimmbar",
       "corrNasdaq": "Korrelation BTC ↔ Nasdaq (30 T)",
+      "corrRussell": "Korrelation BTC ↔ Russell 2000 (30 T)",
       "corrDxy": "Korrelation BTC ↔ Dollar-Index (30 T)",
       "corrPoints": "gemeinsame Handelstage",
       "legendGut": "Rückenwind für Krypto",
@@ -2188,8 +2190,8 @@
       "domPoints": "Punkte",
       "domFromSupply": "aus echten Flüssen",
       "domFromPrice": "aus Kursbewegung",
-      "domHint": "Die Dominanz allein ist nicht deutbar: sie steigt schon, wenn nur die Kurse fallen. Erst die Aufteilung zeigt, ob wirklich Geld geflossen ist.",
-      "source": "Aktien als FUTURES (ES/NQ), nicht als Kassa-Index: der Index steht nachts und am Wochenende still, der Future läuft fast durch — nur so ist der Vergleich mit dem durchlaufenden Krypto-Markt ehrlich. Die Farbe zeigt Rückenwind oder Gegenwind FÜR KRYPTO, nicht die Richtung des Marktes: ein steigender Dollar ist deshalb rot. Der Stablecoin-Fluss ist die Mengenänderung von USDT und USDC — bewusst nicht die „USDT-Dominanz\", denn die steigt schon rein rechnerisch, wenn Krypto fällt, und wiederholt dann nur den Kursrückgang. Zu- oder Abfluss dagegen zeigt echtes Geld, das in den Markt kommt oder ihn verlässt."
+      "domHint": "Die Dominanz allein ist nicht deutbar: sie steigt schon, wenn nur die Kurse fallen. Erst die Aufteilung zeigt, ob wirklich Geld geflossen ist. Der Russell 2000 steht als Gegenprobe zur Nasdaq daneben: laufen beide zusammen, ist es eine Liquiditäts- oder Zinsbewegung, die Krypto mitbetrifft; läuft nur die Nasdaq, ist es Rotation in wenige grosse Werte und trägt selten hierher.",
+      "source": "Aktien als FUTURES (ES/NQ/RTY), nicht als Kassa-Index: der Index steht nachts und am Wochenende still, der Future läuft fast durch — nur so ist der Vergleich mit dem durchlaufenden Krypto-Markt ehrlich. Die Farbe zeigt Rückenwind oder Gegenwind FÜR KRYPTO, nicht die Richtung des Marktes: ein steigender Dollar ist deshalb rot. Der Stablecoin-Fluss ist die Mengenänderung von USDT und USDC — bewusst nicht die „USDT-Dominanz\", denn die steigt schon rein rechnerisch, wenn Krypto fällt, und wiederholt dann nur den Kursrückgang. Zu- oder Abfluss dagegen zeigt echtes Geld, das in den Markt kommt oder ihn verlässt."
     },
     "lage": {
       "title": "Gesamtlage (KI)",
@@ -2722,7 +2724,7 @@
         },
         {
           "h": "INDIZES, FUNDING, LONG/SHORT, MAKRO",
-          "p": "Indizes zeigt ES=F, NQ=F und den Dollar-Index als Intraday-Kerzen von Yahoo. Funding, Long/Short + offenes Interesse und Makro-Umfeld sind dieselben Kacheln wie im Marktradar — Funding und Long/Short folgen der Symbolwahl."
+          "p": "Indizes zeigt ES=F, NQ=F, RTY=F und den Dollar-Index als Intraday-Kerzen von Yahoo. Funding, Long/Short + offenes Interesse und Makro-Umfeld sind dieselben Kacheln wie im Marktradar — Funding und Long/Short folgen der Symbolwahl."
         },
         {
           "h": "BOOKMAP & HEBELKARTE",

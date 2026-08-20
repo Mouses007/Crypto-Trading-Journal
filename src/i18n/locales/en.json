@@ -2167,6 +2167,7 @@
       "title": "Macro backdrop",
       "sp500": "S&P 500 (future)",
       "nasdaq": "Nasdaq 100 (future)",
+      "russell": "Russell 2000 (future)",
       "dxy": "Dollar index",
       "closed": "closed",
       "closedHint": "Market closed — the value stands still while crypto keeps trading.",
@@ -2177,6 +2178,7 @@
       "corr_starkGegen": "Crypto runs against the Nasdaq",
       "corr_unbekannt": "Coupling not determinable yet",
       "corrNasdaq": "Correlation BTC ↔ Nasdaq (30 d)",
+      "corrRussell": "Correlation BTC ↔ Russell 2000 (30 d)",
       "corrDxy": "Correlation BTC ↔ dollar index (30 d)",
       "corrPoints": "shared trading days",
       "legendGut": "Tailwind for crypto",
@@ -2189,7 +2191,7 @@
       "domFromSupply": "from real flows",
       "domFromPrice": "from price moves",
       "domHint": "Dominance on its own cannot be read: it rises even when only prices fall. Only the split shows whether money actually moved.",
-      "source": "Equities as FUTURES (ES/NQ), not cash indices: the index stands still overnight and on weekends while the future trades nearly around the clock — only that makes the comparison with the non-stop crypto market honest. Colour shows tailwind or headwind FOR CRYPTO, not the direction of the market itself: a rising dollar is therefore red. Stablecoin flow is the change in USDT and USDC supply — deliberately not \"USDT dominance\", which rises arithmetically whenever crypto falls and merely restates the price drop. Inflow or outflow, by contrast, shows real money entering or leaving the market."
+      "source": "Equities as FUTURES (ES/NQ/RTY), not cash indices: the index stands still overnight and on weekends while the future trades nearly around the clock — only that makes the comparison with the non-stop crypto market honest. Colour shows tailwind or headwind FOR CRYPTO, not the direction of the market itself: a rising dollar is therefore red. Stablecoin flow is the change in USDT and USDC supply — deliberately not \"USDT dominance\", which rises arithmetically whenever crypto falls and merely restates the price drop. Inflow or outflow, by contrast, shows real money entering or leaving the market. The Russell 2000 sits next to the Nasdaq as a cross-check: if both move together it is a liquidity or rates move that reaches crypto too; if only the Nasdaq moves it is rotation into a few large caps and rarely carries over."
     },
     "lage": {
       "title": "Overall picture (AI)",
@@ -2722,7 +2724,7 @@
         },
         {
           "h": "INDICES, FUNDING, LONG/SHORT, MACRO",
-          "p": "Indices shows ES=F, NQ=F and the dollar index as intraday candles from Yahoo. Funding, long/short + open interest and the macro environment are the same tiles as in the market radar — funding and long/short follow the symbol choice."
+          "p": "Indices shows ES=F, NQ=F, RTY=F and the dollar index as intraday candles from Yahoo. Funding, long/short + open interest and the macro environment are the same tiles as in the market radar — funding and long/short follow the symbol choice."
         },
         {
           "h": "BOOKMAP & LEVERAGE MAP",

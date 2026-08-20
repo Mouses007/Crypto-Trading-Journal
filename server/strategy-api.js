@@ -17,6 +17,7 @@ import {
     ladeRegelStrategien, istEingebaut,
     normalisiereTimeframes, MAX_TIMEFRAMES,
 } from './strategies/index.js'
+import { kostenAus } from './fill-simulator.js'
 import { BAUSTEINE } from './strategies/rule-engine.js'
 import { pruefeRegeln, regelnUnterscheidenSich } from './strategies/rule-validate.js'
 import { regelnAlsSaetze } from './strategies/rule-text.js'
@@ -51,8 +52,18 @@ function instanzNachAussen(row) {
         enabled: Boolean(row.enabled),
         symbols: parseJson(row.symbols, []),
         timeframes: parseJson(row.timeframes, []),
-        params: parseJson(row.params, {}),
-        risk: parseJson(row.risk, {}),
+        // Gegen das Schema validiert statt roh durchgereicht: neue Parameter
+        // fehlen in gespeicherten Instanzen und kämen sonst als `undefined` in
+        // der Oberfläche an — ein leeres Feld, während die Engine längst mit
+        // dem Vorgabewert rechnet. Genau diese Lücke ist beim Umbau auf
+        // Maker/Taker aufgefallen (`entryOrder`, `breakEvenCoversCosts`).
+        // Nur validieren, wenn die Strategie überhaupt bekannt ist: eine noch
+        // nicht registrierte Regelstrategie hat kein Schema, und `values` wäre
+        // dann leer — die Instanz käme ohne ihre Parameter an.
+        params: getStrategy(row.strategyId)
+            ? validateParams(row.strategyId, parseJson(row.params, {})).values
+            : parseJson(row.params, {}),
+        risk: validateRisk(parseJson(row.risk, {})).values,
         agents: parseJson(row.agents, {}),
     }
 }
@@ -1073,7 +1084,7 @@ export function setupStrategyRoutes(app) {
 
             const r = await schliessePositionManuell({
                 instance, positionRow: row, price: preis, time: Date.now(),
-                costs: { feeBps: instance.risk.feeBps, slippageBps: instance.risk.slippageBps, fundingBpsPer8h: instance.risk.fundingBpsPer8h },
+                costs: kostenAus(instance.risk),
             })
             if (!r.ok) {
                 return res.status(502).json({ error: `Position konnte an der Börse nicht geschlossen werden: ${r.reason}` })

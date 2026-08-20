@@ -63,6 +63,10 @@ export async function alleHistoryPositions(config, { startTime, endTime }, holeS
 const MAERKTE = {
     sp500: { ticker: 'ES=F', name: 'S&P 500 (ES)' },
     nasdaq: { ticker: 'NQ=F', name: 'Nasdaq 100 (NQ)' },
+    // Russell 2000: die Nebenwerte reagieren am stärksten auf Zins- und
+    // Risikoerwartung — dreht RTY vor ES/NQ, ist es eine Risikobewegung
+    // und keine Rotation innerhalb der grossen Werte.
+    russell: { ticker: 'RTY=F', name: 'Russell 2000 (RTY)' },
     dxy: { ticker: 'DX-Y.NYB', name: 'US-Dollar-Index' },
 }
 
@@ -77,7 +81,7 @@ const INTERVALLE = new Set(['1m', '2m', '5m', '15m', '30m', '1h'])
 /**
  * TTL 60 s — unabhängig davon, wie viele Fenster offen sind, fragt der Server
  * höchstens einmal pro Minute je Markt. Yahoo hat kein dokumentiertes Limit,
- * blockt aber aggressive Aufrufer; drei Anfragen pro Minute für den ganzen
+ * blockt aber aggressive Aufrufer; vier Anfragen pro Minute für den ganzen
  * Server sind unbedenklich.
  */
 const INDIZES_TTL = 60 * 1000
@@ -90,7 +94,7 @@ async function holeIndizes(interval, range) {
             const daten = ohlcAusChart(json)
             return [id, { ...daten, ticker: m.ticker, name: daten.name || m.name }]
         } catch (e) {
-            // Ein Markt darf die anderen zwei nicht mitnehmen
+            // Ein Markt darf die übrigen nicht mitnehmen
             logWarn('livetrading', `Indizes: ${m.ticker} fehlgeschlagen`, e.message)
             return [id, null]
         }

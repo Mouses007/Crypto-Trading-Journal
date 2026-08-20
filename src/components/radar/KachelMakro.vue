@@ -116,6 +116,10 @@ const punkte = (v) => (!Number.isFinite(v) ? '—' : `${v > 0 ? '+' : v < 0 ? '�
                     <b>{{ Number.isFinite(korr.nasdaq) ? korr.nasdaq.toFixed(2) : '—' }}</b>
                 </div>
                 <div class="mkDetailZeile">
+                    <span>{{ t('marktradar.makro.corrRussell') }}</span>
+                    <b>{{ Number.isFinite(korr.russell) ? korr.russell.toFixed(2) : '—' }}</b>
+                </div>
+                <div class="mkDetailZeile">
                     <span>{{ t('marktradar.makro.corrDxy') }}</span>
                     <b>{{ Number.isFinite(korr.dxy) ? korr.dxy.toFixed(2) : '—' }}</b>
                 </div>

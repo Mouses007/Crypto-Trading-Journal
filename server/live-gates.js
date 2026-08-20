@@ -32,7 +32,14 @@ export function bewerteGates({ laeufe = [], paperTrades = 0, minPaperTrades = 0 
 
     // Ein Lauf zählt nur, wenn er mit Kosten gerechnet wurde. Ein Backtest ohne
     // Gebühren ist kein optimistischer Test, sondern ein anderer Test.
-    const mitKosten = mitStats.filter((l) => Number(l.risk?.feeBps) > 0)
+    //
+    // Geprüft wird der TAKER-Satz: der Stop ist die Marktorder, und ein Lauf,
+    // der den Verlustausgang gratis rechnet, ist der geschönte Fall. Ein Maker-
+    // Satz von 0 ist dagegen bei manchen Gebührenstufen real. `feeBps` bleibt
+    // als Rückfall stehen — gespeicherte Läufe von vor der Aufteilung tragen
+    // nur diesen einen Satz.
+    const takerSatz = (l) => Number(l.risk?.feeTakerBps ?? l.risk?.feeBps ?? 0)
+    const mitKosten = mitStats.filter((l) => takerSatz(l) > 0)
     const belastbar = mitKosten.filter((l) => Number(l.stats.trades) >= MIN_TRADES_BELASTBAR)
     const vollstaendig = belastbar.filter((l) => l.stats.abdeckung?.vollstaendig !== false)
     const positiv = vollstaendig.filter((l) => Number(l.stats.expectancyR) > 0)

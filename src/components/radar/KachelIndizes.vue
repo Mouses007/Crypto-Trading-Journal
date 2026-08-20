@@ -2,11 +2,11 @@
 /**
  * Kachel „Indizes (Intraday)".
  *
- * ES, NQ und der Dollar-Index als Fünf-Minuten-Kerzen. Krypto läuft rund um die
+ * ES, NQ, RTY und der Dollar-Index als Fünf-Minuten-Kerzen. Krypto läuft rund um die
  * Uhr, aber der Takt kommt von hier: dreht der Nasdaq-Future, dreht Bitcoin
  * meistens mit — und die Bewegung beginnt dort, nicht hier.
  *
- * Bewusst FUTURES statt Kassa-Indizes (ES=F, NQ=F): der Kassa-Index steht
+ * Bewusst FUTURES statt Kassa-Indizes (ES=F, NQ=F, RTY=F): der Kassa-Index steht
  * ausserhalb der Börsenzeiten still, und genau dann handelt man Krypto. Die
  * Begründung steht ausführlich in `server/makro.js`.
  *
@@ -35,6 +35,7 @@ let ro = null
 const MAERKTE = [
     { id: 'nasdaq', kurz: 'NQ' },
     { id: 'sp500', kurz: 'ES' },
+    { id: 'russell', kurz: 'RTY' },
     { id: 'dxy', kurz: 'DXY' },
 ]
 
@@ -165,7 +166,7 @@ function zeichne() {
 
 function waehle(id) {
     markt.value = id
-    // Nur Anzeige: alle drei Märkte stecken schon in derselben Nutzlast, ein
+    // Nur Anzeige: alle Märkte stecken schon in derselben Nutzlast, ein
     // Umschalten darf keinen neuen Abruf auslösen.
     emit('anzeige', { markt: id })
     nextTick(zeichne)

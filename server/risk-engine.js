@@ -10,6 +10,8 @@
  * Simulation. Nur so rechnen beide gleich.
  */
 
+import { satzFuer, einstiegsSorte, MARKT } from './fill-simulator.js'
+
 /** Warum eine Ausführung abgelehnt wurde — landet in `strategy_runs.reason`. */
 export const RISK_REASONS = {
     KILL_SWITCH: 'kill_switch',
@@ -38,18 +40,26 @@ export const RISK_REASONS = {
 export function computePositionSize({
     equity, riskPerTradePct, entry, stopLoss, leverage = 1,
     maxNotionalUsdt = Infinity, stepSize = 0, minQty = 0, minNotional = 0,
-    feeBps = 0, slippageBps = 0,
+    costs = {},
 }) {
     const abstand = Math.abs(entry - stopLoss)
     if (!(equity > 0)) return { qty: 0, reason: RISK_REASONS.NO_EQUITY }
     if (!(abstand > 0) || !(entry > 0)) return { qty: 0, reason: RISK_REASONS.BAD_LEVELS }
 
     const riskUsd = equity * (riskPerTradePct / 100)
-    // Der Verlust am Stop ist nicht nur der Kursabstand: Ein- und Ausstieg
-    // rutschen je einmal, und beide Seiten kosten Gebühr. Ohne diesen Anteil
-    // liegt das echte Risiko über dem eingestellten Prozentsatz — bei engen
-    // Stops um ein Vielfaches.
-    const kostenJeEinheit = entry * (2 * (Number(feeBps) + Number(slippageBps))) / 10000
+    // Der Verlust am Stop ist nicht nur der Kursabstand: beide Seiten kosten
+    // Gebühr, und die Marktseiten rutschen. Ohne diesen Anteil liegt das echte
+    // Risiko über dem eingestellten Prozentsatz — bei engen Stops um ein
+    // Vielfaches.
+    //
+    // Gerechnet wird der WEG ZUM STOP, nicht ein Durchschnitt beider Ausgänge:
+    // der Einstieg zu seiner Ordersorte, der Ausstieg als Stop-Market. Das ist
+    // die teurere der beiden Seiten — und die Positionsgrösse soll sich am
+    // schlechten Ausgang bemessen, nicht am guten.
+    const ein = satzFuer(costs, einstiegsSorte(costs))
+    const aus = satzFuer(costs, MARKT)
+    const kostenBps = ein.feeBps + ein.slippageBps + aus.feeBps + aus.slippageBps
+    const kostenJeEinheit = entry * kostenBps / 10000
     let qty = riskUsd / (abstand + kostenJeEinheit)
     let capped = false
 
@@ -203,8 +213,7 @@ export function evaluateRisk(ctx) {
         stepSize: marketMeta.stepSize || 0,
         minQty: marketMeta.minQty || 0,
         minNotional: marketMeta.minNotional || 0,
-        feeBps: risk.feeBps,
-        slippageBps: risk.slippageBps,
+        costs: risk,
     })
     if (!size.qty) return { ok: false, reason: size.reason || RISK_REASONS.SIZE_TOO_SMALL }
 
