@@ -2,8 +2,13 @@ name: Docker publish
 
 # Baut und veröffentlicht das Container-Image.
 #
-#   Tag "v*" gepusht  → Release-Build: :3.8.0, :3.8, :3 und :latest
+#   Tag "v*" gepusht  → Release-Build: :3.8.0, :3.8, :3, :latest — und :edge
 #   Manuell gestartet → Testlauf: nur :edge, rührt :latest NICHT an
+#
+# :edge zeigt bewusst IMMER auf den neuesten Build, Zwischenstand wie
+# Release. Ein Gerät, das dauerhaft darauf steht, bekommt sonst zwar jeden
+# Testlauf, aber ausgerechnet die Veröffentlichung nicht — und fällt beim
+# nächsten Tag stillschweigend hinter :latest zurück.
 #
 # Die Versions-Tags sind der eigentliche Zweck: CasaOS verbietet ":latest"
 # ausdrücklich, Unraid und Umbrel wollen einen stabilen Tag mit Digest.
@@ -53,7 +58,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=edge,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=edge
           labels: |
             org.opencontainers.image.title=Crypto Trading Journal
             org.opencontainers.image.description=Self-hosted trading journal for crypto futures (Bitunix, Bitget, Pionex)
