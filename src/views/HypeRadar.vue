@@ -135,15 +135,52 @@
                 <h6 class="hypTitel mt-4">{{ t('hype.quellenTitel') }}</h6>
                 <div class="hypQuellen">
                     <div v-for="(_, q) in einst.quellen" :key="q" class="form-check form-switch">
+                        <!-- Reddit lässt sich gar nicht einschalten: der freie
+                             Zugang ist zu (403), und ein Schlüsselfeld hilft
+                             dagegen nichts — es bräuchte OAuth. Ein Schalter,
+                             der nur Fehlermeldungen erzeugt, ist schlimmer als
+                             keiner. -->
                         <input :id="'hypQ' + q" class="form-check-input" type="checkbox"
+                            :disabled="q === 'reddit'"
                             v-model="einst.quellen[q]" @change="speichern">
-                        <label class="form-check-label small" :for="'hypQ' + q">
+                        <label class="form-check-label small" :for="'hypQ' + q"
+                            :class="{ hypAus: q === 'reddit' }">
                             {{ q }}
                             <span v-if="q === 'reddit'" class="hypHinweisKlein">{{ t('hype.redditHinweis') }}</span>
-                            <span v-else-if="['cryptopanic', 'lunarcrush'].includes(q)" class="hypHinweisKlein">
+                            <!-- CoinGecko läuft auch ohne Schlüssel, nur mit
+                                 engem Limit — „braucht einen Schlüssel" wäre
+                                 dort schlicht falsch. -->
+                            <span v-else-if="SCHLUESSEL_QUELLEN[q] && !SCHLUESSEL_QUELLEN[q].optional && !schluesselDa(q)"
+                                class="hypHinweisKlein">
                                 {{ t('hype.brauchtSchluessel') }}
                             </span>
                         </label>
+                    </div>
+                </div>
+
+                <!-- Zugangsdaten der Quellen.
+                     Sie standen bisher nirgends: Die Schalter oben liessen sich
+                     einschalten, der Schlüssel dazu war nicht einzugeben, und
+                     der Lauf meldete „kein Schlüssel hinterlegt". Gespeichert
+                     wird verschlüsselt; zurück kommt nur eine Maske, und ein
+                     Feld mit Maske überschreibt beim Speichern nichts. -->
+                <div class="hypSchluessel mt-3">
+                    <div v-for="(info, q) in SCHLUESSEL_QUELLEN" :key="q" class="hypSchluesselZeile">
+                        <label class="form-label small mb-1">
+                            {{ q }}
+                            <span class="hypHinweisKlein">{{ info.optional ? t('hype.keyOptional') : t('hype.keyNoetig') }}</span>
+                        </label>
+                        <div class="hypSchluesselFeld">
+                            <input v-model="einst.schluessel[q]" type="password"
+                                class="form-control form-control-sm"
+                                :placeholder="schluesselDa(q) ? einst.schluessel[q] : t('hype.keyPlatzhalter')"
+                                @change="speichern">
+                            <a :href="info.url" target="_blank" rel="noopener"
+                                class="ctl-pill klein" :title="info.url">
+                                <i class="uil uil-external-link-alt"></i>{{ t('hype.keyHolen') }}
+                            </a>
+                        </div>
+                        <div class="hypHinweis">{{ t('hype.keyHinweis.' + q) }}</div>
                     </div>
                 </div>
 
@@ -1121,6 +1158,24 @@ const berichte = ref([])
 const offenerBericht = ref(null)
 const einst = ref(null)
 const stufen = ref([])
+/*
+ * Quellen, die Zugangsdaten brauchen — und wo man sie herbekommt.
+ *
+ * Die Namen sind dieselben wie in `SCHLUESSEL_SPALTEN` auf dem Server
+ * (`server/hype-radar/einstellungen.js`); daran hängt der Schreibweg. Reddit
+ * fehlt hier bewusst: dort genügt kein Schlüssel, es bräuchte OAuth.
+ */
+const SCHLUESSEL_QUELLEN = {
+    cryptopanic: { url: 'https://cryptopanic.com/developers/api/', optional: false },
+    lunarcrush: { url: 'https://lunarcrush.com/developers/api/authentication', optional: false },
+    coingecko: { url: 'https://www.coingecko.com/en/developers/dashboard', optional: true },
+}
+
+/** Liegt für diese Quelle schon ein Schlüssel? Erkennbar an der Maske. */
+function schluesselDa(q) {
+    return String(einst.value?.schluessel?.[q] || '').includes('•')
+}
+
 const fehlendeSchluessel = ref([])
 const ordnung = ref(localStorage.getItem('hypeOrdnung') || 'preis')
 
@@ -2436,6 +2491,30 @@ watch(locale, () => zeichne())
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: .2rem 1rem;
     max-width: 40rem;
+}
+
+/* Zugangsdaten der Quellen: eine Zeile je Quelle, Feld und Bezugsquelle
+   nebeneinander. Der Link daneben ist kein Schmuck — ohne ihn sucht man die
+   Seite, auf der es den Schlüssel gibt, jedes Mal neu. */
+.hypSchluessel {
+    display: grid;
+    gap: .8rem;
+    max-width: 40rem;
+}
+
+.hypSchluesselFeld {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+
+.hypSchluesselFeld input {
+    max-width: 20rem;
+}
+
+/* Abgeschaltete Quelle: sichtbar, aber erkennbar nicht wählbar. */
+.hypAus {
+    opacity: .55;
 }
 
 .hypStufen {

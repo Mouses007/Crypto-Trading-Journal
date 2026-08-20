@@ -21,6 +21,56 @@ import axios from 'axios'
  */
 axios.defaults.timeout = 20000
 
+/**
+ * Pfade, die LÄNGER dauern dürfen als der Hausstandard.
+ *
+ * Die 20 Sekunden oben sind für Datenabrufe richtig und für KI-Arbeit falsch:
+ * Ein Lagebericht schreibt fünf Minuten, die Gesamtlage-Kachel rund dreissig
+ * Sekunden, ein Backtest läuft über hunderttausend Kerzen. Der Browser brach
+ * ab, während der Server ungerührt weiterrechnete — und die Oberfläche meldete
+ * „timeout of 20000ms exceeded" für Arbeit, die gelang und bezahlt wurde.
+ *
+ * Deshalb EINE Liste statt eines Zeitlimits je Aufrufstelle: Jede neue Kachel,
+ * die ein Modell anstösst, erbt die richtige Frist automatisch, und wer die
+ * Liste liest, sieht auf einen Blick, was im Haus lange dauert.
+ *
+ * Ein eigener, GRÖSSERER Wert am Aufruf gewinnt weiterhin — kleinere werden
+ * angehoben, weil sie fast immer die geerbte Vorgabe sind und nicht Absicht.
+ */
+const MIN = 60 * 1000
+export const LANGSAME_PFADE = [
+    // Lagebericht: gemessen 5 min 49 s (Videoanalyse + Recherche + langer Text)
+    { muster: /\/api\/marktradar\/lagebericht\/(erzeugen|aktualisieren)/, ms: 10 * MIN },
+    { muster: /\/api\/marktradar\/lagebericht\/anweisung-pruefen/, ms: 2 * MIN },
+    { muster: /\/api\/marktradar\/news\/holen/, ms: 3 * MIN },
+    // Gesamtlage-Kachel: ~30 s, mit trägem Anbieter auch mehr
+    { muster: /\/api\/marktradar\/lage$/, ms: 5 * MIN },
+    { muster: /\/api\/marktradar\/mechanik-erklaerung/, ms: 3 * MIN },
+    // Radar-Läufe: eigene Fremdabrufe plus KI-Einordnung
+    { muster: /\/api\/(coin-radar|hype-radar)\//, ms: 15 * MIN },
+    // KI-Berichte, Rückfragen, Agent, Baukasten
+    { muster: /\/api\/(ai|ollama)\//, ms: 10 * MIN },
+    { muster: /\/api\/strategies\/(builder|backtest)/, ms: 15 * MIN },
+    { muster: /\/api\/rangliste\/(ki-vorschlag|laeufe)/, ms: 10 * MIN },
+    { muster: /\/api\/flux\//, ms: 5 * MIN },
+]
+
+/**
+ * Welche Frist gilt für diese Adresse? `null` heisst: die Hausvorgabe.
+ *
+ * Rein und ohne Axios, damit ein Selbsttest sie prüfen kann.
+ */
+export function langsameFrist(url) {
+    const treffer = LANGSAME_PFADE.find(p => p.muster.test(String(url || '')))
+    return treffer ? treffer.ms : null
+}
+
+axios.interceptors.request.use((config) => {
+    const frist = langsameFrist(config.url)
+    if (frist && (!config.timeout || config.timeout < frist)) config.timeout = frist
+    return config
+})
+
 // Central error handling for API responses
 axios.interceptors.response.use(
     response => {
