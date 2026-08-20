@@ -91,6 +91,31 @@ function datenTabelle(zeilen) {
         + ` style="width:100%;border-collapse:collapse;margin:14px 0;">${reihen}</table>`
 }
 
+/**
+ * Zwischenüberschrift: eine Zeile, die mit „## " beginnt.
+ *
+ * Kam mit dem ganzen Lagebericht in der Mail. Eine Meldung besteht aus zwei
+ * Sätzen und braucht keine Gliederung, ein vollständiger Bericht mit drei
+ * Kapiteln und einem Dutzend Meldungen schon: ohne Überschriften ist er im
+ * Postfach eine Textwand. Bewusst kein Markdown-Dialekt, nur diese eine
+ * Marke — alles Weitere wäre eine Auszeichnungssprache im Mailtext.
+ */
+const UEBERSCHRIFT_ZEILE = /^(##|###)[ \t]+(.+)$/
+
+function istUeberschrift(zeilen) {
+    return zeilen.length === 1 && UEBERSCHRIFT_ZEILE.test(zeilen[0])
+}
+
+function ueberschrift(zeile) {
+    const [, marke, text] = zeile.match(UEBERSCHRIFT_ZEILE)
+    // Zwei Stufen, mehr nicht: Kapitel und die einzelne Meldung darin. Ohne die
+    // zweite Stufe verschwindet der Titel einer Meldung im Fliesstext, mit
+    // einer dritten wäre es eine Auszeichnungssprache.
+    const klein = marke === '###'
+    return `<p style="margin:${klein ? '18px 0 6px' : '22px 0 8px'};color:${FARBEN.titel};`
+        + `font-size:${klein ? '14px' : '15px'};line-height:1.4;font-weight:600;">${escape(text)}</p>`
+}
+
 function absatz(zeilen, ersterAbsatz) {
     const stil = ersterAbsatz
         ? `margin:0 0 12px;color:${FARBEN.text};font-size:15px;line-height:1.62;`
@@ -105,6 +130,7 @@ export function baueKoerper(text) {
         .filter((b) => b.length)
     let ersterAbsatz = true
     return bloecke.map((zeilen) => {
+        if (istUeberschrift(zeilen)) return ueberschrift(zeilen[0])
         if (istDatenBlock(zeilen)) return datenTabelle(zeilen)
         const html = absatz(zeilen, ersterAbsatz)
         ersterAbsatz = false
@@ -220,8 +246,12 @@ export function baueMail({ titel, text, symbol, ton, bereich, marke = 'Crypto Tr
         + `Welche Ereignisse per Mail kommen, steht unter Einstellungen → Benachrichtigungen.`
         + `</td></tr></table></td></tr></table></body></html>`
 
+    // In der Nur-Text-Fassung wird aus „## Kapitel" eine unterstrichene Zeile —
+    // die Marke selbst hat dort nichts zu suchen.
+    const textRein = String(text || '').trim().replace(/^(##|###)[ \t]+(.+)$/gm,
+        (_, marke, z) => (marke === '###' ? z : `${z}\n${'─'.repeat(Math.min(60, z.length))}`))
     const nurText = `${zeichen} ${titel}\n${'─'.repeat(Math.min(60, titel.length + 2))}\n\n`
-        + `${String(text || '').trim()}\n\n`
+        + `${textRein}\n\n`
         + `— ${marke}${nutzer ? ` · ${nutzer}` : ''} · ${stempel}\n`
         + 'Automatische Nachricht. Einstellungen → Benachrichtigungen.\n'
 

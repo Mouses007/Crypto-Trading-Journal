@@ -108,5 +108,20 @@ function pruefe(name, bedingung, detail = '') {
     pruefe('externe URL wird nicht verwendet', kaputt && kaputt.filename === 'logo.png')
 }
 
+// Überschriften: zwei Stufen, und in der Nur-Text-Fassung ohne die Marke.
+{
+    const h = baueKoerper('## Kapitel\n\nText dazu.\n\n### Meldung eins\n\nMehr Text.')
+    pruefe('## wird zur grossen Überschrift', h.includes('font-size:15px') && h.includes('Kapitel'))
+    pruefe('### wird zur kleinen Überschrift', h.includes('font-size:14px') && h.includes('Meldung eins'))
+    pruefe('die Marke selbst steht nicht in der Mail', !h.includes('##'))
+    const nur = baueMail({ titel: 'x', text: '## Kapitel\n\nText.\n\n### Meldung\n\nMehr.' }).text
+    pruefe('Nur-Text: Kapitel unterstrichen', nur.includes('Kapitel\n──────'))
+    pruefe('Nur-Text: Meldung ohne Marke', nur.includes('\nMeldung\n') && !nur.includes('###'))
+    // Ein Doppelkreuz MITTEN im Satz ist keine Überschrift, sondern Text.
+    const kein = baueKoerper('Wir kaufen ## Stück davon.')
+    pruefe('## mitten im Satz bleibt stehen',
+        kein.includes('Wir kaufen ## Stück davon.') && kein.includes('line-height:1.62'))
+}
+
 console.log(`mail-vorlage: ${ok} ok, ${fehler} Fehler`)
 process.exit(fehler ? 1 : 0)
