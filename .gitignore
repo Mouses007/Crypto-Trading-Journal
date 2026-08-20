@@ -36,3 +36,6 @@ ESP32-2432S028/.pio/
 
 # Erzeugte Share-Cards (die gepflegten Vorlagen heissen loss-*/win-*)
 server/templates/sharecard-*.png
+
+# Persönliche NAS-Zugangsdaten für scripts/nas-deploy.sh
+scripts/.nas-deploy.env
