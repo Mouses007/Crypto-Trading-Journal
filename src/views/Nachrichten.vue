@@ -17,6 +17,7 @@
  */
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
 import { timeZoneTrade } from '../stores/ui.js'
@@ -29,6 +30,7 @@ import RadarOverlay from '../components/RadarOverlay.vue'
 import PageInfo from '../components/PageInfo.vue'
 
 const { t, locale } = useI18n()
+const router = useRouter()
 
 /** Wochentag in der Oberflächensprache — „Montag" statt „Monday". */
 function wochentag(ms) {
@@ -305,8 +307,41 @@ function videoText(text) {
 }
 
 /** Zeigt die Seite gerade einen alten Bericht aus dem Archiv? */
-const zeigtArchiv = computed(() =>
-    Boolean(bericht.value && aktuellerBericht.value && bericht.value.id !== aktuellerBericht.value.id))
+// „aus dem Archiv" gilt nur für Berichte AUSSERHALB der Kette des Tages —
+// eine zugeklappte Zwischenmeldung von heute Mittag ist kein Archivfund.
+const zeigtArchiv = computed(() => Boolean(
+    bericht.value && aktuellerBericht.value
+    && bericht.value.id !== aktuellerBericht.value.id
+    && !kette.value.some(z => z.id === bericht.value.id)))
+
+/*
+ * Die Kette des Tages: Tagesbericht plus seine Zwischenmeldungen.
+ *
+ * Gezeigt wird immer nur EINER ausgeschrieben — der jüngste. Die älteren
+ * stehen als zugeklappte Zeile darüber, mit Uhrzeit und Schlagzeile; ein Klick
+ * tauscht, welcher offen ist. Nach Mitternacht ist der Tag archiviert: `vorTag`
+ * ist gesetzt, nichts liegt offen, und die Zeilen des Vortags stehen
+ * zugeklappt da statt einer leeren Seite.
+ */
+const kette = ref([])
+const vorTag = ref(false)
+
+/** Kettenzeilen ohne die, die gerade ausgeschrieben dasteht. */
+const ketteZeilen = computed(() => kette.value.map(z => ({
+    ...z,
+    offen: Boolean(bericht.value && bericht.value.id === z.id),
+})))
+
+/** Name der Zeile: „Tagesbericht" oder „Zwischenmeldung 2". */
+function ketteName(z) {
+    return z.art === 'update' ? t('news.updateMark', { n: z.updateNr || 1 }) : t('news.dailyReport')
+}
+
+/** Zugeklappte Zeile anklicken: diese öffnen — oder die offene zuklappen. */
+function ketteUmschalten(z) {
+    if (bericht.value && bericht.value.id === z.id) { bericht.value = null; return }
+    oeffneAusArchiv(z.id)
+}
 
 const THEMA_NAME = { crypto: 'Crypto', finanzen: 'Finanzen', tech: 'Tech', chartanalyse: 'Chartanalyse' }
 
@@ -367,6 +402,9 @@ function klappeUm(id) {
 // gleiche Vorsicht wie `radarSpeichern` in den Einstellungen) — sie gelten
 // für den NÄCHSTEN Bericht, der bestehende bleibt stehen.
 const nRhythmus = ref('taeglich')
+/* Nur zur Anzeige: wie viele Aktualisierungen der Takt fährt. Eingestellt wird
+   das in den Einstellungen — es ist ein Zeitplan, keine Form des Berichts. */
+const nUpdates = ref(0)
 const nThemen = ref(['crypto'])
 const nLaenge = ref('mittel')
 const nLayout = ref(LAYOUT_VORGABE)
@@ -376,7 +414,9 @@ const nPunkte = ref(0)
 
 function ladeBerichtOptionen() {
     const s = currentUser.value || {}
-    nRhythmus.value = s.radarNewsRhythmus === 'woechentlich' ? 'woechentlich' : 'taeglich'
+    nRhythmus.value = ['woechentlich', 'manuell'].includes(s.radarNewsRhythmus)
+        ? s.radarNewsRhythmus : 'taeglich'
+    nUpdates.value = Math.max(0, Math.min(2, Number(s.radarNewsUpdates) || 0))
     nThemen.value = String(s.radarNewsThemen || 'crypto').split(',')
         .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech', 'chartanalyse'].includes(t))
     if (!nThemen.value.length) nThemen.value = ['crypto']
@@ -401,6 +441,22 @@ function ladeBerichtOptionen() {
  */
 const schnellOffen = ref(localStorage.getItem(SPEICHER_SCHNELL) === '1')
 
+/**
+ * Zu den vollen Einstellungen springen — direkt in den richtigen Reiter.
+ *
+ * Die Seite merkt sich ihren Reiter im localStorage (`settingsBereich` /
+ * `settingsKiBereich`), also wird er hier gesetzt, bevor der Router dorthin
+ * wechselt. Ohne das landet man auf „Allgemein" und sucht sich durch zwei
+ * Reiterreihen.
+ */
+function zuDenEinstellungen() {
+    try {
+        localStorage.setItem('settingsBereich', 'ki')
+        localStorage.setItem('settingsKiBereich', 'nachrichten')
+    } catch (_) { /* privater Modus: dann eben der zuletzt offene Reiter */ }
+    router.push('/settings')
+}
+
 function schnellUmschalten() {
     schnellOffen.value = !schnellOffen.value
     localStorage.setItem(SPEICHER_SCHNELL, schnellOffen.value ? '1' : '0')
@@ -409,7 +465,7 @@ function schnellUmschalten() {
 /** Die Einstellungen als ein Satz — „täglich · Crypto + Finanzen · Mittel · …". */
 const schnellZusammenfassung = computed(() => {
     const teile = [
-        nRhythmus.value === 'woechentlich' ? t('news.weekly') : t('news.daily'),
+        RHYTHMUS_NAME[nRhythmus.value](),
         nThemen.value.map(th => THEMA_NAME[th] || th).join(' + '),
         // Eine eigene Meldungszahl setzt die Länge ausser Kraft — dann steht
         // sie hier auch nicht mehr, sonst widerspricht die Zeile sich selbst.
@@ -418,6 +474,9 @@ const schnellZusammenfassung = computed(() => {
         `${t('news.quickVideos')} ${t('news.depth.' + nVideoTiefe.value).toLowerCase()}`,
     ]
     if (nBudget.value) teile.push(`${nBudget.value} ${t('news.budget')}`)
+    if (nUpdates.value && nRhythmus.value !== 'manuell') {
+        teile.push(t('news.updatesN', { n: nUpdates.value }))
+    }
     return teile.join(' · ')
 })
 
@@ -451,6 +510,14 @@ function setzePunkte(wert) {
 async function speichereOption(feld, wert) {
     await dbUpdateSettings({ [feld]: wert })
     if (currentUser.value) currentUser.value[feld] = wert
+}
+
+/* Die drei Rhythmen mit ihrer Beschriftung. Als Funktionen, damit ein
+   Sprachwechsel nicht an einer eingefrorenen Zeichenkette vorbeiläuft. */
+const RHYTHMUS_NAME = {
+    taeglich: () => t('news.daily'),
+    woechentlich: () => t('news.weekly'),
+    manuell: () => t('news.manual'),
 }
 
 function setzeRhythmus(w) {
@@ -683,6 +750,8 @@ async function ladeAlles() {
             // Wer gerade im Archiv liest, wird vom Zehn-Minuten-Takt nicht
             // zurück auf den jüngsten Bericht geworfen
             if (!zeigtArchiv.value) bericht.value = b.value.data.bericht
+            kette.value = b.value.data.kette || []
+            vorTag.value = Boolean(b.value.data.vomVortag)
             verlauf.value = b.value.data.verlauf || []
             letzterFehlschlag.value = b.value.data.letzterFehlschlag || null
         }
@@ -772,7 +841,9 @@ async function beitraegeHolen() {
     holt.value = true
     meldung.value = ''
     try {
-        const { data } = await axios.post('/api/marktradar/news/holen')
+        // Der Abruf zieht alle Quellen und ggf. die bezahlte X-Suche nach —
+        // mit zwanzig Sekunden bricht er mitten im Einsammeln ab.
+        const { data } = await axios.post('/api/marktradar/news/holen', null, { timeout: 3 * 60 * 1000 })
         meldung.value = data.uebersprungen
             ? t('news.throttled')
             : t('news.fetched', { gesehen: data.gesehen, neu: data.neu })
@@ -809,20 +880,42 @@ async function berichtLoeschen() {
     }
 }
 
-async function berichtErzeugen() {
+/**
+ * Bericht erzeugen oder fortschreiben.
+ *
+ * Beide Wege durch dieselbe Funktion, weil sich hinterher nur die Adresse
+ * unterscheidet: Bremse, Meldung, Guthabenprüfung und das Zurückspringen aus
+ * dem Archiv sind identisch. Was die Aktualisierung anders macht, entscheidet
+ * der Server — er kennt den bisherigen Bericht.
+ */
+async function berichtErzeugen(aktualisieren = false) {
     laeuft.value = true
     meldung.value = ''
     fehler.value = false
+    // Woran man erkennt, dass doch noch etwas ankam, falls die Leitung aufgibt.
+    const vorherId = aktuellerBericht.value?.id || 0
     try {
-        const { data } = await axios.post('/api/marktradar/lagebericht/erzeugen')
+        const { data } = await axios.post(aktualisieren
+            ? '/api/marktradar/lagebericht/aktualisieren'
+            : '/api/marktradar/lagebericht/erzeugen',
+        // 20 Sekunden sind die HAUSVORGABE (`axios.defaults.timeout` in
+        // utils/db.js) und für diesen Knopf schlicht falsch: Ein Bericht
+        // braucht Videoanalyse, Recherche und ein Modell, das mehrere tausend
+        // Token schreibt — gemessen zwei bis drei Minuten. Der Browser gab
+        // vorher nach 20 Sekunden auf und meldete „timeout of 20000ms
+        // exceeded", während der Server ungerührt weiterschrieb und den
+        // Bericht auch ablieferte. Der Fehler war also keiner, sondern eine
+        // Lüge über einen Lauf, der lief.
+        { timeout: 10 * 60 * 1000 })
         if (data.uebersprungen) {
             meldung.value = t('news.digestThrottled')
         } else if (data.fehler) {
             meldung.value = data.fehler
             fehler.value = true
         } else {
-            meldung.value = t('news.digestDone', {
+            meldung.value = t(data.art === 'update' ? 'news.updateDone' : 'news.digestDone', {
                 n: data.beitraege, v: data.videos, tok: data.tokens,
+                p: data.punkte || 0, r: data.recherchen || 0,
                 modell: `${data.provider}/${data.modell}`,
             }) + (data.kostenUsd ? ` · ${data.kostenUsd.toFixed(4)} USD` : '')
                 + (data.geminiFehler ? ` · Gemini: ${data.geminiFehler}` : '')
@@ -832,8 +925,30 @@ async function berichtErzeugen() {
         }
         await ladeAlles()
     } catch (e) {
-        meldung.value = e.response?.data?.error || e.message
-        fehler.value = true
+        /*
+         * Abgebrochene Leitung heisst NICHT abgebrochener Lauf.
+         *
+         * Der Server schreibt weiter, auch wenn der Browser aufgibt (Timeout,
+         * Netzwechsel, geschlossener Deckel). Statt einen roten Fehler zu
+         * zeigen, für den es keinen Beleg gibt, wird nachgesehen: alle 15
+         * Sekunden, bis ein neuer Bericht dasteht — höchstens zehn Minuten.
+         */
+        if (e.code === 'ECONNABORTED' || e.message?.includes('timeout')) {
+            meldung.value = t('news.stillRunning')
+            const bis = Date.now() + 10 * 60 * 1000
+            while (Date.now() < bis) {
+                await new Promise(r => setTimeout(r, 15000))
+                await ladeAlles()
+                if ((aktuellerBericht.value?.id || 0) !== vorherId) {
+                    meldung.value = t('news.arrivedLate')
+                    bericht.value = aktuellerBericht.value
+                    break
+                }
+            }
+        } else {
+            meldung.value = e.response?.data?.error || e.message
+            fehler.value = true
+        }
     } finally {
         laeuft.value = false
         // Ein gescheiterter Lauf ist der Moment, in dem ein leeres Guthaben
@@ -893,7 +1008,15 @@ onBeforeUnmount(() => {
                 <button type="button" class="ctl-pill" :disabled="holt" @click="beitraegeHolen">
                     <i class="uil uil-sync"></i>{{ holt ? t('common.loading') : t('news.fetchNow') }}
                 </button>
-                <button type="button" class="ctl-pill accent" :disabled="laeuft" @click="berichtErzeugen">
+                <!-- Aktualisieren steht vor „Neu erzeugen": Es ist der
+                     häufigere und der billigere Weg — was der Bericht schon
+                     gelesen hat, wird nicht ein zweites Mal bezahlt. Ohne
+                     bestehenden Bericht gibt es nichts fortzuschreiben. -->
+                <button v-if="bericht" type="button" class="ctl-pill" :disabled="laeuft"
+                    :title="t('news.updateHint')" @click="berichtErzeugen(true)">
+                    <i class="uil uil-sync-exclamation"></i>{{ t('news.updateDigest') }}
+                </button>
+                <button type="button" class="ctl-pill accent" :disabled="laeuft" @click="berichtErzeugen(false)">
                     <i class="uil uil-robot"></i>{{ laeuft ? t('news.working') : t('news.makeDigest') }}
                 </button>
                 <span class="ctl-sep"></span>
@@ -910,7 +1033,16 @@ onBeforeUnmount(() => {
                 :class="{ active: schnellOffen }" :aria-expanded="schnellOffen"
                 :title="schnellOffen ? t('news.quickClose') : t('news.quickOpen')"
                 @click="schnellUmschalten">
-                <i class="uil" :class="schnellOffen ? 'uil-angle-down' : 'uil-setting'"></i>
+                <i class="uil" :class="schnellOffen ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                <span>{{ t('news.quickTitle') }}</span>
+            </button>
+            <!-- Der Weg zu allem, was hier NICHT steht: Wochentag, Modelle,
+                 Videoauflösung, Zwischenmeldungen, Aufbewahrung. Bisher stand
+                 dazu nur ein Satz unter den Reglern — als Hinweis, nicht als
+                 Weg. -->
+            <button v-if="schnellOffen" type="button" class="ctl-pill klein" :title="t('news.toSettings')"
+                @click="zuDenEinstellungen">
+                <i class="uil uil-sliders-v-alt"></i>
             </button>
             <span v-if="!schnellOffen" class="nwSchnellZeile" @click="schnellUmschalten">
                 {{ schnellZusammenfassung }}
@@ -918,9 +1050,9 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="schnellOffen" class="nwSchnell" :title="t('news.quickHint')">
-            <button v-for="r in ['taeglich', 'woechentlich']" :key="r" type="button"
+            <button v-for="r in ['taeglich', 'woechentlich', 'manuell']" :key="r" type="button"
                 class="ctl-pill klein" :class="{ active: nRhythmus === r }" @click="setzeRhythmus(r)">
-                {{ r === 'taeglich' ? t('news.daily') : t('news.weekly') }}
+                {{ RHYTHMUS_NAME[r]() }}
             </button>
             <span class="nwTrenner"></span>
             <button v-for="(bez, th) in THEMA_NAME" :key="th" type="button"
@@ -994,11 +1126,42 @@ onBeforeUnmount(() => {
         </p>
 
         <!--=============== LAGEBERICHT ===============-->
+        <!-- Die Kette des Tages. Jede Zeile ist ein Bericht: die offene steht
+             darunter ausgeschrieben, die anderen als eine Zeile mit Uhrzeit.
+             Ein Klick tauscht. Nach Mitternacht ist nichts offen — der Tag ist
+             archiviert, aber die Zeilen bleiben erreichbar. -->
+        <div v-if="ketteZeilen.length > 1 || vorTag" class="nwKette">
+            <p v-if="vorTag" class="nwKetteHinweis">
+                <i class="uil uil-archive"></i>{{ t('news.archivedAtMidnight') }}
+            </p>
+            <button v-for="z in ketteZeilen" :key="z.id" type="button"
+                class="nwKetteZeile" :class="{ offen: z.offen }" @click="ketteUmschalten(z)">
+                <i class="uil" :class="z.offen ? 'uil-angle-down' : 'uil-angle-right'"></i>
+                <span class="nwKetteZeit">{{ dayjs(z.erstelltAm).format('HH:mm') }}</span>
+                <span class="nwKetteName" :class="{ update: z.art === 'update' }">{{ ketteName(z) }}</span>
+                <span class="nwKetteTitel">{{ z.ueberschrift || '—' }}</span>
+                <span class="nwKetteTag">{{ dayjs(z.erstelltAm).format('DD.MM.') }}</span>
+            </button>
+        </div>
+
         <section class="nwKarte nwBericht nwZeitung">
             <template v-if="bericht">
                 <div class="nwBerichtKopf">
                     <span class="nwMarke">{{ t('news.briefing') }}</span>
                     <span class="nwZeitpunkt">{{ dayjs(bericht.erstelltAm).format('DD.MM.YYYY, HH:mm') }}</span>
+                    <!-- Eine Aktualisierung ist ein eigener Bericht, kein
+                         nachgebessertes Original — der Leser muss sehen, dass
+                         er den Nachtrag vor sich hat. -->
+                    <span v-if="bericht.art === 'update'" class="nwUpdateMarke">
+                        {{ t('news.updateMark', { n: bericht.updateNr || 1 }) }}
+                    </span>
+                    <!-- Die Zwischenmeldung enthält den Tagesbericht NICHT mehr
+                         (sie meldet nur, was seither dazukam) — ohne diesen
+                         Sprung wäre er für den Leser verschwunden. -->
+                    <button v-if="bericht.art === 'update' && bericht.basisId" type="button"
+                        class="ctl-pill klein" @click="oeffneAusArchiv(bericht.basisId)">
+                        <i class="uil uil-newspaper"></i>{{ t('news.toBase') }}
+                    </button>
                     <span v-for="th in String(bericht.themen || '').split(',').filter(Boolean)"
                         :key="th" class="nwThema">{{ THEMA_NAME[th] || th }}</span>
                     <span v-if="zeigtArchiv" class="nwArchivMarke">{{ t('news.fromArchive') }}</span>
@@ -1025,6 +1188,7 @@ onBeforeUnmount(() => {
                         <span class="nwArchivDatum">{{ dayjs(v.erstelltAm).format('DD.MM.YYYY HH:mm') }}</span>
                         <span class="nwArchivTitel">{{ v.ueberschrift || '—' }}</span>
                         <span class="nwArchivMeta">
+                            <template v-if="v.art === 'update'">{{ t('news.updateShort', { n: v.updateNr || 1 }) }} · </template>
                             {{ v.beitraege }} · {{ v.ausloeser }}
                             <template v-if="v.kostenUsd"> · {{ useKostenAnzeige(v.kostenUsd) }}</template>
                         </span>
@@ -1176,6 +1340,10 @@ onBeforeUnmount(() => {
                                     <span v-if="p.wichtigkeit === 'hoch'" class="nwWichtig">
                                         {{ t('news.important') }}
                                     </span>
+                                    <!-- In einer Zwischenmeldung ist alles neu;
+                                         markiert wird deshalb der Sonderfall:
+                                         Das hier stand heute Morgen anders. -->
+                                    <span v-if="p.korrektur === true" class="nwNeuMarke">{{ t('news.fixMark') }}</span>
                                 </h4>
                                 <p class="nwDoMeldungText">{{ p.text }}</p>
                                 <p class="nwDoMeldungFuss">
@@ -1211,6 +1379,7 @@ onBeforeUnmount(() => {
                                 <span v-if="p.wichtigkeit === 'hoch'" class="nwWichtig">
                                     {{ t('news.important') }}
                                 </span>
+                                <span v-if="p.korrektur === true" class="nwNeuMarke">{{ t('news.fixMark') }}</span>
                             </span>
                             <span class="nwPunktText">{{ p.text }}</span>
                             <!-- Die Zahlen aus den Quellen, wörtlich. Sie sind
@@ -1348,7 +1517,7 @@ onBeforeUnmount(() => {
 
             <div v-else class="nwLeer">
                 <i class="uil uil-newspaper"></i>
-                <span>{{ t('news.noDigest') }}</span>
+                <span>{{ ketteZeilen.length ? t('news.pickFromChain') : t('news.noDigest') }}</span>
             </div>
         </section>
 
@@ -1359,6 +1528,9 @@ onBeforeUnmount(() => {
             <div class="nwFenster">
                 <p v-if="punktImFenster.wichtigkeit === 'hoch'" class="nwWichtigGross">
                     {{ t('news.important') }}
+                </p>
+                <p v-if="punktImFenster.korrektur === true" class="nwWichtigGross neu">
+                    {{ t('news.fixMark') }}
                 </p>
                 <img v-if="punktBild(punktImFenster)" class="nwFensterBild"
                     :src="punktBild(punktImFenster)" alt=""
@@ -1806,6 +1978,110 @@ onBeforeUnmount(() => {
 .nwThema.klein {
     font-size: 0.62rem;
     padding: 0.05rem 0.4rem;
+}
+
+/* Die Kette des Tages: eine Zeile je Bericht, die offene hervorgehoben.
+   Bewusst flach und ohne Karte — sie ist ein Inhaltsverzeichnis, nicht der
+   Inhalt, und darf dem Bericht darunter nicht die Aufmerksamkeit nehmen. */
+.nwKette {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0 0 0.6rem;
+}
+
+.nwKetteHinweis {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 0.3rem;
+    color: var(--grey-color);
+    font-size: 0.78rem;
+}
+
+.nwKetteZeile {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius);
+    background: var(--black-bg-soft, rgba(255, 255, 255, 0.03));
+    color: var(--white-2, #d5d7dc);
+    font-size: 0.82rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.nwKetteZeile:hover {
+    border-color: var(--grey-color);
+}
+
+.nwKetteZeile.offen {
+    border-color: var(--blue-color);
+    background: rgba(1, 180, 255, 0.08);
+}
+
+.nwKetteZeit {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.nwKetteName {
+    padding: 0.05rem 0.45rem;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.nwKetteName.update {
+    background: rgba(87, 190, 129, 0.16);
+    color: #57be81;
+}
+
+/* Die Schlagzeile darf die Zeile nicht sprengen — eine Zeile, ein Bericht. */
+.nwKetteTitel {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--grey-color);
+}
+
+.nwKetteTag {
+    color: var(--grey-color);
+    font-size: 0.74rem;
+}
+
+@media (max-width: 640px) {
+    .nwKetteTitel,
+    .nwKetteTag {
+        display: none;
+    }
+}
+
+/* Aktualisierung und Neu-Marke: bewusst in Grün statt im Orange der
+   Wichtig-Marke — sie beantworten verschiedene Fragen („zählt das viel" gegen
+   „kannte ich das schon"), und zwei gleichfarbige Marken nebeneinander würden
+   wie eine aussehen. */
+.nwUpdateMarke,
+.nwNeuMarke {
+    padding: 0.05rem 0.45rem;
+    border-radius: 3px;
+    background: rgba(87, 190, 129, 0.16);
+    color: #57be81;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.nwUpdateMarke {
+    border-radius: 999px;
+    font-size: 0.7rem;
 }
 
 .nwArchivMarke {
@@ -2630,6 +2906,11 @@ onBeforeUnmount(() => {
 /* ── Belege im Fenster ── */
 .nwFenster {
     max-width: 760px;
+}
+
+.nwWichtigGross.neu {
+    background: rgba(87, 190, 129, 0.16);
+    color: #57be81;
 }
 
 .nwWichtigGross {

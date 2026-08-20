@@ -1561,6 +1561,32 @@ async function runMigrations(knex, client) {
         }
     }
 
+    // Gebühren nach Ordersorte statt eines Satzes für alles. Der alte `feeBps`
+    // galt für JEDE Füllung, war aber als Taker-Satz gedacht — er wandert
+    // deshalb auf `feeTakerBps`. Für den Maker-Satz gibt es keine Altangabe;
+    // er bekommt den Schemawert, nie mehr als den Taker-Satz. Wer eine eigene
+    // Gebührenstufe fährt, muss ihn einmal nachtragen (Konto → Gebühren).
+    //
+    // Idempotent: eine Instanz, die die neuen Schlüssel schon trägt, wird nicht
+    // angefasst — die Migration darf auf mehreren Containern laufen.
+    {
+        const instanzen = await knex('strategy_instances').select('id', 'risk')
+        for (const i of instanzen) {
+            let risk
+            try { risk = JSON.parse(i.risk || '{}') } catch { continue }
+            if (!risk || typeof risk !== 'object') continue
+            if (risk.feeTakerBps !== undefined || risk.feeMakerBps !== undefined) continue
+            const alt = Number(risk.feeBps)
+            if (!Number.isFinite(alt)) continue
+            risk.feeTakerBps = alt
+            risk.feeMakerBps = Math.min(2, alt)
+            delete risk.feeBps
+            await knex('strategy_instances').where('id', i.id)
+                .update({ risk: JSON.stringify(risk) })
+                .catch(() => {})
+        }
+    }
+
     // Globale Schalter der Strategie-Agenten (Live-Freigabe und Not-Aus)
     await addColumnIfNotExists('settings', 'strategyLiveEnabled', (t) => t.integer('strategyLiveEnabled').defaultTo(0))
     await addColumnIfNotExists('settings', 'strategyKillSwitch', (t) => t.integer('strategyKillSwitch').defaultTo(0))
@@ -1803,6 +1829,19 @@ async function runMigrations(knex, client) {
     // vier bezahlte Zusammenfassungen darin steckten — nur eben aus einem
     // früheren Lauf.
     await addColumnIfNotExists('news_digests', 'videosNeu', (t) => t.integer('videosNeu').defaultTo(0))
+    /*
+     * Bericht oder Aktualisierung — und worauf sie aufsetzt.
+     *
+     * Eine Aktualisierung ist eine EIGENE Zeile, keine Überschreibung des
+     * Mittagsberichts: Sie hat andere Kosten, andere Beiträge und einen
+     * anderen Stand, und wer wissen will, was um 12:00 dastand, muss das
+     * nachlesen können. `basisId` zeigt immer auf den ERSTEN Bericht der
+     * Kette, `updateNr` zählt innerhalb der Kette — so bleibt „Aktualisierung
+     * 2 von heute Mittag" ohne Rekursion lesbar.
+     */
+    await addColumnIfNotExists('news_digests', 'art', (t) => t.text('art').defaultTo('bericht'))   // bericht|update
+    await addColumnIfNotExists('news_digests', 'basisId', (t) => t.integer('basisId').defaultTo(0))
+    await addColumnIfNotExists('news_digests', 'updateNr', (t) => t.integer('updateNr').defaultTo(0))
     // Je Quelle steuerbar, ob ihre Videos analysiert werden. Ohne das ginge das
     // Videobudget an den erstbesten Kanal — und der ist nicht zwingend der,
     // dessen Inhalt im Bericht gebraucht wird.
@@ -1814,6 +1853,36 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'radarNewsWochentag', (t) => t.integer('radarNewsWochentag').defaultTo(1))   // 1=Mo … 7=So
     await addColumnIfNotExists('settings', 'radarNewsThemen', (t) => t.text('radarNewsThemen').defaultTo('crypto'))     // CSV: crypto,finanzen,tech
     await addColumnIfNotExists('settings', 'radarNewsLaenge', (t) => t.text('radarNewsLaenge').defaultTo('mittel'))     // kurz|mittel|lang
+    /*
+     * Aktualisierungen des Tagesberichts: keine, eine oder zwei.
+     *
+     * Ein Bericht um 12:00 ist um 20:00 nicht falsch, aber alt — und ein
+     * zweiter Vollbericht wäre die teure Antwort darauf (er zahlt alles noch
+     * einmal, was sich seit dem Mittag nicht geändert hat). Die Aktualisierung
+     * bekommt stattdessen den bisherigen Bericht vorgelegt und arbeitet nur
+     * ein, was seither dazugekommen ist.
+     *
+     * Zwei ist die Obergrenze, und zwar bewusst als Zahl und nicht als
+     * Vorsatz: jeder Lauf kostet Geld, und ab dem dritten liest sie ohnehin
+     * niemand mehr. Die Stunden stehen als CSV, weil sie immer gemeinsam
+     * gelesen und geprüft werden — `leseUpdateStunden` in
+     * `server/marktradar-news.js` ist die eine Stelle, die sie auslegt.
+     */
+    await addColumnIfNotExists('settings', 'radarNewsUpdates', (t) => t.integer('radarNewsUpdates').defaultTo(0))
+    await addColumnIfNotExists('settings', 'radarNewsUpdateStunden', (t) => t.text('radarNewsUpdateStunden').defaultTo('18,21'))
+    // Ganzer Bericht in der Benachrichtigungs-Mail statt nur der Gesamtlage.
+    // Vorgabe aus: eine Mail, die man nicht angefordert hat, soll nicht
+    // zwanzig Absätze lang sein — wer sie lesen will, schaltet sie ein.
+    await addColumnIfNotExists('settings', 'radarNewsMailVoll', (t) => t.integer('radarNewsMailVoll').defaultTo(0))
+    // Aufbewahrung der BERICHTE (nicht der Rohbeiträge, die haben ihre eigenen
+    // 30 Tage). Vorgabe „manuell": ein Bericht ist bezahlte Arbeit, und was
+    // automatisch verschwindet, verschwindet irgendwann auch ungelegen.
+    await addColumnIfNotExists('settings', 'radarNewsBerichtAufbewahrung',
+        (t) => t.text('radarNewsBerichtAufbewahrung').defaultTo('manuell'))   // manuell|tag|woche|monat
+    // Zeithorizont des Chartanalyse-Kapitels: steuert, wie alt die Fundstellen
+    // sein dürfen UND welchen Horizont die Frage verlangt.
+    await addColumnIfNotExists('settings', 'radarNewsChartFrische',
+        (t) => t.text('radarNewsChartFrische').defaultTo('woche'))            // tag|woche|monat
     // Der neue Arschlochfilter: Truth Social automatisch plus frei wählbare
     // Stichwörter (eines je Zeile). Er wirkt auf Liste UND Berichtsgrundlage,
     // aber nicht beim Abruf — die Beiträge bleiben gespeichert, damit eine

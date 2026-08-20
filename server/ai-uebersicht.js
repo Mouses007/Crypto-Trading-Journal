@@ -20,6 +20,7 @@ import { waehleAnbieter } from './ollama-api.js'
 import { standardModell } from './ai-models.js'
 import { istAgentAktiv } from './ai-agent.js'
 import { engineStatus } from './strategy-engine.js'
+import { leseUpdateStunden, leseRhythmus } from './marktradar-news.js'
 import { logWarn } from './logger.js'
 
 const TAG_MS = 24 * 60 * 60 * 1000
@@ -51,7 +52,10 @@ const KI_FUNKTIONEN = [
         // Die Nachrichten wählen ihren Anbieter über eigene Felder statt über
         // `waehleAnbieter` — deshalb hier ausdrücklich benannt.
         felder: { provider: 'radarNewsBerichtProvider', modell: 'radarNewsBerichtModell' },
-        funktionen: ['lagebericht'],
+        // Die Aktualisierung ist derselbe Vorgang mit anderem Zuschnitt — sie
+        // gehört in dieselbe Kostenzeile, sonst sucht man den Nachmittag im
+        // Verbrauch vergeblich.
+        funktionen: ['lagebericht', 'lagebericht-update', 'lagebericht-pruefung'],
     },
     {
         id: 'recherche', titelKey: 'kiUebersicht.fn.recherche', bereich: 'nachrichten',
@@ -104,6 +108,22 @@ const AUTOMATIKEN = [
         schalter: 'radarNewsAuto', bereich: 'nachrichten',
         zeitFelder: { stunde: 'radarNewsStunde', rhythmus: 'radarNewsRhythmus', wochentag: 'radarNewsWochentag' },
     },
+    /*
+     * Die beiden Aktualisierungs-Plätze des Lageberichts.
+     *
+     * Sie stehen einzeln da, weil sie einzeln laufen: eigener Tages-Anspruch,
+     * eigene Stunde, eigener Fehlervermerk. Ihr „an" hängt nicht an einer
+     * 0/1-Spalte, sondern an einer Anzahl — deshalb `aktiv` statt `schalter`.
+     */
+    ...[1, 2].map((platz) => ({
+        id: `lageberichtUpdate${platz}`, titelKey: `kiUebersicht.auto.lageberichtUpdate${platz}`,
+        anspruch: `news_lagebericht_update${platz}`, taktKey: 'kiUebersicht.takt.taeglich',
+        kostet: true, bereich: 'nachrichten',
+        aktiv: (s) => Number(s?.radarNewsAuto ?? 1) === 1
+            && leseRhythmus(s?.radarNewsRhythmus) !== 'manuell'
+            && Number(s?.radarNewsUpdates || 0) >= platz,
+        updatePlatz: platz,
+    })),
     {
         id: 'xSuche', titelKey: 'kiUebersicht.auto.xSuche',
         anspruch: 'news_x_suche', taktKey: 'kiUebersicht.takt.zweiStunden', kostet: true,
@@ -132,6 +152,27 @@ const AUTOMATIKEN = [
         schalter: 'liveRecordEnabled', bereich: null,
     },
 ]
+
+/**
+ * Der Zeitplan einer Automatik, so wie die Oberfläche ihn schreibt.
+ *
+ * Zwei Quellen: die benannten Einstellungsfelder (Bericht) oder — für die
+ * Aktualisierungen — die Stundenliste. Ein Platz ohne eingestellte Stunde
+ * bekommt `null` statt einer erfundenen 0, sonst stünde „täglich ab 00 Uhr"
+ * an einer Zeile, die gar nicht läuft.
+ */
+function zeitplanVon(a, s) {
+    if (a.updatePlatz) {
+        const stunde = leseUpdateStunden(s?.radarNewsUpdateStunden, 2)[a.updatePlatz - 1]
+        return Number.isFinite(stunde) ? { stunde, rhythmus: 'taeglich', wochentag: 1 } : null
+    }
+    if (!a.zeitFelder) return null
+    return {
+        stunde: Number(s?.[a.zeitFelder.stunde] ?? 12),
+        rhythmus: String(s?.[a.zeitFelder.rhythmus] || 'taeglich'),
+        wochentag: Number(s?.[a.zeitFelder.wochentag] ?? 1),
+    }
+}
 
 /** Anbieter und Modell einer Funktion auflösen — inklusive „folgt dem globalen". */
 function loeseAnbieter(eintrag, s) {
@@ -301,7 +342,9 @@ export function setupAiUebersichtRoutes(app) {
                 const z = standNach.get(a.anspruch)
                 // Ein Schalter, den es nicht gibt, gilt als eingeschaltet —
                 // sonst stünde ein Takt ohne eigenen Schalter fälschlich als aus.
-                const an = a.schalter === undefined ? true : Number(s?.[a.schalter] ?? 1) === 1
+                const an = a.aktiv
+                    ? a.aktiv(s)
+                    : (a.schalter === undefined ? true : Number(s?.[a.schalter] ?? 1) === 1)
                 return {
                     id: a.id,
                     titelKey: a.titelKey,
@@ -312,13 +355,7 @@ export function setupAiUebersichtRoutes(app) {
                     letzterLauf: Number(z?.fetchedAt) || 0,
                     haelt: z?.claimedBy || '',
                     fehler: z?.lastError || '',
-                    zeitplan: a.zeitFelder
-                        ? {
-                            stunde: Number(s?.[a.zeitFelder.stunde] ?? 12),
-                            rhythmus: String(s?.[a.zeitFelder.rhythmus] || 'taeglich'),
-                            wochentag: Number(s?.[a.zeitFelder.wochentag] ?? 1),
-                        }
-                        : null,
+                    zeitplan: zeitplanVon(a, s),
                 }
             })
 

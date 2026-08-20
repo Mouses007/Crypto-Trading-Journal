@@ -38,6 +38,8 @@ export const FUNKTIONEN = {
     TRADE_CHAT: 'trade-chat',              // Rückfragen zu einem Trade
     AGENT: 'agent',                        // KI-Agent mit Werkzeugen
     LAGEBERICHT: 'lagebericht',            // Nachrichten-Zeitungsbericht
+    LAGEBERICHT_UPDATE: 'lagebericht-update',  // dessen Aktualisierung im Tagesverlauf
+    LAGEBERICHT_PRUEFUNG: 'lagebericht-pruefung',  // eigene Anweisungen vorab prüfen
     VIDEO: 'video',                        // Gemini liest ein YouTube-Video
     X_SUCHE: 'x-suche',                    // Grok durchsucht X
     RECHERCHE: 'recherche',                // Perplexity Sonar

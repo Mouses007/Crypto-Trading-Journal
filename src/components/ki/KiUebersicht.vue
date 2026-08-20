@@ -174,6 +174,8 @@ function zeitpunkt(ms) {
 
 function zeitplanText(z) {
     const stunde = String(z.stunde).padStart(2, '0')
+    // „nur manuell": ein Uhrzeittext wäre hier schlicht falsch — es läuft nichts.
+    if (z.rhythmus === 'manuell') return t('kiUebersicht.zeitplanManuell')
     if (z.rhythmus === 'woechentlich') {
         const tage = t('kiUebersicht.wochentage').split(',')
         return t('kiUebersicht.zeitplanWoche', { tag: tage[(z.wochentag - 1) % 7] || '', stunde })

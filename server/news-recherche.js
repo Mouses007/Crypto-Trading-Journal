@@ -188,7 +188,8 @@ export const THEMEN_NAMEN = {
  *
  * @returns {{text: string, citations: string[], bilder: Array<{url: string, quelle: string}>, tokens: number, kostenUsd: number}}
  */
-export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'sonar', timeoutMs = 60000, frage = '', mitBildern = false }) {
+export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'sonar', timeoutMs = 60000,
+    frage = '', mitBildern = false, aktualitaet = 'day' }) {
     if (!apiKey) throw new Error('Kein Perplexity-Schlüssel hinterlegt')
     const was = THEMEN_NAMEN[thema] || thema
 
@@ -204,6 +205,20 @@ export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'so
                         + 'Nüchtern und faktisch, für einen Krypto-Futures-Händler. Nenne Zahlen, wo welche '
                         + 'berichtet werden. Keine Anlageberatung, keine Prognosen, keine Aufzählung von Meinungen.'),
             }],
+            /*
+             * Der Aktualitätsfilter ist keine Feinheit, sondern die Grenze
+             * zwischen Nachricht und Archiv.
+             *
+             * Gemessen am 20.08.2026 mit derselben Frage: OHNE Filter kamen
+             * unter zwanzig Fundstellen Artikel von 2019, 2020, 2022 und
+             * November 2025 — direkt neben den heutigen, und im Bericht als
+             * gleichwertiger Beleg nummeriert. MIT `search_recency_filter`
+             * waren alle zwanzig vom selben Tag.
+             *
+             * Die Frage nach dem Zeitraum im Text genügt dafür nicht: Sie ist
+             * eine Bitte an das Modell, der Filter eine Bedingung an die Suche.
+             */
+            ...(aktualitaet ? { search_recency_filter: aktualitaet } : {}),
             ...(mitBildern ? { return_images: true } : {}),
         }),
     }, timeoutMs)
@@ -214,6 +229,15 @@ export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'so
     // Zitate liegen top-level; neuere API-Stände nennen sie `search_results`.
     const citations = Array.isArray(j?.citations) ? j.citations.filter((u) => typeof u === 'string')
         : (Array.isArray(j?.search_results) ? j.search_results.map((s) => s?.url).filter(Boolean) : [])
+    /*
+     * Das Datum je Fundstelle, soweit die API es nennt.
+     *
+     * Es steht nur in `search_results`, nicht in `citations` — und es ist die
+     * einzige Handhabe, mit der ein Leser einen Beleg einordnen kann. Ein
+     * Verweis ohne Datum sieht neben einem tagesaktuellen genauso aus.
+     */
+    const daten = new Map((Array.isArray(j?.search_results) ? j.search_results : [])
+        .filter((x) => x?.url).map((x) => [x.url, String(x.date || x.last_updated || '').slice(0, 10)]))
     // Bilder je nach API-Stand als Objekt {image_url, origin_url} oder blanke URL.
     const bilder = !mitBildern ? [] : (Array.isArray(j?.images) ? j.images : [])
         .map((b) => (typeof b === 'string'
@@ -238,6 +262,7 @@ export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'so
     return {
         text,
         citations,
+        quellenDaten: daten,
         bilder,
         tokens: promptTokens + completionTokens,
         kostenUsd,

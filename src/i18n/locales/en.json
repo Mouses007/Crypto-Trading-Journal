@@ -310,7 +310,7 @@
     "ki": {
       "tab_uebersicht": "Overview",
       "tab_allgemein": "Access",
-      "tab_berichte": "Reports",
+      "tab_berichte": "Trade reports",
       "tab_nachrichten": "News",
       "tab_agent": "Agent",
       "tab_strategie": "Strategy",
@@ -369,7 +369,7 @@
         "intro2b": "which writes the briefing. If Gemini fails the briefing is still produced — just without video content.",
         "intro3": "The video is the expensive part, not the text: it is billed by video length. Subtitles would be cheaper, but YouTube no longer serves them to signed-out clients (checked 16 Aug 2026, yt-dlp included).",
         "autoLabel": "Generate automatically",
-        "autoHint": "Daily or weekly at the configured hour. Off: by button only. Posts are collected daily regardless.",
+        "autoHint": "Daily, weekly or not at all (\"manual only\"). Off: by button only. Posts are collected daily regardless.",
         "daily": "daily",
         "weekly": "weekly",
         "localTime": "local time",
@@ -414,7 +414,39 @@
         "customLabel": "Own instructions for the AI",
         "customHint": "Tone, focus and exclusions for the briefing — applies from the next run. Empty = unchanged.",
         "customPlaceholder": "e.g.: Write more tersely, no filler. Give the time of each item. Regulation only matters to me when it affects futures. More detail on Ether than on altcoins.",
-        "customLimits": "{n} of {max} characters. The ground rules stay in force: no trade recommendations, no price targets, no forecasts, nothing invented. Every character costs tokens on every run."
+        "customLimits": "{n} of {max} characters. The ground rules stay in force: no trade recommendations, no price targets, no forecasts, nothing invented. Every character costs tokens on every run.",
+        "manual": "manual only",
+        "manualHint": "The briefing is only written when you press the button.",
+        "updatesLabel": "Interim notes",
+        "updatesHint": "On top of the daily briefing: at the configured hour the AI searches your sources and the web for what has come in since — news, numbers and dates relevant to crypto and trading. It does not rewrite the briefing, it reports only what is new, and shorter than the briefing.",
+        "updates0": "none",
+        "updates1": "once a day",
+        "updates2": "twice a day",
+        "updatesCost": "Each interim note costs one research call and one writing call.",
+        "mailLabel": "Mail content",
+        "mailHint": "Applies to the \"briefing ready\" notification (Settings → Notifications). Automatic runs send mail; a briefing you triggered yourself does not — you are sitting in front of it.",
+        "mailShort": "Overall picture and run figures only",
+        "mailFull": "Full briefing: chapters, items, figures, sources",
+        "keepLabel": "Keep briefings",
+        "keepHint": "How long generated briefings are kept. \"By hand\" never deletes — every briefing cost money. Cleanup runs once a day; raw posts have their own 30 days.",
+        "keepManual": "by hand",
+        "keepDay": "1 day",
+        "keepWeek": "1 week",
+        "keepMonth": "1 month",
+        "checkBtn": "Check & sharpen",
+        "checkHint": "One model call (a few cents): what takes effect, what bounces off the hard rules — plus a sharper wording.",
+        "suggestion": "Suggestion:",
+        "apply": "Apply",
+        "discard": "Discard",
+        "mark": {
+          "wirkt": "takes effect",
+          "wirkungslos": "no effect",
+          "gegenregel": "against the rules"
+        },
+        "chartHint": "Chart analysis: how old the cited analyses may be, and which horizon they should describe.",
+        "chartTag": "Chart: short term (1 day)",
+        "chartWoche": "Chart: medium term (1 week)",
+        "chartMonat": "Chart: higher timeframe (1 month)"
       },
       "agentBudget": "Token budget per run",
       "agentBudgetHint": "Upper limit for one agent run across all reasoning rounds (input + output). When reached, the agent summarises what it has found so far. More budget = deeper analyses, but higher cost per question."
@@ -842,7 +874,7 @@
     "quellenTitel": "Sources",
     "recherche": "Research",
     "redakteur": "Editor",
-    "redditHinweis": "needs an access token since OAuth became mandatory",
+    "redditHinweis": "unavailable — Reddit requires OAuth, a key field is not enough",
     "regelFundingExtrem": "Funding extreme % p.a.",
     "regelLiqAbfluss": "Liquidity outflow (%)",
     "regelPreis24h": "Price move 24h (%)",
@@ -927,7 +959,16 @@
     "favMehr": "+{n} more",
     "favWeniger": "show fewer",
     "alarmeMehr": "show {n} older",
-    "alarmeWeniger": "show newest only"
+    "alarmeWeniger": "show newest only",
+    "keyNoetig": "— key required",
+    "keyOptional": "— optional, raises the limit",
+    "keyPlatzhalter": "Paste key",
+    "keyHolen": "Get key",
+    "keyHinweis": {
+      "cryptopanic": "Free account; the auth_token is in the developer area. Supplies the news picture around rising coins.",
+      "lunarcrush": "Social metrics (mentions, sentiment). Paid access; without a key the source stays off.",
+      "coingecko": "Without a key the free tier applies, with a tight limit that drops calls. The demo key is free."
+    }
   },
   "kiUebersicht": {
     "laedt": "Loading overview …",
@@ -981,7 +1022,9 @@
       "schnappschuss": "Market data snapshot",
       "kalender": "Economic calendar",
       "newsAufbewahrung": "Clean up old news",
-      "aufzeichner": "Live recording"
+      "aufzeichner": "Live recording",
+      "lageberichtUpdate1": "Update briefing (1)",
+      "lageberichtUpdate2": "Update briefing (2)"
     },
     "takt": {
       "stunde": "hourly",
@@ -991,7 +1034,8 @@
       "taeglich": "daily",
       "sekunden15": "every 15 seconds",
       "laufend": "continuous"
-    }
+    },
+    "zeitplanManuell": "by hand only"
   },
   "kiAgent": {
     "createReport": "Create AI Report",
@@ -1800,8 +1844,13 @@
       "cooldownMinutes": "Cooldown per symbol (minutes)",
       "duplicateScope": "One position per … (symbol / symbol+timeframe)",
       "minRR": "Minimum reward/risk",
-      "feeBps": "Fee per side (basis points)",
-      "slippageBps": "Slippage per side (basis points)",
+      "feeMakerBps": "Maker / limit fee (basis points)",
+      "feeTakerBps": "Taker / market fee (basis points)",
+      "slippageBps": "Slippage per market order (basis points)",
+      "entryOrder": "Entry as",
+      "entryOrderLimit": "Limit at the zone (maker)",
+      "entryOrderMarket": "Market order (taker)",
+      "breakEvenCoversCosts": "Break-even stop covers fees",
       "fundingBpsPer8h": "Funding per 8 h (basis points, 0 = not modelled)",
       "maxPriceDeviationPct": "Max price deviation from reference (%)"
     },
@@ -3137,7 +3186,23 @@
     "tag": {
       "fakt": "Fact",
       "einschaetzung": "Assessment"
-    }
+    },
+    "manual": "manual only",
+    "updateDigest": "Update",
+    "updateHint": "Searches your sources and the web for what has come in since the daily briefing — a short interim note, not a second briefing.",
+    "updateDone": "Interim note: {p} item(s) from {n} new posts and {r} research call(s), {v} video(s), {tok} tokens via {modell}",
+    "updateMark": "Interim note {n}",
+    "updateShort": "Int. {n}",
+    "updatesN": "{n}× interim note",
+    "fixMark": "corrects",
+    "toBase": "Daily briefing",
+    "dailyReport": "Daily briefing",
+    "archivedAtMidnight": "Archived at midnight — click a line to read it.",
+    "pickFromChain": "Pick a line above to read that briefing.",
+    "quickTitle": "Quick settings",
+    "toSettings": "All settings: AI → News",
+    "stillRunning": "The run outlasts the connection — it continues on the server. The page checks back every 15 seconds.",
+    "arrivedLate": "Done — the briefing has arrived."
   },
   "rangliste": {
     "title": "Coin ranking",

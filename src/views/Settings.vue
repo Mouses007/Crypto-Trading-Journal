@@ -673,6 +673,52 @@ let radarNewsBerichtModell = ref('')
    als Kapitel und Länge. Themen als Array — gespeichert wird CSV. */
 let radarNewsRhythmus = ref('taeglich')
 let radarNewsWochentag = ref(1)
+/* Aktualisierungen im Tagesverlauf: keine, eine oder zwei. Gespeichert wird
+   die Zahl plus die Stunden als CSV; hier stehen sie als zwei getrennte Felder,
+   weil man sie einzeln auswählt. */
+let radarNewsUpdates = ref(0)
+let radarNewsUpdateStunde1 = ref(18)
+let radarNewsUpdateStunde2 = ref(21)
+/* Ganzer Bericht in der Mail statt nur der Gesamtlage. */
+let radarNewsMailVoll = ref(false)
+/* Wie lange erzeugte Berichte liegen bleiben. 'manuell' löscht nie. */
+let radarNewsBerichtAufbewahrung = ref('manuell')
+/* Zeithorizont der Chartanalyse: wie alt die Analysen sein dürfen und wie weit
+   sie vorausschauen sollen. */
+let radarNewsChartFrische = ref('woche')
+/* Prüfung der eigenen Anweisungen: Befunde und geschärfte Fassung. */
+const anweisungPruefung = ref(null)
+const anweisungLaeuft = ref(false)
+
+/**
+ * Die eigene Anweisung vom Modell beurteilen lassen.
+ *
+ * Geprüft wird der Text im Feld, nicht der gespeicherte — sonst müsste man
+ * erst speichern, um zu erfahren, ob das Gespeicherte etwas taugt. Gespeichert
+ * wird erst mit „Übernehmen".
+ */
+async function anweisungPruefen() {
+    anweisungLaeuft.value = true
+    anweisungPruefung.value = null
+    try {
+        const { data } = await axios.post('/api/marktradar/lagebericht/anweisung-pruefen',
+            { text: radarNewsPromptZusatz.value }, { timeout: 120000 })
+        anweisungPruefung.value = data
+    } catch (e) {
+        anweisungPruefung.value = {
+            befunde: [{ art: 'wirkungslos', text: e.response?.data?.error || e.message }],
+            vorschlag: '',
+        }
+    } finally {
+        anweisungLaeuft.value = false
+    }
+}
+
+function anweisungUebernehmen() {
+    radarNewsPromptZusatz.value = anweisungPruefung.value.vorschlag
+    radarSpeichern('radarNewsPromptZusatz')
+    anweisungPruefung.value = null
+}
 let radarNewsThemen = ref(['crypto'])
 let radarNewsLaenge = ref('mittel')
 let radarNewsXModell = ref('grok-4.6')
@@ -755,8 +801,26 @@ function loadRadarSettings() {
     radarNewsAufloesung.value = s.radarNewsAufloesung || 'niedrig'
     radarNewsBerichtProvider.value = s.radarNewsBerichtProvider || ''
     radarNewsBerichtModell.value = s.radarNewsBerichtModell || ''
-    radarNewsRhythmus.value = s.radarNewsRhythmus === 'woechentlich' ? 'woechentlich' : 'taeglich'
+    radarNewsRhythmus.value = ['woechentlich', 'manuell'].includes(s.radarNewsRhythmus)
+        ? s.radarNewsRhythmus : 'taeglich'
     radarNewsWochentag.value = Math.max(1, Math.min(7, Number(s.radarNewsWochentag ?? 1)))
+    radarNewsUpdates.value = Math.max(0, Math.min(2, Number(s.radarNewsUpdates) || 0))
+    radarNewsMailVoll.value = Number(s.radarNewsMailVoll ?? 0) === 1
+    radarNewsBerichtAufbewahrung.value = ['manuell', 'tag', 'woche', 'monat']
+        .includes(s.radarNewsBerichtAufbewahrung) ? s.radarNewsBerichtAufbewahrung : 'manuell'
+    radarNewsChartFrische.value = ['tag', 'woche', 'monat'].includes(s.radarNewsChartFrische)
+        ? s.radarNewsChartFrische : 'woche'
+    {
+        // Wie `leseUpdateStunden` auf dem Server: sortiert und geklemmt. Fehlt
+        // eine Stunde, bleibt die Vorgabe stehen — ein leeres Auswahlfeld wäre
+        // ein Wert, den niemand gewählt hat.
+        const st = String(s.radarNewsUpdateStunden || '18,21').split(',')
+            .map(x => x.trim()).filter(x => x !== '')
+            .map(x => Math.max(0, Math.min(23, Number(x) || 0)))
+            .sort((a, b) => a - b)
+        radarNewsUpdateStunde1.value = Number.isFinite(st[0]) ? st[0] : 18
+        radarNewsUpdateStunde2.value = Number.isFinite(st[1]) ? st[1] : 21
+    }
     radarNewsThemen.value = String(s.radarNewsThemen || 'crypto').split(',')
         .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech', 'chartanalyse'].includes(t))
     if (!radarNewsThemen.value.length) radarNewsThemen.value = ['crypto']
@@ -805,6 +869,15 @@ async function radarSpeichern(feld) {
         radarNewsBerichtModell: radarNewsBerichtModell.value.trim(),
         radarNewsRhythmus: radarNewsRhythmus.value,
         radarNewsWochentag: Math.max(1, Math.min(7, Number(radarNewsWochentag.value) || 1)),
+        radarNewsUpdates: Math.max(0, Math.min(2, Number(radarNewsUpdates.value) || 0)),
+        radarNewsMailVoll: radarNewsMailVoll.value ? 1 : 0,
+        radarNewsBerichtAufbewahrung: radarNewsBerichtAufbewahrung.value,
+        radarNewsChartFrische: radarNewsChartFrische.value,
+        // Immer beide Stunden schreiben, auch bei nur einer Aktualisierung:
+        // Die Anzahl entscheidet, wie viele davon gelten — so bleibt die zweite
+        // Wahl erhalten, wenn jemand kurz auf „eine" stellt und zurück.
+        radarNewsUpdateStunden: [radarNewsUpdateStunde1.value, radarNewsUpdateStunde2.value]
+            .map(h => Math.max(0, Math.min(23, Number(h) || 0))).join(','),
         // Reihenfolge festnageln, damit die Kapitel immer gleich sortiert sind
         radarNewsThemen: ['crypto', 'finanzen', 'tech', 'chartanalyse'].filter(t => radarNewsThemen.value.includes(t)).join(','),
         radarNewsLaenge: radarNewsLaenge.value,
@@ -2933,7 +3006,9 @@ onBeforeMount(async () => {
 
                 <!--=============== BERICHTE ===============-->
                 <div v-show="kiBereich === 'berichte'">
-                    <p class="fs-5 fw-bold mb-1">{{ t('settings.ki.tab_berichte') }}</p>
+                    <!-- Keine Überschrift: Der aktive Reiter darüber trägt
+                         denselben Namen, und zweimal dasselbe Wort untereinander
+                         erklärt nichts, was der Reiter nicht schon sagt. -->
                     <p class="fw-lighter">{{ t('settings.ki.berichteHint') }}</p>
 
                     <div class="row mt-3">
@@ -3323,20 +3398,111 @@ onBeforeMount(async () => {
                                 v-model="radarNewsRhythmus" :disabled="!radarNewsAuto" @change="radarSpeichern('radarNewsRhythmus')">
                                 <option value="taeglich">{{ t('settings.ki.news.daily') }}</option>
                                 <option value="woechentlich">{{ t('settings.ki.news.weekly') }}</option>
+                                <option value="manuell">{{ t('settings.ki.news.manual') }}</option>
                             </select>
                             <select v-if="radarNewsRhythmus === 'woechentlich'" class="form-select form-select-sm" style="max-width:8.5rem;"
                                 v-model.number="radarNewsWochentag" :disabled="!radarNewsAuto" @change="radarSpeichern('radarNewsWochentag')">
                                 <option v-for="(tag, i) in wochentagNamen" :key="i" :value="i + 1">{{ tag }}</option>
                             </select>
-                            <select class="form-select form-select-sm" style="max-width:8rem;"
+                            <!-- Bei „nur manuell" gibt es keine Stunde: Der Takt
+                                 erzeugt nichts, ein Uhrzeitfeld daneben würde
+                                 etwas anderes behaupten. -->
+                            <select v-if="radarNewsRhythmus !== 'manuell'" class="form-select form-select-sm" style="max-width:8rem;"
                                 v-model.number="radarNewsStunde" :disabled="!radarNewsAuto" @change="radarSpeichern('radarNewsStunde')">
                                 <option v-for="h in 24" :key="h - 1" :value="h - 1">
                                     {{ String(h - 1).padStart(2, '0') }}:00
                                 </option>
                             </select>
-                            <span class="small text-muted">
+                            <span v-if="radarNewsRhythmus !== 'manuell'" class="small text-muted">
                                 {{ currentUser?.timeZone || t('settings.ki.news.localTime') }}
                             </span>
+                            <span v-else class="small text-muted">{{ t('settings.ki.news.manualHint') }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Zwischenmeldungen. Sie setzen auf dem Bericht des Tages auf —
+                         nicht um ihn umzuschreiben, sondern um zu melden, was
+                         seither dazukam. Bei „nur manuell" nicht wählbar: ohne
+                         automatischen Bericht gibt es nichts, worauf sie
+                         aufsetzen könnten. Von Hand geht es weiterhin über den
+                         Knopf auf der Nachrichtenseite. -->
+                    <div v-if="radarNewsRhythmus !== 'manuell'" class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.updatesLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.updatesHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
+                            <select class="form-select form-select-sm" style="max-width:9.5rem;"
+                                v-model.number="radarNewsUpdates" :disabled="!radarNewsAuto"
+                                @change="radarSpeichern('radarNewsUpdates')">
+                                <option :value="0">{{ t('settings.ki.news.updates0') }}</option>
+                                <option :value="1">{{ t('settings.ki.news.updates1') }}</option>
+                                <option :value="2">{{ t('settings.ki.news.updates2') }}</option>
+                            </select>
+                            <select v-if="radarNewsUpdates >= 1" class="form-select form-select-sm" style="max-width:8rem;"
+                                v-model.number="radarNewsUpdateStunde1" :disabled="!radarNewsAuto"
+                                @change="radarSpeichern('radarNewsUpdateStunden')">
+                                <option v-for="h in 24" :key="h - 1" :value="h - 1">
+                                    {{ String(h - 1).padStart(2, '0') }}:00
+                                </option>
+                            </select>
+                            <select v-if="radarNewsUpdates >= 2" class="form-select form-select-sm" style="max-width:8rem;"
+                                v-model.number="radarNewsUpdateStunde2" :disabled="!radarNewsAuto"
+                                @change="radarSpeichern('radarNewsUpdateStunden')">
+                                <option v-for="h in 24" :key="h - 1" :value="h - 1">
+                                    {{ String(h - 1).padStart(2, '0') }}:00
+                                </option>
+                            </select>
+                            <span v-if="radarNewsUpdates" class="small text-muted">
+                                {{ t('settings.ki.news.updatesCost') }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Was in der Benachrichtigungs-Mail steht. Sie kommt nur,
+                         wenn „Lagebericht fertig" unter Benachrichtigungen auf
+                         Mail steht — deshalb der Verweis darauf statt eines
+                         zweiten Schalters, der dasselbe noch einmal regelt. -->
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.mailLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.mailHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="radarNewsMailVollToggle"
+                                    v-model="radarNewsMailVoll" @change="radarSpeichern('radarNewsMailVoll')">
+                            </div>
+                            <label class="mb-0" for="radarNewsMailVollToggle">
+                                {{ radarNewsMailVoll ? t('settings.ki.news.mailFull') : t('settings.ki.news.mailShort') }}
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Aufbewahrung. Steht bei der Mail und nicht bei den
+                         Quellen: Es geht um die erzeugten Berichte, nicht um
+                         die eingesammelten Beiträge — die haben ihre eigenen
+                         30 Tage im Abruf. -->
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.keepLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.keepHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <select class="form-select form-select-sm" style="max-width:10rem;"
+                                v-model="radarNewsBerichtAufbewahrung"
+                                @change="radarSpeichern('radarNewsBerichtAufbewahrung')">
+                                <option value="manuell">{{ t('settings.ki.news.keepManual') }}</option>
+                                <option value="tag">{{ t('settings.ki.news.keepDay') }}</option>
+                                <option value="woche">{{ t('settings.ki.news.keepWeek') }}</option>
+                                <option value="monat">{{ t('settings.ki.news.keepMonth') }}</option>
+                            </select>
                         </div>
                     </div>
 
@@ -3355,6 +3521,17 @@ onBeforeMount(async () => {
                                     @change="radarSpeichern('radarNewsThemen')">
                                 <span>{{ bez }}</span>
                             </label>
+                            <!-- Nur sinnvoll, wenn das Kapitel überhaupt gewählt
+                                 ist — sonst steht hier ein Regler für etwas,
+                                 das gar nicht erzeugt wird. -->
+                            <select v-if="radarNewsThemen.includes('chartanalyse')"
+                                class="form-select form-select-sm" style="max-width:13rem;"
+                                v-model="radarNewsChartFrische" :title="t('settings.ki.news.chartHint')"
+                                @change="radarSpeichern('radarNewsChartFrische')">
+                                <option value="tag">{{ t('settings.ki.news.chartTag') }}</option>
+                                <option value="woche">{{ t('settings.ki.news.chartWoche') }}</option>
+                                <option value="monat">{{ t('settings.ki.news.chartMonat') }}</option>
+                            </select>
                             <select class="form-select form-select-sm" style="max-width:10rem;"
                                 v-model="radarNewsLaenge" @change="radarSpeichern('radarNewsLaenge')">
                                 <option value="kurz">{{ t('news.len.kurz') }} — {{ t('news.lenSub.kurz') }}</option>
@@ -3405,6 +3582,57 @@ onBeforeMount(async () => {
                                     n: radarNewsPromptZusatz.length, max: 2000,
                                 }) }}
                             </small>
+
+                            <!-- Prüfen, bevor es einen bezahlten Lauf kostet.
+                                 Ob ein Satz überhaupt wirkt, sah man bisher
+                                 erst am fertigen Bericht — und bei dem, was an
+                                 den Grundregeln abprallt, nie. -->
+                            <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    :disabled="anweisungLaeuft || !radarNewsPromptZusatz.trim()"
+                                    @click="anweisungPruefen">
+                                    <span v-if="anweisungLaeuft" class="spinner-border spinner-border-sm me-1"></span>
+                                    <i v-else class="uil uil-check-circle me-1"></i>
+                                    {{ t('settings.ki.news.checkBtn') }}
+                                </button>
+                                <small class="text-muted" style="font-size:0.75rem;">
+                                    {{ t('settings.ki.news.checkHint') }}
+                                </small>
+                            </div>
+
+                            <div v-if="anweisungPruefung" class="mt-2 p-2"
+                                style="border:1px solid var(--border-color,#2a2a30);border-radius:.4rem;">
+                                <div v-for="(b, i) in anweisungPruefung.befunde" :key="i"
+                                    class="d-flex gap-2 align-items-start mb-1">
+                                    <span class="badge" :class="{
+                                        'text-bg-success': b.art === 'wirkt',
+                                        'text-bg-secondary': b.art === 'wirkungslos',
+                                        'text-bg-warning': b.art === 'gegenregel',
+                                    }" style="font-size:.68rem;">{{ t('settings.ki.news.mark.' + b.art) }}</span>
+                                    <span style="font-size:.8rem;">{{ b.text }}</span>
+                                </div>
+                                <div v-if="anweisungPruefung.vorschlag" class="mt-2">
+                                    <div class="text-muted" style="font-size:.75rem;">
+                                        {{ t('settings.ki.news.suggestion') }}
+                                    </div>
+                                    <div style="font-size:.82rem;white-space:pre-wrap;">{{ anweisungPruefung.vorschlag }}</div>
+                                    <div class="d-flex gap-2 mt-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary"
+                                            :disabled="anweisungPruefung.vorschlag === radarNewsPromptZusatz.trim()"
+                                            @click="anweisungUebernehmen">
+                                            {{ t('settings.ki.news.apply') }}
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                            @click="anweisungPruefung = null">
+                                            {{ t('settings.ki.news.discard') }}
+                                        </button>
+                                    </div>
+                                </div>
+                                <small v-if="anweisungPruefung.kostenUsd" class="d-block text-muted mt-2"
+                                    style="font-size:.72rem;">
+                                    {{ anweisungPruefung.modell }} · {{ useKostenAnzeige(anweisungPruefung.kostenUsd) }}
+                                </small>
+                            </div>
                         </div>
                     </div>
 

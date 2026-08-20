@@ -8,7 +8,9 @@
  * Aufruf: node server/__selftest-news-filter.mjs
  */
 import { istGefiltert, zerlegeWoerter, THEMEN_NAMEN } from './news-recherche.js'
-import { bauLagePrompt, leseThemen } from './marktradar-news.js'
+import {
+    bauLagePrompt, leseThemen, bauAnweisungPruefPrompt, leseAnweisungPruefung,
+} from './marktradar-news.js'
 
 let fehler = 0
 // Auch die bestandenen zählen: `scripts/run-selftests.mjs` liest das Zahlenpaar
@@ -63,7 +65,14 @@ const p1 = bauLagePrompt({ themen: ['crypto', 'tech'], laenge: 'kurz', rhythmus:
 pruefe('gewählte Kapitel stehen im Prompt', p1.includes('"crypto"') && p1.includes('"tech"'))
 pruefe('nicht gewähltes Kapitel fehlt', !p1.includes('"finanzen"'))
 pruefe('kurz heisst zwei bis drei Punkte', p1.includes('zwei bis drei Punkte'))
-pruefe('täglich heisst 36 Stunden', p1.includes('36 Stunden'))
+pruefe('täglich heisst 36 Stunden, solange nichts Genaueres bekannt ist', p1.includes('36 Stunden'))
+// Der Zeitraum ist eine Behauptung über die Grundlage: Liegt die wahre
+// Abdeckung vor, gilt sie — sonst verspricht der Prompt einen Tag und liefert
+// sechs Stunden.
+pruefe('gemessene Abdeckung schlägt das eingestellte Fenster',
+    bauLagePrompt({ abdeckung: 'der letzten 7 Stunden' }).includes('der letzten 7 Stunden'))
+pruefe('gemessene Abdeckung verdrängt die 36 Stunden',
+    !bauLagePrompt({ abdeckung: 'der letzten 7 Stunden' }).includes('36 Stunden'))
 pruefe('Krypto-Kapitel bringt die Marktdaten-Anweisung mit', p1.includes('Marktdaten-Block'))
 pruefe('Antwortschema verlangt Kapitel', p1.includes('"kapitel"'))
 
@@ -78,7 +87,67 @@ pruefe('Vorgabe ist mittel/täglich/crypto',
 
 const p4 = bauLagePrompt({ themen: ['crypto', 'chartanalyse'], laenge: 'kurz' })
 pruefe('Chartanalyse-Kapitel verbietet eigene Deutung', p4.includes('keine eigene Chartdeutung'))
+// Videos sind für dieses Kapitel eine Quelle, Text-Meldungen nicht: Ein
+// Chartvideo IST eine Analyse, eine Nachrichtenmeldung ist es nicht.
+pruefe('Videos dürfen ins Chartkapitel', p4.includes('Videoinhalten'))
+pruefe('Text-Meldungen bleiben draussen', p4.includes('gehören weiterhin NICHT in dieses'))
+pruefe('Videomarken brauchen die Quelle', p4.includes('nenne das Video als Quelle'))
+pruefe('Widerspruch wird nebeneinandergestellt, nicht entschieden',
+    p4.includes('nenne beide Stände nebeneinander'))
 pruefe('ohne Chartanalyse keine Chartanalyse-Anweisung', !p1.includes('Chartdeutung'))
+
+// 5) Zwischenmeldung: melden, was dazukam — nicht den Bericht umschreiben.
+const p5 = bauLagePrompt({ themen: ['crypto'], laenge: 'kurz', aktualisierung: true })
+pruefe('Zwischenmeldung sagt, dass sie kein zweiter Bericht ist',
+    p5.includes('KEIN ZWEITER TAGESBERICHT'))
+pruefe('Zwischenmeldung bekommt den Tagesbericht als Abgrenzung',
+    p5.includes('BEREITS BERICHTET'))
+// Der Kern der Sache: nicht wiederholen, was heute Morgen schon dastand.
+pruefe('Zwischenmeldung verbietet Wiederholung',
+    p5.includes('NICHT noch einmal vor'))
+pruefe('Zwischenmeldung kennt die Marke „korrektur"', p5.includes('"korrektur": true'))
+pruefe('Zwischenmeldung fragt nach Zahlen', p5.includes('Zahlen sind hier das Wichtigste'))
+pruefe('Zwischenmeldung darf kurz ausfallen', p5.includes('Zwei belastbare Punkte'))
+pruefe('Zwischenmeldung nennt kein festes Zeitfenster mehr',
+    !p5.includes('36 Stunden') && p5.includes('seit dem bisherigen Bericht'))
+// Der reguläre Bericht darf davon nichts abbekommen — sonst führte er Marken,
+// die für ihn nichts bedeuten, und lüde zum Erfinden von Korrekturen ein.
+pruefe('regulärer Bericht kennt keine Zwischenmeldung',
+    !p1.includes('BEREITS BERICHTET') && !p1.includes('"korrektur"'))
+
+// 6) Anweisungen prüfen: der Prompt muss die Grenzen NENNEN, sonst bestätigt
+// die Prüfung Wünsche, an die sich der Bericht später nicht hält.
+const pp = bauAnweisungPruefPrompt({ themen: ['crypto', 'tech'], laenge: 'kurz' })
+pruefe('Prüfprompt schreibt keinen Bericht', pp.includes('KEINEN Bericht'))
+pruefe('Prüfprompt nennt die Kapitel', pp.includes('crypto, tech'))
+pruefe('Prüfprompt nennt den Umfang der Länge', pp.includes('zwei bis drei Punkte'))
+pruefe('Prüfprompt nennt die unverrückbaren Regeln',
+    pp.includes('keine Handelsempfehlungen') && pp.includes('nichts Erfundenes'))
+pruefe('Prüfprompt kennt die drei Marken',
+    pp.includes('"wirkt"') && pp.includes('"wirkungslos"') && pp.includes('"gegenregel"'))
+pruefe('Prüfprompt verlangt eine geschärfte Fassung', pp.includes('"vorschlag"'))
+
+const pr = leseAnweisungPruefung({
+    befunde: [
+        { art: 'wirkt', text: 'Nur Bitcoin-Themen' },
+        { art: 'quatsch', text: 'unbekannte Marke' },
+        'nackter Satz',
+        { art: 'gegenregel', text: '' },
+    ],
+    vorschlag: '  Schreibe nur über Bitcoin.  ',
+})
+pruefe('drei brauchbare Befunde bleiben', pr.befunde.length === 3, JSON.stringify(pr.befunde))
+// Im Zweifel die harmlose Marke: eine als „wirkt" ausgegebene Fehleinschätzung
+// wäre der teure Fehler — der Leser verlässt sich darauf.
+pruefe('unbekannte Marke wird zu wirkungslos', pr.befunde[1].art === 'wirkungslos')
+pruefe('nackter Satz überlebt als wirkungslos',
+    pr.befunde[2].art === 'wirkungslos' && pr.befunde[2].text === 'nackter Satz')
+pruefe('leerer Befund fällt weg', !pr.befunde.some(b => !b.text))
+pruefe('Vorschlag wird getrimmt', pr.vorschlag === 'Schreibe nur über Bitcoin.')
+pruefe('Vorschlag wird auf die Feldlänge gekürzt',
+    leseAnweisungPruefung({ vorschlag: 'x'.repeat(5000) }, { maxLaenge: 2000 }).vorschlag.length === 2000)
+pruefe('Unsinn wirft nicht',
+    leseAnweisungPruefung(null).befunde.length === 0 && leseAnweisungPruefung('kaputt').vorschlag === '')
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

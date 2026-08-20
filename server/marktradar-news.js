@@ -297,6 +297,20 @@ export async function laufeNewsAbruf({ manuell = false } = {}) {
     if (await beansprucheAufgabe('news_retention', TAG)) {
         const weg = await knex('news_items').where('publishedAt', '<', Date.now() - AUFBEWAHRUNG).del()
         if (weg) console.log(` -> News: ${weg} alte Beiträge entfernt`)
+
+        /*
+         * Berichte haben ihre EIGENE Frist — und normalerweise gar keine.
+         *
+         * Die 30 Tage oben gelten für Rohbeiträge, die nichts gekostet haben.
+         * Ein Bericht ist bezahlte Arbeit; ihn nach derselben Regel zu löschen
+         * wäre eine stille Enteignung. Deshalb Vorgabe „manuell" und eine
+         * eigene Einstellung für alle, die den Bestand kurz halten wollen.
+         */
+        const frist = aufbewahrungMs((await knex('settings').where('id', 1).first())?.radarNewsBerichtAufbewahrung)
+        if (frist) {
+            const weit = await knex('news_digests').where('erstelltAm', '<', Date.now() - frist).del()
+            if (weit) console.log(` -> News: ${weit} alte Bericht(e) entfernt (Frist ${frist / TAG} Tage)`)
+        }
     }
 
     console.log(` -> News: ${gesehen} Beiträge gesehen, ${neu} neu, ${fehler} Quelle(n) mit Fehler`)
@@ -354,6 +368,40 @@ export const VIDEO_TIEFEN = {
     },
 }
 
+/**
+ * Der Auftrag an Gemini für ein Video.
+ *
+ * `mitChart` kommt vom Kapitel „Chartanalyse": Ist es aktiv, sollen die im
+ * Video GENANNTEN Marken erhalten bleiben — Unterstützungen, Widerstände,
+ * Muster, Zeiteinheit. Ohne diesen Satz gehen sie in der Zusammenfassung
+ * verloren: „Nur was für die Marktlage relevant ist" liest ein Modell als
+ * Nachrichtenlage, und ein Chartvideo besteht aus fast nichts anderem als
+ * Marken.
+ *
+ * Wichtig ist die Grenze: WIEDERGEBEN, was das Video sagt, nicht bewerten. Die
+ * Regel „keine Kursziele" bleibt stehen — eine genannte Unterstützung ist eine
+ * Aussage des Videos, ein Kursziel wäre eine Empfehlung daraus.
+ *
+ * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
+ */
+export function bauVideoAuftrag({ tiefe = 'normal', deckel = 0, mitChart = false } = {}) {
+    const stufe = videoTiefeAus(tiefe, deckel)
+    const chart = mitChart
+        ? 'Bespricht das Video Charts, gib die GENANNTEN Marken wörtlich wieder: '
+          + 'Unterstützungen, Widerstände, Chartmuster, Indikatoren und die Zeiteinheit, '
+          + 'jeweils mit dem Coin dazu. Nur wiedergeben, nicht selbst deuten. '
+        : ''
+    return {
+        tokens: stufe.tokens,
+        text: `${stufe.auftrag} `
+            + 'Nur was für die Marktlage relevant ist: Thesen, Zahlen, genannte Ereignisse. '
+            + chart
+            + 'Lass Eigenwerbung, Sponsoren und Aufrufe zum Abonnieren weg. '
+            + 'Keine Handelsempfehlung, keine Kursziele, keine Spekulation. '
+            + 'Wenn das Video nichts Marktrelevantes enthält, schreibe genau: OHNE INHALT',
+    }
+}
+
 /** Stufe samt Token-Deckel auflösen; `deckel > 0` schlägt die Stufe. */
 export function videoTiefeAus(tiefe, deckel) {
     const stufe = VIDEO_TIEFEN[tiefe] || VIDEO_TIEFEN.normal
@@ -400,9 +448,30 @@ export function istEndgueltig(fehlertext) {
     return /HTTP 403|PERMISSION_DENIED/i.test(String(fehlertext || ''))
 }
 
-async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe = 'normal', deckel = 0 } = {}) {
+/**
+ * Denk-Reserve für Modelle, die vor der Antwort nachdenken.
+ *
+ * `maxOutputTokens` deckelt bei Gemini nicht die Antwort, sondern Antwort UND
+ * internes Nachdenken. Gemessen am 20.08.2026 mit `gemini-3.1-pro-preview`:
+ * Bei 400 Token gingen 380 ins Nachdenken, 16 blieben für die Antwort — Ende
+ * mitten im ersten Stichpunkt (`finishReason: MAX_TOKENS`). In der Datenbank
+ * standen daraufhin Zusammenfassungen von 33 bis 77 Zeichen, während für das
+ * Video selbst 96.000 Eingabe-Token bezahlt waren.
+ *
+ * `thinkingBudget: 0` ist keine Lösung: Das Modell lehnt es mit
+ * „This model only works in thinking mode" ab. Also Luft schaffen — mit 2500
+ * kam derselbe Auftrag vollständig zurück (1699 gedacht, 93 geantwortet) —
+ * die Reserve liegt darüber, weil ein langes Video mehr Nachdenken braucht als
+ * ein Kurzvideo. Ein höherer Deckel kostet nichts: Bezahlt wird, was das
+ * Modell tatsächlich verbraucht. Ein abgeschnittener Stichpunkt dagegen macht
+ * die ganze bezahlte Videoanalyse wertlos.
+ */
+const DENKRESERVE = 3000
+
+async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe = 'normal', deckel = 0,
+    mitChart = false } = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent`
-    const stufe = videoTiefeAus(tiefe, deckel)
+    const stufe = bauVideoAuftrag({ tiefe, deckel, mitChart })
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), 120000)   // Video braucht länger als Text
     try {
@@ -415,13 +484,7 @@ async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe
             body: JSON.stringify({
                 contents: [{
                     parts: [
-                        {
-                            text: stufe.auftrag + ' '
-                                + 'Nur was für die Marktlage relevant ist: Thesen, Zahlen, genannte Ereignisse. '
-                                + 'Lass Eigenwerbung, Sponsoren und Aufrufe zum Abonnieren weg. '
-                                + 'Keine Handelsempfehlung, keine Kursziele, keine Spekulation. '
-                                + 'Wenn das Video nichts Marktrelevantes enthält, schreibe genau: OHNE INHALT',
-                        },
+                        { text: stufe.text },
                         { fileData: { fileUri: videoUrl } },
                     ],
                 }],
@@ -431,7 +494,7 @@ async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe
                 // mitzulaufen kostet nichts und spart die nächste Überraschung.
                 generationConfig: {
                     ...samplingFelder(cfg.model, 0.2),
-                    maxOutputTokens: stufe.tokens,
+                    maxOutputTokens: stufe.tokens + DENKRESERVE,
                     // Der teuerste Regler im ganzen Aufbau: Standard kostet
                     // rund 300 Token je Videosekunde, niedrig rund 100.
                     mediaResolution: aufloesung === 'standard'
@@ -443,6 +506,19 @@ async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe
         const j = await r.json()
         const text = j?.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join('\n').trim()
         if (!text) throw new Error('Gemini-Antwort ohne Text')
+        /*
+         * Abgeschnitten heisst abgeschnitten — auch wenn Text zurückkommt.
+         *
+         * Ein halber Stichpunkt sah in der Datenbank aus wie eine gelungene
+         * Analyse und wurde in jeden folgenden Bericht übernommen. Sichtbar
+         * machen statt still speichern; bei einem Bruchstück lieber gar nichts.
+         */
+        if (j?.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+            const gedacht = Number(j?.usageMetadata?.thoughtsTokenCount) || 0
+            logWarn('news', `Videozusammenfassung abgeschnitten (${gedacht} Token gedacht, `
+                + `Deckel ${stufe.tokens + DENKRESERVE}): ${videoUrl}`)
+            if (text.length < 60) throw new Error('Antwort abgeschnitten — Token-Deckel zu klein')
+        }
         return { text, tokens: Number(j?.usageMetadata?.totalTokenCount) || 0 }
     } finally {
         clearTimeout(timer)
@@ -459,10 +535,26 @@ export function leseThemen(text) {
 }
 
 /** Umfang je Länge: Sätze der Kapitel-Lage und Punkte je Kapitel. */
+/*
+ * Die Erststufen kommen aus Messungen, nicht aus Gefühl.
+ *
+ * Vier Messungen am 20.08.2026, „mittel" mit zwei Kapiteln (crypto +
+ * chartanalyse) und Opus 5: 5000 abgebrochen, 5000 abgebrochen, 11000
+ * abgebrochen — gebraucht wurden 12114 Ausgabe-Token für zehn Punkte. Jeder
+ * dieser Abbrüche ist voll bezahlt und komplett wertlos; der teuerste kostete
+ * 0,38 USD für Text, den niemand je gesehen hat.
+ *
+ * Die alten Werte stammten aus der Zeit, als ein Punkt eine Zeile war. Seit
+ * Punkte ausgeschriebene Absätze mit Kennzahlen und Belegen sind, liegt der
+ * Bedarf beim Zwei- bis Dreifachen. Die Stufen hier haben deshalb bewusst
+ * Luft nach oben: Der Deckel ist eine Obergrenze, keine Bestellung — wie lang
+ * die Antwort wird, sagt der Prompt (Lage, Punkte je Kapitel), nicht diese
+ * Zahl. Zu hoch kostet nichts, zu tief kostet den ganzen Lauf.
+ */
 const LAENGEN = {
-    kurz: { lage: 'zwei bis drei Sätze', punkte: 'zwei bis drei Punkte', budgets: [2500, 5000] },
-    mittel: { lage: 'vier bis sechs Sätze', punkte: 'vier bis fünf Punkte', budgets: [5000, 10000] },
-    lang: { lage: 'acht bis zehn Sätze', punkte: 'sechs bis acht Punkte', budgets: [9000, 18000] },
+    kurz: { lage: 'zwei bis drei Sätze', punkte: 'zwei bis drei Punkte', budgets: [8000, 16000] },
+    mittel: { lage: 'vier bis sechs Sätze', punkte: 'vier bis fünf Punkte', budgets: [16000, 32000] },
+    lang: { lage: 'acht bis zehn Sätze', punkte: 'sechs bis acht Punkte', budgets: [26000, 52000] },
 }
 
 /**
@@ -480,11 +572,42 @@ const LAENGEN = {
  *
  * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
  */
-export function budgetsAus(laenge, budget) {
+export function budgetsAus(laenge, budget, { aktualisierung = false } = {}) {
     const eigen = Math.max(0, Number(budget) || 0)
-    if (!eigen) return (LAENGEN[laenge] || LAENGEN.mittel).budgets
-    const erst = Math.min(60000, Math.max(1000, eigen))
-    return [erst, Math.min(120000, erst * 2)]
+    const stufen = eigen
+        ? [Math.min(60000, Math.max(1000, eigen)), Math.min(120000, Math.min(60000, Math.max(1000, eigen)) * 2)]
+        : (LAENGEN[laenge] || LAENGEN.mittel).budgets
+    if (!aktualisierung) return stufen
+    /*
+     * Die Aktualisierung bekommt eine Stufe mehr Luft, als ihre Länge vorgibt.
+     *
+     * Gemessen am 20.08.2026 am ersten echten Lauf: Der Erstversuch mit 5000
+     * Ausgabe-Token brach bei genau 5000 ab — 0,19 USD für nichts, und der
+     * Nachschlag musste alles noch einmal schreiben. Ein abgebrochener Lauf
+     * ist der einzige wirklich teure Fehler an dieser Stelle.
+     *
+     * Der Deckel ist eine Obergrenze, keine Bestellung: Bezahlt werden die
+     * tatsächlich geschriebenen Token, und wie lang die Antwort wird, sagt die
+     * Länge im Prompt (bei der Zwischenmeldung ohnehin eine Stufe kürzer).
+     * Höher anzusetzen kostet also nichts — zu tief anzusetzen kostet den Lauf.
+     */
+    // Erststufe wie überall bei 60000 gedeckelt, sonst wären beide Anläufe
+    // gleich gross und der zweite bloss eine Wiederholung des Abbruchs.
+    return [Math.min(60000, stufen[1]), Math.min(120000, stufen[1] * 2)]
+}
+
+/**
+ * Wie lang eine Aktualisierung ausfällt: eine Stufe unter der Einstellung.
+ *
+ * Die Aktualisierung ist eine Zwischenmeldung, kein zweiter Morgenbericht. Sie
+ * beantwortet „was ist seither passiert", und darauf gibt es um 15:00 selten
+ * acht Absätze Antwort — wer dann trotzdem acht bekommt, liest Füllmaterial.
+ * „kurz" ist die Untergrenze: darunter bliebe nichts als eine Schlagzeile.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ */
+export function laengeFuerUpdate(laenge) {
+    return { lang: 'mittel', mittel: 'kurz', kurz: 'kurz' }[laenge] || 'kurz'
 }
 
 /** Punkte je Kapitel: eigene Zahl schlägt die Vorgabe der Länge. */
@@ -536,6 +659,62 @@ Prognosen, nichts erfinden — und die Antwort bleibt genau das JSON unten.
 }
 
 /**
+ * Was heute schon berichtet wurde — als Prompt-Block für die Zwischenmeldung.
+ *
+ * Die Aktualisierung schreibt den Tagesbericht NICHT fort, sie meldet, was
+ * seither dazukam. Genau dafür muss sie wissen, was schon dasteht: ohne diesen
+ * Block wiederholt die Nachmittagsmeldung am zuverlässigsten das, was man
+ * morgens gelesen hat. Mitgegeben werden Überschrift, Lage und je Kapitel die
+ * Punkte — angerissen, nicht ausgeschrieben; zum Wiedererkennen genügt der
+ * Anfang, und jedes Zeichen mehr wird bei jeder Aktualisierung mitbezahlt.
+ *
+ * Die BELEGNUMMERN sind der zweite Zweck: Die gespeicherten Punkte tragen ihre
+ * Belege als aufgelöste Objekte, nicht mehr als Nummern. Korrigiert die
+ * Zwischenmeldung etwas von heute Morgen, soll sie auf dessen Quelle zeigen
+ * können — dafür wird die alte Beitragsliste hinter den neuen Beiträgen
+ * weiternummeriert (`offset`) und jeder Punkt mit seinen Nummern ausgewiesen.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ *
+ * @param {object} zeile  Zeile aus `news_digests`
+ * @param {number} offset So viele Nummern sind schon für neue Beiträge vergeben
+ */
+export function kompaktVorbericht(zeile, offset = 0) {
+    if (!zeile) return ''
+    const lies = (text, rueckfall) => {
+        try { return JSON.parse(text || rueckfall) } catch { return JSON.parse(rueckfall) }
+    }
+    const kapitel = lies(zeile.kapitel, '[]')
+    const alteBelege = lies(zeile.beitraegeListe, '[]')
+    const nrVon = new Map(alteBelege.map((b, i) => [b?.url, i + 1 + offset]))
+
+    const zeit = new Date(Number(zeile.erstelltAm) || Date.now()).toISOString().slice(0, 16)
+    const zeilen = [`BEREITS BERICHTET (Tagesbericht, Stand ${zeit} UTC) — nicht wiederholen:`,
+        `Überschrift: ${zeile.ueberschrift || ''}`,
+        `Lage: ${zeile.lage || ''}`]
+
+    const punkt = (p) => {
+        const nummern = (Array.isArray(p?.belege) ? p.belege : [])
+            .map(b => nrVon.get(b?.url)).filter(Boolean)
+        return `- ${p?.titel || ''}${nummern.length ? ` [Belege: ${nummern.join(', ')}]` : ''}: `
+            + `${String(p?.text || '').slice(0, 300)}`
+    }
+
+    if (Array.isArray(kapitel) && kapitel.length) {
+        for (const k of kapitel) {
+            zeilen.push(`\nKapitel "${k?.thema || ''}" — ${k?.ueberschrift || ''}`)
+            if (k?.lage) zeilen.push(`Lage: ${k.lage}`)
+            for (const p of (Array.isArray(k?.punkte) ? k.punkte : [])) zeilen.push(punkt(p))
+        }
+    } else {
+        for (const p of lies(zeile.punkte, '[]')) zeilen.push(punkt(p))
+    }
+    // Deckel gegen einen Bericht, der sich selbst aufbläht: der Vorbericht ist
+    // Eingabe, die bei JEDER Aktualisierung mitbezahlt wird.
+    return zeilen.join('\n').slice(0, 24000)
+}
+
+/**
  * System-Prompt des Lageberichts.
  *
  * Aus der früheren Konstante wurde ein Builder: Themen, Länge und Rhythmus
@@ -544,15 +723,53 @@ Prognosen, nichts erfinden — und die Antwort bleibt genau das JSON unten.
  * Exportiert, damit der Selbsttest die Varianten ohne Netz prüfen kann.
  */
 export function bauLagePrompt({ themen = ['crypto'], laenge = 'mittel', rhythmus = 'taeglich',
-    punkte = 0, zusatz = '' } = {}) {
+    punkte = 0, zusatz = '', aktualisierung = false, abdeckung = '' } = {}) {
     const l = { ...(LAENGEN[laenge] || LAENGEN.mittel), punkte: punkteVorgabe(laenge, punkte) }
-    const zeitraum = rhythmus === 'woechentlich' ? 'der vergangenen Woche' : 'der letzten 36 Stunden'
+    /*
+     * Der Zeitraum ist eine BEHAUPTUNG über die Grundlage — also muss er
+     * stimmen. `abdeckung` kommt aus den tatsächlich mitgegebenen Beiträgen;
+     * das eingestellte Fenster ist nur der Rückfall, wenn keine Zeitstempel
+     * vorliegen.
+     */
+    const zeitraum = aktualisierung
+        ? 'seit dem bisherigen Bericht'
+        : (abdeckung || (rhythmus === 'woechentlich' ? 'der vergangenen Woche' : 'der letzten 36 Stunden'))
     const kapitelListe = themen.map(t => `- "${t}": ${THEMEN_NAMEN[t] || t}`).join('\n')
     const eigene = eigeneAnweisungen(zusatz)
 
+    /*
+     * Der Aufsatz für die Aktualisierung.
+     *
+     * Er steht VOR den Kapitelregeln, weil er die Aufgabe umdreht: nicht neu
+     * schreiben, sondern fortschreiben. Das Ergebnis ist trotzdem ein
+     * VOLLSTÄNDIGER Bericht im gewohnten Umfang — der Leser öffnet ihn statt
+     * des Mittagsberichts und darf nicht zwei Fassungen nebeneinanderlegen
+     * müssen, um zu wissen, was gilt.
+     */
+    const nachtrag = aktualisierung ? `DIES IST EINE ZWISCHENMELDUNG, KEIN ZWEITER TAGESBERICHT.
+
+Der Bericht des Tages steht bereits; er ist unten unter „BEREITS BERICHTET"
+zusammengefasst. Deine Aufgabe ist NICHT, ihn neu zu schreiben, sondern die
+Frage zu beantworten: **Was ist seither passiert, das für einen
+Krypto-Futures-Händler zählt?**
+- Grundlage sind die neuen Beiträge und die frische Recherche, nichts sonst.
+- Was schon im Tagesbericht steht, kommt NICHT noch einmal vor. Ausnahme:
+  Es hat sich geändert, ist überholt oder wurde widerlegt — dann schreibst du
+  den korrigierten Stand und setzt bei diesem Punkt "korrektur": true.
+  Nur dann; sonst bleibt das Feld weg.
+- Zahlen sind hier das Wichtigste: Kurse, Flüsse, Quoten, Termine, Beschlüsse.
+  Eine Meldung ohne Zahl oder ohne Folge für den Handel gehört nicht hinein.
+- Ist wenig passiert, wird die Meldung KURZ. Zwei belastbare Punkte sind mehr
+  wert als sechs aufgefüllte; erfundene Bewegung ist der teuerste Fehler.
+- Belege: Für Neues nimmst du die Nummern der neuen Beiträge und
+  Recherche-Quellen. Korrigierst du etwas, darfst du zusätzlich die Nummern aus
+  „BEREITS BERICHTET" nennen — sie stehen dort in eckigen Klammern.
+
+` : ''
+
     return `Du bist Marktbeobachter für einen **Krypto-Futures-Händler**.
 
-Aus den nummerierten Beiträgen, dem Marktdaten-Block und den Rechercheergebnissen
+${nachtrag}Aus den nummerierten Beiträgen, dem Marktdaten-Block und den Rechercheergebnissen
 schreibst du EINEN Lagebericht ${zeitraum} auf Deutsch — auch wenn die Quellen
 englisch sind. Nicht je Beitrag eine Zusammenfassung, sondern das Gesamtbild.
 
@@ -567,12 +784,16 @@ ${themen.includes('crypto') ? `Im Krypto-Kapitel zählt, in dieser Reihenfolge:
 3. Regulierung, soweit sie den Handel betrifft
 Der Marktdaten-Block (Fear & Greed, Dominanz, Funding …) gehört in die Lage
 dieses Kapitels — als gemessener Ist-Zustand, gegen den die Meldungen laufen.
-` : ''}${themen.includes('chartanalyse') ? `Das Kapitel "chartanalyse" beruht AUSSCHLIESSLICH
-auf dem Rechercheergebnis zur technischen Chartanalyse: je Coin EIN Punkt, in der
-Reihenfolge der Recherche. Jeder Punkt nennt Trend, die berichteten Unterstützungen
-und Widerstände als Kennzahlen und die genannten Chartmuster/Indikatoren. Du gibst
-NUR wieder, was die recherchierten Analysen schreiben — keine eigene Chartdeutung,
-und Beiträge aus den News-Quellen gehören nicht in dieses Kapitel.
+` : ''}${themen.includes('chartanalyse') ? `Das Kapitel "chartanalyse" beruht auf dem
+Rechercheergebnis zur technischen Chartanalyse UND auf Videoinhalten, sofern
+darin Charts besprochen werden: je Coin EIN Punkt, in der Reihenfolge der
+Recherche. Jeder Punkt nennt Trend, die berichteten Unterstützungen und
+Widerstände als Kennzahlen und die genannten Chartmuster/Indikatoren. Du gibst
+NUR wieder, was die Analysen und Videos sagen — keine eigene Chartdeutung.
+Stammt eine Marke aus einem Video, nenne das Video als Quelle; widersprechen
+sich Video und Recherche, nenne beide Stände nebeneinander statt einen zu
+wählen. Text-Meldungen aus den News-Quellen gehören weiterhin NICHT in dieses
+Kapitel — sie sind Nachrichten, keine Chartaussagen.
 ` : ''}REGELN:
 - Keine Handelsempfehlungen, keine Kursziele, keine Prognosen.
 - Nichts erfinden. Was nicht in den Quellen steht, steht nicht im Bericht.
@@ -606,7 +827,7 @@ ${eigene}Antworte NUR mit JSON:
               "ueberschrift": "Kapitel-Schlagzeile",
               "lage": "${l.lage}",
               "punkte": [{"titel": "...", "text": "drei bis fünf Sätze", "quelle": "...",
-                          "wichtigkeit": "hoch|mittel",
+                          "wichtigkeit": "hoch|mittel",${aktualisierung ? ' "korrektur": true,' : ''}
                           "kennzahlen": [{"wert": "-29.000 BTC", "was": "Apparent Demand"}],
                           "belege": [1, 4]}]}]}
 
@@ -728,9 +949,324 @@ async function holeMarktdatenBlock() {
     return { text, werte }
 }
 
+/**
+ * Wie frisch die Rechercheergebnisse sein müssen.
+ *
+ * Gemessen am 20.08.2026: Ohne Filter lieferte dieselbe Frage Fundstellen von
+ * 2019, 2020 und 2022 neben den heutigen — im Bericht als gleichwertiger Beleg
+ * nummeriert. Der Zeitraum in der Frage ist eine Bitte, der Filter eine
+ * Bedingung.
+ *
+ * Die Chartanalyse bekommt eine Woche statt eines Tages: Unterstützungen und
+ * Widerstände werden nicht täglich neu publiziert, und ein Tagesfilter liesse
+ * das Kapitel an ruhigen Tagen leer ausgehen. Zwei Monate alt darf sie darum
+ * trotzdem nicht sein.
+ *
+ * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
+ */
+export function aktualitaetFuer({ thema, rhythmus = 'taeglich', istUpdate = false, chartFrische = '' } = {}) {
+    if (thema === 'chartanalyse') return CHART_FRISCHE[chartFrische]?.filter || CHART_FRISCHE.woche.filter
+    if (istUpdate) return 'day'
+    return leseRhythmus(rhythmus) === 'woechentlich' ? 'week' : 'day'
+}
+
+/**
+ * Die drei Zeithorizonte der Chartanalyse.
+ *
+ * Der Filter allein genügt nicht: Eine Analyse von heute kann trotzdem das
+ * Monatsbild beschreiben, und wer „kurzfristig" wählt, will Marken für die
+ * nächsten Stunden. Deshalb steuert die Wahl BEIDES — wie alt die Fundstellen
+ * sein dürfen und welchen Horizont die Frage verlangt.
+ */
+export const CHART_FRISCHE = {
+    tag: { filter: 'day', horizont: 'kurzfristig (Intraday bis wenige Tage)' },
+    woche: { filter: 'week', horizont: 'kurz- bis mittelfristig (Tage bis Wochen)' },
+    monat: { filter: 'month', horizont: 'übergeordnet (Wochen- und Monatsbild)' },
+}
+
+/** Eingestellter Chart-Horizont, mit Rückfall auf die Wochensicht. */
+export function leseChartFrische(wert) {
+    return CHART_FRISCHE[String(wert || '').trim()] ? String(wert).trim() : 'woche'
+}
+
+/**
+ * Welche Beiträge in den Bericht gehen — verteilt über das Fenster.
+ *
+ * Der Deckel („die 60 jüngsten") war als Kostenbremse gedacht und wurde zur
+ * heimlichen Zeitgrenze: Gemessen am 20.08.2026 lagen 326 Beiträge im
+ * 36-Stunden-Fenster, die 60 jüngsten reichten ganze SECHS Stunden zurück.
+ * Der Prompt versprach dem Modell „die letzten 36 Stunden", geliefert wurde
+ * der Nachmittag — alles vom Morgen fiel weg, weil die grossen Feeds
+ * (Investing, CNBC, Hacker News) im Minutentakt tickern und die Liste von oben
+ * her auffressen.
+ *
+ * Deshalb wird nicht mehr abgeschnitten, sondern VERTEILT: Das Fenster wird in
+ * Körbe von rund sechs Stunden zerlegt, jeder Korb bekommt seinen Anteil am
+ * Deckel, und was ein leerer Korb übrig lässt, geht an die jüngsten Beiträge.
+ * Die Kosten bleiben gleich (gleicher Deckel), die Abdeckung wird ehrlich.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ *
+ * @param {object[]} zeilen  Beiträge, JÜNGSTE ZUERST
+ * @returns {object[]} Auswahl, jüngste zuerst
+ */
+export function waehleBeitraege(zeilen, { limit = 60, fensterMs = 36 * 3600000, jetzt = Date.now() } = {}) {
+    const liste = (Array.isArray(zeilen) ? zeilen : []).filter(Boolean)
+    if (liste.length <= limit) return liste
+
+    // Ein Korb je rund sechs Stunden; unter sechs Stunden Fenster (jede
+    // Zwischenmeldung) bleibt es bei einem einzigen Korb, dort ist „die
+    // jüngsten" die richtige Antwort.
+    const koerbe = Math.max(1, Math.min(8, Math.round(fensterMs / (6 * 3600000))))
+    if (koerbe === 1) return liste.slice(0, limit)
+
+    const start = jetzt - fensterMs
+    const breite = fensterMs / koerbe
+    const proKorb = Math.ceil(limit / koerbe)
+    const gewaehlt = new Set()
+    for (let k = 0; k < koerbe; k++) {
+        const bis = jetzt - k * breite
+        const von = bis - breite
+        let genommen = 0
+        for (const b of liste) {
+            if (genommen >= proKorb) break
+            const t = Number(b.publishedAt) || 0
+            if (t <= bis && (t > von || (k === koerbe - 1 && t >= start)) && !gewaehlt.has(b)) {
+                gewaehlt.add(b)
+                genommen++
+            }
+        }
+    }
+    // Leere Körbe haben Platz gelassen — der geht an die jüngsten Beiträge,
+    // denn die sind im Zweifel das, worüber der Leser etwas erfahren will.
+    for (const b of liste) {
+        if (gewaehlt.size >= limit) break
+        gewaehlt.add(b)
+    }
+    return liste.filter(b => gewaehlt.has(b)).slice(0, limit)
+}
+
+/**
+ * Wie weit der Bericht tatsächlich zurückreicht — für den Prompt.
+ *
+ * Nicht das eingestellte Fenster, sondern der Abstand zum ÄLTESTEN wirklich
+ * mitgegebenen Beitrag. „Die letzten 36 Stunden" zu behaupten, während die
+ * Grundlage sechs Stunden alt ist, wäre die Sorte Ungenauigkeit, die ein
+ * Modell bereitwillig zu einer Aussage über den Tag ausbaut.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ */
+export function abdeckungText(beitraege, { jetzt = Date.now() } = {}) {
+    const zeiten = (Array.isArray(beitraege) ? beitraege : [])
+        .map(b => Number(b?.publishedAt) || 0).filter(t => t > 0)
+    if (!zeiten.length) return ''
+    const stunden = (jetzt - Math.min(...zeiten)) / 3600000
+    if (stunden < 1) return 'der letzten Stunde'
+    if (stunden < 48) return `der letzten ${Math.round(stunden)} Stunden`
+    return `der letzten ${Math.round(stunden / 24)} Tage`
+}
+
+/**
+ * Prompt für die Prüfung eigener Anweisungen.
+ *
+ * Das Feld „Eigene Anweisungen an die KI" ist der einzige Ort, an dem der
+ * Leser den Bericht steuert — und der einzige, an dem er es blind tut: Ob ein
+ * Satz überhaupt etwas bewirkt, zeigt sich erst nach einem bezahlten Lauf.
+ * Manches KANN nicht wirken, weil die Grundregeln des Berichts vorgehen; das
+ * hier sagt es vorher.
+ *
+ * Wichtig ist die Ehrlichkeit der Prüfung: Sie darf nicht bestätigen, was
+ * nicht geht. Deshalb stehen die Grundregeln wörtlich im Prompt, und das
+ * Modell soll ausdrücklich benennen, was folgenlos bleibt.
+ *
+ * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
+ */
+export function bauAnweisungPruefPrompt({ themen = ['crypto'], laenge = 'mittel' } = {}) {
+    const l = LAENGEN[laenge] || LAENGEN.mittel
+    return `Du prüfst eine Anweisung, die ein Leser dem Schreiber seines
+Krypto-Lageberichts mitgeben will. Du schreibst KEINEN Bericht.
+
+So arbeitet dieser Bericht — daran ändert die Anweisung nichts:
+- Er hat genau diese Kapitel: ${themen.join(', ')}. Kapitel kann die Anweisung
+  nicht hinzufügen oder streichen; das steht in den Einstellungen.
+- Umfang je Kapitel: eine Lage von ${l.lage} und ${l.punkte}. Auch das kommt
+  aus den Einstellungen.
+- Unverrückbare Regeln: keine Handelsempfehlungen, keine Kursziele, keine
+  Prognosen, nichts Erfundenes, Quellenangaben bleiben Pflicht.
+- Die Quellen sind die eingerichteten Feeds plus Recherche. Die Anweisung kann
+  keine neue Quelle erschliessen.
+
+Was die Anweisung SEHR WOHL kann: Ton, Ausführlichkeit der Sprache,
+Schwerpunkte, Ausschlüsse, Reihenfolge innerhalb eines Kapitels, welche Zahlen
+genannt werden, wie mit Randthemen umgegangen wird.
+
+Beurteile jeden Wunsch in der Anweisung einzeln:
+- "wirkt"       — wird der Bericht so machen
+- "wirkungslos" — folgenlos, weil es an den Vorgaben oben abprallt
+- "gegenregel"  — verlangt etwas, das die unverrückbaren Regeln verbieten
+
+Schreibe zusätzlich eine geschärfte Fassung: derselbe Wille, aber so
+formuliert, dass sie eindeutig ist und nichts Wirkungsloses mehr enthält. Ist
+die Anweisung schon gut, gib sie unverändert zurück. Deutsch, keine Anrede,
+keine Erklärungen ausserhalb des JSON.
+
+Antworte NUR mit JSON:
+{"befunde": [{"art": "wirkt|wirkungslos|gegenregel", "text": "ein Satz"}],
+ "vorschlag": "die geschärfte Anweisung"}`
+}
+
+/**
+ * Die Antwort der Prüfung in eine verlässliche Form bringen.
+ *
+ * Wie bei `leseLagebild`: Der Rückfall ist die harmlose Marke. Eine als
+ * „wirkt" ausgegebene Fehleinschätzung wäre hier der teure Fehler — der Leser
+ * verlässt sich darauf und wundert sich nach dem nächsten Lauf.
+ *
+ * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
+ */
+export function leseAnweisungPruefung(roh, { maxLaenge = ZUSATZ_MAX } = {}) {
+    const j = roh && typeof roh === 'object' ? roh : {}
+    const arten = ['wirkt', 'wirkungslos', 'gegenregel']
+    const befunde = (Array.isArray(j.befunde) ? j.befunde : [])
+        .map(b => (typeof b === 'string' ? { art: '', text: b } : b))
+        .filter(b => b && typeof b === 'object' && String(b.text || '').trim())
+        .slice(0, 12)
+        .map(b => ({
+            art: arten.includes(String(b.art || '').trim()) ? String(b.art).trim() : 'wirkungslos',
+            text: String(b.text).trim().slice(0, 300),
+        }))
+    return {
+        befunde,
+        // Ein Vorschlag, der länger ist als das Feld, wäre keiner.
+        vorschlag: String(j.vorschlag || '').trim().slice(0, maxLaenge),
+    }
+}
+
+/**
+ * Wie lange Berichte aufbewahrt werden. `null` heisst: von Hand.
+ *
+ * Ein Bericht hat Geld gekostet, deshalb ist „manuell" die Vorgabe — was
+ * automatisch verschwindet, verschwindet irgendwann auch, wenn man es noch
+ * gebraucht hätte. Wer den Bestand kurz halten will, stellt eine Frist ein.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ */
+export function aufbewahrungMs(wert) {
+    return { tag: TAG, woche: 7 * TAG, monat: 30 * TAG }[String(wert || '').trim()] ?? null
+}
+
+/**
+ * Was auf der Nachrichtenseite offen liegt: die Berichtskette des TAGES.
+ *
+ * Ein Tag besteht aus dem Tagesbericht und seinen Zwischenmeldungen. Sie
+ * gehören zusammen und werden zusammen gezeigt — die jüngste offen, die
+ * älteren zugeklappt mit ihrer Uhrzeit.
+ *
+ * Um Mitternacht wandert der Tag ins Archiv: Sobald `tagesbeginn`
+ * weiterspringt, ist die Kette von gestern nicht mehr „die aktuelle". Sie
+ * verschwindet aber nicht von der Seite, sondern kommt zugeklappt und als
+ * `vomVortag` markiert — eine leere Nachrichtenseite von Mitternacht bis zum
+ * Morgenbericht wäre kein Aufräumen, sondern ein Ausfall.
+ *
+ * Kettenzugehörigkeit: Ein Tagesbericht ist seine eigene Kette (`id`), eine
+ * Zwischenmeldung zeigt mit `basisId` auf ihn.
+ *
+ * @param {object[]} zeilen  Berichte, JÜNGSTE ZUERST
+ * @returns {{kette: object[], vomVortag: boolean}} kette ÄLTESTE ZUERST
+ */
+export function berichtsKette(zeilen, { tagesbeginn = 0 } = {}) {
+    const liste = (Array.isArray(zeilen) ? zeilen : []).filter(z => z && z.id)
+    if (!liste.length) return { kette: [], vomVortag: false }
+
+    const gruppe = (z) => (z.art === 'update' ? Number(z.basisId) || Number(z.id) : Number(z.id))
+    const heute = liste.filter(z => Number(z.erstelltAm) >= tagesbeginn)
+    const vomVortag = !heute.length
+    // Ohne Bericht von heute: die Kette der jüngsten Zeile, egal wie alt.
+    const schluessel = vomVortag ? gruppe(liste[0]) : null
+    const kette = (vomVortag ? liste.filter(z => gruppe(z) === schluessel) : heute)
+        .slice()
+        .sort((a, b) => Number(a.erstelltAm) - Number(b.erstelltAm))
+    return { kette, vomVortag }
+}
+
+/**
+ * Der Bericht als Mailtext — kurz oder vollständig.
+ *
+ * Die Meldung nach einem Lauf war bisher immer die Kurzfassung: Gesamtlage und
+ * eine Zeile Grundlage. Das genügt, um zu wissen, DASS ein Bericht da ist, und
+ * nicht, um ihn zu lesen — wer unterwegs ist, musste trotzdem ans Journal.
+ * Mit `voll` steht der ganze Bericht in der Mail: Kapitel, Meldungen,
+ * Kennzahlen, Belege.
+ *
+ * Das Format ist der Mail-Vorlage abgeschaut, nicht erfunden:
+ *   - Leerzeile trennt Absätze
+ *   - „## " am Zeilenanfang ist eine Zwischenüberschrift
+ *   - ein Block, in dem JEDE Zeile „Label: Wert" ist, wird zur Tabelle
+ * Deshalb stehen Kennzahlen und Belege gebündelt und ohne Fliesstext dazwischen
+ * — eine erklärende Zeile mittendrin würde die Tabelle zum Absatz machen.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ */
+export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], grundlage = '',
+    themenNamen = {}, voll = false } = {}) {
+    // Doppelpunkte im Wert sind harmlos, im LABEL nicht: „Funding: 8h" würde
+    // die Zeile spalten und die Tabelle zerreissen. Der Ersatz zieht die
+    // entstandene Lücke gleich wieder zu.
+    const label = (text) => String(text).replace(/:/g, ' ').replace(/\s+/g, ' ').trim()
+    const teile = []
+    if (lage) teile.push(String(lage).trim())
+
+    if (voll) {
+        // Marktstand zuerst: er ist der gemessene Boden, gegen den die
+        // Meldungen darunter gelesen werden — und als Tabelle zwei Zeilen kurz.
+        const marktZeilen = (Array.isArray(markt) ? markt : [])
+            .filter(w => w?.was && w?.wert)
+            .map(w => `${label(w.was)}: ${w.wert}${w.zusatz ? ` — ${w.zusatz}` : ''}`)
+        if (marktZeilen.length >= 2) teile.push('## Marktstand', marktZeilen.join('\n'))
+
+        for (const k of (Array.isArray(kapitel) ? kapitel : [])) {
+            const name = themenNamen[k?.thema] || k?.thema || ''
+            teile.push(`## ${[name, k?.ueberschrift].filter(Boolean).join(' — ')}`)
+            if (k?.lage) teile.push(String(k.lage).trim())
+
+            for (const [i, p] of (Array.isArray(k?.punkte) ? k.punkte : []).entries()) {
+                const marken = [
+                    p?.wichtigkeit === 'hoch' ? 'wichtig' : '',
+                    p?.korrektur === true ? 'korrigiert' : '',
+                ].filter(Boolean)
+                teile.push(`### ${i + 1}. ${p?.titel || ''}${marken.length ? ` [${marken.join(', ')}]` : ''}`)
+                if (p?.text) teile.push(String(p.text).trim())
+
+                const daten = []
+                for (const z of (Array.isArray(p?.kennzahlen) ? p.kennzahlen : []).slice(0, 3)) {
+                    if (z?.wert && z?.was) daten.push(`${label(z.was)}: ${z.wert}`)
+                }
+                for (const b of (Array.isArray(p?.belege) ? p.belege : []).slice(0, 4)) {
+                    if (b?.url) daten.push(`${label(b.quelle || 'Beleg')}: ${b.url}`)
+                }
+                // Eine einzelne Zeile wäre keine Tabelle, sondern ein Satz mit
+                // Doppelpunkt — dann lieber als Absatz stehen lassen.
+                if (daten.length) teile.push(daten.join('\n'))
+            }
+        }
+    }
+
+    if (grundlage) teile.push(String(grundlage).trim())
+    return teile.filter(Boolean).join('\n\n')
+}
+
 /** Anspruchs-Schlüssel: der Tageslauf und die Bremse für den Knopf. */
 export const BERICHT_SCHLUESSEL = 'news_lagebericht'
 export const BERICHT_MANUELL = 'news_lagebericht_manuell'
+/**
+ * Je Aktualisierungs-Platz ein eigener Tages-Anspruch.
+ *
+ * Ein gemeinsamer Schlüssel für „die Aktualisierung" ginge nicht: der
+ * Tages-Anspruch lässt genau einen Lauf je Kalendertag durch, zwei Plätze
+ * brauchen also zwei Schlüssel. Die Nummer steht im Namen, damit in der
+ * KI-Übersicht ablesbar bleibt, welcher der beiden zuletzt lief.
+ */
+export const UPDATE_SCHLUESSEL = (platz) => `news_lagebericht_update${Math.max(1, Math.min(2, Number(platz) || 1))}`
 /** Nach einem echten Fehlschlag frühestens so bald wieder versuchen. */
 const WIEDERHOLUNG_MS = 60 * 60 * 1000
 
@@ -765,12 +1301,84 @@ export function tagesbeginn(jetzt = Date.now(), zeitzone = '') {
  * @param {{jetztLokal: Date, stunde: number, rhythmus?: string, wochentag?: number}} opt
  */
 export function sollBerichtLaufen({ jetztLokal, stunde, rhythmus = 'taeglich', wochentag = 1 }) {
+    // „nur manuell" heisst wörtlich das: der Takt erzeugt nichts, auch nicht
+    // versehentlich um Mitternacht. Der Knopf auf der Nachrichtenseite bleibt
+    // davon unberührt — er geht gar nicht erst durch diese Prüfung.
+    if (leseRhythmus(rhythmus) === 'manuell') return false
     const soll = Math.max(0, Math.min(23, Number(stunde) || 0))
     if (jetztLokal.getHours() < soll) return false
     if (rhythmus !== 'woechentlich') return true
     // 1 = Montag … 7 = Sonntag, wie die Auswahl in den Einstellungen
     const heute = ((jetztLokal.getDay() + 6) % 7) + 1
     return heute === Math.max(1, Math.min(7, Number(wochentag) || 1))
+}
+
+/** Gültige Rhythmen des Berichts. Alles Unbekannte ist „täglich". */
+export function leseRhythmus(wert) {
+    const r = String(wert || '').trim()
+    return r === 'woechentlich' || r === 'manuell' ? r : 'taeglich'
+}
+
+/**
+ * Die Stunden der Aktualisierungen aus der Einstellung lesen.
+ *
+ * Eine Zeichenkette wie „18,21" wird zu `[18, 21]` — sortiert, ohne Dubletten
+ * und auf `anzahl` gekürzt. Sortiert ist wichtig: die Plätze werden über ihre
+ * Position nummeriert, und ein umgedrehtes Paar würde sonst den Abendlauf zum
+ * ersten Platz machen und damit den Tages-Anspruch des Nachmittags verbrauchen.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ */
+export function leseUpdateStunden(text, anzahl = 2) {
+    const n = Math.max(0, Math.min(2, Math.round(Number(anzahl) || 0)))
+    if (!n) return []
+    const stunden = String(text || '').split(',')
+        .map(x => String(x).trim())
+        // Erst auf Leere prüfen, dann umwandeln: `Number('')` ist 0, und ohne
+        // diesen Schritt würde aus einem leeren Feld die Aktualisierung um
+        // Mitternacht.
+        .filter(x => x !== '')
+        .map(Number)
+        .filter(x => Number.isFinite(x))
+        .map(x => Math.max(0, Math.min(23, Math.round(x))))
+    return [...new Set(stunden)].sort((a, b) => a - b).slice(0, n)
+}
+
+/**
+ * Welcher Aktualisierungs-Platz ist gerade fällig? 0 heisst: keiner.
+ *
+ * Wie beim Bericht gilt „Stunde erreicht ODER überschritten", damit ein
+ * Neustart um 18:55 den Platz nicht verschluckt. Zurückgegeben wird bewusst
+ * nur der SPÄTESTE erreichte Platz: War der Rechner nachmittags aus, soll um
+ * 21:00 die Aktualisierung von 21:00 laufen — und nicht zuerst die von 18:00
+ * nachgeholt und eine Minute später die zweite hinterher. Der ausgelassene
+ * Platz bleibt unbeansprucht liegen; das ist die gewollte Ersparnis.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ */
+export function faelligerUpdatePlatz({ jetztLokal, stunden = [] }) {
+    let platz = 0
+    stunden.forEach((h, i) => { if (jetztLokal.getHours() >= h) platz = i + 1 })
+    return platz
+}
+
+/**
+ * Taugt dieser Bericht als Grundlage einer Aktualisierung?
+ *
+ * Eine Aktualisierung trägt nach, was seit dem letzten Bericht geschehen ist.
+ * Ist der aber von vorgestern, wäre das kein Nachtrag mehr, sondern ein
+ * Vollbericht unter falschem Namen — und einer, dem die Beiträge dazwischen
+ * fehlen. Deshalb eine Frist: ein Tag beim täglichen Bericht, eine Woche beim
+ * wöchentlichen. Fehlt die Grundlage, läuft gar nichts; der reguläre Bericht
+ * kommt ohnehin zu seiner Stunde.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ */
+export function basisTaugtFuerUpdate({ basisAm, jetzt = Date.now(), rhythmus = 'taeglich' }) {
+    const am = Number(basisAm) || 0
+    if (!am || am > jetzt) return false
+    const frist = leseRhythmus(rhythmus) === 'woechentlich' ? 7 * TAG : TAG
+    return jetzt - am <= frist
 }
 
 /**
@@ -786,15 +1394,30 @@ export function sollBerichtLaufen({ jetztLokal, stunde, rhythmus = 'taeglich', w
  * Vorher wurde der Anspruch vor der Arbeit gestempelt und nie zurückgegeben:
  * ein gescheiterter Lauf sperrte volle 20 Stunden, und niemand erfuhr davon.
  */
-export async function erzeugeLagebericht({ manuell = false } = {}) {
+export async function erzeugeLagebericht({ manuell = false, aktualisierung = false, platz = 1 } = {}) {
     const knex = getKnex()
     const s = await knex('settings').where('id', 1).first()
 
+    // Eine Aktualisierung braucht etwas zum Aktualisieren. Das wird VOR dem
+    // Anspruch geprüft: Sonst verbrennt ein Lauf ohne Grundlage den Platz des
+    // Tages, und der Nachmittag bliebe still ohne Nachtrag.
+    let basis = null
+    if (aktualisierung) {
+        basis = await knex('news_digests').orderBy('erstelltAm', 'desc').first()
+        if (!basis) return { fehler: 'Noch kein Bericht vorhanden, den man aktualisieren könnte' }
+        if (!manuell && !basisTaugtFuerUpdate({
+            basisAm: Number(basis.erstelltAm), rhythmus: s?.radarNewsRhythmus,
+        })) {
+            return { fehler: 'Der letzte Bericht ist zu alt für eine Aktualisierung' }
+        }
+    }
+
+    const autoSchluessel = aktualisierung ? UPDATE_SCHLUESSEL(platz) : BERICHT_SCHLUESSEL
     if (manuell) {
         // Nur eine Bremse gegen Doppelklicks — ein Bericht von Hand darf den
         // automatischen NICHT blockieren, deshalb ein eigener Schlüssel.
         if (!(await beansprucheAufgabe(BERICHT_MANUELL, 5 * 60 * 1000))) return { uebersprungen: true }
-    } else if (!(await beansprucheTagesaufgabe(BERICHT_SCHLUESSEL, {
+    } else if (!(await beansprucheTagesaufgabe(autoSchluessel, {
         tagesbeginn: tagesbeginn(Date.now(), s?.timeZone),
         wiederholungMs: WIEDERHOLUNG_MS,
     }))) {
@@ -802,15 +1425,15 @@ export async function erzeugeLagebericht({ manuell = false } = {}) {
     }
 
     try {
-        const ergebnis = await baueLagebericht(s, { manuell })
-        const nach = anspruchsNachlauf({ manuell, ohneInhalt: !!ergebnis?.fehler })
+        const ergebnis = await baueLagebericht(s, { manuell, basis })
+        const nach = anspruchsNachlauf({ manuell, ohneInhalt: !!ergebnis?.fehler, autoSchluessel })
         if (nach.freigeben) await gibAufgabeFrei(nach.freigeben)
         if (nach.stempeln) await stempleAufgabe(nach.stempeln)
         return ergebnis
     } catch (e) {
-        const nach = anspruchsNachlauf({ manuell, geworfen: true })
+        const nach = anspruchsNachlauf({ manuell, geworfen: true, autoSchluessel })
         await merkeAufgabenFehler(nach.fehlerAn, e.message)
-        logWarn('news', `Lagebericht gescheitert: ${e.message}`)
+        logWarn('news', `${aktualisierung ? 'Aktualisierung' : 'Lagebericht'} gescheitert: ${e.message}`)
         throw e
     }
 }
@@ -834,13 +1457,19 @@ export async function erzeugeLagebericht({ manuell = false } = {}) {
  *   nichts zu berichten   → eigenen Anspruch zurück, kein verbrannter Tag
  *   echter Fehler         → Vermerk am EIGENEN Schlüssel
  *
+ * `autoSchluessel` sagt, welcher Tages-Anspruch gemeint ist: der Bericht oder
+ * einer der beiden Aktualisierungs-Plätze. Ohne ihn hätte eine gescheiterte
+ * Aktualisierung den Vermerk am Bericht hinterlassen und dort einen
+ * Wiederholungslauf freigeschaltet, den niemand angefordert hat.
+ *
  * @returns {{freigeben: string|null, stempeln: string|null, fehlerAn: string|null}}
  */
-export function anspruchsNachlauf({ manuell = false, ohneInhalt = false, geworfen = false } = {}) {
-    const eigener = manuell ? BERICHT_MANUELL : BERICHT_SCHLUESSEL
+export function anspruchsNachlauf({ manuell = false, ohneInhalt = false, geworfen = false,
+    autoSchluessel = BERICHT_SCHLUESSEL } = {}) {
+    const eigener = manuell ? BERICHT_MANUELL : autoSchluessel
     if (geworfen) return { freigeben: null, stempeln: null, fehlerAn: eigener }
     if (ohneInhalt) return { freigeben: eigener, stempeln: null, fehlerAn: null }
-    return { freigeben: null, stempeln: manuell ? null : BERICHT_SCHLUESSEL, fehlerAn: null }
+    return { freigeben: null, stempeln: manuell ? null : autoSchluessel, fehlerAn: null }
 }
 
 /**
@@ -850,7 +1479,7 @@ export function anspruchsNachlauf({ manuell = false, ohneInhalt = false, geworfe
  * Anbieter (Claude), die Videos gehen vorher an Gemini. Fällt Gemini aus,
  * entsteht der Bericht trotzdem — nur eben ohne Videoinhalte.
  */
-async function baueLagebericht(s, { manuell = false } = {}) {
+async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
     const knex = getKnex()
     const filterAn = Number(s?.radarArschlochfilter ?? 1) === 1
 
@@ -861,27 +1490,49 @@ async function baueLagebericht(s, { manuell = false } = {}) {
 
     // Zuschnitt des Berichts: Rhythmus bestimmt Fenster und Beitragsmenge,
     // Themen die Kapitel, Länge den Umfang je Kapitel.
-    const rhythmus = s?.radarNewsRhythmus === 'woechentlich' ? 'woechentlich' : 'taeglich'
-    const laenge = ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
-    const themen = leseThemen(s?.radarNewsThemen)
+    const rhythmus = leseRhythmus(s?.radarNewsRhythmus)
+    const laengeEingestellt = ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
+    const themenEingestellt = leseThemen(s?.radarNewsThemen)
     const fensterMs = rhythmus === 'woechentlich' ? 7 * TAG : 36 * 60 * 60 * 1000
-    const zeitraumText = rhythmus === 'woechentlich' ? '7 Tage' : '36 Stunden'
-
-    const seit = Date.now() - fensterMs
+    /*
+     * Bei einer Aktualisierung beginnt das Fenster am bisherigen Bericht.
+     *
+     * Das ist der ganze Unterschied im Datenteil: Was der Mittagsbericht schon
+     * gelesen hat, wird nicht erneut eingekauft — weder als Eingabe-Token noch
+     * als Videoanalyse. Was seither dazukam, ist die Aktualisierung.
+     */
+    const istUpdate = !!basis
+    const seit = istUpdate ? Number(basis.erstelltAm) : Date.now() - fensterMs
+    const zeitraumText = istUpdate
+        ? `seit ${new Date(seit).toISOString().slice(11, 16)} UTC`
+        : (rhythmus === 'woechentlich' ? '7 Tage' : '36 Stunden')
+    // Eine Zwischenmeldung ist kürzer als der Tagesbericht — und lässt die
+    // Chartanalyse weg: Ein Kapitel, das Unterstützungen und Widerstände
+    // referiert, hat sich fünf Stunden später nicht bewegt und würde nur den
+    // Recherchepreis ein zweites Mal kosten.
+    const laenge = istUpdate ? laengeFuerUpdate(laengeEingestellt) : laengeEingestellt
+    const chartFrische = leseChartFrische(s?.radarNewsChartFrische)
+    const themen = istUpdate
+        ? (themenEingestellt.filter(t => t !== 'chartanalyse').length
+            ? themenEingestellt.filter(t => t !== 'chartanalyse')
+            : ['crypto'])
+        : themenEingestellt
+    /*
+     * Erst ALLES aus dem Fenster holen, dann verteilt auswählen.
+     *
+     * Vorher stand hier `.limit(60)` — und weil die Liste nach Zeit absteigend
+     * sortiert ist, war das kein Kostendeckel, sondern eine heimliche
+     * Zeitgrenze: Gemessen am 20.08.2026 reichten die 60 jüngsten von 326
+     * Beiträgen nur sechs Stunden zurück. `waehleBeitraege` behält den Deckel
+     * bei, verteilt ihn aber über das Fenster; die 400 hier sind nur die
+     * Obergrenze dessen, was zur Auswahl steht.
+     */
+    const deckel = istUpdate ? 60 : (rhythmus === 'woechentlich' ? 80 : 60)
     let beitraege = await knex('news_items')
         .whereIn('sourceId', erlaubt.map(q => q.id))
         .where('publishedAt', '>=', seit)
         .orderBy('publishedAt', 'desc')
-        /*
-         * 60 statt 30 für den Tagesbericht.
-         *
-         * Die 30 stammen aus der Zeit vor den grossen Nachrichtenfeeds (CNBC,
-         * Investing, Ars Technica, TechCrunch, The Verge, Hacker News). Mit
-         * denen reichten 30 Beiträge nur noch rund DREI Stunden zurück — der
-         * „Tagesbericht" war faktisch ein Drei-Stunden-Bericht und bestand
-         * überwiegend aus dem, was gerade am lautesten getickert hat.
-         */
-        .limit(rhythmus === 'woechentlich' ? 80 : 60)
+        .limit(400)
 
     // Arschlochfilter: wirkt auf die Berichtsgrundlage, nicht auf den Bestand —
     // die Beiträge bleiben gespeichert, eine geänderte Wörterliste greift
@@ -894,7 +1545,17 @@ async function baueLagebericht(s, { manuell = false } = {}) {
             console.log(` -> Lagebericht: Arschlochfilter hat ${vorher - beitraege.length} Beitrag/Beiträge aussortiert`)
         }
     }
-    if (!beitraege.length) return { fehler: `Keine Beiträge der letzten ${zeitraumText}` }
+    if (!beitraege.length) {
+        return { fehler: istUpdate ? `Keine neuen Beiträge ${zeitraumText}` : `Keine Beiträge der letzten ${zeitraumText}` }
+    }
+    // Auswahl NACH dem Filter: Sonst verbrauchen aussortierte Beiträge Plätze,
+    // die einem verwertbaren zugestanden hätten.
+    const vorAuswahl = beitraege.length
+    beitraege = waehleBeitraege(beitraege, { limit: deckel, fensterMs: Date.now() - seit })
+    if (vorAuswahl > beitraege.length) {
+        console.log(` -> Lagebericht: ${beitraege.length} von ${vorAuswahl} Beiträgen ausgewählt `
+            + `(über ${Math.round((Date.now() - seit) / 3600000)} h verteilt)`)
+    }
 
     // ── Schritt 1: Videos ansehen (Gemini, eigener Schlüssel) ────────────
     let videosGesehen = 0
@@ -966,6 +1627,9 @@ async function baueLagebericht(s, { manuell = false } = {}) {
                         aufloesung: s?.radarNewsAufloesung || 'niedrig',
                         tiefe: s?.radarNewsVideoTiefe || 'normal',
                         deckel: s?.radarNewsVideoTokens,
+                        // Ist das Chartkapitel gewählt, sollen die im Video
+                        // genannten Marken die Zusammenfassung überleben.
+                        mitChart: themen.includes('chartanalyse'),
                     })
                     await knex('news_items').where('id', v.id).update({
                         zusammenfassung: istOhneInhalt(text) ? '' : text,
@@ -1090,16 +1754,39 @@ async function baueLagebericht(s, { manuell = false } = {}) {
                     // Bilder der gefundenen Analysen. Wir tragen zusammen, was
                     // Analysten publizieren — gerechnet wird hier nichts.
                     let extra = {}
+                    /*
+                     * Die Zwischenmeldung stellt eine ANDERE Frage.
+                     *
+                     * Die Standardfrage („was waren die wichtigsten
+                     * Nachrichten der letzten 36 Stunden") liefert am
+                     * Nachmittag zum grossen Teil dasselbe wie am Morgen —
+                     * bezahlt, gelesen, schon bekannt. Hier wird deshalb
+                     * ausdrücklich nach dem Zeitraum SEIT dem Tagesbericht
+                     * gefragt, und nach Zählbarem statt nach Stimmung.
+                     */
+                    if (istUpdate) {
+                        extra = {
+                            frage: `Was ist seit ${new Date(seit).toISOString().slice(0, 16).replace('T', ' ')} UTC `
+                                + `zum Thema ${THEMEN_NAMEN[thema] || thema} geschehen, das für einen `
+                                + 'Krypto-Futures-Händler zählt? Nur Neues aus diesem Zeitraum: Meldungen, '
+                                + 'Beschlüsse, veröffentlichte Zahlen, Marktdaten, angekündigte Termine — '
+                                + 'jeweils mit den genannten Zahlen und der Quelle. Nüchtern und faktisch, '
+                                + 'ohne Prognosen, ohne Anlageberatung, ohne Meinungssammlung. Ist in diesem '
+                                + 'Zeitraum nichts Wesentliches passiert, sage das ausdrücklich.',
+                        }
+                    }
                     if (thema === 'chartanalyse') {
                         let coins = ['Bitcoin', 'Ethereum', 'XRP', 'BNB', 'Solana']  // Rückfall
                         try {
                             const m = await holeMarkt(5)
                             if (m?.muenzen?.length >= 3) coins = m.muenzen.map(c => `${c.name} (${c.symbol})`)
                         } catch (e) { logWarn('news', `Top-5 für Chartanalyse nicht abrufbar: ${e.message}`) }
+                        const horizont = CHART_FRISCHE[chartFrische].horizont
                         extra = {
                             mitBildern: true,
                             frage: `Wie lautet die aktuelle technische Chartanalyse für ${coins.join(', ')} `
-                                + 'laut Analysten und Fachmedien? Je Coin: Trend, wichtige Unterstützungen und '
+                                + `laut Analysten und Fachmedien, mit Blick ${horizont}? `
+                                + 'Je Coin: Trend, wichtige Unterstützungen und '
                                 + 'Widerstände mit konkreten Kursmarken, auffällige Chartmuster und Indikatoren — '
                                 + 'so, wie sie in aktuellen veröffentlichten Analysen genannt werden, mit Quellenbezug. '
                                 + 'Nüchtern und faktisch. Keine eigene Analyse, keine Anlageberatung, keine Kursziele '
@@ -1109,15 +1796,20 @@ async function baueLagebericht(s, { manuell = false } = {}) {
                     const r = await rechercheThema({
                         thema, zeitraumText, apiKey: pCfg.apiKey,
                         modell: s?.radarNewsRechercheModell || undefined,
+                        aktualitaet: aktualitaetFuer({ thema, rhythmus, istUpdate, chartFrische }),
                         ...extra,
                     })
                     if (thema === 'chartanalyse' && r.bilder?.length) taBilder = r.bilder
                     if (r.text) {
                         recherchen.push({ thema, text: r.text })
                         for (const url of r.citations.slice(0, 8)) {
+                            // Das Datum gehört an den Beleg, nicht in eine
+                            // Fussnote: Ein Verweis ohne Datum sieht neben
+                            // einem tagesaktuellen genauso aus.
+                            const datum = r.quellenDaten?.get(url) || ''
                             rechercheZitate.push({
-                                titel: url.replace(/^https?:\/\//, '').slice(0, 200),
-                                url, quelle: 'Perplexity-Recherche', art: 'rss', bild: '',
+                                titel: `${url.replace(/^https?:\/\//, '').slice(0, 180)}${datum ? ` (${datum})` : ''}`,
+                                url, quelle: 'Perplexity-Recherche', art: 'rss', bild: '', datum,
                             })
                         }
                     }
@@ -1151,13 +1843,31 @@ async function baueLagebericht(s, { manuell = false } = {}) {
     for (const [j, z] of rechercheZitate.entries()) {
         zeilen.push(`[${beitraege.length + j + 1}] Recherche-Quelle: ${z.url}\n`)
     }
+    /*
+     * Die Belege des bisherigen Berichts laufen in DERSELBEN Nummernreihe
+     * weiter — hinter den neuen Beiträgen und den Recherche-Zitaten.
+     *
+     * Ohne das verlöre jeder übernommene Punkt seine Quellen: Die gespeicherten
+     * Belege sind aufgelöste Objekte, das Modell sieht sie nur als Nummern.
+     * `kompaktVorbericht` schreibt die Nummern in den Vorbericht, hier hängen
+     * die zugehörigen Einträge hinten an die Belegliste.
+     */
+    let alteBelege = []
+    if (istUpdate) {
+        try { alteBelege = JSON.parse(basis.beitraegeListe || '[]') } catch { alteBelege = [] }
+    }
+
     const teile = []
+    if (istUpdate) {
+        teile.push(kompaktVorbericht(basis, beitraege.length + rechercheZitate.length))
+    }
     if (marktdaten.text) teile.push(marktdaten.text)
     for (const r of recherchen) {
         teile.push(`RECHERCHE zum Thema ${THEMEN_NAMEN[r.thema] || r.thema} `
             + `(Perplexity, Belege siehe nummerierte Recherche-Quellen):\n${r.text}`)
     }
-    teile.push('BEITRÄGE:\n' + zeilen.join('\n---\n'))
+    teile.push(`${istUpdate ? 'NEUE BEITRÄGE (seit dem bisherigen Bericht)' : 'BEITRÄGE'}:\n`
+        + zeilen.join('\n---\n'))
 
     // Eigene Modellwahl für den Bericht; leer heisst: der allgemein
     // eingestellte Anbieter des Journals
@@ -1181,11 +1891,14 @@ async function baueLagebericht(s, { manuell = false } = {}) {
      * Umfangs. Ausgabe-Token kosten hier wenige Rappen — ein abgebrochener
      * Lauf kostet den ganzen Bericht.
      */
-    const budgets = budgetsAus(laenge, s?.radarNewsTokenBudget)
+    const budgets = budgetsAus(laenge, s?.radarNewsTokenBudget, { aktualisierung: istUpdate })
     const system = bauLagePrompt({
         themen, laenge, rhythmus,
+        // Nicht das eingestellte Fenster, sondern was wirklich drinsteht.
+        abdeckung: istUpdate ? '' : abdeckungText(beitraege),
         punkte: s?.radarNewsPunkte,
         zusatz: s?.radarNewsPromptZusatz,
+        aktualisierung: istUpdate,
     })
     let antwort = null
     for (const budget of budgets) {
@@ -1196,7 +1909,7 @@ async function baueLagebericht(s, { manuell = false } = {}) {
             timeoutMs: 180000,
             // Jeder Anlauf wird verbucht: ein abgeschnittener Bericht ist
             // wertlos, bezahlt ist er trotzdem.
-            zweck: 'lagebericht',
+            zweck: istUpdate ? 'lagebericht-update' : 'lagebericht',
             ausloeser: manuell ? 'manuell' : 'auto',
         })
         if (!antwort.abgeschnitten && antwort.json) break
@@ -1228,10 +1941,17 @@ async function baueLagebericht(s, { manuell = false } = {}) {
             bild: b.bild || '',
         })),
         ...rechercheZitate,
+        // Die Belege des bisherigen Berichts, in unveränderter Reihenfolge —
+        // sie tragen die Nummern, die der Vorbericht ausweist.
+        ...alteBelege,
     ]
     const loesePunkte = (punkte, thema) => (Array.isArray(punkte) ? punkte : []).map(p => ({
         ...p,
         ...(thema ? { thema } : {}),
+        // In der Zwischenmeldung ist jeder Punkt neu — deshalb wird nicht „neu"
+        // markiert, sondern der Sonderfall: Dieser Punkt korrigiert etwas, das
+        // heute Morgen anders dastand. Ein fehlendes Feld heisst „einfach neu".
+        ...(istUpdate ? { korrektur: p.korrektur === true } : {}),
         belege: (Array.isArray(p.belege) ? p.belege : [])
             .map(nr => belegBasis[Number(nr) - 1])
             .filter(Boolean),
@@ -1293,30 +2013,67 @@ async function baueLagebericht(s, { manuell = false } = {}) {
         // Abwägung über alle Kapitel, mit Fakt/Einschätzung je Zeile. Leer,
         // wenn das Modell nichts Brauchbares lieferte — dann fehlt der Kasten.
         lagebild: abwaegung ? JSON.stringify(abwaegung) : '',
+        /*
+         * Art, Grundlage und Zählnummer der Kette.
+         *
+         * `basisId` zeigt immer auf den ERSTEN Bericht des Tages, auch wenn
+         * diese Aktualisierung auf der vorherigen aufsetzt — sonst müsste man
+         * sich zum Ursprung durchhangeln. `updateNr` zählt fortlaufend, damit
+         * „Aktualisierung 2" im Archiv ohne Rechnerei dasteht.
+         */
+        art: istUpdate ? 'update' : 'bericht',
+        basisId: istUpdate ? (Number(basis.basisId) || Number(basis.id) || 0) : 0,
+        updateNr: istUpdate ? (Number(basis.updateNr) || 0) + 1 : 0,
     }
     const [id] = await knex('news_digests').insert(zeile).returning('id')
     const digestId = typeof id === 'object' ? id.id : id
 
     // Nur der automatische Lauf meldet sich. Wer den Bericht selbst angestossen
     // hat, sitzt davor und braucht keine Post darüber.
+    const korrekturen = flachePunkte.filter(p => p.korrektur === true).length
     if (!manuell) {
+        /*
+         * Kurz oder ganz — der Leser entscheidet.
+         *
+         * Die Kurzfassung sagt, DASS es einen Bericht gibt; wer unterwegs ist,
+         * musste trotzdem ans Journal. Mit `radarNewsMailVoll` steht der ganze
+         * Bericht in der Mail. Vorgabe bleibt kurz: eine Mail, die man nicht
+         * bestellt hat, sollte nicht zwanzig Absätze lang sein.
+         */
+        const mailVoll = Number(s?.radarNewsMailVoll ?? 0) === 1
+        const grundlage = `Grundlage: ${beitraege.length} ${istUpdate ? 'neue ' : ''}Beiträge, `
+            + `${recherchen.length} Recherche(n), ${videosVerwendet} Video(s), ${themen.join(' + ')}.\n`
+            + `${flachePunkte.length} Meldung(en)${korrekturen ? `, davon ${korrekturen} als Korrektur` : ''}.\n`
+            + (mailVoll
+                ? 'Im Journal unter „Nachrichten" steht er mit Bildern und Belegen.'
+                : 'Den vollständigen Bericht findest du im Journal unter „Nachrichten".')
         melde('lageberichtFertig', {
-            betreff: `Lagebericht: ${zeile.ueberschrift || 'neuer Bericht'}`,
-            text: `${zeile.lage || ''}\n\n`
-                + `Grundlage: ${beitraege.length} Beiträge, ${videosVerwendet} Video(s), `
-                + `${themen.join(' + ')}.\n`
-                + 'Den vollständigen Bericht findest du im Journal unter „Nachrichten".',
+            betreff: `${istUpdate ? `Zwischenmeldung ${zeile.updateNr}` : 'Lagebericht'}: `
+                + `${zeile.ueberschrift || 'neuer Bericht'}`,
+            text: berichtAlsMailText({
+                lage: zeile.lage,
+                kapitel,
+                markt: marktdaten.werte || [],
+                grundlage,
+                themenNamen: THEMEN_NAMEN,
+                voll: mailVoll,
+            }),
+            // Eigener Schlüssel je Bericht: eine Aktualisierung ist eine eigene
+            // Nachricht und darf nicht als Dublette des Mittags gelten.
             schluessel: String(digestId),
             ttlMs: 365 * 24 * 60 * 60 * 1000,
         }).catch(() => { })
     }
 
-    console.log(` -> Lagebericht (${rhythmus}, ${laenge}, ${themen.join('+')}): ${beitraege.length} Beiträge, `
+    console.log(` -> ${istUpdate ? `Zwischenmeldung ${zeile.updateNr} (Basis ${basis.id})` : 'Lagebericht'}`
+        + ` (${rhythmus}, ${laenge}, ${themen.join('+')}): ${beitraege.length} Beiträge, `
         + `${recherchen.length} Recherche(n), ${videosVerwendet} Video(s) verwendet `
         + `(davon ${videosGesehen} neu analysiert), `
         + `${tokens} Token via ${cfg.provider}/${cfg.model} (${kostenUsd.toFixed(4)} USD)`)
     return {
         id: digestId,
+        art: zeile.art, updateNr: zeile.updateNr, basisId: zeile.basisId,
+        punkte: flachePunkte.length, korrekturen, recherchen: recherchen.length,
         beitraege: beitraege.length, videos: videosVerwendet, videosNeu: videosGesehen, tokens,
         kostenUsd,
         provider: cfg.provider, modell: cfg.model,
@@ -1544,21 +2301,52 @@ export function setupNewsRoutes(app) {
     app.get('/api/marktradar/lagebericht', async (req, res) => {
         try {
             const knex = getKnex()
-            const letzter = await knex('news_digests').orderBy('erstelltAm', 'desc').first()
+            /*
+             * Die Seite zeigt einen TAG, nicht einen Bericht.
+             *
+             * Tagesbericht und Zwischenmeldungen gehören zusammen; die jüngste
+             * liegt offen, die älteren zugeklappt darüber. Geholt werden die
+             * jüngsten fünf Zeilen — mehr kann eine Kette nicht haben (ein
+             * Bericht plus zwei Zwischenmeldungen), der Rest ist Luft für den
+             * Fall, dass jemand von Hand nachlegt.
+             */
+            const s = await knex('settings').where('id', 1).first()
+            const jung = await knex('news_digests').orderBy('erstelltAm', 'desc').limit(5)
+                .select('id', 'erstelltAm', 'ueberschrift', 'art', 'updateNr', 'basisId', 'beitraege')
+            const { kette, vomVortag } = berichtsKette(jung, {
+                tagesbeginn: tagesbeginn(Date.now(), s?.timeZone),
+            })
+            // Offen ist die jüngste der Kette — und nach Mitternacht keine:
+            // der Vortag ist archiviert, nicht gelöscht.
+            const offen = kette.length ? kette[kette.length - 1] : null
+            const letzter = offen && !vomVortag
+                ? await knex('news_digests').where('id', offen.id).first()
+                : null
             // 30 Zeilen Metadaten — das Archiv auf der Nachrichten-Seite.
             // Volltext je Bericht kommt einzeln über /lagebericht/:id.
             const verlauf = await knex('news_digests')
                 .orderBy('erstelltAm', 'desc').limit(30)
                 .select('id', 'erstelltAm', 'ueberschrift', 'beitraege', 'videos', 'tokens',
-                    'ausloeser', 'kostenUsd', 'themen', 'laenge')
+                    'ausloeser', 'kostenUsd', 'themen', 'laenge', 'art', 'updateNr', 'basisId')
             // Ein gescheiterter Lauf war bisher nur im Serverlog zu sehen — genau
             // deshalb fiel ein ausgefallener Tagesbericht tagelang nicht auf.
-            const stand = await leseAufgabenStand(BERICHT_SCHLUESSEL)
+            // Die Aktualisierungen zählen mit: ein Nachtrag, der still ausfällt,
+            // ist genauso unsichtbar wie ein ausgefallener Bericht. Gezeigt wird
+            // der JÜNGSTE Fehlschlag — mehrere Zeilen übereinander erklären
+            // nichts, was die neueste nicht schon sagt.
+            const staende = await Promise.all([BERICHT_SCHLUESSEL, UPDATE_SCHLUESSEL(1), UPDATE_SCHLUESSEL(2)]
+                .map(k => leseAufgabenStand(k)))
+            const stand = staende.filter(z => z?.fehler)
+                .sort((a, b) => b.zeit - a.zeit)[0] || null
             res.set('Cache-Control', 'no-store')
             res.json({
-                stand: Number(letzter?.erstelltAm) || null,
+                stand: Number(offen?.erstelltAm) || null,
                 veraltet: false,
                 bericht: berichtAntwort(letzter),
+                // Die Köpfe der Kette — daraus baut die Seite die zugeklappten
+                // Zeilen. Der Volltext kommt je Bericht über /lagebericht/:id.
+                kette: kette.map(z => ({ ...z, erstelltAm: Number(z.erstelltAm) })),
+                vomVortag,
                 verlauf: verlauf.map(v => ({ ...v, erstelltAm: Number(v.erstelltAm) })),
                 letzterFehlschlag: stand?.fehler
                     ? { text: stand.fehler, zeit: stand.zeit }
@@ -1623,6 +2411,64 @@ export function setupNewsRoutes(app) {
         }
     })
 
+    /**
+     * Eigene Anweisungen prüfen — bevor sie einen bezahlten Lauf kosten.
+     *
+     * Der Text kommt aus dem Formular und wird NICHT gespeichert: Wer prüft,
+     * hat sich noch nicht entschieden. Gespeichert wird erst, wenn der Leser
+     * den Vorschlag übernimmt — über den normalen Weg der Einstellungen.
+     */
+    app.post('/api/marktradar/lagebericht/anweisung-pruefen', async (req, res) => {
+        try {
+            const text = String(req.body?.text || '').trim().slice(0, ZUSATZ_MAX)
+            if (!text) return res.status(400).json({ error: 'Keine Anweisung übergeben' })
+
+            const s = await getKnex()('settings').where('id', 1).first()
+            const cfg = await ladeLlmConfig({
+                provider: s?.radarNewsBerichtProvider || undefined,
+                model: s?.radarNewsBerichtModell || undefined,
+            })
+            // Geprüft wird von dem Modell, das die Anweisung später auch
+            // befolgen muss — ein anderes könnte etwas zusagen, woran sich der
+            // Schreiber nicht hält.
+            cfg.maxTokens = 1500
+            const antwort = await callLLMJson(cfg, {
+                system: bauAnweisungPruefPrompt({
+                    themen: leseThemen(s?.radarNewsThemen),
+                    laenge: ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel',
+                }),
+                user: `ANWEISUNG DES LESERS:\n<<<\n${text}\n>>>`,
+                timeoutMs: 90000,
+                zweck: 'lagebericht-pruefung',
+                ausloeser: 'manuell',
+            })
+            if (!antwort.json) return res.status(502).json({ error: 'Das Modell lieferte kein verwertbares JSON' })
+            res.json({
+                ...leseAnweisungPruefung(antwort.json),
+                kostenUsd: Number(antwort.costUsd) || 0,
+                provider: cfg.provider, modell: cfg.model,
+            })
+        } catch (e) {
+            sendRadarError(res, e, 'Anweisung prüfen')
+        }
+    })
+
+    /**
+     * Den bestehenden Bericht auf den Stand bringen.
+     *
+     * Von Hand ohne Fristprüfung: Wer den Knopf drückt, hat den Bericht vor
+     * sich und weiss, wie alt er ist. Die Frist aus `basisTaugtFuerUpdate`
+     * gilt nur dem Takt, der niemanden fragt.
+     */
+    app.post('/api/marktradar/lagebericht/aktualisieren', async (req, res) => {
+        try {
+            await laufeNewsAbruf({ manuell: true }).catch(() => { })
+            res.json(await erzeugeLagebericht({ manuell: true, aktualisierung: true }))
+        } catch (e) {
+            sendRadarError(res, e, 'Lagebericht aktualisieren')
+        }
+    })
+
     console.log(' -> News routes initialized')
 }
 
@@ -1634,8 +2480,12 @@ let newsTakt = null
  * Ob wirklich einer entsteht, entscheidet der Tages-Anspruch in der Datenbank —
  * auch wenn NAS und Entwicklungsrechner gleichzeitig laufen und beide die
  * Stunde sehen. Beiträge werden IMMER täglich gesammelt, auch wenn der Bericht
- * wöchentlich läuft: sonst fehlt dem Wochenbericht alles, was aus dem
- * Drei-Tage-Fenster der Feeds herausgefallen ist.
+ * wöchentlich läuft oder gar nicht („nur manuell"): sonst fehlt dem nächsten
+ * Bericht alles, was aus dem Drei-Tage-Fenster der Feeds herausgefallen ist.
+ *
+ * Nach dem Bericht kommen die Aktualisierungen: bis zu zwei am Tag, jede mit
+ * eigenem Tages-Anspruch, jede nur dann, wenn der Bericht des Tages schon
+ * steht.
  */
 export function startNewsTakt() {
     if (newsTakt) return
@@ -1652,14 +2502,40 @@ export function startNewsTakt() {
 
             await laufeNewsAbruf().catch(() => { })
 
-            if (!sollBerichtLaufen({
+            if (sollBerichtLaufen({
                 jetztLokal: lokal,
                 stunde: Number(s?.radarNewsStunde ?? 12),
                 rhythmus: s?.radarNewsRhythmus,
                 wochentag: Number(s?.radarNewsWochentag ?? 1),
-            })) return
+            })) {
+                const lauf = await erzeugeLagebericht().catch(() => null)   // Fehler steht im Vermerk
+                /*
+                 * Nur weiter zu den Aktualisierungen, wenn der Bericht
+                 * ÜBERSPRUNGEN wurde — also heute schon lief.
+                 *
+                 * Die Prüfung ist der eigentliche Knackpunkt dieses Blocks:
+                 * `sollBerichtLaufen` bleibt ab der Berichtsstunde den ganzen
+                 * Tag wahr, ein blosses `return` an dieser Stelle hätte die
+                 * Nachträge also nie erreicht. Umgekehrt darf nach einem
+                 * frischen oder gescheiterten Bericht keiner laufen: im ersten
+                 * Fall gäbe es nichts nachzutragen, im zweiten keine Grundlage.
+                 */
+                if (!lauf?.uebersprungen) return
+            }
 
-            await erzeugeLagebericht().catch(() => { })   // Fehler steht im Vermerk
+            /*
+             * Aktualisierungen — höchstens zwei am Tag, und nie ohne Bericht.
+             *
+             * Sie laufen NUR, wenn der Rhythmus nicht „nur manuell" ist: Wer
+             * die Automatik abgeschaltet hat, will keine bezahlten Läufe durch
+             * die Hintertür. Und sie laufen nach demselben Tages-Anspruch wie
+             * der Bericht, je Platz einer — ein Neustart um 21:30 holt den
+             * Abendnachtrag nach, verdoppelt ihn aber nicht.
+             */
+            if (leseRhythmus(s?.radarNewsRhythmus) === 'manuell') return
+            const stunden = leseUpdateStunden(s?.radarNewsUpdateStunden, s?.radarNewsUpdates)
+            const platz = faelligerUpdatePlatz({ jetztLokal: lokal, stunden })
+            if (platz) await erzeugeLagebericht({ aktualisierung: true, platz }).catch(() => { })
         } catch (e) {
             logWarn('news', `Takt: ${e.message}`)
         }

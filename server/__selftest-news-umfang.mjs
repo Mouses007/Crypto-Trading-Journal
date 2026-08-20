@@ -14,7 +14,8 @@
  * Aufruf: node server/__selftest-news-umfang.mjs
  */
 import {
-    budgetsAus, punkteVorgabe, videoTiefeAus, VIDEO_TIEFEN, bauLagePrompt,
+    budgetsAus, punkteVorgabe, videoTiefeAus, VIDEO_TIEFEN, bauLagePrompt, laengeFuerUpdate,
+    bauVideoAuftrag,
     istLiveSeite, istEndgueltig, leseLagebild, eigeneAnweisungen, ZUSATZ_MAX,
 } from './marktradar-news.js'
 
@@ -30,13 +31,13 @@ const p = (name, bedingung, zusatz) => { anzahl++; pruefe(name, bedingung, zusat
 // ── Token-Budget ─────────────────────────────────────────────────────────
 // 0 = Vorgabe der Länge. Das ist der Bestandsfall: Wer nie etwas einstellt,
 // muss exakt dieselben Werte bekommen wie vor dem Umbau.
-p('kurz ohne Eigenwert', String(budgetsAus('kurz', 0)) === '2500,5000')
-p('mittel ohne Eigenwert', String(budgetsAus('mittel', 0)) === '5000,10000')
-p('lang ohne Eigenwert', String(budgetsAus('lang', 0)) === '9000,18000')
-p('unbekannte Länge fällt auf mittel', String(budgetsAus('quatsch', 0)) === '5000,10000')
-p('leerer Wert wie 0', String(budgetsAus('mittel', '')) === '5000,10000')
-p('null wie 0', String(budgetsAus('mittel', null)) === '5000,10000')
-p('Unsinn wie 0', String(budgetsAus('mittel', 'abc')) === '5000,10000')
+p('kurz ohne Eigenwert', String(budgetsAus('kurz', 0)) === '8000,16000')
+p('mittel ohne Eigenwert', String(budgetsAus('mittel', 0)) === '16000,32000')
+p('lang ohne Eigenwert', String(budgetsAus('lang', 0)) === '26000,52000')
+p('unbekannte Länge fällt auf mittel', String(budgetsAus('quatsch', 0)) === '16000,32000')
+p('leerer Wert wie 0', String(budgetsAus('mittel', '')) === '16000,32000')
+p('null wie 0', String(budgetsAus('mittel', null)) === '16000,32000')
+p('Unsinn wie 0', String(budgetsAus('mittel', 'abc')) === '16000,32000')
 
 // Eigenwert schlägt die Länge, Nachschlag ist das Doppelte.
 p('Eigenwert gilt', String(budgetsAus('kurz', 7000)) === '7000,14000')
@@ -45,12 +46,35 @@ p('Eigenwert als Text gilt', String(budgetsAus('mittel', '3000')) === '3000,6000
 // Grenzen: unter 1000 Token kommt kein vollständiges JSON zurück, über 60000
 // zahlt man für einen Bericht, den niemand liest.
 p('Untergrenze 1000', String(budgetsAus('mittel', 5)) === '1000,2000')
-p('negativ wie 0', String(budgetsAus('mittel', -400)) === '5000,10000')
+p('negativ wie 0', String(budgetsAus('mittel', -400)) === '16000,32000')
 p('Obergrenze 60000', String(budgetsAus('mittel', 999999)) === '60000,120000')
+
+// Die Zwischenmeldung ist eine Stufe KÜRZER als der Bericht — sie beantwortet
+// „was ist seither passiert", und darauf gibt es um 15:00 selten acht Absätze.
+p('lang wird mittel', laengeFuerUpdate('lang') === 'mittel')
+p('mittel wird kurz', laengeFuerUpdate('mittel') === 'kurz')
+p('kurz bleibt kurz — darunter bliebe nur eine Schlagzeile', laengeFuerUpdate('kurz') === 'kurz')
+p('Unsinn wird kurz', laengeFuerUpdate('quatsch') === 'kurz' && laengeFuerUpdate(undefined) === 'kurz')
+
+// Beim Token-Deckel dagegen eine Stufe HÖHER. Gemessen: der Erstversuch mit
+// 5000 brach bei genau 5000 ab (0,19 USD für nichts). Der Deckel ist eine
+// Obergrenze, keine Bestellung — höher anzusetzen kostet nichts.
+p('Aktualisierung überspringt die kleine Stufe',
+    String(budgetsAus('mittel', 0, { aktualisierung: true })) === '32000,64000')
+p('Aktualisierung kurz', String(budgetsAus('kurz', 0, { aktualisierung: true })) === '16000,32000')
+p('Aktualisierung mit Eigenwert', String(budgetsAus('mittel', 3000, { aktualisierung: true })) === '6000,12000')
+p('ohne Aktualisierung bleibt alles wie bisher',
+    String(budgetsAus('mittel', 0, {})) === '16000,32000')
+p('Aktualisierung sprengt die Obergrenze nicht',
+    String(budgetsAus('mittel', 999999, { aktualisierung: true })) === '60000,120000')
 
 // Der Nachschlag muss IMMER grösser sein — sonst wiederholt der zweite Anlauf
 // denselben Abbruch und kostet nur ein zweites Mal.
 for (const [l, b] of [['kurz', 0], ['mittel', 0], ['lang', 0], ['mittel', 1000], ['mittel', 60000]]) {
+    for (const akt of [false, true]) {
+        const [e, n] = budgetsAus(l, b, { aktualisierung: akt })
+        p(`Nachschlag > Erstversuch (${l}/${b}${akt ? '/Update' : ''})`, n > e, `${e} → ${n}`)
+    }
     const [erst, nach] = budgetsAus(l, b)
     p(`Nachschlag > Erstversuch (${l}/${b})`, nach > erst, `${erst} → ${nach}`)
 }
@@ -182,5 +206,26 @@ p('undefined ist nicht endgültig', istEndgueltig(undefined) === false)
 
 // Format bewusst so: `scripts/run-selftests.mjs` liest genau dieses Zahlenpaar
 // heraus, sonst taucht die Datei in der Gesamtsumme mit „keine Zählung" auf.
+// ── Videoauftrag: Chartmarken überleben nur, wenn man sie verlangt ───────
+// Ein Chartvideo besteht fast nur aus Marken; „was für die Marktlage relevant
+// ist" liest ein Modell als Nachrichtenlage und wirft sie weg.
+{
+    const ohne = bauVideoAuftrag({ tiefe: 'normal' })
+    const mit = bauVideoAuftrag({ tiefe: 'normal', mitChart: true })
+    p('ohne Chartkapitel keine Chartanweisung', !ohne.text.includes('Unterstützungen'))
+    p('mit Chartkapitel werden Marken verlangt',
+        mit.text.includes('Unterstützungen') && mit.text.includes('Zeiteinheit'))
+    p('auch dann nur wiedergeben, nicht deuten', mit.text.includes('nicht selbst deuten'))
+    // Die Grenze bleibt: eine genannte Unterstützung ist eine Aussage des
+    // Videos, ein Kursziel wäre eine Empfehlung daraus.
+    p('das Kursziel-Verbot bleibt in beiden Fassungen',
+        ohne.text.includes('keine Kursziele') && mit.text.includes('keine Kursziele'))
+    p('die Leermeldung bleibt in beiden Fassungen',
+        ohne.text.includes('OHNE INHALT') && mit.text.includes('OHNE INHALT'))
+    p('der Token-Deckel kommt weiter aus der Stufe',
+        bauVideoAuftrag({ tiefe: 'knapp' }).tokens === videoTiefeAus('knapp', 0).tokens
+        && bauVideoAuftrag({ tiefe: 'knapp', deckel: 1234 }).tokens === 1234)
+}
+
 console.log(`${anzahl - fehler} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

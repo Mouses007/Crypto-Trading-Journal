@@ -310,7 +310,7 @@
     "ki": {
       "tab_uebersicht": "Übersicht",
       "tab_allgemein": "Zugang",
-      "tab_berichte": "Berichte",
+      "tab_berichte": "Trade-Berichte",
       "tab_nachrichten": "Nachrichten",
       "tab_agent": "Agent",
       "tab_strategie": "Strategie",
@@ -369,7 +369,7 @@
         "intro2b": "der daraus den Bericht schreibt. Fällt Gemini aus, entsteht der Bericht trotzdem — dann ohne Videoinhalte.",
         "intro3": "Das Video ist der teure Teil, nicht der Text: abgerechnet wird nach Videolänge. Untertitel wären billiger, aber YouTube liefert sie an nicht angemeldete Zugriffe seit Kurzem nicht mehr aus (geprüft am 16.08.2026, auch mit yt-dlp).",
         "autoLabel": "Automatisch erzeugen",
-        "autoHint": "Täglich oder wöchentlich zur eingestellten Stunde. Aus: nur noch per Knopf. Beiträge werden unabhängig davon täglich gesammelt.",
+        "autoHint": "Täglich, wöchentlich oder gar nicht („nur manuell\"). Aus: nur noch per Knopf. Beiträge werden unabhängig davon täglich gesammelt.",
         "daily": "täglich",
         "weekly": "wöchentlich",
         "localTime": "lokale Zeit",
@@ -414,7 +414,39 @@
         "customLabel": "Eigene Anweisungen an die KI",
         "customHint": "Ton, Schwerpunkte und Ausschlüsse für den Lagebericht — gilt ab dem nächsten Lauf. Leer = wie bisher.",
         "customPlaceholder": "z. B.: Schreib knapper und ohne Füllsätze. Nenne bei jedem Punkt die Uhrzeit der Meldung. Regulierungsthemen interessieren mich nur, wenn sie Futures betreffen. Ether ausführlicher als Altcoins.",
-        "customLimits": "{n} von {max} Zeichen. Die Grundregeln bleiben in Kraft: keine Handelsempfehlungen, keine Kursziele, keine Prognosen, nichts Erfundenes. Jedes Zeichen kostet bei jedem Lauf Token mit."
+        "customLimits": "{n} von {max} Zeichen. Die Grundregeln bleiben in Kraft: keine Handelsempfehlungen, keine Kursziele, keine Prognosen, nichts Erfundenes. Jedes Zeichen kostet bei jedem Lauf Token mit.",
+        "manual": "nur manuell",
+        "manualHint": "Der Bericht entsteht nur noch auf Knopfdruck.",
+        "updatesLabel": "Zwischenmeldungen",
+        "updatesHint": "Zusätzlich zum Tagesbericht: Die KI durchsucht zur eingestellten Stunde Quellen und Netz nach dem, was seither dazugekommen ist — Meldungen, Zahlen, Termine mit Bezug zu Krypto und Handel. Sie schreibt den Bericht NICHT um, sondern meldet nur das Neue, kürzer als der Tagesbericht.",
+        "updates0": "keine",
+        "updates1": "eine am Tag",
+        "updates2": "zwei am Tag",
+        "updatesCost": "Jede Zwischenmeldung kostet einen Recherche- und einen Schreibvorgang.",
+        "mailLabel": "Inhalt der Mail",
+        "mailHint": "Gilt für die Benachrichtigung „Lagebericht fertig\" (Einstellungen → Benachrichtigungen). Automatische Läufe melden sich per Mail; ein Bericht auf Knopfdruck nicht — da sitzt du davor.",
+        "mailShort": "Nur Gesamtlage und Kennzahlen des Laufs",
+        "mailFull": "Ganzer Bericht: Kapitel, Meldungen, Kennzahlen, Belege",
+        "keepLabel": "Berichte aufbewahren",
+        "keepHint": "Wie lange erzeugte Berichte liegen bleiben. „Von Hand\" löscht nie — jeder Bericht hat Geld gekostet. Gelöscht wird einmal täglich beim Aufräumen; die Rohbeiträge haben ihre eigenen 30 Tage.",
+        "keepManual": "von Hand",
+        "keepDay": "1 Tag",
+        "keepWeek": "1 Woche",
+        "keepMonth": "1 Monat",
+        "checkBtn": "Prüfen & schärfen",
+        "checkHint": "Ein Modellaufruf (wenige Rappen): Was wirkt, was prallt an den Grundregeln ab — und eine präzisere Fassung.",
+        "suggestion": "Vorschlag:",
+        "apply": "Übernehmen",
+        "discard": "Verwerfen",
+        "mark": {
+          "wirkt": "wirkt",
+          "wirkungslos": "wirkungslos",
+          "gegenregel": "gegen die Regeln"
+        },
+        "chartHint": "Chartanalyse: wie alt die ausgewerteten Analysen sein dürfen und welchen Horizont sie beschreiben sollen.",
+        "chartTag": "Chart: kurzfristig (1 Tag)",
+        "chartWoche": "Chart: mittelfristig (1 Woche)",
+        "chartMonat": "Chart: übergeordnet (1 Monat)"
       },
       "agentBudget": "Token-Budget je Lauf",
       "agentBudgetHint": "Obergrenze für einen Agenten-Lauf über alle Denkrunden (Eingabe + Ausgabe). Ist sie erreicht, fasst der Agent die bis dahin gesammelten Ergebnisse zusammen. Mehr Budget = tiefere Analysen, aber höhere Kosten je Frage."
@@ -842,7 +874,7 @@
     "quellenTitel": "Quellen",
     "recherche": "Recherche",
     "redakteur": "Redakteur",
-    "redditHinweis": "braucht seit dem OAuth-Zwang ein Zugangstoken",
+    "redditHinweis": "nicht verfügbar — Reddit verlangt OAuth, ein Schlüsselfeld genügt nicht",
     "regelFundingExtrem": "Funding extrem % p.a.",
     "regelLiqAbfluss": "Liquiditätsabfluss (%)",
     "regelPreis24h": "Preisbewegung 24h (%)",
@@ -927,7 +959,16 @@
     "favMehr": "+{n} mehr",
     "favWeniger": "weniger zeigen",
     "alarmeMehr": "{n} ältere anzeigen",
-    "alarmeWeniger": "nur die neuesten zeigen"
+    "alarmeWeniger": "nur die neuesten zeigen",
+    "keyNoetig": "— Schlüssel nötig",
+    "keyOptional": "— optional, hebt das Limit",
+    "keyPlatzhalter": "Schlüssel einfügen",
+    "keyHolen": "Schlüssel holen",
+    "keyHinweis": {
+      "cryptopanic": "Kostenloses Konto, im Entwickler-Bereich steht der auth_token. Liefert die Nachrichtenlage zu aufstrebenden Coins.",
+      "lunarcrush": "Sozial-Kennzahlen (Erwähnungen, Stimmung). Der Zugang ist kostenpflichtig; ohne Schlüssel bleibt die Quelle aus.",
+      "coingecko": "Ohne Schlüssel läuft der freie Zugang mit engem Limit — bei jedem Lauf ein Risiko für Aussetzer. Der Demo-Schlüssel ist gratis."
+    }
   },
   "kiUebersicht": {
     "laedt": "Übersicht wird geladen …",
@@ -981,7 +1022,9 @@
       "schnappschuss": "Marktdaten-Schnappschuss",
       "kalender": "Wirtschaftskalender",
       "newsAufbewahrung": "Alte Nachrichten aufräumen",
-      "aufzeichner": "Live-Aufzeichnung"
+      "aufzeichner": "Live-Aufzeichnung",
+      "lageberichtUpdate1": "Bericht aktualisieren (1)",
+      "lageberichtUpdate2": "Bericht aktualisieren (2)"
     },
     "takt": {
       "stunde": "stündlich",
@@ -991,7 +1034,8 @@
       "taeglich": "täglich",
       "sekunden15": "alle 15 Sekunden",
       "laufend": "laufend"
-    }
+    },
+    "zeitplanManuell": "nur von Hand"
   },
   "kiAgent": {
     "createReport": "KI-Bericht erstellen",
@@ -1800,8 +1844,13 @@
       "cooldownMinutes": "Sperrfrist je Symbol (Minuten)",
       "duplicateScope": "Eine Position je … (Symbol / Symbol+Zeiteinheit)",
       "minRR": "Mindest-Chance/Risiko",
-      "feeBps": "Gebühr je Seite (Basispunkte)",
-      "slippageBps": "Slippage je Seite (Basispunkte)",
+      "feeMakerBps": "Gebühr Maker / Limit (Basispunkte)",
+      "feeTakerBps": "Gebühr Taker / Markt (Basispunkte)",
+      "slippageBps": "Slippage je Marktorder (Basispunkte)",
+      "entryOrder": "Einstieg als",
+      "entryOrderLimit": "Limit an der Zone (Maker)",
+      "entryOrderMarket": "Marktorder (Taker)",
+      "breakEvenCoversCosts": "Break-Even-Stop deckt die Gebühren",
       "fundingBpsPer8h": "Finanzierung je 8 h (Basispunkte, 0 = nicht gerechnet)",
       "maxPriceDeviationPct": "Max. Preisabweichung zur Referenz (%)"
     },
@@ -3137,7 +3186,23 @@
     "tag": {
       "fakt": "Fakt",
       "einschaetzung": "Einschätzung"
-    }
+    },
+    "manual": "nur manuell",
+    "updateDigest": "Aktualisieren",
+    "updateHint": "Durchsucht Quellen und Netz nach dem, was seit dem Tagesbericht dazugekommen ist — als kurze Zwischenmeldung, nicht als zweiter Bericht.",
+    "updateDone": "Zwischenmeldung: {p} Meldung(en) aus {n} neuen Beiträgen und {r} Recherche(n), {v} Video(s), {tok} Token via {modell}",
+    "updateMark": "Zwischenmeldung {n}",
+    "updateShort": "Zwisch. {n}",
+    "updatesN": "{n}× Zwischenmeldung",
+    "fixMark": "korrigiert",
+    "toBase": "Tagesbericht",
+    "dailyReport": "Tagesbericht",
+    "archivedAtMidnight": "Um Mitternacht archiviert — zum Lesen anklicken.",
+    "pickFromChain": "Oben eine Zeile anklicken, um den Bericht zu lesen.",
+    "quickTitle": "Schnelleinstellungen",
+    "toSettings": "Alle Einstellungen: KI → Nachrichten",
+    "stillRunning": "Der Lauf dauert länger als die Verbindung — er läuft auf dem Server weiter. Die Seite sieht alle 15 Sekunden nach.",
+    "arrivedLate": "Fertig — der Bericht ist da."
   },
   "rangliste": {
     "title": "Coin-Rangliste",
