@@ -12,7 +12,9 @@
  * vorhandenen Loader selbst an und hält sie im Takt frisch.
  *
  * Die generierte News-Zusammenfassung sitzt als feste Karte über dem Raster
- * (`NewsKarte.vue`), nicht als verschiebbare Kachel.
+ * (`NewsKarte.vue`), nicht als verschiebbare Kachel. Ausblendbar ist sie
+ * trotzdem: sie steht als eigener Eintrag im Kachel-Menü (`NEWS_ID`) und teilt
+ * sich dessen localStorage-Mechanik, obwohl sie nicht in der Registry steht.
  */
 import { onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -59,6 +61,14 @@ import { useGetIncomingPositions, useStartGlobalPolling, useStopGlobalPolling } 
 import { refreshAccountBalance } from '../stores/accountBalance.js'
 
 const { t } = useI18n()
+
+/**
+ * Schlüssel der festen Marktbericht-Karte im Sichtbarkeits-Speicher. Bewusst
+ * KEINE Registry-Kachel (sie sitzt über dem Raster, ist nicht verschiebbar und
+ * hat keinen Endpunkt) — `isVisible`/`beiUmschalten` arbeiten aber über eine
+ * freie Schlüsselmenge, also genügt der eigene Schlüssel.
+ */
+const NEWS_ID = 'newsKarte'
 const router = useRouter()
 
 /**
@@ -166,8 +176,9 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="radarWrap">
-        <!-- Feste News-Karte: immer sichtbar, nicht Teil des Rasters -->
-        <NewsKarte />
+        <!-- Feste News-Karte: nicht Teil des Rasters, aber über das
+             Kachel-Menü ausblendbar -->
+        <NewsKarte v-if="isVisible(NEWS_ID)" />
 
         <div class="liveHeader">
             <div class="liveTitle">
@@ -182,6 +193,14 @@ onBeforeUnmount(() => {
                     </button>
                     <div v-if="showConfigDropdown" class="card-config-dropdown">
                         <div class="card-config-title">{{ t('auswertung.visibleCards') }}</div>
+                        <!-- Der Marktbericht ist keine Raster-Kachel, gehört
+                             aber in dieselbe Liste — sonst gibt es genau einen
+                             Block auf der Seite, den man nicht loswird. -->
+                        <div class="card-config-item" @click="beiUmschalten(NEWS_ID)">
+                            <i class="uil me-2"
+                                :class="isVisible(NEWS_ID) ? 'uil-check-square text-success' : 'uil-square-full text-muted'"></i>
+                            {{ t('startseite.news.label') }}
+                        </div>
                         <div v-for="kachel in alleKacheln" :key="kachel.id" class="card-config-item"
                             @click="beiUmschalten(kachel.id)">
                             <i class="uil me-2"

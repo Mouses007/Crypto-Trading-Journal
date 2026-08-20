@@ -10,8 +10,9 @@
  * Marktradar.
  *
  * Die generierte News-Zusammenfassung ist bewusst KEINE Kachel hier — sie sitzt
- * als feste Karte über dem Raster (`NewsKarte.vue`), immer sichtbar und nicht
- * verschiebbar.
+ * als feste Karte über dem Raster (`NewsKarte.vue`), nicht verschiebbar. Ihr
+ * Ein/Aus-Schalter steht trotzdem im Kachel-Menü der Seite (`NEWS_ID` in
+ * `Startseite.vue`), gespeichert unter demselben localStorage-Schlüssel.
  *
  * Felder je Kachel: siehe `src/config/marktradar.js`. Zusätzlich hier:
  *   endpunkt: null — die Journal-Kacheln versorgen sich selbst aus den
