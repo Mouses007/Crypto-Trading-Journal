@@ -49,6 +49,41 @@ const FARBEN = {
 
 const SCHRIFT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 
+/**
+ * Schriftgrössen.
+ *
+ * Eine Mail ist nicht wie eine Webseite zoombar: die meisten Postfächer
+ * bieten keine Textvergrösserung, `rem` bezieht sich auf nichts Verlässliches,
+ * und Media Queries verwirft dieselbe Word-Engine, die auch `rgba()` verwirft.
+ * Die Grösse muss also schon beim Bauen feststehen — eine Stufe je Mail.
+ *
+ * Alle Grössen kommen aus dieser einen Tabelle. Einzeln verteilte px-Werte
+ * wären beim nächsten „etwas grösser, bitte" wieder Handarbeit an zwölf
+ * Stellen, und eine davon würde vergessen.
+ */
+export const STUFEN = { normal: 1, gross: 1.18, sehrGross: 1.36 }
+
+/** Vorgabe ist eine Stufe über dem alten Stand: die Meldungen wurden auf dem
+ *  Telefon gelesen und waren dort zu klein. */
+export const STUFE_VORGABE = 'gross'
+
+const GRUND = {
+    fliess: 14, fliessErster: 15, tabelle: 13,
+    kapitel: 15, unterkapitel: 14,
+    titel: 19, marke: 12, unterzeile: 11, rubrik: 11, fuss: 11,
+    // Sinnbild und sein Kasten wachsen mit, sonst schwimmt das Zeichen
+    // bei „sehr gross" in einer viel zu grossen Fläche.
+    sinnbild: 22, kasten: 44,
+}
+
+/** Stufenname → fertige px-Werte. Unbekannter Name fällt auf die Vorgabe. */
+export function groessen(stufe) {
+    const faktor = STUFEN[stufe] || STUFEN[STUFE_VORGABE]
+    const werte = {}
+    for (const [rolle, px] of Object.entries(GRUND)) werte[rolle] = Math.round(px * faktor)
+    return werte
+}
+
 /** Rückfallwerte, wenn ein Ereignis (noch) keine eigene Gestaltung hat. */
 const VORGABE = { symbol: '•', ton: 'info', bereich: 'Meldung' }
 
@@ -74,7 +109,7 @@ function istDatenBlock(zeilen) {
     return zeilen.length >= 2 && zeilen.every((z) => LABEL_ZEILE.test(z))
 }
 
-function datenTabelle(zeilen) {
+function datenTabelle(zeilen, g) {
     const reihen = zeilen.map((z, i) => {
         const [, label, wert] = z.match(LABEL_ZEILE)
         const oben = i === 0 ? '' : `border-top:1px solid ${FARBEN.rand};`
@@ -82,9 +117,9 @@ function datenTabelle(zeilen) {
         // längstes Label und keinen Punkt breiter — der Rest gehört dem Wert.
         return `<tr>`
             + `<td width="1%" style="${oben}padding:7px 14px 7px 0;color:${FARBEN.leise};`
-            + `font-size:13px;line-height:1.45;white-space:nowrap;vertical-align:top;width:1%;">${escape(label)}</td>`
+            + `font-size:${g.tabelle}px;line-height:1.45;white-space:nowrap;vertical-align:top;width:1%;">${escape(label)}</td>`
             + `<td style="${oben}padding:7px 0;color:${FARBEN.text};`
-            + `font-size:13px;line-height:1.45;vertical-align:top;">${verlinke(escape(wert))}</td>`
+            + `font-size:${g.tabelle}px;line-height:1.45;vertical-align:top;">${verlinke(escape(wert))}</td>`
             + `</tr>`
     }).join('')
     return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"`
@@ -106,33 +141,33 @@ function istUeberschrift(zeilen) {
     return zeilen.length === 1 && UEBERSCHRIFT_ZEILE.test(zeilen[0])
 }
 
-function ueberschrift(zeile) {
+function ueberschrift(zeile, g) {
     const [, marke, text] = zeile.match(UEBERSCHRIFT_ZEILE)
     // Zwei Stufen, mehr nicht: Kapitel und die einzelne Meldung darin. Ohne die
     // zweite Stufe verschwindet der Titel einer Meldung im Fliesstext, mit
     // einer dritten wäre es eine Auszeichnungssprache.
     const klein = marke === '###'
     return `<p style="margin:${klein ? '18px 0 6px' : '22px 0 8px'};color:${FARBEN.titel};`
-        + `font-size:${klein ? '14px' : '15px'};line-height:1.4;font-weight:600;">${escape(text)}</p>`
+        + `font-size:${klein ? g.unterkapitel : g.kapitel}px;line-height:1.4;font-weight:600;">${escape(text)}</p>`
 }
 
-function absatz(zeilen, ersterAbsatz) {
-    const stil = ersterAbsatz
-        ? `margin:0 0 12px;color:${FARBEN.text};font-size:15px;line-height:1.62;`
-        : `margin:0 0 12px;color:${FARBEN.text};font-size:14px;line-height:1.62;`
+function absatz(zeilen, ersterAbsatz, g) {
+    const groesse = ersterAbsatz ? g.fliessErster : g.fliess
+    const stil = `margin:0 0 12px;color:${FARBEN.text};font-size:${groesse}px;line-height:1.62;`
     return `<p style="${stil}">${verlinke(escape(zeilen.join('\n'))).replace(/\n/g, '<br>')}</p>`
 }
 
 /** Fliesstext → HTML. Blöcke sind durch Leerzeilen getrennt, wie im Quelltext. */
-export function baueKoerper(text) {
+export function baueKoerper(text, stufe) {
+    const g = groessen(stufe)
     const bloecke = String(text ?? '').split(/\n{2,}/)
         .map((b) => b.split('\n').map((z) => z.trim()).filter(Boolean))
         .filter((b) => b.length)
     let ersterAbsatz = true
     return bloecke.map((zeilen) => {
-        if (istUeberschrift(zeilen)) return ueberschrift(zeilen[0])
-        if (istDatenBlock(zeilen)) return datenTabelle(zeilen)
-        const html = absatz(zeilen, ersterAbsatz)
+        if (istUeberschrift(zeilen)) return ueberschrift(zeilen[0], g)
+        if (istDatenBlock(zeilen)) return datenTabelle(zeilen, g)
+        const html = absatz(zeilen, ersterAbsatz, g)
         ersterAbsatz = false
         return html
     }).join('')
@@ -170,7 +205,7 @@ export function logoAnhang(settings) {
     return { filename: 'logo.png', content: logoZwischen, cid: 'ctjlogo' }
 }
 
-function kopfzeile(marke, unterzeile, mitLogo) {
+function kopfzeile(marke, unterzeile, mitLogo, g) {
     const bild = mitLogo
         ? `<td width="40" valign="middle" style="width:40px;">`
         + `<img src="cid:ctjlogo" width="36" height="36" alt=""`
@@ -180,9 +215,9 @@ function kopfzeile(marke, unterzeile, mitLogo) {
         + `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>`
         + bild
         + `<td valign="middle" style="${mitLogo ? 'padding-left:12px;' : ''}">`
-        + `<div style="color:${FARBEN.titel};font-size:12px;font-weight:700;`
+        + `<div style="color:${FARBEN.titel};font-size:${g.marke}px;font-weight:700;`
         + `letter-spacing:1.6px;text-transform:uppercase;">${escape(marke)}</div>`
-        + `<div style="color:${FARBEN.sehrLeise};font-size:11px;padding-top:2px;">${escape(unterzeile)}</div>`
+        + `<div style="color:${FARBEN.sehrLeise};font-size:${g.unterzeile}px;padding-top:2px;">${escape(unterzeile)}</div>`
         + `</td></tr></table></td></tr>`
 }
 
@@ -199,11 +234,13 @@ function kopfzeile(marke, unterzeile, mitLogo) {
  * @param {string} [opt.nutzer]  Zusatz in der Unterzeile (Name aus den Einstellungen)
  * @param {Date}   [opt.zeit]    Zeitstempel der Meldung
  * @param {boolean}[opt.mitLogo] false, wenn kein Anhang mitgeschickt wird
+ * @param {string} [opt.groesse] Schriftstufe: normal | gross | sehrGross
  * @returns {{betreff: string, text: string, html: string}}
  */
 export function baueMail({ titel, text, symbol, ton, bereich, marke = 'Crypto Trading Journal',
-    nutzer = '', zeit = new Date(), mitLogo = true } = {}) {
+    nutzer = '', zeit = new Date(), mitLogo = true, groesse = STUFE_VORGABE } = {}) {
     const stil = TOENE[ton] || TOENE[VORGABE.ton]
+    const g = groessen(groesse)
     const zeichen = symbol || VORGABE.symbol
     const rubrik = bereich || VORGABE.bereich
     const stempel = zeit.toLocaleString('de-CH', {
@@ -227,21 +264,22 @@ export function baueMail({ titel, text, symbol, ton, bereich, marke = 'Crypto Tr
         // Akzentstreifen: Dringlichkeit noch vor dem ersten Wort
         + `<tr><td bgcolor="${stil.akzent}" style="height:4px;line-height:4px;font-size:0;`
         + `background:${stil.akzent};border-radius:14px 14px 0 0;">&nbsp;</td></tr>`
-        + kopfzeile(marke, unterzeile, mitLogo)
+        + kopfzeile(marke, unterzeile, mitLogo, g)
         + `<tr><td style="padding:16px 24px 0 24px;">`
         + `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>`
-        + `<td width="48" valign="top" style="width:48px;">`
-        + `<div style="width:44px;height:44px;line-height:44px;text-align:center;font-size:22px;`
+        + `<td width="${g.kasten + 4}" valign="top" style="width:${g.kasten + 4}px;">`
+        + `<div style="width:${g.kasten}px;height:${g.kasten}px;line-height:${g.kasten}px;`
+        + `text-align:center;font-size:${g.sinnbild}px;`
         + `background:${stil.flaeche};border-radius:11px;">${escape(zeichen)}</div></td>`
         + `<td valign="middle" style="padding-left:14px;">`
-        + `<div style="color:${stil.akzent};font-size:11px;font-weight:700;letter-spacing:1.3px;`
+        + `<div style="color:${stil.akzent};font-size:${g.rubrik}px;font-weight:700;letter-spacing:1.3px;`
         + `text-transform:uppercase;">${escape(rubrik)}</div>`
-        + `<div style="color:${FARBEN.titel};font-size:19px;line-height:1.32;font-weight:600;`
+        + `<div style="color:${FARBEN.titel};font-size:${g.titel}px;line-height:1.32;font-weight:600;`
         + `padding-top:3px;">${escape(titel)}</div>`
         + `</td></tr></table></td></tr>`
-        + `<tr><td style="padding:18px 24px 6px 24px;">${baueKoerper(text)}</td></tr>`
+        + `<tr><td style="padding:18px 24px 6px 24px;">${baueKoerper(text, groesse)}</td></tr>`
         + `<tr><td style="border-top:1px solid ${FARBEN.rand};padding:14px 24px 18px 24px;`
-        + `color:${FARBEN.sehrLeise};font-size:11px;line-height:1.6;">`
+        + `color:${FARBEN.sehrLeise};font-size:${g.fuss}px;line-height:1.6;">`
         + `Automatische Nachricht aus deinem Trading Journal.<br>`
         + `Welche Ereignisse per Mail kommen, steht unter Einstellungen → Benachrichtigungen.`
         + `</td></tr></table></td></tr></table></body></html>`

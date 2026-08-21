@@ -646,7 +646,11 @@
       "speichern": "Speichern",
       "test": "Testmail senden",
       "testLaeuft": "Wird gesendet …",
-      "passwortHinweis": "Das Passwort wird verschlüsselt abgelegt und verlässt den Server nie wieder — weder über die Einstellungen noch über den Backup-Export. Bei Gmail und Outlook braucht es ein App-Passwort; das normale Kontopasswort wird für SMTP abgelehnt."
+      "passwortHinweis": "Das Passwort wird verschlüsselt abgelegt und verlässt den Server nie wieder — weder über die Einstellungen noch über den Backup-Export. Bei Gmail und Outlook braucht es ein App-Passwort; das normale Kontopasswort wird für SMTP abgelehnt.",
+      "schrift": "Schriftgrösse",
+      "schriftNormal": "Normal",
+      "schriftGross": "Gross",
+      "schriftSehrGross": "Sehr gross"
     }
   },
   "setup": {

@@ -1824,6 +1824,9 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'mailPasswort', (t) => t.text('mailPasswort').defaultTo(''))
     await addColumnIfNotExists('settings', 'mailVon', (t) => t.text('mailVon').defaultTo(''))
     await addColumnIfNotExists('settings', 'mailAn', (t) => t.text('mailAn').defaultTo(''))
+    // Schriftgrösse der Mails. Vorgabe „gross": ein Postfach kennt keinen Zoom,
+    // die Meldungen werden meist auf dem Telefon gelesen.
+    await addColumnIfNotExists('settings', 'mailSchriftGroesse', (t) => t.text('mailSchriftGroesse').defaultTo('gross'))
 
     // Vorschaubild je Beitrag. Nachträglich, weil news_items zuerst ohne
     // gebaut wurde — die Spalte muss also auch bestehenden Tabellen wachsen.

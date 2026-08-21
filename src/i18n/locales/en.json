@@ -646,7 +646,11 @@
       "speichern": "Save",
       "test": "Send test email",
       "testLaeuft": "Sending …",
-      "passwortHinweis": "The password is stored encrypted and never leaves the server again — neither via settings nor via the backup export. Gmail and Outlook require an app password; the normal account password is rejected for SMTP."
+      "passwortHinweis": "The password is stored encrypted and never leaves the server again — neither via settings nor via the backup export. Gmail and Outlook require an app password; the normal account password is rejected for SMTP.",
+      "schrift": "Font size",
+      "schriftNormal": "Normal",
+      "schriftGross": "Large",
+      "schriftSehrGross": "Extra large"
     }
   },
   "setup": {

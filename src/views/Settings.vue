@@ -2115,6 +2115,7 @@ async function setzeKanal(id, kanal, wert) {
 const mail = ref({
     mailAktiv: 0, mailHost: '', mailPort: 587, mailSicherheit: 'starttls',
     mailUser: '', mailVon: '', mailAn: '', mailPasswort: '', mailPasswortSet: false,
+    mailSchriftGroesse: 'gross',
 })
 const mailTestLaeuft = ref(false)
 const mailMeldung = ref('')
@@ -5081,6 +5082,18 @@ onBeforeMount(async () => {
                     <span class="text-muted" style="font-size:0.8rem;">{{ t('settings.benachrichtigungen.vorlage') }}</span>
                     <button v-for="v in MAIL_VORLAGEN" :key="v.name" type="button"
                         class="btn btn-sm btn-outline-secondary" @click="mailVorlage(v)">{{ v.name }}</button>
+                </div>
+
+                <div class="row align-items-center mt-2">
+                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.schrift') }}</div>
+                    <div class="col-12 col-md-8">
+                        <select class="form-select" style="max-width:14rem;"
+                            v-model="mail.mailSchriftGroesse" @change="speichereMail">
+                            <option value="normal">{{ t('settings.benachrichtigungen.schriftNormal') }}</option>
+                            <option value="gross">{{ t('settings.benachrichtigungen.schriftGross') }}</option>
+                            <option value="sehrGross">{{ t('settings.benachrichtigungen.schriftSehrGross') }}</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div class="row align-items-center mt-3">

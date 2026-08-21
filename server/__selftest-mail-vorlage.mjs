@@ -7,7 +7,7 @@
  * Farben, die Outlook verwirft, und die Textfassung für Clients ohne HTML.
  */
 
-import { baueMail, baueKoerper, logoAnhang, TOENE } from './mail-vorlage.js'
+import { baueMail, baueKoerper, logoAnhang, TOENE, STUFEN, STUFE_VORGABE, groessen } from './mail-vorlage.js'
 
 let ok = 0, fehler = 0
 function pruefe(name, bedingung, detail = '') {
@@ -111,8 +111,13 @@ function pruefe(name, bedingung, detail = '') {
 // Überschriften: zwei Stufen, und in der Nur-Text-Fassung ohne die Marke.
 {
     const h = baueKoerper('## Kapitel\n\nText dazu.\n\n### Meldung eins\n\nMehr Text.')
-    pruefe('## wird zur grossen Überschrift', h.includes('font-size:15px') && h.includes('Kapitel'))
-    pruefe('### wird zur kleinen Überschrift', h.includes('font-size:14px') && h.includes('Meldung eins'))
+    const g = groessen(STUFE_VORGABE)
+    // Auf feste px zu prüfen wäre eine zweite Quelle für die Grössen — die
+    // Aussage ist „Kapitel grösser als Meldung", nicht „15 Pixel".
+    pruefe('## wird zur grossen Überschrift',
+        h.includes(`font-size:${g.kapitel}px`) && h.includes('Kapitel') && g.kapitel > g.unterkapitel)
+    pruefe('### wird zur kleinen Überschrift',
+        h.includes(`font-size:${g.unterkapitel}px`) && h.includes('Meldung eins'))
     pruefe('die Marke selbst steht nicht in der Mail', !h.includes('##'))
     const nur = baueMail({ titel: 'x', text: '## Kapitel\n\nText.\n\n### Meldung\n\nMehr.' }).text
     pruefe('Nur-Text: Kapitel unterstrichen', nur.includes('Kapitel\n──────'))
@@ -121,6 +126,32 @@ function pruefe(name, bedingung, detail = '') {
     const kein = baueKoerper('Wir kaufen ## Stück davon.')
     pruefe('## mitten im Satz bleibt stehen',
         kein.includes('Wir kaufen ## Stück davon.') && kein.includes('line-height:1.62'))
+}
+
+// Schriftstufen: eine Mail ist nicht zoombar, die Grösse muss beim Bauen
+// feststehen — und ausser dem Akzentstreifen darf keine px-Grösse fest im
+// Quelltext stehen, sonst wächst beim Umschalten nur ein Teil mit.
+{
+    const klein = baueMail({ titel: 'T', text: 'Ein Satz.\n\nSymbol: X\nWert: 1', groesse: 'normal' }).html
+    const mittel = baueMail({ titel: 'T', text: 'Ein Satz.\n\nSymbol: X\nWert: 1', groesse: 'gross' }).html
+    const riesig = baueMail({ titel: 'T', text: 'Ein Satz.\n\nSymbol: X\nWert: 1', groesse: 'sehrGross' }).html
+    const px = (html) => [...html.matchAll(/font-size:(\d+)px/g)].map((m) => Number(m[1]))
+    const a = px(klein), b = px(mittel), c = px(riesig)
+    pruefe('jede Stufe setzt gleich viele Grössen', a.length === b.length && b.length === c.length && a.length > 6)
+    pruefe('gross ist überall grösser als normal', a.every((v, i) => b[i] > v))
+    pruefe('sehr gross ist überall grösser als gross', b.every((v, i) => c[i] > v))
+
+    const g = groessen('normal')
+    pruefe('normal entspricht den Grundwerten', g.fliess === 14 && g.titel === 19)
+    pruefe('unbekannte Stufe fällt auf die Vorgabe',
+        JSON.stringify(groessen('riesengross')) === JSON.stringify(groessen(STUFE_VORGABE)))
+    pruefe('ohne Angabe gilt die Vorgabe',
+        baueMail({ titel: 'T', text: 'x' }).html === baueMail({ titel: 'T', text: 'x', groesse: STUFE_VORGABE }).html)
+    pruefe('Vorgabe ist grösser als normal', STUFEN[STUFE_VORGABE] > STUFEN.normal)
+    // Fest verdrahtete Grössen: erlaubt ist nur der Akzentstreifen (font-size:0).
+    const roh = baueMail({ titel: 'T', text: 'x' }).html.replace(/font-size:0;/g, '')
+    pruefe('keine Grösse ausserhalb der Stufe', px(roh).every((v) => Object.values(groessen(STUFE_VORGABE)).includes(v)))
+    pruefe('Nur-Text-Fassung kennt keine Grössen', !baueMail({ titel: 'T', text: 'x' }).text.includes('font-size'))
 }
 
 console.log(`mail-vorlage: ${ok} ok, ${fehler} Fehler`)

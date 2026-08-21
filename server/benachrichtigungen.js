@@ -32,7 +32,7 @@ import { getKnex } from './database.js'
 import { decrypt, encrypt } from './crypto.js'
 import { beansprucheAufgabe, gibAufgabeFrei, merkeAufgabenFehler } from './db-claim.js'
 import { logWarn, logError } from './logger.js'
-import { baueMail, logoAnhang } from './mail-vorlage.js'
+import { baueMail, logoAnhang, STUFEN, STUFE_VORGABE } from './mail-vorlage.js'
 
 /**
  * Alle Meldungstypen der App.
@@ -189,6 +189,12 @@ async function sendeMail(s, { betreff, text, html, anhaenge }) {
     }
 }
 
+/** Schriftstufe aus den Einstellungen; unbekannter Wert fällt auf die Vorgabe. */
+function schriftStufe(s) {
+    const gewaehlt = String(s?.mailSchriftGroesse || '')
+    return STUFEN[gewaehlt] ? gewaehlt : STUFE_VORGABE
+}
+
 /**
  * Aus Betreff und Text die fertige Mail bauen.
  *
@@ -207,6 +213,7 @@ function gestalteteMail(s, id, { betreff, text }) {
         bereich: eintrag.bereich,
         nutzer: s?.username || '',
         mitLogo: Boolean(logo),
+        groesse: schriftStufe(s),
     })
     return { ...mail, anhaenge: logo ? [logo] : [] }
 }
@@ -529,6 +536,7 @@ export function setupBenachrichtigungsRoutes(app) {
                 mailUser: s?.mailUser || '',
                 mailVon: s?.mailVon || '',
                 mailAn: s?.mailAn || '',
+                mailSchriftGroesse: s?.mailSchriftGroesse || STUFE_VORGABE,
                 // Das Passwort verlässt den Server nie — nur die Auskunft,
                 // ob eines hinterlegt ist.
                 mailPasswortSet: Boolean(s?.mailPasswort),
@@ -545,7 +553,7 @@ export function setupBenachrichtigungsRoutes(app) {
             if (fehler) return res.status(400).json({ error: fehler })
 
             const { mailAktiv, mailHost, mailPort, mailSicherheit, mailUser,
-                mailVon, mailAn, mailPasswort } = req.body || {}
+                mailVon, mailAn, mailPasswort, mailSchriftGroesse } = req.body || {}
             const aenderung = {
                 mailAktiv: mailAktiv ? 1 : 0,
                 mailHost: String(mailHost || ''),
@@ -554,6 +562,7 @@ export function setupBenachrichtigungsRoutes(app) {
                 mailUser: String(mailUser || ''),
                 mailVon: String(mailVon || ''),
                 mailAn: String(mailAn || ''),
+                mailSchriftGroesse: STUFEN[mailSchriftGroesse] ? mailSchriftGroesse : STUFE_VORGABE,
             }
             // Maskierten Wert nicht zurückschreiben — sonst überschreibt ein
             // Speichern ohne Passwortänderung das echte Passwort mit Punkten.
@@ -592,6 +601,7 @@ export function setupBenachrichtigungsRoutes(app) {
                 bereich: 'System · Test',
                 nutzer: s?.username || '',
                 mitLogo: Boolean(logo),
+                groesse: schriftStufe(s),
             })
             await sendeMail(s, { ...mail, anhaenge: logo ? [logo] : [] })
             res.json({ success: true })
