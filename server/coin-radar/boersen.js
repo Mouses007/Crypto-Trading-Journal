@@ -17,12 +17,20 @@
  * fünfhundert Coins, das Orderbuch einen je Coin. Genau diese Reihenfolge hält
  * den Lauf bei einer halben Minute statt bei zwanzig.
  *
- * ⚠ PIONEX FEHLT — und das ist kein Versäumnis, sondern ein Messergebnis.
- * `/api/v1/common/symbols` liefert 405 Märkte, davon 405 SPOT und NULL
- * Perpetuals (geprüft am 19.08.2026). Der Coin-Radar rankt Perpetuals; auf
- * Pionex gibt es dafür nichts zu messen. Die Börse bleibt deshalb das, was sie
- * im Hype-Radar schon ist: ein Listungs-Hinweis. Sollte Pionex Perps einführen,
- * ist hier ein Adapter nach demselben Muster zu ergänzen.
+ * ⚠ PIONEX FEHLT — aber nicht aus dem Grund, der hier bis zum 21.08.2026
+ * stand. Dort hiess es, `/api/v1/common/symbols` liefere 405 Märkte, davon
+ * alle SPOT und NULL Perpetuals. Der Abruf stimmte, die Schlussfolgerung
+ * nicht: das ist der SPOT-Endpunkt. Die Perpetuals liegen unter
+ * `/api/v1/market/tickers?type=PERP` — gemessen am 21.08.2026 sind es 602 —
+ * und der Handel läuft über `/uapi/v1/`. `hype-radar/listungen.js` fragt den
+ * richtigen Endpunkt längst ab; nur dieser Kommentar behauptete das Gegenteil.
+ *
+ * Was Pionex WIRKLICH fehlt, ist ein geprüfter öffentlicher Orderbuch-
+ * Endpunkt. `ausfuehrung.js` misst Slippage und Tiefe aus dem Buch; ohne eine
+ * verifizierte Quelle dafür gäbe es hier nichts zu rechnen. Die Börse bleibt
+ * deshalb ein Listungs-Hinweis — die Spalte „handelbar auf" führt sie, die
+ * Ausführungsmessung nicht. Wer den Buch-Endpunkt verifiziert, ergänzt hier
+ * einen Adapter nach demselben Muster.
  */
 
 import { holeJson as radarJson } from '../marktradar-api.js'

@@ -82,8 +82,10 @@ makes entry cheap and exit expensive is a trap no average reveals. The cheaper
 venue is named per coin, and the differences are large (measured: TREE cost 5
 basis points on Bitunix and 54 on Bitget). The two scores sit side by side and
 are never merged — "moves a lot" and "trades cheaply" are two questions. Pionex
-is absent from this measurement because it lists 405 spot markets and no
-perpetuals.
+is absent from this measurement because no public order-book endpoint is
+verified for it — not, as previously stated here, for lack of perpetuals: it
+runs 602 of them. It appears in the exchange filter, just not in the execution
+figures.
 
 **Outcome tracking**: for the top twenty of every run, what actually happened
 afterwards is recorded — 15m/1h/4h for the Coin Radar, 1/7/30 days for the Hype
