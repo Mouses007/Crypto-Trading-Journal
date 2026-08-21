@@ -536,7 +536,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="l in laeufe" :key="l.id" class="crZeile"
+                        <tr v-for="l in sichtbareLaeufe" :key="l.id" class="crZeile"
                             :class="{ aktiv: lauf && l.id === lauf.id }" @click="laufOeffnen(l)">
                             <td>{{ zeitpunkt(l.erstelltAm) }}</td>
                             <td>
@@ -554,6 +554,15 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Ältere Läufe bleiben eingeklappt: die Liste wächst mit jedem
+                 Lauf, gebraucht werden fast immer nur die letzten paar. -->
+            <div v-if="laeufe.length > VERLAUF_SICHTBAR" class="text-center">
+                <button class="btn btn-sm crMehr" @click="verlaufOffen = !verlaufOffen">
+                    <i class="uil" :class="verlaufOffen ? 'uil-angle-up' : 'uil-angle-down'"></i>
+                    {{ verlaufOffen ? t('coinradar.verlaufWeniger') : t('coinradar.verlaufMehr', { n: laeufe.length - VERLAUF_SICHTBAR }) }}
+                </button>
             </div>
 
             <!-- Wer hält sich oben: die Frage, die eine einzelne Rangliste
@@ -665,6 +674,10 @@ const boersenFilter = ref(new Set())
 const lauf = ref(null)
 const zeilen = ref([])
 const laeufe = ref([])
+/* Wie viele Läufe ohne Aufklappen zu sehen sind. */
+const VERLAUF_SICHTBAR = 5
+const verlaufOffen = ref(false)
+const sichtbareLaeufe = computed(() => (verlaufOffen.value ? laeufe.value : laeufe.value.slice(0, VERLAUF_SICHTBAR)))
 const favoriten = ref([])
 const einst = ref({
     aktiv: false, intervallStunden: 1, zeiteinheiten: ['1h', '15m'],
@@ -1705,6 +1718,19 @@ onBeforeUnmount(() => {
     font-size: .897rem;
     color: var(--grey-color, #9aa0a6);
     margin-bottom: .6rem;
+}
+
+.crMehr {
+    color: var(--grey-color, #9aa0a6);
+    font-size: .85rem;
+    border: 1px solid var(--black-bg-soft, #2a2a2a);
+    border-radius: var(--border-radius, 6px);
+    padding: .25rem .8rem;
+}
+
+.crMehr:hover {
+    color: var(--white-color, #e8eaed);
+    border-color: var(--blue-color, #4f8bff);
 }
 
 .crKlein {

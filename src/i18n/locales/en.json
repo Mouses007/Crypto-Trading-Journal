@@ -3577,6 +3577,8 @@
     "tab_verlauf": "History",
     "teilnoten": "Sub-scores",
     "verlaufHinweis": "Every run compares its ranking with the previous one. Near 1 means the list holds; near 0 means it is noise — and then it says nothing about tomorrow.",
+    "verlaufMehr": "Show {n} more runs",
+    "verlaufWeniger": "Show fewer",
     "zeigeHuerden": "Failed the gates ({n})",
     "filter_btcMit": "Tracks BTC",
     "filter_btcEigen": "Independent",

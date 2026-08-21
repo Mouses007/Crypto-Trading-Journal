@@ -3577,6 +3577,8 @@
     "tab_verlauf": "Verlauf",
     "teilnoten": "Teilnoten",
     "verlaufHinweis": "Jeder Lauf vergleicht seine Rangfolge mit der des vorigen. Nahe 1 heisst, die Liste hält; nahe 0 heisst, sie ist Rauschen — und dann sagt sie über morgen nichts.",
+    "verlaufMehr": "Weitere {n} Läufe zeigen",
+    "verlaufWeniger": "Weniger zeigen",
     "zeigeHuerden": "An den Hürden gescheitert ({n})",
     "filter_btcMit": "Läuft mit BTC",
     "filter_btcEigen": "Eigenständig",
