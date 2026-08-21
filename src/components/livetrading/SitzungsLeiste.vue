@@ -13,6 +13,12 @@
  *
  * Der Plan bleibt während der Sitzung sichtbar, aber nicht änderbar. Das ist
  * der ganze Punkt an einem Plan.
+ *
+ * Ein- und ausklappbar, weil die Leiste dem Raster Platz wegnimmt: eingeklappt
+ * bleibt die **Kopfzeile** stehen (Uhr, Plan, Beenden) und nur das Ausführliche
+ * verschwindet — Notizfeld und Vorsatz. Die Uhr zu verstecken wäre falsch: dass
+ * mitgezählt wird, ist der Sinn der Leiste. Der Zustand liegt in `localStorage`,
+ * damit das eigene Fenster ihn beim Sitzungsstart mit übernimmt.
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
@@ -42,6 +48,17 @@ const beschaeftigt = ref(false)
 const letzteBilanz = ref(null)
 
 const laeuft = computed(() => !!aktiveSitzung.value)
+
+// ── Ein-/Ausklappen ─────────────────────────────────────────────────────
+const SPEICHER = 'livetrading_sitzung_zu'
+const zu = ref((() => {
+    try { return localStorage.getItem(SPEICHER) === '1' } catch { return false }
+})())
+
+function klappe(wert) {
+    zu.value = typeof wert === 'boolean' ? wert : !zu.value
+    try { localStorage.setItem(SPEICHER, zu.value ? '1' : '0') } catch { /* egal */ }
+}
 
 const planText = computed(() => {
     const s = aktiveSitzung.value
@@ -106,6 +123,12 @@ async function beenden() {
     }
 }
 
+/** Das Fazit-Feld gehört zum Ausführlichen — wer beenden will, sieht es. */
+function beendenUmschalten() {
+    beendenOffen.value = !beendenOffen.value
+    if (beendenOffen.value) klappe(false)
+}
+
 async function abbrechen() {
     beschaeftigt.value = true
     await brichAb()
@@ -139,8 +162,13 @@ onBeforeUnmount(speichereJetzt)
         <template v-if="!laeuft">
             <div class="stZeile">
                 <span class="stTitel">{{ t('livetrading.sitzung.neu') }}</span>
+                <span class="stLuecke"></span>
+                <button type="button" class="stKlapp" :title="t(zu ? 'livetrading.sitzung.ausklappen' : 'livetrading.sitzung.einklappen')"
+                    @click="klappe()">
+                    <i class="uil" :class="zu ? 'uil-angle-down' : 'uil-angle-up'"></i>
+                </button>
             </div>
-            <div class="stZeile stPlan">
+            <div v-if="!zu" class="stZeile stPlan">
                 <label class="stFeld">
                     <span>{{ t('livetrading.sitzung.maxVerlust') }}</span>
                     <input v-model="planMaxVerlust" type="number" min="0" step="10" class="stInput" placeholder="200" />
@@ -172,16 +200,20 @@ onBeforeUnmount(speichereJetzt)
                 <span v-if="planText" class="stPlanText">{{ planText }}</span>
                 <span class="stSeit">{{ t('livetrading.sitzung.seit', { zeit: dayjs(Number(aktiveSitzung.startUnix)).format('HH:mm') }) }}</span>
                 <span class="stLuecke"></span>
-                <button type="button" class="ctl-pill" :disabled="beschaeftigt" @click="beendenOffen = !beendenOffen">
+                <button type="button" class="ctl-pill" :disabled="beschaeftigt" @click="beendenUmschalten">
                     <i class="uil uil-square"></i>{{ t('livetrading.sitzung.beenden') }}
+                </button>
+                <button type="button" class="stKlapp" :title="t(zu ? 'livetrading.sitzung.ausklappen' : 'livetrading.sitzung.einklappen')"
+                    @click="klappe()">
+                    <i class="uil" :class="zu ? 'uil-angle-down' : 'uil-angle-up'"></i>
                 </button>
             </div>
 
-            <div v-if="aktiveSitzung.planNotiz" class="stPlanNotiz">
+            <div v-if="aktiveSitzung.planNotiz && !zu" class="stPlanNotiz">
                 <i class="uil uil-notes"></i>{{ aktiveSitzung.planNotiz }}
             </div>
 
-            <textarea class="stNotizen" :value="aktiveSitzung.notizen"
+            <textarea v-if="!zu" class="stNotizen" :value="aktiveSitzung.notizen"
                 :placeholder="t('livetrading.sitzung.notizenHint')"
                 @input="setzeNotizen($event.target.value)"></textarea>
 
@@ -353,6 +385,20 @@ onBeforeUnmount(speichereJetzt)
 }
 
 .stBilanzWarn { color: #ff6b7a; font-weight: 600; }
+
+/* Der Umschalter sitzt in der Kopfzeile und soll dort nicht mitreden:
+   gleiche Höhe wie die Pillen, aber ohne Fläche. */
+.stKlapp {
+    background: none;
+    border: none;
+    color: var(--white-60);
+    padding: 0 0.2rem;
+    line-height: 1;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.stKlapp:hover { color: var(--white-87); }
 
 .stFehler {
     font-size: 0.8rem;

@@ -3302,7 +3302,9 @@
       "seit": "seit {zeit}",
       "bilanzTrades": "{n} Trades im Fenster",
       "planVerletzt": "Plan überschritten",
-      "planGehalten": "Plan eingehalten"
+      "planGehalten": "Plan eingehalten",
+      "einklappen": "Einklappen",
+      "ausklappen": "Ausklappen"
     },
     "indizes": {
       "title": "Indizes (Intraday)",
