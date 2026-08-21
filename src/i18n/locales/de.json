@@ -2356,6 +2356,24 @@
       "aiMark": "KI, ungeprüft",
       "source": "Gespeichert werden Titel, Verweis und Zeitpunkt — keine Volltextkopien. Jeder Eintrag verlinkt das Original.",
       "noAi": "Zusammenfassungen sind noch nicht eingeschaltet: die Kachel zeigt Titel und Verweise, ohne KI-Kontingent zu verbrauchen."
+    },
+    "etf": {
+      "title": "ETF-Fluss (BTC)",
+      "fluss": "Tagesfluss",
+      "bestand": "Bestand",
+      "bestandGesamt": "Bestand aller Fonds:",
+      "woche": "7 T",
+      "monat": "30 T",
+      "tagesfluss": "Gestern",
+      "fonds": "Fonds",
+      "anteil": "Anteil",
+      "rest": "Übrige Fonds",
+      "unvollstaendig": "Für einige Tage im Fenster liegt kein Wert vor — die Summe beruht auf weniger Tagen.",
+      "keinSchluessel": "Kein CryptoQuant-Schlüssel hinterlegt. Der Gratis-Tarif reicht für die Fondsbestände.",
+      "zuEinstellungen": "In den Einstellungen eintragen",
+      "wartet": "Bestände werden beim nächsten Takt geholt.",
+      "eigeneTage": "Kurve aus {n} eigenen Tagen — der Gratis-Tarif gibt nur 30 Tage her, alles Ältere wird hier gesammelt.",
+      "nachtrag": "Die Quelle korrigiert Werte im Nachhinein; die letzten Tage werden deshalb erneut geholt."
     }
   },
   "info": {
@@ -2441,6 +2459,10 @@
         {
           "h": "DEINE TRADES × MARKTREGIME",
           "p": "Die einzige Kachel, die von dir handelt und nicht vom Markt: Deine eigenen Trades werden dem Fear-&-Greed-Wert ihres Einstiegstags zugeordnet, gerechnet mit Netto-Ergebnissen nach Gebühren, Bot-Trades bleiben draussen. Je Phase siehst du Anzahl, Trefferquote, Summe, Schnitt, Profitfaktor und Long-Anteil. Blass gezeichnete Phasen haben zu wenige Trades, um etwas zu bedeuten. Wenn sich über viele Trades zeigt, dass du in einer bestimmten Marktlage regelmässig verlierst, ist das die konkreteste Regel, die diese ganze Seite hergibt."
+        },
+        {
+          "h": "ETF-FLUSS (BTC)",
+          "p": "Wie viele Bitcoin die Spot-ETFs zusammen halten und wie sich das täglich ändert. Der Zufluss IST die Bestandsänderung — eine zweite Zahl dafür gibt es nicht. Angezeigt wird in BTC, nicht in Dollar: mal Tageskurs gerechnet bewegte sich der „Zufluss\" auch an Tagen, an denen kein einziger Anteil geschaffen wurde. Gross zeigt die Kachel die einzelnen Fonds (IBIT, FBTC, GBTC, Grayscale Mini, BITB, ARKB) und weist als „Übrige Fonds\" aus, was auf die nicht einzeln abgefragten entfällt — die Gesamtsumme kommt von der Quelle und wird nie aus den Einzelnen addiert. Braucht einen CryptoQuant-Schlüssel (Gratis-Tarif genügt), einzutragen unter Einstellungen → Marktradar. Die Quelle gibt nur 30 Tage Rückblick her; alles Ältere sammelt das Journal selbst, die Kurve wächst also mit der Zeit. Ein Warndreieck an der 7- oder 30-Tage-Summe heisst: für einzelne Tage im Fenster fehlt ein Wert, die Summe beruht auf weniger Tagen."
         },
         {
           "h": "GESAMTLAGE (KI)",

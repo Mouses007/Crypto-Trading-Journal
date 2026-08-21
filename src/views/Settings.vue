@@ -1020,6 +1020,107 @@ async function kalenderHolen() {
     }
 }
 
+/* CRYPTOQUANT — Schlüssel für die ETF-Kachel.
+
+   Eigener Endpunkt statt `radarSpeichern`: Zugangsdaten gehen nie über die
+   allgemeine Einstellungs-Route, die gibt sie weder heraus noch schreibt sie.
+   Angezeigt wird deshalb nur, OB einer hinterlegt ist — der Wert selbst kommt
+   nicht zurück. */
+let cqKey = ref('')
+let cqStatus = ref(null)
+let cqMeldung = ref(null)
+let cqLaeuft = ref(false)
+
+async function cqLaden() {
+    try {
+        const { data } = await axios.get('/api/cryptoquant/status')
+        cqStatus.value = data
+        // Platzhalter statt Klartext: der Server gibt den Schlüssel nicht her
+        cqKey.value = data.schluesselGesetzt ? '••••••••••••••••' : ''
+    } catch (e) {
+        cqStatus.value = null
+    }
+}
+
+async function cqSpeichern() {
+    cqLaeuft.value = true
+    cqMeldung.value = null
+    try {
+        await axios.post('/api/cryptoquant/settings', { cryptoquantApiKey: cqKey.value })
+        cqMeldung.value = { ok: true, text: t('common.saved') }
+        await cqLaden()
+    } catch (e) {
+        cqMeldung.value = { ok: false, text: e.response?.data?.error || e.message }
+    } finally {
+        cqLaeuft.value = false
+    }
+}
+
+/** Ein einziger Abruf mit limit=1 — der billigste Weg, den Schlüssel zu prüfen. */
+async function cqPruefen() {
+    cqLaeuft.value = true
+    cqMeldung.value = null
+    try {
+        const { data } = await axios.post('/api/cryptoquant/test', { cryptoquantApiKey: cqKey.value })
+        cqMeldung.value = {
+            ok: true,
+            text: `Schlüssel gültig — ${Number(data.bestand).toLocaleString('de-CH')} BTC in allen Fonds `
+                + `(${dayjs(data.tag).format('DD.MM.YYYY')}).`,
+        }
+    } catch (e) {
+        cqMeldung.value = { ok: false, text: e.response?.data?.error || e.message }
+    } finally {
+        cqLaeuft.value = false
+    }
+}
+
+/**
+ * Von Hand nachführen.
+ *
+ * Der Knopf STARTET nur; gearbeitet wird auf dem Server weiter, auch wenn man
+ * die Seite verlässt. Auf die Antwort zu warten war der erste Entwurf und ein
+ * Fehler: sieben Fonds mit sieben Sekunden Abstand dauern knapp eine Minute,
+ * und was in dieser Minute zwischen Browser und Server passiert — ein
+ * Serverneustart, ein Gegenstück mit kurzem Zeitlimit — landet als „Network
+ * Error" beim Nutzer, obwohl der Lauf sauber durchläuft. Also fragen wir den
+ * Fortschritt ab, statt die Verbindung offen zu halten.
+ */
+async function cqHolen() {
+    cqLaeuft.value = true
+    cqMeldung.value = null
+    try {
+        const { data } = await axios.post('/api/cryptoquant/aktualisieren')
+        if (data.uebersprungen) {
+            cqMeldung.value = { ok: false, text: `Übersprungen: ${data.uebersprungen}` }
+            cqLaeuft.value = false
+            return
+        }
+        await cqVerfolgen()
+    } catch (e) {
+        cqMeldung.value = { ok: false, text: e.response?.data?.error || e.message }
+        cqLaeuft.value = false
+    }
+}
+
+/** Fortschritt abfragen, bis der Lauf steht. Abbruch nach drei Minuten. */
+async function cqVerfolgen() {
+    const ende = Date.now() + 3 * 60 * 1000
+    while (Date.now() < ende) {
+        await new Promise(r => setTimeout(r, 2500))
+        await cqLaden()
+        if (!cqStatus.value?.laeuft) {
+            cqMeldung.value = cqStatus.value?.fehler
+                ? { ok: false, text: cqStatus.value.fehler.text }
+                : { ok: true, text: `Fertig — ${cqStatus.value?.tage || 0} Tage eingelagert.` }
+            cqLaeuft.value = false
+            return
+        }
+    }
+    // Kein Fehler, nur keine Geduld mehr: der Lauf arbeitet weiter
+    cqMeldung.value = { ok: true, text: 'Läuft weiter im Hintergrund — Seite später neu laden.' }
+    cqLaeuft.value = false
+}
+
 /* LIVE-RECORDER — serverseitige Aufzeichnung, deshalb eigene Felder mit
    explizitem Speichern (der Server übernimmt sie erst beim Neuabgleich). */
 let recExpanded = ref(false)
@@ -1357,6 +1458,9 @@ let editGroupColor = ref('')
 onMounted(async () => {
     await useInitTooltip()
     await ladeBenachrichtigungen()
+    // Nur der Zustand (Schlüssel gesetzt? wie viele Tage eingelagert?) — der
+    // Schlüssel selbst kommt nie zurück
+    await cqLaden()
 })
 
 /* PROFILE */
@@ -4034,6 +4138,71 @@ onBeforeMount(async () => {
                         </button>
                         <span v-if="radarMeldung" class="ms-2 small text-muted">{{ radarMeldung }}</span>
                     </div>
+
+                    <!--=============== ETF-KACHEL (CRYPTOQUANT) ===============-->
+                    <hr class="mt-4" />
+                    <p class="fw-bold mb-1">ETF-Fluss · CryptoQuant-Schlüssel</p>
+                    <p class="fw-lighter">
+                        Für die Kachel „ETF-Fluss": wie viele Bitcoin die Spot-ETFs halten und wie sich das
+                        täglich ändert. Den <strong>Gratis-Tarif</strong> („Basic") reicht dafür — die Fondsdaten
+                        zählen bei CryptoQuant als Marktdaten und sind auf jedem Tarif offen. Schlüssel holen
+                        unter <code>cryptoquant.com/settings/api</code>.
+                    </p>
+                    <p class="fw-lighter" style="font-size:0.82rem;">
+                        Der Gratis-Tarif gibt nur <strong>30 Tage</strong> Rückblick her und erlaubt 10 Anfragen je
+                        Minute. Geholt wird deshalb im Hintergrund, höchstens alle sechs Stunden, und alles
+                        Geholte bleibt hier gespeichert — die Kurve wächst mit der Zeit über die 30 Tage hinaus.
+                        Die Kachel selbst fragt nie bei CryptoQuant nach, sie liest nur den eigenen Bestand.
+                    </p>
+
+                    <div class="row align-items-center mt-2">
+                        <div class="col-12 col-md-4">
+                            API-Schlüssel
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Verschlüsselt gespeichert. Angezeigt wird nur, ob einer hinterlegt ist.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <input type="password" class="form-control" v-model="cqKey"
+                                placeholder="CryptoQuant API Key" autocomplete="off" />
+                        </div>
+                    </div>
+
+                    <div class="mt-2">
+                        <button class="btn btn-outline-primary btn-sm me-2" :disabled="cqLaeuft" @click="cqSpeichern">
+                            <span v-if="cqLaeuft" class="spinner-border spinner-border-sm me-2"></span>
+                            Speichern
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm me-2" :disabled="cqLaeuft" @click="cqPruefen">
+                            Schlüssel prüfen
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" :disabled="cqLaeuft || !cqStatus?.schluesselGesetzt"
+                            @click="cqHolen">
+                            <span v-if="cqStatus?.laeuft" class="spinner-border spinner-border-sm me-2"></span>
+                            <template v-if="cqStatus?.fortschritt">
+                                {{ cqStatus.fortschritt.fertig }} von {{ cqStatus.fortschritt.gesamt }} Fonds
+                            </template>
+                            <template v-else>Jetzt nachführen</template>
+                        </button>
+                        <span v-if="cqMeldung" class="ms-2 small" :class="cqMeldung.ok ? 'text-success' : 'text-danger'">
+                            {{ cqMeldung.text }}
+                        </span>
+                    </div>
+
+                    <p v-if="cqStatus" class="fw-lighter mt-2 mb-0" style="font-size:0.82rem;">
+                        <template v-if="cqStatus.tage">
+                            {{ cqStatus.tage }} Tage eingelagert, letzter Stand
+                            {{ cqStatus.letzterTag ? dayjs(cqStatus.letzterTag).format('DD.MM.YYYY') : '—' }}.
+                        </template>
+                        <template v-else-if="cqStatus.schluesselGesetzt">
+                            Noch nichts eingelagert — der erste Lauf holt 30 Tage.
+                        </template>
+                        <template v-else>Kein Schlüssel hinterlegt, die Kachel bleibt leer.</template>
+                        <span v-if="cqStatus.fehler" class="text-danger ms-1">
+                            Letzter Fehler ({{ cqStatus.fehler.fonds }}): {{ cqStatus.fehler.text }}
+                        </span>
+                    </p>
+
 
                     <!--=============== NACHRICHTENQUELLEN ===============-->
                     <hr class="mt-4" />

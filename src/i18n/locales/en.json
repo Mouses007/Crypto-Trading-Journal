@@ -2356,6 +2356,24 @@
       "aiMark": "AI, unverified",
       "source": "Only title, link and timestamp are stored — no full-text copies. Every entry links the original.",
       "noAi": "Summaries are not enabled yet: the tile shows titles and links without spending any AI quota."
+    },
+    "etf": {
+      "title": "ETF flow (BTC)",
+      "fluss": "Daily flow",
+      "bestand": "Holdings",
+      "bestandGesamt": "Holdings across all funds:",
+      "woche": "7 d",
+      "monat": "30 d",
+      "tagesfluss": "Yesterday",
+      "fonds": "Fund",
+      "anteil": "Share",
+      "rest": "Other funds",
+      "unvollstaendig": "Some days in the window have no value — the sum rests on fewer days.",
+      "keinSchluessel": "No CryptoQuant key stored. The free tier covers fund holdings.",
+      "zuEinstellungen": "Enter it in settings",
+      "wartet": "Holdings will be fetched on the next cycle.",
+      "eigeneTage": "Curve built from {n} days of our own — the free tier only reaches back 30 days, everything older is collected here.",
+      "nachtrag": "The source revises values afterwards, so the last few days are re-fetched."
     }
   },
   "info": {
@@ -2441,6 +2459,10 @@
         {
           "h": "YOUR TRADES × MARKET REGIME",
           "p": "The only card that is about you rather than the market: your own trades are grouped by the Fear & Greed value of their entry day, calculated on net results after fees, bot trades excluded. Per phase you get count, hit rate, total, average, profit factor and long share. Faded phases have too few trades to mean anything. If, across many trades, you consistently lose in a particular market state, that is the most concrete rule this whole page can give you."
+        },
+        {
+          "h": "ETF FLOW (BTC)",
+          "p": "How many bitcoin the spot ETFs hold in total and how that changes day by day. The inflow IS the change in holdings — there is no second number for it. Shown in BTC, not dollars: multiplied by the daily price, the \"inflow\" would move on days when not a single share was created. Enlarged, the tile lists the individual funds (IBIT, FBTC, GBTC, Grayscale Mini, BITB, ARKB) and reports the remainder as \"Other funds\" — the total comes from the source and is never summed up from the individual ones. Requires a CryptoQuant key (the free tier is enough), entered under Settings → Marktradar. The source only reaches back 30 days; everything older the journal collects itself, so the curve grows over time. A warning triangle next to the 7- or 30-day sum means some days in the window have no value and the sum rests on fewer days."
         },
         {
           "h": "OVERALL PICTURE (AI)",

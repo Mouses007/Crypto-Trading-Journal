@@ -31,6 +31,8 @@ export const SETTINGS_SENSITIVE_FIELDS = [
     'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
     'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen', 'aiKeyPerplexity',
     'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey', 'authPasswordHash', 'aiKeyCustom',
+    // CryptoQuant (ETF-Kachel): geschrieben nur über /api/cryptoquant/settings
+    'cryptoquantApiKey',
     // SMTP-Passwort: geschrieben nur über /api/mail/settings (verschlüsselt)
     'mailPasswort'
 ]

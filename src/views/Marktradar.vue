@@ -30,6 +30,7 @@ import KachelPiCycle from '../components/radar/KachelPiCycle.vue'
 import KachelMechanik from '../components/radar/KachelMechanik.vue'
 import KachelMakro from '../components/radar/KachelMakro.vue'
 import KachelLage from '../components/radar/KachelLage.vue'
+import KachelEtf from '../components/radar/KachelEtf.vue'
 import { liveSymbol } from '../stores/live.js'
 // Für die Alarm-Einstellungen: currentUser hält den Einstellungssatz
 import { currentUser } from '../stores/globals.js'
@@ -57,6 +58,7 @@ const KOMPONENTEN = {
     mechanik: KachelMechanik,
     makro: KachelMakro,
     lage: KachelLage,
+    etf: KachelEtf,
 }
 
 const PARAM_KEY = 'marktradar_params'

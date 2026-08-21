@@ -14,6 +14,7 @@ import { setupKalenderRoutes, stopKalender } from './server/marktradar-kalender.
 import { setupLivetradingRoutes } from './server/livetrading-api.js'
 import { setupLageRoutes } from './server/marktradar-lage.js'
 import { setupNewsRoutes, startNewsTakt, stopNews } from './server/marktradar-news.js'
+import { setupCryptoquantRoutes, stopCryptoquant } from './server/cryptoquant-api.js'
 import { setupBenachrichtigungsRoutes, startBenachrichtigungsTakt, stopBenachrichtigungen } from './server/benachrichtigungen.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
 import { setupAiModelRoutes } from './server/ai-models.js'
@@ -144,6 +145,9 @@ const startIndex = async () => {
     setupLivetradingRoutes(app);
     setupNewsRoutes(app);
     startNewsTakt();
+    // ETF-Bestände: eigene Datei, weil sie als einzige Radar-Quelle einen
+    // Schlüssel braucht — und nach dem Marktradar, dessen Cache sie mitbenutzt.
+    setupCryptoquantRoutes(app);
     startHypeTakt();
     startWachhundTakt();
     startCoinRadarTakt();
@@ -308,7 +312,7 @@ const startIndex = async () => {
             // ist einzeln gesichert, der nächste Start nimmt ihn wieder auf.
             try { stopRanglisteTakt() } catch (e) { /* trotzdem beenden */ }
             try { stopMarktradar() } catch (e) { /* trotzdem beenden */ }
-            try { stopKalender(); stopNews(); stopBenachrichtigungen() } catch (e) { /* trotzdem beenden */ }
+            try { stopKalender(); stopNews(); stopBenachrichtigungen(); stopCryptoquant() } catch (e) { /* trotzdem beenden */ }
             process.exit(0)
         })
     }

@@ -1657,6 +1657,14 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'radarKalenderImpact', (t) => t.text('radarKalenderImpact').defaultTo('medium'))
 
     /*
+     * CryptoQuant-Schlüssel für die ETF-Kachel. Verschlüsselt wie alle
+     * Zugangsdaten, geschrieben nur über /api/cryptoquant/settings.
+     * Ohne Schlüssel bleibt die Kachel leer und sagt das auch — der
+     * Gratis-Tarif der Quelle reicht für die Fondsbestände.
+     */
+    await addColumnIfNotExists('settings', 'cryptoquantApiKey', (t) => t.text('cryptoquantApiKey').defaultTo(''))
+
+    /*
      * Live-Trading-Fenster. Wer nur beobachtet und nicht handelt, braucht die
      * Seite nicht — dann sollen auch der Startknopf auf dem Marktradar und der
      * Menüeintrag verschwinden, statt als toter Weg herumzustehen. Vorgabe an:

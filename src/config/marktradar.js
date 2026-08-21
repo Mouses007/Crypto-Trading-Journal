@@ -31,7 +31,7 @@ import { baueKachelListe, macheSortierer } from './kachel-registry.js'
  */
 export const STANDARD_REIHENFOLGE = [
     'mechanik', 'funding', 'lsoi', 'liq24', 'fng', 'dom',
-    'picycle', 'altseason', 'markt', 'rainbow', 'regime', 'rsi', 'makro',
+    'picycle', 'altseason', 'markt', 'rainbow', 'regime', 'rsi', 'makro', 'etf',
     // Die Zusammenfassung steht am Ende: sie liest die anderen Kacheln, also
     // gehört sie hinter sie — und nachrückende Ids landen ohnehin dort.
     'lage',
@@ -179,6 +179,19 @@ const DEFINITIONEN = [
         intervallMs: 5 * 60 * 1000,
         spalten: 1,
         quelle: 'die übrigen Kacheln dieser Seite · Einordnung durch die eingestellte KI',
+    },
+    {
+        id: 'etf',
+        titleKey: 'marktradar.etf.title',
+        icon: 'uil uil-university',
+        endpunkt: '/api/marktradar/etf',
+        // Der Endpunkt liest nur den eigenen Bestand — der Abruf bei
+        // CryptoQuant läuft im Hintergrundtakt, höchstens alle sechs Stunden.
+        // Häufiger nachzusehen kostet nichts und ändert meist nichts: die
+        // Quelle liefert einmal täglich gegen 12:00 UTC.
+        intervallMs: 30 * 60 * 1000,
+        spalten: 1,
+        quelle: 'CryptoQuant (Gratis-Tarif) · eigener Bestand ab Einrichtung',
     },
     {
         id: 'rsi',
