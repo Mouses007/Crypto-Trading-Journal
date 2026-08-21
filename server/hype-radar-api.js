@@ -551,7 +551,18 @@ export function startWachhundTakt() {
         if (laeuft) return
         try {
             const einst = await leseEinstellungen()
-            const minuten = Math.max(5, Number(einst.wachhundIntervallMin) || 15)
+            /*
+             * 0 heisst AUS — und das braucht eine eigene Abfrage.
+             *
+             * `Number(0) || 15` ergäbe 15, weil die Null falsy ist: Der
+             * Wachhund liefe genau dann weiter, wenn er abgeschaltet werden
+             * soll. Dieselbe Falle steckte an mehreren Stellen im Haus und ist
+             * am 21.08.2026 überall aufgeräumt worden.
+             */
+            const roh = Number(einst.wachhundIntervallMin)
+            if (roh === 0) return
+
+            const minuten = Math.max(5, Number.isFinite(roh) && roh > 0 ? roh : 15)
             if (!(await beansprucheAufgabe('hype_wachhund', minuten * 60 * 1000))) return
 
             laeuft = true

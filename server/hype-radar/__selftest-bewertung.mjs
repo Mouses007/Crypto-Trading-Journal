@@ -9,7 +9,8 @@
  * Aufruf: node server/hype-radar/__selftest-bewertung.mjs
  */
 import {
-    bewerte, noteSozial, noteVolumen, noteQuellen, noteNarrativ, noteNeuheit, istTrittbrettfahrer, BOOST_DECKEL,
+    bewerte, noteSozial, noteVolumen, noteQuellen, noteNarrativ, noteNeuheit, istTrittbrettfahrer,
+    BOOST_DECKEL, REDDIT_DECKEL,
     STANDARD_GEWICHTE,
 } from './bewertung.js'
 import { fuehreZusammen, evidenzDomaenen, normSymbol, normChain } from './quellen.js'
@@ -39,9 +40,11 @@ pruefe('keine Quelle ist 0', noteQuellen({}) === 0)
 
 // ── Zusammenführung ─────────────────────────────────────────────────────
 const funde = [
-    { symbol: 'PEPE', name: '', chain: 'ethereum', contract: '0xAAA', pair: '', quelle: { quelle: 'coingecko' }, markt: { preisUsd: 1 }, sozial: { stimmen: 10 } },
-    { symbol: 'PEPE', name: 'Pepe', chain: 'ethereum', contract: '0xaaa', pair: 'p1', quelle: { quelle: 'reddit-CryptoMoonShots' }, markt: {}, sozial: { stimmen: 15 } },
-    { symbol: 'WIF', name: 'dogwifhat', chain: 'solana', contract: '', pair: '', quelle: { quelle: 'reddit-CryptoCurrency' }, markt: {}, sozial: { stimmen: 5 } },
+    { symbol: 'PEPE', name: '', chain: 'ethereum', contract: '0xAAA', pair: '', quelle: { quelle: 'coingecko' }, markt: { preisUsd: 1 }, sozial: { boostGesamt: 10 } },
+    // `geckoterminal` (onchain), damit PEPE zwei VERSCHIEDENE Domänen hat —
+    // CoinGecko und die Boost-Liste zählen beide zu `discovery`.
+    { symbol: 'PEPE', name: 'Pepe', chain: 'ethereum', contract: '0xaaa', pair: 'p1', quelle: { quelle: 'geckoterminal' }, markt: {}, sozial: { boostGesamt: 15 } },
+    { symbol: 'WIF', name: 'dogwifhat', chain: 'solana', contract: '', pair: '', quelle: { quelle: 'geckoterminal' }, markt: {}, sozial: { boostGesamt: 5 } },
 ]
 const zusammen = fuehreZusammen(funde)
 pruefe('gleicher Vertrag wird zusammengefasst, Schreibweise egal', zusammen.length === 2,
@@ -49,7 +52,7 @@ pruefe('gleicher Vertrag wird zusammengefasst, Schreibweise egal', zusammen.leng
 const pepe = zusammen.find((z) => z.symbol === 'PEPE')
 pruefe('fehlender Name wird nachgetragen', pepe.name === 'Pepe')
 pruefe('fehlendes Paar wird nachgetragen', pepe.pair === 'p1')
-pruefe('Zahlen werden addiert', pepe.sozial.stimmen === 25)
+pruefe('Zahlen werden addiert', pepe.sozial.boostGesamt === 25)
 pruefe('zwei unabhängige Quellen erkannt', pepe.quellenAnzahl === 2)
 
 /*
@@ -72,13 +75,13 @@ pruefe('zwei Endpunkte eines Anbieters zählen als eine Quelle',
  */
 const ohneKette = fuehreZusammen([
     { symbol: 'PEPE', chain: 'solana', contract: '', quelle: { quelle: 'geckoterminal' }, markt: { volumen24h: 5 }, sozial: {} },
-    { symbol: 'PEPE', chain: '', contract: '', quelle: { quelle: 'coingecko' }, markt: {}, sozial: { stimmen: 7 } },
+    { symbol: 'PEPE', chain: '', contract: '', quelle: { quelle: 'coingecko' }, markt: {}, sozial: { boostGesamt: 7 } },
 ])
 pruefe('Fund ohne Kette schliesst sich dem mit Kette an', ohneKette.length === 1,
     JSON.stringify(ohneKette.map((k) => `${k.symbol}|${k.chain}`)))
 pruefe('und wird als zweite Quelle gezählt', ohneKette[0]?.quellenAnzahl === 2)
 pruefe('die Kette bleibt erhalten', ohneKette[0]?.chain === 'solana')
-pruefe('Sozialdaten werden übernommen', ohneKette[0]?.sozial?.stimmen === 7)
+pruefe('Sozialdaten werden übernommen', ohneKette[0]?.sozial?.boostGesamt === 7)
 
 /*
  * Aber nur bei Eindeutigkeit: „PEPE" gibt es auf vier Ketten. Ein falsch
@@ -137,12 +140,12 @@ pruefe('Grossschreibung der Adresse trennt nicht', gleich.length === 1 && gleich
  */
 const ohneAdresse = fuehreZusammen([
     { symbol: 'XYZ', chain: 'solana', contract: '0xD', quelle: { quelle: 'dexscreener' }, markt: { volumen24h: 5 }, sozial: {} },
-    { symbol: 'XYZ', chain: 'solana', contract: '', quelle: { quelle: 'coingecko' }, markt: {}, sozial: { stimmen: 9 } },
+    { symbol: 'XYZ', chain: 'solana', contract: '', quelle: { quelle: 'coingecko' }, markt: {}, sozial: { boostGesamt: 9 } },
 ])
 pruefe('Fund ohne Adresse schliesst sich dem mit Adresse an', ohneAdresse.length === 1,
     JSON.stringify(ohneAdresse.map((k) => k.contract)))
 pruefe('und wird als zweite Quelle gezählt', ohneAdresse[0]?.quellenAnzahl === 2)
-pruefe('Sozialdaten wandern mit', ohneAdresse[0]?.sozial?.stimmen === 9)
+pruefe('Sozialdaten wandern mit', ohneAdresse[0]?.sozial?.boostGesamt === 9)
 
 // Aber nur bei Eindeutigkeit: zwei Verträge, gleiches Kürzel, einer ohne.
 const mehrdeutigeAdresse = fuehreZusammen([
@@ -171,14 +174,37 @@ pruefe('zwei On-chain-Aggregatoren sind EIN Beleg',
 pruefe('die Anbieterzahl bleibt trotzdem sichtbar',
     zweiAggregatoren[0].anbieterAnzahl === 2, String(zweiAggregatoren[0].anbieterAnzahl))
 
-// Verschiedene Domänen zählen dagegen einzeln — das ist der Sinn der Zahl.
+/*
+ * Verschiedene Domänen zählen dagegen einzeln — das ist der Sinn der Zahl.
+ *
+ * Es sind DREI: `onchain` (DexScreener, GeckoTerminal, pump.fun),
+ * `discovery` (CoinGecko, CoinPaprika, Boost-Listen) und `social` (Reddit).
+ * `news` gibt es seit dem Wegfall von CryptoPanic nicht mehr — die geprüften
+ * Nachrichten-Feeds schreiben über Bitcoin und Makro, nicht über junge
+ * Projekte, und eine Quelle, die den Kandidaten nie nennt, ist keine.
+ */
 const dreiDomaenen = fuehreZusammen([
     { symbol: 'B', chain: 'base', contract: '0x2', quelle: { quelle: 'geckoterminal' }, markt: {}, sozial: {} },
     { symbol: 'B', chain: 'base', contract: '0x2', quelle: { quelle: 'coingecko' }, markt: {}, sozial: {} },
-    { symbol: 'B', chain: 'base', contract: '0x2', quelle: { quelle: 'reddit-x' }, markt: {}, sozial: {} },
+    { symbol: 'B', chain: 'base', contract: '0x2', quelle: { quelle: 'reddit-CryptoMoonShots' }, markt: {}, sozial: {} },
 ])
 pruefe('Handel, Entdeckung und Gerede sind drei Belege',
     dreiDomaenen[0].quellenAnzahl === 3, JSON.stringify(dreiDomaenen[0].evidenzDomaenen))
+pruefe('die neuen Quellen landen in der richtigen Domäne',
+    evidenzDomaenen([{ quelle: 'pumpfun' }]).join() === 'onchain'
+    && evidenzDomaenen([{ quelle: 'coinpaprika' }]).join() === 'discovery'
+    && evidenzDomaenen([{ quelle: 'reddit-SolanaMemeCoins' }]).join() === 'social',
+    [evidenzDomaenen([{ quelle: 'pumpfun' }]), evidenzDomaenen([{ quelle: 'coinpaprika' }]),
+     evidenzDomaenen([{ quelle: 'reddit-x' }])].join(' | '))
+/*
+ * pump.fun ist bewusst KEINE eigene Domäne: Eine Bindungskurve ist gehandelte
+ * Kette wie ein Raydium-Pool. Sie getrennt zu zählen wäre derselbe Fehler,
+ * den das Audit bei DexScreener und GeckoTerminal behoben hat.
+ */
+pruefe('pump.fun und GeckoTerminal bleiben EIN Beleg',
+    evidenzDomaenen([{ quelle: 'pumpfun' }, { quelle: 'geckoterminal' }]).length === 1)
+pruefe('CoinPaprika und CoinGecko bleiben EIN Beleg',
+    evidenzDomaenen([{ quelle: 'coinpaprika' }, { quelle: 'coingecko' }]).length === 1)
 
 /*
  * Bezahlte Sichtbarkeit ist ausdrücklich KEIN Handelsbeleg. Wer sich einen
@@ -339,30 +365,47 @@ pruefe('gekaufte Aufmerksamkeit ist gedeckelt',
     noteSozial({ markt: { boosts: 100000 } }) <= BOOST_DECKEL,
     String(noteSozial({ markt: { boosts: 100000 } })))
 pruefe('und reicht nie in die obere Hälfte', BOOST_DECKEL < 50)
-pruefe('echte Zustimmung schlägt gekaufte',
-    noteSozial({ sozial: { stimmen: 5000 } }) > noteSozial({ markt: { boosts: 100000 } }))
-pruefe('der Deckel gilt nur für den gekauften Anteil',
-    noteSozial({ sozial: { galaxyScore: 80 }, markt: { boosts: 100000 } }) === 80)
-const wenig = noteSozial({ sozial: { stimmen: 10 } })
-const viel = noteSozial({ sozial: { stimmen: 1000 } })
-pruefe('mehr Zustimmung gibt mehr Note', viel > wenig)
-pruefe('Zustimmung wirkt gedämpft, nicht linear', viel < wenig * 10,
-    `${wenig} → ${viel}`)
 /*
- * Gekaufte Sichtbarkeit darf nicht so schwer wiegen wie echte Zustimmung —
- * sonst kauft man sich in den Bericht.
+ * `noteSozial` kennt seit dem 21.08.2026 zwei Signale: die POSITION eines
+ * Reddit-Beitrags und gekaufte Sichtbarkeit. Beide sind gedeckelt, und beide
+ * Deckel sind Aussagen, keine Versehen.
+ *
+ * Die Felder der entfernten Bezahlquellen (`galaxyScore`, `altRank`,
+ * `panicScore`) dürfen NICHT mehr wirken — sonst hinge die Bewertung an
+ * Daten, die nie wieder ankommen.
  */
-const gekauft = noteSozial({ sozial: { boostGesamt: 1000 } })
-const echt = noteSozial({ sozial: { stimmen: 1000 } })
-pruefe('gekaufte Sichtbarkeit wiegt weniger als echte Zustimmung', gekauft < echt,
-    `boost ${gekauft} vs stimmen ${echt}`)
+pruefe('Felder der entfernten Bezahlquellen wirken nicht mehr',
+    noteSozial({ sozial: { galaxyScore: 80, panicScore: 900, altRank: 1 } }) === 0)
+pruefe('eine erfundene Stimmenzahl wirkt ebenfalls nicht',
+    noteSozial({ sozial: { stimmen: 5000 } }) === 0)
+
+// Reddit: Platz 1 wiegt schwer, Platz 50 kaum noch.
+const platz1 = noteSozial({ sozial: { redditRang: 1 } })
+const platz50 = noteSozial({ sozial: { redditRang: 50 } })
+pruefe('vorderer Platz gibt mehr als hinterer', platz1 > platz50, `${platz1} vs ${platz50}`)
+pruefe('und der vordere Platz erreicht höchstens seinen Deckel',
+    platz1 === REDDIT_DECKEL, String(platz1))
+pruefe('ein Werbe-Unterforum trägt niemanden allein an die Spitze', REDDIT_DECKEL < 100)
+pruefe('unsinniger Rang wirkt nicht', noteSozial({ sozial: { redditRang: 0 } }) === 0
+    && noteSozial({ sozial: { redditRang: -3 } }) === 0)
+
+pruefe('gekaufte Aufmerksamkeit zählt, erreicht aber höchstens ihren Deckel',
+    noteSozial({ sozial: { boostGesamt: 1e9 }, markt: { boosts: 1e9 } }) === BOOST_DECKEL,
+    String(noteSozial({ sozial: { boostGesamt: 1e9 }, markt: { boosts: 1e9 } })))
+pruefe('echter Zuspruch schlägt gekauften',
+    noteSozial({ sozial: { redditRang: 1 } }) > noteSozial({ markt: { boosts: 1e9 } }))
+const wenigBoost = noteSozial({ sozial: { boostGesamt: 10 } })
+const vielBoost = noteSozial({ sozial: { boostGesamt: 1000 } })
+pruefe('mehr gekaufte Sichtbarkeit gibt mehr Note', vielBoost > wenigBoost)
+pruefe('sie wirkt gedämpft, nicht linear', vielBoost < wenigBoost * 10,
+    `${wenigBoost} → ${vielBoost}`)
 
 // ── Gesamtnote ──────────────────────────────────────────────────────────
 const stark = bewerte({
     symbol: 'AGENT', name: 'AI Agent Protocol',
-    quellenAnzahl: 4,
+    quellenAnzahl: 3,        // drei Domänen sind das Maximum
     markt: { volumen24h: 2400, volumen1h: 400, paarAlterStunden: 48 },
-    sozial: { stimmen: 2000 },
+    sozial: { redditRang: 1 },
 })
 const schwach = bewerte({
     symbol: 'ZZZ', name: '',
@@ -370,7 +413,25 @@ const schwach = bewerte({
     markt: { volumen24h: 100, paarAlterStunden: 24 * 200 },
     sozial: {},
 })
-pruefe('starker Fund bekommt eine hohe Note', stark.hypeScore > 70, String(stark.hypeScore))
+/*
+ * Die erreichbare Höchstnote ist gedeckelt, und der Test rechnet sie nach
+ * statt sie zu behaupten.
+ *
+ * `sozial` wiegt 30, erreicht aber höchstens REDDIT_DECKEL; `quellen` wiegt
+ * 15 bei drei Domänen, also höchstens 75. Volumen, Narrativ und Neuheit
+ * können voll ausschlagen. Wer die Deckel später ändert, sieht hier sofort,
+ * dass sich die Skala mitbewegt — statt es an einer festen Zahl zu übersehen.
+ */
+pruefe('starker Fund bekommt eine hohe Note', stark.hypeScore > 45, String(stark.hypeScore))
+const maximum = bewerte({
+    symbol: 'AI Agent', name: 'AI Agent', quellenAnzahl: 3,
+    markt: { volumen24h: 1e9, volumen1h: 1e9, paarAlterStunden: 1 },
+    sozial: { redditRang: 1 },
+})
+const erwartet = (REDDIT_DECKEL * 30 + 100 * 25 + 75 * 15 + 100 * 20 + 100 * 10) / 100
+pruefe('die erreichbare Höchstnote entspricht der Rechnung',
+    Math.abs(maximum.hypeScore - erwartet) <= 1,
+    `gemessen ${maximum.hypeScore}, gerechnet ${erwartet}`)
 pruefe('schwacher Fund bekommt eine niedrige Note', schwach.hypeScore < 25, String(schwach.hypeScore))
 pruefe('Note bleibt im Bereich 0..100',
     stark.hypeScore <= 100 && schwach.hypeScore >= 0)
@@ -392,7 +453,7 @@ pruefe('nur Quellen gefüllt → Note entspricht dem Quellenanteil',
     schief.hypeScore === 20, String(schief.hypeScore))
 
 // Kaputte Eingaben dürfen keine NaN-Note erzeugen.
-const murks = bewerte({ symbol: 'A', quellenAnzahl: 'viele', markt: { volumen24h: 'x' }, sozial: { stimmen: null } })
+const murks = bewerte({ symbol: 'A', quellenAnzahl: 'viele', markt: { volumen24h: 'x' }, sozial: { boostGesamt: null, redditRang: 'x' } })
 pruefe('unbrauchbare Eingaben ergeben eine gültige Zahl',
     Number.isFinite(murks.hypeScore) && murks.hypeScore >= 0)
 

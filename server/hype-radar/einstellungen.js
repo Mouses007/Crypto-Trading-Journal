@@ -17,8 +17,6 @@ import { STANDARD_SICHERHEIT } from './sicherheit.js'
 
 /** Spalten in `settings`, in denen die Schlüssel der Zusatzquellen liegen. */
 const SCHLUESSEL_SPALTEN = {
-    cryptopanic: 'hypeKeyCryptopanic',
-    lunarcrush: 'hypeKeyLunarcrush',
     coingecko: 'hypeKeyCoingecko',
     // Zustellgeheimnisse des Wachhunds. Die Webhook-Adresse gehört dazu:
     // bei Home Assistant IST die Adresse das Geheimnis.
@@ -31,13 +29,22 @@ export const VORGABEN = {
     aktiv: false,                    // Aus. Wer es will, schaltet es ein.
     intervallStunden: 6,
     ketten: ['solana', 'eth', 'base', 'bsc'],
+    /*
+     * Alle sechs laufen OHNE Schlüssel — das ist die Aufnahmebedingung.
+     *
+     * CryptoPanic und LunarCrush sind am 21.08.2026 geflogen, weil beide
+     * ihren Gratis-Zugang abgeschafft haben. Reddit ist am selben Tag
+     * zurückgekommen, nachdem sich zeigte, dass nur die JSON-Schnittstelle zu
+     * ist und der RSS-Feed offen steht. Begründungen im Kopf von `quellen.js`.
+     *
+     * `pumpfun` ist als Vorgabe AN: Es ist die einzige Quelle, die einen Token
+     * sieht, bevor er einen DEX-Pool hat. `reddit` ebenfalls, weil es die
+     * einzige Quelle der Domäne `social` ist — ohne sie fehlt der Bewertung
+     * eine ganze Achse.
+     */
     quellen: {
         coingecko: true, dexscreener: true, geckoterminal: true,
-        // Aus, weil sie Zugangsdaten brauchen. Ein Schalter, der ohne
-        // Zugangsdaten „an" steht, erzeugt nur Fehlermeldungen.
-        // Reddit gehört seit dem OAuth-Zwang in diese Gruppe (siehe
-        // `ausReddit` in quellen.js) — der freie Zugang ist zu.
-        reddit: false, cryptopanic: false, lunarcrush: false,
+        pumpfun: true, coinpaprika: true, reddit: true,
     },
     gewichte: STANDARD_GEWICHTE,
     narrative: STANDARD_NARRATIVE,
@@ -118,6 +125,21 @@ export async function leseEinstellungen() {
         e[k] = (typeof v === 'object' && !Array.isArray(v) && typeof VORGABEN[k] === 'object' && !Array.isArray(VORGABEN[k]))
             ? { ...VORGABEN[k], ...v }
             : v
+    }
+
+    /*
+     * Quellen, die es nicht mehr gibt, aus dem Gespeicherten werfen.
+     *
+     * Das Auffüllen oben behält jeden gespeicherten Schlüssel — auch die drei
+     * am 21.08.2026 entfernten. Die Oberfläche zeichnet ihre Schalter aus
+     * genau diesem Objekt und zeigte sonst weiter `reddit`, `cryptopanic` und
+     * `lunarcrush` an, für die es im Lauf gar keine Aufgabe mehr gibt. Statt
+     * einer Datenwanderung: beim Lesen aussortieren, dann heilt sich der
+     * Altbestand beim nächsten Speichern von selbst.
+     */
+    if (e.quellen && typeof e.quellen === 'object') {
+        e.quellen = Object.fromEntries(
+            Object.entries(e.quellen).filter(([name]) => name in VORGABEN.quellen))
     }
 
     e.schluessel = await leseSchluessel()

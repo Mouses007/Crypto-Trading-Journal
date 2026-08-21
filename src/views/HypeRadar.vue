@@ -134,23 +134,19 @@
                 <!-- Quellen -->
                 <h6 class="hypTitel mt-4">{{ t('hype.quellenTitel') }}</h6>
                 <div class="hypQuellen">
+                    <!-- Alle verbliebenen Quellen laufen ohne Schlüssel. Die drei
+                         früheren Zusatzquellen sind am 21.08.2026 entfernt worden,
+                         weil keine davon nutzbar war — Begründung im Kopf von
+                         `quellen.js`. -->
                     <div v-for="(_, q) in einst.quellen" :key="q" class="form-check form-switch">
-                        <!-- Reddit lässt sich gar nicht einschalten: der freie
-                             Zugang ist zu (403), und ein Schlüsselfeld hilft
-                             dagegen nichts — es bräuchte OAuth. Ein Schalter,
-                             der nur Fehlermeldungen erzeugt, ist schlimmer als
-                             keiner. -->
                         <input :id="'hypQ' + q" class="form-check-input" type="checkbox"
-                            :disabled="q === 'reddit'"
                             v-model="einst.quellen[q]" @change="speichern">
-                        <label class="form-check-label small" :for="'hypQ' + q"
-                            :class="{ hypAus: q === 'reddit' }">
+                        <label class="form-check-label small" :for="'hypQ' + q">
                             {{ q }}
-                            <span v-if="q === 'reddit'" class="hypHinweisKlein">{{ t('hype.redditHinweis') }}</span>
                             <!-- CoinGecko läuft auch ohne Schlüssel, nur mit
                                  engem Limit — „braucht einen Schlüssel" wäre
                                  dort schlicht falsch. -->
-                            <span v-else-if="SCHLUESSEL_QUELLEN[q] && !SCHLUESSEL_QUELLEN[q].optional && !schluesselDa(q)"
+                            <span v-if="SCHLUESSEL_QUELLEN[q] && !SCHLUESSEL_QUELLEN[q].optional && !schluesselDa(q)"
                                 class="hypHinweisKlein">
                                 {{ t('hype.brauchtSchluessel') }}
                             </span>
@@ -187,11 +183,18 @@
                 <!-- Wachhund & Alarme -->
                 <h6 class="hypTitel mt-4">{{ t('hype.wachhundTitel') }}</h6>
                 <p class="hypHinweis">{{ t('hype.wachhundHinweis') }}</p>
+                <p v-if="einst.wachhundIntervallMin === 0" class="hypHinweis hypAus">
+                    {{ t('hype.wachhundAusHinweis') }}
+                </p>
                 <div class="row g-3">
                     <div class="col-auto">
                         <label class="form-label small">{{ t('hype.wachhundTakt') }}</label>
                         <select v-model.number="einst.wachhundIntervallMin" class="form-select form-select-sm"
                             @change="speichern">
+                            <!-- „Aus" als eigener Wert. Bis zum 21.08.2026 liess sich der
+                                 Wachhund nur stilllegen, indem man alle Sterne entfernte —
+                                 das ist ein Nebeneffekt, keine Einstellung. -->
+                            <option :value="0">{{ t('hype.wachhundAus') }}</option>
                             <option :value="5">5 min</option>
                             <option :value="15">15 min</option>
                             <option :value="30">30 min</option>
@@ -556,14 +559,23 @@
                     <span v-for="n in narrativeInDaten" :key="n"
                         class="hypChip" :class="{ aktiv: filterNarrativ === n }"
                         @click="filterNarrativ = filterNarrativ === n ? '' : n">{{ n }}</span>
-                    <!-- Aufgüsse ausblenden. Nicht als Vorgabe an: manchmal läuft
-                         ein Klon trotzdem, und ihn ungefragt zu verstecken wäre
+                    <!-- Namens-Nachahmer ausblenden. Nicht als Vorgabe an: manchmal
+                         läuft ein Klon trotzdem, und ihn ungefragt zu verstecken wäre
                          eine andere Art, die Liste zu schönen. -->
                     <span v-if="trittbrettAnzahl" class="hypChip" :class="{ aktiv: ohneTrittbrett }"
                         :title="t('hype.trittbrettHilfe')"
                         @click="ohneTrittbrett = !ohneTrittbrett">
                         <i class="uil uil-copy me-1"></i>{{ t('hype.trittbrettAus', { n: trittbrettAnzahl }) }}
                     </span>
+                    <!-- Börsenfilter, gleiche Bedeutung wie im Coin-Radar: ODER über
+                         die gewählten Börsen. Der Schalter in den Einstellungen
+                         („Nur Funde, die … führen") wirkt auf den ganzen LAUF und
+                         kennt keine einzelne Börse — hier wird die vorhandene Liste
+                         nachträglich enger gezogen, ohne einen neuen Lauf. -->
+                    <span v-for="b in BOERSEN" :key="b" class="hypChip"
+                        :class="{ aktiv: boersenFilter.has(b) }"
+                        :title="t('hype.boersenFilterChip', { b: boerseName(b) })"
+                        @click="boerseUmschalten(b)">{{ BOERSEN_KUERZEL[b] }}</span>
                     <select v-model="filterStatus" class="form-select form-select-sm hypAuswahl ms-auto">
                         <option value="">{{ t('hype.alleStatus') }}</option>
                         <option value="bestanden">{{ t('hype.bestanden') }}</option>
@@ -813,6 +825,46 @@ const HINWEIS_RUECKFALL = 'Keine Anlageberatung. Frühphasen-Token sind hochrisk
 // genug zum Wiedererkennen. Der volle Name steht im Title-Text.
 const BOERSEN_KUERZEL = { bitunix: 'BX', bitget: 'BG', pionex: 'PX' }
 
+/* Ausgeschrieben für alles, was beim Darüberfahren erscheint — ein Kürzel,
+ * das man erst lernen muss, ist in einem Filter die falsche Sparsamkeit. */
+const BOERSEN_NAME = { bitunix: 'Bitunix', bitget: 'Bitget', pionex: 'Pionex' }
+const boerseName = (b) => BOERSEN_NAME[b] || b
+const BOERSEN = ['bitunix', 'bitget', 'pionex']
+
+/*
+ * Gewählte Börsen. ODER-verknüpft: Wer Konten bei zweien hat, sucht die
+ * Vereinigung. Leere Auswahl heisst „alle", nicht „keine".
+ */
+const boersenFilter = ref(new Set())
+
+function boerseUmschalten(b) {
+    const neu = new Set(boersenFilter.value)
+    if (neu.has(b)) neu.delete(b)
+    else neu.add(b)
+    boersenFilter.value = neu
+}
+
+/** Der Börsenname einer Listung — sie kommt als Zeichenkette ODER als Objekt. */
+const listungBoerse = (l) => (typeof l === 'string' ? l : l?.boerse)
+
+/**
+ * Trifft der Börsenfilter zu?
+ *
+ * Eine ungeklärte Listung lässt durch — genau wie der Laufschalter es tut und
+ * aus demselben Grund: Dass eine Börsenliste gerade nicht abrufbar war, ist
+ * kein Beleg dafür, dass es den Coin dort nicht gibt.
+ */
+function passtBoersenfilter(k) {
+    const gewaehlt = boersenFilter.value
+    if (!gewaehlt.size) return true
+    const gelistet = (k.marktDaten?.listungen || []).map(listungBoerse)
+    const offen = k.marktDaten?.listungUnbekannt || []
+    for (const b of gewaehlt) {
+        if (gelistet.includes(b) || offen.includes(b)) return true
+    }
+    return false
+}
+
 /*
  * Eine Listung kommt in zwei Formen an: alte Läufe speicherten den blossen
  * Börsennamen ('bitunix'), neue ein Objekt mit Marktart ({boerse, spot,
@@ -827,11 +879,11 @@ function listungKuerzel(l) {
 }
 
 function listungText(l) {
-    if (typeof l === 'string') return t('hype.gelistetAuf', { b: l })
+    if (typeof l === 'string') return t('hype.gelistetAuf', { b: boerseName(l) })
     const teile = []
     if (l.futures) teile.push(t('hype.marktFutures'))
     if (l.spot) teile.push(t('hype.marktSpot'))
-    return `${l.boerse}: ${teile.join(' + ') || '—'}`
+    return `${boerseName(l.boerse)}: ${teile.join(' + ') || '—'}`
 }
 
 // ── Favoriten & Livedaten ───────────────────────────────────────────────
@@ -1159,15 +1211,16 @@ const offenerBericht = ref(null)
 const einst = ref(null)
 const stufen = ref([])
 /*
- * Quellen, die Zugangsdaten brauchen — und wo man sie herbekommt.
+ * Quellen, für die sich ein Schlüssel lohnt — und wo man ihn herbekommt.
  *
  * Die Namen sind dieselben wie in `SCHLUESSEL_SPALTEN` auf dem Server
- * (`server/hype-radar/einstellungen.js`); daran hängt der Schreibweg. Reddit
- * fehlt hier bewusst: dort genügt kein Schlüssel, es bräuchte OAuth.
+ * (`server/hype-radar/einstellungen.js`); daran hängt der Schreibweg.
+ *
+ * Nur noch CoinGecko, und dort ist der Schlüssel OPTIONAL: Er ist gratis und
+ * hebt bloss das Abruflimit von etwa 30 auf 500 Aufrufe je Minute. Die
+ * Pflicht-Schlüsselquellen sind am 21.08.2026 entfallen.
  */
 const SCHLUESSEL_QUELLEN = {
-    cryptopanic: { url: 'https://cryptopanic.com/developers/api/', optional: false },
-    lunarcrush: { url: 'https://lunarcrush.com/developers/api/authentication', optional: false },
     coingecko: { url: 'https://www.coingecko.com/en/developers/dashboard', optional: true },
 }
 
@@ -1233,10 +1286,26 @@ const gefiltert = computed(() => {
     else if (filterStatus.value === 'bestanden') {
         liste = liste.filter((k) => k.status === 'bestanden' || k.status === 'berichtet')
     }
+    liste = liste.filter(passtBoersenfilter)
+
     const f = sortFeld.value
     return [...liste].sort((a, b) => {
-        const av = a[f] ?? 0
-        const bv = b[f] ?? 0
+        /*
+         * Fehlwerte ans ENDE, in beide Richtungen.
+         *
+         * Vorher stand hier `a[f] ?? 0`. Ein nicht gemessener Wert wurde damit
+         * zur Null und stand aufsteigend ganz oben — bei einer Kostenspalte
+         * sah der ungemessene Fund wie der günstigste der Liste aus. Derselbe
+         * Fehler steckte im Coin-Radar und ist dort am 21.08.2026 behoben
+         * worden; hier blieb er stehen.
+         */
+        const av = a[f]
+        const bv = b[f]
+        const aOhne = av === null || av === undefined || av === ''
+        const bOhne = bv === null || bv === undefined || bv === ''
+        if (aOhne && bOhne) return 0
+        if (aOhne) return 1
+        if (bOhne) return -1
         const cmp = typeof av === 'string' ? String(av).localeCompare(String(bv)) : av - bv
         return sortAb.value ? -cmp : cmp
     })
@@ -1863,6 +1932,14 @@ watch(locale, () => zeichne())
 .hypChip.klein {
     cursor: default;
     font-size: .782rem;
+}
+
+/* Abgeschaltet oder nicht verfügbar. Die Klasse wurde an mehreren Stellen
+   referenziert, ohne je definiert zu sein — der Hinweis blieb deshalb
+   unauffällig genau dort, wo er auffallen sollte. */
+.hypAus {
+    color: var(--grey-color, #9aa0a6);
+    opacity: .85;
 }
 
 .hypAuswahl {

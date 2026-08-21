@@ -119,7 +119,12 @@ export const PAGES = [
  * Ohne shortKey gilt titleKey.
  */
 // `versteckbar: true` → wird von der Einstellung „Beta-Funktionen ausblenden"
-// (Layout & Stil) aus dem Umschalter entfernt. Momentan Strategien und Research.
+// (Layout & Stil) aus dem Umschalter entfernt. Momentan Agent und Research.
+//
+// ⚠ Research trägt seit dem 21.08.2026 KEINE Beta-Marke mehr, bleibt aber
+// versteckbar. Der Schalter heisst also nicht mehr genau das, was er tut —
+// er blendet „Agent und Research" aus, nicht „alles Beta". Wer den Namen
+// stört, benennt ihn um; das Verhalten ist Absicht.
 export const MODES = [
     // Landing-Page der App: frei konfigurierbares Kachelraster (Kontostand,
     // Marktlage, News-Zusammenfassung …).
@@ -128,15 +133,18 @@ export const MODES = [
     { id: 'live', titleKey: 'modes.live', shortKey: 'modes.liveShort', icon: 'uil uil-chart-line', home: '/marktradar', enabled: true },
     /*
      * Entdecken: was es noch nicht ins Journal geschafft hat. Bislang ein
-     * Platzhalter, jetzt vom Hype-Radar bewohnt. Bleibt versteckbar — wer nur
-     * sein Journal führt, braucht den Modus nicht.
+     * Platzhalter, jetzt von Hype-Radar und Coin-Radar bewohnt.
      *
-     * Ebenfalls Beta, aber aus anderem Grund als der Strategie-Modus: hier
-     * handelt niemand selbstständig, die Funde sind bloss noch jung und wenig
-     * erprobt. Deshalb ein eigener Hinweistext — „nur im Papierbetrieb
-     * verwenden" ergäbe für einen Radar keinen Sinn.
+     * Die Beta-Marke ist am 21.08.2026 gefallen. Sie stand für „jung und wenig
+     * erprobt"; inzwischen laufen beide Radare gegen sechs bzw. drei geprüfte
+     * Quellen, haben eine eigene Erfolgskontrolle und Selbsttests. Anders als
+     * beim Agenten handelt hier ohnehin niemand selbstständig — es gab also
+     * nie eine Gefahr, vor der die Marke gewarnt hätte.
+     *
+     * `versteckbar` bleibt, aber aus dem anderen Grund: Wer nur sein Journal
+     * führt, braucht den Modus nicht im Umschalter.
      */
-    { id: 'research', titleKey: 'modes.research', icon: 'uil uil-telescope', home: '/hype-radar', enabled: true, beta: true, betaHintKey: 'modes.betaHintResearch', versteckbar: true },
+    { id: 'research', titleKey: 'modes.research', icon: 'uil uil-telescope', home: '/hype-radar', enabled: true, versteckbar: true },
     // Freigegeben als Beta. Der Modus handelt selbstständig, deshalb warnt
     // `BetaHinweis.vue` auf jeder seiner Seiten, und der scharfe Betrieb hängt
     // zusätzlich an der dreifachen Freigabekette (globaler Schalter, Freigabe je

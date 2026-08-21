@@ -66,20 +66,37 @@ export function noteSozial(k) {
     const s = k?.sozial || {}
     let punkte = 0
 
-    // LunarCrush ist das belastbarste Signal, wenn vorhanden.
-    if (Number.isFinite(s.galaxyScore)) punkte = Math.max(punkte, Number(s.galaxyScore))
-    if (Number.isFinite(s.altRank) && s.altRank > 0) {
-        // Rang 1 ist am besten; ab Rang 500 zählt es nicht mehr.
-        punkte = Math.max(punkte, klemme(100 - (Number(s.altRank) / 5)))
+    /*
+     * Reddit: die Position in „hot", nicht die Stimmenzahl.
+     *
+     * Der RSS-Feed nennt keine Stimmen — nur die Reihenfolge, und die ist
+     * bereits nach Zustimmung sortiert. Platz 1 wiegt am schwersten, Platz 50
+     * kaum noch.
+     *
+     * GEDECKELT bei 60 und nicht bei 100: r/CryptoMoonShots ist ein Ort, an
+     * dem Leute ihre eigenen Token bewerben. Ein Auftritt dort ist ein
+     * Hinweis, keine Bestätigung — er soll einen Fund nicht allein an die
+     * Spitze tragen.
+     */
+    const rang = Number(s.redditRang)
+    if (Number.isFinite(rang) && rang > 0) {
+        punkte = Math.max(punkte, klemme(Math.min(REDDIT_DECKEL, 61 - rang)))
     }
-    // Reddit: Zustimmung, logarithmisch — der Sprung von 10 auf 100 Stimmen
-    // sagt mehr als der von 1000 auf 1090.
-    if (Number(s.stimmen) > 0) {
-        punkte = Math.max(punkte, klemme(Math.log10(Number(s.stimmen) + 1) * 33))
-    }
-    if (Number(s.panicScore) > 0) {
-        punkte = Math.max(punkte, klemme(Math.log10(Number(s.panicScore) + 1) * 40))
-    }
+
+    /*
+     * Die gekauften Sozialsignale sind am 21.08.2026 entfallen.
+     *
+     * `galaxyScore`/`altRank` kamen von LunarCrush, `stimmen` von Reddit,
+     * `panicScore` von CryptoPanic — alle drei Quellen sind entfernt, weil
+     * keine davon nutzbar war (Reddit sperrt mit 403, die anderen beiden haben
+     * keinen Gratis-Tarif mehr). Die Zweige standen danach als toter Code da:
+     * geprüft trug KEINER der 2337 gespeicherten Kandidaten eines dieser
+     * Felder. Sie zu behalten hiesse, eine Bewertung zu beschreiben, die nicht
+     * stattfinden kann.
+     *
+     * Übrig bleibt die gekaufte Aufmerksamkeit unten — kein Sozialsignal im
+     * eigentlichen Sinn, aber messbar und gedeckelt.
+     */
     /*
      * Bezahlte Hervorhebung ist Aufmerksamkeit, aber gekaufte.
      *
@@ -103,6 +120,9 @@ export function noteSozial(k) {
 
 /** Höchstens so viel Aufmerksamkeit lässt sich kaufen. */
 export const BOOST_DECKEL = 30
+
+/** Und höchstens so viel trägt ein Auftritt in einem Werbe-Unterforum. */
+export const REDDIT_DECKEL = 60
 
 /**
  * Zieht der Handel an.

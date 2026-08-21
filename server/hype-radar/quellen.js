@@ -14,12 +14,24 @@
  *    Quellen ein Kandidat stammt — diese Zahl ist später der wichtigste
  *    Einzelfaktor gegen gekauften Lärm.
  *
- * Die vier Hauptquellen brauchen keinen Schlüssel. Das ist Absicht: das
- * Feature soll nach dem Einschalten laufen, nicht nach dem Anlegen von vier
- * Konten. CryptoPanic und LunarCrush sind Zugaben.
+ * KEINE der Quellen braucht einen Schlüssel. Das ist Absicht: das Feature
+ * soll nach dem Einschalten laufen, nicht nach dem Anlegen von Konten.
+ *
+ * CryptoPanic und LunarCrush standen hier bis zum 21.08.2026 und sind geprüft
+ * entfernt worden: CryptoPanic hat seinen Gratis-Tarif abgeschafft
+ * (günstigster Plan 50 $/Woche) und den Endpunkt auf /api/{plan}/v2/
+ * umgestellt, LunarCrush war nie gratis (ab 90 $/Monat).
+ *
+ * Reddit war am selben Tag zuerst mit entfernt und ist dann zurückgekommen.
+ * Der Grund für die Kehrtwende ist eine Messung: `/hot.json` ergab in vier
+ * von vier Versuchen 403, `/hot.rss` mit DERSELBEN Kennung 200. Gesperrt war
+ * nicht die Quelle, sondern der Weg dorthin. Eine fremde Kennung braucht es
+ * dafür nicht — im Gegenteil, mit einer Browser-Kennung kam die Drosselung
+ * früher.
  */
 
 import { logWarn } from '../logger.js'
+import { leseFeed } from '../feed-parser.js'
 
 /** Zeitgrenze je Einzelabruf. Lieber eine Quelle weniger als ein hängender Lauf. */
 const ABRUF_TIMEOUT_MS = 10000
@@ -39,8 +51,8 @@ export const ERLAUBTE_HOSTS = new Set([
     'api.gopluslabs.io',
     'api.rugcheck.xyz',
     'www.reddit.com',
-    'cryptopanic.com',
-    'lunarcrush.com',
+    'frontend-api-v3.pump.fun',
+    'api.coinpaprika.com',
 ])
 
 /**
@@ -71,7 +83,64 @@ const EIMER = {
     'api.coingecko.com': new Eimer(25),        // Demo-Kontingent ~30
     'api.geckoterminal.com': new Eimer(25),
     'api.gopluslabs.io': new Eimer(30),
-    'www.reddit.com': new Eimer(30),
+    /*
+     * Reddit drosselt spürbar. Gemessen am 21.08.2026: bei 20 s Abstand kam
+     * nur jeder zweite Abruf durch, bei 60 s jeder. Eins je Minute ist die
+     * ehrliche Obergrenze — bei zwei Unterforen und einem Lauf alle sechs
+     * Stunden kostet das zwei Minuten und fällt nicht ins Gewicht.
+     */
+    'www.reddit.com': new Eimer(1),
+    'frontend-api-v3.pump.fun': new Eimer(20),
+    'api.coinpaprika.com': new Eimer(10),
+}
+
+/**
+ * Wie `holeJson`, aber für Text — RSS und Atom kommen als XML.
+ *
+ * Eigene Funktion statt eines Schalters an `holeJson`: Dort steht `Accept:
+ * application/json` im Kopf, und ein Feed-Server darf darauf mit 406
+ * antworten. Der Rest (Whitelist, Bremse, eine Wiederholung) ist derselbe.
+ */
+export async function holeText(url, { timeout = ABRUF_TIMEOUT_MS, kopf = {} } = {}) {
+    const ziel = new URL(url)
+    if (!ERLAUBTE_HOSTS.has(ziel.hostname)) {
+        throw new Error(`Host nicht erlaubt: ${ziel.hostname}`)
+    }
+    await EIMER[ziel.hostname]?.warte()
+
+    let letzterFehler
+    for (let versuch = 0; versuch < 2; versuch++) {
+        const abbruch = new AbortController()
+        const uhr = setTimeout(() => abbruch.abort(), timeout)
+        try {
+            const r = await fetch(url, {
+                signal: abbruch.signal,
+                headers: {
+                    'User-Agent': 'CryptoTradingJournal/1.0 (Hype-Radar)',
+                    Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml',
+                    ...kopf,
+                },
+            })
+            if (!r.ok) {
+                const fehler = new Error(`HTTP ${r.status}`)
+                /*
+                 * 429 ist hier NICHT endgültig: Reddit drosselt, und genau
+                 * dafür ist die Wiederholung da. Bei 403 dagegen hilft kein
+                 * zweiter Versuch — das ist eine Entscheidung, keine Last.
+                 */
+                if (r.status < 500 && r.status !== 429) throw Object.assign(fehler, { endgueltig: true })
+                throw fehler
+            }
+            return await r.text()
+        } catch (e) {
+            letzterFehler = e
+            if (e.endgueltig || versuch === 1) break
+            await new Promise((r) => setTimeout(r, 2000))
+        } finally {
+            clearTimeout(uhr)
+        }
+    }
+    throw letzterFehler
 }
 
 /**
@@ -96,7 +165,7 @@ export async function holeJson(url, { timeout = ABRUF_TIMEOUT_MS, kopf = {} } = 
             const r = await fetch(url, {
                 signal: abbruch.signal,
                 headers: {
-                    // Reddit weist Anfragen ohne eigene Kennung ab.
+                    // Eigene Kennung: manche Anbieter weisen anonyme Anfragen ab.
                     'User-Agent': 'CryptoTradingJournal/1.0 (Hype-Radar)',
                     Accept: 'application/json',
                     ...kopf,
@@ -460,38 +529,58 @@ export async function ausGeckoTerminal(ketten = ['solana', 'eth', 'base', 'bsc']
 }
 
 /**
- * Reddit: worüber geredet wird.
+ * Reddit — über den RSS-Feed, nicht über die JSON-Schnittstelle.
  *
- * Aus Titeln werden Kürzel („$PEPE") und Vertragsadressen gefischt. Die
- * Zustimmung je Beitrag zählt als Stärke — nicht die blosse Erwähnung, sonst
- * wöge ein ignorierter Beitrag so viel wie ein vieldiskutierter.
+ * Der alte Weg (`/hot.json`) ist tot: vier von vier Abrufen am 21.08.2026
+ * ergaben 403, und daran ändert auch eine Kennung nichts. `/hot.rss` dagegen
+ * antwortet derselben Kennung mit 200 — es ist ein öffentlicher Feed, für
+ * Leseprogramme gedacht, und wir geben uns dabei als das aus, was wir sind.
  *
- * ACHTUNG: Standardmässig ABGESCHALTET. Der schlüsselfreie JSON-Zugang, den es
- * jahrelang gab, ist zu. Geprüft am 19.08.2026 gegen `www.reddit.com`,
- * `old.reddit.com` und die `.json`-Variante des Unterforums — alle drei
- * antworten mit 403, unabhängig von der Kennung. Reddit verlangt inzwischen
- * OAuth. Der Code bleibt stehen, weil er mit einem Zugangstoken sofort wieder
- * trägt; eingeschaltet würde er nur bei jedem Lauf eine Fehlermeldung
- * erzeugen.
+ * Gedrosselt wird spürbar (siehe `EIMER`). Der Feed liefert die Beitrags-
+ * titel samt Textvorschau; daraus werden `$SYMBOL`-Nennungen und
+ * Vertragsadressen gezogen. Gemessen an r/CryptoMoonShots: aus 25 Beiträgen
+ * 7 Symbole, 5 Solana- und 8 EVM-Adressen.
+ *
+ * Das ist die EINZIGE Quelle der Domäne `social` — Menschen, die reden, statt
+ * Ketten, die handeln. Genau deshalb ist sie den Aufwand wert, obwohl das
+ * Rauschen hoch ist: Sie bestätigt unabhängig von allem anderen.
  */
-export async function ausReddit(unterforen = ['CryptoMoonShots', 'CryptoCurrency']) {
+export async function ausReddit(unterforen = ['CryptoMoonShots', 'SolanaMemeCoins']) {
     const funde = []
     for (const sub of unterforen) {
         try {
-            const j = await holeJson(`https://www.reddit.com/r/${sub}/hot.json?limit=50`)
-            const posts = j?.data?.children || []
-            for (const p of posts) {
-                const titel = String(p?.data?.title || '')
-                const stimmen = Number(p?.data?.ups) || 0
-                const kuerzel = titel.match(/\$([A-Za-z][A-Za-z0-9]{1,14})\b/g) || []
-                const evm = titel.match(/0x[a-fA-F0-9]{40}/g) || []
+            const xml = await holeText(`https://www.reddit.com/r/${encodeURIComponent(sub)}/hot.rss?limit=50`)
+            const beitraege = leseFeed(xml)
+            for (const b of beitraege) {
+                const text = `${b.titel || ''} ${b.inhalt || ''}`
+                /*
+                 * Die Stimmenzahl steht im RSS NICHT — anders als in der alten
+                 * JSON-Antwort. Statt eine zu erfinden, zählt die POSITION:
+                 * „hot" ist bereits nach Zustimmung sortiert, der erste
+                 * Beitrag hat mehr davon als der fünfzigste. Eine erfundene
+                 * Stimmenzahl wäre eine Messung, die nie stattfand.
+                 */
+                const rang = beitraege.indexOf(b) + 1
+                const kuerzel = text.match(/\$([A-Za-z][A-Za-z0-9]{1,9})\b/g) || []
+                const evm = text.match(/0x[a-fA-F0-9]{40}/g) || []
+                const sol = text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g) || []
                 for (const k of kuerzel.slice(0, 3)) {
                     funde.push(fund({
-                        symbol: k,
+                        symbol: k.slice(1),
                         quelle: `reddit-${sub}`,
-                        url: p?.data?.permalink ? `https://www.reddit.com${p.data.permalink}` : '',
-                        contract: evm[0] || '',
-                        sozial: { stimmen, kommentare: Number(p?.data?.num_comments) || 0 },
+                        url: b.link || '',
+                        contract: evm[0] || sol[0] || '',
+                        rang,
+                        /*
+                         * NUR der Rang, keine erfundene Stimmenzahl.
+                         *
+                         * Im ersten Anlauf stand hier `stimmen: 51 - rang` —
+                         * eine Zahl, die aussieht wie gemessene Zustimmung und
+                         * keine ist. Der Feed nennt Stimmen nicht; „Platz 7 in
+                         * hot" ist alles, was wir wissen, und genau das steht
+                         * jetzt da.
+                         */
+                        sozial: { redditRang: rang },
                     }))
                 }
             }
@@ -503,48 +592,75 @@ export async function ausReddit(unterforen = ['CryptoMoonShots', 'CryptoCurrency
     return funde
 }
 
-/** CryptoPanic: Nachrichtenlage, gefiltert auf das Aufstrebende. */
-export async function ausCryptoPanic(schluessel) {
-    if (!schluessel) throw new Error('kein Schlüssel hinterlegt')
+/**
+ * Pump.fun — die frischesten Solana-Starts.
+ *
+ * Der Wert dieser Quelle ist der ZEITPUNKT. Ein Token auf der Bindungskurve
+ * hat noch keinen Raydium-Pool und taucht deshalb weder bei DexScreener noch
+ * bei GeckoTerminal auf. Gemessen am 21.08.2026 waren die obersten Einträge
+ * null Stunden alt, mit Marktkapitalisierungen zwischen 680 und 108'000 USD.
+ *
+ * Der alte Host `frontend-api.pump.fun` ist abgeschaltet (HTTP 530); der
+ * v3-Host antwortet ohne Schlüssel.
+ *
+ * Domäne bleibt `onchain`: Auch eine Bindungskurve ist gehandelte Kette, nur
+ * an einem anderen Ort. Als eigene Bestätigung neben DexScreener zu zählen
+ * wäre derselbe Fehler, den das Audit im August behoben hat.
+ */
+export async function ausPumpFun(anzahl = 50) {
     const j = await holeJson(
-        `https://cryptopanic.com/api/v1/posts/?auth_token=${encodeURIComponent(schluessel)}&filter=rising`)
-    const posts = Array.isArray(j?.results) ? j.results : []
-    const funde = []
-    posts.forEach((p, i) => {
-        for (const c of (p?.currencies || []).slice(0, 3)) {
-            funde.push(fund({
-                symbol: c?.code,
-                name: c?.title,
-                quelle: 'cryptopanic',
+        `https://frontend-api-v3.pump.fun/coins?limit=${Math.min(100, anzahl)}`
+        + '&sort=created_timestamp&order=DESC&includeNsfw=false')
+    const liste = Array.isArray(j) ? j : []
+    return liste
+        .map((c, i) => {
+            const erstellt = Number(c?.created_timestamp) || 0
+            const alterStunden = erstellt ? (Date.now() - erstellt) / 3600000 : null
+            return fund({
+                symbol: c?.symbol,
+                name: c?.name || '',
+                chain: 'solana',
+                contract: c?.mint || '',
+                quelle: 'pumpfun',
                 rang: i + 1,
-                url: p?.url || '',
-                sozial: { panicScore: Number(p?.votes?.important) || 0 },
-            }))
-        }
-    })
-    return funde.filter((f) => f.symbol)
+                url: c?.mint ? `https://pump.fun/coin/${c.mint}` : '',
+                markt: {
+                    marktKapUsd: Number(c?.usd_market_cap) || null,
+                    paarAlterStunden: alterStunden,
+                    // `complete` heisst: die Kurve ist durch, der Token ist an
+                    // eine echte Börse gewandert. Das ist ein Reifezeichen.
+                    graduiert: c?.complete === true,
+                },
+            })
+        })
+        .filter((f) => f.symbol)
 }
 
-/** LunarCrush: das beste Sozialsignal, aber kostenpflichtig. */
-export async function ausLunarCrush(schluessel) {
-    if (!schluessel) throw new Error('kein Schlüssel hinterlegt')
-    const j = await holeJson('https://lunarcrush.com/api4/public/coins/list/v1',
-        { kopf: { Authorization: `Bearer ${schluessel}` } })
-    const liste = Array.isArray(j?.data) ? j.data : []
+/**
+ * CoinPaprika — zweite Meinung zur Entdeckung.
+ *
+ * Anderes Haus als CoinGecko, eigene Redaktion, eigene Aufnahmekriterien.
+ * Deshalb ist es keine Verdopplung derselben Liste, sondern eine unabhängige
+ * Bestätigung INNERHALB der Domäne `discovery` — sie erhöht die Datenqualität,
+ * nicht die Zahl der Belege.
+ *
+ * Gemessen: 61'083 Coins, davon 14'974 aktiv und 71 mit `is_new`-Marke.
+ *
+ * ⚠ Die Antwort ist 7,4 MB gross, und `limit` wird ignoriert (geprüft). Bei
+ * einem Lauf alle sechs Stunden sind das rund 30 MB am Tag — vertretbar, aber
+ * der Grund, warum diese Quelle nicht öfter befragt werden sollte.
+ */
+export async function ausCoinPaprika() {
+    const j = await holeJson('https://api.coinpaprika.com/v1/coins', { timeout: 25000 })
+    const liste = Array.isArray(j) ? j : []
     return liste
-        .filter((c) => Number(c?.alt_rank) > 0)
-        .sort((a, b) => Number(a.alt_rank) - Number(b.alt_rank))
-        .slice(0, 30)
+        .filter((c) => c?.is_new && c?.is_active)
+        .slice(0, 60)
         .map((c, i) => fund({
             symbol: c?.symbol,
-            name: c?.name,
-            quelle: 'lunarcrush',
-            rang: i + 1,
-            sozial: {
-                galaxyScore: Number(c?.galaxy_score) || null,
-                altRank: Number(c?.alt_rank) || null,
-                sozialVolumen24h: Number(c?.social_volume_24h) || null,
-            },
+            name: c?.name || '',
+            quelle: 'coinpaprika',
+            rang: Number(c?.rank) > 0 ? Number(c.rank) : i + 1,
         }))
         .filter((f) => f.symbol)
 }
@@ -554,8 +670,8 @@ export async function ausLunarCrush(schluessel) {
  *
  * Zusammengeführt wird bevorzugt über die Vertragsadresse — sie ist eindeutig,
  * während Symbole sich wiederholen: „PEPE" gibt es auf vier Ketten und
- * hundertfach als Nachahmung. Nur wo keine Adresse vorliegt (Reddit, CoinGecko),
- * dient Symbol samt Kette als Notbehelf.
+ * hundertfach als Nachahmung. Nur wo keine Adresse vorliegt (CoinGecko),
+ * dient Symbol samt Kette als Notbehelf (CoinGecko liefert keine Adresse).
  */
 export function fuehreZusammen(funde) {
     const nachSchluessel = new Map()
@@ -613,7 +729,7 @@ export function fuehreZusammen(funde) {
             Object.entries(f.markt || {}).filter(([, v]) => v !== null && v !== undefined)))
         for (const [feld, wert] of Object.entries(f.sozial || {})) {
             if (wert === null || wert === undefined) continue
-            // Zahlen aufaddieren (drei Reddit-Beiträge sind mehr als einer),
+            // Zahlen aufaddieren (drei Nennungen sind mehr als eine),
             // alles andere überschreiben.
             k.sozial[feld] = typeof wert === 'number' ? (k.sozial[feld] || 0) + wert : wert
         }
@@ -627,7 +743,7 @@ export function fuehreZusammen(funde) {
      * Quellenzahl und das Sicherheitsurteil eines anderen Coins.
      */
     // 1. Symbol samt Kette, aber ohne Adresse → Eintrag mit Adresse.
-    //    Betrifft CoinGecko und Reddit, die keine Adresse nennen.
+    //    Betrifft CoinGecko, das keine Adresse nennt.
     schliesseAn(nachSchluessel,
         (sl, k) => sl.startsWith('s:') && k.chain && k.chain !== '?',
         (k, k2) => k2.contract && k2.symbol === k.symbol && k2.chain === k.chain)
@@ -684,9 +800,12 @@ const QUELL_DOMAENE = {
     'dexscreener-neu': 'discovery',      // frisch eingereichtes Profil
     dexscreener: 'onchain',
     geckoterminal: 'onchain',
+    // Auch eine Bindungskurve ist gehandelte Kette — nur an anderem Ort.
+    pumpfun: 'onchain',
+    // Eigenes Haus, eigene Aufnahmekriterien — aber dieselbe Frage wie CoinGecko.
+    coinpaprika: 'discovery',
+    // Die einzige Quelle, in der Menschen reden statt Ketten zu handeln.
     reddit: 'social',
-    lunarcrush: 'social',
-    cryptopanic: 'news',
 }
 
 /** Die belegten Domänen eines Kandidaten, ohne Wiederholung. */
@@ -737,7 +856,7 @@ function schliesseAn(karte, istVage, passt) {
  * Stufe 1 im Ganzen.
  *
  * @param {object} opts
- * @param {object} opts.schluessel  {cryptopanic, lunarcrush, coingecko}
+ * @param {object} opts.schluessel  {coingecko} — optional, hebt nur das Limit
  * @param {string[]} opts.ketten    GeckoTerminal-Ketten
  * @param {object} opts.quellen     Schalter je Quelle
  * @returns {Promise<{kandidaten: object[], quellenStand: object}>}
@@ -749,9 +868,9 @@ export async function sammle({ schluessel = {}, ketten, quellen = {} } = {}) {
     if (an('coingecko')) aufgaben.push(['coingecko', () => ausCoinGecko(schluessel.coingecko)])
     if (an('dexscreener')) aufgaben.push(['dexscreener', () => ausDexScreener()])
     if (an('geckoterminal')) aufgaben.push(['geckoterminal', () => ausGeckoTerminal(ketten)])
+    if (an('pumpfun')) aufgaben.push(['pumpfun', () => ausPumpFun()])
+    if (an('coinpaprika')) aufgaben.push(['coinpaprika', () => ausCoinPaprika()])
     if (an('reddit')) aufgaben.push(['reddit', () => ausReddit()])
-    if (quellen.cryptopanic) aufgaben.push(['cryptopanic', () => ausCryptoPanic(schluessel.cryptopanic)])
-    if (quellen.lunarcrush) aufgaben.push(['lunarcrush', () => ausLunarCrush(schluessel.lunarcrush)])
 
     const ergebnisse = await Promise.allSettled(aufgaben.map(([, f]) => f()))
 
