@@ -181,6 +181,16 @@
                             {{ t('coinradar.filter_' + f.id) }}
                         </button>
                     </template>
+                    <!-- Börsenfilter: ODER über die gewählten. Wer Konten bei zwei
+                         Börsen hat, will sehen, was er auf EINER davon ausführen
+                         kann — die Schnittmenge wäre die seltenere Frage. -->
+                    <span class="crChipTrenner"></span>
+                    <button v-for="b in BOERSEN" :key="b" class="crChip crChipBoerse"
+                        :class="{ aktiv: boersenFilter.has(b) }"
+                        :title="t('coinradar.boersenFilterChip', { b: boerseName(b) })"
+                        @click="boerseUmschalten(b)">
+                        {{ boerseKurz(b) }}
+                    </button>
                     <span class="ms-auto"></span>
                     <button class="crChip" :class="{ aktiv: zeigeHuerden }" @click="huerdenUmschalten">
                         <i class="uil uil-filter me-1"></i>{{ t('coinradar.zeigeHuerden', { n: lauf.verworfenHuerde }) }}
@@ -227,7 +237,22 @@
                                 <span class="crNote" :class="noteKlasse(z.noteAusfuehrung)">{{ z.noteAusfuehrung }}</span>
                             </span>
                             <span class="crPaar"><b>{{ t('coinradar.spRund') }}</b> {{ n(z.rundlaufBp, 1) }} bp</span>
-                            <span v-if="z.besteBoerse" class="crBoerse">{{ boerseKurz(z.besteBoerse) }}</span>
+                            <span v-if="z.besteBoerse" class="crBoerse"
+                                :title="t('coinradar.besteBoerseHilfe', { b: boerseName(z.besteBoerse) })">{{ boerseKurz(z.besteBoerse) }}</span>
+                        </div>
+                        <!-- BTC-Bezug in eigener Zeile, wie die Ausführung: eine
+                             dritte Aussage, die zwischen ATR und Funding untergehen
+                             würde. -->
+                        <div v-if="z.status === 'bewertet' && !ohneWert(z.btcKorrelation)" class="crKarteZeile">
+                            <span class="crPaar" :class="kopplungKlasse(z)">
+                                <b>BTC</b> {{ btcProzent(z) }} %
+                                <i v-if="zerfallen(z)" class="uil uil-exclamation-triangle crWarnZerfall"></i>
+                            </span>
+                            <span class="crPaar"><b>β</b> {{ n(z.btcBeta, 2) }}</span>
+                            <span v-for="e in boersenVon(z)" :key="e.boerse" class="crBoerse"
+                                :title="t('coinradar.gelistetAuf', { b: boerseName(e.boerse) })">
+                                {{ boerseKurz(e.boerse) }}
+                            </span>
                         </div>
                         <div v-if="offen === z.id && z.status === 'bewertet'" class="crKarteDetail">
                             <div v-for="(wert, feld) in z.teilnoten" :key="feld" class="crNoteZeile">
@@ -256,11 +281,16 @@
                                 <th class="text-end" @click="sortiere('tiefeUsd')">{{ t('coinradar.spalteTiefe') }}</th>
                             </tr>
                             <tr v-else>
-                                <th class="text-end crSchmal">#</th>
+                                <!-- Die Rangspalte ist klickbar wie jede andere: Sie ist die
+                                     Vorgabe-Sortierung, und ohne Handler kam man nach einem
+                                     Ausflug in eine andere Spalte nicht mehr zurück. -->
+                                <th class="text-end crSchmal" @click="sortiere('rang')"
+                                    :title="t('coinradar.spalteRangHilfe')">#</th>
                                 <th @click="sortiere('symbol')">{{ t('coinradar.spalteSymbol') }}</th>
-                                <!-- Die zwei Achsen stehen nebeneinander und werden nie
-                                     verrechnet: „bewegt sich viel" und „lässt sich günstig
-                                     handeln" sind zwei Fragen. -->
+                                <!-- Drei Achsen stehen nebeneinander und werden nie
+                                     verrechnet: „bewegt sich viel", „lässt sich günstig
+                                     handeln" und „folgt BTC" sind drei Fragen, deren
+                                     Antworten sich oft widersprechen. -->
                                 <th class="text-end" @click="sortiere('note')"
                                     :title="t('coinradar.spalteNoteHilfe')">{{ t('coinradar.spalteNote') }}</th>
                                 <th class="text-end" @click="sortiere('noteAusfuehrung')"
@@ -268,6 +298,16 @@
                                 <th class="text-end" @click="sortiere('atrPct')">{{ t('coinradar.spalteAtr') }}</th>
                                 <th class="text-end" @click="sortiere('rvol')">{{ t('coinradar.spalteRvol') }}</th>
                                 <th class="text-end" @click="sortiere('adx')">{{ t('coinradar.spalteAdx') }}</th>
+                                <!-- Dritte Achse: hängt der Coin an Bitcoin? Beide Spalten
+                                     gehen NICHT in die Note ein — „bewegt sich viel",
+                                     „lässt sich günstig handeln" und „folgt BTC" sind drei
+                                     Fragen, und die Antworten widersprechen sich oft. -->
+                                <th class="text-end" @click="sortiere('btcKorrelation')"
+                                    :title="t('coinradar.spalteBtcHilfe', { ze: konst.btcZeiteinheit })">
+                                    {{ t('coinradar.spalteBtc') }}
+                                </th>
+                                <th class="text-end" @click="sortiere('btcBeta')"
+                                    :title="t('coinradar.spalteBetaHilfe')">{{ t('coinradar.spalteBeta') }}</th>
                                 <!-- Rundlauf statt Spread: Der Spread ist darin enthalten,
                                      aber allein sagt er nichts über eine Order, die tiefer
                                      ins Buch greift. -->
@@ -302,6 +342,14 @@
                                         <strong>{{ kurz(z.symbol) }}</strong>
                                         <span v-if="bestaetigt(z)" class="crBestaetigt"
                                             :title="t('coinradar.bestaetigtHilfe')"><i class="uil uil-check-circle"></i></span>
+                                        <!-- Wo es den Coin überhaupt gibt. Leise gesetzt: eine
+                                             Randnotiz, bis jemand danach filtert. -->
+                                        <span v-for="e in boersenVon(z)" :key="e.boerse" class="crBoersePunkt"
+                                            :title="t('coinradar.gelistetAuf', { b: boerseName(e.boerse) })">
+                                            {{ boerseKurz(e.boerse) }}
+                                        </span>
+                                        <span v-if="boersenUnbekannt(z).length" class="crBoersePunkt crUnbekannt"
+                                            :title="t('coinradar.listungUnbekannt', { b: boersenUnbekannt(z).map(boerseName).join(', ') })">?</span>
                                     </td>
                                     <td class="text-end">
                                         <span class="crNote" :class="noteKlasse(z.note)">{{ z.note }}</span>
@@ -314,11 +362,22 @@
                                              genug, dass die Börse an die Zeile gehört und
                                              nicht ins Aufklappen. -->
                                         <span v-if="z.besteBoerse" class="crBoerse"
-                                            :title="t('coinradar.besteBoerseHilfe')">{{ boerseKurz(z.besteBoerse) }}</span>
+                                            :title="t('coinradar.besteBoerseHilfe', { b: boerseName(z.besteBoerse) })">{{ boerseKurz(z.besteBoerse) }}</span>
                                     </td>
                                     <td class="text-end crZahl">{{ n(z.atrPct, 2) }}</td>
-                                    <td class="text-end crZahl" :class="{ 'crStark': z.rvol >= 2 }">{{ n(z.rvol, 2) }}</td>
-                                    <td class="text-end crZahl" :class="{ 'crStark': z.adx >= 25 }">{{ n(z.adx, 0) }}</td>
+                                    <td class="text-end crZahl" :class="{ 'crStark': istImSpiel(z) }">{{ n(z.rvol, 2) }}</td>
+                                    <td class="text-end crZahl" :class="{ 'crStark': istTrendend(z) }">{{ n(z.adx, 0) }}</td>
+                                    <td class="text-end crZahl" :class="kopplungKlasse(z)">
+                                        {{ btcProzent(z) }}<span v-if="!ohneWert(z.btcKorrelation)"> %</span>
+                                        <!-- Der Gleichlauf ist im Zeitraum zerbrochen: Die
+                                             Zahl links stimmt als Durchschnitt und taugt
+                                             trotzdem nicht als Grundlage. -->
+                                        <i v-if="zerfallen(z)" class="uil uil-exclamation-triangle crWarnZerfall"
+                                            :title="t('coinradar.zerfallHilfe', {
+                                                a: Math.round(z.btcKorrelationH1 * 100),
+                                                b: Math.round(z.btcKorrelationH2 * 100) })"></i>
+                                    </td>
+                                    <td class="text-end crZahl">{{ n(z.btcBeta, 2) }}</td>
                                     <td class="text-end crZahl" :class="rundlaufKlasse(z.rundlaufBp)">{{ n(z.rundlaufBp, 1) }}</td>
                                     <td class="text-end crZahl" :class="fundingKlasse(z.fundingJahresRate)">
                                         {{ n(z.fundingJahresRate, 1) }}
@@ -329,7 +388,7 @@
                                     </td>
                                 </tr>
                                 <tr v-if="offen === z.id && !zeigeHuerden" :key="z.id + '-d'">
-                                    <td colspan="11" class="crDetail">
+                                    <td colspan="13" class="crDetail">
                                         <div class="crDetailGrid">
                                             <div>
                                                 <div class="crDetailTitel">{{ t('coinradar.teilnoten') }}</div>
@@ -373,7 +432,7 @@
                                                     </tr>
                                                     <tr v-for="(v, b) in jeBoerse(z)" :key="b"
                                                         :class="{ crBeste: b === z.besteBoerse }">
-                                                        <td><b>{{ boerseKurz(b) }}</b></td>
+                                                        <td :title="boerseName(b)"><b>{{ boerseKurz(b) }}</b></td>
                                                         <td>{{ n(v.slippageKaufBp, 1) }}</td>
                                                         <td>{{ n(v.slippageVerkaufBp, 1) }}</td>
                                                         <td>{{ n(v.rundlaufBp, 1) }}</td>
@@ -383,9 +442,64 @@
                                                 <p class="crHinweise mb-0 mt-2">
                                                     <template v-for="(v, b) in jeBoerse(z)" :key="b + 'p'">
                                                         <span v-if="!v.passt5k" class="d-block">
-                                                            {{ t('coinradar.passtNicht', { b: boerseKurz(b) }) }}
+                                                            {{ t('coinradar.passtNicht', { b: boerseName(b) }) }}
                                                         </span>
                                                     </template>
+                                                </p>
+                                            </div>
+                                            <!-- Die dritte Achse ausgeschrieben. Hier steht
+                                                 auch, wie viele Renditen dahinterstehen:
+                                                 „30 Tage" bei einem Coin, der seit zehn
+                                                 Tagen gelistet ist, wäre eine Behauptung. -->
+                                            <div v-if="!ohneWert(z.btcKorrelation)">
+                                                <div class="crDetailTitel">
+                                                    {{ t('coinradar.btcTitel', { ze: konst.btcZeiteinheit }) }}
+                                                    <!-- Der Grundsatz „geht nicht in die Note ein" gehört
+                                                         dazu, aber nicht als Absatz: Er ist immer gleich
+                                                         und stünde bei jedem aufgeklappten Coin erneut da.
+                                                         Als Zeichen zum Darüberfahren bleibt er greifbar,
+                                                         ohne den Platz zu nehmen, den die Zahlen brauchen. -->
+                                                    <i class="uil uil-info-circle crInfoWink"
+                                                        :title="t('coinradar.btcNichtInNote')"></i>
+                                                </div>
+                                                <table class="crZeTabelle">
+                                                    <tr>
+                                                        <td>{{ t('coinradar.btcKopplung') }}</td>
+                                                        <td class="text-end">
+                                                            <b>{{ btcProzent(z) }} %</b>
+                                                            <span class="crHinweisWort">
+                                                                {{ t('coinradar.kopplung_' + deuteKopplung(z)) }}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>{{ t('coinradar.spalteBeta') }}</td>
+                                                        <td class="text-end"><b>{{ n(z.btcBeta, 2) }}</b>
+                                                            <span class="crHinweisWort">
+                                                                {{ t('coinradar.betaSatz', { p: n(z.btcBeta, 2) }) }}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>{{ t('coinradar.btcErklaert') }}</td>
+                                                        <td class="text-end">
+                                                            {{ Math.round(z.btcKorrelation * z.btcKorrelation * 100) }} %
+                                                        </td>
+                                                    </tr>
+                                                    <tr v-if="!ohneWert(z.btcKorrelationH1)">
+                                                        <td>{{ t('coinradar.btcHaelften') }}</td>
+                                                        <td class="text-end" :class="{ crWarnZerfall: zerfallen(z) }">
+                                                            {{ Math.round(z.btcKorrelationH1 * 100) }} %
+                                                            → {{ Math.round(z.btcKorrelationH2 * 100) }} %
+                                                        </td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>{{ t('coinradar.btcPunkte') }}</td>
+                                                        <td class="text-end">{{ z.btcPunkte ?? '—' }}</td>
+                                                    </tr>
+                                                </table>
+                                                <p v-if="zerfallen(z)" class="crHinweise mb-0 mt-2 crWarnZerfall">
+                                                    {{ t('coinradar.zerfallSatz') }}
                                                 </p>
                                             </div>
                                         </div>
@@ -393,7 +507,7 @@
                                 </tr>
                             </template>
                             <tr v-if="!gefiltert.length">
-                                <td :colspan="zeigeHuerden ? 6 : 11" class="text-center text-muted py-3">
+                                <td :colspan="zeigeHuerden ? 6 : 13" class="text-center text-muted py-3">
                                     {{ t('coinradar.keineTreffer') }}
                                 </td>
                             </tr>
@@ -495,7 +609,33 @@ import { logWarn } from '../utils/logger.js'
 const { t } = useI18n()
 const istTelefon = useIstTelefon()
 
-const FILTER = [{ id: 'alle' }, { id: 'imSpiel' }, { id: 'trendend' }, { id: 'bestaetigt' }]
+const FILTER = [
+    { id: 'alle' }, { id: 'imSpiel' }, { id: 'trendend' }, { id: 'bestaetigt' },
+    // Die dritte Achse als Filter: läuft der Coin mit BTC oder eigenständig?
+    { id: 'btcMit' }, { id: 'btcEigen' },
+]
+
+/**
+ * Die Börsen, nach denen gefiltert werden kann.
+ *
+ * Reihenfolge wie im Haus üblich: Bitunix zuerst, weil dort gehandelt wird.
+ * Pionex ist dabei — die Börse führt über sechshundert Perpetuals (gemessen
+ * am 21.08.2026); dass sie in der AUSFÜHRUNGSmessung fehlt, liegt am fehlenden
+ * geprüften Orderbuch-Zugang und nicht an fehlenden Märkten.
+ */
+const BOERSEN = ['bitunix', 'bitget', 'pionex']
+
+/**
+ * Notnagel, falls der Server (noch) keine Konstanten mitgeschickt hat.
+ *
+ * Die verbindliche Quelle ist `ANKER` auf dem Server, geliefert unter
+ * `konstanten`. Diese Werte hier greifen nur zwischen Seitenaufbau und
+ * erster Antwort — vorher standen dieselben Zahlen fest verdrahtet mitten im
+ * Filtercode, wo niemand sie neben den Serverwerten sah.
+ */
+const KONSTANTEN_NOTFALL = {
+    rvolSchwelle: 2, adxSchwelle: 25, kopplungFest: 0.7, kopplungLose: 0.3, btcZeiteinheit: '4h',
+}
 const GEWICHT_FELDER = ['bewegung', 'imSpiel', 'trend', 'kosten']
 const ZE_AUSWAHL = ['5m', '15m', '1h', '4h']
 
@@ -515,6 +655,12 @@ const meldungFehler = ref(false)
 const offen = ref(null)
 const filter = ref('alle')
 const zeigeHuerden = ref(false)
+/*
+ * Gewählte Börsen. ODER-Verknüpfung: Wer Konten bei zwei Börsen hat, will
+ * sehen, was er auf EINER davon ausführen kann — nicht nur die Schnittmenge.
+ * Leere Auswahl heisst „alle", nicht „keine".
+ */
+const boersenFilter = ref(new Set())
 
 const lauf = ref(null)
 const zeilen = ref([])
@@ -539,6 +685,11 @@ let strom = null
  */
 const fehlt = (w) => w === null || w === undefined || w === ''
 const n = (w, s = 2) => (!fehlt(w) && Number.isFinite(Number(w)) ? Number(w).toFixed(s) : '—')
+/** Nicht vergleichbar — weder gemessen noch als Zahl lesbar. */
+const ohneWert = (w) => fehlt(w) || !Number.isFinite(Number(w))
+
+/** Die Schwellen kommen vom Server; siehe `KONSTANTEN_NOTFALL`. */
+const konst = computed(() => ({ ...KONSTANTEN_NOTFALL, ...(einst.value.konstanten || {}) }))
 const mio = (w) => (!fehlt(w) && Number(w) ? `${(Number(w) / 1e6).toFixed(0)}` : '—')
 
 /**
@@ -570,6 +721,17 @@ const noteKlasse = (w) => (w >= 60 ? 'gut' : (w >= 40 ? 'mittel' : 'schwach'))
 /** Börsennamen kurz — in einer Tabellenzelle zählt jedes Zeichen. */
 const BOERSE_KURZ = { bitunix: 'BX', bitget: 'BG', pionex: 'PX' }
 const boerseKurz = (b) => BOERSE_KURZ[b] || b
+
+/*
+ * Ausgeschrieben — für alles, was beim Darüberfahren erscheint.
+ *
+ * Sichtbar bleiben die Kürzel: In einer Zeile mit dreizehn Spalten kostet
+ * „Bitunix" den Platz, den die Zahlen brauchen. Aber ein Kürzel, das man erst
+ * lernen muss, ist in einem Filter die falsche Sparsamkeit — dort steht der
+ * Name deshalb voll da.
+ */
+const BOERSE_NAME = { bitunix: 'Bitunix', bitget: 'Bitget', pionex: 'Pionex' }
+const boerseName = (b) => BOERSE_NAME[b] || b
 
 /**
  * Die Messwerte je Börse, beste zuerst.
@@ -633,8 +795,8 @@ const hauptZe = computed(() => einst.value.zeiteinheiten?.[0] || '1h')
 
 // ── Kennzahlen des Laufs ────────────────────────────────────────────────
 const bewertete = computed(() => zeilen.value.filter((z) => z.status === 'bewertet'))
-const imSpielAnzahl = computed(() => bewertete.value.filter((z) => Number(z.rvol) >= 2).length)
-const trendendAnzahl = computed(() => bewertete.value.filter((z) => Number(z.adx) >= 25).length)
+const imSpielAnzahl = computed(() => bewertete.value.filter(istImSpiel).length)
+const trendendAnzahl = computed(() => bewertete.value.filter(istTrendend).length)
 /*
  * Der mittlere Rundlauf des Laufs — die Antwort auf „wie teuer ist das Feld
  * heute". Median statt Mittelwert: Ein einzelner Coin mit fünfzig Basispunkten
@@ -683,28 +845,138 @@ const beharrlichKlasse = computed(() => {
 const sortFeld = ref('rang')
 const sortAb = ref(false)
 
+/**
+ * Sortierrichtung beim ERSTEN Klick auf eine Spalte.
+ *
+ * Bei Kennzahlen ist gross gut, also absteigend. Bei Symbol und Rang nicht:
+ * A steht vor Z, und Rang 1 ist der beste — absteigend zu beginnen zeigte dort
+ * das Schlechteste zuerst und sähe nach einem Fehler aus.
+ */
+const AUFSTEIGEND_ZUERST = new Set(['symbol', 'rang'])
+
 function sortiere(feld) {
     if (sortFeld.value === feld) sortAb.value = !sortAb.value
-    else { sortFeld.value = feld; sortAb.value = feld !== 'symbol' }
+    else { sortFeld.value = feld; sortAb.value = !AUFSTEIGEND_ZUERST.has(feld) }
+}
+
+/*
+ * Die Schwellenfragen an einer Stelle. `ohneWert` VOR dem Vergleich: Ein
+ * `Number(null)` ist 0, und 0 ist kleiner als jede Schwelle — ein ungemessener
+ * Coin fiele also stillschweigend in „nein" statt in „unbekannt".
+ */
+const istImSpiel = (z) => !ohneWert(z.rvol) && Number(z.rvol) >= konst.value.rvolSchwelle
+const istTrendend = (z) => !ohneWert(z.adx) && Number(z.adx) >= konst.value.adxSchwelle
+const laeuftMitBtc = (z) => !ohneWert(z.btcKorrelation)
+    && Number(z.btcKorrelation) >= konst.value.kopplungFest
+const istEigenstaendig = (z) => !ohneWert(z.btcKorrelation)
+    && Math.abs(Number(z.btcKorrelation)) <= konst.value.kopplungLose
+
+/**
+ * Auf welchen Börsen der Coin handelbar ist.
+ *
+ * `unbekannt` bleibt erhalten und wird NICHT zu „nein": Antwortet eine Börse
+ * gerade nicht, ist das kein Beleg dafür, dass sie den Coin nicht führt.
+ */
+const boersenVon = (z) => (Array.isArray(z.boersen?.liste) ? z.boersen.liste : [])
+const boersenUnbekannt = (z) => (Array.isArray(z.boersen?.unbekannt) ? z.boersen.unbekannt : [])
+const handelbarAuf = (z, boerse) => boersenVon(z).some((e) => e.boerse === boerse)
+
+/**
+ * Trifft der Börsenfilter zu? ODER über die gewählten Börsen.
+ *
+ * Eine Zeile, deren Listung bei einer GEWÄHLTEN Börse unbekannt ist, bleibt
+ * stehen — sonst leert ein Netzaussetzer bei einer Quelle die halbe Liste,
+ * und zwar wortlos.
+ */
+function passtBoersenfilter(z) {
+    const gewaehlt = boersenFilter.value
+    if (!gewaehlt.size) return true
+    for (const b of gewaehlt) {
+        if (handelbarAuf(z, b)) return true
+        if (boersenUnbekannt(z).includes(b)) return true
+    }
+    return false
 }
 
 const gefiltert = computed(() => {
     let l = zeilen.value
     if (!zeigeHuerden.value) {
-        if (filter.value === 'imSpiel') l = l.filter((z) => Number(z.rvol) >= 2)
-        else if (filter.value === 'trendend') l = l.filter((z) => Number(z.adx) >= 25)
+        if (filter.value === 'imSpiel') l = l.filter(istImSpiel)
+        else if (filter.value === 'trendend') l = l.filter(istTrendend)
         else if (filter.value === 'bestaetigt') l = l.filter(bestaetigt)
+        else if (filter.value === 'btcMit') l = l.filter(laeuftMitBtc)
+        else if (filter.value === 'btcEigen') l = l.filter(istEigenstaendig)
     }
+    l = l.filter(passtBoersenfilter)
+
     const f = sortFeld.value
     return [...l].sort((a, b) => {
         if (f === 'symbol') {
             const v = String(a.symbol).localeCompare(String(b.symbol))
             return sortAb.value ? -v : v
         }
-        const v = (Number(a[f]) || 0) - (Number(b[f]) || 0)
+        /*
+         * Fehlwerte ans ENDE, und zwar in beide Richtungen.
+         *
+         * Vorher stand hier `(Number(a[f]) || 0) - (Number(b[f]) || 0)`.
+         * `Number(null)` ist 0, also sortierte ein nie gemessener Coin
+         * aufsteigend nach ganz oben — beim Rundlauf sah er damit aus wie der
+         * billigste der Liste. Mit der BTC-Korrelation wäre daraus ein Coin
+         * geworden, der sich angeblich unabhängig von Bitcoin bewegt, obwohl
+         * für ihn nie eine Kerze verglichen wurde.
+         */
+        const aOhne = ohneWert(a[f])
+        const bOhne = ohneWert(b[f])
+        if (aOhne && bOhne) return 0
+        if (aOhne) return 1
+        if (bOhne) return -1
+        const v = Number(a[f]) - Number(b[f])
         return sortAb.value ? -v : v
     })
 })
+
+/** Korrelation als ganze Prozent — die Nachkommastelle täuscht Genauigkeit vor. */
+const btcProzent = (z) => (ohneWert(z.btcKorrelation) ? '—' : Math.round(Number(z.btcKorrelation) * 100))
+
+/**
+ * Ist der Gleichlauf im Messzeitraum zerbrochen?
+ *
+ * Der Server hat das bereits entschieden (Fisher-z gegen 1,96) und liefert
+ * das z mit. Hier nur noch die Schwelle, nicht die Rechnung — sonst stünde die
+ * Statistik an zwei Orten.
+ */
+const zerfallen = (z) => !ohneWert(z.btcZerfallZ) && Number(z.btcZerfallZ) > 1.96
+
+/**
+ * Die Einordnung in Worten — dieselben Schlüssel wie serverseitig in
+ * `btc-vergleich.js`, gebildet aus den Schwellen, die von dort kommen.
+ * `unbekannt` ist ein eigener Fall und fällt NICHT mit „eigenständig"
+ * zusammen: Ein ungemessener Coin ist nicht nachweislich unabhängig.
+ */
+function deuteKopplung(z) {
+    if (ohneWert(z.btcKorrelation)) return 'unbekannt'
+    const r = Number(z.btcKorrelation)
+    if (r >= konst.value.kopplungFest) return 'laeuftMit'
+    if (r <= -konst.value.kopplungFest) return 'laeuftGegen'
+    if (Math.abs(r) <= konst.value.kopplungLose) return 'eigenstaendig'
+    return 'teilweise'
+}
+
+const kopplungKlasse = (z) => {
+    if (ohneWert(z.btcKorrelation)) return ''
+    const r = Number(z.btcKorrelation)
+    if (r >= konst.value.kopplungFest) return 'crStark'
+    if (Math.abs(r) <= konst.value.kopplungLose) return 'crEigen'
+    return ''
+}
+
+/** Chip an oder aus. Ein Set, damit die Reihenfolge des Anklickens egal ist. */
+function boerseUmschalten(b) {
+    const neu = new Set(boersenFilter.value)
+    if (neu.has(b)) neu.delete(b)
+    else neu.add(b)
+    boersenFilter.value = neu
+}
 
 /*
  * Wer hält sich oben? Gezählt wird, wie oft ein Symbol in den letzten Läufen
@@ -1123,6 +1395,63 @@ onBeforeUnmount(() => {
 .crChip.aktiv {
     background: var(--blue-color, #4da3ff);
     color: #fff;
+}
+
+/* Börsen-Chips setzen sich ab: sie schliessen anders aus als die Filter
+   links davon — nicht „welche Coins", sondern „wo handelbar". */
+.crChipTrenner {
+    width: 1px;
+    align-self: stretch;
+    margin: .1rem .25rem;
+    background: rgba(255, 255, 255, .12);
+}
+
+.crChipBoerse {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .02em;
+}
+
+/* ── Dritte Achse: BTC ──────────────────────────────────── */
+.crEigen {
+    color: var(--grey-color, #9aa0a6);
+}
+
+/* Der Gleichlauf ist im Zeitraum zerbrochen. Warnfarbe, weil die
+   Durchschnittszahl daneben für sich genommen richtig aussieht. */
+.crWarnZerfall {
+    color: #e0a33e;
+}
+
+/* Unaufdringlich: Das Zeichen erklärt einen Grundsatz, es meldet nichts. */
+.crInfoWink {
+    margin-left: .35rem;
+    color: var(--grey-color, #9aa0a6);
+    cursor: help;
+    font-size: .9em;
+}
+
+.crHinweisWort {
+    margin-left: .4rem;
+    color: var(--grey-color, #9aa0a6);
+    font-weight: 400;
+}
+
+/* Leise Marke am Symbol: wo es den Coin gibt. Kleiner als die
+   Ausführungsbörse daneben — das ist eine Randnotiz, keine Messung. */
+.crBoersePunkt {
+    display: inline-block;
+    margin-left: .25rem;
+    padding: 0 .22rem;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, .05);
+    color: var(--grey-color, #9aa0a6);
+    font-size: .68rem;
+    vertical-align: middle;
+}
+
+.crBoersePunkt.crUnbekannt {
+    background: transparent;
+    border: 1px dashed rgba(255, 255, 255, .2);
 }
 
 /* ── Tabelle ────────────────────────────────────────────── */

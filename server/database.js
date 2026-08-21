@@ -114,7 +114,9 @@ async function fixPostgresSequences(knex) {
 // v8: Ausführungsgüte am Coin-Radar (Slippage, Tiefe, beste Börse). Additiv;
 //     ein älterer Codestand ignoriert die Spalten und läuft weiter.
 // v9: `radar_ergebnisse` — Erfolgskontrolle beider Radare. Rein additiv.
-const SCHEMA_VERSION = 9
+// v10: BTC-Vergleich und Börsenlistung am Coin-Radar. Rein additiv — ein
+// älterer Codestand schreibt die Spalten nicht und zeigt sie nicht an.
+const SCHEMA_VERSION = 10
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2264,6 +2266,23 @@ async function runMigrations(knex, client) {
             t.double('slippageVerkaufBp')
             t.double('tiefe25Bp')                   // USD im Buch innerhalb ±25 bp
             t.text('jeBoerse').defaultTo('{}')      // JSON: Messwerte je Börse
+            /*
+             * Dritte Achse: hängt der Coin an Bitcoin? (4h-Kerzen, ~33 Tage)
+             *
+             * Wieder OHNE `defaultTo` — aus demselben Grund wie oben, aber mit
+             * schärferer Folge: Eine Korrelation von 0 hiesse „bewegt sich
+             * unabhängig von BTC" und liesse den Coin im Filter „eigenständig"
+             * auftauchen. Für einen Coin ohne genug Historie wäre das eine
+             * erfundene Messung an genau der Stelle, an der jemand eine
+             * Handelsentscheidung darauf stützt.
+             */
+            t.double('btcKorrelation')              // −1 … +1, null = nicht gemessen
+            t.double('btcBeta')                     // Ausschlag je 1 % BTC
+            t.integer('btcPunkte')                  // wie viele Renditen dahinterstehen
+            t.double('btcKorrelationH1')            // erste Hälfte des Zeitraums
+            t.double('btcKorrelationH2')            // zweite Hälfte
+            t.double('btcZerfallZ')                 // Fisher-z der Differenz
+            t.text('boersen').defaultTo('{}')       // JSON: wo handelbar (+ unbekannt)
             t.bigInteger('erstelltAm').defaultTo(0)
             t.unique(['laufId', 'symbol'], 'uq_coinradar_zeile')
             t.index(['laufId'], 'idx_coinradar_lauf')
@@ -2296,6 +2315,22 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('coinradar_zeilen', 'slippageVerkaufBp', (t) => t.double('slippageVerkaufBp'))
     await addColumnIfNotExists('coinradar_zeilen', 'tiefe25Bp', (t) => t.double('tiefe25Bp'))
     await addColumnIfNotExists('coinradar_zeilen', 'jeBoerse', (t) => t.text('jeBoerse').defaultTo('{}'))
+
+    /*
+     * BTC-Vergleich und Börsenlistung (v10). Rein additiv.
+     *
+     * Altbestand bleibt `null` und wird in der Oberfläche als „—" gezeigt.
+     * Nachrechnen liesse sich das zwar — die Kerzen sind abrufbar —, aber
+     * nicht für den Zeitraum, in dem der alte Lauf stattfand; die Zahl gehörte
+     * dann zu einem anderen Monat als die Zeile, in der sie steht.
+     */
+    await addColumnIfNotExists('coinradar_zeilen', 'btcKorrelation', (t) => t.double('btcKorrelation'))
+    await addColumnIfNotExists('coinradar_zeilen', 'btcBeta', (t) => t.double('btcBeta'))
+    await addColumnIfNotExists('coinradar_zeilen', 'btcPunkte', (t) => t.integer('btcPunkte'))
+    await addColumnIfNotExists('coinradar_zeilen', 'btcKorrelationH1', (t) => t.double('btcKorrelationH1'))
+    await addColumnIfNotExists('coinradar_zeilen', 'btcKorrelationH2', (t) => t.double('btcKorrelationH2'))
+    await addColumnIfNotExists('coinradar_zeilen', 'btcZerfallZ', (t) => t.double('btcZerfallZ'))
+    await addColumnIfNotExists('coinradar_zeilen', 'boersen', (t) => t.text('boersen').defaultTo('{}'))
 
     /*
      * Erfolgskontrolle beider Radare (Audit R-06).

@@ -13,6 +13,7 @@
  *   2. Marktweite Hürden — drei Abrufe für alle, Umsatz und Spread sieben aus
  *   3. Kerzen und Kennzahlen — nur noch für die Übriggebliebenen
  *  3b. Ausführungsgüte — Orderbücher von Bitunix und Bitget, nur für dieselben
+ *  3c. BTC-Vergleich — 4h-Kerzen über rund einen Monat, wieder nur für dieselben
  *   4. Bewertung und Rangfolge (ZWEI Achsen: Gelegenheit und Ausführung)
  *   5. Beharrlichkeit gegen den Vorlauf
  *
@@ -27,6 +28,8 @@ import { logWarn } from '../logger.js'
 import { holeHandelbar, holeTestbar } from '../coin-universum.js'
 import { holeMarktweit, holeKerzenGebremst } from './daten.js'
 import { holeAusfuehrungGebremst } from './boersen.js'
+import { ladeListungen, pruefeListung } from '../hype-radar/listungen.js'
+import { vergleicheMitBtc, BTC_REFERENZ, BTC_ZEITEINHEIT } from './btc-vergleich.js'
 import { rechneAlle, fundingJahresRate } from './kennzahlen.js'
 import {
     bewerte, pruefeHuerden, vergibRaenge, rangkorrelation,
@@ -56,6 +59,11 @@ const UNGEMESSEN = {
     note: null, fundingJahresRate: null, atrPct: null, rvol: null, adx: null,
     noteAusfuehrung: null, rundlaufBp: null,
     slippageKaufBp: null, slippageVerkaufBp: null, tiefe25Bp: null,
+    // Der BTC-Vergleich braucht Kerzen — für einen an der Hürde gescheiterten
+    // Coin wurde keine geholt. `null` heisst hier „nicht gemessen"; eine 0
+    // hiesse „läuft unabhängig von BTC" und wäre schlicht erfunden.
+    btcKorrelation: null, btcBeta: null, btcPunkte: null,
+    btcKorrelationH1: null, btcKorrelationH2: null, btcZerfallZ: null,
 }
 
 /**
@@ -86,7 +94,35 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
 
     // ── Stufe 2: marktweite Hürden ──────────────────────────────────────
     melde({ schritt: 'marktweit' })
-    const { jeSymbol, quellenStand } = await holeMarktweit()
+    /*
+     * Die Börsenlistungen kommen hier schon mit, obwohl sie erst in der
+     * Anzeige gebraucht werden. Sie kosten drei Abrufe für den GANZEN Lauf
+     * (12-Stunden-Cache in `listungen.js`), nicht einen je Coin — und so
+     * bekommen auch die an einer Hürde gescheiterten Zeilen ihre Listung,
+     * die sonst leer bliebe, weil sie vor Stufe 3 geschrieben werden.
+     */
+    const [{ jeSymbol, quellenStand }, listen] = await Promise.all([
+        holeMarktweit(),
+        ladeListungen().catch((e) => {
+            logWarn('coin-radar', `Börsenlistungen nicht abrufbar: ${e.message}`)
+            return null
+        }),
+    ])
+    /*
+     * Binance-Perp-Symbol → Basiswert, wie ihn die Listungen führen.
+     *
+     * Zweimal abschneiden, nicht einmal: `1000PEPEUSDT` heisst bei Bitget und
+     * Pionex schlicht `PEPE`. Bliebe die Tausenderbündelung stehen, gälten
+     * genau die Kleinstpreis-Coins als nirgends gelistet — und das sind nicht
+     * die Ausnahmen, sondern ein guter Teil dessen, was hier oben landet.
+     * `pruefeListung` prüft die Gegenrichtung ohnehin mit.
+     */
+    const listungFuer = (symbol) => {
+        if (!listen) return {}
+        const basis = String(symbol || '').replace(/USDT$/, '').replace(/^1000+/, '')
+        const { liste, unbekannt } = pruefeListung(basis, listen)
+        return { liste, unbekannt }
+    }
     const huerden = { ...STANDARD_HUERDEN, ...(einst.huerden || {}) }
 
     const anwaerter = []
@@ -136,6 +172,7 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
         // Null. Für einen Coin, der an der Liquiditätshürde scheiterte, wurde
         // nie eine Kerze geholt — „ATR 0" wäre eine Behauptung.
         ...UNGEMESSEN,
+        boersen: JSON.stringify(listungFuer(g.symbol)),
         erstelltAm: jetzt,
     })))
 
@@ -182,6 +219,50 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
         }
     }
 
+    /*
+     * ── Stufe 3c: BTC-Vergleich ─────────────────────────────────────────
+     *
+     * Hängt der Coin an Bitcoin, und wie kräftig? Eigene Zeiteinheit (4h) und
+     * eigener Zeitraum (200 Kerzen ≈ 33 Tage), unabhängig von `zeiteinheiten`:
+     * Wer die Lauf-Zeiteinheit umstellt, soll nicht nebenbei den Zeitraum
+     * verschieben, über den die Kopplung gemessen wird — zwei Läufe wären
+     * sonst nicht vergleichbar.
+     *
+     * Kostenpunkt: 200 Coins × 2 Gewicht = 400, gemessen rund zehn Sekunden.
+     * Zusammen mit dem übrigen Lauf bleibt das unter dem Eigendeckel von 1000
+     * je Minute. Und weil `getClosedCandles` bis zur nächsten Kerzenöffnung
+     * zwischenspeichert, kostet ein zweiter Lauf innerhalb derselben vier
+     * Stunden gar nichts mehr.
+     */
+    const btcVergleich = new Map()
+    if (!abbruch()) {
+        melde({ schritt: 'btc', gesamt: offen.length })
+        try {
+            const btcKerzen = (await holeKerzenGebremst([BTC_REFERENZ], BTC_ZEITEINHEIT))
+                .get(BTC_REFERENZ)
+            if (btcKerzen?.length) {
+                const jeSymbol4h = await holeKerzenGebremst(
+                    offen.map((a) => a.symbol), BTC_ZEITEINHEIT,
+                    (f) => melde({ schritt: 'btc', ...f }),
+                )
+                for (const [sym, kerzen] of jeSymbol4h) {
+                    const v = vergleicheMitBtc(kerzen, btcKerzen)
+                    if (v) btcVergleich.set(sym, v)
+                }
+            } else {
+                /*
+                 * Ohne die Referenz ist KEIN Vergleich möglich — dann bleiben
+                 * alle Felder leer. Der Lauf deswegen abzubrechen wäre falsch:
+                 * Gelegenheit und Ausführung stehen bereits und sind für sich
+                 * brauchbar.
+                 */
+                logWarn('coin-radar', `${BTC_REFERENZ} ${BTC_ZEITEINHEIT}: keine Kerzen, BTC-Vergleich entfällt`)
+            }
+        } catch (e) {
+            logWarn('coin-radar', `BTC-Vergleich nicht möglich: ${e.message}`)
+        }
+    }
+
     // ── Stufe 4: Bewertung ──────────────────────────────────────────────
     melde({ schritt: 'bewerten', gesamt: offen.length })
     const gewichte = { ...STANDARD_GEWICHTE, ...(einst.gewichte || {}) }
@@ -210,6 +291,7 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
                     spreadBp: zahlOderNull(a.roh.spreadBp),
                     tiefeUsd: zahlOderNull(a.roh.tiefeUsd),
                     ...UNGEMESSEN,
+                    boersen: JSON.stringify(listungFuer(a.symbol)),
                     erstelltAm: jetzt,
                 })
                 continue
@@ -232,6 +314,8 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
                 adx: zahlOderNull(ze[haupt].adx),
                 // Die zweite Achse — bewusst NICHT mit `note` verrechnet.
                 ...ausfuehrungsFelder(ausfuehrung.get(a.symbol)),
+                ...btcFelder(btcVergleich.get(a.symbol)),
+                boersen: JSON.stringify(listungFuer(a.symbol)),
                 jeZeiteinheit: JSON.stringify({ ...ze, hinweise: b.hinweise, bestaetigt: b.bestaetigt }),
                 teilnoten: JSON.stringify(b.teilnoten),
                 erstelltAm: jetzt,
@@ -309,6 +393,32 @@ function ausfuehrungsFelder(a) {
         slippageVerkaufBp: zahlOderNull(b?.slippageVerkaufBp),
         tiefe25Bp: zahlOderNull(b?.tiefe25Bp),
         jeBoerse: JSON.stringify(a.jeBoerse),
+    }
+}
+
+/**
+ * Die Felder des BTC-Vergleichs.
+ *
+ * Ohne Ergebnis bleibt alles `null`. Der Unterschied zu einer Null ist hier
+ * grösser als bei den übrigen Kennzahlen: `btcKorrelation = 0` hiesse
+ * „bewegt sich nachweislich unabhängig von Bitcoin" — eine Aussage, auf die
+ * jemand einen Trade stützt. Für einen frisch gelisteten Coin mit zehn Tagen
+ * Historie wäre sie frei erfunden.
+ */
+function btcFelder(v) {
+    if (!v) {
+        return {
+            btcKorrelation: null, btcBeta: null, btcPunkte: null,
+            btcKorrelationH1: null, btcKorrelationH2: null, btcZerfallZ: null,
+        }
+    }
+    return {
+        btcKorrelation: zahlOderNull(v.korrelation),
+        btcBeta: zahlOderNull(v.beta),
+        btcPunkte: zahlOderNull(v.punkte),
+        btcKorrelationH1: zahlOderNull(v.korrelationH1),
+        btcKorrelationH2: zahlOderNull(v.korrelationH2),
+        btcZerfallZ: zahlOderNull(v.zerfallZ),
     }
 }
 

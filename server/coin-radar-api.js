@@ -14,10 +14,29 @@ import { beobachteAbbruch, sseSender } from './sse.js'
 import { logWarn, logError } from './logger.js'
 import { beansprucheAufgabe, beansprucheFuehrung, gibFuehrungFrei, meldeFehler } from './db-claim.js'
 import { leseEinstellungen, schreibeEinstellungen, VORGABEN } from './coin-radar/einstellungen.js'
+import { ANKER } from './coin-radar/bewertung.js'
+import { KOPPLUNG_FEST, KOPPLUNG_LOSE, BTC_ZEITEINHEIT } from './coin-radar/btc-vergleich.js'
 import { fuehreLaufAus } from './coin-radar/lauf.js'
 import { erzeugeEinordnung } from './coin-radar/einordnung.js'
 import { legeAnCoinRadar } from './radar-ergebnisse.js'
 import { werteAus } from './radar-guete.js'
+
+/**
+ * Die Schwellen, nach denen die Oberfläche filtert und einfärbt.
+ *
+ * Sie gehen mit den Einstellungen mit, statt im Frontend ein zweites Mal
+ * dazustehen. Vorher war „im Spiel" als `rvol >= 2` und „trendet" als
+ * `adx >= 25` direkt in `CoinRadar.vue` verdrahtet, während `ANKER` dieselben
+ * Zahlen führte — wer eine davon anpasste, verschob die Anzeige gegen die
+ * Bewertung, ohne dass es auffiel.
+ */
+const KONSTANTEN = {
+    rvolSchwelle: ANKER.rvolSchwelle,
+    adxSchwelle: ANKER.adxSchwelle,
+    kopplungFest: KOPPLUNG_FEST,
+    kopplungLose: KOPPLUNG_LOSE,
+    btcZeiteinheit: BTC_ZEITEINHEIT,
+}
 
 /** Gegen den Doppelklick im selben Prozess. */
 let laufAktiv = false
@@ -35,7 +54,7 @@ export function setupCoinRadarRoutes(app) {
     // ── Einstellungen ───────────────────────────────────────────────────
     app.get('/api/coin-radar/einstellungen', async (req, res) => {
         try {
-            res.json({ ...(await leseEinstellungen()), vorgaben: VORGABEN })
+            res.json({ ...(await leseEinstellungen()), vorgaben: VORGABEN, konstanten: KONSTANTEN })
         } catch (e) {
             logWarn('coin-radar', `Einstellungen lesen: ${e.message}`)
             res.status(500).json({ error: 'Einstellungen konnten nicht geladen werden' })
@@ -60,7 +79,7 @@ export function setupCoinRadarRoutes(app) {
                 return res.status(400).json({ error: 'Mindestens eine Zeiteinheit wird gebraucht.' })
             }
             await schreibeEinstellungen(neu)
-            res.json({ ...(await leseEinstellungen()), vorgaben: VORGABEN })
+            res.json({ ...(await leseEinstellungen()), vorgaben: VORGABEN, konstanten: KONSTANTEN })
         } catch (e) {
             logWarn('coin-radar', `Einstellungen schreiben: ${e.message}`)
             res.status(500).json({ error: 'Einstellungen konnten nicht gespeichert werden' })
@@ -129,6 +148,7 @@ export function setupCoinRadarRoutes(app) {
                     ...z,
                     jeZeiteinheit: sicherParse(z.jeZeiteinheit, {}),
                     teilnoten: sicherParse(z.teilnoten, {}),
+                    boersen: sicherParse(z.boersen, {}),
                 })),
             })
         } catch (e) {

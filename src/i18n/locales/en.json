@@ -874,7 +874,6 @@
     "quellenTitel": "Sources",
     "recherche": "Research",
     "redakteur": "Editor",
-    "redditHinweis": "unavailable — Reddit requires OAuth, a key field is not enough",
     "regelFundingExtrem": "Funding extreme % p.a.",
     "regelLiqAbfluss": "Liquidity outflow (%)",
     "regelPreis24h": "Price move 24h (%)",
@@ -965,10 +964,11 @@
     "keyPlatzhalter": "Paste key",
     "keyHolen": "Get key",
     "keyHinweis": {
-      "cryptopanic": "Free account; the auth_token is in the developer area. Supplies the news picture around rising coins.",
-      "lunarcrush": "Social metrics (mentions, sentiment). Paid access; without a key the source stays off.",
       "coingecko": "Without a key the free tier applies, with a tight limit that drops calls. The demo key is free."
-    }
+    },
+    "boersenFilterChip": "{b} — show only finds tradable there. Selecting several means \"on at least one\". Unresolved listings stay in.",
+    "wachhundAus": "Off",
+    "wachhundAusHinweis": "The watchdog is off. Favourites stay saved and visible — they are simply no longer watched, and no new alerts are raised."
   },
   "kiUebersicht": {
     "laedt": "Loading overview …",
@@ -1271,8 +1271,7 @@
     "agentShort": "Strategy",
     "research": "Research",
     "comingSoon": "Coming soon",
-    "betaHint": "Unfinished — please use in paper mode only",
-    "betaHintResearch": "Young and lightly tested — findings are hints, not verified data"
+    "betaHint": "Unfinished — please use in paper mode only"
   },
   "live": {
     "symbol": "SYMBOL",
@@ -2958,7 +2957,7 @@
     },
     "coinRadar": {
       "title": "Coin Radar — which of the tradable coins can be traded right now",
-      "intro": "The Coin Radar walks the coins that are tradable on Bitunix and measurable on Binance and answers TWO separate questions: how much is going on right now (opportunity — ATR, RVOL, ADX, funding), and what an order actually costs (execution — slippage, depth, spread, measured against the real order books of Bitunix and Bitget). It is a description of state, not a forecast.",
+      "intro": "The Coin Radar walks the coins that are tradable on Bitunix and measurable on Binance and answers THREE separate questions: how much is going on right now (opportunity — ATR, RVOL, ADX, funding), what an order actually costs (execution — slippage, depth, spread, measured against the real order books of Bitunix and Bitget), and does the coin hang on Bitcoin (co-movement and beta over roughly one month). The three answers are NOT merged. It is a description of state, not a forecast.",
       "sections": [
         {
           "g": "THE MOST IMPORTANT SENTENCE FIRST",
@@ -3016,6 +3015,28 @@
         {
           "h": "AND ON WHICH EXCHANGE",
           "p": "Measured on Bitunix and Bitget; the cheaper one is shown. The differences are large — in the test run TREE cost 5 basis points on Bitunix and 54 on Bitget, ten times as much. Pionex is deliberately absent: it lists 405 spot markets and NO perpetuals, and the Coin Radar ranks perpetuals. There is nothing to measure there."
+        },
+        {
+          "g": "THE THIRD AXIS",
+          "h": "DOES THE COIN HANG ON BITCOIN",
+          "p": "Anyone reading a Bitcoin chart wants to know which coins will follow that thesis. Two numbers answer it. Co-movement (column BTC, in percent) says WHETHER it follows — computed on 4h candles over roughly one month, on returns rather than prices, and paired by timestamp rather than by row number. Beta says HOW STRONGLY: when Bitcoin moves 1 %, the coin moves β percent on average. Measured, the range runs from 0.16 to above 1.5 — for one it is not worth joining in, for the other the position belongs correspondingly smaller."
+        },
+        {
+          "h": "DOES THE RELATIONSHIP STILL HOLD",
+          "p": "An average over a month hides it when the coupling breaks apart midway. So the window is halved and each half computed separately; if they differ more than chance explains (Fisher z above 1.96), a warning triangle appears. A measured case: 54 % co-movement across the month — 82 % in the first half, 38 % in the second. The average was correct and still worthless as a basis for a trade. A fixed threshold would not do this: at high co-movement even a small difference matters, at low co-movement the same difference is noise."
+        },
+        {
+          "h": "WHAT IS DELIBERATELY ABSENT",
+          "p": "A lead/lag measure. The obvious idea — enter the laggard after the Bitcoin signal — was measured across 18 coins over 179 points: for ALL 18 the strongest match sat at zero shift. On four hours the market moves within the same candle. A column that always shows the same zero would look measured and would not be. R² is likewise absent as its own column: it is exactly the square of the co-movement and thus no extra information — as a sentence in the expanded view (\"explained by BTC\") it reads better than as a number in the row."
+        },
+        {
+          "h": "NONE OF IT ENTERS THE SCORE",
+          "p": "\"Moves a lot\", \"trades cheaply\" and \"follows Bitcoin\" are three questions, and their answers often contradict each other. Pressed into one number, exactly the distinction you came for disappears. A coin without a measurement — listed too recently, too few shared candles — stays empty and explicitly does NOT count as independent. It therefore appears neither under the filter \"Tracks BTC\" nor under \"Independent\"."
+        },
+        {
+          "g": "ONLY WHAT YOU CAN ACTUALLY TRADE",
+          "h": "THE EXCHANGE FILTER",
+          "p": "Three chips sit above the table: BX (Bitunix), BG (Bitget), PX (Pionex) — the full name appears on hover. Selecting several means \"tradable on at least ONE\", not \"on all\": someone holding accounts at two wants the union, not the intersection. The basis is the exchanges' listings rather than the execution measurement, because only they know a third state. If an exchange does not answer right now, the row stays and carries a question mark — a source outage is no proof the coin is missing there. The symbol also carries a quiet marker showing where the coin exists at all."
         },
         {
           "g": "IS THE LIST ANY GOOD?",
@@ -3445,7 +3466,7 @@
     "beharrlichMittel": "ranking partly holds",
     "beharrlichNiedrig": "ranking is mostly noise",
     "bestaetigtHilfe": "In play on both timeframes — not just a short-lived spike.",
-    "besteBoerseHilfe": "Execution is cheaper here.",
+    "besteBoerseHilfe": "Execution is cheaper on {b}.",
     "dauerhaftHinweis": "How often a coin was in the top ten across recent runs. What survives several runs is more than a spike.",
     "dauerhaftTitel": "Who stays on top",
     "eAktiv": "Measure regularly on its own",
@@ -3556,6 +3577,30 @@
     "tab_verlauf": "History",
     "teilnoten": "Sub-scores",
     "verlaufHinweis": "Every run compares its ranking with the previous one. Near 1 means the list holds; near 0 means it is noise — and then it says nothing about tomorrow.",
-    "zeigeHuerden": "Failed the gates ({n})"
+    "zeigeHuerden": "Failed the gates ({n})",
+    "filter_btcMit": "Tracks BTC",
+    "filter_btcEigen": "Independent",
+    "gelistetAuf": "Tradable as a perpetual on {b}",
+    "listungUnbekannt": "Listing unavailable: {b}. The row stays — a source outage is no proof the coin is missing there.",
+    "spalteBtc": "BTC",
+    "spalteBtcHilfe": "Co-movement with Bitcoin over roughly one month ({ze} candles), computed on returns. 100 % means it moves like BTC. Not part of the score.",
+    "spalteBeta": "β",
+    "spalteBetaHilfe": "When BTC moves 1 %, this coin moves β % on average. Above 1 it amplifies the BTC move, below 1 it dampens it.",
+    "zerfallHilfe": "Careful: the co-movement broke down within the window — first half {a} %, second half {b} %. The figure beside it averages both.",
+    "zerfallSatz": "Co-movement weakened markedly during the window. Trading on the average figure means trading on a relationship that recently stopped holding.",
+    "btcTitel": "Relation to Bitcoin ({ze}, ~1 month)",
+    "btcKopplung": "Co-movement",
+    "btcErklaert": "Explained by BTC",
+    "btcHaelften": "First → second half",
+    "btcPunkte": "Candles compared",
+    "btcNichtInNote": "The BTC relation deliberately stays out of the score — \"moves a lot\", \"trades cheaply\" and \"follows BTC\" are three questions.",
+    "betaSatz": "about {p} % per 1 % BTC",
+    "kopplung_laeuftMit": "tracks BTC",
+    "kopplung_laeuftGegen": "moves against BTC",
+    "kopplung_eigenstaendig": "independent",
+    "kopplung_teilweise": "partly coupled",
+    "kopplung_unbekannt": "not measured",
+    "boersenFilterChip": "{b} — show only coins tradable there. Selecting several means \"on at least one\".",
+    "spalteRangHilfe": "Sort by rank — the default. Click again to reverse."
   }
 }

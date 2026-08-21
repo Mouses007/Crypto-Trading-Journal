@@ -874,7 +874,6 @@
     "quellenTitel": "Quellen",
     "recherche": "Recherche",
     "redakteur": "Redakteur",
-    "redditHinweis": "nicht verfügbar — Reddit verlangt OAuth, ein Schlüsselfeld genügt nicht",
     "regelFundingExtrem": "Funding extrem % p.a.",
     "regelLiqAbfluss": "Liquiditätsabfluss (%)",
     "regelPreis24h": "Preisbewegung 24h (%)",
@@ -929,7 +928,7 @@
     "testFehlgeschlagen": "Test fehlgeschlagen",
     "tokenOptional": "Token (optional)",
     "topN": "Kandidaten je Bericht",
-    "trittbrettAus": "Aufgüsse ausblenden ({n})",
+    "trittbrettAus": "Nachahmer ausblenden ({n})",
     "trittbrettHilfe": "Funde, deren Name einen etablierten Coin oder eine fremde Marke enthält — sie bringen keine eigene Idee mit, sondern hoffen auf die Verwechslung. Sie werden in der Note bereits abgewertet.",
     "trittbrettHilfeEinzeln": "Fährt auf „{v}\" mit — abgewertet.",
     "unterSchwelle": "unter der Schwelle",
@@ -965,10 +964,11 @@
     "keyPlatzhalter": "Schlüssel einfügen",
     "keyHolen": "Schlüssel holen",
     "keyHinweis": {
-      "cryptopanic": "Kostenloses Konto, im Entwickler-Bereich steht der auth_token. Liefert die Nachrichtenlage zu aufstrebenden Coins.",
-      "lunarcrush": "Sozial-Kennzahlen (Erwähnungen, Stimmung). Der Zugang ist kostenpflichtig; ohne Schlüssel bleibt die Quelle aus.",
       "coingecko": "Ohne Schlüssel läuft der freie Zugang mit engem Limit — bei jedem Lauf ein Risiko für Aussetzer. Der Demo-Schlüssel ist gratis."
-    }
+    },
+    "boersenFilterChip": "{b} — nur Funde zeigen, die dort handelbar sind. Mehrere Börsen heisst „auf mindestens einer\". Ungeklärte Listungen bleiben drin.",
+    "wachhundAus": "Aus",
+    "wachhundAusHinweis": "Der Wachhund ist abgeschaltet. Favoriten bleiben gespeichert und werden weiter angezeigt — sie werden nur nicht mehr überwacht, und es entstehen keine neuen Alarme."
   },
   "kiUebersicht": {
     "laedt": "Übersicht wird geladen …",
@@ -1271,8 +1271,7 @@
     "agentShort": "Strategie",
     "research": "Research",
     "comingSoon": "Kommt später",
-    "betaHint": "Unfertig — bitte nur im Papierbetrieb verwenden",
-    "betaHintResearch": "Jung und wenig erprobt — die Funde sind Hinweise, keine geprüften Daten"
+    "betaHint": "Unfertig — bitte nur im Papierbetrieb verwenden"
   },
   "live": {
     "symbol": "SYMBOL",
@@ -2958,7 +2957,7 @@
     },
     "coinRadar": {
       "title": "Coin-Radar — welche der handelbaren Coins sich gerade handeln lassen",
-      "intro": "Der Coin-Radar geht die Coins durch, die auf Bitunix handelbar und bei Binance messbar sind, und beantwortet ZWEI getrennte Fragen: Wie viel ist gerade los (Gelegenheit — ATR, RVOL, ADX, Funding), und was kostet eine Order wirklich (Ausführung — Slippage, Tiefe, Spread, gemessen an den echten Orderbüchern von Bitunix und Bitget). Es ist eine Zustandsbeschreibung, keine Prognose — wohin ein Kurs geht, steht hier nirgends.",
+      "intro": "Der Coin-Radar geht die Coins durch, die auf Bitunix handelbar und bei Binance messbar sind, und beantwortet DREI getrennte Fragen: Wie viel ist gerade los (Gelegenheit — ATR, RVOL, ADX, Funding), was kostet eine Order wirklich (Ausführung — Slippage, Tiefe, Spread, gemessen an den echten Orderbüchern von Bitunix und Bitget), und hängt der Coin an Bitcoin (Gleichlauf und Beta über rund einen Monat). Die drei Antworten werden NICHT verrechnet. Es ist eine Zustandsbeschreibung, keine Prognose — wohin ein Kurs geht, steht hier nirgends.",
       "sections": [
         {
           "g": "DER WICHTIGSTE SATZ ZUERST",
@@ -3016,6 +3015,28 @@
         {
           "h": "UND AUF WELCHER BÖRSE",
           "p": "Gemessen wird auf Bitunix und Bitget; angezeigt wird, wo es günstiger ist. Die Unterschiede sind gross — im Testlauf kostete TREE auf Bitunix 5 Basispunkte und auf Bitget 54, also das Zehnfache. Pionex fehlt bewusst: Die Börse führt 405 Spot-Märkte und KEINE Perpetuals, und der Coin-Radar rankt Perpetuals. Dort ist schlicht nichts zu messen."
+        },
+        {
+          "g": "DIE DRITTE ACHSE",
+          "h": "HÄNGT DER COIN AN BITCOIN",
+          "p": "Wer eine Chartanalyse auf Bitcoin macht, will wissen, welche Coins die These mitmachen. Zwei Zahlen beantworten das. Der Gleichlauf (Spalte BTC, in Prozent) sagt, OB er mitläuft — gerechnet auf 4h-Kerzen über rund einen Monat, auf Renditen statt Kursen und über Zeitstempel gepaart statt über die Zeilennummer. Beta sagt, WIE KRÄFTIG: Bewegt sich Bitcoin um 1 %, bewegt sich der Coin im Schnitt um β Prozent. Gemessen reicht die Spanne von 0,16 bis über 1,5 — beim einen lohnt das Mitspielen nicht, beim anderen gehört die Position entsprechend kleiner."
+        },
+        {
+          "h": "GILT DER ZUSAMMENHANG ÜBERHAUPT NOCH",
+          "p": "Ein Durchschnitt über einen Monat verbirgt es, wenn die Kopplung mittendrin zerbricht. Deshalb wird der Zeitraum halbiert und jede Hälfte einzeln gerechnet; weichen sie stärker voneinander ab, als der Zufall erklärt (Fisher-z über 1,96), erscheint ein Warndreieck. Ein gemessener Fall: über den Monat 54 % Gleichlauf — in der ersten Hälfte 82 %, in der zweiten 38 %. Die Durchschnittszahl war richtig und als Handelsgrundlage trotzdem wertlos. Eine feste Schwelle täte das nicht: Bei hohem Gleichlauf ist schon eine kleine Abweichung bedeutsam, bei niedrigem ist dieselbe Abweichung Rauschen."
+        },
+        {
+          "h": "WAS HIER MIT ABSICHT FEHLT",
+          "p": "Ein Vor- und Nachlaufmass. Die naheliegende Idee — nach dem Bitcoin-Signal noch in den Nachzügler einsteigen — wurde an 18 Coins über 179 Punkte gemessen: Bei ALLEN 18 lag die stärkste Übereinstimmung bei Verschiebung null. Auf vier Stunden bewegt sich der Markt in derselben Kerze. Eine Spalte, die immer dieselbe Null zeigt, sähe nach einer Messung aus und wäre keine. Ebenso fehlt R² als eigene Spalte: Es ist genau das Quadrat des Gleichlaufs und damit keine zusätzliche Information — als Satz im Aufklappen („davon durch BTC erklärt“) ist es verständlicher als als Zahl in der Zeile."
+        },
+        {
+          "h": "NICHTS DAVON GEHT IN DIE NOTE EIN",
+          "p": "„Bewegt sich viel“, „lässt sich günstig handeln“ und „folgt Bitcoin“ sind drei Fragen, und ihre Antworten widersprechen sich oft. In eine Zahl gepresst verschwände genau die Unterscheidung, wegen der man hinsieht. Ein Coin ohne Messung — zu kurz gelistet, zu wenige gemeinsame Kerzen — bleibt leer und gilt ausdrücklich NICHT als eigenständig. Er taucht deshalb weder im Filter „Läuft mit BTC“ noch in „Eigenständig“ auf."
+        },
+        {
+          "g": "NUR WAS DU AUCH HANDELN KANNST",
+          "h": "DER BÖRSENFILTER",
+          "p": "Über der Tabelle stehen drei Chips: BX (Bitunix), BG (Bitget), PX (Pionex) — der volle Name erscheint, wenn die Maus darüber steht. Mehrere gewählt heisst „auf mindestens EINER handelbar“, nicht „auf allen“: Wer Konten bei zweien hat, sucht die Vereinigung und nicht die Schnittmenge. Grundlage sind die Listungen der Börsen und nicht die Ausführungsmessung, weil nur sie einen dritten Zustand kennen. Antwortet eine Börse gerade nicht, bleibt die Zeile stehen und trägt ein Fragezeichen — ein Ausfall der Quelle ist kein Beleg dafür, dass es den Coin dort nicht gibt. Am Symbol steht ausserdem leise, wo es den Coin überhaupt gibt."
         },
         {
           "g": "TAUGT DIE LISTE ETWAS?",
@@ -3445,7 +3466,7 @@
     "beharrlichMittel": "Rangfolge hält teilweise",
     "beharrlichNiedrig": "Rangfolge ist grösstenteils Rauschen",
     "bestaetigtHilfe": "Auf beiden Zeiteinheiten im Spiel — nicht nur ein kurzfristiger Ausschlag.",
-    "besteBoerseHilfe": "Hier ist die Ausführung günstiger.",
+    "besteBoerseHilfe": "Auf {b} ist die Ausführung günstiger.",
     "dauerhaftHinweis": "Wie oft ein Coin in den letzten Läufen unter den ersten zehn stand. Was mehrere Läufe übersteht, ist mehr als ein Ausschlag.",
     "dauerhaftTitel": "Wer hält sich oben",
     "eAktiv": "Regelmässig von selbst messen",
@@ -3556,6 +3577,30 @@
     "tab_verlauf": "Verlauf",
     "teilnoten": "Teilnoten",
     "verlaufHinweis": "Jeder Lauf vergleicht seine Rangfolge mit der des vorigen. Nahe 1 heisst, die Liste hält; nahe 0 heisst, sie ist Rauschen — und dann sagt sie über morgen nichts.",
-    "zeigeHuerden": "An den Hürden gescheitert ({n})"
+    "zeigeHuerden": "An den Hürden gescheitert ({n})",
+    "filter_btcMit": "Läuft mit BTC",
+    "filter_btcEigen": "Eigenständig",
+    "gelistetAuf": "Als Perpetual handelbar auf {b}",
+    "listungUnbekannt": "Listung nicht abrufbar: {b}. Die Zeile bleibt stehen — ein Ausfall der Quelle ist kein Beleg dafür, dass es den Coin dort nicht gibt.",
+    "spalteBtc": "BTC",
+    "spalteBtcHilfe": "Gleichlauf mit Bitcoin über rund einen Monat ({ze}-Kerzen), gerechnet auf Renditen. 100 % heisst: bewegt sich wie BTC. Geht nicht in die Note ein.",
+    "spalteBeta": "β",
+    "spalteBetaHilfe": "Bewegt sich BTC um 1 %, bewegt sich dieser Coin im Schnitt um β %. Über 1 verstärkt er die BTC-Bewegung, unter 1 dämpft er sie.",
+    "zerfallHilfe": "Achtung: Der Gleichlauf ist im Messzeitraum zerbrochen — erste Hälfte {a} %, zweite Hälfte {b} %. Die Zahl daneben ist der Durchschnitt aus beidem.",
+    "zerfallSatz": "Der Gleichlauf hat im Zeitraum deutlich nachgelassen. Wer auf die Durchschnittszahl hin handelt, handelt auf einen Zusammenhang, den es zuletzt so nicht mehr gab.",
+    "btcTitel": "Bezug zu Bitcoin ({ze}, ~1 Monat)",
+    "btcKopplung": "Gleichlauf",
+    "btcErklaert": "Davon durch BTC erklärt",
+    "btcHaelften": "Erste → zweite Hälfte",
+    "btcPunkte": "Verglichene Kerzen",
+    "btcNichtInNote": "Der BTC-Bezug geht bewusst nicht in die Note ein — „bewegt sich viel\", „lässt sich günstig handeln\" und „folgt BTC\" sind drei Fragen.",
+    "betaSatz": "je 1 % BTC rund {p} %",
+    "kopplung_laeuftMit": "läuft mit BTC",
+    "kopplung_laeuftGegen": "läuft gegen BTC",
+    "kopplung_eigenstaendig": "eigenständig",
+    "kopplung_teilweise": "teilweise gekoppelt",
+    "kopplung_unbekannt": "nicht gemessen",
+    "boersenFilterChip": "{b} — nur Coins zeigen, die dort handelbar sind. Mehrere Börsen heisst „auf mindestens einer\".",
+    "spalteRangHilfe": "Nach Rang sortieren — die Vorgabe. Erneut klicken kehrt die Reihenfolge um."
   }
 }

@@ -90,6 +90,14 @@ export const ANKER = {
     // (gemessen: Median 23, p75 33, p90 41)
     adxUnten: 20,
     adxVoll: 40,
+    /*
+     * Die Schwelle für „trendet gerade" — sie geht NICHT in die Note ein
+     * (dafür sind `adxUnten`/`adxVoll` da), sondern trennt den gleichnamigen
+     * Filter der Oberfläche. Sie stand dort bisher als blanke 25 im Code, also
+     * ein zweites Mal neben diesem Kommentar, der sie schon nannte. Zwei
+     * Zahlen, die dasselbe meinen, laufen früher oder später auseinander.
+     */
+    adxSchwelle: 25,
     // Ab 50 % Jahresrate ist Funding ein ernsthafter Kostenfaktor.
     fundingTeuer: 50,
 }
