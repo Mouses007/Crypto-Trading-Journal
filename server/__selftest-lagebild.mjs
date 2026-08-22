@@ -46,7 +46,7 @@ console.log('\nEinheiten')
                 // Ohne Bitunix-Zeile darf kein „n/a" in der Liste stehen
                 { symbol: 'ETHUSDT', jahresRate: 0.06, bitunix: null },
             ],
-            divergenzen: [{ symbol: 'ZECUSDT', binance: 0.11, bybit: 0.0 }],
+            divergenzen: [{ symbol: 'ZECUSDT', binance: 0.11, bybit: 0.0, rate: 0.0001, intervallStunden: 4 }],
         },
         mechanik: {
             symbol: 'BTCUSDT', fenster: '1h', state: 'NEUTRAL', gruende: [],
@@ -66,7 +66,13 @@ console.log('\nEinheiten')
         alle(zeilen, 'funding').includes('ETH +6.0 %,') || alle(zeilen, 'funding').includes('ETH +6.0 % |')
         || /ETH \+6\.0 %$/m.test(alle(zeilen, 'funding')), alle(zeilen, 'funding'))
     check('Divergenz in Prozent statt im Rohbruch',
-        alle(zeilen, 'funding').includes('ZEC +11.0 % vs. 0.0 %'), alle(zeilen, 'funding'))
+        alle(zeilen, 'funding').includes('ZEC +11.0 % p.a. vs. 0.0 % p.a.'), alle(zeilen, 'funding'))
+    // Ohne Einheit hat ein Prüfer die Jahresrate als Einzelzahlung gelesen und
+    // eine richtige Zahl als unmöglich verworfen (21.08.2026).
+    check('Divergenz nennt den Takt der Zahlung',
+        alle(zeilen, 'funding').includes('(+0.010 % je 4 h)'), alle(zeilen, 'funding'))
+    check('Einheitenhinweis steht in der Grundlage',
+        /JAHRESRATEN/.test(alle(zeilen, 'funding')), alle(zeilen, 'funding'))
 }
 
 console.log('\nRichtung der Liquidationen')

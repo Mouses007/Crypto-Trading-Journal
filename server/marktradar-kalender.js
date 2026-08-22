@@ -137,7 +137,11 @@ export async function holeKalender({ manuell = false } = {}) {
         logWarn('kalender', `Fed-Kalender: ${e.message}`)
     }
 
-    if (letzterFehler && !gesehen) await meldeFehler('kalender_ff', letzterFehler)
+    // Erfolg löscht den Fehler wieder. Sonst bleibt der Eintrag stehen, bis
+    // irgendwann der nächste Lauf scheitert — die Statusanzeige zeigte dann
+    // tagelang ein „HTTP 429", das längst vorbei ist.
+    if (gesehen) await meldeFehler('kalender_ff', '')
+    else if (letzterFehler) await meldeFehler('kalender_ff', letzterFehler)
     console.log(` -> Kalender: ${gesehen} Termine gesehen, ${neu} neu, ${aktualisiert} aktualisiert`
         + ` (davon Fed: ${fed.gesehen} mit langem Vorlauf)`)
     return { gesehen, neu, aktualisiert, fed: fed.gesehen, fehler: letzterFehler }

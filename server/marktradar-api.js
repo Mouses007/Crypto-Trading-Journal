@@ -733,7 +733,13 @@ export async function holeFunding(anzahl = 50, rang = 'volumen') {
                     divergenz: Math.abs(delta) >= DIVERGENZ_PP ? delta : null,
                 }
             })
-            .sort((a, b) => b.rate - a.rate)
+            // Nach JAHRESRATE ordnen, nicht nach der rohen Intervallrate:
+            // die Liste vergleicht Märkte mit 1-h-, 4-h- und 8-h-Takt
+            // miteinander. -0,09 % je Stunde kostet achtmal so viel wie
+            // -0,09 % je acht Stunden — nach der rohen Zahl sortiert stünden
+            // beide nebeneinander, und die Kachel zeigt daneben ohnehin die
+            // Jahresrate an.
+            .sort((a, b) => (b.jahresRate ?? 0) - (a.jahresRate ?? 0))
 
         // Die Extreme des Gesamtmarkts sitzen fast immer in Mikro-Werten, die
         // niemand handelt. Deshalb stehen VORNE die eigenen Märkte; die
@@ -774,6 +780,11 @@ export async function holeFunding(anzahl = 50, rang = 'volumen') {
                     binance: r.jahresRate,
                     bybit: r.bybitJahresRate,
                     delta: r.divergenz,
+                    // Der Takt gehört mit: eine Jahresrate von -900 % liest
+                    // sich wie ein Fehler, bis danebensteht, dass es -0,10 %
+                    // je Stunde sind — eine Zahl innerhalb der Börsengrenze.
+                    intervallStunden: r.intervallStunden ?? FUNDING_STANDARD_H,
+                    rate: r.rate,
                 })),
             divergenzSchwelle: DIVERGENZ_PP,
             /*

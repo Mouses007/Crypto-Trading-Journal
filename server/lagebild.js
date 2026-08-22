@@ -95,12 +95,30 @@ export function baueZeilen(d = {}) {
 
     // ── Funding ─────────────────────────────────────────────────────────
     if (d.funding) {
+        /*
+         * Einheit IMMER mitschreiben — sonst liest die KI (und jeder Leser
+         * nach ihr) eine Jahresrate als Einzelzahlung. Beobachtet am
+         * 21.08.2026: „ONG -950,4 % gegen Bybit -27,5 %" landete so im
+         * Lagebericht, wurde nachgeprüft und als unmöglich verworfen — zu
+         * Recht, denn je Zahlung deckelt Binance bei ±2 %. Die Zahl selbst
+         * stimmte: -0,110 % je Stunde sind -963 % p.a.
+         *
+         * Deshalb steht an jeder Zahl „p.a." und daneben die Rate je Takt.
+         */
         // Dezimalbruch → Prozent (siehe Kopfkommentar)
-        const fmt = (r) => `${kurz(r.symbol)} ${pz(nz(r.jahresRate) ? r.jahresRate * 100 : null, 1)}`
+        const takt = (r) => (nz(r.rate) && nz(r.intervallStunden)
+            ? ` (${pz(r.rate * 100, 3)} je ${r.intervallStunden} h)` : '')
+        const fmt = (r) => `${kurz(r.symbol)} ${pz(nz(r.jahresRate) ? r.jahresRate * 100 : null, 1)} p.a.${takt(r)}`
         const teile = []
         if (d.funding.oben?.length) teile.push(`teuerste Longs: ${d.funding.oben.slice(0, 4).map(fmt).join(', ')}`)
         if (d.funding.unten?.length) teile.push(`teuerste Shorts: ${d.funding.unten.slice(0, 4).map(fmt).join(', ')}`)
         if (teile.length) dazu('funding', `Funding p.a. (Top ${d.funding.n ?? '?'}): ${teile.join('; ')}`)
+
+        if (teile.length || d.funding.divergenzen?.length) {
+            dazu('funding', 'Einheit: Funding-Zahlen sind JAHRESRATEN (aktuelle Rate hochgerechnet).'
+                + ' Die Zahlung je Takt ist an der Börse gedeckelt (Binance in der Regel ±2 %),'
+                + ' dreistellige Jahresraten sind daher normal und kein Datenfehler.')
+        }
 
         if (d.funding.eigene?.length) {
             // Die eigene Börse nur nennen, wenn sie eine Zahl geliefert hat —
@@ -111,8 +129,8 @@ export function baueZeilen(d = {}) {
                 + (nz(r.bitunix?.jahresRate) ? ` (Bitunix ${pz(r.bitunix.jahresRate * 100, 1)})` : '')).join(', '))
         }
         if (d.funding.divergenzen?.length) {
-            dazu('funding', 'Börsen-Divergenz Binance vs. Bybit: ' + d.funding.divergenzen.slice(0, 3).map(r =>
-                `${kurz(r.symbol)} ${pz(r.binance * 100, 1)} vs. ${pz(r.bybit * 100, 1)}`).join('; '))
+            dazu('funding', 'Börsen-Divergenz Binance vs. Bybit (Funding p.a.): ' + d.funding.divergenzen.slice(0, 3).map(r =>
+                `${kurz(r.symbol)} ${pz(r.binance * 100, 1)} p.a. vs. ${pz(r.bybit * 100, 1)} p.a.${takt(r)}`).join('; '))
         }
     }
 
