@@ -32,6 +32,7 @@ import { getKnex } from './database.js'
 import { decrypt, encrypt } from './crypto.js'
 import { beansprucheAufgabe, gibAufgabeFrei, merkeAufgabenFehler } from './db-claim.js'
 import { logWarn, logError } from './logger.js'
+import { empfaengerListe, EMPFAENGER_MAX } from '../shared/empfaenger.js'
 import { baueMail, logoAnhang, STUFEN, STUFE_VORGABE } from './mail-vorlage.js'
 
 /**
@@ -60,7 +61,17 @@ export const REGISTER = [
     { id: 'strategieOrderUnbekannt', gruppe: 'handel', email: true, symbol: '\u2757', ton: 'gefahr', bereich: 'Handel · Strategie' },
     { id: 'strategieKillSwitch', gruppe: 'handel', email: true, symbol: '\u{1F6D1}', ton: 'gefahr', bereich: 'Handel · Not-Aus' },
     // ── System ───────────────────────────────────────────────────────────
-    { id: 'lageberichtFertig', gruppe: 'system', email: true, symbol: '\u{1F4F0}', ton: 'gut', bereich: 'System · Nachrichten' },
+    // Einziger Eintrag mit EIGENER Stelle: Der Lagebericht geht oft an mehrere
+    // Leser, und ein Empfängerfeld je Ereignis waere fuer die anderen zehn
+    // Ballast. Schalter und Empfaenger stehen deshalb bei den
+    // Nachrichten-Einstellungen; hier steht nur, WO sie stehen.
+    {
+        id: 'lageberichtFertig', gruppe: 'system', email: true,
+        symbol: '\u{1F4F0}', ton: 'gut', bereich: 'System · Nachrichten',
+        eigeneStelle: 'nachrichten',
+        mailSchalter: 'radarNewsMailAktiv',
+        empfaengerSpalte: 'radarNewsMailAn',
+    },
     { id: 'kiBerichtFertig', gruppe: 'system', email: false, symbol: '\u{1F4C4}', ton: 'gut', bereich: 'System · KI' },
     { id: 'kiGuthabenLeer', gruppe: 'system', email: true, symbol: '\u{1F4B3}', ton: 'warnung', bereich: 'System · KI' },
     { id: 'neueVersion', gruppe: 'system', email: true, symbol: '\u{1F195}', ton: 'gut', bereich: 'System · Update' },
@@ -118,19 +129,50 @@ export function kanalWahl(settings, id) {
         wahl = {}
     }
     const eigen = wahl[id] || {}
-    return {
-        browser: eigen.browser !== undefined ? Boolean(eigen.browser) : true,
+    /*
+     * Ereignisse mit eigener Stelle lesen ihren Mail-Schalter aus einer eigenen
+     * Spalte. Sonst stünde dieselbe Entscheidung an zwei Orten, und der Leser
+     * hätte keine Möglichkeit zu erkennen, welcher der beiden gewinnt.
+     */
+    const email = eintrag?.mailSchalter
+        ? Number(settings?.[eintrag.mailSchalter] ?? 0) === 1
         // Ein Ereignis ohne serverseitige Erkennung kann nie mailen, egal was
         // gespeichert ist — sonst verspräche die Oberfläche etwas, das der
         // Server nicht halten kann.
-        email: eintrag?.email ? Boolean(eigen.email) : false,
+        : (eintrag?.email ? Boolean(eigen.email) : false)
+    return {
+        browser: eigen.browser !== undefined ? Boolean(eigen.browser) : true,
+        email,
     }
 }
 
-/** Ist der SMTP-Zugang vollständig genug für einen Versuch? */
+export { empfaengerListe, EMPFAENGER_MAX }
+
+/**
+ * An WEN diese Meldung geht.
+ *
+ * Hat das Ereignis eine eigene Empfängerspalte und steht dort etwas, gilt
+ * diese Liste — sonst der allgemeine Empfänger. Der Rückfall ist wichtig: Wer
+ * den Schalter umlegt, aber kein Feld ausfüllt, soll Post bekommen und nicht
+ * ins Leere senden.
+ */
+export function empfaengerFuer(settings, id) {
+    const eintrag = NACH_ID.get(id)
+    const eigene = eintrag?.empfaengerSpalte
+        ? empfaengerListe(settings?.[eintrag.empfaengerSpalte])
+        : []
+    return eigene.length ? eigene : empfaengerListe(settings?.mailAn)
+}
+
+/**
+ * Ist der SMTP-Zugang vollständig genug für einen Versuch?
+ *
+ * Der Empfänger gehört NICHT hierher: Ein Ereignis mit eigener Liste braucht
+ * `mailAn` nicht. Wer geliefert wird, entscheidet `empfaengerFuer`, und ohne
+ * Empfänger bricht `melde` ab — mit einer Meldung, die den Grund nennt.
+ */
 export function mailKonfigVollstaendig(s) {
-    return Boolean(s && Number(s.mailAktiv) === 1 && s.mailHost && s.mailPort
-        && s.mailVon && s.mailAn)
+    return Boolean(s && Number(s.mailAktiv) === 1 && s.mailHost && s.mailPort && s.mailVon)
 }
 
 /**
@@ -142,7 +184,7 @@ export function mailKonfigVollstaendig(s) {
  * Text raus, wie vorher. Mit ihnen sieht jedes Postfach die gestaltete
  * Fassung — und Textleser (oder ein Client, der HTML sperrt) den `text`.
  */
-async function sendeMail(s, { betreff, text, html, anhaenge }) {
+async function sendeMail(s, { betreff, text, html, anhaenge, an }) {
     const sicherheit = String(s.mailSicherheit || 'starttls')
     let passwort = ''
     if (s.mailPasswort) {
@@ -178,7 +220,10 @@ async function sendeMail(s, { betreff, text, html, anhaenge }) {
             // Anzeigename statt nackter Adresse — im Postfach steht dann die
             // App und nicht „noreply@…".
             from: { name: 'Crypto Trading Journal', address: String(s.mailVon) },
-            to: String(s.mailAn),
+            // Mehrere Empfänger stehen alle im "An" und sehen einander. Das ist
+            // Absicht: Es ist die eigene Verteilerliste des Lesers, und ein
+            // verstecktes Blindkopie-Feld würde beim Antworten überraschen.
+            to: (Array.isArray(an) && an.length ? an : [String(s.mailAn)]).join(', '),
             subject: betreff,
             text,
             ...(html ? { html } : {}),
@@ -257,6 +302,11 @@ export async function melde(id, { betreff, text, schluessel = '', ttlMs = 12 * 6
         if (!s) return false
         if (!kanalWahl(s, id).email) return false
         if (!mailKonfigVollstaendig(s)) return false
+        const an = empfaengerFuer(s, id)
+        if (!an.length) {
+            logWarn('benachrichtigungen', `"${id}" ist auf Mail gestellt, aber kein Empfänger eingetragen`)
+            return false
+        }
 
         // Entprellen VOR dem Deckel: sonst verbraucht ein längst gemeldetes
         // Ereignis einen Platz, den ein neues gebraucht hätte.
@@ -272,7 +322,7 @@ export async function melde(id, { betreff, text, schluessel = '', ttlMs = 12 * 6
         }
 
         try {
-            await sendeMail(s, gestalteteMail(s, id, { betreff, text }))
+            await sendeMail(s, { ...gestalteteMail(s, id, { betreff, text }), an })
         } catch (e) {
             /*
              * Ansprüche sind gesetzt, die Mail aber nie angekommen. Ohne
@@ -286,7 +336,7 @@ export async function melde(id, { betreff, text, schluessel = '', ttlMs = 12 * 6
             await merkeAufgabenFehler(anspruch, e.message)
             throw e
         }
-        console.log(` -> Benachrichtigung verschickt: ${id}`)
+        console.log(` -> Benachrichtigung verschickt: ${id} an ${an.length} Empfänger`)
         return true
     } catch (e) {
         logError('benachrichtigungen', `"${id}" konnte nicht verschickt werden`, e)
@@ -585,7 +635,16 @@ export function setupBenachrichtigungsRoutes(app) {
     app.post('/api/mail/test', async (req, res) => {
         try {
             const s = await getKnex()('settings').where('id', 1).first()
-            if (!s?.mailHost || !s?.mailVon || !s?.mailAn) {
+            /*
+             * Der Testempfänger ist der allgemeine — steht dort nichts, tut es
+             * auch die Nachrichten-Liste. Ohne diesen Rückfall liefe jemand,
+             * der NUR die Nachrichten-Empfänger pflegt, in eine Sackgasse: Der
+             * Testknopf verlangte eine Adresse, die er nirgends braucht.
+             */
+            const an = empfaengerListe(s?.mailAn).length
+                ? empfaengerListe(s?.mailAn)
+                : empfaengerFuer(s, 'lageberichtFertig')
+            if (!s?.mailHost || !s?.mailVon || !an.length) {
                 return res.status(400).json({ error: 'SMTP-Server, Absender und Empfänger müssen ausgefüllt sein.' })
             }
             const logo = logoAnhang(s)
@@ -593,7 +652,7 @@ export function setupBenachrichtigungsRoutes(app) {
                 titel: 'Testmail aus dem Trading Journal',
                 text: 'Wenn diese Nachricht ankommt, ist der E-Mail-Versand richtig eingerichtet.\n\n'
                     + `SMTP-Server: ${s.mailHost}:${s.mailPort} (${s.mailSicherheit})\n`
-                    + `Absender: ${s.mailVon}\nEmpfänger: ${s.mailAn}\n\n`
+                    + `Absender: ${s.mailVon}\nEmpfänger: ${an.join(', ')}\n\n`
                     + 'So sehen ab jetzt alle Benachrichtigungen aus. Sinnbild und Farbe '
                     + 'wechseln je nach Ereignis — rot bei Not-Aus, gelb bei Warnungen.',
                 symbol: '\u2705',
@@ -603,7 +662,7 @@ export function setupBenachrichtigungsRoutes(app) {
                 mitLogo: Boolean(logo),
                 groesse: schriftStufe(s),
             })
-            await sendeMail(s, { ...mail, anhaenge: logo ? [logo] : [] })
+            await sendeMail(s, { ...mail, anhaenge: logo ? [logo] : [], an })
             res.json({ success: true })
         } catch (e) {
             // Kein 500: die Konfiguration ist falsch, nicht der Server kaputt

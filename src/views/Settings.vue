@@ -24,6 +24,7 @@ import { merkeErweiterteInfos } from '../composables/useErweiterteInfos.js'
 import { setLocale } from '../i18n'
 import { useGetPeriods } from '../utils/utils.js'
 import appLogoSrc from '../assets/icon.png'
+import { empfaengerPruefung, EMPFAENGER_MAX } from '../../shared/empfaenger.js'
 import {
     liveMarket, liveViewPct, liveFrameMs, liveHistoryMin, liveRamp, liveShowProfile,
     livePauseInBackground, liveColorMode, liveColorRef, liveAutoFollow, liveThreshold, liveDotStep,
@@ -735,6 +736,15 @@ let radarNewsUpdateStunde1 = ref(18)
 let radarNewsUpdateStunde2 = ref(21)
 /* Ganzer Bericht in der Mail statt nur der Gesamtlage. */
 let radarNewsMailVoll = ref(false)
+let radarNewsMailAktiv = ref(false)
+let radarNewsMailAn = ref('')
+
+/*
+ * Dieselbe Regel wie beim Versand — geteiltes Modul statt zweiter Umsetzung.
+ * Zeigte die Oberfläche „4 Empfänger" und der Server schickte an drei, suchte
+ * man den Grund am SMTP-Zugang statt an der Adresse.
+ */
+const newsEmpfaenger = computed(() => empfaengerPruefung(radarNewsMailAn.value))
 /* Wie lange erzeugte Berichte liegen bleiben. 'manuell' löscht nie. */
 let radarNewsBerichtAufbewahrung = ref('manuell')
 /* Zeithorizont der Chartanalyse: wie alt die Analysen sein dürfen und wie weit
@@ -860,6 +870,8 @@ function loadRadarSettings() {
     radarNewsWochentag.value = Math.max(1, Math.min(7, Number(s.radarNewsWochentag ?? 1)))
     radarNewsUpdates.value = Math.max(0, Math.min(2, Number(s.radarNewsUpdates) || 0))
     radarNewsMailVoll.value = Number(s.radarNewsMailVoll ?? 0) === 1
+    radarNewsMailAktiv.value = Number(s.radarNewsMailAktiv ?? 0) === 1
+    radarNewsMailAn.value = s.radarNewsMailAn || ''
     radarNewsBerichtAufbewahrung.value = ['manuell', 'tag', 'woche', 'monat']
         .includes(s.radarNewsBerichtAufbewahrung) ? s.radarNewsBerichtAufbewahrung : 'manuell'
     radarNewsChartFrische.value = ['tag', 'woche', 'monat'].includes(s.radarNewsChartFrische)
@@ -925,6 +937,8 @@ async function radarSpeichern(feld) {
         radarNewsWochentag: Math.max(1, Math.min(7, Number(radarNewsWochentag.value) || 1)),
         radarNewsUpdates: Math.max(0, Math.min(2, Number(radarNewsUpdates.value) || 0)),
         radarNewsMailVoll: radarNewsMailVoll.value ? 1 : 0,
+        radarNewsMailAktiv: radarNewsMailAktiv.value ? 1 : 0,
+        radarNewsMailAn: radarNewsMailAn.value,
         radarNewsBerichtAufbewahrung: radarNewsBerichtAufbewahrung.value,
         radarNewsChartFrische: radarNewsChartFrische.value,
         // Immer beide Stunden schreiben, auch bei nur einer Aktualisierung:
@@ -2076,9 +2090,20 @@ const kanalWahl = ref({})
 
 /** Reihenfolge der Gruppen in der Anzeige. */
 const MELDE_GRUPPEN = ['markt', 'handel', 'system']
+/*
+ * Ereignisse mit `eigeneStelle` stehen NICHT in dieser Tabelle.
+ *
+ * Der Lagebericht geht oft an mehrere Leser und hat deshalb eine eigene
+ * Empfängerliste unter KI → Nachrichten. Zwei Schalter für dieselbe Sache an
+ * zwei Orten wären schlimmer als einer am ungewohnten Ort — deshalb hier nur
+ * der Hinweis, wo er steht.
+ */
 const typenNachGruppe = computed(() => MELDE_GRUPPEN
-    .map(g => ({ id: g, typen: meldeTypen.value.filter(t => t.gruppe === g) }))
+    .map(g => ({ id: g, typen: meldeTypen.value.filter(t => t.gruppe === g && !t.eigeneStelle) }))
     .filter(g => g.typen.length))
+
+/** Welche Ereignisse anderswo eingestellt werden — für den Verweis darunter. */
+const meldeAnderswo = computed(() => meldeTypen.value.filter(t => t.eigeneStelle))
 
 /** Schwelle je Ereignis — die beiden, die eine haben, hängen an eigenen Spalten. */
 const SCHWELLEN = {
@@ -3677,11 +3702,106 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
-                    <!-- Was in der Benachrichtigungs-Mail steht. Sie kommt nur,
-                         wenn „Lagebericht fertig" unter Benachrichtigungen auf
-                         Mail steht — deshalb der Verweis darauf statt eines
-                         zweiten Schalters, der dasselbe noch einmal regelt. -->
+                    <!--=============== VERSAND ===============-->
+                    <!-- Der Lagebericht ist der einzige Meldungstyp mit eigener
+                         Empfängerliste: Er geht oft an mehrere Leser, während
+                         alle anderen Meldungen den einen Betreiber angehen.
+                         Deshalb steht der Schalter HIER und nicht in der
+                         Benachrichtigungs-Tabelle. -->
+                    <hr class="mt-4" />
+                    <p class="fw-bold mb-1">{{ t('settings.ki.news.sendTitle') }}</p>
+                    <p class="fw-lighter" style="font-size:0.85rem;">
+                        {{ t('settings.ki.news.sendIntro') }}
+                    </p>
+
+                    <!-- Der Browser-Hinweis stand bisher in der
+                         Benachrichtigungs-Tabelle. Er zieht mit um, sonst wäre
+                         er nach dem Umbau nirgends mehr erreichbar. Gespeichert
+                         wird er weiterhin in derselben Kanalwahl. -->
                     <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.browserLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.browserHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="newsBrowserToggle"
+                                    :checked="kanalAn('lageberichtFertig', 'browser')"
+                                    :disabled="!browserNotifications"
+                                    @change="setzeKanal('lageberichtFertig', 'browser', $event.target.checked)">
+                            </div>
+                            <label class="mb-0" for="newsBrowserToggle">
+                                {{ kanalAn('lageberichtFertig', 'browser')
+                                    ? t('settings.ki.news.browserOn') : t('settings.ki.news.browserOff') }}
+                            </label>
+                            <span v-if="!browserNotifications" class="text-muted small">
+                                {{ t('settings.ki.news.browserGlobalOff') }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.mailOnLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.mailOnHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="radarNewsMailAktivToggle"
+                                    v-model="radarNewsMailAktiv" @change="radarSpeichern('radarNewsMailAktiv')">
+                            </div>
+                            <label class="mb-0" for="radarNewsMailAktivToggle">
+                                {{ radarNewsMailAktiv ? t('settings.ki.news.mailOn') : t('settings.ki.news.mailOff') }}
+                            </label>
+                            <!-- Ohne SMTP-Zugang ist der Schalter eine leere
+                                 Zusage — dann steht hier, was fehlt. -->
+                            <span v-if="radarNewsMailAktiv && !mail.mailAktiv" class="text-warning small">
+                                <i class="uil uil-exclamation-triangle me-1"></i>
+                                {{ t('settings.ki.news.mailNoSmtp') }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div v-if="radarNewsMailAktiv" class="row align-items-start mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.recipientsLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.recipientsHint', { max: EMPFAENGER_MAX }) }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <textarea class="form-control form-control-sm" rows="3"
+                                :placeholder="t('settings.ki.news.recipientsPlaceholder')"
+                                v-model="radarNewsMailAn" @change="radarSpeichern('radarNewsMailAn')"></textarea>
+                            <!-- Was der Server daraus macht, steht direkt darunter.
+                                 Eine stille Filterung wäre die schlechtere Wahl:
+                                 Ein Tippfehler fiele erst auf, wenn die Post
+                                 ausbleibt — und dann sucht man am SMTP-Zugang. -->
+                            <div class="small mt-1">
+                                <template v-if="newsEmpfaenger.gueltig.length">
+                                    <span class="text-muted">{{ t('settings.ki.news.recipientsOk', {
+                                        n: newsEmpfaenger.gueltig.length }) }}</span>
+                                    <span class="ms-1">{{ newsEmpfaenger.gueltig.join(', ') }}</span>
+                                </template>
+                                <span v-else-if="radarNewsMailAn.trim()" class="text-danger">
+                                    {{ t('settings.ki.news.recipientsNone') }}
+                                </span>
+                                <span v-else class="text-muted">
+                                    {{ t('settings.ki.news.recipientsFallback', { adresse: mail.mailAn || '—' }) }}
+                                </span>
+                                <div v-if="newsEmpfaenger.verworfen.length" class="text-danger">
+                                    {{ t('settings.ki.news.recipientsBad', {
+                                        was: newsEmpfaenger.verworfen.join(', ') }) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="radarNewsMailAktiv" class="row align-items-center mt-3">
                         <div class="col-12 col-md-4">
                             {{ t('settings.ki.news.mailLabel') }}
                             <small class="d-block text-muted" style="font-size:0.78rem;">
@@ -5188,6 +5308,16 @@ onBeforeMount(async () => {
                 </div>
                 <p class="fw-lighter mt-2" style="font-size:0.8rem;">
                     {{ t('settings.benachrichtigungen.kanalHinweis') }}
+                </p>
+
+                <!-- Wo die Ereignisse stehen, die hier fehlen. Ohne diese Zeile
+                     sucht man den Lagebericht in der Tabelle und hält sein
+                     Fehlen für einen Fehler. -->
+                <p v-if="meldeAnderswo.length" class="fw-lighter" style="font-size:0.8rem;">
+                    <i class="uil uil-info-circle me-1"></i>
+                    {{ t('settings.benachrichtigungen.anderswo', {
+                        was: meldeAnderswo.map(typ => t('settings.benachrichtigungen.typ_' + typ.id)).join(', ')
+                    }) }}
                 </p>
 
                 <!--=============== E-MAIL ===============-->
