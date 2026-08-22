@@ -668,9 +668,39 @@ const naechsterTermin = computed(() => termine.value.find(e => e.dateUnix >= jet
  * (Wirkung, Länder), die unten in der Terminliste eingestellt ist — zwei
  * Filtergedanken auf einer Seite wären einer zu viel.
  */
-const naechsteTermine = computed(() => termine.value
-    .filter(e => e.dateUnix >= jetzt && e.dateUnix < jetzt + 36 * 60 * 60 * 1000)
-    .slice(0, 6))
+/*
+ * Die naechsten Termine fuer die Dossier-Kachel.
+ *
+ * 36 Stunden sind das Fenster, das zum Bericht passt. An einem ruhigen Tag
+ * steht darin aber genau ein Eintrag — und weil daneben die Marktdaten-Tabelle
+ * mit einem Dutzend Zeilen haengt, ist die Kachel dann zu neun Zehnteln leer.
+ * Deshalb wird das Fenster geoeffnet, bis wenigstens MIN_TERMINE zusammen-
+ * kommen. Die Fusszeile sagt dann, welches Fenster gilt: eine Kachel, die
+ * heimlich sieben Tage zeigt, waehrend "naechste 36 Stunden" darunter steht,
+ * ist schlimmer als eine leere.
+ *
+ * Steht gar nichts im Bestand, faellt die Kachel weg (`v-if` unten) und die
+ * Marktdaten-Tabelle bekommt die volle Breite.
+ */
+const MIN_TERMINE = 3
+const TERMIN_FENSTER = [36, 24 * 7, 24 * 30]
+
+const naechsteTermine = computed(() => {
+    const kommend = termine.value.filter(e => e.dateUnix >= jetzt)
+    for (const stunden of TERMIN_FENSTER) {
+        const liste = kommend.filter(e => e.dateUnix < jetzt + stunden * 60 * 60 * 1000).slice(0, 6)
+        if (liste.length >= MIN_TERMINE) return { liste, stunden }
+    }
+    return { liste: kommend.slice(0, 6), stunden: 0 }   // 0 = alles, was dasteht
+})
+
+/**
+ * Uhrzeit fuer die Kachel — mit Datum, sobald das Fenster ueber die 36 Stunden
+ * hinausgeht. "01:00" allein beantwortet bei sieben Tagen nicht, welcher Tag.
+ */
+const terminZeit = (ms) => (naechsteTermine.value.stunden === 36
+    ? zeit(ms)
+    : dayjs(ms).tz(zone()).format('DD.MM. ') + zeit(ms))
 
 /** Welche Quellen liefern gerade Beiträge? Reihenfolge nach Menge. */
 const quellenListe = computed(() => {
@@ -1226,7 +1256,10 @@ onBeforeUnmount(() => {
                      darunter je Kapitel die Zahlen und die Meldungen. Klick auf
                      eine Zeile öffnet dasselbe Belegfenster wie überall sonst. -->
                 <div v-if="layoutModus === 'dossier'" class="nwDossier">
-                    <div class="nwDoKopfzeile">
+                    <!-- Faellt einer der beiden Kaesten weg, teilt sich der andere
+                         die Zeile nicht mit einer Luecke, sondern nimmt sie ganz. -->
+                    <div class="nwDoKopfzeile"
+                        :class="{ nwDoEinzeln: !(bericht.markt && bericht.markt.length) || !naechsteTermine.liste.length }">
                         <!-- Der gemessene Marktstand VON DAMALS. Ältere Berichte
                              haben ihn nicht gespeichert — dann fehlt die Tabelle,
                              statt hier die Zahlen von heute zu zeigen. -->
@@ -1259,8 +1292,9 @@ onBeforeUnmount(() => {
                         </section>
 
                         <!-- Was noch bevorsteht — live aus dem Kalender, mit der
-                             Auswahl, die unten in der Terminliste eingestellt ist. -->
-                        <section v-if="naechsteTermine.length" class="nwDoBlock">
+                             Auswahl, die unten in der Terminliste eingestellt ist.
+                             Steht nichts an, faellt der ganze Kasten weg. -->
+                        <section v-if="naechsteTermine.liste.length" class="nwDoBlock">
                             <h3 class="nwDoTitel">
                                 <i class="uil uil-calendar-alt"></i>{{ t('news.upcoming') }}
                             </h3>
@@ -1268,17 +1302,20 @@ onBeforeUnmount(() => {
                                 <thead>
                                     <tr>
                                         <th>{{ t('news.time') }}</th>
+                                        <th>{{ t('news.country') }}</th>
                                         <th>{{ t('news.event') }}</th>
                                         <th>{{ t('news.forecast') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="e in naechsteTermine" :key="e.extId">
+                                    <tr v-for="e in naechsteTermine.liste" :key="e.extId">
+                                        <!-- Zeit und Land in GETRENNTEN Spalten: nebeneinander
+                                             las sich "01:00 USD" wie ein Geldbetrag. -->
                                         <td class="nwDoZeit">
                                             <i class="nwPunktFarbe" :style="{ background: IMPACT_FARBE[e.impact] }"></i>
-                                            {{ zeit(e.dateUnix) }}
-                                            <span class="nwLand">{{ e.land }}</span>
+                                            {{ terminZeit(e.dateUnix) }}
                                         </td>
+                                        <td class="nwDoLand">{{ e.land }}</td>
                                         <td>{{ e.titel }}</td>
                                         <td class="nwDoWert">
                                             <b v-if="e.forecast">{{ e.forecast }}</b>
@@ -1288,7 +1325,11 @@ onBeforeUnmount(() => {
                                     </tr>
                                 </tbody>
                             </table>
-                            <p class="nwDoFuss">{{ t('news.upcomingHint') }}</p>
+                            <p class="nwDoFuss">
+                                {{ naechsteTermine.stunden === 36
+                                    ? t('news.upcomingHint')
+                                    : t('news.upcomingHintWide', { n: naechsteTermine.liste.length }) }}
+                            </p>
                         </section>
                     </div>
 
@@ -2389,6 +2430,11 @@ onBeforeUnmount(() => {
 .nwDoKopfzeile {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    /* Nicht strecken. Der Marktstand hat ein Dutzend Zeilen, die Termine an
+       einem ruhigen Tag zwei — bei `stretch` erbt der kurze Kasten die Hoehe
+       des langen und besteht zu neun Zehnteln aus Leere. Zwei Kaesten
+       ungleicher Hoehe sind ehrlicher als ein aufgeblasener. */
+    align-items: start;
     gap: 0.9rem;
     margin-bottom: 1.2rem;
 }
@@ -2396,6 +2442,10 @@ onBeforeUnmount(() => {
 @media (min-width: 1000px) {
     .nwDoKopfzeile {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .nwDoKopfzeile.nwDoEinzeln {
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 
@@ -2499,12 +2549,13 @@ onBeforeUnmount(() => {
 
 .nwDoZeit {
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
     color: var(--white-87);
     font-weight: 600;
 }
 
-.nwDoZeit .nwLand {
-    margin-left: 0.35rem;
+.nwDoLand {
+    white-space: nowrap;
     font-weight: 500;
     color: var(--white-50, rgba(255, 255, 255, 0.5));
 }
@@ -3311,6 +3362,12 @@ onBeforeUnmount(() => {
 }
 
 .nwPunktFarbe {
+    /* `display` ist Pflicht, nicht Kosmetik: In der Terminliste ist der Punkt
+       ein Flex-Kind und bekommt seine Masse; in der Dossier-Tabelle steht er
+       inline, und dort ignoriert der Browser width/height ersatzlos — die
+       Wichtigkeits-Farbe fehlte dort schlicht. */
+    display: inline-block;
+    vertical-align: middle;
     width: 8px;
     height: 8px;
     border-radius: 50%;

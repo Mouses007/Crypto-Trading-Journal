@@ -31,6 +31,8 @@ import {
     holeMarkt,
 } from './marktradar-api.js'
 import { ladeLlmConfig, callLLMJson, istGuthabenFehler, merkeKiGuthaben, schaetzeKosten } from './llm.js'
+import { entdoppleBericht, protokollText } from './news-doppler.js'
+import { gruppiereBeitraege, themenRegel, haltEinsProThema } from './news-themen.js'
 import { merkeVerbrauch } from './ai-usage.js'
 import { samplingFelder, GEMINI_STANDARDMODELL } from './ai-models.js'
 import {
@@ -74,6 +76,36 @@ const X_WIEDERHOLUNG_MS = 2 * 60 * 60 * 1000
  */
 export function istOhneInhalt(text) {
     return /^[\s\-–—*•]*ohne\s+inhalt/i.test(String(text || ''))
+}
+
+/**
+ * Ist das nur ein Bruchstück statt einer Zusammenfassung?
+ *
+ * Der Wächter in `fasseVideoZusammen` prüft `finishReason` — er merkt einen
+ * Abbruch also nur im Augenblick des Abrufs. Was einmal in der Datenbank
+ * steht, wird von da an ungeprüft weiterverwendet: `erzeugeLagebericht` hebt
+ * jede vorhandene `zusammenfassung` als `ergebnis: 'übernommen'` in JEDEN
+ * neuen Bericht. So standen am 21.08.2026 fünfzehn halbe Stichpunkte über
+ * fünf Kanäle in der Videoliste und sahen aus wie gelungene Analysen —
+ * `"- Bitcoin stieg durch Short-Squeeze über 70.00"`, mitten in der Zahl
+ * abgeschnitten.
+ *
+ * Deshalb wird hier bei der VERWENDUNG geprüft, nicht nur beim Abruf. Ein
+ * Wächter, der nur die Entstehung bewacht, lässt jeden Altbestand durch —
+ * und der Grund für den Abbruch muss dafür nicht einmal derselbe sein.
+ *
+ * Die Grenze ist gemessen, nicht geschätzt: die kaputten Bruchstücke lagen
+ * bei 33–77 Zeichen, die brauchbaren Zusammenfassungen begannen bei 304.
+ * 120 liegt in dieser Lücke. Wer drei Stichpunkte zustande bringt, hat
+ * geliefert, auch wenn sie kurz ausfallen — deshalb die zweite Bedingung.
+ *
+ * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
+ */
+export function istBruchstueck(text) {
+    const t = String(text || '').trim()
+    if (!t) return true
+    const punkte = t.split('\n').filter(z => /^[\s]*[-–—*•]/.test(z)).length
+    return t.length < 120 && punkte < 3
 }
 
 /**
@@ -517,7 +549,11 @@ async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe
             const gedacht = Number(j?.usageMetadata?.thoughtsTokenCount) || 0
             logWarn('news', `Videozusammenfassung abgeschnitten (${gedacht} Token gedacht, `
                 + `Deckel ${stufe.tokens + DENKRESERVE}): ${videoUrl}`)
-            if (text.length < 60) throw new Error('Antwort abgeschnitten — Token-Deckel zu klein')
+            // Dieselbe Messlatte wie bei der Verwendung: eine Grenze, nicht zwei.
+            // Die alte Zahl (60 Zeichen) liess `"- Krypto-Gipfel im Weissen Haus
+            // mit Coinbase."` durch — 44 Zeichen, sieht vollständig aus, ist
+            // aber ein einziger von fünf bis acht verlangten Stichpunkten.
+            if (!istOhneInhalt(text) && istBruchstueck(text)) throw new Error('Antwort abgeschnitten — Token-Deckel zu klein')
         }
         return { text, tokens: Number(j?.usageMetadata?.totalTokenCount) || 0 }
     } finally {
@@ -647,13 +683,23 @@ export const ZUSATZ_MAX = 2000
 export function eigeneAnweisungen(zusatz) {
     const text = String(zusatz || '').trim().slice(0, ZUSATZ_MAX)
     if (!text) return ''
-    return `EIGENE ANWEISUNGEN DES LESERS — sie gehen bei Ton, Schwerpunkt und Auswahl
-vor, hebeln die REGELN oben aber NICHT aus:
+    return `EIGENE ANWEISUNGEN DES LESERS — sie haben VORRANG:
 <<<
 ${text}
 >>>
-Auch damit gilt weiter: keine Handelsempfehlungen, keine Kursziele, keine
-Prognosen, nichts erfinden — und die Antwort bleibt genau das JSON unten.
+Sie gehen den Vorgaben aus den Einstellungen VOR. Umfang, Anzahl der Punkte,
+Reihenfolge, Schwerpunkt und Auswahl richten sich nach ihnen, auch wenn oben
+unter UMFANG etwas anderes steht — dort steht die Vorgabe, hier steht der
+Wille des Lesers.
+
+Nur zwei Dinge kann auch sie nicht aushebeln: die REGELN oben — also
+keine Handelsempfehlungen, keine Kursziele, keine Prognosen, nichts
+erfinden — und das Antwortformat: genau das JSON unten, mit genau den
+Kapiteln von oben.
+
+Verlangt die Anweisung einen eigenen Abschnitt, eine eigene Kachel oder einen
+eigenen Block, LEHNE DAS NICHT AB: erfülle es so weit das Schnittmuster
+trägt — als eigenen, klar benannten Punkt am ANFANG des passenden Kapitels.
 
 `
 }
@@ -784,6 +830,9 @@ ${themen.includes('crypto') ? `Im Krypto-Kapitel zählt, in dieser Reihenfolge:
 3. Regulierung, soweit sie den Handel betrifft
 Der Marktdaten-Block (Fear & Greed, Dominanz, Funding …) gehört in die Lage
 dieses Kapitels — als gemessener Ist-Zustand, gegen den die Meldungen laufen.
+Er steht dem Leser ausserdem als TABELLE daneben. Nenne einen Wert daraus also
+höchstens EINMAL im ganzen Bericht, und nur dort, wo du etwas dazu sagst; ihn
+zusätzlich in einer Meldung oder als Kennzahl aufzuführen, ist Wiederholung.
 ` : ''}${themen.includes('chartanalyse') ? `Das Kapitel "chartanalyse" beruht auf dem
 Rechercheergebnis zur technischen Chartanalyse UND auf Videoinhalten, sofern
 darin Charts besprochen werden: je Coin EIN Punkt, in der Reihenfolge der
@@ -800,6 +849,12 @@ Kapitel — sie sind Nachrichten, keine Chartaussagen.
 - Eigenwerbung, Sponsoren, Clickbait und reine Meinungsmache lässt du weg.
 - Zahlen nennen, wenn welche dastehen — sie sind das Überprüfbare.
 - Jedes Thema gehört in SEIN Kapitel; was in keins passt, bleibt draussen.
+- KEINE WIEDERHOLUNG. Der Leser sieht Gesamtlage, Abwägung, Kapitel-Lage und
+  Meldungen untereinander auf EINER Seite. Jede Zahl und jede Aussage steht
+  darin genau einmal — an der Stelle, an der sie am meisten trägt. Was in der
+  Gesamtlage steht, wiederholt die Kapitel-Lage nicht; was in der Kapitel-Lage
+  steht, wiederholt keine Meldung. Ist ein Punkt schon gesagt, schreibe den
+  nächsten oder lass die Liste kürzer.
 
 UMFANG je Kapitel: eine Lage von ${l.lage} und ${l.punkte}. Jeder Punkt ist ein
 ausgeschriebener Absatz von drei bis fünf Sätzen — was geschehen ist, welche
@@ -827,7 +882,7 @@ ${eigene}Antworte NUR mit JSON:
               "ueberschrift": "Kapitel-Schlagzeile",
               "lage": "${l.lage}",
               "punkte": [{"titel": "...", "text": "drei bis fünf Sätze", "quelle": "...",
-                          "wichtigkeit": "hoch|mittel",${aktualisierung ? ' "korrektur": true,' : ''}
+                          "wichtigkeit": "hoch|mittel", "themaId": "T3",${aktualisierung ? ' "korrektur": true,' : ''}
                           "kennzahlen": [{"wert": "-29.000 BTC", "was": "Apparent Demand"}],
                           "belege": [1, 4]}]}]}
 
@@ -835,7 +890,12 @@ ${eigene}Antworte NUR mit JSON:
 Punkt beruht — daran kann der Leser nachschlagen, woher es kommt.
 "kennzahlen" sind bis zu drei Zahlen, die WÖRTLICH in den Quellen stehen —
 Kurse, Flüsse, Quoten, Fristen. Steht keine Zahl da, lass die Liste leer;
-erfundene oder gerundete Zahlen sind schlimmer als gar keine.`
+erfundene oder gerundete Zahlen sind schlimmer als gar keine.
+"themaId" ist die Kennung {Tn}, die hinter der Nummer des Beitrags steht, auf
+dem der Punkt hauptsächlich beruht. JEDE KENNUNG DARF IM GANZEN BERICHT NUR
+EINMAL VORKOMMEN — sie ist die Zusicherung, dass dieser Vorgang noch nicht
+behandelt wurde. Beruht ein Punkt auf einer Recherche-Quelle statt auf einem
+Beitrag, lass das Feld weg.`
 }
 
 /**
@@ -906,10 +966,16 @@ async function holeMarktdatenBlock() {
     } catch (e) { logWarn('news', `Marktdaten Dominanz: ${e.message}`) }
     try {
         const fu = await holeFunding(30)
-        const fmt = r => `${r.symbol} ${(r.rate * 100).toFixed(3)} %`
+        // Einheit an jede Zahl: Der Takt ist NICHT überall acht Stunden (ONG
+        // zahlt stündlich, viele Perps vierstündlich), und die Jahresrate ohne
+        // „p.a." liest sich wie eine unmögliche Einzelzahlung — an der Stelle
+        // hat der Lagebericht am 21.08.2026 richtige Zahlen als Fehler
+        // ausgewiesen bekommen.
+        const fmt = r => `${r.symbol} ${(r.rate * 100).toFixed(3)} % je ${r.intervallStunden || 8} h`
+            + (Number.isFinite(r.jahresRate) ? ` (${(r.jahresRate * 100).toFixed(0)} % p.a.)` : '')
         if (fu.oben?.length || fu.unten?.length) {
             werte.push({
-                was: 'Funding-Extreme (8h)',
+                was: 'Funding-Extreme',
                 wert: `oben ${fu.oben.slice(0, 3).map(fmt).join(', ') || '—'}`,
                 zusatz: `unten ${fu.unten.slice(0, 3).map(fmt).join(', ') || '—'}`,
             })
@@ -1081,20 +1147,36 @@ export function abdeckungText(beitraege, { jetzt = Date.now() } = {}) {
  *
  * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
  */
-export function bauAnweisungPruefPrompt({ themen = ['crypto'], laenge = 'mittel' } = {}) {
+export function bauAnweisungPruefPrompt({ themen = ['crypto'], laenge = 'mittel', quellen = [] } = {}) {
     const l = LAENGEN[laenge] || LAENGEN.mittel
+    const liste = (Array.isArray(quellen) ? quellen : [])
+        .filter(q => q && String(q.name || '').trim())
+        .slice(0, 60)
+        .map(q => `  - ${String(q.name).trim()} (${String(q.art || 'rss').trim()}`
+            + `${String(q.art) === 'youtube' && Number(q.videoAnalyse ?? 1) === 1 ? ', Videos werden ausgewertet' : ''})`)
+        .join('\n')
     return `Du prüfst eine Anweisung, die ein Leser dem Schreiber seines
 Krypto-Lageberichts mitgeben will. Du schreibst KEINEN Bericht.
 
 So arbeitet dieser Bericht — daran ändert die Anweisung nichts:
 - Er hat genau diese Kapitel: ${themen.join(', ')}. Kapitel kann die Anweisung
-  nicht hinzufügen oder streichen; das steht in den Einstellungen.
-- Umfang je Kapitel: eine Lage von ${l.lage} und ${l.punkte}. Auch das kommt
-  aus den Einstellungen.
+  nicht hinzufügen oder streichen — die Seite kennt nur diese Kennungen.
+- Umfang je Kapitel: eine Lage von ${l.lage} und ${l.punkte}. Das ist die
+  VORGABE, keine Grenze: die Anweisung des Lesers geht ihr VOR. Verlangt sie
+  mehr, weniger, anderes Gewicht oder eine andere Reihenfolge, richtet der
+  Bericht sich danach — das ist dann "wirkt", nicht "wirkungslos".
+- Einen frei erfundenen Abschnitt neben Lage und Punkten kann sie nicht
+  schaffen, denn die Seite zeichnet nur dieses Schnittmuster. Einen eigenen,
+  klar benannten PUNKT am Anfang eines Kapitels aber sehr wohl — so und nicht
+  anders erfüllt der Bericht den Wunsch nach einer eigenen Kachel oder einem
+  eigenen Block. Sage das als "wirkt" und nenne den Weg, statt abzulehnen.
 - Unverrückbare Regeln: keine Handelsempfehlungen, keine Kursziele, keine
   Prognosen, nichts Erfundenes, Quellenangaben bleiben Pflicht.
 - Die Quellen sind die eingerichteten Feeds plus Recherche. Die Anweisung kann
-  keine neue Quelle erschliessen.
+  keine neue Quelle erschliessen. Eingerichtet sind AKTUELL${liste ? `:\n${liste}` : ' keine.'}
+  Was hier steht, IST erreichbar — nenne es nicht wirkungslos. Nur ein Name,
+  der hier fehlt, wäre eine neue Quelle. Bei YouTube-Quellen mit Videoauswertung
+  liegt dem Bericht eine Zusammenfassung des Videoinhalts vor.
 
 Was die Anweisung SEHR WOHL kann: Ton, Ausführlichkeit der Sprache,
 Schwerpunkte, Ausschlüsse, Reihenfolge innerhalb eines Kapitels, welche Zahlen
@@ -1631,12 +1713,16 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                         // genannten Marken die Zusammenfassung überleben.
                         mitChart: themen.includes('chartanalyse'),
                     })
+                    // Bruchstücke gar nicht erst speichern: ein halber
+                    // Stichpunkt ist keine Analyse, sähe in der Datenbank aber
+                    // wie eine aus und würde von da an weitergereicht.
+                    const brauchbar = istOhneInhalt(text) || istBruchstueck(text) ? '' : text
                     await knex('news_items').where('id', v.id).update({
-                        zusammenfassung: istOhneInhalt(text) ? '' : text,
+                        zusammenfassung: brauchbar,
                         aiModel: geminiCfg.model, aiStand: Date.now(), tokens,
                         status: 'zusammengefasst', fehler: '',
                     })
-                    v.zusammenfassung = istOhneInhalt(text) ? '' : text
+                    v.zusammenfassung = brauchbar
                     if (v.zusammenfassung) videoAnalysiert.push(v)
                     videosGesehen++
                     /*
@@ -1718,13 +1804,16 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
      * Videoanalyse bezahlt und dem Modell dann vorenthalten.
      */
     for (const v of videoAnalysiert) {
-        if (!v.zusammenfassung) continue
+        if (istBruchstueck(v.zusammenfassung)) continue
         if (beitraege.some(b => b.id === v.id)) continue
         beitraege.push(v)
     }
 
     for (const b of beitraege) {
-        if (!b.zusammenfassung) continue
+        // Hier landet der ALTBESTAND — früher zusammengefasste Videos, die
+        // heute gratis wiederverwendet werden. Genau hier sickerten die
+        // Bruchstücke Tag für Tag in neue Berichte.
+        if (istBruchstueck(b.zusammenfassung)) continue
         if (videoLog.some(v => v.url === b.url)) continue
         videoLog.push({
             titel: b.titel, url: b.url,
@@ -1833,10 +1922,27 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
     // Durchnummeriert, damit das Modell seine Belege benennen kann. Die
     // Recherche-Zitate hängen hinter den Beiträgen in derselben Nummernreihe —
     // ein Beleg ist ein Beleg, egal woher er stammt.
+    /*
+     * Beitraege buendeln, BEVOR das Modell sie sieht.
+     *
+     * Ohne diesen Schritt ist die Liste flach, und ueber denselben Vorgang
+     * schreiben acht Quellen acht Eintraege — das Modell macht daraus
+     * bereitwillig zwei Meldungen, weil es die Verwandtschaft nirgends
+     * vermerkt sieht. Die Kennung {Tn} hinter jeder Nummer macht sie sichtbar,
+     * und `haltEinsProThema` weiter unten prueft, ob sich das Modell daran
+     * gehalten hat. Kostet nichts ausser rund drei Token je Beitrag.
+     */
+    const { themaJeIndex, gruppen: themenGruppen } = gruppiereBeitraege(beitraege)
+    if (themenGruppen.length) {
+        console.log(`[NEWS] Themen gebündelt: ${themenGruppen.length} Bündel aus `
+            + `${themenGruppen.reduce((a, g) => a + g.indizes.length, 0)} Beiträgen `
+            + `(${themenGruppen.map(g => `${g.id}×${g.indizes.length}`).join(', ')})`)
+    }
+
     const zeilen = beitraege.map((b, i) => {
         const q = nachId.get(b.sourceId)
         const inhalt = b.zusammenfassung || (b.inhalt || '').slice(0, 600)
-        return `[${i + 1}] [${new Date(Number(b.publishedAt)).toISOString().slice(0, 16)}] ${b.titel}\n`
+        return `[${i + 1}] {${themaJeIndex[i]}} [${new Date(Number(b.publishedAt)).toISOString().slice(0, 16)}] ${b.titel}\n`
             + `Quelle: ${q?.name || '?'} (${q?.art || 'rss'})${b.zusammenfassung ? ' — Videoinhalt, von Gemini angesehen' : ''}\n`
             + `${inhalt}\n`
     })
@@ -1866,6 +1972,8 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         teile.push(`RECHERCHE zum Thema ${THEMEN_NAMEN[r.thema] || r.thema} `
             + `(Perplexity, Belege siehe nummerierte Recherche-Quellen):\n${r.text}`)
     }
+    const regel = themenRegel(themenGruppen)
+    if (regel) teile.push(regel)
     teile.push(`${istUpdate ? 'NEUE BEITRÄGE (seit dem bisherigen Bericht)' : 'BEITRÄGE'}:\n`
         + zeilen.join('\n---\n'))
 
@@ -1948,6 +2056,9 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
     const loesePunkte = (punkte, thema) => (Array.isArray(punkte) ? punkte : []).map(p => ({
         ...p,
         ...(thema ? { thema } : {}),
+        // Die Kennung des Beitragsbündels, auf dem der Punkt beruht — sie
+        // entscheidet gleich, ob dieser Vorgang schon einmal dasteht.
+        themaId: String(p?.themaId || '').trim().slice(0, 8),
         // In der Zwischenmeldung ist jeder Punkt neu — deshalb wird nicht „neu"
         // markiert, sondern der Sonderfall: Dieser Punkt korrigiert etwas, das
         // heute Morgen anders dastand. Ein fehlendes Feld heisst „einfach neu".
@@ -1975,12 +2086,69 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         const kTa = kapitel.find(k => k.thema === 'chartanalyse')
         if (kTa) kTa.bilder = taBilder.slice(0, 8)
     }
+    /*
+     * Die Prüfung zur Regel: ein Thema, eine Meldung.
+     *
+     * Sie liest, was das Modell SELBST über die Herkunft seines Punktes gesagt
+     * hat, statt aus dem Wortlaut zu raten — anders als der Durchgang gleich
+     * darunter, der Sätze vergleicht. Deshalb steht sie zuerst: Fliegt ein
+     * ganzer Punkt, muss der Satzvergleich ihn gar nicht erst ansehen.
+     *
+     * Kapitelübergreifend, weil derselbe Vorgang sonst einmal unter "crypto"
+     * und einmal unter "finanzen" stehen könnte — die häufigste Form der
+     * Doppelung, die eine Prüfung je Kapitel nicht sieht.
+     */
+    // Rückfall: ein Modell ohne Kapitel liefert die Punkte flach.
+    let flachOhneKapitel = kapitel.length ? [] : loesePunkte(daten?.punkte)
+    {
+        const alle = kapitel.length ? kapitel.flatMap(k => k.punkte) : flachOhneKapitel
+        const { punkte: behalten, entfernt } = haltEinsProThema(alle)
+        if (entfernt.length) {
+            console.log(`[NEWS] Themen doppelt vergeben: ${entfernt.length} `
+                + `(${entfernt.map(e => `${e.thema} „${e.titel.slice(0, 40)}" statt „${e.statt.slice(0, 40)}"`).join('; ')})`)
+            const bleibt = new Set(behalten)
+            if (kapitel.length) for (const k of kapitel) k.punkte = k.punkte.filter(p => bleibt.has(p))
+            else flachOhneKapitel = behalten
+        }
+    }
+
     const flachePunkte = kapitel.length
         ? kapitel.flatMap(k => k.punkte).slice(0, 24)
-        : loesePunkte(daten?.punkte).slice(0, 12)   // Rückfall: Modell ohne Kapitel
+        : flachOhneKapitel.slice(0, 12)
 
     // Abwägung „dafür/dagegen/offen" — null, wenn das Modell nichts lieferte
     const abwaegung = leseLagebild(daten?.lagebild)
+
+    /*
+     * Doppelungen raus, BEVOR der Bericht in die Datenbank geht.
+     *
+     * Das Modell schreibt einen Text, die Seite zeigt sechs Bausteine
+     * (Marktdaten-Tabelle, Gesamtlage, Abwägung, Kapitel-Lage, Meldungen,
+     * Kennzahlen-Chips). Dass derselbe Messwert dabei mehrfach auftaucht, ist
+     * der Normalfall und nicht die Ausnahme — „Fear & Greed 63" stand am
+     * 21.08.2026 dreimal auf einer Seite. Die Prompt-Regel allein hat das nicht
+     * verhindert; sie ist eine Bitte, dieser Durchgang ist eine Bedingung.
+     *
+     * Bei einer Zwischenmeldung zählt zusätzlich, was der Tagesbericht schon
+     * gesagt hat. Hat sich eine Zahl GEÄNDERT, ist sie eine andere Marke und
+     * bleibt stehen — genau das soll eine Korrektur ja zeigen.
+     */
+    const vorherige = istUpdate
+        ? [String(basis?.lage || ''), ...(() => {
+            try {
+                const kap = JSON.parse(basis?.kapitel || '[]')
+                return kap.flatMap(k => [String(k?.lage || ''),
+                    ...(k?.punkte || []).map(p => String(p?.text || ''))])
+            } catch { return [] }
+        })()].filter(Boolean)
+        : []
+    const entdoppelt = entdoppleBericht(
+        { lage: String(daten?.lage || ''), lagebild: abwaegung, kapitel, punkte: flachePunkte },
+        { markt: marktdaten.werte || [], vorherige },
+    )
+    if (entdoppelt.protokoll.length) {
+        console.log(`[NEWS] Doppelungen entfernt: ${protokollText(entdoppelt.protokoll)}`)
+    }
 
     const kostenUsd = (Number(antwort.costUsd) || 0) + rechercheKostenUsd + letzteXKostenUsd
     letzteXKostenUsd = 0   // abgeholt — nicht doppelt verbuchen
@@ -1990,9 +2158,9 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         provider: cfg.provider,
         modell: cfg.model,
         ueberschrift: String(daten?.ueberschrift || '').slice(0, 300),
-        lage: String(daten?.lage || '').slice(0, 4000),
-        punkte: JSON.stringify(flachePunkte),
-        kapitel: JSON.stringify(kapitel),
+        lage: entdoppelt.bericht.lage.slice(0, 4000),
+        punkte: JSON.stringify(entdoppelt.bericht.punkte),
+        kapitel: JSON.stringify(entdoppelt.bericht.kapitel),
         themen: themen.join(','),
         laenge,
         beitraege: beitraege.length,
@@ -2012,7 +2180,7 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         marktBlock: JSON.stringify(marktdaten.werte || []),
         // Abwägung über alle Kapitel, mit Fakt/Einschätzung je Zeile. Leer,
         // wenn das Modell nichts Brauchbares lieferte — dann fehlt der Kasten.
-        lagebild: abwaegung ? JSON.stringify(abwaegung) : '',
+        lagebild: entdoppelt.bericht.lagebild ? JSON.stringify(entdoppelt.bericht.lagebild) : '',
         /*
          * Art, Grundlage und Zählnummer der Kette.
          *
@@ -2436,6 +2604,13 @@ export function setupNewsRoutes(app) {
                 system: bauAnweisungPruefPrompt({
                     themen: leseThemen(s?.radarNewsThemen),
                     laenge: ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel',
+                    // Ohne die Liste rät das Modell, ob ein genannter Kanal
+                    // erreichbar ist — und riet „nein" bei einer Quelle, die
+                    // seit Monaten eingerichtet ist. Nur die AKTIVEN: eine
+                    // abgeschaltete Quelle liefert nichts, ein Wunsch nach ihr
+                    // ist tatsächlich wirkungslos.
+                    quellen: await getKnex()('news_sources').where('enabled', 1)
+                        .select('name', 'art', 'videoAnalyse').orderBy('id'),
                 }),
                 user: `ANWEISUNG DES LESERS:\n<<<\n${text}\n>>>`,
                 timeoutMs: 90000,

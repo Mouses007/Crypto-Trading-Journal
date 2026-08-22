@@ -16,7 +16,7 @@
 import {
     budgetsAus, punkteVorgabe, videoTiefeAus, VIDEO_TIEFEN, bauLagePrompt, laengeFuerUpdate,
     bauVideoAuftrag,
-    istLiveSeite, istEndgueltig, leseLagebild, eigeneAnweisungen, ZUSATZ_MAX,
+    istLiveSeite, istEndgueltig, leseLagebild, eigeneAnweisungen, ZUSATZ_MAX, istBruchstueck,
 } from './marktradar-news.js'
 
 let fehler = 0
@@ -97,6 +97,25 @@ p('Prompt ohne Eigenwert trägt die Vorgabe',
 // ── Eigene Anweisungen aus den Einstellungen ─────────────────────────────
 // Leer muss WIRKLICH leer bleiben: sonst zahlt jeder Lauf für einen Block,
 // der nichts sagt, und der Bestandsbericht ändert sich ohne Zutun.
+// ── Bruchstuecke: abgeschnittene Videozusammenfassungen ──────────────────
+// Gemessen am 21.08.2026 an der Live-DB: die kaputten lagen bei 33–77 Zeichen,
+// die brauchbaren begannen bei 304. Die Gegenprobe ist hier wichtiger als der
+// Fund — ein Filter, der zu viel frisst, kostet bezahlte Analysen.
+p('leer ist Bruchstueck', istBruchstueck('') && istBruchstueck('   ') && istBruchstueck(null))
+p('halber Stichpunkt faellt', istBruchstueck('- Bitcoin stieg durch Short-Squeeze über 70.00'))
+p('vollstaendig aussehender Einzelpunkt faellt auch',
+    istBruchstueck('- Krypto-Gipfel im Weißen Haus mit Coinbase.'))
+p('77 Zeichen fallen', istBruchstueck('- ' + 'x'.repeat(75)))
+// Gegenprobe: echte Zusammenfassungen muessen durch.
+p('fuenf Stichpunkte bleiben', !istBruchstueck(
+    '- Der aktuelle Seitwärtsmarkt zerstört das Sentiment der Anleger.\n'
+    + '- Dies führt zu Verkäufererschöpfung und extremen Positionierungen.\n'
+    + '- Der genaue Auslöser für die nächste Bewegung ist unwichtig.\n'
+    + '- Die Positionierung ist einseitig.\n- Liquidität bleibt duenn.'))
+p('kurze Liste mit drei Punkten bleibt',
+    !istBruchstueck('- Eins ist so.\n- Zwei ist so.\n- Drei ist so.'))
+p('langer Fliesstext ohne Striche bleibt', !istBruchstueck('y'.repeat(300)))
+
 p('leerer Zusatz ergibt nichts', eigeneAnweisungen('') === '')
 p('nur Leerzeichen ergeben nichts', eigeneAnweisungen('   \n  ') === '')
 p('undefined ergibt nichts', eigeneAnweisungen(undefined) === '')
@@ -110,6 +129,15 @@ p('Text steht in Klammern', zus.includes('<<<') && zus.includes('>>>'))
 // Handelsempfehlung zu machen.
 p('Regeln werden nachgereicht', zus.includes('keine Handelsempfehlungen'))
 p('Format wird nachgereicht', zus.includes('JSON'))
+// Rangfolge (Nutzerentscheid 21.08.2026): Die Anweisung des Lesers geht den
+// EINSTELLUNGEN vor — Umfang, Punktzahl, Reihenfolge. Vorher stand sie unter
+// ihnen, und die Prüfung wies Wünsche als „wirkungslos" ab, die der Leser
+// ausdrücklich wollte. Unantastbar bleiben nur Regeln und Antwortformat.
+p('Anweisung hat Vorrang vor den Einstellungen',
+    zus.includes('VORRANG') && zus.includes('gehen den Vorgaben aus den Einstellungen VOR'))
+p('Umfang ist ausdrücklich überstimmbar', zus.includes('unter UMFANG etwas anderes steht'))
+p('eigener Block wird erfüllt statt abgelehnt',
+    zus.includes('LEHNE DAS NICHT AB') && zus.includes('ANFANG des passenden Kapitels'))
 p('Deckel greift', eigeneAnweisungen('y'.repeat(ZUSATZ_MAX + 500)).includes('y'.repeat(ZUSATZ_MAX))
     && !eigeneAnweisungen('y'.repeat(ZUSATZ_MAX + 500)).includes('y'.repeat(ZUSATZ_MAX + 1)))
 

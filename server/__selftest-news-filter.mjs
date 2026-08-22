@@ -126,6 +126,32 @@ pruefe('Prüfprompt nennt die unverrückbaren Regeln',
 pruefe('Prüfprompt kennt die drei Marken',
     pp.includes('"wirkt"') && pp.includes('"wirkungslos"') && pp.includes('"gegenregel"'))
 pruefe('Prüfprompt verlangt eine geschärfte Fassung', pp.includes('"vorschlag"'))
+pruefe('Prüfprompt ohne Quellen behauptet keine', pp.includes('AKTUELL keine.'))
+
+// Die eingerichteten Quellen müssen im Prompt STEHEN. Ohne die Liste rät das
+// Modell, ob ein genannter Kanal erreichbar ist — und riet am 21.08.2026
+// „keine eingerichtete Quelle" bei einem Kanal, der seit Monaten aktiv ist.
+const pq = bauAnweisungPruefPrompt({
+    themen: ['crypto'], laenge: 'kurz',
+    quellen: [
+        { name: 'Bitbull', art: 'youtube', videoAnalyse: 1 },
+        { name: 'Coin Bureau', art: 'youtube', videoAnalyse: 0 },
+        { name: 'Cointelegraph', art: 'rss' },
+    ],
+})
+pruefe('Prüfprompt nennt die eingerichteten Quellen',
+    pq.includes('Bitbull') && pq.includes('Cointelegraph'))
+pruefe('Prüfprompt kennzeichnet die Videoauswertung',
+    pq.includes('Bitbull (youtube, Videos werden ausgewertet)')
+    && pq.includes('Coin Bureau (youtube)'))
+pruefe('Prüfprompt verbietet „wirkungslos" für vorhandene Quellen',
+    pq.includes('nenne es nicht wirkungslos'))
+// Gleiche Rangfolge auf der Prüfseite: Was der Bericht dem Leser zugesteht,
+// muss die Prüfung ihm auch zusagen — sonst warnt sie vor etwas, das wirkt.
+pruefe('Prüfung stellt den Umfang unter die Anweisung',
+    pp.includes('die Anweisung des Lesers geht ihr VOR'))
+pruefe('Prüfung nennt den Weg zur eigenen Kachel',
+    pp.includes('eigenen Kachel') && pp.includes('statt abzulehnen'))
 
 const pr = leseAnweisungPruefung({
     befunde: [
