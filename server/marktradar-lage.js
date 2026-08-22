@@ -24,7 +24,7 @@
 
 import { getKnex } from './database.js'
 import { logWarn } from './logger.js'
-import { ladeLlmConfig, callLLMJson } from './llm.js'
+import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson } from './llm.js'
 import { baueZeilen, normalisiereAntwort, STIMMUNGEN } from './lagebild.js'
 import {
     holeFearGreed, holeDominanz, holeFunding, holeLsOi, holeLiquidationen,
@@ -213,7 +213,7 @@ export async function erzeugeLage(symbol, erzwingen = false) {
         const s = await getKnex()('settings').select('language').where('id', 1).first().catch(() => null)
         const englisch = s?.language === 'en'
 
-        const cfg = await ladeLlmConfig()
+        const cfg = await ladeLlmConfigFuerAufgabe('marktradar-lage')
         /*
          * Deutlich mehr als die 800 aus `ladeLlmConfig`, weil hier eine LANGE
          * Antwort bestellt ist: Gesamtbild, drei bis vier Punkte mit je zwei

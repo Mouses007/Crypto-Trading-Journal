@@ -71,6 +71,29 @@ export const PREISE = {
     'glm-5.1': [0.6, 2],
     'minimax-m3': [0.3, 1.2],
     'minimax-m2.7': [1, 3],
+
+    // OpenRouter: alle Modelle sind Proxy-Aufrufe, Preise sind gleich wie
+    // bei direktem Anbieter. Format: 'provider/model'.
+    // Längere Namen ZUERST wegen `includes`-Matching:
+    'anthropic/claude-opus-5': [5, 25],
+    'anthropic/claude-sonnet-5': [3, 15],
+    'anthropic/claude-fable-5': [10, 50],
+    'anthropic/claude-haiku': [1, 5],
+    'openai/gpt-4o': [2.5, 10],
+    'openai/gpt-4o-mini': [0.15, 0.6],
+    'openai/gpt-4-turbo': [3, 12],
+    'meta-llama/llama-3.1-405b': [0.54, 2.16],
+    'meta-llama/llama-3.1-70b': [0.1, 0.4],
+    'meta-llama/llama-3.1-8b': [0.05, 0.15],
+    'meta-llama/llama-3.2-90b-vision': [0.3, 0.6],
+    'deepseek/deepseek-chat': [0.27, 1.1],
+    'mistral/mistral-large': [0.5, 1.5],
+    'mistral/mistral-small': [0.15, 0.6],
+    'xai/grok-4.6': [2, 6],
+    'xai/grok-4.5': [2, 6],
+    'google/gemini-3.5-flash': [1.5, 9],
+    'perplexity/sonar-pro': [3, 15],
+    'perplexity/sonar': [1, 1],
 }
 
 /**

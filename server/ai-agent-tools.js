@@ -178,6 +178,55 @@ export const AGENT_TOOLS = [
             }
         }
     },
+    // ── Modell-Optimierung: OpenRouter-Analyse ──────────────────────
+    {
+        name: 'analyze_model_performance',
+        description: 'Analysiert, welche KI-Modelle für welche Aufgaben am besten funktionieren anhand von Kosten und Verbrauch',
+        parameters: {
+            type: 'object',
+            properties: {
+                task: {
+                    type: 'string',
+                    description: 'Aufgaben-ID zur Analyse (z.B. "lagebericht", "trade-analyse")',
+                },
+                daysBack: {
+                    type: 'number',
+                    description: 'Wie viele Tage in die Vergangenheit schauen (Standard: 30)',
+                    default: 30,
+                },
+            },
+        },
+    },
+    {
+        name: 'get_openrouter_models',
+        description: 'Holt verfügbare OpenRouter-Modelle mit Preisen und Benchmarks',
+        parameters: {
+            type: 'object',
+            properties: {
+                filterBy: {
+                    type: 'string',
+                    enum: ['speed', 'cost', 'quality', 'all'],
+                    description: 'Filterkriterium: schnelle, billige oder hochwertige Modelle',
+                    default: 'all',
+                },
+            },
+        },
+    },
+    {
+        name: 'recommend_model_allocation',
+        description: 'Empfiehlt beste Modell-Zuordnung für alle KI-Aufgaben basierend auf Kosten und Qualität',
+        parameters: {
+            type: 'object',
+            properties: {
+                optimizeFor: {
+                    type: 'string',
+                    enum: ['cost', 'quality', 'balance'],
+                    description: 'Optimierungs-Ziel: minimale Kosten, beste Qualität oder Balance',
+                    default: 'balance',
+                },
+            },
+        },
+    },
     // Werkzeuge der Strategie-Agenten — auch der KI-Coach darf die Auswertung
     // der automatisch gehandelten Strategien lesen und Verbesserungen vorschlagen.
     ...STRATEGY_TOOLS,
@@ -208,6 +257,9 @@ export async function executeTool(toolName, params, knex) {
         analyze_screenshot: toolAnalyzeScreenshot,
         query_app_help: toolQueryAppHelp,
         query_marktradar: toolQueryMarktradar,
+        analyze_model_performance: toolAnalyzeModelPerformance,
+        get_openrouter_models: toolGetOpenrouterModels,
+        recommend_model_allocation: toolRecommendModelAllocation,
         // Werkzeuge der Strategie-Agenten: Auswertung lesen, Hypothesen im
         // Backtest messen, Parameteränderungen zur Freigabe vorschlagen.
         ...STRATEGY_TOOL_IMPL,
@@ -805,5 +857,183 @@ async function toolAnalyzeScreenshot(knex, params) {
             broker: row.broker || '',
             existingAiReview: row.aiReview || ''
         }
+    }
+}
+
+// ── Modell-Optimierung: OpenRouter & KI-Modelle ──────────────────
+
+/**
+ * Analysiert Performance von KI-Modellen für eine Aufgabe.
+ * Liest `ai_usage` Tabelle und berechnet Kosten/Token-Verhältnis.
+ */
+async function toolAnalyzeModelPerformance(knex, params) {
+    const { task, daysBack = 30 } = params
+    if (!task) {
+        const { AI_TASKS } = await import('./ai-task-config.js')
+        return {
+            error: 'task erforderlich',
+            verfuebareAufgaben: Object.keys(AI_TASKS),
+        }
+    }
+
+    const startDate = Date.now() - (daysBack * 24 * 60 * 60 * 1000)
+
+    const records = await knex('ai_usage')
+        .where('funktion', task)
+        .where('createdAt', '>=', new Date(startDate))
+        .select('provider', 'modell', 'usage', 'kostenUsd')
+
+    if (records.length === 0) {
+        return { hinweis: `Keine Nutzungsdaten für "${task}" in den letzten ${daysBack} Tagen` }
+    }
+
+    // Aggregieren nach Provider/Modell
+    const byModel = {}
+    for (const r of records) {
+        const key = `${r.provider}/${r.modell}`
+        if (!byModel[key]) {
+            byModel[key] = { count: 0, totalTokens: 0, totalCost: 0, kostenProMillionTokens: 0 }
+        }
+        byModel[key].count++
+        const usage = r.usage || {}
+        byModel[key].totalTokens += (usage.totalTokens || 0)
+        byModel[key].totalCost += (r.kostenUsd || 0)
+    }
+
+    // Metriken berechnen
+    const modelStats = Object.entries(byModel).map(([model, stats]) => ({
+        modell: model,
+        nutzungen: stats.count,
+        gesamtTokens: stats.totalTokens,
+        gesamtKosten: (stats.totalCost).toFixed(4),
+        kostenProMillionTokens: stats.totalTokens > 0
+            ? (stats.totalCost / (stats.totalTokens / 1_000_000)).toFixed(2)
+            : '0',
+        kostenProAufruf: (stats.totalCost / stats.count).toFixed(4),
+    }))
+
+    return {
+        aufgabe: task,
+        tage: daysBack,
+        modelle: modelStats.sort((a, b) => parseFloat(a.kostenProAufruf) - parseFloat(b.kostenProAufruf)),
+    }
+}
+
+/**
+ * Holt verfügbare OpenRouter-Modelle mit Preisen.
+ */
+async function toolGetOpenrouterModels(knex, params) {
+    const { filterBy = 'all' } = params
+
+    const settings = await knex('settings').select('aiOpenrouterCatalog').where('id', 1).first()
+    let cached = {}
+    try { cached = JSON.parse(settings?.aiOpenrouterCatalog || '{}') } catch {}
+
+    if (!cached.models || cached.models.length === 0) {
+        return { error: 'OpenRouter-Katalog nicht gecacht. Erst /api/ai/openrouter/models aufrufen.' }
+    }
+
+    let modelle = cached.models
+    if (filterBy === 'cost') {
+        modelle = modelle.sort((a, b) => 
+            (a.pricing?.prompt || 0) - (b.pricing?.prompt || 0)
+        ).slice(0, 10)
+    } else if (filterBy === 'speed') {
+        modelle = modelle.filter((m) => 
+            (m.contextLength || 0) > 50000 && (m.name || '').includes('flash')
+        ).slice(0, 10)
+    } else if (filterBy === 'quality') {
+        modelle = modelle.filter((m) => 
+            (m.contextLength || 0) > 100000
+        ).slice(0, 10)
+    }
+
+    return {
+        filter: filterBy,
+        count: modelle.length,
+        modelle: modelle.map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            provider: m.provider,
+            contextLength: m.contextLength || 0,
+            pricing: m.pricing || { prompt: 0, completion: 0 },
+            topProvider: m.topProvider || '',
+        })),
+    }
+}
+
+/**
+ * Empfiehlt beste Modell-Zuordnung für alle Aufgaben.
+ */
+async function toolRecommendModelAllocation(knex, params) {
+    const { optimizeFor = 'balance' } = params
+    const { AI_TASKS } = await import('./ai-task-config.js')
+    const { PREISE } = await import('./ai-preise.js')
+
+    const settings = await knex('settings').select('aiOpenrouterCatalog').where('id', 1).first()
+    let cached = {}
+    try { cached = JSON.parse(settings?.aiOpenrouterCatalog || '{}') } catch {}
+
+    if (!cached.models || cached.models.length === 0) {
+        return { error: 'OpenRouter-Katalog nicht gecacht. Erst /api/ai/openrouter/models aufrufen.' }
+    }
+
+    // Scoring pro Modell für Aufgabe
+    const recommendations = {}
+    for (const [taskId, task] of Object.entries(AI_TASKS)) {
+        if (!task.recommendedModels || task.recommendedModels.length === 0) continue
+
+        let candidates = []
+        for (const modelName of task.recommendedModels) {
+            const fullName = `anthropic/${modelName}` // Vereinfachung: nur OpenRouter-Namen
+            const preis = Object.entries(PREISE).find(([k]) => k.includes(modelName))
+            if (preis) {
+                candidates.push({
+                    model: modelName,
+                    fullName,
+                    costPerMillion: preis[1]?.[0] || 0,  // prompt price
+                    quality: task.importance === 'high' ? 1 : (task.importance === 'medium' ? 0.7 : 0.4),
+                })
+            }
+        }
+
+        if (candidates.length === 0) continue
+
+        let selected
+        if (optimizeFor === 'cost') {
+            selected = candidates.sort((a, b) => a.costPerMillion - b.costPerMillion)[0]
+        } else if (optimizeFor === 'quality') {
+            selected = candidates.sort((a, b) => b.quality - a.quality)[0]
+        } else {  // balance
+            selected = candidates.sort((a, b) => {
+                const scoreA = (b.quality / (a.costPerMillion + 0.1))
+                const scoreB = (b.quality / (b.costPerMillion + 0.1))
+                return scoreB - scoreA
+            })[0]
+        }
+
+        if (selected) {
+            recommendations[taskId] = {
+                aufgabe: task.name,
+                empfohleneModelle: {
+                    eins: `openrouter/${selected.fullName}`,
+                    alternativ: candidates.slice(1).map(c => `openrouter/${c.fullName}`),
+                },
+                gruende: [
+                    task.importance === 'high' ? 'Hohe Anforderungen an Qualität' : undefined,
+                    optimizeFor === 'cost' ? 'Kostenoptimierung aktiviert' : undefined,
+                    optimizeFor === 'balance' ? 'Beste Balance zwischen Kosten und Qualität' : undefined,
+                ].filter(Boolean),
+            }
+        }
+    }
+
+    return {
+        optimierungsziel: optimizeFor,
+        empfehlungen: recommendations,
+        einstellungen: {
+            pfad: 'Einstellungen → KI → OpenRouter-Modelle',
+            spalte: 'aiTaskProviders',
+        },
     }
 }

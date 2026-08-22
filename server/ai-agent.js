@@ -48,7 +48,7 @@ async function loadAiSettings() {
     const knex = getKnex()
     const settings = await knex('settings')
         .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
-            'aiAgentProvider', 'aiAgentModell', 'aiAgentTokenBudget',
+            'aiAgentProvider', 'aiAgentModell', 'aiAgentTokenBudget', 'aiTaskProviders',
             ...KEY_SPALTEN, ...KI_URL_SPALTEN)
         .where('id', 1).first()
     if (!settings) throw new Error('No AI settings found')
@@ -56,7 +56,25 @@ async function loadAiSettings() {
     // Eigener Anbieter für den Agenten; leer = der global eingestellte.
     // Der Agent ist der teuerste Verbraucher (Werkzeugschleife über mehrere
     // Runden), deshalb lohnt hier eine eigene Wahl besonders.
-    const { provider, model } = waehleAnbieter(settings, 'Agent')
+    let provider, model
+    // Erste Priorität: aiAgentProvider (legacy separate setting)
+    if (settings.aiAgentProvider) {
+        ({ provider, model } = waehleAnbieter(settings, 'Agent'))
+    } else {
+        // Zweite Priorität: aiTaskProviders['agent'] (neues task-spezifisches System)
+        try {
+            const taskProviders = settings.aiTaskProviders ? JSON.parse(settings.aiTaskProviders) : {}
+            const taskAssignment = taskProviders['agent']
+            if (taskAssignment && typeof taskAssignment === 'string' && taskAssignment.includes('/')) {
+                [provider, model] = taskAssignment.split('/').map(s => s.trim())
+            }
+        } catch (e) { /* JSON parse error */ }
+        
+        // Fallback: global
+        if (!provider) {
+            ({ provider, model } = waehleAnbieter(settings, 'Agent'))
+        }
+    }
     const col = keySpalte(provider)
     let apiKey = ''
     if (col && settings[col]) {

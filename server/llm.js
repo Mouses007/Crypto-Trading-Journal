@@ -451,3 +451,54 @@ export async function callLLMJson(cfg, {
         costUsd,
     }
 }
+
+/**
+ * LLM-Konfiguration für eine spezifische KI-Aufgabe.
+ *
+ * Prüft zuerst, ob diese Aufgabe einen eigenen Provider-Override hat
+ * (gespeichert in `settings.aiTaskProviders`). Falls ja, nutzt diesen.
+ * Sonst fällt auf den globalen Provider zurück.
+ *
+ * Das ermöglicht: "News-Berichte mit Claude, Trade-Analyse mit Llama".
+ *
+ * @param {string} aufgabenId - Aufgaben-ID (z.B. 'lagebericht', 'trade-analyse')
+ * @returns {Promise<{provider, model, apiKey, temperature, maxTokens, ollamaUrl, endpunkt}>}
+ */
+export async function ladeLlmConfigFuerAufgabe(aufgabenId = '') {
+    const knex = getKnex()
+    const s = await knex('settings')
+        .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
+            'aiTaskProviders', ...KEY_SPALTEN, ...KI_URL_SPALTEN)
+        .where('id', 1).first()
+    if (!s) throw new Error('Keine KI-Einstellungen gefunden')
+
+    // Task-spezifische Overrides laden
+    let taskProviders = {}
+    try { taskProviders = JSON.parse(s.aiTaskProviders || '{}') } catch { /* ignore */ }
+
+    // 1. Task-spezifischer Provider (falls gesetzt)
+    const override = aufgabenId ? taskProviders[aufgabenId] : ''
+    if (override) {
+        // Format: 'provider/modell' oder 'provider'
+        const [provider, model] = String(override).split('/').map((x) => x.trim())
+        if (provider) {
+            const spalte = keySpalte(provider)
+            let apiKey = ''
+            if (spalte && s[spalte]) apiKey = decrypt(s[spalte])
+            else if (provider === 'openai' && s.aiApiKey) apiKey = decrypt(s.aiApiKey)
+
+            return {
+                provider,
+                model: model || s.aiModel || '',
+                apiKey,
+                temperature: 0,
+                maxTokens: 800,
+                ollamaUrl: s.aiOllamaUrl || DEFAULT_OLLAMA_URL,
+                endpunkt: chatEndpunkt(provider, s),
+            }
+        }
+    }
+
+    // 2. Fallback: globaler Provider
+    return ladeLlmConfig()
+}

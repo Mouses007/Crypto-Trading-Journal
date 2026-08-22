@@ -1610,6 +1610,11 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'aiCustomUrl', (t) => t.text('aiCustomUrl'))
     await addColumnIfNotExists('settings', 'aiKeyCustom', (t) => t.text('aiKeyCustom'))
 
+    // OpenRouter-spezifische Spalten
+    await addColumnIfNotExists('settings', 'aiKeyOpenrouter', (t) => t.text('aiKeyOpenrouter'))
+    await addColumnIfNotExists('settings', 'aiOpenrouterCatalog', (t) => t.text('aiOpenrouterCatalog'))
+    await addColumnIfNotExists('settings', 'aiTaskProviders', (t) => t.text('aiTaskProviders').defaultTo('{}'))
+
     // ==================== MARKTRADAR ====================
 
     // Tagesschnappschüsse von Kennzahlen, für die es keine kostenlose Historie

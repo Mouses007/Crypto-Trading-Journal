@@ -465,8 +465,21 @@ export function setupOllamaRoutes(app) {
                 knex('tags').where('tradeId', tradeId).first(),
             ])
 
-            // Eigener Anbieter für Berichte/Bewertungen; leer = global
-            const { provider, model } = waehleAnbieter(settings, 'Bericht')
+            // Task-spezifischer Anbieter für Trade-Analyse; leer = global
+            // Resolves aiTaskProviders['trade-analyse'] → provider/modell oder fallback zu global
+            let provider, model
+            try {
+                const taskProviders = settings.aiTaskProviders ? JSON.parse(settings.aiTaskProviders) : {}
+                const taskAssignment = taskProviders['trade-analyse']
+                if (taskAssignment && typeof taskAssignment === 'string' && taskAssignment.includes('/')) {
+                    [provider, model] = taskAssignment.split('/').map(s => s.trim())
+                }
+            } catch (e) { /* JSON parse error – fallback */ }
+            
+            if (!provider) {
+                // Fallback zu globalem Anbieter (für Berichte ist meist gute Wahl)
+                ({ provider, model } = waehleAnbieter(settings, 'Bericht'))
+            }
             const temperature = settings?.aiTemperature ?? 0.7
             const maxTokens = settings?.aiMaxTokens || 1500
             const ollamaUrl = settings?.aiOllamaUrl || DEFAULT_OLLAMA_URL

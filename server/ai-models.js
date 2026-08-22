@@ -152,6 +152,17 @@ export const ANBIETER_REG = {
         anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
         modelle: ['minimax-m3', 'minimax-m2.7'],
     },
+    openrouter: {
+        name: 'OpenRouter', art: 'openai', keySpalte: 'aiKeyOpenrouter',
+        basisUrl: 'https://openrouter.ai/api/v1', keyUrl: 'openrouter.ai/keys',
+        anhang: { image: true, pdf: false }, jsonModus: false, katalog: true,
+        modelle: [
+            'anthropic/claude-opus-5',
+            'openai/gpt-4o',
+            'meta-llama/llama-3.1-70b',
+            'deepseek/deepseek-chat',
+        ],
+    },
 }
 
 /** Auswählbare Anbieter — ohne die abgekündigten. */
@@ -439,6 +450,79 @@ export function setupAiModelRoutes(app) {
             res.json({ modelle, gesamt: alle.length })
         } catch (e) {
             logError('ai-models', 'Anbieter-Abfrage fehlgeschlagen', e)
+            res.status(502).json({ error: e.message })
+        }
+    })
+
+    // ── OpenRouter: Modellkatalog abrufen und cachen ─────────────────────
+
+    /**
+     * OpenRouter-Modelle mit Benchmarks abrufen und in Settings cachen.
+     * Cache-TTL: 24 Stunden.
+     */
+    app.get('/api/ai/openrouter/models', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const settings = await knex('settings')
+                .select('aiKeyOpenrouter', 'aiOpenrouterCatalog')
+                .where('id', 1).first()
+
+            if (!settings?.aiKeyOpenrouter) {
+                return res.status(400).json({ error: 'OpenRouter API-Key nicht konfiguriert' })
+            }
+
+            const apiKey = decrypt(settings.aiKeyOpenrouter)
+            if (!apiKey) {
+                return res.status(400).json({ error: 'OpenRouter API-Key nicht lesbar' })
+            }
+
+            // Cache prüfen (24h)
+            let cached = {}
+            try { cached = JSON.parse(settings.aiOpenrouterCatalog || '{}') } catch { /* */ }
+            if (cached.models && cached.cachedAt && (Date.now() - cached.cachedAt < 24 * 60 * 60 * 1000)) {
+                return res.json({ modelle: cached.models, fromCache: true })
+            }
+
+            // OpenRouter API aufrufen
+            const r = await fetch('https://openrouter.ai/api/v1/models', {
+                headers: { Authorization: `Bearer ${apiKey}` },
+                signal: AbortSignal.timeout(15000),
+            })
+
+            if (!r.ok) {
+                const text = await r.text().catch(() => '')
+                return res.status(502).json({
+                    error: `OpenRouter antwortet mit ${r.status}${text ? ': ' + text.slice(0, 200) : ''}`,
+                })
+            }
+
+            const daten = await r.json()
+            const allModelle = (daten.data || [])
+                .filter((m) => m.architecture?.modality === 'text' && !m.architecture?.modality?.includes('vision-only'))
+                .map((m) => ({
+                    id: m.id,
+                    name: m.name || m.id,
+                    provider: m.id.split('/')[0],
+                    pricing: m.pricing || { prompt: 0, completion: 0 },
+                    contextLength: m.context_length,
+                    topProvider: m.top_provider,
+                }))
+                .filter((m) => m.id)
+
+            // Cache speichern
+            await knex('settings')
+                .where('id', 1)
+                .update({
+                    aiOpenrouterCatalog: JSON.stringify({
+                        models: allModelle,
+                        cachedAt: Date.now(),
+                    }),
+                })
+                .catch(() => { /* Fehler beim Cachen ignorieren */ })
+
+            res.json({ modelle: allModelle, fromCache: false })
+        } catch (e) {
+            logError('ai-models', 'OpenRouter-Abfrage fehlgeschlagen', e)
             res.status(502).json({ error: e.message })
         }
     })
