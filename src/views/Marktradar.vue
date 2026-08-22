@@ -284,7 +284,7 @@ watch(() => daten.funding, (d) => {
         <div ref="gridEl" class="radarGrid">
             <div v-for="kachel in sichtbareKacheln" :key="kachel.id" :data-kachel="kachel.id"
                 :style="stilFuer(kachel)">
-                <RadarKachel :titel="t(kachel.titleKey)" :icon="kachel.icon" :zustand="zustand[kachel.id] || 'idle'"
+                <RadarKachel :titel="t(kachel.titleKey)" :icon="kachel.icon" :info-key="kachel.infoKey" :zustand="zustand[kachel.id] || 'idle'"
                     :stand="stand[kachel.id] || 0" :fehler="fehler[kachel.id] || ''" :hat-daten="!!daten[kachel.id]"
                     @gross="offeneKachel = kachel.id" @neuladen="ladeKachel(kachel.id, true)"
                     @groesse-start="starteGroesse(kachel, $event)" @groesse-zurueck="setzeGroesseZurueck(kachel)">
@@ -305,7 +305,7 @@ watch(() => daten.funding, (d) => {
 
         <!-- Gross: dieselbe Komponente, dieselben Daten, nur mit mehr Platz -->
         <RadarOverlay v-if="offeneKachel && daten[offeneKachel]" :titel="t(offeneDefinition.titleKey)"
-            :quelle="offeneDefinition.quelle" @schliessen="offeneKachel = null">
+            :info-key="offeneDefinition.infoKey" :quelle="offeneDefinition.quelle" @schliessen="offeneKachel = null">
             <component :is="KOMPONENTEN[offeneKachel]" :daten="daten[offeneKachel]" :gross="true"
                 :params="kachelParams[offeneKachel] || {}"
                 @params="setzeParams(offeneKachel, $event)"

@@ -78,6 +78,7 @@ const VALID_SETTINGS_KEYS = [
     'radarNewsTokenBudget', 'radarNewsPunkte', 'radarNewsVideoTiefe', 'radarNewsVideoTokens', 'radarNewsLayout',
     'radarNewsPromptZusatz',
     'livetradingAn', 'betaAusblenden', 'livetradingMobil', 'startseiteAn',
+    'erweiterteInfos', 'modusLiveAn', 'modusResearchAn', 'modusStrategieAn',
     // Anbieter/Modell je KI-Funktion; leer = global
     'aiBerichtProvider', 'aiBerichtModell', 'aiAgentProvider', 'aiAgentModell',
     'aiAgentTokenBudget',

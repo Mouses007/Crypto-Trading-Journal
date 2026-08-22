@@ -215,6 +215,8 @@ presented as a finding — three sessions on a Tuesday are noise.
 - **Rollback** — revert to previous version if needed
 - **First-Run Setup** — guided initial configuration wizard
 - **Multi-Language** — German (default) and English
+- **Extended info** — a small "i" next to values and controls; hover (tap on phones) explains what the number means. Switchable off in one place for the whole app (Settings → General → Layout & Style); button labels and the full info panels at the top of each page stay either way.
+- **Switch modes off** — every mode except the journal can be turned off individually (Übersicht, Live-Analyse, Research, Strategien). Off means off, not hidden: the tab disappears, the side menu renders nothing, and even a direct link leads back to the journal. For anyone who only wants the journal.
 
 ---
 

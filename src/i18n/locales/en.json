@@ -257,8 +257,6 @@
     "layoutAndStyle": "Layout & Style",
     "startpageOn": "Show home page",
     "startpageOnHint": "Shows the configurable home page as landing page and its own mode tab. Off: the app starts directly in the journal.",
-    "hideBeta": "Hide beta features",
-    "hideBetaHint": "Removes the unfinished modes (Strategies, Research) from the navigation.",
     "livetradingMobile": "Live trading on mobile",
     "livetradingMobileHint": "Shows the live trading window on phones too. Desktop-only by default because the tile grid needs a lot of space.",
     "username": "Username",
@@ -651,6 +649,28 @@
       "schriftNormal": "Normal",
       "schriftGross": "Large",
       "schriftSehrGross": "Extra large"
+    },
+    "erweiterteInfos": "Extended info",
+    "erweiterteInfosHint": "Shows a small \"i\" next to values and controls. Hover (tap on phone) explains what the number means.",
+    "erweiterteInfosInfo": "Affects only the explanations of values.\nButton labels stay visible either way, as do the large info panels at the top of each page.",
+    "modesTitle": "Show/hide modes",
+    "modesHint": "Which areas appear in the bar above the page title. Off really means off: the area disappears from navigation, and even a direct link leads back to the journal.",
+    "modesJournalFix": "The journal cannot be switched off — it is the core of the app.",
+    "modeLiveInfo": "Market radar, news, order book, liquidations and the live trading window.\nOff: none of it is loaded or fetched any more.",
+    "modeResearchInfo": "Hype radar (young projects out there) and coin radar (what your own account can trade today).",
+    "modeStrategyInfo": "The strategy mode trades on its own. Off: instances stop running and the pages are unreachable.",
+    "livetradingModeOffHint": "The \"Live analysis\" mode is switched off — this setting takes effect again once it is on. Its value is kept.",
+    "info": {
+      "customTimeframe": "Your own time frame for classifying trades, e.g. \"Swing 3d\".\nThe built-in Scalp/Daytrade categories follow the minute and hour limits above; a custom frame is assigned by hand.",
+      "fluxModel": "Which FLUX model paints the share card background.\nLarger models cost more per image and take longer; for a card that ends up as a thumbnail that rarely pays off.",
+      "geminiImageModel": "Which Gemini image model paints the share card — the alternative to FLUX.\nBoth need their own key and are billed by that provider, not through the AI settings.",
+      "liveRamp": "The colour scale of the order book heat map.\nViridis and Magma are perceptually uniform — equal colour steps mean equal differences in size. A rainbow scale is not, and there the eye invents edges where there are none.",
+      "dbPort": "The default is 5432. If PostgreSQL runs in a container with a remapped port (often 5433 on a NAS), that is the port that belongs here, not the internal one.",
+      "laermfilter": "Switches off the sources marked as noise: they are neither fetched nor displayed.\nActs at fetch time — items already stored stay put. Not to be confused with the keyword filter below.",
+      "wortfilter": "Filters by keyword rather than by source: items containing one of the words disappear from the list and the briefing.\nActs at display time, not at fetch time — so changing the word list retroactively changes what you see.",
+      "mailSicherheit": "TLS encrypts from the first second (port 465); STARTTLS begins unencrypted and switches over (port 587).\nWhich one works is decided by the provider. Gmail and Outlook also need an app password — the normal account password is rejected for SMTP.",
+      "newsRhythmus": "When the briefing is written by itself: daily, weekly or not at all.\n\"Manual only\" does not mean never — the interim notes below run independently, and the button on the news page always works.",
+      "mailSchrift": "Applies to the text of notification e-mails. A mailbox has no browser-style zoom — the size is fixed when the mail is sent and cannot be changed while reading.\nChanges take effect with the next mail; use \"Send test mail\" to see the result right away."
     }
   },
   "setup": {
@@ -2015,11 +2035,13 @@
       "start": "Start",
       "bonus": "Bonus",
       "broker": "Exchange",
-      "leer": "No starting balance set — add it under Accounts."
+      "leer": "No starting balance set — add it under Accounts.",
+      "info": "Current balance across the configured accounts.\nReads directly from the app's stores, so it makes no fetch of its own."
     },
     "offeneTrades": {
       "title": "Open trades",
-      "keine": "No open positions"
+      "keine": "No open positions",
+      "info": "Positions currently running — the same data as under \"Open positions\"."
     },
     "winrate": {
       "title": "Win rate",
@@ -2028,12 +2050,14 @@
       "trades": "trades",
       "basis_net": "net · all-time",
       "basis_gross": "gross · all-time",
-      "leer": "No trades recorded yet."
+      "leer": "No trades recorded yet.",
+      "info": "Share of winning trades in the selected period.\nOn its own it says little: a 30 % hit rate can be very profitable, an 80 % one ruinous. Only together with the profit factor does it form a picture."
     },
     "kapitalkurve": {
       "title": "Equity curve",
       "kumuliert": "cumulative · all-time",
-      "leer": "No trades recorded yet."
+      "leer": "No trades recorded yet.",
+      "info": "The account over time, from net results after fees.\nThe shape of the curve says more than its end point — steadily rising is something quite different from one hit followed by a flat line."
     },
     "kennzahlen": {
       "title": "Key figures",
@@ -2044,11 +2068,13 @@
       "avgLoss": "Avg loss",
       "gebuehren": "Fees",
       "funding": "Funding",
-      "leer": "No trades recorded yet."
+      "leer": "No trades recorded yet.",
+      "info": "The key figures for the selected period: count, hit rate, total, average, profit factor."
     },
     "heatmap": {
       "title": "Calendar heatmap",
-      "leer": "No trades recorded yet."
+      "leer": "No trades recorded yet.",
+      "info": "Result per day, coloured as a calendar.\nMakes patterns across weekdays and clusters visible that get lost in a list."
     },
     "performance": {
       "title": "Performance",
@@ -2067,7 +2093,8 @@
       "dauer_lt4h": "30m–4h",
       "dauer_lt1d": "4–24h",
       "dauer_gt1d": ">1d",
-      "leer": "No trades recorded yet."
+      "leer": "No trades recorded yet.",
+      "info": "Result over time, grouped by the selected interval."
     },
     "news": {
       "label": "Market report",
@@ -2109,7 +2136,8 @@
       "class_fear": "Fear",
       "class_neutral": "Neutral",
       "class_greed": "Greed",
-      "class_extremeGreed": "Extreme greed"
+      "class_extremeGreed": "Extreme greed",
+      "info": "Sentiment index from alternative.me based on volatility, volume, surveys and search trends — it measures mood, not prices, and changes once a day.\nExtremes are more interesting than the middle, but \"extreme fear\" is not a buy signal: the state can stay extreme for weeks."
     },
     "dom": {
       "title": "BTC dominance",
@@ -2125,7 +2153,8 @@
         "d30": "30 days",
         "y1": "1 year",
         "all": "All"
-      }
+      },
+      "info": "Bitcoin's share of the entire crypto market, from roughly six years of our own records.\nRising dominance with falling prices = flight from altcoins into BTC. An altcoin long against rising dominance swims against the current."
     },
     "funding": {
       "title": "Funding rates",
@@ -2146,14 +2175,16 @@
       "divergenzText": "Binance {binance}% p.a., Bybit {bybit}% p.a. — {delta} points apart.",
       "divergenzGegensatz": "Binance {binance}% p.a., Bybit {bybit}% p.a. — the exchanges disagree about which side is crowded.",
       "source": "Binance USDⓈ-M perpetuals, the {n} markets with the highest 24h volume. The rate is charged every 8 hours; \"p.a.\" annualises it. Positive means longs pay shorts — a crowded long side. Clicking a row sets the symbol for the live views.",
-      "sourceMcap": "Binance USDⓈ-M perpetuals, the {n} largest coins by market cap (CoinGecko) that are tradable on Binance. The rate is charged every 8 hours; \"p.a.\" annualises it. Positive means longs pay shorts — a crowded long side. Clicking a row sets the symbol for the live views."
+      "sourceMcap": "Binance USDⓈ-M perpetuals, the {n} largest coins by market cap (CoinGecko) that are tradable on Binance. The rate is charged every 8 hours; \"p.a.\" annualises it. Positive means longs pay shorts — a crowded long side. Clicking a row sets the symbol for the live views.",
+      "info": "The settlement payment between longs and shorts on Binance perpetuals. Positive means longs pay shorts.\n\"p.a.\" uses each market's actual interval — many pay every four hours, not eight. Funding is a real cost item."
     },
     "lsoi": {
       "title": "Long/short + open interest",
       "ratio": "Account ratio",
       "oiDelta": "OI 24h",
       "priceDelta": "Price 24h",
-      "source": "Binance account ratio for {symbol} (hourly, 48 hours). It counts ACCOUNTS, not capital — a whale weighs the same as a tiny account. Together with open interest and price it yields the reading below."
+      "source": "Binance account ratio for {symbol} (hourly, 48 hours). It counts ACCOUNTS, not capital — a whale weighs the same as a tiny account. Together with open interest and price it yields the reading below.",
+      "info": "Binance account ratio over 48 hours plus the change in open interest and price.\nIt counts ACCOUNTS, not capital — the ratio mostly reflects retail. A skewed ratio plus growing OI means one side is loading up."
     },
     "rsi": {
       "title": "RSI heatmap",
@@ -2169,7 +2200,8 @@
       "zone_weak": "Weak",
       "zone_oversold": "Oversold",
       "topHint": "The highest-volume crypto perpetuals on Binance — how many is set on the right",
-      "ownHint": "Only the markets you traded yourself over the last 90 days"
+      "ownHint": "Only the markets you traded yourself over the last 90 days",
+      "info": "RSI(14) per market, one dot per symbol, sorted by turnover.\nThe dashed line is the average — and it is the real value here: an oversold coin while the average is low is not its own story, just the market."
     },
     "markt": {
       "title": "Market overview",
@@ -2183,7 +2215,8 @@
       "area_mcap": "Market cap",
       "area_gleich": "Equal",
       "areaHint": "What the area is based on",
-      "noPerp": "No Binance perpetual — cannot be selected as symbol"
+      "noPerp": "No Binance perpetual — cannot be selected as symbol",
+      "info": "Top 100 by market capitalisation, stablecoins excluded.\nBubble view: area = strength of the move. Tile view: area = market cap. Answers whether the whole market is moving or just one corner of it."
     },
     "rainbow": {
       "title": "Rainbow (BTC)",
@@ -2197,7 +2230,8 @@
       "band_ausverkauf": "Fire sale",
       "band_grund": "Basement",
       "caveat": "This is a curve fitted to the past, not a forecast. The bands shift with every new price — what reads as \"cheap\" today may be the middle in a year. Useful as a multi-year mood gauge, not as a trading signal.",
-      "params": "ln(price) ≈ {a} · ln(days since genesis) + {b}, residual spread {s}, {n} points"
+      "params": "ln(price) ≈ {a} · ln(days since genesis) + {b}, residual spread {s}, {n} points",
+      "info": "A logarithmic curve fitted to the whole price history of Bitcoin, with bands from \"sell-off\" to \"bubble\".\nThe bands shift with every new price. A mood gauge across years, too coarse for a trading decision."
     },
     "top": "Top",
     "liq": {
@@ -2213,7 +2247,8 @@
       "since": "Recorded since {zeit}.",
       "inactive": "Liquidations are not being recorded right now. Without the recording there is nothing to show here — no free third-party source for aggregated liquidations exists.",
       "activate": "Enable in settings",
-      "source": "From this journal's own recording of the Binance and Bybit liquidation streams — no third party. Binance throttles its stream to 1 event/s/symbol (a sample), Bybit is unthrottled — so Bybit usually dominates. Red means a LONG was closed out (price fell), green a SHORT. Amounts are price × size of the single event."
+      "source": "From this journal's own recording of the Binance and Bybit liquidation streams — no third party. Binance throttles its stream to 1 event/s/symbol (a sample), Bybit is unthrottled — so Bybit usually dominates. Red means a LONG was closed out (price fell), green a SHORT. Amounts are price × size of the single event.",
+      "info": "Forced liquidations over the last 24 hours from our own recording — it has to be switched on in the settings and only runs from then on.\nRed = a LONG was closed out, green = a SHORT. Binance delivers only a sample, Bybit the full stream."
     },
     "makro": {
       "title": "Macro backdrop",
@@ -2243,7 +2278,8 @@
       "domFromSupply": "from real flows",
       "domFromPrice": "from price moves",
       "domHint": "Dominance on its own cannot be read: it rises even when only prices fall. Only the split shows whether money actually moved.",
-      "source": "Equities as FUTURES (ES/NQ/RTY), not cash indices: the index stands still overnight and on weekends while the future trades nearly around the clock — only that makes the comparison with the non-stop crypto market honest. Colour shows tailwind or headwind FOR CRYPTO, not the direction of the market itself: a rising dollar is therefore red. Stablecoin flow is the change in USDT and USDC supply — deliberately not \"USDT dominance\", which rises arithmetically whenever crypto falls and merely restates the price drop. Inflow or outflow, by contrast, shows real money entering or leaving the market. The Russell 2000 sits next to the Nasdaq as a cross-check: if both move together it is a liquidity or rates move that reaches crypto too; if only the Nasdaq moves it is rotation into a few large caps and rarely carries over."
+      "source": "Equities as FUTURES (ES/NQ/RTY), not cash indices: the index stands still overnight and on weekends while the future trades nearly around the clock — only that makes the comparison with the non-stop crypto market honest. Colour shows tailwind or headwind FOR CRYPTO, not the direction of the market itself: a rising dollar is therefore red. Stablecoin flow is the change in USDT and USDC supply — deliberately not \"USDT dominance\", which rises arithmetically whenever crypto falls and merely restates the price drop. Inflow or outflow, by contrast, shows real money entering or leaving the market. The Russell 2000 sits next to the Nasdaq as a cross-check: if both move together it is a liquidity or rates move that reaches crypto too; if only the Nasdaq moves it is rotation into a few large caps and rarely carries over.",
+      "info": "The view out of the crypto market: S&P 500 and Nasdaq futures, the dollar index, stablecoin flow.\nThe headline is the CORRELATION BTC↔Nasdaq, not the price. Colour shows tailwind for crypto, not the direction of the market — a rising dollar is therefore red."
     },
     "lage": {
       "title": "Overall picture (AI)",
@@ -2259,7 +2295,8 @@
       "widerspruch": "Contradiction",
       "achten": "What to watch",
       "grundlage": "Basis: {n} readings from the cards",
-      "hinweis": "A read of the numbers shown, not a trading recommendation. The AI only ever sees the values above — it looks nothing up."
+      "hinweis": "A read of the numbers shown, not a trading recommendation. The AI only ever sees the values above — it looks nothing up.",
+      "info": "The tile that reads all the others: the AI summarises the current state in five lines.\nGenerated by button only — neither the page timer nor \"Refresh all\" triggers a billable request. It does no research of its own and gives no trading advice."
     },
     "mechanik": {
       "title": "Market mechanics",
@@ -2289,7 +2326,8 @@
       "erklaeren": "AI context",
       "erklaerungLaedt": "Generating context …",
       "erklaerungHinweis": "Context, not trading advice.",
-      "source": "State derived rule-based from price and OI change (Binance USDⓈ-M), the current funding rate and this journal's own liquidation recording (Binance + Bybit) over the selected window. The same numbers always yield the same state — the AI may explain it, it never decides it."
+      "source": "State derived rule-based from price and OI change (Binance USDⓈ-M), the current funding rate and this journal's own liquidation recording (Binance + Bybit) over the selected window. The same numbers always yield the same state — the AI may explain it, it never decides it.",
+      "info": "Condenses price, open interest, funding and liquidated volume into one market state.\nRule-based: the same numbers always give the same verdict, no AI. In the enlarged view the AI only explains, it never decides."
     },
     "regime": {
       "title": "Your trades × market regime",
@@ -2315,7 +2353,8 @@
       "leastBad": "Least lost in {phase}: {summe} from {n} trades. Every phase is negative.",
       "source": "{n} of your own trades over the last {tage} days, each matched to the Fear & Greed value of its entry day. Bot trades are excluded. Figures are net of fees, as everywhere else in the journal.",
       "missing": "{n} trades have no sentiment value (the index starts in 2018).",
-      "thin": "Phases with fewer than {n} trades are drawn faded — nothing can be concluded from them."
+      "thin": "Phases with fewer than {n} trades are drawn faded — nothing can be concluded from them.",
+      "info": "The only tile that is about you: your trades, grouped by the Fear & Greed value on their entry day.\nFaded phases have too few trades to mean anything. If you lose regularly in a particular market state, that is the most concrete rule this page offers."
     },
     "picycle": {
       "title": "Pi Cycle Top (BTC)",
@@ -2326,7 +2365,8 @@
       "crossings": "Past crossovers",
       "caveat": "Three hits on three occasions (2013, 2017, 2021) are an observation, not proof — no rule can be derived from that statistically. The name comes from 350 divided by 111 being roughly π; that too is numerology, not a mechanism. Useful as a multi-year mood gauge, not as an exit signal.",
       "alarm": "Crossover on {datum}: the 111-day line crossed above the doubled 350-day line.",
-      "vorwarnung": "Early warning: the short line is only {pct} % below the long one (threshold {schwelle} %)."
+      "vorwarnung": "Early warning: the short line is only {pct} % below the long one (threshold {schwelle} %).",
+      "info": "When the 111-day line crosses twice the 350-day line from below, that has historically been close to a cycle top.\nThree hits on three occasions is an observation, not a rule — an early warning for \"careful with leverage\", not an exit signal."
     },
     "altseason": {
       "title": "Altcoin season index",
@@ -2337,7 +2377,8 @@
       "best": "Strongest",
       "worst": "Weakest",
       "summary": "{besser} of {n} large altcoins beat Bitcoin over {tage} days. BTC itself: {btc}.",
-      "source": "Computed from Binance daily candles of the largest coins with a perpetual market, measured against BTC over the same window. The 25 and 75 thresholds come from the original index — they are set, not derived. Clicking a row sets the symbol for the live views."
+      "source": "Computed from Binance daily candles of the largest coins with a perpetual market, measured against BTC over the same window. The 25 and 75 thresholds come from the original index — they are set, not derived. Clicking a row sets the symbol for the live views.",
+      "info": "How many large altcoins beat Bitcoin over the selected window.\nAbove 75 = altcoin season, below 25 = bitcoin season. The thresholds are set, not derived, and the window changes the message a lot."
     },
     "kalender": {
       "title": "Economic calendar",
@@ -2376,7 +2417,8 @@
       "zuEinstellungen": "Enter it in settings",
       "wartet": "Holdings will be fetched on the next cycle.",
       "eigeneTage": "Curve built from {n} days of our own — the free tier only reaches back 30 days, everything older is collected here.",
-      "nachtrag": "The source revises values afterwards, so the last few days are re-fetched."
+      "nachtrag": "The source revises values afterwards, so the last few days are re-fetched.",
+      "info": "Spot ETF holdings in BTC and their daily change — the inflow IS the change in holdings.\nDeliberately in BTC, not dollars: multiplied by the day's price, the \"inflow\" moved even on days when not a single new share was created. Needs a CryptoQuant key."
     }
   },
   "info": {
@@ -3220,7 +3262,9 @@
     "reading": "Reading",
     "upcoming": "Coming up",
     "upcomingHint": "Next 36 hours, using the selection set below. As of now.",
+    "upcomingHintWide": "Nothing due in the next 36 hours — so here are the coming {n} events, using the selection set below. As of now.",
     "time": "Time",
+    "country": "Country",
     "event": "Event",
     "figure": "Value",
     "figureWhat": "What for",
@@ -3331,7 +3375,8 @@
       "warn_makro": "Macro data due",
       "warn_fomc": "FOMC decision",
       "warn_schluss": "US close, market-on-close",
-      "warn_cme": "CME break, thin books"
+      "warn_cme": "CME break, thin books",
+      "info": "Which session is running, the countdown to the next market mark, volatility windows.\nComputed in the browser, no fetch. Each session carries its own zone as wall-clock time — the US and Europe switch to summer time weeks apart."
     },
     "start": "Start live trading",
     "sitzung": {
@@ -3357,7 +3402,8 @@
       "title": "Indices (intraday)",
       "vortag": "Prev. close",
       "eroeffnung": "US open",
-      "keineKerzen": "No candles in range"
+      "keineKerzen": "No candles in range",
+      "info": "ES=F, NQ=F, RTY=F and the dollar index as intraday candles.\nFutures rather than cash indices, because the index stands still overnight and at weekends, and a 62-hour-old value describes nothing."
     },
     "liq": {
       "title": "Liquidations (live)",
@@ -3372,7 +3418,8 @@
       "aufzeichnungAus": "Recording is off — empty does NOT mean quiet here",
       "keinSammelstrom": "Collector off: only individually recorded symbols deliver events.",
       "quellenHinweis": "Binance throttles to one event per second per symbol — a sample, not a full count. Bybit does not throttle.",
-      "bybitStill": "Bybit has not delivered anything yet"
+      "bybitStill": "Bybit has not delivered anything yet",
+      "info": "The most recent forced liquidations from an in-memory ring buffer.\nShows \"what just happened\" — the database lags, because the recorder only writes every 30 seconds."
     },
     "kalender": {
       "title": "Events",
@@ -3386,7 +3433,8 @@
       "impact_high": "high impact",
       "impact_medium": "medium impact",
       "impact_low": "low impact",
-      "impact_holiday": "holiday"
+      "impact_holiday": "holiday",
+      "info": "The next economic events with a countdown.\nTells \"nothing scheduled\" apart from \"everything filtered out\" — the country and impact filters are in the settings."
     },
     "positionen": {
       "title": "Positions & plan",
@@ -3399,7 +3447,8 @@
       "keinPlan": "No plan set — enter limits when starting the session.",
       "keineOffenen": "No open positions",
       "offenesRisiko": "Open and down: {betrag}",
-      "trennungHinweis": "Realised is fixed, open changes on the next tick. Limits count against the realised part — otherwise the bar breaks on every pullback."
+      "trennungHinweis": "Realised is fixed, open changes on the next tick. Limits count against the realised part — otherwise the bar breaks on every pullback.",
+      "info": "Open and closed positions of the running session, measured against the plan's limits.\nRealised and unrealised stay separate — a floating book gain is not a result — and the limits count against the realised part only."
     },
     "ganzeSeite": "Full page",
     "vollbild": "Fullscreen",
@@ -3410,6 +3459,12 @@
       "gespeichert": "Saved · ready to paste",
       "hinweis": "Capture this window as a screenshot into the journal (setups gallery, daily view) and make it ready to insert in Pending Trades",
       "fehler": "Capture failed"
+    },
+    "bookmap": {
+      "info": "Binance's order book in real time as a heat map: where liquidity sits and where it disappears.\nNo enlarged view — that would be a second connection. Needs at least two columns of width."
+    },
+    "hebelkarte": {
+      "info": "A model of where leveraged positions would be liquidated — computed from our own recording, not reported by the exchange.\nShows where the other side keeps its stops. No enlarged view, at least two columns wide."
     }
   },
   "liveSessions": {

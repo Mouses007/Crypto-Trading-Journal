@@ -168,6 +168,9 @@ const DEFINITIONEN = [
     {
         id: 'bookmap',
         titleKey: 'nav.liquidity',
+        // Eigenes `infoKey`: `nav.liquidity`/`nav.liquidations` enden nicht auf
+        // `.title`, die Ableitung ergäbe zweimal dasselbe `nav.info`.
+        infoKey: 'livetrading.bookmap.info',
         icon: 'uil uil-chart-line',
         endpunkt: null,
         intervallMs: Infinity,
@@ -183,6 +186,9 @@ const DEFINITIONEN = [
     {
         id: 'hebelkarte',
         titleKey: 'nav.liquidations',
+        // Eigenes `infoKey`: `nav.liquidity`/`nav.liquidations` enden nicht auf
+        // `.title`, die Ableitung ergäbe zweimal dasselbe `nav.info`.
+        infoKey: 'livetrading.hebelkarte.info',
         icon: 'uil uil-fire',
         endpunkt: null,
         intervallMs: Infinity,

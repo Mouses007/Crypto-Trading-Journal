@@ -1682,6 +1682,48 @@ async function runMigrations(knex, client) {
     // Standard an; aus = die App startet wie früher direkt im Journal.
     await addColumnIfNotExists('settings', 'startseiteAn', (t) => t.integer('startseiteAn').defaultTo(1))
 
+    /*
+     * Erweiterte Infos: das kleine „i" an Werten und Bedienelementen
+     * (`InfoTipp.vue`). Vorgabe AN — die Erklärungen sind für den da, der die
+     * App noch nicht kennt, und genau der sucht keinen Schalter, um sie
+     * einzuschalten. Wer sie nicht braucht, schaltet sie ab.
+     */
+    await addColumnIfNotExists('settings', 'erweiterteInfos', (t) => t.integer('erweiterteInfos').defaultTo(1))
+
+    /*
+     * Modi einzeln ab- und anschaltbar. Journal hat bewusst KEINEN Schalter:
+     * es ist der Kern der App, ohne ihn bliebe nichts übrig. Die Startseite
+     * hängt weiterhin an `startseiteAn` (oben), gehört aber in der Oberfläche
+     * in dieselbe Gruppe.
+     *
+     * Vorgabe an: ein Bestandsnutzer soll nach dem Update dieselbe App
+     * vorfinden wie davor.
+     */
+    await addColumnIfNotExists('settings', 'modusLiveAn', (t) => t.integer('modusLiveAn').defaultTo(1))
+    await addColumnIfNotExists('settings', 'modusResearchAn', (t) => t.integer('modusResearchAn').defaultTo(1))
+    await addColumnIfNotExists('settings', 'modusStrategieAn', (t) => t.integer('modusStrategieAn').defaultTo(1))
+
+    /*
+     * Einmalige Übernahme von „Beta-Funktionen ausblenden".
+     *
+     * Der alte Schalter versteckte Research und Strategien nur im Umschalter;
+     * die Routen blieben erreichbar. Die drei Schalter oben ersetzen ihn und
+     * schalten wirklich ab. Ohne diese Übernahme bekäme jeder, der die beiden
+     * Modi ausgeblendet hatte, sie beim nächsten Start zurück.
+     *
+     * Läuft genau einmal: nur wenn die neuen Spalten noch auf ihrer Vorgabe
+     * stehen. Wer Research später bewusst wieder einschaltet, behält das —
+     * sonst würde die Übernahme bei jedem Start seine Entscheidung überfahren.
+     */
+    const betaZeile = await knex('settings').where('id', 1)
+        .select('betaAusblenden', 'modusResearchAn', 'modusStrategieAn').first()
+    if (betaZeile && Number(betaZeile.betaAusblenden) === 1
+        && Number(betaZeile.modusResearchAn ?? 1) === 1
+        && Number(betaZeile.modusStrategieAn ?? 1) === 1) {
+        await knex('settings').where('id', 1).update({ modusResearchAn: 0, modusStrategieAn: 0 })
+        console.log(' -> Einstellungen: „Beta ausblenden" übernommen — Research und Strategien stehen jetzt auf aus')
+    }
+
     // Nachrichtenquellen. `laerm` markiert, was der Nutzer als Lärm einstuft —
     // der Sammelschalter („Arschlochfilter") blendet genau diese Quellen aus
     // und holt sie erst gar nicht ab.

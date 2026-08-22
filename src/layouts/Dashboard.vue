@@ -6,7 +6,7 @@ import ReturnToTopButton from '../components/ReturnToTopButton.vue'
 import TradeEvalPopup from '../components/TradeEvalPopup.vue'
 import UpdateNoticeModal from '../components/UpdateNoticeModal.vue'
 import { computed, ref, onBeforeMount, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useCreatedDateFormat, useTimeFormat, useHourMinuteFormat } from '../utils/formatters.js'
 import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues, useCloseMobileMenu } from '../utils/utils.js'
 import { screenType, sideMenuMobileOut, pageId, selectedScreenshotIndex, appMode, privacyMode } from '../stores/ui.js'
@@ -24,6 +24,7 @@ import { ebeneAuf, ebeneZu } from '../composables/useZurueckGeste.js'
 import { useImVollbild } from '../utils/geraet.js'
 import BetaHinweis from '../components/BetaHinweis.vue'
 import PageInfo from '../components/PageInfo.vue'
+import { istModusAn, ersterAktiverModus, modeHome } from '../config/menu.js'
 import { setLocale } from '../i18n'
 import i18n from '../i18n'
 import axios from 'axios'
@@ -85,6 +86,37 @@ function aktualisiereZensur() {
     }
 }
 watch([privacyMode, appMode], aktualisiereZensur)
+
+/*
+ * Wache für abgeschaltete Modi.
+ *
+ * Hier und nicht im Router: beim kalten Deep-Link sind die Einstellungen noch
+ * nicht geladen, `currentUser` ist null, und eine `beforeEach`-Wache müsste
+ * raten. Sie würde falsch raten — jeder Aufruf von /marktradar landete bei
+ * langsamem Einstellungsabruf im Journal. Deshalb wartet die Wache: solange
+ * nichts geladen ist, leitet sie nichts um.
+ *
+ * Und hier statt je Seite: das Layout hängt an JEDER Route. Fünf Kopien
+ * derselben Watch in fünf Views wären fünf Stellen, die auseinanderlaufen.
+ *
+ * Beide Quellen werden gebraucht:
+ *   `currentUser` — die Einstellungen treffen verspätet ein (Deep-Link).
+ *   `route.fullPath` — Navigation innerhalb der App (Zurück-Knopf, altes
+ *                      Lesezeichen), wenn die Einstellungen längst da sind.
+ *
+ * `livetradingAn` bleibt davon unberührt: das ist ein Seiten-Flag und wird
+ * weiterhin in `Livetrading.vue` selbst bewacht.
+ */
+const router = useRouter()
+watch([currentUser, () => route.fullPath], ([u]) => {
+  if (!u) return
+  const modus = route.meta?.mode
+  // Modusneutrale Seiten (Einstellungen, Konten) und das Journal haben keinen
+  // Schalter — sie sind immer erreichbar.
+  if (!modus || modus === 'any' || modus === 'journal') return
+  if (istModusAn(modus, u)) return
+  router.replace(modeHome(ersterAktiverModus(u)))
+}, { immediate: true })
 onMounted(aktualisiereZensur)
 onUnmounted(() => { if (stopZensur) { stopZensur(); stopZensur = null } })
 

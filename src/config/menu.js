@@ -118,19 +118,22 @@ export const PAGES = [
  * ~45px breit, „Live-Analyse" und „Strategien" passen dort nicht mehr rein.
  * Ohne shortKey gilt titleKey.
  */
-// `versteckbar: true` → wird von der Einstellung „Beta-Funktionen ausblenden"
-// (Layout & Stil) aus dem Umschalter entfernt. Momentan Agent und Research.
+// `flag` nennt — wie bei PAGES — eine Einstellungsspalte, die den Modus ein-
+// und ausschaltet. Fehlt das Feld, ist der Modus nicht abschaltbar: das gilt
+// genau für `journal`, den Kern der App. Alles andere darf weg, für den, der
+// nur sein Journal führen will.
 //
-// ⚠ Research trägt seit dem 21.08.2026 KEINE Beta-Marke mehr, bleibt aber
-// versteckbar. Der Schalter heisst also nicht mehr genau das, was er tut —
-// er blendet „Agent und Research" aus, nicht „alles Beta". Wer den Namen
-// stört, benennt ihn um; das Verhalten ist Absicht.
+// Abgeschaltet heisst wirklich abgeschaltet: der Tab verschwindet aus dem
+// Umschalter, das Seitenmenü rendert nichts mehr, und die Wache in
+// `layouts/Dashboard.vue` leitet auch einen Deep-Link auf eine Route des
+// Modus um. Der frühere Schalter „Beta-Funktionen ausblenden" konnte das
+// nicht — er nahm nur den Tab weg, `/hype-radar` blieb per URL erreichbar.
 export const MODES = [
     // Landing-Page der App: frei konfigurierbares Kachelraster (Kontostand,
     // Marktlage, News-Zusammenfassung …).
-    { id: 'start', titleKey: 'modes.start', icon: 'uil uil-estate', home: '/startseite', enabled: true },
+    { id: 'start', titleKey: 'modes.start', icon: 'uil uil-estate', home: '/startseite', enabled: true, flag: 'startseiteAn' },
     { id: 'journal', titleKey: 'modes.journal', icon: 'uil uil-book-alt', home: '/dashboard', enabled: true },
-    { id: 'live', titleKey: 'modes.live', shortKey: 'modes.liveShort', icon: 'uil uil-chart-line', home: '/marktradar', enabled: true },
+    { id: 'live', titleKey: 'modes.live', shortKey: 'modes.liveShort', icon: 'uil uil-chart-line', home: '/marktradar', enabled: true, flag: 'modusLiveAn' },
     /*
      * Entdecken: was es noch nicht ins Journal geschafft hat. Bislang ein
      * Platzhalter, jetzt von Hype-Radar und Coin-Radar bewohnt.
@@ -141,15 +144,15 @@ export const MODES = [
      * beim Agenten handelt hier ohnehin niemand selbstständig — es gab also
      * nie eine Gefahr, vor der die Marke gewarnt hätte.
      *
-     * `versteckbar` bleibt, aber aus dem anderen Grund: Wer nur sein Journal
-     * führt, braucht den Modus nicht im Umschalter.
+     * Abschaltbar bleibt er, aber aus dem anderen Grund: Wer nur sein Journal
+     * führt, braucht den Modus nicht.
      */
-    { id: 'research', titleKey: 'modes.research', icon: 'uil uil-telescope', home: '/hype-radar', enabled: true, versteckbar: true },
+    { id: 'research', titleKey: 'modes.research', icon: 'uil uil-telescope', home: '/hype-radar', enabled: true, flag: 'modusResearchAn' },
     // Freigegeben als Beta. Der Modus handelt selbstständig, deshalb warnt
     // `BetaHinweis.vue` auf jeder seiner Seiten, und der scharfe Betrieb hängt
     // zusätzlich an der dreifachen Freigabekette (globaler Schalter, Freigabe je
     // Instanz, Mindestzahl Papier-Trades).
-    { id: 'agent', titleKey: 'modes.agent', shortKey: 'modes.agentShort', icon: 'uil uil-robot', home: '/agent/strategies', enabled: true, beta: true, versteckbar: true },
+    { id: 'agent', titleKey: 'modes.agent', shortKey: 'modes.agentShort', icon: 'uil uil-robot', home: '/agent/strategies', enabled: true, beta: true, flag: 'modusStrategieAn' },
 ]
 
 export const pageById = (id) => PAGES.find(p => p.id === id) || null
@@ -157,3 +160,28 @@ export const pageById = (id) => PAGES.find(p => p.id === id) || null
 export const pagesForMode = (mode) => PAGES.filter(p => p.mode === mode && p.group)
 
 export const modeHome = (mode) => MODES.find(m => m.id === mode)?.home || '/dashboard'
+
+/**
+ * Ist dieser Modus eingeschaltet?
+ *
+ * `?? 1` — Unwissen ist kein Nein. Dieselbe Regel wie beim Seitenmenü: solange
+ * die Einstellungen noch nicht geladen sind, gilt ein Modus als vorhanden.
+ * Andersherum bräuchte jeder Deep-Link eine Wartezeit, bevor er etwas zeigen
+ * dürfte, und ein langsamer Einstellungsabruf würde als „abgeschaltet" gelesen.
+ *
+ * @param {string} modeId
+ * @param {object|null} einstellungen `currentUser.value` (die Einstellungszeile)
+ */
+export const istModusAn = (modeId, einstellungen) => {
+    const m = MODES.find(x => x.id === modeId)
+    if (!m || !m.flag) return true
+    return Number(einstellungen?.[m.flag] ?? 1) === 1
+}
+
+/**
+ * Erster eingeschalteter Modus in der Reihenfolge der Leiste — das Ziel, wenn
+ * jemand aus einem abgeschalteten Modus herausgeleitet werden muss. Journal
+ * trägt kein Flag und ist deshalb immer der letzte sichere Halt.
+ */
+export const ersterAktiverModus = (einstellungen) =>
+    MODES.find(m => istModusAn(m.id, einstellungen))?.id || 'journal'

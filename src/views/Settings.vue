@@ -1,8 +1,9 @@
 <script setup>
-import { onBeforeMount, onMounted, ref, reactive, computed } from 'vue';
+import { onBeforeMount, onMounted, ref, reactive, computed, watch } from 'vue';
 import { useDateCalFormat, useKostenAnzeige, useKostenZahl } from '../utils/formatters.js';
 import ModelManager from '../components/ModelManager.vue'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
+import InfoTipp from '../components/InfoTipp.vue'
 import KiUebersicht from '../components/ki/KiUebersicht.vue'
 import { useCheckCurrentUser, useInitTooltip } from '../utils/utils';
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js';
@@ -17,6 +18,9 @@ import { useQuickApiImport } from '../utils/quickImport.js'
 import { loadSymbolMeta } from '../utils/liveSymbols.js'
 import { sendNotification } from '../utils/notify.js'
 import { useI18n } from 'vue-i18n'
+import { MODES } from '../config/menu.js'
+import { appMode } from '../stores/ui.js'
+import { merkeErweiterteInfos } from '../composables/useErweiterteInfos.js'
 import { setLocale } from '../i18n'
 import { useGetPeriods } from '../utils/utils.js'
 import appLogoSrc from '../assets/icon.png'
@@ -41,9 +45,14 @@ async function changeLanguage(lang) {
 let profileAvatar = null
 let username = ref('')
 // Layout & Stil
-let betaAusblenden = ref(false)      // Strategien/Research aus dem Umschalter nehmen
 let livetradingMobil = ref(false)    // Live-Trading-Fenster auch am Telefon zeigen
 let startseiteAn = ref(true)         // Startseite als Landing-Page + Modus-Tab
+let erweiterteInfosAn = ref(true)    // kleines „i" an Werten und Bedienelementen
+// Modi einzeln abschaltbar. Journal fehlt hier absichtlich: es ist der Kern
+// der App und trägt in menu.js kein Flag.
+let modusLiveAn = ref(true)
+let modusResearchAn = ref(true)
+let modusStrategieAn = ref(true)
 let startBalance = ref(0)
 let currentBalance = ref(0)
 let bitunixApiKey = ref('')
@@ -406,6 +415,44 @@ async function startseiteSpeichern(an) {
     await kiSpeichern('startseiteAn', an ? 1 : 0)
 }
 
+/**
+ * Erweiterte Infos speichern. Wie beim Startseiten-Schalter wird der Wert nach
+ * localStorage gespiegelt: die Vorgabe ist „an", also blitzten bei jemandem,
+ * der sie abgeschaltet hat, sonst alle Symbole kurz auf, bis die Einstellungen
+ * geladen sind.
+ */
+async function erweiterteInfosSpeichern(an) {
+    merkeErweiterteInfos(an)
+    await kiSpeichern('erweiterteInfos', an ? 1 : 0)
+}
+
+/**
+ * Modus-Schalter speichern.
+ *
+ * `kiSpeichern` schreibt die Datenbank und patcht `currentUser` gleich mit —
+ * der Tab verschwindet dadurch im selben Takt aus dem Umschalter, ohne Reload.
+ *
+ * Der zweite Teil räumt das Gedächtnis auf: Wer den Modus abschaltet, in dem
+ * er gerade steht, hinterliesse sonst `appMode` im localStorage. Die
+ * Einstellungen sind modusneutral (`meta.mode: 'any'`), also korrigiert der
+ * Router das nicht — und der nächste Kaltstart zeigte einen Bildaufbau lang
+ * das Menü eines Modus, den es nicht mehr gibt.
+ *
+ * KEIN localStorage-Spiegel für die Werte selbst: den braucht nur
+ * `startseiteAn`, weil die Wurzel-Umleitung synchron entscheiden muss. Ein
+ * Spiegel ohne synchronen Leser wäre eine zweite Wahrheit, die irgendwann
+ * auseinanderläuft.
+ */
+async function modusSpeichern(feld, an) {
+    await kiSpeichern(feld, an ? 1 : 0)
+    if (an) return
+    const modus = MODES.find(m => m.flag === feld)?.id
+    if (modus && appMode.value === modus) {
+        appMode.value = 'journal'
+        try { localStorage.setItem('appMode', 'journal') } catch (_) { /* egal */ }
+    }
+}
+
 /** Anbieter+Modell eines Bereichs setzen und sofort sichern. */
 function setzeFunktionsAnbieter(providerRef, modellRef, providerFeld, modellFeld) {
     return {
@@ -660,6 +707,13 @@ let radarKalenderLaender = ref('')
 let radarKalenderImpact = ref('medium')
 let radarHolt = ref(false)
 let radarMeldung = ref('')
+/* Stand des Kalenderabrufs. Der Abruf laeuft von selbst (Serverstart, danach
+   alle zwei Stunden, gedrosselt auf hoechstens alle sechs) — hier steht
+   deshalb, WANN er zuletzt lief, nicht ein Knopf, der so tut, als muesste man
+   ihn druecken. Die Laender- und Wirkungsfelder darueber sind reine
+   Anzeigefilter und haben mit dem Abruf nichts zu tun. */
+let kalenderStand = ref(null)
+let kalenderMeldung = ref('')
 let radarNewsAuto = ref(true)
 let radarNewsStunde = ref(12)
 let radarNewsVideos = ref(3)
@@ -1004,21 +1058,44 @@ async function vorschlagUebernehmen(v) {
     await quelleAnlegen()
 }
 
+/* Nur lesen: der GET erzeugt keinen Abruf, er zeigt den Bestand der eigenen
+   Datenbank und den Zeitpunkt des letzten Feed-Laufs. */
+async function kalenderStandLaden() {
+    try {
+        const { data } = await axios.get('/api/marktradar/kalender')
+        kalenderStand.value = {
+            letzterAbruf: data.letzterAbruf || null,
+            letzterFehler: data.letzterFehler || '',
+            gesamt: Number(data.gesamtImZeitraum) || 0,
+        }
+    } catch (e) {
+        kalenderStand.value = null
+        kalenderMeldung.value = e.response?.data?.error || e.message
+    }
+}
+
 async function kalenderHolen() {
     radarHolt.value = true
-    radarMeldung.value = ''
+    kalenderMeldung.value = ''
     try {
         const { data } = await axios.post('/api/marktradar/kalender/holen')
-        radarMeldung.value = data.uebersprungen
+        kalenderMeldung.value = data.uebersprungen
             // Der Feed ist gedrosselt — ein „zu früh" ist kein Fehler
-            ? 'Zuletzt vor Kurzem geholt — der Feed wird höchstens alle paar Minuten gefragt.'
+            ? 'Zuletzt vor Kurzem geholt — häufiger als alle paar Minuten fragt der Feed nicht.'
             : `${data.gesehen} Termine gesehen, ${data.neu} neu.`
+        await kalenderStandLaden()
     } catch (e) {
-        radarMeldung.value = e.response?.data?.error || e.message
+        kalenderMeldung.value = e.response?.data?.error || e.message
     } finally {
         radarHolt.value = false
     }
 }
+
+// Erst beim Aufklappen fragen — der Abschnitt steht zwar im DOM (v-show), aber
+// wer die Marktradar-Einstellungen nie öffnet, braucht den Abruf auch nicht.
+watch(radarExpanded, offen => {
+    if (offen && !kalenderStand.value) kalenderStandLaden()
+})
 
 /* CRYPTOQUANT — Schlüssel für die ETF-Kachel.
 
@@ -2335,7 +2412,10 @@ onBeforeMount(async () => {
         daytradeMaxHours.value = settings.daytradeMaxHours ?? 24
         enableBinanceChart.value = settings.enableBinanceChart === 1
         selectedLanguage.value = settings.language || 'de'
-        betaAusblenden.value = Number(settings.betaAusblenden ?? 0) === 1
+        erweiterteInfosAn.value = Number(settings.erweiterteInfos ?? 1) === 1
+        modusLiveAn.value = Number(settings.modusLiveAn ?? 1) === 1
+        modusResearchAn.value = Number(settings.modusResearchAn ?? 1) === 1
+        modusStrategieAn.value = Number(settings.modusStrategieAn ?? 1) === 1
         livetradingMobil.value = Number(settings.livetradingMobil ?? 0) === 1
         startseiteAn.value = Number(settings.startseiteAn ?? 1) === 1
         browserNotifications.value = settings.browserNotifications !== 0
@@ -2462,34 +2542,61 @@ onBeforeMount(async () => {
                         <input type="file" @change="uploadProfileAvatar" />
                     </div>
 
-                    <!-- Startseite ein-/ausschalten (Landing-Page + Modus-Tab) -->
+                    <!-- Erweiterte Infos: das kleine „i" an Werten und Bedienelementen -->
                     <div class="col-12 mt-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="erweiterteInfosToggle"
+                                v-model="erweiterteInfosAn" @change="erweiterteInfosSpeichern(erweiterteInfosAn)">
+                            <label class="form-check-label" for="erweiterteInfosToggle">{{ t('settings.erweiterteInfos') }}</label>
+                            <InfoTipp schluessel="settings.erweiterteInfosInfo" />
+                        </div>
+                        <p class="fw-lighter small mb-0">{{ t('settings.erweiterteInfosHint') }}</p>
+                    </div>
+
+                    <!-- Modi ein-/ausblenden. Journal fehlt bewusst: nicht abschaltbar. -->
+                    <div class="col-12 mt-4">
+                        <h6 class="mb-1">{{ t('settings.modesTitle') }}</h6>
+                        <p class="fw-lighter small mb-2">{{ t('settings.modesHint') }}</p>
+
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="startseiteAnToggle"
                                 v-model="startseiteAn" @change="startseiteSpeichern(startseiteAn)">
-                            <label class="form-check-label" for="startseiteAnToggle">{{ t('settings.startpageOn') }}</label>
+                            <label class="form-check-label" for="startseiteAnToggle">{{ t('modes.start') }}</label>
+                            <InfoTipp schluessel="settings.startpageOnHint" />
                         </div>
-                        <p class="fw-lighter small mb-0">{{ t('settings.startpageOnHint') }}</p>
-                    </div>
-
-                    <!-- Beta-Funktionen ausblenden (Strategien/Research) -->
-                    <div class="col-12 mt-3">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="betaAusblendenToggle"
-                                v-model="betaAusblenden" @change="kiSpeichern('betaAusblenden', betaAusblenden ? 1 : 0)">
-                            <label class="form-check-label" for="betaAusblendenToggle">{{ t('settings.hideBeta') }}</label>
+                            <input class="form-check-input" type="checkbox" id="modusLiveAnToggle"
+                                v-model="modusLiveAn" @change="modusSpeichern('modusLiveAn', modusLiveAn)">
+                            <label class="form-check-label" for="modusLiveAnToggle">{{ t('modes.live') }}</label>
+                            <InfoTipp schluessel="settings.modeLiveInfo" />
                         </div>
-                        <p class="fw-lighter small mb-0">{{ t('settings.hideBetaHint') }}</p>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="modusResearchAnToggle"
+                                v-model="modusResearchAn" @change="modusSpeichern('modusResearchAn', modusResearchAn)">
+                            <label class="form-check-label" for="modusResearchAnToggle">{{ t('modes.research') }}</label>
+                            <InfoTipp schluessel="settings.modeResearchInfo" />
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="modusStrategieAnToggle"
+                                v-model="modusStrategieAn" @change="modusSpeichern('modusStrategieAn', modusStrategieAn)">
+                            <label class="form-check-label" for="modusStrategieAnToggle">{{ t('modes.agent') }}</label>
+                            <InfoTipp schluessel="settings.modeStrategyInfo" />
+                        </div>
+                        <p class="fw-lighter small mb-0 mt-2">{{ t('settings.modesJournalFix') }}</p>
                     </div>
 
                     <!-- Live-Trading-Fenster auf dem Handy zeigen -->
                     <div class="col-12 mt-3">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="livetradingMobilToggle"
+                                :disabled="!modusLiveAn"
                                 v-model="livetradingMobil" @change="kiSpeichern('livetradingMobil', livetradingMobil ? 1 : 0)">
                             <label class="form-check-label" for="livetradingMobilToggle">{{ t('settings.livetradingMobile') }}</label>
                         </div>
                         <p class="fw-lighter small mb-0">{{ t('settings.livetradingMobileHint') }}</p>
+                        <!-- Ausgrauen statt verstecken: ein verschwundener Schalter lässt
+                             offen, ob die Einstellung überlebt hat. -->
+                        <p v-if="!modusLiveAn" class="fw-lighter small mb-0 text-warning">{{ t('settings.livetradingModeOffHint') }}</p>
                     </div>
 
                     <div class="col-12 mt-3 mb-3">
@@ -2794,6 +2901,7 @@ onBeforeMount(async () => {
                     <div class="d-flex mt-2 mb-2">
                         <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" :placeholder="t('timeframes.egCustom')" v-model="newCustomTf" @keyup.enter="addCustomTimeframe" />
                         <button class="btn btn-outline-primary btn-sm" @click="addCustomTimeframe">{{ t('timeframes.addCustom') }}</button>
+                        <InfoTipp schluessel="settings.info.customTimeframe" />
                     </div>
                     <div class="mt-3 mb-3">
                         <button type="button" v-on:click="saveTimeframes" class="btn btn-success">{{ t('common.save') }}</button>
@@ -3270,7 +3378,7 @@ onBeforeMount(async () => {
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">{{ t('settings.fluxModel') }}</div>
+                            <div class="col-12 col-md-4">{{ t('settings.fluxModel') }}<InfoTipp schluessel="settings.info.fluxModel" /></div>
                             <div class="col-12 col-md-8">
                                 <select class="form-select" v-model="fluxModel">
                                     <option v-for="m in fluxModels" :key="m.value" :value="m.value">{{ m.label }}</option>
@@ -3299,7 +3407,7 @@ onBeforeMount(async () => {
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Gemini Modell</div>
+                            <div class="col-12 col-md-4">Gemini Modell<InfoTipp schluessel="settings.info.geminiImageModel" /></div>
                             <div class="col-12 col-md-8">
                                 <select class="form-select" v-model="geminiImageModel">
                                     <option v-for="m in geminiImageModels" :key="m.value" :value="m.value">{{ m.label }}</option>
@@ -3393,7 +3501,9 @@ onBeforeMount(async () => {
                 </div>
                 <div v-show="agentExpanded" class="mt-2 ms-3">
                     <p class="fw-lighter">
-                        {{ t('settings.ki.strat.intro') }} <a href="/agent/strategies">{{ t('settings.ki.strat.link') }}</a>. {{ t('settings.ki.strat.intro2') }}
+                        <!-- Link nur, wenn der Strategien-Modus an ist — sonst führt er auf
+                             eine Route, die die Wache im Layout sofort wieder abprallen lässt. -->
+                        {{ t('settings.ki.strat.intro') }} <a v-if="modusStrategieAn" href="/agent/strategies">{{ t('settings.ki.strat.link') }}</a><span v-else>{{ t('settings.ki.strat.link') }}</span>. {{ t('settings.ki.strat.intro2') }}
                     </p>
 
                     <div class="row align-items-center mt-3">
@@ -3505,6 +3615,7 @@ onBeforeMount(async () => {
                                 <option value="woechentlich">{{ t('settings.ki.news.weekly') }}</option>
                                 <option value="manuell">{{ t('settings.ki.news.manual') }}</option>
                             </select>
+                            <InfoTipp schluessel="settings.info.newsRhythmus" />
                             <select v-if="radarNewsRhythmus === 'woechentlich'" class="form-select form-select-sm" style="max-width:8.5rem;"
                                 v-model.number="radarNewsWochentag" :disabled="!radarNewsAuto" @change="radarSpeichern('radarNewsWochentag')">
                                 <option v-for="(tag, i) in wochentagNamen" :key="i" :value="i + 1">{{ tag }}</option>
@@ -3908,9 +4019,15 @@ onBeforeMount(async () => {
 
                     <div class="form-check form-switch mt-2">
                         <input class="form-check-input" type="checkbox" id="livetradingToggle"
+                            :disabled="!modusLiveAn"
                             v-model="livetradingAn" @change="radarSpeichern('livetradingAn')">
                         <label class="form-check-label" for="livetradingToggle">Live-Trading-Fenster anzeigen</label>
                     </div>
+                    <!-- Der Modus steht über der Seite: ist er aus, ist auch diese Seite
+                         weg. Der Schalter behält seinen Wert und kommt unverändert
+                         zurück, sobald der Modus wieder an ist — deshalb ausgrauen und
+                         nicht heimlich mit umschalten. -->
+                    <p v-if="!modusLiveAn" class="fw-lighter small mb-0 mt-1 text-warning">{{ t('settings.livetradingModeOffHint') }}</p>
                 </div>
 
                 <hr />
@@ -3970,7 +4087,7 @@ onBeforeMount(async () => {
                     </div>
 
                     <div class="row align-items-center mt-2">
-                        <div class="col-12 col-md-4">Farbrampe</div>
+                        <div class="col-12 col-md-4">Farbrampe<InfoTipp schluessel="settings.info.liveRamp" /></div>
                         <div class="col-12 col-md-8">
                             <select class="form-select" v-model="liveRamp">
                                 <option value="viridis">Viridis (violett → grün → gelb)</option>
@@ -4132,12 +4249,24 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
-                    <div class="mt-3">
-                        <button class="btn btn-outline-primary btn-sm" :disabled="radarHolt" @click="kalenderHolen">
+                    <!-- Kein „jetzt holen" als Hauptsache: der Kalender wird ohnehin
+                         regelmässig nachgeführt. Die Zeile sagt, ob das geklappt hat;
+                         der Knopf ist der Ausweg, wenn nicht. -->
+                    <div class="mt-3 small text-muted">
+                        <span v-if="kalenderStand">
+                            Zuletzt geholt:
+                            {{ kalenderStand.letzterAbruf ? dayjs(kalenderStand.letzterAbruf).format('DD.MM. HH:mm') : 'noch nie' }}
+                            · {{ kalenderStand.gesamt }} Termine im Bestand (−3 bis +14 Tage)
+                        </span>
+                        <span v-else>Stand wird geladen …</span>
+                        <button class="btn btn-outline-secondary btn-sm ms-2" :disabled="radarHolt" @click="kalenderHolen">
                             <span v-if="radarHolt" class="spinner-border spinner-border-sm me-2"></span>
-                            Kalender jetzt holen
+                            Erneut holen
                         </button>
-                        <span v-if="radarMeldung" class="ms-2 small text-muted">{{ radarMeldung }}</span>
+                        <div v-if="kalenderStand && kalenderStand.letzterFehler" class="mt-1" style="color:rgb(250,190,60);">
+                            Letzter Fehler: {{ kalenderStand.letzterFehler }}
+                        </div>
+                        <div v-if="kalenderMeldung" class="mt-1">{{ kalenderMeldung }}</div>
                     </div>
 
                     <!--=============== ETF-KACHEL (CRYPTOQUANT) ===============-->
@@ -4204,7 +4333,6 @@ onBeforeMount(async () => {
                         </span>
                     </p>
 
-
                     <!--=============== NACHRICHTENQUELLEN ===============-->
                     <hr class="mt-4" />
                     <p class="fw-bold mb-1">Nachrichtenquellen</p>
@@ -4224,7 +4352,7 @@ onBeforeMount(async () => {
 
                     <div class="row align-items-center mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Temporär ausschliessen</label>
+                            <label class="fw-lighter">Temporär ausschliessen<InfoTipp schluessel="settings.info.laermfilter" /></label>
                         </div>
                         <div class="col-12 col-md-9">
                             <label class="switch">
@@ -4243,7 +4371,7 @@ onBeforeMount(async () => {
                          also auch rückwirkend. -->
                     <div class="row mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Arschlochfilter</label>
+                            <label class="fw-lighter">Arschlochfilter<InfoTipp schluessel="settings.info.wortfilter" /></label>
                             <small class="d-block text-muted" style="font-size:0.78rem;">
                                 Filtert Truth Social automatisch. Beiträge, die eines der Stichwörter
                                 enthalten (ein Begriff je Zeile), verschwinden aus Liste und Lagebericht.
@@ -4762,7 +4890,7 @@ onBeforeMount(async () => {
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Port</div>
+                            <div class="col-12 col-md-4">Port<InfoTipp schluessel="settings.info.dbPort" /></div>
                             <div class="col-12 col-md-8">
                                 <input type="number" class="form-control" v-model="dbPort" placeholder="5432" />
                             </div>
@@ -5085,7 +5213,7 @@ onBeforeMount(async () => {
                 </div>
 
                 <div class="row align-items-center mt-2">
-                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.schrift') }}</div>
+                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.schrift') }}<InfoTipp schluessel="settings.info.mailSchrift" /></div>
                     <div class="col-12 col-md-8">
                         <select class="form-select" style="max-width:14rem;"
                             v-model="mail.mailSchriftGroesse" @change="speichereMail">
@@ -5097,7 +5225,7 @@ onBeforeMount(async () => {
                 </div>
 
                 <div class="row align-items-center mt-3">
-                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.host') }}</div>
+                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.host') }}<InfoTipp schluessel="settings.info.mailSicherheit" /></div>
                     <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
                         <input type="text" class="form-control" style="max-width:18rem;"
                             v-model="mail.mailHost" placeholder="smtp.example.com" />

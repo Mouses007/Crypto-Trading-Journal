@@ -22,10 +22,33 @@
  * @param {string[]} standardReihenfolge Ids in Wunschreihenfolge
  */
 export function baueKachelListe(definitionen, standardReihenfolge = []) {
-    return [
+    const geordnet = [
         ...standardReihenfolge.map(id => definitionen.find(k => k.id === id)).filter(Boolean),
         ...definitionen.filter(k => !standardReihenfolge.includes(k.id)),
     ]
+    return geordnet.map(k => ({ ...k, infoKey: infoSchluessel(k) }))
+}
+
+/**
+ * Schlüssel des Erklärtexts einer Kachel (das kleine „i" im Kachelkopf).
+ *
+ * Regel: `marktradar.fng.title` → `marktradar.fng.info`. Das trägt, weil der
+ * Titel eines Kachel-Namensraums immer unter `<raum>.title` liegt — der Raum
+ * ist also schon ein Objekt und verträgt einen zweiten Schlüssel.
+ *
+ * Zwei Kacheln im Live-Trading-Fenster hängen aber an `nav.liquidity` und
+ * `nav.liquidations`; dort endet der Schlüssel nicht auf `.title`, und die
+ * Ableitung ergäbe zweimal dasselbe `nav.info`. Deshalb darf eine Definition
+ * ihr `infoKey` selbst setzen, und die Ableitung ist nur der Normalfall.
+ *
+ * Wichtig: hier wird eine KOPIE gebaut, nie die Definition beschrieben. Die
+ * Startseite hängt sich den Marktradar-Katalog per Referenz ein — ein
+ * Schreibzugriff auf ein Definitionsobjekt liefe quer über beide Seiten.
+ */
+function infoSchluessel(kachel) {
+    if (kachel.infoKey) return kachel.infoKey
+    const titel = kachel.titleKey || ''
+    return titel.endsWith('.title') ? titel.slice(0, -'.title'.length) + '.info' : ''
 }
 
 /**

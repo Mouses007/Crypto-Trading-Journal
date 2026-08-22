@@ -10,9 +10,13 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ebeneAuf, ebeneZu } from '../composables/useZurueckGeste.js'
+import InfoTipp from './InfoTipp.vue'
 
 defineProps({
     titel: { type: String, default: '' },
+    /** Erklärtext-Schlüssel wie bei `RadarKachel` — sonst wäre ausgerechnet
+     *  die Gross-Ansicht die einzige Stelle ohne Erklärung. */
+    infoKey: { type: String, default: '' },
     /** Herkunft der Daten, klein in der Fusszeile */
     quelle: { type: String, default: '' },
 })
@@ -47,7 +51,7 @@ onBeforeUnmount(() => ebeneZu(schliesseDurchGeste))
         <div class="radarOverlay" tabindex="0" ref="boxEl" @click.self="emit('schliessen')" @keydown="beiTaste">
             <div class="radarOverlayBox">
                 <div class="radarOverlayHead">
-                    <h5>{{ titel }}</h5>
+                    <h5>{{ titel }}<InfoTipp v-if="infoKey" :schluessel="infoKey" /></h5>
                     <button type="button" class="radarOverlayClose" :title="t('common.close')"
                         @click="emit('schliessen')">
                         <i class="uil uil-times"></i>

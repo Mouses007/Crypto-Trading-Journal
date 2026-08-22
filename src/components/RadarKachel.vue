@@ -10,6 +10,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import dayjs from '../utils/dayjs-setup.js'
+import InfoTipp from './InfoTipp.vue'
 
 const props = defineProps({
     titel: { type: String, required: true },
@@ -37,6 +38,12 @@ const props = defineProps({
      * aufbauen.
      */
     interaktiv: { type: Boolean, default: false },
+    /**
+     * Schlüssel des Erklärtexts (das kleine „i" neben dem Titel). Kommt aus
+     * der Kachel-Registry, die ihn aus dem `titleKey` ableitet. Leer oder ohne
+     * hinterlegten Text → kein Symbol, siehe `InfoTipp.vue`.
+     */
+    infoKey: { type: String, default: '' },
 })
 
 const emit = defineEmits(['gross', 'neuladen', 'groesseStart', 'groesseZurueck'])
@@ -56,6 +63,7 @@ const standText = computed(() => {
             <span class="radarGriff" :title="t('marktradar.drag')"><i class="uil uil-draggabledots"></i></span>
             <i v-if="icon" :class="[icon, 'radarCardIcon']"></i>
             <span class="radarCardTitle">{{ titel }}</span>
+            <InfoTipp v-if="infoKey" :schluessel="infoKey" />
             <span :class="['liveDot', 'dot-' + zustand]" :title="t('marktradar.status_' + zustand)"></span>
             <span v-if="!eigenstaendig" class="radarCardStand">{{ standText }}</span>
             <span v-else class="radarCardStand"></span>

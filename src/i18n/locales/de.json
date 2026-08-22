@@ -257,8 +257,6 @@
     "layoutAndStyle": "Layout & Stil",
     "startpageOn": "Startseite anzeigen",
     "startpageOnHint": "Zeigt die konfigurierbare Startseite als Landing-Page und eigenen Modus-Tab. Aus: die App startet direkt im Journal.",
-    "hideBeta": "Beta-Funktionen ausblenden",
-    "hideBetaHint": "Blendet die noch unfertigen Modi (Strategien, Research) aus der Navigation aus.",
     "livetradingMobile": "Live-Trading auf dem Handy",
     "livetradingMobileHint": "Zeigt das Live-Trading-Fenster auch auf dem Telefon. Standardmässig nur am Desktop, weil das Kachelraster viel Platz braucht.",
     "username": "Benutzername",
@@ -651,6 +649,28 @@
       "schriftNormal": "Normal",
       "schriftGross": "Gross",
       "schriftSehrGross": "Sehr gross"
+    },
+    "erweiterteInfos": "Erweiterte Infos",
+    "erweiterteInfosHint": "Zeigt ein kleines „i“ an Werten und Bedienelementen. Mauszeiger darüber (am Telefon: antippen) erklärt, was die Zahl bedeutet.",
+    "erweiterteInfosInfo": "Betrifft nur die Erklärungen zu Werten.\nDie Beschriftungen der Knöpfe bleiben immer sichtbar, ebenso die grossen Info-Tafeln oben auf den Seiten.",
+    "modesTitle": "Modi ein-/ausblenden",
+    "modesHint": "Welche Bereiche in der Leiste über dem Seitentitel erscheinen. Ausgeschaltet heisst wirklich aus: der Bereich verschwindet aus der Navigation, und auch ein direkt aufgerufener Link führt zurück ins Journal.",
+    "modesJournalFix": "Das Journal lässt sich nicht abschalten — es ist der Kern der App.",
+    "modeLiveInfo": "Marktradar, Nachrichten, Orderbuch, Liquidationen und das Live-Trading-Fenster.\nAus: nichts davon wird noch geladen oder abgerufen.",
+    "modeResearchInfo": "Hype-Radar (junge Projekte draussen) und Coin-Radar (was das eigene Konto heute handeln kann).",
+    "modeStrategyInfo": "Der Strategien-Modus handelt selbstständig. Aus: Instanzen laufen nicht weiter, und die Seiten sind nicht erreichbar.",
+    "livetradingModeOffHint": "Der Modus „Live-Analyse“ ist ausgeschaltet — diese Einstellung wirkt erst wieder, wenn er an ist. Ihr Wert bleibt erhalten.",
+    "info": {
+      "customTimeframe": "Eigener Zeitrahmen für die Trade-Einteilung, z.B. „Swing 3d“.\nDie Vorgaben Scalp/Daytrade richten sich nach den Minuten- und Stundengrenzen darüber; ein eigener Rahmen wird von Hand vergeben.",
+      "fluxModel": "Welches FLUX-Modell den Hintergrund der Share-Card malt.\nGrössere Modelle kosten je Bild mehr und brauchen länger; für eine Karte, die als Vorschaubild endet, lohnt das selten.",
+      "geminiImageModel": "Welches Gemini-Bildmodell die Share-Card malt — die Alternative zu FLUX.\nBeide brauchen einen eigenen Schlüssel; abgerechnet wird beim jeweiligen Anbieter, nicht über die KI-Einstellungen.",
+      "liveRamp": "Die Farbskala des Orderbuch-Wärmebilds.\nViridis und Magma sind gleichabständig wahrgenommen — gleiche Farbabstände bedeuten gleiche Mengenunterschiede. Bei einer Regenbogenskala wäre das nicht so, dort erfindet das Auge Kanten, wo keine sind.",
+      "dbPort": "Standard ist 5432. Läuft PostgreSQL in einem Container mit umgelegtem Port (auf einer NAS oft 5433), gehört hier dieser Port hin, nicht der interne.",
+      "laermfilter": "Schaltet die als Lärm markierten Quellen ab: sie werden weder geholt noch angezeigt.\nWirkt beim Abruf — bereits gespeicherte Beiträge bleiben liegen. Nicht zu verwechseln mit dem Arschlochfilter darunter, der nach Wörtern filtert.",
+      "wortfilter": "Filtert nach Stichwörtern statt nach Quellen: Beiträge, die eines der Wörter enthalten, verschwinden aus Liste und Lagebericht.\nWirkt bei der Anzeige, nicht beim Abruf — die Wortliste zu ändern verändert deshalb rückwirkend, was du siehst.",
+      "mailSicherheit": "TLS verschlüsselt ab der ersten Sekunde (Port 465), STARTTLS beginnt unverschlüsselt und schaltet um (Port 587).\nWelches von beiden geht, gibt der Anbieter vor. Gmail und Outlook brauchen ausserdem ein App-Passwort — das normale Kontopasswort wird für SMTP abgelehnt.",
+      "newsRhythmus": "Wann der Lagebericht von selbst entsteht: täglich, wöchentlich oder gar nicht.\n„Nur manuell“ heisst nicht „nie“ — die Zwischenmeldungen weiter unten laufen unabhängig davon, und der Knopf auf der Nachrichtenseite geht immer.",
+      "mailSchrift": "Gilt für den Text der Benachrichtigungs-Mails. Ein Postfach kennt keinen Zoom wie ein Browser — die Grösse steht schon beim Versand fest und lässt sich beim Lesen nicht mehr ändern.\nÄnderungen gelten ab der nächsten Mail; mit „Testmail senden“ siehst du das Ergebnis sofort."
     }
   },
   "setup": {
@@ -2015,11 +2035,13 @@
       "start": "Start",
       "bonus": "Bonus",
       "broker": "Börse",
-      "leer": "Kein Startguthaben hinterlegt — unter Konten eintragen."
+      "leer": "Kein Startguthaben hinterlegt — unter Konten eintragen.",
+      "info": "Aktueller Kontostand aus den hinterlegten Konten.\nVersorgt sich direkt aus den Stores der App, holt also nichts über einen eigenen Abruf."
     },
     "offeneTrades": {
       "title": "Offene Trades",
-      "keine": "Keine offenen Positionen"
+      "keine": "Keine offenen Positionen",
+      "info": "Positionen, die gerade laufen — dieselben Daten wie unter „Offene Positionen“."
     },
     "winrate": {
       "title": "Winrate",
@@ -2028,12 +2050,14 @@
       "trades": "Trades",
       "basis_net": "netto · gesamt",
       "basis_gross": "brutto · gesamt",
-      "leer": "Noch keine Trades erfasst."
+      "leer": "Noch keine Trades erfasst.",
+      "info": "Anteil gewinnender Trades im gewählten Zeitraum.\nAllein wenig aussagekräftig: eine Trefferquote von 30 % kann sehr profitabel sein, eine von 80 % ruinös. Erst zusammen mit dem Profitfaktor ergibt sie ein Bild."
     },
     "kapitalkurve": {
       "title": "Kapitalkurve",
       "kumuliert": "kumuliert · gesamt",
-      "leer": "Noch keine Trades erfasst."
+      "leer": "Noch keine Trades erfasst.",
+      "info": "Verlauf des Kontos über die Zeit, aus den Netto-Ergebnissen nach Gebühren.\nDie Form der Kurve sagt mehr als ihr Endpunkt — gleichmässig steigend ist etwas anderes als ein Treffer und danach Stillstand."
     },
     "kennzahlen": {
       "title": "Kennzahlen",
@@ -2044,11 +2068,13 @@
       "avgLoss": "Ø Verlust",
       "gebuehren": "Gebühren",
       "funding": "Funding",
-      "leer": "Noch keine Trades erfasst."
+      "leer": "Noch keine Trades erfasst.",
+      "info": "Die Eckwerte des gewählten Zeitraums: Anzahl, Trefferquote, Summe, Schnitt, Profitfaktor."
     },
     "heatmap": {
       "title": "Kalender-Heatmap",
-      "leer": "Noch keine Trades erfasst."
+      "leer": "Noch keine Trades erfasst.",
+      "info": "Ergebnis je Tag als Kalender eingefärbt.\nMacht Muster über Wochentage und Häufungen sichtbar, die in einer Liste untergehen."
     },
     "performance": {
       "title": "Performance",
@@ -2067,7 +2093,8 @@
       "dauer_lt4h": "30m–4h",
       "dauer_lt1d": "4–24h",
       "dauer_gt1d": ">1d",
-      "leer": "Noch keine Trades erfasst."
+      "leer": "Noch keine Trades erfasst.",
+      "info": "Ergebnis über die Zeit, gruppiert nach dem gewählten Raster."
     },
     "news": {
       "label": "Marktbericht",
@@ -2109,7 +2136,8 @@
       "class_fear": "Angst",
       "class_neutral": "Neutral",
       "class_greed": "Gier",
-      "class_extremeGreed": "Extreme Gier"
+      "class_extremeGreed": "Extreme Gier",
+      "info": "Stimmungsindex von alternative.me aus Volatilität, Volumen, Umfragen und Suchtrends — misst Stimmung, nicht Kurse, und wechselt einmal täglich.\nExtreme sind interessanter als die Mitte, aber „extreme Angst“ ist kein Kaufsignal: der Zustand kann wochenlang extrem bleiben."
     },
     "dom": {
       "title": "BTC-Dominanz",
@@ -2125,7 +2153,8 @@
         "d30": "30 Tage",
         "y1": "1 Jahr",
         "all": "Alles"
-      }
+      },
+      "info": "Anteil von Bitcoin am gesamten Kryptomarkt, aus rund sechs Jahren eigenem Bestand.\nSteigende Dominanz bei fallenden Kursen = Flucht aus Altcoins in BTC. Ein Altcoin-Long gegen steigende Dominanz schwimmt gegen den Strom."
     },
     "funding": {
       "title": "Funding-Raten",
@@ -2146,14 +2175,16 @@
       "divergenzText": "Binance {binance} % p.a., Bybit {bybit} % p.a. — {delta} Punkte Unterschied.",
       "divergenzGegensatz": "Binance {binance} % p.a., Bybit {bybit} % p.a. — die Börsen sind sich nicht einig, welche Seite überfüllt ist.",
       "source": "Binance USDⓈ-M Perpetuals, die {n} Märkte mit dem höchsten 24h-Umsatz. Die Rate wird alle 8 Stunden fällig; „p.a.\" rechnet sie aufs Jahr hoch. Positiv heisst: Longs zahlen an Shorts — eine überfüllte Long-Seite. Klick auf eine Zeile setzt das Symbol der Live-Analyse.",
-      "sourceMcap": "Binance USDⓈ-M Perpetuals, die {n} grössten Coins nach Marktkapitalisierung (CoinGecko), soweit auf Binance handelbar. Die Rate wird alle 8 Stunden fällig; „p.a.\" rechnet sie aufs Jahr hoch. Positiv heisst: Longs zahlen an Shorts — eine überfüllte Long-Seite. Klick auf eine Zeile setzt das Symbol der Live-Analyse."
+      "sourceMcap": "Binance USDⓈ-M Perpetuals, die {n} grössten Coins nach Marktkapitalisierung (CoinGecko), soweit auf Binance handelbar. Die Rate wird alle 8 Stunden fällig; „p.a.\" rechnet sie aufs Jahr hoch. Positiv heisst: Longs zahlen an Shorts — eine überfüllte Long-Seite. Klick auf eine Zeile setzt das Symbol der Live-Analyse.",
+      "info": "Ausgleichszahlung zwischen Longs und Shorts auf Binance-Perpetuals. Positiv heisst: Longs zahlen an Shorts.\n„p.a.“ rechnet mit dem tatsächlichen Intervall je Markt — viele zahlen vierstündlich, nicht achtstündlich. Funding ist ein echter Kostenposten."
     },
     "lsoi": {
       "title": "Long/Short + Offenes Interesse",
       "ratio": "Kontenquote",
       "oiDelta": "OI 24h",
       "priceDelta": "Preis 24h",
-      "source": "Binance-Kontenquote für {symbol} (Stundenraster, 48 Stunden). Gezählt werden KONTEN, nicht Kapital — ein Grosskonto wiegt so viel wie ein Kleinstkonto. Zusammen mit offenem Interesse und Preis ergibt sich die Lesart darunter."
+      "source": "Binance-Kontenquote für {symbol} (Stundenraster, 48 Stunden). Gezählt werden KONTEN, nicht Kapital — ein Grosskonto wiegt so viel wie ein Kleinstkonto. Zusammen mit offenem Interesse und Preis ergibt sich die Lesart darunter.",
+      "info": "Binance-Kontenquote über 48 Stunden plus Veränderung von offenem Interesse und Preis.\nGezählt werden KONTEN, nicht Kapital — die Quote bildet eher Kleinanleger ab. Schiefe Quote plus wachsendes OI heisst: eine Seite lädt sich auf."
     },
     "rsi": {
       "title": "RSI-Heatmap",
@@ -2169,7 +2200,8 @@
       "zone_weak": "Schwach",
       "zone_oversold": "Überverkauft",
       "topHint": "Die umsatzstärksten Krypto-Perpetuals von Binance — wie viele, steht rechts daneben",
-      "ownHint": "Nur die Märkte, die du in den letzten 90 Tagen selbst gehandelt hast"
+      "ownHint": "Nur die Märkte, die du in den letzten 90 Tagen selbst gehandelt hast",
+      "info": "RSI(14) je Markt, ein Punkt pro Symbol, nach Umsatz sortiert.\nDie gestrichelte Linie ist der Durchschnitt — sie ist der eigentliche Wert: ein überverkaufter Coin bei tiefem Durchschnitt ist nichts Eigenes, sondern nur der Markt."
     },
     "markt": {
       "title": "Marktübersicht",
@@ -2183,7 +2215,8 @@
       "area_mcap": "Marktkap.",
       "area_gleich": "Gleich",
       "areaHint": "Wonach sich die Fläche bemisst",
-      "noPerp": "Kein Binance-Perpetual — nicht als Symbol wählbar"
+      "noPerp": "Kein Binance-Perpetual — nicht als Symbol wählbar",
+      "info": "Top 100 nach Marktkapitalisierung ohne Stablecoins.\nBlasenansicht: Fläche = Stärke der Bewegung. Kachelansicht: Fläche = Marktkapitalisierung. Beantwortet, ob der ganze Markt läuft oder nur eine Ecke davon."
     },
     "rainbow": {
       "title": "Regenbogen (BTC)",
@@ -2197,7 +2230,8 @@
       "band_ausverkauf": "Ausverkauf",
       "band_grund": "Grundrauschen",
       "caveat": "Das ist eine Kurvenanpassung an die Vergangenheit, keine Prognose. Die Bänder verschieben sich mit jedem neuen Kurs — was heute „günstig\" heisst, kann in einem Jahr die Mitte sein. Als Stimmungsmesser über Jahre brauchbar, als Handelssignal nicht.",
-      "params": "ln(Preis) ≈ {a} · ln(Tage seit Genesis) + {b}, Reststreuung {s}, {n} Stützpunkte"
+      "params": "ln(Preis) ≈ {a} · ln(Tage seit Genesis) + {b}, Reststreuung {s}, {n} Stützpunkte",
+      "info": "Logarithmische Kurvenanpassung an die gesamte Preisgeschichte von Bitcoin, mit Bändern von „Ausverkauf“ bis „Blase“.\nDie Bänder verschieben sich mit jedem neuen Kurs. Über Jahre ein Stimmungsmesser, für eine Handelsentscheidung zu grob."
     },
     "top": "Top",
     "liq": {
@@ -2213,7 +2247,8 @@
       "since": "Erfasst seit {zeit}.",
       "inactive": "Liquidationen werden gerade nicht aufgezeichnet. Ohne Aufzeichnung gibt es hier nichts zu zeigen — eine freie Fremdquelle für aggregierte Liquidationen existiert nicht.",
       "activate": "In den Einstellungen einschalten",
-      "source": "Aus der eigenen Aufzeichnung der Binance- und Bybit-Liquidationsströme — keine Fremdquelle. Binance drosselt seinen Strom auf 1 Ereignis/s/Symbol (Stichprobe), Bybit liefert ungedrosselt — deshalb überwiegt Bybit meist. Rot heisst: ein LONG wurde glattgestellt (Kurs fiel), grün: ein SHORT. Beträge sind Preis × Menge des einzelnen Ereignisses."
+      "source": "Aus der eigenen Aufzeichnung der Binance- und Bybit-Liquidationsströme — keine Fremdquelle. Binance drosselt seinen Strom auf 1 Ereignis/s/Symbol (Stichprobe), Bybit liefert ungedrosselt — deshalb überwiegt Bybit meist. Rot heisst: ein LONG wurde glattgestellt (Kurs fiel), grün: ein SHORT. Beträge sind Preis × Menge des einzelnen Ereignisses.",
+      "info": "Zwangsliquidationen der letzten 24 Stunden aus der eigenen Aufzeichnung — muss in den Einstellungen eingeschaltet sein und läuft erst ab dann.\nRot = ein LONG wurde glattgestellt, grün = ein SHORT. Binance liefert nur eine Stichprobe, Bybit den vollen Strom."
     },
     "makro": {
       "title": "Makro-Umfeld",
@@ -2243,7 +2278,8 @@
       "domFromSupply": "aus echten Flüssen",
       "domFromPrice": "aus Kursbewegung",
       "domHint": "Die Dominanz allein ist nicht deutbar: sie steigt schon, wenn nur die Kurse fallen. Erst die Aufteilung zeigt, ob wirklich Geld geflossen ist.",
-      "source": "Aktien als FUTURES (ES/NQ/RTY), nicht als Kassa-Index: der Index steht nachts und am Wochenende still, der Future läuft fast durch — nur so ist der Vergleich mit dem durchlaufenden Krypto-Markt ehrlich. Die Farbe zeigt Rückenwind oder Gegenwind FÜR KRYPTO, nicht die Richtung des Marktes: ein steigender Dollar ist deshalb rot. Der Stablecoin-Fluss ist die Mengenänderung von USDT und USDC — bewusst nicht die „USDT-Dominanz\", denn die steigt schon rein rechnerisch, wenn Krypto fällt, und wiederholt dann nur den Kursrückgang. Zu- oder Abfluss dagegen zeigt echtes Geld, das in den Markt kommt oder ihn verlässt. Der Russell 2000 steht als Gegenprobe zur Nasdaq daneben: laufen beide zusammen, ist es eine Liquiditäts- oder Zinsbewegung, die Krypto mitbetrifft; läuft nur die Nasdaq, ist es Rotation in wenige grosse Werte und trägt selten hierher."
+      "source": "Aktien als FUTURES (ES/NQ/RTY), nicht als Kassa-Index: der Index steht nachts und am Wochenende still, der Future läuft fast durch — nur so ist der Vergleich mit dem durchlaufenden Krypto-Markt ehrlich. Die Farbe zeigt Rückenwind oder Gegenwind FÜR KRYPTO, nicht die Richtung des Marktes: ein steigender Dollar ist deshalb rot. Der Stablecoin-Fluss ist die Mengenänderung von USDT und USDC — bewusst nicht die „USDT-Dominanz\", denn die steigt schon rein rechnerisch, wenn Krypto fällt, und wiederholt dann nur den Kursrückgang. Zu- oder Abfluss dagegen zeigt echtes Geld, das in den Markt kommt oder ihn verlässt. Der Russell 2000 steht als Gegenprobe zur Nasdaq daneben: laufen beide zusammen, ist es eine Liquiditäts- oder Zinsbewegung, die Krypto mitbetrifft; läuft nur die Nasdaq, ist es Rotation in wenige grosse Werte und trägt selten hierher.",
+      "info": "Der Blick aus dem Kryptomarkt heraus: S&P-500- und Nasdaq-Future, Dollar-Index, Stablecoin-Fluss.\nDie Kopfzeile ist die KOPPLUNG BTC↔Nasdaq, nicht der Kurs. Die Farbe zeigt Rückenwind für Krypto, nicht die Richtung des Marktes — ein steigender Dollar ist deshalb rot."
     },
     "lage": {
       "title": "Gesamtlage (KI)",
@@ -2259,7 +2295,8 @@
       "widerspruch": "Widerspruch",
       "achten": "Worauf achten",
       "grundlage": "Grundlage: {n} Messwerte aus den Kacheln",
-      "hinweis": "Einordnung der angezeigten Zahlen, keine Handelsempfehlung. Die KI bekommt ausschliesslich die Werte oben — sie recherchiert nichts nach."
+      "hinweis": "Einordnung der angezeigten Zahlen, keine Handelsempfehlung. Die KI bekommt ausschliesslich die Werte oben — sie recherchiert nichts nach.",
+      "info": "Die Kachel, die alle anderen liest: die KI ordnet den aktuellen Stand in fünf Zeilen ein.\nErzeugt wird ausschliesslich per Knopf — weder der Seitentakt noch „Alle aktualisieren“ lösen eine kostenpflichtige Anfrage aus. Sie recherchiert nichts nach und gibt keine Handelsempfehlung."
     },
     "mechanik": {
       "title": "Marktmechanik",
@@ -2289,7 +2326,8 @@
       "erklaeren": "KI-Einordnung",
       "erklaerungLaedt": "Einordnung wird erstellt …",
       "erklaerungHinweis": "Einordnung, keine Handelsempfehlung.",
-      "source": "Zustand regelbasiert aus Preis- und OI-Änderung (Binance USDⓈ-M), aktueller Funding-Rate und der eigenen Liquidations-Aufzeichnung (Binance + Bybit) im gewählten Fenster. Dieselben Zahlen ergeben immer denselben Zustand — die KI erklärt ihn höchstens, sie bestimmt ihn nie."
+      "source": "Zustand regelbasiert aus Preis- und OI-Änderung (Binance USDⓈ-M), aktueller Funding-Rate und der eigenen Liquidations-Aufzeichnung (Binance + Bybit) im gewählten Fenster. Dieselben Zahlen ergeben immer denselben Zustand — die KI erklärt ihn höchstens, sie bestimmt ihn nie.",
+      "info": "Verdichtet Preis, offenes Interesse, Funding und liquidiertes Volumen zu einem Marktzustand.\nRegelbasiert: dieselben Zahlen ergeben immer dasselbe Urteil, keine KI. Die KI erklärt in der Gross-Ansicht nur, sie entscheidet nie."
     },
     "regime": {
       "title": "Deine Trades × Marktregime",
@@ -2315,7 +2353,8 @@
       "leastBad": "Am wenigsten verloren in {phase}: {summe} aus {n} Trades. Alle Phasen sind im Minus.",
       "source": "{n} eigene Trades der letzten {tage} Tage, jeder dem Fear-&-Greed-Wert seines Einstiegstags zugeordnet. Bot-Trades bleiben draussen. Gerechnet wird mit Netto-Ergebnissen nach Gebühren, wie im übrigen Journal.",
       "missing": "Für {n} Trades gibt es keinen Stimmungswert (der Index beginnt 2018).",
-      "thin": "Phasen mit weniger als {n} Trades sind blass gezeichnet — daraus lässt sich nichts ableiten."
+      "thin": "Phasen mit weniger als {n} Trades sind blass gezeichnet — daraus lässt sich nichts ableiten.",
+      "info": "Die einzige Kachel, die von dir handelt: deine Trades, zugeordnet nach dem Fear-&-Greed-Wert ihres Einstiegstags.\nBlass gezeichnete Phasen haben zu wenige Trades, um etwas zu bedeuten. Verlierst du in einer bestimmten Marktlage regelmässig, ist das die konkreteste Regel der Seite."
     },
     "picycle": {
       "title": "Pi-Cycle-Top (BTC)",
@@ -2326,7 +2365,8 @@
       "crossings": "Bisherige Kreuzungen",
       "caveat": "Drei Treffer bei drei Gelegenheiten (2013, 2017, 2021) sind kein Beweis, sondern eine Beobachtung — statistisch lässt sich daraus keine Regel ableiten. Der Name kommt daher, dass 350 geteilt durch 111 ungefähr π ergibt; auch das ist Zahlenspielerei und kein Mechanismus. Als Stimmungsmesser über Jahre brauchbar, als Ausstiegssignal nicht.",
       "alarm": "Kreuzung am {datum}: Die 111-Tage-Linie hat die doppelte 350-Tage-Linie von unten geschnitten.",
-      "vorwarnung": "Vorwarnung: Die kurze Linie ist nur noch {pct} % von der langen entfernt (Schwelle {schwelle} %)."
+      "vorwarnung": "Vorwarnung: Die kurze Linie ist nur noch {pct} % von der langen entfernt (Schwelle {schwelle} %).",
+      "info": "Kreuzt die 111-Tage-Linie die doppelte 350-Tage-Linie von unten, lag das in der Vergangenheit nahe an einem Zyklushoch.\nDrei Treffer bei drei Gelegenheiten sind eine Beobachtung, keine Regel — Frühwarnung für „Vorsicht mit Hebel“, kein Ausstiegssignal."
     },
     "altseason": {
       "title": "Altcoin-Season-Index",
@@ -2337,7 +2377,8 @@
       "best": "Stärkste",
       "worst": "Schwächste",
       "summary": "{besser} von {n} grossen Altcoins haben Bitcoin über {tage} Tage geschlagen. BTC selbst: {btc}.",
-      "source": "Gerechnet aus Binance-Tageskerzen der grössten Coins mit Perpetual-Markt, gemessen gegen BTC über dasselbe Fenster. Die Schwellen 25 und 75 stammen vom ursprünglichen Index — sie sind gesetzt, nicht hergeleitet. Klick auf eine Zeile setzt das Symbol der Live-Analyse."
+      "source": "Gerechnet aus Binance-Tageskerzen der grössten Coins mit Perpetual-Markt, gemessen gegen BTC über dasselbe Fenster. Die Schwellen 25 und 75 stammen vom ursprünglichen Index — sie sind gesetzt, nicht hergeleitet. Klick auf eine Zeile setzt das Symbol der Live-Analyse.",
+      "info": "Wie viele grosse Altcoins Bitcoin über das gewählte Fenster geschlagen haben.\nÜber 75 = Altcoin-Saison, unter 25 = Bitcoin-Saison. Die Schwellen sind gesetzt, nicht hergeleitet, und das Fenster verändert die Aussage stark."
     },
     "kalender": {
       "title": "Wirtschaftskalender",
@@ -2376,7 +2417,8 @@
       "zuEinstellungen": "In den Einstellungen eintragen",
       "wartet": "Bestände werden beim nächsten Takt geholt.",
       "eigeneTage": "Kurve aus {n} eigenen Tagen — der Gratis-Tarif gibt nur 30 Tage her, alles Ältere wird hier gesammelt.",
-      "nachtrag": "Die Quelle korrigiert Werte im Nachhinein; die letzten Tage werden deshalb erneut geholt."
+      "nachtrag": "Die Quelle korrigiert Werte im Nachhinein; die letzten Tage werden deshalb erneut geholt.",
+      "info": "Bestand der Spot-ETFs in BTC und dessen tägliche Änderung — der Zufluss IST die Bestandsänderung.\nBewusst in BTC statt Dollar: mal Tageskurs gerechnet bewegte sich der „Zufluss“ auch an Tagen ohne einen einzigen neuen Anteil. Braucht einen CryptoQuant-Schlüssel."
     }
   },
   "info": {
@@ -3220,7 +3262,9 @@
     "reading": "Einordnung",
     "upcoming": "Was noch ansteht",
     "upcomingHint": "Nächste 36 Stunden, mit der unten eingestellten Auswahl. Stand: jetzt.",
+    "upcomingHintWide": "In den nächsten 36 Stunden steht nichts an — darum die kommenden {n} Termine, mit der unten eingestellten Auswahl. Stand: jetzt.",
     "time": "Zeit",
+    "country": "Land",
     "event": "Ereignis",
     "figure": "Wert",
     "figureWhat": "Wofür",
@@ -3331,7 +3375,8 @@
       "warn_makro": "Makrodaten stehen an",
       "warn_fomc": "FOMC-Entscheid",
       "warn_schluss": "US-Schluss, Market-on-Close",
-      "warn_cme": "CME-Pause, dünne Bücher"
+      "warn_cme": "CME-Pause, dünne Bücher",
+      "info": "Welche Sitzung gerade läuft, Countdown bis zur nächsten Markt-Marke, Volatilitätsfenster.\nRechnet im Browser, ohne Abruf. Jede Sitzung trägt ihre eigene Zeitzone als Wandzeit — USA und Europa stellen Wochen versetzt auf Sommerzeit um."
     },
     "start": "Live-Trading starten",
     "sitzung": {
@@ -3357,7 +3402,8 @@
       "title": "Indizes (Intraday)",
       "vortag": "Vortag",
       "eroeffnung": "US-Eröffnung",
-      "keineKerzen": "Keine Kerzen im Zeitraum"
+      "keineKerzen": "Keine Kerzen im Zeitraum",
+      "info": "ES=F, NQ=F, RTY=F und der Dollar-Index als Intraday-Kerzen.\nFutures statt Kassa-Indizes, weil der Index nachts und am Wochenende stillsteht und ein 62 Stunden alter Wert keine Lage beschreibt."
     },
     "liq": {
       "title": "Liquidationen (live)",
@@ -3372,7 +3418,8 @@
       "aufzeichnungAus": "Aufzeichnung ist aus — leer heisst hier NICHT ruhig",
       "keinSammelstrom": "Sammelstrom aus: nur eigens aufgezeichnete Symbole liefern Ereignisse.",
       "quellenHinweis": "Binance drosselt auf ein Ereignis pro Sekunde und Symbol — Stichprobe, keine Vollerhebung. Bybit drosselt nicht.",
-      "bybitStill": "Bybit hat noch nichts geliefert"
+      "bybitStill": "Bybit hat noch nichts geliefert",
+      "info": "Die letzten Zwangsliquidationen aus einem Ringpuffer im Arbeitsspeicher.\nZeigt „was gerade eben passiert ist“ — die Datenbank hinkt hinterher, weil der Aufzeichner nur alle 30 Sekunden schreibt."
     },
     "kalender": {
       "title": "Termine",
@@ -3386,7 +3433,8 @@
       "impact_high": "hohe Wirkung",
       "impact_medium": "mittlere Wirkung",
       "impact_low": "geringe Wirkung",
-      "impact_holiday": "Feiertag"
+      "impact_holiday": "Feiertag",
+      "info": "Die nächsten Wirtschaftstermine mit Countdown.\nUnterscheidet „nichts steht an“ von „alles weggefiltert“ — die Filter für Länder und Wirkung stehen in den Einstellungen."
     },
     "positionen": {
       "title": "Positionen & Plan",
@@ -3399,7 +3447,8 @@
       "keinPlan": "Kein Plan gesetzt — Grenzen trägst du beim Start der Sitzung ein.",
       "keineOffenen": "Keine offenen Positionen",
       "offenesRisiko": "Offen im Minus: {betrag}",
-      "trennungHinweis": "Realisiert steht fest, offen ändert sich beim nächsten Tick. Die Grenzen zählen am realisierten Teil — sonst reisst der Balken bei jedem Rücksetzer."
+      "trennungHinweis": "Realisiert steht fest, offen ändert sich beim nächsten Tick. Die Grenzen zählen am realisierten Teil — sonst reisst der Balken bei jedem Rücksetzer.",
+      "info": "Offene und geschlossene Positionen der laufenden Sitzung, gerechnet gegen die Plangrenzen.\nRealisiert und unrealisiert bleiben getrennt — ein schwebender Buchgewinn ist kein Ergebnis —, und die Grenzen zählen nur gegen den realisierten Teil."
     },
     "ganzeSeite": "Ganze Seite",
     "vollbild": "Vollbild",
@@ -3410,6 +3459,12 @@
       "gespeichert": "Gespeichert · bereit zum Einfügen",
       "hinweis": "Fenster als Screenshot ins Journal legen (Setup-Galerie, Tagesansicht) und direkt zum Einfügen in Pendente Trades bereitstellen",
       "fehler": "Aufnahme fehlgeschlagen"
+    },
+    "bookmap": {
+      "info": "Das Orderbuch von Binance in Echtzeit als Wärmebild: wo Liquidität liegt, wo sie verschwindet.\nKeine Gross-Ansicht — die wäre eine zweite Verbindung. Braucht mindestens zwei Spalten Breite."
+    },
+    "hebelkarte": {
+      "info": "Modell, wo gehebelte Positionen liquidiert würden — gerechnet aus der eigenen Aufzeichnung, nicht von der Börse gemeldet.\nZeigt, wo die Gegenseite ihre Stopps hat. Keine Gross-Ansicht, mindestens zwei Spalten Breite."
     }
   },
   "liveSessions": {

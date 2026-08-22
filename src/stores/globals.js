@@ -215,10 +215,11 @@ export const selectedGrossNet = typeof localStorage !== 'undefined' ? ref(localS
 export const selectedPlSatisfaction = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedPlSatisfaction')) : ""
 export const selectedBroker = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedBroker')) : ref()
 // Top-Level-Modus der App: 'start' (Startseite/Landing) | 'journal'
-// (Nachbetrachtung) | 'live' (Live-Analyse) | 'agent' (Agent-Trading). Steuert,
+// (Nachbetrachtung) | 'live' (Live-Analyse) | 'research' (Entdecken) |
+// 'agent' (Agent-Trading). Steuert,
 // welches Seitenmenü das SideMenu rendert. Die Route ist die Wahrheit
 // (meta.mode), dieser Ref nur das Gedächtnis für den Umschalter.
-export const APP_MODES = ['start', 'journal', 'live', 'agent']
+export const APP_MODES = ['start', 'journal', 'live', 'research', 'agent']
 export const appMode = typeof localStorage !== 'undefined'
     ? ref(APP_MODES.includes(localStorage.getItem('appMode')) ? localStorage.getItem('appMode') : 'journal')
     : ref('journal')

@@ -18,7 +18,7 @@ const props = defineProps({
     section: { type: String, required: true },
 })
 
-const { t, tm, rt } = useI18n()
+const { t, tm, rt, te } = useI18n()
 const offen = ref(false)
 const overlayEl = ref(null)
 
@@ -80,7 +80,7 @@ function schliessenBeiEsc(e) {
                     </div>
                 </template>
 
-                <p class="infoCaveat">{{ t(`${section}.caveat`) }}</p>
+                <p v-if="te(`${section}.caveat`)" class="infoCaveat">{{ t(`${section}.caveat`) }}</p>
             </div>
         </div>
     </Teleport>

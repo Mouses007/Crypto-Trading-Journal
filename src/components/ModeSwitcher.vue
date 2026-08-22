@@ -13,7 +13,7 @@
 import { computed } from 'vue'
 import { appMode, screenType, pageId } from '../stores/ui.js'
 import { currentUser } from '../stores/settings.js'
-import { MODES, modeHome, pageById } from '../config/menu.js'
+import { MODES, modeHome, pageById, istModusAn } from '../config/menu.js'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
@@ -22,16 +22,12 @@ const props = defineProps({
 
 const { t } = useI18n()
 
-// „Beta-Funktionen ausblenden" (Layout & Stil) entfernt die als `versteckbar`
-// markierten Modi (Strategien, Research) aus dem Umschalter. Ist die Startseite
-// abgeschaltet (`startseiteAn = 0`), fällt zusätzlich der Start-Tab weg.
-const sichtbareModi = computed(() => {
-    const aus = Number(currentUser.value?.betaAusblenden ?? 0) === 1
-    const startAus = Number(currentUser.value?.startseiteAn ?? 1) === 0
-    let modi = aus ? MODES.filter(m => !m.versteckbar) : MODES
-    if (startAus) modi = modi.filter(m => m.id !== 'start')
-    return modi
-})
+// Jeder Modus ausser dem Journal trägt in `menu.js` ein `flag` — den Namen
+// seiner Einstellungsspalte. Ein Filter reicht deshalb für alle: die Startseite
+// war früher ein handgeschriebener Sonderfall, jetzt ist sie einfach der Modus
+// mit dem Flag `startseiteAn`.
+const sichtbareModi = computed(() =>
+    MODES.filter(m => istModusAn(m.id, currentUser.value)))
 
 // Breite Variante: volle Beschriftung, ausser auf dem Telefon — dort die
 // Kurzform, sonst passen fünf Pillen nicht nebeneinander.

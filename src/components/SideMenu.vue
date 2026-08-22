@@ -6,7 +6,7 @@ import { pageId, screenType, appMode } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
 import { useIstTelefon } from '../utils/geraet.js'
 import { selectedBroker, brokers, selectedTradeCategory, BOT_BROKERS } from "../stores/filters.js"
-import { PAGES, pagesForMode, modeHome } from "../config/menu.js"
+import { PAGES, pagesForMode, modeHome, istModusAn, ersterAktiverModus } from '../config/menu.js'
 import SidebarFilters from './SidebarFilters.vue'
 import LiveSymbolPicker from './LiveSymbolPicker.vue'
 import donateBtc from '../assets/donate-btc.png'
@@ -226,6 +226,10 @@ function setCategory(value) {
 // `group`-Wert in menu.js). Das Journal-Menü bleibt bewusst handgeschriebenes
 // Markup — dort hängen Tour-Anker, bedingte Einträge und Sonderfälle dran.
 function gruppenFuer(mode) {
+    // Ganzer Modus abgeschaltet → gar keine Gruppen. Muss vor der Seiten-
+    // schleife stehen: sonst rendert das Menü die Einträge eines Modus weiter,
+    // den der Umschalter längst nicht mehr anbietet.
+    if (!istModusAn(mode, currentUser.value)) return []
     const groups = new Map()
     for (const page of pagesForMode(mode)) {
         // Abschaltbare Seiten: `flag` nennt die Einstellungsspalte. Fehlt der
@@ -284,7 +288,14 @@ function goToDashboard() {
     if (screenType.value === 'mobile') {
         useToggleMobileMenu()
     } else {
-        window.location.href = modeHome(appMode.value)
+        // `appMode` ist nur ein Gedächtnis und kann veraltet sein — wer den
+        // Modus abschaltet, in dem er gerade steht, hat ihn noch im Speicher.
+        // Die Wache im Layout finge das ab, aber ein sichtbarer Abpraller
+        // sieht kaputt aus; also gleich richtig zielen.
+        const ziel = istModusAn(appMode.value, currentUser.value)
+            ? appMode.value
+            : ersterAktiverModus(currentUser.value)
+        window.location.href = modeHome(ziel)
     }
 }
 

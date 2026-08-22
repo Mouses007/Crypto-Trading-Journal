@@ -22,8 +22,10 @@ Oben in der Leiste wird zwischen den Modi umgeschaltet:
 - **Übersicht** — Landing-Page mit frei konfigurierbarem Kachelraster (Kontostand, Marktlage, News-Zusammenfassung); links steht dort dasselbe Seitenmenü wie im Journal.
 - **Journal** — das eigentliche Trading-Journal: Dashboard, Tages-Ansicht, Kalender, Playbook, Auswertung, KI-Coach, Screenshots, Import.
 - **Live-Analyse** — Marktradar (Kachelraster mit Marktdaten), Nachrichten, Open Interest, Liquidität (Bookmap), Liquidationen sowie das Live-Trading-Fenster mit Session-Archiv und -Auswertung.
-- **Strategien (Beta)** — automatisch handelnde Strategie-Instanzen: Strategien, Setups, Editor, Baukasten, Performance, Labor, Coin-Rangliste. Über „Beta-Funktionen ausblenden" (Einstellungen → Layout & Stil) abschaltbar.
+- **Strategien (Beta)** — automatisch handelnde Strategie-Instanzen: Strategien, Setups, Editor, Baukasten, Performance, Labor, Coin-Rangliste.
 - **Entdecken (Research)** — zwei Radare mit gegensätzlichen Fragen: Hype-Radar („was ist neu draussen") und Coin-Radar („was lässt sich heute handeln"). Siehe Thema "entdecken".
+
+Jeder Modus ausser dem Journal lässt sich einzeln abschalten (Einstellungen → Allgemein → Layout & Stil → „Modi ein-/ausblenden"). Abgeschaltet heisst wirklich aus: der Tab verschwindet, das Seitenmenü zeigt nichts mehr, und auch ein direkt aufgerufener Link führt zurück ins Journal. Das Journal selbst hat keinen Schalter. Wer also nach einem Bereich fragt, den es hier nicht gibt, hat ihn möglicherweise abgeschaltet.
 
 Links im Seitenmenü: Börsen-Umschalter (Bitunix/Bitget/Pionex), Pille „Kontoübersicht", darunter die Seiten des aktiven Modus. Die Einstellungen sind modusübergreifend immer erreichbar. Oben rechts sitzt der Augen-Button (Zensur-Modus: verbirgt Kontostände und Beträge, z.B. für Screenshots) und daneben der Roboter-Button als Schnellzugriff auf den KI-Agenten.`,
     },
@@ -115,7 +117,7 @@ Wichtig: Der Coin-Radar sagt NICHTS über die Richtung. Er trägt in die Gegenwa
 
 Seiten: **Strategien** (Instanzen anlegen/starten, immer benannt mit Strategie + Symbol + Zeiteinheit), **Setups** (erkannte Einstiege), **Editor** und **Baukasten** (eigene Regel-Strategien ohne Programmierung, auch per Chat), **Performance** (Auswertung der automatischen Trades), **Labor** (Backtests, Parameter-Läufe, Robustheit) und **Coin-Rangliste** (eine fertige Strategie über 100+ Coins ranken).
 
-Trades der Strategie-Instanzen stehen NICHT im normalen Journal — der KI-Agent hat dafür eigene Abfrage-Werkzeuge. Der ganze Modus lässt sich über „Beta-Funktionen ausblenden" verstecken.`,
+Trades der Strategie-Instanzen stehen NICHT im normalen Journal — der KI-Agent hat dafür eigene Abfrage-Werkzeuge. Der ganze Modus lässt sich unter Einstellungen → Layout & Stil → „Modi ein-/ausblenden" abschalten.`,
     },
     ki: {
         titel: 'KI-Funktionen: Coach, Agent, Berichte, Nachrichten, Bilder',
@@ -134,7 +136,7 @@ Trades der Strategie-Instanzen stehen NICHT im normalen Journal — der KI-Agent
 
 - **Börsen/API-Schlüssel**: Bitunix, Bitget, Pionex — Schlüssel werden verschlüsselt gespeichert.
 - **KI**: Anbieter, Schlüssel, Modelle und Optionen je Funktion (siehe Thema "ki").
-- **Layout & Stil**: dunkles Design, Beta-Funktionen ausblenden, Live-Trading auf dem Handy freischalten, Sprache (Deutsch/Englisch).
+- **Layout & Stil**: dunkles Design, „Erweiterte Infos" (das kleine „i" an Werten und Bedienelementen — Mauszeiger darüber bzw. antippen zeigt, was die Zahl bedeutet; ab Werk an), „Modi ein-/ausblenden" (Übersicht, Live-Analyse, Research, Strategien einzeln; Journal ist nicht abschaltbar), Live-Trading auf dem Handy freischalten, Sprache (Deutsch/Englisch).
 - **Sicherheit**: optionales Passwort-Login (Auth-Gate) für den Zugriff übers Netz; Update-PIN.
 - **Backup**: JSON-Export/-Import aller Daten. Sensible Schlüssel werden beim Export ausgelassen.
 - **Update**: Prüfung auf neue Versionen (GitHub) und Ein-Klick-Update.
