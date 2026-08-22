@@ -13,7 +13,10 @@
  *
  * Aufruf: node server/__selftest-benachrichtigungen.mjs
  */
-import { REGISTER, kanalWahl, mailKonfigVollstaendig, pruefeMailKonfig } from './benachrichtigungen.js'
+import {
+    REGISTER, kanalWahl, mailKonfigVollstaendig, pruefeMailKonfig,
+    empfaengerListe, empfaengerFuer, EMPFAENGER_MAX,
+} from './benachrichtigungen.js'
 
 let fehler = 0
 let bestanden = 0
@@ -85,10 +88,14 @@ const vollstaendig = {
 }
 pruefe('vollständige Konfiguration wird erkannt', mailKonfigVollstaendig(vollstaendig) === true)
 pruefe('abgeschaltet zählt nicht', mailKonfigVollstaendig({ ...vollstaendig, mailAktiv: 0 }) === false)
-for (const feld of ['mailHost', 'mailPort', 'mailVon', 'mailAn']) {
+for (const feld of ['mailHost', 'mailPort', 'mailVon']) {
     pruefe(`ohne ${feld} unvollständig`,
         mailKonfigVollstaendig({ ...vollstaendig, [feld]: '' }) === false)
 }
+// Der Empfänger gehört bewusst NICHT dazu: Ein Ereignis mit eigener Liste
+// (Lagebericht) braucht den allgemeinen Empfänger nicht.
+pruefe('ohne allgemeinen Empfänger bleibt der Zugang gültig',
+    mailKonfigVollstaendig({ ...vollstaendig, mailAn: '' }) === true)
 pruefe('leere Konfiguration unvollständig', mailKonfigVollstaendig(null) === false)
 
 // Metadaten-Ziele sind nie ein Mailserver, aber DAS SSRF-Ziel schlechthin —
@@ -107,6 +114,50 @@ pruefe('öffentlicher SMTP-Anbieter bleibt erlaubt',
 // verlangen keine Anmeldung.
 pruefe('Zugang ohne Benutzer bleibt gültig',
     mailKonfigVollstaendig({ ...vollstaendig, mailUser: '' }) === true)
+
+// ── 4b) Eigene Empfängerliste (Lagebericht) ──────────────────────────────
+/*
+ * Der Lagebericht ist das einzige Ereignis mit eigenem Schalter und eigener
+ * Liste. Beides muss sich gegenüber der allgemeinen Kanalwahl DURCHSETZEN —
+ * sonst entschiede weiterhin die Tabelle unter Benachrichtigungen, obwohl die
+ * Oberfläche den Schalter woanders zeigt.
+ */
+pruefe('Liste trennt bei Komma',
+    empfaengerListe('a@x.de,b@y.de').join('|') === 'a@x.de|b@y.de')
+pruefe('Liste trennt bei Semikolon, Zeilenumbruch und Leerzeichen',
+    empfaengerListe('a@x.de; b@y.de\nc@z.de d@w.de').length === 4)
+pruefe('ungültige Adressen fliegen still raus',
+    empfaengerListe('a@x.de, kaputt, @nix.de, b@y.de').join('|') === 'a@x.de|b@y.de')
+pruefe('doppelte Adressen fallen weg — auch mit anderer Schreibweise',
+    empfaengerListe('a@x.de, A@X.DE').length === 1)
+pruefe('die erste Schreibweise bleibt erhalten',
+    empfaengerListe('Anna@X.de, anna@x.de')[0] === 'Anna@X.de')
+pruefe('leeres Feld ergibt leere Liste', empfaengerListe('').length === 0)
+pruefe('null ergibt leere Liste', empfaengerListe(null).length === 0)
+pruefe(`höchstens ${EMPFAENGER_MAX} Empfänger`,
+    empfaengerListe(Array.from({ length: 40 }, (_, i) => `n${i}@x.de`).join(',')).length === EMPFAENGER_MAX)
+
+const mitListe = { radarNewsMailAktiv: 1, radarNewsMailAn: 'a@x.de, b@y.de', mailAn: 'allgemein@x.de' }
+pruefe('eigene Liste schlägt den allgemeinen Empfänger',
+    empfaengerFuer(mitListe, 'lageberichtFertig').join('|') === 'a@x.de|b@y.de')
+pruefe('leere eigene Liste fällt auf den allgemeinen Empfänger zurück',
+    empfaengerFuer({ ...mitListe, radarNewsMailAn: '' }, 'lageberichtFertig').join('|') === 'allgemein@x.de')
+pruefe('ein Ereignis ohne eigene Spalte nimmt immer den allgemeinen Empfänger',
+    empfaengerFuer(mitListe, 'neueVersion').join('|') === 'allgemein@x.de')
+
+pruefe('eigener Schalter an → Mail, obwohl die Kanalwahl sie aus hat',
+    kanalWahl({ ...mitListe, benachrichtigungen: { lageberichtFertig: { email: false } } },
+        'lageberichtFertig').email === true)
+pruefe('eigener Schalter aus → keine Mail, obwohl die Kanalwahl sie an hat',
+    kanalWahl({ radarNewsMailAktiv: 0, benachrichtigungen: { lageberichtFertig: { email: true } } },
+        'lageberichtFertig').email === false)
+pruefe('der Browser-Kanal bleibt bei der allgemeinen Wahl',
+    kanalWahl({ radarNewsMailAktiv: 0, benachrichtigungen: { lageberichtFertig: { browser: false } } },
+        'lageberichtFertig').browser === false)
+pruefe('der Lagebericht ist als eigene Stelle markiert',
+    REGISTER.find(e => e.id === 'lageberichtFertig')?.eigeneStelle === 'nachrichten')
+pruefe('sonst hat kein Ereignis eine eigene Stelle',
+    REGISTER.filter(e => e.eigeneStelle).length === 1)
 
 // ── 5) Hysterese der Divergenz-Meldung (Browser-Kanal) ───────────────────
 /**

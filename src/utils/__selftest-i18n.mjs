@@ -84,5 +84,28 @@ for (const [pfad, deText] of dePfade) {
 pruefe('gleiche Platzhalter in beiden Sprachen',
     platzhalterAbweichung.length === 0, platzhalterAbweichung.slice(0, 5).join(' | '))
 
+/*
+ * Nacktes @ — der Fehler, der die ganze Seite abschiesst.
+ *
+ * vue-i18n liest `@` als Beginn einer VERKNÜPFTEN Meldung (`@:anderer.key`).
+ * Steht in einem Text eine E-Mail-Adresse, wirft der Tokenizer
+ * „Invalid linked format", und dann rendert nicht etwa nur dieser Text falsch,
+ * sondern die ganze Komponente gar nicht mehr — am 22.08.2026 war die
+ * komplette Einstellungsseite deswegen leer. Geschrieben werden muss `{'@'}`.
+ *
+ * Der Test läuft über ALLE Texte, nicht nur über neue: Ein solcher Fehler
+ * kommt beim nächsten Beispiel mit Adresse sofort wieder.
+ */
+const nacktesAt = []
+for (const [dateiName, karte] of [['de', dePfade], ['en', enPfade]]) {
+    for (const [pfad, text] of karte) {
+        if (typeof text !== 'string') continue
+        // Erlaubt ist nur die geschützte Form {'@'}; alles andere ist der Fehler.
+        if (/(?<!\{')@/.test(text)) nacktesAt.push(`${dateiName}:${pfad}`)
+    }
+}
+pruefe("kein ungeschütztes @ in den Texten (muss {'@'} heissen)",
+    nacktesAt.length === 0, nacktesAt.slice(0, 5).join(', '))
+
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 if (fehler) process.exit(1)

@@ -3808,14 +3808,19 @@ onBeforeMount(async () => {
                                 {{ t('settings.ki.news.mailHint') }}
                             </small>
                         </div>
-                        <div class="col-12 col-md-8 d-flex align-items-center gap-2 flex-wrap">
-                            <div class="form-check form-switch mb-0">
-                                <input class="form-check-input" type="checkbox" id="radarNewsMailVollToggle"
-                                    v-model="radarNewsMailVoll" @change="radarSpeichern('radarNewsMailVoll')">
-                            </div>
-                            <label class="mb-0" for="radarNewsMailVollToggle">
-                                {{ radarNewsMailVoll ? t('settings.ki.news.mailFull') : t('settings.ki.news.mailShort') }}
-                            </label>
+                        <!-- Auswahl statt Schalter: Ein Schalter, dessen Beschriftung
+                             sich mitdreht, zeigt immer nur den JETZIGEN Zustand — was
+                             beim Umlegen käme, muss man raten. Hier stehen beide
+                             Möglichkeiten nebeneinander, wie bei der Aufbewahrung
+                             darunter. -->
+                        <div class="col-12 col-md-8">
+                            <select class="form-select form-select-sm" style="max-width:26rem;"
+                                :value="radarNewsMailVoll ? 'voll' : 'kurz'"
+                                @change="radarNewsMailVoll = $event.target.value === 'voll';
+                                    radarSpeichern('radarNewsMailVoll')">
+                                <option value="kurz">{{ t('settings.ki.news.mailShort') }}</option>
+                                <option value="voll">{{ t('settings.ki.news.mailFull') }}</option>
+                            </select>
                         </div>
                     </div>
 
