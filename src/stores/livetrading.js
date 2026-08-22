@@ -22,6 +22,7 @@
  */
 
 import { ref, computed } from 'vue'
+import axios from 'axios'
 import { dbCreate, dbUpdate, dbFind } from '../utils/db.js'
 
 const SPEICHER_KEY = 'livetrading_session'
@@ -168,89 +169,53 @@ export async function starteSitzung({ symbol, market = 'futures', planMaxVerlust
 }
 
 /**
- * Sitzung beenden: Trades im Zeitfenster einfrieren, P&L rechnen, schreiben.
+ * Sitzung beenden — die Rechnung macht der Server.
  *
  * Ein Trade zählt zu der Sitzung, in der er GESCHLOSSEN wurde — dann ist die
  * P&L entstanden. Ein Trade, der vor der Sitzung eröffnet und während ihr
  * geschlossen wurde, gehört also dazu; einer, der noch offen ist, nicht.
+ *
+ * ## Warum hier nicht mehr gerechnet wird
+ *
+ * Diese Funktion las früher die bereits importierten Journal-Trades
+ * (`dbFind('trades', …)`), während die Kachel „Positionen & Plan" daneben aus
+ * Bitunix rechnete. Zwei Quellen für ein Urteil: Solange der Import hinterher
+ * hing — und beim Beenden hinkt er praktisch immer —, zeigten Kachel und
+ * Archiv verschiedene Zahlen, ohne dass die Oberfläche sagte, welche stimmt.
+ * `POST /api/livetrading/session-beenden` geht durch dieselbe Beschaffung und
+ * dieselbe `berechneSitzung()` wie `/session-stand`.
+ *
+ * ## Ein Fehlschlag schliesst die Sitzung NICHT mehr
+ *
+ * Der alte Weg fing den Abruffehler ab und schrieb trotzdem eine Null. Das war
+ * die schlimmere Hälfte des Problems: Weil die Disziplinbilanz archivierte
+ * Sitzungen mitzählt, verbesserte ein Bitunix-Aussetzer stillschweigend die
+ * eigene Statistik. Jetzt bleibt die Sitzung laufend und der Fehler steht in
+ * `sitzungFehler` — beenden lässt sie sich, sobald die Quelle wieder da ist.
+ *
+ * @returns {Promise<object|null>} die fertige Sitzung, oder null bei Fehler
  */
 export async function beendeSitzung(fazit = '') {
     const s = aktiveSitzung.value
     if (!s?.objectId) return null
-    const endeMs = Date.now()
 
-    let trades = []
-    let pnl = 0
+    sitzungFehler.value = ''
+    let fertig = null
     try {
-        trades = await tradesImFenster(Number(s.startUnix), endeMs)
-        pnl = trades.reduce((n, t) => n + (Number(t.netProceeds) || 0), 0)
-    } catch (e) {
-        // Die Sitzung trotzdem sauber schliessen — ein Abruffehler darf sie
-        // nicht auf ewig als „laufend" stehen lassen.
-        sitzungFehler.value = e.response?.data?.error || e.message
-    }
-
-    const maxVerlust = Number(s.planMaxVerlustUsd) || 0
-    const maxTrades = Number(s.planMaxTrades) || 0
-    const verletzt = (maxVerlust > 0 && pnl < -maxVerlust) || (maxTrades > 0 && trades.length > maxTrades)
-
-    const daten = {
-        endUnix: endeMs,
-        status: 'beendet',
-        fazit,
-        notizen: s.notizen || '',
-        protokoll: [...(s.protokoll || []), { t: endeMs, art: 'ende', text: 'Sitzung beendet' }],
-        trades,
-        pnlUsd: pnl,
-        tradeAnzahl: trades.length,
-        planVerletzt: verletzt ? 1 : 0,
-    }
-    try {
-        await dbUpdate('live_sessions', s.objectId, daten)
+        const { data } = await axios.post('/api/livetrading/session-beenden', {
+            objectId: s.objectId,
+            fazit,
+        })
+        fertig = { ...s, ...(data?.sitzung || {}) }
     } catch (e) {
         sitzungFehler.value = e.response?.data?.error || e.message
         return null
     }
-    const fertig = { ...s, ...daten }
+
     aktiveSitzung.value = null
     vergissId()
     stoppeUhr()
     return fertig
-}
-
-/**
- * Trades, die im Fenster geschlossen wurden.
- *
- * Das Journal legt Trades als TAGESZEILEN mit einem JSON-Array ab, deshalb
- * wird grosszügig auf Tagesebene geholt und danach auf die Sekunde geschnitten.
- * `entryTime`/`exitTime` stehen in Sekunden, nicht in Millisekunden.
- */
-async function tradesImFenster(vonMs, bisMs) {
-    const tagVon = Math.floor(vonMs / 1000 / 86400) * 86400
-    const tagBis = Math.floor(bisMs / 1000 / 86400) * 86400
-    const zeilen = await dbFind('trades', {
-        greaterThanOrEqualTo: { dateUnix: tagVon },
-        lessThanOrEqualTo: { dateUnix: tagBis },
-    })
-    const vonSek = Math.floor(vonMs / 1000)
-    const bisSek = Math.ceil(bisMs / 1000)
-    const raus = []
-    for (const zeile of zeilen || []) {
-        for (const t of zeile.trades || []) {
-            const ende = Number(t.exitTime)
-            if (!Number.isFinite(ende) || ende < vonSek || ende > bisSek) continue
-            raus.push({
-                symbol: t.symbol, side: t.side, strategy: t.strategy,
-                entryTime: Number(t.entryTime) || 0, exitTime: ende,
-                entryPrice: t.entryPrice, exitPrice: t.exitPrice,
-                netProceeds: Number(t.netProceeds) || 0,
-                grossProceeds: Number(t.grossProceeds) || 0,
-                commission: Number(t.commission) || 0,
-            })
-        }
-    }
-    raus.sort((a, b) => a.exitTime - b.exitTime)
-    return raus
 }
 
 /** Offene Sitzung suchen — erst über die gemerkte Id, dann in der Datenbank. */

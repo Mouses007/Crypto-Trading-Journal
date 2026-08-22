@@ -11,6 +11,12 @@
  *                 Verbindung öffnen.
  *   minSpalten  — Untergrenze beim Ziehen. Eine Bookmap in einer Spalte ist
  *                 nicht klein, sondern unlesbar.
+ *   eigenerStrom — die Kachel hängt an einem laufenden Datenstrom und MELDET
+ *                 dessen Zustand selbst ans Raster. Nicht zu verwechseln mit
+ *                 `endpunkt: null`: „Handelszeiten" hat auch keinen Endpunkt,
+ *                 rechnet aber lokal aus `shared/handelszeiten.js` und ist zu
+ *                 Recht immer fertig. Nur wer eine Verbindung hat, kann sie
+ *                 auch verlieren.
  *   hoehe       — Standardhöhe in Pixeln, wenn der Nutzer noch nie am
  *                 Anfasser gezogen hat (sonst gilt die Rasterhöhe 270).
  *
@@ -181,6 +187,9 @@ const DEFINITIONEN = [
         // nicht erst nach dem Ziehen am Anfasser.
         hoehe: 559,
         gross: false,
+        // Hängt an einem eigenen Strom und meldet dessen Zustand selbst ans
+        // Raster. Siehe `eigenerStrom` in `useKachelRaster.js`.
+        eigenerStrom: true,
         quelle: 'Binance-Orderbuchstrom (live)',
     },
     {
@@ -196,6 +205,7 @@ const DEFINITIONEN = [
         minSpalten: 2,
         hoehe: 546,
         gross: false,
+        eigenerStrom: true,
         quelle: 'Modell auf Basis der eigenen Aufzeichnung',
     },
 ]

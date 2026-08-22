@@ -60,15 +60,34 @@ export async function alleHistoryPositions(config, { startTime, endTime }, holeS
  * Kassa-Index: der Kassa-Index steht ausserhalb der Börsenzeiten still und war
  * in der ersten Fassung der Makro-Kachel zeitweise 62 Stunden alt.
  */
+/*
+ * `erwartetMin` ist die von Yahoo angegebene Verzögerung der jeweiligen Börse
+ * (CME rund 10 Minuten, ICE rund 30). Sie dient NUR als Beschriftung und als
+ * Schwelle — das tatsächliche Alter wird aus `regularMarketTime` gemessen, das
+ * `ohlcAusChart` als `zeit` liefert. Eine Konstante als Alterswert auszugeben
+ * wäre dieselbe Sorte Falschaussage, die diese Änderung beseitigen soll.
+ */
 const MAERKTE = {
-    sp500: { ticker: 'ES=F', name: 'S&P 500 (ES)' },
-    nasdaq: { ticker: 'NQ=F', name: 'Nasdaq 100 (NQ)' },
+    sp500: { ticker: 'ES=F', name: 'S&P 500 (ES)', erwartetMin: 10 },
+    nasdaq: { ticker: 'NQ=F', name: 'Nasdaq 100 (NQ)', erwartetMin: 10 },
     // Russell 2000: die Nebenwerte reagieren am stärksten auf Zins- und
     // Risikoerwartung — dreht RTY vor ES/NQ, ist es eine Risikobewegung
     // und keine Rotation innerhalb der grossen Werte.
-    russell: { ticker: 'RTY=F', name: 'Russell 2000 (RTY)' },
-    dxy: { ticker: 'DX-Y.NYB', name: 'US-Dollar-Index' },
+    russell: { ticker: 'RTY=F', name: 'Russell 2000 (RTY)', erwartetMin: 10 },
+    dxy: { ticker: 'DX-Y.NYB', name: 'US-Dollar-Index', erwartetMin: 30 },
 }
+
+/**
+ * Zuschlag auf die erwartete Verzögerung, ab dem die Kachel auf „veraltet"
+ * geht. Ohne ihn stünde eine Quelle, die ihre 10 Minuten genau einhält, im
+ * Sekundentakt zwischen grün und gelb.
+ *
+ * Ausserhalb der Handelszeiten läuft er ins Leere und das ist beabsichtigt:
+ * Am Wochenende ist der letzte Kurs Stunden alt, und genau das soll die Kachel
+ * dann auch sagen. Ein Feiertagskurs, der als frisch durchgeht, ist die
+ * Falschaussage — nicht ein gelber Punkt am Sonntag.
+ */
+const ALTERS_RESERVE_MIN = 5
 
 const YAHOO = 'https://query1.finance.yahoo.com/v8/finance/chart/'
 
@@ -92,7 +111,22 @@ async function holeIndizes(interval, range) {
             const url = `${YAHOO}${encodeURIComponent(m.ticker)}?range=${range}&interval=${interval}`
             const json = await holeJson(url)
             const daten = ohlcAusChart(json)
-            return [id, { ...daten, ticker: m.ticker, name: daten.name || m.name }]
+            /*
+             * `quellenStand` ist ein ABSOLUTER Zeitstempel, kein Alter. Die
+             * Antwort liegt bis zu `INDIZES_TTL` im Zwischenspeicher — ein hier
+             * ausgerechnetes Alter wäre beim Ausliefern bis zu eine Minute zu
+             * jung, und ausgerechnet die Zahl, die Frische behaupten soll,
+             * würde selbst zu alt ausgeliefert. Gerechnet wird beim Senden.
+             */
+            const quellenStand = daten.zeit
+                || (daten.kerzen.length ? daten.kerzen[daten.kerzen.length - 1].t : null)
+            return [id, {
+                ...daten,
+                ticker: m.ticker,
+                name: daten.name || m.name,
+                quellenStand,
+                erwartetMin: m.erwartetMin,
+            }]
         } catch (e) {
             // Ein Markt darf die übrigen nicht mitnehmen
             logWarn('livetrading', `Indizes: ${m.ticker} fehlgeschlagen`, e.message)
@@ -111,6 +145,159 @@ async function holeIndizes(interval, range) {
         maerkte,
         hinweis: fehlend.length ? `Nicht erreichbar: ${fehlend.join(', ')}` : '',
     }
+}
+
+/**
+ * Datenalter einer Indizes-Antwort BEIM SENDEN bestimmen.
+ *
+ * Rein und ohne Netz, damit prüfbar — Selbsttest in
+ * `server/__selftest-livetrading-ohlc.mjs`.
+ *
+ * Warum das nicht in `holeIndizes` steht: die Antwort kommt aus dem
+ * Zwischenspeicher. Alles, was mit `Date.now()` rechnet, muss deshalb hier
+ * passieren, sonst altert die Altersangabe mit.
+ *
+ * Warum `stand` der ÄLTESTE Quellenstand ist und nicht der jüngste: Der
+ * Kachelkopf zeigt eine Zahl für die ganze Kachel. Die darf nicht vom
+ * frischesten Markt kommen — sonst verdeckt ein munterer ES einen DXY, der
+ * seit einer halben Stunde steht. Der Kopf sagt, wie alt das ÄLTESTE ist, was
+ * man da sieht.
+ *
+ * @param {object} nutzlast Ergebnis von `holeIndizes`
+ * @param {number} [jetzt]  Bezugszeit (für den Selbsttest setzbar)
+ * @returns {{stand:number|null, veraltet:boolean, maerkte:object}}
+ */
+export function altereIndizes(nutzlast, jetzt = Date.now()) {
+    const maerkte = {}
+    const staende = []
+    let veraltet = false
+
+    for (const [id, m] of Object.entries(nutzlast?.maerkte || {})) {
+        if (!m) { maerkte[id] = m; continue }
+        const quelle = Number(m.quellenStand)
+        if (!Number.isFinite(quelle) || quelle <= 0) {
+            // Kein Zeitstempel heisst UNBEKANNT, nicht „null Minuten alt".
+            // `Number(null)` ergibt 0 und wäre hier die frischeste denkbare
+            // Angabe — genau falsch herum.
+            maerkte[id] = { ...m, alterMinuten: null }
+            continue
+        }
+        const alter = Math.max(0, (jetzt - quelle) / 60000)
+        const grenze = (Number(m.erwartetMin) || 0) + ALTERS_RESERVE_MIN
+        if (alter > grenze) veraltet = true
+        staende.push(quelle)
+        maerkte[id] = { ...m, alterMinuten: Math.round(alter * 10) / 10 }
+    }
+
+    return {
+        stand: staende.length ? Math.min(...staende) : null,
+        veraltet,
+        maerkte,
+    }
+}
+
+/**
+ * Positionen einer Sitzung von Bitunix holen — offen und im Fenster geschlossen.
+ *
+ * Herausgezogen, weil es **genau eine** Beschaffung geben muss: Der laufende
+ * Stand (`/session-stand`) und der Abschluss (`/session-beenden`) rechnen sonst
+ * dieselbe Zahl aus verschiedenen Quellen. Vor dieser Änderung war genau das
+ * der Fall — die Kachel rechnete aus Bitunix, das Beenden aus bereits
+ * importierten Journal-Trades. Ein verzögerter Import liess Live-Anzeige,
+ * Planurteil und Archiv auseinanderlaufen, und nichts an der Oberfläche sagte,
+ * welche der beiden Zahlen stimmt.
+ *
+ * @param {number} von Beginn in ms
+ * @param {number} bis Ende in ms
+ * @returns {Promise<{offen:Array, geschlossen:Array, hinweis?:string, ohneSchluessel?:boolean}>}
+ */
+async function holeSitzungsRohdaten(von, bis) {
+    const config = await getDecryptedConfig()
+    if (!config?.apiKey || !config?.secretKey) {
+        // Kein Schlüssel ist kein Fehler, sondern ein bekannter Zustand: die
+        // Kachel soll „nichts hinterlegt" sagen und nicht rot blinken. Der
+        // Abschlussweg wertet das Kennzeichen allerdings anders — dort darf
+        // daraus keine makellose Nullsitzung werden.
+        return { offen: [], geschlossen: [], hinweis: 'Kein Bitunix-Schlüssel hinterlegt', ohneSchluessel: true }
+    }
+
+    const [offenRoh, histAlle] = await Promise.all([
+        getPendingPositions(config.apiKey, config.secretKey, {}),
+        /*
+         * BEWUSST `getHistoryPositions` und NICHT der Endpunkt
+         * /api/bitunix/recent-closed: der schreibt bei jedem Aufruf
+         * `bitunix_config.lastHistoryScan`. Ein Abruf im Sekundentakt würde das
+         * Import-Fenster ständig zurücksetzen und den Trade-Import
+         * stillschweigend sabotieren. Dieser Weg liest nur.
+         */
+        alleHistoryPositions(config, { startTime: von, endTime: bis }),
+    ])
+
+    const offen = Array.isArray(offenRoh?.data)
+        ? offenRoh.data
+        : (offenRoh?.data?.positionList || [])
+    const geschlossen = histAlle
+        // Bitunix filtert den Zeitraum serverseitig; zur Sicherheit
+        // nachschneiden, damit ein Randfall nicht ins Ergebnis rutscht
+        .filter(p => {
+            const zu = Number(p.mtime)
+            return Number.isFinite(zu) && zu >= von && zu <= bis
+        })
+
+    return { offen, geschlossen }
+}
+
+/**
+ * Geschlossene Bitunix-Positionen in den Schnappschuss der Sitzung überführen.
+ *
+ * Rein, damit prüfbar. Bewusst dieselben Feldnamen wie der frühere
+ * Journal-Schnappschuss (`symbol`, `side`, `entryTime` …), damit
+ * `LiveSessions.vue` unverändert weiterliest — alte Sitzungen im Archiv
+ * behalten ihre Form, neue bekommen dieselbe.
+ *
+ * Zeiten stehen hier in **Sekunden**, wie im Journal-Schnappschuss zuvor; die
+ * Bitunix-Antwort liefert Millisekunden. Felder der History-Position laut
+ * `bitunix-api.js`: symbol, entryPrice, closePrice, maxQty, side, fee, funding,
+ * realizedPNL, leverage, ctime, mtime.
+ *
+ * ## `netProceeds` heisst hier `realizedPNL` — und das ist Absicht
+ *
+ * Im Journal bedeutet `netProceeds` nach dem Kanon aus `bitunix-api.js`
+ * (`fix-double-fees`) `realizedPNL - funding`. Hier steht bewusst `realizedPNL`
+ * selbst, weil die laufende Kachel über `berechneSitzung().realisiertUsd`
+ * genau diese Summe zeigt. Der ganze Zweck dieser Änderung ist, dass Kachel
+ * und Archiv **dieselbe** Zahl nennen; ein um das Funding verschobener
+ * Archivwert wäre der alte Widerspruch in klein. Funding geht deshalb nicht
+ * unter, es steht als eigenes Feld daneben und als `fundingUsd` an der
+ * Sitzung.
+ */
+export function schnappschussAusPositionen(geschlossen = []) {
+    const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
+    return (Array.isArray(geschlossen) ? geschlossen : [])
+        .filter(Boolean)
+        .map(p => {
+            const realisiert = n(p.realizedPNL ?? p.realizedPnl ?? p.realized_pnl)
+            const gebuehr = n(p.fee)
+            const funding = n(p.funding)
+            return {
+                symbol: p.symbol || '',
+                side: p.side || '',
+                entryTime: Math.floor(n(p.ctime) / 1000),
+                exitTime: Math.floor(n(p.mtime) / 1000),
+                entryPrice: Number(p.entryPrice) || null,
+                exitPrice: Number(p.closePrice) || null,
+                qty: Number(p.maxQty) || null,
+                netProceeds: realisiert,
+                // Kanon aus `bitunix-api.js`: brutto = realizedPNL + |fee|.
+                // `Math.abs`, weil das Vorzeichen der Gebühr je nach Endpunkt
+                // wechselt — ein positiver Gebührenwert dürfte den Bruttowert
+                // nicht kleiner machen als den Nettowert.
+                grossProceeds: realisiert + Math.abs(gebuehr),
+                commission: Math.abs(gebuehr),
+                funding,
+            }
+        })
+        .sort((a, b) => a.exitTime - b.exitTime)
 }
 
 /** Countdown-Fenster: nur was in den nächsten Stunden kommt. */
@@ -152,7 +339,17 @@ export function setupLivetradingRoutes(app) {
             const range = req.query.range === '5d' ? '5d' : '1d'
             const key = `lt_indizes|${interval}|${range}`
             if (req.query.force) verwerfeCache(key)
-            sendeRadar(res, await ausCache(key, INDIZES_TTL, () => holeIndizes(interval, range)))
+            const roh = await ausCache(key, INDIZES_TTL, () => holeIndizes(interval, range))
+            /*
+             * Alter erst hier: `roh` kann aus dem Zwischenspeicher kommen, und
+             * bisher setzte das Raster mangels `stand` schlicht `Date.now()` —
+             * über einer zehn Minuten alten Kerze stand die aktuelle Uhrzeit.
+             * `veraltet` aus dem Altstand-Rückfall von `ausCache` bleibt
+             * erhalten: ein Abrufproblem ist auch dann eines, wenn die Kurse
+             * im Rahmen sind.
+             */
+            const gealtert = altereIndizes(roh)
+            sendeRadar(res, { ...roh, ...gealtert, veraltet: roh.veraltet || gealtert.veraltet })
         } catch (e) {
             sendRadarError(res, e, 'Indizes')
         }
@@ -236,42 +433,121 @@ export function setupLivetradingRoutes(app) {
             // einem Bitunix-Aussetzer flog der Fehler bis zur Kachel durch,
             // statt den letzten Stand mit `veraltet: true` zu zeigen.
             const key = `lt_session|${von}`
-            const roh = await ausCache(key, 5000, async () => {
-                const config = await getDecryptedConfig()
-                if (!config?.apiKey || !config?.secretKey) {
-                    return { offen: [], geschlossen: [], hinweis: 'Kein Bitunix-Schlüssel hinterlegt' }
-                }
-
-                const [offenRoh, histAlle] = await Promise.all([
-                    getPendingPositions(config.apiKey, config.secretKey, {}),
-                    /*
-                     * BEWUSST `getHistoryPositions` und NICHT der Endpunkt
-                     * /api/bitunix/recent-closed: der schreibt bei jedem Aufruf
-                     * `bitunix_config.lastHistoryScan`. Ein Abruf im
-                     * Sekundentakt würde das Import-Fenster ständig
-                     * zurücksetzen und den Trade-Import stillschweigend
-                     * sabotieren. Dieser Weg liest nur.
-                     */
-                    alleHistoryPositions(config, { startTime: von, endTime: bis }),
-                ])
-
-                const offen = Array.isArray(offenRoh?.data)
-                    ? offenRoh.data
-                    : (offenRoh?.data?.positionList || [])
-                const geschlossen = histAlle
-                    // Bitunix filtert den Zeitraum serverseitig; zur Sicherheit
-                    // nachschneiden, damit ein Randfall nicht ins Ergebnis rutscht
-                    .filter(p => {
-                        const zu = Number(p.mtime)
-                        return Number.isFinite(zu) && zu >= von && zu <= bis
-                    })
-
-                return { offen, geschlossen }
-            })
+            const roh = await ausCache(key, 5000, () => holeSitzungsRohdaten(von, bis))
 
             sendeRadar(res, { ...roh, ...berechneSitzung({ ...roh, ...plan }) })
         } catch (e) {
             sendRadarError(res, e, 'Sitzungsstand')
+        }
+    })
+
+    /**
+     * Sitzung beenden — dieselbe Rechnung wie der laufende Stand.
+     *
+     * Bis hierher rechnete das Beenden im Browser aus bereits importierten
+     * Journal-Trades, während die Kachel daneben aus Bitunix rechnete. Zwei
+     * Quellen für ein Urteil; ein verzögerter Import genügte, damit Kachel und
+     * Archiv verschiedene Zahlen zeigten. Jetzt gehen beide durch
+     * `holeSitzungsRohdaten` und `berechneSitzung`.
+     *
+     * ## Kein Nullstand bei Ausfall
+     *
+     * Der alte Weg fing einen Abruffehler ab und schrieb trotzdem
+     * `pnlUsd: 0, tradeAnzahl: 0, planVerletzt: 0`. Ein Fehlschlag wurde damit
+     * zur makellosen Sitzung — und weil die Disziplinbilanz auch archivierte
+     * Sitzungen zählt, verbesserte ein Bitunix-Aussetzer stillschweigend die
+     * eigene Statistik. Hier bricht der Abschluss stattdessen ab: die Sitzung
+     * bleibt `laufend` und lässt sich beenden, sobald die Quelle wieder da ist.
+     */
+    app.post('/api/livetrading/session-beenden', async (req, res) => {
+        try {
+            const id = Number(req.body?.objectId ?? req.body?.id)
+            if (!Number.isFinite(id) || id <= 0) {
+                return res.status(400).json({ error: 'objectId ist erforderlich' })
+            }
+            const knex = getKnex()
+            const s = await knex('live_sessions').where('id', id).first()
+            if (!s) return res.status(404).json({ error: 'Sitzung nicht gefunden' })
+            if (s.status !== 'laufend') {
+                return res.status(409).json({ error: 'Sitzung läuft nicht mehr' })
+            }
+
+            const von = Number(s.startUnix)
+            if (!Number.isFinite(von) || von <= 0) {
+                return res.status(422).json({ error: 'Sitzung ohne gültige Startzeit' })
+            }
+            const endeMs = Date.now()
+
+            /*
+             * Bewusst OHNE `ausCache`: Ein Abschluss ist einmalig und muss den
+             * Stand von jetzt sehen, nicht den bis zu fünf Sekunden alten aus
+             * der Kachelabfrage. Der letzte Trade fällt sonst womöglich aus dem
+             * eingefrorenen Ergebnis.
+             */
+            const roh = await holeSitzungsRohdaten(von, endeMs)
+            if (roh.ohneSchluessel) {
+                // Ohne Schlüssel ist die Kachel zu Recht still — ein Abschluss
+                // wäre hier aber eine erfundene Nullsitzung.
+                return res.status(422).json({ error: 'Kein Bitunix-Schlüssel hinterlegt — Sitzung nicht abrechenbar' })
+            }
+
+            const rechnung = berechneSitzung({
+                ...roh,
+                planMaxVerlustUsd: Number(s.planMaxVerlustUsd) || 0,
+                planMaxTrades: Number(s.planMaxTrades) || 0,
+            })
+            const trades = schnappschussAusPositionen(roh.geschlossen)
+
+            let protokoll = []
+            try {
+                protokoll = JSON.parse(s.protokoll || '[]')
+            } catch { protokoll = [] }
+            if (!Array.isArray(protokoll)) protokoll = []
+
+            const daten = {
+                endUnix: endeMs,
+                status: 'beendet',
+                fazit: String(req.body?.fazit || ''),
+                protokoll: JSON.stringify([...protokoll, { t: endeMs, art: 'ende', text: 'Sitzung beendet' }]),
+                trades: JSON.stringify(trades),
+                // Genau die Zahl, die die Kachel als „realisiert" zeigt
+                pnlUsd: rechnung.realisiertUsd,
+                gebuehrenUsd: rechnung.gebuehrenUsd,
+                fundingUsd: rechnung.fundingUsd,
+                tradeAnzahl: rechnung.tradeAnzahl,
+                planVerletzt: rechnung.plan.verletzt ? 1 : 0,
+                updatedAt: knex.fn.now(),
+            }
+
+            // Erst rechnen, dann schreiben — und erst danach gilt sie als beendet
+            await knex('live_sessions').where('id', id).update(daten)
+
+            /*
+             * Bewusst NICHT die rohe Zeile mitschicken: dort stehen
+             * `protokoll`, `trades` und `kacheln` als JSON-TEXT. Der Store
+             * legt die Antwort über sein bereits geparstes Objekt — rohe
+             * Zeichenketten würden die geparsten Felder überschreiben.
+             */
+            res.json({
+                ok: true,
+                sitzung: {
+                    objectId: id,
+                    endUnix: endeMs,
+                    status: 'beendet',
+                    fazit: daten.fazit,
+                    protokoll: JSON.parse(daten.protokoll),
+                    trades,
+                    pnlUsd: daten.pnlUsd,
+                    gebuehrenUsd: daten.gebuehrenUsd,
+                    fundingUsd: daten.fundingUsd,
+                    tradeAnzahl: daten.tradeAnzahl,
+                    planVerletzt: daten.planVerletzt,
+                },
+                rechnung,
+            })
+        } catch (e) {
+            logWarn('livetrading', 'Sitzungsabschluss fehlgeschlagen', e.message)
+            res.status(502).json({ error: `Sitzung konnte nicht abgerechnet werden: ${e.message}` })
         }
     })
 

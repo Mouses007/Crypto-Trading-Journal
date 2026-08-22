@@ -12,6 +12,7 @@
  * aufsetzen — also einen zweiten Abruf der Aufzeichnung und eine zweite
  * Verlaufsmatrix über Zehntausende Zellen.
  */
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HebelkartenCanvas from '../HebelkartenCanvas.vue'
 
@@ -20,6 +21,29 @@ defineProps({
     gross: { type: Boolean, default: false },
     params: { type: Object, default: () => ({}) },
 })
+
+/**
+ * Zustand der Karte ans Raster durchreichen.
+ *
+ * `HebelkartenCanvas` legt `status`, `statusDetail` und `stand` per
+ * `defineExpose` offen — beobachtet statt per Ereignis, damit die eigene Seite
+ * unverändert bleibt. `LeverageMapSource` meldet `loading`, `ready`, `empty`
+ * und `error`; die Übersetzung in die Rasterzustände macht `useKachelRaster`.
+ *
+ * `empty` ist der interessante Fall: die Karte hat dann eine gültige Antwort,
+ * aber keine Open-Interest-Historie zum Zeichnen. Grün wäre gelogen.
+ */
+const emit = defineEmits(['zustand'])
+const karte = ref(null)
+
+watch(
+    () => [karte.value?.status, karte.value?.statusDetail, karte.value?.stand],
+    ([status, detail, stand]) => {
+        if (!status) return
+        emit('zustand', status, { stand, fehler: detail })
+    },
+    { immediate: true },
+)
 
 const { t } = useI18n()
 
@@ -46,7 +70,7 @@ const DAYTRADING_SPANNE = 2
 <template>
     <div class="hkWrap">
         <div class="hkFlaeche">
-            <HebelkartenCanvas :stunden="DAYTRADING_STUNDEN" :spanne-pct="DAYTRADING_SPANNE" />
+            <HebelkartenCanvas ref="karte" :stunden="DAYTRADING_STUNDEN" :spanne-pct="DAYTRADING_SPANNE" />
         </div>
         <a class="hkGanzeSeite" href="/liquidations" @click.stop>
             <i class="uil uil-expand-arrows-alt"></i>{{ t('livetrading.ganzeSeite') }}

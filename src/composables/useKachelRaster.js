@@ -37,6 +37,7 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } 
 import axios from 'axios'
 import Sortable from 'sortablejs'
 import { useHiddenCards } from './useHiddenCards.js'
+import { rasterZustand } from '../utils/kachelZustand.js'
 
 export function useKachelRaster({
     storageKey,
@@ -116,6 +117,28 @@ export function useKachelRaster({
 
     const offeneDefinition = computed(() =>
         alleKacheln.value.find(k => k.id === offeneKachel.value) || null)
+
+    /**
+     * Meldeweg für Kacheln mit `eigenerStrom`.
+     *
+     * Sie holen ihre Daten nicht über `ladeKachel`, kennen ihren Zustand aber
+     * genauer als das Raster ihn je erraten könnte. Die Übersetzung in die
+     * fünf Rasterzustände steht in `src/utils/kachelZustand.js` — bewusst als
+     * reine Funktion ausserhalb dieser Datei, damit sie ohne Vue prüfbar ist.
+     *
+     * @param {string} id
+     * @param {string} stromZustand Zustand des eigenen Stroms ('live', 'reconnecting', …)
+     * @param {object} [extra]
+     * @param {number} [extra.stand]  Zeitpunkt der angezeigten Daten in ms
+     * @param {string} [extra.fehler] Klartextmeldung für den Kachelfuss
+     */
+    function setzeKachelZustand(id, stromZustand, { stand: neuerStand, fehler: meldung } = {}) {
+        zustand[id] = rasterZustand(stromZustand)
+        // Nur überschreiben, wenn wirklich etwas mitkam: eine Kachel, die nur
+        // ihren Zustand meldet, soll den letzten bekannten Stand nicht löschen.
+        if (Number.isFinite(neuerStand) && neuerStand > 0) stand[id] = neuerStand
+        if (meldung !== undefined) fehler[id] = meldung || ''
+    }
 
     // ── Laden ───────────────────────────────────────────────────────────
 
@@ -356,11 +379,20 @@ export function useKachelRaster({
     onMounted(async () => {
         document.addEventListener('click', onClickOutside)
         document.addEventListener('visibilitychange', beiSichtbarkeit)
-        // Kacheln ohne Endpunkt versorgen sich selbst. Ohne diese Zeile blieben
-        // sie auf 'idle' stehen und zögen den Zustandspunkt der ganzen Seite
-        // mit herunter, obwohl bei ihnen nichts fehlt.
+        /*
+         * Kacheln, die lokal rechnen, sind sofort fertig — ohne diese Zeile
+         * blieben sie auf 'idle' stehen und zögen den Zustandspunkt der ganzen
+         * Seite mit herunter, obwohl bei ihnen nichts fehlt.
+         *
+         * `eigenerStrom` ist ausgenommen und das ist der Kern der Sache: Diese
+         * Schleife lief früher über ALLE Kacheln ohne Endpunkt, setzte Bookmap
+         * und Hebelkarte einmalig auf 'ready' und fasste sie nie wieder an.
+         * Ein abgerissener Orderbuch-Socket blieb damit grün — die
+         * gefährlichste Anzeige, die ein Handelsfenster haben kann. Sie melden
+         * ihren Zustand jetzt selbst über `setzeKachelZustand`.
+         */
         for (const kachel of kacheln) {
-            if (!kachel.endpunkt) zustand[kachel.id] = 'ready'
+            if (!kachel.endpunkt && !kachel.eigenerStrom) zustand[kachel.id] = 'ready'
         }
         await nextTick()
         initSortable()
@@ -400,6 +432,7 @@ export function useKachelRaster({
         showConfigDropdown, configRef,
         // Bedienung
         ladeKachel, ladeFaellige, beiUmschalten, isVisible, zeigeAlle,
+        setzeKachelZustand,
         setzeParams, setzeAnzeige,
         stilFuer, starteGroesse, setzeGroesseZurueck,
     }

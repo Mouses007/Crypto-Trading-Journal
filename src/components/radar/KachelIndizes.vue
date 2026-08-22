@@ -45,6 +45,42 @@ const markt = ref(props.params.markt || 'nasdaq')
 const gewaehlt = computed(() => props.daten?.maerkte?.[markt.value] || null)
 const kerzen = computed(() => gewaehlt.value?.kerzen || [])
 
+/**
+ * Wie alt der angezeigte Kurs WIRKLICH ist.
+ *
+ * Yahoo gibt CME rund 10 und ICE rund 30 Minuten verzögert aus. Der Kachelkopf
+ * zeigte trotzdem die Abrufzeit — ein frischer HTTP-Abruf sah damit aus wie ein
+ * frischer Kurs. Gerechnet wird aus `quellenStand` (Yahoos
+ * `regularMarketTime`), also gemessen und nicht aus der bekannten Verzögerung
+ * behauptet; die dient nur als Beschriftung, wenn der Zeitstempel fehlt.
+ *
+ * Eigene Uhr statt des Servers `alterMinuten`: die Kachel holt einmal pro
+ * Minute, die Zahl soll dazwischen nicht stehenbleiben.
+ */
+const jetzt = ref(Date.now())
+let uhr = null
+
+const alterText = computed(() => {
+    const m = gewaehlt.value
+    if (!m) return ''
+    const quelle = Number(m.quellenStand)
+    if (!Number.isFinite(quelle) || quelle <= 0) {
+        // Kein Zeitstempel: die dokumentierte Verzögerung als Richtwert, klar
+        // als solcher beschriftet. Lieber ein „ca." als eine erfundene Minute.
+        return m.erwartetMin ? t('livetrading.indizes.verzoegertCa', { min: m.erwartetMin }) : ''
+    }
+    const min = Math.max(0, Math.round((jetzt.value - quelle) / 60000))
+    return t('livetrading.indizes.alt', { min })
+})
+
+/** Über der erwarteten Verzögerung: die Zahl wird eingefärbt, nicht versteckt. */
+const alterAuffaellig = computed(() => {
+    const m = gewaehlt.value
+    const quelle = Number(m?.quellenStand)
+    if (!Number.isFinite(quelle) || quelle <= 0) return false
+    return (jetzt.value - quelle) / 60000 > (Number(m.erwartetMin) || 0) + 5
+})
+
 /** Prozentabstand zum Vortagesschluss — die Zahl, auf die alle schauen. */
 function delta(m) {
     if (!m?.preis || !m?.vorherClose) return null
@@ -180,6 +216,9 @@ onMounted(async () => {
     ro.observe(chartEl.value)
     zeichne()
     requestAnimationFrame(() => chart?.resize())
+    // 15 s reichen für eine Minutenangabe und kosten nichts — die Kachel selbst
+    // holt nur einmal pro Minute neu, das Alter soll dazwischen weiterlaufen.
+    uhr = setInterval(() => { jetzt.value = Date.now() }, 15000)
 })
 
 onBeforeUnmount(() => {
@@ -187,6 +226,8 @@ onBeforeUnmount(() => {
     ro = null
     chart?.dispose()
     chart = null
+    clearInterval(uhr)
+    uhr = null
 })
 
 watch(() => props.daten, zeichne)
@@ -210,7 +251,13 @@ watch(() => props.daten, zeichne)
         <div v-if="gewaehlt" class="ixPreis">
             <b>{{ gewaehlt.preis?.toLocaleString(undefined, { maximumFractionDigits: 3 }) }}</b>
             <span class="ixName">{{ gewaehlt.name }}</span>
-            <span v-if="gewaehlt.zeit" class="ixZeit">{{ dayjs(gewaehlt.zeit).format('HH:mm') }}</span>
+            <!-- Marktzeit, nicht Abrufzeit: die Uhrzeit ist die des Kurses,
+                 daneben steht sein Alter. Beides zusammen, weil eine Uhrzeit
+                 allein nicht verrät, dass sie zehn Minuten zurückliegt. -->
+            <span v-if="gewaehlt.quellenStand" class="ixZeit">
+                {{ dayjs(gewaehlt.quellenStand).format('HH:mm') }}
+            </span>
+            <span v-if="alterText" class="ixAlter" :class="{ ixAltertAuf: alterAuffaellig }">{{ alterText }}</span>
         </div>
 
         <div ref="chartEl" class="ixChart"></div>
@@ -282,6 +329,18 @@ watch(() => props.daten, zeichne)
     margin-left: auto;
     font-size: 0.72rem;
     color: var(--white-60);
+}
+
+/* Das Alter steht direkt neben der Marktzeit und darf sie nicht überstrahlen —
+   auffällig wird es erst, wenn es die erwartete Verzögerung überschreitet. */
+.ixAlter {
+    font-size: 0.68rem;
+    color: var(--white-45, rgba(255, 255, 255, 0.45));
+    white-space: nowrap;
+}
+
+.ixAlter.ixAltertAuf {
+    color: #e8b04b;
 }
 
 /* Der Chart nimmt den Rest — `min-height: 0` ist Pflicht, sonst sprengt der

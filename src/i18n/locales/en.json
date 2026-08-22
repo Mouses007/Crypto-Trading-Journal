@@ -2307,6 +2307,8 @@
       "erzeugen": "Summarise the situation",
       "erneut": "Summarise again — costs another AI request",
       "laedt": "Reading the cards and putting them together …",
+      "alterMin": "generated {min} min ago",
+      "alterStd": "generated {std} h ago",
       "stimmung_risiko_auf": "Risk appetite",
       "stimmung_risiko_ab": "Risk coming off",
       "stimmung_angespannt": "Stretched",
@@ -3423,6 +3425,8 @@
       "vortag": "Prev. close",
       "eroeffnung": "US open",
       "keineKerzen": "No candles in range",
+      "alt": "{min} min old",
+      "verzoegertCa": "approx. {min} min delayed",
       "info": "ES=F, NQ=F, RTY=F and the dollar index as intraday candles.\nFutures rather than cash indices, because the index stands still overnight and at weekends, and a 62-hour-old value describes nothing."
     },
     "liq": {

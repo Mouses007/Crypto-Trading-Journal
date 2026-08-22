@@ -14,7 +14,7 @@
  * lesen — sonst zeigte die Gross-Ansicht (eine zweite Instanz dieser
  * Komponente) weiter den alten Stand.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import { kachelById } from '../../config/marktradar.js'
@@ -50,6 +50,42 @@ const fehler = ref('')
 
 /** Liegt eine Einordnung vor? `leer` ist die Antwort des Servers, wenn nicht. */
 const hat = computed(() => Boolean(props.daten && !props.daten.leer && props.daten.ueberschrift))
+
+/**
+ * Alter der Einordnung, gut sichtbar am Kopf.
+ *
+ * Diese Kachel ist KEINE Live-Quelle: Der Text entsteht nur auf Knopfdruck
+ * (der Endpunkt liest per GET bloss, erzeugt wird per POST) und steht danach,
+ * bis jemand ihn neu erzeugt. Im Handelsfenster stand er schon über acht
+ * Stunden — und der „Stand 07:12" im Kachelkopf liest sich wie Datenfrische,
+ * nicht wie das Erzeugungsdatum eines Textes. Deshalb hier eine Angabe, die
+ * ausspricht, was sie meint, und ab einer Stunde auffällig wird.
+ *
+ * `daten.alterMs` vom Server wird bewusst NICHT genommen: die Kachel holt alle
+ * fünf Minuten, der Wert wäre entsprechend eingefroren. Gerechnet wird gegen
+ * `daten.stand`, den Erzeugungszeitpunkt.
+ */
+const jetzt = ref(Date.now())
+let uhr = null
+
+const alterMinuten = computed(() => {
+    const s = Number(props.daten?.stand)
+    if (!Number.isFinite(s) || s <= 0) return null
+    return Math.max(0, Math.round((jetzt.value - s) / 60000))
+})
+
+const alterText = computed(() => {
+    const m = alterMinuten.value
+    if (m == null) return ''
+    if (m < 60) return t('marktradar.lage.alterMin', { min: m })
+    return t('marktradar.lage.alterStd', { std: Math.floor(m / 60) })
+})
+
+/** Ab einer Stunde ist eine Markteinordnung im Handelsfenster kein Befund mehr. */
+const alterAuffaellig = computed(() => (alterMinuten.value ?? 0) >= 60)
+
+onMounted(() => { uhr = setInterval(() => { jetzt.value = Date.now() }, 30000) })
+onBeforeUnmount(() => { clearInterval(uhr); uhr = null })
 const farbe = computed(() => STIMMUNG_FARBE[props.daten?.stimmung] || GRAU)
 
 /**
@@ -108,6 +144,11 @@ async function erzeuge(erzwingen = false) {
             <div class="lgKopf">
                 <span class="lgBadge" :style="{ borderColor: farbe, color: farbe }">
                     {{ t('marktradar.lage.stimmung_' + daten.stimmung) }}
+                </span>
+                <!-- Erzeugungsalter, nicht Datenfrische: der Text steht, bis
+                     ihn jemand neu erzeugt. -->
+                <span v-if="alterText" class="lgAlter" :class="{ lgAlterAuf: alterAuffaellig }">
+                    {{ alterText }}
                 </span>
                 <button type="button" class="lgErneut" :title="t('marktradar.lage.erneut')"
                     @click.stop="erzeuge(true)">
@@ -222,6 +263,18 @@ async function erzeuge(erzwingen = false) {
 
 .lgWrap.gross .lgBadge {
     font-size: 1.05rem;
+}
+
+/* Das Alter steht direkt am Befund — wer die Stimmung liest, liest mit, wie
+   alt sie ist. Unauffällig, solange sie frisch ist. */
+.lgAlter {
+    font-size: 0.7rem;
+    color: var(--white-45, rgba(255, 255, 255, 0.45));
+    white-space: nowrap;
+}
+
+.lgAlter.lgAlterAuf {
+    color: #e8b04b;
 }
 
 /* Zweiter Lauf kostet Geld — deshalb unauffällig, nicht als Hauptknopf */

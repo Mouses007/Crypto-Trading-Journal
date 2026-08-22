@@ -114,9 +114,19 @@ async function beenden() {
     beschaeftigt.value = true
     const fertig = await beendeSitzung(fazit.value)
     beschaeftigt.value = false
+    if (!fertig) {
+        /*
+         * Der Abschluss rechnet serverseitig gegen Bitunix und bricht bei einem
+         * Ausfall ab, statt eine Nullsitzung zu speichern. Dann muss der Dialog
+         * offen bleiben und das getippte Fazit stehen: Der nächste Versuch
+         * gelingt, sobald die Quelle wieder da ist, und niemand soll seine
+         * Notiz ein zweites Mal schreiben. Die Meldung steht in `sitzungFehler`
+         * unten in der Leiste.
+         */
+        return
+    }
     beendenOffen.value = false
     fazit.value = ''
-    if (!fertig) return
     letzteBilanz.value = fertig
     if (istCockpit.value) {
         setTimeout(() => { try { window.close() } catch { /* egal */ } }, 2000)

@@ -116,7 +116,11 @@ async function fixPostgresSequences(knex) {
 // v9: `radar_ergebnisse` — Erfolgskontrolle beider Radare. Rein additiv.
 // v10: BTC-Vergleich und Börsenlistung am Coin-Radar. Rein additiv — ein
 // älterer Codestand schreibt die Spalten nicht und zeigt sie nicht an.
-const SCHEMA_VERSION = 10
+// v11: Gebühren und Funding an `live_sessions` — der Sitzungsabschluss rechnet
+// jetzt serverseitig aus Bitunix statt im Browser aus Journal-Importen. Rein
+// additiv; ein älterer Codestand schreibt die Spalten nicht und zeigt sie
+// nicht an, sein Abschlussweg rechnet aber weiter aus dem Journal.
+const SCHEMA_VERSION = 11
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2234,6 +2238,19 @@ async function runMigrations(knex, client) {
      * sind nur aus der Liste geräumt.
      */
     await addColumnIfNotExists('live_sessions', 'archiviert', (t) => t.integer('archiviert').defaultTo(0))
+
+    /*
+     * Gebühren und Funding der Sitzung, beim Abschluss eingefroren.
+     *
+     * `pnlUsd` ist die realisierte P&L, wie sie die laufende Kachel zeigt —
+     * bei Bitunix ist das `realizedPNL`, also bereits ohne Handelsgebühr, aber
+     * OHNE Funding. Ohne diese beiden Spalten liesse sich im Archiv nicht mehr
+     * nachvollziehen, was an einem Ergebnis Handel und was Kosten war; und die
+     * Frage, ob eine Sitzung an der Richtung oder an der Gebühr gescheitert
+     * ist, stellt sich bei Skalpsitzungen regelmässig.
+     */
+    await addColumnIfNotExists('live_sessions', 'gebuehrenUsd', (t) => t.float('gebuehrenUsd').defaultTo(0))
+    await addColumnIfNotExists('live_sessions', 'fundingUsd', (t) => t.float('fundingUsd').defaultTo(0))
 
     /*
      * Nachzug für Datenbanken, die die erste Fassung dieser Tabelle bekommen

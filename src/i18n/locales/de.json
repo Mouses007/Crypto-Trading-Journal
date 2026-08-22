@@ -2307,6 +2307,8 @@
       "erzeugen": "Lage zusammenfassen",
       "erneut": "Neu zusammenfassen — kostet eine weitere KI-Anfrage",
       "laedt": "Die Kacheln werden gelesen und eingeordnet …",
+      "alterMin": "vor {min} Min. erzeugt",
+      "alterStd": "vor {std} Std. erzeugt",
       "stimmung_risiko_auf": "Risikofreude",
       "stimmung_risiko_ab": "Risiko wird abgebaut",
       "stimmung_angespannt": "Angespannt",
@@ -3423,6 +3425,8 @@
       "vortag": "Vortag",
       "eroeffnung": "US-Eröffnung",
       "keineKerzen": "Keine Kerzen im Zeitraum",
+      "alt": "{min} Min. alt",
+      "verzoegertCa": "ca. {min} Min. verzögert",
       "info": "ES=F, NQ=F, RTY=F und der Dollar-Index als Intraday-Kerzen.\nFutures statt Kassa-Indizes, weil der Index nachts und am Wochenende stillsteht und ein 62 Stunden alter Wert keine Lage beschreibt."
     },
     "liq": {

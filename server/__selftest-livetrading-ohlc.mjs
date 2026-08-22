@@ -15,6 +15,7 @@
  */
 
 import { ohlcAusChart, reiheAusChart } from './makro.js'
+import { altereIndizes } from './livetrading-api.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -156,6 +157,78 @@ console.log('\nreiheAusChart bleibt unverändert')
     const o = ohlcAusChart(j)
     check('beide Parser verwerfen dieselbe Zeile',
         o.kerzen.length === r.reihe.length, `${o.kerzen.length} vs ${r.reihe.length}`)
+}
+
+// ── Datenalter ───────────────────────────────────────────────────────────
+/*
+ * Die Kachel zeigte bisher die ABRUFZEIT und sah damit immer frisch aus: der
+ * Endpunkt lieferte kein `stand`, das Kachelraster setzte deshalb `Date.now()`.
+ * Über einer zehn Minuten alten CME-Kerze stand die aktuelle Uhrzeit. Yahoo
+ * verzögert CME rund 10 und ICE rund 30 Minuten — gemessen wird das Alter
+ * trotzdem, nicht behauptet.
+ */
+console.log('\nDatenalter der Indizes')
+{
+    const JETZT = 1786970000 * 1000
+    const min = (m) => JETZT - m * 60000
+
+    const a = altereIndizes({
+        maerkte: {
+            sp500: { quellenStand: min(9), erwartetMin: 10 },
+            dxy: { quellenStand: min(28), erwartetMin: 30 },
+        },
+    }, JETZT)
+
+    check('Alter wird in Minuten gerechnet', a.maerkte.sp500.alterMinuten === 9, String(a.maerkte.sp500.alterMinuten))
+    check('jeder Markt bekommt sein eigenes Alter', a.maerkte.dxy.alterMinuten === 28, String(a.maerkte.dxy.alterMinuten))
+    check('innerhalb der erwarteten Verzögerung ist nichts veraltet', a.veraltet === false)
+    // Der Kopf zeigt EINE Zahl — sie muss vom ältesten Markt kommen, sonst
+    // verdeckt ein munterer ES einen DXY, der seit einer halben Stunde steht.
+    check('stand ist der ÄLTESTE Quellenstand', a.stand === min(28), String(a.stand))
+}
+{
+    const JETZT = 1786970000 * 1000
+    const a = altereIndizes({
+        maerkte: {
+            sp500: { quellenStand: JETZT - 16 * 60000, erwartetMin: 10 },
+            dxy: { quellenStand: JETZT - 20 * 60000, erwartetMin: 30 },
+        },
+    }, JETZT)
+    // 16 min > 10 erwartet + 5 Reserve → der eine reisst die Kachel auf gelb,
+    // obwohl der andere mit 20 von 30 Minuten im Rahmen liegt.
+    check('ein Markt über der Grenze macht die Kachel veraltet', a.veraltet === true)
+    check('… der andere bleibt trotzdem mit seinem Alter sichtbar',
+        a.maerkte.dxy.alterMinuten === 20, String(a.maerkte.dxy.alterMinuten))
+}
+{
+    const JETZT = 1786970000 * 1000
+    const a = altereIndizes({
+        maerkte: {
+            sp500: { quellenStand: null, erwartetMin: 10 },
+            nasdaq: null,
+            dxy: { quellenStand: JETZT - 60000, erwartetMin: 30 },
+        },
+    }, JETZT)
+    // `Number(null)` ist 0 und damit endlich — ohne Schranke wäre ein fehlender
+    // Zeitstempel die frischestmögliche Angabe statt einer unbekannten.
+    check('fehlender Quellenstand ergibt null, nicht 0',
+        a.maerkte.sp500.alterMinuten === null, String(a.maerkte.sp500.alterMinuten))
+    check('ein nicht erreichbarer Markt bleibt null', a.maerkte.nasdaq === null)
+    check('… und zieht den Kopfstand nicht auf 1970', a.stand === JETZT - 60000, String(a.stand))
+}
+{
+    const a = altereIndizes({ maerkte: {} }, 1786970000 * 1000)
+    check('ohne jeden Markt bleibt stand null', a.stand === null, String(a.stand))
+    check('… und veraltet false', a.veraltet === false)
+    const b = altereIndizes(null, 1786970000 * 1000)
+    check('null-Nutzlast wirft nicht', b.stand === null && b.veraltet === false)
+}
+{
+    // Zeitstempel aus der Zukunft (Uhrdrift) darf kein negatives Alter geben
+    const JETZT = 1786970000 * 1000
+    const a = altereIndizes({ maerkte: { sp500: { quellenStand: JETZT + 30000, erwartetMin: 10 } } }, JETZT)
+    check('Zeitstempel aus der Zukunft ergibt 0, nicht negativ',
+        a.maerkte.sp500.alterMinuten === 0, String(a.maerkte.sp500.alterMinuten))
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)

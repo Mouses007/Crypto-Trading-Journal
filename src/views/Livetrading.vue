@@ -93,7 +93,7 @@ const {
     gridEl, daten, zustand, stand, fehler, kachelParams,
     alleKacheln, sichtbareKacheln, gesamtZustand,
     offeneKachel, offeneDefinition, showConfigDropdown, configRef,
-    ladeKachel, ladeFaellige, beiUmschalten, isVisible,
+    ladeKachel, ladeFaellige, beiUmschalten, isVisible, setzeKachelZustand,
     setzeParams, setzeAnzeige, stilFuer, starteGroesse, setzeGroesseZurueck,
 } = useKachelRaster({
     storageKey: 'livetrading_hidden_cards',
@@ -305,6 +305,7 @@ const interaktiv = (kachel) => kachel.gross === false
                         :params="kachelParams[kachel.id] || {}"
                         @params="setzeParams(kachel.id, $event)"
                         @anzeige="setzeAnzeige(kachel.id, $event)"
+                        @zustand="(z, extra) => setzeKachelZustand(kachel.id, z, extra)"
                         @neuladen="ladeKachel(kachel.id, true)" />
                 </RadarKachel>
             </div>

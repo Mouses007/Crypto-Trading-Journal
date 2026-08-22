@@ -12,6 +12,7 @@
  */
 
 import { berechneSitzung } from './sitzung-rechnung.js'
+import { schnappschussAusPositionen } from './livetrading-api.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -170,6 +171,80 @@ console.log('\nRobustheit')
             try { berechneSitzung({ offen: null, geschlossen: 'nein' }); return true }
             catch { return false }
         })())
+}
+
+// ── Live-Stand und Abschluss ─────────────────────────────────────────────
+/*
+ * Der eigentliche Grund für diesen Block: Bis zum 22.08.2026 rechnete die
+ * Kachel „Positionen & Plan" aus Bitunix-Positionen, das Beenden der Sitzung
+ * dagegen im Browser aus bereits importierten Journal-Trades. Ein verzögerter
+ * Import genügte, damit Live-Anzeige, Planurteil und Archiv verschiedene
+ * Zahlen zeigten — ohne Hinweis, welche stimmt. Beide Wege gehen jetzt durch
+ * `holeSitzungsRohdaten` und `berechneSitzung`; hier wird festgehalten, dass
+ * dieselben Rohdaten auch dasselbe Ergebnis geben.
+ */
+console.log('\nLive-Stand und Abschluss rechnen gleich')
+{
+    const rohdaten = {
+        offen: [auf(12.5)],
+        geschlossen: [
+            { realizedPNL: 30, fee: -1.5, funding: 0.2, symbol: 'BTCUSDT', side: 'BUY', ctime: 1000, mtime: 5000, entryPrice: '100', closePrice: '103', maxQty: '0.5' },
+            { realizedPNL: -10, fee: -1.2, funding: -0.4, symbol: 'ETHUSDT', side: 'SELL', ctime: 2000, mtime: 9000, entryPrice: '50', closePrice: '51', maxQty: '2' },
+        ],
+    }
+    const plan = { planMaxVerlustUsd: 100, planMaxTrades: 5 }
+
+    const stand = berechneSitzung({ ...rohdaten, ...plan })
+    const abschluss = berechneSitzung({ ...rohdaten, ...plan })
+
+    check('realisiert identisch', stand.realisiertUsd === abschluss.realisiertUsd, String(stand.realisiertUsd))
+    check('Tradeanzahl identisch', stand.tradeAnzahl === abschluss.tradeAnzahl)
+    check('Planurteil identisch', stand.plan.verletzt === abschluss.plan.verletzt)
+
+    // Die Zahl, die im Archiv als `pnlUsd` landet, ist genau die, die die
+    // Kachel als „realisiert" zeigt — nicht eine um Funding verschobene.
+    check('gespeicherte pnlUsd ist die realisierte P&L der Kachel',
+        Math.abs(abschluss.realisiertUsd - 20) < 1e-9, String(abschluss.realisiertUsd))
+    check('unrealisiert geht NICHT ins Ergebnis ein',
+        Math.abs(abschluss.realisiertUsd - 20) < 1e-9 && abschluss.unrealisiertUsd === 12.5)
+
+    const schnapp = schnappschussAusPositionen(rohdaten.geschlossen)
+    check('Schnappschuss hat eine Zeile je geschlossener Position', schnapp.length === 2)
+    check('… nach Ausstiegszeit sortiert', schnapp[0].symbol === 'BTCUSDT' && schnapp[1].symbol === 'ETHUSDT')
+    check('… Zeiten in Sekunden', schnapp[0].entryTime === 1 && schnapp[0].exitTime === 5,
+        `${schnapp[0].entryTime}/${schnapp[0].exitTime}`)
+    // Summe der Einzelzeilen muss die Sitzungssumme ergeben, sonst zeigt die
+    // Archivzeile etwas anderes als die aufgeklappte Liste darunter.
+    const summe = schnapp.reduce((n, x) => n + x.netProceeds, 0)
+    check('Summe der Zeilen == pnlUsd der Sitzung',
+        Math.abs(summe - abschluss.realisiertUsd) < 1e-9, `${summe} vs ${abschluss.realisiertUsd}`)
+    check('Gebühr ohne Vorzeichenspiel', schnapp[0].commission === 1.5, String(schnapp[0].commission))
+    check('brutto = realizedPNL + |Gebühr|', schnapp[0].grossProceeds === 31.5, String(schnapp[0].grossProceeds))
+    check('Funding steht als eigenes Feld daneben', schnapp[1].funding === -0.4, String(schnapp[1].funding))
+    check('Menge aus maxQty, nicht aus qty', schnapp[1].qty === 2, String(schnapp[1].qty))
+}
+{
+    // Der Fall, der den alten Weg zur Falschaussage machte: Die Börse kennt
+    // Trades, das Journal hat sie noch nicht importiert. Früher stand dann eine
+    // makellose Nullsitzung im Archiv, weil im Browser aus dem leeren Journal
+    // gerechnet wurde. Heute ist die Bitunix-Antwort die einzige Grundlage.
+    const a = berechneSitzung({
+        offen: [],
+        geschlossen: [zu(-250)],
+        planMaxVerlustUsd: 100,
+    })
+    check('ein Verlust über der Grenze wird als Verletzung erkannt', a.plan.verletzt === true)
+    check('… mit Grund „verlust"', a.plan.gruende.includes('verlust'))
+    check('… und nicht als Nullsitzung', a.realisiertUsd === -250 && a.tradeAnzahl === 1)
+}
+{
+    const leer = schnappschussAusPositionen([])
+    check('leere Liste ergibt leeren Schnappschuss', Array.isArray(leer) && leer.length === 0)
+    check('null ergibt leeren Schnappschuss', schnappschussAusPositionen(null).length === 0)
+    const kaputt = schnappschussAusPositionen([null, {}, { realizedPNL: 'abc' }])
+    check('unbrauchbare Zeilen werfen nicht', kaputt.length === 2)
+    check('… und werden zu 0, nicht zu NaN',
+        kaputt.every(x => Number.isFinite(x.netProceeds)), JSON.stringify(kaputt.map(x => x.netProceeds)))
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)

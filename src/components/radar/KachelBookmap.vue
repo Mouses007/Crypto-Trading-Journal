@@ -32,13 +32,23 @@ defineProps({
     params: { type: Object, default: () => ({}) },
 })
 
+/**
+ * Zustand des Orderbuchstroms ans Raster durchreichen.
+ *
+ * `LiquidityHeatmap` emittiert ihn längst — er kam nur nie oben an, weil das
+ * Raster Kacheln ohne Endpunkt einmalig auf „bereit" setzte. Der Punkt blieb
+ * damit grün, während der Socket tot war und die Karte einfror. Übersetzt wird
+ * in `useKachelRaster.js`, hier wird nur weitergegeben.
+ */
+const emit = defineEmits(['zustand'])
+
 const { t } = useI18n()
 </script>
 
 <template>
     <div class="bmWrap">
         <div class="bmFlaeche">
-            <LiquidityHeatmap />
+            <LiquidityHeatmap @status="e => emit('zustand', e.state, { fehler: e.detail })" />
         </div>
         <a class="bmGanzeSeite" href="/liquidity" @click.stop>
             <i class="uil uil-expand-arrows-alt"></i>{{ t('livetrading.ganzeSeite') }}
