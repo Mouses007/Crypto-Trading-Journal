@@ -84,7 +84,7 @@ function verschluesseln(text, key) {
 const FELDER = [
     ['settings', 'id', [
         'aiApiKey', 'aiKeyOpenai', 'aiKeyAnthropic', 'aiKeyGemini', 'aiKeyDeepseek',
-        'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen', 'aiKeyCustom',
+        'aiKeyMistral', 'aiKeyXai', 'aiKeyQwen', 'aiKeyCustom', 'aiKeyOpenrouter',
         'fluxApiKey', 'geminiImageApiKey', 'esp32ApiKey',
     ]],
     ['bitunix_config', 'id', ['apiKey', 'secretKey']],

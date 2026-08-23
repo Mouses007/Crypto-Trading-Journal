@@ -36,6 +36,15 @@
  *   - Sonst `<seitennamensraum>.info.<element>`.
  * Bestehende Schlüssel werden NICHT umbenannt; `schluessel` wird explizit
  * übergeben, alte Namen wie `dashboard.cumulativePnlTooltip` bleiben gültig.
+ *
+ * INHALTSREGEL — das hier ist Lernwissen, keine Rechenanleitung:
+ *   Ein Info-Tipp sagt, WAS der Wert zeigt, in WELCHEM Zusammenhang man ihn
+ *   beim Traden ansieht und WAS sich daraus ableiten lässt (und was nicht).
+ *   Er sagt NICHT, wie der Wert im Detail berechnet wird oder woher er
+ *   stammt — das steht bereits ausführlich in der grossen Anleitung
+ *   (`PageInfo.vue`, Knopf oben rechts) und würde hier nur doppelt stehen.
+ *   Zwei Sätze reichen fast immer: einer für die Bedeutung, einer für die
+ *   Schlussfolgerung.
  */
 import { ref, computed, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -78,8 +87,8 @@ const inhalt = computed(() => {
 
 const zeigen = computed(() => erweiterteInfos.value && !!inhalt.value)
 
-const BREITE = 300
-const BREITE_GROSS = 460
+const BREITE = 320
+const BREITE_GROSS = 480
 
 function messen() {
     const el = ausloeser.value
@@ -191,25 +200,27 @@ onBeforeUnmount(() => {
 .infoTippBox {
     position: fixed;
     z-index: 2100;
-    width: 300px;
+    width: 320px;
     max-width: calc(100vw - 16px);
     transform: translateY(-100%);
     background: var(--black-bg-12, #1f1f1f);
     border: 1px solid var(--white-18, rgba(255, 255, 255, 0.18));
     border-radius: var(--border-radius, 6px);
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
-    padding: 0.6rem 0.75rem;
+    padding: 0.7rem 0.85rem;
     color: var(--white-70, rgba(255, 255, 255, 0.7));
-    font-size: 0.8rem;
+    /* Bewusst deutlich grösser als der Rest der Oberfläche: das hier ist
+       Lerntext zum Durchlesen, nicht ein Kürzel zum kurzen Überfliegen. */
+    font-size: 0.98rem;
     font-weight: 400;
-    line-height: 1.45;
+    line-height: 1.55;
     /* Ein `\n` in der Übersetzung wird zum Umbruch — kein HTML im Spiel. */
     white-space: pre-line;
     pointer-events: none;
 }
 
 .infoTippBox--breit {
-    width: 460px;
+    width: 480px;
 }
 
 /* Nach unten gekippt: dann keine Verschiebung um die eigene Höhe. */

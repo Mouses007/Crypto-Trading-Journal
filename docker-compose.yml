@@ -32,6 +32,34 @@ services:
       - .env
     restart: unless-stopped
 
+  # TLS-Termination für den LAN-Zugriff (siehe Caddyfile + DOCKER.md). Rein
+  # additiv: "journal" bleibt unverändert per HTTP auf CTJ_PORT erreichbar
+  # (u.a. für das ESP32-Display, das kein TLS spricht) — Caddy kommt als
+  # zweiter, unabhängiger Eingang dazu, erreicht "journal" über den internen
+  # Compose-Netzwerknamen.
+  caddy:
+    image: caddy:2-alpine
+    container_name: crypto-trading-journal-caddy
+    ports:
+      # 443 ist auf der NAS bereits durch die DSM (nginx) belegt, deshalb ein
+      # eigener Port statt des HTTPS-Standardports.
+      - "${CTJ_TLS_PORT:-8443}:443"
+    environment:
+      # Wohin Caddy weiterreicht. Hier heisst der Service "journal"; im Projekt
+      # des Synology Container Managers heisst er "trading-journal" — dort also
+      # CTJ_UPSTREAM=trading-journal:8080 setzen.
+      - CTJ_UPSTREAM=${CTJ_UPSTREAM:-journal:8080}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - caddy_data:/data
+    depends_on:
+      - journal
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+
 # Auto-Updates (Watchtower) sind bewusst NICHT Teil dieses Compose-Files.
 # Fuer lokalen Klick-Update-Betrieb reicht der Socket-Mount oben + der
 # Update-Button in der App (Docker-Mode erkannt -> App startet Helper-

@@ -39,3 +39,7 @@ server/templates/sharecard-*.png
 
 # Persönliche NAS-Zugangsdaten für scripts/nas-deploy.sh
 scripts/.nas-deploy.env
+
+# mkcert-Zertifikat + privater Schlüssel für den Caddy-HTTPS-Zugang (DOCKER.md) —
+# maschinenspezifisch, gehört nie ins Repository
+certs/

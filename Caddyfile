@@ -1,0 +1,18 @@
+# TLS-Termination für den LAN-Zugriff aufs Journal.
+#
+# Zertifikat kommt von mkcert (lokale, selbst verwaltete CA — siehe DOCKER.md),
+# nicht von Let's Encrypt: die NAS hat keinen öffentlichen Hostnamen, nur die
+# private Adresse 192.168.178.100. `:443` statt einer Hostangabe, weil Docker
+# den Host-Port (siehe docker-compose.yml, CTJ_TLS_PORT) ohnehin schon auf
+# diesen Container-Port 443 mappt — ein Host/Port-Filter im Caddyfile würde
+# nur die falsche Fehlerquelle bei einer Portänderung hinzufügen.
+#
+# Das Ziel steht NICHT fest verdrahtet, weil der App-Service nicht überall
+# gleich heisst: in der docker-compose.yml dieses Repos ist es `journal`, im
+# Projekt des Synology Container Managers `trading-journal`. Ein fester Name
+# hier ergibt einen Caddy, der sauber startet und ins Leere proxyt — der
+# unangenehmste Fehler, weil er erst im Browser auffällt.
+:443 {
+    tls /certs/nas.pem /certs/nas-key.pem
+    reverse_proxy {$CTJ_UPSTREAM:journal:8080}
+}

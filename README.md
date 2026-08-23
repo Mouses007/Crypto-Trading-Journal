@@ -340,6 +340,8 @@ docker compose pull && docker compose up -d
 
 Copy `docker-compose.yml` and your `.env` to the NAS and create a project in Container Manager. See [DOCKER.md](DOCKER.md) for details.
 
+**HTTPS for LAN access**: `docker-compose.yml` includes an optional Caddy container that terminates TLS with a self-issued [mkcert](https://github.com/FiloSottile/mkcert) certificate — needed for the browser's Notification permission prompt, which Chrome refuses on plain HTTP (except `localhost`). Purely additive; port 8080/HTTP keeps working unchanged. See [DOCKER.md](DOCKER.md#https-für-den-lan-zugriff-caddy--mkcert) for setup.
+
 ---
 
 ## Update

@@ -75,3 +75,56 @@ Das baut das Image mit dem neuen Code neu und startet den Container. Die Datenba
 - Über `CTJ_PORT` in der `.env` kann der Port geändert werden
 - Die `.env`-Datei ist in `.gitignore` und wird nicht committed
 - Wenn `DB_TYPE` nicht gesetzt oder leer ist, verwendet der Container SQLite (lokal im Container — nur für Tests geeignet)
+
+## HTTPS für den LAN-Zugriff (Caddy + mkcert)
+
+`http://<nas-ip>:8080` reicht zum Ansehen, aber Browser verweigern darüber
+zwei Dinge: das Anfragen der Notification-Berechtigung (Chrome erlaubt
+`Notification.requestPermission()` nur in einem „secure context" — HTTPS
+oder `localhost`) und markieren die Adresse als „Nicht sicher". Docker-Compose
+bringt dafür optional einen [Caddy](https://caddyserver.com/)-Container mit,
+der TLS mit einem selbst erzeugten [mkcert](https://github.com/FiloSottile/mkcert)-Zertifikat
+terminiert und intern an `journal:8080` weiterreicht. Rein additiv: Port 8080
+bleibt unverändert per HTTP erreichbar (u.a. fürs ESP32-Display, das kein TLS
+spricht).
+
+### 1. Zertifikat erzeugen (auf dem Rechner, der das Dashboard im Browser öffnet)
+
+```bash
+# mkcert installieren (Ubuntu/Debian/Mint; für macOS: brew install mkcert)
+sudo apt-get install -y mkcert libnss3-tools
+
+# Lokale CA anlegen und im System- sowie Firefox/Chrome-Truststore vertrauen
+mkcert -install
+
+# Zertifikat für die NAS-Adresse erzeugen (im Projektordner)
+mkcert -cert-file certs/nas.pem -key-file certs/nas-key.pem 192.168.178.100 localhost
+```
+
+`certs/` ist in `.gitignore` — Zertifikat und Schlüssel bleiben lokal.
+
+Für JEDES weitere Gerät, das das grüne Schloss zeigen soll (Handy, anderer
+Laptop): die Root-CA (`rootCA.pem`, Pfad über `mkcert -CAROOT`) dorthin
+kopieren und dort ebenfalls installieren/vertrauen — mkcert kennt nur das
+Gerät, auf dem `-install` lief. Ohne diesen Schritt bleibt es dort bei einer
+einmaligen Klick-durch-Warnung, das ist bei einer selbst verwalteten CA nicht
+zu vermeiden (eine öffentlich vertrauenswürdige CA wie Let's Encrypt scheidet
+ohne öffentlichen Domainnamen aus).
+
+### 2. Auf die NAS bringen
+
+`Caddyfile` sowie `certs/nas.pem` + `certs/nas-key.pem` neben die
+`docker-compose.yml` im NAS-Projektordner kopieren, dann:
+
+```bash
+docker compose up -d
+```
+
+Das startet nur den neu hinzugekommenen `caddy`-Container — der laufende
+`journal`-Container wird nicht neu gestartet.
+
+### 3. Port
+
+Caddy hört standardmässig auf `8443` (`CTJ_TLS_PORT` in der `.env`), NICHT auf
+443 — die Synology-DSM belegt 443 (und 80) bereits selbst mit ihrem eigenen
+nginx. Das Journal ist danach unter `https://<nas-ip>:8443` erreichbar.
