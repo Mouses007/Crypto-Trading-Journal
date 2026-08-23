@@ -220,10 +220,12 @@ async function sendeMail(s, { betreff, text, html, anhaenge, an }) {
             // Anzeigename statt nackter Adresse — im Postfach steht dann die
             // App und nicht „noreply@…".
             from: { name: 'Crypto Trading Journal', address: String(s.mailVon) },
-            // Mehrere Empfänger stehen alle im "An" und sehen einander. Das ist
-            // Absicht: Es ist die eigene Verteilerliste des Lesers, und ein
-            // verstecktes Blindkopie-Feld würde beim Antworten überraschen.
-            to: (Array.isArray(an) && an.length ? an : [String(s.mailAn)]).join(', '),
+            // "An" bekommt die App selbst, die echten Empfänger stehen in
+            // "Bcc" — sonst sähe bei einer Verteilerliste jeder Empfänger die
+            // Adressen aller anderen. Ein "Antworten" landet damit bei der
+            // eigenen Absenderadresse statt ungewollt bei allen anderen.
+            to: String(s.mailVon),
+            bcc: Array.isArray(an) && an.length ? an : [String(s.mailAn)],
             subject: betreff,
             text,
             ...(html ? { html } : {}),
