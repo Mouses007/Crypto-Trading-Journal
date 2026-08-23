@@ -847,6 +847,17 @@ function anweisungUebernehmen() {
 }
 let radarNewsThemen = ref(['crypto'])
 let radarNewsLaenge = ref('mittel')
+
+/*
+ * Eine Prüfung veraltet, sobald sich Themen oder Länge ändern — genau die
+ * beiden Werte, gegen die `bauAnweisungPruefPrompt` urteilt (siehe
+ * `anweisungPruefen`). Ohne das blieb ein "wirkungslos, weil Kapitel X nicht
+ * existiert" auf dem Schirm stehen, nachdem X längst angehakt wurde — der
+ * Leser sah einen Befund, der sich auf eine Auswahl bezog, die es nicht mehr
+ * gab.
+ */
+watch([radarNewsThemen, radarNewsLaenge], () => { anweisungPruefung.value = null }, { deep: true })
+
 let radarNewsXModell = ref('grok-4.6')
 /* Umfangs- und Darstellungsregler. Überall heisst 0 bzw. leer „Vorgabe der
    gewählten Länge" — wer nichts einstellt, bekommt exakt das bisherige
@@ -902,6 +913,27 @@ let radarArschlochfilter = ref(true)
    ausschliessen" — gleiche Technik, ehrlicherer Name. */
 let radarArschlochAn = ref(true)
 let radarArschlochWoerter = ref('')
+
+/* Fokus-Filter: das Gegenstück zum Arschlochfilter. Der schliesst aus, der
+   hier lässt nur durch, was mindestens eines der Stichwörter trifft. */
+let radarNewsFokusAn = ref(false)
+let radarNewsFokusWoerter = ref('')
+
+/* News-Profile: benannte Sammlungen aller Nachrichten-Einstellungen inkl.
+   Quellen-Auswahl. Eigene, schlanke Endpunkte statt der generischen
+   Tabellen-Route — anlegen/anwenden schnappen bzw. schreiben ~30 Felder auf
+   einmal, das soll nicht über die Feld-für-Feld-Logik von `dbUpdateSettings`
+   laufen. */
+let newsProfile = ref([])
+let neuesProfilName = ref('')
+let profilLoeschBestaetigung = ref(null)
+let profilMeldung = ref('')
+let profilFehler = ref(false)
+/* Umbenennen inline in der Zeile statt eigenem Formular — bei einem einzigen
+   Feld wäre ein zweiter Editier-Modus wie bei den Strategie-Instanzen
+   überdimensioniert. */
+let profilUmbenennen = ref(null)
+let profilUmbenennenName = ref('')
 
 /* Nachrichtenquellen — serverseitige Liste, deshalb eigene Endpunkte statt
    der generischen Tabellen-Route: die URL kommt vom Nutzer und muss vor dem
@@ -967,10 +999,106 @@ function loadRadarSettings() {
     radarNewsVideoTokens.value = Math.max(0, Math.min(4000, Number(s.radarNewsVideoTokens) || 0))
     radarArschlochAn.value = Number(s.radarArschlochAn ?? 1) === 1
     radarArschlochWoerter.value = s.radarArschlochWoerter ?? 'Donald Trump'
+    radarNewsFokusAn.value = Number(s.radarNewsFokusAn ?? 0) === 1
+    radarNewsFokusWoerter.value = s.radarNewsFokusWoerter || ''
     radarPicycleSchwelle.value = Number(s.radarPicycleSchwelle ?? 0)
     radarFundingDivergenz.value = Number(s.radarFundingDivergenz ?? 15)
     radarDivergenzSymbole.value = s.radarDivergenzSymbole || ''
     ladeNewsQuellen()
+    ladeNewsProfile()
+}
+
+async function ladeNewsProfile() {
+    try {
+        const { data } = await axios.get('/api/marktradar/news-profile')
+        newsProfile.value = data || []
+    } catch (e) {
+        newsProfile.value = []
+    }
+}
+
+function profilMelden(text, fehler = false) {
+    profilMeldung.value = text
+    profilFehler.value = fehler
+    setTimeout(() => { profilMeldung.value = '' }, 6000)
+}
+
+/** Diff-/Fehlwerte aus der Anwenden-Antwort in eine Zeile für den Nutzer. */
+function profilHinweis(antwort) {
+    const teile = []
+    const geaendertFelder = Object.keys(antwort.geaendert || {})
+    if (geaendertFelder.length) {
+        teile.push(`Mail-/Modellwahl wurde mit übernommen (${geaendertFelder.length} Feld/Felder geändert)`)
+    }
+    if (antwort.fehlendeQuellen?.length) {
+        teile.push(`Quellen aus dem Profil nicht mehr vorhanden: ${antwort.fehlendeQuellen.join(', ')}`)
+    }
+    return teile.join(' · ')
+}
+
+async function profilAnlegen() {
+    const name = neuesProfilName.value.trim()
+    if (!name) return
+    try {
+        await axios.post('/api/marktradar/news-profile', { name })
+        neuesProfilName.value = ''
+        await ladeNewsProfile()
+        profilMelden(`Profil "${name}" angelegt.`)
+    } catch (e) {
+        profilMelden(e.response?.data?.error || e.message, true)
+    }
+}
+
+async function profilNameSpeichern(p) {
+    const name = profilUmbenennenName.value.trim()
+    if (!name) return
+    try {
+        await axios.put(`/api/marktradar/news-profile/${p.id}`, { name })
+        profilUmbenennen.value = null
+        await ladeNewsProfile()
+    } catch (e) {
+        profilMelden(e.response?.data?.error || e.message, true)
+    }
+}
+
+async function profilAnwenden(p) {
+    try {
+        const { data } = await axios.post(`/api/marktradar/news-profile/${p.id}/anwenden`)
+        // Die Anwenden-Route schreibt direkt per Knex, nicht über
+        // dbUpdateSettings — currentUser muss deshalb frisch geholt werden,
+        // sonst zeigt die Seite noch den alten Stand.
+        currentUser.value = await dbGetSettings()
+        loadRadarSettings()
+        const hinweis = profilHinweis(data)
+        profilMelden(`Profil "${p.name}" angewendet.${hinweis ? ' ' + hinweis : ''}`)
+    } catch (e) {
+        profilMelden(e.response?.data?.error || e.message, true)
+    }
+}
+
+async function profilAktualisieren(p) {
+    try {
+        await axios.put(`/api/marktradar/news-profile/${p.id}`, { uebernehmen: true })
+        await ladeNewsProfile()
+        profilMelden(`Profil "${p.name}" mit den aktuellen Einstellungen aktualisiert.`)
+    } catch (e) {
+        profilMelden(e.response?.data?.error || e.message, true)
+    }
+}
+
+async function profilLoeschen(p) {
+    try {
+        const warAktiv = Number(currentUser.value?.radarNewsAktivesProfil) === p.id
+        await axios.delete(`/api/marktradar/news-profile/${p.id}`)
+        profilLoeschBestaetigung.value = null
+        await ladeNewsProfile()
+        // Der Server hat radarNewsAktivesProfil zurückgesetzt, wenn es das
+        // gelöschte Profil war — den lokalen Stand nachziehen, sonst zeigt
+        // das Dropdown auf der Nachrichten-Seite weiter eine tote Auswahl.
+        if (warAktiv) currentUser.value = await dbGetSettings()
+    } catch (e) {
+        profilMelden(e.response?.data?.error || e.message, true)
+    }
 }
 
 /**
@@ -1014,6 +1142,8 @@ async function radarSpeichern(feld) {
         radarNewsXModell: radarNewsXModell.value.trim() || 'grok-4.6',
         radarArschlochAn: radarArschlochAn.value ? 1 : 0,
         radarArschlochWoerter: radarArschlochWoerter.value,
+        radarNewsFokusAn: radarNewsFokusAn.value ? 1 : 0,
+        radarNewsFokusWoerter: radarNewsFokusWoerter.value,
         radarPicycleSchwelle: Math.max(0, Math.min(50, Number(radarPicycleSchwelle.value) || 0)),
         radarFundingDivergenz: Math.max(0, Math.min(100, Number(radarFundingDivergenz.value) || 0)),
         radarDivergenzSymbole: radarDivergenzSymbole.value,
@@ -3855,6 +3985,82 @@ onBeforeMount(async () => {
                     </p>
                     <p class="fw-lighter">{{ t('settings.ki.news.intro3') }}</p>
 
+                    <!--=============== NEWS-PROFILE ===============-->
+                    <!-- Benannte Sammlungen aller Felder unten auf dieser Seite
+                         PLUS Fokus-/Ausschluss-Filter und Quellen-Auswahl von
+                         der Marktradar-Unterseite. Anlegen/Aktualisieren
+                         schnappt einfach ein, was hier gerade eingestellt ist —
+                         kein zweites Formular, das dieselben ~30 Felder noch
+                         einmal abfragt. -->
+                    <div class="mb-3 p-2 rounded" style="background: rgba(255,255,255,.03);">
+                        <p class="fw-bold mb-1" style="font-size:0.9rem;">
+                            News-Profile
+                            <InfoTipp schluessel="settings.info.newsProfile" />
+                        </p>
+                        <p class="fw-lighter" style="font-size:0.8rem;">
+                            Benannte Vorlagen aus allen Feldern dieser Seite plus Fokus-/Ausschluss-Filter
+                            und Quellen-Auswahl. Auf der Nachrichten-Seite steht dafür nur noch ein
+                            Dropdown zum Anwenden — angelegt und bearbeitet wird hier.
+                        </p>
+                        <table class="table table-sm align-middle mb-2" v-if="newsProfile.length">
+                            <tbody>
+                                <tr v-for="p in newsProfile" :key="p.id">
+                                    <td>
+                                        <input v-if="profilUmbenennen === p.id" class="form-control form-control-sm"
+                                            style="max-width:14rem;" v-model="profilUmbenennenName"
+                                            @keyup.enter="profilNameSpeichern(p)" @keyup.esc="profilUmbenennen = null">
+                                        <span v-else>{{ p.name }}</span>
+                                    </td>
+                                    <td class="text-muted small">
+                                        {{ new Date(Number(p.aktualisiertAm)).toLocaleString() }}
+                                    </td>
+                                    <td class="text-end">
+                                        <template v-if="profilUmbenennen === p.id">
+                                            <button class="btn btn-success btn-sm me-1" @click="profilNameSpeichern(p)">
+                                                <i class="uil uil-check"></i>
+                                            </button>
+                                            <button class="btn btn-outline-secondary btn-sm" @click="profilUmbenennen = null">
+                                                <i class="uil uil-times"></i>
+                                            </button>
+                                        </template>
+                                        <template v-else>
+                                            <button class="btn btn-outline-secondary btn-sm me-1" title="Umbenennen"
+                                                @click="profilUmbenennen = p.id; profilUmbenennenName = p.name">
+                                                <i class="uil uil-edit-alt"></i>
+                                            </button>
+                                            <button class="btn btn-outline-primary btn-sm me-1" @click="profilAnwenden(p)">
+                                                Anwenden
+                                            </button>
+                                            <button class="btn btn-outline-secondary btn-sm me-1" @click="profilAktualisieren(p)"
+                                                title="Aktuelle Einstellungen erneut in dieses Profil einschnappen">
+                                                Aktualisieren
+                                            </button>
+                                            <template v-if="profilLoeschBestaetigung === p.id">
+                                                <button class="btn btn-danger btn-sm me-1" @click="profilLoeschen(p)">Ja</button>
+                                                <button class="btn btn-outline-secondary btn-sm" @click="profilLoeschBestaetigung = null">Nein</button>
+                                            </template>
+                                            <button v-else class="btn btn-outline-danger btn-sm" @click="profilLoeschBestaetigung = p.id">
+                                                <i class="uil uil-trash-alt"></i>
+                                            </button>
+                                        </template>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p v-else class="small text-muted">Noch keine Profile angelegt.</p>
+                        <div class="d-flex gap-2 align-items-center">
+                            <input class="form-control form-control-sm" style="max-width:16rem;"
+                                v-model="neuesProfilName" placeholder="Name, z.B. 'Nur BTC wichtige News'"
+                                @keyup.enter="profilAnlegen">
+                            <button class="btn btn-outline-primary btn-sm" :disabled="!neuesProfilName.trim()" @click="profilAnlegen">
+                                + Aus aktuellen Einstellungen speichern
+                            </button>
+                        </div>
+                        <div v-if="profilMeldung" class="small mt-2" :class="profilFehler ? 'text-danger' : 'text-muted'">
+                            {{ profilMeldung }}
+                        </div>
+                    </div>
+
                     <div class="row align-items-center mt-2">
                         <div class="col-12 col-md-4">
                             {{ t('settings.ki.news.autoLabel') }}
@@ -4749,6 +4955,30 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
+                    <!-- Fokus-Filter: das Gegenstück. Wer ihn anschaltet, will
+                         NUR NOCH Beiträge zu seinen Stichwörtern sehen — sonst
+                         genau wie der Arschlochfilter aufgebaut. -->
+                    <div class="row mb-2">
+                        <div class="col-12 col-md-3">
+                            <label class="fw-lighter">Fokus-Filter<InfoTipp schluessel="settings.info.fokusfilter" /></label>
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Umgekehrt zum Arschlochfilter: nur Beiträge, die eines der Stichwörter
+                                enthalten (ein Begriff je Zeile), bleiben in Liste und Lagebericht übrig.
+                                Leer = kein Fokus, alles bleibt.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-9">
+                            <label class="switch">
+                                <input type="checkbox" v-model="radarNewsFokusAn" @change="radarSpeichern('radarNewsFokusAn')">
+                                <span class="slider round"></span>
+                            </label>
+                            <textarea class="form-control form-control-sm mt-2" rows="3" style="max-width:26rem;"
+                                v-model="radarNewsFokusWoerter" :disabled="!radarNewsFokusAn"
+                                placeholder="Bitcoin&#10;BTC"
+                                @change="radarSpeichern('radarNewsFokusWoerter')"></textarea>
+                        </div>
+                    </div>
+
                     <table class="table table-sm align-middle" v-if="newsQuellen.length">
                         <thead>
                             <tr>
@@ -4830,7 +5060,8 @@ onBeforeMount(async () => {
                         <i class="uil uil-brain me-1"></i>
                         Rhythmus, Themen, Länge und die Modellwahl des Lageberichts stehen jetzt unter
                         <a href="#" @click.prevent="bereichWechseln('ki'); kiBereichWechseln('nachrichten')">
-                            KI · Nachrichten</a>.
+                            KI · Nachrichten</a> — dort auch die News-Profile, die diese Felder und die
+                        Filter/Quellen hier oben zusammen als benannte Vorlage speichern.
                     </p>
 
                     <div v-if="newsVorschlaege.length" class="mt-2 small">

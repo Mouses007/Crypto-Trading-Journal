@@ -7,7 +7,7 @@
  *
  * Aufruf: node server/__selftest-news-filter.mjs
  */
-import { istGefiltert, zerlegeWoerter, THEMEN_NAMEN } from './news-recherche.js'
+import { istGefiltert, istFokusTreffer, zerlegeWoerter, baueRechercheZitate, THEMEN_NAMEN } from './news-recherche.js'
 import {
     bauLagePrompt, leseThemen, bauAnweisungPruefPrompt, leseAnweisungPruefung,
 } from './marktradar-news.js'
@@ -47,6 +47,45 @@ pruefe('Kein Treffer, kein Filter',
     !istGefiltert({ titel: 'ETF-Flüsse steigen', inhalt: 'BlackRock meldet Zufluss' }, woerter, { art: 'rss', name: 'Feed' }))
 pruefe('Leere Wörterliste filtert nichts (ausser Truth)',
     !istGefiltert({ titel: 'Donald Trump' }, [], { art: 'rss', name: 'Feed' }))
+
+// 2b) Fokus-Filter: das Gegenstück — leer lässt alles durch, gesetzt nur Treffer.
+const fokusWoerter = zerlegeWoerter('Bitcoin\nBTC')
+pruefe('Fokus: leere Liste lässt alles durch',
+    istFokusTreffer({ titel: 'Irgendwas' }, [], { art: 'rss', name: 'Feed' }))
+pruefe('Fokus: Treffer im Titel',
+    istFokusTreffer({ titel: 'BTC steigt' }, fokusWoerter, { art: 'rss', name: 'Feed' }))
+pruefe('Fokus: Treffer im Inhalt',
+    istFokusTreffer({ titel: 'Neues', inhalt: 'Bitcoin überschreitet Marke' }, fokusWoerter, { art: 'rss', name: 'Feed' }))
+pruefe('Fokus: Treffer im Quellennamen',
+    istFokusTreffer({ titel: 'Neues' }, fokusWoerter, { art: 'rss', name: 'Bitcoin Magazine' }))
+pruefe('Fokus: kein Treffer fällt raus',
+    !istFokusTreffer({ titel: 'Ethereum-Update', inhalt: 'Layer-2-Neuigkeiten' }, fokusWoerter, { art: 'rss', name: 'Feed' }))
+pruefe('Fokus ist unabhängig von Truth Social (keine automatische Sonderregel)',
+    istFokusTreffer({ titel: 'BTC News' }, fokusWoerter, { art: 'truth', name: 'Truth Social' }))
+
+// 2c) baueRechercheZitate: Chart-Bilder wandern an den passenden Beleg.
+{
+    const zitate = baueRechercheZitate(
+        ['https://example.com/btc-chart', 'https://andere-seite.com/ohne-bild'],
+        [
+            { url: 'https://img.example.com/btc.png', quelle: 'https://example.com/btc-chart' },
+            { url: 'https://img.example.com/unrelated.png', quelle: 'https://nirgends-zitiert.com/x' },
+        ],
+        new Map([['https://example.com/btc-chart', '22.08.2026']]),
+    )
+    pruefe('Zitat mit passendem Bild bekommt es zugeordnet',
+        zitate[0].bild === 'https://img.example.com/btc.png')
+    pruefe('Zitat ohne passendes Bild bleibt ohne Bild',
+        zitate[1].bild === '')
+    pruefe('Bild, dessen Herkunft in keinem Zitat steht, taucht nirgends unpassend auf',
+        !zitate.some(z => z.bild === 'https://img.example.com/unrelated.png'))
+    pruefe('Datum landet im Titel', zitate[0].titel.includes('22.08.2026'))
+    pruefe('Trailing Slash bei der Herkunft stört den Abgleich nicht',
+        baueRechercheZitate(['https://x.com/a/'], [{ url: 'https://img.x.com/a.png', quelle: 'https://x.com/a' }])[0].bild
+            === 'https://img.x.com/a.png')
+    pruefe('Ohne Bilder bleibt jedes Zitat bildlos',
+        baueRechercheZitate(['https://x.com/a'], [])[0].bild === '')
+}
 
 // 3) Themen-Auswahl: feste Reihenfolge, Unbekanntes fliegt, leer fällt zurück.
 pruefe('leseThemen behält die Kapitelreihenfolge',

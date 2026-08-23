@@ -14,6 +14,7 @@ import { setupKalenderRoutes, stopKalender } from './server/marktradar-kalender.
 import { setupLivetradingRoutes } from './server/livetrading-api.js'
 import { setupLageRoutes } from './server/marktradar-lage.js'
 import { setupNewsRoutes, startNewsTakt, stopNews } from './server/marktradar-news.js'
+import { setupNewsProfilRoutes } from './server/news-profil-api.js'
 import { setupCryptoquantRoutes, stopCryptoquant } from './server/cryptoquant-api.js'
 import { setupBenachrichtigungsRoutes, startBenachrichtigungsTakt, stopBenachrichtigungen } from './server/benachrichtigungen.js'
 import { setupOllamaRoutes } from './server/ollama-api.js'
@@ -144,6 +145,7 @@ const startIndex = async () => {
     // `leseKalender` mit, statt eine zweite Abfrage aufzubauen.
     setupLivetradingRoutes(app);
     setupNewsRoutes(app);
+    setupNewsProfilRoutes(app);
     startNewsTakt();
     // ETF-Bestände: eigene Datei, weil sie als einzige Radar-Quelle einen
     // Schlüssel braucht — und nach dem Marktradar, dessen Cache sie mitbenutzt.

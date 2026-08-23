@@ -289,6 +289,23 @@ export function istGefiltert(item, woerter, quelle) {
 }
 
 /**
+ * Fokus-Filter — das Gegenstück zum Arschlochfilter. Der schliesst aus, der
+ * hier lässt nur durch, was mindestens eines der Stichwörter trifft. Leere
+ * Liste heisst „kein Fokus eingestellt", also lässt alles durch — nicht
+ * „nichts passt". Gleicher `heuhaufen`-Aufbau wie `istGefiltert`, damit
+ * dieselbe Eingabe an beiden Filtern gleich behandelt wird.
+ *
+ * @param {{titel?: string, inhalt?: string}} item
+ * @param {string[]} woerter  bereits zerlegte, getrimmte Stichwörter
+ * @param {{name?: string}} quelle
+ */
+export function istFokusTreffer(item, woerter, quelle) {
+    if (!woerter?.length) return true
+    const heuhaufen = `${item?.titel || ''}\n${item?.inhalt || ''}\n${quelle?.name || ''}`.toLowerCase()
+    return woerter.some((w) => w && heuhaufen.includes(String(w).toLowerCase()))
+}
+
+/**
  * Einstellungs-Text in die Wörterliste zerlegen. Getrennt wird an
  * Zeilenumbrüchen UND Kommas — die Eingabemaske sagt zwar „ein Begriff je
  * Zeile", aber getippt wird trotzdem „Donald Trump, Michael Saylor", und ein
@@ -299,4 +316,33 @@ export function zerlegeWoerter(text) {
         .split(/[\r\n,]+/)
         .map((z) => z.trim())
         .filter(Boolean)
+}
+
+/**
+ * Zitate einer Recherche in Beleg-Zeilen umbauen — mit Bild, wo eines passt.
+ *
+ * `citations` und `bilder` kommen aus DERSELBEN Perplexity-Antwort: eine
+ * Bild-Herkunft (`quelle`, eigentlich `origin_url`) ist dieselbe URL wie ein
+ * Zitat, wenn beide von derselben Seite stammen. Passt eine zusammen, trägt
+ * der Beleg das Bild — `punktBild()` im Frontend zeigt es dann direkt am
+ * Punkt, der sich auf diese Quelle stützt, statt dass eine Chartgrafik
+ * beziehungslos neben dem Text herumliegt, ohne zu sagen, wozu sie gehört.
+ *
+ * Reine Funktion, damit der Selbsttest die Zuordnung ohne Netz prüfen kann.
+ *
+ * @param {string[]} citations
+ * @param {Array<{url: string, quelle: string}>} bilder
+ * @param {Map<string,string>} [quellenDaten]  URL -> Datum, soweit bekannt
+ */
+export function baueRechercheZitate(citations, bilder = [], quellenDaten = new Map()) {
+    const bildJeUrl = new Map((bilder || [])
+        .filter((b) => b?.quelle).map((b) => [String(b.quelle).replace(/\/$/, ''), b.url]))
+    return (Array.isArray(citations) ? citations : []).map((url) => {
+        const datum = quellenDaten?.get(url) || ''
+        return {
+            titel: `${url.replace(/^https?:\/\//, '').slice(0, 180)}${datum ? ` (${datum})` : ''}`,
+            url, quelle: 'Perplexity-Recherche', art: 'rss',
+            bild: bildJeUrl.get(url.replace(/\/$/, '')) || '', datum,
+        }
+    })
 }

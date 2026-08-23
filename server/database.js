@@ -2029,6 +2029,63 @@ async function runMigrations(knex, client) {
     // Eigene Anweisungen an die Berichts-KI (Ton, Schwerpunkte, Ausschlüsse).
     // Leer = Bericht wie gehabt; der Server deckelt bei ZUSATZ_MAX Zeichen.
     await addColumnIfNotExists('settings', 'radarNewsPromptZusatz', (t) => t.text('radarNewsPromptZusatz').defaultTo(''))
+
+    /*
+     * Fokus-Filter: das Gegenstück zum Arschlochfilter. Der schliesst aus, der
+     * hier lässt nur durch, was mindestens eines der Stichwörter trifft — leer
+     * heisst „kein Fokus", nicht „nichts durchlassen".
+     */
+    await addColumnIfNotExists('settings', 'radarNewsFokusAn', (t) => t.integer('radarNewsFokusAn').defaultTo(0))
+    await addColumnIfNotExists('settings', 'radarNewsFokusWoerter', (t) => t.text('radarNewsFokusWoerter').defaultTo(''))
+    // Id des zuletzt angewendeten News-Profils — nur für die Anzeige im
+    // Dropdown, keine Spalte, von der Erzeugungslogik selbst abhängt.
+    await addColumnIfNotExists('settings', 'radarNewsAktivesProfil', (t) => t.integer('radarNewsAktivesProfil').defaultTo(0))
+
+    /*
+     * Benannte Sammlungen aller Nachrichten-Einstellungen (siehe
+     * `news-profil-felder.js` für die Feldliste). `einstellungen` und
+     * `quellen` sind bewusst JSON-Blobs statt eigener Spalten je Feld — bei
+     * ~30 Feldern wäre jede künftige Erweiterung sonst eine Spalte an ZWEI
+     * Stellen (settings UND news_profile). Gleiches Muster wie
+     * `strategy_instances.params`.
+     */
+    if (!(await knex.schema.hasTable('news_profile'))) {
+        await knex.schema.createTable('news_profile', (t) => {
+            t.increments('id').primary()
+            t.text('name').notNullable()
+            t.text('einstellungen').defaultTo('{}')
+            t.text('quellen').defaultTo('{}')
+            t.bigInteger('erstelltAm').defaultTo(0)
+            t.bigInteger('aktualisiertAm').defaultTo(0)
+        })
+        console.log(' -> Created table: news_profile')
+
+        // Startprofil aus dem, was gerade live steht — sonst ist das Dropdown
+        // nach einem Update leer, obwohl der Nutzer längst etwas eingestellt hat.
+        try {
+            const { NEWS_PROFIL_FELDER } = await import('./news-profil-felder.js')
+            const zeile = await knex('settings').where('id', 1).first()
+            if (zeile) {
+                const einstellungen = {}
+                for (const feld of NEWS_PROFIL_FELDER) einstellungen[feld] = zeile[feld] ?? null
+                const quellenZeilen = await knex('news_sources').select('id', 'name', 'enabled', 'laerm')
+                const quellen = {}
+                for (const q of quellenZeilen) quellen[q.id] = { name: q.name, enabled: q.enabled, laerm: q.laerm }
+                const jetzt = Date.now()
+                await knex('news_profile').insert({
+                    name: 'Standard',
+                    einstellungen: JSON.stringify(einstellungen),
+                    quellen: JSON.stringify(quellen),
+                    erstelltAm: jetzt,
+                    aktualisiertAm: jetzt,
+                })
+                console.log(' -> Startprofil "Standard" aus aktuellen Einstellungen angelegt')
+            }
+        } catch (e) {
+            console.log(` -> Startprofil konnte nicht angelegt werden: ${e.message}`)
+        }
+    }
+
     // Kapitel je Thema; `punkte` bleibt als flache Liste für Altleser bestehen.
     await addColumnIfNotExists('news_digests', 'kapitel', (t) => t.text('kapitel').defaultTo('[]'))
     // Marktstand zum Zeitpunkt des Berichts (Fear&Greed, Dominanz, Funding …)

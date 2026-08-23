@@ -51,7 +51,7 @@ function redactSettings(parsed) {
 }
 
 // Whitelist of allowed settings keys (from schema + migrations)
-const VALID_SETTINGS_KEYS = [
+export const VALID_SETTINGS_KEYS = [
     'timeZone', 'waehrungCode', 'waehrungFaktor', 'accounts', 'tags', 'apis', 'layoutStyle', 'avatar',
     'showTradePopups', 'username', 'startBalance', 'startBalanceDate', 'currentBalance',
     'tradeTimeframes', 'customTimeframes', 'enableBinanceChart',
@@ -78,7 +78,7 @@ const VALID_SETTINGS_KEYS = [
     'radarNewsBerichtAufbewahrung', 'radarNewsChartFrische',
     'radarNewsRechercheModell',
     'radarNewsTokenBudget', 'radarNewsPunkte', 'radarNewsVideoTiefe', 'radarNewsVideoTokens', 'radarNewsLayout',
-    'radarNewsPromptZusatz',
+    'radarNewsPromptZusatz', 'radarNewsFokusAn', 'radarNewsFokusWoerter', 'radarNewsAktivesProfil',
     'livetradingAn', 'betaAusblenden', 'livetradingMobil', 'startseiteAn',
     'erweiterteInfos', 'modusLiveAn', 'modusResearchAn', 'modusStrategieAn',
     // Anbieter/Modell je KI-Funktion; leer = global

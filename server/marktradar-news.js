@@ -30,13 +30,13 @@ import {
     sendRadarError, holeFearGreed, holeGlobal, holeFunding, holeLsOi, holeAltseason,
     holeMarkt,
 } from './marktradar-api.js'
-import { ladeLlmConfig, callLLMJson, istGuthabenFehler, merkeKiGuthaben, schaetzeKosten } from './llm.js'
+import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson, istGuthabenFehler, merkeKiGuthaben, schaetzeKosten } from './llm.js'
 import { entdoppleBericht, protokollText } from './news-doppler.js'
 import { gruppiereBeitraege, themenRegel, haltEinsProThema } from './news-themen.js'
 import { merkeVerbrauch } from './ai-usage.js'
 import { samplingFelder, GEMINI_STANDARDMODELL } from './ai-models.js'
 import {
-    sucheXPosts, rechercheThema, istGefiltert, zerlegeWoerter, THEMEN_NAMEN,
+    sucheXPosts, rechercheThema, istGefiltert, istFokusTreffer, zerlegeWoerter, baueRechercheZitate, THEMEN_NAMEN,
 } from './news-recherche.js'
 
 const TAG = 24 * 60 * 60 * 1000
@@ -559,6 +559,89 @@ async function fasseVideoZusammen(videoUrl, cfg, { aufloesung = 'niedrig', tiefe
     } finally {
         clearTimeout(timer)
     }
+}
+
+/** Ein Bild laden und für einen multimodalen Modellaufruf kodieren. */
+async function ladeBildAlsAnhang(url, timeoutMs = 15000) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    try {
+        const r = await fetch(url, { signal: ctrl.signal })
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const mediaType = String(r.headers.get('content-type') || 'image/jpeg').split(';')[0].trim()
+        const buf = Buffer.from(await r.arrayBuffer())
+        return { kind: 'image', base64: buf.toString('base64'), mediaType }
+    } finally {
+        clearTimeout(timer)
+    }
+}
+
+/**
+ * Chartbilder vom Modell selbst einordnen lassen: echter Preis-Chart mit
+ * sichtbarer Analyse, oder blosse Dekoration?
+ *
+ * Perplexitys Bildersuche liefert nur URL und Herkunftsseite, keine
+ * Bildunterschrift — geprüft am Bestand vom 23.08.2026 hatte jedes Bild eine
+ * Herkunft, aber die Herkunfts-Domains einer Recherche und ihre zitierten
+ * Text-Quellen überschneiden sich fast nie (Bild von TradingView, Zitat von
+ * einem Newsportal). Ein Domain-Filter hätte deshalb nichts zum Anschlagen:
+ * jede beobachtete Herkunft sah seriös aus, auch die eines reinen
+ * Symbolbilds. Nur das Bild selbst verrät, ob es eine Analyse zeigt — und
+ * DIESE Beschreibung ist zugleich die "Erklärung", die ein Chart ohne
+ * Autoren-Bildunterschrift sonst nie bekäme.
+ *
+ * Ein Bild ohne verwertbares Urteil (Download schlägt fehl, Modellantwort
+ * unbrauchbar) fällt raus statt unbeschriftet durchzurutschen — keine
+ * Erklärung heisst keine Verwendung.
+ *
+ * @param {Array<{url:string, quelle:string}>} bilder
+ * @param {object} cfg  von `ladeLlmConfig({provider:'gemini', ...})`
+ * @returns {Promise<{bilder: Array<{url:string, quelle:string, beschreibung:string}>, tokens:number, kostenUsd:number}>}
+ */
+async function pruefeChartBilder(bilder, cfg) {
+    if (!bilder?.length) return { bilder: [], tokens: 0, kostenUsd: 0 }
+
+    // Parallel statt nacheinander: bei bis zu zehn Bildern à 15 s Zeitlimit
+    // summierte ein sequenzieller Download sich sonst auf über zwei Minuten,
+    // nur um am Ende festzustellen, dass die Hälfte gar nicht erreichbar war.
+    const geladenOderNicht = await Promise.all(bilder.map(async (b) => {
+        try {
+            return { b, anhang: await ladeBildAlsAnhang(b.url) }
+        } catch (e) {
+            logWarn('news', `Chartbild nicht ladbar, übersprungen: ${b.url} (${e.message})`)
+            return null
+        }
+    }))
+    const treffer = geladenOderNicht.filter(Boolean)
+    const anhaenge = treffer.map((t) => t.anhang)
+    const geladen = treffer.map((t) => t.b)   // dieselbe Reihenfolge wie `anhaenge`
+    if (!anhaenge.length) return { bilder: [], tokens: 0, kostenUsd: 0 }
+
+    const antwort = await callLLMJson(cfg, {
+        system: `Du bekommst ${anhaenge.length} Bild(er), in der Reihenfolge nummeriert, wie sie kommen (erstes Bild = Index 0).
+Für JEDES Bild: Ist es ein echter Preis-Chart mit sichtbarer technischer Analyse — eingezeichnete Linien, Kursmarken,
+Indikatoren, Trendlinien, Unterstützungs- oder Widerstandszonen? Symbolbilder, Werbegrafiken, Logos oder reine
+Stimmungs-Illustrationen zählen NICHT, auch wenn Kurspfeile, Münzen oder Zahlen abgebildet sind.
+Antworte NUR mit JSON: {"bilder":[{"istChart":true|false,"beschreibung":"ein Satz auf Deutsch, was zu sehen ist"}]}
+Genau ${anhaenge.length} Einträge, in derselben Reihenfolge wie die Bilder. "beschreibung" bei istChart=false kurz
+begründen, wieso es kein Chart ist.`,
+        user: 'Bewerte die Bilder.',
+        anhaenge,
+        timeoutMs: 60000,
+        zweck: 'chartbild-pruefung',
+        ausloeser: 'auto',
+    })
+
+    const roh = Array.isArray(antwort.json?.bilder) ? antwort.json.bilder : []
+    const raus = []
+    geladen.forEach((b, i) => {
+        const urteil = roh[i]
+        const beschreibung = String(urteil?.beschreibung || '').trim()
+        if (urteil?.istChart === true && beschreibung) {
+            raus.push({ ...b, beschreibung: beschreibung.slice(0, 300) })
+        }
+    })
+    return { bilder: raus, tokens: antwort.usage?.totalTokens || 0, kostenUsd: antwort.costUsd || 0 }
 }
 
 /** Gültige Themen des Berichts — Reihenfolge ist die Kapitelreihenfolge. */
@@ -1627,6 +1710,16 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
             console.log(` -> Lagebericht: Arschlochfilter hat ${vorher - beitraege.length} Beitrag/Beiträge aussortiert`)
         }
     }
+    // Fokus-Filter: das Gegenstück. Wer ihn anschaltet, will NUR noch Beiträge
+    // zu seinen Stichwörtern sehen — leer eingestellt bleibt er wirkungslos.
+    if (Number(s?.radarNewsFokusAn ?? 0) === 1) {
+        const fokusWoerter = zerlegeWoerter(s?.radarNewsFokusWoerter)
+        const vorher = beitraege.length
+        beitraege = beitraege.filter(b => istFokusTreffer(b, fokusWoerter, nachId.get(b.sourceId)))
+        if (vorher !== beitraege.length) {
+            console.log(` -> Lagebericht: Fokus-Filter hat ${vorher - beitraege.length} Beitrag/Beiträge aussortiert`)
+        }
+    }
     if (!beitraege.length) {
         return { fehler: istUpdate ? `Keine neuen Beiträge ${zeitraumText}` : `Keine Beiträge der letzten ${zeitraumText}` }
     }
@@ -1686,9 +1779,23 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                 .filter(b => (b.status === 'neu' || (b.status === 'fehler' && Number(b.versuche || 0) < 3))
                     && /youtube\.com|youtu\.be/.test(b.url))
 
+            /*
+             * Nur das EINE neueste Video, und nur, wenn es taggenau ist.
+             *
+             * Vorher zählten bis zu `maxVideos` innerhalb des ganzen
+             * Berichtsfensters — an einem ruhigen Tag landete so ein Video
+             * von vorgestern neben einem von heute im selben Bericht, und der
+             * Leser sah zwei Einschätzungen desselben Kanals, von denen eine
+             * längst überholt war. `radarNewsVideos` bleibt der Ein/Aus-Schalter
+             * (0 = keine Videos), zählt aber nicht mehr hoch.
+             */
+            const EIN_TAG_MS = 24 * 60 * 60 * 1000
             const videos = []
             for (const v of videoKandidaten) {
-                if (videos.length >= maxVideos) break
+                if (videos.length >= 1) break
+                // Absteigend sortiert: ist dieses schon zu alt, sind es alle
+                // folgenden auch — Abbruch statt Weitersuchen.
+                if (Date.now() - Number(v.publishedAt) > EIN_TAG_MS) break
                 // Livestreams gar nicht erst anfassen: laufende lehnt Gemini ab,
                 // Aufzeichnungen kosten nach Länge ein Vermögen. Bewusst OHNE
                 // videoLog-Eintrag — sie sollen in der Videoliste des Berichts
@@ -1888,19 +1995,47 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                         aktualitaet: aktualitaetFuer({ thema, rhythmus, istUpdate, chartFrische }),
                         ...extra,
                     })
-                    if (thema === 'chartanalyse' && r.bilder?.length) taBilder = r.bilder
+                    /*
+                     * Vor jeder Verwendung durchs Modell selbst prüfen lassen —
+                     * siehe Kommentar bei `pruefeChartBilder`. Ein Fehlschlag
+                     * (kein Gemini-Schlüssel, Guthaben leer) lässt die Bilder
+                     * einfach weg statt den Lauf abzubrechen: die Textanalyse
+                     * ist unabhängig davon fertig und für sich brauchbar.
+                     */
+                    let gepruefteBilder = []
+                    if (thema === 'chartanalyse' && r.bilder?.length) {
+                        try {
+                            const visionCfg = await ladeLlmConfig({
+                                provider: 'gemini', model: s?.radarNewsModel || 'gemini-3.5-flash-lite',
+                            })
+                            // Gleiche Falle wie bei `fasseVideoZusammen`: ein
+                            // "Denk"-Modell (hier live beobachtet mit
+                            // `gemini-3.1-pro-preview`) verbraucht einen
+                            // Grossteil des Budgets für unsichtbares Reasoning,
+                            // BEVOR die sichtbare Antwort beginnt — ohne
+                            // `DENKRESERVE` brach die JSON-Antwort nach dem
+                            // zweiten von acht Bildern mitten im Satz ab
+                            // (stopReason=MAX_TOKENS bei 131 Token).
+                            visionCfg.maxTokens = 1200 + DENKRESERVE
+                            if (visionCfg.apiKey) {
+                                const p = await pruefeChartBilder(r.bilder, visionCfg)
+                                gepruefteBilder = p.bilder
+                                rechercheKostenUsd += p.kostenUsd
+                                rechercheTokens += p.tokens
+                            }
+                        } catch (e) {
+                            logWarn('news', `Chartbild-Prüfung fehlgeschlagen: ${e.message}`)
+                        }
+                        taBilder = gepruefteBilder
+                    }
                     if (r.text) {
                         recherchen.push({ thema, text: r.text })
-                        for (const url of r.citations.slice(0, 8)) {
-                            // Das Datum gehört an den Beleg, nicht in eine
-                            // Fussnote: Ein Verweis ohne Datum sieht neben
-                            // einem tagesaktuellen genauso aus.
-                            const datum = r.quellenDaten?.get(url) || ''
-                            rechercheZitate.push({
-                                titel: `${url.replace(/^https?:\/\//, '').slice(0, 180)}${datum ? ` (${datum})` : ''}`,
-                                url, quelle: 'Perplexity-Recherche', art: 'rss', bild: '', datum,
-                            })
-                        }
+                        // Bilder wandern hier an ihren Beleg, wo die Herkunft
+                        // zum Zitat passt — siehe Kommentar in `baueRechercheZitate`.
+                        // Nur die geprüften: ein Bild ohne Modell-Erklärung soll
+                        // auch als Beleg-Bild nicht auftauchen.
+                        rechercheZitate.push(...baueRechercheZitate(
+                            r.citations.slice(0, 8), gepruefteBilder, r.quellenDaten))
                     }
                     rechercheKostenUsd += r.kostenUsd
                     rechercheTokens += r.tokens
@@ -2402,6 +2537,12 @@ export function setupNewsRoutes(app) {
                 const vorher = zeilen.length
                 zeilen = zeilen.filter(z => !istGefiltert(z, woerter, nachId.get(z.sourceId)))
                 stichwortGefiltert = vorher - zeilen.length
+            }
+            // Fokus-Filter: dasselbe Prinzip wie im Lagebericht, hier auf die
+            // Auslieferung an die Nachrichtenübersicht angewendet.
+            if (Number(s?.radarNewsFokusAn ?? 0) === 1) {
+                const fokusWoerter = zerlegeWoerter(s?.radarNewsFokusWoerter)
+                zeilen = zeilen.filter(z => istFokusTreffer(z, fokusWoerter, nachId.get(z.sourceId)))
             }
 
             res.set('Cache-Control', 'no-store')

@@ -22,7 +22,7 @@ import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
 import { timeZoneTrade } from '../stores/ui.js'
 import { spinnerLoadingPage, currentUser } from '../stores/globals.js'
-import { dbUpdateSettings } from '../utils/db.js'
+import { dbUpdateSettings, dbGetSettings } from '../utils/db.js'
 import { useKostenAnzeige } from '../utils/formatters.js'
 import { sendNotification } from '../utils/notify.js'
 // Dasselbe Overlay wie im Marktradar — ein Muster für beide Seiten
@@ -70,7 +70,6 @@ const SPEICHER_HOEHE = 'nachrichten_hoehen'
 const SPEICHER_QUELLEN = 'nachrichten_quellen_aus'
 const SPEICHER_MENGE = 'nachrichten_menge'
 const SPEICHER_VIDEOS = 'nachrichten_videos_offen'
-const SPEICHER_SCHNELL = 'nachrichten_schnell_offen'
 /** Wie viele Meldungen die Liste führt. Mehr als 200 lässt der Server nicht zu. */
 const MENGEN = [20, 40, 100, 200]
 
@@ -175,13 +174,6 @@ const WAAGE_ICON = {
     dafuer: 'uil-arrow-growth',
     dagegen: 'uil-chart-down',
     offen: 'uil-question-circle',
-}
-
-const LAYOUT_ICON = {
-    kombiniert: 'uil-newspaper',
-    artikel: 'uil-align-left',
-    kacheln: 'uil-apps',
-    dossier: 'uil-table',
 }
 
 const layoutModus = computed(() => {
@@ -428,19 +420,6 @@ function ladeBerichtOptionen() {
     nPunkte.value = Number(s.radarNewsPunkte) || 0
 }
 
-/*
- * Die Reglerreihe ist zugeklappt, bis man sie braucht.
- *
- * Mit ausgeschriebenen Beschriftungen sind es acht Gruppen — dauerhaft
- * ausgeklappt schöben sie den Bericht unter die Bildschirmkante. Zugeklappt
- * steht dieselbe Auskunft in einer Zeile Klartext: was eingestellt ist, sieht
- * man immer, nur ändern kostet einen Klick.
- *
- * Muster wie bei `videosOffen` in derselben Datei: Zustand im localStorage,
- * weil er zum Gerät gehört und nicht in die Datenbank.
- */
-const schnellOffen = ref(localStorage.getItem(SPEICHER_SCHNELL) === '1')
-
 /**
  * Zu den vollen Einstellungen springen — direkt in den richtigen Reiter.
  *
@@ -455,11 +434,6 @@ function zuDenEinstellungen() {
         localStorage.setItem('settingsKiBereich', 'nachrichten')
     } catch (_) { /* privater Modus: dann eben der zuletzt offene Reiter */ }
     router.push('/settings')
-}
-
-function schnellUmschalten() {
-    schnellOffen.value = !schnellOffen.value
-    localStorage.setItem(SPEICHER_SCHNELL, schnellOffen.value ? '1' : '0')
 }
 
 /** Die Einstellungen als ein Satz — „täglich · Crypto + Finanzen · Mittel · …". */
@@ -480,68 +454,49 @@ const schnellZusammenfassung = computed(() => {
     return teile.join(' · ')
 })
 
-/**
- * Zahlenregler speichern.
- *
- * 0 heisst überall „Vorgabe der Länge" — deshalb wird eine geleerte Eingabe zu
- * 0 und nicht zu NaN. Die Grenzen sind dieselben wie auf dem Server; sie hier
- * zu wiederholen ist Absicht: der Server muss ihnen trauen können, ohne dass
- * die Oberfläche vorher Unsinn schickt.
- *
- * Bewusst zwei getrennte Funktionen statt einer, der man die Ref mitgibt: im
- * Template entpackt Vue Refs automatisch, eine übergebene `nPunkte` käme dort
- * als blosse Zahl an und `ref.value = n` liefe wirkungslos ins Leere — der Wert
- * landete in der Datenbank, aber die Ansicht bliebe stehen.
- */
-function grenze(wert, max) {
-    return Math.max(0, Math.min(max, Math.round(Number(wert) || 0)))
-}
-
-function setzeBudget(wert) {
-    nBudget.value = grenze(wert, 60000)
-    speichereOption('radarNewsTokenBudget', nBudget.value)
-}
-
-function setzePunkte(wert) {
-    nPunkte.value = grenze(wert, 12)
-    speichereOption('radarNewsPunkte', nPunkte.value)
-}
-
-async function speichereOption(feld, wert) {
-    await dbUpdateSettings({ [feld]: wert })
-    if (currentUser.value) currentUser.value[feld] = wert
-}
-
 /* Die drei Rhythmen mit ihrer Beschriftung. Als Funktionen, damit ein
-   Sprachwechsel nicht an einer eingefrorenen Zeichenkette vorbeiläuft. */
+   Sprachwechsel nicht an einer eingefrorenen Zeichenkette vorbeiläuft. Bleibt
+   bestehen, obwohl die Regler weg sind — `schnellZusammenfassung` braucht sie
+   weiterhin für die Klartext-Zeile. */
 const RHYTHMUS_NAME = {
     taeglich: () => t('news.daily'),
     woechentlich: () => t('news.weekly'),
     manuell: () => t('news.manual'),
 }
 
-function setzeRhythmus(w) {
-    if (nRhythmus.value === w) return
-    nRhythmus.value = w
-    speichereOption('radarNewsRhythmus', w)
+// ── News-Profile ─────────────────────────────────────────────────────────
+// Ersetzt die frühere Regler-Batterie: statt jedes Feld einzeln zu drehen,
+// wählt man hier eine vollständige, in den Einstellungen gepflegte Vorlage.
+const newsProfile = ref([])
+const profilMeldung = ref('')
+const profilFehler = ref(false)
+
+async function ladeNewsProfile() {
+    try {
+        const { data } = await axios.get('/api/marktradar/news-profile')
+        newsProfile.value = data || []
+    } catch { newsProfile.value = [] }
 }
 
-function toggleThema(t) {
-    const i = nThemen.value.indexOf(t)
-    if (i >= 0) {
-        if (nThemen.value.length === 1) return   // mindestens ein Thema
-        nThemen.value.splice(i, 1)
-    } else nThemen.value.push(t)
-    // Reihenfolge festnageln — die Kapitel sollen immer gleich sortiert sein
-    const geordnet = ['crypto', 'finanzen', 'tech', 'chartanalyse'].filter(x => nThemen.value.includes(x))
-    nThemen.value = geordnet
-    speichereOption('radarNewsThemen', geordnet.join(','))
-}
-
-function setzeLaenge(w) {
-    if (nLaenge.value === w) return
-    nLaenge.value = w
-    speichereOption('radarNewsLaenge', w)
+async function profilAnwenden(id) {
+    if (!id) return
+    try {
+        const { data } = await axios.post(`/api/marktradar/news-profile/${id}/anwenden`)
+        // Die Route schreibt direkt per Knex, nicht über dbUpdateSettings —
+        // currentUser muss deshalb komplett ERSETZT werden (nicht nur eine
+        // Eigenschaft verändert), sonst feuert `watch(currentUser, ...)`
+        // unten nicht und die Zusammenfassungszeile bliebe auf dem alten Stand.
+        currentUser.value = await dbGetSettings()
+        const teile = []
+        if (Object.keys(data.geaendert || {}).length) teile.push('Mail-/Modellwahl mit übernommen')
+        if (data.fehlendeQuellen?.length) teile.push(`Quellen nicht mehr vorhanden: ${data.fehlendeQuellen.join(', ')}`)
+        profilFehler.value = false
+        profilMeldung.value = `Profil angewendet.${teile.length ? ' ' + teile.join(' · ') : ''}`
+        setTimeout(() => { profilMeldung.value = '' }, 6000)
+    } catch (e) {
+        profilFehler.value = true
+        profilMeldung.value = e.response?.data?.error || e.message
+    }
 }
 
 // ── KI-Guthaben ──────────────────────────────────────────────────────────
@@ -551,6 +506,22 @@ function setzeLaenge(w) {
 const guthabenLeer = ref([])
 /** Letzter gescheiterter Berichtslauf — kommt aus dem Anspruchs-Vermerk. */
 const letzterFehlschlag = ref(null)
+
+/*
+ * Wegklickbar, aber nicht dauerhaft blind für neue Ausfälle: gespeichert wird
+ * NICHT "verworfen" als Bit, sondern FÜR WELCHE Anbieter-Kombination verworfen
+ * wurde. Läuft danach ein anderer Anbieter leer, ist `guthabenLeer` eine neue
+ * Liste, der Vergleich schlägt fehl, und der Hinweis kommt zurück.
+ */
+const SPEICHER_GUTHABEN_ZU = 'nachrichten_guthaben_verworfen'
+const guthabenVerworfenFuer = ref(localStorage.getItem(SPEICHER_GUTHABEN_ZU) || '')
+const guthabenBannerAn = computed(() =>
+    guthabenLeer.value.map(a => a.name).sort().join(',') !== guthabenVerworfenFuer.value)
+
+function guthabenAusblenden() {
+    guthabenVerworfenFuer.value = guthabenLeer.value.map(a => a.name).sort().join(',')
+    localStorage.setItem(SPEICHER_GUTHABEN_ZU, guthabenVerworfenFuer.value)
+}
 
 async function pruefeGuthaben() {
     try {
@@ -599,6 +570,23 @@ function quelleTrifft(genannt, name) {
  */
 function punktBild(p) {
     return (p?.belege || []).find(b => b.bild)?.bild || ''
+}
+
+/**
+ * Chart-Bilder eines Kapitels, die KEINEM Punkt zugeordnet werden konnten.
+ *
+ * `punktBild()` verknüpft ein Bild mit einem Punkt über die Herkunfts-URL
+ * gegen eine Zitat-URL — das trifft in der Praxis selten, weil Perplexitys
+ * Bildersuche und seine Text-Zitate meist von KOMPLETT anderen Domains
+ * stammen (Bild von YouTube/TradingView, Zitat von coinstats.app o.ä.).
+ * Ohne diese zweite Liste verschwänden fast alle Chartbilder eines Berichts
+ * ersatzlos, sobald `k.bilder` nicht mehr pauschal gezeigt wird. Sie stehen
+ * deshalb weiterhin da — nur ehrlich als "weitere Grafiken zur Recherche"
+ * nach den Punkten, nicht als Behauptung, sie gehörten zu einem bestimmten.
+ */
+function weitereBilder(k) {
+    const verwendet = new Set((k?.punkte || []).map(p => punktBild(p)).filter(Boolean))
+    return (k?.bilder || []).filter(b => b.url && !verwendet.has(b.url))
 }
 
 const belegeZumPunkt = computed(() => {
@@ -996,25 +984,42 @@ async function berichtErzeugen(aktualisieren = false) {
  * Aufgefallen ist es erst, seit die Zusammenfassungszeile den Zustand
  * ausschreibt — die Pillen sahen mit den Vorgaben zufällig richtig aus.
  *
- * Bewusst flach beobachtet: `speichereOption` ändert eine EIGENSCHAFT von
- * `currentUser`, das löst hier nichts aus. Sonst würde jede Änderung sofort
- * wieder überschrieben.
+ * Bewusst flach beobachtet: Einstellungen, die anderswo eine EIGENSCHAFT von
+ * `currentUser` ändern (z.B. `radarSpeichern` in Settings.vue), lösen hier
+ * nichts aus — sonst würde jede Änderung sofort wieder überschrieben. Ein
+ * angewendetes News-Profil ERSETZT `currentUser.value` dagegen komplett
+ * (siehe `profilAnwenden`) und triggert den Watch damit gezielt.
  */
 watch(currentUser, ladeBerichtOptionen, { immediate: true })
 
 // ── Chart-Bilder gross ansehen ───────────────────────────────────────────
 // Klick auf ein Chart-Bild der Chartanalyse öffnet es bildschirmfüllend;
 // der Link zum Quell-Artikel wandert in die Fusszeile des Overlays.
-const grossesBild = ref(null)   // {url, quelle} oder null
+const grossesBild = ref(null)   // {url, quelle, titel, text} oder null
 
 function schliesseBildBeiEsc(e) {
     if (e.key === 'Escape') grossesBild.value = null
+}
+
+/**
+ * Ein Punkt-Bild gross öffnen — MIT der Beschreibung, zu der es gehört.
+ *
+ * Ein Chart ohne den Text daneben ist ohne Aussage: "Widerstand bei 78.500"
+ * liest sich nur mit dem Bild vor Augen, und das Bild allein zeigt nicht,
+ * WESSEN Analyse das ist. Beides gehört deshalb im Overlay zusammen, nicht
+ * nur nebeneinander in der Kapitelansicht.
+ */
+function oeffneBildZuPunkt(p) {
+    const beleg = (p?.belege || []).find(b => b.bild)
+    if (!beleg) return
+    grossesBild.value = { url: beleg.bild, quelle: beleg.quelle || '', titel: p.titel, text: p.text }
 }
 
 let takt = null
 onMounted(() => {
     ladeAlles()
     pruefeGuthaben()
+    ladeNewsProfile()
     // Zehn Minuten reichen: Feeds ändern sich langsamer als Kurse
     takt = setInterval(() => { if (!document.hidden) ladeAlles() }, 10 * 60 * 1000)
     window.addEventListener('keydown', schliesseBildBeiEsc)
@@ -1054,95 +1059,39 @@ onBeforeUnmount(() => {
             </div>
         </div>
 
-        <!-- Die wichtigsten Berichts-Regler direkt auf der Seite. Sie gelten
-             für den nächsten Bericht; der angezeigte bleibt unverändert. -->
-        <!-- Zugeklappt steht hier eine Zeile Klartext: man sieht, was eingestellt
-             ist, ohne dass acht Reglergruppen Platz fressen. -->
+        <!-- Statt acht Reglergruppen: eine Vorlage wählen. Angelegt und
+             bearbeitet werden die Profile in den Einstellungen — hier nur
+             noch anwenden. Die Klartext-Zeile bleibt, sie zeigt weiterhin
+             den tatsächlich aktiven Stand, egal ob er aus einem Profil oder
+             einer manuellen Änderung in den Einstellungen stammt. -->
         <div class="nwSchnellKopf">
-            <button type="button" class="ctl-pill klein nwSchnellKnopf"
-                :class="{ active: schnellOffen }" :aria-expanded="schnellOffen"
-                :title="schnellOffen ? t('news.quickClose') : t('news.quickOpen')"
-                @click="schnellUmschalten">
-                <i class="uil" :class="schnellOffen ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                <span>{{ t('news.quickTitle') }}</span>
-            </button>
-            <!-- Der Weg zu allem, was hier NICHT steht: Wochentag, Modelle,
-                 Videoauflösung, Zwischenmeldungen, Aufbewahrung. Bisher stand
-                 dazu nur ein Satz unter den Reglern — als Hinweis, nicht als
-                 Weg. -->
-            <button v-if="schnellOffen" type="button" class="ctl-pill klein" :title="t('news.toSettings')"
+            <select class="form-select form-select-sm nwProfilAuswahl"
+                :value="currentUser?.radarNewsAktivesProfil || ''"
+                :title="t('news.quickHint')"
+                @change="profilAnwenden($event.target.value)">
+                <option value="" disabled>{{ t('news.profileChoose') }}</option>
+                <option v-for="p in newsProfile" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+            <button type="button" class="ctl-pill klein" :title="t('news.toSettings')"
                 @click="zuDenEinstellungen">
-                <i class="uil uil-sliders-v-alt"></i>
+                <i class="uil uil-sliders-v-alt"></i>{{ t('news.manageProfiles') }}
             </button>
-            <span v-if="!schnellOffen" class="nwSchnellZeile" @click="schnellUmschalten">
-                {{ schnellZusammenfassung }}
-            </span>
+            <span class="nwSchnellZeile">{{ schnellZusammenfassung }}</span>
         </div>
-
-        <div v-if="schnellOffen" class="nwSchnell" :title="t('news.quickHint')">
-            <button v-for="r in ['taeglich', 'woechentlich', 'manuell']" :key="r" type="button"
-                class="ctl-pill klein" :class="{ active: nRhythmus === r }" @click="setzeRhythmus(r)">
-                {{ RHYTHMUS_NAME[r]() }}
-            </button>
-            <span class="nwTrenner"></span>
-            <button v-for="(bez, th) in THEMA_NAME" :key="th" type="button"
-                class="ctl-pill klein" :class="{ active: nThemen.includes(th) }" @click="toggleThema(th)">
-                {{ bez }}
-            </button>
-            <span class="nwTrenner"></span>
-            <!-- Zweizeilige Pillen: das Wort allein („Mittel", „Knapp") sagt
-                 niemandem, was sich ändert — die Zeile darunter schon. -->
-            <button v-for="l in ['kurz', 'mittel', 'lang']" :key="l" type="button"
-                class="ctl-pill klein zwei" :class="{ active: nLaenge === l }" @click="setzeLaenge(l)">
-                <b>{{ t('news.len.' + l) }}</b>
-                <!-- Sobald „Meldungen" auf einem eigenen Wert steht, gilt die
-                     Zahl der Länge nicht mehr — dann wäre sie schlicht gelogen. -->
-                <small>{{ nPunkte ? t('news.ownValue') : t('news.lenSub.' + l) }}</small>
-            </button>
-            <span class="nwTrenner"></span>
-            <!-- Darstellung. Wirkt sofort, auch auf den angezeigten Bericht —
-                 es ist reine Anzeige, der Bericht selbst ändert sich nicht. -->
-            <button v-for="l in LAYOUTS" :key="l" type="button"
-                class="ctl-pill klein zwei" :class="{ active: nLayout === l }"
-                @click="nLayout = l; speichereOption('radarNewsLayout', l)">
-                <b><i class="uil" :class="LAYOUT_ICON[l]"></i>
-                    {{ t('news.layout.' + l) }}</b>
-                <small>{{ t('news.layoutSub.' + l) }}</small>
-            </button>
-            <span class="nwTrenner"></span>
-            <!-- Videotiefe: der einzige Regler hier, der Geld je Lauf kostet. -->
-            <button v-for="v in ['knapp', 'normal', 'ausfuehrlich']" :key="v" type="button"
-                class="ctl-pill klein zwei" :class="{ active: nVideoTiefe === v }"
-                :title="t('news.videoDepthHint')"
-                @click="nVideoTiefe = v; speichereOption('radarNewsVideoTiefe', v)">
-                <b><i class="uil uil-youtube"></i>{{ t('news.depth.' + v) }}</b>
-                <small>{{ t('news.depthSub.' + v) }}</small>
-            </button>
-            <span class="nwTrenner"></span>
-            <!-- Zahlenregler. 0 ist kein Wert, sondern „Vorgabe der Länge" —
-                 deshalb steht dann „auto" im Feld statt einer nackten Null. -->
-            <label class="nwZahlFeld" :title="t('news.budgetHint')">
-                <span>{{ t('news.budget') }}</span>
-                <input type="number" min="0" max="60000" step="500"
-                    :value="nBudget || ''" :placeholder="t('news.auto')"
-                    @change="setzeBudget($event.target.value)" />
-            </label>
-            <label class="nwZahlFeld" :title="t('news.pointsHint')">
-                <span>{{ t('news.points') }}</span>
-                <input type="number" min="0" max="12" step="1"
-                    :value="nPunkte || ''" :placeholder="t('news.auto')"
-                    @change="setzePunkte($event.target.value)" />
-            </label>
-            <p class="nwSchnellFuss">{{ t('news.moreInSettings') }}</p>
-        </div>
+        <p v-if="profilMeldung" class="nwMeldung" :class="{ fehler: profilFehler }">{{ profilMeldung }}</p>
 
         <p v-if="meldung" class="nwMeldung" :class="{ fehler }">{{ meldung }}</p>
 
         <!-- KI-Guthaben aufgebraucht: ohne diesen Hinweis sieht ein leerer
-             Anbieter wie ein kaputter Bericht aus. -->
-        <p v-if="guthabenLeer.length" class="nwWarnung nwGuthaben">
+             Anbieter wie ein kaputter Bericht aus. Wegklickbar, aber pro
+             Anbieter-Kombination: läuft ein WEITERER Anbieter leer, ist das
+             eine neue Information und der Hinweis kommt zurück. -->
+        <p v-if="guthabenLeer.length && guthabenBannerAn" class="nwWarnung nwGuthaben">
             <i class="uil uil-exclamation-triangle"></i>
             {{ t('news.quotaEmpty', { liste: guthabenLeer.map(a => a.name).join(', ') }) }}
+            <button type="button" class="nwGuthabenZu" :title="t('common.close')" @click="guthabenAusblenden">
+                <i class="uil uil-times"></i>
+            </button>
         </p>
 
         <!-- Gescheiterter Berichtslauf. Vorher stand so etwas nur im Serverlog —
@@ -1341,15 +1290,6 @@ onBeforeUnmount(() => {
                         </div>
                         <p v-if="k.lage" class="nwDoLage">{{ k.lage }}</p>
 
-                        <!-- Charts der recherchierten Analysen, wie in der
-                             Zeitungsansicht; Klick öffnet sie gross. -->
-                        <div v-if="k.bilder && k.bilder.length" class="nwChartBilder">
-                            <img v-for="(b, bi) in k.bilder" :key="bi" :src="b.url"
-                                loading="lazy" referrerpolicy="no-referrer" class="pointerClass"
-                                @click="grossesBild = b"
-                                @error="e => { e.target.style.display = 'none' }" />
-                        </div>
-
                         <!-- Die wörtlichen Zahlen des Kapitels, untereinander
                              vergleichbar. Klick springt zur Meldung dahinter. -->
                         <table v-if="kennzahlenZeilen(k.eintraege).length" class="nwDoTab nwDoZahlen">
@@ -1372,8 +1312,9 @@ onBeforeUnmount(() => {
 
                         <article v-for="{ p, i } in k.eintraege" :key="i" class="nwDoMeldung"
                             :class="{ hoch: p.wichtigkeit === 'hoch' }" @click="offenerPunkt = i">
-                            <img v-if="punktBild(p)" class="nwDoBild" :src="punktBild(p)" alt=""
+                            <img v-if="punktBild(p)" class="nwDoBild pointerClass" :src="punktBild(p)" alt=""
                                 loading="lazy" referrerpolicy="no-referrer"
+                                @click.stop="oeffneBildZuPunkt(p)"
                                 @error="$event.target.style.display = 'none'" />
                             <div class="nwDoInhalt">
                                 <h4 class="nwDoMeldungTitel">
@@ -1397,6 +1338,20 @@ onBeforeUnmount(() => {
                                 </p>
                             </div>
                         </article>
+
+                        <!-- Bilder, die sich keinem Punkt oben zuordnen liessen —
+                             ehrlich als "weitere Grafiken" statt so zu tun, als
+                             gehörten sie zu einer bestimmten Aussage. Ohne diese
+                             Zeile wären es fast alle: Perplexitys Bildersuche
+                             und seine Text-Zitate stammen meist von komplett
+                             anderen Seiten. -->
+                        <div v-if="weitereBilder(k).length" class="nwWeitereBilder">
+                            <span class="nwWeitereBilderLabel">{{ t('news.moreCharts') }}</span>
+                            <img v-for="(b, bi) in weitereBilder(k)" :key="bi" :src="b.url" :title="b.beschreibung"
+                                loading="lazy" referrerpolicy="no-referrer" class="pointerClass"
+                                @click="grossesBild = b"
+                                @error="e => { e.target.style.display = 'none' }" />
+                        </div>
                     </section>
                 </div>
 
@@ -1412,7 +1367,8 @@ onBeforeUnmount(() => {
                                  erzeugt, nichts kopiert — es zeigt auf das
                                  Original und verschwindet still, wenn es fehlt. -->
                             <img v-if="punktBild(p)" class="nwPunktBild" :src="punktBild(p)" alt=""
-                                loading="lazy" @error="$event.target.style.display = 'none'" />
+                                loading="lazy" @click.stop="oeffneBildZuPunkt(p)"
+                                @error="$event.target.style.display = 'none'" />
                             <span class="nwPunktKopf">
                                 <span class="nwRang">{{ i + 1 }}</span>
                                 <span class="nwPunktTitel">{{ p.titel }}</span>
@@ -1452,21 +1408,18 @@ onBeforeUnmount(() => {
                     </div>
                     <p class="nwKapitelText" :class="{ erste: ki === 0 }">{{ k.lage }}</p>
 
-                    <!-- Chart-Grafiken aus den recherchierten Analysen (nur
-                         Chartanalyse-Kapitel). Klick öffnet das Bild gross im
-                         Overlay; tote Bild-URLs verschwinden still. -->
-                    <div v-if="k.bilder && k.bilder.length" class="nwChartBilder">
-                        <img v-for="(b, bi) in k.bilder" :key="bi" :src="b.url"
-                            loading="lazy" referrerpolicy="no-referrer" class="pointerClass"
-                            @click="grossesBild = b"
-                            @error="e => { e.target.style.display = 'none' }" />
-                    </div>
-
                     <!-- Die Punkte des Kapitels als Artikel im laufenden Satz.
                          Anklickbar wie die Kacheln vorher: das Belegfenster ist
-                         der Ort, an dem nachgeschlagen wird, nicht die Ansicht. -->
+                         der Ort, an dem nachgeschlagen wird, nicht die Ansicht.
+                         Ein Bild direkt am eigenen Artikel, wenn ein Beleg eines
+                         mitbringt — der Rest (meistens der grössere Teil, siehe
+                         `weitereBilder()`) folgt gesammelt nach den Artikeln. -->
                     <article v-for="{ p, i } in artikelZuThema(k.thema)" :key="i" class="nwArtikel"
                         @click="offenerPunkt = i">
+                        <img v-if="punktBild(p)" class="nwArtikelBild pointerClass" :src="punktBild(p)" alt=""
+                            loading="lazy" referrerpolicy="no-referrer"
+                            @click.stop="oeffneBildZuPunkt(p)"
+                            @error="$event.target.style.display = 'none'" />
                         <h4 class="nwArtikelTitel">{{ p.titel }}</h4>
                         <p class="nwArtikelText">{{ p.text }}</p>
                         <p v-if="p.kennzahlen && p.kennzahlen.length" class="nwArtikelZahlen">
@@ -1481,6 +1434,17 @@ onBeforeUnmount(() => {
                             </span>
                         </p>
                     </article>
+
+                    <!-- Bilder ohne passenden Punkt — siehe Kommentar bei
+                         `weitereBilder()`: das ist der Normalfall, nicht die
+                         Ausnahme. -->
+                    <div v-if="weitereBilder(k).length" class="nwWeitereBilder">
+                        <span class="nwWeitereBilderLabel">{{ t('news.moreCharts') }}</span>
+                        <img v-for="(b, bi) in weitereBilder(k)" :key="bi" :src="b.url" :title="b.beschreibung"
+                            loading="lazy" referrerpolicy="no-referrer" class="pointerClass"
+                            @click="grossesBild = b"
+                            @error="e => { e.target.style.display = 'none' }" />
+                    </div>
                 </div>
 
                 <!-- Punkte, deren Thema zu keinem Kapitel passt (Altbestand,
@@ -1776,6 +1740,13 @@ onBeforeUnmount(() => {
                     <i class="uil uil-times"></i>
                 </button>
                 <img :src="grossesBild.url" referrerpolicy="no-referrer" @click.stop />
+                <div v-if="grossesBild.titel || grossesBild.text || grossesBild.beschreibung" class="nwBildText" @click.stop>
+                    <h4 v-if="grossesBild.titel">{{ grossesBild.titel }}</h4>
+                    <p v-if="grossesBild.text">{{ grossesBild.text }}</p>
+                    <!-- Bilder ohne Punkt-Zuordnung tragen nur die
+                         Modell-Beschreibung, keinen eigenen Punkttext. -->
+                    <p v-if="!grossesBild.text && grossesBild.beschreibung">{{ grossesBild.beschreibung }}</p>
+                </div>
                 <a v-if="grossesBild.quelle" class="nwBildQuelle" :href="grossesBild.quelle"
                     target="_blank" rel="noopener" @click.stop>
                     <i class="uil uil-external-link-alt"></i>
@@ -1801,101 +1772,22 @@ onBeforeUnmount(() => {
     color: rgb(250, 140, 130);
 }
 
-/* Schnell-Einstellungen des Berichts: Rhythmus · Themen · Länge */
-.nwSchnell {
-    display: flex;
-    align-items: stretch;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    margin: 0 0 0.7rem;
-}
-
-/* Zugeklappter Zustand: Zahnrad plus eine Zeile Klartext. */
+/* Kopfzeile mit Profil-Dropdown, Verwalten-Knopf und Klartext-Zeile. */
 .nwSchnellKopf {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex-wrap: wrap;
     margin: 0 0 0.5rem;
+}
+
+.nwProfilAuswahl {
+    max-width: 14rem;
 }
 
 .nwSchnellZeile {
     font-size: 0.76rem;
     color: var(--white-60, rgba(255, 255, 255, 0.6));
-    cursor: pointer;
-}
-
-.nwSchnellZeile:hover {
-    color: var(--white-87);
-}
-
-.nwSchnellFuss {
-    flex-basis: 100%;
-    margin: 0.15rem 0 0;
-    font-size: 0.7rem;
-    color: var(--white-50, rgba(255, 255, 255, 0.5));
-}
-
-/* Zweizeilige Pille: fettes Schlagwort, darunter was es bewirkt. */
-.ctl-pill.zwei {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.05rem;
-    line-height: 1.2;
-    text-align: left;
-}
-
-.ctl-pill.zwei small {
-    font-size: 0.62rem;
-    opacity: 0.7;
-}
-
-/*
- * Die Zahlenfelder. Ohne diese Regeln erben die `input[type=number]` die
- * Vorgabe des Browsers und stehen weiss in der dunklen Leiste — genau das war
- * der Fall, seit die Felder eingebaut wurden.
- */
-.nwZahlFeld {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    margin: 0;
-    padding: 0.15rem 0.5rem 0.15rem 0.7rem;
-    border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
-    border-radius: 999px;
-    font-size: 0.72rem;
-    color: var(--white-70, rgba(255, 255, 255, 0.7));
-    white-space: nowrap;
-}
-
-.nwZahlFeld input {
-    width: 4.2rem;
-    padding: 0.1rem 0.35rem;
-    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
-    border-radius: 6px;
-    background: var(--black-bg-7, rgba(0, 0, 0, 0.25));
-    color: var(--white-87);
-    font-size: 0.72rem;
-    font-variant-numeric: tabular-nums;
-    /* Die Pfeilchen fressen die halbe Feldbreite und werden hier nie benutzt. */
-    appearance: textfield;
-    -moz-appearance: textfield;
-}
-
-.nwZahlFeld input::-webkit-outer-spin-button,
-.nwZahlFeld input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-
-.nwZahlFeld input:focus {
-    outline: none;
-    border-color: var(--blue-color, #01B4FF);
-}
-
-.nwZahlFeld input::placeholder {
-    color: var(--white-40, rgba(255, 255, 255, 0.4));
-    font-style: italic;
 }
 
 .nwGuthaben {
@@ -2177,22 +2069,46 @@ onBeforeUnmount(() => {
     hyphens: auto;
 }
 
-/* Bilderleiste der Chartanalyse: Grafiken aus den recherchierten Artikeln,
-   seitlich scrollbar statt das Zeitungslayout zu sprengen. */
-.nwChartBilder {
-    display: flex;
-    gap: 0.5rem;
-    overflow-x: auto;
-    margin: 0.2rem 0 0.9rem;
-    padding-bottom: 0.25rem;
-}
-.nwChartBilder img {
-    height: 140px;
-    max-width: 260px;
+/* Bild eines Zeitungsteil-Artikels — eigenes statt einer geteilten Leiste,
+   damit immer klar ist, zu welchem Artikel es gehört (siehe nwDoBild). */
+.nwArtikelBild {
+    width: 100%;
+    max-height: 180px;
     object-fit: cover;
     border-radius: 6px;
-    border: 1px solid var(--white-18, rgba(255, 255, 255, 0.15));
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.12));
     display: block;
+    margin-bottom: 0.5rem;
+}
+
+/* Bilder ohne Punkt-Zuordnung — bewusst zurückhaltender als nwArtikelBild/
+   nwDoBild und mit eigenem Titel, damit klar bleibt: das sind zusätzliche
+   Funde der Recherche, keine Illustration zu einer bestimmten Aussage. */
+.nwWeitereBilder {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.3rem 0 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed var(--white-12, rgba(255, 255, 255, 0.1));
+}
+.nwWeitereBilderLabel {
+    flex-basis: 100%;
+    font-size: 0.72rem;
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+}
+.nwWeitereBilder img {
+    height: 90px;
+    max-width: 160px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    opacity: 0.85;
+    display: block;
+}
+.nwWeitereBilder img:hover {
+    opacity: 1;
 }
 
 @media (min-width: 900px) {
@@ -3176,6 +3092,23 @@ onBeforeUnmount(() => {
     margin: 0.6rem 0 0;
     font-size: 0.82rem;
     color: rgb(250, 190, 60);
+    position: relative;
+}
+
+.nwGuthabenZu {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    opacity: 0.7;
+    cursor: pointer;
+    padding: 0 0.2rem;
+}
+
+.nwGuthabenZu:hover {
+    opacity: 1;
 }
 
 .nwKiMarke {
@@ -3583,15 +3516,36 @@ onBeforeUnmount(() => {
     justify-content: center;
     gap: 0.7rem;
     padding: 2rem;
+    overflow-y: auto;
     cursor: zoom-out;
 }
 .nwBildOverlay img {
     max-width: min(96vw, 1700px);
-    max-height: 82vh;
+    max-height: 70vh;
     object-fit: contain;
     border-radius: 8px;
     box-shadow: 0 10px 50px rgba(0, 0, 0, 0.7);
     cursor: default;
+}
+/* Die Beschreibung, zu der das Chart-Bild gehört — ohne sie ist eine
+   Kursmarke im Bild nur eine Zahl ohne Zusammenhang. */
+.nwBildText {
+    max-width: min(90vw, 700px);
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 0.9rem 1.1rem;
+    cursor: default;
+}
+.nwBildText h4 {
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+    color: #fff;
+}
+.nwBildText p {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.85);
 }
 .nwBildZu {
     position: absolute;
