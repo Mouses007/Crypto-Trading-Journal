@@ -208,8 +208,9 @@ export function bewerte(roh = {}, ze = {}, gewichte = STANDARD_GEWICHTE, haupt =
     }
 
     if (Number.isFinite(H.adx) && H.adx < ANKER.adxUnten) hinweise.push('sägt seitwärts')
-    if (Math.abs(Number(roh.fundingJahresRate) || 0) >= ANKER.fundingTeuer) {
-        hinweise.push(`Funding ${Math.round(roh.fundingJahresRate)} % p. a.`)
+    const fundingAbs = Math.abs(Number(roh.fundingJahresRate) || 0)
+    if (fundingAbs >= ANKER.fundingTeuer) {
+        hinweise.push(`Funding ${Math.round(fundingAbs)} % p. a.`)
     }
 
     return { note: Math.round(note), teilnoten, bestaetigt, hinweise }

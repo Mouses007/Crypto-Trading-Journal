@@ -249,10 +249,15 @@
                                 <i v-if="zerfallen(z)" class="uil uil-exclamation-triangle crWarnZerfall"></i>
                             </span>
                             <span class="crPaar"><b>β</b> {{ n(z.btcBeta, 2) }}</span>
-                            <span v-for="e in boersenVon(z)" :key="e.boerse" class="crBoerse"
-                                :title="t('coinradar.gelistetAuf', { b: boerseName(e.boerse) })">
+                            <!-- Wie auf dem Desktop klickbar zur Handelsseite — hier ist es
+                                 die einzige Stelle am Telefon, wo die Listung überhaupt
+                                 steht, deshalb muss der Link auch hierhin. -->
+                            <a v-for="e in boersenVon(z)" :key="e.boerse" class="crBoerse"
+                                :href="boerseUrl(e.boerse, z.symbol)" target="_blank" rel="noopener noreferrer"
+                                :title="t('coinradar.gelistetAuf', { b: boerseName(e.boerse) })"
+                                @click.stop>
                                 {{ boerseKurz(e.boerse) }}
-                            </span>
+                            </a>
                         </div>
                         <div v-if="offen === z.id && z.status === 'bewertet'" class="crKarteDetail">
                             <div v-for="(wert, feld) in z.teilnoten" :key="feld" class="crNoteZeile">
@@ -284,37 +289,51 @@
                                 <!-- Die Rangspalte ist klickbar wie jede andere: Sie ist die
                                      Vorgabe-Sortierung, und ohne Handler kam man nach einem
                                      Ausflug in eine andere Spalte nicht mehr zurück. -->
-                                <th class="text-end crSchmal" @click="sortiere('rang')"
-                                    :title="t('coinradar.spalteRangHilfe')">#</th>
+                                <th class="text-end crSchmal" @click="sortiere('rang')">
+                                    #<InfoTipp schluessel="coinradar.spalteRangHilfe" />
+                                </th>
                                 <th @click="sortiere('symbol')">{{ t('coinradar.spalteSymbol') }}</th>
                                 <!-- Drei Achsen stehen nebeneinander und werden nie
                                      verrechnet: „bewegt sich viel", „lässt sich günstig
                                      handeln" und „folgt BTC" sind drei Fragen, deren
                                      Antworten sich oft widersprechen. -->
-                                <th class="text-end" @click="sortiere('note')"
-                                    :title="t('coinradar.spalteNoteHilfe')">{{ t('coinradar.spalteNote') }}</th>
-                                <th class="text-end" @click="sortiere('noteAusfuehrung')"
-                                    :title="t('coinradar.spalteAusfuehrungHilfe')">{{ t('coinradar.spalteAusfuehrung') }}</th>
-                                <th class="text-end" @click="sortiere('atrPct')">{{ t('coinradar.spalteAtr') }}</th>
-                                <th class="text-end" @click="sortiere('rvol')">{{ t('coinradar.spalteRvol') }}</th>
-                                <th class="text-end" @click="sortiere('adx')">{{ t('coinradar.spalteAdx') }}</th>
+                                <th class="text-end" @click="sortiere('note')">
+                                    {{ t('coinradar.spalteNote') }}<InfoTipp schluessel="coinradar.spalteNoteHilfe" />
+                                </th>
+                                <th class="text-end" @click="sortiere('noteAusfuehrung')">
+                                    {{ t('coinradar.spalteAusfuehrung') }}<InfoTipp schluessel="coinradar.spalteAusfuehrungHilfe" />
+                                </th>
+                                <th class="text-end" @click="sortiere('atrPct')">
+                                    {{ t('coinradar.spalteAtr') }}<InfoTipp schluessel="coinradar.spalteAtrHilfe" />
+                                </th>
+                                <th class="text-end" @click="sortiere('rvol')">
+                                    {{ t('coinradar.spalteRvol') }}<InfoTipp schluessel="coinradar.spalteRvolHilfe" />
+                                </th>
+                                <th class="text-end" @click="sortiere('adx')">
+                                    {{ t('coinradar.spalteAdx') }}<InfoTipp schluessel="coinradar.spalteAdxHilfe" />
+                                </th>
                                 <!-- Dritte Achse: hängt der Coin an Bitcoin? Beide Spalten
                                      gehen NICHT in die Note ein — „bewegt sich viel",
                                      „lässt sich günstig handeln" und „folgt BTC" sind drei
                                      Fragen, und die Antworten widersprechen sich oft. -->
-                                <th class="text-end" @click="sortiere('btcKorrelation')"
-                                    :title="t('coinradar.spalteBtcHilfe', { ze: konst.btcZeiteinheit })">
-                                    {{ t('coinradar.spalteBtc') }}
+                                <th class="text-end" @click="sortiere('btcKorrelation')">
+                                    {{ t('coinradar.spalteBtc') }}<InfoTipp schluessel="coinradar.spalteBtcHilfe" />
                                 </th>
-                                <th class="text-end" @click="sortiere('btcBeta')"
-                                    :title="t('coinradar.spalteBetaHilfe')">{{ t('coinradar.spalteBeta') }}</th>
+                                <th class="text-end" @click="sortiere('btcBeta')">
+                                    {{ t('coinradar.spalteBeta') }}<InfoTipp schluessel="coinradar.spalteBetaHilfe" />
+                                </th>
                                 <!-- Rundlauf statt Spread: Der Spread ist darin enthalten,
                                      aber allein sagt er nichts über eine Order, die tiefer
                                      ins Buch greift. -->
-                                <th class="text-end" @click="sortiere('rundlaufBp')"
-                                    :title="t('coinradar.spalteRundlaufHilfe')">{{ t('coinradar.spalteRundlauf') }}</th>
-                                <th class="text-end" @click="sortiere('fundingJahresRate')">{{ t('coinradar.spalteFunding') }}</th>
-                                <th class="text-end" @click="sortiere('umsatz24h')">{{ t('coinradar.spalteUmsatz') }}</th>
+                                <th class="text-end" @click="sortiere('rundlaufBp')">
+                                    {{ t('coinradar.spalteRundlauf') }}<InfoTipp schluessel="coinradar.spalteRundlaufHilfe" />
+                                </th>
+                                <th class="text-end" @click="sortiere('fundingJahresRate')">
+                                    {{ t('coinradar.spalteFunding') }}<InfoTipp schluessel="coinradar.spalteFundingHilfe" />
+                                </th>
+                                <th class="text-end" @click="sortiere('umsatz24h')">
+                                    {{ t('coinradar.spalteUmsatz') }}<InfoTipp schluessel="coinradar.spalteUmsatzHilfe" />
+                                </th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -343,11 +362,14 @@
                                         <span v-if="bestaetigt(z)" class="crBestaetigt"
                                             :title="t('coinradar.bestaetigtHilfe')"><i class="uil uil-check-circle"></i></span>
                                         <!-- Wo es den Coin überhaupt gibt. Leise gesetzt: eine
-                                             Randnotiz, bis jemand danach filtert. -->
-                                        <span v-for="e in boersenVon(z)" :key="e.boerse" class="crBoersePunkt"
-                                            :title="t('coinradar.gelistetAuf', { b: boerseName(e.boerse) })">
+                                             Randnotiz, bis jemand danach filtert. Klickbar direkt
+                                             auf die Handelsseite der jeweiligen Börse. -->
+                                        <a v-for="e in boersenVon(z)" :key="e.boerse" class="crBoersePunkt"
+                                            :href="boerseUrl(e.boerse, z.symbol)" target="_blank" rel="noopener noreferrer"
+                                            :title="t('coinradar.gelistetAuf', { b: boerseName(e.boerse) })"
+                                            @click.stop>
                                             {{ boerseKurz(e.boerse) }}
-                                        </span>
+                                        </a>
                                         <span v-if="boersenUnbekannt(z).length" class="crBoersePunkt crUnbekannt"
                                             :title="t('coinradar.listungUnbekannt', { b: boersenUnbekannt(z).map(boerseName).join(', ') })">?</span>
                                     </td>
@@ -611,6 +633,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import PageInfo from '../components/PageInfo.vue'
+import InfoTipp from '../components/InfoTipp.vue'
 import { useKostenAnzeige } from '../utils/formatters.js'
 import { useIstTelefon } from '../utils/geraet.js'
 import { logWarn } from '../utils/logger.js'
@@ -734,6 +757,24 @@ const noteKlasse = (w) => (w >= 60 ? 'gut' : (w >= 40 ? 'mittel' : 'schwach'))
 /** Börsennamen kurz — in einer Tabellenzelle zählt jedes Zeichen. */
 const BOERSE_KURZ = { bitunix: 'BX', bitget: 'BG', pionex: 'PX' }
 const boerseKurz = (b) => BOERSE_KURZ[b] || b
+
+/**
+ * Direktlink zur Handelsseite eines Symbols auf einer Börse.
+ *
+ * Bitunix ist die Quelle des Symbols selbst (`z.symbol` stammt aus
+ * `holeHandelbar()`), und Bitget wird im ganzen Coin-Radar mit demselben
+ * String angefragt — `boersen.js` liest Bitgets Orderbuch unter exakt
+ * diesem Symbol, ohne Umformung. Beide Börsen bekommen `z.symbol` deshalb
+ * unverändert. Pionex benennt seine Handelsseite anders (`BASIS.PERP_USDT`
+ * statt `BASISUSDT`); die Basis ist dieselbe, die auch die Listungsprüfung
+ * auf dem Server verwendet (USDT-Endung und `1000`-Bündelung abgeschnitten).
+ */
+const BOERSE_URL = {
+    bitunix: (s) => `https://www.bitunix.com/contract-trade/${s}`,
+    bitget: (s) => `https://www.bitget.com/futures/usdt/${s}`,
+    pionex: (s) => `https://www.pionex.com/en/futures/${s.replace(/USDT$/, '').replace(/^1000+/, '')}.PERP_USDT/Manual`,
+}
+const boerseUrl = (boerse, symbol) => BOERSE_URL[boerse]?.(symbol) || null
 
 /*
  * Ausgeschrieben — für alles, was beim Darüberfahren erscheint.
@@ -1450,7 +1491,9 @@ onBeforeUnmount(() => {
 }
 
 /* Leise Marke am Symbol: wo es den Coin gibt. Kleiner als die
-   Ausführungsbörse daneben — das ist eine Randnotiz, keine Messung. */
+   Ausführungsbörse daneben — das ist eine Randnotiz, keine Messung.
+   Als Link zur Handelsseite ohne den Look eines Links: nur der Hover
+   zeigt, dass sich dahinter etwas anklicken lässt. */
 .crBoersePunkt {
     display: inline-block;
     margin-left: .25rem;
@@ -1460,6 +1503,12 @@ onBeforeUnmount(() => {
     color: var(--grey-color, #9aa0a6);
     font-size: .68rem;
     vertical-align: middle;
+    text-decoration: none;
+}
+
+a.crBoersePunkt:hover {
+    background: var(--blue-color, #4da3ff);
+    color: #fff;
 }
 
 .crBoersePunkt.crUnbekannt {
@@ -1558,6 +1607,20 @@ onBeforeUnmount(() => {
     color: var(--grey-color, #9aa0a6);
     font-size: .69rem;
     letter-spacing: .03em;
+    text-decoration: none;
+}
+
+/* Als Link grösserer Tastbereich als der reine Text hergibt — auf einem
+   echten Finger, nicht nur der Maus, geht sonst der Tipp am Badge vorbei
+   und trifft die Karte dahinter statt des Links. */
+a.crBoerse {
+    padding: .3rem .4rem;
+    margin: -.3rem -.05rem;
+}
+
+a.crBoerse:hover, a.crBoerse:active {
+    background: var(--blue-color, #4da3ff);
+    color: #fff;
 }
 
 .crZeTabelle tr.crBeste {
