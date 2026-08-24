@@ -30,6 +30,7 @@ const ohneSampling = ref([])
 const ollamaModelle = ref([])
 const neuerName = ref('')
 const angebot = ref(null)      // vom Anbieter geholte Liste
+const angebotSuche = ref('')
 const holtAngebot = ref(false)
 const fehler = ref('')
 const meldung = ref('')
@@ -107,6 +108,7 @@ const entfernen = (m) => speichern(eigene.value.filter((x) => x !== m))
 async function angebotHolen() {
     holtAngebot.value = true
     fehler.value = ''
+    angebotSuche.value = ''
     try {
         const r = await axios.get('/api/ai/models/available', { params: { provider: props.provider } })
         angebot.value = r.data.modelle || []
@@ -120,8 +122,16 @@ async function angebotHolen() {
 }
 
 const uebernehmen = (m) => speichern([...eigene.value, m])
-const alleUebernehmen = () => speichern([...new Set([...eigene.value, ...(angebot.value || [])])])
+const alleUebernehmen = () => speichern([...new Set([...eigene.value, ...angebotGefiltert.value])])
 const zuruecksetzen = () => speichern([])
+
+/** Bei 400+ Modellen ist Scrollen keine Suche — der Filter wirkt nur auf die
+ *  bereits geholte Liste, kein zweiter Serverruf nötig. */
+const angebotGefiltert = computed(() => {
+    const q = angebotSuche.value.trim().toLowerCase()
+    if (!q) return angebot.value || []
+    return (angebot.value || []).filter((m) => m.toLowerCase().includes(q))
+})
 
 // ── Ollama: laden und löschen ───────────────────────────────────────────
 
@@ -290,21 +300,27 @@ const prozent = computed(() => {
                         <span v-if="holtAngebot" class="spinner-border spinner-border-sm me-1"></span>
                         <i v-else class="uil uil-cloud-download me-1"></i>{{ t('settings.fetchFromProvider') }}
                     </button>
-                    <button v-if="angebot" class="btn btn-sm btn-outline-secondary" @click="angebot = null">
+                    <button v-if="angebot" class="btn btn-sm btn-outline-secondary"
+                        @click="angebot = null; angebotSuche = ''">
                         {{ t('common.close') }}
                     </button>
                 </div>
 
                 <div v-if="angebot" class="angebot mt-2 p-2">
-                    <div class="d-flex align-items-center mb-1">
+                    <div class="d-flex align-items-center mb-1 gap-2">
                         <span class="small text-muted me-auto">
-                            {{ t('settings.providerOffers', { n: angebot.length }) }}
+                            {{ angebotSuche.trim() ? t('settings.providerOffersFiltered', { n: angebotGefiltert.length, gesamt: angebot.length }) : t('settings.providerOffers', { n: angebot.length }) }}
                         </span>
                         <button class="btn btn-sm btn-outline-primary py-0" @click="alleUebernehmen">
                             {{ t('settings.addAll') }}
                         </button>
                     </div>
-                    <div v-for="m in angebot" :key="m" class="d-flex align-items-center gap-2 py-1">
+                    <input v-model="angebotSuche" type="text" class="form-control form-control-sm mb-2"
+                        :placeholder="t('settings.searchModelsPlaceholder')" />
+                    <div v-if="!angebotGefiltert.length" class="small text-muted py-1">
+                        {{ t('settings.noModelsMatch') }}
+                    </div>
+                    <div v-for="m in angebotGefiltert" :key="m" class="d-flex align-items-center gap-2 py-1">
                         <span class="mono small me-auto" :class="{ 'text-muted': eigene.includes(m) }">{{ m }}</span>
                         <span v-if="istOhneSampling(m)" class="badge bg-dark">{{ t('settings.noSampling') }}</span>
                         <span v-if="eigene.includes(m)" class="small text-muted">{{ t('settings.alreadyInList') }}</span>

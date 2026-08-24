@@ -497,8 +497,15 @@ export function setupAiModelRoutes(app) {
             }
 
             const daten = await r.json()
+            /*
+             * `architecture.modality` ist ein zusammengesetzter String wie
+             * "text+image+file->text", nie das blanke "text" — der alte
+             * Vergleich `=== 'text'` traf deshalb nie, der Endpunkt lieferte
+             * seit Einführung 0 Modelle. Massgeblich ist, ob Text unter den
+             * AUSGABE-Modalitäten steht — Eingabe darf mehr können.
+             */
             const allModelle = (daten.data || [])
-                .filter((m) => m.architecture?.modality === 'text' && !m.architecture?.modality?.includes('vision-only'))
+                .filter((m) => (m.architecture?.output_modalities || []).includes('text'))
                 .map((m) => ({
                     id: m.id,
                     name: m.name || m.id,

@@ -189,12 +189,18 @@ async function laden() {
     try {
         const res = await axios.get('/api/ai/uebersicht')
         daten.value = res.data
+        // `laedt` MUSS vor dem nextTick fallen — erst das schaltet die
+        // Vorlage vom Spinner auf den `v-else`-Zweig um, der `verlaufEl`
+        // überhaupt erst bindet. Stand das hier noch im `finally`, lief
+        // `zeichne()` gegen ein `verlaufEl`, das noch gar nicht existierte,
+        // und niemand rief es danach ein zweites Mal auf — leerer Container,
+        // ohne Fehler.
+        laedt.value = false
         await nextTick()
         zeichne()
     } catch (e) {
         logWarn('ki-uebersicht', 'Übersicht konnte nicht geladen werden', e)
         fehler.value = t('kiUebersicht.fehler')
-    } finally {
         laedt.value = false
     }
 }

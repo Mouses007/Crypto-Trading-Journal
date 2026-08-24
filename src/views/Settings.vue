@@ -123,14 +123,6 @@ let aiReportPromptPreset = ref('standard')
 let aiTestLoading = ref(false)
 let aiTestResult = ref(null)
 let ollamaModels = ref([])
-let aiTokenStats = ref(null)
-
-async function loadAiTokenStats() {
-    try {
-        const res = await axios.get('/api/ai/token-stats')
-        aiTokenStats.value = res.data
-    } catch (e) { /* silent */ }
-}
 
 /* Beschriftung UND Prompt-Text kommen aus der Übersetzung. Vorher war nur die
    Beschriftung übersetzt, der Prompt selbst stand als deutscher Klartext da —
@@ -2665,7 +2657,7 @@ onBeforeMount(async () => {
     // Auswahlfeld nur das gespeicherte Modell, und die Auswahl ist praktisch
     // tot (Anbieter wechseln half nicht — die Listen wurden nur für Ollama
     // nachgeladen).
-    await Promise.all([loadAiSettings(), loadAiTokenStats(), loadModelLists()])
+    await Promise.all([loadAiSettings(), loadModelLists()])
     if (aiProvider.value === 'ollama') {
         await loadOllamaModels()
     }
@@ -3402,34 +3394,6 @@ onBeforeMount(async () => {
                             {{ aiTestResult.message }}
                         </span>
                     </div>
-
-                    <!-- Token-Statistiken -->
-                    <div v-if="aiTokenStats?.total?.totalTokens > 0" class="mt-2 mb-3">
-                        <p class="fw-bold small mb-2"><i class="uil uil-processor me-1"></i>{{ t('kiAgent.aiTokenUsage') }}</p>
-                        <table class="table table-sm table-borderless mb-0" style="font-size: 0.8rem; max-width: 500px;">
-                            <tbody>
-                                <tr>
-                                    <td class="text-muted">{{ t('kiAgent.totalTokens') }}</td>
-                                    <td class="text-end fw-bold">{{ (aiTokenStats?.total?.totalTokens || 0).toLocaleString() }}</td>
-                                </tr>
-                                <tr v-for="(data, provider) in (aiTokenStats?.byProvider || {})" :key="provider">
-                                    <td class="text-muted ps-3">{{ provider.charAt(0).toUpperCase() + provider.slice(1) }}</td>
-                                    <td class="text-end">{{ (data.totalTokens || 0).toLocaleString() }}</td>
-                                </tr>
-                                <tr class="border-top" style="border-color: var(--grey-color) !important;">
-                                    <td class="text-muted" style="font-size: 0.75rem;">
-                                        {{ t('kiAgent.reports') }}: {{ aiTokenStats?.counts?.reports || 0 }} ·
-                                        {{ t('kiAgent.chatMessages') }}: {{ aiTokenStats?.counts?.chatMessages || 0 }} ·
-                                        {{ t('kiAgent.tradeReviews') }}: {{ aiTokenStats?.counts?.tradeReviews || 0 }} ·
-                                        Agent: {{ aiTokenStats?.counts?.agentSessions || 0 }} ·
-                                        {{ t('settings.ki.tab_nachrichten') }}: {{ aiTokenStats?.counts?.lageberichte || 0 }} ·
-                                        {{ t('settings.ki.tab_strategie') }}: {{ aiTokenStats?.counts?.strategieLaeufe || 0 }}
-                                    </td>
-                                    <td></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
                     </div><!-- /v-show aiEnabled -->
                 </div>
                 </div><!-- /kiBereich allgemein -->
@@ -3980,7 +3944,7 @@ onBeforeMount(async () => {
                     <p class="fw-lighter">{{ t('settings.ki.news.intro1') }}</p>
                     <p class="fw-lighter">
                         {{ t('settings.ki.news.intro2') }}
-                        <code>{{ currentUser?.aiProvider || '—' }} / {{ currentUser?.aiModel || '—' }}</code>
+                        <code>{{ radarNewsBerichtProvider || currentUser?.aiProvider || '—' }} / {{ radarNewsBerichtModell || currentUser?.aiModel || '—' }}</code>
                         {{ t('settings.ki.news.intro2b') }}
                     </p>
                     <p class="fw-lighter">{{ t('settings.ki.news.intro3') }}</p>
