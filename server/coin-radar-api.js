@@ -18,6 +18,8 @@ import { ANKER } from './coin-radar/bewertung.js'
 import { KOPPLUNG_FEST, KOPPLUNG_LOSE, BTC_ZEITEINHEIT } from './coin-radar/btc-vergleich.js'
 import { fuehreLaufAus } from './coin-radar/lauf.js'
 import { erzeugeEinordnung } from './coin-radar/einordnung.js'
+import { holeCoinInfo } from './coin-radar/coin-info.js'
+import { leseSchluessel } from './hype-radar/einstellungen.js'
 import { legeAnCoinRadar } from './radar-ergebnisse.js'
 import { werteAus } from './radar-guete.js'
 
@@ -154,6 +156,63 @@ export function setupCoinRadarRoutes(app) {
         } catch (e) {
             logWarn('coin-radar', `Zeilen lesen: ${e.message}`)
             res.status(500).json({ error: 'Rangliste konnte nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Projekt-Infos zu einem Symbol — Beschreibung, Links, Kategorien.
+     * `null` (kein Treffer bei CoinGecko) ist ein gültiges, eigenes Ergebnis
+     * und kein Fehler: gerade die kleinen Perpetuals, um die es im Coin-Radar
+     * oft geht, sind nicht bei jeder Quelle gelistet.
+     */
+    app.get('/api/coin-radar/coin-info', async (req, res) => {
+        try {
+            const symbol = String(req.query.symbol || '').trim()
+            if (!symbol) return res.status(400).json({ error: 'Symbol fehlt' })
+            const { coingecko } = await leseSchluessel()
+            const info = await holeCoinInfo(symbol, coingecko)
+            res.json({ info })
+        } catch (e) {
+            logWarn('coin-radar', `Coin-Info: ${e.message}`)
+            res.status(502).json({ error: 'Projekt-Infos konnten nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Wer hält sich oben — über ALLE fertigen Läufe, nicht nur die letzten
+     * paar. Seit die Läufe automatisch alle paar Stunden laufen statt von
+     * Hand, wäre "die letzten 5" nur noch ein Tagesausschnitt; Beständigkeit
+     * über Tage/Wochen braucht die volle Historie. Deshalb eine einzige
+     * Aggregations-Abfrage statt N Einzelabrufe (einer je Lauf) — das war der
+     * bisherige Ansatz auf der Client-Seite und hätte bei hunderten
+     * automatischen Läufen ebenso viele parallele Anfragen bedeutet.
+     */
+    app.get('/api/coin-radar/dauerhaft', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const moeglich = Number(await knex('coinradar_laeufe').where('status', 'fertig').count('id as n').first().then((r) => r?.n) || 0)
+            if (moeglich < 2) return res.json({ dauerhaft: [], moeglich })
+
+            const treffer = await knex('coinradar_zeilen as z')
+                .join('coinradar_laeufe as l', 'l.id', 'z.laufId')
+                .where('l.status', 'fertig')
+                .andWhere('z.status', 'bewertet')
+                .andWhere('z.rang', '<=', 10)
+                .andWhere('z.rang', '>', 0)
+                .select('z.symbol')
+                .count('z.id as haeufigkeit')
+                .groupBy('z.symbol')
+                .orderBy('haeufigkeit', 'desc')
+                .limit(8)
+
+            const dauerhaft = treffer
+                .map((t) => ({ symbol: t.symbol, male: Number(t.haeufigkeit), moeglich }))
+                .filter((t) => t.male >= 2)
+                .map((t) => ({ ...t, anteil: Math.round((t.male / moeglich) * 100) }))
+            res.json({ dauerhaft, moeglich })
+        } catch (e) {
+            logWarn('coin-radar', `Dauerhaft-Auswertung: ${e.message}`)
+            res.status(500).json({ error: 'Beständigkeit konnte nicht berechnet werden' })
         }
     })
 

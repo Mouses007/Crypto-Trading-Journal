@@ -543,6 +543,82 @@
         <div v-show="reiter === 'verlauf'" class="mt-3">
             <p class="crHinweis">{{ t('coinradar.verlaufHinweis') }}</p>
 
+            <!-- Wer hält sich oben: die Frage, die eine einzelne Rangliste
+                 nicht beantworten kann — deshalb vor der Läufe-Tabelle, nicht
+                 danach. Wertet über ALLE fertigen Läufe aus, nicht nur die
+                 sichtbaren paar: seit der Lauf automatisch alle paar Stunden
+                 startet, wäre eine Begrenzung auf die letzten fünf nur noch
+                 ein Tagesausschnitt. -->
+            <div v-if="dauerhaft.length" class="crBlock mb-4">
+                <h6 class="crTitel">{{ t('coinradar.dauerhaftTitel') }}</h6>
+                <p class="crHinweis">{{ t('coinradar.dauerhaftHinweis', { n: dauerhaftMoeglich }) }}</p>
+                <div class="crDauerLayout" :class="{ mitInfo: coinInfoSymbol }">
+                    <div class="crDauerListe">
+                        <button v-for="d in dauerhaft" :key="d.symbol" type="button" class="crDauer"
+                            :class="{ aktiv: coinInfoSymbol === d.symbol }" @click="coinInfoOeffnen(d.symbol)">
+                            <span class="crDauerSymbol">{{ kurz(d.symbol) }}</span>
+                            <span class="crBalken breit"><i :style="{ width: d.anteil + '%' }"></i></span>
+                            <span class="crDauerWert">{{ d.male }} / {{ d.moeglich }}</span>
+                        </button>
+                    </div>
+
+                    <!-- Projekt-Infos zum angeklickten Symbol: was ist das,
+                         Links zur Website etc. Quelle ist CoinGecko — die
+                         hat KEIN strukturiertes "Team"-Feld mehr, deshalb
+                         der Hinweis unten statt einer erfundenen Ja/Nein-Zeile. -->
+                    <div v-if="coinInfoSymbol" class="crCoinInfo">
+                        <button type="button" class="crCoinInfoZu" @click="coinInfoSymbol = ''">
+                            <i class="uil uil-times"></i>
+                        </button>
+                        <div v-if="coinInfoLaedt" class="text-center py-3">
+                            <span class="spinner-border spinner-border-sm"></span>
+                        </div>
+                        <p v-else-if="coinInfoFehler" class="text-muted small mb-0">{{ coinInfoFehler }}</p>
+                        <p v-else-if="coinInfo === null" class="text-muted small mb-0">
+                            {{ t('coinradar.coinInfoKeineDaten', { symbol: kurz(coinInfoSymbol) }) }}
+                        </p>
+                        <template v-else-if="coinInfo">
+                            <div class="crCoinInfoKopf">
+                                <img v-if="coinInfo.bild" :src="coinInfo.bild" alt="" referrerpolicy="no-referrer">
+                                <div>
+                                    <strong>{{ coinInfo.name }}</strong>
+                                    <span v-if="coinInfo.marketCapRang" class="crCoinInfoRang">
+                                        {{ t('coinradar.coinInfoRang', { n: coinInfo.marketCapRang }) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-if="coinInfo.kategorien.length" class="crCoinInfoTags">
+                                <span v-for="k in coinInfo.kategorien.slice(0, 6)" :key="k" class="crCoinInfoTag">{{ k }}</span>
+                            </div>
+                            <p v-if="coinInfo.beschreibung" class="crCoinInfoText" :class="{ gekuerzt: !coinInfoVoll }">
+                                {{ coinInfo.beschreibung }}
+                            </p>
+                            <button v-if="coinInfo.beschreibung.length > 320" type="button"
+                                class="crCoinInfoMehr" @click="coinInfoVoll = !coinInfoVoll">
+                                {{ coinInfoVoll ? t('coinradar.coinInfoWeniger') : t('coinradar.coinInfoMehr') }}
+                            </button>
+                            <div class="crCoinInfoLinks">
+                                <a v-if="coinInfo.homepage" :href="coinInfo.homepage" target="_blank" rel="noopener">
+                                    <i class="uil uil-globe"></i>{{ t('coinradar.coinInfoWebsite') }}</a>
+                                <a v-if="coinInfo.whitepaper" :href="coinInfo.whitepaper" target="_blank" rel="noopener">
+                                    <i class="uil uil-file-alt"></i>Whitepaper</a>
+                                <a v-if="coinInfo.twitter" :href="coinInfo.twitter" target="_blank" rel="noopener">
+                                    <i class="uil uil-twitter"></i>X</a>
+                                <a v-if="coinInfo.telegram" :href="coinInfo.telegram" target="_blank" rel="noopener">
+                                    <i class="uil uil-telegram"></i>Telegram</a>
+                                <a v-if="coinInfo.github" :href="coinInfo.github" target="_blank" rel="noopener">
+                                    <i class="uil uil-github"></i>GitHub</a>
+                                <a v-if="coinInfo.explorer" :href="coinInfo.explorer" target="_blank" rel="noopener">
+                                    <i class="uil uil-search"></i>Explorer</a>
+                                <a :href="coinInfo.coingeckoUrl" target="_blank" rel="noopener">
+                                    <i class="uil uil-external-link-alt"></i>CoinGecko</a>
+                            </div>
+                            <p class="crCoinInfoFuss">{{ coinInfoSichtbarkeitText }}</p>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
             <div v-if="!laeufe.length" class="text-muted small py-3">{{ t('coinradar.keineLaeufe') }}</div>
             <div v-else class="table-responsive">
                 <table class="table table-sm align-middle crTabelle">
@@ -585,20 +661,6 @@
                     <i class="uil" :class="verlaufOffen ? 'uil-angle-up' : 'uil-angle-down'"></i>
                     {{ verlaufOffen ? t('coinradar.verlaufWeniger') : t('coinradar.verlaufMehr', { n: laeufe.length - VERLAUF_SICHTBAR }) }}
                 </button>
-            </div>
-
-            <!-- Wer hält sich oben: die Frage, die eine einzelne Rangliste
-                 nicht beantworten kann. -->
-            <div v-if="dauerhaft.length" class="crBlock mt-4">
-                <h6 class="crTitel">{{ t('coinradar.dauerhaftTitel') }}</h6>
-                <p class="crHinweis">{{ t('coinradar.dauerhaftHinweis', { n: laeufe.length }) }}</p>
-                <div class="crDauerListe">
-                    <div v-for="d in dauerhaft" :key="d.symbol" class="crDauer">
-                        <span class="crDauerSymbol">{{ kurz(d.symbol) }}</span>
-                        <span class="crBalken breit"><i :style="{ width: d.anteil + '%' }"></i></span>
-                        <span class="crDauerWert">{{ d.male }} / {{ d.moeglich }}</span>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -1038,6 +1100,53 @@ function boerseUmschalten(b) {
  * das, was mehrere überstanden hat.
  */
 const dauerhaft = ref([])
+/** Über wie viele fertige Läufe die Beständigkeit oben gerechnet ist. */
+const dauerhaftMoeglich = ref(0)
+
+// ── Coin-Info (Projektdaten zum angeklickten Symbol) ───────────────────────
+const coinInfoSymbol = ref('')
+const coinInfo = ref(undefined)   // undefined = noch nicht geladen, null = kein Treffer
+const coinInfoLaedt = ref(false)
+const coinInfoFehler = ref('')
+const coinInfoVoll = ref(false)
+let coinInfoLauf = 0   // gegen überholende Antworten beim schnellen Umklicken
+
+/*
+ * "Team vorhanden" ist bei CoinGecko keine strukturierte Angabe mehr — aber
+ * OB ein Projekt öffentliche Kanäle hinterlegt hat, ist selbst ein Hinweis:
+ * ein öffentliches GitHub-Repo bedeutet sichtbaren, arbeitenden Code statt
+ * einer blossen Behauptung. Gezählt wird aus Feldern, die ohnehin schon da
+ * sind — kein zusätzlicher API-Aufruf, kein erfundenes Ja/Nein.
+ */
+const COIN_INFO_KANAELE = ['homepage', 'whitepaper', 'twitter', 'telegram', 'github']
+const coinInfoSichtbarkeitText = computed(() => {
+    const c = coinInfo.value
+    if (!c) return ''
+    const n = COIN_INFO_KANAELE.filter((f) => c[f]).length
+    const kanaeleTxt = t('coinradar.coinInfoKanaeleHinweis', { n, gesamt: COIN_INFO_KANAELE.length })
+    const githubTxt = t(c.github ? 'coinradar.coinInfoGithubJa' : 'coinradar.coinInfoGithubNein')
+    return `${kanaeleTxt} ${githubTxt}`
+})
+
+async function coinInfoOeffnen(symbol) {
+    if (coinInfoSymbol.value === symbol) { coinInfoSymbol.value = ''; return }
+    coinInfoSymbol.value = symbol
+    coinInfo.value = undefined
+    coinInfoFehler.value = ''
+    coinInfoVoll.value = false
+    coinInfoLaedt.value = true
+    const eigenerLauf = ++coinInfoLauf
+    try {
+        const { data } = await axios.get('/api/coin-radar/coin-info', { params: { symbol } })
+        if (eigenerLauf !== coinInfoLauf) return   // zwischenzeitlich ein anderes Symbol angeklickt
+        coinInfo.value = data?.info ?? null
+    } catch (e) {
+        if (eigenerLauf !== coinInfoLauf) return
+        coinInfoFehler.value = e.response?.data?.error || e.message
+    } finally {
+        if (eigenerLauf === coinInfoLauf) coinInfoLaedt.value = false
+    }
+}
 
 // ── Laden ───────────────────────────────────────────────────────────────
 async function ladeZeilen(laufId = 0) {
@@ -1063,26 +1172,23 @@ async function ladeLaeufe() {
 }
 
 async function rechneDauerhaft() {
-    const fertige = laeufe.value.filter((l) => l.status === 'fertig').slice(0, 5)
-    // Unter zwei Läufen gibt es nichts zu vergleichen — eine „Beständigkeit"
-    // aus einer einzigen Messung wäre eine Behauptung, keine Beobachtung.
-    if (fertige.length < 2) { dauerhaft.value = []; return }
+    // Server rechnet über ALLE fertigen Läufe in einer Abfrage — Vorgänger
+    // holte je Lauf einzeln die Top-10 und zählte im Browser; bei Läufen alle
+    // paar Stunden wären das mit der Zeit hunderte parallele Anfragen.
     try {
-        const alle = await Promise.all(fertige.map((l) =>
-            axios.get('/api/coin-radar/zeilen', { params: { laufId: l.id, limit: 10 } })
-                .then((r) => (r.data?.zeilen || []).slice(0, 10).map((z) => z.symbol))
-                .catch(() => [])))
-        const zaehler = new Map()
-        for (const liste of alle) for (const s of liste) zaehler.set(s, (zaehler.get(s) || 0) + 1)
-        dauerhaft.value = [...zaehler.entries()]
-            .filter(([, male]) => male >= 2)
-            .sort((a, b) => b[1] - a[1]).slice(0, 8)
-            .map(([symbol, male]) => ({
-                symbol, male, moeglich: fertige.length,
-                anteil: Math.round((male / fertige.length) * 100),
-            }))
-    } catch {
+        const r = await axios.get('/api/coin-radar/dauerhaft')
+        dauerhaft.value = r.data?.dauerhaft || []
+        dauerhaftMoeglich.value = r.data?.moeglich || 0
+        // Vorbelegt mit dem ersten Coin, statt einer leeren Fläche —
+        // nur beim allerersten Laden, damit ein erneuter Aufruf (z.B. nach
+        // einem frischen Lauf) nicht die eigene Auswahl des Lesers verwirft.
+        if (dauerhaft.value.length && !coinInfoSymbol.value) {
+            coinInfoOeffnen(dauerhaft.value[0].symbol)
+        }
+    } catch (e) {
+        logWarn('coin-radar', 'Beständigkeit konnte nicht geladen werden', e)
         dauerhaft.value = []
+        dauerhaftMoeglich.value = 0
     }
 }
 
@@ -1801,6 +1907,21 @@ a.crBoerse:hover, a.crBoerse:active {
     opacity: .75;
 }
 
+/* Liste links, Projekt-Infos rechts — nur wenn ein Symbol angeklickt ist.
+   Auf schmalem Schirm untereinander statt nebeneinander. */
+.crDauerLayout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    align-items: start;
+}
+
+@media (min-width: 700px) {
+    .crDauerLayout.mitInfo {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    }
+}
+
 .crDauerListe {
     display: grid;
     gap: .3rem;
@@ -1811,6 +1932,25 @@ a.crBoerse:hover, a.crBoerse:active {
     align-items: center;
     gap: .6rem;
     font-size: .92rem;
+    /* Reset gegenüber dem Standard-<button> — sieht sonst wie ein Formularfeld aus */
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius, 6px);
+    padding: .2rem .4rem;
+    margin: -.2rem -.4rem;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    width: 100%;
+}
+
+.crDauer:hover {
+    background: rgba(255, 255, 255, .04);
+}
+
+.crDauer.aktiv {
+    background: rgba(79, 139, 255, .1);
+    border-color: var(--blue-color, #4f8bff);
 }
 
 .crDauerSymbol {
@@ -1822,6 +1962,121 @@ a.crBoerse:hover, a.crBoerse:active {
     font-size: .851rem;
     color: var(--grey-color, #9aa0a6);
     font-variant-numeric: tabular-nums;
+}
+
+/* ── Coin-Info-Feld ─────────────────────────────────────── */
+.crCoinInfo {
+    position: relative;
+    background: var(--black-bg-2, rgba(255, 255, 255, .03));
+    border: 1px solid var(--black-bg-soft, #2a2a2a);
+    border-radius: var(--border-radius, 8px);
+    padding: .9rem 1rem;
+    font-size: .87rem;
+}
+
+.crCoinInfoZu {
+    position: absolute;
+    top: .5rem;
+    right: .5rem;
+    background: transparent;
+    border: 0;
+    color: var(--grey-color, #9aa0a6);
+    cursor: pointer;
+    padding: .2rem;
+}
+
+.crCoinInfoZu:hover {
+    color: var(--white-color, #e8eaed);
+}
+
+.crCoinInfoKopf {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: .5rem;
+    padding-right: 1.5rem;
+}
+
+.crCoinInfoKopf img {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.crCoinInfoRang {
+    display: block;
+    font-size: .76rem;
+    color: var(--grey-color, #9aa0a6);
+}
+
+.crCoinInfoTags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .3rem;
+    margin-bottom: .6rem;
+}
+
+.crCoinInfoTag {
+    font-size: .68rem;
+    padding: .1rem .45rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .06);
+    color: var(--grey-color, #9aa0a6);
+}
+
+.crCoinInfoText {
+    line-height: 1.5;
+    margin-bottom: .3rem;
+    white-space: pre-line;
+}
+
+.crCoinInfoText.gekuerzt {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.crCoinInfoMehr {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: var(--blue-color, #4f8bff);
+    font-size: .8rem;
+    cursor: pointer;
+    margin-bottom: .6rem;
+}
+
+.crCoinInfoLinks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-bottom: .6rem;
+}
+
+.crCoinInfoLinks a {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .78rem;
+    padding: .2rem .55rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .06);
+    color: var(--white-70, rgba(255, 255, 255, .7));
+    text-decoration: none;
+}
+
+.crCoinInfoLinks a:hover {
+    background: var(--blue-color, #4f8bff);
+    color: #fff;
+}
+
+.crCoinInfoFuss {
+    font-size: .72rem;
+    color: var(--grey-color, #9aa0a6);
+    margin: .4rem 0 0;
+    line-height: 1.4;
 }
 
 /* ── Einstellungen ──────────────────────────────────────── */
