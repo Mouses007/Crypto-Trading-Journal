@@ -159,7 +159,7 @@ export async function laufeNewsAbruf({ manuell = false } = {}) {
 
     const knex = getKnex()
     const s = await knex('settings').where('id', 1).first().catch(() => null)
-    const filterAn = Number(s?.radarArschlochfilter ?? 1) === 1
+    const filterAn = Number(s?.radarNewsQuellenAusschluss ?? 1) === 1
 
     const liste = await quellen(true)
     let neu = 0, gesehen = 0, fehler = 0
@@ -1651,7 +1651,7 @@ export function anspruchsNachlauf({ manuell = false, ohneInhalt = false, geworfe
  */
 async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
     const knex = getKnex()
-    const filterAn = Number(s?.radarArschlochfilter ?? 1) === 1
+    const filterAn = Number(s?.radarNewsQuellenAusschluss ?? 1) === 1
 
     const quellenListe = await knex('news_sources').select('id', 'name', 'art', 'laerm')
     const erlaubt = quellenListe.filter(q => !filterAn || Number(q.laerm) !== 1)
@@ -1704,15 +1704,15 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         .orderBy('publishedAt', 'desc')
         .limit(400)
 
-    // Arschlochfilter: wirkt auf die Berichtsgrundlage, nicht auf den Bestand —
+    // Ruhe-Filter: wirkt auf die Berichtsgrundlage, nicht auf den Bestand —
     // die Beiträge bleiben gespeichert, eine geänderte Wörterliste greift
     // rückwirkend.
-    if (Number(s?.radarArschlochAn ?? 1) === 1) {
-        const woerter = zerlegeWoerter(s?.radarArschlochWoerter)
+    if (Number(s?.radarNewsRuheAn ?? 1) === 1) {
+        const woerter = zerlegeWoerter(s?.radarNewsRuheWoerter)
         const vorher = beitraege.length
         beitraege = beitraege.filter(b => !istGefiltert(b, woerter, nachId.get(b.sourceId)))
         if (vorher !== beitraege.length) {
-            console.log(` -> Lagebericht: Arschlochfilter hat ${vorher - beitraege.length} Beitrag/Beiträge aussortiert`)
+            console.log(` -> Lagebericht: Ruhe-Filter hat ${vorher - beitraege.length} Beitrag/Beiträge aussortiert`)
         }
     }
     // Fokus-Filter: das Gegenstück. Wer ihn anschaltet, will NUR noch Beiträge
@@ -2549,7 +2549,7 @@ export function setupNewsRoutes(app) {
         try {
             const knex = getKnex()
             const s = await knex('settings').where('id', 1).first().catch(() => null)
-            const filterAn = Number(s?.radarArschlochfilter ?? 1) === 1
+            const filterAn = Number(s?.radarNewsQuellenAusschluss ?? 1) === 1
 
             const qs = await knex('news_sources').select('id', 'name', 'art', 'laerm', 'letzterFehler')
             const nachId = new Map(qs.map(q => [q.id, q]))
@@ -2573,12 +2573,12 @@ export function setupNewsRoutes(app) {
                     .limit(Math.max(10, Math.min(200, Number(req.query.limit) || 40)))
                 : []
 
-            // Arschlochfilter: Stichwörter + Truth Social automatisch. Wirkt
+            // Ruhe-Filter: Stichwörter + Truth Social automatisch. Wirkt
             // nur auf die Auslieferung — gespeichert bleibt alles, damit eine
             // geänderte Wörterliste rückwirkend greift.
             let stichwortGefiltert = 0
-            if (Number(s?.radarArschlochAn ?? 1) === 1) {
-                const woerter = zerlegeWoerter(s?.radarArschlochWoerter)
+            if (Number(s?.radarNewsRuheAn ?? 1) === 1) {
+                const woerter = zerlegeWoerter(s?.radarNewsRuheWoerter)
                 const vorher = zeilen.length
                 zeilen = zeilen.filter(z => !istGefiltert(z, woerter, nachId.get(z.sourceId)))
                 stichwortGefiltert = vorher - zeilen.length

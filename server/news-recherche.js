@@ -7,7 +7,7 @@
  *                      Vielfaches und hat keinen Gratis-Zugang.
  *  - `rechercheThema`  Perplexity Sonar — eine Suchfrage je Berichtsthema,
  *                      Antwort kommt mit Web-Zitaten.
- *  - `istGefiltert`    der Kern des Arschlochfilters, als reine Funktion,
+ *  - `istGefiltert`    der Kern des Ruhe-Filters, als reine Funktion,
  *                      damit der Selbsttest sie ohne Netz prüfen kann.
  *
  * Beide Netzfunktionen bekommen den entschlüsselten Schlüssel übergeben —
@@ -270,7 +270,7 @@ export async function rechercheThema({ thema, zeitraumText, apiKey, modell = 'so
 }
 
 /**
- * Arschlochfilter-Kern. Gefiltert wird ein Beitrag, wenn
+ * Ruhe-Filter-Kern. Gefiltert wird ein Beitrag, wenn
  *  (a) seine Quelle Truth Social ist — das ist der automatische Teil — oder
  *  (b) eines der Stichwörter (ohne Beachtung der Schreibung) in Titel, Inhalt
  *      oder Quellennamen vorkommt.
@@ -289,7 +289,7 @@ export function istGefiltert(item, woerter, quelle) {
 }
 
 /**
- * Fokus-Filter — das Gegenstück zum Arschlochfilter. Der schliesst aus, der
+ * Fokus-Filter — das Gegenstück zum Ruhe-Filter. Der schliesst aus, der
  * hier lässt nur durch, was mindestens eines der Stichwörter trifft. Leere
  * Liste heisst „kein Fokus eingestellt", also lässt alles durch — nicht
  * „nichts passt". Gleicher `heuhaufen`-Aufbau wie `istGefiltert`, damit

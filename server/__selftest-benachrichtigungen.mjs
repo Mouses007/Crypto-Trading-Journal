@@ -31,12 +31,12 @@ console.log('Benachrichtigungen')
 // ── 1) Register ──────────────────────────────────────────────────────────
 pruefe('Register ist nicht leer', REGISTER.length > 0)
 pruefe('Kennungen sind eindeutig', new Set(REGISTER.map(e => e.id)).size === REGISTER.length)
-pruefe('jede Kennung hat eine Gruppe', REGISTER.every(e => ['markt', 'handel', 'system'].includes(e.gruppe)))
+pruefe('jede Kennung hat eine Gruppe', REGISTER.every(e => ['markt', 'system'].includes(e.gruppe)))
 pruefe('Import und KI-Bericht können NICHT mailen',
     REGISTER.find(e => e.id === 'importFertig')?.email === false
     && REGISTER.find(e => e.id === 'kiBerichtFertig')?.email === false)
-pruefe('Order-unbekannt kann mailen',
-    REGISTER.find(e => e.id === 'strategieOrderUnbekannt')?.email === true)
+pruefe('Pi-Cycle-Kreuzung kann mailen',
+    REGISTER.find(e => e.id === 'picycleKreuzung')?.email === true)
 
 // ── 2) Kanalwahl: Vorgaben ───────────────────────────────────────────────
 // Ohne gespeicherte Wahl soll der Browser melden, die Mail aber schweigen:

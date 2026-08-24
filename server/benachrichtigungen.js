@@ -4,8 +4,7 @@
  * Die App meldete sich bisher ausschliesslich über Browser-Benachrichtigungen.
  * Die erreichen nur, wer die Seite gerade offen hat (`src/utils/notify.js`
  * prüft `Notification.permission` UND `!document.hasFocus()`). Auf eine
- * Pi-Cycle-Kreuzung wartet man aber Monate, und ein „Order-Zustand UNBEKANNT"
- * der Strategie-Engine betrifft echtes Geld — beides darf nicht davon abhängen,
+ * Pi-Cycle-Kreuzung wartet man aber Monate — die darf nicht davon abhängen,
  * ob zufällig ein Tab offen stand.
  *
  * Deshalb hier der zweite Kanal: E-Mail, serverseitig ausgelöst.
@@ -49,17 +48,14 @@ import { baueMail, logoAnhang, STUFEN, STUFE_VORGABE } from './mail-vorlage.js'
  * `symbol`, `ton` und `bereich` sind die Gestaltung der Mail (siehe
  * `mail-vorlage.js`). Sie stehen hier und nicht dort, damit ein neuer
  * Meldungstyp weiterhin an EINER Stelle vollständig beschrieben ist.
- * Der `ton` folgt der Dringlichkeit, nicht der Gruppe: der Not-Aus ist rot,
- * obwohl er in derselben Gruppe sitzt wie eine ausgeführte Order.
+ * Der `ton` folgt der Dringlichkeit, nicht der Gruppe: die Pi-Cycle-Kreuzung
+ * ist gelb, ihre Vorwarnung nur blau, obwohl beide in derselben Gruppe sitzen.
  */
 export const REGISTER = [
     // ── Markt ────────────────────────────────────────────────────────────
     { id: 'picycleKreuzung', gruppe: 'markt', email: true, symbol: '\u{1F53A}', ton: 'warnung', bereich: 'Markt · Pi-Cycle' },
     { id: 'picycleVorwarnung', gruppe: 'markt', email: true, schwelleSpalte: 'radarPicycleSchwelle', symbol: '\u{1F441}\uFE0F', ton: 'info', bereich: 'Markt · Pi-Cycle' },
     { id: 'fundingDivergenz', gruppe: 'markt', email: true, schwelleSpalte: 'radarFundingDivergenz', symbol: '\u2696\uFE0F', ton: 'info', bereich: 'Markt · Funding' },
-    // ── Handel ───────────────────────────────────────────────────────────
-    { id: 'strategieOrderUnbekannt', gruppe: 'handel', email: true, symbol: '\u2757', ton: 'gefahr', bereich: 'Handel · Strategie' },
-    { id: 'strategieKillSwitch', gruppe: 'handel', email: true, symbol: '\u{1F6D1}', ton: 'gefahr', bereich: 'Handel · Not-Aus' },
     // ── System ───────────────────────────────────────────────────────────
     // Einziger Eintrag mit EIGENER Stelle: Der Lagebericht geht oft an mehrere
     // Leser, und ein Empfängerfeld je Ereignis waere fuer die anderen zehn
@@ -328,10 +324,10 @@ export async function melde(id, { betreff, text, schluessel = '', ttlMs = 12 * 6
         } catch (e) {
             /*
              * Ansprüche sind gesetzt, die Mail aber nie angekommen. Ohne
-             * Freigabe wäre die Meldung für die volle Sperrfrist verloren — bei
-             * „Order-Zustand unbekannt" also schlimmstenfalls ein Jahr, wegen
-             * eines SMTP-Aussetzers von zehn Sekunden. Also beides zurückgeben
-             * und den Grund vermerken; der nächste Takt versucht es erneut.
+             * Freigabe wäre die Meldung für die volle Sperrfrist verloren —
+             * wegen eines SMTP-Aussetzers von zehn Sekunden. Also beides
+             * zurückgeben und den Grund vermerken; der nächste Takt versucht
+             * es erneut.
              */
             await gibAufgabeFrei(anspruch)
             await gibAufgabeFrei(platz)
@@ -656,7 +652,7 @@ export function setupBenachrichtigungsRoutes(app) {
                     + `SMTP-Server: ${s.mailHost}:${s.mailPort} (${s.mailSicherheit})\n`
                     + `Absender: ${s.mailVon}\nEmpfänger: ${an.join(', ')}\n\n`
                     + 'So sehen ab jetzt alle Benachrichtigungen aus. Sinnbild und Farbe '
-                    + 'wechseln je nach Ereignis — rot bei Not-Aus, gelb bei Warnungen.',
+                    + 'wechseln je nach Ereignis — gelb bei Warnungen, blau bei Hinweisen.',
                 symbol: '\u2705',
                 ton: 'gut',
                 bereich: 'System · Test',

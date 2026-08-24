@@ -1734,8 +1734,8 @@ async function runMigrations(knex, client) {
     }
 
     // Nachrichtenquellen. `laerm` markiert, was der Nutzer als Lärm einstuft —
-    // der Sammelschalter („Arschlochfilter") blendet genau diese Quellen aus
-    // und holt sie erst gar nicht ab.
+    // der Sammelschalter („Temporär ausschliessen") blendet genau diese
+    // Quellen aus und holt sie erst gar nicht ab.
     if (!(await knex.schema.hasTable('news_sources'))) {
         await knex.schema.createTable('news_sources', (t) => {
             t.increments('id').primary()
@@ -1781,7 +1781,7 @@ async function runMigrations(knex, client) {
     }
 
     // Vorgabe AN: wer den Schalter nicht kennt, soll den Lärm nicht sehen
-    await addColumnIfNotExists('settings', 'radarArschlochfilter', (t) => t.integer('radarArschlochfilter').defaultTo(1))
+    await addColumnIfNotExists('settings', 'radarNewsQuellenAusschluss', (t) => t.integer('radarNewsQuellenAusschluss').defaultTo(1))
 
     // Lageberichte. Ein Bericht je Lauf — nicht je Beitrag: die Frage ist
     // „was ist heute wichtig", nicht „was stand in Beitrag 7".
@@ -1993,14 +1993,14 @@ async function runMigrations(knex, client) {
     // sein dürfen UND welchen Horizont die Frage verlangt.
     await addColumnIfNotExists('settings', 'radarNewsChartFrische',
         (t) => t.text('radarNewsChartFrische').defaultTo('woche'))            // tag|woche|monat
-    // Der neue Arschlochfilter: Truth Social automatisch plus frei wählbare
-    // Stichwörter (eines je Zeile). Er wirkt auf Liste UND Berichtsgrundlage,
-    // aber nicht beim Abruf — die Beiträge bleiben gespeichert, damit eine
-    // geänderte Wörterliste rückwirkend greift. Der alte Sammelschalter
-    // `radarArschlochfilter` heisst in der Oberfläche fortan
-    // „Temporär ausschliessen" und bleibt unverändert bestehen.
-    await addColumnIfNotExists('settings', 'radarArschlochAn', (t) => t.integer('radarArschlochAn').defaultTo(1))
-    await addColumnIfNotExists('settings', 'radarArschlochWoerter', (t) => t.text('radarArschlochWoerter').defaultTo('Donald Trump\nMichael Saylor'))
+    // Der Ruhe-Filter (bis 24.08.2026 „Arschlochfilter"): Truth Social
+    // automatisch plus frei wählbare Stichwörter (eines je Zeile). Er wirkt
+    // auf Liste UND Berichtsgrundlage, aber nicht beim Abruf — die Beiträge
+    // bleiben gespeichert, damit eine geänderte Wörterliste rückwirkend
+    // greift. Der Sammelschalter `radarNewsQuellenAusschluss` („Temporär
+    // ausschliessen") ist davon getrennt und wirkt schon beim Abruf.
+    await addColumnIfNotExists('settings', 'radarNewsRuheAn', (t) => t.integer('radarNewsRuheAn').defaultTo(1))
+    await addColumnIfNotExists('settings', 'radarNewsRuheWoerter', (t) => t.text('radarNewsRuheWoerter').defaultTo('Donald Trump\nMichael Saylor'))
     // X-Suche läuft über die xAI Responses API — Modellname drifted, daher Feld.
     // Grok holt die X-Posts nur ab, zusammengefasst wird hier — dafür reicht das
     // günstigere Modell (1,25 statt 2 USD je Mio. Eingabe-Token).
@@ -2045,7 +2045,7 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'radarNewsPromptZusatz', (t) => t.text('radarNewsPromptZusatz').defaultTo(''))
 
     /*
-     * Fokus-Filter: das Gegenstück zum Arschlochfilter. Der schliesst aus, der
+     * Fokus-Filter: das Gegenstück zum Ruhe-Filter. Der schliesst aus, der
      * hier lässt nur durch, was mindestens eines der Stichwörter trifft — leer
      * heisst „kein Fokus", nicht „nichts durchlassen".
      */
@@ -2054,6 +2054,48 @@ async function runMigrations(knex, client) {
     // Id des zuletzt angewendeten News-Profils — nur für die Anzeige im
     // Dropdown, keine Spalte, von der Erzeugungslogik selbst abhängt.
     await addColumnIfNotExists('settings', 'radarNewsAktivesProfil', (t) => t.integer('radarNewsAktivesProfil').defaultTo(0))
+
+    /*
+     * Umbenennung 24.08.2026: „Arschlochfilter" heisst jetzt „Ruhe-Filter",
+     * und alle drei Spalten rücken unter das radarNews-Präfix, damit die
+     * Profil-Feldliste (`news-profil-felder.js`) sie ohne Sonderfall erfasst.
+     * Werte einmalig übernehmen, alte Spalten entfernen. Gespeicherte
+     * News-Profile tragen dieselben Schlüssel in ihrem JSON — die ziehen mit
+     * um, sonst griffe ein angewendetes Altprofil für diese Felder ins Leere.
+     */
+    const RUHE_UMZUG = [
+        ['radarArschlochfilter', 'radarNewsQuellenAusschluss'],
+        ['radarArschlochAn', 'radarNewsRuheAn'],
+        ['radarArschlochWoerter', 'radarNewsRuheWoerter'],
+    ]
+    for (const [alt, neu] of RUHE_UMZUG) {
+        if (!(await knex.schema.hasColumn('settings', alt))) continue
+        const zeile = await knex('settings').select(alt).where('id', 1).first()
+        if (zeile && zeile[alt] !== null && zeile[alt] !== undefined) {
+            await knex('settings').where('id', 1).update({ [neu]: zeile[alt] })
+        }
+        await knex.schema.alterTable('settings', (t) => t.dropColumn(alt))
+        console.log(` -> Einstellungen: ${alt} → ${neu} übernommen`)
+    }
+    if (await knex.schema.hasTable('news_profile')) {
+        const profile = await knex('news_profile').select('id', 'einstellungen')
+        for (const p of profile) {
+            let e
+            try { e = JSON.parse(p.einstellungen || '{}') } catch { continue }
+            let geaendert = false
+            for (const [alt, neu] of RUHE_UMZUG) {
+                if (!(alt in e)) continue
+                if (!(neu in e)) e[neu] = e[alt]
+                delete e[alt]
+                geaendert = true
+            }
+            if (geaendert) {
+                await knex('news_profile').where('id', p.id)
+                    .update({ einstellungen: JSON.stringify(e) })
+            }
+        }
+    }
+
 
     /*
      * Benannte Sammlungen aller Nachrichten-Einstellungen (siehe

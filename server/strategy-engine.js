@@ -20,7 +20,6 @@
 
 import { getKnex } from './database.js'
 import { logError, logWarn } from './logger.js'
-import { melde } from './benachrichtigungen.js'
 import { getStrategy, validateParams, validateRisk, AGENT_DEFAULTS, normalisiereTimeframes } from './strategies/index.js'
 import { getClosedCandles, getSymbolMeta, getLastPrice, timeframeMs, isValidTimeframe } from './market-data.js'
 import { sichtBedarfKerzen } from './strategies/rule-engine.js'
@@ -482,17 +481,6 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
 
     // (a) Not-Aus und Live-Freigabe
     if (schalter.killSwitch) {
-        // Die Bremse greift bei JEDEM Takt neu — die Sperrfrist im Versand
-        // sorgt dafür, dass daraus eine Meldung wird und nicht hundert.
-        melde('strategieKillSwitch', {
-            betreff: 'Not-Aus aktiv — Handel wird blockiert',
-            text: 'Der Not-Aus („Kill-Switch") ist eingeschaltet und hat gerade ein '
-                + 'Handelssignal verworfen.\n\n'
-                + `Strategie-Instanz: ${instance.name} (#${instance.id})\n\n`
-                + 'Solange der Schalter steht, wird nichts ausgeführt. Falls das nicht '
-                + 'gewollt ist: Einstellungen → Agent.',
-            schluessel: 'aktiv',
-        }).catch(() => { })
         return beenden('reject_risk', RISK_REASONS.KILL_SWITCH)
     }
     const live = await darfLiveHandeln(instance, schalter)
@@ -663,22 +651,6 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
                 await knex('strategy_positions').where('id', eroeffnet.positionId)
                     .update({ status: 'unknown', updatedAt: knex.fn.now() })
                 logError('strategy-engine', `Order-Zustand UNBEKANNT (${setup.symbol}, ${clientOrderId}) — an der Börse prüfen! Position steht auf 'unknown'.`)
-                // Hier steht echtes Geld in einer Position, deren Zustand die
-                // App nicht kennt. Eine Zeile im Log erreicht niemanden, der
-                // gerade nicht hinsieht — deshalb raus damit.
-                melde('strategieOrderUnbekannt', {
-                    betreff: `Order-Zustand unbekannt: ${setup.symbol}`,
-                    text: 'Nach dem Senden einer Order ist die Verbindung zur Börse abgerissen. '
-                        + 'Ob die Order angekommen ist, weiss die App NICHT.\n\n'
-                        + `Symbol: ${setup.symbol}\n`
-                        + `Order-Kennung: ${clientOrderId}\n`
-                        + `Strategie-Instanz: ${instance.name} (#${instance.id})\n`
-                        + `Detail: ${brokerAntwort.detail || '—'}\n\n`
-                        + 'Bitte an der Börse von Hand nachsehen. Die Position steht in der '
-                        + 'App auf „unknown" und blockiert weitere Versuche, bis das geklärt ist.',
-                    schluessel: String(clientOrderId),
-                    ttlMs: 365 * 24 * 60 * 60 * 1000,
-                }).catch(() => { })
                 return beenden('error', 'order_state_unknown', brokerAntwort.detail || '')
             }
             // Saubere Ablehnung durch die Börse: nichts steht, Reservierung weg.

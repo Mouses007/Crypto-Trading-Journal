@@ -899,14 +899,14 @@ const kostenSchaetzung = computed(() => {
     return { gesamt: bericht + videos * proVideo, proVideo, bericht, videos }
 })
 
-let radarArschlochfilter = ref(true)
-/* Der NEUE Arschlochfilter: Truth Social automatisch + Stichwörter (eine je
+let radarNewsQuellenAusschluss = ref(true)
+/* Der NEUE Ruhe-Filter: Truth Social automatisch + Stichwörter (eine je
    Zeile). Der alte Sammelschalter oben drüber heisst jetzt „Temporär
    ausschliessen" — gleiche Technik, ehrlicherer Name. */
-let radarArschlochAn = ref(true)
-let radarArschlochWoerter = ref('')
+let radarNewsRuheAn = ref(true)
+let radarNewsRuheWoerter = ref('')
 
-/* Fokus-Filter: das Gegenstück zum Arschlochfilter. Der schliesst aus, der
+/* Fokus-Filter: das Gegenstück zum Ruhe-Filter. Der schliesst aus, der
    hier lässt nur durch, was mindestens eines der Stichwörter trifft. */
 let radarNewsFokusAn = ref(false)
 let radarNewsFokusWoerter = ref('')
@@ -942,7 +942,7 @@ function loadRadarSettings() {
     radarRsiSymbols.value = s.radarRsiSymbols || ''
     radarKalenderLaender.value = s.radarKalenderLaender || 'USD,JPY'
     radarKalenderImpact.value = s.radarKalenderImpact || 'medium'
-    radarArschlochfilter.value = Number(s.radarArschlochfilter ?? 1) === 1
+    radarNewsQuellenAusschluss.value = Number(s.radarNewsQuellenAusschluss ?? 1) === 1
     livetradingAn.value = Number(s.livetradingAn ?? 1) === 1
     radarNewsAuto.value = Number(s.radarNewsAuto ?? 1) === 1
     radarNewsStunde.value = Number(s.radarNewsStunde ?? 12)
@@ -989,8 +989,8 @@ function loadRadarSettings() {
     radarNewsVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
         ? s.radarNewsVideoTiefe : 'normal'
     radarNewsVideoTokens.value = Math.max(0, Math.min(4000, Number(s.radarNewsVideoTokens) || 0))
-    radarArschlochAn.value = Number(s.radarArschlochAn ?? 1) === 1
-    radarArschlochWoerter.value = s.radarArschlochWoerter ?? 'Donald Trump'
+    radarNewsRuheAn.value = Number(s.radarNewsRuheAn ?? 1) === 1
+    radarNewsRuheWoerter.value = s.radarNewsRuheWoerter ?? 'Donald Trump'
     radarNewsFokusAn.value = Number(s.radarNewsFokusAn ?? 0) === 1
     radarNewsFokusWoerter.value = s.radarNewsFokusWoerter || ''
     radarPicycleSchwelle.value = Number(s.radarPicycleSchwelle ?? 0)
@@ -1097,7 +1097,7 @@ async function profilLoeschen(p) {
  * Speichert GENAU EIN Feld.
  *
  * Vorher schrieb diese Funktion die ganze Gruppe auf einmal — mit der Folge,
- * dass eine Änderung an der Länderliste den Arschlochfilter mit dem Stand
+ * dass eine Änderung an der Länderliste den Ruhe-Filter mit dem Stand
  * überschrieb, den die Seite beim Laden gesehen hatte. Stand die Seite länger
  * offen oder wurde der Wert anderswo geändert, kippte er stillschweigend
  * zurück. Ein Feld, ein Schreibvorgang.
@@ -1107,7 +1107,7 @@ async function radarSpeichern(feld) {
         radarRsiSymbols: radarRsiSymbols.value.toUpperCase().replace(/\s+/g, ''),
         radarKalenderLaender: radarKalenderLaender.value.toUpperCase().replace(/\s+/g, ''),
         radarKalenderImpact: radarKalenderImpact.value,
-        radarArschlochfilter: radarArschlochfilter.value ? 1 : 0,
+        radarNewsQuellenAusschluss: radarNewsQuellenAusschluss.value ? 1 : 0,
         livetradingAn: livetradingAn.value ? 1 : 0,
         radarNewsAuto: radarNewsAuto.value ? 1 : 0,
         radarNewsStunde: radarNewsStunde.value,
@@ -1132,8 +1132,8 @@ async function radarSpeichern(feld) {
         radarNewsThemen: ['crypto', 'finanzen', 'tech', 'chartanalyse'].filter(t => radarNewsThemen.value.includes(t)).join(','),
         radarNewsLaenge: radarNewsLaenge.value,
         radarNewsXModell: radarNewsXModell.value.trim() || 'grok-4.6',
-        radarArschlochAn: radarArschlochAn.value ? 1 : 0,
-        radarArschlochWoerter: radarArschlochWoerter.value,
+        radarNewsRuheAn: radarNewsRuheAn.value ? 1 : 0,
+        radarNewsRuheWoerter: radarNewsRuheWoerter.value,
         radarNewsFokusAn: radarNewsFokusAn.value ? 1 : 0,
         radarNewsFokusWoerter: radarNewsFokusWoerter.value,
         radarPicycleSchwelle: Math.max(0, Math.min(50, Number(radarPicycleSchwelle.value) || 0)),
@@ -4048,22 +4048,22 @@ onBeforeMount(async () => {
                         </div>
                         <div class="col-12 col-md-9">
                             <label class="switch">
-                                <input type="checkbox" v-model="radarArschlochfilter" @change="radarSpeichern('radarArschlochfilter')">
+                                <input type="checkbox" v-model="radarNewsQuellenAusschluss" @change="radarSpeichern('radarNewsQuellenAusschluss')">
                                 <span class="slider round"></span>
                             </label>
                             <span class="ms-2 small text-muted">
-                                {{ radarArschlochfilter ? 'An — als Ausschluss markierte Quellen bleiben aussen vor' : 'Aus — alle aktiven Quellen werden geholt' }}
+                                {{ radarNewsQuellenAusschluss ? 'An — als Ausschluss markierte Quellen bleiben aussen vor' : 'Aus — alle aktiven Quellen werden geholt' }}
                             </span>
                         </div>
                     </div>
 
-                    <!-- Der NEUE Arschlochfilter: automatisch Truth Social, dazu
+                    <!-- Der NEUE Ruhe-Filter: automatisch Truth Social, dazu
                          Stichwörter. Wirkt auf Liste UND Berichtsgrundlage —
                          gespeichert bleibt alles, eine geänderte Liste greift
                          also auch rückwirkend. -->
                     <div class="row mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Arschlochfilter<InfoTipp schluessel="settings.info.wortfilter" /></label>
+                            <label class="fw-lighter">Ruhe-Filter<InfoTipp schluessel="settings.info.wortfilter" /></label>
                             <small class="d-block text-muted" style="font-size:0.78rem;">
                                 Filtert Truth Social automatisch. Beiträge, die eines der Stichwörter
                                 enthalten (ein Begriff je Zeile), verschwinden aus Liste und Lagebericht.
@@ -4071,24 +4071,24 @@ onBeforeMount(async () => {
                         </div>
                         <div class="col-12 col-md-9">
                             <label class="switch">
-                                <input type="checkbox" v-model="radarArschlochAn" @change="radarSpeichern('radarArschlochAn')">
+                                <input type="checkbox" v-model="radarNewsRuheAn" @change="radarSpeichern('radarNewsRuheAn')">
                                 <span class="slider round"></span>
                             </label>
                             <textarea class="form-control form-control-sm mt-2" rows="3" style="max-width:26rem;"
-                                v-model="radarArschlochWoerter" :disabled="!radarArschlochAn"
+                                v-model="radarNewsRuheWoerter" :disabled="!radarNewsRuheAn"
                                 placeholder="Donald Trump&#10;Michael Saylor"
-                                @change="radarSpeichern('radarArschlochWoerter')"></textarea>
+                                @change="radarSpeichern('radarNewsRuheWoerter')"></textarea>
                         </div>
                     </div>
 
                     <!-- Fokus-Filter: das Gegenstück. Wer ihn anschaltet, will
                          NUR NOCH Beiträge zu seinen Stichwörtern sehen — sonst
-                         genau wie der Arschlochfilter aufgebaut. -->
+                         genau wie der Ruhe-Filter aufgebaut. -->
                     <div class="row mb-2">
                         <div class="col-12 col-md-3">
                             <label class="fw-lighter">Fokus-Filter<InfoTipp schluessel="settings.info.fokusfilter" /></label>
                             <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Umgekehrt zum Arschlochfilter: nur Beiträge, die eines der Stichwörter
+                                Umgekehrt zum Ruhe-Filter: nur Beiträge, die eines der Stichwörter
                                 enthalten (ein Begriff je Zeile), bleiben in Liste und Lagebericht übrig.
                                 Leer = kein Fokus, alles bleibt.
                             </small>

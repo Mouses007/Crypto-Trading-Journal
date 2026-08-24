@@ -17,5 +17,5 @@ import { VALID_SETTINGS_KEYS } from './api-routes.js'
 const AUSGESCHLOSSEN = new Set(['radarNewsAktivesProfil'])
 
 export const NEWS_PROFIL_FELDER = VALID_SETTINGS_KEYS.filter(
-    (k) => (k.startsWith('radarNews') || k.startsWith('radarArschloch')) && !AUSGESCHLOSSEN.has(k),
+    (k) => k.startsWith('radarNews') && !AUSGESCHLOSSEN.has(k),
 )

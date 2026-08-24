@@ -1,5 +1,5 @@
 /**
- * Selbsttest: Arschlochfilter und Lagebericht-Prompt.
+ * Selbsttest: Ruhe-Filter und Lagebericht-Prompt.
  *
  * Läuft ohne Netz und ohne Datenbank. Prüft die reinen Funktionen des
  * News-Umbaus: die Filterregel (`istGefiltert`), die Wörter-Zerlegung, die
@@ -23,7 +23,7 @@ const pruefe = (name, bedingung, zusatz = '') => {
     console.error(`  ✗ ${name}${zusatz ? ' — ' + zusatz : ''}`)
 }
 
-console.log('Arschlochfilter & Lagebericht-Prompt')
+console.log('Ruhe-Filter & Lagebericht-Prompt')
 
 // 1) Truth Social fliegt automatisch — unabhängig von der Wörterliste.
 pruefe('Truth-Quelle wird ohne Wörter gefiltert',
