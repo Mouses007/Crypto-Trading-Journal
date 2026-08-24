@@ -1788,14 +1788,20 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
              * Leser sah zwei Einschätzungen desselben Kanals, von denen eine
              * längst überholt war. `radarNewsVideos` bleibt der Ein/Aus-Schalter
              * (0 = keine Videos), zählt aber nicht mehr hoch.
+             *
+             * „Taggenau" heisst KALENDERTAG, kein rollierendes 24h-Fenster:
+             * ein `jetzt - 24h`-Vergleich liess ein Video von gestern 13 Uhr
+             * bei einem Mittagslauf durch (erst 23h alt) — kalendarisch war es
+             * trotzdem gestern. Massgeblich ist `tagesbeginn()`, dieselbe
+             * Mitternacht-Grenze wie beim Tages-Anspruch weiter oben.
              */
-            const EIN_TAG_MS = 24 * 60 * 60 * 1000
+            const heuteAb = tagesbeginn(Date.now(), s?.timeZone)
             const videos = []
             for (const v of videoKandidaten) {
                 if (videos.length >= 1) break
-                // Absteigend sortiert: ist dieses schon zu alt, sind es alle
-                // folgenden auch — Abbruch statt Weitersuchen.
-                if (Date.now() - Number(v.publishedAt) > EIN_TAG_MS) break
+                // Absteigend sortiert: liegt dieses schon vor Mitternacht,
+                // liegen alle folgenden auch davor — Abbruch statt Weitersuchen.
+                if (Number(v.publishedAt) < heuteAb) break
                 // Livestreams gar nicht erst anfassen: laufende lehnt Gemini ab,
                 // Aufzeichnungen kosten nach Länge ein Vermögen. Bewusst OHNE
                 // videoLog-Eintrag — sie sollen in der Videoliste des Berichts
@@ -1987,6 +1993,39 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                                 + 'so, wie sie in aktuellen veröffentlichten Analysen genannt werden, mit Quellenbezug. '
                                 + 'Nüchtern und faktisch. Keine eigene Analyse, keine Anlageberatung, keine Kursziele '
                                 + 'ohne Quelle.',
+                        }
+                    } else if (Number(s?.radarNewsFokusAn ?? 0) === 1) {
+                        /*
+                         * Fokus-Filter aktiv, Thema ist NICHT Chartanalyse.
+                         *
+                         * Der Fokus-Filter grenzt oben nur die eigenen
+                         * Quellen-Beiträge ein — die Perplexity-Recherche
+                         * stellte bislang weiter die generische Themenfrage
+                         * ("wichtigste Nachrichten zu Krypto") und holte sich
+                         * damit den ganzen Marktbericht zurück, den der Filter
+                         * gerade aussortiert hatte. Live beobachtet: ein
+                         * "Bitcoin only"-Bericht mit Altcoin-Deleveraging und
+                         * Zcash-ETF-Meldung, beide aus der Recherche, keine
+                         * davon aus den gefilterten Beiträgen.
+                         */
+                        const fokusWoerter = zerlegeWoerter(s?.radarNewsFokusWoerter)
+                        if (fokusWoerter.length) {
+                            const ziel = fokusWoerter.join(' oder ')
+                            extra = {
+                                frage: istUpdate
+                                    ? `Was ist seit ${new Date(seit).toISOString().slice(0, 16).replace('T', ' ')} UTC `
+                                        + `zu ${ziel} geschehen, das für einen Krypto-Futures-Händler zählt? Nur Neues `
+                                        + 'aus diesem Zeitraum: Meldungen, Beschlüsse, veröffentlichte Zahlen, '
+                                        + 'Marktdaten, angekündigte Termine — jeweils mit den genannten Zahlen und der '
+                                        + `Quelle. Nur was ${ziel} unmittelbar betrifft, nicht der übrige Kryptomarkt. `
+                                        + 'Nüchtern und faktisch, ohne Prognosen, ohne Anlageberatung. Ist in diesem '
+                                        + 'Zeitraum nichts Wesentliches dazu passiert, sage das ausdrücklich.'
+                                    : `Was sind die wichtigsten Nachrichten der letzten ${zeitraumText} zu ${ziel}? `
+                                        + 'Nüchtern und faktisch, für einen Krypto-Futures-Händler. Nenne Zahlen, wo '
+                                        + `welche berichtet werden. Nur Inhalte, die ${ziel} unmittelbar betreffen — `
+                                        + 'nicht der übrige Kryptomarkt. Keine Anlageberatung, keine Prognosen, keine '
+                                        + 'Aufzählung von Meinungen.',
+                            }
                         }
                     }
                     const r = await rechercheThema({
