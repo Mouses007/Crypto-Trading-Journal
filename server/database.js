@@ -1938,6 +1938,20 @@ async function runMigrations(knex, client) {
     // Vorgabe aus: eine Mail, die man nicht angefordert hat, soll nicht
     // zwanzig Absätze lang sein — wer sie lesen will, schaltet sie ein.
     await addColumnIfNotExists('settings', 'radarNewsMailVoll', (t) => t.integer('radarNewsMailVoll').defaultTo(0))
+    /*
+     * Dieselbe Frage als dreistufige Wahl statt Schalter: Kurz (nur Gesamtlage),
+     * Mittel (dazu Marktstand und Kapitel-Lage, ohne einzelne Meldungen) und
+     * Ganz (alles, wie bisher). `radarNewsMailVoll` bleibt als Spalte stehen,
+     * die einmalige Übernahme unten trägt ihren Wert in die neue Spalte über.
+     */
+    await addColumnIfNotExists('settings', 'radarNewsMailInhalt', (t) => t.text('radarNewsMailInhalt').defaultTo('kurz'))
+    {
+        const mailZeile = await knex('settings').where('id', 1)
+            .select('radarNewsMailVoll', 'radarNewsMailInhalt').first()
+        if (mailZeile && Number(mailZeile.radarNewsMailVoll) === 1 && mailZeile.radarNewsMailInhalt === 'kurz') {
+            await knex('settings').where('id', 1).update({ radarNewsMailInhalt: 'voll' })
+        }
+    }
     // Versand des Lageberichts: eigener Schalter und eigene Empfängerliste,
     // damit die Nachrichten-Post nicht am allgemeinen Benachrichtigungs-Empfänger
     // hängt — mehrere Leser sind hier der Normalfall, sonst nirgends.

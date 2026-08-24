@@ -1373,7 +1373,7 @@ export function berichtsKette(zeilen, { tagesbeginn = 0 } = {}) {
  * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
  */
 export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], grundlage = '',
-    themenNamen = {}, voll = false } = {}) {
+    themenNamen = {}, inhalt = 'kurz' } = {}) {
     // Doppelpunkte im Wert sind harmlos, im LABEL nicht: „Funding: 8h" würde
     // die Zeile spalten und die Tabelle zerreissen. Der Ersatz zieht die
     // entstandene Lücke gleich wieder zu.
@@ -1381,7 +1381,10 @@ export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], grundl
     const teile = []
     if (lage) teile.push(String(lage).trim())
 
-    if (voll) {
+    // "Mittel" und "Ganz" teilen sich den Marktstand und die Kapitel-Überschrift
+    // + -Lage; nur "Ganz" steigt zusätzlich in die einzelnen Meldungen ein —
+    // das ist der Teil, der eine ungefragte Mail auf zwanzig Absätze aufbläst.
+    if (inhalt === 'mittel' || inhalt === 'voll') {
         // Marktstand zuerst: er ist der gemessene Boden, gegen den die
         // Meldungen darunter gelesen werden — und als Tabelle zwei Zeilen kurz.
         const marktZeilen = (Array.isArray(markt) ? markt : [])
@@ -1393,6 +1396,8 @@ export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], grundl
             const name = themenNamen[k?.thema] || k?.thema || ''
             teile.push(`## ${[name, k?.ueberschrift].filter(Boolean).join(' — ')}`)
             if (k?.lage) teile.push(String(k.lage).trim())
+
+            if (inhalt !== 'voll') continue
 
             for (const [i, p] of (Array.isArray(k?.punkte) ? k.punkte : []).entries()) {
                 const marken = [
@@ -2375,18 +2380,19 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
     const korrekturen = flachePunkte.filter(p => p.korrektur === true).length
     if (!manuell) {
         /*
-         * Kurz oder ganz — der Leser entscheidet.
+         * Kurz, mittel oder ganz — der Leser entscheidet.
          *
          * Die Kurzfassung sagt, DASS es einen Bericht gibt; wer unterwegs ist,
-         * musste trotzdem ans Journal. Mit `radarNewsMailVoll` steht der ganze
-         * Bericht in der Mail. Vorgabe bleibt kurz: eine Mail, die man nicht
-         * bestellt hat, sollte nicht zwanzig Absätze lang sein.
+         * musste trotzdem ans Journal. "Mittel" gibt zusätzlich Marktstand und
+         * Kapitel-Lage mit, ohne in die einzelnen Meldungen einzusteigen — das
+         * ist der Teil, der "Ganz" auf zwanzig Absätze bringt. Vorgabe bleibt
+         * kurz: eine Mail, die man nicht bestellt hat, sollte nicht so lang sein.
          */
-        const mailVoll = Number(s?.radarNewsMailVoll ?? 0) === 1
+        const mailInhalt = ['kurz', 'mittel', 'voll'].includes(s?.radarNewsMailInhalt) ? s.radarNewsMailInhalt : 'kurz'
         const grundlage = `Grundlage: ${beitraege.length} ${istUpdate ? 'neue ' : ''}Beiträge, `
             + `${recherchen.length} Recherche(n), ${videosVerwendet} Video(s), ${themen.join(' + ')}.\n`
             + `${flachePunkte.length} Meldung(en)${korrekturen ? `, davon ${korrekturen} als Korrektur` : ''}.\n`
-            + (mailVoll
+            + (mailInhalt === 'voll'
                 ? 'Im Journal unter „Nachrichten" steht er mit Bildern und Belegen.'
                 : 'Den vollständigen Bericht findest du im Journal unter „Nachrichten".')
         melde('lageberichtFertig', {
@@ -2398,7 +2404,7 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                 markt: marktdaten.werte || [],
                 grundlage,
                 themenNamen: THEMEN_NAMEN,
-                voll: mailVoll,
+                inhalt: mailInhalt,
             }),
             // Eigener Schlüssel je Bericht: eine Aktualisierung ist eine eigene
             // Nachricht und darf nicht als Dublette des Mittags gelten.

@@ -266,12 +266,18 @@ console.log('\nBericht als Mailtext')
         themenNamen: { crypto: 'Krypto' },
     }
 
-    const kurz = berichtAlsMailText({ ...daten, voll: false })
+    const kurz = berichtAlsMailText({ ...daten, inhalt: 'kurz' })
     pruefe('kurz: Lage und Grundlage, sonst nichts',
         kurz === 'Ruhige Lage.\n\nGrundlage: 12 Beiträge.', JSON.stringify(kurz))
     pruefe('kurz enthält keine Meldung', !kurz.includes('HYPE'))
 
-    const voll = berichtAlsMailText({ ...daten, voll: true })
+    const mittel = berichtAlsMailText({ ...daten, inhalt: 'mittel' })
+    pruefe('mittel: Kapitelüberschrift mit Themennamen', mittel.includes('## Krypto — HYPE zieht an'))
+    pruefe('mittel: Marktstand als eigener Abschnitt', mittel.includes('## Marktstand'))
+    pruefe('mittel: Kapitel-Lage steht drin', mittel.includes('Dünne Nachrichtenlage.'))
+    pruefe('mittel enthält KEINE einzelne Meldung', !mittel.includes('### 1. HYPE steigt auf 72 Dollar'))
+
+    const voll = berichtAlsMailText({ ...daten, inhalt: 'voll' })
     pruefe('voll: Kapitelüberschrift mit Themennamen', voll.includes('## Krypto — HYPE zieht an'))
     pruefe('voll: Marktstand als eigener Abschnitt', voll.includes('## Marktstand'))
     pruefe('voll: Meldung nummeriert und als Zwischentitel', voll.includes('### 1. HYPE steigt auf 72 Dollar'))
@@ -283,19 +289,19 @@ console.log('\nBericht als Mailtext')
     // Ein Doppelpunkt IM Label würde die Zeile spalten und die Tabelle in der
     // Mail zerreissen — deshalb wird er ersetzt, nicht durchgereicht.
     const heikel = berichtAlsMailText({
-        ...daten, voll: true,
+        ...daten, inhalt: 'voll',
         markt: [{ was: 'Funding: 8h', wert: '0,01 %' }, { was: 'Dominanz', wert: '58 %' }],
     })
     pruefe('Doppelpunkt im Label wird entschärft',
         heikel.includes('Funding 8h: 0,01 %') && !heikel.includes('Funding: 8h: '))
 
     // Ein einzelner Marktwert ergibt keine Tabelle — dann lieber weglassen.
-    const einzeln = berichtAlsMailText({ ...daten, voll: true, markt: [{ was: 'Dominanz', wert: '58 %' }] })
+    const einzeln = berichtAlsMailText({ ...daten, inhalt: 'voll', markt: [{ was: 'Dominanz', wert: '58 %' }] })
     pruefe('einzelner Marktwert bekommt keinen Abschnitt', !einzeln.includes('## Marktstand'))
 
     pruefe('leere Eingabe wirft nicht', berichtAlsMailText() === '')
     pruefe('kaputte Kapitel werfen nicht',
-        typeof berichtAlsMailText({ lage: 'x', kapitel: [null, { punkte: 'kaputt' }], voll: true }) === 'string')
+        typeof berichtAlsMailText({ lage: 'x', kapitel: [null, { punkte: 'kaputt' }], inhalt: 'voll' }) === 'string')
 }
 
 // ── 11) Die Kette des Tages ──────────────────────────────────────────────

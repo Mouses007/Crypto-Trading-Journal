@@ -788,8 +788,8 @@ let radarNewsWochentag = ref(1)
 let radarNewsUpdates = ref(0)
 let radarNewsUpdateStunde1 = ref(18)
 let radarNewsUpdateStunde2 = ref(21)
-/* Ganzer Bericht in der Mail statt nur der Gesamtlage. */
-let radarNewsMailVoll = ref(false)
+/* Wieviel vom Bericht in der Mail steht: 'kurz' | 'mittel' | 'voll'. */
+let radarNewsMailInhalt = ref('kurz')
 let radarNewsMailAktiv = ref(false)
 let radarNewsMailAn = ref('')
 
@@ -955,7 +955,7 @@ function loadRadarSettings() {
         ? s.radarNewsRhythmus : 'taeglich'
     radarNewsWochentag.value = Math.max(1, Math.min(7, Number(s.radarNewsWochentag ?? 1)))
     radarNewsUpdates.value = Math.max(0, Math.min(2, Number(s.radarNewsUpdates) || 0))
-    radarNewsMailVoll.value = Number(s.radarNewsMailVoll ?? 0) === 1
+    radarNewsMailInhalt.value = ['kurz', 'mittel', 'voll'].includes(s.radarNewsMailInhalt) ? s.radarNewsMailInhalt : 'kurz'
     radarNewsMailAktiv.value = Number(s.radarNewsMailAktiv ?? 0) === 1
     radarNewsMailAn.value = s.radarNewsMailAn || ''
     radarNewsBerichtAufbewahrung.value = ['manuell', 'tag', 'woche', 'monat']
@@ -1118,7 +1118,7 @@ async function radarSpeichern(feld) {
         radarNewsRhythmus: radarNewsRhythmus.value,
         radarNewsWochentag: Math.max(1, Math.min(7, Number(radarNewsWochentag.value) || 1)),
         radarNewsUpdates: Math.max(0, Math.min(2, Number(radarNewsUpdates.value) || 0)),
-        radarNewsMailVoll: radarNewsMailVoll.value ? 1 : 0,
+        radarNewsMailInhalt: radarNewsMailInhalt.value,
         radarNewsMailAktiv: radarNewsMailAktiv.value ? 1 : 0,
         radarNewsMailAn: radarNewsMailAn.value,
         radarNewsBerichtAufbewahrung: radarNewsBerichtAufbewahrung.value,
@@ -2273,7 +2273,7 @@ const meldeTypen = ref([])
 const kanalWahl = ref({})
 
 /** Reihenfolge der Gruppen in der Anzeige. */
-const MELDE_GRUPPEN = ['markt', 'handel', 'system']
+const MELDE_GRUPPEN = ['markt', 'system']
 /*
  * Ereignisse mit `eigeneStelle` stehen NICHT in dieser Tabelle.
  *
@@ -4025,6 +4025,171 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
+                    <!--=============== NACHRICHTENQUELLEN ===============-->
+                    <hr class="mt-4" />
+                    <p class="fw-bold mb-1">Nachrichtenquellen</p>
+                    <p class="fw-lighter">
+                        YouTube-Kanäle, RSS-Adressen, Telegram-Kanäle und X-Accounts für die Nachrichten-Seite.
+                        Was du als <strong>Ausschluss</strong> markierst, blendet „Temporär ausschliessen" aus —
+                        und holt es gar nicht erst ab. Es werden nur Titel, Verweis und Zeitpunkt gespeichert,
+                        keine Volltexte.
+                    </p>
+                    <p class="fw-lighter" style="font-size:0.82rem;">
+                        <strong>Zu X:</strong> läuft über die bezahlte Grok-Suche (xAI) — als Adresse genügt der
+                        Handle, z.B. <code>@saylor</code>. Alle X-Quellen zusammen kosten EINE Suche je Abruflauf
+                        (rund 0,5 Rappen plus Token), gedrosselt auf höchstens eine Suche alle vier Stunden.
+                        Voraussetzung ist ein xAI-Schlüssel unter „KI-Einstellungen". Gratis-Umwege (Nitter-Spiegel)
+                        sind tot — geprüft am 16.08.2026.
+                    </p>
+
+                    <div class="row align-items-center mb-2">
+                        <div class="col-12 col-md-3">
+                            <label class="fw-lighter">Temporär ausschliessen<InfoTipp schluessel="settings.info.laermfilter" /></label>
+                        </div>
+                        <div class="col-12 col-md-9">
+                            <label class="switch">
+                                <input type="checkbox" v-model="radarArschlochfilter" @change="radarSpeichern('radarArschlochfilter')">
+                                <span class="slider round"></span>
+                            </label>
+                            <span class="ms-2 small text-muted">
+                                {{ radarArschlochfilter ? 'An — als Ausschluss markierte Quellen bleiben aussen vor' : 'Aus — alle aktiven Quellen werden geholt' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Der NEUE Arschlochfilter: automatisch Truth Social, dazu
+                         Stichwörter. Wirkt auf Liste UND Berichtsgrundlage —
+                         gespeichert bleibt alles, eine geänderte Liste greift
+                         also auch rückwirkend. -->
+                    <div class="row mb-2">
+                        <div class="col-12 col-md-3">
+                            <label class="fw-lighter">Arschlochfilter<InfoTipp schluessel="settings.info.wortfilter" /></label>
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Filtert Truth Social automatisch. Beiträge, die eines der Stichwörter
+                                enthalten (ein Begriff je Zeile), verschwinden aus Liste und Lagebericht.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-9">
+                            <label class="switch">
+                                <input type="checkbox" v-model="radarArschlochAn" @change="radarSpeichern('radarArschlochAn')">
+                                <span class="slider round"></span>
+                            </label>
+                            <textarea class="form-control form-control-sm mt-2" rows="3" style="max-width:26rem;"
+                                v-model="radarArschlochWoerter" :disabled="!radarArschlochAn"
+                                placeholder="Donald Trump&#10;Michael Saylor"
+                                @change="radarSpeichern('radarArschlochWoerter')"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Fokus-Filter: das Gegenstück. Wer ihn anschaltet, will
+                         NUR NOCH Beiträge zu seinen Stichwörtern sehen — sonst
+                         genau wie der Arschlochfilter aufgebaut. -->
+                    <div class="row mb-2">
+                        <div class="col-12 col-md-3">
+                            <label class="fw-lighter">Fokus-Filter<InfoTipp schluessel="settings.info.fokusfilter" /></label>
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Umgekehrt zum Arschlochfilter: nur Beiträge, die eines der Stichwörter
+                                enthalten (ein Begriff je Zeile), bleiben in Liste und Lagebericht übrig.
+                                Leer = kein Fokus, alles bleibt.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-9">
+                            <label class="switch">
+                                <input type="checkbox" v-model="radarNewsFokusAn" @change="radarSpeichern('radarNewsFokusAn')">
+                                <span class="slider round"></span>
+                            </label>
+                            <textarea class="form-control form-control-sm mt-2" rows="3" style="max-width:26rem;"
+                                v-model="radarNewsFokusWoerter" :disabled="!radarNewsFokusAn"
+                                placeholder="Bitcoin&#10;BTC"
+                                @change="radarSpeichern('radarNewsFokusWoerter')"></textarea>
+                        </div>
+                    </div>
+
+                    <table class="table table-sm align-middle" v-if="newsQuellen.length">
+                        <thead>
+                            <tr>
+                                <th style="width:6rem;">Art</th>
+                                <th>Name</th>
+                                <th>Adresse</th>
+                                <th style="width:5rem;" class="text-center">Aktiv</th>
+                                <th style="width:6rem;" class="text-center"
+                                    title="Temporär ausschliessen: Quelle wird weder geholt noch angezeigt, solange der Schalter oben an ist.">
+                                    Ausschluss</th>
+                                <th style="width:5rem;" class="text-center" title="Nur YouTube: sollen die Videos dieser Quelle an Gemini gehen? Jedes kostet 3–10 Rappen.">Videos</th>
+                                <th style="width:7rem;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="q in newsQuellen" :key="q.id">
+                                <td class="text-muted">{{ q.art }}</td>
+                                <td>{{ q.name || '—' }}</td>
+                                <td class="text-truncate" style="max-width:22rem;">
+                                    <span :title="q.url">{{ q.url }}</span>
+                                    <div v-if="q.letzterFehler" class="small" style="color:rgb(250,190,60);">
+                                        {{ q.letzterFehler }}
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <input type="checkbox" :checked="!!q.enabled"
+                                        @change="quelleAendern(q, { enabled: $event.target.checked ? 1 : 0 })">
+                                </td>
+                                <td class="text-center">
+                                    <input type="checkbox" :checked="!!q.laerm"
+                                        @change="quelleAendern(q, { laerm: $event.target.checked ? 1 : 0 })">
+                                </td>
+                                <td class="text-center">
+                                    <!-- Nur bei YouTube sinnvoll: alles andere hat keine Videos -->
+                                    <input v-if="q.art === 'youtube'" type="checkbox"
+                                        :checked="Number(q.videoAnalyse ?? 1) === 1"
+                                        @change="quelleAendern(q, { videoAnalyse: $event.target.checked ? 1 : 0 })">
+                                    <span v-else class="text-muted">—</span>
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-outline-danger btn-sm" @click="quelleLoeschen(q)">
+                                        <i class="uil uil-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="row g-2 align-items-center">
+                        <div class="col-6 col-md-2">
+                            <select class="form-select form-select-sm" v-model="neueQuelle.art">
+                                <option value="youtube">YouTube</option>
+                                <option value="rss">RSS</option>
+                                <option value="telegram">Telegram</option>
+                                <option value="truth">Truth Social</option>
+                                <option value="x">X (via Grok)</option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <input class="form-control form-control-sm" v-model="neueQuelle.name" placeholder="Name">
+                        </div>
+                        <div class="col-12 col-md-5">
+                            <input class="form-control form-control-sm" v-model="neueQuelle.url"
+                                :placeholder="neueQuelle.art === 'x' ? '@handle'
+                                    : neueQuelle.art === 'telegram' ? 'https://t.me/s/kanalname'
+                                        : 'https://www.youtube.com/feeds/videos.xml?channel_id=…'">
+                        </div>
+                        <div class="col-12 col-md-2 d-flex gap-1">
+                            <button class="btn btn-outline-secondary btn-sm" :disabled="newsTestet"
+                                @click="quelleTesten">Test</button>
+                            <button class="btn btn-outline-primary btn-sm" @click="quelleAnlegen">Hinzufügen</button>
+                        </div>
+                    </div>
+                    <div v-if="newsMeldung" class="small mt-2" :class="newsFehler ? 'text-danger' : 'text-muted'">
+                        {{ newsMeldung }}
+                    </div>
+
+                    <div v-if="newsVorschlaege.length" class="mt-2 small">
+                        <span class="text-muted me-2">Vorschläge:</span>
+                        <button v-for="v in newsVorschlaege" :key="v.url"
+                            class="btn btn-outline-secondary btn-sm me-1 mb-1" @click="vorschlagUebernehmen(v)">
+                            {{ v.name }}<span v-if="v.laerm" class="ms-1 text-muted">(Lärm)</span>
+                        </button>
+                    </div>
+
                     <div class="row align-items-center mt-2">
                         <div class="col-12 col-md-4">
                             {{ t('settings.ki.news.autoLabel') }}
@@ -4215,15 +4380,14 @@ onBeforeMount(async () => {
                         </div>
                         <!-- Auswahl statt Schalter: Ein Schalter, dessen Beschriftung
                              sich mitdreht, zeigt immer nur den JETZIGEN Zustand — was
-                             beim Umlegen käme, muss man raten. Hier stehen beide
+                             beim Umlegen käme, muss man raten. Hier stehen alle
                              Möglichkeiten nebeneinander, wie bei der Aufbewahrung
                              darunter. -->
                         <div class="col-12 col-md-8">
                             <select class="form-select form-select-sm" style="max-width:26rem;"
-                                :value="radarNewsMailVoll ? 'voll' : 'kurz'"
-                                @change="radarNewsMailVoll = $event.target.value === 'voll';
-                                    radarSpeichern('radarNewsMailVoll')">
+                                v-model="radarNewsMailInhalt" @change="radarSpeichern('radarNewsMailInhalt')">
                                 <option value="kurz">{{ t('settings.ki.news.mailShort') }}</option>
+                                <option value="mittel">{{ t('settings.ki.news.mailMedium') }}</option>
                                 <option value="voll">{{ t('settings.ki.news.mailFull') }}</option>
                             </select>
                         </div>
@@ -4862,179 +5026,6 @@ onBeforeMount(async () => {
                             Letzter Fehler ({{ cqStatus.fehler.fonds }}): {{ cqStatus.fehler.text }}
                         </span>
                     </p>
-
-                    <!--=============== NACHRICHTENQUELLEN ===============-->
-                    <hr class="mt-4" />
-                    <p class="fw-bold mb-1">Nachrichtenquellen</p>
-                    <p class="fw-lighter">
-                        YouTube-Kanäle, RSS-Adressen, Telegram-Kanäle und X-Accounts für die Nachrichten-Seite.
-                        Was du als <strong>Ausschluss</strong> markierst, blendet „Temporär ausschliessen" aus —
-                        und holt es gar nicht erst ab. Es werden nur Titel, Verweis und Zeitpunkt gespeichert,
-                        keine Volltexte.
-                    </p>
-                    <p class="fw-lighter" style="font-size:0.82rem;">
-                        <strong>Zu X:</strong> läuft über die bezahlte Grok-Suche (xAI) — als Adresse genügt der
-                        Handle, z.B. <code>@saylor</code>. Alle X-Quellen zusammen kosten EINE Suche je Abruflauf
-                        (rund 0,5 Rappen plus Token), gedrosselt auf höchstens eine Suche alle vier Stunden.
-                        Voraussetzung ist ein xAI-Schlüssel unter „KI-Einstellungen". Gratis-Umwege (Nitter-Spiegel)
-                        sind tot — geprüft am 16.08.2026.
-                    </p>
-
-                    <div class="row align-items-center mb-2">
-                        <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Temporär ausschliessen<InfoTipp schluessel="settings.info.laermfilter" /></label>
-                        </div>
-                        <div class="col-12 col-md-9">
-                            <label class="switch">
-                                <input type="checkbox" v-model="radarArschlochfilter" @change="radarSpeichern('radarArschlochfilter')">
-                                <span class="slider round"></span>
-                            </label>
-                            <span class="ms-2 small text-muted">
-                                {{ radarArschlochfilter ? 'An — als Ausschluss markierte Quellen bleiben aussen vor' : 'Aus — alle aktiven Quellen werden geholt' }}
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Der NEUE Arschlochfilter: automatisch Truth Social, dazu
-                         Stichwörter. Wirkt auf Liste UND Berichtsgrundlage —
-                         gespeichert bleibt alles, eine geänderte Liste greift
-                         also auch rückwirkend. -->
-                    <div class="row mb-2">
-                        <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Arschlochfilter<InfoTipp schluessel="settings.info.wortfilter" /></label>
-                            <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Filtert Truth Social automatisch. Beiträge, die eines der Stichwörter
-                                enthalten (ein Begriff je Zeile), verschwinden aus Liste und Lagebericht.
-                            </small>
-                        </div>
-                        <div class="col-12 col-md-9">
-                            <label class="switch">
-                                <input type="checkbox" v-model="radarArschlochAn" @change="radarSpeichern('radarArschlochAn')">
-                                <span class="slider round"></span>
-                            </label>
-                            <textarea class="form-control form-control-sm mt-2" rows="3" style="max-width:26rem;"
-                                v-model="radarArschlochWoerter" :disabled="!radarArschlochAn"
-                                placeholder="Donald Trump&#10;Michael Saylor"
-                                @change="radarSpeichern('radarArschlochWoerter')"></textarea>
-                        </div>
-                    </div>
-
-                    <!-- Fokus-Filter: das Gegenstück. Wer ihn anschaltet, will
-                         NUR NOCH Beiträge zu seinen Stichwörtern sehen — sonst
-                         genau wie der Arschlochfilter aufgebaut. -->
-                    <div class="row mb-2">
-                        <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Fokus-Filter<InfoTipp schluessel="settings.info.fokusfilter" /></label>
-                            <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Umgekehrt zum Arschlochfilter: nur Beiträge, die eines der Stichwörter
-                                enthalten (ein Begriff je Zeile), bleiben in Liste und Lagebericht übrig.
-                                Leer = kein Fokus, alles bleibt.
-                            </small>
-                        </div>
-                        <div class="col-12 col-md-9">
-                            <label class="switch">
-                                <input type="checkbox" v-model="radarNewsFokusAn" @change="radarSpeichern('radarNewsFokusAn')">
-                                <span class="slider round"></span>
-                            </label>
-                            <textarea class="form-control form-control-sm mt-2" rows="3" style="max-width:26rem;"
-                                v-model="radarNewsFokusWoerter" :disabled="!radarNewsFokusAn"
-                                placeholder="Bitcoin&#10;BTC"
-                                @change="radarSpeichern('radarNewsFokusWoerter')"></textarea>
-                        </div>
-                    </div>
-
-                    <table class="table table-sm align-middle" v-if="newsQuellen.length">
-                        <thead>
-                            <tr>
-                                <th style="width:6rem;">Art</th>
-                                <th>Name</th>
-                                <th>Adresse</th>
-                                <th style="width:5rem;" class="text-center">Aktiv</th>
-                                <th style="width:6rem;" class="text-center"
-                                    title="Temporär ausschliessen: Quelle wird weder geholt noch angezeigt, solange der Schalter oben an ist.">
-                                    Ausschluss</th>
-                                <th style="width:5rem;" class="text-center" title="Nur YouTube: sollen die Videos dieser Quelle an Gemini gehen? Jedes kostet 3–10 Rappen.">Videos</th>
-                                <th style="width:7rem;"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="q in newsQuellen" :key="q.id">
-                                <td class="text-muted">{{ q.art }}</td>
-                                <td>{{ q.name || '—' }}</td>
-                                <td class="text-truncate" style="max-width:22rem;">
-                                    <span :title="q.url">{{ q.url }}</span>
-                                    <div v-if="q.letzterFehler" class="small" style="color:rgb(250,190,60);">
-                                        {{ q.letzterFehler }}
-                                    </div>
-                                </td>
-                                <td class="text-center">
-                                    <input type="checkbox" :checked="!!q.enabled"
-                                        @change="quelleAendern(q, { enabled: $event.target.checked ? 1 : 0 })">
-                                </td>
-                                <td class="text-center">
-                                    <input type="checkbox" :checked="!!q.laerm"
-                                        @change="quelleAendern(q, { laerm: $event.target.checked ? 1 : 0 })">
-                                </td>
-                                <td class="text-center">
-                                    <!-- Nur bei YouTube sinnvoll: alles andere hat keine Videos -->
-                                    <input v-if="q.art === 'youtube'" type="checkbox"
-                                        :checked="Number(q.videoAnalyse ?? 1) === 1"
-                                        @change="quelleAendern(q, { videoAnalyse: $event.target.checked ? 1 : 0 })">
-                                    <span v-else class="text-muted">—</span>
-                                </td>
-                                <td class="text-end">
-                                    <button class="btn btn-outline-danger btn-sm" @click="quelleLoeschen(q)">
-                                        <i class="uil uil-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    <div class="row g-2 align-items-center">
-                        <div class="col-6 col-md-2">
-                            <select class="form-select form-select-sm" v-model="neueQuelle.art">
-                                <option value="youtube">YouTube</option>
-                                <option value="rss">RSS</option>
-                                <option value="telegram">Telegram</option>
-                                <option value="truth">Truth Social</option>
-                                <option value="x">X (via Grok)</option>
-                            </select>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <input class="form-control form-control-sm" v-model="neueQuelle.name" placeholder="Name">
-                        </div>
-                        <div class="col-12 col-md-5">
-                            <input class="form-control form-control-sm" v-model="neueQuelle.url"
-                                :placeholder="neueQuelle.art === 'x' ? '@handle'
-                                    : neueQuelle.art === 'telegram' ? 'https://t.me/s/kanalname'
-                                        : 'https://www.youtube.com/feeds/videos.xml?channel_id=…'">
-                        </div>
-                        <div class="col-12 col-md-2 d-flex gap-1">
-                            <button class="btn btn-outline-secondary btn-sm" :disabled="newsTestet"
-                                @click="quelleTesten">Test</button>
-                            <button class="btn btn-outline-primary btn-sm" @click="quelleAnlegen">Hinzufügen</button>
-                        </div>
-                    </div>
-                    <div v-if="newsMeldung" class="small mt-2" :class="newsFehler ? 'text-danger' : 'text-muted'">
-                        {{ newsMeldung }}
-                    </div>
-
-                    <p class="fw-lighter mt-3" style="font-size:0.82rem;">
-                        <i class="uil uil-brain me-1"></i>
-                        Rhythmus, Themen, Länge und die Modellwahl des Lageberichts stehen jetzt unter
-                        <a href="#" @click.prevent="bereichWechseln('ki'); kiBereichWechseln('nachrichten')">
-                            KI · Nachrichten</a> — dort auch die News-Profile, die diese Felder und die
-                        Filter/Quellen hier oben zusammen als benannte Vorlage speichern.
-                    </p>
-
-                    <div v-if="newsVorschlaege.length" class="mt-2 small">
-                        <span class="text-muted me-2">Vorschläge:</span>
-                        <button v-for="v in newsVorschlaege" :key="v.url"
-                            class="btn btn-outline-secondary btn-sm me-1 mb-1" @click="vorschlagUebernehmen(v)">
-                            {{ v.name }}<span v-if="v.laerm" class="ms-1 text-muted">(Lärm)</span>
-                        </button>
-                    </div>
 
                 </div>
 

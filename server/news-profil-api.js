@@ -132,7 +132,7 @@ export function setupNewsProfilRoutes(app) {
      * ohne den Schreibvorgang selbst zu blockieren.
      */
     const AUFFAELLIGE_FELDER = new Set([
-        'radarNewsMailAktiv', 'radarNewsMailAn', 'radarNewsMailVoll',
+        'radarNewsMailAktiv', 'radarNewsMailAn', 'radarNewsMailInhalt',
         'radarNewsModel', 'radarNewsXModell', 'radarNewsRechercheModell',
         'radarNewsBerichtProvider', 'radarNewsBerichtModell',
     ])
