@@ -105,6 +105,20 @@ const router = createRouter({
             import('../views/Screenshots.vue')
     },
     {
+        // Lern-Karteikasten: Sitzung und Kartenverwaltung teilen sich eine
+        // Route (wie Hype-/Coin-Radar), damit eine laufende Sitzung beim
+        // Wechsel zwischen den Menüeinträgen nicht verloren geht.
+        path: '/lernen/:reiter?',
+        name: 'lernen',
+        meta: {
+            title: "Lernen", titleKey: "nav.lernen",
+            mode: 'lernen',
+            layout: DashboardLayout
+        },
+        component: () =>
+            import('../views/Lernen.vue')
+    },
+    {
         path: '/playbook',
         name: 'playbook',
         meta: {

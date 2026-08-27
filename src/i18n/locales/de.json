@@ -98,7 +98,9 @@
     "livetrading": "Live-Trading",
     "liveTrade": "HANDELN",
     "liveSessions": "Archiv",
-    "liveAuswertung": "Auswertung"
+    "liveAuswertung": "Auswertung",
+    "lernen": "Lernen",
+    "lernenGruppe": "LERNEN"
   },
   "filters": {
     "periodRange": "Zeitraum der angezeigten Trades",
@@ -678,6 +680,7 @@
     "modeLiveInfo": "Marktradar, Nachrichten, Orderbuch, Liquidationen und das Live-Trading-Fenster.\nAus: nichts davon wird noch geladen oder abgerufen.",
     "modeResearchInfo": "Hype-Radar (junge Projekte draussen) und Coin-Radar (was das eigene Konto heute handeln kann).",
     "modeStrategyInfo": "Der Strategien-Modus handelt selbstständig. Aus: Instanzen laufen nicht weiter, und die Seiten sind nicht erreichbar.",
+    "modeLernenInfo": "Der Lern-Karteikasten für Fachbegriffe. Aus: der Tab verschwindet, gespeicherter Lernfortschritt bleibt aber erhalten.",
     "livetradingModeOffHint": "Der Modus „Live-Analyse“ ist ausgeschaltet — diese Einstellung wirkt erst wieder, wenn er an ist. Ihr Wert bleibt erhalten.",
     "info": {
       "customTimeframe": "Eigener Zeitrahmen für die Trade-Einteilung, z.B. „Swing 3d“.\nDie Vorgaben Scalp/Daytrade richten sich nach den Minuten- und Stundengrenzen darüber; ein eigener Rahmen wird von Hand vergeben.",
@@ -1315,6 +1318,7 @@
     "agent": "Strategien",
     "agentShort": "Strategie",
     "research": "Research",
+    "lernen": "Lernen",
     "comingSoon": "Kommt später",
     "betaHint": "Unfertig — bitte nur im Papierbetrieb verwenden"
   },
@@ -3698,5 +3702,75 @@
     "kopplung_unbekannt": "nicht gemessen",
     "boersenFilterChip": "{b} — nur Coins zeigen, die dort handelbar sind. Mehrere Börsen heisst „auf mindestens einer\".",
     "spalteRangHilfe": "Die Platzierung nach Gesamtnote, die Vorgabe-Sortierung der Liste.\nSagt nichts über die Richtung — nur, wie viel Bewegung und wie günstig sich der Coin heute ausführen lässt, zusammengefasst in einer Zahl."
+  },
+  "lernen": {
+    "tabKarten": "Karten",
+    "tabStatistik": "Statistik",
+    "kategorie": {
+      "indikatoren": "Indikatoren",
+      "derivate": "Derivate",
+      "sentiment": "Sentiment",
+      "chartAnalyse": "Chartanalyse",
+      "risiko": "Risiko & Handwerk",
+      "markt": "Markt",
+      "onchain": "On-Chain-Daten"
+    },
+    "niveau": "Level {n}",
+    "start": {
+      "faelligTitel": "Fällige Karten heute",
+      "faelligNone": "Keine Karte ist heute fällig — gut gelernt.",
+      "boxVerteilung": "Boxen-Verteilung",
+      "box": "Box {n}",
+      "starten": "Sitzung starten",
+      "keineKarten": "Noch keine Karten vorhanden.",
+      "karteAnlegen": "Erste Karte anlegen"
+    },
+    "review": {
+      "antwortZeigen": "Antwort zeigen",
+      "vergessen": "Vergessen",
+      "schwer": "Schwer",
+      "gut": "Gut",
+      "leicht": "Leicht",
+      "fortschritt": "{aktuell} / {gesamt}",
+      "abbrechen": "Sitzung beenden"
+    },
+    "summary": {
+      "titel": "Sitzung beendet",
+      "richtig": "Gewusst",
+      "falsch": "Nicht gewusst",
+      "neueVerteilung": "Neue Boxen-Verteilung",
+      "fertig": "Fertig"
+    },
+    "karten": {
+      "eigene": "Eigene Karten",
+      "vorgegeben": "Vorgegebene Karten",
+      "neueKarte": "Neue Karte",
+      "frage": "Frage",
+      "antwort": "Antwort",
+      "kategorieLabel": "Kategorie",
+      "speichern": "Speichern",
+      "abbrechen": "Abbrechen",
+      "bearbeiten": "Bearbeiten",
+      "loeschen": "Löschen",
+      "loeschenConfirm": "Diese Karte inkl. Lernfortschritt wirklich löschen?",
+      "aktivHint": "Ausblenden statt löschen — der Inhalt bleibt fest, damit ein späteres Update die Karte nicht doppelt anlegt.",
+      "keineEigenen": "Noch keine eigenen Karten.",
+      "box": "Box {n}",
+      "filterAlle": "Alle"
+    },
+    "statistik": {
+      "gesamtKarten": "Karten insgesamt",
+      "gemeistert": "Gemeistert (Box 4)",
+      "erfolgsquote": "Erfolgsquote",
+      "erfolgsquoteLeer": "—",
+      "serieTitel": "Lernserie",
+      "serieTage": "{n} Tage in Folge",
+      "serieKeine": "Heute noch nicht gelernt",
+      "proTagTitel": "Wiederholungen der letzten 14 Tage",
+      "kategorieTitel": "Erfolg nach Kategorie",
+      "kategorieLeer": "Noch keine Bewertungen je Kategorie.",
+      "duennHinweis": "zu wenig Daten",
+      "keineDaten": "Noch keine Bewertungen — starte eine Sitzung, um hier etwas zu sehen."
+    }
   }
 }

@@ -9,6 +9,8 @@ import { logError } from './logger.js'
 const VALID_TABLES = [
     'trades', 'diaries', 'screenshots', 'satisfactions', 'tags', 'notes', 'excursions',
     'incoming_positions', 'share_card_templates', 'live_sessions',
+    // Lern-Karteikasten (Leitner-Prinzip)
+    'quiz_karten', 'quiz_fortschritt',
     // Strategie-Agenten: nur lesend über die generische Route (siehe READ_ONLY_TABLES)
     'strategy_instances', 'strategy_setups', 'strategy_runs', 'strategy_positions',
     'strategy_trades', 'strategy_backtests', 'strategy_suggestions', 'strategy_drafts', 'rule_strategies',
@@ -80,7 +82,7 @@ export const VALID_SETTINGS_KEYS = [
     'radarNewsTokenBudget', 'radarNewsPunkte', 'radarNewsVideoTiefe', 'radarNewsVideoTokens', 'radarNewsLayout',
     'radarNewsPromptZusatz', 'radarNewsFokusAn', 'radarNewsFokusWoerter', 'radarNewsAktivesProfil',
     'livetradingAn', 'betaAusblenden', 'livetradingMobil', 'startseiteAn',
-    'erweiterteInfos', 'modusLiveAn', 'modusResearchAn', 'modusStrategieAn',
+    'erweiterteInfos', 'modusLiveAn', 'modusResearchAn', 'modusStrategieAn', 'modusLernenAn',
     // Anbieter/Modell je KI-Funktion; leer = global
     'aiBerichtProvider', 'aiBerichtModell', 'aiAgentProvider', 'aiAgentModell',
     'aiAgentTokenBudget',
@@ -101,6 +103,8 @@ const TABLE_COLUMNS = {
     excursions: ['id', 'dateUnix', 'tradeId', 'stopLoss', 'maePrice', 'mfePrice', 'createdAt', 'updatedAt'],
     incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType', 'closingTradeType', 'strategyFollowed', 'trendScreenshotId', 'tpslHistory'],
     share_card_templates: ['id', 'name', 'prompt', 'imageBase64', 'category', 'createdAt', 'updatedAt'],
+    quiz_karten: ['id', 'schluessel', 'frage', 'antwort', 'kategorie', 'herkunft', 'aktiv', 'niveau', 'createdAt', 'updatedAt'],
+    quiz_fortschritt: ['id', 'kartenId', 'box', 'faelligAm', 'zuletztGesehenAm', 'richtigStreak', 'gesamtRichtig', 'gesamtFalsch', 'historie', 'createdAt', 'updatedAt'],
     live_sessions: ['id', 'startUnix', 'endUnix', 'symbol', 'market', 'status', 'planMaxVerlustUsd', 'planMaxTrades', 'planNotiz', 'notizen', 'fazit', 'protokoll', 'kacheln', 'trades', 'pnlUsd', 'gebuehrenUsd', 'fundingUsd', 'tradeAnzahl', 'planVerletzt', 'archiviert', 'createdAt', 'updatedAt'],
     strategy_instances: ['id', 'strategyId', 'name', 'enabled', 'mode', 'broker', 'market', 'symbols', 'timeframe', 'timeframes', 'params', 'risk', 'agents', 'paramsVersion', 'liveApprovedAt', 'lastRunAt', 'lastError', 'createdAt', 'updatedAt'],
     strategy_setups: ['id', 'instanceId', 'strategyId', 'symbol', 'timeframe', 'direction', 'status', 'sweepLevel', 'sweepPrice', 'sweepCandleTime', 'obHigh', 'obLow', 'obCandleTime', 'watchFrom', 'tradeableFrom', 'impulseExtreme', 'entry', 'stopLoss', 'takeProfit', 'rr', 'confirmations', 'invalidReason', 'rejectReason', 'triggeredAt', 'paramsVersion', 'detectorVersion', 'createdAt', 'updatedAt'],
@@ -121,6 +125,7 @@ const JSON_COLUMNS = {
     settings: ['accounts', 'tags', 'apis', 'layoutStyle', 'tradeTimeframes', 'customTimeframes', 'balances', 'strategyHiddenTemplates', 'benachrichtigungen'],
     incoming_positions: ['bitunixData', 'tags', 'closingTags', 'historyData', 'tpslHistory'],
     notes: ['tradingMetadata'],
+    quiz_fortschritt: ['historie'],
     strategy_instances: ['symbols', 'timeframes', 'params', 'risk', 'agents'],
     strategy_setups: ['confirmations'],
     strategy_runs: ['sentimentOutput', 'portfolioOutput', 'riskOutput', 'executionOutput'],

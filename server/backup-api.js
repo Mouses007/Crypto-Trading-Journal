@@ -106,6 +106,10 @@ const BACKUP_TABLES = [
     // Der Verbrauchsnachweis: Wer nachvollziehen will, was die KI gekostet
     // hat, kann das nach einem Restore ohne diese Tabelle nie wieder.
     'ai_usage',
+    // Lern-Karteikasten: eigene Karten und der Lernfortschritt (Box je Karte)
+    // sind Handarbeit bzw. Lernverlauf — beides sonst nirgends rekonstruierbar.
+    'quiz_karten',
+    'quiz_fortschritt',
 ]
 
 /**
@@ -125,6 +129,9 @@ const BACKUP_TABLES = [
 // rollt die GANZE Rücksicherung zurück. Der Selbsttest `__selftest-backup.mjs`
 // hält beide Listen deckungsgleich.
 const DELETE_ORDER = [
+    // Fortschritt (verweist auf Karten) vor den Karten selbst.
+    'quiz_fortschritt',
+    'quiz_karten',
     // Radar-Tabellen: Zeilen vor Läufen, Alarme vor Favoriten.
     'coinradar_zeilen',
     'coinradar_laeufe',

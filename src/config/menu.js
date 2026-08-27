@@ -105,6 +105,15 @@ export const PAGES = [
     // fertige Strategie gegen viele Münzen, statt an ihr zu schrauben.
     { id: 'coinRangliste', mode: 'agent', path: '/agent/rangliste', icon: 'uil uil-list-ol-alt', titleKey: 'nav.coinRangliste', group: 'agentReview' },
 
+    // ── Lernen ──────────────────────────────────────────────
+    // Leitner-Karteikasten für Fachbegriffe. Drei Einträge auf einer Route,
+    // nach demselben Muster wie Hype-/Coin-Radar oben: eine laufende
+    // Lernsitzung überlebt den Wechsel zwischen Sitzung, Kartenverwaltung
+    // und Statistik.
+    { id: 'lernen', mode: 'lernen', path: '/lernen', icon: 'uil uil-graduation-hat', titleKey: 'nav.lernen', group: 'lernenGruppe' },
+    { id: 'lernenKarten', mode: 'lernen', path: '/lernen/karten', icon: 'uil uil-list-ul', titleKey: 'lernen.tabKarten', group: 'lernenGruppe' },
+    { id: 'lernenStatistik', mode: 'lernen', path: '/lernen/statistik', icon: 'uil uil-chart-pie', titleKey: 'lernen.tabStatistik', group: 'lernenGruppe' },
+
     // ── modusübergreifend ───────────────────────────────────
     { id: 'settings', mode: null, path: '/settings', icon: 'uil uil-sliders-v-alt', titleKey: 'nav.settings', group: null },
 ]
@@ -153,6 +162,10 @@ export const MODES = [
     // zusätzlich an der dreifachen Freigabekette (globaler Schalter, Freigabe je
     // Instanz, Mindestzahl Papier-Trades).
     { id: 'agent', titleKey: 'modes.agent', shortKey: 'modes.agentShort', icon: 'uil uil-robot', home: '/agent/strategies', enabled: true, beta: true, flag: 'modusStrategieAn' },
+    // Leitner-Karteikasten: Fachbegriffe und Marktzusammenhänge lernen, die im
+    // Journal selbst laufend vorkommen. Kein Betrieb, keine Live-Daten — darf
+    // deshalb auch am Telefon voll bedient werden.
+    { id: 'lernen', titleKey: 'modes.lernen', icon: 'uil uil-graduation-hat', home: '/lernen', enabled: true, flag: 'modusLernenAn' },
 ]
 
 export const pageById = (id) => PAGES.find(p => p.id === id) || null

@@ -5,6 +5,7 @@
 import Knex from 'knex'
 import { loadDbConfig } from './db-config.js'
 import { seedDefaultTemplates } from './default-templates.js'
+import { seedDefaultLernkarten } from './default-lernkarten.js'
 
 let knex = null
 
@@ -120,7 +121,12 @@ async function fixPostgresSequences(knex) {
 // jetzt serverseitig aus Bitunix statt im Browser aus Journal-Importen. Rein
 // additiv; ein älterer Codestand schreibt die Spalten nicht und zeigt sie
 // nicht an, sein Abschlussweg rechnet aber weiter aus dem Journal.
-const SCHEMA_VERSION = 11
+// v12: `quiz_karten` + `quiz_fortschritt` — Leitner-Karteikasten für
+// Fachbegriffe. Rein additiv; ein älterer Codestand kennt die Tabellen nicht
+// und läuft unverändert weiter.
+// v13: `niveau` an `quiz_karten` — Schwierigkeitsstufe der Lernkarten (1 =
+// App-eigene Grundbegriffe, 2 = vertiefte Konzepte). Rein additiv, Default 1.
+const SCHEMA_VERSION = 13
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2801,6 +2807,59 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'aiKeyMoonshot', (t) => t.text('aiKeyMoonshot').defaultTo(''))
     await addColumnIfNotExists('settings', 'aiKeyZai', (t) => t.text('aiKeyZai').defaultTo(''))
     await addColumnIfNotExists('settings', 'aiKeyMinimax', (t) => t.text('aiKeyMinimax').defaultTo(''))
+
+    /*
+     * Lern-Karteikasten (Leitner-Prinzip). Zwei Tabellen bewusst getrennt:
+     * `quiz_karten` ist der Inhalt (Frage/Antwort), `quiz_fortschritt` ist der
+     * Lernzustand (Box, Fälligkeit). Ein Reseed des Starter-Decks über
+     * `schluessel` (siehe default-lernkarten.js) darf den Fortschritt nie
+     * anfassen — deshalb zwei Tabellen statt einer.
+     */
+    if (!(await knex.schema.hasTable('quiz_karten'))) {
+        await knex.schema.createTable('quiz_karten', (t) => {
+            t.increments('id').primary()
+            t.string('schluessel').nullable()   // stabiler Key für built-in Karten; null bei eigenen
+            t.text('frage').notNullable()
+            t.text('antwort').notNullable()
+            t.string('kategorie').defaultTo('')
+            t.string('herkunft').defaultTo('eigen')   // 'built-in' | 'eigen'
+            t.integer('aktiv').defaultTo(1)
+            // 1 = App-eigene Grundbegriffe, 2 = vertiefte Konzepte (On-Chain, Derivate-Feinheiten, Risikokennzahlen …)
+            t.integer('niveau').defaultTo(1)
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.unique(['schluessel'], 'uq_quiz_karten_schluessel')
+        })
+        console.log(' -> Created table: quiz_karten')
+    }
+
+    if (!(await knex.schema.hasTable('quiz_fortschritt'))) {
+        await knex.schema.createTable('quiz_fortschritt', (t) => {
+            t.increments('id').primary()
+            t.integer('kartenId').notNullable()
+            t.integer('box').defaultTo(1)
+            t.bigInteger('faelligAm').defaultTo(0)   // unix ms; 0 = sofort fällig
+            t.bigInteger('zuletztGesehenAm').defaultTo(0)
+            t.integer('richtigStreak').defaultTo(0)
+            t.integer('gesamtRichtig').defaultTo(0)
+            t.integer('gesamtFalsch').defaultTo(0)
+            t.text('historie').defaultTo('[]')
+            t.timestamp('createdAt').defaultTo(knex.fn.now())
+            t.timestamp('updatedAt').defaultTo(knex.fn.now())
+            t.unique(['kartenId'], 'uq_quiz_fortschritt_karte')
+            t.index(['faelligAm'], 'idx_quiz_fortschritt_faellig')
+        })
+        console.log(' -> Created table: quiz_fortschritt')
+    }
+
+    // Für Installationen, auf denen quiz_karten schon vor v13 existierte.
+    await addColumnIfNotExists('quiz_karten', 'niveau', (t) => t.integer('niveau').defaultTo(1))
+
+    // Starter-Deck nachziehen (nur fehlende Karten, siehe default-lernkarten.js)
+    await seedDefaultLernkarten(knex)
+
+    // Modus-Schalter, gleiches Muster wie modusLiveAn/modusResearchAn/modusStrategieAn oben.
+    await addColumnIfNotExists('settings', 'modusLernenAn', (t) => t.integer('modusLernenAn').defaultTo(1))
 
     // ==================== SCHEMA-ANKER ====================
     // Ganz am Ende, damit die Version erst steht, wenn alle Checks durch sind.

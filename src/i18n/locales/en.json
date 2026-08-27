@@ -98,7 +98,9 @@
     "livetrading": "Live trading",
     "liveTrade": "TRADING",
     "liveSessions": "Archive",
-    "liveAuswertung": "Evaluation"
+    "liveAuswertung": "Evaluation",
+    "lernen": "Learn",
+    "lernenGruppe": "LEARN"
   },
   "filters": {
     "periodRange": "Time period of displayed trades",
@@ -678,6 +680,7 @@
     "modeLiveInfo": "Market radar, news, order book, liquidations and the live trading window.\nOff: none of it is loaded or fetched any more.",
     "modeResearchInfo": "Hype radar (young projects out there) and coin radar (what your own account can trade today).",
     "modeStrategyInfo": "The strategy mode trades on its own. Off: instances stop running and the pages are unreachable.",
+    "modeLernenInfo": "The flashcard box for trading terminology. Off: the tab disappears, but saved learning progress is kept.",
     "livetradingModeOffHint": "The \"Live analysis\" mode is switched off — this setting takes effect again once it is on. Its value is kept.",
     "info": {
       "customTimeframe": "Your own time frame for classifying trades, e.g. \"Swing 3d\".\nThe built-in Scalp/Daytrade categories follow the minute and hour limits above; a custom frame is assigned by hand.",
@@ -1315,6 +1318,7 @@
     "agent": "Strategies",
     "agentShort": "Strategy",
     "research": "Research",
+    "lernen": "Learn",
     "comingSoon": "Coming soon",
     "betaHint": "Unfinished — please use in paper mode only"
   },
@@ -3698,5 +3702,75 @@
     "kopplung_unbekannt": "not measured",
     "boersenFilterChip": "{b} — show only coins tradable there. Selecting several means \"on at least one\".",
     "spalteRangHilfe": "The placement by overall score — the list's default sort order.\nSays nothing about direction, only how much is moving and how cheaply the coin trades right now, boiled down into one number."
+  },
+  "lernen": {
+    "tabKarten": "Cards",
+    "tabStatistik": "Statistics",
+    "kategorie": {
+      "indikatoren": "Indicators",
+      "derivate": "Derivatives",
+      "sentiment": "Sentiment",
+      "chartAnalyse": "Chart analysis",
+      "risiko": "Risk & craft",
+      "markt": "Market",
+      "onchain": "On-chain data"
+    },
+    "niveau": "Level {n}",
+    "start": {
+      "faelligTitel": "Cards due today",
+      "faelligNone": "No card is due today — well learned.",
+      "boxVerteilung": "Box distribution",
+      "box": "Box {n}",
+      "starten": "Start session",
+      "keineKarten": "No cards yet.",
+      "karteAnlegen": "Add first card"
+    },
+    "review": {
+      "antwortZeigen": "Show answer",
+      "vergessen": "Forgot",
+      "schwer": "Hard",
+      "gut": "Good",
+      "leicht": "Easy",
+      "fortschritt": "{aktuell} / {gesamt}",
+      "abbrechen": "End session"
+    },
+    "summary": {
+      "titel": "Session finished",
+      "richtig": "Knew it",
+      "falsch": "Didn't know it",
+      "neueVerteilung": "New box distribution",
+      "fertig": "Done"
+    },
+    "karten": {
+      "eigene": "Own cards",
+      "vorgegeben": "Built-in cards",
+      "neueKarte": "New card",
+      "frage": "Question",
+      "antwort": "Answer",
+      "kategorieLabel": "Category",
+      "speichern": "Save",
+      "abbrechen": "Cancel",
+      "bearbeiten": "Edit",
+      "loeschen": "Delete",
+      "loeschenConfirm": "Really delete this card including its learning progress?",
+      "aktivHint": "Hide instead of delete — the content stays fixed so a later update won't re-add it.",
+      "keineEigenen": "No own cards yet.",
+      "box": "Box {n}",
+      "filterAlle": "All"
+    },
+    "statistik": {
+      "gesamtKarten": "Cards total",
+      "gemeistert": "Mastered (box 4)",
+      "erfolgsquote": "Success rate",
+      "erfolgsquoteLeer": "—",
+      "serieTitel": "Learning streak",
+      "serieTage": "{n} days in a row",
+      "serieKeine": "Not learned today yet",
+      "proTagTitel": "Reviews over the last 14 days",
+      "kategorieTitel": "Success by category",
+      "kategorieLeer": "No ratings by category yet.",
+      "duennHinweis": "not enough data",
+      "keineDaten": "No ratings yet — start a session to see something here."
+    }
   }
 }

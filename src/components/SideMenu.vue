@@ -283,6 +283,7 @@ const agentGroups = computed(() => gruppenFuer('agent'))
  * die Adresszeile wechseln.
  */
 const researchGroups = computed(() => gruppenFuer('research'))
+const lernenGroups = computed(() => gruppenFuer('lernen'))
 
 function goToDashboard() {
     if (screenType.value === 'mobile') {
@@ -439,6 +440,19 @@ function goToDashboard() {
         <!-- ===== ENTDECKEN ===== -->
         <template v-else-if="appMode === 'research'">
             <div v-for="group in researchGroups" :key="group.labelKey" class="sideMenuDiv">
+                <div class="sideMenuDivContent">
+                    <label class="fw-lighter">{{ t(group.labelKey) }}</label>
+                    <a v-for="page in group.items" :key="page.id" :href="page.path"
+                        v-bind:class="[istAktiv(page) ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
+                        <i v-bind:class="[page.menuIcon || page.icon, 'me-2']"></i>{{ t(page.menuKey || page.titleKey) }}
+                    </a>
+                </div>
+            </div>
+        </template>
+
+        <!-- ===== LERNEN ===== -->
+        <template v-else-if="appMode === 'lernen'">
+            <div v-for="group in lernenGroups" :key="group.labelKey" class="sideMenuDiv">
                 <div class="sideMenuDivContent">
                     <label class="fw-lighter">{{ t(group.labelKey) }}</label>
                     <a v-for="page in group.items" :key="page.id" :href="page.path"

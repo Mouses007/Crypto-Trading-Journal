@@ -54,6 +54,7 @@ let erweiterteInfosAn = ref(true)    // kleines „i" an Werten und Bedienelemen
 let modusLiveAn = ref(true)
 let modusResearchAn = ref(true)
 let modusStrategieAn = ref(true)
+let modusLernenAn = ref(true)
 let startBalance = ref(0)
 let currentBalance = ref(0)
 let bitunixApiKey = ref('')
@@ -2625,6 +2626,7 @@ onBeforeMount(async () => {
         modusLiveAn.value = Number(settings.modusLiveAn ?? 1) === 1
         modusResearchAn.value = Number(settings.modusResearchAn ?? 1) === 1
         modusStrategieAn.value = Number(settings.modusStrategieAn ?? 1) === 1
+        modusLernenAn.value = Number(settings.modusLernenAn ?? 1) === 1
         livetradingMobil.value = Number(settings.livetradingMobil ?? 0) === 1
         startseiteAn.value = Number(settings.startseiteAn ?? 1) === 1
         browserNotifications.value = settings.browserNotifications !== 0
@@ -2790,6 +2792,12 @@ onBeforeMount(async () => {
                                 v-model="modusStrategieAn" @change="modusSpeichern('modusStrategieAn', modusStrategieAn)">
                             <label class="form-check-label" for="modusStrategieAnToggle">{{ t('modes.agent') }}</label>
                             <InfoTipp schluessel="settings.modeStrategyInfo" />
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="modusLernenAnToggle"
+                                v-model="modusLernenAn" @change="modusSpeichern('modusLernenAn', modusLernenAn)">
+                            <label class="form-check-label" for="modusLernenAnToggle">{{ t('modes.lernen') }}</label>
+                            <InfoTipp schluessel="settings.modeLernenInfo" />
                         </div>
                         <p class="fw-lighter small mb-0 mt-2">{{ t('settings.modesJournalFix') }}</p>
                     </div>
