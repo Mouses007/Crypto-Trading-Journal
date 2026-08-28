@@ -3,7 +3,19 @@ import { tradesData } from "../stores/trades.js"
 import { selectedBroker } from "../stores/filters.js"
 
 /* MODULES */
-import Papa from 'papaparse'
+/*
+ * Dynamisch, wie in `addTrades.js` und aus demselben Grund: diese Datei haengt
+ * ueber `addTrades.js` am Router und zog den CSV-Parser damit in das
+ * Start-Bundle jeder Seite.
+ */
+let PapaModul = null
+async function holePapa() {
+    if (!PapaModul) {
+        const m = await import('papaparse')
+        PapaModul = m.default || m
+    }
+    return PapaModul
+}
 import i18n from '../i18n'
 import { parseBitunixRows, parseBitgetRows } from './brokers-kern.js'
 
@@ -17,8 +29,9 @@ import { parseBitunixRows, parseBitgetRows } from './brokers-kern.js'
  * dieser Wrapper macht nur noch CSV-Parsing und das Befüllen von tradesData.
  */
 export async function useBrokerBitunix(csvInput) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         try {
+            const Papa = await holePapa()
             const parsed = Papa.parse(csvInput, { header: true, skipEmptyLines: true })
 
             if (parsed.errors.length > 0 && parsed.data.length === 0) {
@@ -61,8 +74,9 @@ export async function useBrokerBitunix(csvInput) {
  * We try multiple column name patterns to be flexible.
  */
 export async function useBrokerBitget(csvInput) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         try {
+            const Papa = await holePapa()
             const parsed = Papa.parse(csvInput, { header: true, skipEmptyLines: true })
 
             if (parsed.errors.length > 0 && parsed.data.length === 0) {

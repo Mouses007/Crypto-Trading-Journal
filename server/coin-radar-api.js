@@ -188,34 +188,66 @@ export function setupCoinRadarRoutes(app) {
      * bisherige Ansatz auf der Client-Seite und hätte bei hunderten
      * automatischen Läufen ebenso viele parallele Anfragen bedeutet.
      */
+    /*
+     * Die Abfrage aggregiert ueber die groesste Tabelle der Datenbank — an der
+     * Live-Postgres 1,3 Mio Zeilen, gemessene 177 ms und 555 MB Lese-I/O, weil
+     * auf `status`/`rang` kein Index liegt und keiner sinnvoll waere (beide
+     * sind wenig selektiv). Auf einer NAS-Platte war das der teuerste
+     * Einzelabruf der Anwendung.
+     *
+     * Ein Cache passt hier besonders gut, weil sich das Ergebnis nur aendern
+     * KANN, wenn ein Lauf fertig wird — und das passiert stuendlich, nicht bei
+     * jedem Seitenaufruf. Dieselbe Bauart wie `ausCache` im Marktradar: TTL
+     * plus Zusammenfassen gleichzeitiger Anfragen, damit zwei offene Tabs
+     * nicht zwei Vollscans ausloesen.
+     */
+    let dauerhaftCache = null
+    let dauerhaftLaeuft = null
+    const DAUERHAFT_TTL_MS = 10 * 60 * 1000
+
     app.get('/api/coin-radar/dauerhaft', async (req, res) => {
         try {
-            const knex = getKnex()
-            const moeglich = Number(await knex('coinradar_laeufe').where('status', 'fertig').count('id as n').first().then((r) => r?.n) || 0)
-            if (moeglich < 2) return res.json({ dauerhaft: [], moeglich })
+            if (dauerhaftCache && Date.now() - dauerhaftCache.ts < DAUERHAFT_TTL_MS) {
+                return res.json({ ...dauerhaftCache.wert, ausCache: true })
+            }
+            if (dauerhaftLaeuft) return res.json({ ...(await dauerhaftLaeuft), ausCache: true })
 
-            const treffer = await knex('coinradar_zeilen as z')
-                .join('coinradar_laeufe as l', 'l.id', 'z.laufId')
-                .where('l.status', 'fertig')
-                .andWhere('z.status', 'bewertet')
-                .andWhere('z.rang', '<=', 10)
-                .andWhere('z.rang', '>', 0)
-                .select('z.symbol')
-                .count('z.id as haeufigkeit')
-                .groupBy('z.symbol')
-                .orderBy('haeufigkeit', 'desc')
-                .limit(8)
+            dauerhaftLaeuft = (async () => {
+                const wert = await berechneDauerhaft()
+                dauerhaftCache = { ts: Date.now(), wert }
+                return wert
+            })().finally(() => { dauerhaftLaeuft = null })
 
-            const dauerhaft = treffer
-                .map((t) => ({ symbol: t.symbol, male: Number(t.haeufigkeit), moeglich }))
-                .filter((t) => t.male >= 2)
-                .map((t) => ({ ...t, anteil: Math.round((t.male / moeglich) * 100) }))
-            res.json({ dauerhaft, moeglich })
+            res.json(await dauerhaftLaeuft)
         } catch (e) {
             logWarn('coin-radar', `Dauerhaft-Auswertung: ${e.message}`)
             res.status(500).json({ error: 'Beständigkeit konnte nicht berechnet werden' })
         }
     })
+
+    async function berechneDauerhaft() {
+        const knex = getKnex()
+        const moeglich = Number(await knex('coinradar_laeufe').where('status', 'fertig').count('id as n').first().then((r) => r?.n) || 0)
+        if (moeglich < 2) return { dauerhaft: [], moeglich }
+
+        const treffer = await knex('coinradar_zeilen as z')
+            .join('coinradar_laeufe as l', 'l.id', 'z.laufId')
+            .where('l.status', 'fertig')
+            .andWhere('z.status', 'bewertet')
+            .andWhere('z.rang', '<=', 10)
+            .andWhere('z.rang', '>', 0)
+            .select('z.symbol')
+            .count('z.id as haeufigkeit')
+            .groupBy('z.symbol')
+            .orderBy('haeufigkeit', 'desc')
+            .limit(8)
+
+        const dauerhaft = treffer
+            .map((t) => ({ symbol: t.symbol, male: Number(t.haeufigkeit), moeglich }))
+            .filter((t) => t.male >= 2)
+            .map((t) => ({ ...t, anteil: Math.round((t.male / moeglich) * 100) }))
+        return { dauerhaft, moeglich }
+    }
 
     /**
      * Erfolgskontrolle: taugt die Rangfolge überhaupt etwas?

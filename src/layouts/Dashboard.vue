@@ -126,8 +126,9 @@ onUnmounted(() => { if (stopZensur) { stopZensur(); stopZensur = null } })
 onBeforeMount(async () => {
   usePageId()
   await useInitParse()
-  // Sync language from DB settings to i18n
-  setLocale(currentUser.value?.language || 'de')
+  // Sync language from DB settings to i18n. Nur Deutsch liegt im
+  // Start-Bundle; eine andere Sprache wird hier nachgeladen.
+  await setLocale(currentUser.value?.language || 'de')
   useGetTimeZone()
   useScreenType()
   // Live-Analyse-Einstellungen aus den Settings übernehmen (auch im Journal —

@@ -4,7 +4,22 @@ import { pageId, timeZoneTrade, currentUser, renderData, screenshotsPagination, 
 import { periodRange, selectedDashTab, selectedPeriodRange, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccount, selectedGrossNet, selectedPlSatisfaction, selectedBroker, selectedDateRange, selectedMonth, selectedMonthPreset, selectedAccounts, amountCase, selectedRange, selectedTags, selectedTradeTimeframes } from "../stores/filters.js"
 import { tags, filteredTrades, screenshots, screenshotsInfos, availableTags, groups } from "../stores/trades.js"
 import { apis, layoutStyle } from "../stores/settings.js"
-import { useECharts } from './charts.js';
+/*
+ * `charts.js` wird NICHT statisch importiert.
+ *
+ * Es zieht das ECharts-Vollbundle nach (332 kB gzip), und diese Datei haengt
+ * ueber `layouts/Dashboard.vue` am Router — ECharts lag damit im Preload
+ * JEDER Seite, auch derer ohne ein einziges Diagramm. Es ist der mit Abstand
+ * groesste Posten des Start-Bundles.
+ *
+ * Der dynamische Import laedt es beim ersten Zeichnen. Die Chart-Komponenten
+ * selbst duerfen `echarts` weiter statisch importieren: sie sind lazy geladene
+ * Views, ihr Chunk kommt ohnehin erst bei Bedarf.
+ */
+async function useECharts(param) {
+    const m = await import('./charts.js')
+    return m.useECharts(param)
+}
 import { useDeleteScreenshot, useGetScreenshots } from '../utils/screenshots.js'
 import { useDeleteTrade, useDeleteExcursions } from "./trades.js";
 import { useGetAvailableTags, useGetTags } from "./daily.js";

@@ -37,7 +37,8 @@ const { t, te, locale } = useI18n()
 let selectedLanguage = ref('de')
 
 async function changeLanguage(lang) {
-    setLocale(lang)
+    // `setLocale` laedt die Sprachdatei bei Bedarf nach und ist deshalb async.
+    await setLocale(lang)
     await dbUpdateSettings({ language: lang })
     currentUser.value.language = lang
     await useGetPeriods()

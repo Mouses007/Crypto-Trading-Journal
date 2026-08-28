@@ -11,7 +11,22 @@ import { istGewinn } from '../../shared/gewinn.js'
 import dayjs from './dayjs-setup.js'
 import _ from 'lodash'
 import axios from 'axios'
-import Papa from 'papaparse';
+/*
+ * PapaParse wird NICHT statisch importiert.
+ *
+ * Diese Datei haengt ueber `trades.js` <- `utils.js` <- `layouts/Dashboard.vue`
+ * am Router und landete damit im Start-Bundle jeder Seite — gemessene 37 kB
+ * gzip fuer einen CSV-Parser, den nur der Import und die OHLCV-Einlesung
+ * brauchen. Der dynamische Import laedt ihn beim ersten Gebrauch nach.
+ */
+let PapaModul = null
+async function holePapa() {
+    if (!PapaModul) {
+        const m = await import('papaparse')
+        PapaModul = m.default || m
+    }
+    return PapaModul
+}
 
 let openPosition = false
 let tradeAccounts = []
@@ -414,6 +429,7 @@ async function createExecutions() {
 export const useCreateOHLCV = (param, param2) => {
     //console.log(" param "+JSON.stringify(param))
     return new Promise(async (resolve, reject) => {
+        const Papa = await holePapa()
         let papaParse = Papa.parse(param, { header: true })
         let tempArray = papaParse.data
         //console.log(' tempArray ' + JSON.stringify(tempArray))

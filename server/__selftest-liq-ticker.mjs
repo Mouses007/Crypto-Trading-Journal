@@ -88,6 +88,49 @@ console.log('\nVerdrängung nach Obergrenze')
         a.letzte[0].t === T0 - 30_000 + n - 1, String(a.letzte[0].t))
 }
 
+/*
+ * Verdrängung über den Kopfzeiger.
+ *
+ * Vorher filterte `merkeLiq` den ganzen Ring bei praktisch jedem Ereignis neu
+ * — im Vollstand gemessene 137 µs, bei einer Kaskade ein Viertel eines Kerns
+ * in genau dem Prozess, der die Live-Trading-Kacheln bedient. Jetzt wandert
+ * ein Index. Dieser Test hält fest, dass das Ergebnis dasselbe bleibt: der
+ * Kopfzeiger darf nichts liegen lassen und nichts zu früh wegwerfen.
+ */
+console.log('\nVerdrängung über die Zeitgrenze')
+{
+    _leere()
+    const FENSTER = _grenzen.FENSTER_MS
+    // Ein altes Ereignis weit vor dem Fenster, ein frisches darin.
+    merkeLiq('binance', 'BTCUSDT', T0 - FENSTER - 60_000, 100, 1, 0)
+    merkeLiq('binance', 'BTCUSDT', T0 - 1000, 100, 2, 0)
+    const a = lies({ minuten: 30, jetzt: T0 })
+    check('das verfallene Ereignis ist weg', a.gesamt.anzahl === 1, String(a.gesamt.anzahl))
+    check('das frische ist da', a.letzte[0].menge === 2)
+}
+
+{
+    // Der Fall, der den Kopfzeiger auf die Probe stellt: viele Ereignisse, die
+    // nach und nach verfallen, und dazwischen gelesen. Bleibt der Zeiger
+    // stehen, wachsen die Antworten; springt er zu weit, verschwinden gültige.
+    _leere()
+    const FENSTER = _grenzen.FENSTER_MS
+    const schritt = 1000
+    const anzahl = 5000
+    for (let i = 0; i < anzahl; i++) {
+        merkeLiq('binance', 'BTCUSDT', T0 + i * schritt, 100, 1, 0)
+    }
+    const ende = T0 + (anzahl - 1) * schritt
+    const a = lies({ minuten: 30, jetzt: ende })
+    // Im 30-Minuten-Fenster liegen genau so viele, wie hineinpassen.
+    const erwartet = Math.floor(FENSTER / schritt) + 1
+    check('nach vielen Verdrängungen stimmt die Zahl im Fenster',
+        Math.abs(a.gesamt.anzahl - erwartet) <= 1, `${a.gesamt.anzahl}, erwartet ~${erwartet}`)
+    check('das jüngste Ereignis ist erhalten', a.letzte[0].t === ende, String(a.letzte[0].t))
+    check('nichts Verfallenes rutscht durch',
+        a.letzte.every((e) => e.t >= ende - FENSTER))
+}
+
 // ── Minuteneinteilung ────────────────────────────────────────────────────
 console.log('\nMinuteneinteilung')
 {

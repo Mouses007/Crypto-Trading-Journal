@@ -9,7 +9,20 @@ import { pageId, spinnerLoadingPage, dashboardChartsMounted, dashboardIdMounted,
 import { selectedRange, selectedDateRange, selectedMonth, selectedAccounts, selectedPeriodRange } from "../stores/filters.js"
 import { filteredTrades, availableTags, groups } from "../stores/trades.js"
 import { useCalculateProfitAnalysis, useGetFilteredTrades, useGetFilteredTradesForDaily, useGroupTrades, useTotalTrades } from "./trades.js"
-import { useECharts, useRenderDoubleLineChart, useRenderPieChart } from './charts.js'
+/*
+ * Dynamisch, siehe SidebarFilters.vue: `charts.js` zieht das
+ * ECharts-Vollbundle nach. Diese Datei ist ueber die Filterleiste am Layout
+ * erreichbar; ein statischer Import legte ECharts in jedes Start-Bundle.
+ * Geladen wird es genau dann, wenn ein Diagramm gezeichnet werden soll.
+ */
+let chartsModul = null
+async function holeCharts() {
+    if (!chartsModul) chartsModul = await import('./charts.js')
+    return chartsModul
+}
+const useECharts = async (p) => (await holeCharts()).useECharts(p)
+const useRenderDoubleLineChart = async (...a) => (await holeCharts()).useRenderDoubleLineChart(...a)
+const useRenderPieChart = async (...a) => (await holeCharts()).useRenderPieChart(...a)
 import { useGetScreenshots, useGetScreenshotsPagination } from './screenshots.js'
 import { useLoadCalendar } from "./calendar.js"
 import { useGetAvailableTags, useGetExcursions, useGetSatisfactions, useGetTags, useGetNotes, useGetAuswertungNotes } from "./daily.js"
