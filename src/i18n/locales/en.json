@@ -2060,6 +2060,13 @@
     "read_neutral": "no clear direction"
   },
   "startseite": {
+    "quiz": {
+      "title": "Quiz",
+      "faellig": "due today",
+      "karten": "cards",
+      "oeffnen": "Study now",
+      "info": "How many of your flashcards are due today and how they are spread across the four Leitner boxes. A click enlarges the tile — the study session then runs inside it, without leaving the overview."
+    },
     "title": "Overview",
     "kontostand": {
       "title": "Account balance",
@@ -3722,7 +3729,7 @@
     "status_wartet": "waiting",
     "stunden": "hours",
     "tab_einstellungen": "Settings",
-    "tab_rangliste": "Ranking",
+    "tab_rangliste": "Analysis",
     "tab_verlauf": "History",
     "teilnoten": "Sub-scores",
     "verlaufHinweis": "Every run compares its ranking with the previous one. Near 1 means the list holds; near 0 means it is noise — and then it says nothing about tomorrow.",
@@ -3807,7 +3814,8 @@
       "aktivHint": "Hide instead of delete — the content stays fixed so a later update won't re-add it.",
       "keineEigenen": "No own cards yet.",
       "box": "Box {n}",
-      "filterAlle": "All"
+      "filterAlle": "All",
+      "niveauLabel": "Level"
     },
     "statistik": {
       "gesamtKarten": "Cards total",

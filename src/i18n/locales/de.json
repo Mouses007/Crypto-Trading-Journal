@@ -2060,6 +2060,13 @@
     "read_neutral": "keine klare Richtung"
   },
   "startseite": {
+    "quiz": {
+      "title": "Quiz",
+      "faellig": "fällig heute",
+      "karten": "Karten",
+      "oeffnen": "Jetzt lernen",
+      "info": "Wie viele deiner Lernkarten heute fällig sind und wie sie sich über die vier Leitner-Boxen verteilen. Ein Klick vergrössert die Kachel — die Lernsitzung läuft dann direkt darin, ohne die Übersicht zu verlassen."
+    },
     "title": "Übersicht",
     "kontostand": {
       "title": "Kontostand",
@@ -3722,7 +3729,7 @@
     "status_wartet": "wartet",
     "stunden": "Stunden",
     "tab_einstellungen": "Einstellungen",
-    "tab_rangliste": "Rangliste",
+    "tab_rangliste": "Analyse",
     "tab_verlauf": "Verlauf",
     "teilnoten": "Teilnoten",
     "verlaufHinweis": "Jeder Lauf vergleicht seine Rangfolge mit der des vorigen. Nahe 1 heisst, die Liste hält; nahe 0 heisst, sie ist Rauschen — und dann sagt sie über morgen nichts.",
@@ -3807,7 +3814,8 @@
       "aktivHint": "Ausblenden statt löschen — der Inhalt bleibt fest, damit ein späteres Update die Karte nicht doppelt anlegt.",
       "keineEigenen": "Noch keine eigenen Karten.",
       "box": "Box {n}",
-      "filterAlle": "Alle"
+      "filterAlle": "Alle",
+      "niveauLabel": "Level"
     },
     "statistik": {
       "gesamtKarten": "Karten insgesamt",
