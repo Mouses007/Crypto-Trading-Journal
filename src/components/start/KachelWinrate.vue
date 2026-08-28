@@ -37,13 +37,37 @@ const farbe = computed(() => {
     return 'rgb(255, 95, 86)'
 })
 
+/*
+ * Dieselbe Einstufung noch einmal, aber ohne Farbe.
+ *
+ * 49 % und 51 % unterscheiden sich sonst nur im Farbton — fuer jemanden mit
+ * Rot-Gruen-Schwaeche (rund acht Prozent der Maenner) sind das zwei gleich
+ * aussehende Zahlen, und in einer Kachel, die den Erfolg zusammenfasst, ist
+ * genau der Unterschied die Aussage. Das Zeichen traegt sie mit.
+ */
+const zeichen = computed(() => {
+    const r = rate.value
+    if (r >= 55) return '▲'
+    if (r >= 45) return '▬'
+    return '▼'
+})
+
+const einstufung = computed(() => {
+    const r = rate.value
+    return r >= 55 ? 'gut' : (r >= 45 ? 'mittel' : 'schwach')
+})
+
 const prozent = (n) => Number(n || 0).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 </script>
 
 <template>
     <div class="wrWrap" :class="{ gross }">
         <template v-if="anzahl">
-            <div class="wrHaupt" :style="{ color: farbe }">{{ prozent(rate) }} <span>%</span></div>
+            <div class="wrHaupt" :style="{ color: farbe }"
+                :title="t('startseite.winrate.einstufung_' + einstufung)">
+                <span class="wrZeichen" aria-hidden="true">{{ zeichen }}</span>{{ prozent(rate) }} <span>%</span>
+                <span class="visually-hidden">{{ t('startseite.winrate.einstufung_' + einstufung) }}</span>
+            </div>
 
             <div class="wrBalken">
                 <div class="wrBalkenFuell" :style="{ width: rate + '%', background: farbe }"></div>
@@ -74,6 +98,12 @@ const prozent = (n) => Number(n || 0).toLocaleString('de-DE', { minimumFractionD
     min-height: 140px;
     gap: 0.5rem;
     padding: 0.2rem 0.3rem;
+}
+
+.wrZeichen {
+    font-size: 0.6em;
+    margin-right: 0.35rem;
+    vertical-align: middle;
 }
 
 .wrHaupt {

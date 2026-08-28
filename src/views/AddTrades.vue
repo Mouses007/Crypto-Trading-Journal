@@ -379,7 +379,7 @@ async function importFromApi() {
                 <input type="number" step="any" class="form-control" v-model="manual.netPL" placeholder="z.B. 25.40" />
             </div>
             <div class="col-sm-4">
-                <label class="form-label mb-0">Gebühren <span class="text-muted">(opt.)</span></label>
+                <label class="form-label mb-0">{{ t('dashboard.fees') }} <span class="text-muted">(opt.)</span></label>
                 <input type="number" step="any" class="form-control" v-model="manual.fee" />
             </div>
         </div>

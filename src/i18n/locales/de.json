@@ -2108,6 +2108,9 @@
       "info": "Was gerade offen ist, auf einen Blick.\nBevor du eine weitere Position eröffnest, lohnt der Blick hierhin: mehrere gleichzeitig offene Trades summieren sich zu einem Gesamtrisiko, auch wenn jeder einzelne klein aussieht."
     },
     "winrate": {
+        "einstufung_gut": "über dem Schnitt",
+        "einstufung_mittel": "im Mittelfeld",
+        "einstufung_schwach": "unter dem Schnitt",
       "title": "Winrate",
       "wins": "Gewinner",
       "losses": "Verlierer",

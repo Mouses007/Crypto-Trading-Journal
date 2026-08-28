@@ -2068,7 +2068,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                     </ul>
                 </div>
                 <div class="col text-center mt-4 mb-4">
-                    <button class="btn btn-outline-primary btn-sm" v-on:click="closeTagsModal">Schließen</button>
+                    <button class="btn btn-outline-primary btn-sm" v-on:click="closeTagsModal">{{ t('common.close') }}</button>
                     <button class="btn btn-outline-success btn-sm ms-4" v-on:click="saveDailyTags()">Save</button>
                 </div>
             </div>

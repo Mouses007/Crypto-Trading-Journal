@@ -134,6 +134,23 @@ body {
     font-size: 110%;
 }
 
+/*
+ * Nur fuer Screenreader. Bootstrap bringt die Klasse mit, aber Bootstrap kommt
+ * vom CDN — ohne Netz stuende der Text sonst sichtbar mitten in der Kachel.
+ * Was die Bedienbarkeit trägt, gehoert nicht an eine fremde Datei.
+ */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
 .text-muted {
     color: var(--white-60) !important;
 }

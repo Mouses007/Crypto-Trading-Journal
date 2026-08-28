@@ -247,7 +247,7 @@ async function getScreenshotToEdit(param) {
         </p>
 
         <div class="mt-3 mb-3">
-            <button type="button" v-on:click="useSaveScreenshot" class="btn btn-success btn-sm">Absenden</button>
+            <button type="button" v-on:click="useSaveScreenshot" class="btn btn-success btn-sm">{{ t('common.submit') }}</button>
         </div>
         <div class="mt-3">
             <!-- siehe AddTrades.vue: kein `type="cancel"`, keine harte Navigation -->

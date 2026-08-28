@@ -2108,6 +2108,9 @@
       "info": "What's open right now, at a glance.\nWorth checking before opening another position: several trades open at once add up to a combined risk, even if each one looks small on its own."
     },
     "winrate": {
+        "einstufung_gut": "above average",
+        "einstufung_mittel": "middling",
+        "einstufung_schwach": "below average",
       "title": "Win rate",
       "wins": "wins",
       "losses": "losses",
