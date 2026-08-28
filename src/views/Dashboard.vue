@@ -1104,37 +1104,7 @@ onBeforeMount(async () => {
 </template>
 
 <style scoped>
-.card-config-dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    z-index: 1000;
-    min-width: 250px;
-    max-height: 70vh;
-    overflow-y: auto;
-    background: var(--black-bg-3, #1e1e2f);
-    border: 1px solid var(--white-38, rgba(255, 255, 255, 0.15));
-    border-radius: var(--border-radius, 0.5rem);
-    box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.3));
-    padding: 0.5rem 0;
-}
-.card-config-title {
-    padding: 0.4rem 0.75rem;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--white-38, rgba(255, 255, 255, 0.38));
-}
-.card-config-item {
-    padding: 0.4rem 0.75rem;
-    cursor: pointer;
-    font-size: 0.85rem;
-    color: var(--white-87, rgba(255, 255, 255, 0.87));
-    user-select: none;
-}
-.card-config-item:hover {
-    background: var(--white-38, rgba(255, 255, 255, 0.08));
-}
+/* .card-config-* — global in style-dark.css, siehe dort. */
 @keyframes ctj-spin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }

@@ -1628,7 +1628,7 @@ table {
 }
 
 .forecastTable th:first-child,
-td:first-child {
+.forecastTable td:first-child {
     position: sticky;
     left: 0px;
     background-color: var(--black-bg-7) !important;
@@ -2552,6 +2552,81 @@ h4 {
     height: 16px;
     background: var(--white-18);
     margin: 0 0.2rem;
+}
+
+/*
+ * ── Kachel-Auswahl-Dropdown ("Kacheln"-Knopf) ──
+ *
+ * War bislang DREIFACH als `<style scoped>` in Dashboard.vue und
+ * Auswertung.vue definiert — Marktradar.vue, Livetrading.vue und
+ * Startseite.vue nutzen dieselben Klassennamen, hatten aber gar keine eigene
+ * Regel dafür, weil Vues `scoped` sich nicht über Routenwechsel vererbt: eine
+ * scoped Regel in einer Layout-Komponente greift nicht an Elementen, die eine
+ * andere Komponente rendert. Ergebnis: auf drei von fünf Seiten lief die Liste
+ * komplett unformatiert in den normalen Dokumentfluss — sichtbar als eine
+ * beliebig lange Zeilenkette ohne Rahmen, Hintergrund oder Abschneiden.
+ *
+ * Jetzt EINE globale Definition für alle fünf Seiten, dieselbe Begründung wie
+ * beim Radar-Chrom direkt darunter. Als Grid statt einer einzelnen Spalte:
+ * Marktradar allein bietet über zwanzig Kacheln an, und eine Spalte liess die
+ * Liste weit über den sichtbaren Bereich hinauswachsen. `auto-fill` nimmt so
+ * viele Spalten wie in die feste Dropdown-Breite passen; unter etwa 600px
+ * bleibt es bei einer Spalte, damit nichts über den Bildschirmrand hinausragt.
+ */
+.card-config-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 1000;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.05rem 0.5rem;
+    width: min(880px, 94vw);
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--black-bg-3);
+    border: 1px solid var(--white-18);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    padding: 0.6rem 0.75rem;
+}
+
+.card-config-title {
+    grid-column: 1 / -1;
+    padding: 0.2rem 0 0.5rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--white-38);
+}
+
+.card-config-item {
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--white-87);
+    user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-config-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.card-config-divider {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--white-18);
+    margin: 0.3rem 0;
+}
+
+@media (max-width: 600px) {
+    .card-config-dropdown {
+        grid-template-columns: 1fr;
+        width: min(320px, 94vw);
+    }
 }
 
 /* ── Marktradar: Kachelraster, Kachel, Gross-Ansicht ──
