@@ -337,6 +337,11 @@
       "quotaTitle": "Guthaben-Status",
       "quotaHint": "Die Anbieter geben ihr Restguthaben nicht über die API heraus. Angezeigt wird, ob der letzte Aufruf an fehlendem Guthaben scheiterte — den genauen Kontostand zeigt die jeweilige Konsole.",
       "quotaEmpty": "kein Guthaben",
+      "quotaStale": "alter Vermerk",
+      "quotaStaleSince": "vom {zeit}, seither nicht mehr geprüft",
+      "quotaAffects": "betrifft: {liste}",
+      "quotaReset": "Vermerk zurücksetzen",
+      "quotaResetDone": "Vermerk zurückgesetzt — der nächste Aufruf entscheidet neu.",
       "quotaSince": "seit {zeit}",
       "quotaOk": "ok",
       "quotaLast": "(zuletzt {zeit})",
@@ -408,6 +413,7 @@
         "scopeLabel": "Umfang je Kapitel",
         "scopeHint": "Meldungen sind die einzelnen Punkte eines Kapitels — im Zeitungslayout je ein Artikel mit Überschrift, Absatz und Belegen. Der Token-Deckel begrenzt, wie lang die Antwort der KI werden darf; er legt die Kosten nicht fest, sondern deckelt sie.",
         "scopeAuto": "leer = die gewählte Länge entscheidet",
+        "pointDepthLabel": "Ausführlichkeit je Meldung",
         "videoDepthLabel": "Ausführlichkeit der Videobeschreibung",
         "videoTokensHint": "eigener Ausgabe-Deckel, leer = nach Stufe",
         "topicChartanalyse": "Technische Chartanalyse Top 5 (aus Quellen, mit Bildern)",
@@ -2054,6 +2060,10 @@
     "read_neutral": "keine klare Richtung"
   },
   "startseite": {
+    "pult": {
+      "pultSub": "Wähle eine deiner Übersichts-Kacheln als grosse Bühne, der Rest bildet die Leiste",
+      "keineBuehne": "Keine sichtbare Kachel eignet sich als Bühne. Blende z. B. Kapitalkurve, Kalender-Heatmap, Marktübersicht, RSI-Heatmap, BTC-Dominanz oder den Regenbogen ein."
+    },
     "title": "Übersicht",
     "kontostand": {
       "title": "Kontostand",
@@ -2130,6 +2140,18 @@
     }
   },
   "marktradar": {
+    "pult": {
+      "zyklus": "Zyklus",
+      "bitcoinSaison": "Bitcoin-Saison",
+      "altSaison": "Altcoin-Saison",
+      "sieben": "7 T",
+      "letzterTag": "letzter erfasster Tag",
+      "piAbstand": "Abstand der 111-T-Linie zur doppelten 350-T-Linie",
+      "piAusgeloest": "Linien haben gekreuzt — historisches Top-Signal",
+      "ganzerText": "ganzer Bericht",
+      "lageLeer": "Noch keine Einordnung erzeugt.",
+      "lageErzeugen": "erzeugen"
+    },
     "title": "Marktradar",
     "symbol": "Symbol",
     "symbolHinweis": "Gilt für Marktmechanik, Long/Short + OI und Gesamtlage — die übrigen Kacheln sind marktweit",
@@ -2226,6 +2248,7 @@
       "zone_oversold": "Überverkauft",
       "topHint": "Die umsatzstärksten Krypto-Perpetuals von Binance — wie viele, steht rechts daneben",
       "ownHint": "Nur die Märkte, die du in den letzten 90 Tagen selbst gehandelt hast",
+      "openBitunix": "→ Bitunix öffnen",
       "info": "Wie überkauft oder überverkauft die einzelnen Märkte gerade sind.\nDie gestrichelte Linie ist der Durchschnitt — sie ist der eigentliche Massstab: ein überverkaufter Coin bei tiefem Durchschnitt ist nichts Eigenes, sondern nur der ganze Markt."
     },
     "markt": {
@@ -2241,6 +2264,7 @@
       "area_gleich": "Gleich",
       "areaHint": "Wonach sich die Fläche bemisst",
       "noPerp": "Kein Binance-Perpetual — nicht als Symbol wählbar",
+      "openBitunix": "→ Bitunix öffnen",
       "info": "Die 100 grössten Coins auf einen Blick, ohne Stablecoins.\nBlasenansicht: Fläche = Stärke der Bewegung — auch ein kleiner Coin mit grossem Ausschlag fällt auf. Kachelansicht: Fläche = Marktkapitalisierung. Beantwortet, ob der ganze Markt läuft oder nur eine Ecke davon."
     },
     "rainbow": {
@@ -3242,6 +3266,7 @@
     "manageProfiles": "Profile verwalten",
     "quotaTitle": "KI-Guthaben aufgebraucht",
     "quotaEmpty": "KI-Guthaben aufgebraucht: {liste}. Bericht, Recherche oder Videoanalyse können scheitern, bis Guthaben nachgeladen ist (Einstellungen → KI zeigt Details).",
+    "quotaStale": "Älterer Guthaben-Vermerk zu {liste} — seit über zwei Wochen weder bestätigt noch widerlegt. Unter Einstellungen → KI lässt er sich zurücksetzen.",
     "lastFailure": "Letzter Berichtslauf ({zeit}) gescheitert: {text} — es wird stündlich erneut versucht.",
     "layout": {
       "kombiniert": "Kombiniert",
@@ -3275,6 +3300,13 @@
       "normal": "5–8 Stichpunkte",
       "ausfuehrlich": "Absatz + 8–12 Punkte"
     },
+    "pointDepthSub": {
+      "knapp": "1–2 Sätze",
+      "normal": "3–5 Sätze",
+      "ausfuehrlich": "6–9 Sätze"
+    },
+    "pointDepthHint": "Wie ausführlich eine einzelne Meldung ausfällt — unabhängig davon, wie viele es sind. „Ausführlich\" hebt den Token-Deckel automatisch mit an, damit der Bericht nicht mitten im Satz abbricht.",
+    "quickDepth": "Meldungen",
     "ownValue": "nach eigener Vorgabe",
     "auto": "auto",
     "quickVideos": "Videos",
@@ -3375,6 +3407,29 @@
     "kiVerworfen": "{n} von {gesamt} Vorschlägen sind nicht testbar und wurden entfernt."
   },
   "livetrading": {
+    "ansicht": {
+      "raster": "Raster",
+      "rasterSub": "Freies Kachelraster — alles gleichrangig, alles verstellbar",
+      "pult": "Pult",
+      "pultSub": "Festes Instrumentenpult — eine Bühne, eine Leiste, nichts verstellbar"
+    },
+    "pult": {
+      "markt": "Bitunix Perp",
+      "mark": "Mark",
+      "verlustbudget": "Verlustbudget",
+      "trades": "Trades",
+      "ohneGrenze": "keine Grenze",
+      "sitzung": "Sitzung",
+      "keineSitzung": "keine Sitzung",
+      "zeitband": "Zeitband",
+      "liq": "Liq",
+      "keineLiq": "Keine Liquidationen im Fenster",
+      "proJahr": "p. a.",
+      "bitunix": "Bitunix",
+      "vorSek": "vor {n} s",
+      "vorMin": "vor {n} min",
+      "vorStd": "vor {n} h"
+    },
     "title": "Live-Trading",
     "handelszeiten": {
       "title": "Handelszeiten",

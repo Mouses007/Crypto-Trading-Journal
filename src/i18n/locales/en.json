@@ -337,6 +337,11 @@
       "quotaTitle": "Credit status",
       "quotaHint": "Providers do not expose their remaining credit through the API. What is shown is whether the last call failed for lack of credit — the exact balance is in the provider's own console.",
       "quotaEmpty": "no credit",
+      "quotaStale": "stale note",
+      "quotaStaleSince": "from {zeit}, not checked since",
+      "quotaAffects": "affects: {liste}",
+      "quotaReset": "Clear note",
+      "quotaResetDone": "Note cleared — the next call decides anew.",
       "quotaSince": "since {zeit}",
       "quotaOk": "ok",
       "quotaLast": "(last {zeit})",
@@ -408,6 +413,7 @@
         "scopeLabel": "Scope per chapter",
         "scopeHint": "Items are the individual points of a chapter — in the newspaper layout, one article each with headline, paragraph and sources. The token cap bounds how long the AI answer may get; it caps the cost rather than setting it.",
         "scopeAuto": "empty = the chosen length decides",
+        "pointDepthLabel": "Detail per item",
         "videoDepthLabel": "Detail of the video description",
         "videoTokensHint": "own output cap, empty = per level",
         "topicChartanalyse": "Technical chart analysis top 5 (from sources, with images)",
@@ -2054,6 +2060,10 @@
     "read_neutral": "no clear direction"
   },
   "startseite": {
+    "pult": {
+      "pultSub": "Pick one of your overview tiles as the large stage, the rest form the rail",
+      "keineBuehne": "No visible tile is suited as a stage. Show, for example, the equity curve, calendar heatmap, market overview, RSI heatmap, BTC dominance, or the rainbow chart."
+    },
     "title": "Overview",
     "kontostand": {
       "title": "Account balance",
@@ -2130,6 +2140,18 @@
     }
   },
   "marktradar": {
+    "pult": {
+      "zyklus": "Cycle",
+      "bitcoinSaison": "Bitcoin season",
+      "altSaison": "Altcoin season",
+      "sieben": "7 d",
+      "letzterTag": "last recorded day",
+      "piAbstand": "Gap between the 111-day line and twice the 350-day line",
+      "piAusgeloest": "Lines have crossed — historic top signal",
+      "ganzerText": "full report",
+      "lageLeer": "No assessment generated yet.",
+      "lageErzeugen": "generate"
+    },
     "title": "Market radar",
     "symbol": "Symbol",
     "symbolHinweis": "Applies to market mechanics, long/short + OI and the overall picture — the other cards are market-wide",
@@ -2226,6 +2248,7 @@
       "zone_oversold": "Oversold",
       "topHint": "The highest-volume crypto perpetuals on Binance — how many is set on the right",
       "ownHint": "Only the markets you traded yourself over the last 90 days",
+      "openBitunix": "→ Open on Bitunix",
       "info": "How overbought or oversold each individual market is right now.\nThe dashed line is the average — and it is the real yardstick here: an oversold coin while the average is low is not its own story, it's just the whole market."
     },
     "markt": {
@@ -2241,6 +2264,7 @@
       "area_gleich": "Equal",
       "areaHint": "What the area is based on",
       "noPerp": "No Binance perpetual — cannot be selected as symbol",
+      "openBitunix": "→ Open on Bitunix",
       "info": "The 100 biggest coins at a glance, stablecoins excluded.\nBubble view: area = strength of the move — even a small coin with a big move stands out. Tile view: area = market cap. Answers whether the whole market is moving or just one corner of it."
     },
     "rainbow": {
@@ -3242,6 +3266,7 @@
     "manageProfiles": "Manage profiles",
     "quotaTitle": "AI credits exhausted",
     "quotaEmpty": "AI credits exhausted: {liste}. Briefing, research or video analysis may fail until credits are topped up (Settings → AI shows details).",
+    "quotaStale": "Older credit note for {liste} — neither confirmed nor refuted for over two weeks. It can be cleared under Settings → AI.",
     "lastFailure": "Last briefing run ({zeit}) failed: {text} — it retries every hour.",
     "layout": {
       "kombiniert": "Combined",
@@ -3275,6 +3300,13 @@
       "normal": "5–8 bullets",
       "ausfuehrlich": "paragraph + 8–12 bullets"
     },
+    "pointDepthSub": {
+      "knapp": "1–2 sentences",
+      "normal": "3–5 sentences",
+      "ausfuehrlich": "6–9 sentences"
+    },
+    "pointDepthHint": "How thoroughly a single item is written — independent of how many there are. \"Detailed\" raises the token cap along with it, so the report does not break off mid-sentence.",
+    "quickDepth": "Items",
     "ownValue": "your own setting",
     "auto": "auto",
     "quickVideos": "Videos",
@@ -3375,6 +3407,29 @@
     "kiVerworfen": "{n} of {gesamt} suggestions are not testable and were removed."
   },
   "livetrading": {
+    "ansicht": {
+      "raster": "Grid",
+      "rasterSub": "Free tile grid — everything equal, everything adjustable",
+      "pult": "Console",
+      "pultSub": "Fixed instrument console — one stage, one rail, nothing adjustable"
+    },
+    "pult": {
+      "markt": "Bitunix perp",
+      "mark": "Mark",
+      "verlustbudget": "Loss budget",
+      "trades": "Trades",
+      "ohneGrenze": "no limit",
+      "sitzung": "Session",
+      "keineSitzung": "no session",
+      "zeitband": "Time band",
+      "liq": "Liq",
+      "keineLiq": "No liquidations in window",
+      "proJahr": "p.a.",
+      "bitunix": "Bitunix",
+      "vorSek": "{n} s ago",
+      "vorMin": "{n} min ago",
+      "vorStd": "{n} h ago"
+    },
     "title": "Live trading",
     "handelszeiten": {
       "title": "Trading hours",
