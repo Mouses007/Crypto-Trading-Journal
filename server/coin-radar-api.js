@@ -22,6 +22,7 @@ import { holeCoinInfo } from './coin-radar/coin-info.js'
 import { leseSchluessel } from './hype-radar/einstellungen.js'
 import { legeAnCoinRadar } from './radar-ergebnisse.js'
 import { werteAus } from './radar-guete.js'
+import { raeumeRadarAuf } from './radar-aufraeumen.js'
 
 /**
  * Die Schwellen, nach denen die Oberfläche filtert und einfärbt.
@@ -423,6 +424,22 @@ export function startCoinRadarTakt() {
         if (laufAktiv) return
         let hatFuehrung = false
         try {
+            /*
+             * Aufräumen zuerst und unabhängig davon, ob der Radar aktiv ist:
+             * ein abgeschalteter Radar soll seinen Altbestand trotzdem
+             * loswerden, sonst bleiben 710 MB liegen, bis jemand ihn wieder
+             * einschaltet. Eigener Tagesanspruch, damit es nicht am Takt des
+             * Laufs hängt.
+             */
+            if (await beansprucheAufgabe('coinradar_aufraeumen', 24 * 3600 * 1000)) {
+                const b = await raeumeRadarAuf()
+                const summe = b.zeilenVerworfen + b.zeilenBewertet + b.ergebnisse + b.laeufe
+                if (summe > 0) {
+                    console.log(` -> Coin-Radar aufgeräumt: ${b.zeilenVerworfen} verworfene, `
+                        + `${b.zeilenBewertet} bewertete Zeilen, ${b.ergebnisse} Ergebnisse, ${b.laeufe} Läufe`)
+                }
+            }
+
             const einst = await leseEinstellungen()
             if (!einst.aktiv) return
 

@@ -6,6 +6,7 @@ import Knex from 'knex'
 import { loadDbConfig } from './db-config.js'
 import { seedDefaultTemplates } from './default-templates.js'
 import { seedDefaultLernkarten } from './default-lernkarten.js'
+import { istGewinn } from '../shared/gewinn.js'
 
 let knex = null
 
@@ -194,6 +195,21 @@ async function runMigrations(knex, client) {
             await knex.raw(`CREATE INDEX IF NOT EXISTS ${name} ON ${isPg ? `"${table}"` : `\`${table}\``} (${isPg ? `"${column}"` : `\`${column}\``})`)
         } catch (e) {
             console.warn(`[DB] Index ${name} konnte nicht angelegt werden: ${e.message}`)
+        }
+    }
+
+    /**
+     * Redundanten Index fallen lassen.
+     *
+     * `DROP INDEX IF EXISTS` können SQLite und PostgreSQL beide. Nur für
+     * Indizes, die ein anderer vollständig abdeckt — ein Index, der nur
+     * SELTEN gebraucht wird, bleibt.
+     */
+    async function dropIndexIfExists(name) {
+        try {
+            await knex.raw(`DROP INDEX IF EXISTS ${isPg ? `"${name}"` : `\`${name}\``}`)
+        } catch (e) {
+            console.warn(`[DB] Index ${name} konnte nicht entfernt werden: ${e.message}`)
         }
     }
 
@@ -603,6 +619,17 @@ async function runMigrations(knex, client) {
     await addIndexIfNotExists('notes', 'dateUnix', 'idx_notes_dateUnix')
     await addIndexIfNotExists('excursions', 'dateUnix', 'idx_excursions_dateUnix')
 
+    /*
+     * Drei Indizes, die ein anderer vollständig abdeckt. Zwei sind linke
+     * Präfixe eines Unique-Index, einer ist ein exaktes Duplikat. Sie kosten
+     * Platz und verlangsamen jeden Schreibvorgang, ohne je eine Abfrage
+     * beantworten zu können, die der jeweils andere nicht auch beantwortet.
+     * An der Live-Datenbank gemessen: `idx_coinradar_lauf` allein 10 MB.
+     */
+    await dropIndexIfExists('idx_coinradar_lauf')
+    await dropIndexIfExists('idx_msnap_kind_day')
+    await dropIndexIfExists('idx_rangliste_zeilen_lauf')
+
     // Trade type (scalp, day, swing) — opening + closing separate
     await addColumnIfNotExists('notes', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
     await addColumnIfNotExists('notes', 'closingTradeType', (t) => t.text('closingTradeType').defaultTo(''))
@@ -918,8 +945,8 @@ async function runMigrations(knex, client) {
                     const realNet = oldGross                // what Bitunix showed as PnL
                     const realGross = oldGross + fee        // true gross = net + fee
 
-                    const isGrossWin = realGross > 0
-                    const isNetWin = realNet > 0
+                    const isGrossWin = istGewinn(realGross)
+                    const isNetWin = istGewinn(realNet)
 
                     t.grossProceeds = realGross
                     t.netProceeds = realNet
@@ -1123,8 +1150,8 @@ async function runMigrations(knex, client) {
                     const newNet = oldNet + fund        // realizedPNL
                     const newGross = oldGross - fund    // gross − fundingFee
 
-                    const isGrossWin = newGross > 0
-                    const isNetWin = newNet > 0
+                    const isGrossWin = istGewinn(newGross)
+                    const isNetWin = istGewinn(newNet)
 
                     t.netProceeds = newNet
                     t.grossProceeds = newGross
@@ -1635,8 +1662,9 @@ async function runMigrations(knex, client) {
             t.float('value').notNullable()
             t.text('extra').defaultTo('{}')
             t.bigInteger('createdAt').defaultTo(0)
+            // Der Unique-Index deckt dieselben Spalten in derselben
+            // Reihenfolge ab — ein zweiter wäre ein exaktes Duplikat.
             t.unique(['kind', 'dayUnix'])
-            t.index(['kind', 'dayUnix'], 'idx_msnap_kind_day')
         })
         console.log(' -> Created table: market_snapshots')
     }
@@ -2305,8 +2333,8 @@ async function runMigrations(knex, client) {
             t.text('fehler').defaultTo('')
             t.integer('dauerMs').defaultTo(0)
             t.bigInteger('createdAt').defaultTo(0)
+            // Linker Präfix des Unique-Index oben, siehe coinradar_zeilen.
             t.unique(['laufId', 'symbol'])
-            t.index('laufId', 'idx_rangliste_zeilen_lauf')
         })
         console.log(' -> Created table: rangliste_zeilen')
     }
@@ -2506,8 +2534,14 @@ async function runMigrations(knex, client) {
             t.double('btcZerfallZ')                 // Fisher-z der Differenz
             t.text('boersen').defaultTo('{}')       // JSON: wo handelbar (+ unbekannt)
             t.bigInteger('erstelltAm').defaultTo(0)
+            /*
+             * KEIN eigener Index auf `laufId`: der Unique-Index darüber hat
+             * ihn als linken Präfix und bedient jede Abfrage nach laufId
+             * mit. Der separate Index kostete an der Live-Datenbank
+             * gemessene 10 MB, ohne je etwas zu können, was der andere
+             * nicht kann.
+             */
             t.unique(['laufId', 'symbol'], 'uq_coinradar_zeile')
-            t.index(['laufId'], 'idx_coinradar_lauf')
         })
         console.log(' -> Created table: coinradar_zeilen')
     }
