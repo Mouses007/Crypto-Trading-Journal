@@ -94,6 +94,20 @@ const JOURNAL_KACHELN = [
         spalten: 1,
         quelle: 'Journal (gesamt)',
     },
+    {
+        // Fachfremd zu den übrigen Journal-Kacheln — kein Broker-Bezug,
+        // sondern der Leitner-Karteikasten (`shared/leitner.js`). Steht
+        // trotzdem hier statt in einer eigenen Registry: eine Kachel für
+        // eine einzelne Seite braucht keine eigene Registry-Datei.
+        id: 'quiz',
+        titleKey: 'startseite.quiz.title',
+        icon: 'uil uil-graduation-hat',
+        // Holt sich selbst über `dbFind` — siehe Kopfkommentar der Kachel.
+        endpunkt: null,
+        intervallMs: Infinity,
+        spalten: 1,
+        quelle: 'Lern-Karteikasten (Leitner-System)',
+    },
 ]
 
 /**

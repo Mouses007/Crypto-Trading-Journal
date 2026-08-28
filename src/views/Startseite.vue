@@ -31,6 +31,7 @@ import KachelKapitalkurve from '../components/start/KachelKapitalkurve.vue'
 import KachelKennzahlen from '../components/start/KachelKennzahlen.vue'
 import KachelHeatmap from '../components/start/KachelHeatmap.vue'
 import KachelPerformance from '../components/start/KachelPerformance.vue'
+import KachelQuiz from '../components/start/KachelQuiz.vue'
 // Voller Marktradar-Katalog
 import KachelFearGreed from '../components/radar/KachelFearGreed.vue'
 import KachelDominanz from '../components/radar/KachelDominanz.vue'
@@ -46,6 +47,7 @@ import KachelPiCycle from '../components/radar/KachelPiCycle.vue'
 import KachelMechanik from '../components/radar/KachelMechanik.vue'
 import KachelMakro from '../components/radar/KachelMakro.vue'
 import KachelLage from '../components/radar/KachelLage.vue'
+import KachelEtf from '../components/radar/KachelEtf.vue'
 import { liveSymbol } from '../stores/live.js'
 import { KACHELN, sortiereKacheln, STANDARD_VERSTECKT } from '../config/startseite.js'
 import { useKachelRaster } from '../composables/useKachelRaster.js'
@@ -91,6 +93,7 @@ const KOMPONENTEN = {
     kennzahlen: KachelKennzahlen,
     heatmap: KachelHeatmap,
     performance: KachelPerformance,
+    quiz: KachelQuiz,
     fng: KachelFearGreed,
     dom: KachelDominanz,
     funding: KachelFunding,
@@ -105,6 +108,13 @@ const KOMPONENTEN = {
     mechanik: KachelMechanik,
     makro: KachelMakro,
     lage: KachelLage,
+    // Fehlte hier — die einzige Id aus dem geteilten Marktradar-Katalog ohne
+    // eigenen Eintrag. `<component :is="undefined">` rendert lautlos nichts;
+    // Registry, Abruf und Zustandspunkt liefen davon unberührt weiter (der
+    // Kopf zeigte „Stand HH:mm" und einen grünen Punkt), nur der Kachelkörper
+    // blieb leer. Sichtbar erst, wenn man die Kachel überhaupt einblendet —
+    // sie steht nicht in `ZUERST`.
+    etf: KachelEtf,
 }
 
 const {
