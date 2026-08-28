@@ -11,18 +11,32 @@ import {
 
 // Kreis-Import mit llm.js (llm.js holt sich hier den SSRF-Schutz) — unkritisch,
 // weil beide Seiten nur Funktionen zur Laufzeit aufrufen, nichts beim Laden.
-import { istGuthabenFehler, merkeKiGuthaben } from './llm.js'
+import {
+    istGuthabenFehler, merkeKiGuthaben, istVermerkVeraltet, loescheKiGuthabenVermerk,
+} from './llm.js'
+import { anbieterBereiche, nachrichtenAnbieter } from './ki-funktionen.js'
 import { merkeVerbrauch, verbrauchJeFunktion } from './ai-usage.js'
 import { PREISE, BILD_PREISE } from './ai-preise.js'
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
-/** Guthaben-Fehler im Routen-Catch vermerken — Anbieter aus den Einstellungen. */
+/**
+ * Guthaben-Fehler im Routen-Catch vermerken.
+ *
+ * Der Anbieter wird über `waehleAnbieter` bestimmt und nicht mehr stur aus
+ * `aiProvider` gelesen: Beide Aufrufer — der Bericht und der Coach-Chat —
+ * arbeiten mit der Rolle „Bericht", und wer dort einen eigenen Anbieter
+ * eingestellt hat, bekam den Vermerk bisher beim FALSCHEN. Der echte blieb
+ * scheinbar in Ordnung, während er der einzige war, der scheiterte.
+ */
 async function merkeGuthabenAusFehler(e) {
     if (!istGuthabenFehler(e?.message)) return false
     try {
-        const s = await getKnex()('settings').select('aiProvider').where('id', 1).first()
-        if (s?.aiProvider) await merkeKiGuthaben(s.aiProvider, e.message)
+        const s = await getKnex()('settings')
+            .select('aiProvider', 'aiModel', 'aiBerichtProvider', 'aiBerichtModell')
+            .where('id', 1).first()
+        const { provider } = waehleAnbieter(s || {}, 'Bericht')
+        if (provider) await merkeKiGuthaben(provider, e.message)
     } catch { /* Status ist kein Blocker */ }
     return true
 }
@@ -1146,14 +1160,27 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             // damit automatisch mitgespeichert.
             if (keys) {
                 const aenderungen = {}
+                const neueSchluessel = []
                 for (const [id, reg] of Object.entries(ANBIETER_REG)) {
                     const wert = keys[id]
                     if (!reg.keySpalte || wert === undefined || wert.includes('•')) continue
                     aenderungen[reg.keySpalte] = wert ? encrypt(wert) : ''
+                    if (wert) neueSchluessel.push(id)
                 }
                 if (Object.keys(aenderungen).length) {
                     await knex('settings').where('id', 1).update(aenderungen)
                 }
+                /*
+                 * Ein neuer Schlüssel hebt den Guthaben-Vermerk auf.
+                 *
+                 * „credit balance is too low" ist eine Aussage über das Konto
+                 * hinter dem ALTEN Schlüssel — für einen neu eingetragenen kann
+                 * sie gar nicht mehr gelten. Bisher blieb der Vermerk stehen,
+                 * bis zufällig ein Aufruf gelang; wer nachgeladen hatte, sah
+                 * die Warnung trotzdem weiter. Geleerte Felder bleiben
+                 * unberührt — der Anbieter verschwindet ohnehin per `keySet`.
+                 */
+                for (const id of neueSchluessel) await loescheKiGuthabenVermerk(id)
             }
 
             res.json({ success: true })
@@ -1424,11 +1451,21 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
     app.get('/api/ai/guthaben', async (req, res) => {
         try {
             const knex = getKnex()
-            const s = await knex('settings')
-                .select('aiQuotaStatus', 'aiProvider', ...KEY_SPALTEN)
-                .where('id', 1).first()
+            const s = await knex('settings').where('id', 1).first()
             let status = {}
             try { status = JSON.parse(s?.aiQuotaStatus || '{}') } catch { /* Altbestand */ }
+
+            /*
+             * Wer benutzt diesen Anbieter überhaupt?
+             *
+             * Ohne diese Auskunft konnte die Nachrichten-Seite nur „irgendein
+             * Anbieter mit Schlüssel ist leer" melden — und warnte damit vor
+             * Anthropic, während das in Wahrheit den Strategie-Baukasten
+             * betraf. Abgeleitet aus der Funktions-Registry statt aus einer
+             * zweiten, handgepflegten Liste.
+             */
+            const bereicheJeAnbieter = anbieterBereiche(s)
+            const news = nachrichtenAnbieter(s)
 
             const anbieter = Object.entries(ANBIETER_REG)
                 // Abgekündigte nur zeigen, wenn noch ein Schlüssel liegt
@@ -1446,12 +1483,42 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
                         meldung: st.meldung || '',
                         seit: st.seit || null,
                         okSeit: st.okSeit || null,
+                        // Die Frist rechnet der Server, nicht die zwei
+                        // Oberflächen: `seit` stammt von der Server-Uhr, und
+                        // eine doppelte Arithmetik in beiden Ansichten liefe
+                        // beim ersten Nachjustieren auseinander.
+                        veraltet: Boolean(st.leer) && istVermerkVeraltet(st.seit),
+                        bereiche: [...(bereicheJeAnbieter.get(id) || [])].sort(),
+                        fuerNachrichten: news.has(id),
                     }
                 })
             res.json({ anbieter })
         } catch (e) {
             logError('ai-guthaben', e.message)
             res.status(500).json({ error: 'Guthaben-Status nicht lesbar' })
+        }
+    })
+
+    /*
+     * Vermerk von Hand verwerfen.
+     *
+     * Bisher gab es keinen Weg zurück ausser einem gelungenen Aufruf beim
+     * betroffenen Anbieter — bei einem, den man nicht mehr benutzt, also gar
+     * keinen. POST und nicht DELETE, weil nichts Adressierbares verschwindet:
+     * Der Vermerk ist ein Feld in einem JSON-Blob innerhalb der einen
+     * Einstellungszeile.
+     */
+    app.post('/api/ai/guthaben/zuruecksetzen', async (req, res) => {
+        try {
+            const provider = String(req.body?.provider || '').trim()
+            if (!provider || !ANBIETER_REG[provider]) {
+                return res.status(400).json({ error: 'Unbekannter Anbieter' })
+            }
+            const geloescht = await loescheKiGuthabenVermerk(provider)
+            res.json({ ok: true, geloescht })
+        } catch (e) {
+            logError('ai-guthaben-reset', e.message)
+            res.status(500).json({ error: 'Vermerk nicht zurückgesetzt' })
         }
     })
 }

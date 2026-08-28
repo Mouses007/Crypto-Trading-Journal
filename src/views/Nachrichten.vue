@@ -403,6 +403,7 @@ const nLayout = ref(LAYOUT_VORGABE)
 const nVideoTiefe = ref('normal')
 const nBudget = ref(0)
 const nPunkte = ref(0)
+const nMeldungsTiefe = ref('normal')
 
 function ladeBerichtOptionen() {
     const s = currentUser.value || {}
@@ -416,6 +417,8 @@ function ladeBerichtOptionen() {
     nLayout.value = LAYOUTS.includes(s.radarNewsLayout) ? s.radarNewsLayout : LAYOUT_VORGABE
     nVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
         ? s.radarNewsVideoTiefe : 'normal'
+    nMeldungsTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsMeldungsTiefe)
+        ? s.radarNewsMeldungsTiefe : 'normal'
     nBudget.value = Number(s.radarNewsTokenBudget) || 0
     nPunkte.value = Number(s.radarNewsPunkte) || 0
 }
@@ -444,6 +447,10 @@ const schnellZusammenfassung = computed(() => {
         // Eine eigene Meldungszahl setzt die Länge ausser Kraft — dann steht
         // sie hier auch nicht mehr, sonst widerspricht die Zeile sich selbst.
         nPunkte.value ? `${nPunkte.value} ${t('news.points')}` : t('news.len.' + nLaenge.value),
+        // Die Tiefe steht IMMER da, auch auf „normal": Anders als der
+        // Token-Deckel hat sie in jedem Fall eine sichtbare Wirkung, und zwei
+        // Profile, die sich nur darin unterscheiden, sähen sonst gleich aus.
+        `${t('news.quickDepth')} ${t('news.depth.' + nMeldungsTiefe.value).toLowerCase()}`,
         t('news.layout.' + nLayout.value),
         `${t('news.quickVideos')} ${t('news.depth.' + nVideoTiefe.value).toLowerCase()}`,
     ]
@@ -503,7 +510,16 @@ async function profilAnwenden(id) {
 // Scheiterte ein Aufruf an fehlendem Guthaben, steht das serverseitig fest —
 // hier wird es sichtbar gemacht: Banner über dem Bericht, dazu höchstens alle
 // zwölf Stunden eine Browser-Benachrichtigung (sofern erlaubt).
+//
+// Gezeigt werden aber NUR Anbieter, die an einem Nachrichtenlauf beteiligt
+// sind (`fuerNachrichten` vom Server). Vorher stand hier jeder Anbieter mit
+// hinterlegtem Schlüssel — und diese Seite warnte tagelang vor Anthropic,
+// obwohl der Bericht über OpenRouter lief und Anthropic in Wahrheit den
+// Strategie-Baukasten bediente. Eine Warnung, die den Falschen nennt, kostet
+// mehr Vertrauen als sie Nutzen bringt.
 const guthabenLeer = ref([])
+/** Dieselben Anbieter, aber mit einem Vermerk, den seit Wochen niemand prüfte. */
+const guthabenAlt = ref([])
 /** Letzter gescheiterter Berichtslauf — kommt aus dem Anspruchs-Vermerk. */
 const letzterFehlschlag = ref(null)
 
@@ -526,8 +542,13 @@ function guthabenAusblenden() {
 async function pruefeGuthaben() {
     try {
         const { data } = await axios.get('/api/ai/guthaben')
-        guthabenLeer.value = (data.anbieter || []).filter(a => a.keySet && a.leer)
-    } catch { guthabenLeer.value = [] }
+        const betroffen = (data.anbieter || []).filter(a => a.keySet && a.leer && a.fuerNachrichten)
+        guthabenLeer.value = betroffen.filter(a => !a.veraltet)
+        guthabenAlt.value = betroffen.filter(a => a.veraltet)
+    } catch { guthabenLeer.value = []; guthabenAlt.value = [] }
+    // Nur der frische Fall meldet aufs Telefon. Ein zwei Wochen alter Stand ist
+    // keine Neuigkeit, und eine Push-Meldung über etwas, das die Seite selbst
+    // nur noch gedämpft anzeigt, ist genau der Fehlalarm von vorher.
     if (!guthabenLeer.value.length) return
 
     // Höchstens alle zwölf Stunden. Ob überhaupt gemeldet wird, entscheidet
@@ -1092,6 +1113,14 @@ onBeforeUnmount(() => {
             <button type="button" class="nwGuthabenZu" :title="t('common.close')" @click="guthabenAusblenden">
                 <i class="uil uil-times"></i>
             </button>
+        </p>
+
+        <!-- Derselbe Vermerk, nur alt: seit über zwei Wochen hat ihn niemand
+             mehr bestätigt oder widerlegt. Das ist ein Hinweis, keine Warnung —
+             deshalb ohne Warndreieck und ohne Wegklicken, es drängt ja nichts. -->
+        <p v-if="guthabenAlt.length" class="nwMeldung nwGuthabenAlt">
+            <i class="uil uil-info-circle"></i>
+            {{ t('news.quotaStale', { liste: guthabenAlt.map(a => a.name).join(', ') }) }}
         </p>
 
         <!-- Gescheiterter Berichtslauf. Vorher stand so etwas nur im Serverlog —
@@ -1796,6 +1825,16 @@ onBeforeUnmount(() => {
     border-radius: var(--border-radius, 6px);
     background: rgba(250, 190, 60, 0.1);
     border: 1px solid rgba(250, 190, 60, 0.35);
+}
+
+/* Der alte Vermerk: bewusst OHNE Rahmen und Warnfarbe. Er sagt „das hat seit
+   zwei Wochen niemand geprüft", nicht „hier brennt es" — und was aussieht wie
+   eine Warnung, wird auch wie eine gelesen. */
+.nwGuthabenAlt {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--white-40, rgba(255, 255, 255, 0.4));
 }
 
 /* Ohne `min-width: 0` besteht ein Grid-Element auf seiner Min-Content-Breite —

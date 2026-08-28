@@ -12,7 +12,10 @@ import {
     keySpalte, istOpenAiKompatibel, kannBilder, standardModell,
     anbieterBasis, chatEndpunkt,
 } from './ai-models.js'
-import { ANHANG_UNTERSTUETZUNG } from './llm.js'
+import {
+    ANHANG_UNTERSTUETZUNG, istGuthabenFehler, istVermerkVeraltet, VERMERK_VERFALL_TAGE,
+} from './llm.js'
+import { nachrichtenAnbieter, anbieterBereiche } from './ki-funktionen.js'
 
 let fehler = 0
 // Auch die bestandenen zählen: `scripts/run-selftests.mjs` liest das Zahlenpaar
@@ -102,6 +105,65 @@ for (const p of ['openai', 'anthropic', 'gemini', 'mistral', 'xai', 'qwen']) {
     pruefe(`${p} hat ein Standardmodell`, !!standardModell(p))
 }
 pruefe('eigener Anbieter hat bewusst keines', standardModell('custom') === '')
+
+// 8) Guthaben-Vermerke: erkennen, altern, zuordnen.
+//
+// Der teure Fehler hier ist nicht der übersehene, sondern der falsch stehen
+// gebliebene: Ein Vermerk wird nur beim nächsten ERFOLGREICHEN Aufruf desselben
+// Anbieters gelöscht — nach einem Anbieterwechsel kommt der nie.
+pruefe('echter Anthropic-Text wird erkannt',
+    istGuthabenFehler('Your credit balance is too low to access the Anthropic API.'))
+pruefe('HTTP 402 wird erkannt', istGuthabenFehler('Anbieter antwortete HTTP 402'))
+pruefe('OpenAI-Kontingent wird erkannt', istGuthabenFehler('You exceeded your current quota'))
+// Gegenprobe: Ein zu gieriges Muster markiert einen funktionierenden Anbieter
+// als leer — und blendet ihn danach nie wieder aus dem Banner aus.
+pruefe('Ratenbegrenzung ist KEIN Guthabenfehler', !istGuthabenFehler('rate limit exceeded, retry in 20s'))
+pruefe('fehlendes Modell ist KEIN Guthabenfehler', !istGuthabenFehler('model not found'))
+pruefe('Leeres ist kein Fehler', !istGuthabenFehler('') && !istGuthabenFehler(undefined))
+
+const TAG = 24 * 60 * 60 * 1000
+const jetzt = 1_756_000_000_000
+pruefe('ohne Zeitpunkt nicht veraltet — unbekannt ist kein Ja',
+    !istVermerkVeraltet(null, jetzt) && !istVermerkVeraltet(0, jetzt)
+    && !istVermerkVeraltet(undefined, jetzt) && !istVermerkVeraltet('abc', jetzt))
+pruefe('13 Tage sind frisch', !istVermerkVeraltet(jetzt - 13 * TAG, jetzt))
+pruefe('15 Tage sind veraltet', istVermerkVeraltet(jetzt - 15 * TAG, jetzt))
+pruefe('die Frist steht bei 14 Tagen',
+    VERMERK_VERFALL_TAGE === 14
+    && !istVermerkVeraltet(jetzt - 14 * TAG, jetzt)
+    && istVermerkVeraltet(jetzt - 14 * TAG - 1000, jetzt))
+
+/*
+ * Die Zuordnung Anbieter → Bereich. Der Rückfall ist der eigentliche Grund für
+ * diesen Test: Ein leeres eigenes Feld heisst „der globale Anbieter", nicht
+ * „keiner" — eine handgeschriebene Liste läge hier falsch, sobald jemand das
+ * Feld leert.
+ */
+{
+    const nichts = nachrichtenAnbieter({})
+    pruefe('die festen Nachrichten-Anbieter sind immer dabei',
+        ['perplexity', 'xai', 'gemini'].every((p) => nichts.has(p)))
+    pruefe('Ergebnis ist ein Set', nichts instanceof Set)
+
+    const leer = nachrichtenAnbieter({ aiProvider: 'openai', radarNewsBerichtProvider: '' })
+    pruefe('leeres Berichtsfeld fällt auf den globalen Anbieter', leer.has('openai'))
+
+    const eigen = nachrichtenAnbieter({ aiProvider: 'openai', radarNewsBerichtProvider: 'openrouter' })
+    pruefe('eigener Berichts-Anbieter gilt', eigen.has('openrouter'))
+    pruefe('und verdrängt den globalen', !eigen.has('openai'))
+
+    // Genau die Lage, gegen die der Filter gebaut wurde: Anthropic bedient den
+    // Strategie-Baukasten, hat mit den Nachrichten aber nichts zu tun.
+    const echt = { aiProvider: 'openrouter', radarNewsBerichtProvider: 'openrouter', aiStrategieProvider: 'anthropic' }
+    pruefe('ein reiner Strategie-Anbieter zählt nicht zu den Nachrichten',
+        !nachrichtenAnbieter(echt).has('anthropic'))
+    const bereiche = anbieterBereiche(echt)
+    pruefe('…wird aber seinem Bereich zugeordnet',
+        [...(bereiche.get('anthropic') || [])].join(',') === 'strategie')
+    pruefe('der globale Anbieter erbt die Bereiche ohne eigenes Feld',
+        (bereiche.get('openrouter') || new Set()).has('nachrichten')
+        && bereiche.get('openrouter').has('berichte'))
+}
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

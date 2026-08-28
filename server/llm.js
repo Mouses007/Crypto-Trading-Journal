@@ -50,6 +50,33 @@ export { schaetzeKosten }
 // je Anbieter in `settings.aiQuotaStatus` festgehalten und beim nächsten
 // erfolgreichen Aufruf wieder gelöscht.
 
+/**
+ * Ab wann ein Guthaben-Vermerk nur noch ein alter Stand ist.
+ *
+ * Gelöscht wird ein Vermerk laut oben nur beim nächsten ERFOLGREICHEN Aufruf
+ * desselben Anbieters. Wer den Anbieter wechselt, bekommt diesen Aufruf nie —
+ * der Vermerk altert dann unbegrenzt weiter. Live beobachtet: Anthropic stand
+ * seit dem 23.08.2026 als „leer", während der Betrieb längst über OpenRouter
+ * lief, und warnte täglich auf einer Seite, die Anthropic gar nicht benutzt.
+ *
+ * 14 Tage, weil Guthaben nachladen und ein täglicher Berichtszyklus um
+ * Grössenordnungen darunter liegen: Was so alt ist, wurde nachweislich nicht
+ * mehr nachgeprüft. Kürzer würde echte Warnungen verschlucken.
+ */
+export const VERMERK_VERFALL_TAGE = 14
+
+/**
+ * Ist dieser Vermerk so alt, dass er nichts mehr über HEUTE aussagt?
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann. Ohne
+ * Zeitpunkt: `false` — unbekannt ist kein Ja.
+ */
+export function istVermerkVeraltet(seit, jetzt = Date.now()) {
+    const t = Number(seit)
+    if (!Number.isFinite(t) || t <= 0) return false
+    return jetzt - t > VERMERK_VERFALL_TAGE * 24 * 60 * 60 * 1000
+}
+
 /** Sieht diese Fehlermeldung nach aufgebrauchtem Guthaben/Kontingent aus? */
 export function istGuthabenFehler(text) {
     return /insufficient[_ ]quota|insufficient[_ ]credits?|credit balance|balance is too low|out of credits|no credits|payment required|billing hard limit|purchase (more )?credits|HTTP 402|\b402\b|exceeded your current quota/i
@@ -97,6 +124,33 @@ export async function merkeKiGuthaben(provider, fehler = null) {
         await knex('settings').where('id', 1).update({ aiQuotaStatus: JSON.stringify(status) })
     } catch (e) {
         logWarn('llm', `Guthaben-Status nicht gespeichert: ${e.message}`)
+    }
+}
+
+/**
+ * Guthaben-Vermerk eines Anbieters verwerfen.
+ *
+ * Der Eintrag wird GANZ entfernt, nicht auf `leer: false` gesetzt: Das schriebe
+ * ein `okSeit`, also die Behauptung eines gelungenen Aufrufs, den es nie gab.
+ * Der ehrliche Zustand nach einem Reset ist „kein Vermerk" — unbekannt, nicht
+ * bestätigt.
+ *
+ * Absichtlich hier neben `merkeKiGuthaben` und nicht in der Route: `settings.
+ * aiQuotaStatus` hat genau einen schreibenden Ort, und das soll so bleiben.
+ */
+export async function loescheKiGuthabenVermerk(provider) {
+    try {
+        const knex = getKnex()
+        const s = await knex('settings').where('id', 1).select('aiQuotaStatus').first()
+        let status = {}
+        try { status = JSON.parse(s?.aiQuotaStatus || '{}') } catch { /* Altbestand */ }
+        if (!(provider in status)) return false
+        delete status[provider]
+        await knex('settings').where('id', 1).update({ aiQuotaStatus: JSON.stringify(status) })
+        return true
+    } catch (e) {
+        logWarn('llm', `Guthaben-Vermerk nicht gelöscht: ${e.message}`)
+        return false
     }
 }
 

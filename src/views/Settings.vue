@@ -32,7 +32,7 @@ import {
     VIEW_PCT_OPTIONS, FRAME_MS_OPTIONS, HISTORY_MIN_OPTIONS,
 } from '../stores/live.js'
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 
 let selectedLanguage = ref('de')
 
@@ -542,6 +542,35 @@ async function ladeGuthaben() {
     }
 }
 
+/*
+ * Einen Guthaben-Vermerk verwerfen.
+ *
+ * Nötig, weil ein Vermerk sonst nur durch einen GELUNGENEN Aufruf desselben
+ * Anbieters verschwindet — bei einem, den man nicht mehr benutzt, also nie.
+ * Danach steht der Anbieter auf „kein Vermerk", nicht auf „ok": Zurücknehmen
+ * ist keine Zusage.
+ */
+async function guthabenZuruecksetzen(id) {
+    try {
+        await axios.post('/api/ai/guthaben/zuruecksetzen', { provider: id })
+        await ladeGuthaben()
+        aiTestResult.value = { success: true, message: t('settings.ki.quotaResetDone') }
+    } catch (e) {
+        aiTestResult.value = { success: false, message: e.response?.data?.error || e.message }
+    }
+    setTimeout(() => { aiTestResult.value = null }, 4000)
+}
+
+/* Bereichsnamen der Unter-Reiter — dieselben Beschriftungen wie die Reiterreihe
+   der KI-Einstellungen, damit „betrifft: Strategie" auch dorthin zeigt. */
+function bereichsNamen(g) {
+    // `te()` vor `t()`: Ein Bereich ohne Reiter (etwa „allgemein" für die
+    // Radar-Kacheln) darf keinen rohen Schlüssel auf die Seite schreiben.
+    return (g?.bereiche || [])
+        .map(b => (te('settings.ki.tab_' + b) ? t('settings.ki.tab_' + b) : b))
+        .join(', ')
+}
+
 async function loadAiSettings() {
     try {
         const res = await axios.get('/api/ai/settings')
@@ -841,16 +870,6 @@ function anweisungUebernehmen() {
 let radarNewsThemen = ref(['crypto'])
 let radarNewsLaenge = ref('mittel')
 
-/*
- * Eine Prüfung veraltet, sobald sich Themen oder Länge ändern — genau die
- * beiden Werte, gegen die `bauAnweisungPruefPrompt` urteilt (siehe
- * `anweisungPruefen`). Ohne das blieb ein "wirkungslos, weil Kapitel X nicht
- * existiert" auf dem Schirm stehen, nachdem X längst angehakt wurde — der
- * Leser sah einen Befund, der sich auf eine Auswahl bezog, die es nicht mehr
- * gab.
- */
-watch([radarNewsThemen, radarNewsLaenge], () => { anweisungPruefung.value = null }, { deep: true })
-
 let radarNewsXModell = ref('grok-4.6')
 /* Umfangs- und Darstellungsregler. Überall heisst 0 bzw. leer „Vorgabe der
    gewählten Länge" — wer nichts einstellt, bekommt exakt das bisherige
@@ -860,9 +879,25 @@ let radarNewsLayout = ref('dossier')
 /** Eigene Anweisungen an die Berichts-KI. Leer = Bericht wie gehabt. */
 let radarNewsPromptZusatz = ref('')
 let radarNewsPunkte = ref(0)
+/* Wie ausführlich eine einzelne Meldung wird — die Länge sagt nur, wie viele. */
+let radarNewsMeldungsTiefe = ref('normal')
 let radarNewsTokenBudget = ref(0)
 let radarNewsVideoTiefe = ref('normal')
 let radarNewsVideoTokens = ref(0)
+
+/*
+ * Eine Prüfung veraltet, sobald sich der Zuschnitt ändert, gegen den
+ * `bauAnweisungPruefPrompt` urteilt (siehe `anweisungPruefen`). Ohne das blieb
+ * ein "wirkungslos, weil Kapitel X nicht existiert" auf dem Schirm stehen,
+ * nachdem X längst angehakt wurde — der Leser sah einen Befund, der sich auf
+ * eine Auswahl bezog, die es nicht mehr gab.
+ *
+ * Punktzahl und Meldungstiefe stehen seit dem Umbau ebenfalls im Prüf-Prompt
+ * und gehören deshalb hierher: Eine Anweisung wie „fasse dich kürzer" wird
+ * gegen den eingestellten Umfang beurteilt, und der ändert sich hier.
+ */
+watch([radarNewsThemen, radarNewsLaenge, radarNewsPunkte, radarNewsMeldungsTiefe],
+    () => { anweisungPruefung.value = null }, { deep: true })
 
 /* 0 ist kein Wert, sondern „Vorgabe der Länge" — deshalb zeigen die Felder
    dann „auto" statt einer nackten Null, wie in der Schnellleiste auf
@@ -986,6 +1021,8 @@ function loadRadarSettings() {
         ? s.radarNewsLayout : 'dossier'
     radarNewsPromptZusatz.value = s.radarNewsPromptZusatz || ''
     radarNewsPunkte.value = Math.max(0, Math.min(12, Number(s.radarNewsPunkte) || 0))
+    radarNewsMeldungsTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsMeldungsTiefe)
+        ? s.radarNewsMeldungsTiefe : 'normal'
     radarNewsTokenBudget.value = Math.max(0, Math.min(60000, Number(s.radarNewsTokenBudget) || 0))
     radarNewsVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
         ? s.radarNewsVideoTiefe : 'normal'
@@ -1148,6 +1185,7 @@ async function radarSpeichern(feld) {
         // ein Feld, das mehr annimmt als gilt, belügt den Schreibenden
         radarNewsPromptZusatz: radarNewsPromptZusatz.value.trim().slice(0, 2000),
         radarNewsPunkte: Math.max(0, Math.min(12, Number(radarNewsPunkte.value) || 0)),
+        radarNewsMeldungsTiefe: radarNewsMeldungsTiefe.value,
         radarNewsTokenBudget: Math.max(0, Math.min(60000, Number(radarNewsTokenBudget.value) || 0)),
         radarNewsVideoTiefe: radarNewsVideoTiefe.value,
         radarNewsVideoTokens: Math.max(0, Math.min(4000, Number(radarNewsVideoTokens.value) || 0)),
@@ -3336,10 +3374,19 @@ onBeforeMount(async () => {
                                             </span>
                                         </td>
                                         <td>
-                                            <span v-if="g.leer" class="text-danger" :title="g.meldung">
+                                            <!-- Frischer Vermerk: rot. Ein Vermerk, den seit zwei
+                                                 Wochen niemand mehr bestätigt oder widerlegt hat,
+                                                 ist dagegen ein alter Stand und keine Warnung —
+                                                 der Anbieter wurde einfach nicht mehr angefragt. -->
+                                            <span v-if="g.leer && !g.veraltet" class="text-danger" :title="g.meldung">
                                                 <i class="uil uil-exclamation-triangle"></i>
                                                 {{ t('settings.ki.quotaEmpty') }}
                                                 <small v-if="g.seit">{{ t('settings.ki.quotaSince', { zeit: zeitpunkt(g.seit) }) }}</small>
+                                            </span>
+                                            <span v-else-if="g.leer" class="text-muted" :title="g.meldung">
+                                                <i class="uil uil-info-circle"></i>
+                                                {{ t('settings.ki.quotaStale') }}
+                                                <small v-if="g.seit">{{ t('settings.ki.quotaStaleSince', { zeit: zeitpunkt(g.seit) }) }}</small>
                                             </span>
                                             <span v-else-if="g.okSeit" class="text-success">
                                                 <i class="uil uil-check-circle"></i>
@@ -3347,8 +3394,19 @@ onBeforeMount(async () => {
                                                 <small class="text-muted">{{ t('settings.ki.quotaLast', { zeit: zeitpunkt(g.okSeit) }) }}</small>
                                             </span>
                                             <span v-else class="text-muted">{{ t('settings.ki.quotaNone') }}</span>
+                                            <!-- Wen es trifft. Ohne diese Zeile nennt ein Vermerk
+                                                 nur einen Namen, und man sucht selbst zusammen,
+                                                 welche Funktion damit stillsteht. -->
+                                            <small v-if="g.leer && g.bereiche?.length" class="d-block text-muted"
+                                                style="font-size:0.72rem;">
+                                                {{ t('settings.ki.quotaAffects', { liste: bereichsNamen(g) }) }}
+                                            </small>
                                         </td>
                                         <td class="text-end">
+                                            <button v-if="g.leer" class="btn btn-outline-secondary btn-sm me-2"
+                                                @click="guthabenZuruecksetzen(g.id)">
+                                                {{ t('settings.ki.quotaReset') }}
+                                            </button>
                                             <a v-if="g.keyUrl" :href="'https://' + g.keyUrl" target="_blank"
                                                 rel="noopener noreferrer" class="small">
                                                 {{ t('settings.ki.console') }} <i class="uil uil-external-link-alt"></i>
@@ -4555,7 +4613,10 @@ onBeforeMount(async () => {
                     </div>
 
                     <!-- Umfang: Meldungen je Kapitel und der Token-Deckel. Beide
-                         leer/0 = die oben gewählte Länge entscheidet. -->
+                         leer/0 = die oben gewählte Länge entscheidet.
+                         Dazwischen die Tiefe: Anzahl und Ausführlichkeit sind
+                         zwei Fragen, und wer die Anzahl selbst vorgibt, hatte
+                         vorher gar keinen Hebel mehr auf den Umfang. -->
                     <div class="row align-items-center mt-3">
                         <div class="col-12 col-md-4">
                             {{ t('settings.ki.news.scopeLabel') }}
@@ -4569,6 +4630,14 @@ onBeforeMount(async () => {
                                 style="max-width:6rem;" :placeholder="t('news.auto')"
                                 :value="radarNewsPunkte || ''"
                                 @change="radarNewsPunkte = grenzeZahl($event.target.value, 12); radarSpeichern('radarNewsPunkte')" />
+                            <span class="small ms-2">{{ t('settings.ki.news.pointDepthLabel') }}</span>
+                            <select class="form-select form-select-sm" style="max-width:12rem;"
+                                :title="t('news.pointDepthHint')"
+                                v-model="radarNewsMeldungsTiefe" @change="radarSpeichern('radarNewsMeldungsTiefe')">
+                                <option v-for="v in ['knapp', 'normal', 'ausfuehrlich']" :key="v" :value="v">
+                                    {{ t('news.depth.' + v) }} — {{ t('news.pointDepthSub.' + v) }}
+                                </option>
+                            </select>
                             <span class="small ms-2">{{ t('news.budget') }}</span>
                             <input type="number" min="0" max="60000" step="500" class="form-control form-control-sm"
                                 style="max-width:7rem;" :placeholder="t('news.auto')"

@@ -79,7 +79,7 @@ export const VALID_SETTINGS_KEYS = [
     'radarNewsUpdates', 'radarNewsUpdateStunden', 'radarNewsMailVoll', 'radarNewsMailInhalt', 'radarNewsMailAktiv', 'radarNewsMailAn',
     'radarNewsBerichtAufbewahrung', 'radarNewsChartFrische',
     'radarNewsRechercheModell',
-    'radarNewsTokenBudget', 'radarNewsPunkte', 'radarNewsVideoTiefe', 'radarNewsVideoTokens', 'radarNewsLayout',
+    'radarNewsTokenBudget', 'radarNewsPunkte', 'radarNewsMeldungsTiefe', 'radarNewsVideoTiefe', 'radarNewsVideoTokens', 'radarNewsLayout',
     'radarNewsPromptZusatz', 'radarNewsFokusAn', 'radarNewsFokusWoerter', 'radarNewsAktivesProfil',
     'livetradingAn', 'betaAusblenden', 'livetradingMobil', 'startseiteAn',
     'erweiterteInfos', 'modusLiveAn', 'modusResearchAn', 'modusStrategieAn', 'modusLernenAn',

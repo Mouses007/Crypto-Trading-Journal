@@ -2040,6 +2040,10 @@ async function runMigrations(knex, client) {
      */
     await addColumnIfNotExists('settings', 'radarNewsTokenBudget', (t) => t.integer('radarNewsTokenBudget').defaultTo(0))
     await addColumnIfNotExists('settings', 'radarNewsPunkte', (t) => t.integer('radarNewsPunkte').defaultTo(0))
+    // Wie ausführlich eine EINZELNE Meldung ausfällt — die Länge regelt nur,
+    // wie viele es sind. Vorgabe `normal` ist wörtlich der Text, der vorher
+    // fest im Prompt stand: Bestandsberichte ändern sich um kein Zeichen.
+    await addColumnIfNotExists('settings', 'radarNewsMeldungsTiefe', (t) => t.text('radarNewsMeldungsTiefe').defaultTo('normal'))   // knapp|normal|ausfuehrlich
     await addColumnIfNotExists('settings', 'radarNewsVideoTiefe', (t) => t.text('radarNewsVideoTiefe').defaultTo('normal'))   // knapp|normal|ausfuehrlich
     await addColumnIfNotExists('settings', 'radarNewsVideoTokens', (t) => t.integer('radarNewsVideoTokens').defaultTo(0))
     // dossier = Tabellen, Kennzahlen und Bilder (Vorgabe) · kombiniert =

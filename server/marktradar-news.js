@@ -677,6 +677,58 @@ const LAENGEN = {
 }
 
 /**
+ * Wie ausführlich eine EINZELNE Meldung ausfällt.
+ *
+ * Die Länge oben steuert die MENGE — Sätze der Lage, Anzahl der Punkte,
+ * Budget. Wie tief ein einzelner Punkt geht, stand dagegen fest im Prompt
+ * („drei bis fünf Sätze"). Wer die Anzahl über die eigene Punktzahl vorgibt,
+ * hatte damit gar keinen Hebel mehr auf den Umfang: „drei Meldungen, aber
+ * richtig" war nicht einstellbar, „acht kurze" ebenso wenig.
+ *
+ * Zwei Textformen, weil der Prompt beide braucht: `auftrag` steht im Fliesstext
+ * des UMFANG-Blocks, `kurz` im JSON-Schnittmuster. Beide sind Pflicht — das
+ * Modell hält sich am ehesten an das Schnittmuster, weil es zuletzt kommt.
+ * Ein Feld für beide ginge nicht: „ein Absatz von drei bis fünf SÄTZEN"
+ * (Dativ) gegen `"text": "drei bis fünf Sätze"` (Nominativ), und was bei
+ * „normal" aufzuzählen ist, sprengt bei „knapp" schon die vorgegebene Länge.
+ *
+ * `faktor` skaliert das Token-Budget mit. Ohne ihn wäre „ausführlich" bei acht
+ * Meldungen ein planbarer Abbruch: voll bezahlt, komplett wertlos (siehe die
+ * Messungen bei LAENGEN). Gerechnet: normal ≈ 4 Sätze je Meldung,
+ * ausführlich ≈ 7,5 → 1,9; aufgerundet auf 2, weil zu hoch nichts kostet und
+ * zu tief den ganzen Lauf. Nach unten nur 0,7 statt 0,375, weil Gesamtlage,
+ * Lagebild, Überschriften und JSON-Gerüst NICHT mitschrumpfen — dieser feste
+ * Anteil bliebe sonst ungedeckt.
+ */
+export const MELDUNGS_TIEFEN = {
+    knapp: {
+        auftrag: 'Jeder Punkt ist ein bis zwei Sätze — was geschehen ist und die '
+            + 'wichtigste Zahl dazu.',
+        kurz: 'ein bis zwei Sätze',
+        faktor: 0.7,
+    },
+    normal: {
+        auftrag: 'Jeder Punkt ist ein ausgeschriebener Absatz von drei bis fünf Sätzen '
+            + '— was geschehen ist, welche Zahlen dazu genannt werden und wie es '
+            + 'zusammenhängt.',
+        kurz: 'drei bis fünf Sätze',
+        faktor: 1,
+    },
+    ausfuehrlich: {
+        auftrag: 'Jeder Punkt ist ein ausgeschriebener Absatz von sechs bis neun Sätzen '
+            + '— was geschehen ist, welche Zahlen dazu genannt werden, wie es '
+            + 'zusammenhängt und was daran neu ist gegenüber dem bisher Bekannten.',
+        kurz: 'sechs bis neun Sätze',
+        faktor: 2,
+    },
+}
+
+/** Stufe der Meldungstiefe auflösen; unbekannt → `normal`. */
+export function meldungsTiefeAus(tiefe) {
+    return MELDUNGS_TIEFEN[tiefe] || MELDUNGS_TIEFEN.normal
+}
+
+/**
  * Token-Budget der Berichtsantwort — Erstversuch und Nachschlag.
  *
  * Die Werte oben sind Erfahrungswerte für ein Kapitel; bei drei Kapiteln und
@@ -689,13 +741,23 @@ const LAENGEN = {
  * Versuch ist immer das Doppelte — er kostet nur Text, und ein abgebrochener
  * Lauf wirft die bereits bezahlte Videoanalyse weg.
  *
+ * `tiefe` skaliert die Stufen der Länge mit der Ausführlichkeit je Meldung:
+ * acht Meldungen à neun Sätze brauchen mehr als acht à zwei. Ein EIGENER
+ * Deckel wird bewusst NICHT skaliert — der ist eine ausdrückliche Ansage des
+ * Lesers und wird nicht hinter seinem Rücken verdoppelt.
+ *
  * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
  */
-export function budgetsAus(laenge, budget, { aktualisierung = false } = {}) {
+export function budgetsAus(laenge, budget, { aktualisierung = false, tiefe = 'normal' } = {}) {
     const eigen = Math.max(0, Number(budget) || 0)
+    const faktor = meldungsTiefeAus(tiefe).faktor
     const stufen = eigen
         ? [Math.min(60000, Math.max(1000, eigen)), Math.min(120000, Math.min(60000, Math.max(1000, eigen)) * 2)]
+        // Erststufe wie beim eigenen Wert bei 60000 gedeckelt, der Nachschlag
+        // bei 120000 — sonst würde „lang" + „ausführlich" den zweiten Anlauf
+        // KLEINER machen als den ersten es verlangt.
         : (LAENGEN[laenge] || LAENGEN.mittel).budgets
+            .map((b, i) => Math.min(i ? 120000 : 60000, Math.max(1000, Math.round(b * faktor))))
     if (!aktualisierung) return stufen
     /*
      * Die Aktualisierung bekommt eine Stufe mehr Luft, als ihre Länge vorgibt.
@@ -852,8 +914,9 @@ export function kompaktVorbericht(zeile, offset = 0) {
  * Exportiert, damit der Selbsttest die Varianten ohne Netz prüfen kann.
  */
 export function bauLagePrompt({ themen = ['crypto'], laenge = 'mittel', rhythmus = 'taeglich',
-    punkte = 0, zusatz = '', aktualisierung = false, abdeckung = '' } = {}) {
+    punkte = 0, tiefe = 'normal', zusatz = '', aktualisierung = false, abdeckung = '' } = {}) {
     const l = { ...(LAENGEN[laenge] || LAENGEN.mittel), punkte: punkteVorgabe(laenge, punkte) }
+    const t = meldungsTiefeAus(tiefe)
     /*
      * Der Zeitraum ist eine BEHAUPTUNG über die Grundlage — also muss er
      * stimmen. `abdeckung` kommt aus den tatsächlich mitgegebenen Beiträgen;
@@ -939,10 +1002,8 @@ Kapitel — sie sind Nachrichten, keine Chartaussagen.
   steht, wiederholt keine Meldung. Ist ein Punkt schon gesagt, schreibe den
   nächsten oder lass die Liste kürzer.
 
-UMFANG je Kapitel: eine Lage von ${l.lage} und ${l.punkte}. Jeder Punkt ist ein
-ausgeschriebener Absatz von drei bis fünf Sätzen — was geschehen ist, welche
-Zahlen dazu genannt werden und wie es zusammenhängt. Sagen zwei Quellen
-dasselbe, schreibe EINEN Punkt und nenne beide Belege.
+UMFANG je Kapitel: eine Lage von ${l.lage} und ${l.punkte}. ${t.auftrag} Sagen
+zwei Quellen dasselbe, schreibe EINEN Punkt und nenne beide Belege.
 
 LAGEBILD: Zusätzlich wägst du ab, was die Lage STÜTZT ("dafuer"), was sie
 BELASTET ("dagegen") und WORAN SIE SICH ENTSCHEIDET ("offen"). Je zwei bis vier
@@ -964,7 +1025,7 @@ ${eigene}Antworte NUR mit JSON:
  "kapitel": [{"thema": "crypto",
               "ueberschrift": "Kapitel-Schlagzeile",
               "lage": "${l.lage}",
-              "punkte": [{"titel": "...", "text": "drei bis fünf Sätze", "quelle": "...",
+              "punkte": [{"titel": "...", "text": "${t.kurz}", "quelle": "...",
                           "wichtigkeit": "hoch|mittel", "themaId": "T3",${aktualisierung ? ' "korrektur": true,' : ''}
                           "kennzahlen": [{"wert": "-29.000 BTC", "was": "Apparent Demand"}],
                           "belege": [1, 4]}]}]}
@@ -1230,8 +1291,16 @@ export function abdeckungText(beitraege, { jetzt = Date.now() } = {}) {
  *
  * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
  */
-export function bauAnweisungPruefPrompt({ themen = ['crypto'], laenge = 'mittel', quellen = [] } = {}) {
-    const l = LAENGEN[laenge] || LAENGEN.mittel
+export function bauAnweisungPruefPrompt({ themen = ['crypto'], laenge = 'mittel',
+    punkte = 0, tiefe = 'normal', quellen = [] } = {}) {
+    /*
+     * Wie in `bauLagePrompt`: eine eigene Punktzahl SCHLÄGT die Vorgabe der
+     * Länge. Das fehlte hier — die Prüfung sagte dem Leser „vier bis fünf
+     * Punkte", während sein Bericht zehn schrieb, und beurteilte seine
+     * Anweisung damit gegen einen Umfang, den es gar nicht gab.
+     */
+    const l = { ...(LAENGEN[laenge] || LAENGEN.mittel), punkte: punkteVorgabe(laenge, punkte) }
+    const t = meldungsTiefeAus(tiefe)
     const liste = (Array.isArray(quellen) ? quellen : [])
         .filter(q => q && String(q.name || '').trim())
         .slice(0, 60)
@@ -1244,7 +1313,8 @@ Krypto-Lageberichts mitgeben will. Du schreibst KEINEN Bericht.
 So arbeitet dieser Bericht — daran ändert die Anweisung nichts:
 - Er hat genau diese Kapitel: ${themen.join(', ')}. Kapitel kann die Anweisung
   nicht hinzufügen oder streichen — die Seite kennt nur diese Kennungen.
-- Umfang je Kapitel: eine Lage von ${l.lage} und ${l.punkte}. Das ist die
+- Umfang je Kapitel: eine Lage von ${l.lage} und ${l.punkte}, jede Meldung
+  ${t.kurz} lang. Das ist die
   VORGABE, keine Grenze: die Anweisung des Lesers geht ihr VOR. Verlangt sie
   mehr, weniger, anderes Gewicht oder eine andere Reihenfolge, richtet der
   Bericht sich danach — das ist dann "wirkt", nicht "wirkungslos".
@@ -1662,6 +1732,16 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
     // Themen die Kapitel, Länge den Umfang je Kapitel.
     const rhythmus = leseRhythmus(s?.radarNewsRhythmus)
     const laengeEingestellt = ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
+    /*
+     * Die Tiefe gilt für die Zwischenmeldung UNVERÄNDERT — anders als die
+     * Länge, die `laengeFuerUpdate` eine Stufe senkt. Die Länge steuert, WIE
+     * VIELE Meldungen kommen, und um 15:00 sind das selten acht; wie tief die
+     * einzelne erklärt wird, hat damit nichts zu tun. Beides zu senken machte
+     * aus der Zwischenmeldung wieder die Schlagzeilenliste, gegen die dieser
+     * Regler gebaut ist.
+     */
+    const tiefe = ['knapp', 'normal', 'ausfuehrlich'].includes(s?.radarNewsMeldungsTiefe)
+        ? s.radarNewsMeldungsTiefe : 'normal'
     const themenEingestellt = leseThemen(s?.radarNewsThemen)
     const fensterMs = rhythmus === 'woechentlich' ? 7 * TAG : 36 * 60 * 60 * 1000
     /*
@@ -2178,9 +2258,9 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
      * Umfangs. Ausgabe-Token kosten hier wenige Rappen — ein abgebrochener
      * Lauf kostet den ganzen Bericht.
      */
-    const budgets = budgetsAus(laenge, s?.radarNewsTokenBudget, { aktualisierung: istUpdate })
+    const budgets = budgetsAus(laenge, s?.radarNewsTokenBudget, { aktualisierung: istUpdate, tiefe })
     const system = bauLagePrompt({
-        themen, laenge, rhythmus,
+        themen, laenge, rhythmus, tiefe,
         // Nicht das eingestellte Fenster, sondern was wirklich drinsteht.
         abdeckung: istUpdate ? '' : abdeckungText(beitraege),
         punkte: s?.radarNewsPunkte,
@@ -2790,6 +2870,9 @@ export function setupNewsRoutes(app) {
                 system: bauAnweisungPruefPrompt({
                     themen: leseThemen(s?.radarNewsThemen),
                     laenge: ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel',
+                    punkte: s?.radarNewsPunkte,
+                    tiefe: ['knapp', 'normal', 'ausfuehrlich'].includes(s?.radarNewsMeldungsTiefe)
+                        ? s.radarNewsMeldungsTiefe : 'normal',
                     // Ohne die Liste rät das Modell, ob ein genannter Kanal
                     // erreichbar ist — und riet „nein" bei einer Quelle, die
                     // seit Monaten eingerichtet ist. Nur die AKTIVEN: eine

@@ -15,7 +15,7 @@
  */
 import {
     budgetsAus, punkteVorgabe, videoTiefeAus, VIDEO_TIEFEN, bauLagePrompt, laengeFuerUpdate,
-    bauVideoAuftrag,
+    bauVideoAuftrag, MELDUNGS_TIEFEN, meldungsTiefeAus, bauAnweisungPruefPrompt,
     istLiveSeite, istEndgueltig, leseLagebild, eigeneAnweisungen, ZUSATZ_MAX, istBruchstueck,
 } from './marktradar-news.js'
 
@@ -93,6 +93,85 @@ const prompt = bauLagePrompt({ themen: ['crypto'], laenge: 'kurz', punkte: 6 })
 p('Prompt trägt die eigene Punktzahl', prompt.includes('genau 6 Punkte'))
 p('Prompt ohne Eigenwert trägt die Vorgabe',
     bauLagePrompt({ themen: ['crypto'], laenge: 'kurz' }).includes('zwei bis drei Punkte'))
+
+// ── Ausführlichkeit je Meldung ───────────────────────────────────────────
+// Die Länge regelt, WIE VIELE Meldungen kommen; die Tiefe, wie ausführlich
+// jede einzelne ist. Vorher stand die Tiefe fest im Prompt — wer die Anzahl
+// selbst vorgab, hatte damit gar keinen Hebel mehr auf den Umfang.
+p('drei Stufen in fester Reihenfolge',
+    Object.keys(MELDUNGS_TIEFEN).join(',') === 'knapp,normal,ausfuehrlich')
+for (const [name, stufe] of Object.entries(MELDUNGS_TIEFEN)) {
+    p(`${name}: Auftrag und Kurzform vorhanden`,
+        typeof stufe.auftrag === 'string' && stufe.auftrag.length > 40
+        && typeof stufe.kurz === 'string' && /S(ä|a)tz/.test(stufe.kurz))
+    p(`${name}: Faktor ist eine positive Zahl`, Number.isFinite(stufe.faktor) && stufe.faktor > 0)
+}
+p('unbekannte Stufe fällt auf normal', meldungsTiefeAus('quatsch') === MELDUNGS_TIEFEN.normal
+    && meldungsTiefeAus(undefined) === MELDUNGS_TIEFEN.normal
+    && meldungsTiefeAus('') === MELDUNGS_TIEFEN.normal)
+p('normal ist der Bestandsfall', MELDUNGS_TIEFEN.normal.faktor === 1)
+p('knapp kleiner, ausführlich grösser',
+    MELDUNGS_TIEFEN.knapp.faktor < 1 && MELDUNGS_TIEFEN.ausfuehrlich.faktor > 1)
+
+/*
+ * Der wichtigste Test des Blocks: Wer nichts einstellt, bekommt exakt dieselben
+ * Budgets wie vor dem Umbau. Ein Regler, der den Bestandsfall verschiebt, macht
+ * jeden bisherigen Erfahrungswert wertlos.
+ */
+for (const laenge of ['kurz', 'mittel', 'lang']) {
+    p(`${laenge}: ohne Tiefe = mit normal`,
+        String(budgetsAus(laenge, 0)) === String(budgetsAus(laenge, 0, { tiefe: 'normal' })))
+    p(`${laenge}: auch bei der Aktualisierung`,
+        String(budgetsAus(laenge, 0, { aktualisierung: true }))
+        === String(budgetsAus(laenge, 0, { aktualisierung: true, tiefe: 'normal' })))
+}
+p('ausführlich verdoppelt die Stufe',
+    String(budgetsAus('mittel', 0, { tiefe: 'ausfuehrlich' })) === '32000,64000')
+p('knapp senkt sie', String(budgetsAus('kurz', 0, { tiefe: 'knapp' })) === '5600,11200')
+
+// Ein EIGENER Deckel ist die ausdrückliche Ansage des Lesers — der wird nicht
+// hinter seinem Rücken verdoppelt.
+p('Eigenwert bleibt ungeskaliert',
+    String(budgetsAus('mittel', 7000, { tiefe: 'ausfuehrlich' })) === '7000,14000'
+    && String(budgetsAus('mittel', 7000, { tiefe: 'knapp' })) === '7000,14000')
+
+// Die Grenzen halten auch mit Faktor, und der Nachschlag bleibt grösser als
+// der Erstversuch — sonst wäre der zweite Anlauf bloss die Wiederholung des
+// Abbruchs.
+for (const tiefe of ['knapp', 'normal', 'ausfuehrlich']) {
+    for (const laenge of ['kurz', 'mittel', 'lang']) {
+        for (const aktualisierung of [false, true]) {
+            const [erst, nach] = budgetsAus(laenge, 0, { tiefe, aktualisierung })
+            p(`${laenge}/${tiefe}${aktualisierung ? '/update' : ''}: Nachschlag grösser`, nach > erst)
+            p(`${laenge}/${tiefe}${aktualisierung ? '/update' : ''}: Grenzen halten`,
+                erst >= 1000 && erst <= 60000 && nach <= 120000)
+        }
+    }
+}
+
+// Und die Stufe muss im Prompt ankommen — an BEIDEN Stellen. Das Modell hält
+// sich am ehesten an das JSON-Schnittmuster, weil es zuletzt kommt.
+{
+    const tief = bauLagePrompt({ themen: ['crypto'], tiefe: 'ausfuehrlich' })
+    p('Prompt trägt den Auftrag der Stufe', tief.includes('sechs bis neun Sätzen'))
+    p('Prompt trägt die Kurzform im Schnittmuster', tief.includes('"sechs bis neun Sätze"'))
+    p('ohne Angabe bleibt der Bestandstext',
+        bauLagePrompt({ themen: ['crypto'] }).includes('drei bis fünf Sätzen'))
+    p('knapp verlangt keine Absätze',
+        !bauLagePrompt({ themen: ['crypto'], tiefe: 'knapp' }).includes('drei bis fünf Sätzen'))
+}
+
+// Die Anweisungs-Prüfung muss denselben Umfang kennen wie der Bericht — sonst
+// beurteilt sie „mach die Meldungen kürzer" gegen eine Vorgabe, die es nicht
+// gibt. Die eigene Punktzahl fehlte dort bis zu diesem Umbau ganz.
+{
+    const pruef = bauAnweisungPruefPrompt({ themen: ['crypto'], laenge: 'mittel', punkte: 9, tiefe: 'knapp' })
+    p('Prüfung kennt die eigene Punktzahl', pruef.includes('genau 9 Punkte'))
+    p('Prüfung kennt die Tiefe', pruef.includes('ein bis zwei Sätze'))
+    p('Prüfung ohne Eigenwerte nennt die Vorgaben',
+        bauAnweisungPruefPrompt({ themen: ['crypto'], laenge: 'mittel' })
+            .includes('vier bis fünf Punkte'))
+}
 
 // ── Eigene Anweisungen aus den Einstellungen ─────────────────────────────
 // Leer muss WIRKLICH leer bleiben: sonst zahlt jeder Lauf für einen Block,

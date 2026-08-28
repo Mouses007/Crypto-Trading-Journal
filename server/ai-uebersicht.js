@@ -21,72 +21,10 @@ import { standardModell } from './ai-models.js'
 import { istAgentAktiv } from './ai-agent.js'
 import { engineStatus } from './strategy-engine.js'
 import { leseUpdateStunden, leseRhythmus } from './marktradar-news.js'
+import { KI_FUNKTIONEN, anbieterVon } from './ki-funktionen.js'
 import { logWarn } from './logger.js'
 
 const TAG_MS = 24 * 60 * 60 * 1000
-
-/**
- * Die KI-Funktionen des Hauses.
- *
- * `bereich` ist der Unter-Reiter der Einstellungen, in dem die Funktion
- * eingestellt wird — die Oberfläche macht daraus den Sprung dorthin. `rolle`
- * benennt den `waehleAnbieter`-Bereich; leer heisst „nimmt den globalen
- * Anbieter". `funktionen` sind die Schlüssel, unter denen der Verbrauch
- * gebucht wird (mehrere, wo ein Vorgang aus Teilschritten besteht).
- */
-const KI_FUNKTIONEN = [
-    {
-        id: 'bericht', titelKey: 'kiUebersicht.fn.bericht', bereich: 'berichte',
-        rolle: 'Bericht', funktionen: ['bericht', 'coach-chat'],
-    },
-    {
-        id: 'tradeAnalyse', titelKey: 'kiUebersicht.fn.tradeAnalyse', bereich: 'berichte',
-        rolle: 'Bericht', funktionen: ['trade-analyse', 'trade-chat'],
-    },
-    {
-        id: 'agent', titelKey: 'kiUebersicht.fn.agent', bereich: 'agent',
-        rolle: 'Agent', funktionen: ['agent'],
-    },
-    {
-        id: 'lagebericht', titelKey: 'kiUebersicht.fn.lagebericht', bereich: 'nachrichten',
-        // Die Nachrichten wählen ihren Anbieter über eigene Felder statt über
-        // `waehleAnbieter` — deshalb hier ausdrücklich benannt.
-        felder: { provider: 'radarNewsBerichtProvider', modell: 'radarNewsBerichtModell' },
-        // Die Aktualisierung ist derselbe Vorgang mit anderem Zuschnitt — sie
-        // gehört in dieselbe Kostenzeile, sonst sucht man den Nachmittag im
-        // Verbrauch vergeblich.
-        funktionen: ['lagebericht', 'lagebericht-update', 'lagebericht-pruefung'],
-    },
-    {
-        id: 'recherche', titelKey: 'kiUebersicht.fn.recherche', bereich: 'nachrichten',
-        fest: { provider: 'perplexity', feld: 'radarNewsRechercheModell', standard: 'sonar' },
-        funktionen: ['recherche'],
-    },
-    {
-        id: 'xSuche', titelKey: 'kiUebersicht.fn.xSuche', bereich: 'nachrichten',
-        fest: { provider: 'xai', feld: 'radarNewsXModell', standard: 'grok-4.6' },
-        funktionen: ['x-suche'],
-    },
-    {
-        id: 'video', titelKey: 'kiUebersicht.fn.video', bereich: 'nachrichten',
-        // Nur Gemini öffnet eine YouTube-Adresse selbst.
-        fest: { provider: 'gemini', feld: 'radarNewsModel', standard: 'gemini-3.5-flash-lite' },
-        funktionen: ['video'],
-    },
-    {
-        id: 'strategie', titelKey: 'kiUebersicht.fn.strategie', bereich: 'strategie',
-        rolle: 'Strategie', funktionen: ['strategie-veto', 'regel-baukasten', 'strategie-baukasten'],
-    },
-    {
-        id: 'radar', titelKey: 'kiUebersicht.fn.radar', bereich: 'allgemein',
-        rolle: '', funktionen: ['lage', 'mechanik', 'rangliste'],
-    },
-    {
-        id: 'bild', titelKey: 'kiUebersicht.fn.bild', bereich: 'bilder',
-        fest: { feldProvider: 'shareCardProvider', feld: 'fluxModel', standard: 'flux-2-pro' },
-        funktionen: ['bild'],
-    },
-]
 
 /**
  * Was von selbst läuft.
@@ -174,29 +112,35 @@ function zeitplanVon(a, s) {
     }
 }
 
-/** Anbieter und Modell einer Funktion auflösen — inklusive „folgt dem globalen". */
+/**
+ * Anbieter und Modell einer Funktion auflösen — inklusive „folgt dem globalen".
+ *
+ * Der ANBIETER kommt aus `anbieterVon` im Registry-Modul und wird hier nicht
+ * ein zweites Mal bestimmt: Der Guthaben-Endpunkt beantwortet dieselbe Frage,
+ * und zwei Auflösungen, die auseinanderlaufen dürfen, sind genau das Muster,
+ * das im Haus schon zweimal schiefging. Hier kommt nur das Modell dazu.
+ */
 function loeseAnbieter(eintrag, s) {
-    const global = { provider: s?.aiProvider || 'ollama', model: s?.aiModel || '' }
+    const provider = anbieterVon(eintrag, s)
 
     if (eintrag.fest) {
-        const provider = eintrag.fest.provider || String(s?.[eintrag.fest.feldProvider] || '') || ''
         const modell = String(s?.[eintrag.fest.feld] || '') || eintrag.fest.standard
         return { provider, modell, folgtGlobal: false }
     }
 
     if (eintrag.felder) {
         const eigen = String(s?.[eintrag.felder.provider] || '').trim()
-        if (!eigen) return { ...global, modell: global.model, folgtGlobal: true }
+        if (!eigen) return { provider, modell: s?.aiModel || '', folgtGlobal: true }
         return {
-            provider: eigen,
-            modell: String(s?.[eintrag.felder.modell] || '').trim() || standardModell(eigen),
+            provider,
+            modell: String(s?.[eintrag.felder.modell] || '').trim() || standardModell(provider),
             folgtGlobal: false,
         }
     }
 
     const gewaehlt = waehleAnbieter(s || {}, eintrag.rolle || '')
     const eigen = eintrag.rolle ? String(s?.[`ai${eintrag.rolle}Provider`] || '').trim() : ''
-    return { provider: gewaehlt.provider, modell: gewaehlt.model, folgtGlobal: !eigen }
+    return { provider, modell: gewaehlt.model, folgtGlobal: !eigen }
 }
 
 /**
