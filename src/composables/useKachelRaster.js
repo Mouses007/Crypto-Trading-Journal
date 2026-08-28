@@ -31,6 +31,12 @@
  * @param {number}   [opt.startVersatzMs=250] Versatz beim Erststart
  * @param {string[]} [opt.standardVersteckt=[]] beim Erststart ausgeblendete Ids
  *   (für Seiten mit grossem Katalog, die aufgeräumt starten — z.B. die Startseite)
+ * @param {object}   [opt.immerLaden] Ref auf eine Id-Liste, die UNABHÄNGIG von der
+ *   Sichtbarkeit geholt wird. Gebraucht, sobald eine Seite zwei Darstellungen
+ *   derselben Daten hat: im Live-Trading blendet das Kachelraster einzelne
+ *   Kacheln aus, das Pult zeigt aber feste Instrumente. Ohne diese Liste
+ *   verhungerte die zweite Ansicht an einer Entscheidung, die für die erste
+ *   getroffen wurde — mit einem leeren Instrument als einzigem Hinweis.
  */
 
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
@@ -50,6 +56,7 @@ export function useKachelRaster({
     taktMs = 30000,
     startVersatzMs = 250,
     standardVersteckt = [],
+    immerLaden = null,
 }) {
     const { hiddenCards, reihenfolge, groessen, toggleCard, isVisible, zeigeAlle,
         setzeReihenfolge, setzeGroesse } = useHiddenCards(storageKey, standardVersteckt)
@@ -105,6 +112,24 @@ export function useKachelRaster({
 
     const alleKacheln = computed(() => sortiere(reihenfolge.value))
     const sichtbareKacheln = computed(() => alleKacheln.value.filter(k => isVisible(k.id)))
+
+    /**
+     * Welche Kacheln geholt werden — die sichtbaren plus die fest angeforderten.
+     *
+     * Nicht dasselbe wie `sichtbareKacheln`, und der Unterschied ist der Zweck:
+     * geholt wird nach Bedarf, gezeichnet wird nach Sichtbarkeit. Wer im Raster
+     * eine Kachel ausblendet, meint „ich will sie hier nicht sehen" und nicht
+     * „diese Zahl darf die Seite nicht mehr kennen".
+     */
+    const zuLaden = computed(() => {
+        const extra = new Set(immerLaden?.value || [])
+        if (!extra.size) return sichtbareKacheln.value
+        const schon = new Set(sichtbareKacheln.value.map(k => k.id))
+        return [
+            ...sichtbareKacheln.value,
+            ...alleKacheln.value.filter(k => extra.has(k.id) && !schon.has(k.id)),
+        ]
+    })
 
     /** Zustandspunkt der Kopfzeile: der schlechteste aller sichtbaren Kacheln. */
     const gesamtZustand = computed(() => {
@@ -182,7 +207,7 @@ export function useKachelRaster({
     function ladeFaellige(erzwingen = false) {
         if (document.hidden) return
         const jetzt = Date.now()
-        for (const kachel of sichtbareKacheln.value) {
+        for (const kachel of zuLaden.value) {
             // Läuft die Anfrage noch, nicht nachlegen: eine langsame Quelle
             // (bis 10 s) bekäme sonst im Prüftakt weitere Anfragen derselben
             // Kachel parallel obendrauf.
@@ -399,7 +424,7 @@ export function useKachelRaster({
         // Versetzt anfordern statt alle auf einmal: RSI und Altcoin-Saison holen
         // je fünfzig Kerzenreihen, und wenn zwölf Kacheln gleichzeitig loslegen,
         // drosselt Binance — mit halb leeren Kacheln als Ergebnis.
-        for (const [i, kachel] of sichtbareKacheln.value.entries()) {
+        for (const [i, kachel] of zuLaden.value.entries()) {
             setTimeout(() => ladeKachel(kachel.id), i * startVersatzMs)
         }
         timer = setInterval(() => ladeFaellige(false), taktMs)
@@ -417,8 +442,21 @@ export function useKachelRaster({
     // Symbolwechsel im Seitenmenü: nur die Kacheln neu holen, die daran hängen
     if (symbolRef) {
         watch(symbolRef, () => {
-            for (const kachel of sichtbareKacheln.value) {
+            for (const kachel of zuLaden.value) {
                 if (kachel.symbolAbhaengig) ladeKachel(kachel.id, true)
+            }
+        })
+    }
+
+    /*
+     * Wechselt die Seite ihre Darstellung, sind die neu gebrauchten Kacheln
+     * sofort fällig — nicht erst beim nächsten Prüftakt. Ein Instrument, das
+     * nach dem Umschalten drei Sekunden leer bleibt, sieht aus wie ein Fehler.
+     */
+    if (immerLaden) {
+        watch(immerLaden, () => {
+            for (const kachel of zuLaden.value) {
+                if (kachel.endpunkt && !daten[kachel.id] && !offeneAnfrage[kachel.id]) ladeKachel(kachel.id)
             }
         })
     }

@@ -10,7 +10,7 @@
  * Unsichtbare Kacheln werden gar nicht erst geladen. Ausblenden spart damit
  * nicht nur Platz, sondern auch Anfragen an Fremdquellen.
  */
-import { computed, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PageInfo from '../components/PageInfo.vue'
 import RadarKachel from '../components/RadarKachel.vue'
@@ -38,6 +38,8 @@ import { useIstTelefon } from '../utils/geraet.js'
 import { oeffneLivetradingFenster } from '../utils/livetradingFenster.js'
 import { sendNotification } from '../utils/notify.js'
 import { KACHELN, sortiereKacheln } from '../config/marktradar.js'
+import PultAnsicht from '../components/marktradar/PultAnsicht.vue'
+import { PULT_KACHELN } from '../config/marktradar-pult.js'
 import { useKachelRaster } from '../composables/useKachelRaster.js'
 
 const { t } = useI18n()
@@ -97,11 +99,35 @@ const livetradingSichtbar = computed(() =>
 
 const oeffneLivetrading = () => oeffneLivetradingFenster()
 
+/**
+ * Welche der beiden Darstellungen läuft — dieselbe Mechanik wie im
+ * Live-Trading-Fenster, eigener Speicher.
+ *
+ * Raster = Werkstatt (alles gleichrangig, alles verstellbar), Pult = Gerät
+ * (feste Rangfolge, nichts verstellbar). Beide hängen an derselben
+ * `useKachelRaster`-Instanz, ein Wechsel kostet keinen Abruf.
+ */
+const ANSICHT_KEY = 'marktradar_ansicht'
+const ansicht = ref(localStorage.getItem(ANSICHT_KEY) === 'pult' ? 'pult' : 'raster')
+
+function waehleAnsicht(wert) {
+    ansicht.value = wert
+    localStorage.setItem(ANSICHT_KEY, wert)
+}
+
+/*
+ * Das Pult hat feste Instrumente und kennt das Ausblenden nicht. Ohne diese
+ * Liste entschiede das Raster mit, was das Pult sehen darf — wer dort den
+ * Regenbogen ausblendet, bekäme hier ein leeres Zyklusband ohne Hinweis auf
+ * den Grund.
+ */
+const immerLaden = computed(() => ansicht.value === 'pult' ? PULT_KACHELN : [])
+
 const {
     gridEl, daten, zustand, stand, fehler, kachelParams,
     alleKacheln, sichtbareKacheln, gesamtZustand,
     offeneKachel, offeneDefinition, showConfigDropdown, configRef,
-    ladeKachel, ladeFaellige, beiUmschalten, isVisible,
+    ladeKachel, ladeFaellige, beiUmschalten, isVisible, setzeKachelZustand,
     setzeParams, setzeAnzeige, stilFuer, starteGroesse, setzeGroesseZurueck,
 } = useKachelRaster({
     storageKey: 'marktradar_hidden_cards',
@@ -109,6 +135,7 @@ const {
     kacheln: KACHELN,
     sortiere: sortiereKacheln,
     symbolRef: liveSymbol,
+    immerLaden,
 })
 
 /**
@@ -254,7 +281,22 @@ watch(() => daten.funding, (d) => {
             </div>
 
             <div class="liveActions">
-                <div ref="configRef" class="position-relative">
+                <!-- Zwei Formen derselben Daten. Steht ganz links, weil der
+                     Umschalter die Bedeutung der folgenden Knöpfe verändert. -->
+                <div class="ltAnsicht">
+                    <button type="button" :class="['ctl-pill', ansicht === 'raster' ? 'active' : '']"
+                        :title="t('livetrading.ansicht.rasterSub')" @click="waehleAnsicht('raster')">
+                        <i class="uil uil-apps"></i>{{ t('livetrading.ansicht.raster') }}
+                    </button>
+                    <button type="button" :class="['ctl-pill', ansicht === 'pult' ? 'active' : '']"
+                        :title="t('livetrading.ansicht.pultSub')" @click="waehleAnsicht('pult')">
+                        <i class="uil uil-sliders-v-alt"></i>{{ t('livetrading.ansicht.pult') }}
+                    </button>
+                </div>
+                <span class="ctl-sep"></span>
+                <!-- Sichtbarkeit ist eine Rasterfrage: das Pult hat feste
+                     Instrumente und kennt kein Ausblenden. -->
+                <div v-if="ansicht === 'raster'" ref="configRef" class="position-relative">
                     <button type="button" class="ctl-pill" @click="showConfigDropdown = !showConfigDropdown">
                         <i class="uil uil-apps"></i>{{ t('marktradar.cards') }}
                     </button>
@@ -281,7 +323,18 @@ watch(() => daten.funding, (d) => {
             </div>
         </div>
 
-        <div ref="gridEl" class="radarGrid">
+        <!-- Die Gross-Ansicht bleibt in BEIDEN Darstellungen erreichbar: anders
+             als im Live-Fenster hängt hier keine Kachel an einem WebSocket, eine
+             zweite Instanz kostet also nichts ausser Platz. Der Lage-Fuss
+             braucht sie, um den ganzen Bericht zu zeigen. -->
+        <PultAnsicht v-if="ansicht === 'pult'" :daten="daten" :zustand="zustand" :stand="stand"
+            :kachel-params="kachelParams" :komponenten="KOMPONENTEN" :symbol="liveSymbol"
+            @params="setzeParams" @anzeige="setzeAnzeige"
+            @zustand="(id, z, extra) => setzeKachelZustand(id, z, extra)"
+            @neuladen="(id) => ladeKachel(id, true)"
+            @oeffnen="(id) => offeneKachel = id" />
+
+        <div v-else ref="gridEl" class="radarGrid">
             <div v-for="kachel in sichtbareKacheln" :key="kachel.id" :data-kachel="kachel.id"
                 :style="stilFuer(kachel)">
                 <RadarKachel :titel="t(kachel.titleKey)" :icon="kachel.icon" :info-key="kachel.infoKey" :zustand="zustand[kachel.id] || 'idle'"
@@ -301,7 +354,7 @@ watch(() => daten.funding, (d) => {
             </div>
         </div>
 
-        <div v-if="!sichtbareKacheln.length" class="radarLeer">{{ t('marktradar.allHidden') }}</div>
+        <div v-if="ansicht === 'raster' && !sichtbareKacheln.length" class="radarLeer">{{ t('marktradar.allHidden') }}</div>
 
         <!-- Gross: dieselbe Komponente, dieselben Daten, nur mit mehr Platz -->
         <RadarOverlay v-if="offeneKachel && daten[offeneKachel]" :titel="t(offeneDefinition.titleKey)"
@@ -316,6 +369,10 @@ watch(() => daten.funding, (d) => {
 </template>
 
 <style scoped>
+/* Die beiden Ansichtsknöpfe rücken zusammen: sie sind eine Entscheidung, nicht
+   zwei Befehle. */
+.ltAnsicht { display: flex; gap: 0.15rem; }
+
 .radarWrap {
     display: flex;
     flex-direction: column;

@@ -56,6 +56,7 @@ const DEFINITIONEN = [
         endpunkt: '/api/marktradar/btc-dominanz',
         intervallMs: 3 * 60 * 1000,
         spalten: 1,
+        flaeche: true,
         quelle: 'CoinMarketCap (eigener Bestand) · CoinGecko',
     },
     {
@@ -142,6 +143,7 @@ const DEFINITIONEN = [
         intervallMs: 5 * 60 * 1000,
         // Blasen und Treemap brauchen Fläche, sonst wird jede Beschriftung Brei
         spalten: 2,
+        flaeche: true,
         quelle: 'CoinGecko',
     },
     {
@@ -152,6 +154,7 @@ const DEFINITIONEN = [
         // Wochenkerzen — häufiger nachzufragen wäre sinnlos
         intervallMs: 12 * 60 * 60 * 1000,
         spalten: 1,
+        flaeche: true,
         quelle: 'blockchain.info · Binance',
     },
     {
@@ -202,6 +205,7 @@ const DEFINITIONEN = [
         intervallMs: 60 * 1000,
         // Eine Matrix braucht Breite — sonst quetschen sich die Spalten
         spalten: 2,
+        flaeche: true,
         quelle: 'Binance-Kerzen · RSI(14) nach Wilder',
     },
 ]

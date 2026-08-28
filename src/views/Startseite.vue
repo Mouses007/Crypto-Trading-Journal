@@ -16,13 +16,14 @@
  * trotzdem: sie steht als eigener Eintrag im Kachel-Menü (`NEWS_ID`) und teilt
  * sich dessen localStorage-Mechanik, obwohl sie nicht in der Registry steht.
  */
-import { onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import PageInfo from '../components/PageInfo.vue'
 import RadarKachel from '../components/RadarKachel.vue'
 import RadarOverlay from '../components/RadarOverlay.vue'
 import NewsKarte from '../components/start/NewsKarte.vue'
+import PultAnsicht from '../components/startseite/PultAnsicht.vue'
 // Journal-Kacheln (self-supplying)
 import KachelKontostand from '../components/start/KachelKontostand.vue'
 import KachelOffeneTrades from '../components/start/KachelOffeneTrades.vue'
@@ -70,6 +71,21 @@ const { t } = useI18n()
  */
 const NEWS_ID = 'newsKarte'
 const router = useRouter()
+
+/**
+ * Raster oder Pult — dieselbe Mechanik wie bei Marktradar und Live-Trading,
+ * eigener Speicher. Anders als dort braucht das Pult hier kein `immerLaden`:
+ * die Startseite hat keine feste Kachelmenge, das Pult zeigt exakt dieselben
+ * sichtbaren Kacheln wie das Raster, nur mit einer davon als Bühne statt in
+ * gleicher Grösse. Siehe `components/startseite/PultAnsicht.vue`.
+ */
+const ANSICHT_KEY = 'startseite_ansicht'
+const ansicht = ref(localStorage.getItem(ANSICHT_KEY) === 'pult' ? 'pult' : 'raster')
+
+function waehleAnsicht(wert) {
+    ansicht.value = wert
+    localStorage.setItem(ANSICHT_KEY, wert)
+}
 
 /**
  * Abschalter. Ist die Startseite in den Einstellungen abgeschaltet, landet ein
@@ -187,6 +203,17 @@ onBeforeUnmount(() => {
                 <span class="liveState">{{ t('marktradar.status_' + gesamtZustand) }}</span>
             </div>
             <div class="liveActions">
+                <div class="ltAnsicht">
+                    <button type="button" :class="['ctl-pill', ansicht === 'raster' ? 'active' : '']"
+                        :title="t('livetrading.ansicht.rasterSub')" @click="waehleAnsicht('raster')">
+                        <i class="uil uil-apps"></i>{{ t('livetrading.ansicht.raster') }}
+                    </button>
+                    <button type="button" :class="['ctl-pill', ansicht === 'pult' ? 'active' : '']"
+                        :title="t('startseite.pult.pultSub')" @click="waehleAnsicht('pult')">
+                        <i class="uil uil-sliders-v-alt"></i>{{ t('livetrading.ansicht.pult') }}
+                    </button>
+                </div>
+                <span class="ctl-sep"></span>
                 <div ref="configRef" class="position-relative">
                     <button type="button" class="ctl-pill" @click="showConfigDropdown = !showConfigDropdown">
                         <i class="uil uil-apps"></i>{{ t('marktradar.cards') }}
@@ -217,7 +244,17 @@ onBeforeUnmount(() => {
             </div>
         </div>
 
-        <div ref="gridEl" class="radarGrid">
+        <!-- Keine WebSocket-Kacheln in diesem Katalog: `v-if` ist hier nicht aus
+             Verbindungsgründen nötig wie bei Bookmap/Hebelkarte, sondern weil die
+             Bühne sich mit der Sichtbarkeit ändert und `v-show` beide Bäume
+             gleichzeitig am Leben hielte. -->
+        <PultAnsicht v-if="ansicht === 'pult'" :daten="daten" :zustand="zustand" :stand="stand"
+            :kachel-params="kachelParams" :komponenten="KOMPONENTEN" :sichtbare-kacheln="sichtbareKacheln"
+            @params="setzeParams" @anzeige="setzeAnzeige"
+            @zustand="() => {}"
+            @neuladen="(id) => ladeKachel(id, true)" />
+
+        <div v-else ref="gridEl" class="radarGrid">
             <div v-for="kachel in sichtbareKacheln" :key="kachel.id" :data-kachel="kachel.id"
                 :style="stilFuer(kachel)">
                 <RadarKachel :titel="t(kachel.titleKey)" :icon="kachel.icon" :info-key="kachel.infoKey" :zustand="zustand[kachel.id] || 'idle'"
@@ -238,7 +275,7 @@ onBeforeUnmount(() => {
 
         <!-- Gross: dieselbe Komponente, dieselben Daten, nur mit mehr Platz.
              Self-supplying Kacheln (ohne Endpunkt) dürfen auch ohne `daten` auf. -->
-        <RadarOverlay v-if="offeneKachel && (daten[offeneKachel] || !offeneDefinition?.endpunkt)"
+        <RadarOverlay v-if="ansicht === 'raster' && offeneKachel && (daten[offeneKachel] || !offeneDefinition?.endpunkt)"
             :titel="t(offeneDefinition.titleKey)" :info-key="offeneDefinition.infoKey" :quelle="offeneDefinition.quelle" @schliessen="offeneKachel = null">
             <component :is="KOMPONENTEN[offeneKachel]" :daten="daten[offeneKachel]" :gross="true"
                 :params="kachelParams[offeneKachel] || {}"
@@ -250,6 +287,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* Die beiden Ansichtsknöpfe rücken zusammen: sie sind eine Entscheidung, nicht
+   zwei Befehle. */
+.ltAnsicht { display: flex; gap: 0.15rem; }
+
 .radarWrap {
     display: flex;
     flex-direction: column;

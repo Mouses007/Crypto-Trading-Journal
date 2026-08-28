@@ -43,7 +43,9 @@ import { oeffneLivetradingFenster } from '../utils/livetradingFenster.js'
 import { speichereCockpitFoto } from '../utils/cockpitFoto.js'
 import { kopiertesBild } from '../stores/ui.js'
 import { aktiveSitzung, merkeSymbol, protokolliere } from '../stores/livetrading.js'
+import PultAnsicht from '../components/livetrading/PultAnsicht.vue'
 import { KACHELN, sortiereKacheln } from '../config/livetrading.js'
+import { PULT_KACHELN } from '../config/pult.js'
 import { useKachelRaster } from '../composables/useKachelRaster.js'
 
 const { t } = useI18n()
@@ -89,6 +91,37 @@ function zusatzParams(kachel) {
     return { von: tagesbeginn.getTime() }
 }
 
+/**
+ * Welche der beiden Darstellungen läuft.
+ *
+ * Raster = Werkstatt (alles gleichrangig, alles verstellbar), Pult = Gerät
+ * (feste Rangfolge, nichts verstellbar). Zwei Formen derselben Daten, nicht
+ * zwei Seiten: beide hängen an derselben `useKachelRaster`-Instanz, ein Wechsel
+ * kostet keinen Abruf.
+ *
+ * Gemerkt wird pro Gerät in `localStorage` und NICHT in den Einstellungen: der
+ * Wechsel ist auch mitten in einer Sitzung sinnvoll, und was man während der
+ * Arbeit umschaltet, gehört an die Seite. (Die Vorlage dafür ist
+ * `radarNewsLayout` — dort gilt bewusst das Gegenteil, weil man ein
+ * Nachrichten-Layout nicht zwischen zwei Berichten umwerfen soll.)
+ */
+const ANSICHT_KEY = 'livetrading_ansicht'
+const ansicht = ref(localStorage.getItem(ANSICHT_KEY) === 'pult' ? 'pult' : 'raster')
+
+function waehleAnsicht(wert) {
+    ansicht.value = wert
+    localStorage.setItem(ANSICHT_KEY, wert)
+}
+
+/*
+ * Das Pult hat feste Instrumente und kennt das Ausblenden nicht. Ohne diese
+ * Liste entschiede das Raster mit, was das Pult sehen darf — wer dort die
+ * Makro-Kachel ausblendet, bekäme hier ein leeres Instrument ohne Hinweis auf
+ * den Grund. Im Raster bleibt die Liste leer, damit ausgeblendete Kacheln wie
+ * bisher gar nicht erst geholt werden.
+ */
+const immerLaden = computed(() => ansicht.value === 'pult' ? PULT_KACHELN : [])
+
 const {
     gridEl, daten, zustand, stand, fehler, kachelParams,
     alleKacheln, sichtbareKacheln, gesamtZustand,
@@ -103,6 +136,7 @@ const {
     symbolRef: liveSymbol,
     zusatzParams,
     taktMs: 3000,
+    immerLaden,
 })
 
 /**
@@ -245,7 +279,23 @@ const interaktiv = (kachel) => kachel.gross === false
                 <SymbolWahl />
             </div>
             <div class="liveActions">
-                <div ref="configRef" class="position-relative">
+                <!-- Zwei Formen derselben Daten. Der Umschalter steht ganz
+                     links in der Knopfreihe, weil er die Bedeutung aller
+                     folgenden Knöpfe verändert. -->
+                <div class="ltAnsicht">
+                    <button type="button" :class="['ctl-pill', ansicht === 'raster' ? 'active' : '']"
+                        :title="t('livetrading.ansicht.rasterSub')" @click="waehleAnsicht('raster')">
+                        <i class="uil uil-apps"></i>{{ t('livetrading.ansicht.raster') }}
+                    </button>
+                    <button type="button" :class="['ctl-pill', ansicht === 'pult' ? 'active' : '']"
+                        :title="t('livetrading.ansicht.pultSub')" @click="waehleAnsicht('pult')">
+                        <i class="uil uil-sliders-v-alt"></i>{{ t('livetrading.ansicht.pult') }}
+                    </button>
+                </div>
+                <span class="ctl-sep"></span>
+                <!-- Sichtbarkeit ist eine Rasterfrage: das Pult hat feste
+                     Instrumente und kennt kein Ausblenden. -->
+                <div v-if="ansicht === 'raster'" ref="configRef" class="position-relative">
                     <button type="button" class="ctl-pill" @click="showConfigDropdown = !showConfigDropdown">
                         <i class="uil uil-apps"></i>{{ t('marktradar.cards') }}
                     </button>
@@ -290,7 +340,20 @@ const interaktiv = (kachel) => kachel.gross === false
         <SitzungsLeiste />
         </div>
 
-        <div ref="gridEl" class="radarGrid">
+        <!--
+            `v-if` und nicht `v-show`: Bookmap und Hebelkarte hängen an eigenen
+            WebSockets mit einem Modul-Singleton für den Einfrier-Zustand. Zwei
+            gleichzeitig lebende Instanzen wären zwei Verbindungen auf denselben
+            Zustand. Der Preis ist ein Verbindungsaufbau beim Umschalten — er
+            steht am Zustandspunkt, und das ist die ehrlichere Anzeige.
+        -->
+        <PultAnsicht v-if="ansicht === 'pult'" :daten="daten" :zustand="zustand" :stand="stand"
+            :kachel-params="kachelParams" :komponenten="KOMPONENTEN" :symbol="liveSymbol"
+            @params="setzeParams" @anzeige="setzeAnzeige"
+            @zustand="(id, z, extra) => setzeKachelZustand(id, z, extra)"
+            @neuladen="(id) => ladeKachel(id, true)" />
+
+        <div v-else ref="gridEl" class="radarGrid">
             <div v-for="kachel in sichtbareKacheln" :key="kachel.id" :data-kachel="kachel.id"
                 :style="stilFuer(kachel)">
                 <RadarKachel :titel="t(kachel.titleKey)" :icon="kachel.icon" :info-key="kachel.infoKey" :zustand="zustand[kachel.id] || 'idle'"
@@ -311,10 +374,12 @@ const interaktiv = (kachel) => kachel.gross === false
             </div>
         </div>
 
-        <div v-if="!sichtbareKacheln.length" class="radarLeer">{{ t('marktradar.allHidden') }}</div>
+        <div v-if="ansicht === 'raster' && !sichtbareKacheln.length" class="radarLeer">
+            {{ t('marktradar.allHidden') }}
+        </div>
 
         <!-- Gross: dieselbe Komponente, dieselben Daten, nur mit mehr Platz -->
-        <RadarOverlay v-if="offeneKachel && (daten[offeneKachel] || !offeneDefinition?.endpunkt)"
+        <RadarOverlay v-if="ansicht === 'raster' && offeneKachel && (daten[offeneKachel] || !offeneDefinition?.endpunkt)"
             :titel="t(offeneDefinition.titleKey)"
             :info-key="offeneDefinition.infoKey" :quelle="offeneDefinition.quelle" @schliessen="offeneKachel = null">
             <component :is="KOMPONENTEN[offeneKachel]" :daten="daten[offeneKachel]" :gross="true"
@@ -368,6 +433,21 @@ const interaktiv = (kachel) => kachel.gross === false
 .vollbildKahl .radarGrid {
     margin-top: 8px;
 }
+
+/*
+ * Im kahlen Zustand ist die Kopfzeile ausgefahren — das Pult darf den Platz
+ * haben. Die Höhe steht hier und nicht in der Komponente, weil nur die Seite
+ * weiss, wie viel über ihr steht: mit Kopfzeile und Sitzungsleiste sind es
+ * rund 190 px, im eigenen Fenster nur der 6-px-Streifen.
+ */
+.vollbildKahl .pult {
+    margin-top: 8px;
+    height: calc(100dvh - 24px);
+}
+
+/* Die beiden Ansichtsknöpfe rücken zusammen: sie sind eine Entscheidung, nicht
+   zwei Befehle. */
+.ltAnsicht { display: flex; gap: 0.15rem; }
 
 .fotoOk { color: #4ec9a0; }
 
