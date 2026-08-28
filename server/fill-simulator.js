@@ -116,6 +116,10 @@ export function kostenAus(risk) {
         feeBps: r.feeBps,
         slippageBps: r.slippageBps,
         fundingBpsPer8h: r.fundingBpsPer8h,
+        // Der Takt gehört zum Satz. Ohne ihn wäre `fundingBpsPer8h` eine Zahl
+        // ohne Einheit — genau der Fehler, den der Funding-Takt-Kanon im
+        // Marktradar schon einmal gekostet hat.
+        fundingIntervalH: r.fundingIntervalH,
         entryOrder: r.entryOrder,
         // Reist im Kostenobjekt mit, statt durch drei weitere Signaturen
         // gefädelt zu werden: es IST eine Kostenentscheidung, und jede
@@ -151,15 +155,30 @@ export function breakEvenAufschlag(pos, costs) {
     return Number(pos.entryPrice) * (einBps + aus.feeBps + aus.slippageBps) / BPS
 }
 
-/** Abrechnungszeitpunkte für Finanzierungskosten: 00:00, 08:00, 16:00 UTC. */
-const FUNDING_MS = 8 * 3600000
+/**
+ * Vorgabe-Takt der Finanzierungsabrechnung, in Stunden.
+ *
+ * Acht Stunden (00:00, 08:00, 16:00 UTC) war bis zum Audit vom 28.08.2026 fest
+ * verdrahtet. Der Marktradar weiss längst, dass das nicht allgemein gilt: von
+ * den fünfzig grössten Perps rechnen 31 VIERstündlich ab
+ * (`holeBinanceIntervalle`, `jahresRateAus`). Bei mehrtägigen Haltedauern
+ * verdoppelt sich der Fehler damit auf die Grössenordnung der Handelsgebühren.
+ *
+ * Der Takt ist ein PARAMETER und kein Automatismus. Ein Automatismus müsste
+ * die Börse fragen, und die kennt nur den HEUTIGEN Takt — für einen Backtest
+ * über Monate wäre das eine stille Rückprojektion. Wer den Wert setzt, trifft
+ * eine Annahme, die im Ergebnis ausgewiesen wird; dieselbe Haltung wie bei
+ * `fundingBpsPer8h` und `maintenanceMarginPct`.
+ */
+export const FUNDING_STANDARD_H = 8
 
 /**
  * Finanzierungskosten einer Haltedauer — als NEGATIVE Zahl (Kosten).
  *
  * Abgerechnet wird an festen Zeitpunkten, nicht anteilig: wer eine Minute vor
  * der Abrechnung einsteigt und eine Minute danach aussteigt, zahlt eine volle
- * Periode, und wer 7 Stunden dazwischen hält, zahlt gar nichts. Eine anteilige
+ * Periode, und wer knapp unter einer Periode dazwischen hält, zahlt gar
+ * nichts. Eine anteilige
  * Rechnung wäre glatter, aber falsch — und gerade bei kurzen Haltedauern
  * systematisch zu hoch.
  *
@@ -171,17 +190,23 @@ const FUNDING_MS = 8 * 3600000
  * ohne historische Daten unbekannt. Im Zweifel pessimistisch: Shorts werden
  * dadurch systematisch etwas zu SCHLECHT gerechnet, nie zu gut.
  */
-export function fundingFor(notional, entryTime, exitTime, fundingBpsPer8h) {
-    const satz = Number(fundingBpsPer8h) || 0
+export function fundingFor(notional, entryTime, exitTime, fundingBpsProPeriode, intervallH) {
+    const satz = Number(fundingBpsProPeriode) || 0
     if (!(satz > 0) || !(notional > 0)) return 0
     const von = Number(entryTime)
     const bis = Number(exitTime)
     if (!(bis > von)) return 0
 
+    // Unbrauchbare Angabe fällt auf den Standardtakt zurück statt die Rechnung
+    // zu sprengen — dieselbe Linie wie `jahresRateAus` im Marktradar.
+    const h = Number(intervallH)
+    const stunden = (Number.isFinite(h) && h > 0) ? h : FUNDING_STANDARD_H
+    const periodeMs = stunden * 3600000
+
     // Erste Abrechnung nach dem Einstieg
-    const erste = Math.floor(von / FUNDING_MS) * FUNDING_MS + FUNDING_MS
+    const erste = Math.floor(von / periodeMs) * periodeMs + periodeMs
     if (erste > bis) return 0
-    const anzahl = Math.floor((bis - erste) / FUNDING_MS) + 1
+    const anzahl = Math.floor((bis - erste) / periodeMs) + 1
     return -Math.abs(notional) * (satz / BPS) * anzahl
 }
 
@@ -417,7 +442,7 @@ export function closePosition(pos, { price, reason, time }, costs, extra = {}) {
     // dasselbe, was der ganze Zweck dieser Datei ist.
     const funding = extra.funding !== undefined
         ? Number(extra.funding) || 0
-        : fundingFor(pos.notionalUsdt, pos.entryTime, time, costs.fundingBpsPer8h)
+        : fundingFor(pos.notionalUsdt, pos.entryTime, time, costs.fundingBpsPer8h, costs.fundingIntervalH)
     const netPnl = grossPnl - fees + funding
 
     const r = riskPerUnit(pos)

@@ -28,7 +28,7 @@ export async function useBrokerBitunix(csvInput) {
 
             tradesData.length = 0
 
-            const { trades } = parseBitunixRows(parsed.data)
+            const { trades, funding } = parseBitunixRows(parsed.data)
             if (trades.length === 0) {
                 reject("No 'Futures Profit' or 'Futures Loss' rows found in CSV")
                 return
@@ -36,6 +36,17 @@ export async function useBrokerBitunix(csvInput) {
             tradesData.push(...trades)
 
             console.log(" -> Parsed " + tradesData.length + " Bitunix trades")
+            /*
+             * Nicht zugeordnetes Funding wird GEMELDET statt verschwiegen. Eine
+             * Buchung ohne Symbol im Kommentar oder an einem Tag mit mehreren
+             * Trades desselben Symbols laesst sich nicht eindeutig zuordnen —
+             * eine geratene Aufteilung waere schlimmer als ein ausgewiesener
+             * Rest.
+             */
+            if (funding?.gefunden) {
+                console.log(` -> Funding: ${funding.zugeordnet} von ${funding.gefunden} Buchungen zugeordnet`
+                    + (funding.offen ? `, ${funding.offen} offen (${funding.offenBetrag.toFixed(4)} USDT)` : ''))
+            }
             resolve()
         } catch (error) {
             reject("Error parsing Bitunix CSV: " + error.message)

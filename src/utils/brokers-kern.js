@@ -19,9 +19,36 @@ import dayjs from './dayjs-setup.js'
 export function parseBitunixRows(rows) {
     const trades = []
     let uebersprungen = 0
+    /** Funding-Buchungen, bevor sie zugeordnet sind: Schlüssel `Tag|Symbol`. */
+    const fundingRoh = []
 
     for (const row of rows || []) {
         const label = (row.Label || '').trim()
+
+        /*
+         * Funding-Zeilen sind eigene Buchungen, keine Trades — sie fielen
+         * bis zum Audit vom 28.08.2026 stillschweigend unter
+         * `uebersprungen`. Folge: aus einem CSV-Import kam IMMER
+         * `fundingFee: 0`, obwohl die Beträge in der Datei standen, und die
+         * Funding-Zeile der Kennzahlen-Kachel blendete sich lautlos aus.
+         *
+         * Vorzeichen nach dem Kanon aus `funding.js`: + erhalten, − bezahlt.
+         */
+        if (label === 'Funding Fee') {
+            const erhalten = parseFloat(row['Incoming Amount'] || 0) || 0
+            const bezahlt = Math.abs(parseFloat(row['Outgoing Amount'] || 0) || 0)
+            const betrag = erhalten - bezahlt
+            if (betrag !== 0) {
+                fundingRoh.push({
+                    tag: (row['Date (UTC)'] || '').trim().slice(0, 10),
+                    symbol: (row.Comment || '').trim(),
+                    betrag,
+                })
+            }
+            uebersprungen++
+            continue
+        }
+
         if (label !== 'Futures Profit' && label !== 'Futures Loss') { uebersprungen++; continue }
         const isProfit = label === 'Futures Profit'
 
@@ -59,7 +86,52 @@ export function parseBitunixRows(rows) {
         })
     }
 
-    return { trades, uebersprungen }
+    /*
+     * Zuordnung — und zwar nur, wo sie EINDEUTIG ist.
+     *
+     * Eine Funding-Buchung trägt keine Positions-ID. Zugeordnet wird deshalb
+     * über Tag und Symbol, und auch das nur, wenn an diesem Tag genau EIN
+     * Trade dieses Symbols steht. Gibt es mehrere, wäre jede Aufteilung
+     * geraten; die Buchung bleibt dann offen und wird gemeldet, statt
+     * gleichmässig verteilt zu werden. Dasselbe gilt für Zeilen ohne Symbol
+     * im Kommentarfeld.
+     *
+     * Ein stiller Fehlbetrag ist schlimmer als ein ausgewiesener.
+     */
+    const nachTagSymbol = new Map()
+    for (const t of trades) {
+        const schluessel = `${(t.DateUTC || '').slice(0, 10)}|${t.Symbol}`
+        if (!nachTagSymbol.has(schluessel)) nachTagSymbol.set(schluessel, [])
+        nachTagSymbol.get(schluessel).push(t)
+    }
+
+    let zugeordnet = 0
+    let offen = 0
+    let offenBetrag = 0
+    for (const f of fundingRoh) {
+        const treffer = f.symbol ? nachTagSymbol.get(`${f.tag}|${f.symbol}`) : null
+        if (treffer && treffer.length === 1) {
+            const t = treffer[0]
+            t.FundingFee = (Number(t.FundingFee) || 0) + f.betrag
+            /*
+             * Netto ist das Wallet-Delta und muss das Funding enthalten —
+             * so rechnet auch der API-Pfad (`realizedPNL` ist dort bereits
+             * inklusive). Brutto bleibt die reine Trade-PnL, damit
+             * `netto = brutto − tradingFee + fundingFee` weiter aufgeht.
+             */
+            t.NetProceeds = (Number(t.NetProceeds) || 0) + f.betrag
+            zugeordnet++
+        } else {
+            offen++
+            offenBetrag += f.betrag
+        }
+    }
+
+    return {
+        trades,
+        uebersprungen,
+        funding: { gefunden: fundingRoh.length, zugeordnet, offen, offenBetrag },
+    }
 }
 
 /**

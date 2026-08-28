@@ -82,6 +82,12 @@ export const RISK_PARAMS = [
     // ab, und das ist ohne Daten unbekannt. Im Zweifel pessimistisch, wie im
     // Rest der Ausführungs-Simulation.
     { key: 'fundingBpsPer8h', type: 'number', default: 0, min: 0, max: 50, step: 0.1, group: 'costs' },
+    // Takt der Finanzierungsabrechnung in Stunden. Acht war bis zum Audit vom
+    // 28.08.2026 fest verdrahtet — der Marktradar misst, dass 31 der fuenfzig
+    // groessten Perps VIERstuendlich abrechnen. Bei mehrtaegigen Haltedauern
+    // verdoppelt der falsche Takt die Finanzierungskosten-Abweichung auf die
+    // Groessenordnung der Handelsgebuehren. Der Satz oben gilt JE PERIODE.
+    { key: 'fundingIntervalH', type: 'number', default: 8, min: 1, max: 24, step: 1, group: 'costs' },
     // Wartungsmarge in Prozent des Nominalwerts — bestimmt, ab wann die Börse
     // zwangsschliesst. Greift nur, wenn der Hebel so hoch ist, dass die Marge
     // vor dem Stop aufgebraucht wäre; bei moderatem Hebel ändert sie nichts.
