@@ -16,6 +16,7 @@
  * FOMC-Protokoll ist eine Nachricht mit Datum, keine Kennzahl.
  */
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { sichereUrl } from '../utils/sanitize.js'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
@@ -1507,7 +1508,7 @@ onBeforeUnmount(() => {
                     </button>
                     <div v-for="(vi, k) in (videosOffen ? sichtbareVideos : [])" :key="k"
                         class="nwVideoEintrag">
-                        <a class="nwVideo" :href="vi.url" target="_blank" rel="noopener noreferrer">
+                        <a class="nwVideo" :href="sichereUrl(vi.url) || undefined" target="_blank" rel="noopener noreferrer">
                             <i class="uil uil-youtube"></i>
                             <span class="nwBelegQuelle">{{ vi.quelle }}</span>
                             <span class="nwBelegTitel">{{ vi.titel }}</span>
@@ -1583,8 +1584,11 @@ onBeforeUnmount(() => {
                 </h4>
 
                 <template v-if="belegeZumPunkt.liste.length">
+                    <!-- Beleg-URLs stammen aus Perplexity-Zitaten und fremden Feeds.
+                         Ohne gueltiges Schema wird der Eintrag ohne Link gezeigt,
+                         statt einen `javascript:`-Klick anzubieten. -->
                     <a v-for="(b, j) in belegeZumPunkt.liste" :key="j" class="nwBeleg"
-                        :href="b.url" target="_blank" rel="noopener noreferrer">
+                        :href="sichereUrl(b.url) || undefined" target="_blank" rel="noopener noreferrer">
                         <i :class="ART_ICON[b.art] || ART_ICON.rss"></i>
                         <span class="nwBelegQuelle">{{ b.quelle }}</span>
                         <span class="nwBelegTitel">{{ b.titel }}</span>
@@ -1722,7 +1726,7 @@ onBeforeUnmount(() => {
 
                 <div class="nwListe"
                     :style="hoehen.beitraege ? { maxHeight: hoehen.beitraege + 'px', overflowY: 'auto' } : {}">
-                <a v-for="b in sichtbareBeitraege" :key="b.id" class="nwBeitrag" :href="b.url"
+                <a v-for="b in sichtbareBeitraege" :key="b.id" class="nwBeitrag" :href="sichereUrl(b.url) || undefined"
                     target="_blank" rel="noopener noreferrer">
                     <!-- Vorschaubild vom Original geladen, nichts kopiert.
                          Fällt es aus (toter Verweis, Blocker), verschwindet es
@@ -1776,7 +1780,7 @@ onBeforeUnmount(() => {
                          Modell-Beschreibung, keinen eigenen Punkttext. -->
                     <p v-if="!grossesBild.text && grossesBild.beschreibung">{{ grossesBild.beschreibung }}</p>
                 </div>
-                <a v-if="grossesBild.quelle" class="nwBildQuelle" :href="grossesBild.quelle"
+                <a v-if="grossesBild.quelle" class="nwBildQuelle" :href="sichereUrl(grossesBild.quelle) || undefined"
                     target="_blank" rel="noopener" @click.stop>
                     <i class="uil uil-external-link-alt"></i>
                     {{ grossesBild.quelle.replace(/^https?:\/\//, '').split('/')[0] }} — {{ t('news.openArticle') }}

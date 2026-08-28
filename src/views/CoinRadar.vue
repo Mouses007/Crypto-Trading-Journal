@@ -597,18 +597,21 @@
                                 class="crCoinInfoMehr" @click="coinInfoVoll = !coinInfoVoll">
                                 {{ coinInfoVoll ? t('coinradar.coinInfoWeniger') : t('coinradar.coinInfoMehr') }}
                             </button>
+                            <!-- homepage/whitepaper/github/explorer kommen roh von CoinGecko.
+                                 twitter/telegram/coingeckoUrl werden serverseitig mit festem
+                                 https:// zusammengesetzt und sind schemasicher. -->
                             <div class="crCoinInfoLinks">
-                                <a v-if="coinInfo.homepage" :href="coinInfo.homepage" target="_blank" rel="noopener">
+                                <a v-if="sichereUrl(coinInfo.homepage)" :href="sichereUrl(coinInfo.homepage)" target="_blank" rel="noopener">
                                     <i class="uil uil-globe"></i>{{ t('coinradar.coinInfoWebsite') }}</a>
-                                <a v-if="coinInfo.whitepaper" :href="coinInfo.whitepaper" target="_blank" rel="noopener">
+                                <a v-if="sichereUrl(coinInfo.whitepaper)" :href="sichereUrl(coinInfo.whitepaper)" target="_blank" rel="noopener">
                                     <i class="uil uil-file-alt"></i>Whitepaper</a>
                                 <a v-if="coinInfo.twitter" :href="coinInfo.twitter" target="_blank" rel="noopener">
                                     <i class="uil uil-twitter"></i>X</a>
                                 <a v-if="coinInfo.telegram" :href="coinInfo.telegram" target="_blank" rel="noopener">
                                     <i class="uil uil-telegram"></i>Telegram</a>
-                                <a v-if="coinInfo.github" :href="coinInfo.github" target="_blank" rel="noopener">
+                                <a v-if="sichereUrl(coinInfo.github)" :href="sichereUrl(coinInfo.github)" target="_blank" rel="noopener">
                                     <i class="uil uil-github"></i>GitHub</a>
-                                <a v-if="coinInfo.explorer" :href="coinInfo.explorer" target="_blank" rel="noopener">
+                                <a v-if="sichereUrl(coinInfo.explorer)" :href="sichereUrl(coinInfo.explorer)" target="_blank" rel="noopener">
                                     <i class="uil uil-search"></i>Explorer</a>
                                 <a :href="coinInfo.coingeckoUrl" target="_blank" rel="noopener">
                                     <i class="uil uil-external-link-alt"></i>CoinGecko</a>
@@ -691,6 +694,7 @@
  * einen Zustand.
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { sichereUrl } from '../utils/sanitize.js'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'

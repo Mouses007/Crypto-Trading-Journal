@@ -63,3 +63,29 @@ export function sanitizeHtml(dirty) {
         FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur']
     })
 }
+
+/**
+ * Eine fremde URL für ein `:href`-Attribut sicher machen.
+ *
+ * `sanitizeHtml` filtert `href` nur INNERHALB von HTML, das durch DOMPurify
+ * läuft. Ein `:href="b.url"` im Template geht daran vorbei — und die Werte
+ * stammen aus Perplexity-Zitaten, Hype-Radar-Belegen und CoinGecko-Projektlinks,
+ * also aus KI- und Drittanbieter-Antworten. Ein `javascript:`- oder
+ * `data:`-Schema führt dort direkt zur Ausführung beim Klick.
+ *
+ * Erlaubt sind dieselben Schemata wie im DOMPurify-Hook oben, damit es nur
+ * EINE Regel gibt. Alles andere ergibt `null` — der Aufrufer rendert dann
+ * keinen Link statt eines gefährlichen.
+ *
+ * @param {string} url
+ * @returns {string|null}
+ */
+export function sichereUrl(url) {
+    const v = String(url ?? '').trim()
+    if (!v) return null
+    // Steuerzeichen entfernen: "java\0script:" und Zeilenumbrüche im Schema
+    // sind der klassische Weg, eine Schemaprüfung zu umgehen.
+    const sauber = v.replace(/[\u0000-\u001F\u007F]/g, '')
+    if (!/^(https?:\/\/|\/|#|mailto:)/i.test(sauber)) return null
+    return sauber
+}

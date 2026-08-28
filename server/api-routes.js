@@ -519,16 +519,27 @@ export function setupApiRoutes(app) {
                 query = req.query.descending ? query.orderBy(orderCol, 'desc') : query.orderBy(orderCol, 'asc')
             }
 
-            // Ohne Angabe wurde bisher die GANZE Tabelle geliefert. Ein Default
-            // bremst das ab, ist aber bewusst so hoch gewählt wie das Limit, das
-            // das Frontend ohnehin mitschickt (queryLimit) — ein kleinerer Wert
-            // würde Dashboards still um Trades kürzen statt sie zu schützen.
+            /*
+             * Ohne Angabe wurde bisher die GANZE Tabelle geliefert. Ein Default
+             * bremst das ab, ist aber bewusst so hoch gewählt wie das Limit, das
+             * das Frontend ohnehin mitschickt (queryLimit) — ein kleinerer Wert
+             * würde Dashboards still um Trades kürzen statt sie zu schützen.
+             *
+             * Das Limit zählt ZEILEN, und das ist bei `screenshots` das falsche
+             * Mass: 134 Zeilen sind dort 71 MB, weil die Bilder als Base64 in
+             * der Zeile stehen. Das Frontend schliesst sie über `exclude` aus —
+             * ein Abruf ohne beides zöge sie alle. Deshalb ein eigener,
+             * niedriger Vorgabewert für die schweren Tabellen; wer mehr will,
+             * fragt ausdrücklich danach.
+             */
             const DEFAULT_API_LIMIT = 50000
+            const DEFAULT_JE_TABELLE = { screenshots: 500 }
             const MAX_API_LIMIT = 100000
+            const vorgabe = DEFAULT_JE_TABELLE[table] ?? DEFAULT_API_LIMIT
             const limit = parseInt(req.query.limit, 10)
             query = (Number.isInteger(limit) && limit > 0)
                 ? query.limit(Math.min(limit, MAX_API_LIMIT))
-                : query.limit(DEFAULT_API_LIMIT)
+                : query.limit(vorgabe)
             const skip = parseInt(req.query.skip, 10)
             if (Number.isInteger(skip) && skip >= 0) query = query.offset(skip)
 
