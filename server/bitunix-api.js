@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { encrypt, decrypt, maskKey } from './crypto.js'
+import { istGewinn } from '../shared/gewinn.js'
 
 // Rohantworten der Börsen enthalten Positionen, Kontostände, PnL und IDs.
 // Standardmässig NICHT ins Log — Logs landen in Container-Ausgaben, Backups und
@@ -348,8 +349,8 @@ export function setupBitunixRoutes(app) {
                     const delta = newNet - oldNet
                     if (Math.abs(delta) < 0.0001) continue
 
-                    const isGrossWin = newGross > 0
-                    const isNetWin = newNet > 0
+                    const isGrossWin = istGewinn(newGross)
+                    const isNetWin = istGewinn(newNet)
                     t.grossProceeds = newGross
                     t.netProceeds = newNet
                     t.commission = fee

@@ -5,6 +5,7 @@ import { currentUser } from '../stores/settings.js'
 import { useBrokerBitunix, useBrokerBitget } from './brokers.js'
 import { useChartFormat, useDateTimeFormat, useDecimalsArithmetic, useTimeFormat } from './formatters.js'
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbGetSettings, dbUpdateSettings } from './db.js'
+import { istGewinn } from '../../shared/gewinn.js'
 
 /* MODULES */
 import dayjs from './dayjs-setup.js'
@@ -182,8 +183,8 @@ async function createBitunixTrades() {
             // aber grün gefärbt wurde (Winrate-Drift zwischen Import und
             // Dashboard). Number-Guard, damit eine Zeile ohne Feld nicht als
             // Gewinn durchrutscht, sondern als 0 gezählt wird.
-            const isGrossWin = (Number(row.GrossProceeds) || 0) >= 0
-            const isNetWin = (Number(row.NetProceeds) || 0) >= 0
+            const isGrossWin = istGewinn(row.GrossProceeds)
+            const isNetWin = istGewinn(row.NetProceeds)
 
             // Determine side: Bitget CSV provides Side field, Bitunix CSV does not.
             // For Bitunix we default to 'SS'/short as a placeholder — but count
