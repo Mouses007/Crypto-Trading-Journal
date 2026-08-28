@@ -170,13 +170,13 @@ onBeforeUnmount(speichereJetzt)
     <div class="stLeiste">
         <!-- ── 1. Vorher: der Plan ── -->
         <template v-if="!laeuft">
-            <div class="stZeile">
+            <div class="stZeile stZeileKlickbar" :title="t(zu ? 'livetrading.sitzung.ausklappen' : 'livetrading.sitzung.einklappen')"
+                @click="klappe()">
                 <span class="stTitel">{{ t('livetrading.sitzung.neu') }}</span>
                 <span class="stLuecke"></span>
-                <button type="button" class="stKlapp" :title="t(zu ? 'livetrading.sitzung.ausklappen' : 'livetrading.sitzung.einklappen')"
-                    @click="klappe()">
+                <span class="stKlapp">
                     <i class="uil" :class="zu ? 'uil-angle-down' : 'uil-angle-up'"></i>
-                </button>
+                </span>
             </div>
             <div v-if="!zu" class="stZeile stPlan">
                 <label class="stFeld">
@@ -200,7 +200,8 @@ onBeforeUnmount(speichereJetzt)
 
         <!-- ── 2. Läuft ── -->
         <template v-else>
-            <div class="stZeile">
+            <div class="stZeile stZeileKlickbar" :title="t(zu ? 'livetrading.sitzung.ausklappen' : 'livetrading.sitzung.einklappen')"
+                @click="klappe()">
                 <span class="stPunkt"></span>
                 <span class="stUhr">{{ laufzeitText }}</span>
                 <!-- Kein Symbol mehr: eine Sitzung ist ein ZEITRAUM, kein Markt.
@@ -210,13 +211,14 @@ onBeforeUnmount(speichereJetzt)
                 <span v-if="planText" class="stPlanText">{{ planText }}</span>
                 <span class="stSeit">{{ t('livetrading.sitzung.seit', { zeit: dayjs(Number(aktiveSitzung.startUnix)).format('HH:mm') }) }}</span>
                 <span class="stLuecke"></span>
-                <button type="button" class="ctl-pill" :disabled="beschaeftigt" @click="beendenUmschalten">
+                <!-- `.stop`: sitzt in der jetzt ganzflächig klickbaren Zeile,
+                     ohne das würde Beenden zusätzlich die Zeile umschalten. -->
+                <button type="button" class="ctl-pill" :disabled="beschaeftigt" @click.stop="beendenUmschalten">
                     <i class="uil uil-square"></i>{{ t('livetrading.sitzung.beenden') }}
                 </button>
-                <button type="button" class="stKlapp" :title="t(zu ? 'livetrading.sitzung.ausklappen' : 'livetrading.sitzung.einklappen')"
-                    @click="klappe()">
+                <span class="stKlapp">
                     <i class="uil" :class="zu ? 'uil-angle-down' : 'uil-angle-up'"></i>
-                </button>
+                </span>
             </div>
 
             <div v-if="aktiveSitzung.planNotiz && !zu" class="stPlanNotiz">
@@ -278,6 +280,23 @@ onBeforeUnmount(speichereJetzt)
     align-items: center;
     gap: 0.6rem;
     flex-wrap: wrap;
+}
+
+/*
+ * Die ganze Kopfzeile klappt jetzt ein/aus, nicht mehr nur der kleine Pfeil
+ * rechts — der war auf dem Handy kaum zu treffen und liess einen grossen Teil
+ * der Zeile ungenutzt liegen. Die Aktionsknöpfe darin (Start, Beenden)
+ * bleiben eigenständig klickbar, siehe `@click.stop` im Template.
+ */
+.stZeileKlickbar {
+    cursor: pointer;
+    margin: -0.3rem -0.4rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: var(--border-radius);
+}
+
+.stZeileKlickbar:hover {
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .stLuecke { flex: 1; }
@@ -396,19 +415,21 @@ onBeforeUnmount(speichereJetzt)
 
 .stBilanzWarn { color: #ff6b7a; font-weight: 600; }
 
-/* Der Umschalter sitzt in der Kopfzeile und soll dort nicht mitreden:
-   gleiche Höhe wie die Pillen, aber ohne Fläche. */
+/*
+ * Nur noch das Symbol, kein eigener Klickbereich — jetzt ist es die ganze
+ * Zeile (`.stZeileKlickbar`), sonst würde ein Klick auf den Pfeil die Zeile
+ * zweimal umschalten (einmal von hier, einmal von der Zeile).
+ */
 .stKlapp {
-    background: none;
-    border: none;
+    display: inline-flex;
     color: var(--white-60);
     padding: 0 0.2rem;
     line-height: 1;
     font-size: 1.1rem;
-    cursor: pointer;
 }
 
-.stKlapp:hover { color: var(--white-87); }
+/* Reagiert auf Hover der ganzen Zeile, nicht nur auf das Symbol selbst. */
+.stZeileKlickbar:hover .stKlapp { color: var(--white-87); }
 
 .stFehler {
     font-size: 0.8rem;
