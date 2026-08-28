@@ -64,5 +64,55 @@ console.log('\nFunding-Vorzeichen\n')
         Math.abs((s.received - s.paid) - 2.5) < 1e-9, String(s.received - s.paid))
 }
 
+console.log('\nBitunix-Netto-Kanon\n')
+
+/*
+ * `realizedPNL` ist bei Bitunix bereits der FERTIGE Wallet-Delta — Gebühr und
+ * Funding sind darin verrechnet. Wer davon noch einmal Gebühren abzieht,
+ * verliert bei jedem Trade den Gebührenbetrag ein zweites Mal.
+ *
+ * Genau das tat bis zum Audit vom 28.08.2026 der API-Import auf der
+ * AddTrades-Seite: eine vierte Kopie der Rechnung, die den sechszeiligen
+ * Kommentar der anderen drei nie bekommen hatte. Am echten Bitunix-Trade
+ * (BTCUSDT) hätte das 1,30884 USDT je Trade unterschlagen — 7,9 % des
+ * Ergebnisses.
+ *
+ * Die Rechnung steht heute nur noch in `quickImport.js`. Dieser Test hält sie
+ * fest, damit die nächste Kopie auffällt.
+ */
+{
+    const realizedPNL = 16.560725359903   // Wallet-Delta laut Börse
+    const tradingFee = 1.1725739403
+    const fundingFee = 0.136269300203     // SIGNIERT: positiv = erhalten
+
+    const netto = realizedPNL
+    const brutto = realizedPNL + tradingFee - fundingFee
+
+    check('netto ist realizedPNL, unverändert',
+        Math.abs(netto - 16.560725359903) < 1e-9, String(netto))
+    check('brutto rekonstruiert die reine Trade-PnL',
+        Math.abs(brutto - 17.59703) < 1e-9, String(brutto))
+    check('die Netto-Formel schliesst den Kreis',
+        Math.abs((brutto - tradingFee + fundingFee) - netto) < 1e-9)
+
+    // Der alte, falsche Weg — als ausdrücklicher Gegenbeleg.
+    const falsch = realizedPNL - (tradingFee + Math.abs(fundingFee))
+    check('der doppelte Abzug fehlt um Gebühr plus Funding',
+        Math.abs((netto - falsch) - (tradingFee + Math.abs(fundingFee))) < 1e-9,
+        `Fehlbetrag ${(netto - falsch).toFixed(5)}`)
+}
+
+{
+    // Bezahltes Funding: das Vorzeichen muss die Bruttorechnung ANHEBEN,
+    // nicht senken. Mit Math.abs kippt genau das um.
+    const realizedPNL = 10
+    const tradingFee = 1
+    const bezahlt = -0.5
+    const brutto = realizedPNL + tradingFee - bezahlt
+    check('bezahltes Funding erhöht das Brutto', Math.abs(brutto - 11.5) < 1e-9, String(brutto))
+    const mitAbs = realizedPNL + tradingFee - Math.abs(bezahlt)
+    check('mit Math.abs käme 10,5 statt 11,5 heraus', Math.abs(mitAbs - 10.5) < 1e-9)
+}
+
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
 if (fehlgeschlagen) { console.log('Fehler:', fehler.join(', ')); process.exit(1) }

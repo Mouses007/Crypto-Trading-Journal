@@ -6,6 +6,7 @@ import { currentUser } from '../stores/settings.js'
 import { selectedBroker } from '../stores/filters.js'
 import { refreshAccountBalance } from '../stores/accountBalance.js'
 import { logWarn } from './logger.js'
+import { istGewinn } from '../../shared/gewinn.js'
 import i18n from '../i18n'
 
 /**
@@ -313,7 +314,7 @@ export async function useQuickApiImport(explicitBroker) {
 /**
  * Create a trade object from a Bitunix API position.
  */
-function createBitunixTradeObj(pos, i) {
+export function createBitunixTradeObj(pos, i) {
     // Bitunix API: `realizedPNL` ist bereits der FINALE Wallet-Delta
     // (inkl. Trading-Fee UND Funding — verifiziert gegen Bitunix-UI
     // "Realisierter Gewinn/Verlust"). Daher:
@@ -332,8 +333,8 @@ function createBitunixTradeObj(pos, i) {
 
     // Bitunix API: Pending uses 'BUY'/'SELL', History uses 'LONG'/'SHORT' — accept both
     const side = (pos.side === 'LONG' || pos.side === 'BUY') ? 'B' : 'SS'
-    const isGrossWin = grossPL > 0
-    const isNetWin = netPL > 0
+    const isGrossWin = istGewinn(grossPL)
+    const isNetWin = istGewinn(netPL)
     const quantity = parseFloat(pos.maxQty || 1)
     const entryTime = dayjs(openTime).utc().unix()
     const exitTime = dayjs(closeTime).utc().unix()
@@ -356,7 +357,7 @@ function createBitunixTradeObj(pos, i) {
  *                openTotalPos, closeTotalPos, pnl, netProfit, openFee, closeFee,
  *                totalFunding, cTime, uTime
  */
-function createBitgetTradeObj(pos, i) {
+export function createBitgetTradeObj(pos, i) {
     const grossPL = parseFloat(pos.pnl || 0)            // Bitget pnl = BRUTTO (vor Gebuehren)
     const openFee = Math.abs(parseFloat(pos.openFee || 0))
     const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
@@ -380,8 +381,8 @@ function createBitgetTradeObj(pos, i) {
     const rawNet = pos.netProfit
     const hasNet = rawNet !== undefined && rawNet !== null && rawNet !== ''
     const netPL = hasNet ? parseFloat(rawNet) : (grossPL - tradingFee + fundingFee)
-    const isGrossWin = grossPL > 0
-    const isNetWin = netPL > 0
+    const isGrossWin = istGewinn(grossPL)
+    const isNetWin = istGewinn(netPL)
     const quantity = parseFloat(pos.closeTotalPos || pos.openTotalPos || 1)
     const entryTime = dayjs(openTime).utc().unix()
     const exitTime = dayjs(closeTime).utc().unix()
@@ -460,8 +461,8 @@ function createPionexTradeObj(pos, i) {
     const quantity = isSpot
         ? Math.abs(parseFloat(pos.usdtInvestment ?? pos.totalVolume ?? 1))
         : Math.abs(parseFloat(pos.totalVolume ?? pos.netSize ?? pos.sizeLong ?? pos.sizeShort ?? pos.size ?? 1))
-    const isGrossWin = grossPL > 0
-    const isNetWin = netPL > 0
+    const isGrossWin = istGewinn(grossPL)
+    const isNetWin = istGewinn(netPL)
     const entryTime = dayjs(openTime).utc().unix()
     const exitTime = dayjs(closeTime).utc().unix()
     const idSuffix = pos.buOrderId ?? pos.positionId ?? i
