@@ -49,7 +49,33 @@ export async function useGetDiaries(param1, param2) {
     })
 }
 
+/*
+ * Sperre gegen den Doppelklick.
+ *
+ * Der Auslöser ist ein `<div>` mit `:disabled` — auf einem div ist das
+ * Attribut wirkungslos, der `@click` feuert trotzdem. Der einzige Schutz war
+ * die ASYNCHRONE Existenzprüfung unten: zwei schnelle Klicks liefen beide in
+ * `await dbFirst`, bevor einer schrieb, und legten zwei Einträge an.
+ *
+ * Ein Flag im Modul und nicht im Store: es beschreibt einen laufenden
+ * Schreibvorgang, nicht einen Zustand der Oberfläche.
+ */
+let schreibtGerade = false
+
 export async function useUploadDiary(param) {
+    if (schreibtGerade) {
+        console.log(' -> Tagebuch: Speichern läuft bereits, zweiter Klick verworfen')
+        return
+    }
+    schreibtGerade = true
+    try {
+        return await uploadDiaryIntern(param)
+    } finally {
+        schreibtGerade = false
+    }
+}
+
+async function uploadDiaryIntern(param) {
     return new Promise(async (resolve, reject) => {
 
         await Promise.all([useUpdateAvailableTags(), useUpdateTags()])

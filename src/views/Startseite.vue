@@ -58,7 +58,7 @@ import { useKachelRaster } from '../composables/useKachelRaster.js'
 import { totals, selectedBroker, currentUser } from '../stores/globals.js'
 import { neueSummen, summiereTrade, leiteKennzahlenAb } from '../utils/totals-kern.js'
 import { dbFind } from '../utils/db.js'
-import { setzeJournalTage } from '../stores/startseite.js'
+import { setzeJournalTage, meldeJournalFehler } from '../stores/startseite.js'
 import { useGetIncomingPositions, useStartGlobalPolling, useStopGlobalPolling } from '../utils/incoming.js'
 import { refreshAccountBalance } from '../stores/accountBalance.js'
 
@@ -159,7 +159,9 @@ async function ladeJournal() {
         for (const k in totals) delete totals[k]
         Object.assign(totals, merged)
     } catch (e) {
-        console.warn(' -> Startseite: Winrate laden fehlgeschlagen:', e?.message)
+        console.warn(' -> Startseite: Journal laden fehlgeschlagen:', e?.message)
+        // Der Fehler wird gemeldet, statt als „keine Trades" durchzugehen.
+        meldeJournalFehler()
     }
 }
 

@@ -10,7 +10,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
 import dayjs from '../../utils/dayjs-setup.js'
-import { journalTage } from '../../stores/startseite.js'
+import { journalTage, journalZustand } from '../../stores/startseite.js'
 
 const props = defineProps({
     daten: { type: Object, default: null },
@@ -154,7 +154,7 @@ watch([buckets, () => props.gross], () => { zeichne(); requestAnimationFrame(() 
             </button>
         </div>
         <div ref="chartEl" class="pfChart"></div>
-        <p v-if="!alleTrades.length" class="pfLeer">{{ t('startseite.performance.leer') }}</p>
+        <p v-if="!alleTrades.length" class="pfLeer">{{ journalZustand === 'fehler' ? t('startseite.abrufFehler') : t('startseite.performance.leer') }}</p>
     </div>
 </template>
 

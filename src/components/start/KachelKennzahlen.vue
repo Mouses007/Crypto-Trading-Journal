@@ -8,6 +8,7 @@
  * Erwartungswert, Ø Gewinn/Verlust, Gebühren.
  */
 import { computed } from 'vue'
+import { journalZustand } from '../../stores/startseite.js'
 import { useI18n } from 'vue-i18n'
 import { totals } from '../../stores/globals.js'
 
@@ -61,7 +62,7 @@ const kacheln = computed(() => [
         </div>
         <div v-else class="knLeer">
             <i class="uil uil-calculator-alt"></i>
-            <span>{{ t('startseite.kennzahlen.leer') }}</span>
+            <span>{{ journalZustand === 'fehler' ? t('startseite.abrufFehler') : t('startseite.kennzahlen.leer') }}</span>
         </div>
     </div>
 </template>

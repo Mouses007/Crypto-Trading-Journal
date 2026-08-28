@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeMount, ref, onMounted, nextTick } from 'vue';
+import { useRouter } from 'vue-router'
 import { spinnerLoadingPage } from '../stores/ui.js';
 import { daysMargin, daysBack } from '../stores/filters.js';
 import { imports, excursions } from '../stores/trades.js';
@@ -14,6 +15,8 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 /* MODULES */
 import dayjs from '../utils/dayjs-setup.js'
+
+const router = useRouter()
 
 spinnerLoadingPage.value = false
 
@@ -160,7 +163,8 @@ const updateMFEPrices = async () => {
                 <button v-show="dateArray.length > 0 && !spinnerLoadingPage" type="button" v-on:click="updateMFEPrices"
                     class="btn btn-success btn-lg me-3">{{ t('excursions.add') }}</button>
 
-                <button type="cancel" onclick="location.href = 'dashboard';"
+                <!-- siehe AddTrades.vue: kein `type="cancel"`, keine harte Navigation -->
+                <button type="button" @click="router.push('/dashboard')"
                     class="btn btn-outline-secondary btn-sm me-2">{{ t('common.cancel') }}</button>
 
             </div>

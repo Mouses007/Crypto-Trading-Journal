@@ -2084,6 +2084,7 @@
     "read_neutral": "keine klare Richtung"
   },
   "startseite": {
+    "abrufFehler": "Daten konnten nicht geladen werden.",
     "quiz": {
       "title": "Quiz",
       "faellig": "fällig heute",
@@ -3788,6 +3789,7 @@
     "spalteRangHilfe": "Die Platzierung nach Gesamtnote, die Vorgabe-Sortierung der Liste.\nSagt nichts über die Richtung — nur, wie viel Bewegung und wie günstig sich der Coin heute ausführen lässt, zusammengefasst in einer Zahl."
   },
   "lernen": {
+    "ladeFehler": "Die Lernkarten konnten nicht geladen werden.",
     "tabKarten": "Karten",
     "tabStatistik": "Statistik",
     "kategorie": {
@@ -3819,6 +3821,7 @@
       "abbrechen": "Sitzung beenden"
     },
     "summary": {
+        "schwer": "schwer",
       "titel": "Sitzung beendet",
       "richtig": "Gewusst",
       "falsch": "Nicht gewusst",

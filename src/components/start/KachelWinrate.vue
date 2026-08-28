@@ -11,6 +11,7 @@
  * `useTotalTrades()` befüllt. `daten` bleibt ungenutzt.
  */
 import { computed } from 'vue'
+import { journalZustand } from '../../stores/startseite.js'
 import { useI18n } from 'vue-i18n'
 import { totals, amountCase } from '../../stores/globals.js'
 
@@ -59,7 +60,7 @@ const prozent = (n) => Number(n || 0).toLocaleString('de-DE', { minimumFractionD
 
         <div v-else class="wrLeer">
             <i class="uil uil-chart-pie"></i>
-            <span>{{ t('startseite.winrate.leer') }}</span>
+            <span>{{ journalZustand === 'fehler' ? t('startseite.abrufFehler') : t('startseite.winrate.leer') }}</span>
         </div>
     </div>
 </template>

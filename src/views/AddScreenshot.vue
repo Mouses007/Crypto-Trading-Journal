@@ -1,5 +1,7 @@
 <script setup>
 import { onBeforeMount, onMounted, onUnmounted, ref } from 'vue';
+import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import Screenshot from '../components/Screenshot.vue'
 import { currentDate, dateScreenshotEdited, editingScreenshot, itemToEditId, spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js';
@@ -14,6 +16,9 @@ import { useFilterSuggestions, useTradeTagsChange, useFilterTags, useToggleTagsD
 /* MODULES */
 import { dbGet } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
+
+const router = useRouter()
+const { t } = useI18n()
 
 onBeforeMount(async () => {
     await (spinnerLoadingPage.value = true)
@@ -245,8 +250,9 @@ async function getScreenshotToEdit(param) {
             <button type="button" v-on:click="useSaveScreenshot" class="btn btn-success btn-sm">Absenden</button>
         </div>
         <div class="mt-3">
-            <button type="cancel" onclick="location.href = '/screenshots';"
-                class="btn btn-outline-secondary btn-sm">Abbrechen</button>
+            <!-- siehe AddTrades.vue: kein `type="cancel"`, keine harte Navigation -->
+            <button type="button" @click="router.push('/screenshots')"
+                class="btn btn-outline-secondary btn-sm">{{ t('common.cancel') }}</button>
         </div>
     </div>
 </template>

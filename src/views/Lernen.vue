@@ -7,6 +7,7 @@ import { boxVerteilung, auswerten, BOX_MIN, GRADE_VERGESSEN, GRADE_SCHWER, GRADE
 import { werteAus as lernstatistikAuswerten } from '../utils/lernStatistik.js'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
+import { logWarn } from '../utils/logger.js'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -17,15 +18,32 @@ const reiter = computed(() => route.params.reiter || null) // null = Sitzung, 'k
 const karten = ref([])       // quiz_karten
 const fortschritt = ref([])  // quiz_fortschritt
 
+/**
+ * Ladefehler beim Start — sichtbar statt als Dauerspinner.
+ *
+ * Ohne `finally` blieb `spinnerLoadingPage` bei einer abgelehnten Zusage auf
+ * `true` stehen: die Seite drehte sich für immer, ohne zu sagen warum. Die
+ * Schwesterkomponente `KachelQuiz.vue` macht es seit jeher richtig — genau
+ * die Art Abweichung, die dieses Audit überall gefunden hat.
+ */
+const ladeFehler = ref('')
+
 async function ladeAlles() {
     spinnerLoadingPage.value = true
-    const [k, f] = await Promise.all([
-        dbFind('quiz_karten', { ascending: 'id' }),
-        dbFind('quiz_fortschritt', {}),
-    ])
-    karten.value = k
-    fortschritt.value = f
-    spinnerLoadingPage.value = false
+    ladeFehler.value = ''
+    try {
+        const [k, f] = await Promise.all([
+            dbFind('quiz_karten', { ascending: 'id' }),
+            dbFind('quiz_fortschritt', {}),
+        ])
+        karten.value = k
+        fortschritt.value = f
+    } catch (e) {
+        ladeFehler.value = e?.message || String(e)
+        logWarn('lernen', 'Karten laden fehlgeschlagen', e)
+    } finally {
+        spinnerLoadingPage.value = false
+    }
 }
 onMounted(ladeAlles)
 
@@ -61,6 +79,8 @@ const aktuellerIndex = ref(0)
 const antwortSichtbar = ref(false)
 const sitzungRichtig = ref(0)
 const sitzungFalsch = ref(0)
+/** „Schwer" — weder Treffer noch Fehler, und deshalb eine eigene Zahl. */
+const sitzungSchwer = ref(0)
 // Karten, die in DIESER Sitzung schon einmal wiedervorgelegt wurden — eine
 // vergessene Karte kommt genau einmal zurück, sonst liesse sich die Sitzung
 // mit wiederholtem „Vergessen" in eine Endlosschleife bewerten.
@@ -81,6 +101,7 @@ function sitzungStarten() {
     antwortSichtbar.value = false
     sitzungRichtig.value = 0
     sitzungFalsch.value = 0
+    sitzungSchwer.value = 0
     wiedervorgelegt.value = new Set()
     phase.value = 'review'
 }
@@ -106,13 +127,33 @@ async function bewerten(grad) {
         eintrag.fortschritt = erstellt
     }
 
+    /*
+     * „Schwer" ist kein Treffer.
+     *
+     * Bis zum Audit vom 28.08.2026 zählte alles ausser „Vergessen" als
+     * richtig — die angezeigte Trefferquote war damit systematisch zu gut,
+     * und zwar genau bei den Karten, die man noch nicht kann. Die Bilanz
+     * weist „Schwer" jetzt getrennt aus: die Box bleibt (so will es der
+     * Leitner-Kanon in `shared/leitner.js`, `gewusst` ist dort die Frage
+     * nach dem Wiedersehen, nicht nach dem Können), aber die Sitzung
+     * beschönigt nicht mehr.
+     */
     if (grad === GRADE_VERGESSEN) sitzungFalsch.value++
+    else if (grad === GRADE_SCHWER) sitzungSchwer.value++
     else sitzungRichtig.value++
 
-    // Box 1 ist sofort wieder fällig (INTERVALL_TAGE in shared/leitner.js) —
-    // eine frisch vergessene Karte gehört deshalb ans Ende der laufenden
-    // Warteschlange und nicht erst in die nächste Sitzung.
-    if (grad === GRADE_VERGESSEN && !wiedervorgelegt.value.has(eintrag.karte.objectId)) {
+    /*
+     * Box 1 ist sofort wieder fällig (INTERVALL_TAGE in shared/leitner.js) —
+     * eine frisch vergessene Karte gehört deshalb ans Ende der laufenden
+     * Warteschlange und nicht erst in die nächste Sitzung.
+     *
+     * „Schwer" kommt aus demselben Grund zurück: wer eine Karte gerade eben
+     * nur mit Mühe wusste, hat sie in dieser Runde nicht gelernt. Sie bleibt
+     * in ihrer Box — die Wiedervorlage ist eine Sache DIESER Sitzung, nicht
+     * des Langzeitplans.
+     */
+    const nochmal = grad === GRADE_VERGESSEN || grad === GRADE_SCHWER
+    if (nochmal && !wiedervorgelegt.value.has(eintrag.karte.objectId)) {
         wiedervorgelegt.value.add(eintrag.karte.objectId)
         warteschlange.value.push(eintrag)
     }
@@ -218,6 +259,13 @@ async function aktivUmschalten(karte) {
             <!-- ===== SITZUNG ===== -->
             <template v-if="!reiter">
                 <div v-if="phase === 'start'" class="dailyCard p-4 lernen-panel">
+                    <!-- Ein gescheiterter Abruf sah vorher aus wie „keine Karten
+                         vorhanden" — oder die Seite drehte sich fuer immer. -->
+                    <div v-if="ladeFehler" class="alert alert-warning py-2 px-3 mb-3 small">
+                        {{ t('lernen.ladeFehler') }}
+                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2 py-0"
+                            @click="ladeAlles">{{ t('common.retry') }}</button>
+                    </div>
                     <h5 class="mb-1">{{ t('lernen.start.faelligTitel') }}</h5>
                     <div class="lernen-faellig-count mb-3">{{ faelligeEintraege.length }}</div>
 
@@ -289,6 +337,14 @@ async function aktivUmschalten(karte) {
                         <div>
                             <div class="greenTrade lernen-summary-value">{{ sitzungRichtig }}</div>
                             <div class="text-muted small">{{ t('lernen.summary.richtig') }}</div>
+                        </div>
+                        <!-- „Schwer" hat eine eigene Spalte: es unter „richtig"
+                             zu verbuchen machte die Trefferquote systematisch
+                             zu gut, und zwar genau bei den Karten, die noch
+                             nicht sitzen. -->
+                        <div v-if="sitzungSchwer">
+                            <div class="lernen-summary-value lernen-summary-schwer">{{ sitzungSchwer }}</div>
+                            <div class="text-muted small">{{ t('lernen.summary.schwer') }}</div>
                         </div>
                         <div>
                             <div class="redTrade lernen-summary-value">{{ sitzungFalsch }}</div>
@@ -522,6 +578,7 @@ async function aktivUmschalten(karte) {
 .lernen-grade-btn:last-child { border-right: none; }
 .lernen-grade-vergessen { color: #ef4444; }
 .lernen-grade-schwer { color: #f59e0b; }
+.lernen-summary-schwer { color: #f59e0b; }
 .lernen-grade-gut { color: #3b82f6; }
 .lernen-grade-leicht { color: #22c55e; }
 .lernen-grade-btn:active { background: var(--black-bg-7, #262626); }

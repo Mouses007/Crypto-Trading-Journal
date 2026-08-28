@@ -1,5 +1,7 @@
 <script setup>
 import { onBeforeMount, ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import { spinnerLoadingPage, itemToEditId, currentDate, timeZoneTrade, countdownSeconds } from '../stores/ui.js';
 import { selectedTagIndex } from '../stores/filters.js';
@@ -15,6 +17,9 @@ import { useFilterSuggestions, useTradeTagsChange, useFilterTags, useToggleTagsD
 /* MODULES */
 import { dbGet } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
+
+const router = useRouter()
+const { t } = useI18n()
 
 let diary = {}
 currentDate.value = dayjs().tz(timeZoneTrade.value).format("YYYY-MM-DD")
@@ -160,14 +165,27 @@ async function initDiaryJson(param) {
                     <div id="quillEditorDiary"></div>
                 </div>
                 
-                <div class="progress buttonProgress mt-3" role="progressbar" :disabled="!diaryButton" type="button" v-on:click="useUploadDiary()">
-                    
-                    <div class="progress-bar buttonProgressBar text-center" :style="{ width: (5 - countdownSeconds) / 5 * 100 + '%' }"><span class="progress-bar-text">Absenden</span></div>
-                </div>
+                <!--
+                    Ein <button>, kein <div>: `:disabled` und `type` sind auf
+                    einem div wirkungslos — der Klick feuerte trotzdem, und per
+                    Tastatur war der Knopf gar nicht erreichbar.
+                -->
+                <button type="button" class="progress buttonProgress mt-3"
+                    :disabled="!diaryButton" @click="useUploadDiary()">
+                    <span class="progress-bar buttonProgressBar text-center"
+                        :style="{ width: (5 - countdownSeconds) / 5 * 100 + '%' }">
+                        <span class="progress-bar-text">{{ t('common.submit') }}</span>
+                    </span>
+                </button>
 
                 <div class="mt-3">
-                    <button type="cancel" onclick="location.href = '/diary';"
-                        class="btn btn-outline-secondary btn-sm">Abbrechen</button>
+                    <!--
+                        `type="cancel"` gibt es nicht — der Browser faellt auf
+                        `submit` zurueck. Und `location.href` startet die ganze
+                        App neu, statt im Router zu navigieren.
+                    -->
+                    <button type="button" @click="router.push('/diary')"
+                        class="btn btn-outline-secondary btn-sm">{{ t('common.cancel') }}</button>
                 </div>
             </div>
         </div>

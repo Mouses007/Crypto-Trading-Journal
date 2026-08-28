@@ -2084,6 +2084,7 @@
     "read_neutral": "no clear direction"
   },
   "startseite": {
+    "abrufFehler": "Could not load the data.",
     "quiz": {
       "title": "Quiz",
       "faellig": "due today",
@@ -3788,6 +3789,7 @@
     "spalteRangHilfe": "The placement by overall score — the list's default sort order.\nSays nothing about direction, only how much is moving and how cheaply the coin trades right now, boiled down into one number."
   },
   "lernen": {
+    "ladeFehler": "Could not load the flashcards.",
     "tabKarten": "Cards",
     "tabStatistik": "Statistics",
     "kategorie": {
@@ -3819,6 +3821,7 @@
       "abbrechen": "End session"
     },
     "summary": {
+        "schwer": "hard",
       "titel": "Session finished",
       "richtig": "Knew it",
       "falsch": "Didn't know it",

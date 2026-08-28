@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue';
+import { useRouter } from 'vue-router'
 import { spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js';
 import { executions, existingImports, blotter, pAndL, tradesData, existingTradesArray, trades as globalTrades } from '../stores/trades.js';
 import { selectedBroker } from '../stores/filters.js';
@@ -14,6 +15,8 @@ import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
 import { sendNotification } from '../utils/notify.js'
 import { useI18n } from 'vue-i18n'
+
+const router = useRouter()
 
 const { t } = useI18n()
 
@@ -482,7 +485,9 @@ async function importFromApi() {
         <button v-show="Object.keys(executions).length > 0 && !spinnerLoadingPage" type="button"
             v-on:click="useUploadTrades" class="btn btn-success btn-lg me-3">{{ t('common.submit') }}</button>
 
-        <button type="cancel" onclick="location.href = 'dashboard';"
+        <!-- `type="cancel"` gibt es nicht; der Browser faellt auf `submit`
+             zurueck. Und `location.href` startet die ganze App neu. -->
+        <button type="button" @click="router.push('/dashboard')"
             class="btn btn-outline-secondary btn-sm me-2">{{ t('common.cancel') }}</button>
 
     </div>
