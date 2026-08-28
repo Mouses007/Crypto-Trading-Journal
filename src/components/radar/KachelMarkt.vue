@@ -68,14 +68,20 @@ function farbe(v) {
 
 const proz = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} %`
 const mcapText = (v) => (v >= 1e12 ? `${(v / 1e12).toFixed(2)} Bio.` : v >= 1e9 ? `${(v / 1e9).toFixed(1)} Mrd` : `${Math.round(v / 1e6)} Mio`)
+// Bitunix und Binance nutzen dasselbe Symbolschema (gleiche Annahme wie in
+// CoinRadar.vue/boersen.js) — `perp` (bereits Binance-Format) direkt verwenden.
+const bitunixUrl = (perp) => `https://www.bitunix.com/contract-trade/${perp}`
 
 function tooltipText(m) {
     const w = m[fenster.value]
     return `<b>${m.symbol}</b> — ${m.name}<br/>`
         + `${t('marktradar.markt.change')}: <b style="color:${w >= 0 ? '#26be96' : '#ff5f56'}">${proz(w)}</b><br/>`
         + `<span style="opacity:.65">${t('marktradar.markt.mcap')}: ${mcapText(m.mcap)} $ · #${m.rang}</span>`
-        // Ohne Perp-Markt führt ein Klick nirgendwohin — das gehört dazugesagt
-        + (m.perp ? '' : `<br/><span style="opacity:.65">${t('marktradar.markt.noPerp')}</span>`)
+        // Ohne Perp-Markt führt ein Klick nirgendwohin und es gibt auch keine
+        // Bitunix-Seite dazu — das gehört dazugesagt
+        + (m.perp
+            ? `<br/><a href="${bitunixUrl(m.perp)}" target="_blank" rel="noopener noreferrer" style="color:#4da3ff">${t('marktradar.markt.openBitunix')}</a>`
+            : `<br/><span style="opacity:.65">${t('marktradar.markt.noPerp')}</span>`)
 }
 
 /**
@@ -129,6 +135,9 @@ function optionBlasen() {
             backgroundColor: 'rgba(18,18,18,0.94)',
             borderColor: 'rgba(255,255,255,0.18)',
             textStyle: { color: 'rgba(255,255,255,0.87)', fontSize: 12 },
+            // Ohne enterable schliesst sich der Tooltip, sobald die Maus ihn
+            // verlässt — der Bitunix-Link wäre nie klickbar
+            enterable: true,
             formatter: (p) => tooltipText(p.data.roh),
         },
         series: [{
@@ -190,6 +199,9 @@ function optionKacheln() {
             backgroundColor: 'rgba(18,18,18,0.94)',
             borderColor: 'rgba(255,255,255,0.18)',
             textStyle: { color: 'rgba(255,255,255,0.87)', fontSize: 12 },
+            // Ohne enterable schliesst sich der Tooltip, sobald die Maus ihn
+            // verlässt — der Bitunix-Link wäre nie klickbar
+            enterable: true,
             // Ohne Rohdaten gibt es nichts zu erzählen: `null` lässt ECharts
             // den Kasten ganz weg, ein leerer Text liesse ein leeres Kästchen
             // an der Maus kleben.

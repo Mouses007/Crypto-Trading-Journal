@@ -47,6 +47,9 @@ const zoneFuer = (v) => ZONEN.find(z => v >= z.von && v <= z.bis) || ZONEN[2]
 
 const punkte = computed(() => props.daten?.punkte || [])
 const kurz = (s) => s.replace(/USDT$/, '')
+// Bitunix und Binance nutzen dasselbe Symbolschema (gleiche Annahme wie in
+// CoinRadar.vue/boersen.js) — kein eigener Listungs-Check nötig.
+const bitunixUrl = (s) => `https://www.bitunix.com/contract-trade/${s}`
 
 function zeichne() {
     if (!chart || !punkte.value.length) return
@@ -75,6 +78,9 @@ function zeichne() {
             backgroundColor: 'rgba(18,18,18,0.94)',
             borderColor: 'rgba(255,255,255,0.18)',
             textStyle: { color: 'rgba(255,255,255,0.87)', fontSize: 12 },
+            // Ohne enterable schliesst sich der Tooltip, sobald die Maus ihn
+            // verlässt — der Bitunix-Link wäre nie klickbar
+            enterable: true,
             formatter: (p) => {
                 const eintrag = punkte.value[p.data.value[0]]
                 const z = zoneFuer(eintrag.rsi)
@@ -83,7 +89,9 @@ function zeichne() {
                     : `${Math.round(eintrag.volumen24h / 1e6)} Mio`
                 return `<b>${kurz(eintrag.symbol)}</b> · ${props.daten.tf}<br/>`
                     + `RSI <b>${eintrag.rsi}</b> — ${t('marktradar.rsi.zone_' + z.key)}<br/>`
-                    + `<span style="opacity:.6">${t('marktradar.funding.volume')}: ${umsatz}</span>`
+                    + `<span style="opacity:.6">${t('marktradar.funding.volume')}: ${umsatz}</span><br/>`
+                    + `<a href="${bitunixUrl(eintrag.symbol)}" target="_blank" rel="noopener noreferrer" `
+                    + `style="color:#4da3ff">${t('marktradar.rsi.openBitunix')}</a>`
             },
         },
         xAxis: {
