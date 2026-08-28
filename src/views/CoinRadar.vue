@@ -1810,13 +1810,18 @@ a.crBoerse:hover, a.crBoerse:active {
 
 .crZeTabelle td {
     text-align: right;
-    padding-right: .5rem;
+    padding: .2rem .5rem .2rem 0;
     font-variant-numeric: tabular-nums;
 }
 
 .crZeTabelle td:first-child,
 .crZeTabelle th:first-child {
     text-align: left;
+    padding-left: .4rem;
+}
+
+.crZeTabelle tr:nth-child(even) {
+    background: rgba(255, 255, 255, .035);
 }
 
 .crHinweise {
