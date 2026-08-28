@@ -1254,6 +1254,7 @@
     "exitNextDay": "Exit (next day)"
   },
   "messages": {
+    "confirmDelete": "Really delete?",
     "allTradesImported": "All trades already imported.",
     "positionsImported": "{count} positions loaded, {days} new days imported.",
     "importFailed": "Import failed: ",
@@ -3829,6 +3830,8 @@
       "fertig": "Done"
     },
     "karten": {
+        "erklaerung": "Explanation (optional)",
+        "erklaerungHinweis": "Why is that so? Shown below the answer after revealing.",
       "eigene": "Own cards",
       "vorgegeben": "Built-in cards",
       "neueKarte": "New card",

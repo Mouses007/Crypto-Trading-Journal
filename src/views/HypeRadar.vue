@@ -420,8 +420,8 @@
                         <span class="hypAlarmSchwere">{{ t('hype.schwere_' + a.schwere) }}</span>
                         <span class="hypAlarmText">{{ a.meldung }}</span>
                         <span class="hypAlarmZeit">{{ zeitpunkt(a.erstelltAm) }}</span>
-                        <span class="hypAlarmWeg" :class="{ scharf: alarmLoeschId === a.id }"
-                            :title="t('hype.loeschen')" @click.stop="alarmLoeschen(a.id)">
+                        <span role="button" tabindex="0" class="hypAlarmWeg" :class="{ scharf: alarmLoeschId === a.id }"
+                            :title="t('hype.loeschen')" @keydown.enter.stop.prevent="alarmLoeschen(a.id)" @keydown.space.stop.prevent="alarmLoeschen(a.id)" @click.stop="alarmLoeschen(a.id)">
                             <i class="uil uil-trash-alt"></i>
                         </span>
                     </div>

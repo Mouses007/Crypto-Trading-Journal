@@ -196,5 +196,5 @@ onMounted(load)
 .acc-more { font-size: 0.75rem; padding-top: 0.3rem; }
 
 .acc-flow-lists { display: flex; flex-direction: column; gap: 0.25rem; }
-.acc-flow-row { display: grid; grid-template-columns: 1fr auto auto; gap: 0.75rem; font-size: 0.8rem; align-items: center; }
+.acc-flow-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 0.75rem; font-size: 0.8rem; align-items: center; }
 </style>

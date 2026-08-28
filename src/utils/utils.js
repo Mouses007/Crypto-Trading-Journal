@@ -341,29 +341,8 @@ export async function useInitQuill(param) {
 let popoverHandlerAktiv = false
 let zuletztGeklickterLoeschKnopf = null
 
-async function behandlePopoverKlick(e) {
-    const ziel = e.target
-    if (ziel.classList.contains('popoverDelete')) {
-        zuletztGeklickterLoeschKnopf = ziel
-        document.querySelectorAll('.popoverDelete').forEach(function (popDelete) {
-            if (popDelete !== ziel) bootstrap.Popover.getInstance(popDelete)?.hide()
-        })
-        return
-    }
-
-    const bestaetigt = ziel.classList.contains('popoverYes')
-    const abgelehnt = ziel.classList.contains('popoverNo')
-    if (!bestaetigt && !abgelehnt) return
-
-    if (zuletztGeklickterLoeschKnopf) {
-        bootstrap.Popover.getInstance(zuletztGeklickterLoeschKnopf)?.hide()
-    }
-
-    if (abgelehnt) {
-        selectedItem.value = null
-        return
-    }
-
+/** Rueckfrage per Popover — oder per `confirm()`, wenn Bootstrap fehlt. */
+async function fuehreLoeschungAus() {
     if (pageId.value == "screenshots" || pageId.value == "daily") {
         useDeleteScreenshot()
     }
@@ -373,13 +352,66 @@ async function behandlePopoverKlick(e) {
     }
 }
 
+async function behandlePopoverKlick(e) {
+    const ziel = e.target
+    const bs = typeof bootstrap !== 'undefined' ? bootstrap : null
+
+    if (ziel.classList.contains('popoverDelete')) {
+        zuletztGeklickterLoeschKnopf = ziel
+        /*
+         * Ohne Bootstrap gibt es kein Popover — dann uebernimmt `confirm()`.
+         * Vorher scheiterte schon `useInitPopover`, und der Knopf tat
+         * gar nichts: ohne Netz war das Loeschen unbedienbar.
+         */
+        if (!bs?.Popover) {
+            if (window.confirm(i18n.global.t('messages.confirmDelete'))) await fuehreLoeschungAus()
+            else selectedItem.value = null
+            return
+        }
+        document.querySelectorAll('.popoverDelete').forEach(function (popDelete) {
+            if (popDelete !== ziel) bs.Popover.getInstance(popDelete)?.hide()
+        })
+        return
+    }
+
+    const bestaetigt = ziel.classList.contains('popoverYes')
+    const abgelehnt = ziel.classList.contains('popoverNo')
+    if (!bestaetigt && !abgelehnt) return
+
+    if (zuletztGeklickterLoeschKnopf && bs?.Popover) {
+        bs.Popover.getInstance(zuletztGeklickterLoeschKnopf)?.hide()
+    }
+
+    if (abgelehnt) {
+        selectedItem.value = null
+        return
+    }
+
+    await fuehreLoeschungAus()
+}
+
+/*
+ * Bootstrap kommt vom CDN (`index.html`). Ohne Netz ist `window.bootstrap`
+ * undefined — und dann warf `useInitPopover` beim Aufbau, noch bevor der
+ * Klick-Handler registriert war. Folge: der Loeschknopf im Import-Verlauf
+ * oeffnete keinen Bestaetigungsdialog und war damit ohne Netz unbedienbar.
+ *
+ * Der Handler haengt jetzt IMMER, auch wenn die Popover-Instanzen fehlen; der
+ * Bestaetigungsdialog faellt dann auf `confirm()` zurueck. Ein Loeschen ohne
+ * Rueckfrage waere die falsche Rettung — die Rueckfrage ist der Zweck.
+ */
 export function useInitPopover() {
     console.log(" -> Init Popover");
 
-    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (popoverTriggerEl) {
-        // Ohne diese Prüfung stapeln sich auch die Popover-Instanzen selbst.
-        if (!bootstrap.Popover.getInstance(popoverTriggerEl)) new bootstrap.Popover(popoverTriggerEl)
-    });
+    const bs = typeof bootstrap !== 'undefined' ? bootstrap : null
+    if (bs?.Popover) {
+        document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (popoverTriggerEl) {
+            // Ohne diese Prüfung stapeln sich auch die Popover-Instanzen selbst.
+            if (!bs.Popover.getInstance(popoverTriggerEl)) new bs.Popover(popoverTriggerEl)
+        });
+    } else {
+        console.warn(' -> Bootstrap nicht verfügbar (CDN?) — Popover-Bestätigung fällt auf confirm() zurück')
+    }
 
     if (!popoverHandlerAktiv) {
         document.addEventListener('click', behandlePopoverKlick)
@@ -389,9 +421,11 @@ export function useInitPopover() {
 
 export function useInitTooltip() {
     //console.log(" -> Init Tooltip")
+    const bs = typeof bootstrap !== 'undefined' ? bootstrap : null
+    if (!bs?.Tooltip) return
     let tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
     tooltipTriggerList.map((tooltipTriggerEl) => {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
+        return new bs.Tooltip(tooltipTriggerEl)
     })
 
 }

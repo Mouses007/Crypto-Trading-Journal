@@ -1971,7 +1971,7 @@ onBeforeUnmount(() => {
     align-items: center;
     gap: 0.4rem;
     margin: 0 0 0.3rem;
-    color: var(--grey-color);
+    color: var(--grey-text);
     font-size: 0.78rem;
 }
 
@@ -2024,11 +2024,11 @@ onBeforeUnmount(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--grey-color);
+    color: var(--grey-text);
 }
 
 .nwKetteTag {
-    color: var(--grey-color);
+    color: var(--grey-text);
     font-size: 0.74rem;
 }
 
@@ -3406,7 +3406,7 @@ onBeforeUnmount(() => {
 /* ── Beiträge ── */
 .nwBeitrag {
     display: grid;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas: 'bild kopf' 'bild titel' 'bild text' 'bild klappe';
     column-gap: 0.6rem;
     padding: 0.45rem 0;

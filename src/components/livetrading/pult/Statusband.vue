@@ -213,7 +213,7 @@ const alterText = computed(() => {
      * einem breiten Schirm über 500 px lang, und ein Balken, dessen Ende man
      * nicht zusammen mit seinem Anfang sieht, ist keine Anzeige mehr.
      */
-    grid-template-columns: 110px 190px 230px 190px 1fr 136px;
+    grid-template-columns: 110px 190px 230px 190px minmax(0, 1fr) 136px;
     border-bottom: 1px solid var(--pTrenn);
     background: var(--pChrom);
 }

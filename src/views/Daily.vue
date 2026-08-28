@@ -1938,7 +1938,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                                     :style="{ 'background-color': useGetTagInfo(tag.id).groupColor }">
                                                     {{ tag.name }}
                                                 </span>
-                                                <span v-if="!tradeTags.length" class="txt-small" style="color: var(--white-40);">–</span>
+                                                <span v-if="!tradeTags.length" class="txt-small" style="color: var(--white-38);">–</span>
                                             </div>
                                         </div>
                                         <!-- MFE -->

@@ -113,7 +113,7 @@ const geld = (n) => (n >= 0 ? '+' : '') + Number(n || 0).toLocaleString('de-DE',
 
 .otZeile {
     display: grid;
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.84rem;

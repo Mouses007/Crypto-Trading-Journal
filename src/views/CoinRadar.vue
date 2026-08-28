@@ -205,8 +205,15 @@
                         @click="offen = offen === z.id ? null : z.id">
                         <div class="crKarteKopf">
                             <span v-if="z.status === 'bewertet'" class="crRang">{{ z.rang }}</span>
+                            <!-- role/tabindex/keydown: ein klickbares <i> ist per Tastatur
+                                 nicht erreichbar und fuer Screenreader kein Bedienelement. -->
                             <i class="uil crStern" :class="istFav(z) ? 'uil-favorite aktiv' : 'uil-star'"
-                                @click.stop="favUmschalten(z)"></i>
+                                role="button" tabindex="0"
+                                :aria-pressed="istFav(z) ? 'true' : 'false'"
+                                :title="istFav(z) ? t('coinradar.favEntfernen') : t('coinradar.favHinzu')"
+                                @click.stop="favUmschalten(z)"
+                                @keydown.enter.stop.prevent="favUmschalten(z)"
+                                @keydown.space.stop.prevent="favUmschalten(z)"></i>
                             <strong>{{ kurz(z.symbol) }}</strong>
                             <span v-if="bestaetigt(z)" class="crBestaetigt" :title="t('coinradar.bestaetigtHilfe')">
                                 <i class="uil uil-check-circle"></i>
@@ -343,8 +350,12 @@
                                     <td></td>
                                     <td>
                                         <i class="uil crStern" :class="istFav(z) ? 'uil-favorite aktiv' : 'uil-star'"
+                                            role="button" tabindex="0"
+                                            :aria-pressed="istFav(z) ? 'true' : 'false'"
                                             :title="istFav(z) ? t('coinradar.favEntfernen') : t('coinradar.favHinzu')"
-                                            @click.stop="favUmschalten(z)"></i>
+                                            @click.stop="favUmschalten(z)"
+                                            @keydown.enter.stop.prevent="favUmschalten(z)"
+                                            @keydown.space.stop.prevent="favUmschalten(z)"></i>
                                         <strong>{{ kurz(z.symbol) }}</strong>
                                     </td>
                                     <td><span class="badge bg-secondary crBadge">{{ grundText(z.huerdeGrund) }}</span></td>
@@ -356,8 +367,12 @@
                                     <td class="text-end crRangZelle">{{ z.rang || '—' }}</td>
                                     <td>
                                         <i class="uil crStern" :class="istFav(z) ? 'uil-favorite aktiv' : 'uil-star'"
+                                            role="button" tabindex="0"
+                                            :aria-pressed="istFav(z) ? 'true' : 'false'"
                                             :title="istFav(z) ? t('coinradar.favEntfernen') : t('coinradar.favHinzu')"
-                                            @click.stop="favUmschalten(z)"></i>
+                                            @click.stop="favUmschalten(z)"
+                                            @keydown.enter.stop.prevent="favUmschalten(z)"
+                                            @keydown.space.stop.prevent="favUmschalten(z)"></i>
                                         <strong>{{ kurz(z.symbol) }}</strong>
                                         <span v-if="bestaetigt(z)" class="crBestaetigt"
                                             :title="t('coinradar.bestaetigtHilfe')"><i class="uil uil-check-circle"></i></span>

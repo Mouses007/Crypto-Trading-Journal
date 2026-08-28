@@ -1254,6 +1254,7 @@
     "exitNextDay": "Exit (Folgetag)"
   },
   "messages": {
+    "confirmDelete": "Wirklich löschen?",
     "allTradesImported": "Alle Trades bereits importiert.",
     "positionsImported": "{count} Positionen geladen, {days} neue Tage importiert.",
     "importFailed": "Import fehlgeschlagen: ",
@@ -3829,6 +3830,8 @@
       "fertig": "Fertig"
     },
     "karten": {
+        "erklaerung": "Erklärung (optional)",
+        "erklaerungHinweis": "Warum ist das so? Steht nach dem Aufdecken unter der Antwort.",
       "eigene": "Eigene Karten",
       "vorgegeben": "Vorgegebene Karten",
       "neueKarte": "Neue Karte",

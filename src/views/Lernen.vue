@@ -192,6 +192,8 @@ const formOffen = ref(false)
 const bearbeiteId = ref(null)
 const formFrage = ref('')
 const formAntwort = ref('')
+/** Optional: warum die Antwort richtig ist. Leer heisst: nichts zu erklaeren. */
+const formErklaerung = ref('')
 const formKategorie = ref('indikatoren')
 const formNiveau = ref(1)
 
@@ -199,6 +201,7 @@ function formOeffnen(karte = null) {
     bearbeiteId.value = karte?.objectId || null
     formFrage.value = karte?.frage || ''
     formAntwort.value = karte?.antwort || ''
+    formErklaerung.value = karte?.erklaerung || ''
     formKategorie.value = karte?.kategorie || 'indikatoren'
     formNiveau.value = niveauVonKarte(karte)
     formOffen.value = true
@@ -216,13 +219,14 @@ async function formSpeichern() {
     if (!formFrage.value.trim() || !formAntwort.value.trim()) return
 
     if (bearbeiteId.value) {
-        const patch = { frage: formFrage.value.trim(), antwort: formAntwort.value.trim(), kategorie: formKategorie.value, niveau: formNiveau.value }
+        const patch = { frage: formFrage.value.trim(), antwort: formAntwort.value.trim(), erklaerung: formErklaerung.value.trim(), kategorie: formKategorie.value, niveau: formNiveau.value }
         await dbUpdate('quiz_karten', bearbeiteId.value, patch)
         const k = karten.value.find(x => x.objectId === bearbeiteId.value)
         if (k) Object.assign(k, patch)
     } else {
         const neu = await dbCreate('quiz_karten', {
-            frage: formFrage.value.trim(), antwort: formAntwort.value.trim(), kategorie: formKategorie.value,
+            frage: formFrage.value.trim(), antwort: formAntwort.value.trim(),
+            erklaerung: formErklaerung.value.trim(), kategorie: formKategorie.value,
             niveau: formNiveau.value, herkunft: 'eigen', aktiv: 1,
         })
         karten.value.push(neu)
@@ -321,6 +325,12 @@ async function aktivUmschalten(karte) {
                         <template v-else>
                             <div class="lernen-card-box lernen-card-box-antwort">
                                 <div class="lernen-antwort">{{ aktuellerEintrag.karte.antwort }}</div>
+                                <!-- Die Antwort steht da, aber nicht warum. Wer eine Karte
+                                     nicht wusste, lernt aus der Begruendung mehr als aus
+                                     der Wiederholung. Optional: leere Karten zeigen nichts. -->
+                                <div v-if="aktuellerEintrag.karte.erklaerung" class="lernen-erklaerung">
+                                    {{ aktuellerEintrag.karte.erklaerung }}
+                                </div>
                             </div>
                             <div class="lernen-grade-grid">
                                 <button v-for="g in GRADE_BUTTONS" :key="g.grad" class="lernen-grade-btn" :class="g.klasse" @click="bewerten(g.grad)">
@@ -372,6 +382,11 @@ async function aktivUmschalten(karte) {
                     <div class="mb-2">
                         <label class="form-label small text-muted">{{ t('lernen.karten.antwort') }}</label>
                         <textarea class="form-control" rows="3" v-model="formAntwort"></textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small text-muted">{{ t('lernen.karten.erklaerung') }}</label>
+                        <textarea class="form-control" rows="2" v-model="formErklaerung"
+                            :placeholder="t('lernen.karten.erklaerungHinweis')"></textarea>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-12 col-sm-8">
@@ -560,6 +575,7 @@ async function aktivUmschalten(karte) {
 .lernen-card-box-antwort { min-height: 140px; padding-top: 1.5rem; }
 .lernen-frage { font-size: 1.75rem; font-weight: 600; line-height: 1.35; color: var(--white-87, rgba(255, 255, 255, 0.92)); }
 .lernen-antwort { font-size: 1.25rem; line-height: 1.5; color: var(--white-87, rgba(255, 255, 255, 0.85)); }
+.lernen-erklaerung { margin-top: 0.9rem; font-size: 0.95rem; line-height: 1.5; color: var(--white-60, rgba(255, 255, 255, 0.6)); }
 
 .lernen-trennlinie { height: 2px; background: #22c55e; margin: 0 1.5rem; }
 
@@ -569,7 +585,17 @@ async function aktivUmschalten(karte) {
 
 /* Vier Bewertungsstufen, in derselben Farbfolge wie die Box-Legende (1=rot … 4=grün) —
    die Farbe deutet also gleich an, wie weit die Karte damit springt. */
-.lernen-grade-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+/*
+ * Vier Knoepfe nebeneinander brauchen Platz: bei 375 px minus Rahmen bleiben
+ * je rund 80 px, und "Vergessen" passt dort nicht mehr. Unter 420 px zwei
+ * Reihen zu zwei — lieber zwei Zeilen als abgeschnittene Beschriftungen.
+ * `minmax(0, 1fr)`, damit ein langes Wort die Spalte nicht aufblaest.
+ */
+.lernen-grade-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+@media (max-width: 420px) {
+    .lernen-grade-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .lernen-grade-btn {
     border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); border-right: 1px solid rgba(255, 255, 255, 0.1);
     padding: 0.9rem 0.4rem; font-size: 0.88rem; font-weight: 600;
@@ -594,7 +620,7 @@ async function aktivUmschalten(karte) {
 .lernen-tage-balken-wrap { flex: 1; display: flex; align-items: flex-end; height: 100%; }
 .lernen-tage-balken { width: 100%; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--blue-color, #3b82f6); }
 
-.lernen-kategorie-zeile { display: grid; grid-template-columns: 9rem 1fr auto; align-items: center; gap: 0.75rem; padding: 0.4rem 0; font-size: 0.85rem; }
+.lernen-kategorie-zeile { display: grid; grid-template-columns: 9rem minmax(0, 1fr) auto; align-items: center; gap: 0.75rem; padding: 0.4rem 0; font-size: 0.85rem; }
 .lernen-kategorie-name { color: var(--white-87, rgba(255, 255, 255, 0.85)); }
 .lernen-kategorie-bar-wrap { height: 8px; border-radius: 999px; overflow: hidden; background: var(--black-bg-7, rgba(255, 255, 255, 0.08)); }
 .lernen-kategorie-bar { height: 100%; }
