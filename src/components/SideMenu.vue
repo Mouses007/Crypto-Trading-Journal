@@ -6,7 +6,7 @@ import { pageId, screenType, appMode } from "../stores/ui.js"
 import { currentUser } from "../stores/settings.js"
 import { useIstTelefon } from '../utils/geraet.js'
 import { selectedBroker, brokers, selectedTradeCategory, BOT_BROKERS } from "../stores/filters.js"
-import { PAGES, pagesForMode, modeHome, istModusAn, ersterAktiverModus } from '../config/menu.js'
+import { PAGES, pagesForMode, istModusAn } from '../config/menu.js'
 import SidebarFilters from './SidebarFilters.vue'
 import LiveSymbolPicker from './LiveSymbolPicker.vue'
 import donateBtc from '../assets/donate-btc.png'
@@ -285,18 +285,25 @@ const agentGroups = computed(() => gruppenFuer('agent'))
 const researchGroups = computed(() => gruppenFuer('research'))
 const lernenGroups = computed(() => gruppenFuer('lernen'))
 
+/**
+ * Ziel des Logo-Klicks: immer die Übersicht — unabhängig davon, in welchem
+ * Modus man gerade steht. Vorher zielte der Klick auf die Startseite des
+ * AKTUELLEN Modus (`appMode`), was den Logo-Klick zu einem reinen
+ * „Modus-Home"-Knopf machte, der auf der Live-Seite z.B. wieder auf
+ * `/marktradar` zurückfiel statt zur echten Übersicht zu springen. Ein Klick
+ * aufs Logo meint aber „ganz nach vorn", nicht „diesen Modus von vorn".
+ *
+ * Ist die Übersicht selbst abgeschaltet (`startseiteAn`), gibt es sie
+ * nirgends hinzuspringen — dann das Journal-Dashboard, der einzige Modus ohne
+ * eigenes Flag und deshalb der sichere Grundzustand der App.
+ */
+const logoZiel = computed(() => istModusAn('start', currentUser.value) ? '/startseite' : '/dashboard')
+
 function goToDashboard() {
     if (screenType.value === 'mobile') {
         useToggleMobileMenu()
     } else {
-        // `appMode` ist nur ein Gedächtnis und kann veraltet sein — wer den
-        // Modus abschaltet, in dem er gerade steht, hat ihn noch im Speicher.
-        // Die Wache im Layout finge das ab, aber ein sichtbarer Abpraller
-        // sieht kaputt aus; also gleich richtig zielen.
-        const ziel = istModusAn(appMode.value, currentUser.value)
-            ? appMode.value
-            : ersterAktiverModus(currentUser.value)
-        window.location.href = modeHome(ziel)
+        window.location.href = logoZiel.value
     }
 }
 
@@ -306,7 +313,7 @@ function goToDashboard() {
     <!-- Der Modus-Umschalter sitzt auf jedem Bildschirm zuoberst im Inhalt
          (Nav.vue), nicht mehr in der Seitenleiste. -->
     <div class="col-2 logoDiv">
-        <a class="logo-area pointerClass text-decoration-none" :href="modeHome(appMode)" @click.prevent="goToDashboard">
+        <a class="logo-area pointerClass text-decoration-none" :href="logoZiel" @click.prevent="goToDashboard">
             <div class="d-flex align-items-center">
                 <span v-if="currentUser?.avatar"><img class="logoProfileImg me-2" v-bind:src="currentUser.avatar" /></span>
                 <span v-else><img class="logoProfileImg me-2" src="../assets/icon.png" /></span>
