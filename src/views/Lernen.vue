@@ -61,6 +61,10 @@ const aktuellerIndex = ref(0)
 const antwortSichtbar = ref(false)
 const sitzungRichtig = ref(0)
 const sitzungFalsch = ref(0)
+// Karten, die in DIESER Sitzung schon einmal wiedervorgelegt wurden — eine
+// vergessene Karte kommt genau einmal zurück, sonst liesse sich die Sitzung
+// mit wiederholtem „Vergessen" in eine Endlosschleife bewerten.
+const wiedervorgelegt = ref(new Set())
 
 const aktuellerEintrag = computed(() => warteschlange.value[aktuellerIndex.value] || null)
 const aktuelleBox = computed(() => Number(aktuellerEintrag.value?.fortschritt?.box) || BOX_MIN)
@@ -77,6 +81,7 @@ function sitzungStarten() {
     antwortSichtbar.value = false
     sitzungRichtig.value = 0
     sitzungFalsch.value = 0
+    wiedervorgelegt.value = new Set()
     phase.value = 'review'
 }
 
@@ -104,6 +109,14 @@ async function bewerten(grad) {
     if (grad === GRADE_VERGESSEN) sitzungFalsch.value++
     else sitzungRichtig.value++
 
+    // Box 1 ist sofort wieder fällig (INTERVALL_TAGE in shared/leitner.js) —
+    // eine frisch vergessene Karte gehört deshalb ans Ende der laufenden
+    // Warteschlange und nicht erst in die nächste Sitzung.
+    if (grad === GRADE_VERGESSEN && !wiedervorgelegt.value.has(eintrag.karte.objectId)) {
+        wiedervorgelegt.value.add(eintrag.karte.objectId)
+        warteschlange.value.push(eintrag)
+    }
+
     antwortSichtbar.value = false
     if (aktuellerIndex.value + 1 < warteschlange.value.length) {
         aktuellerIndex.value++
@@ -118,6 +131,10 @@ function sitzungZurueck() {
 
 // ── Kartenverwaltung ────────────────────────────────────────────────────
 const KATEGORIEN = ['indikatoren', 'derivate', 'sentiment', 'chartAnalyse', 'risiko', 'markt', 'onchain']
+// Schwierigkeitsstufen des Starter-Decks (siehe `niveau` in
+// server/default-lernkarten.js). Als Liste, damit eine neue Stufe dort nur
+// hier eingetragen werden muss und nicht drei feste Knöpfe im Template braucht.
+const NIVEAUS = [1, 2, 3]
 const kategorieLabel = (k) => t('lernen.kategorie.' + k)
 const boxVonKarte = (kartenId) => Number(fortschrittByKarte.value[kartenId]?.box) || BOX_MIN
 const niveauVonKarte = (karte) => Number(karte?.niveau) || 1
@@ -135,12 +152,14 @@ const bearbeiteId = ref(null)
 const formFrage = ref('')
 const formAntwort = ref('')
 const formKategorie = ref('indikatoren')
+const formNiveau = ref(1)
 
 function formOeffnen(karte = null) {
     bearbeiteId.value = karte?.objectId || null
     formFrage.value = karte?.frage || ''
     formAntwort.value = karte?.antwort || ''
     formKategorie.value = karte?.kategorie || 'indikatoren'
+    formNiveau.value = niveauVonKarte(karte)
     formOffen.value = true
 }
 function formSchliessen() {
@@ -156,14 +175,14 @@ async function formSpeichern() {
     if (!formFrage.value.trim() || !formAntwort.value.trim()) return
 
     if (bearbeiteId.value) {
-        const patch = { frage: formFrage.value.trim(), antwort: formAntwort.value.trim(), kategorie: formKategorie.value }
+        const patch = { frage: formFrage.value.trim(), antwort: formAntwort.value.trim(), kategorie: formKategorie.value, niveau: formNiveau.value }
         await dbUpdate('quiz_karten', bearbeiteId.value, patch)
         const k = karten.value.find(x => x.objectId === bearbeiteId.value)
         if (k) Object.assign(k, patch)
     } else {
         const neu = await dbCreate('quiz_karten', {
             frage: formFrage.value.trim(), antwort: formAntwort.value.trim(), kategorie: formKategorie.value,
-            herkunft: 'eigen', aktiv: 1,
+            niveau: formNiveau.value, herkunft: 'eigen', aktiv: 1,
         })
         karten.value.push(neu)
         const f = await dbCreate('quiz_fortschritt', {
@@ -298,11 +317,19 @@ async function aktivUmschalten(karte) {
                         <label class="form-label small text-muted">{{ t('lernen.karten.antwort') }}</label>
                         <textarea class="form-control" rows="3" v-model="formAntwort"></textarea>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-muted">{{ t('lernen.karten.kategorieLabel') }}</label>
-                        <select class="form-select" v-model="formKategorie">
-                            <option v-for="k in KATEGORIEN" :key="k" :value="k">{{ kategorieLabel(k) }}</option>
-                        </select>
+                    <div class="row g-2 mb-3">
+                        <div class="col-12 col-sm-8">
+                            <label class="form-label small text-muted">{{ t('lernen.karten.kategorieLabel') }}</label>
+                            <select class="form-select" v-model="formKategorie">
+                                <option v-for="k in KATEGORIEN" :key="k" :value="k">{{ kategorieLabel(k) }}</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-4">
+                            <label class="form-label small text-muted">{{ t('lernen.karten.niveauLabel') }}</label>
+                            <select class="form-select" v-model.number="formNiveau">
+                                <option v-for="n in NIVEAUS" :key="n" :value="n">{{ t('lernen.niveau', { n }) }}</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="d-flex gap-2">
                         <button class="btn btn-primary btn-sm" @click="formSpeichern">{{ t('lernen.karten.speichern') }}</button>
@@ -313,15 +340,20 @@ async function aktivUmschalten(karte) {
                 <p v-if="!eigeneKarten.length" class="text-muted small mb-4">{{ t('lernen.karten.keineEigenen') }}</p>
                 <div v-else class="row g-2 mb-4">
                     <div v-for="k in eigeneKarten" :key="k.objectId" class="col-12">
-                        <div class="dailyCard p-3 d-flex justify-content-between align-items-start gap-3">
+                        <div class="dailyCard p-3 d-flex justify-content-between align-items-start gap-3" :class="{ 'lernen-inaktiv': Number(k.aktiv) === 0 }">
                             <div class="lernen-karte-text">
                                 <div class="fw-semibold">{{ k.frage }}</div>
                                 <div class="text-muted small">{{ k.antwort }}</div>
                                 <div class="text-muted small mt-1">
-                                    {{ kategorieLabel(k.kategorie) }} · {{ t('lernen.karten.box', { n: boxVonKarte(k.objectId) }) }}
+                                    {{ t('lernen.niveau', { n: niveauVonKarte(k) }) }} · {{ kategorieLabel(k.kategorie) }} · {{ t('lernen.karten.box', { n: boxVonKarte(k.objectId) }) }}
                                 </div>
                             </div>
-                            <div class="d-flex gap-1 flex-shrink-0">
+                            <!-- Ausblenden gibt es auch für eigene Karten: ihr Lernfortschritt ist
+                                 genauso wenig ersetzbar wie der einer mitgelieferten, Löschen nimmt ihn mit. -->
+                            <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                                <div class="form-check form-switch me-1 mb-0" :title="t('lernen.karten.aktivHint')">
+                                    <input class="form-check-input" type="checkbox" :checked="Number(k.aktiv) === 1" @change="aktivUmschalten(k)">
+                                </div>
                                 <button class="btn btn-sm btn-outline-secondary" :title="t('lernen.karten.bearbeiten')" @click="formOeffnen(k)">
                                     <i class="uil uil-edit"></i>
                                 </button>
@@ -337,8 +369,7 @@ async function aktivUmschalten(karte) {
                     <h5 class="mb-0">{{ t('lernen.karten.vorgegeben') }}</h5>
                     <div class="lernen-niveau-filter">
                         <button type="button" class="btn btn-sm" :class="niveauFilter === 'alle' ? 'btn-secondary' : 'btn-outline-secondary'" @click="niveauFilter = 'alle'">{{ t('lernen.karten.filterAlle') }}</button>
-                        <button type="button" class="btn btn-sm" :class="niveauFilter === 1 ? 'btn-secondary' : 'btn-outline-secondary'" @click="niveauFilter = 1">{{ t('lernen.niveau', { n: 1 }) }}</button>
-                        <button type="button" class="btn btn-sm" :class="niveauFilter === 2 ? 'btn-secondary' : 'btn-outline-secondary'" @click="niveauFilter = 2">{{ t('lernen.niveau', { n: 2 }) }}</button>
+                        <button v-for="n in NIVEAUS" :key="n" type="button" class="btn btn-sm" :class="niveauFilter === n ? 'btn-secondary' : 'btn-outline-secondary'" @click="niveauFilter = n">{{ t('lernen.niveau', { n }) }}</button>
                     </div>
                 </div>
                 <div class="row g-2">

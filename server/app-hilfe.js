@@ -130,6 +130,17 @@ Trades der Strategie-Instanzen stehen NICHT im normalen Journal — der KI-Agent
 - **Share Cards**: stilisierte Trade-Bilder zum Teilen, KI-generierter Hintergrund (FLUX) plus Trade-Daten als Overlay.
 - **Screenshot-Analyse**: die KI bewertet Chart-Screenshots (nur mit bildfähigen Modellen).`,
     },
+    lernen: {
+        titel: 'Lernen: Karteikasten für Fachbegriffe',
+        text: `Der Modus **Lernen** ist ein Karteikasten nach dem Leitner-Prinzip für die Fachbegriffe, die im Journal laufend vorkommen. Kein Marktbezug, keine Live-Daten — er lässt sich deshalb auch am Telefon voll bedienen. Abschaltbar unter Einstellungen → Allgemein → Layout & Stil → „Modi ein-/ausblenden".
+
+Drei Seiten im Seitenmenü:
+- **Lernen** — die Sitzung. Oben steht, wie viele Karten heute fällig sind, darunter ein Balken mit der Verteilung über die vier Boxen. „Sitzung starten" zeigt eine Frage; nach „Antwort zeigen" wird selbst bewertet: **Vergessen** (zurück auf Box 1), **Schwer** (bleibt in der Box), **Gut** (eine Box weiter), **Leicht** (zwei Boxen weiter). Je höher die Box, desto seltener kommt die Karte wieder: Box 1 sofort, Box 2 nach einem Tag, Box 3 nach drei, Box 4 nach sieben Tagen. Eine mit „Vergessen" bewertete Karte kommt in derselben Sitzung noch einmal dran.
+- **Karten** — Verwaltung. Oben die eigenen Karten (anlegen, bearbeiten, löschen), darunter die mitgelieferten. Mitgelieferte Karten lassen sich nicht bearbeiten, aber per Schalter ausblenden — sie zählen dann nicht mehr als fällig, ihr bisheriger Lernverlauf bleibt aber erhalten. Gefiltert wird nach Level: **Level 1** sind Grundbegriffe, die die App an ihren eigenen Kacheln ohnehin erklärt, **Level 2** vertiefte Konzepte (On-Chain-Kennzahlen, Derivate-Feinheiten, Risikokennzahlen), **Level 3** Spezialwissen (Orderfluss, Optionen, Börsen-Innenmechanik, Backtest-Fallen, Zyklusmodelle).
+- **Statistik** — vier Kopfzahlen (Karten insgesamt, gemeisterte Karten in Box 4, Erfolgsquote, Lernserie in Tagen), ein Balkendiagramm der Wiederholungen der letzten 14 Tage und der Erfolg je Kategorie, schwächste zuerst. Kategorien mit sehr wenigen Bewertungen sind ausgegraut und mit „zu wenig Daten" markiert, statt eine Quote zu behaupten, die noch Zufall sein kann.
+
+Auf der Übersichtsseite gibt es zusätzlich die Kachel **Quiz**: klein zeigt sie nur, wie viele Karten fällig sind; ein Klick vergrössert sie, und dort läuft eine vollwertige Sitzung, ohne die Übersicht zu verlassen. Eigene Karten und der Lernfortschritt liegen in der Datensicherung.`,
+    },
     einstellungen: {
         titel: 'Einstellungen, Sicherheit, Backup, Update, Extras',
         text: `Die Einstellungen (Zahnrad im Seitenmenü) sind in Reiter gegliedert; das Wichtigste:
