@@ -3615,6 +3615,8 @@
     "mitPlan": "Mit Plan ({n})",
     "ohnePlan": "Ohne Plan ({n})",
     "jeSitzung": "je Sitzung",
+    "medianJeSitzung": "Median je Sitzung",
+    "medianAbweichung": "Der Durchschnitt sagt {betrag} — er hängt an einzelnen Ausreissern, der Median ist hier der ehrlichere Wert.",
     "unterschied": "Unterschied: {betrag} je Sitzung zugunsten der geplanten.",
     "vergleichZuDuenn": "Für den Vergleich braucht es auf beiden Seiten mindestens {n} Sitzungen.",
     "startstunde": "Nach Startstunde",

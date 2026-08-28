@@ -17,6 +17,13 @@
  *      ausgehalten hätte.
  */
 
+/*
+ * Rangkorrelation und Median kommen aus `shared/statistik.js` -- beide
+ * Formeln standen im Projekt mehrfach, die Rangkorrelation zweimal ohne
+ * Bindungskorrektur (Audit 28.08.2026, FIN-08).
+ */
+import { spearman, median } from '../shared/statistik.js'
+
 /** Ab welcher Bewegung ein Coin im Nachhinein als „beweglich" gilt. */
 export const BEWEGT_PCT = 1.0
 
@@ -64,31 +71,21 @@ export function rangGegenErgebnis(zeilen = []) {
         .map((z) => ({ rang: Number(z.rang), wert: spanne(z) }))
     if (paare.length < 10) return { wert: null, n: paare.length }
 
-    const ordne = (feld, absteigend) => {
-        const sortiert = [...paare].sort((a, b) => (absteigend ? b[feld] - a[feld] : a[feld] - b[feld]))
-        const karte = new Map()
-        sortiert.forEach((p, i) => karte.set(p, i + 1))
-        return karte
-    }
-    const nachRang = ordne('rang', false)
-    const nachWert = ordne('wert', true)
-
-    const n = paare.length
-    const summeD2 = paare.reduce((s, p) => {
-        const d = nachRang.get(p) - nachWert.get(p)
-        return s + d * d
-    }, 0)
-    const rho = 1 - (6 * summeD2) / (n * (n * n - 1))
-    return { wert: Math.max(-1, Math.min(1, rho)), n }
+    /*
+     * Hier stand die Kurzformel `1 - 6*Sd2/(n(n2-1))`. Die gilt nur ohne
+     * Bindungen -- und `wert` ist eine gemessene Preisspanne, wo Bindungen
+     * realistisch sind: mehrere Coins ohne Bewegung ergeben exakt dieselbe
+     * Spanne. Dann hing das Ergebnis davon ab, in welcher Reihenfolge `sort`
+     * gleiche Werte zufaellig stehen liess.
+     *
+     * Gemessen wird Rang gegen NEGATIVE Spanne: Rang 1 soll die groesste
+     * Bewegung sein, und ein positives Rho soll "die Liste taugt" heissen.
+     */
+    const rho = spearman(paare.map((p) => p.rang), paare.map((p) => -p.wert), 10)
+    return { wert: rho, n: paare.length }
 }
 
-/** Median einer Zahlenreihe, oder null. */
-export function median(werte = []) {
-    const z = werte.filter((w) => Number.isFinite(w)).sort((a, b) => a - b)
-    if (!z.length) return null
-    const m = Math.floor(z.length / 2)
-    return z.length % 2 ? z[m] : (z[m - 1] + z[m]) / 2
-}
+export { median }
 
 /**
  * Die Auswertung eines Horizonts.

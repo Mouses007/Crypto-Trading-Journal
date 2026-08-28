@@ -20,6 +20,8 @@
  * Gegenwart. Die Richtung ist es nicht.
  */
 
+import { spearman } from '../../shared/statistik.js'
+
 /** Vorgabe-Gewichte. Summe 100; die Oberfläche prüft das beim Speichern. */
 export const STANDARD_GEWICHTE = {
     bewegung: 30,   // ATR% — lohnt sich der Einstieg überhaupt
@@ -263,11 +265,16 @@ export function rangkorrelation(alt = [], neu = []) {
     const a = ordne(altRang)
     const b = ordne(neuRang)
 
-    const n = gemeinsam.length
-    const summeD2 = gemeinsam.reduce((s, sym) => {
-        const d = a.get(sym) - b.get(sym)
-        return s + d * d
-    }, 0)
-    const rho = 1 - (6 * summeD2) / (n * (n * n - 1))
-    return { wert: Math.max(-1, Math.min(1, rho)), gemeinsam: n }
+    /*
+     * Hier stand die Kurzformel `1 - 6*Sd2/(n(n2-1))`. Sie war an dieser
+     * Stelle nicht falsch -- `vergibRaenge` erzeugt konstruktiv eindeutige
+     * Raenge (Gleichstand nach Symbol gebrochen), Bindungen sind also
+     * unmoeglich. Sie stand hier nur ein zweites Mal, und genau daran ist die
+     * Fassung in `radar-guete.js` auseinandergelaufen. Eine Formel, ein Ort.
+     */
+    const rho = spearman(
+        gemeinsam.map((sym) => a.get(sym)),
+        gemeinsam.map((sym) => b.get(sym)),
+        10)
+    return { wert: rho, gemeinsam: gemeinsam.length }
 }

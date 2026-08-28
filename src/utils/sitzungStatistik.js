@@ -22,8 +22,47 @@
  *    benutzt `KachelRegime.vue`.
  */
 
+import { median } from '../../shared/statistik.js'
+
 /** Ab wie vielen Sitzungen eine Gruppe als Aussage gilt. */
 export const MIN_GRUPPE = 4
+
+/**
+ * Stunde und Wochentag eines Zeitpunkts in einer bestimmten Zeitzone.
+ *
+ * Hier stand `new Date(ms).getHours()` / `.getDay()`, also die Zeitzone des
+ * BROWSERS. Der Rest der App rechnet mit `timeZoneTrade`. Wer auf Reisen oder
+ * mit einer abweichend eingestellten Maschine auswertet, bekam „Sitzungen um
+ * die US-Eröffnung" im falschen Stundenbalken, und Sitzungen nahe Mitternacht
+ * landeten auf dem falschen Wochentag.
+ *
+ * `Intl` statt dayjs, weil dieses Modul bewusst abhängigkeitsfrei bleibt: es
+ * wird von Vue UND vom Selbsttest in Node geladen. Ohne Zeitzone fällt es auf
+ * die Maschinenzeit zurück — dasselbe Verhalten wie vorher, nur bewusst.
+ *
+ * @param {number} ms
+ * @param {string} [zone] IANA-Name, z.B. 'Europe/Zurich'
+ * @returns {{stunde:number, wochentag:number}} Wochentag 0 = Sonntag
+ */
+export function stundeUndTag(ms, zone) {
+    const d = new Date(ms)
+    if (!zone) return { stunde: d.getHours(), wochentag: d.getDay() }
+    try {
+        const teile = new Intl.DateTimeFormat('en-US', {
+            timeZone: zone, hour: 'numeric', hour12: false, weekday: 'short',
+        }).formatToParts(d)
+        const stunde = Number(teile.find((t) => t.type === 'hour')?.value)
+        const kurz = teile.find((t) => t.type === 'weekday')?.value
+        const tage = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+        const wochentag = tage[kurz]
+        if (!Number.isFinite(stunde) || wochentag === undefined) throw new Error('unlesbar')
+        // 24 Uhr gibt es in hour12:false gelegentlich für Mitternacht.
+        return { stunde: stunde % 24, wochentag }
+    } catch {
+        // Unbekannte Zeitzone: lieber Maschinenzeit als gar keine Auswertung.
+        return { stunde: d.getHours(), wochentag: d.getDay() }
+    }
+}
 
 const WOCHENTAGE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
 
@@ -63,6 +102,16 @@ function bilanz(gruppe) {
         pnlUsd: pnl,
         /** Durchschnitt je Sitzung — vergleichbar über verschieden grosse Gruppen. */
         pnlJeSitzung: n ? pnl / n : 0,
+        /**
+         * Median je Sitzung — der belastbarere der beiden Werte.
+         *
+         * PnL-Verteilungen sind stark schief: vier Verlustsitzungen und ein
+         * Ausreisser nach oben ergeben einen positiven Durchschnitt, obwohl
+         * vier von fünf Sitzungen Geld gekostet haben. Das Schwestermodul
+         * `radar-guete.js` rechnet für dieselbe Frage bewusst mit dem Median;
+         * beide holen ihn jetzt aus `shared/statistik.js`.
+         */
+        pnlMedian: median(gruppe.map((s) => zahl(s.pnlUsd))),
         trades,
         gewinner: gruppe.filter(s => zahl(s.pnlUsd) > 0).length,
         mitPlan: mitPlan.length,
@@ -124,15 +173,13 @@ export function disziplinVerlauf(sitzungen) {
  * Handelszeiten systematisch kosten — die Sitzungen um die US-Eröffnung sind
  * der klassische Verdacht.
  */
-export function nachZeit(sitzungen) {
+export function nachZeit(sitzungen, zone) {
     const fertige = nurBeendete(sitzungen)
 
     const proStunde = new Map()
     const proTag = new Map()
     for (const s of fertige) {
-        const d = new Date(zahl(s.startUnix))
-        const h = d.getHours()
-        const w = d.getDay()
+        const { stunde: h, wochentag: w } = stundeUndTag(zahl(s.startUnix), zone)
         if (!proStunde.has(h)) proStunde.set(h, [])
         if (!proTag.has(w)) proTag.set(w, [])
         proStunde.get(h).push(s)
@@ -153,19 +200,31 @@ export function nachZeit(sitzungen) {
 /**
  * 3. Mit Plan gegen ohne Plan.
  *
- * Die Frage, die den ganzen Sitzungsgedanken trägt. Bewusst als Vergleich
- * zweier Durchschnitte je Sitzung und nicht als Summe: mit ungleich grossen
- * Gruppen wäre eine Summe irreführend.
+ * Die Frage, die den ganzen Sitzungsgedanken trägt. Bewusst je Sitzung und
+ * nicht als Summe: mit ungleich grossen Gruppen wäre eine Summe irreführend.
+ *
+ * Verglichen werden die MEDIANE, nicht die Durchschnitte. Der Durchschnitt
+ * stand hier bis zum Audit vom 28.08.2026 und beantwortete die Frage falsch,
+ * sobald eine Seite einen Ausreisser hatte: vier Verlustsitzungen und ein
+ * grosser Gewinn meldeten „mit Plan 40 USD besser je Sitzung". Der
+ * Durchschnitt bleibt als `unterschiedDurchschnitt` daneben stehen — weichen
+ * beide stark voneinander ab, IST das die Auskunft (die Gruppe hängt an
+ * wenigen Sitzungen).
  */
 export function planWirkung(sitzungen) {
     const fertige = nurBeendete(sitzungen)
     const mit = bilanz(fertige.filter(hatPlan))
     const ohne = bilanz(fertige.filter(s => !hatPlan(s)))
+    /** null, solange eine der beiden Seiten zu dünn ist — sonst liest man Zufall als Befund. */
+    const zuDuenn = mit.duenn || ohne.duenn
+    const beideMediane = mit.pnlMedian !== null && ohne.pnlMedian !== null
     return {
         mit,
         ohne,
-        /** null, solange eine der beiden Seiten zu dünn ist — sonst liest man Zufall als Befund. */
-        unterschiedJeSitzung: (mit.duenn || ohne.duenn)
+        unterschiedJeSitzung: (zuDuenn || !beideMediane)
+            ? null
+            : mit.pnlMedian - ohne.pnlMedian,
+        unterschiedDurchschnitt: zuDuenn
             ? null
             : mit.pnlJeSitzung - ohne.pnlJeSitzung,
     }
@@ -222,12 +281,12 @@ export function nachUmfang(sitzungen) {
 }
 
 /** Alles auf einmal — die Ansicht braucht keine vier Aufrufe. */
-export function werteAus(sitzungen) {
+export function werteAus(sitzungen, zone) {
     const fertige = nurBeendete(sitzungen)
     return {
         gesamt: bilanz(fertige),
         disziplin: disziplinVerlauf(sitzungen),
-        zeit: nachZeit(sitzungen),
+        zeit: nachZeit(sitzungen, zone),
         plan: planWirkung(sitzungen),
         umfang: nachUmfang(sitzungen),
     }

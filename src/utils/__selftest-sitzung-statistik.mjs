@@ -13,7 +13,7 @@
  */
 
 import {
-    werteAus, disziplinVerlauf, nachZeit, planWirkung, nachUmfang,
+    werteAus, disziplinVerlauf, nachZeit, planWirkung, nachUmfang, stundeUndTag,
     nurBeendete, hatPlan, dauerMin, MIN_GRUPPE,
 } from './sitzungStatistik.js'
 
@@ -168,6 +168,65 @@ console.log('\nMit Plan gegen ohne Plan')
 
     check('Disziplin einer Gruppe ohne Plan ist null, nicht 0',
         planWirkung([s({ planMaxVerlustUsd: 0, planMaxTrades: 0 })]).ohne.disziplin === null)
+}
+
+/*
+ * Der Grund, warum hier der Median steht und nicht der Durchschnitt.
+ *
+ * Vier Verlustsitzungen mit Plan und ein grosser Gewinn: der Durchschnitt
+ * meldet „mit Plan deutlich besser", obwohl vier von fünf Sitzungen Geld
+ * gekostet haben. Genau dieser Fall stand bis zum Audit vom 28.08.2026 in der
+ * Auswertung. Der Durchschnitt bleibt daneben stehen — weichen beide stark ab,
+ * IST das die Auskunft.
+ */
+{
+    const schief = planWirkung([
+        s({ pnlUsd: -20 }), s({ pnlUsd: -15 }), s({ pnlUsd: -10 }), s({ pnlUsd: -5 }), s({ pnlUsd: 200 }),
+        ...viele(MIN_GRUPPE, { planMaxVerlustUsd: 0, planMaxTrades: 0, pnlUsd: 0 }),
+    ])
+    check('Median deckt die schiefe Verteilung auf',
+        schief.mit.pnlMedian === -10, String(schief.mit.pnlMedian))
+    check('Durchschnitt behauptet das Gegenteil',
+        schief.mit.pnlJeSitzung === 30, String(schief.mit.pnlJeSitzung))
+    check('der ausgewiesene Unterschied folgt dem Median',
+        schief.unterschiedJeSitzung === -10, String(schief.unterschiedJeSitzung))
+    check('der Durchschnitt bleibt daneben sichtbar',
+        schief.unterschiedDurchschnitt === 30, String(schief.unterschiedDurchschnitt))
+
+    const duenn2 = planWirkung([...viele(2, { pnlUsd: 20 })])
+    check('auch der Durchschnitt schweigt bei zu duenner Gruppe',
+        duenn2.unterschiedDurchschnitt === null)
+}
+
+// ── Zeitzone: nicht die des Browsers ─────────────────────────────────────
+console.log('\nZeitzone der Gruppierung')
+{
+    // 23:30 UTC am Samstag ist in Tokio bereits Sonntag 08:30.
+    const utcSamstagAbend = Date.UTC(2026, 7, 15, 23, 30)
+    const a = stundeUndTag(utcSamstagAbend, 'UTC')
+    const b = stundeUndTag(utcSamstagAbend, 'Asia/Tokyo')
+    check('UTC: Samstag 23 Uhr', a.stunde === 23 && a.wochentag === 6, JSON.stringify(a))
+    check('Tokio: derselbe Zeitpunkt ist Sonntag 8 Uhr', b.stunde === 8 && b.wochentag === 0, JSON.stringify(b))
+
+    const c = stundeUndTag(Date.UTC(2026, 0, 15, 12, 0), 'Europe/Zurich')
+    check('Zuerich im Winter ist UTC+1', c.stunde === 13, JSON.stringify(c))
+    const d = stundeUndTag(Date.UTC(2026, 6, 15, 12, 0), 'Europe/Zurich')
+    check('Zuerich im Sommer ist UTC+2', d.stunde === 14, JSON.stringify(d))
+
+    check('unbekannte Zeitzone faellt auf die Maschinenzeit zurueck, statt zu werfen',
+        Number.isFinite(stundeUndTag(utcSamstagAbend, 'Kein/Ort').stunde))
+    check('ohne Zeitzone bleibt das alte Verhalten',
+        stundeUndTag(utcSamstagAbend).stunde === new Date(utcSamstagAbend).getHours())
+
+    // Mitternacht ist 0, nicht 24.
+    check('Mitternacht ist Stunde 0', stundeUndTag(Date.UTC(2026, 7, 16, 0, 0), 'UTC').stunde === 0)
+
+    const z = nachZeit([s({
+        startUnix: utcSamstagAbend,
+        endUnix: utcSamstagAbend + 3600000,
+    })], 'Asia/Tokyo')
+    check('nachZeit gruppiert nach der uebergebenen Zone',
+        z.wochentage.length === 1 && z.wochentage[0].tag === 0, JSON.stringify(z.wochentage.map(w => w.tag)))
 }
 
 // ── 4. Dauer und Überhandeln ─────────────────────────────────────────────

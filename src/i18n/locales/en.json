@@ -3615,6 +3615,8 @@
     "mitPlan": "With plan ({n})",
     "ohnePlan": "Without plan ({n})",
     "jeSitzung": "per session",
+    "medianJeSitzung": "Median per session",
+    "medianAbweichung": "The mean says {betrag} — it hangs on a few outliers; the median is the more honest figure here.",
     "unterschied": "Difference: {betrag} per session in favour of the planned ones.",
     "vergleichZuDuenn": "The comparison needs at least {n} sessions on each side.",
     "startstunde": "By start hour",
