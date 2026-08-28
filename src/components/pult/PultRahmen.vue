@@ -40,7 +40,7 @@
  * Verbindungen auf denselben Zustand. Der Preis ist ein Verbindungsaufbau beim
  * Umschalten — sichtbar am Zustandspunkt, und das ist die ehrlichere Anzeige.
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import InfoTipp from '../InfoTipp.vue'
 
@@ -54,29 +54,6 @@ const props = defineProps({
     komponenten: { type: Object, required: true },
     /** Grosse Arbeitsflächen, umschaltbar: `[{ id, titleKey, icon }]`. */
     buehnen: { type: Array, required: true },
-    /**
-     * Welche Bühne gerade steht — "controlled": der Rahmen hält diesen
-     * Zustand NICHT mehr selbst, er meldet nur `update:buehne` und zeichnet,
-     * was ihm gesagt wird.
-     *
-     * Grund für den Umbau: die ersten beiden Pulte (Live-Trading, Marktradar)
-     * haben eine FESTE Bühnenliste, aber die Startseite bietet den ganzen
-     * frei konfigurierbaren Kachelkatalog an — welche Kacheln überhaupt als
-     * Bühne wählbar sind, ändert sich dort, sobald man im Kachel-Menü etwas
-     * aus- oder einblendet. Ein intern verwalteter Zustand kann auf eine sich
-     * ändernde Liste nicht reagieren (wählt man z.B. eine Kachel als Bühne und
-     * blendet sie dann aus, bliebe der Rahmen auf einer verschwundenen Bühne
-     * stehen); ein von aussen kontrollierter Zustand kann es, weil der
-     * Aufrufer den Rückfall entscheidet.
-     */
-    /** Leerer String: keine Bühnenkandidatin sichtbar. Siehe `buehneLeerHinweis`. */
-    buehne: { type: String, required: true },
-    /**
-     * Text für den Fall `buehne === ''`. Bei Live-Trading und Marktradar
-     * kommt das nie vor (feste, immer vorhandene Bühnenliste); bei der
-     * Startseite kann der Nutzer alle bühnentauglichen Kacheln ausblenden.
-     */
-    buehneLeerHinweis: { type: String, default: '' },
     /** Instrumente von oben nach unten: `[{ id, titleKey, eigen? }]`. */
     leiste: { type: Array, required: true },
     /** Verdichtete Eigenbauten: `eigen`-Name → Komponente. */
@@ -86,21 +63,23 @@ const props = defineProps({
      * unverändert durchgereicht — der Rahmen weiss nicht, was drin steht.
      */
     kontext: { type: Object, default: () => ({}) },
+    /** localStorage-Schlüssel der Bühnenwahl. Je Seite ein eigener. */
+    speicher: { type: String, required: true },
 })
 
-const emit = defineEmits(['params', 'anzeige', 'zustand', 'neuladen', 'update:buehne'])
+const emit = defineEmits(['params', 'anzeige', 'zustand', 'neuladen'])
 
 const { t, te } = useI18n()
 
-/*
- * Lokaler Name fürs Template — spart das Umschreiben aller `buehne`-Stellen
- * dort auf `props.buehne`, und macht an einer Stelle sichtbar, dass es sich
- * um eine reine Durchreichung handelt (kein `ref`, kein eigener Zustand).
- */
-const buehne = computed(() => props.buehne)
+/** Welche der grossen Flächen gerade steht. Pro Gerät gemerkt. */
+const buehne = ref((() => {
+    const gemerkt = localStorage.getItem(props.speicher)
+    return props.buehnen.some(b => b.id === gemerkt) ? gemerkt : props.buehnen[0].id
+})())
 
 function waehleBuehne(id) {
-    emit('update:buehne', id)
+    buehne.value = id
+    localStorage.setItem(props.speicher, id)
 }
 
 /*
@@ -155,9 +134,9 @@ defineExpose({ jetzt })
         <slot name="bandOben" :jetzt="jetzt" />
         <slot name="bandUnten" :jetzt="jetzt" />
 
-        <div class="pMitte" :class="{ pOhneBuehne: !buehne }">
+        <div class="pMitte">
             <!-- ── Bühne ──────────────────────────────────────────────── -->
-            <section v-if="buehne" class="pBuehne">
+            <section class="pBuehne">
                 <header class="pBuehneKopf">
                     <button v-for="b in buehnen" :key="b.id" type="button"
                         :class="['ctl-pill', buehne === b.id ? 'active' : '']"
@@ -179,15 +158,6 @@ defineExpose({ jetzt })
                         @zustand="(z, extra) => emit('zustand', buehne, z, extra)"
                         @neuladen="emit('neuladen', buehne)" />
                 </div>
-            </section>
-
-            <!-- Kein Bühnenkandidat sichtbar (nur bei der Startseite möglich,
-                 wo der Nutzer selbst bestimmt, welche Kacheln überhaupt da
-                 sind). Die Leiste bekommt dann die volle Breite, siehe
-                 `.pMitte.pOhneBuehne` unten. -->
-            <section v-else class="pBuehneLeer">
-                <i class="uil uil-web-grid"></i>
-                <p>{{ buehneLeerHinweis }}</p>
             </section>
 
             <!-- ── Instrumentenleiste ─────────────────────────────────── -->
@@ -270,29 +240,6 @@ defineExpose({ jetzt })
     flex: 1 1 auto;
     min-height: 0;
 }
-
-/* Keine Bühne (nur Startseite): die Leiste nimmt die volle Breite, damit
-   nichts unsichtbar wird, nur weil keine Kachel als Fläche taugt. */
-.pMitte.pOhneBuehne {
-    grid-template-columns: 1fr;
-}
-
-.pBuehneLeer {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    min-height: 200px;
-    padding: 2rem;
-    color: var(--white-38);
-    border-right: 1px solid var(--pTrenn);
-}
-
-.pBuehneLeer i { font-size: 1.6rem; }
-.pBuehneLeer p { max-width: 32ch; text-align: center; font-size: 0.82rem; margin: 0; }
-
-.pMitte.pOhneBuehne .pBuehneLeer { display: none; }
 
 /* ── Bühne ──────────────────────────────────────────────────────────── */
 .pBuehne {

@@ -2060,10 +2060,6 @@
     "read_neutral": "keine klare Richtung"
   },
   "startseite": {
-    "pult": {
-      "pultSub": "Wähle eine deiner Übersichts-Kacheln als grosse Bühne, der Rest bildet die Leiste",
-      "keineBuehne": "Keine sichtbare Kachel eignet sich als Bühne. Blende z. B. Kapitalkurve, Kalender-Heatmap, Marktübersicht, RSI-Heatmap, BTC-Dominanz oder den Regenbogen ein."
-    },
     "title": "Übersicht",
     "kontostand": {
       "title": "Kontostand",

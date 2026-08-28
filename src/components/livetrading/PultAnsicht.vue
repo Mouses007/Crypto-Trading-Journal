@@ -1,5 +1,4 @@
 <script setup>
-import { ref } from 'vue'
 /**
  * Das Pult des Live-Trading-Fensters.
  *
@@ -35,31 +34,13 @@ const emit = defineEmits(['params', 'anzeige', 'zustand', 'neuladen'])
 /** Verdichtete Fassungen. Nur Funding braucht eine — die Kachel ist eine
  *  sortierbare Liste über bis zu hundert Märkte. */
 const EIGENE = { funding: InstrumentFunding }
-
-/**
- * Bühnenwahl — liegt jetzt hier (nicht mehr im Rahmen), weil der Rahmen seit
- * dem Startseiten-Pult "controlled" ist: dort ändert sich die Kandidatenliste
- * zur Laufzeit, hier ist sie fest. Für eine feste Liste ist das Halten hier
- * dieselbe eine Zeile wie vorher im Rahmen, nur an der Stelle, die weiss, ob
- * die Liste sich je ändert.
- */
-const BUEHNE_KEY = 'livetrading_pult_buehne'
-const buehne = ref((() => {
-    const gemerkt = localStorage.getItem(BUEHNE_KEY)
-    return BUEHNEN.some(b => b.id === gemerkt) ? gemerkt : BUEHNEN[0].id
-})())
-
-function setzeBuehne(id) {
-    buehne.value = id
-    localStorage.setItem(BUEHNE_KEY, id)
-}
 </script>
 
 <template>
     <PultRahmen :daten="daten" :zustand="zustand" :stand="stand" :kachel-params="kachelParams"
         :komponenten="komponenten" :buehnen="BUEHNEN" :leiste="LEISTE"
         :eigene-komponenten="EIGENE" :kontext="{ symbol }"
-        :buehne="buehne" @update:buehne="setzeBuehne"
+        speicher="livetrading_pult_buehne"
         @params="(id, w) => emit('params', id, w)"
         @anzeige="(id, w) => emit('anzeige', id, w)"
         @zustand="(id, z, extra) => emit('zustand', id, z, extra)"

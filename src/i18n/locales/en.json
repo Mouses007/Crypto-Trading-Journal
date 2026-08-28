@@ -2060,10 +2060,6 @@
     "read_neutral": "no clear direction"
   },
   "startseite": {
-    "pult": {
-      "pultSub": "Pick one of your overview tiles as the large stage, the rest form the rail",
-      "keineBuehne": "No visible tile is suited as a stage. Show, for example, the equity curve, calendar heatmap, market overview, RSI heatmap, BTC dominance, or the rainbow chart."
-    },
     "title": "Overview",
     "kontostand": {
       "title": "Account balance",

@@ -18,16 +18,6 @@
  *   endpunkt: null — die Journal-Kacheln versorgen sich selbst aus den
  *   reaktiven Stores (Kontostand, offene Positionen, Totals), holen also nichts
  *   über einen eigenen Endpunkt.
- *
- * `flaeche: true` markiert Kacheln, die als PULT-BÜHNE taugen — eine grosse
- * Fläche, deren Inhalt mit dem Platz mitwächst (Kapitalkurve, Heatmap, und
- * die vier geteilten Marktradar-Charts markt/rsi/dom/rainbow). Alles andere
- * ist eine kompakte Stat- oder Listenkachel (Kontostand, Offene Trades,
- * Winrate, Kennzahlen, Performance): auf Bühnengrösse gezogen zeigt so eine
- * Kachel eine Zahl oder ein paar Zeilen und lässt den Rest der Fläche leer —
- * genau das Bild, das die erste Fassung des Startseiten-Pults zeigte, als
- * jede sichtbare Kachel als Bühne wählbar war. Siehe
- * `components/startseite/PultAnsicht.vue`.
  */
 
 import { baueKachelListe, macheSortierer } from './kachel-registry.js'
@@ -75,7 +65,6 @@ const JOURNAL_KACHELN = [
         endpunkt: null,
         intervallMs: Infinity,
         spalten: 2,
-        flaeche: true,
         quelle: 'Journal (gesamt, kumulierter Netto-PnL)',
     },
     {
@@ -94,7 +83,6 @@ const JOURNAL_KACHELN = [
         endpunkt: null,
         intervallMs: Infinity,
         spalten: 2,
-        flaeche: true,
         quelle: 'Journal (Netto-PnL je Tag)',
     },
     {
