@@ -113,7 +113,11 @@ const DEFINITIONEN = [
         titleKey: 'livetrading.indizes.title',
         icon: 'uil uil-chart-line',
         endpunkt: '/api/livetrading/indizes',
-        params: { interval: '5m', range: '1d' },
+        // `stunden` statt `range`: Yahoos `range=1d` liefert für einen Future
+        // nur die laufende reguläre Sitzung — morgens sind das zehn Kerzen.
+        // Der Server holt jetzt immer fünf Tage und schneidet auf dieses
+        // Fenster zu; die Auflösung wandert mit (siehe `FENSTER` in der Kachel).
+        params: { interval: '5m', stunden: 12 },
         intervallMs: 60 * 1000,
         // Ein Kerzenchart braucht Breite, sonst klebt jede Kerze an der nächsten
         spalten: 2,

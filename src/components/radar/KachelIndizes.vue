@@ -39,8 +39,35 @@ const MAERKTE = [
     { id: 'dxy', kurz: 'DXY' },
 ]
 
+/**
+ * Fensterstufen. Die Auflösung hängt mit dran, und zwar so, dass immer
+ * ungefähr gleich viele Kerzen entstehen (~100–150).
+ *
+ * Das ist der Kern der Sache: Yahoos `range=1d` gab für einen Future gerade
+ * zehn Kerzen zurück (gemessen 27.08.2026, `NQ=F` um 06:30 MESZ) — auf einer
+ * grossen Fläche fünf riesige Klötze, an denen man eine Bewegung zwar sieht,
+ * aber nicht einordnen kann. Ein Chart wird nicht dadurch lesbar, dass er
+ * einen langen Zeitraum abdeckt, sondern durch eine sinnvolle Zahl an Kerzen
+ * darin. Der Server holt deshalb immer fünf Tage und schneidet auf `stunden`.
+ */
+const FENSTER = [
+    { h: 6, interval: '5m', label: '6 h' },
+    { h: 12, interval: '5m', label: '12 h' },
+    { h: 24, interval: '15m', label: '24 h' },
+    { h: 72, interval: '30m', label: '3 T' },
+]
+
 /** Welcher Markt gezeichnet wird — die anderen stehen als Zahl daneben. */
 const markt = ref(props.params.markt || 'nasdaq')
+
+/** Aktives Fenster: was der Server geliefert hat, sonst die Vorgabe. */
+const fenster = computed(() => Number(props.daten?.stunden) || 12)
+
+function waehleFenster(f) {
+    // Anders als der Marktwechsel BRAUCHT das einen neuen Abruf: der Server
+    // schneidet die Kerzen zu, der Browser hat die übrigen gar nicht.
+    emit('params', { stunden: f.h, interval: f.interval })
+}
 
 const gewaehlt = computed(() => props.daten?.maerkte?.[markt.value] || null)
 const kerzen = computed(() => gewaehlt.value?.kerzen || [])
@@ -246,6 +273,12 @@ watch(() => props.daten, zeichne)
                 </span>
                 <span v-else class="ixDelta ixFehlt">—</span>
             </button>
+
+            <span class="ixFenster">
+                <button v-for="f in FENSTER" :key="f.h" type="button"
+                    :class="['ctl-pill', fenster === f.h ? 'active' : '']"
+                    @click.stop="waehleFenster(f)">{{ f.label }}</button>
+            </span>
         </div>
 
         <div v-if="gewaehlt" class="ixPreis">
@@ -268,6 +301,19 @@ watch(() => props.daten, zeichne)
 </template>
 
 <style scoped>
+/* Rechtsbündig abgesetzt: die Marktpillen wählen WAS gezeichnet wird, diese
+   hier WIE WEIT zurück — zwei verschiedene Fragen, also zwei Gruppen. */
+.ixFenster {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 0.15rem;
+}
+
+.ixFenster .ctl-pill {
+    padding: 0.05rem 0.4rem;
+    font-size: 0.7rem;
+}
+
 .ixWrap {
     display: flex;
     flex-direction: column;

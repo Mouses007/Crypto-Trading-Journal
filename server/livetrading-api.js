@@ -105,6 +105,58 @@ const INTERVALLE = new Set(['1m', '2m', '5m', '15m', '30m', '1h'])
  */
 const INDIZES_TTL = 60 * 1000
 
+/**
+ * Zeitraum, den wir bei Yahoo IMMER anfordern — unabhängig vom Fenster, das
+ * die Kachel zeigt.
+ *
+ * `1d` war hier die naheliegende und falsche Wahl. Für einen Future meint
+ * Yahoo damit die laufende reguläre Sitzung, und die hat um sechs Uhr früh
+ * europäischer Zeit noch kaum begonnen: gemessen am 27.08.2026 lieferte
+ * `NQ=F?range=1d&interval=5m` genau **10 Kerzen**, bei `15m` noch fünf. Auf
+ * einer grossen Fläche standen dann fünf riesige Kerzen ohne jeden Bezug —
+ * man sah eine Bewegung, konnte sie aber nicht einordnen.
+ *
+ * `5d` liefert an derselben Stelle 945 Kerzen und deckt damit auch die
+ * Nachtsitzung ab, in der Krypto tatsächlich gehandelt wird. Beschnitten wird
+ * danach hier, nicht bei Yahoo — ein Abruf bedient so jedes Fenster.
+ */
+const YAHOO_RANGE = '5d'
+
+/** Fenster in Stunden: Vorgabe, Grenzen und Mindestzahl an Kerzen. */
+const FENSTER_VORGABE_H = 12
+const FENSTER_MAX_H = 120
+const MIN_KERZEN = 12
+
+/**
+ * Kerzen auf das gewünschte Fenster kürzen.
+ *
+ * Arbeitet auf einer KOPIE: `roh` kommt aus dem Zwischenspeicher und wird von
+ * parallelen Anfragen mit anderem Fenster mitbenutzt. Wer hier hineinschneidet,
+ * kürzt sie allen.
+ *
+ * Bleiben weniger als `MIN_KERZEN` übrig, gelten stattdessen die letzten
+ * `MIN_KERZEN` — ein Markt, der im Fenster gar nicht gehandelt hat (Feiertag,
+ * Wochenende, ICE-Pause), soll seinen letzten bekannten Verlauf zeigen und
+ * nicht eine leere Fläche.
+ */
+function beschneideFenster(roh, stunden) {
+    const grenze = Date.now() - stunden * 60 * 60 * 1000
+    const maerkte = {}
+    for (const [id, m] of Object.entries(roh.maerkte || {})) {
+        const alle = Array.isArray(m?.kerzen) ? m.kerzen : []
+        const drin = alle.filter(k => k.t >= grenze)
+        maerkte[id] = {
+            ...m,
+            kerzen: drin.length >= MIN_KERZEN ? drin : alle.slice(-MIN_KERZEN),
+            // Was der Schnitt weggenommen hat, gehört angeschrieben: sonst
+            // sieht ein zurückgefallenes Mindestfenster wie das gewählte aus.
+            kerzenGesamt: alle.length,
+            fensterVoll: drin.length >= MIN_KERZEN,
+        }
+    }
+    return { maerkte }
+}
+
 async function holeIndizes(interval, range) {
     const eintraege = await Promise.all(Object.entries(MAERKTE).map(async ([id, m]) => {
         try {
@@ -334,12 +386,17 @@ export function setupLivetradingRoutes(app) {
     app.get('/api/livetrading/indizes', async (req, res) => {
         try {
             const interval = INTERVALLE.has(String(req.query.interval)) ? String(req.query.interval) : '5m'
-            // 1d deckt die laufende Sitzung; 5d ist die einzige sinnvolle
-            // Erweiterung, alles darüber sprengt eine Kachel
-            const range = req.query.range === '5d' ? '5d' : '1d'
-            const key = `lt_indizes|${interval}|${range}`
+            /*
+             * Das Fenster steht NICHT im Cache-Schlüssel: geholt wird immer
+             * `YAHOO_RANGE`, geschnitten wird danach. Sonst hielte der Server
+             * für jedes Fenster eine eigene Kopie derselben Kurse vor und
+             * fragte Yahoo entsprechend öfter.
+             */
+            const stunden = Math.max(1, Math.min(FENSTER_MAX_H,
+                Number(req.query.stunden) || FENSTER_VORGABE_H))
+            const key = `lt_indizes|${interval}`
             if (req.query.force) verwerfeCache(key)
-            const roh = await ausCache(key, INDIZES_TTL, () => holeIndizes(interval, range))
+            const roh = await ausCache(key, INDIZES_TTL, () => holeIndizes(interval, YAHOO_RANGE))
             /*
              * Alter erst hier: `roh` kann aus dem Zwischenspeicher kommen, und
              * bisher setzte das Raster mangels `stand` schlicht `Date.now()` —
@@ -349,7 +406,13 @@ export function setupLivetradingRoutes(app) {
              * im Rahmen sind.
              */
             const gealtert = altereIndizes(roh)
-            sendeRadar(res, { ...roh, ...gealtert, veraltet: roh.veraltet || gealtert.veraltet })
+            const geschnitten = beschneideFenster(gealtert, stunden)
+            sendeRadar(res, {
+                ...roh, ...gealtert,
+                maerkte: geschnitten.maerkte,
+                stunden,
+                veraltet: roh.veraltet || gealtert.veraltet,
+            })
         } catch (e) {
             sendRadarError(res, e, 'Indizes')
         }
