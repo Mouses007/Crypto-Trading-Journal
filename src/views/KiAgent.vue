@@ -57,6 +57,10 @@ const chatError = reactive({}) // { reportId: 'error msg' }
 // ==================== AGENT STATE ====================
 const agentSessions = reactive([])
 const agentCurrentSessionId = ref(null)
+// Seite, von der aus der Agent geöffnet wurde (Roboter-Button in Nav.vue,
+// ?sourcePage=…) — bleibt für den ganzen Seitenbesuch gültig, auch über
+// „+ Neuer Chat" hinweg, und geht mit jeder Nachricht an den Server.
+const agentPageContext = ref(null)
 const agentMessages = reactive([]) // Current session messages
 const agentInput = ref('')
 const agentLoading = ref(false)
@@ -547,7 +551,8 @@ async function sendAgentMessage() {
             signal: agentAbbruch.signal,
             body: JSON.stringify({
                 sessionId: agentCurrentSessionId.value,
-                message: msg
+                message: msg,
+                ...(agentPageContext.value ? { pageId: agentPageContext.value } : {})
             })
         })
 
@@ -632,6 +637,8 @@ const vueRouter = useRouter()
 const pendingAgentPrompt = route.query.agentPrompt || null
 // ?tab=agent: Schnellzugriff aus der Navigationsleiste landet direkt im Chat.
 const pendingTab = route.query.tab || null
+// ?sourcePage=…: von welcher Seite aus der Roboter-Button gedrückt wurde.
+const pendingSourcePage = route.query.sourcePage || null
 
 onBeforeMount(async () => {
     spinnerLoadingPage.value = false
@@ -640,9 +647,10 @@ onBeforeMount(async () => {
     if (pendingAgentPrompt || pendingTab === 'agent') {
         currentTab.value = 'agent'
     }
+    if (pendingSourcePage) agentPageContext.value = pendingSourcePage
 
     // Clean URL immediately (remove query param so it doesn't retrigger)
-    if (route.query.agentPrompt || route.query.tab) {
+    if (route.query.agentPrompt || route.query.tab || route.query.sourcePage) {
         vueRouter.replace({ path: route.path })
     }
 

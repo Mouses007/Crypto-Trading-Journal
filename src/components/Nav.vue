@@ -134,7 +134,7 @@ onMounted(async () => {
 // Seite aus, damit eine Frage an den Agenten keinen Umweg über das Menü braucht.
 const router = useRouter()
 function openAgent() {
-    router.push({ path: '/ki-coach', query: { tab: 'agent' } })
+    router.push({ path: '/ki-coach', query: { tab: 'agent', sourcePage: pageId.value } })
 }
 
 // Datenschutz-/Zensur-Modus: verbirgt Kontostände und Zahlen im Journal.

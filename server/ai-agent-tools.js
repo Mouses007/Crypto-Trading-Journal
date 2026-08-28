@@ -9,6 +9,8 @@ import { STRATEGY_TOOLS, STRATEGY_TOOL_IMPL } from './strategy-tools.js'
 import { hilfeUebersicht, hilfeThema, HILFE_THEMEN } from './app-hilfe.js'
 import { sammleKacheln, normSymbol } from './marktradar-lage.js'
 import { baueZeilen } from './lagebild.js'
+import { ANKER } from './coin-radar/bewertung.js'
+import { KOPPLUNG_FEST, KOPPLUNG_LOSE, deuteKopplung } from './coin-radar/btc-vergleich.js'
 
 // ==================== TOOL DEFINITIONS (for LLM) ====================
 
@@ -178,6 +180,22 @@ export const AGENT_TOOLS = [
             }
         }
     },
+    {
+        name: 'query_coin_radar',
+        description: 'Fetch the current Coin-Radar ranking — which of the tradable coins looks best to trade RIGHT NOW (movement, liquidity, trend, funding cost), from the most recently finished run. Returns the top-ranked coins as text lines. This is DIFFERENT from query_marktradar (which covers Marktradar tiles for ONE symbol, e.g. Fear&Greed, Marktmechanik) — use THIS tool for Coin-Radar questions ("welcher Coin lässt sich gerade gut handeln"). Important: a high score means "tradeable now" (moves enough, cheap to execute), NOT "will go up" — never turn this into a price/direction prediction.',
+        parameters: {
+            type: 'object',
+            properties: {
+                limit: { type: 'number', description: 'How many top-ranked coins to return. Default 12, max 30.' },
+                filter: {
+                    type: 'string',
+                    enum: ['alle', 'imSpiel', 'trendend', 'bestaetigt', 'laeuftMitBtc', 'eigenstaendig'],
+                    description: 'alle = keine Einschränkung. imSpiel = RVOL über der Schwelle. trendend = ADX über der Schwelle. bestaetigt = beide Zeiteinheiten stimmen überein. laeuftMitBtc = starker Bitcoin-Gleichlauf. eigenstaendig = kaum Bitcoin-Bezug.'
+                },
+                boerse: { type: 'string', enum: ['bitunix', 'bitget', 'pionex'], description: 'Nur Coins zeigen, die auf dieser Börse handelbar sind.' }
+            }
+        }
+    },
     // ── Modell-Optimierung: OpenRouter-Analyse ──────────────────────
     {
         name: 'analyze_model_performance',
@@ -257,6 +275,7 @@ export async function executeTool(toolName, params, knex) {
         analyze_screenshot: toolAnalyzeScreenshot,
         query_app_help: toolQueryAppHelp,
         query_marktradar: toolQueryMarktradar,
+        query_coin_radar: toolQueryCoinRadar,
         analyze_model_performance: toolAnalyzeModelPerformance,
         get_openrouter_models: toolGetOpenrouterModels,
         recommend_model_allocation: toolRecommendModelAllocation,
@@ -309,6 +328,94 @@ async function toolQueryMarktradar(knex, params) {
         stand: new Date().toISOString(),
         hinweis: 'Eine Zeile je Kachel; fehlende Kacheln waren gerade nicht erreichbar. Keine Handelsempfehlungen ableiten.',
         messwerte: zeilen.map(z => z.text),
+    }
+}
+
+/** JSON-Spalten von `coinradar_zeilen` sind TEXT (siehe database.js) — Parse-Fehler geben den Rückfall. */
+function sicherParseJson(text, rueckfall) {
+    try {
+        const j = JSON.parse(text)
+        return j ?? rueckfall
+    } catch {
+        return rueckfall
+    }
+}
+
+// Dieselben Schwellenfragen wie CoinRadar.vue (`istImSpiel`/`istTrendend`/
+// `laeuftMitBtc`/`istEigenstaendig`), damit das Tool nicht zufällig eine
+// andere Grenze zieht als die Seite, die es beschreibt. `ohneWert` zuerst:
+// Number(null) ist 0, und 0 unterschreitet jede Schwelle — ein ungemessener
+// Coin fiele sonst still in „nein" statt in „unbekannt".
+const COIN_RADAR_FILTER = {
+    imSpiel: z => z.rvol != null && Number(z.rvol) >= ANKER.rvolSchwelle,
+    trendend: z => z.adx != null && Number(z.adx) >= ANKER.adxSchwelle,
+    bestaetigt: z => z.jeZeiteinheit?.bestaetigt === true,
+    laeuftMitBtc: z => z.btcKorrelation != null && Number(z.btcKorrelation) >= KOPPLUNG_FEST,
+    eigenstaendig: z => z.btcKorrelation != null && Math.abs(Number(z.btcKorrelation)) <= KOPPLUNG_LOSE,
+}
+
+const fmtZahl = v => (v === null || v === undefined ? '?' : Number(v).toFixed(2))
+
+// Aktuelle Coin-Radar-Rangliste — letzter FERTIGER Lauf, dieselbe Abfrage wie
+// GET /api/coin-radar/zeilen (server/coin-radar-api.js), nur ohne Express und
+// mit knappen Textzeilen statt Rohdaten, damit der Agent nicht ~100 Zeilen mit
+// allen Spalten in den Kontext bekommt.
+async function toolQueryCoinRadar(knex, params) {
+    const letzterLauf = await knex('coinradar_laeufe').where('status', 'fertig').orderBy('id', 'desc').first()
+    if (!letzterLauf) return { error: 'Noch kein fertiger Coin-Radar-Lauf vorhanden.' }
+
+    const rohZeilen = await knex('coinradar_zeilen')
+        .where('laufId', letzterLauf.id)
+        .where('status', 'bewertet')
+        .orderBy('rang', 'asc')
+
+    let zeilen = rohZeilen.map(z => ({
+        ...z,
+        jeZeiteinheit: sicherParseJson(z.jeZeiteinheit, {}),
+        boersen: sicherParseJson(z.boersen, {}),
+    }))
+
+    const filter = String(params.filter || 'alle')
+    if (COIN_RADAR_FILTER[filter]) zeilen = zeilen.filter(COIN_RADAR_FILTER[filter])
+
+    const boerse = String(params.boerse || '').trim()
+    if (boerse) {
+        zeilen = zeilen.filter(z => {
+            const liste = Array.isArray(z.boersen?.liste) ? z.boersen.liste : []
+            const unbekannt = Array.isArray(z.boersen?.unbekannt) ? z.boersen.unbekannt : []
+            // Unbekannt bleibt stehen statt als „nein" zu gelten — ein
+            // Netzaussetzer bei einer Quelle soll die Liste nicht leeren.
+            return liste.some(e => e.boerse === boerse) || unbekannt.includes(boerse)
+        })
+    }
+
+    if (zeilen.length === 0) return { error: 'Kein Coin passt zu diesem Filter.' }
+
+    const limit = Math.min(30, Math.max(1, Number(params.limit) || 12))
+    zeilen = zeilen.slice(0, limit)
+
+    const zeile = z => {
+        const teile = [
+            `#${z.rang} ${z.symbol}`,
+            `Note ${z.note}`,
+            `ATR% ${fmtZahl(z.atrPct)}`,
+            `RVOL ${fmtZahl(z.rvol)}`,
+            `ADX ${fmtZahl(z.adx)}`,
+            `Funding ${fmtZahl(z.fundingJahresRate)}% p.a.`,
+            `BTC-Bezug ${deuteKopplung(z.btcKorrelation)}${z.btcKorrelation != null ? ` (${(Number(z.btcKorrelation) * 100).toFixed(0)}%)` : ''}`,
+        ]
+        if (z.rundlaufBp != null) teile.push(`Ausführung ${fmtZahl(z.rundlaufBp)} bp${z.besteBoerse ? ` (${z.besteBoerse})` : ''}`)
+        if (z.umsatz24h != null) teile.push(`Umsatz ${(Number(z.umsatz24h) / 1e6).toFixed(0)} Mio USD`)
+        return teile.join(', ')
+    }
+
+    return {
+        stand: new Date(Number(letzterLauf.erstelltAm)).toISOString(),
+        filter,
+        boerse: boerse || null,
+        anzahlGezeigt: zeilen.length,
+        hinweis: 'Der Coin-Radar sagt NICHTS über die Richtung — eine hohe Note heisst "lässt sich jetzt gut handeln", nicht "steigt". Keine Handelsempfehlung daraus ableiten.',
+        rangliste: zeilen.map(zeile),
     }
 }
 

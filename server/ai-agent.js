@@ -10,6 +10,7 @@ import { getKnex } from './database.js'
 import { decrypt } from './crypto.js'
 import { logWarn, logError } from './logger.js'
 import { AGENT_TOOLS, executeTool } from './ai-agent-tools.js'
+import { seitenKontext } from './app-hilfe.js'
 import { resetBacktestKontingent } from './strategy-tools.js'
 import { assertAllowedOllamaUrl, waehleAnbieter } from './ollama-api.js'
 import {
@@ -99,7 +100,7 @@ async function loadAiSettings() {
 
 // ==================== SYSTEM PROMPT ====================
 
-function buildSystemPrompt() {
+function buildSystemPrompt(seitenKontext) {
     const now = new Date()
     const dateStr = now.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     const year = now.getFullYear()
@@ -131,8 +132,15 @@ Deine Aufgabe:
 - Fragen zur aktuellen Marktlage (Fear & Greed, Dominanz, Funding, Long/Short,
   Liquidationen, Makro …) beantwortest du mit query_marktradar — nur die
   gelieferten Zahlen nennen, keine Handelsempfehlung daraus machen.
+- Fragen zum Coin-Radar ("welcher Coin lässt sich gerade gut handeln")
+  beantwortest du mit query_coin_radar, NICHT mit query_marktradar — das sind
+  zwei verschiedene Features. Eine hohe Note heisst "lässt sich jetzt gut
+  handeln", nicht "steigt"; keine Kursprognose daraus machen.
 
-Regeln:
+${seitenKontext ? `AKTUELLER KONTEXT:
+Der Nutzer hat dich gerade von der Seite „${seitenKontext.themaTitel}" aus geöffnet. Bezieht sich seine Frage erkennbar darauf, was dort zu sehen ist, zieh bevorzugt query_app_help(topic="${seitenKontext.thema}") heran.${seitenKontext.hinweis ? ' ' + seitenKontext.hinweis : ''}
+
+` : ''}Regeln:
 - Nutze immer zuerst die passenden Tools, bevor du antwortest
 - Beziehe dich NUR auf tatsächliche Daten aus den Tool-Ergebnissen
 - Erfinde keine Zahlen oder Trades
@@ -240,7 +248,7 @@ async function callAnthropicWithTools(messages, config) {
         body: JSON.stringify({
             model: config.model,
             max_tokens: config.maxTokens,
-            system: buildSystemPrompt(),
+            system: buildSystemPrompt(config.seitenKontext),
             messages,
             tools: toolsToAnthropic(),
             // Werkzeuge bleiben im Request (die Historie enthält tool_use-Blöcke,
@@ -280,7 +288,7 @@ async function callAnthropicWithTools(messages, config) {
 
 async function callOpenAIWithTools(messages, config, endpoint = 'https://api.openai.com/v1/chat/completions') {
     const apiMessages = [
-        { role: 'system', content: buildSystemPrompt() },
+        { role: 'system', content: buildSystemPrompt(config.seitenKontext) },
         ...messages
     ]
 
@@ -367,7 +375,7 @@ async function callGeminiWithTools(messages, config) {
             'x-goog-api-key': config.apiKey
         },
         body: JSON.stringify({
-            systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+            systemInstruction: { parts: [{ text: buildSystemPrompt(config.seitenKontext) }] },
             contents,
             tools: toolsToGemini(),
             ...(config.ohneTools ? { toolConfig: { functionCallingConfig: { mode: 'NONE' } } } : {}),
@@ -413,7 +421,7 @@ async function callOllamaWithTools(messages, config) {
     assertAllowedOllamaUrl(url)
 
     // Ollama: inject tools into system prompt
-    const enrichedSystem = config.ohneTools ? buildSystemPrompt() : buildSystemPrompt() + '\n\n' + toolsToPromptText()
+    const enrichedSystem = config.ohneTools ? buildSystemPrompt(config.seitenKontext) : buildSystemPrompt(config.seitenKontext) + '\n\n' + toolsToPromptText()
     const ollamaMessages = [
         { role: 'system', content: enrichedSystem },
         ...messages.map(m => {
@@ -805,7 +813,7 @@ export function setupAgentRoutes(app) {
             return res.status(429).json({ error: 'Ein Agent-Lauf läuft bereits. Bitte warten.' })
         }
 
-        const { sessionId, message } = req.body
+        const { sessionId, message, pageId } = req.body
         if (!message || !message.trim()) {
             return res.status(400).json({ error: 'Nachricht darf nicht leer sein.' })
         }
@@ -836,6 +844,7 @@ export function setupAgentRoutes(app) {
         try {
             // Load AI config
             const config = await loadAiSettings()
+            config.seitenKontext = pageId ? seitenKontext(pageId) : null
             sendSSE({ type: 'status', provider: config.provider, model: config.model })
 
             // Load or create session
