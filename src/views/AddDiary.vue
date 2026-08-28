@@ -1,11 +1,12 @@
 <script setup>
-import { onBeforeMount } from 'vue';
+import { onBeforeMount, ref } from 'vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import { spinnerLoadingPage, itemToEditId, currentDate, timeZoneTrade, countdownSeconds } from '../stores/ui.js';
 import { selectedTagIndex } from '../stores/filters.js';
 import { tradeTags, tagInput, showTagsList, availableTags, tags } from '../stores/trades.js';
 import { diaryUpdate, diaryIdToEdit, diaryButton } from '../stores/diary.js';
 import { useDateCalFormat } from '../utils/formatters.js';
+import { useVerlassenSchutz } from '../composables/useVerlassenSchutz.js';
 import { useInitQuill } from '../utils/utils';
 import { useUploadDiary } from '../utils/diary'
 import { sanitizeHtml } from '../utils/sanitize'
@@ -25,6 +26,26 @@ onBeforeMount(async () => {
     await getDiaryToEdit(itemToEditId.value)
     await sessionStorage.removeItem('editItemId');
     await (spinnerLoadingPage.value = false)
+    standBeimLaden.value = quillInhalt()
+})
+
+/*
+ * Der Editorinhalt lebt im DOM, nicht im Store — `diaryUpdate.diary` wird nur
+ * beim Speichern gelesen. Für die Frage „gibt es Ungespeichertes?" ist der DOM
+ * deshalb die verlässliche Quelle.
+ */
+function quillInhalt() {
+    return document.querySelector('#quillEditorDiary .ql-editor')?.innerHTML ?? ''
+}
+
+const standBeimLaden = ref('')
+
+useVerlassenSchutz(() => {
+    const jetzt = quillInhalt()
+    // Quill hinterlässt bei leerem Editor ein <p><br></p> — das ist kein Text.
+    const leer = (h) => h.replace(/<p>(<br\s*\/?>)?<\/p>/gi, '').trim() === ''
+    if (leer(jetzt)) return false
+    return jetzt !== standBeimLaden.value
 })
 
 function diaryDateInput(param) {

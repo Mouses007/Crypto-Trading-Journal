@@ -25,6 +25,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import dayjs from '../../utils/dayjs-setup.js'
 import { oeffneLivetradingFenster } from '../../utils/livetradingFenster.js'
+import { useVerlassenSchutz } from '../../composables/useVerlassenSchutz.js'
 import { liveSymbol, liveMarket } from '../../stores/live.js'
 import {
     aktiveSitzung, sitzungFehler, laufzeitText,
@@ -48,6 +49,17 @@ const beschaeftigt = ref(false)
 const letzteBilanz = ref(null)
 
 const laeuft = computed(() => !!aktiveSitzung.value)
+
+/*
+ * Der Plan wird erst beim Klick auf „Starten" geschrieben und ist danach nicht
+ * mehr änderbar — wer ihn ausgefüllt hat und wegnavigiert, tippt alles neu.
+ * Die laufenden Sitzungsnotizen brauchen den Schutz nicht, die speichern von
+ * selbst verzögert (`setzeNotizen` → `planeSpeichern`).
+ */
+useVerlassenSchutz(
+    () => !laeuft.value && [planMaxVerlust, planMaxTrades, planNotiz]
+        .some((f) => String(f.value ?? '').trim() !== ''),
+    () => t('common.unsavedLeave'))
 
 // ── Ein-/Ausklappen ─────────────────────────────────────────────────────
 const SPEICHER = 'livetrading_sitzung_zu'

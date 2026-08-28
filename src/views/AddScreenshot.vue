@@ -8,6 +8,7 @@ import { screenshot, tradeTags, tagInput, showTagsList, availableTags, tags } fr
 import { useSaveScreenshot, useSetupImageUpload, useSetupImageFile } from '../utils/screenshots';
 import { useDatetimeLocalFormat } from '../utils/formatters.js';
 import { useGetSelectedRange } from '../utils/mountOrchestration.js';
+import { useVerlassenSchutz } from '../composables/useVerlassenSchutz.js';
 import { useFilterSuggestions, useTradeTagsChange, useFilterTags, useToggleTagsDropdown, useGetTags, useGetAvailableTags, useGetTagInfo } from '../utils/daily';
 
 /* MODULES */
@@ -21,12 +22,24 @@ onBeforeMount(async () => {
     await getScreenshotToEdit(itemToEditId.value)
     await sessionStorage.removeItem('editItemId');
     await (spinnerLoadingPage.value = false)
+    // Erst NACH dem Laden merken — `onMounted` käme dem async-Laden zuvor und
+    // hielte ein bestehendes Bild fälschlich für neu hinzugefügt.
+    bildBeimLaden.value = !!screenshot.originalBase64
 })
 currentDate.value = dayjs().tz(timeZoneTrade.value).format("YYYY-MM-DD HH:mm")
 
 // ── Drag & Drop + Zwischenablage ──
 // Erstes Bild aus Drop bzw. Paste an dieselbe Verarbeitung wie der Datei-Upload.
 const dragOver = ref(false)
+
+/*
+ * Ein hochgeladenes und womöglich schon annotiertes Bild ist bis zum
+ * Speichern nur im Speicher. Beim Bearbeiten eines bestehenden Screenshots
+ * liegt das Bild bereits vor — dann fragt der Schutz nicht, sonst käme die
+ * Rückfrage auch bei reinem Ansehen.
+ */
+const bildBeimLaden = ref(false)
+useVerlassenSchutz(() => !!screenshot.originalBase64 && !bildBeimLaden.value)
 
 function ersteBilddatei(list) {
     return [...(list || [])].find(f => f && f.type && f.type.startsWith('image/')) || null
