@@ -2848,6 +2848,14 @@ async function runMigrations(knex, client) {
      * brauchen keinen — sie stehen hier deshalb nicht. Verschlüsselt wie die
      * KI-Schlüssel; die Oberfläche bekommt sie nur maskiert zurück.
      */
+    /*
+     * Generation des Sitzungs-Tokens (Audit 28.08.2026, SEC-02). Erhoehen
+     * entwertet jedes ausgestellte Cookie; ein Neustart darf das nicht
+     * zuruecknehmen, deshalb steht der Wert in der Datenbank und nicht im
+     * Prozess.
+     */
+    await addColumnIfNotExists('settings', 'sessionGeneration', (t) => t.integer('sessionGeneration').defaultTo(0))
+
     await addColumnIfNotExists('settings', 'hypeKeyCryptopanic', (t) => t.text('hypeKeyCryptopanic').defaultTo(''))
     await addColumnIfNotExists('settings', 'hypeKeyLunarcrush', (t) => t.text('hypeKeyLunarcrush').defaultTo(''))
     await addColumnIfNotExists('settings', 'hypeKeyCoingecko', (t) => t.text('hypeKeyCoingecko').defaultTo(''))

@@ -36,7 +36,14 @@ export const SETTINGS_SENSITIVE_FIELDS = [
     // CryptoQuant (ETF-Kachel): geschrieben nur über /api/cryptoquant/settings
     'cryptoquantApiKey',
     // SMTP-Passwort: geschrieben nur über /api/mail/settings (verschlüsselt)
-    'mailPasswort'
+    'mailPasswort',
+    /*
+     * Generation des Sitzungs-Tokens: geschrieben NUR von `auth.js` beim
+     * Entwerten. Über die generische Settings-Route setzbar waere sie ein
+     * Werkzeug, um sich selbst oder andere auszusperren — und beim Auslesen
+     * verriete sie, wie oft rotiert wurde.
+     */
+    'sessionGeneration'
 ]
 
 /** Strip sensitive fields from a settings row, exposing only `${field}Set` presence flags. */
