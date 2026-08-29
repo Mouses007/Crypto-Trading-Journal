@@ -44,6 +44,9 @@ async function ladeAlles() {
     } finally {
         spinnerLoadingPage.value = false
     }
+    // Erst NACH dem Laden: die Warteschlange wird aus den geladenen Karten
+    // aufgelöst, vorher gäbe es nichts aufzulösen.
+    stelleSitzungHer()
 }
 onMounted(ladeAlles)
 
@@ -103,6 +106,70 @@ function sitzungStarten() {
     sitzungFalsch.value = 0
     sitzungSchwer.value = 0
     wiedervorgelegt.value = new Set()
+    phase.value = 'review'
+    sichereSitzung()
+}
+
+/*
+ * Die laufende Sitzung übersteht ein Neuladen.
+ *
+ * Der Fortschritt lag schon immer in der Datenbank — ein Gerätewechsel kostet
+ * nichts. Die SITZUNG lebte aber nur im Speicher: ein F5 mitten in einer
+ * 40-Karten-Runde warf auf den Startbildschirm zurück, und die bereits
+ * bewerteten Karten waren aus der Warteschlange verschwunden.
+ *
+ * Gesichert werden nur IDs und Zähler, keine Objektkopien: die Einträge
+ * hängen an `karten`/`fortschritt` und werden beim Wiederherstellen frisch
+ * aufgelöst. Eine eingefrorene Kopie wäre nach dem Neuladen veraltet.
+ *
+ * `localStorage`, nicht `sessionStorage`: wer den Tab schliesst und in der
+ * Mittagspause weitermacht, soll dort weitermachen, wo er war.
+ */
+const SITZUNG_KEY = 'lernenSitzung'
+
+function sichereSitzung() {
+    try {
+        if (phase.value !== 'review') { localStorage.removeItem(SITZUNG_KEY); return }
+        localStorage.setItem(SITZUNG_KEY, JSON.stringify({
+            kartenIds: warteschlange.value.map(e => e.karte.objectId),
+            index: aktuellerIndex.value,
+            richtig: sitzungRichtig.value,
+            falsch: sitzungFalsch.value,
+            schwer: sitzungSchwer.value,
+            wiedervorgelegt: [...wiedervorgelegt.value],
+            gesichertAm: Date.now(),
+        }))
+    } catch { /* voller Speicher darf die Sitzung nicht abbrechen */ }
+}
+
+/** Älter als das: die Runde ist vorbei, auch wenn sie nie beendet wurde. */
+const SITZUNG_MAX_ALTER_MS = 12 * 60 * 60 * 1000
+
+function stelleSitzungHer() {
+    let roh
+    try { roh = JSON.parse(localStorage.getItem(SITZUNG_KEY) || 'null') } catch { roh = null }
+    if (!roh || !Array.isArray(roh.kartenIds) || !roh.kartenIds.length) return
+    if (Date.now() - Number(roh.gesichertAm || 0) > SITZUNG_MAX_ALTER_MS) {
+        localStorage.removeItem(SITZUNG_KEY)
+        return
+    }
+
+    /*
+     * Karten neu auflösen. Was inzwischen gelöscht oder ausgeblendet wurde,
+     * fällt dabei heraus — die Runde wird kürzer, statt auf eine Karte zu
+     * zeigen, die es nicht mehr gibt.
+     */
+    const nachId = new Map(aktiveEintraege.value.map(e => [e.karte.objectId, e]))
+    const liste = roh.kartenIds.map(id => nachId.get(id)).filter(Boolean)
+    if (!liste.length) { localStorage.removeItem(SITZUNG_KEY); return }
+
+    warteschlange.value = liste
+    aktuellerIndex.value = Math.min(Math.max(0, Number(roh.index) || 0), liste.length - 1)
+    sitzungRichtig.value = Number(roh.richtig) || 0
+    sitzungFalsch.value = Number(roh.falsch) || 0
+    sitzungSchwer.value = Number(roh.schwer) || 0
+    wiedervorgelegt.value = new Set(Array.isArray(roh.wiedervorgelegt) ? roh.wiedervorgelegt : [])
+    antwortSichtbar.value = false
     phase.value = 'review'
 }
 
@@ -164,10 +231,12 @@ async function bewerten(grad) {
     } else {
         phase.value = 'summary'
     }
+    sichereSitzung()
 }
 
 function sitzungZurueck() {
     phase.value = 'start'
+    sichereSitzung()   // räumt den gespeicherten Stand weg
 }
 
 // ── Kartenverwaltung ────────────────────────────────────────────────────
