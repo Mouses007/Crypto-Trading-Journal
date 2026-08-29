@@ -2995,10 +2995,10 @@ onBeforeMount(async () => {
                                     <div v-if="bitgetTestError.includes('40012')" class="mt-2 text-muted" style="font-size: 0.8rem;">
                                         <strong>{{ t('settings.possibleCausesLabel') }}</strong>
                                         <ul class="mb-0 mt-1">
-                                            <li>API Key, Secret Key oder Passphrase sind falsch</li>
-                                            <li>IP-Whitelist: Dein Server-IP ist nicht in der API-Key-Konfiguration freigegeben</li>
-                                            <li>API-Key-Typ: Stelle sicher, dass "HMAC" als Verschlüsselungsmethode ausgewählt wurde</li>
-                                            <li>Berechtigungen: Der API Key braucht "Futures" Leserechte</li>
+                                            <li>{{ t('settings.bitgetCauseWrongKeys') }}</li>
+                                            <li>{{ t('settings.bitgetCauseIpWhitelist') }}</li>
+                                            <li>{{ t('settings.bitgetCauseKeyType') }}</li>
+                                            <li>{{ t('settings.bitgetCausePermissions') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -3052,9 +3052,9 @@ onBeforeMount(async () => {
                                     <div class="mt-2 text-muted" style="font-size: 0.8rem;">
                                         <strong>{{ t('settings.possibleCausesLabel') }}</strong>
                                         <ul class="mb-0 mt-1">
-                                            <li>API Key oder Secret Key sind falsch</li>
-                                            <li>IP-Whitelist: Dein Server-IP ist nicht freigegeben (optional bei Pionex)</li>
-                                            <li>Berechtigungen: Der API Key braucht "Lesen aktivieren" (Read)</li>
+                                            <li>{{ t('settings.pionexCauseWrongKeys') }}</li>
+                                            <li>{{ t('settings.pionexCauseIpWhitelist') }}</li>
+                                            <li>{{ t('settings.pionexCausePermissions') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -3094,7 +3094,7 @@ onBeforeMount(async () => {
                             </template>
                             <template v-else>
                                 <span class="fw-bold me-2">{{ group.name }}</span>
-                                <span class="badge me-2" :style="{ backgroundColor: group.color }">{{ group.tags.length }} Tags</span>
+                                <span class="badge me-2" :style="{ backgroundColor: group.color }">{{ group.tags.length }} {{ t('settings.tagsCountSuffix') }}</span>
                                 <button v-if="tagGroups.indexOf(group) !== 0" class="btn btn-outline-secondary btn-sm me-1" @click="startEditGroup(group)"><i class="uil uil-pen"></i></button>
                                 <button v-if="tagGroups.indexOf(group) !== 0" class="btn btn-outline-danger btn-sm" @click="removeGroup(group.id)"><i class="uil uil-trash-alt"></i></button>
                                 <span v-else class="badge bg-secondary ms-1" style="font-size: 0.65rem;"><i class="uil uil-lock-alt me-1"></i>{{ t('common.mandatory') }}</span>
@@ -3112,7 +3112,7 @@ onBeforeMount(async () => {
                         <!-- Add tag input -->
                         <div class="d-flex">
                             <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" :placeholder="t('settings.newTagPlaceholder')" v-model="newTagName[group.id]" @keyup.enter="addTag(group)" />
-                            <button class="btn btn-outline-primary btn-sm" @click="addTag(group)">+ Tag</button>
+                            <button class="btn btn-outline-primary btn-sm" @click="addTag(group)">{{ t('settings.addTagBtn') }}</button>
                         </div>
                     </div>
 
@@ -3121,7 +3121,7 @@ onBeforeMount(async () => {
                         <div class="d-flex align-items-center">
                             <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" :placeholder="t('settings.newGroupPlaceholder')" v-model="newGroupName" @keyup.enter="addGroup" />
                             <input type="color" class="form-control form-control-color form-control-sm me-2" v-model="newGroupColor" />
-                            <button class="btn btn-outline-success btn-sm" @click="addGroup">+ Gruppe</button>
+                            <button class="btn btn-outline-success btn-sm" @click="addGroup">{{ t('settings.addGroupBtn') }}</button>
                         </div>
                     </div>
 
