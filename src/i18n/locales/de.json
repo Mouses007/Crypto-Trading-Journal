@@ -669,7 +669,19 @@
       "mailSicherheit": "TLS verschlüsselt ab der ersten Sekunde (Port 465), STARTTLS beginnt unverschlüsselt und schaltet um (Port 587).\nWelches von beiden geht, gibt der Anbieter vor. Gmail und Outlook brauchen ausserdem ein App-Passwort — das normale Kontopasswort wird für SMTP abgelehnt.",
       "newsRhythmus": "Wann der Lagebericht von selbst entsteht: täglich, wöchentlich oder gar nicht.\n„Nur manuell“ heisst nicht „nie“ — die Zwischenmeldungen weiter unten laufen unabhängig davon, und der Knopf auf der Nachrichtenseite geht immer.",
       "mailSchrift": "Gilt für den Text der Benachrichtigungs-Mails. Ein Postfach kennt keinen Zoom wie ein Browser — die Grösse steht schon beim Versand fest und lässt sich beim Lesen nicht mehr ändern.\nÄnderungen gelten ab der nächsten Mail; mit „Testmail senden“ siehst du das Ergebnis sofort."
-    }
+    },
+    "secretKeyLabel": "Secret-Key",
+    "possibleCausesLabel": "Mögliche Ursachen:",
+    "bitgetCauseWrongKeys": "API Key, Secret Key oder Passphrase sind falsch",
+    "bitgetCauseIpWhitelist": "IP-Whitelist: Dein Server-IP ist nicht in der API-Key-Konfiguration freigegeben",
+    "bitgetCauseKeyType": "API-Key-Typ: Stelle sicher, dass \"HMAC\" als Verschlüsselungsmethode ausgewählt wurde",
+    "bitgetCausePermissions": "Berechtigungen: Der API Key braucht \"Futures\" Leserechte",
+    "pionexCauseWrongKeys": "API Key oder Secret Key sind falsch",
+    "pionexCauseIpWhitelist": "IP-Whitelist: Dein Server-IP ist nicht freigegeben (optional bei Pionex)",
+    "pionexCausePermissions": "Berechtigungen: Der API Key braucht \"Lesen aktivieren\" (Read)",
+    "tagsCountSuffix": "Tags",
+    "addTagBtn": "+ Tag",
+    "addGroupBtn": "+ Gruppe"
   },
   "setup": {
     "welcome": "Willkommen!",

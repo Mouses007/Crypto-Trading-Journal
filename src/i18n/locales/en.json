@@ -669,7 +669,19 @@
       "mailSicherheit": "TLS encrypts from the first second (port 465); STARTTLS begins unencrypted and switches over (port 587).\nWhich one works is decided by the provider. Gmail and Outlook also need an app password — the normal account password is rejected for SMTP.",
       "newsRhythmus": "When the briefing is written by itself: daily, weekly or not at all.\n\"Manual only\" does not mean never — the interim notes below run independently, and the button on the news page always works.",
       "mailSchrift": "Applies to the text of notification e-mails. A mailbox has no browser-style zoom — the size is fixed when the mail is sent and cannot be changed while reading.\nChanges take effect with the next mail; use \"Send test mail\" to see the result right away."
-    }
+    },
+    "secretKeyLabel": "Secret Key",
+    "possibleCausesLabel": "Possible causes:",
+    "bitgetCauseWrongKeys": "API Key, Secret Key, or passphrase is incorrect",
+    "bitgetCauseIpWhitelist": "IP whitelist: your server IP is not allowed in the API key configuration",
+    "bitgetCauseKeyType": "API key type: make sure \"HMAC\" is selected as the encryption method",
+    "bitgetCausePermissions": "Permissions: the API key needs \"Futures\" read access",
+    "pionexCauseWrongKeys": "API Key or Secret Key is incorrect",
+    "pionexCauseIpWhitelist": "IP whitelist: your server IP is not allowed (optional on Pionex)",
+    "pionexCausePermissions": "Permissions: the API key needs \"Enable Reading\" (Read)",
+    "tagsCountSuffix": "Tags",
+    "addTagBtn": "+ Tag",
+    "addGroupBtn": "+ Group"
   },
   "setup": {
     "welcome": "Welcome!",
