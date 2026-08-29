@@ -3757,14 +3757,14 @@ onBeforeMount(async () => {
                 <!--=============== SHARE CARDS (FLUX.2 + Gemini) ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="fluxExpanded = !fluxExpanded">
                     <i class="uil me-2" :class="fluxExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Share-Karten</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.shareCardsTitle') }}</p>
                 </div>
                 <div v-show="fluxExpanded" class="mt-2 ms-3">
-                    <p class="fw-lighter">Erstelle stylische Share-Bilder für deine Trades mit KI-Bildgenerierung.</p>
+                    <p class="fw-lighter">{{ t('settings.shareCardsDescription') }}</p>
 
                     <!-- Provider Selection -->
                     <div class="row mt-2">
-                        <div class="col-12 col-md-4">Bild-Provider</div>
+                        <div class="col-12 col-md-4">{{ t('settings.imageProviderLabel') }}</div>
                         <div class="col-12 col-md-8">
                             <div class="d-flex gap-4">
                                 <div class="form-check">
@@ -3811,7 +3811,7 @@ onBeforeMount(async () => {
                     <!-- Gemini-specific settings -->
                     <div v-show="shareCardProvider === 'gemini'">
                         <div class="row mt-3">
-                            <div class="col-12 col-md-4">Gemini API-Key</div>
+                            <div class="col-12 col-md-4">{{ t('settings.geminiApiKeyLabel') }}</div>
                             <div class="col-12 col-md-8">
                                 <div class="input-group">
                                     <input type="password" class="form-control" v-model="geminiImageApiKey" placeholder="AIza..."
@@ -3828,7 +3828,7 @@ onBeforeMount(async () => {
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Gemini Modell<InfoTipp schluessel="settings.info.geminiImageModel" /></div>
+                            <div class="col-12 col-md-4">{{ t('settings.geminiModelLabel') }}<InfoTipp schluessel="settings.info.geminiImageModel" /></div>
                             <div class="col-12 col-md-8">
                                 <select class="form-select" v-model="geminiImageModel">
                                     <option v-for="m in geminiImageModels" :key="m.value" :value="m.value">{{ m.label }}</option>
@@ -4025,13 +4025,11 @@ onBeforeMount(async () => {
                          einmal abfragt. -->
                     <div class="mb-3 p-2 rounded" style="background: rgba(255,255,255,.03);">
                         <p class="fw-bold mb-1" style="font-size:0.9rem;">
-                            News-Profile
+                            {{ t('settings.ki.news.profilesTitle') }}
                             <InfoTipp schluessel="settings.info.newsProfile" />
                         </p>
                         <p class="fw-lighter" style="font-size:0.8rem;">
-                            Benannte Vorlagen aus allen Feldern dieser Seite plus Fokus-/Ausschluss-Filter
-                            und Quellen-Auswahl. Auf der Nachrichten-Seite steht dafür nur noch ein
-                            Dropdown zum Anwenden — angelegt und bearbeitet wird hier.
+                            {{ t('settings.ki.news.profilesDescription') }}
                         </p>
                         <table class="table table-sm align-middle mb-2" v-if="newsProfile.length">
                             <tbody>
@@ -4055,20 +4053,20 @@ onBeforeMount(async () => {
                                             </button>
                                         </template>
                                         <template v-else>
-                                            <button class="btn btn-outline-secondary btn-sm me-1" title="Umbenennen"
+                                            <button class="btn btn-outline-secondary btn-sm me-1" :title="t('settings.ki.news.renameTitle')"
                                                 @click="profilUmbenennen = p.id; profilUmbenennenName = p.name">
                                                 <i class="uil uil-edit-alt"></i>
                                             </button>
                                             <button class="btn btn-outline-primary btn-sm me-1" @click="profilAnwenden(p)">
-                                                Anwenden
+                                                {{ t('common.apply') }}
                                             </button>
                                             <button class="btn btn-outline-secondary btn-sm me-1" @click="profilAktualisieren(p)"
-                                                title="Aktuelle Einstellungen erneut in dieses Profil einschnappen">
-                                                Aktualisieren
+                                                :title="t('settings.ki.news.updateProfileTitle')">
+                                                {{ t('settings.ki.news.updateProfileBtn') }}
                                             </button>
                                             <template v-if="profilLoeschBestaetigung === p.id">
-                                                <button class="btn btn-danger btn-sm me-1" @click="profilLoeschen(p)">Ja</button>
-                                                <button class="btn btn-outline-secondary btn-sm" @click="profilLoeschBestaetigung = null">Nein</button>
+                                                <button class="btn btn-danger btn-sm me-1" @click="profilLoeschen(p)">{{ t('common.yes') }}</button>
+                                                <button class="btn btn-outline-secondary btn-sm" @click="profilLoeschBestaetigung = null">{{ t('common.no') }}</button>
                                             </template>
                                             <button v-else class="btn btn-outline-danger btn-sm" @click="profilLoeschBestaetigung = p.id">
                                                 <i class="uil uil-trash-alt"></i>
@@ -4078,13 +4076,13 @@ onBeforeMount(async () => {
                                 </tr>
                             </tbody>
                         </table>
-                        <p v-else class="small text-muted">Noch keine Profile angelegt.</p>
+                        <p v-else class="small text-muted">{{ t('settings.ki.news.noProfiles') }}</p>
                         <div class="d-flex gap-2 align-items-center">
                             <input class="form-control form-control-sm" style="max-width:16rem;"
-                                v-model="neuesProfilName" placeholder="Name, z.B. 'Nur BTC wichtige News'"
+                                v-model="neuesProfilName" :placeholder="t('settings.ki.news.newProfileNamePlaceholder')"
                                 @keyup.enter="profilAnlegen">
                             <button class="btn btn-outline-primary btn-sm" :disabled="!neuesProfilName.trim()" @click="profilAnlegen">
-                                + Aus aktuellen Einstellungen speichern
+                                {{ t('settings.ki.news.saveAsProfileBtn') }}
                             </button>
                         </div>
                         <div v-if="profilMeldung" class="small mt-2" :class="profilFehler ? 'text-danger' : 'text-muted'">
@@ -4094,24 +4092,17 @@ onBeforeMount(async () => {
 
                     <!--=============== NACHRICHTENQUELLEN ===============-->
                     <hr class="mt-4" />
-                    <p class="fw-bold mb-1">Nachrichtenquellen</p>
+                    <p class="fw-bold mb-1">{{ t('settings.ki.news.sourcesTitle') }}</p>
                     <p class="fw-lighter">
-                        YouTube-Kanäle, RSS-Adressen, Telegram-Kanäle und X-Accounts für die Nachrichten-Seite.
-                        Was du als <strong>Ausschluss</strong> markierst, blendet „Temporär ausschliessen" aus —
-                        und holt es gar nicht erst ab. Es werden nur Titel, Verweis und Zeitpunkt gespeichert,
-                        keine Volltexte.
+                        {{ t('settings.ki.news.sourcesDescription') }}
                     </p>
                     <p class="fw-lighter" style="font-size:0.82rem;">
-                        <strong>Zu X:</strong> läuft über die bezahlte Grok-Suche (xAI) — als Adresse genügt der
-                        Handle, z.B. <code>@saylor</code>. Alle X-Quellen zusammen kosten EINE Suche je Abruflauf
-                        (rund 0,5 Rappen plus Token), gedrosselt auf höchstens eine Suche alle vier Stunden.
-                        Voraussetzung ist ein xAI-Schlüssel unter „KI-Einstellungen". Gratis-Umwege (Nitter-Spiegel)
-                        sind tot — geprüft am 16.08.2026.
+                        {{ t('settings.ki.news.xSourceHint') }}
                     </p>
 
                     <div class="row align-items-center mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Temporär ausschliessen<InfoTipp schluessel="settings.info.laermfilter" /></label>
+                            <label class="fw-lighter">{{ t('settings.ki.news.tempExcludeLabel') }}<InfoTipp schluessel="settings.info.laermfilter" /></label>
                         </div>
                         <div class="col-12 col-md-9">
                             <label class="switch">
@@ -4119,7 +4110,7 @@ onBeforeMount(async () => {
                                 <span class="slider round"></span>
                             </label>
                             <span class="ms-2 small text-muted">
-                                {{ radarNewsQuellenAusschluss ? 'An — als Ausschluss markierte Quellen bleiben aussen vor' : 'Aus — alle aktiven Quellen werden geholt' }}
+                                {{ radarNewsQuellenAusschluss ? t('settings.ki.news.tempExcludeOn') : t('settings.ki.news.tempExcludeOff') }}
                             </span>
                         </div>
                     </div>
@@ -4130,10 +4121,9 @@ onBeforeMount(async () => {
                          also auch rückwirkend. -->
                     <div class="row mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Ruhe-Filter<InfoTipp schluessel="settings.info.wortfilter" /></label>
+                            <label class="fw-lighter">{{ t('settings.ki.news.quietFilterLabel') }}<InfoTipp schluessel="settings.info.wortfilter" /></label>
                             <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Filtert Truth Social automatisch. Beiträge, die eines der Stichwörter
-                                enthalten (ein Begriff je Zeile), verschwinden aus Liste und Lagebericht.
+                                {{ t('settings.ki.news.quietFilterHint') }}
                             </small>
                         </div>
                         <div class="col-12 col-md-9">
@@ -4153,11 +4143,9 @@ onBeforeMount(async () => {
                          genau wie der Ruhe-Filter aufgebaut. -->
                     <div class="row mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Fokus-Filter<InfoTipp schluessel="settings.info.fokusfilter" /></label>
+                            <label class="fw-lighter">{{ t('settings.ki.news.focusFilterLabel') }}<InfoTipp schluessel="settings.info.fokusfilter" /></label>
                             <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Umgekehrt zum Ruhe-Filter: nur Beiträge, die eines der Stichwörter
-                                enthalten (ein Begriff je Zeile), bleiben in Liste und Lagebericht übrig.
-                                Leer = kein Fokus, alles bleibt.
+                                {{ t('settings.ki.news.focusFilterHint') }}
                             </small>
                         </div>
                         <div class="col-12 col-md-9">
@@ -4175,14 +4163,14 @@ onBeforeMount(async () => {
                     <table class="table table-sm align-middle" v-if="newsQuellen.length">
                         <thead>
                             <tr>
-                                <th style="width:6rem;">Art</th>
-                                <th>Name</th>
-                                <th>Adresse</th>
-                                <th style="width:5rem;" class="text-center">Aktiv</th>
+                                <th style="width:6rem;">{{ t('settings.ki.news.colType') }}</th>
+                                <th>{{ t('settings.ki.news.colName') }}</th>
+                                <th>{{ t('settings.ki.news.colAddress') }}</th>
+                                <th style="width:5rem;" class="text-center">{{ t('settings.ki.news.colActive') }}</th>
                                 <th style="width:6rem;" class="text-center"
-                                    title="Temporär ausschliessen: Quelle wird weder geholt noch angezeigt, solange der Schalter oben an ist.">
-                                    Ausschluss</th>
-                                <th style="width:5rem;" class="text-center" title="Nur YouTube: sollen die Videos dieser Quelle an Gemini gehen? Jedes kostet 3–10 Rappen.">Videos</th>
+                                    :title="t('settings.ki.news.colExcludeTitle')">
+                                    {{ t('settings.ki.news.colExclude') }}</th>
+                                <th style="width:5rem;" class="text-center" :title="t('settings.ki.news.colVideosTitle')">{{ t('settings.ki.news.colVideos') }}</th>
                                 <th style="width:7rem;"></th>
                             </tr>
                         </thead>
@@ -4231,7 +4219,7 @@ onBeforeMount(async () => {
                             </select>
                         </div>
                         <div class="col-6 col-md-3">
-                            <input class="form-control form-control-sm" v-model="neueQuelle.name" placeholder="Name">
+                            <input class="form-control form-control-sm" v-model="neueQuelle.name" :placeholder="t('settings.ki.news.sourceNamePlaceholder')">
                         </div>
                         <div class="col-12 col-md-5">
                             <input class="form-control form-control-sm" v-model="neueQuelle.url"
@@ -4241,8 +4229,8 @@ onBeforeMount(async () => {
                         </div>
                         <div class="col-12 col-md-2 d-flex gap-1">
                             <button class="btn btn-outline-secondary btn-sm" :disabled="newsTestet"
-                                @click="quelleTesten">Test</button>
-                            <button class="btn btn-outline-primary btn-sm" @click="quelleAnlegen">Hinzufügen</button>
+                                @click="quelleTesten">{{ t('settings.ki.news.testSourceBtn') }}</button>
+                            <button class="btn btn-outline-primary btn-sm" @click="quelleAnlegen">{{ t('settings.ki.news.addSourceBtn') }}</button>
                         </div>
                     </div>
                     <div v-if="newsMeldung" class="small mt-2" :class="newsFehler ? 'text-danger' : 'text-muted'">
@@ -4250,10 +4238,10 @@ onBeforeMount(async () => {
                     </div>
 
                     <div v-if="newsVorschlaege.length" class="mt-2 small">
-                        <span class="text-muted me-2">Vorschläge:</span>
+                        <span class="text-muted me-2">{{ t('settings.ki.news.suggestionsLabel') }}</span>
                         <button v-for="v in newsVorschlaege" :key="v.url"
                             class="btn btn-outline-secondary btn-sm me-1 mb-1" @click="vorschlagUebernehmen(v)">
-                            {{ v.name }}<span v-if="v.laerm" class="ms-1 text-muted">(Lärm)</span>
+                            {{ v.name }}<span v-if="v.laerm" class="ms-1 text-muted">{{ t('settings.ki.news.noiseSuffix') }}</span>
                         </button>
                     </div>
 
