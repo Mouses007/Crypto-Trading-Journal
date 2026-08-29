@@ -2248,6 +2248,7 @@
       "source": "RSI(14) nach Wilder aus geschlossenen Binance-Kerzen. Jeder Punkt ist ein Markt, von links nach rechts nach 24h-Umsatz. Die gestrichelte Linie ist der Durchschnitt — daran sieht man, ob ein Ausschlag zum Markt passt oder gegen ihn läuft. Klick auf einen Punkt setzt das Symbol der Live-Analyse.",
       "derived": "Die Märkte kommen aus deinen Trades der letzten 90 Tage; eine eigene Liste kannst du in den Einstellungen eintragen.",
       "top": "Nach Umsatz",
+      "mcap": "Marktkap.",
       "own": "Meine Trades",
       "count": "{n} Märkte",
       "average": "Ø",
@@ -2257,6 +2258,8 @@
       "zone_weak": "Schwach",
       "zone_oversold": "Überverkauft",
       "topHint": "Die umsatzstärksten Krypto-Perpetuals von Binance — wie viele, steht rechts daneben",
+      "mcapHint": "Die Coin-Perpetuals mit der höchsten Marktkapitalisierung (CoinGecko) — wie viele, steht rechts daneben",
+      "sourceMcap": "RSI(14) nach Wilder aus geschlossenen Binance-Kerzen. Jeder Punkt ist ein Markt, von links nach rechts nach Marktkapitalisierung. Die gestrichelte Linie ist der Durchschnitt — daran sieht man, ob ein Ausschlag zum Markt passt oder gegen ihn läuft. Klick auf einen Punkt setzt das Symbol der Live-Analyse.",
       "ownHint": "Nur die Märkte, die du in den letzten 90 Tagen selbst gehandelt hast",
       "openBitunix": "→ Bitunix öffnen",
       "info": "Wie überkauft oder überverkauft die einzelnen Märkte gerade sind.\nDie gestrichelte Linie ist der Durchschnitt — sie ist der eigentliche Massstab: ein überverkaufter Coin bei tiefem Durchschnitt ist nichts Eigenes, sondern nur der ganze Markt."
