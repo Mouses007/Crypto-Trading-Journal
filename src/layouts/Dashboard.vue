@@ -246,14 +246,18 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
         <div v-show="sideMenuMobileOut" class="sideMenuMobileOut position-absolute" v-on:click="useCloseMobileMenu"></div>
         <Nav v-if="!chromeAus" />
         <main ref="mainEl">
-          <div v-if="isAgent" class="ps-3 pe-3 pt-3">
+          <div v-if="isAgent" class="row ps-3 pe-3 pt-3">
             <!-- Die Anleitung hängt am Layout statt an einer Seite: sie ist
                  damit von JEDER Agent-Seite aus erreichbar — auch wenn der
-                 Beta-Hinweis für die Sitzung weggeklickt wurde. -->
-            <div class="d-flex justify-content-end mb-2">
-              <PageInfo section="info.agent" />
+                 Beta-Hinweis für die Sitzung weggeklickt wurde. Breite an
+                 col-xl-11 angeglichen, damit sie mit dem Seiteninhalt (z. B.
+                 den Strategie-Instanzen) fluchtet statt volle Breite zu ziehen. -->
+            <div class="col-12 col-xl-11">
+              <div class="d-flex justify-content-end mb-2">
+                <PageInfo section="info.agent" />
+              </div>
+              <BetaHinweis />
             </div>
-            <BetaHinweis />
           </div>
           <slot />
         </main>
