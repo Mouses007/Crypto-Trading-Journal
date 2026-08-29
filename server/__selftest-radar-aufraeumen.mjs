@@ -12,7 +12,7 @@
  * sondern „bleibt Junges liegen".
  */
 import knexLib from 'knex'
-import { raeumeRadarAuf, VERWORFEN_TAGE, BEWERTET_TAGE, ERGEBNIS_TAGE } from './radar-aufraeumen.js'
+import { raeumeRadarAuf, VERWORFEN_TAGE, BEWERTET_TAGE, ERGEBNIS_TAGE, KANDIDAT_TAGE, KANDIDAT_BERICHTET_TAGE } from './radar-aufraeumen.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -49,6 +49,12 @@ await knex.schema.createTable('radar_ergebnisse', (t) => {
     t.string('status')
     t.bigInteger('faelligAm').defaultTo(0)
 })
+await knex.schema.createTable('hype_candidates', (t) => {
+    t.increments('id').primary()
+    t.string('symbol')
+    t.string('status')
+    t.bigInteger('erstelltAm').defaultTo(0)
+})
 
 const alter = (tage) => JETZT - tage * TAG
 
@@ -77,6 +83,18 @@ await knex('radar_ergebnisse').insert([
     { status: 'offen', faelligAm: alter(ERGEBNIS_TAGE + 10) },
 ])
 
+/*
+ * Hype-Kandidaten. Der längste Messhorizont des Hype-Radars ist 30 Tage —
+ * vorher darf nichts weg, sonst misst die Erfolgskontrolle ins Leere.
+ */
+await knex('hype_candidates').insert([
+    { symbol: 'ALTVERWORFEN', status: 'verworfen', erstelltAm: alter(KANDIDAT_TAGE + 1) },
+    { symbol: 'JUNGVERWORFEN', status: 'verworfen', erstelltAm: alter(KANDIDAT_TAGE - 1) },
+    { symbol: 'BERICHTETMITTEL', status: 'berichtet', erstelltAm: alter(KANDIDAT_TAGE + 10) },
+    { symbol: 'BERICHTETALT', status: 'berichtet', erstelltAm: alter(KANDIDAT_BERICHTET_TAGE + 1) },
+    { symbol: 'BESTANDEN', status: 'bestanden', erstelltAm: alter(200) },
+])
+
 console.log('\nRadar aufräumen\n')
 
 const b = await raeumeRadarAuf({ jetzt: JETZT, knex, blockGroesse: 2 })
@@ -101,10 +119,26 @@ check('leergeräumter alter Lauf ist weg', !laeufe.includes(1), laeufe.join(',')
 check('Lauf mit verbliebenen Zeilen bleibt', laeufe.includes(2), laeufe.join(','))
 check('junger Lauf bleibt', laeufe.includes(3), laeufe.join(','))
 
+console.log('\nHype-Kandidaten\n')
+{
+    const uebrig = (await knex('hype_candidates').select('symbol')).map((k) => k.symbol).sort()
+    check('alter verworfener Kandidat ist weg', !uebrig.includes('ALTVERWORFEN'), uebrig.join(','))
+    check('junger verworfener bleibt', uebrig.includes('JUNGVERWORFEN'), uebrig.join(','))
+    /*
+     * Der wichtigste Fall: berichtet UND älter als die Verworfenen-Frist. Wer
+     * hier nur nach Alter löscht, reisst die Belege unter den Berichten weg.
+     */
+    check('berichteter Kandidat überlebt die kürzere Frist', uebrig.includes('BERICHTETMITTEL'), uebrig.join(','))
+    check('bestandener Kandidat überlebt ebenfalls', uebrig.includes('BESTANDEN'), uebrig.join(','))
+    check('berichteter Kandidat über der langen Frist ist weg', !uebrig.includes('BERICHTETALT'), uebrig.join(','))
+    check('Bilanz zählt die Kandidaten', b.kandidaten === 2, JSON.stringify(b))
+}
+
 console.log('\nZweiter Durchgang ändert nichts mehr\n')
 const b2 = await raeumeRadarAuf({ jetzt: JETZT, knex, blockGroesse: 2 })
 check('nichts mehr zu löschen',
-    b2.zeilenVerworfen === 0 && b2.zeilenBewertet === 0 && b2.ergebnisse === 0 && b2.laeufe === 0,
+    b2.zeilenVerworfen === 0 && b2.zeilenBewertet === 0 && b2.ergebnisse === 0
+    && b2.kandidaten === 0 && b2.laeufe === 0,
     JSON.stringify(b2))
 
 console.log('\nBlockweises Löschen erwischt alles\n')
@@ -125,6 +159,8 @@ console.log('\nBlockweises Löschen erwischt alles\n')
 console.log('\nGrenzwerte sind plausibel\n')
 check('verworfen kürzer als bewertet', VERWORFEN_TAGE < BEWERTET_TAGE)
 check('Ergebnisse überleben die Zeilen', ERGEBNIS_TAGE >= BEWERTET_TAGE)
+check('Kandidaten überleben den längsten Hype-Horizont (30 Tage)', KANDIDAT_TAGE > 30)
+check('berichtete Kandidaten überleben die verworfenen', KANDIDAT_BERICHTET_TAGE > KANDIDAT_TAGE)
 
 await knex.destroy()
 

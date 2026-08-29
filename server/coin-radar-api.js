@@ -467,8 +467,9 @@ export function startCoinRadarTakt() {
                 const b = await raeumeRadarAuf()
                 const summe = b.zeilenVerworfen + b.zeilenBewertet + b.ergebnisse + b.laeufe
                 if (summe > 0) {
-                    console.log(` -> Coin-Radar aufgeräumt: ${b.zeilenVerworfen} verworfene, `
-                        + `${b.zeilenBewertet} bewertete Zeilen, ${b.ergebnisse} Ergebnisse, ${b.laeufe} Läufe`)
+                    console.log(` -> Radar aufgeräumt: ${b.zeilenVerworfen} verworfene, `
+                        + `${b.zeilenBewertet} bewertete Zeilen, ${b.ergebnisse} Ergebnisse, `
+                        + `${b.kandidaten} Kandidaten, ${b.laeufe} Läufe`)
                 }
             }
 

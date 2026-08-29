@@ -38,6 +38,16 @@ export const VERWORFEN_TAGE = 3
 export const BEWERTET_TAGE = 90
 /** Abgeschlossene Güte-Messungen. */
 export const ERGEBNIS_TAGE = 180
+/**
+ * Verworfene Hype-Kandidaten.
+ *
+ * Der längste Messhorizont des Hype-Radars ist 30 Tage (`HORIZONTE.hype`) —
+ * vorher darf nichts weg, sonst misst die Erfolgskontrolle ins Leere. 120 Tage
+ * lassen reichlich Luft.
+ */
+export const KANDIDAT_TAGE = 120
+/** Kandidaten, die es in einen Bericht geschafft haben: das ist Historie. */
+export const KANDIDAT_BERICHTET_TAGE = 365
 
 /**
  * Einmal aufräumen.
@@ -57,7 +67,7 @@ export const ERGEBNIS_TAGE = 180
  */
 export async function raeumeRadarAuf({ jetzt = Date.now(), blockGroesse = 20000, knex: eigenerKnex } = {}) {
     const knex = eigenerKnex || getKnex()
-    const bilanz = { zeilenVerworfen: 0, zeilenBewertet: 0, ergebnisse: 0, laeufe: 0 }
+    const bilanz = { zeilenVerworfen: 0, zeilenBewertet: 0, ergebnisse: 0, kandidaten: 0, laeufe: 0 }
 
     const loescheInBloecken = async (bauAbfrage) => {
         let gesamt = 0
@@ -84,6 +94,19 @@ export async function raeumeRadarAuf({ jetzt = Date.now(), blockGroesse = 20000,
             .whereNot('status', 'offen').andWhere('faelligAm', '<', grenzeErgebnis))
 
         /*
+         * Hype-Kandidaten. Was durchgefallen ist, interessiert nur so lange,
+         * wie die Erfolgskontrolle noch misst; was in einem Bericht stand,
+         * bleibt ein Jahr, weil der Bericht darauf verweist.
+         */
+        const grenzeKandidat = jetzt - KANDIDAT_TAGE * TAG_MS
+        bilanz.kandidaten = await loescheInBloecken(() => knex('hype_candidates')
+            .whereNotIn('status', ['bestanden', 'berichtet']).andWhere('erstelltAm', '<', grenzeKandidat))
+
+        const grenzeBerichtet = jetzt - KANDIDAT_BERICHTET_TAGE * TAG_MS
+        bilanz.kandidaten += await loescheInBloecken(() => knex('hype_candidates')
+            .whereIn('status', ['bestanden', 'berichtet']).andWhere('erstelltAm', '<', grenzeBerichtet))
+
+        /*
          * Läufe zuletzt und nur die leeren: ein Lauf, auf den noch bewertete
          * Zeilen zeigen, trägt deren Datum und Auslöser. Ihn zu löschen
          * machte die Zeilen unauffindbar, statt Platz zu schaffen.
@@ -98,6 +121,36 @@ export async function raeumeRadarAuf({ jetzt = Date.now(), blockGroesse = 20000,
             }))
     } catch (e) {
         logWarn('radar-aufraeumen', 'Aufräumen fehlgeschlagen', e)
+    }
+
+    /*
+     * Nach dem Löschen aufräumen — sonst wächst die Datei weiter.
+     *
+     * PostgreSQL löscht nicht wirklich, es markiert nur: der Platz bleibt in
+     * der Datei und wird erst durch VACUUM zur Wiederverwendung freigegeben.
+     * Ohne das legt die Tabelle nach jedem Aufräumen wieder auf einem höheren
+     * Stand los. Wie viel das ausmacht, steht in derselben Datenbank:
+     * `share_card_templates` hat NULL Zeilen und belegt 52 MB.
+     *
+     * Bewusst KEIN `VACUUM FULL`: das gäbe den Platz zwar ans Betriebssystem
+     * zurück, sperrt die Tabelle aber für die gesamte Dauer — bei 700 MB auf
+     * einer NAS-Platte ist das nichts, was nachts ungefragt laufen sollte.
+     * Das normale VACUUM läuft nebenher.
+     *
+     * `ANALYZE` gleich mit: nach dem Löschen von Hunderttausenden Zeilen sind
+     * die Planer-Statistiken veraltet, und dann wählt PostgreSQL für genau die
+     * Abfragen falsche Pläne, die auf dieser Tabelle ohnehin teuer sind.
+     */
+    const geloescht = bilanz.zeilenVerworfen + bilanz.zeilenBewertet
+        + bilanz.ergebnisse + bilanz.kandidaten + bilanz.laeufe
+    if (geloescht > 0 && String(knex.client?.config?.client || '').includes('pg')) {
+        for (const t of ['coinradar_zeilen', 'radar_ergebnisse', 'hype_candidates', 'coinradar_laeufe']) {
+            try {
+                await knex.raw(`VACUUM (ANALYZE) "${t}"`)
+            } catch (e) {
+                logWarn('radar-aufraeumen', `VACUUM auf ${t} fehlgeschlagen`, e)
+            }
+        }
     }
 
     return bilanz
