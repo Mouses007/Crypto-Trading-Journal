@@ -159,7 +159,7 @@ let tagsModal = null
 let tagsModalOpen = ref(false)
 
 function closeTradeModal() {
-    tradesModal.hide()
+    tradesModal?.hide()
     modalDailyTradeOpen.value = false
 }
 
@@ -434,23 +434,54 @@ onMounted(async () => {
         scrollToTradeCard(scrollToDateUnix.value)
     }
 
-    tradesModal = new bootstrap.Modal("#tradesModal")
-    document.getElementById("tradesModal").addEventListener('shown.bs.modal', async (event) => {
+    /*
+     * Der gesamte Modal-Bereich steht hinter `v-if="!spinnerLoadingPage &&
+     * filteredTrades"` (siehe Template). `useMountDaily()` schaltet den
+     * Spinner ab, aber Vue schreibt die DOM-Änderung erst asynchron — ohne
+     * dieses `nextTick()` griff `document.getElementById("tradesModal")`
+     * manchmal ins Leere, je nachdem wie schnell Vue nachkam. Bisher lief
+     * das nur zufällig glatt, wenn der Kalender-Zweig oben bereits ein
+     * `nextTick()` erzwungen hatte.
+     */
+    await nextTick()
+
+    // Bootstrap kommt vom CDN (index.html). Ohne Netz ist `bootstrap`
+    // undefined, und `new bootstrap.Modal(...)` würde hier werfen und den
+    // Rest von onMounted (Tag-Modal, Event-Listener) mitreissen. Dasselbe
+    // Muster wie useInitPopover/useInitTooltip in utils.js.
+    const bs = typeof bootstrap !== 'undefined' ? bootstrap : null
+    if (!bs?.Modal) {
+        console.warn(' -> Bootstrap nicht verfügbar (CDN?) — Trade- und Tag-Modal bleiben ohne Funktion')
+        return
+    }
+
+    // `filteredTrades` kann trotz nextTick() noch leer/null sein (z.B. neuer
+    // Broker ohne Trades) — dann rendert v-if den Modal-Bereich nie, und die
+    // Elemente existieren nicht. Kein Fehler, nur nichts zu initialisieren.
+    const tradesModalEl = document.getElementById("tradesModal")
+    const tagsModalEl = document.getElementById("tagsModal")
+    if (!tradesModalEl || !tagsModalEl) {
+        console.warn(' -> Daily: Modal-Elemente noch nicht im DOM — filteredTrades vermutlich leer')
+        return
+    }
+
+    tradesModal = new bs.Modal(tradesModalEl)
+    tradesModalEl.addEventListener('shown.bs.modal', async (event) => {
         const caller = event.relatedTarget
         const index = caller.dataset.index
         const index2 = caller.dataset.indextwo
         clickTradesModal(index, index2, index2)
     })
 
-    tagsModal = new bootstrap.Modal("#tagsModal")
-    document.getElementById("tagsModal").addEventListener('shown.bs.modal', async (event) => {
+    tagsModal = new bs.Modal(tagsModalEl)
+    tagsModalEl.addEventListener('shown.bs.modal', async (event) => {
         tagsModalOpen.value = true
         showTagsList.value = ''
         const caller = event.relatedTarget
         const index = caller.dataset.index
         clickTagsModal(index)
     })
-    document.getElementById("tagsModal").addEventListener('hidden.bs.modal', () => {
+    tagsModalEl.addEventListener('hidden.bs.modal', () => {
         tagsModalOpen.value = false
         showTagsList.value = ''
     })
@@ -545,7 +576,7 @@ async function clickTradesModal(param1, param2, param3) {
 
             showTagsList.value = ''
 
-            tradesModal.hide()
+            tradesModal?.hide()
             await (modalDailyTradeOpen.value = false) //this is important because we use itemTradeIndex on filteredTrades and if change month, this causes problems. So only show modal content when clicked on open modal/v-if
             await useInitTab("daily")
             loadScreenshots = false
@@ -820,7 +851,7 @@ const onTagsModalInput = () => {
 
 const closeTagsModal = async () => {
     tradeTags.length = 0
-    tagsModal.hide()
+    tagsModal?.hide()
 }
 
 const checkDate = ((param1, param2) => {

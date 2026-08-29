@@ -317,10 +317,16 @@ export const useTradeTagsChange = async (param1, param2) => {
     }
 
     if (pageId.value == "daily") {
-        tradeTagsDateUnix.value = filteredTrades[itemTradeIndex.value].dateUnix
+        // Filter/Auswahl können auseinanderlaufen (z.B. Filter geändert,
+        // während ein Tag-Dialog offen war) — dann zeigt itemTradeIndex auf
+        // keinen gültigen Eintrag mehr. Ohne diese Prüfung warf der Zugriff
+        // eine TypeError statt den Dialog einfach zu schließen.
+        const trade = filteredTrades[itemTradeIndex.value]
+        if (!trade) return
+        tradeTagsDateUnix.value = trade.dateUnix
         console.log(" tradeIndex.value " + tradeIndex.value)
         if (tradeIndex.value != undefined) {
-            tradeTagsId.value = filteredTrades[itemTradeIndex.value].trades[tradeIndex.value].id
+            tradeTagsId.value = trade.trades[tradeIndex.value]?.id ?? null
         } else {
             tradeTagsId.value = null
         }
