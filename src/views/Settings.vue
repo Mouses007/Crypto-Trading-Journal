@@ -5468,7 +5468,7 @@ onBeforeMount(async () => {
                                 <thead>
                                     <tr style="color: var(--white-50);">
                                         <th>{{ t('settings.pgProvider') }}</th>
-                                        <th>Free Tier</th>
+                                        <th>{{ t('settings.freeTierCol') }}</th>
                                         <th>{{ t('settings.pgFeature') }}</th>
                                     </tr>
                                 </thead>
@@ -5496,13 +5496,13 @@ onBeforeMount(async () => {
                     <!-- PostgreSQL-Felder -->
                     <template v-if="dbType === 'postgresql'">
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Host</div>
+                            <div class="col-12 col-md-4">{{ t('settings.hostLabel') }}</div>
                             <div class="col-12 col-md-8">
                                 <input type="text" class="form-control" v-model="dbHost" :placeholder="t('settings.hostPlaceholder')" />
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Port<InfoTipp schluessel="settings.info.dbPort" /></div>
+                            <div class="col-12 col-md-4">{{ t('settings.portLabel') }}<InfoTipp schluessel="settings.info.dbPort" /></div>
                             <div class="col-12 col-md-8">
                                 <input type="number" class="form-control" v-model="dbPort" placeholder="5432" />
                             </div>
@@ -5584,7 +5584,7 @@ onBeforeMount(async () => {
                 <!--=============== OHLC-CHART ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="chartExpanded = !chartExpanded">
                     <i class="uil me-2" :class="chartExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">OHLC-Chart</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.ohlcChart') }}</p>
                 </div>
                 <div v-show="chartExpanded" class="mt-2 ms-3">
                     <p class="fw-lighter">{{ t('settings.ohlcDescription') }}</p>
@@ -5625,7 +5625,7 @@ onBeforeMount(async () => {
                                     @click="toggleMonth(month.key)">
                                     <i class="uil" :class="expandedMonths.has(month.key) ? 'uil-angle-down' : 'uil-angle-right'"></i>
                                     <span class="fw-bold">{{ month.label }}</span>
-                                    <span class="badge bg-secondary">{{ month.days.length }} {{ month.days.length === 1 ? 'Tag' : 'Tage' }}</span>
+                                    <span class="badge bg-secondary">{{ month.days.length }} {{ month.days.length === 1 ? t('settings.dayLabel') : t('settings.daysLabel') }}</span>
                                     <span class="badge bg-secondary">{{ month.tradeCount }} {{ t('common.trades') }}</span>
                                     <span v-if="month.evaluatedCount === month.tradeCount && month.tradeCount > 0"
                                         class="badge bg-success">{{ t('settings.allEvaluated') }}</span>
@@ -5677,15 +5677,15 @@ onBeforeMount(async () => {
                                                 </div>
                                                 <div class="d-flex align-items-center gap-2">
                                                     <span v-if="isTradeEvaluated(trade.id)" class="badge bg-success">
-                                                        <i class="uil uil-check me-1"></i>Bewertet
+                                                        <i class="uil uil-check me-1"></i>{{ t('settings.importEvaluatedBadge') }}
                                                     </span>
                                                     <a v-else :href="'/playbook?tradeId=' + trade.id" class="btn btn-sm btn-outline-primary py-0 px-2">
-                                                        <i class="uil uil-pen me-1"></i>Bewerten
+                                                        <i class="uil uil-pen me-1"></i>{{ t('settings.importEvaluateLink') }}
                                                     </a>
                                                 </div>
                                             </div>
                                             <div v-if="getTradesForDay(data).length === 0" class="text-muted small py-1">
-                                                Keine einzelnen Trades gefunden.
+                                                {{ t('settings.importNoTradesFound') }}
                                             </div>
                                         </div>
                                     </div>
@@ -5856,7 +5856,7 @@ onBeforeMount(async () => {
                         <select class="form-select" style="max-width:11rem;" v-model="mail.mailSicherheit">
                             <option value="tls">TLS (465)</option>
                             <option value="starttls">STARTTLS (587)</option>
-                            <option value="keine">ohne</option>
+                            <option value="keine">{{ t('settings.benachrichtigungen.mailSecurityNone') }}</option>
                         </select>
                     </div>
                 </div>

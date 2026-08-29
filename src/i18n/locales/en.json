@@ -476,7 +476,7 @@
         "saveAsProfileBtn": "+ Save from current settings",
         "sourcesTitle": "News sources",
         "sourcesDescription": "YouTube channels, RSS feeds, Telegram channels, and X accounts for the news page. Anything you mark as exclude gets hidden by \"Temporarily exclude\" — and isn't fetched at all. Only title, link, and timestamp are stored, never full text.",
-        "xSourceHint": "About X: runs via the paid Grok search (xAI) — just the handle is enough as the address, e.g. @saylor. All X sources together cost ONE search per fetch run (roughly $0.005 plus tokens), throttled to at most one search every four hours. Requires an xAI key under \"AI settings\". Free workarounds (Nitter mirrors) are dead — checked 2026-08-16.",
+        "xSourceHint": "About X: runs via the paid Grok search (xAI) — just the handle is enough as the address, e.g. {'@'}saylor. All X sources together cost ONE search per fetch run (roughly $0.005 plus tokens), throttled to at most one search every four hours. Requires an xAI key under \"AI settings\". Free workarounds (Nitter mirrors) are dead — checked 2026-08-16.",
         "tempExcludeLabel": "Temporarily exclude",
         "tempExcludeOn": "On — sources marked as excluded stay out",
         "tempExcludeOff": "Off — all active sources are fetched",
@@ -674,7 +674,8 @@
       "schrift": "Font size",
       "schriftNormal": "Normal",
       "schriftGross": "Large",
-      "schriftSehrGross": "Extra large"
+      "schriftSehrGross": "Extra large",
+      "mailSecurityNone": "none"
     },
     "erweiterteInfos": "Extended info",
     "erweiterteInfosHint": "Shows a small \"i\" next to values and controls. Hover (tap on phone) explains what the number means.",
@@ -717,7 +718,16 @@
     "shareCardsDescription": "Create stylish share images for your trades using AI image generation.",
     "imageProviderLabel": "Image provider",
     "geminiApiKeyLabel": "Gemini API key",
-    "geminiModelLabel": "Gemini model"
+    "geminiModelLabel": "Gemini model",
+    "hostLabel": "Host",
+    "portLabel": "Port",
+    "freeTierCol": "Free tier",
+    "ohlcChart": "OHLC chart",
+    "dayLabel": "day",
+    "daysLabel": "days",
+    "importEvaluatedBadge": "Evaluated",
+    "importEvaluateLink": "Evaluate",
+    "importNoTradesFound": "No individual trades found."
   },
   "setup": {
     "welcome": "Welcome!",

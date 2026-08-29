@@ -476,7 +476,7 @@
         "saveAsProfileBtn": "+ Aus aktuellen Einstellungen speichern",
         "sourcesTitle": "Nachrichtenquellen",
         "sourcesDescription": "YouTube-Kanäle, RSS-Adressen, Telegram-Kanäle und X-Accounts für die Nachrichten-Seite. Was du als Ausschluss markierst, blendet „Temporär ausschliessen\" aus — und holt es gar nicht erst ab. Es werden nur Titel, Verweis und Zeitpunkt gespeichert, keine Volltexte.",
-        "xSourceHint": "Zu X: läuft über die bezahlte Grok-Suche (xAI) — als Adresse genügt der Handle, z.B. @saylor. Alle X-Quellen zusammen kosten EINE Suche je Abruflauf (rund 0,5 Rappen plus Token), gedrosselt auf höchstens eine Suche alle vier Stunden. Voraussetzung ist ein xAI-Schlüssel unter „KI-Einstellungen\". Gratis-Umwege (Nitter-Spiegel) sind tot — geprüft am 16.08.2026.",
+        "xSourceHint": "Zu X: läuft über die bezahlte Grok-Suche (xAI) — als Adresse genügt der Handle, z.B. {'@'}saylor. Alle X-Quellen zusammen kosten EINE Suche je Abruflauf (rund 0,5 Rappen plus Token), gedrosselt auf höchstens eine Suche alle vier Stunden. Voraussetzung ist ein xAI-Schlüssel unter „KI-Einstellungen\". Gratis-Umwege (Nitter-Spiegel) sind tot — geprüft am 16.08.2026.",
         "tempExcludeLabel": "Temporär ausschliessen",
         "tempExcludeOn": "An — als Ausschluss markierte Quellen bleiben aussen vor",
         "tempExcludeOff": "Aus — alle aktiven Quellen werden geholt",
@@ -674,7 +674,8 @@
       "schrift": "Schriftgrösse",
       "schriftNormal": "Normal",
       "schriftGross": "Gross",
-      "schriftSehrGross": "Sehr gross"
+      "schriftSehrGross": "Sehr gross",
+      "mailSecurityNone": "ohne"
     },
     "erweiterteInfos": "Erweiterte Infos",
     "erweiterteInfosHint": "Zeigt ein kleines „i“ an Werten und Bedienelementen. Mauszeiger darüber (am Telefon: antippen) erklärt, was die Zahl bedeutet.",
@@ -717,7 +718,16 @@
     "shareCardsDescription": "Erstelle stylische Share-Bilder für deine Trades mit KI-Bildgenerierung.",
     "imageProviderLabel": "Bild-Provider",
     "geminiApiKeyLabel": "Gemini API-Key",
-    "geminiModelLabel": "Gemini Modell"
+    "geminiModelLabel": "Gemini Modell",
+    "hostLabel": "Host",
+    "portLabel": "Port",
+    "freeTierCol": "Kostenlos bis",
+    "ohlcChart": "OHLC-Chart",
+    "dayLabel": "Tag",
+    "daysLabel": "Tage",
+    "importEvaluatedBadge": "Bewertet",
+    "importEvaluateLink": "Bewerten",
+    "importNoTradesFound": "Keine einzelnen Trades gefunden."
   },
   "setup": {
     "welcome": "Willkommen!",
