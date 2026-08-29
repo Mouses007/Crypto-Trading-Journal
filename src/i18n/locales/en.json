@@ -758,6 +758,47 @@
     "nextStepImport": "Import your first trades via {csv} or {api}",
     "postgresUsedOnRestart": "PostgreSQL connection will be used on next start."
   },
+  "onboarding": {
+    "title": "Update Assistant",
+    "whatsNew": "What's new",
+    "finish": "Finish",
+    "later": "Later — no problem, you can pick this up anytime in Settings",
+    "reopenButton": "Reopen onboarding assistant",
+    "intro": {
+      "setupTitle": "Almost there",
+      "setupText": "A few suggestions before you start — all of them skippable.",
+      "updateTitle": "New since your last visit",
+      "updateText": "An update brought new defaults and options. Take a quick look at what changed.",
+      "manuellTitle": "Onboarding assistant",
+      "manuellText": "Default settings, AI access, news sources and mail in one place."
+    },
+    "defaults": {
+      "title": "Apply default settings?",
+      "intro": "The currently recommended defaults are pre-checked — uncheck anything you'd rather set yourself.",
+      "startseiteKacheln": {
+        "label": "Reset the Overview to the recommended tile selection",
+        "info": "Resets the visibility of the Overview tiles to the current default. A custom selection is lost in the process."
+      },
+      "marktradarPult": {
+        "label": "Start Market Radar in the console view",
+        "info": "The console view shows a fixed instrument bar instead of the freely arrangeable tile grid."
+      }
+    },
+    "ki": {
+      "title": "AI access",
+      "intro": "For reports, the agent and more. Keys already stored stay unchanged if you don't edit them here.",
+      "keySetHint": "Already stored — leave empty to keep it",
+      "alreadySet": "Access already configured."
+    },
+    "news": {
+      "title": "News sources",
+      "intro": "Sources you already added stay untouched — this is only for adding new ones."
+    },
+    "mail": {
+      "title": "Configure email",
+      "intro": "For notifications and sending news reports."
+    }
+  },
   "accounts": {
     "totalEquity": "Total Equity",
     "refresh": "Refresh",

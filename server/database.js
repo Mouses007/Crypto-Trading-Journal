@@ -695,6 +695,13 @@ async function runMigrations(knex, client) {
         } catch (e) { /* ignore */ }
     }
 
+    // Update-Assistent: letzte Version, für die der Nutzer den Assistenten
+    // gesehen/übersprungen hat. Leer bei Neuinstallation (der Setup-Wizard
+    // hängt den Assistenten selbst an und markiert ihn dabei als gesehen) —
+    // bei einer Bestandsinstallation weicht sie beim nächsten Boot nach einem
+    // Update von package.json ab und löst den Assistenten einmalig aus.
+    await addColumnIfNotExists('settings', 'zuletztGeseheneVersion', (t) => t.text('zuletztGeseheneVersion').defaultTo(''))
+
     // ai_reports additions
     await addColumnIfNotExists('ai_reports', 'promptTokens', (t) => t.integer('promptTokens').defaultTo(0))
     await addColumnIfNotExists('ai_reports', 'completionTokens', (t) => t.integer('completionTokens').defaultTo(0))

@@ -92,8 +92,9 @@ async function completeSetup() {
         if (dbType.value === 'postgresql') {
             step.value = 4 // Neustart-Schritt
         } else {
-            // Reload damit Router setupComplete neu lädt
-            window.location.href = '/dashboard'
+            // Reload damit Router setupComplete neu lädt; direkt weiter zu den
+            // Onboarding-Schritten (Standardeinstellungen/KI/News/Mail).
+            window.location.href = '/update-assistent?kontext=setup'
         }
     } catch (e) {
         error.value = t('common.errorPrefix') + (e.response?.data?.error || e.message)
@@ -108,7 +109,7 @@ async function skipSetup() {
     try {
         await axios.post('/api/setup/complete')
         // Vollständiger Reload, damit der Router setupComplete neu lädt und nicht mehr zu /setup umleitet
-        window.location.href = '/dashboard'
+        window.location.href = '/update-assistent?kontext=setup'
     } catch (e) {
         error.value = t('common.errorPrefix') + (e.response?.data?.error || e.message)
     }
@@ -128,7 +129,7 @@ async function restartServer() {
             await new Promise(r => setTimeout(r, 2000))
             try {
                 await axios.get('/api/setup/status')
-                window.location.href = '/dashboard'
+                window.location.href = '/update-assistent?kontext=setup'
                 return
             } catch (e) { /* still restarting */ }
         }

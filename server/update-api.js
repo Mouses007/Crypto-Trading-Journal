@@ -284,7 +284,7 @@ function httpsGetJson(url) {
 }
 
 // Get local version from package.json
-function getLocalVersion() {
+export function getLocalVersion() {
     const pkg = JSON.parse(readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'))
     return pkg.version
 }

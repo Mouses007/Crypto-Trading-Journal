@@ -3,7 +3,7 @@ import { getKnex } from './database.js'
 import { loadDbConfig, saveDbConfig } from './db-config.js'
 import { setupEsp32AdminRoutes } from './esp32-api.js'
 import { encrypt, maskKey } from './crypto.js'
-import { isLocalRequest } from './update-api.js'
+import { isLocalRequest, getLocalVersion } from './update-api.js'
 import { logError } from './logger.js'
 
 const VALID_TABLES = [
@@ -252,8 +252,15 @@ export function setupApiRoutes(app) {
     // ==================== SETUP (Installationsassistent) ====================
     app.get('/api/setup/status', async (req, res) => {
         try {
-            const row = await knex('settings').where('id', 1).select('setupComplete').first()
-            res.json({ setupComplete: row?.setupComplete === 1 })
+            const row = await knex('settings').where('id', 1)
+                .select('setupComplete', 'zuletztGeseheneVersion').first()
+            const setupComplete = row?.setupComplete === 1
+            res.json({
+                setupComplete,
+                // Nur für Bestandsinstallationen relevant — der Setup-Wizard
+                // selbst markiert den Assistenten beim Abschluss als gesehen.
+                updateAssistantPending: setupComplete && (row?.zuletztGeseheneVersion || '') !== getLocalVersion(),
+            })
         } catch (error) {
             res.status(500).json({ error: 'Internal server error' })
         }
@@ -262,6 +269,20 @@ export function setupApiRoutes(app) {
     app.post('/api/setup/complete', async (req, res) => {
         try {
             await knex('settings').where('id', 1).update({ setupComplete: 1, updatedAt: knex.fn.now() })
+            res.json({ ok: true })
+        } catch (error) {
+            res.status(500).json({ error: 'Internal server error' })
+        }
+    })
+
+    // Onboarding-/Update-Assistent als "gesehen" markieren (egal ob mit
+    // "Übernehmen" oder "Später" verlassen) — verhindert, dass er bei jedem
+    // Reload erneut aufploppt. Manueller Wiederaufruf bleibt über die eigene
+    // Route jederzeit möglich, unabhängig von diesem Stand.
+    app.post('/api/setup/update-assistent/gesehen', async (req, res) => {
+        try {
+            await knex('settings').where('id', 1)
+                .update({ zuletztGeseheneVersion: getLocalVersion(), updatedAt: knex.fn.now() })
             res.json({ ok: true })
         } catch (error) {
             res.status(500).json({ error: 'Internal server error' })
