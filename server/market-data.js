@@ -81,10 +81,6 @@ const inFlight = new Map()   // key -> Promise (Dedup paralleler Abrufe)
 
 const cacheKey = (symbol, interval, market) => `${symbol}|${market}|${interval}`
 
-export function clearCandleCache() {
-    cache.clear()
-    inFlight.clear()
-}
 
 /** Rohe Binance-Zeilen → Zahlen-Kerzen. */
 function normalizeKlines(rows) {
@@ -349,9 +345,3 @@ export async function getSymbolMeta(symbol, opts = {}) {
     return metaCache.get(market).map.get(sym) || null
 }
 
-/** Rundet auf ein Vielfaches von `step` ab (Binance lehnt krumme Mengen ab). */
-export function roundToStep(value, step) {
-    if (!step || !Number.isFinite(step) || step <= 0) return value
-    const decimals = Math.max(0, Math.round(-Math.log10(step)))
-    return Number((Math.floor(value / step) * step).toFixed(decimals))
-}

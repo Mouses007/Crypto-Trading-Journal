@@ -49,15 +49,6 @@ export function getKnex() {
     return knex
 }
 
-/**
- * Close the database connection.
- */
-export async function closeDb() {
-    if (knex) {
-        await knex.destroy()
-        knex = null
-    }
-}
 
 // ============================================================
 // Schema Migrations

@@ -81,12 +81,6 @@ export async function loadReplayLiquidations({ symbol, market, from, to }) {
     return ring
 }
 
-/** Welche Stunden liegen für ein Symbol vor? */
-export async function loadAvailability({ symbol, market, from, to }) {
-    const { data } = await axios.get('/api/live/recorder/available', { params: { symbol, market, from, to } })
-    return data.stunden || []
-}
-
 /** Server schickt die Matrix gzip-gepackt; ältere Antworten kamen roh. */
 async function unpack(data) {
     const bytes = base64ToBytes(data.data)

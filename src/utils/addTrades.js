@@ -42,9 +42,6 @@ let openPositionsParse = []
 
 let currentTradeId
 
-export const testPost = async () => {
-    return "test successful !!!!"
-}
 /****************************
  * TRADES
  ****************************/

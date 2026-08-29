@@ -27,8 +27,6 @@
 
 import { logWarn } from './logger.js'
 
-/** Binance-Limit je IP und Minute (USDⓈ-M). */
-export const LIMIT_JE_MINUTE = 2400
 /** So viel darf die Rangliste selbst je Minute verbrauchen. */
 export const EIGEN_DECKEL = 1000
 /** Ab diesem GESAMTverbrauch der IP hält die Rangliste ganz an. */

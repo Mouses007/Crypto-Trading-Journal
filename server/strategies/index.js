@@ -201,10 +201,6 @@ export function defaultsFromSchema(schema) {
     return out
 }
 
-export function defaultParams(strategyId) {
-    const s = getStrategy(strategyId)
-    return s ? defaultsFromSchema(s.params) : {}
-}
 
 /**
  * Validiert und normalisiert Parameter gegen ein Schema.

@@ -341,18 +341,6 @@ export const useFilterTags = () => {
     showTagsList.value = (tagInput.value !== '' && filteredSuggestions.length > 0) ? pageId.value : ''
 };
 
-export const useHandleKeyDown = (event) => {
-    if (showTagsList.value !== '') {
-        if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            console.log("filteredSuggestions " + JSON.stringify(filteredSuggestions))
-            selectedTagIndex.value = Math.min(selectedTagIndex.value + 1, filteredSuggestions.length - 1);
-        } else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            selectedTagIndex.value = Math.max(selectedTagIndex.value - 1, 0);
-        }
-    }
-};
 
 export const useToggleTagsDropdown = () => {
     selectedTagIndex.value = -1
@@ -368,26 +356,6 @@ export const useToggleTagsDropdown = () => {
     }
 }
 
-export const useGetTagGroup = (param) => {
-    const findGroupName = (tagId) => {
-        for (let obj of availableTags) {
-            for (let tag of obj.tags) {
-                if (tag.id === tagId) {
-                    return obj.name;
-                }
-            }
-        }
-        let name = null
-        if (availableTags.length > 0) {
-            name = availableTags.filter(obj => obj.id == "group_0")[0].name
-        }
-        return name
-    }
-
-    const tagIdToFind = param;
-    const groupName = findGroupName(tagIdToFind);
-    return groupName
-}
 
 export const useResetTags = () => {
     tradeTags.splice(0);

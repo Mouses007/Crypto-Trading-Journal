@@ -288,41 +288,6 @@ export async function useGetPeriods() {
     });
 }
 
-export async function useInitQuill(param) {
-    return new Promise((resolve, reject) => {
-        //console.log("param " + param)
-        let quillEditor
-        if (param != undefined) {
-            quillEditor = '#quillEditor' + param
-        } else {
-            quillEditor = '#quillEditor'
-        }
-        //console.log("quilEditor " + quillEditor)
-        let quill = new Quill(quillEditor, {
-            modules: {
-                toolbar: [
-                    [{ header: [1, 2, 3, false] }],
-                    ['bold', 'italic', 'underline', 'strike'],
-                    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-                    [{ 'indent': '-1' }, { 'indent': '+1' }],
-                    ['image'],
-                ]
-            },
-            theme: 'snow'
-        });
-        quill.root.setAttribute('spellcheck', true)
-        //console.log("quill " + quill)
-
-        quill.on('text-change', () => {
-            if (pageId.value == "addScreenshot") {
-                setupUpdate.value.checkList = document.querySelector(".ql-editor").innerHTML
-                //console.log("setup " + JSON.stringify(setupUpdate.value))
-            }
-
-        });
-        resolve()
-    })
-}
 
 
 /*
@@ -638,22 +603,7 @@ export function returnToTop() {
 }
 
 
-export const useGetLegacy = async () => {
-    console.log(" -> Getting legacy information")
-    return new Promise(async (resolve, reject) => {
-        // Legacy is no longer tracked in single-user mode
-        console.log("  --> Legacy skipped (single-user)")
-        resolve()
-    })
-}
 
-export const useUpdateLegacy = async (param1) => {
-    console.log("\n -> Updating legacy information")
-    return new Promise(async (resolve, reject) => {
-        // Legacy is no longer tracked in single-user mode
-        resolve()
-    })
-}
 
 export const useGetAPIS = async () => {
     console.log("\n -> Getting APIS")
@@ -670,20 +620,6 @@ export const useGetAPIS = async () => {
     })
 }
 
-export const useGetLayoutStyle = async () => {
-    console.log("\n -> Getting Layout Style")
-    layoutStyle.length = 0
-    return new Promise(async (resolve, reject) => {
-        const settings = await dbGetSettings()
-        if (settings && settings.layoutStyle != undefined) {
-            for (let index = 0; index < settings.layoutStyle.length; index++) {
-                const element = settings.layoutStyle[index];
-                layoutStyle.push(element)
-            }
-        }
-        resolve()
-    })
-}
 
 export const useExport = async (param1, param2, param3, param4) => {
     // Convert the JSON object to a string
