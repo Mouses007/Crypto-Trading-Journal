@@ -1347,7 +1347,22 @@ function getOHLC(date, symbol, type, interval, entryTime) {
 
                                     <!-- Stats bar -->
                                     <div class="col-12 mb-1">
-                                        <div class="daily-stats-bar">
+                                        <!--
+                                            `itemTrade.pAndL` fehlt fuer Tage, an denen die
+                                            `trades`-Tabelle mehr als eine Zeile fuer dasselbe
+                                            Datum hat: die Zuordnung weiter unten in
+                                            `useGetFilteredTrades` (trades.js) haengt an einer
+                                            Map, die pro Datum nur EINEN Eintrag halten kann —
+                                            bei zwei Zeilen zum selben Tag bekommt nur die
+                                            zuletzt eingefuegte ihr pAndL zugewiesen, die andere
+                                            bleibt dauerhaft ohne. Frueher stuerzte das hier ab
+                                            ("Cannot read properties of undefined"); jetzt zeigt
+                                            die Leiste einen ehrlichen Hinweis statt einer
+                                            erfundenen Zahl — eine stille Null waere HIER
+                                            besonders gefaehrlich, weil sie wie eine echte
+                                            Trefferquote von 0 aussaehe.
+                                        -->
+                                        <div v-if="itemTrade.pAndL" class="daily-stats-bar">
                                             <span class="stats-item"><span class="stats-label">Trades</span> {{ itemTrade.pAndL.trades }}</span>
                                             <span class="stats-divider">|</span>
                                             <span class="stats-item"><span class="stats-label">Wins</span> <span class="greenTrade">{{ itemTrade.pAndL.grossWinsCount }}</span></span>
@@ -1357,6 +1372,10 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                             <span class="stats-item"><span class="stats-label">Fees</span> {{ useTwoDecCurrencyFormat(itemTrade.pAndL.fees) }}</span>
                                             <span class="stats-divider">|</span>
                                             <span class="stats-item"><span class="stats-label">PnL(g)</span> <span :class="itemTrade.pAndL.grossProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(itemTrade.pAndL.grossProceeds) }}</span></span>
+                                        </div>
+                                        <div v-else class="daily-stats-bar text-muted small">
+                                            <i class="uil uil-exclamation-triangle"></i>
+                                            Kennzahlen nicht berechnet — vermutlich zwei Datenbankzeilen für diesen Tag.
                                         </div>
                                     </div>
 
