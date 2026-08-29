@@ -2459,6 +2459,20 @@
       "eigeneTage": "Kurve aus {n} eigenen Tagen — der Gratis-Tarif gibt nur 30 Tage her, alles Ältere wird hier gesammelt.",
       "nachtrag": "Die Quelle korrigiert Werte im Nachhinein; die letzten Tage werden deshalb erneut geholt.",
       "info": "Wie viel Bitcoin institutionell über Spot-ETFs gehalten wird, und ob täglich mehr hinein- oder herausfliesst.\nZeigt, ob grosses Geld gerade Position aufbaut oder abbaut — ein anhaltender Abfluss über mehrere Tage wiegt schwerer als ein einzelner roter Tag."
+    },
+    "wal": {
+      "title": "Wal-Bewegungen",
+      "window": "Fenster",
+      "inactive": "Keine Telegram-Quelle aktiv. Wal-Kanäle (Whale Alert, Lookonchain, …) lassen sich unter Einstellungen → Nachrichten eintragen.",
+      "toSettings": "Zu den Einstellungen",
+      "empty": "Nichts über der Schwelle im gewählten Fenster.",
+      "source": "eigene Telegram-Quellen · ab {schwelle} $",
+      "richtung": {
+        "ein": "Richtung Börse — potenzieller Verkaufsdruck",
+        "aus": "von Börse weg — potenzielle Verwahrung",
+        "unbekannt": "Richtung unbekannt"
+      },
+      "info": "Grosse Krypto-Transaktionen aus den eigenen Telegram-Quellen (Whale Alert, Lookonchain, …), automatisch erkannt — kein zusätzlicher Netzabruf.\nRot = Bewegung Richtung Börse (potenzieller Verkaufsdruck), Grün = Bewegung von einer Börse weg (potenzielle Verwahrung). Wallet-zu-Wallet-Bewegungen bleiben grau, weil die Richtung dort nicht geraten wird."
     }
   },
   "info": {
