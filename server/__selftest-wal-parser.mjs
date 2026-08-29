@@ -52,10 +52,24 @@ console.log('\nLookonchain (mittlere Zuversicht)')
     check('Symbol', r.symbol === 'ETH', r.symbol)
     check('Richtung: withdrew from Börse = aus', r.richtung === 'aus', r.richtung)
     check('Zuversicht mittel', r.zuversicht === 'mittel', r.zuversicht)
+    check('Gegenpartei ohne Zeitrauschen ("4 hours ago" abgeschnitten)', r.gegenpartei === 'Binance', r.gegenpartei)
 }
 {
     const r = parseWalBeitrag('Whale deposited 2,000 $BTC ($218,000,000) to Coinbase')
     check('Richtung: deposited to Börse = ein', r.richtung === 'ein', r.richtung)
+}
+{
+    // Realer Lookonchain-Fund: "into" statt "to" — ohne die Erweiterung blieb
+    // das eine 237-Mio-$-Meldung mit Richtung "unbekannt" und Gegenpartei "—".
+    const r = parseWalBeitrag('Bitcoin mining company #MetaPlanet has deposited 3,000 $BTC($237M) into #CoinbasePrime in the past 24 hours.')
+    check('"into" wird wie "to" erkannt', r.richtung === 'ein', r.richtung)
+    check('Gegenpartei ohne "in the past 24 hours"', r.gegenpartei === '#CoinbasePrime', r.gegenpartei)
+}
+{
+    // Realer Lookonchain-Fund mit "9 hours ago" direkt an die Gegenpartei angehängt
+    const r = parseWalBeitrag('5p6zPz withdrew 281,446 $SOL ($29.68M) from #Binance 9 hours ago.')
+    check('Gegenpartei ohne "9 hours ago"', r.gegenpartei === '#Binance', r.gegenpartei)
+    check('Richtung weiterhin aus', r.richtung === 'aus', r.richtung)
 }
 {
     // Abgekürzter USD-Betrag (K/M/B) — häufig bei Lookonchain
