@@ -219,8 +219,13 @@ defineExpose({ jetzt })
     --pChrom: hsl(0, 0%, 5%);
     --pFlaeche: hsl(0, 0%, 0%);
     /* Beschriftungsband über jedem Instrument — macht den Feldanfang sichtbar,
-       ohne dass daraus wieder eine Karte wird. */
-    --pBand: rgba(255, 255, 255, 0.035);
+       ohne dass daraus wieder eine Karte wird. 20 % heller als zuvor (0,035). */
+    --pBand: rgba(255, 255, 255, 0.042);
+    /* Titel-Beschriftungen im ganzen Pult (Instrumentenleiste, Stimmungs- und
+       Zyklusband, Lage-Fuss) — EINE Stelle, damit sie garantiert gleich
+       aussehen. 50 % heller als das globale `--white-38`, das hier vorher
+       direkt verwendet wurde. */
+    --pTitel: hsla(0, 0%, 100%, 0.57);
 
     display: flex;
     flex-direction: column;
@@ -336,7 +341,7 @@ defineExpose({ jetzt })
     font-size: 0.62rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--white-38);
+    color: var(--pTitel);
 }
 
 .pInstStand {

@@ -149,7 +149,8 @@ const piNah = computed(() => abstand.value !== null && abstand.value > -10)
     font-size: 0.62rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--white-38);
+    /* Dieselbe Titel-Farbe wie im Rest des Pults — siehe `--pTitel` in PultRahmen.vue */
+    color: var(--pTitel);
 }
 
 .zyPreis {
@@ -211,7 +212,7 @@ const piNah = computed(() => abstand.value !== null && abstand.value > -10)
     font-size: 0.62rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--white-38);
+    color: var(--pTitel);
 }
 
 .zyPiZahl {

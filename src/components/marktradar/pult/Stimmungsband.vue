@@ -209,7 +209,8 @@ const vzProz = (v, n = 2) => v === null ? '—' : `${v >= 0 ? '+' : '−'}${Math
     font-size: 0.62rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--white-38);
+    /* Dieselbe Titel-Farbe wie im Rest des Pults — siehe `--pTitel` in PultRahmen.vue */
+    color: var(--pTitel);
 }
 
 .sZahl {
