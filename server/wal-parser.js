@@ -62,7 +62,13 @@ const WHALE_ALERT_RE = /([\d.,]+)\s*#([A-Za-z0-9]{2,15})\s*\(\s*([\d.,]+)\s*USD\
 // (häufigsten) Satzbau verfehlen.
 const BETRAG_SYMBOL_RE = /([\d.,]+)\s*\$([A-Za-z0-9]{2,15})\s*\(\s*\$?([\d.,]+\s*[kKmMbB]?)\s*\)/
 const VERB_RE = /\b(withdrew|deposited|bought|sold|transferred)\b/i
-const GEGENPARTEI_RE = /\b(?:from|to)\s+([^\n.,]+)/i
+// "into"/"onto" fehlten — "deposited ... into #CoinbasePrime" ist die
+// häufigste Formulierung für einen Börsen-Einzahlung bei Lookonchain, blieb
+// damit aber unerkannt (kein "to"). Der Nachsatz mit Zeitangabe ("9 hours
+// ago", "in the past 24 hours") gehört NICHT zur Gegenpartei — ungetrimmt
+// stand "#Binance 9 hours ago" in der Kachel statt nur "#Binance".
+const GEGENPARTEI_RE = /\b(?:from|to|into|onto)\s+([^\n.,]+)/i
+const ZEITRAUSCHEN_RE = /\s+(?:\d+\s*(?:sek(?:unden)?|sec(?:ond)?s?|min(?:ute)?s?|hours?|hrs?|std\.?|stunden?|days?|tage?)\s*ago|in\s+the\s+(?:last|past)\s+\d+\s*(?:sec(?:ond)?s?|min(?:ute)?s?|hours?|hrs?|days?))\.?$/i
 
 /**
  * @param {string} text  Roher Beitragstext (`news_items.inhalt`)
@@ -96,7 +102,7 @@ export function parseWalBeitrag(text) {
         const usdWert = parseZahl(bs[3])
         if (betrag && usdWert) {
             const verb = t.match(VERB_RE)?.[1]?.toLowerCase() || null
-            const gegenpartei = t.match(GEGENPARTEI_RE)?.[1]?.trim() || null
+            const gegenpartei = t.match(GEGENPARTEI_RE)?.[1]?.trim().replace(ZEITRAUSCHEN_RE, '').trim() || null
             let richtung = 'unbekannt'
             if (verb === 'withdrew') richtung = nachBoerse(gegenpartei) ? 'aus' : 'unbekannt'
             else if (verb === 'deposited') richtung = nachBoerse(gegenpartei) ? 'ein' : 'unbekannt'
