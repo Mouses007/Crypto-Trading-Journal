@@ -31,7 +31,7 @@ import { baueKachelListe, macheSortierer } from './kachel-registry.js'
  */
 export const STANDARD_REIHENFOLGE = [
     'mechanik', 'funding', 'lsoi', 'liq24', 'fng', 'dom',
-    'picycle', 'altseason', 'markt', 'rainbow', 'regime', 'rsi', 'makro', 'etf',
+    'picycle', 'altseason', 'markt', 'rainbow', 'regime', 'rsi', 'makro', 'etf', 'wal',
     // Die Zusammenfassung steht am Ende: sie liest die anderen Kacheln, also
     // gehört sie hinter sie — und nachrückende Ids landen ohnehin dort.
     'lage',
@@ -195,6 +195,18 @@ const DEFINITIONEN = [
         intervallMs: 30 * 60 * 1000,
         spalten: 1,
         quelle: 'CryptoQuant (Gratis-Tarif) · eigener Bestand ab Einrichtung',
+    },
+    {
+        id: 'wal',
+        titleKey: 'marktradar.wal.title',
+        icon: 'uil uil-anchor',
+        endpunkt: '/api/marktradar/wale',
+        // Nur eigene, schon gesammelte Telegram-Beiträge — kein Netzabruf,
+        // daher darf hier häufiger nachgesehen werden als bei den News selbst
+        params: { stunden: 24, minUsd: 5000000 },
+        intervallMs: 5 * 60 * 1000,
+        spalten: 1,
+        quelle: 'eigene Telegram-Quellen (Whale Alert, Lookonchain, …) · eigener Parser, keine Fremd-API',
     },
     {
         id: 'rsi',
