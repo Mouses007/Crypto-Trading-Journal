@@ -99,7 +99,7 @@ ssh -t "$ZIEL" "
     sudo sh -c \"cd '$NAS_PROJEKT' && '$DOCKER' compose up -d --force-recreate\"
     # Jeder Durchlauf laesst das vorherige Image namenlos zurueck (docker load
     # meldet das als \"renaming the old one to empty string\"), rund 390 MB je
-    # Stueck. `prune` fasst NUR namenlose Images an — der Knopf \"Nicht
+    # Stueck. \`prune\` fasst NUR namenlose Images an — der Knopf \"Nicht
     # verwendete Images entfernen\" in DSM ist deutlich grober und wuerde auch
     # getaggte Images loeschen, die gerade kein Container benutzt.
     sudo '$DOCKER' image prune -f
