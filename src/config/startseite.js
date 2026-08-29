@@ -111,27 +111,31 @@ const JOURNAL_KACHELN = [
 ]
 
 /**
- * Beim ersten Öffnen sichtbar. Kontostand, Fear&Greed, Marktmechanik, offene
- * Trades und Winrate — ein Blick auf „wie steht mein Konto und wie der Markt".
- * Der Rest des Katalogs ist per Zahnrad zuschaltbar.
+ * Beim ersten Öffnen sichtbar: Fear&Greed, Kennzahlen, Performance, offene
+ * Trades, Marktübersicht, Marktmechanik, Quiz, RSI-Heatmap und Gesamtlage
+ * (KI) — ein Blick auf „wie steht mein Konto und wie der Markt", in dieser
+ * Reihenfolge. Der Rest des Katalogs ist per Zahnrad zuschaltbar.
+ *
+ * Stand 29.08.2026: Wunsch-Layout des Nutzers übernommen (vorher kontostand/
+ * kapitalkurve/winrate/heatmap statt markt/quiz/rsi/lage).
  */
 const ZUERST = [
-    'kontostand', 'kapitalkurve', 'kennzahlen', 'winrate',
-    'offeneTrades', 'heatmap', 'performance', 'fng', 'mechanik',
+    'fng', 'kennzahlen', 'performance', 'offeneTrades',
+    'markt', 'mechanik', 'quiz', 'rsi', 'lage',
 ]
 
 /** Journal-Kacheln zuerst, danach der Marktradar-Katalog. */
 const DEFINITIONEN = [...JOURNAL_KACHELN, ...RADAR_KACHELN]
 
 /**
- * Standardanordnung: die fünf Startkacheln vorn, alles Übrige hängt in seiner
+ * Standardanordnung: die neun Startkacheln vorn, alles Übrige hängt in seiner
  * Katalog-Reihenfolge hinten an (`baueKachelListe` sorgt dafür, dass vergessene
  * Ids nie verschwinden).
  */
 export const STANDARD_REIHENFOLGE = [...ZUERST]
 
 /**
- * Beim Erststart ausgeblendet: alles außer den fünf Startkacheln. Sobald der
+ * Beim Erststart ausgeblendet: alles außer den neun Startkacheln. Sobald der
  * Nutzer im Zahnrad etwas umschaltet, gilt nur noch sein localStorage.
  */
 export const STANDARD_VERSTECKT = DEFINITIONEN

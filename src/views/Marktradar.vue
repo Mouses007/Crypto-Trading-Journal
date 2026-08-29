@@ -108,7 +108,9 @@ const oeffneLivetrading = () => oeffneLivetradingFenster()
  * `useKachelRaster`-Instanz, ein Wechsel kostet keinen Abruf.
  */
 const ANSICHT_KEY = 'marktradar_ansicht'
-const ansicht = ref(localStorage.getItem(ANSICHT_KEY) === 'pult' ? 'pult' : 'raster')
+// Stand 29.08.2026: Pult ist die Vorgabe (Wunsch-Layout des Nutzers) — nur ein
+// gespeichertes 'raster' schaltet noch zurück.
+const ansicht = ref(localStorage.getItem(ANSICHT_KEY) === 'raster' ? 'raster' : 'pult')
 
 function waehleAnsicht(wert) {
     ansicht.value = wert
