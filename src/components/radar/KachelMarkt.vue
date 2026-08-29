@@ -163,7 +163,9 @@ function optionBlasen() {
                     name: m.symbol,
                     symbolSize: groesse,
                     roh: m,
-                    itemStyle: { color: farbe(w), borderColor: 'rgba(0,0,0,0.35)', borderWidth: 1 },
+                    // Ohne Perp tut ein Klick nichts — der Cursor soll das
+                    // vorher zeigen, nicht erst der Tooltip-Hinweis
+                    itemStyle: { color: farbe(w), borderColor: 'rgba(0,0,0,0.35)', borderWidth: 1, cursor: m.perp ? 'pointer' : 'default' },
                     label: {
                         // Beschriften, sobald der Text überhaupt hineinpasst;
                         // in grossen Blasen zusätzlich die Prozentzahl
@@ -235,7 +237,9 @@ function optionKacheln() {
                 name: m.symbol,
                 value: Math.max(0.02, gewichte.value[i]),
                 roh: m,
-                itemStyle: { color: farbe(m[fenster.value]) },
+                // Ohne Perp tut ein Klick nichts — der Cursor soll das
+                // vorher zeigen, nicht erst der Tooltip-Hinweis
+                itemStyle: { color: farbe(m[fenster.value]), cursor: m.perp ? 'pointer' : 'default' },
             })),
         }],
     }
