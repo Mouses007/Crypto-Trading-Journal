@@ -18,23 +18,46 @@ const { t } = useI18n()
 
 const anbieterListe = ref([])
 const modellListen = ref({})
+// Ollama führt keinen Katalog in `/api/ai/models` (server/ai-models.js: `modelle: []`,
+// "kommen vom Ollama-Server selbst") — die echte Liste kommt separat aus
+// `/api/ollama/status`, genau wie in Settings.vue (`loadOllamaModels()`).
+const ollamaModels = ref([])
 const aiProvider = ref('ollama')
 const aiModel = ref('')
 const aiKeys = reactive({})
 const geladen = ref(false)
 
 const aktuellerAnbieter = computed(() => anbieterListe.value.find(a => a.id === aiProvider.value) || null)
-const modelle = computed(() => modellListen.value[aiProvider.value] || [])
+/**
+ * Ein gespeichertes Modell, das nicht (mehr) in der Liste steht, würde das
+ * Auswahlfeld sonst leer erscheinen lassen und beim nächsten Speichern still
+ * verschwinden — dieselbe Absicherung wie Settings.vue `getModelsForProvider()`.
+ */
+const modelle = computed(() => {
+    const liste = aiProvider.value === 'ollama' ? ollamaModels.value : (modellListen.value[aiProvider.value] || [])
+    if (aiModel.value && !liste.includes(aiModel.value)) return [aiModel.value, ...liste]
+    return liste
+})
 const schonEingerichtet = computed(() => {
     const wert = aiKeys[aiProvider.value]
     return aiProvider.value === 'ollama' || (!!wert && wert.includes('•'))
 })
+
+async function ladeOllamaModelle() {
+    try {
+        const res = await axios.get('/api/ollama/status')
+        ollamaModels.value = res.data.models || []
+    } catch (e) {
+        ollamaModels.value = []
+    }
+}
 
 onMounted(async () => {
     try {
         const [modelleRes, settingsRes] = await Promise.all([
             axios.get('/api/ai/models'),
             axios.get('/api/ai/settings'),
+            ladeOllamaModelle(),
         ])
         anbieterListe.value = modelleRes.data.anbieter || []
         modellListen.value = modelleRes.data.modelle || {}
@@ -48,18 +71,19 @@ onMounted(async () => {
     }
 })
 
-/** Nur speichern, wenn der Nutzer den Schritt aktiv genutzt hat. */
+/**
+ * Nur speichern, wenn der Nutzer den Schritt aktiv genutzt hat. Ein Fehlschlag
+ * wird NICHT geschluckt — der Elternteil (OnboardingAssistent.vue) fängt ihn
+ * ab und zeigt ihn an, statt den Assistenten trotzdem als erledigt zu
+ * markieren und wegzuleiten.
+ */
 async function uebernehmen() {
     if (!geladen.value) return
-    try {
-        await axios.post('/api/ai/settings', {
-            aiProvider: aiProvider.value,
-            aiModel: aiModel.value,
-            keys: { ...aiKeys },
-        })
-    } catch (e) {
-        // Wird im nächsten Schritt/Settings ohnehin sichtbar, wenn es fehlschlägt.
-    }
+    await axios.post('/api/ai/settings', {
+        aiProvider: aiProvider.value,
+        aiModel: aiModel.value,
+        keys: { ...aiKeys },
+    })
 }
 
 defineExpose({ uebernehmen })

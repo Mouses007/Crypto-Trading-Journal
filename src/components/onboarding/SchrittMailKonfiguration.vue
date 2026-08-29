@@ -63,6 +63,28 @@ async function speichereMail() {
     }
 }
 
+/**
+ * Vom Onboarding-Assistenten beim Verlassen gerufen (Fertig/Später) — anders
+ * als `speichereMail()` (Klick auf den eigenen "Speichern"-Button) wird ein
+ * Fehler hier NICHT geschluckt: der Elternteil fängt ihn ab und zeigt ihn an,
+ * statt stillschweigend weiterzuleiten und die eingegebenen SMTP-Daten zu
+ * verlieren.
+ */
+async function uebernehmen() {
+    await axios.post('/api/mail/settings', mail.value)
+}
+
+/*
+ * `laden` zusätzlich exponiert: Settings.vue hat vor der Extraktion
+ * `ladeMailKonfig()` explizit in seiner eigenen, sequenzierten Mount-Kette
+ * abgewartet (drei andere Stellen dort lesen `mail.mailAktiv`/`mailAn`
+ * reaktiv). Ohne diesen Zugriff hinge die Reihenfolge nur noch daran, dass
+ * die umschliessenden `v-show`-Bereiche die Komponente immer mounten — ändert
+ * sich das je zu `v-if`, würden die drei Lesestellen dauerhaft auf den
+ * Default-Werten einfrieren, ohne dass ein Fehler sichtbar würde.
+ */
+defineExpose({ uebernehmen, laden: ladeMailKonfig })
+
 async function testeMail() {
     mailTestLaeuft.value = true
     mailMeldung.value = ''

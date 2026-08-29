@@ -2375,6 +2375,11 @@ const mail = ref({
     mailUser: '', mailVon: '', mailAn: '', mailPasswort: '', mailPasswortSet: false,
     mailSchriftGroesse: 'gross',
 })
+// Ref auf <SchrittMailKonfiguration>, nur um deren Ladevorgang hier explizit
+// abzuwarten (siehe Kommentar in ladeBenachrichtigungen) — der News-Mailhinweis
+// und die Kanal-Checkbox weiter unten brauchen `mail.mailAktiv`/`mailAn` schon
+// beim ersten Rendern, nicht irgendwann später.
+const mailKonfigRef = ref(null)
 async function ladeBenachrichtigungen() {
     try {
         const { data } = await axios.get('/api/benachrichtigungen/typen')
@@ -2384,9 +2389,12 @@ async function ladeBenachrichtigungen() {
     }
     const roh = currentUser.value?.benachrichtigungen
     kanalWahl.value = roh && typeof roh === 'object' && !Array.isArray(roh) ? { ...roh } : {}
-    // Mail-Zugang lädt sich seit der Extraktion nach SchrittMailKonfiguration.vue
-    // selbst (v-model:mail="mail" hält `mail` trotzdem hier aktuell — gebraucht
-    // für den News-Mailversand-Hinweis und die Kanal-Checkbox weiter unten).
+    // SchrittMailKonfiguration.vue lädt sich seit der Extraktion selbst — hier
+    // trotzdem explizit erneut abwarten, damit `mail.mailAktiv`/`mailAn` beim
+    // ersten Rendern des News-Mailhinweises und der Kanal-Checkbox (unten)
+    // sicher aktuell sind, statt von der Mount-Reihenfolge der `v-show`-Bereiche
+    // abzuhängen.
+    await mailKonfigRef.value?.laden()
 }
 
 // Load imports on mount
@@ -2681,7 +2689,7 @@ onBeforeMount(async () => {
                          nachzutragen, die man beim ersten Mal übersprungen hat. -->
                     <div class="col-12 mt-4">
                         <button type="button" class="btn btn-outline-secondary btn-sm"
-                            @click="router.push('/update-assistent?kontext=manuell')">
+                            @click="router.push({ path: '/update-assistent', query: { kontext: 'manuell', rueckkehr: '/settings' } })">
                             <i class="uil uil-magic me-1"></i>{{ t('onboarding.reopenButton') }}
                         </button>
                     </div>
@@ -5619,7 +5627,7 @@ onBeforeMount(async () => {
                     {{ t('settings.benachrichtigungen.mailEinleitung') }}
                 </p>
 
-                <SchrittMailKonfiguration v-model:mail="mail" />
+                <SchrittMailKonfiguration v-model:mail="mail" ref="mailKonfigRef" />
                 </div>
 
             </div>

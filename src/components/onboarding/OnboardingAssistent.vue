@@ -6,11 +6,22 @@
  * Einstellungen (`kontext: 'manuell'`). Der Kontext steuert nur den
  * Einleitungstext, der Ablauf ist identisch.
  *
- * "Fertig" und "Später" markieren beide die aktuelle Version als gesehen
- * (verhindert, dass der Update-Assistent bei jedem Reload erneut aufploppt)
- * und machen danach einen HARTEN Reload — wie Setup.vue es bereits tut —
- * damit der Router-Cache (`updateAssistantPending`) neu geladen wird statt
- * in eine Redirect-Schleife zu laufen.
+ * "Fertig" und "Später" verhalten sich bewusst GLEICH: beide übernehmen die
+ * bis dahin gemachten Angaben aus allen Schritten und markieren die aktuelle
+ * Version als gesehen. "Später" ist kein Verwerfen — News und Mail speichern
+ * ohnehin schon bei jeder Aktion sofort serverseitig; würde "Später" nur
+ * diese beiden behalten und Standardeinstellungen/KI-Zugang stillschweigend
+ * verwerfen, verlöre ein Nutzer ohne jeden Hinweis genau die Hälfte seiner
+ * Eingaben, je nachdem auf welchem Schritt er den Assistenten verlässt.
+ *
+ * Ein Fehlschlag beim Übernehmen (z.B. eine vom Server abgelehnte KI-Adresse)
+ * bricht den Abschluss ab, statt den Assistenten trotzdem als erledigt zu
+ * markieren und die Eingabe wegzuleiten — der Nutzer bleibt auf der Seite und
+ * sieht, was schiefging.
+ *
+ * Danach folgt ein HARTER Reload — wie Setup.vue es bereits tut — damit der
+ * Router-Cache (`updateAssistantPending`) neu geholt wird statt in eine
+ * Redirect-Schleife zu laufen.
  */
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -30,40 +41,37 @@ const { t } = useI18n()
 const SCHRITTE = 4
 const schritt = ref(1)
 const beendet = ref(false)
+const fehler = ref('')
 
 const standardRef = ref(null)
 const kiRef = ref(null)
-
-async function markiereGesehen() {
-    try {
-        await axios.post('/api/setup/update-assistent/gesehen')
-    } catch (e) {
-        // Nicht blockierend — der manuelle Wiederaufruf bleibt so oder so möglich.
-    }
-}
+const mailRef = ref(null)
 
 function weiter() {
     if (schritt.value < SCHRITTE) schritt.value += 1
-    else fertig()
+    else beenden()
 }
 
 function zurueck() {
     if (schritt.value > 1) schritt.value -= 1
 }
 
-async function fertig() {
+async function beenden() {
     if (beendet.value) return
     beendet.value = true
-    standardRef.value?.uebernehmen()
-    await kiRef.value?.uebernehmen()
-    await markiereGesehen()
-    window.location.href = props.rueckkehrPfad
-}
-
-async function spaeter() {
-    if (beendet.value) return
-    beendet.value = true
-    await markiereGesehen()
+    fehler.value = ''
+    try {
+        standardRef.value?.uebernehmen()
+        await Promise.all([
+            kiRef.value?.uebernehmen(),
+            mailRef.value?.uebernehmen(),
+            axios.post('/api/setup/update-assistent/gesehen'),
+        ])
+    } catch (e) {
+        beendet.value = false
+        fehler.value = e.response?.data?.error || e.message || t('onboarding.saveError')
+        return
+    }
     window.location.href = props.rueckkehrPfad
 }
 </script>
@@ -90,8 +98,10 @@ async function spaeter() {
             <div v-show="schritt === 4" class="onboarding-schritt">
                 <h3>{{ t('onboarding.mail.title') }}</h3>
                 <p class="text-muted">{{ t('onboarding.mail.intro') }}</p>
-                <SchrittMailKonfiguration />
+                <SchrittMailKonfiguration ref="mailRef" />
             </div>
+
+            <p v-if="fehler" class="alert alert-danger py-2 small mb-3">{{ fehler }}</p>
 
             <div class="d-flex gap-2 mt-4">
                 <button v-if="schritt > 1" class="btn btn-outline-secondary" @click="zurueck">
@@ -103,7 +113,7 @@ async function spaeter() {
                 </button>
             </div>
             <p class="mt-3 mb-0 text-center">
-                <button type="button" class="btn btn-link btn-sm text-muted p-0" :disabled="beendet" @click="spaeter">
+                <button type="button" class="btn btn-link btn-sm text-muted p-0" :disabled="beendet" @click="beenden">
                     {{ t('onboarding.later') }}
                 </button>
             </p>

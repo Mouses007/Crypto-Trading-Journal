@@ -268,7 +268,19 @@ export function setupApiRoutes(app) {
 
     app.post('/api/setup/complete', async (req, res) => {
         try {
-            await knex('settings').where('id', 1).update({ setupComplete: 1, updatedAt: knex.fn.now() })
+            /*
+             * `zuletztGeseheneVersion` hier gleich mitsetzen: Setup.vue navigiert
+             * danach selbst explizit zu `/update-assistent?kontext=setup`. Bliebe
+             * die Spalte leer, würde ein abgebrochener Übergang (Tab zu, Reload)
+             * den Router-Guard beim nächsten Laden ohne Query-String auf
+             * `/update-assistent` umleiten — der Assistent zeigt dann fälschlich
+             * die Update-Rahmung ("Neu seit deinem letzten Besuch") samt
+             * Release-Notes-Abruf für eine Installation, die nie ein "letztes
+             * Mal" hatte. Mit der Version schon hier gesetzt bleibt der Weg zum
+             * Assistenten ausschliesslich Setup.vues eigener expliziter Link.
+             */
+            await knex('settings').where('id', 1)
+                .update({ setupComplete: 1, zuletztGeseheneVersion: getLocalVersion(), updatedAt: knex.fn.now() })
             res.json({ ok: true })
         } catch (error) {
             res.status(500).json({ error: 'Internal server error' })

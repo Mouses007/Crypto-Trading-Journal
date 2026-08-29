@@ -12,8 +12,15 @@ import { STANDARD_VORSCHLAEGE } from '../../config/onboarding-defaults.js'
 
 const { t } = useI18n()
 
-// Alle Vorschläge starten angehakt — das ist der beworbene "neue Standard".
-const angehakt = reactive(Object.fromEntries(STANDARD_VORSCHLAEGE.map(v => [v.id, true])))
+/*
+ * Vorbelegung: angehakt nur, wenn der Nutzer hier noch nichts Eigenes
+ * eingestellt hat (`bereitsAngepasst()` false) — sonst würde ein blosses
+ * Durchklicken des Assistenten eine bestehende, selbst gewählte Ansicht ohne
+ * Warnung überschreiben.
+ */
+const angehakt = reactive(Object.fromEntries(
+    STANDARD_VORSCHLAEGE.map(v => [v.id, !v.bereitsAngepasst?.()]),
+))
 
 /** Wendet alle angehakten Vorschläge an. Vom Elternteil beim "Weiter" gerufen. */
 function uebernehmen() {
@@ -35,6 +42,9 @@ defineExpose({ uebernehmen })
                 <span>
                     {{ t(v.labelKey) }}
                     <InfoTipp :schluessel="v.infoKey" />
+                    <small v-if="v.bereitsAngepasst?.()" class="d-block text-muted">
+                        {{ t('onboarding.defaults.alreadyCustomized') }}
+                    </small>
                 </span>
             </label>
         </div>
