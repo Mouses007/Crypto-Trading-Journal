@@ -3062,3 +3062,34 @@ h4 {
 .ctl-select:hover {
     border-color: var(--blue-color);
 }
+
+/* Geteilte Optik für eigene Aufklapp-Auswahlfelder (statt <select>, wenn
+   Zeilen mehr als reinen Text brauchen — Badges, Checkboxen, Suche). Position
+   und z-index bleiben bei jeder Stelle lokal (hängen vom umgebenden Kontext
+   ab, z.B. dem z-index eines Modals darüber); nur Kasten- und Zeilen-Optik
+   sind hier gebündelt, damit sie nicht an mehreren Stellen im Code getrennt
+   nachgepflegt werden. Verwendet u.a. von Settings.vue (`.divWahl`) und
+   ShareCardModal.vue (`.hgWahl`). */
+.floatDropdown {
+    max-height: 18rem;
+    overflow-y: auto;
+    padding: 0.5rem;
+    border-radius: var(--border-radius, 0.5rem);
+    background: var(--black-bg-3, #1e1e2f);
+    border: 1px solid var(--white-38, rgba(255, 255, 255, 0.15));
+    box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.3));
+}
+
+.floatDropdownZeile {
+    padding: 0.25rem 0.4rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--white-87, rgba(255, 255, 255, 0.87));
+    user-select: none;
+}
+
+.floatDropdownZeile:hover,
+.floatDropdownZeile:focus-visible {
+    background: var(--white-38, rgba(255, 255, 255, 0.08));
+}

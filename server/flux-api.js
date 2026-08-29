@@ -432,7 +432,13 @@ export async function setupFluxRoutes(app) {
                 shareCardProvider, geminiImageApiKey, geminiImageModel } = req.body
             const update = {}
 
-            if (shareCardProvider !== undefined) update.shareCardProvider = shareCardProvider
+            // Nur die beiden echten Anbieter durchlassen — ein anderer Wert
+            // liesse `loeseAnbieter()` in ai-uebersicht.js ins Leere laufen
+            // (dessen `feld`/`standard`-Fallback existiert für den Bild-Eintrag
+            // nicht mehr, siehe server/ki-funktionen.js).
+            if (shareCardProvider === 'flux' || shareCardProvider === 'gemini') {
+                update.shareCardProvider = shareCardProvider
+            }
             if (fluxModel !== undefined) update.fluxModel = fluxModel
             if (fluxDisplayName !== undefined) update.fluxDisplayName = fluxDisplayName
             if (fluxAvatar !== undefined) update.fluxAvatar = fluxAvatar

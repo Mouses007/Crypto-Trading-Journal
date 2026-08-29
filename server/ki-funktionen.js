@@ -73,7 +73,15 @@ export const KI_FUNKTIONEN = [
     },
     {
         id: 'bild', titelKey: 'kiUebersicht.fn.bild', bereich: 'bilder',
-        fest: { feldProvider: 'shareCardProvider', feld: 'fluxModel', standard: 'flux-2-pro' },
+        // Anders als bei den übrigen `fest`-Einträgen hängt hier auch das
+        // MODELLFELD vom gewählten Anbieter ab (FLUX vs. Gemini haben je ein
+        // eigenes Einstellungsfeld) — ein festes `feld` zeigte bei Gemini als
+        // Provider weiterhin den FLUX-Modellnamen an.
+        fest: {
+            feldProvider: 'shareCardProvider',
+            feldJeProvider: { flux: 'fluxModel', gemini: 'geminiImageModel' },
+            standardJeProvider: { flux: 'flux-2-pro', gemini: 'gemini-2.5-flash-image' },
+        },
         funktionen: ['bild'],
     },
 ]

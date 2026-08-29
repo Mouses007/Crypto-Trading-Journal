@@ -55,6 +55,20 @@ export function useWaehrungCode() {
 }
 
 /**************************************
+* SHARE-KARTEN
+**************************************/
+
+/**
+ * Vorlagen-Kategorie als Wort statt des rohen `win`/`loss`-Werts.
+ *
+ * Stand vorher wortgleich in ShareCardModal.vue UND Settings.vue — zwei
+ * Kopien, die bei der nächsten Wortlaut-Änderung leicht auseinanderlaufen.
+ */
+export function useVorlagenKategorieLabel(kategorie) {
+    return kategorie === 'win' ? 'Gewinn' : kategorie === 'loss' ? 'Verlust' : kategorie
+}
+
+/**************************************
 * STRING FORMATS
 **************************************/
 export function useCapitalizeFirstLetter(param) {
