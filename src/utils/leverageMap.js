@@ -459,24 +459,3 @@ export function buildLeverageHistory(points, opts) {
     }
 }
 
-/**
- * Nullmodell zum Vergleich: reine Hebelgeometrie um den aktuellen Preis, ohne
- * jede Open-Interest-Attribution. Wenn die echte Karte hiergegen nicht besser
- * abschneidet, trägt die ganze ΔOI-Rechnung nichts bei.
- */
-export function buildGeometryOnlyMap(mid, opts) {
-    const { bucketSize, spanPct = 8, mmr = 0.004, tiers = LEVERAGE_TIERS } = opts
-    const usable = tiers.filter(L => tierPossible(L, mmr))
-    const rows = Math.max(8, Math.ceil((mid * (spanPct / 100) * 2) / bucketSize))
-    const base = Math.round(mid / bucketSize) - (rows >> 1)
-    const map = new LeverageMap({ bucketSize, rows, base, tiers: usable })
-    map.mmr = mmr
-    map.oi = 1
-    map.attributed = 2
-    for (let k = 0; k < usable.length; k++) {
-        deposit(map, map.long[k], k, liqPriceLong(mid, usable[k], mmr), 1)
-        deposit(map, map.short[k], k, liqPriceShort(mid, usable[k], mmr), 1)
-        map.mass[k] = 2
-    }
-    return map
-}

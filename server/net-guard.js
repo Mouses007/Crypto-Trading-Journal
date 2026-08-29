@@ -258,13 +258,3 @@ async function einAbruf(rawUrl, timeout) {
     throw new Error(`Mehr als ${MAX_UMLEITUNGEN} Umleitungen`)
 }
 
-/** Für die Oberfläche: prüfen ohne zu holen. */
-export async function pruefeUndMelde(url) {
-    try {
-        const r = await pruefeOeffentlicheUrl(url)
-        return { ok: true, host: r.host }
-    } catch (e) {
-        logWarn('net-guard', `abgelehnt: ${url} — ${e.message}`)
-        return { ok: false, grund: e.message }
-    }
-}

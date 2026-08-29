@@ -10,6 +10,7 @@ import sharp from 'sharp'
 import { readFile } from 'fs/promises'
 import { fileURLToPath } from 'url'
 import path from 'path'
+import { darfLaufen, sendeZuFrueh } from './drossel.js'
 
 const BFL_API_BASE = 'https://api.bfl.ai/v1'
 
@@ -517,6 +518,13 @@ export async function setupFluxRoutes(app) {
     // --- Generate share card (provider-agnostic) ---
     app.post('/api/flux/generate', async (req, res) => {
         try {
+            // Jeder Aufruf erzeugt ein bezahltes Bild. Der Abstand ist grosszuegig
+            // bemessen, weil eine Erzeugung ohnehin mehrere Sekunden dauert — er
+            // faengt den Doppelklick und den haengenden Ladebalken ab, nicht die
+            // normale Nutzung.
+            const frei = darfLaufen('flux:generate', 15000)
+            if (!frei.ok) return sendeZuFrueh(res, frei.wartenMs)
+
             const knex = getKnex()
             const settings = await knex('settings')
                 .select('fluxApiKey', 'fluxModel', 'fluxDisplayName', 'fluxAvatar', 'fluxUseCustomAvatar',

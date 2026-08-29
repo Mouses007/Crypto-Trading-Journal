@@ -38,11 +38,6 @@ export const LIQ_SPIKE = 2
 // Dominanz: eine Seite trägt mindestens 70 % des liquidierten Volumens.
 export const LIQ_DOMINANZ = 0.7
 
-export const ZUSTAENDE = [
-    'DELEVERAGING', 'LONG_SQUEEZE_RISK', 'SHORT_SQUEEZE_RISK',
-    'LONG_AUFBAU', 'SHORT_AUFBAU', 'NEUTRAL',
-]
-
 /**
  * Bewertet einen Faktorensatz. Fehlende Faktoren (null/undefined bzw.
  * liqVerfuegbar=false) werfen nicht, sondern überspringen die Regeln, die sie

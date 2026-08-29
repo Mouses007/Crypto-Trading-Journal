@@ -6,6 +6,7 @@ import { expandedId } from '../stores/ui.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker, brokers } from '../stores/filters.js'
 import { refreshAccountBalance } from '../stores/accountBalance.js'
+import { istGewinn } from '../../shared/gewinn.js'
 import i18n from '../i18n'
 
 let globalPollingInterval = null
@@ -411,8 +412,8 @@ async function createTradeFromClosedPosition(histPos, incoming, skipMetadata = f
         const cp = parseFloat(histPos.closedPrice || histPos.closePrice || histPos.closeAvgPrice || 0)
         side = (cp >= op) ? 'B' : 'SS'
     }
-    const isGrossWin = grossPL > 0
-    const isNetWin = netPL > 0
+    const isGrossWin = istGewinn(grossPL)
+    const isNetWin = istGewinn(netPL)
     const quantity = Math.abs(parseFloat(histPos.maxQty || histPos.closeTotalPos || histPos.openTotalPos || histPos.totalVolume || histPos.sizeLong || histPos.sizeShort || histPos.netSize || 1))
     const entryTime = dayjs(openTime).utc().unix()
     const exitTime = dayjs(closeTime).utc().unix()

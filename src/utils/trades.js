@@ -3,6 +3,7 @@ import { selectedRange, selectedDateRange, selectedPositions, selectedAccounts, 
 import { filteredTrades, filteredTradesTrades, pAndL, blotter, totals, totalsByDate, groups, profitAnalysis, timeFrame, satisfactionArray, satisfactionTradeArray, tags, filteredTradesDaily, excursions, availableTags, imports } from "../stores/trades.js"
 import { useDateTimeFormat } from "./formatters.js";
 import { splitFunding } from "./funding.js";
+import { mfeR } from "./mfe-kern.js";
 import { neueSummen, summiereTrade, leiteKennzahlenAb } from "./totals-kern.js";
 /* useRefreshTrades moved to mountOrchestration.js */
 import { useCreateBlotter, useCreatePnL } from "./addTrades.js"
@@ -883,34 +884,46 @@ export async function useCalculateProfitAnalysis(param) {
                         let trade = tradeFilter.trades.find(x => x.id == element.tradeId)
                         if (trade != undefined) {
                             //console.log(" -> Trade " + JSON.stringify(trade))
-                            let tradeEntryPrice = trade.entryPrice
-                            //console.log(" Entry price " + tradeEntryPrice + " | MFE Price " + element.mfePrice)
-                            let entryMfeDiff
-                            trade.strategy == "long" ? entryMfeDiff = (element.mfePrice - tradeEntryPrice) : entryMfeDiff = (tradeEntryPrice - element.mfePrice)
                             /*
-                             * Zähler und Nenner MÜSSEN dieselbe Einheit haben.
-                             * `grossAvLossPerShare` stammt aus `grossSharePL =
-                             * grossProceeds / buyQuantity`, ist also ein Wert
-                             * JE STÜCK — und `entryMfeDiff` ist eine
-                             * Kursdifferenz, ebenfalls je Stück. Damit geht die
-                             * Division auf und R ist mengenunabhängig.
+                             * Zähler und Nenner MÜSSEN dieselbe Einheit haben —
+                             * und beide sind ein Betrag JE TRADE, nicht je Stück.
                              *
-                             * Hier stand vorher `entryMfeDiff * qty`, mit dem
-                             * Kommentar, das sei für Krypto nötig, weil die
-                             * Menge selten 1 ist. Das war der Fehler: ein
-                             * Dollarbetrag geteilt durch einen Stückwert. R
-                             * wuchs dadurch proportional zur Positionsgrösse —
-                             * derselbe Trade mit zehnfacher Menge zeigte das
-                             * zehnfache R. Beispiel: Verlustbasis 2 USD/Stück,
-                             * MFE 3 USD/Stück, Menge 10 ergab 15R statt 1,5R.
-                             * Auf dieser Zahl beruhen die Take-Profit-
-                             * Empfehlungen im Journal.
+                             * `grossAvLossPerShare` heisst zwar "PerShare", ist es
+                             * aber seit dem Wegfall des Aktien-Importpfades nicht
+                             * mehr: alle lebenden Zuweisungen setzen
+                             * `grossSharePL = grossProceeds` OHNE Division
+                             * (quickImport.js, addTrades.js beim CSV-Import,
+                             * journal-bridge.js). Die einzige teilende Stelle sitzt
+                             * in `createTrades()` — einer Funktion, die nirgends
+                             * aufgerufen wird. Das Dashboard beschriftet dieselbe
+                             * Zahl korrekt als "avgLossPerTrade" (Dashboard.vue).
+                             *
+                             * Ohne die Multiplikation mit der Menge wurde ein
+                             * Stückwert durch einen Tradebetrag geteilt: R war um
+                             * den Faktor 1/Menge zu gross. Bei 0,05 BTC ergab das
+                             * den zwanzigfachen Wert, womit jedes R über der
+                             * obersten Zielstufe lag, `winRateNet` auf jeder Stufe
+                             * 1 wurde und die Take-Profit-Empfehlung konstant
+                             * 20,00 anzeigte — den oberen Rand der Stufenliste,
+                             * nicht ein gemessenes Optimum.
+                             *
+                             * Die Rechnung steht in `mfe-kern.js`, damit sie ein
+                             * Selbsttest erreicht. Sie hing vorher zwischen Stores
+                             * und Axios-Aufrufen und war von aussen unprüfbar.
+                             *
+                             * `null` heisst „nicht messbar" und wird VERWORFEN,
+                             * nicht als 0 eingerechnet. Der wichtigste Fall ist
+                             * `mfePrice = 0` (Spaltenvorgabe, also nie gemessen):
+                             * bei einem Short wurde daraus `entryPrice − 0`, der
+                             * volle Positionswert als Gewinnpotenzial. An den
+                             * echten Daten waren das 13 von 26 Einträgen mit
+                             * R-Werten zwischen 25 und 57 — sie allein liessen in
+                             * der Zielsuche die oberste Stufe gewinnen.
                              */
-                            let grossMfeR = profitAnalysis.grossAvLossPerShare ? (entryMfeDiff / profitAnalysis.grossAvLossPerShare) : 0
-                            //console.log("  --> Strategy "+trade.strategy+", entry price : "+tradeEntryPrice+", mfe price "+element.mfePrice+", diff "+entryMfeDiff+" and gross mfe R "+grossMfeR)
-                            grossMfeRArray.push(grossMfeR)
-                            let netMfeR = profitAnalysis.netAvLossPerShare ? (entryMfeDiff / profitAnalysis.netAvLossPerShare) : 0
-                            netMfeRArray.push(netMfeR)
+                            const gR = mfeR(trade, element.mfePrice, profitAnalysis.grossAvLossPerShare)
+                            if (gR !== null) grossMfeRArray.push(gR)
+                            const nR = mfeR(trade, element.mfePrice, profitAnalysis.netAvLossPerShare)
+                            if (nR !== null) netMfeRArray.push(nR)
                         }
                     }
                 }

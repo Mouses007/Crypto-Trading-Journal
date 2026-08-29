@@ -1,7 +1,30 @@
 /**
- * ai-agent-tools.js — Read-only tool implementations for the KI-Agent.
- * Each tool queries the DB via Knex and returns structured data.
- * No write operations — agent has read-only access.
+ * ai-agent-tools.js — Werkzeuge des KI-Agenten.
+ *
+ * Die Werkzeuge IN DIESER DATEI lesen nur: sie fragen die Datenbank ueber Knex
+ * ab und geben strukturierte Daten zurueck.
+ *
+ * Der Dateikopf behauptete bis zum Audit vom 28.08.2026 "no write operations"
+ * fuer das GANZE Toolset — das stimmt nicht: `AGENT_TOOLS` spreizt
+ * `STRATEGY_TOOLS` mit hinein, und zwei davon schreiben.
+ *
+ *   `run_backtest`          legt eine Zeile in `strategy_backtests` an
+ *   `propose_param_change`  legt einen Vorschlag in `strategy_suggestions` an
+ *
+ * Beides ist Absicht und bewusst begrenzt: ein Vorschlag entsteht mit
+ * `status='pending'` und wird erst durch einen Menschen wirksam, und die
+ * Freigabekette fuer scharfen Betrieb liegt vollstaendig ausserhalb des
+ * Modells (`strategy-agents.js`: "die Agenten duerfen nur bremsen"). Falsch
+ * war nur der Kommentar — und ein Kommentar, der mehr Sicherheit behauptet als
+ * da ist, ist gefaehrlicher als gar keiner.
+ *
+ * ZWEITE REGEL, die nirgends stand und die ganze Sicherheitseigenschaft traegt:
+ * **kein Agent-Tool darf je Fremdtext zurueckgeben.** Keines der Werkzeuge
+ * liefert News, Feeds oder Webinhalte; deshalb hat eine Prompt-Injektion aus
+ * einem Beitrag keinen Codepfad, sondern nur einen Entscheidungspfad ueber den
+ * gelesenen Bericht. Wer ein `query_news`-Tool ergaenzt, hebt das auf —
+ * besonders bei Ollama, wo Tool-Aufrufe per Regex aus dem Antworttext geparst
+ * werden (`ai-agent.js`). Siehe `server/fremdtext.js`.
  */
 
 import { logWarn } from './logger.js'

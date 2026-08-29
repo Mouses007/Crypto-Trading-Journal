@@ -16,6 +16,7 @@
 import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { isLocalRequest } from './update-api.js'
+import { logWarn } from './logger.js'
 
 /**
  * Sitzungs-Token.
@@ -40,9 +41,88 @@ import { isLocalRequest } from './update-api.js'
  * dem Maschinennamen abgeleiteter Ersatz wäre erratbar und damit schlechter als
  * eine lästige Neuanmeldung.
  */
-const SESSION_TOKEN = process.env.CTJ_SECRET
-    ? crypto.createHmac('sha256', String(process.env.CTJ_SECRET)).update('tn_session_v1').digest('hex')
-    : crypto.randomBytes(32).toString('hex')
+/**
+ * Generation des Sitzungs-Tokens.
+ *
+ * Bis zum Audit vom 28.08.2026 war das Token allein aus `CTJ_SECRET`
+ * abgeleitet und damit unveraenderlich: Abmelden loeschte nur das Cookie beim
+ * Client, und ein Passwortwechsel liess bestehende Sitzungen ausdruecklich
+ * weiterlaufen. Wer sein Passwort wechselt, tut das aber meistens, WEIL er
+ * einen Kompromiss vermutet — genau dann muss ein abgegriffenes Cookie
+ * sterben.
+ *
+ * Die Generation liegt in den Einstellungen und geht in die Ableitung ein.
+ * Sie erhoehen entwertet jedes ausgestellte Cookie auf einen Schlag, ohne dass
+ * jemand `CTJ_SECRET` anfassen muss. Der uebrige Preis bleibt bewusst bestehen
+ * (siehe Kopf): das Token ueberlebt einen Neustart, damit ein Container-Update
+ * nicht alle Geraete abmeldet.
+ */
+let sessionGeneration = 0
+
+function leiteTokenAb(generation) {
+    /*
+     * Die Generation geht in BEIDE Faelle ein.
+     *
+     * Erster Entwurf gab ohne `CTJ_SECRET` einfach `zufallsToken` zurueck —
+     * dann waere der Passwortwechsel dort wirkungslos gewesen, und zwar
+     * lautlos. Der Selbsttest hat genau das gefangen. Ohne Secret ist die
+     * Basis der Zufallswert des Prozesses statt des Hauptgeheimnisses; die
+     * Rotation funktioniert in beiden Faellen gleich.
+     */
+    const basis = process.env.CTJ_SECRET ? String(process.env.CTJ_SECRET) : zufallsToken
+    /*
+     * Generation 0 ergibt GENAU das alte Token.
+     *
+     * Ohne diese Ausnahme haette schon das Einspielen dieser Aenderung jedes
+     * Geraet abgemeldet — beim NAS also Desktop, Handy und Tablet gleichzeitig,
+     * und zwar ohne dass irgendetwas passiert waere. Der Dateikopf nennt genau
+     * das als unerwuenscht: "Ein Update ist kein Sicherheitsereignis, das
+     * rechtfertigt das nicht." Entwertet wird erst, wenn jemand sein Passwort
+     * wechselt — dann ab Generation 1.
+     */
+    const zweck = generation > 0 ? `tn_session_v1:${generation}` : 'tn_session_v1'
+    return crypto.createHmac('sha256', basis).update(zweck).digest('hex')
+}
+
+/*
+ * Ohne `CTJ_SECRET` bleibt es beim alten Verhalten: zufaellig je Start. Der
+ * Wert wird EINMAL gewuerfelt, sonst wechselte das Token bei jedem Aufruf und
+ * niemand koennte angemeldet bleiben.
+ */
+const zufallsToken = crypto.randomBytes(32).toString('hex')
+let SESSION_TOKEN = leiteTokenAb(sessionGeneration)
+
+/**
+ * Alle bestehenden Sitzungen entwerten.
+ *
+ * @returns {Promise<void>}
+ */
+export async function entwerteAlleSitzungen() {
+    /*
+     * ZUERST rotieren, dann speichern — nicht umgekehrt.
+     *
+     * Im ersten Entwurf stand `getKnex()` vor der Erhoehung. Ohne erreichbare
+     * Datenbank warf der Aufruf, die Generation blieb stehen, und die
+     * Entwertung fiel lautlos aus: genau in dem Moment, in dem etwas nicht
+     * stimmt, waere das abgegriffene Cookie am Leben geblieben. Das Speichern
+     * darf scheitern; das Entwerten nicht.
+     */
+    sessionGeneration = Number(sessionGeneration || 0) + 1
+    SESSION_TOKEN = leiteTokenAb(sessionGeneration)
+    try {
+        const knex = getKnex()
+        await knex('settings').where('id', 1).update({
+            sessionGeneration,
+            updatedAt: knex.fn.now(),
+        })
+    } catch (e) {
+        // Nicht persistiert: nach einem Neustart gilt wieder die alte
+        // Generation. Das ist der kleinere Schaden — jetzt sofort ist alles
+        // entwertet, und der Passwortwechsel selbst ist ohne Datenbank
+        // ohnehin nicht durchgekommen.
+        logWarn('auth', 'Sitzungs-Generation konnte nicht gespeichert werden', e)
+    }
+}
 const COOKIE_NAME = 'tn_session'
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 // 30 Tage in Sekunden
 
@@ -85,10 +165,19 @@ const PUBLIC_API_PATHS = new Set(['/api/login', '/api/logout', '/api/auth/status
 export async function loadAuthConfig() {
     try {
         const knex = getKnex()
-        const row = await knex('settings').select('authEnabled', 'authPasswordHash').where('id', 1).first()
+        const row = await knex('settings').select('authEnabled', 'authPasswordHash', 'sessionGeneration').where('id', 1).first()
         authConfig = {
             enabled: !!(row && row.authEnabled) && !!(row && row.authPasswordHash),
             passwordHash: (row && row.authPasswordHash) || ''
+        }
+        /*
+         * Die Generation kommt aus der Datenbank, nicht aus dem Prozess: ein
+         * Neustart darf die Entwertung nicht zuruecknehmen.
+         */
+        const gen = Number(row?.sessionGeneration) || 0
+        if (gen !== sessionGeneration) {
+            sessionGeneration = gen
+            SESSION_TOKEN = leiteTokenAb(sessionGeneration)
         }
     } catch (e) {
         authConfig = { enabled: false, passwordHash: '' }
@@ -421,9 +510,19 @@ export function setupAuthRoutes(app) {
             // Erst-Einrichtung: wer das erste Passwort setzt, hat sich damit
             // als Eigentümer ausgewiesen — Cookie gleich mitgeben, sonst müsste
             // er sich direkt danach mit demselben Passwort noch einmal anmelden.
-            if (warErstEinrichtung) res.setHeader('Set-Cookie', getSessionCookieString(req))
-            // Aktuelle Session bleibt gültig (Token unverändert)
-            res.json({ ok: true, authEnabled: true })
+            /*
+             * Passwortwechsel entwertet ALLE bestehenden Sitzungen — wer sein
+             * Passwort aendert, vermutet meistens einen Kompromiss. Danach ein
+             * frisches Cookie fuer den Aufrufer, sonst meldete sich gerade der
+             * ab, der die Aenderung vorgenommen hat.
+             *
+             * Bei der Erst-Einrichtung gibt es noch keine fremde Sitzung; das
+             * Cookie kommt trotzdem mit, damit niemand sich direkt danach mit
+             * demselben Passwort noch einmal anmelden muss.
+             */
+            if (!warErstEinrichtung) await entwerteAlleSitzungen()
+            res.setHeader('Set-Cookie', getSessionCookieString(req))
+            res.json({ ok: true, authEnabled: true, sitzungenEntwertet: !warErstEinrichtung })
         } catch (e) {
             res.status(500).json({ error: e.message || 'Fehler beim Setzen des Passworts.' })
         }

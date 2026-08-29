@@ -34,6 +34,7 @@ import { setupStrategyBuilderRoutes } from './server/strategy-builder.js'
 import { setupRuleBuilderRoutes } from './server/rule-builder.js'
 import { startStrategyEngine, stopStrategyEngine } from './server/strategy-engine.js'
 import { setupRanglisteRoutes, startRanglisteTakt, stopRanglisteTakt } from './server/rangliste-api.js'
+import { logError } from './server/logger.js'
 import { sessionCookieMiddleware, apiAuthMiddleware, getSessionCookieString, setupAuthRoutes, loadAuthConfig, isAuthEnabled, maybeResetAuthFromEnv, istLoopbackHost, setzeBindungsModus, hostGuardMiddleware, hatGueltigeSession } from './server/auth.js'
 
 const app = express();
@@ -301,23 +302,60 @@ const startIndex = async () => {
     // Beim Beenden die angefangene Aufzeichnungs-Stunde noch wegschreiben,
     // sonst geht sie beim Container-Neustart verloren.
     let shuttingDown = false
-    for (const signal of ['SIGTERM', 'SIGINT']) {
-        process.on(signal, async () => {
-            if (shuttingDown) return
-            shuttingDown = true
-            console.log(`\n${signal} — fahre herunter…`)
-            try { await stopLiveRecorder() } catch (e) { /* trotzdem beenden */ }
-            // Laufende Strategie-Durchgänge auslaufen lassen, damit keine
-            // halb ausgeführte Order zurückbleibt.
-            try { await stopStrategyEngine() } catch (e) { /* trotzdem beenden */ }
-            // Ein laufender Rangliste-Lauf braucht kein Auslaufen: jeder Coin
-            // ist einzeln gesichert, der nächste Start nimmt ihn wieder auf.
-            try { stopRanglisteTakt() } catch (e) { /* trotzdem beenden */ }
-            try { stopMarktradar() } catch (e) { /* trotzdem beenden */ }
-            try { stopKalender(); stopNews(); stopBenachrichtigungen(); stopCryptoquant() } catch (e) { /* trotzdem beenden */ }
-            process.exit(0)
-        })
+
+    async function fahreHerunter(grund, code = 0) {
+        if (shuttingDown) return
+        shuttingDown = true
+        console.log(`\n${grund} — fahre herunter…`)
+        try { await stopLiveRecorder() } catch (e) { /* trotzdem beenden */ }
+        // Laufende Strategie-Durchgänge auslaufen lassen, damit keine
+        // halb ausgeführte Order zurückbleibt.
+        try { await stopStrategyEngine() } catch (e) { /* trotzdem beenden */ }
+        // Ein laufender Rangliste-Lauf braucht kein Auslaufen: jeder Coin
+        // ist einzeln gesichert, der nächste Start nimmt ihn wieder auf.
+        try { stopRanglisteTakt() } catch (e) { /* trotzdem beenden */ }
+        try { stopMarktradar() } catch (e) { /* trotzdem beenden */ }
+        try { stopKalender(); stopNews(); stopBenachrichtigungen(); stopCryptoquant() } catch (e) { /* trotzdem beenden */ }
+        process.exit(code)
     }
+
+    for (const signal of ['SIGTERM', 'SIGINT']) {
+        process.on(signal, () => fahreHerunter(signal, 0))
+    }
+
+    /*
+     * Unbehandelte Fehler: laut protokollieren statt still sterben.
+     *
+     * Bis zum Audit vom 28.08.2026 gab es im ganzen Projekt keinen dieser
+     * beiden Auffänger. Eine einzige abgelehnte Zusage in einem
+     * WebSocket-Handler beendete damit den Prozess — und mit ihm den
+     * 30-Minuten-Liquidationsring, sämtliche Caches, alle laufenden
+     * SSE-Ströme und bis zu 30 s ungeschriebene Aufzeichnungspuffer. Der
+     * Container startete neu, aber stumm: im Log stand nichts, was den
+     * Zusammenhang erklärt hätte.
+     *
+     * Die beiden Fälle werden BEWUSST verschieden behandelt:
+     *
+     *   unhandledRejection — weiterlaufen. Das ist der häufige Fall (ein
+     *     Abruf einer Drittanbieter-Schnittstelle ohne `.catch`), und der
+     *     Prozess ist dabei in aller Regel in Ordnung. Ihn deswegen zu
+     *     beenden richtet mehr Schaden an als der Fehler selbst. Ab Node 15
+     *     wäre der Standard sonst genau das.
+     *
+     *   uncaughtException — geordnet beenden. Hier ist der Zustand des
+     *     Prozesses unbekannt, weiterzulaufen wäre geraten. Aber der Weg
+     *     hinaus ist derselbe wie bei SIGTERM, damit die angefangene
+     *     Aufzeichnungsstunde nicht verloren geht.
+     */
+    process.on('unhandledRejection', (grund) => {
+        const fehler = grund instanceof Error ? grund : new Error(String(grund))
+        logError('prozess', 'Unbehandelte Rejection — der Dienst läuft weiter', fehler.stack || fehler.message)
+    })
+
+    process.on('uncaughtException', (fehler) => {
+        logError('prozess', 'Unbehandelte Ausnahme — fahre geordnet herunter', fehler?.stack || String(fehler))
+        fahreHerunter('uncaughtException', 1)
+    })
 
     console.log("\n Crypto Trading Journal ready!")
 }

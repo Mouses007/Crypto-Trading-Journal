@@ -33,6 +33,25 @@
 
 :root {
     --grey-color: #6c757d;
+    /*
+     * Textvariante von `--grey-color`.
+     *
+     * #6c757d ergibt auf #121212 nur 3,99:1 und verfehlt AA bei 12px. Die
+     * Farbe selbst kann nicht einfach aufgehellt werden — sie dient an fuenf
+     * Stellen als HINTERGRUND, wo ein hellerer Ton den Text darauf
+     * verschlechtern wuerde. Deshalb eine eigene Variable fuer die sechs
+     * Textstellen: #8a9199 ergibt 5,88:1.
+     */
+    --grey-text: #8a9199;
+
+/*
+ * MERKREGEL fuer Raster (Audit 28.08.2026, UX-13):
+ * In `grid-template-columns` gehoert `minmax(0, 1fr)` statt `1fr`, sobald in
+ * der Spalte Text, eine Tabelle oder ein Diagramm steht. `1fr` bedeutet
+ * `minmax(auto, 1fr)`, und `auto` ist bei langem Inhalt die INHALTSBREITE —
+ * die Spalte waechst dann ueber das Raster hinaus und schiebt die Seite
+ * seitlich weg. Sichtbar wird das erst auf schmalen Schirmen.
+ */
     --blue-active-color: #2ea2d9;
     --blue-color: #01B4FF;
     --ghost-grey: #f2f2f4;
@@ -49,7 +68,18 @@
     /*High-emphasis (text)*/
     --white-60: hsla(0, 0%, 100%, 0.6);
     /*Medium-emphasis (text)*/
-    --white-38: hsla(0, 0%, 100%, 0.38);
+    /*
+     * 0.55 statt der namensgebenden 0.38.
+     *
+     * Auf dem Kachelgrund #121212 ergab 0.38 einen Kontrast von 3,57:1 — bei
+     * der Grundschriftgroesse von 12px verfehlt das WCAG AA (4,5:1), und die
+     * Grosstext-Ausnahme greift erst ab 18,66px fett. 46 der 52 Verwendungen
+     * sind `color:`, das hier ist also eine Textfarbe. 0.55 ergibt 6,18:1.
+     *
+     * Der Name bleibt, weil er an ueber fuenfzig Stellen steht; er bezeichnet
+     * den Slot "Text mit geringer Betonung", nicht mehr die Deckkraft.
+     */
+    --white-38: hsla(0, 0%, 100%, 0.55);
     /*Low-emphasis (text)*/
     /*for quill */
     --white-70: hsla(0, 0%, 100%, 0.7);
@@ -61,6 +91,32 @@
     --font-size-secondary: x-small;
 
     --black-bg-12: hsl(0, 0%, 12%);
+
+    /*
+     * Nachgetragene Variablen (Audit 28.08.2026, UX-16).
+     *
+     * Diese Namen wurden an rund dreissig Stellen benutzt, aber nirgends
+     * definiert — und ohne Fallback faellt die ganze Deklaration ersatzlos
+     * weg. Sichtbar wurde das nicht als Fehler, sondern als fehlende
+     * Trennlinie oder als Text, der still die Farbe des Elternelements erbte.
+     * Das ist die unangenehmere Sorte Fehler: nichts ist kaputt, es sieht nur
+     * anders aus als gedacht.
+     *
+     * Werte nach der bestehenden Konvention: `--white-NN` ist Weiss mit NN %
+     * Deckkraft. NICHT nachgetragen sind `--white-30` und `--white-40`: sie
+     * wurden fuer TEXT benutzt und ergaeben auf dem Kachelgrund 2,8:1 bzw.
+     * 3,9:1 — beides unter WCAG AA. Die beiden Stellen nehmen jetzt
+     * `--white-38`, den dokumentierten Slot fuer schwach betonten Text.
+     */
+    --white-10: hsla(0, 0%, 100%, 0.10);
+    --white-20: hsla(0, 0%, 100%, 0.20);
+    --white-50: hsla(0, 0%, 100%, 0.50);
+    --white-75: hsla(0, 0%, 100%, 0.75);
+    --white-80: hsla(0, 0%, 100%, 0.80);
+    --black-bg-2: hsl(0, 0%, 2%);
+    /* Flaechen und Rahmen, die sich an den Kacheln orientieren. */
+    --bg-card: var(--black-bg-7);
+    --border-color: var(--white-10);
     --border-radius: 12px;
     --border-subtle: 1px solid var(--white-18);
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -76,6 +132,23 @@ body {
     background-color: var(--black-bg-0);
     color: var(--white-87);
     font-size: 110%;
+}
+
+/*
+ * Nur fuer Screenreader. Bootstrap bringt die Klasse mit, aber Bootstrap kommt
+ * vom CDN — ohne Netz stuende der Text sonst sichtbar mitten in der Kachel.
+ * Was die Bedienbarkeit trägt, gehoert nicht an eine fremde Datei.
+ */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
 }
 
 .text-muted {
@@ -315,7 +388,7 @@ input:checked+.slider:before {
 }
 
 .noDataTab {
-    color: var(--grey-color) !important;
+    color: var(--grey-text) !important;
 }
 
 .parentIcon {
@@ -925,7 +998,8 @@ img.logo {
 
 .quill-incoming .ql-editor.ql-blank::before,
 .quill-incoming.ql-container .ql-editor.ql-blank::before {
-    color: var(--white-30);
+    /* War undefiniert; 0.30 ergaebe 2,8:1 auf dem Kachelgrund. */
+    color: var(--white-38);
 }
 
 .navbar {
@@ -1320,12 +1394,12 @@ ol li[data-list="bullet"] {
 }
 
 .daily-stats-bar .stats-label {
-    color: var(--grey-color);
+    color: var(--grey-text);
     margin-right: 0.3rem;
 }
 
 .daily-stats-bar .stats-divider {
-    color: var(--grey-color);
+    color: var(--grey-text);
     opacity: 0.3;
 }
 
@@ -2160,7 +2234,20 @@ h4 {
         -webkit-overflow-scrolling: touch;
     }
 
-    .table:not(.stats-table) {
+    /*
+     * 600 px Mindestbreite nur DORT, wo auch gescrollt werden kann.
+     *
+     * Die Regel galt bis zum Audit vom 28.08.2026 fuer jede Tabelle. Von den
+     * rund zwei Dutzend Tabellen der App steht aber nur ein Teil in einem
+     * `.table-responsive` oder `.tab-content`; bei allen anderen zwang die
+     * Regel den Inhalt auf 600 px, ohne einen Weg, ihn zu erreichen — auf
+     * einem 375-px-Schirm schob das die ganze Seite seitlich weg.
+     *
+     * Ohne Container schrumpft die Tabelle jetzt und bricht um. Das ist eng,
+     * aber lesbar; eine Seite, die seitlich wegrutscht, ist es nicht.
+     */
+    .table-responsive .table:not(.stats-table),
+    .tab-content .table:not(.stats-table) {
         min-width: 600px;
     }
 
@@ -2308,7 +2395,11 @@ h4 {
 
     #tradesModal .modal-content {
         border-radius: 0;
-        min-height: 100vh;
+        /* dvh statt vh: auf Geraeten mit einfahrender Adressleiste misst vh
+           die groessere Hoehe, und das Modal ragt unten hinaus. Das Projekt
+           begruendet das an mehreren Stellen (PultRahmen.vue) — hier war es
+           der Ausreisser. */
+        min-height: 100dvh;
     }
 
     #evalPopupModal .modal-dialog {
@@ -2807,7 +2898,7 @@ h4 {
     display: flex;
     flex-direction: column;
     width: min(1100px, 100%);
-    max-height: 92vh;
+    max-height: 92dvh;
     background: var(--black-bg-3);
     border: 1px solid var(--white-18);
     border-radius: var(--border-radius);
@@ -2900,7 +2991,7 @@ h4 {
     }
 
     .radarOverlayBox {
-        max-height: 96vh;
+        max-height: 96dvh;
     }
 
     /* Kopfzeilen-Knöpfe brauchen am Finger mehr Fläche als an der Maus */

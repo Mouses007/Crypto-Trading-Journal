@@ -138,34 +138,6 @@ export const bitget = {
 
 export const BOERSEN = { bitunix, bitget }
 
-/**
- * Ticker aller Börsen, jede einzeln aufgefangen.
- *
- * Eine Börse, die klemmt, darf die anderen nicht mitnehmen — dieselbe Linie
- * wie bei den Quellen des Hype-Radars. Was fehlt, steht in `stand` und ist
- * später nachvollziehbar, statt still zu einer kürzeren Liste zu führen.
- *
- * @returns {Promise<{jeBoerse: Object<string, Map>, stand: object}>}
- */
-export async function holeAlleTicker(namen = Object.keys(BOERSEN)) {
-    const ergebnisse = await Promise.allSettled(
-        namen.map((n) => BOERSEN[n].holeTicker()))
-
-    const jeBoerse = {}
-    const stand = {}
-    ergebnisse.forEach((e, i) => {
-        const name = namen[i]
-        if (e.status === 'fulfilled') {
-            jeBoerse[name] = e.value
-            stand[name] = { ok: true, anzahl: e.value.size }
-        } else {
-            jeBoerse[name] = new Map()
-            stand[name] = { ok: false, fehler: String(e.reason?.message || e.reason).slice(0, 200) }
-            logWarn('coin-radar', `Börse ${name} ausgefallen: ${stand[name].fehler}`)
-        }
-    })
-    return { jeBoerse, stand }
-}
 
 /**
  * Ausführungsgüte vieler Symbole auf allen Börsen — gebremst.

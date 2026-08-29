@@ -205,8 +205,15 @@
                         @click="offen = offen === z.id ? null : z.id">
                         <div class="crKarteKopf">
                             <span v-if="z.status === 'bewertet'" class="crRang">{{ z.rang }}</span>
+                            <!-- role/tabindex/keydown: ein klickbares <i> ist per Tastatur
+                                 nicht erreichbar und fuer Screenreader kein Bedienelement. -->
                             <i class="uil crStern" :class="istFav(z) ? 'uil-favorite aktiv' : 'uil-star'"
-                                @click.stop="favUmschalten(z)"></i>
+                                role="button" tabindex="0"
+                                :aria-pressed="istFav(z) ? 'true' : 'false'"
+                                :title="istFav(z) ? t('coinradar.favEntfernen') : t('coinradar.favHinzu')"
+                                @click.stop="favUmschalten(z)"
+                                @keydown.enter.stop.prevent="favUmschalten(z)"
+                                @keydown.space.stop.prevent="favUmschalten(z)"></i>
                             <strong>{{ kurz(z.symbol) }}</strong>
                             <span v-if="bestaetigt(z)" class="crBestaetigt" :title="t('coinradar.bestaetigtHilfe')">
                                 <i class="uil uil-check-circle"></i>
@@ -343,8 +350,12 @@
                                     <td></td>
                                     <td>
                                         <i class="uil crStern" :class="istFav(z) ? 'uil-favorite aktiv' : 'uil-star'"
+                                            role="button" tabindex="0"
+                                            :aria-pressed="istFav(z) ? 'true' : 'false'"
                                             :title="istFav(z) ? t('coinradar.favEntfernen') : t('coinradar.favHinzu')"
-                                            @click.stop="favUmschalten(z)"></i>
+                                            @click.stop="favUmschalten(z)"
+                                            @keydown.enter.stop.prevent="favUmschalten(z)"
+                                            @keydown.space.stop.prevent="favUmschalten(z)"></i>
                                         <strong>{{ kurz(z.symbol) }}</strong>
                                     </td>
                                     <td><span class="badge bg-secondary crBadge">{{ grundText(z.huerdeGrund) }}</span></td>
@@ -356,8 +367,12 @@
                                     <td class="text-end crRangZelle">{{ z.rang || '—' }}</td>
                                     <td>
                                         <i class="uil crStern" :class="istFav(z) ? 'uil-favorite aktiv' : 'uil-star'"
+                                            role="button" tabindex="0"
+                                            :aria-pressed="istFav(z) ? 'true' : 'false'"
                                             :title="istFav(z) ? t('coinradar.favEntfernen') : t('coinradar.favHinzu')"
-                                            @click.stop="favUmschalten(z)"></i>
+                                            @click.stop="favUmschalten(z)"
+                                            @keydown.enter.stop.prevent="favUmschalten(z)"
+                                            @keydown.space.stop.prevent="favUmschalten(z)"></i>
                                         <strong>{{ kurz(z.symbol) }}</strong>
                                         <span v-if="bestaetigt(z)" class="crBestaetigt"
                                             :title="t('coinradar.bestaetigtHilfe')"><i class="uil uil-check-circle"></i></span>
@@ -597,18 +612,21 @@
                                 class="crCoinInfoMehr" @click="coinInfoVoll = !coinInfoVoll">
                                 {{ coinInfoVoll ? t('coinradar.coinInfoWeniger') : t('coinradar.coinInfoMehr') }}
                             </button>
+                            <!-- homepage/whitepaper/github/explorer kommen roh von CoinGecko.
+                                 twitter/telegram/coingeckoUrl werden serverseitig mit festem
+                                 https:// zusammengesetzt und sind schemasicher. -->
                             <div class="crCoinInfoLinks">
-                                <a v-if="coinInfo.homepage" :href="coinInfo.homepage" target="_blank" rel="noopener">
+                                <a v-if="sichereUrl(coinInfo.homepage)" :href="sichereUrl(coinInfo.homepage)" target="_blank" rel="noopener">
                                     <i class="uil uil-globe"></i>{{ t('coinradar.coinInfoWebsite') }}</a>
-                                <a v-if="coinInfo.whitepaper" :href="coinInfo.whitepaper" target="_blank" rel="noopener">
+                                <a v-if="sichereUrl(coinInfo.whitepaper)" :href="sichereUrl(coinInfo.whitepaper)" target="_blank" rel="noopener">
                                     <i class="uil uil-file-alt"></i>Whitepaper</a>
                                 <a v-if="coinInfo.twitter" :href="coinInfo.twitter" target="_blank" rel="noopener">
                                     <i class="uil uil-twitter"></i>X</a>
                                 <a v-if="coinInfo.telegram" :href="coinInfo.telegram" target="_blank" rel="noopener">
                                     <i class="uil uil-telegram"></i>Telegram</a>
-                                <a v-if="coinInfo.github" :href="coinInfo.github" target="_blank" rel="noopener">
+                                <a v-if="sichereUrl(coinInfo.github)" :href="sichereUrl(coinInfo.github)" target="_blank" rel="noopener">
                                     <i class="uil uil-github"></i>GitHub</a>
-                                <a v-if="coinInfo.explorer" :href="coinInfo.explorer" target="_blank" rel="noopener">
+                                <a v-if="sichereUrl(coinInfo.explorer)" :href="sichereUrl(coinInfo.explorer)" target="_blank" rel="noopener">
                                     <i class="uil uil-search"></i>Explorer</a>
                                 <a :href="coinInfo.coingeckoUrl" target="_blank" rel="noopener">
                                     <i class="uil uil-external-link-alt"></i>CoinGecko</a>
@@ -691,6 +709,7 @@
  * einen Zustand.
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { sichereUrl } from '../utils/sanitize.js'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'

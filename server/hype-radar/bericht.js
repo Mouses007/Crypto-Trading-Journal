@@ -24,6 +24,7 @@ import { ladeLlmConfig, callLLMJson } from '../llm.js'
 import { rechercheThema } from '../news-recherche.js'
 import { rollenAnbieter } from './stufen.js'
 import { logWarn } from '../logger.js'
+import { alsZitat, entschaerfe, ZITAT_REGEL } from '../fremdtext.js'
 
 /** Steht unter jedem Bericht. Nicht verhandelbar, nicht vom Modell erzeugt. */
 export const HINWEIS = 'Keine Anlageberatung. Frühphasen-Token sind hochriskant; '
@@ -33,6 +34,8 @@ const SYSTEM_REDAKTEUR = `Du bist Research-Analyst für Krypto-Frühphasenprojek
 
 Du bekommst vorgefilterte Kandidaten mit Markt-, Sozial- und Sicherheitsdaten.
 Schreibe einen nüchternen Bericht auf Deutsch.
+
+${ZITAT_REGEL}
 
 Regeln:
 - KEINE Kursziele, KEINE Kaufempfehlungen, keine Aufforderung zum Handeln.
@@ -72,16 +75,22 @@ Antworte AUSSCHLIESSLICH mit JSON:
 function beschreibe(k) {
     const m = k.marktDaten || {}
     const s = k.sicherheitsDaten || {}
+    /*
+     * Symbol, Name und Narrativ sind VOLLSTÄNDIG angreiferkontrolliert — jeder
+     * kann einen Token beliebig benennen, und genau das ist hier der Punkt:
+     * ein Tokenname ist der billigste Weg, Text in einen fremden Prompt zu
+     * bekommen. Deshalb entschärft, nicht bloss eingerückt.
+     */
     const zeilen = [
-        `${k.symbol}${k.name ? ` (${k.name})` : ''} auf ${k.chain || 'unbekannter Kette'}`,
+        `${entschaerfe(k.symbol)}${k.name ? ` (${entschaerfe(k.name)})` : ''} auf ${entschaerfe(k.chain || 'unbekannter Kette')}`,
         `  Hype-Note ${k.hypeScore}, Sicherheitsnote ${k.safetyScore}`,
-        `  Narrativ: ${k.narrative || 'keines erkannt'}`,
-        `  Quellen: ${(k.quellen || []).map((q) => q.quelle).join(', ') || 'unbekannt'}`,
+        `  Narrativ: ${entschaerfe(k.narrative || 'keines erkannt')}`,
+        `  Quellen: ${(k.quellen || []).map((q) => entschaerfe(q.quelle)).join(', ') || 'unbekannt'}`,
     ]
     if (m.liquiditaetUsd) zeilen.push(`  Liquidität ${Math.round(m.liquiditaetUsd)} USD, Volumen 24h ${Math.round(m.volumen24h || 0)} USD`)
     if (m.fdv) zeilen.push(`  Bewertung (FDV) ${Math.round(m.fdv)} USD`)
     if (Number.isFinite(m.paarAlterStunden)) zeilen.push(`  Paar seit ${(m.paarAlterStunden / 24).toFixed(1)} Tagen`)
-    if (s.hinweise?.length) zeilen.push(`  Sicherheitsbefunde: ${s.hinweise.join('; ')}`)
+    if (s.hinweise?.length) zeilen.push(`  Sicherheitsbefunde: ${s.hinweise.map(entschaerfe).join('; ')}`)
     else zeilen.push('  Sicherheitsbefunde: keine Auffälligkeiten')
     return zeilen.join('\n')
 }
@@ -206,14 +215,17 @@ export async function erzeugeBericht(bestanden, verworfen, einstellungen = {}, m
         ...auswahl.map((k) => {
             const r = recherchen.get(k.symbol)
             const block = beschreibe(k)
-            if (r?.text) return `${block}\n  Recherche: ${String(r.text).slice(0, 1500)}`
+            // 1500 Zeichen roher Modellausgabe eines DRITTEN Anbieters — der
+            // schwerste Fremdtext-Vektor dieses Berichts, und bis zum Audit vom
+            // 28.08.2026 nur um zwei Leerzeichen eingerückt.
+            if (r?.text) return `${block}\n  Recherche: ${alsZitat(String(r.text).slice(0, 1500))}`
             if (modus === 'gruendlich') return `${block}\n  Recherche: nicht verfügbar`
             return block
         }),
     ]
     if (verworfen.length) {
         teile.push('', `AUSSORTIERT (${verworfen.length}), nur zur Einordnung des Marktumfelds:`,
-            verworfen.slice(0, 25).map((v) => `  ${v.symbol}: ${v.verworfenGrund}`).join('\n'))
+            verworfen.slice(0, 25).map((v) => `  ${entschaerfe(v.symbol)}: ${entschaerfe(v.verworfenGrund)}`).join('\n'))
     }
 
     const cfg = await ladeLlmConfig({ provider, model: modell })

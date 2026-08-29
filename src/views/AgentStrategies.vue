@@ -143,11 +143,27 @@ function neu() {
 // ── Reifegrad: welche Nachweise fehlen für den scharfen Betrieb? ────────
 const reife = ref({})
 
+/*
+ * Ein gescheiterter Abruf ist NICHT dasselbe wie „alle Tore offen" und erst
+ * recht nicht dasselbe wie „alles erfüllt". Vorher wurde der Fehler still
+ * geschluckt; `reife[inst.id]` blieb `undefined`, die Nachweisliste
+ * verschwand aus dem Dialog, und `undefined?.bereit === false` wertete zu
+ * `false` aus — die Sperre am Freigabeknopf fiel damit weg. Die Oberfläche
+ * versprach die geringste Hürde, wo sie die höchste zeigen müsste. Der Server
+ * lehnt zwar ohnehin ab, aber eine Freigabemaske für scharfen Handel darf
+ * Unwissen nicht als Unbedenklichkeit anzeigen.
+ */
+const reifeFehler = ref({})
+
 async function reifeLaden(inst) {
     try {
         const r = await axios.get(`/api/strategies/instances/${inst.id}/readiness`)
         reife.value = { ...reife.value, [inst.id]: r.data }
-    } catch { /* Anzeige ist Beiwerk — ein Fehler hier darf die Liste nicht stören */ }
+        reifeFehler.value = { ...reifeFehler.value, [inst.id]: false }
+    } catch {
+        reife.value = { ...reife.value, [inst.id]: undefined }
+        reifeFehler.value = { ...reifeFehler.value, [inst.id]: true }
+    }
 }
 
 function bearbeiten(inst) {
@@ -463,11 +479,18 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                             </div>
                         </div>
 
+                        <div v-else-if="reifeFehler[inst.id]" class="mb-3 small text-warning">
+                            <i class="uil uil-exclamation-triangle"></i>
+                            {{ t('strategies.gatesUnknown') }}
+                            <button class="btn btn-sm btn-outline-secondary ms-2 py-0"
+                                @click="reifeLaden(inst)">{{ t('common.retry') }}</button>
+                        </div>
+
                         <p class="mb-2 small">{{ t('strategies.approveLiveType', { name: inst.name }) }}</p>
                         <div class="d-flex gap-2">
                             <input v-model="freigabeText" class="form-control form-control-sm" :placeholder="inst.name" />
                             <button class="btn btn-sm btn-danger"
-                                :disabled="freigabeText !== inst.name || reife[inst.id]?.bereit === false"
+                                :disabled="freigabeText !== inst.name || reife[inst.id]?.bereit !== true"
                                 @click="freigeben">{{ t('strategies.approve') }}</button>
                             <button class="btn btn-sm btn-outline-secondary"
                                 @click="freigabeFuer = null">{{ t('common.cancel') }}</button>

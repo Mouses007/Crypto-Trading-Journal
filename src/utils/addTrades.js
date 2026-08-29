@@ -5,12 +5,28 @@ import { currentUser } from '../stores/settings.js'
 import { useBrokerBitunix, useBrokerBitget } from './brokers.js'
 import { useChartFormat, useDateTimeFormat, useDecimalsArithmetic, useTimeFormat } from './formatters.js'
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbGetSettings, dbUpdateSettings } from './db.js'
+import { istGewinn } from '../../shared/gewinn.js'
 
 /* MODULES */
 import dayjs from './dayjs-setup.js'
 import _ from 'lodash'
 import axios from 'axios'
-import Papa from 'papaparse';
+/*
+ * PapaParse wird NICHT statisch importiert.
+ *
+ * Diese Datei haengt ueber `trades.js` <- `utils.js` <- `layouts/Dashboard.vue`
+ * am Router und landete damit im Start-Bundle jeder Seite — gemessene 37 kB
+ * gzip fuer einen CSV-Parser, den nur der Import und die OHLCV-Einlesung
+ * brauchen. Der dynamische Import laedt ihn beim ersten Gebrauch nach.
+ */
+let PapaModul = null
+async function holePapa() {
+    if (!PapaModul) {
+        const m = await import('papaparse')
+        PapaModul = m.default || m
+    }
+    return PapaModul
+}
 
 let openPosition = false
 let tradeAccounts = []
@@ -26,9 +42,6 @@ let openPositionsParse = []
 
 let currentTradeId
 
-export const testPost = async () => {
-    return "test successful !!!!"
-}
 /****************************
  * TRADES
  ****************************/
@@ -182,8 +195,8 @@ async function createBitunixTrades() {
             // aber grün gefärbt wurde (Winrate-Drift zwischen Import und
             // Dashboard). Number-Guard, damit eine Zeile ohne Feld nicht als
             // Gewinn durchrutscht, sondern als 0 gezählt wird.
-            const isGrossWin = (Number(row.GrossProceeds) || 0) >= 0
-            const isNetWin = (Number(row.NetProceeds) || 0) >= 0
+            const isGrossWin = istGewinn(row.GrossProceeds)
+            const isNetWin = istGewinn(row.NetProceeds)
 
             // Determine side: Bitget CSV provides Side field, Bitunix CSV does not.
             // For Bitunix we default to 'SS'/short as a placeholder — but count
@@ -413,6 +426,7 @@ async function createExecutions() {
 export const useCreateOHLCV = (param, param2) => {
     //console.log(" param "+JSON.stringify(param))
     return new Promise(async (resolve, reject) => {
+        const Papa = await holePapa()
         let papaParse = Papa.parse(param, { header: true })
         let tempArray = papaParse.data
         //console.log(' tempArray ' + JSON.stringify(tempArray))

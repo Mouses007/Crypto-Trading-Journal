@@ -5,7 +5,16 @@ import { useMountCalendar, useMountDashboard, useMountDaily, useMountAuswertung,
 import { pageId, timeZoneTrade, hasData } from "../stores/ui.js"
 import { periodRange, positions, timeFrames, ratios, grossNet, plSatisfaction, selectedPositions, selectedTimeFrame, selectedRatio, selectedAccounts, selectedGrossNet, selectedPlSatisfaction, selectedDateRange, selectedMonth, selectedMonthPreset, selectedPeriodRange, tempSelectedPlSatisfaction, amountCase, amountCapital, selectedTags } from "../stores/filters.js"
 import { tags, availableTags } from "../stores/trades.js"
-import { useECharts } from "../utils/charts.js"
+/*
+ * Dynamisch: diese Komponente haengt ueber SideMenu.vue am Layout und damit am
+ * Router — ein statischer Import zoege das ECharts-Vollbundle (332 kB gzip) in
+ * das Start-Bundle jeder Seite. Gebraucht wird es hier fuer einen einzigen
+ * Aufruf beim Zuruecksetzen der Filter.
+ */
+async function useECharts(param) {
+    const m = await import('../utils/charts.js')
+    return m.useECharts(param)
+}
 import { useRefreshScreenshot } from "../utils/screenshots"
 import { useInitTooltip, useCloseMobileMenu } from "../utils/utils.js"
 import dayjs from '../utils/dayjs-setup.js'

@@ -9,7 +9,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
-import { journalTage } from '../../stores/startseite.js'
+import { journalTage, journalZustand } from '../../stores/startseite.js'
 
 const props = defineProps({
     daten: { type: Object, default: null },
@@ -109,15 +109,24 @@ watch([serie, () => props.gross], () => { zeichne(); requestAnimationFrame(() =>
 
 <template>
     <div class="kkWrap" :class="{ gross }">
+        <!--
+            Der Kopf stand ausserhalb jedes `v-if`: bei leerer Serie ist
+            `endwert` 0, `positiv` damit true, und die Kachel zeigte ein
+            gruenes „+0,00 USDT" ueber dem Hinweis, dass noch keine Trades
+            erfasst sind. Eine erfundene Zahl in Gewinnfarbe ist schlimmer als
+            gar keine — das Schadensmodell dieses Projekts ist die falsche
+            Zahl, die vertrauenswuerdig aussieht.
+        -->
         <div class="kkKopf">
-            <span class="kkEnd" :class="positiv ? 'up' : 'down'">
+            <span v-if="serie.length" class="kkEnd" :class="positiv ? 'up' : 'down'">
                 {{ positiv ? '+' : '' }}{{ endwert.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
                 <span class="kkWaehrung">USDT</span>
             </span>
+            <span v-else class="kkEnd kkOhne">–</span>
             <span class="kkLabel">{{ t('startseite.kapitalkurve.kumuliert') }}</span>
         </div>
         <div ref="chartEl" class="kkChart"></div>
-        <p v-if="!serie.length" class="kkLeer">{{ t('startseite.kapitalkurve.leer') }}</p>
+        <p v-if="!serie.length" class="kkLeer">{{ journalZustand === 'fehler' ? t('startseite.abrufFehler') : t('startseite.kapitalkurve.leer') }}</p>
     </div>
 </template>
 
@@ -168,6 +177,10 @@ watch([serie, () => props.gross], () => { zeichne(); requestAnimationFrame(() =>
 
 .kkWrap.gross .kkChart {
     min-height: 46vh;
+}
+
+.kkOhne {
+    color: var(--white-38, rgba(255, 255, 255, 0.6));
 }
 
 .kkLeer {

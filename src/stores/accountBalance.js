@@ -41,7 +41,6 @@ function getCurrentBroker() {
 export const allTimeNetPnL = computed(() => cache[getCurrentBroker()]?.totalNet ?? 0)
 export const allTimeVolume = computed(() => cache[getCurrentBroker()]?.totalVol ?? 0)
 export const last30dVolume = computed(() => cache[getCurrentBroker()]?.vol30d ?? 0)
-export const accountBalanceLoading = computed(() => loading.value)
 
 /**
  * Aktueller Futures-Bonus (Bitunix Promo-/Referral-Bonus), der im Broker-

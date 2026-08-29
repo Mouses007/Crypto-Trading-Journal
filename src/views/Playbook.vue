@@ -13,6 +13,7 @@ import { dbFind, dbGet, dbUpdate, dbCreate, dbDelete } from '../utils/db.js'
 import Quill from 'quill'
 import { sanitizeHtml } from '../utils/sanitize'
 import { useI18n } from 'vue-i18n'
+import { useVerlassenSchutz } from '../composables/useVerlassenSchutz.js'
 import dayjs from '../utils/dayjs-setup.js'
 
 const route = useRoute()
@@ -26,6 +27,13 @@ function toggleTpSlHistory(id) {
 }
 const editingId = ref(null)
 const savingId = ref(null)
+
+/*
+ * Solange eine Zeile im Bearbeitungsmodus steht, ist ihr Inhalt nur im
+ * Speicher — geschrieben wird erst beim Klick auf Speichern. Ein Menüwechsel
+ * warf die Eingabe vorher wortlos weg.
+ */
+useVerlassenSchutz(() => editingId.value !== null, () => t('common.unsavedLeave'))
 const quillInstances = {}
 const screenshotMap = ref([]) // array of screenshot records
 const fullscreenImg = ref(null) // base64 string for fullscreen modal

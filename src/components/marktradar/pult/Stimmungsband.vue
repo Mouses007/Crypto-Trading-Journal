@@ -189,7 +189,7 @@ const vzProz = (v, n = 2) => v === null ? '—' : `${v >= 0 ? '+' : '−'}${Math
 .sBand {
     display: grid;
     /* Die beiden Skalen bekommen den Platz, die beiden Zahlen sind schmal. */
-    grid-template-columns: 1fr 1fr 170px 170px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 170px 170px;
     border-bottom: 1px solid var(--pTrenn);
     background: var(--pChrom);
 }

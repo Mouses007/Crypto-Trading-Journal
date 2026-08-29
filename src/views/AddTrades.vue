@@ -1,17 +1,22 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue';
+import { useRouter } from 'vue-router'
 import { spinnerLoadingPage, timeZoneTrade } from '../stores/ui.js';
 import { executions, existingImports, blotter, pAndL, tradesData, existingTradesArray, trades as globalTrades } from '../stores/trades.js';
 import { selectedBroker } from '../stores/filters.js';
 import { useDecimalsArithmetic, useCreatedDateFormat, useDateCalFormat } from '../utils/formatters.js';
 import { useImportTrades, useUploadTrades, useGetExistingTradesArray, useCreateBlotter, useCreatePnL } from '../utils/addTrades'
-import { buildTradeObj, saveManualTrade, useQuickApiImport } from '../utils/quickImport.js'
+import { buildTradeObj, saveManualTrade, useQuickApiImport, createBitunixTradeObj, createBitgetTradeObj } from '../utils/quickImport.js'
 import { refreshAccountBalance } from '../stores/accountBalance.js'
+import { istGewinn } from '../../shared/gewinn.js'
+import { useVerlassenSchutz } from '../composables/useVerlassenSchutz.js'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import axios from 'axios'
 import dayjs from '../utils/dayjs-setup.js'
 import { sendNotification } from '../utils/notify.js'
 import { useI18n } from 'vue-i18n'
+
+const router = useRouter()
 
 const { t } = useI18n()
 
@@ -27,19 +32,91 @@ const manual = ref({
 const manualSaving = ref(false)
 const manualMsg = ref(null)   // { ok, text }
 
+/*
+ * Symbol und Datum bleiben nach dem Speichern absichtlich stehen (schnelle
+ * Mehrfacheingabe) — sie zählen deshalb NICHT als ungespeicherte Eingabe.
+ * Alles andere schon: wer Preise und PnL getippt hat und wegnavigiert, hat die
+ * Arbeit verloren.
+ */
+useVerlassenSchutz(() => ['entryPrice', 'exitPrice', 'qty', 'netPL', 'fee', 'leverage']
+    .some((f) => String(manual.value[f] ?? '').trim() !== ''),
+    () => t('common.unsavedLeave'))
+
+/*
+ * Ein leeres Feld ist keine Null.
+ *
+ * Vorher lief jede Zahl durch `parseFloat(x || 0) || 0` bzw. `|| 1`. Eine
+ * vergessene Gebühr wurde damit stillschweigend zu 0, eine vergessene Menge zu
+ * 1 — und der Trade wurde mit grüner Erfolgsmeldung gespeichert. Der Fehler
+ * fiel erst Wochen später in der Auswertung auf, wenn überhaupt.
+ *
+ * Leer bleibt erlaubt (nicht jedes Feld ist bekannt), aber etwas Getipptes,
+ * das keine Zahl ergibt, ist ab jetzt ein Fehler und keine Null.
+ *
+ * @returns {number|null} null = leer gelassen
+ */
+function zahlOderNull(wert, feldName, fehler) {
+    const roh = String(wert ?? '').trim()
+    if (roh === '') return null
+    const n = Number(roh.replace(',', '.'))   // Komma-Eingabe ist gemeint, nicht verworfen
+    if (!Number.isFinite(n)) { fehler.push(t('addTrades.manualNotANumber', { feld: feldName })); return null }
+    return n
+}
+
 async function addManualTrade() {
     manualMsg.value = null
     const sym = (manual.value.symbol || '').trim().toUpperCase()
-    if (!sym) { manualMsg.value = { ok: false, text: 'Symbol fehlt' }; return }
-    if (manual.value.netPL === '' || isNaN(parseFloat(manual.value.netPL))) {
-        manualMsg.value = { ok: false, text: 'Netto-PnL fehlt' }; return
+    if (!sym) { manualMsg.value = { ok: false, text: t('addTrades.manualSymbolMissing') }; return }
+
+    const fehler = []
+    const netPLRoh = zahlOderNull(manual.value.netPL, t('addTrades.manualFieldNetPL'), fehler)
+    if (netPLRoh === null && !fehler.length) fehler.push(t('addTrades.manualNetPLMissing'))
+
+    const feeRoh = zahlOderNull(manual.value.fee, t('addTrades.manualFieldFee'), fehler)
+    const qtyRoh = zahlOderNull(manual.value.qty, t('addTrades.manualFieldQty'), fehler)
+    const einRoh = zahlOderNull(manual.value.entryPrice, t('addTrades.manualFieldEntry'), fehler)
+    const ausRoh = zahlOderNull(manual.value.exitPrice, t('addTrades.manualFieldExit'), fehler)
+    const hebelRoh = zahlOderNull(manual.value.leverage, t('addTrades.manualFieldLeverage'), fehler)
+
+    if (qtyRoh !== null && qtyRoh <= 0) fehler.push(t('addTrades.manualQtyPositive'))
+    if (einRoh !== null && einRoh < 0) fehler.push(t('addTrades.manualPricePositive'))
+    if (ausRoh !== null && ausRoh < 0) fehler.push(t('addTrades.manualPricePositive'))
+    if (hebelRoh !== null && hebelRoh <= 0) fehler.push(t('addTrades.manualLeveragePositive'))
+
+    // Ein Abschluss in der Zukunft ist immer ein Tippfehler im Datumsfeld.
+    const abschluss = dayjs.utc(manual.value.date)
+    if (!abschluss.isValid()) fehler.push(t('addTrades.manualDateInvalid'))
+    else if (abschluss.startOf('day').isAfter(dayjs.utc().startOf('day'))) fehler.push(t('addTrades.manualDateFuture'))
+
+    if (manual.value.entryDate) {
+        const ein = dayjs.utc(manual.value.entryDate)
+        if (!ein.isValid()) fehler.push(t('addTrades.manualEntryDateInvalid'))
+        else if (abschluss.isValid() && ein.startOf('day').isAfter(abschluss.startOf('day'))) {
+            fehler.push(t('addTrades.manualEntryAfterExit'))
+        }
     }
+
+    if (fehler.length) { manualMsg.value = { ok: false, text: fehler.join(' · ') }; return }
+
+    /*
+     * Plausibilität nur als WARNUNG, nicht als Sperre: bei Teilausstiegen,
+     * nachgezogenen Stopps oder Gebührenrabatten kann das Vorzeichen des PnL
+     * der reinen Preisrichtung echt widersprechen. Wer das weiss, soll
+     * speichern können — er soll es nur einmal gesehen haben.
+     */
+    let warnung = ''
+    if (einRoh !== null && ausRoh !== null && einRoh > 0 && ausRoh > 0 && netPLRoh !== null && netPLRoh !== 0) {
+        const richtungLong = manual.value.side === 'B'
+        const preisGewinn = richtungLong ? (ausRoh > einRoh) : (ausRoh < einRoh)
+        if (preisGewinn !== (netPLRoh > 0)) warnung = ' — ' + t('addTrades.manualPnlMismatch')
+    }
+
     manualSaving.value = true
     try {
-        const fee = Math.abs(parseFloat(manual.value.fee || 0)) || 0
-        const netPL = parseFloat(manual.value.netPL)
+        const fee = feeRoh === null ? 0 : Math.abs(feeRoh)
+        const netPL = netPLRoh
         const grossPL = netPL + fee   // Brutto = Netto + Gebühren
-        const qty = parseFloat(manual.value.qty || 1) || 1
+        const qty = qtyRoh === null ? 1 : qtyRoh
         const closeDay = dayjs.utc(manual.value.date)
         const dateUnix = closeDay.startOf('day').unix()
         const exitTime = closeDay.hour(12).minute(0).second(0).unix()
@@ -51,21 +128,29 @@ async function addManualTrade() {
             id: `t${dateUnix}_0_manual${Date.now()}`,
             broker: broker.value, td: dateUnix, side: manual.value.side, quantity: qty,
             entryTime, exitTime,
-            entryPrice: parseFloat(manual.value.entryPrice || 0) || 0,
-            exitPrice: parseFloat(manual.value.exitPrice || 0) || 0,
+            entryPrice: einRoh === null ? 0 : einRoh,
+            exitPrice: ausRoh === null ? 0 : ausRoh,
             symbol: sym, grossPL, netPL, fee, tradingFee: fee, fundingFee: 0,
-            isGrossWin: grossPL > 0, isNetWin: netPL > 0,
+            isGrossWin: istGewinn(grossPL), isNetWin: istGewinn(netPL),
         })
-        if (manual.value.leverage) tradeObj.leverage = parseFloat(manual.value.leverage)
+        if (hebelRoh !== null) tradeObj.leverage = hebelRoh
 
         await saveManualTrade(tradeObj)
         try { await refreshAccountBalance({ broker: broker.value, force: true }) } catch (_) { /* egal */ }
 
-        manualMsg.value = { ok: true, text: `Gespeichert: ${sym} ${manual.value.side === 'B' ? 'Long' : 'Short'} ${netPL >= 0 ? '+' : ''}${netPL} USDT (${manual.value.date})` }
+        manualMsg.value = {
+            ok: true,
+            text: t('addTrades.manualSaved', {
+                symbol: sym,
+                seite: manual.value.side === 'B' ? t('addTrades.manualLong') : t('addTrades.manualShort'),
+                pnl: `${netPL >= 0 ? '+' : ''}${netPL}`,
+                datum: manual.value.date,
+            }) + warnung,
+        }
         // PnL-bezogene Felder zurücksetzen, Symbol/Datum für schnelle Mehrfacheingabe behalten
         manual.value.netPL = ''; manual.value.fee = ''; manual.value.entryPrice = ''; manual.value.exitPrice = ''; manual.value.qty = ''
     } catch (e) {
-        manualMsg.value = { ok: false, text: 'Fehler beim Speichern: ' + (e?.message || e) }
+        manualMsg.value = { ok: false, text: t('addTrades.manualSaveFailed') + ' ' + (e?.message || e) }
     }
     manualSaving.value = false
 }
@@ -83,87 +168,6 @@ const brokerLabel = computed(() => BROKER_LABEL[broker.value] || 'Bitunix')
 onMounted(async () => {
     await useGetExistingTradesArray()
 })
-
-/**
- * Parse a single Bitunix API position into tradesData row format.
- */
-function parseBitunixPosition(pos) {
-    const grossPL = parseFloat(pos.realizedPNL || 0)
-    const tradingFee = Math.abs(parseFloat(pos.fee || 0))
-    const fundingFee = Math.abs(parseFloat(pos.funding || 0))
-    const fee = tradingFee + fundingFee
-    const closeTime = parseInt(pos.mtime || pos.ctime)
-    const openTime = parseInt(pos.ctime)
-    // Bitunix: side is LONG/SHORT or BUY/SELL
-    const side = (pos.side === 'LONG' || pos.side === 'BUY') ? 'B' : 'SS'
-
-    return {
-        Account: 'bitunix',
-        Broker: 'bitunix',
-        DateUTC: dayjs(closeTime).utc().format('YYYY-MM-DD HH:mm:ss'),
-        EntryDateUTC: dayjs(openTime).utc().format('YYYY-MM-DD HH:mm:ss'),
-        Symbol: pos.symbol || 'FUTURES',
-        Type: 'futures',
-        GrossProceeds: grossPL,
-        Fee: fee,
-        NetProceeds: grossPL - fee,
-        TrxId: pos.positionId || '',
-        Side: side,
-        EntryPrice: parseFloat(pos.entryPrice || 0),
-        ClosePrice: parseFloat(pos.closePrice || 0),
-        Quantity: parseFloat(pos.maxQty || 1),
-        Leverage: pos.leverage || '',
-        IncomingAsset: 'USDT',
-        OutgoingAsset: 'USDT',
-        TradingFee: tradingFee,
-        FundingFee: fundingFee,
-    }
-}
-
-/**
- * Parse a single Bitget API position into tradesData row format.
- * Bitget fields: positionId, symbol, holdSide, openAvgPrice, closeAvgPrice,
- *                openTotalPos, closeTotalPos, pnl, netProfit, openFee, closeFee,
- *                totalFunding, cTime, uTime
- */
-function parseBitgetPosition(pos) {
-    const grossPL = parseFloat(pos.pnl || 0)
-    const openFee = Math.abs(parseFloat(pos.openFee || 0))
-    const closeFee = Math.abs(parseFloat(pos.closeFee || 0))
-    const totalFunding = Math.abs(parseFloat(pos.totalFunding || 0))
-    const tradingFee = openFee + closeFee
-    const fundingFee = totalFunding
-    const fee = tradingFee + fundingFee
-    const closeTime = parseInt(pos.utime || pos.uTime || pos.ctime || pos.cTime)
-    const openTime = parseInt(pos.ctime || pos.cTime)
-    // Bitget: holdSide is 'long' or 'short'
-    const holdSide = (pos.holdSide || '').toLowerCase()
-    const side = holdSide === 'long' ? 'B' : 'SS'
-    const netPL = parseFloat(pos.netProfit || 0) || (grossPL - fee)
-    const quantity = parseFloat(pos.closeTotalPos || pos.openTotalPos || 1)
-
-    return {
-        Account: 'bitget',
-        Broker: 'bitget',
-        DateUTC: dayjs(closeTime).utc().format('YYYY-MM-DD HH:mm:ss'),
-        EntryDateUTC: dayjs(openTime).utc().format('YYYY-MM-DD HH:mm:ss'),
-        Symbol: pos.symbol || 'FUTURES',
-        Type: 'futures',
-        GrossProceeds: grossPL,
-        Fee: fee,
-        NetProceeds: netPL,
-        TrxId: pos.positionId || '',
-        Side: side,
-        EntryPrice: parseFloat(pos.openAvgPrice || 0),
-        ClosePrice: parseFloat(pos.closeAvgPrice || 0),
-        Quantity: quantity,
-        Leverage: pos.leverage || '',
-        IncomingAsset: 'USDT',
-        OutgoingAsset: 'USDT',
-        TradingFee: tradingFee,
-        FundingFee: fundingFee,
-    }
-}
 
 async function importFromApi() {
     apiImportLoading.value = true
@@ -235,83 +239,36 @@ async function importFromApi() {
             return
         }
 
-        // Convert API positions to tradesData format
-        tradesData.length = 0
-        allPositions.forEach(pos => {
-            if (currentBroker === 'bitget') {
-                tradesData.push(parseBitgetPosition(pos))
-            } else {
-                tradesData.push(parseBitunixPosition(pos))
-            }
-        })
-
-        // Create trades from the API data
+        /*
+         * EIN Bauplan für Trade-Objekte, nicht zwei.
+         *
+         * Hier standen bis zum Audit vom 28.08.2026 zwei eigene Parser plus
+         * ein von Hand nachgebautes Trade-Objekt — eine Feld-für-Feld-Kopie
+         * von `buildTradeObj`, die drei Korrekturen nicht mitbekommen hatte:
+         *   - `realizedPNL` ist bei Bitunix bereits der fertige Wallet-Delta,
+         *     hier wurden Gebühr UND Funding ein zweites Mal abgezogen,
+         *   - `Math.abs` auf dem Funding machte erhaltenes Funding zu Kosten,
+         *   - `tradingFee`/`fundingFee` fehlten im Objekt, weshalb die
+         *     Funding-Zeile der Kennzahlen-Kachel lautlos verschwand.
+         *
+         * Die Rechnung steht jetzt nur noch in `quickImport.js`. Wer sie
+         * ändert, ändert beide Importwege.
+         */
         spinnerLoadingPage.value = true
 
         for (let key in executions) delete executions[key]
         const trades = {}
         existingImports.length = 0
+        tradesData.length = 0
 
-        tradesData.forEach((row, i) => {
-            let dateUnix = dayjs.utc(row.DateUTC).startOf('day').unix()
+        allPositions.forEach((pos, i) => {
+            const tradeObj = currentBroker === 'bitget'
+                ? createBitgetTradeObj(pos, i)
+                : createBitunixTradeObj(pos, i)
 
+            const dateUnix = tradeObj.td
             if (!trades[dateUnix]) trades[dateUnix] = []
             if (!executions[dateUnix]) executions[dateUnix] = []
-
-            const entryTime = dayjs.utc(row.EntryDateUTC).unix()
-            const exitTime = dayjs.utc(row.DateUTC).unix()
-
-            // Kanon im Journal: 0 = kein Verlust, zählt als Gewinner (wie
-            // addTrades.js beim Import und die Dashboard-Färbung).
-            const isGrossWin = row.GrossProceeds >= 0
-            const isNetWin = row.NetProceeds >= 0
-
-            const tradeObj = {
-                id: `t${dateUnix}_${i}_${row.TrxId || i}`,
-                account: currentBroker,
-                broker: currentBroker,
-                td: dateUnix,
-                currency: 'USDT',
-                type: 'futures',
-                side: row.Side || (isGrossWin ? 'B' : 'SS'),
-                strategy: (row.Side === 'B' || (!row.Side && isGrossWin)) ? 'long' : 'short',
-                symbol: row.Symbol,
-                buyQuantity: row.Quantity || 1,
-                sellQuantity: row.Quantity || 1,
-                entryPrice: row.EntryPrice || 0,
-                exitPrice: row.ClosePrice || 0,
-                entryTime: entryTime,
-                exitTime: exitTime,
-                grossProceeds: row.GrossProceeds,
-                netProceeds: row.NetProceeds,
-                commission: row.Fee,
-                sec: 0, taf: 0, nscc: 0, nasdaq: 0,
-                grossSharePL: row.GrossProceeds,
-                netSharePL: row.NetProceeds,
-                grossWins: isGrossWin ? row.GrossProceeds : 0,
-                grossLoss: isGrossWin ? 0 : row.GrossProceeds,
-                netWins: isNetWin ? row.NetProceeds : 0,
-                netLoss: isNetWin ? 0 : row.NetProceeds,
-                grossWinsCount: isGrossWin ? 1 : 0,
-                grossLossCount: isGrossWin ? 0 : 1,
-                netWinsCount: isNetWin ? 1 : 0,
-                netLossCount: isNetWin ? 0 : 1,
-                grossWinsQuantity: isGrossWin ? (row.Quantity || 1) : 0,
-                grossLossQuantity: isGrossWin ? 0 : (row.Quantity || 1),
-                netWinsQuantity: isNetWin ? (row.Quantity || 1) : 0,
-                netLossQuantity: isNetWin ? 0 : (row.Quantity || 1),
-                grossSharePLWins: isGrossWin ? row.GrossProceeds : 0,
-                grossSharePLLoss: isGrossWin ? 0 : row.GrossProceeds,
-                netSharePLWins: isNetWin ? row.NetProceeds : 0,
-                netSharePLLoss: isNetWin ? 0 : row.NetProceeds,
-                highGrossSharePLWin: isGrossWin ? row.GrossProceeds : 0,
-                highGrossSharePLLoss: isGrossWin ? 0 : row.GrossProceeds,
-                highNetSharePLWin: isNetWin ? row.NetProceeds : 0,
-                highNetSharePLLoss: isNetWin ? 0 : row.NetProceeds,
-                executionsCount: 1,
-                tradesCount: 1,
-                openPosition: false,
-            }
 
             trades[dateUnix].push(tradeObj)
             executions[dateUnix].push({ ...tradeObj, trade: tradeObj.id })
@@ -422,7 +379,7 @@ async function importFromApi() {
                 <input type="number" step="any" class="form-control" v-model="manual.netPL" placeholder="z.B. 25.40" />
             </div>
             <div class="col-sm-4">
-                <label class="form-label mb-0">Gebühren <span class="text-muted">(opt.)</span></label>
+                <label class="form-label mb-0">{{ t('dashboard.fees') }} <span class="text-muted">(opt.)</span></label>
                 <input type="number" step="any" class="form-control" v-model="manual.fee" />
             </div>
         </div>
@@ -528,7 +485,9 @@ async function importFromApi() {
         <button v-show="Object.keys(executions).length > 0 && !spinnerLoadingPage" type="button"
             v-on:click="useUploadTrades" class="btn btn-success btn-lg me-3">{{ t('common.submit') }}</button>
 
-        <button type="cancel" onclick="location.href = 'dashboard';"
+        <!-- `type="cancel"` gibt es nicht; der Browser faellt auf `submit`
+             zurueck. Und `location.href` startet die ganze App neu. -->
+        <button type="button" @click="router.push('/dashboard')"
             class="btn btn-outline-secondary btn-sm me-2">{{ t('common.cancel') }}</button>
 
     </div>

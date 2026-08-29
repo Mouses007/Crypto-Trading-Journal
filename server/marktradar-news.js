@@ -33,6 +33,8 @@ import {
 import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson, istGuthabenFehler, merkeKiGuthaben, schaetzeKosten } from './llm.js'
 import { entdoppleBericht, protokollText } from './news-doppler.js'
 import { gruppiereBeitraege, themenRegel, haltEinsProThema } from './news-themen.js'
+import { zitatBlock, alsZitat, ZITAT_REGEL } from './fremdtext.js'
+import { darfLaufen, sendeZuFrueh } from './drossel.js'
 import { merkeVerbrauch } from './ai-usage.js'
 import { samplingFelder, GEMINI_STANDARDMODELL } from './ai-models.js'
 import {
@@ -960,6 +962,8 @@ Krypto-Futures-Händler zählt?**
 ` : ''
 
     return `Du bist Marktbeobachter für einen **Krypto-Futures-Händler**.
+
+${ZITAT_REGEL}
 
 ${nachtrag}Aus den nummerierten Beiträgen, dem Marktdaten-Block und den Rechercheergebnissen
 schreibst du EINEN Lagebericht ${zeitraum} auf Deutsch — auch wenn die Quellen
@@ -2228,13 +2232,23 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
     }
     if (marktdaten.text) teile.push(marktdaten.text)
     for (const r of recherchen) {
-        teile.push(`RECHERCHE zum Thema ${THEMEN_NAMEN[r.thema] || r.thema} `
-            + `(Perplexity, Belege siehe nummerierte Recherche-Quellen):\n${r.text}`)
+        // Perplexity-Freitext ist Fremdtext wie jeder Beitrag auch.
+        teile.push(zitatBlock(
+            `RECHERCHE zum Thema ${THEMEN_NAMEN[r.thema] || r.thema} `
+            + '(Perplexity, Belege siehe nummerierte Recherche-Quellen)',
+            r.text))
     }
     const regel = themenRegel(themenGruppen)
     if (regel) teile.push(regel)
-    teile.push(`${istUpdate ? 'NEUE BEITRÄGE (seit dem bisherigen Bericht)' : 'BEITRÄGE'}:\n`
-        + zeilen.join('\n---\n'))
+    /*
+     * Die Beiträge sind vollständig angreiferkontrolliert: Titel und Inhalt
+     * schreibt, wer den Feed füllt. Bis zum Audit vom 28.08.2026 war der
+     * einzige Trenner `\n---\n` — den ein Beitrag selbst schreiben kann — und
+     * nirgends stand, dass dieser Text Material ist und kein Auftrag.
+     */
+    teile.push(zitatBlock(
+        istUpdate ? 'NEUE BEITRÄGE (seit dem bisherigen Bericht)' : 'BEITRÄGE',
+        zeilen.join('\n---\n')))
 
     // Eigene Modellwahl für den Bericht; leer heisst: der allgemein
     // eingestellte Anbieter des Journals
@@ -2856,6 +2870,11 @@ export function setupNewsRoutes(app) {
         try {
             const text = String(req.body?.text || '').trim().slice(0, ZUSATZ_MAX)
             if (!text) return res.status(400).json({ error: 'Keine Anweisung übergeben' })
+
+            // Jede Prüfung kostet einen bezahlten Modellaufruf (1500 Tokens).
+            // Ein zweiter Klick auf denselben Knopf ist fast immer Ungeduld.
+            const frei = darfLaufen('news:anweisung-pruefen', 8000)
+            if (!frei.ok) return sendeZuFrueh(res, frei.wartenMs)
 
             const s = await getKnex()('settings').where('id', 1).first()
             const cfg = await ladeLlmConfig({

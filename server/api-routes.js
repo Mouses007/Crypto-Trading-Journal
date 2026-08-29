@@ -36,7 +36,14 @@ export const SETTINGS_SENSITIVE_FIELDS = [
     // CryptoQuant (ETF-Kachel): geschrieben nur über /api/cryptoquant/settings
     'cryptoquantApiKey',
     // SMTP-Passwort: geschrieben nur über /api/mail/settings (verschlüsselt)
-    'mailPasswort'
+    'mailPasswort',
+    /*
+     * Generation des Sitzungs-Tokens: geschrieben NUR von `auth.js` beim
+     * Entwerten. Über die generische Settings-Route setzbar waere sie ein
+     * Werkzeug, um sich selbst oder andere auszusperren — und beim Auslesen
+     * verriete sie, wie oft rotiert wurde.
+     */
+    'sessionGeneration'
 ]
 
 /** Strip sensitive fields from a settings row, exposing only `${field}Set` presence flags. */
@@ -103,7 +110,7 @@ const TABLE_COLUMNS = {
     excursions: ['id', 'dateUnix', 'tradeId', 'stopLoss', 'maePrice', 'mfePrice', 'createdAt', 'updatedAt'],
     incoming_positions: ['id', 'positionId', 'symbol', 'side', 'entryPrice', 'leverage', 'quantity', 'unrealizedPNL', 'markPrice', 'playbook', 'stressLevel', 'feelings', 'screenshotId', 'status', 'bitunixData', 'createdAt', 'updatedAt', 'tags', 'entryNote', 'historyData', 'openingEvalDone', 'entryTimeframe', 'emotionLevel', 'closingNote', 'satisfaction', 'skipEvaluation', 'closingStressLevel', 'closingEmotionLevel', 'closingFeelings', 'closingTimeframe', 'closingTags', 'closingScreenshotId', 'closingPlaybook', 'entryScreenshotId', 'broker', 'tradeType', 'closingTradeType', 'strategyFollowed', 'trendScreenshotId', 'tpslHistory'],
     share_card_templates: ['id', 'name', 'prompt', 'imageBase64', 'category', 'createdAt', 'updatedAt'],
-    quiz_karten: ['id', 'schluessel', 'frage', 'antwort', 'kategorie', 'herkunft', 'aktiv', 'niveau', 'createdAt', 'updatedAt'],
+    quiz_karten: ['id', 'schluessel', 'frage', 'antwort', 'erklaerung', 'kategorie', 'herkunft', 'aktiv', 'niveau', 'createdAt', 'updatedAt'],
     quiz_fortschritt: ['id', 'kartenId', 'box', 'faelligAm', 'zuletztGesehenAm', 'richtigStreak', 'gesamtRichtig', 'gesamtFalsch', 'historie', 'createdAt', 'updatedAt'],
     live_sessions: ['id', 'startUnix', 'endUnix', 'symbol', 'market', 'status', 'planMaxVerlustUsd', 'planMaxTrades', 'planNotiz', 'notizen', 'fazit', 'protokoll', 'kacheln', 'trades', 'pnlUsd', 'gebuehrenUsd', 'fundingUsd', 'tradeAnzahl', 'planVerletzt', 'archiviert', 'createdAt', 'updatedAt'],
     strategy_instances: ['id', 'strategyId', 'name', 'enabled', 'mode', 'broker', 'market', 'symbols', 'timeframe', 'timeframes', 'params', 'risk', 'agents', 'paramsVersion', 'liveApprovedAt', 'lastRunAt', 'lastError', 'createdAt', 'updatedAt'],
@@ -519,16 +526,27 @@ export function setupApiRoutes(app) {
                 query = req.query.descending ? query.orderBy(orderCol, 'desc') : query.orderBy(orderCol, 'asc')
             }
 
-            // Ohne Angabe wurde bisher die GANZE Tabelle geliefert. Ein Default
-            // bremst das ab, ist aber bewusst so hoch gewählt wie das Limit, das
-            // das Frontend ohnehin mitschickt (queryLimit) — ein kleinerer Wert
-            // würde Dashboards still um Trades kürzen statt sie zu schützen.
+            /*
+             * Ohne Angabe wurde bisher die GANZE Tabelle geliefert. Ein Default
+             * bremst das ab, ist aber bewusst so hoch gewählt wie das Limit, das
+             * das Frontend ohnehin mitschickt (queryLimit) — ein kleinerer Wert
+             * würde Dashboards still um Trades kürzen statt sie zu schützen.
+             *
+             * Das Limit zählt ZEILEN, und das ist bei `screenshots` das falsche
+             * Mass: 134 Zeilen sind dort 71 MB, weil die Bilder als Base64 in
+             * der Zeile stehen. Das Frontend schliesst sie über `exclude` aus —
+             * ein Abruf ohne beides zöge sie alle. Deshalb ein eigener,
+             * niedriger Vorgabewert für die schweren Tabellen; wer mehr will,
+             * fragt ausdrücklich danach.
+             */
             const DEFAULT_API_LIMIT = 50000
+            const DEFAULT_JE_TABELLE = { screenshots: 500 }
             const MAX_API_LIMIT = 100000
+            const vorgabe = DEFAULT_JE_TABELLE[table] ?? DEFAULT_API_LIMIT
             const limit = parseInt(req.query.limit, 10)
             query = (Number.isInteger(limit) && limit > 0)
                 ? query.limit(Math.min(limit, MAX_API_LIMIT))
-                : query.limit(DEFAULT_API_LIMIT)
+                : query.limit(vorgabe)
             const skip = parseInt(req.query.skip, 10)
             if (Number.isInteger(skip) && skip >= 0) query = query.offset(skip)
 

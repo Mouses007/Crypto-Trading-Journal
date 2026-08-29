@@ -14,7 +14,7 @@
  * genau der Fall, den diese Prüfungen brauchen.
  */
 
-import { istLoopbackHost, setzeBindungsModus, offenerBetriebErlaubt, sessionCookieMiddleware, apiAuthMiddleware, istErlaubterHost } from './auth.js'
+import { istLoopbackHost, setzeBindungsModus, offenerBetriebErlaubt, sessionCookieMiddleware, apiAuthMiddleware, istErlaubterHost, getSessionCookieString, hatGueltigeSession, entwerteAlleSitzungen } from './auth.js'
 import { pruefeKiEndpunkt } from './ollama-url.js'
 
 let bestanden = 0
@@ -155,6 +155,53 @@ console.log('\nFrei eingetragene KI-Endpunkte\n')
     check('eigener Rechner bleibt erlaubt', await angenommen('http://127.0.0.1:8000/v1'))
     check('eigenes Netz bleibt erlaubt', await angenommen('http://192.168.178.50:8000/v1'))
     check('öffentlicher Anbieter bleibt erlaubt', await angenommen('https://8.8.8.8/v1'))
+}
+
+/*
+ * Entwertung bestehender Sitzungen.
+ *
+ * Bis zum Audit vom 28.08.2026 war das Token unveraenderlich aus `CTJ_SECRET`
+ * abgeleitet: Abmelden loeschte nur das Cookie beim Client, und der
+ * Passwortwechsel liess bestehende Sitzungen ausdruecklich weiterlaufen — mit
+ * einem Kommentar, der genau das festhielt. Wer sein Passwort wechselt,
+ * vermutet aber meistens einen Kompromiss.
+ *
+ * Ohne Datenbank schlaegt das Schreiben der Generation fehl; die Rotation muss
+ * TROTZDEM greifen. Genau das prueft dieser Block: im Zweifel lieber alle
+ * abmelden als ein Cookie am Leben lassen, das weg soll.
+ */
+console.log('\nEntwertung von Sitzungen')
+{
+    const tokenAus = (cookie) => String(cookie).split(';')[0].split('=')[1]
+    const req = { headers: { host: '127.0.0.1:8080' }, secure: false }
+
+    const vorher = tokenAus(getSessionCookieString(req))
+    check('ein Cookie wird ueberhaupt ausgestellt', !!vorher && vorher.length > 20, String(vorher).slice(0, 12))
+    check('das ausgestellte Cookie gilt',
+        hatGueltigeSession({ headers: { cookie: `tn_session=${vorher}` } }))
+
+    await entwerteAlleSitzungen()
+
+    const nachher = tokenAus(getSessionCookieString(req))
+    check('nach dem Entwerten ist das Token ein anderes', nachher !== vorher,
+        `${String(vorher).slice(0, 8)} vs ${String(nachher).slice(0, 8)}`)
+    check('das ALTE Cookie gilt nicht mehr',
+        hatGueltigeSession({ headers: { cookie: `tn_session=${vorher}` } }) === false)
+    check('das NEUE Cookie gilt',
+        hatGueltigeSession({ headers: { cookie: `tn_session=${nachher}` } }))
+
+    // Zweimal entwerten muss zweimal etwas aendern — sonst haengt die
+    // Generation und ein zweiter Wechsel waere wirkungslos.
+    await entwerteAlleSitzungen()
+    const drittes = tokenAus(getSessionCookieString(req))
+    check('erneutes Entwerten wirkt wieder', drittes !== nachher)
+    check('kein altes Cookie ueberlebt',
+        [vorher, nachher].every((t) => hatGueltigeSession({ headers: { cookie: `tn_session=${t}` } }) === false))
+
+    check('ein leeres oder falsches Cookie gilt nie',
+        hatGueltigeSession({ headers: { cookie: 'tn_session=' } }) === false
+        && hatGueltigeSession({ headers: {} }) === false
+        && hatGueltigeSession({ headers: { cookie: 'tn_session=abc' } }) === false)
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)

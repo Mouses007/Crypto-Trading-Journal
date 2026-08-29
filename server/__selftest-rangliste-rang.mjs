@@ -9,7 +9,10 @@
  * schlimmer als gar keine, weil sie Vertrauen schafft, wo keines hingehört.
  */
 
-import { vergibRaenge, spearman, umtopfen, beurteileRangliste, ranglisteSatz } from './rangliste-rang.js'
+import { vergibRaenge, umtopfen, beurteileRangliste, ranglisteSatz } from './rangliste-rang.js'
+// Spearman liegt seit dem Audit vom 28.08.2026 in `shared/statistik.js` —
+// die Formel stand dreimal im Projekt, zweimal ohne Bindungskorrektur.
+import { spearman } from '../shared/statistik.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0

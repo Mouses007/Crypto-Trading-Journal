@@ -10,7 +10,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
 import dayjs from '../../utils/dayjs-setup.js'
-import { journalTage } from '../../stores/startseite.js'
+import { journalTage, journalZustand } from '../../stores/startseite.js'
 
 const props = defineProps({
     daten: { type: Object, default: null },
@@ -114,7 +114,7 @@ watch([eintraege, () => props.gross], () => { zeichne(); requestAnimationFrame((
 <template>
     <div class="hmWrap" :class="{ gross }">
         <div ref="chartEl" class="hmChart"></div>
-        <p v-if="!eintraege.length" class="hmLeer">{{ t('startseite.heatmap.leer') }}</p>
+        <p v-if="!eintraege.length" class="hmLeer">{{ journalZustand === 'fehler' ? t('startseite.abrufFehler') : t('startseite.heatmap.leer') }}</p>
     </div>
 </template>
 

@@ -26,6 +26,7 @@
  */
 
 import { perzentil, zufall } from './robustness.js'
+import { spearman } from '../shared/statistik.js'
 import { MIN_TRADES_BELASTBAR } from './strategy-backtest.js'
 
 /** Wie oft der Topf neu verteilt wird. */
@@ -53,49 +54,6 @@ export function vergibRaenge(zeilen) {
         .forEach((z, i) => { z.rangA = i + 1 })
     for (const z of zeilen) if (z.klasse !== 'belastbar') z.rangA = 0
     return zeilen
-}
-
-/**
- * Spearman-Rangkorrelation zwischen zwei gleich langen Reihen.
- *
- * Bindungen bekommen den mittleren Rang — sonst hinge das Ergebnis davon ab, in
- * welcher Reihenfolge gleiche Werte zufällig standen.
- * `null`, wenn es weniger als drei Paare gibt oder eine Reihe konstant ist:
- * dann ist keine Korrelation messbar, und 0 wäre eine Aussage, die die Daten
- * nicht hergeben.
- */
-export function spearman(xs, ys) {
-    const n = Math.min(xs.length, ys.length)
-    if (n < 3) return null
-
-    const raenge = (werte) => {
-        const idx = werte.map((w, i) => ({ w, i })).sort((a, b) => a.w - b.w)
-        const r = new Array(werte.length)
-        let i = 0
-        while (i < idx.length) {
-            let j = i
-            while (j + 1 < idx.length && idx[j + 1].w === idx[i].w) j++
-            const mittel = (i + j) / 2 + 1
-            for (let k = i; k <= j; k++) r[idx[k].i] = mittel
-            i = j + 1
-        }
-        return r
-    }
-
-    const rx = raenge(xs.slice(0, n))
-    const ry = raenge(ys.slice(0, n))
-    const mx = rx.reduce((s, v) => s + v, 0) / n
-    const my = ry.reduce((s, v) => s + v, 0) / n
-    let oben = 0
-    let sx = 0
-    let sy = 0
-    for (let i = 0; i < n; i++) {
-        oben += (rx[i] - mx) * (ry[i] - my)
-        sx += (rx[i] - mx) ** 2
-        sy += (ry[i] - my) ** 2
-    }
-    if (!(sx > 0) || !(sy > 0)) return null
-    return oben / Math.sqrt(sx * sy)
 }
 
 /**

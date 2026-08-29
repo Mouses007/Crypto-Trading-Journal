@@ -37,7 +37,8 @@ const { t, te, locale } = useI18n()
 let selectedLanguage = ref('de')
 
 async function changeLanguage(lang) {
-    setLocale(lang)
+    // `setLocale` laedt die Sprachdatei bei Bedarf nach und ist deshalb async.
+    await setLocale(lang)
     await dbUpdateSettings({ language: lang })
     currentUser.value.language = lang
     await useGetPeriods()
@@ -2911,13 +2912,13 @@ onBeforeMount(async () => {
                         </div>
                         <div v-show="bitunixSubExpanded" class="row align-items-center px-3 py-3">
                             <div class="row mt-1">
-                                <div class="col-12 col-md-4">API Key</div>
+                                <div class="col-12 col-md-4">{{ t('settings.apiKeyLabel') }}</div>
                                 <div class="col-12 col-md-8">
                                     <input type="text" class="form-control" v-model="bitunixApiKey" :placeholder="t('settings.apiKeyPlaceholder')" />
                                 </div>
                             </div>
                             <div class="row mt-2">
-                                <div class="col-12 col-md-4">Secret Key</div>
+                                <div class="col-12 col-md-4">{{ t('settings.secretKeyLabel') }}</div>
                                 <div class="col-12 col-md-8">
                                     <input type="password" class="form-control" v-model="bitunixSecretKey" :placeholder="t('settings.secretKeyPlaceholder')" />
                                 </div>
@@ -2932,7 +2933,7 @@ onBeforeMount(async () => {
                             <div class="mt-3">
                                 <button type="button" v-on:click="saveBitunixConfig" class="btn btn-success me-2">{{ t('common.save') }}</button>
                                 <button type="button" v-on:click="testBitunixConnection" class="btn btn-outline-primary" :disabled="bitunixTestLoading">
-                                    <span v-if="bitunixTestLoading">Testing...</span>
+                                    <span v-if="bitunixTestLoading">{{ t('common.testing') }}</span>
                                     <span v-else>{{ t('common.testConnection') }}</span>
                                 </button>
                                 <span v-if="bitunixTestResult === 'success'" class="ms-2 text-success">{{ t('common.connected') }}</span>
@@ -2951,19 +2952,19 @@ onBeforeMount(async () => {
                         </div>
                         <div v-show="bitgetSubExpanded" class="row align-items-center px-3 py-3">
                             <div class="row mt-1">
-                                <div class="col-12 col-md-4">API Key</div>
+                                <div class="col-12 col-md-4">{{ t('settings.apiKeyLabel') }}</div>
                                 <div class="col-12 col-md-8">
                                     <input type="text" class="form-control" v-model="bitgetApiKey" :placeholder="t('settings.apiKeyPlaceholder')" />
                                 </div>
                             </div>
                             <div class="row mt-2">
-                                <div class="col-12 col-md-4">Secret Key</div>
+                                <div class="col-12 col-md-4">{{ t('settings.secretKeyLabel') }}</div>
                                 <div class="col-12 col-md-8">
                                     <input type="password" class="form-control" v-model="bitgetSecretKey" :placeholder="t('settings.secretKeyPlaceholder')" />
                                 </div>
                             </div>
                             <div class="row mt-2">
-                                <div class="col-12 col-md-4">Passphrase</div>
+                                <div class="col-12 col-md-4">{{ t('settings.passphrase') }}</div>
                                 <div class="col-12 col-md-8">
                                     <input type="password" class="form-control" v-model="bitgetPassphrase" :placeholder="t('settings.passphrasePlaceholder')" />
                                     <small class="text-muted">{{ t('settings.passphraseHint') }}</small>
@@ -2982,22 +2983,22 @@ onBeforeMount(async () => {
                                     {{ bitgetImporting ? t('common.importing') : t('common.save') }}
                                 </button>
                                 <button type="button" v-on:click="testBitgetConnection" class="btn btn-outline-primary" :disabled="bitgetTestLoading">
-                                    <span v-if="bitgetTestLoading">Testing...</span>
+                                    <span v-if="bitgetTestLoading">{{ t('common.testing') }}</span>
                                     <span v-else>{{ t('common.testConnection') }}</span>
                                 </button>
-                                <span v-if="bitgetTestResult === 'success'" class="ms-2 text-success"><i class="uil uil-check-circle"></i> Verbunden</span>
+                                <span v-if="bitgetTestResult === 'success'" class="ms-2 text-success"><i class="uil uil-check-circle"></i> {{ t('common.connected') }}</span>
                                 <span v-if="bitgetTestResult === 'error'" class="ms-2 text-danger"><i class="uil uil-exclamation-triangle"></i> {{ t('common.failed') }}</span>
                             </div>
                             <div v-if="bitgetTestResult === 'error' && bitgetTestError" class="mt-2">
                                 <div class="p-2" style="background: rgba(255,0,0,0.1); border-radius: var(--border-radius); font-size: 0.85rem;">
-                                    <strong>Fehler:</strong> {{ bitgetTestError }}
+                                    <strong>{{ t('common.error') }}:</strong> {{ bitgetTestError }}
                                     <div v-if="bitgetTestError.includes('40012')" class="mt-2 text-muted" style="font-size: 0.8rem;">
-                                        <strong>Mögliche Ursachen:</strong>
+                                        <strong>{{ t('settings.possibleCausesLabel') }}</strong>
                                         <ul class="mb-0 mt-1">
-                                            <li>API Key, Secret Key oder Passphrase sind falsch</li>
-                                            <li>IP-Whitelist: Dein Server-IP ist nicht in der API-Key-Konfiguration freigegeben</li>
-                                            <li>API-Key-Typ: Stelle sicher, dass "HMAC" als Verschlüsselungsmethode ausgewählt wurde</li>
-                                            <li>Berechtigungen: Der API Key braucht "Futures" Leserechte</li>
+                                            <li>{{ t('settings.bitgetCauseWrongKeys') }}</li>
+                                            <li>{{ t('settings.bitgetCauseIpWhitelist') }}</li>
+                                            <li>{{ t('settings.bitgetCauseKeyType') }}</li>
+                                            <li>{{ t('settings.bitgetCausePermissions') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -3015,13 +3016,13 @@ onBeforeMount(async () => {
                         </div>
                         <div v-show="pionexSubExpanded" class="row align-items-center px-3 py-3">
                             <div class="row mt-1">
-                                <div class="col-12 col-md-4">API Key</div>
+                                <div class="col-12 col-md-4">{{ t('settings.apiKeyLabel') }}</div>
                                 <div class="col-12 col-md-8">
                                     <input type="text" class="form-control" v-model="pionexApiKey" :placeholder="t('settings.apiKeyPlaceholder')" />
                                 </div>
                             </div>
                             <div class="row mt-2">
-                                <div class="col-12 col-md-4">Secret Key</div>
+                                <div class="col-12 col-md-4">{{ t('settings.secretKeyLabel') }}</div>
                                 <div class="col-12 col-md-8">
                                     <input type="password" class="form-control" v-model="pionexSecretKey" :placeholder="t('settings.secretKeyPlaceholder')" />
                                 </div>
@@ -3039,21 +3040,21 @@ onBeforeMount(async () => {
                                     {{ pionexImporting ? t('common.importing') : t('common.save') }}
                                 </button>
                                 <button type="button" v-on:click="testPionexConnection" class="btn btn-outline-primary" :disabled="pionexTestLoading">
-                                    <span v-if="pionexTestLoading">Testing...</span>
+                                    <span v-if="pionexTestLoading">{{ t('common.testing') }}</span>
                                     <span v-else>{{ t('common.testConnection') }}</span>
                                 </button>
-                                <span v-if="pionexTestResult === 'success'" class="ms-2 text-success"><i class="uil uil-check-circle"></i> Verbunden</span>
+                                <span v-if="pionexTestResult === 'success'" class="ms-2 text-success"><i class="uil uil-check-circle"></i> {{ t('common.connected') }}</span>
                                 <span v-if="pionexTestResult === 'error'" class="ms-2 text-danger"><i class="uil uil-exclamation-triangle"></i> {{ t('common.failed') }}</span>
                             </div>
                             <div v-if="pionexTestResult === 'error' && pionexTestError" class="mt-2">
                                 <div class="p-2" style="background: rgba(255,0,0,0.1); border-radius: var(--border-radius); font-size: 0.85rem;">
-                                    <strong>Fehler:</strong> {{ pionexTestError }}
+                                    <strong>{{ t('common.error') }}:</strong> {{ pionexTestError }}
                                     <div class="mt-2 text-muted" style="font-size: 0.8rem;">
-                                        <strong>Mögliche Ursachen:</strong>
+                                        <strong>{{ t('settings.possibleCausesLabel') }}</strong>
                                         <ul class="mb-0 mt-1">
-                                            <li>API Key oder Secret Key sind falsch</li>
-                                            <li>IP-Whitelist: Dein Server-IP ist nicht freigegeben (optional bei Pionex)</li>
-                                            <li>Berechtigungen: Der API Key braucht "Lesen aktivieren" (Read)</li>
+                                            <li>{{ t('settings.pionexCauseWrongKeys') }}</li>
+                                            <li>{{ t('settings.pionexCauseIpWhitelist') }}</li>
+                                            <li>{{ t('settings.pionexCausePermissions') }}</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -3093,7 +3094,7 @@ onBeforeMount(async () => {
                             </template>
                             <template v-else>
                                 <span class="fw-bold me-2">{{ group.name }}</span>
-                                <span class="badge me-2" :style="{ backgroundColor: group.color }">{{ group.tags.length }} Tags</span>
+                                <span class="badge me-2" :style="{ backgroundColor: group.color }">{{ group.tags.length }} {{ t('settings.tagsCountSuffix') }}</span>
                                 <button v-if="tagGroups.indexOf(group) !== 0" class="btn btn-outline-secondary btn-sm me-1" @click="startEditGroup(group)"><i class="uil uil-pen"></i></button>
                                 <button v-if="tagGroups.indexOf(group) !== 0" class="btn btn-outline-danger btn-sm" @click="removeGroup(group.id)"><i class="uil uil-trash-alt"></i></button>
                                 <span v-else class="badge bg-secondary ms-1" style="font-size: 0.65rem;"><i class="uil uil-lock-alt me-1"></i>{{ t('common.mandatory') }}</span>
@@ -3111,7 +3112,7 @@ onBeforeMount(async () => {
                         <!-- Add tag input -->
                         <div class="d-flex">
                             <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" :placeholder="t('settings.newTagPlaceholder')" v-model="newTagName[group.id]" @keyup.enter="addTag(group)" />
-                            <button class="btn btn-outline-primary btn-sm" @click="addTag(group)">+ Tag</button>
+                            <button class="btn btn-outline-primary btn-sm" @click="addTag(group)">{{ t('settings.addTagBtn') }}</button>
                         </div>
                     </div>
 
@@ -3120,7 +3121,7 @@ onBeforeMount(async () => {
                         <div class="d-flex align-items-center">
                             <input type="text" class="form-control form-control-sm me-2" style="max-width: 200px;" :placeholder="t('settings.newGroupPlaceholder')" v-model="newGroupName" @keyup.enter="addGroup" />
                             <input type="color" class="form-control form-control-color form-control-sm me-2" v-model="newGroupColor" />
-                            <button class="btn btn-outline-success btn-sm" @click="addGroup">+ Gruppe</button>
+                            <button class="btn btn-outline-success btn-sm" @click="addGroup">{{ t('settings.addGroupBtn') }}</button>
                         </div>
                     </div>
 
@@ -3756,14 +3757,14 @@ onBeforeMount(async () => {
                 <!--=============== SHARE CARDS (FLUX.2 + Gemini) ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="fluxExpanded = !fluxExpanded">
                     <i class="uil me-2" :class="fluxExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">Share-Karten</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.shareCardsTitle') }}</p>
                 </div>
                 <div v-show="fluxExpanded" class="mt-2 ms-3">
-                    <p class="fw-lighter">Erstelle stylische Share-Bilder für deine Trades mit KI-Bildgenerierung.</p>
+                    <p class="fw-lighter">{{ t('settings.shareCardsDescription') }}</p>
 
                     <!-- Provider Selection -->
                     <div class="row mt-2">
-                        <div class="col-12 col-md-4">Bild-Provider</div>
+                        <div class="col-12 col-md-4">{{ t('settings.imageProviderLabel') }}</div>
                         <div class="col-12 col-md-8">
                             <div class="d-flex gap-4">
                                 <div class="form-check">
@@ -3810,7 +3811,7 @@ onBeforeMount(async () => {
                     <!-- Gemini-specific settings -->
                     <div v-show="shareCardProvider === 'gemini'">
                         <div class="row mt-3">
-                            <div class="col-12 col-md-4">Gemini API-Key</div>
+                            <div class="col-12 col-md-4">{{ t('settings.geminiApiKeyLabel') }}</div>
                             <div class="col-12 col-md-8">
                                 <div class="input-group">
                                     <input type="password" class="form-control" v-model="geminiImageApiKey" placeholder="AIza..."
@@ -3827,7 +3828,7 @@ onBeforeMount(async () => {
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Gemini Modell<InfoTipp schluessel="settings.info.geminiImageModel" /></div>
+                            <div class="col-12 col-md-4">{{ t('settings.geminiModelLabel') }}<InfoTipp schluessel="settings.info.geminiImageModel" /></div>
                             <div class="col-12 col-md-8">
                                 <select class="form-select" v-model="geminiImageModel">
                                     <option v-for="m in geminiImageModels" :key="m.value" :value="m.value">{{ m.label }}</option>
@@ -4024,13 +4025,11 @@ onBeforeMount(async () => {
                          einmal abfragt. -->
                     <div class="mb-3 p-2 rounded" style="background: rgba(255,255,255,.03);">
                         <p class="fw-bold mb-1" style="font-size:0.9rem;">
-                            News-Profile
+                            {{ t('settings.ki.news.profilesTitle') }}
                             <InfoTipp schluessel="settings.info.newsProfile" />
                         </p>
                         <p class="fw-lighter" style="font-size:0.8rem;">
-                            Benannte Vorlagen aus allen Feldern dieser Seite plus Fokus-/Ausschluss-Filter
-                            und Quellen-Auswahl. Auf der Nachrichten-Seite steht dafür nur noch ein
-                            Dropdown zum Anwenden — angelegt und bearbeitet wird hier.
+                            {{ t('settings.ki.news.profilesDescription') }}
                         </p>
                         <table class="table table-sm align-middle mb-2" v-if="newsProfile.length">
                             <tbody>
@@ -4054,20 +4053,20 @@ onBeforeMount(async () => {
                                             </button>
                                         </template>
                                         <template v-else>
-                                            <button class="btn btn-outline-secondary btn-sm me-1" title="Umbenennen"
+                                            <button class="btn btn-outline-secondary btn-sm me-1" :title="t('settings.ki.news.renameTitle')"
                                                 @click="profilUmbenennen = p.id; profilUmbenennenName = p.name">
                                                 <i class="uil uil-edit-alt"></i>
                                             </button>
                                             <button class="btn btn-outline-primary btn-sm me-1" @click="profilAnwenden(p)">
-                                                Anwenden
+                                                {{ t('common.apply') }}
                                             </button>
                                             <button class="btn btn-outline-secondary btn-sm me-1" @click="profilAktualisieren(p)"
-                                                title="Aktuelle Einstellungen erneut in dieses Profil einschnappen">
-                                                Aktualisieren
+                                                :title="t('settings.ki.news.updateProfileTitle')">
+                                                {{ t('settings.ki.news.updateProfileBtn') }}
                                             </button>
                                             <template v-if="profilLoeschBestaetigung === p.id">
-                                                <button class="btn btn-danger btn-sm me-1" @click="profilLoeschen(p)">Ja</button>
-                                                <button class="btn btn-outline-secondary btn-sm" @click="profilLoeschBestaetigung = null">Nein</button>
+                                                <button class="btn btn-danger btn-sm me-1" @click="profilLoeschen(p)">{{ t('common.yes') }}</button>
+                                                <button class="btn btn-outline-secondary btn-sm" @click="profilLoeschBestaetigung = null">{{ t('common.no') }}</button>
                                             </template>
                                             <button v-else class="btn btn-outline-danger btn-sm" @click="profilLoeschBestaetigung = p.id">
                                                 <i class="uil uil-trash-alt"></i>
@@ -4077,13 +4076,13 @@ onBeforeMount(async () => {
                                 </tr>
                             </tbody>
                         </table>
-                        <p v-else class="small text-muted">Noch keine Profile angelegt.</p>
+                        <p v-else class="small text-muted">{{ t('settings.ki.news.noProfiles') }}</p>
                         <div class="d-flex gap-2 align-items-center">
                             <input class="form-control form-control-sm" style="max-width:16rem;"
-                                v-model="neuesProfilName" placeholder="Name, z.B. 'Nur BTC wichtige News'"
+                                v-model="neuesProfilName" :placeholder="t('settings.ki.news.newProfileNamePlaceholder')"
                                 @keyup.enter="profilAnlegen">
                             <button class="btn btn-outline-primary btn-sm" :disabled="!neuesProfilName.trim()" @click="profilAnlegen">
-                                + Aus aktuellen Einstellungen speichern
+                                {{ t('settings.ki.news.saveAsProfileBtn') }}
                             </button>
                         </div>
                         <div v-if="profilMeldung" class="small mt-2" :class="profilFehler ? 'text-danger' : 'text-muted'">
@@ -4093,24 +4092,17 @@ onBeforeMount(async () => {
 
                     <!--=============== NACHRICHTENQUELLEN ===============-->
                     <hr class="mt-4" />
-                    <p class="fw-bold mb-1">Nachrichtenquellen</p>
+                    <p class="fw-bold mb-1">{{ t('settings.ki.news.sourcesTitle') }}</p>
                     <p class="fw-lighter">
-                        YouTube-Kanäle, RSS-Adressen, Telegram-Kanäle und X-Accounts für die Nachrichten-Seite.
-                        Was du als <strong>Ausschluss</strong> markierst, blendet „Temporär ausschliessen" aus —
-                        und holt es gar nicht erst ab. Es werden nur Titel, Verweis und Zeitpunkt gespeichert,
-                        keine Volltexte.
+                        {{ t('settings.ki.news.sourcesDescription') }}
                     </p>
                     <p class="fw-lighter" style="font-size:0.82rem;">
-                        <strong>Zu X:</strong> läuft über die bezahlte Grok-Suche (xAI) — als Adresse genügt der
-                        Handle, z.B. <code>@saylor</code>. Alle X-Quellen zusammen kosten EINE Suche je Abruflauf
-                        (rund 0,5 Rappen plus Token), gedrosselt auf höchstens eine Suche alle vier Stunden.
-                        Voraussetzung ist ein xAI-Schlüssel unter „KI-Einstellungen". Gratis-Umwege (Nitter-Spiegel)
-                        sind tot — geprüft am 16.08.2026.
+                        {{ t('settings.ki.news.xSourceHint') }}
                     </p>
 
                     <div class="row align-items-center mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Temporär ausschliessen<InfoTipp schluessel="settings.info.laermfilter" /></label>
+                            <label class="fw-lighter">{{ t('settings.ki.news.tempExcludeLabel') }}<InfoTipp schluessel="settings.info.laermfilter" /></label>
                         </div>
                         <div class="col-12 col-md-9">
                             <label class="switch">
@@ -4118,7 +4110,7 @@ onBeforeMount(async () => {
                                 <span class="slider round"></span>
                             </label>
                             <span class="ms-2 small text-muted">
-                                {{ radarNewsQuellenAusschluss ? 'An — als Ausschluss markierte Quellen bleiben aussen vor' : 'Aus — alle aktiven Quellen werden geholt' }}
+                                {{ radarNewsQuellenAusschluss ? t('settings.ki.news.tempExcludeOn') : t('settings.ki.news.tempExcludeOff') }}
                             </span>
                         </div>
                     </div>
@@ -4129,10 +4121,9 @@ onBeforeMount(async () => {
                          also auch rückwirkend. -->
                     <div class="row mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Ruhe-Filter<InfoTipp schluessel="settings.info.wortfilter" /></label>
+                            <label class="fw-lighter">{{ t('settings.ki.news.quietFilterLabel') }}<InfoTipp schluessel="settings.info.wortfilter" /></label>
                             <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Filtert Truth Social automatisch. Beiträge, die eines der Stichwörter
-                                enthalten (ein Begriff je Zeile), verschwinden aus Liste und Lagebericht.
+                                {{ t('settings.ki.news.quietFilterHint') }}
                             </small>
                         </div>
                         <div class="col-12 col-md-9">
@@ -4152,11 +4143,9 @@ onBeforeMount(async () => {
                          genau wie der Ruhe-Filter aufgebaut. -->
                     <div class="row mb-2">
                         <div class="col-12 col-md-3">
-                            <label class="fw-lighter">Fokus-Filter<InfoTipp schluessel="settings.info.fokusfilter" /></label>
+                            <label class="fw-lighter">{{ t('settings.ki.news.focusFilterLabel') }}<InfoTipp schluessel="settings.info.fokusfilter" /></label>
                             <small class="d-block text-muted" style="font-size:0.78rem;">
-                                Umgekehrt zum Ruhe-Filter: nur Beiträge, die eines der Stichwörter
-                                enthalten (ein Begriff je Zeile), bleiben in Liste und Lagebericht übrig.
-                                Leer = kein Fokus, alles bleibt.
+                                {{ t('settings.ki.news.focusFilterHint') }}
                             </small>
                         </div>
                         <div class="col-12 col-md-9">
@@ -4174,14 +4163,14 @@ onBeforeMount(async () => {
                     <table class="table table-sm align-middle" v-if="newsQuellen.length">
                         <thead>
                             <tr>
-                                <th style="width:6rem;">Art</th>
-                                <th>Name</th>
-                                <th>Adresse</th>
-                                <th style="width:5rem;" class="text-center">Aktiv</th>
+                                <th style="width:6rem;">{{ t('settings.ki.news.colType') }}</th>
+                                <th>{{ t('settings.ki.news.colName') }}</th>
+                                <th>{{ t('settings.ki.news.colAddress') }}</th>
+                                <th style="width:5rem;" class="text-center">{{ t('settings.ki.news.colActive') }}</th>
                                 <th style="width:6rem;" class="text-center"
-                                    title="Temporär ausschliessen: Quelle wird weder geholt noch angezeigt, solange der Schalter oben an ist.">
-                                    Ausschluss</th>
-                                <th style="width:5rem;" class="text-center" title="Nur YouTube: sollen die Videos dieser Quelle an Gemini gehen? Jedes kostet 3–10 Rappen.">Videos</th>
+                                    :title="t('settings.ki.news.colExcludeTitle')">
+                                    {{ t('settings.ki.news.colExclude') }}</th>
+                                <th style="width:5rem;" class="text-center" :title="t('settings.ki.news.colVideosTitle')">{{ t('settings.ki.news.colVideos') }}</th>
                                 <th style="width:7rem;"></th>
                             </tr>
                         </thead>
@@ -4230,7 +4219,7 @@ onBeforeMount(async () => {
                             </select>
                         </div>
                         <div class="col-6 col-md-3">
-                            <input class="form-control form-control-sm" v-model="neueQuelle.name" placeholder="Name">
+                            <input class="form-control form-control-sm" v-model="neueQuelle.name" :placeholder="t('settings.ki.news.sourceNamePlaceholder')">
                         </div>
                         <div class="col-12 col-md-5">
                             <input class="form-control form-control-sm" v-model="neueQuelle.url"
@@ -4240,8 +4229,8 @@ onBeforeMount(async () => {
                         </div>
                         <div class="col-12 col-md-2 d-flex gap-1">
                             <button class="btn btn-outline-secondary btn-sm" :disabled="newsTestet"
-                                @click="quelleTesten">Test</button>
-                            <button class="btn btn-outline-primary btn-sm" @click="quelleAnlegen">Hinzufügen</button>
+                                @click="quelleTesten">{{ t('settings.ki.news.testSourceBtn') }}</button>
+                            <button class="btn btn-outline-primary btn-sm" @click="quelleAnlegen">{{ t('settings.ki.news.addSourceBtn') }}</button>
                         </div>
                     </div>
                     <div v-if="newsMeldung" class="small mt-2" :class="newsFehler ? 'text-danger' : 'text-muted'">
@@ -4249,10 +4238,10 @@ onBeforeMount(async () => {
                     </div>
 
                     <div v-if="newsVorschlaege.length" class="mt-2 small">
-                        <span class="text-muted me-2">Vorschläge:</span>
+                        <span class="text-muted me-2">{{ t('settings.ki.news.suggestionsLabel') }}</span>
                         <button v-for="v in newsVorschlaege" :key="v.url"
                             class="btn btn-outline-secondary btn-sm me-1 mb-1" @click="vorschlagUebernehmen(v)">
-                            {{ v.name }}<span v-if="v.laerm" class="ms-1 text-muted">(Lärm)</span>
+                            {{ v.name }}<span v-if="v.laerm" class="ms-1 text-muted">{{ t('settings.ki.news.noiseSuffix') }}</span>
                         </button>
                     </div>
 
@@ -5479,7 +5468,7 @@ onBeforeMount(async () => {
                                 <thead>
                                     <tr style="color: var(--white-50);">
                                         <th>{{ t('settings.pgProvider') }}</th>
-                                        <th>Free Tier</th>
+                                        <th>{{ t('settings.freeTierCol') }}</th>
                                         <th>{{ t('settings.pgFeature') }}</th>
                                     </tr>
                                 </thead>
@@ -5507,13 +5496,13 @@ onBeforeMount(async () => {
                     <!-- PostgreSQL-Felder -->
                     <template v-if="dbType === 'postgresql'">
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Host</div>
+                            <div class="col-12 col-md-4">{{ t('settings.hostLabel') }}</div>
                             <div class="col-12 col-md-8">
                                 <input type="text" class="form-control" v-model="dbHost" :placeholder="t('settings.hostPlaceholder')" />
                             </div>
                         </div>
                         <div class="row mt-2">
-                            <div class="col-12 col-md-4">Port<InfoTipp schluessel="settings.info.dbPort" /></div>
+                            <div class="col-12 col-md-4">{{ t('settings.portLabel') }}<InfoTipp schluessel="settings.info.dbPort" /></div>
                             <div class="col-12 col-md-8">
                                 <input type="number" class="form-control" v-model="dbPort" placeholder="5432" />
                             </div>
@@ -5595,7 +5584,7 @@ onBeforeMount(async () => {
                 <!--=============== OHLC-CHART ===============-->
                 <div class="d-flex align-items-center pointerClass" @click="chartExpanded = !chartExpanded">
                     <i class="uil me-2" :class="chartExpanded ? 'uil-angle-down' : 'uil-angle-right'"></i>
-                    <p class="fs-5 fw-bold mb-0">OHLC-Chart</p>
+                    <p class="fs-5 fw-bold mb-0">{{ t('settings.ohlcChart') }}</p>
                 </div>
                 <div v-show="chartExpanded" class="mt-2 ms-3">
                     <p class="fw-lighter">{{ t('settings.ohlcDescription') }}</p>
@@ -5636,7 +5625,7 @@ onBeforeMount(async () => {
                                     @click="toggleMonth(month.key)">
                                     <i class="uil" :class="expandedMonths.has(month.key) ? 'uil-angle-down' : 'uil-angle-right'"></i>
                                     <span class="fw-bold">{{ month.label }}</span>
-                                    <span class="badge bg-secondary">{{ month.days.length }} {{ month.days.length === 1 ? 'Tag' : 'Tage' }}</span>
+                                    <span class="badge bg-secondary">{{ month.days.length }} {{ month.days.length === 1 ? t('settings.dayLabel') : t('settings.daysLabel') }}</span>
                                     <span class="badge bg-secondary">{{ month.tradeCount }} {{ t('common.trades') }}</span>
                                     <span v-if="month.evaluatedCount === month.tradeCount && month.tradeCount > 0"
                                         class="badge bg-success">{{ t('settings.allEvaluated') }}</span>
@@ -5688,15 +5677,15 @@ onBeforeMount(async () => {
                                                 </div>
                                                 <div class="d-flex align-items-center gap-2">
                                                     <span v-if="isTradeEvaluated(trade.id)" class="badge bg-success">
-                                                        <i class="uil uil-check me-1"></i>Bewertet
+                                                        <i class="uil uil-check me-1"></i>{{ t('settings.importEvaluatedBadge') }}
                                                     </span>
                                                     <a v-else :href="'/playbook?tradeId=' + trade.id" class="btn btn-sm btn-outline-primary py-0 px-2">
-                                                        <i class="uil uil-pen me-1"></i>Bewerten
+                                                        <i class="uil uil-pen me-1"></i>{{ t('settings.importEvaluateLink') }}
                                                     </a>
                                                 </div>
                                             </div>
                                             <div v-if="getTradesForDay(data).length === 0" class="text-muted small py-1">
-                                                Keine einzelnen Trades gefunden.
+                                                {{ t('settings.importNoTradesFound') }}
                                             </div>
                                         </div>
                                     </div>
@@ -5867,7 +5856,7 @@ onBeforeMount(async () => {
                         <select class="form-select" style="max-width:11rem;" v-model="mail.mailSicherheit">
                             <option value="tls">TLS (465)</option>
                             <option value="starttls">STARTTLS (587)</option>
-                            <option value="keine">ohne</option>
+                            <option value="keine">{{ t('settings.benachrichtigungen.mailSecurityNone') }}</option>
                         </select>
                     </div>
                 </div>

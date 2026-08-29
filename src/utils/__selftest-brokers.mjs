@@ -59,6 +59,89 @@ console.log('\nBitunix-Kontoauszug\n')
     check('undefined kippt nicht um', parseBitunixRows(undefined).trades.length === 0)
 }
 
+/*
+ * Funding-Buchungen aus dem Kontoauszug.
+ *
+ * Sie fielen bis zum Audit vom 28.08.2026 stillschweigend unter
+ * `uebersprungen`. Aus einem CSV-Import kam damit IMMER `fundingFee: 0`,
+ * obwohl die Betraege in der Datei standen.
+ *
+ * Die wichtigere Haelfte dieses Tests ist nicht "wird zugeordnet", sondern
+ * "wird NICHT geraten": ohne Positions-ID ist die Zuordnung nur bei genau
+ * einem Trade je Tag und Symbol eindeutig.
+ */
+console.log('\nBitunix: Funding aus dem Kontoauszug\n')
+
+{
+    const zeilen = [
+        { 'Date (UTC)': '2026-08-01 10:00:00', Label: 'Futures Profit', 'Incoming Amount': '20', 'Fee Amount': '1', 'Trx. ID': 'T1', Comment: 'BTCUSDT' },
+        // bezahlt -> negativ
+        { 'Date (UTC)': '2026-08-01 12:00:00', Label: 'Funding Fee', 'Outgoing Amount': '0.50', 'Trx. ID': 'F1', Comment: 'BTCUSDT' },
+        // erhalten -> positiv, anderes Symbol am selben Tag
+        { 'Date (UTC)': '2026-08-01 13:00:00', Label: 'Futures Loss', 'Outgoing Amount': '5', 'Fee Amount': '0.20', 'Trx. ID': 'T2', Comment: 'ETHUSDT' },
+        { 'Date (UTC)': '2026-08-01 14:00:00', Label: 'Funding Fee', 'Incoming Amount': '0.30', 'Trx. ID': 'F2', Comment: 'ETHUSDT' },
+    ]
+    const { trades, funding } = parseBitunixRows(zeilen)
+    const btc = trades.find((t) => t.Symbol === 'BTCUSDT')
+    const eth = trades.find((t) => t.Symbol === 'ETHUSDT')
+
+    check('bezahltes Funding steht negativ im Trade', nah(btc.FundingFee, -0.5), String(btc.FundingFee))
+    check('erhaltenes Funding steht positiv im Trade', nah(eth.FundingFee, 0.3), String(eth.FundingFee))
+    check('beide Buchungen zugeordnet', funding.gefunden === 2 && funding.zugeordnet === 2 && funding.offen === 0,
+        JSON.stringify(funding))
+
+    // Netto ist das Wallet-Delta und enthaelt das Funding; brutto bleibt die
+    // reine Trade-PnL, damit netto = brutto - Gebuehr + Funding aufgeht.
+    check('Netto enthaelt das Funding', nah(btc.NetProceeds, 20 - 0.5), String(btc.NetProceeds))
+    check('Brutto bleibt die reine Trade-PnL', nah(btc.GrossProceeds, 21), String(btc.GrossProceeds))
+    check('die Netto-Formel geht auf',
+        nah(btc.GrossProceeds - btc.Fee + btc.FundingFee, btc.NetProceeds),
+        `${btc.GrossProceeds} - ${btc.Fee} + ${btc.FundingFee} != ${btc.NetProceeds}`)
+}
+
+{
+    // Kein Symbol im Kommentar -> nicht zuordenbar, aber auch nicht verschwiegen.
+    const { trades, funding } = parseBitunixRows([
+        { 'Date (UTC)': '2026-08-01 10:00:00', Label: 'Futures Profit', 'Incoming Amount': '20', 'Fee Amount': '1', Comment: 'BTCUSDT' },
+        { 'Date (UTC)': '2026-08-01 12:00:00', Label: 'Funding Fee', 'Outgoing Amount': '0.50' },
+    ])
+    check('Funding ohne Symbol bleibt offen', funding.offen === 1 && funding.zugeordnet === 0, JSON.stringify(funding))
+    check('offener Betrag wird ausgewiesen', nah(funding.offenBetrag, -0.5), String(funding.offenBetrag))
+    check('der Trade bleibt unveraendert', !trades[0].FundingFee && nah(trades[0].NetProceeds, 20))
+}
+
+{
+    // Zwei Trades desselben Symbols am selben Tag: jede Aufteilung waere
+    // geraten. Genau hier darf NICHT zugeordnet werden.
+    const { trades, funding } = parseBitunixRows([
+        { 'Date (UTC)': '2026-08-01 10:00:00', Label: 'Futures Profit', 'Incoming Amount': '20', 'Fee Amount': '1', Comment: 'BTCUSDT' },
+        { 'Date (UTC)': '2026-08-01 15:00:00', Label: 'Futures Profit', 'Incoming Amount': '10', 'Fee Amount': '1', Comment: 'BTCUSDT' },
+        { 'Date (UTC)': '2026-08-01 12:00:00', Label: 'Funding Fee', 'Outgoing Amount': '0.50', Comment: 'BTCUSDT' },
+    ])
+    check('mehrdeutige Zuordnung wird nicht geraten',
+        funding.zugeordnet === 0 && funding.offen === 1, JSON.stringify(funding))
+    check('kein Trade bekommt heimlich Funding',
+        trades.every((t) => !t.FundingFee))
+}
+
+{
+    // Anderer Tag -> keine Zuordnung ueber Tagesgrenzen hinweg.
+    const { funding } = parseBitunixRows([
+        { 'Date (UTC)': '2026-08-01 10:00:00', Label: 'Futures Profit', 'Incoming Amount': '20', 'Fee Amount': '1', Comment: 'BTCUSDT' },
+        { 'Date (UTC)': '2026-08-02 12:00:00', Label: 'Funding Fee', 'Outgoing Amount': '0.50', Comment: 'BTCUSDT' },
+    ])
+    check('Funding eines anderen Tages bleibt offen', funding.offen === 1, JSON.stringify(funding))
+}
+
+{
+    // Null-Buchungen sind kein Fund.
+    const { funding } = parseBitunixRows([
+        { 'Date (UTC)': '2026-08-01 10:00:00', Label: 'Futures Profit', 'Incoming Amount': '20', 'Fee Amount': '1', Comment: 'BTCUSDT' },
+        { 'Date (UTC)': '2026-08-01 12:00:00', Label: 'Funding Fee', 'Outgoing Amount': '0', Comment: 'BTCUSDT' },
+    ])
+    check('Nullbetrag wird nicht als Buchung gezaehlt', funding.gefunden === 0, JSON.stringify(funding))
+}
+
 console.log('\nBitget-Verlauf\n')
 
 {

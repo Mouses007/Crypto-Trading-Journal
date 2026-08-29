@@ -40,6 +40,26 @@ const MAX_EREIGNISSE = 20000
 let ring = []
 
 /**
+ * Index des ersten noch gültigen Eintrags.
+ *
+ * Verdrängt wurde bis zum Audit vom 28.08.2026 mit `ring.filter(...)` bei
+ * praktisch JEDEM Ereignis: sobald der Ring das 30-Minuten-Fenster füllt,
+ * liegt das älteste Element per Konstruktion an der Grenze, und das nächste
+ * Ereignis schiebt sie darüber hinweg. Gemessen 137 µs je Liquidation im
+ * Vollstand — bei einer ungedrosselten Bybit-Kaskade (2000 Ereignisse/s) ein
+ * Viertel eines Kerns, und zwar in genau dem Prozess, der gleichzeitig die
+ * Live-Trading-Kacheln bedient. Also teuer genau dann, wenn das Fenster
+ * gebraucht wird.
+ *
+ * Mit einem Kopfzeiger kostet das Verdrängen amortisiert O(1); kopiert wird
+ * nur, wenn der tote Vorlauf gross genug ist, dass sich das Kopieren lohnt.
+ */
+let kopf = 0
+
+/** Ab wann der tote Vorlauf weggeschnitten wird. */
+const KOMPAKT_AB = 4096
+
+/**
  * Börse → Zeitpunkt des zuletzt gelieferten Ereignisses.
  *
  * Vorher war das ein Set: „hat je geliefert". Ein toter Bybit-Strom blieb
@@ -73,13 +93,29 @@ export function merkeLiq(boerse, symbol, t, preis, menge, seite) {
     boersen.set(boerse, zeit)
     ring.push([zeit, p, m, seite === 1 ? 1 : 0, boerse, String(symbol).toUpperCase()])
 
-    // Verdrängung beim Schreiben statt per Zeitgeber: ein Timer, der auch dann
-    // läuft, wenn gar nichts kommt, wäre reine Beschäftigung.
-    if (ring.length > MAX_EREIGNISSE) ring = ring.slice(-MAX_EREIGNISSE)
+    /*
+     * Verdrängung beim Schreiben statt per Zeitgeber: ein Timer, der auch dann
+     * läuft, wenn gar nichts kommt, wäre reine Beschäftigung.
+     *
+     * Der Kopfzeiger wandert nur über die Elemente, die WIRKLICH verfallen —
+     * über die Lebenszeit eines Elements genau einmal. Das ist der Unterschied
+     * zum vorherigen `filter`, das bei jedem Ereignis den ganzen Ring anfasste.
+     */
     const grenze = zeit - FENSTER_MS
-    if (ring.length && ring[0][0] < grenze) {
-        ring = ring.filter(e => e[0] >= grenze)
+    while (kopf < ring.length && ring[kopf][0] < grenze) kopf++
+    // Harte Obergrenze: bei einem Ausschlag greift die Zeitgrenze noch nicht.
+    while (ring.length - kopf > MAX_EREIGNISSE) kopf++
+
+    // Kopieren lohnt erst, wenn genug totes Vorspann liegt.
+    if (kopf >= KOMPAKT_AB) {
+        ring = ring.slice(kopf)
+        kopf = 0
     }
+}
+
+/** Die gültigen Einträge — ohne den verdrängten Vorlauf. */
+function gueltige() {
+    return kopf === 0 ? ring : ring.slice(kopf)
 }
 
 /**
@@ -95,7 +131,7 @@ export function lies({ minuten = 15, symbol = null, jetzt = Date.now() } = {}) {
     const von = jetzt - spanne
     const sym = symbol ? String(symbol).toUpperCase() : null
 
-    const treffer = ring.filter(e => e[0] >= von && (!sym || e[5] === sym))
+    const treffer = gueltige().filter(e => e[0] >= von && (!sym || e[5] === sym))
 
     let longUsd = 0
     let shortUsd = 0
@@ -156,6 +192,7 @@ export function lies({ minuten = 15, symbol = null, jetzt = Date.now() } = {}) {
 /** Nur für den Selbsttest — im Betrieb gibt es keinen Grund, zu leeren. */
 export function _leere() {
     ring = []
+    kopf = 0
     boersen.clear()
 }
 

@@ -420,8 +420,8 @@
                         <span class="hypAlarmSchwere">{{ t('hype.schwere_' + a.schwere) }}</span>
                         <span class="hypAlarmText">{{ a.meldung }}</span>
                         <span class="hypAlarmZeit">{{ zeitpunkt(a.erstelltAm) }}</span>
-                        <span class="hypAlarmWeg" :class="{ scharf: alarmLoeschId === a.id }"
-                            :title="t('hype.loeschen')" @click.stop="alarmLoeschen(a.id)">
+                        <span role="button" tabindex="0" class="hypAlarmWeg" :class="{ scharf: alarmLoeschId === a.id }"
+                            :title="t('hype.loeschen')" @keydown.enter.stop.prevent="alarmLoeschen(a.id)" @keydown.space.stop.prevent="alarmLoeschen(a.id)" @click.stop="alarmLoeschen(a.id)">
                             <i class="uil uil-trash-alt"></i>
                         </span>
                     </div>
@@ -769,8 +769,14 @@
                         <dt>{{ t('hype.risiken') }}</dt><dd>{{ k.risiken }}</dd>
                     </dl>
                     <div v-if="k.belege?.length" class="hypBelege">
-                        <a v-for="(b, i) in k.belege.slice(0, 6)" :key="i" :href="b"
-                            target="_blank" rel="noopener noreferrer">[{{ i + 1 }}]</a>
+                        <template v-for="(b, i) in k.belege.slice(0, 6)" :key="i">
+                            <!-- Belege stammen aus Perplexity-Zitaten, also aus einer
+                                 KI-Antwort. Ein `javascript:`-Schema fuehrt beim Klick
+                                 direkt zur Ausfuehrung; ohne gueltiges Schema wird gar
+                                 kein Link gerendert. -->
+                            <a v-if="sichereUrl(b)" :href="sichereUrl(b)"
+                                target="_blank" rel="noopener noreferrer">[{{ i + 1 }}]</a>
+                        </template>
                     </div>
                 </div>
 
@@ -807,6 +813,7 @@
  * Kandidat nicht allein wegen seiner Lage interessant aussieht.
  */
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { sichereUrl } from '../utils/sanitize.js'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'

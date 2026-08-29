@@ -159,7 +159,7 @@ let tagsModal = null
 let tagsModalOpen = ref(false)
 
 function closeTradeModal() {
-    tradesModal.hide()
+    tradesModal?.hide()
     modalDailyTradeOpen.value = false
 }
 
@@ -434,23 +434,54 @@ onMounted(async () => {
         scrollToTradeCard(scrollToDateUnix.value)
     }
 
-    tradesModal = new bootstrap.Modal("#tradesModal")
-    document.getElementById("tradesModal").addEventListener('shown.bs.modal', async (event) => {
+    /*
+     * Der gesamte Modal-Bereich steht hinter `v-if="!spinnerLoadingPage &&
+     * filteredTrades"` (siehe Template). `useMountDaily()` schaltet den
+     * Spinner ab, aber Vue schreibt die DOM-Änderung erst asynchron — ohne
+     * dieses `nextTick()` griff `document.getElementById("tradesModal")`
+     * manchmal ins Leere, je nachdem wie schnell Vue nachkam. Bisher lief
+     * das nur zufällig glatt, wenn der Kalender-Zweig oben bereits ein
+     * `nextTick()` erzwungen hatte.
+     */
+    await nextTick()
+
+    // Bootstrap kommt vom CDN (index.html). Ohne Netz ist `bootstrap`
+    // undefined, und `new bootstrap.Modal(...)` würde hier werfen und den
+    // Rest von onMounted (Tag-Modal, Event-Listener) mitreissen. Dasselbe
+    // Muster wie useInitPopover/useInitTooltip in utils.js.
+    const bs = typeof bootstrap !== 'undefined' ? bootstrap : null
+    if (!bs?.Modal) {
+        console.warn(' -> Bootstrap nicht verfügbar (CDN?) — Trade- und Tag-Modal bleiben ohne Funktion')
+        return
+    }
+
+    // `filteredTrades` kann trotz nextTick() noch leer/null sein (z.B. neuer
+    // Broker ohne Trades) — dann rendert v-if den Modal-Bereich nie, und die
+    // Elemente existieren nicht. Kein Fehler, nur nichts zu initialisieren.
+    const tradesModalEl = document.getElementById("tradesModal")
+    const tagsModalEl = document.getElementById("tagsModal")
+    if (!tradesModalEl || !tagsModalEl) {
+        console.warn(' -> Daily: Modal-Elemente noch nicht im DOM — filteredTrades vermutlich leer')
+        return
+    }
+
+    tradesModal = new bs.Modal(tradesModalEl)
+    tradesModalEl.addEventListener('shown.bs.modal', async (event) => {
         const caller = event.relatedTarget
         const index = caller.dataset.index
         const index2 = caller.dataset.indextwo
         clickTradesModal(index, index2, index2)
     })
 
-    tagsModal = new bootstrap.Modal("#tagsModal")
-    document.getElementById("tagsModal").addEventListener('shown.bs.modal', async (event) => {
+    tagsModal = new bs.Modal(tagsModalEl)
+    tagsModalEl.addEventListener('shown.bs.modal', async (event) => {
         tagsModalOpen.value = true
         showTagsList.value = ''
         const caller = event.relatedTarget
         const index = caller.dataset.index
         clickTagsModal(index)
     })
-    document.getElementById("tagsModal").addEventListener('hidden.bs.modal', () => {
+    tagsModalEl.addEventListener('hidden.bs.modal', () => {
         tagsModalOpen.value = false
         showTagsList.value = ''
     })
@@ -545,7 +576,7 @@ async function clickTradesModal(param1, param2, param3) {
 
             showTagsList.value = ''
 
-            tradesModal.hide()
+            tradesModal?.hide()
             await (modalDailyTradeOpen.value = false) //this is important because we use itemTradeIndex on filteredTrades and if change month, this causes problems. So only show modal content when clicked on open modal/v-if
             await useInitTab("daily")
             loadScreenshots = false
@@ -820,7 +851,7 @@ const onTagsModalInput = () => {
 
 const closeTagsModal = async () => {
     tradeTags.length = 0
-    tagsModal.hide()
+    tagsModal?.hide()
 }
 
 const checkDate = ((param1, param2) => {
@@ -1316,7 +1347,22 @@ function getOHLC(date, symbol, type, interval, entryTime) {
 
                                     <!-- Stats bar -->
                                     <div class="col-12 mb-1">
-                                        <div class="daily-stats-bar">
+                                        <!--
+                                            `itemTrade.pAndL` fehlt fuer Tage, an denen die
+                                            `trades`-Tabelle mehr als eine Zeile fuer dasselbe
+                                            Datum hat: die Zuordnung weiter unten in
+                                            `useGetFilteredTrades` (trades.js) haengt an einer
+                                            Map, die pro Datum nur EINEN Eintrag halten kann —
+                                            bei zwei Zeilen zum selben Tag bekommt nur die
+                                            zuletzt eingefuegte ihr pAndL zugewiesen, die andere
+                                            bleibt dauerhaft ohne. Frueher stuerzte das hier ab
+                                            ("Cannot read properties of undefined"); jetzt zeigt
+                                            die Leiste einen ehrlichen Hinweis statt einer
+                                            erfundenen Zahl — eine stille Null waere HIER
+                                            besonders gefaehrlich, weil sie wie eine echte
+                                            Trefferquote von 0 aussaehe.
+                                        -->
+                                        <div v-if="itemTrade.pAndL" class="daily-stats-bar">
                                             <span class="stats-item"><span class="stats-label">Trades</span> {{ itemTrade.pAndL.trades }}</span>
                                             <span class="stats-divider">|</span>
                                             <span class="stats-item"><span class="stats-label">Wins</span> <span class="greenTrade">{{ itemTrade.pAndL.grossWinsCount }}</span></span>
@@ -1326,6 +1372,10 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                             <span class="stats-item"><span class="stats-label">Fees</span> {{ useTwoDecCurrencyFormat(itemTrade.pAndL.fees) }}</span>
                                             <span class="stats-divider">|</span>
                                             <span class="stats-item"><span class="stats-label">PnL(g)</span> <span :class="itemTrade.pAndL.grossProceeds >= 0 ? 'greenTrade' : 'redTrade'">{{ useTwoDecCurrencyFormat(itemTrade.pAndL.grossProceeds) }}</span></span>
+                                        </div>
+                                        <div v-else class="daily-stats-bar text-muted small">
+                                            <i class="uil uil-exclamation-triangle"></i>
+                                            Kennzahlen nicht berechnet — vermutlich zwei Datenbankzeilen für diesen Tag.
                                         </div>
                                     </div>
 
@@ -1938,7 +1988,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                                     :style="{ 'background-color': useGetTagInfo(tag.id).groupColor }">
                                                     {{ tag.name }}
                                                 </span>
-                                                <span v-if="!tradeTags.length" class="txt-small" style="color: var(--white-40);">–</span>
+                                                <span v-if="!tradeTags.length" class="txt-small" style="color: var(--white-38);">–</span>
                                             </div>
                                         </div>
                                         <!-- MFE -->
@@ -2068,7 +2118,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                     </ul>
                 </div>
                 <div class="col text-center mt-4 mb-4">
-                    <button class="btn btn-outline-primary btn-sm" v-on:click="closeTagsModal">Schließen</button>
+                    <button class="btn btn-outline-primary btn-sm" v-on:click="closeTagsModal">{{ t('common.close') }}</button>
                     <button class="btn btn-outline-success btn-sm ms-4" v-on:click="saveDailyTags()">Save</button>
                 </div>
             </div>

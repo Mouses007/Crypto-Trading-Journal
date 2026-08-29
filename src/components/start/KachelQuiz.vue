@@ -444,7 +444,17 @@ function sitzungZurueck() {
 .lernen-reveal-mark { font-size: 1.5rem; color: var(--grey-color, rgba(255, 255, 255, 0.4)); }
 .lernen-reveal-text { font-size: 1.1rem; color: var(--grey-color, rgba(255, 255, 255, 0.6)); margin-top: 0.25rem; }
 
-.lernen-grade-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+/*
+ * Vier Knoepfe nebeneinander brauchen Platz: bei 375 px minus Rahmen bleiben
+ * je rund 80 px, und "Vergessen" passt dort nicht mehr. Unter 420 px zwei
+ * Reihen zu zwei — lieber zwei Zeilen als abgeschnittene Beschriftungen.
+ * `minmax(0, 1fr)`, damit ein langes Wort die Spalte nicht aufblaest.
+ */
+.lernen-grade-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+@media (max-width: 420px) {
+    .lernen-grade-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .lernen-grade-btn {
     border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); border-right: 1px solid rgba(255, 255, 255, 0.1);
     padding: 0.9rem 0.4rem; font-size: 0.88rem; font-weight: 600;

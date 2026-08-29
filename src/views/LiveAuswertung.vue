@@ -22,6 +22,7 @@ import { useI18n } from 'vue-i18n'
 import PageInfo from '../components/PageInfo.vue'
 import { dbFind } from '../utils/db.js'
 import { werteAus, MIN_GRUPPE } from '../utils/sitzungStatistik.js'
+import { timeZoneTrade } from '../stores/ui.js'
 
 const { t } = useI18n()
 
@@ -29,7 +30,23 @@ const sitzungen = ref([])
 const laedt = ref(true)
 const fehler = ref('')
 
-const a = computed(() => werteAus(sitzungen.value))
+// Zeitzone MIT übergeben: sonst gruppiert die Auswertung nach Browserzeit,
+// während der Rest der App mit `timeZoneTrade` rechnet.
+const a = computed(() => werteAus(sitzungen.value, timeZoneTrade.value))
+
+/*
+ * Weicht der Durchschnitt stark vom Median ab, hängt das Ergebnis an wenigen
+ * Sitzungen. Schwelle: doppelter Betrag ODER anderes Vorzeichen — beides
+ * heisst, dass die beiden Masse verschiedene Geschichten erzählen.
+ */
+const ausreisserWarnung = computed(() => {
+    const p = a.value.plan
+    const m = p.unterschiedJeSitzung
+    const d = p.unterschiedDurchschnitt
+    if (m == null || d == null) return false
+    if ((m >= 0) !== (d >= 0)) return true
+    return Math.abs(d) > Math.abs(m) * 2 + 1
+})
 
 async function lade() {
     laedt.value = true
@@ -129,17 +146,26 @@ onMounted(lade)
                 <div class="awVergleich">
                     <div class="awSeite" :class="{ awDuenn: a.plan.mit.duenn }">
                         <span class="awLabel">{{ t('liveAuswertung.mitPlan', { n: a.plan.mit.anzahl }) }}</span>
-                        <b :class="farbe(a.plan.mit.pnlJeSitzung)">{{ geld(a.plan.mit.pnlJeSitzung) }}</b>
-                        <span class="awKlein">{{ t('liveAuswertung.jeSitzung') }}</span>
+                        <b :class="farbe(a.plan.mit.pnlMedian)">{{ geld(a.plan.mit.pnlMedian ?? 0) }}</b>
+                        <span class="awKlein">{{ t('liveAuswertung.medianJeSitzung') }}</span>
                     </div>
                     <div class="awSeite" :class="{ awDuenn: a.plan.ohne.duenn }">
                         <span class="awLabel">{{ t('liveAuswertung.ohnePlan', { n: a.plan.ohne.anzahl }) }}</span>
-                        <b :class="farbe(a.plan.ohne.pnlJeSitzung)">{{ geld(a.plan.ohne.pnlJeSitzung) }}</b>
-                        <span class="awKlein">{{ t('liveAuswertung.jeSitzung') }}</span>
+                        <b :class="farbe(a.plan.ohne.pnlMedian)">{{ geld(a.plan.ohne.pnlMedian ?? 0) }}</b>
+                        <span class="awKlein">{{ t('liveAuswertung.medianJeSitzung') }}</span>
                     </div>
                 </div>
                 <p v-if="a.plan.unterschiedJeSitzung != null" class="awText">
                     {{ t('liveAuswertung.unterschied', { betrag: geld(a.plan.unterschiedJeSitzung) }) }}
+                </p>
+                <!--
+                    Der Durchschnitt daneben, aber nur wenn er DEUTLICH abweicht:
+                    dann hängt die Gruppe an wenigen Sitzungen, und genau das ist
+                    die eigentliche Auskunft. Stimmen beide überein, wäre die
+                    zweite Zahl nur Lärm.
+                -->
+                <p v-if="ausreisserWarnung" class="awHinweis">
+                    {{ t('liveAuswertung.medianAbweichung', { betrag: geld(a.plan.unterschiedDurchschnitt) }) }}
                 </p>
                 <p v-else class="awHinweis">{{ t('liveAuswertung.vergleichZuDuenn', { n: MIN_GRUPPE }) }}</p>
             </section>

@@ -6,6 +6,7 @@ import Knex from 'knex'
 import { loadDbConfig } from './db-config.js'
 import { seedDefaultTemplates } from './default-templates.js'
 import { seedDefaultLernkarten } from './default-lernkarten.js'
+import { istGewinn } from '../shared/gewinn.js'
 
 let knex = null
 
@@ -48,15 +49,6 @@ export function getKnex() {
     return knex
 }
 
-/**
- * Close the database connection.
- */
-export async function closeDb() {
-    if (knex) {
-        await knex.destroy()
-        knex = null
-    }
-}
 
 // ============================================================
 // Schema Migrations
@@ -126,13 +118,29 @@ async function fixPostgresSequences(knex) {
 // und läuft unverändert weiter.
 // v13: `niveau` an `quiz_karten` — Schwierigkeitsstufe der Lernkarten (1 =
 // App-eigene Grundbegriffe, 2 = vertiefte Konzepte). Rein additiv, Default 1.
-const SCHEMA_VERSION = 13
+// v14: `erklaerung` an `quiz_karten` — warum die Antwort richtig ist, optional
+// (Audit 28.08.2026, UX-11). Rein additiv, Default leer; ein älterer
+// Codestand schreibt das Feld nicht und zeigt es nicht an.
+const SCHEMA_VERSION = 14
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
 
-    // Helper: add column if it doesn't exist
+    /*
+     * Spalte nachruesten, wenn sie fehlt.
+     *
+     * Der `hasTable`-Check ist nicht kosmetisch: steht der Aufruf im
+     * Migrationslauf VOR der Erstellung seiner Tabelle, bricht `alter table`
+     * auf einer frischen Datenbank die gesamte Migration ab — und damit den
+     * Start. `addIndexIfNotExists` hat diesen Schutz seit jeher, diese
+     * Schwesterfunktion nicht (gefunden beim Nachruesten von
+     * `quiz_karten.erklaerung`, Audit 28.08.2026).
+     */
     async function addColumnIfNotExists(table, column, buildCol) {
+        if (!(await knex.schema.hasTable(table))) {
+            console.warn(`[DB] Spalte ${table}.${column} übersprungen — Tabelle existiert (noch) nicht`)
+            return
+        }
         const hasCol = await knex.schema.hasColumn(table, column)
         if (!hasCol) {
             await knex.schema.alterTable(table, (t) => {
@@ -194,6 +202,21 @@ async function runMigrations(knex, client) {
             await knex.raw(`CREATE INDEX IF NOT EXISTS ${name} ON ${isPg ? `"${table}"` : `\`${table}\``} (${isPg ? `"${column}"` : `\`${column}\``})`)
         } catch (e) {
             console.warn(`[DB] Index ${name} konnte nicht angelegt werden: ${e.message}`)
+        }
+    }
+
+    /**
+     * Redundanten Index fallen lassen.
+     *
+     * `DROP INDEX IF EXISTS` können SQLite und PostgreSQL beide. Nur für
+     * Indizes, die ein anderer vollständig abdeckt — ein Index, der nur
+     * SELTEN gebraucht wird, bleibt.
+     */
+    async function dropIndexIfExists(name) {
+        try {
+            await knex.raw(`DROP INDEX IF EXISTS ${isPg ? `"${name}"` : `\`${name}\``}`)
+        } catch (e) {
+            console.warn(`[DB] Index ${name} konnte nicht entfernt werden: ${e.message}`)
         }
     }
 
@@ -603,6 +626,17 @@ async function runMigrations(knex, client) {
     await addIndexIfNotExists('notes', 'dateUnix', 'idx_notes_dateUnix')
     await addIndexIfNotExists('excursions', 'dateUnix', 'idx_excursions_dateUnix')
 
+    /*
+     * Drei Indizes, die ein anderer vollständig abdeckt. Zwei sind linke
+     * Präfixe eines Unique-Index, einer ist ein exaktes Duplikat. Sie kosten
+     * Platz und verlangsamen jeden Schreibvorgang, ohne je eine Abfrage
+     * beantworten zu können, die der jeweils andere nicht auch beantwortet.
+     * An der Live-Datenbank gemessen: `idx_coinradar_lauf` allein 10 MB.
+     */
+    await dropIndexIfExists('idx_coinradar_lauf')
+    await dropIndexIfExists('idx_msnap_kind_day')
+    await dropIndexIfExists('idx_rangliste_zeilen_lauf')
+
     // Trade type (scalp, day, swing) — opening + closing separate
     await addColumnIfNotExists('notes', 'tradeType', (t) => t.text('tradeType').defaultTo(''))
     await addColumnIfNotExists('notes', 'closingTradeType', (t) => t.text('closingTradeType').defaultTo(''))
@@ -918,8 +952,8 @@ async function runMigrations(knex, client) {
                     const realNet = oldGross                // what Bitunix showed as PnL
                     const realGross = oldGross + fee        // true gross = net + fee
 
-                    const isGrossWin = realGross > 0
-                    const isNetWin = realNet > 0
+                    const isGrossWin = istGewinn(realGross)
+                    const isNetWin = istGewinn(realNet)
 
                     t.grossProceeds = realGross
                     t.netProceeds = realNet
@@ -1123,8 +1157,8 @@ async function runMigrations(knex, client) {
                     const newNet = oldNet + fund        // realizedPNL
                     const newGross = oldGross - fund    // gross − fundingFee
 
-                    const isGrossWin = newGross > 0
-                    const isNetWin = newNet > 0
+                    const isGrossWin = istGewinn(newGross)
+                    const isNetWin = istGewinn(newNet)
 
                     t.netProceeds = newNet
                     t.grossProceeds = newGross
@@ -1635,8 +1669,9 @@ async function runMigrations(knex, client) {
             t.float('value').notNullable()
             t.text('extra').defaultTo('{}')
             t.bigInteger('createdAt').defaultTo(0)
+            // Der Unique-Index deckt dieselben Spalten in derselben
+            // Reihenfolge ab — ein zweiter wäre ein exaktes Duplikat.
             t.unique(['kind', 'dayUnix'])
-            t.index(['kind', 'dayUnix'], 'idx_msnap_kind_day')
         })
         console.log(' -> Created table: market_snapshots')
     }
@@ -2305,8 +2340,8 @@ async function runMigrations(knex, client) {
             t.text('fehler').defaultTo('')
             t.integer('dauerMs').defaultTo(0)
             t.bigInteger('createdAt').defaultTo(0)
+            // Linker Präfix des Unique-Index oben, siehe coinradar_zeilen.
             t.unique(['laufId', 'symbol'])
-            t.index('laufId', 'idx_rangliste_zeilen_lauf')
         })
         console.log(' -> Created table: rangliste_zeilen')
     }
@@ -2506,8 +2541,14 @@ async function runMigrations(knex, client) {
             t.double('btcZerfallZ')                 // Fisher-z der Differenz
             t.text('boersen').defaultTo('{}')       // JSON: wo handelbar (+ unbekannt)
             t.bigInteger('erstelltAm').defaultTo(0)
+            /*
+             * KEIN eigener Index auf `laufId`: der Unique-Index darüber hat
+             * ihn als linken Präfix und bedient jede Abfrage nach laufId
+             * mit. Der separate Index kostete an der Live-Datenbank
+             * gemessene 10 MB, ohne je etwas zu können, was der andere
+             * nicht kann.
+             */
             t.unique(['laufId', 'symbol'], 'uq_coinradar_zeile')
-            t.index(['laufId'], 'idx_coinradar_lauf')
         })
         console.log(' -> Created table: coinradar_zeilen')
     }
@@ -2798,6 +2839,14 @@ async function runMigrations(knex, client) {
      * brauchen keinen — sie stehen hier deshalb nicht. Verschlüsselt wie die
      * KI-Schlüssel; die Oberfläche bekommt sie nur maskiert zurück.
      */
+    /*
+     * Generation des Sitzungs-Tokens (Audit 28.08.2026, SEC-02). Erhoehen
+     * entwertet jedes ausgestellte Cookie; ein Neustart darf das nicht
+     * zuruecknehmen, deshalb steht der Wert in der Datenbank und nicht im
+     * Prozess.
+     */
+    await addColumnIfNotExists('settings', 'sessionGeneration', (t) => t.integer('sessionGeneration').defaultTo(0))
+
     await addColumnIfNotExists('settings', 'hypeKeyCryptopanic', (t) => t.text('hypeKeyCryptopanic').defaultTo(''))
     await addColumnIfNotExists('settings', 'hypeKeyLunarcrush', (t) => t.text('hypeKeyLunarcrush').defaultTo(''))
     await addColumnIfNotExists('settings', 'hypeKeyCoingecko', (t) => t.text('hypeKeyCoingecko').defaultTo(''))
@@ -2830,12 +2879,31 @@ async function runMigrations(knex, client) {
             t.integer('aktiv').defaultTo(1)
             // 1 = App-eigene Grundbegriffe, 2 = vertiefte Konzepte (On-Chain, Derivate-Feinheiten, Risikokennzahlen …)
             t.integer('niveau').defaultTo(1)
+            /*
+             * Warum die Antwort richtig ist — optional.
+             *
+             * Der Leitner-Kasten zeigt die Antwort, bevor man sich bewertet;
+             * eine Karte, die man nicht wusste, hinterlaesst damit die Frage
+             * „warum eigentlich?". Leer heisst: es gibt nichts zu erklaeren,
+             * und dann steht dort auch nichts.
+             */
+            t.text('erklaerung').defaultTo('')
             t.timestamp('createdAt').defaultTo(knex.fn.now())
             t.timestamp('updatedAt').defaultTo(knex.fn.now())
             t.unique(['schluessel'], 'uq_quiz_karten_schluessel')
         })
         console.log(' -> Created table: quiz_karten')
     }
+
+    /*
+     * Erklaerungsfeld der Lernkarten (Audit 28.08.2026, UX-11).
+     *
+     * MUSS hinter der Tabellenerstellung stehen: auf einer frischen Datenbank
+     * gibt es `quiz_karten` weiter oben noch nicht, und `alter table` auf eine
+     * fehlende Tabelle bricht die ganze Migration ab. Derselbe Grund, aus dem
+     * die `hype_favoriten`-Spalte weiter unten steht.
+     */
+    await addColumnIfNotExists('quiz_karten', 'erklaerung', (t) => t.text('erklaerung').defaultTo(''))
 
     if (!(await knex.schema.hasTable('quiz_fortschritt'))) {
         await knex.schema.createTable('quiz_fortschritt', (t) => {

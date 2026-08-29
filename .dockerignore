@@ -27,3 +27,17 @@ server_neustart.sh
 # Interne Audits/Berichte gehoeren nicht in den Build-Kontext
 internal
 _audit-*.md
+
+# Geheimnisse, die `.gitignore` laengst kennt, die hier aber fehlten.
+# Der Build ist mehrstufig, die finale Stufe kopiert nur server/, shared/,
+# dist/ und index.mjs — im veroeffentlichten Image landet also nichts davon.
+# Aber die Builder-Schicht bekommt den ganzen Kontext, und ein lokaler
+# `docker build` laeuft in einem Verzeichnis, in dem diese Dateien liegen.
+# Was nicht in den Kontext muss, gehoert nicht hinein.
+_schluessel-sicherung-*.json
+certs/
+scripts/.nas-deploy.env
+.env.*
+# Analyse-/Pruefskripte, die gegen die Live-DB oder Live-APIs laufen
+_levmap-*.mjs
+_themen-probe.mjs

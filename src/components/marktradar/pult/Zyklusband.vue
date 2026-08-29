@@ -133,7 +133,7 @@ const piNah = computed(() => abstand.value !== null && abstand.value > -10)
 <style scoped>
 .zyBand {
     display: grid;
-    grid-template-columns: auto 1fr 210px;
+    grid-template-columns: auto minmax(0, 1fr) 210px;
     align-items: center;
     border-bottom: 1px solid var(--pTrenn);
     background: var(--pChrom);
