@@ -111,13 +111,14 @@ const JOURNAL_KACHELN = [
 ]
 
 /**
- * Beim ersten Öffnen sichtbar. Kontostand, Fear&Greed, Marktmechanik, offene
- * Trades und Winrate — ein Blick auf „wie steht mein Konto und wie der Markt".
- * Der Rest des Katalogs ist per Zahnrad zuschaltbar.
+ * Beim ersten Öffnen sichtbar: Kennzahlen, Performance und offene Trades aus
+ * dem Journal, dazu Fear&Greed, Marktübersicht, Marktmechanik, RSI-Heatmap und
+ * die Gesamtlage (KI) aus dem Marktradar, sowie das Quiz. Der Rest des
+ * Katalogs ist per Zahnrad zuschaltbar.
  */
 const ZUERST = [
-    'kontostand', 'kapitalkurve', 'kennzahlen', 'winrate',
-    'offeneTrades', 'heatmap', 'performance', 'fng', 'mechanik',
+    'fng', 'kennzahlen', 'performance', 'offeneTrades',
+    'markt', 'mechanik', 'quiz', 'rsi', 'lage',
 ]
 
 /** Journal-Kacheln zuerst, danach der Marktradar-Katalog. */
