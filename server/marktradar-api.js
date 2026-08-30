@@ -942,6 +942,27 @@ async function topSymbole(n = 50) {
 }
 
 /**
+ * Die Coin-Perps mit der höchsten Marktkapitalisierung — kein eigener Abruf,
+ * sondern dieselbe CoinGecko-Rangliste, die die Marktübersicht-Kachel ohnehin
+ * alle 5 Minuten hält (`holeMarkt`). `muenzen` kommt bereits nach Mcap
+ * sortiert von CoinGecko, `.perp` bildet auf das Binance/Bitunix-Symbol ab
+ * (inkl. 1000er-Präfix bei Kleinstwerten) — Coins ohne handelbaren Perp
+ * fallen einfach raus.
+ */
+async function topSymboleNachMcap(n = 50) {
+    const { muenzen } = await holeMarkt(250)
+    return muenzen.filter(m => m.perp).map(m => m.perp).slice(0, topN(n))
+}
+
+/** Mcap je Perp-Symbol, zum Anzeigen/Sortieren der RSI-Punkte. */
+async function holeMarktkapMap() {
+    const { muenzen } = await holeMarkt(250)
+    const map = {}
+    for (const m of muenzen) if (m.perp) map[m.perp] = m.mcap
+    return map
+}
+
+/**
  * RSI-Verteilung über viele Märkte in EINER Zeiteinheit.
  *
  * Bewusst ein Streubild statt einer Matrix: die interessante Frage ist nicht
@@ -950,7 +971,7 @@ async function topSymbole(n = 50) {
  * Zeilen mit Zahlen.
  *
  * @param {string} tf      Zeiteinheit
- * @param {string} quelle  'top' (Umsatz-Rangliste) | 'eigene' (eigene Trades) | 'liste'
+ * @param {string} quelle  'top' (Umsatz-Rangliste) | 'mcap' (Mcap-Rangliste) | 'eigene' (eigene Trades) | 'liste'
  */
 export async function holeRsi(tf = '1h', quelle = 'top', anzahl = 50) {
     const n = topN(anzahl)
@@ -959,16 +980,19 @@ export async function holeRsi(tf = '1h', quelle = 'top', anzahl = 50) {
     const s = await knex('settings').where('id', 1).first().catch(() => null)
     const eigeneListe = String(s?.radarRsiSymbols || '').trim()
 
-    let art = ['top', 'eigene', 'liste'].includes(quelle) ? quelle : 'top'
+    let art = ['top', 'mcap', 'eigene', 'liste'].includes(quelle) ? quelle : 'top'
     // Eine eingetragene Liste ist eine bewusste Entscheidung — sie gewinnt
     if (art === 'liste' && !eigeneListe) art = 'top'
 
     const symbole = art === 'liste' || (art === 'eigene' && eigeneListe)
         ? await eigeneSymbole()
-        : art === 'eigene' ? await eigeneSymbole() : await topSymbole(n)
+        : art === 'eigene' ? await eigeneSymbole()
+        : art === 'mcap' ? await topSymboleNachMcap(n)
+        : await topSymbole(n)
 
     return ausCache(`rsi|${zeiteinheit}|${art}|${n}|${symbole.join(',')}`, 60 * 1000, async () => {
         const { map: volumen } = await holeVolumen().catch(() => ({ map: {} }))
+        const mcap = art === 'mcap' ? await holeMarktkapMap().catch(() => ({})) : {}
         const punkte = []
         const fehlend = []
 
@@ -986,6 +1010,7 @@ export async function holeRsi(tf = '1h', quelle = 'top', anzahl = 50) {
                         symbol,
                         rsi: Math.round(wert * 10) / 10,
                         volumen24h: volumen[symbol] || 0,
+                        mcap: mcap[symbol] || 0,
                     })
                 } catch {
                     fehlend.push(symbol)
@@ -999,8 +1024,9 @@ export async function holeRsi(tf = '1h', quelle = 'top', anzahl = 50) {
             throw new Error(`nur ${punkte.length} von ${symbole.length} Märkten abrufbar`)
         }
 
-        // Nach Umsatz sortiert: links die grossen Märkte, rechts die kleinen
-        punkte.sort((a, b) => b.volumen24h - a.volumen24h)
+        // Sortiert nach der Grösse, auf der auch die Auswahl beruht: links die
+        // grossen Märkte, rechts die kleinen
+        punkte.sort((a, b) => art === 'mcap' ? b.mcap - a.mcap : b.volumen24h - a.volumen24h)
         const schnitt = punkte.length
             ? Math.round((punkte.reduce((sum, p) => sum + p.rsi, 0) / punkte.length) * 100) / 100
             : null

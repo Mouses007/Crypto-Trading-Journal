@@ -84,12 +84,14 @@ function zeichne() {
             formatter: (p) => {
                 const eintrag = punkte.value[p.data.value[0]]
                 const z = zoneFuer(eintrag.rsi)
-                const umsatz = eintrag.volumen24h >= 1e9
-                    ? `${(eintrag.volumen24h / 1e9).toFixed(1)} Mrd`
-                    : `${Math.round(eintrag.volumen24h / 1e6)} Mio`
+                const gross = (v) => v >= 1e9 ? `${(v / 1e9).toFixed(1)} Mrd` : `${Math.round(v / 1e6)} Mio`
+                const mcapZeile = eintrag.mcap
+                    ? `<span style="opacity:.6">${t('marktradar.markt.mcap')}: ${gross(eintrag.mcap)} $</span><br/>`
+                    : ''
                 return `<b>${kurz(eintrag.symbol)}</b> · ${props.daten.tf}<br/>`
                     + `RSI <b>${eintrag.rsi}</b> — ${t('marktradar.rsi.zone_' + z.key)}<br/>`
-                    + `<span style="opacity:.6">${t('marktradar.funding.volume')}: ${umsatz}</span><br/>`
+                    + `<span style="opacity:.6">${t('marktradar.funding.volume')}: ${gross(eintrag.volumen24h)}</span><br/>`
+                    + mcapZeile
                     + `<a href="${bitunixUrl(eintrag.symbol)}" target="_blank" rel="noopener noreferrer" `
                     + `style="color:#4da3ff">${t('marktradar.rsi.openBitunix')}</a>`
             },
@@ -197,12 +199,15 @@ watch(() => props.daten, zeichne)
             <button type="button" :class="['ctl-pill', daten.quelle === 'top' ? 'active' : '']"
                 :title="t('marktradar.rsi.topHint')"
                 @click.stop="emit('params', { quelle: 'top' })">{{ t('marktradar.rsi.top') }}</button>
+            <button type="button" :class="['ctl-pill', daten.quelle === 'mcap' ? 'active' : '']"
+                :title="t('marktradar.rsi.mcapHint')"
+                @click.stop="emit('params', { quelle: 'mcap' })">{{ t('marktradar.rsi.mcap') }}</button>
             <button type="button" :class="['ctl-pill', daten.quelle === 'eigene' ? 'active' : '']"
                 :title="t('marktradar.rsi.ownHint')"
                 @click.stop="emit('params', { quelle: 'eigene' })">{{ t('marktradar.rsi.own') }}</button>
 
-            <!-- Ranglisten-Grösse: nur sinnvoll, solange die Quelle die Rangliste ist -->
-            <template v-if="daten.quelle === 'top'">
+            <!-- Ranglisten-Grösse: nur sinnvoll, solange die Quelle eine Rangliste ist -->
+            <template v-if="daten.quelle === 'top' || daten.quelle === 'mcap'">
                 <span class="ctl-sep"></span>
                 <span class="rLabel">{{ t('marktradar.top') }}</span>
                 <button v-for="n in TOP_N" :key="n" type="button"
@@ -216,7 +221,7 @@ watch(() => props.daten, zeichne)
         <div ref="chartEl" class="rChart"></div>
 
         <p v-if="gross" class="rQuelle">
-            {{ t('marktradar.rsi.source') }}
+            {{ t(daten.quelle === 'mcap' ? 'marktradar.rsi.sourceMcap' : 'marktradar.rsi.source') }}
             <span v-if="daten.quelle === 'eigene'"> {{ t('marktradar.rsi.derived') }}</span>
         </p>
     </div>

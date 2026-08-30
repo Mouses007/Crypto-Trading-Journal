@@ -2248,6 +2248,7 @@
       "source": "Wilder RSI(14) from closed Binance candles. Each dot is one market, ordered left to right by 24h volume. The dashed line is the average — it shows whether a reading fits the market or fights it. Clicking a dot sets the symbol for the live views.",
       "derived": "Markets come from your trades over the last 90 days; you can enter your own list in the settings.",
       "top": "By volume",
+      "mcap": "Market cap",
       "own": "My trades",
       "count": "{n} markets",
       "average": "avg",
@@ -2257,6 +2258,8 @@
       "zone_weak": "Weak",
       "zone_oversold": "Oversold",
       "topHint": "The highest-volume crypto perpetuals on Binance — how many is set on the right",
+      "mcapHint": "The coin perpetuals with the highest market cap (CoinGecko) — how many is set on the right",
+      "sourceMcap": "Wilder RSI(14) from closed Binance candles. Each dot is one market, ordered left to right by market cap. The dashed line is the average — it shows whether a reading fits the market or fights it. Clicking a dot sets the symbol for the live views.",
       "ownHint": "Only the markets you traded yourself over the last 90 days",
       "openBitunix": "→ Open on Bitunix",
       "info": "How overbought or oversold each individual market is right now.\nThe dashed line is the average — and it is the real yardstick here: an oversold coin while the average is low is not its own story, it's just the whole market."
