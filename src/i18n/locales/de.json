@@ -3183,6 +3183,10 @@
   },
   "news": {
     "fetchNow": "Beiträge holen",
+    "fontSize": "Schriftgrösse",
+    "fontSmaller": "Schrift verkleinern",
+    "fontBigger": "Schrift vergrössern",
+    "fontReset": "Schriftgrösse zurücksetzen (100 %)",
     "makeDigest": "Lagebericht erzeugen",
     "working": "Schreibt …",
     "asOf": "Stand {zeit}",
