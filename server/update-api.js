@@ -283,10 +283,18 @@ function httpsGetJson(url) {
     })
 }
 
-// Get local version from package.json
-function getLocalVersion() {
-    const pkg = JSON.parse(readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'))
-    return pkg.version
+// Get local version from package.json. Cached: an update always ends in
+// process.exit() (see installGitUpdate/installDockerUpdate below), so the
+// version cannot change without a process restart — no need to re-read the
+// file from disk on every call, which matters now that /api/setup/status
+// (a public, unauthenticated endpoint) calls this on every request.
+let localVersionCache = null
+export function getLocalVersion() {
+    if (localVersionCache === null) {
+        const pkg = JSON.parse(readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'))
+        localVersionCache = pkg.version
+    }
+    return localVersionCache
 }
 
 // Compare semver: returns 1 if a > b, -1 if a < b, 0 if equal

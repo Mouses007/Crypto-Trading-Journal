@@ -758,6 +758,49 @@
     "nextStepImport": "Importiere deine ersten Trades über {csv} oder {api}",
     "postgresUsedOnRestart": "PostgreSQL-Verbindung wird beim nächsten Start verwendet."
   },
+  "onboarding": {
+    "title": "Update-Assistent",
+    "whatsNew": "Was ist neu",
+    "finish": "Fertig",
+    "later": "Später — kein Problem, jederzeit über die Einstellungen nachholbar",
+    "saveError": "Speichern fehlgeschlagen — bitte prüfen und erneut versuchen.",
+    "reopenButton": "Onboarding-Assistent erneut öffnen",
+    "intro": {
+      "setupTitle": "Fast geschafft",
+      "setupText": "Ein paar Vorschläge, bevor es losgeht — alles überspringbar.",
+      "updateTitle": "Neu seit deinem letzten Besuch",
+      "updateText": "Ein Update hat neue Standards und Möglichkeiten mitgebracht. Schau kurz durch, was dazugekommen ist.",
+      "manuellTitle": "Onboarding-Assistent",
+      "manuellText": "Standardeinstellungen, KI-Zugang, Nachrichtenquellen und Mail an einem Ort."
+    },
+    "defaults": {
+      "title": "Standardeinstellungen übernehmen?",
+      "intro": "Angehakt sind die aktuell empfohlenen Standards — abwählen, was du lieber selbst einstellst.",
+      "alreadyCustomized": "Du hast das schon selbst angepasst — deshalb nicht vorangehakt.",
+      "startseiteKacheln": {
+        "label": "Übersicht auf die empfohlene Kachelauswahl zurücksetzen",
+        "info": "Setzt die Sichtbarkeit der Übersichts-Kacheln zurück auf den aktuellen Standard. Eine eigene Auswahl geht dabei verloren."
+      },
+      "marktradarPult": {
+        "label": "Marktradar in der Pult-Ansicht starten",
+        "info": "Die Pult-Ansicht zeigt eine feste Instrumenten-Leiste statt des frei anordenbaren Kachelrasters."
+      }
+    },
+    "ki": {
+      "title": "KI-Zugang",
+      "intro": "Für Berichte, den Agenten und mehr. Bereits hinterlegte Schlüssel bleiben erhalten, wenn du hier nichts änderst.",
+      "keySetHint": "Bereits hinterlegt — leer lassen, um ihn zu behalten",
+      "alreadySet": "Zugang bereits eingerichtet."
+    },
+    "news": {
+      "title": "Nachrichtenquellen",
+      "intro": "Bereits eingetragene Quellen bleiben unangetastet — hier lassen sich neue hinzufügen."
+    },
+    "mail": {
+      "title": "E-Mail konfigurieren",
+      "intro": "Für Benachrichtigungen und den Nachrichtenversand."
+    }
+  },
   "accounts": {
     "totalEquity": "Gesamtvermögen",
     "refresh": "Aktualisieren",
@@ -2472,6 +2515,20 @@
       "eigeneTage": "Kurve aus {n} eigenen Tagen — der Gratis-Tarif gibt nur 30 Tage her, alles Ältere wird hier gesammelt.",
       "nachtrag": "Die Quelle korrigiert Werte im Nachhinein; die letzten Tage werden deshalb erneut geholt.",
       "info": "Wie viel Bitcoin institutionell über Spot-ETFs gehalten wird, und ob täglich mehr hinein- oder herausfliesst.\nZeigt, ob grosses Geld gerade Position aufbaut oder abbaut — ein anhaltender Abfluss über mehrere Tage wiegt schwerer als ein einzelner roter Tag."
+    },
+    "wal": {
+      "title": "Wal-Bewegungen",
+      "window": "Fenster",
+      "inactive": "Keine Telegram-Quelle aktiv. Wal-Kanäle (Whale Alert, Lookonchain, …) lassen sich unter Einstellungen → Nachrichten eintragen.",
+      "toSettings": "Zu den Einstellungen",
+      "empty": "Nichts über der Schwelle im gewählten Fenster.",
+      "source": "eigene Telegram-Quellen · ab {schwelle} $",
+      "richtung": {
+        "ein": "Richtung Börse — potenzieller Verkaufsdruck",
+        "aus": "von Börse weg — potenzielle Verwahrung",
+        "unbekannt": "Richtung unbekannt"
+      },
+      "info": "Grosse Krypto-Transaktionen aus den eigenen Telegram-Quellen (Whale Alert, Lookonchain, …), automatisch erkannt — kein zusätzlicher Netzabruf.\nRot = Bewegung Richtung Börse (potenzieller Verkaufsdruck), Grün = Bewegung von einer Börse weg (potenzielle Verwahrung). Wallet-zu-Wallet-Bewegungen bleiben grau, weil die Richtung dort nicht geraten wird."
     }
   },
   "info": {

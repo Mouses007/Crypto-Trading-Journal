@@ -140,6 +140,14 @@ export const VORSCHLAEGE = [
     { art: 'rss', name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', laerm: 0 },               // 10
     { art: 'rss', name: 'Hacker News', url: 'https://news.ycombinator.com/rss', laerm: 0 },                   // 30
     { art: 'telegram', name: 'Watcher Guru', url: 'https://t.me/s/watcherguru', laerm: 0 },
+    // Weitere Telegram-Kanäle mit echtem Markteinfluss, geprüft 29.08.2026 —
+    // bewusst ohne die zahllosen "90%-Trefferquote"-Signalgruppen, die bei
+    // einer Suche zuerst auftauchen: das sind bezahlte Pump-Werbeflächen,
+    // keine Nachrichtenquellen.
+    { art: 'telegram', name: 'Whale Alert', url: 'https://t.me/s/whale_alert_io', laerm: 0 },
+    { art: 'telegram', name: 'Lookonchain', url: 'https://t.me/s/lookonchainchannel', laerm: 0 },
+    { art: 'telegram', name: 'Wu Blockchain', url: 'https://t.me/s/wublockchainenglish', laerm: 0 },
+    { art: 'telegram', name: 'PANews (chinesisch)', url: 'https://t.me/s/ChannelPANews', laerm: 0 },
     { art: "truth", name: "Truth Social (Spiegel)", url: "https://trumpstruth.org/feed", laerm: 1 },
 ]
 

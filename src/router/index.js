@@ -41,6 +41,21 @@ const router = createRouter({
             import('../views/Setup.vue')
     },
     {
+        // Zeigt nach dem Setup-Wizard UND einmalig nach einem Update dieselben
+        // Onboarding-Schritte (Standardeinstellungen/KI/News/Mail). Braucht
+        // beide Skip-Flags: skipSetupCheck, weil die Route sonst zirkulär auf
+        // sich selbst prüfen würde, skipUpdateCheck gegen den eigentlichen
+        // Redirect-Grund dieser Route.
+        path: '/update-assistent',
+        name: 'updateAssistent',
+        meta: {
+            title: "Update-Assistent", titleKey: "onboarding.title",
+            skipSetupCheck: true, skipUpdateCheck: true
+        },
+        component: () =>
+            import('../views/UpdateAssistent.vue')
+    },
+    {
         path: '/dashboard',
         name: 'dashboard',
         meta: {
@@ -423,6 +438,10 @@ const router = createRouter({
 // Cache fuer Setup-Status (wird einmal geladen)
 let setupChecked = false
 let setupComplete = false
+// Ob der Update-Assistent aussteht (Bestandsinstallation nach einem Update).
+// Läuft am selben Request wie der Setup-Check, damit kein zweiter Roundtrip
+// beim Boot nötig ist.
+let updateAssistantPending = false
 
 router.beforeEach(async (to, from, next) => {
     if (to.meta.titleKey) {
@@ -441,9 +460,11 @@ router.beforeEach(async (to, from, next) => {
         try {
             const { data } = await axios.get('/api/setup/status')
             setupComplete = !!data.setupComplete
+            updateAssistantPending = !!data.updateAssistantPending
         } catch (e) {
             // Bei Fehler Setup ueberspringen (z.B. alter Server ohne Endpoint)
             setupComplete = true
+            updateAssistantPending = false
         }
         setupChecked = true
     }
@@ -451,6 +472,13 @@ router.beforeEach(async (to, from, next) => {
     // Zum Setup weiterleiten wenn nicht abgeschlossen
     if (!setupComplete) {
         return next('/setup')
+    }
+
+    // Nach einem Update einmalig zum Update-Assistenten. Der Assistent selbst
+    // macht nach Abschluss/"Später" einen harten Reload (kein router.push) —
+    // dadurch wird dieser Cache-Stand neu geholt, kein Redirect-Loop nötig.
+    if (updateAssistantPending && !to.meta.skipUpdateCheck) {
+        return next('/update-assistent')
     }
 
     // Die Route bestimmt den Modus, nicht umgekehrt: ein Deep-Link auf

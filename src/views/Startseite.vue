@@ -48,6 +48,7 @@ import KachelMechanik from '../components/radar/KachelMechanik.vue'
 import KachelMakro from '../components/radar/KachelMakro.vue'
 import KachelLage from '../components/radar/KachelLage.vue'
 import KachelEtf from '../components/radar/KachelEtf.vue'
+import KachelWal from '../components/radar/KachelWal.vue'
 import { liveSymbol } from '../stores/live.js'
 import { KACHELN, sortiereKacheln, STANDARD_VERSTECKT } from '../config/startseite.js'
 import { useKachelRaster } from '../composables/useKachelRaster.js'
@@ -108,13 +109,16 @@ const KOMPONENTEN = {
     mechanik: KachelMechanik,
     makro: KachelMakro,
     lage: KachelLage,
-    // Fehlte hier — die einzige Id aus dem geteilten Marktradar-Katalog ohne
-    // eigenen Eintrag. `<component :is="undefined">` rendert lautlos nichts;
-    // Registry, Abruf und Zustandspunkt liefen davon unberührt weiter (der
-    // Kopf zeigte „Stand HH:mm" und einen grünen Punkt), nur der Kachelkörper
-    // blieb leer. Sichtbar erst, wenn man die Kachel überhaupt einblendet —
-    // sie steht nicht in `ZUERST`.
+    // Historie: `etf` fehlte hier lange (die einzige Id aus dem geteilten
+    // Marktradar-Katalog ohne eigenen Eintrag). `<component :is="undefined">`
+    // rendert lautlos nichts; Registry, Abruf und Zustandspunkt liefen davon
+    // unberührt weiter (der Kopf zeigte „Stand HH:mm" und einen grünen Punkt),
+    // nur der Kachelkörper blieb leer. Sichtbar erst, wenn man die Kachel
+    // überhaupt einblendet — sie steht nicht in `ZUERST`. `wal` ist derselben
+    // Falle frisch erlegen; beide stehen jetzt hier, damit eine neue Id aus dem
+    // Marktradar-Katalog nicht wieder still verschwindet.
     etf: KachelEtf,
+    wal: KachelWal,
 }
 
 const {

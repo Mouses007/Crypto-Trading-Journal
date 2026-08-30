@@ -5,6 +5,8 @@ import ModelManager from '../components/ModelManager.vue'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
 import InfoTipp from '../components/InfoTipp.vue'
 import KiUebersicht from '../components/ki/KiUebersicht.vue'
+import SchrittNewsQuellen from '../components/onboarding/SchrittNewsQuellen.vue'
+import SchrittMailKonfiguration from '../components/onboarding/SchrittMailKonfiguration.vue'
 import { useCheckCurrentUser, useInitTooltip } from '../utils/utils';
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker } from '../stores/filters.js';
 import { currentUser, renderProfile } from '../stores/settings.js';
@@ -18,6 +20,7 @@ import { useQuickApiImport } from '../utils/quickImport.js'
 import { loadSymbolMeta } from '../utils/liveSymbols.js'
 import { sendNotification } from '../utils/notify.js'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { MODES } from '../config/menu.js'
 import { appMode } from '../stores/ui.js'
 import { merkeErweiterteInfos } from '../composables/useErweiterteInfos.js'
@@ -33,6 +36,7 @@ import {
 } from '../stores/live.js'
 
 const { t, te, locale } = useI18n()
+const router = useRouter()
 
 let selectedLanguage = ref('de')
 
@@ -954,6 +958,9 @@ let radarNewsFokusWoerter = ref('')
    einmal, das soll nicht über die Feld-für-Feld-Logik von `dbUpdateSettings`
    laufen. */
 let newsProfile = ref([])
+/* Erzwingt einen Remount von <SchrittNewsQuellen>, wenn ein Profil die
+   Quellen serverseitig ändert — siehe profilAnwenden(). */
+let newsQuellenKey = ref(0)
 let neuesProfilName = ref('')
 let profilLoeschBestaetigung = ref(null)
 let profilMeldung = ref('')
@@ -963,16 +970,6 @@ let profilFehler = ref(false)
    überdimensioniert. */
 let profilUmbenennen = ref(null)
 let profilUmbenennenName = ref('')
-
-/* Nachrichtenquellen — serverseitige Liste, deshalb eigene Endpunkte statt
-   der generischen Tabellen-Route: die URL kommt vom Nutzer und muss vor dem
-   Speichern gegen interne Ziele geprüft werden (server/net-guard.js). */
-let newsQuellen = ref([])
-let newsVorschlaege = ref([])
-let neueQuelle = ref({ art: 'youtube', name: '', url: '' })
-let newsMeldung = ref('')
-let newsFehler = ref(false)
-let newsTestet = ref(false)
 
 function loadRadarSettings() {
     const s = currentUser.value || {}
@@ -1035,7 +1032,6 @@ function loadRadarSettings() {
     radarPicycleSchwelle.value = Number(s.radarPicycleSchwelle ?? 0)
     radarFundingDivergenz.value = Number(s.radarFundingDivergenz ?? 15)
     radarDivergenzSymbole.value = s.radarDivergenzSymbole || ''
-    ladeNewsQuellen()
     ladeNewsProfile()
 }
 
@@ -1100,6 +1096,11 @@ async function profilAnwenden(p) {
         // sonst zeigt die Seite noch den alten Stand.
         currentUser.value = await dbGetSettings()
         loadRadarSettings()
+        // Die Quellen-Tabelle lebt jetzt in einer eigenen, self-contained
+        // Komponente (lädt nur bei ihrem eigenen Mount) — ein Profilwechsel
+        // ändert `news_sources` aber serverseitig direkt, also erzwingt der
+        // Schlüsselwechsel einen Remount statt eines toten Reload-Aufrufs.
+        newsQuellenKey.value++
         const hinweis = profilHinweis(data)
         profilMelden(`Profil "${p.name}" angewendet.${hinweis ? ' ' + hinweis : ''}`)
     } catch (e) {
@@ -1225,75 +1226,6 @@ async function berichtJetzt() {
     } finally {
         berichtLaeuft.value = false
     }
-}
-
-async function ladeNewsQuellen() {
-    try {
-        const { data } = await axios.get('/api/marktradar/news/sources')
-        newsQuellen.value = data.quellen || []
-        // Vorschläge nur zeigen, solange sie nicht schon eingetragen sind
-        const vorhanden = new Set(newsQuellen.value.map(q => q.url))
-        newsVorschlaege.value = (data.vorschlaege || []).filter(v => !vorhanden.has(v.url))
-    } catch (e) {
-        newsQuellen.value = []
-    }
-}
-
-function meldung(text, fehler = false) {
-    newsMeldung.value = text
-    newsFehler.value = fehler
-    setTimeout(() => { newsMeldung.value = '' }, 6000)
-}
-
-async function quelleTesten() {
-    newsTestet.value = true
-    try {
-        // `art` mitschicken: Telegram braucht den anderen Leser, X wird nur
-        // auf Handle-Form geprüft (jede echte Suche kostet)
-        const { data } = await axios.post('/api/marktradar/news/test', {
-            url: neueQuelle.value.url, art: neueQuelle.value.art,
-        })
-        meldung(data.hinweis || `${data.anzahl} Einträge gefunden — z.B. „${(data.beispiel[0] || '').slice(0, 60)}"`)
-    } catch (e) {
-        meldung(e.response?.data?.error || e.message, true)
-    } finally {
-        newsTestet.value = false
-    }
-}
-
-async function quelleAnlegen() {
-    try {
-        await axios.post('/api/marktradar/news/sources', neueQuelle.value)
-        neueQuelle.value = { art: 'youtube', name: '', url: '' }
-        await ladeNewsQuellen()
-        meldung('Quelle hinzugefügt.')
-    } catch (e) {
-        meldung(e.response?.data?.error || e.message, true)
-    }
-}
-
-async function quelleAendern(q, felder) {
-    try {
-        await axios.put(`/api/marktradar/news/sources/${q.id}`, felder)
-        await ladeNewsQuellen()
-    } catch (e) {
-        meldung(e.response?.data?.error || e.message, true)
-    }
-}
-
-async function quelleLoeschen(q) {
-    if (!confirm(`Quelle „${q.name || q.url}" mitsamt ihren Beiträgen löschen?`)) return
-    try {
-        await axios.delete(`/api/marktradar/news/sources/${q.id}`)
-        await ladeNewsQuellen()
-    } catch (e) {
-        meldung(e.response?.data?.error || e.message, true)
-    }
-}
-
-async function vorschlagUebernehmen(v) {
-    neueQuelle.value = { art: v.art, name: v.name, url: v.url, laerm: v.laerm }
-    await quelleAnlegen()
 }
 
 /* Nur lesen: der GET erzeugt keinen Abruf, er zeigt den Bestand der eigenen
@@ -2443,67 +2375,11 @@ const mail = ref({
     mailUser: '', mailVon: '', mailAn: '', mailPasswort: '', mailPasswortSet: false,
     mailSchriftGroesse: 'gross',
 })
-const mailTestLaeuft = ref(false)
-const mailMeldung = ref('')
-const mailFehler = ref(false)
-
-/**
- * Vorlagen für die verbreiteten Anbieter. Port und Verschlüsselung zu
- * verwechseln ist der häufigste Grund, warum ein SMTP-Zugang „einfach nicht
- * geht" — die Knöpfe nehmen das Raten heraus.
- */
-const MAIL_VORLAGEN = [
-    { name: 'Gmail', mailHost: 'smtp.gmail.com', mailPort: 465, mailSicherheit: 'tls' },
-    { name: 'Outlook', mailHost: 'smtp-mail.outlook.com', mailPort: 587, mailSicherheit: 'starttls' },
-    { name: 'GMX', mailHost: 'mail.gmx.net', mailPort: 587, mailSicherheit: 'starttls' },
-]
-
-function mailVorlage(v) {
-    mail.value.mailHost = v.mailHost
-    mail.value.mailPort = v.mailPort
-    mail.value.mailSicherheit = v.mailSicherheit
-}
-
-async function ladeMailKonfig() {
-    try {
-        const { data } = await axios.get('/api/mail/settings')
-        mail.value = { ...data, mailPasswort: data.mailPasswortSet ? '••••••••' : '' }
-    } catch (e) {
-        console.error(' -> Mail-Einstellungen nicht ladbar:', e)
-    }
-}
-
-async function speichereMail() {
-    mailMeldung.value = ''
-    try {
-        await axios.post('/api/mail/settings', mail.value)
-        mailFehler.value = false
-        mailMeldung.value = 'Gespeichert.'
-        await ladeMailKonfig()
-    } catch (e) {
-        mailFehler.value = true
-        mailMeldung.value = e.response?.data?.error || e.message
-    }
-}
-
-async function testeMail() {
-    mailTestLaeuft.value = true
-    mailMeldung.value = ''
-    try {
-        // Erst speichern: sonst testet der Server eine ältere Konfiguration
-        // als die, die auf dem Bildschirm steht.
-        await axios.post('/api/mail/settings', mail.value)
-        await axios.post('/api/mail/test')
-        mailFehler.value = false
-        mailMeldung.value = 'Testmail verschickt — schau ins Postfach.'
-    } catch (e) {
-        mailFehler.value = true
-        mailMeldung.value = e.response?.data?.error || e.message
-    } finally {
-        mailTestLaeuft.value = false
-    }
-}
-
+// Ref auf <SchrittMailKonfiguration>, nur um deren Ladevorgang hier explizit
+// abzuwarten (siehe Kommentar in ladeBenachrichtigungen) — der News-Mailhinweis
+// und die Kanal-Checkbox weiter unten brauchen `mail.mailAktiv`/`mailAn` schon
+// beim ersten Rendern, nicht irgendwann später.
+const mailKonfigRef = ref(null)
 async function ladeBenachrichtigungen() {
     try {
         const { data } = await axios.get('/api/benachrichtigungen/typen')
@@ -2513,7 +2389,12 @@ async function ladeBenachrichtigungen() {
     }
     const roh = currentUser.value?.benachrichtigungen
     kanalWahl.value = roh && typeof roh === 'object' && !Array.isArray(roh) ? { ...roh } : {}
-    await ladeMailKonfig()
+    // SchrittMailKonfiguration.vue lädt sich seit der Extraktion selbst — hier
+    // trotzdem explizit erneut abwarten, damit `mail.mailAktiv`/`mailAn` beim
+    // ersten Rendern des News-Mailhinweises und der Kanal-Checkbox (unten)
+    // sicher aktuell sind, statt von der Mount-Reihenfolge der `v-show`-Bereiche
+    // abzuhängen.
+    await mailKonfigRef.value?.laden()
 }
 
 // Load imports on mount
@@ -2801,6 +2682,16 @@ onBeforeMount(async () => {
                             <InfoTipp schluessel="settings.erweiterteInfosInfo" />
                         </div>
                         <p class="fw-lighter small mb-0">{{ t('settings.erweiterteInfosHint') }}</p>
+                    </div>
+
+                    <!-- Manueller Wiederaufruf des Onboarding-Assistenten — unabhängig
+                         vom Versionsabgleich, z.B. um eine Nachrichtenquelle
+                         nachzutragen, die man beim ersten Mal übersprungen hat. -->
+                    <div class="col-12 mt-4">
+                        <button type="button" class="btn btn-outline-secondary btn-sm"
+                            @click="router.push({ path: '/update-assistent', query: { kontext: 'manuell', rueckkehr: '/settings' } })">
+                            <i class="uil uil-magic me-1"></i>{{ t('onboarding.reopenButton') }}
+                        </button>
                     </div>
 
                     <!-- Modi ein-/ausblenden. Journal fehlt bewusst: nicht abschaltbar. -->
@@ -4160,90 +4051,7 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
-                    <table class="table table-sm align-middle" v-if="newsQuellen.length">
-                        <thead>
-                            <tr>
-                                <th style="width:6rem;">{{ t('settings.ki.news.colType') }}</th>
-                                <th>{{ t('settings.ki.news.colName') }}</th>
-                                <th>{{ t('settings.ki.news.colAddress') }}</th>
-                                <th style="width:5rem;" class="text-center">{{ t('settings.ki.news.colActive') }}</th>
-                                <th style="width:6rem;" class="text-center"
-                                    :title="t('settings.ki.news.colExcludeTitle')">
-                                    {{ t('settings.ki.news.colExclude') }}</th>
-                                <th style="width:5rem;" class="text-center" :title="t('settings.ki.news.colVideosTitle')">{{ t('settings.ki.news.colVideos') }}</th>
-                                <th style="width:7rem;"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="q in newsQuellen" :key="q.id">
-                                <td class="text-muted">{{ q.art }}</td>
-                                <td>{{ q.name || '—' }}</td>
-                                <td class="text-truncate" style="max-width:22rem;">
-                                    <span :title="q.url">{{ q.url }}</span>
-                                    <div v-if="q.letzterFehler" class="small" style="color:rgb(250,190,60);">
-                                        {{ q.letzterFehler }}
-                                    </div>
-                                </td>
-                                <td class="text-center">
-                                    <input type="checkbox" :checked="!!q.enabled"
-                                        @change="quelleAendern(q, { enabled: $event.target.checked ? 1 : 0 })">
-                                </td>
-                                <td class="text-center">
-                                    <input type="checkbox" :checked="!!q.laerm"
-                                        @change="quelleAendern(q, { laerm: $event.target.checked ? 1 : 0 })">
-                                </td>
-                                <td class="text-center">
-                                    <!-- Nur bei YouTube sinnvoll: alles andere hat keine Videos -->
-                                    <input v-if="q.art === 'youtube'" type="checkbox"
-                                        :checked="Number(q.videoAnalyse ?? 1) === 1"
-                                        @change="quelleAendern(q, { videoAnalyse: $event.target.checked ? 1 : 0 })">
-                                    <span v-else class="text-muted">—</span>
-                                </td>
-                                <td class="text-end">
-                                    <button class="btn btn-outline-danger btn-sm" @click="quelleLoeschen(q)">
-                                        <i class="uil uil-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    <div class="row g-2 align-items-center">
-                        <div class="col-6 col-md-2">
-                            <select class="form-select form-select-sm" v-model="neueQuelle.art">
-                                <option value="youtube">YouTube</option>
-                                <option value="rss">RSS</option>
-                                <option value="telegram">Telegram</option>
-                                <option value="truth">Truth Social</option>
-                                <option value="x">X (via Grok)</option>
-                            </select>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <input class="form-control form-control-sm" v-model="neueQuelle.name" :placeholder="t('settings.ki.news.sourceNamePlaceholder')">
-                        </div>
-                        <div class="col-12 col-md-5">
-                            <input class="form-control form-control-sm" v-model="neueQuelle.url"
-                                :placeholder="neueQuelle.art === 'x' ? '@handle'
-                                    : neueQuelle.art === 'telegram' ? 'https://t.me/s/kanalname'
-                                        : 'https://www.youtube.com/feeds/videos.xml?channel_id=…'">
-                        </div>
-                        <div class="col-12 col-md-2 d-flex gap-1">
-                            <button class="btn btn-outline-secondary btn-sm" :disabled="newsTestet"
-                                @click="quelleTesten">{{ t('settings.ki.news.testSourceBtn') }}</button>
-                            <button class="btn btn-outline-primary btn-sm" @click="quelleAnlegen">{{ t('settings.ki.news.addSourceBtn') }}</button>
-                        </div>
-                    </div>
-                    <div v-if="newsMeldung" class="small mt-2" :class="newsFehler ? 'text-danger' : 'text-muted'">
-                        {{ newsMeldung }}
-                    </div>
-
-                    <div v-if="newsVorschlaege.length" class="mt-2 small">
-                        <span class="text-muted me-2">{{ t('settings.ki.news.suggestionsLabel') }}</span>
-                        <button v-for="v in newsVorschlaege" :key="v.url"
-                            class="btn btn-outline-secondary btn-sm me-1 mb-1" @click="vorschlagUebernehmen(v)">
-                            {{ v.name }}<span v-if="v.laerm" class="ms-1 text-muted">{{ t('settings.ki.news.noiseSuffix') }}</span>
-                        </button>
-                    </div>
+                    <SchrittNewsQuellen :key="newsQuellenKey" />
 
                     <div class="row align-items-center mt-2">
                         <div class="col-12 col-md-4">
@@ -5819,82 +5627,7 @@ onBeforeMount(async () => {
                     {{ t('settings.benachrichtigungen.mailEinleitung') }}
                 </p>
 
-                <div class="form-check form-switch mt-2">
-                    <input class="form-check-input" type="checkbox" id="mailAktivToggle"
-                        :checked="mail.mailAktiv === 1"
-                        @change="mail.mailAktiv = $event.target.checked ? 1 : 0; speichereMail()">
-                    <label class="form-check-label" for="mailAktivToggle">
-                        {{ t('settings.benachrichtigungen.mailAktiv') }}
-                    </label>
-                </div>
-
-                <div class="d-flex align-items-center gap-2 flex-wrap mt-3">
-                    <span class="text-muted" style="font-size:0.8rem;">{{ t('settings.benachrichtigungen.vorlage') }}</span>
-                    <button v-for="v in MAIL_VORLAGEN" :key="v.name" type="button"
-                        class="btn btn-sm btn-outline-secondary" @click="mailVorlage(v)">{{ v.name }}</button>
-                </div>
-
-                <div class="row align-items-center mt-2">
-                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.schrift') }}<InfoTipp schluessel="settings.info.mailSchrift" /></div>
-                    <div class="col-12 col-md-8">
-                        <select class="form-select" style="max-width:14rem;"
-                            v-model="mail.mailSchriftGroesse" @change="speichereMail">
-                            <option value="normal">{{ t('settings.benachrichtigungen.schriftNormal') }}</option>
-                            <option value="gross">{{ t('settings.benachrichtigungen.schriftGross') }}</option>
-                            <option value="sehrGross">{{ t('settings.benachrichtigungen.schriftSehrGross') }}</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="row align-items-center mt-3">
-                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.host') }}<InfoTipp schluessel="settings.info.mailSicherheit" /></div>
-                    <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
-                        <input type="text" class="form-control" style="max-width:18rem;"
-                            v-model="mail.mailHost" placeholder="smtp.example.com" />
-                        <input type="number" class="form-control" style="max-width:7rem;"
-                            v-model.number="mail.mailPort" placeholder="587" />
-                        <select class="form-select" style="max-width:11rem;" v-model="mail.mailSicherheit">
-                            <option value="tls">TLS (465)</option>
-                            <option value="starttls">STARTTLS (587)</option>
-                            <option value="keine">{{ t('settings.benachrichtigungen.mailSecurityNone') }}</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="row align-items-center mt-2">
-                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.zugang') }}</div>
-                    <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
-                        <input type="text" class="form-control" style="max-width:18rem;"
-                            v-model="mail.mailUser" :placeholder="t('settings.benachrichtigungen.benutzer')" />
-                        <input type="password" class="form-control" style="max-width:14rem;"
-                            v-model="mail.mailPasswort" :placeholder="t('settings.benachrichtigungen.passwort')" />
-                    </div>
-                </div>
-
-                <div class="row align-items-center mt-2">
-                    <div class="col-12 col-md-4">{{ t('settings.benachrichtigungen.adressen') }}</div>
-                    <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
-                        <input type="email" class="form-control" style="max-width:18rem;"
-                            v-model="mail.mailVon" :placeholder="t('settings.benachrichtigungen.von')" />
-                        <input type="email" class="form-control" style="max-width:18rem;"
-                            v-model="mail.mailAn" :placeholder="t('settings.benachrichtigungen.an')" />
-                    </div>
-                </div>
-
-                <div class="d-flex align-items-center gap-2 flex-wrap mt-3">
-                    <button type="button" class="btn btn-sm btn-primary" @click="speichereMail">
-                        {{ t('settings.benachrichtigungen.speichern') }}
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary"
-                        :disabled="mailTestLaeuft" @click="testeMail">
-                        {{ mailTestLaeuft ? t('settings.benachrichtigungen.testLaeuft') : t('settings.benachrichtigungen.test') }}
-                    </button>
-                    <span v-if="mailMeldung" :class="mailFehler ? 'text-danger' : 'text-success'"
-                        style="font-size:0.85rem;">{{ mailMeldung }}</span>
-                </div>
-                <p class="fw-lighter mt-2" style="font-size:0.8rem;">
-                    {{ t('settings.benachrichtigungen.passwortHinweis') }}
-                </p>
+                <SchrittMailKonfiguration v-model:mail="mail" ref="mailKonfigRef" />
                 </div>
 
             </div>

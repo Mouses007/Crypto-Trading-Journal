@@ -30,6 +30,7 @@ import {
     stableFluss, waehleDominanzPunkte, zerlegeDominanz,
 } from './makro.js'
 import { ladeLlmConfig, callLLMJson } from './llm.js'
+import { parseWalBeitrag } from './wal-parser.js'
 
 const HTTP_TIMEOUT = 10000
 
@@ -2020,6 +2021,64 @@ export async function holeMarkt(anzahl = 100) {
     }
 }
 
+// ── Kachel: Wal-Transaktionen ────────────────────────────────────────────
+
+/**
+ * Grosse Krypto-Transaktionen aus den bereits gesammelten Telegram-Quellen
+ * (`news_items`) — keine eigene Fremdquelle, kein zweiter Abruf. Bewusst
+ * ohne Kanal-Whitelist: der Parser läuft über ALLE aktiven Telegram-Quellen
+ * und behält nur, was er als Wal-Transaktion über der Schwelle erkennt.
+ * Kommt der Nutzer später ein fünfter Kanal hinzu, muss hier nichts geändert
+ * werden — dieselbe Lehre wie bei `STANDARD_ALARM_REGELN` im Hype-Radar,
+ * wo eine zweite, separat gepflegte Liste irgendwann verlässlich abdriftet.
+ *
+ * `aktiveQuellen` (Anzahl eingeschalteter Telegram-Quellen, nicht nur
+ * Wal-Kanäle) lässt die Kachel „keine Quelle aktiv" von „nichts über der
+ * Schwelle im Fenster" unterscheiden — dieselbe Unterscheidung wie
+ * `gesamtImZeitraum` beim Kalender-Countdown.
+ */
+export async function holeWalTransaktionen({ stunden = 24, minUsd = 5_000_000 } = {}) {
+    const fenster = Math.max(1, Math.min(168, Math.round(Number(stunden)) || 24))
+    const schwelle = Math.max(0, Number(minUsd) || 0)
+
+    return ausCache(`wal|${fenster}|${schwelle}`, 5 * 60 * 1000, async () => {
+        const knex = getKnex()
+        const telegramQuellen = await knex('news_sources').where({ art: 'telegram' })
+        const aktive = telegramQuellen.filter(q => Number(q.enabled) === 1)
+
+        if (!aktive.length) {
+            return { transaktionen: [], aktiveQuellen: 0, fenster, schwelle }
+        }
+
+        const seit = Date.now() - fenster * 60 * 60 * 1000
+        const beitraege = await knex('news_items')
+            .whereIn('sourceId', aktive.map(q => q.id))
+            .where('publishedAt', '>=', seit)
+            .select('inhalt', 'url', 'publishedAt', 'sourceId')
+
+        const nameVon = new Map(aktive.map(q => [q.id, q.name]))
+        const transaktionen = []
+        for (const b of beitraege) {
+            const p = parseWalBeitrag(b.inhalt)
+            if (!p.erkannt || p.usdWert < schwelle) continue
+            transaktionen.push({
+                zeit: Number(b.publishedAt),
+                betrag: p.betrag,
+                symbol: p.symbol,
+                usdWert: p.usdWert,
+                richtung: p.richtung,
+                gegenpartei: p.gegenpartei,
+                zuversicht: p.zuversicht,
+                quelle: nameVon.get(b.sourceId) || '',
+                url: b.url,
+            })
+        }
+        transaktionen.sort((a, b) => b.usdWert - a.usdWert)
+
+        return { transaktionen: transaktionen.slice(0, 30), aktiveQuellen: aktive.length, fenster, schwelle }
+    })
+}
+
 let snapTimer = null
 
 export function setupMarktradarRoutes(app) {
@@ -2151,6 +2210,17 @@ export function setupMarktradarRoutes(app) {
             sendeRadar(res, await holeMarkt(topN(req.query.n)))
         } catch (e) {
             sendRadarError(res, e, 'Marktübersicht')
+        }
+    })
+
+    app.get('/api/marktradar/wale', async (req, res) => {
+        try {
+            if (req.query.force === '1') verwerfeCache('wal|')
+            sendeRadar(res, await holeWalTransaktionen({
+                stunden: req.query.stunden, minUsd: req.query.minUsd,
+            }))
+        } catch (e) {
+            sendRadarError(res, e, 'Wal-Transaktionen')
         }
     })
 
