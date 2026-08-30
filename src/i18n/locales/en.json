@@ -1345,6 +1345,10 @@
     "liquidations": "Liquidations",
     "volumeBars": "Volume bars",
     "volumeBarsTitle": "Bars below the chart: traded volume per time slice, green when buyers were more aggressive",
+    "delta": "Buy/sell balance",
+    "deltaTitle": "Running sum of buy minus sell volume (Cumulative Volume Delta) below the chart — shows which side is currently more aggressive",
+    "absorption": "Mark absorption",
+    "absorptionTitle": "Highlights price levels where far more traded than the heatmap showed as resting size, without the price moving through — a sign of a hidden large order",
     "laneWidth": "LANE WIDTH",
     "laneWidthTitle": "Width of the “traded” lane",
     "colorScale": "COLOR SCALE",
@@ -1354,6 +1358,9 @@
     "saturationTitle": "Quantity at which a cell is fully saturated",
     "takeAutoTitle": "Adopt current auto value ({value})",
     "autoValue": "Auto value: {value}",
+    "saturationMult": "SATURATION CEILING",
+    "saturationMultTitle": "How many times the reference value fully saturates a cell — lower makes walls pop sooner, higher keeps the scale more restrained",
+    "autoFixedHint": "For persistently comparable, strong colours: switch the colour scale to \"Fixed\" and use \"Adopt auto value\"",
     "threshold": "LIQUIDITY THRESHOLD",
     "thresholdTitle": "Hides everything below this share of the colour scale",
     "dotStep": "GROUP TRADE DOTS",
@@ -1377,7 +1384,10 @@
     "pauseBgOffHint": "Keeps running in the background — connection stays open",
     "replayLocked": "Fixed during replay — the interval is baked into the recording",
     "replayNoTrades": "Not available during replay: individual trades are not recorded",
-    "replayHint": "Replay: liquidity, price path and liquidations. Trade dots, volume profile and bars need data that is not recorded."
+    "replayHint": "Replay: liquidity, price path and liquidations. Trade dots, volume profile and bars need data that is not recorded.",
+    "imbalanceBuy": "{pct}% buy",
+    "imbalanceSell": "{pct}% sell",
+    "imbalanceTitle": "Buy vs. sell volume near the mid price"
   },
   "strategies": {
     "labTitle": "Lab",

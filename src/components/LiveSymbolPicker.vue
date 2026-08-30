@@ -16,7 +16,8 @@ import { currentUser } from '../stores/settings.js'
 import { loadSymbolMeta } from '../utils/liveSymbols.js'
 import {
     liveSymbol, liveMarket, liveViewPct, liveFrameMs, liveShowProfile,
-    liveColorMode, liveColorRef, liveAutoRefValue, liveThreshold, liveShowLiquidations, liveDotStep, liveProfileW, liveShowVolumeBars,
+    liveColorMode, liveColorRef, liveSatMult, liveAutoRefValue, liveThreshold, liveShowLiquidations, liveDotStep, liveProfileW, liveShowVolumeBars,
+    liveShowDelta, liveShowAbsorption,
     livePauseInBackground, liveMode,
     levMapTier, levMapHours, levMapSpanPct, levMapView, levMapThreshold, levMapMmr, levMapMmrQuelle, levMapProfileW,
     VIEW_PCT_OPTIONS, FRAME_MS_OPTIONS, FAVORITE_SYMBOLS,
@@ -245,6 +246,13 @@ onMounted(async () => {
             <input type="checkbox" v-model="liveShowVolumeBars" class="me-1" :disabled="istWiedergabe" />{{ t('live.volumeBars') }}
         </label>
         <label :class="['liveToggle', istWiedergabe ? 'liveToggleAus' : '']"
+            :title="istWiedergabe ? t('live.replayNoTrades') : t('live.deltaTitle')">
+            <input type="checkbox" v-model="liveShowDelta" class="me-1" :disabled="istWiedergabe" />{{ t('live.delta') }}
+        </label>
+        <label class="liveToggle" :title="t('live.absorptionTitle')">
+            <input type="checkbox" v-model="liveShowAbsorption" class="me-1" />{{ t('live.absorption') }}
+        </label>
+        <label :class="['liveToggle', istWiedergabe ? 'liveToggleAus' : '']"
             :title="istWiedergabe ? t('live.replayLocked') : t('live.pauseBgTitle')">
             <input type="checkbox" v-model="livePauseInBackground" class="me-1" :disabled="istWiedergabe" />{{ t('live.pauseBg') }}
         </label>
@@ -267,6 +275,16 @@ onMounted(async () => {
             </button>
         </div>
         <div v-else class="autoRefHint">{{ t('live.autoValue', { value: fmtRef(liveAutoRefValue) }) }}</div>
+        <div class="autoRefHint">{{ t('live.autoFixedHint') }}</div>
+
+        <template v-if="liveColorMode !== 'fixed'">
+            <label class="fw-lighter mt-2">
+                {{ t('live.saturationMult') }}
+                <span class="threshVal">{{ liveSatMult.toFixed(1) }}×</span>
+            </label>
+            <input v-model.number="liveSatMult" type="range" min="1.5" max="6" step="0.1"
+                class="threshRange" :title="t('live.saturationMultTitle')" />
+        </template>
 
         <label class="fw-lighter mt-2">
             {{ t('live.threshold') }}

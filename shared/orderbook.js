@@ -121,6 +121,24 @@ export class OrderBook {
     }
 
     /**
+     * Kauf- zu Verkaufsvolumen innerhalb eines Preisbands um den Mid — ein
+     * schneller Blick auf den Druck nahe am Geschehen, statt auf das ganze
+     * (teils sehr breite) Buch. Bei gekreuztem oder fehlendem Buch gibt es
+     * absichtlich keinen Wert, aus demselben Grund wie in `bestPrices()`.
+     */
+    topImbalance(bandPct = 0.5) {
+        const { mid } = this.bestPrices()
+        if (!mid) return null
+        const lo = mid * (1 - bandPct / 100)
+        const hi = mid * (1 + bandPct / 100)
+        let bidQty = 0, askQty = 0
+        for (const [price, qty] of this.bids) if (price >= lo) bidQty += qty
+        for (const [price, qty] of this.asks) if (price <= hi) askQty += qty
+        const total = bidQty + askQty
+        return { bidQty, askQty, buyShare: total ? bidQty / total : 0.5 }
+    }
+
+    /**
      * Entfernt Level weit ausserhalb des Marktes. Diffs können Preise ausserhalb
      * des Snapshot-Bandes anlegen, die nie wieder ein Delete sehen — ohne Prune
      * wachsen die Maps unbegrenzt.
