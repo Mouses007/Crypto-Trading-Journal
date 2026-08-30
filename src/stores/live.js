@@ -20,6 +20,7 @@ export const liveShowProfile = ref(false)
 export const livePauseInBackground = ref(true)
 export const liveColorMode = ref('auto')      // 'auto' | 'fixed'
 export const liveColorRef = ref(0)            // Sättigungswert bei 'fixed'
+export const liveSatMult = ref(2.5)           // Vielfaches des Bezugswerts bei voller Sättigung ('auto')
 export const liveAutoFollow = ref(true)
 export const liveThreshold = ref(0)           // 0..0.95, blendet schwache Liquidität aus
 export const liveShowLiquidations = ref(true) // Zwangsliquidationen einzeichnen (nur Futures)
@@ -27,6 +28,8 @@ export const livePrefillMin = ref(15)         // Vorlauf aus der Aufzeichnung, 0
 export const liveDotStep = ref(11)            // Rasterbreite der Handelspunkte in px
 export const liveProfileW = ref(74)           // Breite der Volumenprofil-Spur in px
 export const liveShowVolumeBars = ref(false)  // Volumen-Säulen unter dem Chart
+export const liveShowDelta = ref(false)       // Cumulative-Volume-Delta-Spur unter dem Chart
+export const liveShowAbsorption = ref(false)  // Preisstufen markieren, an denen mehr gehandelt als geruht wurde
 
 /* Liquidationskarte (eigene Seite) — Modell, keine Messung. */
 export const levMapTier = ref('all')          // 'all' | Index in LEVERAGE_TIERS
@@ -74,12 +77,16 @@ export const liveAutoRefValue = ref(0)
 
 const FIELDS = {
     liveSymbol, liveMarket, liveViewPct, liveFrameMs, liveHistoryMin, liveRamp,
-    liveShowProfile, livePauseInBackground, liveColorMode, liveColorRef, liveAutoFollow,
+    liveShowProfile, livePauseInBackground, liveColorMode, liveColorRef, liveSatMult, liveAutoFollow,
     liveThreshold, liveShowLiquidations, livePrefillMin, liveDotStep, liveProfileW, liveShowVolumeBars,
+    liveShowDelta, liveShowAbsorption,
     levMapTier, levMapHours, levMapSpanPct, levMapMmr, levMapMmrQuelle, levMapWeights, levMapView,
     levMapThreshold, levMapProfileW,
 }
-const BOOLEAN_FIELDS = ['liveShowProfile', 'livePauseInBackground', 'liveAutoFollow', 'liveShowLiquidations', 'liveShowVolumeBars']
+const BOOLEAN_FIELDS = [
+    'liveShowProfile', 'livePauseInBackground', 'liveAutoFollow', 'liveShowLiquidations',
+    'liveShowVolumeBars', 'liveShowDelta', 'liveShowAbsorption',
+]
 
 let hydrated = false
 let saveTimer = null

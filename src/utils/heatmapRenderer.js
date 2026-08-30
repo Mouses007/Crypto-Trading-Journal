@@ -20,6 +20,11 @@ import { decimalsFor } from '../../shared/priceBins.js'
 export const AXIS_W = 78      // Preisachse rechts
 export const AXIS_H = 24      // Zeitachse unten
 export const VOLUME_H = 56    // Spur mit gehandeltem Volumen je Zeitabschnitt
+export const DELTA_H = 40     // Spur mit dem laufenden Kauf-/Verkaufssaldo (CVD)
+// Vielfaches der ruhenden Menge, ab dem gehandeltes Volumen an einer Preisstufe
+// als Absorption gilt. Bewusst grosszügig gewählt: eine normale Umsatzspitze
+// an einer dünnen Zeile soll nicht schon als Wand-Absorption durchgehen.
+const ABSORPTION_MULT = 3
 export const PROFILE_W = 74   // Vorgabebreite der Volumenprofil-Spur
 // Rasterbreite der Handelspunkte in Pixeln (über setDotStep einstellbar).
 // Muss grösser sein als der Durchmesser eines typischen Punktes (~8 px),
@@ -123,7 +128,8 @@ export class HeatmapRenderer {
 
         this.lut = buildLut('bookmap')
         this.ref = 1
-        this.invLogMax = 1 / Math.log1p(4)
+        this.satMult = 2.5
+        this.invLogMax = 1 / Math.log1p(this.satMult)
         this.cursor = null
         this.colorMode = 'auto'   // 'auto' = rollendes p95, 'fixed' = gesetzter Wert
         this.threshold = 0        // 0..0.95 — blendet schwache Liquidität ganz aus
@@ -133,6 +139,8 @@ export class HeatmapRenderer {
         this.profileBins = null   // Werte der Spur, für den Tooltip
         this.volumeH = 0          // Höhe der Volumen-Spur unten (0 = aus)
         this.volumeBins = null    // Werte der Säulen, für den Tooltip
+        this.deltaH = 0           // Höhe der Delta-Spur (CVD) unten (0 = aus)
+        this.absorptionOn = false // Preisstufen mit auffälliger Absorption markieren
         // Beschriftungen der Canvas-Texte. Der Renderer ist bewusst Vue-frei und
         // kann kein useI18n() — die Komponente reicht die übersetzten Texte
         // durch. Die Vorgaben hier sind nur ein Notnagel, falls setLabels()
@@ -148,6 +156,17 @@ export class HeatmapRenderer {
     /** Zellen unterhalb dieses Anteils der Farbskala werden nicht gezeichnet. */
     setThreshold(value) {
         this.threshold = Math.max(0, Math.min(0.95, Number(value) || 0))
+    }
+
+    /**
+     * Beim Wievielfachen des Bezugswerts ('auto': rollendes 95. Perzentil) eine
+     * Zelle voll gesättigt ist. Kleiner lässt Wände schneller heiss aufleuchten,
+     * grösser hält die Skala zurückhaltender — der bisherige Fixwert 4 liess nur
+     * die obersten ~5 % aller Mengen je Farbe zeigen.
+     */
+    setSaturationMult(value) {
+        this.satMult = Math.max(1.2, Math.min(8, Number(value) || 2.5))
+        this.invLogMax = 1 / Math.log1p(this.satMult)
     }
 
     /** Rasterbreite der Handelspunkte in Pixeln (1 = jede Spalte einzeln). */
@@ -208,6 +227,19 @@ export class HeatmapRenderer {
         if (this.cssW) this.resize(this.cssW, this.cssH)
     }
 
+    /** Spur mit dem laufenden Kauf-/Verkaufssaldo (Cumulative Volume Delta). */
+    setDeltaVisible(visible) {
+        const wanted = visible ? DELTA_H : 0
+        if (this.deltaH === wanted) return
+        this.deltaH = wanted
+        if (this.cssW) this.resize(this.cssW, this.cssH)
+    }
+
+    /** Preisstufen markieren, an denen deutlich mehr gehandelt als geruht wurde. */
+    setAbsorptionVisible(visible) {
+        this.absorptionOn = !!visible
+    }
+
     setProfileWidth(px) {
         this.profileWanted = Math.max(40, Math.min(320, Math.round(Number(px)) || PROFILE_W))
         if (!this.profileVisible) return
@@ -231,7 +263,7 @@ export class HeatmapRenderer {
             ? Math.max(36, Math.min(this.profileWanted, Math.floor(cssW * 0.22)))
             : 0
         this.plotW = Math.max(50, Math.floor(cssW - this.axisW - this.profileW))
-        this.plotH = Math.max(50, Math.floor(cssH - AXIS_H - this.volumeH))
+        this.plotH = Math.max(50, Math.floor(cssH - AXIS_H - this.volumeH - this.deltaH))
         this.axisX = this.plotW + this.profileW
         this.cols = this.plotW
 
@@ -468,6 +500,15 @@ export class HeatmapRenderer {
         if (showLiquidations && liquidations) this._drawLiquidations(ctx, liquidations, { yFor, xForTs, tLeft, tMax })
         if (showProfile) this._drawVolumeProfile(ctx, trades, { yFor, tLeft, tMax })
         if (this.volumeH) this._drawVolumeBars(ctx, trades, { xForTs, tLeft, tMax, dotStep })
+        if (this.deltaH) this._drawDelta(ctx, trades, { xForTs, tLeft, tMax })
+        // Absorption ist ein lokales, kein Gesamtfenster-Phänomen — nur die
+        // letzte Minute (oder das ganze Fenster, falls kürzer) zählt.
+        if (this.absorptionOn) {
+            this._drawAbsorption(ctx, ring, {
+                view, bucketSize, yFor, trades,
+                windowMs: Math.min(60000, visible * frameMs), tMax, head,
+            })
+        }
         this._drawLegend(ctx)
 
         this._drawAxes(ctx, { ring, view, bucketSize, rowH, visible, frameMs, tRight, formatTime, head })
@@ -690,7 +731,7 @@ export class HeatmapRenderer {
             // Feed-Pause fehlen Spalten, die Achse würde sonst eine gleichmässige
             // Zeit vortäuschen, die es nie gab.
             const ts = ring.ts[ring.colFrom(head, this.plotW - 1 - x)] || tRight
-            ctx.fillText(formatTime(ts), x, this.plotH + this.volumeH + AXIS_H / 2)
+            ctx.fillText(formatTime(ts), x, this.plotH + this.volumeH + this.deltaH + AXIS_H / 2)
         }
     }
 
@@ -819,6 +860,124 @@ export class HeatmapRenderer {
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
         ctx.fillText(`${this.labels.volumePer.replace('{n}', step)} · ${this.labels.max} ${formatQty(max)}`, 4, y0 + 3)
+    }
+
+    /**
+     * Cumulative Volume Delta: laufende Summe aus Kauf- minus Verkaufsmenge
+     * über die sichtbare Breite. Pro Bildschirmspalte einzeln aufsummiert
+     * (feiner als das dotStep-Raster der Blasen) — die Linie soll auf jede
+     * einzelne Ausführung reagieren, nicht erst auf ein gebündeltes Fenster.
+     */
+    _drawDelta(ctx, trades, { xForTs, tLeft, tMax }) {
+        const y0 = this.plotH + this.volumeH
+        const h = this.deltaH
+
+        ctx.fillStyle = 'rgba(0,0,0,0.35)'
+        ctx.fillRect(0, y0, this.plotW, h)
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)'
+        ctx.beginPath()
+        ctx.moveTo(0, y0 + 0.5); ctx.lineTo(this.plotW, y0 + 0.5)
+        ctx.stroke()
+
+        const perCol = new Float64Array(this.plotW)
+        for (let i = 0; i < trades.count; i++) {
+            const idx = trades.idxFromEnd(i)
+            const ts = trades.ts[idx]
+            if (ts >= tMax) continue
+            if (ts < tLeft) break
+            const x = Math.min(this.plotW - 1, Math.max(0, Math.round(xForTs(ts))))
+            perCol[x] += trades.buy[idx] ? trades.qty[idx] : -trades.qty[idx]
+        }
+        const cum = new Float64Array(this.plotW)
+        let running = 0
+        let min = 0, max = 0
+        for (let x = 0; x < this.plotW; x++) {
+            running += perCol[x]
+            cum[x] = running
+            if (running < min) min = running
+            if (running > max) max = running
+        }
+        const span = Math.max(max - min, 1e-9)
+        const yFor = (v) => y0 + h - ((v - min) / span) * (h - 6) - 3
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+        ctx.beginPath()
+        ctx.moveTo(0, yFor(0) + 0.5); ctx.lineTo(this.plotW, yFor(0) + 0.5)
+        ctx.stroke()
+
+        ctx.beginPath()
+        ctx.strokeStyle = running >= 0 ? COLORS.buy : COLORS.sell
+        ctx.lineWidth = 1.5
+        for (let x = 0; x < this.plotW; x++) {
+            const py = yFor(cum[x])
+            if (x === 0) ctx.moveTo(x + 0.5, py)
+            else ctx.lineTo(x + 0.5, py)
+        }
+        ctx.stroke()
+
+        const sign = running < 0 ? '-' : '+'
+        ctx.font = '11px system-ui, sans-serif'
+        ctx.fillStyle = COLORS.axisText
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'top'
+        ctx.fillText(`Δ ${sign}${formatQty(Math.abs(running))}`, 4, y0 + 3)
+    }
+
+    /**
+     * Markiert Preisstufen, an denen im letzten kurzen Fenster deutlich mehr
+     * gehandelt wurde als die Heatmap an ruhender Menge zeigt — ein Hinweis
+     * auf eine versteckte grosse (Iceberg-)Order, die die Aufträge absorbiert.
+     * Der Mindest-Bezug auf `this.ref` (statt einer festen Zahl) macht die
+     * Schwelle automatisch symbolabhängig, ohne einen weiteren Regler zu
+     * brauchen.
+     */
+    _drawAbsorption(ctx, ring, { view, bucketSize, yFor, trades, windowMs, tMax, head }) {
+        const rowsView = view.hi - view.lo
+        if (rowsView <= 0 || rowsView > 4000) return
+        const traded = new Float64Array(rowsView)
+        const tFrom = tMax - windowMs
+        for (let i = 0; i < trades.count; i++) {
+            const idx = trades.idxFromEnd(i)
+            const ts = trades.ts[idx]
+            if (ts >= tMax) continue
+            if (ts < tFrom) break
+            const bucket = Math.round(trades.price[idx] / bucketSize)
+            const row = bucket - view.lo
+            if (row < 0 || row >= rowsView) continue
+            traded[row] += trades.qty[idx]
+        }
+
+        const newestCol = ring.colFrom(head, 0)
+        const minRuhend = this.ref * 0.15
+        let beschriftet = false
+        for (let row = 0; row < rowsView; row++) {
+            const gehandelt = traded[row]
+            if (!gehandelt) continue
+            const bucket = view.lo + row
+            const ruhend = ring.valueAt(newestCol, bucket)
+            if (ruhend < minRuhend) continue
+            if (gehandelt < ABSORPTION_MULT * ruhend) continue
+            const y = yFor(bucket * bucketSize)
+            if (y < 4 || y > this.plotH - 4) continue
+
+            ctx.save()
+            ctx.setLineDash([2, 3])
+            ctx.strokeStyle = 'rgba(255,193,7,0.85)'
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            ctx.moveTo(0, y + 0.5); ctx.lineTo(this.plotW, y + 0.5)
+            ctx.stroke()
+            ctx.restore()
+
+            if (!beschriftet) {
+                ctx.font = '11px system-ui, sans-serif'
+                ctx.fillStyle = 'rgba(255,193,7,0.95)'
+                ctx.textAlign = 'right'
+                ctx.textBaseline = 'bottom'
+                ctx.fillText('Absorption', this.plotW - 4, y - 2)
+                beschriftet = true   // nur einmal beschriften, sonst überladen bei mehreren Treffern
+            }
+        }
     }
 
     /** Tooltip für die Volumen-Säulen: Mengen und Übergewicht des Abschnitts. */

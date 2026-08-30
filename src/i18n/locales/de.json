@@ -1345,6 +1345,10 @@
     "liquidations": "Liquidationen",
     "volumeBars": "Volumen-Säulen",
     "volumeBarsTitle": "Säulen unter dem Chart: gehandeltes Volumen je Zeitabschnitt, grün wenn Käufer aggressiver waren",
+    "delta": "Kauf-/Verkaufssaldo",
+    "deltaTitle": "Laufende Summe aus Kauf- minus Verkaufsvolumen (Cumulative Volume Delta) unter dem Chart — zeigt, welche Seite gerade aggressiver ist",
+    "absorption": "Absorption markieren",
+    "absorptionTitle": "Hebt Preisstufen hervor, an denen deutlich mehr gehandelt wurde als die Heatmap an ruhender Menge zeigt, ohne dass der Kurs durchlief — ein Hinweis auf eine versteckte grosse Order",
     "laneWidth": "SPURBREITE",
     "laneWidthTitle": "Breite der Spur „gehandelt“",
     "colorScale": "FARBSKALA",
@@ -1354,6 +1358,9 @@
     "saturationTitle": "Menge, ab der eine Zelle voll gesättigt ist",
     "takeAutoTitle": "Aktuellen Auto-Wert übernehmen ({value})",
     "autoValue": "Auto-Wert: {value}",
+    "saturationMult": "SÄTTIGUNGSGRENZE",
+    "saturationMultTitle": "Ab dem Wievielfachen des Bezugswerts eine Zelle voll gesättigt ist — kleiner macht Wände schneller kräftig, grösser hält die Skala zurückhaltender",
+    "autoFixedHint": "Für dauerhaft vergleichbare, kräftige Farben: Farbskala auf „Fest“ stellen und „Auto-Wert übernehmen“ nutzen",
     "threshold": "LIQUIDITÄTSSCHWELLE",
     "thresholdTitle": "Blendet alles unterhalb dieses Anteils der Farbskala aus",
     "dotStep": "PUNKTE ZUSAMMENFASSEN",
@@ -1377,7 +1384,10 @@
     "pauseBgOffHint": "Läuft im Hintergrund weiter — Verbindung bleibt offen",
     "replayLocked": "In der Wiedergabe fest — der Takt steckt in der Aufzeichnung",
     "replayNoTrades": "In der Wiedergabe nicht verfügbar: einzelne Handelsgeschäfte werden nicht mitgeschnitten",
-    "replayHint": "Wiedergabe: Liquidität, Kursverlauf und Liquidationen. Handelspunkte, Volumenprofil und Säulen brauchen Daten, die nicht aufgezeichnet werden."
+    "replayHint": "Wiedergabe: Liquidität, Kursverlauf und Liquidationen. Handelspunkte, Volumenprofil und Säulen brauchen Daten, die nicht aufgezeichnet werden.",
+    "imbalanceBuy": "{pct} % Kauf",
+    "imbalanceSell": "{pct} % Verkauf",
+    "imbalanceTitle": "Kauf- zu Verkaufsvolumen nahe am Mittelkurs"
   },
   "strategies": {
     "labTitle": "Labor",

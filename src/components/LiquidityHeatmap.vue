@@ -20,8 +20,9 @@ import { followMid } from '../../shared/priceBins.js'
 import { timeZoneTrade } from '../stores/ui.js'
 import {
     liveSymbol, liveMarket, liveViewPct, liveFrameMs, liveHistoryMin, liveRamp,
-    liveShowProfile, livePauseInBackground, liveColorMode, liveColorRef,
+    liveShowProfile, livePauseInBackground, liveColorMode, liveColorRef, liveSatMult,
     liveAutoFollow, liveFrozen, liveAutoRefValue, liveThreshold, liveShowLiquidations, liveDotStep, liveProfileW, liveShowVolumeBars,
+    liveShowDelta, liveShowAbsorption,
     liveMode, replayFrom, replayTo, livePrefillMin, VIEW_PCT_OPTIONS,
     replayEntry, replayExit, replayFokus, replayZoom,
 } from '../stores/live.js'
@@ -51,6 +52,8 @@ const uiEl = ref(null)
 
 const status = ref('idle')
 const statusDetail = ref('')
+/** Wie weit horizontal zurückgezogen wurde, in ms — nur fürs Badge, siehe colOffset. */
+const panMs = ref(0)
 /** Scrub-Position in der Wiedergabe: 0 = Anfang, 1 = Ende des Zeitfensters. */
 const replayPos = ref(1)
 const replayCols = ref(0)
@@ -63,8 +66,10 @@ const replayAufloesung = ref('')
  * Kopfzeile soll zeigen, was man sieht.
  */
 const replayFensterLabel = ref('')
+/** Kauf-/Verkaufsvolumen nahe am Mid — { bidQty, askQty, buyShare } oder null. */
+const bookImbalance = ref(null)
 
-defineExpose({ replayPos, replayCols, replayTimeLabel, replayAufloesung, replayFensterLabel })
+defineExpose({ replayPos, replayCols, replayTimeLabel, replayAufloesung, replayFensterLabel, bookImbalance })
 
 // Nicht-reaktiver Zustand
 let feed = null
@@ -91,14 +96,25 @@ let cursor = null
 // dem Trade-Stream sind in dieser Einheit, nicht in USDT.
 const baseAsset = computed(
     () => (liveSymbol.value || '').replace(/(USDT|USDC|BUSD|USD)$/, '') || '')
-let drag = null            // { y, lo, hi } während des vertikalen Ziehens
+let drag = null            // { y, lo, hi, x, colOffset0, axis } während des Ziehens
 let frozenHead = null      // Ring-Position, an der die Ansicht eingefroren wurde
 let framesSinceFreeze = 0
+// Spalten, um die der Anker gegenüber frozenHead/Live-Kopf zurückversetzt ist —
+// wächst beim horizontalen Ziehen, um ältere Wände in der Heatmap zu zeigen.
+let colOffset = 0
 let dirtyHeat = false
 let dirtyOverlay = false
 let dirtyUi = false
 
 const formatTime = (ms) => dayjs(ms).tz(timeZoneTrade.value || dayjs.tz.guess()).format('HH:mm:ss')
+/** "12:34 zurück" fürs Badge — nur wenn per Zeitachse zurückgezogen wurde. */
+const panLabel = computed(() => {
+    if (!panMs.value) return ''
+    const total = Math.round(panMs.value / 1000)
+    const m = Math.floor(total / 60)
+    const s = total % 60
+    return `${m}:${String(s).padStart(2, '0')}`
+})
 
 // Live-Feed und Wiedergabe füllen denselben Ringtyp — der Renderer bekommt
 // deshalb in beiden Fällen dieselben Argumente.
@@ -127,7 +143,35 @@ const anchor = () => {
         if (!ring) return null
         return Math.max(1, Math.min(ring.cap, Math.round(replayPos.value * ring.cap)))
     }
-    return liveFrozen.value && frozenHead !== null ? frozenHead : null
+    const base = liveFrozen.value && frozenHead !== null ? frozenHead : null
+    const ring = feed?.ring
+    if (!colOffset || !ring) return base
+    // Bewusst NICHT über colFrom() verkettet: dessen i=0 meint bereits "eine
+    // Spalte vor head" (head ist der nächste Schreibplatz, keine Datenspalte).
+    // Das Ergebnis von colFrom als neuen head weiterzureichen verschöbe die
+    // Ansicht um eine zusätzliche Spalte. Direkt vom head-Zeiger subtrahieren
+    // trifft genau die gewünschten colOffset Spalten.
+    const head = base ?? ring.head
+    return (((head - colOffset) % ring.cap) + ring.cap) % ring.cap
+}
+
+/**
+ * Wie weit lässt sich der Anker noch zurückversetzen, ohne dass hinter ihm
+ * weniger als eine volle Bildschirmbreite an aufgezeichneten Spalten übrig
+ * bliebe — dafür müsste der Renderer sonst mit teils leeren Spalten umgehen.
+ *
+ * Vor dem ersten vollen Umlauf (count < cap) sind nur die Spalten VOR dem
+ * jeweiligen Anker beschrieben, nicht ring.count Spalten insgesamt — sonst
+ * würde man bei einem früh eingefrorenen, seither im Hintergrund
+ * weitergelaufenen Ring über den Anfang der Aufzeichnung hinaus in
+ * unbeschriebene (leere) Spalten ziehen können.
+ */
+function maxColOffset() {
+    const ring = feed?.ring
+    if (!ring || !renderer) return 0
+    const head = liveFrozen.value && frozenHead !== null ? frozenHead : ring.head
+    const available = ring.count >= ring.cap ? ring.cap : head
+    return Math.max(0, available - renderer.cols)
 }
 
 /**
@@ -393,6 +437,8 @@ async function startFeed() {
     view = null
     frozenHead = null
     liveFrozen.value = false
+    colOffset = 0
+    panMs.value = 0
     feed = new LiveFeed({
         symbol: liveSymbol.value,
         market: liveMarket.value,
@@ -404,9 +450,13 @@ async function startFeed() {
         onFrame: () => {
             if (liveFrozen.value) {
                 // Der Ring läuft weiter — irgendwann überschreibt er den
-                // eingefrorenen Ausschnitt. Vorher selbst auftauen.
+                // eingefrorenen Ausschnitt. Vorher selbst auftauen. Mit
+                // Zeitversatz (zurückgezogene Ansicht) reicht der sichtbare
+                // Ausschnitt colOffset Spalten weiter zurück — die Marge
+                // schrumpft entsprechend, sonst zeigt eine lange eingefrorene,
+                // weit zurückgezogene Ansicht irgendwann überschriebene Daten.
                 framesSinceFreeze++
-                if (framesSinceFreeze > feed.ring.cap - renderer.cols - 10) unfreeze()
+                if (framesSinceFreeze > feed.ring.cap - renderer.cols - colOffset - 10) unfreeze()
                 return
             }
             const shifted = updateView()
@@ -426,6 +476,8 @@ function unfreeze() {
     liveFrozen.value = false
     frozenHead = null
     framesSinceFreeze = 0
+    colOffset = 0
+    panMs.value = 0
     updateView()
     dirtyHeat = true
 }
@@ -437,6 +489,12 @@ function unfreeze() {
  * trägt Maus, Stift und Finger. Auf dem Handy gibt es kein Hover und kein
  * Mausrad — dort ersetzen ein Finger (Schieben + Fadenkreuz), zwei Finger
  * (Zoom) und Doppeltippen (Auto-Achse) die Maus.
+ *
+ * Der eine Finger bedient zwei Achsen: hoch/runter verschiebt wie bisher die
+ * Preisachse, links/rechts (nur live, nicht in der Wiedergabe — die hat ihre
+ * eigene Scrub-Leiste) blättert in der bereits gepufferten Vergangenheit der
+ * Heatmap zurück. Welche Achse gemeint ist, entscheidet erst die Bewegung
+ * nach dem Ansetzen (grösserer Ausschlag gewinnt), nicht der Startpunkt.
  */
 const zeiger = new Map()   // pointerId → {x, y} in Bildschirmkoordinaten
 let pinch = null           // { dist, index } beim Ansetzen des zweiten Fingers
@@ -479,10 +537,27 @@ function onPointerMove(event) {
         // Erst ab ein paar Pixeln wird aus dem Antippen ein Schieben — sonst
         // schaltet schon ein Tipp aufs Fadenkreuz die Auto-Achse ab.
         if (!drag.aktiv) {
-            if (Math.abs(y - drag.y) < 4) { cursor = { x, y }; dirtyUi = true; return }
+            const dx = x - drag.x
+            const dy = y - drag.y
+            if (Math.max(Math.abs(dx), Math.abs(dy)) < 4) { cursor = { x, y }; dirtyUi = true; return }
             drag.aktiv = true
-            // Ziehen heisst: der Nutzer will selbst bestimmen, wo die Achse steht
-            if (liveAutoFollow.value) liveAutoFollow.value = false
+            drag.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'
+            if (drag.axis === 'y') {
+                // Ziehen heisst: der Nutzer will selbst bestimmen, wo die Achse steht
+                if (liveAutoFollow.value) liveAutoFollow.value = false
+            } else if (!isReplay() && !liveFrozen.value) {
+                // Zeitachse ziehen heisst zurückblättern — der Live-Rand darf
+                // dabei nicht weiterlaufen, sonst rutscht der Ausschnitt unter
+                // dem Finger weg.
+                liveFrozen.value = true
+            }
+        }
+        if (drag.axis === 'x') {
+            if (isReplay()) return
+            colOffset = Math.max(0, Math.min(maxColOffset(), drag.colOffset0 + Math.round(x - drag.x)))
+            panMs.value = colOffset * currentFrameMs()
+            dirtyHeat = true
+            return
         }
         const rowsView = view.hi - view.lo
         const rowH = renderer.plotH / rowsView
@@ -508,7 +583,11 @@ function onPointerDown(event) {
     }
     if (!view) return
     const rect = wrapEl.value.getBoundingClientRect()
-    drag = { y: event.clientY - rect.top, lo: view.lo, hi: view.hi, aktiv: false }
+    drag = {
+        y: event.clientY - rect.top, lo: view.lo, hi: view.hi,
+        x: event.clientX - rect.left, colOffset0: colOffset,
+        aktiv: false, axis: null,
+    }
     // Ohne Hover braucht der Finger sofort ein Fadenkreuz
     cursor = { x: event.clientX - rect.left, y: event.clientY - rect.top }
     dirtyUi = true
@@ -545,6 +624,8 @@ function onWheel(event) {
 function onDoubleClick() {
     liveAutoFollow.value = true
     if (liveFrozen.value) unfreeze()
+    colOffset = 0
+    panMs.value = 0
     updateView(true)
     dirtyHeat = true
 }
@@ -556,10 +637,13 @@ onMounted(async () => {
     renderer.setRamp(liveRamp.value)
     renderer.setColorScale(liveColorMode.value, liveColorRef.value)
     renderer.setThreshold(liveThreshold.value)
+    renderer.setSaturationMult(liveSatMult.value)
     renderer.setDotStep(liveDotStep.value)
     renderer.setLabels(canvasLabels())
     renderer.setProfileWidth(liveProfileW.value)
     renderer.setVolumeBarsVisible(liveShowVolumeBars.value)
+    renderer.setDeltaVisible(liveShowDelta.value)
+    renderer.setAbsorptionVisible(liveShowAbsorption.value)
     renderer.setProfileVisible(profilAktiv())
     await nextTick()
     applySize()
@@ -578,6 +662,9 @@ onMounted(async () => {
         renderer?.recalcNorm(ring, view, anchor())
         // Vorschlagswert für „Auto-Wert übernehmen" in den Einstellungen
         liveAutoRefValue.value = renderer.currentRef
+        // Orderbuch-Tiefe wird nicht aufgezeichnet — in der Wiedergabe bleibt
+        // die Anzeige deshalb leer statt einen alten Stand vorzutäuschen.
+        bookImbalance.value = isReplay() ? null : (feed?.book?.topImbalance() ?? null)
     }, 1000)
 
     window.addEventListener('pointerup', onPointerUp)
@@ -620,6 +707,7 @@ watch([liveColorMode, liveColorRef], ([mode, value]) => {
     dirtyHeat = true
 })
 watch(liveThreshold, (value) => { renderer?.setThreshold(value); dirtyHeat = true })
+watch(liveSatMult, (value) => { renderer?.setSaturationMult(value); dirtyHeat = true })
 // Punkte liegen auf der Overlay-Ebene — die Heatmap muss dafür nicht neu
 watch(liveDotStep, (value) => { renderer?.setDotStep(value); dirtyOverlay = true })
 watch(locale, () => { renderer?.setLabels(canvasLabels()); dirtyOverlay = true })
@@ -627,6 +715,10 @@ watch(locale, () => { renderer?.setLabels(canvasLabels()); dirtyOverlay = true }
 watch(liveProfileW, (value) => { renderer?.setProfileWidth(value); dirtyHeat = true })
 // Säulen nehmen Höhe vom Chart → Heatmap muss neu
 watch(liveShowVolumeBars, (v) => { renderer?.setVolumeBarsVisible(v); dirtyHeat = true })
+// Delta-Spur nimmt ebenfalls Höhe vom Chart → Heatmap muss neu
+watch(liveShowDelta, (v) => { renderer?.setDeltaVisible(v); dirtyHeat = true })
+// Absorption ist reine Overlay-Zeichnung ohne Höhenänderung
+watch(liveShowAbsorption, (v) => { renderer?.setAbsorptionVisible(v); dirtyOverlay = true })
 watch(liveViewPct, () => { updateView(); dirtyHeat = true })
 watch(liveShowProfile, () => {
     // Die Spur ändert die Plotbreite → Heatmap muss komplett neu gezeichnet werden
@@ -642,6 +734,11 @@ watch(liveFrozen, (frozen) => {
     } else {
         frozenHead = null
         framesSinceFreeze = 0
+        // Auch beim manuellen "Weiter"-Knopf (Liquidity.vue) und nicht nur
+        // über unfreeze() hier drin: der Zeitversatz muss immer mit dem
+        // Auftauen enden, egal woher es ausgelöst wurde.
+        colOffset = 0
+        panMs.value = 0
         updateView()
     }
     dirtyHeat = true
@@ -674,6 +771,7 @@ watch(liveFrozen, (frozen) => {
         </div>
         <div v-if="liveFrozen" class="heatBadge frozen">
             <i class="uil uil-pause me-1"></i>Eingefroren — Aufzeichnung läuft weiter
+            <span v-if="panLabel"> · vor {{ panLabel }} Min</span>
         </div>
         <div v-else-if="!liveAutoFollow" class="heatBadge manual">
             <i class="uil uil-lock me-1"></i>Feste Preisachse — Doppelklick für Auto

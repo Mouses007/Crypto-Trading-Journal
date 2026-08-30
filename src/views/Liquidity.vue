@@ -7,6 +7,7 @@
  * Live-Store und werden im Seitenmenü bedient.
  */
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import LiquidityHeatmap from '../components/LiquidityHeatmap.vue'
 import PageInfo from '../components/PageInfo.vue'
 import {
@@ -16,10 +17,22 @@ import {
 } from '../stores/live.js'
 import dayjs from '../utils/dayjs-setup.js'
 
+const { t } = useI18n()
 const status = ref('idle')
 const heatmapRef = ref(null)
 
 const isReplay = computed(() => liveMode.value === 'replay')
+
+/** Kleines Badge in der Kopfzeile: Kauf-/Verkaufsvolumen nahe am Mittelkurs. */
+const imbalanceLabel = computed(() => {
+    const imb = heatmapRef.value?.bookImbalance
+    if (isReplay.value || !imb) return ''
+    const pct = Math.round(imb.buyShare * 100)
+    return imb.buyShare >= 0.5
+        ? t('live.imbalanceBuy', { pct })
+        : t('live.imbalanceSell', { pct: 100 - pct })
+})
+const imbalanceKauf = computed(() => (heatmapRef.value?.bookImbalance?.buyShare ?? 0.5) >= 0.5)
 
 const replaySpanne = computed(() => {
     if (!replayFrom.value || !replayTo.value) return ''
@@ -89,6 +102,8 @@ const statusLabel = {
                 <span class="liveMarket">{{ liveMarket === 'futures' ? 'Perp' : 'Spot' }}</span>
                 <span :class="['liveDot', 'dot-' + status]"></span>
                 <span class="liveState">{{ statusLabel[status] || status }}</span>
+                <span v-if="imbalanceLabel" class="imbalanceBadge" :class="imbalanceKauf ? 'imbalanceBuy' : 'imbalanceSell'"
+                    :title="t('live.imbalanceTitle')">{{ imbalanceLabel }}</span>
                 <span v-if="isReplay" class="replayInfo">
                     {{ replayLabel ? replayLabel + ' · ' : '' }}{{ heatmapRef?.replayFensterLabel || replaySpanne }}
                     <template v-if="heatmapRef?.replayAufloesung"> · {{ heatmapRef.replayAufloesung }}</template>
@@ -185,6 +200,24 @@ const statusLabel = {
     font-size: 0.78rem;
     color: var(--blue-color);
     margin-left: 0.3rem;
+}
+
+.imbalanceBadge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    margin-left: 0.3rem;
+}
+
+.imbalanceBuy {
+    background: rgba(38, 190, 150, 0.18);
+    color: var(--green-color, #26be96);
+}
+
+.imbalanceSell {
+    background: rgba(255, 95, 86, 0.18);
+    color: var(--red-color, #ff5f56);
 }
 
 .replayBar {
