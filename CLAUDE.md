@@ -41,13 +41,17 @@ What does exist are standalone self-test files (`server/**/__selftest*.mjs`,
 zeigt den aktuellen Stand, Zahlen hier veralten schneller als Prosa)
 covering the strategy layer (detectors, fill simulation incl. liquidation,
 look-ahead, live gates, statistics, robustness, journal bridge, coin ranking),
-session-cookie handling, the funding sign convention, and the live-trading
+session-cookie handling, the funding sign convention, the live-trading
 layer (trading hours incl. the DST gaps between US and EU changeover, the
-liquidation ring buffer, the intraday candle parser, session P&L).
+liquidation ring buffer, the intraday candle parser, session P&L), and the
+local order book of the Bookmap (`shared/__selftest-orderbuch.mjs`: Binance
+sync state machine for futures/`pu` and spot, qty-0/NaN handling, crossed
+book, prune, and the `mergeSnapshot` re-anchor incl. its crossing guard).
 `npm run test:self` runs each in its own process and prints one summary; run it
 after touching anything under `server/strategies/`, `server/fill-simulator.js`,
 `server/strategy-*.js`, `server/live-gates.js`, `server/liq-ticker.js`,
-`server/sitzung-rechnung.js`, `server/makro.js` or `shared/handelszeiten.js`.
+`server/sitzung-rechnung.js`, `server/makro.js`, `shared/handelszeiten.js`
+or `shared/orderbook.js`.
 Directories are listed in `ORTE` in `scripts/run-selftests.mjs` — a new one has
 to be added there or its tests are silently skipped.
 
@@ -98,6 +102,7 @@ frontend.
 - **`server/radar-ergebnisse.js`** / **`radar-guete.js`** — outcome tracking (audit R-06). The rank correlation between two runs measures *persistence*, not usefulness; a stable ranking can be stably wrong. `radar_ergebnisse` freezes what the page claimed (rank, score, price) and a takt redeems the orders when due. `radar-guete.js` is the pure evaluation: it measures the **span** (MFE − MAE), not the return, because the page promises movement and not direction — and it always reports the **control group** (bottom half), since on a busy day everything moves and Precision@10 alone would look perfect. Weights are deliberately *not* auto-optimised against it.
 - **`server/net-guard.js`** / **`server/feed-parser.js`** — SSRF guard for user-entered feed URLs (public hosts only, no private ranges, redirects re-checked) and a slim reader for RSS, Atom and public Telegram channel pages.
 - **`server/livetrading-api.js`** — Endpoints of the live-trading window: `/api/livetrading/indizes` (ES=F, NQ=F, DX-Y.NYB as intraday candles from the same key-less Yahoo v8 endpoint the Makro tile uses — parsed by the new `ohlcAusChart` in `makro.js`, which keeps OHLC where `reiheAusChart` keeps only closes), `/kalender-countdown` (next hours from `calendar_events` via `leseKalender`, passing `gesamtImZeitraum` through so a tile can tell "nothing happening" from "all filtered out"), `/liq-ticker` and `/session-stand`. All go through `ausCache`/`sendeRadar`, so every open tab shares one fetch. **`/session-stand` deliberately uses `getHistoryPositions` and NOT `/api/bitunix/recent-closed`** — the latter writes `bitunix_config.lastHistoryScan` on every call and a polling tile would keep resetting the trade-import window.
+- **`server/live-recorder.js`** — Records the Binance order book (kind `heat`, one gzip row per symbol and hour), forced liquidations (`liq`, Bybit second source `liqB`) and, since 30.08.2026, **aggTrades** (`trades`) — the replay can therefore show trade dots, volume profile/bars and CVD. One side-channel `/market` connection per symbol carries forceOrder AND aggTrade. Trades are written as a full rewrite per hour (single writer); a restart mid-hour merges the DB remainder once (`_tradesUebernommen`) so a deploy no longer erases the first half of the hour. Against silent book drift there is a **re-anchor**: every 30 min (or when the mid nears the snapshot coverage edge) a fresh snapshot is MERGED via `OrderBook.mergeSnapshot` — only resting levels the book has never seen, never a reset (a reset would wipe the diff-accumulated far field), with a crossing guard against stale ghost levels — and its top-of-book doubles as a self-check (>10 bp deviation twice → full resync). The browser feed (`src/utils/liveFeed.js`) runs the same self-check every 30 s with a weight-2 mini snapshot.
 - **`server/liq-ticker.js`** — In-memory ring buffer (30 min / 20k events) for the live liquidation ticker, filled next to the recorder's write buffer. Needed because `live-recorder.js` flushes to the DB only every 30 s, so a DB read lags for "what just happened". Does **not** touch the side convention — all three hook points already store `1 = SHORT liquidated`.
 - **`server/sitzung-rechnung.js`** — Pure calculation of a running session: realised and unrealised P&L stay **separate** (a floating book gain is not a result), and the plan limits count against the **realised** part only — otherwise the bar breaks on every pullback.
 - **`shared/handelszeiten.js`** — Trading sessions, market marks and volatility windows. Each session carries its own zone as wall-clock time, because the US and EU switch to summer time weeks apart; a fixed offset is wrong two to three times a year. Shared between browser (per-second countdown) and server. Holidays and calendar events are passed in from outside so the module stays net-free.

@@ -50,9 +50,10 @@ const { t } = useI18n()
         <div class="bmFlaeche">
             <LiquidityHeatmap @status="e => emit('zustand', e.state, { fehler: e.detail })" />
         </div>
-        <a class="bmGanzeSeite" href="/liquidity" @click.stop>
+        <!-- router-link statt <a href>: der harte Link lud die ganze SPA neu -->
+        <router-link class="bmGanzeSeite" to="/liquidity" @click.stop>
             <i class="uil uil-expand-arrows-alt"></i>{{ t('livetrading.ganzeSeite') }}
-        </a>
+        </router-link>
     </div>
 </template>
 

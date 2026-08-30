@@ -135,7 +135,21 @@ for (const [key, target] of Object.entries(FIELDS)) {
 /** Auswahlmöglichkeiten für die Bedienelemente. */
 // Bookmap zeigt eine Handvoll Ticks — erst bei diesen engen Stufen werden
 // aus den Preiszeilen fette Balken statt haarfeiner Striche.
-export const VIEW_PCT_OPTIONS = [0.02, 0.05, 0.1, 0.25, 0.5, 1, 2]
+// Obergrenze 1,5: der Feed erfasst ±1,5 % um den Mid (liveFeed rangePct), und
+// updateView klemmt auf die Ringzeilen — eine „2 %"-Stufe zeigte stillschweigend
+// dasselbe Bild wie 1,5 %.
+export const VIEW_PCT_OPTIONS = [0.02, 0.05, 0.1, 0.25, 0.5, 1, 1.5]
+
+// Dauer-Klemme (keine Migration): früher gab es die 2-%-Stufe, und ein
+// gespeicherter Wert oberhalb der grössten Stufe liesse die <select v-model>-
+// Felder leer erscheinen. Die Klemme greift beim Hydrieren jeder Sitzung neu;
+// zurückgeschrieben wird dabei NICHT (während des Hydrierens ist der
+// Save-Watcher absichtlich stumm) — erst die nächste Bedienung persistiert
+// den geklemmten Wert. Für die Anzeige ist das gleichwertig.
+watch(liveViewPct, (value) => {
+    const max = VIEW_PCT_OPTIONS[VIEW_PCT_OPTIONS.length - 1]
+    if (value > max) liveViewPct.value = max
+}, { flush: 'sync' })
 export const FRAME_MS_OPTIONS = [250, 500, 1000]
 export const HISTORY_MIN_OPTIONS = [15, 30, 60, 120]
 export const FAVORITE_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'BNBUSDT']

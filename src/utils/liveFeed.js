@@ -94,7 +94,45 @@ export class LiveFeed {
         this.pruneTimer = setInterval(() => {
             const { mid } = this.book.bestPrices()
             this.book.prune(mid)
+            // Huckepack auf demselben Takt: unabhängige Gegenprobe des Buchs
+            this._selbstkontrolle().catch(() => { /* nächster Takt */ })
         }, PRUNE_INTERVAL_MS)
+    }
+
+    /**
+     * Selbstkontrolle gegen stille Drift: ein Mini-Snapshot (limit=5, Weight 2)
+     * ist eine vom WebSocket unabhängige zweite Quelle für das Top-of-Book.
+     * Weicht unser Buch dort in zwei Takten hintereinander um mehr als 10 bp
+     * ab, ist es kaputt, egal was die pu-Kette sagt (der Klassiker wären
+     * doppelt angewandte Diffs) — dann voller Neuaufbau. Zwei Takte statt
+     * einem: ein einzelner Treffer kann ein heftiger Move zwischen Snapshot-
+     * Aufnahme und Vergleich sein.
+     */
+    async _selbstkontrolle() {
+        if (this.stopped || this.buffering || this.prefilling || !this.book.synced) return
+        if (typeof document !== 'undefined' && document.hidden) return
+        const { data } = await axios.get('/api/binance/depth', {
+            params: { symbol: this.symbol, market: this.market, limit: 5 },
+            timeout: 5000,
+        })
+        if (this.stopped || this.buffering || !this.book.synced) return
+        const eigen = this.book.bestPrices()
+        const snapBid = Number(data.bids?.[0]?.[0])
+        const snapAsk = Number(data.asks?.[0]?.[0])
+        if (!eigen.mid || !Number.isFinite(snapBid) || !Number.isFinite(snapAsk)) return
+        const abweichung = Math.max(
+            Math.abs(eigen.bestBid - snapBid),
+            Math.abs(eigen.bestAsk - snapAsk)
+        ) / eigen.mid
+        if (abweichung > 0.001) {
+            this._kontrolleTreffer = (this._kontrolleTreffer || 0) + 1
+            if (this._kontrolleTreffer >= 2) {
+                this._kontrolleTreffer = 0
+                this._resync(`Selbstkontrolle: Top-of-Book weicht ${(abweichung * 10000).toFixed(1)} bp vom Snapshot ab`)
+            }
+        } else {
+            this._kontrolleTreffer = 0
+        }
     }
 
     stop() {
@@ -126,7 +164,11 @@ export class LiveFeed {
             url: buildStreamUrl(this.symbol, this.market),
             onMessage: (msg) => this._onMessage(msg),
             // Reihenfolge ist entscheidend: erst puffern, dann Snapshot holen.
-            onOpen: () => this._beginSync(),
+            // Eine frische Verbindung ist ein frischer Versuch: ohne den Reset
+            // blieb der Feed nach 5 Fehlversuchen (Proxy kurz weg) dauerhaft im
+            // Fehlerzustand, weil der nächste Reconnect mit verbrauchtem Budget
+            // startete — Erholung gab es nur über Symbolwechsel oder Reload.
+            onOpen: () => { this.snapshotTries = 0; this._beginSync() },
             onStatus: (s) => {
                 if (s === 'closed' || s === 'connecting') {
                     this.buffering = true
@@ -159,10 +201,13 @@ export class LiveFeed {
                 const order = data.o
                 // S = Seite der Liquidations-ORDER: 'SELL' schliesst eine Long-
                 // Position, 'BUY' eine Short-Position.
+                // +ap statt (ap || p): der String "0" ist truthy — eine
+                // ungefüllte Order (ap="0", l="0") landete sonst bei Preis
+                // UND Menge 0 statt beim Orderpreis/der Ordermenge.
                 this.liquidations.push(
                     order.T,
-                    +(order.ap || order.p),
-                    +(order.l || order.q),
+                    +order.ap || +order.p,
+                    +order.l || +order.q,
                     order.S === 'BUY'
                 )
             },
@@ -170,7 +215,7 @@ export class LiveFeed {
         this.liqStream.connect()
     }
 
-    _beginSync() {
+    _beginSync(verzoegerung = 200) {
         this.book.reset()
         this.pending.length = 0
         this.buffering = true
@@ -179,7 +224,7 @@ export class LiveFeed {
         // Snapshot überlappen.
         clearTimeout(this.snapshotTimer)
         clearTimeout(this.syncWatchdog)
-        this.snapshotTimer = setTimeout(() => this._fetchSnapshot(), 200)
+        this.snapshotTimer = setTimeout(() => this._fetchSnapshot(), verzoegerung)
     }
 
     async _fetchSnapshot() {
@@ -271,7 +316,14 @@ export class LiveFeed {
     _resync(reason) {
         console.log(`[live] RESYNC: ${reason}`)
         this.gapPending = true
-        this._beginSync()
+        // Bremse statt Budget: reisst die pu-Kette wiederholt kurz nacheinander,
+        // liegt es nicht am Einzelfall, sondern am Stream — dann im Sekundentakt
+        // weiterzuprobieren zöge pro Zyklus einen Snapshot (Weight 20) und
+        // brächte doch nichts. Das 60-s-Fenster leert sich von selbst wieder.
+        const now = Date.now()
+        this._resyncZeiten = (this._resyncZeiten || []).filter(t => now - t < 60000)
+        this._resyncZeiten.push(now)
+        this._beginSync(this._resyncZeiten.length > 3 ? 5000 : undefined)
     }
 
     _onMessage(msg) {
@@ -305,10 +357,27 @@ export class LiveFeed {
     _ensureRing() {
         const { mid } = this.book.bestPrices()
         if (!mid) return
+        // Der Ring wird nur EINMAL gebaut. _ensureRing läuft nach jedem
+        // Snapshot, also auch nach jedem Resync — ist der Preis bis dahin über
+        // eine NICE_MULTIPLES-Grenze gedriftet, ergäbe pickBucketSize eine
+        // andere Bucket-Grösse und ein leerer Ring ersetzte die komplette
+        // Historie. Eine leicht unpassende Bucket-Grösse ist das kleinere Übel
+        // als 30–120 min verlorene Heatmap; neu gerastert wird beim nächsten
+        // Symbolwechsel ohnehin.
+        if (this.ring) return
         const bucketSize = pickBucketSize(this.tickSize, mid, this.rangePct, this.rows)
-        if (this.ring && this.bucketSize === bucketSize) return
         this.bucketSize = bucketSize
-        const cap = Math.ceil((this.historyMin * 60 * 1000) / this.frameMs)
+        // Boden über jeder denkbaren Plotbreite: die Einfrier-Logik der Ansicht
+        // braucht Luft zwischen Sichtfenster und Überschreibkante des Rings.
+        // Bei historyMin=15 und frameMs=1000 wären es nur 900 Spalten — auf
+        // einem breiten Monitor (Plot > 890 px) taute die Pause sonst sofort
+        // wieder auf. innerWidth zusätzlich zu screen.width: ein Fenster über
+        // zwei Monitore ist breiter als der einzelne Bildschirm.
+        const breiten = typeof window !== 'undefined'
+            ? [window.screen?.width || 0, window.innerWidth || 0, 1920]
+            : [1920]
+        const minCap = Math.ceil(Math.max(...breiten) * 1.25)
+        const cap = Math.max(Math.ceil((this.historyMin * 60 * 1000) / this.frameMs), minCap)
         this.ring = new HeatmapRing({ cap, rows: this.rows, bucketSize })
         console.log(`[live] Ring: ${cap} Spalten × ${this.rows} Zeilen, Bucket ${bucketSize}`)
         // Historie gibt es nur aus der eigenen Aufzeichnung — Binance liefert

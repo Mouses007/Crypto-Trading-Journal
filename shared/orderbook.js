@@ -121,6 +121,60 @@ export class OrderBook {
     }
 
     /**
+     * Ergänzt ruhende Level aus einem FRISCHEN Snapshot, ohne den Sync-Zustand
+     * anzufassen (Re-Anker des Recorders).
+     *
+     * Warum kein applySnapshot: das setzte lastUpdateId/prevU neu und
+     * erzwänge den kompletten Sync-Tanz — dabei ist das laufende Buch für
+     * jedes je berührte Level NEUER als der Snapshot. Der Snapshot kann nur
+     * eines beitragen: ruhende Level, die seit dem letzten Anker nie ein Diff
+     * gesehen haben und dem Buch deshalb fehlen. Genau die (und nur die)
+     * werden übernommen; bekannte Level behalten ihren aktuelleren Stand.
+     *
+     * Restrisiko, bewusst getragen: ein Level, das zwischen Snapshot-Aufnahme
+     * und jetzt per Diff gelöscht wurde, kehrt kurz als Geist zurück. Das
+     * Fenster ist unter einer Sekunde, und nahe am Mid wird jedes Level
+     * laufend berührt — der nächste Diff räumt auf.
+     *
+     * @returns {number} Anzahl ergänzter Level
+     */
+    mergeSnapshot(snapshot) {
+        if (!this.synced) return 0
+        let neu = 0
+        let lo = this.coverLo > 0 ? this.coverLo : Infinity
+        let hi = this.coverHi > 0 ? this.coverHi : -Infinity
+        // Crossing-Guard: der Snapshot ist um die REST-Laufzeit ÄLTER als das
+        // Buch. In einem schnellen Move (genau dann feuert der Re-Anker) kann
+        // er ein Bid tragen, das inzwischen durchgehandelt und per Diff
+        // gelöscht ist — als Geist über dem eigenen bestAsk kreuzte es das
+        // Buch, bestPrices() lieferte mid=0 und die Aufzeichnung stünde still,
+        // bis zufällig ein Diff das Geist-Level berührt. Deshalb: nichts
+        // einfügen, was das eigene Top-of-Book kreuzen würde.
+        const { bestBid, bestAsk } = this.bestPrices()
+        for (const [price, qty] of snapshot.bids || []) {
+            const p = +price
+            const q = +qty
+            if (!Number.isFinite(p) || !Number.isFinite(q) || p <= 0 || q <= 0) continue
+            if (p >= bestAsk) continue
+            if (p < lo) lo = p
+            if (!this.bids.has(p)) { this.bids.set(p, q); neu++ }
+        }
+        for (const [price, qty] of snapshot.asks || []) {
+            const p = +price
+            const q = +qty
+            if (!Number.isFinite(p) || !Number.isFinite(q) || p <= 0 || q <= 0) continue
+            if (p <= bestBid) continue
+            if (p > hi) hi = p
+            if (!this.asks.has(p)) { this.asks.set(p, q); neu++ }
+        }
+        // Abdeckung als Vereinigung: der alte Bereich bleibt so aktuell, wie
+        // die Diffs ihn halten, der neue kommt dazu.
+        if (Number.isFinite(lo)) this.coverLo = lo
+        if (Number.isFinite(hi)) this.coverHi = hi
+        return neu
+    }
+
+    /**
      * Entfernt Level weit ausserhalb des Marktes. Diffs können Preise ausserhalb
      * des Snapshot-Bandes anlegen, die nie wieder ein Delete sehen — ohne Prune
      * wachsen die Maps unbegrenzt.

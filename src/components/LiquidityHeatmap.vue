@@ -14,7 +14,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LiveFeed } from '../utils/liveFeed.js'
 import { HeatmapRenderer } from '../utils/heatmapRenderer.js'
-import { loadReplay, loadReplayLiquidations } from '../utils/replaySource.js'
+import { loadReplay, loadReplayLiquidations, loadReplayTrades } from '../utils/replaySource.js'
 import { TradeRing } from '../utils/tradeRing.js'
 import { followMid } from '../../shared/priceBins.js'
 import { timeZoneTrade } from '../stores/ui.js'
@@ -70,6 +70,7 @@ defineExpose({ replayPos, replayCols, replayTimeLabel, replayAufloesung, replayF
 let feed = null
 let replay = null          // { ring, frameMs, cols } im Wiedergabe-Modus
 let replayLiqRing = null   // aufgezeichnete Liquidationen zum selben Fenster
+let replayTradeRing = null // aufgezeichnete aggTrades zum selben Fenster
 let replayLauf = 0         // Zähler gegen verspätete Antworten alter Läufe
 let replayBreite = 0       // Plotbreite, mit der die Wiedergabe geladen wurde
 // Zuletzt angefragte Kombination. Beim Einstieg aus dem Journal laufen Mount,
@@ -104,16 +105,16 @@ const formatTime = (ms) => dayjs(ms).tz(timeZoneTrade.value || dayjs.tz.guess())
 // deshalb in beiden Fällen dieselben Argumente.
 const isReplay = () => liveMode.value === 'replay'
 /**
- * Das Volumenprofil speist sich aus aggTrades, die nicht mitgeschnitten werden.
- * In der Wiedergabe bleibt die Spur deshalb aus — sonst reservierte sie
- * Plotbreite für eine leere Fläche.
+ * Das Volumenprofil speist sich aus aggTrades. Seit der Recorder Trades
+ * mitschneidet (30.08.2026), gibt es die Spur auch in der Wiedergabe — aber
+ * nur, wenn zum Fenster tatsächlich Trades geladen wurden; für ältere
+ * Aufzeichnungen reservierte sie sonst Plotbreite für eine leere Fläche.
  */
-const profilAktiv = () => liveShowProfile.value && !isReplay()
+const profilAktiv = () => liveShowProfile.value && (!isReplay() || !!replayTradeRing)
 const currentRing = () => (isReplay() ? replay?.ring : feed?.ring)
-const currentTrades = () => (isReplay() ? emptyTrades : feed?.trades)
-// Liquidationen liegen als eigene Sorte in der Aufzeichnung und werden zum
-// Fenster nachgeladen; aggTrades dagegen schneiden wir nicht mit, deshalb
-// bleiben die Handelspunkte in der Wiedergabe leer.
+const currentTrades = () => (isReplay() ? (replayTradeRing || emptyTrades) : feed?.trades)
+// Liquidationen und aggTrades liegen als eigene Sorten in der Aufzeichnung
+// und werden zum Fenster nachgeladen.
 const currentLiquidations = () => (isReplay() ? (replayLiqRing || emptyTrades) : feed?.liquidations)
 const currentFrameMs = () => (isReplay() ? (replay?.frameMs || liveFrameMs.value) : liveFrameMs.value)
 
@@ -245,10 +246,15 @@ function applySize() {
     dirtyHeat = true
     // Die Verdichtung der Wiedergabe hängt an der Plotbreite — die steht beim
     // ersten Laden noch nicht immer fest (Layout, ausgeklapptes Seitenmenü).
-    // Bei nennenswerter Abweichung neu holen, sonst zeigt die Karte weniger
-    // oder gröber als der Platz hergibt. Die Totzone hält das Ziehen am
-    // Fensterrand ruhig.
-    if (isReplay() && renderer.cols && Math.abs(renderer.cols - replayBreite) > 40) startReplay()
+    // Neu geholt wird nur, wenn der Plot WÄCHST (sonst bliebe rechts
+    // Leerfläche bzw. die Karte gröber als der Platz hergibt). Beim
+    // Schrumpfen zeigt die Ansicht schlicht die neuesten Spalten — kein
+    // Datenfehler. Totzone 90 statt 40: das Ein-/Ausblenden der Profilspur
+    // (74 px) beim asynchronen Trades-Laden darf keinen zweiten Voll-Abruf
+    // auslösen — in KEINE Richtung (Fenster mit Trades → ohne wuchs der Plot
+    // sonst um genau 74 > 40). Echte Layoutwechsel (Seitenmenü ~200 px,
+    // Fenstergrösse) liegen weit darüber.
+    if (isReplay() && renderer.cols && renderer.cols - replayBreite > 90) startReplay()
 }
 
 /**
@@ -314,9 +320,17 @@ async function startReplay() {
     const schluessel = `${symbol}|${market}|${von}|${bis}|${breite}`
     if (schluessel === replaySchluessel) return
 
+    // Anderes Zeitfenster = anderer Datenbestand → Farb-Bezug sofort neu
+    // setzen. NACH dem Schlüssel-Wächter: Watcher-Aufrufe ohne effektive
+    // Fensteränderung dürfen den EMA-Zustand nicht entwerten.
+    renderer?.resetNorm()
+    // Tooltip-Bins des alten Fensters sofort entwerten — die Nullung in den
+    // Zeichenroutinen greift nur, wenn die Spur noch einmal zeichnet.
+    renderer?.resetTradeBins()
     stopFeed()
     replay = null
     replayLiqRing = null
+    replayTradeRing = null
     view = null
     replayCols.value = 0
     replayAufloesung.value = ''
@@ -345,8 +359,8 @@ async function startReplay() {
         quellTaktMs = result.quellFrameMs || quellTaktMs
         replayAufloesung.value = beschreibeAufloesung(result)
 
-        // Liquidationen zum selben Fenster nachladen. Sie sind Beiwerk — ein
-        // Fehler hier darf die Heatmap nicht mitreissen.
+        // Liquidationen und Trades zum selben Fenster nachladen. Beides ist
+        // Beiwerk — ein Fehler hier darf die Heatmap nicht mitreissen.
         loadReplayLiquidations({ symbol, market, from: von, to: bis })
             .then((ring) => {
                 if (lauf !== replayLauf) return
@@ -354,6 +368,25 @@ async function startReplay() {
                 dirtyOverlay = true
             })
             .catch(() => {})
+        loadReplayTrades({ symbol, market, from: von, to: bis })
+            .then((ring) => {
+                if (lauf !== replayLauf) return
+                replayTradeRing = ring
+                // Trades speisen Punkte, Profil UND Volumenspur — die
+                // Profilspur wird erst jetzt sichtbar (profilAktiv) und
+                // braucht Platz, also Layout neu messen.
+                renderer?.setProfileVisible(profilAktiv())
+                dirtyOverlay = true
+                applySize()
+            })
+            .catch(() => {
+                // Auch im Fehlerfall die Spur dem Zustand angleichen: ohne
+                // Trades (replayTradeRing bleibt null) darf keine leere,
+                // reservierte Profilspur des VORHERIGEN Fensters stehen.
+                if (lauf !== replayLauf) return
+                renderer?.setProfileVisible(profilAktiv())
+                dirtyOverlay = true
+            })
         // Ans Ende der tatsächlich vorhandenen Daten springen, nicht ans Ende
         // des angefragten Fensters — das kann grösstenteils leer sein.
         const letzte = letzteDatenSpalte(result.ring)
@@ -385,8 +418,17 @@ function updateReplayLabel() {
 
 async function startFeed() {
     stopFeed()
+    // Laufende Replay-Ladungen entwerten: ohne das besteht eine späte
+    // loadReplay-Antwort den lauf-Wächter und überschreibt im Live-Modus
+    // Status, Ringe und den Farb-Bezug mit Replay-Daten.
+    replayLauf++
+    // Neuer Datenbestand → Farb-Bezug sofort neu setzen statt vom alten
+    // Symbol herüberzugleiten (Grössenordnungen!)
+    renderer?.resetNorm()
+    renderer?.resetTradeBins()
     replay = null
     replayLiqRing = null
+    replayTradeRing = null
     // Beim Verlassen der Wiedergabe vergessen, damit ein erneuter Einstieg in
     // dasselbe Fenster wieder lädt.
     replaySchluessel = ''
@@ -406,7 +448,14 @@ async function startFeed() {
                 // Der Ring läuft weiter — irgendwann überschreibt er den
                 // eingefrorenen Ausschnitt. Vorher selbst auftauen.
                 framesSinceFreeze++
-                if (framesSinceFreeze > feed.ring.cap - renderer.cols - 10) unfreeze()
+                // Reicht der Ring nicht über den Plot hinaus (Schwelle ≤ 0),
+                // taut die Ansicht sofort wieder auf — das ist dann die
+                // EHRLICHE Option: der Ring überschreibt ab dem ersten Frame
+                // den eingefrorenen Ausschnitt, eine „Pause" zeigte still
+                // verfälschte Spalten. Praktisch verhindert der Kapazitäts-
+                // boden in liveFeed._ensureRing (max(screen.width,
+                // innerWidth)·1,25) diesen Fall.
+                if (framesSinceFreeze > Math.max(0, feed.ring.cap - renderer.cols - 10)) unfreeze()
                 return
             }
             const shifted = updateView()
@@ -449,7 +498,11 @@ const fingerAbstand = () => {
 
 const viewPctIndex = () => {
     const index = VIEW_PCT_OPTIONS.indexOf(liveViewPct.value)
-    return index >= 0 ? index : VIEW_PCT_OPTIONS.findIndex(v => v >= liveViewPct.value)
+    if (index >= 0) return index
+    // Gespeicherte Werte oberhalb der grössten Stufe (z.B. das frühere „2 %")
+    // fallen auf die letzte Stufe statt auf -1.
+    const naechster = VIEW_PCT_OPTIONS.findIndex(v => v >= liveViewPct.value)
+    return naechster >= 0 ? naechster : VIEW_PCT_OPTIONS.length - 1
 }
 
 function setViewPctIndex(index) {
@@ -629,9 +682,16 @@ watch(liveProfileW, (value) => { renderer?.setProfileWidth(value); dirtyHeat = t
 watch(liveShowVolumeBars, (v) => { renderer?.setVolumeBarsVisible(v); dirtyHeat = true })
 watch(liveViewPct, () => { updateView(); dirtyHeat = true })
 watch(liveShowProfile, () => {
-    // Die Spur ändert die Plotbreite → Heatmap muss komplett neu gezeichnet werden
+    // Die Spur ändert die Plotbreite → Heatmap muss komplett neu gezeichnet
+    // werden.
     renderer?.setProfileVisible(profilAktiv())
     dirtyHeat = true
+    // Bewusste Nutzeraktion im Replay: Breite exakt nachziehen. Die
+    // automatische Totzone in applySize (90 px) ignoriert die 74-px-Änderung
+    // der Spur absichtlich — hier will der Nutzer sie aber, sonst bleibt beim
+    // Ausblenden Leerfläche stehen. Schlüssel leeren, damit der Wächter den
+    // Neuladen-Lauf nicht als Duplikat verwirft.
+    if (isReplay()) { replaySchluessel = ''; startReplay() }
 })
 watch(liveShowLiquidations, () => { dirtyOverlay = true })
 watch(liveAutoFollow, (on) => { if (on) { updateView(true); dirtyHeat = true } })

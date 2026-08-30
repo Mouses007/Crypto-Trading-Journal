@@ -221,6 +221,7 @@ export class HeatmapRenderer {
     resize(cssW, cssH) {
         // Über 2 lohnt die DPR-Auflösung bei einer Heatmap nicht mehr
         const dpr = Math.min(window.devicePixelRatio || 1, 2)
+        this.dpr = dpr
         this.cssW = cssW
         this.cssH = cssH
         // Auf dem Handy sind Achse und Profilspur zusammen breiter als die
@@ -272,7 +273,33 @@ export class HeatmapRenderer {
         }
         if (!sample.length) return
         sample.sort((a, b) => a - b)
-        this.ref = Math.max(sample[Math.floor(sample.length * 0.95)] || 0, 1e-9)
+        const neu = Math.max(sample[Math.floor(sample.length * 0.95)] || 0, 1e-9)
+        // Gleiten statt springen: das p95 einer dünnen Stichprobe zappelt, und
+        // ein hart nachgezogener Bezugswert liess die ganze Karte im
+        // Sekundentakt in der Helligkeit „atmen". Der erste Wert sitzt sofort,
+        // danach zieht der Bezug mit ~1/3 pro Neuberechnung nach — schnell
+        // genug für einen Regimewechsel, träge genug gegen Flackern.
+        this.ref = this._refGesetzt ? this.ref + (neu - this.ref) * 0.35 : neu
+        this._refGesetzt = true
+    }
+
+    /**
+     * Vor einem Datenwechsel (Symbol, Wiedergabefenster) aufrufen: der nächste
+     * recalcNorm setzt den Bezug dann sofort statt zu gleiten — Bücher
+     * verschiedener Symbole unterscheiden sich um Grössenordnungen.
+     */
+    resetNorm() { this._refGesetzt = false }
+
+    /**
+     * Tooltip-Datenquellen der Volumenspur/Profilspur sofort entwerten. Die
+     * Nullung am Anfang der Zeichenroutinen reicht nicht in jedem Fall: wird
+     * die Spur abgeschaltet, BEVOR sie noch einmal zeichnet (Fenster ohne
+     * Trades, Fetch-Fehler), zeigte der Hover sonst dauerhaft die Bins des
+     * vorherigen Datenbestands.
+     */
+    resetTradeBins() {
+        this.profileBins = null
+        this.volumeBins = null
     }
 
     drawHeat(ring, view, anchor) {
@@ -282,7 +309,15 @@ export class HeatmapRenderer {
         const head = anchor ?? ring.head
 
         const rowsView = Math.max(1, view.hi - view.lo)
-        this._ensureOffscreen(rowsView)
+        // Passen mehr Ringzeilen ins Bild als Gerätepixel da sind, würde das
+        // Nearest-Neighbor-drawImage nur jede n-te Quellzeile abtasten — nicht
+        // getroffene Zeilen verschwänden KOMPLETT, einzeilige Liquiditätswände
+        // eingeschlossen (typisch in der kleinen Kachel: 600 Ringzeilen auf
+        // ~300 px Plothöhe). Deshalb wird vorab auf Zielzeilen gefaltet, je
+        // Zielzeile mit MAX: eine Wand bleibt eine Wand, egal wie klein der Plot.
+        const outRows = Math.min(rowsView, Math.max(1, Math.floor(this.plotH * (this.dpr || 1))))
+        const fold = outRows < rowsView
+        this._ensureOffscreen(outRows)
         const buf = this.buf32
         buf.fill(0)
 
@@ -291,26 +326,50 @@ export class HeatmapRenderer {
         const invLogMax = this.invLogMax
         const threshold = this.threshold
         const visible = Math.min(this.cols, ring.count)
+        // -1 = leer; 0 ist ein gültiger (fast transparenter) LUT-Eintrag
+        let tmp = null
+        if (fold) {
+            if (!this._foldTmp || this._foldTmp.length < outRows) this._foldTmp = new Int16Array(outRows)
+            tmp = this._foldTmp
+        }
 
         for (let x = 0; x < visible; x++) {
             const col = ring.colFrom(head, visible - 1 - x)
             const base = ring.base[col]
             const offset = col * ring.rows
             const px = this.cols - visible + x
-            for (let y = 0; y < rowsView; y++) {
-                const r = (view.hi - 1 - y) - base
-                if (r < 0 || r >= ring.rows) continue
-                const v = ring.data[offset + r]
-                if (v <= 0) continue
-                const t = Math.log1p(v / ref) * invLogMax
-                if (t < threshold) continue     // schwache Liquidität ausblenden
-                buf[y * this.cols + px] = lut[t >= 1 ? 255 : (t * 255) | 0]
+            if (!fold) {
+                for (let y = 0; y < rowsView; y++) {
+                    const r = (view.hi - 1 - y) - base
+                    if (r < 0 || r >= ring.rows) continue
+                    const v = ring.data[offset + r]
+                    if (v <= 0) continue
+                    const t = Math.log1p(v / ref) * invLogMax
+                    if (t < threshold) continue     // schwache Liquidität ausblenden
+                    buf[y * this.cols + px] = lut[t >= 1 ? 255 : (t * 255) | 0]
+                }
+            } else {
+                tmp.fill(-1, 0, outRows)
+                for (let y = 0; y < rowsView; y++) {
+                    const r = (view.hi - 1 - y) - base
+                    if (r < 0 || r >= ring.rows) continue
+                    const v = ring.data[offset + r]
+                    if (v <= 0) continue
+                    const t = Math.log1p(v / ref) * invLogMax
+                    if (t < threshold) continue
+                    const byte = t >= 1 ? 255 : (t * 255) | 0
+                    const oy = ((y * outRows) / rowsView) | 0
+                    if (byte > tmp[oy]) tmp[oy] = byte
+                }
+                for (let oy = 0; oy < outRows; oy++) {
+                    if (tmp[oy] >= 0) buf[oy * this.cols + px] = lut[tmp[oy]]
+                }
             }
         }
 
         this.offCtx.putImageData(this.img, 0, 0)
         ctx.imageSmoothingEnabled = false   // harte Zellkanten statt Weichzeichner
-        ctx.drawImage(this.off, 0, 0, this.cols, rowsView, 0, 0, this.plotW, this.plotH)
+        ctx.drawImage(this.off, 0, 0, this.cols, outRows, 0, 0, this.plotW, this.plotH)
     }
 
     /**
@@ -574,9 +633,12 @@ export class HeatmapRenderer {
         ctx.fillStyle = COLORS.axisText
         ctx.textAlign = 'left'
         ctx.textBaseline = 'middle'
-        // Die Farbe sättigt bei 4× dem Bezugswert (siehe invLogMax)
+        // Die Farbe sättigt bei 4× dem Bezugswert (siehe invLogMax). Das
+        // ref-Label sitzt auf der Höhe, an der die Rampe ref wirklich zeigt:
+        // t(ref) = log1p(1)/log1p(4) ≈ 0,431 von unten — nicht auf einer
+        // geschätzten Konstanten.
         ctx.fillText(formatQty(this.ref * 4), x + w + 4, y + 4)
-        ctx.fillText(formatQty(this.ref), x + w + 4, y + h * 0.63)
+        ctx.fillText(formatQty(this.ref), x + w + 4, y + h * (1 - Math.log1p(1) * this.invLogMax))
         ctx.fillText('0', x + w + 4, y + h - 3)
         if (this.threshold > 0) {
             const ty = y + (1 - this.threshold) * h
@@ -589,6 +651,11 @@ export class HeatmapRenderer {
     }
 
     _drawVolumeProfile(ctx, trades, { yFor, tLeft, tMax }) {
+        // Sofort entwerten: kehrt die Routine unten leer zurück (frischer
+        // TradeRing nach Symbolwechsel, Wiedergabe ohne Trades), zeigte der
+        // Tooltip sonst die Mengen des VORHERIGEN Symbols auf den Zeitstempeln
+        // des neuen Rings.
+        this.profileBins = null
         if (!this.profileW) return
         const width = this.profileW - 8
         const x0 = this.plotW + 4
@@ -775,6 +842,9 @@ export class HeatmapRenderer {
      * Bookmap als Wechsel der Initiative liest.
      */
     _drawVolumeBars(ctx, trades, { xForTs, tLeft, tMax, dotStep }) {
+        // Wie beim Volumenprofil: erst entwerten, sonst zeigte der Tooltip nach
+        // Symbolwechsel oder in der Wiedergabe die Säulen des vorherigen Symbols.
+        this.volumeBins = null
         const y0 = this.plotH
         const h = this.volumeH
 
@@ -814,11 +884,41 @@ export class HeatmapRenderer {
             ctx.fillRect(x - breite / 2, y0 + h - bh, breite, bh)
         }
 
+        // CVD-Linie über den Säulen: kumulierte Differenz Kauf−Verkauf über
+        // das sichtbare Fenster, auf die Spurhöhe normiert. Die Säulen zeigen
+        // WIE VIEL gehandelt wurde, die Linie zeigt, WOHIN es kumuliert — der
+        // Umschlag der Steigung ist der Wechsel der Initiative. Startpunkt ist
+        // der linke Bildrand (fensterrelativ), kein Absolutwert.
+        const xs = [...bins.keys()].sort((a, b) => a - b)
+        let cum = 0
+        let cvdMin = 0
+        let cvdMax = 0
+        for (const x of xs) {
+            const bin = bins.get(x)
+            cum += bin.buy - bin.sell
+            bin.cvd = cum
+            if (cum < cvdMin) cvdMin = cum
+            if (cum > cvdMax) cvdMax = cum
+        }
+        const cvdSpanne = cvdMax - cvdMin
+        if (cvdSpanne > 0 && xs.length > 1) {
+            ctx.beginPath()
+            ctx.strokeStyle = COLORS.accent
+            ctx.lineWidth = 1.5
+            for (let i = 0; i < xs.length; i++) {
+                const y = y0 + 6 + (1 - (bins.get(xs[i]).cvd - cvdMin) / cvdSpanne) * (h - 18)
+                if (i === 0) ctx.moveTo(xs[i], y)
+                else ctx.lineTo(xs[i], y)
+            }
+            ctx.stroke()
+        }
+
         ctx.font = '11px system-ui, sans-serif'
         ctx.fillStyle = COLORS.axisText
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
-        ctx.fillText(`${this.labels.volumePer.replace('{n}', step)} · ${this.labels.max} ${formatQty(max)}`, 4, y0 + 3)
+        const cvdText = xs.length ? ` · CVD ${cum >= 0 ? '+' : '−'}${formatQty(Math.abs(cum))}` : ''
+        ctx.fillText(`${this.labels.volumePer.replace('{n}', step)} · ${this.labels.max} ${formatQty(max)}${cvdText}`, 4, y0 + 3)
     }
 
     /** Tooltip für die Volumen-Säulen: Mengen und Übergewicht des Abschnitts. */
@@ -852,6 +952,10 @@ export class HeatmapRenderer {
             `${this.labels.sold} ${formatQty(verkauf)} ${einheit}${wert(verkauf)}`,
             `${this.labels.sum} ${formatQty(total)} ${einheit}${wert(total)}`,
             `${this.labels.buyerShare} ${anteil} %`,
+            // Fensterrelativ kumuliert bis zu dieser Säule (siehe _drawVolumeBars)
+            bin.cvd !== undefined
+                ? `CVD ${bin.cvd >= 0 ? '+' : '−'}${formatQty(Math.abs(bin.cvd))} ${einheit}`
+                : '',
         ].filter(Boolean)
 
         ctx.font = '12px system-ui, sans-serif'
