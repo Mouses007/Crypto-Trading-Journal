@@ -170,7 +170,7 @@ const navAdd = (param) => {
             <!-- Zensur-Modus: verbirgt Kontostände und Zahlen (für Screenshots). -->
             <button v-if="appMode === 'journal'" type="button"
                 :class="['btn', 'btn-sm', 'privacy-toggle', privacyMode ? 'active' : '']"
-                :title="privacyMode ? 'Zahlen wieder anzeigen' : 'Zahlen verbergen'"
+                :title="privacyMode ? t('nav.showNumbers') : t('nav.hideNumbers')"
                 @click="togglePrivacy">
                 <i :class="privacyMode ? 'fa fa-eye-slash' : 'fa fa-eye'"></i>
             </button>

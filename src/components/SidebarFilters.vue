@@ -167,6 +167,16 @@ function inputMonth(param1) {
     SAVE / APPLY FILTER
 ============================================*/
 function applyAndClose() {
+    /*
+     * Erst prüfen, dann schliessen: Vorher stand der Datums-Alert vor bereits
+     * geschlossenem Panel, und das return in saveFilter übersprang still auch
+     * das Persistieren ALLER übrigen in dieser Sitzung geänderten Filter —
+     * die Seite zeigte kommentarlos den alten Stand.
+     */
+    if (selectedDateRange.value.end < selectedDateRange.value.start) {
+        alert($t('filters.endBeforeStart'))
+        return   // Panel bleibt offen, nichts wird halb übernommen
+    }
     filtersOpen.value = false
     saveFilter()
     // Auf Mobil zusätzlich das Seitenmenü schließen, damit das gefilterte

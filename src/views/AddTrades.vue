@@ -330,7 +330,7 @@ async function importFromApi() {
     <div class="mt-3">
         <ul class="nav nav-tabs">
             <li class="nav-item">
-                <a class="nav-link" :class="{ active: importMode === 'manual' }" href="#" @click.prevent="importMode = 'manual'">Manuell</a>
+                <a class="nav-link" :class="{ active: importMode === 'manual' }" href="#" @click.prevent="importMode = 'manual'">{{ t('addTrades.manualTab') }}</a>
             </li>
             <li class="nav-item">
                 <a class="nav-link" :class="{ active: importMode === 'api' }" href="#" @click.prevent="importMode = 'api'">{{ t('addTrades.apiImport') }}</a>
@@ -340,48 +340,48 @@ async function importFromApi() {
 
     <!-- Manuelle Eingabe (Futures) -->
     <div v-show="importMode === 'manual'" class="mt-3" style="max-width: 660px;">
-        <p class="txt-small">Einzelnen Futures-Trade manuell erfassen — Konto: <strong>{{ brokerLabel }}</strong>. Pflicht: Symbol &amp; Netto-PnL.</p>
+        <p class="txt-small">{{ t('addTrades.manualIntro') }} <strong>{{ brokerLabel }}</strong>. {{ t('addTrades.manualIntroRequired') }}</p>
         <div class="row g-2 mb-2">
             <div class="col-sm-6">
                 <label class="form-label mb-0">Symbol</label>
                 <input class="form-control" v-model="manual.symbol" placeholder="BTCUSDT" />
             </div>
             <div class="col-sm-6">
-                <label class="form-label mb-0">Richtung</label>
+                <label class="form-label mb-0">{{ t('addTrades.manualSide') }}</label>
                 <select class="form-control" v-model="manual.side">
-                    <option value="B">Long</option>
-                    <option value="SS">Short</option>
+                    <option value="B">{{ t('addTrades.manualLong') }}</option>
+                    <option value="SS">{{ t('addTrades.manualShort') }}</option>
                 </select>
             </div>
         </div>
         <div class="row g-2 mb-2">
             <div class="col-sm-6">
-                <label class="form-label mb-0">Datum (Ausstieg)</label>
+                <label class="form-label mb-0">{{ t('addTrades.manualDateExit') }}</label>
                 <input type="date" class="form-control" v-model="manual.date" />
             </div>
             <div class="col-sm-6">
-                <label class="form-label mb-0">Einstiegsdatum <span class="text-muted">(optional)</span></label>
+                <label class="form-label mb-0">{{ t('addTrades.manualDateEntry') }} <span class="text-muted">{{ t('addTrades.manualOptional') }}</span></label>
                 <input type="date" class="form-control" v-model="manual.entryDate" />
             </div>
         </div>
         <div class="row g-2 mb-2">
             <div class="col-sm-6">
-                <label class="form-label mb-0">Einstiegspreis <span class="text-muted">(opt.)</span></label>
+                <label class="form-label mb-0">{{ t('addTrades.manualFieldEntry') }} <span class="text-muted">{{ t('addTrades.manualOptionalShort') }}</span></label>
                 <input type="text" inputmode="decimal" class="form-control" v-model="manual.entryPrice" />
             </div>
             <div class="col-sm-6">
-                <label class="form-label mb-0">Ausstiegspreis <span class="text-muted">(opt.)</span></label>
+                <label class="form-label mb-0">{{ t('addTrades.manualFieldExit') }} <span class="text-muted">{{ t('addTrades.manualOptionalShort') }}</span></label>
                 <input type="text" inputmode="decimal" class="form-control" v-model="manual.exitPrice" />
             </div>
         </div>
         <div class="row g-2 mb-2">
             <div class="col-sm-4">
-                <label class="form-label mb-0">Menge <span class="text-muted">(opt.)</span></label>
+                <label class="form-label mb-0">{{ t('addTrades.manualFieldQty') }} <span class="text-muted">{{ t('addTrades.manualOptionalShort') }}</span></label>
                 <input type="text" inputmode="decimal" class="form-control" v-model="manual.qty" />
             </div>
             <div class="col-sm-4">
-                <label class="form-label mb-0">Netto-PnL (USDT) *</label>
-                <input type="text" inputmode="decimal" class="form-control" v-model="manual.netPL" placeholder="z.B. 25.40" />
+                <label class="form-label mb-0">{{ t('addTrades.manualFieldNetPL') }} (USDT) *</label>
+                <input type="text" inputmode="decimal" class="form-control" v-model="manual.netPL" :placeholder="t('addTrades.manualPnlPlaceholder')" />
             </div>
             <div class="col-sm-4">
                 <label class="form-label mb-0">{{ t('dashboard.fees') }} <span class="text-muted">(opt.)</span></label>
@@ -390,12 +390,12 @@ async function importFromApi() {
         </div>
         <div class="row g-2 mb-3">
             <div class="col-sm-4">
-                <label class="form-label mb-0">Hebel <span class="text-muted">(opt.)</span></label>
+                <label class="form-label mb-0">{{ t('addTrades.manualFieldLeverage') }} <span class="text-muted">{{ t('addTrades.manualOptionalShort') }}</span></label>
                 <input type="text" inputmode="decimal" class="form-control" v-model="manual.leverage" />
             </div>
         </div>
         <button type="button" class="btn btn-success" :disabled="manualSaving" @click="addManualTrade">
-            {{ manualSaving ? 'Speichern…' : 'Trade speichern' }}
+            {{ manualSaving ? t('addTrades.manualSavingStatus') : t('addTrades.manualSave') }}
         </button>
         <div v-if="manualMsg" class="mt-2 small" :class="manualMsg.ok ? 'greenTrade' : 'redTrade'">{{ manualMsg.text }}</div>
     </div>
@@ -406,10 +406,10 @@ async function importFromApi() {
 
         <!-- Pionex: Bot-Import (Zeitraum über Einstellungen → kein Datumsfeld) -->
         <div v-if="isPionex" class="mb-3">
-            <p class="txt-small text-muted">Pionex-Bots werden importiert (Zeitraum via „Import ab Datum" in den Einstellungen). Bestehende Bots werden dabei um den PnL-Breakdown ergänzt.</p>
+            <p class="txt-small text-muted">{{ t('addTrades.apiPionexHint') }}</p>
             <button type="button" class="btn btn-primary" @click="importFromApi" :disabled="apiImportLoading">
                 <span v-if="apiImportLoading">{{ t('addTrades.importingStatus') }}</span>
-                <span v-else>Bots importieren</span>
+                <span v-else>{{ t('addTrades.apiPionexButton') }}</span>
             </button>
         </div>
 

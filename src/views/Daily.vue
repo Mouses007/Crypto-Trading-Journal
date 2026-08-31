@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeMount, onMounted, computed, ref, watch, nextTick } from 'vue';
+import { onBeforeMount, onBeforeUnmount, onMounted, computed, ref, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import NoData from '../components/NoData.vue';
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
@@ -14,7 +14,10 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 
 import { useCreatedDateFormat, useTwoDecCurrencyFormat, useTimeFormat, useTimeDuration, useDecimalsArithmetic, useDateCalFormat, useSwingDuration, useStartOfDay } from '../utils/formatters.js';
-import { useMountDaily, useGetSelectedRange, useLoadMore, useCheckVisibleScreen } from '../utils/mountOrchestration.js';
+import { useMountDaily, useGetSelectedRange, useLoadMore, useCheckVisibleScreen, useDisposeJournalCharts } from '../utils/mountOrchestration.js';
+
+// Kerzenchart-Instanz beim Seitenwechsel entsorgen (ECharts-Registry-Leck)
+onBeforeUnmount(useDisposeJournalCharts)
 import { useInitTooltip, useInitTab } from '../utils/utils';
 
 import { useSetupImageUpload, useSaveScreenshot, useGetScreenshots, useSelectedScreenshotFunction } from '../utils/screenshots';
@@ -528,7 +531,7 @@ async function clickTradesModal(param1, param2, param3) {
     //console.log(" clicking ")
 
     if (markerAreaOpen.value == true) {
-        alert("Bitte speichere deine Screenshot-Markierung")
+        alert(t('common.screenshotSaveAnnotation'))
         return
     } else {
         await (spinnerSetups.value = true)
@@ -2053,7 +2056,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                                                 class="screenshot-thumb pointerClass"
                                                 data-bs-toggle="modal" data-bs-target="#fullScreenModal"
                                                 @click="useSelectedScreenshotFunction(-1, 'dailyModal', screenshot)"
-                                                title="Screenshot vergrößern" />
+                                                :title="t('common.enlarge')" />
                                             <button
                                                 v-show="filteredTrades[itemTradeIndex].trades.hasOwnProperty(tradeIndex + 1)"
                                                 class="btn btn-outline-primary btn-sm me-3 mb-2"
@@ -2119,7 +2122,7 @@ function getOHLC(date, symbol, type, interval, entryTime) {
                 </div>
                 <div class="col text-center mt-4 mb-4">
                     <button class="btn btn-outline-primary btn-sm" v-on:click="closeTagsModal">{{ t('common.close') }}</button>
-                    <button class="btn btn-outline-success btn-sm ms-4" v-on:click="saveDailyTags()">Save</button>
+                    <button class="btn btn-outline-success btn-sm ms-4" v-on:click="saveDailyTags()">{{ t('common.save') }}</button>
                 </div>
             </div>
         </div>

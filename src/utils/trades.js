@@ -2,6 +2,7 @@ import { pageId, spinnerLoadingPage, queryLimit, timeZoneTrade, hasData, dailyPa
 import { selectedRange, selectedDateRange, selectedPositions, selectedAccounts, selectedTags, selectedBroker, selectedTradeCategory, daysBack } from "../stores/filters.js"
 import { filteredTrades, filteredTradesTrades, pAndL, blotter, totals, totalsByDate, groups, profitAnalysis, timeFrame, satisfactionArray, satisfactionTradeArray, tags, filteredTradesDaily, excursions, availableTags, imports } from "../stores/trades.js"
 import { useDateTimeFormat } from "./formatters.js";
+import i18n from '../i18n/index.js'
 import { splitFunding } from "./funding.js";
 import { mfeR } from "./mfe-kern.js";
 import { neueSummen, summiereTrade, leiteKennzahlenAb } from "./totals-kern.js";
@@ -1095,7 +1096,7 @@ export const useDeleteTrade = async () => {
 
         useGetTrades("imports")
     } else {
-        alert("There was problem with deleting trade")
+        alert(i18n.global.t('common.deleteTradeFailed'))
         throw new Error("There was problem with deleting trade")
     }
 }
@@ -1107,7 +1108,7 @@ export const useDeleteExcursions = async () => {
         })
         console.log('  --> Deleted excursions for dateUnix ' + selectedItem.value)
     } catch (error) {
-        alert("There was a problem with deleting excursions")
+        alert(i18n.global.t('common.deleteExcursionsFailed'))
         throw error
     }
 }

@@ -252,7 +252,13 @@ const startIndex = async () => {
         // neu laden — im Entwicklungsbetrieb genau das, was HMR abnehmen soll.
         viteProxy = proxy
     } else {
-        // Production: static files
+        // Production: static files.
+        // Vite hasht die Asset-Namen inhaltsbasiert — gleicher Name heisst
+        // gleicher Inhalt, die Dateien dürfen also unbegrenzt gecacht werden.
+        // Ohne die Regel revalidierte der Browser jedes Bundle bei jedem
+        // Seitenaufruf (max-age=0 → eine 304-Runde je Datei). index.html
+        // bleibt bewusst ohne Langzeit-Cache, sonst käme ein Deploy nie an.
+        app.use('/assets', express.static('dist/assets', { maxAge: '1y', immutable: true }));
         app.use(express.static('dist'));
         app.get('*', (req, res) => {
             res.sendFile(path.resolve('dist', 'index.html'));

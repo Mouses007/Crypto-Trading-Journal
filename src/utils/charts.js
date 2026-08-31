@@ -25,6 +25,18 @@ function holeChart(el) {
     if (!el) return null
     return echarts.getInstanceByDom(el) || echarts.init(el)
 }
+
+/**
+ * Instanzen zu den übergebenen Knoten entsorgen.
+ *
+ * Läuft über die ECharts-Registry und funktioniert deshalb auch für Knoten,
+ * die schon aus dem Dokument gefallen sind — der Aufrufer sammelt sie ein,
+ * BEVOR Vue sie ersetzt (siehe useDisposeJournalCharts in
+ * mountOrchestration.js).
+ */
+export function disposeCharts(knoten) {
+    for (const el of knoten) echarts.getInstanceByDom(el)?.dispose()
+}
 const _t = (key, named) => i18n.global.t(key, named)
 
 const cssColor87 = "rgba(255, 255, 255, 0.87)"
