@@ -19,10 +19,10 @@ import {
     liveColorMode, liveColorRef, liveSatMult, liveAutoRefValue, liveThreshold, liveShowLiquidations, liveDotStep, liveProfileW, liveShowVolumeBars,
     liveShowDelta, liveShowAbsorption,
     livePauseInBackground, liveMode,
-    levMapTier, levMapHours, levMapSpanPct, levMapView, levMapThreshold, levMapMmr, levMapMmrQuelle, levMapProfileW,
+    levMapTier, levMapHours, levMapSpanPct, levMapView, levMapThreshold, levMapMmr, levMapMmrQuelle, levMapProfileW, levMapWeights,
     VIEW_PCT_OPTIONS, FRAME_MS_OPTIONS, FAVORITE_SYMBOLS,
 } from '../stores/live.js'
-import { LEVERAGE_TIERS } from '../utils/leverageMap.js'
+import { LEVERAGE_TIERS, parseTierAuswahl } from '../utils/leverageMap.js'
 import { mmrHerkunft } from '../utils/marginRate.js'
 
 const props = defineProps({
@@ -48,6 +48,90 @@ const effektiverMarkt = computed(() => (props.variant === 'bookmap' ? liveMarket
 const istWiedergabe = computed(() => props.variant === 'bookmap' && liveMode.value === 'replay')
 
 const TIERS = LEVERAGE_TIERS
+
+/**
+ * Stufenauswahl der Liquidationskarte — mehrfach anklickbar. Ein Klick schaltet
+ * eine Stufe zu oder ab (50x und 100x zusammen zeigt beide Szenarien
+ * kombiniert); fällt die letzte Stufe weg, geht es zurück auf „Alle".
+ */
+const tierAuswahl = computed(() => parseTierAuswahl(levMapTier.value))
+const tierAktiv = (L) => tierAuswahl.value?.includes(L) ?? false
+
+/**
+ * Effektiver Hebel einer Pille: der Max-Hebel des Symbols (aus den Binance-
+ * Brackets) klemmt Stufen, die es dort gar nicht gibt — eine 100x-Pille bei
+ * einem 75x-Coin zeigt dann „75x". Kollabiert eine Stufe komplett auf eine
+ * niedrigere (Max-Hebel 50: 100x wäre dasselbe wie 50x), wird sie deaktiviert.
+ */
+const effektiverHebel = (L) => {
+    const deckel = Number(mmrHerkunft.value?.maxHebel)
+    return deckel > 1 ? Math.min(L, deckel) : L
+}
+const stufeKollabiert = (L) => TIERS.some(M => M < L && effektiverHebel(M) === effektiverHebel(L))
+
+/**
+ * Stufengewichte — das erste UI für `levMapWeights` überhaupt (bis dahin gab
+ * es nur den Store-Wert). Daneben die GEMESSENE Verteilung aus den eigenen
+ * Liquidations-Aufzeichnungen (`/api/liq/hebelverteilung`): geraten gegen
+ * gemessen, und ein Knopf übernimmt die Messung in die Karte.
+ */
+const gewichte = computed(() => String(levMapWeights.value || '40,30,20,10').split(',').map(x => Number(x) || 0))
+function setzeGewicht(i, wert) {
+    const neu = [...gewichte.value]
+    while (neu.length < TIERS.length) neu.push(0)
+    neu[i] = Math.max(0, Math.min(100, Math.round(Number(wert) || 0)))
+    levMapWeights.value = neu.slice(0, TIERS.length).join(',')
+}
+
+const messung = ref(null)          // Antwort der Kalibrier-Route
+const messungHinweis = ref('')
+const messungLaedt = ref(false)
+let messungAnfrage = 0
+
+async function ladeMessung() {
+    if (props.variant !== 'levmap') return
+    const meine = ++messungAnfrage
+    messung.value = null
+    messungHinweis.value = ''
+    messungLaedt.value = true
+    try {
+        // Erster Lauf des Tages rechnet über 14 Tage Aufzeichnung — das darf
+        // dauern; danach kommt die Antwort aus dem Tages-Cache.
+        const { data } = await axios.get('/api/liq/hebelverteilung', {
+            params: { symbol: liveSymbol.value },
+        })
+        if (meine !== messungAnfrage) return
+        if (data?.gewichte) messung.value = data
+        else messungHinweis.value = data?.hinweis || t('levmap.noRecording')
+    } catch (e) {
+        if (meine !== messungAnfrage) return
+        messungHinweis.value = e.response?.data?.error || t('levmap.noRecording')
+    } finally {
+        if (meine === messungAnfrage) messungLaedt.value = false
+    }
+}
+
+const messungText = computed(() => {
+    const m = messung.value
+    if (!m?.gewichte) return ''
+    return (m.stufen || [])
+        .map(L => `${L}x ${Math.round((m.gewichte[L] || 0) * 100)} %`)
+        .join(' · ')
+})
+
+function uebernehmeMessung() {
+    const m = messung.value
+    if (!m?.gewichte) return
+    levMapWeights.value = TIERS.map(L => Math.round((m.gewichte[L] || 0) * 100)).join(',')
+}
+
+watch(() => liveSymbol.value, ladeMessung, { immediate: true })
+function tierUmschalten(L) {
+    const akt = tierAuswahl.value
+    if (!akt) { levMapTier.value = String(L); return }
+    const neu = akt.includes(L) ? akt.filter(x => x !== L) : [...akt, L].sort((a, b) => a - b)
+    levMapTier.value = neu.length ? neu.join(',') : 'all'
+}
 const LEV_HOURS = [6, 12, 24, 48, 96]
 const LEV_SPANS = [1, 2, 4, 8, 12, 20, 40]
 
@@ -315,13 +399,38 @@ onMounted(async () => {
                     :title="t('levmap.viewHistoryTitle')" @click="levMapView = 'history'">{{ t('levmap.viewHistory') }}</button>
             </div>
 
-            <label class="fw-lighter mt-2">{{ t('levmap.tierLabel') }}</label>
+            <label class="fw-lighter mt-2" :title="t('levmap.tierToggleTitle')">{{ t('levmap.tierLabel') }}</label>
             <div class="tierGrid">
-                <button type="button" :class="['cat-pill', levMapTier === 'all' ? 'active' : '']"
-                    @click="levMapTier = 'all'">{{ t('levmap.allTiers') }}</button>
-                <button v-for="(L, i) in TIERS" :key="L" type="button"
-                    :class="['cat-pill', String(levMapTier) === String(i) ? 'active' : '']"
-                    @click="levMapTier = i">{{ L }}x</button>
+                <button type="button" :class="['cat-pill', !tierAuswahl ? 'active' : '']"
+                    :title="t('levmap.tierToggleTitle')" @click="levMapTier = 'all'">{{ t('levmap.allTiers') }}</button>
+                <button v-for="L in TIERS" :key="L" type="button"
+                    :class="['cat-pill', tierAktiv(L) ? 'active' : '']"
+                    :disabled="stufeKollabiert(L)"
+                    :title="stufeKollabiert(L)
+                        ? t('levmap.tierClampedTitle', { max: mmrHerkunft.maxHebel })
+                        : t('levmap.tierToggleTitle')"
+                    @click="tierUmschalten(L)">{{ effektiverHebel(L) }}x</button>
+            </div>
+
+            <label class="fw-lighter mt-2" :title="t('levmap.weightsTitle')">{{ t('levmap.weightsLabel') }}</label>
+            <div class="gewichtRow">
+                <label v-for="(L, i) in TIERS" :key="L" class="gewichtFeld">
+                    <span class="gewichtStufe">{{ effektiverHebel(L) }}x</span>
+                    <input type="number" min="0" max="100" step="5" class="gewichtInput"
+                        :value="gewichte[i] ?? 0" :disabled="stufeKollabiert(L)"
+                        @change="setzeGewicht(i, $event.target.value)" />
+                </label>
+            </div>
+            <div class="autoRefHint messZeile" :title="t('levmap.measuredWeightsTitle')">
+                <template v-if="messungLaedt">{{ t('levmap.measuredLoading') }}</template>
+                <template v-else-if="messung">
+                    {{ t('levmap.measuredWeights', { n: messung.anzahl }) }}: {{ messungText }}
+                    <span v-if="messung.unerklaertPct > 0" class="unerklaert">
+                        ({{ t('levmap.unexplained') }} {{ messung.unerklaertPct }} %)</span>
+                    <button type="button" class="cat-pill uebernehmenKnopf"
+                        @click="uebernehmeMessung">{{ t('levmap.adoptWeights') }}</button>
+                </template>
+                <template v-else>{{ messungHinweis }}</template>
             </div>
 
             <label class="fw-lighter mt-2">{{ t('levmap.windowLabel') }}</label>
@@ -383,6 +492,55 @@ onMounted(async () => {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
+}
+
+/* Stufengewichte: vier schmale Zahlenfelder mit Stufen-Beschriftung. */
+.gewichtRow {
+    display: flex;
+    gap: 0.3rem;
+}
+
+.gewichtFeld {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin: 0;
+}
+
+.gewichtStufe {
+    font-size: 0.66rem;
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+    text-align: center;
+}
+
+.gewichtInput {
+    width: 100%;
+    background-color: var(--black-bg-7);
+    color: var(--white-87);
+    border: 1px solid var(--white-18);
+    border-radius: 6px;
+    font-size: 0.78rem;
+    padding: 0.2rem 0.15rem;
+    text-align: center;
+}
+
+.gewichtInput:disabled {
+    opacity: 0.4;
+}
+
+.messZeile {
+    line-height: 1.5;
+}
+
+.unerklaert {
+    color: var(--white-50, rgba(255, 255, 255, 0.5));
+}
+
+.uebernehmenKnopf {
+    margin-left: 0.35rem;
+    padding: 0.05rem 0.5rem;
+    font-size: 0.7rem;
 }
 
 /* Eingabefelder im Seitenmenü-Look (dunkel statt Browser-Default-Weiss).

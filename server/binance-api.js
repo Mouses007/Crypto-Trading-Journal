@@ -65,9 +65,53 @@ const INFO_CACHE_MS = 6 * 60 * 60 * 1000
 // Rohdaten für das clientseitige Modell. Bewusst NICHT serverseitig gerechnet:
 // die Karte hängt an interaktiven Parametern (Hebelstufe, Gewichte, Margin,
 // Spanne). Ein Cache-Eintrag je symbol|period bedient damit jede Kombination.
-const LEVMAP_PERIODS = { '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 }
+// '1m' kommt NICHT von Binance (openInterestHist beginnt bei 5m), sondern aus
+// dem eigenen Archiv `oi_minute` (server/oi-archiv.js). Reicht dessen
+// Abdeckung nicht, stuft die Route still auf 5m herab — sichtbar am
+// `period`-Feld der Antwort.
+const LEVMAP_PERIODS = { '1m': 1, '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 }
 const levMapCache = new Map()      // `${symbol}|${period}` -> { ts, payload }
 const levMapForce = new Map()      // symbol -> letzter erzwungener Abruf
+
+/**
+ * 1m-OI-Reihe aus dem eigenen Archiv, Lücken mit 5m-Stützen gefüllt.
+ * null = Abdeckung zu dünn (Archiv läuft noch nicht lange genug) — dann
+ * fällt die Route auf den normalen 5m-Pfad zurück.
+ */
+async function lese1mOiReihe(symbol) {
+    try {
+        const { getKnex } = await import('./database.js')
+        const knex = getKnex()
+        const bis = Math.floor(Date.now() / 60000) * 60000 - 60000   // letzte volle Minute
+        const von = bis - 499 * 60000
+        const zeilen = await knex('oi_minute')
+            .where({ symbol })
+            .andWhere('t', '>=', von)
+            .andWhere('t', '<=', bis)
+            .orderBy('t')
+            .select('t', 'oi')
+        if (!zeilen.length) return null
+
+        const stuetzenRes = await axios.get(`${BASES.futures}/futures/data/openInterestHist`, {
+            params: { symbol, period: '5m', limit: 110 }, timeout: HTTP_TIMEOUT,
+        })
+        notiereGewicht(stuetzenRes.headers)
+        const fuenfMin = (Array.isArray(stuetzenRes.data) ? stuetzenRes.data : [])
+            .map(h => ({ t: Number(h.timestamp), oi: Number(h.sumOpenInterest) }))
+
+        const { fuelleOiLuecken } = await import('./oi-archiv.js')
+        const { reihe, abdeckung } = fuelleOiLuecken(
+            zeilen.map(z => ({ t: Number(z.t), oi: Number(z.oi) })), fuenfMin, von, bis)
+        // Unter 60 % eigener Messpunkte wäre die Reihe überwiegend eine als
+        // 1m verkleidete 5m-Stufenfunktion — dann lieber ehrlich 5m liefern.
+        if (abdeckung < 0.6 || reihe.length < 20) return null
+        return reihe.map(p => ({ timestamp: p.t, sumOpenInterest: p.oi, sumOpenInterestValue: 0 }))
+    } catch (fehler) {
+        const status = fehler.response?.status
+        if (status === 429 || status === 418) melde429(status, fehler.response?.headers)
+        return null
+    }
+}
 
 /**
  * Führt OI-Historie und Kerzen zusammen. Fehlende Kerzen werden übersprungen
@@ -277,21 +321,22 @@ export function setupBinanceRoutes(app) {
                 return res.status(400).json({ error: 'symbol ist erforderlich und darf nur Buchstaben und Ziffern enthalten' })
             }
 
-            const period = LEVMAP_PERIODS[req.query.period] ? req.query.period : '5m'
+            let period = LEVMAP_PERIODS[req.query.period] ? req.query.period : '5m'
             // Der Cache-Schlüssel ist `symbol|period` OHNE limit. Würde hier
             // die Wunschmenge des Aufrufers durchgereicht, bekäme der nächste
             // Aufruf mit grösserem Fenster stillschweigend die kürzere
             // gecachte Antwort. Deshalb wird immer die volle Tiefe geholt und
             // der Aufrufer schneidet sich sein Fenster selbst heraus.
             const limit = 500
-            const periodMs = LEVMAP_PERIODS[period] * 60000
 
             // Ein fehlerhafter Client darf mit force=1 nicht die Server-IP verbrennen
             const wantsForce = req.query.force === '1'
                 && (Date.now() - (levMapForce.get(symbol) || 0)) > 30000
 
+            // Schlüssel über die ANGEFRAGTE Periode: der 1m→5m-Rückfall wird
+            // mitgecacht, sonst prüfte jeder Poll das dünne Archiv erneut.
             const key = `${symbol}|${period}`
-            const ttl = Math.min(Math.max(periodMs / 2, 60000), 300000)
+            const ttl = Math.min(Math.max(LEVMAP_PERIODS[period] * 60000 / 2, 60000), 300000)
             const cached = levMapCache.get(key)
             if (cached && (Date.now() - cached.ts) < ttl && !wantsForce) {
                 res.setHeader('X-Cache', 'HIT')
@@ -299,17 +344,34 @@ export function setupBinanceRoutes(app) {
             }
             if (wantsForce) levMapForce.set(symbol, Date.now())
 
-            // /futures/data/… liegt NICHT unter /fapi/v1
+            // ── 1m: eigenes Archiv statt openInterestHist ───────
+            let histEigen = null
+            if (period === '1m') {
+                histEigen = await lese1mOiReihe(symbol)
+                if (!histEigen) period = '5m'
+            }
+            const periodMs = LEVMAP_PERIODS[period] * 60000
+
+            // /futures/data/… liegt NICHT unter /fapi/v1.
+            // Die Kontenquote kennt kein 1m — dort bleibt 5m die feinste Stufe.
+            const ratioPeriod = period === '1m' ? '5m' : period
             const [histRes, nowRes, ratioRes] = await Promise.all([
-                axios.get(`${BASES.futures}/futures/data/openInterestHist`,
-                    { params: { symbol, period, limit }, timeout: HTTP_TIMEOUT }),
+                histEigen
+                    ? null
+                    : axios.get(`${BASES.futures}/futures/data/openInterestHist`,
+                        { params: { symbol, period, limit }, timeout: HTTP_TIMEOUT }),
                 axios.get(`${BASES.futures}/fapi/v1/openInterest`,
                     { params: { symbol }, timeout: HTTP_TIMEOUT }),
                 axios.get(`${BASES.futures}/futures/data/globalLongShortAccountRatio`,
-                    { params: { symbol, period, limit: 1 }, timeout: HTTP_TIMEOUT }).catch(() => null),
+                    { params: { symbol, period: ratioPeriod, limit: 1 }, timeout: HTTP_TIMEOUT }).catch(() => null),
             ])
+            // Gewicht an die gemeinsame IP-Bremse melden — diese Route tat das
+            // als einzige nicht (Audit-Fund 31.08.2026).
+            notiereGewicht(nowRes.headers)
+            if (histRes) notiereGewicht(histRes.headers)
+            if (ratioRes) notiereGewicht(ratioRes.headers)
 
-            const hist = Array.isArray(histRes.data) ? histRes.data : []
+            const hist = histEigen || (Array.isArray(histRes?.data) ? histRes.data : [])
             if (!hist.length) {
                 const leer = {
                     symbol, period, points: [],
@@ -321,10 +383,12 @@ export function setupBinanceRoutes(app) {
 
             // startTime eine Periode früher: jeder OI-Punkt braucht die bei
             // seinem Zeitstempel ENDENDE Kerze (siehe mergeLeverageMapPoints)
-            const { data: klines } = await axios.get(`${BASES.futures}/fapi/v1/klines`, {
+            const klinesRes = await axios.get(`${BASES.futures}/fapi/v1/klines`, {
                 params: { symbol, interval: period, startTime: Number(hist[0].timestamp) - periodMs, limit: hist.length + 2 },
                 timeout: HTTP_TIMEOUT,
             })
+            notiereGewicht(klinesRes.headers)
+            const klines = klinesRes.data
 
             const points = mergeLeverageMapPoints(hist, klines, periodMs)
             const letzte = points[points.length - 1]

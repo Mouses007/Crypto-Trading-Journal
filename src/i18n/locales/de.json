@@ -2082,7 +2082,7 @@
     "windowTitle": "Zeitfenster, über das Positionen zugeordnet werden. Kurze Fenster decken wenig ab: was vorher eröffnet wurde, kennt das Modell nicht.",
     "spanTitle": "Gezeigte Preisspanne um den aktuellen Kurs",
     "asOf": "Stand",
-    "measured": "Gemessen am 13.08.2026 über 9 734 aufgezeichnete Liquidationen: Treffer 1,54× gegenüber Zufall (Kontrolle 0,99×, reine Hebelgeometrie 1,11×).",
+    "measured": "Gemessen am 31.08.2026 über 4 900 aufgezeichnete Liquidationen (5 Symbole): mit GEMESSENEN Stufengewichten Treffer 1,38× gegenüber Zufall, mit den Vorgabe-Gewichten 40/30/20/10 nur 0,48× — die Messung im Seitenmenü übernehmen lohnt sich. Reine Hebelgeometrie: 1,39×.",
     "status_idle": "bereit",
     "status_loading": "lädt",
     "status_ready": "aktuell",
@@ -2097,6 +2097,18 @@
     "thresholdTitle": "Blendet schwache Zonen aus — nur die Klumpen bleiben stehen",
     "viewLabel": "ANSICHT",
     "tierLabel": "HEBELSTUFE",
+    "tierToggleTitle": "Mehrere Stufen kombinierbar: Ein Klick schaltet eine Stufe zu oder ab — etwa 50x und 100x zusammen. Die eingestellten Gewichte gelten dann anteilig für die gewählten Stufen.",
+    "tierClampedTitle": "Dieses Symbol erlaubt höchstens {max}x — die Stufe fällt mit der nächstniedrigeren zusammen.",
+    "accountRatio": "Konten",
+    "accountRatioTitle": "Anteil der Binance-Konten, die netto long bzw. short sind (globale Statistik). Konten, nicht Kapital — die Zahl zeigt, welche Seite überfüllt ist: dort liegt die schwerere Liquidationsseite der Karte.",
+    "weightsLabel": "STUFENGEWICHTE",
+    "weightsTitle": "Wie stark jede Hebelstufe in der Ansicht „Alle\" zählt. Die Summe wird automatisch normiert.",
+    "measuredWeights": "Gemessen aus {n} Liquidationen",
+    "measuredWeightsTitle": "Aus den eigenen Aufzeichnungen der letzten 14 Tage: je Liquidation wird der Einstieg pro Hebel-Hypothese zurückgerechnet und geprüft, ob dieser Preis vorher gehandelt wurde. Achtung: Der Binance-Strom ist gedrosselt (höchstens ein Ereignis pro Sekunde und Symbol) — die Verteilung ist eine Stichprobe.",
+    "measuredLoading": "Messung läuft — erster Lauf des Tages rechnet über 14 Tage …",
+    "adoptWeights": "Übernehmen",
+    "noRecording": "Keine Liquidations-Aufzeichnung für dieses Symbol",
+    "unexplained": "unerklärt",
     "windowLabel": "ZEITFENSTER",
     "oneDay": "1 Tag",
     "days": "{n} Tage",
@@ -2782,13 +2794,25 @@
           "p": "Der Anteil der Position, den die Börse als Sicherheit stehen sehen will. Bei 100x Hebel und 0,4 Prozent Rate darfst du nur 0,6 Prozent verlieren, nicht ein Prozent — deshalb liquidiert 100x schon bei minus 0,6 Prozent. Die Rate hängt am Coin: 0,004 ist die BTCUSDT-Stufe 1, kleine Coins liegen eher bei ein bis fünf Prozent. Deshalb wird sie je Symbol geholt — wahlweise von Binance oder Bybit, die Werte der beiden Börsen weichen um bis zu die Hälfte voneinander ab. „Manuell\" trägt wieder einen festen Wert für alle Coins ein; dann liegen die Zonen bei allem ausser BTC und ETH zu nah am Kurs. Gerechnet wird immer mit Stufe 1: die Karte kennt keine Positionsgrössen, und ab der in der Seitenleiste genannten Obergrenze steigt die echte Rate."
         },
         {
+          "h": "STUFENGEWICHTE UND GEMESSENE VERTEILUNG",
+          "p": "Die vier Felder bestimmen, wie stark jede Hebelstufe in der Ansicht „Alle\" zählt — die Summe wird automatisch normiert. Darunter steht die GEMESSENE Verteilung aus den eigenen Liquidations-Aufzeichnungen der letzten 14 Tage: je aufgezeichneter Liquidation wird der Einstieg pro Hebel-Hypothese exakt zurückgerechnet und geprüft, ob dieser Preis vorher überhaupt gehandelt wurde. „Übernehmen\" ersetzt die eingestellten Gewichte durch die gemessenen — geraten gegen gemessen. Der Binance-Strom ist gedrosselt (höchstens ein Ereignis pro Sekunde und Symbol), die Messung ist also eine Stichprobe; der Anteil „unerklärt\" sind Ereignisse, deren implizierter Einstieg nie gehandelt wurde — meist Cross-Margin oder Nachschuss."
+        },
+        {
+          "h": "MAX-HEBEL DES SYMBOLS",
+          "p": "Nicht jeder Coin bietet 100x: BTCUSDT erlaubt 150x, viele kleine Perps nur 20 bis 75x. Die Karte klemmt ihre Stufen automatisch auf den echten Max-Hebel aus den Binance-Klammern — eine Pille, die dann mit einer niedrigeren zusammenfällt, wird ausgegraut. Ohne das Klemmen lägen Zonen an Preisen, an denen bei diesem Symbol niemand liquidiert werden kann."
+        },
+        {
           "g": "Wie weit man ihr trauen darf",
+          "h": "KONTEN-QUOTE",
+          "p": "Der kleine Balken in der Fusszeile zeigt, wie viele Binance-Konten netto long bzw. short stehen (globale Statistik). Konten, nicht Kapital — ein Wal zählt gleich viel wie ein Kleinkonto. Als Lesehilfe gedacht: Sind die meisten long, ist die Long-Liquidationsseite unter dem Kurs die schwerere Seite der Karte."
+        },
+        {
           "h": "ABDECKUNG",
           "p": "Der wichtigste Wert in der Legende: welcher Anteil des tatsächlichen offenen Interesses überhaupt in der Karte steht. Positionen, die vor dem Zeitfenster eröffnet wurden, kennt das Modell nicht. Unter zwanzig Prozent erscheint eine Warnung — dann zeigt die Karte nur einen Bruchteil. Erste Reaktion auf eine niedrige Abdeckung ist immer: Zeitfenster vergrössern."
         },
         {
           "h": "WIE VERLÄSSLICH",
-          "p": "Gemessen an 9 734 aufgezeichneten echten Liquidationen: Die Karte markiert rund dreizehn Prozent des besuchten Preisbereichs und trifft darin etwa zwanzig Prozent der tatsächlichen Ereignisse. Das ist Faktor 1,54 gegenüber Zufall — messbar besser als Raten, aber vier von fünf Liquidationen passieren woanders."
+          "p": "Neu gemessen am 31.08.2026 an 4 900 aufgezeichneten echten Liquidationen über fünf Symbole (Skript: scripts/levmap-backtest.mjs): Mit den GEMESSENEN Stufengewichten markiert die Karte 15 Prozent des Preisbandes und trifft darin gut 20 Prozent der Ereignisse — Faktor 1,38 gegenüber Zufall. Mit den geratenen Vorgabe-Gewichten 40/30/20/10 fiel sie auf 0,48 — schlechter als Zufall, weil zu viel Gewicht auf den weit entfernten 10x-Zonen lag. Die reine Hebelgeometrie ohne OI-Verteilung erreicht 1,39; bei BTC und BNB schlägt die kalibrierte Karte sie deutlich (1,83 bzw. 2,67), bei SOL und XRP nicht. Kurz: erst die Kalibrierung macht die Karte besser als Raten — und vier von fünf Liquidationen passieren weiterhin woanders."
         },
         {
           "g": "Im Alltag",

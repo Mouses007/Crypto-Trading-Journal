@@ -18,11 +18,36 @@
  *  3. Der Einstiegspreis innerhalb einer Kerze ist unbekannt.
  *  4. Die Hebelverteilung ist unbekannt; einzelne Stufen sind ein Was-wäre-wenn.
  *  5. Cross Margin und Nachschuss verschieben echte Liquidationspreise beliebig.
+ *  6. Nur die MOMENTKARTE (buildLeverageMap): Sweep und decay zählen den
+ *     Abbau in Kaskaden doppelt — eine Liquidation senkt das OI, der postScale-
+ *     Trick legt diesen Abbau zusätzlich anteilig auf die Überlebenden um.
+ *     Konservative Richtung (zu wenig gehaltene Masse), aber genau im
+ *     Kaskadenfall aktiv. Der Verlaufsaufbau (buildLeverageHistory) verrechnet
+ *     die gefegte Masse seit 31.08.2026 korrekt; hier bräuchte der Fix
+ *     O(n·Zeilen) statt des O(n)-Tricks und steht deshalb noch aus.
  */
 
 import { liqPreisLong, liqPreisShort, hebelHaltbar } from '../../shared/liquidation.js'
 
 export const LEVERAGE_TIERS = [10, 25, 50, 100]
+
+/**
+ * Gespeicherte Stufenauswahl lesen: `'all'` (oder leer) heisst alle Stufen,
+ * sonst eine Kommaliste von HEBELWERTEN wie `'50,100'` — Werte statt Indizes,
+ * damit die Auswahl auch dann stimmt, wenn Stufen wegen der Margin-Rate
+ * verworfen werden und die Indizes verrutschen.
+ *
+ * Altbestand: früher stand hier ein einzelner Index (0..3). Zahlen unter 10
+ * können kein Hebel sein und werden deshalb als Index gedeutet.
+ *
+ * @returns {number[]|null}  aufsteigende Hebelwerte, null = alle
+ */
+export function parseTierAuswahl(wert) {
+    if (wert == null || wert === '' || wert === 'all') return null
+    const zahlen = String(wert).split(',').map(Number).filter(n => Number.isFinite(n) && n >= 0)
+    const werte = zahlen.map(n => (n < 10 ? LEVERAGE_TIERS[n] : n)).filter(n => n != null)
+    return werte.length ? [...new Set(werte)].sort((a, b) => a - b) : null
+}
 
 /*
  * Die Formeln stehen seit dem Audit vom 19.08.2026 in `shared/liquidation.js`
@@ -40,12 +65,45 @@ export const liqPriceShort = liqPreisShort
  */
 export const tierPossible = hebelHaltbar
 
+/**
+ * Hebelstufen auf den echten Max-Hebel des Symbols klemmen.
+ *
+ * BTCUSDT erlaubt 150x, viele Alt-Perps nur 20–75x — eine 100x-Stufe bei
+ * einem Coin, der sie gar nicht anbietet, ist reine Fiktion und legt Zonen an
+ * Preise, an denen niemand liquidiert werden kann. Gerechnet wird deshalb mit
+ * dem EFFEKTIVEN Hebel `min(L, maxHebel)`; der NOMINALE Wert bleibt daneben
+ * stehen, weil Auswahl (`levMapTier`) und Gewichte (`levMapWeights`) über die
+ * Nominale adressieren und einen Symbolwechsel überleben müssen.
+ *
+ * Kollabieren zwei Nominale auf denselben Effektivwert (maxHebel 50: die
+ * 50x- UND die 100x-Klasse landen bei 50), überlebt die NIEDRIGERE — sie ist
+ * die, deren Pille der Nutzer sieht und anklickt; das Gewicht der entfallenen
+ * Stufe gleicht die Renormierung aus.
+ *
+ * @param {number[]} tiers    nominale Stufen, aufsteigend
+ * @param {number}   maxHebel 0/leer = kein Klemmen
+ * @returns {{nominal: number, effektiv: number}[]}
+ */
+export function effektiveStufen(tiers, maxHebel) {
+    const deckel = Number(maxHebel) > 1 ? Number(maxHebel) : 0
+    const belegt = new Set()
+    const liste = []
+    for (const L of tiers) {
+        const effektiv = deckel ? Math.min(L, deckel) : L
+        if (belegt.has(effektiv)) continue
+        belegt.add(effektiv)
+        liste.push({ nominal: L, effektiv })
+    }
+    return liste
+}
+
 export class LeverageMap {
     constructor({ bucketSize, rows, base, tiers }) {
         this.bucketSize = bucketSize
         this.rows = rows
         this.base = base                 // absoluter Bucket-Index von Zeile 0
-        this.tiers = tiers               // tatsächlich verwendete Stufen
+        this.tiers = tiers               // tatsächlich verwendete (EFFEKTIVE) Stufen
+        this.tiersNominal = tiers        // nominale Gegenstücke (Gewichts-/Auswahl-Adresse)
         this.long = tiers.map(() => new Float64Array(rows))    // Coins
         this.short = tiers.map(() => new Float64Array(rows))
         this.oi = 0                      // offenes Interesse am Ende
@@ -111,28 +169,26 @@ export class LeverageMap {
  */
 export function buildLeverageMap(points, opts) {
     const {
-        mid, bucketSize, spanPct = 8, mmr = 0.004,
+        mid, bucketSize, spanPct = 8, mmr = 0.004, maxHebel = 0,
         tiers = LEVERAGE_TIERS, maxSubSteps = 64, sweep = true, seed = true,
     } = opts
 
-    const usable = tiers.filter(L => tierPossible(L, mmr))
-    const dropped = tiers.filter(L => !tierPossible(L, mmr))
+    const stufen = effektiveStufen(tiers, maxHebel).filter(s => tierPossible(s.effektiv, mmr))
+    const usable = stufen.map(s => s.effektiv)
+    const nominale = stufen.map(s => s.nominal)
+    const dropped = tiers.filter(L => !nominale.includes(L))
 
     // Die erfasste Spanne muss die weiteste Stufe abdecken, sonst fällt sie
     // komplett aus dem Raster: 10x liquidiert erst bei −9,6 %, bei einer
     // Spanne von ±8 % wäre diese Stufe restlos leer. Angezeigt wird davon
     // später nur ein Ausschnitt — dasselbe Prinzip wie bei der Heatmap
     // (erfassen ±1,5 %, zeigen ±0,5 %).
-    const spanNeeded = usable.length
-        ? Math.max(...usable.map(L => Math.max(
-            1 - liqPriceLong(1, L, mmr),
-            liqPriceShort(1, L, mmr) - 1))) * 100 * 1.1
-        : spanPct
-    const capturePct = Math.max(spanPct, spanNeeded)
+    const capturePct = Math.max(spanPct, noetigeSpannePct(points, usable, mid, mmr))
 
     const rows = Math.max(8, Math.ceil((mid * (capturePct / 100) * 2) / bucketSize))
     const base = Math.round(mid / bucketSize) - (rows >> 1)
     const map = new LeverageMap({ bucketSize, rows, base, tiers: usable })
+    map.tiersNominal = nominale
     map.mmr = mmr
     map.droppedTiers = dropped
     map.capturePct = capturePct
@@ -173,7 +229,7 @@ export function buildLeverageMap(points, opts) {
 
         // Richtung aus dem aggressiven Volumen; geklemmt, damit eine einzelne
         // extreme Kerze keine Seite komplett leerräumt.
-        const anteilLong = p.v > 0 ? clamp(p.tb / p.v, 0.15, 0.85) : 0.5
+        const anteilLong = richtungsAnteilLong(p)
 
         // Einstieg gleichverteilt über die Kerzenspanne — innerhalb der Kerze
         // existiert keine Information über die Reihenfolge.
@@ -208,6 +264,62 @@ export function buildLeverageMap(points, opts) {
     }
 
     return map
+}
+
+/**
+ * Einseitige Spanne (in % vom Mid), die das Raster wirklich braucht.
+ *
+ * Früher wurde die Liquidationsdistanz vom MID gemessen — Einstiege liegen
+ * aber an den Fensterextremen: Mid 100, ältere Kerzen bei 108 → der
+ * 10x-Short-Liq vom 108er-Einstieg liegt bei +18 % vom Mid und fiel still aus
+ * dem Raster; die Kopfzeilen-Abdeckung sank, ohne dass man den Grund sah.
+ * Darum von den Extremen des Fensters aus rechnen; ohne Punkte bleibt der
+ * Mid selbst die Bezugsbasis.
+ */
+export function noetigeSpannePct(points, usable, mid, mmr) {
+    if (!usable.length || !(mid > 0)) return 0
+    let hiExt = mid
+    let loExt = mid
+    for (const p of points) {
+        if (p.h > hiExt) hiExt = p.h
+        if (p.l < loExt) loExt = p.l
+    }
+    let s = 0
+    for (const L of usable) {
+        s = Math.max(s,
+            1 - liqPriceLong(loExt, L, mmr) / mid,
+            liqPriceShort(hiExt, L, mmr) / mid - 1)
+    }
+    return s * 100 * 1.02   // kleine Reserve für die Bucket-Rundung
+}
+
+/*
+ * Gewichte der beiden Richtungssignale. Benannte Konstanten, weil sie die
+ * ersten Kandidaten für die Backtest-Kalibrierung sind (scripts/
+ * levmap-backtest.mjs) — wer hier dreht, soll messen, nicht raten.
+ */
+export const RICHTUNG_TAKER_GEWICHT = 0.6
+export const RICHTUNG_KERZEN_GEWICHT = 0.2
+
+/**
+ * Long-Anteil neu eröffneter Positionen einer Kerze schätzen.
+ *
+ * Bis 31.08.2026 zählte allein der Taker-Buy-Anteil (geklemmt 0,15–0,85).
+ * Der ist aber Bruttovolumen und enthält auch Schliessungen. Eingezahlt wird
+ * nur bei ΔOI > 0, und dort reduziert sich die Quadranten-Logik (Preis×OI,
+ * Glassnode-LPOC) auf die Kerzenrichtung: OI rauf + Kerze grün → überwiegend
+ * neue Longs, OI rauf + Kerze rot → neue Shorts. Beide Signale werden
+ * gemischt statt hart geschaltet — die Funktion bleibt stetig, ein Doji
+ * degradiert exakt aufs alte Verhalten, und Konsens zweier Signale darf
+ * weiter ausschlagen (Klemme 0,10–0,90 statt 0,15–0,85) als eines allein.
+ */
+export function richtungsAnteilLong(p) {
+    const taker = p.v > 0 ? p.tb / p.v : 0.5
+    const spanne = p.h - p.l
+    const kerze = spanne > 0 ? clamp((p.c - p.o) / spanne, -1, 1) : 0
+    return clamp(
+        0.5 + RICHTUNG_TAKER_GEWICHT * (taker - 0.5) + RICHTUNG_KERZEN_GEWICHT * kerze,
+        0.1, 0.9)
 }
 
 function deposit(map, arr, tierIndex, price, menge) {
@@ -258,7 +370,7 @@ export function buildEntryMap(points, opts) {
         const menge = add[i] * postScale[i]
         if (menge <= 0) continue
         const p = points[i]
-        const anteilLong = p.v > 0 ? clamp(p.tb / p.v, 0.15, 0.85) : 0.5
+        const anteilLong = richtungsAnteilLong(p)
         const spanne = Math.max(0, p.h - p.l)
         const schritte = Math.max(1, Math.min(maxSubSteps, Math.ceil(spanne / bucketSize)))
         const jeSchritt = menge / schritte
@@ -308,9 +420,11 @@ export function attributeOpenInterest(points, { seed = true } = {}) {
         postScale[i] = acc
         acc *= decay[i]
     }
-    // `decay` kommt mit heraus: der Verlaufsaufbau (buildLeverageHistory)
-    // dünnt schrittweise aus und kann postScale nicht gebrauchen — das ist ein
-    // Rückwärtsprodukt und würde die Zukunft in eine Momentaufnahme tragen.
+    // `decay` kommt mit heraus, damit Prüfskripte die postScale-Identität
+    // nachrechnen können. Der Verlaufsaufbau benutzt es NICHT mehr: er
+    // verrechnet den Abbau je Kerze selbst mit der gefegten Masse, weil das
+    // globale decay Liquidationen doppelt entfernte. postScale wäre dort
+    // ohnehin falsch — ein Rückwärtsprodukt trüge die Zukunft in die Spalte.
     return { add, postScale, decay }
 }
 
@@ -332,17 +446,14 @@ export function attributeOpenInterest(points, { seed = true } = {}) {
  */
 export function buildLeverageHistory(points, opts) {
     const {
-        mid, bucketSize, spanPct = 8, mmr = 0.004,
+        mid, bucketSize, spanPct = 8, mmr = 0.004, maxHebel = 0,
         tiers = LEVERAGE_TIERS, weights = null, maxSubSteps = 32, seed = false,
     } = opts
 
-    const usable = tiers.filter(L => tierPossible(L, mmr))
-    const spanNeeded = usable.length
-        ? Math.max(...usable.map(L => Math.max(
-            1 - liqPriceLong(1, L, mmr),
-            liqPriceShort(1, L, mmr) - 1))) * 100 * 1.1
-        : spanPct
-    const capturePct = Math.max(spanPct, spanNeeded)
+    const stufen = effektiveStufen(tiers, maxHebel).filter(s => tierPossible(s.effektiv, mmr))
+    const usable = stufen.map(s => s.effektiv)
+    const nominale = stufen.map(s => s.nominal)
+    const capturePct = Math.max(spanPct, noetigeSpannePct(points, usable, mid, mmr))
     const rows = Math.max(8, Math.ceil((mid * (capturePct / 100) * 2) / bucketSize))
     const base = Math.round(mid / bucketSize) - (rows >> 1)
     const n = points.length
@@ -352,11 +463,16 @@ export function buildLeverageHistory(points, opts) {
         ts: new Float64Array(0), mid: new Float64Array(0),
         o: new Float64Array(0), h: new Float64Array(0), l: new Float64Array(0),
         long: new Float32Array(0), short: new Float32Array(0),
-        swept: new Float32Array(0), sweptUntil: new Int32Array(0), max: 0, oi: 0, tiers: usable,
+        swept: new Float32Array(0), sweptUntil: new Int32Array(0), max: 0, oi: 0,
+        tiers: usable, tiersNominal: nominale,
     }
     if (!n || !usable.length) return leer
 
-    const { add, decay } = attributeOpenInterest(points, { seed })
+    // decay aus attributeOpenInterest wird hier NICHT verwendet: der Verlauf
+    // verrechnet den OI-Abbau je Kerze selbst mit der gefegten Masse (Schritt 2
+    // unten) — das globale decay kennt die Sweeps nicht und entfernte
+    // liquidierte Masse doppelt.
+    const { add } = attributeOpenInterest(points, { seed })
     const gewicht = (k) => (weights ? (weights[k] ?? 0) : 1)
 
     // Laufender Zustand über alle Stufen zusammengefasst — für die Ansicht
@@ -394,16 +510,47 @@ export function buildLeverageHistory(points, opts) {
     for (let i = 0; i < n; i++) {
         const p = points[i]
 
-        // 1) Ausdünnen: geschlossene Positionen treffen den Altbestand anteilig
-        const d = decay[i]
+        // Abräum-Zeilen der Kerze. Gerundet wird zur KONSERVATIVEN Seite
+        // (Zeilenmitte muss wirklich berührt worden sein): `Math.round` fegte
+        // bis zu einer halben Bucket-Breite, die der Kurs nie erreicht hat —
+        // die Momentkarte vergleicht exakt, und beide Ansichten desselben
+        // Modells sollen an der Bucket-Kante gleich entscheiden.
+        const rTief = Math.ceil(p.l / bucketSize) - base
+        const rHoch = Math.floor(p.h / bucketSize) - base
+        const fege = () => {
+            let summe = 0
+            for (let r = Math.max(0, rTief); r < rows; r++) {
+                if (aktLong[r] > 0) { summe += aktLong[r]; abLong[r] += aktLong[r]; aktLong[r] = 0; sweptUntil[r] = i }
+            }
+            for (let r = Math.min(rows - 1, rHoch); r >= 0; r--) {
+                if (aktShort[r] > 0) { summe += aktShort[r]; abShort[r] += aktShort[r]; aktShort[r] = 0; sweptUntil[r] = i }
+            }
+            return summe
+        }
+
+        // 1) Abräumen des ALTBESTANDS: Long-Level unterhalb holt das Tief,
+        //    Short-Level oberhalb das Hoch. Was der Preis erreicht hat,
+        //    existiert nicht mehr — und die entfernte Menge ist gemessen.
+        const gefegt = fege()
+
+        // 2) Ausdünnen: geschlossene Positionen treffen den Rest anteilig.
+        //    Die gefegte Masse wird vorher vom OI-Abbau abgezogen: eine
+        //    Liquidation senkt das offene Interesse AUCH — sie zusätzlich
+        //    proportional auf die Überlebenden umzulegen entfernte dieselbe
+        //    Masse doppelt. Messbeispiel: OI 100→50, alles bei 100 eröffnet,
+        //    Tief fegt die 100x-Level — die Überlebenden wurden früher auf 25
+        //    halbiert, obwohl der komplette Abbau schon in den gefegten 50
+        //    steckte.
+        const prev = i > 0 ? points[i - 1].oi : 0
+        const d = prev > 0 ? Math.min(1, (p.oi + gefegt) / prev) : 1
         if (d < 1) {
             for (let r = 0; r < rows; r++) { aktLong[r] *= d; aktShort[r] *= d }
         }
 
-        // 2) Einzahlen
+        // 3) Einzahlen
         const menge = add[i]
         if (menge > 0) {
-            const anteilLong = p.v > 0 ? clamp(p.tb / p.v, 0.15, 0.85) : 0.5
+            const anteilLong = richtungsAnteilLong(p)
             const spanne = Math.max(0, p.h - p.l)
             const schritte = Math.max(1, Math.min(maxSubSteps, Math.ceil(spanne / bucketSize)))
             const jeSchritt = menge / schritte
@@ -421,16 +568,11 @@ export function buildLeverageHistory(points, opts) {
             }
         }
 
-        // 3) Abräumen: Long-Level unterhalb werden vom Tief geholt, Short
-        //    oberhalb vom Hoch. Was der Preis erreicht hat, existiert nicht mehr.
-        const rTief = rowFor(p.l)
-        for (let r = Math.max(0, rTief); r < rows; r++) {
-            if (aktLong[r] > 0) { abLong[r] += aktLong[r]; aktLong[r] = 0; sweptUntil[r] = i }
-        }
-        const rHoch = rowFor(p.h)
-        for (let r = Math.min(rows - 1, rHoch); r >= 0; r--) {
-            if (aktShort[r] > 0) { abShort[r] += aktShort[r]; aktShort[r] = 0; sweptUntil[r] = i }
-        }
+        // 4) Frische Einzahlungen derselben Kerze abräumen — die Reihenfolge
+        //    innerhalb der Kerze ist unbekannt, „schon abgeräumt" bleibt die
+        //    konservative Annahme (dieselbe Konvention wie in buildLeverageMap).
+        //    Ihr OI-Saldo steckt bereits in p.oi, darum ohne decay-Verrechnung.
+        fege()
 
         // 4) Spalte festhalten
         const off = i * rows
@@ -456,6 +598,7 @@ export function buildLeverageHistory(points, opts) {
         // Offenes Interesse am Ende — Bezug für die Abdeckung in der Legende
         oi: points[n - 1].oi,
         tiers: usable,
+        tiersNominal: nominale,
     }
 }
 

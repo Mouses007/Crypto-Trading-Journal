@@ -32,7 +32,7 @@ export const liveShowDelta = ref(false)       // Cumulative-Volume-Delta-Spur un
 export const liveShowAbsorption = ref(false)  // Preisstufen markieren, an denen mehr gehandelt als geruht wurde
 
 /* Liquidationskarte (eigene Seite) — Modell, keine Messung. */
-export const levMapTier = ref('all')          // 'all' | Index in LEVERAGE_TIERS
+export const levMapTier = ref('all')          // 'all' | Kommaliste von Hebelwerten ('50,100'); Altbestand: Index
 export const levMapHours = ref(48)            // gewünschtes Zeitfenster
 export const levMapSpanPct = ref(8)           // Preisspanne um den Mid, einseitig
 export const levMapMmr = ref(0.004)           // Maintenance-Margin-Rate, Stufe 1

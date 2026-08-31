@@ -2082,7 +2082,7 @@
     "windowTitle": "Time window over which positions are attributed. Short windows cover little: the model does not know positions opened before it.",
     "spanTitle": "Price span shown around the current price",
     "asOf": "As of",
-    "measured": "Measured 13 Aug 2026 over 9,734 recorded liquidations: 1.54× better than chance (control 0.99×, pure leverage geometry 1.11×).",
+    "measured": "Measured 31 Aug 2026 over 4,900 recorded liquidations (5 symbols): with MEASURED tier weights 1.38× better than chance, with the default weights 40/30/20/10 only 0.48× — adopting the measurement in the side menu pays off. Pure leverage geometry: 1.39×.",
     "status_idle": "ready",
     "status_loading": "loading",
     "status_ready": "current",
@@ -2097,6 +2097,18 @@
     "thresholdTitle": "Hides weak zones — only the clusters remain",
     "viewLabel": "VIEW",
     "tierLabel": "LEVERAGE",
+    "tierToggleTitle": "Tiers can be combined: a click toggles a tier on or off — e.g. 50x and 100x together. The configured weights then apply proportionally to the selected tiers.",
+    "tierClampedTitle": "This symbol allows at most {max}x — the tier collapses into the next lower one.",
+    "accountRatio": "Accounts",
+    "accountRatioTitle": "Share of Binance accounts that are net long vs. short (global statistic). Accounts, not capital — the number shows which side is crowded: that is the heavier liquidation side of the map.",
+    "weightsLabel": "TIER WEIGHTS",
+    "weightsTitle": "How much each leverage tier counts in the \"All\" view. The sum is normalized automatically.",
+    "measuredWeights": "Measured from {n} liquidations",
+    "measuredWeightsTitle": "From your own recordings of the last 14 days: for each liquidation the entry is inverted per leverage hypothesis and checked against whether that price actually traded before. Note: the Binance stream is throttled (at most one event per second and symbol) — the distribution is a sample.",
+    "measuredLoading": "Measuring — the first run of the day computes over 14 days …",
+    "adoptWeights": "Adopt",
+    "noRecording": "No liquidation recording for this symbol",
+    "unexplained": "unexplained",
     "windowLabel": "TIME WINDOW",
     "oneDay": "1 day",
     "days": "{n} days",
@@ -2782,13 +2794,25 @@
           "p": "The share of the position the exchange requires to remain as collateral. At 100x leverage and a 0.4 percent rate you may only lose 0.6 percent, not one percent — which is why 100x liquidates at minus 0.6 percent. The rate depends on the coin: 0.004 is BTCUSDT tier 1, small coins sit closer to one to five percent. That is why it is fetched per symbol — from Binance or Bybit, whose values differ by up to half. \"Manual\" puts one fixed value back in place for every coin; every zone then sits too close to the price for anything but BTC and ETH. Tier 1 is always used: the map does not know position sizes, and above the cap shown in the sidebar the real rate rises."
         },
         {
+          "h": "TIER WEIGHTS AND MEASURED DISTRIBUTION",
+          "p": "The four fields determine how much each leverage tier counts in the \"All\" view — the sum is normalized automatically. Below them stands the MEASURED distribution from your own liquidation recordings of the last 14 days: for each recorded liquidation the entry is inverted per leverage hypothesis and checked against whether that price actually traded before. \"Adopt\" replaces the configured weights with the measured ones — guessed versus measured. The Binance stream is throttled (at most one event per second and symbol), so the measurement is a sample; the \"unexplained\" share are events whose implied entry never traded — mostly cross margin or added margin."
+        },
+        {
+          "h": "SYMBOL MAX LEVERAGE",
+          "p": "Not every coin offers 100x: BTCUSDT allows 150x, many small perps only 20 to 75x. The map automatically clamps its tiers to the real max leverage from the Binance brackets — a pill that then collapses into a lower one is greyed out. Without clamping, zones would sit at prices where nobody can be liquidated on this symbol."
+        },
+        {
           "g": "How far to trust it",
+          "h": "ACCOUNT RATIO",
+          "p": "The small bar in the footer shows how many Binance accounts are net long vs. short (global statistic). Accounts, not capital — a whale counts the same as a small account. Meant as a reading aid: if most are long, the long liquidation side below the price is the heavier side of the map."
+        },
+        {
           "h": "COVERAGE",
           "p": "The most important number in the legend: what share of the actual open interest is represented in the map at all. Positions opened before the time window are unknown to the model. Below twenty percent a warning appears — the map then shows only a fraction. The first response to low coverage is always: enlarge the time window."
         },
         {
           "h": "HOW RELIABLE",
-          "p": "Measured against 9,734 recorded real liquidations: the map marks about thirteen percent of the visited price range and catches roughly twenty percent of actual events within it. That is a factor of 1.54 over chance — measurably better than guessing, but four out of five liquidations happen elsewhere."
+          "p": "Re-measured 31 Aug 2026 against 4,900 recorded real liquidations across five symbols (script: scripts/levmap-backtest.mjs): with the MEASURED tier weights the map marks 15 percent of the price band and catches a good 20 percent of events within it — a factor of 1.38 over chance. With the guessed default weights 40/30/20/10 it dropped to 0.48 — worse than chance, because too much weight sat on the far-away 10x zones. Pure leverage geometry without the OI distribution reaches 1.39; on BTC and BNB the calibrated map beats it clearly (1.83 and 2.67), on SOL and XRP it does not. In short: only calibration makes the map better than guessing — and four out of five liquidations still happen elsewhere."
         },
         {
           "g": "In daily use",

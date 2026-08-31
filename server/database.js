@@ -60,7 +60,7 @@ export function getKnex() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute']
     let fixed = 0
 
     for (const table of tables) {
@@ -121,7 +121,11 @@ async function fixPostgresSequences(knex) {
 // v14: `erklaerung` an `quiz_karten` — warum die Antwort richtig ist, optional
 // (Audit 28.08.2026, UX-11). Rein additiv, Default leer; ein älterer
 // Codestand schreibt das Feld nicht und zeigt es nicht an.
-const SCHEMA_VERSION = 14
+// v15: `api_cache` (persistierter Brackets-Cache der Liquidationskarte) +
+// `oi_minute` (eigenes 1-Minuten-Open-Interest-Archiv — Binance bietet kein
+// 1m-OI, die feinste Historie ist 5m). Rein additiv; ein älterer Codestand
+// kennt beide Tabellen nicht und läuft unverändert weiter.
+const SCHEMA_VERSION = 15
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -1681,6 +1685,40 @@ async function runMigrations(knex, client) {
             t.unique(['kind', 'dayUnix'])
         })
         console.log(' -> Created table: market_snapshots')
+    }
+
+    // Generischer Ablagekasten für teure Fremd-API-Antworten, die einen
+    // Prozess-Neustart überleben sollen (v15). Erster Nutzer: die Binance-
+    // Hebelklammern der Liquidationskarte (~1,6 MB je Netzabruf, ändern sich
+    // in Wochen) — ohne Persist lud jeder Neustart auf NAS UND dev die volle
+    // Tabelle neu. Schlüssel frei wählbar, Payload ist JSON-Text; zwei
+    // Prozesse überschreiben sich gegenseitig (last-writer-wins), was bei
+    // idempotenten Fremddaten genau richtig ist.
+    if (!(await knex.schema.hasTable('api_cache'))) {
+        await knex.schema.createTable('api_cache', (t) => {
+            t.string('key').primary()
+            t.bigInteger('ts').notNullable().defaultTo(0)
+            t.text('payload')
+        })
+        console.log(' -> Created table: api_cache')
+    }
+
+    // Eigenes 1-Minuten-Open-Interest-Archiv (v15). Binance kennt kein 1m-OI:
+    // `openInterestHist` beginnt bei 5m (und reicht nur 30 Tage zurück),
+    // `/fapi/v1/openInterest` liefert nur den Momentwert. Der Takt in
+    // `server/oi-archiv.js` pollt deshalb minütlich selbst. Innerhalb einer
+    // 5m-Periode öffnen und schliessen viele Positionen gegeneinander — die
+    // Minutenreihe viertelt diesen unsichtbaren Umschlag für die
+    // Liquidationskarte.
+    if (!(await knex.schema.hasTable('oi_minute'))) {
+        await knex.schema.createTable('oi_minute', (t) => {
+            t.increments('id').primary()
+            t.string('symbol').notNullable()
+            t.bigInteger('t').notNullable()      // Minutengrenze in ms
+            t.float('oi').notNullable()          // offenes Interesse in Coins
+            t.unique(['symbol', 't'])
+        })
+        console.log(' -> Created table: oi_minute')
     }
 
     // Leer = die Symbole der RSI-Heatmap werden aus den eigenen Trades der
