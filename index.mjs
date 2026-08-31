@@ -26,6 +26,7 @@ import { setupCoinRadarRoutes, startCoinRadarTakt } from './server/coin-radar-ap
 import { startErgebnisTakt } from './server/radar-ergebnisse.js'
 import { startOiArchivTakt, stopOiArchivTakt } from './server/oi-archiv.js'
 import { setupUpdateRoutes } from './server/update-api.js'
+import { setupSpeicherRoutes } from './server/speicher-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
 import { setupEsp32Routes } from './server/esp32-api.js'
@@ -169,6 +170,7 @@ const startIndex = async () => {
     setupHypeRadarRoutes(app);
     setupCoinRadarRoutes(app);
     setupUpdateRoutes(app);
+    setupSpeicherRoutes(app);
     setupBackupRoutes(app);
     await setupFluxRoutes(app);
     setupLiveRecorder(app);
