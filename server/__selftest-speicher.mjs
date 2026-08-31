@@ -7,7 +7,7 @@
  * nicht, sondern landet in 'system' — neues Wachstum darf nie unsichtbar
  * sein, nur weil die Liste in speicher-api.js nicht nachgezogen wurde.
  */
-import { gruppiereSpeicher, SPEICHER_MODULE } from './speicher-api.js'
+import { gruppiereSpeicher, SPEICHER_MODULE, AUFRAEUM_AKTIONEN } from './speicher-api.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -56,6 +56,18 @@ check('Zeilen zählen auch ohne Grössen weiter',
 // Die Zuordnung selbst: keine Tabelle darf in zwei Modulen stehen
 const alle = Object.values(SPEICHER_MODULE).flat()
 check('keine Tabelle doppelt zugeordnet', new Set(alle).size === alle.length)
+
+// Aufräum-Katalog: jede Aktion zeigt auf ein existierendes Modul und dessen
+// Tabelle, und die Mindestalter-Sperre existiert — sie ist der Schutz davor,
+// dass ein Tippfehler („0 Tage") den ganzen Bestand löscht.
+for (const [id, a] of Object.entries(AUFRAEUM_AKTIONEN)) {
+    check(`Aktion ${id}: Modul bekannt und Tabelle zugeordnet`,
+        SPEICHER_MODULE[a.modul]?.includes(a.tabelle), JSON.stringify(a.tabelle))
+    check(`Aktion ${id}: Mindestalter >= 14 Tage, Vorgabe darüber`,
+        a.minTage >= 14 && a.vorgabeTage >= a.minTage, `min=${a.minTage} vorgabe=${a.vorgabeTage}`)
+    check(`Aktion ${id}: rührt keine Benutzerinhalte an`,
+        !['trades', 'notes', 'screenshots', 'playbooks', 'diaries', 'ai_reports'].includes(a.tabelle))
+}
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
 if (fehlgeschlagen) { console.log('Fehler:', fehler.join(', ')); process.exit(1) }

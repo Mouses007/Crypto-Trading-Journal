@@ -125,6 +125,34 @@ async function messeSqlite(knex) {
     return { tabellen, gesamtBytes, zeilenGeschaetzt: false }
 }
 
+/**
+ * Aufräum-Aktionen je Modul — bewusst ein KATALOG statt eines generischen
+ * „Tabelle X leeren": gelöscht wird nur, wofür es eine begründete Regel gibt,
+ * und nie Benutzerinhalte (Trades, Notizen, Screenshots, Playbooks, Berichte).
+ * `minTage` ist die Server-seitige Untergrenze — ein Tippfehler im Formular
+ * („0 Tage") darf nicht den ganzen Bestand löschen.
+ *
+ * Die Kandidaten sind die drei Wachstums-Treiber der Messung: Ranglisten-
+ * Zeilen alter Coin-Radar-Läufe (die Kopfdaten der Läufe bleiben — nur die
+ * Detailzeilen gehen), alte Nachrichten-Beiträge (Lageberichte bleiben) und
+ * alte Live-Aufzeichnungen (Replays entsprechend alter Trades entfallen).
+ */
+export const AUFRAEUM_AKTIONEN = {
+    coinradarZeilen: {
+        modul: 'research', tabelle: 'coinradar_zeilen', minTage: 14, vorgabeTage: 60,
+        abfrage: (knex, grenzeMs) => knex('coinradar_zeilen').whereIn(
+            'laufId', knex('coinradar_laeufe').select('id').where('erstelltAm', '<', grenzeMs)),
+    },
+    newsItems: {
+        modul: 'nachrichten', tabelle: 'news_items', minTage: 30, vorgabeTage: 90,
+        abfrage: (knex, grenzeMs) => knex('news_items').where('publishedAt', '<', grenzeMs),
+    },
+    liveRecordings: {
+        modul: 'liveAnalyse', tabelle: 'live_recordings', minTage: 30, vorgabeTage: 90,
+        abfrage: (knex, grenzeMs) => knex('live_recordings').where('hourStart', '<', grenzeMs),
+    },
+}
+
 // Eine Minute Cache: die Messung ist billig, aber die Einstellungsseite soll
 // beim Hin- und Herklappen nicht jedes Mal 50 Tabellen abfragen.
 let cache = null
@@ -152,6 +180,58 @@ export function setupSpeicherRoutes(app) {
         } catch (fehler) {
             logWarn('speicher', `Messung fehlgeschlagen: ${fehler.message}`)
             res.status(500).json({ error: `Speicher-Messung fehlgeschlagen: ${fehler.message}` })
+        }
+    })
+
+    /**
+     * POST /api/system/speicher/aufraeumen  { aktion, tage, trocken }
+     *
+     * Zweistufig gedacht: das Frontend ruft zuerst mit `trocken: true` und
+     * zeigt die Trefferzahl an; erst der zweite Aufruf löscht wirklich —
+     * in Blöcken (Muster aus radar-aufraeumen.js), damit weder SQLite noch
+     * die NAS-Postgres eine Riesen-Transaktion halten müssen. Auf PostgreSQL
+     * folgt ein VACUUM (ANALYZE) — der Platz wird damit DB-intern wieder
+     * nutzbar; die Datei schrumpft bewusst nicht (kein VACUUM FULL, das
+     * würde die Tabelle sperren).
+     */
+    app.post('/api/system/speicher/aufraeumen', async (req, res) => {
+        try {
+            const aktion = AUFRAEUM_AKTIONEN[String(req.body?.aktion || '')]
+            if (!aktion) return res.status(400).json({ error: 'Unbekannte Aufräum-Aktion' })
+
+            const tage = Math.floor(Number(req.body?.tage))
+            if (!Number.isFinite(tage) || tage < aktion.minTage) {
+                return res.status(400).json({
+                    error: `Mindestalter für diese Aktion: ${aktion.minTage} Tage`,
+                    minTage: aktion.minTage,
+                })
+            }
+
+            const knex = getKnex()
+            const grenzeMs = Date.now() - tage * 24 * 60 * 60 * 1000
+            const treffer = Number((await aktion.abfrage(knex, grenzeMs).count('* as c').first())?.c) || 0
+
+            if (req.body?.trocken) {
+                return res.json({ aktion: req.body.aktion, tage, zeilen: treffer, trocken: true })
+            }
+
+            let geloescht = 0
+            const blockGroesse = 2000
+            while (true) {
+                const ids = (await aktion.abfrage(knex, grenzeMs).select('id').limit(blockGroesse)).map((r) => r.id)
+                if (!ids.length) break
+                geloescht += await knex(aktion.tabelle).whereIn('id', ids).del()
+            }
+            if (knex.client.config.client === 'pg') {
+                try { await knex.raw(`VACUUM (ANALYZE) "${aktion.tabelle}"`) }
+                catch (e) { logWarn('speicher', `VACUUM auf ${aktion.tabelle} fehlgeschlagen: ${e.message}`) }
+            }
+            cache = null   // die nächste Messung soll den neuen Stand zeigen
+            console.log(` -> Aufräumen ${req.body.aktion}: ${geloescht} Zeilen älter ${tage} Tage entfernt`)
+            res.json({ aktion: req.body.aktion, tage, geloescht })
+        } catch (fehler) {
+            logWarn('speicher', `Aufräumen fehlgeschlagen: ${fehler.message}`)
+            res.status(500).json({ error: `Aufräumen fehlgeschlagen: ${fehler.message}` })
         }
     })
 }

@@ -626,6 +626,18 @@
     "speicherZeilenGeschaetzt": "Zeilenzahlen sind bei PostgreSQL Schätzwerte des Planers, keine exakte Zählung.",
     "speicherAktualisieren": "Neu messen",
     "speicherFehler": "Messung fehlgeschlagen: ",
+    "aufraeumenAelterAls": "Aufräumen: älter als",
+    "aufraeumenTage": "Tage",
+    "aufraeumenPruefen": "Prüfen",
+    "aufraeumenNichts": "nichts zu löschen",
+    "aufraeumenLoeschen": "{n} Zeilen endgültig löschen",
+    "aufraeumenFertig": "{n} Zeilen gelöscht.",
+    "aufraeumenPlatzHinweis": "Der Platz wird von der Datenbank intern wiederverwendet; die Datei schrumpft nicht sofort.",
+    "aufraeumenAktion": {
+      "coinradarZeilen": "Ranglisten-Zeilen alter Coin-Radar-Läufe — die Kopfdaten der Läufe bleiben erhalten.",
+      "newsItems": "Alte Nachrichten-Beiträge — Lageberichte und Archiv bleiben.",
+      "liveRecordings": "Alte Live-Aufzeichnungen (Orderbuch/Liquidationen) — das Replay entsprechend alter Trades entfällt."
+    },
     "speicherModul": {
       "journal": "Journal",
       "screenshots": "Screenshots",

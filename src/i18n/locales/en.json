@@ -626,6 +626,18 @@
     "speicherZeilenGeschaetzt": "On PostgreSQL, row counts are planner estimates, not exact counts.",
     "speicherAktualisieren": "Re-measure",
     "speicherFehler": "Measurement failed: ",
+    "aufraeumenAelterAls": "Clean up: older than",
+    "aufraeumenTage": "days",
+    "aufraeumenPruefen": "Check",
+    "aufraeumenNichts": "nothing to delete",
+    "aufraeumenLoeschen": "Delete {n} rows permanently",
+    "aufraeumenFertig": "{n} rows deleted.",
+    "aufraeumenPlatzHinweis": "The database reuses the space internally; the file does not shrink immediately.",
+    "aufraeumenAktion": {
+      "coinradarZeilen": "Ranking rows of old Coin Radar runs — the run headers are kept.",
+      "newsItems": "Old news posts — briefings and the archive are kept.",
+      "liveRecordings": "Old live recordings (order book/liquidations) — replays of correspondingly old trades go away."
+    },
     "speicherModul": {
       "journal": "Journal",
       "screenshots": "Screenshots",

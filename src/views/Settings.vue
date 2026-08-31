@@ -1464,6 +1464,54 @@ const speicherMax = computed(() => Math.max(1, ...(speicherDaten.value?.module |
 const speicherAnteil = (m) => Math.max(m.bytes ? 1 : 0, Math.round(((m.bytes || 0) / speicherMax.value) * 100))
 const fmtZahl = (n) => new Intl.NumberFormat().format(Number(n) || 0)
 
+/*
+ * Aufräumen je Modul — Katalog spiegelt AUFRAEUM_AKTIONEN in
+ * server/speicher-api.js. Zweistufig: „Prüfen" ist ein Trockenlauf und zeigt
+ * die Trefferzahl; erst der rote Knopf löscht, und der nennt dieselbe Zahl.
+ * Ändert man das Alter, verfällt die Vorschau — der rote Knopf darf nie
+ * etwas anderes löschen, als geprüft wurde.
+ */
+const AUFRAEUMEN_JE_MODUL = { research: 'coinradarZeilen', nachrichten: 'newsItems', liveAnalyse: 'liveRecordings' }
+const aufraeumTage = ref({ research: 60, nachrichten: 90, liveAnalyse: 90 })
+const aufraeumVorschau = ref({})   // modulId -> Trefferzahl des Trockenlaufs
+const aufraeumLoading = ref({})
+const aufraeumMeldung = ref({})    // modulId -> { ok, text }
+
+async function aufraeumPruefen(modulId) {
+    aufraeumLoading.value[modulId] = true
+    aufraeumMeldung.value[modulId] = null
+    try {
+        const { data } = await axios.post('/api/system/speicher/aufraeumen', {
+            aktion: AUFRAEUMEN_JE_MODUL[modulId], tage: aufraeumTage.value[modulId], trocken: true,
+        })
+        aufraeumVorschau.value[modulId] = data.zeilen
+    } catch (e) {
+        aufraeumMeldung.value[modulId] = { ok: false, text: e.response?.data?.error || e.message }
+    } finally {
+        aufraeumLoading.value[modulId] = false
+    }
+}
+
+async function aufraeumLoeschen(modulId) {
+    aufraeumLoading.value[modulId] = true
+    aufraeumMeldung.value[modulId] = null
+    try {
+        const { data } = await axios.post('/api/system/speicher/aufraeumen', {
+            aktion: AUFRAEUMEN_JE_MODUL[modulId], tage: aufraeumTage.value[modulId],
+        })
+        aufraeumMeldung.value[modulId] = {
+            ok: true,
+            text: t('settings.aufraeumenFertig', { n: fmtZahl(data.geloescht) }) + ' ' + t('settings.aufraeumenPlatzHinweis'),
+        }
+        aufraeumVorschau.value[modulId] = undefined
+        ladeSpeicher(true)   // neue Messung zeigt den Effekt
+    } catch (e) {
+        aufraeumMeldung.value[modulId] = { ok: false, text: e.response?.data?.error || e.message }
+    } finally {
+        aufraeumLoading.value[modulId] = false
+    }
+}
+
 /* ESP32 DISPLAY SETTINGS */
 let esp32Expanded = ref(false)
 let esp32KeySet = ref(false)
@@ -5452,6 +5500,28 @@ onBeforeMount(async () => {
                                     <span>{{ tb.name }}</span>
                                     <span>{{ tb.bytes != null ? fmtBytes(tb.bytes) : '—' }} · {{ fmtZahl(tb.zeilen) }} {{ t('settings.speicherZeilen') }}</span>
                                 </div>
+
+                                <!-- Aufräumen (nur Module mit begründeter Regel; zweistufig) -->
+                                <template v-if="AUFRAEUMEN_JE_MODUL[m.id]">
+                                    <p class="small fw-lighter mb-1 mt-2">{{ t('settings.aufraeumenAktion.' + AUFRAEUMEN_JE_MODUL[m.id]) }}</p>
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <span class="small">{{ t('settings.aufraeumenAelterAls') }}</span>
+                                        <input type="text" inputmode="numeric" class="form-control form-control-sm" style="width: 70px;"
+                                            v-model="aufraeumTage[m.id]" @input="aufraeumVorschau[m.id] = undefined" />
+                                        <span class="small">{{ t('settings.aufraeumenTage') }}</span>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm"
+                                            :disabled="aufraeumLoading[m.id]" @click="aufraeumPruefen(m.id)">
+                                            <span v-if="aufraeumLoading[m.id]" class="spinner-border spinner-border-sm me-1"></span>{{ t('settings.aufraeumenPruefen') }}
+                                        </button>
+                                        <span v-if="aufraeumVorschau[m.id] === 0" class="small text-muted">{{ t('settings.aufraeumenNichts') }}</span>
+                                        <button v-else-if="aufraeumVorschau[m.id] > 0" type="button" class="btn btn-outline-danger btn-sm"
+                                            :disabled="aufraeumLoading[m.id]" @click="aufraeumLoeschen(m.id)">
+                                            <i class="uil uil-trash-alt me-1"></i>{{ t('settings.aufraeumenLoeschen', { n: fmtZahl(aufraeumVorschau[m.id]) }) }}
+                                        </button>
+                                    </div>
+                                    <p v-if="aufraeumMeldung[m.id]" class="small mb-0 mt-1"
+                                        :class="aufraeumMeldung[m.id].ok ? 'text-success' : 'text-danger'">{{ aufraeumMeldung[m.id].text }}</p>
+                                </template>
                             </div>
                         </div>
 
