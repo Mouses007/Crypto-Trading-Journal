@@ -2291,8 +2291,12 @@ export function usePerfChart(param) {
         if (!el) { resolve(); return }
         var myChart = holeChart(el)
 
-        // Trades nach Datum sortiert (aufsteigend)
-        let trades = [...filteredTradesTrades].sort((a, b) => a.td - b.td)
+        // Trades nach Tag sortiert, innerhalb des Tages nach Einstiegszeit:
+        // ohne Sekundärschlüssel blieb die Einfüge-Reihenfolge der Börsenantwort
+        // stehen, und HWM/Drawdown bauten im Tagesinneren falsch auf
+        // (−50/+80 statt +80/−50 ergibt ein anderes Zwischentief).
+        let trades = [...filteredTradesTrades]
+            .sort((a, b) => a.td - b.td || (a.entryTime || 0) - (b.entryTime || 0))
 
         if (trades.length === 0) { resolve(); return }
 

@@ -203,8 +203,8 @@ presented as a finding — three sessions on a Tuesday are noise.
 - **Global AI Toggle** — enable/disable all AI features at once
 
 ### Import & Broker Support
-- **Bitunix** — CSV export + API integration (positions, balance, trades)
-- **Bitget** — CSV + API integration (positions, balance, fills)
+- **Bitunix** — API integration (positions, balance, trades)
+- **Bitget** — API integration (positions, balance, fills)
 - **Pionex** — API integration (futures and grid-bot trades)
 - **Encrypted API Keys** — AES-256-GCM encryption at rest
 - **Auto-Deduplication** — prevents duplicate trade entries on re-import
@@ -239,7 +239,6 @@ Your open positions outside the browser — all three companions live in this re
 | Database | SQLite (default) or PostgreSQL (optional) |
 | Rich Text | Quill |
 | Annotations | MarkerJS2 |
-| CSV | PapaParse |
 | Dates | Day.js |
 | AI Image | FLUX.2, Google Gemini |
 
@@ -435,7 +434,7 @@ Starts the Vite dev server with Hot Module Replacement on port 39482, proxied th
 ## Usage
 
 1. Go to **Einstellungen** (Settings) and configure your broker API Key + Secret
-2. Import trades via **CSV upload** or **API fetch**
+2. Import trades via **API fetch** — or enter single trades manually
 3. Evaluate your trades in **Playbook** — add tags, stress/emotion levels, notes
 4. Review your performance in **Dashboard** and **Auswertung**
 5. Use the **KI-Agent** for AI-powered trade analysis

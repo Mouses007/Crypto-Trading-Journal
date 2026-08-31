@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Crypto Trading Journal is a **local single-user** trading journal for **Bitunix futures trading**. It lets users import trades via CSV or Bitunix API, view dashboards with analytics/charts, keep a diary, manage playbooks, and store screenshots. Licensed under GPL-3.0.
+Crypto Trading Journal is a **local single-user** trading journal for **Bitunix futures trading**. It lets users import trades via the Bitunix API (or enter them manually), view dashboards with analytics/charts, keep a diary, manage playbooks, and store screenshots. Licensed under GPL-3.0.
 
 **Key simplifications from the original project:**
 - No cloud login (single user, direct to dashboard); API protected by session cookie
 - SQLite (or optional PostgreSQL) instead of MongoDB/Parse Server (no Docker needed)
-- Bitunix primary; optional Bitget broker (CSV + API)
+- Bitunix primary; optional Bitget broker (both API; the CSV upload tab was removed in v3.0.0)
 - No Stripe payments, no PostHog analytics, no Shepherd tours
 - KI-Agent: AI reports/chat (Ollama, OpenAI, Anthropic, Gemini, DeepSeek)
 
@@ -143,8 +143,8 @@ View initialization follows a pattern in `src/utils/mountOrchestration.js`:
 ### Business Logic Utils
 
 - `trades.js` — Query/filter/group trades, P&L calculations (`useGetFilteredTrades`, `useGroupTrades`, `useCalculateProfitAnalysis`)
-- `addTrades.js` — Import Bitunix CSV/API data (~2000+ lines, contains dead code from old import flow — left intentionally)
-- `brokers.js` — Bitunix-only CSV parser (PapaParse)
+- `addTrades.js` — Import Bitunix API data (~2000+ lines, contains dead code from the old import flow — left intentionally; the CSV path in here has had no UI since v3.0.0)
+- `brokers.js` / `brokers-kern.js` — CSV parsers (PapaParse), functional and self-tested but unreachable from the UI since v3.0.0; kept for a possible reinstatement
 - `charts.js` — ECharts configuration and rendering
 
 ### Key Views
@@ -157,7 +157,7 @@ View initialization follows a pattern in `src/utils/mountOrchestration.js`:
 
 - `HypeRadar.vue` / `CoinRadar.vue` — The two pages of the `research` mode (`/hype-radar`, `/coin-radar`), siblings with opposite questions: "what is new out there" vs. "what can be traded today". Same shape, same star, same expandable sub-scores; phone gets cards instead of tables. The former in-page tabs are gone: each view is a **side-menu entry** on a shared route (`/hype-radar` + `/hype-radar/berichte`, `/coin-radar` + `/coin-radar/verlauf`) — one route record per page, so switching does not remount and a running scan keeps its SSE stream. Settings are no longer a tab but a **gear panel with a one-line summary**, the same pattern as `Nachrichten.vue`. The star feeds one shared `hype_favoriten` list — `quelle` decides which watchdog data path applies. `CoinRadar.vue` shows the **rank correlation among the headline figures**, in words as well as a number ("Rangfolge ist grösstenteils Rauschen"): a ranking that hides its own predictive power is more dangerous than none. The gate view switches to a **different column set** (reason, turnover, spread, depth) rather than printing zeros — for a rejected coin no metrics were ever computed. Note: the side menu renders per-mode groups (`research` = `HYPE-RADAR` + `COIN-RADAR`) and highlights by **path, not `pageId`** — two entries share one route name, so `pageId` would light up both. `menuKey`/`menuIcon` in `menu.js` let a menu entry read "Übersicht" while the page header still says "Hype-Radar".
 - `Incoming.vue` — Live open positions from Bitunix API
-- `Imports.vue` — CSV / API trade import UI
+- `AddTrades.vue` — Manual single-trade entry + API import; the CSV upload tab was removed in v3.0.0 (the parser stack in `brokers.js`/`addTrades.js` remains, without UI)
 
 ### Key Components
 
@@ -186,6 +186,6 @@ No `.env` files — runtime config stored in DB (settings table) and localStorag
 
 ### Bitunix / Bitget Integration
 
-**CSV Import**: Bitunix CSV export; parses "Futures Profit"/"Futures Loss" rows into trade objects. Bitget CSV supported where implemented.
+**CSV Import**: removed from the UI in v3.0.0 — imports run via API (or manual entry) only. The parser code (`brokers.js`: "Futures Profit"/"Futures Loss" rows for Bitunix, Bitget where implemented) remains in the codebase, self-tested, for a possible reinstatement. Known caveats if it is ever wired up again: it stamps entry/exit times to midnight (audit 31.08.2026, M-01) and its TrxId-based IDs don't match the API import's positionId dedup (M-02).
 
 **API Import**: Configure API Key + Secret (Bitunix) or API Key + Secret + Passphrase (Bitget) in Settings. Keys are encrypted at rest (`server/crypto.js`). Server-side proxies (`/api/bitunix/*`, `/api/bitget/*`) fetch positions; Bitunix uses SHA256 double-hash auth.
