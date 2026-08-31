@@ -292,7 +292,10 @@ export function setupEsp32Routes(app) {
                 brokers:       brokers
             }
             })
-            res.json(daten)
+            // _cache ist internes ausCache-Detail (sendeRadar zieht es sonst in
+            // einen Kopf um) — die Firmware/Widget-Clients bekommen es nicht.
+            const { _cache, ...antwort } = daten
+            res.json(antwort)
         } catch (e) {
             console.error('ESP32 display error:', e)
             res.status(500).json({ error: 'Internal server error' })
