@@ -52,11 +52,26 @@ export function parseBinanceKlammern(rohdaten) {
         const erste = stufen.find(s => Number(s.bracketNotionalFloor) === 0)
         const mmr = Number(erste?.bracketMaintenanceMarginRate)
         if (!(mmr > 0)) continue
+        // Die volle Stufenliste bleibt erhalten (bis 31.08.2026 wurde sie hier
+        // verworfen): `cum` ist das Maintenance Amount der exakten Binance-
+        // Liquidationsformel, `maxHebel` je Stufe klemmt die Hebelklassen der
+        // Karte. Der Abruf kostet dadurch nichts extra — dieselbe Antwort,
+        // nur weniger weggeworfen.
+        const klammern = stufen
+            .map(s => ({
+                floor: Number(s.bracketNotionalFloor) || 0,
+                cap: Number(s.bracketNotionalCap) || 0,
+                mmr: Number(s.bracketMaintenanceMarginRate) || 0,
+                cum: Number(s.cumFastMaintenanceAmount) || 0,
+                maxHebel: Number(s.maxOpenPosLeverage) || 0,
+            }))
+            .sort((a, b) => a.floor - b.floor)
         tabelle.set(String(eintrag.symbol).toUpperCase(), {
             mmr,
             obergrenze: Number(erste.bracketNotionalCap) || 0,
             maxHebel: Number(erste.maxOpenPosLeverage) || 0,
             stufen: stufen.length,
+            klammern,
         })
     }
     return tabelle
@@ -87,8 +102,51 @@ export function parseBybitRisikolimit(rohdaten) {
 
 // ── Binance: eine Tabelle für alle Symbole ──────────────────────────────
 // 1,6 MB je Abruf, deshalb genau einer pro Tag und nicht einer pro Symbol.
+// Zusätzlich DB-persistiert (`api_cache`, Schlüssel `binance_brackets`): der
+// Prozess-Cache stirbt mit jedem Neustart, und NAS-Container und dev-Server
+// luden dann beide die volle Tabelle neu. Geschrieben wird die GEPARSTE
+// Tabelle, nicht die Rohantwort — einige hundert KB statt 1,6 MB.
 let binanceCache = null       // { ts, tabelle }
 let binanceLaeuft = null      // laufender Abruf, gegen den Ansturm beim Start
+
+const BRACKETS_DB_KEY = 'binance_brackets'
+
+/**
+ * DB lazy importieren: die Parser oben bleiben pure, und der Selftest läuft
+ * ohne Netz UND ohne Datenbank. Jeder DB-Fehler ist hier weich — der Persist
+ * ist eine Abkürzung, keine Voraussetzung.
+ */
+async function leseBracketsAusDb() {
+    try {
+        const { getKnex } = await import('./database.js')
+        const knex = getKnex()
+        if (!knex) return null
+        const zeile = await knex('api_cache').where({ key: BRACKETS_DB_KEY }).first()
+        if (!zeile?.payload || (Date.now() - Number(zeile.ts)) >= CACHE_MS) return null
+        const roh = JSON.parse(zeile.payload)
+        return { ts: Number(zeile.ts), tabelle: new Map(Object.entries(roh)) }
+    } catch {
+        return null
+    }
+}
+
+async function schreibeBracketsInDb(cache) {
+    try {
+        const { getKnex } = await import('./database.js')
+        const knex = getKnex()
+        if (!knex) return
+        await knex('api_cache')
+            .insert({
+                key: BRACKETS_DB_KEY,
+                ts: cache.ts,
+                payload: JSON.stringify(Object.fromEntries(cache.tabelle)),
+            })
+            .onConflict('key')
+            .merge(['ts', 'payload'])
+    } catch (fehler) {
+        logWarn('margin-rates', `Brackets-Persist fehlgeschlagen: ${fehler.message}`)
+    }
+}
 
 async function holeBinanceTabelle() {
     const frisch = binanceCache && (Date.now() - binanceCache.ts) < CACHE_MS
@@ -97,23 +155,54 @@ async function holeBinanceTabelle() {
 
     binanceLaeuft = (async () => {
         try {
+            // Kalter Start: erst nachsehen, ob ein anderer Prozess die Tabelle
+            // heute schon geholt hat — dann kostet der Start keinen Netzabruf.
+            if (!binanceCache) {
+                const ausDb = await leseBracketsAusDb()
+                if (ausDb?.tabelle.size) {
+                    binanceCache = ausDb
+                    console.log(` -> Binance Hebelklammern: ${ausDb.tabelle.size} Symbole aus der DB übernommen`)
+                    return binanceCache
+                }
+            }
             const { data } = await axios.get(BINANCE_URL, { timeout: HTTP_TIMEOUT })
             const tabelle = parseBinanceKlammern(data)
             if (!tabelle.size) throw new Error('leere Klammertabelle')
             binanceCache = { ts: Date.now(), tabelle }
             console.log(` -> Binance Hebelklammern: ${tabelle.size} Symbole gecacht`)
+            await schreibeBracketsInDb(binanceCache)
             return binanceCache
         } catch (fehler) {
             logWarn('margin-rates', `Binance-Klammern nicht abrufbar: ${fehler.message}`)
             // Alter Stand ist besser als keiner: die Klammern stehen wochenlang
             // still, ein Tag Verspätung ändert an der Karte nichts.
             if (binanceCache) return { ...binanceCache, veraltet: true }
+            // Notnagel: auch ein abgelaufener DB-Stand schlägt gar keinen.
+            const alt = await leseBracketsAusDbOhneFrist()
+            if (alt?.tabelle.size) {
+                binanceCache = alt
+                return { ...alt, veraltet: true }
+            }
             return null
         } finally {
             binanceLaeuft = null
         }
     })()
     return binanceLaeuft
+}
+
+/** Wie leseBracketsAusDb, aber ohne 24-h-Frist — nur für den Fehlerpfad. */
+async function leseBracketsAusDbOhneFrist() {
+    try {
+        const { getKnex } = await import('./database.js')
+        const knex = getKnex()
+        if (!knex) return null
+        const zeile = await knex('api_cache').where({ key: BRACKETS_DB_KEY }).first()
+        if (!zeile?.payload) return null
+        return { ts: Number(zeile.ts), tabelle: new Map(Object.entries(JSON.parse(zeile.payload))) }
+    } catch {
+        return null
+    }
 }
 
 async function ausBinance(symbol) {

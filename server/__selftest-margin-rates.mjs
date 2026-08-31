@@ -62,6 +62,22 @@ pruefe('Rate 0 fällt raus', !tabelle.has('NULLUSDT'))
 pruefe('Leere Antwort ergibt leere Tabelle', parseBinanceKlammern({}).size === 0)
 pruefe('null ergibt leere Tabelle', parseBinanceKlammern(null).size === 0)
 
+// ── Volle Klammerliste (seit 31.08.2026 nicht mehr verworfen) ──────────
+{
+    const btc = tabelle.get('BTCUSDT')
+    pruefe('Klammerliste ist vollständig', btc?.klammern?.length === 2,
+        `bekam ${btc?.klammern?.length}`)
+    pruefe('Klammern sind nach Untergrenze sortiert',
+        btc?.klammern[0].floor === 0 && btc?.klammern[1].floor === 300000)
+    pruefe('Klammer trägt mmr und maxHebel je Stufe',
+        btc?.klammern[1].mmr === 0.005 && btc?.klammern[1].maxHebel === 100)
+    const wif = tabelle.get('WIFUSDT')
+    pruefe('verdrehte Reihenfolge wird in den Klammern geradegezogen',
+        wif?.klammern[0].floor === 0 && wif?.klammern[0].mmr === 0.01)
+    pruefe('fehlendes cum wird 0, nicht NaN',
+        btc?.klammern.every(k => Number.isFinite(k.cum)))
+}
+
 // ── Bybit ──────────────────────────────────────────────────────────────
 const bybitRoh = {
     result: {

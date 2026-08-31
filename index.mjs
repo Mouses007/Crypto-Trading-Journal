@@ -24,11 +24,13 @@ import { setupAiUebersichtRoutes } from './server/ai-uebersicht.js'
 import { setupHypeRadarRoutes, startHypeTakt, startWachhundTakt } from './server/hype-radar-api.js'
 import { setupCoinRadarRoutes, startCoinRadarTakt } from './server/coin-radar-api.js'
 import { startErgebnisTakt } from './server/radar-ergebnisse.js'
+import { startOiArchivTakt, stopOiArchivTakt } from './server/oi-archiv.js'
 import { setupUpdateRoutes } from './server/update-api.js'
 import { setupBackupRoutes } from './server/backup-api.js'
 import { setupFluxRoutes } from './server/flux-api.js'
 import { setupEsp32Routes } from './server/esp32-api.js'
 import { setupLiveRecorder, stopLiveRecorder } from './server/live-recorder.js'
+import { setupLiqKalibrierungRoutes } from './server/liq-kalibrierung.js'
 import { setupStrategyRoutes, ladeAlleRegelStrategien } from './server/strategy-api.js'
 import { setupStrategyBuilderRoutes } from './server/strategy-builder.js'
 import { setupRuleBuilderRoutes } from './server/rule-builder.js'
@@ -155,6 +157,9 @@ const startIndex = async () => {
     startWachhundTakt();
     startCoinRadarTakt();
     startErgebnisTakt();
+    // 1-Minuten-Open-Interest für die Liquidationskarte — Binance bietet kein
+    // 1m-OI, die feinste Historie ist 5m; deshalb pollt der Takt selbst.
+    startOiArchivTakt();
     setupBenachrichtigungsRoutes(app);
     startBenachrichtigungsTakt();
     setupOllamaRoutes(app);
@@ -167,6 +172,9 @@ const startIndex = async () => {
     setupBackupRoutes(app);
     await setupFluxRoutes(app);
     setupLiveRecorder(app);
+    // Gemessene Hebelverteilung aus den Aufzeichnungen — NACH dem Recorder,
+    // weil sie dessen Leselogik benutzt.
+    setupLiqKalibrierungRoutes(app);
     setupStrategyRoutes(app);
     setupStrategyBuilderRoutes(app);
     setupRuleBuilderRoutes(app);
@@ -314,6 +322,7 @@ const startIndex = async () => {
         // Ein laufender Rangliste-Lauf braucht kein Auslaufen: jeder Coin
         // ist einzeln gesichert, der nächste Start nimmt ihn wieder auf.
         try { stopRanglisteTakt() } catch (e) { /* trotzdem beenden */ }
+        try { stopOiArchivTakt() } catch (e) { /* trotzdem beenden */ }
         try { stopMarktradar() } catch (e) { /* trotzdem beenden */ }
         try { stopKalender(); stopNews(); stopBenachrichtigungen(); stopCryptoquant() } catch (e) { /* trotzdem beenden */ }
         process.exit(code)

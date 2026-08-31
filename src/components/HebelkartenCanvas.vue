@@ -19,13 +19,13 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LeverageMapSource } from '../utils/leverageMapSource.js'
-import { buildLeverageHistory } from '../utils/leverageMap.js'
+import { buildLeverageHistory, LEVERAGE_TIERS, parseTierAuswahl } from '../utils/leverageMap.js'
 import { LeverageMapRenderer } from '../utils/leverageMapRenderer.js'
 import {
     liveSymbol,
     levMapTier, levMapHours, levMapSpanPct, levMapMmr, levMapMmrQuelle, levMapWeights, levMapView, levMapThreshold, levMapProfileW,
 } from '../stores/live.js'
-import { aktualisiereMarginRate } from '../utils/marginRate.js'
+import { aktualisiereMarginRate, mmrHerkunft } from '../utils/marginRate.js'
 import dayjs from '../utils/dayjs-setup.js'
 
 /**
@@ -50,6 +50,12 @@ const canvasEl = ref(null)
 const status = ref('idle')
 const statusDetail = ref('')
 const stand = ref(0)
+/**
+ * Long/Short-Konten-Ratio (globalLongShortAccountRatio, Anteile 0..1). Der
+ * Endpoint liefert sie seit jeher mit — angezeigt wurde sie nie. Als eigener
+ * ref gespiegelt, weil `source` bewusst nicht reaktiv ist (TypedArrays).
+ */
+const accountRatio = ref(null)
 
 // Nicht reaktiv: enthalten TypedArrays
 let source = null
@@ -58,15 +64,52 @@ let hist = null            // Verlaufsmatrix, nur im Heatmap-Modus
 let ro = null
 let resizeTimer = null
 
-// Auf Summe 1 normiert: die Gewichte gehen multiplikativ in Tooltip-Beträge
-// und Abdeckungs-% ein. Roh (Summe 100) wären alle absoluten Werte im Modus
-// „Alle" rund 100-fach überhöht — die Optik war davon nie betroffen (p98-
-// Normierung), nur die Zahlen.
-const gewichte = computed(() => {
+/** Gewählte Hebelstufen als Werte (z.B. [50, 100]); null = alle. */
+const auswahl = computed(() => parseTierAuswahl(levMapTier.value))
+
+/** Echter Max-Hebel des Symbols (aus den Brackets); 0 = unbekannt, kein Klemmen. */
+const maxHebel = computed(() => (mmrHerkunft.value?.maxHebel > 1 ? mmrHerkunft.value.maxHebel : 0))
+
+/**
+ * Gewichte je Stufe der Karte, auf Summe 1 normiert: die Gewichte gehen
+ * multiplikativ in Tooltip-Beträge und Abdeckungs-% ein. Roh (Summe 100) wären
+ * alle absoluten Werte im Modus „Alle" rund 100-fach überhöht — die Optik war
+ * davon nie betroffen (p98-Normierung), nur die Zahlen.
+ *
+ * Bei einer Teilauswahl (Stufen sind einzeln kombinierbar) werden dieselben
+ * Gewichte auf die gewählten Stufen renormiert: „50x + 100x" heisst also
+ * „unterstelle, alle Positionen lägen auf diesen Stufen, im eingestellten
+ * Verhältnis". Zugeordnet wird über den NOMINALEN Hebelwert (`tiersNominal`),
+ * nicht den Index oder den Effektivwert: die Margin-Rate verwirft Stufen und
+ * der Max-Hebel klemmt sie — beides würde Index- und Wert-Adressen verrutschen
+ * lassen, während die Nominale den Symbolwechsel überlebt.
+ */
+function gewichteFuer(karte) {
     const roh = String(levMapWeights.value || '40,30,20,10').split(',').map(x => Number(x) || 0)
-    const summe = roh.reduce((a, b) => a + b, 0)
-    return summe > 0 ? roh.map(x => x / summe) : roh.map(() => 1 / (roh.length || 1))
-})
+    const nominale = karte.tiersNominal || karte.tiers
+    const gewaehlt = auswahl.value
+    let w = nominale.map(L => {
+        if (gewaehlt && !gewaehlt.includes(L)) return 0
+        const i = LEVERAGE_TIERS.indexOf(L)
+        return i >= 0 && roh[i] > 0 ? roh[i] : 0
+    })
+    let summe = w.reduce((a, b) => a + b, 0)
+    if (summe <= 0) {
+        // Die eingestellten Gewichte geben für diese Auswahl nichts her
+        // (z.B. Gewicht 0 auf einer bewusst angeklickten Stufe) — dann gleich
+        // verteilen statt gar nichts zu zeichnen.
+        w = nominale.map(L => (!gewaehlt || gewaehlt.includes(L)) ? 1 : 0)
+        summe = w.reduce((a, b) => a + b, 0)
+    }
+    if (summe <= 0) {
+        // Die Auswahl existiert bei diesem Symbol gar nicht (alle gewählten
+        // Stufen sind auf niedrigere geklemmt worden) — dann alle Stufen
+        // gleich, statt eine leere Karte zu zeichnen.
+        w = nominale.map(() => 1)
+        summe = nominale.length
+    }
+    return summe > 0 ? w.map(x => x / summe) : w
+}
 
 const zeitstempel = computed(() => (stand.value ? new Date(stand.value).toLocaleTimeString() : '—'))
 
@@ -97,12 +140,10 @@ function baueVerlauf() {
     if (levMapView.value !== 'history' || !source?.points.length || !source.map) return
     const letzte = source.points[source.points.length - 1]
     if (!(letzte.c > 0)) return
-    const gew = levMapTier.value === 'all'
-        ? gewichte.value
-        : source.map.tiers.map((_, i) => (i === Number(levMapTier.value) ? 1 : 0))
+    const gew = gewichteFuer(source.map)
     hist = buildLeverageHistory(source.points, {
         mid: letzte.c, bucketSize: source.map.bucketSize,
-        spanPct: erfassung(), mmr: levMapMmr.value,
+        spanPct: erfassung(), mmr: levMapMmr.value, maxHebel: maxHebel.value,
         weights: gew, seed: false,
     })
 }
@@ -125,8 +166,11 @@ function zeichne() {
         map,
         mid,
         viewPct: spanne.value,
-        tier: levMapTier.value === 'all' ? 'all' : Number(levMapTier.value),
-        weights: gewichte.value,
+        // Nur noch für die Beschriftung — die Rechnung steckt komplett in den
+        // Gewichten (0 = abgewählt), damit Mehrfachauswahl und „Alle" denselben
+        // Pfad nehmen.
+        tier: auswahl.value ?? 'all',
+        weights: map ? gewichteFuer(map) : null,
         hinweis: statusDetail.value,
     })
 }
@@ -166,8 +210,14 @@ onMounted(async () => {
         hours: stundenEff.value,
         spanPct: erfassung(),
         mmr: levMapMmr.value,
+        maxHebel: maxHebel.value,
         onStatus: (s, d) => { status.value = s; statusDetail.value = d || ''; if (s !== 'ready') zeichne() },
-        onMap: () => { stand.value = source?.map?.ts || 0; baueVerlauf(); zeichne() },
+        onMap: () => {
+            stand.value = source?.map?.ts || 0
+            accountRatio.value = source?.meta?.accountRatio || null
+            baueVerlauf()
+            zeichne()
+        },
     })
     await source.start()
 })
@@ -193,12 +243,16 @@ watch([liveSymbol, stundenEff], () => {
 watch([liveSymbol, levMapMmrQuelle], () => aktualisiereMarginRate(liveSymbol.value), { immediate: true })
 // Neu rechnen nur, wenn sich die ERFASSTE Spanne ändert. Reines Hineinzoomen
 // bleibt innerhalb des Rasters und braucht bloss einen neuen Anstrich.
-watch([spanne, levMapMmr], () => {
+// `maxHebel` hängt mit dran: die Bracket-Antwort kommt asynchron nach dem
+// ersten Bild, und ein geklemmter Hebel verschiebt die Zonen genauso real
+// wie eine andere Margin-Rate.
+watch([spanne, levMapMmr, maxHebel], () => {
     if (!source) return
     const neu = erfassung()
-    if (neu !== source.spanPct || levMapMmr.value !== source.mmr) {
+    if (neu !== source.spanPct || levMapMmr.value !== source.mmr || maxHebel.value !== source.maxHebel) {
         source.spanPct = neu
         source.mmr = levMapMmr.value
+        source.maxHebel = maxHebel.value
         source.rebuild()
     } else {
         zeichne()
@@ -293,7 +347,7 @@ function onWheel(e) {
  * Für die Seite: Verbindungszustand und Stand der Karte. Die Kachel braucht das
  * nicht — dort zeigt der Kachelrahmen den Zustandspunkt.
  */
-defineExpose({ status, statusDetail, stand, zeitstempel })
+defineExpose({ status, statusDetail, stand, zeitstempel, accountRatio })
 </script>
 
 <template>

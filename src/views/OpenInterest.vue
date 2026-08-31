@@ -136,7 +136,10 @@ function zeichne() {
 
 /** Fenster aus dem Rohbestand schneiden — ohne Netzverkehr. */
 function schneiden() {
-    const { period } = pickPeriod(levMapHours.value)
+    // Nach der Periode des ROHBESTANDS schneiden: bei einer 1m-Anfrage kann
+    // der Server auf 5m herabgestuft haben (dünnes OI-Archiv), und
+    // pickPeriod(hours) schnitte dann fünfmal zu wenige Punkte.
+    const period = rohPeriode || pickPeriod(levMapHours.value).period
     const noetig = Math.max(20, Math.ceil((levMapHours.value * 60) / LEVMAP_PERIODS[period]))
     punkte.value = rohPunkte.slice(-noetig)
     status.value = punkte.value.length ? 'ready' : 'empty'
