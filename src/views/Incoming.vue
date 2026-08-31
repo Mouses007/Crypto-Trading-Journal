@@ -1109,7 +1109,16 @@ async function saveMetadata(pos) {
         data.closingPlaybook = quillInstances[closingKey].root.innerHTML
     }
 
-    await useUpdateIncomingPosition(pos.objectId, data)
+    try {
+        await useUpdateIncomingPosition(pos.objectId, data)
+    } catch (error) {
+        // Sichtbar wird der Fehler zentral (db.js-Hinweis). Hier zählt der
+        // Zustand: savingId muss zurück, sonst bleibt der Knopf bis zum
+        // Neuladen auf «Speichert»; Editor und Quill-Inhalte bleiben stehen.
+        console.error(' -> Incoming saveMetadata Fehler:', error)
+        savingId.value = null
+        return
+    }
 
     // Save Quill content to pos
     if (data.playbook) pos.playbook = data.playbook

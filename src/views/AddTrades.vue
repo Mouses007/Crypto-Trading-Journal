@@ -53,6 +53,11 @@ useVerlassenSchutz(() => ['entryPrice', 'exitPrice', 'qty', 'netPL', 'fee', 'lev
  * Leer bleibt erlaubt (nicht jedes Feld ist bekannt), aber etwas Getipptes,
  * das keine Zahl ergibt, ist ab jetzt ein Fehler und keine Null.
  *
+ * Die Felder im Template sind bewusst type="text" mit inputmode="decimal":
+ * ein type="number"-Feld liefert bei «12,50» je nach Browser (badInput) den
+ * LEEREN String über v-model — die Komma-Ersetzung hier wäre unerreichbar und
+ * die getippte Gebühr würde still als «leer gelassen» → 0 gespeichert.
+ *
  * @returns {number|null} null = leer gelassen
  */
 function zahlOderNull(wert, feldName, fehler) {
@@ -362,31 +367,31 @@ async function importFromApi() {
         <div class="row g-2 mb-2">
             <div class="col-sm-6">
                 <label class="form-label mb-0">Einstiegspreis <span class="text-muted">(opt.)</span></label>
-                <input type="number" step="any" class="form-control" v-model="manual.entryPrice" />
+                <input type="text" inputmode="decimal" class="form-control" v-model="manual.entryPrice" />
             </div>
             <div class="col-sm-6">
                 <label class="form-label mb-0">Ausstiegspreis <span class="text-muted">(opt.)</span></label>
-                <input type="number" step="any" class="form-control" v-model="manual.exitPrice" />
+                <input type="text" inputmode="decimal" class="form-control" v-model="manual.exitPrice" />
             </div>
         </div>
         <div class="row g-2 mb-2">
             <div class="col-sm-4">
                 <label class="form-label mb-0">Menge <span class="text-muted">(opt.)</span></label>
-                <input type="number" step="any" class="form-control" v-model="manual.qty" />
+                <input type="text" inputmode="decimal" class="form-control" v-model="manual.qty" />
             </div>
             <div class="col-sm-4">
                 <label class="form-label mb-0">Netto-PnL (USDT) *</label>
-                <input type="number" step="any" class="form-control" v-model="manual.netPL" placeholder="z.B. 25.40" />
+                <input type="text" inputmode="decimal" class="form-control" v-model="manual.netPL" placeholder="z.B. 25.40" />
             </div>
             <div class="col-sm-4">
                 <label class="form-label mb-0">{{ t('dashboard.fees') }} <span class="text-muted">(opt.)</span></label>
-                <input type="number" step="any" class="form-control" v-model="manual.fee" />
+                <input type="text" inputmode="decimal" class="form-control" v-model="manual.fee" />
             </div>
         </div>
         <div class="row g-2 mb-3">
             <div class="col-sm-4">
                 <label class="form-label mb-0">Hebel <span class="text-muted">(opt.)</span></label>
-                <input type="number" step="any" class="form-control" v-model="manual.leverage" />
+                <input type="text" inputmode="decimal" class="form-control" v-model="manual.leverage" />
             </div>
         </div>
         <button type="button" class="btn btn-success" :disabled="manualSaving" @click="addManualTrade">

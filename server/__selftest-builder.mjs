@@ -45,6 +45,9 @@ const boesartig = {
         { key: 'gut', type: 'number', default: 25, min: 5, max: 60, group: 'entry' },
         { key: 'gut', type: 'number', default: 1, min: 0, max: 2 },
         { key: 'wahl', type: 'select', options: ['a', 'b'], default: 'z' },
+        // Zeilenumbruch im hint: brach früher aus dem //-Kommentar der
+        // Parameterzeile aus — der Folgetext stand als Code in der Datei.
+        { key: 'zeilig', type: 'number', default: 1, min: 0, max: 2, hint: `Zeile eins\nfs.writeFileSync('${MARKER}', 'x')` },
     ],
     rules: { context: 'x */ evil() /*', entryLong: ['Schritt eins'], entryShort: [],
              invalidations: [{ code: 'Zu Tief!!', description: 'y' }], stopLoss: 's', takeProfit: 't' },
@@ -83,9 +86,12 @@ try {
 check('Datei ist gültiges JavaScript', !!modul, importFehler)
 check('Import führt keinen fremden Code aus', !fs.existsSync(MARKER),
     'Marker-Datei wurde angelegt — Code aus dem Modelltext lief!')
+check('hint mit Zeilenumbruch bleibt im Zeilenkommentar', !/^\s*fs\.writeFileSync/m.test(quelltext),
+    'Payload aus dem hint steht als eigene Zeile in der Datei')
 
 if (modul) {
-    check('Parameter-Schema übernommen', Array.isArray(modul.params) && modul.params.length === 2,
+    // 3 gültige Parameter: gut, wahl, zeilig — der Rest wird abgewiesen.
+    check('Parameter-Schema übernommen', Array.isArray(modul.params) && modul.params.length === 3,
         `params=${modul.params?.length}`)
     check('Kurzname trägt Entwurfs-Präfix', modul.id === 'entwurf_boesartig_test', modul.id)
     check('Name als Entwurf gekennzeichnet', String(modul.name).includes('(Entwurf)'))

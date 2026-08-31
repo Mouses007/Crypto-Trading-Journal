@@ -189,6 +189,14 @@ console.log('\nBitget-Verlauf\n')
     check('altes Format: einzelne Fee-Spalte, Betrag positiv', alt.length === 1 && nah(alt[0].Fee, 0.4), JSON.stringify(alt[0] || {}))
     check('altes Format: netto = brutto − Fee', nah(alt[0].NetProceeds, 1.6), String(alt[0]?.NetProceeds))
 
+    // Nur-Fee-Spalte MIT Funding-Spalte: das Funding hing früher am
+    // Open+Close-Fee-Paar und ging in genau diesem Format komplett verloren.
+    const { trades: altFund } = parseBitgetRows([
+        { symbol: 'BTCUSDT', side: 'buy', pnl: '2', fee: '-0.4', funding: '-0.1', qty: '1', Time: '2026-08-01 11:00:00' },
+    ])
+    check('altes Format: Funding-Spalte wird trotzdem gelesen', nah(altFund[0]?.FundingFee, -0.1), JSON.stringify(altFund[0] || {}))
+    check('altes Format: netto = brutto − Fee + Funding', nah(altFund[0]?.NetProceeds, 1.5), String(altFund[0]?.NetProceeds))
+
     check('leere Zeilen ohne PnL werden übersprungen',
         parseBitgetRows([{ symbol: 'X', pnl: '' }]).trades.length === 0)
     check('leere Eingabe ergibt leere Liste', parseBitgetRows([]).trades.length === 0)

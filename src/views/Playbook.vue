@@ -1003,13 +1003,19 @@ async function saveEntry(entry) {
         }
 
     } catch (error) {
+        // Sichtbar wird der Fehler zentral (db.js-Hinweis). Hier zählt der
+        // Zustand: Der Editor bleibt OFFEN und die Quill-Instanzen bleiben
+        // stehen — vorher schloss der finally-Block auch im Fehlerfall, und
+        // ein gescheitertes Speichern sah exakt aus wie ein gelungenes.
         console.error(' -> Playbook saveEntry Fehler:', error)
-    } finally {
-        delete quillInstances[entry.tradeId + '_opening']
-        delete quillInstances[entry.tradeId + '_closing']
-        editingId.value = null
         savingId.value = null
+        return
     }
+
+    delete quillInstances[entry.tradeId + '_opening']
+    delete quillInstances[entry.tradeId + '_closing']
+    editingId.value = null
+    savingId.value = null
 }
 </script>
 

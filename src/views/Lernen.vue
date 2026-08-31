@@ -185,13 +185,21 @@ async function bewerten(grad) {
     if (!eintrag) return
     const patch = auswerten(eintrag.fortschritt, grad, Date.now())
 
-    if (eintrag.fortschritt) {
-        await dbUpdate('quiz_fortschritt', eintrag.fortschritt.objectId, patch)
-        Object.assign(eintrag.fortschritt, patch)
-    } else {
-        const erstellt = await dbCreate('quiz_fortschritt', { kartenId: eintrag.karte.objectId, ...patch })
-        fortschritt.value.push(erstellt)
-        eintrag.fortschritt = erstellt
+    try {
+        if (eintrag.fortschritt) {
+            await dbUpdate('quiz_fortschritt', eintrag.fortschritt.objectId, patch)
+            Object.assign(eintrag.fortschritt, patch)
+        } else {
+            const erstellt = await dbCreate('quiz_fortschritt', { kartenId: eintrag.karte.objectId, ...patch })
+            fortschritt.value.push(erstellt)
+            eintrag.fortschritt = erstellt
+        }
+    } catch (fehler) {
+        // Sichtbar wird der Fehler zentral (db.js-Hinweis). Die Karte bleibt
+        // stehen und nichts wird gezählt — der nächste Klick versucht es neu,
+        // statt dass eine Bewertung still verloren geht.
+        console.error('Lernen: Bewertung nicht gespeichert:', fehler)
+        return
     }
 
     /*

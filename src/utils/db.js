@@ -71,6 +71,55 @@ axios.interceptors.request.use((config) => {
     return config
 })
 
+/*
+ * Fehlgeschlagene SCHREIB-Zugriffe sichtbar machen.
+ *
+ * Der Interceptor unten loggte bisher nur in die Konsole — jede Ansicht musste
+ * den Fehler selbst anzeigen, und drei (Playbook, Incoming, Lernen) taten es
+ * nicht: ein gescheitertes Speichern sah für den Benutzer aus wie ein
+ * gelungenes. Der Hinweis gilt nur für Schreibzugriffe auf /api/db/ — Lesefehler
+ * bleiben Sache der Ansichten (Kacheln haben eigene Veraltet-/Fehlerpfade, ein
+ * Hinweis je fehlgeschlagenem Poll wäre Lärm).
+ */
+let schreibfehlerElement = null
+let schreibfehlerTimer = null
+function zeigeSchreibfehler(text) {
+    if (typeof document === 'undefined' || !document.body) return
+    if (!schreibfehlerElement || !schreibfehlerElement.isConnected) {
+        schreibfehlerElement = document.createElement('div')
+        schreibfehlerElement.setAttribute('role', 'alert')
+        schreibfehlerElement.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);'
+            + 'z-index:2147483000;max-width:min(92vw,560px);padding:10px 16px;border-radius:8px;'
+            + 'background:#8f2020;color:#fff;font-size:14px;line-height:1.4;'
+            + 'box-shadow:0 4px 16px rgba(0,0,0,.35);cursor:pointer;'
+        schreibfehlerElement.title = 'Klick zum Schliessen'
+        schreibfehlerElement.addEventListener('click', () => schreibfehlerElement.remove())
+        document.body.appendChild(schreibfehlerElement)
+    }
+    schreibfehlerElement.textContent = text
+    clearTimeout(schreibfehlerTimer)
+    schreibfehlerTimer = setTimeout(() => {
+        if (schreibfehlerElement) schreibfehlerElement.remove()
+    }, 8000)
+}
+
+/** Hinweis nur für gescheiterte Schreibzugriffe auf die CRUD-Schicht. */
+function meldeSchreibfehler(error) {
+    const conf = error.config || {}
+    const methode = String(conf.method || '').toLowerCase()
+    if (!['post', 'put', 'patch', 'delete'].includes(methode)) return
+    if (!/\/api\/db\//.test(String(conf.url || ''))) return
+    const meldung = error.response?.data?.error || error.message
+    // i18n erst hier laden: die Node-Selbsttests importieren db.js direkt,
+    // und dort scheitert ein statischer Import von vue-i18n samt JSON-Sprachdatei.
+    import('../i18n/index.js')
+        .then((m) => {
+            const praefix = m.default.global.t(methode === 'delete' ? 'common.errorDeleting' : 'common.errorSaving')
+            zeigeSchreibfehler(praefix + meldung)
+        })
+        .catch(() => zeigeSchreibfehler(meldung))
+}
+
 // Central error handling for API responses
 axios.interceptors.response.use(
     response => {
@@ -80,6 +129,8 @@ axios.interceptors.response.use(
         return response
     },
     error => {
+        // 401 nicht doppelt melden — dafür gibt es den Reload-/Login-Pfad unten.
+        if (error.response?.status !== 401) meldeSchreibfehler(error)
         if (error.response) {
             const status = error.response.status
             if (status === 401) {

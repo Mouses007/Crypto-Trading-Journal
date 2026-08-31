@@ -37,7 +37,7 @@ const HTTP_TIMEOUT = 10000
 const FEAR_GREED_URL = 'https://api.alternative.me/fng/'
 const COINGECKO_GLOBAL_URL = 'https://api.coingecko.com/api/v3/global'
 
-// key -> { ts, payload }
+// key -> { ts, ttlMs, payload }
 const cache = new Map()
 // key -> Promise  (parallele Anfragen desselben Schlüssels teilen einen Abruf)
 const inFlight = new Map()
@@ -68,13 +68,22 @@ function darfNeuVersuchen(key, ttlMs) {
  * Der Cache wuchs bisher unbegrenzt: Schlüssel mit rotierenden Anteilen
  * (Symbollisten, Zeitfenster) legen laufend neue Einträge an, gelöscht wurde
  * nur auf Knopfdruck. Auf dem NAS läuft der Prozess wochenlang.
+ *
+ * Die Frist richtet sich nach der TTL des Eintrags, nicht nach einer Pauschale:
+ * ein fester 1-h-Schnitt warf Langläufer (coinSymbole, rainbow, picycle — TTL
+ * 12 h) stündlich weg und zerstörte damit genau deren Altstand-Rückfall — nach
+ * der Räumung gab es bei Quellenausfall nichts Altes mehr zu liefern, obwohl
+ * der Dateikopf das verspricht.
  */
 const RAEUM_ALTER_MS = 60 * 60 * 1000
 let raeumZaehler = 0
 function raeumeAbgelaufene() {
-    const grenze = Date.now() - RAEUM_ALTER_MS
-    for (const [k, v] of cache) if (v.ts < grenze) cache.delete(k)
-    for (const [k, v] of fehlschlag) if (v.ts < grenze) fehlschlag.delete(k)
+    const jetzt = Date.now()
+    for (const [k, v] of cache) {
+        const frist = Math.max(2 * (v.ttlMs || 0), RAEUM_ALTER_MS)
+        if (v.ts < jetzt - frist) cache.delete(k)
+    }
+    for (const [k, v] of fehlschlag) if (v.ts < jetzt - RAEUM_ALTER_MS) fehlschlag.delete(k)
 }
 
 /**
@@ -168,7 +177,7 @@ export async function ausCache(key, ttlMs, holen) {
     }
 
     const p = holen().then((wert) => {
-        cache.set(key, { ts: Date.now(), payload: wert })
+        cache.set(key, { ts: Date.now(), ttlMs, payload: wert })
         fehlschlag.delete(key)
         return wert
     })
