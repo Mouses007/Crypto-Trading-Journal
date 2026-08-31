@@ -197,10 +197,13 @@ export function parseBitgetRows(rows) {
         // commission = NUR Trading-Fee (Open + Close). Funding NICHT
         // einrechnen — identisch zur API-Import- und Bitunix-Semantik.
         let tradingFee = 0
-        let fundingFee = 0
+        // Funding unabhängig von den Fee-Spalten lesen: welche Fee-Form der
+        // Export trägt (Open+Close oder eine Sammelspalte), sagt nichts darüber,
+        // ob eine Funding-Spalte da ist — im Nur-Fee-Zweig ging sie verloren
+        // und der Netto-Fallback rechnete mit Funding 0.
+        let fundingFee = colFunding ? parseFloat(row[colFunding] || 0) : 0  // signiert
         if (colOpenFee && colCloseFee) {
             tradingFee = Math.abs(parseFloat(row[colOpenFee] || 0)) + Math.abs(parseFloat(row[colCloseFee] || 0))
-            if (colFunding) fundingFee = parseFloat(row[colFunding] || 0)  // signiert
         } else if (colFee) {
             tradingFee = Math.abs(parseFloat(row[colFee] || 0))
         }

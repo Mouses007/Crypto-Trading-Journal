@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { dbFind, dbCreate, dbUpdate, dbDelete } from '../utils/db.js'
@@ -180,18 +180,42 @@ const GRADE_BUTTONS = [
     { grad: GRADE_LEICHT, key: 'leicht', klasse: 'lernen-grade-leicht' },
 ]
 
+/*
+ * Tastaturbedienung der Kartensitzung: Die Sitzung wird in Serie bedient
+ * (aufdecken → bewerten, dutzende Male) — nur mit der Maus ist das spürbar
+ * langsamer. Ziffern 1–4 bewerten die aufgedeckte Karte (Reihenfolge der
+ * Knöpfe); das Aufdecken selbst hängt am fokussierbaren Reveal-Element
+ * (Enter/Leertaste). Eingabefelder bleiben unberührt.
+ */
+function tastendruck(e) {
+    if (phase.value !== 'review' || !antwortSichtbar.value) return
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)) return
+    const n = Number(e.key)
+    if (n >= 1 && n <= 4) { e.preventDefault(); bewerten(GRADE_BUTTONS[n - 1].grad) }
+}
+onMounted(() => window.addEventListener('keydown', tastendruck))
+onBeforeUnmount(() => window.removeEventListener('keydown', tastendruck))
+
 async function bewerten(grad) {
     const eintrag = aktuellerEintrag.value
     if (!eintrag) return
     const patch = auswerten(eintrag.fortschritt, grad, Date.now())
 
-    if (eintrag.fortschritt) {
-        await dbUpdate('quiz_fortschritt', eintrag.fortschritt.objectId, patch)
-        Object.assign(eintrag.fortschritt, patch)
-    } else {
-        const erstellt = await dbCreate('quiz_fortschritt', { kartenId: eintrag.karte.objectId, ...patch })
-        fortschritt.value.push(erstellt)
-        eintrag.fortschritt = erstellt
+    try {
+        if (eintrag.fortschritt) {
+            await dbUpdate('quiz_fortschritt', eintrag.fortschritt.objectId, patch)
+            Object.assign(eintrag.fortschritt, patch)
+        } else {
+            const erstellt = await dbCreate('quiz_fortschritt', { kartenId: eintrag.karte.objectId, ...patch })
+            fortschritt.value.push(erstellt)
+            eintrag.fortschritt = erstellt
+        }
+    } catch (fehler) {
+        // Sichtbar wird der Fehler zentral (db.js-Hinweis). Die Karte bleibt
+        // stehen und nichts wird gezählt — der nächste Klick versucht es neu,
+        // statt dass eine Bewertung still verloren geht.
+        console.error('Lernen: Bewertung nicht gespeichert:', fehler)
+        return
     }
 
     /*
@@ -387,7 +411,10 @@ async function aktivUmschalten(karte) {
 
                         <div class="lernen-trennlinie"></div>
 
-                        <div v-if="!antwortSichtbar" class="lernen-reveal" @click="antwortSichtbar = true">
+                        <div v-if="!antwortSichtbar" class="lernen-reveal" role="button" tabindex="0"
+                            @click="antwortSichtbar = true"
+                            @keydown.enter.prevent="antwortSichtbar = true"
+                            @keydown.space.prevent="antwortSichtbar = true">
                             <div class="lernen-reveal-mark">?</div>
                             <div class="lernen-reveal-text">{{ t('lernen.review.antwortZeigen') }}</div>
                         </div>
@@ -472,7 +499,9 @@ async function aktivUmschalten(karte) {
                         </div>
                     </div>
                     <div class="d-flex gap-2">
-                        <button class="btn btn-primary btn-sm" @click="formSpeichern">{{ t('lernen.karten.speichern') }}</button>
+                        <!-- :disabled statt stillem return: der Zustand erklärt sich selbst -->
+                        <button class="btn btn-primary btn-sm" :disabled="!formFrage.trim() || !formAntwort.trim()"
+                            @click="formSpeichern">{{ t('lernen.karten.speichern') }}</button>
                         <button class="btn btn-outline-secondary btn-sm" @click="formSchliessen">{{ t('lernen.karten.abbrechen') }}</button>
                     </div>
                 </div>

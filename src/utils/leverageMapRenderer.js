@@ -93,13 +93,23 @@ export class LeverageMapRenderer {
         }
 
         const y0 = LEGEND_H
+        // Unten Platz für die Zeitachse reservieren: sie stand bisher bei
+        // y0 + plotH + 3 mit Baseline 'top' — also AUSSERHALB des Canvas und
+        // war schlicht unsichtbar.
+        const plotH = Math.max(30, this.plotH - 16)
         const mid = hist.mid[hist.cols - 1]
-        const hi = mid * (1 + viewPct / 100)
-        const lo = mid * (1 - viewPct / 100)
-        const rHi = Math.min(hist.rows - 1, Math.round(hi / hist.bucketSize) - hist.base)
-        const rLo = Math.max(0, Math.round(lo / hist.bucketSize) - hist.base)
+        const wunschHi = mid * (1 + viewPct / 100)
+        const wunschLo = mid * (1 - viewPct / 100)
+        const rHi = Math.min(hist.rows - 1, Math.round(wunschHi / hist.bucketSize) - hist.base)
+        const rLo = Math.max(0, Math.round(wunschLo / hist.bucketSize) - hist.base)
         const sichtbar = rHi - rLo + 1
         if (sichtbar < 2) return
+        // Das Offscreen-Bild füllt die Zeilen rLo..rHi kantengenau auf
+        // [y0, y0+plotH]. yFor muss über dieselben Bucket-KANTEN laufen —
+        // über die Mitten lag bis zu einer halben Zelle Versatz zwischen
+        // Heatmap und Kerzen/Achse/Fadenkreuz.
+        const hi = (hist.base + rHi + 0.5) * hist.bucketSize
+        const lo = (hist.base + rLo - 0.5) * hist.bucketSize
 
         // Das Verteilungsprofil bekommt einen eigenen Streifen rechts, damit
         // Momentaufnahme und Verlauf in EINEM Bild stehen — wie bei Coinglass.
@@ -165,14 +175,14 @@ export class LeverageMapRenderer {
         this._offCtx.putImageData(this._img, 0, 0)
 
         ctx.imageSmoothingEnabled = false
-        ctx.drawImage(this._off, 0, 0, hist.cols, sichtbar, PAD_L, y0, heatW, this.plotH)
+        ctx.drawImage(this._off, 0, 0, hist.cols, sichtbar, PAD_L, y0, heatW, plotH)
         ctx.imageSmoothingEnabled = true
 
         // ── Kurs als Kerzen ─────────────────────────────────────
         // Dochte sind hier der eigentliche Gewinn gegenüber einer Linie: sie
         // zeigen die Berührungen, die eine Zone abräumen — genau das, was man
         // an dieser Karte ablesen will.
-        const yFor = (price) => y0 + ((hi - price) / (hi - lo)) * this.plotH
+        const yFor = (price) => y0 + ((hi - price) / (hi - lo)) * plotH
         const xFor = (c) => PAD_L + (c / Math.max(1, hist.cols - 1)) * heatW
         if (hist.o && hist.h && hist.l) {
             const breite = Math.max(1, Math.min(6, (heatW / hist.cols) * 0.7))
@@ -202,11 +212,13 @@ export class LeverageMapRenderer {
         }
 
         // ── Verteilungsprofil am rechten Rand (letzte Spalte) ───
-        this._drawHistoryProfile(ctx, { hist, rLo, rHi, yFor, y0, x0: PAD_L + heatW + LUECKE, w: profilW })
+        this._drawHistoryProfile(ctx, { hist, rLo, rHi, yFor, y0, plotH, x0: PAD_L + heatW + LUECKE, w: profilW })
 
         this._drawAxis(ctx, { mid, lo, hi, yFor, y0 })
 
         // ── Zeitachse ───────────────────────────────────────────
+        // x über heatW, nicht plotW: die Heatmap endet vor der Profilspur —
+        // mit plotW sassen die Marken bis ~80 px neben ihrer Spalte.
         ctx.font = '12px system-ui, sans-serif'
         ctx.fillStyle = COLORS.axisText
         ctx.textAlign = 'center'
@@ -214,8 +226,8 @@ export class LeverageMapRenderer {
         const marken = 5
         for (let i = 0; i <= marken; i++) {
             const c = Math.round((hist.cols - 1) * (i / marken))
-            const x = PAD_L + (c / Math.max(1, hist.cols - 1)) * this.plotW
-            ctx.fillText(formatTime ? formatTime(hist.ts[c]) : '', x, y0 + this.plotH + 3)
+            const x = PAD_L + (c / Math.max(1, hist.cols - 1)) * heatW
+            ctx.fillText(formatTime ? formatTime(hist.ts[c]) : '', x, y0 + plotH + 3)
         }
 
         // ── Kopfzeile ───────────────────────────────────────────
@@ -241,7 +253,7 @@ export class LeverageMapRenderer {
             ctx.fillText(`${this.labels.long} ■  ${this.labels.short} ■  ${this.labels.swept} ■`, PAD_L, 42)
         }
 
-        this._drawHistoryCursor(ctx, { hist, lo, hi, y0, yFor, formatTime, heatW })
+        this._drawHistoryCursor(ctx, { hist, lo, hi, y0, plotH, yFor, formatTime, heatW })
     }
 
     /**
@@ -251,7 +263,7 @@ export class LeverageMapRenderer {
      * im Bild gibt nur das Übergewicht wieder, und wer auf eine Zone zeigt,
      * will wissen, ob dort auch Gegenmasse liegt.
      */
-    _drawHistoryProfile(ctx, { hist, rLo, rHi, yFor, y0, x0, w }) {
+    _drawHistoryProfile(ctx, { hist, rLo, rHi, yFor, y0, plotH, x0, w }) {
         const off = (hist.cols - 1) * hist.rows
         let max = 0
         for (let r = rLo; r <= rHi; r++) {
@@ -259,11 +271,11 @@ export class LeverageMapRenderer {
             if (v > max) max = v
         }
         ctx.fillStyle = 'rgba(0,0,0,0.35)'
-        ctx.fillRect(x0, y0, w, this.plotH)
+        ctx.fillRect(x0, y0, w, plotH)
         ctx.strokeStyle = COLORS.grid
-        ctx.beginPath(); ctx.moveTo(x0 + 0.5, y0); ctx.lineTo(x0 + 0.5, y0 + this.plotH); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(x0 + 0.5, y0); ctx.lineTo(x0 + 0.5, y0 + plotH); ctx.stroke()
         if (!max) return
-        const hoehe = this.plotH / Math.max(1, rHi - rLo + 1)
+        const hoehe = plotH / Math.max(1, rHi - rLo + 1)
         for (let r = rLo; r <= rHi; r++) {
             const y = yFor((hist.base + r) * hist.bucketSize)
             const l = hist.long[off + r], sh = hist.short[off + r]
@@ -278,14 +290,14 @@ export class LeverageMapRenderer {
         }
     }
 
-    _drawHistoryCursor(ctx, { hist, lo, hi, y0, yFor, formatTime, heatW }) {
+    _drawHistoryCursor(ctx, { hist, lo, hi, y0, plotH, yFor, formatTime, heatW }) {
         const c = this.cursor
-        if (!c || c.y < y0 || c.y > y0 + this.plotH) return
+        if (!c || c.y < y0 || c.y > y0 + plotH) return
         if (c.x < PAD_L || c.x > PAD_L + heatW) return
 
         const spalte = Math.max(0, Math.min(hist.cols - 1,
             Math.round(((c.x - PAD_L) / heatW) * (hist.cols - 1))))
-        const preis = hi - ((c.y - y0) / this.plotH) * (hi - lo)
+        const preis = hi - ((c.y - y0) / plotH) * (hi - lo)
         const r = Math.round(preis / hist.bucketSize) - hist.base
         if (r < 0 || r >= hist.rows) return
 
@@ -302,7 +314,7 @@ export class LeverageMapRenderer {
         ctx.lineWidth = 1
         ctx.beginPath()
         ctx.moveTo(PAD_L, c.y + 0.5); ctx.lineTo(PAD_L + this.plotW, c.y + 0.5)
-        ctx.moveTo(x + 0.5, y0); ctx.lineTo(x + 0.5, y0 + this.plotH)
+        ctx.moveTo(x + 0.5, y0); ctx.lineTo(x + 0.5, y0 + plotH)
         ctx.stroke()
         ctx.restore()
 
@@ -332,7 +344,7 @@ export class LeverageMapRenderer {
         // auf die man gerade zeigt
         const linksVomZeiger = c.x > PAD_L + heatW / 2
         const bx = linksVomZeiger ? Math.max(PAD_L, c.x - w - 12) : Math.min(c.x + 12, PAD_L + heatW - w)
-        const by = Math.min(Math.max(y0, c.y - h - 10), y0 + this.plotH - h)
+        const by = Math.min(Math.max(y0, c.y - h - 10), y0 + plotH - h)
         ctx.fillStyle = COLORS.tooltipBg
         ctx.strokeStyle = 'rgba(255,255,255,0.18)'
         ctx.fillRect(bx, by, w, h)
@@ -364,8 +376,10 @@ export class LeverageMapRenderer {
      * @param {import('./leverageMap.js').LeverageMap|null} opts.map
      * @param {number} opts.mid          aktueller Preis (Mittellinie)
      * @param {number} opts.viewPct      gezeigte Spanne um den Mid, einseitig
-     * @param {number|'all'} opts.tier   Index der Hebelstufe oder 'all'
-     * @param {number[]} opts.weights    Gewichte für 'all'
+     * @param {number[]|'all'} opts.tier gewählte Hebelwerte (z.B. [50,100]) oder
+     *                                   'all' — nur noch für die Beschriftung
+     * @param {number[]} opts.weights    Gewichte je Stufe in map.tiers, Summe 1;
+     *                                   0 = Stufe abgewählt
      * @param {string} [opts.hinweis]
      */
     draw({ map, mid, viewPct, tier, weights, hinweis }) {
@@ -394,7 +408,9 @@ export class LeverageMapRenderer {
         const short = new Float64Array(this.plotH)
         const longSwept = new Float64Array(this.plotH)
         const shortSwept = new Float64Array(this.plotH)
-        const gewicht = (k) => (tier === 'all' ? (weights?.[k] ?? 1) : (k === tier ? 1 : 0))
+        // Die Auswahl steckt vollständig in den Gewichten (0 = abgewählt) —
+        // Einzelstufe, Kombination und „Alle" sind derselbe Rechenweg.
+        const gewicht = (k) => (weights?.[k] ?? 1)
 
         for (let r = 0; r < map.rows; r++) {
             const price = map.priceAt(r)
@@ -497,9 +513,17 @@ export class LeverageMapRenderer {
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
 
-        const stufen = tier === 'all'
-            ? map.tiers.map(t => `${t}x`).join(' · ')
-            : `${map.tiers[tier]}x`
+        // Auswahl adressiert NOMINALE Hebelwerte, angezeigt werden die
+        // EFFEKTIVEN (der Max-Hebel des Symbols kann Stufen klemmen).
+        const nominale = map.tiersNominal || map.tiers
+        const gewaehlt = tier === 'all'
+            ? map.tiers
+            : map.tiers.filter((L, k) => tier.includes(nominale[k]))
+        // Leere Schnittmenge = die Auswahl wurde beim Symbol weggeklemmt;
+        // gezeichnet werden dann alle Stufen (siehe gewichteFuer), also
+        // stehen sie auch so in der Überschrift.
+        const liste = gewaehlt.length ? gewaehlt : map.tiers
+        const stufen = liste.length ? liste.map(t => `${t}x`).join(' · ') : '—'
         ctx.fillStyle = 'rgba(255,255,255,0.87)'
         ctx.fillText(`${this.labels.title} — ${stufen}`, PAD_L, 8)
 
@@ -508,14 +532,13 @@ export class LeverageMapRenderer {
         // kurzen Fenstern ist das wenig — was vor dem Fenster eröffnet wurde,
         // kennt das Modell nicht. Der frühere Wert (gehalten/(gehalten+
         // abgeräumt)) sah dabei gut aus, obwohl die Karte fast leer war.
-        const idx = tier === 'all' ? null : tier
-        // Bei „Alle": gewichteter MITTELWERT der Stufen-Szenarien (Gewichte
-        // sind auf Summe 1 normiert). Die Szenarien schlicht zu ADDIEREN
-        // zählte dieselbe Position bis zu viermal — die Abdeckung stand dann
-        // systematisch zu hoch und die „Fenster zu kurz"-Warnung griff nie.
-        const gehalten = idx == null
-            ? map.mass.reduce((a, m, k) => a + m * (weights?.[k] ?? 1 / (map.mass.length || 1)), 0)
-            : map.mass[idx]
+        // Gewichteter MITTELWERT der Stufen-Szenarien (Gewichte sind auf
+        // Summe 1 normiert; abgewählte Stufen tragen 0). Die Szenarien schlicht
+        // zu ADDIEREN zählte dieselbe Position bis zu viermal — die Abdeckung
+        // stand dann systematisch zu hoch und die „Fenster zu kurz"-Warnung
+        // griff nie.
+        const gehalten = map.mass.reduce(
+            (a, m, k) => a + m * (weights?.[k] ?? 1 / (map.mass.length || 1)), 0)
         const abdeckung = map.oi > 0 ? gehalten / map.oi : 0
 
         ctx.font = '12px system-ui, sans-serif'
@@ -538,18 +561,30 @@ export class LeverageMapRenderer {
 
     setCursor(cursor) { this.cursor = cursor }
 
-    _drawCursor(ctx, { map, mid, lo, hi, yFor, y0, tier, weights, ref, maxLen, mitte }) {
+    _drawCursor(ctx, { map, mid, lo, hi, yFor, y0, weights }) {
         const c = this.cursor
         if (!c || c.y < y0 || c.y > y0 + this.plotH) return
         const price = hi - ((c.y - y0) / this.plotH) * (hi - lo)
-        const r = map.rowFor(price)
-        if (r < 0 || r >= map.rows) return
+        if (map.rowFor(price) < 0 || map.rowFor(price) >= map.rows) return
 
-        const gewicht = (k) => (tier === 'all' ? (weights?.[k] ?? 1) : (k === tier ? 1 : 0))
-        let l = 0, s = 0
-        for (let k = 0; k < map.tiers.length; k++) {
-            l += map.long[k][r] * gewicht(k)
-            s += map.short[k][r] * gewicht(k)
+        // Der Balken einer Pixelzeile ist die SUMME mehrerer Buckets (draw()
+        // summiert gegen Moiré-Lücken) — der Tooltip muss über dieselben
+        // Buckets summieren, sonst zeigt er bis Faktor 2–3 weniger als der
+        // Balken daneben suggeriert. Abgeräumtes läuft getrennt mit.
+        const gewicht = (k) => (weights?.[k] ?? 1)
+        const py = Math.floor(c.y - y0)
+        let l = 0, s = 0, lAb = 0, sAb = 0
+        for (let r = 0; r < map.rows; r++) {
+            const pr = map.priceAt(r)
+            if (pr > hi || pr < lo) continue
+            if (Math.floor(yFor(pr) - y0) !== py) continue
+            let vl = 0, vs = 0
+            for (let k = 0; k < map.tiers.length; k++) {
+                vl += map.long[k][r] * gewicht(k)
+                vs += map.short[k][r] * gewicht(k)
+            }
+            if (map.isSwept(r, 'long')) lAb += vl; else l += vl
+            if (map.isSwept(r, 'short')) sAb += vs; else s += vs
         }
 
         ctx.strokeStyle = 'rgba(255,255,255,0.35)'
@@ -561,13 +596,22 @@ export class LeverageMapRenderer {
         ctx.setLineDash([])
 
         const dez = mid > 1000 ? 0 : mid > 10 ? 2 : 5
-        const usd = (v) => (v * price >= 1e6
-            ? (v * price / 1e6).toFixed(2) + ' Mio $'
-            : Math.round(v * price / 1e3) + 'k $')
+        // Gleiche Staffelung wie im Verlaufs-Tooltip — ohne die <1000-$-Stufe
+        // wurde jeder kleine Betrag zu „0k $" gerundet.
+        const usd = (v) => {
+            const w = v * price
+            if (w <= 0) return '—'
+            if (w >= 1e6) return (w / 1e6).toFixed(2) + ' Mio $'
+            if (w >= 1e3) return Math.round(w / 1e3) + 'k $'
+            return Math.round(w) + ' $'
+        }
+        const seite = (aktiv, ab) => (aktiv > 0
+            ? usd(aktiv)
+            : (ab > 0 ? `${usd(ab)}  (${this.labels.swept})` : '—'))
         const zeilen = [
             `${price.toFixed(dez)}   ${(((price - mid) / mid) * 100).toFixed(2)} ${this.labels.toMid}`,
-            `${this.labels.long}  ${l > 0 ? usd(l) : '—'}${map.isSwept(r, 'long') ? '  (' + this.labels.swept + ')' : ''}`,
-            `${this.labels.short} ${s > 0 ? usd(s) : '—'}${map.isSwept(r, 'short') ? '  (' + this.labels.swept + ')' : ''}`,
+            `${this.labels.long}  ${seite(l, lAb)}`,
+            `${this.labels.short} ${seite(s, sAb)}`,
         ]
         ctx.font = '12px system-ui, sans-serif'
         ctx.textAlign = 'left'

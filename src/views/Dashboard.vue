@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeMount, onMounted, onUnmounted, ref, reactive } from 'vue'
+import { computed, onBeforeMount, onBeforeUnmount, onMounted, onUnmounted, ref, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue';
 import { spinnerLoadingPage, dashboardIdMounted, renderData, dashboardChartsMounted, hasData, barChartNegativeTagGroups, timeZoneTrade } from '../stores/ui.js'
@@ -12,8 +12,9 @@ import { incomingPositions } from '../stores/globals.js'
 import { useFetchOpenPositions } from '../utils/incoming.js'
 import { dbFind } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
+import { istGewinn } from '../../shared/gewinn.js'
 import { useThousandCurrencyFormat, useTwoDecCurrencyFormat, useXDecCurrencyFormat, useThousandFormat, useXDecFormat } from '../utils/formatters.js';
-import { useMountDashboard } from '../utils/mountOrchestration.js';
+import { useMountDashboard, useDisposeJournalCharts } from '../utils/mountOrchestration.js';
 import NoData from '../components/NoData.vue';
 
 const { t } = useI18n()
@@ -67,6 +68,8 @@ function onClickOutside(e) {
 
 onMounted(() => document.addEventListener('click', onClickOutside))
 onUnmounted(() => document.removeEventListener('click', onClickOutside))
+// Vor dem Unmount, solange die Chart-Knoten noch im Dokument stehen
+onBeforeUnmount(useDisposeJournalCharts)
 
 // ========== Kontostand-Direkt-Sync ==========
 const syncingBalance = ref(false)
@@ -172,11 +175,14 @@ const todayStats = computed(() => {
     for (const trade of filteredTradesTrades) {
         if (trade.td >= todayStart && trade.td <= todayEnd) {
             total++
+            // Win/Loss auf DERSELBEN Basis wie das summierte P&L (netto) und
+            // nach dem Kanon aus shared/gewinn.js — vorher klassifizierte
+            // dieser Block über grossProceeds mit > 0: gemischte Basis und
+            // eine dritte Break-even-Regel auf derselben Seite.
             const np = trade.netProceeds ?? trade.grossProceeds ?? 0
-            const gp = trade.grossProceeds ?? trade.netProceeds ?? 0
             pnl += np
-            if (gp > 0) wins++
-            else if (gp < 0) losses++
+            if (istGewinn(np)) wins++
+            else losses++
         }
     }
     return { total, wins, losses, pnl }
@@ -242,9 +248,9 @@ const tradeTypeStats = computed(() => {
         trades.forEach(t => {
             const pnl = t.netProceeds || 0
             totalPnl += pnl
-            // Break-even (0) zählt als Gewinner — Journal-Kanon
-            // (server/journal-bridge.js), gleiche Regel wie Import und Views.
-            if (pnl >= 0) { wins++; grossWins += pnl }
+            // Break-even (0) zählt als Gewinner — Kanon aus shared/gewinn.js,
+            // gleiche Regel wie Import und Views.
+            if (istGewinn(pnl)) { wins++; grossWins += pnl }
             else { losses++; grossLoss += Math.abs(pnl) }
         })
 
@@ -285,9 +291,12 @@ const strategyTagStats = computed(() => {
             if (t.tagName) tagName = t.tagName
             const pnl = t.netProceeds || 0
             totalPnl += pnl
-            if (pnl > 0) { wins++; grossWins += pnl }
-            else if (pnl < 0) { losses++; grossLoss += Math.abs(pnl) }
-            // pnl === 0 → break-even, weder Win noch Loss
+            // Kanon aus shared/gewinn.js: 0 zählt als Gewinn — vorher stand
+            // hier «weder Win noch Loss», womit ein Break-even-Trade die
+            // Winrate drückte (er blieb im Nenner) und dieselbe Seite drei
+            // verschiedene Break-even-Regeln zeigte.
+            if (istGewinn(pnl)) { wins++; grossWins += pnl }
+            else { losses++; grossLoss += Math.abs(pnl) }
         })
 
         const tagDef = stratGroup.tags.find(t => t.id === tagId)

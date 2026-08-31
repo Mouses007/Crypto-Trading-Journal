@@ -7,10 +7,13 @@
  * unbeobachtbaren Annahmen. Beides übereinander zu legen würde die Grenze
  * zwischen Messung und Rechnung verwischen.
  *
- * Der Rückwärts-Backtest vom 13.08.2026 über 9.734 aufgezeichnete
- * Liquidationen ergab Lift 1,54× gegenüber Zufall (Kontrolle 0,99×, reine
- * Hebelgeometrie 1,11×). Diese Zahl steht in der Fusszeile — eine Karte, die
- * ihre eigene Treffsicherheit verschweigt, lädt zum Überschätzen ein.
+ * Der Rückwärts-Backtest vom 31.08.2026 (scripts/levmap-backtest.mjs, 4.900
+ * aufgezeichnete Liquidationen über 5 Symbole) ergab: mit GEMESSENEN
+ * Stufengewichten Lift 1,38× gegenüber Zufall, mit den geratenen
+ * Vorgabe-Gewichten nur 0,48× — erst die Kalibrierung aus den eigenen
+ * Aufzeichnungen macht die Karte besser als Raten. Diese Zahlen stehen in der
+ * Fusszeile — eine Karte, die ihre eigene Treffsicherheit verschweigt, lädt
+ * zum Überschätzen ein.
  *
  * Das Zeichnen selbst liegt in `src/components/HebelkartenCanvas.vue`, damit
  * dieselbe Karte auch als Kachel im Live-Trading-Fenster stehen kann. Hier
@@ -30,6 +33,22 @@ const karte = ref(null)
 
 const status = computed(() => karte.value?.status || 'idle')
 const zeitstempel = computed(() => karte.value?.zeitstempel || '—')
+
+/**
+ * Long/Short-Konten-Ratio als Prozentpaar. Konten, nicht Kapital — die Zahl
+ * sagt, welche Seite überfüllt ist, und damit, welche Zonenseite der Karte
+ * die schwerere ist. Bei fehlender Antwort (der Abruf ist serverseitig ein
+ * stilles `.catch`) verschwindet der Balken kommentarlos.
+ */
+const ratio = computed(() => {
+    const r = karte.value?.accountRatio
+    if (!(r?.long > 0) || !(r?.short > 0)) return null
+    const summe = r.long + r.short
+    return {
+        long: Math.round((r.long / summe) * 1000) / 10,
+        short: Math.round((r.short / summe) * 1000) / 10,
+    }
+})
 </script>
 
 <template>
@@ -55,6 +74,14 @@ const zeitstempel = computed(() => karte.value?.zeitstempel || '—')
 
         <div class="levFoot">
             <span>{{ t('levmap.measured') }}</span>
+            <span v-if="ratio" class="ratioWrap" :title="t('levmap.accountRatioTitle')">
+                <span class="ratioLabel">{{ t('levmap.accountRatio') }}</span>
+                <span class="ratioBalken">
+                    <span class="ratioLong" :style="{ width: ratio.long + '%' }"></span>
+                    <span class="ratioShort" :style="{ width: ratio.short + '%' }"></span>
+                </span>
+                <span class="ratioZahl">L {{ ratio.long.toFixed(1) }} % / S {{ ratio.short.toFixed(1) }} %</span>
+            </span>
             <span class="levStamp">{{ t('levmap.asOf') }} {{ zeitstempel }}</span>
         </div>
     </div>
@@ -107,5 +134,41 @@ const zeitstempel = computed(() => karte.value?.zeitstempel || '—')
 
 .levStamp {
     white-space: nowrap;
+}
+
+/* Konten-Ratio: Balkenmuster wie .lsBalken in KachelLsOi, auf Fusszeilen-
+   Format eingedampft (10 px statt 16, keine Innenbeschriftung). */
+.ratioWrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    white-space: nowrap;
+    cursor: help;
+}
+
+.ratioLabel {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.68rem;
+}
+
+.ratioBalken {
+    display: inline-flex;
+    width: 72px;
+    height: 10px;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.ratioLong {
+    background: rgba(38, 190, 150, 0.55);
+}
+
+.ratioShort {
+    background: rgba(255, 95, 86, 0.55);
+}
+
+.ratioZahl {
+    font-variant-numeric: tabular-nums;
 }
 </style>

@@ -188,8 +188,12 @@ export function pruefeSpec(roh) {
 
 // ── Erzeugung der Moduldatei ─────────────────────────────────────────────
 
-/** Macht Text kommentarsicher: ein `*​/` würde den Block sonst vorzeitig schliessen. */
-const alsKommentar = (text) => String(text || '').replace(/\*\//g, '* /')
+/**
+ * Macht Text kommentarsicher: ein `*​/` würde den Block vorzeitig schliessen,
+ * und ein Zeilenumbruch würde aus einem `//`-Zeilenkommentar ausbrechen — der
+ * Folgetext stünde dann als Code in der erzeugten Datei.
+ */
+const alsKommentar = (text) => String(text || '').replace(/\*\//g, '* /').replace(/\r\n|[\r\n]/g, ' ')
 
 const zeilen = (arr, praefix) => (arr.length
     ? arr.map((z, i) => ` * ${praefix}${i + 1}. ${alsKommentar(z)}`).join('\n')

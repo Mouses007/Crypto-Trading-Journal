@@ -21,6 +21,7 @@ import { encrypt, decrypt } from './crypto.js'
 import { getPendingPositions } from './bitunix-api.js'
 import { getCurrentPositions as getBitgetCurrentPositions } from './bitget-api.js'
 import { getRunningBotPositions } from './pionex-api.js'
+import { ausCache } from './marktradar-api.js'
 import dayjs from 'dayjs'
 import dayjsUtc from 'dayjs/plugin/utc.js'
 import dayjsTimezone from 'dayjs/plugin/timezone.js'
@@ -100,6 +101,16 @@ export function setupEsp32Routes(app) {
             const filter = forced
                 ? (req.query.filter || 'all')
                 : (settings?.esp32Filter || req.query.filter || 'month')
+
+            /*
+             * Teuren Teil cachen und bündeln: Dies war der einzige Poll-Endpunkt
+             * ohne ausCache — jeder Abruf las alle trades-Zeilen neu und fragte
+             * Bitunix/Bitget/Pionex live an. Mehrere Poller (ESP32-Display,
+             * Android-Widget, Desklet) teilen sich jetzt einen Abruf je 15 s;
+             * der Schlüssel trägt den Filter, weil er die Zeiträume verschiebt.
+             * Fällt eine Quelle aus, liefert ausCache den Altstand.
+             */
+            const daten = await ausCache(`esp32|${filter}`, 15 * 1000, async () => {
             let periodStart = 0
             if      (filter === 'month') periodStart = dayjs().tz(tz).startOf('month').unix()
             else if (filter === 'week')  periodStart = dayjs().tz(tz).startOf('week').unix()
@@ -258,7 +269,7 @@ export function setupEsp32Routes(app) {
             }
 
             const filterLabels = { month: 'Monat', week: 'Woche', year: 'Jahr', all: 'Gesamt' }
-            res.json({
+            return {
                 filter:       filter,
                 filterLabel:  filterLabels[filter] || 'Gesamt',
                 todayPnL:      Math.round(todayPnL * 100) / 100,
@@ -279,7 +290,12 @@ export function setupEsp32Routes(app) {
                 // Top-Level-Felder oben = primaryBroker (Backward-Compat für ältere Clients).
                 primaryBroker: primaryBroker,
                 brokers:       brokers
+            }
             })
+            // _cache ist internes ausCache-Detail (sendeRadar zieht es sonst in
+            // einen Kopf um) — die Firmware/Widget-Clients bekommen es nicht.
+            const { _cache, ...antwort } = daten
+            res.json(antwort)
         } catch (e) {
             console.error('ESP32 display error:', e)
             res.status(500).json({ error: 'Internal server error' })

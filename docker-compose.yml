@@ -21,6 +21,12 @@ services:
       # Der App-Update-Button im Docker-Modus uebergibt diesen Pfad an
       # den Helfer-Container, damit compose das richtige Projekt findet.
       - CTJ_HOST_COMPOSE_DIR=${CTJ_HOST_COMPOSE_DIR}
+      # Hinter Caddy tragen alle Klienten dieselbe Peer-IP — der Login-
+      # Fehlversuchs-Zähler würde zu EINEM Eimer kollabieren und fremde
+      # Fehlversuche sperrten den Eigentümer aus. Mit =1 liest NUR dieser
+      # Zähler die vom Proxy angehängte X-Forwarded-For-Adresse; alle
+      # anderen Prüfungen (isLocalRequest) bleiben bei der Peer-IP.
+      - CTJ_TRUST_PROXY=${CTJ_TRUST_PROXY:-1}
     volumes:
       # Docker-Socket — ermoeglicht Klick-Update aus der App heraus. Der Mount
       # ist NICHT read-only (das Update startet einen Helper-Container) und

@@ -7,6 +7,7 @@ import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete } from './db.js'
 
 /* MODULES */
 import dayjs from './dayjs-setup.js'
+import i18n from '../i18n/index.js'
 import * as markerjs2 from 'markerjs2';
 
 
@@ -399,17 +400,17 @@ export async function useSaveScreenshot() {
          * CHECKS
          * **/
         if (markerAreaOpen.value == true) {
-            alert("Please save your screenshot annotation")
+            alert(i18n.global.t('common.screenshotSaveAnnotation'))
             return
         }
 
         if (pageId.value == "addScreenshot") {
             if (screenshot.symbol == undefined) {
-                alert("Please add symbol")
+                alert(i18n.global.t('common.screenshotAddSymbol'))
                 return
             }
             if (!editingScreenshot.value && tradeScreenshotChanged.value == false) {
-                alert("Please add a screenshot")
+                alert(i18n.global.t('common.screenshotAddImage'))
                 return
             }
         }

@@ -25,6 +25,18 @@ function holeChart(el) {
     if (!el) return null
     return echarts.getInstanceByDom(el) || echarts.init(el)
 }
+
+/**
+ * Instanzen zu den übergebenen Knoten entsorgen.
+ *
+ * Läuft über die ECharts-Registry und funktioniert deshalb auch für Knoten,
+ * die schon aus dem Dokument gefallen sind — der Aufrufer sammelt sie ein,
+ * BEVOR Vue sie ersetzt (siehe useDisposeJournalCharts in
+ * mountOrchestration.js).
+ */
+export function disposeCharts(knoten) {
+    for (const el of knoten) echarts.getInstanceByDom(el)?.dispose()
+}
 const _t = (key, named) => i18n.global.t(key, named)
 
 const cssColor87 = "rgba(255, 255, 255, 0.87)"
@@ -2291,8 +2303,12 @@ export function usePerfChart(param) {
         if (!el) { resolve(); return }
         var myChart = holeChart(el)
 
-        // Trades nach Datum sortiert (aufsteigend)
-        let trades = [...filteredTradesTrades].sort((a, b) => a.td - b.td)
+        // Trades nach Tag sortiert, innerhalb des Tages nach Einstiegszeit:
+        // ohne Sekundärschlüssel blieb die Einfüge-Reihenfolge der Börsenantwort
+        // stehen, und HWM/Drawdown bauten im Tagesinneren falsch auf
+        // (−50/+80 statt +80/−50 ergibt ein anderes Zwischentief).
+        let trades = [...filteredTradesTrades]
+            .sort((a, b) => a.td - b.td || (a.entryTime || 0) - (b.entryTime || 0))
 
         if (trades.length === 0) { resolve(); return }
 

@@ -8,6 +8,7 @@ import PageInfo from '../components/PageInfo.vue'
 import { spinnerLoadingPage, timeZoneTrade, expandedId, kopiertesBild } from '../stores/ui.js'
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker, selectedTradeCategory, brokers } from '../stores/filters.js'
 import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
+import { useVerlassenSchutz } from '../composables/useVerlassenSchutz.js'
 import { currentUser } from '../stores/settings.js'
 import { useFetchOpenPositions, useGetIncomingPositions, useUpdateIncomingPosition, useDeleteIncomingPosition, useTransferClosingMetadata } from '../utils/incoming'
 import { useGetAvailableTags, useGetTagInfo } from '../utils/daily.js'
@@ -23,6 +24,30 @@ let pollingInterval = null
 const quillInstances = {} // key: positionId_opening / positionId_closing
 const incomingError = ref(null)
 const savingId = ref(null)
+
+/*
+ * Verlassen-Schutz: Incoming ist der textreichste Eingabeort der App (/diary
+ * leitet hierhin um), gespeichert wird nur über den Knopf — genau der Fall,
+ * für den useVerlassenSchutz gebaut wurde; die Schwesterseite Playbook hat
+ * ihn, hier fehlte er. Schmutzig ist die Seite, wenn die aufgeklappte
+ * Position Quill-Text trägt, der vom gespeicherten Stand abweicht — blosses
+ * Aufklappen fragt nicht nach.
+ */
+useVerlassenSchutz(() => {
+    const id = expandedId.value
+    if (!id) return false
+    const pos = incomingPositions.find((p) => p.positionId === id)
+    if (!pos) return false
+    for (const art of ['opening', 'closing']) {
+        const quill = quillInstances[`${id}_${art}`]
+        if (!quill) continue
+        const aktuell = quill.root.innerHTML
+        const gespeichert = pos[art === 'opening' ? 'playbook' : 'closingPlaybook'] || ''
+        const leer = aktuell === '' || aktuell === '<p><br></p>'
+        if (leer ? (gespeichert !== '' && gespeichert !== '<p><br></p>') : aktuell !== gespeichert) return true
+    }
+    return false
+}, () => t('common.unsavedLeave'))
 
 // ===== COMPOUND/FILLS TRACKING =====
 import axios from 'axios'
@@ -1109,7 +1134,16 @@ async function saveMetadata(pos) {
         data.closingPlaybook = quillInstances[closingKey].root.innerHTML
     }
 
-    await useUpdateIncomingPosition(pos.objectId, data)
+    try {
+        await useUpdateIncomingPosition(pos.objectId, data)
+    } catch (error) {
+        // Sichtbar wird der Fehler zentral (db.js-Hinweis). Hier zählt der
+        // Zustand: savingId muss zurück, sonst bleibt der Knopf bis zum
+        // Neuladen auf «Speichert»; Editor und Quill-Inhalte bleiben stehen.
+        console.error(' -> Incoming saveMetadata Fehler:', error)
+        savingId.value = null
+        return
+    }
 
     // Save Quill content to pos
     if (data.playbook) pos.playbook = data.playbook

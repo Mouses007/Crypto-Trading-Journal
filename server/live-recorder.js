@@ -1303,6 +1303,37 @@ async function runRetention() {
     }
 }
 
+/**
+ * Aufgezeichnete Zwangsliquidationen eines Zeitfensters lesen.
+ *
+ * Herausgelöst aus der Route `/api/live/liquidations`, damit die
+ * Hebel-Kalibrierung (`server/liq-kalibrierung.js`) dieselben Daten ohne
+ * HTTP-Selbstaufruf bekommt. `isBuy: true` heisst SHORT liquidiert —
+ * dieselbe Konvention wie überall im Projekt (seite 1 = SHORT liquidiert).
+ *
+ * @returns {Promise<Array<{t:number, price:number, qty:number, isBuy:boolean}>>}
+ */
+export async function leseLiquidationen(symbol, from, to, { market = 'futures', venue = 'binance' } = {}) {
+    const kind = venue === 'bybit' ? 'liqB' : 'liq'
+    const rows = await getKnex()('live_recordings')
+        .where({ symbol, market, kind })
+        .andWhere('hourStart', '>=', hourFloor(from))
+        .andWhere('hourStart', '<=', hourFloor(to))
+        .orderBy('hourStart')
+
+    const events = []
+    for (const row of rows) {
+        const roh = JSON.parse((await gunzip(row.payload)).toString('utf8'))
+        for (const e of roh) {
+            if (e[0] >= from && e[0] <= to) {
+                events.push({ t: e[0], price: e[1], qty: e[2], isBuy: !!e[3] })
+            }
+        }
+    }
+    events.sort((a, b) => a.t - b.t)
+    return events
+}
+
 export function setupLiveRecorder(app) {
     /** Status + Speicherverbrauch je Symbol. */
     app.get('/api/live/recorder/status', async (req, res) => {
@@ -1462,23 +1493,8 @@ export function setupLiveRecorder(app) {
             // Standard bleibt Binance ('liq') — die Hebelkarten-Prüfung ist
             // auf den gedrosselten Binance-Strom kalibriert. Bybit auf Wunsch
             // per ?venue=bybit (ungültige Werte fallen auf Binance zurück).
-            const kind = req.query.venue === 'bybit' ? 'liqB' : 'liq'
-            const rows = await getKnex()('live_recordings')
-                .where({ symbol, market, kind })
-                .andWhere('hourStart', '>=', hourFloor(from))
-                .andWhere('hourStart', '<=', hourFloor(to))
-                .orderBy('hourStart')
-
-            const events = []
-            for (const row of rows) {
-                const roh = JSON.parse((await gunzip(row.payload)).toString('utf8'))
-                for (const e of roh) {
-                    if (e[0] >= from && e[0] <= to) {
-                        events.push({ t: e[0], price: e[1], qty: e[2], isBuy: !!e[3] })
-                    }
-                }
-            }
-            events.sort((a, b) => a.t - b.t)
+            const venue = req.query.venue === 'bybit' ? 'bybit' : 'binance'
+            const events = await leseLiquidationen(symbol, from, to, { market, venue })
             res.json({ symbol, market, anzahl: events.length, events })
         } catch (error) {
             logError('live-recorder', 'Liquidationen lesen fehlgeschlagen', error)

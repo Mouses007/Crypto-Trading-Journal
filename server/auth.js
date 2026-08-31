@@ -401,6 +401,21 @@ const LOGIN_LOCK_MS = 5 * 60 * 1000 // 5 min Sperre nach zu vielen Versuchen
 const loginAttempts = new Map() // ip -> { count, lockUntil }
 
 function clientIp(req) {
+    /*
+     * Hinter dem hauseigenen Reverse-Proxy (Caddy) tragen ALLE Klienten
+     * dieselbe Peer-IP — der Fehlversuchs-Zähler kollabierte zu einem
+     * einzigen Eimer, und fünf fremde Fehlversuche sperrten auch den
+     * Eigentümer aus. CTJ_TRUST_PROXY=1 lässt NUR diesen Zähler die vom
+     * unmittelbaren Proxy angehängte Adresse lesen (letzter Eintrag in
+     * X-Forwarded-For — den setzt der eigene Proxy, alles davor ist
+     * Klienten-Behauptung). isLocalRequest bleibt bewusst bei der Peer-IP:
+     * dort wäre ein gefälschter Header eine Rechteausweitung.
+     */
+    if (process.env.CTJ_TRUST_PROXY === '1') {
+        const xff = String(req.headers['x-forwarded-for'] || '')
+        const letzte = xff.split(',').map((s) => s.trim()).filter(Boolean).pop()
+        if (letzte) return letzte.replace('::ffff:', '')
+    }
     return String(req.ip || req.socket?.remoteAddress || 'unknown').replace('::ffff:', '')
 }
 
