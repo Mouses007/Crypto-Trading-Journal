@@ -1,6 +1,6 @@
 # Crypto Trading Journal
 
-A self-hosted, open-source trading journal for **crypto futures** on **Bitunix**, **Bitget** and **Pionex**.
+A **free**, self-hosted, open-source trading journal for **crypto futures** on **Bitunix**, **Bitget** and **Pionex**.
 Runs locally or via Docker — no cloud, no account, no subscription.
 Vue 3 + Express, SQLite or PostgreSQL, GPL-3.0.
 
