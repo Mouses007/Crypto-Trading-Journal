@@ -33,6 +33,7 @@ import {
 import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson, istGuthabenFehler, merkeKiGuthaben, schaetzeKosten } from './llm.js'
 import { entdoppleBericht, protokollText } from './news-doppler.js'
 import { gruppiereBeitraege, themenRegel, haltEinsProThema } from './news-themen.js'
+import { bewerteChartGehalt, marktMarken } from './news-bildgehalt.js'
 import { zitatBlock, alsZitat, ZITAT_REGEL } from './fremdtext.js'
 import { darfLaufen, sendeZuFrueh } from './drossel.js'
 import { merkeVerbrauch } from './ai-usage.js'
@@ -629,12 +630,20 @@ async function pruefeChartBilder(bilder, cfg) {
 
     const antwort = await callLLMJson(cfg, {
         system: `Du bekommst ${anhaenge.length} Bild(er), in der Reihenfolge nummeriert, wie sie kommen (erstes Bild = Index 0).
-Für JEDES Bild: Ist es ein echter Preis-Chart mit sichtbarer technischer Analyse — eingezeichnete Linien, Kursmarken,
+Für JEDES Bild:
+1. istChart: Ist es ein echter Preis-Chart mit sichtbarer technischer Analyse — eingezeichnete Linien, Kursmarken,
 Indikatoren, Trendlinien, Unterstützungs- oder Widerstandszonen? Symbolbilder, Werbegrafiken, Logos oder reine
 Stimmungs-Illustrationen zählen NICHT, auch wenn Kurspfeile, Münzen oder Zahlen abgebildet sind.
-Antworte NUR mit JSON: {"bilder":[{"istChart":true|false,"beschreibung":"ein Satz auf Deutsch, was zu sehen ist"}]}
-Genau ${anhaenge.length} Einträge, in derselben Reihenfolge wie die Bilder. "beschreibung" bei istChart=false kurz
-begründen, wieso es kein Chart ist.`,
+2. marken: Lies die KONKRETEN Kursniveaus ab, die im Chart eingezeichnet oder beschriftet sind (Unterstützung,
+Widerstand, Kursziele) — als Liste der abgelesenen Zahlen, z. B. ["46.000","38.500"]. Kannst du keine konkrete Zahl
+ablesen, gib eine leere Liste zurück. Erfinde nichts.
+3. aussage: EIN Satz auf Deutsch mit der handelbaren Kernaussage — Trend UND das wichtigste Kursniveau UND was es
+bedeutet (z. B. "Aufwärtstrend, Bruch über 46.000 eröffnet 52.000, darunter droht Rücklauf zur 38.500"). VERBOTEN ist
+eine reine Formbeschreibung ohne Zahlen wie "ein Chart mit Zonen und Kerzen". Kannst du nichts Konkretes ablesen, gib
+"" zurück — eine ehrliche Leerangabe ist besser als eine nichtssagende.
+Antworte NUR mit JSON: {"bilder":[{"istChart":true|false,"marken":["…"],"aussage":"…"}]}
+Genau ${anhaenge.length} Einträge, in derselben Reihenfolge wie die Bilder. Bei istChart=false: marken=[] und aussage
+kurz begründen, wieso es kein Chart ist.`,
         user: 'Bewerte die Bilder.',
         anhaenge,
         timeoutMs: 60000,
@@ -643,15 +652,55 @@ begründen, wieso es kein Chart ist.`,
     })
 
     const roh = Array.isArray(antwort.json?.bilder) ? antwort.json.bilder : []
-    const raus = []
-    geladen.forEach((b, i) => {
-        const urteil = roh[i]
-        const beschreibung = String(urteil?.beschreibung || '').trim()
-        if (urteil?.istChart === true && beschreibung) {
-            raus.push({ ...b, beschreibung: beschreibung.slice(0, 300) })
-        }
+    let tokens = antwort.usage?.totalTokens || 0
+    let kostenUsd = antwort.costUsd || 0
+
+    /*
+     * Zweistufiges Gate. Erst rein rechnerisch (0 Token) einordnen — siehe
+     * `bewerteChartGehalt`: `pass` übernehmen, `fail` verwerfen. Nur die
+     * unsicheren `grenzfall`-Bilder gehen an einen zweiten, textbasierten
+     * Modellaufruf (die Bilder werden NICHT erneut gesendet), der semantisch
+     * entscheidet, statt sie pauschal durchzuwinken oder wegzuwerfen.
+     */
+    const eingeordnet = geladen.map((b, i) => {
+        const urteil = roh[i] || {}
+        return { b, urteil, aussage: String(urteil.aussage || '').trim(), stufe: bewerteChartGehalt(urteil) }
     })
-    return { bilder: raus, tokens: antwort.usage?.totalTokens || 0, kostenUsd: antwort.costUsd || 0 }
+
+    const raus = []
+    for (const e of eingeordnet) {
+        if (e.stufe === 'pass' && e.aussage) raus.push({ ...e.b, beschreibung: e.aussage.slice(0, 300) })
+    }
+
+    const grenzfaelle = eingeordnet.filter(e => e.stufe === 'grenzfall' && e.aussage)
+    if (grenzfaelle.length) {
+        try {
+            const j = await callLLMJson(cfg, {
+                system: `Du beurteilst ${grenzfaelle.length} Chart-Beschreibung(en), nummeriert ab 0. Eine Beschreibung ist
+KONKRET, wenn sie mindestens ein benanntes Kursniveau als Zahl UND eine Richtungsaussage (Trend, Bruch, Halten, Ziel)
+enthält. Eine reine Formbeschreibung ("ein Chart mit Zonen und Kerzen", "Unterstützungs- und Widerstandszonen sind
+eingezeichnet") ist NICHT konkret.
+Antworte NUR mit JSON: {"urteile":[{"konkret":true|false}]} — genau ${grenzfaelle.length} Einträge in derselben Reihenfolge.`,
+                user: grenzfaelle.map((e, i) => `[${i}] marken=${JSON.stringify(marktMarken(e.urteil).size ? [...marktMarken(e.urteil)] : (e.urteil.marken || []))} · ${e.aussage}`).join('\n'),
+                timeoutMs: 30000,
+                zweck: 'chartbild-judge',
+                ausloeser: 'auto',
+            })
+            tokens += j.usage?.totalTokens || 0
+            kostenUsd += j.costUsd || 0
+            const urteile = Array.isArray(j.json?.urteile) ? j.json.urteile : []
+            grenzfaelle.forEach((e, i) => {
+                if (urteile[i]?.konkret === true) raus.push({ ...e.b, beschreibung: e.aussage.slice(0, 300) })
+            })
+        } catch (err) {
+            // Judge nicht erreichbar (kein Schlüssel, Guthaben leer, Timeout):
+            // Grenzfälle verwerfen statt raten — "keine verwertbare Erklärung →
+            // keine Verwendung", dieselbe Philosophie wie oben.
+            logWarn('news', `Chartbild-Judge übersprungen, Grenzfälle verworfen: ${err.message}`)
+        }
+    }
+
+    return { bilder: raus, tokens, kostenUsd }
 }
 
 /** Gültige Themen des Berichts — Reihenfolge ist die Kapitelreihenfolge. */

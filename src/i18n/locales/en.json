@@ -3326,6 +3326,10 @@
   },
   "news": {
     "fetchNow": "Fetch posts",
+    "fontSize": "Text size",
+    "fontSmaller": "Smaller text",
+    "fontBigger": "Larger text",
+    "fontReset": "Reset text size (100%)",
     "makeDigest": "Write briefing",
     "working": "Writing …",
     "asOf": "as of {zeit}",

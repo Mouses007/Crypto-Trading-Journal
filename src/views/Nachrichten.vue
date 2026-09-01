@@ -71,6 +71,7 @@ const SPEICHER_HOEHE = 'nachrichten_hoehen'
 const SPEICHER_QUELLEN = 'nachrichten_quellen_aus'
 const SPEICHER_MENGE = 'nachrichten_menge'
 const SPEICHER_VIDEOS = 'nachrichten_videos_offen'
+const SPEICHER_SCHRIFT = 'nachrichten_schrift'
 /** Wie viele Meldungen die Liste führt. Mehr als 200 lässt der Server nicht zu. */
 const MENGEN = [20, 40, 100, 200]
 
@@ -96,6 +97,29 @@ const videosOffen = ref(localStorage.getItem(SPEICHER_VIDEOS) === '1')
 function videosUmschalten() {
     videosOffen.value = !videosOffen.value
     localStorage.setItem(SPEICHER_VIDEOS, videosOffen.value ? '1' : '0')
+}
+
+/**
+ * Schriftgrösse der Seite in Prozent, je Gerät gemerkt. Wirkt als `zoom` auf
+ * den Seitenwurzel-Container statt als `font-size`: die Stylesheets dieser
+ * Seite messen fast durchweg in `rem`, das an der Dokumentwurzel hängt — eine
+ * Wrapper-`font-size` würde daran vorbeigreifen, und ein Umschreiben auf `em`
+ * würde verschachtelte Grössen stillschweigend multiplizieren.
+ */
+const SCHRIFT_MIN = 80
+const SCHRIFT_MAX = 160
+const SCHRIFT_SCHRITT = 10
+const schrift = ref(Math.min(SCHRIFT_MAX, Math.max(SCHRIFT_MIN,
+    Number(localStorage.getItem(SPEICHER_SCHRIFT)) || 100)))
+
+function schriftAendern(delta) {
+    schrift.value = Math.min(SCHRIFT_MAX, Math.max(SCHRIFT_MIN, schrift.value + delta))
+    localStorage.setItem(SPEICHER_SCHRIFT, String(schrift.value))
+}
+
+function schriftZuruecksetzen() {
+    schrift.value = 100
+    localStorage.removeItem(SPEICHER_SCHRIFT)
 }
 
 const bericht = ref(null)
@@ -1053,7 +1077,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="nwSeite">
+    <div class="nwSeite" :style="schrift !== 100 ? { zoom: schrift / 100 } : null">
         <div class="liveHeader">
             <div class="liveTitle">
                 <span>{{ t('nav.nachrichten') }}</span>
@@ -1077,6 +1101,22 @@ onBeforeUnmount(() => {
                     <i class="uil uil-robot"></i>{{ laeuft ? t('news.working') : t('news.makeDigest') }}
                 </button>
                 <span class="ctl-sep"></span>
+                <!-- Schriftgrösse nur dieser Seite — gelesen wird hier viel,
+                     und der Browser-Zoom würde die ganze App mitvergrössern. -->
+                <span class="nwSchrift" role="group" :aria-label="t('news.fontSize')">
+                    <button type="button" class="ctl-pill" :title="t('news.fontSmaller')"
+                        :disabled="schrift <= SCHRIFT_MIN" @click="schriftAendern(-SCHRIFT_SCHRITT)">
+                        <span class="nwSchriftA klein">A</span>
+                    </button>
+                    <button v-if="schrift !== 100" type="button" class="ctl-pill nwSchriftWert"
+                        :title="t('news.fontReset')" @click="schriftZuruecksetzen">
+                        {{ schrift }}&nbsp;%
+                    </button>
+                    <button type="button" class="ctl-pill" :title="t('news.fontBigger')"
+                        :disabled="schrift >= SCHRIFT_MAX" @click="schriftAendern(SCHRIFT_SCHRITT)">
+                        <span class="nwSchriftA gross">A</span>
+                    </button>
+                </span>
                 <PageInfo section="info.nachrichten" />
             </div>
         </div>
@@ -1793,6 +1833,41 @@ onBeforeUnmount(() => {
 <style scoped>
 .nwSeite {
     padding-bottom: 2rem;
+}
+
+/* Schriftgrössen-Regler im Seitenkopf: zwei A in zwei Grössen sagen mehr als
+   ein Icon; die Prozentzahl erscheint nur, wenn sie von 100 abweicht. */
+.nwSchrift {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.nwSchrift .ctl-pill {
+    padding: 0.15rem 0.5rem;
+}
+
+.nwSchrift .ctl-pill:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.nwSchriftA {
+    font-weight: 700;
+    line-height: 1;
+}
+
+.nwSchriftA.klein {
+    font-size: 0.68rem;
+}
+
+.nwSchriftA.gross {
+    font-size: 0.95rem;
+}
+
+.nwSchriftWert {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.72rem;
 }
 
 .nwMeldung {
