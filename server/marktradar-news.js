@@ -2584,7 +2584,7 @@ export function setupNewsRoutes(app) {
     // ── Quellen verwalten ────────────────────────────────────────────
     app.get('/api/marktradar/news/sources', async (req, res) => {
         try {
-            const liste = await getKnex()('news_sources').orderBy('id')
+            const liste = await getKnex()('news_sources').orderBy(['art', 'name'])
             res.json({ quellen: liste, vorschlaege: VORSCHLAEGE })
         } catch (e) {
             sendRadarError(res, e, 'News-Quellen')
