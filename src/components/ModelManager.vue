@@ -54,8 +54,12 @@ async function laden() {
     fehler.value = ''
     try {
         const r = await axios.get('/api/ai/models')
-        listen.value = r.data.modelle
-        standard.value = r.data.standard
+        // Bild-Anbieter (FLUX/Gemini-Bild) stehen in eigenen Feldern, damit
+        // `AnbieterWahl.vue` (das `modelle` per `Object.keys()` als
+        // Chat-Anbieter-Auswahl liest) sie nicht mitbekommt. Hier, als eigene
+        // Instanz je Anbieter, ist das Zusammenführen unbedenklich.
+        listen.value = { ...r.data.modelle, ...r.data.bildModelle }
+        standard.value = { ...r.data.standard, ...r.data.bildStandard }
         ohneSampling.value = r.data.ohneSampling || []
         if (istOllama.value) await ollamaLaden()
     } catch (e) {

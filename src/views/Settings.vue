@@ -1,6 +1,6 @@
 <script setup>
 import { onBeforeMount, onMounted, ref, reactive, computed, watch } from 'vue';
-import { useDateCalFormat, useKostenAnzeige, useKostenZahl } from '../utils/formatters.js';
+import { useDateCalFormat, useKostenAnzeige, useKostenZahl, useVorlagenKategorieLabel } from '../utils/formatters.js';
 import ModelManager from '../components/ModelManager.vue'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
 import InfoTipp from '../components/InfoTipp.vue'
@@ -158,6 +158,8 @@ const currentApiKey = computed({
 // Modell-Listen kommen vom Server (Tabelle `settings`), damit neue Modelle
 // nachgetragen werden können, ohne den Quelltext anzufassen.
 const modellListen = ref({})
+const bildModellListen = ref({})
+const bildStandardListen = ref({})
 
 /**
  * Die Einstellungen sind über 1500 Zeilen lang. Ohne Gliederung findet man
@@ -222,12 +224,20 @@ async function loadModelLists() {
     try {
         const r = await axios.get('/api/ai/models')
         modellListen.value = r.data.modelle || {}
+        // Getrennt gehalten: `bildModelle` (FLUX/Gemini-Bild) landet NICHT in
+        // `modellListen` — das speist u.a. `AnbieterWahl.vue`, die ihre
+        // Anbieter-Auswahl per `Object.keys(modellListen)` bildet. Ein
+        // Bild-Anbieter dort tauchte sonst in der Auswahl für Berichte/Agent/
+        // Strategie/Radar auf, obwohl er dort nichts beitragen kann.
+        bildModellListen.value = r.data.bildModelle || {}
+        bildStandardListen.value = r.data.bildStandard || {}
         ohneSampling.value = r.data.ohneSampling || []
         if (Array.isArray(r.data.anbieter) && r.data.anbieter.length) {
             anbieterListe.value = r.data.anbieter
         }
     } catch (e) {
         modellListen.value = {}
+        bildModellListen.value = {}
     }
 }
 
@@ -640,18 +650,50 @@ let geminiImageModel = ref('gemini-2.5-flash-image')
 let geminiTestLoading = ref(false)
 let geminiTestResult = ref(null)
 
-const fluxModels = [
-    { value: 'flux-2-pro', label: 'FLUX.2 Pro (~$0.03)' },
-    { value: 'flux-2-flex', label: 'FLUX.2 Flex (~$0.05)' },
-    { value: 'flux-2-max', label: 'FLUX.2 Max (~$0.07)' }
-]
+// Prompt-Vorlagen der Share-Karten — Anlegen/Anwenden/Löschen gab es schon im
+// Trade-Modal (ShareCardModal.vue); hier kommt die Verwaltung dazu (Umbenennen
+// und Löschen), zentral in den Einstellungen statt nur pro Trade. Der
+// Prompt-Text ist bewusst NICHT bearbeitbar — er hat mit dem gespeicherten
+// Bild nichts zu tun (keine Bild-Bearbeitung in der App), ein frei
+// eintragbares Feld hätte das fälschlich suggeriert.
+let shareCardTemplates = ref([])
+let templatesLoading = ref(false)
+let editingTemplateId = ref(null)
+let editTemplateName = ref('')
+let savingTemplateEdit = ref(false)
+let deletingTemplateId = ref(null)
 
-const geminiImageModels = [
-    { value: 'gemini-2.5-flash-image', label: 'Nano Banana (Gemini 2.5 Flash)' },
-    { value: 'gemini-3.1-flash-lite-image', label: 'Nano Banana 2 Lite (Gemini 3.1 Flash Lite)' },
-    { value: 'gemini-3.1-flash-image', label: 'Nano Banana 2 (Gemini 3.1 Flash)' },
-    { value: 'gemini-3-pro-image', label: 'Nano Banana Pro (Gemini 3 Pro)' }
-]
+// Bekannte Preis-Hinweise je Modellname — nur Kosmetik. Ein über „Modelle
+// verwalten" (ModelManager.vue) neu hinzugefügtes Modell (z.B. eine künftige
+// „flux-3-…"-Reihe) hat keinen Eintrag hier und zeigt dann einfach seinen
+// rohen Namen — das Dropdown selbst kommt serverseitig aus derselben
+// DB-gestützten Liste wie bei den Chat-Anbietern (`modellListen`), nicht mehr
+// aus einer im Code fest verdrahteten Auswahl.
+const FLUX_PREISHINWEIS = {
+    'flux-2-pro': 'FLUX.2 Pro (~$0.03)',
+    'flux-2-flex': 'FLUX.2 Flex (~$0.05)',
+    'flux-2-max': 'FLUX.2 Max (~$0.07)',
+}
+const GEMINI_BILD_NAME = {
+    'gemini-2.5-flash-image': 'Nano Banana (Gemini 2.5 Flash)',
+    'gemini-3.1-flash-lite-image': 'Nano Banana 2 Lite (Gemini 3.1 Flash Lite)',
+    'gemini-3.1-flash-image': 'Nano Banana 2 (Gemini 3.1 Flash)',
+    'gemini-3-pro-image': 'Nano Banana Pro (Gemini 3 Pro)',
+}
+// Die Ausgangslisten kommen vom Server (`bildStandard` in der
+// `/api/ai/models`-Antwort, aus derselben `BILD_MODELL_REG`-Registry, aus der
+// server/ai-models.js auch die eigentliche Modell-Liste ableitet) — keine
+// zweite, hier von Hand gepflegte Kopie, die bei einer Änderung der Registry
+// unbemerkt zurückbleibt.
+const fluxModels = computed(() => {
+    const liste = bildModellListen.value.flux?.length ? bildModellListen.value.flux : (bildStandardListen.value.flux || [])
+    return liste.map((m) => ({ value: m, label: FLUX_PREISHINWEIS[m] || m }))
+})
+
+const geminiImageModels = computed(() => {
+    const liste = bildModellListen.value.geminiBild?.length ? bildModellListen.value.geminiBild : (bildStandardListen.value.geminiBild || [])
+    return liste.map((m) => ({ value: m, label: GEMINI_BILD_NAME[m] || m }))
+})
 
 /**
  * Gespeicherten Namen auf einen Eintrag der Auswahl bringen.
@@ -663,7 +705,27 @@ const geminiImageModels = [
  */
 function gueltigesBildmodell(m) {
     const s = String(m || '').replace(/-preview$/, '')
-    return geminiImageModels.some((e) => e.value === s) ? s : 'gemini-2.5-flash-image'
+    return geminiImageModels.value.some((e) => e.value === s) ? s : 'gemini-2.5-flash-image'
+}
+
+/**
+ * Dasselbe für FLUX: ein alter oder nie gültiger Modellname (die Datenbank
+ * trug hier lange den Platzhalter `flux-2-klein-9b`) liesse das Dropdown ohne
+ * Auswahl stehen, weil `<select v-model>` keine passende `<option>` findet.
+ */
+function gueltigesFluxModell(m) {
+    const s = String(m || '')
+    return fluxModels.value.some((e) => e.value === s) ? s : 'flux-2-pro'
+}
+
+/** Nach dem Bearbeiten der Bild-Modell-Liste (ModelManager.vue): Auswahl gültig halten. */
+function fluxModelleGeaendert(liste) {
+    bildModellListen.value = { ...bildModellListen.value, flux: liste }
+    if (!liste.includes(fluxModel.value)) fluxModel.value = liste[0] || 'flux-2-pro'
+}
+function geminiBildModelleGeaendert(liste) {
+    bildModellListen.value = { ...bildModellListen.value, geminiBild: liste }
+    if (!liste.includes(geminiImageModel.value)) geminiImageModel.value = liste[0] || 'gemini-2.5-flash-image'
 }
 
 async function loadFluxSettings() {
@@ -671,7 +733,7 @@ async function loadFluxSettings() {
         const res = await axios.get('/api/flux/settings')
         shareCardProvider.value = res.data.shareCardProvider || 'flux'
         fluxApiKey.value = res.data.fluxApiKey || ''
-        fluxModel.value = res.data.fluxModel || 'flux-2-pro'
+        fluxModel.value = gueltigesFluxModell(res.data.fluxModel)
         fluxDisplayName.value = res.data.fluxDisplayName || ''
         fluxAvatar.value = res.data.fluxAvatar || ''
         fluxUseCustomAvatar.value = !!res.data.fluxUseCustomAvatar
@@ -680,6 +742,62 @@ async function loadFluxSettings() {
     } catch (e) {
         console.error('Fehler beim Laden der Share-Card-Settings:', e)
     }
+    await loadShareCardTemplates()
+}
+
+async function loadShareCardTemplates() {
+    templatesLoading.value = true
+    try {
+        const res = await axios.get('/api/db/share_card_templates', { params: { sort: '-createdAt' } })
+        shareCardTemplates.value = (res.data.results || res.data || []).map((r) => ({
+            id: r.objectId || r.id,
+            name: r.name,
+            category: r.category || '',
+            imageBase64: r.imageBase64 || '',
+        }))
+    } catch (e) {
+        console.error('Fehler beim Laden der Share-Card-Vorlagen:', e)
+        shareCardTemplates.value = []
+    }
+    templatesLoading.value = false
+}
+
+function startEditTemplate(tpl) {
+    editingTemplateId.value = tpl.id
+    editTemplateName.value = tpl.name
+}
+
+function cancelEditTemplate() {
+    editingTemplateId.value = null
+    editTemplateName.value = ''
+}
+
+async function saveTemplateEdit() {
+    if (!editTemplateName.value.trim()) return
+    savingTemplateEdit.value = true
+    try {
+        await axios.put(`/api/db/share_card_templates/${editingTemplateId.value}`, {
+            name: editTemplateName.value.trim(),
+        })
+        cancelEditTemplate()
+        await loadShareCardTemplates()
+    } catch (e) {
+        alert(t('common.errorSaving') + e.message)
+    }
+    savingTemplateEdit.value = false
+}
+
+async function deleteShareCardTemplate(id) {
+    if (!confirm(t('settings.shareCardTemplateDeleteConfirm'))) return
+    deletingTemplateId.value = id
+    try {
+        await axios.delete(`/api/db/share_card_templates/${id}`)
+        if (editingTemplateId.value === id) cancelEditTemplate()
+        await loadShareCardTemplates()
+    } catch (e) {
+        alert(t('common.errorSaving') + e.message)
+    }
+    deletingTemplateId.value = null
 }
 
 async function saveFluxSettings() {
@@ -3324,6 +3442,64 @@ onBeforeMount(async () => {
                         </div>
                     </div>
 
+                    <!-- Bild-Generierung: FLUX.2/Gemini-Bild sprechen kein Chat-Protokoll
+                         und stehen deshalb nicht in `anbieterListe` oben — ohne diese Zeile
+                         fiel FLUX komplett aus der KI-Übersicht. Schlüssel bleiben bewusst
+                         nur im Bilder-Reiter editierbar (ein Ort pro Schlüssel), hier nur
+                         Sichtbarkeit + Sprung dorthin. -->
+                    <div class="row mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.imageProvidersTitle') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.imageProvidersHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <table class="table table-sm align-middle mb-1">
+                                <tbody>
+                                    <tr>
+                                        <td style="width:11rem;">
+                                            FLUX.2 <small class="text-muted">(Black Forest Labs)</small>
+                                            <span v-if="shareCardProvider === 'flux'" class="badge bg-secondary ms-1">
+                                                {{ t('settings.ki.mainProvider') }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span v-if="fluxApiKey" class="text-success small">
+                                                <i class="uil uil-check-circle"></i> {{ t('settings.ki.keySet') }}
+                                            </span>
+                                            <span v-else class="text-muted small">{{ t('settings.ki.keyMissing') }}</span>
+                                        </td>
+                                        <td class="text-end" style="width:8rem;">
+                                            <a href="#" class="small" @click.prevent="kiBereichWechseln('bilder')">
+                                                {{ t('kiUebersicht.einstellen') }}
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            Google Gemini <small class="text-muted">(Nano Banana)</small>
+                                            <span v-if="shareCardProvider === 'gemini'" class="badge bg-secondary ms-1">
+                                                {{ t('settings.ki.mainProvider') }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span v-if="geminiImageApiKey" class="text-success small">
+                                                <i class="uil uil-check-circle"></i> {{ t('settings.ki.keySet') }}
+                                            </span>
+                                            <span v-else class="text-muted small">{{ t('settings.ki.keyMissing') }}</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <a href="#" class="small" @click.prevent="kiBereichWechseln('bilder')">
+                                                {{ t('kiUebersicht.einstellen') }}
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
                     <!-- Guthaben-Status: kein Anbieter verrät sein Restguthaben über
                          den API-Key. Gezeigt wird, was der Server WEISS — scheiterte
                          ein Aufruf an fehlendem Guthaben, steht das hier, bis wieder
@@ -3775,6 +3951,7 @@ onBeforeMount(async () => {
                                 <select class="form-select" v-model="fluxModel">
                                     <option v-for="m in fluxModels" :key="m.value" :value="m.value">{{ m.label }}</option>
                                 </select>
+                                <ModelManager provider="flux" @geaendert="fluxModelleGeaendert" />
                             </div>
                         </div>
                     </div>
@@ -3804,6 +3981,7 @@ onBeforeMount(async () => {
                                 <select class="form-select" v-model="geminiImageModel">
                                     <option v-for="m in geminiImageModels" :key="m.value" :value="m.value">{{ m.label }}</option>
                                 </select>
+                                <ModelManager provider="geminiBild" @geaendert="geminiBildModelleGeaendert" />
                             </div>
                         </div>
                     </div>
@@ -3861,6 +4039,57 @@ onBeforeMount(async () => {
                         <span v-if="shareCardProvider === 'gemini' && geminiTestResult" class="ms-2" :class="geminiTestResult.success ? 'text-success' : 'text-danger'">
                             {{ geminiTestResult.message }}
                         </span>
+                    </div>
+
+                    <!-- Prompt-Vorlagen: anlegen/anwenden geschieht im Trade-Modal
+                         (ShareCardModal.vue) beim Erzeugen einer Share-Karte;
+                         hier — zentral in den Einstellungen — lassen sie sich
+                         benennen, der Prompt-Text bearbeiten und löschen. -->
+                    <hr class="my-3" />
+                    <p class="fs-6 fw-bold mb-1">{{ t('settings.shareCardTemplatesTitle') }}</p>
+                    <p class="fw-lighter">{{ t('settings.shareCardTemplatesHint') }}</p>
+                    <div v-if="templatesLoading" class="text-muted small">{{ t('common.loading') }}</div>
+                    <div v-else-if="!shareCardTemplates.length" class="text-muted small">
+                        {{ t('settings.shareCardTemplatesEmpty') }}
+                    </div>
+                    <!-- Bootstraps `.list-group-item` legt eine eigene (helle-Theme-)
+                         Textfarbe fest, die die geerbte `body`-Farbe überstimmt — auf
+                         dunklem Grund praktisch unlesbar. Deshalb einfache divs statt
+                         `list-group`, Farbe kommt von den App-eigenen CSS-Variablen. -->
+                    <div v-else class="shareCardVorlagen">
+                        <div v-for="tpl in shareCardTemplates" :key="tpl.id" class="shareCardVorlagenZeile">
+                            <div v-if="editingTemplateId !== tpl.id" class="d-flex align-items-center gap-2">
+                                <img v-if="tpl.imageBase64" :src="'data:image/png;base64,' + tpl.imageBase64"
+                                     class="rounded" style="width: 36px; height: 36px; object-fit: cover; flex-shrink: 0;" />
+                                <div class="flex-grow-1" style="min-width: 0;">
+                                    <div class="fw-bold text-truncate">
+                                        {{ tpl.name }}
+                                        <span v-if="tpl.category" class="badge ms-1"
+                                              :class="tpl.category === 'win' ? 'bg-success' : 'bg-danger'">{{ useVorlagenKategorieLabel(tpl.category) }}</span>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @click="startEditTemplate(tpl)">
+                                    <i class="uil uil-edit-alt"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" :disabled="deletingTemplateId === tpl.id"
+                                        @click="deleteShareCardTemplate(tpl.id)">
+                                    <i class="uil uil-trash-alt"></i>
+                                </button>
+                            </div>
+                            <div v-else class="d-flex flex-column gap-2">
+                                <!-- Nur der Name ist hier bearbeitbar. Der Prompt-Text
+                                     hat mit dem gespeicherten Bild nichts zu tun — die App
+                                     kann kein Bild nachträglich bearbeiten, „Text ändern"
+                                     hätte also nie etwas am Bild bewirkt. Ein frei
+                                     eintragbares Feld suggerierte genau das fälschlich. -->
+                                <input type="text" class="form-control form-control-sm" v-model="editTemplateName" />
+                                <div>
+                                    <button type="button" class="btn btn-sm btn-success me-2" :disabled="savingTemplateEdit || !editTemplateName.trim()"
+                                            @click="saveTemplateEdit">{{ t('common.save') }}</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" @click="cancelEditTemplate">{{ t('common.cancel') }}</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -5731,17 +5960,17 @@ onBeforeMount(async () => {
                                         </button>
                                         <template v-if="divergenzOffen">
                                             <div class="divWahlHinter" @click="divergenzOffen = false"></div>
-                                            <div class="divWahl">
+                                            <div class="divWahl floatDropdown">
                                                 <input type="text" class="form-control form-control-sm mb-2"
                                                     v-model="divergenzSuche" :placeholder="t('settings.benachrichtigungen.divergenzSuche')" />
-                                                <div class="divWahlZeile" @click="divergenzLeeren">
+                                                <div class="divWahlZeile floatDropdownZeile" @click="divergenzLeeren">
                                                     <i class="uil me-2" :class="divergenzGewaehlt.length ? 'uil-square-full text-muted' : 'uil-check-square text-success'"></i>
                                                     {{ t('settings.benachrichtigungen.divergenzEigene') }}
                                                 </div>
                                                 <div v-if="divergenzLaedt" class="text-muted px-1 py-2" style="font-size:0.8rem;">
                                                     {{ t('settings.benachrichtigungen.divergenzLaedt') }}
                                                 </div>
-                                                <div v-for="s in divergenzTreffer" :key="s" class="divWahlZeile"
+                                                <div v-for="s in divergenzTreffer" :key="s" class="divWahlZeile floatDropdownZeile"
                                                     @click="divergenzUmschalten(s)">
                                                     <i class="uil me-2" :class="divergenzGewaehlt.includes(s) ? 'uil-check-square text-success' : 'uil-square-full text-muted'"></i>
                                                     {{ kurzCoin(s) }}
@@ -5791,6 +6020,21 @@ onBeforeMount(async () => {
 </template>
 
 <style scoped>
+/* Prompt-Vorlagen der Share-Karten. Bewusst kein Bootstrap `.list-group-item`:
+   das legt eine eigene (helle-Theme-)Textfarbe fest, die die geerbte
+   `body`-Farbe überstimmt und auf dunklem Grund unlesbar wird. */
+.shareCardVorlagen {
+    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    border-radius: var(--border-radius, 0.5rem);
+}
+.shareCardVorlagenZeile {
+    padding: 0.5rem 0.75rem;
+    color: var(--white-87);
+}
+.shareCardVorlagenZeile + .shareCardVorlagenZeile {
+    border-top: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+}
+
 /* Coin-Auswahl des Divergenz-Alarms. Eigenes Aufklappfeld statt eines
    <select multiple>: aus über 500 Perps sucht man ohne Suchfeld nicht, und
    ein mehrzeiliges Auswahlfeld sprengt die Tabellenzeile. */
@@ -5807,32 +6051,18 @@ onBeforeMount(async () => {
     z-index: 1040;
 }
 
+/* Kasten- und Zeilen-Optik kommen aus den geteilten `.floatDropdown*`-Klassen
+   in style-dark.css — hier nur Position/Grösse, die vom umgebenden Layout
+   abhängen (Tabellenzelle statt Modal), nicht vom Dropdown-Inhalt. */
 .divWahl {
     position: absolute;
     z-index: 1050;
     top: calc(100% + 0.25rem);
     right: 0;
     width: 15rem;
-    max-height: 18rem;
-    overflow-y: auto;
-    padding: 0.5rem;
-    border-radius: var(--border-radius, 0.5rem);
-    background: var(--black-bg-3, #1e1e2f);
-    border: 1px solid var(--white-38, rgba(255, 255, 255, 0.15));
-    box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.3));
 }
 
 .divWahlZeile {
-    padding: 0.25rem;
-    border-radius: 0.25rem;
-    cursor: pointer;
-    font-size: 0.82rem;
     white-space: nowrap;
-    color: var(--white-87, rgba(255, 255, 255, 0.87));
-    user-select: none;
-}
-
-.divWahlZeile:hover {
-    background: var(--white-38, rgba(255, 255, 255, 0.08));
 }
 </style>

@@ -4,7 +4,7 @@
  */
 import Knex from 'knex'
 import { loadDbConfig } from './db-config.js'
-import { seedDefaultTemplates } from './default-templates.js'
+import { seedDefaultTemplates, korrigiereVorlagenKategorien } from './default-templates.js'
 import { seedDefaultLernkarten } from './default-lernkarten.js'
 import { istGewinn } from '../shared/gewinn.js'
 
@@ -752,7 +752,7 @@ async function runMigrations(knex, client) {
 
     // ==================== SETTINGS: FLUX.2 SHARE CARDS ====================
     await addColumnIfNotExists('settings', 'fluxApiKey', (t) => t.text('fluxApiKey').defaultTo(''))
-    await addColumnIfNotExists('settings', 'fluxModel', (t) => t.text('fluxModel').defaultTo('flux-2-klein-9b'))
+    await addColumnIfNotExists('settings', 'fluxModel', (t) => t.text('fluxModel').defaultTo('flux-2-pro'))
     await addColumnIfNotExists('settings', 'fluxDisplayName', (t) => t.text('fluxDisplayName').defaultTo(''))
     await addColumnIfNotExists('settings', 'fluxAvatar', (t) => t.text('fluxAvatar').defaultTo(''))
     await addColumnIfNotExists('settings', 'fluxUseCustomAvatar', (t) => t.boolean('fluxUseCustomAvatar').defaultTo(false))
@@ -847,7 +847,7 @@ async function runMigrations(knex, client) {
         await knex.schema.createTable('share_card_templates', (t) => {
             t.increments('id').primary()
             t.text('name').notNullable()           // "Cyberpunk Bull"
-            t.text('prompt').defaultTo('')          // Der verwendete Prompt
+            t.text('prompt').defaultTo('')          // ungenutzt seit dem Presets-Wegfall — kein Code schreibt hier noch etwas hinein
             t.text('imageBase64').defaultTo('')     // Hintergrundbild OHNE Overlay (base64)
             t.text('category').defaultTo('')        // 'win' oder 'loss'
             t.timestamp('createdAt').defaultTo(knex.fn.now())
@@ -855,9 +855,20 @@ async function runMigrations(knex, client) {
         })
         console.log(' -> Created table: share_card_templates')
     }
+    // Unterscheidet mitgelieferte von eigenen Vorlagen — ohne dieses Feld traf
+    // `korrigiereVorlagenKategorien` unten nur eine Namens-Vermutung und hätte
+    // eine gleichnamige eigene Vorlage des Nutzers mitkorrigiert.
+    await addColumnIfNotExists('share_card_templates', 'istStandard', (t) => t.boolean('istStandard').defaultTo(false))
+    // Einmal-Migration: läuft nur, solange der Vermerk fehlt — sonst läse die
+    // Korrektur unten bei jedem Start erneut 14 Bilddateien von der Platte,
+    // nur um festzustellen, dass nichts mehr zu tun ist.
+    await addColumnIfNotExists('settings', 'vorlagenKategorienKorrigiert', (t) => t.integer('vorlagenKategorienKorrigiert').defaultTo(0))
 
     // Seed default templates from server/templates/ (only if table is empty)
     await seedDefaultTemplates(knex)
+    // Bereits vorhandene Standard-Vorlagen mit der alten Long/Short-Kategorie
+    // korrigieren — Seeding legt nur fehlende Namen an, ändert bestehende nicht.
+    await korrigiereVorlagenKategorien(knex)
 
     // ==================== SEED: Default Tag Groups ====================
     // Ensure the mandatory "Strategie" tag group exists (required by charts/dashboard).

@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
+import { useVorlagenKategorieLabel } from '../utils/formatters.js'
 
 const { t } = useI18n()
 
@@ -25,8 +26,46 @@ const commentText = ref('')
 // ====== Template state ======
 const templates = ref([])
 const selectedTemplateId = ref(null) // null = "Neu generieren"
+// Eigenes Dropdown statt <select>: native <option>s können kein farbiges
+// Long/Short-Badge tragen, nur Klartext (Browser-Grenze, kein HTML in <option>).
+const hgOffen = ref(false)
+const hgKnopfEl = ref(null)
+const hgWahlEl = ref(null)
+const selectedTemplate = computed(() =>
+    templates.value.find((t) => String(t.id) === String(selectedTemplateId.value)) || null)
+
+function hgWaehlen(id) {
+    selectedTemplateId.value = id
+    hgOffen.value = false
+    hgKnopfEl.value?.focus()
+}
+
+// Sobald das Panel öffnet, Fokus auf die aktive (oder erste) Zeile setzen —
+// sonst bliebe der Fokus auf dem Knopf stehen und Pfeiltasten liefen ins Leere.
+watch(hgOffen, async (offen) => {
+    if (!offen) return
+    await nextTick()
+    const aktiv = hgWahlEl.value?.querySelector('.hgZeile.hgAktiv') || hgWahlEl.value?.querySelector('.hgZeile')
+    aktiv?.focus()
+})
+
+/** Pfeiltasten wandern zwischen den Zeilen, Escape schliesst und gibt den Fokus zurück. */
+function hgWahlKeydown(event) {
+    if (event.key === 'Escape') {
+        hgOffen.value = false
+        hgKnopfEl.value?.focus()
+        return
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    const zeilen = [...(hgWahlEl.value?.querySelectorAll('.hgZeile') || [])]
+    const idx = zeilen.indexOf(document.activeElement)
+    const naechste = event.key === 'ArrowDown'
+        ? zeilen[(idx + 1) % zeilen.length]
+        : zeilen[(idx - 1 + zeilen.length) % zeilen.length]
+    naechste?.focus()
+}
 const lastBackgroundBase64 = ref('') // raw BG from last generation (for saving)
-const lastPrompt = ref('')           // prompt used for last generation
 const savingTemplate = ref(false)
 const templateName = ref('')
 const showSaveForm = ref(false)
@@ -51,7 +90,6 @@ async function loadTemplates() {
         templates.value = (res.data.results || res.data || []).map(r => ({
             id: r.objectId || r.id,
             name: r.name,
-            prompt: r.prompt || '',
             category: r.category || '',
             imageBase64: r.imageBase64 || '',
             createdAt: r.createdAt
@@ -69,6 +107,7 @@ watch(() => props.trade, (trade) => {
     error.value = ''
     selectedTemplateId.value = null
     showSaveForm.value = false
+    hgOffen.value = false
     lastBackgroundBase64.value = ''
     promptText.value = buildClientPrompt(trade)
 }, { immediate: true })
@@ -109,7 +148,6 @@ watch(selectedTemplateId, async (id) => {
         })
         generatedImage.value = res.data.image
         lastBackgroundBase64.value = '' // template BG already saved
-        if (tpl.prompt) promptText.value = tpl.prompt
     } catch (e) {
         error.value = e.response?.data?.error || e.message
     }
@@ -160,20 +198,20 @@ const tradeSummary = computed(() => {
     }
 })
 
-// Filtered templates by long/short direction
+/**
+ * Gefilterte Vorlagen nach Ausgang, nicht nach Richtung.
+ *
+ * Das Motiv (Bulle triumphierend vs. Bulle am Boden im Regen, siehe
+ * `buildClientPrompt`) folgt Gewinn/Verlust — ein Long-Trade kann verlieren
+ * und ein Short-Trade gewinnen, die Stimmung des Bilds hat mit der Richtung
+ * nichts zu tun. Vorher stand hier `long`/`short`: „Friedhof der Bullen"
+ * (ein Verlust-Bild) war als `long` einsortiert und tauchte bei jedem
+ * gewonnenen Long-Trade zwischen den triumphierenden Bildern auf.
+ */
 const filteredTemplates = computed(() => {
-    const isLong = tradeSummary.value.isLong
-    const cat = isLong ? 'long' : 'short'
+    const cat = tradeSummary.value.isWin ? 'win' : 'loss'
     // Show matching category + uncategorized templates
     return templates.value.filter(t => !t.category || t.category === cat)
-})
-
-// Prompt presets from all templates
-const promptPresets = computed(() => {
-    const seen = new Set()
-    return templates.value
-        .filter(t => t.prompt && !seen.has(t.prompt) && (seen.add(t.prompt), true))
-        .map(t => ({ name: t.name, prompt: t.prompt }))
 })
 
 async function generateShareCard() {
@@ -195,7 +233,6 @@ async function generateShareCard() {
         generatedImage.value = res.data.image
         // Store raw background for template saving
         lastBackgroundBase64.value = res.data.backgroundImage || ''
-        lastPrompt.value = promptText.value
     } catch (e) {
         const msg = e.response?.data?.error || e.message
         error.value = msg
@@ -215,12 +252,11 @@ async function saveAsTemplate() {
     error.value = ''
 
     try {
-        const isLong = props.trade?.strategy === 'long'
+        const isWin = (props.trade?.netProceeds || 0) > 0
         await axios.post('/api/db/share_card_templates', {
             name: templateName.value.trim(),
-            prompt: lastPrompt.value || promptText.value,
             imageBase64: lastBackgroundBase64.value,
-            category: isLong ? 'long' : 'short'
+            category: isWin ? 'win' : 'loss'
         })
         templateName.value = ''
         showSaveForm.value = false
@@ -245,11 +281,6 @@ async function deleteTemplate(id) {
         error.value = e.response?.data?.error || e.message
     }
     deletingTemplateId.value = null
-}
-
-// Apply prompt from preset
-function applyPromptPreset(prompt) {
-    promptText.value = prompt
 }
 
 function downloadImage() {
@@ -353,13 +384,42 @@ function closeModal() {
                         <label class="form-label small fw-bold">
                             <i class="uil uil-layers me-1"></i>Hintergrund
                         </label>
-                        <div class="d-flex gap-2 align-items-center">
-                            <select class="form-select form-select-sm" v-model="selectedTemplateId" :disabled="generating" style="max-width: 350px;">
-                                <option :value="null">Neu generieren (KI)</option>
-                                <option v-for="tpl in filteredTemplates" :key="tpl.id" :value="tpl.id">
-                                    {{ tpl.name }} {{ tpl.category === 'long' ? '(Long)' : tpl.category === 'short' ? '(Short)' : '' }}
-                                </option>
-                            </select>
+                        <div class="d-flex gap-2 align-items-center position-relative">
+                            <!-- Eigenes Dropdown statt <select>: native <option>s
+                                 können kein farbiges Long/Short-Badge tragen. Die
+                                 Tastatursteuerung, die ein <select> kostenlos
+                                 mitbringt, muss dafür von Hand nachgebaut werden
+                                 (Pfeiltasten, Enter/Leertaste, Escape) — sonst ist
+                                 die Auswahl für Tastatur-/Screenreader-Nutzer
+                                 unerreichbar. -->
+                            <button type="button" class="form-select form-select-sm text-start hgKnopf" ref="hgKnopfEl"
+                                :disabled="generating" aria-haspopup="listbox" :aria-expanded="hgOffen"
+                                @click="hgOffen = !hgOffen" style="max-width: 350px;">
+                                <template v-if="selectedTemplate">
+                                    {{ selectedTemplate.name }}
+                                    <span v-if="selectedTemplate.category" class="badge ms-1"
+                                          :class="selectedTemplate.category === 'win' ? 'bg-success' : 'bg-danger'">{{ useVorlagenKategorieLabel(selectedTemplate.category) }}</span>
+                                </template>
+                                <template v-else>Neu generieren (KI)</template>
+                            </button>
+                            <template v-if="hgOffen">
+                                <div class="hgHinter" @click="hgOffen = false"></div>
+                                <div class="hgWahl floatDropdown" role="listbox" ref="hgWahlEl" @keydown="hgWahlKeydown">
+                                    <div class="hgZeile floatDropdownZeile" role="option" tabindex="0" :aria-selected="!selectedTemplateId"
+                                         :class="{ hgAktiv: !selectedTemplateId }"
+                                         @click="hgWaehlen(null)" @keydown.enter.prevent="hgWaehlen(null)" @keydown.space.prevent="hgWaehlen(null)">
+                                        Neu generieren (KI)
+                                    </div>
+                                    <div v-for="tpl in filteredTemplates" :key="tpl.id" class="hgZeile floatDropdownZeile" role="option" tabindex="0"
+                                         :aria-selected="String(selectedTemplateId) === String(tpl.id)"
+                                         :class="{ hgAktiv: String(selectedTemplateId) === String(tpl.id) }"
+                                         @click="hgWaehlen(tpl.id)" @keydown.enter.prevent="hgWaehlen(tpl.id)" @keydown.space.prevent="hgWaehlen(tpl.id)">
+                                        {{ tpl.name }}
+                                        <span v-if="tpl.category" class="badge ms-1"
+                                              :class="tpl.category === 'win' ? 'bg-success' : 'bg-danger'">{{ useVorlagenKategorieLabel(tpl.category) }}</span>
+                                    </div>
+                                </div>
+                            </template>
                             <button v-if="selectedTemplateId" class="btn btn-sm btn-outline-danger" @click="deleteTemplate(selectedTemplateId)"
                                 :disabled="deletingTemplateId === selectedTemplateId" title="Vorlage löschen">
                                 <i class="uil uil-trash-alt"></i>
@@ -385,25 +445,9 @@ function closeModal() {
 
                     <!-- Prompt (only when "Neu generieren" is selected) -->
                     <div v-if="!selectedTemplateId" class="mb-3">
-                        <div class="d-flex align-items-center gap-2 mb-1">
-                            <label class="form-label small fw-bold mb-0">
-                                <i class="uil uil-pen me-1"></i>{{ t('daily.shareCardPrompt') }}
-                            </label>
-                            <!-- Prompt presets dropdown -->
-                            <div v-if="promptPresets.length > 0" class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle py-0 px-2" type="button"
-                                    data-bs-toggle="dropdown" :disabled="generating" style="font-size: 0.75rem;">
-                                    Presets
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-dark">
-                                    <li v-for="preset in promptPresets" :key="preset.name">
-                                        <a class="dropdown-item small" href="#" @click.prevent="applyPromptPreset(preset.prompt)">
-                                            {{ preset.name }}
-                                        </a>
-                                    </li>
-                                </ul>
-                            </div>
-                        </div>
+                        <label class="form-label small fw-bold mb-0">
+                            <i class="uil uil-pen me-1"></i>{{ t('daily.shareCardPrompt') }}
+                        </label>
                         <textarea class="form-control share-card-prompt" rows="5" v-model="promptText"
                             :disabled="generating" style="resize: vertical; min-height: 100px;"></textarea>
                     </div>
@@ -479,3 +523,36 @@ function closeModal() {
         </div>
     </div>
 </template>
+
+<style scoped>
+/* Eigenes Hintergrund-Dropdown, gleiche Machart wie `.divWahl*` in
+   Settings.vue: die Modal-Box selbst hat z-index 1070, deshalb hier höher.
+   Kasten- und Zeilen-Optik kommen aus den geteilten `.floatDropdown*`-Klassen
+   in style-dark.css — hier nur, was an DIESER Stelle abweicht: Position und
+   Grösse hängen vom umgebenden Modal ab, nicht vom Dropdown-Inhalt. */
+.hgKnopf {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hgHinter {
+    position: fixed;
+    inset: 0;
+    z-index: 1080;
+}
+
+.hgWahl {
+    position: absolute;
+    z-index: 1090;
+    top: calc(100% + 0.25rem);
+    left: 0;
+    width: 100%;
+    max-width: 350px;
+}
+
+.hgZeile.hgAktiv {
+    background: var(--blue-color, #4da3ff);
+    color: white;
+}
+</style>

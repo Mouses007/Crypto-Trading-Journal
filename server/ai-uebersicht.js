@@ -124,7 +124,20 @@ function loeseAnbieter(eintrag, s) {
     const provider = anbieterVon(eintrag, s)
 
     if (eintrag.fest) {
-        const modell = String(s?.[eintrag.fest.feld] || '') || eintrag.fest.standard
+        // `feldJeProvider`/`standardJeProvider` (mehrere Anbieter mit je
+        // eigenem Modellfeld, z.B. Bild) und `feld`/`standard` (ein fester
+        // Anbieter) schliessen sich gegenseitig aus — ein Eintrag hat nie
+        // beides. Ein unbekannter `provider` (z.B. ein leeres oder von aussen
+        // manipuliertes Einstellungsfeld) fiele bei `feldJeProvider` sonst auf
+        // ein nicht existierendes `.feld` und lieferte `undefined` — hier
+        // stattdessen der erste hinterlegte Anbieter als Notanker.
+        const feld = eintrag.fest.feldJeProvider
+            ? (eintrag.fest.feldJeProvider[provider] ?? Object.values(eintrag.fest.feldJeProvider)[0])
+            : eintrag.fest.feld
+        const standard = eintrag.fest.standardJeProvider
+            ? (eintrag.fest.standardJeProvider[provider] ?? Object.values(eintrag.fest.standardJeProvider)[0])
+            : eintrag.fest.standard
+        const modell = String(s?.[feld] || '') || standard
         return { provider, modell, folgtGlobal: false }
     }
 

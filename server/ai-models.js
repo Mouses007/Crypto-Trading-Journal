@@ -173,6 +173,45 @@ export const STANDARD_MODELLE = Object.fromEntries(
     ANBIETER.map((p) => [p, [...ANBIETER_REG[p].modelle]]),
 )
 
+/**
+ * Bild-Anbieter der Share-Karten (FLUX.2, Gemini-Bild) — bewusst NICHT Teil
+ * von `ANBIETER_REG`: sie sprechen keine Chat-Completions-API, brauchen kein
+ * Sampling/JSON-Modus und dürfen in der allgemeinen KI-Anbieter-Auswahl
+ * (Berichte/Agent/Strategie) gar nicht erst auftauchen. Sie teilen sich aber
+ * dieselbe Modell-Listen-Pflege (`ladeModelle`, `ModelManager.vue`) wie die
+ * Chat-Anbieter — sonst bräuchte ein neues FLUX-Modell einen Code-Release.
+ */
+export const BILD_MODELL_REG = {
+    flux: {
+        name: 'FLUX.2 (Bild)',
+        modelle: ['flux-2-pro', 'flux-2-flex', 'flux-2-max'],
+        // BFL führt keinen abrufbaren Katalog (kein `GET /models` — geprüft
+        // gegen docs.bfl.ml, Stand 29.08.2026: 404). „Vom Anbieter holen"
+        // zeigt deshalb diese von Hand gepflegte Liste der offiziell
+        // dokumentierten Endpunkt-Namen statt eines Live-Aufrufs.
+        katalog: [
+            'flux-2-max', 'flux-2-pro-preview', 'flux-2-pro', 'flux-2-flex',
+            'flux-2-klein-4b', 'flux-2-klein-9b-preview', 'flux-2-klein-9b',
+        ],
+    },
+    geminiBild: {
+        name: 'Google Gemini (Bild)',
+        modelle: ['gemini-2.5-flash-image', 'gemini-3.1-flash-lite-image', 'gemini-3.1-flash-image', 'gemini-3-pro-image'],
+        // Gemini führt sehr wohl einen Katalog — derselbe `/models`-Endpunkt,
+        // den `/api/flux/test-gemini` schon zum Schlüssel-Test nutzt, nur mit
+        // dem Bild-Schlüssel statt des Chat-Schlüssels.
+        keySpalte: 'geminiImageApiKey',
+    },
+}
+
+/** Schlüssel der Bild-Anbieter — für Übersicht-Loops ohne zweite Liste. */
+export const BILD_SCHLUESSEL = Object.keys(BILD_MODELL_REG)
+
+/** Ausgangslisten je Bild-Anbieter (Rückfallebene für `ladeModelle`). */
+export const BILD_STANDARD_MODELLE = Object.fromEntries(
+    BILD_SCHLUESSEL.map((p) => [p, [...BILD_MODELL_REG[p].modelle]]),
+)
+
 /** Schlüsselspalte eines Anbieters, '' wenn er keine hat (Ollama). */
 export function keySpalte(provider) {
     return ANBIETER_REG[provider]?.keySpalte || ''
@@ -306,15 +345,28 @@ const saeubere = (liste) => [...new Set(
         .filter(istGueltigerModellname),
 )].slice(0, 60)
 
-/** Gespeicherte Listen, mit den Standards als Rückfallebene je Anbieter. */
-export async function ladeModelle() {
-    let gespeichert = {}
+/** Die gespeicherten Roh-Listen (beide Welten), nur einmal aus der DB gelesen. */
+async function ladeGespeicherteListen() {
     try {
         const row = await getKnex()('settings').select('aiModels').where('id', 1).first()
-        gespeichert = parse(row?.aiModels, {}) || {}
+        return parse(row?.aiModels, {}) || {}
     } catch (e) {
         logWarn('ai-models', 'Modell-Listen nicht lesbar, nutze Standards')
+        return {}
     }
+}
+
+/**
+ * Gespeicherte Listen, mit den Standards als Rückfallebene je Anbieter.
+ *
+ * Bewusst NUR die Chat-Anbieter (`ANBIETER`): `AnbieterWahl.vue` leitet ihre
+ * Anbieter-Auswahl per `Object.keys(modellListen)` her — ein Bild-Anbieter
+ * hier drin tauchte prompt in der Anbieter-Wahl für Berichte/Agent/Strategie
+ * auf, obwohl er dort nie etwas beitragen kann. Bild-Listen kommen über
+ * `ladeBildModelle()`, eigens und getrennt gehalten.
+ */
+export async function ladeModelle(gespeichert) {
+    gespeichert ??= await ladeGespeicherteListen()
     const out = {}
     for (const anbieter of ANBIETER) {
         const eigene = saeubere(gespeichert[anbieter])
@@ -323,14 +375,32 @@ export async function ladeModelle() {
     return out
 }
 
+/** Dasselbe für die Bild-Anbieter (FLUX.2, Gemini-Bild) — siehe `ladeModelle`. */
+export async function ladeBildModelle(gespeichert) {
+    gespeichert ??= await ladeGespeicherteListen()
+    const out = {}
+    for (const bildAnbieter of BILD_SCHLUESSEL) {
+        const eigene = saeubere(gespeichert[bildAnbieter])
+        out[bildAnbieter] = eigene.length ? eigene : [...BILD_STANDARD_MODELLE[bildAnbieter]]
+    }
+    return out
+}
+
 export function setupAiModelRoutes(app) {
     /** Listen + welche davon vom Standard abweichen. */
     app.get('/api/ai/models', async (req, res) => {
         try {
-            const modelle = await ladeModelle()
+            // Beide Welten teilen sich dieselbe `settings.aiModels`-Zeile — sie
+            // hier einmal laden und beiden reichen, statt sie zweimal separat
+            // aus der DB zu holen (das widerspräche `ladeGespeicherteListen`s
+            // eigenem "nur einmal aus der DB gelesen").
+            const gespeichert = await ladeGespeicherteListen()
+            const [modelle, bildModelle] = await Promise.all([ladeModelle(gespeichert), ladeBildModelle(gespeichert)])
             res.json({
                 modelle,
                 standard: STANDARD_MODELLE,
+                bildModelle,
+                bildStandard: BILD_STANDARD_MODELLE,
                 ohneSampling: OHNE_SAMPLING,
                 // Damit die Oberfläche Auswahl, Schlüssel-Hinweis und Adressfeld
                 // nicht ein zweites Mal fest verdrahten muss.
@@ -353,7 +423,8 @@ export function setupAiModelRoutes(app) {
     app.put('/api/ai/models/:provider', async (req, res) => {
         try {
             const anbieter = String(req.params.provider)
-            if (!ANBIETER.includes(anbieter)) {
+            const istBild = BILD_SCHLUESSEL.includes(anbieter)
+            if (!ANBIETER.includes(anbieter) && !istBild) {
                 return res.status(400).json({ error: 'Unbekannter Anbieter' })
             }
             if (anbieter === 'ollama') {
@@ -366,7 +437,9 @@ export function setupAiModelRoutes(app) {
             const alle = parse(row?.aiModels, {}) || {}
             alle[anbieter] = saeubere(req.body?.modelle)
             await knex('settings').where('id', 1).update({ aiModels: JSON.stringify(alle) })
-            res.json({ ok: true, modelle: await ladeModelle() })
+            // Bild-Anbieter kommen nicht aus `ladeModelle()` (siehe dort) — sonst
+            // bekäme ModelManager.vue für `flux`/`geminiBild` eine leere Antwort.
+            res.json({ ok: true, modelle: istBild ? await ladeBildModelle() : await ladeModelle() })
         } catch (e) {
             logError('ai-models', 'Speichern fehlgeschlagen', e)
             res.status(500).json({ error: 'Interner Serverfehler' })
@@ -382,6 +455,47 @@ export function setupAiModelRoutes(app) {
      */
     app.get('/api/ai/models/available', async (req, res) => {
         const anbieter = String(req.query.provider || '')
+
+        // Bild-Anbieter: eigener, kleiner Zweig statt der Chat-Anbieter-Logik
+        // unten — die verlangt eine Chat-`/models`-Antwort und filtert
+        // Bildmodelle sogar ausdrücklich HERAUS (`untauglich`-Regex).
+        if (anbieter === 'flux') {
+            // Kein Katalog-Endpunkt bei BFL (siehe `BILD_MODELL_REG`) — von
+            // Hand gepflegte Liste der dokumentierten Modellnamen.
+            return res.json({ modelle: [...BILD_MODELL_REG.flux.katalog], gesamt: BILD_MODELL_REG.flux.katalog.length })
+        }
+        if (anbieter === 'geminiBild') {
+            try {
+                const knex = getKnex()
+                const s = await knex('settings').select('geminiImageApiKey').where('id', 1).first()
+                const apiKey = decrypt(s?.geminiImageApiKey || '')
+                if (!apiKey) {
+                    return res.status(400).json({ error: 'Für Gemini-Bild ist kein API-Key hinterlegt.' })
+                }
+                const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {
+                    headers: { 'x-goog-api-key': apiKey },
+                    signal: AbortSignal.timeout(20000),
+                })
+                if (!r.ok) {
+                    const t = await r.text().catch(() => '')
+                    return res.status(502).json({ error: `Gemini antwortet mit ${r.status}${t ? ': ' + t.slice(0, 200) : ''}` })
+                }
+                const daten = await r.json()
+                // Nur Modelle, die Bilder erzeugen — das Gegenteil des Chat-Zweigs
+                // unten, der Bildmodelle ausdrücklich verwirft.
+                const modelle = [...new Set(
+                    (daten.models || [])
+                        .map((m) => String(m.name).replace(/^models\//, ''))
+                        .filter((m) => m.includes('image'))
+                        .filter(istGueltigerModellname),
+                )].sort()
+                return res.json({ modelle, gesamt: modelle.length })
+            } catch (e) {
+                logError('ai-models', 'Gemini-Bild-Katalog fehlgeschlagen', e)
+                return res.status(502).json({ error: e.message })
+            }
+        }
+
         const reg = ANBIETER_REG[anbieter]
         if (!reg) {
             return res.status(400).json({ error: `Unbekannter Anbieter: ${anbieter}` })
