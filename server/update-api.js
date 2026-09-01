@@ -298,7 +298,7 @@ export function getLocalVersion() {
 }
 
 // Compare semver: returns 1 if a > b, -1 if a < b, 0 if equal
-function compareSemver(a, b) {
+export function compareSemver(a, b) {
     const pa = a.replace(/^v/, '').split('.').map(Number)
     const pb = b.replace(/^v/, '').split('.').map(Number)
     for (let i = 0; i < 3; i++) {

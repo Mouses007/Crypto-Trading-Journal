@@ -3,7 +3,7 @@ import { getKnex } from './database.js'
 import { loadDbConfig, saveDbConfig } from './db-config.js'
 import { setupEsp32AdminRoutes } from './esp32-api.js'
 import { encrypt, maskKey } from './crypto.js'
-import { isLocalRequest, getLocalVersion } from './update-api.js'
+import { isLocalRequest, getLocalVersion, compareSemver } from './update-api.js'
 import { logError } from './logger.js'
 
 const VALID_TABLES = [
@@ -250,16 +250,33 @@ export function setupApiRoutes(app) {
     })
 
     // ==================== SETUP (Installationsassistent) ====================
+
+    /*
+     * Bis zu welcher Version der Update-Assistent NEUE Inhalte hat.
+     *
+     * Vorher öffnete er sich bei JEDER Versionsänderung (`gesehen !==
+     * aktuell`) — auch bei Patch-Releases ohne einen einzigen neuen Schritt:
+     * v3.10.1 zeigte exakt dieselben Seiten wie v3.10.0 noch einmal. Diese
+     * Konstante wird nur dann angehoben, wenn der Assistent (OnboardingAssistent.vue)
+     * wirklich neue Standards oder Schritte bekommt; alles darunter läuft
+     * ohne Unterbrechung durch. „Was ist neu" steht ohnehin in den
+     * Release-Notes des Update-Dialogs.
+     */
+    const ASSISTENT_INHALT_STAND = '3.10.0'
+
     app.get('/api/setup/status', async (req, res) => {
         try {
             const row = await knex('settings').where('id', 1)
                 .select('setupComplete', 'zuletztGeseheneVersion').first()
             const setupComplete = row?.setupComplete === 1
+            // Nur für Bestandsinstallationen relevant — der Setup-Wizard
+            // selbst markiert den Assistenten beim Abschluss als gesehen.
+            // Leere Spalte = Installation von vor dem Assistenten → zeigen.
+            const gesehen = row?.zuletztGeseheneVersion || '0.0.0'
             res.json({
                 setupComplete,
-                // Nur für Bestandsinstallationen relevant — der Setup-Wizard
-                // selbst markiert den Assistenten beim Abschluss als gesehen.
-                updateAssistantPending: setupComplete && (row?.zuletztGeseheneVersion || '') !== getLocalVersion(),
+                updateAssistantPending: setupComplete
+                    && compareSemver(gesehen, ASSISTENT_INHALT_STAND) < 0,
             })
         } catch (error) {
             res.status(500).json({ error: 'Internal server error' })
