@@ -281,17 +281,47 @@ async function fetchRecentlyClosed(broker) {
             })
             if (existingIncoming) continue
 
-            // Dedup 2: Check if trade already exists (positionId-Suche statt starrem ID-Muster)
-            // Support both Bitunix (mtime/ctime) and Bitget (uTime/cTime) timestamps
+            /*
+             * Dedup 2: steht die Position schon im Journal?
+             *
+             * Zwei Fallen, beide real aufgetreten:
+             *
+             * 1. `dbFirst` OHNE `broker` liefert die erste Tageszeile — und es
+             *    gibt eine pro Broker. An einem Tag mit Bitunix- UND
+             *    Bitget-Trades wurde die Bitget-positionId also in der
+             *    Bitunix-Zeile gesucht, nie gefunden, und die längst
+             *    verbuchte Position landete erneut in den pendenten Trades.
+             *    `createTradeFromClosedPosition` filtert weiter unten längst
+             *    richtig (`{dateUnix, broker}`) — deshalb entstanden keine
+             *    doppelten Journaleinträge, sondern nur Karteileichen.
+             *
+             * 2. Der Eintrag kann unter dem ERÖFFNUNGSTAG liegen. Bis zur
+             *    Normalisierung in `bitget-api.js` las der Import bei Bitget
+             *    `ctime` statt `utime`; ein Trade über Mitternacht steht im
+             *    Altbestand deshalb unter einem anderen Datum als dem, das
+             *    jetzt berechnet wird. Beide Kandidatentage prüfen kostet eine
+             *    Abfrage und macht den Abgleich unabhängig davon, welcher
+             *    Codestand den Eintrag angelegt hat.
+             */
             const closeTime = parseInt(histPos.mtime || histPos.uTime || histPos.ctime || histPos.cTime)
-            const dateUnix = dayjs(closeTime).utc().startOf('day').unix()
+            const openTime = parseInt(histPos.ctime || histPos.cTime || closeTime)
+            const kandidatenTage = [...new Set([
+                dayjs(closeTime).utc().startOf('day').unix(),
+                dayjs(openTime).utc().startOf('day').unix(),
+            ])]
 
-            const dayRecord = await dbFirst('trades', { equalTo: { dateUnix: dateUnix } })
-            if (dayRecord) {
+            let schonImJournal = false
+            for (const tag of kandidatenTage) {
+                const dayRecord = await dbFirst('trades', { equalTo: { dateUnix: tag, broker: broker } })
+                if (!dayRecord) continue
                 const dayTrades = Array.isArray(dayRecord.trades) ? dayRecord.trades : []
-                // Prüfe ob positionId bereits in einem Trade-ID vorkommt (Format: t{date}_{idx}_{posId})
-                if (dayTrades.some(t => t.id && String(t.id).endsWith('_' + positionId))) continue
+                // Trade-ID hat das Format t{date}_{idx}_{positionId}
+                if (dayTrades.some(t => t.id && String(t.id).endsWith('_' + positionId))) {
+                    schonImJournal = true
+                    break
+                }
             }
+            if (schonImJournal) continue
 
             // New closed position: create trade record
             // Support both Bitunix (side: LONG/SHORT/BUY/SELL) and Bitget (holdSide: long/short)

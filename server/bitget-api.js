@@ -146,7 +146,9 @@ export async function holeHistorieSeit(config, startTime, endTime) {
 
         const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, opts)
         const seite = result.data?.list || []
-        positions.push(...seite)
+        // Hier und nicht in den Routen: beide Aufrufer (`recent-closed`,
+        // `quick-import`) brauchen dieselbe Uebersetzung.
+        positions.push(...seite.map(normalizeClosedPosition))
 
         if (seite.length < 100) break
         idLessThan = seite[seite.length - 1]?.positionId
@@ -306,6 +308,36 @@ function normalizeOpenPosition(p) {
         markPrice: p.markPrice ?? p.liquidationPrice ?? 0,
         ctime: p.cTime ?? p.ctime ?? '',
         mtime: p.uTime ?? p.utime ?? ''
+    }
+}
+
+/**
+ * Geschlossene Position auf das Bitunix-Schema bringen — das Gegenstueck zu
+ * `normalizeOpenPosition` fuer `history-position`.
+ *
+ * Ohne diese Uebersetzung gingen die Rohfelder durch, und das Frontend liest
+ * ueberall `mtime`/`ctime` (Bitunix-Schreibweise). Bitget schreibt bei
+ * `history-position` `utime`/`ctime` — KLEIN, waehrend `all-position` `uTime`
+ * in CamelCase liefert. Der Frontend-Code prueft `histPos.mtime || histPos.uTime
+ * || histPos.ctime` und fiel deshalb bei jeder geschlossenen Bitget-Position
+ * auf `ctime` durch, also auf die EROEFFNUNG statt den Abschluss.
+ *
+ * Die Folgen waren real: der ZEC-Trade vom 10.06.2026 21:10 landete im Journal
+ * unter dem 07.06., und die Haltedauer jedes Bitget-Trades war 0 (open- und
+ * closeTime lasen beide `ctime`), womit die Einteilung Scalp/Day/Swing nie
+ * zustande kam.
+ *
+ * Rohfelder bleiben erhalten (`...p`): `quickImport.js` liest `utime` direkt
+ * und darf davon nichts merken.
+ *
+ * `leverage` wird bewusst NICHT ergaenzt — `history-position` liefert es nicht,
+ * und eine erfundene 0 waere schlechter als eine fehlende Angabe.
+ */
+function normalizeClosedPosition(p) {
+    return {
+        ...p,
+        ctime: p.ctime ?? p.cTime ?? '',
+        mtime: p.utime ?? p.uTime ?? p.ctime ?? p.cTime ?? '',
     }
 }
 
