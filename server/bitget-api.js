@@ -99,6 +99,63 @@ export async function getHistoryPositions(apiKey, secretKey, passphrase, options
     return bitgetRequest('GET', '/api/v2/mix/position/history-position', apiKey, secretKey, passphrase, params)
 }
 
+/*
+ * Bitget haelt bei `history-position` nur die letzten 90 Tage vor. Die
+ * Fehlermeldung dazu ist irrefuehrend — sie lautet `[00001] startTime and
+ * endTime interval cannot be greater than 90 days` und klingt nach einer
+ * Grenze fuer die SPANNE. Gemessen am 02.09.2026 ist sie das nicht:
+ *
+ *   now-89d .. now       →  ok
+ *   now-120d .. now-40d  →  abgelehnt, obwohl die Spanne nur 80 Tage ist
+ *
+ * Gemessen wird also `startTime` gegen JETZT, nicht gegen `endTime`. Ein
+ * Aufteilen in kleinere Fenster hilft deshalb nichts: aelteres gibt Bitget
+ * schlicht nicht mehr heraus. 89 statt 90, damit die Grenze nicht waehrend des
+ * Laufs unter dem Abruf wegwandert.
+ */
+const HISTORIE_MAX_ALTER_MS = 89 * 24 * 60 * 60 * 1000
+
+/**
+ * Geschlossene Positionen holen — mit `startTime` auf das noch abrufbare
+ * Fenster geklemmt, statt die Abfrage daran scheitern zu lassen.
+ *
+ * Genau daran war der Import gestorben: der Zeitstempel des letzten Laufs wird
+ * erst NACH einem erfolgreichen Abruf fortgeschrieben, der Fehler kommt davor.
+ * Der Stand blieb also stehen, rutschte mit jedem Tag weiter aus dem
+ * 90-Tage-Fenster heraus und konnte sich nie wieder fangen — hier gemessen ein
+ * Stillstand vom 23.02. bis zum 02.09.2026, in dem drei geschlossene
+ * Positionen nie im Journal ankamen.
+ *
+ * @param {object} config entschluesselte Bitget-Zugangsdaten
+ * @param {number} startTime gewuenschter Beginn in ms
+ * @param {number} endTime Ende in ms
+ * @returns {Promise<{positions: object[], abStart: number, gekappt: boolean}>}
+ *   `gekappt` sagt, dass vor `abStart` eine Luecke bleibt, die Bitget nicht
+ *   mehr herausgibt — die faellt sonst niemandem auf.
+ */
+export async function holeHistorieSeit(config, startTime, endTime) {
+    const gewuenscht = Number(startTime) || 0
+    const abStart = Math.max(gewuenscht, Date.now() - HISTORIE_MAX_ALTER_MS)
+    const gekappt = abStart > gewuenscht
+
+    const positions = []
+    let idLessThan = null
+    for (;;) {
+        const opts = { startTime: abStart, endTime, limit: 100 }
+        if (idLessThan) opts.idLessThan = idLessThan
+
+        const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, opts)
+        const seite = result.data?.list || []
+        positions.push(...seite)
+
+        if (seite.length < 100) break
+        idLessThan = seite[seite.length - 1]?.positionId
+        if (!idLessThan) break
+    }
+
+    return { positions, abStart, gekappt }
+}
+
 /**
  * Get currently open positions from Bitget (USDT-M Futures).
  * Endpoint: GET /api/v2/mix/position/all-position
@@ -462,34 +519,18 @@ export function setupBitgetRoutes(app) {
 
             console.log(` -> Bitget History-Scan: startTime=${startTime} (${new Date(startTime).toISOString()}), endTime=${endTime}`)
 
-            // Fetch all pages using idLessThan pagination (Bitget uses cursor-based pagination)
-            let allPositions = []
-            let idLessThan = null
-            let hasMore = true
-
-            while (hasMore) {
-                const opts = { startTime, endTime, limit: 100 }
-                if (idLessThan) opts.idLessThan = idLessThan
-
-                const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, opts)
-
-                const positions = result.data?.list || []
-                allPositions = allPositions.concat(positions)
-
-                if (positions.length < 100) {
-                    hasMore = false
-                } else {
-                    // Use last position's positionId for cursor pagination
-                    idLessThan = positions[positions.length - 1]?.positionId
-                    if (!idLessThan) hasMore = false
-                }
-            }
+            const { positions: allPositions, abStart, gekappt } =
+                await holeHistorieSeit(config, startTime, endTime)
 
             // Update lastHistoryScan
             await knex('bitget_config').where('id', 1).update({ lastHistoryScan: endTime })
 
-            console.log(` -> Bitget History-Scan: ${allPositions.length} geschlossene Positionen seit ${new Date(startTime).toISOString()}`)
-            res.json({ ok: true, positions: allPositions, count: allPositions.length })
+            if (gekappt) {
+                console.warn(` -> Bitget History-Scan: Abfrage auf ${new Date(abStart).toISOString()} gekuerzt`
+                    + ` (aelteres gibt Bitget nicht heraus) — Luecke seit ${new Date(startTime).toISOString()}`)
+            }
+            console.log(` -> Bitget History-Scan: ${allPositions.length} geschlossene Positionen seit ${new Date(abStart).toISOString()}`)
+            res.json({ ok: true, positions: allPositions, count: allPositions.length, gekappt })
         } catch (error) {
             console.error(' -> Bitget recent closed positions error:', error.message)
             res.status(500).json({ ok: false, error: 'Bitget History-Scan fehlgeschlagen', positions: [], count: 0 })
@@ -522,27 +563,10 @@ export function setupBitgetRoutes(app) {
             }
             const endTime = Date.now()
 
-            // Fetch all pages of historical positions (cursor-based pagination)
-            let allPositions = []
-            let idLessThan = null
-            let hasMore = true
-
-            while (hasMore) {
-                const opts = { startTime, endTime, limit: 100 }
-                if (idLessThan) opts.idLessThan = idLessThan
-
-                const result = await getHistoryPositions(config.apiKey, config.secretKey, config.passphrase, opts)
-
-                const positions = result.data?.list || []
-                allPositions = allPositions.concat(positions)
-
-                if (positions.length < 100) {
-                    hasMore = false
-                } else {
-                    idLessThan = positions[positions.length - 1]?.positionId
-                    if (!idLessThan) hasMore = false
-                }
-            }
+            // Dieselbe 90-Tage-Grenze wie beim History-Scan: nach einem laengeren
+            // Unterbruch liegt auch `lastApiImport` ausserhalb des Fensters.
+            const { positions: allPositions, abStart, gekappt } =
+                await holeHistorieSeit(config, startTime, endTime)
 
             // Update last import timestamp
             await knex('bitget_config').where('id', 1).update({ lastApiImport: endTime })
@@ -550,9 +574,10 @@ export function setupBitgetRoutes(app) {
             res.json({
                 ok: true,
                 positions: allPositions,
-                startTime,
+                startTime: abStart,
                 endTime,
-                count: allPositions.length
+                count: allPositions.length,
+                gekappt
             })
         } catch (error) {
             res.status(500).json({ error: 'Interner Serverfehler' })
