@@ -259,11 +259,11 @@
                             <!-- Wie auf dem Desktop klickbar zur Handelsseite — hier ist es
                                  die einzige Stelle am Telefon, wo die Listung überhaupt
                                  steht, deshalb muss der Link auch hierhin. -->
-                            <a v-for="e in boersenVon(z)" :key="e.boerse" class="crBoerse"
+                            <a v-for="e in boersenLinksVon(z)" :key="e.boerse" class="crBoerse"
                                 :href="boerseUrl(e.boerse, z.symbol)" target="_blank" rel="noopener noreferrer"
-                                :title="t('coinradar.gelistetAuf', { b: boerseName(e.boerse) })"
+                                :title="t('coinradar.gelistetAuf', { b: BOERSE_LINK_NAME[e.boerse] })"
                                 @click.stop>
-                                {{ boerseKurz(e.boerse) }}
+                                {{ BOERSE_LINK_KURZ[e.boerse] }}
                             </a>
                         </div>
                         <div v-if="offen === z.id && z.status === 'bewertet'" class="crKarteDetail">
@@ -379,11 +379,11 @@
                                         <!-- Wo es den Coin überhaupt gibt. Leise gesetzt: eine
                                              Randnotiz, bis jemand danach filtert. Klickbar direkt
                                              auf die Handelsseite der jeweiligen Börse. -->
-                                        <a v-for="e in boersenVon(z)" :key="e.boerse" class="crBoersePunkt"
+                                        <a v-for="e in boersenLinksVon(z)" :key="e.boerse" class="crBoersePunkt"
                                             :href="boerseUrl(e.boerse, z.symbol)" target="_blank" rel="noopener noreferrer"
-                                            :title="t('coinradar.gelistetAuf', { b: boerseName(e.boerse) })"
+                                            :title="t('coinradar.gelistetAuf', { b: BOERSE_LINK_NAME[e.boerse] })"
                                             @click.stop>
-                                            {{ boerseKurz(e.boerse) }}
+                                            {{ BOERSE_LINK_KURZ[e.boerse] }}
                                         </a>
                                         <span v-if="boersenUnbekannt(z).length" class="crBoersePunkt crUnbekannt"
                                             :title="t('coinradar.listungUnbekannt', { b: boersenUnbekannt(z).map(boerseName).join(', ') })">?</span>
@@ -718,6 +718,11 @@ import InfoTipp from '../components/InfoTipp.vue'
 import { useKostenAnzeige } from '../utils/formatters.js'
 import { useIstTelefon } from '../utils/geraet.js'
 import { logWarn } from '../utils/logger.js'
+import { currentUser } from '../stores/globals.js'
+import {
+    BOERSE_KURZ as BOERSE_LINK_KURZ, BOERSE_NAME as BOERSE_LINK_NAME,
+    boerseUrl, aktivierteBoersen,
+} from '../utils/boersenLinks.js'
 
 const { t } = useI18n()
 const istTelefon = useIstTelefon()
@@ -838,24 +843,6 @@ const noteKlasse = (w) => (w >= 60 ? 'gut' : (w >= 40 ? 'mittel' : 'schwach'))
 /** Börsennamen kurz — in einer Tabellenzelle zählt jedes Zeichen. */
 const BOERSE_KURZ = { bitunix: 'BX', bitget: 'BG', pionex: 'PX' }
 const boerseKurz = (b) => BOERSE_KURZ[b] || b
-
-/**
- * Direktlink zur Handelsseite eines Symbols auf einer Börse.
- *
- * Bitunix ist die Quelle des Symbols selbst (`z.symbol` stammt aus
- * `holeHandelbar()`), und Bitget wird im ganzen Coin-Radar mit demselben
- * String angefragt — `boersen.js` liest Bitgets Orderbuch unter exakt
- * diesem Symbol, ohne Umformung. Beide Börsen bekommen `z.symbol` deshalb
- * unverändert. Pionex benennt seine Handelsseite anders (`BASIS.PERP_USDT`
- * statt `BASISUSDT`); die Basis ist dieselbe, die auch die Listungsprüfung
- * auf dem Server verwendet (USDT-Endung und `1000`-Bündelung abgeschnitten).
- */
-const BOERSE_URL = {
-    bitunix: (s) => `https://www.bitunix.com/contract-trade/${s}`,
-    bitget: (s) => `https://www.bitget.com/futures/usdt/${s}`,
-    pionex: (s) => `https://www.pionex.com/en/futures/${s.replace(/USDT$/, '').replace(/^1000+/, '')}.PERP_USDT/Manual`,
-}
-const boerseUrl = (boerse, symbol) => BOERSE_URL[boerse]?.(symbol) || null
 
 /*
  * Ausgeschrieben — für alles, was beim Darüberfahren erscheint.
@@ -1015,6 +1002,17 @@ const istEigenstaendig = (z) => !ohneWert(z.btcKorrelation)
 const boersenVon = (z) => (Array.isArray(z.boersen?.liste) ? z.boersen.liste : [])
 const boersenUnbekannt = (z) => (Array.isArray(z.boersen?.unbekannt) ? z.boersen.unbekannt : [])
 const handelbarAuf = (z, boerse) => boersenVon(z).some((e) => e.boerse === boerse)
+
+/**
+ * Verlinkungen, die für diesen Coin tatsächlich angezeigt werden: gelistete
+ * Börsen, gefiltert auf das, was in den Einstellungen aktiviert ist, plus
+ * TradingView (kein Listungscheck — jeder Coin hier kommt von Binance).
+ */
+const boersenLinksVon = (z) => {
+    const aktiv = aktivierteBoersen(currentUser.value?.boersenLinks)
+    const geliste = boersenVon(z).filter((e) => aktiv.includes(e.boerse))
+    return aktiv.includes('tradingview') ? [...geliste, { boerse: 'tradingview' }] : geliste
+}
 
 /**
  * Trifft der Börsenfilter zu? ODER über die gewählten Börsen.

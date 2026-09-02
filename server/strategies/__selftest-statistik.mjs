@@ -8,7 +8,10 @@
  * Backtest, der still ein halbes Jahr weniger gemessen hat als eingestellt.
  */
 
-import { berechneStatistik, berechneSharpe, pruefeAbdeckung, runBacktest, MIN_TRADES_BELASTBAR } from '../strategy-backtest.js'
+import {
+    berechneStatistik, berechneSharpe, pruefeAbdeckung, runBacktest, MIN_TRADES_BELASTBAR,
+    berechneBuyHoldBaseline, floatingEquitySchritt, schaetzeFloatingDrawdownAusTrades,
+} from '../strategy-backtest.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -309,6 +312,83 @@ console.log('\nDatenabdeckung')
     const a = pruefeAbdeckung(k, von, jetzt + 10 * STUNDE, '1h')
     check('Zukunft wird auf die letzte geschlossene Kerze geklemmt', a.vollstaendig === true,
         `${a.prozent.toFixed(0)} % ${JSON.stringify(a.fehlend)}`)
+}
+
+// ── Buy&Hold-Baseline ─────────────────────────────────────────────────────
+console.log('\nBuy&Hold-Baseline')
+{
+    check('zu wenige Kerzen ergeben keine Baseline', berechneBuyHoldBaseline([{ o: 100, c: 100 }], 1000) === null)
+    check('kein Open bei null ergibt keine Baseline',
+        berechneBuyHoldBaseline([{ o: 0, c: 100 }, { o: 100, c: 110 }], 1000) === null)
+
+    const b = berechneBuyHoldBaseline([{ o: 100, c: 101 }, { o: 101, c: 120 }], 1000)
+    check('Rendite ist erster Open zu letztem Close, nicht Close zu Close',
+        Math.abs(b.buyHoldReturnPct - 20) < 1e-9, String(b.buyHoldReturnPct))
+    check('Endkapital folgt derselben Rendite',
+        Math.abs(b.buyHoldEndEquity - 1200) < 1e-9, String(b.buyHoldEndEquity))
+
+    const fallend = berechneBuyHoldBaseline([{ o: 100, c: 100 }, { o: 100, c: 90 }], 1000)
+    check('ein fallender Kurs ergibt eine negative Baseline',
+        fallend.buyHoldReturnPct < 0, String(fallend.buyHoldReturnPct))
+}
+
+// ── Floating-Drawdown ─────────────────────────────────────────────────────
+//
+// `maxDrawdownPct` misst nur an Trade-Abschlüssen — eine Position, die
+// zwischenzeitlich tief im Minus steht, bevor sie sich am Stop gerade noch mit
+// einem kleinen Verlust rettet, taucht dort NICHT auf. Genau das soll der
+// Floating-Drawdown fangen.
+console.log('\nFloating-Drawdown')
+{
+    const long = { direction: 'long', entryPrice: 100, qty: 1 }
+    const zustand = { hoch: 1000, maxDd: 0 }
+
+    // Kerze 1: Kurs fällt bis 70 (−30 vom Einstieg), schliesst aber bei 95.
+    floatingEquitySchritt(zustand, 1000, [long], { l: 70, h: 100 })
+    check('der Tiefstpunkt INNERHALB der Kerze zählt, nicht nur der Schluss',
+        Math.abs(zustand.maxDd - 3.0) < 1e-9, String(zustand.maxDd))
+
+    // Kerze 2: Position schliesst bei 98 mit kleinem Verlust — realisiert
+    // wäre der Drawdown winzig, aber der Floating-Wert bleibt stehen.
+    const zustandNachher = { hoch: zustand.hoch, maxDd: zustand.maxDd }
+    floatingEquitySchritt(zustandNachher, 998, [], { l: 98, h: 98 })
+    check('der Floating-Drawdown bleibt bestehen, auch wenn der Trade glimpflich endet',
+        Math.abs(zustandNachher.maxDd - 3.0) < 1e-9, String(zustandNachher.maxDd))
+    check('das ist grösser als der reale Verlust dieses Trades (0,2 %)',
+        zustandNachher.maxDd > 0.2)
+
+    // Ohne offene Position ist Floating-Equity identisch mit der Equity.
+    const flach = { hoch: 1000, maxDd: 0 }
+    const fe = floatingEquitySchritt(flach, 1000, [], { l: 900, h: 1100 })
+    check('ohne offene Position bewegt sich nichts', fe === 1000 && flach.maxDd === 0, String(fe))
+
+    // Short: der ungünstigste Preis ist das HOCH der Kerze, nicht das Tief.
+    const short = { direction: 'short', entryPrice: 100, qty: 1 }
+    const zustandShort = { hoch: 1000, maxDd: 0 }
+    floatingEquitySchritt(zustandShort, 1000, [short], { l: 100, h: 130 })
+    check('bei Short zieht das Hoch der Kerze den Drawdown, nicht das Tief',
+        Math.abs(zustandShort.maxDd - 3.0) < 1e-9, String(zustandShort.maxDd))
+}
+
+// ── Floating-Drawdown aus gespeicherten Trades (Papier-/Live-Betrieb) ────
+//
+// `ladePerformance` hat keine Kerzen, nur abgeschlossene Trades mit ihrem MAE
+// in R — diese Näherung rechnet das eingegangene Risiko aus netPnl/rMultiple
+// zurück und nimmt an, der Tiefpunkt lag vor dem Ergebnis.
+console.log('\nFloating-Drawdown aus Trades (Näherung)')
+{
+    check('ein Verlust-Trade mit MAE über dem Ergebnis zieht den Floating-Wert tiefer',
+        Math.abs(schaetzeFloatingDrawdownAusTrades([{ netPnl: -10, rMultiple: -1, maeR: 3 }], 1000) - 3) < 1e-9)
+
+    check('ein Break-Even-Trade (rMultiple 0) trägt mangels Risiko nichts bei',
+        schaetzeFloatingDrawdownAusTrades([{ netPnl: 0, rMultiple: 0, maeR: 5 }], 1000) === 0)
+
+    const gemischt = schaetzeFloatingDrawdownAusTrades([
+        { netPnl: 200, rMultiple: 2, maeR: 0 },
+        { netPnl: -10, rMultiple: -1, maeR: 5 },
+    ], 1000)
+    check('der Drawdown misst gegen den zuvor erreichten Höchststand, nicht gegen den Start',
+        Math.abs(gemischt - (50 / 12)) < 1e-6, String(gemischt))
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)

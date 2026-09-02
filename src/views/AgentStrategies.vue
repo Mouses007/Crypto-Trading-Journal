@@ -16,6 +16,7 @@ import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import { useXDecCurrencyFormat } from '../utils/formatters.js'
 import { logError } from '../utils/logger.js'
 import { apiFehlerText } from '../utils/apiError.js'
+import dayjs from '../utils/dayjs-setup.js'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -67,6 +68,41 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 const verlaufOffen = ref(null)          // instanceId oder null
 const verlaufDaten = ref([])
 const verlaufLaedt = ref(false)
+
+// ── Coin-Ausblick ─────────────────────────────────────────────────────────
+// Welche Trades hat DIESE Instanz auf DIESEM Coin gemacht? Ein blosser
+// Ausblick beim Durchklicken — deshalb der schlanke Endpunkt statt der vollen
+// Auswertung (Trichter, Gruppierungen, Buy&Hold-Kerzenabruf wären hier
+// unnötiger Ballast).
+const coinOffen = ref({ instanceId: null, symbol: '' })
+const coinTrades = ref([])
+const coinLaedt = ref(false)
+
+async function coinAnzeigen(inst, symbol) {
+    if (coinOffen.value.instanceId === inst.id && coinOffen.value.symbol === symbol) {
+        coinOffen.value = { instanceId: null, symbol: '' }
+        return
+    }
+    coinOffen.value = { instanceId: inst.id, symbol }
+    coinLaedt.value = true
+    coinTrades.value = []
+    try {
+        const r = await axios.get('/api/strategies/trades', { params: { instanceId: inst.id, symbol } })
+        coinTrades.value = r.data
+    } catch (e) {
+        logError('AgentStrategies', 'Coin-Trades laden fehlgeschlagen', e)
+    } finally {
+        coinLaedt.value = false
+    }
+}
+
+/** Sprung zur vollen Auswertung, vorgefiltert auf genau diese Instanz+diesen Coin. */
+function zurZwischenauswertung() {
+    router.push({
+        path: '/agent/performance',
+        query: { instanceId: coinOffen.value.instanceId, symbol: coinOffen.value.symbol, tab: 'liste' },
+    })
+}
 
 async function verlaufAnzeigen(inst) {
     if (verlaufOffen.value === inst.id) { verlaufOffen.value = null; return }
@@ -311,6 +347,7 @@ async function notAusAusloesen(positionenSchliessen) {
 
 const modusFarbe = (m) => (m === 'live' ? 'bg-danger' : m === 'shadow' ? 'bg-warning text-dark' : 'bg-secondary')
 const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
+const zahl = (v, n = 2) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '–' : Number(v).toFixed(n))
 </script>
 
 <template>
@@ -365,7 +402,10 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                         <span class="badge" :class="modusFarbe(inst.mode)">{{ t('strategies.mode_' + inst.mode) }}</span>
                         <span class="badge bg-dark">{{ (inst.timeframes?.length ? inst.timeframes : [inst.timeframe]).join(' · ') }}</span>
                         <span class="badge bg-dark">v{{ inst.paramsVersion }}</span>
-                        <span v-for="s in inst.symbols" :key="s" class="badge bg-dark">{{ s }}</span>
+                        <span v-for="s in inst.symbols" :key="s" class="badge pointerClass"
+                            :class="coinOffen.instanceId === inst.id && coinOffen.symbol === s ? 'bg-info text-dark' : 'bg-dark'"
+                            :title="t('strategies.coinTradesHint')"
+                            @click="coinAnzeigen(inst, s)">{{ s }}</span>
 
                         <div class="ms-auto d-flex align-items-center gap-3">
                             <small class="text-muted">
@@ -416,6 +456,51 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
                                 </div>
                             </div>
                             <div v-if="!verlaufDaten.length" class="text-muted small">{{ t('strategies.historyEmpty') }}</div>
+                        </template>
+                    </div>
+
+                    <!-- ══ Coin-Ausblick ══
+                         Klick auf ein Symbol-Badge oben klappt hier die Trades
+                         dieser Instanz auf genau diesem Coin auf. -->
+                    <div v-if="coinOffen.instanceId === inst.id" class="mt-2 verlaufBox p-2">
+                        <div v-if="coinLaedt" class="text-muted small">
+                            <span class="spinner-border spinner-border-sm me-1"></span>{{ t('common.loading') }}
+                        </div>
+                        <template v-else>
+                            <div v-if="!coinTrades.length" class="text-muted small">
+                                {{ t('strategies.coinTradesEmpty', { symbol: coinOffen.symbol }) }}
+                            </div>
+                            <template v-else>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-borderless mb-0">
+                                        <thead>
+                                            <tr class="text-muted small">
+                                                <th>{{ t('strategies.exitTime') }}</th>
+                                                <th>{{ t('strategies.direction') }}</th>
+                                                <th class="text-end">R</th>
+                                                <th class="text-end">PnL</th>
+                                                <th>{{ t('strategies.byExitReason') }}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="tr in coinTrades" :key="tr.id">
+                                                <td class="small text-muted">{{ dayjs(Number(tr.exitTime)).format('DD.MM. HH:mm') }}</td>
+                                                <td class="small">{{ tr.direction }}</td>
+                                                <td class="text-end small" :class="tr.rMultiple >= 0 ? 'greenTrade' : 'redTrade'">
+                                                    {{ zahl(tr.rMultiple) }}
+                                                </td>
+                                                <td class="text-end small" :class="tr.netPnl >= 0 ? 'greenTrade' : 'redTrade'">
+                                                    {{ geld(tr.netPnl) }}
+                                                </td>
+                                                <td class="small text-muted">{{ tr.exitReason }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <button class="btn btn-sm btn-outline-info mt-2" @click="zurZwischenauswertung">
+                                    <i class="uil uil-chart-line me-1"></i>{{ t('strategies.toInterimReview') }}
+                                </button>
+                            </template>
                         </template>
                     </div>
 
@@ -637,7 +722,7 @@ const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
     padding: 0.1rem 0;
 }
 
-.torJa { color: var(--green-color, #27ae60); }
+.torJa { color: var(--green, #27ae60); }
 .torNein { color: var(--red-color, #e74c3c); }
 
 .status-dot {

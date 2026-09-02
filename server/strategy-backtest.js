@@ -112,6 +112,43 @@ function emptyFunnel() {
 const bump = (obj, key) => { obj[key] = (obj[key] || 0) + 1 }
 
 /**
+ * Ein Schritt der Floating-Drawdown-Verfolgung.
+ *
+ * `maxDrawdownPct` (siehe `berechneStatistik`) misst nur an Trade-ABSCHLÜSSEN
+ * — eine Position, die zwischenzeitlich tief im Minus steht, bevor sie am Stop
+ * schliesst, fliesst dort nicht ein. Hier wird JEDE Kerze zum ungünstigsten
+ * Preis bewertet (dieselbe pessimistische Grundhaltung wie der Rest der
+ * Datei): Tief bei Long, Hoch bei Short — nicht `pos.maePrice`, das ist der
+ * Tiefstwert seit Einstieg und damit ein Wert PRO TRADE, keine Zeitreihe.
+ *
+ * Läuft als Peak-to-Trough auf einer eigenen Serie statt sie komplett zu
+ * speichern — bei 20 000 Kerzen wäre das reiner Ballast für eine Zahl, die am
+ * Ende nur EIN Prozentwert ist. Als eigene Funktion, damit sie ohne einen
+ * kompletten Backtest-Lauf mit echter Strategie-Erkennung testbar ist.
+ *
+ * @param {{hoch:number, maxDd:number}} zustand  wird in place fortgeschrieben
+ * @param {number} equity            realisierte Equity zu diesem Zeitpunkt
+ * @param {Array}  offenePositionen  Positionen mit direction/entryPrice/qty
+ * @param {{l:number,h:number}} kerze
+ * @returns {number} Floating-Equity dieser Kerze
+ */
+export function floatingEquitySchritt(zustand, equity, offenePositionen, kerze) {
+    let floatingEquity = equity
+    for (const pos of offenePositionen) {
+        const ungPreis = pos.direction === 'long' ? kerze.l : kerze.h
+        floatingEquity += pos.direction === 'long'
+            ? (ungPreis - pos.entryPrice) * pos.qty
+            : (pos.entryPrice - ungPreis) * pos.qty
+    }
+    if (floatingEquity > zustand.hoch) zustand.hoch = floatingEquity
+    if (zustand.hoch > 0) {
+        const dd = ((zustand.hoch - floatingEquity) / zustand.hoch) * 100
+        if (dd > zustand.maxDd) zustand.maxDd = dd
+    }
+    return floatingEquity
+}
+
+/**
  * @param {object} opts
  * @param {string} opts.strategyId
  * @param {object} opts.params      Roh-Parameter (werden validiert)
@@ -242,6 +279,15 @@ export async function runBacktest(opts) {
     let equity = startEquity
     // Wert der am Ende noch offenen Positionen — bewusst NEBEN der Kapitalkurve
     let unrealisiert = 0
+    // Floating-Drawdown: `maxDrawdownPct` (siehe berechneStatistik) misst nur an
+    // Trade-ABSCHLÜSSEN — eine Position, die zwischenzeitlich tief im Minus
+    // steht, bevor sie am Stop schliesst, fliesst dort nicht ein. Hier wird JEDE
+    // Kerze zum ungünstigsten Preis bewertet (dieselbe pessimistische
+    // Grundhaltung wie der Rest der Datei), damit dieser Rückgang nicht
+    // unterschlagen wird. Läuft als Peak-to-Trough auf einer eigenen Serie statt
+    // sie komplett zu speichern — bei 20 000 Kerzen wäre das reiner Ballast für
+    // eine Zahl, die am Ende nur EIN Prozentwert ist.
+    const floatingZustand = { hoch: startEquity, maxDd: 0 }
     let nextSetupId = 1
     let offeneSetups = []
     const bekannteSchluessel = new Set()
@@ -297,6 +343,8 @@ export async function runBacktest(opts) {
             }
             offenePositionen = bleiben
         }
+
+        floatingEquitySchritt(floatingZustand, equity, offenePositionen, kerze)
 
         // 2. Erkennung auf allem, was bis einschliesslich dieser Kerze geschlossen ist
         const von = volleHistorie ? 0 : Math.max(0, i + 1 - fenster)
@@ -457,6 +505,8 @@ export async function runBacktest(opts) {
     }
 
     const abdeckung = pruefeAbdeckung(candles, opts.fromTs, opts.toTs, timeframe)
+    const baseline = berechneBuyHoldBaseline(candles.slice(warmup), startEquity)
+    const statsRoh = berechneStatistik(trades, startEquity, equity, equityCurve)
 
     return {
         // Die erkannten Setups gehören zum Ergebnis, nicht nur die Trades:
@@ -472,7 +522,16 @@ export async function runBacktest(opts) {
             invalidReason: s.invalidReason || '', rejectReason: s.rejectReason || '',
         })),
         stats: {
-            ...berechneStatistik(trades, startEquity, equity, equityCurve),
+            ...statsRoh,
+            // Zusätzlich zu `maxDrawdownPct` (nur bei Trade-Abschluss gemessen):
+            // der Rückgang, den eine offene Position zwischenzeitlich gerissen
+            // hätte, wäre sie schon zu diesem Zeitpunkt bewertet worden.
+            maxFloatingDrawdownPct: floatingZustand.maxDd,
+            // Kontrollgruppe: schlägt die Strategie reines Halten? `null`, wenn
+            // keine Baseline berechenbar war (z. B. zu wenige Kerzen) — dann
+            // zeigt die Oberfläche keinen Vergleich statt einer erfundenen Zahl.
+            baselineBuyHoldReturnPct: baseline?.buyHoldReturnPct ?? null,
+            baselineDiffPct: baseline ? statsRoh.returnPct - baseline.buyHoldReturnPct : null,
             // Was die offenen Positionen zum Stichtag wert wären. Steht neben
             // den Kennzahlen, nicht in ihnen — wer sie mitrechnen will, kann
             // es tun, aber niemand tut es versehentlich.
@@ -667,6 +726,66 @@ export function berechneStatistik(alleTrades, startEquity, endEquity, equityCurv
         endEquity,
         returnPct: startEquity > 0 ? ((endEquity - startEquity) / startEquity) * 100 : 0,
     }
+}
+
+/**
+ * Kontrollgruppe für einen Backtest: was hätte reines Halten über denselben
+ * Zeitraum gebracht? Ohne sie ist eine positive Rendite bedeutungslos — an
+ * einem Tag, an dem der Coin ohnehin durchmarschiert, sieht jede Strategie gut
+ * aus (dasselbe Prinzip wie die Kontrollgruppe in `radar-guete.js`, dort für
+ * den Coin-Radar).
+ *
+ * Bewusst NUR Buy&Hold, nicht die „ungefilterte Strategie" wie beim Vorbild:
+ * das würde einen zweiten vollständigen Simulationslauf verlangen. Buy&Hold
+ * kostet nichts extra — die Kerzen sind ohnehin schon geladen.
+ *
+ * `candles` beginnt bewusst erst NACH der Warmup-Phase: die Strategie konnte
+ * darin ohnehin nicht handeln, und ein Vergleich gegen den Warmup-Anfangspreis
+ * wäre ein Vorteil, den keine Strategie je hätte nutzen können.
+ */
+export function berechneBuyHoldBaseline(candles, startEquity) {
+    if (!Array.isArray(candles) || candles.length < 2) return null
+    const erstesOpen = candles[0].o
+    const letztesClose = candles[candles.length - 1].c
+    if (!(erstesOpen > 0)) return null
+    const returnPct = ((letztesClose - erstesOpen) / erstesOpen) * 100
+    return {
+        buyHoldReturnPct: returnPct,
+        buyHoldEndEquity: startEquity * (1 + returnPct / 100),
+    }
+}
+
+/**
+ * Näherung des Floating-Drawdown aus bereits ABGESCHLOSSENEN Trades (Papier-
+ * /Schatten-/Live-Betrieb), ohne Kerzen zur Verfügung zu haben.
+ *
+ * `floatingEquitySchritt` braucht eine Kerze je Schritt — die echte Auswertung
+ * (`ladePerformance`) hat nur die gespeicherten Trades mit ihrem MAE in R.
+ * Angenommen wird: der Tiefpunkt eines Trades lag VOR seinem Ergebnis (das ist
+ * exakt, was „Maximum Adverse Excursion" bedeutet), und das eingegangene
+ * Risiko in USD lässt sich aus `netPnl / rMultiple` zurückrechnen. Gröber als
+ * die kerzengenaue Version, aber besser als ein blinder Fleck — bei einem
+ * Break-Even-Trade (rMultiple 0) trägt er mangels rekonstruierbarem Risiko
+ * nichts bei, statt zu raten.
+ */
+export function schaetzeFloatingDrawdownAusTrades(trades, startEquity) {
+    let equity = startEquity
+    let hoch = startEquity
+    let maxDd = 0
+    for (const t of trades) {
+        const rMultiple = Number(t.rMultiple) || 0
+        const risk = rMultiple !== 0 ? Math.abs((Number(t.netPnl) || 0) / rMultiple) : 0
+        const mae = Number(t.maeR) || 0
+        const tiefpunkt = equity - risk * mae
+        if (equity > hoch) hoch = equity
+        if (hoch > 0) {
+            const dd = ((hoch - tiefpunkt) / hoch) * 100
+            if (dd > maxDd) maxDd = dd
+        }
+        equity += Number(t.netPnl) || 0
+        if (equity > hoch) hoch = equity
+    }
+    return maxDd
 }
 
 /** Grobe Abschätzung, wie viele Kerzen ein Zeitraum umfasst (für Limits in der UI). */

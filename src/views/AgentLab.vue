@@ -839,6 +839,7 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || 'â
                                     <th class="text-end" v-if="matrix.ergebnis.urteil">Î”</th>
                                     <th class="text-end">{{ t('strategies.matrixWithoutBest') }}</th>
                                     <th class="text-end">{{ t('strategies.kpiMaxDd') }}</th>
+                                    <th class="text-end" :title="t('strategies.baselineHint')">{{ t('strategies.kpiBuyHold') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -859,6 +860,10 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || 'â
                                     </td>
                                     <td class="text-end">{{ matrixZahl(z.kandidat.ohneBestenR) }}</td>
                                     <td class="text-end">{{ matrixZahl(z.kandidat.maxDrawdownPct, 2) }} %</td>
+                                    <td class="text-end text-muted">
+                                        {{ z.kandidat.baselineBuyHoldReturnPct === null ? 'â€“'
+                                            : matrixZahl(z.kandidat.baselineBuyHoldReturnPct, 1) + ' %' }}
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -967,6 +972,7 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || 'â
                             { l: t('strategies.kpiNetPnl'), v: geld(ergebnis.stats.netPnl),
                               farbe: ergebnis.stats.netPnl >= 0 },
                             { l: t('strategies.kpiMaxDd'), v: zahl(ergebnis.stats.maxDrawdownPct, 1) + ' %' },
+                            { l: t('strategies.kpiFloatingDd'), v: zahl(ergebnis.stats.maxFloatingDrawdownPct, 1) + ' %' },
                             { l: t('strategies.kpiSharpe'),
                               v: ergebnis.stats.sharpe === null || ergebnis.stats.sharpe === undefined
                                   ? 'â€”' : zahl(ergebnis.stats.sharpe, 2),
@@ -982,6 +988,23 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || 'â
                             </div>
                         </div>
                     </div>
+
+                    <!-- Kontrollgruppe: schlÃ¤gt die Strategie reines Halten? Ohne
+                         sie ist eine positive Rendite bedeutungslos. -->
+                    <p v-if="ergebnis.stats.baselineBuyHoldReturnPct !== null && ergebnis.stats.baselineBuyHoldReturnPct !== undefined"
+                        class="small mb-3"
+                        :class="ergebnis.stats.baselineDiffPct > 0 ? 'greenTrade' : (ergebnis.stats.baselineDiffPct < 0 ? 'redTrade' : 'text-muted')">
+                        <i class="uil uil-balance-scale me-1"></i>
+                        {{ ergebnis.stats.baselineDiffPct > 0
+                            ? t('strategies.baselineBeats', { diff: zahl(Math.abs(ergebnis.stats.baselineDiffPct), 1) })
+                            : ergebnis.stats.baselineDiffPct < 0
+                                ? t('strategies.baselineMisses', { diff: zahl(Math.abs(ergebnis.stats.baselineDiffPct), 1) })
+                                : t('strategies.baselineTie') }}
+                        <span class="text-muted">
+                            ({{ t('strategies.returnPct') }} {{ zahl(ergebnis.stats.returnPct, 1) }} % Â·
+                            {{ t('strategies.kpiBuyHold') }} {{ zahl(ergebnis.stats.baselineBuyHoldReturnPct, 1) }} %)
+                        </span>
+                    </p>
 
                     <div class="row">
                         <div class="col-12 col-md-6">
@@ -1141,8 +1164,8 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || 'â
    Vorgabe senkt die Deckkraft so weit, dass die Beschriftung verschwindet. */
 .robustKnoepfe .btn:disabled {
     opacity: 1;
-    color: var(--white-40, rgba(255, 255, 255, 0.45));
-    border-color: var(--white-12, rgba(255, 255, 255, 0.15));
+    color: var(--white-38, rgba(255, 255, 255, 0.55));
+    border-color: var(--white-10, rgba(255, 255, 255, 0.15));
 }
 
 .stufenLeiste {
@@ -1162,12 +1185,12 @@ const instanzName = (id) => instanzen.value.find((i) => i.id === id)?.name || 'â
     font-size: 0.8rem;
     padding: 0.1rem 0.45rem;
     border-radius: var(--border-radius, 6px);
-    background: var(--white-6, rgba(255, 255, 255, 0.08));
-    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.12));
+    background: var(--white-10, rgba(255, 255, 255, 0.08));
+    border: 1px solid var(--white-10, rgba(255, 255, 255, 0.12));
 }
 
 tr.besterWert {
-    background: rgba(77, 144, 254, 0.10);
+    background: rgba(1, 180, 255, 0.10);
 }
 
 .kpi-label {
