@@ -14,6 +14,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
 import { liveSymbol } from '../../stores/live.js'
+import { currentUser } from '../../stores/globals.js'
+import { BOERSE_NAME, boerseUrl, aktivierteBoersen } from '../../utils/boersenLinks.js'
 
 const props = defineProps({
     daten: { type: Object, default: null },
@@ -47,9 +49,19 @@ const zoneFuer = (v) => ZONEN.find(z => v >= z.von && v <= z.bis) || ZONEN[2]
 
 const punkte = computed(() => props.daten?.punkte || [])
 const kurz = (s) => s.replace(/USDT$/, '')
-// Bitunix und Binance nutzen dasselbe Symbolschema (gleiche Annahme wie in
-// CoinRadar.vue/boersen.js) — kein eigener Listungs-Check nötig.
-const bitunixUrl = (s) => `https://www.bitunix.com/contract-trade/${s}`
+
+/**
+ * Verlinkungen für den Tooltip — je aktivierter Option aus den Einstellungen
+ * eine Zeile. Anders als in CoinRadar.vue OHNE Listungscheck: diese Kachel
+ * kennt nur den Binance-Datensatz, keine Bitget-/Pionex-Listungsprüfung je
+ * Coin (gleiches, bewusst unverändertes Verhalten wie bisher bei Bitunix).
+ */
+function boersenLinksZeilen(symbol) {
+    return aktivierteBoersen(currentUser.value?.boersenLinks).map((b) =>
+        `<a href="${boerseUrl(b, symbol)}" target="_blank" rel="noopener noreferrer" `
+        + `style="color:#4da3ff">${t('marktradar.rsi.openBoerse', { boerse: BOERSE_NAME[b] })}</a>`,
+    ).join('<br/>')
+}
 
 function zeichne() {
     if (!chart || !punkte.value.length) return
@@ -79,7 +91,7 @@ function zeichne() {
             borderColor: 'rgba(255,255,255,0.18)',
             textStyle: { color: 'rgba(255,255,255,0.87)', fontSize: 12 },
             // Ohne enterable schliesst sich der Tooltip, sobald die Maus ihn
-            // verlässt — der Bitunix-Link wäre nie klickbar
+            // verlässt — die Börsen-Links wären nie klickbar
             enterable: true,
             formatter: (p) => {
                 const eintrag = punkte.value[p.data.value[0]]
@@ -92,8 +104,7 @@ function zeichne() {
                     + `RSI <b>${eintrag.rsi}</b> — ${t('marktradar.rsi.zone_' + z.key)}<br/>`
                     + `<span style="opacity:.6">${t('marktradar.funding.volume')}: ${gross(eintrag.volumen24h)}</span><br/>`
                     + mcapZeile
-                    + `<a href="${bitunixUrl(eintrag.symbol)}" target="_blank" rel="noopener noreferrer" `
-                    + `style="color:#4da3ff">${t('marktradar.rsi.openBitunix')}</a>`
+                    + boersenLinksZeilen(eintrag.symbol)
             },
         },
         xAxis: {

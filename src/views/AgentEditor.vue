@@ -1171,7 +1171,7 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
 }
 
 .block {
-    border-top: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    border-top: 1px solid var(--white-10,rgba(255, 255, 255, 0.1));
     padding-top: 0.7rem;
     margin-top: 0.7rem;
 }
@@ -1179,10 +1179,10 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
 /* Vom letzten Chat-Vorschlag angefasst. Bewusst eine Kante statt einer Füllung:
    sie zeigt den Ort, ohne die Werte darin schwerer lesbar zu machen. */
 .block.blockGeaendert {
-    border-left: 3px solid var(--blue-color, #4d90fe);
+    border-left: 3px solid var(--blue-color, #01B4FF);
     padding-left: 0.6rem;
     margin-left: -0.6rem;
-    background: rgba(77, 144, 254, 0.06);
+    background: rgba(1, 180, 255, 0.06);
     border-radius: var(--border-radius, 6px);
 }
 
@@ -1203,7 +1203,7 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
 }
 
 .saetzeKarte {
-    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.12));
+    border: 1px solid var(--white-10,rgba(255, 255, 255, 0.12));
     border-radius: var(--border-radius, 6px);
     padding: 0.75rem;
 }
@@ -1223,22 +1223,22 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
 }
 
 .chatPanel {
-    border: 1px solid rgba(77, 144, 254, 0.35);
-    background: rgba(77, 144, 254, 0.05);
+    border: 1px solid rgba(1, 180, 255, 0.35);
+    background: rgba(1, 180, 255, 0.05);
     border-radius: var(--border-radius, 6px);
     padding: 0.75rem;
     margin-top: 0.7rem;
 }
 
 .chatIcon {
-    color: var(--blue-color, #4d90fe);
+    color: var(--blue-color, #01B4FF);
     font-size: 1.1rem;
 }
 
 .chatVerlauf {
     max-height: 16rem;
     overflow-y: auto;
-    border: 1px solid var(--white-12, rgba(255, 255, 255, 0.1));
+    border: 1px solid var(--white-10,rgba(255, 255, 255, 0.1));
     border-radius: var(--border-radius, 6px);
     padding: 0.5rem;
 }
@@ -1252,12 +1252,12 @@ const sortiert = (o) => Object.entries(o || {}).sort((a, b) => b[1] - a[1])
 }
 
 .chatNutzer {
-    background: rgba(77, 144, 254, 0.14);
+    background: rgba(1, 180, 255, 0.14);
     margin-left: 2rem;
 }
 
 .chatModell {
-    background: var(--white-6, rgba(255, 255, 255, 0.06));
+    background: var(--white-10, rgba(255, 255, 255, 0.06));
     margin-right: 2rem;
 }
 

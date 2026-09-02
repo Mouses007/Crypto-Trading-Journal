@@ -81,7 +81,7 @@ export const VALID_SETTINGS_KEYS = [
     'strategyLiveEnabled', 'strategyKillSwitch', 'strategyMaxLeverage', 'strategyHiddenTemplates',
     'strategyMinPaperTrades', 'strategyLlmBudgetUsd', 'aiModels', 'aiCustomUrl', 'aiKeyCustom',
     'aiKeyOpenrouter', 'aiOpenrouterCatalog', 'aiTaskProviders',
-    'radarRsiSymbols', 'radarRsiTfs', 'radarKalenderLaender', 'radarKalenderImpact', 'radarNewsQuellenAusschluss', 'radarNewsAuto', 'radarNewsStunde', 'radarNewsVideos', 'radarNewsModel', 'radarNewsAufloesung', 'radarNewsBerichtProvider', 'radarNewsBerichtModell', 'radarPicycleAlarm', 'radarPicycleSchwelle', 'radarFundingDivergenz', 'radarDivergenzSymbole',
+    'radarRsiSymbols', 'radarRsiTfs', 'radarKalenderLaender', 'radarKalenderImpact', 'radarNewsQuellenAusschluss', 'radarNewsAuto', 'radarNewsStunde', 'radarNewsVideos', 'radarNewsModel', 'radarNewsAufloesung', 'radarNewsBerichtProvider', 'radarNewsBerichtModell', 'radarPicycleAlarm', 'radarPicycleSchwelle', 'radarFundingDivergenz', 'radarDivergenzSymbole', 'boersenLinks',
     'radarNewsRhythmus', 'radarNewsWochentag', 'radarNewsThemen', 'radarNewsLaenge', 'radarNewsRuheAn', 'radarNewsRuheWoerter', 'radarNewsXModell',
     'radarNewsUpdates', 'radarNewsUpdateStunden', 'radarNewsMailVoll', 'radarNewsMailInhalt', 'radarNewsMailAktiv', 'radarNewsMailAn',
     'radarNewsBerichtAufbewahrung', 'radarNewsChartFrische',

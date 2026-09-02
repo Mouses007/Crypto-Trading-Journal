@@ -14,6 +14,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
 import { liveSymbol } from '../../stores/live.js'
+import { currentUser } from '../../stores/globals.js'
+import { BOERSE_NAME, boerseUrl, aktivierteBoersen } from '../../utils/boersenLinks.js'
 
 const props = defineProps({
     daten: { type: Object, default: null },
@@ -68,9 +70,19 @@ function farbe(v) {
 
 const proz = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} %`
 const mcapText = (v) => (v >= 1e12 ? `${(v / 1e12).toFixed(2)} Bio.` : v >= 1e9 ? `${(v / 1e9).toFixed(1)} Mrd` : `${Math.round(v / 1e6)} Mio`)
-// Bitunix und Binance nutzen dasselbe Symbolschema (gleiche Annahme wie in
-// CoinRadar.vue/boersen.js) — `perp` (bereits Binance-Format) direkt verwenden.
-const bitunixUrl = (perp) => `https://www.bitunix.com/contract-trade/${perp}`
+
+/**
+ * Verlinkungen für den Tooltip — je aktivierter Option aus den Einstellungen
+ * eine Zeile. Ohne Listungscheck je Börse (gleiches, bewusst unverändertes
+ * Verhalten wie bisher bei Bitunix) — nur TradingView ist ohnehin immer
+ * gültig, da `perp` bereits Binance-Format ist.
+ */
+function boersenLinksZeilen(perp) {
+    return aktivierteBoersen(currentUser.value?.boersenLinks).map((b) =>
+        `<a href="${boerseUrl(b, perp)}" target="_blank" rel="noopener noreferrer" `
+        + `style="color:#4da3ff">${t('marktradar.markt.openBoerse', { boerse: BOERSE_NAME[b] })}</a>`,
+    ).join('<br/>')
+}
 
 function tooltipText(m) {
     const w = m[fenster.value]
@@ -78,9 +90,9 @@ function tooltipText(m) {
         + `${t('marktradar.markt.change')}: <b style="color:${w >= 0 ? '#26be96' : '#ff5f56'}">${proz(w)}</b><br/>`
         + `<span style="opacity:.65">${t('marktradar.markt.mcap')}: ${mcapText(m.mcap)} $ · #${m.rang}</span>`
         // Ohne Perp-Markt führt ein Klick nirgendwohin und es gibt auch keine
-        // Bitunix-Seite dazu — das gehört dazugesagt
+        // Börsen-Seite dazu — das gehört dazugesagt
         + (m.perp
-            ? `<br/><a href="${bitunixUrl(m.perp)}" target="_blank" rel="noopener noreferrer" style="color:#4da3ff">${t('marktradar.markt.openBitunix')}</a>`
+            ? `<br/>${boersenLinksZeilen(m.perp)}`
             : `<br/><span style="opacity:.65">${t('marktradar.markt.noPerp')}</span>`)
 }
 

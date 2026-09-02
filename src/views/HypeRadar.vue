@@ -495,9 +495,10 @@
                     </div>
                     <div class="hypLiveKachel">
                         <div class="hypLiveWert hypLiveBoersen">
-                            <template v-if="liveOffen.listungen?.length">
-                                <span v-for="l in liveOffen.listungen" :key="l.boerse || l" class="hypBoerse"
-                                    :title="listungText(l)">{{ listungKuerzel(l) }}</span>
+                            <template v-if="boersenLinksVon(liveOffen.listungen).length">
+                                <a v-for="l in boersenLinksVon(liveOffen.listungen)" :key="l.boerse || l" class="hypBoerse"
+                                    :href="listungHref(l, liveOffen.favorit.symbol)" target="_blank" rel="noopener noreferrer"
+                                    :title="linkText(l)">{{ linkKuerzel(l) }}</a>
                             </template>
                             <span v-else class="text-muted">—</span>
                         </div>
@@ -610,8 +611,9 @@
                             <span v-if="k.narrative" class="hypChip klein">{{ k.narrative }}</span>
                             <span class="hypKarteWert">{{ geld(k.marktDaten?.liquiditaetUsd) }} USD</span>
                             <span class="hypKarteWert">{{ alter(k.marktDaten?.paarAlterStunden) }}</span>
-                            <span v-for="(l, i) in (k.marktDaten?.listungen || [])" :key="i"
-                                class="hypBoerse">{{ listungKuerzel(l) }}</span>
+                            <a v-for="(l, i) in boersenLinksVon(k.marktDaten?.listungen)" :key="i"
+                                class="hypBoerse" :href="listungHref(l, k.symbol)" target="_blank"
+                                rel="noopener noreferrer" @click.stop :title="linkText(l)">{{ linkKuerzel(l) }}</a>
                         </div>
                         <div class="hypKarteZeile">
                             <span v-if="k.status === 'verworfen'" class="badge bg-danger hypBadge">
@@ -668,9 +670,10 @@
                                     <td class="text-end">{{ alter(k.marktDaten?.paarAlterStunden) }}</td>
                                     <td>
                                         <span v-if="k.marktDaten?.dex" class="hypDex">{{ k.marktDaten.dex }}</span>
-                                        <span v-for="(l, i) in (k.marktDaten?.listungen || [])" :key="i"
-                                            class="hypBoerse" :title="listungText(l)">{{ listungKuerzel(l) }}</span>
-                                        <span v-if="!k.marktDaten?.dex && !(k.marktDaten?.listungen || []).length"
+                                        <a v-for="(l, i) in boersenLinksVon(k.marktDaten?.listungen)" :key="i"
+                                            class="hypBoerse" :href="listungHref(l, k.symbol)" target="_blank"
+                                            rel="noopener noreferrer" @click.stop :title="linkText(l)">{{ linkKuerzel(l) }}</a>
+                                        <span v-if="!k.marktDaten?.dex && !boersenLinksVon(k.marktDaten?.listungen).length"
                                             class="text-muted">—</span>
                                     </td>
                                     <td>
@@ -823,6 +826,11 @@ import { logWarn } from '../utils/logger.js'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
 import PageInfo from '../components/PageInfo.vue'
 import { useIstTelefon } from '../utils/geraet.js'
+import { currentUser } from '../stores/globals.js'
+import {
+    BOERSE_KURZ as BOERSE_LINK_KURZ, BOERSE_NAME as BOERSE_LINK_NAME,
+    boerseUrl, aktivierteBoersen,
+} from '../utils/boersenLinks.js'
 
 const { t, locale } = useI18n()
 
@@ -891,6 +899,35 @@ function listungText(l) {
     if (l.futures) teile.push(t('hype.marktFutures'))
     if (l.spot) teile.push(t('hype.marktSpot'))
     return `${boerseName(l.boerse)}: ${teile.join(' + ') || '—'}`
+}
+
+/**
+ * Verlinkte Listungen: die vorhandenen, gefiltert auf das in den Einstellungen
+ * Aktivierte, plus TradingView (kein Listungscheck — jeder erfasste Coin
+ * kommt über dieselbe Binance-Prüfung wie die drei Börsen).
+ */
+function boersenLinksVon(listungen) {
+    const aktiv = aktivierteBoersen(currentUser.value?.boersenLinks)
+    const geliste = (listungen || []).filter((l) => aktiv.includes(listungBoerse(l)))
+    return aktiv.includes('tradingview') ? [...geliste, 'tradingview'] : geliste
+}
+
+/**
+ * `k.symbol` ist die blosse Basis (die Listungsprüfung rechnet auf der
+ * Basis, siehe `pruefeListung` auf dem Server) — die Handelsseiten brauchen
+ * das volle Paar. Pionex trennt USDT/1000 intern wieder ab, siehe
+ * `boersenLinks.js`.
+ */
+function listungHref(l, symbol) {
+    return boerseUrl(listungBoerse(l), `${symbol}USDT`)
+}
+
+/** Kürzel/Text fürs Badge — TradingView ist keine Listung, deshalb eigene Maps statt `listungKuerzel`/`listungText`. */
+function linkKuerzel(l) {
+    return l === 'tradingview' ? BOERSE_LINK_KURZ.tradingview : listungKuerzel(l)
+}
+function linkText(l) {
+    return l === 'tradingview' ? BOERSE_LINK_NAME.tradingview : listungText(l)
 }
 
 // ── Favoriten & Livedaten ───────────────────────────────────────────────
