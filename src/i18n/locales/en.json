@@ -1015,6 +1015,7 @@
     "kanaeleTitel": "Delivery",
     "kandidaten": "Finds",
     "keineBefunde": "Nothing unusual.",
+    "keinBericht": "Run finished: nothing passed the check ({v} rejected) — no report.",
     "keineBerichte": "No reports yet.",
     "kiHinweis": "\"Thorough\" researches each candidate separately and is usually both better AND cheaper than \"simple\" at the same profile.",
     "kiTitel": "Who writes the report",
@@ -3644,6 +3645,30 @@
       "quellenHinweis": "Binance throttles to one event per second per symbol — a sample, not a full count. Bybit does not throttle.",
       "bybitStill": "Bybit has not delivered anything yet",
       "info": "The most recent forced liquidations in real time — what the market is flushing out right now.\nA sudden burst on one side (many longs or many shorts in quick succession) often marks the exact moment a move runs out of fuel."
+    },
+    "bookmapKopf": {
+      "pause": "Pause",
+      "weiter": "Resume",
+      "pauseTitel": "Freeze the view \u2014 recording continues",
+      "weiterTitel": "Let the view follow again"
+    },
+    "coinradar": {
+      "title": "Coin radar top 10",
+      "coin": "Coin",
+      "note": "Score",
+      "funding": "Funding p.a.",
+      "umsatz": "24h turnover",
+      "boerse": "Best venue",
+      "leer": "No completed coin radar run yet.",
+      "vorMin": "{m} min ago",
+      "vorStd": "{h} h ago",
+      "korHoch": "ranking holds",
+      "korMittel": "ranking partly stable",
+      "korTief": "ranking mostly noise",
+      "korFehlt": "stability unknown",
+      "korTitel": "Rank correlation with the previous run: 1 = the order holds, 0 = it is noise. It measures persistence, not accuracy.",
+      "waehlen": "Set {s} as this window's symbol",
+      "info": "The ten highest-scoring perpetuals from the last completed coin radar run. This tile only reads \u2014 it never triggers a run.\nScore 0\u2013100 from movement, participation, trend and cost; ATR is the average daily range, RVOL the volume against its own 20-period average. Clicking a row sets the symbol for the whole window."
     },
     "kalender": {
       "title": "Events",

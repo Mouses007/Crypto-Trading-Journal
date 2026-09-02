@@ -311,6 +311,24 @@ export async function scanneUndBerichte(einst, melde = () => {}, ausloeser = 'au
 
     const knex = getKnex()
     const jetzt = Date.now()
+
+    /*
+     * Ein Lauf ohne bestandenen Fund bekommt KEINEN Berichtseintrag.
+     *
+     * Er ist ein gültiges Ergebnis — an vielen Tagen hält schlicht nichts der
+     * Prüfung stand, `erzeugeBericht` fragt dafür nicht einmal ein Modell. Als
+     * Karte in der Berichtsliste ist er trotzdem wertlos: acht von zehn
+     * Einträgen hiessen „Keine Kandidaten" und verdeckten die Berichte, wegen
+     * derer man die Liste öffnet. Was der Lauf gesehen hat, steht ohnehin
+     * vollständig in `hype_candidates` — samt Verwerfungsgrund.
+     *
+     * `id` ist dann `null`; die Aufrufer unterscheiden daran „nichts gefunden"
+     * von „Bericht liegt vor".
+     */
+    if (!bericht.kandidaten.length) {
+        return { id: null, bericht, quellenStand }
+    }
+
     const [eingefuegt] = await knex('hype_reports').insert({
         erstelltAm: jetzt,
         ueberschrift: bericht.ueberschrift,

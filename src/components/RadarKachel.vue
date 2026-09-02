@@ -65,6 +65,20 @@ const standText = computed(() => {
             <span class="radarCardTitle">{{ titel }}</span>
             <InfoTipp v-if="infoKey" :schluessel="infoKey" />
             <span :class="['liveDot', 'dot-' + zustand]" :title="t('marktradar.status_' + zustand)"></span>
+            <!--
+                Bedienung in der Kopfzeile. Nur für die paar Regler, die man
+                WÄHREND des Handelns anfasst — alles Übrige gehört auf die
+                eigene Seite, sonst ist die Zeile nach drei Kacheln zu.
+
+                Die Kopfzeile IST der Ziehgriff (`cursor: grab`,
+                `touch-action: none`). Ein Regler darin muss beides abfangen,
+                sonst schiebt jeder Klick die Kachel durchs Raster statt den
+                Wert zu ändern.
+            -->
+            <span v-if="$slots.steuerung" class="radarCardSteuerung"
+                @pointerdown.stop @mousedown.stop @touchstart.stop @click.stop @dblclick.stop>
+                <slot name="steuerung"></slot>
+            </span>
             <span v-if="!eigenstaendig" class="radarCardStand">{{ standText }}</span>
             <span v-else class="radarCardStand"></span>
             <button type="button" class="radarCardBtn" :title="t('marktradar.refresh')" @click="emit('neuladen')">

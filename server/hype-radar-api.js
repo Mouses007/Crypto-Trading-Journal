@@ -122,9 +122,13 @@ export function setupHypeRadarRoutes(app) {
     // ── Berichte ────────────────────────────────────────────────────────
     app.get('/api/hype-radar/berichte', async (req, res) => {
         try {
+            // Leere Läufe werden seit dem Fix gar nicht mehr gespeichert; der
+            // Altbestand aus der Zeit davor bleibt in der Tabelle stehen und
+            // wird hier ausgeblendet, statt ihn zu löschen.
             const zeilen = await getKnex()('hype_reports')
                 .select('id', 'erstelltAm', 'ueberschrift', 'marktkontext',
                     'anzahlKandidaten', 'anzahlAussortiert', 'kostenUsd', 'ausloeser')
+                .where('anzahlKandidaten', '>', 0)
                 .orderBy('erstelltAm', 'desc').limit(50)
             res.json(zeilen)
         } catch (e) {
@@ -518,8 +522,11 @@ export function startHypeTakt() {
 
             laufAktiv = true
             try {
-                const { id } = await scanneUndBerichte(einst, () => {}, 'auto')
-                console.log(` -> Hype-Radar: Bericht ${id} erstellt`)
+                const { id, bericht } = await scanneUndBerichte(einst, () => {}, 'auto')
+                console.log(id
+                    ? ` -> Hype-Radar: Bericht ${id} erstellt`
+                    : ` -> Hype-Radar: kein Fund bestanden, kein Bericht `
+                      + `(${bericht.aussortiert.length} aussortiert)`)
             } finally {
                 laufAktiv = false
             }

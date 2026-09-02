@@ -148,9 +148,32 @@ export async function erzeugeEinordnung(bewertet, meta = {}, laufId = 0) {
         if (!provider) return null
 
         const cfg = await ladeLlmConfig({ provider, model: modell })
-        // Vier Sätze brauchen keine 4000 Token. Der Deckel ist hier eine
-        // Kostenbremse und zugleich eine Formvorgabe.
-        cfg.maxTokens = 400
+        /*
+         * Vier Sätze brauchen keine 3000 Token — das Denken davor schon.
+         *
+         * Mit 400 scheiterte praktisch jeder Lauf: `stopReason=length`, kein
+         * verwertbares JSON, Kosten trotzdem gebucht (127 Fehlläufe in 11
+         * Stunden, gemessen 02.09.2026). Naheliegend war, der Absatz sei zu
+         * lang — falsch. Gemessen gegen deepseek-v4-pro:
+         *
+         *   max 900  → length, alle 900 Token weg, nichts kam an
+         *   max 2000 → stop,  635 Token, 418 Zeichen Text
+         *   max 4000 → stop, 1291 Token, 419 Zeichen Text
+         *
+         * Der ANTWORTTEXT ist konstant ~130 Token. Alles darüber ist der
+         * Reasoning-Anteil, und der schwankt um mehr als das Doppelte — er
+         * zählt bei OpenRouter in `completion_tokens` mit, steht aber in
+         * `message.reasoning` und nicht in `content`. Ein Deckel, der nur den
+         * Text bemisst, schneidet deshalb das Denken ab und bekommt eine leere
+         * `content`, für die voll bezahlt wird.
+         *
+         * 3000 gibt dem Reasoning Luft (gemessenes Maximum 1291) und bleibt
+         * eine Kostenbremse — abgerechnet wird der Verbrauch, nicht der
+         * Deckel. Die Formvorgabe leistet der Prompt, und `pruefeEinordnung`
+         * kürzt zusätzlich bei 1200 Zeichen. Dieselbe Begründung wie beim
+         * `maxTokens` der Lage-Kachel in `marktradar-lage.js`.
+         */
+        cfg.maxTokens = 3000
 
         const { zeilen } = baueEinordnungsBasis(bewertet, meta)
         const antwort = await callLLMJson(cfg, {

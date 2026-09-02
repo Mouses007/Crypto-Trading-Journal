@@ -210,11 +210,21 @@ defineExpose({ jetzt })
      * Literale in fünf Dateien verstreut. Kindkomponenten erben sie über die
      * Kaskade, auch durch `scoped` hindurch.
      *
-     * `--pTrenn` trennt FELDER (sichtbar, das ist der Sinn), `--pTrennFein`
-     * gliedert INNERHALB eines Feldes (darf man übersehen).
+     * Deutlich kräftiger als zuvor (0,16 / 0,07). Auf einem schwarzen Pult mit
+     * dicht gestapelten Instrumenten verschwand eine 16-%-Linie faktisch: die
+     * Abschnitte liefen optisch ineinander, und die einzige Abgrenzung war das
+     * Beschriftungsband. Eine Trennlinie, die man suchen muss, trennt nicht.
+     *
+     * Bewusst nicht reines Weiss: bei einem Werkzeug, auf das man stundenlang
+     * schaut, schneidet eine 100-%-Linie ins Bild und zieht den Blick auf das
+     * Raster statt auf die Zahlen. 42 % steht klar, ohne zu blenden.
+     *
+     * Die Abstufung bleibt: `--pTrenn` trennt FELDER (sichtbar, das ist der
+     * Sinn), `--pTrennFein` gliedert INNERHALB eines Feldes (darf man
+     * übersehen) — es erbt jetzt den früheren Wert von `--pTrenn`.
      */
-    --pTrenn: rgba(255, 255, 255, 0.16);
-    --pTrennFein: rgba(255, 255, 255, 0.07);
+    --pTrenn: rgba(255, 255, 255, 0.42);
+    --pTrennFein: rgba(255, 255, 255, 0.16);
     /* Zwei Ebenen: Gerät (Beschriftung, Instrumente) und Arbeitsfläche (Bühne). */
     --pChrom: hsl(0, 0%, 5%);
     --pFlaeche: hsl(0, 0%, 0%);

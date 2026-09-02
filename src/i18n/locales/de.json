@@ -1015,6 +1015,7 @@
     "kanaeleTitel": "Zustellung",
     "kandidaten": "Funde",
     "keineBefunde": "Keine Auffälligkeiten.",
+    "keinBericht": "Lauf fertig: kein Fund hat die Prüfung bestanden ({v} aussortiert) — kein Bericht.",
     "keineBerichte": "Noch keine Berichte.",
     "kiHinweis": "„Gründlich\" recherchiert je Kandidat einzeln und ist bei gleichem Profil meist besser UND billiger als „einfach\".",
     "kiTitel": "Wer den Bericht schreibt",
@@ -3644,6 +3645,30 @@
       "quellenHinweis": "Binance drosselt auf ein Ereignis pro Sekunde und Symbol — Stichprobe, keine Vollerhebung. Bybit drosselt nicht.",
       "bybitStill": "Bybit hat noch nichts geliefert",
       "info": "Die letzten Zwangsliquidationen in Echtzeit — was in diesem Moment am Markt weggespült wird.\nEin plötzlicher Schwall auf einer Seite (viele Longs oder viele Shorts kurz hintereinander) markiert oft genau den Moment, in dem eine Bewegung ihren Treibstoff verliert."
+    },
+    "bookmapKopf": {
+      "pause": "Pause",
+      "weiter": "Weiter",
+      "pauseTitel": "Ansicht einfrieren \u2014 die Aufzeichnung l\u00e4uft weiter",
+      "weiterTitel": "Ansicht wieder mitlaufen lassen"
+    },
+    "coinradar": {
+      "title": "Coin-Radar Top 10",
+      "coin": "Coin",
+      "note": "Note",
+      "funding": "Funding p. a.",
+      "umsatz": "Umsatz 24h",
+      "boerse": "Beste B\u00f6rse",
+      "leer": "Noch kein fertiger Coin-Radar-Lauf.",
+      "vorMin": "vor {m} min",
+      "vorStd": "vor {h} h",
+      "korHoch": "Rangfolge h\u00e4lt",
+      "korMittel": "Rangfolge teils best\u00e4ndig",
+      "korTief": "Rangfolge gr\u00f6sstenteils Rauschen",
+      "korFehlt": "Best\u00e4ndigkeit unbekannt",
+      "korTitel": "Rangkorrelation zum vorigen Lauf: 1 = die Reihenfolge h\u00e4lt, 0 = sie ist Rauschen. Sie misst Best\u00e4ndigkeit, nicht Treffsicherheit.",
+      "waehlen": "{s} als Symbol dieses Fensters setzen",
+      "info": "Die zehn bestbewerteten Perpetuals aus dem letzten fertigen Coin-Radar-Lauf. Die Kachel liest nur \u2014 sie st\u00f6sst keinen Lauf an.\nNote 0\u2013100 aus Bewegung, Beteiligung, Trend und Kosten; ATR ist die mittlere Tagesspanne, RVOL das Volumen gegen den eigenen 20-Perioden-Schnitt. Ein Klick auf eine Zeile setzt das Symbol des ganzen Fensters."
     },
     "kalender": {
       "title": "Termine",
