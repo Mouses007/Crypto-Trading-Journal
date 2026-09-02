@@ -911,6 +911,7 @@ async function saveAgentSettings() {
    Gerät im localStorage und werden direkt auf der Seite eingestellt. */
 let radarExpanded = ref(false)
 let radarRsiSymbols = ref('')
+let boersenLinks = ref(['bitunix', 'bitget', 'pionex', 'tradingview'])
 let radarKalenderLaender = ref('')
 let radarKalenderImpact = ref('medium')
 let radarHolt = ref(false)
@@ -1092,6 +1093,9 @@ let profilUmbenennenName = ref('')
 function loadRadarSettings() {
     const s = currentUser.value || {}
     radarRsiSymbols.value = s.radarRsiSymbols || ''
+    boersenLinks.value = String(s.boersenLinks || 'bitunix,bitget,pionex,tradingview').split(',')
+        .map(b => b.trim()).filter(b => ['bitunix', 'bitget', 'pionex', 'tradingview'].includes(b))
+    if (!boersenLinks.value.length) boersenLinks.value = ['bitunix', 'bitget', 'pionex', 'tradingview']
     radarKalenderLaender.value = s.radarKalenderLaender || 'USD,JPY'
     radarKalenderImpact.value = s.radarKalenderImpact || 'medium'
     radarNewsQuellenAusschluss.value = Number(s.radarNewsQuellenAusschluss ?? 1) === 1
@@ -1288,6 +1292,7 @@ async function radarSpeichern(feld) {
             .map(h => Math.max(0, Math.min(23, Number(h) || 0))).join(','),
         // Reihenfolge festnageln, damit die Kapitel immer gleich sortiert sind
         radarNewsThemen: ['crypto', 'finanzen', 'tech', 'chartanalyse'].filter(t => radarNewsThemen.value.includes(t)).join(','),
+        boersenLinks: ['bitunix', 'bitget', 'pionex', 'tradingview'].filter(b => boersenLinks.value.includes(b)).join(','),
         radarNewsLaenge: radarNewsLaenge.value,
         radarNewsXModell: radarNewsXModell.value.trim() || 'grok-4.6',
         radarNewsRuheAn: radarNewsRuheAn.value ? 1 : 0,
@@ -5090,6 +5095,27 @@ onBeforeMount(async () => {
                         <div class="col-12 col-md-8">
                             <input type="text" class="form-control" v-model="radarRsiSymbols"
                                 placeholder="BTCUSDT, ETHUSDT, SOLUSDT" @change="radarSpeichern('radarRsiSymbols')" />
+                        </div>
+                    </div>
+
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            Börsen-Verlinkung<InfoTipp schluessel="settings.info.boersenLinks" />
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                Welche Handelsseiten neben einem Coin angezeigt werden — in Coin-Radar, Hype-Radar und den Marktradar-Kacheln RSI/Marktübersicht.
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8 d-flex flex-wrap gap-3">
+                            <label v-for="b in [
+                                { key: 'bitunix', label: 'Bitunix' },
+                                { key: 'bitget', label: 'Bitget' },
+                                { key: 'pionex', label: 'Pionex' },
+                                { key: 'tradingview', label: 'TradingView' },
+                            ]" :key="b.key" class="d-flex align-items-center gap-1 mb-0">
+                                <input type="checkbox" :value="b.key" v-model="boersenLinks"
+                                    @change="radarSpeichern('boersenLinks')">
+                                <span>{{ b.label }}</span>
+                            </label>
                         </div>
                     </div>
 

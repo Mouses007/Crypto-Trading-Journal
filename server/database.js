@@ -2013,6 +2013,8 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'radarNewsRhythmus', (t) => t.text('radarNewsRhythmus').defaultTo('taeglich'))
     await addColumnIfNotExists('settings', 'radarNewsWochentag', (t) => t.integer('radarNewsWochentag').defaultTo(1))   // 1=Mo … 7=So
     await addColumnIfNotExists('settings', 'radarNewsThemen', (t) => t.text('radarNewsThemen').defaultTo('crypto'))     // CSV: crypto,finanzen,tech
+    // CSV: bitunix,bitget,pionex,tradingview — welche Verlinkungen zu Coin-Radar/Hype-Radar/RSI-Kachel/Markt-Kachel gehören.
+    await addColumnIfNotExists('settings', 'boersenLinks', (t) => t.text('boersenLinks').defaultTo('bitunix,bitget,pionex,tradingview'))
     await addColumnIfNotExists('settings', 'radarNewsLaenge', (t) => t.text('radarNewsLaenge').defaultTo('mittel'))     // kurz|mittel|lang
     /*
      * Aktualisierungen des Tagesberichts: keine, eine oder zwei.

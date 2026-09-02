@@ -39,18 +39,21 @@ export function disposeCharts(knoten) {
 }
 const _t = (key, named) => i18n.global.t(key, named)
 
-const cssColor87 = "rgba(255, 255, 255, 0.87)"
-const cssColor60 = "rgba(255, 255, 255, 0.60)"
-const cssColor38 = "rgba(255, 255, 255, 0.38)"
+// `export` auf den Konstanten, die auch AUSSERHALB dieser Datei lokale Chart-
+// Konfigurationen speisen (z. B. AgentPerformance.vue) — eine zweite,
+// handgepflegte Kopie derselben Werte drohte sonst unbemerkt abzuweichen.
+export const cssColor87 = "rgba(255, 255, 255, 0.87)"
+export const cssColor60 = "rgba(255, 255, 255, 0.60)"
+export const cssColor38 = "rgba(255, 255, 255, 0.38)"
 const blackbg0 = "hsl(0, 0%, 0%)"
-const blackbg5 = "hsl(0, 0%, 5%)"
+export const blackbg5 = "hsl(0, 0%, 5%)"
 const blackbg7 = "hsl(0, 0%, 7%)"
 const white87 = "hsla(0, 0%, 100%, 0.87)"
 const white60 = "hsla(0, 0%, 100%, 0.6)"
 const white38 = "hsla(0, 0%, 100%, 0.38)"
-const greenColor = "rgba(72, 199, 142, 0.85)"   // leichtes Grün für positive Werte
+export const greenColor = "rgba(72, 199, 142, 0.85)"   // leichtes Grün für positive Werte
 const greenColorHover = "rgba(72, 199, 142, 1)"
-const redColor = "rgba(235, 87, 87, 0.85)"      // leichtes Rot für negative Werte
+export const redColor = "rgba(235, 87, 87, 0.85)"      // leichtes Rot für negative Werte
 const redColorHover = "rgba(235, 87, 87, 1)"
 const maxChartValues = 20
 

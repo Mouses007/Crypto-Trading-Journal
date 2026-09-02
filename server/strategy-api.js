@@ -22,8 +22,11 @@ import { BAUSTEINE } from './strategies/rule-engine.js'
 import { pruefeRegeln, regelnUnterscheidenSich } from './strategies/rule-validate.js'
 import { regelnAlsSaetze } from './strategies/rule-text.js'
 import { VORLAGEN } from './strategies/rule-templates.js'
-import { isValidTimeframe, timeframeMs, getLastPrice } from './market-data.js'
-import { runBacktest, berechneStatistik, MAX_BACKTEST_CANDLES, schaetzeKerzen } from './strategy-backtest.js'
+import { isValidTimeframe, timeframeMs, getLastPrice, getHistoricalCandles } from './market-data.js'
+import {
+    runBacktest, berechneStatistik, MAX_BACKTEST_CANDLES, schaetzeKerzen,
+    berechneBuyHoldBaseline, schaetzeFloatingDrawdownAusTrades,
+} from './strategy-backtest.js'
 import { monteCarlo, parameterStabilitaet, stabilitaetsMatrix, walkForward, MAX_STUFEN } from './robustness.js'
 import { engineStatus, resetSymbolCache, killSwitch, ladeInstanz, tick, schliessePositionManuell } from './strategy-engine.js'
 import { bewerteGates } from './live-gates.js'
@@ -878,6 +881,8 @@ export function setupStrategyRoutes(app) {
                     winRate: e.stats?.winRate ?? 0,
                     returnPct: e.stats?.returnPct ?? 0,
                     maxDrawdownPct: e.stats?.maxDrawdownPct ?? 0,
+                    maxFloatingDrawdownPct: e.stats?.maxFloatingDrawdownPct ?? 0,
+                    baselineBuyHoldReturnPct: e.stats?.baselineBuyHoldReturnPct ?? null,
                 }
             }
 
@@ -987,6 +992,26 @@ export function setupStrategyRoutes(app) {
             })
         } catch (e) {
             res.status(500).json({ error: 'Backtest konnte nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Schlanker Trade-Ausblick für die Instanzenliste: nur die gefilterte Liste,
+     * ohne Trichter, Gruppierungen oder den Buy&Hold-Kerzenabruf aus
+     * `ladePerformance`. Für einen Klick-Ausblick beim Durchklicken der
+     * Instanzen wäre der volle Aufruf unnötig teuer.
+     */
+    app.get('/api/strategies/trades', async (req, res) => {
+        try {
+            const knex = getKnex()
+            let q = knex('strategy_trades').orderBy('exitTime', 'desc').limit(100)
+            if (req.query.instanceId) q = q.where('instanceId', Number(req.query.instanceId))
+            if (req.query.symbol) q = q.where('symbol', String(req.query.symbol).toUpperCase())
+            const rows = await q
+            res.json(rows.map(normalisiereTrade))
+        } catch (e) {
+            logError('strategy-api', 'Trades konnten nicht geladen werden', e)
+            res.status(500).json({ error: 'Trades konnten nicht geladen werden' })
         }
     })
 
@@ -1572,6 +1597,20 @@ export function setupStrategyRoutes(app) {
  * `strategy_runs` und zeigt, WO Setups verloren gehen; das ist die eigentlich
  * nützliche Information für die Optimierung.
  */
+/** Rohe DB-Zeile aus `strategy_trades` in nutzbare Zahlen — SQLite/Postgres liefern manches als String. */
+function normalisiereTrade(t) {
+    return {
+        ...t,
+        netPnl: Number(t.netPnl) || 0,
+        grossPnl: Number(t.grossPnl) || 0,
+        fees: Number(t.fees) || 0,
+        rMultiple: Number(t.rMultiple) || 0,
+        maeR: Number(t.maeR) || 0,
+        mfeR: Number(t.mfeR) || 0,
+        holdingMinutes: Number(t.holdingMinutes) || 0,
+    }
+}
+
 export async function ladePerformance(filter = {}) {
     const knex = getKnex()
 
@@ -1602,18 +1641,35 @@ export async function ladePerformance(filter = {}) {
         equityCurve.push({ t: Number(t.exitTime), equity })
     }
 
-    const normiert = trades.map((t) => ({
-        ...t,
-        netPnl: Number(t.netPnl) || 0,
-        grossPnl: Number(t.grossPnl) || 0,
-        fees: Number(t.fees) || 0,
-        rMultiple: Number(t.rMultiple) || 0,
-        maeR: Number(t.maeR) || 0,
-        mfeR: Number(t.mfeR) || 0,
-        holdingMinutes: Number(t.holdingMinutes) || 0,
-    }))
+    const normiert = trades.map(normalisiereTrade)
 
     const kpis = berechneStatistik(normiert, startEquity, equity, equityCurve)
+    // Näherung statt Kerzensimulation — siehe `schaetzeFloatingDrawdownAusTrades`.
+    kpis.maxFloatingDrawdownPct = schaetzeFloatingDrawdownAusTrades(normiert, startEquity)
+
+    // Kontrollgruppe: nur sinnvoll bei EINEM Symbol — bei mehreren gemischten
+    // Symbolen gibt es kein "das hätte man gehalten". Ein Fehlschlag beim
+    // Kerzenabruf darf die Auswertung nicht kippen, die Baseline ist ein
+    // Zusatz, kein Kernwert.
+    kpis.baselineBuyHoldReturnPct = null
+    kpis.baselineDiffPct = null
+    if (filter.symbol && normiert.length) {
+        try {
+            const symbol = String(filter.symbol).toUpperCase()
+            const timeframe = filter.timeframe || normiert[0]?.timeframe || '1h'
+            const von = Math.min(...normiert.map((t) => Number(t.entryTime)))
+            const bis = Math.max(...normiert.map((t) => Number(t.exitTime)))
+            const candles = await getHistoricalCandles(symbol, timeframe, von, bis,
+                { market: 'futures', maxCandles: MAX_BACKTEST_CANDLES })
+            const baseline = berechneBuyHoldBaseline(candles, startEquity)
+            if (baseline) {
+                kpis.baselineBuyHoldReturnPct = baseline.buyHoldReturnPct
+                kpis.baselineDiffPct = kpis.returnPct - baseline.buyHoldReturnPct
+            }
+        } catch (e) {
+            logWarn('strategy-api', 'Buy&Hold-Baseline konnte nicht berechnet werden', e)
+        }
+    }
 
     // ── Gruppierungen ────────────────────────────────────────────────
     const gruppiere = (schluessel) => {
