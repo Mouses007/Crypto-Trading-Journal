@@ -1543,7 +1543,15 @@ function verarbeite(e, mitBericht) {
         .filter(([, s]) => !s.ok).map(([n]) => n)
     const teil = ausgefallen.length ? ' ' + t('hype.quellenAusgefallen', { q: ausgefallen.join(', ') }) : ''
 
-    if (mitBericht) {
+    if (mitBericht && !e.berichtId) {
+        /*
+         * Nichts bestanden — der Server hat dafür bewusst keinen Bericht
+         * angelegt. Dann auch nicht auf den Berichte-Reiter springen: dort
+         * stünde der vorige Lauf, und der sähe aus wie das Ergebnis von
+         * diesem.
+         */
+        meldung.value = t('hype.keinBericht', { v: e.bericht?.aussortiert?.length || 0 }) + teil
+    } else if (mitBericht) {
         meldung.value = t('hype.berichtFertig', { n: e.bericht?.kandidaten?.length || 0 }) + teil
         ladeBerichte()
         if (reiter.value !== 'berichte') router.push('/hype-radar/berichte')

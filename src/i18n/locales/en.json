@@ -1015,6 +1015,7 @@
     "kanaeleTitel": "Delivery",
     "kandidaten": "Finds",
     "keineBefunde": "Nothing unusual.",
+    "keinBericht": "Run finished: nothing passed the check ({v} rejected) — no report.",
     "keineBerichte": "No reports yet.",
     "kiHinweis": "\"Thorough\" researches each candidate separately and is usually both better AND cheaper than \"simple\" at the same profile.",
     "kiTitel": "Who writes the report",
