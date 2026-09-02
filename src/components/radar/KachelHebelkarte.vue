@@ -12,11 +12,11 @@
  * aufsetzen — also einen zweiten Abruf der Aufzeichnung und eine zweite
  * Verlaufsmatrix über Zehntausende Zellen.
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HebelkartenCanvas from '../HebelkartenCanvas.vue'
 
-defineProps({
+const props = defineProps({
     daten: { type: Object, default: null },
     gross: { type: Boolean, default: false },
     params: { type: Object, default: () => ({}) },
@@ -65,12 +65,20 @@ const { t } = useI18n()
  */
 const DAYTRADING_STUNDEN = 24
 const DAYTRADING_SPANNE = 2
+
+/*
+ * Das Fenster ist seit der Kopfzeilen-Bedienung verstellbar (`LiqkarteKopf`),
+ * die 24 Stunden sind nur noch die Vorgabe. Bewusst über `params` und nicht
+ * über `levMapHours`: der Store-Wert gehört der eigenen Seite, und die
+ * abweichende Daytrading-Vorgabe hier ist der ganze Sinn der Trennung.
+ */
+const stunden = computed(() => Number(props.params?.stunden) || DAYTRADING_STUNDEN)
 </script>
 
 <template>
     <div class="hkWrap">
         <div class="hkFlaeche">
-            <HebelkartenCanvas ref="karte" :stunden="DAYTRADING_STUNDEN" :spanne-pct="DAYTRADING_SPANNE" />
+            <HebelkartenCanvas ref="karte" :stunden="stunden" :spanne-pct="DAYTRADING_SPANNE" />
         </div>
         <a class="hkGanzeSeite" href="/liquidations" @click.stop>
             <i class="uil uil-expand-arrows-alt"></i>{{ t('livetrading.ganzeSeite') }}

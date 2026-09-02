@@ -47,7 +47,7 @@ import { baueKachelListe, macheSortierer } from './kachel-registry.js'
 export const STANDARD_REIHENFOLGE = [
     'bookmap', 'hebelkarte',
     'mechanik', 'liqticker', 'positionen',
-    'lsoi', 'indizes', 'funding',
+    'coinradar', 'lsoi', 'indizes', 'funding',
     'handelszeiten', 'makro', 'kalender',
     'lage',
 ]
@@ -122,6 +122,24 @@ const DEFINITIONEN = [
         // Ein Kerzenchart braucht Breite, sonst klebt jede Kerze an der nächsten
         spalten: 2,
         quelle: 'Yahoo Finance (ES=F, NQ=F, RTY=F, DX-Y.NYB)',
+    },
+    {
+        id: 'coinradar',
+        titleKey: 'livetrading.coinradar.title',
+        icon: 'uil uil-ranking',
+        /*
+         * Liest den letzten FERTIGEN Lauf, stösst keinen an: `GET zeilen` ist
+         * ein reiner Datenbankblick, `POST lauf` wäre 42 Sekunden Arbeit und
+         * 360 Gewichtspunkte bei Binance. Eine Kachel darf so etwas nicht im
+         * Takt auslösen.
+         */
+        endpunkt: '/api/coin-radar/zeilen',
+        params: { limit: 10 },
+        // Der Radar selbst läuft im Takt von Minuten bis Stunden — häufiger zu
+        // fragen liefert dieselbe Zeile noch einmal.
+        intervallMs: 5 * 60 * 1000,
+        spalten: 1,
+        quelle: 'Coin-Radar (eigener Lauf)',
     },
     {
         id: 'funding',

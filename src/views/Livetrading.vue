@@ -36,6 +36,9 @@ import KachelMakro from '../components/radar/KachelMakro.vue'
 import KachelBookmap from '../components/radar/KachelBookmap.vue'
 import KachelHebelkarte from '../components/radar/KachelHebelkarte.vue'
 import KachelLage from '../components/radar/KachelLage.vue'
+import KachelCoinRadar from '../components/radar/KachelCoinRadar.vue'
+import BookmapKopf from '../components/radar/kopf/BookmapKopf.vue'
+import LiqkarteKopf from '../components/radar/kopf/LiqkarteKopf.vue'
 import { liveSymbol } from '../stores/live.js'
 import { currentUser } from '../stores/globals.js'
 import { useIstTelefon, useImVollbild } from '../utils/geraet.js'
@@ -60,11 +63,25 @@ const KOMPONENTEN = {
     kalender: KachelKalenderCountdown,
     indizes: KachelIndizes,
     funding: KachelFunding,
+    coinradar: KachelCoinRadar,
     lsoi: KachelLsOi,
     makro: KachelMakro,
     bookmap: KachelBookmap,
     hebelkarte: KachelHebelkarte,
     lage: KachelLage,
+}
+
+/**
+ * Kachel-Id → Bedienung in der KOPFZEILE (Slot `steuerung` von `RadarKachel`).
+ *
+ * Nur für die beiden Arbeitsflächen: sie lassen sich nicht vergrössern
+ * (`gross: false`, sonst zweiter Datenstrom) und haben ihre Regler deshalb
+ * sonst nur auf der eigenen Seite — ein Seitenwechsel mitten in der Sitzung.
+ * Die übrigen Kacheln bedienen sich im Körper oder brauchen nichts.
+ */
+const KOPF_STEUERUNG = {
+    bookmap: BookmapKopf,
+    hebelkarte: LiqkarteKopf,
 }
 
 /**
@@ -126,7 +143,7 @@ const {
     gridEl, daten, zustand, stand, fehler, kachelParams,
     alleKacheln, sichtbareKacheln, gesamtZustand,
     offeneKachel, offeneDefinition, showConfigDropdown, configRef,
-    ladeKachel, ladeFaellige, beiUmschalten, isVisible, setzeKachelZustand,
+    ladeKachel, beiUmschalten, isVisible, setzeKachelZustand,
     setzeParams, setzeAnzeige, stilFuer, starteGroesse, setzeGroesseZurueck,
 } = useKachelRaster({
     storageKey: 'livetrading_hidden_cards',
@@ -309,9 +326,14 @@ const interaktiv = (kachel) => kachel.gross === false
                         </div>
                     </div>
                 </div>
-                <button type="button" class="ctl-pill" @click="ladeFaellige(true)">
-                    <i class="uil uil-sync"></i>{{ t('marktradar.refreshAll') }}
-                </button>
+                <!-- „Alle aktualisieren" gibt es hier bewusst NICHT (im
+                     Marktradar schon). Der Prüftakt liegt bei 3 s statt 30 s,
+                     und acht der elf abrufenden Kacheln laden von selbst im
+                     5- bis 60-Sekunden-Rhythmus; für Bookmap, Hebelkarte und
+                     Handelszeiten täte der Knopf ohnehin nichts. Er hätte nur
+                     die vier 5-Minuten-Kacheln vorgezogen — zu wenig für einen
+                     Dauerplatz in einer Leiste, die im Handelsfenster ohnehin
+                     zu eng wird. -->
                 <button type="button" class="ctl-pill" :class="{ fotoOk: fotoZustand === 'ok' }"
                     :disabled="fotoZustand === 'laeuft'" :title="t('livetrading.foto.hinweis')"
                     @click="cockpitFoto">
@@ -361,6 +383,12 @@ const interaktiv = (kachel) => kachel.gross === false
                     :eigenstaendig="eigenstaendig(kachel)" :interaktiv="interaktiv(kachel)"
                     @gross="offeneKachel = kachel.id" @neuladen="ladeKachel(kachel.id, true)"
                     @groesse-start="starteGroesse(kachel, $event)" @groesse-zurueck="setzeGroesseZurueck(kachel)">
+                    <!-- Regler in der Kopfzeile: dieselben `params` wie der
+                         Körper, damit beide Seiten denselben Wert sehen. -->
+                    <template v-if="KOPF_STEUERUNG[kachel.id]" #steuerung>
+                        <component :is="KOPF_STEUERUNG[kachel.id]" :params="kachelParams[kachel.id] || {}"
+                            @params="setzeParams(kachel.id, $event)" />
+                    </template>
                     <!-- `neuladen` aus der Kachel heraus: die KI-Lage erzeugt
                          ihren Text selbst per POST und will danach den frischen
                          Stand sehen. -->
@@ -447,7 +475,18 @@ const interaktiv = (kachel) => kachel.gross === false
 
 /* Die beiden Ansichtsknöpfe rücken zusammen: sie sind eine Entscheidung, nicht
    zwei Befehle. */
-.ltAnsicht { display: flex; gap: 0.15rem; }
+/* Eigener Flex-Container in der Knopfreihe: die globale Regel fasst nur die
+   direkten Kinder von `.liveActions`, die beiden Pillen hier drin brauchen sie
+   noch einmal. */
+.ltAnsicht {
+    display: flex;
+    gap: 0.15rem;
+    flex: 0 0 auto;
+}
+
+.ltAnsicht > .ctl-pill {
+    flex: 0 0 auto;
+}
 
 .fotoOk { color: #4ec9a0; }
 

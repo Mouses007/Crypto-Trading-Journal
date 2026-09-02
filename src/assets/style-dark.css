@@ -2561,6 +2561,25 @@ h4 {
     flex-wrap: wrap;
 }
 
+/*
+ * Pillen dürfen NIE schrumpfen, sonst zerfliesst die Beschriftung.
+ *
+ * Diese Regel stand nur im Handy-Block und galt darum ab 768 px nicht mehr —
+ * dabei ist der Desktop der schlimmere Fall: dort ist `flex-wrap` scheinbar die
+ * Rettung, aber ein Flex-Kind schrumpft ZUERST bis auf seine min-content-Breite
+ * und bricht erst dann um. Da `.ctl-pill` seinen Text nicht abschneidet, ragt
+ * die Beschriftung aus der zusammengedrückten Pille heraus und liegt sichtbar
+ * über der Nachbarpille. Genau so sah es im Live-Trading-Kopf aus, sobald das
+ * Fenster schmaler wurde als die Knopfreihe.
+ *
+ * Mit `flex: 0 0 auto` behalten die Pillen ihre Breite und die Reihe bricht
+ * sauber um, statt sich selbst zu überlagern.
+ */
+.liveActions > *,
+.liveActions .ctl-pill {
+    flex: 0 0 auto;
+}
+
 .ctl-pill {
     display: inline-flex;
     align-items: center;
@@ -2799,6 +2818,92 @@ h4 {
     white-space: nowrap;
 }
 
+/*
+ * Bedienung in der Kachel-Kopfzeile (Slot `steuerung`).
+ *
+ * Steht VOR `.radarCardStand`, das per `margin-left: auto` alles Folgende nach
+ * rechts drückt — die Regler sitzen damit direkt hinter dem Titel und die
+ * Knöpfe bleiben am rechten Rand. `nowrap`, weil eine umbrechende Kopfzeile die
+ * Kachelhöhe verschieben würde; passt es nicht, wird gescrollt.
+ */
+.radarCardSteuerung {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-left: 0.35rem;
+    /* Die Kopfzeile ist Ziehgriff — hier drin wieder normal bedienbar. */
+    cursor: default;
+    touch-action: auto;
+    user-select: none;
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.radarCardSteuerung::-webkit-scrollbar { display: none; }
+
+/* Kleiner als `.ctl-pill`: in einer 26 px hohen Kopfzeile ist die normale
+   Pille zu wuchtig und drückt den Titel heraus. */
+.radarCardCtl {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.02rem 0.4rem;
+    font-size: 0.7rem;
+    line-height: 1.5;
+    border-radius: 6px;
+    border: 1px solid var(--white-18);
+    background: transparent;
+    color: var(--white-70);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.radarCardCtl:hover {
+    border-color: var(--blue-color);
+    color: var(--white-87);
+}
+
+.radarCardCtl.active {
+    background: var(--blue-color);
+    border-color: var(--blue-color);
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Eingefroren ist kein „aktiv", sondern eine Warnung: die Karte zeigt dann
+   nicht mehr, was gerade passiert. */
+.radarCardCtl.warn {
+    background: #b4801f;
+    border-color: #b4801f;
+    color: #fff;
+    font-weight: 600;
+}
+
+.radarCardSel {
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    padding: 0.02rem 0.25rem;
+    border-radius: 6px;
+    border: 1px solid var(--white-18);
+    background: var(--black-bg-2, #14141f);
+    color: var(--white-70);
+    cursor: pointer;
+}
+
+/* Beschriftung vor einer Reglergruppe — so klein wie die Instrumententitel
+   im Pult, damit sie den Kacheltitel nicht doppelt. */
+.radarCardCtlLabel {
+    flex: 0 0 auto;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--white-45, rgba(255, 255, 255, 0.45));
+    white-space: nowrap;
+}
+
 .radarCardBtn {
     background: transparent;
     border: none;
@@ -3034,11 +3139,6 @@ h4 {
 
     .liveActions::-webkit-scrollbar {
         display: none;
-    }
-
-    /* Pillen dürfen nicht schrumpfen, sonst zerfliesst die Beschriftung */
-    .liveActions > * {
-        flex: 0 0 auto;
     }
 
     .ctl-pill {
