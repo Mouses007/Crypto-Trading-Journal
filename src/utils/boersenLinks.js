@@ -51,3 +51,21 @@ export function aktivierteBoersen(csv) {
     const gefiltert = BOERSE_SCHLUESSEL.filter((b) => gewaehlt.includes(b))
     return gefiltert.length ? gefiltert : BOERSE_SCHLUESSEL
 }
+
+/**
+ * Verlinkbare Börsen einer Coin-Radar-Zeile: gelistete ∩ aktivierte, plus TradingView.
+ *
+ * `csv` kommt von aussen (`currentUser.value?.boersenLinks`) statt aus einem
+ * Store-Import, damit dieses Modul frei von Vue-Abhängigkeiten bleibt — es wird
+ * auch aus reinen Hilfsfunktionen heraus benutzt.
+ *
+ * Fehlt `boersen` ganz (ältere Läufe, bevor die Listung mitgeschrieben wurde),
+ * bleibt TradingView übrig: ein Perpetual-Chart existiert für jeden Coin hier,
+ * die Börsenlistung dagegen ist dann schlicht unbekannt.
+ */
+export function boersenLinksVon(zeile, csv) {
+    const aktiv = aktivierteBoersen(csv)
+    const liste = Array.isArray(zeile?.boersen?.liste) ? zeile.boersen.liste : []
+    const geliste = liste.filter((e) => aktiv.includes(e.boerse))
+    return aktiv.includes('tradingview') ? [...geliste, { boerse: 'tradingview' }] : geliste
+}
