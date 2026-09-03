@@ -399,6 +399,7 @@ let aiTaskProviders = ref({
     lagebericht: '',
     'trade-analyse': '',
     'marktradar-lage': '',
+    'livetrading-handelslage': '',
 })
 let aiStrategieProvider = ref('')
 let aiStrategieModell = ref('')
@@ -3798,6 +3799,15 @@ onBeforeMount(async () => {
                                             <td>
                                                 <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
                                                     placeholder="openrouter/..." v-model="aiTaskProviders['marktradar-lage']"
+                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td><small>Live-Trading-Handelslage</small></td>
+                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['livetrading-handelslage'] || '(global)' }}</code></td>
+                                            <td>
+                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
+                                                    placeholder="openrouter/..." v-model="aiTaskProviders['livetrading-handelslage']"
                                                     @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
                                             </td>
                                         </tr>

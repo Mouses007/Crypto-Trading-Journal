@@ -36,6 +36,7 @@ import KachelMakro from '../components/radar/KachelMakro.vue'
 import KachelBookmap from '../components/radar/KachelBookmap.vue'
 import KachelHebelkarte from '../components/radar/KachelHebelkarte.vue'
 import KachelLage from '../components/radar/KachelLage.vue'
+import KachelHandelslage from '../components/radar/KachelHandelslage.vue'
 import KachelCoinRadar from '../components/radar/KachelCoinRadar.vue'
 import BookmapKopf from '../components/radar/kopf/BookmapKopf.vue'
 import LiqkarteKopf from '../components/radar/kopf/LiqkarteKopf.vue'
@@ -69,6 +70,7 @@ const KOMPONENTEN = {
     bookmap: KachelBookmap,
     hebelkarte: KachelHebelkarte,
     lage: KachelLage,
+    handelslage: KachelHandelslage,
 }
 
 /**
@@ -153,6 +155,21 @@ const {
     symbolRef: liveSymbol,
     zusatzParams,
     taktMs: 3000,
+    /*
+     * Die Gesamtlage startet hier ausgeblendet — sie bleibt im Zahnrad
+     * zuschaltbar, steht aber nicht mehr von sich aus im Raster.
+     *
+     * Grund: Seit es die Handelslage gibt, stehen zwei KI-Kacheln nebeneinander,
+     * die verschiedene Fragen beantworten (Zyklus gegen Handelstag) und beide
+     * je Druck Geld kosten. Wer während einer Sitzung schnell etwas drückt,
+     * erwischt sonst leicht die falsche — und bezahlt eine Einordnung über
+     * Regenbogen-Bänder und Altcoin-Saison für die nächsten drei Stunden.
+     *
+     * Greift ausschliesslich beim ERSTSTART (siehe `useHiddenCards`): wer hier
+     * schon einmal etwas ein- oder ausgeblendet hat, behält sein Layout
+     * unverändert.
+     */
+    standardVersteckt: ['lage'],
     immerLaden,
 })
 

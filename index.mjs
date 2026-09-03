@@ -13,6 +13,7 @@ import { setupMarktradarRoutes, stopMarktradar } from './server/marktradar-api.j
 import { setupKalenderRoutes, stopKalender } from './server/marktradar-kalender.js'
 import { setupLivetradingRoutes } from './server/livetrading-api.js'
 import { setupLageRoutes } from './server/marktradar-lage.js'
+import { setupHandelslageRoutes } from './server/handelslage.js'
 import { setupNewsRoutes, startNewsTakt, stopNews } from './server/marktradar-news.js'
 import { setupNewsProfilRoutes } from './server/news-profil-api.js'
 import { setupCryptoquantRoutes, stopCryptoquant } from './server/cryptoquant-api.js'
@@ -148,6 +149,11 @@ const startIndex = async () => {
     // Nach dem Kalender: die Termin-Kachel des Live-Fensters liest über
     // `leseKalender` mit, statt eine zweite Abfrage aufzubauen.
     setupLivetradingRoutes(app);
+    // Nach dem Live-Fenster und aus demselben Grund wie das Lagebild in einer
+    // eigenen Datei: die Handelslage liest die Kachel-Funktionen des
+    // Marktradars UND den Kalender mit — als Teil eines der beiden Module
+    // wäre es ein Ringschluss.
+    setupHandelslageRoutes(app);
     setupNewsRoutes(app);
     setupNewsProfilRoutes(app);
     startNewsTakt();

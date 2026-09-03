@@ -46,6 +46,7 @@ import { baueKachelListe, macheSortierer } from './kachel-registry.js'
  */
 export const STANDARD_REIHENFOLGE = [
     'bookmap', 'hebelkarte',
+    'handelslage',
     'mechanik', 'liqticker', 'positionen',
     'coinradar', 'lsoi', 'indizes', 'funding',
     'handelszeiten', 'makro', 'kalender',
@@ -170,6 +171,28 @@ const DEFINITIONEN = [
         intervallMs: 5 * 60 * 1000,
         spalten: 1,
         quelle: 'Yahoo Finance · CoinGecko · Binance-Tageskerzen',
+    },
+    {
+        /*
+         * Die Schwester der Gesamtlage, mit dem Horizont dieser Seite: was
+         * geben die nächsten Stunden her. Eigene Kachel statt Umbau der
+         * Gesamtlage, weil die beiden verschiedene Fragen beantworten — Zyklus
+         * gegen Handelstag — und eine Kachel, die Regenbogen-Bänder neben einen
+         * 15-Minuten-Befund stellt, keine von beiden gut beantwortet.
+         *
+         * Wie bei der Gesamtlage LIEST der Endpunkt nur; erzeugt wird per Knopf
+         * (POST) oder durch den Automatismus in der Kachel. Der Prüftakt der
+         * Seite liegt bei drei Sekunden — ein erzeugendes GET wäre eine
+         * fortlaufende Rechnung.
+         */
+        id: 'handelslage',
+        titleKey: 'livetrading.handelslage.title',
+        icon: 'uil uil-compass',
+        endpunkt: '/api/livetrading/handelslage',
+        symbolAbhaengig: true,
+        intervallMs: 60 * 1000,
+        spalten: 2,
+        quelle: 'Kerzen, Kalender und Handelszeiten · Einordnung durch die eingestellte KI',
     },
     {
         // Dieselbe Kachel wie im Marktradar. Der Endpunkt LIEST nur, was schon
