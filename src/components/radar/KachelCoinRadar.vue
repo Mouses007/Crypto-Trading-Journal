@@ -22,6 +22,8 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { liveSymbol } from '../../stores/live.js'
+import { currentUser } from '../../stores/globals.js'
+import { BOERSE_KURZ, BOERSE_NAME, boerseUrl, boersenLinksVon } from '../../utils/boersenLinks.js'
 
 const props = defineProps({
     daten: { type: Object, default: null },
@@ -31,6 +33,14 @@ const props = defineProps({
 const { t } = useI18n()
 
 const kurz = (s) => String(s || '').replace(/USDT$/, '')
+
+/**
+ * Börsen-/TradingView-Badges hinter dem Coin-Namen — dieselbe Auswahl wie auf
+ * der Coin-Radar-Seite, inklusive der Einstellung, welche Börsen überhaupt
+ * verlinkt werden. `z.symbol` (das volle Perp-Symbol) geht an `boerseUrl`, NICHT
+ * `kurz(z.symbol)`: die URL-Bauer erwarten `BTCUSDT`, nicht `BTC`.
+ */
+const links = (z) => boersenLinksVon(z, currentUser.value?.boersenLinks)
 
 /** Im Raster reichen zehn Zeilen; gross zeigt, was der Lauf sonst noch hergibt. */
 const liste = computed(() => (props.daten?.zeilen || []).slice(0, 10))
@@ -141,7 +151,15 @@ function waehle(symbol) {
                 :title="t('livetrading.coinradar.waehlen', { s: kurz(z.symbol) })"
                 @click.stop="waehle(z.symbol)">
                 <span class="crRang">{{ z.rang }}</span>
-                <span class="crSym">{{ kurz(z.symbol) }}</span>
+                <span class="crSym">
+                    <span class="crName">{{ kurz(z.symbol) }}</span>
+                    <!-- `@click.stop`: die ganze Zeile wechselt sonst zusätzlich
+                         das Handelssymbol, wenn man nur den Chart öffnen wollte. -->
+                    <a v-for="e in links(z)" :key="e.boerse" class="crBoerse"
+                        :href="boerseUrl(e.boerse, z.symbol)" target="_blank" rel="noopener noreferrer"
+                        :title="t('coinradar.gelistetAuf', { b: BOERSE_NAME[e.boerse] })"
+                        @click.stop>{{ BOERSE_KURZ[e.boerse] }}</a>
+                </span>
                 <span class="crWert" :class="noteKlasse(z.note)"><b>{{ z.note }}</b></span>
                 <span class="crWert">{{ proz(z.atrPct, 2) }}</span>
                 <span class="crWert">{{ zahl(z.rvol, 1) }}</span>
@@ -228,10 +246,42 @@ function waehle(symbol) {
     font-variant-numeric: tabular-nums;
 }
 
+/* Name und Badges teilen sich die einzige `1fr`-Spur. `overflow: hidden` hier
+   plus `flex: none` an den Badges heisst: bei einem langen Namen werden die
+   Badges abgeschnitten, statt die Zeile umzubrechen — genau wie die Spur heute
+   schon den Namen selbst kürzt. */
 .crSym {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    overflow: hidden;
+}
+
+.crName {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.crBoerse {
+    flex: none;
+    font-size: 0.6rem;
+    line-height: 1.4;
+    padding: 0 0.18rem;
+    border-radius: 3px;
+    text-decoration: none;
+    color: var(--white-45, rgba(255, 255, 255, 0.45));
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.crBoerse:hover {
+    color: var(--blue-color, #4da3ff);
+    background: rgba(77, 163, 255, 0.15);
+}
+
+.crWrap.gross .crBoerse {
+    font-size: 0.68rem;
+    padding: 0 0.24rem;
 }
 
 .crWert {

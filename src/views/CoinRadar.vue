@@ -721,7 +721,7 @@ import { logWarn } from '../utils/logger.js'
 import { currentUser } from '../stores/globals.js'
 import {
     BOERSE_KURZ as BOERSE_LINK_KURZ, BOERSE_NAME as BOERSE_LINK_NAME,
-    boerseUrl, aktivierteBoersen,
+    boerseUrl, boersenLinksVon as boersenLinksAus,
 } from '../utils/boersenLinks.js'
 
 const { t } = useI18n()
@@ -1008,11 +1008,7 @@ const handelbarAuf = (z, boerse) => boersenVon(z).some((e) => e.boerse === boers
  * Börsen, gefiltert auf das, was in den Einstellungen aktiviert ist, plus
  * TradingView (kein Listungscheck — jeder Coin hier kommt von Binance).
  */
-const boersenLinksVon = (z) => {
-    const aktiv = aktivierteBoersen(currentUser.value?.boersenLinks)
-    const geliste = boersenVon(z).filter((e) => aktiv.includes(e.boerse))
-    return aktiv.includes('tradingview') ? [...geliste, { boerse: 'tradingview' }] : geliste
-}
+const boersenLinksVon = (z) => boersenLinksAus(z, currentUser.value?.boersenLinks)
 
 /**
  * Trifft der Börsenfilter zu? ODER über die gewählten Börsen.
