@@ -2252,6 +2252,12 @@ async function runMigrations(knex, client) {
     // Prompt; gespeichert werden sie, damit die Dossier-Ansicht sie als
     // Tabelle zeigen kann — und zwar den Stand von damals, nicht den von jetzt.
     await addColumnIfNotExists('news_digests', 'marktBlock', (t) => t.text('marktBlock').defaultTo('[]'))
+    /*
+     * Die beiden KI-Einordnungen (Gesamtlage, Handelslage) zum Zeitpunkt des
+     * Berichts. Wie `marktBlock` mitgespeichert und nicht live nachgeladen:
+     * ein archivierter Bericht muss die Lage von DAMALS zeigen.
+     */
+    await addColumnIfNotExists('news_digests', 'lagenBlock', (t) => t.text('lagenBlock').defaultTo('{}'))
     // Abwägung des Berichts: was stützt, was belastet, woran es sich
     // entscheidet — je Zeile mit der Marke Fakt/Einschätzung. Leer bei
     // Berichten aus der Zeit davor.

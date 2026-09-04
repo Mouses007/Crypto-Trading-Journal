@@ -31,6 +31,13 @@ import {
     holeMarkt,
 } from './marktradar-api.js'
 import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson, istGuthabenFehler, merkeKiGuthaben, schaetzeKosten } from './llm.js'
+/*
+ * Die beiden KI-Kacheln. Der Bericht laesst sie neu rechnen statt einen
+ * Knopfdruck von gestern zu uebernehmen — Einzelheiten in `holeLagenBlock`.
+ * Keine Zyklusgefahr: beide Module kennen die Nachrichten nicht.
+ */
+import { erzeugeLage } from './marktradar-lage.js'
+import { erzeugeHandelslage } from './handelslage.js'
 import { entdoppleBericht, protokollText } from './news-doppler.js'
 import { gruppiereBeitraege, themenRegel, haltEinsProThema } from './news-themen.js'
 import { bewerteChartGehalt, marktMarken } from './news-bildgehalt.js'
@@ -1221,6 +1228,82 @@ async function holeMarktdatenBlock() {
 }
 
 /**
+ * Die beiden KI-Einordnungen fuer den Bericht: Gesamtlage und Handelslage.
+ *
+ * `holeMarktdatenBlock` liefert ZAHLEN, das hier liefert deren DEUTUNG — und
+ * zwar aus zwei Blickwinkeln, die sich nicht ueberschneiden: Die Gesamtlage
+ * beantwortet „wo stehen wir im Zyklus" (Dominanz, Altseason, Zyklusmodelle),
+ * die Handelslage „was gibt der Tag her" (Tagesspanne, Bewegungsvorrat,
+ * Sitzungsphase, anstehende Termine). Zusammen sind sie der Rahmen, in dem
+ * die Nachrichten des Tages ueberhaupt eine Bedeutung haben.
+ *
+ * **Frisch erzeugt, nicht uebernommen.** Beide Kacheln werden sonst nur per
+ * Knopf gefuellt und stehen dann, bis jemand sie neu anstoesst — im
+ * Handelsfenster stand ein Text schon ueber acht Stunden. Eine Handelslage
+ * von gestern Abend in einem Morgenbericht waere schlimmer als keine: Ihr
+ * Horizont sind wenige Stunden, sie behauptet aber nichts ueber ihr Alter,
+ * sobald sie einmal im Fliesstext steht.
+ *
+ * Teuer ist das nicht. `erzeugeLage`/`erzeugeHandelslage` geben einen
+ * vorhandenen Text zurueck, solange er frisch genug ist (20 bzw. 5 Minuten),
+ * und ein Neulauf kostet mit Gemini rund 0,004 $ — gegen die 0,24 $ eines
+ * Berichts faellt das nicht ins Gewicht.
+ *
+ * Faellt eine der beiden aus (kein Guthaben, Anbieter weg), kostet das ihren
+ * Absatz und nicht den Bericht. Genau diese Trennung fehlte an anderer Stelle
+ * schon einmal.
+ *
+ * @param {string} symbol Fuer die symbolabhaengige Handelslage
+ * @returns {Promise<{text: string, lagen: object}>}
+ */
+async function holeLagenBlock(symbol = 'BTCUSDT') {
+    const lagen = {}
+    const zeilen = []
+
+    try {
+        const g = await erzeugeLage(symbol, false)
+        if (g?.ueberschrift) {
+            lagen.gesamt = {
+                stimmung: g.stimmung, ueberschrift: g.ueberschrift, text: g.text,
+                punkte: g.punkte || [], widerspruch: g.widerspruch || '',
+                stand: g.stand, model: g.model,
+            }
+            zeilen.push(`- Gesamtlage (Zyklus, Stimmung „${g.stimmung}"): ${g.ueberschrift}. ${g.text}`
+                + (g.widerspruch ? ` Widerspruch: ${g.widerspruch}` : ''))
+        }
+    } catch (e) { logWarn('news', `Gesamtlage fuer den Bericht: ${e.message}`) }
+
+    try {
+        const h = await erzeugeHandelslage(symbol, { erzwingen: false })
+        if (h?.ueberschrift) {
+            lagen.handel = {
+                lage: h.lage, ueberschrift: h.ueberschrift, text: h.text,
+                spielraum: h.spielraum || '', zeitfenster: h.zeitfenster || '',
+                bedingungen: h.bedingungen || [], hinfaellig: h.hinfaellig || [],
+                symbol: h.symbol, stand: h.stand, model: h.model,
+            }
+            const bed = (h.bedingungen || []).map(b => `wenn ${b.wenn}, dann ${b.dann}`).join('; ')
+            zeilen.push(`- Handelslage ${h.symbol} (die naechsten Stunden, Lage „${h.lage}"): ${h.ueberschrift}. ${h.text}`
+                + (h.spielraum ? ` Spielraum: ${h.spielraum}` : '')
+                + (h.zeitfenster ? ` Zeitfenster: ${h.zeitfenster}` : '')
+                + (bed ? ` Bedingungen: ${bed}.` : ''))
+        }
+    } catch (e) { logWarn('news', `Handelslage fuer den Bericht: ${e.message}`) }
+
+    /*
+     * Der Hinweis am Ende ist keine Hoeflichkeit: Ohne ihn zitiert das Modell
+     * die Einordnung als Nachricht („Analysten sehen …") und macht aus der
+     * eigenen Messung eine Fremdquelle mit Beleg-Nummer.
+     */
+    const text = zeilen.length
+        ? 'EIGENE MARKTEINORDNUNG (von der App erzeugt, KEINE Nachricht und keine Fremdquelle —\n'
+        + 'nutze sie als Rahmen fuer die Bewertung der Meldungen, zitiere sie nicht als Beleg):\n'
+        + zeilen.join('\n')
+        : ''
+    return { text, lagen }
+}
+
+/**
  * Wie frisch die Rechercheergebnisse sein müssen.
  *
  * Gemessen am 20.08.2026: Ohne Filter lieferte dieselbe Frage Fundstellen von
@@ -1503,7 +1586,7 @@ export function berichtsKette(zeilen, { tagesbeginn = 0 } = {}) {
  *
  * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
  */
-export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], grundlage = '',
+export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], lagen = null, grundlage = '',
     themenNamen = {}, inhalt = 'kurz' } = {}) {
     // Doppelpunkte im Wert sind harmlos, im LABEL nicht: „Funding: 8h" würde
     // die Zeile spalten und die Tabelle zerreissen. Der Ersatz zieht die
@@ -1522,6 +1605,27 @@ export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], grundl
             .filter(w => w?.was && w?.wert)
             .map(w => `${label(w.was)}: ${w.wert}${w.zusatz ? ` — ${w.zusatz}` : ''}`)
         if (marktZeilen.length >= 2) teile.push('## Marktstand', marktZeilen.join('\n'))
+
+        /*
+         * Die eigene Einordnung direkt hinter den Marktstand: erst was gemessen
+         * wurde, dann was es heisst, dann die Meldungen. Bewusst KURZ gehalten
+         * — Überschrift, Spielraum und die Bedingungen. Der ausgeschriebene
+         * Text steht im Bericht; eine Mail, die ihn mitschleppt, wird zu dem
+         * Wandtext, den `inhalt !== 'voll'` gerade vermeiden soll.
+         */
+        const lageZeilen = []
+        if (lagen?.gesamt?.ueberschrift) {
+            lageZeilen.push(`Gesamtlage: ${lagen.gesamt.ueberschrift}`)
+        }
+        if (lagen?.handel?.ueberschrift) {
+            const sym = String(lagen.handel.symbol || '').replace(/USDT$/, '')
+            lageZeilen.push(`Handelslage${sym ? ' ' + sym : ''}: ${lagen.handel.ueberschrift}`)
+            if (lagen.handel.spielraum) lageZeilen.push(`Spielraum: ${lagen.handel.spielraum}`)
+            for (const b of (Array.isArray(lagen.handel.bedingungen) ? lagen.handel.bedingungen : []).slice(0, 3)) {
+                if (b?.wenn && b?.dann) lageZeilen.push(`Wenn ${b.wenn}, dann ${b.dann}`)
+            }
+        }
+        if (lageZeilen.length) teile.push('## Eigene Einordnung', lageZeilen.join('\n'))
 
         for (const k of (Array.isArray(kapitel) ? kapitel : [])) {
             const name = themenNamen[k?.thema] || k?.thema || ''
@@ -2237,6 +2341,13 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
 
     // ── Schritt 1c: Marktdaten aus dem eigenen Radar ─────────────────────
     const marktdaten = await holeMarktdatenBlock().catch(() => ({ text: '', werte: [] }))
+    /*
+     * Schritt 1d: die eigene Einordnung dazu. Nacheinander und nicht parallel
+     * zu 1c — beide greifen auf dieselben `hole*`-Funktionen zu, und ein
+     * paralleler Start liesse sie am kalten Zwischenspeicher vorbeilaufen und
+     * dieselben Fremdabrufe doppelt ausloesen.
+     */
+    const lagenBlock = await holeLagenBlock('BTCUSDT').catch(() => ({ text: '', lagen: {} }))
 
     // ── Schritt 2: Bericht schreiben (eingestellter Anbieter = Claude) ───
     // Durchnummeriert, damit das Modell seine Belege benennen kann. Die
@@ -2288,6 +2399,8 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         teile.push(kompaktVorbericht(basis, beitraege.length + rechercheZitate.length))
     }
     if (marktdaten.text) teile.push(marktdaten.text)
+    // Direkt hinter die Zahlen: erst was gemessen wurde, dann was es heisst.
+    if (lagenBlock.text) teile.push(lagenBlock.text)
     for (const r of recherchen) {
         // Perplexity-Freitext ist Fremdtext wie jeder Beitrag auch.
         teile.push(zitatBlock(
@@ -2508,6 +2621,13 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         // ihn als Tabelle. Mitgespeichert und nicht live nachgeladen, sonst
         // stünden neben einem Bericht von gestern die Zahlen von heute.
         marktBlock: JSON.stringify(marktdaten.werte || []),
+        /*
+         * Die eigene Einordnung zum Berichtszeitpunkt. Aus demselben Grund
+         * mitgespeichert wie `marktBlock`: die Kacheln zeigen den Stand von
+         * JETZT, ein Bericht von gestern muss den von gestern zeigen. Beides
+         * nebeneinander waere eine stille Luege.
+         */
+        lagenBlock: JSON.stringify(lagenBlock.lagen || {}),
         // Abwägung über alle Kapitel, mit Fakt/Einschätzung je Zeile. Leer,
         // wenn das Modell nichts Brauchbares lieferte — dann fehlt der Kasten.
         lagebild: entdoppelt.bericht.lagebild ? JSON.stringify(entdoppelt.bericht.lagebild) : '',
@@ -2553,6 +2673,7 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                 lage: zeile.lage,
                 kapitel,
                 markt: marktdaten.werte || [],
+                lagen: lagenBlock.lagen || null,
                 grundlage,
                 themenNamen: THEMEN_NAMEN,
                 inhalt: mailInhalt,
@@ -2790,13 +2911,21 @@ export function setupNewsRoutes(app) {
         try { markt = JSON.parse(zeile.marktBlock || '[]') } catch { /* Altbestand */ }
         let lagebild = null
         try { lagebild = leseLagebild(JSON.parse(zeile.lagebild || 'null')) } catch { /* Altbestand */ }
-        const { marktBlock, ...rest } = zeile
+        // Die beiden KI-Einordnungen. Aeltere Berichte haben sie nicht — dann
+        // bleibt der Kasten weg, statt die Lage von heute danebenzustellen.
+        let lagen = null
+        try {
+            const roh = JSON.parse(zeile.lagenBlock || '{}')
+            if (roh && (roh.gesamt || roh.handel)) lagen = roh
+        } catch { /* Altbestand */ }
+        const { marktBlock, lagenBlock, ...rest } = zeile
         return {
             ...rest,
             erstelltAm: Number(zeile.erstelltAm),
             punkte: JSON.parse(zeile.punkte || '[]'),
             kapitel,
             markt,
+            lagen,
             lagebild,
             beitraege_liste: JSON.parse(zeile.beitraegeListe || '[]'),
             videos_liste: JSON.parse(zeile.videosListe || '[]'),

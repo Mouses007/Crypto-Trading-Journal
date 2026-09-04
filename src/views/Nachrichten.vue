@@ -1252,6 +1252,58 @@ onBeforeUnmount(() => {
                 <h2 class="nwUeberschrift">{{ bericht.ueberschrift }}</h2>
                 <p class="nwLage">{{ bericht.lage }}</p>
 
+                <!-- Eigene Markteinordnung: zwei Blickwinkel, die sich nicht
+                     überschneiden — Zyklus links, Handelstag rechts. Steht vor
+                     den Nachrichten, weil sie den Rahmen setzt, in dem eine
+                     Meldung überhaupt etwas bedeutet. Gilt für alle vier
+                     Darstellungen, deshalb hier oben und nicht im Dossier.
+                     Ältere Berichte haben `lagen` nicht — dann fehlt der
+                     Kasten, statt die Lage von heute danebenzustellen. -->
+                <section v-if="bericht.lagen" class="nwLagen">
+                    <article v-if="bericht.lagen.gesamt" class="nwLageKarte">
+                        <header class="nwLageKopf">
+                            <i class="uil uil-robot"></i>
+                            <span class="nwLageWas">{{ t('news.lagen.gesamt') }}</span>
+                            <span class="nwLageMarke">{{ t('marktradar.lage.stimmung_' + bericht.lagen.gesamt.stimmung) }}</span>
+                        </header>
+                        <p class="nwLageTitel">{{ bericht.lagen.gesamt.ueberschrift }}</p>
+                        <p class="nwLageText">{{ bericht.lagen.gesamt.text }}</p>
+                        <p v-if="bericht.lagen.gesamt.widerspruch" class="nwLageNeben">
+                            <strong>{{ t('marktradar.lage.widerspruch') }}:</strong>
+                            {{ bericht.lagen.gesamt.widerspruch }}
+                        </p>
+                    </article>
+
+                    <article v-if="bericht.lagen.handel" class="nwLageKarte">
+                        <header class="nwLageKopf">
+                            <i class="uil uil-compass"></i>
+                            <span class="nwLageWas">
+                                {{ t('news.lagen.handel', { symbol: (bericht.lagen.handel.symbol || '').replace(/USDT$/, '') }) }}
+                            </span>
+                            <span class="nwLageMarke">{{ t('livetrading.handelslage.lage_' + bericht.lagen.handel.lage) }}</span>
+                        </header>
+                        <p class="nwLageTitel">{{ bericht.lagen.handel.ueberschrift }}</p>
+                        <p class="nwLageText">{{ bericht.lagen.handel.text }}</p>
+                        <p v-if="bericht.lagen.handel.spielraum" class="nwLageNeben">
+                            <strong>{{ t('livetrading.handelslage.spielraum') }}:</strong>
+                            {{ bericht.lagen.handel.spielraum }}
+                        </p>
+                        <!-- Die Bedingungen sind der Grund, warum diese Kachel
+                             im Bericht steht: sie binden die Einordnung an
+                             Zahlen, statt sie zu behaupten. -->
+                        <ul v-if="bericht.lagen.handel.bedingungen?.length" class="nwLageBed">
+                            <li v-for="(b, bi) in bericht.lagen.handel.bedingungen" :key="bi">
+                                <span class="nwLageWenn">{{ t('livetrading.handelslage.wenn') }}</span>
+                                {{ b.wenn }}
+                                <span class="nwLageDann">{{ t('livetrading.handelslage.dann') }}</span>
+                                {{ b.dann }}
+                            </li>
+                        </ul>
+                    </article>
+
+                    <p class="nwLagenFuss">{{ t('news.lagen.hinweis') }}</p>
+                </section>
+
                 <!-- Abwägung: dafür / dagegen / woran es sich entscheidet.
                      Jede Zeile sagt, ob sie eine Tatsache aus den Quellen ist
                      oder eine Deutung — ohne diese Marke wäre der Kasten nur
@@ -3689,5 +3741,97 @@ onBeforeUnmount(() => {
 .nwBildQuelle:hover {
     color: #fff;
     text-decoration: underline;
+}
+
+/* ── Eigene Markteinordnung im Bericht ──────────────────────────────────
+   Zwei gleichrangige Karten nebeneinander, auf dem Telefon untereinander.
+   Bewusst zurückhaltender gesetzt als die Abwägung darunter: das hier ist
+   der Rahmen, nicht der Befund des Berichts. */
+.nwLagen {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+    gap: 0.7rem;
+    margin: 1rem 0;
+}
+
+.nwLageKarte {
+    background: var(--black-bg-12, rgba(255, 255, 255, 0.04));
+    border-left: 3px solid var(--blue-color, rgb(90, 156, 255));
+    border-radius: 0 var(--border-radius, 6px) var(--border-radius, 6px) 0;
+    padding: 0.6rem 0.8rem;
+    min-width: 0;
+}
+
+.nwLageKopf {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--white-60);
+    margin-bottom: 0.3rem;
+}
+
+.nwLageMarke {
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+    border: 1px solid currentColor;
+    border-radius: var(--border-radius, 6px);
+    padding: 0 0.4rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.nwLageTitel {
+    margin: 0 0 0.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--white-87);
+}
+
+.nwLageText {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+}
+
+.nwLageNeben {
+    margin: 0.4rem 0 0;
+    font-size: 0.84rem;
+    line-height: 1.45;
+    color: var(--white-70, rgba(255, 255, 255, 0.7));
+}
+
+.nwLageBed {
+    margin: 0.4rem 0 0;
+    padding-left: 1rem;
+    font-size: 0.84rem;
+    line-height: 1.5;
+    color: var(--white-87);
+}
+
+.nwLageWenn,
+.nwLageDann {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--white-60);
+    margin-right: 0.25rem;
+}
+
+.nwLageDann {
+    margin-left: 0.3rem;
+}
+
+/* Über die ganze Breite unter beiden Karten */
+.nwLagenFuss {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.72rem;
+    color: var(--white-60);
 }
 </style>

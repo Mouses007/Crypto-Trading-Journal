@@ -3352,6 +3352,11 @@
     }
   },
   "news": {
+    "lagen": {
+        "gesamt": "Gesamtlage",
+        "handel": "Handelslage {symbol}",
+        "hinweis": "Eigene Einordnung der App zum Zeitpunkt des Berichts — keine Nachricht und keine Handelsempfehlung."
+    },
     "fetchNow": "Beiträge holen",
     "fontSize": "Schriftgrösse",
     "fontSmaller": "Schrift verkleinern",

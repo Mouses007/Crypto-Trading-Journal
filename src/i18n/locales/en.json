@@ -3352,6 +3352,11 @@
     }
   },
   "news": {
+    "lagen": {
+        "gesamt": "Overall situation",
+        "handel": "Trading situation {symbol}",
+        "hinweis": "The app's own reading at the time of the report — not a news item and not a trading recommendation."
+    },
     "fetchNow": "Fetch posts",
     "fontSize": "Text size",
     "fontSmaller": "Smaller text",
