@@ -322,18 +322,16 @@
                     <!-- Wo der Coin sonst noch liegt. Bei einem Paar, das
                          Binance nicht führt, ist das keine Nebensache: Es ist
                          die Antwort auf „wo kann ich das überhaupt handeln". -->
-                    <p v-if="ep.boersen?.liste?.length" class="crEinzelListung">
+                    <p v-if="epLinks.length" class="crEinzelListung">
                         <span>{{ t('coinradar.epGelistet') }}</span>
-                        <template v-for="b in ep.boersen.liste" :key="b.boerse">
-                            <a v-if="boerseUrl(b.boerse, ep.symbol)" class="crBoerse"
-                                :href="boerseUrl(b.boerse, ep.symbol)" target="_blank"
-                                rel="noopener noreferrer" :title="boerseName(b.boerse)">
-                                {{ boerseKurz(b.boerse) }}
-                            </a>
-                            <span v-else class="crBoerse" :title="boerseName(b.boerse)">
-                                {{ boerseKurz(b.boerse) }}
-                            </span>
-                        </template>
+                        <a v-for="e in epLinks" :key="e.boerse" class="crBoerse"
+                            :href="boerseUrl(e.boerse, ep.symbol, epChartQuelle)" target="_blank"
+                            rel="noopener noreferrer"
+                            :title="e.boerse === 'tradingview'
+                                ? t('coinradar.epChartOeffnen', { q: epChartQuelle })
+                                : t('coinradar.gelistetAuf', { b: BOERSE_LINK_NAME[e.boerse] })">
+                            {{ BOERSE_LINK_KURZ[e.boerse] }}
+                        </a>
                     </p>
                 </template>
             </div>
@@ -1429,6 +1427,25 @@ const epBoersen = computed(() => jeBoerse({ jeBoerse: ep.value?.ausfuehrung?.jeB
  * Fehler, den `KONSTANTEN` auf dem Server abgestellt hat.
  */
 const epAlsZeile = computed(() => ({ btcKorrelation: ep.value?.btc?.korrelation ?? null }))
+
+/*
+ * Dieselben Links wie in der Rangliste — gelistete Börsen plus TradingView,
+ * gefiltert nach der Einstellung `boersenLinks`. `boersenLinksVon` erwartet
+ * genau die Form, die der Bericht mitbringt (`boersen.liste`), deshalb keine
+ * zweite Umrechnung: Eine eigene Liste hier hätte TradingView weggelassen und
+ * die Einstellung ignoriert — beides ist beim ersten Entwurf passiert.
+ */
+const epLinks = computed(() => (ep.value ? boersenLinksVon(ep.value) : []))
+
+/*
+ * Woher TradingView seine Kerzen nehmen soll.
+ *
+ * Nicht kosmetisch: `BINANCE:CASHCATUSDT.P` gibt es nicht — Binance führt das
+ * Paar nicht, und TradingView antwortet mit „This symbol doesn't exist"
+ * (live geprüft am 04.09.2026, ebenso dass `BITUNIX:CASHCATUSDT.P` lädt).
+ * Der Chart folgt deshalb derselben Quelle wie die Messung.
+ */
+const epChartQuelle = computed(() => (ep.value?.quelle === 'bitunix' ? 'BITUNIX' : 'BINANCE'))
 
 function epZuruecksetzen() {
     ep.value = null

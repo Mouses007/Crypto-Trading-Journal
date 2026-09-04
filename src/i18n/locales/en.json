@@ -4009,7 +4009,8 @@
     "epFehler_leer": "Please enter a symbol.",
     "epFehler_zu_lang": "That is not a trading symbol.",
     "epUmsatz": "24h turnover",
-    "epGelistet": "Tradable on:"
+    "epGelistet": "Tradable on:",
+    "epChartOeffnen": "Open the chart on TradingView — prices from {q}"
   },
   "lernen": {
     "ladeFehler": "Could not load the flashcards.",

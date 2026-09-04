@@ -10,11 +10,20 @@
  * (z. B. `BTC.PERP_USDT`) — das `USDT`-Suffix und ein führendes `1000...`
  * (Meme-Coins mit vielen Nullen) müssen dafür weg.
  *
- * TradingView bekommt KEINE Listungsprüfung wie die drei Börsen: alle Coins in
- * Coin-Radar/Hype-Radar/RSI-Kachel/Markt-Kachel kommen ohnehin aus Binances
+ * TradingView bekommt KEINE Listungsprüfung wie die drei Börsen: die Coins in
+ * Coin-Radar-Rangliste/Hype-Radar/RSI-Kachel/Markt-Kachel kommen aus Binances
  * USDⓈ-M-FUTURES (`nurCoinSymbole()`/`getClosedCandles(..., {market:'futures'})`
  * in server/marktradar-api.js bzw. server/market-data.js) — ein Perpetual-Chart
- * existiert dafür also immer. Das `.P`-Suffix ist hier PFLICHT: ohne ihn löst
+ * existiert dafür also immer.
+ *
+ * ⚠ Diese Annahme gilt seit der Coin-Radar-EINZELPRÜFUNG nicht mehr überall.
+ * Sie misst auch Paare, die Binance gar nicht führt (gemessen 04.09.2026: 291
+ * der 790 Bitunix-Perpetuals), und für die gibt es dort auch keinen Chart.
+ * Live geprüft: `BINANCE:CASHCATUSDT.P` antwortet mit „This symbol doesn't
+ * exist", `BITUNIX:CASHCATUSDT.P` lädt. Deshalb nimmt `tradingview` eine
+ * QUELLE entgegen — wer von Bitunix gemessen hat, verlinkt auch dorthin.
+ * Vorgabe bleibt BINANCE, damit alle bestehenden Aufrufer unverändert
+ * funktionieren. Das `.P`-Suffix ist hier PFLICHT: ohne ihn löst
  * TradingView den SPOT-Markt auf, und der existiert nicht zwingend — Monero
  * z.B. ist bei Binance nur noch als Future gelistet, nicht mehr als Spot-Paar.
  * `1000PEPEUSDT` als Futures-Symbol hat ohne `.P` ebenfalls keine Entsprechung,
@@ -26,7 +35,7 @@ export const BOERSE_URL = {
     bitunix: (s) => `https://www.bitunix.com/contract-trade/${s}`,
     bitget: (s) => `https://www.bitget.com/futures/usdt/${s}`,
     pionex: (s) => `https://www.pionex.com/en/futures/${s.replace(/USDT$/, '').replace(/^1000+/, '')}.PERP_USDT/Manual`,
-    tradingview: (s) => `https://www.tradingview.com/chart/?symbol=BINANCE:${s}.P`,
+    tradingview: (s, quelle) => `https://www.tradingview.com/chart/?symbol=${String(quelle || 'BINANCE').toUpperCase()}:${s}.P`,
 }
 
 export const BOERSE_KURZ = { bitunix: 'BX', bitget: 'BG', pionex: 'PX', tradingview: 'TV' }
@@ -35,8 +44,15 @@ export const BOERSE_NAME = { bitunix: 'Bitunix', bitget: 'Bitget', pionex: 'Pion
 /** Kanonische Reihenfolge — bestimmt sowohl die Anzeige-Reihenfolge als auch die CSV-Schreibreihenfolge der Einstellung. */
 export const BOERSE_SCHLUESSEL = ['bitunix', 'bitget', 'pionex', 'tradingview']
 
-export function boerseUrl(boerse, symbol) {
-    return BOERSE_URL[boerse]?.(symbol) || null
+/**
+ * @param {string} boerse   Schlüssel aus `BOERSE_SCHLUESSEL`
+ * @param {string} symbol   Handelssymbol, z. B. `CASHCATUSDT`
+ * @param {string} [quelle] nur für `tradingview`: Datenquelle des Charts
+ *                          (`BINANCE` als Vorgabe, `BITUNIX` für Paare, die
+ *                          Binance nicht führt — siehe Kopf)
+ */
+export function boerseUrl(boerse, symbol, quelle) {
+    return BOERSE_URL[boerse]?.(symbol, quelle) || null
 }
 
 /**

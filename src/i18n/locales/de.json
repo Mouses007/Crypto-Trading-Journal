@@ -4009,7 +4009,8 @@
     "epFehler_leer": "Bitte ein Symbol eingeben.",
     "epFehler_zu_lang": "Das ist kein Handelssymbol.",
     "epUmsatz": "Umsatz 24 h",
-    "epGelistet": "Handelbar auf:"
+    "epGelistet": "Handelbar auf:",
+    "epChartOeffnen": "Chart auf TradingView öffnen — Kurse von {q}"
   },
   "lernen": {
     "ladeFehler": "Die Lernkarten konnten nicht geladen werden.",
