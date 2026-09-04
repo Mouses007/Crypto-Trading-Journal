@@ -19,6 +19,7 @@ import { KOPPLUNG_FEST, KOPPLUNG_LOSE, BTC_ZEITEINHEIT } from './coin-radar/btc-
 import { fuehreLaufAus } from './coin-radar/lauf.js'
 import { erzeugeEinordnung } from './coin-radar/einordnung.js'
 import { holeCoinInfo } from './coin-radar/coin-info.js'
+import { pruefeEinzeln } from './coin-radar/einzel.js'
 import { leseSchluessel } from './hype-radar/einstellungen.js'
 import { legeAnCoinRadar } from './radar-ergebnisse.js'
 import { werteAus } from './radar-guete.js'
@@ -176,6 +177,44 @@ export function setupCoinRadarRoutes(app) {
         } catch (e) {
             logWarn('coin-radar', `Coin-Info: ${e.message}`)
             res.status(502).json({ error: 'Projekt-Infos konnten nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Einzelprüfung: ein Symbol auf Zuruf messen.
+     *
+     * Der Endpunkt beantwortet die Frage, die die Rangliste konstruktiv nicht
+     * beantworten kann. Sie misst die Schnittmenge aus Bitunix und Binance und
+     * siebt danach nach Umsatz — gemessen am 04.09.2026 sind das 499 von 790
+     * Bitunix-Perpetuals, und von denen bleiben nach der Umsatzhürde rund
+     * hundert übrig. Wer ein bestimmtes Symbol im Kopf hat, fällt fast immer
+     * durch eines der beiden Raster.
+     *
+     * GET, obwohl gemessen wird: Der Abruf schreibt nichts, kostet kein Geld
+     * (nur Binance- und Börsen-Kontingent) und dauert wenige Sekunden. Das ist
+     * der Unterschied zur „Gesamtlage"-Kachel, wo GET nur den Cache liest, weil
+     * dort jeder Aufruf ein bezahltes Modell anwirft.
+     */
+    app.get('/api/coin-radar/einzel', async (req, res) => {
+        try {
+            const eingabe = String(req.query.symbol || '').trim()
+            if (!eingabe) return res.status(400).json({ error: 'Symbol fehlt' })
+
+            let einst
+            try {
+                einst = await leseEinstellungen()
+            } catch {
+                // Ohne gespeicherte Einstellungen wird mit den Vorgaben
+                // gemessen — eine Einzelprüfung soll nicht daran scheitern,
+                // dass noch nie ein Lauf lief.
+                einst = { ...VORGABEN }
+            }
+
+            const bericht = await pruefeEinzeln(eingabe, einst)
+            res.json({ bericht, konstanten: KONSTANTEN })
+        } catch (e) {
+            logWarn('coin-radar', `Einzelprüfung: ${e.message}`)
+            res.status(502).json({ error: 'Der Coin konnte nicht gemessen werden' })
         }
     })
 

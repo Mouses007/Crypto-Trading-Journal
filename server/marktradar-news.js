@@ -1159,6 +1159,17 @@ export function leseLagebild(roh) {
  * `skala` (0–100) tragen nur die Werte, die tatsächlich eine feste Spanne
  * haben; daraus zeichnet die Anzeige einen Balken. Erfunden wird keine.
  */
+/**
+ * Ab welchem Tagesumsatz ein Markt in der Funding-Extremliste auftauchen darf.
+ *
+ * Siehe Begründung an der Fundstelle: ohne Schwelle sind die Extreme immer die
+ * illiquidesten Coins, und über die lässt sich nichts handeln.
+ */
+const FUNDING_MIN_UMSATZ = 250e6
+
+/** „BTCUSDT" → „BTC". In einer Mail zählt jedes Zeichen. */
+const kurzSym = (s) => String(s || '').replace(/USDT$/, '')
+
 async function holeMarktdatenBlock() {
     const werte = []
     try {
@@ -1183,13 +1194,59 @@ async function holeMarktdatenBlock() {
         // „p.a." liest sich wie eine unmögliche Einzelzahlung — an der Stelle
         // hat der Lagebericht am 21.08.2026 richtige Zahlen als Fehler
         // ausgewiesen bekommen.
-        const fmt = r => `${r.symbol} ${(r.rate * 100).toFixed(3)} % je ${r.intervallStunden || 8} h`
+        const fmt = r => `${kurzSym(r.symbol)} ${(r.rate * 100).toFixed(3)} % je ${r.intervallStunden || 8} h`
             + (Number.isFinite(r.jahresRate) ? ` (${(r.jahresRate * 100).toFixed(0)} % p.a.)` : '')
-        if (fu.oben?.length || fu.unten?.length) {
+        const knapp = r => `${kurzSym(r.symbol)} ${(r.jahresRate * 100).toFixed(0)} % p.a.`
+
+        /*
+         * ZUERST die eigenen Märkte — das ist die Zeile, die etwas bedeutet.
+         *
+         * `fu.eigene` sind die Symbole aus den eigenen Trades der letzten 90
+         * Tage (bzw. die von Hand gesetzte Liste). Ob BTC 5 % oder ETH 0 %
+         * zahlt, ist eine Aussage über die Positionierung DORT, wo tatsächlich
+         * gehandelt wird.
+         *
+         * BTC und ETH stehen immer dabei, auch wenn ihre Rate unauffällig ist:
+         * Sie sind die Leitmärkte, und „unauffällig" ist bei ihnen selbst ein
+         * Befund. Der Rest wird nach dem BETRAG der Jahresrate ausgewählt —
+         * eine hohe Minusrate ist genauso interessant wie eine hohe Plusrate.
+         */
+        const eigene = (fu.eigene || []).filter(r => Number.isFinite(r.jahresRate))
+        if (eigene.length) {
+            const leit = eigene.filter(r => /^(BTC|ETH)USDT$/.test(r.symbol))
+            const rest = eigene
+                .filter(r => !/^(BTC|ETH)USDT$/.test(r.symbol))
+                .sort((a, b) => Math.abs(b.jahresRate) - Math.abs(a.jahresRate))
+                .slice(0, 4)
             werte.push({
-                was: 'Funding-Extreme',
-                wert: `oben ${fu.oben.slice(0, 3).map(fmt).join(', ') || '—'}`,
-                zusatz: `unten ${fu.unten.slice(0, 3).map(fmt).join(', ') || '—'}`,
+                was: 'Funding deine Märkte',
+                wert: [...leit, ...rest].map(knapp).join(', '),
+                zusatz: `aus ${eigene.length} selbst gehandelten Märkten`,
+            })
+        }
+
+        /*
+         * Extreme nur aus Märkten mit echtem Umsatz.
+         *
+         * Ohne Schwelle standen hier verlässlich Namen wie BULLAUSDT oder
+         * 牛来USDT — extreme Funding-Raten hat strukturell IMMER der kleinste,
+         * illiquideste Markt, und über den lässt sich nichts handeln. Die
+         * Liste ist zwar schon auf die 50 umsatzstärksten begrenzt, aber deren
+         * unteres Ende liegt bei 50 Mio USD; gemessen am 04.09.2026 wurden die
+         * Extreme erst ab rund 250 Mio zu Namen, die man kennt (HYPE, ADA,
+         * SOL, TRUMP statt 牛来 und BULLA).
+         *
+         * Ist nach dem Filter zu wenig übrig, fällt die Zeile weg statt auf
+         * die ungefilterte Liste zurück — eine Extremliste aus drei Märkten
+         * ist keine.
+         */
+        const grosse = (fu.alle || []).filter(r => (r.volumen24h || 0) >= FUNDING_MIN_UMSATZ)
+        if (grosse.length >= 8) {
+            werte.push({
+                was: 'Funding-Extreme (grosse Märkte)',
+                wert: `oben ${grosse.slice(0, 3).map(fmt).join(', ')}`,
+                zusatz: `unten ${grosse.slice(-3).reverse().map(fmt).join(', ')}`
+                    + ` — nur Märkte über ${Math.round(FUNDING_MIN_UMSATZ / 1e6)} Mio USD Tagesumsatz`,
             })
         }
     } catch (e) { logWarn('news', `Marktdaten Funding: ${e.message}`) }
@@ -1608,24 +1665,50 @@ export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], lagen 
 
         /*
          * Die eigene Einordnung direkt hinter den Marktstand: erst was gemessen
-         * wurde, dann was es heisst, dann die Meldungen. Bewusst KURZ gehalten
-         * — Überschrift, Spielraum und die Bedingungen. Der ausgeschriebene
-         * Text steht im Bericht; eine Mail, die ihn mitschleppt, wird zu dem
-         * Wandtext, den `inhalt !== 'voll'` gerade vermeiden soll.
+         * wurde, dann was es heisst, dann die Meldungen.
+         *
+         * VOLLSTÄNDIG, nicht als Stichwortliste. Der erste Entwurf gab nur
+         * Überschrift, Spielraum und Bedingungen mit — aus Sorge, die Mail
+         * werde zum Wandtext. Das war an der falschen Stelle gespart: Der
+         * Block ist zusammen kürzer als ein einzelnes Nachrichtenkapitel, und
+         * er ist der Teil, der die Meldungen darunter überhaupt einordnet. Wer
+         * die Mail unterwegs liest, will genau das lesen und nicht auf das
+         * Journal vertröstet werden.
+         *
+         * Zwei Unterüberschriften statt einer Liste, weil es zwei getrennte
+         * Blickwinkel sind — Zyklus gegen Handelstag.
          */
-        const lageZeilen = []
-        if (lagen?.gesamt?.ueberschrift) {
-            lageZeilen.push(`Gesamtlage: ${lagen.gesamt.ueberschrift}`)
+        const abschnitt = (kopf, zeilen) => {
+            const gefiltert = zeilen.filter(Boolean)
+            if (gefiltert.length) teile.push(`### ${kopf}`, gefiltert.join('\n'))
         }
-        if (lagen?.handel?.ueberschrift) {
-            const sym = String(lagen.handel.symbol || '').replace(/USDT$/, '')
-            lageZeilen.push(`Handelslage${sym ? ' ' + sym : ''}: ${lagen.handel.ueberschrift}`)
-            if (lagen.handel.spielraum) lageZeilen.push(`Spielraum: ${lagen.handel.spielraum}`)
-            for (const b of (Array.isArray(lagen.handel.bedingungen) ? lagen.handel.bedingungen : []).slice(0, 3)) {
-                if (b?.wenn && b?.dann) lageZeilen.push(`Wenn ${b.wenn}, dann ${b.dann}`)
+
+        if (lagen?.gesamt?.ueberschrift || lagen?.handel?.ueberschrift) {
+            teile.push('## Eigene Einordnung')
+
+            if (lagen?.gesamt?.ueberschrift) {
+                abschnitt(lagen.gesamt.ueberschrift, [
+                    lagen.gesamt.text,
+                    lagen.gesamt.widerspruch ? `Widerspruch: ${lagen.gesamt.widerspruch}` : '',
+                ])
+            }
+
+            if (lagen?.handel?.ueberschrift) {
+                const sym = String(lagen.handel.symbol || '').replace(/USDT$/, '')
+                const bed = (Array.isArray(lagen.handel.bedingungen) ? lagen.handel.bedingungen : [])
+                    .filter(b => b?.wenn && b?.dann)
+                    .map(b => `- Wenn ${b.wenn}, dann ${b.dann}`)
+                const hin = (Array.isArray(lagen.handel.hinfaellig) ? lagen.handel.hinfaellig : [])
+                    .filter(Boolean)
+                abschnitt(`${sym ? sym + ': ' : ''}${lagen.handel.ueberschrift}`, [
+                    lagen.handel.text,
+                    lagen.handel.spielraum ? `Spielraum: ${lagen.handel.spielraum}` : '',
+                    lagen.handel.zeitfenster ? `Zeitfenster: ${lagen.handel.zeitfenster}` : '',
+                    bed.length ? `Bedingungen:\n${bed.join('\n')}` : '',
+                    hin.length ? `Hinfällig, sobald: ${hin.join(' · ')}` : '',
+                ])
             }
         }
-        if (lageZeilen.length) teile.push('## Eigene Einordnung', lageZeilen.join('\n'))
 
         for (const k of (Array.isArray(kapitel) ? kapitel : [])) {
             const name = themenNamen[k?.thema] || k?.thema || ''
