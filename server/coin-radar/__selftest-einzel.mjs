@@ -89,6 +89,22 @@ pruefe('kein Treffer bleibt leer', () => {
     assert.deepEqual(vorschlaege('QUATSCH', BESTAND), [])
 })
 
+/*
+ * Der eigentliche Zweck der Vorschläge. „CASHCTA" ist Teilstring von nichts —
+ * mit reiner Enthält-Suche käme die leere Antwort heraus, obwohl das gemeinte
+ * Symbol fünf gemeinsame Anfangszeichen hat. Genau dieser Dreher ist bei
+ * Meme-Tickern der häufigste Vertipper.
+ */
+pruefe('Vertipper findet über den gemeinsamen Anfang', () => {
+    const v = vorschlaege('CASHCTA', BESTAND)
+    assert.equal(v[0], 'CASHCATUSDT')
+})
+
+pruefe('unter drei gemeinsamen Zeichen wird nichts geraten', () => {
+    // 'BT' teilt mit BTCUSDT zwei Zeichen — zu wenig, um mehr als Zufall zu sein.
+    assert.deepEqual(vorschlaege('BTXYZQ', BESTAND), [])
+})
+
 // ── Bitunix-Kerzen ──────────────────────────────────────────────────────
 /** Eine Antwort, wie Bitunix sie liefert: neueste zuerst, Zahlen als Text. */
 function bitunixAntwort(zeiten) {
@@ -164,5 +180,8 @@ pruefe('halbes Buch hat keine Spitze', () => {
     assert.equal(spitzeAusBuch(null), null)
 })
 
-console.log(`einzel: ${gut} gut, ${schlecht} schlecht`)
-if (schlecht) process.exit(1)
+// Wortlaut wie in den übrigen Selbsttests — `run-selftests.mjs` liest die
+// Zahlen genau aus dieser Zeile; jede andere Formulierung zählt als „keine
+// Zählung gefunden" und fällt aus der Gesamtsumme.
+console.log(`  ${gut} bestanden, ${schlecht} fehlgeschlagen`)
+process.exit(schlecht === 0 ? 0 : 1)

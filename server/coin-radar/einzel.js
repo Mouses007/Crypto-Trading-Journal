@@ -110,7 +110,27 @@ export function vorschlaege(basis, symbole, max = 6) {
     // Kurze zuerst: `CATUSDT` ist bei Eingabe „CAT" die bessere Antwort als
     // `CATERPILLARUSDT`, auch wenn beide passen.
     const nachLaenge = (x, y) => x.length - y.length || x.localeCompare(y)
-    return [...beginnt.sort(nachLaenge), ...enthaelt.sort(nachLaenge)].slice(0, max)
+    const treffer = [...beginnt.sort(nachLaenge), ...enthaelt.sort(nachLaenge)]
+    if (treffer.length) return treffer.slice(0, max)
+
+    /*
+     * Nichts enthält die Eingabe — jetzt wird der Vertipper interessant.
+     * „CASHCTA" statt „CASHCAT" ist kein Teilstring von irgendetwas, teilt mit
+     * dem gemeinten Symbol aber die ersten fünf Zeichen. Vorgeschlagen wird
+     * deshalb nach GEMEINSAMEM ANFANG, absteigend — ab drei Zeichen, darunter
+     * wäre es Zufall.
+     */
+    const gemeinsam = (s) => {
+        let i = 0
+        while (i < b.length && i < s.length && b[i] === s[i]) i++
+        return i
+    }
+    return alle
+        .map((s) => ({ s, n: gemeinsam(s) }))
+        .filter((x) => x.n >= 3)
+        .sort((x, y) => y.n - x.n || nachLaenge(x.s, y.s))
+        .slice(0, max)
+        .map((x) => x.s)
 }
 
 /**

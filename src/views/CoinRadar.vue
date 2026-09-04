@@ -110,6 +110,235 @@
             {{ meldung }}
         </div>
 
+        <!-- ══ Einzelprüfung ═════════════════════════════════════════
+             Die Rangliste misst eine Schnittmenge und siebt sie nach Umsatz.
+             Beides ist für eine Liste richtig und für eine Frage falsch: Wer
+             ein bestimmtes Symbol im Kopf hat, findet es dort meistens nicht
+             — 291 der 790 Bitunix-Perpetuals führt Binance gar nicht, und
+             von den übrigen bleibt nach der Umsatzhürde rund ein Fünftel.
+             Deshalb hier dasselbe Messwerk auf Zuruf, für ein Symbol. -->
+        <div v-show="reiter === 'rangliste'" class="crEinzel mt-3">
+            <form class="crEinzelKopf" @submit.prevent="epMessen">
+                <i class="uil uil-search crEinzelLupe"></i>
+                <!-- Die Eingabetaste ausdrücklich am Feld, nicht nur über die
+                     implizite Absendung des Formulars: Letztere hängt am
+                     Zeichenereignis und ist damit nicht in jeder Umgebung
+                     auslösbar. `.prevent` verhindert, dass beide Wege denselben
+                     Abruf zweimal starten. -->
+                <input v-model="epEingabe" type="text" class="crEinzelFeld"
+                    :placeholder="t('coinradar.epPlatzhalter')" :disabled="epLaeuft"
+                    spellcheck="false" autocomplete="off"
+                    @keydown.enter.prevent="epMessen">
+                <button type="submit" class="ctl-pill accent" :disabled="epLaeuft || !epEingabe.trim()">
+                    <span v-if="epLaeuft" class="spinner-border spinner-border-sm me-1"></span>
+                    <i v-else class="uil uil-search-alt me-1"></i>{{ t('coinradar.epMessen') }}
+                </button>
+                <button v-if="ep || epFehler" type="button" class="ctl-pill klein"
+                    :title="t('coinradar.epSchliessen')" @click="epZuruecksetzen">
+                    <i class="uil uil-times"></i>
+                </button>
+                <span class="crEinzelWink">{{ t('coinradar.epWink') }}</span>
+            </form>
+
+            <!-- Nicht gefunden. Ein blosses „unbekannt" ist bei Meme-Tickern
+                 die nutzloseste Antwort — deshalb Vorschläge zum Anklicken. -->
+            <div v-if="epFehler" class="crEinzelFehler">
+                <div>{{ epFehler }}</div>
+                <div v-if="epVorschlaege.length" class="crEinzelChips">
+                    <span class="crEinzelChipsTitel">{{ t('coinradar.epMeintest') }}</span>
+                    <button v-for="v in epVorschlaege" :key="v" type="button"
+                        class="crEinzelChip" @click="epNimm(v)">{{ kurz(v) }}</button>
+                </div>
+            </div>
+
+            <div v-if="ep" class="crEinzelKarte">
+                <!-- Kopf: Symbol, Note, Preis — und woher gemessen wurde -->
+                <div class="crEinzelTitel">
+                    <span class="crEinzelSymbol">{{ kurz(ep.symbol) }}</span>
+                    <span v-if="ep.status === 'bewertet'" class="crNote" :class="noteKlasse(ep.note)">
+                        {{ ep.note }}
+                    </span>
+                    <span class="crEinzelPreis">{{ epPreis }}</span>
+                    <span class="ms-auto crEinzelQuelle" :class="{ fremd: !ep.vergleichbar }"
+                        :title="ep.vergleichbar ? t('coinradar.epQuelleBinanceHilfe') : t('coinradar.epQuelleBitunixHilfe')">
+                        {{ ep.vergleichbar ? t('coinradar.epQuelleBinance') : t('coinradar.epQuelleBitunix') }}
+                    </span>
+                </div>
+
+                <!-- Was an dieser Messung anders ist als in der Rangliste.
+                     Steht oben und nicht im Kleingedruckten: Eine Note, die
+                     auf einer anderen Börse entstand, darf nicht wie eine
+                     Ranglistenzeile gelesen werden. -->
+                <p v-if="!ep.vergleichbar" class="crEinzelVermerk">
+                    {{ t('coinradar.epNichtVergleichbar') }}
+                </p>
+                <p v-if="ep.ergaenzt" class="crEinzelVermerk leise">
+                    {{ t('coinradar.epErgaenzt', { s: ep.symbol }) }}
+                </p>
+                <p v-if="!ep.aufBitunix" class="crEinzelVermerk warn">
+                    {{ t('coinradar.epNichtAufBitunix') }}
+                </p>
+
+                <!-- Die Hürden gelten, aber sie brechen hier nichts ab. -->
+                <p v-if="ep.huerde && !ep.huerde.ok" class="crEinzelVermerk warn">
+                    {{ t('coinradar.epHuerdeGerissen', { g: grundText(ep.huerde.grund) }) }}
+                </p>
+
+                <!-- Zu jung für eine Bewertung: Klartext statt einer Note aus
+                     zu wenigen Kerzen. -->
+                <div v-if="ep.status !== 'bewertet'" class="crEinzelLeer">
+                    <i class="uil uil-hourglass"></i>
+                    <div>
+                        <div>{{ t('coinradar.epZuJung', { n: ep.kerzenAnzahl, ze: ep.haupt, min: ep.mindestKerzen }) }}</div>
+                        <div class="crHinweise">{{ t('coinradar.epZuJungHinweis') }}</div>
+                    </div>
+                </div>
+
+                <template v-else>
+                    <!-- Kennzahlenband -->
+                    <div class="crEinzelBand">
+                        <div class="crEinzelWert">
+                            <div class="crEinzelZahl">{{ n(epHaupt.atrPct, 2) }}<span class="crEinheit"> %</span></div>
+                            <div class="crLabel">ATR {{ ep.haupt }}</div>
+                        </div>
+                        <div class="crEinzelWert">
+                            <div class="crEinzelZahl">{{ n(epHaupt.rvol, 2) }}</div>
+                            <div class="crLabel">RVOL</div>
+                        </div>
+                        <div class="crEinzelWert">
+                            <div class="crEinzelZahl">{{ n(epHaupt.adx, 0) }}</div>
+                            <div class="crLabel">ADX</div>
+                        </div>
+                        <div class="crEinzelWert">
+                            <div class="crEinzelZahl">{{ geld(ep.umsatz24h) }}</div>
+                            <div class="crLabel">{{ t('coinradar.epUmsatz') }}</div>
+                        </div>
+                        <div class="crEinzelWert">
+                            <div class="crEinzelZahl">{{ n(ep.spreadBp, 2) }}<span class="crEinheit"> bp</span></div>
+                            <div class="crLabel">{{ t('coinradar.spalteSpread') }}</div>
+                        </div>
+                        <div class="crEinzelWert">
+                            <div class="crEinzelZahl" :class="fundingKlasse(ep.fundingJahresRate)">
+                                {{ n(ep.fundingJahresRate, 1) }}<span class="crEinheit"> %</span>
+                            </div>
+                            <div class="crLabel">
+                                {{ t('coinradar.spalteFunding') }}
+                                <span v-if="ep.fundingIntervallH" class="crEinzelTakt">{{ ep.fundingIntervallH }}h</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ab hier dieselbe Aufteilung wie im aufgeklappten
+                         Ranglisteneintrag — dieselben Zahlen, dieselbe
+                         Anordnung, damit nichts zweimal gelernt werden muss. -->
+                    <div class="crDetailGrid">
+                        <div>
+                            <div class="crDetailTitel">{{ t('coinradar.teilnoten') }}</div>
+                            <div v-for="(wert, feld) in ep.teilnoten" :key="feld" class="crNoteZeile">
+                                <span class="crNoteName">{{ t('coinradar.note_' + feld) }}</span>
+                                <span class="crBalken"><i :style="{ width: Math.round(wert) + '%' }"></i></span>
+                                <span class="crNoteWert">{{ Math.round(wert) }}</span>
+                            </div>
+                            <p v-if="ep.hinweise?.length" class="crHinweise mb-0 mt-2">
+                                {{ ep.hinweise.join(' · ') }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <div class="crDetailTitel">{{ t('coinradar.jeZeiteinheit') }}</div>
+                            <table class="crZeTabelle">
+                                <tr>
+                                    <th></th><th>ATR %</th><th>RVOL</th><th>ADX</th><th>{{ t('coinradar.kerzen') }}</th>
+                                </tr>
+                                <tr v-for="(m, ze) in ep.jeZeiteinheit" :key="ze">
+                                    <td><b>{{ ze }}</b></td>
+                                    <td>{{ n(m.atrPct, 2) }}</td>
+                                    <td>{{ n(m.rvol, 2) }}</td>
+                                    <td>{{ n(m.adx, 0) }}</td>
+                                    <td>{{ m.kerzen }}</td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <div v-if="Object.keys(epBoersen).length">
+                            <div class="crDetailTitel">{{ t('coinradar.ausfuehrung5k') }}</div>
+                            <table class="crZeTabelle">
+                                <tr>
+                                    <th></th>
+                                    <th>{{ t('coinradar.spKauf') }}</th>
+                                    <th>{{ t('coinradar.spVerkauf') }}</th>
+                                    <th>{{ t('coinradar.spRund') }}</th>
+                                    <th>{{ t('coinradar.spTiefe25') }}</th>
+                                </tr>
+                                <tr v-for="(v, b) in epBoersen" :key="b"
+                                    :class="{ crBeste: b === ep.ausfuehrung?.beste?.boerse }">
+                                    <td :title="boerseName(b)"><b>{{ boerseKurz(b) }}</b></td>
+                                    <td>{{ n(v.slippageKaufBp, 1) }}</td>
+                                    <td>{{ n(v.slippageVerkaufBp, 1) }}</td>
+                                    <td>{{ n(v.rundlaufBp, 1) }}</td>
+                                    <td>{{ geld(v.tiefe25Bp) }}</td>
+                                </tr>
+                            </table>
+                            <p class="crHinweise mb-0 mt-2">
+                                <template v-for="(v, b) in epBoersen" :key="b + 'p'">
+                                    <span v-if="!v.passt5k" class="d-block">
+                                        {{ t('coinradar.passtNicht', { b: boerseName(b) }) }}
+                                    </span>
+                                </template>
+                            </p>
+                        </div>
+
+                        <div>
+                            <div class="crDetailTitel">
+                                {{ t('coinradar.btcTitel', { ze: ep.btc?.zeiteinheit || konst.btcZeiteinheit }) }}
+                                <i class="uil uil-info-circle crInfoWink"
+                                    :title="t('coinradar.btcNichtInNote')"></i>
+                            </div>
+                            <table v-if="ep.btc" class="crZeTabelle">
+                                <tr>
+                                    <td>{{ t('coinradar.btcKopplung') }}</td>
+                                    <td class="text-end">
+                                        <b>{{ Math.round(ep.btc.korrelation * 100) }} %</b>
+                                        <span class="crHinweisWort">
+                                            {{ t('coinradar.kopplung_' + deuteKopplung(epAlsZeile)) }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>{{ t('coinradar.spalteBeta') }}</td>
+                                    <td class="text-end"><b>{{ n(ep.btc.beta, 2) }}</b></td>
+                                </tr>
+                                <tr>
+                                    <td>{{ t('coinradar.btcPunkte') }}</td>
+                                    <td class="text-end">{{ ep.btc.punkte }}</td>
+                                </tr>
+                            </table>
+                            <p v-else class="crHinweise mb-0">
+                                {{ t('coinradar.epBtc_' + (ep.btcGrund || 'nicht_messbar'), { n: ep.btcKerzen ?? 0 }) }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Wo der Coin sonst noch liegt. Bei einem Paar, das
+                         Binance nicht führt, ist das keine Nebensache: Es ist
+                         die Antwort auf „wo kann ich das überhaupt handeln". -->
+                    <p v-if="ep.boersen?.liste?.length" class="crEinzelListung">
+                        <span>{{ t('coinradar.epGelistet') }}</span>
+                        <template v-for="b in ep.boersen.liste" :key="b.boerse">
+                            <a v-if="boerseUrl(b.boerse, ep.symbol)" class="crBoerse"
+                                :href="boerseUrl(b.boerse, ep.symbol)" target="_blank"
+                                rel="noopener noreferrer" :title="boerseName(b.boerse)">
+                                {{ boerseKurz(b.boerse) }}
+                            </a>
+                            <span v-else class="crBoerse" :title="boerseName(b.boerse)">
+                                {{ boerseKurz(b.boerse) }}
+                            </span>
+                        </template>
+                    </p>
+                </template>
+            </div>
+        </div>
+
         <!-- ══ Rangliste ═════════════════════════════════════════════ -->
         <div v-show="reiter === 'rangliste'" class="mt-3">
 
@@ -1161,6 +1390,87 @@ async function coinInfoOeffnen(symbol) {
     }
 }
 
+// ── Einzelprüfung ───────────────────────────────────────────────────────
+/*
+ * Ein Symbol auf Zuruf messen — die Frage, die die Rangliste konstruktiv nicht
+ * beantwortet. Sie zeigt die Schnittmenge aus Bitunix und Binance, nach Umsatz
+ * gesiebt; wer ein bestimmtes Paar sucht, findet es dort meistens nicht. Der
+ * Server misst dann über Bitunix und schreibt dazu, dass die Zahlen aus einer
+ * anderen Quelle stammen (`vergleichbar`).
+ */
+const epEingabe = ref('')
+const epLaeuft = ref(false)
+const ep = ref(null)
+const epFehler = ref('')
+const epVorschlaege = ref([])
+
+/** Die Kennzahlen der Zeiteinheit, welche die Note trägt. */
+const epHaupt = computed(() => ep.value?.jeZeiteinheit?.[ep.value.haupt] || {})
+
+/*
+ * Der Preis mit so vielen Stellen, wie der Coin braucht. Ein Meme-Coin steht
+ * bei 0,0000042 — mit zwei Nachkommastellen wäre er kostenlos, und genau die
+ * Coins, für die es diese Prüfung gibt, stehen tief.
+ */
+const epPreis = computed(() => {
+    const w = Number(ep.value?.preis)
+    if (!Number.isFinite(w) || w <= 0) return '—'
+    const stellen = w >= 100 ? 2 : (w >= 1 ? 4 : (w >= 0.01 ? 5 : 8))
+    return w.toFixed(stellen)
+})
+
+/** Dieselbe Sortierung (günstigster Rundlauf zuerst) wie in der Rangliste. */
+const epBoersen = computed(() => jeBoerse({ jeBoerse: ep.value?.ausfuehrung?.jeBoerse || {} }))
+
+/*
+ * Der BTC-Vergleich kommt hier als eigenes Objekt, in der Rangliste als flache
+ * Spalten. Statt `deuteKopplung` zu verdoppeln, bekommt es die Form, die die
+ * Funktion erwartet — eine zweite Fassung derselben Schwellen ist genau der
+ * Fehler, den `KONSTANTEN` auf dem Server abgestellt hat.
+ */
+const epAlsZeile = computed(() => ({ btcKorrelation: ep.value?.btc?.korrelation ?? null }))
+
+function epZuruecksetzen() {
+    ep.value = null
+    epFehler.value = ''
+    epVorschlaege.value = []
+}
+
+/** Vorschlag angeklickt: übernehmen und sofort messen. */
+function epNimm(symbol) {
+    epEingabe.value = symbol
+    epMessen()
+}
+
+async function epMessen() {
+    const eingabe = epEingabe.value.trim()
+    if (!eingabe || epLaeuft.value) return
+    epLaeuft.value = true
+    epFehler.value = ''
+    epVorschlaege.value = []
+    try {
+        const r = await axios.get('/api/coin-radar/einzel', { params: { symbol: eingabe } })
+        const b = r.data?.bericht
+        if (!b?.gefunden) {
+            ep.value = null
+            epVorschlaege.value = b?.vorschlaege || []
+            /*
+             * Der Grund wird übersetzt, nicht durchgereicht: `unbekannt`,
+             * `leer` und `zu_lang` sind Schlüssel des Servers und für sich
+             * keine Meldung.
+             */
+            epFehler.value = t('coinradar.epFehler_' + (b?.fehler || 'unbekannt'), { s: b?.symbol || eingabe })
+            return
+        }
+        ep.value = b
+    } catch (e) {
+        ep.value = null
+        epFehler.value = e.response?.data?.error || e.message
+    } finally {
+        epLaeuft.value = false
+    }
+}
+
 // ── Laden ───────────────────────────────────────────────────────────────
 async function ladeZeilen(laufId = 0) {
     try {
@@ -2152,7 +2462,214 @@ a.crBoerse:hover, a.crBoerse:active {
 }
 
 /* ── Schmale Fenster ────────────────────────────────────── */
+/* ── Einzelprüfung ──────────────────────────────────────────────────────
+   Bewusst als abgesetzte Karte über der Rangliste und nicht als weiterer
+   Filter darin: Es ist eine andere Frage („was ist mit DIESEM Coin") und ein
+   anderer Datenstand — die Karte kann aus einer anderen Quelle stammen als
+   die Tabelle darunter. Zwei Fragen, zwei Flächen. */
+.crEinzel {
+    margin-bottom: 1rem;
+}
+
+.crEinzelKopf {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+    background: var(--black-bg-soft, rgba(255, 255, 255, .03));
+    border: 1px solid var(--grey-color, rgba(255, 255, 255, .12));
+    border-radius: var(--border-radius, 8px);
+    padding: .5rem .75rem;
+}
+
+.crEinzelLupe {
+    opacity: .6;
+    font-size: 1.1rem;
+}
+
+.crEinzelFeld {
+    flex: 1 1 12rem;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--grey-color, rgba(255, 255, 255, .18));
+    color: inherit;
+    padding: .25rem .25rem;
+    font-size: .9rem;
+    text-transform: uppercase;
+}
+
+.crEinzelFeld:focus {
+    outline: none;
+    border-bottom-color: var(--blue-color, #4a9eff);
+}
+
+.crEinzelFeld::placeholder {
+    text-transform: none;
+    opacity: .45;
+}
+
+.crEinzelWink {
+    flex: 1 1 100%;
+    font-size: .72rem;
+    opacity: .55;
+}
+
+.crEinzelFehler {
+    margin-top: .5rem;
+    padding: .6rem .75rem;
+    border-radius: var(--border-radius, 8px);
+    background: rgba(255, 193, 7, .1);
+    border: 1px solid rgba(255, 193, 7, .3);
+    font-size: .85rem;
+}
+
+.crEinzelChips {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    flex-wrap: wrap;
+    margin-top: .5rem;
+}
+
+.crEinzelChipsTitel {
+    font-size: .75rem;
+    opacity: .6;
+}
+
+.crEinzelChip {
+    background: rgba(255, 255, 255, .06);
+    border: 1px solid var(--grey-color, rgba(255, 255, 255, .15));
+    border-radius: 999px;
+    padding: .1rem .55rem;
+    font-size: .75rem;
+    color: inherit;
+}
+
+.crEinzelChip:hover {
+    border-color: var(--blue-color, #4a9eff);
+}
+
+.crEinzelKarte {
+    margin-top: .5rem;
+    padding: .85rem 1rem 1rem;
+    border-radius: var(--border-radius, 8px);
+    background: var(--black-bg-soft, rgba(255, 255, 255, .03));
+    border: 1px solid var(--grey-color, rgba(255, 255, 255, .12));
+}
+
+.crEinzelTitel {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+
+.crEinzelSymbol {
+    font-size: 1.15rem;
+    font-weight: 600;
+}
+
+.crEinzelPreis {
+    opacity: .75;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Die Herkunft der Zahlen, nicht als Fussnote. Eine auf Bitunix gemessene
+   Note steht neben einer Rangliste aus Binance-Daten — wer das übersieht,
+   vergleicht zwei verschiedene Messungen. */
+.crEinzelQuelle {
+    font-size: .72rem;
+    padding: .1rem .5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .07);
+    opacity: .8;
+}
+
+.crEinzelQuelle.fremd {
+    background: rgba(255, 193, 7, .15);
+    color: #ffc107;
+    opacity: 1;
+}
+
+.crEinzelVermerk {
+    margin: .5rem 0 0;
+    font-size: .78rem;
+    opacity: .8;
+}
+
+.crEinzelVermerk.leise {
+    opacity: .55;
+}
+
+.crEinzelVermerk.warn {
+    color: #ffc107;
+    opacity: 1;
+}
+
+.crEinzelLeer {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    margin-top: .75rem;
+    font-size: .85rem;
+}
+
+.crEinzelLeer i {
+    font-size: 1.3rem;
+    opacity: .5;
+}
+
+.crEinzelBand {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(7rem, 100%), 1fr));
+    gap: .5rem;
+    margin: .85rem 0;
+}
+
+.crEinzelWert {
+    text-align: center;
+    padding: .4rem .25rem;
+    border-radius: var(--border-radius, 8px);
+    background: rgba(255, 255, 255, .04);
+}
+
+.crEinzelZahl {
+    font-size: 1.05rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.crEinzelTakt {
+    opacity: .6;
+}
+
+.crEinzelListung {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    flex-wrap: wrap;
+    margin: .85rem 0 0;
+    font-size: .78rem;
+    opacity: .85;
+}
+
+
 @media (max-width: 767px) {
+    /* Auf dem Telefon passen Feld und beide Knöpfe nicht in eine Zeile —
+       ohne diese Regel bricht der Schliessen-Knopf allein um und steht
+       verloren unter dem Suchfeld. Feld über die volle Breite, Knöpfe
+       darunter nebeneinander. */
+    .crEinzelFeld {
+        flex-basis: 100%;
+        order: -1;
+    }
+
+    .crEinzelLupe {
+        display: none;
+    }
+
+
 
     /* Der Kopf stapelt: Reiter über den Knöpfen, damit beide voll
        antippbar bleiben statt sich die Zeile zu teilen. */
