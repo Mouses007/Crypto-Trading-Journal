@@ -54,6 +54,8 @@ export const PREISE = {
     'grok-build': [1, 2],
     'grok-4': [2, 6],
     // Längerer Name zuerst, sonst fängt `sonar` auch `sonar-pro` ein.
+    'sonar-deep-research': [2, 8],
+    'sonar-reasoning-pro': [2, 8],
     'sonar-pro': [3, 15],
     'sonar': [1, 1],
     'qwen3.7-max': [2, 6],          // Alibaba nennt keinen öffentlichen Listenpreis

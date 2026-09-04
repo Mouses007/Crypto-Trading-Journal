@@ -83,7 +83,14 @@ export const ANBIETER_REG = {
         basisUrl: 'https://api.x.ai/v1', keyUrl: 'console.x.ai',
         anhang: { image: false, pdf: false },   // ungetestet, siehe unten
         jsonModus: true, katalog: true,
-        modelle: ['grok-4.6', 'grok-4.5', 'grok-4.3'],
+        /*
+         * grok-4.20 ist neuer als 4.6 (die Zahl hinter dem Punkt zaehlt weiter,
+         * nicht dezimal). Die Non-Reasoning-Variante ist fuer Werkzeugaufgaben
+         * wie die X-Suche die richtige: gemessen am 04.09.2026 lieferte sie
+         * dieselben 39 Posts wie grok-4.6, in 34 statt 206 Sekunden.
+         */
+        modelle: ['grok-4.20-0309-non-reasoning', 'grok-4.20-0309-reasoning',
+            'grok-4.20-multi-agent-0309', 'grok-4.6', 'grok-4.5', 'grok-4.3'],
     },
     qwen: {
         name: 'Qwen (Alibaba)', art: 'openai', keySpalte: 'aiKeyQwen',
@@ -99,12 +106,17 @@ export const ANBIETER_REG = {
     },
     perplexity: {
         name: 'Perplexity (Sonar)', art: 'openai', keySpalte: 'aiKeyPerplexity',
-        basisUrl: 'https://api.perplexity.ai', keyUrl: 'perplexity.ai/settings/api',
+        // `perplexity.ai/settings/api` fuehrte ins Leere -- die Schluesselverwaltung
+        // liegt seit dem Umbau auf einer eigenen Konsole (vom Nutzer gemeldet 04.09.2026).
+        basisUrl: 'https://api.perplexity.ai', keyUrl: 'console.perplexity.ai',
         // Sonar ist eine Such-KI: jede Antwort kommt mit Web-Zitaten. Primär
         // für die Themen-Recherche des Lageberichts gedacht; als Chat-Anbieter
         // wählbar, aber ohne Anhänge und ohne festen JSON-Modus.
         anhang: { image: false, pdf: false }, jsonModus: false, katalog: false,
-        modelle: ['sonar', 'sonar-pro'],
+        // Vier Stufen, nicht zwei. `sonar-deep-research` rechnet zusaetzlich
+        // Reasoning und Suchanfragen ab -- fuer einen Rechercheabsatz je Thema
+        // ist `sonar-pro` weiterhin die richtige Wahl.
+        modelle: ['sonar', 'sonar-pro', 'sonar-reasoning-pro', 'sonar-deep-research'],
     },
     custom: {
         name: 'Eigener Anbieter (OpenAI-kompatibel)', art: 'openai', keySpalte: 'aiKeyCustom',
