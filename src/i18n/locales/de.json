@@ -780,7 +780,9 @@
     "daysLabel": "Tage",
     "importEvaluatedBadge": "Bewertet",
     "importEvaluateLink": "Bewerten",
-    "importNoTradesFound": "Keine einzelnen Trades gefunden."
+    "importNoTradesFound": "Keine einzelnen Trades gefunden.",
+    "modelsFor": "Modelle von",
+    "modelsOtherProvider": "nicht dein Hauptanbieter — Änderungen gelten nur für diese Liste"
   },
   "setup": {
     "welcome": "Willkommen!",

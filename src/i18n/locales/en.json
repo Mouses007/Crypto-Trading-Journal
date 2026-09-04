@@ -780,7 +780,9 @@
     "daysLabel": "days",
     "importEvaluatedBadge": "Evaluated",
     "importEvaluateLink": "Evaluate",
-    "importNoTradesFound": "No individual trades found."
+    "importNoTradesFound": "No individual trades found.",
+    "modelsFor": "Models of",
+    "modelsOtherProvider": "not your main provider — changes apply to this list only"
   },
   "setup": {
     "welcome": "Welcome!",

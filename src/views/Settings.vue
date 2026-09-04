@@ -288,10 +288,20 @@ const modellOhneTemperatur = computed(
 )
 
 /** Nach dem Bearbeiten der Liste: die Auswahl gültig halten. */
-function modelleGeaendert(liste) {
-    if (aiProvider.value === 'ollama') ollamaModels.value = liste
-    else modellListen.value = { ...modellListen.value, [aiProvider.value]: liste }
-    if (!liste.includes(aiModel.value)) aiModel.value = liste[0] || ''
+/*
+ * `anbieter` kommt seit dem Umbau des ModelManagers mit: Dort laesst sich
+ * jetzt die Liste JEDES Anbieters ansehen und bearbeiten, ohne den
+ * Hauptanbieter zu wechseln. Ohne das zweite Argument landete die Liste des
+ * gerade angesehenen Anbieters unter dem Hauptanbieter.
+ *
+ * Das Modell darunter wird nur nachgezogen, wenn tatsaechlich die Liste des
+ * HAUPTANBIETERS bearbeitet wurde -- sonst spraenge die Auswahl um, weil
+ * jemand bei einem ganz anderen Anbieter aufgeraeumt hat.
+ */
+function modelleGeaendert(liste, anbieter = aiProvider.value) {
+    if (anbieter === 'ollama') ollamaModels.value = liste
+    else modellListen.value = { ...modellListen.value, [anbieter]: liste }
+    if (anbieter === aiProvider.value && !liste.includes(aiModel.value)) aiModel.value = liste[0] || ''
 }
 
 async function loadOllamaModels() {
@@ -3400,7 +3410,7 @@ onBeforeMount(async () => {
                             <small v-if="aiProvider === 'ollama' && ollamaModels.length === 0" class="text-warning">
                                 {{ t('settings.loadModelsHint') }}
                             </small>
-                            <ModelManager :provider="aiProvider" :ollama-url="aiOllamaUrl"
+                            <ModelManager :provider="aiProvider" :ollama-url="aiOllamaUrl" waehlbar
                                 @geaendert="modelleGeaendert" />
                         </div>
                     </div>

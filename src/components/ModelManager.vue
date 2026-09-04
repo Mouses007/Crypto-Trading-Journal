@@ -20,6 +20,20 @@ const { t } = useI18n()
 const props = defineProps({
     provider: { type: String, required: true },
     ollamaUrl: { type: String, default: '' },
+    /*
+     * Darf im Panel ein anderer Anbieter gewählt werden?
+     *
+     * Nur die Instanz unter der Hauptauswahl setzt das. Vorher war `provider`
+     * fest der Hauptanbieter, und wer die Modelle von DeepSeek ansehen wollte,
+     * musste die ganze App auf DeepSeek umstellen, nachsehen und
+     * zurückstellen — für eine reine Leseoperation. Der Endpunkt
+     * (`/api/ai/models/available?provider=…`) konnte das immer schon, nur die
+     * Oberfläche gab es nicht her.
+     *
+     * Die Bild-Instanzen (FLUX, Gemini-Bild) bleiben fest: sie verwalten
+     * genau eine Liste, eine Auswahl wäre dort sinnlos.
+     */
+    waehlbar: { type: Boolean, default: false },
 })
 const emit = defineEmits(['geaendert'])
 
@@ -40,10 +54,26 @@ const laedt = ref(false)
 const download = ref(null)
 let strom = null
 
-const istOllama = computed(() => props.provider === 'ollama')
-const eigene = computed(() => listen.value[props.provider] || [])
+/*
+ * Welcher Anbieter gerade verwaltet wird. Startet beim übergebenen und folgt
+ * ihm, solange der Nutzer nicht selbst umgeschaltet hat — wer in der
+ * Hauptauswahl den Anbieter wechselt, will hier nicht die Liste von vorhin
+ * sehen. Nach einer eigenen Wahl gilt sie, bis das Panel geschlossen wird.
+ */
+const gewaehlt = ref(props.provider)
+const selbstGewaehlt = ref(false)
+watch(() => props.provider, (neu) => { if (!selbstGewaehlt.value) gewaehlt.value = neu })
+
+const aktiv = computed(() => (props.waehlbar ? gewaehlt.value : props.provider))
+
+/** Anbieter zur Auswahl — nur solche, für die es überhaupt eine Liste gibt. */
+const anbieterListe = computed(() =>
+    Object.keys(listen.value).filter((id) => !['flux', 'geminiBild'].includes(id)).sort())
+
+const istOllama = computed(() => aktiv.value === 'ollama')
+const eigene = computed(() => listen.value[aktiv.value] || [])
 const abweichend = computed(() => {
-    const s = standard.value[props.provider] || []
+    const s = standard.value[aktiv.value] || []
     return eigene.value.length !== s.length || eigene.value.some((m, i) => m !== s[i])
 })
 
@@ -83,14 +113,21 @@ async function oeffnen() {
 }
 
 watch(() => props.provider, () => { if (offen.value) laden() })
+// Umschalten im Panel verwirft die geholte Katalogliste — sie gehoerte zum
+// vorherigen Anbieter, und stehen zu lassen waere die schlimmere Variante:
+// man uebernaehme Modellnamen in die falsche Liste.
+watch(aktiv, () => { angebot.value = null; angebotSuche.value = ''; fehler.value = '' })
 
 async function speichern(neueListe) {
     laedt.value = true
     fehler.value = ''
     try {
-        const r = await axios.put(`/api/ai/models/${props.provider}`, { modelle: neueListe })
+        // `aktiv`, nicht `props.provider` — sonst landete die Liste des
+        // gerade angesehenen Anbieters unter dem Hauptanbieter.
+        const ziel = aktiv.value
+        const r = await axios.put(`/api/ai/models/${ziel}`, { modelle: neueListe })
         listen.value = r.data.modelle
-        emit('geaendert', listen.value[props.provider] || [])
+        emit('geaendert', listen.value[ziel] || [], ziel)
     } catch (e) {
         fehler.value = apiFehlerText(e, t('settings.modelsSaveFailed'), t)
     } finally {
@@ -114,7 +151,7 @@ async function angebotHolen() {
     fehler.value = ''
     angebotSuche.value = ''
     try {
-        const r = await axios.get('/api/ai/models/available', { params: { provider: props.provider } })
+        const r = await axios.get('/api/ai/models/available', { params: { provider: aktiv.value } })
         angebot.value = r.data.modelle || []
         if (!angebot.value.length) fehler.value = t('settings.providerNoModels')
     } catch (e) {
@@ -230,6 +267,20 @@ const prozent = computed(() => {
         </button>
 
         <div v-if="offen" class="modelle mt-2 p-3">
+            <!-- Anbieterwahl: Nur hier, nicht bei den Bild-Instanzen. Wer die
+                 Modelle eines anderen Anbieters ansehen will, musste vorher die
+                 ganze App umstellen — für eine Leseoperation. -->
+            <div v-if="waehlbar" class="d-flex align-items-center gap-2 mb-3">
+                <label class="small text-muted mb-0">{{ t('settings.modelsFor') }}</label>
+                <select class="form-select form-select-sm" style="max-width:14rem;"
+                    :value="aktiv" @change="e => { gewaehlt = e.target.value; selbstGewaehlt = true }">
+                    <option v-for="id in anbieterListe" :key="id" :value="id">{{ id }}</option>
+                </select>
+                <small v-if="aktiv !== provider" class="text-muted">
+                    {{ t('settings.modelsOtherProvider') }}
+                </small>
+            </div>
+
             <div v-if="fehler" class="alert alert-danger py-2 small">{{ fehler }}</div>
             <div v-if="meldung" class="alert alert-success py-2 small">{{ meldung }}</div>
 
