@@ -1006,6 +1006,11 @@ let radarNewsPromptZusatz = ref('')
 let radarNewsPunkte = ref(0)
 /* Wie ausführlich eine einzelne Meldung wird — die Länge sagt nur, wie viele. */
 let radarNewsMeldungsTiefe = ref('knapp')
+/* Eigene Markteinordnung im Bericht: Gesamtlage (Zyklus) + Handelslage
+   (Tagesspanne, Bedingungen). Die Handelslage misst EINEN Markt, deshalb
+   das Symbol daneben. */
+let radarNewsLagenAn = ref(true)
+let radarNewsLagenSymbol = ref('BTCUSDT')
 let radarNewsTokenBudget = ref(0)
 let radarNewsVideoTiefe = ref('normal')
 let radarNewsVideoTokens = ref(0)
@@ -1144,6 +1149,8 @@ function loadRadarSettings() {
     radarNewsPunkte.value = Math.max(0, Math.min(12, Number(s.radarNewsPunkte) || 0))
     radarNewsMeldungsTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsMeldungsTiefe)
         ? s.radarNewsMeldungsTiefe : 'knapp'
+    radarNewsLagenAn.value = Number(s.radarNewsLagenAn ?? 1) === 1
+    radarNewsLagenSymbol.value = s.radarNewsLagenSymbol || 'BTCUSDT'
     radarNewsTokenBudget.value = Math.max(0, Math.min(60000, Number(s.radarNewsTokenBudget) || 0))
     radarNewsVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
         ? s.radarNewsVideoTiefe : 'normal'
@@ -4765,6 +4772,38 @@ onBeforeMount(async () => {
                                 :value="radarNewsTokenBudget || ''"
                                 @change="radarNewsTokenBudget = grenzeZahl($event.target.value, 60000); radarSpeichern('radarNewsTokenBudget')" />
                             <span class="small text-muted">{{ t('settings.ki.news.scopeAuto') }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Eigene Markteinordnung im Bericht. Steht direkt unter
+                         Umfang und Tiefe, weil sie denselben Zweck hat: sie
+                         bestimmt, was im Bericht steht — nur nicht, wie viel,
+                         sondern was ausser Nachrichten. -->
+                    <div class="row align-items-center mt-3">
+                        <div class="col-12 col-md-4">
+                            {{ t('settings.ki.news.lagenLabel') }}
+                            <small class="d-block text-muted" style="font-size:0.78rem;">
+                                {{ t('settings.ki.news.lagenHint') }}
+                            </small>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <div class="d-flex align-items-center flex-wrap gap-2">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="radarNewsLagenAn"
+                                        v-model="radarNewsLagenAn" @change="radarSpeichern('radarNewsLagenAn')" />
+                                    <label class="form-check-label small" for="radarNewsLagenAn">
+                                        {{ t('settings.ki.news.lagenAn') }}
+                                    </label>
+                                </div>
+                                <template v-if="radarNewsLagenAn">
+                                    <span class="small ms-2">{{ t('settings.ki.news.lagenSymbol') }}</span>
+                                    <input type="text" class="form-control form-control-sm text-uppercase"
+                                        style="max-width:9rem;" placeholder="BTCUSDT"
+                                        v-model="radarNewsLagenSymbol"
+                                        @change="radarNewsLagenSymbol = (radarNewsLagenSymbol || 'BTCUSDT').toUpperCase(); radarSpeichern('radarNewsLagenSymbol')" />
+                                    <small class="text-muted">{{ t('settings.ki.news.lagenSymbolHint') }}</small>
+                                </template>
+                            </div>
                         </div>
                     </div>
 

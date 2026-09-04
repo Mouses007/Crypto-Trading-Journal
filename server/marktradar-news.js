@@ -2430,7 +2430,13 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
      * paralleler Start liesse sie am kalten Zwischenspeicher vorbeilaufen und
      * dieselben Fremdabrufe doppelt ausloesen.
      */
-    const lagenBlock = await holeLagenBlock('BTCUSDT').catch(() => ({ text: '', lagen: {} }))
+    const lagenAn = Number(s?.radarNewsLagenAn ?? 1) === 1
+    const lagenSymbol = /^[A-Z0-9]{2,20}$/.test(String(s?.radarNewsLagenSymbol || '').toUpperCase())
+        ? String(s.radarNewsLagenSymbol).toUpperCase()
+        : 'BTCUSDT'
+    const lagenBlock = lagenAn
+        ? await holeLagenBlock(lagenSymbol).catch(() => ({ text: '', lagen: {} }))
+        : { text: '', lagen: {} }
 
     // ── Schritt 2: Bericht schreiben (eingestellter Anbieter = Claude) ───
     // Durchnummeriert, damit das Modell seine Belege benennen kann. Die

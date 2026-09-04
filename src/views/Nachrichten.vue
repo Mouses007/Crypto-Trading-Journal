@@ -438,12 +438,12 @@ function ladeBerichtOptionen() {
     nThemen.value = String(s.radarNewsThemen || 'crypto').split(',')
         .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech', 'chartanalyse'].includes(t))
     if (!nThemen.value.length) nThemen.value = ['crypto']
-    nLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
+    nLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'kurz'
     nLayout.value = LAYOUTS.includes(s.radarNewsLayout) ? s.radarNewsLayout : LAYOUT_VORGABE
     nVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
         ? s.radarNewsVideoTiefe : 'normal'
     nMeldungsTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsMeldungsTiefe)
-        ? s.radarNewsMeldungsTiefe : 'normal'
+        ? s.radarNewsMeldungsTiefe : 'knapp'
     nBudget.value = Number(s.radarNewsTokenBudget) || 0
     nPunkte.value = Number(s.radarNewsPunkte) || 0
 }

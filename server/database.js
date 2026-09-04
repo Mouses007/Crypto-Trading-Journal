@@ -2137,6 +2137,21 @@ async function runMigrations(knex, client) {
     // wie viele es sind. Vorgabe `normal` ist wörtlich der Text, der vorher
     // fest im Prompt stand: Bestandsberichte ändern sich um kein Zeichen.
     await addColumnIfNotExists('settings', 'radarNewsMeldungsTiefe', (t) => t.text('radarNewsMeldungsTiefe').defaultTo('knapp'))    // knapp|normal|ausfuehrlich
+    /*
+     * Eigene Markteinordnung im Nachrichtenbericht (Gesamtlage + Handelslage).
+     *
+     * Vorgabe an: sie ist der Rahmen, in dem die Meldungen ueberhaupt etwas
+     * bedeuten, und kostet mit Gemini zusammen rund 0,008 $ je Bericht. Wer
+     * sie nicht will, schaltet sie ab — dann faellt auch die Rechnung weg.
+     */
+    await addColumnIfNotExists('settings', 'radarNewsLagenAn', (t) => t.integer('radarNewsLagenAn').defaultTo(1))
+    /*
+     * Symbol der Handelslage im Bericht. Die Gesamtlage ist marktweit, die
+     * Handelslage nicht — sie misst Tagesspanne, VWAP und Mechanik EINES
+     * Marktes. Bisher stand hier fest BTCUSDT; wer ueberwiegend etwas anderes
+     * handelt, bekam eine Einordnung ueber einen Markt, der ihn nicht betrifft.
+     */
+    await addColumnIfNotExists('settings', 'radarNewsLagenSymbol', (t) => t.text('radarNewsLagenSymbol').defaultTo('BTCUSDT'))
     await addColumnIfNotExists('settings', 'radarNewsVideoTiefe', (t) => t.text('radarNewsVideoTiefe').defaultTo('normal'))   // knapp|normal|ausfuehrlich
     await addColumnIfNotExists('settings', 'radarNewsVideoTokens', (t) => t.integer('radarNewsVideoTokens').defaultTo(0))
     // dossier = Tabellen, Kennzahlen und Bilder (Vorgabe) · kombiniert =

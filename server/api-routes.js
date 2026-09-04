@@ -87,6 +87,7 @@ export const VALID_SETTINGS_KEYS = [
     'radarNewsBerichtAufbewahrung', 'radarNewsChartFrische',
     'radarNewsRechercheModell',
     'radarNewsTokenBudget', 'radarNewsPunkte', 'radarNewsMeldungsTiefe', 'radarNewsVideoTiefe', 'radarNewsVideoTokens', 'radarNewsLayout',
+    'radarNewsLagenAn', 'radarNewsLagenSymbol',
     'radarNewsPromptZusatz', 'radarNewsFokusAn', 'radarNewsFokusWoerter', 'radarNewsAktivesProfil',
     'livetradingAn', 'betaAusblenden', 'livetradingMobil', 'startseiteAn',
     'erweiterteInfos', 'modusLiveAn', 'modusResearchAn', 'modusStrategieAn', 'modusLernenAn',
