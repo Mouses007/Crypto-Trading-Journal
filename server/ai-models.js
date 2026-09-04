@@ -62,7 +62,8 @@ export const ANBIETER_REG = {
         // `gemini-2.x` fehlt bewusst: Google antwortet darauf mit 404
         // („no longer available to new users").
         modelle: [
-            'gemini-3.7-flash',        // neuestes Flash; im Gratis-Kontingent oft 503
+            'gemini-3.8-flash',        // neuestes Flash (04.09.2026), gleicher Preis wie 3.7
+            'gemini-3.7-flash',        // im Gratis-Kontingent oft 503
             'gemini-3.6-flash',
             'gemini-3.5-flash',
             'gemini-3.5-flash-lite',

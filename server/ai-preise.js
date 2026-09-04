@@ -35,6 +35,7 @@ export const PREISE = {
     'gemini-3.1-flash-lite': [0.25, 1.5],
     'gemini-2.5-flash-lite': [0.1, 0.4],
     'gemini-3.1-pro': [2, 12],
+    'gemini-3.8-flash': [0.75, 3.75],
     'gemini-3.7-flash': [0.75, 3.75],
     'gemini-3.6-flash': [0.75, 3.75],
     'gemini-3.5-flash': [1.5, 9],
