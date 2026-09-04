@@ -69,9 +69,24 @@ function starte(rel) {
  * Wo keine Zahlen stehen, werden ersatzweise die Häkchen gezählt — die
  * Gesamtsumme soll nicht davon abhängen, wie eine Datei ihre Bilanz formuliert.
  */
+/**
+ * Prüfzahlen aus der Ausgabe einer Testdatei lesen.
+ *
+ * Drei Schreibweisen haben sich im Projekt eingebürgert, und der Läufer muss
+ * alle drei kennen — sonst zählt eine grüne Datei still mit null Prüfungen
+ * mit. Genau das war bei `__selftest-mail-vorlage.mjs` der Fall: Sie meldet
+ * „mail-vorlage: 44 ok, 0 Fehler", passte auf kein Muster, und ihre 44
+ * Prüfungen fehlten monatelang in jeder Gesamtsumme. Aufgefallen ist es
+ * niemandem, weil die DATEI korrekt als grün gezählt wurde — nur ihr Inhalt
+ * verschwand, und der Hinweis „(keine Zählung gefunden)" steht in Grau neben
+ * einem grünen Haken.
+ */
 function zaehle(ausgabe) {
     const m = ausgabe.match(/(\d+)\s+(?:bestanden|passed)[^\d]+(\d+)\s+(?:fehlgeschlagen|failed)/i)
     if (m) return { ok: Number(m[1]), fehler: Number(m[2]) }
+    // „<name>: 44 ok, 0 Fehler"
+    const o = ausgabe.match(/(\d+)\s+ok[^\d]+(\d+)\s+(?:Fehler|schlecht|errors?)/i)
+    if (o) return { ok: Number(o[1]), fehler: Number(o[2]) }
     const haken = (ausgabe.match(/✓/g) || []).length
     const kreuze = (ausgabe.match(/✗/g) || []).length
     if (haken + kreuze === 0) return null
@@ -90,6 +105,13 @@ let dateienFehler = 0
 let pruefungen = 0
 let pruefungenFehler = 0
 const gescheitert = []
+/*
+ * Dateien, deren Prüfzahlen der Läufer nicht lesen konnte. Sie stehen am Ende
+ * als eigene Zeile, nicht nur grau in der Liste: Eine Gesamtsumme, die still
+ * Prüfungen verschluckt, ist schlimmer als gar keine — man verlässt sich
+ * darauf, und in jedem Bericht steht sie als Beleg.
+ */
+const ungezaehlt = []
 
 for (const rel of dateien) {
     const { code, ausgabe } = await starte(rel)
@@ -98,7 +120,8 @@ for (const rel of dateien) {
         pruefungen += zahlen.ok + zahlen.fehler
         pruefungenFehler += zahlen.fehler
     }
-    const zusatz = zahlen ? grau(` ${zahlen.ok} Prüfungen`) : grau(' (keine Zählung gefunden)')
+    if (!zahlen) ungezaehlt.push(rel)
+    const zusatz = zahlen ? grau(` ${zahlen.ok} Prüfungen`) : rot(' (keine Zählung gefunden)')
     if (code === 0) {
         console.log(`  ${gruen('✓')} ${rel}${zusatz}`)
     } else {
@@ -111,6 +134,11 @@ for (const rel of dateien) {
 }
 
 console.log(`\n${dateien.length - dateienFehler}/${dateien.length} Dateien grün, ${pruefungen - pruefungenFehler}/${pruefungen} Prüfungen bestanden`)
+if (ungezaehlt.length) {
+    console.log(rot(`⚠ ${ungezaehlt.length} Datei(en) ohne lesbare Prüfzahlen — ihre Prüfungen fehlen in der Summe:`))
+    for (const f of ungezaehlt) console.log(rot(`    ${f}`))
+    console.log(grau('    Erwartet wird „N bestanden … M fehlgeschlagen", „N ok, M Fehler" oder ✓/✗ je Prüfung.'))
+}
 if (gescheitert.length) {
     console.log(rot(`Fehlgeschlagen: ${gescheitert.join(', ')}\n`))
     process.exit(1)
