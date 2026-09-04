@@ -1979,7 +1979,7 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
     // Zuschnitt des Berichts: Rhythmus bestimmt Fenster und Beitragsmenge,
     // Themen die Kapitel, Länge den Umfang je Kapitel.
     const rhythmus = leseRhythmus(s?.radarNewsRhythmus)
-    const laengeEingestellt = ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
+    const laengeEingestellt = ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'kurz'
     /*
      * Die Tiefe gilt für die Zwischenmeldung UNVERÄNDERT — anders als die
      * Länge, die `laengeFuerUpdate` eine Stufe senkt. Die Länge steuert, WIE
@@ -1989,7 +1989,7 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
      * Regler gebaut ist.
      */
     const tiefe = ['knapp', 'normal', 'ausfuehrlich'].includes(s?.radarNewsMeldungsTiefe)
-        ? s.radarNewsMeldungsTiefe : 'normal'
+        ? s.radarNewsMeldungsTiefe : 'knapp'
     const themenEingestellt = leseThemen(s?.radarNewsThemen)
     const fensterMs = rhythmus === 'woechentlich' ? 7 * TAG : 36 * 60 * 60 * 1000
     /*
@@ -3157,10 +3157,10 @@ export function setupNewsRoutes(app) {
             const antwort = await callLLMJson(cfg, {
                 system: bauAnweisungPruefPrompt({
                     themen: leseThemen(s?.radarNewsThemen),
-                    laenge: ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel',
+                    laenge: ['kurz', 'mittel', 'lang'].includes(s?.radarNewsLaenge) ? s.radarNewsLaenge : 'kurz',
                     punkte: s?.radarNewsPunkte,
                     tiefe: ['knapp', 'normal', 'ausfuehrlich'].includes(s?.radarNewsMeldungsTiefe)
-                        ? s.radarNewsMeldungsTiefe : 'normal',
+                        ? s.radarNewsMeldungsTiefe : 'knapp',
                     // Ohne die Liste rät das Modell, ob ein genannter Kanal
                     // erreichbar ist — und riet „nein" bei einer Quelle, die
                     // seit Monaten eingerichtet ist. Nur die AKTIVEN: eine
@@ -3236,7 +3236,7 @@ export function startNewsTakt() {
 
             if (sollBerichtLaufen({
                 jetztLokal: lokal,
-                stunde: Number(s?.radarNewsStunde ?? 12),
+                stunde: Number(s?.radarNewsStunde ?? 9),
                 rhythmus: s?.radarNewsRhythmus,
                 wochentag: Number(s?.radarNewsWochentag ?? 1),
             })) {

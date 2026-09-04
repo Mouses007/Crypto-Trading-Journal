@@ -1907,7 +1907,7 @@ async function runMigrations(knex, client) {
 
     // Zeitplan des Lageberichts. 12:00 in der eingestellten Zeitzone; 0 = aus.
     await addColumnIfNotExists('settings', 'radarNewsAuto', (t) => t.integer('radarNewsAuto').defaultTo(1))
-    await addColumnIfNotExists('settings', 'radarNewsStunde', (t) => t.integer('radarNewsStunde').defaultTo(12))
+    await addColumnIfNotExists('settings', 'radarNewsStunde', (t) => t.integer('radarNewsStunde').defaultTo(9))
     // Wie viele Videos je Lauf an Gemini gehen dürfen — Video ist der teuerste
     // Eingabetyp, deshalb eine harte Obergrenze statt eines guten Vorsatzes.
     await addColumnIfNotExists('settings', 'radarNewsVideos', (t) => t.integer('radarNewsVideos').defaultTo(3))
@@ -2015,7 +2015,7 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('settings', 'radarNewsThemen', (t) => t.text('radarNewsThemen').defaultTo('crypto'))     // CSV: crypto,finanzen,tech
     // CSV: bitunix,bitget,pionex,tradingview — welche Verlinkungen zu Coin-Radar/Hype-Radar/RSI-Kachel/Markt-Kachel gehören.
     await addColumnIfNotExists('settings', 'boersenLinks', (t) => t.text('boersenLinks').defaultTo('bitunix,bitget,pionex,tradingview'))
-    await addColumnIfNotExists('settings', 'radarNewsLaenge', (t) => t.text('radarNewsLaenge').defaultTo('mittel'))     // kurz|mittel|lang
+    await addColumnIfNotExists('settings', 'radarNewsLaenge', (t) => t.text('radarNewsLaenge').defaultTo('kurz'))       // kurz|mittel|lang
     /*
      * Aktualisierungen des Tagesberichts: keine, eine oder zwei.
      *
@@ -2136,7 +2136,7 @@ async function runMigrations(knex, client) {
     // Wie ausführlich eine EINZELNE Meldung ausfällt — die Länge regelt nur,
     // wie viele es sind. Vorgabe `normal` ist wörtlich der Text, der vorher
     // fest im Prompt stand: Bestandsberichte ändern sich um kein Zeichen.
-    await addColumnIfNotExists('settings', 'radarNewsMeldungsTiefe', (t) => t.text('radarNewsMeldungsTiefe').defaultTo('normal'))   // knapp|normal|ausfuehrlich
+    await addColumnIfNotExists('settings', 'radarNewsMeldungsTiefe', (t) => t.text('radarNewsMeldungsTiefe').defaultTo('knapp'))    // knapp|normal|ausfuehrlich
     await addColumnIfNotExists('settings', 'radarNewsVideoTiefe', (t) => t.text('radarNewsVideoTiefe').defaultTo('normal'))   // knapp|normal|ausfuehrlich
     await addColumnIfNotExists('settings', 'radarNewsVideoTokens', (t) => t.integer('radarNewsVideoTokens').defaultTo(0))
     // dossier = Tabellen, Kennzahlen und Bilder (Vorgabe) · kombiniert =

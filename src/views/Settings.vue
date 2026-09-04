@@ -925,7 +925,7 @@ let radarMeldung = ref('')
 let kalenderStand = ref(null)
 let kalenderMeldung = ref('')
 let radarNewsAuto = ref(true)
-let radarNewsStunde = ref(12)
+let radarNewsStunde = ref(9)
 let radarNewsVideos = ref(3)
 let radarNewsModel = ref('')
 /* Leer = Vorgabe des Projekts bzw. der allgemein eingestellte Anbieter. So
@@ -993,7 +993,7 @@ function anweisungUebernehmen() {
     anweisungPruefung.value = null
 }
 let radarNewsThemen = ref(['crypto'])
-let radarNewsLaenge = ref('mittel')
+let radarNewsLaenge = ref('kurz')
 
 let radarNewsXModell = ref('grok-4.6')
 /* Umfangs- und Darstellungsregler. Überall heisst 0 bzw. leer „Vorgabe der
@@ -1005,7 +1005,7 @@ let radarNewsLayout = ref('dossier')
 let radarNewsPromptZusatz = ref('')
 let radarNewsPunkte = ref(0)
 /* Wie ausführlich eine einzelne Meldung wird — die Länge sagt nur, wie viele. */
-let radarNewsMeldungsTiefe = ref('normal')
+let radarNewsMeldungsTiefe = ref('knapp')
 let radarNewsTokenBudget = ref(0)
 let radarNewsVideoTiefe = ref('normal')
 let radarNewsVideoTokens = ref(0)
@@ -1102,7 +1102,7 @@ function loadRadarSettings() {
     radarNewsQuellenAusschluss.value = Number(s.radarNewsQuellenAusschluss ?? 1) === 1
     livetradingAn.value = Number(s.livetradingAn ?? 1) === 1
     radarNewsAuto.value = Number(s.radarNewsAuto ?? 1) === 1
-    radarNewsStunde.value = Number(s.radarNewsStunde ?? 12)
+    radarNewsStunde.value = Number(s.radarNewsStunde ?? 9)
     radarNewsVideos.value = Number(s.radarNewsVideos ?? 3)
     radarNewsModel.value = s.radarNewsModel || ''
     radarNewsAufloesung.value = s.radarNewsAufloesung || 'niedrig'
@@ -1133,7 +1133,7 @@ function loadRadarSettings() {
     radarNewsThemen.value = String(s.radarNewsThemen || 'crypto').split(',')
         .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech', 'chartanalyse'].includes(t))
     if (!radarNewsThemen.value.length) radarNewsThemen.value = ['crypto']
-    radarNewsLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'mittel'
+    radarNewsLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'kurz'
     radarNewsXModell.value = s.radarNewsXModell || 'grok-4.6'
     // Grenzen wie auf dem Server (budgetsAus/punkteVorgabe/videoTiefeAus in
     // server/marktradar-news.js) — die Oberfläche soll ihm keinen Unsinn schicken.
@@ -1143,7 +1143,7 @@ function loadRadarSettings() {
     radarNewsPromptZusatz.value = s.radarNewsPromptZusatz || ''
     radarNewsPunkte.value = Math.max(0, Math.min(12, Number(s.radarNewsPunkte) || 0))
     radarNewsMeldungsTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsMeldungsTiefe)
-        ? s.radarNewsMeldungsTiefe : 'normal'
+        ? s.radarNewsMeldungsTiefe : 'knapp'
     radarNewsTokenBudget.value = Math.max(0, Math.min(60000, Number(s.radarNewsTokenBudget) || 0))
     radarNewsVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
         ? s.radarNewsVideoTiefe : 'normal'
