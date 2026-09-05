@@ -1301,6 +1301,20 @@ onBeforeUnmount(() => {
                         </ul>
                     </article>
 
+                    <!-- Ausgefallene Einordnung benennen statt weglassen.
+                         Fehlt die Karte kommentarlos, sucht man die Ursache im
+                         Bericht — dabei steht sie meist in den Einstellungen
+                         (etwa ein Tippfehler im Symbol). -->
+                    <p v-if="bericht.lagen.fehlerHandel" class="nwLagenFehler">
+                        {{ t('news.lagen.fehlerHandel', {
+                            symbol: (bericht.lagen.fehlerSymbol || '').replace(/USDT$/, ''),
+                            grund: bericht.lagen.fehlerHandel,
+                        }) }}
+                    </p>
+                    <p v-if="bericht.lagen.fehlerGesamt" class="nwLagenFehler">
+                        {{ t('news.lagen.fehlerGesamt', { grund: bericht.lagen.fehlerGesamt }) }}
+                    </p>
+
                     <p class="nwLagenFuss">{{ t('news.lagen.hinweis') }}</p>
                 </section>
 
@@ -3825,6 +3839,16 @@ onBeforeUnmount(() => {
 
 .nwLageDann {
     margin-left: 0.3rem;
+}
+
+/* Ausgefallene Einordnung: auffällig genug, um gelesen zu werden, aber kein
+   Alarm — der Bericht selbst ist ja da. */
+.nwLagenFehler {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: #e8b04b;
 }
 
 /* Über die ganze Breite unter beiden Karten */

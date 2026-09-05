@@ -1236,9 +1236,21 @@ async function holeMarktdatenBlock() {
         // „p.a." liest sich wie eine unmögliche Einzelzahlung — an der Stelle
         // hat der Lagebericht am 21.08.2026 richtige Zahlen als Fehler
         // ausgewiesen bekommen.
-        const fmt = r => `${kurzSym(r.symbol)} ${(r.rate * 100).toFixed(3)} % je ${r.intervallStunden || 8} h`
-            + (Number.isFinite(r.jahresRate) ? ` (${(r.jahresRate * 100).toFixed(0)} % p.a.)` : '')
-        const knapp = r => `${kurzSym(r.symbol)} ${(r.jahresRate * 100).toFixed(0)} % p.a.`
+        /*
+         * Ohne diese Klemme druckt `toFixed` die NEGATIVE NULL: XRP stand am
+         * 05.09.2026 mit „-0.000 % je 8 h (-0 % p.a.)" im Bericht. Rechnerisch
+         * korrekt (die Rate ist ein Hauch unter null), gelesen aber Unsinn —
+         * ein Minus ohne Betrag behauptet eine Richtung, die die Zahl nicht
+         * hergibt, und eine KI, die daraus „Shorts zahlen" liest, hat sich
+         * nicht geirrt, sondern das gelesen, was dastand.
+         */
+        const zahl = (wert, stellen) => {
+            const t = wert.toFixed(stellen)
+            return /^-0(\.0*)?$/.test(t) ? t.slice(1) : t
+        }
+        const fmt = r => `${kurzSym(r.symbol)} ${zahl(r.rate * 100, 3)} % je ${r.intervallStunden || 8} h`
+            + (Number.isFinite(r.jahresRate) ? ` (${zahl(r.jahresRate * 100, 0)} % p.a.)` : '')
+        const knapp = r => `${kurzSym(r.symbol)} ${zahl(r.jahresRate * 100, 0)} % p.a.`
 
         /*
          * ZUERST die eigenen Märkte — das ist die Zeile, die etwas bedeutet.
@@ -1370,7 +1382,10 @@ async function holeLagenBlock(symbol = 'BTCUSDT') {
             zeilen.push(`- Gesamtlage (Zyklus, Stimmung „${g.stimmung}"): ${g.ueberschrift}. ${g.text}`
                 + (g.widerspruch ? ` Widerspruch: ${g.widerspruch}` : ''))
         }
-    } catch (e) { logWarn('news', `Gesamtlage fuer den Bericht: ${e.message}`) }
+    } catch (e) {
+        logWarn('news', `Gesamtlage fuer den Bericht: ${e.message}`)
+        lagen.fehlerGesamt = String(e.message || 'unbekannt').slice(0, 200)
+    }
 
     try {
         const h = await erzeugeHandelslage(symbol, { erzwingen: false })
@@ -1387,7 +1402,20 @@ async function holeLagenBlock(symbol = 'BTCUSDT') {
                 + (h.zeitfenster ? ` Zeitfenster: ${h.zeitfenster}` : '')
                 + (bed ? ` Bedingungen: ${bed}.` : ''))
         }
-    } catch (e) { logWarn('news', `Handelslage fuer den Bericht: ${e.message}`) }
+    } catch (e) {
+        /*
+         * Der Ausfall gehoert in den Bericht, nicht nur ins Log.
+         *
+         * Faellt die Handelslage aus — etwa weil im Feld „Handelslage fuer"
+         * ein Tippfehler steht, den die Formpruefung des Servers durchlaesst —
+         * fehlte die Karte danach KOMMENTARLOS. Man sieht am naechsten Morgen
+         * nur, dass etwas NICHT da ist, und sucht die Ursache im Bericht
+         * statt in den Einstellungen. Der Satz kostet nichts und spart das.
+         */
+        logWarn('news', `Handelslage fuer den Bericht: ${e.message}`)
+        lagen.fehlerHandel = String(e.message || 'unbekannt').slice(0, 200)
+        lagen.fehlerSymbol = symbol
+    }
 
     /*
      * Der Hinweis am Ende ist keine Hoeflichkeit: Ohne ihn zitiert das Modell
@@ -3140,7 +3168,11 @@ export function setupNewsRoutes(app) {
         let lagen = null
         try {
             const roh = JSON.parse(zeile.lagenBlock || '{}')
-            if (roh && (roh.gesamt || roh.handel)) lagen = roh
+            // Auch ein reiner FEHLERvermerk zaehlt: Faellt eine Einordnung
+            // aus, soll auf der Seite stehen warum — sonst fehlt sie
+            // kommentarlos, und man sucht die Ursache im Bericht statt in
+            // den Einstellungen.
+            if (roh && (roh.gesamt || roh.handel || roh.fehlerHandel || roh.fehlerGesamt)) lagen = roh
         } catch { /* Altbestand */ }
         const { marktBlock, lagenBlock, ...rest } = zeile
         return {

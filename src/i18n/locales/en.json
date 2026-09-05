@@ -3366,7 +3366,9 @@
     "lagen": {
       "gesamt": "Overall situation",
       "handel": "Trading situation {symbol}",
-      "hinweis": "The app's own reading at the time of the report — not a news item and not a trading recommendation."
+      "hinweis": "The app's own reading at the time of the report — not a news item and not a trading recommendation.",
+      "fehlerHandel": "The trading situation for {symbol} could not be produced: {grund}. Check the symbol under Settings → AI → News.",
+      "fehlerGesamt": "The overall situation could not be produced: {grund}"
     },
     "fetchNow": "Fetch posts",
     "fontSize": "Text size",
