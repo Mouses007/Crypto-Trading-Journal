@@ -163,6 +163,124 @@ function slimExchangeInfo(raw, market) {
     return { market, serverTime: raw.serverTime, symbols }
 }
 
+/**
+ * Rohdaten der Hebelkarte beschaffen: Open-Interest-Historie, Kerzen und die
+ * Kontenquote, auf denselben Zeitraster zusammengeführt.
+ *
+ * Stand bis zum 05.09.2026 vollständig im Rumpf der Express-Route. Herausgezogen,
+ * weil `server/hebelzonen.js` dieselben Punkte serverseitig braucht (für die
+ * Liquidations-Cluster der Handelslage) — und ein ZWEITER Abrufpfad hier teuer
+ * wäre: Er umginge den geteilten `levMapCache` (die Liquidationskarte hält ihn
+ * im Live-Fenster ohnehin warm, ein Treffer kostet null Binance-Gewicht),
+ * unterschlüge `notiereGewicht` an der gemeinsamen IP-Bremse — genau der
+ * Audit-Fund vom 31.08.2026, der in dieser Route behoben wurde — und
+ * duplizierte den 1m→5m-Rückfall.
+ *
+ * Die Antwortform ist unverändert; `src/utils/leverageMapSource.js` liest
+ * `points`, `period`, `unvollstaendig`, `hinweis` und `accountRatio`.
+ *
+ * Achtung: Die Kerzen kommen von `fapi`, NICHT über /api/binance/klines — der
+ * liefert Spot-Kerzen, deren Hochs/Tiefs und Volumen für die Sweep-Logik und
+ * die Long/Short-Aufteilung unbrauchbar wären.
+ *
+ * Wirft bei Netz-/HTTP-Fehlern; die Route übersetzt sie über `sendBinanceError`.
+ *
+ * @param {string} symbol  bereits geprüft und gross geschrieben
+ * @param {string} period  Schlüssel aus LEVMAP_PERIODS
+ * @param {{force?: boolean}} [opt]
+ * @returns {Promise<{payload: object, cache: 'HIT'|'MISS'}>}
+ */
+export async function holeLeverageMapPunkte(symbol, period = '5m', { force = false } = {}) {
+    let p = LEVMAP_PERIODS[period] ? period : '5m'
+    /*
+     * Der Cache-Schlüssel ist `symbol|period` OHNE limit. Würde hier die
+     * Wunschmenge des Aufrufers durchgereicht, bekäme der nächste Aufruf mit
+     * grösserem Fenster stillschweigend die kürzere gecachte Antwort. Deshalb
+     * wird immer die volle Tiefe geholt und der Aufrufer schneidet sich sein
+     * Fenster selbst heraus.
+     */
+    const limit = 500
+
+    // Ein fehlerhafter Client darf mit force=1 nicht die Server-IP verbrennen
+    const wantsForce = force && (Date.now() - (levMapForce.get(symbol) || 0)) > 30000
+
+    // Schlüssel über die ANGEFRAGTE Periode: der 1m→5m-Rückfall wird
+    // mitgecacht, sonst prüfte jeder Poll das dünne Archiv erneut.
+    const key = `${symbol}|${p}`
+    const ttl = Math.min(Math.max(LEVMAP_PERIODS[p] * 60000 / 2, 60000), 300000)
+    const cached = levMapCache.get(key)
+    if (cached && (Date.now() - cached.ts) < ttl && !wantsForce) {
+        return { payload: cached.payload, cache: 'HIT' }
+    }
+    if (wantsForce) levMapForce.set(symbol, Date.now())
+
+    // ── 1m: eigenes Archiv statt openInterestHist ───────
+    let histEigen = null
+    if (p === '1m') {
+        histEigen = await lese1mOiReihe(symbol)
+        if (!histEigen) p = '5m'
+    }
+    const periodMs = LEVMAP_PERIODS[p] * 60000
+
+    // /futures/data/… liegt NICHT unter /fapi/v1.
+    // Die Kontenquote kennt kein 1m — dort bleibt 5m die feinste Stufe.
+    const ratioPeriod = p === '1m' ? '5m' : p
+    const [histRes, nowRes, ratioRes] = await Promise.all([
+        histEigen
+            ? null
+            : axios.get(`${BASES.futures}/futures/data/openInterestHist`,
+                { params: { symbol, period: p, limit }, timeout: HTTP_TIMEOUT }),
+        axios.get(`${BASES.futures}/fapi/v1/openInterest`,
+            { params: { symbol }, timeout: HTTP_TIMEOUT }),
+        axios.get(`${BASES.futures}/futures/data/globalLongShortAccountRatio`,
+            { params: { symbol, period: ratioPeriod, limit: 1 }, timeout: HTTP_TIMEOUT }).catch(() => null),
+    ])
+    // Gewicht an die gemeinsame IP-Bremse melden — diese Route tat das
+    // als einzige nicht (Audit-Fund 31.08.2026).
+    notiereGewicht(nowRes.headers)
+    if (histRes) notiereGewicht(histRes.headers)
+    if (ratioRes) notiereGewicht(ratioRes.headers)
+
+    const hist = histEigen || (Array.isArray(histRes?.data) ? histRes.data : [])
+    if (!hist.length) {
+        const leer = {
+            symbol, period: p, points: [],
+            hinweis: `Binance liefert für ${symbol} keine Open-Interest-Historie`,
+        }
+        levMapCache.set(key, { ts: Date.now(), payload: leer })
+        return { payload: leer, cache: 'MISS' }
+    }
+
+    // startTime eine Periode früher: jeder OI-Punkt braucht die bei
+    // seinem Zeitstempel ENDENDE Kerze (siehe mergeLeverageMapPoints)
+    const klinesRes = await axios.get(`${BASES.futures}/fapi/v1/klines`, {
+        params: { symbol, interval: p, startTime: Number(hist[0].timestamp) - periodMs, limit: hist.length + 2 },
+        timeout: HTTP_TIMEOUT,
+    })
+    notiereGewicht(klinesRes.headers)
+
+    const points = mergeLeverageMapPoints(hist, klinesRes.data, periodMs)
+    const letzte = points[points.length - 1]
+
+    const payload = {
+        symbol, period: p,
+        openInterest: Number(nowRes.data?.openInterest) || 0,
+        spanneMs: points.length ? letzte.t - points[0].t : 0,
+        // Seit dem End-Join ist jede zugeordnete Kerze abgeschlossen (sie
+        // endet am OI-Zeitpunkt) — eine „laufende Periode" gibt es im
+        // Datensatz nicht mehr. Feld bleibt für die Client-Kompatibilität.
+        unvollstaendig: false,
+        accountRatio: ratioRes?.data?.[0]
+            ? { long: +ratioRes.data[0].longAccount, short: +ratioRes.data[0].shortAccount }
+            : null,
+        points,
+    }
+
+    levMapCache.set(key, { ts: Date.now(), payload })
+    console.log(` -> Binance Hebelkarte ${symbol} ${p}: ${points.length}/${hist.length} Punkte, ${(payload.spanneMs / 3600000).toFixed(1)} h`)
+    return { payload, cache: 'MISS' }
+}
+
 export function setupBinanceRoutes(app) {
 
     /**
@@ -302,13 +420,13 @@ export function setupBinanceRoutes(app) {
 
     /**
      * GET /api/binance/leverage-map
-     * Rohdaten für die berechnete Hebelkarte: Open-Interest-Historie, Kerzen
-     * und die Kontenquote, auf denselben Zeitraster zusammengeführt.
-     * Query: symbol (required), period (5m|15m|1h|4h|1d), limit (≤500), force=1
+     * Query: symbol (required), period (1m|5m|15m|1h|4h|1d), force=1
      *
-     * Achtung: Die Kerzen kommen von `fapi`, NICHT über /api/binance/klines —
-     * der liefert Spot-Kerzen, deren Hochs/Tiefs und Volumen für die
-     * Sweep-Logik und die Long/Short-Aufteilung unbrauchbar wären.
+     * Nur noch der Mantel: Prüfungen, Kopfzeilen, Fehlerübersetzung. Die
+     * Beschaffung samt Cache und Gewichtsmeldung steht in
+     * `holeLeverageMapPunkte` — dieselbe Funktion, die `server/hebelzonen.js`
+     * für die Handelslage benutzt. `limit` wird bewusst ignoriert (die
+     * Funktion holt immer die volle Tiefe, siehe dort).
      */
     app.get('/api/binance/leverage-map', async (req, res) => {
         try {
@@ -321,97 +439,12 @@ export function setupBinanceRoutes(app) {
                 return res.status(400).json({ error: 'symbol ist erforderlich und darf nur Buchstaben und Ziffern enthalten' })
             }
 
-            let period = LEVMAP_PERIODS[req.query.period] ? req.query.period : '5m'
-            // Der Cache-Schlüssel ist `symbol|period` OHNE limit. Würde hier
-            // die Wunschmenge des Aufrufers durchgereicht, bekäme der nächste
-            // Aufruf mit grösserem Fenster stillschweigend die kürzere
-            // gecachte Antwort. Deshalb wird immer die volle Tiefe geholt und
-            // der Aufrufer schneidet sich sein Fenster selbst heraus.
-            const limit = 500
+            const period = LEVMAP_PERIODS[req.query.period] ? req.query.period : '5m'
+            const { payload, cache } = await holeLeverageMapPunkte(symbol, period,
+                { force: req.query.force === '1' })
 
-            // Ein fehlerhafter Client darf mit force=1 nicht die Server-IP verbrennen
-            const wantsForce = req.query.force === '1'
-                && (Date.now() - (levMapForce.get(symbol) || 0)) > 30000
-
-            // Schlüssel über die ANGEFRAGTE Periode: der 1m→5m-Rückfall wird
-            // mitgecacht, sonst prüfte jeder Poll das dünne Archiv erneut.
-            const key = `${symbol}|${period}`
-            const ttl = Math.min(Math.max(LEVMAP_PERIODS[period] * 60000 / 2, 60000), 300000)
-            const cached = levMapCache.get(key)
-            if (cached && (Date.now() - cached.ts) < ttl && !wantsForce) {
-                res.setHeader('X-Cache', 'HIT')
-                return res.json(cached.payload)
-            }
-            if (wantsForce) levMapForce.set(symbol, Date.now())
-
-            // ── 1m: eigenes Archiv statt openInterestHist ───────
-            let histEigen = null
-            if (period === '1m') {
-                histEigen = await lese1mOiReihe(symbol)
-                if (!histEigen) period = '5m'
-            }
-            const periodMs = LEVMAP_PERIODS[period] * 60000
-
-            // /futures/data/… liegt NICHT unter /fapi/v1.
-            // Die Kontenquote kennt kein 1m — dort bleibt 5m die feinste Stufe.
-            const ratioPeriod = period === '1m' ? '5m' : period
-            const [histRes, nowRes, ratioRes] = await Promise.all([
-                histEigen
-                    ? null
-                    : axios.get(`${BASES.futures}/futures/data/openInterestHist`,
-                        { params: { symbol, period, limit }, timeout: HTTP_TIMEOUT }),
-                axios.get(`${BASES.futures}/fapi/v1/openInterest`,
-                    { params: { symbol }, timeout: HTTP_TIMEOUT }),
-                axios.get(`${BASES.futures}/futures/data/globalLongShortAccountRatio`,
-                    { params: { symbol, period: ratioPeriod, limit: 1 }, timeout: HTTP_TIMEOUT }).catch(() => null),
-            ])
-            // Gewicht an die gemeinsame IP-Bremse melden — diese Route tat das
-            // als einzige nicht (Audit-Fund 31.08.2026).
-            notiereGewicht(nowRes.headers)
-            if (histRes) notiereGewicht(histRes.headers)
-            if (ratioRes) notiereGewicht(ratioRes.headers)
-
-            const hist = histEigen || (Array.isArray(histRes?.data) ? histRes.data : [])
-            if (!hist.length) {
-                const leer = {
-                    symbol, period, points: [],
-                    hinweis: `Binance liefert für ${symbol} keine Open-Interest-Historie`,
-                }
-                levMapCache.set(key, { ts: Date.now(), payload: leer })
-                return res.json(leer)
-            }
-
-            // startTime eine Periode früher: jeder OI-Punkt braucht die bei
-            // seinem Zeitstempel ENDENDE Kerze (siehe mergeLeverageMapPoints)
-            const klinesRes = await axios.get(`${BASES.futures}/fapi/v1/klines`, {
-                params: { symbol, interval: period, startTime: Number(hist[0].timestamp) - periodMs, limit: hist.length + 2 },
-                timeout: HTTP_TIMEOUT,
-            })
-            notiereGewicht(klinesRes.headers)
-            const klines = klinesRes.data
-
-            const points = mergeLeverageMapPoints(hist, klines, periodMs)
-            const letzte = points[points.length - 1]
-            // Seit dem End-Join ist jede zugeordnete Kerze abgeschlossen (sie
-            // endet am OI-Zeitpunkt) — eine „laufende Periode" gibt es im
-            // Datensatz nicht mehr. Feld bleibt für die Client-Kompatibilität.
-            const unvollstaendig = false
-
-            const payload = {
-                symbol, period,
-                openInterest: Number(nowRes.data?.openInterest) || 0,
-                spanneMs: points.length ? letzte.t - points[0].t : 0,
-                unvollstaendig,
-                accountRatio: ratioRes?.data?.[0]
-                    ? { long: +ratioRes.data[0].longAccount, short: +ratioRes.data[0].shortAccount }
-                    : null,
-                points,
-            }
-
-            levMapCache.set(key, { ts: Date.now(), payload })
-            console.log(` -> Binance Hebelkarte ${symbol} ${period}: ${points.length}/${hist.length} Punkte, ${(payload.spanneMs / 3600000).toFixed(1)} h`)
-            res.setHeader('X-Cache', 'MISS')
-            res.setHeader('Cache-Control', 'private, max-age=60')
+            res.setHeader('X-Cache', cache)
+            if (cache === 'MISS') res.setHeader('Cache-Control', 'private, max-age=60')
             res.json(payload)
 
         } catch (error) {
