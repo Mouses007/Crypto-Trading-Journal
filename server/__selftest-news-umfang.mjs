@@ -334,5 +334,83 @@ p('undefined ist nicht endgültig', istEndgueltig(undefined) === false)
         && bauVideoAuftrag({ tiefe: 'knapp', deckel: 1234 }).tokens === 1234)
 }
 
+/*
+ * Die Kapitel-Lage schreibt über NACHRICHTEN, nicht über Messwerte.
+ *
+ * Bis zum 05.09.2026 befahl der Prompt das Gegenteil („Der Marktdaten-Block
+ * gehört in die Lage dieses Kapitels") und verbot zwei Absätze später die
+ * Wiederholung. Das Modell gehorchte dem Befehl: Die Kapitel-Lage vom
+ * 05.09.2026 bestand aus Fear & Greed, Dominanz und Funding — und keiner
+ * einzigen Meldung.
+ */
+{
+    const mit = bauLagePrompt({ themen: ['crypto'], einordnung: true })
+    const ohne = bauLagePrompt({ themen: ['crypto'], einordnung: false })
+
+    p('der alte Befehl steht in keiner Fassung mehr',
+        !mit.includes('gehört in die Lage') && !ohne.includes('gehört in die Lage'))
+    p('mit Einordnung: Kapitel-Lage NICHT über den Marktdaten-Block',
+        mit.includes('NICHT über den Marktdaten-Block'))
+    p('mit Einordnung: die Karte wird als vorhanden benannt',
+        mit.includes('EIGENE MARKTEINORDNUNG'))
+    // GEGENPROBE: Ohne Einordnung deutet sonst niemand den Marktstand —
+    // dann darf die GESAMTLAGE einen Satz dazu sagen, die Kapitel-Lage nicht.
+    p('GEGENPROBE ohne Einordnung darf die Gesamtlage deuten',
+        ohne.includes('der GESAMTLAGE') && !ohne.includes('NICHT über den Marktdaten-Block'))
+    p('beide Fassungen schicken die Kapitel-Lage zu den Nachrichten',
+        mit.includes('über die NACHRICHTEN') && ohne.includes('über die NACHRICHTEN'))
+
+    // Die Wiederholungsregel muss die unantastbaren Blöcke aufzählen — genau
+    // sie fehlten, weshalb das Modell die Doppelung nicht erkennen konnte.
+    p('Wiederholungsregel nennt die Marktstand-Tabelle',
+        mit.includes('Marktstand-Tabelle') && ohne.includes('Marktstand-Tabelle'))
+    p('Wiederholungsregel nennt die Einordnung nur, wenn es sie gibt',
+        mit.includes('die eigene Markteinordnung,') && !ohne.includes('die eigene Markteinordnung,'))
+
+    // GEGENPROBE: ein anderes Thema bekommt die Krypto-Sonderregel nicht.
+    const fin = bauLagePrompt({ themen: ['finanzen'], einordnung: true })
+    p('GEGENPROBE fremdes Thema bekommt die Krypto-Sonderregel nicht',
+        !fin.includes('NICHT über den Marktdaten-Block') && !fin.includes('der GESAMTLAGE'))
+}
+
+/*
+ * Handelsempfehlungen, Kursziele, Prognosen — wählbar seit 05.09.2026
+ * (`kiEmpfehlungenAn`, gilt auch für die Gesamtlage- und Handelslage-Kachel).
+ *
+ * Vorgabe AUS: Der Bericht geht per Mail hinaus, auch an die Empfängerliste.
+ * Eingeschaltet bleibt die Pflicht, Bedingung und Widerlegung zu nennen — eine
+ * nackte Zahl ist auch dann keine Aussage.
+ */
+{
+    const aus = bauLagePrompt({ themen: ['crypto'] })
+    const an = bauLagePrompt({ themen: ['crypto'], empfehlungen: true })
+
+    p('Vorgabe verbietet Empfehlungen wie bisher',
+        aus.includes('Keine Handelsempfehlungen, keine Kursziele, keine Prognosen.'))
+    p('eingeschaltet sind sie erlaubt',
+        an.includes('sind ERLAUBT') && !an.includes('Keine Handelsempfehlungen, keine Kursziele, keine Prognosen.'))
+    // Erlaubt heisst nicht schrankenlos: ohne Bedingung und Widerlegung nicht.
+    p('erlaubt verlangt Begründung, Marke und Widerlegung',
+        an.includes('was die Aussage widerlegt') && an.includes('lässt du weg'))
+    p('erlaubt trennt eigene Einschätzung von Fremdprognose',
+        an.includes('Prognosen der ZITIERTEN Quellen'))
+
+    // Die Waage stellt Fragen — auch wenn Empfehlungen erlaubt sind. Sonst
+    // steht die Antwort in der Spalte, die die Frage stellen soll.
+    p('„offen" bleibt in beiden Fassungen eine Frage',
+        aus.includes('über 66.000 kaufen') && an.includes('Die Waage wägt ab, sie entscheidet nicht'))
+
+    // Die Prüfung der eigenen Anweisung muss mitziehen, sonst nennt sie eine
+    // Anweisung „gegenregel", die der Leser längst erlaubt hat.
+    const pruefAus = bauAnweisungPruefPrompt({ themen: ['crypto'] })
+    const pruefAn = bauAnweisungPruefPrompt({ themen: ['crypto'], empfehlungen: true })
+    p('Anweisungsprüfung kennt das Verbot in der Vorgabe',
+        pruefAus.includes('keine Handelsempfehlungen'))
+    p('Anweisungsprüfung nennt Empfehlungen dann nicht mehr unverrückbar',
+        !pruefAn.includes('keine Handelsempfehlungen') && pruefAn.includes('ERLAUBT'))
+    p('Anweisungsprüfung kennt die neue Grenze der Kapitel-Lage',
+        pruefAus.includes('bleibt wirkungslos') && pruefAn.includes('bleibt wirkungslos'))
+}
+
 console.log(`${anzahl - fehler} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

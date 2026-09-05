@@ -935,7 +935,7 @@ let radarMeldung = ref('')
 let kalenderStand = ref(null)
 let kalenderMeldung = ref('')
 let radarNewsAuto = ref(true)
-let radarNewsStunde = ref(9)
+let radarNewsStunde = ref(10)
 let radarNewsVideos = ref(3)
 let radarNewsModel = ref('')
 /* Leer = Vorgabe des Projekts bzw. der allgemein eingestellte Anbieter. So
@@ -1020,6 +1020,9 @@ let radarNewsMeldungsTiefe = ref('knapp')
    (Tagesspanne, Bedingungen). Die Handelslage misst EINEN Markt, deshalb
    das Symbol daneben. */
 let radarNewsLagenAn = ref(true)
+/* Duerfen die KI-Ausgaben Handelsempfehlungen, Kursziele und Prognosen geben?
+   Gilt fuer Lagebericht, Gesamtlage- und Handelslage-Kachel. Vorgabe aus. */
+let kiEmpfehlungenAn = ref(false)
 let radarNewsLagenSymbol = ref('BTCUSDT')
 /*
  * Prüft das eingetippte Symbol gegen die echte Binance-Liste.
@@ -1144,7 +1147,7 @@ function loadRadarSettings() {
     radarNewsQuellenAusschluss.value = Number(s.radarNewsQuellenAusschluss ?? 1) === 1
     livetradingAn.value = Number(s.livetradingAn ?? 1) === 1
     radarNewsAuto.value = Number(s.radarNewsAuto ?? 1) === 1
-    radarNewsStunde.value = Number(s.radarNewsStunde ?? 9)
+    radarNewsStunde.value = Number(s.radarNewsStunde ?? 10)
     radarNewsVideos.value = Number(s.radarNewsVideos ?? 3)
     radarNewsModel.value = s.radarNewsModel || ''
     radarNewsAufloesung.value = s.radarNewsAufloesung || 'niedrig'
@@ -3386,6 +3389,23 @@ onBeforeMount(async () => {
                         <label class="form-check-label" for="aiEnabledToggle">{{ t('settings.aiEnabled') }}</label>
                     </div>
                     <small class="text-muted d-block mb-3">{{ t('settings.aiEnabledHint') }}</small>
+
+                    <!-- Handelsempfehlungen, Kursziele, Prognosen.
+                         Steht hier und nicht bei „Nachrichten", weil er ALLE
+                         KI-Ausgaben betrifft: Lagebericht, Gesamtlage-Kachel
+                         und Handelslage-Kachel im Live-Trading-Fenster. Vorgabe
+                         aus — das ist der Stand, den jeder Bestand hatte. -->
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="kiEmpfehlungenAn"
+                            v-model="kiEmpfehlungenAn" @change="kiSpeichern('kiEmpfehlungenAn', kiEmpfehlungenAn ? 1 : 0)">
+                        <label class="form-check-label" for="kiEmpfehlungenAn">
+                            {{ t('settings.ki.empfehlungenAn') }}
+                        </label>
+                    </div>
+                    <small class="text-muted d-block mb-3">{{ t('settings.ki.empfehlungenHint') }}</small>
+                    <small v-if="kiEmpfehlungenAn" class="d-block text-warning mb-3">
+                        {{ t('settings.ki.empfehlungenWarnung') }}
+                    </small>
 
                     <div v-show="currentUser?.aiEnabled !== false && currentUser?.aiEnabled !== 0">
                     <p class="fw-lighter">{{ t('settings.kiDescription') }}</p>

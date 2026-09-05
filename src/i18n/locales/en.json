@@ -517,7 +517,10 @@
         "lagenSymbolUnbekannt": "Binance does not list {symbol} as a perpetual — the trading situation would be missing from the report."
       },
       "agentBudget": "Token budget per run",
-      "agentBudgetHint": "Upper limit for one agent run across all reasoning rounds (input + output). When reached, the agent summarises what it has found so far. More budget = deeper analyses, but higher cost per question."
+      "agentBudgetHint": "Upper limit for one agent run across all reasoning rounds (input + output). When reached, the agent summarises what it has found so far. More budget = deeper analyses, but higher cost per question.",
+      "empfehlungenAn": "Allow trading recommendations, price targets and forecasts",
+      "empfehlungenHint": "Applies to the news report and to the Overall situation and Trading situation tiles. Switched off, they only describe what was measured.",
+      "empfehlungenWarnung": "When on, every such statement must name the level at which it holds and what would refute it. The report is also sent by email. Descriptions of the readings (what a liquidation cluster is, what a movement budget above 100 % means) stay unchanged — they explain the number, they forbid nothing."
     },
     "aiEnabled": "AI features enabled",
     "aiEnabledHint": "Hides AI Agent from menu and dashboard. Settings are preserved.",

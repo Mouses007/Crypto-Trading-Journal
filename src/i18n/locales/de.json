@@ -517,7 +517,10 @@
         "lagenSymbolUnbekannt": "{symbol} führt Binance nicht als Perpetual — die Handelslage würde im Bericht fehlen."
       },
       "agentBudget": "Token-Budget je Lauf",
-      "agentBudgetHint": "Obergrenze für einen Agenten-Lauf über alle Denkrunden (Eingabe + Ausgabe). Ist sie erreicht, fasst der Agent die bis dahin gesammelten Ergebnisse zusammen. Mehr Budget = tiefere Analysen, aber höhere Kosten je Frage."
+      "agentBudgetHint": "Obergrenze für einen Agenten-Lauf über alle Denkrunden (Eingabe + Ausgabe). Ist sie erreicht, fasst der Agent die bis dahin gesammelten Ergebnisse zusammen. Mehr Budget = tiefere Analysen, aber höhere Kosten je Frage.",
+      "empfehlungenAn": "Handelsempfehlungen, Kursziele und Prognosen erlauben",
+      "empfehlungenHint": "Gilt für den Nachrichten-Lagebericht sowie die Kacheln Gesamtlage und Handelslage. Ausgeschaltet beschreiben sie nur, was gemessen wurde.",
+      "empfehlungenWarnung": "Eingeschaltet muss jede solche Aussage die Marke nennen, an der sie gilt, und was sie widerlegt. Der Lagebericht geht auch per Mail hinaus. Beschreibungen der Messwerte (was ein Liquidations-Cluster ist, was ein Bewegungsvorrat über 100 % heisst) bleiben unverändert — sie erklären die Zahl, sie verbieten nichts."
     },
     "aiEnabled": "KI-Funktionen aktiviert",
     "aiEnabledHint": "Blendet KI-Agent aus Menü und Dashboard aus. Einstellungen bleiben gespeichert.",

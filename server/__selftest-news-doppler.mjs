@@ -7,7 +7,9 @@
  * Satz nirgends auffällt. Deshalb steht hier zu jeder Fangprobe eine
  * Gegenprobe.
  */
-import { entdoppleBericht, zahlenAus, woerterAus, saetzeAus, istWiederholung } from './news-doppler.js'
+import {
+    entdoppleBericht, zahlenAus, woerterAus, saetzeAus, istWiederholung, einordnungTexte,
+} from './news-doppler.js'
 
 let ok = 0, fehler = 0
 const check = (name, bedingung, zusatz = '') => {
@@ -153,6 +155,144 @@ console.log('\nGrenzfälle')
     check('Zwischenmeldung wiederholt den Tagesbericht nicht',
         update.bericht.punkte.length === 1 && update.bericht.punkte[0].titel === 'Neu',
         JSON.stringify(update.bericht.punkte.map(p => p.titel)))
+}
+
+console.log('\nNackte Zahl gegen Zahl mit Einheit')
+{
+    const m = (t) => ({ text: t, zahlen: zahlenAus(t), woerter: woerterAus(t) })
+
+    // FANGPROBE: dieselbe Messung, einmal unbestimmt, einmal mit Einheit.
+    const a = m('Der Fear & Greed Index von 73 zeigt ausgeprägte Gier im Markt.')
+    const b = m('Der Fear & Greed Index notiert mit 73 Punkten und zeigt Gier.')
+    check('„73" und „73 Punkte" sind dieselbe Zahl', !!istWiederholung(b, [a]))
+
+    // GEGENPROBE: gleiche Ziffern, VERSCHIEDENE Einheiten — bleiben getrennt.
+    // Das ist der Fall, für den die Einheit überhaupt an der Marke hängt.
+    const c = m('Die BTC-Dominanz im Kryptomarkt liegt bei 58,2 Prozent.')
+    const d = m('Die Zuflüsse im Kryptomarkt summierten sich auf 58,2 Mrd. USD.')
+    check('GEGENPROBE Prozent und Milliarden bleiben getrennt', !istWiederholung(d, [c]),
+        'gleiche Ziffernfolge, zwei verschiedene Messungen')
+}
+
+console.log('\nEinordnungskarten als Vergleichsbasis')
+{
+    // Der reale Fall vom 05.09.2026: Die Gesamtlage-Karte sagt es, die
+    // Kapitel-Lage sagt es noch einmal.
+    const einordnung = ['Der Markt zeigt mit einem Fear & Greed Index von 73 eine ausgeprägte Gier.']
+
+    const a = entdoppleBericht({
+        lage: 'Makrodaten bremsen die Rallye.',
+        kapitel: [{
+            thema: 'crypto',
+            lage: 'Der gemessene Fear & Greed Index notiert mit 73 Punkten im Gier-Bereich.'
+                + ' Die ETF-Zuflüsse liefen den dritten Tag in Folge.',
+            punkte: [{ titel: 'ETF', text: 'BlackRock sammelte 117 Mio. USD ein.' }],
+        }],
+    }, { einordnung })
+    check('Kapitel-Lage verliert den Satz, den die Einordnung schon sagt',
+        !a.bericht.kapitel[0].lage.includes('73 Punkten'), a.bericht.kapitel[0].lage)
+    check('der eigene Satz der Kapitel-Lage bleibt',
+        a.bericht.kapitel[0].lage.includes('ETF-Zuflüsse'), a.bericht.kapitel[0].lage)
+
+    // GEGENPROBE: dieselbe Zahl, andere Aussage — muss stehen bleiben.
+    const b = entdoppleBericht({
+        lage: 'Makrodaten bremsen die Rallye.',
+        kapitel: [{
+            thema: 'crypto',
+            lage: 'Beim Emittenten flossen 73 Mio. USD in den Fonds zurück.',
+            punkte: [],
+        }],
+    }, { einordnung })
+    check('GEGENPROBE gleiche Zahl, andere Aussage bleibt stehen',
+        b.bericht.kapitel[0].lage.includes('73 Mio'), b.bericht.kapitel[0].lage)
+
+    // Kapitel-Lage NUR aus Wiederholung: der Ankersatz darf sie nicht retten.
+    const c = entdoppleBericht({
+        lage: 'Makrodaten bremsen die Rallye.',
+        kapitel: [{ thema: 'crypto', lage: einordnung[0], punkte: [] }],
+    }, { einordnung })
+    check('Kapitel-Lage ganz aus fremdem Block wird LEER',
+        c.bericht.kapitel[0].lage === '', JSON.stringify(c.bericht.kapitel[0].lage))
+    check('das Leeren steht im Protokoll',
+        c.protokoll.some(p => p.art === 'absatz'), JSON.stringify(c.protokoll))
+
+    // GEGENPROBE: Wiederholung der GESAMTLAGE (nicht fremd) behält den Anker —
+    // sonst begänne der Absatz mitten im Gedanken.
+    const d = entdoppleBericht({
+        lage: 'Die ETF-Zuflüsse summierten sich auf 951 Mio. USD.',
+        kapitel: [{
+            thema: 'crypto',
+            lage: 'Die ETF-Zuflüsse summierten sich auf 951 Mio. USD.',
+            punkte: [],
+        }],
+    })
+    check('GEGENPROBE Wiederholung der eigenen Gesamtlage behält den Ankersatz',
+        d.bericht.kapitel[0].lage.includes('951'), JSON.stringify(d.bericht.kapitel[0].lage))
+
+    // Die Gesamtlage selbst behält ihren Anker auch gegen die Einordnung:
+    // oben auf der Seite und in jeder Mail darf kein Loch stehen.
+    const e = entdoppleBericht({ lage: einordnung[0], kapitel: [] }, { einordnung })
+    check('Gesamtlage behält ihren Ankersatz auch gegen die Einordnung',
+        e.bericht.lage.includes('73'), JSON.stringify(e.bericht.lage))
+}
+
+console.log('\nMarktdaten-Tabelle gegen die Kapitel-Lage')
+{
+    const markt = [{ was: 'Fear & Greed', wert: '73 (Gier)', zusatz: '30-Tage-Mittel 53' }]
+    const satz = 'Der Fear & Greed Index liegt bei 73 und damit im Bereich Gier.'
+
+    const a = entdoppleBericht({
+        lage: 'Ruhige Lage.',
+        kapitel: [{ thema: 'crypto', lage: `${satz} Die Zuflüsse hielten an.`, punkte: [] }],
+    }, { markt })
+    check('Kapitel-Lage verliert den Satz, der nur die Tabelle nacherzählt',
+        !a.bericht.kapitel[0].lage.includes('73'), a.bericht.kapitel[0].lage)
+
+    // GEGENPROBE 1: In einer MELDUNG ist der Messwert Beleg, nicht Wiederholung.
+    const b = entdoppleBericht({
+        lage: 'Ruhige Lage.',
+        kapitel: [{ thema: 'crypto', lage: 'Die Zuflüsse hielten an.', punkte: [{ titel: 'Stimmung', text: satz }] }],
+    }, { markt })
+    check('GEGENPROBE Meldung darf die Tabellenzahl nennen',
+        b.bericht.kapitel[0].punkte.length === 1, JSON.stringify(b.bericht.kapitel[0].punkte))
+
+    // GEGENPROBE 2: Die Gesamtlage ist bei abgeschalteter Einordnung der
+    // einzige erlaubte Deutungsort — die Tabelle darf sie nicht leerräumen.
+    const c = entdoppleBericht({ lage: satz, kapitel: [] }, { markt })
+    check('GEGENPROBE Gesamtlage darf die Tabellenzahl deuten',
+        c.bericht.lage.includes('73'), c.bericht.lage)
+}
+
+console.log('\neinordnungTexte')
+{
+    check('leere Eingaben ergeben eine leere Liste',
+        einordnungTexte(null).length === 0 && einordnungTexte({}).length === 0
+        && einordnungTexte(undefined).length === 0)
+    const t = einordnungTexte({
+        gesamt: { text: 'Gier trifft auf Long-Auflösung.', widerspruch: 'Sentiment gegen Fluss.' },
+        handel: {
+            text: 'Enge Spanne.', spielraum: '12 % der Tagesspanne', zeitfenster: 'CME zu',
+            bedingungen: [{ wenn: 'über 79683', dann: 'Test des Vortageshochs' }, { wenn: 'x' }],
+        },
+    })
+    check('alle Teile kommen mit', t.length === 6, JSON.stringify(t))
+    check('unvollständige Bedingung fällt weg', !t.some(x => x === 'Wenn x, dann undefined.'))
+    check('Bedingung wird zu einem Satz', t.some(x => x.startsWith('Wenn über 79683, dann')))
+}
+
+console.log('\nRückwärtskompatibilität')
+{
+    // Der zweiargumentige Aufruf ohne `einordnung` muss sich verhalten wie
+    // bisher — die ganze Datei ruft so auf, das darf nicht kippen.
+    const ohne = entdoppleBericht({
+        lage: 'Erster Satz. Zweiter Satz.',
+        kapitel: [{ thema: 'crypto', lage: 'Eigener Text.', punkte: [] }],
+    })
+    check('ohne Einordnung bleibt alles stehen',
+        ohne.bericht.lage.includes('Erster') && ohne.bericht.kapitel[0].lage === 'Eigener Text.',
+        JSON.stringify(ohne.bericht))
+    check('ohne Einordnung ist das Protokoll leer', ohne.protokoll.length === 0,
+        JSON.stringify(ohne.protokoll))
 }
 
 console.log(`\n${ok} bestanden, ${fehler} fehlgeschlagen`)

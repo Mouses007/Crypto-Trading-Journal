@@ -27,7 +27,7 @@ import {
 import { holeText, pruefeOeffentlicheUrl } from './net-guard.js'
 import { leseFeed, leseTelegram, telegramUrl } from './feed-parser.js'
 import {
-    sendRadarError, holeFearGreed, holeGlobal, holeFunding, holeLsOi, holeAltseason,
+    sendRadarError, holeFearGreed, holeDominanz, holeFunding, holeLsOi, holeAltseason,
     holeMarkt,
 } from './marktradar-api.js'
 import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson, istGuthabenFehler, merkeKiGuthaben, schaetzeKosten } from './llm.js'
@@ -38,7 +38,7 @@ import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson, istGuthabenFehler
  */
 import { erzeugeLage } from './marktradar-lage.js'
 import { erzeugeHandelslage } from './handelslage.js'
-import { entdoppleBericht, protokollText } from './news-doppler.js'
+import { entdoppleBericht, protokollText, einordnungTexte } from './news-doppler.js'
 import { gruppiereBeitraege, themenRegel, haltEinsProThema } from './news-themen.js'
 import { bewerteChartGehalt, marktMarken } from './news-bildgehalt.js'
 import { zitatBlock, alsZitat, ZITAT_REGEL } from './fremdtext.js'
@@ -980,7 +980,8 @@ export function kompaktVorbericht(zeile, offset = 0) {
  * Exportiert, damit der Selbsttest die Varianten ohne Netz prüfen kann.
  */
 export function bauLagePrompt({ themen = ['crypto'], laenge = 'mittel', rhythmus = 'taeglich',
-    punkte = 0, tiefe = 'normal', zusatz = '', aktualisierung = false, abdeckung = '' } = {}) {
+    punkte = 0, tiefe = 'normal', zusatz = '', aktualisierung = false, abdeckung = '',
+    einordnung = false, empfehlungen = false } = {}) {
     const l = { ...(LAENGEN[laenge] || LAENGEN.mittel), punkte: punkteVorgabe(laenge, punkte) }
     const t = meldungsTiefeAus(tiefe)
     /*
@@ -1042,11 +1043,22 @@ ${themen.includes('crypto') ? `Im Krypto-Kapitel zählt, in dieser Reihenfolge:
 1. Bitcoin und Ether: Kursbewegung, Positionierung, Liquidität, ETF-Flüsse
 2. Der übrige Kryptomarkt: Altcoins, DeFi, Stablecoins, Börsen, Hacks
 3. Regulierung, soweit sie den Handel betrifft
-Der Marktdaten-Block (Fear & Greed, Dominanz, Funding …) gehört in die Lage
-dieses Kapitels — als gemessener Ist-Zustand, gegen den die Meldungen laufen.
-Er steht dem Leser ausserdem als TABELLE daneben. Nenne einen Wert daraus also
-höchstens EINMAL im ganzen Bericht, und nur dort, wo du etwas dazu sagst; ihn
-zusätzlich in einer Meldung oder als Kennzahl aufzuführen, ist Wiederholung.
+${einordnung ? `Die Lage dieses Kapitels schreibst du über die NACHRICHTEN: was in den
+Beiträgen und der Recherche steht, worauf es hinausläuft, wo sie sich
+widersprechen. NICHT über den Marktdaten-Block. Der steht dem Leser als Tabelle
+auf derselben Seite, und die EIGENE MARKTEINORDNUNG darüber sagt bereits, was
+diese Zahlen bedeuten — eine Kapitel-Lage, die Fear & Greed, Dominanz und
+Funding aufzählt, sagt zum dritten Mal dasselbe und keine einzige Nachricht.
+Einen Wert aus dem Marktdaten-Block nennst du nur, wenn eine MELDUNG sich daran
+entscheidet, und dann genau EINMAL im ganzen Bericht — nicht zusätzlich als
+Kennzahl.` : `Die Lage dieses Kapitels schreibst du über die NACHRICHTEN: was in
+den Beiträgen und der Recherche steht, worauf es hinausläuft, wo sie sich
+widersprechen. Der Marktdaten-Block steht dem Leser als Tabelle daneben; er ist
+gemessen, nicht gedeutet, und heute deutet ihn sonst niemand. Deshalb darfst du
+der GESAMTLAGE — dort, nicht in der Kapitel-Lage — einen einzigen Satz
+voranstellen, der sagt, was der Marktstand als Ganzes heisst; höchstens zwei
+Werte. Danach kommt keiner davon noch einmal vor, weder in der Kapitel-Lage
+noch in einer Meldung noch als Kennzahl.`}
 ` : ''}${themen.includes('chartanalyse') ? `Das Kapitel "chartanalyse" beruht auf dem
 Rechercheergebnis zur technischen Chartanalyse UND auf Videoinhalten, sofern
 darin Charts besprochen werden: je Coin EIN Punkt, in der Reihenfolge der
@@ -1058,17 +1070,26 @@ sich Video und Recherche, nenne beide Stände nebeneinander statt einen zu
 wählen. Text-Meldungen aus den News-Quellen gehören weiterhin NICHT in dieses
 Kapitel — sie sind Nachrichten, keine Chartaussagen.
 ` : ''}REGELN:
-- Keine Handelsempfehlungen, keine Kursziele, keine Prognosen.
+${empfehlungen ? `- Handelsempfehlungen, Kursziele und Prognosen sind ERLAUBT, aber nur mit
+  Begründung aus den Quellen: Woran es sich entscheidet, welche Marke gilt und
+  was die Aussage widerlegt. Eine Zahl ohne diese drei Angaben lässt du weg.
+  Kennzeichne jede solche Aussage im Text als deine Einschätzung, nicht als
+  Nachricht — Prognosen der ZITIERTEN Quellen bleiben deren Prognosen und
+  werden mit Beleg als solche benannt.`
+        : '- Keine Handelsempfehlungen, keine Kursziele, keine Prognosen.'}
 - Nichts erfinden. Was nicht in den Quellen steht, steht nicht im Bericht.
 - Eigenwerbung, Sponsoren, Clickbait und reine Meinungsmache lässt du weg.
 - Zahlen nennen, wenn welche dastehen — sie sind das Überprüfbare.
 - Jedes Thema gehört in SEIN Kapitel; was in keins passt, bleibt draussen.
-- KEINE WIEDERHOLUNG. Der Leser sieht Gesamtlage, Abwägung, Kapitel-Lage und
-  Meldungen untereinander auf EINER Seite. Jede Zahl und jede Aussage steht
-  darin genau einmal — an der Stelle, an der sie am meisten trägt. Was in der
-  Gesamtlage steht, wiederholt die Kapitel-Lage nicht; was in der Kapitel-Lage
-  steht, wiederholt keine Meldung. Ist ein Punkt schon gesagt, schreibe den
-  nächsten oder lass die Liste kürzer.
+- KEINE WIEDERHOLUNG. Der Leser sieht auf EINER Seite untereinander: die
+  Gesamtlage, ${einordnung ? 'die eigene Markteinordnung, ' : ''}die Abwägung, die
+  Marktstand-Tabelle, je Kapitel eine Lage und darunter die Meldungen. Jede Zahl
+  und jede Aussage steht darin genau einmal — an der Stelle, an der sie am
+  meisten trägt. Die Tabelle ${einordnung ? 'und die Einordnung stehen' : 'steht'} fest
+  und ${einordnung ? 'werden' : 'wird'} nicht von dir geschrieben: Was dort schon steht,
+  schreibst du nicht noch einmal. Was in der Gesamtlage steht, wiederholt die
+  Kapitel-Lage nicht; was in der Kapitel-Lage steht, wiederholt keine Meldung.
+  Ist ein Punkt schon gesagt, schreibe den nächsten oder lass die Liste kürzer.
 
 UMFANG je Kapitel: eine Lage von ${l.lage} und ${l.punkte}. ${t.auftrag} Sagen
 zwei Quellen dasselbe, schreibe EINEN Punkt und nenne beide Belege.
@@ -1076,9 +1097,14 @@ zwei Quellen dasselbe, schreibe EINEN Punkt und nenne beide Belege.
 LAGEBILD: Zusätzlich wägst du ab, was die Lage STÜTZT ("dafuer"), was sie
 BELASTET ("dagegen") und WORAN SIE SICH ENTSCHEIDET ("offen"). Je zwei bis vier
 Einträge, jeder ein Satz. "offen" nennt beobachtbare Bedingungen — was man in
-den nächsten Stunden oder Tagen sehen wird, das die Frage beantwortet. KEINE
+den nächsten Stunden oder Tagen sehen wird, das die Frage beantwortet. ${empfehlungen
+        ? `"offen" bleibt eine FRAGE, auch wenn Empfehlungen erlaubt sind: „ob die
+ETF-Abflüsse enden" gehört hierher, „über 66.000 kaufen" in den Meldungstext.
+Die Waage wägt ab, sie entscheidet nicht — sonst steht die Antwort in der
+Spalte, die die Frage stellen soll.`
+        : `KEINE
 Richtung, kein Kursziel, kein Einstieg, keine Empfehlung; „ob die ETF-Abflüsse
-enden" ist erlaubt, „über 66.000 kaufen" nicht.
+enden" ist erlaubt, „über 66.000 kaufen" nicht.`}
 Jeder Eintrag trägt "art": "fakt" NUR, wenn der Satz eine gemessene oder in den
 Quellen genannte Tatsache wiedergibt — alles Gedeutete, Verknüpfte, Gewichtete
 ist "einschaetzung". Im Zweifel "einschaetzung": eine als Fakt ausgegebene
@@ -1180,11 +1206,27 @@ async function holeMarktdatenBlock() {
         })
     } catch (e) { logWarn('news', `Marktdaten Fear&Greed: ${e.message}`) }
     try {
-        const g = await holeGlobal()
+        /*
+         * `holeDominanz` und NICHT `holeGlobal`.
+         *
+         * Beide messen dieselbe Grösse aus verschiedenen Quellen: `holeGlobal`
+         * fragt CoinGecko live, `holeDominanz` liest den Tagesschnappschuss aus
+         * `market_snapshots` — und aus DEM baut `baueZeilen` die Zeile, die in
+         * die Gesamtlage-Karte eingeht. Nebeneinander auf einer Seite ergab das
+         * am 05.09.2026 „59,1 %" in dieser Tabelle gegen „59,78 %" in der
+         * Einordnung: zwei Werte derselben Grösse, beide richtig, zusammen eine
+         * stille Lüge. Der Livewert geht nicht verloren — `holeDominanz` fällt
+         * selbst auf `holeGlobal` zurück, wenn der Schnappschuss älter als drei
+         * Tage ist.
+         */
+        const g = await holeDominanz()
         werte.push({
-            was: 'BTC-Dominanz', wert: `${g.pct} %`,
-            zusatz: g.mcapUsd ? `Gesamtmarkt ${(g.mcapUsd / 1e12).toFixed(2)} Bio. USD` : '',
-            skala: Number(g.pct),
+            was: 'BTC-Dominanz', wert: `${g.jetzt.pct} %`,
+            zusatz: [
+                g.jetzt.mcapUsd ? `Gesamtmarkt ${(g.jetzt.mcapUsd / 1e12).toFixed(2)} Bio. USD` : '',
+                Number.isFinite(g.delta7) ? `7 Tage ${g.delta7 > 0 ? '+' : ''}${g.delta7} Punkte` : '',
+            ].filter(Boolean).join(', '),
+            skala: Number(g.jetzt.pct),
         })
     } catch (e) { logWarn('news', `Marktdaten Dominanz: ${e.message}`) }
     try {
@@ -1354,7 +1396,19 @@ async function holeLagenBlock(symbol = 'BTCUSDT') {
      */
     const text = zeilen.length
         ? 'EIGENE MARKTEINORDNUNG (von der App erzeugt, KEINE Nachricht und keine Fremdquelle —\n'
-        + 'nutze sie als Rahmen fuer die Bewertung der Meldungen, zitiere sie nicht als Beleg):\n'
+        + 'nutze sie als Rahmen fuer die Bewertung der Meldungen, zitiere sie nicht als Beleg).\n'
+        /*
+         * Der zweite Satz ist so noetig wie der erste, aus einem anderen Grund.
+         *
+         * Diese Einordnung steht dem Leser als KARTE auf der Seite — sie wird
+         * angezeigt, nicht nur gedacht. Der Text unten nennt darin dieselben
+         * Messwerte wie der Marktdaten-Block darueber, nur ausformuliert. Ohne
+         * den Hinweis schreibt das Modell sie ein drittes Mal ab: Am 05.09.2026
+         * stand „Fear & Greed 73" in der Tabelle, in dieser Karte und in der
+         * Kapitel-Lage.
+         */
+        + 'Ihre ZAHLEN stehen bereits im Marktdaten-Block und in dieser Karte, die der Leser\n'
+        + 'sieht. Uebernimm sie nicht in deinen Text — du brauchst die DEUTUNG, nicht die Werte.\n'
         + zeilen.join('\n')
         : ''
     return { text, lagen }
@@ -1493,7 +1547,7 @@ export function abdeckungText(beitraege, { jetzt = Date.now() } = {}) {
  * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
  */
 export function bauAnweisungPruefPrompt({ themen = ['crypto'], laenge = 'mittel',
-    punkte = 0, tiefe = 'normal', quellen = [] } = {}) {
+    punkte = 0, tiefe = 'normal', quellen = [], empfehlungen = false } = {}) {
     /*
      * Wie in `bauLagePrompt`: eine eigene Punktzahl SCHLÄGT die Vorgabe der
      * Länge. Das fehlte hier — die Prüfung sagte dem Leser „vier bis fünf
@@ -1524,8 +1578,14 @@ So arbeitet dieser Bericht — daran ändert die Anweisung nichts:
   klar benannten PUNKT am Anfang eines Kapitels aber sehr wohl — so und nicht
   anders erfüllt der Bericht den Wunsch nach einer eigenen Kachel oder einem
   eigenen Block. Sage das als "wirkt" und nenne den Weg, statt abzulehnen.
-- Unverrückbare Regeln: keine Handelsempfehlungen, keine Kursziele, keine
-  Prognosen, nichts Erfundenes, Quellenangaben bleiben Pflicht.
+- Unverrückbare Regeln: ${empfehlungen ? '' : 'keine Handelsempfehlungen, keine Kursziele, keine Prognosen, '}nichts Erfundenes, Quellenangaben bleiben Pflicht.${empfehlungen ? `
+  Der Leser hat Handelsempfehlungen, Kursziele und Prognosen ERLAUBT — eine
+  Anweisung, die danach verlangt, ist also "wirkt", nicht "gegenregel". Jede
+  solche Aussage muss aber ihre Bedingung und ihre Widerlegung nennen.` : ''}
+- Marktstand und eigene Einordnung sind eigene Blöcke der Seite, nicht Teil des
+  geschriebenen Berichts. Die Kapitel-Lage schreibt über die Nachrichten des
+  Kapitels; eine Anweisung, die dort Fear & Greed, Dominanz oder Funding
+  verlangt, bleibt wirkungslos — die Zahlen stehen bereits daneben.
 - Die Quellen sind die eingerichteten Feeds plus Recherche. Die Anweisung kann
   keine neue Quelle erschliessen. Eingerichtet sind AKTUELL${liste ? `:\n${liste}` : ' keine.'}
   Was hier steht, IST erreichbar — nenne es nicht wirkungslos. Nur ein Name,
@@ -1684,7 +1744,16 @@ export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], lagen 
         }
 
         if (lagen?.gesamt?.ueberschrift || lagen?.handel?.ueberschrift) {
-            teile.push('## Eigene Einordnung')
+            /*
+             * Der Hinweis steht in der Web-Ansicht unter den Karten
+             * (`news.lagen.hinweis`) und fehlte hier. Das ist der Punkt mit
+             * inhaltlichem Risiko: Auf die Überschrift folgt unmittelbar
+             * „Wenn der Kurs über X, dann …", und die Mail geht ungefragt
+             * raus — ohne die Kennzeichnung liest sich das wie eine
+             * Empfehlung statt wie die Messung der eigenen App.
+             */
+            teile.push('## Eigene Einordnung',
+                'Von der App erzeugt, keine Nachricht und keine Handelsempfehlung.')
 
             if (lagen?.gesamt?.ueberschrift) {
                 abschnitt(lagen.gesamt.ueberschrift, [
@@ -1711,6 +1780,13 @@ export function berichtAlsMailText({ lage = '', kapitel = [], markt = [], lagen 
         }
 
         for (const k of (Array.isArray(kapitel) ? kapitel : [])) {
+            // Netz für den Altbestand: Berichte von vor dem 05.09.2026 tragen
+            // leere Kapitel noch mit („Keine technischen Chartanalysen
+            // verfügbar"). Neue werden schon beim Speichern gefiltert.
+            // Punkte entscheiden, nicht die Lage — eine Lage ohne Punkte IST
+            // die Fehlanzeige. Bei `inhalt: 'mittel'` werden die Punkte zwar
+            // nicht gedruckt, sie sind aber da und tragen das Kapitel.
+            if (!(Array.isArray(k?.punkte) && k.punkte.length) && !k?.bilder?.length) continue
             const name = themenNamen[k?.thema] || k?.thema || ''
             teile.push(`## ${[name, k?.ueberschrift].filter(Boolean).join(' — ')}`)
             if (k?.lage) teile.push(String(k.lage).trim())
@@ -2539,6 +2615,21 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         punkte: s?.radarNewsPunkte,
         zusatz: s?.radarNewsPromptZusatz,
         aktualisierung: istUpdate,
+        /*
+         * Was TATSAECHLICH im Kontext steht, nicht was eingestellt ist:
+         * `radarNewsLagenAn` kann an sein, waehrend `holeLagenBlock` am
+         * fehlenden Guthaben gescheitert ist und leer zurueckkam. Der Prompt
+         * darf dann nicht auf eine Einordnung verweisen, die es nicht gibt —
+         * sonst schreibt das Modell die Deutung des Marktstands nirgends hin.
+         */
+        einordnung: !!lagenBlock.text,
+        /*
+         * Handelsempfehlungen, Kursziele und Prognosen. Ein globaler Schalter
+         * (Einstellungen → KI → Allgemein), der auch die Gesamtlage- und die
+         * Handelslage-Kachel betrifft — deshalb `kiEmpfehlungenAn` und nicht
+         * `radarNews...`. Vorgabe AUS, also das bisherige Verhalten.
+         */
+        empfehlungen: Number(s?.kiEmpfehlungenAn ?? 0) === 1,
     })
     let antwort = null
     for (const budget of budgets) {
@@ -2676,10 +2767,46 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         : []
     const entdoppelt = entdoppleBericht(
         { lage: String(daten?.lage || ''), lagebild: abwaegung, kapitel, punkte: flachePunkte },
-        { markt: marktdaten.werte || [], vorherige },
+        {
+            markt: marktdaten.werte || [],
+            vorherige,
+            // Die Einordnungskarten stehen auf derselben Seite und sind von
+            // hier aus unantastbar — was sie sagen, darf der Bericht nicht
+            // noch einmal sagen. Leer, wenn sie abgeschaltet sind oder der
+            // Abruf scheiterte; dann verhält sich alles wie vorher.
+            einordnung: einordnungTexte(lagenBlock.lagen),
+        },
     )
     if (entdoppelt.protokoll.length) {
         console.log(`[NEWS] Doppelungen entfernt: ${protokollText(entdoppelt.protokoll)}`)
+    }
+
+    /*
+     * Ein Kapitel, das nur mitteilt, dass es nichts mitzuteilen hat, ist eine
+     * Ueberschrift plus ein Satz Platzverbrauch — in beiden Berichten vom
+     * 04./05.09.2026 stand „chartanalyse" genau so da („Keine technischen
+     * Chartanalysen verfuegbar"). Seit der Doppler eine Kapitel-Lage auch ganz
+     * leeren darf, kann das jedes Kapitel treffen.
+     *
+     * Der Filter steht hier und nicht in der Anzeige: Sonst muesste ihn jede
+     * der vier Darstellungen UND die Mail einzeln nachbauen, und im
+     * gespeicherten JSON bliebe der leere Eintrag fuer immer stehen.
+     *
+     * Maßgeblich sind PUNKTE, nicht die Lage. Eine Lage ohne Punkte ist genau
+     * die Fehlanzeige, um die es geht — der Prompt verlangt sie ausdruecklich
+     * („sage das in einem Satz und lass seine Punkteliste leer"), und das
+     * bleibt richtig: Ein Modell, das ein Kapitel stillschweigend weglaesst,
+     * ist nicht unterscheidbar von einem, das es vergessen hat. Der Satz ist
+     * die Quittung, dass geschaut wurde. Er wird nur nicht mehr gedruckt.
+     *
+     * `bilder` gehoert in die Bedingung — die Chartgrafiken der Recherche
+     * haengen am Kapitel und waeren sonst mit ihm weg.
+     */
+    const kapitelMitInhalt = (entdoppelt.bericht.kapitel || [])
+        .filter(k => k?.punkte?.length || k?.bilder?.length)
+    const leere = (entdoppelt.bericht.kapitel || []).filter(k => !kapitelMitInhalt.includes(k))
+    if (leere.length) {
+        console.log(`[NEWS] Kapitel ohne Inhalt weggelassen: ${leere.map(k => k?.thema).join(', ')}`)
     }
 
     const kostenUsd = (Number(antwort.costUsd) || 0) + rechercheKostenUsd + letzteXKostenUsd
@@ -2692,7 +2819,7 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         ueberschrift: String(daten?.ueberschrift || '').slice(0, 300),
         lage: entdoppelt.bericht.lage.slice(0, 4000),
         punkte: JSON.stringify(entdoppelt.bericht.punkte),
-        kapitel: JSON.stringify(entdoppelt.bericht.kapitel),
+        kapitel: JSON.stringify(kapitelMitInhalt),
         themen: themen.join(','),
         laenge,
         beitraege: beitraege.length,
@@ -2760,7 +2887,15 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                 + `${zeile.ueberschrift || 'neuer Bericht'}`,
             text: berichtAlsMailText({
                 lage: zeile.lage,
-                kapitel,
+                /*
+                 * `kapitelMitInhalt`, NICHT `kapitel`: Letzteres ist die rohe
+                 * Liste vor der Doppelungspruefung. `entdoppleBericht` baut per
+                 * `.map()` neue Objekte, die aeussere Liste bleibt unberuehrt —
+                 * die Mail zeigte damit Wiederholungen, die die Weboberflaeche
+                 * laengst entfernt hatte, und daneben in `zeile.lage` die
+                 * BEREINIGTE Gesamtlage. Zwei Staende in einer Nachricht.
+                 */
+                kapitel: kapitelMitInhalt,
                 markt: marktdaten.werte || [],
                 lagen: lagenBlock.lagen || null,
                 grundlage,
@@ -3167,6 +3302,9 @@ export function setupNewsRoutes(app) {
                     punkte: s?.radarNewsPunkte,
                     tiefe: ['knapp', 'normal', 'ausfuehrlich'].includes(s?.radarNewsMeldungsTiefe)
                         ? s.radarNewsMeldungsTiefe : 'knapp',
+                    // Sonst nennt die Prüfung eine Anweisung „gegenregel", die
+                    // der Leser per Einstellung längst erlaubt hat.
+                    empfehlungen: Number(s?.kiEmpfehlungenAn ?? 0) === 1,
                     // Ohne die Liste rät das Modell, ob ein genannter Kanal
                     // erreichbar ist — und riet „nein" bei einer Quelle, die
                     // seit Monaten eingerichtet ist. Nur die AKTIVEN: eine
@@ -3242,7 +3380,7 @@ export function startNewsTakt() {
 
             if (sollBerichtLaufen({
                 jetztLokal: lokal,
-                stunde: Number(s?.radarNewsStunde ?? 9),
+                stunde: Number(s?.radarNewsStunde ?? 10),
                 rhythmus: s?.radarNewsRhythmus,
                 wochentag: Number(s?.radarNewsWochentag ?? 1),
             })) {

@@ -1907,7 +1907,7 @@ async function runMigrations(knex, client) {
 
     // Zeitplan des Lageberichts. 12:00 in der eingestellten Zeitzone; 0 = aus.
     await addColumnIfNotExists('settings', 'radarNewsAuto', (t) => t.integer('radarNewsAuto').defaultTo(1))
-    await addColumnIfNotExists('settings', 'radarNewsStunde', (t) => t.integer('radarNewsStunde').defaultTo(9))
+    await addColumnIfNotExists('settings', 'radarNewsStunde', (t) => t.integer('radarNewsStunde').defaultTo(10))
     // Wie viele Videos je Lauf an Gemini gehen dürfen — Video ist der teuerste
     // Eingabetyp, deshalb eine harte Obergrenze statt eines guten Vorsatzes.
     await addColumnIfNotExists('settings', 'radarNewsVideos', (t) => t.integer('radarNewsVideos').defaultTo(3))
@@ -2152,6 +2152,23 @@ async function runMigrations(knex, client) {
      * handelt, bekam eine Einordnung ueber einen Markt, der ihn nicht betrifft.
      */
     await addColumnIfNotExists('settings', 'radarNewsLagenSymbol', (t) => t.text('radarNewsLagenSymbol').defaultTo('BTCUSDT'))
+    /*
+     * Duerfen die KI-Ausgaben Handelsempfehlungen, Kursziele und Prognosen
+     * geben? Gilt fuer den Lagebericht, die Gesamtlage- und die
+     * Handelslage-Kachel — ein Schalter fuer eine Frage, nicht drei.
+     *
+     * Vorgabe AUS — das ist der Stand, den jeder Bestand hatte, und die sichere
+     * Richtung: Der Bericht geht per Mail hinaus, auch an die Empfaengerliste.
+     * Wer ihn einschaltet, tut das fuer die eigene, lokale Installation.
+     * Eingeschaltet verlangt der Prompt zu jeder solchen Aussage die Marke,
+     * woran sie sich entscheidet und was sie widerlegt — eine nackte Zahl
+     * bleibt verboten. Die BESCHREIBUNGEN der Messwerte (was ein
+     * Liquidations-Cluster ist, was ein Bewegungsvorrat ueber 100 % heisst)
+     * bleiben in jedem Fall stehen: Sie verbieten nichts, sie erklaeren die
+     * Zahl — ohne sie raet das Modell, und dann steht die Richtungsaussage da,
+     * ohne dass jemand sie erlaubt haette.
+     */
+    await addColumnIfNotExists('settings', 'kiEmpfehlungenAn', (t) => t.integer('kiEmpfehlungenAn').defaultTo(0))
     await addColumnIfNotExists('settings', 'radarNewsVideoTiefe', (t) => t.text('radarNewsVideoTiefe').defaultTo('normal'))   // knapp|normal|ausfuehrlich
     await addColumnIfNotExists('settings', 'radarNewsVideoTokens', (t) => t.integer('radarNewsVideoTokens').defaultTo(0))
     // dossier = Tabellen, Kennzahlen und Bilder (Vorgabe) · kombiniert =

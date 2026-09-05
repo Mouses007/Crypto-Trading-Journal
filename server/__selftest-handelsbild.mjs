@@ -373,6 +373,84 @@ console.log('\nAntwort absichern')
         normalisiereHandelslage(null) === null && normalisiereHandelslage('text') === null)
 }
 
+/*
+ * Logikprüfung der Bedingungen und Hinfällig-Marken.
+ *
+ * Die Fälle stammen aus einer ECHTEN Antwort vom 05.09.2026 (BTCUSDT, Bericht
+ * id=44). Beide lesen sich flüssig und sind trotzdem unmöglich — genau deshalb
+ * fielen sie beim Überfliegen nicht auf: Jede einzelne Zahl stimmt.
+ *
+ * Zu jeder Fangprobe steht eine Gegenprobe. Eine Prüfung, die richtige
+ * Bedingungen wegwirft, ist schlimmer als gar keine: Der Leser sieht nicht,
+ * was fehlt.
+ */
+console.log('\nBedingungen: Richtung und Entwertung')
+{
+    const echt = normalisiereHandelslage({
+        ueberschrift: 'BTC: Geringe Aktivität in enger Wochenend-Spanne',
+        text: 'Kaum Dynamik.',
+        bedingungen: [
+            // FALSCH: 79616 liegt UNTER der Schwelle 79683 — beim Steigen
+            // darüber kann diese Marke nicht getestet werden.
+            {
+                wenn: 'der Kurs nachhaltig über das bisherige Tageshoch von 79683 USD steigt',
+                dann: 'könnte ein Test des gestrigen Schlusskurses bei 79616 USD in Richtung des Vortageshochs von 81394 USD einsetzen',
+            },
+            // RICHTIG: 78618 liegt unter der Schwelle 79405, Richtung abwärts.
+            {
+                wenn: 'der Kurs unter das Tagestief von 79405 USD fällt',
+                dann: 'rückt die Unterkante mit dem Vortagestief bei 78618 USD in den Fokus',
+            },
+        ],
+        hinfaellig: [
+            'Bruch des Tageshochs bei 79683 USD',      // = Auslöser der ersten Bedingung
+            'Bruch des Tagestiefs bei 79405 USD',      // = Auslöser der zweiten
+            'ADX auf 1 h steigt über 25 bei anziehendem Volumen',   // eigenständig
+        ],
+    })
+    check('unmögliche Bedingung fliegt', echt.bedingungen.length === 1,
+        JSON.stringify(echt.bedingungen.map(b => b.wenn)))
+    check('die stimmige Bedingung bleibt', echt.bedingungen[0]?.wenn.includes('Tagestief'))
+    // Die erste Bedingung ist weg, ihr Auslöser 79683 ist damit kein Auslöser
+    // mehr — die Marke darf wieder stehen. 79405 gehört noch zur zweiten.
+    check('Marke, die Auslöser einer bleibenden Bedingung ist, fliegt',
+        !echt.hinfaellig.some(h => h.includes('79405')), JSON.stringify(echt.hinfaellig))
+    check('eigenständige Marke bleibt', echt.hinfaellig.some(h => h.includes('ADX')))
+
+    // GEGENPROBE 1: eine saubere Aufwärtsbedingung darf nicht fliegen.
+    const sauber = normalisiereHandelslage({
+        ueberschrift: 'x', text: 'y',
+        bedingungen: [{
+            wenn: 'der Kurs über 79683 USD steigt',
+            dann: 'öffnet sich der Weg zum Vortageshoch bei 81394 USD',
+        }],
+        hinfaellig: ['Rückfall unter den VWAP bei 79551 USD'],
+    })
+    check('GEGENPROBE stimmige Aufwärtsbedingung bleibt', sauber.bedingungen.length === 1)
+    check('GEGENPROBE unabhängige Marke bleibt', sauber.hinfaellig.length === 1)
+
+    // GEGENPROBE 2: Prozente und Indikatorwerte sind keine Kursmarken. „über
+    // 0,8 %" darf nicht gegen „1,8" geprüft werden.
+    const ohneKurs = normalisiereHandelslage({
+        ueberschrift: 'x', text: 'y',
+        bedingungen: [{ wenn: 'OI weiter über +0,8 % steigt', dann: 'RVOL bleibt bei 1,8x getragen' }],
+        hinfaellig: ['ADX fällt unter 20'],
+    })
+    check('GEGENPROBE Bedingung ohne Kursmarken bleibt', ohneKurs.bedingungen.length === 1)
+    check('GEGENPROBE Marke ohne Kursmarke bleibt', ohneKurs.hinfaellig.length === 1)
+
+    // GEGENPROBE 3: Eine Zahl in ganz anderer Grössenordnung im `dann` ist
+    // keine Kursmarke der Schwelle — 250 Mio USD Umsatz neben 79683 USD Kurs.
+    const andereGroesse = normalisiereHandelslage({
+        ueberschrift: 'x', text: 'y',
+        bedingungen: [{
+            wenn: 'der Kurs über 79683 USD steigt',
+            dann: 'dürfte der Umsatz über 250 Mio USD hinausgehen',
+        }],
+    })
+    check('GEGENPROBE fremde Grössenordnung stört nicht', andereGroesse.bedingungen.length === 1)
+}
+
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
 if (fehlgeschlagen) {
     console.log('Fehlgeschlagen:')

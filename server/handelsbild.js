@@ -591,6 +591,36 @@ export function baueHandelsZeilen(d = {}) {
  *
  * @returns {object|null}
  */
+/**
+ * Kursmarken aus einem Satz — nur Zahlen, die ein PREIS sein können.
+ *
+ * Prozente, Zeiten und Perioden fliegen raus: „über 25 steigt" (ADX) und
+ * „79683 USD" dürfen nicht in denselben Topf, sonst vergleicht die Prüfung
+ * unten einen Indikatorwert mit einem Kurs.
+ */
+function kursmarken(text) {
+    const raus = []
+    const re = /(\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,](\d+))?\s*(%|prozent|x|h|min)?/gi
+    let m
+    while ((m = re.exec(String(text || '')))) {
+        if (m[3]) continue                     // 25 %, 4 h, 20x — kein Preis
+        const ganz = m[1].replace(/[.,](?=\d{3}\b)/g, '')
+        const wert = Number(m[2] ? `${ganz}.${m[2]}` : ganz)
+        if (Number.isFinite(wert) && wert > 0) raus.push(wert)
+    }
+    return raus
+}
+
+/** Sagt der Satz „aufwärts", „abwärts" oder nichts davon? */
+function richtungAus(text) {
+    const t = String(text || '').toLowerCase()
+    const auf = /\b(über|ueber|oberhalb|steigt|durchbricht nach oben|nach oben)\b/.test(t)
+    const ab = /\b(unter|unterhalb|fällt|faellt|nach unten)\b/.test(t)
+    if (auf && !ab) return 'auf'
+    if (ab && !auf) return 'ab'
+    return null
+}
+
 export function normalisiereHandelslage(json) {
     if (!json || typeof json !== 'object') return null
 
@@ -607,17 +637,63 @@ export function normalisiereHandelslage(json) {
         .filter(p => p.titel || p.text)
         .slice(0, 5)
 
+    /*
+     * Bedingungen — mit einer LOGIKPRÜFUNG, nicht nur einer Formprüfung.
+     *
+     * Am 05.09.2026 stand in einer echten Antwort: „wenn der Kurs über das
+     * Tageshoch von 79683 steigt, dann Test des gestrigen Schlusskurses bei
+     * 79616 in Richtung 81394". 79616 liegt UNTER der Schwelle — beim Steigen
+     * kann diese Marke nicht getestet werden. Der Satz liest sich flüssig und
+     * ist trotzdem unmöglich; genau solche Sätze fallen beim Überfliegen nicht
+     * auf, weil alle vier Zahlen für sich stimmen.
+     *
+     * Verworfen wird die GANZE Bedingung, nicht die einzelne Zahl: Eine
+     * Wenn-Dann-Regel mit einer falschen Marke ist irreführender als keine, und
+     * den Satz umzuschreiben hiesse, die Aussage zu erfinden.
+     *
+     * Geprüft wird nur, was eindeutig ist — eine Richtung im `wenn`, eine
+     * Schwelle, und Zahlen im `dann`, die in derselben Grössenordnung liegen
+     * (halbe bis doppelte Schwelle). Alles andere passiert unbehelligt: Diese
+     * Prüfung soll falsche Sätze fangen, nicht richtige verlieren.
+     */
     const bedingungen = (Array.isArray(json.bedingungen) ? json.bedingungen : [])
         .map(b => ({
             wenn: String(b?.wenn || '').trim(),
             dann: String(b?.dann || '').trim(),
         }))
         .filter(b => b.wenn && b.dann)
+        .filter(b => {
+            const richtung = richtungAus(b.wenn)
+            const schwellen = kursmarken(b.wenn)
+            if (!richtung || !schwellen.length) return true
+            const schwelle = richtung === 'auf' ? Math.max(...schwellen) : Math.min(...schwellen)
+            return kursmarken(b.dann)
+                .filter(z => z >= schwelle * 0.5 && z <= schwelle * 2)
+                .every(z => (richtung === 'auf' ? z >= schwelle : z <= schwelle))
+        })
         .slice(0, 4)
 
+    /*
+     * Hinfällig-Marken, die schon Auslöser einer Bedingung sind, tragen nichts.
+     *
+     * Derselbe Lauf vom 05.09.2026 nannte „Bruch des Tageshochs bei 79683" als
+     * Hinfällig-Marke — und genau dieser Bruch war der Auslöser von Bedingung 1.
+     * Beide Szenarien entwerteten damit die Einordnung, die sie beschreiben: Sie
+     * galt nur, solange nichts geschieht. Das ist keine Invalidierung, sondern
+     * eine Tautologie.
+     *
+     * Die Bedingung bleibt, die Marke fliegt — die Bedingung sagt, WAS dann
+     * geschieht, die Marke nur, dass etwas geschieht.
+     */
+    const ausloeser = bedingungen.map(b => kursmarken(b.wenn)).filter(z => z.length)
     const hinfaellig = (Array.isArray(json.hinfaellig) ? json.hinfaellig : [])
         .map(h => String(h || '').trim())
         .filter(Boolean)
+        .filter(h => {
+            const zahlen = kursmarken(h)
+            if (!zahlen.length) return true        // „ADX steigt über 25" — kein Kurs, kein Konflikt
+            return !ausloeser.some(a => zahlen.every(z => a.includes(z)))
+        })
         .slice(0, 3)
 
     return {

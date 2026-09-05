@@ -147,6 +147,38 @@ export function saetzeAus(text) {
 
 const schnitt = (a, b) => [...a].filter(x => b.has(x)).length
 
+/** „73pkt" → { wert: '73', einheit: 'pkt' } */
+const zerlegeMarke = (m) => {
+    const t = String(m).match(/^([+-]?\d+(?:\.\d+)?)(.*)$/)
+    return t ? { wert: t[1], einheit: t[2] } : { wert: String(m), einheit: '' }
+}
+
+/**
+ * Gemeinsame ZAHLEN zweier Sätze — mit einer Ausnahme für die nackte Zahl.
+ *
+ * `zahlenAus` hängt die Einheit an die Marke, und das ist richtig: „58,2 %
+ * Dominanz" und „58,2 Mrd. USD Zufluss" sind zwei Messungen, die zufällig
+ * dieselbe Ziffernfolge tragen. Eine Zahl OHNE Einheit ist aber nicht eine
+ * dritte Messung, sondern dieselbe unbestimmt geschrieben: „Fear & Greed von
+ * 73" und „73 Punkte" sind derselbe Wert. Ohne diese Ausnahme blieb genau
+ * dieser Satz am 05.09.2026 stehen — die Karte sagte „von 73", die Kapitel-Lage
+ * „mit 73 Punkten", und der Durchgang sah zwei verschiedene Marken.
+ *
+ * Zwei Sätze mit VERSCHIEDENEN Einheiten bleiben getrennt; nur die leere
+ * Einheit passt auf jede. Das zweite Signal (gemeinsame Wörter) gilt
+ * unverändert daneben.
+ */
+const zahlSchnitt = (a, b) => {
+    const bTeile = [...b].map(zerlegeMarke)
+    let treffer = 0
+    for (const x of [...a].map(zerlegeMarke)) {
+        if (bTeile.some(y => y.wert === x.wert && (!x.einheit || !y.einheit || x.einheit === y.einheit))) {
+            treffer++
+        }
+    }
+    return treffer
+}
+
 /**
  * Sagt dieser Satz dasselbe wie ein früherer?
  *
@@ -167,7 +199,7 @@ export function istWiederholung(neu, frueher) {
              * Inhalt. Eine von acht gemeinsamen Zahlen ist Zufall; eine von
              * einer, zwei von drei sind dieselbe Aussage.
              */
-            const zahlGleich = schnitt(neu.zahlen, alt.zahlen)
+            const zahlGleich = zahlSchnitt(neu.zahlen, alt.zahlen)
             const zahlKleiner = Math.min(neu.zahlen.size, alt.zahlen.size)
             const gemeinsam = schnitt(neu.woerter, alt.woerter)
             const kleiner = Math.min(neu.woerter.size, alt.woerter.size) || 1
@@ -184,7 +216,36 @@ export function istWiederholung(neu, frueher) {
     return null
 }
 
-const marke = (text) => ({ text, zahlen: zahlenAus(text), woerter: woerterAus(text) })
+/**
+ * Ein Satz, vorbereitet zum Vergleichen.
+ *
+ * `fremd` heisst: Dieser Satz steht in einem Block, den dieser Durchgang NICHT
+ * ändern kann — Einordnungskarte, Marktstand-Tabelle, Vorbericht. Der
+ * Unterschied entscheidet, ob der Ankersatz-Schutz greifen darf: Gegen einen
+ * Block, der ohnehin auf der Seite stehen bleibt, ist „den ersten Satz retten"
+ * keine Rettung, sondern die Konservierung der Wiederholung.
+ */
+const marke = (text, fremd = false) => ({ text, fremd, zahlen: zahlenAus(text), woerter: woerterAus(text) })
+
+/**
+ * Die Einordnungskarten als Sätze — genau der Text, den der Leser sieht.
+ *
+ * Bewusst NICHT der Prompt-Block aus `holeLagenBlock`: Der trägt Beschriftungen
+ * („Gesamtlage (Zyklus, Stimmung …)"), die auf der Seite nicht stehen und den
+ * Wortvergleich verfälschen würden.
+ */
+export function einordnungTexte(lagen) {
+    const l = lagen && typeof lagen === 'object' ? lagen : {}
+    const raus = []
+    for (const feld of [l.gesamt?.text, l.gesamt?.widerspruch]) if (feld) raus.push(String(feld))
+    for (const feld of [l.handel?.text, l.handel?.spielraum, l.handel?.zeitfenster]) {
+        if (feld) raus.push(String(feld))
+    }
+    for (const b of Array.isArray(l.handel?.bedingungen) ? l.handel.bedingungen : []) {
+        if (b?.wenn && b?.dann) raus.push(`Wenn ${b.wenn}, dann ${b.dann}.`)
+    }
+    return raus
+}
 
 /**
  * Einen Absatz auf die Sätze kürzen, die noch nichts gesagt haben.
@@ -200,10 +261,14 @@ const marke = (text) => ({ text, zahlen: zahlenAus(text), woerter: woerterAus(te
  *   denn eine Meldung, die nur Bekanntes enthält, ist keine Meldung; sie wird
  *   danach als Ganzes verworfen.
  */
-function kuerzeAbsatz(text, gesehen, protokoll, wo, { ankerSatz = true } = {}) {
+function kuerzeAbsatz(text, gesehen, protokoll, wo,
+    { ankerSatz = true, ankerAuchFremd = false, zusaetzlich = [] } = {}) {
     const saetze = saetzeAus(text)
-    const marken = saetze.map(marke)
-    const treffer = marken.map(m => istWiederholung(m, gesehen))
+    const marken = saetze.map(t => marke(t))
+    // `zusaetzlich` wandert NICHT in `gesehen`: Die Marktdaten-Tabelle gilt nur
+    // gegen die Kapitel-Lage, und derselbe Speicher trägt gleich die Meldungen.
+    const vergleich = zusaetzlich.length ? [...gesehen, ...zusaetzlich] : gesehen
+    const treffer = marken.map(m => istWiederholung(m, vergleich))
 
     /*
      * Ein Absatz, in dem JEDER Satz schon dastand, ist als Ganzes alt — bei
@@ -211,9 +276,17 @@ function kuerzeAbsatz(text, gesehen, protokoll, wo, { ankerSatz = true } = {}) {
      * Gedanke darin, bleibt der erste Satz stehen, selbst wenn er wiederholt.
      * Ein Absatz, der mit „Auf 24-Stunden-Sicht dagegen …" beginnt, weil ihm
      * die Einleitung fehlt, ist kein aufgeräumter Text, sondern ein zerhackter.
+     *
+     * ABER: Der Anker darf nicht ausgerechnet die Wiederholung schützen. Steht
+     * der erste Satz schon in einem Block, den dieser Durchgang NICHT ändern
+     * kann (Einordnungskarte, Marktstand-Tabelle, Vorbericht), ist „stehen
+     * lassen" genau der Fehler vom 05.09.2026: eine Kapitel-Lage aus Fear &
+     * Greed 73, Dominanz 59,1 % und Funding 0 % p.a. — und keiner einzigen
+     * Nachricht. Dann wird der Absatz leer, und das Kapitel fällt weg.
      */
+    const ankerTaugt = ankerAuchFremd || !treffer[0]?.fremd
     const allesAlt = saetze.length > 0 && treffer.every(Boolean)
-    const geschuetzt = allesAlt ? -1 : 0
+    const geschuetzt = (allesAlt || !ankerTaugt) ? -1 : 0
 
     const behalten = []
     saetze.forEach((s, i) => {
@@ -225,9 +298,14 @@ function kuerzeAbsatz(text, gesehen, protokoll, wo, { ankerSatz = true } = {}) {
         gesehen.push(marken[i])
     })
     // Die Lage eines Kapitels darf nie leer werden — dort steht sonst ein Loch.
-    if (!behalten.length && ankerSatz && saetze.length) {
+    // Ausser der Absatz stand vollständig in einem fremden Block: Dann ist das
+    // Loch die ehrlichere Anzeige, und der Aufrufer lässt das Kapitel weg.
+    if (!behalten.length && ankerSatz && ankerTaugt && saetze.length) {
         gesehen.push(marken[0])
         return saetze[0]
+    }
+    if (!behalten.length && saetze.length) {
+        protokoll.push({ wo, art: 'absatz', text: saetze[0], wie: 'stand schon fest daneben' })
     }
     return behalten.join(' ')
 }
@@ -247,19 +325,55 @@ function kuerzeAbsatz(text, gesehen, protokoll, wo, { ankerSatz = true } = {}) {
  * Gibt den bereinigten Bericht und ein Protokoll zurück. Das Protokoll ist
  * nicht Zierde: Ohne es weiss niemand, ob dieser Durchgang nützt oder frisst.
  */
-export function entdoppleBericht(bericht, { markt = [], vorherige = [] } = {}) {
+export function entdoppleBericht(bericht, { markt = [], vorherige = [], einordnung = [] } = {}) {
     const b = bericht && typeof bericht === 'object' ? bericht : {}
     const protokoll = []
-    const gesehen = (Array.isArray(vorherige) ? vorherige : [])
-        .flatMap(t => saetzeAus(t)).map(marke)
+    /*
+     * Beide Vorbelegungen sind `fremd`: Sie stehen fest, während der Bericht
+     * geschrieben wird. Die Einordnungskarten stehen auf der Seite ZWISCHEN
+     * Gesamtlage und Kapiteln — sie belegen `gesehen` trotzdem von Anfang an,
+     * weil von zwei Blöcken, die dasselbe sagen, nur einer geändert werden
+     * kann. Der muss weichen.
+     */
+    const gesehen = [
+        ...(Array.isArray(einordnung) ? einordnung : []).flatMap(t => saetzeAus(t)).map(t => marke(t, true)),
+        ...(Array.isArray(vorherige) ? vorherige : []).flatMap(t => saetzeAus(t)).map(t => marke(t, true)),
+    ]
 
-    // Die Tabelle zählt NUR für die Kennzahlen-Chips, nicht für den Fliesstext.
+    // Die Tabelle zählt für die Kennzahlen-Chips …
     const tabelle = new Set()
     for (const w of Array.isArray(markt) ? markt : []) {
         for (const z of zahlenAus(`${w?.wert || ''} ${w?.zusatz || ''}`)) tabelle.add(z)
     }
+    /*
+     * … und seit dem 05.09.2026 zusätzlich gegen die KAPITEL-LAGE, aber nur
+     * dort. Die alte Ausnahme („die Tabelle ist der Messwert, der Satz die
+     * Deutung — eine Erwähnung darf der Text haben") war richtig, solange es
+     * zwei Ebenen gab. Mit der Einordnung sind es drei, und die Deutung hat
+     * einen eigenen, besseren Platz bekommen; die Kapitel-Lage ist die Ebene,
+     * die dadurch überflüssig wurde.
+     *
+     * NICHT gegen die Gesamtlage: Sie steht auf der Seite über der Tabelle und
+     * ist bei abgeschalteter Einordnung der einzige erlaubte Deutungsort.
+     * NICHT gegen die Meldungen: Dort ist der Messwert Beleg einer Nachricht,
+     * nicht Wiederholung — und ein fälschlich gelöschter Meldungssatz fällt
+     * niemandem auf. Das ist die gefährlichere Fehlerrichtung.
+     *
+     * Die Beschriftung gehört in den Satz: „Fear & Greed 73 (Gier) 30-Tage-
+     * Mittel 55" hat genug Inhaltswörter, dass die Zwei-Signal-Regel überhaupt
+     * greifen kann — „73 (Gier)" allein hätte keine zwei.
+     */
+    const tabelleMarken = (Array.isArray(markt) ? markt : [])
+        .map(w => `${w?.was || ''} ${w?.wert || ''} ${w?.zusatz || ''}`.trim())
+        .filter(Boolean)
+        .flatMap(t => saetzeAus(t))
+        .map(t => marke(t, true))
 
-    const lage = kuerzeAbsatz(b.lage || '', gesehen, protokoll, 'lage')
+    // Die Gesamtlage behält ihren Ankersatz auch gegen fremde Blöcke: Für sie
+    // gibt es kein Auffangnetz — eine leere `lage` ist ein Loch oben auf der
+    // Seite und die erste Zeile jeder Mail. Ein Kapitel darf verschwinden,
+    // die Gesamtlage nicht.
+    const lage = kuerzeAbsatz(b.lage || '', gesehen, protokoll, 'lage', { ankerAuchFremd: true })
 
     /*
      * Die Abwägung wird NUR gegen sich selbst geprüft, nicht gegen den Text.
@@ -338,7 +452,8 @@ export function entdoppleBericht(bericht, { markt = [], vorherige = [] } = {}) {
 
     const kapitel = (Array.isArray(b.kapitel) ? b.kapitel : []).map((k, i) => ({
         ...k,
-        lage: kuerzeAbsatz(k?.lage || '', gesehen, protokoll, `kapitel[${i}].lage`),
+        lage: kuerzeAbsatz(k?.lage || '', gesehen, protokoll, `kapitel[${i}].lage`,
+            { zusaetzlich: tabelleMarken }),
         punkte: putzePunkte(k?.punkte, `kapitel[${i}]`),
     }))
 

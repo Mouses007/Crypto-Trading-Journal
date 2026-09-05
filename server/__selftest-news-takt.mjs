@@ -302,6 +302,75 @@ console.log('\nBericht als Mailtext')
     pruefe('leere Eingabe wirft nicht', berichtAlsMailText() === '')
     pruefe('kaputte Kapitel werfen nicht',
         typeof berichtAlsMailText({ lage: 'x', kapitel: [null, { punkte: 'kaputt' }], inhalt: 'voll' }) === 'string')
+
+    /*
+     * Die eigene Markteinordnung in der Mail. Bis zum 05.09.2026 war dieser
+     * Zweig von keiner Prüfung berührt — fünfzig Zeilen mit vier Verzweigungen
+     * in einer Funktion, die ausdrücklich rein gehalten wird, „damit der
+     * Selbsttest sie prüfen kann".
+     */
+    const lagen = {
+        gesamt: {
+            ueberschrift: 'Gier trifft auf Long-Auflösung',
+            text: 'Der Markt zeigt Gier.', widerspruch: 'Sentiment gegen Fluss.',
+        },
+        handel: {
+            symbol: 'BTCUSDT', ueberschrift: 'Enge Wochenend-Spanne',
+            text: 'Kaum Dynamik.', spielraum: '12 % der Tagesspanne', zeitfenster: 'CME geschlossen',
+            bedingungen: [{ wenn: 'über 79683', dann: 'Test des Vortageshochs' }],
+            hinfaellig: ['Bruch des Tagestiefs'],
+        },
+    }
+    const mitLagen = berichtAlsMailText({ ...daten, lagen, inhalt: 'mittel' })
+    pruefe('Einordnung bekommt einen eigenen Abschnitt', mitLagen.includes('## Eigene Einordnung'))
+    pruefe('beide Blickwinkel als Zwischentitel',
+        mitLagen.includes('### Gier trifft auf Long-Auflösung')
+        && mitLagen.includes('### BTC: Enge Wochenend-Spanne'), mitLagen)
+    pruefe('Bedingung steht als Wenn-Dann-Zeile',
+        mitLagen.includes('- Wenn über 79683, dann Test des Vortageshochs'), mitLagen)
+    pruefe('Hinfällig-Marke kommt mit', mitLagen.includes('Hinfällig, sobald: Bruch des Tagestiefs'))
+    // Die Mail geht ungefragt raus, und auf die Überschrift folgt unmittelbar
+    // ein Wenn-Dann-Satz. Ohne die Kennzeichnung liest sich das wie eine
+    // Empfehlung — in der Web-Ansicht steht sie unter den Karten, hier fehlte sie.
+    pruefe('Warnhinweis steht in der Mail',
+        mitLagen.includes('keine Handelsempfehlung'), mitLagen)
+
+    // GEGENPROBE: ohne Einordnung (radarNewsLagenAn = 0) kein leerer Abschnitt.
+    pruefe('GEGENPROBE ohne Einordnung fehlt der Abschnitt',
+        !berichtAlsMailText({ ...daten, inhalt: 'mittel' }).includes('## Eigene Einordnung'))
+    // Randfall: Überschrift ohne Inhalt darf keine verwaiste Überschrift geben.
+    pruefe('Karte ohne Inhalt erzeugt keinen leeren Zwischentitel',
+        !berichtAlsMailText({ ...daten, inhalt: 'mittel', lagen: { gesamt: { ueberschrift: 'Nur Titel' } } })
+            .includes('### Nur Titel'))
+    pruefe('kaputte Einordnung wirft nicht',
+        typeof berichtAlsMailText({ ...daten, inhalt: 'mittel', lagen: { handel: { ueberschrift: 'x', bedingungen: 'kaputt' } } }) === 'string')
+    // Bei „kurz" bleibt die Mail kurz — auch mit Einordnung.
+    pruefe('kurz zeigt keine Einordnung',
+        !berichtAlsMailText({ ...daten, lagen, inhalt: 'kurz' }).includes('Eigene Einordnung'))
+
+    /*
+     * Fehlanzeige-Kapitel wird nicht gedruckt (Altbestand-Netz). Entscheidend
+     * sind die PUNKTE, nicht die Lage: Am 04./05.09.2026 stand „chartanalyse"
+     * mit einer vollen Lage („Keine technischen Chartanalysen verfügbar") und
+     * null Punkten in der Mail — eine Überschrift plus ein Satz, der nichts sagt.
+     */
+    const mitLeerem = berichtAlsMailText({
+        ...daten, inhalt: 'mittel',
+        kapitel: [...daten.kapitel, {
+            thema: 'chartanalyse', ueberschrift: 'Keine Chartanalysen verfügbar',
+            lage: 'Zu den fünf grössten Coins liegen keine Analysen vor.', punkte: [],
+        }],
+    })
+    pruefe('Fehlanzeige-Kapitel erzeugt keine Überschrift',
+        !mitLeerem.includes('Keine Chartanalysen verfügbar'), mitLeerem)
+    pruefe('GEGENPROBE das Kapitel mit Meldungen bleibt',
+        mitLeerem.includes('HYPE zieht an'), mitLeerem)
+    // GEGENPROBE: leere Lage, aber ein Punkt — das Kapitel trägt und bleibt.
+    pruefe('GEGENPROBE Kapitel ohne Lage, aber mit Meldung bleibt',
+        berichtAlsMailText({
+            ...daten, inhalt: 'voll',
+            kapitel: [{ thema: 'crypto', ueberschrift: 'Trägt doch', lage: '', punkte: [{ titel: 'X', text: 'Y' }] }],
+        }).includes('Trägt doch'))
 }
 
 // ── 11) Die Kette des Tages ──────────────────────────────────────────────

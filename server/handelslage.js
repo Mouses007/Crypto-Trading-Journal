@@ -275,7 +275,7 @@ export async function sammleHandelsdaten(symbol) {
     }
 }
 
-function baueSystem(englisch) {
+export function baueSystem(englisch, empfehlungen = false) {
     const regeln = englisch
         ? [
             'You are a sober market observer inside the live-trading window of a trading journal.',
@@ -288,7 +288,11 @@ function baueSystem(englisch) {
             'The questions you answer, in this order: (1) is there tradable movement at all right now,',
             '(2) what KIND of movement is it, (3) how much room is left, (4) what would make this reading void.',
             'Use ONLY the numbers given. Never invent a number, never add outside knowledge.',
-            'NO trading recommendation: no entries, no exits, no price targets, no position sizes, no "one should".',
+            ...(empfehlungen
+                ? ['Trading recommendations, price targets and position sizes ARE allowed — but only with the level',
+                    'at which they hold and what would refute them. A number without both, you leave out.',
+                    'They belong in "text" and "bedingungen"; there is no other field for them.']
+                : ['NO trading recommendation: no entries, no exits, no price targets, no position sizes, no "one should".']),
             'Conditions ARE wanted: "continuation holds as long as X" is a statement about the market, not about the reader.',
             'Price marks contained in the readings (previous day high/low, session VWAP, day high/low) may be named.',
             'Time beats technique: if an event of high importance is due within an hour, that is the main finding,',
@@ -307,8 +311,24 @@ function baueSystem(englisch) {
             'Die Fragen, die du beantwortest, in dieser Reihenfolge: (1) ist gerade überhaupt handelbare Bewegung da,',
             '(2) welcher ART ist sie, (3) wie viel Spielraum ist noch übrig, (4) was macht diese Einordnung hinfällig.',
             'Nutze AUSSCHLIESSLICH die genannten Zahlen. Erfinde nie eine Zahl, ergänze kein Fremdwissen.',
-            'KEINE Handelsempfehlung: keine Einstiege, keine Ausstiege, keine Kursziele, keine Positionsgrössen,',
-            'kein „sollte man".',
+            /*
+             * Der Schalter kippt NUR dieses Verbot. Die Saetze weiter oben, die
+             * sagen was ein Cluster IST, bleiben in jedem Fall stehen — sie
+             * verbieten nichts, sie erklaeren die Zahl.
+             *
+             * Wo die Aussage hin soll, muss dabeistehen: Das Antwortschema hat
+             * kein Feld fuer Kursziele (`normalisiereHandelslage` wirft alles
+             * weg, was es nicht kennt). Ohne diesen Hinweis landet die erlaubte
+             * Aussage in einem erfundenen Feld und verschwindet stillschweigend
+             * — der Leser haette den Schalter umgelegt, ohne dass sich etwas
+             * aendert.
+             */
+            ...(empfehlungen
+                ? ['Handelsempfehlungen, Kursziele und Positionsgrössen sind ERLAUBT — aber nur mit der Marke,',
+                    'an der sie gelten, und dem, was sie widerlegt. Eine Zahl ohne beides laesst du weg.',
+                    'Sie gehoeren in "text" und "bedingungen"; ein anderes Feld dafuer gibt es nicht.']
+                : ['KEINE Handelsempfehlung: keine Einstiege, keine Ausstiege, keine Kursziele, keine Positionsgrössen,',
+                    'kein „sollte man".']),
             'Bedingungen sind ausdrücklich erwünscht: „Fortsetzung trägt, solange X" ist eine Aussage über den Markt,',
             'nicht über den Leser.',
             'Preismarken, die in den Messwerten stehen (Vortageshoch/-tief, Tages-VWAP, Tageshoch/-tief), darfst du nennen.',
@@ -403,15 +423,20 @@ export async function erzeugeHandelslage(symbol, { erzwingen = false, auto = fal
             throw new Error('Zu wenige Quellen liefern gerade Daten — eine Handelslage wäre geraten')
         }
 
-        const s = await getKnex()('settings').select('language').where('id', 1).first().catch(() => null)
+        // `kiEmpfehlungenAn` gleich mitlesen: ein globaler Schalter
+        // (Einstellungen → KI → Allgemein), der bestimmt, ob diese Kachel
+        // Kursziele und Empfehlungen geben darf. Vorgabe aus.
+        const s = await getKnex()('settings').select('language', 'kiEmpfehlungenAn')
+            .where('id', 1).first().catch(() => null)
         const englisch = s?.language === 'en'
+        const empfehlungen = Number(s?.kiEmpfehlungenAn ?? 0) === 1
 
         const cfg = await ladeLlmConfigFuerAufgabe('livetrading-handelslage')
         // Gleiche Begründung wie bei der Gesamtlage: die bestellte Antwort ist
         // lang, und ein abgeschnittenes JSON ist bezahlt und wertlos.
         cfg.maxTokens = 3000
 
-        const system = baueSystem(englisch)
+        const system = baueSystem(englisch, empfehlungen)
         const user = [
             `SYMBOL: ${sym}`,
             `ZEITPUNKT: ${new Date().toISOString()} (UTC)`,
