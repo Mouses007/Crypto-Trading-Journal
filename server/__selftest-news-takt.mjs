@@ -16,6 +16,7 @@ import {
     anspruchsNachlauf, BERICHT_SCHLUESSEL, BERICHT_MANUELL, UPDATE_SCHLUESSEL,
     leseRhythmus, leseUpdateStunden, faelligerUpdatePlatz, basisTaugtFuerUpdate,
     kompaktVorbericht, berichtAlsMailText, berichtsKette, aufbewahrungMs,
+    videoFensterAb,
     waehleBeitraege, abdeckungText, aktualitaetFuer, leseChartFrische, CHART_FRISCHE,
 } from './marktradar-news.js'
 
@@ -499,6 +500,62 @@ pruefe('die Wahl greift nicht auf andere Kapitel über',
     aktualitaetFuer({ thema: 'crypto', chartFrische: 'monat' }) === 'day')
 pruefe('nie ohne Filter — das war der Fehler',
     ['crypto', 'finanzen', 'tech', 'chartanalyse'].every(t => aktualitaetFuer({ thema: t })))
+
+/*
+ * Ab wann ein Video als „neu" gilt.
+ *
+ * Zwei Fälle, die sich über die FENSTERGRÖSSE nicht trennen lassen und deshalb
+ * beide hier stehen: die Abendausgabe von gestern 20:00, die nie jemand gesehen
+ * hat, muss durch — das Video von gestern 13:00, das im gestrigen Bericht schon
+ * stand, darf nicht noch einmal. Beide liegen im selben 24h-Fenster; nur der
+ * Zeitpunkt des letzten Berichts unterscheidet sie.
+ */
+const T = (tag, stunde) => Date.UTC(2026, 8, tag, stunde, 0, 0)
+{
+    const jetzt = T(5, 10)              // heute 10:00, der Berichtslauf
+    const gestern10 = T(4, 10)          // der Bericht von gestern
+
+    pruefe('Fenster beginnt beim letzten Bericht',
+        videoFensterAb(jetzt, '', gestern10) === gestern10)
+    pruefe('Abendausgabe von gestern 20:00 liegt IM Fenster',
+        T(4, 20) >= videoFensterAb(jetzt, '', gestern10))
+    /*
+     * Die Trennlinie ist NICHT die Uhrzeit, sondern der letzte Lauf. Ein Video
+     * von gestern 13:00 erschien NACH dem gestrigen 10-Uhr-Bericht, stand also
+     * nie darin — es ist neu und kommt durch, auch wenn es kalendarisch gestern
+     * ist. Ungesehen bleibt ungesehen, ob 14 oder 21 Stunden alt.
+     *
+     * Ausserhalb liegt, was der letzte Lauf schon vor sich hatte: ein Video von
+     * gestern 09:00. Das ist der Fall, den der Kommentar an `heuteAb` schliessen
+     * wollte — und er bleibt geschlossen, ohne die Abendausgabe mitzunehmen.
+     */
+    pruefe('Video von NACH dem letzten Bericht ist neu',
+        T(4, 13) >= videoFensterAb(jetzt, '', gestern10))
+    pruefe('Video von VOR dem letzten Bericht fällt raus — es wurde behandelt',
+        T(4, 9) < videoFensterAb(jetzt, '', gestern10))
+
+    // Ohne vorherigen Bericht bleibt es beim Kalendertag: frische Installation,
+    // und ein rollierendes Fenster wäre genau der geschlossene Fehler.
+    pruefe('ohne vorherigen Bericht gilt der Kalendertag',
+        videoFensterAb(jetzt, '', 0) === tagesbeginn(jetzt, ''))
+    pruefe('unbrauchbarer Wert wie kein Bericht',
+        videoFensterAb(jetzt, '', null) === tagesbeginn(jetzt, '')
+        && videoFensterAb(jetzt, '', 'quatsch') === tagesbeginn(jetzt, ''))
+    // Ein Zeitstempel aus der Zukunft ist kaputt, nicht „ganz frisch" — sonst
+    // wäre das Fenster leer und der Bericht stumm.
+    pruefe('Bericht aus der Zukunft fällt auf den Kalendertag zurück',
+        videoFensterAb(jetzt, '', jetzt + 3600000) === tagesbeginn(jetzt, ''))
+
+    // Der Deckel: nach langer Pause steht sonst ein wochenaltes Video als „neu"
+    // im Bericht.
+    const langePause = T(1, 10)         // vier Tage her
+    pruefe('Deckel greift nach langer Pause',
+        videoFensterAb(jetzt, '', langePause) === jetzt - 48 * 3600000)
+    pruefe('innerhalb des Deckels zählt der Bericht',
+        videoFensterAb(jetzt, '', gestern10) > jetzt - 48 * 3600000)
+    pruefe('eigener Deckel wird beachtet',
+        videoFensterAb(jetzt, '', langePause, 12 * 3600000) === jetzt - 12 * 3600000)
+}
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

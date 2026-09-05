@@ -1880,6 +1880,43 @@ export function tagesbeginn(jetzt = Date.now(), zeitzone = '') {
 }
 
 /**
+ * Ab wann ein Video für diesen Lauf als „neu" gilt.
+ *
+ * Nicht der Kalendertag und keine feste Stundenzahl, sondern SEIT DEM LETZTEN
+ * BERICHT. Das trifft den Zweck genauer als jede Zahl:
+ *
+ *   * Die Abendausgabe von gestern 20:00 ist seit dem gestrigen 10-Uhr-Lauf
+ *     neu und kommt in den Morgenbericht. Mit `tagesbeginn` fiel sie heraus,
+ *     obwohl sie nie jemand gesehen hatte — genau das ist dem Bitbull-Video
+ *     vom 03.09.2026, 20:00 passiert (`status=neu, versuche=0` bis heute).
+ *   * Ein Video von gestern 13:00 lag beim gestrigen Lauf schon vor und wurde
+ *     behandelt; es kommt nicht ein zweites Mal. Ein rollierendes 24h- oder
+ *     12h-Fenster liesse es wieder durch — der Fall, den der Kommentar an
+ *     `heuteAb` ausdrücklich als geschlossen beschreibt. Über die
+ *     FENSTERGRÖSSE sind beide Fälle nicht zu trennen, über den letzten Lauf
+ *     schon.
+ *   * Fiel ein Bericht aus (Wochenende, Guthaben leer), holt der nächste die
+ *     Lücke nach, statt dass die Ausgabe dazwischen still verfällt.
+ *
+ * Der Deckel ist kein Feinschliff: Nach zwei Wochen Pause stünde sonst ein
+ * zwei Wochen altes Video als „neu" im Bericht. Ohne vorherigen Bericht
+ * (frische Installation) gilt der Kalendertag wie bisher.
+ *
+ * Rein und ohne Datenbank, damit der Selbsttest sie prüfen kann.
+ *
+ * @param {number} jetzt
+ * @param {string} zeitzone
+ * @param {number} letzterBericht  `erstelltAm` des jüngsten Berichts, 0 = keiner
+ * @param {number} deckelMs        wie weit maximal zurück
+ */
+export function videoFensterAb(jetzt = Date.now(), zeitzone = '', letzterBericht = 0, deckelMs = 48 * 3600000) {
+    const tag = tagesbeginn(jetzt, zeitzone)
+    const letzter = Number(letzterBericht) || 0
+    if (!letzter || letzter > jetzt) return tag
+    return Math.max(letzter, jetzt - deckelMs)
+}
+
+/**
  * Ist die Zeit für den Bericht gekommen?
  *
  * Bewusst „Stunde erreicht ODER überschritten" statt exakter Treffer: Der Takt
@@ -2226,13 +2263,21 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
              * längst überholt war. `radarNewsVideos` bleibt der Ein/Aus-Schalter
              * (0 = keine Videos), zählt aber nicht mehr hoch.
              *
-             * „Taggenau" heisst KALENDERTAG, kein rollierendes 24h-Fenster:
-             * ein `jetzt - 24h`-Vergleich liess ein Video von gestern 13 Uhr
-             * bei einem Mittagslauf durch (erst 23h alt) — kalendarisch war es
-             * trotzdem gestern. Massgeblich ist `tagesbeginn()`, dieselbe
-             * Mitternacht-Grenze wie beim Tages-Anspruch weiter oben.
+             * „Taggenau" hiess bis 05.09.2026 KALENDERTAG, kein rollierendes
+             * 24h-Fenster: ein `jetzt - 24h`-Vergleich liess ein Video von
+             * gestern 13 Uhr bei einem Mittagslauf durch (erst 23h alt) —
+             * kalendarisch war es trotzdem gestern.
+             *
+             * Diese Entscheidung gilt weiter, die Grenze liegt nur woanders:
+             * SEIT DEM LETZTEN BERICHT statt seit Mitternacht (siehe
+             * `videoFensterAb`). Der 13-Uhr-Fall bleibt geschlossen, weil das
+             * Video beim gestrigen Lauf schon behandelt wurde — die
+             * Abendausgabe von 20:00 kommt jetzt aber durch, statt ungesehen
+             * zu verfallen.
              */
-            const heuteAb = tagesbeginn(Date.now(), s?.timeZone)
+            const letzterBericht = await knex('news_digests')
+                .orderBy('erstelltAm', 'desc').first().catch(() => null)
+            const heuteAb = videoFensterAb(Date.now(), s?.timeZone, Number(letzterBericht?.erstelltAm) || 0)
             const videos = []
             for (const v of videoKandidaten) {
                 if (videos.length >= 1) break
