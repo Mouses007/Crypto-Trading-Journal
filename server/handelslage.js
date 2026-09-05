@@ -29,6 +29,7 @@ import { logWarn } from './logger.js'
 import { ladeLlmConfigFuerAufgabe, callLLMJson } from './llm.js'
 import { baueHandelsZeilen, normalisiereHandelslage, rechneTagesbild, LAGEN } from './handelsbild.js'
 import { getClosedCandles } from './market-data.js'
+import { holeHebelzonen } from './hebelzonen.js'
 import { lies as liesLiqTicker } from './liq-ticker.js'
 import { lageZu } from '../shared/handelszeiten.js'
 import { leseKalender } from './marktradar-kalender.js'
@@ -219,7 +220,7 @@ export async function sammleHandelsdaten(symbol) {
     const sym = normSymbol(symbol)
     const [
         tagesbild, mechanik15, mechanik1h, lsoi, funding,
-        rsi, markt, makro, termine, coinradar, sitzung,
+        rsi, markt, makro, termine, coinradar, sitzung, hebelzonen,
     ] = await Promise.all([
         mitFrist(holeTagesbild(sym), 'Tagesbild'),
         mitFrist(holeMechanik(sym, '15m'), 'Mechanik 15m'),
@@ -232,6 +233,13 @@ export async function sammleHandelsdaten(symbol) {
         mitFrist(holeTermine(TERMIN_STUNDEN), 'Termine'),
         mitFrist(holeCoinRadar(), 'Coin-Radar'),
         mitFrist(holeSitzung(), 'Sitzung'),
+        /*
+         * Die Liquidations-Cluster. Nutzt denselben Binance-Abruf wie die
+         * Kachel „Liquidationskarte" (`holeLeverageMapPunkte`), profitiert
+         * also von deren Zwischenspeicher — im Live-Fenster kostet das
+         * regelmässig null Gewicht.
+         */
+        mitFrist(holeHebelzonen(sym), 'Hebelkarte'),
     ])
 
     /*
@@ -263,7 +271,7 @@ export async function sammleHandelsdaten(symbol) {
 
     return {
         symbol: sym, zeit, termine, tagesbild, mechanik15, mechanik1h,
-        liqJetzt, lsoi, funding, rsi, markt, makro, coinradar, sitzung,
+        liqJetzt, hebelzonen, lsoi, funding, rsi, markt, makro, coinradar, sitzung,
     }
 }
 
@@ -274,7 +282,9 @@ function baueSystem(englisch) {
             'Your horizon is the NEXT ONE TO FOUR HOURS — not days, not weeks. A cycle argument is out of scope here.',
             'You receive current readings: where we are in the trading day, upcoming economic events, the day range and',
             'how much of a usual day range is already used up, marks from the previous day, the session VWAP, volatility,',
-            'participation, market mechanics on two windows, live liquidations, positioning and the wider market.',
+            'participation, market mechanics on two windows, live liquidations, modelled liquidation clusters',
+            'from the leverage map, positioning and the wider market.',
+            'A dense cluster is NOT a directional signal — it says what happens IF price gets there.',
             'The questions you answer, in this order: (1) is there tradable movement at all right now,',
             '(2) what KIND of movement is it, (3) how much room is left, (4) what would make this reading void.',
             'Use ONLY the numbers given. Never invent a number, never add outside knowledge.',
@@ -291,8 +301,9 @@ function baueSystem(englisch) {
             'gehört hier nicht hin.',
             'Du bekommst aktuelle Messwerte: wo im Handelstag wir stehen, anstehende Wirtschaftstermine, die Tagesspanne',
             'und wie viel einer üblichen Tagesspanne schon verbraucht ist, Marken aus dem Vortag, den Tages-VWAP,',
-            'Volatilität, Beteiligung, Marktmechanik auf zwei Fenstern, laufende Liquidationen, Positionierung und den',
-            'breiten Markt.',
+            'Volatilität, Beteiligung, Marktmechanik auf zwei Fenstern, laufende Liquidationen,',
+            'modellierte Liquidations-Cluster aus der Hebelkarte, Positionierung und den breiten Markt.',
+            'Ein dichtes Cluster ist KEIN Richtungssignal — es sagt, was passiert, WENN der Kurs dort ankommt.',
             'Die Fragen, die du beantwortest, in dieser Reihenfolge: (1) ist gerade überhaupt handelbare Bewegung da,',
             '(2) welcher ART ist sie, (3) wie viel Spielraum ist noch übrig, (4) was macht diese Einordnung hinfällig.',
             'Nutze AUSSCHLIESSLICH die genannten Zahlen. Erfinde nie eine Zahl, ergänze kein Fremdwissen.',

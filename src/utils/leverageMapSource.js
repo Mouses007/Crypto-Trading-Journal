@@ -11,21 +11,7 @@
  */
 import axios from 'axios'
 import { buildLeverageMap, buildEntryMap, LEVERAGE_TIERS } from '../../shared/leverageMap.js'
-import { pickBucketSize } from '../../shared/priceBins.js'
-
-/**
- * Grobe Tickgrösse aus der Preishöhe ableiten.
- *
- * `inferTickSize` aus priceBins braucht einen Orderbuch-Snapshot — den hat
- * diese Ansicht nicht, sie kennt nur Kerzen. Für die Zeilenbreite reicht die
- * Grössenordnung völlig; ein Bucket umfasst ohnehin viele Ticks.
- */
-function grobeTickgroesse(mid) {
-    if (mid > 1000) return 0.1
-    if (mid > 10) return 0.001
-    if (mid > 0.1) return 0.00001
-    return 0.0000001
-}
+import { pickBucketSize, grobeTickgroesse } from '../../shared/priceBins.js'
 
 /** Perioden des Endpoints und ihre Länge in Minuten. */
 export const LEVMAP_PERIODS = { '1m': 1, '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 }

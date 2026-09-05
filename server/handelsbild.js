@@ -415,6 +415,88 @@ export function baueHandelsZeilen(d = {}) {
         }
     }
 
+    // ── Wo der Treibstoff liegt ─────────────────────────────────────────
+    /*
+     * Direkt hinter `liqJetzt` und mit Absicht: Das dort ist die MESSUNG (was
+     * wurde gerade liquidiert), das hier das MODELL (was könnte). Die Messung
+     * zuerst — die KI liest von oben nach unten, und ein Modell hinter seiner
+     * eigenen Messung zu lesen ist die richtige Reihenfolge.
+     *
+     * Drei Zeilen, nicht vier: Die Beträge sind gross (Millionen), und zu viel
+     * davon überstrahlt den Bewegungsvorrat, der die wichtigste Zahl dieser
+     * Kachel bleibt.
+     */
+    if (d.hebelzonen) {
+        const h = d.hebelzonen
+        const zone = (z) => `${preisText(z.preis)} USD (${pz(z.abstandPct, 2)}, ${geld(z.usd)}`
+            + `, ${(z.anteil * 100).toFixed(0)} % der Masse auf dieser Seite)`
+
+        const teile = []
+        if (h.oben?.length) teile.push(`oberhalb ${h.oben.map(zone).join(' und ')}`)
+        else teile.push(`oberhalb kein Cluster im Band ±${h.spannePct} %`)
+        if (h.unten?.length) teile.push(`unterhalb ${h.unten.map(zone).join(' und ')}`)
+        else teile.push(`unterhalb kein Cluster im Band ±${h.spannePct} %`)
+
+        dazu('hebelzonen', `Liquidations-Cluster ${kurz(h.symbol || d.symbol)}`
+            + ` (Modell aus der Open-Interest-Historie, keine gemessenen Orders): ${teile.join('; ')}.`
+            + ' Wird eine solche Zone erreicht, erzwingt sie Käufe (oberhalb) bzw. Verkäufe (unterhalb)'
+            + ' in Richtung der Bewegung — ein Ausbruch auf ein dichtes Band nährt sich selbst,'
+            + ' einer ins Leere versandet.')
+
+        /*
+         * Schwellen an die Verhältniszahl. Ohne sie liest ein Modell „2,1 zu 1"
+         * als dramatisch oder als belanglos, je nach Tagesform — dieselbe
+         * Begründung wie bei den ADX-Schwellen weiter oben.
+         */
+        const verteilung = [`oberhalb ${geld(h.masseOben)}`, `unterhalb ${geld(h.masseUnten)}`]
+        if (nz(h.verhaeltnis) && h.schwerer) {
+            verteilung.push(`Verhältnis ${h.verhaeltnis.toFixed(1)} zu 1 zugunsten ${h.schwerer}`)
+        } else {
+            verteilung.push('nur eine Seite trägt Masse, ein Verhältnis gibt es nicht')
+        }
+        dazu('hebelzonen', `Verteilung des Zwangsschlussdrucks im Band ±${h.spannePct} % um den Kurs: `
+            + verteilung.join(', ')
+            + '. Ab etwa 1,5 zu 1 ist eine Seite deutlich schwerer beladen, unter 1,2 zu 1 ist das ausgeglichen.'
+            + (nz(h.gefegtAnteil)
+                ? ` Vom modellierten Bestand hat der Kurs im Fenster bereits ${(h.gefegtAnteil * 100).toFixed(0)} %`
+                  + ' durchlaufen; diese Zonen sind abgeräumt und stecken nicht in den Zahlen oben.'
+                : ''))
+
+        /*
+         * Die Grenzen sind NICHT optional. Der Schlusssatz ist der wichtigste
+         * der ganzen Zeile: Ohne ihn wird aus „dichtes Cluster oben" mit
+         * grosser Zuverlässigkeit „geht hoch" — dieselbe Sorte Fehllesung wie
+         * beim Bewegungsvorrat, wo ein Modell „genutzt 118 %" als
+         * „Kursanstieg von 118 %" gelesen hat.
+         */
+        const grenzen = []
+        if (nz(h.spanneStunden)) grenzen.push(`Fenster ${h.spanneStunden.toFixed(1)} h`)
+        if (nz(h.abdeckung)) {
+            /*
+             * Die Abdeckung wird ERKLÄRT, nicht als Warnung gesetzt. Gemessen
+             * liegt sie bei den grossen Märkten zwischen 7 und 16 % — das ist
+             * der Normalfall, nicht der Ausnahmefall: Das Modell sieht nur den
+             * Zuwachs im Fenster, alles Ältere kennt es nicht. Eine Warnung,
+             * die immer leuchtet, liest niemand mehr.
+             */
+            grenzen.push(`erfasst ${(h.abdeckung * 100).toFixed(0)} % des offenen Interesses`
+                + ' (der Rest stammt aus der Zeit vor dem Fenster und ist dem Modell unbekannt)'
+                + (h.duenn ? ' — bei unter 5 % tragen die Beträge unten kaum' : ''))
+        }
+        if (nz(h.mmr)) {
+            grenzen.push(`Wartungsmarge ${(h.mmr * 100).toFixed(2)} %`
+                + (h.mmrQuelle ? ` (${h.mmrQuelle}${h.mmrErsatz ? ', Ersatzquelle' : ''}${h.mmrVeraltet ? ', veraltet' : ''})` : ''))
+        }
+        if (h.stufen?.length) {
+            grenzen.push(`gerechnete Hebelstufen ${h.stufen.join('x/')}x`
+                + (nz(h.maxHebel) && h.maxHebel > 0 ? ` bei Höchsthebel ${h.maxHebel}x` : ', Höchsthebel unbekannt'))
+        }
+        dazu('hebelzonen', `Grenzen dieser Hebelkarte: ${grenzen.join(', ')}.`
+            + ' Das Modell erkennt Positionen nur daran, dass das offene Interesse steigt;'
+            + ' wo innerhalb einer Kerze eröffnet wurde und wie die Hebel verteilt sind, weiss es nicht.'
+            + ' Cluster sind Orte möglichen Zwangsflusses, keine Kursziele und keine Richtungsaussage.')
+    }
+
     // ── Positionierung ──────────────────────────────────────────────────
     if (d.lsoi?.jetzt) {
         const j = d.lsoi.jetzt

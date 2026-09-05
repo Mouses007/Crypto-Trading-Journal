@@ -169,6 +169,7 @@ const QUELLE_NAME = {
     mechanik15: 'Mechanik 15m',
     mechanik1h: 'Mechanik 1h',
     liqJetzt: 'Liquidationen live',
+    hebelzonen: 'Liquidations-Cluster',
     lsoi: 'Long/Short',
     funding: 'Funding',
     rsi: 'RSI',

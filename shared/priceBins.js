@@ -72,3 +72,22 @@ export function followMid(view, midBucket, rows, deadZone = 0.35) {
     const shift = Math.round(midBucket - center)
     return { lo: view.lo + shift, hi: view.hi + shift, shifted: true }
 }
+
+/**
+ * Grobe Tickgrösse aus der Preishöhe ableiten.
+ *
+ * `inferTickSize` braucht einen Orderbuch-Schnappschuss. Wer nur Kerzen hat
+ * (die Hebelkarte im Browser, `server/hebelzonen.js` auf dem Server), kennt
+ * den nicht — für die Zeilenbreite reicht die Grössenordnung völlig, ein
+ * Bucket umfasst ohnehin viele Ticks.
+ *
+ * Stand bis zum 05.09.2026 in `src/utils/leverageMapSource.js`; hierher
+ * gezogen, als der Server dieselbe Ableitung brauchte. Zweimal im Baum wäre
+ * genau die Art Duplikat, gegen die es dieses Modul gibt.
+ */
+export function grobeTickgroesse(mid) {
+    if (mid > 1000) return 0.1
+    if (mid > 10) return 0.001
+    if (mid > 0.1) return 0.00001
+    return 0.0000001
+}
