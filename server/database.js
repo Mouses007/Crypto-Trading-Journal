@@ -125,7 +125,14 @@ async function fixPostgresSequences(knex) {
 // `oi_minute` (eigenes 1-Minuten-Open-Interest-Archiv — Binance bietet kein
 // 1m-OI, die feinste Historie ist 5m). Rein additiv; ein älterer Codestand
 // kennt beide Tabellen nicht und läuft unverändert weiter.
-const SCHEMA_VERSION = 15
+// v16: `gesamtSchwer` an `quiz_fortschritt` — eigener Zähler für die Bewertung
+// „Schwer", die vorher in `gesamtRichtig` steckte und damit die Erfolgsquote
+// beschönigte (siehe `auswerten` in shared/leitner.js). Rein additiv, Default
+// 0. Ein älterer Codestand schreibt die Spalte nicht: er bucht „Schwer"
+// weiterhin als Treffer, seine Quote fällt also zu gut aus — die Zahlen
+// laufen zwischen altem und neuem Stand auseinander, ohne dass etwas kaputt
+// geht.
+const SCHEMA_VERSION = 16
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
