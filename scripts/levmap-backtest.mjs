@@ -36,7 +36,7 @@ import { schaetzeHebelVerteilung } from '../server/liq-kalibrierung.js'
 import {
     buildLeverageHistory, LEVERAGE_TIERS, effektiveStufen,
     liqPriceLong, liqPriceShort,
-} from '../src/utils/leverageMap.js'
+} from '../shared/leverageMap.js'
 import { pickBucketSize } from '../shared/priceBins.js'
 
 const gunzip = promisify(zlib.gunzip)

@@ -10,7 +10,7 @@
  * Vue Proxies legen würde. Nach aussen gehen nur Skalare über `onStatus`.
  */
 import axios from 'axios'
-import { buildLeverageMap, buildEntryMap, LEVERAGE_TIERS } from './leverageMap.js'
+import { buildLeverageMap, buildEntryMap, LEVERAGE_TIERS } from '../../shared/leverageMap.js'
 import { pickBucketSize } from '../../shared/priceBins.js'
 
 /**

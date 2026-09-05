@@ -10,6 +10,35 @@
  * genau dieses Modul, damit die Verifikation dasselbe Modell prüft, das auch
  * gezeichnet wird.
  *
+ * ── Warum die Datei in `shared/` liegt ────────────────────────────────────
+ *
+ * Am 05.09.2026 aus `src/utils/` hierher verschoben. Browser-gebunden war sie
+ * nie — kein DOM, kein axios, kein Vue, und die einzige Abhängigkeit
+ * (`liquidation.js`) lag schon immer hier. Der frühere Ort war eine
+ * Ablage-Entscheidung, keine technische.
+ *
+ * Gebraucht hat den Umzug die KI-Kachel „Handelslage" (`server/handelslage.js`
+ * über `server/hebelzonen.js`): Sie soll die Liquidations-Cluster als
+ * Grundlagenzeile bekommen, und im Projekt gilt „der Server importiert nicht
+ * aus `src/`". Nebeneffekt: `server/liq-kalibrierung.js` hatte `effektiveStufen`
+ * von Hand nachgebaut, weil die Regel im Weg stand — dieser Nachbau ist mit
+ * dem Umzug entfallen.
+ *
+ * Drei Nutzer, ein Modell: Browser (Liquidationskarte), Server (Handelslage)
+ * und das Backtest-Skript (`scripts/levmap-backtest.mjs`).
+ *
+ * ── Kanon ─────────────────────────────────────────────────────────────────
+ *
+ *  • `mmr` ist ein BRUCH, nie Prozent (0,004 = 0,4 %). Der Einheiten-Kanon
+ *    steht in `liquidation.js`; wer hier Prozent einsetzt, schaltet die
+ *    Wartungsmarge faktisch aus und bekommt trotzdem plausible Zahlen.
+ *  • Das Modul HOLT NICHTS. Punkte kommen von aussen, ebenso `mmr` und
+ *    `maxHebel` — damit es netzfrei und in jedem Kontext gleich rechnet.
+ *  • Es ZEICHNET NICHT. Das macht `src/utils/leverageMapRenderer.js`, der
+ *    bewusst in `src/` bleibt (Canvas).
+ *  • Es kennt keine Positionsgrössen: gerechnet wird immer mit Stufe 1 der
+ *    Margin-Klammern.
+ *
  * Was das Modell NICHT kann, in der Reihenfolge der Schwere:
  *  1. ΔOI ist ein Saldo. Innerhalb einer Periode öffnen und schliessen viele
  *     Positionen; der Umschlag bleibt unsichtbar.
@@ -27,7 +56,7 @@
  *     O(n·Zeilen) statt des O(n)-Tricks und steht deshalb noch aus.
  */
 
-import { liqPreisLong, liqPreisShort, hebelHaltbar } from '../../shared/liquidation.js'
+import { liqPreisLong, liqPreisShort, hebelHaltbar } from './liquidation.js'
 
 export const LEVERAGE_TIERS = [10, 25, 50, 100]
 

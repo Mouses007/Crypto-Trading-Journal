@@ -76,7 +76,7 @@ export class LeverageMapRenderer {
      * dort sind es höchstens ein paar hundert Balken.
      *
      * @param {object} opts
-     * @param {ReturnType<import('./leverageMap.js').buildLeverageHistory>} opts.hist
+     * @param {ReturnType<import('../../shared/leverageMap.js').buildLeverageHistory>} opts.hist
      * @param {number} opts.viewPct   gezeigte Spanne um den letzten Preis
      * @param {Function} opts.formatTime
      */
@@ -373,7 +373,7 @@ export class LeverageMapRenderer {
 
     /**
      * @param {object} opts
-     * @param {import('./leverageMap.js').LeverageMap|null} opts.map
+     * @param {import('../../shared/leverageMap.js').LeverageMap|null} opts.map
      * @param {number} opts.mid          aktueller Preis (Mittellinie)
      * @param {number} opts.viewPct      gezeigte Spanne um den Mid, einseitig
      * @param {number[]|'all'} opts.tier gewählte Hebelwerte (z.B. [50,100]) oder

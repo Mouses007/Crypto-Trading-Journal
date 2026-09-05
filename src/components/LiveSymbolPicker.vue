@@ -22,7 +22,7 @@ import {
     levMapTier, levMapHours, levMapSpanPct, levMapView, levMapThreshold, levMapMmr, levMapMmrQuelle, levMapProfileW, levMapWeights,
     VIEW_PCT_OPTIONS, FRAME_MS_OPTIONS, FAVORITE_SYMBOLS,
 } from '../stores/live.js'
-import { LEVERAGE_TIERS, parseTierAuswahl } from '../utils/leverageMap.js'
+import { LEVERAGE_TIERS, parseTierAuswahl } from '../../shared/leverageMap.js'
 import { mmrHerkunft } from '../utils/marginRate.js'
 
 const props = defineProps({

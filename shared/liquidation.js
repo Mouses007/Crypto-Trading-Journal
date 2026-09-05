@@ -3,7 +3,7 @@
  *
  * Bis zum Audit vom 19.08.2026 rechneten zwei Stellen unabhängig voneinander:
  * der Fill-Simulator (`server/fill-simulator.js`) legte die Wartungsmarge auf
- * das EINSTIEGS-Nominal, die Hebelkarte (`src/utils/leverageMap.js`) auf das
+ * das EINSTIEGS-Nominal, die Hebelkarte (`leverageMap.js`, seit 05.09.2026 daneben) auf das
  * MARK-Nominal — letzteres ist die Formel der Börsen (Binance USDⓈ-M, Stufe 1).
  *
  * Die Differenz der beiden Formeln ist wirtschaftlich vernachlässigbar

@@ -19,7 +19,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LeverageMapSource } from '../utils/leverageMapSource.js'
-import { buildLeverageHistory, LEVERAGE_TIERS, parseTierAuswahl } from '../utils/leverageMap.js'
+import { buildLeverageHistory, LEVERAGE_TIERS, parseTierAuswahl } from '../../shared/leverageMap.js'
 import { LeverageMapRenderer } from '../utils/leverageMapRenderer.js'
 import {
     liveSymbol,

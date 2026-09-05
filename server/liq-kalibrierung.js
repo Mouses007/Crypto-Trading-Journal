@@ -31,7 +31,7 @@
  */
 
 import axios from 'axios'
-import { hebelHaltbar } from '../shared/liquidation.js'
+import { effektiveStufen, tierPossible, LEVERAGE_TIERS } from '../shared/leverageMap.js'
 import { leseLiquidationen } from './live-recorder.js'
 import { holeMarginRate, MMR_VORGABE } from './margin-rates.js'
 import { notiereGewicht, melde429, warteAufGewicht } from './binance-takt.js'
@@ -75,22 +75,21 @@ function untereGrenze(zeiten, ziel) {
  */
 export function schaetzeHebelVerteilung(events, kerzen, opts = {}) {
     const {
-        tiers = [10, 25, 50, 100], mmr = MMR_VORGABE, maxHebel = 0,
+        tiers = LEVERAGE_TIERS, mmr = MMR_VORGABE, maxHebel = 0,
         rueckblickMs = 48 * 60 * 60 * 1000,
     } = opts
 
-    // Stufen klemmen wie im Kartenmodell (effektiveStufen in
-    // src/utils/leverageMap.js — hier lokal, der Server importiert nicht aus
-    // src/): kollabierte und unhaltbare Stufen existieren beim Symbol nicht.
-    const deckel = Number(maxHebel) > 1 ? Number(maxHebel) : 0
-    const belegt = new Set()
-    const stufen = []
-    for (const L of tiers) {
-        const effektiv = deckel ? Math.min(L, deckel) : L
-        if (belegt.has(effektiv) || !hebelHaltbar(effektiv, mmr)) continue
-        belegt.add(effektiv)
-        stufen.push({ nominal: L, effektiv })
-    }
+    /*
+     * Stufen klemmen wie im Kartenmodell: kollabierte und unhaltbare Stufen
+     * existieren beim Symbol nicht.
+     *
+     * Hier stand bis zum 05.09.2026 ein handgeschriebener Nachbau von
+     * `effektiveStufen`, mit der Begründung „der Server importiert nicht aus
+     * src/". Seit die Hebelkarte in `shared/leverageMap.js` liegt, steht die
+     * Regel nicht mehr im Weg — dieselbe Zeile wie in `buildLeverageMap` und
+     * `buildLeverageHistory`, also mit Sicherheit dasselbe Ergebnis.
+     */
+    const stufen = effektiveStufen(tiers, maxHebel).filter(s => tierPossible(s.effektiv, mmr))
 
     const leer = {
         gewichte: null, unerklaertPct: 0, anzahl: events.length,
