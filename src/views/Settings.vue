@@ -1021,6 +1021,33 @@ let radarNewsMeldungsTiefe = ref('knapp')
    das Symbol daneben. */
 let radarNewsLagenAn = ref(true)
 let radarNewsLagenSymbol = ref('BTCUSDT')
+/*
+ * Prüft das eingetippte Symbol gegen die echte Binance-Liste.
+ *
+ * Der Server prüft nur die GESTALT (`/^[A-Z0-9]{2,20}$/`) — „SOLUSD" und
+ * „FOOBAR" bestehen das beide. Danach wirft `erzeugeHandelslage`, es landet in
+ * einem `logWarn`, und die Handelslage fehlt im Bericht, ohne dass irgendwo
+ * steht warum. Ein Tippfehler darf nicht erst am nächsten Morgen auffallen,
+ * indem etwas NICHT da ist.
+ *
+ * `loadSymbolMeta` hält die Liste modulweit; Picker und Datenfeed benutzen
+ * dieselbe, der Abruf kostet hier also im Regelfall nichts.
+ */
+const lagenSymbolWarnung = ref('')
+
+async function pruefeLagenSymbol() {
+    const wert = String(radarNewsLagenSymbol.value || '').trim().toUpperCase()
+    lagenSymbolWarnung.value = ''
+    if (!wert) return
+    try {
+        const liste = await loadSymbolMeta('futures')
+        // Leere Liste heisst „Binance war nicht erreichbar", nicht „Symbol
+        // falsch" — dann lieber nichts behaupten.
+        if (liste.length && !liste.some(x => x.symbol === wert)) {
+            lagenSymbolWarnung.value = t('settings.ki.news.lagenSymbolUnbekannt', { symbol: wert })
+        }
+    } catch { /* siehe oben: keine Liste, keine Aussage */ }
+}
 let radarNewsTokenBudget = ref(0)
 let radarNewsVideoTiefe = ref('normal')
 let radarNewsVideoTokens = ref(0)
@@ -1161,6 +1188,7 @@ function loadRadarSettings() {
         ? s.radarNewsMeldungsTiefe : 'knapp'
     radarNewsLagenAn.value = Number(s.radarNewsLagenAn ?? 1) === 1
     radarNewsLagenSymbol.value = s.radarNewsLagenSymbol || 'BTCUSDT'
+    pruefeLagenSymbol()
     radarNewsTokenBudget.value = Math.max(0, Math.min(60000, Number(s.radarNewsTokenBudget) || 0))
     radarNewsVideoTiefe.value = ['knapp', 'normal', 'ausfuehrlich'].includes(s.radarNewsVideoTiefe)
         ? s.radarNewsVideoTiefe : 'normal'
@@ -4810,8 +4838,9 @@ onBeforeMount(async () => {
                                     <input type="text" class="form-control form-control-sm text-uppercase"
                                         style="max-width:9rem;" placeholder="BTCUSDT"
                                         v-model="radarNewsLagenSymbol"
-                                        @change="radarNewsLagenSymbol = (radarNewsLagenSymbol || 'BTCUSDT').toUpperCase(); radarSpeichern('radarNewsLagenSymbol')" />
-                                    <small class="text-muted">{{ t('settings.ki.news.lagenSymbolHint') }}</small>
+                                        @change="radarNewsLagenSymbol = (radarNewsLagenSymbol || 'BTCUSDT').toUpperCase(); radarSpeichern('radarNewsLagenSymbol'); pruefeLagenSymbol()" />
+                                    <small v-if="lagenSymbolWarnung" class="text-warning">{{ lagenSymbolWarnung }}</small>
+                                    <small v-else class="text-muted">{{ t('settings.ki.news.lagenSymbolHint') }}</small>
                                 </template>
                             </div>
                         </div>

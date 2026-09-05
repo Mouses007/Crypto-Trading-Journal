@@ -513,7 +513,8 @@
         "lagenHint": "Gesamtlage (Zyklus) und Handelslage (Tagesspanne, Bedingungen) werden beim Bericht neu gerechnet und stehen vor den Nachrichten. Zusammen rund 0,008 $ je Bericht.",
         "lagenAn": "Im Bericht mitschicken",
         "lagenSymbol": "Handelslage für",
-        "lagenSymbolHint": "Die Handelslage misst einen einzelnen Markt — Tagesspanne, VWAP, Mechanik."
+        "lagenSymbolHint": "Binance-Perpetual, z. B. BTCUSDT oder SOLUSDT — die Handelslage misst diesen einen Markt.",
+        "lagenSymbolUnbekannt": "{symbol} führt Binance nicht als Perpetual — die Handelslage würde im Bericht fehlen."
       },
       "agentBudget": "Token-Budget je Lauf",
       "agentBudgetHint": "Obergrenze für einen Agenten-Lauf über alle Denkrunden (Eingabe + Ausgabe). Ist sie erreicht, fasst der Agent die bis dahin gesammelten Ergebnisse zusammen. Mehr Budget = tiefere Analysen, aber höhere Kosten je Frage."

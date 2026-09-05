@@ -513,7 +513,8 @@
         "lagenHint": "Overall situation (cycle) and trading situation (day range, conditions) are recomputed for each report and placed before the news. Around $0.008 per report combined.",
         "lagenAn": "Include in the report",
         "lagenSymbol": "Trading situation for",
-        "lagenSymbolHint": "The trading situation measures a single market — day range, VWAP, mechanics."
+        "lagenSymbolHint": "A Binance perpetual, e.g. BTCUSDT or SOLUSDT — the trading situation measures this one market.",
+        "lagenSymbolUnbekannt": "Binance does not list {symbol} as a perpetual — the trading situation would be missing from the report."
       },
       "agentBudget": "Token budget per run",
       "agentBudgetHint": "Upper limit for one agent run across all reasoning rounds (input + output). When reached, the agent summarises what it has found so far. More budget = deeper analyses, but higher cost per question."
