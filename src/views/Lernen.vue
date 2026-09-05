@@ -205,7 +205,7 @@ const niveauVonKarte = (karte) => Number(karte?.niveau) || 1
 
 const eigeneKarten = computed(() => karten.value.filter(k => k.herkunft !== 'built-in'))
 
-const niveauFilter = ref('alle') // 'alle' | 1 | 2
+const niveauFilter = ref('alle') // 'alle' oder eine Stufe aus NIVEAUS
 const builtinKartenAlle = computed(() => karten.value.filter(k => k.herkunft === 'built-in'))
 const builtinKarten = computed(() => niveauFilter.value === 'alle'
     ? builtinKartenAlle.value
