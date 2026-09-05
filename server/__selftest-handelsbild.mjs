@@ -439,6 +439,60 @@ console.log('\nBedingungen: Richtung und Entwertung')
     check('GEGENPROBE Bedingung ohne Kursmarken bleibt', ohneKurs.bedingungen.length === 1)
     check('GEGENPROBE Marke ohne Kursmarke bleibt', ohneKurs.hinfaellig.length === 1)
 
+    /*
+     * Derselbe Fall, aber mit einer Zahl im `dann`, die UNTER der Prozentzahl
+     * im `wenn` liegt. Der Fall darüber kann den Fehler bauartbedingt nicht
+     * sehen: „1,8x" wird als Einheit ausgeschlossen, die Prüfung läuft über
+     * eine leere Marken-Liste und kann gar nicht scheitern.
+     *
+     * Hier ist „0,6" eine nackte Zahl. Gilt „0,8 %" faelschlich als
+     * Kursmarke, wird sie zur Schwelle, 0,6 liegt darunter und in der Spanne
+     * — und eine voellig richtige Bedingung fliegt als „unmoeglich" raus.
+     * Genau das ist beim ersten Anlauf des Fixes am 05.09.2026 passiert, und
+     * alle 3388 Pruefungen blieben dabei gruen.
+     */
+    const prozentImWenn = normalisiereHandelslage({
+        ueberschrift: 'x', text: 'y',
+        bedingungen: [{ wenn: 'das offene Interesse weiter über +0,8 % steigt',
+            dann: 'faellt der RVOL auf 0,6 zurueck' }],
+    })
+    check('GEGENPROBE Prozent im wenn wird nicht zur Kursschwelle',
+        prozentImWenn.bedingungen.length === 1,
+        `${prozentImWenn.bedingungen.length} von 1 ueberlebt`)
+
+    // Und die Umkehr: eine ECHTE Kursmarke muss weiter greifen
+    const echteMarke = normalisiereHandelslage({
+        ueberschrift: 'x', text: 'y',
+        bedingungen: [{ wenn: 'der Kurs über 79683 USD steigt', dann: 'faellt er auf 79000' }],
+    })
+    check('echte Kursmarke wirkt weiterhin als Schwelle',
+        echteMarke.bedingungen.length === 0,
+        `${echteMarke.bedingungen.length} ueberlebt, erwartet 0`)
+
+    /*
+     * Die andere Haelfte desselben Audit-Befunds: Ohne Wortgrenze griff die
+     * Einheit `h` in das FOLGEWORT, „79683 halten" galt als „79683 Stunden"
+     * und verschwand als Kursmarke. Die Bedingung ging dann offen aus und
+     * blieb stehen, obwohl sie sich widerspricht.
+     *
+     * Dieser Fall wird ROT mit der Fassung von vor dem 05.09.2026 — die
+     * bestehenden Faelle konnten ihn nicht sehen, weil in keinem eine Zahl
+     * unmittelbar vor einem Wort mit `h`, `x` oder `min` stand.
+     */
+    for (const [wort, wenn] of [
+        ['halten', 'der Kurs über 79683 halten kann'],
+        ['hoch', 'der Kurs über 79683 hoch bleibt'],
+        ['maximal', 'der Kurs über 79683 maximal ausdehnt'],
+    ]) {
+        const r = normalisiereHandelslage({
+            ueberschrift: 'x', text: 'y',
+            bedingungen: [{ wenn, dann: 'faellt er auf 79000 zurueck' }],
+        })
+        check(`Zahl vor „${wort}" bleibt eine Kursmarke`,
+            r.bedingungen.length === 0,
+            `${r.bedingungen.length} ueberlebt, erwartet 0 (Marke wurde nicht erkannt)`)
+    }
+
     // GEGENPROBE 3: Eine Zahl in ganz anderer Grössenordnung im `dann` ist
     // keine Kursmarke der Schwelle — 250 Mio USD Umsatz neben 79683 USD Kurs.
     const andereGroesse = normalisiereHandelslage({

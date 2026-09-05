@@ -601,16 +601,30 @@ export function baueHandelsZeilen(d = {}) {
 function kursmarken(text) {
     const raus = []
     /*
-     * `\b` hinter der Einheitengruppe ist Pflicht: Ohne sie greift `h` in das
-     * FOLGEWORT, und „über 79683 halten" wurde als „79683 Stunden" gelesen und
-     * damit als Kursmarke verworfen (ebenso „79683 hoch"). Meist bleibt das
-     * folgenlos, weil die Prüfung dann nichts findet und offen ausgeht —
-     * stehen im Satz aber ZWEI Marken und eine verschwindet, wählt
-     * `Math.max`/`Math.min` unten die falsche Schwelle, und eine korrekte
-     * Bedingung fliegt raus. Genau das nennt der Kommentar unten „schlimmer
-     * als keine Prüfung". Gefunden im Audit vom 05.09.2026.
+     * Die Wortgrenze gehört NUR an die Buchstaben-Einheiten, nicht an `%`.
+     *
+     * Ohne Grenze greift `h` in das FOLGEWORT: „über 79683 halten" wurde als
+     * „79683 Stunden" gelesen und damit als Kursmarke verworfen (ebenso
+     * „79683 hoch").
+     *
+     * Der erste Anlauf hängte `\b` hinter die GANZE Gruppe — und baute damit
+     * den umgekehrten, schlimmeren Fehler ein: `%` ist kein Wortzeichen, also
+     * gibt es zwischen `%` und dem folgenden Leerzeichen keine Wortgrenze.
+     * `\b` scheiterte, die Gruppe fiel per Backtracking auf „leer" zurück, und
+     * eine PROZENTZAHL galt plötzlich als Kursmarke: „OI weiter über +0,8 %
+     * steigt" lieferte 0,8. Damit wurde 0,8 zur Schwelle, und eine völlig
+     * richtige Bedingung („dann fällt der RVOL auf 0,6") flog als unmöglich
+     * raus — genau die Richtung, die der Kommentar unten „schlimmer als keine
+     * Prüfung" nennt.
+     *
+     * Beide Fassungen liefen durch alle Selbsttests. Der Fehler war
+     * unsichtbar, weil der vorhandene Prozent-Fall im `dann` nur „1,8x"
+     * enthielt: `x` wird korrekt ausgeschlossen, die Prüfung lief also über
+     * eine leere Marken-Liste und konnte gar nicht scheitern.
+     *
+     * Audit vom 05.09.2026, beide Runden.
      */
-    const re = /(\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,](\d+))?\s*(%|prozent|x|h|min)?\b/gi
+    const re = /(\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,](\d+))?\s*(%|(?:prozent|x|h|min)\b)?/gi
     let m
     while ((m = re.exec(String(text || '')))) {
         if (m[3]) continue                     // 25 %, 4 h, 20x — kein Preis
