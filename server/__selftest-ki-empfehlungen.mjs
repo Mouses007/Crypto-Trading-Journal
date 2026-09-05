@@ -89,6 +89,28 @@ console.log('\nLagebericht (Nachrichten)')
     check('nichts Erfundenes gilt in beiden Fassungen',
         aus.includes('Nichts erfinden') && an.includes('Nichts erfinden'))
 
+    /*
+     * MIT eigenen Anweisungen — die Lücke, durch die der erste Anlauf fiel.
+     *
+     * `eigeneAnweisungen()` schreibt einen eigenen Block, und der beteuerte
+     * unbedingt „keine Handelsempfehlungen, keine Kursziele, keine Prognosen",
+     * auch wenn die REGELN oben sie gerade erlaubten. Zwei sich
+     * widersprechende Sätze im selben Prompt — derselbe Bautyp, gegen den
+     * dieser Schalter überhaupt angetreten ist. Der Selbsttest traf die Stelle
+     * nicht, weil er ohne `zusatz` prüfte und der Block dann gar nicht
+     * entsteht. Aufgefallen im Audit vom 05.09.2026.
+     */
+    const mitZusatz = bauLagePrompt({ themen: ['crypto'], empfehlungen: true, zusatz: 'Schreib knapper.' })
+    check('mit eigenen Anweisungen kein widersprüchliches Verbot',
+        !mitZusatz.includes('keine Handelsempfehlungen, keine Kursziele, keine Prognosen'),
+        'der Anweisungsblock beteuert sonst das Gegenteil der REGELN')
+    check('der Anweisungsblock steht überhaupt drin', mitZusatz.includes('EIGENE ANWEISUNGEN'))
+    check('„nichts erfinden" bleibt auch dort unverrückbar', mitZusatz.includes('nichts\nerfinden'))
+    // GEGENPROBE: ausgeschaltet MUSS das Verbot im Anweisungsblock stehen.
+    const ausMitZusatz = bauLagePrompt({ themen: ['crypto'], zusatz: 'Schreib knapper.' })
+    check('GEGENPROBE ausgeschaltet steht das Verbot im Anweisungsblock',
+        ausMitZusatz.includes('keine Handelsempfehlungen, keine Kursziele, keine Prognosen'))
+
     // Die Anweisungsprüfung darf nicht „gegenregel" sagen zu etwas, das der
     // Leser per Einstellung erlaubt hat.
     check('Anweisungsprüfung zieht mit',

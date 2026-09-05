@@ -891,7 +891,7 @@ export const ZUSATZ_MAX = 2000
  *
  * Rein und ohne Netz, damit der Selbsttest sie prüfen kann.
  */
-export function eigeneAnweisungen(zusatz) {
+export function eigeneAnweisungen(zusatz, empfehlungen = false) {
     const text = String(zusatz || '').trim().slice(0, ZUSATZ_MAX)
     if (!text) return ''
     return `EIGENE ANWEISUNGEN DES LESERS — sie haben VORRANG:
@@ -904,7 +904,7 @@ unter UMFANG etwas anderes steht — dort steht die Vorgabe, hier steht der
 Wille des Lesers.
 
 Nur zwei Dinge kann auch sie nicht aushebeln: die REGELN oben — also
-keine Handelsempfehlungen, keine Kursziele, keine Prognosen, nichts
+${empfehlungen ? '' : 'keine Handelsempfehlungen, keine Kursziele, keine Prognosen, '}nichts
 erfinden — und das Antwortformat: genau das JSON unten, mit genau den
 Kapiteln von oben.
 
@@ -994,7 +994,14 @@ export function bauLagePrompt({ themen = ['crypto'], laenge = 'mittel', rhythmus
         ? 'seit dem bisherigen Bericht'
         : (abdeckung || (rhythmus === 'woechentlich' ? 'der vergangenen Woche' : 'der letzten 36 Stunden'))
     const kapitelListe = themen.map(t => `- "${t}": ${THEMEN_NAMEN[t] || t}`).join('\n')
-    const eigene = eigeneAnweisungen(zusatz)
+    /*
+     * Der Schalter muss BIS HIER durchgereicht werden, sonst steht das Verbot
+     * im Anweisungsblock, waehrend die REGELN oben es gerade erlauben — genau
+     * der Bautyp, gegen den `c50234d` angetreten ist, eine Etage tiefer.
+     * Aufgefallen erst im Audit, weil der Selbsttest ohne `zusatz` prueft und
+     * der Block dann gar nicht entsteht.
+     */
+    const eigene = eigeneAnweisungen(zusatz, empfehlungen)
 
     /*
      * Der Aufsatz für die Aktualisierung.
@@ -2275,7 +2282,15 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
              * Abendausgabe von 20:00 kommt jetzt aber durch, statt ungesehen
              * zu verfallen.
              */
+            /*
+             * NUR Tagesberichte, keine Zwischenmeldungen. Eine Zwischenmeldung
+             * laesst das Chartanalyse-Kapitel bewusst weg — sie wuerde das
+             * Fenster also hinter ein Chartvideo schieben, das nie in einem
+             * Chartkapitel angekommen ist. Dasselbe stille Verfallen, gegen das
+             * `0c842a9` angetreten ist, nur eine Etage kleiner.
+             */
             const letzterBericht = await knex('news_digests')
+                .whereNot('art', 'update')
                 .orderBy('erstelltAm', 'desc').first().catch(() => null)
             const heuteAb = videoFensterAb(Date.now(), s?.timeZone, Number(letzterBericht?.erstelltAm) || 0)
             const videos = []
@@ -2893,7 +2908,11 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         lage: entdoppelt.bericht.lage.slice(0, 4000),
         punkte: JSON.stringify(entdoppelt.bericht.punkte),
         kapitel: JSON.stringify(kapitelMitInhalt),
-        themen: themen.join(','),
+        // Aus den Kapiteln, die es WIRKLICH in den Bericht geschafft haben,
+        // nicht aus der Einstellung: Der Kopf der Seite zeichnet je Eintrag ein
+        // Kaertchen, und „Chartanalyse" ueber einem Bericht ohne
+        // Chartanalyse-Kapitel ist eine Aussage, die der Inhalt nicht deckt.
+        themen: kapitelMitInhalt.map(k => k?.thema).filter(Boolean).join(','),
         laenge,
         beitraege: beitraege.length,
         videos: videosVerwendet,

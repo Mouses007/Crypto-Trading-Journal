@@ -555,6 +555,30 @@ const T = (tag, stunde) => Date.UTC(2026, 8, tag, stunde, 0, 0)
         videoFensterAb(jetzt, '', gestern10) > jetzt - 48 * 3600000)
     pruefe('eigener Deckel wird beachtet',
         videoFensterAb(jetzt, '', langePause, 12 * 3600000) === jetzt - 12 * 3600000)
+
+    /*
+     * ZWISCHENMELDUNGEN ZÄHLEN NICHT ALS LETZTER BERICHT.
+     *
+     * Eine Zwischenmeldung lässt das Chartanalyse-Kapitel bewusst weg. Zählte
+     * sie mit, begänne das Fenster des nächsten Tagesberichts NACH einem
+     * Chartvideo, das nie in einem Chartkapitel angekommen ist — dasselbe
+     * stille Verfallen, gegen das diese Funktion angetreten ist. Die Auswahl
+     * dafür steht in der Abfrage (`whereNot('art','update')`), hier wird
+     * festgehalten, WARUM die Zahl, die hereingereicht wird, die des
+     * Tagesberichts sein muss.
+     *
+     * Aufgefallen im Audit vom 05.09.2026, nicht im ersten Anlauf.
+     */
+    const update16 = T(4, 16)           // Zwischenmeldung gestern 16:00
+    pruefe('gegen den Tagesbericht gerechnet bleibt die Abendausgabe drin',
+        T(4, 20) >= videoFensterAb(jetzt, '', gestern10))
+    pruefe('gegen die Zwischenmeldung gerechnet fiele sie heraus',
+        T(4, 20) >= videoFensterAb(jetzt, '', update16)
+        && videoFensterAb(jetzt, '', update16) > videoFensterAb(jetzt, '', gestern10),
+        'deshalb filtert die Abfrage Zwischenmeldungen aus')
+    pruefe('ein Chartvideo VOR der Zwischenmeldung wäre verloren',
+        T(4, 14) < videoFensterAb(jetzt, '', update16)
+        && T(4, 14) >= videoFensterAb(jetzt, '', gestern10))
 }
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
