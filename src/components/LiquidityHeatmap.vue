@@ -96,12 +96,27 @@ let cursor = null
 // dem Trade-Stream sind in dieser Einheit, nicht in USDT.
 const baseAsset = computed(
     () => (liveSymbol.value || '').replace(/(USDT|USDC|BUSD|USD)$/, '') || '')
-let drag = null            // { y, lo, hi, x, colOffset0, axis } während des Ziehens
+let drag = null            // { y, lo, hi, x, colOffset0, zukunft0, axis } während des Ziehens
 let frozenHead = null      // Ring-Position, an der die Ansicht eingefroren wurde
 let framesSinceFreeze = 0
 // Spalten, um die der Anker gegenüber frozenHead/Live-Kopf zurückversetzt ist —
 // wächst beim horizontalen Ziehen, um ältere Wände in der Heatmap zu zeigen.
 let colOffset = 0
+/*
+ * Breite des freien Feldes rechts, in Spalten (= Pixeln).
+ *
+ * Zieht man den Chart nach LINKS über die Gegenwart hinaus, entsteht dort
+ * Platz, in den das aktuelle Buch als waagerechte Linien gezeichnet wird —
+ * dieselbe Ansicht wie in Bookmap. In der Historie sind dieselben Orders über
+ * die Zeitachse verschmiert; im freien Feld sieht man auf einen Blick, wo die
+ * Wände liegen.
+ *
+ * Getrennt von `colOffset`, weil es zwei verschiedene Dinge sind:
+ * `colOffset` blättert in der Vergangenheit, `zukunftCols` schafft Platz für
+ * die Gegenwart. Beides in einer Zahl unterzubringen (negativer colOffset)
+ * hätte den Anker in einen Bereich gerechnet, den der Ring nicht hat.
+ */
+let zukunftCols = 0
 let dirtyHeat = false
 let dirtyOverlay = false
 let dirtyUi = false
@@ -153,6 +168,18 @@ const anchor = () => {
     // trifft genau die gewünschten colOffset Spalten.
     const head = base ?? ring.head
     return (((head - colOffset) % ring.cap) + ring.cap) % ring.cap
+}
+
+/**
+ * Anker auf das jüngste bekannte Buch — unabhängig davon, wie weit in der
+ * Historie zurückgeblättert wurde.
+ *
+ * Bei eingefrorener Ansicht ist das der eingefrorene Kopf: Wer anhält, will
+ * das Bild von damals festhalten, auch rechts.
+ */
+const jetztAnchor = () => {
+    if (isReplay()) return anchor()
+    return liveFrozen.value && frozenHead !== null ? frozenHead : (feed?.ring?.head ?? null)
 }
 
 /**
@@ -254,7 +281,13 @@ function loop() {
     const head = anchor()
     const frameMs = currentFrameMs()
     if (dirtyHeat) {
-        renderer.drawHeat(ring, view, head)
+        /*
+         * Zweiter Anker fürs freie Feld: dort steht immer das JÜNGSTE bekannte
+         * Buch, auch wenn man in der Historie zurückgeblättert hat. Sonst
+         * stünde rechts eine zweite Vergangenheit, und die Linien beantworteten
+         * die Frage nicht mehr, für die sie da sind.
+         */
+        renderer.drawHeat(ring, view, head, jetztAnchor())
         dirtyHeat = false
         dirtyOverlay = true
     }
@@ -286,6 +319,10 @@ function applySize() {
     const rect = wrapEl.value.getBoundingClientRect()
     if (rect.width < 10 || rect.height < 10) return
     renderer.resize(rect.width, rect.height)
+    // Der Renderer klemmt das freie Feld auf ein Drittel der neuen Breite —
+    // den geklemmten Wert zurückholen, sonst rechnet der nächste Zug mit einem
+    // Startwert, den es nicht mehr gibt.
+    zukunftCols = renderer.zukunft
     dirtyHeat = true
     // Die Verdichtung der Wiedergabe hängt an der Plotbreite — die steht beim
     // ersten Laden noch nicht immer fest (Layout, ausgeklapptes Seitenmenü).
@@ -438,6 +475,8 @@ async function startFeed() {
     frozenHead = null
     liveFrozen.value = false
     colOffset = 0
+    zukunftCols = 0
+    renderer?.setZukunft(0)
     panMs.value = 0
     feed = new LiveFeed({
         symbol: liveSymbol.value,
@@ -545,16 +584,43 @@ function onPointerMove(event) {
             if (drag.axis === 'y') {
                 // Ziehen heisst: der Nutzer will selbst bestimmen, wo die Achse steht
                 if (liveAutoFollow.value) liveAutoFollow.value = false
-            } else if (!isReplay() && !liveFrozen.value) {
-                // Zeitachse ziehen heisst zurückblättern — der Live-Rand darf
-                // dabei nicht weiterlaufen, sonst rutscht der Ausschnitt unter
-                // dem Finger weg.
-                liveFrozen.value = true
             }
+            /*
+             * Früher wurde hier pauschal eingefroren, sobald die Achse 'x' war.
+             * Das ist nur für das ZURÜCKBLÄTTERN richtig — beim Platzschaffen
+             * fürs aktuelle Buch wäre es falsch: Dort will man ja gerade
+             * zusehen, wie sich die Wände verschieben. Das Einfrieren passiert
+             * jetzt unten, wenn `colOffset` tatsächlich über null geht.
+             */
         }
         if (drag.axis === 'x') {
             if (isReplay()) return
-            colOffset = Math.max(0, Math.min(maxColOffset(), drag.colOffset0 + Math.round(x - drag.x)))
+            /*
+             * Der Zug wird von rechts nach links auf eine durchgehende Achse
+             * gelegt: Erst wird das freie Feld aufgebraucht, dann beginnt das
+             * Zurückblättern. So fühlt sich das Ziehen wie EINE Bewegung an,
+             * obwohl dahinter zwei verschiedene Grössen stehen.
+             */
+            /*
+             * EINE Achse für zwei Grössen, Vorzeichen ist hier alles:
+             *   nach RECHTS ziehen (dx > 0) → in der Historie zurückblättern
+             *   nach LINKS ziehen  (dx < 0) → Platz fürs aktuelle Buch schaffen
+             * Das entspricht der Leserichtung: Die Vergangenheit liegt links,
+             * man holt sie sich nach rechts ins Bild; das freie Feld gehört
+             * rechts hin, also schiebt man die Historie nach links weg.
+             */
+            const roh = drag.colOffset0 - drag.zukunft0 + Math.round(x - drag.x)
+            if (roh >= 0) {
+                colOffset = Math.min(maxColOffset(), roh)
+                zukunftCols = 0
+                // Erst hier einfrieren: sonst rutscht der Ausschnitt unter dem
+                // Finger weg, weil der Live-Rand weiterläuft.
+                if (colOffset > 0 && !isReplay() && !liveFrozen.value) liveFrozen.value = true
+            } else {
+                colOffset = 0
+                zukunftCols = -roh
+            }
+            renderer?.setZukunft(zukunftCols)
             panMs.value = colOffset * currentFrameMs()
             dirtyHeat = true
             return
@@ -585,7 +651,7 @@ function onPointerDown(event) {
     const rect = wrapEl.value.getBoundingClientRect()
     drag = {
         y: event.clientY - rect.top, lo: view.lo, hi: view.hi,
-        x: event.clientX - rect.left, colOffset0: colOffset,
+        x: event.clientX - rect.left, colOffset0: colOffset, zukunft0: zukunftCols,
         aktiv: false, axis: null,
     }
     // Ohne Hover braucht der Finger sofort ein Fadenkreuz
@@ -625,6 +691,11 @@ function onDoubleClick() {
     liveAutoFollow.value = true
     if (liveFrozen.value) unfreeze()
     colOffset = 0
+    // Doppelklick ist die Geste für „alles auf Anfang" — dazu gehört das freie
+    // Feld rechts. Beim blossen Auftauen bleibt es dagegen stehen: Es ist eine
+    // Ansichtseinstellung wie eine Zoomstufe, kein Zeitversatz.
+    zukunftCols = 0
+    renderer?.setZukunft(0)
     panMs.value = 0
     updateView(true)
     dirtyHeat = true

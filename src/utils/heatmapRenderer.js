@@ -120,6 +120,18 @@ export class HeatmapRenderer {
         this.axisW = AXIS_W
         this.axisX = 0
         this.cols = 0
+        /*
+         * Spalten, die rechts für das AKTUELLE Buch frei bleiben.
+         *
+         * Bookmap hält dort Luft und zeichnet hinein, was gerade im Buch liegt.
+         * In der Historie sind dieselben Orders über die Zeitachse verschmiert
+         * und von Handelsspuren überlagert; im freien Raum stehen sie als
+         * klare waagerechte Linien, und man sieht auf einen Blick, wo die
+         * Wände liegen.
+         *
+         * 0 heisst: alles wie bisher, die Gegenwart klebt am rechten Rand.
+         */
+        this.zukunft = 0
 
         this.off = document.createElement('canvas')
         this.offCtx = this.off.getContext('2d')
@@ -266,6 +278,7 @@ export class HeatmapRenderer {
         this.plotH = Math.max(50, Math.floor(cssH - AXIS_H - this.volumeH - this.deltaH))
         this.axisX = this.plotW + this.profileW
         this.cols = this.plotW
+        this._klemmeZukunft()
 
         for (const el of [this.heatEl, this.overlayEl, this.uiEl]) {
             el.width = Math.floor(cssW * dpr)
@@ -290,11 +303,33 @@ export class HeatmapRenderer {
      * wäre alles ausser den grössten Wänden schwarz — Orderbuch-Liquidität
      * unterscheidet sich um Grössenordnungen.
      */
+    /**
+     * Breite, in der HISTORIE gezeichnet wird. Alles rechts davon gehört dem
+     * aktuellen Buch.
+     */
+    get histCols() { return Math.max(1, this.cols - this.zukunft) }
+
+    /** Höchstens ein Drittel der Fläche; darunter bliebe von der Historie zu wenig. */
+    _klemmeZukunft() {
+        const max = Math.floor(this.cols / 3)
+        this.zukunft = Math.max(0, Math.min(max, Math.round(this.zukunft)))
+    }
+
+    /**
+     * Wie viele Spalten rechts freibleiben sollen.
+     * @returns {number} der tatsächlich gesetzte Wert (geklemmt)
+     */
+    setZukunft(spalten) {
+        this.zukunft = Number(spalten) || 0
+        this._klemmeZukunft()
+        return this.zukunft
+    }
+
     recalcNorm(ring, view, anchor) {
         if (!ring || !ring.count || this.colorMode === 'fixed') return
         const head = anchor ?? ring.head
         const sample = []
-        const maxCols = Math.min(this.cols, ring.count)
+        const maxCols = Math.min(this.histCols, ring.count)
         for (let x = 0; x < maxCols; x += 7) {
             const col = ring.colFrom(head, x)
             for (let abs = view.lo; abs < view.hi; abs += 3) {
@@ -307,7 +342,7 @@ export class HeatmapRenderer {
         this.ref = Math.max(sample[Math.floor(sample.length * 0.95)] || 0, 1e-9)
     }
 
-    drawHeat(ring, view, anchor) {
+    drawHeat(ring, view, anchor, jetztAnchor) {
         const ctx = this.heatCtx
         ctx.clearRect(0, 0, this.cssW, this.cssH)
         if (!ring || !ring.count) return
@@ -322,13 +357,14 @@ export class HeatmapRenderer {
         const ref = this.ref
         const invLogMax = this.invLogMax
         const threshold = this.threshold
-        const visible = Math.min(this.cols, ring.count)
+        const histCols = this.histCols
+        const visible = Math.min(histCols, ring.count)
 
         for (let x = 0; x < visible; x++) {
             const col = ring.colFrom(head, visible - 1 - x)
             const base = ring.base[col]
             const offset = col * ring.rows
-            const px = this.cols - visible + x
+            const px = histCols - visible + x
             for (let y = 0; y < rowsView; y++) {
                 const r = (view.hi - 1 - y) - base
                 if (r < 0 || r >= ring.rows) continue
@@ -337,6 +373,36 @@ export class HeatmapRenderer {
                 const t = Math.log1p(v / ref) * invLogMax
                 if (t < threshold) continue     // schwache Liquidität ausblenden
                 buf[y * this.cols + px] = lut[t >= 1 ? 255 : (t * 255) | 0]
+            }
+        }
+
+        /*
+         * Das freie Feld rechts: die AKTUELLE Buchspalte, über die ganze
+         * Breite wiederholt. So werden aus Punkten waagerechte Linien — man
+         * sieht, wo die Wände liegen, statt sie aus der verschmierten
+         * Historie herauslesen zu müssen.
+         *
+         * Genommen wird `jetztAnchor`, NICHT `anchor`: Blättert man in der
+         * Historie zurück, soll rechts weiter das jüngste bekannte Buch
+         * stehen. Sonst hätte man eine zweite Historie neben der Historie,
+         * und die Linien beantworteten die Frage nicht mehr, für die sie da
+         * sind („wo liegt jetzt Widerstand").
+         */
+        if (this.zukunft > 0) {
+            const jetzt = jetztAnchor ?? head
+            const col = ring.colFrom(jetzt, 0)
+            const base = ring.base[col]
+            const offset = col * ring.rows
+            for (let y = 0; y < rowsView; y++) {
+                const r = (view.hi - 1 - y) - base
+                if (r < 0 || r >= ring.rows) continue
+                const v = ring.data[offset + r]
+                if (v <= 0) continue
+                const t = Math.log1p(v / ref) * invLogMax
+                if (t < threshold) continue
+                const farbe = lut[t >= 1 ? 255 : (t * 255) | 0]
+                const zeile = y * this.cols
+                for (let px = histCols; px < this.cols; px++) buf[zeile + px] = farbe
             }
         }
 
@@ -363,7 +429,11 @@ export class HeatmapRenderer {
         const head = anchor ?? ring.head
         const rowsView = Math.max(1, view.hi - view.lo)
         const rowH = this.plotH / rowsView
-        const visible = Math.min(this.cols, ring.count)
+        // Alles Gezeichnete bezieht sich auf die HISTORIE; das freie Feld
+        // rechts gehört dem aktuellen Buch und bekommt weder Handelspunkte
+        // noch Mid-Linie — dort ist keine Zeit vergangen.
+        const histCols = this.histCols
+        const visible = Math.min(histCols, ring.count)
         const tRight = ring.ts[ring.colFrom(head, 0)]
         // Rechte Zeitgrenze: bei eingefrorener Ansicht laufen die Trade-Puffer
         // weiter — Ereignisse NACH der letzten sichtbaren Spalte gehören nicht
@@ -400,7 +470,7 @@ export class HeatmapRenderer {
                 else hi = mid
             }
             // Die gefundene Spalte ist die erste, die nicht vor dem Trade liegt
-            return this.cols - visible + lo
+            return histCols - visible + lo
         }
 
         // Lücken (Tab war im Hintergrund) sichtbar machen
@@ -408,7 +478,7 @@ export class HeatmapRenderer {
             const col = ring.colFrom(head, visible - 1 - x)
             if (!ring.flags[col]) continue
             ctx.fillStyle = COLORS.gap
-            ctx.fillRect(this.cols - visible + x, 0, 1, this.plotH)
+            ctx.fillRect(histCols - visible + x, 0, 1, this.plotH)
         }
 
         // Mid-Preis-Linie
@@ -420,7 +490,7 @@ export class HeatmapRenderer {
             const col = ring.colFrom(head, visible - 1 - x)
             const mid = ring.mid[col]
             if (!mid) { started = false; continue }
-            const px = this.cols - visible + x + 0.5
+            const px = histCols - visible + x + 0.5
             const py = yFor(mid)
             if (!started) { ctx.moveTo(px, py); started = true }
             else ctx.lineTo(px, py)
@@ -726,12 +796,34 @@ export class HeatmapRenderer {
         ctx.fillStyle = COLORS.axisText
         ctx.textAlign = 'center'
         const labelEvery = Math.max(60, Math.floor(this.plotW / 8))
-        for (let x = this.plotW - 1; x > this.plotW - visible; x -= labelEvery) {
+        for (let x = this.histCols - 1; x > this.histCols - visible; x -= labelEvery) {
             // Zeitstempel der Spalte lesen statt linear hochrechnen — nach einer
             // Feed-Pause fehlen Spalten, die Achse würde sonst eine gleichmässige
             // Zeit vortäuschen, die es nie gab.
-            const ts = ring.ts[ring.colFrom(head, this.plotW - 1 - x)] || tRight
+            const ts = ring.ts[ring.colFrom(head, this.histCols - 1 - x)] || tRight
             ctx.fillText(formatTime(ts), x, this.plotH + this.volumeH + this.deltaH + AXIS_H / 2)
+        }
+
+        /*
+         * Grenze zum freien Feld. Ohne sie liest man die Linien rechts als
+         * Fortsetzung der Zeitachse, also als Messung einer Zukunft, die es
+         * nicht gibt — die Achse behauptete sonst etwas, das nirgends steht.
+         */
+        if (this.zukunft > 0) {
+            ctx.save()
+            ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+            ctx.setLineDash([2, 3])
+            ctx.lineWidth = 1
+            ctx.beginPath()
+            ctx.moveTo(this.histCols + 0.5, 0)
+            ctx.lineTo(this.histCols + 0.5, this.plotH)
+            ctx.stroke()
+            ctx.setLineDash([])
+            ctx.fillStyle = 'rgba(255,255,255,0.55)'
+            ctx.textAlign = 'left'
+            ctx.font = '11px system-ui, sans-serif'
+            ctx.fillText('Buch jetzt', this.histCols + 4, this.plotH + this.volumeH + this.deltaH + AXIS_H / 2)
+            ctx.restore()
         }
     }
 
@@ -766,8 +858,15 @@ export class HeatmapRenderer {
         if (x < 0 || x > this.plotW) return
         const absBucket = Math.round(view.hi - 0.5 - y / rowH)
         const price = absBucket * bucketSize
-        const visible = Math.min(this.cols, ring.count)
-        const colFromRight = Math.round(this.plotW - 1 - x)
+        const histCols = this.histCols
+        const visible = Math.min(histCols, ring.count)
+        /*
+         * Im freien Feld rechts steht das aktuelle Buch, dort ist keine Zeit
+         * vergangen — also wird von dort auch die JÜNGSTE Spalte gelesen
+         * (colFromRight 0) statt eine negative, die es nicht gibt.
+         */
+        const imFeld = x >= histCols
+        const colFromRight = imFeld ? 0 : Math.round(histCols - 1 - x)
         // Links des aufgezeichneten Bereichs gibt es schlicht nichts. Den Index
         // dorthin zu klemmen zeigte die Werte der ältesten Spalte — also Zahlen,
         // die zu einem ganz anderen Zeitpunkt gehören.
@@ -995,8 +1094,8 @@ export class HeatmapRenderer {
         const wert = (q) => mid ? ` ≈ ${formatUsd(q * mid)}` : ''
 
         // Zeit dieses Abschnitts aus der Spalte lesen, nicht hochrechnen
-        const colFromRight = Math.round(this.plotW - 1 - bx)
-        const visible = Math.min(this.cols, ring.count)
+        const colFromRight = Math.round(this.histCols - 1 - bx)
+        const visible = Math.min(this.histCols, ring.count)
         const ts = colFromRight >= 0 && colFromRight < visible
             ? ring.ts[ring.colFrom(head, colFromRight)] : 0
 
