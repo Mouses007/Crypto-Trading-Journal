@@ -600,7 +600,17 @@ export function baueHandelsZeilen(d = {}) {
  */
 function kursmarken(text) {
     const raus = []
-    const re = /(\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,](\d+))?\s*(%|prozent|x|h|min)?/gi
+    /*
+     * `\b` hinter der Einheitengruppe ist Pflicht: Ohne sie greift `h` in das
+     * FOLGEWORT, und „über 79683 halten" wurde als „79683 Stunden" gelesen und
+     * damit als Kursmarke verworfen (ebenso „79683 hoch"). Meist bleibt das
+     * folgenlos, weil die Prüfung dann nichts findet und offen ausgeht —
+     * stehen im Satz aber ZWEI Marken und eine verschwindet, wählt
+     * `Math.max`/`Math.min` unten die falsche Schwelle, und eine korrekte
+     * Bedingung fliegt raus. Genau das nennt der Kommentar unten „schlimmer
+     * als keine Prüfung". Gefunden im Audit vom 05.09.2026.
+     */
+    const re = /(\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,](\d+))?\s*(%|prozent|x|h|min)?\b/gi
     let m
     while ((m = re.exec(String(text || '')))) {
         if (m[3]) continue                     // 25 %, 4 h, 20x — kein Preis
@@ -614,8 +624,18 @@ function kursmarken(text) {
 /** Sagt der Satz „aufwärts", „abwärts" oder nichts davon? */
 function richtungAus(text) {
     const t = String(text || '').toLowerCase()
-    const auf = /\b(über|ueber|oberhalb|steigt|durchbricht nach oben|nach oben)\b/.test(t)
-    const ab = /\b(unter|unterhalb|fällt|faellt|nach unten)\b/.test(t)
+    /*
+     * `u`-Flag und `\p{L}` statt `\b`: Ein `\b` VOR einem Umlaut ist keine
+     * Wortgrenze, weil `ü` für die Regex-Maschine kein Wortzeichen ist. „über"
+     * traf deshalb nie — nur „ueber" und (wegen des ASCII-Anfangsbuchstabens)
+     * „fällt". Die Richtungsprüfung fiel bei jedem Satz aus, der die Richtung
+     * allein über „über" ausdrückt; sie ging dann offen aus, verwarf also
+     * nichts fälschlich, prüfte aber auch nichts. Gefunden im Audit vom
+     * 05.09.2026 — die vorhandenen Gegenproben konnten es nicht sehen, weil
+     * sie alle zusätzlich „steigt" oder „fällt" enthielten.
+     */
+    const auf = /(?:^|[^\p{L}])(über|ueber|oberhalb|steigt|durchbricht nach oben|nach oben)/u.test(t)
+    const ab = /(?:^|[^\p{L}])(unter|unterhalb|fällt|faellt|nach unten)/u.test(t)
     if (auf && !ab) return 'auf'
     if (ab && !auf) return 'ab'
     return null

@@ -183,8 +183,29 @@ export function verdichteHebelkarte(map, { mid, bandPct = BAND_PCT, spannePct = 
         // Kombination ist bereits durchlaufen und wäre Doppelzählung.
         const arrays = seite === 'oben' ? map.short : map.long
 
+        /*
+         * MITTELWERT über die Stufen, nicht Summe — dieselbe Begründung wie
+         * bei der Abdeckung oben, und aus demselben Grund leicht zu übersehen:
+         * Die Hebelstufen sind einander AUSSCHLIESSENDE Was-wäre-wenn-
+         * Rechnungen für dieselbe Position („wäre sie 10x gehebelt, läge ihr
+         * Liquidationspreis hier; wäre sie 100x, dort"). Ihre Summe ist keine
+         * Geldmenge, sondern dieselbe Position vierfach gezählt.
+         *
+         * Stand bis zum 05.09.2026 hier eine Summe, während vierzig Zeilen
+         * darüber der Kommentar zur Abdeckung genau das verbot. Gemessen an
+         * einer Karte mit vier Stufen, die dieselben 10 Coins halten: gemeldet
+         * 3980 USD, richtig 990 — Faktor 4,02, exakt die Stufenzahl. Die
+         * Beträge lagen damit um ein Vielfaches über dem, was der Tooltip der
+         * Liquidationskarte für dieselbe Zone zeigt: genau der
+         * „Vertrauensschaden, den niemand mehr repariert", vor dem der
+         * Kommentar oben warnt.
+         *
+         * `anteil`, `verhaeltnis` und `abstandPct` waren nie betroffen — sie
+         * sind Quotienten, in denen der Faktor sich herauskürzt.
+         */
         let menge = 0
         for (let k = 0; k < arrays.length; k++) menge += arrays[k][r]
+        menge /= arrays.length || 1
         if (!(menge > 0)) continue
 
         // COINS × ZEILENPREIS. Nicht mit dem Mid rechnen: eine Zeile drei

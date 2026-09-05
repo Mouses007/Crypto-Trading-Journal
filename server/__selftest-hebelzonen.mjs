@@ -134,6 +134,63 @@ console.log('\nEinheiten: USD über den Zeilenpreis')
         Math.abs(billig.masseUnten * 10 - teuer.masseUnten) / teuer.masseUnten < 0.25)
 }
 
+console.log('\nBeträge mitteln über die Stufen, nicht summieren')
+{
+    /*
+     * Die Lücke, durch die der Fehler bis zum 05.09.2026 kam: ALLE Massefälle
+     * hier nutzten genau EINE Stufe (`tiers: [100]`), und bei einer Stufe sind
+     * Summe und Mittelwert dasselbe. Erst mit mehreren Stufen trennt sich das.
+     *
+     * Die Stufen sind einander ausschliessende Was-wäre-wenn-Rechnungen für
+     * DIESELBE Position. Summiert man sie, zählt man sie viermal.
+     */
+    const vierStufen = {
+        rows: 5, tiers: [10, 25, 50, 100], mass: [10, 10, 10, 10], swept: [0, 0, 0, 0],
+        oi: 100, mmr: MMR,
+        long: [1, 2, 3, 4].map(() => Float64Array.from([0, 10, 0, 0, 0])),
+        short: [1, 2, 3, 4].map(() => Float64Array.from([0, 0, 0, 0, 0])),
+        priceAt: (r) => 100 + (r - 2) * 0.5,
+        spanMs: 3600000, periods: 12,
+    }
+    const v = verdichteHebelkarte(vierStufen, { mid: 100 })
+    // Zeile 1 -> Preis 99,50; 10 Coins (nicht 40) x 99,50 = 995
+    check('vier Stufen mit derselben Position ergeben EINE Menge, nicht vier',
+        Math.abs(v.masseUnten - 995) < 1, `${v.masseUnten?.toFixed(1)} statt 995`)
+    check('die Zone selbst traegt denselben Betrag',
+        Math.abs(v.unten[0].usd - 995) < 1, v.unten[0]?.usd?.toFixed(1))
+
+    // Gegenprobe: eine Stufe mit derselben Coin-Menge ergibt dasselbe
+    const eineStufe = {
+        ...vierStufen, tiers: [100], mass: [10], swept: [0],
+        long: [Float64Array.from([0, 10, 0, 0, 0])],
+        short: [Float64Array.from([0, 0, 0, 0, 0])],
+    }
+    const e = verdichteHebelkarte(eineStufe, { mid: 100 })
+    check('eine Stufe ergibt denselben Betrag wie vier gleiche',
+        Math.abs(e.masseUnten - v.masseUnten) < 0.01,
+        `${e.masseUnten?.toFixed(1)} vs ${v.masseUnten?.toFixed(1)}`)
+
+    /*
+     * Der eigentliche Punkt: Beträge und Abdeckung müssen DIESELBE Rechnung
+     * benutzen. Standen sie auseinander, widersprach die Grundlage der KI dem
+     * Tooltip der Kachel — und niemand konnte sagen, welche der beiden Zahlen
+     * stimmt.
+     */
+    check('Abdeckung rechnet wie die Betraege (Mittel, nicht Summe)',
+        Math.abs(v.abdeckung - 0.10) < 0.001, String(v.abdeckung))
+
+    // Ungleiche Stufen: der Mittelwert zaehlt, nicht die groesste
+    const ungleich = {
+        ...vierStufen,
+        long: [Float64Array.from([0, 4, 0, 0, 0]), Float64Array.from([0, 8, 0, 0, 0]),
+               Float64Array.from([0, 12, 0, 0, 0]), Float64Array.from([0, 16, 0, 0, 0])],
+    }
+    const u = verdichteHebelkarte(ungleich, { mid: 100 })
+    // (4+8+12+16)/4 = 10 Coins x 99,50
+    check('ungleiche Stufen ergeben ihren Mittelwert',
+        Math.abs(u.masseUnten - 995) < 1, u.masseUnten?.toFixed(1))
+}
+
 console.log('\nVerhältnis und schwerere Seite')
 {
     // Karte von Hand: oben exakt doppelte Masse

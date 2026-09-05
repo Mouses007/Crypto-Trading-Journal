@@ -865,6 +865,16 @@ export class HeatmapRenderer {
          * vergangen — also wird von dort auch die JÜNGSTE Spalte gelesen
          * (colFromRight 0) statt eine negative, die es nicht gibt.
          */
+        /*
+         * ⚠ Stille Kopplung, benannt statt behoben (Audit 05.09.2026): Hier
+         * wird aus `anchor` gelesen, gezeichnet wird das Feld aber aus
+         * `jetztAnchor`. Beide sind heute identisch, WEIL die Zuglogik in
+         * `LiquidityHeatmap.vue` `colOffset` und `zukunftCols` gegenseitig
+         * ausschliesst — man kann nicht gleichzeitig zurückblättern und Platz
+         * schaffen. Fällt diese Bedingung, zeigt der Tooltip im freien Feld
+         * Zahlen aus einer anderen Spalte als das Bild darunter, ohne dass
+         * etwas kaputtgeht: die Anzeige wird still falsch.
+         */
         const imFeld = x >= histCols
         const colFromRight = imFeld ? 0 : Math.round(histCols - 1 - x)
         // Links des aufgezeichneten Bereichs gibt es schlicht nichts. Den Index
@@ -999,15 +1009,30 @@ export class HeatmapRenderer {
         const span = Math.max(max - min, 1e-9)
         const yFor = (v) => y0 + h - ((v - min) / span) * (h - 6) - 3
 
+        // Nulllinie gehört zum Panel-Rahmen und läuft bewusst über die volle
+        // Breite — anders als der Verlauf darunter, der an `histCols` endet.
         ctx.strokeStyle = 'rgba(255,255,255,0.18)'
         ctx.beginPath()
         ctx.moveTo(0, yFor(0) + 0.5); ctx.lineTo(this.plotW, yFor(0) + 0.5)
         ctx.stroke()
 
+        /*
+         * Die Linie endet an `histCols`, nicht am Plotrand.
+         *
+         * Rechts davon liegt das freie Feld mit dem aktuellen Buch; dort ist
+         * keine Zeit vergangen, und die Achse schreibt „Buch jetzt" darunter.
+         * Bis zum Audit vom 05.09.2026 lief die Linie flach durch dieses Feld
+         * hindurch und behauptete damit einen Verlauf, den es dort nicht gibt.
+         *
+         * Der Wert selbst war nie falsch: `perCol` wird über `xForTs` befüllt,
+         * das seit dem Umbau höchstens `histCols - 1` liefert — die Zellen
+         * dahinter sind immer null. Falsch war nur, sie zu zeichnen.
+         */
+        const bis = Math.min(this.plotW, this.histCols)
         ctx.beginPath()
         ctx.strokeStyle = running >= 0 ? COLORS.buy : COLORS.sell
         ctx.lineWidth = 1.5
-        for (let x = 0; x < this.plotW; x++) {
+        for (let x = 0; x < bis; x++) {
             const py = yFor(cum[x])
             if (x === 0) ctx.moveTo(x + 0.5, py)
             else ctx.lineTo(x + 0.5, py)
