@@ -3010,6 +3010,9 @@ async function runMigrations(knex, client) {
             t.bigInteger('zuletztGesehenAm').defaultTo(0)
             t.integer('richtigStreak').defaultTo(0)
             t.integer('gesamtRichtig').defaultTo(0)
+            // „Schwer" ist weder Treffer noch Fehler und braucht deshalb einen
+            // eigenen Zähler — siehe `auswerten` in shared/leitner.js.
+            t.integer('gesamtSchwer').defaultTo(0)
             t.integer('gesamtFalsch').defaultTo(0)
             t.text('historie').defaultTo('[]')
             t.timestamp('createdAt').defaultTo(knex.fn.now())
@@ -3022,6 +3025,17 @@ async function runMigrations(knex, client) {
 
     // Für Installationen, auf denen quiz_karten schon vor v13 existierte.
     await addColumnIfNotExists('quiz_karten', 'niveau', (t) => t.integer('niveau').defaultTo(1))
+
+    /*
+     * Eigener Zähler für „Schwer" (05.09.2026). MUSS als `addColumnIfNotExists`
+     * hier stehen und nicht nur im `createTable`-Zweig oben: bei jeder
+     * bestehenden Installation läuft der Zweig nie wieder, die Spalte fehlte
+     * dort also für immer. Altbestand hat „Schwer" in `gesamtRichtig` gefaltet
+     * und bleibt leicht optimistisch — das wächst sich mit jeder Neubewertung
+     * aus. Eine Rückrechnung aus `historie` deckte nur die letzten 20
+     * Bewertungen je Karte ab und wäre damit eine halbe Korrektur.
+     */
+    await addColumnIfNotExists('quiz_fortschritt', 'gesamtSchwer', (t) => t.integer('gesamtSchwer').defaultTo(0))
 
     // Starter-Deck nachziehen (nur fehlende Karten, siehe default-lernkarten.js)
     await seedDefaultLernkarten(knex)

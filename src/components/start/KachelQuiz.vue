@@ -28,8 +28,9 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { dbFind, dbCreate, dbUpdate } from '../../utils/db.js'
-import { boxVerteilung, auswerten, BOX_MIN, GRADE_VERGESSEN, GRADE_SCHWER, GRADE_GUT, GRADE_LEICHT } from '../../../shared/leitner.js'
+import { dbFind } from '../../utils/db.js'
+import { boxVerteilung } from '../../../shared/leitner.js'
+import { useLernSitzung, GRADE_BUTTONS } from '../../composables/useLernSitzung.js'
 import { lernserie } from '../../utils/lernStatistik.js'
 
 const props = defineProps({
@@ -112,82 +113,29 @@ function karteAnlegen() {
 }
 
 // ── Sitzung (nur in der Gross-Ansicht bedient) ───────────────────────────
-const phase = ref('uebersicht') // uebersicht | review | summary
-const warteschlange = ref([])
-const aktuellerIndex = ref(0)
-const antwortSichtbar = ref(false)
-const sitzungRichtig = ref(0)
-const sitzungFalsch = ref(0)
-// Siehe Lernen.vue: genau eine Wiedervorlage je Karte und Sitzung.
-const wiedervorgelegt = ref(new Set())
-
-const aktuellerEintrag = computed(() => warteschlange.value[aktuellerIndex.value] || null)
-const aktuelleBox = computed(() => Number(aktuellerEintrag.value?.fortschritt?.box) || BOX_MIN)
-
-function sitzungStarten() {
-    warteschlange.value = [...faelligeEintraege.value].sort((a, b) => {
-        const boxA = Number(a.fortschritt?.box) || BOX_MIN
-        const boxB = Number(b.fortschritt?.box) || BOX_MIN
-        if (boxA !== boxB) return boxA - boxB
-        return Number(a.fortschritt?.faelligAm ?? 0) - Number(b.fortschritt?.faelligAm ?? 0)
-    })
-    aktuellerIndex.value = 0
-    antwortSichtbar.value = false
-    sitzungRichtig.value = 0
-    sitzungFalsch.value = 0
-    wiedervorgelegt.value = new Set()
-    phase.value = 'review'
-}
-
-const GRADE_BUTTONS = [
-    { grad: GRADE_VERGESSEN, key: 'vergessen', klasse: 'lernen-grade-vergessen' },
-    { grad: GRADE_SCHWER, key: 'schwer', klasse: 'lernen-grade-schwer' },
-    { grad: GRADE_GUT, key: 'gut', klasse: 'lernen-grade-gut' },
-    { grad: GRADE_LEICHT, key: 'leicht', klasse: 'lernen-grade-leicht' },
-]
-
-async function bewerten(grad) {
-    const eintrag = aktuellerEintrag.value
-    if (!eintrag) return
-    const patch = auswerten(eintrag.fortschritt, grad, Date.now())
-
-    if (eintrag.fortschritt) {
-        await dbUpdate('quiz_fortschritt', eintrag.fortschritt.objectId, patch)
-        Object.assign(eintrag.fortschritt, patch)
-    } else {
-        const erstellt = await dbCreate('quiz_fortschritt', { kartenId: eintrag.karte.objectId, ...patch })
-        fortschritt.value.push(erstellt)
-        eintrag.fortschritt = erstellt
-    }
-
-    if (grad === GRADE_VERGESSEN) sitzungFalsch.value++
-    else sitzungRichtig.value++
-
-    // Box 1 ist sofort wieder fällig — dieselbe Regel wie in Lernen.vue.
-    if (grad === GRADE_VERGESSEN && !wiedervorgelegt.value.has(eintrag.karte.objectId)) {
-        wiedervorgelegt.value.add(eintrag.karte.objectId)
-        warteschlange.value.push(eintrag)
-    }
-
-    window.dispatchEvent(new CustomEvent(QUIZ_EVENT))
-
-    antwortSichtbar.value = false
-    if (aktuellerIndex.value + 1 < warteschlange.value.length) {
-        aktuellerIndex.value++
-    } else {
-        phase.value = 'summary'
-    }
-}
-
-function sitzungBeenden() {
-    phase.value = 'summary'
-}
-
-/** Zurück zur Übersicht — Zähler sind bereits geschrieben, `faelligeEintraege`
- *  rechnet aus den mutierten `fortschritt`-Objekten automatisch neu. */
-function sitzungZurueck() {
-    phase.value = 'uebersicht'
-}
+/*
+ * Dieselbe Quelle wie die Lernseite (`useLernSitzung`) — und zwar seit dem
+ * 05.09.2026 auch wirklich. Vorher stand hier eine Handkopie, die den Audit-Fix
+ * vom 28.08.2026 nie bekommen hatte: „Schwer" zählte als Treffer, wurde nicht
+ * wiedervorgelegt, und ein fehlgeschlagener Schreibvorgang flog ungefangen
+ * durch. Hinter gleicher Beschriftung stand also unterschiedliches Verhalten,
+ * je nachdem wo man bewertete.
+ *
+ * `onGeaendert` ist der Grund, warum das Composable diesen Rückruf hat: die
+ * kompakte Instanz ist eine ANDERE Instanz (siehe Kopfkommentar) und erfährt
+ * nur über dieses Ereignis, dass sich der Stand geändert hat.
+ */
+const {
+    phase, warteschlange, aktuellerIndex, antwortSichtbar, erklaerungOffen,
+    sitzungRichtig, sitzungSchwer, sitzungFalsch,
+    aktuellerEintrag, aktuelleBox, hatErklaerung,
+    sitzungStarten, antwortZeigen, erklaerungUmschalten, bewerten,
+    karteAusblenden, sitzungBeenden, sitzungZurueck,
+} = useLernSitzung({
+    faelligeEintraege,
+    fortschritt,
+    onGeaendert: () => window.dispatchEvent(new CustomEvent(QUIZ_EVENT)),
+})
 </script>
 
 <template>
@@ -207,7 +155,7 @@ function sitzungZurueck() {
             </div>
         </template>
 
-        <template v-else-if="phase === 'uebersicht'">
+        <template v-else-if="phase === 'start'">
             <h5 class="mb-1">{{ t('lernen.start.faelligTitel') }}</h5>
             <div class="lernen-faellig-count mb-3">{{ faelligeEintraege.length }}</div>
 
@@ -236,9 +184,15 @@ function sitzungZurueck() {
             <div class="lernen-statusleiste">
                 <span>{{ t('lernen.review.fortschritt', { aktuell: aktuellerIndex + 1, gesamt: warteschlange.length }) }}
                     · {{ t('lernen.start.box', { n: aktuelleBox }) }}</span>
-                <button type="button" class="lernen-statusleiste-btn" @click="sitzungBeenden">
-                    {{ t('lernen.review.abbrechen') }}
-                </button>
+                <span class="lernen-statusleiste-aktionen">
+                    <button type="button" class="lernen-statusleiste-icon"
+                        :title="t('lernen.review.ausblendenHint')" @click="karteAusblenden">
+                        <i class="uil uil-eye-slash"></i>
+                    </button>
+                    <button type="button" class="lernen-statusleiste-btn" @click="sitzungBeenden">
+                        {{ t('lernen.review.abbrechen') }}
+                    </button>
+                </span>
             </div>
 
             <div class="lernen-karteikarte">
@@ -247,13 +201,23 @@ function sitzungZurueck() {
                 </div>
                 <div class="lernen-trennlinie"></div>
 
-                <div v-if="!antwortSichtbar" class="lernen-reveal" @click="antwortSichtbar = true">
+                <div v-if="!antwortSichtbar" class="lernen-reveal" @click="antwortZeigen">
                     <div class="lernen-reveal-mark">?</div>
                     <div class="lernen-reveal-text">{{ t('lernen.review.antwortZeigen') }}</div>
                 </div>
                 <template v-else>
                     <div class="lernen-card-box lernen-card-box-antwort">
                         <div class="lernen-antwort">{{ aktuellerEintrag.karte.antwort }}</div>
+                        <!-- Gleiche Erklärung wie auf der Lernseite, gleiche Begründung
+                             gegen InfoTipp (siehe dort) — nur eben aus dem Composable. -->
+                        <button v-if="hatErklaerung" type="button" class="lernen-erklaerung-knopf"
+                            :aria-expanded="erklaerungOffen" @click="erklaerungUmschalten">
+                            <i class="uil" :class="erklaerungOffen ? 'uil-angle-up' : 'uil-info-circle'"></i>
+                            {{ erklaerungOffen ? t('lernen.review.erklaerungZu') : t('lernen.review.erklaerungAuf') }}
+                        </button>
+                        <div v-if="hatErklaerung && erklaerungOffen" class="lernen-erklaerung">
+                            {{ aktuellerEintrag.karte.erklaerung }}
+                        </div>
                     </div>
                     <div class="lernen-grade-grid">
                         <button v-for="g in GRADE_BUTTONS" :key="g.grad" type="button" class="lernen-grade-btn" :class="g.klasse"
@@ -271,6 +235,13 @@ function sitzungZurueck() {
                 <div>
                     <div class="greenTrade lernen-summary-value">{{ sitzungRichtig }}</div>
                     <div class="text-muted small">{{ t('lernen.summary.richtig') }}</div>
+                </div>
+                <!-- Eigene Spalte wie auf der Lernseite: „Schwer" unter „richtig"
+                     zu verbuchen machte die Quote genau bei den Karten zu gut,
+                     die noch nicht sitzen. -->
+                <div v-if="sitzungSchwer">
+                    <div class="lernen-summary-value lernen-summary-schwer">{{ sitzungSchwer }}</div>
+                    <div class="text-muted small">{{ t('lernen.summary.schwer') }}</div>
                 </div>
                 <div>
                     <div class="redTrade lernen-summary-value">{{ sitzungFalsch }}</div>
@@ -427,6 +398,19 @@ function sitzungZurueck() {
     padding: 0.6rem 1rem; background: var(--black-bg-5, #1a1a1a);
     font-size: 0.8rem; color: var(--grey-color, rgba(255, 255, 255, 0.6));
 }
+.lernen-statusleiste-aktionen { display: inline-flex; align-items: center; gap: 0.9rem; }
+.lernen-statusleiste-icon {
+    background: none; border: none; padding: 0; line-height: 1;
+    font-size: 1.05rem; color: var(--grey-color, rgba(255, 255, 255, 0.6));
+}
+.lernen-statusleiste-icon:hover { color: var(--white-87, rgba(255, 255, 255, 0.9)); }
+.lernen-erklaerung-knopf {
+    margin-top: 0.9rem; background: none; border: none; padding: 0.15rem 0.4rem;
+    font-size: 0.9rem; color: var(--blue-color, #3b82f6);
+    display: inline-flex; align-items: center; gap: 0.35rem;
+}
+.lernen-erklaerung-knopf:hover { text-decoration: underline; }
+.lernen-erklaerung { margin-top: 0.9rem; font-size: 0.95rem; line-height: 1.5; color: rgba(255, 255, 255, 0.6); }
 .lernen-statusleiste-btn {
     background: none; border: none; padding: 0; font: inherit;
     color: var(--grey-color, rgba(255, 255, 255, 0.6)); text-decoration: underline;
@@ -464,6 +448,7 @@ function sitzungZurueck() {
 .lernen-grade-btn:last-child { border-right: none; }
 .lernen-grade-vergessen { color: #ef4444; }
 .lernen-grade-schwer { color: #f59e0b; }
+.lernen-summary-schwer { color: #f59e0b; }
 .lernen-grade-gut { color: #3b82f6; }
 .lernen-grade-leicht { color: #22c55e; }
 .lernen-grade-btn:active { background: var(--black-bg-7, #262626); }

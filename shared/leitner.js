@@ -100,15 +100,37 @@ export function auswerten(fortschritt, grad, jetztMs) {
     const box = naechsteBox(fortschritt?.box, grad)
     let historie = parseHistorie(fortschritt?.historie).concat({ t: jetztMs, grad }).slice(-HISTORIE_MAX)
 
-    const gewusst = grad !== GRADE_VERGESSEN
+    /*
+     * DREI Zähler, nicht zwei.
+     *
+     * Bis zum 05.09.2026 lief hier `gewusst = grad !== VERGESSEN` in
+     * `gesamtRichtig` — „Schwer" zählte also dauerhaft als Treffer. Die
+     * Sitzungsbilanz hatte das seit dem Audit vom 28.08.2026 getrennt, die
+     * Zähler in der Datenbank nicht, und genau aus ihnen rechnet
+     * `src/utils/lernStatistik.js` die Erfolgsquote. Die Statistik-Seite war
+     * damit systematisch zu gut — bei genau den Karten, die noch nicht sitzen.
+     *
+     * `richtigStreak` bleibt bewusst an `gewusst` hängen: die Serie fragt nach
+     * dem Wiedersehen (kam die Karte zurück auf Box 1?), nicht nach dem
+     * Können. Dasselbe gilt für den Boxsprung — beides ist Leitner-Kanon und
+     * steht so im Modulkopf.
+     *
+     * Eine unbekannte Bewertung wird wie „Schwer" verbucht, passend zu
+     * `naechsteBox()`, das sie ebenfalls dorthin fallen lässt.
+     */
+    const vergessen = grad === GRADE_VERGESSEN
+    const sicher = grad === GRADE_GUT || grad === GRADE_LEICHT
+    const schwer = !vergessen && !sicher
+    const gewusst = !vergessen
 
     return {
         box,
         faelligAm: naechsteFaelligkeit(jetztMs, box),
         zuletztGesehenAm: jetztMs,
         richtigStreak: gewusst ? (Number(fortschritt?.richtigStreak) || 0) + 1 : 0,
-        gesamtRichtig: (Number(fortschritt?.gesamtRichtig) || 0) + (gewusst ? 1 : 0),
-        gesamtFalsch: (Number(fortschritt?.gesamtFalsch) || 0) + (gewusst ? 0 : 1),
+        gesamtRichtig: (Number(fortschritt?.gesamtRichtig) || 0) + (sicher ? 1 : 0),
+        gesamtSchwer: (Number(fortschritt?.gesamtSchwer) || 0) + (schwer ? 1 : 0),
+        gesamtFalsch: (Number(fortschritt?.gesamtFalsch) || 0) + (vergessen ? 1 : 0),
         historie: JSON.stringify(historie),
     }
 }

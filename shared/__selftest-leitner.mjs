@@ -104,7 +104,21 @@ console.log('\nauswerten()')
 
     const r4 = auswerten(r3, GRADE_SCHWER, JETZT + 3 * TAG_MS)
     check('„Schwer" nach Reset bleibt auf Box 1 (kein weiterer Rückfall möglich)', r4.box === 1)
-    check('„Schwer" zählt als gewusst (Streak läuft weiter)', r4.richtigStreak === 1 && r4.gesamtFalsch === 1)
+    check('„Schwer" hält den Streak (Frage nach dem Wiedersehen, nicht nach dem Können)', r4.richtigStreak === 1)
+    /*
+     * Der Kern der Korrektur vom 05.09.2026: „Schwer" landet in seinem EIGENEN
+     * Zähler. Vorher stand hier `gesamtRichtig`, und die Erfolgsquote der
+     * Statistik-Seite war dadurch systematisch zu gut.
+     */
+    check('„Schwer" ist weder Treffer noch Fehler, sondern zählt eigen',
+        r4.gesamtSchwer === 1 && r4.gesamtRichtig === 2 && r4.gesamtFalsch === 1)
+
+    const rUnbekannt = auswerten(r4, 'irgendwas', JETZT + 4 * TAG_MS)
+    check('Unbekannte Bewertung wird wie „Schwer" verbucht (wie beim Boxsprung)',
+        rUnbekannt.gesamtSchwer === 2 && rUnbekannt.gesamtRichtig === 2 && rUnbekannt.gesamtFalsch === 1)
+
+    check('Fehlendes gesamtSchwer im Altbestand startet bei 0, nicht bei NaN',
+        auswerten({ box: 1, gesamtRichtig: 3 }, GRADE_SCHWER, JETZT).gesamtSchwer === 1)
 
     let historie = JSON.parse(r4.historie)
     check('Historie sammelt alle vier Einträge samt Bewertung', historie.length === 4 && historie[0].grad === GRADE_GUT)

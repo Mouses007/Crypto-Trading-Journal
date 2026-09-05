@@ -9,6 +9,7 @@
  *
  *   node server/__selftest-lernkarten.mjs
  */
+import { readFile } from 'node:fs/promises'
 import { LERNKARTEN_DEFS } from './default-lernkarten.js'
 
 // Muss deckungsgleich zu KATEGORIEN in src/views/Lernen.vue sein — eine
@@ -56,11 +57,41 @@ const zuLang = LERNKARTEN_DEFS.filter(k => k.antwort.length > 300)
 pruefe('Keine Antwort sprengt die Karteikarte (max. 300 Zeichen)', zuLang.length === 0,
     zuLang.map(k => `${k.schluessel}:${k.antwort.length}`).join(', '))
 
-// Jede Kategorie soll auf jedem angebotenen Niveau überhaupt Karten haben,
-// sonst zeigt ein Filter eine leere Seite.
+// Jedes angebotene Niveau soll Karten haben, sonst zeigt der Filter eine leere
+// Seite. Absichtlich NICHT je Kategorie geprüft: `indikatoren` hat kein Niveau
+// 2/3 und `onchain` kein Niveau 1, und das ist in Ordnung — gefiltert wird nur
+// nach Niveau, nicht nach Niveau × Kategorie.
 const besetzt = new Set(LERNKARTEN_DEFS.map(k => k.niveau || 1))
 pruefe('Jedes Niveau ist mit Karten belegt', NIVEAUS.every(n => besetzt.has(n)),
     NIVEAUS.filter(n => !besetzt.has(n)).join(', '))
+
+/*
+ * Erklärungen — das Feld, das von v14 bis zum 05.09.2026 an drei Stellen
+ * zugleich nicht verdrahtet war. Die letzte Prüfung ist die wichtigste: sie
+ * liest den Quelltext von `seedDefaultLernkarten`, weil ein fehlendes
+ * `erklaerung` dort keinen Fehler wirft, sondern einfach nichts tut — und
+ * zwar nur bei bestehenden Installationen, also nirgends, wo man hinschaut.
+ */
+const mitErklaerung = LERNKARTEN_DEFS.filter(k => String(k.erklaerung || '').trim())
+
+// Der Ausklappbereich verträgt mehr als die Karteikarte, aber keine Aufsätze.
+const erklaerungZuLang = mitErklaerung.filter(k => k.erklaerung.length > 600)
+pruefe('Keine Erklärung länger als 600 Zeichen', erklaerungZuLang.length === 0,
+    erklaerungZuLang.map(k => `${k.schluessel}:${k.erklaerung.length}`).join(', '))
+
+// Eine Erklärung, die mit der Antwort beginnt, erklärt nichts — sie wiederholt.
+const nurWiederholung = mitErklaerung.filter(k => {
+    const a = k.antwort.slice(0, 60).toLowerCase()
+    return k.erklaerung.toLowerCase().startsWith(a)
+})
+pruefe('Keine Erklärung wiederholt bloss die Antwort', nurWiederholung.length === 0,
+    nurWiederholung.map(k => k.schluessel).join(', '))
+
+const seedQuelle = await readFile(new URL('./default-lernkarten.js', import.meta.url), 'utf8')
+const seedKoerper = seedQuelle.slice(seedQuelle.indexOf('export async function seedDefaultLernkarten'))
+pruefe('seedDefaultLernkarten schreibt erklaerung beim Anlegen UND beim Nachführen',
+    (seedKoerper.match(/erklaerung/g) || []).length >= 2,
+    'ohne beide Stellen erreichen Erklärungen nur Neuinstallationen')
 
 console.log(`\n${ok} bestanden, ${fehler} fehlgeschlagen\n`)
 process.exit(fehler ? 1 : 0)

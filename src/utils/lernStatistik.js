@@ -21,6 +21,20 @@ const TAG_MS = 24 * 60 * 60 * 1000
 
 const zahl = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 
+/**
+ * Alle Bewertungen einer Fortschrittszeile — der NENNER jeder Quote hier.
+ *
+ * „Schwer" gehört dazu und zählt nicht als Treffer (siehe `auswerten` in
+ * shared/leitner.js). Vor dem 05.09.2026 steckte es in `gesamtRichtig` und
+ * hob damit jede Quote genau bei den Karten an, die man noch nicht kann.
+ * Zeilen aus der Zeit davor haben kein `gesamtSchwer` — `zahl()` macht daraus
+ * eine 0, die Quote bleibt für diesen Altbestand also unverändert, statt zu
+ * springen.
+ */
+function bewertungen(fortschritt) {
+    return zahl(fortschritt?.gesamtRichtig) + zahl(fortschritt?.gesamtSchwer) + zahl(fortschritt?.gesamtFalsch)
+}
+
 /** Kalendertag in lokaler Zeit als sortierbarer Schlüssel. */
 function tagSchluessel(t) {
     const d = new Date(zahl(t))
@@ -48,10 +62,9 @@ export function uebersicht(eintraege) {
     const aktive = (eintraege || []).filter(e => Number(e?.karte?.aktiv) !== 0)
     const mitFortschritt = aktive.filter(e => e.fortschritt)
     const gemeistert = aktive.filter(e => zahl(e.fortschritt?.box) === BOX_MAX).length
-    const begonnen = mitFortschritt.filter(e => zahl(e.fortschritt.gesamtRichtig) + zahl(e.fortschritt.gesamtFalsch) > 0).length
+    const begonnen = mitFortschritt.filter(e => bewertungen(e.fortschritt) > 0).length
     const richtig = mitFortschritt.reduce((a, e) => a + zahl(e.fortschritt.gesamtRichtig), 0)
-    const falsch = mitFortschritt.reduce((a, e) => a + zahl(e.fortschritt.gesamtFalsch), 0)
-    const bewertungenGesamt = richtig + falsch
+    const bewertungenGesamt = mitFortschritt.reduce((a, e) => a + bewertungen(e.fortschritt), 0)
 
     return {
         gesamt: aktive.length,
@@ -109,16 +122,16 @@ export function proKategorie(eintraege) {
         const kat = e?.karte?.kategorie
         if (!kat) continue
         const richtig = zahl(e.fortschritt?.gesamtRichtig)
-        const falsch = zahl(e.fortschritt?.gesamtFalsch)
-        if (richtig + falsch === 0) continue
-        if (!gruppen.has(kat)) gruppen.set(kat, { richtig: 0, falsch: 0 })
+        const gesamt = bewertungen(e.fortschritt)
+        if (gesamt === 0) continue
+        if (!gruppen.has(kat)) gruppen.set(kat, { richtig: 0, gesamt: 0 })
         const g = gruppen.get(kat)
         g.richtig += richtig
-        g.falsch += falsch
+        g.gesamt += gesamt
     }
     return [...gruppen.entries()]
         .map(([kategorie, g]) => {
-            const anzahl = g.richtig + g.falsch
+            const anzahl = g.gesamt
             return { kategorie, anzahl, quote: g.richtig / anzahl, duenn: anzahl < MIN_GRUPPE }
         })
         .sort((a, b) => a.quote - b.quote)

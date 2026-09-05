@@ -258,6 +258,17 @@ export async function seedDefaultLernkarten(knex) {
             antwort: def.antwort,
             kategorie: def.kategorie,
             niveau: def.niveau || 1,
+            /*
+             * `erklaerung` MUSS hier stehen, nicht nur im Insert weiter unten.
+             * Die Spalte gibt es seit v14, aber bis zum 05.09.2026 war sie an
+             * drei Stellen zugleich nicht verdrahtet — keine Kartendefinition
+             * setzte sie, der Insert listete sie nicht, und dieses `soll` auch
+             * nicht. Fehlt sie ausgerechnet hier, bekommen NEUE Installationen
+             * die Erklärungen und alle bestehenden Decks nie: Schritt 2 legt nur
+             * fehlende Karten an, und vorhandene Karten fehlen definitionsgemäss
+             * nicht. Ein Fehler, der still bleibt.
+             */
+            erklaerung: def.erklaerung || '',
         }
         if (Object.keys(soll).every(f => row[f] === soll[f])) continue
         await knex('quiz_karten').where({ id: row.id }).update(soll)
@@ -276,6 +287,7 @@ export async function seedDefaultLernkarten(knex) {
             schluessel: def.schluessel,
             frage: def.frage,
             antwort: def.antwort,
+            erklaerung: def.erklaerung || '',
             kategorie: def.kategorie,
             herkunft: 'built-in',
             aktiv: 1,

@@ -4048,7 +4048,11 @@
       "gut": "Good",
       "leicht": "Easy",
       "fortschritt": "{aktuell} / {gesamt}",
-      "abbrechen": "End session"
+      "abbrechen": "End session",
+      "ausblenden": "Hide card",
+      "ausblendenHint": "Hide this card — it will no longer count as due. Its learning history stays; you can bring it back on the \"Cards\" tab.",
+      "erklaerungAuf": "Why is that?",
+      "erklaerungZu": "Collapse explanation"
     },
     "summary": {
       "schwer": "hard",

@@ -3,7 +3,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { dbFind, dbCreate, dbUpdate, dbDelete } from '../utils/db.js'
-import { boxVerteilung, auswerten, BOX_MIN, GRADE_VERGESSEN, GRADE_SCHWER, GRADE_GUT, GRADE_LEICHT } from '../../shared/leitner.js'
+import { boxVerteilung, BOX_MIN } from '../../shared/leitner.js'
+import { useLernSitzung, GRADE_BUTTONS } from '../composables/useLernSitzung.js'
 import { werteAus as lernstatistikAuswerten } from '../utils/lernStatistik.js'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
@@ -38,15 +39,24 @@ async function ladeAlles() {
         ])
         karten.value = k
         fortschritt.value = f
+        /*
+         * Erst NACH dem Laden: die Warteschlange wird aus den geladenen Karten
+         * aufgelöst, vorher gäbe es nichts aufzulösen.
+         *
+         * Und ausdrücklich NUR im Erfolgsfall. Stand der Aufruf hinter dem
+         * `finally`, lief er auch nach einem Fehlschlag — dann war `karten`
+         * leer, keine gespeicherte Karten-ID liess sich auflösen, und der
+         * Aufräumzweig in `stelleSitzungHer` löschte die halb abgearbeitete
+         * Runde, die die Persistenz gerade retten sollte. Ein Netzhänger kostete
+         * so 40 bewertete Karten.
+         */
+        stelleSitzungHer()
     } catch (e) {
         ladeFehler.value = e?.message || String(e)
         logWarn('lernen', 'Karten laden fehlgeschlagen', e)
     } finally {
         spinnerLoadingPage.value = false
     }
-    // Erst NACH dem Laden: die Warteschlange wird aus den geladenen Karten
-    // aufgelöst, vorher gäbe es nichts aufzulösen.
-    stelleSitzungHer()
 }
 onMounted(ladeAlles)
 
@@ -76,39 +86,24 @@ const statistik = computed(() => lernstatistikAuswerten(alleEintraege.value, Dat
 const proTagMax = computed(() => Math.max(1, ...statistik.value.proTag.map(t => t.anzahl)))
 
 // ── Sitzung ─────────────────────────────────────────────────────────────
-const phase = ref('start') // start | review | summary
-const warteschlange = ref([])
-const aktuellerIndex = ref(0)
-const antwortSichtbar = ref(false)
-const sitzungRichtig = ref(0)
-const sitzungFalsch = ref(0)
-/** „Schwer" — weder Treffer noch Fehler, und deshalb eine eigene Zahl. */
-const sitzungSchwer = ref(0)
-// Karten, die in DIESER Sitzung schon einmal wiedervorgelegt wurden — eine
-// vergessene Karte kommt genau einmal zurück, sonst liesse sich die Sitzung
-// mit wiederholtem „Vergessen" in eine Endlosschleife bewerten.
-const wiedervorgelegt = ref(new Set())
-
-const aktuellerEintrag = computed(() => warteschlange.value[aktuellerIndex.value] || null)
-const aktuelleBox = computed(() => Number(aktuellerEintrag.value?.fortschritt?.box) || BOX_MIN)
-
-function sitzungStarten() {
-    // niedrigste Box zuerst, dann am längsten überfällig zuerst
-    warteschlange.value = [...faelligeEintraege.value].sort((a, b) => {
-        const boxA = Number(a.fortschritt?.box) || BOX_MIN
-        const boxB = Number(b.fortschritt?.box) || BOX_MIN
-        if (boxA !== boxB) return boxA - boxB
-        return Number(a.fortschritt?.faelligAm ?? 0) - Number(b.fortschritt?.faelligAm ?? 0)
-    })
-    aktuellerIndex.value = 0
-    antwortSichtbar.value = false
-    sitzungRichtig.value = 0
-    sitzungFalsch.value = 0
-    sitzungSchwer.value = 0
-    wiedervorgelegt.value = new Set()
-    phase.value = 'review'
-    sichereSitzung()
-}
+/*
+ * Sitzungslogik liegt in `useLernSitzung` — dieselbe Quelle, aus der sich auch
+ * die Startseiten-Kachel bedient. Was hier bleibt, ist das, was es dort nicht
+ * gibt: die Runde übersteht ein Neuladen, und sie lässt sich per Tastatur
+ * bedienen. `sichereSitzung` ist eine Funktionsdeklaration und damit auch
+ * hier oben schon verwendbar.
+ */
+const {
+    phase, warteschlange, aktuellerIndex, antwortSichtbar, erklaerungOffen,
+    sitzungRichtig, sitzungSchwer, sitzungFalsch, wiedervorgelegt,
+    aktuellerEintrag, aktuelleBox, hatErklaerung,
+    sitzungStarten, antwortZeigen, erklaerungUmschalten, bewerten,
+    karteAusblenden, sitzungBeenden, sitzungZurueck,
+} = useLernSitzung({
+    faelligeEintraege,
+    fortschritt,
+    onZustand: () => sichereSitzung(),
+})
 
 /*
  * Die laufende Sitzung übersteht ein Neuladen.
@@ -146,6 +141,14 @@ function sichereSitzung() {
 const SITZUNG_MAX_ALTER_MS = 12 * 60 * 60 * 1000
 
 function stelleSitzungHer() {
+    /*
+     * Zweiter Riegel gegen den Datenverlust aus `ladeAlles`: ohne geladene
+     * Karten liesse sich unten keine ID auflösen, und der Aufräumzweig würde
+     * eine völlig intakte Runde wegwerfen. Nichts wissen ist kein Grund zu
+     * löschen.
+     */
+    if (!karten.value.length) return
+
     let roh
     try { roh = JSON.parse(localStorage.getItem(SITZUNG_KEY) || 'null') } catch { roh = null }
     if (!roh || !Array.isArray(roh.kartenIds) || !roh.kartenIds.length) return
@@ -170,22 +173,16 @@ function stelleSitzungHer() {
     sitzungSchwer.value = Number(roh.schwer) || 0
     wiedervorgelegt.value = new Set(Array.isArray(roh.wiedervorgelegt) ? roh.wiedervorgelegt : [])
     antwortSichtbar.value = false
+    erklaerungOffen.value = false
     phase.value = 'review'
 }
-
-const GRADE_BUTTONS = [
-    { grad: GRADE_VERGESSEN, key: 'vergessen', klasse: 'lernen-grade-vergessen' },
-    { grad: GRADE_SCHWER, key: 'schwer', klasse: 'lernen-grade-schwer' },
-    { grad: GRADE_GUT, key: 'gut', klasse: 'lernen-grade-gut' },
-    { grad: GRADE_LEICHT, key: 'leicht', klasse: 'lernen-grade-leicht' },
-]
 
 /*
  * Tastaturbedienung der Kartensitzung: Die Sitzung wird in Serie bedient
  * (aufdecken → bewerten, dutzende Male) — nur mit der Maus ist das spürbar
  * langsamer. Ziffern 1–4 bewerten die aufgedeckte Karte (Reihenfolge der
- * Knöpfe); das Aufdecken selbst hängt am fokussierbaren Reveal-Element
- * (Enter/Leertaste). Eingabefelder bleiben unberührt.
+ * Knöpfe in `GRADE_BUTTONS`); das Aufdecken selbst hängt am fokussierbaren
+ * Reveal-Element (Enter/Leertaste). Eingabefelder bleiben unberührt.
  */
 function tastendruck(e) {
     if (phase.value !== 'review' || !antwortSichtbar.value) return
@@ -195,73 +192,6 @@ function tastendruck(e) {
 }
 onMounted(() => window.addEventListener('keydown', tastendruck))
 onBeforeUnmount(() => window.removeEventListener('keydown', tastendruck))
-
-async function bewerten(grad) {
-    const eintrag = aktuellerEintrag.value
-    if (!eintrag) return
-    const patch = auswerten(eintrag.fortschritt, grad, Date.now())
-
-    try {
-        if (eintrag.fortschritt) {
-            await dbUpdate('quiz_fortschritt', eintrag.fortschritt.objectId, patch)
-            Object.assign(eintrag.fortschritt, patch)
-        } else {
-            const erstellt = await dbCreate('quiz_fortschritt', { kartenId: eintrag.karte.objectId, ...patch })
-            fortschritt.value.push(erstellt)
-            eintrag.fortschritt = erstellt
-        }
-    } catch (fehler) {
-        // Sichtbar wird der Fehler zentral (db.js-Hinweis). Die Karte bleibt
-        // stehen und nichts wird gezählt — der nächste Klick versucht es neu,
-        // statt dass eine Bewertung still verloren geht.
-        console.error('Lernen: Bewertung nicht gespeichert:', fehler)
-        return
-    }
-
-    /*
-     * „Schwer" ist kein Treffer.
-     *
-     * Bis zum Audit vom 28.08.2026 zählte alles ausser „Vergessen" als
-     * richtig — die angezeigte Trefferquote war damit systematisch zu gut,
-     * und zwar genau bei den Karten, die man noch nicht kann. Die Bilanz
-     * weist „Schwer" jetzt getrennt aus: die Box bleibt (so will es der
-     * Leitner-Kanon in `shared/leitner.js`, `gewusst` ist dort die Frage
-     * nach dem Wiedersehen, nicht nach dem Können), aber die Sitzung
-     * beschönigt nicht mehr.
-     */
-    if (grad === GRADE_VERGESSEN) sitzungFalsch.value++
-    else if (grad === GRADE_SCHWER) sitzungSchwer.value++
-    else sitzungRichtig.value++
-
-    /*
-     * Box 1 ist sofort wieder fällig (INTERVALL_TAGE in shared/leitner.js) —
-     * eine frisch vergessene Karte gehört deshalb ans Ende der laufenden
-     * Warteschlange und nicht erst in die nächste Sitzung.
-     *
-     * „Schwer" kommt aus demselben Grund zurück: wer eine Karte gerade eben
-     * nur mit Mühe wusste, hat sie in dieser Runde nicht gelernt. Sie bleibt
-     * in ihrer Box — die Wiedervorlage ist eine Sache DIESER Sitzung, nicht
-     * des Langzeitplans.
-     */
-    const nochmal = grad === GRADE_VERGESSEN || grad === GRADE_SCHWER
-    if (nochmal && !wiedervorgelegt.value.has(eintrag.karte.objectId)) {
-        wiedervorgelegt.value.add(eintrag.karte.objectId)
-        warteschlange.value.push(eintrag)
-    }
-
-    antwortSichtbar.value = false
-    if (aktuellerIndex.value + 1 < warteschlange.value.length) {
-        aktuellerIndex.value++
-    } else {
-        phase.value = 'summary'
-    }
-    sichereSitzung()
-}
-
-function sitzungZurueck() {
-    phase.value = 'start'
-    sichereSitzung()   // räumt den gespeicherten Stand weg
-}
 
 // ── Kartenverwaltung ────────────────────────────────────────────────────
 const KATEGORIEN = ['indikatoren', 'derivate', 'sentiment', 'chartAnalyse', 'risiko', 'markt', 'onchain']
@@ -399,9 +329,18 @@ async function aktivUmschalten(karte) {
                             · {{ t('lernen.niveau', { n: niveauVonKarte(aktuellerEintrag.karte) }) }}
                             · {{ t('lernen.start.box', { n: aktuelleBox }) }}
                         </span>
-                        <button class="lernen-statusleiste-btn" @click="phase = 'summary'">
-                            {{ t('lernen.review.abbrechen') }}
-                        </button>
+                        <span class="lernen-statusleiste-aktionen">
+                            <!-- Nackter Icon-Knopf: `title=` ist sein einziger Name und
+                                 bleibt deshalb auch ohne erweiterte Infos stehen (siehe
+                                 Abgrenzung im Kopf von InfoTipp.vue). -->
+                            <button class="lernen-statusleiste-icon" :title="t('lernen.review.ausblendenHint')"
+                                @click="karteAusblenden">
+                                <i class="uil uil-eye-slash"></i>
+                            </button>
+                            <button class="lernen-statusleiste-btn" @click="sitzungBeenden">
+                                {{ t('lernen.review.abbrechen') }}
+                            </button>
+                        </span>
                     </div>
 
                     <div class="lernen-karteikarte">
@@ -412,19 +351,36 @@ async function aktivUmschalten(karte) {
                         <div class="lernen-trennlinie"></div>
 
                         <div v-if="!antwortSichtbar" class="lernen-reveal" role="button" tabindex="0"
-                            @click="antwortSichtbar = true"
-                            @keydown.enter.prevent="antwortSichtbar = true"
-                            @keydown.space.prevent="antwortSichtbar = true">
+                            @click="antwortZeigen"
+                            @keydown.enter.prevent="antwortZeigen"
+                            @keydown.space.prevent="antwortZeigen">
                             <div class="lernen-reveal-mark">?</div>
                             <div class="lernen-reveal-text">{{ t('lernen.review.antwortZeigen') }}</div>
                         </div>
                         <template v-else>
                             <div class="lernen-card-box lernen-card-box-antwort">
                                 <div class="lernen-antwort">{{ aktuellerEintrag.karte.antwort }}</div>
-                                <!-- Die Antwort steht da, aber nicht warum. Wer eine Karte
-                                     nicht wusste, lernt aus der Begruendung mehr als aus
-                                     der Wiederholung. Optional: leere Karten zeigen nichts. -->
-                                <div v-if="aktuellerEintrag.karte.erklaerung" class="lernen-erklaerung">
+                                <!--
+                                    Die Antwort steht da, aber nicht warum. Wer eine Karte
+                                    nicht wusste, lernt aus der Begründung mehr als aus der
+                                    blossen Wiederholung.
+
+                                    Bewusst NICHT `InfoTipp.vue`: das hängt an der
+                                    Einstellung `erweiterteInfos` und wäre weg, sobald
+                                    jemand die Bedienhilfen abschaltet — eine Erklärung
+                                    ist hier aber Lerninhalt, kein Bedienhinweis. Es liest
+                                    ausserdem i18n-Schlüssel, während dieser Text pro
+                                    Karte in der Datenbank steht (auch bei eigenen Karten).
+
+                                    Ausgeklappt statt immer sichtbar, damit man sich erst
+                                    selbst bewertet und dann nachliest.
+                                -->
+                                <button v-if="hatErklaerung" type="button" class="lernen-erklaerung-knopf"
+                                    :aria-expanded="erklaerungOffen" @click="erklaerungUmschalten">
+                                    <i class="uil" :class="erklaerungOffen ? 'uil-angle-up' : 'uil-info-circle'"></i>
+                                    {{ erklaerungOffen ? t('lernen.review.erklaerungZu') : t('lernen.review.erklaerungAuf') }}
+                                </button>
+                                <div v-if="hatErklaerung && erklaerungOffen" class="lernen-erklaerung">
                                     {{ aktuellerEintrag.karte.erklaerung }}
                                 </div>
                             </div>
@@ -668,6 +624,21 @@ async function aktivUmschalten(karte) {
     background: none; border: none; padding: 0; font: inherit;
     color: var(--grey-color, rgba(255, 255, 255, 0.6)); text-decoration: underline;
 }
+.lernen-statusleiste-aktionen { display: inline-flex; align-items: center; gap: 0.9rem; }
+.lernen-statusleiste-icon {
+    background: none; border: none; padding: 0; line-height: 1;
+    font-size: 1.05rem; color: var(--grey-color, rgba(255, 255, 255, 0.6));
+}
+.lernen-statusleiste-icon:hover { color: var(--white-87, rgba(255, 255, 255, 0.9)); }
+
+/* Auslöser der Kartenerklärung — betont zurückhaltend: er soll erst auffallen,
+   wenn man die Antwort gelesen hat und etwas offen geblieben ist. */
+.lernen-erklaerung-knopf {
+    margin-top: 0.9rem; background: none; border: none; padding: 0.15rem 0.4rem;
+    font-size: 0.9rem; color: var(--blue-color, #3b82f6);
+    display: inline-flex; align-items: center; gap: 0.35rem;
+}
+.lernen-erklaerung-knopf:hover { text-decoration: underline; }
 
 .lernen-card-box { min-height: 220px; display: flex; flex-direction: column; justify-content: center; padding: 2.5rem 1.5rem 1.5rem; text-align: center; }
 .lernen-card-box-antwort { min-height: 140px; padding-top: 1.5rem; }

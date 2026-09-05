@@ -44,7 +44,27 @@ console.log('Überblick')
     check('Nur aktive Karten zählen zu „gesamt"', u.gesamt === 3, `gesamt=${u.gesamt}`)
     check('Nur aktive, gemeisterte Karten (Box 4) zählen', u.gemeistert === 1, `gemeistert=${u.gemeistert}`)
     check('„begonnen" zählt Karten mit mindestens einer Bewertung', u.begonnen === 1, `begonnen=${u.begonnen}`)
-    check('Erfolgsquote = richtig / (richtig+falsch) über alle aktiven Karten', Math.abs(u.erfolgsquote - 5 / 6) < 1e-9)
+    check('Altbestand ohne gesamtSchwer rechnet unverändert weiter', Math.abs(u.erfolgsquote - 5 / 6) < 1e-9)
+}
+
+/*
+ * „Schwer" senkt die Quote (05.09.2026).
+ *
+ * Die wichtigere der beiden Prüfungen ist die zweite: sie zeigt, dass „Schwer"
+ * NICHT einfach als Fehler verbucht wird. Beide Fassungen — vorher als Treffer,
+ * jetzt als Fehler — wären falsch, nur in verschiedene Richtungen.
+ */
+console.log('\n„Schwer" im Nenner')
+{
+    const eintraege = [eintrag(karte(1, 'indikatoren'), { gesamtRichtig: 6, gesamtSchwer: 2, gesamtFalsch: 2 })]
+    const u = uebersicht(eintraege)
+    check('Erfolgsquote = richtig / (richtig+schwer+falsch)', Math.abs(u.erfolgsquote - 6 / 10) < 1e-9, `quote=${u.erfolgsquote}`)
+    check('bewertungenGesamt zählt „Schwer" mit', u.bewertungenGesamt === 10, `n=${u.bewertungenGesamt}`)
+    check('„Schwer" ist kein Fehler — sonst käme 6/8 heraus', Math.abs(u.erfolgsquote - 6 / 8) > 1e-9)
+
+    const nurSchwer = uebersicht([eintrag(karte(1, 'indikatoren'), { gesamtRichtig: 0, gesamtSchwer: 3, gesamtFalsch: 0 })])
+    check('Eine Karte, die nur mit Mühe ging, ergibt 0 % statt „noch nie bewertet"',
+        nurSchwer.erfolgsquote === 0 && nurSchwer.begonnen === 1)
 }
 
 // ── Wiederholungen pro Tag ───────────────────────────────────────────────
@@ -101,6 +121,18 @@ console.log('\nErfolg nach Kategorie')
     check('Kategorie unter MIN_GRUPPE trägt duenn:true', kats.find(k => k.kategorie === 'derivate').duenn === true, `MIN_GRUPPE=${MIN_GRUPPE}`)
     check('Kategorie mit genug Bewertungen trägt duenn:false', kats.find(k => k.kategorie === 'indikatoren').duenn === false)
     check('Quote je Kategorie korrekt berechnet', Math.abs(kats.find(k => k.kategorie === 'indikatoren').quote - 0.8) < 1e-9)
+
+    /*
+     * „Schwer" zählt auch je Kategorie in den Nenner. Ohne diese Prüfung liesse
+     * sich `proKategorie` versehentlich auf die alte Zweiteilung zurückbauen,
+     * während `uebersicht` bereits richtig rechnet — die beiden Zahlen stehen
+     * auf derselben Seite untereinander und dürfen sich nicht widersprechen.
+     */
+    const mitSchwer = proKategorie([
+        eintrag(karte(1, 'risiko'), { gesamtRichtig: 2, gesamtSchwer: 1, gesamtFalsch: 1 }),
+    ])
+    check('Kategorie-Quote nimmt „Schwer" in den Nenner', Math.abs(mitSchwer[0].quote - 0.5) < 1e-9, `quote=${mitSchwer[0].quote}`)
+    check('Kategorie-Anzahl zählt „Schwer" mit (steuert duenn)', mitSchwer[0].anzahl === 4, `n=${mitSchwer[0].anzahl}`)
 }
 
 // ── werteAus() — Gesamtpaket ──────────────────────────────────────────────

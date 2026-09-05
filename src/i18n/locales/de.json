@@ -4048,7 +4048,11 @@
       "gut": "Gut",
       "leicht": "Leicht",
       "fortschritt": "{aktuell} / {gesamt}",
-      "abbrechen": "Sitzung beenden"
+      "abbrechen": "Sitzung beenden",
+      "ausblenden": "Karte ausblenden",
+      "ausblendenHint": "Diese Karte ausblenden — sie zählt dann nicht mehr als fällig. Der Lernverlauf bleibt, im Reiter „Karten\" lässt sie sich zurückholen.",
+      "erklaerungAuf": "Warum ist das so?",
+      "erklaerungZu": "Erklärung zuklappen"
     },
     "summary": {
       "schwer": "schwer",
