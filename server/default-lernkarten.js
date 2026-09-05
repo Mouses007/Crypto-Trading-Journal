@@ -1017,8 +1017,18 @@ export const LERNKARTEN_DEFS = [
  * `herkunft` und alles in `quiz_fortschritt`.
  */
 export async function seedDefaultLernkarten(knex) {
+    /*
+     * Jedes Feld aus `soll` MUSS hier im `select` stehen, sonst ist `row[feld]`
+     * undefined, der Vergleich unten schlägt immer fehl und jede built-in Karte
+     * bekommt bei JEDEM Serverstart ein UPDATE. Genau das passierte mit
+     * `erklaerung` zwischen 5dc4b4d und diesem Commit: die Spalte kam ins
+     * `soll`, aber nicht in die Auswahl — 153 sinnlose Schreibvorgänge pro
+     * Start, und die Logzeile „N Lernkarten inhaltlich aktualisiert" meldete
+     * eine Änderung, wo keine war. Der Selbsttest hält die beiden Listen
+     * ab jetzt zusammen.
+     */
     const existing = await knex('quiz_karten')
-        .select('id', 'schluessel', 'frage', 'antwort', 'kategorie', 'niveau', 'herkunft')
+        .select('id', 'schluessel', 'frage', 'antwort', 'erklaerung', 'kategorie', 'niveau', 'herkunft')
         .whereIn('schluessel', LERNKARTEN_DEFS.map(k => k.schluessel))
     const existingKeys = new Set(existing.map(r => r.schluessel))
 

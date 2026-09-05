@@ -93,5 +93,24 @@ pruefe('seedDefaultLernkarten schreibt erklaerung beim Anlegen UND beim Nachfüh
     (seedKoerper.match(/erklaerung/g) || []).length >= 2,
     'ohne beide Stellen erreichen Erklärungen nur Neuinstallationen')
 
+/*
+ * Jedes Feld, das der Nachführ-Abgleich VERGLEICHT, muss auch GELESEN werden.
+ *
+ * Steht ein Feld nur im `soll`, aber nicht im `.select(...)`, ist `row[feld]`
+ * undefined, die Abbruchbedingung `every(...)` trifft nie zu, und jede
+ * built-in Karte bekommt bei jedem Serverstart ein UPDATE — samt einer
+ * Logzeile, die eine Änderung meldet, wo keine war. Genau so lief es zwischen
+ * 5dc4b4d und dem Fix; der Fehler wirft nichts und fällt nur auf, wenn man
+ * zweimal hintereinander startet und ins Log sieht.
+ */
+const auswahl = new Set((seedKoerper.match(/\.select\(([^)]*)\)/)?.[1] || '')
+    .split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean))
+const sollBlock = seedKoerper.slice(seedKoerper.indexOf('const soll = {'))
+const sollFelder = [...sollBlock.slice(0, sollBlock.indexOf('\n        }')).matchAll(/^\s{12}(\w+):/gm)].map(m => m[1])
+const ungelesen = sollFelder.filter(f => !auswahl.has(f))
+pruefe('Jedes verglichene Feld wird auch gelesen (soll ⊆ select)',
+    sollFelder.length > 0 && ungelesen.length === 0,
+    sollFelder.length === 0 ? 'soll-Felder nicht erkannt' : 'fehlt im select: ' + ungelesen.join(', '))
+
 console.log(`\n${ok} bestanden, ${fehler} fehlgeschlagen\n`)
 process.exit(fehler ? 1 : 0)
