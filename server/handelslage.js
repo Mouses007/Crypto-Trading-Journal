@@ -456,7 +456,15 @@ export async function erzeugeHandelslage(symbol, { erzwingen = false, auto = fal
             antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000, ...buchung })
         }
 
-        const einordnung = normalisiereHandelslage(antwort.json)
+        /*
+         * Was die Logikprüfung verwirft, steht im Protokoll — sonst weiss
+         * niemand, ob sie nützt oder frisst. Mit `sym` davor, damit sich die
+         * Zeilen einem Lauf zuordnen lassen.
+         */
+        const einordnung = normalisiereHandelslage(antwort.json, (art, inhalt, grund) => {
+            const text = art === 'bedingung' ? `wenn ${inhalt.wenn} → dann ${inhalt.dann}` : String(inhalt)
+            logWarn('handelslage', `${sym}: ${art} verworfen (${grund}) — ${text.slice(0, 200)}`)
+        })
         if (!einordnung) throw new Error('Die KI hat keine verwertbare Einordnung geliefert')
 
         if (auto) zaehleAuto()

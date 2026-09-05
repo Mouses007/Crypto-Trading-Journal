@@ -655,7 +655,17 @@ function richtungAus(text) {
     return null
 }
 
-export function normalisiereHandelslage(json) {
+/**
+ * Antwort des Modells auf eine feste Form bringen und auf Widersprüche prüfen.
+ *
+ * `melde(art, inhalt, grund)` ist optional und wird gerufen, wenn die
+ * Logikprüfung etwas verwirft. Bewusst ein Rückruf statt eines `logWarn` in
+ * dieser Datei: Sie ist rein und netzfrei, damit der Selbsttest sie anfassen
+ * kann — und ein Test, der bei jedem Lauf Protokollzeilen ausspuckt, macht
+ * seine eigene Ausgabe unlesbar. Wer nichts übergibt, bekommt das bisherige
+ * Verhalten.
+ */
+export function normalisiereHandelslage(json, melde = null) {
     if (!json || typeof json !== 'object') return null
 
     const ueberschrift = String(json.ueberschrift || '').trim().slice(0, 140)
@@ -701,9 +711,27 @@ export function normalisiereHandelslage(json) {
             const schwellen = kursmarken(b.wenn)
             if (!richtung || !schwellen.length) return true
             const schwelle = richtung === 'auf' ? Math.max(...schwellen) : Math.min(...schwellen)
-            return kursmarken(b.dann)
+            const ok = kursmarken(b.dann)
                 .filter(z => z >= schwelle * 0.5 && z <= schwelle * 2)
                 .every(z => (richtung === 'auf' ? z >= schwelle : z <= schwelle))
+            /*
+             * Verwerfen wird PROTOKOLLIERT, nicht stillschweigend getan.
+             *
+             * Ohne diese Zeile kann niemand feststellen, ob die Prüfung nützt
+             * oder frisst — man müsste es jedes Mal neu raten. Dieselbe
+             * Begründung steht im Kopf von `news-doppler.js`, und dort hat
+             * sich das Protokoll bewährt: Es zeigte, dass der Durchgang
+             * chirurgisch arbeitet und nicht gefrässig.
+             *
+             * Der Anlass ist konkret: Diese Prüfung hat am 05.09.2026 binnen
+             * einer Stunde zweimal falsch GELESEN — beide Male in der
+             * Zahl-Extraktion, nie in der Vergleichsregel —, und beide Male
+             * fiel es nur einem Audit auf, weil nirgends stand, was sie tat.
+             */
+            if (!ok && melde) {
+                melde('bedingung', b, `Ziel liegt entgegen der Richtung „${richtung}" zur Schwelle ${schwelle}`)
+            }
+            return ok
         })
         .slice(0, 4)
 
@@ -726,7 +754,9 @@ export function normalisiereHandelslage(json) {
         .filter(h => {
             const zahlen = kursmarken(h)
             if (!zahlen.length) return true        // „ADX steigt über 25" — kein Kurs, kein Konflikt
-            return !ausloeser.some(a => zahlen.every(z => a.includes(z)))
+            const ok = !ausloeser.some(a => zahlen.every(z => a.includes(z)))
+            if (!ok && melde) melde('hinfaellig', h, 'Marke ist bereits Auslöser einer Bedingung')
+            return ok
         })
         .slice(0, 3)
 
