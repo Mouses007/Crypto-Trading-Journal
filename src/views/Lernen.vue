@@ -634,7 +634,7 @@ async function aktivUmschalten(karte) {
 /* Auslöser der Kartenerklärung — betont zurückhaltend: er soll erst auffallen,
    wenn man die Antwort gelesen hat und etwas offen geblieben ist. */
 .lernen-erklaerung-knopf {
-    margin-top: 0.9rem; background: none; border: none; padding: 0.15rem 0.4rem;
+    margin-top: 0.9rem; align-self: center; background: none; border: none; padding: 0.15rem 0.4rem;
     font-size: 0.9rem; color: var(--blue-color, #3b82f6);
     display: inline-flex; align-items: center; gap: 0.35rem;
 }
