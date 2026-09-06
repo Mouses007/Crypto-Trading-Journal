@@ -132,7 +132,9 @@ async function fixPostgresSequences(knex) {
 // weiterhin als Treffer, seine Quote fällt also zu gut aus — die Zahlen
 // laufen zwischen altem und neuem Stand auseinander, ohne dass etwas kaputt
 // geht.
-const SCHEMA_VERSION = 16
+// v17: `bild` an `quiz_karten` — SVG-Skizze zu Strukturkarten. Rein additiv,
+// Vorgabe leer; ein aelterer Codestand ignoriert die Spalte schlicht.
+const SCHEMA_VERSION = 17
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2983,6 +2985,20 @@ async function runMigrations(knex, client) {
             // 1 = App-eigene Grundbegriffe, 2 = vertiefte Konzepte (On-Chain, Derivate-Feinheiten, Risikokennzahlen …)
             t.integer('niveau').defaultTo(1)
             /*
+             * Skizze zur Karte — SVG-Quelltext, optional.
+             *
+             * Strukturbegriffe wie BOS, CHoCH oder Order Block sind in Prosa
+             * kaum zu fassen: Der Unterschied zwischen den beiden ersten ist
+             * die LAGE eines gebrochenen Punktes, und die zeigt ein Bild in
+             * einer Sekunde. Gezeichnet, nicht erzeugt — bei einer Skizze, die
+             * eine Definition trägt, muss jede Kerze stimmen.
+             *
+             * Als SVG-Text und nicht als Datei, damit die Karte in einem Stück
+             * wandert: Export, Sicherung und das Nachführen des Starter-Decks
+             * fassen sonst zwei Dinge an, die zusammengehören.
+             */
+            t.text('bild').defaultTo('')
+            /*
              * Warum die Antwort richtig ist — optional.
              *
              * Der Leitner-Kasten zeigt die Antwort, bevor man sich bewertet;
@@ -3032,6 +3048,8 @@ async function runMigrations(knex, client) {
 
     // Für Installationen, auf denen quiz_karten schon vor v13 existierte.
     await addColumnIfNotExists('quiz_karten', 'niveau', (t) => t.integer('niveau').defaultTo(1))
+    // Skizze zur Karte (SVG-Quelltext) — siehe createTable oben.
+    await addColumnIfNotExists('quiz_karten', 'bild', (t) => t.text('bild').defaultTo(''))
 
     /*
      * Eigener Zähler für „Schwer" (05.09.2026). MUSS als `addColumnIfNotExists`

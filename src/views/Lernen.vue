@@ -200,6 +200,17 @@ const KATEGORIEN = ['indikatoren', 'derivate', 'sentiment', 'chartAnalyse', 'ris
 // hier eingetragen werden muss und nicht drei feste Knöpfe im Template braucht.
 const NIVEAUS = [1, 2, 3]
 const kategorieLabel = (k) => t('lernen.kategorie.' + k)
+/*
+ * Skizze als DATA-URI in einem `img`, nicht ueber `v-html`.
+ *
+ * Ein SVG in `v-html` liegt im selben Dokument und darf alles, was das
+ * Dokument darf — Skripte eingeschlossen. Eigene Karten befuellt der Nutzer
+ * selbst, und ein Sicherungs-Import bringt fremde Inhalte mit; in einem `img`
+ * ist ein SVG dagegen abgeschottet und fuehrt nichts aus.
+ */
+const bildQuelle = (svg) => (String(svg || '').trim()
+    ? `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+    : '')
 const boxVonKarte = (kartenId) => Number(fortschrittByKarte.value[kartenId]?.box) || BOX_MIN
 const niveauVonKarte = (karte) => Number(karte?.niveau) || 1
 
@@ -435,6 +446,11 @@ async function aktivUmschalten(karte) {
                                     Ausgeklappt statt immer sichtbar, damit man sich erst
                                     selbst bewertet und dann nachliest.
                                 -->
+                            <!-- Skizze: bei Strukturbegriffen sagt sie in einer Sekunde,
+                             wofuer der Text drei Saetze braucht. -->
+                            <img v-if="bildQuelle(aktuellerEintrag.karte.bild)" class="lernen-skizze"
+                                :src="bildQuelle(aktuellerEintrag.karte.bild)" alt="" />
+
                                 <button v-if="hatErklaerung" type="button" class="lernen-erklaerung-knopf"
                                     :aria-expanded="erklaerungOffen" @click="erklaerungUmschalten">
                                     <i class="uil" :class="erklaerungOffen ? 'uil-angle-up' : 'uil-info-circle'"></i>
@@ -644,6 +660,16 @@ async function aktivUmschalten(karte) {
 </template>
 
 <style scoped>
+/* Skizze zur Karte: volle Breite, aber nie hoeher als ein Drittel des Bildes —
+   sie erklaert die Antwort, sie ersetzt sie nicht. */
+.lernen-skizze {
+    display: block;
+    width: 100%;
+    max-width: 460px;
+    height: auto;
+    margin: 1rem auto 0;
+}
+
 /* Stufenwahl auf dem Startbildschirm */
 .lernen-niveauwahl {
     display: flex;

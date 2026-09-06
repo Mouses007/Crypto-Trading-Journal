@@ -11,6 +11,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { LERNKARTEN_DEFS } from './default-lernkarten.js'
+import { BILDER, bildFuer } from './lernkarten-bilder.js'
 
 // Muss deckungsgleich zu KATEGORIEN in src/views/Lernen.vue sein — eine
 // Kategorie ohne dortigen Eintrag hat auch keinen i18n-Schlüssel.
@@ -111,6 +112,40 @@ const ungelesen = sollFelder.filter(f => !auswahl.has(f))
 pruefe('Jedes verglichene Feld wird auch gelesen (soll ⊆ select)',
     sollFelder.length > 0 && ungelesen.length === 0,
     sollFelder.length === 0 ? 'soll-Felder nicht erkannt' : 'fehlt im select: ' + ungelesen.join(', '))
+
+
+/*
+ * Skizzen zu den Strukturkarten.
+ *
+ * Die wichtigste Pruefung ist die erste: Ein Bild haengt ueber den
+ * KARTENSCHLUESSEL an seiner Karte. Vertippt man sich dort, verschwindet die
+ * Skizze lautlos -- die Karte funktioniert weiter, nur ohne Bild, und niemand
+ * vermisst etwas, das er nie gesehen hat.
+ */
+{
+    const schluessel = new Set(LERNKARTEN_DEFS.map(k => k.schluessel))
+    const verwaist = Object.keys(BILDER).filter(k => !schluessel.has(k))
+    pruefe('jede Skizze gehoert zu einer Karte', verwaist.length === 0, verwaist.join(', '))
+
+    for (const [k, svg] of Object.entries(BILDER)) {
+        pruefe(`${k}: ist ein SVG mit Namensraum`,
+            svg.startsWith('<svg') && svg.includes('xmlns="http://www.w3.org/2000/svg"'))
+        pruefe(`${k}: Tags gehen auf`,
+            (svg.match(/</g) || []).length === (svg.match(/>/g) || []).length)
+        /*
+         * Nichts darf ueber den Rand hinausragen. Ein abgeschnittener Text ist
+         * im Quelltext unsichtbar und faellt erst am Bild auf -- genau das ist
+         * beim ersten Anlauf zweimal passiert.
+         */
+        const xWerte = [...svg.matchAll(/\b(?:x|x1|x2|cx)="(-?\d+(?:\.\d+)?)"/g)].map(m => Number(m[1]))
+        pruefe(`${k}: nichts links ausserhalb`, xWerte.every(v => v >= 0), String(Math.min(...xWerte)))
+        pruefe(`${k}: nichts rechts ausserhalb`, xWerte.every(v => v <= 460), String(Math.max(...xWerte)))
+    }
+
+    pruefe('bildFuer liefert leer statt undefined fuer unbekannte Karten',
+        bildFuer('gibtsNicht') === '' && bildFuer(undefined) === '' && bildFuer(null) === '')
+    pruefe('bildFuer trifft eine bekannte Karte', bildFuer('bosChoch').startsWith('<svg'))
+}
 
 console.log(`\n${ok} bestanden, ${fehler} fehlgeschlagen\n`)
 process.exit(fehler ? 1 : 0)

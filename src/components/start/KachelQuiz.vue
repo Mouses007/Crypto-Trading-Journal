@@ -42,6 +42,17 @@ const { t } = useI18n()
 
 /** Kategoriename wie auf der Lernseite — dieselben i18n-Schluessel. */
 const kategorieLabel = (k) => t('lernen.kategorie.' + k)
+/*
+ * Skizze als DATA-URI in einem `img`, nicht ueber `v-html`.
+ *
+ * Ein SVG in `v-html` liegt im selben Dokument und darf alles, was das
+ * Dokument darf — Skripte eingeschlossen. Eigene Karten befuellt der Nutzer
+ * selbst, und ein Sicherungs-Import bringt fremde Inhalte mit; in einem `img`
+ * ist ein SVG dagegen abgeschottet und fuehrt nichts aus.
+ */
+const bildQuelle = (svg) => (String(svg || '').trim()
+    ? `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+    : '')
 const router = useRouter()
 
 const geladen = ref(false)
@@ -222,6 +233,10 @@ const {
                         <div class="lernen-antwort">{{ aktuellerEintrag.karte.antwort }}</div>
                         <!-- Gleiche Erklärung wie auf der Lernseite, gleiche Begründung
                              gegen InfoTipp (siehe dort) — nur eben aus dem Composable. -->
+                        <!-- Siehe Lernen.vue: Data-URI statt v-html. -->
+                        <img v-if="bildQuelle(aktuellerEintrag.karte.bild)" class="lernen-skizze"
+                            :src="bildQuelle(aktuellerEintrag.karte.bild)" alt="" />
+
                         <button v-if="hatErklaerung" type="button" class="lernen-erklaerung-knopf"
                             :aria-expanded="erklaerungOffen" @click="erklaerungUmschalten">
                             <i class="uil" :class="erklaerungOffen ? 'uil-angle-up' : 'uil-info-circle'"></i>
@@ -418,6 +433,16 @@ const {
 .qzFuss .qzFuss-hinweis { margin-left: auto; }
 
 .qzStart { margin-top: 0; }
+
+/* Skizze zur Karte: volle Breite, aber nie hoeher als ein Drittel des Bildes —
+   sie erklaert die Antwort, sie ersetzt sie nicht. */
+.lernen-skizze {
+    display: block;
+    width: 100%;
+    max-width: 460px;
+    height: auto;
+    margin: 1rem auto 0;
+}
 
 .lernen-karteikarte { background: #000; border-radius: var(--border-radius, 8px); overflow: hidden; }
 

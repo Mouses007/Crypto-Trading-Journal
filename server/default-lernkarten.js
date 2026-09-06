@@ -25,6 +25,8 @@
  * ergänzt, sie wiederholt nicht (der Selbsttest prüft beides).
  */
 
+import { bildFuer } from './lernkarten-bilder.js'
+
 export const LERNKARTEN_DEFS = [
     // ── Indikatoren ─────────────────────────────────────────
     {
@@ -590,6 +592,42 @@ export const LERNKARTEN_DEFS = [
         erklaerung: 'Beides sind Beschreibungen der Struktur aus höheren Hochs und höheren Tiefs. BOS bestätigt sie, CHoCH bricht sie zum ersten Mal. Der wunde Punkt ist die Definition von Hoch und Tief: je nachdem welche Zwischenbewegungen man zählt, ergibt sich eine andere Struktur — dasselbe Chart lässt sich als BOS oder als CHoCH lesen. Nützlich wird es erst mit einer festen, vorher aufgeschriebenen Regel, welche Punkte zählen.',
     },
     {
+        schluessel: 'displacement', kategorie: 'chartAnalyse', niveau: 3,
+        frage: 'Was ist Displacement — und woran erkennt man es?',
+        antwort: 'Eine Bewegung, die in kurzer Zeit deutlich mehr Spanne nimmt als die Kerzen davor, meist mit grossen Körpern und kleinen Dochten. Sie hinterlässt in der Regel eine Fair Value Gap. Ohne Displacement ist ein Order Block bloss eine Kerze.',
+        erklaerung: 'Der Begriff soll Absicht von Rauschen trennen: Eine Bewegung, für die deutlich mehr bezahlt wurde als üblich, hat einen Auftraggeber. Messbar wird er erst mit einem Bezug — etwa Körper grösser als das Dreifache der ATR der letzten 20 Kerzen. Wer ihn nach Augenmass vergibt, findet ihn immer dort, wo er ihn braucht; das ist der übliche Fehlgebrauch.',
+    },
+    {
+        schluessel: 'inducement', kategorie: 'chartAnalyse', niveau: 3,
+        frage: 'Was meint Inducement?',
+        antwort: 'Ein naheliegendes Zwischenhoch oder -tief, dessen Stopps zuerst abgeräumt werden, bevor der Kurs den eigentlich gemeinten Bereich anläuft. Der Köder liegt vor dem Ziel, nicht dahinter.',
+        erklaerung: 'Die Idee dahinter: Ein grosser Auftrag braucht Gegenseite, und die liegt gebündelt hinter offensichtlichen Marken. Deshalb wird erst dort abgeholt und dann gedreht. Nachweisbar ist die Absicht nicht — beobachtbar ist nur die Reihenfolge. Der Begriff ist im Nachhinein immer eindeutig und vorher fast nie; wer damit arbeitet, muss vorab festlegen, welches Zwischenhoch zählt.',
+    },
+    {
+        schluessel: 'mitigationBlock', kategorie: 'chartAnalyse', niveau: 3,
+        frage: 'Was ist ein Mitigation Block?',
+        antwort: 'Ein Bereich, den der Kurs erneut anläuft, damit dort eröffnete und ins Minus geratene Positionen glattgestellt werden können — er hält, und die Bewegung geht in der alten Richtung weiter.',
+        erklaerung: 'Anders als beim Order Block ist nicht die letzte gegenfarbige Kerze gemeint, sondern der Bereich, in dem jemand ungünstig eingestiegen ist. Das Rückkehrverhalten sieht identisch aus; unterscheidbar sind die beiden nur über die Frage, ob der Kurs von dort weg eine Struktur gebrochen hat. Im Zweifel ist es dieselbe Zone unter zwei Namen.',
+    },
+    {
+        schluessel: 'breakerBlock', kategorie: 'chartAnalyse', niveau: 3,
+        frage: 'Was ist ein Breaker Block und was unterscheidet ihn vom Order Block?',
+        antwort: 'Ein Order Block, der NICHT gehalten hat: Der Kurs ist durchgelaufen. Danach wird derselbe Bereich in der umgekehrten Rolle geprüft — aus Unterstützung wird Widerstand.',
+        erklaerung: 'Es ist derselbe Gedanke wie bei einer gebrochenen Unterstützung, nur im Vokabular der Marktstruktur. Der Wert liegt darin, dass ein Fehlschlag nicht verworfen, sondern umgedeutet wird — und genau darin die Gefahr: Ein Bereich, der einmal gebrochen wurde, lässt sich in beide Richtungen erzählen. Ohne die Regel, dass zwischen Bruch und Rücktest eine Struktur gebrochen sein muss, ist jeder gescheiterte Order Block nachträglich ein Breaker.',
+    },
+    {
+        schluessel: 'premiumDiscount', kategorie: 'chartAnalyse', niveau: 3,
+        frage: 'Was bedeuten Premium und Discount in einer Handelsspanne?',
+        antwort: 'Die beiden Hälften der Spanne, geteilt bei 50 %: Oberhalb ist der Kurs teuer (Premium) — dort wird eher verkauft; unterhalb billig (Discount) — dort eher gekauft. Nicht zu verwechseln mit dem Coinbase-Premium, der etwas völlig anderes misst.',
+        erklaerung: 'Die Regel ist nur so gut wie die Spanne, auf die sie sich bezieht: Wer Hoch und Tief nachträglich wählt, bekommt jede gewünschte Antwort, weil sich die Mitte mitverschiebt. Brauchbar wird sie mit einer vorher definierten Spanne — etwa der Tagesspanne oder dem letzten klar begrenzten Seitwärtsbereich. Der Nutzen ist nicht die Prognose, sondern die Disziplin: Sie verhindert Käufe am oberen Rand.',
+    },
+    {
+        schluessel: 'equalHighsLows', kategorie: 'chartAnalyse', niveau: 3,
+        frage: 'Warum sind mehrere Hochs auf exakt derselben Marke interessant?',
+        antwort: 'Weil sich darüber Aufträge sammeln: Stopps der Verkäufer und Kaufaufträge für den Ausbruch. Je sauberer die Hochs übereinstimmen, desto sichtbarer ist die Marke — und desto eher wird sie angelaufen.',
+        erklaerung: 'Der Kurs geht nicht dorthin, WEIL dort Aufträge liegen; er geht dorthin, weil Ausführung Gegenseite braucht, und die liegt gebündelt an offensichtlichen Marken. Der Unterschied klingt spitzfindig, ist aber der zwischen einer Beobachtung und einer Absichtserklärung des Marktes. Prüfbar ist nur die Beobachtung — und dass eine Marke geholt wurde, heisst nicht, dass die Bewegung dort endet.',
+    },
+    {
         schluessel: 'wyckoff', kategorie: 'chartAnalyse', niveau: 3,
         frage: 'Was beschreibt das Wyckoff-Schema?',
         antwort: 'Einen wiederkehrenden Vierklang: Akkumulation (leises Einsammeln in einer Range), Markup (Aufwärtstrend), Distribution (Abgeben in die Stärke), Markdown (Abwärtstrend). Ein Deutungsrahmen, kein Signalgeber.',
@@ -1028,7 +1066,7 @@ export async function seedDefaultLernkarten(knex) {
      * ab jetzt zusammen.
      */
     const existing = await knex('quiz_karten')
-        .select('id', 'schluessel', 'frage', 'antwort', 'erklaerung', 'kategorie', 'niveau', 'herkunft')
+        .select('id', 'schluessel', 'frage', 'antwort', 'erklaerung', 'bild', 'kategorie', 'niveau', 'herkunft')
         .whereIn('schluessel', LERNKARTEN_DEFS.map(k => k.schluessel))
     const existingKeys = new Set(existing.map(r => r.schluessel))
 
@@ -1054,6 +1092,9 @@ export async function seedDefaultLernkarten(knex) {
              * nicht. Ein Fehler, der still bleibt.
              */
             erklaerung: def.erklaerung || '',
+            // Steht im `soll` UND oben im `select` — fehlt es dort, ist der
+            // Vergleich immer falsch und jeder Start schreibt alle Karten neu.
+            bild: bildFuer(def.schluessel),
         }
         if (Object.keys(soll).every(f => row[f] === soll[f])) continue
         await knex('quiz_karten').where({ id: row.id }).update(soll)
@@ -1073,6 +1114,7 @@ export async function seedDefaultLernkarten(knex) {
             frage: def.frage,
             antwort: def.antwort,
             erklaerung: def.erklaerung || '',
+            bild: bildFuer(def.schluessel),
             kategorie: def.kategorie,
             herkunft: 'built-in',
             aktiv: 1,
