@@ -7,7 +7,7 @@
  * Farben, die Outlook verwirft, und die Textfassung für Clients ohne HTML.
  */
 
-import { baueMail, baueKoerper, logoAnhang, TOENE, STUFEN, STUFE_VORGABE, groessen } from './mail-vorlage.js'
+import { baueMail, baueKoerper, logoAnhang, zeitStempel, TOENE, STUFEN, STUFE_VORGABE, groessen } from './mail-vorlage.js'
 
 let ok = 0, fehler = 0
 function pruefe(name, bedingung, detail = '') {
@@ -152,6 +152,35 @@ function pruefe(name, bedingung, detail = '') {
     const roh = baueMail({ titel: 'T', text: 'x' }).html.replace(/font-size:0;/g, '')
     pruefe('keine Grösse ausserhalb der Stufe', px(roh).every((v) => Object.values(groessen(STUFE_VORGABE)).includes(v)))
     pruefe('Nur-Text-Fassung kennt keine Grössen', !baueMail({ titel: 'T', text: 'x' }).text.includes('font-size'))
+}
+
+
+// ── Zeitstempel ──────────────────────────────────────────────────────────
+/*
+ * Der Container läuft auf UTC, der Nutzer nicht. Ohne `timeZone` nimmt
+ * `toLocaleString` die Prozesszone: Der Lagebericht vom 06.09.2026 trug
+ * „08:07" im Kopf, obwohl er laut Einstellung und Datenbank um 10:07
+ * entstanden war. Zwei Stunden fallen niemandem als Zeitzonenfehler auf —
+ * man hält den Bericht schlicht für älter, als er ist.
+ *
+ * Die Prüfung setzt die Zone ausdrücklich, statt sich auf die des Läufers zu
+ * verlassen: Auf einer Maschine in Europe/Zurich wäre der Fehler unsichtbar,
+ * und ein Test, der nur dort rot wird, wo niemand ihn laufen lässt, ist keiner.
+ */
+{
+    const t = new Date('2026-09-06T08:07:06Z')
+    pruefe('Zone des Nutzers schlägt die des Prozesses',
+        zeitStempel(t, 'Europe/Brussels') === '06.09.2026, 10:07', zeitStempel(t, 'Europe/Brussels'))
+    pruefe('andere Zone, andere Stunde',
+        zeitStempel(t, 'UTC') === '06.09.2026, 08:07', zeitStempel(t, 'UTC'))
+    // Eine kaputte Einstellung darf die Benachrichtigung nicht verhindern —
+    // eine Mail mit falscher Uhrzeit ist besser als keine Mail.
+    pruefe('unbrauchbare Zone wirft nicht', /^\d\d\.\d\d\.\d{4}, \d\d:\d\d$/.test(zeitStempel(t, 'Mond/Krater')))
+    pruefe('ungültiges Datum wirft nicht', /^\d\d\.\d\d\.\d{4}, \d\d:\d\d$/.test(zeitStempel(new Date('quatsch'), 'UTC')))
+    pruefe('die Mail trägt die Zone in Kopf UND Nur-Text-Fassung', (() => {
+        const m = baueMail({ titel: 'T', text: 'x', zeit: t, zeitzone: 'Europe/Brussels' })
+        return m.html.includes('06.09.2026, 10:07') && m.text.includes('06.09.2026, 10:07')
+    })())
 }
 
 console.log(`mail-vorlage: ${ok} ok, ${fehler} Fehler`)

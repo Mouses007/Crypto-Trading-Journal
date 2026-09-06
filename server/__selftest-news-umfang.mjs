@@ -16,8 +16,9 @@
 import {
     budgetsAus, punkteVorgabe, videoTiefeAus, VIDEO_TIEFEN, bauLagePrompt, laengeFuerUpdate,
     bauVideoAuftrag, MELDUNGS_TIEFEN, meldungsTiefeAus, bauAnweisungPruefPrompt,
-    istLiveSeite, istEndgueltig, leseLagebild, eigeneAnweisungen, ZUSATZ_MAX, istBruchstueck,
+    istLiveSeite, istEndgueltig, leseLagebild, eigeneAnweisungen, ZUSATZ_MAX, istBruchstueck, de,
 } from './marktradar-news.js'
+import { zahlenAus } from './news-doppler.js'
 
 let fehler = 0
 const pruefe = (name, bedingung, zusatz = '') => {
@@ -410,6 +411,37 @@ p('undefined ist nicht endgültig', istEndgueltig(undefined) === false)
         !pruefAn.includes('keine Handelsempfehlungen') && pruefAn.includes('ERLAUBT'))
     p('Anweisungsprüfung kennt die neue Grenze der Kapitel-Lage',
         pruefAus.includes('bleibt wirkungslos') && pruefAn.includes('bleibt wirkungslos'))
+}
+
+
+/*
+ * Deutsche Zahlen im Marktstand.
+ *
+ * Der Bericht ist deutsch, die Tabelle daneben kam aus `toFixed` und schrieb
+ * einen Dezimalpunkt — im selben Dokument stand damit „2.68 Bio. USD" (App,
+ * Dezimaltrenner) neben „81.000 USD" (Modell, Tausendertrenner). Wer das
+ * nebeneinander liest, liest 268 Billionen.
+ *
+ * Die Gegenprobe ist die wichtigere Hälfte: Der Doppler muss die neue
+ * Schreibweise weiterhin auf dieselbe Marke normalisieren, sonst zählt eine
+ * Zahl in der Tabelle und dieselbe Zahl im Text als zwei verschiedene und die
+ * Wiederholungsprüfung fällt lautlos aus.
+ */
+p('Dezimalkomma statt Punkt', de(2.68, 2) === '2,68', de(2.68, 2))
+p('vorhandene Genauigkeit bleibt ohne Stellenangabe', de(59.6) === '59,6', de(59.6))
+p('ganze Zahl bleibt ohne Komma', de(73) === '73', de(73))
+p('echtes Minus bleibt', de(-0.9, 1) === '-0,9', de(-0.9, 1))
+p('negative Null verliert das Vorzeichen', de(-0.0004, 3) === '0,000', de(-0.0004, 3))
+p('fehlender Wert wird KEINE Null', de(null) === '' && de(undefined) === '' && de('') === '',
+    `${JSON.stringify(de(null))} ${JSON.stringify(de(undefined))} ${JSON.stringify(de(''))}`)
+p('Text bleibt Text', de('n/a') === 'n/a')
+p('echte Null bleibt eine Null', de(0) === '0' && de(0, 2) === '0,00')
+{
+    const marken = (t) => [...zahlenAus(t)]
+    p('Doppler liest die deutsche Schreibweise', marken('Dominanz 59,6 %')[0] === '59.6%',
+        JSON.stringify(marken('Dominanz 59,6 %')))
+    p('deutsche und englische Schreibweise ergeben dieselbe Marke',
+        marken('Dominanz 59,6 %')[0] === marken('Dominanz 59.6 %')[0])
 }
 
 console.log(`${anzahl - fehler} bestanden, ${fehler} fehlgeschlagen`)

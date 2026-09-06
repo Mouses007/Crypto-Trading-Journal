@@ -1203,13 +1203,53 @@ const FUNDING_MIN_UMSATZ = 250e6
 /** „BTCUSDT" → „BTC". In einer Mail zählt jedes Zeichen. */
 const kurzSym = (s) => String(s || '').replace(/USDT$/, '')
 
+/**
+ * Zahl für den deutschen Marktstand: Dezimal-KOMMA, kein Minus vor der Null.
+ *
+ * Der Bericht ist deutsch, die Zahlen daneben kamen aus `toFixed` und trugen
+ * einen Dezimalpunkt. Im selben Dokument bedeutete der Punkt damit zweierlei:
+ * die App schrieb „2.68 Bio. USD" (Dezimaltrenner), das Modell im Fliesstext
+ * daneben „81.000 USD" (Tausendertrenner). „2.68 Bio." liest sich so als 268
+ * Billionen — in einem Bericht, dessen ganzer Zweck die Zahlen sind, ist das
+ * der teuerste denkbare Tippfehler, und er stand da als Absicht.
+ *
+ * Der zweite Teil ist älter: `toFixed` druckt die NEGATIVE NULL. XRP stand am
+ * 05.09.2026 mit „-0.000 % je 8 h" im Bericht — rechnerisch korrekt, gelesen
+ * aber Unsinn: ein Minus ohne Betrag behauptet eine Richtung, die die Zahl
+ * nicht hergibt.
+ *
+ * Rückwärts gelesen wird das ohne Schaden: `zahlenAus` in `news-doppler.js`
+ * normalisiert „1.234,50 %" und „1234.5 Prozent" auf dieselbe Marke, und die
+ * Anzeige der Tabelle zeichnet ihren Balken aus dem separaten `skala`-Feld,
+ * nicht aus diesem Text.
+ *
+ * @param {number|string} wert
+ * @param {number} [stellen]  weglassen = vorhandene Genauigkeit behalten
+ */
+export function de(wert, stellen = null) {
+    /*
+     * `Number(null)` ist 0, und `Number('')` ebenso — ohne diesen Riegel würde
+     * aus einem fehlenden Messwert eine „0 %" in der Tabelle. Eine erfundene
+     * Null ist in einem Messwertblock die teuerste Ausgabe: Sie sieht aus wie
+     * ein Befund („kein Zufluss", „keine Prämie") statt wie eine Lücke. Der
+     * Fehlgriff ist im Projekt belegt — das Audit vom 20.08.2026 fand ihn an
+     * fünf Stellen.
+     */
+    if (wert === null || wert === undefined || wert === '') return ''
+    const n = Number(wert)
+    if (!Number.isFinite(n)) return String(wert)
+    const t = stellen === null ? String(n) : n.toFixed(stellen)
+    const ohneNegativeNull = /^-0(\.0*)?$/.test(t) ? t.slice(1) : t
+    return ohneNegativeNull.replace('.', ',')
+}
+
 async function holeMarktdatenBlock() {
     const werte = []
     try {
         const f = await holeFearGreed(35)
         werte.push({
             was: 'Fear & Greed', wert: `${f.aktuell.wert} (${f.aktuell.klasse})`,
-            zusatz: `30-Tage-Mittel ${f.mittel30}`, skala: Number(f.aktuell.wert),
+            zusatz: `30-Tage-Mittel ${de(f.mittel30)}`, skala: Number(f.aktuell.wert),
         })
     } catch (e) { logWarn('news', `Marktdaten Fear&Greed: ${e.message}`) }
     try {
@@ -1228,10 +1268,10 @@ async function holeMarktdatenBlock() {
          */
         const g = await holeDominanz()
         werte.push({
-            was: 'BTC-Dominanz', wert: `${g.jetzt.pct} %`,
+            was: 'BTC-Dominanz', wert: `${de(g.jetzt.pct)} %`,
             zusatz: [
-                g.jetzt.mcapUsd ? `Gesamtmarkt ${(g.jetzt.mcapUsd / 1e12).toFixed(2)} Bio. USD` : '',
-                Number.isFinite(g.delta7) ? `7 Tage ${g.delta7 > 0 ? '+' : ''}${g.delta7} Punkte` : '',
+                g.jetzt.mcapUsd ? `Gesamtmarkt ${de(g.jetzt.mcapUsd / 1e12, 2)} Bio. USD` : '',
+                Number.isFinite(g.delta7) ? `7 Tage ${g.delta7 > 0 ? '+' : ''}${de(g.delta7)} Punkte` : '',
             ].filter(Boolean).join(', '),
             skala: Number(g.jetzt.pct),
         })
@@ -1251,10 +1291,7 @@ async function holeMarktdatenBlock() {
          * hergibt, und eine KI, die daraus „Shorts zahlen" liest, hat sich
          * nicht geirrt, sondern das gelesen, was dastand.
          */
-        const zahl = (wert, stellen) => {
-            const t = wert.toFixed(stellen)
-            return /^-0(\.0*)?$/.test(t) ? t.slice(1) : t
-        }
+        const zahl = (wert, stellen) => de(wert, stellen)
         const fmt = r => `${kurzSym(r.symbol)} ${zahl(r.rate * 100, 3)} % je ${r.intervallStunden || 8} h`
             + (Number.isFinite(r.jahresRate) ? ` (${zahl(r.jahresRate * 100, 0)} % p.a.)` : '')
         const knapp = r => `${kurzSym(r.symbol)} ${zahl(r.jahresRate * 100, 0)} % p.a.`
@@ -1316,10 +1353,10 @@ async function holeMarktdatenBlock() {
         const p = ls.punkte?.[ls.punkte.length - 1]
         if (p) {
             werte.push({
-                was: 'BTC Long/Short-Konten', wert: `${p.longPct} % long / ${p.shortPct} % short`,
+                was: 'BTC Long/Short-Konten', wert: `${de(p.longPct)} % long / ${de(p.shortPct)} % short`,
                 zusatz: [
                     ls.oiDelta !== null && ls.oiDelta !== undefined
-                        ? `Open Interest 24h ${ls.oiDelta > 0 ? '+' : ''}${Number(ls.oiDelta).toFixed(1)} %` : '',
+                        ? `Open Interest 24h ${ls.oiDelta > 0 ? '+' : ''}${de(ls.oiDelta, 1)} %` : '',
                     ls.deutung && ls.deutung !== 'neutral' ? ls.deutung : '',
                 ].filter(Boolean).join(', '),
                 skala: Number(p.longPct),

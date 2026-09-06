@@ -255,6 +255,9 @@ function gestalteteMail(s, id, { betreff, text }) {
         ton: eintrag.ton,
         bereich: eintrag.bereich,
         nutzer: s?.username || '',
+        // Der Container läuft auf UTC — ohne diese Zone trägt die Mail eine
+        // Uhrzeit, die zwei Stunden vor der steht, die der Nutzer erlebt hat.
+        zeitzone: s?.timeZone || '',
         mitLogo: Boolean(logo),
         groesse: schriftStufe(s),
     })
@@ -657,6 +660,7 @@ export function setupBenachrichtigungsRoutes(app) {
                 ton: 'gut',
                 bereich: 'System · Test',
                 nutzer: s?.username || '',
+                zeitzone: s?.timeZone || '',
                 mitLogo: Boolean(logo),
                 groesse: schriftStufe(s),
             })

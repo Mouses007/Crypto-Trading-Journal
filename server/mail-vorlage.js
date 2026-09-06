@@ -222,6 +222,32 @@ function kopfzeile(marke, unterzeile, mitLogo, g) {
 }
 
 /**
+ * Zeitstempel der Kopfzeile — in der Zone des NUTZERS, nicht des Prozesses.
+ *
+ * Der Container läuft auf UTC. Ohne `timeZone` nimmt `toLocaleString` die
+ * Prozesszone, und der Lagebericht vom 06.09.2026 trug „08:07" im Kopf,
+ * während er laut Einstellung und Datenbank um 10:07 entstanden war. Zwei
+ * Stunden Unterschied fallen niemandem als Zeitzonenfehler auf — man hält den
+ * Bericht schlicht für älter, als er ist, und bei einer Zwischenmeldung ist
+ * genau das die Frage, um die es geht.
+ *
+ * Eine unbrauchbare Zone darf die Mail nicht verhindern: `toLocaleString`
+ * wirft bei einer unbekannten Zone einen RangeError, und eine Benachrichtigung,
+ * die wegen einer Einstellung gar nicht erst ankommt, ist der schlechtere
+ * Fehler als eine mit falscher Uhrzeit.
+ */
+export function zeitStempel(zeit, zeitzone = '') {
+    const opt = {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    }
+    const d = zeit instanceof Date && !Number.isNaN(zeit.getTime()) ? zeit : new Date()
+    if (zeitzone) {
+        try { return d.toLocaleString('de-CH', { ...opt, timeZone: zeitzone }) } catch { /* s.o. */ }
+    }
+    return d.toLocaleString('de-CH', opt)
+}
+
+/**
  * Eine fertige Mail.
  *
  * @param {object} opt
@@ -233,19 +259,18 @@ function kopfzeile(marke, unterzeile, mitLogo, g) {
  * @param {string} [opt.marke]   Absenderzeile, Vorgabe „Crypto Trading Journal"
  * @param {string} [opt.nutzer]  Zusatz in der Unterzeile (Name aus den Einstellungen)
  * @param {Date}   [opt.zeit]    Zeitstempel der Meldung
+ * @param {string} [opt.zeitzone] IANA-Zone für den Stempel, z.B. „Europe/Zurich"
  * @param {boolean}[opt.mitLogo] false, wenn kein Anhang mitgeschickt wird
  * @param {string} [opt.groesse] Schriftstufe: normal | gross | sehrGross
  * @returns {{betreff: string, text: string, html: string}}
  */
 export function baueMail({ titel, text, symbol, ton, bereich, marke = 'Crypto Trading Journal',
-    nutzer = '', zeit = new Date(), mitLogo = true, groesse = STUFE_VORGABE } = {}) {
+    nutzer = '', zeit = new Date(), zeitzone = '', mitLogo = true, groesse = STUFE_VORGABE } = {}) {
     const stil = TOENE[ton] || TOENE[VORGABE.ton]
     const g = groessen(groesse)
     const zeichen = symbol || VORGABE.symbol
     const rubrik = bereich || VORGABE.bereich
-    const stempel = zeit.toLocaleString('de-CH', {
-        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    })
+    const stempel = zeitStempel(zeit, zeitzone)
     const unterzeile = [nutzer, stempel].filter(Boolean).join(' · ')
 
     const html = `<!doctype html><html lang="de"><head><meta charset="utf-8">`
