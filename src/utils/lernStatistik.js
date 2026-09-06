@@ -14,6 +14,47 @@
 
 import { BOX_MAX, parseHistorie } from '../../shared/leitner.js'
 
+/** Die Stufen des Starter-Decks. Eine Karte ohne Angabe gilt als Stufe 1. */
+export const NIVEAUS = [1, 2, 3]
+
+/** Stufe einer Karte, robust gegen fehlende und krumme Werte. */
+export const niveauVon = (karte) => (NIVEAUS.includes(Number(karte?.niveau)) ? Number(karte.niveau) : 1)
+
+/**
+ * Faellige Eintraege auf die gewaehlten Stufen einschraenken.
+ *
+ * `null` oder eine leere Auswahl heisst ALLE — nicht „keine". Das ist der
+ * Unterschied, an dem eine Auswahl-Oberflaeche sonst still kaputtgeht: Wer die
+ * letzte Stufe abwaehlt, will nicht eine leere Sitzung, sondern hat sich
+ * vertan. Eine Sitzung ohne Karten waere ausserdem nicht von „nichts faellig"
+ * zu unterscheiden.
+ *
+ * @param {Array<{karte: object}>} eintraege
+ * @param {number[]|null} niveaus
+ */
+export function filterNiveaus(eintraege, niveaus) {
+    const liste = Array.isArray(eintraege) ? eintraege : []
+    const wahl = (Array.isArray(niveaus) ? niveaus : []).map(Number).filter(n => NIVEAUS.includes(n))
+    // Immer eine NEUE Liste: Der Aufrufer sortiert das Ergebnis, und `sort`
+    // arbeitet an Ort und Stelle — ohne die Kopie waere das die Liste der
+    // faelligen Karten selbst, mitten in einer Vue-Berechnung.
+    if (!wahl.length) return [...liste]
+    return liste.filter(e => wahl.includes(niveauVon(e?.karte)))
+}
+
+/**
+ * Wie viele faellige Karten je Stufe — die Zahl neben der Auswahl.
+ *
+ * Ohne sie waehlt man blind: „Level 3" klingt nach dem richtigen Training und
+ * ist an einem Tag, an dem davon zwei Karten faellig sind, eine Sitzung von
+ * zwei Karten.
+ */
+export function niveauVerteilung(eintraege) {
+    const raus = Object.fromEntries(NIVEAUS.map(n => [n, 0]))
+    for (const e of Array.isArray(eintraege) ? eintraege : []) raus[niveauVon(e?.karte)]++
+    return raus
+}
+
 /** Ab wie vielen Bewertungen eine Kategorie-Quote eine Aussage ist, nicht Zufall. */
 export const MIN_GRUPPE = 3
 

@@ -4,7 +4,8 @@
  *   node src/utils/__selftest-lern-statistik.mjs
  */
 
-import { werteAus, uebersicht, proTag, lernserie, proKategorie, MIN_GRUPPE } from './lernStatistik.js'
+import { werteAus, uebersicht, proTag, lernserie, proKategorie, MIN_GRUPPE,
+    filterNiveaus, niveauVerteilung, niveauVon, NIVEAUS } from './lernStatistik.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -142,6 +143,45 @@ console.log('\nwerteAus()')
     const w = werteAus(eintraege, JETZT)
     check('werteAus liefert alle vier Bausteine', 'uebersicht' in w && 'proTag' in w && 'serie' in w && 'kategorien' in w)
     check('werteAus.serie stimmt mit lernserie() überein', w.serie === lernserie(eintraege, JETZT))
+}
+
+
+console.log('\nStufenwahl fuer die Sitzung')
+{
+    const e = (niveau, id) => ({ karte: { objectId: id, niveau }, fortschritt: null })
+    const deck = [e(1, 'a'), e(2, 'b'), e(3, 'c'), e(2, 'd'), e(undefined, 'e')]
+
+    check('Karte ohne Stufe gilt als Stufe 1', niveauVon({}) === 1 && niveauVon({ niveau: 0 }) === 1)
+    check('krumme Stufe faellt auf 1 zurueck', niveauVon({ niveau: 9 }) === 1 && niveauVon({ niveau: 'x' }) === 1)
+    check('Verteilung zaehlt die fehlende Stufe mit',
+        JSON.stringify(niveauVerteilung(deck)) === JSON.stringify({ 1: 2, 2: 2, 3: 1 }),
+        JSON.stringify(niveauVerteilung(deck)))
+    check('Auswahl schraenkt ein', filterNiveaus(deck, [2]).length === 2)
+    check('mehrere Stufen zugleich', filterNiveaus(deck, [1, 3]).length === 3)
+
+    /*
+     * LEER HEISST ALLE, nicht KEINE. Wer die letzte Stufe abwaehlt, hat sich
+     * vertan und will keine leere Sitzung — und eine leere Runde waere von
+     * „nichts faellig" nicht zu unterscheiden.
+     */
+    check('leere Auswahl bedeutet alle', filterNiveaus(deck, []).length === deck.length)
+    check('null bedeutet alle', filterNiveaus(deck, null).length === deck.length)
+    check('unbekannte Stufe wird ignoriert, nicht zur Leermenge',
+        filterNiveaus(deck, [9]).length === deck.length)
+
+    /*
+     * Der Aufrufer sortiert das Ergebnis, und `sort` arbeitet an Ort und
+     * Stelle. Ohne Kopie waere das die Liste der faelligen Karten selbst.
+     */
+    const kopie = filterNiveaus(deck, null)
+    kopie.reverse()
+    check('das Ergebnis ist eine Kopie, keine Referenz',
+        deck[0].karte.objectId === 'a', deck[0].karte.objectId)
+
+    check('nichts kaputt bei leerer Eingabe',
+        filterNiveaus(null, [1]).length === 0
+        && JSON.stringify(niveauVerteilung(null)) === JSON.stringify({ 1: 0, 2: 0, 3: 0 }))
+    check('die Stufenliste ist die erwartete', JSON.stringify(NIVEAUS) === '[1,2,3]')
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen\n`)

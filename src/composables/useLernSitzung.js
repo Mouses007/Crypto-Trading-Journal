@@ -26,6 +26,7 @@ import { ref, computed } from 'vue'
 import { dbCreate, dbUpdate } from '../utils/db.js'
 import { auswerten, BOX_MIN, GRADE_VERGESSEN, GRADE_SCHWER, GRADE_GUT, GRADE_LEICHT } from '../../shared/leitner.js'
 import { logWarn } from '../utils/logger.js'
+import { filterNiveaus } from '../utils/lernStatistik.js'
 
 /**
  * Reihenfolge der Bewertungsknöpfe — sie ist zugleich die Tastenbelegung 1–4
@@ -75,9 +76,18 @@ export function useLernSitzung({ faelligeEintraege, fortschritt, onGeaendert = n
     const aktuelleBox = computed(() => Number(aktuellerEintrag.value?.fortschritt?.box) || BOX_MIN)
     const hatErklaerung = computed(() => !!String(aktuellerEintrag.value?.karte?.erklaerung || '').trim())
 
-    function sitzungStarten() {
+    /**
+     * Eine Runde beginnen.
+     *
+     * @param {number[]|null} [niveaus] gewählte Stufen; leer/`null` = alle.
+     *   Die Einschränkung gilt NUR für diese Runde — sie ändert nichts daran,
+     *   was fällig ist, sondern nur, was jetzt drankommt. Wiedervorgelegte
+     *   Karten laufen deshalb auch nicht noch einmal durch den Filter: Sie
+     *   sind bereits in der Runde.
+     */
+    function sitzungStarten(niveaus = null) {
         // niedrigste Box zuerst, dann am längsten überfällig zuerst
-        warteschlange.value = [...faelligeEintraege.value].sort((a, b) => {
+        warteschlange.value = filterNiveaus(faelligeEintraege.value, niveaus).sort((a, b) => {
             const boxA = Number(a.fortschritt?.box) || BOX_MIN
             const boxB = Number(b.fortschritt?.box) || BOX_MIN
             if (boxA !== boxB) return boxA - boxB

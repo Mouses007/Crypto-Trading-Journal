@@ -4039,7 +4039,10 @@
       "box": "Box {n}",
       "starten": "Sitzung starten",
       "keineKarten": "Noch keine Karten vorhanden.",
-      "karteAnlegen": "Erste Karte anlegen"
+      "karteAnlegen": "Erste Karte anlegen",
+      "niveauWahl": "Stufen für diese Runde",
+      "niveauAlle": "Alle Stufen — die ganze Runde",
+      "niveauAuswahl": "{n} Karten in dieser Runde"
     },
     "review": {
       "antwortZeigen": "Antwort zeigen",

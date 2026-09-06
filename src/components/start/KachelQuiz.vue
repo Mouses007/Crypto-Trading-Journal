@@ -39,6 +39,9 @@ const props = defineProps({
 })
 
 const { t } = useI18n()
+
+/** Kategoriename wie auf der Lernseite — dieselben i18n-Schluessel. */
+const kategorieLabel = (k) => t('lernen.kategorie.' + k)
 const router = useRouter()
 
 const geladen = ref(false)
@@ -183,11 +186,14 @@ const {
         <template v-else-if="phase === 'review' && aktuellerEintrag">
             <div class="lernen-statusleiste">
                 <span>{{ t('lernen.review.fortschritt', { aktuell: aktuellerIndex + 1, gesamt: warteschlange.length }) }}
+                    · {{ kategorieLabel(aktuellerEintrag.karte.kategorie) }}
                     · {{ t('lernen.start.box', { n: aktuelleBox }) }}</span>
                 <span class="lernen-statusleiste-aktionen">
-                    <button type="button" class="lernen-statusleiste-icon"
+                    <!-- Beschriftet wie auf der Lernseite: Als nacktes Symbol wurde
+                         der Knopf uebersehen und die Funktion als fehlend gemeldet. -->
+                    <button type="button" class="lernen-statusleiste-btn"
                         :title="t('lernen.review.ausblendenHint')" @click="karteAusblenden">
-                        <i class="uil uil-eye-slash"></i>
+                        <i class="uil uil-eye-slash me-1"></i>{{ t('lernen.review.ausblenden') }}
                     </button>
                     <button type="button" class="lernen-statusleiste-btn" @click="sitzungBeenden">
                         {{ t('lernen.review.abbrechen') }}

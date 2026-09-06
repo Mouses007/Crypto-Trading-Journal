@@ -4039,7 +4039,10 @@
       "box": "Box {n}",
       "starten": "Start session",
       "keineKarten": "No cards yet.",
-      "karteAnlegen": "Add first card"
+      "karteAnlegen": "Add first card",
+      "niveauWahl": "Levels for this round",
+      "niveauAlle": "All levels — the full round",
+      "niveauAuswahl": "{n} cards in this round"
     },
     "review": {
       "antwortZeigen": "Show answer",

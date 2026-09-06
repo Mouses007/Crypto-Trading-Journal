@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { dbFind, dbCreate, dbUpdate, dbDelete } from '../utils/db.js'
 import { boxVerteilung, BOX_MIN } from '../../shared/leitner.js'
 import { useLernSitzung, GRADE_BUTTONS } from '../composables/useLernSitzung.js'
-import { werteAus as lernstatistikAuswerten } from '../utils/lernStatistik.js'
+import { werteAus as lernstatistikAuswerten, NIVEAUS as NIVEAU_STUFEN, niveauVerteilung} from '../utils/lernStatistik.js'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
 import { spinnerLoadingPage } from '../stores/ui.js'
 import { logWarn } from '../utils/logger.js'
@@ -206,6 +206,43 @@ const niveauVonKarte = (karte) => Number(karte?.niveau) || 1
 const eigeneKarten = computed(() => karten.value.filter(k => k.herkunft !== 'built-in'))
 
 const niveauFilter = ref('alle') // 'alle' oder eine Stufe aus NIVEAUS
+
+/*
+ * Stufenwahl FUER DIE SITZUNG — nicht zu verwechseln mit `niveauFilter`, der
+ * nur die Kartenliste im Reiter „Karten" durchsucht. Hier geht es darum, was
+ * in der naechsten Runde drankommt.
+ *
+ * Leere Auswahl heisst ALLE. Wer die letzte Stufe abwaehlt, hat sich vertan
+ * und will keine leere Sitzung; siehe `filterNiveaus`.
+ *
+ * Die Wahl ueberlebt den Seitenwechsel, weil sie eine Gewohnheit ist und keine
+ * Einzelentscheidung: Wer Stufe 3 uebt, uebt sie auch morgen.
+ */
+const SITZUNG_NIVEAUS_KEY = 'lernenSitzungNiveaus'
+const sitzungNiveaus = ref((() => {
+    try {
+        const roh = JSON.parse(localStorage.getItem(SITZUNG_NIVEAUS_KEY) || '[]')
+        return Array.isArray(roh) ? roh.map(Number).filter(n => NIVEAU_STUFEN.includes(n)) : []
+    } catch { return [] }
+})())
+
+/** Faellige Karten je Stufe — die Zahl neben der Auswahl. */
+const faelligJeNiveau = computed(() => niveauVerteilung(faelligeEintraege.value))
+
+/** Wie viele Karten die Runde mit der aktuellen Wahl haette. */
+const sitzungAnzahl = computed(() => (sitzungNiveaus.value.length
+    ? sitzungNiveaus.value.reduce((a, n) => a + (faelligJeNiveau.value[n] || 0), 0)
+    : faelligeEintraege.value.length))
+
+function niveauUmschalten(n) {
+    const i = sitzungNiveaus.value.indexOf(n)
+    if (i >= 0) sitzungNiveaus.value.splice(i, 1)
+    else sitzungNiveaus.value.push(n)
+    try { localStorage.setItem(SITZUNG_NIVEAUS_KEY, JSON.stringify(sitzungNiveaus.value)) } catch { /* voller Speicher */ }
+}
+
+/** Die Runde mit der getroffenen Stufenwahl beginnen. */
+const rundeStarten = () => sitzungStarten(sitzungNiveaus.value)
 const builtinKartenAlle = computed(() => karten.value.filter(k => k.herkunft === 'built-in'))
 const builtinKarten = computed(() => niveauFilter.value === 'alle'
     ? builtinKartenAlle.value
@@ -309,7 +346,26 @@ async function aktivUmschalten(karte) {
                             </span>
                         </div>
 
-                        <button v-if="faelligeEintraege.length" class="btn btn-primary" @click="sitzungStarten">
+                        <!-- Stufenwahl fuer die Runde. Ohne die Zahl daneben waehlt
+                             man blind: „Level 3" ist an manchen Tagen eine Sitzung
+                             von zwei Karten. -->
+                        <div v-if="faelligeEintraege.length" class="lernen-niveauwahl mb-3">
+                            <span class="lernen-niveauwahl-titel">{{ t('lernen.start.niveauWahl') }}</span>
+                            <button v-for="n in NIVEAU_STUFEN" :key="n" type="button"
+                                class="ctl-pill klein"
+                                :class="{ active: sitzungNiveaus.includes(n) }"
+                                :disabled="!faelligJeNiveau[n]"
+                                @click="niveauUmschalten(n)">
+                                {{ t('lernen.niveau', { n }) }}
+                                <span class="lernen-niveauwahl-zahl">{{ faelligJeNiveau[n] || 0 }}</span>
+                            </button>
+                            <span class="lernen-niveauwahl-hinweis">
+                                {{ sitzungNiveaus.length ? t('lernen.start.niveauAuswahl', { n: sitzungAnzahl }) : t('lernen.start.niveauAlle') }}
+                            </span>
+                        </div>
+
+                        <button v-if="faelligeEintraege.length" class="btn btn-primary"
+                            :disabled="!sitzungAnzahl" @click="rundeStarten">
                             {{ t('lernen.start.starten') }}
                         </button>
                         <p v-else class="text-muted mb-0">{{ t('lernen.start.faelligNone') }}</p>
@@ -326,16 +382,20 @@ async function aktivUmschalten(karte) {
                     <div class="lernen-statusleiste">
                         <span>
                             {{ t('lernen.review.fortschritt', { aktuell: aktuellerIndex + 1, gesamt: warteschlange.length }) }}
+                            · {{ kategorieLabel(aktuellerEintrag.karte.kategorie) }}
                             · {{ t('lernen.niveau', { n: niveauVonKarte(aktuellerEintrag.karte) }) }}
                             · {{ t('lernen.start.box', { n: aktuelleBox }) }}
                         </span>
                         <span class="lernen-statusleiste-aktionen">
-                            <!-- Nackter Icon-Knopf: `title=` ist sein einziger Name und
-                                 bleibt deshalb auch ohne erweiterte Infos stehen (siehe
-                                 Abgrenzung im Kopf von InfoTipp.vue). -->
-                            <button class="lernen-statusleiste-icon" :title="t('lernen.review.ausblendenHint')"
+                            <!-- MIT Beschriftung. Als nacktes Auge-Symbol hat der
+                                 Knopf seinen Zweck nicht erfuellt: Der Nutzer hat ihn
+                                 am 06.09.2026 nicht gefunden und die Funktion als
+                                 fehlend gemeldet, obwohl sie seit einem Tag dastand.
+                                 Ein `title=` sieht nur, wer schon weiss, dass es etwas
+                                 zu sehen gibt. -->
+                            <button class="lernen-statusleiste-btn" :title="t('lernen.review.ausblendenHint')"
                                 @click="karteAusblenden">
-                                <i class="uil uil-eye-slash"></i>
+                                <i class="uil uil-eye-slash me-1"></i>{{ t('lernen.review.ausblenden') }}
                             </button>
                             <button class="lernen-statusleiste-btn" @click="sitzungBeenden">
                                 {{ t('lernen.review.abbrechen') }}
@@ -584,6 +644,29 @@ async function aktivUmschalten(karte) {
 </template>
 
 <style scoped>
+/* Stufenwahl auf dem Startbildschirm */
+.lernen-niveauwahl {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+}
+.lernen-niveauwahl-titel {
+    font-size: 0.82rem;
+    color: var(--grey-color, #8b95a1);
+    margin-right: 0.2rem;
+}
+.lernen-niveauwahl-zahl {
+    opacity: 0.65;
+    margin-left: 0.35rem;
+    font-variant-numeric: tabular-nums;
+}
+.lernen-niveauwahl-hinweis {
+    font-size: 0.78rem;
+    color: var(--grey-color, #8b95a1);
+    margin-left: 0.2rem;
+}
+
 .lernen-panel { max-width: 640px; margin: 0 auto; }
 .lernen-panel-review { max-width: 820px; }
 
