@@ -252,6 +252,63 @@ BILDER.equalHighsLows = svg([
     text(8, 194, 'Drei Hochs auf derselben Marke — beim vierten Anlauf wird sie geholt.', { gr: 10 }),
 ].join(''))
 
+/**
+ * Judas Swing: der Fehlausbruch ALS AUFTAKT. Die Zeitachse traegt hier die
+ * Aussage mit, deshalb steht die Eroeffnung als eigene Linie im Bild — ohne
+ * sie waere es dasselbe Bild wie beim Stop-Hunt.
+ */
+BILDER.judasSwing = svg([
+    text(8, 18, 'Judas Swing — die erste Bewegung ist die falsche', { farbe: F.marke, gr: 10 }),
+    linie(96, 34, 96, 176, { farbe: F.linie, strich: '2 3' }),
+    text(100, 46, 'Eroeffnung', { gr: 10 }),
+    linie(30, 74, 452, 74, { farbe: F.liqRand, strich: '3 3' }),
+    text(452, 70, 'Stopps', { farbe: F.liqRand, gr: 10, anker: 'end' }),
+    `<polyline points="30,110 70,104 96,100 140,76 168,66 200,96 240,130 290,150 340,132 396,158 440,168"
+        fill="none" stroke="#e5e7eb" stroke-width="2" stroke-linejoin="round"/>`,
+    `<circle cx="168" cy="66" r="4" fill="${F.tief}"/>`,
+    pfeil(200, 96, 246, 134, F.tief),
+    text(8, 194, '1. hoch, Stopps geholt   2. gedreht — die eigentliche Richtung', { gr: 10 }),
+].join(''))
+
+/**
+ * Optimal Trade Entry: der Ruecklauf in das eigene Discount-Drittel des
+ * Impulses. Anfang und Ende des Impulses sind beschriftet, weil die ganze
+ * Rechnung an ihnen haengt — wer sie nachtraeglich waehlt, legt die Zone
+ * dorthin, wo der Kurs ohnehin gedreht hat.
+ */
+/**
+ * Optimal Trade Entry: der Ruecklauf in die Zone zwischen 62 und 79 % des
+ * Impulses.
+ *
+ * DIE BANDKANTEN WERDEN GERECHNET, NICHT GESETZT. Beim ersten Anlauf stand
+ * das Band bei 50 bis 71 % und die Beschriftung daneben sagte 62 bis 79 --
+ * dieselbe Sorte Fehler wie in der Fair-Value-Gap-Skizze, und beim dritten
+ * Mal ist es keine Unachtsamkeit mehr, sondern die falsche Bauart. Aus
+ * `OTE` fallen jetzt Zahl UND Linie, ein Auseinanderlaufen ist ausgeschlossen.
+ */
+export const OTE = { anfangY: 152, endeY: 48, von: 0.62, bis: 0.79 }
+
+BILDER.optimalTradeEntry = (() => {
+    const spanne = OTE.anfangY - OTE.endeY
+    const oben = OTE.endeY + OTE.von * spanne
+    const unten = OTE.endeY + OTE.bis * spanne
+    return svg([
+        text(8, 18, `Optimal Trade Entry — Ruecklauf in ${Math.round(OTE.von * 100)} bis `
+            + `${Math.round(OTE.bis * 100)} % des Impulses`, { farbe: F.marke, gr: 10 }),
+        linie(30, OTE.anfangY, 452, OTE.anfangY, { farbe: F.linie, strich: '3 3' }),
+        text(30, OTE.anfangY + 14, 'Impulsanfang (0 %)', { gr: 10 }),
+        linie(30, OTE.endeY, 452, OTE.endeY, { farbe: F.linie, strich: '3 3' }),
+        text(30, OTE.endeY - 6, 'Impulsende (100 %)', { gr: 10 }),
+        kasten(150, oben, 302, unten - oben),
+        text(452, oben - 4, `${Math.round(OTE.von * 100)} – ${Math.round(OTE.bis * 100)} %`,
+            { farbe: F.marke, gr: 10, anker: 'end' }),
+        `<polyline points="30,152 74,120 110,64 150,48 196,86 232,112 262,${Math.round((oben + unten) / 2)} 310,70 360,52 410,40"
+            fill="none" stroke="#e5e7eb" stroke-width="2" stroke-linejoin="round"/>`,
+        `<circle cx="262" cy="${Math.round((oben + unten) / 2)}" r="4" fill="${F.hoch}"/>`,
+        text(8, 194, 'Guenstig einsteigen, bevor die Bewegung als gescheitert gilt.', { gr: 10 }),
+    ].join(''))
+})()
+
 /** SVG-Quelltext zu einem Kartenschluessel, oder leerer Text. */
 export function bildFuer(schluessel) {
     return BILDER[schluessel] || ''

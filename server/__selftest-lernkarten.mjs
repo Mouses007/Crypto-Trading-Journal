@@ -11,7 +11,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { LERNKARTEN_DEFS } from './default-lernkarten.js'
-import { BILDER, bildFuer } from './lernkarten-bilder.js'
+import { BILDER, bildFuer, OTE } from './lernkarten-bilder.js'
 import { BEISPIELE, beispielFuer, zeichneBeispiel } from './lernkarten-beispiele.js'
 
 // Muss deckungsgleich zu KATEGORIEN in src/views/Lernen.vue sein — eine
@@ -201,6 +201,50 @@ pruefe('Jedes verglichene Feld wird auch gelesen (soll ⊆ select)',
     }
     pruefe('beispielFuer liefert leer fuer Karten ohne Beispiel',
         beispielFuer('bosChoch') === '' && beispielFuer('gibtsNicht') === '')
+}
+
+
+/*
+ * Jede Karte nennt ihre Stufe AUSDRUECKLICH.
+ *
+ * `seedDefaultLernkarten` setzt `def.niveau || 1` -- 51 Karten lebten deshalb
+ * von einer unsichtbaren Vorgabe. Inhaltlich war sie richtig (es sind die
+ * Grundbegriffe), aber eine Stufe, die niemand hingeschrieben hat, laesst sich
+ * auch nicht bestreiten. Seit die Sitzung nach Stufen filtert, entscheidet sie
+ * ausserdem mit, was ueberhaupt drankommt.
+ */
+{
+    const ohne = LERNKARTEN_DEFS.filter(k => !k.niveau).map(k => k.schluessel)
+    pruefe('jede Karte nennt ihre Stufe', ohne.length === 0, ohne.slice(0, 8).join(', '))
+    pruefe('nur die Stufen 1 bis 3',
+        LERNKARTEN_DEFS.every(k => [1, 2, 3].includes(k.niveau)),
+        [...new Set(LERNKARTEN_DEFS.map(k => k.niveau))].join(', '))
+}
+
+
+/*
+ * Die OTE-Skizze: Band und Beschriftung stammen aus DENSELBEN Zahlen.
+ *
+ * Dreimal ist in diesen Bildern eine Kante von ihrer Beschriftung abgewichen
+ * (Fair Value Gap, dann OTE). Der Test prueft deshalb nicht das Ergebnis,
+ * sondern dass die Zahl im Text und die Linie im Bild dieselbe Quelle haben.
+ */
+{
+    const svg = BILDER.optimalTradeEntry
+    const spanne = OTE.anfangY - OTE.endeY
+    const oben = OTE.endeY + OTE.von * spanne
+    const unten = OTE.endeY + OTE.bis * spanne
+    const rect = svg.match(/<rect x="150" y="([\d.]+)" width="302" height="([\d.]+)"/)
+    pruefe('OTE: das Band steht im Bild', Boolean(rect))
+    if (rect) {
+        pruefe('OTE: Bandoberkante ist der 62-%-Ruecklauf', Math.abs(Number(rect[1]) - oben) < 0.5,
+            `${rect[1]} statt ${oben}`)
+        pruefe('OTE: Bandhoehe entspricht 62 bis 79 %', Math.abs(Number(rect[2]) - (unten - oben)) < 0.5,
+            `${rect[2]} statt ${unten - oben}`)
+    }
+    pruefe('OTE: die Beschriftung nennt dieselben Prozente',
+        svg.includes(`${Math.round(OTE.von * 100)} – ${Math.round(OTE.bis * 100)} %`))
+    pruefe('OTE: Anfang liegt unter dem Ende (y waechst nach unten)', OTE.anfangY > OTE.endeY)
 }
 
 console.log(`\n${ok} bestanden, ${fehler} fehlgeschlagen\n`)

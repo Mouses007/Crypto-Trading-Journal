@@ -31,49 +31,49 @@ import { beispielFuer } from './lernkarten-beispiele.js'
 export const LERNKARTEN_DEFS = [
     // ── Indikatoren ─────────────────────────────────────────
     {
-        schluessel: 'atr', kategorie: 'indikatoren',
+        schluessel: 'atr', kategorie: 'indikatoren', niveau: 1,
         frage: 'Wofür steht ATR und was zeigt er?',
         antwort: 'Average True Range — die durchschnittliche Kerzenspanne. Zeigt, ob sich ein Einstieg mit Stopp überhaupt lohnt: unter rund 0,2 % je Kerze fressen die Kosten die Spanne auf.',
         erklaerung: 'Die Schwelle ist keine Konvention, sondern eine Kostenrechnung. Ein Rundlauf aus Gebühren und Spread kostet auf einer Futures-Börse leicht 10 bis 15 Basispunkte, also 0,10–0,15 %. Bewegt sich eine Kerze im Schnitt nur 0,2 %, bleibt nach Ein- und Ausstieg fast nichts übrig — der Vorteil müsste die Kosten erst wieder einspielen. Deshalb ist ATR in Prozent die erste Frage vor jedem Setup: Passt das Ziel überhaupt in die übliche Bewegung des Coins hinein?',
     },
     {
-        schluessel: 'rvol', kategorie: 'indikatoren',
+        schluessel: 'rvol', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was misst das relative Volumen (RVOL)?',
         antwort: 'Ob gerade ungewöhnlich viel los ist, verglichen mit dem eigenen Normalzustand des Coins. Ab etwa 2,0 gilt ein Coin als „im Spiel".',
         erklaerung: 'RVOL vergleicht das aktuelle Volumen mit dem Durchschnitt derselben Zeitspanne desselben Coins — nicht mit anderen Coins. Genau darin liegt der Nutzen: ein kleiner Coin mit 2,0 ist auffällig, obwohl sein Umsatz absolut winzig bleibt. Die 2,0 ist eine Faustregel, keine Konstante; entscheidend ist, dass die Basislinie den laufenden Balken ausschliesst, sonst dämpft ein Ausreisser seinen eigenen Massstab.',
     },
     {
-        schluessel: 'adx', kategorie: 'indikatoren',
+        schluessel: 'adx', kategorie: 'indikatoren', niveau: 1,
         frage: 'Wofür steht ADX und wie liest man ihn?',
         antwort: 'Average Directional Index — zeigt, ob eine Bewegung durchläuft oder nur seitwärts sägt. Über 25 lohnt Trendfolge eher, unter 20 eher nicht.',
         erklaerung: 'Der ADX misst nur die STÄRKE einer Bewegung, nicht ihre Richtung — er steigt im Aufwärts- wie im Abwärtstrend. Die Werte 20 und 25 stammen von Welles Wilder selbst und sind gesetzt, nicht hergeleitet. Zwischen 20 und 25 liegt bewusst eine Grauzone: dort ist weder Trendfolge noch Rangehandel klar im Vorteil. Ein fallender ADX über 25 heisst nicht Trendwende, sondern nachlassendes Tempo.',
     },
     {
-        schluessel: 'rsi', kategorie: 'indikatoren',
+        schluessel: 'rsi', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was zeigt der RSI?',
         antwort: 'Wie überkauft oder überverkauft ein Markt gerade ist. Aussagekräftig erst im Vergleich zum Marktdurchschnitt — ein überverkaufter Coin bei ebenfalls tiefem Gesamtmarkt ist nichts Eigenes.',
         erklaerung: 'Der RSI setzt die durchschnittlichen Aufwärts- gegen die Abwärtsbewegungen der letzten Perioden (üblich 14) ins Verhältnis. Der häufigste Fehler ist, „überkauft" als Verkaufssignal zu lesen: in einem starken Trend bleibt der RSI wochenlang über 70, und wer dagegen handelt, steht die ganze Bewegung auf der falschen Seite. Aussagekräftig wird er erst relativ — gegen den eigenen Verlauf des Coins oder gegen den Gesamtmarkt.',
     },
     {
-        schluessel: 'vwapAnker', kategorie: 'indikatoren',
+        schluessel: 'vwapAnker', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was ist ein VWAP-Anker?',
         antwort: 'Ein volumengewichteter Durchschnittspreis, gerechnet ab einem bestimmten Startpunkt (Session-Start, Swing-Hoch/-Tief). Zeigt das durchschnittliche Einstiegsniveau seit diesem Punkt — oft ein Magnet, an dem der Kurs zurücktestet.',
         erklaerung: 'Volumengewichtet heisst: ein Preis, an dem viel gehandelt wurde, zählt mehr als einer, an dem fast nichts lief. Der VWAP zeigt damit näherungsweise, was die Masse der seit dem Anker eingestiegenen Positionen im Schnitt bezahlt hat. Darum wirkt er wie ein Magnet — oberhalb sitzt diese Masse im Gewinn, unterhalb im Verlust. Der Anker entscheidet alles: ab Sitzungsbeginn beantwortet er eine andere Frage als ab dem letzten Swing-Hoch.',
     },
     {
-        schluessel: 'rrr', kategorie: 'indikatoren',
+        schluessel: 'rrr', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was bedeutet RRR (Risk-Reward-Ratio)?',
         antwort: 'Das Verhältnis von möglichem Gewinn zu eingegangenem Risiko je Trade. Ein RRR von 2 heisst: doppelt so viel Gewinnpotenzial wie Risiko bei gleichem Positionsrisiko.',
         erklaerung: 'Das RRR allein sagt nichts über Rentabilität — es wird erst zusammen mit der Trefferquote zu einer Aussage. Ein RRR von 3 bei 20 % Treffern verliert, ein RRR von 1 bei 60 % gewinnt. Wichtig ist ausserdem, dass man das RRR VOR dem Einstieg festlegt, aus Stopp und Ziel: nachträglich am Chart gemessen lässt sich jede Zahl schönrechnen, indem man das Ziel dorthin legt, wo der Kurs zufällig war.',
     },
     {
-        schluessel: 'mfeMae', kategorie: 'indikatoren',
+        schluessel: 'mfeMae', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was sind MFE und MAE?',
         antwort: 'Maximum Favorable / Adverse Excursion — wie weit ein Trade während seiner Laufzeit maximal in die richtige bzw. falsche Richtung lief. Zeigt, ob Stopps und Ziele zur tatsächlichen Kursbewegung passen.',
         erklaerung: 'Der praktische Nutzen liegt im Vergleich der beiden über viele Trades. Liegt die MFE regelmässig weit über dem tatsächlichen Gewinn, wird zu früh geschlossen. Bleibt die MAE bei Gewinnern immer klein und nur bei Verlierern gross, war der Stopp zu weit — er hätte enger gekonnt, ohne gute Trades zu töten. Eine einzelne MFE ist dagegen nur eine Anekdote.',
     },
     {
-        schluessel: 'breakEven', kategorie: 'indikatoren',
+        schluessel: 'breakEven', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was heisst Break-even-Stop?',
         antwort: 'Der Stop-Loss wird nach einer gewissen Bewegung zum Einstiegspreis nachgezogen, damit der Trade im schlimmsten Fall bei ±0 endet statt im Verlust.',
         erklaerung: 'Die Falle steckt im Wort „bei ±0": ein Stopp exakt auf dem Einstiegspreis endet in Wirklichkeit im Minus, weil Gebühren für Ein- UND Ausstieg anfallen und der Spread dazukommt. Wer wirklich kostenneutral aussteigen will, muss den Stopp um den Rundlauf über den Einstieg legen. Zweite Falle: zu früh nachgezogen, wird man von jedem normalen Rücksetzer ausgestoppt — die Absicherung kostet dann mehr Trades, als sie rettet.',
@@ -81,49 +81,49 @@ export const LERNKARTEN_DEFS = [
 
     // ── Derivate ────────────────────────────────────────────
     {
-        schluessel: 'fundingRate', kategorie: 'derivate',
+        schluessel: 'fundingRate', kategorie: 'derivate', niveau: 1,
         frage: 'Was ist die Funding-Rate bei Perpetual Futures?',
         antwort: 'Was das Halten einer Long- oder Short-Position kostet oder einbringt. Positiv heisst: Longs zahlen an Shorts — ein Hinweis auf eine überfüllte Long-Seite.',
         erklaerung: 'Die Rate besteht aus zwei Teilen: einem festen Zinsanteil und einem Aufschlag, der misst, wie weit der Perpetual-Preis über oder unter dem Spot-Index liegt. Gezahlt wird nicht an die Börse, sondern direkt zwischen den Marktteilnehmern. Deshalb ist eine hoch positive Rate zugleich eine Aussage über Positionierung: die Long-Seite zahlt dafür, dass sie überfüllt ist. Und die Rate ist ohne ihren Takt nicht lesbar — 0,01 % alle 4 Stunden sind doppelt so teuer wie alle 8.',
     },
     {
-        schluessel: 'openInterest', kategorie: 'derivate',
+        schluessel: 'openInterest', kategorie: 'derivate', niveau: 1,
         frage: 'Was zeigt Open Interest (OI)?',
         antwort: 'Die Summe aller offenen Futures-Positionen. Steigendes OI bei steigendem Preis heisst: neues Geld kommt long rein; steigendes OI bei fallendem Preis: neues Geld geht short.',
         erklaerung: 'Es gibt vier Kombinationen, und erst sie machen OI nützlich. Preis hoch + OI hoch: neues Geld geht long, gesunder Trend. Preis hoch + OI runter: Shorts decken sich ein, die Bewegung wird von Schliessungen getragen und läuft oft aus. Preis runter + OI hoch: neues Geld geht short. Preis runter + OI runter: Longs geben auf, die Abwärtsbewegung erschöpft sich. OI ist immer eine Nettozahl — jeder Kontrakt hat eine Long- und eine Short-Seite.',
     },
     {
-        schluessel: 'longShortRatio', kategorie: 'derivate',
+        schluessel: 'longShortRatio', kategorie: 'derivate', niveau: 1,
         frage: 'Was sagt die Long/Short-Ratio?',
         antwort: 'Wie viele Konten long gegenüber short positioniert sind. Gezählt werden Konten, nicht Kapital — bildet eher Kleinanleger ab. Eine schiefe Quote plus wachsendes OI heisst: eine Seite lädt sich auf.',
         erklaerung: 'Die Zahl zählt KONTEN, und ein Konto mit 100 USD wiegt darin genauso viel wie eines mit einer Million. Sie bildet damit vor allem Kleinanleger ab, weshalb sie oft als Kontraindikator gelesen wird. Das ist keine Regel: eine schiefe Quote kann tagelang schiefer werden. Aussagekraft entsteht erst in Kombination — schiefe Quote plus steigendes OI plus teures Funding heisst, dass sich eine Seite hörbar auflädt.',
     },
     {
-        schluessel: 'liquidation', kategorie: 'derivate',
+        schluessel: 'liquidation', kategorie: 'derivate', niveau: 1,
         frage: 'Was passiert bei einer Liquidation?',
         antwort: 'Eine gehebelte Position wird zwangsweise glattgestellt, weil die Margin das Verlustrisiko nicht mehr deckt. Ein Überhang an Liquidationen auf einer Seite zeigt, wo Druck aus dem Markt genommen wurde.',
         erklaerung: 'Ablauf: unterschreitet die Sicherheit die Wartungsmarge, übernimmt die Liquidations-Engine die Position und stellt sie über eine Marktorder glatt. Diese Zwangsorder ist echtes Angebot bzw. echte Nachfrage — deshalb bewegen Liquidationen den Kurs weiter in dieselbe Richtung und lösen mitunter die nächsten aus. Wichtig für die eigene Position: gerechnet wird gegen den Mark-Preis, nicht gegen den letzten gehandelten Kurs.',
     },
     {
-        schluessel: 'rundlauf', kategorie: 'derivate',
+        schluessel: 'rundlauf', kategorie: 'derivate', niveau: 1,
         frage: 'Was misst der „Rundlauf" eines Coins?',
         antwort: 'Was Ein- und Ausstieg zusammen kosten, in Basispunkten (Spread + Slippage). Bei einem Scalp mit kleinem Ziel kann ein hoher Rundlauf den Trade schon vor dem Start unrentabel machen.',
         erklaerung: 'Vorgerechnet: 5 Basispunkte Gebühr je Seite plus 4 bp Spread ergeben rund 14 bp, also 0,14 % vom Positionswert. Bei einem Scalp mit 0,3 % Ziel ist knapp die Hälfte des Gewinns weg, bevor der Trade läuft — und das bei JEDEM Trade, auch bei jedem Verlierer. Genau deshalb steht der Rundlauf im Coin-Radar neben der Gelegenheits-Note: eine gute Chance auf einem teuren Coin ist keine gute Chance.',
     },
     {
-        schluessel: 'margin', kategorie: 'derivate',
+        schluessel: 'margin', kategorie: 'derivate', niveau: 1,
         frage: 'Was unterscheidet isolierte von Cross-Margin?',
         antwort: 'Isoliert: nur die für die Position hinterlegte Margin steht auf dem Spiel. Cross: das gesamte Kontoguthaben haftet für alle offenen Positionen zusammen.',
         erklaerung: 'Der Unterschied entscheidet, was ein einzelner Fehler kostet. Isoliert liquidiert genau die eine Position, der Rest des Kontos bleibt unangetastet — dafür ist sie schneller weg, weil kein weiteres Guthaben sie stützt. Cross nutzt das gesamte Guthaben als Puffer und hält länger durch, kann im Ernstfall aber das ganze Konto mitnehmen, inklusive der Positionen, die richtig lagen.',
     },
     {
-        schluessel: 'liquidationspreis', kategorie: 'derivate',
+        schluessel: 'liquidationspreis', kategorie: 'derivate', niveau: 1,
         frage: 'Wovon hängt der Liquidationspreis einer Position ab?',
         antwort: 'Vom Hebel, der Positionsgrösse und der Wartungsmarge-Anforderung der Börse. Höherer Hebel bedeutet: der Liquidationspreis liegt näher am Einstieg.',
         erklaerung: 'Die Näherung: Der Abstand zum Einstieg beträgt grob 1/Hebel minus Wartungsmargensatz. Bei 10× Hebel sind das rund 10 % Kursbewegung, bei 50× nur noch etwa 2 %. Zwei Feinheiten, die oft überraschen: der Wartungsmargensatz hängt vom Symbol UND von der Positionsgrösse ab (grössere Positionen fordern mehr), und zusätzlich eingezahlte Margin verschiebt den Preis, ohne dass sich der angezeigte Hebel ändert.',
     },
     {
-        schluessel: 'basis', kategorie: 'derivate',
+        schluessel: 'basis', kategorie: 'derivate', niveau: 1,
         frage: 'Was ist die „Basis" bei Futures?',
         antwort: 'Die Preisdifferenz zwischen Futures und Spot-Markt. Ein Future über Spot (Contango) ist der Normalfall; eine negative Basis (Backwardation) signalisiert Stress oder starke Short-Nachfrage.',
         erklaerung: 'Vergleichbar wird die Basis erst annualisiert. Ein Quartals-Future 2 % über Spot bei drei Monaten Restlaufzeit entspricht rund 8 % im Jahr — das ist die Rendite, die ein Cash-and-Carry-Trade abwirft, und zugleich ein Mass für die Bereitschaft, für Hebel zu zahlen. Contango ist der Normalzustand. Backwardation ist selten und bedeutet fast immer Stress: jemand zahlt einen Aufpreis dafür, JETZT abgesichert zu sein.',
@@ -131,37 +131,37 @@ export const LERNKARTEN_DEFS = [
 
     // ── Sentiment / Marktlage ───────────────────────────────
     {
-        schluessel: 'fearGreed', kategorie: 'sentiment',
+        schluessel: 'fearGreed', kategorie: 'sentiment', niveau: 1,
         frage: 'Was misst der Fear & Greed Index?',
         antwort: 'Wie ängstlich oder gierig der Markt insgesamt ist, auf einer Skala von 0 bis 100. Nur ein Teil davon ist echte Stimmung (soziale Medien, Suchanfragen) — rund die Hälfte kommt aus Volatilität und Volumen, ist also aus dem Kurs abgeleitet. Extreme können wochenlang stehen bleiben.',
         erklaerung: 'Die Zusammensetzung erklärt, warum der Index oft nur bestätigt, was der Chart schon zeigt: Volatilität und Marktmomentum machen zusammen die Hälfte aus und sind aus dem Kurs abgeleitet. Nur ein kleinerer Teil misst echte Stimmung. Als Kontraindikator taugt er deshalb allenfalls an den Extremen — und auch dort gilt: ein Markt kann wochenlang in „extremer Gier" bleiben und dabei weiter steigen.',
     },
     {
-        schluessel: 'dominance', kategorie: 'sentiment',
+        schluessel: 'dominance', kategorie: 'sentiment', niveau: 1,
         frage: 'Was zeigt die BTC-Dominanz?',
         antwort: 'Welcher Anteil des Kryptomarkts auf Bitcoin entfällt. Steigende Dominanz bei fallenden Kursen heisst: Geld flüchtet aus Altcoins in BTC, es kommt kein neues Geld herein.',
         erklaerung: 'Wichtig ist, dass die Dominanz ein VERHÄLTNIS ist: sie steigt, wenn BTC stärker ist als der Rest — auch wenn beide fallen. Deshalb reicht die Zahl allein nie, man braucht die Richtung des Gesamtmarkts dazu. Vier Fälle: Dominanz und Markt steigen — BTC führt eine Rally an. Dominanz steigt, Markt fällt — Flucht in BTC. Dominanz fällt, Markt steigt — Altcoin-Rally. Beide fallen — BTC fällt schneller, selten und meist kurz.',
     },
     {
-        schluessel: 'altseason', kategorie: 'sentiment',
+        schluessel: 'altseason', kategorie: 'sentiment', niveau: 1,
         frage: 'Ab welchem Wert spricht man von Altcoin-Saison?',
         antwort: 'Über 75 gilt als Altcoin-Saison (Alt-Longs haben Rückenwind), unter 25 als Bitcoin-Saison (Alts laufen oft schwächer als BTC). Die Schwellen sind gesetzt, nicht mathematisch hergeleitet.',
         erklaerung: 'Gemessen wird üblicherweise, wie viele der 50 grössten Coins Bitcoin über 90 Tage geschlagen haben. Die Schwellen 75 und 25 sind gesetzt, nicht hergeleitet. Zwei Einschränkungen: die Kennzahl blickt 90 Tage zurück und ist damit träge — wenn sie Altcoin-Saison meldet, läuft die Bewegung meist schon. Und sie sagt nichts über die Richtung: eine Altcoin-Saison kann auch bedeuten, dass Alts weniger stark fallen als BTC.',
     },
     {
-        schluessel: 'makroKopplung', kategorie: 'sentiment',
+        schluessel: 'makroKopplung', kategorie: 'sentiment', niveau: 1,
         frage: 'Was zeigt die Kopplung BTC↔Nasdaq?',
         antwort: 'Wie stark sich Bitcoin gerade wie ein Tech-Aktien-Future verhält. Ein steigender Dollar-Index gilt dabei als Gegenwind für Krypto, unabhängig davon, ob der Dollar selbst „gut" oder „schlecht" performt.',
         erklaerung: 'Die Kopplung ist kein Naturgesetz, sondern ein Regime: sie ist hoch, wenn Zinserwartung und Risikoappetit alles dominieren, und bricht bei krypto-eigenen Nachrichten. Praktisch heisst das: in Phasen hoher Korrelation ist eine BTC-Position teilweise eine Wette auf US-Tech, und die Termine, die zählen, sind FOMC und CPI. Der Dollar-Index wirkt gegenläufig, weil ein starker Dollar globale Liquidität verknappt.',
     },
     {
-        schluessel: 'stablecoinFluss', kategorie: 'sentiment',
+        schluessel: 'stablecoinFluss', kategorie: 'sentiment', niveau: 1,
         frage: 'Was sagt ein Zufluss von Stablecoins auf Börsen?',
         antwort: 'Kapital, das bereit steht, in den Markt zu gehen — meist als leicht bullisches Vorzeichen gelesen, ohne selbst schon eine Kursbewegung zu sein.',
         erklaerung: 'Das Signal ist schwächer, als es oft dargestellt wird. Zuflüsse können ebenso gut aus Umschichtung zwischen Börsen oder von Market Makern stammen, die ihr Inventar auffüllen. Aussagekräftiger als der Tagesfluss ist das Verhältnis zur Marktgrösse und die Richtung über mehrere Wochen. Und es bleibt bei Bereitschaft: Kapital, das bereitsteht, kann auch wochenlang bereitstehen.',
     },
     {
-        schluessel: 'etfFluss', kategorie: 'sentiment',
+        schluessel: 'etfFluss', kategorie: 'sentiment', niveau: 1,
         frage: 'Was zeigt der ETF-Fluss bei Bitcoin?',
         antwort: 'Wie viel BTC institutionell über Spot-ETFs gehalten wird und ob täglich mehr hinein- oder herausfliesst. Ein anhaltender Abfluss über mehrere Tage wiegt schwerer als ein einzelner roter Tag.',
         erklaerung: 'Zwei Feinheiten sind wichtig. Erstens ist ein Teil der Zuflüsse gar keine Richtungswette, sondern die Long-Seite eines Basis-Trades gegen Short-Futures — das Geld ist damit weniger überzeugt, als es aussieht. Zweitens meldet sich der Fluss erst nach Handelsschluss und deckt nur US-Handelstage ab, während Krypto durchläuft. Deshalb wiegt ein mehrtägiger Trend mehr als jeder einzelne Tag.',
@@ -169,25 +169,25 @@ export const LERNKARTEN_DEFS = [
 
     // ── Chartanalyse ────────────────────────────────────────
     {
-        schluessel: 'piCycleTop', kategorie: 'chartAnalyse',
+        schluessel: 'piCycleTop', kategorie: 'chartAnalyse', niveau: 1,
         frage: 'Was ist das Pi-Cycle-Top-Signal?',
         antwort: 'Kreuzt der 111-Tage-Durchschnitt über den doppelten 350-Tage-Durchschnitt, lag in der Vergangenheit ein Zyklushoch nahe — 2013, 2017 und 2021 jeweils auf wenige Tage genau. Beim Hoch von Oktober 2025 kreuzte er gar nicht: drei Treffer und ein Aussetzer sind eine Beobachtung, keine Regel.',
         erklaerung: 'Warum ausgerechnet 111 und 350: die 350 Tage sind grob ein Jahr, verdoppelt ergibt das eine Obergrenze, die historisch nur in Euphoriephasen erreicht wurde. Der Indikator hat genau vier Gelegenheiten gehabt und drei getroffen — das ist zu wenig, um von einer Trefferquote zu sprechen. Der Aussetzer von Oktober 2025 zeigt zudem das grundsätzliche Problem: ein Indikator, der auf drei Zyklen kalibriert wurde, hat nichts, woran er sich prüfen liesse.',
     },
     {
-        schluessel: 'rainbowChart', kategorie: 'chartAnalyse',
+        schluessel: 'rainbowChart', kategorie: 'chartAnalyse', niveau: 1,
         frage: 'Was zeigt der Bitcoin-Rainbow-Chart?',
         antwort: 'Wo der Kurs langfristig innerhalb einer logarithmischen Regression über seine eigene Geschichte steht, von „Ausverkauf" bis „Blase". Die Bänder sind kein Naturgesetz: sie wurden nachträglich neu angepasst, als der Kurs 2022 unten herausfiel. Für eine einzelne Handelsentscheidung zu grob.',
         erklaerung: 'Die Bänder sind eine logarithmische Regression durch den bisherigen Kursverlauf, mit festen Abständen darüber und darunter. Der Haken liegt in der Konstruktion: die Kurve wird mit jedem neuen Datenpunkt neu gefittet, und als der Kurs 2022 unten herausfiel, wurden die Bänder nachjustiert. Ein Modell, das sich an die Daten anpasst, kann von den Daten nicht widerlegt werden — es ordnet ein, es prognostiziert nicht.',
     },
     {
-        schluessel: 'marktregime', kategorie: 'chartAnalyse',
+        schluessel: 'marktregime', kategorie: 'chartAnalyse', niveau: 1,
         frage: 'Was fasst eine Marktmechanik-/Regime-Kachel zusammen?',
         antwort: 'Preis, Open Interest, Funding und liquidiertes Volumen zu einem einzigen Marktzustand, z.B. „Long-Squeeze-Gefahr". Regelbasiert, keine Prognose.',
         erklaerung: 'Der Nutzen liegt darin, vier Grössen gleichzeitig zu lesen, die einzeln mehrdeutig sind. Steigender Preis allein sagt wenig; steigender Preis mit steigendem OI und teurem Funding sagt, dass die Bewegung gehebelt getragen wird und damit anfällig für eine Kaskade ist. Weil die Zustände regelbasiert vergeben werden, sind sie nachvollziehbar und wiederholbar — aber sie beschreiben die Gegenwart, sie sagen nichts voraus.',
     },
     {
-        schluessel: 'stopHunt', kategorie: 'chartAnalyse',
+        schluessel: 'stopHunt', kategorie: 'chartAnalyse', niveau: 1,
         frage: 'Was ist ein Stop-Hunt?',
         antwort: 'Ein kurzer Ausbruch über ein offensichtliches Hoch/Tief, der gehäufte Stop-Loss-Orders auslöst, bevor der Kurs in die ursprüngliche Richtung zurückdreht.',
         erklaerung: 'Es braucht keine Absicht dahinter — die Mechanik reicht. Über einem sichtbaren Hoch liegen die Stopps der Shorts, und ein Stopp ist eine Kauforder: wer dort hinein verkaufen will, findet genau dort Gegenpartei. Der Ausbruch löst die Orders aus, die Nachfrage ist danach verbraucht, und der Kurs fällt zurück. Erkennbar im Nachhinein an einem langen Docht mit hohem Volumen und einem Schlusskurs zurück im alten Bereich.',
@@ -195,73 +195,73 @@ export const LERNKARTEN_DEFS = [
 
     // ── Risiko & Handwerk ───────────────────────────────────
     {
-        schluessel: 'beta', kategorie: 'risiko',
+        schluessel: 'beta', kategorie: 'risiko', niveau: 1,
         frage: 'Was sagt ein hoher Beta-Wert zu Bitcoin aus?',
         antwort: 'Bewegt sich Bitcoin um 1 %, bewegt sich der Coin im Schnitt um β %. Über 1 verstärkt er eine BTC-Bewegung (Position kann kleiner ausfallen), unter 1 dämpft er sie.',
         erklaerung: 'Beta wird aus der Regression der Coin-Renditen auf die BTC-Renditen geschätzt — es ist ein Durchschnitt der Vergangenheit, keine Eigenschaft des Coins. In ruhigen Phasen unterschätzt es das Risiko, weil Beta in Stressphasen für fast alle Altcoins gegen 1 und darüber steigt: genau dann, wenn Streuung helfen sollte, verschwindet sie. Praktischer Nutzen: bei Beta 1,5 entspricht eine Position von 100 dem BTC-Risiko von 150.',
     },
     {
-        schluessel: 'ausfuehrungsguete', kategorie: 'risiko',
+        schluessel: 'ausfuehrungsguete', kategorie: 'risiko', niveau: 1,
         frage: 'Was zeigt die Ausführungsnote eines Coins?',
         antwort: 'Wie teuer eine Order über eine bestimmte Grösse wirklich ist, gemessen am echten Orderbuch. Eine hohe Gelegenheits-Note nützt wenig, wenn die Ausführung sie auffrisst.',
         erklaerung: 'Gemessen wird gegen die Mitte zwischen Bid und Ask, nicht gegen die beste Quote — sonst bliebe der halbe Spread unsichtbar. Kauf und Verkauf werden getrennt bewertet, weil ein Buch, in das man billig hineinkommt und teuer wieder heraus, eine Falle ist, die kein Durchschnitt zeigt. Und passt die gewünschte Grösse nicht ins Buch, wird nichts hochgerechnet: die Note ist dann 0, kein Abzug.',
     },
     {
-        schluessel: 'slippage', kategorie: 'risiko',
+        schluessel: 'slippage', kategorie: 'risiko', niveau: 1,
         frage: 'Was ist Slippage?',
         antwort: 'Die Differenz zwischen dem erwarteten und dem tatsächlich ausgeführten Preis einer Order — meist, weil das Orderbuch bei der georderten Grösse nicht tief genug ist.',
         erklaerung: 'Slippage entsteht, weil eine Marktorder das Buch von der besten Quote aus abarbeitet — je grösser die Order, desto tiefer frisst sie sich hinein. Sie ist damit keine Eigenschaft der Börse, sondern des Verhältnisses von Ordergrösse zu Buchtiefe. Zwei Verstärker: dünne Zeiten (Wochenende, frühe Morgenstunden) und Nachrichtenmomente, in denen Market Maker ihre Orders zurückziehen — genau dann, wenn viele gleichzeitig handeln wollen.',
     },
     {
-        schluessel: 'positionSizing', kategorie: 'risiko',
+        schluessel: 'positionSizing', kategorie: 'risiko', niveau: 1,
         frage: 'Was regelt Position Sizing?',
         antwort: 'Wie gross eine Position gemessen am Konto sein darf, damit ein einzelner Verlust das Konto nicht ernsthaft beschädigt — unabhängig davon, wie überzeugt man vom Trade ist.',
         erklaerung: 'Die übliche Rechnung: Risiko je Trade in Prozent des Kontos, geteilt durch den Stopp-Abstand in Prozent, ergibt die Positionsgrösse. Bei 1 % Risiko und 2 % Stopp-Abstand entspricht das einer Position von 50 % des Kontos — mit Hebel machbar, ohne nicht. Der eigentliche Punkt ist, dass die Grösse aus dem Stopp folgt und nicht aus der Überzeugung: der Markt weiss nicht, wie sicher man sich war.',
     },
     {
-        schluessel: 'hebel', kategorie: 'risiko',
+        schluessel: 'hebel', kategorie: 'risiko', niveau: 1,
         frage: 'Was macht ein höherer Hebel mit dem Risiko einer Position?',
         antwort: 'Er vergrössert Gewinn und Verlust gleichermassen bei gleicher Kapitalbindung — und rückt den Liquidationspreis näher an den Einstieg heran.',
         erklaerung: 'Der oft übersehene Teil: Hebel ändert nichts am Risiko, solange die Positionsgrösse gleich bleibt — er ändert nur, wie viel Kapital gebunden ist. Gefährlich wird er, weil er dazu verleitet, die Position zu vergrössern, und weil er den Liquidationspreis heranzieht. Bei 50× liegt er rund 2 % entfernt, also innerhalb der normalen Tagesschwankung vieler Coins: dann entscheidet nicht mehr die Analyse, sondern Rauschen.',
     },
     {
-        schluessel: 'drawdown', kategorie: 'risiko',
+        schluessel: 'drawdown', kategorie: 'risiko', niveau: 1,
         frage: 'Was ist ein Drawdown?',
         antwort: 'Der Rückgang des Kontostands vom letzten Hoch bis zum aktuellen Tiefpunkt, meist in Prozent. Zeigt, wie schmerzhaft eine schlechte Phase tatsächlich war.',
         erklaerung: 'Zwei Dinge macht der Drawdown sichtbar, die eine Renditezahl verschweigt. Erstens die nötige Gegenbewegung: −50 % brauchen +100 %, um wieder bei null zu sein — die Erholung ist immer schwerer als der Verlust. Zweitens die Dauer: ein Konto kann monatelang unter seinem Hoch liegen, und das ist der Zeitraum, in dem Strategien aus Ungeduld geändert werden. Deshalb misst man neben der Tiefe auch, wie lange sie anhielt.',
     },
     {
-        schluessel: 'profitFactor', kategorie: 'risiko',
+        schluessel: 'profitFactor', kategorie: 'risiko', niveau: 1,
         frage: 'Was sagt der Profit Factor aus?',
         antwort: 'Das Verhältnis von Bruttogewinn zu Bruttoverlust über alle Trades. Über 1 heisst profitabel; ein Wert von 2 heisst: doppelt so viel gewonnen wie verloren.',
         erklaerung: 'Der Profit Factor ist empfindlich gegenüber einzelnen Ausreissern: ein einziger sehr grosser Gewinn kann ihn über 2 heben, ohne dass die Strategie gut ist. Deshalb prüft man ihn immer zusammen mit der Anzahl Trades und dem grössten Einzelgewinn — fällt der Wert nach Herausnahme des besten Trades deutlich, trägt die Strategie sich nicht selbst. Werte knapp über 1 sind zudem meist unter Berücksichtigung der Gebühren schon nicht mehr profitabel.',
     },
     {
-        schluessel: 'winRate', kategorie: 'risiko',
+        schluessel: 'winRate', kategorie: 'risiko', niveau: 1,
         frage: 'Warum reicht eine hohe Win-Rate allein nicht als Erfolgsmass?',
         antwort: 'Weil sie nichts über die Grösse der Gewinne und Verluste aussagt. Eine Win-Rate von 80 % kann trotzdem verlustreich sein, wenn die wenigen Verlierer jeweils riesig sind.',
         erklaerung: 'Die Win-Rate lässt sich beliebig hochtreiben, indem man Gewinne früh mitnimmt und Verluste laufen lässt — genau das Verhalten, das Konten zerstört. Ein Beispiel: 80 % Treffer mit je 1 Gewinn gegen 20 % Verluste mit je 5 ergibt exakt null, vor Kosten. Aussagekräftig wird sie erst neben dem durchschnittlichen Gewinn-Verlust-Verhältnis, und beide zusammen ergeben den Erwartungswert.',
     },
     {
-        schluessel: 'expectancy', kategorie: 'risiko',
+        schluessel: 'expectancy', kategorie: 'risiko', niveau: 1,
         frage: 'Was ist der Erwartungswert (Expectancy) einer Strategie?',
         antwort: 'Der durchschnittliche Gewinn oder Verlust pro Trade, wenn man Win-Rate und durchschnittliche Gewinn-/Verlustgrösse zusammenrechnet. Positiv heisst: die Strategie trägt sich auf lange Sicht.',
         erklaerung: 'Formel: Trefferquote × Durchschnittsgewinn − Verlustquote × Durchschnittsverlust. Beispiel: 40 % × 3R − 60 % × 1R = 0,6R je Trade. Nur diese Zahl entscheidet, ob eine Strategie trägt — Trefferquote und RRR allein sagen nichts. Zwei Einschränkungen: der Erwartungswert gilt erst über viele Trades, und er muss NACH Gebühren gerechnet werden, sonst verschwindet ein knapp positiver Wert in den Kosten.',
     },
     {
-        schluessel: 'scalpSwing', kategorie: 'risiko',
+        schluessel: 'scalpSwing', kategorie: 'risiko', niveau: 1,
         frage: 'Was unterscheidet Scalp, Daytrade und Swing grob?',
         antwort: 'Die Haltedauer: ein Scalp dauert Minuten, ein Daytrade wird innerhalb eines Tages geschlossen, ein Swing-Trade läuft über mehrere Tage bis Wochen.',
         erklaerung: 'Die Haltedauer bestimmt, was die Ergebnisse dominiert. Beim Scalp sind Gebühren und Spread der grösste Einzelposten, beim Swing dagegen Funding und Übernachtrisiko durch Nachrichten. Auch die nötige Trefferquote unterscheidet sich: kurze Ziele werden häufiger erreicht, tragen aber weniger, weshalb Scalping eine hohe Quote braucht, um die Kosten zu decken.',
     },
     {
-        schluessel: 'spotFutures', kategorie: 'risiko',
+        schluessel: 'spotFutures', kategorie: 'risiko', niveau: 1,
         frage: 'Was ist der Kernunterschied zwischen Spot- und Futures-Handel?',
         antwort: 'Beim Spot-Handel wird der Coin tatsächlich gekauft und besessen. Futures sind ein Vertrag auf den zukünftigen Preis, meist gehebelt und ohne den Coin selbst zu halten.',
         erklaerung: 'Drei praktische Unterschiede folgen daraus. Erstens kann eine Spot-Position nicht liquidiert werden — sie kann nur an Wert verlieren. Zweitens kostet ein Future laufend Funding, Spot nicht. Drittens lässt sich mit Futures auch fallen setzen, ohne den Coin zu besitzen. Für das Journal heisst das vor allem: eine Futures-Position hat immer einen Preis, an dem sie zwangsweise endet.',
     },
     {
-        schluessel: 'makerTaker', kategorie: 'risiko',
+        schluessel: 'makerTaker', kategorie: 'risiko', niveau: 1,
         frage: 'Was unterscheidet Maker- von Taker-Gebühren?',
         antwort: 'Maker stellt dem Orderbuch Liquidität bereit (Limit-Order, die nicht sofort ausgeführt wird) und zahlt meist weniger. Taker nimmt bestehende Liquidität sofort weg (Market-Order) und zahlt mehr.',
         erklaerung: 'Der Unterschied ist kein Rabatt, sondern eine Bezahlung für eine Leistung: der Maker stellt Liquidität in das Buch, der Taker entnimmt sie. Typisch sind 2 bp Maker gegen 5 bp Taker; bei 200 Trades im Monat sind das rund 0,6 % des umgesetzten Volumens Unterschied. Der Haken: Maker sein bedeutet warten, und eine Limit-Order wird ausgerechnet dann nicht ausgeführt, wenn der Markt in die richtige Richtung wegläuft.',
@@ -269,19 +269,19 @@ export const LERNKARTEN_DEFS = [
 
     // ── Markt allgemein ─────────────────────────────────────
     {
-        schluessel: 'marktkapitalisierung', kategorie: 'markt',
+        schluessel: 'marktkapitalisierung', kategorie: 'markt', niveau: 1,
         frage: 'Warum sagt der Preis eines Coins allein nichts über seine Grösse aus?',
         antwort: 'Marktkapitalisierung = Preis × zirkulierendes Angebot. Ein Coin bei 0,01 $ kann grösser sein als einer bei 1000 $, je nach Anzahl der Token im Umlauf.',
         erklaerung: 'Der praktische Nutzen ist die Frage „was müsste passieren": ein Coin bei 1 Mrd. Marktkapitalisierung müsste 10 Mrd. erreichen, um sich zu verzehnfachen — bei 100 Mrd. wäre dieselbe Bewegung eine Billion. Der Preis je Token sagt darüber nichts. Vorsicht bei der Zahl selbst: sie unterstellt, dass jeder Token zum aktuellen Preis verkäuflich wäre, was bei dünnen Büchern nicht zutrifft.',
     },
     {
-        schluessel: 'circulatingSupply', kategorie: 'markt',
+        schluessel: 'circulatingSupply', kategorie: 'markt', niveau: 1,
         frage: 'Was ist der Unterschied zwischen zirkulierendem und maximalem Angebot?',
         antwort: 'Zirkulierend: was aktuell tatsächlich am Markt handelbar ist. Maximal: die absolute Obergrenze, die je existieren wird — ein grosser Abstand dazwischen bedeutet künftigen Verwässerungsdruck.',
         erklaerung: 'Die Lücke zwischen zirkulierend und maximal ist künftiges Angebot mit bekanntem Zeitplan. Ein Coin mit 20 % im Umlauf hat noch das Vierfache vor sich, das nach und nach freigeschaltet wird — meist an Team und frühe Investoren, die zu deutlich niedrigeren Preisen eingestiegen sind. Deshalb gehört zur Marktkapitalisierung immer die FDV und der Freischalt-Kalender.',
     },
     {
-        schluessel: 'perpetual', kategorie: 'markt',
+        schluessel: 'perpetual', kategorie: 'markt', niveau: 1,
         frage: 'Was macht einen Perpetual Future „perpetual"?',
         antwort: 'Er hat kein Verfallsdatum wie klassische Futures — dafür sorgt die Funding-Rate laufend dafür, dass sein Preis nah am Spot-Preis bleibt.',
         erklaerung: 'Ohne Verfallsdatum fehlt der Mechanismus, der einen normalen Future zum Spot zurückzwingt — die Konvergenz beim Verfall. Die Funding-Rate ersetzt ihn: läuft der Perpetual über den Spot, wird das Halten für Longs teuer, was Verkäufer anzieht und den Abstand schliesst. Der Preis wird also nicht durch eine Regel angebunden, sondern durch einen laufenden Kostenanreiz.',
@@ -501,43 +501,43 @@ export const LERNKARTEN_DEFS = [
 
     // ── Indikatoren (Ergänzung) ──────────────────────────────
     {
-        schluessel: 'emaSma', kategorie: 'indikatoren',
+        schluessel: 'emaSma', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was unterscheidet einen EMA von einem SMA?',
         antwort: 'Der SMA gewichtet alle Kerzen des Zeitraums gleich, der EMA die jüngsten stärker. Der EMA dreht deshalb früher — und in einem Seitwärtsmarkt entsprechend öfter falsch.',
         erklaerung: 'Der EMA gewichtet mit dem Faktor 2/(n+1) je Kerze, die jüngste also am stärksten; alles Ältere verblasst, verschwindet aber nie ganz. Der SMA dagegen springt, wenn ein alter Ausreisser aus dem Fenster fällt. Schneller ist nicht besser: dieselbe Empfindlichkeit, die im Trend früher einsteigen lässt, erzeugt im Seitwärtsmarkt mehr Fehlsignale. Die Wahl ist ein Tausch, kein Fortschritt.',
     },
     {
-        schluessel: 'macd', kategorie: 'indikatoren',
+        schluessel: 'macd', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was zeigt der MACD?',
         antwort: 'Den Abstand zweier gleitender Durchschnitte (meist 12 und 26) samt Signallinie (9). Er misst Momentum, nicht Richtung: ohne Trend kreuzt er laufend hin und her.',
         erklaerung: 'Die drei Zahlen sind zwei EMAs (12, 26) und ein EMA über deren Differenz (9). Das Histogramm zeigt den Abstand zwischen MACD-Linie und Signallinie — es dreht also, bevor sich die Linien kreuzen. Weil alles auf Durchschnitten beruht, ist der MACD grundsätzlich nachlaufend: er bestätigt eine Bewegung, er sagt sie nicht an. In einer Range kreuzt er um die Nulllinie herum ständig, ohne dass etwas passiert.',
     },
     {
-        schluessel: 'bollinger', kategorie: 'indikatoren',
+        schluessel: 'bollinger', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was sagen Bollinger-Bänder aus?',
         antwort: 'Ein gleitender Durchschnitt (meist 20) plus/minus zwei Standardabweichungen. Die Aussage ist die BREITE der Bänder — eng heisst ruhig, weit heisst bewegt. Eine blosse Berührung des Bandes ist kein Signal.',
         erklaerung: 'Zwei Standardabweichungen bedeuten, dass rund 95 % der Kerzen innerhalb der Bänder liegen — eine Berührung ist damit der Normalfall und für sich genommen kein Signal. Die Aussage steckt in der Breite: ein Squeeze (sehr enge Bänder) zeigt gestaute Volatilität, die sich irgendwann entlädt, sagt aber nichts über die Richtung. In einem starken Trend läuft der Kurs am äusseren Band entlang, ohne umzukehren.',
     },
     {
-        schluessel: 'divergenz', kategorie: 'indikatoren',
+        schluessel: 'divergenz', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was ist eine Divergenz zwischen Kurs und Indikator?',
         antwort: 'Der Kurs macht ein neues Hoch, der Indikator (z.B. RSI) nicht mehr — das Momentum lässt nach. Divergenzen können sich mehrfach hintereinander auflösen, bevor der Kurs tatsächlich dreht.',
         erklaerung: 'Man unterscheidet zwei Sorten. Regulär: der Kurs macht ein höheres Hoch, der Indikator nicht — das Momentum lässt nach, eine Umkehr wird wahrscheinlicher. Versteckt: der Kurs macht ein tieferes Hoch, der Indikator ein höheres — das gilt als Fortsetzungshinweis im bestehenden Trend. Beide sind Hinweise, keine Auslöser: in einem starken Trend lösen sich Divergenzen mehrfach hintereinander auf, weshalb sie eine Bestätigung im Kurs brauchen.',
     },
     {
-        schluessel: 'volumenprofil', kategorie: 'indikatoren',
+        schluessel: 'volumenprofil', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was zeigt ein Volumenprofil (POC, Value Area)?',
         antwort: 'Wie viel Volumen auf welchem PREIS gehandelt wurde statt zu welcher Zeit. Der POC ist der meistgehandelte Preis, die Value Area der Bereich, in dem rund 70 % des Volumens lagen.',
         erklaerung: 'Der Unterschied zum normalen Volumenbalken ist die Achse: hier zählt WO gehandelt wurde, nicht WANN. Ein Preis mit viel Volumen ist ein akzeptierter Preis — dort finden Orders Gegenpartei, der Kurs hält sich gern auf. Ein Bereich mit wenig Volumen ist das Gegenteil: er wurde schnell durchlaufen und wird oft ebenso schnell wieder durchlaufen. Deshalb sucht man Ziele in Lücken und Widerstand an Volumenknoten.',
     },
     {
-        schluessel: 'fibonacci', kategorie: 'indikatoren',
+        schluessel: 'fibonacci', kategorie: 'indikatoren', niveau: 1,
         frage: 'Was sind Fibonacci-Retracements?',
         antwort: 'Prozentmarken einer vorangegangenen Bewegung (38,2 / 50 / 61,8 %), an denen viele einen Rücksetzer erwarten. Sie wirken, weil viele sie beobachten — nicht weil den Zahlen selbst etwas innewohnt.',
         erklaerung: 'Ehrlicherweise: 50 % ist gar keine Fibonacci-Zahl, sie ist aus Gewohnheit dabei. 61,8 % ist der Kehrwert des goldenen Schnitts, 38,2 % dessen Quadrat. Dass die Marken wirken, liegt nicht an der Mathematik, sondern daran, dass sie in jeder Charting-Software voreingestellt sind und deshalb viele dort dieselben Orders platzieren — eine sich selbst erfüllende Erwartung. Entsprechend hilft eine Marke nur, wenn dort auch sonst etwas liegt.',
     },
     {
-        schluessel: 'atrStopp', kategorie: 'indikatoren',
+        schluessel: 'atrStopp', kategorie: 'indikatoren', niveau: 1,
         frage: 'Warum bemisst man den Stopp oft in ATR statt in Prozent?',
         antwort: 'Weil derselbe Prozentabstand in einem ruhigen und in einem heftigen Markt etwas völlig anderes bedeutet. Ein Stopp von z.B. 1,5 ATR passt sich der aktuellen Schwankungsbreite an, statt sie zu ignorieren.',
         erklaerung: 'Konkret: bei einem Kurs von 100 und einer ATR von 2 liegt ein Stopp von 1,5 ATR 3 Punkte entfernt, also bei 97. Beruhigt sich der Markt und die ATR fällt auf 1, wären es nur noch 1,5 Punkte. Ein fixer Prozentstopp würde in der ruhigen Phase unnötig weit und in der heftigen viel zu eng stehen. Der ATR-Stopp koppelt damit auch die Positionsgrösse an die Marktlage: gleiches Risiko in Franken bedeutet in einem wilden Markt automatisch eine kleinere Position.',
@@ -545,25 +545,25 @@ export const LERNKARTEN_DEFS = [
 
     // ── Chartanalyse (Ergänzung) ─────────────────────────────
     {
-        schluessel: 'unterstuetzung', kategorie: 'chartAnalyse',
+        schluessel: 'unterstuetzung', kategorie: 'chartAnalyse', niveau: 1,
         frage: 'Wann ist eine Marke wirklich Unterstützung oder Widerstand?',
         antwort: 'Wenn der Kurs dort schon sichtbar reagiert hat — gedreht, gestockt, auffällig viel Volumen gehandelt. Eine Linie, an der noch nie etwas passiert ist, ist eine gezeichnete Linie, keine Marke.',
         erklaerung: 'Eine Marke ist nur so gut wie die Spur, die sie hinterlassen hat. Was zählt: hat der Kurs dort schon gedreht, wurde dort auffällig viel gehandelt, liegt dort ein Volumenknoten. Nach einem Bruch tauschen Unterstützung und Widerstand oft die Rolle, weil die dort Eingestiegenen ihre Position beim Rücktest ausgleichen. Und je öfter eine Marke getestet wird, desto schwächer wird sie — jeder Test verbraucht die dort liegenden Orders.',
     },
     {
-        schluessel: 'kerzenmuster', kategorie: 'chartAnalyse',
+        schluessel: 'kerzenmuster', kategorie: 'chartAnalyse', niveau: 1,
         frage: 'Was sagt ein einzelnes Kerzenmuster wie Hammer oder Engulfing aus?',
         antwort: 'Für sich genommen sehr wenig. Erst der Ort zählt: dasselbe Muster an einer bedeutenden Marke nach einer klaren Bewegung ist etwas anderes als mitten in einer Range.',
         erklaerung: 'Statistisch untersucht liefern einzelne Kerzenmuster kaum einen Vorteil; was wirkt, ist der Kontext. Ein Hammer an einer bedeutenden Marke nach einer ausgedehnten Abwärtsbewegung ist etwas anderes als derselbe Hammer mitten in einer Range. Das Muster beschreibt zudem nur, was in der Kerze passiert ist — ein langer unterer Docht heisst, dass tiefere Preise abgelehnt wurden. Diese Information ist der eigentliche Inhalt, nicht der Name.',
     },
     {
-        schluessel: 'range', kategorie: 'chartAnalyse',
+        schluessel: 'range', kategorie: 'chartAnalyse', niveau: 1,
         frage: 'Was ist eine Range und was macht sie gefährlich?',
         antwort: 'Ein Seitwärtsbereich zwischen zwei Marken. Gefährlich, weil jede Trendfolge darin systematisch verliert — deshalb prüft man vorher, ob überhaupt ein Trend läuft (z.B. über den ADX).',
         erklaerung: 'Eine Range ist der Normalzustand: Märkte verbringen den Grossteil der Zeit seitwärts. Gefährlich ist sie, weil jedes Trendfolge-Werkzeug darin systematisch das Falsche tut — gleitende Durchschnitte kreuzen ständig, Ausbrüche scheitern. Deshalb steht vor der Strategiewahl die Frage nach dem Zustand, etwa über den ADX. Innerhalb einer Range dreht sich die Logik um: man handelt an den Rändern gegen die Bewegung statt mit ihr.',
     },
     {
-        schluessel: 'zeiteinheiten', kategorie: 'chartAnalyse',
+        schluessel: 'zeiteinheiten', kategorie: 'chartAnalyse', niveau: 1,
         frage: 'Warum schaut man auf mehr als eine Zeiteinheit?',
         antwort: 'Die grosse Zeiteinheit sagt, in welche Richtung man überhaupt handeln will, die kleine, wann man einsteigt. Ein perfekter 5-Minuten-Einstieg gegen die Tagesrichtung bleibt ein Gegentrend-Trade.',
         erklaerung: 'Die übliche Aufteilung ist Richtung aus der grossen, Zeitpunkt aus der kleinen Zeiteinheit — meist im Verhältnis von etwa 1:4 bis 1:6, also Tages- und Vierstundenchart. Zwei Fallen: mehr Zeiteinheiten führen nicht zu mehr Klarheit, sondern dazu, dass sich für jede Meinung eine passende findet. Und ein Signal in der kleinen Zeiteinheit gegen die grosse ist kein Einstieg, sondern ein Gegentrend-Trade mit entsprechend kleinerem Ziel.',
@@ -629,6 +629,36 @@ export const LERNKARTEN_DEFS = [
         erklaerung: 'Der Kurs geht nicht dorthin, WEIL dort Aufträge liegen; er geht dorthin, weil Ausführung Gegenseite braucht, und die liegt gebündelt an offensichtlichen Marken. Der Unterschied klingt spitzfindig, ist aber der zwischen einer Beobachtung und einer Absichtserklärung des Marktes. Prüfbar ist nur die Beobachtung — und dass eine Marke geholt wurde, heisst nicht, dass die Bewegung dort endet.',
     },
     {
+        schluessel: 'smartMoneyConcepts', kategorie: 'chartAnalyse', niveau: 2,
+        frage: 'Was sind Smart Money Concepts (SMC) — und was behaupten sie?',
+        antwort: 'Ein Deutungsrahmen, der Kursbewegungen als Beschaffung von Liquidität für grosse Aufträge liest: Marken werden angelaufen, weil dort Gegenseite liegt. Order Block, Fair Value Gap, BOS/CHoCH und Premium/Discount sind seine Bausteine. Herkunft: Wyckoff, populär gemacht als ICT.',
+        erklaerung: 'Der wunde Punkt steckt im Namen. „Smart Money" als EIN handelnder Akteur ist eine Annahme, keine Beobachtung — belegbar ist nur, dass Ausführung Gegenseite braucht und die an offensichtlichen Marken liegt. Die Bausteine sind grösstenteils umbenannte klassische Preisbildung: Order Block ist die letzte Angebotszone, Fair Value Gap eine Kurslücke. Der Nutzen liegt im gemeinsamen Vokabular und in der Disziplin, Regeln vorher aufzuschreiben — nicht in einem nachgewiesenen Vorteil. Wer den Rahmen erst NACH der Bewegung anlegt, findet ihn immer bestätigt.',
+    },
+    {
+        schluessel: 'killzones', kategorie: 'chartAnalyse', niveau: 2,
+        frage: 'Was sind Killzones und was steckt tatsächlich dahinter?',
+        antwort: 'Zeitfenster rund um die Eröffnungen der grossen Sitzungen — London und der US-Kassahandel —, in denen die Bewegung erfahrungsgemäss grösser ist. Nicht die Uhrzeit macht sie besonders, sondern dass dort Volumen und Nachrichten zusammenfallen.',
+        erklaerung: 'Messbar ist die erhöhte Spanne, nicht die Ursache. Das Journal zeigt dieselben Fenster ohne den Begriff: London 08:00–16:30 Londoner Zeit, US-Kassa 09:30–16:00 New Yorker Zeit, dazu die Marken 08:30 (Makrodaten) und 14:00 (FOMC). Wichtig ist die ZONE, nicht die feste Uhrzeit: Die USA und Europa stellen die Sommerzeit Wochen versetzt um, ein fixer Versatz ist zwei- bis dreimal im Jahr falsch. Und mehr Bewegung heisst mehr Spanne in BEIDE Richtungen — auch der Stop wird schneller erreicht.',
+    },
+    {
+        schluessel: 'judasSwing', kategorie: 'chartAnalyse', niveau: 3,
+        frage: 'Was beschreibt ein Judas Swing?',
+        antwort: 'Eine erste Bewegung nach der Eröffnung, die in die falsche Richtung läuft, dort Stopps abräumt und anschliessend dreht — der Fehlausbruch als Auftakt, nicht als Ausnahme.',
+        erklaerung: 'Es ist derselbe Vorgang wie beim Stop-Hunt, nur an eine Tageszeit gebunden. Genau darin liegt die Schwäche: Nachträglich ist jede Gegenbewegung nach der Eröffnung ein Judas Swing, und an Tagen, an denen die erste Richtung hält, spricht niemand davon. Prüfbar wird die Idee nur mit einer vorher festgelegten Frist („innerhalb der ersten 90 Minuten") und einer Marke, ab der die Umkehr als gescheitert gilt.',
+    },
+    {
+        schluessel: 'optimalTradeEntry', kategorie: 'chartAnalyse', niveau: 3,
+        frage: 'Was meint Optimal Trade Entry (OTE)?',
+        antwort: 'Der Rücklauf einer Impulsbewegung in ihr eigenes Discount-Drittel — üblich genannt wird die Spanne zwischen 62 % und 79 % des Impulses. Der Gedanke: günstig einsteigen, aber bevor die Bewegung als gescheitert gilt.',
+        erklaerung: 'Die Zahlen stammen aus der Fibonacci-Folge und haben keine Begründung im Marktgeschehen — sie wirken, soweit sie wirken, weil viele auf dieselben Marken schauen. Entscheidend ist deshalb nicht die Genauigkeit der Prozentzahl, sondern dass Impulsanfang und -ende VORHER feststehen: Wer sie nachträglich wählt, legt die Zone dorthin, wo der Kurs ohnehin gedreht hat. Der ehrliche Teil der Idee ist das Verhältnis von Einstieg zu Stop, nicht die Trefferquote.',
+    },
+    {
+        schluessel: 'liquidityVoid', kategorie: 'chartAnalyse', niveau: 3,
+        frage: 'Was ist ein Liquidity Void — und wie hängt er mit der Fair Value Gap zusammen?',
+        antwort: 'Ein Kursbereich, der in einer einzigen schnellen Bewegung durchlaufen wurde und in dem kaum Volumen liegt. Die Fair Value Gap ist der eng definierte Kern davon (drei Kerzen), der Void der grössere, unscharf begrenzte Bereich drumherum.',
+        erklaerung: 'Beide beschreiben dieselbe Beobachtung mit unterschiedlicher Schärfe: Dort wurde nur in eine Richtung gehandelt. Die FVG hat eine prüfbare Definition, der Void nicht — deshalb ist er als Begriff bequem und als Regel unbrauchbar. Wer damit arbeitet, sollte ihn über etwas Messbares begrenzen, etwa über das Volumenprofil: Der Bereich mit dem geringsten gehandelten Volumen ist derselbe, nur zählbar.',
+    },
+    {
         schluessel: 'wyckoff', kategorie: 'chartAnalyse', niveau: 3,
         frage: 'Was beschreibt das Wyckoff-Schema?',
         antwort: 'Einen wiederkehrenden Vierklang: Akkumulation (leises Einsammeln in einer Range), Markup (Aufwärtstrend), Distribution (Abgeben in die Stärke), Markdown (Abwärtstrend). Ein Deutungsrahmen, kein Signalgeber.',
@@ -661,13 +691,13 @@ export const LERNKARTEN_DEFS = [
 
     // ── Derivate (Ergänzung) ─────────────────────────────────
     {
-        schluessel: 'orderarten', kategorie: 'derivate',
+        schluessel: 'orderarten', kategorie: 'derivate', niveau: 1,
         frage: 'Was unterscheidet Market-, Limit- und Stop-Order?',
         antwort: 'Market: sofort zum nächstbesten Preis — Ausführung sicher, Preis nicht. Limit: nur zu meinem Preis oder besser — Preis sicher, Ausführung nicht. Stop: wird erst bei einem Auslösekurs überhaupt zu einer Order.',
         erklaerung: 'Der praktische Kern ist der Tausch zwischen Ausführungs- und Preissicherheit. Eine Market-Order in einem dünnen Buch kann mehrere Prozent Slippage kosten — bei kleinen Coins der häufigste unerwartete Verlust. Eine Limit-Order kostet weniger Gebühr, kann aber genau in dem Moment nicht ausgeführt werden, in dem man sie am dringendsten braucht. Und eine Stopp-Order ist bis zum Auslösen nicht im Buch: sie schützt nicht vor einer Lücke.',
     },
     {
-        schluessel: 'trailingStopp', kategorie: 'derivate',
+        schluessel: 'trailingStopp', kategorie: 'derivate', niveau: 1,
         frage: 'Was ist ein Trailing Stop?',
         antwort: 'Ein Stopp, der dem Kurs in festem Abstand folgt, solange dieser in die richtige Richtung läuft, und stehen bleibt, sobald er dreht. Er sichert Gewinn, kostet aber bei jedem grösseren Rücksetzer die Position.',
         erklaerung: 'Der Abstand ist die ganze Entscheidung. Zu eng, und jeder normale Rücksetzer beendet den Trade mitten in einem intakten Trend; zu weit, und ein grosser Teil des Buchgewinns geht zurück, bevor er auslöst. Deshalb bemisst man ihn sinnvollerweise in ATR statt in Prozent. Wichtig auch: viele Börsen führen den Trailing Stop intern, ohne dass sich der aktuelle Auslösepreis abfragen liesse — man sieht nicht, wo er gerade steht.',
@@ -803,25 +833,25 @@ export const LERNKARTEN_DEFS = [
 
     // ── Risiko & Handwerk (Ergänzung) ────────────────────────
     {
-        schluessel: 'rMultiple', kategorie: 'risiko',
+        schluessel: 'rMultiple', kategorie: 'risiko', niveau: 1,
         frage: 'Was ist ein R-Multiple?',
         antwort: 'Das Ergebnis eines Trades gemessen in seinem eigenen Anfangsrisiko: 1R ist genau der Betrag, den der Stopp gekostet hätte. So werden Trades unterschiedlicher Grösse vergleichbar, ohne über Beträge zu reden.',
         erklaerung: 'Der Nutzen liegt im Vergleichbarmachen. 200 Franken Gewinn sagen nichts, solange man nicht weiss, ob 100 oder 1000 riskiert waren; 2R sagt alles. In R zu denken entkoppelt zudem die Bewertung eines Trades vom Kontostand — ein guter Trade bleibt ein guter Trade, ob man mit 1000 oder 100.000 handelt. Voraussetzung ist ein VOR dem Einstieg definierter Stopp, sonst gibt es kein R.',
     },
     {
-        schluessel: 'overtrading', kategorie: 'risiko',
+        schluessel: 'overtrading', kategorie: 'risiko', niveau: 1,
         frage: 'Was ist Overtrading und Revenge-Trading?',
         antwort: 'Overtrading: mehr Trades, als der Plan hergibt — meist aus Langeweile oder Angst, etwas zu verpassen. Revenge-Trading: nach einem Verlust sofort grösser wieder rein. Beides erhöht Frequenz und Grösse genau dann, wenn das Urteil am schlechtesten ist.',
         erklaerung: 'Beides ist dasselbe Muster: die Positionsgrösse oder die Frequenz steigt genau dann, wenn das Urteilsvermögen sinkt. Der Schaden ist doppelt — mehr Trades bedeuten mehr Gebühren, und die zusätzlichen Trades sind im Schnitt die schlechteren. Deshalb wirken mechanische Grenzen besser als Vorsätze: eine maximale Trade-Zahl und ein maximaler Tagesverlust, beide VOR der Sitzung festgelegt, wenn man noch ruhig ist.',
     },
     {
-        schluessel: 'prozessErgebnis', kategorie: 'risiko',
+        schluessel: 'prozessErgebnis', kategorie: 'risiko', niveau: 1,
         frage: 'Warum bewertet man den Prozess und nicht das Ergebnis eines einzelnen Trades?',
         antwort: 'Weil ein guter Trade verlieren und ein schlechter gewinnen kann. Aus einem einzelnen Ausgang zu lernen heisst, Zufall zur Regel zu machen — erst über viele Trades trennt sich Vorteil von Glück.',
         erklaerung: 'Der Kern ist die Rolle des Zufalls. Bei 50 % Trefferquote ist eine Serie von fünf Verlierern nichts Ungewöhnliches — sie tritt regelmässig auf, ohne dass sich an der Strategie etwas geändert hätte. Wer daraus lernt, lernt Rauschen. Praktisch heisst das, den Trade danach zu bewerten, ob er dem Plan entsprach, und die Ergebnisstatistik getrennt über viele Trades zu führen.',
     },
     {
-        schluessel: 'gebuehrenlast', kategorie: 'risiko',
+        schluessel: 'gebuehrenlast', kategorie: 'risiko', niveau: 1,
         frage: 'Warum frisst häufiges Handeln den Vorteil auf?',
         antwort: 'Kosten fallen je Trade an, nicht je Gewinn: Gebühr mal Frequenz. Bei einem Scalp mit kleinem Ziel kann der Rundlauf einen statistisch gültigen Vorteil vollständig aufzehren, ohne dass an der Strategie etwas falsch wäre.',
         erklaerung: 'Nachgerechnet: 0,1 % Rundlauf bei einem Trade pro Tag sind rund 25 % im Jahr, die die Strategie erst einspielen muss. Bei fünf Trades pro Tag über 100 %. Das trifft besonders kurzfristige Ansätze mit kleinen Zielen, denn die Kosten sind unabhängig von der Zielgrösse. Zwei Hebel dagegen: Maker statt Taker handeln, und die Zahl der Trades senken statt die Trefferquote zu jagen.',
@@ -895,7 +925,7 @@ export const LERNKARTEN_DEFS = [
 
     // ── Markt (Ergänzung) ────────────────────────────────────
     {
-        schluessel: 'cexDex', kategorie: 'markt',
+        schluessel: 'cexDex', kategorie: 'markt', niveau: 1,
         frage: 'Was unterscheidet eine zentrale von einer dezentralen Börse?',
         antwort: 'Auf einer CEX verwahrt die Börse die Coins und führt ein klassisches Orderbuch. Auf einer DEX handelt man direkt aus der eigenen Wallet gegen einen Liquiditätspool — ohne Gegenparteirisiko der Börse, dafür mit Vertrags- und Netzwerkrisiko.',
         erklaerung: 'Der Kernunterschied ist, wer die Schlüssel hält. Auf der CEX hält die Börse sie, man hat eine Forderung — dafür gibt es tiefe Bücher, Hebel und schnelle Ausführung. Auf der DEX handelt man aus der eigenen Wallet, dafür gegen einen Pool statt gegen ein Buch: der Preis entsteht aus einer Formel, jede Transaktion ist öffentlich sichtbar, bevor sie ausgeführt wird, und der Vertrag selbst kann Fehler haben.',
