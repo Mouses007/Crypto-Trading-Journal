@@ -42,6 +42,23 @@ const { t } = useI18n()
 
 /** Kategoriename wie auf der Lernseite — dieselben i18n-Schluessel. */
 const kategorieLabel = (k) => t('lernen.kategorie.' + k)
+
+/*
+ * Die Stufenwahl der Lernseite gilt auch hier.
+ *
+ * Die Kachel bietet keine eigene Auswahl -- fuer drei Pillen ist kein Platz,
+ * und eine zweite Einstellung fuer dieselbe Sache waere die schlechtere
+ * Loesung. Sie LIEST aber, was auf der Lernseite gewaehlt wurde: Wer dort
+ * Level 3 uebt, will nicht, dass dieselbe Runde hier stillschweigend alle
+ * Stufen nimmt. Leer heisst wie ueberall: alle.
+ */
+const SITZUNG_NIVEAUS_KEY = 'lernenSitzungNiveaus'
+function gemerkteNiveaus() {
+    try {
+        const roh = JSON.parse(localStorage.getItem(SITZUNG_NIVEAUS_KEY) || '[]')
+        return Array.isArray(roh) ? roh.map(Number).filter(n => [1, 2, 3].includes(n)) : []
+    } catch { return [] }
+}
 /*
  * Skizze als DATA-URI in einem `img`, nicht ueber `v-html`.
  *
@@ -193,7 +210,7 @@ const {
                 <span v-if="serie > 0" class="qzSerie">
                     <i class="uil uil-fire"></i>{{ t('lernen.statistik.serieTage', { n: serie }) }}
                 </span>
-                <button v-if="faelligeEintraege.length" type="button" class="ctl-pill qzStart" @click="sitzungStarten">
+                <button v-if="faelligeEintraege.length" type="button" class="ctl-pill qzStart" @click="sitzungStarten(gemerkteNiveaus())">
                     <i class="uil uil-play"></i>{{ t('lernen.start.starten') }}
                 </button>
                 <p v-else class="text-muted mb-0 qzFuss-hinweis">{{ t('lernen.start.faelligNone') }}</p>

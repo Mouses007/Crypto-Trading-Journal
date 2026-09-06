@@ -48,6 +48,25 @@ const txt = (x, y, s, o = {}) =>
  * @param {object} b        Eintrag aus BEISPIELE
  * @returns {string} SVG-Quelltext
  */
+/**
+ * Beschriftung einer Luecke — AUS DEN KERZEN, nicht von Hand.
+ *
+ * Das erste eingefrorene Beispiel war baerisch, trug aber die Beschriftung des
+ * bullischen Falls („Hoch der 1. und Tief der 3."). Der Selbsttest rechnete
+ * richtungsabhaengig und war deshalb gruen: Er prueft Zahlen, nicht Text. Wer
+ * im Bild nach dem „Hoch der 1. Kerze" suchte, fand dort keine Bandkante.
+ *
+ * Seitdem faellt der Satz aus denselben Daten wie die Kante. Der Spiegelfall
+ * wird ausdruecklich benannt, weil das Schema daneben die Aufwaertsluecke
+ * zeigt und die beiden Bilder sich sonst zu widersprechen scheinen.
+ */
+function bandTitel(b, m) {
+    const a1 = b.kerzen[m.ab - 2], a3 = b.kerzen[m.ab]
+    return a3[3] > a1[2]
+        ? `${b.titel} — Luecke zwischen HOCH der 1. und TIEF der 3. Kerze (aufwaerts)`
+        : `${b.titel} — Luecke zwischen TIEF der 1. und HOCH der 3. Kerze (abwaerts, Spiegelfall zum Schema)`
+}
+
 export function zeichneBeispiel(b) {
     const k = b.kerzen.map(([t, o, h, l, c]) => ({ t, o, h, l, c }))
     if (!k.length) return ''
@@ -92,7 +111,9 @@ export function zeichneBeispiel(b) {
 
     const datum = new Date(k[0].t).toLocaleDateString('de-CH', { timeZone: 'UTC' })
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BREITE} ${HOEHE}" width="${BREITE}" height="${HOEHE}">`
-        + txt(8, 18, b.titel, { farbe: F.marke, gr: 10 })
+        + txt(8, 18, (b.marken || []).find(m => m.art === 'band')
+            ? bandTitel(b, b.marken.find(m => m.art === 'band')) : b.titel,
+            { farbe: F.marke, gr: 9.5 })
         + `<line x1="${PLOT.x0}" y1="${PLOT.y1 + 6}" x2="${PLOT.x1}" y2="${PLOT.y1 + 6}" stroke="${F.achse}" stroke-width="1"/>`
         + marken.join('') + kerzen
         + txt(8, 194, `${b.symbol} · ${b.intervall} · ${datum} · ${b.regel}`, { gr: 9 })
@@ -101,7 +122,7 @@ export function zeichneBeispiel(b) {
 
 const BEISPIELE = {
     fairValueGap: {
-        titel: 'Echtes Beispiel — die Luecke zwischen Hoch der 1. und Tief der 3. Kerze',
+        titel: 'Echtes Beispiel',
         symbol: 'BTCUSDT', intervall: '5m',
         regel: 'Kanten aus den Kerzen gerechnet, nicht gesetzt',
         marken: [{ art: 'band', unten: 79823, oben: 79923.7, ab: 21 }],
@@ -149,8 +170,8 @@ const BEISPIELE = {
     equalHighsLows: {
         titel: 'Echtes Beispiel — zwei Hochs auf derselben Marke',
         symbol: 'BTCUSDT', intervall: '5m',
-        regel: 'Abweichung der beiden Hochs: 0.0001 %',
-        marken: [{ art: 'linie', preis: 79720, punkte: [5, 31] }],
+        regel: 'Zwei Pivot-Hochs, Abweichung 0,0005 % — im Fenster nicht ueberschritten',
+        marken: [{ art: 'linie', preis: 79734.7, punkte: [4, 36] }],
         kerzen: [[1788610800000,79616.4,79640.5,79616.3,79640.4],
         [1788611100000,79640.4,79644.8,79618.4,79618.4],
         [1788611400000,79618.4,79650,79572.8,79638.5],

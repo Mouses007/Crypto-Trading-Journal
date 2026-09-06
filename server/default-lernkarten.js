@@ -240,7 +240,7 @@ export const LERNKARTEN_DEFS = [
         schluessel: 'winRate', kategorie: 'risiko', niveau: 1,
         frage: 'Warum reicht eine hohe Win-Rate allein nicht als Erfolgsmass?',
         antwort: 'Weil sie nichts über die Grösse der Gewinne und Verluste aussagt. Eine Win-Rate von 80 % kann trotzdem verlustreich sein, wenn die wenigen Verlierer jeweils riesig sind.',
-        erklaerung: 'Die Win-Rate lässt sich beliebig hochtreiben, indem man Gewinne früh mitnimmt und Verluste laufen lässt — genau das Verhalten, das Konten zerstört. Ein Beispiel: 80 % Treffer mit je 1 Gewinn gegen 20 % Verluste mit je 5 ergibt exakt null, vor Kosten. Aussagekräftig wird sie erst neben dem durchschnittlichen Gewinn-Verlust-Verhältnis, und beide zusammen ergeben den Erwartungswert.',
+        erklaerung: 'Die Win-Rate lässt sich beliebig hochtreiben, indem man Gewinne früh mitnimmt und Verluste laufen lässt — genau das Verhalten, das Konten zerstört. Ein Beispiel: 80 % Treffer mit je 1 Gewinn gegen 20 % Verluste mit je 4 ergibt exakt null, vor Kosten — bei Verlusten von je 5 sind es bereits −0,2 je Trade. Aussagekräftig wird sie erst neben dem durchschnittlichen Gewinn-Verlust-Verhältnis, und beide zusammen ergeben den Erwartungswert.',
     },
     {
         schluessel: 'expectancy', kategorie: 'risiko', niveau: 1,
@@ -264,7 +264,7 @@ export const LERNKARTEN_DEFS = [
         schluessel: 'makerTaker', kategorie: 'risiko', niveau: 1,
         frage: 'Was unterscheidet Maker- von Taker-Gebühren?',
         antwort: 'Maker stellt dem Orderbuch Liquidität bereit (Limit-Order, die nicht sofort ausgeführt wird) und zahlt meist weniger. Taker nimmt bestehende Liquidität sofort weg (Market-Order) und zahlt mehr.',
-        erklaerung: 'Der Unterschied ist kein Rabatt, sondern eine Bezahlung für eine Leistung: der Maker stellt Liquidität in das Buch, der Taker entnimmt sie. Typisch sind 2 bp Maker gegen 5 bp Taker; bei 200 Trades im Monat sind das rund 0,6 % des umgesetzten Volumens Unterschied. Der Haken: Maker sein bedeutet warten, und eine Limit-Order wird ausgerechnet dann nicht ausgeführt, wenn der Markt in die richtige Richtung wegläuft.',
+        erklaerung: 'Der Unterschied ist kein Rabatt, sondern eine Bezahlung für eine Leistung: der Maker stellt Liquidität in das Buch, der Taker entnimmt sie. Typisch sind 2 bp Maker gegen 5 bp Taker, also 3 bp je Seite und 0,06 % je Rundlauf; bei 200 Rundläufen im Monat rund 12 % der eingesetzten Positionsgrösse. Der Haken: Maker sein bedeutet warten, und eine Limit-Order wird ausgerechnet dann nicht ausgeführt, wenn der Markt in die richtige Richtung wegläuft.',
     },
 
     // ── Markt allgemein ─────────────────────────────────────
@@ -816,7 +816,7 @@ export const LERNKARTEN_DEFS = [
         schluessel: 'cpi', kategorie: 'sentiment', niveau: 2,
         frage: 'Warum ist der CPI-Termin für einen Krypto-Trader relevant?',
         antwort: 'Die Inflationszahl entscheidet mit, ob die Notenbank lockert oder strafft. Der Markt handelt die Erwartung vorab; in den Minuten nach der Zahl wird die Abweichung gehandelt — Spreads gehen dabei kurz weit auf.',
-        erklaerung: 'Die Zahl wirkt indirekt: sie verändert die Zinserwartung, und die verändert den Risikoappetit. Wie beim FOMC zählt nur die Überraschung gegenüber der Konsensschätzung. Der Termin ist immer 14:30 Uhr Schweizer Zeit und damit planbar — man kann die Position vorher verkleinern. Der Kernindex ohne Energie und Nahrungsmittel bewegt die Märkte dabei meist stärker als die Gesamtzahl, weil er als aussagekräftiger für den Trend gilt.',
+        erklaerung: 'Die Zahl wirkt indirekt: sie verändert die Zinserwartung, und die verändert den Risikoappetit. Wie beim FOMC zählt nur die Überraschung gegenüber der Konsensschätzung. Der Termin ist 08:30 New Yorker Zeit, meist 14:30 Schweizer Zeit — ausser in den zwei bis drei Wochen, in denen die USA die Sommerzeit schon umgestellt haben und Europa noch nicht; dann 13:30. Planbar bleibt er, man kann die Position vorher verkleinern. Der Kernindex ohne Energie und Nahrungsmittel bewegt die Märkte dabei meist stärker als die Gesamtzahl, weil er als aussagekräftiger für den Trend gilt.',
     },
     {
         schluessel: 'vix', kategorie: 'sentiment', niveau: 2,
@@ -854,7 +854,7 @@ export const LERNKARTEN_DEFS = [
         schluessel: 'gebuehrenlast', kategorie: 'risiko', niveau: 1,
         frage: 'Warum frisst häufiges Handeln den Vorteil auf?',
         antwort: 'Kosten fallen je Trade an, nicht je Gewinn: Gebühr mal Frequenz. Bei einem Scalp mit kleinem Ziel kann der Rundlauf einen statistisch gültigen Vorteil vollständig aufzehren, ohne dass an der Strategie etwas falsch wäre.',
-        erklaerung: 'Nachgerechnet: 0,1 % Rundlauf bei einem Trade pro Tag sind rund 25 % im Jahr, die die Strategie erst einspielen muss. Bei fünf Trades pro Tag über 100 %. Das trifft besonders kurzfristige Ansätze mit kleinen Zielen, denn die Kosten sind unabhängig von der Zielgrösse. Zwei Hebel dagegen: Maker statt Taker handeln, und die Zahl der Trades senken statt die Trefferquote zu jagen.',
+        erklaerung: 'Nachgerechnet: 0,1 % Rundlauf bei einem Trade pro Tag sind rund 37 % im Jahr, die die Strategie erst einspielen muss — Krypto läuft durch, also 365 Tage, nicht 250. Bei fünf Trades pro Tag sind es über 180 %. Das trifft besonders kurzfristige Ansätze mit kleinen Zielen, denn die Kosten sind unabhängig von der Zielgrösse. Zwei Hebel dagegen: Maker statt Taker handeln, und die Zahl der Trades senken statt die Trefferquote zu jagen.',
     },
     {
         schluessel: 'breakEvenQuote', kategorie: 'risiko', niveau: 2,
@@ -866,13 +866,13 @@ export const LERNKARTEN_DEFS = [
         schluessel: 'riskOfRuin', kategorie: 'risiko', niveau: 2,
         frage: 'Was ist das Risk of Ruin?',
         antwort: 'Die Wahrscheinlichkeit, das Konto zu sprengen, bevor sich der statistische Vorteil auszahlen kann. Sie hängt weniger vom Vorteil ab als vom Einsatz je Trade — bei genug Versuchen kommt jede Verlustserie irgendwann.',
-        erklaerung: 'Der Kern ist unintuitiv: selbst eine profitable Strategie sprengt das Konto sicher, wenn der Einsatz je Trade zu gross ist. Bei 50 % Trefferquote kommt eine Serie von zehn Verlierern in einigen hundert Trades verlässlich vor — bei 10 % Einsatz je Trade ist das Konto dann praktisch weg, bei 1 % ein normaler Drawdown. Deshalb ist der Einsatz je Trade der wichtigere Hebel als die Trefferquote.',
+        erklaerung: 'Der Kern ist unintuitiv: selbst eine profitable Strategie sprengt das Konto sicher, wenn der Einsatz je Trade zu gross ist. Bei 50 % Trefferquote liegt die Wahrscheinlichkeit für eine Serie von zehn Verlierern bei 500 Trades schon bei rund 22 %, bei 5000 über 90 % — bei 10 % Einsatz je Trade ist das Konto dann praktisch weg, bei 1 % ein normaler Drawdown. Deshalb ist der Einsatz je Trade der wichtigere Hebel als die Trefferquote.',
     },
     {
         schluessel: 'stichprobe', kategorie: 'risiko', niveau: 2,
         frage: 'Ab wie vielen Trades ist ein Vorteil belegt?',
         antwort: 'Deutlich mehr als die zwanzig, nach denen die meisten schon urteilen — je nach Trefferquote und Streuung eher im dreistelligen Bereich. Eine Serie von zehn Gewinnern ist bei 50 % Trefferquote nichts Aussergewöhnliches.',
-        erklaerung: 'Grössenordnung: um einen Vorteil von wenigen Prozentpunkten von Zufall zu unterscheiden, braucht es je nach Streuung hunderte Trades. Anschaulich: bei 50 % Trefferquote tritt eine Serie von zehn Gewinnern in 1000 Trades mehrfach auf — sie ist erwartbar, nicht bemerkenswert. Daraus folgt für das Journal: eine Strategie nach zwanzig Trades zu ändern, ist fast immer eine Reaktion auf Rauschen.',
+        erklaerung: 'Grössenordnung: um einen Vorteil von wenigen Prozentpunkten von Zufall zu unterscheiden, braucht es je nach Streuung hunderte Trades. Anschaulich: bei 50 % Trefferquote kommt eine Serie von zehn Gewinnern in 1000 Trades mit rund 39 % Wahrscheinlichkeit mindestens einmal vor — sie ist also nicht bemerkenswert, aber auch nicht erwartbar. Daraus folgt für das Journal: eine Strategie nach zwanzig Trades zu ändern, ist fast immer eine Reaktion auf Rauschen.',
     },
     {
         schluessel: 'korrelationsrisiko', kategorie: 'risiko', niveau: 2,

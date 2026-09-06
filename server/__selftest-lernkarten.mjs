@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises'
 import { LERNKARTEN_DEFS } from './default-lernkarten.js'
 import { BILDER, bildFuer, OTE } from './lernkarten-bilder.js'
 import { BEISPIELE, beispielFuer, zeichneBeispiel } from './lernkarten-beispiele.js'
+import { pivotHighs } from './strategies/indicators.js'
 
 // Muss deckungsgleich zu KATEGORIEN in src/views/Lernen.vue sein — eine
 // Kategorie ohne dortigen Eintrag hat auch keinen i18n-Schlüssel.
@@ -189,6 +190,17 @@ pruefe('Jedes verglichene Feld wird auch gelesen (soll ⊆ select)',
                     m.unten === unten && m.oben === oben,
                     `Bild ${m.unten}/${m.oben}, Kerzen ${unten}/${oben}`)
                 pruefe(`${k}: die Luecke ist auch eine`, m.oben > m.unten)
+                /*
+                 * Und die BESCHRIFTUNG muss zur Richtung passen. Das erste
+                 * Beispiel war baerisch und trug den Satz des bullischen
+                 * Falls; die Zahlenpruefung darueber rechnet richtungsabhaengig
+                 * und war deshalb gruen. Zahlen zu pruefen genuegt nicht, wenn
+                 * daneben ein Satz steht, der etwas anderes behauptet.
+                 */
+                const titel = zeichneBeispiel(b).match(/>([^<]*Luecke[^<]*)</)?.[1] || ''
+                pruefe(`${k}: die Beschriftung nennt die richtige Richtung`,
+                    bull ? /HOCH der 1\..*TIEF der 3\./.test(titel) : /TIEF der 1\..*HOCH der 3\./.test(titel),
+                    `${bull ? 'aufwaerts' : 'abwaerts'} — "${titel}"`)
             }
             if (m.art === 'linie') {
                 const hoehen = (m.punkte || []).map(i => b.kerzen[i][2])
@@ -196,6 +208,24 @@ pruefe('Jedes verglichene Feld wird auch gelesen (soll ⊆ select)',
                     hoehen.every(h => Math.abs(h - m.preis) / m.preis < 0.001),
                     hoehen.join(' / '))
                 pruefe(`${k}: es sind mindestens zwei Punkte`, (m.punkte || []).length >= 2)
+                /*
+                 * DIE BEIDEN PRUEFUNGEN, DIE GEFEHLT HABEN.
+                 *
+                 * Das erste eingefrorene Beispiel markierte zwei Kerzen, die
+                 * gar keine Pivot-Hochs waren, und die Marke wurde im selben
+                 * Fenster von sieben Kerzen ueberschritten -- auf einer Karte,
+                 * die von NICHT genommener Liquiditaet ueber gleichen Hochs
+                 * handelt. Die alte Pruefung sah das nicht: Sie fragte nur, ob
+                 * die Punkte auf der Linie liegen, nicht ob sie etwas bedeuten.
+                 */
+                const kerzen = b.kerzen.map(([t, o, h, l, c]) => ({ t, o, h, l, c }))
+                const pivots = pivotHighs(kerzen, 3, 3).map(p => p.index)
+                pruefe(`${k}: die markierten Punkte sind echte Pivot-Hochs`,
+                    (m.punkte || []).every(i => pivots.includes(i)),
+                    `markiert ${(m.punkte || []).join(',')} — Pivots ${pivots.join(',')}`)
+                const drueber = kerzen.filter(c => c.h > m.preis).length
+                pruefe(`${k}: die Marke wird im Fenster nicht ueberschritten`,
+                    drueber === 0, `${drueber} Kerzen darueber`)
             }
         }
     }
