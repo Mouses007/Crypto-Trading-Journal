@@ -636,6 +636,20 @@ function kursmarken(text) {
 }
 
 /** Sagt der Satz „aufwärts", „abwärts" oder nichts davon? */
+/**
+ * Ein Preisfeld aus der Modellantwort — Zahl oder `null`, nie geraten.
+ *
+ * `Number(null)` ist 0 und `Number('')` ebenso; ohne diesen Riegel wuerde ein
+ * FEHLENDES Feld zur Schwelle 0, und damit gaelte je nach Richtung entweder
+ * jede Bedingung als erfuellt oder jede als widerlegt. Ein Modell schickt
+ * solche Felder auch als Zeichenkette, deshalb wird konvertiert statt geprueft.
+ */
+function preisFeld(v) {
+    if (v === null || v === undefined || v === '') return null
+    const n = Number(String(v).replace(',', '.'))
+    return Number.isFinite(n) && n > 0 ? n : null
+}
+
 function richtungAus(text) {
     const t = String(text || '').toLowerCase()
     /*
@@ -704,16 +718,42 @@ export function normalisiereHandelslage(json, melde = null) {
         .map(b => ({
             wenn: String(b?.wenn || '').trim(),
             dann: String(b?.dann || '').trim(),
+            // Nur zum Pruefen, wird unten wieder abgestreift — die Kachel und
+            // der Lagebericht sehen weiterhin genau `wenn` und `dann`.
+            _schwelle: preisFeld(b?.schwelle),
+            _richtung: b?.richtung === 'auf' || b?.richtung === 'ab' ? b.richtung : null,
+            _ziel: preisFeld(b?.ziel),
         }))
         .filter(b => b.wenn && b.dann)
         .filter(b => {
-            const richtung = richtungAus(b.wenn)
-            const schwellen = kursmarken(b.wenn)
-            if (!richtung || !schwellen.length) return true
-            const schwelle = richtung === 'auf' ? Math.max(...schwellen) : Math.min(...schwellen)
-            const ok = kursmarken(b.dann)
+            /*
+             * ANGEGEBENE FELDER SCHLAGEN DEN FLIESSTEXT.
+             *
+             * Beide Fehler dieser Pruefung sassen im LESEN der Zahlen, nie in
+             * der Vergleichsregel — die ist ein Vorzeichen und hat keinen
+             * Spielraum. Wo das Modell `schwelle`, `richtung` und `ziel` als
+             * Felder mitschickt, entfaellt die Extraktion also samt ihren
+             * Fallen. Das Herauslesen bleibt als RUECKFALL: ein Modell, das
+             * die Felder weglaesst, soll nicht ungeprueft durchkommen.
+             */
+            const richtung = b._richtung || richtungAus(b.wenn)
+            let schwelle = b._schwelle
+            if (schwelle === null) {
+                const schwellen = kursmarken(b.wenn)
+                if (!richtung || !schwellen.length) return true
+                schwelle = richtung === 'auf' ? Math.max(...schwellen) : Math.min(...schwellen)
+            }
+            if (!richtung || !(schwelle > 0)) return true
+            /*
+             * Das Fenster von halber bis doppelter Schwelle gilt fuer BEIDE
+             * Wege. Beim Fliesstext haelt es Indikatorwerte und Prozente von
+             * den Kursen fern; beim Feld schuetzt es vor einem Modell, das
+             * dort eine Prozentzahl eintraegt. Eine Marke weit ausserhalb der
+             * Groessenordnung ist kein Widerspruch, sondern eine andere Groesse.
+             */
+            const ziele = (b._ziel !== null ? [b._ziel] : kursmarken(b.dann))
                 .filter(z => z >= schwelle * 0.5 && z <= schwelle * 2)
-                .every(z => (richtung === 'auf' ? z >= schwelle : z <= schwelle))
+            const ok = ziele.every(z => (richtung === 'auf' ? z >= schwelle : z <= schwelle))
             /*
              * Verwerfen wird PROTOKOLLIERT, nicht stillschweigend getan.
              *
@@ -733,6 +773,7 @@ export function normalisiereHandelslage(json, melde = null) {
             }
             return ok
         })
+        .map(({ wenn, dann }) => ({ wenn, dann }))
         .slice(0, 4)
 
     /*

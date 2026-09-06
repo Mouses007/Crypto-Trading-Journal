@@ -505,6 +505,61 @@ console.log('\nBedingungen: Richtung und Entwertung')
     check('GEGENPROBE fremde Grössenordnung stört nicht', andereGroesse.bedingungen.length === 1)
 }
 
+
+console.log('\nBedingungen — angegebene Felder schlagen den Fliesstext')
+{
+    const lage = (bedingungen) => normalisiereHandelslage({
+        lage: 'ruhig', ueberschrift: 'x', text: 'y', bedingungen,
+    })
+    const wenn = 'der Kurs ueber das Tageshoch steigt'
+    const dann = 'wird die naechste Marke getestet'
+
+    /*
+     * DER PUNKT DES UMBAUS: Beide Saetze enthalten GAR KEINE Zahl. Der
+     * Fliesstext-Weg koennte hier nichts pruefen und liesse alles durch — mit
+     * den Feldern faellt die unmoegliche Bedingung trotzdem auf.
+     */
+    check('Felder pruefen, wo im Text keine Zahl steht',
+        lage([{ wenn, dann, schwelle: 79683, richtung: 'auf', ziel: 79616 }]).bedingungen.length === 0)
+    check('richtige Marke bleibt',
+        lage([{ wenn, dann, schwelle: 79683, richtung: 'auf', ziel: 81394 }]).bedingungen.length === 1)
+    check('abwaerts wird spiegelbildlich geprueft',
+        lage([{ wenn, dann, schwelle: 79405, richtung: 'ab', ziel: 79800 }]).bedingungen.length === 0
+        && lage([{ wenn, dann, schwelle: 79405, richtung: 'ab', ziel: 78618 }]).bedingungen.length === 1)
+
+    // Ohne `ziel` gibt es nichts zu vergleichen — die Bedingung bleibt.
+    check('fehlendes ziel verwirft nicht',
+        lage([{ wenn, dann, schwelle: 79683, richtung: 'auf' }]).bedingungen.length === 1)
+
+    /*
+     * `Number(null)` ist 0. Ohne Riegel wuerde ein fehlendes Feld zur Schwelle
+     * 0, und dann gaelte je nach Richtung entweder jede Bedingung als erfuellt
+     * oder jede als widerlegt — die Falle aus dem Audit vom 20.08.2026.
+     */
+    check('leere Felder werden nicht zur Schwelle 0',
+        lage([{ wenn: 'der Kurs ueber 79683 USD steigt', dann: 'Test bei 79616 USD',
+            schwelle: null, richtung: '', ziel: '' }]).bedingungen.length === 0)
+
+    /*
+     * GEGENPROBE: Ein Feld ausserhalb der Groessenordnung ist eine andere
+     * Groesse (Prozent, Indikator), kein Widerspruch. Sonst verwirft ein
+     * Modell, das dort versehentlich „0,8" eintraegt, seine eigene richtige
+     * Bedingung.
+     */
+    check('fremde Groessenordnung im ziel stoert nicht',
+        lage([{ wenn, dann, schwelle: 79683, richtung: 'auf', ziel: 0.8 }]).bedingungen.length === 1)
+
+    // Der Fliesstext-Rueckfall muss weiter greifen, wenn die Felder fehlen.
+    check('Rueckfall auf den Fliesstext bleibt',
+        lage([{ wenn: 'der Kurs ueber 79683 USD steigt', dann: 'Test bei 79616 USD' }]).bedingungen.length === 0
+        && lage([{ wenn: 'der Kurs ueber 79683 USD steigt', dann: 'Test bei 81394 USD' }]).bedingungen.length === 1)
+
+    // Die Hilfsfelder duerfen die Ausgabe nicht verlassen.
+    const raus = lage([{ wenn, dann, schwelle: 79683, richtung: 'auf', ziel: 81394 }]).bedingungen[0]
+    check('nur wenn und dann kommen heraus',
+        JSON.stringify(Object.keys(raus).sort()) === '["dann","wenn"]', JSON.stringify(raus))
+}
+
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
 if (fehlgeschlagen) {
     console.log('Fehlgeschlagen:')

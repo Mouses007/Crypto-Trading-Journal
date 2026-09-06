@@ -18,7 +18,7 @@
  * dürfen die Kachel nicht sprengen.
  */
 
-import { baueZeilen, normalisiereAntwort, STIMMUNGEN } from './lagebild.js'
+import { baueZeilen, normalisiereAntwort, entdoppleWiderspruch, STIMMUNGEN } from './lagebild.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -183,9 +183,70 @@ console.log('\nAntwort der KI absichern')
         normalisiereAntwort(null) === null && normalisiereAntwort('text') === null)
 }
 
+
+console.log('\nWiderspruch — die Karte darf sich nicht selbst aufsagen')
+{
+    /*
+     * Der echte Fall vom 06.09.2026. Der `text` trug die Spannung bereits
+     * („verharrt jedoch"), der `widerspruch` sagte dieselben vier Zahlen in
+     * anderer Reihenfolge noch einmal — und verdoppelte damit jede Zahl auf
+     * der Seite und in jeder Mail.
+     */
+    const text = 'Der Markt zeigt mit 47 von 50 Werten im Plus und einem Fear-&-Greed-Index von 73 '
+        + 'deutliche Risikobereitschaft bei Altcoins. Bitcoin selbst verharrt jedoch bei einem '
+        + '24-Stunden-Plus von lediglich 0,1 % und verzeichnet rückläufiges Open Interest (-0,9 %).'
+    const echt = 'Während der Fear & Greed Index mit 73 deutliche Gier signalisiert und 47 von 50 '
+        + 'Werten steigen, bewegt sich Bitcoin mit +0,1 % auf 24 Stunden kaum von der Stelle und '
+        + 'verliert parallel an Open Interest (-0,9 %).'
+    check('die Wiederholung vom 06.09.2026 fällt weg', entdoppleWiderspruch(text, echt) === '',
+        entdoppleWiderspruch(text, echt))
+
+    /*
+     * DIE GEGENPROBEN SIND HIER DIE WICHTIGERE HÄLFTE. Ein Durchgang, der zu
+     * viel schluckt, nimmt der Karte die einzige Stelle, an der sie auf eine
+     * Spannung hinweist — und das merkt niemand, denn was fehlt, sieht man
+     * nicht.
+     */
+    check('eine NEUE Zahl rettet den Satz',
+        entdoppleWiderspruch(text, 'Die ETF-Zuflüsse von 340 Mio USD stehen dem gegenüber.').length > 0)
+    check('das Minus ist keine Schreibweise, sondern eine andere Aussage',
+        entdoppleWiderspruch(text, 'Das Open Interest legte um 0,9 % zu und stützt die Bewegung.').length > 0)
+    check('ein Satz ganz ohne Zahlen bleibt',
+        entdoppleWiderspruch(text, 'Die Marktbreite trägt die Bewegung nicht.').length > 0)
+    check('ohne Text bleibt der Widerspruch unangetastet',
+        entdoppleWiderspruch('', echt) === echt)
+    check('leerer Widerspruch bleibt leer',
+        entdoppleWiderspruch(text, '') === '' && entdoppleWiderspruch(text, null) === '')
+
+    /*
+     * Das FÜHRENDE PLUS ist reine Schreibweise. Genau daran scheiterte der
+     * erste Anlauf: „+0,1 %" gegen „0,1 %" galt als neue Messung und rettete
+     * den Satz, obwohl vier von fünf Zahlen identisch waren.
+     */
+    /*
+     * Hier ist ALLES gleich ausser dem Pluszeichen — so und nur so misst der
+     * Fall das Vorzeichen und nicht nebenbei die Wortregel. Der erste Anlauf
+     * prüfte es mit zwei unterschiedlich formulierten Sätzen und schlug fehl,
+     * obwohl der Code stimmte: Dort trennten die WÖRTER die beiden, und der
+     * Satz blieb völlig zu Recht stehen.
+     */
+    const satz = (v) => `Bitcoin bewegt sich mit ${v} auf 24 Stunden kaum von der Stelle.`
+    check('+0,1 % und 0,1 % sind dieselbe Messung',
+        entdoppleWiderspruch(satz('0,1 %'), satz('+0,1 %')) === '',
+        entdoppleWiderspruch(satz('0,1 %'), satz('+0,1 %')))
+    check('-0,1 % ist es NICHT',
+        entdoppleWiderspruch(satz('0,1 %'), satz('-0,1 %')).length > 0)
+
+    // Und der Weg durch die Normalisierung, nicht nur die Funktion allein.
+    const n = normalisiereAntwort({ stimmung: 'gemischt', ueberschrift: 'Lage', text, widerspruch: echt })
+    check('normalisiereAntwort wendet den Abgleich an', n.widerspruch === '', n.widerspruch)
+    check('der Text selbst bleibt unangetastet', n.text === text)
+}
+
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
 if (fehlgeschlagen) {
     console.log('Fehlgeschlagen:')
     for (const f of fehler) console.log(`  - ${f}`)
+
     process.exit(1)
 }

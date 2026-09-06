@@ -18,6 +18,8 @@
  * Zusammenfassung, also wird jede an ihrer eigenen Stelle umgerechnet.
  */
 
+import { saetzeAus, zahlenAus, woerterAus } from './news-doppler.js'
+
 /** Erlaubte Gesamtlagen. Alles andere fällt auf `gemischt` zurück. */
 export const STIMMUNGEN = ['risiko_auf', 'risiko_ab', 'angespannt', 'gemischt', 'ruhig']
 
@@ -233,6 +235,81 @@ export function baueZeilen(d = {}) {
  *
  * @returns {object|null}
  */
+/**
+ * Anteil gemeinsamer Inhaltswörter, ab dem ein Satz als Wiederholung des
+ * Textes gilt. Bewusst hoch: Ein Widerspruch spricht zwangsläufig über
+ * dieselben Grössen wie der Text — er darf sie nur nicht bloss aufsagen.
+ */
+const WIDERSPRUCH_WORTANTEIL = 0.5
+
+/**
+ * Den Widerspruch von dem befreien, was der Text schon gesagt hat.
+ *
+ * Am 06.09.2026 sagte die Gesamtlage-Karte sich selbst auf: Ihr `text` nannte
+ * „47 von 50 Werten im Plus", „Fear & Greed 73", „+0,1 %" und „−0,9 % Open
+ * Interest" — und ihr `widerspruch` dieselben vier Zahlen noch einmal, nur in
+ * anderer Reihenfolge. Der Text trug die Spannung bereits („… verharrt
+ * jedoch …"); der Widerspruch fügte nichts hinzu, verdoppelte aber jede Zahl
+ * auf der Seite und in jeder Mail.
+ *
+ * `news-doppler.js` kann das nicht auffangen: Für ihn ist die Einordnungskarte
+ * ein FREMDER Block, gegen den er den Bericht kürzt — anfassen darf er sie
+ * nicht. Der Selbstabgleich muss deshalb hier passieren, dort wo die Antwort
+ * entsteht. Dieselbe Behandlung hat die Abwägung des Lageberichts längst
+ * („nur gegen sich selbst, und je Spalte").
+ *
+ * ── Die Regel ist ABSICHTLICH streng zum Behalten ─────────────────────────
+ *
+ * Verworfen wird ein Satz nur, wenn BEIDES zutrifft: Er bringt KEINE einzige
+ * Zahl mit, die nicht schon im Text steht, UND er teilt mindestens die Hälfte
+ * seiner Inhaltswörter mit ihm. Eine neue Messgrösse ist immer ein Grund zu
+ * bleiben — denn eine Zahl gegen eine andere zu stellen ist genau das, wofür
+ * das Feld da ist.
+ *
+ * Die gefährliche Richtung ist hier das Löschen: Ein zu eifriger Durchgang
+ * schluckt die einzige Stelle, an der die Karte auf eine Spannung hinweist,
+ * und niemand merkt es — denn was fehlt, sieht man nicht. Also im Zweifel
+ * behalten.
+ *
+ * @param {string} text          der `text` derselben Antwort
+ * @param {string} widerspruch   das Rohfeld des Modells
+ * @returns {string} leer, wenn nichts Eigenes übrig bleibt
+ */
+export function entdoppleWiderspruch(text, widerspruch) {
+    const w = String(widerspruch || '').trim()
+    if (!w) return ''
+    const t = String(text || '').trim()
+    if (!t) return w
+
+    /*
+     * Das führende PLUS gehört nicht zur Messung.
+     *
+     * `zahlenAus` behält das Vorzeichen, und das ist beim Minus richtig: −0,9 %
+     * und 0,9 % sind zwei verschiedene Aussagen. Beim Plus ist es reine
+     * Schreibweise — genau daran scheiterte der erste Anlauf dieser Funktion
+     * am echten Fall vom 06.09.2026: Der Text schrieb „lediglich 0,1 %", der
+     * Widerspruch „+0,1 %", und die eine Marke `+0.1%` gegen `0.1%` liess den
+     * Satz als „bringt eine neue Zahl mit" durchgehen. Vier von fünf Zahlen
+     * waren identisch, die fünfte war dieselbe mit Pluszeichen.
+     */
+    const ohnePlus = (menge) => new Set([...menge].map((m) => String(m).replace(/^\+/, '')))
+
+    const textZahlen = ohnePlus(zahlenAus(t))
+    const textWoerter = woerterAus(t)
+
+    const behalten = saetzeAus(w).filter((satz) => {
+        for (const z of ohnePlus(zahlenAus(satz))) if (!textZahlen.has(z)) return true
+        const woerter = woerterAus(satz)
+        // Unter vier Inhaltswörtern ist jede Ähnlichkeitsrechnung Zufall —
+        // dieselbe Schwelle wie in `istWiederholung`.
+        if (woerter.size < 4) return true
+        const gemeinsam = [...woerter].filter((x) => textWoerter.has(x)).length
+        return gemeinsam / woerter.size < WIDERSPRUCH_WORTANTEIL
+    })
+
+    return behalten.join(' ')
+}
+
 export function normalisiereAntwort(json) {
     if (!json || typeof json !== 'object') return null
 
@@ -259,7 +336,7 @@ export function normalisiereAntwort(json) {
         ueberschrift,
         text,
         punkte,
-        widerspruch: String(json.widerspruch || '').trim(),
+        widerspruch: entdoppleWiderspruch(text, json.widerspruch),
         achten,
     }
 }

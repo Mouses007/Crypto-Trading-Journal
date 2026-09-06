@@ -21,13 +21,26 @@ import {
 import { zahlenAus } from './news-doppler.js'
 
 let fehler = 0
+let anzahl = 0
+/*
+ * EIN Helfer, zwei Namen — und beide zaehlen.
+ *
+ * Bis zum 06.09.2026 zaehlte nur `p`; `pruefe` meldete Fehler, erhoehte aber
+ * `anzahl` nicht. Wer den falschen Namen nahm, dessen Pruefungen liefen und
+ * fielen trotzdem aus der Summe — genau die Bauart, mit der dem Laeufer
+ * monatelang 44 Pruefungen fehlten. Aufgefallen ist es, als zehn neue
+ * Pruefungen die Gesamtzahl nicht bewegten.
+ *
+ * `p` bleibt als Zweitname stehen, weil ihn ueber hundert Zeilen benutzen;
+ * er ist jetzt aber dieselbe Funktion und keine zweite Buchhaltung.
+ */
 const pruefe = (name, bedingung, zusatz = '') => {
+    anzahl++
     if (bedingung) return
     fehler++
     console.error(`  ✗ ${name}${zusatz ? ' — ' + zusatz : ''}`)
 }
-let anzahl = 0
-const p = (name, bedingung, zusatz) => { anzahl++; pruefe(name, bedingung, zusatz) }
+const p = pruefe
 
 // ── Token-Budget ─────────────────────────────────────────────────────────
 // 0 = Vorgabe der Länge. Das ist der Bestandsfall: Wer nie etwas einstellt,
