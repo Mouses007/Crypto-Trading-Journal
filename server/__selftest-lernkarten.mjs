@@ -12,6 +12,7 @@
 import { readFile } from 'node:fs/promises'
 import { LERNKARTEN_DEFS } from './default-lernkarten.js'
 import { BILDER, bildFuer } from './lernkarten-bilder.js'
+import { BEISPIELE, beispielFuer, zeichneBeispiel } from './lernkarten-beispiele.js'
 
 // Muss deckungsgleich zu KATEGORIEN in src/views/Lernen.vue sein — eine
 // Kategorie ohne dortigen Eintrag hat auch keinen i18n-Schlüssel.
@@ -145,6 +146,61 @@ pruefe('Jedes verglichene Feld wird auch gelesen (soll ⊆ select)',
     pruefe('bildFuer liefert leer statt undefined fuer unbekannte Karten',
         bildFuer('gibtsNicht') === '' && bildFuer(undefined) === '' && bildFuer(null) === '')
     pruefe('bildFuer trifft eine bekannte Karte', bildFuer('bosChoch').startsWith('<svg'))
+}
+
+
+/*
+ * Echte Marktbeispiele.
+ *
+ * DIE ZWEITE PRUEFUNG IST DIE WICHTIGE: Die eingezeichnete Marke muss aus den
+ * eingefrorenen Kerzen HERVORGEHEN, nicht daneben stehen. Beim Schema lag
+ * genau hier der Fehler -- die Bandkante war als "Hoch der 1. Kerze"
+ * beschriftet und lag dreissig Punkte daneben. Bei echten Kerzen faellt das
+ * noch weniger auf, weil das Bild ja "echt" aussieht.
+ */
+{
+    const schluessel = new Set(LERNKARTEN_DEFS.map(k => k.schluessel))
+    for (const [k, b] of Object.entries(BEISPIELE)) {
+        pruefe(`${k}: gehoert zu einer Karte`, schluessel.has(k))
+        pruefe(`${k}: hat Kerzen`, Array.isArray(b.kerzen) && b.kerzen.length >= 20, String(b.kerzen?.length))
+        pruefe(`${k}: Kerzenform [t,o,h,l,c] und h >= l`,
+            b.kerzen.every(c => c.length === 5 && c[2] >= c[3] && c[2] >= Math.max(c[1], c[4]) && c[3] <= Math.min(c[1], c[4])))
+        pruefe(`${k}: Zeitstempel laufen aufwaerts`,
+            b.kerzen.every((c, i) => i === 0 || c[0] > b.kerzen[i - 1][0]))
+        pruefe(`${k}: Herkunft steht im Bild`, Boolean(b.symbol && b.intervall && b.regel))
+
+        const svg = zeichneBeispiel(b)
+        pruefe(`${k}: ergibt ein SVG`, svg.startsWith('<svg') && svg.includes('xmlns='))
+        pruefe(`${k}: Symbol und Regel stehen drin`, svg.includes(b.symbol) && svg.includes(b.regel))
+
+        for (const m of b.marken || []) {
+            if (m.art === 'band') {
+                /*
+                 * Eine Fair Value Gap ist definiert als Luecke zwischen dem
+                 * Hoch der ersten und dem Tief der dritten Kerze. `ab` zeigt
+                 * auf die dritte; die Bandkanten muessen daher exakt aus
+                 * Kerze `ab - 2` und `ab` stammen.
+                 */
+                const a1 = b.kerzen[m.ab - 2], a3 = b.kerzen[m.ab]
+                const bull = a3[3] > a1[2]
+                const unten = bull ? a1[2] : a3[2]
+                const oben = bull ? a3[3] : a1[3]
+                pruefe(`${k}: Bandkanten stammen aus den Kerzen`,
+                    m.unten === unten && m.oben === oben,
+                    `Bild ${m.unten}/${m.oben}, Kerzen ${unten}/${oben}`)
+                pruefe(`${k}: die Luecke ist auch eine`, m.oben > m.unten)
+            }
+            if (m.art === 'linie') {
+                const hoehen = (m.punkte || []).map(i => b.kerzen[i][2])
+                pruefe(`${k}: die markierten Punkte liegen auf der Linie`,
+                    hoehen.every(h => Math.abs(h - m.preis) / m.preis < 0.001),
+                    hoehen.join(' / '))
+                pruefe(`${k}: es sind mindestens zwei Punkte`, (m.punkte || []).length >= 2)
+            }
+        }
+    }
+    pruefe('beispielFuer liefert leer fuer Karten ohne Beispiel',
+        beispielFuer('bosChoch') === '' && beispielFuer('gibtsNicht') === '')
 }
 
 console.log(`\n${ok} bestanden, ${fehler} fehlgeschlagen\n`)

@@ -450,6 +450,11 @@ async function aktivUmschalten(karte) {
                              wofuer der Text drei Saetze braucht. -->
                             <img v-if="bildQuelle(aktuellerEintrag.karte.bild)" class="lernen-skizze"
                                 :src="bildQuelle(aktuellerEintrag.karte.bild)" alt="" />
+                            <!-- Zweites Bild: dieselbe Struktur an echten, eingefrorenen Kerzen.
+                                 Das Schema zeigt die Definition, dieses hier,
+                                 wie sie im Chart aussieht. -->
+                            <img v-if="bildQuelle(aktuellerEintrag.karte.bildEcht)" class="lernen-skizze"
+                                 :src="bildQuelle(aktuellerEintrag.karte.bildEcht)" alt="" />
 
                                 <button v-if="hatErklaerung" type="button" class="lernen-erklaerung-knopf"
                                     :aria-expanded="erklaerungOffen" @click="erklaerungUmschalten">

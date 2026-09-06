@@ -26,6 +26,7 @@
  */
 
 import { bildFuer } from './lernkarten-bilder.js'
+import { beispielFuer } from './lernkarten-beispiele.js'
 
 export const LERNKARTEN_DEFS = [
     // ── Indikatoren ─────────────────────────────────────────
@@ -1066,7 +1067,7 @@ export async function seedDefaultLernkarten(knex) {
      * ab jetzt zusammen.
      */
     const existing = await knex('quiz_karten')
-        .select('id', 'schluessel', 'frage', 'antwort', 'erklaerung', 'bild', 'kategorie', 'niveau', 'herkunft')
+        .select('id', 'schluessel', 'frage', 'antwort', 'erklaerung', 'bild', 'bildEcht', 'kategorie', 'niveau', 'herkunft')
         .whereIn('schluessel', LERNKARTEN_DEFS.map(k => k.schluessel))
     const existingKeys = new Set(existing.map(r => r.schluessel))
 
@@ -1095,6 +1096,7 @@ export async function seedDefaultLernkarten(knex) {
             // Steht im `soll` UND oben im `select` — fehlt es dort, ist der
             // Vergleich immer falsch und jeder Start schreibt alle Karten neu.
             bild: bildFuer(def.schluessel),
+            bildEcht: beispielFuer(def.schluessel),
         }
         if (Object.keys(soll).every(f => row[f] === soll[f])) continue
         await knex('quiz_karten').where({ id: row.id }).update(soll)
@@ -1115,6 +1117,7 @@ export async function seedDefaultLernkarten(knex) {
             antwort: def.antwort,
             erklaerung: def.erklaerung || '',
             bild: bildFuer(def.schluessel),
+            bildEcht: beispielFuer(def.schluessel),
             kategorie: def.kategorie,
             herkunft: 'built-in',
             aktiv: 1,

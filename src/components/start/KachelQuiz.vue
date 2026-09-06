@@ -236,6 +236,9 @@ const {
                         <!-- Siehe Lernen.vue: Data-URI statt v-html. -->
                         <img v-if="bildQuelle(aktuellerEintrag.karte.bild)" class="lernen-skizze"
                             :src="bildQuelle(aktuellerEintrag.karte.bild)" alt="" />
+                        <!-- Echtes Marktbeispiel, siehe Lernen.vue. -->
+                        <img v-if="bildQuelle(aktuellerEintrag.karte.bildEcht)" class="lernen-skizze"
+                             :src="bildQuelle(aktuellerEintrag.karte.bildEcht)" alt="" />
 
                         <button v-if="hatErklaerung" type="button" class="lernen-erklaerung-knopf"
                             :aria-expanded="erklaerungOffen" @click="erklaerungUmschalten">

@@ -134,7 +134,8 @@ async function fixPostgresSequences(knex) {
 // geht.
 // v17: `bild` an `quiz_karten` — SVG-Skizze zu Strukturkarten. Rein additiv,
 // Vorgabe leer; ein aelterer Codestand ignoriert die Spalte schlicht.
-const SCHEMA_VERSION = 17
+// v18: `bildEcht` an `quiz_karten` — echtes Marktbeispiel neben dem Schema.
+const SCHEMA_VERSION = 18
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -1871,6 +1872,12 @@ async function runMigrations(knex, client) {
             t.text('url').defaultTo('')
             t.text('inhalt').defaultTo('')
             t.text('bild').defaultTo('')
+            /*
+             * Zweites Bild: dieselbe Struktur an ECHTEN, eingefrorenen Kerzen.
+             * Das Schema oben zeigt die Definition, dieses hier, wie sie im
+             * Chart aussieht — zwei Lernschritte, keine Alternativen.
+             */
+            t.text('bildEcht').defaultTo('')
             t.text('zusammenfassung').defaultTo('')
             t.bigInteger('publishedAt').defaultTo(0)
             t.integer('tokens').defaultTo(0)
@@ -3050,6 +3057,7 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('quiz_karten', 'niveau', (t) => t.integer('niveau').defaultTo(1))
     // Skizze zur Karte (SVG-Quelltext) — siehe createTable oben.
     await addColumnIfNotExists('quiz_karten', 'bild', (t) => t.text('bild').defaultTo(''))
+    await addColumnIfNotExists('quiz_karten', 'bildEcht', (t) => t.text('bildEcht').defaultTo(''))
 
     /*
      * Eigener Zähler für „Schwer" (05.09.2026). MUSS als `addColumnIfNotExists`
