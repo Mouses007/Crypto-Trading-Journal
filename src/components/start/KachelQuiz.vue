@@ -173,14 +173,20 @@ const {
                     <span class="lernen-dot" :class="'box-' + n"></span>{{ t('lernen.start.box', { n }) }}: {{ boxen[n] || 0 }}
                 </span>
             </div>
-            <div v-if="serie > 0" class="qzSerie mb-3">
-                <i class="uil uil-fire"></i>{{ t('lernen.statistik.serieTage', { n: serie }) }}
+            <!-- Serie und Handlung teilen sich eine Zeile, aber an
+                 gegenueberliegenden Enden. Vorher klebte der Knopf direkt an
+                 der Serie, weil `.qzSerie` inline ist und der Knopf einfach
+                 dahinter weiterfloss -- zwei Dinge, die nichts miteinander zu
+                 tun haben, sahen aus wie eine Gruppe. -->
+            <div class="qzFuss">
+                <span v-if="serie > 0" class="qzSerie">
+                    <i class="uil uil-fire"></i>{{ t('lernen.statistik.serieTage', { n: serie }) }}
+                </span>
+                <button v-if="faelligeEintraege.length" type="button" class="ctl-pill qzStart" @click="sitzungStarten">
+                    <i class="uil uil-play"></i>{{ t('lernen.start.starten') }}
+                </button>
+                <p v-else class="text-muted mb-0 qzFuss-hinweis">{{ t('lernen.start.faelligNone') }}</p>
             </div>
-
-            <button v-if="faelligeEintraege.length" type="button" class="ctl-pill qzStart" @click="sitzungStarten">
-                <i class="uil uil-play"></i>{{ t('lernen.start.starten') }}
-            </button>
-            <p v-else class="text-muted mb-0">{{ t('lernen.start.faelligNone') }}</p>
         </template>
 
         <template v-else-if="phase === 'review' && aktuellerEintrag">
@@ -395,7 +401,23 @@ const {
 .lernen-dot.box-3 { background: #3b82f6; }
 .lernen-dot.box-4 { background: #22c55e; }
 
-.qzStart { margin-top: 0.3rem; }
+/*
+ * Serie links, Handlung rechts. `margin-left: auto` am Knopf statt
+ * `justify-content: space-between` am Kasten: Ohne Serie -- und die gibt es
+ * am ersten Tag nicht -- soll der Knopf trotzdem rechts stehen und nicht
+ * nach links springen.
+ */
+.qzFuss {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+}
+
+.qzFuss .qzStart,
+.qzFuss .qzFuss-hinweis { margin-left: auto; }
+
+.qzStart { margin-top: 0; }
 
 .lernen-karteikarte { background: #000; border-radius: var(--border-radius, 8px); overflow: hidden; }
 
