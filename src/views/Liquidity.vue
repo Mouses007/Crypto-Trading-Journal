@@ -7,6 +7,7 @@
  * Live-Store und werden im Seitenmenü bedient.
  */
 import { ref, computed, onMounted } from 'vue'
+import { useFuellhoehe } from '../composables/useFuellhoehe.js'
 import { useI18n } from 'vue-i18n'
 import LiquidityHeatmap from '../components/LiquidityHeatmap.vue'
 import PageInfo from '../components/PageInfo.vue'
@@ -16,6 +17,9 @@ import {
     replayEntry, replayExit, replayFokus, replayZoom, REPLAY_ZOOM_OPTIONS,
 } from '../stores/live.js'
 import dayjs from '../utils/dayjs-setup.js'
+
+// Höhe wird gemessen, nicht in CSS geraten — siehe useFuellhoehe.js
+const { el: wrapHoehe } = useFuellhoehe()
 
 const { t } = useI18n()
 const status = ref('idle')
@@ -95,7 +99,7 @@ const statusLabel = {
 </script>
 
 <template>
-    <div class="liveWrap">
+    <div ref="wrapHoehe" class="liveWrap">
         <div class="liveHeader">
             <div class="liveTitle">
                 <span class="liveSymbol">{{ liveSymbol }}</span>
@@ -168,12 +172,10 @@ const statusLabel = {
 .liveWrap {
     display: flex;
     flex-direction: column;
-    /* Höhe füllt den Inhaltsbereich; die Canvas-Grösse kommt aus dem
-       ResizeObserver, nicht aus einer festen Pixelangabe. */
-    height: calc(100vh - 7.5rem);
-    /* dvh folgt der ein- und ausfahrenden Browserleiste auf dem Handy — mit
-       reinem vh ragt der Chart unter die Adressleiste. */
-    height: calc(100dvh - 7.5rem);
+    /* Rückfall, bis `useFuellhoehe` gemessen hat (und falls JS ausfällt).
+       Die endgültige Höhe kommt von dort — die feste Rechnung hier war um
+       rund hundert Pixel zu gross und erzeugte einen Scrollbalken. */
+    height: calc(100dvh - 9.5rem);
     min-height: 340px;
 }
 

@@ -21,10 +21,14 @@
  * Kachelrahmen.
  */
 import { ref, computed } from 'vue'
+import { useFuellhoehe } from '../composables/useFuellhoehe.js'
 import { useI18n } from 'vue-i18n'
 import PageInfo from '../components/PageInfo.vue'
 import HebelkartenCanvas from '../components/HebelkartenCanvas.vue'
 import { liveSymbol, levMapView } from '../stores/live.js'
+
+// Höhe wird gemessen, nicht in CSS geraten — siehe useFuellhoehe.js
+const { el: wrapHoehe } = useFuellhoehe()
 
 const { t } = useI18n()
 
@@ -52,7 +56,7 @@ const ratio = computed(() => {
 </script>
 
 <template>
-    <div class="levWrap">
+    <div ref="wrapHoehe" class="levWrap">
         <div class="liveHeader">
             <div class="liveTitle">
                 <span class="liveSymbol">{{ liveSymbol }}</span>
@@ -96,11 +100,11 @@ const ratio = computed(() => {
 .levWrap {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 90px);
-    /* dvh folgt der ein- und ausfahrenden Browserleiste auf dem Handy — mit
-       reinem vh ragt die Karte unter die Adressleiste (wie in Liquidity.vue) */
-    height: calc(100dvh - 90px);
-    min-height: 420px;
+    /* Rückfall, bis `useFuellhoehe` gemessen hat (und falls JS ausfällt).
+       Die endgültige Höhe kommt von dort — die feste Rechnung hier war um
+       rund hundert Pixel zu gross und erzeugte einen Scrollbalken. */
+    height: calc(100dvh - 11rem);
+    min-height: 360px;
 }
 
 @media (max-width: 767.98px) {
