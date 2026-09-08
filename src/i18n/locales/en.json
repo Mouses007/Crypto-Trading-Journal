@@ -1455,9 +1455,24 @@
     "noMatch": "No matches",
     "display": "DISPLAY",
     "bandTitle": "Price band around the mid price",
+    "spanNative": "native",
+    "spanTitle": "Visible time span — \"native\" means one recorded column per pixel, longer spans are folded (averaged). In the chart: mouse wheel over the time axis, or Shift+wheel",
+    "spanFolded": "Folded: {n} recorded columns per pixel, averaged",
+    "spanStretched": "Stretched: one recorded column across {n} pixels",
+    "spanNativeHint": "One recorded column per pixel — the span follows the width",
+    "spanRing": "ring {n} min",
+    "spanShort": "Only {have} of {want} min recorded so far — the left stays empty until the ring fills",
+    "historyOpt": "History {n} min",
+    "historyTitle": "How much order-book history the ring keeps. Caps the selectable time span — changing it reloads the history",
+    "priceFold": "PRICE ZONES",
+    "priceFoldRows": "{n} rows",
+    "priceFoldTitle": "How many price rows are merged into one zone. Resting orders sit on round prices — without merging, empty gaps remain between them",
     "frameTitle": "Time per column",
     "perColumn": "{ms} ms / column",
     "profile": "Volume profile",
+    "buch": "BOOK LADDER",
+    "replayNoBook": "Replay has no live order book",
+    "buchTitle": "Resting size per price zone as a bar with figure — green bids, red asks. Shows what RESTS; the volume profile beside it shows what TRADED",
     "liquidations": "Liquidations",
     "volumeBars": "Volume bars",
     "volumeBarsTitle": "Bars below the chart: traded volume per time slice, green when buyers were more aggressive",
@@ -1470,13 +1485,13 @@
     "colorScale": "COLOR SCALE",
     "auto": "Automatic",
     "fixedValue": "Fixed value",
-    "colorScaleTitle": "Auto adapts the colour continuously; Fixed makes images comparable",
+    "colorScaleTitle": "Auto keeps re-anchoring the scale on the median of the visible quantities; Fixed makes images comparable across time and symbols",
     "saturationTitle": "Quantity at which a cell is fully saturated",
     "takeAutoTitle": "Adopt current auto value ({value})",
-    "autoValue": "Auto value: {value}",
+    "autoValue": "Auto value (median): {value}",
     "saturationMult": "SATURATION CEILING",
-    "saturationMultTitle": "How many times the reference value fully saturates a cell — lower makes walls pop sooner, higher keeps the scale more restrained",
-    "autoFixedHint": "For persistently comparable, strong colours: switch the colour scale to \"Fixed\" and use \"Adopt auto value\"",
+    "saturationMultTitle": "How many times the reference value fully saturates a cell — lower makes the picture more colourful and restless, higher lets only real walls stand out",
+    "autoFixedHint": "Auto measures the median of the visible book and colours relative to it — the bulk stays in the blues and walls stand out, on any symbol. Switch to \"Fixed\" for persistently comparable images.",
     "threshold": "LIQUIDITY THRESHOLD",
     "thresholdTitle": "Hides everything below this share of the colour scale",
     "dotStep": "GROUP TRADE DOTS",
@@ -1486,6 +1501,13 @@
     "dotStepHint": "One bubble = {time} of trading",
     "coverage": "Snapshot reach — incomplete above/below",
     "traded": "traded",
+    "bookLane": "resting",
+    "otherVenues": "Bybit + OKX",
+    "shareBinance": "Binance",
+    "otherVenuesTitle": "Shows as a faint bar behind how much rests at the same prices on Bybit and OKX. Deliberately NOT added up: the venues' mid prices differ by several dollars, so summing smears the same wall across zones",
+    "lanes": "RIGHT-HAND LANES",
+    "bid": "Bids",
+    "ask": "Asks",
     "max": "max",
     "liquidity": "Liquidity",
     "toMid": "% to mid",
@@ -2748,7 +2770,7 @@
         },
         {
           "h": "THE TIME AXIS",
-          "p": "One column is exactly one pixel wide and covers the configured interval. At one second per column, a 1200-pixel window shows twenty minutes. A grey vertical stripe marks a gap — the tab was in the background and the connection was closed."
+          "p": "How much time the picture holds is set by \"Time span\" — 1 minute to 1 hour, or \"native\" for one recorded column per pixel. Longer spans average several columns into one pixel; the line below the selector says how many. A grey vertical stripe marks a gap — the tab was in the background and there is no order book for that time. Trades from such a gap are NOT drawn: they would have no place on this axis, and stacked at the edge they would look like a single large burst."
         },
         {
           "h": "THE WHITE LINE",
@@ -2756,7 +2778,7 @@
         },
         {
           "h": "THE BUBBLES",
-          "p": "Executed trades. Area is the traded quantity, colour is the aggressive side: green means buyers lifted the offer, red means sellers hit the bid. The \"group trade dots\" slider bundles them in time — without it they merge into a band."
+          "p": "Executed trades. The area matches the traded size, the colour the aggressive side: green means buyers lifted the offer, red means sellers hit the bid. The \"Merge points\" slider lays a square grid over the map and merges everything inside it into one dot — in time AND price. Dots are drawn at the size-weighted mean price, so they sit where trading actually happened."
         },
         {
           "h": "SPOTTING ABSORPTION",
@@ -2767,16 +2789,16 @@
           "p": "Real forced liquidations from the Binance stream. Unlike the liquidation map, these are not estimates but events that actually happened."
         },
         {
-          "h": "THE LANE ON THE RIGHT",
-          "p": "The volume profile of the visible period: how much was traded at which prices, split by buy and sell. Hovering shows quantity and value. The width is adjustable; at zero it disappears."
+          "h": "THE TWO RIGHT-HAND LANES",
+          "p": "They answer different questions and can be switched off separately. The VOLUME PROFILE shows what was TRADED in the visible period, split by buy and sell. The BOOK LADDER shows what currently RESTS: size per price zone as a bar with a figure, green bids, red asks. Its bars grow towards the price axis, the profile's the other way — that is how you tell them apart. With \"Bybit + OKX\" enabled, a faint bar behind shows how much rests at the same prices on the other venues; the header names the Binance share. Deliberately not added up: the venues' mid prices differ by several dollars, so summing smears the same wall across zones. Where the figures do not fit, hovering shows them."
         },
         {
           "h": "THE BARS BELOW",
           "p": "Traded volume per time slice, green when buyers were more aggressive. The switch from green to red shows a change of initiative — hard to see in the bubbles alone."
         },
         {
-          "h": "LIMIT OF MEASUREMENT",
-          "p": "The dashed \"snapshot reach\" line marks how deep the fetched order book goes. Above and below it the picture is incomplete, not empty — orders do exist there, we just cannot see them."
+          "h": "LIMITS OF THE MEASUREMENT",
+          "p": "The amber dashed \"snapshot range\" line marks how deep the fetched order book reaches — measured about ±0.17 % for BTC. Above and below, the display is incomplete, not empty: orders do rest there, we only see what has changed since the last sync. That region is therefore visibly toned down, otherwise a single delivered level would stand as strong as a fully captured wall. It is also why a narrow price band makes the picture look warmer: narrow shows almost only the captured core, and that is dense by definition."
         },
         {
           "g": "Operating the view",
@@ -2784,16 +2806,16 @@
           "p": "Both live in the side menu on the left. At the top you choose futures (perpetual) or spot, below that you search for the symbol. The choice applies to the whole live analysis: the liquidation map and open interest follow the same symbol, and a click in the market radar sets it too. Perp and spot have separate order books — for the same coin they look different, and that is not a bug."
         },
         {
-          "h": "WINDOW AND CADENCE",
-          "p": "\"Price band\" sets how far the map reaches above and below the mid price: tight shows the inner workings of the book, wide shows the big blocks. \"ms per column\" sets how much time goes into one pixel, and therefore the length of the visible window — 1000 ms is twenty minutes across 1200 pixels, 250 ms is five. Small values for execution, large ones for the overview."
+          "h": "VIEW, SPAN AND GRID",
+          "p": "Four settings that interact. \"Price band\" sets how far the map reaches above and below the mid. \"Time span\" sets how much time is shown; the ring length follows automatically (twice the span, so you can pan back once) and is stated in the hint line. \"ms per column\" is a different thing: how finely it is RECORDED — that changes the view only indirectly. \"Price zones\" merges several price rows into one zone; that closes the gaps between orders sitting on round prices but flattens the differences. 1 to 2 is usually the best compromise. In the chart the mouse wheel does both: over the map the price band, over the time axis or with Shift the time span."
         },
         {
           "h": "COLOUR SCALE AND THRESHOLD",
-          "p": "Top right switches the palette (Viridis, Classic, Journal) — pure taste. More important is the scale in the side menu: \"Automatic\" adjusts brightness continuously so there is always something to see; \"Fixed value\" makes pictures comparable over time, because the same quantity always gets the same colour. The small button beside it adopts the current automatic value as a starting point. The \"liquidity threshold\" hides everything below a given share — turn it up until only the clumps remain."
+          "p": "Top right switches the palette (Viridis, Classic, Journal) — pure taste. What matters is the scale in the side menu. \"Automatic\" measures the median of the captured book and colours relative to it, so the bulk stays in the blues and walls stand out, equally readable on any symbol. \"Fixed value\" makes images comparable across time and symbols because the same size always gets the same colour; the small button beside it adopts the current automatic value. The \"saturation ceiling\" says at how many times the reference a cell is fully saturated — low makes the picture colourful and restless, high lets only real walls stand out. The \"liquidity threshold\" hides everything below a share of the scale."
         },
         {
-          "h": "DOTS AND EXTRA LANES",
-          "p": "\"Group trade dots\" bundles trades into bubbles and controls spacing and size at once: small means many fine dots, precise in time; large means few fat bubbles and a coarser picture. Separately switchable are the volume profile on the right including its lane width, the liquidation diamonds (futures only) and the volume bars below. If you want recording to continue while the tab is in the background, switch off \"pause in background\" — that keeps the connection open permanently and costs CPU time."
+          "h": "POINTS AND EXTRA LANES",
+          "p": "\"Merge points\" sets the grid for trade dots: small means many fine dots and precise timing, large means few that are genuinely merged. The line below states how much trading time then sits in one bubble. Book ladder and volume profile on the right (with width), the liquidation diamonds (futures only), the volume bars and the buy/sell delta below can each be switched on separately. To keep recording in the background, switch off \"Pause in background\" — that keeps the connection open, costs CPU, and the time axis still gets a gap because the browser throttles the ticks."
         },
         {
           "h": "PAUSE, AUTO AXIS, ZOOM",

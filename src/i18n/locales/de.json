@@ -1455,9 +1455,24 @@
     "noMatch": "Keine Treffer",
     "display": "DARSTELLUNG",
     "bandTitle": "Preisband um den Mittelkurs",
+    "spanNative": "nativ",
+    "spanTitle": "Sichtbare Zeitspanne — „nativ\" heisst eine Aufzeichnungsspalte je Pixel, längere Spannen werden gefaltet (gemittelt). Im Chart: Mausrad über der Zeitachse oder Shift+Rad",
+    "spanFolded": "Gefaltet: {n} Aufzeichnungsspalten je Pixel, gemittelt",
+    "spanStretched": "Gedehnt: eine Aufzeichnungsspalte über {n} Pixel",
+    "spanNativeHint": "Eine Aufzeichnungsspalte je Pixel — die Spanne ergibt sich aus der Breite",
+    "spanRing": "Ring {n} min",
+    "spanShort": "Erst {have} von {want} min aufgezeichnet — links bleibt es leer, bis der Ring voll ist",
+    "historyOpt": "Historie {n} min",
+    "historyTitle": "Wie viel Orderbuch-Historie der Ring aufhebt. Begrenzt die wählbare Zeitspanne — ein Wechsel lädt die Historie neu",
+    "priceFold": "PREISZONEN",
+    "priceFoldRows": "{n} Zeilen",
+    "priceFoldTitle": "Wie viele Preiszeilen zu einer Zone zusammengefasst werden. Ruhende Orders sitzen auf runden Preisen — ohne Zusammenfassen bleiben dazwischen leere Striche",
     "frameTitle": "Zeit pro Spalte",
     "perColumn": "{ms} ms / Spalte",
     "profile": "Volumenprofil",
+    "buch": "BUCH-LEITER",
+    "replayNoBook": "In der Wiedergabe gibt es kein aktuelles Buch",
+    "buchTitle": "Ruhende Mengen je Preiszone als Balken mit Zahl — grün Gebote, rot Briefe. Zeigt was LIEGT, das Volumenprofil daneben was GEHANDELT wurde",
     "liquidations": "Liquidationen",
     "volumeBars": "Volumen-Säulen",
     "volumeBarsTitle": "Säulen unter dem Chart: gehandeltes Volumen je Zeitabschnitt, grün wenn Käufer aggressiver waren",
@@ -1470,13 +1485,13 @@
     "colorScale": "FARBSKALA",
     "auto": "Automatisch",
     "fixedValue": "Fester Wert",
-    "colorScaleTitle": "Auto passt die Farbe laufend an; Fest macht Bilder vergleichbar",
+    "colorScaleTitle": "Auto nordet die Skala laufend am Median der sichtbaren Mengen ein; Fest macht Bilder über Zeit und Symbole vergleichbar",
     "saturationTitle": "Menge, ab der eine Zelle voll gesättigt ist",
     "takeAutoTitle": "Aktuellen Auto-Wert übernehmen ({value})",
-    "autoValue": "Auto-Wert: {value}",
+    "autoValue": "Auto-Wert (Median): {value}",
     "saturationMult": "SÄTTIGUNGSGRENZE",
-    "saturationMultTitle": "Ab dem Wievielfachen des Bezugswerts eine Zelle voll gesättigt ist — kleiner macht Wände schneller kräftig, grösser hält die Skala zurückhaltender",
-    "autoFixedHint": "Für dauerhaft vergleichbare, kräftige Farben: Farbskala auf „Fest“ stellen und „Auto-Wert übernehmen“ nutzen",
+    "saturationMultTitle": "Ab dem Wievielfachen des Bezugswerts eine Zelle voll gesättigt ist — kleiner macht das Bild bunter und unruhiger, grösser lässt nur noch echte Wände herausstechen",
+    "autoFixedHint": "Auto misst den Median des sichtbaren Buchs und färbt im Verhältnis dazu — dadurch liegt die Masse im Blauen und Wände heben sich ab, auf jedem Symbol. Für dauerhaft vergleichbare Bilder auf „Fest“ stellen.",
     "threshold": "LIQUIDITÄTSSCHWELLE",
     "thresholdTitle": "Blendet alles unterhalb dieses Anteils der Farbskala aus",
     "dotStep": "PUNKTE ZUSAMMENFASSEN",
@@ -1486,6 +1501,13 @@
     "dotStepHint": "Eine Blase = {time} Handel",
     "coverage": "Snapshot-Reichweite — darüber/darunter unvollständig",
     "traded": "gehandelt",
+    "bookLane": "ruhend",
+    "otherVenues": "Bybit + OKX",
+    "shareBinance": "Binance",
+    "otherVenuesTitle": "Zeigt als blassen Balken dahinter, wie viel bei Bybit und OKX auf denselben Preisen liegt. Bewusst NICHT aufaddiert: die Mittelkurse der Börsen liegen mehrere Dollar auseinander, summiert verschmiert dieselbe Wand über mehrere Zonen",
+    "lanes": "SPUREN RECHTS",
+    "bid": "Gebote",
+    "ask": "Briefe",
     "max": "max",
     "liquidity": "Liquidität",
     "toMid": "% zum Mid",
@@ -2748,7 +2770,7 @@
         },
         {
           "h": "DIE ZEITACHSE",
-          "p": "Eine Spalte ist genau ein Pixel breit und deckt den eingestellten Takt ab. Bei einer Sekunde je Spalte zeigt ein 1200 Pixel breites Fenster also zwanzig Minuten. Ein grauer senkrechter Streifen markiert eine Lücke — dort war der Tab im Hintergrund und die Verbindung getrennt."
+          "p": "Wie viel Zeit im Bild steht, bestimmt „Zeitspanne\" — 1 Minute bis 1 Stunde, oder „nativ\" für eine Aufzeichnungsspalte je Pixel. Bei längeren Spannen werden mehrere Spalten zu einem Pixel gemittelt; die Zeile unter der Auswahl sagt, wie viele. Ein grauer senkrechter Streifen markiert eine Lücke — dort war der Tab im Hintergrund, und für diese Zeit gibt es kein Orderbuch. Handelspunkte aus einer solchen Lücke werden NICHT gezeichnet: sie hätten auf dieser Achse keinen Ort, und an den Rand gestapelt sähen sie aus wie ein einzelner Grossausbruch."
         },
         {
           "h": "DIE WEISSE LINIE",
@@ -2756,7 +2778,7 @@
         },
         {
           "h": "DIE BLASEN",
-          "p": "Ausgeführte Geschäfte. Die Fläche entspricht der gehandelten Menge, die Farbe der aggressiven Seite: grün heisst, Käufer haben ins Angebot hineingekauft, rot heisst, Verkäufer haben ins Gebot verkauft. Der Regler „Punkte zusammenfassen\" bündelt sie zeitlich — ohne ihn verschmelzen sie zu einem Band."
+          "p": "Ausgeführte Geschäfte. Die Fläche entspricht der gehandelten Menge, die Farbe der aggressiven Seite: grün heisst, Käufer haben ins Angebot hineingekauft, rot heisst, Verkäufer haben ins Gebot verkauft. Der Regler „Punkte zusammenfassen\" legt ein quadratisches Raster über die Karte und fasst alles darin zu einem Punkt zusammen — in Zeit UND Preis. Gezeichnet wird am mengengewichteten Mittelpreis, der Punkt sitzt also dort, wo tatsächlich gehandelt wurde."
         },
         {
           "h": "ABSORPTION ERKENNEN",
@@ -2767,8 +2789,8 @@
           "p": "Echte Zwangsliquidationen aus dem Binance-Datenstrom. Anders als in der Liquidationskarte sind das keine Schätzungen, sondern tatsächlich stattgefundene Ereignisse."
         },
         {
-          "h": "DIE SPUR RECHTS",
-          "p": "Das Volumenprofil des sichtbaren Zeitraums: auf welchen Preisen wie viel gehandelt wurde, getrennt nach Kauf und Verkauf. Beim Darüberfahren erscheinen Menge und Gegenwert. Die Breite ist einstellbar, bei null verschwindet sie."
+          "h": "DIE ZWEI SPUREN RECHTS",
+          "p": "Sie beantworten verschiedene Fragen und sind einzeln abschaltbar. Das VOLUMENPROFIL zeigt, was im sichtbaren Zeitraum GEHANDELT wurde, nach Kauf und Verkauf getrennt. Die BUCH-LEITER zeigt, was gerade LIEGT: ruhende Mengen je Preiszone als Balken mit Zahl, grün Gebote, rot Briefe. Ihre Balken wachsen zur Preisachse hin, die des Profils andersherum — daran erkennt man sie auseinander. Ist „Bybit + OKX\" eingeschaltet, steht dahinter blass, wie viel auf denselben Preisen bei den anderen Börsen liegt; die Kopfzeile nennt den Binance-Anteil. Bewusst nicht aufaddiert: die Mittelkurse der Börsen liegen mehrere Dollar auseinander, summiert verschmiert dieselbe Wand über mehrere Zonen. Passen die Zahlen nicht ins Bild, zeigt sie das Darüberfahren."
         },
         {
           "h": "DIE SÄULEN UNTEN",
@@ -2776,7 +2798,7 @@
         },
         {
           "h": "GRENZE DER MESSUNG",
-          "p": "Die gestrichelte Linie „Snapshot-Reichweite\" markiert, wie tief das abgerufene Orderbuch reicht. Darüber und darunter ist die Darstellung unvollständig, nicht leer — dort liegen durchaus Orders, wir sehen sie nur nicht."
+          "p": "Die bernsteinfarbene gestrichelte Linie „Snapshot-Reichweite\" markiert, wie tief das abgerufene Orderbuch reicht — bei BTC gemessen etwa ±0,17 %. Darüber und darunter ist die Darstellung unvollständig, nicht leer: dort liegen durchaus Orders, wir sehen nur, was sich seit dem letzten Abgleich geändert hat. Deshalb wird dieser Bereich sichtbar zurückgenommen, sonst stünde ein einzelnes zugeliefertes Level so kräftig da wie eine vollständig erfasste Wand. Das ist auch der Grund, warum ein enges Preisband das Bild wärmer wirken lässt: eng zeigt fast nur den erfassten Kern, und der ist per Definition dicht."
         },
         {
           "g": "Bedienung",
@@ -2784,16 +2806,16 @@
           "p": "Beides steht im Seitenmenü links. Oben wählst du zwischen Futures (Perpetual) und Spot, darunter suchst du das Symbol. Die Wahl gilt für die ganze Live-Analyse: Liquidationskarte und Open Interest folgen demselben Symbol, und ein Klick im Marktradar setzt es ebenfalls. Perp und Spot haben getrennte Orderbücher — bei denselben Coins sehen sie unterschiedlich aus, das ist kein Fehler."
         },
         {
-          "h": "AUSSCHNITT UND TAKT",
-          "p": "„Preisband\" bestimmt, wie weit die Karte über und unter dem Mittelkurs reicht: eng zeigt das Innenleben des Orderbuchs, weit zeigt die grossen Blöcke. „ms je Spalte\" bestimmt, wie viel Zeit auf ein Pixel geht, und damit die Länge des sichtbaren Fensters — 1000 ms sind zwanzig Minuten auf 1200 Pixel, 250 ms sind fünf. Kleine Werte für die Ausführung, grosse für den Überblick."
+          "h": "AUSSCHNITT, SPANNE UND RASTER",
+          "p": "Vier Regler, die zusammenspielen. „Preisband\" bestimmt, wie weit die Karte über und unter dem Mittelkurs reicht. „Zeitspanne\" bestimmt, wie viel Zeit im Bild steht; die Ringlänge folgt automatisch (doppelte Spanne, damit man einmal zurückziehen kann) und steht als Folge in der Hinweiszeile. „ms je Spalte\" ist etwas anderes: wie fein AUFGEZEICHNET wird — das ändert die Ansicht nur indirekt. „Preiszonen\" fasst mehrere Preiszeilen zu einer Zone zusammen; das schliesst die Lücken zwischen Orders auf runden Preisen, flacht aber die Unterschiede ab. 1 bis 2 ist meist der beste Kompromiss. Im Chart geht beides mit dem Mausrad: über der Karte das Preisband, über der Zeitachse unten oder mit Shift die Zeitspanne."
         },
         {
           "h": "FARBSKALA UND SCHWELLE",
-          "p": "Oben rechts stellst du die Farbpalette um (Viridis, Klassisch, Journal) — reine Geschmacksfrage. Wichtiger ist im Seitenmenü die Skala: „Automatisch\" passt die Helligkeit laufend an, so dass immer etwas zu sehen ist; „Fester Wert\" macht Bilder über die Zeit vergleichbar, weil dieselbe Menge immer dieselbe Farbe hat. Der kleine Knopf daneben übernimmt den aktuellen Automatikwert als Startpunkt. Die „Liquiditätsschwelle\" blendet alles unterhalb eines Anteils aus — hochdrehen, bis nur noch die Klumpen stehen bleiben."
+          "p": "Oben rechts stellst du die Farbpalette um (Viridis, Klassisch, Journal) — reine Geschmacksfrage. Wichtiger ist im Seitenmenü die Skala. „Automatisch\" misst den Median des erfassten Buchs und färbt im Verhältnis dazu; damit liegt die Masse im Blauen und Wände heben sich ab, auf jedem Symbol gleich lesbar. „Fester Wert\" macht Bilder über Zeit und Symbole vergleichbar, weil dieselbe Menge immer dieselbe Farbe hat; der kleine Knopf daneben übernimmt den aktuellen Automatikwert. Die „Sättigungsgrenze\" sagt, beim Wievielfachen des Bezugswerts eine Zelle voll gesättigt ist — klein macht das Bild bunt und unruhig, gross lässt nur echte Wände herausstechen. Die „Liquiditätsschwelle\" blendet alles unterhalb eines Anteils aus."
         },
         {
           "h": "PUNKTE UND ZUSATZSPUREN",
-          "p": "„Punkte zusammenfassen\" bündelt Handelspunkte zu Blasen und steuert Abstand und Grösse gleichzeitig: klein heisst viele feine Punkte und zeitlich genau, gross heisst wenige fette Blasen und gröber. Getrennt zuschaltbar sind das Volumenprofil rechts samt Spurbreite, die Liquidationsrauten (nur Futures) und die Volumensäulen unten. Wer die Aufzeichnung im Hintergrund weiterlaufen lassen will, schaltet „Im Hintergrund pausieren\" aus — das hält die Verbindung dauerhaft offen und kostet Rechenzeit."
+          "p": "„Punkte zusammenfassen\" legt das Raster für die Handelspunkte fest: klein heisst viele feine Punkte und zeitlich genau, gross heisst wenige, die dafür wirklich zusammengefasst sind. Die Zeile darunter sagt, wie viel Handelszeit dann in einer Blase steckt. Getrennt zuschaltbar sind Buch-Leiter und Volumenprofil rechts samt Breite, die Liquidationsrauten (nur Futures), die Volumensäulen und der Kauf-/Verkaufssaldo unten. Wer die Aufzeichnung im Hintergrund weiterlaufen lassen will, schaltet „Im Hintergrund pausieren\" aus — das hält die Verbindung offen, kostet Rechenzeit, und die Zeitachse bekommt trotzdem eine Lücke, weil der Browser die Takte drosselt."
         },
         {
           "h": "PAUSE, AUTO-ACHSE, ZOOM",
