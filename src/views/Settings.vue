@@ -5071,7 +5071,7 @@ onBeforeMount(async () => {
                         </div>
                         <div class="col-12 col-md-8">
                             <select class="form-select" v-model.number="liveHistoryMin">
-                                <option v-for="h in HISTORY_MIN_OPTIONS" :key="h" :value="h">{{ h }} Minuten</option>
+                                <option v-for="h in HISTORY_MIN_OPTIONS" :key="h" :value="h">{{ h ? h + ' Minuten' : 'Automatisch (doppelte Zeitspanne)' }}</option>
                             </select>
                         </div>
                     </div>
@@ -5107,7 +5107,7 @@ onBeforeMount(async () => {
                     <div class="row align-items-center mt-2">
                         <div class="col-12 col-md-4">
                             Vorlauf beim Öffnen
-                            <small class="d-block text-muted" style="font-size:0.78rem;">Nur aus eigener Aufzeichnung — Binance liefert keine vergangene Orderbuch-Tiefe</small>
+                            <small class="d-block text-muted" style="font-size:0.78rem;">Nur aus eigener Aufzeichnung — Binance liefert keine vergangene Orderbuch-Tiefe. Eingeschaltet wird immer die volle Historienlänge geladen: der Server faltet die Antwort ohnehin auf rund 900 Spalten, weniger zu holen spart nichts und lässt die Karte links leer.</small>
                         </div>
                         <div class="col-12 col-md-8">
                             <select class="form-select" v-model.number="livePrefillMin">

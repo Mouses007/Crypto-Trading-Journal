@@ -16,11 +16,12 @@ import { currentUser } from '../stores/settings.js'
 import { loadSymbolMeta } from '../utils/liveSymbols.js'
 import {
     liveSymbol, liveMarket, liveViewPct, liveFrameMs, liveShowProfile,
-    liveColorMode, liveColorRef, liveSatMult, liveAutoRefValue, liveThreshold, liveShowLiquidations, liveDotStep, liveProfileW, liveShowVolumeBars,
+    liveColorMode, liveColorRef, liveSaettigung, liveProPixel, liveBucketSize, liveSpanneMin, livePreisFaltung, liveShowBuch, liveBuchW, liveFremdBuch, liveAutoRefValue, liveThreshold, liveShowLiquidations, liveDotStep, liveProfileW, liveShowVolumeBars,
     liveShowDelta, liveShowAbsorption,
     livePauseInBackground, liveMode,
     levMapTier, levMapHours, levMapSpanPct, levMapView, levMapThreshold, levMapMmr, levMapMmrQuelle, levMapProfileW, levMapWeights,
-    VIEW_PCT_OPTIONS, FRAME_MS_OPTIONS, FAVORITE_SYMBOLS,
+    VIEW_PCT_OPTIONS, FRAME_MS_OPTIONS, PREIS_FALTUNG_OPTIONS, FAVORITE_SYMBOLS,
+    spannenOptionen, historieFuer, liveHistoryMin, liveAbdeckungMin,
 } from '../stores/live.js'
 import { LEVERAGE_TIERS, parseTierAuswahl } from '../../shared/leverageMap.js'
 import { mmrHerkunft } from '../utils/marginRate.js'
@@ -243,13 +244,71 @@ async function resolveDefaultSymbol() {
 const fmtRef = (v) => (v ? (v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(v < 10 ? 2 : 1)) : '—')
 
 /**
- * Wie viel Zeit steckt in einer Blase? Das Raster ist in Pixeln angegeben, eine
- * Spalte ist genau ein Pixel — also entspricht die Rasterbreite direkt so vielen
- * Spalten, und mit dem Takt ergibt das die Zeitspanne.
+ * Wie viel Zeit steckt in einer Blase?
+ *
+ * Das Raster ist in Pixeln angegeben. Bis zur wählbaren Zeitspanne war eine
+ * Pixelspalte auch eine Ringspalte, die Rechnung also Raster × Takt. Seit der
+ * Faltung stimmt das um genau den Faktor `liveProPixel` nicht mehr — bei „1 h"
+ * stecken in einem Pixel neun Takte, und die Angabe war neunmal zu klein.
  */
+/** „15 min", „1 h", und 0 als „nativ" — dieselbe Schreibweise wie in der Kachel. */
+function spanneLabel(min) {
+    if (!min) return t('live.spanNative')
+    return min >= 60 ? `${min / 60} h` : `${min} min`
+}
+
+/*
+ * Was die gewählte Spanne tatsächlich bedeutet.
+ *
+ * Der Faktor kommt gemessen aus dem Renderer (`liveProPixel`), nicht gerechnet:
+ * die Seitenleiste kennt die Plotbreite nicht, und die entscheidet mit. Bei
+ * „nativ" ist er 1, dann steht dort schlicht die Taktbreite.
+ */
+const spanneHint = computed(() => {
+    /*
+     * Erst die Wahrheit über die Daten, dann die über die Darstellung.
+     *
+     * Deckt die Aufzeichnung die gewählte Spanne nicht, ist das die
+     * wichtigere Auskunft — links im Bild steht dann schwarze Fläche, und
+     * ohne diese Zeile sieht das aus wie ein Fehler statt wie „so alt ist
+     * die Aufzeichnung".
+     */
+    const ab = liveAbdeckungMin.value
+    const soll = liveSpanneMin.value
+    if (soll > 0 && ab > 0 && ab < soll * 0.9) {
+        return t('live.spanShort', { have: ab < 1 ? ab.toFixed(1) : Math.round(ab), want: soll })
+    }
+    /*
+     * Die Ringlänge gehört in diese Zeile, nicht in einen eigenen Regler: sie
+     * ist eine FOLGE der Spanne, keine zweite Entscheidung. Sichtbar bleibt
+     * sie trotzdem — sie sagt, wie weit man zurückziehen kann.
+     */
+    const ring = t('live.spanRing', { n: historieFuer(liveSpanneMin.value, liveHistoryMin.value) })
+    const k = liveProPixel.value || 1
+    if (k > 1.05) return `${t('live.spanFolded', { n: k.toFixed(1) })} · ${ring}`
+    if (k < 0.95) return `${t('live.spanStretched', { n: (1 / k).toFixed(1) })} · ${ring}`
+    return `${t('live.spanNativeHint')} · ${ring}`
+})
+
+/** Nur Spannen anbieten, die der Ring aufheben kann (siehe stores/live.js). */
+const spannen = computed(() => spannenOptionen(liveHistoryMin.value))
+
+/**
+ * „2 Zeilen · 4 USD" — die Zahl allein sagt nichts, die USD sind das, was man
+ * im Chart sieht. `bucketSize` kommt aus den Symboldaten; fehlt sie (noch),
+ * bleibt es bei der nackten Zahl statt einer erfundenen Spanne.
+ */
+function preisFaltungLabel(n) {
+    const bs = liveBucketSize.value
+    const zeilen = t('live.priceFoldRows', { n })
+    if (!bs) return zeilen
+    const spanne = n * bs
+    return `${zeilen} · ${spanne >= 1 ? spanne.toFixed(spanne < 10 ? 1 : 0) : spanne.toPrecision(2)}`
+}
+
 const dotStepHint = computed(() => {
     if (liveDotStep.value <= 1) return t('live.dotStepHintOff')
-    const sekunden = liveDotStep.value * liveFrameMs.value / 1000
+    const sekunden = liveDotStep.value * (liveProPixel.value || 1) * liveFrameMs.value / 1000
     const zeit = sekunden >= 60
         ? (sekunden / 60).toFixed(sekunden % 60 ? 1 : 0) + ' min'
         : (sekunden >= 10 ? Math.round(sekunden) : sekunden.toFixed(1)) + ' s'
@@ -305,10 +364,45 @@ onMounted(async () => {
         <select v-model.number="liveViewPct" class="sidebar-select mb-1" :title="t('live.bandTitle')">
             <option v-for="p in VIEW_PCT_OPTIONS" :key="p" :value="p">± {{ p }} %</option>
         </select>
+        <!-- Zeitspanne gehört neben das Preisband: die beiden spannen zusammen
+             auf, was man sieht. Der Takt darunter ist etwas anderes — er sagt,
+             wie fein AUFGEZEICHNET wird, und ändert die Ansicht nur indirekt. -->
+        <select v-model.number="liveSpanneMin" class="sidebar-select mb-1" :disabled="istWiedergabe"
+            :title="istWiedergabe ? t('live.replayLocked') : t('live.spanTitle')">
+            <option v-for="m in spannen" :key="m" :value="m">{{ spanneLabel(m) }}</option>
+        </select>
         <select v-model.number="liveFrameMs" class="sidebar-select mb-1" :disabled="istWiedergabe"
             :title="istWiedergabe ? t('live.replayLocked') : t('live.frameTitle')">
             <option v-for="f in FRAME_MS_OPTIONS" :key="f" :value="f">{{ t('live.perColumn', { ms: f }) }}</option>
         </select>
+        <div v-if="!istWiedergabe" class="autoRefHint">{{ spanneHint }}</div>
+
+        <!-- Preisachse: dasselbe wie die Zeitspanne, nur senkrecht. Eine
+             Ringzeile ist bei BTC 2 USD; ohne Zusammenfassen stehen dort
+             Striche statt Zonen, weil Orders auf runden Preisen sitzen. -->
+        <label class="fw-lighter mt-2">{{ t('live.priceFold') }}</label>
+        <select v-model.number="livePreisFaltung" class="sidebar-select mb-1" :title="t('live.priceFoldTitle')">
+            <option v-for="n in PREIS_FALTUNG_OPTIONS" :key="n" :value="n">{{ preisFaltungLabel(n) }}</option>
+        </select>
+        <!-- Zwei Spuren am rechten Rand, die verschiedene Fragen beantworten:
+             das Profil zeigt, was GEHANDELT wurde, die Leiter, was gerade
+             LIEGT. In der Wiedergabe gibt es kein aktuelles Buch. Die
+             Zwischenüberschrift steht hier, weil beide nebeneinander sonst
+             wie zwei Varianten desselben aussehen. -->
+        <label class="fw-lighter mt-2">{{ t('live.lanes') }}</label>
+        <label :class="['liveToggle', istWiedergabe ? 'liveToggleAus' : '']"
+            :title="istWiedergabe ? t('live.replayNoBook') : t('live.buchTitle')">
+            <input type="checkbox" v-model="liveShowBuch" class="me-1" :disabled="istWiedergabe" />{{ t('live.buch') }}
+        </label>
+        <template v-if="liveShowBuch && !istWiedergabe">
+            <label class="fw-lighter mt-1" style="font-size:0.72rem;">
+                {{ t('live.laneWidth') }} <span class="threshVal">{{ liveBuchW }} PX</span>
+            </label>
+            <input v-model.number="liveBuchW" type="range" min="48" max="200" step="4" class="threshRange" />
+            <label class="liveToggle" :title="t('live.otherVenuesTitle')">
+                <input type="checkbox" v-model="liveFremdBuch" class="me-1" />{{ t('live.otherVenues') }}
+            </label>
+        </template>
         <label :class="['liveToggle', istWiedergabe ? 'liveToggleAus' : '']"
             :title="istWiedergabe ? t('live.replayNoTrades') : null">
             <input type="checkbox" v-model="liveShowProfile" class="me-1" :disabled="istWiedergabe" />{{ t('live.profile') }}
@@ -361,14 +455,15 @@ onMounted(async () => {
         <div v-else class="autoRefHint">{{ t('live.autoValue', { value: fmtRef(liveAutoRefValue) }) }}</div>
         <div class="autoRefHint">{{ t('live.autoFixedHint') }}</div>
 
-        <template v-if="liveColorMode !== 'fixed'">
-            <label class="fw-lighter mt-2">
-                {{ t('live.saturationMult') }}
-                <span class="threshVal">{{ liveSatMult.toFixed(1) }}×</span>
-            </label>
-            <input v-model.number="liveSatMult" type="range" min="1.5" max="6" step="0.1"
-                class="threshRange" :title="t('live.saturationMultTitle')" />
-        </template>
+        <!-- Ein Regler für beide Modi. Der Bezugswert unterscheidet sich
+             (gemessener Median gegen von Hand gesetzt), die Sättigung ist
+             dieselbe Frage: bei welchem Vielfachen davon ist eine Zelle voll. -->
+        <label class="fw-lighter mt-2">
+            {{ t('live.saturationMult') }}
+            <span class="threshVal">{{ liveSaettigung.toFixed(1) }}×</span>
+        </label>
+        <input v-model.number="liveSaettigung" type="range" min="1.5" max="8" step="0.1"
+            class="threshRange" :title="t('live.saturationMultTitle')" />
 
         <label class="fw-lighter mt-2">
             {{ t('live.threshold') }}
@@ -382,7 +477,7 @@ onMounted(async () => {
                 {{ t('live.dotStep') }}
                 <span class="threshVal">{{ liveDotStep === 1 ? t('live.dotStepOff') : liveDotStep + ' px' }}</span>
             </label>
-            <input v-model.number="liveDotStep" type="range" min="1" max="30" step="1"
+            <input v-model.number="liveDotStep" type="range" min="1" max="80" step="1"
                 class="threshRange"
                 :title="t('live.dotStepTitle')" />
             <div class="autoRefHint">{{ dotStepHint }}</div>
