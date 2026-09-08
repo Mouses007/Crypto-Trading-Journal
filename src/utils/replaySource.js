@@ -15,7 +15,7 @@
  * Liquidität, Mid-Kurve und Liquidationen sind da.
  */
 import axios from 'axios'
-import { HeatmapRing } from './heatmapRing.js'
+import { HeatmapRing, FLAG_LUECKE, FLAG_OHNE_BUCH } from './heatmapRing.js'
 import { TradeRing } from './tradeRing.js'
 
 /**
@@ -46,8 +46,10 @@ export async function loadReplay({ symbol, market, from, to, maxCols }) {
         ring.base[c] = data.base[c]
         ring.mid[c] = data.mid[c]
         ring.ts[c] = data.startTs + c * data.frameMs
-        // Spalten ohne Mid sind Lücken in der Aufzeichnung (Server war aus)
-        ring.flags[c] = data.mid[c] ? 0 : 1
+        // Spalten ohne Mid sind Lücken in der Aufzeichnung (Server war aus) —
+        // und tragen zugleich kein Buch, sonst hielte das freie Feld rechts
+        // eine leere Spalte für den aktuellen Buchzustand.
+        ring.flags[c] = data.mid[c] ? 0 : (FLAG_LUECKE | FLAG_OHNE_BUCH)
     }
     ring.count = data.cols
     ring.head = 0   // colFrom(0, 0) zeigt auf die letzte Spalte

@@ -9,13 +9,43 @@
 import axios from 'axios'
 import { OrderBook } from '../../shared/orderbook.js'
 import { BinanceStream, buildStreamUrl, buildLiquidationUrl } from './binanceStream.js'
-import { HeatmapRing } from './heatmapRing.js'
+import { HeatmapRing, FLAG_LUECKE, FLAG_OHNE_BUCH } from './heatmapRing.js'
 import { TradeRing } from './tradeRing.js'
 import { pickBucketSize, inferTickSize } from '../../shared/priceBins.js'
 import { tickSizeFor } from './liveSymbols.js'
 import { loadReplay } from './replaySource.js'
 
+/*
+ * Zeilen und erfasstes Band des Rings.
+ *
+ * Beides zusammen bestimmt über `pickBucketSize` die Preisauflösung. Bis zum
+ * 07.09.2026 standen hier 600 Zeilen über ±1,5 %, was bei BTC einen Bucket von
+ * 4 USD ergab — bei der Vorgabe-Ansicht knapp 100 Zeilen auf 1000 Pixel, also
+ * fingerdicke Balken. Gemessen: 900 Zeilen über ±0,8 % ergeben 2 USD und damit
+ * rund 200 Zeilen im Bild.
+ *
+ * Das erfasste Band schrumpft dabei von ±1,5 % auf ±1,14 % (900 × 2 USD) —
+ * bewusst, denn der Binance-Snapshot deckt gemessen nur ±0,17 % ab. Was
+ * darüber hinausgeht, ist ohnehin nur, was der Diff-Strom zufällig liefert.
+ *
+ * Der Speicherdeckel greift bei langer Historie: der Ring belegt cap × rows × 4
+ * Byte, und bei 120 Minuten wären 900 Zeilen 52 MB. Dann wird das Raster
+ * gröber statt der Speicher grösser — eine lange Historie kostet Auflösung,
+ * nicht Arbeitsspeicher.
+ */
+const RING_ROWS_WUNSCH = 900
+const RING_ROWS_MIN = 300
+const RING_BUDGET_BYTES = 32 * 1024 * 1024
+
+/** Zeilenzahl für `cap` Spalten unter dem Speicherdeckel. */
+function zeilenFuerRing(cap) {
+    const ausBudget = Math.floor(RING_BUDGET_BYTES / 4 / Math.max(1, cap))
+    return Math.max(RING_ROWS_MIN, Math.min(RING_ROWS_WUNSCH, ausBudget))
+}
+
 const PRUNE_INTERVAL_MS = 30000
+// Mindestabstand zwischen zwei Resyncs wegen gekreuztem Buch
+const KREUZ_RESYNC_ABSTAND_MS = 10000
 // Soviele Takte darf der Schreiber höchstens nachholen. Darüber wird eine
 // Lücke markiert statt das aktuelle Buch rückwirkend zu vervielfachen.
 const MAX_NACHHOLEN = 3
@@ -38,8 +68,10 @@ export class LiveFeed {
         this.symbol = opts.symbol
         this.market = opts.market || 'futures'
         this.frameMs = opts.frameMs || 500
-        this.rows = opts.rows || 600
-        this.rangePct = opts.rangePct ?? 1.5
+        // Feste Vorgabe von aussen (Tests) schlägt den Speicherdeckel
+        this.rowsFest = opts.rows || 0
+        this.rows = this.rowsFest || RING_ROWS_WUNSCH
+        this.rangePct = opts.rangePct ?? 0.8
         this.historyMin = opts.historyMin || 30
         this.pauseInBackground = opts.pauseInBackground !== false
         // Vorlauf aus der eigenen Aufzeichnung, 0 = aus
@@ -73,6 +105,8 @@ export class LiveFeed {
         this.snapshotTimer = null
         this.syncWatchdog = null
         this.nextSlot = 0
+        this.kreuzTakte = 0        // Takte in Folge ohne gültiges Mid
+        this.letzteKreuzung = 0    // Zeitpunkt des letzten deswegen ausgelösten Resyncs
         this.stopped = false
         this.prefilling = false    // Ticker pausiert, solange der Vorlauf lädt
         this._onVisibility = this._onVisibility.bind(this)
@@ -305,12 +339,14 @@ export class LiveFeed {
     _ensureRing() {
         const { mid } = this.book.bestPrices()
         if (!mid) return
-        const bucketSize = pickBucketSize(this.tickSize, mid, this.rangePct, this.rows)
-        if (this.ring && this.bucketSize === bucketSize) return
-        this.bucketSize = bucketSize
         const cap = Math.ceil((this.historyMin * 60 * 1000) / this.frameMs)
-        this.ring = new HeatmapRing({ cap, rows: this.rows, bucketSize })
-        console.log(`[live] Ring: ${cap} Spalten × ${this.rows} Zeilen, Bucket ${bucketSize}`)
+        const rows = this.rowsFest || zeilenFuerRing(cap)
+        const bucketSize = pickBucketSize(this.tickSize, mid, this.rangePct, rows)
+        if (this.ring && this.bucketSize === bucketSize && this.rows === rows) return
+        this.rows = rows
+        this.bucketSize = bucketSize
+        this.ring = new HeatmapRing({ cap, rows, bucketSize })
+        console.log(`[live] Ring: ${cap} Spalten × ${rows} Zeilen, Bucket ${bucketSize}`)
         // Historie gibt es nur aus der eigenen Aufzeichnung — Binance liefert
         // keine vergangene Orderbuch-Tiefe. Läuft der Recorder für dieses
         // Symbol, wird der Ring damit vorbelegt und der Live-Betrieb schliesst
@@ -363,7 +399,7 @@ export class LiveFeed {
             if (srcCol < 0 || srcCol >= src.cap || !src.mid[srcCol]) {
                 // Keine Aufzeichnung für diesen Moment → Lücke, nicht erfinden
                 ring.ts[i] = ts
-                ring.flags[i] = 1
+                ring.flags[i] = FLAG_LUECKE | FLAG_OHNE_BUCH
                 continue
             }
 
@@ -449,13 +485,39 @@ export class LiveFeed {
         }
 
         let written = 0
+        let letzterMid = 0
         while (this.nextSlot <= now && written <= MAX_NACHHOLEN) {
-            this.ring.commit(this.book, this.nextSlot, this.gapPending)
+            letzterMid = this.ring.commit(this.book, this.nextSlot, this.gapPending)
             this.gapPending = false
             this.nextSlot += this.frameMs
             written++
         }
-        if (written) this.onFrame?.(now)
+        if (written) {
+            this._pruefeKreuzung(letzterMid, now)
+            this.onFrame?.(now)
+        }
+    }
+
+    /**
+     * Kein Mid heisst: leeres oder GEKREUZTES Buch (Gebot über Brief).
+     *
+     * `bestPrices()` liefert dafür bewusst 0, weil der Mittelwert plausibel
+     * aussähe und falsch wäre. Bisher wertete das niemand aus — die Spalte
+     * blieb leer, die Ansicht zeigte einen Ausfall, und das Buch lief in
+     * genau dem Zustand weiter, der ihn verursacht: Snapshot und Diffs sind
+     * auseinandergelaufen. Von allein heilt das nicht.
+     *
+     * Zwei Takte Toleranz, weil eine Kreuzung über eine Paketgrenze hinweg
+     * normal ist und sich im nächsten Diff auflöst. Danach Abstand halten,
+     * sonst zieht ein dauerhaft kaputter Zustand den Snapshot im Sekundentakt.
+     */
+    _pruefeKreuzung(mid, now) {
+        if (mid > 0) { this.kreuzTakte = 0; return }
+        if (++this.kreuzTakte < 2) return
+        if (now - this.letzteKreuzung < KREUZ_RESYNC_ABSTAND_MS) return
+        this.letzteKreuzung = now
+        this.kreuzTakte = 0
+        this._resync('Buch gekreuzt oder leer')
     }
 
     // ── Sonstiges ───────────────────────────────────────────

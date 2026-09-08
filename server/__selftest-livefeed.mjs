@@ -17,7 +17,7 @@
 
 import fs from 'fs'
 import { OrderBook } from '../shared/orderbook.js'
-import { HeatmapRing } from '../src/utils/heatmapRing.js'
+import { HeatmapRing, FLAG_LUECKE, FLAG_OHNE_BUCH } from '../src/utils/heatmapRing.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -132,7 +132,14 @@ console.log('\nHeatmap-Ring bei ungültigem Mid')
     check('kein Mid für die Spalte', mid === 0, `mid=${mid}`)
     check('die letzte gültige Achse bleibt stehen',
         ring.mid[1] === achseVorher, `${ring.mid[1]} statt ${achseVorher}`)
-    check('die Spalte wird als Lücke geführt', ring.flags[1] === 1)
+    // Beide Bits: Lücke (für die Anzeige) UND ohne Buch (die Zellen sind leer).
+    // Auf `flags === 1` zu prüfen war zu eng — das freie Feld der Bookmap
+    // unterscheidet seit dem 07.09.2026 zwischen fehlender Zeit und fehlendem
+    // Buch, siehe src/utils/__selftest-heatmap-ring.mjs.
+    check('die Spalte wird als Lücke geführt',
+        (ring.flags[1] & FLAG_LUECKE) !== 0, `flags=${ring.flags[1]}`)
+    check('die Spalte wird als „ohne Buch" geführt',
+        (ring.flags[1] & FLAG_OHNE_BUCH) !== 0, `flags=${ring.flags[1]}`)
     check('der Ring wird NICHT um den Preis 0 aufgebaut',
         ring.base[1] === ring.base[0], `base ${ring.base[1]} vs ${ring.base[0]}`)
 

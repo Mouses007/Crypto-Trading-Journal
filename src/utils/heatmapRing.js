@@ -13,6 +13,21 @@
  * die TypedArrays legen und der Hot Path bräche zusammen.
  */
 
+/**
+ * Bits in `flags[col]`.
+ *
+ * Die beiden sagen NICHT dasselbe, und der Unterschied ist der Grund für die
+ * Trennung: `LUECKE` heisst „für diesen Takt fehlt Zeit" (Tab war im
+ * Hintergrund) — die Spalte kann trotzdem ein vollständiges Buch tragen.
+ * `OHNE_BUCH` heisst „für diesen Takt fehlt das Buch" (kein oder gekreuztes
+ * Mid) — die Zellen sind alle 0. Wer beides über `flags[col] !== 0` prüft,
+ * verwirft nach jeder Hintergrundpause eine brauchbare Spalte; wer nur auf
+ * Bit 0 prüft, hält eine leere Spalte für gültige Daten. Beides ist schon
+ * passiert.
+ */
+export const FLAG_LUECKE = 1
+export const FLAG_OHNE_BUCH = 2
+
 export class HeatmapRing {
     /**
      * @param {number} cap    Anzahl Spalten (Frames) — 3600 @ 500 ms = 30 min
@@ -27,7 +42,7 @@ export class HeatmapRing {
         this.base = new Int32Array(cap)            // absoluter Bucket-Index von Zeile 0
         this.mid = new Float64Array(cap)
         this.ts = new Float64Array(cap)
-        this.flags = new Uint8Array(cap)           // Bit 0 = Lücke (Tab war im Hintergrund)
+        this.flags = new Uint8Array(cap)           // siehe FLAG_LUECKE / FLAG_OHNE_BUCH
         this.head = 0                              // nächste zu schreibende Spalte
         this.count = 0
     }
@@ -87,7 +102,7 @@ export class HeatmapRing {
         this.base[col] = base
         this.mid[col] = achsenMid
         this.ts[col] = ts
-        this.flags[col] = luecke ? 1 : 0
+        this.flags[col] = (luecke ? FLAG_LUECKE : 0) | (mid > 0 ? 0 : FLAG_OHNE_BUCH)
         this.head = (col + 1) % this.cap
         if (this.count < this.cap) this.count++
         return mid
@@ -105,6 +120,11 @@ export class HeatmapRing {
     /** Spaltenindex der i-ten Spalte von rechts (0 = neueste). */
     colFromRight(i) {
         return this.colFrom(this.head, i)
+    }
+
+    /** Trägt die Spalte einen Buchzustand? (Nur dann sind ihre Zellen aussagekräftig.) */
+    hatBuch(col) {
+        return (this.flags[col] & FLAG_OHNE_BUCH) === 0
     }
 
     /** Menge in Spalte `col` beim absoluten Bucket `absBucket` (0, wenn ausserhalb). */
