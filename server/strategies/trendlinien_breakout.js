@@ -1,5 +1,5 @@
 /**
- * Trendlinien-Ausbruch — Trendfolge mit frühem Einstieg über eine Trendlinie.
+ * Swing Game — Trendfolge mit frühem Einstieg über eine Trendlinie.
  *
  * Regelwerk aus dem Video „Die Ultimative Swing Trading Strategie: So erzielst
  * du 136% Profit mit Trendlinien" (Kanal: Trading Strategie Analyse,
@@ -664,7 +664,7 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
 
 export default {
     id: 'trendlinien_breakout',
-    name: 'Trendlinien-Ausbruch',
+    name: 'Swing Game',
     description: 'OBV und zwei Durchschnitte geben die Richtung; die Trendlinie vom letzten Higher High zum Signalschluss wird gebrochen, Einstieg per Stop-Order über der Ausbruchskerze.',
     version: DETECTOR_VERSION,
     supportedTimeframes: ['15m', '30m', '1h', '4h', '1d'],
