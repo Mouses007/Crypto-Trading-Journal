@@ -873,3 +873,18 @@ export function stochRsi(candles, { rsiPeriod = 14, stochPeriod = 14, smoothK = 
     const d = smoothD > 1 ? smaSerie(k, smoothD) : k.slice()
     return { k, d }
 }
+
+/**
+ * Ist der Einstieg zum Zeitpunkt `t` durch eine Wochentagssperre blockiert?
+ * Geteilter Baustein für alle Detektoren mit Krypto-Wochenende-Problem
+ * (dünnes Volumen Sa/So, Montags-Bewegung oft bis Dienstag eingesammelt).
+ * `getUTCDay()`: 0 = Sonntag, 1 = Montag, 6 = Samstag — bewusst UTC, damit die
+ * Sperre nicht je nach Sommerzeit eine andere Kerze trifft.
+ */
+export function tagGesperrt(t, p) {
+    const tag = new Date(Number(t)).getUTCDay()
+    if (tag === 6) return !!p.sperreSamstag
+    if (tag === 0) return !!p.sperreSonntag
+    if (tag === 1) return !!p.sperreMontag
+    return false
+}

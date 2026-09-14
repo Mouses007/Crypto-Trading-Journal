@@ -32,7 +32,21 @@ import {
     volumeSma, dayOpen, ankerSichtKerzen,
     isBull, isBear, bodySize, range,
     isHammer, isShootingStar, isBullishEngulfing, isBearishEngulfing, isAdvancingWick,
+    tagGesperrt,
 } from './indicators.js'
+
+/**
+ * Wochentagssperre — für JEDE Regel-Strategie automatisch verfügbar, egal was
+ * ihre Vorlage an eigenen Parametern mitbringt (dünnes Krypto-Wochenende,
+ * Montags-Fehlausbrüche). `alsManifest()` hängt diese drei an `regeln.params`
+ * an, `detectMitRegeln()` prüft sie am Einstieg — dieselbe zwei Zeilen wie bei
+ * LSOB und GUSS, nur ein Mal, statt in jeder Vorlage neu erfunden.
+ */
+const WOCHENTAGS_PARAMS = [
+    { key: 'sperreSamstag', type: 'boolean', default: false, group: 'confirm' },
+    { key: 'sperreSonntag', type: 'boolean', default: false, group: 'confirm' },
+    { key: 'sperreMontag', type: 'boolean', default: false, group: 'confirm' },
+]
 
 export const RULE_ENGINE_VERSION = 1
 
@@ -788,7 +802,13 @@ export function detectMitRegeln(regeln, eingabe) {
 
             if (ausgeloest && entryPreis !== null) {
                 ctx.setup.entry = entryPreis
-                if (!alleErfuellt(regeln.entryFilters, ctx, i)) {
+                // Wochentagssperre — gilt wie ein weiterer entryFilter: die
+                // Bedingung ist am Einstieg nicht erfüllt, das Setup bleibt
+                // gültig und darf bei einer späteren (erlaubten) Berührung
+                // noch auslösen.
+                const wochentagBlockiert = (params.sperreSamstag || params.sperreSonntag || params.sperreMontag)
+                    && tagGesperrt(k.t, params)
+                if (wochentagBlockiert || !alleErfuellt(regeln.entryFilters, ctx, i)) {
                     // Bedingung am Einstieg nicht erfüllt — weiter warten,
                     // das Setup bleibt gültig.
                     if (maxKerzen > 0 && gewartet > maxKerzen) {
@@ -861,6 +881,7 @@ export function detectMitRegeln(regeln, eingabe) {
  * genau das Format, das die Registry und das Frontend erwarten.
  */
 export function alsManifest(regeln) {
+    const paramGroups = regeln.paramGroups || []
     return {
         id: regeln.id,
         name: regeln.name || regeln.id,
@@ -868,8 +889,10 @@ export function alsManifest(regeln) {
         version: RULE_ENGINE_VERSION,
         supportedTimeframes: regeln.timeframes,
         warmupCandles: regeln.warmupCandles || 300,
-        params: regeln.params || [],
-        paramGroups: regeln.paramGroups || [],
+        params: [...(regeln.params || []), ...WOCHENTAGS_PARAMS],
+        paramGroups: paramGroups.some((g) => g.id === 'confirm')
+            ? paramGroups
+            : [...paramGroups, { id: 'confirm', labelKey: 'strategies.groups.confirm' }],
         istRegelStrategie: true,
         regeln,
         detect: (input) => detectMitRegeln(regeln, input),

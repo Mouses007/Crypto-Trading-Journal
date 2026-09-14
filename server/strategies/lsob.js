@@ -22,7 +22,7 @@
 
 import {
     pivotHighs, pivotLows, rsi, atr, ema, fibLevel,
-    isBull, isBear, bodyHigh, bodyLow, range, hasRejectionCandle,
+    isBull, isBear, bodyHigh, bodyLow, range, hasRejectionCandle, tagGesperrt,
 } from './indicators.js'
 
 export const DETECTOR_VERSION = 1
@@ -96,6 +96,13 @@ const params = [
         options: ['1h', '4h', '1d', '1w'],
     },
     { key: 'htfEmaPeriod', type: 'integer', default: 50, min: 5, max: 400, step: 1, group: 'confirm' },
+
+    // Wochentagssperre — dünnes Krypto-Wochenende, Montags-Fehlausbrüche.
+    // Sperrt den EINSTIEG, nicht den Sweep: eine Zone, die am Sonntag entsteht,
+    // bleibt bis zum nächsten (erlaubten) Antippen handelbar.
+    { key: 'sperreSamstag', type: 'boolean', default: false, group: 'confirm' },
+    { key: 'sperreSonntag', type: 'boolean', default: false, group: 'confirm' },
+    { key: 'sperreMontag', type: 'boolean', default: false, group: 'confirm' },
 
     // ── Ausstieg ──────────────────────────────────────────────
     { key: 'slBufferPct', type: 'number', default: 0.1, min: 0, max: 5, step: 0.01, group: 'exit' },
@@ -266,7 +273,7 @@ function computeTakeProfit(direction, entry, stopLoss, p, pivotsOpposite, sweepT
 
 /** Bestätigungen zum Zeitpunkt des Retests. `null` = nicht geprüft. */
 function evaluateConfirmations({ candles, idx, direction, setup, p, rsiSeries, htfBias }) {
-    const conf = { rejection: null, fib: null, rsi: null, htf: null }
+    const conf = { rejection: null, fib: null, rsi: null, htf: null, wochentag: null }
 
     if (p.requireRejectionCandle || p.entryMode === 'rejection_confirmed') {
         conf.rejection = hasRejectionCandle(candles[idx - 1], candles[idx], direction)
@@ -289,6 +296,10 @@ function evaluateConfirmations({ candles, idx, direction, setup, p, rsiSeries, h
 
     if (p.htfTrendFilter) conf.htf = htfBias === null ? null : htfBias === direction
 
+    if (p.sperreSamstag || p.sperreSonntag || p.sperreMontag) {
+        conf.wochentag = !tagGesperrt(candles[idx].t, p)
+    }
+
     return conf
 }
 
@@ -301,7 +312,7 @@ function confirmationsBlock(conf, p) {
     // — wer einen der Filter einschaltete, glaubte gefiltert zu haben und hatte
     // es nicht. `null` (nicht bestimmbar, z. B. RSI noch nicht eingeschwungen)
     // blockiert bewusst nicht: fehlende Daten sind kein Gegensignal.
-    return [conf.fib, conf.rsi, conf.htf].some((v) => v === false)
+    return [conf.fib, conf.rsi, conf.htf, conf.wochentag].some((v) => v === false)
 }
 
 /** Trendrichtung der höheren Zeiteinheit, oder null wenn nicht bestimmbar. */

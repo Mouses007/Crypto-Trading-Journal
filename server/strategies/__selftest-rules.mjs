@@ -175,8 +175,10 @@ const emaTouchAlsRegeln = {
     check('EMA Touch lässt sich vollständig als Regeln ausdrücken', g.ok, g.fehler.join('; '))
 
     const manifest = alsManifest(g.regeln)
+    // 4 eigene Parameter + 3 universelle Wochentagssperren (sperreSamstag/
+    // -Sonntag/-Montag), die alsManifest() an JEDE Regelstrategie anhängt.
     check('Regelstrategie liefert ein gültiges Manifest',
-        typeof manifest.detect === 'function' && manifest.params.length === 4)
+        typeof manifest.detect === 'function' && manifest.params.length === 4 + 3)
 
     // Kerzen bauen: Aufwärtstrend mit mehreren Impulsen und Korrekturen
     const rows = []
@@ -243,6 +245,61 @@ const emaTouchAlsRegeln = {
     check('beide steigen zu denselben Kursen ein',
         JSON.stringify(trigger(a)) === JSON.stringify(trigger(b)),
         `Code=${JSON.stringify(trigger(a).slice(0, 3))} Regeln=${JSON.stringify(trigger(b).slice(0, 3))}`)
+
+    check('manifest.params trägt die drei Schalter für JEDE Regelstrategie',
+        ['sperreSamstag', 'sperreSonntag', 'sperreMontag'].every((k) => manifest.params.some((p) => p.key === k)))
+}
+
+// ── Wochentagssperre: universeller Baustein aus alsManifest() ──────────────
+// Eigenes, minimales Setup statt der Trendserie oben: `entry: {type:'immediate'}`
+// löst an der ERSTEN Kerze nach `watchFrom` aus, ohne Kursbedingung — damit
+// lässt sich exakt eine Sa/So-Kerze und danach eine Werktags-Kerze prüfen,
+// ohne von einer zufällig getroffenen Musterkerze abhängig zu sein.
+console.log('\nWochentagssperre (Regel-Interpreter)')
+{
+    const minimalRegeln = {
+        id: 'wochentag_test', timeframes: ['15m'], direction: 'long', warmupCandles: 1,
+        params: [], indicators: [], signal: { type: 'pivotHigh', left: 1, right: 1 }, signalFilters: [],
+        entry: { type: 'immediate' }, invalidations: [],
+        stopLoss: { anchor: 'signalLow', offsetPct: 0 },
+        takeProfit: { mode: 'rr', rr: 2 },
+    }
+    const manifestMin = alsManifest(minimalRegeln)
+
+    const samstag = Date.UTC(2023, 0, 7, 12, 0, 0)     // 07.01.2023 = Samstag
+    const dienstagDrauf = samstag + 3 * 86400000        // 10.01.2023 = Dienstag
+    const kerze = (t) => ({ t, o: 100, h: 101, l: 99, c: 100.5, v: 100, closeTime: t + TF_MS - 1 })
+    // detectMitRegeln verlangt mindestens 30 Kerzen (Z. 621) — die eigentliche
+    // Prüfkerze braucht also 30 wirkungslose Füllkerzen davor.
+    const fuellkerzen = (bisT) => Array.from({ length: 30 },
+        (_, i) => kerze(bisT - (30 - i) * TF_MS))
+    const fakeSetup = {
+        id: 1, status: 'waiting_retest', direction: 'long',
+        obCandleTime: samstag - 1, watchFrom: samstag - 1, tradeableFrom: 0,
+        sweepPrice: 100, sweepLevel: 95, obHigh: 100, obLow: 90,
+    }
+
+    const lauf = (params, echteKerzen) => manifestMin.detect({
+        candles: [...fuellkerzen(echteKerzen[0].t), ...echteKerzen],
+        params, openSetups: [{ ...fakeSetup }], knownSetupKeys: [],
+    })
+
+    const rGesperrt = lauf({ sperreSamstag: true, sperreSonntag: true, sperreMontag: true }, [kerze(samstag)])
+    check('Samstag gesperrt: kein Trigger, Setup bleibt "waiting" statt ungültig zu werden',
+        rGesperrt.events.length === 0)
+
+    const rOffen = lauf({ sperreSamstag: false, sperreSonntag: false, sperreMontag: false }, [kerze(samstag)])
+    check('Testaufbau: ohne Sperre löst dieselbe Samstagskerze sofort aus',
+        rOffen.events.length === 1 && rOffen.events[0].status === 'triggered')
+
+    const rNachtrag = lauf(
+        { sperreSamstag: true, sperreSonntag: true, sperreMontag: true },
+        [kerze(samstag), kerze(dienstagDrauf)],
+    )
+    check('gesperrter Samstag + Dienstag danach: Einstieg holt auf der Werktagskerze nach',
+        rNachtrag.events.length === 1
+        && rNachtrag.events[0].status === 'triggered'
+        && rNachtrag.events[0].candleTime === dienstagDrauf)
 }
 
 // ── Einstiegszeitpunkt bei `immediate` ───────────────────────────────────

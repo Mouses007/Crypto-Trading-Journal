@@ -38,7 +38,7 @@
  * detect() ist eine REINE Funktion: keine DB, kein Netz, kein Date.now().
  */
 
-import { pivotHighs, pivotLows, ema, isBull, atr } from './indicators.js'
+import { pivotHighs, pivotLows, ema, isBull, atr, tagGesperrt } from './indicators.js'
 
 export const DETECTOR_VERSION = 1
 
@@ -54,6 +54,7 @@ export const INVALID_REASONS = {
     NO_UPTREND: 'no_uptrend',
     NO_FIB_CONFLUENCE: 'no_fib_confluence',
     ENTRY_BEFORE_CONFIRM: 'entry_before_confirm',
+    WOCHENTAG_GESPERRT: 'weekday_blocked',
 }
 
 const params = [
@@ -91,6 +92,14 @@ const params = [
     { key: 'fib0786', type: 'boolean', default: true, group: 'fib' },
     { key: 'fibTolerancePct', type: 'number', default: 0.5, min: 0.05, max: 3, step: 0.05, group: 'fib' },
 
+    // Wochentagssperre — dünnes Krypto-Wochenende, Montags-Fehlausbrüche.
+    // Anders als bei LSOB gibt es hier keine zweite Chance: die Korrektur endet
+    // definitiv an der EMA50-Berührung, ob gehandelt wird oder nicht — eine
+    // gesperrte Berührung macht das Setup deshalb zunichte, statt zu warten.
+    { key: 'sperreSamstag', type: 'boolean', default: false, group: 'confirm' },
+    { key: 'sperreSonntag', type: 'boolean', default: false, group: 'confirm' },
+    { key: 'sperreMontag', type: 'boolean', default: false, group: 'confirm' },
+
     // ── Ausstieg ──────────────────────────────────────────────
     { key: 'slBufferPct', type: 'number', default: 0.2, min: 0.01, max: 3, step: 0.01, group: 'exit' },
     {
@@ -109,6 +118,7 @@ const paramGroups = [
     { id: 'impulse', labelKey: 'strategies.groups.impulse' },
     { id: 'correction', labelKey: 'strategies.groups.correction' },
     { id: 'fib', labelKey: 'strategies.groups.fib' },
+    { id: 'confirm', labelKey: 'strategies.groups.confirm' },
     { id: 'exit', labelKey: 'strategies.groups.exit' },
 ]
 
@@ -344,6 +354,14 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
                 // eine zweite Berührung zu warten wäre geschönt.
                 if (k.t <= handelbarAb) {
                     events.push({ id: s.id, status: 'invalidated', invalidReason: INVALID_REASONS.ENTRY_BEFORE_CONFIRM, candleTime: k.t })
+                    erledigt = true; break
+                }
+                // Die Korrektur endet HIER, ob gehandelt wird oder nicht — anders
+                // als bei LSOB gibt es keine zweite Berührung, auf die man warten
+                // könnte. Eigener Status statt „invalidated": der Markt hat das
+                // Setup nicht widerlegt, wir wollten am gesperrten Tag nicht.
+                if ((p.sperreSamstag || p.sperreSonntag || p.sperreMontag) && tagGesperrt(k.t, p)) {
+                    events.push({ id: s.id, status: 'rejected', invalidReason: INVALID_REASONS.WOCHENTAG_GESPERRT, candleTime: k.t })
                     erledigt = true; break
                 }
                 if (p.requireFib) {
