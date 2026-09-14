@@ -7,7 +7,7 @@ import NoData from '../components/NoData.vue'
 import PageInfo from '../components/PageInfo.vue'
 import { spinnerLoadingPage, timeZoneTrade, expandedId, kopiertesBild } from '../stores/ui.js'
 import { allTradeTimeframes, selectedTradeTimeframes, selectedBroker, selectedTradeCategory, brokers } from '../stores/filters.js'
-import { incomingPositions, incomingPollingActive, incomingLastFetched, availableTags } from '../stores/trades.js'
+import { incomingPositions, incomingPollingActive, incomingLastFetched, incomingBrokerFehler, availableTags } from '../stores/trades.js'
 import { useVerlassenSchutz } from '../composables/useVerlassenSchutz.js'
 import { currentUser } from '../stores/settings.js'
 import { useFetchOpenPositions, useGetIncomingPositions, useUpdateIncomingPosition, useDeleteIncomingPosition, useTransferClosingMetadata } from '../utils/incoming'
@@ -16,6 +16,7 @@ import { dbCreate, dbUpdate, dbFind, dbGet } from '../utils/db.js'
 import dayjs from '../utils/dayjs-setup.js'
 import Quill from 'quill'
 import { sanitizeHtml } from '../utils/sanitize'
+import { sendNotification } from '../utils/notify.js'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -843,6 +844,35 @@ const orderedPositions = computed(() => {
 
 // Überschriften an Gruppengrenzen: vergleiche aktuelles mit vorherigem Element.
 function brokerLabelOf(b) { return brokers.find(x => x.value === b)?.label || b || 'Unbekannt' }
+
+/*
+ * Börsen, die beim letzten Abruf nichts lieferten.
+ *
+ * Der Hinweis steht hier und nicht im bestehenden Fehlerkasten, weil der nur
+ * beim Totalausfall erscheint. Der gefährlichere Fall ist der einzelne:
+ * Eine von drei Börsen antwortet nicht, die Seite füllt sich mit den anderen
+ * beiden, und dass etwas fehlt, sieht man an nichts.
+ */
+const brokerFehler = computed(() => incomingBrokerFehler.value.map(f => ({
+    ...f,
+    name: brokerLabelOf(f.broker),
+})))
+
+/*
+ * Einmal auch als Browser-Meldung — die erreicht den Nutzer, während die Seite
+ * offen, aber nicht im Blick ist. Entprellt über localStorage und je Börse,
+ * sonst meldet sich der Minutentakt sechzigmal in der Stunde.
+ */
+const MELDE_ABSTAND_MS = 6 * 60 * 60 * 1000
+watch(brokerFehler, (liste) => {
+    for (const f of liste) {
+        const schluessel = 'incoming_boerse_notif_' + f.broker
+        const zuletzt = Number(localStorage.getItem(schluessel)) || 0
+        if (Date.now() - zuletzt < MELDE_ABSTAND_MS) continue
+        localStorage.setItem(schluessel, String(Date.now()))
+        sendNotification('boerseKeinZugang', t('incoming.brokerAusfall', { boerse: f.name }), f.meldung)
+    }
+})
 function brokerHeaderAt(idx) {
     const cur = orderedPositions.value[idx], prev = orderedPositions.value[idx - 1]
     if (!cur) return null
@@ -1362,11 +1392,21 @@ function getPositionDate(pos) {
                 </div>
             </div>
 
-            <!-- Error -->
-            <div v-if="incomingError" class="alert alert-danger">{{ incomingError }}</div>
+            <!-- Error — beim Börsenausfall übernimmt der Kasten darunter, sonst
+                 stünde dieselbe Meldung zweimal da (einmal rot, einmal gelb). -->
+            <div v-if="incomingError && !brokerFehler.length" class="alert alert-danger">{{ incomingError }}</div>
+
+            <!-- Börse antwortet nicht: je Börse eine Zeile, solange es anhält -->
+            <div v-for="f in brokerFehler" :key="'boerse_' + f.broker" class="alert alert-warning py-2 px-3 mb-2">
+                <i class="uil uil-exclamation-triangle me-1"></i>
+                <strong>{{ t('incoming.brokerAusfall', { boerse: f.name }) }}</strong>
+                <span v-if="f.teilweise"> {{ t('incoming.brokerTeilausfall') }}</span>
+                <div class="small mt-1 opacity-75">{{ f.meldung }}</div>
+                <div class="small mt-1">{{ t('incoming.brokerAusfallHinweis') }}</div>
+            </div>
 
             <!-- No positions -->
-            <NoData v-if="orderedPositions.length === 0 && !incomingError" />
+            <NoData v-if="orderedPositions.length === 0 && !incomingError && !brokerFehler.length" />
 
             <!-- Position cards: gruppiert je Börse (Titel) → Futures, dann Bots -->
             <template v-for="(pos, idx) in orderedPositions" :key="(pos.broker || '') + '_' + pos.positionId">

@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { encrypt, decrypt, maskKey } from './crypto.js'
+import { merkeBoersenStatus, loescheBoersenVermerk, fehlerText } from './boersen-status.js'
 import { istGewinn } from '../shared/gewinn.js'
 
 // Rohantworten der Börsen enthalten Positionen, Kontostände, PnL und IDs.
@@ -278,6 +279,9 @@ export function setupBitunixRoutes(app) {
                 })
             }
 
+            // Neue Zugangsdaten → alter Zugangs-Vermerk ist hinfällig. Ob die
+            // neuen taugen, weiss erst der nächste Abruf.
+            loescheBoersenVermerk('bitunix').catch(() => { })
             res.json({ ok: true })
         } catch (error) {
             res.status(500).json({ error: 'Interner Serverfehler' })
@@ -648,10 +652,16 @@ export function setupBitunixRoutes(app) {
             const positions = raw.map(normalizeOpenPosition).filter(Boolean)
 
             console.log(` -> Bitunix open positions fetched: ${positions.length}`)
+            // Gelungener Abruf löscht einen etwaigen Zugangs-Vermerk (schreibt
+            // nur, wenn einer stand — siehe boersen-status.js).
+            merkeBoersenStatus('bitunix').catch(() => { })
             res.json({ ok: true, positions })
         } catch (error) {
             console.error(' -> Bitunix open positions error:', error.message)
-            res.status(500).json({ error: 'Interner Serverfehler' })
+            merkeBoersenStatus('bitunix', error.message).catch(() => { })
+            // Wortlaut der Börse statt „Interner Serverfehler": Nur daran ist zu
+            // erkennen, ob ein neuer Schlüssel fällig ist oder die Börse hustet.
+            res.status(502).json({ error: fehlerText(error) })
         }
     })
 

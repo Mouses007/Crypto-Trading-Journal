@@ -923,6 +923,28 @@ async function saveAgentSettings() {
 let radarExpanded = ref(false)
 let radarRsiSymbols = ref('')
 let boersenLinks = ref(['bitunix', 'bitget', 'pionex', 'tradingview'])
+
+/*
+ * Börsen, deren Schlüssel die Börse zurückweist.
+ *
+ * Gelesen aus `settings.boersenStatus`, geschrieben ausschliesslich vom Server
+ * (`server/boersen-status.js`). Die Anzeige steht hier, weil hier der neue
+ * Schlüssel eingetragen wird — und verschwindet von selbst, sobald ein Abruf
+ * wieder gelingt.
+ */
+const BOERSEN_NAME = { bitunix: 'Bitunix', bitget: 'Bitget', pionex: 'Pionex' }
+const boersenZugangKaputt = computed(() => {
+    let st = {}
+    try { st = JSON.parse(currentUser.value?.boersenStatus || '{}') } catch { st = {} }
+    return Object.entries(st)
+        .filter(([, v]) => v?.kaputt)
+        .map(([broker, v]) => ({
+            broker,
+            name: BOERSEN_NAME[broker] || broker,
+            meldung: v.meldung || '',
+            seitText: v.seit ? dayjs(Number(v.seit)).format('DD.MM.YYYY HH:mm') : '—',
+        }))
+})
 let radarKalenderLaender = ref('')
 let radarKalenderImpact = ref('medium')
 let radarHolt = ref(false)
@@ -3044,6 +3066,16 @@ onBeforeMount(async () => {
                 </div>
                 <div v-show="apiExpanded" class="mt-2 ms-3">
                     <p class="fw-lighter">{{ t('settings.apiConnectionDescription') }}</p>
+
+                    <!-- Zugang abgelehnt: der Server merkt es beim Abrufen, die Meldung
+                         gehört dorthin, wo der neue Schlüssel eingetragen wird. -->
+                    <div v-for="z in boersenZugangKaputt" :key="'zugang_' + z.broker"
+                         class="alert alert-warning py-2 px-3">
+                        <i class="uil uil-key-skeleton me-1"></i>
+                        <strong>{{ t('settings.zugangAbgelehnt', { boerse: z.name }) }}</strong>
+                        <div class="small mt-1 opacity-75">{{ z.meldung }}</div>
+                        <div class="small">{{ t('settings.zugangSeit', { zeit: z.seitText }) }}</div>
+                    </div>
 
                     <!-- BITUNIX -->
                     <div class="mb-3" style="border: var(--border-subtle); border-radius: var(--border-radius); overflow: hidden;">

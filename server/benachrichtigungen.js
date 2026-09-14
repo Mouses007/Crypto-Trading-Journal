@@ -70,6 +70,7 @@ export const REGISTER = [
     },
     { id: 'kiBerichtFertig', gruppe: 'system', email: false, symbol: '\u{1F4C4}', ton: 'gut', bereich: 'System · KI' },
     { id: 'kiGuthabenLeer', gruppe: 'system', email: true, symbol: '\u{1F4B3}', ton: 'warnung', bereich: 'System · KI' },
+    { id: 'boerseKeinZugang', gruppe: 'system', email: true, symbol: '\u{1F511}', ton: 'warnung', bereich: 'System · Börsen' },
     { id: 'neueVersion', gruppe: 'system', email: true, symbol: '\u{1F195}', ton: 'gut', bereich: 'System · Update' },
     { id: 'aufzeichnungStumm', gruppe: 'system', email: true, symbol: '\u{1F4E1}', ton: 'warnung', bereich: 'System · Aufzeichnung' },
     { id: 'importFertig', gruppe: 'system', email: false, symbol: '\u{1F4E5}', ton: 'gut', bereich: 'System · Import' },
@@ -504,6 +505,18 @@ async function pruefeVersion() {
  * Fremdquelle aus, sollen die übrigen Prüfungen trotzdem laufen.
  */
 export async function taktDurchlauf() {
+    /*
+     * Börsen-Zugänge zuerst und VOR der Mail-Schranke: Der Vermerk wird auf der
+     * Seite angezeigt, nicht nur gemailt. Wer keinen Mailversand eingerichtet
+     * hat, soll den abgelaufenen Schlüssel trotzdem sehen.
+     */
+    try {
+        const { pruefeBoersenZugang } = await import('./boersen-wacht.js')
+        await pruefeBoersenZugang()
+    } catch (e) {
+        logWarn('benachrichtigungen', `Prüfung Börsen-Zugang fehlgeschlagen: ${e.message}`)
+    }
+
     const s = await ladeSettings()
     if (!s || !mailKonfigVollstaendig(s)) return
 

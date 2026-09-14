@@ -5,6 +5,7 @@ export {
     incomingPositions,
     incomingPollingActive,
     incomingLastFetched,
+    incomingBrokerFehler,
     pendingOpeningCount,
     pendingClosingCount,
     pendingOpeningByBroker,

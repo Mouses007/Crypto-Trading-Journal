@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { encrypt, decrypt, maskKey } from './crypto.js'
+import { merkeBoersenStatus, loescheBoersenVermerk, fehlerText } from './boersen-status.js'
 
 // Rohantworten der Börsen enthalten Positionen, Kontostände, PnL und IDs.
 // Standardmässig NICHT ins Log — Logs landen in Container-Ausgaben, Backups und
@@ -344,7 +345,7 @@ function normalizeClosedPosition(p) {
 /**
  * Load and decrypt Bitget config from DB.
  */
-async function getDecryptedBitgetConfig() {
+export async function getDecryptedBitgetConfig() {
     const knex = getKnex()
     const config = await knex('bitget_config').where('id', 1).first()
     if (!config) return null
@@ -413,6 +414,9 @@ export function setupBitgetRoutes(app) {
                 })
             }
 
+            // Neue Zugangsdaten → alter Zugangs-Vermerk ist hinfällig. Ob die
+            // neuen taugen, weiss erst der nächste Abruf.
+            loescheBoersenVermerk('bitget').catch(() => { })
             res.json({ ok: true })
         } catch (error) {
             res.status(500).json({ error: 'Interner Serverfehler' })
@@ -499,10 +503,12 @@ export function setupBitgetRoutes(app) {
             const positions = raw.map(normalizeOpenPosition).filter(Boolean)
 
             console.log(` -> Bitget open positions fetched: ${positions.length}`)
+            merkeBoersenStatus('bitget').catch(() => { })
             res.json({ ok: true, positions })
         } catch (error) {
             console.error(' -> Bitget open positions error:', error.message)
-            res.status(500).json({ error: 'Interner Serverfehler' })
+            merkeBoersenStatus('bitget', error.message).catch(() => { })
+            res.status(502).json({ error: fehlerText(error) })
         }
     })
 

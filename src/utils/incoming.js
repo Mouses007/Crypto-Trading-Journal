@@ -1,7 +1,7 @@
 import axios from 'axios'
 import dayjs from './dayjs-setup.js'
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete, dbFindTradeIdByPositionId } from './db.js'
-import { incomingPositions, incomingPollingActive, incomingLastFetched, pendingOpeningCount, pendingClosingCount, pendingOpeningByBroker, pendingClosingByBroker, evalNotificationShown, evalNotificationDismissed, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
+import { incomingPositions, incomingPollingActive, incomingLastFetched, incomingBrokerFehler, pendingOpeningCount, pendingClosingCount, pendingOpeningByBroker, pendingClosingByBroker, evalNotificationShown, evalNotificationDismissed, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
 import { expandedId } from '../stores/ui.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker, brokers } from '../stores/filters.js'
@@ -100,16 +100,39 @@ export async function useFetchOpenPositions() {
                 const apiPositions = response.data.positions || []
                 console.log(` -> ${apiPositions.length} offene Positionen von ${broker} erhalten`)
 
-                await syncPositionsWithDb(apiPositions, broker)
+                /*
+                 * `unvollstaendig` heisst: Ein Teil der Börse antwortete nicht
+                 * (bei Pionex etwa die Bots, während Futures durchkam). Die Liste
+                 * ist dann eine Teilmenge — und eine Teilmenge sieht für die
+                 * Schliess-Erkennung genauso aus wie „geschlossen“. Ohne diesen
+                 * Durchgriff würde ein Aussetzer Trades ins Journal schreiben,
+                 * die nie stattgefunden haben.
+                 */
+                await syncPositionsWithDb(apiPositions, broker, { vollstaendig: !response.data.unvollstaendig })
                 await fetchRecentlyClosed(broker)
+
+                if (response.data.unvollstaendig) {
+                    errors.push({ broker, error: new Error(response.data.warnung || 'Teilausfall'), teilweise: true })
+                }
             } catch (error) {
                 console.warn(` -> Abrufen von ${broker} fehlgeschlagen:`, error?.message || error)
                 errors.push({ broker, error })
             }
         }
 
+        /*
+         * Jeder gescheiterte Abruf wird sichtbar — nicht erst, wenn alle
+         * scheitern. Die Liste trägt die Seite; geworfen wird weiterhin nur beim
+         * Totalausfall, damit der bestehende Fehlerkasten seine Rolle behält.
+         */
+        incomingBrokerFehler.value = errors.map(e => ({
+            broker: e.broker,
+            meldung: e.error?.response?.data?.error || e.error?.message || String(e.error || ''),
+            teilweise: !!e.teilweise,
+        }))
+
         // Wenn ALLE Börsen fehlschlugen, Fehler werfen, damit die Seite ihn anzeigt.
-        if (errors.length === activeBrokers.length) {
+        if (errors.length === activeBrokers.length && errors.every(e => !e.teilweise)) {
             throw errors[0].error
         }
 
@@ -130,7 +153,7 @@ export async function useFetchOpenPositions() {
  * - Existing positions → update unrealizedPNL, markPrice
  * - Missing positions → closed → handle transition to trades
  */
-async function syncPositionsWithDb(apiPositions, broker) {
+async function syncPositionsWithDb(apiPositions, broker, { vollstaendig = true } = {}) {
     // Normalize positionId to string everywhere (API may return number)
     const normalizeId = (p) => String(p?.positionId ?? p?.position_id ?? '')
 
@@ -139,7 +162,14 @@ async function syncPositionsWithDb(apiPositions, broker) {
     const apiIds = new Set(apiPositions.map(p => normalizeId(p)).filter(Boolean))
 
     // 1. Detect closed positions (in DB but not in API)
-    const closedPositions = dbPositions.filter(p => !apiIds.has(String(p.positionId)))
+    // Nur bei vollständiger Auskunft: „nicht in der Antwort“ heisst sonst
+    // „nicht abgefragt“, nicht „geschlossen“.
+    const closedPositions = vollstaendig
+        ? dbPositions.filter(p => !apiIds.has(String(p.positionId)))
+        : []
+    if (!vollstaendig && dbPositions.length) {
+        console.warn(` -> ${broker}: Teilausfall — Schliess-Erkennung übersprungen`)
+    }
     if (closedPositions.length > 0) {
         console.log(` -> ${closedPositions.length} Positionen geschlossen erkannt`)
         await handleClosedPositions(closedPositions, broker)

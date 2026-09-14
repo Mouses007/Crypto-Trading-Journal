@@ -309,6 +309,17 @@ export const daysMargin = ref()
 export const incomingPositions = reactive([])
 export const incomingPollingActive = ref(false)
 export const incomingLastFetched = ref(null)
+/*
+ * Börsen, deren Abruf beim letzten Durchgang scheiterte:
+ * [{ broker, meldung, zugang }] — `zugang: true` heisst „Schlüssel abgelehnt",
+ * sonst eine vorübergehende Störung.
+ *
+ * Bis 14.09.2026 gab es diesen Zustand nicht: Der Abruf holt seit jeher ALLE
+ * eingerichteten Börsen, meldete aber nur, wenn ALLE scheiterten. Als der
+ * Pionex-Schlüssel ablief, lief Bitunix weiter — und die Seite sah aus, als
+ * gäbe es bei Pionex einfach nichts.
+ */
+export const incomingBrokerFehler = ref([])
 
 /**************************************
 * EVALUATION NOTIFICATIONS
