@@ -7,8 +7,12 @@
  *
  *   1. OBV zeigt die Trendrichtung (grün = Aufwärtstrend, rot = Abwärtstrend)
  *   2. Die beiden gleitenden Durchschnitte des Trendscanners stehen in
- *      Trendrichtung (schnell über langsam = grün), und der Scanner gibt einen
- *      farbigen Balken in dieselbe Richtung
+ *      Trendrichtung (schnell über langsam = grün), und der Scanner färbt den
+ *      Chart-Hintergrund in dieselbe Richtung ein. Im Video heisst diese
+ *      senkrechte Säule „Balken"; gemeint ist das Ereignis dahinter — der
+ *      Stoch-RSI verlässt den überverkauften Bereich (grün) bzw. den
+ *      überkauften (rot). Der Code nennt sie deshalb weiter `balken*`, die
+ *      Oberfläche spricht von der Momentum-Säule.
  *   3. Alternativ genügt die KREUZUNG der beiden Durchschnitte (das Dreieck)
  *      zusammen mit dem OBV in derselben Farbe
  *   4. Ab der Signalkerze wird eine Trendlinie gezogen: vom letzten Higher
