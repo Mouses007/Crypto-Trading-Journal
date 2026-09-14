@@ -19,7 +19,7 @@
  *   • Fehlen die Kerzen der höheren Zeiteinheit, wird NICHT gehandelt.
  */
 
-import strategie, { strukturTrend, findeZonen, zonenMasse, zonenTreffer, musterTreffer, zielZone, kerzenAbstand } from './set_and_forget.js'
+import strategie, { strukturTrend, trendZustand, findeZonen, zonenMasse, zonenTreffer, musterTreffer, zielZone, kerzenAbstand } from './set_and_forget.js'
 import { aggregiereKerzen, koerperKerzen } from './indicators.js'
 import { defaultsFromSchema } from './index.js'
 
@@ -105,6 +105,35 @@ console.log('\nSet and Forget — Selbsttest\n')
                           [10, 33, 1, 10], [10, 28, 3, 10], [10, 35, 1, 10], [10, 27, 2, 10]])
     check('Dochte allein erzeugen keinen Trend (Linienchart)',
         strukturTrend(koerperKerzen(dochte), 1, 1) === 0, String(strukturTrend(koerperKerzen(dochte), 1, 1)))
+}
+
+// ── Trend als Zustand ────────────────────────────────────────────────────
+{
+    console.log('\nTrend als Zustand')
+    // Aufwärts, dann eine Spanne: die letzten beiden Wendepunkte tragen keine
+    // Richtung mehr, aber gebrochen wurde nichts. Das Video sieht hier weiter
+    // einen Aufwärtstrend — die Momentaufnahme nicht.
+    const haelt = koerperKerzen(reihe([
+        [10, 10, 10, 10], [12, 12, 12, 12], [11, 11, 11, 11], [14, 14, 14, 14],
+        [13, 13, 13, 13], [16, 16, 16, 16], [13.5, 13.5, 13.5, 13.5], [15, 15, 15, 15],
+        [13.2, 13.2, 13.2, 13.2], [15.5, 15.5, 15.5, 15.5], [14, 14, 14, 14],
+    ]))
+    check('der Trend besteht fort, solange nichts gebrochen ist',
+        trendZustand(haelt, 1, 1) === 1, String(trendZustand(haelt, 1, 1)))
+    check('… wo die Momentaufnahme längst „keine Richtung" sagt',
+        strukturTrend(haelt, 1, 1) === 0, String(strukturTrend(haelt, 1, 1)))
+
+    // Dieselbe Reihe, aber der Schlusskurs fällt unter das letzte höhere Tief.
+    const bricht = koerperKerzen(reihe([
+        [10, 10, 10, 10], [12, 12, 12, 12], [11, 11, 11, 11], [14, 14, 14, 14],
+        [13, 13, 13, 13], [16, 16, 16, 16], [13.5, 13.5, 13.5, 13.5], [15, 15, 15, 15],
+        [12.9, 12.9, 12.9, 12.9], [15.5, 15.5, 15.5, 15.5], [12.5, 12.5, 12.5, 12.5],
+    ]))
+    check('der Bruch des letzten höheren Tiefs dreht den Trend',
+        trendZustand(bricht, 1, 1) === -1, String(trendZustand(bricht, 1, 1)))
+
+    check('ohne vollständiges Paar bleibt der Zustand unbestimmt',
+        trendZustand(koerperKerzen(reihe([[10, 10, 10, 10], [11, 11, 11, 11], [10, 10, 10, 10]])), 1, 1) === 0)
 }
 
 // ── Zonen ────────────────────────────────────────────────────────────────

@@ -64,96 +64,103 @@
  *
  * ── Was die Vorgaben messbar bringen ──
  * Gemessen am 14.09.2026, drei Jahre bis 14.09.2026, Zeiteinheit 4h mit Zonen
- * und Trend aus Tages- und Wochenkerzen, 2 % Risiko je Trade, Hebel 5, Taker
- * 6 bp + 2 bp Slippage (der Einstieg IST eine Marktorder):
+ * und Trend aus Tages- und Wochenkerzen, 2 % Risiko je Trade, Hebel 5, eine
+ * Position gleichzeitig, Taker 6 bp + 2 bp Slippage (der Einstieg IST eine
+ * Marktorder):
  *
- *          Trades  Treffer  ØGewinn:ØVerlust  Profitfaktor  SummeR  maxDD  Kaufen&Halten
- *   BTC        52    28,8 %             2,72          1,10    +3,8  25,1 %        +121 %
- *   ETH        32    31,3 %             2,55          1,16    +5,6  17,9 %         +35 %
- *   SOL        69    30,4 %             2,70          1,18   +12,5  32,9 %        +151 %
- *   BNB        66    27,3 %             2,44          0,91    −2,1  23,9 %        +211 %
- *   XRP        96    27,1 %             2,23          0,83   −10,4  27,3 %        +119 %
- *   ADA        71    43,7 %             3,07          2,38   +54,8  22,5 %         −38 %
+ *        Trades  Treffer  ØG:ØV    PF   SummeR  brutto  maxDD  Halten   long    short
+ *   BTC      94   34,0 %   2,79  1,44    +33,7   +51,3   19 %   +121 %   +12R    +21R
+ *   ETH     151   31,3 %   2,63  1,22    +25,6   +42,8   55 %    +35 %   +13R    +12R
+ *   SOL     142   38,0 %   2,83  1,73    +75,8   +89,9   27 %   +151 %   +60R    +16R
+ *   BNB     148   28,4 %   2,56  1,02     +9,9   +33,5   32 %   +211 %    −1R    +11R
+ *   XRP     148   22,3 %   2,44  0,70    −35,3   −16,8   54 %   +119 %   −15R    −20R
+ *   ADA     153   27,5 %   2,85  1,08    +11,0   +27,6   38 %    −38 %   −10R    +21R
+ *                                       ─────── ───────
+ *                        836 Trades     +120,8  +228,3
  *
- * Drei Dinge stehen da, und keines davon ist „funktioniert":
+ * Was daraus abzulesen ist:
  *
- * ERSTENS trifft die Umsetzung das Profil des manuellen Tests aus dem zweiten
- * Video fast auf den Punkt — 28 bis 31 % Treffer bei 2,2 bis 2,7 Ø-Verhältnis
- * gegen dessen 28 % bei 1:3,6. Die behaupteten 60 bis 65 % kommen in keinem
- * einzigen Lauf vor. Das ist der belastbarste Befund dieser Datei.
+ * ERSTENS liegt die Trefferquote bei 22 bis 38 %. Die behaupteten 60 bis 65 %
+ * kommen in keinem einzigen Lauf vor, auf keinem Symbol und in keiner
+ * Zeiteinheit. Der manuelle Test des zweiten Videos fand 28 % — das ist der
+ * Bereich, in dem auch diese Umsetzung landet.
  *
- * ZWEITENS liegt das Ergebnis ohne ADA bei +9,4 R über 315 Trades, also bei
- * null — ADA allein trägt +54,8 R. Und ADA ist das einzige der sechs, das im
- * Zeitraum GEFALLEN ist (−38 %). Das ist kein Zufall, sondern der deutlichste
- * Befund der ganzen Messung: über alle sechs Symbole sind
+ * ZWEITENS ist die Trefferquote fast genau die, die ein ZUFÄLLIGER Einstieg
+ * mit demselben Chance/Risiko bräuchte, um bei null zu landen: bei einem
+ * realisierten Verhältnis von 2,7 liegt diese Schwelle bei 27 %. Fünf der
+ * sechs Symbole liegen knapp darüber, eines darunter. Die Regel schlägt den
+ * Zufall — aber nicht deutlich, und mit XRP ist ein Symbol dabei, das über
+ * 148 Trades klar verliert. Gegen Kaufen und Halten verliert die Strategie
+ * auf fünf von sechs Symbolen.
  *
- *   251 von 386 Trades SHORT (65 %) und bringen  +79,8 R,
- *   135                 LONG  (35 %) und bringen  −15,5 R.
+ * DRITTENS sind die Kosten fast die Hälfte des Ergebnisses: +228 R brutto
+ * werden zu +121 R netto. Jeder Durchgang kostet 4 bis 12 % seines eigenen
+ * Risikos, weil der Stop nahe liegt (Median 0,7 bis 1,8 % vom Einstieg) und
+ * Gebühr plus Slippage 8 Basispunkte davon abziehen. Wer die Zeiteinheit
+ * verfeinert, verschiebt dieses Verhältnis gegen sich: auf 1h steht der
+ * Stop-Median bei 0,66 % (BTC), die Kosten sind dann 12 % des Risikos.
  *
- * Das gesamte Ergebnis hängt an den Shorts; die Longs verlieren Geld. Über
- * einen einzigen Marktzyklus gemessen ist das keine Eigenschaft der Regel,
- * sondern möglicherweise eine des Zeitraums — genau deshalb steht es hier und
- * nicht in einer Fussnote. Gegen Kaufen und Halten verliert die Strategie auf
- * fünf von sechs Symbolen deutlich.
- *
- * DRITTENS sind die Kosten die halbe Miete, und zwar gegen uns (4h, SummeR):
- *
- *            mit Kosten   ohne Gebühr/Slippage
- *   BTC            +3,8                  +13,1
- *   ETH            +5,6                  +10,8
- *   SOL           +12,5                  +19,0
- *
- * Brutto ist das Regelwerk klar positiv, netto grenzwertig. Jeder Durchgang
- * kostet 0,1 bis 0,2 R — wer die Zeiteinheit verfeinert,
- * bezahlt das mehrfach, und genau das zeigt der 1h-Lauf (dieselbe Vorgabe,
- * Zonen weiterhin aus Tages- und Wochenkerzen):
- *
- *          Trades  Treffer  Profitfaktor  SummeR  maxDD
- *   BTC        77    16,9 %          0,45   −36,5  59,5 %
- *   ETH        37     8,1 %          0,20   −31,2  44,5 %
- *   SOL        96    15,6 %          0,47   −48,6  64,6 %
- *
- * Das ist die Richtung, in die der automatische Test des zweiten Videos mit
- * seinen −99,8 % zeigt: je feiner die Ausführungs-Zeiteinheit, desto klarer
- * der Verlust. 30m in Forex und 1h in Krypto sind nicht dasselbe, aber die
- * Tendenz über drei Symbole ist eindeutig.
+ * Dieselben sechs Symbole in 1h (Zonen weiterhin aus Tages- und Wochen-
+ * kerzen): 1308 Trades, Profitfaktor 0,94 bis 1,57, Summe +276,9 R, maximaler
+ * Rückgang 36 bis 63 %. Mehr Trades bei ähnlicher Güte — und deutlich mehr
+ * Rückgang. Was davon Können ist und was Streuung, entscheidet keine dieser
+ * Zahlen: 200 Trades je Symbol über EINEN Marktzyklus sind kein Beweis.
  *
  * ── Was die Schalter bringen ──
  * Summe der R-Vielfachen über BTC/ETH/SOL, 4h, jeweils EIN Schalter gegenüber
  * der Vorgabe verändert (Trades in Klammern):
  *
  *                              BTC     ETH     SOL    Summe
- *   Vorgabe                   +3,8    +5,6   +12,5   +21,9 (153)
- *   Zonentoleranz 0,4 ATR     −2,0    +0,8   +30,7   +29,5 (118)
- *   Zonentoleranz 0,8 ATR     −3,4   +15,8   +30,4   +42,8 (138)
- *   Zonentoleranz 1,2 ATR    +19,8   +14,3   +10,9   +45,0 (214)
- *   Pivot 2 statt 3          −11,4   +32,7   +69,6   +90,9 (307)
- *   Pivot 5 statt 3           −5,6   −13,9   −17,6   −37,1  (92)
- *   4 Berührungen je Zone     −2,7    +5,2    +7,7   +10,2  (89)
- *   ohne zweite Ebene        −10,0   −14,9   −11,7   −36,5 (795)
- *   Ziel: festes 1:4         −25,0   −36,2    +5,0   −56,1 (390)
+ *   Vorgabe                  +33,7   +25,6   +75,8  +135,1 (387)
+ *   Trend als Momentaufnahme  +3,8    +5,6   +12,5   +21,9 (153)
+ *   ohne zweite Ebene        −24,3   −37,2   +42,0   −19,5 (804)
+ *   Pivot 2 statt 3          +21,6   −18,7   +28,2   +31,1 (523)
+ *   Pivot 5 statt 3           +1,6   −11,5   +28,3   +18,3 (140)
  *
- * Die ersten fünf Zeilen kippen das Vorzeichen zwischen den Symbolen; bei 30
- * bis 100 Trades je Zelle ist das Streuung und keine Erkenntnis. Wer hier die
- * Summenspalte optimiert, passt Parameter an drei Kurven an — dieselbe Falle,
- * die in `trendlinien_breakout.js` schon einmal beschrieben ist.
+ * Die beiden Pivot-Zeilen kippen das Vorzeichen zwischen den Symbolen; das
+ * ist Streuung und keine Erkenntnis. Wer hier die Summenspalte optimiert,
+ * passt Parameter an drei Kurven an — dieselbe Falle, die in
+ * `trendlinien_breakout.js` schon einmal beschrieben ist. Die anderen beiden
+ * Zeilen zeigen auf allen Symbolen in dieselbe Richtung und betreffen beide
+ * eine REGEL, keine Einstellung:
  *
- * Belastbar sind nur die beiden letzten Zeilen, weil sie auf ALLEN Symbolen in
- * dieselbe Richtung zeigen und beide eine Regel betreffen:
- *   • Ohne die zweite Ebene handelt die Strategie fünfmal so oft und verliert
- *     überall. Die Forderung „zwei aufeinanderfolgende Zeiteinheiten" ist der
- *     Kern des Regelwerks, nicht seine Verzierung.
- *   • Das feste 1:4 aus dem ersten Video ist deutlich schlechter als das Ziel
- *     an der nächsten Zone — obwohl es dreimal so viele Trades zulässt. Ein
- *     Ziel, das der Markt nicht kennt, wird eben nicht erreicht.
+ *   • Die Forderung „zwei aufeinanderfolgende Zeiteinheiten" ist der Kern des
+ *     Regelwerks. Ohne sie handelt die Strategie doppelt so oft und verliert.
+ *   • Die Trend-LESART ist der grösste Hebel der ganzen Datei, und sie war
+ *     ursprünglich falsch umgesetzt. Als Momentaufnahme der letzten beiden
+ *     Wendepunkte gerechnet, liefert der Trend in 35 bis 44 % aller Takte
+ *     „keine Richtung" — das Video aber sagt, die Lage bestehe fort, bis das
+ *     letzte höhere Tief per Schlusskurs gebrochen ist. Der Unterschied war
+ *     nicht etwa eine Verfeinerung: er hat aus +21,9 R über 153 Trades
+ *     +135,1 R über 387 gemacht UND die vorher deutliche Schieflage zwischen
+ *     Long und Short aufgelöst (vorher trugen die Shorts alles, die Longs
+ *     verloren; jetzt sind beide Seiten positiv). Eine Regel, die im Video
+ *     wörtlich steht, war der Unterschied zwischen „funktioniert nicht" und
+ *     „funktioniert knapp".
  *
- * ── Bekannte Schönung ──
- * Reisst die Einstiegskerze den Stop schon selbst, verwirft die
- * Ausführungsschicht den Einstieg (`entryIsValid`, `stop_in_entry_candle`),
- * statt Einstieg und Stop zu buchen. In Wirklichkeit wäre das ein Verlust.
- * Das gilt für jede Strategie des Projekts gleichermassen und ist hier nur
- * vermerkt, weil eine Marktorder zur Eröffnung diesen Fall häufiger trifft
- * als ein Limit an einer Zonenkante.
+ * ── Wo das Ermessen wirklich sitzt ──
+ * Gemessen über dieselben drei Jahre, Tageskerzen als Zonenebene: der
+ * Detector führt im Mittel 6,5 bis 7,3 Zonen gleichzeitig, und der Kurs steht
+ * in 37 bis 50 % aller Takte an einer davon. Eine der erlaubten Formationen
+ * schliesst in 27 bis 28 % aller Kerzen. Ein Mensch, der dieselbe Strategie
+ * von Hand handelt, hat drei bis vier Zonen im Chart und nennt „der Preis ist
+ * an meiner Zone" ein seltenes Ereignis.
+ *
+ * DAS ist die Lücke zwischen dem manuellen Test des Videos (+71 %) und dem
+ * automatischen (−99,8 %), und sie liegt nicht in der Rechnung, sondern in
+ * der Auswahl. Sie ist hier NICHT geschlossen. Was fehlt, ist eine GÜTE der
+ * Zone statt ihrer blossen Existenz — wie deutlich der Kurs nach jeder
+ * Berührung weglief, wie oft die Zone schon per Schlusskurs durchbrochen
+ * wurde, wie frisch die letzte Berührung ist — und daraus eine Rangfolge, die
+ * nur die besten drei bis vier führt.
+ *
+ * ── Was NICHT geschönt ist ──
+ * Reisst die Einstiegskerze den Stop selbst, bucht der Backtest den Verlust
+ * (`sameBarStop` in `strategy-backtest.js`), statt den Einstieg zu verwerfen.
+ * Stop und Ziel in derselben Kerze werden pessimistisch aufgelöst (Stop
+ * zuerst, `stepCandle`). Von den ausgelösten Setups fallen 21 % (4h) bzw.
+ * 39 % (1h) weg, weil nur EINE Position gleichzeitig erlaubt war — welche
+ * das trifft, entscheidet die Reihenfolge, nicht die Güte.
  *
  * detect() ist eine REINE Funktion: keine DB, kein Netz, kein Date.now().
  */
@@ -205,6 +212,15 @@ const params = [
     // Gegenprobe billig ist und der Unterschied in Krypto grösser sein kann
     // als in Forex — Dochte sind hier ein gutes Stück länger.
     { key: 'nurKoerper', type: 'boolean', default: true, group: 'structure' },
+    // Wie wird „Trend" gelesen? `zustand` folgt dem Video wörtlich — die Lage
+    // besteht fort, bis der Kurs das letzte höhere Tief (bzw. tiefere Hoch)
+    // per Schlusskurs bricht. `momentaufnahme` fragt nur die letzten beiden
+    // Wendepunkte ab und liefert in jedem Drittel der Takte „keine Richtung".
+    {
+        key: 'trendModus', type: 'select', default: 'zustand', group: 'structure',
+        options: [{ value: 'zustand', labelKey: 'strategies.set_and_forget.trendZustand' },
+                  { value: 'momentaufnahme', labelKey: 'strategies.set_and_forget.trendMoment' }],
+    },
 
     // ── Zonen ─────────────────────────────────────────────────────
     { key: 'zonenBeruehrungen', type: 'integer', default: 3, min: 2, max: 8, step: 1, group: 'zones' },
@@ -324,6 +340,77 @@ export function strukturTrend(kerzen, links, rechts) {
     if (hh && hl) return 1
     if (lh && ll) return -1
     return 0
+}
+
+/**
+ * Derselbe Trend, aber als ZUSTAND statt als Momentaufnahme.
+ *
+ * Das Video definiert den Trend nicht als Eigenschaft der letzten beiden
+ * Wendepunkte, sondern als Lage, die BESTEHEN BLEIBT: „Aufwärtstrend =
+ * höheres Hoch und höheres Tief, Fortsetzung, wenn ein neues Hoch per
+ * Körper gebrochen wird — Trendwechsel, wenn das letzte höhere Tief per
+ * Körper nach unten gebrochen wird."
+ *
+ * Der Unterschied ist nicht akademisch. Gemessen über drei Jahre in
+ * Tageskerzen liefert `strukturTrend` auf BTC und ETH in 35 % der Takte
+ * „keine Richtung", auf SOL in 44 % — das sind Phasen, in denen ein Mensch
+ * nach dieser Regel sehr wohl einen Trend sieht, weil der letzte Bruch noch
+ * nicht stattgefunden hat. Ein Drittel bis fast die Hälfte aller Takte fiel
+ * damit aus einem Grund weg, den das Regelwerk nicht kennt.
+ *
+ * Die eine Eigenschaft, die man wissen muss: der Zustand hängt am Anfang des
+ * Fensters. Startet die Reihe mitten in einem Aufwärtstrend, ist der Zustand
+ * bis zum ersten Wechsel unbestimmt (0) — er kann nicht aus dem Nichts eine
+ * Richtung erben. Deshalb braucht diese Lesart mehr Vorlauf als die
+ * Momentaufnahme, und deshalb steht das Zonenfenster (250 Kerzen) auch für
+ * den Trend zur Verfügung. Innerhalb eines Laufs ist sie deterministisch;
+ * zwischen zwei verschieden langen Fenstern kann der Zustand am Anfang
+ * abweichen, bis der erste Bruch beide auf denselben Stand bringt.
+ *
+ * @returns {1|-1|0}
+ */
+export function trendZustand(kerzen, links, rechts) {
+    const hochs = pivotHighs(kerzen, links, rechts)
+    const tiefs = pivotLows(kerzen, links, rechts)
+    if (hochs.length < 2 || tiefs.length < 2) return 0
+
+    let zustand = 0
+    let hIdx = 0          // wie viele Hochs sind an Kerze i bereits bestätigt
+    let tIdx = 0
+    let letztesHoch = null
+    let letztesTief = null
+
+    for (let i = 0; i < kerzen.length; i++) {
+        // Ein Pivot ist erst `rechts` Kerzen nach seinem Extrem bekannt.
+        while (hIdx < hochs.length && hochs[hIdx].index + rechts <= i) {
+            const vor = letztesHoch
+            letztesHoch = hochs[hIdx]
+            letztesHoch.hoeher = vor ? letztesHoch.price > vor.price : null
+            hIdx++
+        }
+        while (tIdx < tiefs.length && tiefs[tIdx].index + rechts <= i) {
+            const vor = letztesTief
+            letztesTief = tiefs[tIdx]
+            letztesTief.hoeher = vor ? letztesTief.price > vor.price : null
+            tIdx++
+        }
+
+        const schluss = kerzen[i].c
+
+        if (zustand === 1) {
+            // Bruch des letzten höheren Tiefs per Schlusskurs dreht den Trend.
+            if (letztesTief && schluss < letztesTief.price) zustand = -1
+            continue
+        }
+        if (zustand === -1) {
+            if (letztesHoch && schluss > letztesHoch.price) zustand = 1
+            continue
+        }
+        // Unbestimmt: erst ein vollständiges Paar setzt den Zustand.
+        if (letztesHoch?.hoeher === true && letztesTief?.hoeher === true) zustand = 1
+        else if (letztesHoch?.hoeher === false && letztesTief?.hoeher === false) zustand = -1
+    }
+    return zustand
 }
 
 /**
@@ -573,10 +660,11 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
         basis = candles.slice(-p.zonenFensterHtf)
     }
 
+    const trendVon = p.trendModus === 'momentaufnahme' ? strukturTrend : trendZustand
     const trendKerzen = p.nurKoerper ? koerperKerzen(basis) : basis
-    const trend1 = strukturTrend(trendKerzen, p.pivotLinks, p.pivotRechts)
+    const trend1 = trendVon(trendKerzen, p.pivotLinks, p.pivotRechts)
     const trend2 = zweite
-        ? strukturTrend(p.nurKoerper ? koerperKerzen(zweite) : zweite, p.pivotLinks, p.pivotRechts)
+        ? trendVon(p.nurKoerper ? koerperKerzen(zweite) : zweite, p.pivotLinks, p.pivotRechts)
         : trend1
     const masse = zonenMasse(basis, p)
     const zonen = findeZonen(basis, p, masse)

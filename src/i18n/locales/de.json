@@ -273,6 +273,8 @@
     "apiBalance": "API-Balance: {value} USDT",
     "manualOrApi": "Manuell eingeben oder automatisch von der API berechnen lassen.",
     "apiConnection": "API Anbindung",
+    "zugangAbgelehnt": "{boerse} weist den hinterlegten API-Schlüssel zurück.",
+    "zugangSeit": "Seit {zeit}. Neuen Schlüssel bei der Börse erzeugen und unten eintragen — der Hinweis verschwindet beim nächsten erfolgreichen Abruf.",
     "apiConnectionDescription": "Verbinde deine Börsen-Konten, um Trades automatisch zu importieren.",
     "apiKey": "API Key",
     "apiKeyPlaceholder": "API Key eingeben",
@@ -701,6 +703,8 @@
       "hinweis_kiBerichtFertig": "Ein Bericht oder Agentenlauf ist durch.",
       "typ_kiGuthabenLeer": "KI-Guthaben leer",
       "hinweis_kiGuthabenLeer": "Ein Anbieter nimmt keine Anfragen mehr an. Solange das anhält, fallen Lagebericht und Agentenläufe aus.",
+      "typ_boerseKeinZugang": "Börsen-Zugang abgelaufen",
+      "hinweis_boerseKeinZugang": "Eine Börse weist den hinterlegten API-Schlüssel zurück. Solange das anhält, kommen von dort keine Positionen mehr an.",
       "typ_neueVersion": "Neue Version",
       "hinweis_neueVersion": "Auf GitHub ist eine neuere Fassung veröffentlicht.",
       "typ_aufzeichnungStumm": "Aufzeichnung stumm",
@@ -876,6 +880,9 @@
   },
   "incoming": {
     "lastUpdated": "Zuletzt aktualisiert:",
+    "brokerAusfall": "{boerse} antwortet nicht — von dieser Börse fehlen hier alle Positionen.",
+    "brokerTeilausfall": "Ein Teil der Antwort kam durch, der Rest nicht; angezeigt wird nur, was ankam.",
+    "brokerAusfallHinweis": "Meldet die Börse einen abgelaufenen oder ungültigen Schlüssel, hilft nur ein neuer: Einstellungen → Börsen.",
     "refresh": "Aktualisieren",
     "futuresSection": "Futures",
     "botsSection": "Bots",
@@ -2273,7 +2280,10 @@
       "zonenToleranzAtr": "Abstand, der zur selben Zone zählt (ATR)",
       "zonenMinBreiteAtr": "Mindestbreite einer Zone (ATR)",
       "zonenMaxBreiteAtr": "Grösste Breite einer Zone (ATR)",
-      "zoneNaeheAtr": "Toleranz beim Antesten der Zone (ATR)"
+      "zoneNaeheAtr": "Toleranz beim Antesten der Zone (ATR)",
+      "trendModus": "Trend-Lesart",
+      "trendZustand": "Zustand (gilt bis zum Bruch)",
+      "trendMoment": "Momentaufnahme (letzte zwei Wendepunkte)"
     }
   },
   "levmap": {

@@ -273,6 +273,8 @@
     "apiBalance": "API Balance: {value} USDT",
     "manualOrApi": "Enter manually or calculate automatically from the API.",
     "apiConnection": "API Connection",
+    "zugangAbgelehnt": "{boerse} rejects the stored API key.",
+    "zugangSeit": "Since {zeit}. Create a new key at the exchange and enter it below — the notice disappears on the next successful call.",
     "apiConnectionDescription": "Connect your exchange accounts to import trades automatically.",
     "apiKey": "API Key",
     "apiKeyPlaceholder": "Enter API Key",
@@ -701,6 +703,8 @@
       "hinweis_kiBerichtFertig": "A report or agent run has finished.",
       "typ_kiGuthabenLeer": "AI credit exhausted",
       "hinweis_kiGuthabenLeer": "A provider stopped accepting requests. While this lasts, briefings and agent runs fail.",
+      "typ_boerseKeinZugang": "Exchange access expired",
+      "hinweis_boerseKeinZugang": "An exchange rejects the stored API key. While this lasts, no positions arrive from there.",
       "typ_neueVersion": "New version",
       "hinweis_neueVersion": "A newer release is published on GitHub.",
       "typ_aufzeichnungStumm": "Recording silent",
@@ -876,6 +880,9 @@
   },
   "incoming": {
     "lastUpdated": "Last updated:",
+    "brokerAusfall": "{boerse} is not responding — all positions from this exchange are missing here.",
+    "brokerTeilausfall": "Part of the answer came through, the rest did not; only what arrived is shown.",
+    "brokerAusfallHinweis": "If the exchange reports an expired or invalid key, only a new one helps: Settings → Exchanges.",
     "refresh": "Refresh",
     "futuresSection": "Futures",
     "botsSection": "Bots",
@@ -2273,7 +2280,10 @@
       "zonenToleranzAtr": "Distance still counted as the same zone (ATR)",
       "zonenMinBreiteAtr": "Minimum zone width (ATR)",
       "zonenMaxBreiteAtr": "Maximum zone width (ATR)",
-      "zoneNaeheAtr": "Tolerance when testing the zone (ATR)"
+      "zoneNaeheAtr": "Tolerance when testing the zone (ATR)",
+      "trendModus": "Trend reading",
+      "trendZustand": "State (holds until broken)",
+      "trendMoment": "Snapshot (last two turning points)"
     }
   },
   "levmap": {
