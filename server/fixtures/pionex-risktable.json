@@ -1,0 +1,62 @@
+{
+  "result": true,
+  "data": {
+    "symbols": [
+      {
+        "symbol": "BTC_USDT_PERP",
+        "rows": [
+          {
+            "rowNum": 1,
+            "notionalLimit": "2000000",
+            "maxLeverage": "100",
+            "maintMarginRatio": "0.005",
+            "quickDeduction": "0"
+          },
+          {
+            "rowNum": 2,
+            "notionalLimit": "12000000",
+            "maxLeverage": "50",
+            "maintMarginRatio": "0.01",
+            "quickDeduction": "10000"
+          },
+          {
+            "rowNum": 3,
+            "notionalLimit": "100000000",
+            "maxLeverage": "20",
+            "maintMarginRatio": "0.025",
+            "quickDeduction": "190000"
+          },
+          {
+            "rowNum": 4,
+            "notionalLimit": "200000000",
+            "maxLeverage": "10",
+            "maintMarginRatio": "0.05",
+            "quickDeduction": "2690000"
+          },
+          {
+            "rowNum": 5,
+            "notionalLimit": "500000000",
+            "maxLeverage": "5",
+            "maintMarginRatio": "0.1",
+            "quickDeduction": "12690000"
+          },
+          {
+            "rowNum": 6,
+            "notionalLimit": "600000000",
+            "maxLeverage": "2",
+            "maintMarginRatio": "0.25",
+            "quickDeduction": "87690000"
+          },
+          {
+            "rowNum": 7,
+            "notionalLimit": "800000000",
+            "maxLeverage": "1",
+            "maintMarginRatio": "0.5",
+            "quickDeduction": "237690000"
+          }
+        ]
+      }
+    ]
+  },
+  "timestamp": 1789413591672
+}

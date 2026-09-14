@@ -196,6 +196,12 @@ async function toolBacktest(knex, p) {
         market: 'futures',
         fromTs, toTs,
         params: JSON.stringify(r.meta?.params || {}),
+        // Das Kostenmodell gehoert zum Ergebnis, nicht zur Umgebung. Fehlte es
+        // hier, rechnete der Lauf zwar mit den Vorgaben (feeTakerBps 6), aber
+        // das Freigabe-Tor `lauf_mit_kosten` sah einen Lauf ohne Gebuehren und
+        // lehnte ihn ab — genau das ist den LSOB-15m-Laeufen #47–#49 passiert.
+        // Dieselbe Zeile steht in strategy-api.js; sie war hier nie nachgezogen.
+        risk: JSON.stringify(r.meta?.risk || {}),
         stats: JSON.stringify({ ...r.stats, funnel: r.funnel }),
         trades: JSON.stringify(r.trades.slice(0, 200)),
     }

@@ -29,6 +29,8 @@ import {
 } from './strategy-backtest.js'
 import { monteCarlo, parameterStabilitaet, stabilitaetsMatrix, walkForward, MAX_STUFEN } from './robustness.js'
 import { engineStatus, resetSymbolCache, killSwitch, ladeInstanz, tick, schliessePositionManuell } from './strategy-engine.js'
+import { holeAdapterListe, kenntBroker } from './execution/index.js'
+import { waechterStatus } from './execution/stop-waechter.js'
 import { bewerteGates } from './live-gates.js'
 import { spiegleInsJournal, entferneAusJournal } from './journal-bridge.js'
 
@@ -130,12 +132,20 @@ function pruefeInstanzEingabe(body, vorhanden = null) {
         return { fehler: [...params.errors, ...risk.errors] }
     }
 
+    // Den Broker pruefen, statt ihn zu uebernehmen. Ein Tippfehler wuerde sonst
+    // erst beim ersten scharfen Einstieg auffallen — dann bricht die Engine mit
+    // `unknown_broker` ab, und die Instanz handelt stillschweigend nie.
+    const broker = String(body.broker || vorhanden?.broker || 'bitunix').toLowerCase().trim()
+    if (!kenntBroker(broker)) {
+        return { fehler: [`Unbekannter Broker: ${broker}`] }
+    }
+
     return {
         werte: {
             strategyId,
             name: String(body.name ?? vorhanden?.name ?? strategie.name).slice(0, 120),
             mode,
-            broker: String(body.broker || vorhanden?.broker || 'bitunix'),
+            broker,
             market: body.market === 'spot' ? 'spot' : (vorhanden?.market || 'futures'),
             timeframe,
             timeframes: JSON.stringify(timeframes),
@@ -199,6 +209,10 @@ export function setupStrategyRoutes(app) {
             riskDefaults: defaultsFromSchema(RISK_PARAMS),
             agentDefaults: AGENT_DEFAULTS,
             modes: ['paper', 'shadow', 'live'],
+            // Die Ausführungswege samt ihrer Fähigkeiten. Die Oberfläche
+            // fragt daraus ab, ob ein Broker einen Börsen-Stop kann — statt
+            // den Namen abzufragen, was bei jedem neuen Broker nachzuziehen wäre.
+            broker: holeAdapterListe(),
             bausteine: BAUSTEINE,
         })
     })
@@ -212,7 +226,7 @@ export function setupStrategyRoutes(app) {
             // Kennzahlen je Instanz gleich mitliefern — die Übersicht soll ohne
             // n weitere Abrufe auskommen.
             const [offen, summen] = await Promise.all([
-                knex('strategy_positions').where('status', 'open')
+                knex('strategy_positions').whereIn('status', ['open', 'closing'])
                     .select('instanceId').count({ n: '*' }).groupBy('instanceId'),
                 knex('strategy_trades')
                     .select('instanceId').count({ n: '*' }).sum({ pnl: 'netPnl' })
@@ -290,7 +304,12 @@ export function setupStrategyRoutes(app) {
             // etwas Handelsrelevantes (Parameter, Risiko, Symbole, Strategie,
             // Zeiteinheit), muss neu freigegeben werden — sonst handelt eine
             // "genehmigte" Instanz nachträglich völlig andere Logik.
+            // Der Broker gehört ausdrücklich dazu: eine Freigabe gilt für EINEN
+            // Ausführungsweg. Bitunix hält den Stop an der Börse, Pionex nicht —
+            // dieselbe Strategie ist auf der anderen Börse ein anderes Risiko.
+            const brokerGeaendert = geprueft.werte.broker !== (vorhanden.broker || 'bitunix')
             const handelsrelevant = paramsGeaendert
+                || brokerGeaendert
                 || geprueft.werte.symbols !== vorhanden.symbols
                 || geprueft.werte.strategyId !== vorhanden.strategyId
                 || geprueft.werte.timeframe !== vorhanden.timeframe
@@ -298,6 +317,21 @@ export function setupStrategyRoutes(app) {
                     vorhanden.timeframes, vorhanden.timeframe, getStrategy(vorhanden.strategyId)))
             if (handelsrelevant && vorhanden.liveApprovedAt) {
                 aktualisierung.liveApprovedAt = 0
+            }
+
+            // Den Ausführungsweg unter einer laufenden Position zu wechseln,
+            // hiesse: die Position steht auf Börse A, das Journal schliesst sie
+            // auf Börse B. Also gar nicht erst zulassen.
+            if (brokerGeaendert) {
+                const offeneZ = await knex('strategy_positions')
+                    .where('instanceId', req.params.id)
+                    .whereIn('status', ['open', 'closing', 'pending', 'unknown'])
+                    .count({ n: '*' }).first()
+                if (Number(offeneZ?.n) > 0) {
+                    return res.status(409).json({
+                        error: 'Broker kann nicht gewechselt werden, solange Positionen offen sind',
+                    })
+                }
             }
 
             await knex('strategy_instances').where('id', req.params.id).update(aktualisierung)
@@ -324,7 +358,8 @@ export function setupStrategyRoutes(app) {
             const knex = getKnex()
             const id = Number(req.params.id)
             const offen = await knex('strategy_positions')
-                .where({ instanceId: id, status: 'open' }).count({ n: '*' }).first()
+                .where('instanceId', id).whereIn('status', ['open', 'closing', 'pending'])
+                .count({ n: '*' }).first()
             if (Number(offen?.n) > 0) {
                 return res.status(409).json({ error: 'Instanz hat offene Positionen — erst schliessen' })
             }
@@ -391,6 +426,171 @@ export function setupStrategyRoutes(app) {
         } catch (e) {
             logError('strategy-api', 'Reifegrad fehlgeschlagen', e)
             res.status(500).json({ error: 'Reifegrad konnte nicht ermittelt werden' })
+        }
+    })
+
+    /**
+     * Zustand des Stop-Wächters.
+     *
+     * Auf einer Börse ohne Stop-Order ist ein schweigender Wächter derselbe
+     * Zustand wie „kein Stop" — nur dass ihn sonst niemand sieht. Deshalb ist
+     * das eine eigene Anzeige und keine Zeile im Engine-Status.
+     */
+    app.get('/api/strategies/waechter', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const offen = await knex('strategy_positions')
+                .where('mode', 'live').whereIn('status', ['open', 'closing'])
+                .count({ n: '*' }).first()
+            const veraltet = await knex('strategy_positions')
+                .where('mode', 'live').whereIn('status', ['open', 'closing'])
+                .where('guardAt', '<', Date.now() - 30000)
+                .count({ n: '*' }).first()
+            res.json({
+                ...waechterStatus(),
+                offeneLivePositionen: Number(offen?.n) || 0,
+                unbewacht: Number(veraltet?.n) || 0,
+            })
+        } catch (e) {
+            logError('strategy-api', 'Wächter-Status fehlgeschlagen', e)
+            res.status(500).json({ error: 'Wächter-Status nicht lesbar' })
+        }
+    })
+
+    /**
+     * Probeorder: EINE winzige Order auf, Fill lesen, sofort wieder zu.
+     *
+     * ── Warum das eine eigene Route hat ────────────────────────────────────
+     * Der Order-Body ist gegen die Dokumentation gebaut und im Betrieb nicht
+     * bestätigt. Offen sind Fragen, die keine Doku beantwortet: Ist `size` bei
+     * MARKET_QTY die Basismenge oder ein Quote-Betrag? Akzeptiert Pionex das
+     * clientOrderId-Format? Lehnt `reduceOnly` sauber ab, wenn nichts da ist?
+     *
+     * Diese Fragen zum ersten Mal an einem echten Setup zu klären, hiesse: eine
+     * Position, die vielleicht hundertmal zu gross ist, und ein Stop, der nicht
+     * greift. Hier kostet dieselbe Klärung zwei Marktorders über 25 USDT.
+     *
+     * Vier Sperren, alle notwendig:
+     *   - der globale Scharf-Schalter muss an sein,
+     *   - der Not-Aus darf nicht gedrückt sein,
+     *   - der ausgeschriebene Bestätigungstext,
+     *   - ein hartes Nominal-Limit, das der Aufrufer nicht überschreiben kann.
+     */
+    app.post('/api/strategies/probeorder', async (req, res) => {
+        const MAX_NOTIONAL = 25
+        const BESTAETIGUNG = 'PROBEORDER'
+        try {
+            const body = req.body || {}
+            if (String(body.confirm || '').trim() !== BESTAETIGUNG) {
+                return res.status(400).json({ error: `Zur Bestätigung "${BESTAETIGUNG}" eingeben` })
+            }
+
+            const knex = getKnex()
+            const s = await knex('settings')
+                .select('strategyLiveEnabled', 'strategyKillSwitch').where('id', 1).first()
+            if (!s?.strategyLiveEnabled) {
+                return res.status(409).json({ error: 'Scharfer Betrieb ist global nicht freigegeben' })
+            }
+            if (s?.strategyKillSwitch) {
+                return res.status(409).json({ error: 'Not-Aus ist aktiv' })
+            }
+
+            const broker = String(body.broker || 'pionex')
+            if (!kenntBroker(broker)) return res.status(400).json({ error: `Unbekannter Broker: ${broker}` })
+            const adapter = holeAdapter(broker)
+
+            const symbol = String(body.symbol || '').toUpperCase().trim()
+            if (!symbol) return res.status(400).json({ error: 'Symbol fehlt' })
+            const direction = body.direction === 'short' ? 'short' : 'long'
+
+            const schritte = []
+            const merke = (name, d) => { schritte.push({ schritt: name, ...d }) }
+
+            // 1. Kontraktdaten — ohne sie ist jede Menge geraten.
+            const meta = typeof adapter.holeSymbolMeta === 'function'
+                ? await adapter.holeSymbolMeta(symbol).catch(() => null)
+                : null
+            if (!meta) return res.status(400).json({ error: `Keine Kontraktdaten für ${symbol}`, schritte })
+            merke('kontraktdaten', { meta })
+
+            // 2. Menge aus dem Nominal-Limit. Der Preis kommt vom Kursfeed.
+            const preis = await getLastPrice(symbol, { market: 'futures' }).catch(() => 0)
+            if (!(preis > 0)) return res.status(400).json({ error: 'Kein Kurs abrufbar', schritte })
+            const rohMenge = MAX_NOTIONAL / preis
+            const menge = typeof adapter.rundeMenge === 'function'
+                ? adapter.rundeMenge(rohMenge, meta.stepSize)
+                : rohMenge
+            merke('menge', { preis, rohMenge, menge, notional: menge * preis })
+
+            if (!(menge > 0) || (meta.minQty > 0 && menge < meta.minQty)) {
+                return res.status(400).json({
+                    error: `${MAX_NOTIONAL} USDT unterschreiten die Mindestmenge von ${symbol} (${meta.minQty}) — kleineres Symbol wählen`,
+                    schritte,
+                })
+            }
+            if (menge * preis > MAX_NOTIONAL * 1.2) {
+                return res.status(400).json({ error: 'Menge über dem Probelimit', schritte })
+            }
+
+            // 3. Margenmodus und Hebel setzen.
+            if (typeof adapter.bereiteSymbolVor === 'function') {
+                const vor = await adapter.bereiteSymbolVor({
+                    symbol, leverage: Number(body.leverage) || 5, isoliert: true, mode: 'live',
+                }).catch((e) => ({ ok: false, reason: e.message }))
+                merke('vorbereitung', vor)
+                if (!vor.ok) return res.status(409).json({ error: `Vorbereitung fehlgeschlagen: ${vor.reason}`, schritte })
+            }
+
+            // 4. Öffnen. `stopLoss` ist hier nur Formsache — der Adapter
+            //    verweigert ohne ihn, und das soll er auch bei der Probe.
+            const clientOrderId = `ctj-probe-${Date.now()}`
+            const auf = await adapter.openLivePosition({
+                setup: {
+                    symbol, direction,
+                    stopLoss: direction === 'long' ? preis * 0.5 : preis * 1.5,
+                    takeProfit: 0,
+                },
+                size: { qty: menge },
+                leverage: Number(body.leverage) || 5,
+                clientOrderId,
+                mode: 'live',
+            }).catch((e) => ({ ok: false, reason: e.message, geschickt: true }))
+            merke('oeffnen', auf)
+
+            if (!auf.ok) {
+                return res.status(502).json({ error: `Order abgelehnt: ${auf.reason} ${auf.detail || ''}`, schritte })
+            }
+
+            // 5. Was ist tatsächlich passiert? Hier klärt sich die
+            //    `size`-Frage: weicht die gefüllte Menge von der bestellten ab,
+            //    bedeutet `size` etwas anderes als angenommen.
+            const positionen = typeof adapter.holeOffenePositionen === 'function'
+                ? await adapter.holeOffenePositionen(symbol).catch(() => [])
+                : []
+            merke('position', { positionen, erwarteteMenge: menge })
+
+            // 6. Sofort wieder zu — unabhängig davon, wie Schritt 5 ausging.
+            const zu = await adapter.closeLivePosition({
+                symbol, direction, qty: menge, mode: 'live',
+            }).catch((e) => ({ ok: false, reason: e.message }))
+            merke('schliessen', zu)
+
+            const danach = typeof adapter.holeOffenePositionen === 'function'
+                ? await adapter.holeOffenePositionen(symbol).catch(() => [])
+                : []
+            merke('kontrolle', { nochOffen: danach })
+
+            if (danach.some((p) => p.qty > 0)) {
+                logError('strategy-api', `PROBEORDER: ${symbol} ist NACH dem Schliessen noch offen — von Hand prüfen!`)
+                return res.status(502).json({
+                    error: 'Position liess sich nicht schliessen — an der Börse prüfen!', schritte,
+                })
+            }
+
+            res.json({ ok: true, schritte })
+        } catch (e) {
+            logError('strategy-api', 'Probeorder fehlgeschlagen', e)
+            res.status(500).json({ error: e.message })
         }
     })
 
@@ -1095,6 +1295,11 @@ export function setupStrategyRoutes(app) {
             const knex = getKnex()
             const row = await knex('strategy_positions').where('id', req.params.id).first()
             if (!row) return res.status(404).json({ error: 'Position nicht gefunden' })
+            // 'closing' heisst: der Stop-Waechter ist schon dran. Ein zweiter
+            // Schliessversuch von Hand wuerde eine zweite Boersen-Order senden.
+            if (row.status === 'closing') {
+                return res.status(409).json({ error: 'Position wird gerade geschlossen — bitte kurz warten' })
+            }
             if (row.status !== 'open') return res.status(409).json({ error: 'Position ist bereits geschlossen' })
 
             const instRow = await knex('strategy_instances').where('id', row.instanceId).first()

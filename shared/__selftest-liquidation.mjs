@@ -10,7 +10,7 @@
  * übereinstimmt.
  */
 
-import { liqPreisLong, liqPreisShort, hebelHaltbar, liqPreis } from './liquidation.js'
+import { liqPreisLong, liqPreisShort, hebelHaltbar, liqPreis, hebelFuerLiqPreis } from './liquidation.js'
 
 let ok = 0
 let fehler = 0
@@ -89,6 +89,85 @@ check('negative Wartungsmarge wird auf 0 gezogen',
  */
 check('0,4 statt 0,004 macht Hebel 20 unhaltbar (Prozent ≠ Bruch)',
     liqPreis(100, 20, 0.4, 'long') === 100)
+
+
+/*
+ * Die Umkehrung (Margen-Netz auf Boersen ohne Stop-Order).
+ *
+ * Geprueft wird als RUNDREISE: aus dem gewuenschten Liquidationspreis einen
+ * Hebel rechnen, ihn in die Vorwaertsformel stecken, wieder beim Ziel landen.
+ * Ein eigener Sollwert waere hier wertlos — er waere dieselbe Algebra ein
+ * zweites Mal hingeschrieben. Die Rundreise prueft dagegen genau das, worauf
+ * sich das Netz verlaesst: dass die beiden Formeln zueinander passen.
+ */
+console.log('\nUmkehrung (hebelFuerLiqPreis)')
+
+for (const [E, Z, m, r] of [
+    [100, 99, 0.004, 'long'],
+    [100, 101, 0.004, 'short'],
+    [64000, 62720, 0.004, 'long'],     // BTC, Stop 2 % darunter
+    [2500, 2450, 0.01, 'long'],        // Alt-Coin mit 1 % Wartungsmarge
+    [2500, 2550, 0.01, 'short'],
+    [0.00001234, 0.00001210, 0.02, 'long'],  // Kleinstpreis: Rundung darf nicht kippen
+]) {
+    const L = hebelFuerLiqPreis(E, Z, m, r)
+    check(`Rundreise ${r} E=${E} Z=${Z} m=${m} (L=${L.toFixed(2)})`,
+        L > 0 && Math.abs(liqPreis(E, L, m, r) - Z) < Math.abs(Z) * 1e-9,
+        `liq=${liqPreis(E, L, m, r)}`)
+}
+
+// Die Faustregel, die an jeder Aufrufstelle bekannt sein muss: der noetige
+// Hebel ist ungefaehr der Kehrwert des relativen Stopabstands. Ohne mmr waere
+// es exakt 1/abstand; die Wartungsmarge macht ihn etwas kleiner.
+{
+    const E = 100000
+    const L1 = hebelFuerLiqPreis(E, E * 0.99, 0.004, 'long')   // 1 % Abstand
+    const L2 = hebelFuerLiqPreis(E, E * 0.98, 0.004, 'long')   // 2 % Abstand
+    check('1 % Stopabstand verlangt Hebel zwischen 60 und 80', L1 > 60 && L1 < 80, String(L1))
+    check('groesserer Abstand = kleinerer Hebel (Monotonie)', L2 < L1)
+
+    // Die Regel ist 1/(a + m), NICHT 1/a. Der Unterschied ist kein Feinschliff:
+    // bei a = 0,1 % und m = 0,4 % waeren es 1000 gegen 200 — Faktor fuenf, und
+    // zwar zugunsten des Netzes. Wer hier 1/a annimmt, haelt das Margen-Netz
+    // faelschlich fuer unerreichbar und schaltet es ab.
+    const m = 0.004
+    for (const a of [0.001, 0.01, 0.02, 0.10]) {
+        const L = hebelFuerLiqPreis(E, E * (1 - a), m, 'long')
+        check(`Faustregel 1/(a+m) trifft bei a=${(a * 100).toFixed(1)} %`,
+            Math.abs(L - 1 / (a + m)) / L < 0.01, `${L.toFixed(1)} vs ${(1 / (a + m)).toFixed(1)}`)
+    }
+    check('1/a allein waere bei engem Stop deutlich daneben',
+        Math.abs(hebelFuerLiqPreis(E, E * 0.999, m, 'long') - 1 / 0.001) > 100)
+}
+
+/*
+ * Ein Ziel auf der falschen Seite ist kein Grenzfall, sondern ein Denkfehler
+ * beim Aufrufer: ein Long wird UNTER dem Einstieg liquidiert. Faellt das hier
+ * durch, bekaeme das Margen-Netz einen Hebel geliefert, der rechnerisch stimmt
+ * und fachlich Unsinn ist — und die UI zeigte ein Netz an, das es nicht gibt.
+ */
+check('Long mit Ziel UEBER dem Einstieg → 0', hebelFuerLiqPreis(100, 101, 0.004, 'long') === 0)
+check('Short mit Ziel UNTER dem Einstieg → 0', hebelFuerLiqPreis(100, 99, 0.004, 'short') === 0)
+// Ziel = Einstieg ergibt rechnerisch L = 1/m (hier 250) — die Liquidation
+// laege exakt auf dem Einstieg, die Position waere bei Eroeffnung schon weg.
+// `hebelHaltbar` laesst das wegen Gleitkomma-Rest knapp durch, deshalb faengt
+// das Modul es mit Toleranz ab.
+check('Ziel gleich Einstieg → 0 (Position waere sofort liquidiert)',
+    hebelFuerLiqPreis(100, 100, 0.004, 'long') === 0 && hebelFuerLiqPreis(100, 100, 0.004, 'short') === 0)
+check('Ziel knapp jenseits des Grenzhebels wird noch geliefert',
+    hebelFuerLiqPreis(100, 99.9, 0.004, 'long') > 0)
+check('kaputte Eingaben → 0 statt NaN',
+    hebelFuerLiqPreis(0, 99, 0.004, 'long') === 0
+    && hebelFuerLiqPreis(100, 0, 0.004, 'long') === 0
+    && hebelFuerLiqPreis('quatsch', 99, 0.004, 'long') === 0)
+
+// Gegenprobe zur Vorwaertsformel: der zurueckgerechnete Hebel muss haltbar
+// sein. Waere er es nicht, gaebe liqPreis den Einstieg zurueck und die
+// Rundreise oben waere still gruen, ohne etwas zu pruefen.
+{
+    const L = hebelFuerLiqPreis(100, 99, 0.004, 'long')
+    check('zurueckgerechneter Hebel ist haltbar', hebelHaltbar(L, 0.004))
+}
 
 console.log(`\n${ok} bestanden, ${fehler} fehlgeschlagen`)
 if (fehler) process.exit(1)

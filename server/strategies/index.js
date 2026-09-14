@@ -99,6 +99,35 @@ export const RISK_PARAMS = [
     // deutlich zu spät liquidiert. Ein eingetragener Wert gilt als Vorrang.
     { key: 'maintenanceMarginPct', type: 'number', default: 0, min: 0, max: 5, step: 0.1, group: 'costs' },
     { key: 'maxPriceDeviationPct', type: 'number', default: 0.5, min: 0.01, max: 10, step: 0.01, group: 'quality' },
+
+    /*
+     * ── Margen-Netz (nur Börsen ohne Stop-Order, z.B. Pionex) ──────────────
+     *
+     * Dort hält ein Wächter im Journal den Stop. Läuft der Prozess nicht, hält
+     * nur noch die isolierte Marge — und wie eng sie hinter dem Stop sitzt,
+     * bestimmt der Hebel. Die Arithmetik dahinter ist unbequem: für eine
+     * Liquidation direkt am Stop braucht es ungefähr Hebel 1/(Stopabstand +
+     * Wartungsmarge), bei 1 % Stopabstand also rund 72.
+     *
+     * WICHTIG und leicht misszuverstehen: ein höherer Hebel vergrössert die
+     * Position NICHT. `computePositionSize` bemisst die Menge am Stopabstand;
+     * der Hebel entscheidet nur, wie viel Marge sie bindet. In diesem Betrieb
+     * ist `strategyMaxLeverage` deshalb ein Netzweiten-Regler, kein
+     * Risikoregler.
+     *
+     *   voll      — Hebel genau so hoch, dass die Liquidation knapp hinter dem
+     *               Stop liegt. Geht das nicht, wird NICHT gehandelt.
+     *   gedeckelt — so eng wie der Deckel erlaubt; das Netz greift dann später,
+     *               und `netzMaxR` sagt, ab wann das zu spät ist. (Vorgabe)
+     *   aus       — kein Netz, reiner Software-Stop. Bewusste Entscheidung.
+     *
+     * Auf Börsen MIT Stop-Order ist die Einstellung wirkungslos.
+     */
+    { key: 'netzModus', type: 'select', default: 'gedeckelt', options: ['voll', 'gedeckelt', 'aus'], group: 'quality' },
+    // Ab wie vielen R das Netz zu weit hinten liegt, um noch zu handeln.
+    // 0 = keine Grenze. Zur Einordnung: Hebel 10 und 2 % Stopabstand ergeben
+    // rund 4,8 R, Hebel 10 und 1 % rund 9,6 R.
+    { key: 'netzMaxR', type: 'number', default: 10, min: 0, max: 100, step: 0.5, group: 'quality' },
 ]
 
 /** Agent-Konfiguration je Rolle. Beide Rollen sind optional abschaltbar. */

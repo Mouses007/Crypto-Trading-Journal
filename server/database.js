@@ -135,7 +135,14 @@ async function fixPostgresSequences(knex) {
 // v17: `bild` an `quiz_karten` — SVG-Skizze zu Strukturkarten. Rein additiv,
 // Vorgabe leer; ein aelterer Codestand ignoriert die Spalte schlicht.
 // v18: `bildEcht` an `quiz_karten` — echtes Marktbeispiel neben dem Schema.
-const SCHEMA_VERSION = 18
+// v19: sechs Spalten an `strategy_positions` für den scharfen Betrieb auf
+// Börsen ohne Stop-Order (externalTpOrderId, liqPrice, netzModus,
+// netzVerlustR, guardAt, exitGrund) und der neue Positionsstatus 'closing'.
+// Rein additiv; ein älterer Codestand ignoriert die Spalten. ABER: er kennt
+// 'closing' nicht und zählt eine gerade schliessende Position nicht als offen
+// — er könnte daneben eine zweite eröffnen. Solange keine Live-Instanz läuft,
+// ist das folgenlos (paper/shadow benutzen den Status nicht).
+const SCHEMA_VERSION = 19
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -1540,6 +1547,30 @@ async function runMigrations(knex, client) {
     // Positions-Kennung der Börse (≠ Order-Kennung) — nötig für gezieltes Close
     await addColumnIfNotExists('strategy_positions', 'externalPositionId', (t) => t.text('externalPositionId').defaultTo(''))
 
+    // ── Scharfer Betrieb auf Börsen ohne Stop-Order (Pionex) ───────────────
+    // Dort hält ein Wächter im Journal den Stop, und die isolierte Marge ist
+    // die zweite Sicherung. Beides muss an der Position stehen: nach einem
+    // Neustart ist die DB-Zeile alles, was der Wächter über sie weiss.
+    //
+    // Das Ziel liegt als reduceOnly-Limit im Buch und überlebt einen Ausfall —
+    // seine Kennung wird gebraucht, um sie bei jedem anderen Ausstieg wieder
+    // zu stornieren, sonst bleibt ein Phantom stehen.
+    await addColumnIfNotExists('strategy_positions', 'externalTpOrderId', (t) => t.text('externalTpOrderId').defaultTo(''))
+    // Der GERECHNETE Liquidationspreis. Der Wächter hält ihn gegen den, den die
+    // Börse meldet — weichen sie ab, ist das Netz eine Zahl ohne Deckung.
+    await addColumnIfNotExists('strategy_positions', 'liqPrice', (t) => t.double('liqPrice').defaultTo(0))
+    await addColumnIfNotExists('strategy_positions', 'netzModus', (t) => t.text('netzModus').defaultTo(''))
+    // Bei wie vielen R das Margen-Netz greift. 1,0 heisst „direkt am Stop",
+    // 9,6 heisst „neunfacher Schaden, falls der Wächter ausfällt".
+    await addColumnIfNotExists('strategy_positions', 'netzVerlustR', (t) => t.double('netzVerlustR').defaultTo(0))
+    // Wann der Wächter diese Position zuletzt gesehen hat. Ohne diesen Stempel
+    // merkt niemand, dass er seit Stunden schweigt — und genau das ist der
+    // Zustand, in dem eine Pionex-Position ungesichert im Markt steht.
+    await addColumnIfNotExists('strategy_positions', 'guardAt', (t) => t.bigInteger('guardAt').defaultTo(0))
+    // Reservierungsgrund beim atomaren 'closing'-Claim: welcher Ausstieg hat
+    // die Zeile beansprucht (sl | tp | be | timeout | manual | extern).
+    await addColumnIfNotExists('strategy_positions', 'exitGrund', (t) => t.text('exitGrund').defaultTo(''))
+
     // Spiegelt diese Instanz ihre geschlossenen Trades ins Journal? Bewusst je
     // Instanz und standardmässig AUS: es sind Papier-Trades, und ob sie im
     // Journal auftauchen sollen, ist eine Entscheidung des Nutzers.
@@ -2124,6 +2155,11 @@ async function runMigrations(knex, client) {
     // „letzter Aufruf scheiterte an fehlendem Guthaben" — mehr geben die
     // Anbieter über den normalen API-Key nicht her.
     await addColumnIfNotExists('settings', 'aiQuotaStatus', (t) => t.text('aiQuotaStatus').defaultTo('{}'))
+    // Zugangs-Status je Börse (JSON, nur der Server schreibt hier): „der letzte
+    // Abruf scheiterte am Schlüssel". Eine Börse meldet einen abgelaufenen
+    // Schlüssel von sich aus nirgends — sichtbar wurde das bis 14.09.2026 nur
+    // im Serverprotokoll. Siehe `server/boersen-status.js`.
+    await addColumnIfNotExists('settings', 'boersenStatus', (t) => t.text('boersenStatus').defaultTo('{}'))
     // Anbieter und Modell je KI-Funktion. Leer = der global eingestellte
     // Anbieter. Vorher hatte nur der Lagebericht diese Wahl, alles andere hing
     // am globalen Feld — wer den Agenten auf ein günstiges Modell stellen

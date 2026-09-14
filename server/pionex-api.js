@@ -1,67 +1,8 @@
-import crypto from 'crypto'
 import { getKnex } from './database.js'
 import { encrypt, decrypt, maskKey } from './crypto.js'
-
-const BASE_URL = 'https://api.pionex.com'
-
-/**
- * Pionex API authentication (HMAC-SHA256 → hex).
- *
- * Signatur-String:  METHOD + PATH + "?" + sortedQuery   (GET)
- *                   METHOD + PATH + "?" + sortedQuery + body   (POST/DELETE)
- * Query-Parameter:  aufsteigend nach ASCII-Key sortiert, mit & verbunden,
- *                   inkl. `timestamp` (ms). Werte NICHT url-encoden.
- * Header:           PIONEX-KEY, PIONEX-SIGNATURE
- *
- * Quelle: https://pionex-doc.gitbook.io/apidocs/restful/general/authentication
- */
-function createSignature(secretKey, method, path, sortedQuery, body) {
-    let str = method.toUpperCase() + path
-    if (sortedQuery) str += '?' + sortedQuery
-    if (body) str += body
-    return crypto.createHmac('sha256', secretKey).update(str).digest('hex')
-}
-
-/**
- * Authentifizierter Request gegen die Pionex REST API.
- * @returns {object} data-Envelope: { result:true, data, timestamp }
- */
-async function pionexRequest(method, path, apiKey, secretKey, params = {}, body = null) {
-    const timestamp = String(Date.now())
-    const allParams = { ...params, timestamp }
-
-    // Keys aufsteigend nach ASCII sortieren (Pionex-Vorgabe), unescaped joinen.
-    const sortedKeys = Object.keys(allParams).sort()
-    const sortedQuery = sortedKeys.map(k => `${k}=${allParams[k]}`).join('&')
-
-    const bodyString = (body && method !== 'GET') ? JSON.stringify(body) : ''
-    const sign = createSignature(secretKey, method, path, sortedQuery, bodyString)
-
-    const url = `${BASE_URL}${path}?${sortedQuery}`
-    const headers = {
-        'Content-Type': 'application/json',
-        'PIONEX-KEY': apiKey,
-        'PIONEX-SIGNATURE': sign,
-    }
-
-    const response = await fetch(url, {
-        method,
-        headers,
-        body: method !== 'GET' ? (bodyString || undefined) : undefined
-    })
-
-    const data = await response.json().catch(() => null)
-
-    if (!response.ok) {
-        const msg = data ? `[${data.code}] ${data.message}` : `${response.status} ${response.statusText}`
-        throw new Error(`Pionex API: ${msg}`)
-    }
-    // Erfolgs-Envelope: result === true
-    if (data && data.result === false) {
-        throw new Error(`Pionex API: [${data.code}] ${data.message || 'Unbekannter Fehler'}`)
-    }
-    return data
-}
+import { merkeBoersenStatus, loescheBoersenVermerk, fehlerText } from './boersen-status.js'
+import { BASE_URL, pionexRequest } from './pionex-transport.js'
+import { journalSymbol } from './pionex-symbole.js'
 
 /**
  * Account-Balances (Spot). GET /api/v1/account/balances
@@ -411,12 +352,11 @@ export async function testConnection(apiKey, secretKey) {
  */
 /**
  * Pionex-Futures-Symbol normalisieren: "MYX_USDT_PERP" → "MYXUSDT".
+ *
+ * Kommt aus `pionex-symbole.js`, weil der Order-Pfad die Rueckrichtung braucht
+ * und zwei Fassungen derselben Regel frueher oder spaeter auseinanderlaufen.
  */
-function cleanPionexSymbol(s) {
-    const str = String(s || '')
-    if (!str) return ''
-    return str.replace(/_PERP$/i, '').replace(/_/g, '')
-}
+const cleanPionexSymbol = journalSymbol
 
 function normalizeOpenPosition(p) {
     if (!p) return null
@@ -518,7 +458,7 @@ function normalizeFuturesHistoryPosition(p, fills = []) {
 /**
  * Lädt und entschlüsselt die Pionex-Config aus der DB.
  */
-async function getDecryptedPionexConfig() {
+export async function getDecryptedPionexConfig() {
     const knex = getKnex()
     const config = await knex('pionex_config').where('id', 1).first()
     if (!config) return null
@@ -634,6 +574,9 @@ export function setupPionexRoutes(app) {
                     apiImportStartDate: apiImportStartDate || ''
                 })
             }
+            // Neue Zugangsdaten → alter Zugangs-Vermerk ist hinfällig. Ob die
+            // neuen taugen, weiss erst der nächste Abruf.
+            loescheBoersenVermerk('pionex').catch(() => { })
             res.json({ ok: true })
         } catch (error) {
             res.status(500).json({ error: 'Interner Serverfehler' })
@@ -722,11 +665,27 @@ export function setupPionexRoutes(app) {
                 return res.status(400).json({ error: 'API-Schlüssel nicht konfiguriert.' })
             }
 
+            /*
+             * Zwei Abrufe, zwei mögliche Ausfälle — und beide wurden hier bis
+             * zum 14.09.2026 verschluckt: Der abgelaufene Schlüssel meldete
+             * `[APIKEY_EXPIRED]`, die Antwort blieb `ok: true` mit leerer
+             * Liste, und die Seite zeigte einfach keinen Bot mehr an.
+             *
+             * Eine leere Liste heisst im Frontend „alles geschlossen" und legt
+             * Trades an. Deshalb ist die Unterscheidung nicht Kosmetik: Was
+             * nicht abgerufen werden konnte, darf nicht als „nicht mehr
+             * vorhanden" durchgehen.
+             */
+            const fehler = []
+
             // Laufende Bots (geteilter Helfer, identisch zum ESP32-Display-Endpoint)
             let botPositions = []
             try {
                 botPositions = await getRunningBotPositions()
-            } catch (e) { console.warn(' -> Pionex running bots error:', e.message) }
+            } catch (e) {
+                console.warn(' -> Pionex running bots error:', e.message)
+                fehler.push(`Bots: ${e.message}`)
+            }
 
             // Echte Futures-Positionen (für manuelles Futures-Trading)
             let futPositions = []
@@ -734,14 +693,27 @@ export function setupPionexRoutes(app) {
                 const result = await getOpenPositions(config.apiKey, config.secretKey)
                 const raw = result.data?.positions || []
                 futPositions = raw.map(normalizeOpenPosition).filter(Boolean)
-            } catch (e) { console.warn(' -> Pionex futures positions error:', e.message) }
+            } catch (e) {
+                console.warn(' -> Pionex futures positions error:', e.message)
+                fehler.push(`Futures: ${e.message}`)
+            }
 
             const positions = [...botPositions, ...futPositions]
             console.log(` -> Pionex open: ${botPositions.length} Bots + ${futPositions.length} Futures`)
-            res.json({ ok: true, positions })
+
+            if (fehler.length === 2) {
+                // Beide Wege tot — das ist kein Teilausfall, sondern „keine Auskunft".
+                merkeBoersenStatus('pionex', fehler[0]).catch(() => { })
+                return res.status(502).json({ error: fehler.join(' | ') })
+            }
+            if (fehler.length) merkeBoersenStatus('pionex', fehler[0]).catch(() => { })
+            else merkeBoersenStatus('pionex').catch(() => { })
+
+            res.json({ ok: true, positions, unvollstaendig: fehler.length > 0, warnung: fehler.join(' | ') || undefined })
         } catch (error) {
             console.error(' -> Pionex open positions error:', error.message)
-            res.status(500).json({ error: 'Interner Serverfehler' })
+            merkeBoersenStatus('pionex', error.message).catch(() => { })
+            res.status(500).json({ error: fehlerText(error) })
         }
     })
 

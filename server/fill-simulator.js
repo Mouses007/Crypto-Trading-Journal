@@ -355,8 +355,14 @@ export function liquidationPrice(pos, wartungsmargePct = WARTUNGSMARGE_PCT) {
  * zählt die Auswertung jeden Trade doppelt und die Trefferquote wird Unsinn.
  * `initialQty` bleibt die Bezugsgrösse für R, damit ein Teilausstieg das
  * eingegangene Risiko nicht nachträglich kleinrechnet.
+ *
+ * Seit dem scharfen Betrieb auch von aussen benutzt: der Stop-Wächter
+ * (`execution/stop-waechter.js`) bucht damit den Live-Teilausstieg. Er muss
+ * durch DIESELBE Funktion laufen wie Backtest und Papierbetrieb — eine zweite
+ * Buchungslogik für Live würde genau die Vergleichbarkeit zerstören, auf der
+ * die Freigabe-Tore beruhen.
  */
-function bucheTeilausstieg(pos, price, anteilPct, costs, time) {
+export function bucheTeilausstieg(pos, price, anteilPct, costs, time) {
     const anteil = Math.min(Math.max(anteilPct, 0), 100) / 100
     const menge = pos.qty * anteil
     if (menge <= 0) return
@@ -484,6 +490,73 @@ export function stepCandle(pos, candle, opts = {}) {
     }
 
     return { exit: null }
+}
+
+/**
+ * Wie `closePosition`, aber mit den ECHTEN Zahlen der Börse.
+ *
+ * Für den Live-Betrieb: `price` ist der tatsächliche Ausführungspreis aus den
+ * Fills, `fee` die tatsächlich abgerechnete Gebühr. Deshalb wird hier weder
+ * Slippage aufgeschlagen (der Fill IST der Preis, den man bekommen hat) noch
+ * eine Gebühr aus einem Satz gerechnet.
+ *
+ * Bewusst eine eigene Funktion statt eines Schalters in `closePosition`: dort
+ * werden Slippage und Gebühr ganz am Anfang angewandt und `netPnl` daraus
+ * gebildet — ein `extra`-Feld käme zu spät, es wird erst am Ende
+ * draufgelegt. Und wichtiger: für Live darf nicht simuliert werden. Eine
+ * Funktion, die je nach Flag mal rechnet und mal übernimmt, lädt dazu ein,
+ * genau das zu verwechseln.
+ *
+ * Alles andere — R-Bezug auf die Einstiegsmenge, Teilausstieg, MAE/MFE —
+ * bleibt identisch, weil es dieselbe Buchhaltung ist.
+ */
+export function closePositionMitFills(pos, { price, reason, time, fee = 0, funding = 0 }, extra = {}) {
+    const fill = Number(price) || 0
+    const feeClose = Math.abs(Number(fee) || 0)
+    const fees = (Number(pos.feeOpen) || 0) + feeClose + (Number(pos.partialFee) || 0)
+
+    const grossPnl = (pos.direction === 'long'
+        ? (fill - pos.entryPrice) * pos.qty
+        : (pos.entryPrice - fill) * pos.qty)
+        + (Number(pos.partialGross) || 0)
+
+    // Funding ist hier ein KOSTENBETRAG der Börse; im Kanon dieser Datei wird
+    // er addiert (negativ = Kosten), deshalb mit negativem Vorzeichen.
+    const f = -Math.abs(Number(funding) || 0)
+    const netPnl = grossPnl - fees + f
+
+    const r = riskPerUnit(pos)
+    const mengeAmEinstieg = Number(pos.initialQty) || (pos.qty + (Number(pos.partialQty) || 0))
+    const riskUsd = r * mengeAmEinstieg
+    const rMultiple = riskUsd > 0 ? netPnl / riskUsd : 0
+    const maeR = r > 0 ? Math.abs(pos.maePrice - pos.entryPrice) / r : 0
+    const mfeR = r > 0 ? Math.abs(pos.mfePrice - pos.entryPrice) / r : 0
+
+    return {
+        setupId: pos.setupId,
+        symbol: pos.symbol,
+        timeframe: pos.timeframe,
+        direction: pos.direction,
+        qty: mengeAmEinstieg,
+        notionalUsdt: pos.notionalUsdt,
+        leverage: pos.leverage,
+        entryPrice: pos.entryPrice,
+        entryTime: pos.entryTime,
+        exitPrice: fill,
+        exitTime: time,
+        stopLoss: pos.initialStopLoss,
+        takeProfit: pos.takeProfit,
+        grossPnl,
+        fees,
+        funding: f,
+        netPnl,
+        rMultiple,
+        exitReason: reason,
+        maeR,
+        mfeR,
+        holdingMinutes: (time - pos.entryTime) / 60000,
+        ...extra,
+    }
 }
 
 /**

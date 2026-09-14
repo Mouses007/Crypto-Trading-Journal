@@ -57,7 +57,15 @@ pruefe('nur bis zur Auslösekerze eingestiegene Positionen',
 pruefe('bis dahin geschlossene Positionen fallen heraus',
     /not exists/i.test(sql.offen) && /"strategy_trades"\."exitTime"\s*<=\s*1700000000000/.test(sql.offen), sql.offen)
 pruefe('Reservierungen (pending) zählen weiterhin nicht als Position',
-    /"status" in \('open', 'closed'\)/i.test(sql.offen), sql.offen)
+    !/'pending'/i.test(sql.offen), sql.offen)
+/*
+ * 'closing' MUSS dagegen mitzählen. So steht eine Live-Position da, die der
+ * Stop-Wächter gerade schliesst: die Börsen-Order ist unterwegs, die Position
+ * also noch im Markt. Fiele sie hier heraus, sähe die Engine einen freien
+ * Platz unter `maxConcurrentPositions` und eröffnete daneben eine zweite.
+ */
+pruefe('schliessende Positionen (closing) zählen als offen',
+    /"status" in \('open', 'closing', 'closed'\)/i.test(sql.offen), sql.offen)
 pruefe('kein Join — eine Position kann nicht doppelt gezählt werden',
     !/join/i.test(sql.offen), sql.offen)
 

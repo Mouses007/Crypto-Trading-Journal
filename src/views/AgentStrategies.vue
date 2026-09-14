@@ -48,6 +48,10 @@ async function laden() {
         registry.value = reg.data
         instanzen.value = inst.data
         engine.value = status.data
+        // Bewusst NACH den anderen und ohne await im selben Promise.all: der
+        // Wächter-Status darf die Seite nicht aufhalten, und sein Scheitern
+        // darf die Instanzliste nicht mitreissen.
+        waechterLaden()
     } catch (e) {
         logError('AgentStrategies', 'Laden fehlgeschlagen', e)
         fehler.value = t('strategies.loadFailed')
@@ -166,7 +170,7 @@ function neu() {
         strategyId: s.id,
         name: `${s.name} ${s.supportedTimeframes[1] || s.supportedTimeframes[0]}`,
         mode: 'paper',
-        broker: 'bitunix',
+        broker: registry.value.broker?.[0]?.id || 'bitunix',
         market: 'futures',
         timeframe: s.supportedTimeframes[1] || s.supportedTimeframes[0],
         timeframes: [],
@@ -175,6 +179,69 @@ function neu() {
         risk: { ...registry.value.riskDefaults },
     }
 }
+
+// ── Broker: was kann der gewählte Ausführungsweg? ───────────────────────
+
+/** Fähigkeiten des Brokers einer Instanz (oder des gerade bearbeiteten). */
+function brokerInfo(id) {
+    const liste = registry.value.broker || []
+    return liste.find((b) => b.id === (id || 'bitunix')) || null
+}
+function brokerName(id) {
+    return brokerInfo(id)?.label || id || 'bitunix'
+}
+/*
+ * Gefragt wird die FÄHIGKEIT, nicht der Name. Eine Abfrage auf 'pionex' müsste
+ * bei jeder weiteren Börse ohne Stop-Order nachgezogen werden — und genau das
+ * wird vergessen.
+ */
+function ohneBoersenStop(id) {
+    const b = brokerInfo(id)
+    return b ? !b.faehigkeiten?.boersenStop : false
+}
+
+/** Bei wie vielen R das Margen-Netz greift — die Zahl für die Warnung. */
+const netzR = computed(() => {
+    const r = bearbeite.value?.risk || {}
+    const hebel = Number(engine.value?.maxLeverage) || 10
+    const mmr = 0.004        // Näherung für die Anzeige; gerechnet wird je Symbol
+    if (!(hebel > 1)) return null
+    // Liquidationsabstand in Prozent, geteilt durch den Stopabstand in Prozent.
+    // Der Stopabstand ist vor dem Trade unbekannt — deshalb die typische
+    // Grössenordnung als Spanne statt einer Scheingenauigkeit.
+    const liqAbstand = (1 - (1 - 1 / hebel) / (1 - mmr))
+    return { hebel, bei1Pct: liqAbstand / 0.01, bei2Pct: liqAbstand / 0.02 }
+})
+
+// ── Stop-Wächter ────────────────────────────────────────────────────────
+const waechter = ref(null)
+
+async function waechterLaden() {
+    try {
+        const r = await axios.get('/api/strategies/waechter')
+        waechter.value = r.data
+    } catch {
+        // Wie beim Reifegrad: Unwissen darf nicht als Unbedenklichkeit
+        // erscheinen. null heisst „unbekannt" und wird rot angezeigt.
+        waechter.value = null
+    }
+}
+
+/** 'gut' | 'alt' | 'tot' | 'unbekannt' — steuert die Ampel. */
+const waechterAmpel = computed(() => {
+    const w = waechter.value
+    if (!w) return 'unbekannt'
+    // Eine offene Live-Position ohne laufenden Wächter ist rot, egal wie alt
+    // der letzte Schlag ist: auf einer Börse ohne Stop-Order steht sie dann
+    // ungesichert im Markt.
+    if (w.offeneLivePositionen > 0 && (!w.laeuft || w.abgeschaltet)) return 'tot'
+    if (w.unbewacht > 0) return 'tot'
+    if (!w.laeuft) return 'unbekannt'
+    if (w.alter === null) return 'unbekannt'
+    if (w.alter < 10000) return 'gut'
+    if (w.alter < 30000) return 'alt'
+    return 'tot'
+})
 
 // ── Reifegrad: welche Nachweise fehlen für den scharfen Betrieb? ────────
 const reife = ref({})
@@ -389,6 +456,43 @@ const zahl = (v, n = 2) => (v === null || v === undefined || !Number.isFinite(Nu
                 <button class="btn btn-sm btn-outline-secondary" @click="notAus = false">{{ t('common.cancel') }}</button>
             </div>
 
+            <!--
+                Stop-Wächter. Nur sichtbar, wenn es etwas zu bewachen gibt oder
+                etwas nicht stimmt — auf einer reinen Papier-Installation wäre
+                die Zeile sonst Dauerlärm.
+            -->
+            <div v-if="waechter && (waechter.offeneLivePositionen > 0 || waechterAmpel === 'tot')"
+                class="dailyCard p-3 mb-3"
+                :class="waechterAmpel === 'tot' ? 'border border-danger' : ''">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span :class="['status-dot', waechterAmpel === 'gut' ? 'on' : 'off']"></span>
+                    <strong>{{ t('strategies.guardTitle') }}</strong>
+                    <span class="badge" :class="{
+                        'bg-success': waechterAmpel === 'gut',
+                        'bg-warning text-dark': waechterAmpel === 'alt',
+                        'bg-danger': waechterAmpel === 'tot',
+                        'bg-secondary': waechterAmpel === 'unbekannt',
+                    }">
+                        {{ waechter.laeuft && waechter.alter !== null
+                            ? t('strategies.guardRunning', { s: Math.round(waechter.alter / 1000) })
+                            : t('strategies.guardNever') }}
+                    </span>
+                    <span class="badge bg-dark">
+                        {{ t('strategies.guardWatching', { n: waechter.offeneLivePositionen }) }}
+                    </span>
+                    <span v-if="waechter.unbewacht > 0" class="badge bg-danger">
+                        {{ t('strategies.guardStale', { n: waechter.unbewacht }) }}
+                    </span>
+                    <span v-if="waechter.abgeschaltet" class="badge bg-danger">CTJ_NO_GUARD=1</span>
+                </div>
+                <div v-if="waechterAmpel === 'tot'" class="alert alert-danger py-2 small mt-2 mb-0">
+                    <i class="uil uil-exclamation-triangle me-1"></i>{{ t('strategies.guardDangerHint') }}
+                </div>
+                <div v-if="waechter.letzterFehler" class="text-muted small mt-2">
+                    {{ waechter.letzterFehler }}
+                </div>
+            </div>
+
             <!-- ══ Liste ══ -->
             <template v-if="!bearbeite">
                 <div v-if="!instanzen.length" class="dailyCard p-4 text-center text-muted">
@@ -400,6 +504,11 @@ const zahl = (v, n = 2) => (v === null || v === undefined || !Number.isFinite(Nu
                         <span :class="['status-dot', inst.enabled ? 'on' : 'off']"></span>
                         <strong>{{ inst.name }}</strong>
                         <span class="badge" :class="modusFarbe(inst.mode)">{{ t('strategies.mode_' + inst.mode) }}</span>
+                        <span class="badge bg-dark" :title="ohneBoersenStop(inst.broker) ? t('strategies.brokerNoStopShort') : ''">
+                            {{ brokerName(inst.broker) }}
+                            <i v-if="ohneBoersenStop(inst.broker) && inst.mode !== 'paper'"
+                                class="uil uil-shield-exclamation ms-1 text-warning"></i>
+                        </span>
                         <span class="badge bg-dark">{{ (inst.timeframes?.length ? inst.timeframes : [inst.timeframe]).join(' · ') }}</span>
                         <span class="badge bg-dark">v{{ inst.paramsVersion }}</span>
                         <span v-for="s in inst.symbols" :key="s" class="badge pointerClass"
@@ -607,6 +716,15 @@ const zahl = (v, n = 2) => (v === null || v === undefined || !Number.isFinite(Nu
                             </select>
                         </div>
                         <div class="col-6 col-md-3 mb-2">
+                            <label class="form-label small">{{ t('strategies.brokerLabel') }}</label>
+                            <select v-model="bearbeite.broker" class="form-select form-select-sm">
+                                <option v-for="b in registry.broker || []" :key="b.id" :value="b.id">{{ b.label }}</option>
+                            </select>
+                            <small v-if="!istNeu && bearbeite.liveApprovedAt" class="text-warning">
+                                {{ t('strategies.brokerChangeResetsApproval') }}
+                            </small>
+                        </div>
+                        <div class="col-6 col-md-3 mb-2">
                             <label class="form-label small">{{ t('strategies.timeframe') }}</label>
                             <select v-model="bearbeite.timeframe" class="form-select form-select-sm"
                                 @change="tfHauptGewechselt">
@@ -650,6 +768,23 @@ const zahl = (v, n = 2) => (v === null || v === undefined || !Number.isFinite(Nu
 
                     <div v-if="bearbeite.mode === 'live'" class="alert alert-danger py-2 small">
                         <i class="uil uil-exclamation-triangle me-1"></i>{{ t('strategies.liveModeWarning') }}
+                    </div>
+                    <!--
+                        Die Warnung nennt eine ZAHL. Eine Warnung ohne Zahl liest
+                        niemand zweimal, und „die Marge fängt das schon" ist ohne
+                        Grössenordnung keine Aussage.
+                    -->
+                    <div v-if="ohneBoersenStop(bearbeite.broker) && bearbeite.mode !== 'paper'"
+                        class="alert alert-warning py-2 small">
+                        <i class="uil uil-shield-exclamation me-1"></i>
+                        {{ t('strategies.brokerNoStopWarning', { broker: brokerName(bearbeite.broker) }) }}
+                        <template v-if="netzR">
+                            {{ t('strategies.brokerNoStopNet', {
+                                hebel: netzR.hebel,
+                                r1: netzR.bei1Pct.toFixed(1),
+                                r2: netzR.bei2Pct.toFixed(1),
+                            }) }}
+                        </template>
                     </div>
                     <div v-else-if="bearbeite.mode === 'shadow'" class="alert alert-warning py-2 small">
                         <i class="uil uil-eye me-1"></i>{{ t('strategies.shadowModeHint') }}

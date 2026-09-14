@@ -72,3 +72,59 @@ export function liqPreis(einstieg, hebel, mmr, richtung) {
     if (!hebelHaltbar(l, m)) return e
     return richtung === 'long' ? liqPreisLong(e, l, m) : liqPreisShort(e, l, m)
 }
+
+/**
+ * Umkehrung: welcher Hebel legt die Liquidation auf einen GEWÜNSCHTEN Preis?
+ *
+ * Gebraucht für das Margen-Netz auf Börsen ohne Stop-Order (Pionex): dort hält
+ * ein Wächter im Journal den Stop, und die isolierte Marge ist die einzige
+ * Sicherung, die auch dann noch greift, wenn der Prozess nicht läuft. Damit
+ * sie etwas taugt, muss die Liquidation knapp HINTER dem Stop liegen — und
+ * dafür braucht es die Formel rückwärts.
+ *
+ * Aus `liqPreisLong` aufgelöst:
+ *   Z = E(1 − 1/L)/(1 − m)  ⇒  L = 1 / (1 − Z(1 − m)/E)
+ *   Z = E(1 + 1/L)/(1 + m)  ⇒  L = 1 / (Z(1 + m)/E − 1)
+ *
+ * Daraus folgt die Faustregel, die an jeder Aufrufstelle bekannt sein muss:
+ * mit a = |E − S|/E ist L ≈ 1/(a + m). NICHT 1/a — die Wartungsmarge addiert
+ * sich zum Stopabstand, und bei engen Stops dominiert sie ihn sogar. Ein Stop
+ * 1 % unter dem Einstieg verlangt Hebel ~72 (nicht 100), ein Stop von 0,1 %
+ * ~200 (nicht 1000). Wer den nötigen Hebel nicht fahren will, bekommt ein
+ * weiteres Netz — kein anderes.
+ *
+ * @param {number} einstieg
+ * @param {number} zielLiq  gewünschter Liquidationspreis
+ * @param {number} mmr      Wartungsmarge als BRUCH
+ * @param {string} richtung 'long' | 'short'
+ * @returns {number} Hebel, oder 0 wenn das Ziel unerreichbar ist (Ziel auf der
+ *                   falschen Seite des Einstiegs, oder Nenner ≤ 0)
+ */
+export function hebelFuerLiqPreis(einstieg, zielLiq, mmr, richtung) {
+    const e = Number(einstieg) || 0
+    const z = Number(zielLiq) || 0
+    const m = Math.max(0, Number(mmr) || 0)
+    if (!(e > 0) || !(z > 0)) return 0
+
+    // Ein Long wird UNTER dem Einstieg liquidiert, ein Short darüber. Ein Ziel
+    // auf der falschen Seite ist kein Grenzfall, sondern ein Denkfehler beim
+    // Aufrufer — 0 zurück, damit er es merkt, statt einen Hebel zu bekommen,
+    // der rechnerisch stimmt und fachlich Unsinn ist.
+    const nenner = richtung === 'long'
+        ? 1 - (z * (1 - m)) / e
+        : (z * (1 + m)) / e - 1
+    if (!(nenner > 0)) return 0
+
+    const hebel = 1 / nenner
+    if (!Number.isFinite(hebel) || !(hebel > 0)) return 0
+
+    // Der Grenzfall Z = E ergibt rechnerisch L = 1/m — den Hebel, bei dem die
+    // Liquidation exakt auf dem Einstieg liegt. Fachlich ist das eine Position,
+    // die im Moment der Eröffnung schon liquidiert wäre. `hebelHaltbar` würde
+    // ihn wegen Gleitkomma-Rest (1/250 kommt als 0.004000000000000004 zurück)
+    // knapp durchlassen; deshalb hier mit Toleranz prüfen statt auf
+    // Rundungsglück zu bauen. Dieselbe Falle hat im Projekt schon einmal einen
+    // Sharpe von 3·10¹⁵ erzeugt.
+    if (1 / hebel <= m * (1 + 1e-9)) return 0
+    return hebel
+}

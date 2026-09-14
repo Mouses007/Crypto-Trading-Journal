@@ -252,7 +252,11 @@ export async function closePaperPositionManually({ instance, positionRow, price,
         // Trade schreiben. HTTP-Route, Takt und Not-Aus können dieselbe
         // Position parallel lesen — ohne den Claim buchte jeder von ihnen.
         const beansprucht = await trx('strategy_positions')
-            .where({ id: positionRow.id, status: 'open' })
+            // 'closing' gilt als beanspruchbar: der Stop-Waechter setzt eine
+            // Live-Position vor der Boersen-Order auf diesen Zustand und bucht
+            // erst danach. Ohne ihn hier scheiterte genau der Pfad, der die
+            // Schliessung bereits bestaetigt hat.
+            .where('id', positionRow.id).whereIn('status', ['open', 'closing'])
             .update({ status: 'closed', updatedAt: trx.fn.now() })
         if (!beansprucht) throw new Error('Position ist bereits geschlossen')
 

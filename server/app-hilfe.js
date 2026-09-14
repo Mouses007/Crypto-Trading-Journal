@@ -49,7 +49,9 @@ Links im Seitenmenü: Börsen-Umschalter (Bitunix/Bitget/Pionex), Pille „Konto
 1. **CSV-Import** (Seite „Imports" bzw. über die Import-Funktion): CSV-Export der Börse hochladen. Bitunix ist der Hauptweg („Futures Profit"/„Futures Loss"-Zeilen), Bitget wird ebenfalls unterstützt. Die Beträge aus der Bitunix-CSV sind bereits netto; Gebühren werden getrennt ausgewiesen.
 2. **API-Import**: In den Einstellungen API-Schlüssel der Börse hinterlegen (Bitunix: Key + Secret; Bitget: Key + Secret + Passphrase; Pionex analog). Die Schlüssel werden verschlüsselt gespeichert und nie im Klartext angezeigt. Danach holt die App geschlossene Trades und offene Positionen direkt von der Börse; „Pendente Trades" zeigt offene Positionen live.
 
-Nach dem Import lassen sich Trades in der Tages-Ansicht mit Notizen, Tags, Playbooks, Zufriedenheits-Bewertung und Screenshots anreichern. Bot-Trades (Grid u.ä.) können als eigene Kategorie geführt werden.`,
+Nach dem Import lassen sich Trades in der Tages-Ansicht mit Notizen, Tags, Playbooks, Zufriedenheits-Bewertung und Screenshots anreichern. Bot-Trades (Grid u.ä.) können als eigene Kategorie geführt werden.
+
+**Wenn eine Börse den Schlüssel zurückweist** (abgelaufen, widerrufen, IP-Sperre), steht auf „Pendente Trades" ein gelber Kasten mit dem Wortlaut der Börse, und in Einstellungen → Börsen ein Hinweis über den Eingabefeldern. Der Server prüft die Zugänge zusätzlich alle zehn Minuten von sich aus, meldet es auf Wunsch per Browser-Meldung oder E-Mail („Börsen-Zugang abgelaufen") und nimmt den Hinweis beim nächsten erfolgreichen Abruf wieder weg. Eine kurze Netzstörung erzeugt nur den Kasten, keine Meldung. Solange eine Börse nicht antwortet, werden ihre offenen Positionen NICHT als geschlossen gewertet — es entstehen also keine Trades aus einem Ausfall.`,
     },
     live_analyse: {
         titel: 'Live-Analyse: Marktradar, Nachrichten, Open Interest, Liquidität, Liquidationen',
@@ -116,6 +118,10 @@ Wichtig: Der Coin-Radar sagt NICHTS über die Richtung. Er trägt in die Gegenwa
         text: `Der Strategien-Modus enthält Strategie-Instanzen, die eigenständig handeln — in drei Stufen: **Papier** (nur simuliert), **Schatten** (rechnet live mit, handelt nicht) und **Live**. Scharfes Handeln hängt an einer dreifachen Freigabekette: globaler Schalter, Freigabe je Instanz und eine Mindestzahl an Papier-Trades.
 
 Seiten: **Strategien** (Instanzen anlegen/starten, immer benannt mit Strategie + Symbol + Zeiteinheit), **Setups** (erkannte Einstiege), **Editor** und **Baukasten** (eigene Regel-Strategien ohne Programmierung, auch per Chat), **Performance** (Auswertung der automatischen Trades), **Labor** (Backtests, Parameter-Läufe, Robustheit) und **Coin-Rangliste** (eine fertige Strategie über 100+ Coins ranken).
+
+Je Instanz wird ausserdem die **Ausführung** gewählt — also die Börse, an die eine scharfe Order ginge. Das ist nicht nur eine Adresse: **Bitunix legt Stop und Ziel mit der Order ins Buch der Börse, Pionex kann das nicht.** Pionex' Schnittstelle kennt überhaupt keine Stop-Order. Dort überwacht das Journal den Stop selbst (Takt 3 Sekunden) und schliesst per Marktorder; läuft der Server nicht, hält nur noch die isolierte Marge. Wie weit hinter dem Stop diese Notbremse greift, hängt am Hebel-Deckel und steht als Zahl in der Warnung über dem Formular. Ein Wechsel der Ausführung setzt die Live-Freigabe zurück und ist bei offenen Positionen gesperrt.
+
+Bei Instanzen ohne Börsen-Stop erscheint über der Liste der **Stop-Wächter** mit einer Ampel: grün heisst, er hat die Positionen vor weniger als zehn Sekunden gesehen; rot heisst, eine scharfe Position wird gerade nicht überwacht — dann sollte man sie an der Börse prüfen oder den Not-Aus benutzen.
 
 Trades der Strategie-Instanzen stehen NICHT im normalen Journal — der KI-Agent hat dafür eigene Abfrage-Werkzeuge. Der ganze Modus lässt sich unter Einstellungen → Layout & Stil → „Modi ein-/ausblenden" abschalten.`,
     },
