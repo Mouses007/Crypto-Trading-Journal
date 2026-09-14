@@ -17,8 +17,8 @@
  * „löst NICHT aus, wenn die Bedingung fehlt".
  */
 
-import strategie, { INVALID_REASONS, linienPreis, obvAmpel, balkenReihe, tagGesperrt } from './trendlinien_breakout.js'
-import { obv, stochRsi } from './indicators.js'
+import strategie, { INVALID_REASONS, linienPreis, obvAmpel, balkenReihe } from './trendlinien_breakout.js'
+import { obv, stochRsi, tagGesperrt } from './indicators.js'
 import { entryIsValid, einstiegsPreis, einstiegsSorte, istStopEinstieg } from '../fill-simulator.js'
 
 const TF_MS = 3600000

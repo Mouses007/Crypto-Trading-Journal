@@ -42,7 +42,7 @@
  * detect() ist eine REINE Funktion: keine DB, kein Netz, kein Date.now().
  */
 
-import { pivotHighs, pivotLows, ema, obv, emaSerie, smaSerie, stochRsi } from './indicators.js'
+import { pivotHighs, pivotLows, ema, obv, emaSerie, smaSerie, stochRsi, tagGesperrt } from './indicators.js'
 
 export const DETECTOR_VERSION = 1
 
@@ -117,7 +117,10 @@ const params = [
     // strengere Variante will, schaltet sie ein.
     { key: 'abbruchBeiTrendwechsel', type: 'boolean', default: false, group: 'entry' },
 
-    // Wochentagssperre. Nicht aus dem Video, sondern aus der Erfahrung mit dem
+    // Wochentagssperre (`tagGesperrt` in indicators.js, geteilt mit LSOB, GUSS
+    // und dem Regel-Interpreter — eine zweite Kopie hier wäre genau die Art
+    // Doppelung, die irgendwann auseinanderläuft).
+    // Nicht aus dem Video, sondern aus der Erfahrung mit dem
     // Krypto-Wochenende: samstags und sonntags fehlt das Volumen, und der
     // Montag beginnt oft mit einer Bewegung, die bis Dienstag wieder eingesammelt
     // ist. Gesperrt wird der EINSTIEG, nicht das Signal: ein Setup, das am
@@ -247,22 +250,6 @@ export function linienPreis(ankerZeit, ankerPreis, bisZeit, bisPreis, t) {
     if (!(bisZeit > ankerZeit)) return bisPreis
     const m = (bisPreis - ankerPreis) / (bisZeit - ankerZeit)
     return bisPreis + m * (t - bisZeit)
-}
-
-/**
- * Ist der Einstieg an diesem Zeitpunkt durch die Wochentagssperre verboten?
- *
- * `getUTCDay()`: 0 = Sonntag, 1 = Montag, 6 = Samstag. Bewusst UTC und nicht
- * die Ortszeit des Rechners — sonst fiele im Backtest eine andere Kerze unter
- * die Sperre als im Papierbetrieb auf einem Server in einer anderen Zone, und
- * zweimal dasselbe Regelwerk lieferte zwei Ergebnisse.
- */
-export function tagGesperrt(t, p) {
-    const tag = new Date(Number(t)).getUTCDay()
-    if (tag === 6) return !!p.sperreSamstag
-    if (tag === 0) return !!p.sperreSonntag
-    if (tag === 1) return !!p.sperreMontag
-    return false
 }
 
 /** Letztes bestätigtes Pivot-Extrem vor `bisIndex`, optional nur als HH/LL. */
