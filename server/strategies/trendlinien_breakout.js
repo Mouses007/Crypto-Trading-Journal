@@ -84,7 +84,7 @@ const params = [
     { key: 'stochSmoothD', type: 'integer', default: 3, min: 1, max: 10, step: 1, group: 'confirm' },
     { key: 'stochNiedrig', type: 'number', default: 20, min: 1, max: 49, step: 1, group: 'confirm' },
     { key: 'stochHoch', type: 'number', default: 80, min: 51, max: 99, step: 1, group: 'confirm' },
-    { key: 'balkenGueltigKerzen', type: 'integer', default: 3, min: 0, max: 20, step: 1, group: 'confirm' },
+    { key: 'balkenGueltigKerzen', type: 'integer', default: 0, min: 0, max: 20, step: 1, group: 'confirm' },
 
     // ── Struktur (Higher High / Lower Low) ────────────────────────
     { key: 'pivotLinks', type: 'integer', default: 5, min: 1, max: 30, step: 1, group: 'structure' },
@@ -99,11 +99,14 @@ const params = [
     },
 
     // ── Ausbruch und Einstieg ─────────────────────────────────────
-    // Das Video nennt keine Frist — es zeigt Fälle, in denen der Bruch bald
-    // kommt. Ein Setup muss aber sterben können, sonst wartet es ewig. 10 ist
-    // deshalb eine technische Zutat, keine Regel aus dem Video; gemessen ändert
-    // sie wenig (5 Kerzen: +8 R, 10: +8 R, 20 und 40: +6 R).
-    { key: 'maxWarteKerzen', type: 'integer', default: 10, min: 1, max: 100, step: 1, group: 'entry' },
+    // EINE Kerze, und das ist die Regel selbst, keine technische Zutat: das
+    // Video wartet darauf, dass die NÄCHSTE Kerze die Linie bricht, und das
+    // Referenz-Skript setzt genau das um (`pendUpBar = bar_index + 1`, danach
+    // verfällt das Setup). Der Unterschied ist gross — ETH über die volle
+    // Historie (2017 bis 14.09.2026, mit Kosten): mit einer Kerze Frist 31
+    // Trades / 39 % / +43 $, mit zehn Kerzen 41 / 34 % / −1 $. Ein Ausbruch,
+    // der eine Woche auf sich warten lässt, ist eben keiner mehr.
+    { key: 'maxWarteKerzen', type: 'integer', default: 1, min: 1, max: 100, step: 1, group: 'entry' },
     { key: 'entryPufferPct', type: 'number', default: 0.05, min: 0, max: 2, step: 0.01, group: 'entry' },
     { key: 'orderGueltigKerzen', type: 'integer', default: 1, min: 1, max: 10, step: 1, group: 'entry' },
     // NICHT aus dem Video: dort wird die Linie gezogen und auf den Bruch
@@ -199,9 +202,11 @@ export function obvAmpel(candles, { laenge = 200, art = 'ema' } = {}) {
  * Symbolen, kein Urteil; wer die Regel des Videos vollständig will, lässt ihn
  * an. 'eintritt' bleibt als Gegenprobe, nicht als zweite Lehrmeinung.
  *
- * `balkenGueltigKerzen` verlängert das Ereignis um N Kerzen. Ohne diese
- * Toleranz müssten Balken, Durchschnitte und OBV auf EINER Kerze
- * zusammenfallen; im Video liegen sie sichtbar ein bis zwei Kerzen auseinander.
+ * `balkenGueltigKerzen` verlängert das Ereignis um N Kerzen. Vorgabe ist 0 —
+ * das Referenz-Skript verlangt alle drei Bedingungen auf DERSELBEN Kerze
+ * (`obv > obvEma and emaGreen and leaveOs`), und gemessen ist das auch besser:
+ * ETH über die volle Historie 31 Trades / 39 % / +43 $ ohne Toleranz gegen
+ * 41 / 34 % / −1 $ mit drei Kerzen (dort zusammen mit der längeren Wartefrist).
  *
  * @returns {Array<1|-1|0>} je Kerze: 1 grün gültig, -1 rot gültig, 0 keins
  */

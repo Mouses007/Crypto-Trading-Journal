@@ -127,10 +127,17 @@ console.log('\n  Balken')
         && gruenEin.every((i) => !gruenAus.includes(i)),
         `eintritt ${gruenEin.slice(0, 4)} / austritt ${gruenAus.slice(0, 4)}`)
 
-    // Ohne Toleranz gilt der Balken nur auf seiner eigenen Kerze
-    const ohne = balkenReihe(c, { ...p, balkenGueltigKerzen: 0 })
-    check('kürzere Gültigkeit ergibt weniger gefärbte Kerzen',
-        ohne.filter((x) => x !== 0).length < b.filter((x) => x !== 0).length)
+    // Vorgabe ist 0: der Balken gilt nur auf seiner eigenen Kerze, so wie im
+    // Referenz-Skript. Die Toleranz ist eine Lockerung, also müssen MEHR Kerzen
+    // gefärbt sein, sobald sie eingeschaltet wird — und die Ereigniskerzen
+    // selbst bleiben dabei erhalten.
+    const mitToleranz = balkenReihe(c, { ...p, balkenGueltigKerzen: 3 })
+    const streng = b.map((x, i) => (x !== 0 ? i : -1)).filter((i) => i >= 0)
+    check('Vorgabe färbt nur die Ereigniskerze',
+        p.balkenGueltigKerzen === 0 && streng.length > 0, `${p.balkenGueltigKerzen}`)
+    check('Toleranz färbt zusätzliche Kerzen, ohne die Ereigniskerzen zu verlieren',
+        mitToleranz.filter((x) => x !== 0).length > streng.length
+        && streng.every((i) => mitToleranz[i] === b[i]))
 }
 
 // ── 4. Phase A: Signal und Ankerwahl ─────────────────────────────────────
