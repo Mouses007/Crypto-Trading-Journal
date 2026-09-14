@@ -117,6 +117,50 @@
  * Die Vorgabe ist vier, weil das der Zahl entspricht, die ein Mensch im Chart
  * führt — nicht, weil es die grösste Summe ergibt.
  *
+ * ── Der einzige Test, der nach alldem noch etwas wert ist ──
+ * Alles oben ist AN DIESEN DATEN entstanden: die Trend-Lesart wurde daran
+ * korrigiert, die Zonennote daran gebaut, die Zahl der geführten Zonen daran
+ * gewählt. Ein Backtest, der die Daten schon gesehen hat, misst nicht mehr die
+ * Strategie, sondern die eigene Anpassung. Also derselbe Lauf auf einem
+ * Zeitraum, der beim Bauen nicht auf dem Tisch lag — 14.09.2020 bis
+ * 14.09.2023, dieselben sechs Symbole, dieselben Vorgaben, NICHTS angepasst.
+ * Diese drei Jahre enthalten den Bullenmarkt 2021 und den Bärenmarkt 2022,
+ * also eine ganz andere Marktphase als das Entwicklungsfenster:
+ *
+ *                            Trades  Treffer    PF   SummeR   R/Trade
+ *   alle Zonen (ohne Note)      868   27,2 %  1,12    +76,3    +0,088
+ *   beste 4 (Vorgabe)           779   34,0 %  2,03   +317,9    +0,408
+ *   zufällige 4 (Kontrolle)     643   32,7 %  1,75   +236,0    +0,367
+ *   schlechteste 4              508   29,3 %  1,41   +121,5    +0,239
+ *   Trend als Momentaufnahme    271   29,5 %  1,28    +52,4    +0,193
+ *
+ * Zwei Dinge halten, eines nicht:
+ *
+ * ES HÄLT, dass das Regelwerk überhaupt trägt: +317,9 R über 779 Trades, fünf
+ * von sechs Symbolen positiv (nur XRP verliert mit −33 R), Profitfaktor 2,03.
+ * In einer Marktphase, die die Strategie nie gesehen hat.
+ *
+ * ES HÄLT, dass die Trend-Lesart der grösste Hebel ist: die Momentaufnahme
+ * kommt auch hier nur auf +52,4 R bei einem Drittel der Trades.
+ *
+ * ES HÄLT NICHT, dass die NOTE den Unterschied macht. Im Entwicklungsfenster
+ * lagen die besten vier bei +0,578 und vier zufällige bei +0,206 R je Trade —
+ * Faktor 2,8. Ausserhalb liegen sie bei +0,408 gegen +0,367, Faktor 1,1. Der
+ * Vorsprung der Note ist also zum grossen Teil an den Daten entstanden, an
+ * denen sie gebaut wurde. Was WIRKLICH trägt, ist die blosse Beschränkung auf
+ * vier Zonen: die schlägt ausserhalb den Lauf ohne Note um das Vierfache
+ * (+0,367 gegen +0,088), und zwar in JEDER Auswahlvariante, sogar in der
+ * schlechtesten (+0,239).
+ *
+ * Damit ist die In-Sample-Deutung widerlegt, und zwar von der eigenen
+ * Kontrollgruppe: dort sah es aus, als bringe die Reduktion nichts und die
+ * Note alles. Es ist genau umgekehrt. Die Note bleibt trotzdem die Vorgabe —
+ * sie ist auch ausserhalb die beste der vier Varianten — aber wer ihr mehr
+ * zutraut als „ein wenig besser als Würfeln unter denselben vier", widerspricht
+ * dieser Tabelle. Die naheliegende Alternative wäre, die Zonen schlicht nach
+ * NÄHE zum Kurs zu führen statt nach einer Note; dass die Note das schlägt,
+ * ist an keiner Stelle gemessen.
+ *
  * ── Was trotzdem offen bleibt ──
  * ERSTENS: Die Trefferquote liegt bei 25 bis 53 %. Die behaupteten 60 bis
  * 65 % kommen in keinem Lauf vor, auf keinem Symbol und in keiner
@@ -128,10 +172,10 @@
  * Profitfaktor 1,23 und 63 % Rückgang (BNB) ist in der Tabelle ein Gewinn und
  * in der Praxis unhandelbar.
  *
- * DRITTENS: Drei Jahre und 804 Trades sind EIN Marktzyklus. Sechs Symbole,
- * die alle dieselbe Marktphase durchlaufen haben, sind keine sechs
- * unabhängigen Stichproben. Was davon trägt, zeigt sich erst an Daten, die
- * beim Bauen dieser Datei nicht auf dem Tisch lagen.
+ * DRITTENS: Sechs Krypto-Symbole sind keine sechs unabhängigen Stichproben —
+ * sie laufen weitgehend im Gleichtakt. Der Lauf ausserhalb des
+ * Entwicklungsfensters ist deshalb die härtere Prüfung als die Zahl der
+ * Symbole, und auch er umfasst nur zwei Marktphasen.
  *
  * ── Was die Schalter bringen ──
  * Summe der R-Vielfachen über BTC/ETH/SOL, 4h, jeweils EIN Schalter gegenüber
