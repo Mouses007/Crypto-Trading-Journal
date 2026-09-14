@@ -43,6 +43,32 @@
  * Prozent des Kontos; die Kostenrechnung (Gebühr, Slippage, Funding) kommt
  * hier aus der Risiko-Schicht und ist damit strenger als im Video.
  *
+ * ── Was die Schalter messbar bringen ──
+ * Gemessen am 14.09.2026 über die volle Binance-Historie in Tageskerzen
+ * (ETH 3316, BTC 3316, SOL 2226 Kerzen), Summe der R-Vielfachen, OHNE Kosten,
+ * jeweils nur EIN Schalter gegenüber der Vorgabe verändert:
+ *
+ *                              ETH     BTC     SOL    Summe
+ *   Vorgabe                    +11     +20      +2     +33
+ *   Momentum-Säule aus         +21     +10     +13     +44
+ *   Säule beim Betreten         +6     +13      +9     +28
+ *   Säule 3 Kerzen gültig       +9     +15      −1     +23
+ *   Stop hinter dem Swing       −5     −10      +2     −13
+ *   Frist 10 statt 1 Kerze      +6     +21     +16     +43
+ *   200er-Trendfilter an       +12     +17      +1     +30
+ *   Abbruch bei Trendwechsel   +11     +18      +2     +31
+ *   MACD bestätigt              +9     +16      +3     +28
+ *
+ * Zu lesen ist daraus vor allem eines: ausser beim STOP kippt jeder Schalter
+ * das Vorzeichen zwischen den Symbolen. Die Säule kostet auf ETH und SOL und
+ * trägt auf BTC; die lange Frist ist auf SOL deutlich besser und auf ETH
+ * schlechter. Bei 25 bis 60 Trades je Zelle ist das keine Erkenntnis, sondern
+ * Streuung — wer hier die Summenspalte optimiert, passt Parameter an drei
+ * Kurven an. Die Vorgaben folgen deshalb dem Video und dem Referenz-Skript,
+ * nicht der Tabelle. Die einzige Ausnahme ist der Stop: dass die Variante
+ * hinter dem Swing auf allen drei Symbolen schlechter liegt, ist deutlich
+ * genug, und das Video lässt beide Varianten ausdrücklich zu.
+ *
  * detect() ist eine REINE Funktion: keine DB, kein Netz, kein Date.now().
  */
 
@@ -110,7 +136,8 @@ const params = [
     // etwas weg (122 von 126 Setups bleiben), 'frueh' widerspricht der
     // Signalbedingung und schneidet fast alles weg (4 von 126). Wer hier
     // filtern will, muss Perioden wählen, die eine ANDERE Ebene messen —
-    // 26/50 lässt 106 durch und ändert am Ergebnis ebenfalls wenig.
+    // 26/50 lässt 106 durch und ändert am Ergebnis ebenfalls wenig
+    // (+28 gegen +33 R, siehe Messblock oben).
     {
         key: 'macdFilter', type: 'select', default: 'aus', group: 'confirm',
         options: [{ value: 'aus', labelKey: 'strategies.trendlinien_breakout.macdAus' },
@@ -131,8 +158,8 @@ const params = [
     // er, ob eine K/D-Kreuzung überhaupt markiert wird — bullisch nur über dem
     // MA. Anders als der MACD misst er wirklich etwas anderes als die
     // Signalbedingung: die 200er liegt Grössenordnungen über EMA12/25.
-    // GEMESSEN (ETH, volle Historie): 114 statt 126 Setups, +8 statt +7 R —
-    // er wirkt, aber er räumt die schlechten Setups nicht ab. Vorgabe aus.
+    // GEMESSEN: er wirkt (auf ETH 33 statt 37 Trades), räumt die schwachen
+    // Setups aber nicht ab — +30 gegen +33 R. Vorgabe aus.
     {
         key: 'macroFilter', type: 'select', default: 'aus', group: 'confirm',
         options: [{ value: 'aus', labelKey: 'strategies.trendlinien_breakout.macroAus' },
@@ -161,19 +188,17 @@ const params = [
     // EINE Kerze, und das ist die Regel selbst, keine technische Zutat: das
     // Video wartet darauf, dass die NÄCHSTE Kerze die Linie bricht, und das
     // Referenz-Skript setzt genau das um (`pendUpBar = bar_index + 1`, danach
-    // verfällt das Setup). Der Unterschied ist gross — ETH über die volle
-    // Historie (2017 bis 14.09.2026, mit Kosten): mit einer Kerze Frist 31
-    // Trades / 39 % / +43 $, mit zehn Kerzen 41 / 34 % / −1 $. Ein Ausbruch,
-    // der eine Woche auf sich warten lässt, ist eben keiner mehr.
+    // verfällt das Setup). Gemessen ist eine lange Frist NICHT schlechter
+    // (10 Kerzen: +43 gegen +33 R, siehe Messblock oben) — aber sie ist eine
+    // andere Strategie, und die Streuung dahinter ist grösser als der
+    // Unterschied. Die Vorgabe folgt der Regel, nicht der Summenspalte.
     { key: 'maxWarteKerzen', type: 'integer', default: 1, min: 1, max: 100, step: 1, group: 'entry' },
     { key: 'entryPufferPct', type: 'number', default: 0.05, min: 0, max: 2, step: 0.01, group: 'entry' },
     { key: 'orderGueltigKerzen', type: 'integer', default: 1, min: 1, max: 10, step: 1, group: 'entry' },
     // NICHT aus dem Video: dort wird die Linie gezogen und auf den Bruch
-    // gewartet, ohne dass ein Farbwechsel das Setup vorher tötet. Als Vorgabe
-    // war das mein Zusatz — und er kostet: über 1000 Tageskerzen von BTC, ETH
-    // und SOL (gemessen 13.09.2026, ohne Kosten) 44 Trades / 36 % / +4 R mit
-    // Abbruch gegen 52 Trades / 38 % / +8 R ohne ihn. Deshalb aus; wer die
-    // strengere Variante will, schaltet sie ein.
+    // gewartet, ohne dass ein Farbwechsel das Setup vorher tötet. Deshalb aus.
+    // Messbar macht er ohnehin fast nichts (+31 gegen +33 R, siehe oben) —
+    // bei einer Frist von einer Kerze bleibt dem Trend kaum Zeit zu drehen.
     { key: 'abbruchBeiTrendwechsel', type: 'boolean', default: false, group: 'entry' },
 
     // Wochentagssperre (`tagGesperrt` in indicators.js, geteilt mit LSOB, GUSS
@@ -193,10 +218,9 @@ const params = [
     // ── Ausstieg ──────────────────────────────────────────────────
     // Das Video nennt beide Möglichkeiten in einem Atemzug („SL zwischen den
     // MAs oder unter dem Swing Low") und lässt offen, wann welche gilt. Vorgabe
-    // sind hier die Durchschnitte, weil sie im Video zuerst stehen — und weil
-    // der Unterschied gross ist: über 1000 Tageskerzen von BTC, ETH und SOL
-    // (gemessen 13.09.2026, ohne Kosten) liefert der Swing-Stop 23 % Treffer
-    // und −14 R, der MA-Stop 36 % und +4 R. Der Swing liegt nach einem
+    // sind die Durchschnitte: sie stehen im Video zuerst, und das ist der
+    // einzige Schalter, der im Messblock oben auf allen drei Symbolen in
+    // dieselbe Richtung zeigt (−13 R gegen +33 R). Der Swing liegt nach einem
     // Ausbruch oft so weit weg, dass das 2-R-Ziel ausser Reichweite gerät.
     {
         key: 'slQuelle', type: 'select', default: 'mas', group: 'exit',
@@ -257,18 +281,16 @@ export function obvAmpel(candles, { laenge = 200, art = 'ema' } = {}) {
  * dasselbe: %K unter das obere Band = rot, %K über das untere = grün, die
  * Gegenrichtung nur auf ausdrücklichen Wunsch. Das ist die Vorgabe hier.
  *
- * Gemessen über 1000 Tageskerzen von BTC, ETH und SOL (13.09.2026, ohne
- * Kosten): 'austritt' 52 Trades / 38 % / +8 R, 'eintritt' 57 / 34 % / +1 R —
- * und ganz ohne diese Bedingung 50 / 47 % / +20 R. Der Balken verbessert also
- * in KEINER Lesart, er verengt nur. Das ist ein Messergebnis auf drei
- * Symbolen, kein Urteil; wer die Regel des Videos vollständig will, lässt ihn
- * an. 'eintritt' bleibt als Gegenprobe, nicht als zweite Lehrmeinung.
+ * Gemessen (Messblock im Dateikopf): 'austritt' +33 R, 'eintritt' +28 R, ganz
+ * ohne diese Bedingung +44 R. Das klingt nach „Säule weglassen", zerfällt aber
+ * beim Blick auf die einzelnen Symbole: ohne Säule gewinnt ETH +10 und SOL +11,
+ * BTC verliert 10. Die Säule ist Teil der Regel und bleibt deshalb an.
+ * 'eintritt' bleibt als Gegenprobe, nicht als zweite Lehrmeinung.
  *
  * `balkenGueltigKerzen` verlängert das Ereignis um N Kerzen. Vorgabe ist 0 —
  * das Referenz-Skript verlangt alle drei Bedingungen auf DERSELBEN Kerze
- * (`obv > obvEma and emaGreen and leaveOs`), und gemessen ist das auch besser:
- * ETH über die volle Historie 31 Trades / 39 % / +43 $ ohne Toleranz gegen
- * 41 / 34 % / −1 $ mit drei Kerzen (dort zusammen mit der längeren Wartefrist).
+ * (`obv > obvEma and emaGreen and leaveOs`), und gemessen ist das auch besser
+ * (+33 gegen +23 R mit drei Kerzen Toleranz, siehe Messblock oben).
  *
  * @returns {Array<1|-1|0>} je Kerze: 1 grün gültig, -1 rot gültig, 0 keins
  */
