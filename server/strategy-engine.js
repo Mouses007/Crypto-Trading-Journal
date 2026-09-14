@@ -25,7 +25,7 @@ import { getClosedCandles, getSymbolMeta, getLastPrice, timeframeMs, isValidTime
 import { sichtBedarfKerzen } from './strategies/rule-engine.js'
 import { evaluateRisk, startOfDayUtc, RISK_REASONS } from './risk-engine.js'
 import { openPaperPosition, stepPaperPositions, getPaperEquity, closePaperPositionManually } from './execution/paper.js'
-import { entryIsValid, kostenAus } from './fill-simulator.js'
+import { entryIsValid, kostenAus, einstiegsPreis } from './fill-simulator.js'
 import { agentenVeto } from './strategy-agents.js'
 import { openLivePosition, getLiveEquity, closeLivePosition, getLivePositionId } from './execution/bitunix.js'
 import { beansprucheFuehrung, verlaengereFuehrung, gibFuehrungFrei } from './db-claim.js'
@@ -582,7 +582,8 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
     if (sameBarStop) {
         if (instance.mode !== 'paper') return beenden('reject_risk', 'stop_in_entry_candle', '')
         const eroeff = await openPaperPosition({
-            instance, setup, size, entryPrice: setup.entry, entryTime: now, costs, clientOrderId,
+            instance, setup, size, entryPrice: einstiegsPreis(setup, ausloeseKerze),
+            entryTime: now, costs, clientOrderId,
         }).catch(() => ({ ok: false }))
         if (!eroeff.ok) return beenden('reject_risk', 'duplicate_order', '')
         const zeile = await knex('strategy_positions').where('id', eroeff.positionId).first()
@@ -614,7 +615,9 @@ async function fuehreAus({ instance, setup, ev, candles, schalter, costs }) {
     try {
         eroeffnet = await openPaperPosition({
             instance, setup, size,
-            entryPrice: setup.entry,
+            // Eine Stop-Order füllt zur Eröffnung, wenn die Kerze schon
+            // jenseits des Niveaus aufmacht — siehe `einstiegsPreis`.
+            entryPrice: einstiegsPreis(setup, ausloeseKerze),
             entryTime: now,
             costs, clientOrderId,
             status: instance.mode === 'paper' ? 'open' : 'pending',

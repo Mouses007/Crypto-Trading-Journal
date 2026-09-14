@@ -17,7 +17,7 @@ import { sichtBedarfKerzen } from './strategies/rule-engine.js'
 import { getHistoricalCandles, timeframeMs, currentCandleOpen } from './market-data.js'
 import { evaluateRisk, startOfDayUtc } from './risk-engine.js'
 import { wartungsmargePctFuer } from './margin-rates.js'
-import { createPosition, stepCandle, closePosition, entryIsValid, kostenAus } from './fill-simulator.js'
+import { createPosition, stepCandle, closePosition, entryIsValid, kostenAus, einstiegsPreis } from './fill-simulator.js'
 
 /** Obergrenze, damit ein versehentlicher 5-Jahres-Lauf den Server nicht blockiert. */
 export const MAX_BACKTEST_CANDLES = 20000
@@ -453,7 +453,8 @@ export async function runBacktest(opts) {
 
             if (sameBarStop) {
                 const posSofort = createPosition({
-                    setup, qty: pruefung.size.qty, entryPrice: setup.entry,
+                    setup, qty: pruefung.size.qty,
+                    entryPrice: einstiegsPreis(setup, triggerKerze),
                     entryTime: triggerKerze.t, leverage: risk.leverage, costs,
                 })
                 const gap = setup.direction === 'long'
@@ -468,7 +469,9 @@ export async function runBacktest(opts) {
             const position = createPosition({
                 setup,
                 qty: pruefung.size.qty,
-                entryPrice: setup.entry,
+                // Stop-Einstiege füllen bei einer Eröffnungslücke schlechter
+                // als am Wunschpreis — `einstiegsPreis` bildet das ab.
+                entryPrice: einstiegsPreis(setup, triggerKerze),
                 entryTime: triggerKerze.t,
                 leverage: risk.leverage,
                 costs,

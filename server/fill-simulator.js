@@ -128,9 +128,53 @@ export function kostenAus(risk) {
     }
 }
 
-/** Ordersorte des Einstiegs. Vorgabe Limit — siehe `entryOrder` in RISK_PARAMS. */
-export function einstiegsSorte(costs) {
+/**
+ * Ist der Einstieg dieses Setups eine STOP-Order?
+ *
+ * Eine Stop-Order wird ausgelöst, wenn der Kurs das Niveau von der ANDEREN
+ * Seite erreicht als ein Limit: ein Kauf-Stop liegt ÜBER dem Markt, ein
+ * Kauf-Limit darunter. Beide Prüfungen in eine zu giessen, ginge schief —
+ * deshalb steht der Charakter am Setup.
+ *
+ * Der Marker reist doppelt: als Feld (Backtest, alles im Speicher) und in
+ * `confirmations` (Engine, die das Setup über die Datenbank schickt, wo es
+ * für ein eigenes Feld keine Spalte gibt). Beim Lesen aus der Datenbank ist
+ * `confirmations` ein JSON-Text — deshalb der Parse-Versuch.
+ */
+export function istStopEinstieg(setup) {
+    if (!setup) return false
+    if (setup.entryTrigger === 'stop') return true
+    let conf = setup.confirmations
+    if (typeof conf === 'string') {
+        try { conf = JSON.parse(conf) } catch { conf = null }
+    }
+    return conf?.entryTrigger === 'stop'
+}
+
+/**
+ * Ordersorte des Einstiegs. Vorgabe Limit — siehe `entryOrder` in RISK_PARAMS.
+ * Eine Stop-Order nimmt immer Liquidität: sie wird zum Marktpreis ausgeführt,
+ * sobald das Niveau fällt, und zahlt damit Taker — unabhängig davon, was in
+ * den Risiko-Einstellungen steht.
+ */
+export function einstiegsSorte(costs, setup = null) {
+    if (istStopEinstieg(setup)) return MARKT
     return (costs || {}).entryOrder === MARKT ? MARKT : LIMIT
+}
+
+/**
+ * Preis, zu dem der Einstieg in dieser Kerze zustande kommt.
+ *
+ * Für ein Limit ist das der Limitpreis. Für eine Stop-Order gilt dasselbe —
+ * AUSSER die Kerze eröffnet schon jenseits des Stops: dann füllt die Börse zur
+ * Eröffnung, nicht zum Wunschpreis. Die Lücke zu ignorieren, würde genau die
+ * Ausbrüche schönrechnen, die am weitesten laufen.
+ */
+export function einstiegsPreis(setup, candle) {
+    if (!istStopEinstieg(setup) || !candle) return setup.entry
+    return setup.direction === 'long'
+        ? Math.max(setup.entry, candle.o)
+        : Math.min(setup.entry, candle.o)
 }
 
 /**
@@ -215,7 +259,7 @@ export function fundingFor(notional, entryTime, exitTime, fundingBpsProPeriode, 
  * `costs` = { feeMakerBps, feeTakerBps, slippageBps, entryOrder, fundingBpsPer8h }
  */
 export function createPosition({ setup, qty, entryPrice, entryTime, leverage = 1, costs }) {
-    const ein = satzFuer(costs, einstiegsSorte(costs))
+    const ein = satzFuer(costs, einstiegsSorte(costs, setup))
     const fill = applySlippage(entryPrice, setup.direction, 'entry', ein.slippageBps)
     return {
         setupId: setup.id ?? 0,
@@ -493,7 +537,11 @@ export function closePosition(pos, { price, reason, time }, costs, extra = {}) {
 export function entryIsValid(setup, candle) {
     const long = setup.direction === 'long'
     // Der Einstieg liegt an der Zonenkante; die Kerze muss sie berührt haben.
-    const beruehrt = long ? candle.l <= setup.entry : candle.h >= setup.entry
+    // Bei einer Stop-Order liegt er auf der anderen Seite des Marktes: dort
+    // löst erst das Überschreiten aus, nicht das Zurückkommen.
+    const beruehrt = istStopEinstieg(setup)
+        ? (long ? candle.h >= setup.entry : candle.l <= setup.entry)
+        : (long ? candle.l <= setup.entry : candle.h >= setup.entry)
     if (!beruehrt) return { ok: false, reason: 'entry_not_touched' }
     const stopSofort = long ? candle.l <= setup.stopLoss : candle.h >= setup.stopLoss
     if (stopSofort) return { ok: false, reason: 'stop_in_entry_candle' }

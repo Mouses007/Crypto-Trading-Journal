@@ -792,3 +792,84 @@ export function stochastic(candles, { period = 14, smoothK = 3, smoothD = 3 } = 
     const d = glaetten(k, smoothD)
     return { k, d }
 }
+
+/**
+ * On Balance Volume — kumuliertes Volumen mit dem Vorzeichen der Kursänderung.
+ *
+ * Absolutwert ohne Aussage: der Startpunkt ist willkürlich (hier 0 auf der
+ * ersten Kerze des Fensters), gemeint ist immer nur die RICHTUNG gegen eine
+ * Vergleichslinie. Deshalb steht neben dieser Funktion fast immer ein
+ * gleitender Durchschnitt über ihr Ergebnis (`emaSerie`/`smaSerie`), und die
+ * Frage lautet „OBV über oder unter seiner Linie", nicht „wie hoch ist OBV".
+ *
+ * Eine unveränderte Kerze (Close == Close der Vorkerze) zählt nach Granville
+ * NICHT — weder auf noch ab.
+ */
+export function obv(candles) {
+    const out = new Array(candles.length).fill(null)
+    if (!candles.length) return out
+    let wert = 0
+    out[0] = 0
+    for (let i = 1; i < candles.length; i++) {
+        const v = candles[i].v > 0 ? candles[i].v : 0
+        if (candles[i].c > candles[i - 1].c) wert += v
+        else if (candles[i].c < candles[i - 1].c) wert -= v
+        out[i] = wert
+    }
+    return out
+}
+
+/** SMA über eine beliebige Zahlenreihe; führende `null` blockieren das Fenster. */
+export function smaSerie(werte, period) {
+    const n = werte.length
+    const out = new Array(n).fill(null)
+    const laenge = Math.max(1, Math.round(period))
+    for (let i = laenge - 1; i < n; i++) {
+        let summe = 0
+        let gezaehlt = 0
+        for (let j = i - laenge + 1; j <= i; j++) {
+            const v = werte[j]
+            if (v === null || v === undefined || !Number.isFinite(v)) { gezaehlt = 0; break }
+            summe += v; gezaehlt++
+        }
+        if (gezaehlt === laenge) out[i] = summe / laenge
+    }
+    return out
+}
+
+/**
+ * Stochastic RSI — der Stochastik-Oszillator, angewendet auf den RSI statt auf
+ * den Kurs.
+ *
+ * NICHT dasselbe wie `stochastic()`: dort ist die Bezugsgrösse die Kursspanne
+ * (Hoch/Tief), hier die Spanne des RSI im Fenster. Der Stoch-RSI schlägt
+ * deutlich häufiger an den Rändern an — die üblichen Schwellen 20/80 bedeuten
+ * hier also etwas anderes als beim klassischen Stochastik.
+ *
+ * @returns {{ k: Array<number|null>, d: Array<number|null> }}
+ */
+export function stochRsi(candles, { rsiPeriod = 14, stochPeriod = 14, smoothK = 3, smoothD = 3 } = {}) {
+    const n = candles.length
+    const r = rsi(candles, rsiPeriod)
+    const rohK = new Array(n).fill(null)
+
+    for (let i = 0; i < n; i++) {
+        if (i < stochPeriod - 1) continue
+        let hoch = -Infinity
+        let tief = Infinity
+        let vollstaendig = true
+        for (let j = i - stochPeriod + 1; j <= i; j++) {
+            const v = r[j]
+            if (v === null) { vollstaendig = false; break }
+            if (v > hoch) hoch = v
+            if (v < tief) tief = v
+        }
+        if (!vollstaendig) continue
+        const spanne = hoch - tief
+        rohK[i] = spanne === 0 ? 50 : ((r[i] - tief) / spanne) * 100
+    }
+
+    const k = smoothK > 1 ? smaSerie(rohK, smoothK) : rohK.slice()
+    const d = smoothD > 1 ? smaSerie(k, smoothD) : k.slice()
+    return { k, d }
+}

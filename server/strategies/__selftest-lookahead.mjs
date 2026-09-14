@@ -24,6 +24,7 @@
 
 import { detectMitRegeln } from './rule-engine.js'
 import emaTouch from './ema_touch.js'
+import trendlinien from './trendlinien_breakout.js'
 import lsob from './lsob.js'
 
 const TF_MS = 900000
@@ -368,6 +369,39 @@ console.log('\nSwing-VWAP — Signale ändern sich nicht rückwirkend')
             gesamt.length > 0 && JSON.stringify(kausal) === JSON.stringify(gesamt),
             `kausal ${kausal.length} / gesamt ${gesamt.length}`)
     }
+}
+
+
+console.log('\nTrendlinien-Ausbruch — Anker bestätigt, Order erst auf der Folgekerze')
+{
+    // Wellen über einem leichten Aufwärtstrend: erzeugt Pivots, EMA-Kreuzungen
+    // und Ausbrüche, ohne Zufall — der Test muss bei jedem Lauf dasselbe sehen.
+    const rows = []
+    for (let i = 0; i < 400; i++) {
+        const basis = 100 + i * 0.05 + 6 * Math.sin(i / 9) + 3 * Math.sin(i / 23)
+        const vor = i === 0 ? basis : 100 + (i - 1) * 0.05 + 6 * Math.sin((i - 1) / 9) + 3 * Math.sin((i - 1) / 23)
+        rows.push([vor, Math.max(vor, basis) + 0.4, Math.min(vor, basis) - 0.4, basis])
+    }
+    const serie = series(rows)
+    const p = {}
+    for (const d of trendlinien.params) p[d.key] = d.default
+    Object.assign(p, { obvLaenge: 50, emaFast: 5, emaSlow: 12, pivotLinks: 3, pivotRechts: 3, verlangeBalken: false })
+
+    const alle = replay(trendlinien.detect, serie, p, 60)
+    const trig = keinLookahead('Trendlinien-Ausbruch', alle, p.pivotRechts)
+
+    // Zweite, schärfere Schranke: der Ausbruch liegt frühestens EINE Kerze nach
+    // dem Signal, die Stop-Order füllt frühestens die Kerze danach.
+    const zuFrueh = trig.filter((s) => Number(s.triggeredAt) < Number(s.obCandleTime) + 2 * TF_MS)
+    check('Einstieg frühestens zwei Kerzen nach der Signalkerze',
+        trig.length > 0 && zuFrueh.length === 0, `${zuFrueh.length} von ${trig.length} zu früh`)
+
+    // Und die Richtung der Linie: ein Long-Einstieg liegt über dem Schlusskurs
+    // der Signalkerze — bricht er nach unten aus, ist die Linie verdreht.
+    const verdreht = trig.filter((s) => s.direction === 'long'
+        ? Number(s.entry) <= Number(s.sweepPrice)
+        : Number(s.entry) >= Number(s.sweepPrice))
+    check('Ausbruch zeigt in die Richtung des Setups', verdreht.length === 0, `${verdreht.length} verdreht`)
 }
 
 // ── Ergebnis ─────────────────────────────────────────────────────────────
