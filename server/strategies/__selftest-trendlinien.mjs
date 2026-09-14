@@ -276,7 +276,9 @@ function phaseB(nachher, over = {}, dir = 'long') {
         confirmations: { entryTrigger: 'stop' },
         entryTrigger: 'stop',
     }
-    const p = params({ abbruchBeiTrendwechsel: false, slQuelle: 'swing', ...over })
+    // Frist hier bewusst gross: diese Fälle prüfen die Mechanik des Ausbruchs,
+    // nicht die Frist. Die hat ihren eigenen Fall weiter unten.
+    const p = params({ abbruchBeiTrendwechsel: false, slQuelle: 'swing', maxWarteKerzen: 3, ...over })
     const { events } = strategie.detect({ candles: c, params: p, openSetups: [setup], knownSetupKeys: [] })
     return { events, candles: c, p }
 }
@@ -399,6 +401,27 @@ function phaseB(nachher, over = {}, dir = 'long') {
         !ohne || ohne.invalidReason !== INVALID_REASONS.TREND_GEDREHT, `${ohne?.invalidReason}`)
 }
 
+{
+    // Die Frist zählt ANGESEHENE Kerzen, nicht Kerzen danach. Bei 1 bekommt
+    // das Setup genau die nächste Kerze — bricht erst die übernächste die
+    // Linie, ist das kein Trade mehr. Vor dem Fix vom 14.09.2026 waren es
+    // faktisch zwei, weil die Fristprüfung hinter der Bruchprüfung steht.
+    const spaet = [
+        [100, 100.5, 99.5, 100],      // 67  kein Bruch (Linie 103)
+        [100, 102.4, 99.8, 102],      // 68  immer noch darunter (Linie 102 → knapp)
+        [102, 105.0, 101.5, 104.5],   // 69  DAS wäre der Bruch — zu spät
+        [104, 106.0, 103.5, 105.5],   // 70
+    ]
+    const mitEins = phaseB(spaet, { maxWarteKerzen: 1 }).events[0]
+    check('mit Frist 1 zählt nur die nächste Kerze',
+        mitEins?.status === 'expired' && mitEins?.invalidReason === INVALID_REASONS.KEIN_AUSBRUCH,
+        `${mitEins?.status}/${mitEins?.invalidReason}`)
+
+    const mitDrei = phaseB(spaet, { maxWarteKerzen: 3 }).events[0]
+    check('mit Frist 3 wird derselbe späte Ausbruch gehandelt',
+        mitDrei?.status === 'triggered', `${mitDrei?.status}/${mitDrei?.invalidReason}`)
+}
+
 // ── 6. Short ist das Spiegelbild ─────────────────────────────────────────
 console.log('\n  Short')
 {
@@ -476,7 +499,8 @@ console.log('\n  Wochentage')
         entry: 0, stopLoss: 0, takeProfit: 0, rr: 0,
         confirmations: { entryTrigger: 'stop' }, entryTrigger: 'stop',
     }
-    const p2 = params({ abbruchBeiTrendwechsel: false })
+    // Frist gross genug, damit dieser Fall die SPERRE prüft und nicht die Frist
+    const p2 = params({ abbruchBeiTrendwechsel: false, maxWarteKerzen: 3 })
     const fuellTag = new Date(c[69].t).getUTCDay()
     check('Testaufbau: die Auslösekerze ist wirklich ein Sonntag', fuellTag === 0, tagName[fuellTag])
 

@@ -613,8 +613,15 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
                 break
             }
 
-            // (d) Zu lange kein Ausbruch
-            if (gewartet > p.maxWarteKerzen) {
+            // (d) Zu lange kein Ausbruch.
+            //
+            // `>=`, nicht `>`: die Prüfung steht NACH der Bruchprüfung, also
+            // ist `gewartet` bereits die Zahl der angesehenen Kerzen. Mit `>`
+            // bekam das Setup eine Kerze mehr, als eingestellt war — bei der
+            // Vorgabe 1 also zwei, und damit genau nicht die Regel des Videos
+            // („die nächste Kerze"). Der Fehler fiel erst auf, als die Frist
+            // von zehn auf eins ging und der Unterschied ein Verdoppeln war.
+            if (gewartet >= p.maxWarteKerzen) {
                 events.push({ id: s.id, status: 'expired', invalidReason: INVALID_REASONS.KEIN_AUSBRUCH, candleTime: k.t })
                 erledigt = true; break
             }
