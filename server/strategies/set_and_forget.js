@@ -41,6 +41,14 @@
  * Prozent umgerechnet, weil das Journal Krypto handelt: 30 Pips auf GBP/NZD
  * sind rund 0,15 % — in dieser Grössenordnung liegen die Vorgaben.
  *
+ * Der grösste unbestimmte Punkt ist aber keiner der drei: Es ist die Frage,
+ * WELCHE der gefundenen Zonen man überhaupt führt. Das Video zeichnet drei
+ * bis vier ein und nennt sie „valide"; eine Regel dafür gibt es nicht. Die
+ * Zonennote unten (`zonenGuete`) ist der Versuch, genau diese Auswahl
+ * messbar zu machen — sie ist die einzige Zutat dieser Datei, die in keinem
+ * der beiden Videos steht, und sie ist zugleich der zweitgrösste Hebel im
+ * Ergebnis.
+ *
  * ── Was das Regelwerk NICHT hergibt ──
  * Das erste Video handelt mit 25 bis 100 % Risiko je Trade und schliesst
  * Positionen nach Gefühl. Beides ist hier nicht abbildbar und auch nicht
@@ -66,52 +74,72 @@
  * Gemessen am 14.09.2026, drei Jahre bis 14.09.2026, Zeiteinheit 4h mit Zonen
  * und Trend aus Tages- und Wochenkerzen, 2 % Risiko je Trade, Hebel 5, eine
  * Position gleichzeitig, Taker 6 bp + 2 bp Slippage (der Einstieg IST eine
- * Marktorder):
+ * Marktorder). ØG:ØV ist in R gerechnet, nicht in Dollar — die
+ * Positionsgrösse wächst mit dem Konto, ein Dollar-Schnitt misst deshalb
+ * auch, WANN die Gewinner kamen:
  *
- *        Trades  Treffer  ØG:ØV    PF   SummeR  brutto  maxDD  Halten   long    short
- *   BTC      94   34,0 %   2,79  1,44    +33,7   +51,3   19 %   +121 %   +12R    +21R
- *   ETH     151   31,3 %   2,63  1,22    +25,6   +42,8   55 %    +35 %   +13R    +12R
- *   SOL     142   38,0 %   2,83  1,73    +75,8   +89,9   27 %   +151 %   +60R    +16R
- *   BNB     148   28,4 %   2,56  1,02     +9,9   +33,5   32 %   +211 %    −1R    +11R
- *   XRP     148   22,3 %   2,44  0,70    −35,3   −16,8   54 %   +119 %   −15R    −20R
- *   ADA     153   27,5 %   2,85  1,08    +11,0   +27,6   38 %    −38 %   −10R    +21R
+ *        Trades  Treffer  ØG:ØV    PF   SummeR  brutto  maxDD  Halten    long   short
+ *   BTC      86   41,9 %   2,81  2,23    +56,7   +68,4   29 %   +121 %   +52R    +4R
+ *   ETH     157   43,6 %   3,23  4,93   +145,4  +157,8   46 %    +35 %  +123R   +22R
+ *   SOL     110   52,7 %   3,27  3,35   +145,8  +154,0   13 %   +151 %   +65R   +81R
+ *   BNB     172   28,5 %   3,33  1,23    +44,0   +62,8   63 %   +211 %   +21R   +23R
+ *   XRP     152   35,5 %   2,84  1,39    +60,1   +73,0   34 %   +119 %   +13R   +47R
+ *   ADA     127   25,2 %   3,33  1,09    +12,5   +21,7   35 %    −38 %    −8R   +21R
  *                                       ─────── ───────
- *                        836 Trades     +120,8  +228,3
+ *                        804 Trades     +464,6  +537,6
  *
- * Was daraus abzulesen ist:
+ * ── Die Gegenprobe, ohne die die Tabelle oben nichts wert wäre ──
+ * Dass „die besten vier Zonen" besser abschneiden als alle sieben, kann auch
+ * schlicht daran liegen, dass VIER Zonen weiter auseinanderliegen und damit
+ * weitere Ziele ergeben. Das trennt nur ein Lauf, der dieselbe Zahl Zonen
+ * führt und sie anders auswählt (`zonenAuswahl`, dieselben sechs Symbole):
  *
- * ERSTENS liegt die Trefferquote bei 22 bis 38 %. Die behaupteten 60 bis 65 %
- * kommen in keinem einzigen Lauf vor, auf keinem Symbol und in keiner
- * Zeiteinheit. Der manuelle Test des zweiten Videos fand 28 % — das ist der
- * Bereich, in dem auch diese Umsetzung landet.
+ *                            Trades  Treffer    PF   SummeR   R/Trade
+ *   alle Zonen (ohne Note)      836   30,0 %  1,27   +120,8    +0,144
+ *   beste 4 (Vorgabe)           804   37,1 %  2,39   +464,6    +0,578
+ *   zufällige 4 (Kontrolle)     723   29,9 %  1,40   +148,9    +0,206
+ *   schlechteste 4              632   25,0 %  1,00     −5,3    −0,008
  *
- * ZWEITENS ist die Trefferquote fast genau die, die ein ZUFÄLLIGER Einstieg
- * mit demselben Chance/Risiko bräuchte, um bei null zu landen: bei einem
- * realisierten Verhältnis von 2,7 liegt diese Schwelle bei 27 %. Fünf der
- * sechs Symbole liegen knapp darüber, eines darunter. Die Regel schlägt den
- * Zufall — aber nicht deutlich, und mit XRP ist ein Symbol dabei, das über
- * 148 Trades klar verliert. Gegen Kaufen und Halten verliert die Strategie
- * auf fünf von sechs Symbolen.
+ * Die Reihenfolge ist monoton und die Kontrollgruppe liegt fast genau auf dem
+ * Lauf ohne Note: vier ZUFÄLLIGE Zonen bringen gegenüber allen sieben so gut
+ * wie nichts (+0,21 gegen +0,14 R je Trade). Die Reduktion allein ist es also
+ * nicht — es ist die Note. Und die schlechtesten vier landen bei exakt null
+ * Profitfaktor, was die Umkehrprobe bestätigt.
  *
- * DRITTENS sind die Kosten fast die Hälfte des Ergebnisses: +228 R brutto
- * werden zu +121 R netto. Jeder Durchgang kostet 4 bis 12 % seines eigenen
- * Risikos, weil der Stop nahe liegt (Median 0,7 bis 1,8 % vom Einstieg) und
- * Gebühr plus Slippage 8 Basispunkte davon abziehen. Wer die Zeiteinheit
- * verfeinert, verschiebt dieses Verhältnis gegen sich: auf 1h steht der
- * Stop-Median bei 0,66 % (BTC), die Kosten sind dann 12 % des Risikos.
+ * Auf 1h dasselbe Muster, schwächer: 35,3 % / PF 1,99 (beste 4) gegen 34,5 %
+ * / 1,59 (zufällig) und 29,5 % / 1,25 (schlechteste). Je feiner die
+ * Zeiteinheit, desto weniger trägt eine Zonenauswahl aus Tageskerzen.
  *
- * Dieselben sechs Symbole in 1h (Zonen weiterhin aus Tages- und Wochen-
- * kerzen): 1308 Trades, Profitfaktor 0,94 bis 1,57, Summe +276,9 R, maximaler
- * Rückgang 36 bis 63 %. Mehr Trades bei ähnlicher Güte — und deutlich mehr
- * Rückgang. Was davon Können ist und was Streuung, entscheidet keine dieser
- * Zahlen: 200 Trades je Symbol über EINEN Marktzyklus sind kein Beweis.
+ * Wie viele Zonen man führt, ist der eigentliche Regler (4h, sechs Symbole):
+ * beste 2 → 283 Trades, 41,0 % Treffer, +229 R; beste 3 → 564 Trades,
+ * 37,9 %, +380 R; beste 4 → 804 Trades, 37,1 %, +465 R; ab sechs verschwindet
+ * der Unterschied zur Auswahl ohne Note, weil dann fast alles übrig bleibt.
+ * Die Vorgabe ist vier, weil das der Zahl entspricht, die ein Mensch im Chart
+ * führt — nicht, weil es die grösste Summe ergibt.
+ *
+ * ── Was trotzdem offen bleibt ──
+ * ERSTENS: Die Trefferquote liegt bei 25 bis 53 %. Die behaupteten 60 bis
+ * 65 % kommen in keinem Lauf vor, auf keinem Symbol und in keiner
+ * Zeiteinheit. Sie liegt aber über der Schwelle, die ein ZUFÄLLIGER Einstieg
+ * mit demselben Chance/Risiko bräuchte (bei ØG:ØV ~3,1 sind das 24 %) — und
+ * seit der Zonennote deutlich darüber statt knapp.
+ *
+ * ZWEITENS: Der maximale Rückgang steht bei 13 bis 63 %. Eine Strategie mit
+ * Profitfaktor 1,23 und 63 % Rückgang (BNB) ist in der Tabelle ein Gewinn und
+ * in der Praxis unhandelbar.
+ *
+ * DRITTENS: Drei Jahre und 804 Trades sind EIN Marktzyklus. Sechs Symbole,
+ * die alle dieselbe Marktphase durchlaufen haben, sind keine sechs
+ * unabhängigen Stichproben. Was davon trägt, zeigt sich erst an Daten, die
+ * beim Bauen dieser Datei nicht auf dem Tisch lagen.
  *
  * ── Was die Schalter bringen ──
  * Summe der R-Vielfachen über BTC/ETH/SOL, 4h, jeweils EIN Schalter gegenüber
  * der Vorgabe verändert (Trades in Klammern):
  *
  *                              BTC     ETH     SOL    Summe
- *   Vorgabe                  +33,7   +25,6   +75,8  +135,1 (387)
+ *   Vorgabe                  +56,7  +145,4  +145,8  +348,0 (353)
+ *   ohne Zonennote           +33,7   +25,6   +75,8  +135,1 (387)
  *   Trend als Momentaufnahme  +3,8    +5,6   +12,5   +21,9 (153)
  *   ohne zweite Ebene        −24,3   −37,2   +42,0   −19,5 (804)
  *   Pivot 2 statt 3          +21,6   −18,7   +28,2   +31,1 (523)
@@ -120,47 +148,36 @@
  * Die beiden Pivot-Zeilen kippen das Vorzeichen zwischen den Symbolen; das
  * ist Streuung und keine Erkenntnis. Wer hier die Summenspalte optimiert,
  * passt Parameter an drei Kurven an — dieselbe Falle, die in
- * `trendlinien_breakout.js` schon einmal beschrieben ist. Die anderen beiden
- * Zeilen zeigen auf allen Symbolen in dieselbe Richtung und betreffen beide
- * eine REGEL, keine Einstellung:
+ * `trendlinien_breakout.js` schon einmal beschrieben ist. Die anderen drei
+ * Zeilen zeigen auf allen Symbolen in dieselbe Richtung:
  *
  *   • Die Forderung „zwei aufeinanderfolgende Zeiteinheiten" ist der Kern des
  *     Regelwerks. Ohne sie handelt die Strategie doppelt so oft und verliert.
- *   • Die Trend-LESART ist der grösste Hebel der ganzen Datei, und sie war
- *     ursprünglich falsch umgesetzt. Als Momentaufnahme der letzten beiden
- *     Wendepunkte gerechnet, liefert der Trend in 35 bis 44 % aller Takte
- *     „keine Richtung" — das Video aber sagt, die Lage bestehe fort, bis das
- *     letzte höhere Tief per Schlusskurs gebrochen ist. Der Unterschied war
- *     nicht etwa eine Verfeinerung: er hat aus +21,9 R über 153 Trades
- *     +135,1 R über 387 gemacht UND die vorher deutliche Schieflage zwischen
- *     Long und Short aufgelöst (vorher trugen die Shorts alles, die Longs
- *     verloren; jetzt sind beide Seiten positiv). Eine Regel, die im Video
- *     wörtlich steht, war der Unterschied zwischen „funktioniert nicht" und
- *     „funktioniert knapp".
- *
- * ── Wo das Ermessen wirklich sitzt ──
- * Gemessen über dieselben drei Jahre, Tageskerzen als Zonenebene: der
- * Detector führt im Mittel 6,5 bis 7,3 Zonen gleichzeitig, und der Kurs steht
- * in 37 bis 50 % aller Takte an einer davon. Eine der erlaubten Formationen
- * schliesst in 27 bis 28 % aller Kerzen. Ein Mensch, der dieselbe Strategie
- * von Hand handelt, hat drei bis vier Zonen im Chart und nennt „der Preis ist
- * an meiner Zone" ein seltenes Ereignis.
- *
- * DAS ist die Lücke zwischen dem manuellen Test des Videos (+71 %) und dem
- * automatischen (−99,8 %), und sie liegt nicht in der Rechnung, sondern in
- * der Auswahl. Sie ist hier NICHT geschlossen. Was fehlt, ist eine GÜTE der
- * Zone statt ihrer blossen Existenz — wie deutlich der Kurs nach jeder
- * Berührung weglief, wie oft die Zone schon per Schlusskurs durchbrochen
- * wurde, wie frisch die letzte Berührung ist — und daraus eine Rangfolge, die
- * nur die besten drei bis vier führt.
+ *   • Die Trend-LESART war ursprünglich falsch umgesetzt. Als Momentaufnahme
+ *     der letzten beiden Wendepunkte gerechnet, liefert der Trend in 35 bis
+ *     44 % aller Takte „keine Richtung" — das Video aber sagt, die Lage
+ *     bestehe fort, bis das letzte höhere Tief per Schlusskurs gebrochen ist.
+ *     Eine Regel, die im Video wörtlich steht, war der Unterschied zwischen
+ *     „knapp über null" und „handelbar".
+ *   • Die Zonennote ist der zweite grosse Hebel und steht in keinem der
+ *     beiden Videos — sie ist der Versuch, das zu quantifizieren, was ein
+ *     Mensch „valide Zone" nennt. Ohne sie führt der Detector 6,5 bis 7,3
+ *     Zonen gleichzeitig, und der Kurs steht in 37 bis 50 % ALLER Takte an
+ *     einer davon; eine erlaubte Formation schliesst in 27 bis 28 % aller
+ *     Kerzen. Ein Mensch hat drei bis vier Zonen im Chart und nennt „der
+ *     Preis ist an meiner Zone" ein seltenes Ereignis. GENAU DIESE Differenz
+ *     ist der Unterschied zwischen dem manuellen Test des Videos (+71 %) und
+ *     dem automatischen (−99,8 %): nicht die Rechnung, sondern die Auswahl.
  *
  * ── Was NICHT geschönt ist ──
  * Reisst die Einstiegskerze den Stop selbst, bucht der Backtest den Verlust
  * (`sameBarStop` in `strategy-backtest.js`), statt den Einstieg zu verwerfen.
  * Stop und Ziel in derselben Kerze werden pessimistisch aufgelöst (Stop
- * zuerst, `stepCandle`). Von den ausgelösten Setups fallen 21 % (4h) bzw.
- * 39 % (1h) weg, weil nur EINE Position gleichzeitig erlaubt war — welche
- * das trifft, entscheidet die Reihenfolge, nicht die Güte.
+ * zuerst, `stepCandle`). Von den ausgelösten Setups fallen rund 20 bis 40 %
+ * weg, weil nur EINE Position gleichzeitig erlaubt war — welche das trifft,
+ * entscheidet die Reihenfolge, nicht die Güte. Die Zonennote misst
+ * ausschliesslich abgeschlossene Kerzen der höheren Zeiteinheit, die der
+ * Backtest vor der gehandelten Kerze abschneidet.
  *
  * detect() ist eine REINE Funktion: keine DB, kein Netz, kein Date.now().
  */
@@ -262,6 +279,33 @@ const params = [
     { key: 'zonenMaxBreitePct', type: 'number', default: 0.8, min: 0.05, max: 10, step: 0.05, group: 'zones' },
     { key: 'zoneNaehePct', type: 'number', default: 0.1, min: 0, max: 3, step: 0.01, group: 'zones' },
     { key: 'zonenFensterHtf', type: 'integer', default: 250, min: 40, max: 1500, step: 10, group: 'zones' },
+    // ── Güte statt blosser Existenz ───────────────────────────────
+    //
+    // Gemessen führt der Detector ohne diesen Schritt 6,5 bis 7,3 Zonen
+    // gleichzeitig, und der Kurs steht in 37 bis 50 % ALLER Takte an einer
+    // davon. Ein Mensch, der dieselbe Strategie von Hand handelt, hat drei
+    // bis vier Zonen im Chart und nennt „der Preis ist an meiner Zone" ein
+    // seltenes Ereignis. Genau in dieser Differenz liegt der Unterschied
+    // zwischen dem manuellen Test des Videos (+71 %) und dem automatischen
+    // (−99,8 %): nicht in der Rechnung, sondern in der Auswahl.
+    { key: 'zonenGuete', type: 'boolean', default: true, group: 'zones' },
+    { key: 'zonenMaxAnzahl', type: 'integer', default: 4, min: 1, max: 20, step: 1, group: 'zones' },
+    // Kontrollgruppe. Eine Auswahlregel, die man nicht widerlegen kann, ist
+    // keine: dass „die besten vier" besser abschneiden als alle Zonen
+    // zusammen, kann auch bloss daran liegen, dass VIER Zonen weiter
+    // auseinanderliegen und damit weitere Ziele ergeben. Erst der Lauf mit den
+    // SCHLECHTESTEN vier trennt beides — schneidet der genauso gut ab, misst
+    // die Note nichts. `zufall` ist die dritte Probe und deterministisch
+    // (der Streuwert kommt aus dem Zonenpreis, nicht aus einem Zufallsgenerator),
+    // damit zwei Läufe vergleichbar bleiben.
+    {
+        key: 'zonenAuswahl', type: 'select', default: 'beste', group: 'zones',
+        options: [{ value: 'beste', labelKey: 'strategies.set_and_forget.auswahlBeste' },
+                  { value: 'schlechteste', labelKey: 'strategies.set_and_forget.auswahlSchlechteste' },
+                  { value: 'zufall', labelKey: 'strategies.set_and_forget.auswahlZufall' }],
+    },
+    // Wie viele Kerzen nach einer Berührung die Gegenbewegung gemessen wird.
+    { key: 'zonenReaktionKerzen', type: 'integer', default: 10, min: 2, max: 60, step: 1, group: 'zones' },
 
     // ── Umkehrformationen ─────────────────────────────────────────
     { key: 'musterEngulfing', type: 'boolean', default: true, group: 'confirm' },
@@ -476,8 +520,8 @@ export function findeZonen(kerzen, p, masse = null) {
     const m = masse || zonenMasse(kerzen, p)
     const basis = p.nurKoerper ? koerperKerzen(kerzen) : kerzen
     const punkte = [
-        ...pivotHighs(basis, p.pivotLinks, p.pivotRechts),
-        ...pivotLows(basis, p.pivotLinks, p.pivotRechts),
+        ...pivotHighs(basis, p.pivotLinks, p.pivotRechts).map((x) => ({ ...x, art: 'hoch' })),
+        ...pivotLows(basis, p.pivotLinks, p.pivotRechts).map((x) => ({ ...x, art: 'tief' })),
     ].sort((a, b) => a.price - b.price)
     if (!punkte.length) return []
 
@@ -501,6 +545,9 @@ export function findeZonen(kerzen, p, masse = null) {
             tief, hoch, mitte,
             punkte: gruppe.length,
             letzterIndex: Math.max(...gruppe.map((g) => g.index)),
+            // Die Wendepunkte selbst reisen mit: `zonenNachGuete` misst an
+            // jedem einzelnen, wie deutlich der Markt dort gedreht hat.
+            stellen: gruppe.map((g) => ({ index: g.index, price: g.price, art: g.art })),
         })
     }
 
@@ -511,6 +558,120 @@ export function findeZonen(kerzen, p, masse = null) {
     }
     abschluss()
     return zonen
+}
+
+/**
+ * Wie deutlich hat der Markt an dieser Stelle gedreht?
+ *
+ * Gemessen wird das Extrem der nächsten `kerzen` Kerzen gegen die Kante der
+ * Zone, in Prozent — nicht gegen den Wendepunkt selbst: eine Zone ist ein
+ * Bereich, und der Weg aus ihr heraus beginnt an ihrem Rand.
+ *
+ * Für die jüngste Berührung sind oft noch nicht alle Kerzen vergangen. Dann
+ * wird über die vorhandenen gemessen, statt die Stelle zu verwerfen — sie ist
+ * die wichtigste, weil sie die frischeste ist. Ein Blick in die Zukunft ist
+ * das nicht: alle betrachteten Kerzen liegen im Sichtfenster und sind
+ * geschlossen.
+ *
+ * @returns {number|null} Weg aus der Zone in Prozent, null wenn nichts folgt
+ */
+export function reaktionAnStelle(kerzen, stelle, zone, wieVieleKerzen) {
+    const nachOben = stelle.art === 'tief'
+    const bis = Math.min(kerzen.length - 1, stelle.index + wieVieleKerzen)
+    let extrem = null
+    for (let j = stelle.index + 1; j <= bis; j++) {
+        const k = kerzen[j]
+        if (extrem === null) extrem = nachOben ? k.h : k.l
+        else extrem = nachOben ? Math.max(extrem, k.h) : Math.min(extrem, k.l)
+    }
+    if (extrem === null) return null
+    const kante = nachOben ? zone.hoch : zone.tief
+    const weg = nachOben ? extrem - kante : kante - extrem
+    return zone.mitte > 0 ? (weg / zone.mitte) * 100 : null
+}
+
+/**
+ * Wie oft ist der Kurs durch die Zone HINDURCHGELAUFEN?
+ *
+ * Gezählt werden Seitenwechsel des Schlusskurses: von unterhalb nach oberhalb
+ * und zurück. Eine Zone, die der Kurs zwanzigmal durchquert hat, ist keine
+ * Zone, sondern die Mitte einer Spanne — sie wird in einem Chart genauso
+ * aussehen wie eine echte, und ein Mensch würde sie nie einzeichnen.
+ *
+ * Die Zone selbst ist neutrales Gebiet: ein Schluss INNERHALB ändert die Seite
+ * nicht. Sonst zählte jedes Hin und Her am Rand als Durchquerung.
+ */
+export function durchquerungen(kerzen, zone) {
+    let seite = 0
+    let zahl = 0
+    for (const k of kerzen) {
+        const s = k.c > zone.hoch ? 1 : (k.c < zone.tief ? -1 : 0)
+        if (s === 0) continue
+        if (seite !== 0 && s !== seite) zahl++
+        seite = s
+    }
+    return zahl
+}
+
+/**
+ * Zonen nach Güte ordnen und auf die besten `zonenMaxAnzahl` kürzen.
+ *
+ * Die Note ist das Produkt dreier Grössen, und jede beantwortet eine Frage,
+ * die ein Mensch vor dem Einzeichnen stellt:
+ *
+ *   REAKTION — wie weit lief der Kurs nach den Berührungen weg? Gemessen in
+ *     Vielfachen der ATR und als MEDIAN über alle Berührungen: eine einzelne
+ *     heftige Reaktion macht noch keine verlässliche Zone, und der Median
+ *     lässt sich von ihr nicht beeindrucken.
+ *   DURCHQUERUNGEN — wie oft ist der Kurs einfach hindurchgelaufen? Geht als
+ *     1/(1+n) ein, ist also scharf: schon drei Durchquerungen vierteln die
+ *     Note. Das ist Absicht — genau diese Zonen sind es, die ein Chart voller
+ *     bunter Rechtecke erzeugen.
+ *   FRISCHE — wie lange ist die letzte Berührung her? Linear von 1,0 (am
+ *     Ende des Fensters) auf 0,3 (am Anfang). Nicht auf 0: eine alte Zone ist
+ *     schwächer, aber nicht wertlos, und ein Nullgewicht würde sie aus der
+ *     Rangfolge werfen, obwohl sie der Markt vielleicht seit Monaten
+ *     respektiert.
+ *
+ * Die Gewichte sind NICHT optimiert. Sie stehen so, weil sie diese drei
+ * Fragen in der Reihenfolge ihrer Wichtigkeit abbilden; was sie im Ergebnis
+ * bringen, steht im Messblock am Dateianfang.
+ */
+export function zonenNachGuete(kerzen, zonen, p, masse) {
+    if (!p.zonenGuete || !zonen.length) return zonen
+    const n = kerzen.length
+    const atrPct = masse?.atrPct || null
+
+    const bewertet = zonen.map((z) => {
+        const wege = (z.stellen || [])
+            .map((st) => reaktionAnStelle(kerzen, st, z, p.zonenReaktionKerzen))
+            .filter((v) => v !== null && v > 0)
+            .sort((a, b) => a - b)
+        // Keine einzige messbare Reaktion heisst: der Kurs ist an jeder
+        // Berührung einfach weitergelaufen. Note 0, nicht „unbekannt".
+        const median = wege.length ? wege[Math.floor(wege.length / 2)] : 0
+        const reaktion = atrPct > 0 ? median / atrPct : median
+        const durch = durchquerungen(kerzen, z)
+        const frische = n > 1 ? 0.3 + 0.7 * (z.letzterIndex / (n - 1)) : 1
+        return { ...z, reaktion, durchquerungen: durch, frische, guete: reaktion * (1 / (1 + durch)) * frische }
+    })
+
+    if (p.zonenAuswahl === 'schlechteste') bewertet.sort((a, b) => a.guete - b.guete)
+    else if (p.zonenAuswahl === 'zufall') {
+        // Streuwert aus dem Preis: gleiche Zonen ergeben immer dieselbe
+        // Reihenfolge, verschiedene eine unkorrelierte. Kein Date.now(),
+        // kein Math.random() — detect() muss reproduzierbar bleiben.
+        const streu = (z) => {
+            const x = Math.sin(z.mitte * 12.9898) * 43758.5453
+            return x - Math.floor(x)
+        }
+        bewertet.sort((a, b) => streu(a) - streu(b))
+    } else bewertet.sort((a, b) => b.guete - a.guete)
+    const beste = bewertet.slice(0, p.zonenMaxAnzahl)
+    // Wieder nach Preis sortiert zurück: `zielZone` und die Trefferprüfung
+    // gehen von einer Preisordnung aus, und eine Rangordnung im selben Array
+    // wäre genau die Art stiller Annahme, die später jemanden kostet.
+    return beste.sort((a, b) => a.mitte - b.mitte)
 }
 
 /**
@@ -667,7 +828,7 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
         ? trendVon(p.nurKoerper ? koerperKerzen(zweite) : zweite, p.pivotLinks, p.pivotRechts)
         : trend1
     const masse = zonenMasse(basis, p)
-    const zonen = findeZonen(basis, p, masse)
+    const zonen = zonenNachGuete(basis, findeZonen(basis, p, masse), p, masse)
 
     const bekannt = new Set(knownSetupKeys)
     for (const s of openSetups) bekannt.add(`${s.direction}|${s.obCandleTime}`)

@@ -2283,7 +2283,14 @@
       "zoneNaeheAtr": "Toleranz beim Antesten der Zone (ATR)",
       "trendModus": "Trend-Lesart",
       "trendZustand": "Zustand (gilt bis zum Bruch)",
-      "trendMoment": "Momentaufnahme (letzte zwei Wendepunkte)"
+      "trendMoment": "Momentaufnahme (letzte zwei Wendepunkte)",
+      "zonenGuete": "Zonen nach Güte auswählen",
+      "zonenMaxAnzahl": "Wie viele Zonen höchstens geführt werden",
+      "zonenReaktionKerzen": "Kerzen zur Messung der Reaktion",
+      "zonenAuswahl": "Welche Zonen geführt werden",
+      "auswahlBeste": "Die besten (Note)",
+      "auswahlSchlechteste": "Die schlechtesten (Gegenprobe)",
+      "auswahlZufall": "Zufällige (Kontrollgruppe)"
     }
   },
   "levmap": {

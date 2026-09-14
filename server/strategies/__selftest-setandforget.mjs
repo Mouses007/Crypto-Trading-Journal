@@ -19,7 +19,7 @@
  *   • Fehlen die Kerzen der höheren Zeiteinheit, wird NICHT gehandelt.
  */
 
-import strategie, { strukturTrend, trendZustand, findeZonen, zonenMasse, zonenTreffer, musterTreffer, zielZone, kerzenAbstand } from './set_and_forget.js'
+import strategie, { strukturTrend, trendZustand, findeZonen, zonenNachGuete, durchquerungen, reaktionAnStelle, zonenMasse, zonenTreffer, musterTreffer, zielZone, kerzenAbstand } from './set_and_forget.js'
 import { aggregiereKerzen, koerperKerzen } from './indicators.js'
 import { defaultsFromSchema } from './index.js'
 
@@ -167,6 +167,85 @@ console.log('\nSet and Forget — Selbsttest\n')
     const schmal = findeZonen(k, { ...p, zonenMinBreitePct: 0.4, zonenMaxBreitePct: 2 })
     check('die Breite wird auf das Mindestmass gebracht',
         schmal.every((z) => (z.hoch - z.tief) / z.mitte * 100 >= 0.39), JSON.stringify(schmal))
+}
+
+// ── Güte der Zonen ───────────────────────────────────────────────────────
+{
+    console.log('\nGüte der Zonen')
+    const p = { ...P, pivotLinks: 1, pivotRechts: 1, zonenBeruehrungen: 3,
+                zonenToleranzPct: 1, zonenMassstab: 'prozent', zonenMaxAnzahl: 1,
+                zonenReaktionKerzen: 3 }
+    const masse = { toleranz: 1, minBreite: 0.05, maxBreite: 1, naehe: 0.1, atrPct: 1 }
+
+    // Zone A bei 100: der Kurs prallt dreimal ab und läuft nie hindurch.
+    // Zone B bei 110: ebenfalls dreimal berührt, aber der Kurs pendelt
+    // ständig darüber und darunter — im Chart sieht sie gleich aus, ein
+    // Mensch würde sie nie einzeichnen. B ist ausserdem die FRISCHERE, hat
+    // also den Vorteil auf ihrer Seite.
+    const rows = []
+    for (let i = 0; i < 3; i++) rows.push([104, 104, 104, 104], [100, 100, 100, 100])
+    rows.push([104, 104, 104, 104])
+    for (let i = 0; i < 3; i++) {
+        rows.push([114, 114, 114, 114], [110, 110, 110, 110], [114, 114, 114, 114],
+                  [106, 106, 106, 106], [110, 110, 110, 110], [106, 106, 106, 106])
+    }
+    const k = reihe(rows)
+    const roh = findeZonen(k, p, masse)
+    const zA = roh.find((z) => Math.abs(z.mitte - 100) < 1)
+    const zB = roh.find((z) => Math.abs(z.mitte - 110) < 1)
+    check('Testaufbau: beide Zonen entstehen', Boolean(zA && zB), JSON.stringify(roh.map((z) => z.mitte)))
+    check('die durchlaufene Zone hat mehr Durchquerungen',
+        zA && zB && durchquerungen(k, zB) > durchquerungen(k, zA),
+        `${zA ? durchquerungen(k, zA) : '?'} gegen ${zB ? durchquerungen(k, zB) : '?'}`)
+
+    const alle = zonenNachGuete(k, roh, { ...p, zonenMaxAnzahl: 99 }, masse)
+    const noteVon = (mitte) => alle.find((z) => Math.abs(z.mitte - mitte) < 1)?.guete ?? -1
+    check('die durchlaufene Zone bekommt die schlechteste Note von allen',
+        alle.length > 2 && alle.every((z) => Math.abs(z.mitte - 110) < 1 || z.guete > noteVon(110)),
+        alle.map((z) => `${z.mitte.toFixed(0)}:${z.guete.toFixed(2)}`).join(' '))
+    check('… und fällt als erste aus der Auswahl',
+        !zonenNachGuete(k, roh, { ...p, zonenMaxAnzahl: alle.length - 1 }, masse)
+            .some((z) => Math.abs(z.mitte - 110) < 1))
+    // Eine saubere, aber ALTE Zone tritt hinter frische zurück — hier fällt
+    // die 100er trotz null Durchquerungen aus den besten zwei. Das ist eine
+    // Eigenschaft der Formel und keine Panne: die letzte Berührung liegt am
+    // Anfang des Fensters, und der Frischefaktor halbiert ihre Note. Wer alte
+    // Zonen gleichwertig führen will, muss die Zahl der geführten Zonen
+    // erhöhen, nicht an der Note drehen.
+    check('eine alte Zone tritt hinter frische zurück',
+        !zonenNachGuete(k, roh, { ...p, zonenMaxAnzahl: 2 }, masse).some((z) => Math.abs(z.mitte - 100) < 1)
+        && zonenNachGuete(k, roh, { ...p, zonenMaxAnzahl: 3 }, masse).some((z) => Math.abs(z.mitte - 100) < 1),
+        JSON.stringify(zonenNachGuete(k, roh, { ...p, zonenMaxAnzahl: 3 }, masse).map((z) => z.mitte)))
+    check('die Auswahl kürzt auf die eingestellte Zahl',
+        zonenNachGuete(k, roh, { ...p, zonenMaxAnzahl: 1 }, masse).length === 1)
+
+    check('ohne Güte bleiben alle Zonen stehen',
+        zonenNachGuete(k, roh, { ...p, zonenGuete: false }, masse).length === roh.length)
+    check('die Rückgabe ist wieder nach Preis sortiert',
+        zonenNachGuete(k, roh, { ...p, zonenMaxAnzahl: 9 }, masse)
+            .every((z, i, a) => i === 0 || a[i - 1].mitte <= z.mitte))
+
+    // Die Reaktion wird an der KANTE gemessen, nicht am Wendepunkt.
+    const zone = { tief: 99, hoch: 101, mitte: 100 }
+    const lauf = reihe([[100, 100, 100, 100], [103, 105, 103, 104], [104, 106, 103, 105]])
+    check('die Reaktion misst den Weg aus der Zone heraus',
+        Math.abs(reaktionAnStelle(lauf, { index: 0, art: 'tief' }, zone, 5) - 5) < 0.01,
+        String(reaktionAnStelle(lauf, { index: 0, art: 'tief' }, zone, 5)))
+    check('ohne Folgekerze gibt es keine Reaktion',
+        reaktionAnStelle(lauf, { index: 2, art: 'tief' }, zone, 5) === null)
+
+    // Frische: dieselbe Reaktion, aber älter, verliert gegen die jüngere.
+    const alt = { tief: 99, hoch: 101, mitte: 100, letzterIndex: 1, punkte: 3,
+                  stellen: [{ index: 1, price: 100, art: 'tief' }] }
+    const neu = { tief: 119, hoch: 121, mitte: 120, letzterIndex: 20, punkte: 3,
+                  stellen: [{ index: 20, price: 120, art: 'tief' }] }
+    const lang = reihe(Array.from({ length: 25 }, (_, i) => (i === 2 || i === 21) ? [130, 132, 129, 131] : [105, 106, 104, 105]))
+    const geordnet = zonenNachGuete(lang, [alt, neu], { ...p, zonenMaxAnzahl: 2 }, masse)
+    const gAlt = geordnet.find((z) => z.mitte === 100)
+    const gNeu = geordnet.find((z) => z.mitte === 120)
+    check('die frischere Zone bekommt bei gleicher Reaktion die bessere Note',
+        gNeu && gAlt && gNeu.frische > gAlt.frische,
+        `${gAlt?.frische?.toFixed(2)} gegen ${gNeu?.frische?.toFixed(2)}`)
 }
 
 // ── Massstab der Zonen ───────────────────────────────────────────────────

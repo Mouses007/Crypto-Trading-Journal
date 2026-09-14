@@ -2283,7 +2283,14 @@
       "zoneNaeheAtr": "Tolerance when testing the zone (ATR)",
       "trendModus": "Trend reading",
       "trendZustand": "State (holds until broken)",
-      "trendMoment": "Snapshot (last two turning points)"
+      "trendMoment": "Snapshot (last two turning points)",
+      "zonenGuete": "Select zones by quality",
+      "zonenMaxAnzahl": "Maximum number of zones kept",
+      "zonenReaktionKerzen": "Candles used to measure the reaction",
+      "zonenAuswahl": "Which zones are kept",
+      "auswahlBeste": "The best (by score)",
+      "auswahlSchlechteste": "The worst (counter-check)",
+      "auswahlZufall": "Random (control group)"
     }
   },
   "levmap": {
