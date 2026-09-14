@@ -422,6 +422,32 @@ function phaseB(nachher, over = {}, dir = 'long') {
         mitDrei?.status === 'triggered', `${mitDrei?.status}/${mitDrei?.invalidReason}`)
 }
 
+{
+    // Die Ausbruchskerze muss in Handelsrichtung schliessen. Dieselbe Kerze,
+    // einmal grün und einmal rot — der Schlusskurs über der Linie ist in
+    // beiden Fällen identisch, nur die Eröffnung wandert.
+    const gruen = phaseB([
+        [100, 100.5, 99.5, 100],
+        [100, 103.4, 99.8, 103],      // Eröffnung 100, Schluss 103 → grün
+        [103, 105.0, 102.5, 104.5],
+    ]).events[0]
+    const rot = phaseB([
+        [100, 100.5, 99.5, 100],
+        [104, 104.2, 99.8, 103],      // Eröffnung 104, Schluss 103 → rot
+        [103, 105.0, 102.5, 104.5],
+    ]).events[0]
+    const rotErlaubt = phaseB([
+        [100, 100.5, 99.5, 100],
+        [104, 104.2, 99.8, 103],
+        [103, 105.0, 102.5, 104.5],
+    ], { ausbruchFarbe: false }).events[0]
+
+    check('grüne Ausbruchskerze löst aus', gruen?.status === 'triggered', `${gruen?.status}`)
+    check('rote Ausbruchskerze löst NICHT aus', rot?.status !== 'triggered', `${rot?.status}`)
+    check('abgeschaltet zählt wieder nur der Schlusskurs',
+        rotErlaubt?.status === 'triggered', `${rotErlaubt?.status}`)
+}
+
 // ── 6. Short ist das Spiegelbild ─────────────────────────────────────────
 console.log('\n  Short')
 {

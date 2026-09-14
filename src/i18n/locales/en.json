@@ -2217,7 +2217,8 @@
       "macroAus": "Off",
       "macroKurs": "Price above/below the slow line",
       "macroLaenge": "Length of the slow line",
-      "macroTyp": "Type of slow line"
+      "macroTyp": "Type of slow line",
+      "ausbruchFarbe": "Breakout candle must close in direction (green/red)"
     },
     "reason_no_pivot_anchor": "No confirmed higher high / lower low as anchor",
     "reason_trend_reversed": "Trend turned before the breakout",

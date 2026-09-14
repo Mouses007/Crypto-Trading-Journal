@@ -2217,7 +2217,8 @@
       "macroAus": "Aus",
       "macroKurs": "Kurs über/unter der langsamen Linie",
       "macroLaenge": "Länge der langsamen Linie",
-      "macroTyp": "Art der langsamen Linie"
+      "macroTyp": "Art der langsamen Linie",
+      "ausbruchFarbe": "Ausbruchskerze muss in Richtung schliessen (grün/rot)"
     },
     "reason_no_pivot_anchor": "Kein bestätigtes Higher High / Lower Low als Ankerpunkt",
     "reason_trend_reversed": "Trend drehte vor dem Ausbruch",

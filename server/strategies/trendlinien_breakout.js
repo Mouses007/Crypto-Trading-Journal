@@ -195,6 +195,12 @@ const params = [
     { key: 'maxWarteKerzen', type: 'integer', default: 1, min: 1, max: 100, step: 1, group: 'entry' },
     { key: 'entryPufferPct', type: 'number', default: 0.05, min: 0, max: 2, step: 0.01, group: 'entry' },
     { key: 'orderGueltigKerzen', type: 'integer', default: 1, min: 1, max: 10, step: 1, group: 'entry' },
+    // Die Ausbruchskerze muss zusätzlich in die Handelsrichtung schliessen:
+    // long grün (Schluss über Eröffnung), short rot. Video und Referenz-Skript
+    // verlangen nur den Schluss jenseits der Linie — ein Schluss über der Linie
+    // in einer roten Kerze ist aber ein Ausbruch, den die Verkäufer schon
+    // wieder eingesammelt haben.
+    { key: 'ausbruchFarbe', type: 'boolean', default: true, group: 'entry' },
     // NICHT aus dem Video: dort wird die Linie gezogen und auf den Bruch
     // gewartet, ohne dass ein Farbwechsel das Setup vorher tötet. Deshalb aus.
     // Messbar macht er ohnehin fast nichts (+31 gegen +33 R, siehe oben) —
@@ -557,7 +563,10 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
             const linie = waagerecht
                 ? ankerPreis
                 : linienPreis(ankerZeit, ankerPreis, Number(s.obCandleTime), bisPreis, k.t)
-            const gebrochen = long ? k.c > linie : k.c < linie
+            const durchLinie = long ? k.c > linie : k.c < linie
+            // Doji (Schluss == Eröffnung) zählt NICHT als grün bzw. rot.
+            const farbeOk = !p.ausbruchFarbe || (long ? k.c > k.o : k.c < k.o)
+            const gebrochen = durchLinie && farbeOk
 
             if (gebrochen) {
                 const entry = long
