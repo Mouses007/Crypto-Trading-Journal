@@ -18,7 +18,7 @@
  */
 
 import strategie, { INVALID_REASONS, linienPreis, obvAmpel, balkenReihe } from './trendlinien_breakout.js'
-import { obv, stochRsi, tagGesperrt } from './indicators.js'
+import { obv, stochRsi, tagGesperrt, ema as emaTest } from './indicators.js'
 import { entryIsValid, einstiegsPreis, einstiegsSorte, istStopEinstieg } from '../fill-simulator.js'
 
 const TF_MS = 3600000
@@ -194,6 +194,58 @@ function aufwaerts() {
     const ohneAnker = (diagnostics.rejected[INVALID_REASONS.KEIN_ANKER] || 0)
     check('ohne Higher High entsteht kein Setup', setups.length === 0 || ohneAnker > 0,
         `${setups.length} Setups, ${ohneAnker} Ablehnungen`)
+}
+
+{
+    // MACD-Filter. Die beiden Lesarten sind GEGENSÄTZLICH — an derselben
+    // Signalkerze steht die MACD-Linie entweder über oder unter null, nie
+    // beides. Genau EINE der beiden Einstellungen darf das Setup also
+    // durchlassen. Das prüft die Richtung, ohne den konkreten Wert zu kennen.
+    const c = ausKursen(aufwaerts())
+    const basis = params({ signalTrend: false, signalKreuzung: true, direction: 'long' })
+    const frueh = strategie.detect({ candles: c, params: { ...basis, macdFilter: 'frueh' }, openSetups: [], knownSetupKeys: [] })
+    const best = strategie.detect({ candles: c, params: { ...basis, macdFilter: 'bestaetigt' }, openSetups: [], knownSetupKeys: [] })
+    const ohne = strategie.detect({ candles: c, params: basis, openSetups: [], knownSetupKeys: [] })
+
+    check('ohne Filter entsteht das Setup', ohne.setups.length > 0)
+    check('genau eine der beiden Lesarten lässt es durch',
+        (frueh.setups.length > 0) !== (best.setups.length > 0),
+        `früh ${frueh.setups.length}, bestätigt ${best.setups.length}`)
+    const abgelehnt = (frueh.setups.length ? best : frueh).diagnostics.rejected[INVALID_REASONS.MACD_FILTER] || 0
+    check('die abgelehnte Seite nennt den MACD-Filter als Grund', abgelehnt > 0, `${abgelehnt}`)
+
+    // Ohne MACD-Wert wird NICHT gehandelt. Ein Filter, der am Anfang des
+    // Fensters stillschweigend durchlässt, ist schlimmer als keiner: er wirkt
+    // genau dort nicht, wo die Historie am dünnsten ist.
+    const kurz = { ...basis, macdFilter: 'frueh', macdSlow: 60, macdSignal: 20 }
+    const knapp = strategie.detect({ candles: c, params: kurz, openSetups: [], knownSetupKeys: [] })
+    check('fehlender MACD-Wert ist kein Freibrief', knapp.setups.length === 0, `${knapp.setups.length}`)
+}
+
+{
+    // Übergeordneter Trendfilter: der Schlusskurs der Signalkerze muss auf der
+    // richtigen Seite der langsamen Linie stehen.
+    const c = ausKursen(aufwaerts())
+    const basis = params({ signalTrend: false, signalKreuzung: true, direction: 'long' })
+    const mit = strategie.detect({ candles: c, params: { ...basis, macroFilter: 'kurs', macroLaenge: 30 }, openSetups: [], knownSetupKeys: [] })
+    const ohne = strategie.detect({ candles: c, params: basis, openSetups: [], knownSetupKeys: [] })
+
+    // Wo liegt der Kurs zur Signalkerze wirklich? Der Test soll das Ergebnis
+    // nicht raten, sondern gegen die Linie prüfen.
+    const sigZeit = Number(ohne.setups[0]?.obCandleTime)
+    const idx = c.findIndex((k) => k.t === sigZeit)
+    const linie = emaTest(c, 30)[idx]
+    const drueber = c[idx].c > linie
+    check('Testaufbau: Lage des Signals zur langsamen Linie ist bestimmt',
+        Number.isFinite(linie), `${linie}`)
+    check(drueber ? 'über der Linie bleibt das Setup' : 'unter der Linie fällt das Setup weg',
+        drueber ? mit.setups.length > 0 : (mit.setups.length === 0
+            && (mit.diagnostics.rejected[INVALID_REASONS.MACRO_FILTER] || 0) > 0),
+        `${mit.setups.length} Setups`)
+
+    // Reicht die Historie für die Linie nicht, wird NICHT gehandelt.
+    const knapp = strategie.detect({ candles: c, params: { ...basis, macroFilter: 'kurs', macroLaenge: 300 }, openSetups: [], knownSetupKeys: [] })
+    check('ohne Wert für die langsame Linie kein Setup', knapp.setups.length === 0, `${knapp.setups.length}`)
 }
 
 // ── 5. Phase B: Ausbruch, Order, Verfall ─────────────────────────────────

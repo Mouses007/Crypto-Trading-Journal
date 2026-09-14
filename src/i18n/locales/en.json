@@ -2202,14 +2202,31 @@
       "balkenAustritt": "On leaving the zone (as in the script)",
       "sperreSamstag": "No entries on Saturdays",
       "sperreSonntag": "No entries on Sundays",
-      "sperreMontag": "No entries on Mondays"
+      "sperreMontag": "No entries on Mondays",
+      "macdFilter": "MACD filter",
+      "macdAus": "Off",
+      "macdFrueh": "Early (long below zero, short above)",
+      "macdBestaetigt": "Confirmed (long above zero, short below)",
+      "macdFast": "MACD fast",
+      "macdSlow": "MACD slow",
+      "macdSignal": "MACD signal",
+      "macdLinie": "Measured line",
+      "macdLinieMacd": "MACD line",
+      "macdLinieHist": "Histogram",
+      "macroFilter": "Higher-level trend filter",
+      "macroAus": "Off",
+      "macroKurs": "Price above/below the slow line",
+      "macroLaenge": "Length of the slow line",
+      "macroTyp": "Type of slow line"
     },
     "reason_no_pivot_anchor": "No confirmed higher high / lower low as anchor",
     "reason_trend_reversed": "Trend turned before the breakout",
     "reason_trendline_not_broken": "Trend line was not broken in time",
     "reason_order_not_filled": "Stop order was not triggered",
     "reason_invalid_stop": "Stop would sit on the wrong side of the entry",
-    "reason_weekday_blocked": "Entry fell on a blocked weekday"
+    "reason_weekday_blocked": "Entry fell on a blocked weekday",
+    "reason_macd_filter": "Rejected by the MACD filter",
+    "reason_macro_ma_filter": "Against the higher-level trend"
   },
   "levmap": {
     "title": "Liquidation zones",

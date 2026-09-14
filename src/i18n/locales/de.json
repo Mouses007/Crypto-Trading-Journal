@@ -2202,14 +2202,31 @@
       "balkenAustritt": "Beim Verlassen der Zone (wie im Skript)",
       "sperreSamstag": "Samstags nicht einsteigen",
       "sperreSonntag": "Sonntags nicht einsteigen",
-      "sperreMontag": "Montags nicht einsteigen"
+      "sperreMontag": "Montags nicht einsteigen",
+      "macdFilter": "MACD-Filter",
+      "macdAus": "Aus",
+      "macdFrueh": "Früh (Long unter null, Short darüber)",
+      "macdBestaetigt": "Bestätigt (Long über null, Short darunter)",
+      "macdFast": "MACD schnell",
+      "macdSlow": "MACD langsam",
+      "macdSignal": "MACD Signal",
+      "macdLinie": "Gemessene Linie",
+      "macdLinieMacd": "MACD-Linie",
+      "macdLinieHist": "Histogramm",
+      "macroFilter": "Übergeordneter Trendfilter",
+      "macroAus": "Aus",
+      "macroKurs": "Kurs über/unter der langsamen Linie",
+      "macroLaenge": "Länge der langsamen Linie",
+      "macroTyp": "Art der langsamen Linie"
     },
     "reason_no_pivot_anchor": "Kein bestätigtes Higher High / Lower Low als Ankerpunkt",
     "reason_trend_reversed": "Trend drehte vor dem Ausbruch",
     "reason_trendline_not_broken": "Trendlinie wurde nicht rechtzeitig gebrochen",
     "reason_order_not_filled": "Stop-Order wurde nicht ausgelöst",
     "reason_invalid_stop": "Stop läge auf der falschen Seite des Einstiegs",
-    "reason_weekday_blocked": "Einstieg fiel auf einen gesperrten Wochentag"
+    "reason_weekday_blocked": "Einstieg fiel auf einen gesperrten Wochentag",
+    "reason_macd_filter": "Vom MACD-Filter abgelehnt",
+    "reason_macro_ma_filter": "Gegen den übergeordneten Trend"
   },
   "levmap": {
     "title": "Liquidationszonen",

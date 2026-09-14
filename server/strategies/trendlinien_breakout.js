@@ -42,7 +42,7 @@
  * detect() ist eine REINE Funktion: keine DB, kein Netz, kein Date.now().
  */
 
-import { pivotHighs, pivotLows, ema, obv, emaSerie, smaSerie, stochRsi, tagGesperrt } from './indicators.js'
+import { pivotHighs, pivotLows, ema, obv, emaSerie, smaSerie, stochRsi, tagGesperrt, macd, sma } from './indicators.js'
 
 export const DETECTOR_VERSION = 1
 
@@ -54,6 +54,8 @@ export const INVALID_REASONS = {
     ORDER_VERFALLEN: 'order_not_filled',
     STOP_UNGUELTIG: 'invalid_stop',
     WOCHENTAG_GESPERRT: 'weekday_blocked',
+    MACD_FILTER: 'macd_filter',
+    MACRO_FILTER: 'macro_ma_filter',
 }
 
 const params = [
@@ -85,6 +87,59 @@ const params = [
     { key: 'stochNiedrig', type: 'number', default: 20, min: 1, max: 49, step: 1, group: 'confirm' },
     { key: 'stochHoch', type: 'number', default: 80, min: 51, max: 99, step: 1, group: 'confirm' },
     { key: 'balkenGueltigKerzen', type: 'integer', default: 0, min: 0, max: 20, step: 1, group: 'confirm' },
+
+    // ── MACD-Filter ───────────────────────────────────────────────
+    // Nicht aus dem Video. Die Frage dahinter: Ein Setup entsteht auch dann,
+    // wenn die Bewegung schon gelaufen ist — und genau die werden nichts.
+    // Zwei entgegengesetzte Lesarten, beide vertretbar:
+    //   'frueh'      Long nur, solange die MACD-Linie noch UNTER null steht,
+    //                Short nur, solange sie darüber steht. Das kauft in die
+    //                frühe Phase hinein, bevor das Momentum ausgereizt ist.
+    //   'bestaetigt' die übliche Lesart: Long über null, Short darunter.
+    // Welche trägt, entscheidet der Backtest — deshalb sind beide da und die
+    // Vorgabe ist 'aus'.
+    //
+    // GEMESSEN (ETH, 3316 Tageskerzen, 14.09.2026): der Filter taugt hier
+    // nichts, und zwar aus einem arithmetischen Grund. Die MACD-Linie IST
+    // ema(fast) − ema(slow), also bei 12/26 fast dieselbe Grösse wie die
+    // Signalbedingung „EMA12 über EMA25". 'bestaetigt' schneidet deshalb kaum
+    // etwas weg (122 von 126 Setups bleiben), 'frueh' widerspricht der
+    // Signalbedingung und schneidet fast alles weg (4 von 126). Wer hier
+    // filtern will, muss Perioden wählen, die eine ANDERE Ebene messen —
+    // 26/50 lässt 106 durch und ändert am Ergebnis ebenfalls wenig.
+    {
+        key: 'macdFilter', type: 'select', default: 'aus', group: 'confirm',
+        options: [{ value: 'aus', labelKey: 'strategies.trendlinien_breakout.macdAus' },
+                  { value: 'frueh', labelKey: 'strategies.trendlinien_breakout.macdFrueh' },
+                  { value: 'bestaetigt', labelKey: 'strategies.trendlinien_breakout.macdBestaetigt' }],
+    },
+    { key: 'macdFast', type: 'integer', default: 12, min: 2, max: 50, step: 1, group: 'confirm' },
+    { key: 'macdSlow', type: 'integer', default: 26, min: 5, max: 100, step: 1, group: 'confirm' },
+    { key: 'macdSignal', type: 'integer', default: 9, min: 1, max: 50, step: 1, group: 'confirm' },
+    {
+        key: 'macdLinie', type: 'select', default: 'macd', group: 'confirm',
+        options: [{ value: 'macd', labelKey: 'strategies.trendlinien_breakout.macdLinieMacd' },
+                  { value: 'hist', labelKey: 'strategies.trendlinien_breakout.macdLinieHist' }],
+    },
+
+    // ── Übergeordneter Trendfilter ────────────────────────────────
+    // Aus dem Referenz-Skript („Macro Moving Average", 200): dort entscheidet
+    // er, ob eine K/D-Kreuzung überhaupt markiert wird — bullisch nur über dem
+    // MA. Anders als der MACD misst er wirklich etwas anderes als die
+    // Signalbedingung: die 200er liegt Grössenordnungen über EMA12/25.
+    // GEMESSEN (ETH, volle Historie): 114 statt 126 Setups, +8 statt +7 R —
+    // er wirkt, aber er räumt die schlechten Setups nicht ab. Vorgabe aus.
+    {
+        key: 'macroFilter', type: 'select', default: 'aus', group: 'confirm',
+        options: [{ value: 'aus', labelKey: 'strategies.trendlinien_breakout.macroAus' },
+                  { value: 'kurs', labelKey: 'strategies.trendlinien_breakout.macroKurs' }],
+    },
+    { key: 'macroLaenge', type: 'integer', default: 200, min: 20, max: 400, step: 10, group: 'confirm' },
+    {
+        key: 'macroTyp', type: 'select', default: 'ema', group: 'confirm',
+        options: [{ value: 'ema', labelKey: 'strategies.trendlinien_breakout.maEma' },
+                  { value: 'sma', labelKey: 'strategies.trendlinien_breakout.maSma' }],
+    },
 
     // ── Struktur (Higher High / Lower Low) ────────────────────────
     { key: 'pivotLinks', type: 'integer', default: 5, min: 1, max: 30, step: 1, group: 'structure' },
@@ -306,8 +361,11 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
         diagnostics.rejections.push({ reason, key })
     }
 
-    const mindestens = Math.max(p.obvLaenge, p.emaSlow, p.stochRsiLaenge + p.stochLaenge)
-        + p.pivotLinks + p.pivotRechts + 5
+    const mindestens = Math.max(
+        p.obvLaenge, p.emaSlow, p.stochRsiLaenge + p.stochLaenge,
+        p.macdFilter !== 'aus' ? p.macdSlow + p.macdSignal : 0,
+        p.macroFilter !== 'aus' ? p.macroLaenge : 0,
+    ) + p.pivotLinks + p.pivotRechts + 5
     if (!Array.isArray(candles) || candles.length < mindestens) {
         return { setups, events, diagnostics }
     }
@@ -316,6 +374,12 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
     const emaF = ema(candles, p.emaFast)
     const emaS = ema(candles, p.emaSlow)
     const balken = p.verlangeBalken ? balkenReihe(candles, p) : null
+    const macroReihe = p.macroFilter !== 'aus'
+        ? (p.macroTyp === 'sma' ? sma(candles, p.macroLaenge) : ema(candles, p.macroLaenge))
+        : null
+    const macdReihe = p.macdFilter !== 'aus'
+        ? macd(candles, { fast: p.macdFast, slow: p.macdSlow, signal: p.macdSignal, line: p.macdLinie })
+        : null
     const hochs = pivotHighs(candles, p.pivotLinks, p.pivotRechts)
     const tiefs = pivotLows(candles, p.pivotLinks, p.pivotRechts)
 
@@ -361,6 +425,30 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [] }) {
             const key = `${dir}|${candles[i].t}`
             if (bekannt.has(key)) continue
             diagnostics.sweepsFound++
+
+            // MACD-Filter: ein noch nicht vorhandener Wert ist KEIN Freibrief —
+            // ohne Aussage wird nicht gehandelt, sonst wäre der Filter am
+            // Anfang jedes Fensters stillschweigend abgeschaltet.
+            // Übergeordneter Trend: der Schlusskurs der Signalkerze muss auf
+            // der richtigen Seite der langsamen Linie stehen. Fehlt sie (zu
+            // kurze Historie), wird nicht gehandelt — wie beim MACD.
+            if (macroReihe) {
+                const m = macroReihe[i]
+                const ok = m === null || m === undefined
+                    ? false
+                    : (long ? candles[i].c > m : candles[i].c < m)
+                if (!ok) { reject(INVALID_REASONS.MACRO_FILTER, key); continue }
+            }
+
+            if (macdReihe) {
+                const v = macdReihe[i]
+                const ok = v === null || v === undefined
+                    ? false
+                    : (p.macdFilter === 'frueh'
+                        ? (long ? v < 0 : v > 0)
+                        : (long ? v > 0 : v < 0))
+                if (!ok) { reject(INVALID_REASONS.MACD_FILTER, key); continue }
+            }
 
             // Der Anker muss BESTÄTIGT sein: ein Pivot ist erst `pivotRechts`
             // Kerzen später überhaupt erkennbar. Ohne diese Schranke würde auf
