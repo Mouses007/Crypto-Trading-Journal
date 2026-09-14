@@ -26,6 +26,7 @@ import { detectMitRegeln } from './rule-engine.js'
 import emaTouch from './ema_touch.js'
 import trendlinien from './trendlinien_breakout.js'
 import lsob from './lsob.js'
+import setAndForget from './set_and_forget.js'
 
 const TF_MS = 900000
 const T0 = 1700000000000
@@ -256,8 +257,19 @@ const emaParams = standard(emaTouch, {
 })
 const lsobParams = standard(lsob)
 
+// Set and Forget ohne höhere Zeiteinheit: `replay()` reicht keine HTF-Kerzen
+// durch, und mit eingeschaltetem Filter würde die Strategie hier gar nichts
+// tun — der Test wäre eine Attrappe. Zonen und Trend kommen so aus der
+// gehandelten Reihe selbst; der geprüfte Weg (Signal → Eröffnung der nächsten
+// Kerze) ist derselbe.
+const safParams = standard(setAndForget, {
+    htfTrendFilter: false, zweiteEbene: false, pivotLinks: 2, pivotRechts: 2,
+    zonenToleranzPct: 1.5, zonenFensterHtf: 400, tpQuelle: 'rr', minRR: 0,
+})
+
 let emaEinstiege = 0
 let lsobEinstiege = 0
+let safEinstiege = 0
 
 for (const seed of [42, 1337, 20260816]) {
     const serie = zufallsSerie(400, seed)
@@ -274,6 +286,15 @@ for (const seed of [42, 1337, 20260816]) {
         eFrueh.length === 0,
         eFrueh.length ? `${eFrueh.length} zu früh` : '')
 
+    const f = replay((ctx) => setAndForget.detect(ctx), serie, safParams, 60)
+    const fTrig = f.filter((s) => s.status === 'triggered')
+    safEinstiege += fTrig.length
+    // Die Signalkerze ist `obCandleTime`; gehandelt wird die ERÖFFNUNG der
+    // Kerze danach, also muss der Einstieg echt später liegen.
+    const fFrueh = fTrig.filter((s) => Number(s.triggeredAt) <= Number(s.obCandleTime))
+    check(`Set and Forget (Seed ${seed}) — ${fTrig.length} Einstiege, keiner auf der Signalkerze`,
+        fFrueh.length === 0, fFrueh.length ? `${fFrueh.length} zu früh` : '')
+
     const l = replay((ctx) => lsob.detect(ctx), serie, lsobParams, 60)
     const lTrig = l.filter((s) => s.status === 'triggered')
     lsobEinstiege += lTrig.length
@@ -286,6 +307,7 @@ for (const seed of [42, 1337, 20260816]) {
 // Eine Prüfung, die nie etwas zu prüfen hatte, beweist nichts.
 check(`EMA Touch hat überhaupt gehandelt (${emaEinstiege} Einstiege)`, emaEinstiege > 0)
 check(`LSOB hat überhaupt gehandelt (${lsobEinstiege} Einstiege)`, lsobEinstiege > 0)
+check(`Set and Forget hat überhaupt gehandelt (${safEinstiege} Einstiege)`, safEinstiege > 0)
 
 // ── 3. EMA Touch: gebauter Fall ──────────────────────────────────────────
 // Die Guss-Bedingung muss weiter über die Bestätigungslücke hinweg gelten —

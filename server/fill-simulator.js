@@ -152,13 +152,35 @@ export function istStopEinstieg(setup) {
 }
 
 /**
+ * Steigt dieses Setup ausdrücklich zum MARKTPREIS ein?
+ *
+ * Dieselbe doppelte Reise wie bei `istStopEinstieg` — Feld für den Backtest,
+ * `confirmations` für den Weg durch die Datenbank.
+ */
+export function istMarktEinstieg(setup) {
+    if (!setup) return false
+    if (setup.entryTrigger === MARKT) return true
+    let conf = setup.confirmations
+    if (typeof conf === 'string') {
+        try { conf = JSON.parse(conf) } catch { conf = null }
+    }
+    return conf?.entryTrigger === MARKT
+}
+
+/**
  * Ordersorte des Einstiegs. Vorgabe Limit — siehe `entryOrder` in RISK_PARAMS.
  * Eine Stop-Order nimmt immer Liquidität: sie wird zum Marktpreis ausgeführt,
  * sobald das Niveau fällt, und zahlt damit Taker — unabhängig davon, was in
  * den Risiko-Einstellungen steht.
+ *
+ * Dasselbe gilt für einen Detector, der seiner Regel nach zur Eröffnung kauft
+ * (`entryTrigger: 'market'`, siehe `set_and_forget.js`): dort ist die
+ * Marktorder Teil der Strategie und keine Voreinstellung. Ohne diese Zeile
+ * bekäme so ein Einstieg die Maker-Gebühr der Vorgabe gutgeschrieben und die
+ * Slippage erlassen — zwei Vorteile, die es in Wirklichkeit nicht gibt.
  */
 export function einstiegsSorte(costs, setup = null) {
-    if (istStopEinstieg(setup)) return MARKT
+    if (istStopEinstieg(setup) || istMarktEinstieg(setup)) return MARKT
     return (costs || {}).entryOrder === MARKT ? MARKT : LIMIT
 }
 

@@ -17,6 +17,7 @@
 import lsob from './lsob.js'
 import emaTouch from './ema_touch.js'
 import trendlinienBreakout from './trendlinien_breakout.js'
+import setAndForget from './set_and_forget.js'
 import { alsManifest } from './rule-engine.js'
 import { pruefeRegeln } from './rule-validate.js'
 import { TIMEFRAME_MS } from '../market-data.js'
@@ -319,6 +320,7 @@ export function normalisiereTimeframes(roh, haupt, strategie) {
 registerStrategy(lsob)
 registerStrategy(emaTouch)
 registerStrategy(trendlinienBreakout)
+registerStrategy(setAndForget)
 
 export const EINGEBAUT = new Set([...registry.keys()])
 export const istEingebaut = (id) => EINGEBAUT.has(id)

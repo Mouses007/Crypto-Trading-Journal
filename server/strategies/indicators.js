@@ -888,3 +888,104 @@ export function tagGesperrt(t, p) {
     if (tag === 1) return !!p.sperreMontag
     return false
 }
+
+/**
+ * Kerzen auf ihren KÖRPER reduziert: `h` wird zum Körperhoch, `l` zum
+ * Körpertief, Eröffnung und Schluss bleiben.
+ *
+ * Das ist der „Linienchart" aus dem Set-and-Forget-Regelwerk: Dochte sind dort
+ * ausdrücklich Nebengeräusch, Struktur und Zonen werden über Schlusskurse
+ * gelesen. Die so umgebauten Kerzen passen unverändert in `pivotHighs`/
+ * `pivotLows`, statt dafür eine zweite Pivot-Funktion zu schreiben.
+ */
+export function koerperKerzen(candles) {
+    return candles.map((k) => ({ ...k, h: Math.max(k.o, k.c), l: Math.min(k.o, k.c) }))
+}
+
+/**
+ * Kerzen zu einer höheren Zeiteinheit zusammenfassen.
+ *
+ * Die Blockgrenzen hängen an der ZEIT (`floor(t / blockMs)`), nicht an der
+ * Position im Array. Das ist der ganze Punkt: Backtest und Live-Engine sehen
+ * verschiedene Ausschnitte derselben Historie — der Backtest schneidet immer
+ * ab dem ersten geladenen Kerzenstab, die Engine holt ein wanderndes Fenster
+ * der letzten N Kerzen. Bei einer Gruppierung nach Index läge dieselbe
+ * Wochenkerze in beiden Läufen anders, und eine Strategie, die im Backtest
+ * etwas anderes rechnet als live, ist wertlos. An der Epoche ausgerichtet
+ * beginnt die 7-Tage-Kerze an einem Donnerstag statt am Montag; das ist der
+ * Preis für die Reproduzierbarkeit und hier bewusst bezahlt.
+ *
+ * Der letzte Block wird nur übernommen, wenn er VOLLSTÄNDIG ist (`erwartet`
+ * Kerzen). Eine halbe Wochenkerze als abgeschlossen zu behandeln, wäre ein
+ * Blick in die Zukunft — ihr Hoch steht noch nicht fest.
+ *
+ * @param {Array}  candles   aufsteigend, gleiche Zeiteinheit
+ * @param {number} tfMs      Länge einer Eingangskerze in ms
+ * @param {number} faktor    wie viele Eingangskerzen eine Ausgangskerze bilden
+ * @returns {Array} Kerzen im selben Format; `t` ist der Blockanfang
+ */
+export function aggregiereKerzen(candles, tfMs, faktor) {
+    if (!Array.isArray(candles) || candles.length === 0) return []
+    if (!(tfMs > 0) || !(faktor > 1)) return candles.slice()
+    const blockMs = tfMs * faktor
+    const out = []
+    let block = null
+    for (const k of candles) {
+        const start = Math.floor(k.t / blockMs) * blockMs
+        if (!block || block.t !== start) {
+            if (block) out.push(block)
+            block = { t: start, o: k.o, h: k.h, l: k.l, c: k.c, v: k.v || 0, n: 1, closeTime: start + blockMs - 1 }
+            continue
+        }
+        block.h = Math.max(block.h, k.h)
+        block.l = Math.min(block.l, k.l)
+        block.c = k.c
+        block.v = (block.v || 0) + (k.v || 0)
+        block.n++
+    }
+    if (block) out.push(block)
+    // Unvollständige Blöcke fallen weg — vorn wie hinten. Vorn fehlt der
+    // Anfang der Periode (das Hoch könnte im nicht geladenen Teil liegen),
+    // hinten fehlt ihr Ende.
+    return out.filter((b) => b.n === faktor)
+}
+
+/** Doji mit langem unterem Docht — Ablehnung nach unten. */
+export function isDragonflyDoji(k, koerperAnteil = 0.1, dochtVerhaeltnis = 2) {
+    const r = range(k)
+    if (!(r > 0)) return false
+    if (bodySize(k) > r * koerperAnteil) return false
+    return lowerWick(k) >= upperWick(k) * dochtVerhaeltnis && lowerWick(k) > r * 0.5
+}
+
+/** Doji mit langem oberem Docht — Ablehnung nach oben. */
+export function isGravestoneDoji(k, koerperAnteil = 0.1, dochtVerhaeltnis = 2) {
+    const r = range(k)
+    if (!(r > 0)) return false
+    if (bodySize(k) > r * koerperAnteil) return false
+    return upperWick(k) >= lowerWick(k) * dochtVerhaeltnis && upperWick(k) > r * 0.5
+}
+
+/**
+ * Morning Star: lange rote Kerze, kleine Kerze mit Abstand darunter, lange
+ * grüne Kerze, die über die Mitte der ersten zurückschliesst.
+ *
+ * „Klein" ist relativ zur ersten Kerze, nicht absolut — sonst fände das Muster
+ * in einem ruhigen Markt überall statt und in einem bewegten nie.
+ */
+export function isMorningStar(a, b, c, kleinAnteil = 0.5) {
+    if (!a || !b || !c) return false
+    if (!isBear(a) || !isBull(c)) return false
+    if (!(bodySize(b) < bodySize(a) * kleinAnteil)) return false
+    if (!(bodyHigh(b) < bodyLow(a))) return false
+    return c.c > (a.o + a.c) / 2
+}
+
+/** Evening Star — gespiegeltes Morning Star. */
+export function isEveningStar(a, b, c, kleinAnteil = 0.5) {
+    if (!a || !b || !c) return false
+    if (!isBull(a) || !isBear(c)) return false
+    if (!(bodySize(b) < bodySize(a) * kleinAnteil)) return false
+    if (!(bodyLow(b) > bodyHigh(a))) return false
+    return c.c < (a.o + a.c) / 2
+}
