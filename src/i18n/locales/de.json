@@ -2368,6 +2368,7 @@
     "profileLabel": "PROFIL-BREITE",
     "profileTitle": "Breite der Verteilungsspur am rechten Rand — 0 blendet sie aus",
     "profileOff": "ausgeblendet",
+    "kachelHinweis": "Zeitfenster stellst du in der Kopfzeile der Kachel; das Preisband ist dort fest auf ± 2 % — im Handelsfenster zählen die Zonen dicht am Kurs.",
     "wheelHint": "Mausrad im Chart zoomt stufenlos",
     "coverage": "Abdeckung",
     "thinWindow": "Fenster zu kurz — die Karte zeigt nur einen Bruchteil der Positionen"
@@ -3944,6 +3945,12 @@
       "gespeichert": "Gespeichert · bereit zum Einfügen",
       "hinweis": "Fenster als Screenshot ins Journal legen (Setup-Galerie, Tagesansicht) und direkt zum Einfügen in Pendente Trades bereitstellen",
       "fehler": "Aufnahme fehlgeschlagen"
+    },
+    "karten": {
+      "knopf": "Karten",
+      "titel": "Bookmap & Liquidationskarte einstellen",
+      "hinweisKnopf": "Alle Regler von Bookmap und Liquidationskarte — im Cockpit gibt es kein Seitenmenü, in dem sie sonst stünden",
+      "hinweis": "Gilt sofort in den Kacheln und ebenso auf den eigenen Seiten Liquidität und Liquidationen — es ist dieselbe Karte, keine Kopie."
     },
     "bookmap": {
       "info": "Das Orderbuch von Binance in Echtzeit als Wärmebild: wo Liquidität liegt und wo sie plötzlich verschwindet.\nEine Wand, die kurz vor dem Kurs auftaucht und wieder wegzieht, ist oft kein echtes Interesse, sondern ein Köder — verlässlicher ist Liquidität, die stehen bleibt, wenn der Kurs sie erreicht."

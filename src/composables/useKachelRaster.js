@@ -259,9 +259,50 @@ export function useKachelRaster({
      * Pixeln — beides aus dem Ziehen am Eckanfasser, sonst die Vorgabe aus der
      * Registry.
      */
+    /*
+     * Spaltenzahl, die das Raster GERADE hat. Gebraucht, weil die gezogene
+     * Breite als Spaltenzahl gespeichert wird und die auf jedem Bildschirm
+     * anders viel ist: ein „span 4" vom grossen Monitor trifft auf dem zweiten
+     * Bildschirm mit 125 % Skalierung auf ein Raster mit drei Spalten. CSS
+     * legt dann stillschweigend eine vierte, implizite Spalte an — und die
+     * ganze Seite bekommt einen waagerechten Rollbalken (gemeldet 16.09.2026).
+     * Die Handy-Regel im Stylesheet klemmt nur den Ein-Spalten-Fall.
+     *
+     * Bewusst aus der Breite gerechnet und nicht aus `gridTemplateColumns`
+     * gelesen: dessen aufgelöster Wert zählt implizite Spalten MIT, würde also
+     * im Überlauf genau die Zahl liefern, die den Überlauf verursacht hat.
+     * Mindestbreite und Lücke kommen aus dem Stylesheet (`--kachelMin`), damit
+     * hier keine zweite 340 steht, die beim nächsten Umbau vergessen wird.
+     */
+    const rasterSpalten = ref(0)
+    let beobachter = null
+
+    function messeSpalten() {
+        const el = gridEl.value
+        if (!el) return
+        const stil = getComputedStyle(el)
+        const min = parseFloat(stil.getPropertyValue('--kachelMin')) || 340
+        const luecke = parseFloat(stil.columnGap) || 0
+        const breite = el.clientWidth
+        if (!breite) return
+        rasterSpalten.value = Math.max(1, Math.floor((breite + luecke) / (min + luecke)))
+    }
+
+    watch(gridEl, (el) => {
+        beobachter?.disconnect()
+        beobachter = null
+        if (!el || typeof ResizeObserver === 'undefined') { messeSpalten(); return }
+        beobachter = new ResizeObserver(messeSpalten)
+        beobachter.observe(el)
+        messeSpalten()
+    })
+
     function stilFuer(kachel) {
         const g = groessen[kachel.id] || {}
-        const spalten = g.spalten || kachel.spalten || 1
+        let spalten = g.spalten || kachel.spalten || 1
+        // Klemme gegen den Überlauf — der gespeicherte Wert bleibt unangetastet,
+        // auf dem grossen Bildschirm ist die Kachel wieder so breit wie gezogen.
+        if (rasterSpalten.value) spalten = Math.min(spalten, rasterSpalten.value)
         return {
             gridColumn: `span ${spalten}`,
             // Gezogene Grösse vor Registry-Vorgabe vor Rasterstandard — damit
@@ -283,10 +324,12 @@ export function useKachelRaster({
             x: ev.clientX, y: ev.clientY,
             spalten: g.spalten || kachel.spalten || 1,
             hoehe: el?.getBoundingClientRect().height || standardHoehe,
-            maxSpalten: spaltenBreiten.length,
+            // Aus der Breite gerechnet, nicht `spaltenBreiten.length`: das
+            // zählt implizite Spalten mit (siehe `messeSpalten`).
+            maxSpalten: rasterSpalten.value || spaltenBreiten.length,
             // Untergrenze aus der Registry: eine Bookmap in einer Spalte ist
             // nicht klein, sondern unlesbar.
-            minSpalten: Math.max(1, Math.min(spaltenBreiten.length, kachel.minSpalten || 1)),
+            minSpalten: Math.max(1, Math.min(rasterSpalten.value || spaltenBreiten.length, kachel.minSpalten || 1)),
             schritt: (spaltenBreiten[0] || 300) + lueckeX,
             el,
         }
@@ -435,6 +478,8 @@ export function useKachelRaster({
         document.removeEventListener('visibilitychange', beiSichtbarkeit)
         endeGroesse()
         clearInterval(timer)
+        beobachter?.disconnect()
+        beobachter = null
         sortable?.destroy()
         sortable = null
     })

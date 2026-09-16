@@ -2750,8 +2750,12 @@ h4 {
        Der Rand kostet nichts und rettet jeden Wurf, der etwas zu tief landet. */
     padding-bottom: 90px;
     /* 340 px ist die Untergrenze, ab der ein Chart in der Kachel noch etwas
-       aussagt — darunter wird jede Beschriftung zum Gedränge. */
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+       aussagt — darunter wird jede Beschriftung zum Gedränge. Als Variable,
+       weil `useKachelRaster` daraus die Spaltenzahl rechnet und gezogene
+       Spannweiten darauf klemmt — sonst läuft die Seite auf einem schmaleren
+       oder stärker skalierten Bildschirm waagerecht über. */
+    --kachelMin: 340px;
+    grid-template-columns: repeat(auto-fill, minmax(var(--kachelMin), 1fr));
     gap: 0.7rem;
     align-content: start;
 }

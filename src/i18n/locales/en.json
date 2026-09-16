@@ -2368,6 +2368,7 @@
     "profileLabel": "PROFILE WIDTH",
     "profileTitle": "Width of the distribution lane on the right — 0 hides it",
     "profileOff": "hidden",
+    "kachelHinweis": "Set the time window in the tile's header; the price band there is fixed at ± 2 % — in the trading window the zones close to the price are what count.",
     "wheelHint": "Mouse wheel in the chart zooms continuously",
     "coverage": "Coverage",
     "thinWindow": "Window too short — the map shows only a fraction of positions"
@@ -3944,6 +3945,12 @@
       "gespeichert": "Saved · ready to paste",
       "hinweis": "Capture this window as a screenshot into the journal (setups gallery, daily view) and make it ready to insert in Pending Trades",
       "fehler": "Capture failed"
+    },
+    "karten": {
+      "knopf": "Maps",
+      "titel": "Bookmap & liquidation map settings",
+      "hinweisKnopf": "Every control of the bookmap and the liquidation map — the cockpit has no side menu where they would otherwise sit",
+      "hinweis": "Applies immediately in the tiles and on the standalone Liquidity and Liquidations pages alike — it is the same map, not a copy."
     },
     "bookmap": {
       "info": "Binance's order book in real time as a heat map: where liquidity sits and where it suddenly disappears.\nA wall that appears just ahead of the price and pulls away again is often not real interest but bait — liquidity that stays put once the price reaches it is more trustworthy."

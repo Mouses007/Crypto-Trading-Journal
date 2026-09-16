@@ -29,6 +29,19 @@ import { mmrHerkunft } from '../utils/marginRate.js'
 const props = defineProps({
     /** 'bookmap' | 'levmap' | 'oi' — bestimmt, was unter dem Symbolblock steht. */
     variant: { type: String, default: 'bookmap' },
+    /**
+     * Ohne Symbolblock (Markt, Suche, Liste). Für das Einstellungsfenster im
+     * Live-Trading-Cockpit: dort steht das Symbol schon in der Kopfzeile, und
+     * ein zweiter Wähler dafür wäre eine zweite Wahrheit.
+     */
+    ohneSymbol: { type: Boolean, default: false },
+    /**
+     * Die Regler gelten für die KACHEL, nicht für die eigene Seite. Bei der
+     * Liquidationskarte fallen dann Zeitfenster und Preisband weg — die Kachel
+     * setzt beides selbst (`KachelHebelkarte`: Fenster aus der Kopfzeile,
+     * Band fest ±2 %), die Store-Werte wären hier Regler ohne Wirkung.
+     */
+    inKachel: { type: Boolean, default: false },
 })
 
 /**
@@ -330,6 +343,14 @@ async function switchMarket(market) {
 watch(effektiverMarkt, loadSymbols)
 
 onMounted(async () => {
+    /*
+     * Ohne Symbolblock keine Vorbelegung: das Einstellungsfenster im Cockpit
+     * öffnet sich mitten in einer Sitzung, und die Kaskade (offene Position →
+     * gespeicherte Wahl → BTCUSDT) dürfte das Symbol unter den laufenden
+     * Karten nicht wechseln. Die Liste braucht es dann auch nicht — die
+     * Suche ist ausgeblendet.
+     */
+    if (props.ohneSymbol) return
     await loadSymbols()
     await resolveDefaultSymbol()
 })
@@ -337,6 +358,7 @@ onMounted(async () => {
 
 <template>
     <div class="livePicker">
+        <template v-if="!ohneSymbol">
         <label class="fw-lighter">{{ t('live.symbol') }}</label>
         <!-- Marktwahl nur in der Bookmap: die anderen beiden Seiten sind
              Futures-only, eine Spot-Pille wäre dort eine tote Taste. -->
@@ -358,6 +380,7 @@ onMounted(async () => {
                 {{ s.symbol }}
             </button>
         </div>
+        </template>
 
         <template v-if="variant === 'bookmap'">
         <label class="fw-lighter mt-2">{{ t('live.display') }}</label>
@@ -528,6 +551,7 @@ onMounted(async () => {
                 <template v-else>{{ messungHinweis }}</template>
             </div>
 
+            <template v-if="!inKachel">
             <label class="fw-lighter mt-2">{{ t('levmap.windowLabel') }}</label>
             <select v-model.number="levMapHours" class="sidebar-select mb-1" :title="t('levmap.windowTitle')">
                 <option v-for="h in LEV_HOURS" :key="h" :value="h">{{ fensterLabel(h) }}</option>
@@ -536,6 +560,8 @@ onMounted(async () => {
                 <option v-for="s in spanOptionen" :key="s" :value="s">± {{ s }} %</option>
             </select>
             <div class="autoRefHint">{{ t('levmap.wheelHint') }}</div>
+            </template>
+            <div v-else class="autoRefHint mt-2">{{ t('levmap.kachelHinweis') }}</div>
 
             <template v-if="levMapView === 'history'">
                 <label class="fw-lighter mt-2">

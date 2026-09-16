@@ -24,6 +24,7 @@ import RadarKachel from '../components/RadarKachel.vue'
 import RadarOverlay from '../components/RadarOverlay.vue'
 import SitzungsLeiste from '../components/livetrading/SitzungsLeiste.vue'
 import SymbolWahl from '../components/livetrading/SymbolWahl.vue'
+import KartenEinstellungen from '../components/livetrading/KartenEinstellungen.vue'
 import KachelHandelszeiten from '../components/radar/KachelHandelszeiten.vue'
 import KachelMechanik from '../components/radar/KachelMechanik.vue'
 import KachelLiqTicker from '../components/radar/KachelLiqTicker.vue'
@@ -54,6 +55,14 @@ import { useKachelRaster } from '../composables/useKachelRaster.js'
 
 const { t } = useI18n()
 const router = useRouter()
+
+/**
+ * Einstellungsfenster für Bookmap und Liquidationskarte. Im Cockpit gibt es
+ * kein Seitenmenü, und die Kopfzeilen der beiden Kacheln tragen bewusst nur
+ * die drei Handgriffe für den Handel — für alles Übrige war bisher der Umweg
+ * über die eigene Seite nötig. Siehe `KartenEinstellungen.vue`.
+ */
+const kartenOffen = ref(false)
 
 /** Kachel-Id → Komponente. Neue Kacheln werden hier eingehängt. */
 const KOMPONENTEN = {
@@ -343,6 +352,13 @@ const interaktiv = (kachel) => kachel.gross === false
                         </div>
                     </div>
                 </div>
+                <!-- Regler beider Canvas-Karten, die nicht in deren Kopfzeile
+                     passen — in beiden Ansichten, die Werte gelten für Raster
+                     und Pult gleichermassen. -->
+                <button type="button" class="ctl-pill" :title="t('livetrading.karten.hinweisKnopf')"
+                    @click="kartenOffen = true">
+                    <i class="uil uil-setting"></i>{{ t('livetrading.karten.knopf') }}
+                </button>
                 <!-- „Alle aktualisieren" gibt es hier bewusst NICHT (im
                      Marktradar schon). Der Prüftakt liegt bei 3 s statt 30 s,
                      und acht der elf abrufenden Kacheln laden von selbst im
@@ -368,6 +384,8 @@ const interaktiv = (kachel) => kachel.gross === false
                 <PageInfo section="info.livetrading" />
             </div>
         </div>
+
+        <KartenEinstellungen v-if="kartenOffen" @schliessen="kartenOffen = false" />
 
         <div v-if="fotoZustand === 'fehler'" class="fotoFehler">
             <i class="uil uil-exclamation-triangle"></i>{{ fotoMeldung }}
