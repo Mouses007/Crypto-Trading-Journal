@@ -58,6 +58,21 @@ export function getKnex() {
  * Fix PostgreSQL auto-increment sequences after data import.
  * When rows are inserted with explicit IDs (e.g., from SQLite migration),
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
+ *
+ * Nur ANHEBEN, nie zurücksetzen. Das lief bis 16.09.2026 als glattes
+ * `setval(MAX(id)+1)` bei jedem Start — und NAS-Container und Dev-Rechner
+ * teilen sich eine Postgres. Startete der eine, während der andere gerade
+ * einen Coin-Radar-Lauf in 25er-Stücken schrieb, sah `MAX(id)` nur die schon
+ * festgeschriebenen Zeilen, während das laufende Stück seine IDs bereits
+ * gezogen hatte: der Zähler wurde unter dem Schreiber zurückgedreht, das
+ * nächste Stück bekam eine vergebene ID, und jeder folgende Lauf scheiterte
+ * mit „duplicate key" an derselben Stelle (Lauf 7854 ff.). `GREATEST` mit
+ * dem aktuellen Stand heilt weiterhin einen Import mit festen IDs, kann aber
+ * nichts mehr zurücksetzen.
+ *
+ * `is_called = true` und `MAX(id)` statt `false` und `MAX+1`: dieselbe
+ * nächste ID, aber der Wert ist direkt mit `last_value` vergleichbar — mit
+ * gemischtem `is_called` hinkt der Vergleich um eins.
  */
 async function fixPostgresSequences(knex) {
     const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute']
@@ -68,18 +83,26 @@ async function fixPostgresSequences(knex) {
             const hasTable = await knex.schema.hasTable(table)
             if (!hasTable) continue
 
-            const result = await knex.raw(
-                `SELECT setval(pg_get_serial_sequence('${table}', 'id'), COALESCE((SELECT MAX(id) FROM "${table}"), 0) + 1, false)`
-            )
-            const newVal = result.rows?.[0]?.setval
-            if (newVal && newVal > 1) fixed++
+            const seq = await knex.raw(`SELECT pg_get_serial_sequence('${table}', 'id') AS s`)
+            const sname = seq.rows?.[0]?.s
+            if (!sname) continue
+            const stand = await knex.raw(`SELECT last_value, is_called FROM ${sname}`)
+            const { last_value, is_called } = stand.rows?.[0] || {}
+            // Letzte vergebene ID laut Zähler; ein frischer Zähler (is_called
+            // false) hat noch keine vergeben.
+            const vergeben = is_called ? Number(last_value) : Number(last_value) - 1
+            const mx = await knex.raw(`SELECT COALESCE(MAX(id), 0) AS m FROM "${table}"`)
+            const hoechste = Number(mx.rows?.[0]?.m || 0)
+            if (hoechste <= vergeben) continue
+            await knex.raw(`SELECT setval('${sname}', ${hoechste}, true)`)
+            fixed++
         } catch (e) {
             // Table might not have a sequence (e.g., settings with fixed id=1)
         }
     }
 
     if (fixed > 0) {
-        console.log(` -> ${fixed} PostgreSQL-Sequenzen repariert`)
+        console.log(` -> ${fixed} PostgreSQL-Sequenzen angehoben`)
     }
 }
 
