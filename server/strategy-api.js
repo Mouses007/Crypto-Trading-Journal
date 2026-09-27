@@ -22,7 +22,9 @@ import { BAUSTEINE } from './strategies/rule-engine.js'
 import { pruefeRegeln, regelnUnterscheidenSich } from './strategies/rule-validate.js'
 import { regelnAlsSaetze } from './strategies/rule-text.js'
 import { VORLAGEN } from './strategies/rule-templates.js'
-import { isValidTimeframe, timeframeMs, getLastPrice, getHistoricalCandles } from './market-data.js'
+import { isValidTimeframe, timeframeMs, getLastPrice, getHistoricalCandles, getFundingHistory } from './market-data.js'
+import { zuPosition } from './execution/paper.js'
+import { fundingAusVerlauf, zwischenstandPosition, summiereJeInstanz } from './execution/zwischenstand.js'
 import {
     runBacktest, berechneStatistik, MAX_BACKTEST_CANDLES, schaetzeKerzen,
     berechneBuyHoldBaseline, schaetzeFloatingDrawdownAusTrades,
@@ -47,6 +49,29 @@ function parseJson(wert, fallback) {
     if (wert === null || wert === undefined) return fallback
     if (typeof wert === 'object') return wert
     try { return JSON.parse(wert) } catch { return fallback }
+}
+
+// Zwischenstand offener Positionen: Kurs 15 s, Funding-Verlauf 10 min —
+// abgerechnet wird ohnehin nur alle 4–8 h.
+const kursCache = new Map()
+const fundingCache = new Map()
+async function zwischenKurs(symbol, market) {
+    const key = `${market}|${symbol}`
+    const c = kursCache.get(key)
+    if (c && Date.now() - c.ts < 15000) return c.wert
+    const wert = await getLastPrice(symbol, { market })
+    kursCache.set(key, { ts: Date.now(), wert })
+    return wert
+}
+async function zwischenFunding(symbol, abTs) {
+    const key = `${symbol}|${abTs}`
+    const c = fundingCache.get(key)
+    if (c && Date.now() - c.ts < 600000) return c.wert
+    const wert = await getFundingHistory(symbol, abTs, Date.now())
+    fundingCache.set(key, { ts: Date.now(), wert })
+    // Geschlossene Positionen fragen nie wieder — alte Schlüssel nicht ewig halten
+    if (fundingCache.size > 200) fundingCache.delete(fundingCache.keys().next().value)
+    return wert
 }
 
 /** DB-Zeile → API-Form (JSON geparst, objectId wie überall im Projekt). */
@@ -1290,6 +1315,61 @@ export function setupStrategyRoutes(app) {
     })
 
     // ── Positionen ───────────────────────────────────────────────────────
+    // Zwischenstand aller offenen Positionen: Brutto, Gebühren und Funding
+    // getrennt, gerechnet wie beim Schliessen (siehe execution/zwischenstand.js).
+    // Die Seiten fragen alle 30 s — Kurse und Funding-Verläufe deshalb kurz
+    // zwischengespeichert, sonst kostet jeder offene Tab Binance-Gewicht.
+    app.get('/api/strategies/positions/zwischenstand', async (req, res) => {
+        try {
+            const knex = getKnex()
+            const rows = await knex('strategy_positions').whereIn('status', ['open', 'closing'])
+            const instRows = rows.length
+                ? await knex('strategy_instances').whereIn('id', [...new Set(rows.map((r) => r.instanceId))])
+                : []
+            const instanzen = new Map(instRows.map((r) => [r.id, r]))
+            const jetzt = Date.now()
+
+            const eintraege = await Promise.all(rows.map(async (row) => {
+                const instRow = instanzen.get(row.instanceId)
+                const risk = parseJson(instRow?.risk, {})
+                const market = instRow?.market === 'spot' ? 'spot' : 'futures'
+                const pos = zuPosition(row)
+                let stand = null
+                let fehler = ''
+                try {
+                    const preis = await zwischenKurs(row.symbol, market)
+                    let funding = 0
+                    if (market === 'futures') {
+                        const verlauf = await zwischenFunding(row.symbol, pos.entryTime).catch(() => null)
+                        funding = verlauf === null
+                            ? null
+                            : fundingAusVerlauf(verlauf, {
+                                qty: pos.qty, direction: pos.direction,
+                                entryTime: pos.entryTime, bis: jetzt, ersatzPreis: pos.entryPrice,
+                            })
+                    }
+                    stand = zwischenstandPosition(pos, { preis, jetzt, costs: kostenAus(risk), funding })
+                } catch (e) {
+                    fehler = 'Kurs nicht abrufbar'
+                }
+                return {
+                    id: row.id, instanceId: row.instanceId, instanz: instRow?.name || '',
+                    mode: row.mode, status: row.status, symbol: row.symbol, timeframe: row.timeframe,
+                    direction: row.direction, qty: Number(row.qty), entryPrice: Number(row.entryPrice),
+                    entryTime: Number(row.entryTime), stopLoss: Number(row.stopLoss),
+                    takeProfit: Number(row.takeProfit), notionalUsdt: Number(row.notionalUsdt),
+                    fundingBpsAnnahme: Number(risk.fundingBpsPer8h) || 0,
+                    stand, fehler,
+                }
+            }))
+
+            res.json({ zeit: jetzt, positionen: eintraege, jeInstanz: summiereJeInstanz(eintraege) })
+        } catch (e) {
+            logError('strategy-api', 'Zwischenstand offener Positionen fehlgeschlagen', e)
+            res.status(500).json({ error: 'Zwischenstand konnte nicht berechnet werden' })
+        }
+    })
+
     app.post('/api/strategies/positions/:id/close', async (req, res) => {
         try {
             const knex = getKnex()

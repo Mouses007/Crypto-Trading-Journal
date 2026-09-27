@@ -89,7 +89,7 @@ export async function openPaperPosition({ instance, setup, size, entryPrice, ent
 }
 
 /** DB-Zeile → Objekt, wie es der Fill-Simulator erwartet. */
-function zuPosition(row) {
+export function zuPosition(row) {
     return {
         setupId: row.setupId,
         symbol: row.symbol,

@@ -313,6 +313,31 @@ export async function getFundingRate(symbol) {
     }
 }
 
+/**
+ * Abgerechnete Funding-Sätze eines Zeitraums (nur Futures), älteste zuerst.
+ * `markPrice` ist der Kurs, zu dem die Börse die Zahlung bemessen hat.
+ * Wirft bei Fehlern — ein fehlender Verlauf darf nicht als „0 Funding" enden.
+ */
+export async function getFundingHistory(symbol, fromTs, toTs) {
+    const sym = String(symbol || '').toUpperCase()
+    const out = []
+    let ab = Number(fromTs) || 0
+    const bis = Number(toTs) || Date.now()
+    // 1000 je Abruf = bei 4h-Takt rund 166 Tage; die Schleife ist die Absicherung
+    for (let runde = 0; runde < 10 && ab <= bis; runde++) {
+        const { data } = await axios.get(`${BASES.futures}/fapi/v1/fundingRate`, {
+            params: { symbol: sym, startTime: ab, endTime: bis, limit: 1000 }, timeout: HTTP_TIMEOUT,
+        })
+        if (!Array.isArray(data)) throw new Error(`Kein Funding-Verlauf für ${sym}`)
+        for (const e of data) {
+            out.push({ t: Number(e.fundingTime), rate: Number(e.fundingRate), markPrice: Number(e.markPrice) || 0 })
+        }
+        if (data.length < 1000) break
+        ab = Number(data[data.length - 1].fundingTime) + 1
+    }
+    return out
+}
+
 // ── Symbol-Metadaten (tickSize/stepSize) für korrektes Runden von Orders ──
 const metaCache = new Map()   // market -> { ts, map }
 const META_TTL = 6 * 60 * 60 * 1000

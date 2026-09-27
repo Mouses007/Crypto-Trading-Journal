@@ -2302,7 +2302,22 @@
       "auswahlBeste": "Die besten (Note)",
       "auswahlSchlechteste": "Die schlechtesten (Gegenprobe)",
       "auswahlZufall": "Zufällige (Kontrollgruppe)"
-    }
+    },
+    "markPrice": "Kurs jetzt",
+    "grossShort": "Brutto",
+    "fees": "Gebühren",
+    "funding": "Funding",
+    "unrealizedNet": "Netto schwebend",
+    "heldSince": "Offen seit",
+    "unrealizedShort": "schwebend",
+    "durationDays": "{d} T {h} h",
+    "durationHours": "{h} h {m} min",
+    "feesHint": "Bezahlt beim Einstieg: {open} · beim Schliessen jetzt (Marktorder, Taker): {close}",
+    "fundingHint": "Echte Funding-Zahlungen laut Binance seit dem Einstieg. Negativ = bezahlt, positiv = erhalten. Die Papier-Buchung rechnet beim Schliessen noch mit der Annahme der Instanz ({bps} bps je Periode).",
+    "fundingUnknown": "Funding-Verlauf nicht abrufbar — im Netto nicht enthalten",
+    "unrealizedHint": "Was beim Schliessen JETZT zum Marktpreis herauskäme — Brutto minus Gebühren plus Funding. Noch kein Ergebnis.",
+    "unrealizedInstanceHint": "{n} offene Position(en): Brutto {gross} · Gebühren {fees} · Funding {funding}",
+    "priceUnavailable": "Kurs nicht abrufbar"
   },
   "levmap": {
     "title": "Liquidationszonen",

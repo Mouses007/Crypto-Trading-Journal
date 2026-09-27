@@ -2302,7 +2302,22 @@
       "auswahlBeste": "The best (by score)",
       "auswahlSchlechteste": "The worst (counter-check)",
       "auswahlZufall": "Random (control group)"
-    }
+    },
+    "markPrice": "Price now",
+    "grossShort": "Gross",
+    "fees": "Fees",
+    "funding": "Funding",
+    "unrealizedNet": "Net (unrealised)",
+    "heldSince": "Open for",
+    "unrealizedShort": "unrealised",
+    "durationDays": "{d} d {h} h",
+    "durationHours": "{h} h {m} min",
+    "feesHint": "Paid on entry: {open} · on closing now (market order, taker): {close}",
+    "fundingHint": "Actual funding payments per Binance since entry. Negative = paid, positive = received. The paper booking still uses the instance assumption ({bps} bps per period) when closing.",
+    "fundingUnknown": "Funding history unavailable — not included in net",
+    "unrealizedHint": "What closing NOW at market would yield — gross minus fees plus funding. Not a result yet.",
+    "unrealizedInstanceHint": "{n} open position(s): gross {gross} · fees {fees} · funding {funding}",
+    "priceUnavailable": "Price unavailable"
   },
   "levmap": {
     "title": "Liquidation zones",

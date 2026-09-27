@@ -17,6 +17,7 @@ import { useBotTradeChart } from '../utils/botChart.js'
 import { useXDecCurrencyFormat } from '../utils/formatters.js'
 import { logError } from '../utils/logger.js'
 import dayjs from '../utils/dayjs-setup.js'
+import InfoTipp from '../components/InfoTipp.vue'
 
 const { t } = useI18n()
 
@@ -34,6 +35,23 @@ let pollTimer = null
 const zahl = (v, n = 2) => (Number.isFinite(Number(v)) ? Number(v).toFixed(n) : '–')
 const geld = (v) => useXDecCurrencyFormat(Number(v) || 0, 2)
 const zeit = (t) => (t ? dayjs(Number(t)).format('DD.MM.YY HH:mm') : '–')
+// Kurse brauchen je nach Coin mehr Stellen: XRP mit zwei Nachkommastellen
+// macht 1,4768 und 1,5384 zu 1,48 und 1,54 — der Zwischenstand wäre unlesbar.
+const kurs = (v) => {
+    const n = Number(v)
+    if (!Number.isFinite(n) || n === 0) return '–'
+    const a = Math.abs(n)
+    return n.toFixed(a >= 100 ? 2 : a >= 1 ? 4 : 6)
+}
+// Vorzeichen immer zeigen — ein schwebender Betrag ohne + liest sich wie ein Saldo
+const geldMitVz = (v) => (Number(v) > 0 ? '+' : '') + geld(v)
+const pnlKlasse = (v) => (Number(v) > 0 ? 'greenTrade' : Number(v) < 0 ? 'redTrade' : '')
+const dauer = (ms) => {
+    const min = Math.floor((Number(ms) || 0) / 60000)
+    const d = Math.floor(min / 1440)
+    const h = Math.floor((min % 1440) / 60)
+    return d > 0 ? t('strategies.durationDays', { d, h }) : t('strategies.durationHours', { h, m: min % 60 })
+}
 
 const statusFarbe = (s) => ({
     open: 'bg-primary', closed: 'bg-secondary', triggered: 'bg-info text-dark',
@@ -50,10 +68,10 @@ async function laden() {
         if (filter.value.status) p.status = filter.value.status
         const [s, pos] = await Promise.all([
             axios.get('/api/strategies/setups', { params: p }),
-            axios.get('/api/db/strategy_positions', { params: { equalTo: JSON.stringify({ status: 'open' }) } }),
+            axios.get('/api/strategies/positions/zwischenstand'),
         ])
         setups.value = s.data
-        positionen.value = pos.data
+        positionen.value = pos.data?.positionen || []
     } catch (e) {
         logError('AgentSetups', 'Laden fehlgeschlagen', e)
     }
@@ -177,23 +195,58 @@ const gruende = computed(() => {
                                 <th>{{ t('strategies.direction') }}</th>
                                 <th class="text-end">{{ t('strategies.qty') }}</th>
                                 <th class="text-end">{{ t('strategies.entry') }}</th>
+                                <th class="text-end">{{ t('strategies.markPrice') }}</th>
                                 <th class="text-end">{{ t('strategies.stop') }}</th>
                                 <th class="text-end">{{ t('strategies.target') }}</th>
                                 <th class="text-end">{{ t('strategies.notional') }}</th>
+                                <th class="text-end">{{ t('strategies.grossShort') }}</th>
+                                <th class="text-end">{{ t('strategies.fees') }}</th>
+                                <th class="text-end">{{ t('strategies.funding') }}</th>
+                                <th class="text-end">
+                                    {{ t('strategies.unrealizedNet') }}<InfoTipp schluessel="strategies.unrealizedHint" breit />
+                                </th>
+                                <th class="text-end">{{ t('strategies.heldSince') }}</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-for="p in positionen" :key="p.id">
-                                <td class="small">{{ p.symbol }}</td>
+                                <td class="small">
+                                    {{ p.symbol }}
+                                    <div class="text-muted" style="font-size: 0.75em">{{ p.instanz }}</div>
+                                </td>
                                 <td class="small" :class="p.direction === 'long' ? 'greenTrade' : 'redTrade'">
                                     {{ p.direction === 'long' ? 'LONG' : 'SHORT' }}
                                 </td>
                                 <td class="text-end small">{{ p.qty }}</td>
-                                <td class="text-end small">{{ zahl(p.entryPrice) }}</td>
-                                <td class="text-end small">{{ zahl(p.stopLoss) }}</td>
-                                <td class="text-end small">{{ p.takeProfit ? zahl(p.takeProfit) : '–' }}</td>
+                                <td class="text-end small">{{ kurs(p.entryPrice) }}</td>
+                                <td class="text-end small">
+                                    <template v-if="p.stand">{{ kurs(p.stand.markPrice) }}</template>
+                                    <span v-else class="text-muted" :title="p.fehler">{{ t('strategies.priceUnavailable') }}</span>
+                                </td>
+                                <td class="text-end small">{{ kurs(p.stopLoss) }}</td>
+                                <td class="text-end small">{{ p.takeProfit ? kurs(p.takeProfit) : '–' }}</td>
                                 <td class="text-end small">{{ geld(p.notionalUsdt) }}</td>
+                                <template v-if="p.stand">
+                                    <td class="text-end small" :class="pnlKlasse(p.stand.grossPnl)">{{ geldMitVz(p.stand.grossPnl) }}</td>
+                                    <td class="text-end small redTrade">
+                                        −{{ geld(p.stand.fees) }}<InfoTipp :text="t('strategies.feesHint', {
+                                            open: geld(p.stand.feeOpen + p.stand.feePartial), close: geld(p.stand.feeClose) })" />
+                                    </td>
+                                    <td class="text-end small" :class="pnlKlasse(p.stand.funding)">
+                                        <template v-if="p.stand.funding !== null">
+                                            {{ geldMitVz(p.stand.funding) }}<InfoTipp breit
+                                                :text="t('strategies.fundingHint', { bps: p.fundingBpsAnnahme })" />
+                                        </template>
+                                        <span v-else class="text-muted" :title="t('strategies.fundingUnknown')">?</span>
+                                    </td>
+                                    <td class="text-end small fw-bold" :class="pnlKlasse(p.stand.netPnl)">
+                                        {{ geldMitVz(p.stand.netPnl) }}
+                                        <div class="fw-normal" style="font-size: 0.75em">{{ (p.stand.rMultiple > 0 ? '+' : '') + zahl(p.stand.rMultiple) }} R</div>
+                                    </td>
+                                    <td class="text-end small">{{ dauer(p.stand.heldMs) }}</td>
+                                </template>
+                                <td v-else colspan="5"></td>
                                 <td class="text-end">
                                     <button class="btn btn-sm btn-outline-danger py-0"
                                         @click="positionSchliessen(p)">

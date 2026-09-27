@@ -13,6 +13,7 @@ import { useI18n } from 'vue-i18n'
 import { spinnerLoadingPage } from '../stores/ui.js'
 import StrategyParamForm from '../components/StrategyParamForm.vue'
 import SpinnerLoadingPage from '../components/SpinnerLoadingPage.vue'
+import InfoTipp from '../components/InfoTipp.vue'
 import { useXDecCurrencyFormat } from '../utils/formatters.js'
 import { logError } from '../utils/logger.js'
 import { apiFehlerText } from '../utils/apiError.js'
@@ -52,11 +53,28 @@ async function laden() {
         // Wächter-Status darf die Seite nicht aufhalten, und sein Scheitern
         // darf die Instanzliste nicht mitreissen.
         waechterLaden()
+        schwebendLaden()
     } catch (e) {
         logError('AgentStrategies', 'Laden fehlgeschlagen', e)
         fehler.value = t('strategies.loadFailed')
     }
 }
+
+// Schwebender Stand offener Positionen je Instanz — NEBEN dem realisierten
+// Ergebnis, nie dazugerechnet: ein Buchgewinn ist noch kein Ergebnis.
+const schwebend = ref({})
+async function schwebendLaden() {
+    try {
+        const r = await axios.get('/api/strategies/positions/zwischenstand')
+        schwebend.value = r.data?.jeInstanz || {}
+    } catch (e) {
+        schwebend.value = {}
+    }
+}
+const schwebendHinweis = (s) => t('strategies.unrealizedInstanceHint', {
+    n: s.n, gross: geld(s.grossPnl), fees: geld(-s.fees),
+    funding: s.fundingUnbekannt ? '?' : geld(s.funding),
+})
 
 onBeforeMount(async () => {
     spinnerLoadingPage.value = true
@@ -525,6 +543,12 @@ const zahl = (v, n = 2) => (v === null || v === undefined || !Number.isFinite(Nu
                             </small>
                             <small :class="inst.totalNetPnl >= 0 ? 'greenTrade' : 'redTrade'">
                                 {{ geld(inst.totalNetPnl) }}
+                            </small>
+                            <small v-if="schwebend[inst.id]" class="text-muted">
+                                {{ t('strategies.unrealizedShort') }}:
+                                <strong :class="schwebend[inst.id].netPnl > 0 ? 'greenTrade' : schwebend[inst.id].netPnl < 0 ? 'redTrade' : ''">
+                                    {{ (schwebend[inst.id].netPnl > 0 ? '+' : '') + geld(schwebend[inst.id].netPnl) }}
+                                </strong><InfoTipp :text="schwebendHinweis(schwebend[inst.id])" />
                             </small>
                         </div>
                     </div>
