@@ -21,7 +21,7 @@ import { erzeugeEinordnung } from './coin-radar/einordnung.js'
 import { holeCoinInfo } from './coin-radar/coin-info.js'
 import { pruefeEinzeln } from './coin-radar/einzel.js'
 import { leseSchluessel } from './hype-radar/einstellungen.js'
-import { legeAnCoinRadar } from './radar-ergebnisse.js'
+import { legeAnCoinRadar, HORIZONTE } from './radar-ergebnisse.js'
 import { werteAus } from './radar-guete.js'
 import { raeumeRadarAuf } from './radar-aufraeumen.js'
 
@@ -298,12 +298,16 @@ export function setupCoinRadarRoutes(app) {
     app.get('/api/coin-radar/guete', async (req, res) => {
         try {
             const knex = getKnex()
-            const seit = Date.now() - (Number(req.query.tage) || 7) * 24 * 3600e3
+            const tage = Math.min(90, Math.max(1, Number(req.query.tage) || 14))
+            const seit = Date.now() - tage * 24 * 3600e3
             const zeilen = await knex('radar_ergebnisse')
                 .where('art', 'coinradar').andWhere('erstelltAm', '>=', seit)
-            const horizonte = [...new Set(zeilen.map((z) => z.horizont))]
+            // Feste Reihenfolge der Horizonte (kurz → lang), nicht die der Zeilen.
+            const horizonte = Object.keys(HORIZONTE.coinradar)
+                .filter((h) => zeilen.some((z) => z.horizont === h))
             res.json({
                 seit,
+                tage,
                 gesamt: zeilen.length,
                 jeHorizont: horizonte.map((h) => werteAus(zeilen.filter((z) => z.horizont === h), h)),
             })

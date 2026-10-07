@@ -249,7 +249,15 @@ export async function getHistoricalCandles(symbol, interval, fromTs, toTs, opts 
     let cursor = Number(fromTs) || 0
     if (!cursor || cursor >= end) return []
 
-    const pageSize = KLINE_LIMITS[market]
+    /*
+     * Wer nur ein paar Dutzend Kerzen braucht, fragt kleine Seiten an: Binance
+     * staffelt das Gewicht nach dem angefragten `limit`, nicht nach der Zahl
+     * der gelieferten Kerzen — sechzig Minutenkerzen über eine 1500er-Seite
+     * kosten zehn Einheiten statt einer.
+     */
+    const pageSize = Math.max(1, Math.min(KLINE_LIMITS[market], Number(opts.seite) || KLINE_LIMITS[market]))
+    const gewicht = market === 'spot' ? 2
+        : (pageSize < 100 ? 1 : pageSize < 500 ? 2 : pageSize <= 1000 ? 5 : 10)
     const maxCandles = Math.min(opts.maxCandles || 20000, 200000)
     const out = []
     let guard = 0
@@ -259,7 +267,7 @@ export async function getHistoricalCandles(symbol, interval, fromTs, toTs, opts 
         // NUR hier wird gewartet: Historie ist Laborarbeit und darf sich
         // gedulden. `getClosedCandles` — der Weg des Livebetriebs — bleibt
         // ungebremst und überholt jederzeit.
-        await warteAufGewicht()
+        await warteAufGewicht(gewicht)
         const rows = await mitWiederholung(() => fetchKlines({
             symbol: sym, interval, market,
             limit: pageSize, startTime: cursor, endTime: end,

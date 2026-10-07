@@ -797,6 +797,53 @@
 
                 <p class="hypDisclaimer">{{ offenerBericht.hinweis || HINWEIS_RUECKFALL }}</p>
             </div>
+
+            <!-- Erfolgskontrolle: was aus den Funden wurde. Drei Gruppen, weil
+                 zwei verschiedene Teile geprüft werden — der Sicherheitsfilter
+                 (Spitze gegen Verworfene) und die Hype-Note (Spitze gegen das
+                 Feld unter der Schwelle). Ohne die Vergleichsgruppen hiesse
+                 „30 % leben noch" gar nichts. -->
+            <div class="hypGuete mt-4">
+                <h6 class="hypTitel">{{ t('hype.gueteTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.gueteHinweis') }}</p>
+                <div v-if="gueteFehler" class="text-muted small">{{ gueteFehler }}</div>
+                <div v-else-if="!guete" class="text-muted small"><span class="spinner-border spinner-border-sm"></span></div>
+                <div v-else-if="!guete.jeHorizont.length" class="text-muted small">{{ t('hype.gueteLeer') }}</div>
+                <template v-else>
+                    <div v-for="h in guete.jeHorizont" :key="h.horizont" class="mb-3">
+                        <div class="hypGueteKopf">
+                            <strong>{{ h.horizont }}</strong>
+                            <span v-for="u in h.urteil" :key="u" class="hypGueteUrteil"
+                                :class="gueteKlasse(u)">{{ t('hype.guete_' + u) }}</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm hypTabelle mb-1">
+                                <thead>
+                                    <tr>
+                                        <th>{{ t('hype.gueteGruppe') }}</th>
+                                        <th class="text-end">n</th>
+                                        <th class="text-end">{{ t('hype.gueteUeberlebt') }}</th>
+                                        <th class="text-end">{{ t('hype.gueteRendite') }}</th>
+                                        <th class="text-end">{{ t('hype.gueteImPlus') }}</th>
+                                        <th class="text-end">{{ t('hype.gueteLiquiditaet') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="g in ['spitze', 'verworfen', 'feld']" :key="g">
+                                        <td>{{ t('hype.gueteGruppe_' + g) }}</td>
+                                        <td class="text-end">{{ h[g].n }}</td>
+                                        <td class="text-end">{{ anteilText(h[g].ueberlebt) }}</td>
+                                        <td class="text-end">{{ prozentText(h[g].medianRendite) }}</td>
+                                        <td class="text-end">{{ anteilText(h[g].imPlusAnteil) }}</td>
+                                        <td class="text-end">{{ prozentText(h[g].medianLiquiditaetAenderung) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="hypHinweisKlein">{{ t('hype.gueteFuss', { offen: h.offen, fehl: h.fehlgeschlagen }) }}</div>
+                    </div>
+                </template>
+            </div>
         </div>
 
     </div>
@@ -1407,6 +1454,30 @@ async function ladeKandidaten() {
     }
 }
 
+// ── Erfolgskontrolle ─────────────────────────────────────────────
+const guete = ref(null)
+const gueteFehler = ref('')
+
+async function ladeGuete() {
+    try {
+        const r = await axios.get('/api/hype-radar/guete')
+        guete.value = r.data || { jeHorizont: [] }
+        gueteFehler.value = ''
+    } catch (e) {
+        logWarn('hype-radar', 'Erfolgskontrolle konnte nicht geladen werden', e)
+        gueteFehler.value = t('hype.gueteFehler')
+    }
+}
+
+/** Anteil 0..1 als ganze Prozent; unbekannt bleibt ein Strich, nicht 0 %. */
+const anteilText = (w) => (w === null || w === undefined || !Number.isFinite(Number(w))
+    ? '—' : `${Math.round(Number(w) * 100)} %`)
+/** Prozentwert mit Vorzeichen; unbekannt bleibt ein Strich. */
+const prozentText = (w) => (w === null || w === undefined || !Number.isFinite(Number(w))
+    ? '—' : `${Number(w) >= 0 ? '+' : ''}${Number(w).toFixed(0)} %`)
+const gueteKlasse = (u) => (u === 'filterWirkt' || u === 'noteWirkt' ? 'gut'
+    : (u === 'zuWenig' || u === 'zuWenigVergleich' ? '' : 'warn'))
+
 async function ladeBerichte() {
     try {
         const r = await axios.get('/api/hype-radar/berichte')
@@ -1863,7 +1934,7 @@ const beiGroesse = () => diagramm?.resize()
 onMounted(async () => {
     window.addEventListener('resize', beiGroesse)
     await Promise.all([
-        ladeKandidaten(), ladeBerichte(), ladeEinstellungen(),
+        ladeKandidaten(), ladeBerichte(), ladeGuete(), ladeEinstellungen(),
         ladeFavoriten(), ladeAlarme(), ladeKiQuellen(),
     ])
     // Der Wachhund läuft serverseitig weiter — die Liste holt seine Funde in
@@ -1980,6 +2051,38 @@ watch(locale, () => zeichne())
 .hypQuadrant {
     width: 100%;
     height: 360px;
+}
+
+/* ── Erfolgskontrolle ───────────────────────────────────── */
+.hypGuete {
+    border-top: 1px solid rgba(255, 255, 255, .07);
+    padding-top: 1rem;
+}
+
+.hypGueteKopf {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: .3rem;
+}
+
+.hypGueteUrteil {
+    font-size: .82rem;
+    padding: .05rem .5rem;
+    border-radius: var(--border-radius, 6px);
+    background: rgba(255, 255, 255, .05);
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypGueteUrteil.gut {
+    color: #4caf50;
+    background: rgba(76, 175, 80, .1);
+}
+
+.hypGueteUrteil.warn {
+    color: #ffb300;
+    background: rgba(255, 179, 0, .1);
 }
 
 .hypChip {

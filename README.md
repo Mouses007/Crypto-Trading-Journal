@@ -88,12 +88,17 @@ verified for it — not, as previously stated here, for lack of perpetuals: it
 runs 602 of them. It appears in the exchange filter, just not in the execution
 figures.
 
-**Outcome tracking**: for the top twenty of every run, what actually happened
-afterwards is recorded — 15m/1h/4h for the Coin Radar, 1/7/30 days for the Hype
-Radar. What is measured is the span between best and worst point, not the
-return, and it is compared against the bottom half of the list. Without that
-control group, on a busy day even a random ranking looks brilliant. The weights
-are not auto-optimised against it.
+**Outcome tracking**: for the top twenty of every run *and* a random sample of ten
+from the bottom half, what actually happened afterwards is recorded — 15m/1h/4h for
+the Coin Radar. What is measured is the span between best and worst point inside
+the horizon, not the return. It is evaluated per run: does the top move more than
+the control group (with a sign test across runs), and does the score rank better
+than a plain ATR% ranking? Without that control group, on a busy day even a random
+ranking looks brilliant. The Hype Radar checks after 1/7/30 days whether the pair
+still exists and what became of price and liquidity — for passed finds, a sample of
+those rejected by the safety check, and a sample from the field below the threshold.
+Both tables are on the pages themselves (Coin Radar → history, Hype Radar →
+reports). The weights are not auto-optimised against it.
 
 The page states plainly what it does *not* claim: direction. It carries into the
 present because volatility is persistent — it comes in phases lasting weeks to

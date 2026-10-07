@@ -864,6 +864,56 @@
                 </div>
             </div>
 
+            <!-- Erfolgskontrolle: die einzige Zahl, die sagt, ob die Rangfolge
+                 etwas taugt. Beharrlichkeit (Spalte unten) misst nur, ob sie
+                 sich wiederholt — eine stabile Liste kann stabil falsch sein.
+                 Je Horizont: Spitze gegen eine Kontrollgruppe aus der unteren
+                 Hälfte desselben Laufs, und die Note gegen eine Rangfolge nur
+                 nach ATR%. -->
+            <div class="crBlock mb-4">
+                <h6 class="crTitel">{{ t('coinradar.gueteTitel') }}</h6>
+                <p class="crHinweis">{{ t('coinradar.gueteHinweis') }}</p>
+                <div v-if="gueteFehler" class="text-muted small">{{ gueteFehler }}</div>
+                <div v-else-if="!guete" class="text-muted small"><span class="spinner-border spinner-border-sm"></span></div>
+                <div v-else-if="!guete.jeHorizont.length" class="text-muted small">{{ t('coinradar.gueteLeer') }}</div>
+                <template v-else>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle crTabelle">
+                            <thead>
+                                <tr>
+                                    <th>{{ t('coinradar.gueteHorizont') }}</th>
+                                    <th class="text-end" :title="t('coinradar.gueteLaeufeTitel')">{{ t('coinradar.gueteLaeufe') }}</th>
+                                    <th class="text-end" :title="t('coinradar.guetePrecisionTitel')">Precision@10</th>
+                                    <th class="text-end" :title="t('coinradar.gueteSpanneTitel')">{{ t('coinradar.gueteSpanne') }}</th>
+                                    <th class="text-end" :title="t('coinradar.gueteVorneTitel')">{{ t('coinradar.gueteVorne') }}</th>
+                                    <th class="text-end" :title="t('coinradar.gueteRhoTitel')">{{ t('coinradar.gueteRho') }}</th>
+                                    <th>{{ t('coinradar.gueteUrteil') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="h in guete.jeHorizont" :key="h.horizont">
+                                    <td>{{ h.horizont }} <span class="crKlein">≥ {{ n(h.schwellePct, 1) }} %</span></td>
+                                    <td class="text-end crZahl">{{ h.laeufeMitKontrolle }} / {{ h.laeufe }}</td>
+                                    <td class="text-end crZahl">{{ prozentAnteil(h.precision10) }}</td>
+                                    <td class="text-end crZahl">{{ n(h.medianSpanneOben, 2) }} / {{ n(h.medianSpanneKontrolle, 2) }} %</td>
+                                    <td class="text-end crZahl">
+                                        {{ prozentAnteil(h.obenVorneAnteil) }}
+                                        <span v-if="h.vorzeichenP !== null" class="crKlein">p {{ n(h.vorzeichenP, 3) }}</span>
+                                    </td>
+                                    <td class="text-end crZahl">{{ n(h.rangKorrelation, 2) }} / {{ n(h.atrKorrelation, 2) }}</td>
+                                    <td :class="gueteKlasse(h.urteil)">{{ t('coinradar.guete_' + h.urteil) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="crKlein mb-0">{{ t('coinradar.gueteFuss', {
+                        tage: guete.tage,
+                        offen: guete.jeHorizont.reduce((a, h) => a + h.offen, 0),
+                        fehl: guete.jeHorizont.reduce((a, h) => a + h.fehlgeschlagen, 0),
+                    }) }}</p>
+                </template>
+            </div>
+
             <div v-if="!laeufe.length" class="text-muted small py-3">{{ t('coinradar.keineLaeufe') }}</div>
             <div v-else class="table-responsive">
                 <table class="table table-sm align-middle crTabelle">
@@ -1505,11 +1555,33 @@ async function ladeLaeufe() {
     try {
         const r = await axios.get('/api/coin-radar/laeufe')
         laeufe.value = r.data || []
-        await rechneDauerhaft()
+        await Promise.all([rechneDauerhaft(), ladeGuete()])
     } catch (e) {
         logWarn('coin-radar', 'Läufe konnten nicht geladen werden', e)
     }
 }
+
+// ── Erfolgskontrolle ─────────────────────────────────────────────
+const guete = ref(null)
+const gueteFehler = ref('')
+
+async function ladeGuete() {
+    try {
+        const r = await axios.get('/api/coin-radar/guete')
+        guete.value = r.data || { jeHorizont: [] }
+        gueteFehler.value = ''
+    } catch (e) {
+        logWarn('coin-radar', 'Erfolgskontrolle konnte nicht geladen werden', e)
+        gueteFehler.value = t('coinradar.gueteFehler')
+    }
+}
+
+/** Anteil 0..1 als ganze Prozent — unbekannt bleibt ein Strich. */
+const prozentAnteil = (w) => (w === null || w === undefined || !Number.isFinite(Number(w))
+    ? '—' : `${Math.round(Number(w) * 100)} %`)
+
+const gueteKlasse = (urteil) => (urteil === 'traegt' ? 'text-success'
+    : (urteil === 'zuWenig' ? 'text-muted' : 'text-warning'))
 
 async function rechneDauerhaft() {
     // Server rechnet über ALLE fertigen Läufe in einer Abfrage — Vorgänger

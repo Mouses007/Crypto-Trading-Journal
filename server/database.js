@@ -135,7 +135,11 @@ async function fixPostgresSequences(knex) {
 // v17: `bild` an `quiz_karten` — SVG-Skizze zu Strukturkarten. Rein additiv,
 // Vorgabe leer; ein aelterer Codestand ignoriert die Spalte schlicht.
 // v18: `bildEcht` an `quiz_karten` — echtes Marktbeispiel neben dem Schema.
-const SCHEMA_VERSION = 18
+// v19: `gruppe`, `atrPct`, `versuche` an `radar_ergebnisse` — Kontrollgruppe,
+// ATR-Gegenprobe und Wiederholung bei vorübergehendem Ausfall. Rein additiv;
+// ein älterer Codestand schreibt `gruppe` nicht (Vorgabe „spitze") und liest
+// die Kontrollzeilen als gewöhnliche Plätze jenseits der zehn.
+const SCHEMA_VERSION = 19
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2754,6 +2758,10 @@ async function runMigrations(knex, client) {
             t.double('liquiditaetEnde')
             t.integer('nochHandelbar')               // 1/0/null
             t.text('fehler').defaultTo('')
+            // spitze | kontrolle (Coin-Radar) — spitze | verworfen | feld (Hype)
+            t.string('gruppe').defaultTo('spitze')
+            t.double('atrPct')                       // Coin-Radar: für die ATR-Gegenprobe
+            t.integer('versuche').defaultTo(0)       // vorübergehende Ausfälle
             t.unique(['art', 'laufId', 'symbol', 'horizont'], 'uq_radar_erg')
             t.index(['status', 'faelligAm'], 'idx_radar_erg_faellig')
         })
@@ -3058,6 +3066,11 @@ async function runMigrations(knex, client) {
     // Skizze zur Karte (SVG-Quelltext) — siehe createTable oben.
     await addColumnIfNotExists('quiz_karten', 'bild', (t) => t.text('bild').defaultTo(''))
     await addColumnIfNotExists('quiz_karten', 'bildEcht', (t) => t.text('bildEcht').defaultTo(''))
+
+    // v19: Erfolgskontrolle mit Kontrollgruppe, ATR-Gegenprobe und Wiederholung.
+    await addColumnIfNotExists('radar_ergebnisse', 'gruppe', (t) => t.string('gruppe').defaultTo('spitze'))
+    await addColumnIfNotExists('radar_ergebnisse', 'atrPct', (t) => t.double('atrPct'))
+    await addColumnIfNotExists('radar_ergebnisse', 'versuche', (t) => t.integer('versuche').defaultTo(0))
 
     /*
      * Eigener Zähler für „Schwer" (05.09.2026). MUSS als `addColumnIfNotExists`

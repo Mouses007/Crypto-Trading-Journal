@@ -304,8 +304,8 @@ export async function ausDexScreener() {
  * Liquidität, Volumen, Alter und das Kauf/Verkauf-Verhältnis dazu — die Zahlen,
  * auf denen Bewertung und Sicherheitsprüfung beruhen.
  */
-export async function dexDetails(contract) {
-    const karte = await dexDetailsViele([contract])
+export async function dexDetails(contract, opts = {}) {
+    const karte = await dexDetailsViele([contract], opts)
     return karte.get(String(contract).toLowerCase()) || null
 }
 
@@ -326,9 +326,11 @@ const SAMMEL_GROESSE = 30
  * Rangfolge entsteht zum ersten Mal auf vergleichbarer Grundlage.
  *
  * @param {string[]} contracts
+ * @param {object} opts  `{streng: true}` reicht Abruffehler weiter, statt sie
+ *                       als „nichts gefunden" zu verschlucken
  * @returns {Promise<Map<string, object>>} Adresse (klein) → Details
  */
-export async function dexDetailsViele(contracts = []) {
+export async function dexDetailsViele(contracts = [], opts = {}) {
     const raus = new Map()
     const liste = [...new Set(contracts.filter(Boolean).map(String))]
 
@@ -340,7 +342,13 @@ export async function dexDetailsViele(contracts = []) {
                 `https://api.dexscreener.com/latest/dex/tokens/${teil.map(encodeURIComponent).join(',')}`)
             paare = Array.isArray(j?.pairs) ? j.pairs : []
         } catch (e) {
-            // Ein Häppchen, das klemmt, darf die übrigen nicht mitnehmen.
+            /*
+             * Ein Häppchen, das klemmt, darf die übrigen nicht mitnehmen —
+             * beim Sammeln. Wer dagegen wissen will, ob es einen Fund noch
+             * GIBT (Erfolgskontrolle, Wachhund), darf einen Ausfall nicht mit
+             * „kein Paar mehr" verwechseln.
+             */
+            if (opts.streng) throw e
             logWarn('hype-radar', `DexScreener-Sammelabruf: ${e.message}`)
             continue
         }

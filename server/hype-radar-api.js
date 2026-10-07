@@ -23,6 +23,8 @@ import { wachhundLauf, STANDARD_ALARM_REGELN } from './hype-radar/wachhund.js'
 import { testZustellung } from './hype-radar/zustellung.js'
 import { stufenNach, benoetigteAnbieter } from './hype-radar/stufen.js'
 import { keySpalte } from './ai-models.js'
+import { HORIZONTE } from './radar-ergebnisse.js'
+import { werteAusHype } from './radar-guete.js'
 // Börsenfavoriten (Coin-Radar) brauchen den anderen Datenweg — siehe `boersenLive`.
 import { holeMarktweit } from './coin-radar/daten.js'
 import { fundingJahresRate } from './coin-radar/kennzahlen.js'
@@ -116,6 +118,34 @@ export function setupHypeRadarRoutes(app) {
         } catch (e) {
             logWarn('hype-radar', `Kandidaten lesen: ${e.message}`)
             res.status(500).json({ error: 'Kandidaten konnten nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Erfolgskontrolle: Was wurde aus den Funden?
+     *
+     * Bis zum 07.10.2026 sammelte der Radar diese Messungen, und niemand las
+     * sie — es gab weder Endpunkt noch Anzeige. Drei Gruppen je Horizont:
+     * die Spitze, die von der Sicherheitsprüfung Verworfenen und das Feld
+     * unter der Schwelle (siehe `werteAusHype`).
+     */
+    app.get('/api/hype-radar/guete', async (req, res) => {
+        try {
+            const tage = Math.min(400, Math.max(1, Number(req.query.tage) || 120))
+            const seit = Date.now() - tage * 24 * 3600e3
+            const zeilen = await getKnex()('radar_ergebnisse')
+                .where('art', 'hype').andWhere('erstelltAm', '>=', seit)
+            const horizonte = Object.keys(HORIZONTE.hype)
+                .filter((h) => zeilen.some((z) => z.horizont === h))
+            res.json({
+                seit,
+                tage,
+                gesamt: zeilen.length,
+                jeHorizont: horizonte.map((h) => werteAusHype(zeilen.filter((z) => z.horizont === h), h)),
+            })
+        } catch (e) {
+            logWarn('hype-radar', `Güte lesen: ${e.message}`)
+            res.status(500).json({ error: 'Erfolgskontrolle konnte nicht geladen werden' })
         }
     })
 
