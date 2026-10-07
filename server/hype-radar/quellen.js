@@ -53,6 +53,9 @@ export const ERLAUBTE_HOSTS = new Set([
     'www.reddit.com',
     'frontend-api-v3.pump.fun',
     'api.coinpaprika.com',
+    // Projektprüfung und Frühphase (07.10.2026)
+    'api.github.com',
+    'a.4cdn.org',
 ])
 
 /**
@@ -92,6 +95,11 @@ const EIMER = {
     'www.reddit.com': new Eimer(1),
     'frontend-api-v3.pump.fun': new Eimer(20),
     'api.coinpaprika.com': new Eimer(10),
+    // Ohne Schlüssel 60 Anfragen je STUNDE — der Zwischenspeicher der
+    // Projektprüfung (24 h) ist die eigentliche Bremse, das hier nur die Reserve.
+    'api.github.com': new Eimer(10),
+    // 4chan verlangt höchstens eine Anfrage je Sekunde.
+    'a.4cdn.org': new Eimer(30),
 }
 
 /**
@@ -213,7 +221,7 @@ export function normChain(roh) {
  * Bewusst flach und tolerant: Fremdantworten haben ständig fehlende Felder,
  * und ein Fund ohne Preis ist immer noch ein Fund.
  */
-function fund({ symbol, name = '', chain = '', contract = '', pair = '', quelle, rang = 0, url = '', markt = {}, sozial = {} }) {
+export function fund({ symbol, name = '', chain = '', contract = '', pair = '', quelle, rang = 0, url = '', markt = {}, sozial = {} }) {
     return {
         symbol: normSymbol(symbol),
         name: String(name || '').slice(0, 120),
@@ -277,6 +285,7 @@ export async function ausDexScreener() {
             quelle: 'dexscreener-boost',
             rang: i + 1,
             url: b?.url || '',
+            markt: { links: linksAusInfo(b) },
             sozial: { boostGesamt: Number(b?.totalAmount) || 0 },
         })))
     }
@@ -289,6 +298,7 @@ export async function ausDexScreener() {
             quelle: 'dexscreener-neu',
             rang: i + 1,
             url: p?.url || '',
+            markt: { links: linksAusInfo(p) },
         })))
     }
     if (!funde.length && boosts.status === 'rejected' && profile.status === 'rejected') {
@@ -417,7 +427,7 @@ function ausPaar(p, seite = 'base') {
             // Wer die Basis kauft, verkauft die Gegenseite — das Verhältnis kehrt sich um.
             kaufVerkaufVerhaeltnis: umgekehrt(m.kaufVerkaufVerhaeltnis),
             kaufVerkauf1h: umgekehrt(m.kaufVerkauf1h),
-            boosts: 0, webseiten: null, kanaele: null, bild: '',
+            boosts: 0, webseiten: null, kanaele: null, bild: '', links: null,
         },
     }
 }
@@ -475,6 +485,9 @@ function ausPaarBasis(p, seite) {
             kaufVerkaufVerhaeltnis: verkaeufe > 0 ? kaeufe / verkaeufe : (kaeufe > 0 ? 99 : null),
             transaktionen24h: kaeufe + verkaeufe,
             transaktionen1h: (Number(p?.txns?.h1?.buys) || 0) + (Number(p?.txns?.h1?.sells) || 0),
+            // Die letzten fünf Minuten — für die Frühphase das Mass, ob der
+            // Handel innerhalb der Stunde gerade anzieht.
+            transaktionen5m: p?.txns?.m5 ? (Number(p.txns.m5.buys) || 0) + (Number(p.txns.m5.sells) || 0) : null,
             kaufVerkauf1h: verhaeltnis(p?.txns?.h1),
             /*
              * BEZAHLTE SICHTBARKEIT — der Wert, um den es hier eigentlich geht.
@@ -492,6 +505,12 @@ function ausPaarBasis(p, seite) {
             webseiten: (p?.info?.websites || []).length,
             kanaele: (p?.info?.socials || []).length,
             bild: p?.info?.imageUrl || '',
+            /*
+             * Die Adressen selbst, nicht nur ihre Anzahl — die Projektprüfung
+             * liest die Webseite und sucht das Team dahinter. Gedeckelt, damit
+             * die gespeicherten Marktdaten klein bleiben.
+             */
+            links: linksAusInfo(p?.info),
         },
     }
 }
@@ -500,6 +519,43 @@ function ausPaarBasis(p, seite) {
  * `Number(null)` ist 0 — und `Number.isFinite(0)` wahr. Ohne die Vorprüfung
  * wurde eine fehlende Kursänderung zu „0 %", also zu einer Messung.
  */
+/**
+ * Webseiten und Kanäle eines Tokens in einer Form — gleich, ob sie aus
+ * DexScreener (`info.websites`/`info.socials`, Profile `links`) oder pump.fun
+ * (`website`, `twitter`, `telegram`) kommen.
+ *
+ * @returns {{webseiten:string[], kanaele:Array<{typ:string, url:string}>}|null}
+ */
+export function linksAusInfo(info) {
+    if (!info || typeof info !== 'object') return null
+    const url = (u) => {
+        const t = String(u || '').trim()
+        return /^https?:\/\//i.test(t) ? t.slice(0, 300) : ''
+    }
+    const webseiten = []
+    const kanaele = []
+    for (const w of info.websites || []) if (url(w?.url)) webseiten.push(url(w.url))
+    for (const k of info.socials || []) if (url(k?.url)) kanaele.push({ typ: String(k?.type || '').toLowerCase(), url: url(k.url) })
+    // Profile und Boosts nennen ihre Links gemischt in `links`.
+    for (const l of info.links || []) {
+        const u = url(l?.url)
+        if (!u) continue
+        const typ = String(l?.type || l?.label || '').toLowerCase()
+        if (!typ || typ === 'website' || typ === 'web') webseiten.push(u)
+        else kanaele.push({ typ, url: u })
+    }
+    // pump.fun: einzelne Felder; X manchmal nur als Name.
+    if (url(info.website)) webseiten.push(url(info.website))
+    if (info.twitter) {
+        const t = String(info.twitter).trim()
+        const u = url(t) || (/^@?[A-Za-z0-9_]{1,15}$/.test(t) ? `https://x.com/${t.replace(/^@/, '')}` : '')
+        if (u) kanaele.push({ typ: 'twitter', url: u })
+    }
+    if (url(info.telegram)) kanaele.push({ typ: 'telegram', url: url(info.telegram) })
+    if (!webseiten.length && !kanaele.length) return null
+    return { webseiten: [...new Set(webseiten)].slice(0, 3), kanaele: kanaele.slice(0, 6) }
+}
+
 const zahlOderNull = (w) => (w === null || w === undefined || w === ''
     ? null
     : (Number.isFinite(Number(w)) ? Number(w) : null))
@@ -679,6 +735,10 @@ export async function ausPumpFun(anzahl = 50) {
                     // `complete` heisst: die Kurve ist durch, der Token ist an
                     // eine echte Börse gewandert. Das ist ein Reifezeichen.
                     graduiert: c?.complete === true,
+                    links: linksAusInfo(c),
+                    // Die Wallet, die den Token aufgelegt hat — Schlüssel zur
+                    // Frage, was dieses „Team" vorher schon gestartet hat.
+                    ersteller: String(c?.creator || ''),
                 },
             })
         })
@@ -857,6 +917,14 @@ const QUELL_DOMAENE = {
     coinpaprika: 'discovery',
     // Die einzige Quelle, in der Menschen reden statt Ketten zu handeln.
     reddit: 'social',
+    /*
+     * Aus der Frühphase übernommen (07.10.2026): Der Token wurde dort über
+     * Stunden beobachtet — das ist gehandelte Kette. Wo er in Telegram-Kanälen
+     * oder auf /biz/ genannt wurde, zählt das als eigene Domäne `social`.
+     */
+    fruehphase: 'onchain',
+    telegram: 'social',
+    biz: 'social',
 }
 
 /*
@@ -872,6 +940,8 @@ const QUELL_DOMAENE = {
 const SOZIAL_ZUSAMMEN = {
     redditRang: (a, b) => Math.min(a, b),
     boostGesamt: (a, b) => Math.max(a, b),
+    // Dieselbe Beobachtung, zweimal gemeldet, ist keine zweite Plattform.
+    fruehPlattformen: (a, b) => Math.max(a, b),
 }
 
 export function fuegeSozialHinzu(ziel, quelle) {

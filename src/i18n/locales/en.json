@@ -520,7 +520,8 @@
       "agentBudgetHint": "Upper limit for one agent run across all reasoning rounds (input + output). When reached, the agent summarises what it has found so far. More budget = deeper analyses, but higher cost per question.",
       "empfehlungenAn": "Allow trading recommendations, price targets and forecasts",
       "empfehlungenHint": "Applies to the news report and to the Overall situation and Trading situation tiles. Switched off, they only describe what was measured.",
-      "empfehlungenWarnung": "When on, every such statement must name the level at which it holds and what would refute it. The report is also sent by email. Descriptions of the readings (what a liquidation cluster is, what a movement budget above 100 % means) stay unchanged — they explain the number, they forbid nothing."
+      "empfehlungenWarnung": "When on, every such statement must name the level at which it holds and what would refute it. The report is also sent by email. Descriptions of the readings (what a liquidation cluster is, what a movement budget above 100 % means) stay unchanged — they explain the number, they forbid nothing.",
+      "modelOptimization": "Model optimisation"
     },
     "aiEnabled": "AI features enabled",
     "aiEnabledHint": "Hides AI Agent from menu and dashboard. Settings are preserved.",
@@ -1196,7 +1197,37 @@
     },
     "boersenFilterChip": "{b} — show only finds tradable there. Selecting several means \"on at least one\". Unresolved listings stay in.",
     "wachhundAus": "Off",
-    "wachhundAusHinweis": "The watchdog is off. Favourites stay saved and visible — they are simply no longer watched, and no new alerts are raised."
+    "wachhundAusHinweis": "The watchdog is off. Favourites stay saved and visible — they are simply no longer watched, and no new alerts are raised.",
+    "gueteTitel": "What became of the finds? — outcome tracking",
+    "gueteHinweis": "After 1, 7 and 30 days the radar checks: does the pair still exist, how did price and liquidity develop? The best passed finds are compared with a sample of those rejected by the safety check (does the filter work?) and a sample from the field below the threshold (does the score work?).",
+    "gueteLeer": "No measurements yet. They are created after every scan and redeemed after 1, 7 and 30 days.",
+    "gueteFehler": "Outcome tracking could not be loaded.",
+    "gueteFuss": "{offen} still open · {fehl} not measurable",
+    "tab_fruehphase": "Early phase",
+    "spalteSubstanz": "Substance",
+    "spalteSubstanzTitel": "Substance score of the project check (website, domain, GitHub, creator) — shown next to hype and safety, never combined with either",
+    "projektTitel": "Project check",
+    "projektHinweis": "For passed finds the radar looks at what stands behind the token: the website (content, contract address, placeholder text), the domain age, GitHub (maintained? earlier projects?) and, on pump.fun, the creator's history. No key needed; each check is valid for 24 hours.",
+    "projektAn": "Project check during scans",
+    "projektMax": "at most per run",
+    "fruehTitel": "Early phase",
+    "fruehHinweis": "A separate lane ahead of the main check: tokens younger than twelve hours or with less than USD 50,000 liquidity. It measures acceleration — trading, distinct buyers and mentions against the token's own history — not size. Tokens that mature move into the main check on the next scan.",
+    "fruehAn": "Watch the early phase automatically",
+    "fruehTakt": "Interval",
+    "fruehAlarmAb": "Alert from score",
+    "fruehAlarmHinweis": "Alerts fire when the score crosses the threshold, at most every 12 hours per token, through the watchdog's channels. 0 = watch only.",
+    "fruehQuelle_pumpfunNeu": "pump.fun — newest launches",
+    "fruehQuelle_pumpfunAufstieg": "pump.fun — close to completion",
+    "fruehQuelle_dexscreenerProfile": "DexScreener — new profiles and takeovers",
+    "fruehQuelle_geckoterminalNeu": "GeckoTerminal — new pools with buyer counts",
+    "fruehQuelle_biz": "4chan /biz/ — mentioned addresses",
+    "fruehQuelle_telegram": "Telegram — configured channels",
+    "fruehQuelle_reddit": "Reddit — mentions",
+    "fruehTelegram": "Telegram channels (public)",
+    "fruehTelegramPlatzhalter": "{'@'}channel or t.me/channel — one per line",
+    "fruehTelegramHinweis": "The public preview (t.me/s/…) is read, last six hours, at most 15 channels. Call channels often promote their own tokens — a single mention is a hint; only several independent platforms count.",
+    "zFrueh": "early phase every {n} min",
+    "zFruehAus": "early phase off"
   },
   "kiUebersicht": {
     "laedt": "Loading overview …",
@@ -3406,6 +3437,43 @@
           "p": "Grid and strategy bots appear as their own group, not among manual positions. They follow different rules: for them the reported quantity is already the total turnover, so they must be computed differently from an ordinary position."
         }
       ]
+    },
+    "hypeFrueh": {
+      "title": "Early phase — finding tokens before they get loud",
+      "intro": "The radar's main check only sees a token from twelve hours of pair age and USD 50,000 liquidity. By then most of the move is often over. The early phase runs before that: every 15 minutes (adjustable) one snapshot per token, and from the history the question whether something is accelerating right now.",
+      "sections": [
+        {
+          "g": "HOW THE EARLY PHASE WORKS",
+          "h": "SOURCES",
+          "p": "pump.fun (newest launches and the largest still on the bonding curve), DexScreener (newly paid profiles and community takeovers), GeckoTerminal (new pools with the number of DISTINCT buyers), the 4chan /biz/ catalog (which contract addresses are mentioned), configured public Telegram channels and, optionally, Reddit. All without keys. A ticker mention (\"$FROG\") only counts for an already known token, and only if exactly one carries that name."
+        },
+        {
+          "h": "ACCELERATION, NOT SIZE",
+          "p": "Five sub-scores: trading surge (transactions in the last hour against the token's own history — at first sight the last five minutes against the hour), participation (distinct buyers instead of transactions), social (on how many platforms it is mentioned — three platforms weigh more than a hundred mentions on one), team/substance (the project check) and momentum (valuation growth)."
+        },
+        {
+          "h": "WHAT IS DEDUCTED",
+          "p": "One-sided buying (more than eight times as many buys as sells — often a bot or a sell block), circular trading (many transactions, few wallets), volume without price movement (wash suspicion), serial creators without a single success, and a collapse below 20 % of the observed peak — then the token is rejected."
+        },
+        {
+          "h": "PROJECT CHECK",
+          "p": "For the best of each run: the website (sections, correct contract address, placeholder text), the domain age, GitHub (maintained, earlier projects) and on pump.fun the other coins of the same wallet. That is the question \"has this team ever delivered anything\" — for tokens without a site or code the only trace."
+        },
+        {
+          "g": "AFTERWARDS",
+          "h": "MATURE → MAIN CHECK",
+          "p": "From twelve hours and USD 50,000 liquidity a token counts as mature. On the next scan it enters the main check as a source of its own — with safety check and report — even if no trending list carries it at that moment. Where it was mentioned on Telegram or /biz/, that counts there as independent social confirmation."
+        },
+        {
+          "h": "ALERTS",
+          "p": "If the score rises above the configured threshold, an alert goes out through the watchdog's channels (ntfy, Telegram, webhook) — on crossing, not while above, and at most every twelve hours per token."
+        },
+        {
+          "h": "WHAT IS MISSING",
+          "p": "TikTok and X offer no free access. X could be connected through the paid Grok search the news already uses; TikTok only through paid scraping services. Neither is built in, deliberately."
+        }
+      ],
+      "caveat": "Early-phase tokens are the riskiest class there is — most are worthless within hours. This lane has NO safety check yet (honeypot, mint and freeze rights); that only follows in the main check. The weights are assumptions that have to prove themselves in the outcome tracking. Not investment advice."
     }
   },
   "news": {
@@ -3903,9 +3971,9 @@
     "beharrlichZuWenig": "too few coins in common",
     "einstNichtGeladen": "Settings not loaded yet — changes are saved only after that.",
     "huerdenGekappt": "Showing the {n} highest-turnover of {m} rejected coins.",
-    "gueteTitel": "What became of the finds? — outcome tracking",
-    "gueteHinweis": "After 1, 7 and 30 days the radar checks: does the pair still exist, how did price and liquidity develop? The best passed finds are compared with a sample of those rejected by the safety check (does the filter work?) and a sample from the field below the threshold (does the score work?).",
-    "gueteLeer": "No measurements yet. They are created after every scan and redeemed after 1, 7 and 30 days.",
+    "gueteTitel": "Does the ranking hold up? — outcome tracking",
+    "gueteHinweis": "After 15 minutes, 1 and 4 hours the radar checks how far the top coins of a run actually moved (high minus low) — compared with a random sample from the bottom half of the same run and with a ranking by ATR% alone. If the top does not move more than the control, the ranking is noise.",
+    "gueteLeer": "No measurements yet. They are created after every run and redeemed after 15 minutes, 1 and 4 hours.",
     "gueteFehler": "Outcome tracking could not be loaded.",
     "gueteHorizont": "Horizon",
     "gueteLaeufe": "Runs",
@@ -4087,10 +4155,10 @@
     "epFehler_zu_lang": "That is not a trading symbol.",
     "epUmsatz": "24h turnover",
     "epGelistet": "Tradable on:",
-    "epChartOeffnen": "Open the chart on TradingView — prices from {q}"
+    "epChartOeffnen": "Open the chart on TradingView — prices from {q}",
+    "ladeFehler": "Ranking could not be loaded — showing the last state."
   },
   "lernen": {
-    "ladeFehler": "Ranking could not be loaded — showing the last state.",
     "tabKarten": "Cards",
     "tabStatistik": "Statistics",
     "kategorie": {
@@ -4169,6 +4237,88 @@
       "kategorieLeer": "No ratings by category yet.",
       "duennHinweis": "not enough data",
       "keineDaten": "No ratings yet — start a session to see something here."
-    }
+    },
+    "ladeFehler": "Could not load the flashcards."
+  },
+  "hypeFrueh": {
+    "taktAus": "Interval off — runs by hand only (switch on via the gear above)",
+    "taktAn": "watching every {n} min",
+    "letzter": "last run {z}",
+    "letzterErgebnis": "{b} watched, {n} new, {a} alerted",
+    "verworfeneZeigen": "Show rejected",
+    "jetzt": "Search now",
+    "laeuft": "Run in progress …",
+    "gestartet": "Run started — the list refreshes as soon as it is done.",
+    "startFehler": "Run could not be started.",
+    "ladeFehler": "Early phase could not be loaded.",
+    "erklaerung": "Tokens the main check does not see yet. The score measures acceleration against the token's own history, not size: a token valued at USD 20,000 whose buyer count triples within an hour ranks above one worth a million where nothing happens. Next to it, the substance score of the project check. There is no safety check (honeypot, mint rights) here yet — that follows in the main check.",
+    "leer": "Nothing watched yet. Switch the early phase on via the gear or start a run by hand.",
+    "substanzKurz": "Substance",
+    "spalteToken": "Token",
+    "spalteNote": "Score",
+    "spalteVerlauf": "History",
+    "spalteSubstanz": "Substance",
+    "spalteMcap": "Valuation",
+    "spalteLiq": "Liquidity",
+    "spalteAlter": "Age",
+    "spalteKaeufer": "Buyers/sellers 1h",
+    "spalteSozial": "Social",
+    "spalteStatus": "Status",
+    "kurveTitel": "Still on the pump.fun bonding curve",
+    "trend_neu": "newly watched",
+    "trend_steigt": "score rising",
+    "trend_faellt": "score falling",
+    "trend_gleich": "score unchanged",
+    "status_beobachtet": "watched",
+    "status_reif": "mature → main check",
+    "status_verworfen": "rejected",
+    "grund_eingebrochen": "collapsed",
+    "grund_leer": "empty",
+    "txKurz": "{n} tx",
+    "sozialTitel": "Mentioned on: {p} — {n} mentions in the last run",
+    "teilnoten": "Sub-scores",
+    "teil_handel": "Trading surge",
+    "teil_beteiligung": "Participation",
+    "teil_sozial": "Social",
+    "teil_team": "Team/substance",
+    "teil_momentum": "Momentum",
+    "quellen": "Sources",
+    "beobachtetSeit": "watched since {z}",
+    "befunde": "Findings",
+    "keineBefunde": "No findings."
+  },
+  "hypeProjekt": {
+    "titel": "Project check",
+    "noteTitel": "Substance score 0–100: website, domain age, GitHub, creator history",
+    "keineNoteTitel": "Too little checkable for a score",
+    "info": "What stands behind the token, gathered without keys: the website (sections such as roadmap and tokenomics, does it show the right contract address, placeholder text, site builder), the domain age (RDAP), the GitHub account (maintained, earlier projects with stars) and for pump.fun tokens the other coins of the same wallet — creators who got one through the curve before succeed far more often than the base rate of about 1 %; those launching dozens produce mass goods. Starts at 50, points for and against. What could not be checked (bot protection, TLD without RDAP) costs nothing. No guarantee: a good website is cheap.",
+    "geprueftAm": "checked {z}",
+    "pruefen": "Check project",
+    "neuPruefen": "check again",
+    "nochNicht": "Not checked yet.",
+    "fehler": "Check failed.",
+    "dafuer": "In favour",
+    "dagegen": "Against",
+    "hinweise": "Not checkable / notes",
+    "webseite": "Website",
+    "domainAlter": "Domain age",
+    "kanaele": "Channels",
+    "status_keine": "none",
+    "status_fehler": "unreachable",
+    "status_geschuetzt": "bot protection, not checkable",
+    "status_unbekannt": "unknown",
+    "plattform": "free platform {p}",
+    "ghKonto": "account {a} old, {r} repos, {f} followers",
+    "ghRepo": "★ {s}, last push {p} ago",
+    "ghFork": "fork",
+    "ghFrueher": "Earlier projects",
+    "ersteller": "Creator",
+    "erstellerBilanz": "{n} other coins, {g} through the curve, {h} in the last 24 h",
+    "erstellerBeste": "best valuation USD {m}",
+    "erstellerBeispiele": "Completed",
+    "unterTag": "under a day",
+    "tage": "{n} days",
+    "monate": "{n} months",
+    "jahre": "{n} years"
   }
 }

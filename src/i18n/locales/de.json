@@ -520,7 +520,8 @@
       "agentBudgetHint": "Obergrenze für einen Agenten-Lauf über alle Denkrunden (Eingabe + Ausgabe). Ist sie erreicht, fasst der Agent die bis dahin gesammelten Ergebnisse zusammen. Mehr Budget = tiefere Analysen, aber höhere Kosten je Frage.",
       "empfehlungenAn": "Handelsempfehlungen, Kursziele und Prognosen erlauben",
       "empfehlungenHint": "Gilt für den Nachrichten-Lagebericht sowie die Kacheln Gesamtlage und Handelslage. Ausgeschaltet beschreiben sie nur, was gemessen wurde.",
-      "empfehlungenWarnung": "Eingeschaltet muss jede solche Aussage die Marke nennen, an der sie gilt, und was sie widerlegt. Der Lagebericht geht auch per Mail hinaus. Beschreibungen der Messwerte (was ein Liquidations-Cluster ist, was ein Bewegungsvorrat über 100 % heisst) bleiben unverändert — sie erklären die Zahl, sie verbieten nichts."
+      "empfehlungenWarnung": "Eingeschaltet muss jede solche Aussage die Marke nennen, an der sie gilt, und was sie widerlegt. Der Lagebericht geht auch per Mail hinaus. Beschreibungen der Messwerte (was ein Liquidations-Cluster ist, was ein Bewegungsvorrat über 100 % heisst) bleiben unverändert — sie erklären die Zahl, sie verbieten nichts.",
+      "modelOptimization": "Modell-Optimierung"
     },
     "aiEnabled": "KI-Funktionen aktiviert",
     "aiEnabledHint": "Blendet KI-Agent aus Menü und Dashboard aus. Einstellungen bleiben gespeichert.",
@@ -1196,7 +1197,37 @@
     },
     "boersenFilterChip": "{b} — nur Funde zeigen, die dort handelbar sind. Mehrere Börsen heisst „auf mindestens einer\". Ungeklärte Listungen bleiben drin.",
     "wachhundAus": "Aus",
-    "wachhundAusHinweis": "Der Wachhund ist abgeschaltet. Favoriten bleiben gespeichert und werden weiter angezeigt — sie werden nur nicht mehr überwacht, und es entstehen keine neuen Alarme."
+    "wachhundAusHinweis": "Der Wachhund ist abgeschaltet. Favoriten bleiben gespeichert und werden weiter angezeigt — sie werden nur nicht mehr überwacht, und es entstehen keine neuen Alarme.",
+    "gueteTitel": "Was wurde aus den Funden? — Erfolgskontrolle",
+    "gueteHinweis": "Nach 1, 7 und 30 Tagen wird nachgesehen: Gibt es das Paar noch, wie haben sich Preis und Liquidität entwickelt? Verglichen werden die besten bestandenen Funde mit einer Stichprobe der von der Sicherheitsprüfung Verworfenen (taugt der Filter?) und einer Stichprobe aus dem Feld unter der Schwelle (taugt die Note?).",
+    "gueteLeer": "Noch keine Messungen. Sie entstehen nach jedem Scan und werden nach 1, 7 und 30 Tagen eingelöst.",
+    "gueteFehler": "Erfolgskontrolle konnte nicht geladen werden.",
+    "gueteFuss": "{offen} noch offen · {fehl} nicht messbar",
+    "tab_fruehphase": "Frühphase",
+    "spalteSubstanz": "Substanz",
+    "spalteSubstanzTitel": "Substanz-Note der Projektprüfung (Webseite, Domain, GitHub, Ersteller) — steht neben Hype und Sicherheit und wird mit keiner verrechnet",
+    "projektTitel": "Projektprüfung",
+    "projektHinweis": "Für die bestandenen Funde wird nachgesehen, was hinter dem Token steht: die Webseite (Inhalt, Vertragsadresse, Platzhaltertext), das Alter der Domain, GitHub (gepflegt? frühere Projekte?) und bei pump.fun die Vorgeschichte des Erstellers. Ohne Schlüssel; jede Prüfung gilt 24 Stunden.",
+    "projektAn": "Projektprüfung im Scan",
+    "projektMax": "höchstens je Lauf",
+    "fruehTitel": "Frühphase",
+    "fruehHinweis": "Eine eigene Spur vor der Hauptprüfung: Token, die jünger als zwölf Stunden sind oder noch keine 50 000 USD Liquidität haben. Gemessen wird Beschleunigung — Handel, verschiedene Käufer und Nennungen gegen den eigenen Verlauf —, nicht Grösse. Wer reift, wandert beim nächsten Scan in die Hauptprüfung.",
+    "fruehAn": "Frühphase automatisch beobachten",
+    "fruehTakt": "Takt",
+    "fruehAlarmAb": "Melden ab Note",
+    "fruehAlarmHinweis": "Gemeldet wird beim Überschreiten, je Token höchstens alle 12 Stunden, über die Kanäle des Wachhunds. 0 = nur beobachten.",
+    "fruehQuelle_pumpfunNeu": "pump.fun — neueste Starts",
+    "fruehQuelle_pumpfunAufstieg": "pump.fun — kurz vor dem Abschluss",
+    "fruehQuelle_dexscreenerProfile": "DexScreener — neue Profile und Übernahmen",
+    "fruehQuelle_geckoterminalNeu": "GeckoTerminal — neue Pools mit Käuferzahl",
+    "fruehQuelle_biz": "4chan /biz/ — genannte Adressen",
+    "fruehQuelle_telegram": "Telegram — eingestellte Kanäle",
+    "fruehQuelle_reddit": "Reddit — Nennungen",
+    "fruehTelegram": "Telegram-Kanäle (öffentlich)",
+    "fruehTelegramPlatzhalter": "{'@'}kanal oder t.me/kanal — einer je Zeile",
+    "fruehTelegramHinweis": "Gelesen wird die öffentliche Vorschau (t.me/s/…), die letzten sechs Stunden, höchstens 15 Kanäle. Call-Kanäle werben oft für eigene Token — eine einzelne Nennung ist ein Hinweis, erst mehrere unabhängige Plattformen zählen.",
+    "zFrueh": "Frühphase alle {n} min",
+    "zFruehAus": "Frühphase aus"
   },
   "kiUebersicht": {
     "laedt": "Übersicht wird geladen …",
@@ -3406,6 +3437,43 @@
           "p": "Grid- und Strategie-Bots erscheinen als eigene Gruppe, nicht zwischen den Handpositionen. Sie folgen anderen Regeln: Bei ihnen ist die gemeldete Menge bereits der Gesamtumsatz, weshalb sie anders gerechnet werden müssen als eine gewöhnliche Position."
         }
       ]
+    },
+    "hypeFrueh": {
+      "title": "Frühphase — Token finden, bevor sie laut werden",
+      "intro": "Die Hauptprüfung des Radars sieht einen Token erst ab zwölf Stunden Paaralter und 50 000 USD Liquidität. Bis dahin ist der grösste Teil der Bewegung oft vorbei. Die Frühphase läuft davor: alle 15 Minuten (einstellbar) eine Momentaufnahme je Token, und aus dem Verlauf die Frage, ob sich gerade etwas beschleunigt.",
+      "sections": [
+        {
+          "g": "SO ARBEITET DIE FRÜHPHASE",
+          "h": "QUELLEN",
+          "p": "pump.fun (neueste Starts und die grössten, die noch auf der Bindungskurve stehen), DexScreener (neu bezahlte Profile und Community-Übernahmen), GeckoTerminal (neue Pools mit der Zahl VERSCHIEDENER Käufer), der 4chan-Katalog von /biz/ (welche Vertragsadressen genannt werden), eingestellte öffentliche Telegram-Kanäle und auf Wunsch Reddit. Alle ohne Schlüssel. Eine Kürzel-Nennung („$FROG\") zählt nur für einen bereits bekannten Token und nur, wenn genau einer so heisst."
+        },
+        {
+          "h": "BESCHLEUNIGUNG STATT GRÖSSE",
+          "p": "Fünf Teilnoten: Handelsschub (Transaktionen der letzten Stunde gegen den eigenen Verlauf — beim ersten Blick die letzten fünf Minuten gegen die Stunde), Beteiligung (verschiedene Käufer statt Transaktionen), Sozial (auf wie vielen Plattformen genannt — drei Plattformen wiegen mehr als hundert Nennungen auf einer), Team/Substanz (die Projektprüfung) und Momentum (Wachstum der Bewertung)."
+        },
+        {
+          "h": "WAS ABGEZOGEN WIRD",
+          "p": "Einseitige Käufe (mehr als achtmal so viele Käufe wie Verkäufe — oft ein Bot oder eine Verkaufssperre), Kreishandel (viele Transaktionen, wenige Wallets), Volumen ohne Preisbewegung (Wash-Verdacht), Serien-Ersteller ohne einen einzigen Erfolg, und ein Einbruch auf unter 20 % des beobachteten Höchststands — dann wird der Token verworfen."
+        },
+        {
+          "h": "PROJEKTPRÜFUNG",
+          "p": "Für die Besten jedes Durchgangs: die Webseite (Abschnitte, richtige Vertragsadresse, Platzhaltertext), das Alter der Domain, GitHub (gepflegt, frühere Projekte) und bei pump.fun die anderen Coins derselben Wallet. Das ist die Frage „hat das Team schon einmal etwas zustande gebracht\" — für Token ohne Seite und Code die einzige Spur."
+        },
+        {
+          "g": "DANACH",
+          "h": "REIF → HAUPTPRÜFUNG",
+          "p": "Ab zwölf Stunden und 50 000 USD Liquidität gilt ein Token als reif. Beim nächsten Scan kommt er als eigene Quelle in die Hauptprüfung — mit Sicherheitsprüfung und Bericht —, auch wenn ihn gerade keine Trendliste führt. Wo er in Telegram oder auf /biz/ genannt wurde, zählt das dort als unabhängige soziale Bestätigung."
+        },
+        {
+          "h": "MELDUNGEN",
+          "p": "Steigt die Note über die eingestellte Schwelle, kommt eine Meldung über die Kanäle des Wachhunds (ntfy, Telegram, Webhook) — beim Überschreiten, nicht solange darüber, und je Token höchstens alle zwölf Stunden."
+        },
+        {
+          "h": "WAS FEHLT",
+          "p": "TikTok und X haben keinen freien Zugang. X liesse sich über die bezahlte Grok-Suche anbinden, die die Nachrichten schon nutzen; TikTok nur über kostenpflichtige Scraping-Dienste. Beides ist bewusst nicht eingebaut."
+        }
+      ],
+      "caveat": "Frühphasen-Token sind die riskanteste Klasse überhaupt — die meisten sind nach Stunden wertlos. In dieser Spur gibt es noch KEINE Sicherheitsprüfung (Honeypot, Mint- und Freeze-Rechte); die folgt erst in der Hauptprüfung. Die Gewichte sind Setzungen, die sich an der Erfolgskontrolle bewähren müssen. Keine Anlageberatung."
     }
   },
   "news": {
@@ -3903,9 +3971,9 @@
     "beharrlichZuWenig": "zu wenige gemeinsame Coins",
     "einstNichtGeladen": "Einstellungen noch nicht geladen — Änderungen werden erst danach gespeichert.",
     "huerdenGekappt": "Gezeigt werden die {n} umsatzstärksten von {m} abgelehnten Coins.",
-    "gueteTitel": "Was wurde aus den Funden? — Erfolgskontrolle",
-    "gueteHinweis": "Nach 1, 7 und 30 Tagen wird nachgesehen: Gibt es das Paar noch, wie haben sich Preis und Liquidität entwickelt? Verglichen werden die besten bestandenen Funde mit einer Stichprobe der von der Sicherheitsprüfung Verworfenen (taugt der Filter?) und einer Stichprobe aus dem Feld unter der Schwelle (taugt die Note?).",
-    "gueteLeer": "Noch keine Messungen. Sie entstehen nach jedem Scan und werden nach 1, 7 und 30 Tagen eingelöst.",
+    "gueteTitel": "Trägt die Rangfolge? — Erfolgskontrolle",
+    "gueteHinweis": "Nach 15 Minuten, 1 und 4 Stunden wird nachgesehen, wie weit sich die oberen Coins eines Laufs tatsächlich bewegt haben (Hoch minus Tief) — verglichen mit einer Zufallsstichprobe aus der unteren Hälfte desselben Laufs und mit einer Rangfolge nur nach ATR%. Bewegen sich die oberen nicht mehr als die Kontrolle, ist die Rangfolge Rauschen.",
+    "gueteLeer": "Noch keine Messungen. Sie entstehen nach jedem Lauf und werden nach 15 Minuten, 1 und 4 Stunden eingelöst.",
     "gueteFehler": "Erfolgskontrolle konnte nicht geladen werden.",
     "gueteHorizont": "Horizont",
     "gueteLaeufe": "Läufe",
@@ -4087,10 +4155,10 @@
     "epFehler_zu_lang": "Das ist kein Handelssymbol.",
     "epUmsatz": "Umsatz 24 h",
     "epGelistet": "Handelbar auf:",
-    "epChartOeffnen": "Chart auf TradingView öffnen — Kurse von {q}"
+    "epChartOeffnen": "Chart auf TradingView öffnen — Kurse von {q}",
+    "ladeFehler": "Rangliste konnte nicht geladen werden — angezeigt wird der letzte Stand."
   },
   "lernen": {
-    "ladeFehler": "Rangliste konnte nicht geladen werden — angezeigt wird der letzte Stand.",
     "tabKarten": "Karten",
     "tabStatistik": "Statistik",
     "kategorie": {
@@ -4169,6 +4237,88 @@
       "kategorieLeer": "Noch keine Bewertungen je Kategorie.",
       "duennHinweis": "zu wenig Daten",
       "keineDaten": "Noch keine Bewertungen — starte eine Sitzung, um hier etwas zu sehen."
-    }
+    },
+    "ladeFehler": "Die Lernkarten konnten nicht geladen werden."
+  },
+  "hypeFrueh": {
+    "taktAus": "Takt aus — Durchgänge nur von Hand (einschalten im Zahnrad oben)",
+    "taktAn": "beobachtet alle {n} min",
+    "letzter": "letzter Durchgang {z}",
+    "letzterErgebnis": "{b} beobachtet, {n} neu, {a} gemeldet",
+    "verworfeneZeigen": "Verworfene zeigen",
+    "jetzt": "Jetzt durchsuchen",
+    "laeuft": "Durchgang läuft …",
+    "gestartet": "Durchgang gestartet — die Liste aktualisiert sich, sobald er fertig ist.",
+    "startFehler": "Durchgang konnte nicht gestartet werden.",
+    "ladeFehler": "Frühphase konnte nicht geladen werden.",
+    "erklaerung": "Token, die die Hauptprüfung noch nicht sieht. Die Note misst Beschleunigung gegen den eigenen Verlauf, nicht Grösse: ein Token mit 20 000 USD Bewertung, dessen Käuferzahl sich in einer Stunde verdreifacht, steht vor einem mit einer Million, bei dem nichts passiert. Daneben die Substanz-Note der Projektprüfung. Eine Sicherheitsprüfung (Honeypot, Mint-Rechte) gibt es hier noch nicht — die folgt in der Hauptprüfung.",
+    "leer": "Noch nichts beobachtet. Schalte die Frühphase im Zahnrad ein oder starte einen Durchgang von Hand.",
+    "substanzKurz": "Substanz",
+    "spalteToken": "Token",
+    "spalteNote": "Note",
+    "spalteVerlauf": "Verlauf",
+    "spalteSubstanz": "Substanz",
+    "spalteMcap": "Bewertung",
+    "spalteLiq": "Liquidität",
+    "spalteAlter": "Alter",
+    "spalteKaeufer": "Käufer/Verk. 1h",
+    "spalteSozial": "Sozial",
+    "spalteStatus": "Status",
+    "kurveTitel": "Noch auf der pump.fun-Bindungskurve",
+    "trend_neu": "neu beobachtet",
+    "trend_steigt": "Note steigt",
+    "trend_faellt": "Note fällt",
+    "trend_gleich": "Note unverändert",
+    "status_beobachtet": "beobachtet",
+    "status_reif": "reif → Hauptprüfung",
+    "status_verworfen": "verworfen",
+    "grund_eingebrochen": "eingebrochen",
+    "grund_leer": "leer",
+    "txKurz": "{n} Tx",
+    "sozialTitel": "Genannt auf: {p} — {n} Nennungen im letzten Durchgang",
+    "teilnoten": "Teilnoten",
+    "teil_handel": "Handelsschub",
+    "teil_beteiligung": "Beteiligung",
+    "teil_sozial": "Sozial",
+    "teil_team": "Team/Substanz",
+    "teil_momentum": "Momentum",
+    "quellen": "Quellen",
+    "beobachtetSeit": "beobachtet seit {z}",
+    "befunde": "Befunde",
+    "keineBefunde": "Keine Befunde."
+  },
+  "hypeProjekt": {
+    "titel": "Projektprüfung",
+    "noteTitel": "Substanz-Note 0–100: Webseite, Domain-Alter, GitHub, Ersteller-Vorgeschichte",
+    "keineNoteTitel": "Zu wenig prüfbar für eine Note",
+    "info": "Was hinter dem Token steht, ohne Schlüssel zusammengetragen: die Webseite (Abschnitte wie Roadmap und Tokenomics, steht die richtige Vertragsadresse darauf, Platzhaltertext, Baukasten), das Alter der Domain (RDAP), das GitHub-Konto (gepflegt, frühere Projekte mit Sternen) und bei pump.fun-Token die anderen Coins derselben Wallet — wer schon einmal einen durch die Kurve gebracht hat, schafft es deutlich häufiger als die Grundrate von rund 1 %, wer Dutzende auflegt, produziert Massenware. Start bei 50, Punkte dafür und dagegen. Was nicht prüfbar war (Bot-Schutz, Endung ohne RDAP), kostet nichts. Keine Garantie: eine gute Webseite kostet wenig.",
+    "geprueftAm": "geprüft {z}",
+    "pruefen": "Projekt prüfen",
+    "neuPruefen": "neu prüfen",
+    "nochNicht": "Noch nicht geprüft.",
+    "fehler": "Prüfung fehlgeschlagen.",
+    "dafuer": "Spricht dafür",
+    "dagegen": "Spricht dagegen",
+    "hinweise": "Nicht prüfbar / Hinweise",
+    "webseite": "Webseite",
+    "domainAlter": "Domain-Alter",
+    "kanaele": "Kanäle",
+    "status_keine": "keine",
+    "status_fehler": "nicht erreichbar",
+    "status_geschuetzt": "Bot-Schutz, nicht prüfbar",
+    "status_unbekannt": "unbekannt",
+    "plattform": "Gratis-Plattform {p}",
+    "ghKonto": "Konto {a} alt, {r} Repos, {f} Follower",
+    "ghRepo": "★ {s}, letzter Push {p} her",
+    "ghFork": "Fork",
+    "ghFrueher": "Frühere Projekte",
+    "ersteller": "Ersteller",
+    "erstellerBilanz": "{n} weitere Coins, {g} durch die Kurve, {h} in den letzten 24 h",
+    "erstellerBeste": "beste Bewertung {m} USD",
+    "erstellerBeispiele": "Abgeschlossen",
+    "unterTag": "unter einem Tag",
+    "tage": "{n} Tage",
+    "monate": "{n} Monate",
+    "jahre": "{n} Jahre"
   }
 }

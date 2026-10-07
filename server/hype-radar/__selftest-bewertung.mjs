@@ -10,7 +10,7 @@
  */
 import {
     bewerte, noteSozial, noteVolumen, noteQuellen, noteNarrativ, noteNeuheit, istTrittbrettfahrer,
-    BOOST_DECKEL, REDDIT_DECKEL,
+    BOOST_DECKEL, REDDIT_DECKEL, FRUEH_DECKEL,
     STANDARD_GEWICHTE,
 } from './bewertung.js'
 import { fuehreZusammen, evidenzDomaenen, normSymbol, normChain } from './quellen.js'
@@ -446,6 +446,25 @@ pruefe('gekaufte Aufmerksamkeit ist gedeckelt',
     noteSozial({ markt: { boosts: 100000 } }) <= BOOST_DECKEL,
     String(noteSozial({ markt: { boosts: 100000 } })))
 pruefe('und reicht nie in die obere Hälfte', BOOST_DECKEL < 50)
+
+/*
+ * Frühphase: Nennung auf mehreren Plattformen während der Beobachtung. Eine
+ * Plattform ist ein Hinweis (unter dem Reddit-Deckel), erst mehrere
+ * unabhängige Orte heben darüber hinaus — und die Plattformzahl darf beim
+ * Zusammenführen nicht addiert werden, sonst zählte dieselbe Beobachtung doppelt.
+ */
+{
+    const eine = noteSozial({ sozial: { fruehPlattformen: 1 } })
+    const drei = noteSozial({ sozial: { fruehPlattformen: 3 } })
+    pruefe('Frühphase: eine Plattform bleibt unter dem Reddit-Deckel', eine > 0 && eine < REDDIT_DECKEL, String(eine))
+    pruefe('Frühphase: drei Plattformen über dem Reddit-Deckel', drei > REDDIT_DECKEL && drei <= FRUEH_DECKEL, String(drei))
+    const f = (n, q) => ({ symbol: 'FOO', contract: 'So1', chain: 'solana', pair: '',
+        quelle: { quelle: q }, markt: {}, sozial: { fruehPlattformen: n } })
+    const z = fuehreZusammen([f(2, 'fruehphase'), f(2, 'fruehphase')])[0]
+    pruefe('Frühphase: Plattformzahl wird nicht addiert', z.sozial.fruehPlattformen === 2, String(z.sozial.fruehPlattformen))
+    pruefe('Frühphase: Telegram ist eine eigene Domäne',
+        evidenzDomaenen([{ quelle: 'fruehphase' }, { quelle: 'telegram' }]).length === 2)
+}
 /*
  * `noteSozial` kennt seit dem 21.08.2026 zwei Signale: die POSITION eines
  * Reddit-Beitrags und gekaufte Sichtbarkeit. Beide sind gedeckelt, und beide

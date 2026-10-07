@@ -41,6 +41,9 @@ Regeln:
 - KEINE Kursziele, KEINE Kaufempfehlungen, keine Aufforderung zum Handeln.
 - Bewerte je Projekt: Warum wird darüber gesprochen? Steckt Substanz dahinter
   (Produkt, Team, Nutzen)? Welche Risiken nennen die Sicherheitsdaten?
+- Stütze die Einschätzung der Substanz auf die Projektprüfung (Webseite,
+  Domain-Alter, Code, frühere Projekte des Erstellers). Was dort fehlt oder
+  nicht prüfbar war, ist eine Lücke — keine Bestätigung.
 - Nenne die Sicherheitsbefunde ausdrücklich, auch bei bestandenen Kandidaten.
 - Kennzeichne Unsicherheit klar. Wo du nichts weisst, schreibe das.
 - Erfinde nichts: keine Teams, keine Partnerschaften, keine Zahlen, die nicht
@@ -92,6 +95,22 @@ function beschreibe(k) {
     if (Number.isFinite(m.paarAlterStunden)) zeilen.push(`  Paar seit ${(m.paarAlterStunden / 24).toFixed(1)} Tagen`)
     if (s.hinweise?.length) zeilen.push(`  Sicherheitsbefunde: ${s.hinweise.map(entschaerfe).join('; ')}`)
     else zeilen.push('  Sicherheitsbefunde: keine Auffälligkeiten')
+    /*
+     * Die Projektprüfung: Webseite, Domain, Code, Vorgeschichte des Erstellers.
+     * Die Befunde sind von uns formuliert; Titel und Seitentext stammen vom
+     * Projekt selbst und gehen deshalb nur als Zitat ins Prompt — eine
+     * Projektseite ist der zweitbilligste Weg, Anweisungen in einen fremden
+     * Prompt zu schreiben.
+     */
+    const p = k.projekt
+    if (p) {
+        zeilen.push(`  Substanz-Note (Projektprüfung): ${p.note ?? 'nicht bestimmbar'}`)
+        for (const b of (p.befunde || []).slice(0, 12)) {
+            zeilen.push(`    ${b.art === 'plus' ? '+' : (b.art === 'minus' ? '−' : '·')} ${entschaerfe(b.text)}`)
+        }
+        if (p.webseite?.titel) zeilen.push(`  Titel der Webseite: ${alsZitat(String(p.webseite.titel).slice(0, 160))}`)
+    }
+    if (k.projektAuszug) zeilen.push(`  Text der Webseite (Auszug): ${alsZitat(String(k.projektAuszug).slice(0, 1200))}`)
     return zeilen.join('\n')
 }
 
@@ -272,6 +291,7 @@ export async function erzeugeBericht(bestanden, verworfen, einstellungen = {}, m
                 vertrauen: ['hoch', 'mittel', 'niedrig'].includes(k.vertrauen) ? k.vertrauen : 'niedrig',
                 belege: r?.belege || [],
                 marktDaten: original.marktDaten,
+                projekt: original.projekt || null,
             }
         })
         .filter(Boolean)

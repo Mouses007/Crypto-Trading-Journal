@@ -111,6 +111,19 @@ export function noteSozial(k) {
      * Hunderter-Boost rund vierzig Punkte kaufen — und genau das ist das
      * Muster, gegen das der ganze Radar gebaut ist.
      */
+    /*
+     * Aus der Frühphase: auf wie vielen Plattformen (Telegram, /biz/, Reddit)
+     * der Token während der Beobachtung genannt wurde. Eine Plattform ist ein
+     * Hinweis — Kanäle, in denen Token beworben werden, gibt es überall. Zwei
+     * und drei unabhängige Orte sind das Frühsignal, um das es dem Radar geht:
+     * eine Erzählung, die sich ausbreitet, bevor der Handel sie einholt.
+     * Gedeckelt wie Reddit, nur höher, weil es mehrere Stimmen sind.
+     */
+    const plattformen = Number(s.fruehPlattformen)
+    if (Number.isFinite(plattformen) && plattformen > 0) {
+        punkte = Math.max(punkte, Math.min(FRUEH_DECKEL, 30 + 25 * (plattformen - 1)))
+    }
+
     const gekauft = Math.max(Number(s.boostGesamt) || 0, Number(k?.markt?.boosts) || 0)
     if (gekauft > 0) {
         punkte = Math.max(punkte, Math.min(BOOST_DECKEL, klemme(Math.log10(gekauft + 1) * 20)))
@@ -123,6 +136,9 @@ export const BOOST_DECKEL = 30
 
 /** Und höchstens so viel trägt ein Auftritt in einem Werbe-Unterforum. */
 export const REDDIT_DECKEL = 60
+
+/** Und so viel die Nennung auf mehreren Plattformen während der Frühphase. */
+export const FRUEH_DECKEL = 80
 
 /**
  * Zieht der Handel an.

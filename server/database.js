@@ -60,7 +60,7 @@ export function getKnex() {
  * the sequence doesn't advance, causing "duplicate key" errors on next insert.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute', 'hype_projekt', 'hype_frueh']
     let fixed = 0
 
     for (const table of tables) {
@@ -139,7 +139,10 @@ async function fixPostgresSequences(knex) {
 // ATR-Gegenprobe und Wiederholung bei vorübergehendem Ausfall. Rein additiv;
 // ein älterer Codestand schreibt `gruppe` nicht (Vorgabe „spitze") und liest
 // die Kontrollzeilen als gewöhnliche Plätze jenseits der zehn.
-const SCHEMA_VERSION = 19
+// v20: Hype-Radar-Frühphase (`hype_frueh`), Projektprüfung (`hype_projekt`,
+// `projektDaten`/`projektNote` an `hype_candidates`). Rein additiv; ein älterer
+// Codestand kennt die Tabellen nicht und schreibt die Spalten nicht.
+const SCHEMA_VERSION = 20
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -3095,6 +3098,59 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('radar_ergebnisse', 'gruppe', (t) => t.string('gruppe').defaultTo('spitze'))
     await addColumnIfNotExists('radar_ergebnisse', 'atrPct', (t) => t.double('atrPct'))
     await addColumnIfNotExists('radar_ergebnisse', 'versuche', (t) => t.integer('versuche').defaultTo(0))
+
+    /*
+     * v20: Projektprüfung — Webseite, Domain-Alter, GitHub, Ersteller-Bilanz.
+     *
+     * Eigene Tabelle als Zwischenspeicher, nicht nur im Speicher: Eine Prüfung
+     * kostet bis zu fünf Fremdabrufe, GitHub erlaubt ohne Schlüssel sechzig je
+     * STUNDE, und ein Neustart soll sie nicht alle wiederholen.
+     */
+    if (!(await knex.schema.hasTable('hype_projekt'))) {
+        await knex.schema.createTable('hype_projekt', (t) => {
+            t.increments('id').primary()
+            t.string('schluessel').notNullable()      // chain|contract (oder sym|SYMBOL)
+            t.integer('note')                         // Substanz 0..100, null = nichts prüfbar
+            t.text('ergebnis').defaultTo('{}')        // {note, befunde, fakten}
+            t.bigInteger('geprueftAm').defaultTo(0)
+            t.unique(['schluessel'], 'uq_hype_projekt')
+        })
+        console.log(' -> Created table: hype_projekt')
+    }
+    await addColumnIfNotExists('hype_candidates', 'projektDaten', (t) => t.text('projektDaten').defaultTo('{}'))
+    await addColumnIfNotExists('hype_candidates', 'projektNote', (t) => t.integer('projektNote'))
+
+    /*
+     * v20: Frühphase — Token, die der Radar beobachtet, BEVOR sie die
+     * Sicherheitsprüfung überhaupt bestehen können (12 h Paaralter, 50 000 USD
+     * Liquidität). Eine Zeile je Vertrag; `verlauf` hält die letzten
+     * Momentaufnahmen, aus denen die Beschleunigung gerechnet wird.
+     */
+    if (!(await knex.schema.hasTable('hype_frueh'))) {
+        await knex.schema.createTable('hype_frueh', (t) => {
+            t.increments('id').primary()
+            t.string('chain').notNullable()
+            t.string('contract').notNullable()
+            t.string('symbol').defaultTo('')
+            t.text('name').defaultTo('')
+            t.text('quellen').defaultTo('[]')         // JSON: Quellennamen, in denen er auftauchte
+            t.text('links').defaultTo('{}')           // JSON: {webseiten, kanaele}
+            t.string('ersteller').defaultTo('')       // Wallet des Erstellers (pump.fun)
+            t.bigInteger('ersterBlick').defaultTo(0)
+            t.bigInteger('letzterBlick').defaultTo(0)
+            t.text('stand').defaultTo('{}')           // JSON: jüngste Messung
+            t.text('verlauf').defaultTo('[]')         // JSON: Momentaufnahmen, älteste zuerst
+            t.integer('note')                         // Frühsignal 0..100
+            t.text('befunde').defaultTo('[]')
+            t.integer('projektNote')
+            t.string('status').defaultTo('beobachtet')  // beobachtet | reif | verworfen
+            t.string('grund').defaultTo('')
+            t.bigInteger('alarmiertAm').defaultTo(0)
+            t.unique(['chain', 'contract'], 'uq_hype_frueh')
+            t.index(['letzterBlick'], 'idx_hype_frueh_blick')
+        })
+        console.log(' -> Created table: hype_frueh')
+    }
 
     /*
      * Eigener Zähler für „Schwer" (05.09.2026). MUSS als `addColumnIfNotExists`

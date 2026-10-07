@@ -19,6 +19,8 @@ import { pruefe, pruefeMarkt, holeGoPlus, STANDARD_SICHERHEIT } from './sicherhe
 import { erzeugeBericht } from './bericht.js'
 import { ladeListungen, pruefeListung, nurNamensgleich } from './listungen.js'
 import { legeAnHype } from '../radar-ergebnisse.js'
+import { pruefeViele, kurzfassung } from './projekt.js'
+import { reifeFunde } from './fruehphase.js'
 
 /** Wie viele Kandidaten in die (teure) Sicherheitsprüfung gehen. */
 const MAX_PRUEFUNGEN = 40
@@ -35,11 +37,20 @@ export async function scanne(einst, melde = () => {}) {
 
     // ── Stufe 1 ─────────────────────────────────────────────────────────
     melde({ schritt: 'sammeln' })
-    const { kandidaten: roh, quellenStand } = await sammle({
+    const { kandidaten: gesammelt, quellenStand } = await sammle({
         schluessel: einst.schluessel || {},
         ketten: einst.ketten,
         quellen: einst.quellen || {},
     })
+    /*
+     * Gereifte Token aus der Frühphase: dort seit Stunden beobachtet, jetzt
+     * alt und liquide genug für die volle Prüfung. Sie kommen als eigene
+     * Quelle dazu — auch wenn keine der Trendlisten sie gerade führt; genau
+     * das ist der Sinn der Frühphase.
+     */
+    const reif = await reifeFunde()
+    if (reif.length) quellenStand.fruehphase = { ok: true, anzahl: reif.filter((f) => f.quelle.quelle === 'fruehphase').length }
+    const roh = reif.length ? fuehreZusammen([...gesammelt, ...reif]) : gesammelt
     melde({ schritt: 'gesammelt', anzahl: roh.length })
 
     /*
@@ -78,7 +89,13 @@ export async function scanne(einst, melde = () => {}) {
             // Steht der Fund auf der Gegenseite seines Paars, gehören Preis
             // und Volumen nicht ihm — der Vermerk wandert mit.
             seite: d?.seite || 'base',
-            markt: { ...k.markt, ...(d?.markt || {}) },
+            markt: {
+                ...k.markt,
+                ...(d?.markt || {}),
+                // Ein Detailabruf ohne Linkangaben darf die Links aus einem
+                // Profil oder von pump.fun nicht mit `null` überschreiben.
+                links: d?.markt?.links || k.markt?.links || null,
+            },
         }
     })
 
@@ -238,6 +255,39 @@ export async function scanne(einst, melde = () => {}) {
         if ((i + 1) % 5 === 0) melde({ schritt: 'sicherheit', fertig: i + 1, gesamt: zuUrteilen.length })
     }
 
+    /*
+     * ── Stufe 3b: Projektprüfung ────────────────────────────────────────
+     *
+     * Für die bestandenen Funde: Webseite, Domain-Alter, GitHub, Ersteller.
+     * Erst NACH der Sicherheitsprüfung — sie kostet bis zu fünf Fremdabrufe
+     * je Fund, und für einen Honeypot ist die Frage nach dem Team müssig.
+     * Die Substanz-Note steht neben Hype- und Sicherheitsnote; verrechnet wird
+     * sie mit keiner von beiden.
+     */
+    if (einst.projektPruefung !== false && bestanden.length) {
+        const auswahl = [...bestanden]
+            .sort((a, b) => b.hypeScore - a.hypeScore)
+            .slice(0, Math.max(0, Number(einst.projektMax) || 15))
+        melde({ schritt: 'projekt', gesamt: auswahl.length })
+        await pruefeViele(auswahl.map((z) => ({
+            symbol: z.symbol, name: z.name, chain: z.chain, contract: z.contractAddress,
+            links: z.marktDaten?.links || null, ersteller: z.marktDaten?.ersteller || '',
+        })), {
+            jeFertig: (fertig, e, fehler, i) => {
+                const z = auswahl[i]
+                if (e) {
+                    z.projekt = kurzfassung(e)
+                    z.projektNote = e.note
+                    // Der Seitentext nur für den Bericht, nicht für die Datenbank.
+                    z.projektAuszug = e.fakten?.webseite?.fakten?.textAuszug || ''
+                } else {
+                    logWarn('hype-radar', `Projektprüfung ${z.symbol}: ${fehler?.message}`)
+                }
+                melde({ schritt: 'projekt', fertig, gesamt: auswahl.length })
+            },
+        })
+    }
+
     // ── Speichern ───────────────────────────────────────────────────────
     const jetzt = Date.now()
 
@@ -290,6 +340,8 @@ export async function scanne(einst, melde = () => {}) {
             safetyScore: z.safetyScore,
             status: z.status,
             verworfenGrund: z.verworfenGrund,
+            projektDaten: JSON.stringify(z.projekt || {}),
+            projektNote: Number.isFinite(z.projektNote) ? z.projektNote : null,
             erstelltAm: jetzt,
             aktualisiertAm: jetzt,
         }))

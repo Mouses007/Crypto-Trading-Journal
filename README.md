@@ -67,6 +67,27 @@ campaign fills one source, rarely three. A divergence quadrant plots attention
 against market confirmation, so bought noise becomes visible where a sorted list
 would hide it. Searching is free; the report costs a few cents to about a franc.
 
+**Project check.** For passed finds (and on demand for any other) the radar looks
+at what stands behind a token: the website (roadmap/tokenomics/team sections, does
+it show the right contract address, placeholder text, site builder), the domain
+age via RDAP, the GitHub account (maintained repo, earlier projects with stars)
+and, for pump.fun tokens, the creator wallet's other coins — creators who got one
+through the bonding curve before succeed far more often than the ~1 % base rate,
+serial launchers produce mass goods. The result is a **substance score** shown
+next to hype and safety, never merged with either. No keys; cached 24 h.
+
+**Early phase.** The main check only sees tokens from 12 h pair age and USD 50k
+liquidity. A separate lane runs before that (off by default, every 15 min when on):
+new tokens from pump.fun, DexScreener profiles/takeovers, GeckoTerminal new pools
+(with *distinct* buyer counts), the 4chan /biz/ catalog, configured public
+Telegram channels and optionally Reddit. Each token gets a snapshot history, and
+the score measures **acceleration** against that history — trading surge, distinct
+buyers, mentions across platforms, project substance, momentum — with deductions
+for one-sided buying, circular trading, volume without price movement, serial
+creators and collapses. Tokens that mature enter the next main scan as a source of
+their own; crossing a score threshold sends an alert through the watchdog's
+channels. TikTok and X are not connected — neither offers free access.
+
 **Coin-Radar — which of the tradable coins can be traded best right now?** Walks the
 ~500 pairs that are tradable on Bitunix and measurable on Binance and ranks them by
 **ATR %** (does it move enough), **RVOL** (is something going on, measured against

@@ -25,6 +25,8 @@ import { stufenNach, benoetigteAnbieter } from './hype-radar/stufen.js'
 import { keySpalte } from './ai-models.js'
 import { HORIZONTE } from './radar-ergebnisse.js'
 import { werteAusHype } from './radar-guete.js'
+import { pruefeProjekt, kurzfassung, gespeichertePruefungen, schluesselFuer } from './hype-radar/projekt.js'
+import { fruehLauf, fruehStand } from './hype-radar/fruehphase.js'
 // Börsenfavoriten (Coin-Radar) brauchen den anderen Datenweg — siehe `boersenLive`.
 import { holeMarktweit } from './coin-radar/daten.js'
 import { fundingJahresRate } from './coin-radar/kennzahlen.js'
@@ -116,10 +118,108 @@ export function setupHypeRadarRoutes(app) {
                 marktDaten: sicherParse(z.marktDaten, {}),
                 sozialDaten: sicherParse(z.sozialDaten, {}),
                 sicherheitsDaten: sicherParse(z.sicherheitsDaten, {}),
+                projektDaten: sicherParse(z.projektDaten, {}),
             })))
         } catch (e) {
             logWarn('hype-radar', `Kandidaten lesen: ${e.message}`)
             res.status(500).json({ error: 'Kandidaten konnten nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Projektprüfung auf Abruf — für jeden Fund, nicht nur die bestandenen.
+     *
+     * Liefert die gespeicherte Prüfung, solange sie gilt (24 h); `neu=1`
+     * erzwingt eine frische, frühestens fünf Minuten nach der letzten. Die
+     * Prüfung läuft im Hintergrund weiter, auch wenn die Seite vorher schliesst.
+     */
+    app.get('/api/hype-radar/projekt', async (req, res) => {
+        try {
+            const kandidat = {
+                symbol: String(req.query.symbol || '').slice(0, 30),
+                name: String(req.query.name || '').slice(0, 120),
+                chain: String(req.query.chain || '').slice(0, 30),
+                contract: String(req.query.contract || '').slice(0, 80),
+            }
+            if (!kandidat.contract && !kandidat.symbol) return res.status(400).json({ error: 'Vertrag oder Symbol fehlt' })
+            // Links und Ersteller aus dem jüngsten Lauf, falls der Fund dort stand.
+            if (kandidat.contract) {
+                const zeile = await getKnex()('hype_candidates')
+                    .where('contractAddress', kandidat.contract)
+                    .orderBy('erstelltAm', 'desc').first()
+                    .catch(() => null)
+                const m = sicherParse(zeile?.marktDaten, {})
+                kandidat.links = m.links || null
+                kandidat.ersteller = m.ersteller || ''
+                if (!kandidat.links) {
+                    const f = await getKnex()('hype_frueh').where('contract', kandidat.contract).first().catch(() => null)
+                    kandidat.links = sicherParse(f?.links, null)
+                    kandidat.ersteller = f?.ersteller || kandidat.ersteller
+                }
+            }
+            const e = await pruefeProjekt(kandidat, { neu: req.query.neu === '1' })
+            res.json({ ...kurzfassung(e), auszug: e.fakten?.webseite?.fakten?.beschreibung || '' })
+        } catch (e) {
+            logWarn('hype-radar', `Projektprüfung: ${e.message}`)
+            res.status(500).json({ error: 'Projektprüfung fehlgeschlagen' })
+        }
+    })
+
+    // ── Frühphase ───────────────────────────────────────────────────────
+    /**
+     * Die beobachteten Token der Frühphase, die besten zuerst.
+     *
+     * Vorgabe: was in den letzten 72 Stunden gesehen wurde und nicht verworfen
+     * ist. `alle=1` zeigt die Verworfenen mit — mit Grund, damit sichtbar
+     * bleibt, WARUM ein Token aus dem Rennen ist.
+     */
+    app.get('/api/hype-radar/frueh', async (req, res) => {
+        try {
+            let q = getKnex()('hype_frueh').select('*')
+            if (req.query.alle !== '1') q = q.whereNot('status', 'verworfen')
+            const zeilen = await q.orderBy('note', 'desc').limit(Math.min(300, Number(req.query.limit) || 150))
+            const projekte = await gespeichertePruefungen(zeilen)
+            res.json({
+                stand: fruehStand(),
+                zeilen: zeilen.map((z) => ({
+                    ...z,
+                    quellen: sicherParse(z.quellen, []),
+                    links: sicherParse(z.links, {}),
+                    stand: sicherParse(z.stand, {}),
+                    // Der Verlauf nur als Notenreihe — die vollen Momentaufnahmen
+                    // wären bei 150 Zeilen ein paar hundert Kilobyte.
+                    verlauf: sicherParse(z.verlauf, []).map((v) => ({ ts: v.ts, note: v.note ?? null, mcap: v.mcap ?? null })),
+                    befunde: sicherParse(z.befunde, []),
+                    projekt: kurzfassung(projekte.get(schluesselFuer(z)) || null),
+                })),
+            })
+        } catch (e) {
+            logWarn('hype-radar', `Frühphase lesen: ${e.message}`)
+            res.status(500).json({ error: 'Frühphase konnte nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Ein Durchgang von Hand, im Hintergrund. Gebremst auf einen je Minute — die Quellen sind
+     * dieselben, die der Takt alle fünfzehn Minuten fragt, und pump.fun wie
+     * GeckoTerminal drosseln spürbar.
+     */
+    app.post('/api/hype-radar/frueh/lauf', async (req, res) => {
+        try {
+            if (!(await beansprucheAufgabe('hype_frueh_hand', 60e3))) {
+                return res.status(429).json({ error: 'Frühestens eine Minute nach dem letzten Durchgang' })
+            }
+            if (fruehStand().laeuft) return res.status(409).json({ error: 'Ein Durchgang läuft bereits' })
+            /*
+             * Im Hintergrund: mit Projektprüfungen dauert ein Durchgang leicht
+             * eine Minute und mehr. Die Seite fragt `GET /frueh` ab und sieht
+             * am `stand`, wann er fertig ist.
+             */
+            fruehLauf().catch((e) => logWarn('hype-radar', `Frühphase von Hand: ${e.message}`))
+            res.status(202).json({ gestartet: true })
+        } catch (e) {
+            logWarn('hype-radar', `Frühphase von Hand: ${e.message}`)
+            res.status(500).json({ error: 'Durchgang fehlgeschlagen' })
         }
     })
 
@@ -278,7 +378,12 @@ export function setupHypeRadarRoutes(app) {
                 .limit(Math.min(200, Number(req.query.limit) || 50))
             if (req.query.ungelesen === '1') q = q.where('a.gelesen', 0)
             const zeilen = await q
-            res.json(zeilen.map((z) => ({ ...z, daten: sicherParse(z.daten, {}) })))
+            res.json(zeilen.map((z) => {
+                const daten = sicherParse(z.daten, {})
+                // Frühphasen-Alarme hängen an keinem Favoriten (`favoritId` 0)
+                // — ihr Symbol steht in den Daten.
+                return { ...z, daten, symbol: z.symbol || daten.symbol || '', chain: z.chain || daten.chain || '' }
+            }))
         } catch (e) {
             res.status(500).json({ error: 'Alarme konnten nicht geladen werden' })
         }

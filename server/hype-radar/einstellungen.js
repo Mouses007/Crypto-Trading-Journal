@@ -90,6 +90,29 @@ export const VORGABEN = {
         webhook: { an: false, minSchwere: 'info' },
     },
     berichtTopN: 7,
+    /*
+     * Projektprüfung der bestandenen Funde: Webseite, Domain-Alter, GitHub,
+     * Ersteller-Vorgeschichte. Kostet keinen Schlüssel, aber bis zu fünf
+     * Abrufe je Fund — deshalb gedeckelt.
+     */
+    projektPruefung: true,
+    projektMax: 15,
+    /*
+     * Die Frühphase: eine eigene Spur VOR der Hauptprüfung, für Token, die
+     * noch keine zwölf Stunden alt sind oder noch keine 50 000 USD Liquidität
+     * haben. Aus als Vorgabe wie der Radar selbst — sie fragt alle fünfzehn
+     * Minuten bis zu sechs Quellen ab.
+     *
+     * `fruehAlarmAb` 0 heisst: beobachten, nicht melden.
+     */
+    fruehAktiv: false,
+    fruehIntervallMin: 15,
+    fruehQuellen: {
+        pumpfunNeu: true, pumpfunAufstieg: true, dexscreenerProfile: true,
+        geckoterminalNeu: true, biz: true, telegram: true, reddit: false,
+    },
+    fruehTelegram: [],
+    fruehAlarmAb: 70,
     llmStufe: 'gruendlich-mittel',
     llmModus: 'gruendlich',
     llmRollen: {},                   // leer = die Stufe entscheidet
@@ -244,9 +267,30 @@ export function bereinigeEinstellungen(neu = {}, zusatzVorgaben = {}) {
             raus[k] = abweichung
             continue
         }
+        if (k === 'fruehTelegram') {
+            raus[k] = telegramKanaele(v)
+            continue
+        }
         raus[k] = v
     }
     return raus
+}
+
+/**
+ * Telegram-Kanäle der Frühphase: nur Kanalnamen, höchstens fünfzehn.
+ *
+ * Angenommen wird, was jemand aus der Adresszeile kopiert — `@name`,
+ * `t.me/name`, `https://t.me/s/name`. Gespeichert wird nur der Name; was
+ * danach nicht wie ein Telegram-Name aussieht, fällt weg, statt später als
+ * Pfad an `t.me` zu gehen.
+ */
+export function telegramKanaele(liste) {
+    const roh = Array.isArray(liste) ? liste : String(liste || '').split(/[\s,;]+/)
+    const namen = roh
+        .map((x) => String(x || '').trim()
+            .replace(/^(https?:\/\/)?(www\.)?(t\.me|telegram\.me)\/(s\/)?/i, '').replace(/^@/, '').split(/[/?#]/)[0])
+        .filter((n) => /^[A-Za-z0-9_]{4,64}$/.test(n))
+    return [...new Set(namen)].slice(0, 15)
 }
 
 /**

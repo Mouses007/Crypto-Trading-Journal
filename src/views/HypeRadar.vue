@@ -180,6 +180,66 @@
                     </div>
                 </div>
 
+                <!-- Projektprüfung: Webseite, Domain-Alter, GitHub, Ersteller.
+                     Kostet keinen Schlüssel, aber Fremdabrufe je Fund —
+                     deshalb gedeckelt. -->
+                <h6 class="hypTitel mt-4">{{ t('hype.projektTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.projektHinweis') }}</p>
+                <div class="row g-3 align-items-end">
+                    <div class="col-auto">
+                        <div class="form-check form-switch">
+                            <input id="hypProjekt" class="form-check-input" type="checkbox"
+                                v-model="einst.projektPruefung" @change="speichern">
+                            <label class="form-check-label small" for="hypProjekt">{{ t('hype.projektAn') }}</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.projektMax') }}</label>
+                        <input v-model.number="einst.projektMax" type="number" min="0" max="40"
+                            class="form-control form-control-sm hypZahl" :disabled="!einst.projektPruefung" @change="speichern">
+                    </div>
+                </div>
+
+                <!-- Frühphase: die Spur VOR der Hauptprüfung. Eigener Takt,
+                     eigene Quellen, eigene Alarmschwelle. -->
+                <h6 class="hypTitel mt-4">{{ t('hype.fruehTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.fruehHinweis') }}</p>
+                <div class="form-check form-switch mb-2">
+                    <input id="hypFrueh" class="form-check-input" type="checkbox"
+                        v-model="einst.fruehAktiv" @change="speichern">
+                    <label class="form-check-label small" for="hypFrueh">{{ t('hype.fruehAn') }}</label>
+                </div>
+                <div class="row g-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.fruehTakt') }}</label>
+                        <select v-model.number="einst.fruehIntervallMin" class="form-select form-select-sm" @change="speichern">
+                            <option :value="5">5 min</option>
+                            <option :value="15">15 min</option>
+                            <option :value="30">30 min</option>
+                            <option :value="60">60 min</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.fruehAlarmAb') }}</label>
+                        <input v-model.number="einst.fruehAlarmAb" type="number" min="0" max="100"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+                <div class="hypHinweisKlein mt-1">{{ t('hype.fruehAlarmHinweis') }}</div>
+                <div class="hypQuellen mt-2">
+                    <div v-for="(_, q) in einst.fruehQuellen" :key="q" class="form-check form-switch">
+                        <input :id="'hypFQ' + q" class="form-check-input" type="checkbox"
+                            v-model="einst.fruehQuellen[q]" @change="speichern">
+                        <label class="form-check-label small" :for="'hypFQ' + q">{{ t('hype.fruehQuelle_' + q) }}</label>
+                    </div>
+                </div>
+                <label class="form-label small mt-2" for="hypFruehTg">{{ t('hype.fruehTelegram') }}</label>
+                <textarea id="hypFruehTg" class="form-control form-control-sm hypTgListe" rows="2"
+                    :value="(einst.fruehTelegram || []).join('\n')"
+                    :placeholder="t('hype.fruehTelegramPlatzhalter')"
+                    @change="fruehTelegramGeaendert"></textarea>
+                <div class="hypHinweis">{{ t('hype.fruehTelegramHinweis') }}</div>
+
                 <!-- Wachhund & Alarme -->
                 <h6 class="hypTitel mt-4">{{ t('hype.wachhundTitel') }}</h6>
                 <p class="hypHinweis">{{ t('hype.wachhundHinweis') }}</p>
@@ -628,6 +688,11 @@
                         <div v-if="offen === k.id && k.sicherheitsDaten?.hinweise?.length" class="hypKarteHinweise">
                             {{ k.sicherheitsDaten.hinweise.join(' · ') }}
                         </div>
+                        <div v-if="offen === k.id" class="hypKarteHinweise" @click.stop>
+                            <ProjektPruefung :projekt="k.projektDaten"
+                                :kandidat="{ symbol: k.symbol, name: k.name, chain: k.chain, contract: k.contractAddress }"
+                                @geprueft="e => { k.projektDaten = e; k.projektNote = e.note }" />
+                        </div>
                     </div>
                     <p v-if="!gefiltert.length" class="text-muted small text-center py-3 mb-0">
                         {{ t('hype.nochKeinScan') }}
@@ -641,6 +706,7 @@
                                 <th @click="sortiere('symbol')">{{ t('hype.spalteSymbol') }}</th>
                                 <th @click="sortiere('hypeScore')" class="text-end">{{ t('hype.spalteHype') }}</th>
                                 <th @click="sortiere('safetyScore')" class="text-end">{{ t('hype.spalteSafety') }}</th>
+                                <th @click="sortiere('projektNote')" class="text-end" :title="t('hype.spalteSubstanzTitel')">{{ t('hype.spalteSubstanz') }}</th>
                                 <th>{{ t('hype.spalteNarrativ') }}</th>
                                 <th class="text-end">{{ t('hype.spalteLiq') }}</th>
                                 <th class="text-end">{{ t('hype.spalteAlter') }}</th>
@@ -668,6 +734,11 @@
                                             {{ k.status === 'verworfen' ? '—' : k.safetyScore }}
                                         </span>
                                     </td>
+                                    <td class="text-end">
+                                        <span v-if="k.projektNote !== null && k.projektNote !== undefined"
+                                            :class="k.projektNote >= 65 ? 'text-success' : (k.projektNote >= 40 ? 'text-warning' : 'text-danger')">{{ k.projektNote }}</span>
+                                        <span v-else class="text-muted">—</span>
+                                    </td>
                                     <td><span v-if="k.narrative" class="hypChip klein">{{ k.narrative }}</span></td>
                                     <td class="text-end">{{ geld(k.marktDaten?.liquiditaetUsd) }}</td>
                                     <td class="text-end">{{ alter(k.marktDaten?.paarAlterStunden) }}</td>
@@ -693,7 +764,7 @@
                                     </td>
                                 </tr>
                                 <tr v-if="offen === k.id" :key="k.id + '-d'">
-                                    <td colspan="9" class="hypDetail">
+                                    <td colspan="10" class="hypDetail">
                                         <div class="hypDetailGrid">
                                             <div>
                                                 <div class="hypDetailTitel">{{ t('hype.teilnoten') }}</div>
@@ -722,17 +793,27 @@
                                                         target="_blank" rel="noopener noreferrer">GeckoTerminal ↗</a>
                                                 </div>
                                             </div>
+                                            <div>
+                                                <ProjektPruefung :projekt="k.projektDaten"
+                                                    :kandidat="{ symbol: k.symbol, name: k.name, chain: k.chain, contract: k.contractAddress }"
+                                                    @geprueft="e => { k.projektDaten = e; k.projektNote = e.note }" />
+                                            </div>
                                         </div>
                                     </td>
                                 </tr>
                             </template>
                             <tr v-if="!gefiltert.length">
-                                <td colspan="9" class="text-center text-muted py-3">{{ t('hype.nochKeinScan') }}</td>
+                                <td colspan="10" class="text-center text-muted py-3">{{ t('hype.nochKeinScan') }}</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
+        </div>
+
+        <!-- ══ Frühphase ═════════════════════════════════════════════ -->
+        <div v-show="reiter === 'fruehphase'" class="mt-3">
+            <FruehphaseAnsicht :aktiv="reiter === 'fruehphase'" :einst="einst" />
         </div>
 
         <!-- ══ Berichte ══════════════════════════════════════════════ -->
@@ -776,6 +857,9 @@
                         <dt>{{ t('hype.substanz') }}</dt><dd>{{ k.substanz }}</dd>
                         <dt>{{ t('hype.risiken') }}</dt><dd>{{ k.risiken }}</dd>
                     </dl>
+                    <div v-if="k.projekt" class="hypBerichtProjekt">
+                        <ProjektPruefung :projekt="k.projekt" />
+                    </div>
                     <div v-if="k.belege?.length" class="hypBelege">
                         <template v-for="(b, i) in k.belege.slice(0, 6)" :key="i">
                             <!-- Belege stammen aus Perplexity-Zitaten, also aus einer
@@ -877,6 +961,8 @@ import { useKostenAnzeige } from '../utils/formatters.js'
 import { logWarn } from '../utils/logger.js'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
 import PageInfo from '../components/PageInfo.vue'
+import ProjektPruefung from '../components/hype/ProjektPruefung.vue'
+import FruehphaseAnsicht from '../components/hype/FruehphaseAnsicht.vue'
 import { useIstTelefon } from '../utils/geraet.js'
 import { currentUser } from '../stores/globals.js'
 import {
@@ -1287,7 +1373,8 @@ const istTelefon = useIstTelefon()
  */
 const route = useRoute()
 const router = useRouter()
-const reiter = computed(() => (route.params.reiter === 'berichte' ? 'berichte' : 'dashboard'))
+const REITER = ['berichte', 'fruehphase']
+const reiter = computed(() => (REITER.includes(route.params.reiter) ? route.params.reiter : 'dashboard'))
 
 /*
  * Der Quadrant hängt an ECharts und misst beim Zeichnen die Breite seines
@@ -1327,6 +1414,7 @@ const einstZusammenfassung = computed(() => {
         t('hype.zTop', { n: e.berichtTopN ?? 0 }),
         quellen.length ? t('hype.zQuellen', { q: quellen.join(' + ') }) : t('hype.zKeineQuellen'),
         kanaele.length ? t('hype.zKanaele', { k: kanaele.join(', ') }) : t('hype.zKeineKanaele'),
+        e.fruehAktiv ? t('hype.zFrueh', { n: e.fruehIntervallMin || 15 }) : t('hype.zFruehAus'),
     ]
     return teile.join(' · ')
 })
@@ -1576,9 +1664,19 @@ async function speichern() {
          */
         const r = await axios.put('/api/hype-radar/einstellungen', einst.value)
         fehlendeSchluessel.value = r.data?.fehlendeSchluessel || []
+        // Der Server bereinigt die Kanalliste (nur Namen, höchstens 15) —
+        // die Anzeige soll zeigen, was gilt, nicht was getippt wurde.
+        if (Array.isArray(r.data?.fruehTelegram)) einst.value.fruehTelegram = r.data.fruehTelegram
     } catch (e) {
         logWarn('hype-radar', 'Einstellungen konnten nicht gespeichert werden', e)
     }
+}
+
+/** Telegram-Kanäle der Frühphase: eine Zeile (oder Komma) je Kanal. */
+function fruehTelegramGeaendert(ev) {
+    if (!einst.value) return
+    einst.value.fruehTelegram = String(ev.target.value || '').split(/[\s,;]+/).filter(Boolean)
+    speichern()
 }
 
 function ordnungWechseln(o) {
@@ -2798,6 +2896,15 @@ watch(locale, () => zeichne())
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: .2rem 1rem;
     max-width: 40rem;
+}
+.hypTgListe {
+    max-width: 28rem;
+    font-family: monospace;
+}
+.hypBerichtProjekt {
+    margin-top: .5rem;
+    padding-top: .5rem;
+    border-top: 1px solid var(--white-10, rgba(255, 255, 255, .1));
 }
 
 /* Zugangsdaten der Quellen: eine Zeile je Quelle, Feld und Bezugsquelle

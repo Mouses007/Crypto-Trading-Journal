@@ -77,6 +77,10 @@ CryptoPanic und LunarCrush waren früher ebenfalls vorgesehen und sind am 21.08.
 - Der Divergenz-Quadrant zeigt Aufmerksamkeit gegen Marktbestätigung — oben links sitzt gekaufter Lärm, den eine sortierte Liste nicht sichtbar macht.
 - Zu jedem Fund steht, ob und wo er handelbar ist (Bitunix/Bitget/Pionex, getrennt nach Spot und Futures).
 
+**Projektprüfung** — für die bestandenen Funde (Vorgabe: die besten 15 je Lauf) und auf Knopfdruck für jeden anderen: Was steht hinter dem Token? Gelesen werden die Webseite (Abschnitte wie Roadmap, Tokenomics, Team, Audit; steht die richtige Vertragsadresse darauf oder eine fremde; Platzhaltertext; Baukasten-Seite), das Alter der Domain (über RDAP), das GitHub-Konto (gepflegtes Repository, frühere Projekte mit Sternen) und bei pump.fun-Token die anderen Coins derselben Wallet — wer schon einmal einen durch die Kurve gebracht hat, schafft es deutlich häufiger als die Grundrate von rund 1 %, wer Dutzende auflegt, produziert Massenware. Daraus entsteht eine **Substanz-Note** (Start bei 50, Punkte dafür und dagegen). Sie steht als eigene Spalte NEBEN Hype- und Sicherheitsnote und wird mit keiner verrechnet. Was nicht prüfbar war (Bot-Schutz einer Seite, Domain-Endung ohne RDAP), kostet keine Punkte. Jede Prüfung gilt 24 Stunden; GitHub erlaubt ohne Schlüssel nur 60 Abfragen je Stunde. Aufgeklappt zeigt jede Zeile die Befunde, getrennt nach „spricht dafür", „spricht dagegen" und „nicht prüfbar", dazu Webseite, Domain-Alter, Kanäle, GitHub und Ersteller. Der Bericht bekommt die Befunde und einen Auszug der Webseite mit.
+
+**Frühphase** (eigener Menüpunkt unter Hype-Radar) — die Hauptprüfung sieht einen Token erst ab zwölf Stunden Paaralter und 50 000 USD Liquidität. Die Frühphase läuft davor: im eigenen Takt (Vorgabe 15 Minuten, ab Werk aus — einschalten im Zahnrad) holt sie neue Token von pump.fun (neueste Starts und die grössten noch auf der Kurve), DexScreener (neue Profile, Community-Übernahmen), GeckoTerminal (neue Pools mit der Zahl VERSCHIEDENER Käufer), dem 4chan-Katalog von /biz/, eingestellten öffentlichen Telegram-Kanälen und auf Wunsch Reddit, und schreibt je Token eine Momentaufnahme fort. Die **Frühphasen-Note** misst Beschleunigung gegen den eigenen Verlauf, nicht Grösse: Handelsschub, Beteiligung (verschiedene Käufer), Sozial (auf wie vielen Plattformen genannt — drei Plattformen wiegen mehr als hundert Nennungen auf einer), Team/Substanz (die Projektprüfung) und Momentum. Abgezogen wird für einseitige Käufe, Kreishandel (viele Transaktionen, wenige Wallets), Volumen ohne Preisbewegung, Serien-Ersteller und einen Einbruch unter 20 % des Höchststands (dann verworfen). Eine Sicherheitsprüfung gibt es in der Frühphase noch nicht. Ab zwölf Stunden und 50 000 USD Liquidität gilt ein Token als „reif" und kommt beim nächsten Scan als eigene Quelle in die Hauptprüfung, mit Telegram- und /biz/-Nennungen als sozialem Beleg. Übersteigt die Note die eingestellte Schwelle (Vorgabe 70), meldet die Frühphase das über die Kanäle des Wachhunds — beim Überschreiten, je Token höchstens alle zwölf Stunden. TikTok und X sind nicht angebunden: beide haben keinen freien Zugang.
+
 **Coin-Radar** — „welcher der handelbaren Coins lässt sich gerade am besten handeln?" Er geht die Coins durch, die auf Bitunix handelbar und bei Binance messbar sind (rund 500 Paare), und ordnet sie nach vier gemessenen Grössen:
 - **ATR %** — wie stark sich der Coin bewegt, im Verhältnis zum Preis. Bewegt er sich zu wenig, frisst die Ausführung die Spanne.
 - **RVOL** — Volumen der letzten Kerze gegen den Schnitt der zwanzig davor. Verglichen wird der Coin mit SICH SELBST; über 2,0 gilt als „im Spiel".
@@ -202,7 +206,7 @@ const SEITEN_ZU_MODUS = {
     addTrades: 'journal', accounts: 'journal', addExcursions: 'journal', setup: 'journal',
     marktradar: 'live', nachrichten: 'live', openinterest: 'live', liquidity: 'live',
     liquidations: 'live', livetrading: 'live', liveSessions: 'live', liveAuswertung: 'live',
-    hypeRadar: 'research', hypeBerichte: 'research', coinRadar: 'research', coinVerlauf: 'research',
+    hypeRadar: 'research', hypeFrueh: 'research', hypeBerichte: 'research', coinRadar: 'research', coinVerlauf: 'research',
     agentStrategies: 'agent', agentSetups: 'agent', agentEditor: 'agent', agentBuilder: 'agent',
     agentPerformance: 'agent', agentLab: 'agent', coinRangliste: 'agent',
     lernen: 'lernen', lernenKarten: 'lernen', lernenStatistik: 'lernen',
@@ -232,6 +236,7 @@ const SEITEN_HINWEIS = {
     coinRadar: RADAR_HINWEIS_COIN,
     coinVerlauf: RADAR_HINWEIS_COIN,
     hypeRadar: RADAR_HINWEIS_HYPE,
+    hypeFrueh: RADAR_HINWEIS_HYPE,
     hypeBerichte: RADAR_HINWEIS_HYPE,
 }
 
