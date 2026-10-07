@@ -443,6 +443,7 @@
                     <span v-if="liveOffen.favorit.name" class="hypKandidatName">{{ liveOffen.favorit.name }}</span>
                     <span class="hypKette">{{ liveOffen.favorit.chain }}</span>
                     <span v-if="liveLaedt" class="spinner-border spinner-border-sm ms-2"></span>
+                    <span v-else-if="liveOffen.fehler" class="hypLiveStand text-warning">{{ t('hype.liveFehler') }}</span>
                     <span v-else class="hypLiveStand">{{ t('hype.liveStand', { z: zeitpunkt(liveOffen.stand) }) }}</span>
                     <span class="ms-auto"></span>
                     <a v-if="liveOffen.dexUrl" class="hypLink me-3" :href="liveOffen.dexUrl"
@@ -975,7 +976,9 @@ function boersenLinksVon(listungen) {
  * `boersenLinks.js`.
  */
 function listungHref(l, symbol) {
-    return boerseUrl(listungBoerse(l), `${symbol}USDT`)
+    // Coin-Radar-Favoriten tragen das volle Paar schon („BTCUSDT").
+    const s = String(symbol || '')
+    return boerseUrl(listungBoerse(l), /USDT$/.test(s) ? s : `${s}USDT`)
 }
 
 /** Kürzel/Text fürs Badge — TradingView ist keine Listung, deshalb eigene Maps statt `listungKuerzel`/`listungText`. */
@@ -1048,12 +1051,17 @@ async function liveOeffnen(f) {
     liveLaedt.value = true
     // Sofort ein Gerüst zeigen, damit der Klick sichtbar ankommt.
     liveOffen.value = { favorit: f, stand: 0, markt: null, listungen: [], letzterLauf: null }
-    await liveNachladen(f.id)
     /*
      * Alle 60 s nachladen, solange die Ansicht offen ist — im Takt des
      * Server-Zwischenspeichers. Öfter zu fragen brächte nur denselben Stand.
+     *
+     * Der Takt entsteht VOR dem ersten Laden, nicht danach. Vorher wurde er
+     * erst nach dem `await` gesetzt: Wer währenddessen einen anderen Chip
+     * anklickte oder die Seite verliess, fand noch keinen Takt zum Abräumen —
+     * und danach lief ein verwaister Takt bis zum Neuladen der Seite.
      */
     liveTakt = setInterval(() => liveNachladen(f.id), 60000)
+    await liveNachladen(f.id)
 }
 
 async function liveNachladen(id) {
@@ -1063,8 +1071,11 @@ async function liveNachladen(id) {
         if (liveOffen.value?.favorit?.id === id) liveOffen.value = r.data
     } catch (e) {
         logWarn('hype-radar', 'Livedaten konnten nicht geladen werden', e)
+        // Sichtbar machen statt „Stand: 01.01. 01:00" (Zeitstempel 0) zu zeigen.
+        if (liveOffen.value?.favorit?.id === id) liveOffen.value = { ...liveOffen.value, fehler: true }
     } finally {
-        liveLaedt.value = false
+        // Nur der Ladevorgang der offenen Ansicht darf den Kreisel abstellen.
+        if (!liveOffen.value || liveOffen.value.favorit?.id === id) liveLaedt.value = false
     }
 }
 
@@ -1199,9 +1210,19 @@ async function kanaeleTesten() {
     }
 }
 
+/*
+ * Unbekannt ist ein Strich, eine gemessene Null ist eine Null. Bis zum
+ * 07.10.2026 galt beides umgekehrt: `Number(null)` machte aus einem fehlenden
+ * Paaralter „0 h" (ein brandneues Paar), und ein auf null geleerter Pool —
+ * genau das, wofür der Wachhund da ist — stand als „—" da.
+ */
+const fehlt = (w) => w === null || w === undefined || w === ''
+
 const preis = (p) => {
+    if (fehlt(p)) return '—'
     const z = Number(p)
-    if (!Number.isFinite(z) || z === 0) return '—'
+    if (!Number.isFinite(z)) return '—'
+    if (z === 0) return '$0'
     // Kleinstpreise brauchen mehr Stellen, sonst steht da nur „0.00".
     if (z < 0.01) return '$' + z.toPrecision(3)
     if (z < 1000) return '$' + z.toFixed(2)
@@ -1209,6 +1230,7 @@ const preis = (p) => {
 }
 
 const kv = (v) => {
+    if (fehlt(v)) return '—'
     const z = Number(v)
     if (!Number.isFinite(z)) return '—'
     return z.toFixed(2)
@@ -1429,23 +1451,26 @@ const fortschrittText = computed(() => {
 })
 
 const geld = (n) => {
+    if (fehlt(n)) return '—'
     const z = Number(n)
-    if (!Number.isFinite(z) || z === 0) return '—'
+    if (!Number.isFinite(z)) return '—'
+    if (z === 0) return '0'
     if (z >= 1e6) return `${(z / 1e6).toFixed(1)} M`
     if (z >= 1e3) return `${Math.round(z / 1e3)} k`
     return String(Math.round(z))
 }
 
 const alter = (stunden) => {
+    if (fehlt(stunden)) return '—'
     const h = Number(stunden)
     if (!Number.isFinite(h)) return '—'
     if (h < 48) return `${Math.round(h)} h`
     return `${Math.round(h / 24)} d`
 }
 
-const zeitpunkt = (ms) => new Date(Number(ms)).toLocaleString(
+const zeitpunkt = (ms) => (!(Number(ms) > 0) ? '—' : new Date(Number(ms)).toLocaleString(
     locale.value === 'en' ? 'en-GB' : 'de-CH',
-    { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))
 
 function sortiere(feld) {
     if (sortFeld.value === feld) sortAb.value = !sortAb.value
@@ -1498,10 +1523,15 @@ async function ladeBerichte() {
     }
 }
 
+// Nur die jüngste Anfrage zählt — zwei schnelle Klicks sollen nicht in der
+// Reihenfolge enden, in der die Antworten zufällig eintreffen.
+let berichtAnfrage = 0
+
 async function berichtOeffnen(id) {
+    const meine = ++berichtAnfrage
     try {
         const r = await axios.get(`/api/hype-radar/berichte/${id}`)
-        offenerBericht.value = r.data
+        if (meine === berichtAnfrage) offenerBericht.value = r.data
     } catch (e) {
         logWarn('hype-radar', 'Bericht konnte nicht geöffnet werden', e)
     }
@@ -1674,7 +1704,13 @@ function verarbeite(e, mitBericht) {
         meldung.value = t('hype.keinBericht', { v: e.bericht?.aussortiert?.length || 0 }) + teil
     } else if (mitBericht) {
         meldung.value = t('hype.berichtFertig', { n: e.bericht?.kandidaten?.length || 0 }) + teil
-        ladeBerichte()
+        /*
+         * Den NEUEN Bericht öffnen. `ladeBerichte` öffnet nur, wenn gerade
+         * keiner offen ist — und nach dem Laden der Seite ist immer einer
+         * offen. So stand unter „Bericht fertig" weiter der alte.
+         */
+        ladeBerichte().then(() => berichtOeffnen(e.berichtId))
+        ladeGuete()
         if (reiter.value !== 'berichte') router.push('/hype-radar/berichte')
     } else {
         meldung.value = t('hype.scanFertig', { b: e.bestanden, v: e.verworfen }) + teil
@@ -1948,11 +1984,18 @@ onMounted(async () => {
         ladeFavoriten(), ladeAlarme(), ladeKiQuellen(),
     ])
     // Der Wachhund läuft serverseitig weiter — die Liste holt seine Funde in
-    // gemächlichem Takt nach, solange die Seite offen ist.
+    // gemächlichem Takt nach, solange die Seite offen ist. Nicht mehr, wenn
+    // die Seite während des Ladens schon wieder verlassen wurde (z. B. der
+    // Moduswächter im Layout leitet einen kalten Direktaufruf um) — sonst
+    // fragte ein verwaister Takt ewig weiter.
+    if (abgebaut) return
     alarmTakt = setInterval(ladeAlarme, 60000)
 })
 
+let abgebaut = false
+
 onBeforeUnmount(() => {
+    abgebaut = true
     window.removeEventListener('resize', beiGroesse)
     strom?.abort()
     diagramm?.dispose()

@@ -1011,6 +1011,7 @@
     "gelistetAuf": "Listed as future/spot on {b}",
     "gewichteHinweis": "How strongly each sub-score counts. The number of independent sources is the strongest defence against bought hype.",
     "gewichteTitel": "Weighting",
+    "liveFehler": "Live data unavailable — retrying in a minute",
     "namensgleichTitel": "{b} lists a ticker with the same name — at this valuation almost certainly a different token. Not counted as tradable.",
     "gueteGruppe": "Group",
     "gueteGruppe_spitze": "Passed (top)",
@@ -3899,6 +3900,9 @@
     "coinInfoGithubJa": "Source code is publicly visible on GitHub — a sign of a visibly working team.",
     "coinInfoGithubNein": "No public GitHub repo listed.",
     "dauerhaftTitel": "Who stays on top",
+    "beharrlichZuWenig": "too few coins in common",
+    "einstNichtGeladen": "Settings not loaded yet — changes are saved only after that.",
+    "huerdenGekappt": "Showing the {n} highest-turnover of {m} rejected coins.",
     "gueteTitel": "What became of the finds? — outcome tracking",
     "gueteHinweis": "After 1, 7 and 30 days the radar checks: does the pair still exist, how did price and liquidity develop? The best passed finds are compared with a sample of those rejected by the safety check (does the filter work?) and a sample from the field below the threshold (does the score work?).",
     "gueteLeer": "No measurements yet. They are created after every scan and redeemed after 1, 7 and 30 days.",
@@ -4086,7 +4090,7 @@
     "epChartOeffnen": "Open the chart on TradingView — prices from {q}"
   },
   "lernen": {
-    "ladeFehler": "Could not load the flashcards.",
+    "ladeFehler": "Ranking could not be loaded — showing the last state.",
     "tabKarten": "Cards",
     "tabStatistik": "Statistics",
     "kategorie": {
