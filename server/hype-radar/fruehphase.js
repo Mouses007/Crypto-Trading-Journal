@@ -38,8 +38,10 @@ import { holeJson, dexDetailsViele, linksAusInfo, normChain, normSymbol, ausRedd
 import { leseEinstellungen } from './einstellungen.js'
 import { stelleZu } from './zustellung.js'
 import { pruefeViele, gespeichertePruefung } from './projekt.js'
+import { sucheXErwaehnungen } from '../news-recherche.js'
+import { ladeLlmConfig, merkeKiGuthaben, istGuthabenFehler } from '../llm.js'
 import {
-    erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh,
+    erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen,
 } from './fruehphase-bewertung.js'
 
 /** Höchstens so viele Token werden gleichzeitig beobachtet. */
@@ -53,6 +55,15 @@ const VERGESSEN_MS = 72 * 3600e3
 
 /** Höchstens so viele Zeilen in der Tabelle. */
 const MAX_ZEILEN = 3000
+
+/*
+ * X über Grok: bezahlt, deshalb mit eigenem, längerem Takt als die Frühphase
+ * selbst. Zwischen zwei Abfragen gilt die letzte Messung je Token weiter —
+ * sechs Stunden, dann ist sie kein Frühsignal mehr.
+ */
+const X_GILT_MS = 6 * 3600e3
+const X_FENSTER_STUNDEN = 6
+const X_TOKEN_JE_ABFRAGE = 15
 
 /** Derselbe Token wird frühestens nach dieser Zeit erneut gemeldet. */
 const ALARM_SPERRE_MS = 12 * 3600e3
@@ -88,6 +99,7 @@ function eintragen(karte, f) {
     if (f.profil) e.profil = true
     if (f.erstelltAm && !e.erstelltAm) e.erstelltAm = f.erstelltAm
     Object.assign(e.markt, Object.fromEntries(Object.entries(f.markt || {}).filter(([, v]) => v !== null && v !== undefined)))
+    return e
 }
 
 // ── Quellen ─────────────────────────────────────────────────────────────
@@ -250,6 +262,51 @@ async function reddit() {
     return erwaehnungen(texte, 'reddit')
 }
 
+/**
+ * X über Grok (`x_search`): eine bezahlte Abfrage nach den bestbeobachteten
+ * Token und nach neu beworbenen Adressen. Gezählt wird in `xNennungen` —
+ * nur zitierte Posts, nur was im Text steht, Autoren statt Posts.
+ *
+ * Gibt dieselbe Form wie die übrigen Sozialquellen zurück; `anzahl` ist hier
+ * die Zahl VERSCHIEDENER Autoren. `belege` trägt je Adresse bis zu drei
+ * Post-Adressen für die Anzeige.
+ */
+async function xQuelle(einst, bekannt) {
+    const beginn = Date.now()
+    try {
+        const cfg = await ladeLlmConfig({ provider: 'xai' })
+        if (!cfg.apiKey) throw new Error('Kein xAI-Schlüssel hinterlegt (Einstellungen → KI)')
+        // Dasselbe Modell wie die X-Suche der Nachrichten — eine Einstellung für „X".
+        const s = await getKnex()('settings').select('radarNewsXModell').where('id', 1).first().catch(() => null)
+        const auswahl = bekannt.filter((z) => z.contract).slice(0, X_TOKEN_JE_ABFRAGE)
+        const { posts, zitierteIds, kostenUsd } = await sucheXErwaehnungen({
+            token: auswahl.map((z) => ({ symbol: z.symbol, contract: z.contract })),
+            stunden: X_FENSTER_STUNDEN,
+            apiKey: cfg.apiKey,
+            modell: s?.radarNewsXModell || undefined,
+        })
+        merkeKiGuthaben('xai').catch(() => {})
+        const symbole = new Map()
+        for (const z of bekannt) {
+            if (!z.symbol) continue
+            symbole.set(z.symbol, symbole.has(z.symbol) ? null : z.contract)
+        }
+        const n = xNennungen(posts, zitierteIds, { adressen: new Set(bekannt.map((z) => z.contract)), symbole })
+        letzteX = { am: beginn, ok: true, posts: posts.length, gezaehlt: n.gezaehlt, verworfen: n.verworfen,
+            token: n.adressen.size, kostenUsd: Math.round(kostenUsd * 10000) / 10000 }
+        return {
+            plattform: 'x',
+            adressen: new Map([...n.adressen].map(([a, x]) => [a, x.autoren])),
+            kuerzel: new Map(),
+            belege: n.adressen,
+        }
+    } catch (e) {
+        if (istGuthabenFehler(e.message)) await merkeKiGuthaben('xai', e.message).catch(() => {})
+        letzteX = { am: beginn, ok: false, fehler: String(e.message || e).slice(0, 200) }
+        throw e
+    }
+}
+
 // ── Der Lauf ────────────────────────────────────────────────────────────
 
 let laeuft = false
@@ -257,9 +314,12 @@ let laeuft = false
 /** Der letzte Durchgang dieses Prozesses — für die Anzeige „welche Quelle fiel aus". */
 let letzter = null
 
-/** Stand für die Oberfläche: läuft gerade etwas, und wie ging der letzte Durchgang aus. */
+/** Die letzte X-Abfrage — sie läuft seltener als die Durchgänge und kostet. */
+let letzteX = null
+
+/** Stand für die Oberfläche: läuft gerade etwas, wie ging der letzte Durchgang aus, was kostete X. */
 export function fruehStand() {
-    return { laeuft, letzter }
+    return { laeuft, letzter, x: letzteX }
 }
 
 /**
@@ -289,6 +349,18 @@ async function fruehLaufIntern(einst) {
     const quellenStand = {}
     const karte = new Map()
 
+    // Die beobachteten Token — vor den Quellen, weil die X-Abfrage nach
+    // genau ihnen fragt.
+    const bekannt = await knex('hype_frueh')
+        .whereNot('status', 'verworfen')
+        .andWhere('letzterBlick', '>=', jetzt - VERGESSEN_MS)
+        .orderBy('note', 'desc')
+        .limit(MAX_BEOBACHTET)
+
+    // X ist bezahlt und hat seinen eigenen Takt (Anspruch in der Datenbank).
+    const xFaellig = q.x === true && await beansprucheAufgabe('hype_frueh_x',
+        Math.max(30, Number(einst.fruehXIntervallMin) || 120) * 60e3 - 30e3)
+
     // ── Quellen parallel; jede fällt für sich aus ───────────────────────
     const aufgaben = [
         ['pumpfun', q.pumpfunNeu !== false || q.pumpfunAufstieg !== false, () => pumpfun(einst)],
@@ -299,6 +371,7 @@ async function fruehLaufIntern(einst) {
         ['biz', q.biz !== false, biz],
         ['telegram', (einst.fruehTelegram || []).length > 0 && q.telegram !== false, () => telegram(einst.fruehTelegram)],
         ['reddit', q.reddit === true, reddit],
+        ['x', xFaellig, () => xQuelle(einst, bekannt)],
     ].filter(([, an]) => an)
 
     const [funde, stimmen] = await Promise.all([
@@ -316,11 +389,6 @@ async function fruehLaufIntern(einst) {
     })
 
     // ── Bekannte Token dazunehmen ───────────────────────────────────────
-    const bekannt = await knex('hype_frueh')
-        .whereNot('status', 'verworfen')
-        .andWhere('letzterBlick', '>=', jetzt - VERGESSEN_MS)
-        .orderBy('note', 'desc')
-        .limit(MAX_BEOBACHTET)
     const bekanntNach = new Map(bekannt.map((z) => [schluessel(z.chain, z.contract), z]))
     for (const z of bekannt) {
         eintragen(karte, {
@@ -336,17 +404,20 @@ async function fruehLaufIntern(einst) {
             quellenStand[name] = { ok: false, fehler: String(e.reason?.message || e.reason).slice(0, 160) }
             return
         }
-        const { plattform, adressen, kuerzel } = e.value
+        const { plattform, adressen, kuerzel, belege } = e.value
         quellenStand[name] = { ok: true, anzahl: adressen.size, kuerzel: kuerzel.size }
+        if (plattform === 'x') quellenStand[name] = { ...quellenStand[name], kostenUsd: letzteX?.kostenUsd ?? null }
         // Adressen: unbekannte Kette ist Solana (Base58) oder EVM (0x…) — die
         // Kette steht erst nach dem Detailabruf fest.
         for (const [adresse, anzahl] of adressen) {
             const passend = [...karte.values()].find((x) => (adresse.startsWith('0x')
                 ? x.contract.toLowerCase() === adresse : x.contract === adresse))
-            eintragen(karte, {
+            const eintrag = eintragen(karte, {
                 chain: passend?.chain || (adresse.startsWith('0x') ? '?' : 'solana'),
                 contract: passend?.contract || adresse, quelle: plattform, plattform, anzahl,
             })
+            const beleg = belege?.get(adresse)
+            if (eintrag && beleg) eintrag.xInfo = { autoren: beleg.autoren, belege: beleg.belege, am: jetzt }
         }
         const nachSymbol = new Map()
         for (const x of karte.values()) {
@@ -397,7 +468,17 @@ async function fruehLaufIntern(einst) {
     for (const x of alle.filter((y) => y.chain !== '?' && (y.symbol || y.markt.preisUsd))) {
         const alt = bekanntNach.get(schluessel(x.chain, x.contract))
         const verlauf = sicherJson(alt?.verlauf, [])
-        const stand = momentaufnahme(x.markt, { erwaehnungen: x.erwaehnungen, plattformen: [...x.plattformen] }, jetzt)
+        /*
+         * X läuft seltener als die Durchgänge. Ohne Fortschreiben fiele die
+         * Plattform zwischen zwei Abfragen aus der Note und kehrte bei der
+         * nächsten als „Schub" zurück — ein Sägezahn aus dem Abfragetakt.
+         */
+        const altX = sicherJson(alt?.stand, {})?.x
+        x.xInfo = x.xInfo || (altX && Number(altX.am) >= jetzt - X_GILT_MS ? altX : null)
+        const plattformen = new Set(x.plattformen)
+        let erwaehnungen = x.erwaehnungen
+        if (x.xInfo && !plattformen.has('x')) { plattformen.add('x'); erwaehnungen += Number(x.xInfo.autoren) || 0 }
+        const stand = momentaufnahme(x.markt, { erwaehnungen, plattformen: [...plattformen] }, jetzt)
         const gespeichert = await gespeichertePruefung({ chain: x.chain, contract: x.contract })
         const r = bewerteFrueh({
             stand, verlauf, links: x.links, profil: x.profil,
@@ -451,7 +532,7 @@ async function fruehLaufIntern(einst) {
             ersteller: x.ersteller || alt?.ersteller || '',
             ersterBlick: erster,
             letzterBlick: jetzt,
-            stand: JSON.stringify({ ...e.stand, alterStunden, teilnoten: r.teilnoten, trend: r.trend,
+            stand: JSON.stringify({ ...e.stand, alterStunden, teilnoten: r.teilnoten, trend: r.trend, x: x.xInfo || null,
                 graduiert: x.markt.graduiert === true }),
             verlauf: JSON.stringify(verlauf),
             note: r.note,
@@ -519,14 +600,14 @@ async function raeumeAuf(knex, jetzt) {
 }
 
 /** Plattformen, auf denen Menschen reden — im Gegensatz zu Ketten, die handeln. */
-const SOZIALE_PLATTFORMEN = ['telegram', 'biz', 'reddit']
+const SOZIALE_PLATTFORMEN = ['telegram', 'biz', 'reddit', 'x']
 
 /**
  * Reife Token als Funde für die Hauptprüfung.
  *
  * Eigene Quelle `fruehphase` (Domäne onchain: der Token wurde über Stunden
  * gehandelt gesehen). Wo er in Telegram-Kanälen oder auf /biz/ genannt wurde,
- * kommt je Plattform ein Fund der Domäne `social` dazu — die Belege aus der
+ * (oder auf X) kommt je Plattform ein Fund der Domäne `social` dazu — die Belege aus der
  * Beobachtung sollen nicht verloren gehen. Reddit nicht: das fragt die
  * Hauptprüfung selbst, ein zweiter Fund wäre dieselbe Stimme doppelt.
  *
@@ -548,7 +629,7 @@ export async function reifeFunde() {
             }
             funde.push(fund({ ...basis, quelle: 'fruehphase',
                 sozial: sozial.length ? { fruehPlattformen: sozial.length } : {} }))
-            for (const p of ['telegram', 'biz']) if (sozial.includes(p)) funde.push(fund({ ...basis, quelle: p }))
+            for (const p of ['telegram', 'biz', 'x']) if (sozial.includes(p)) funde.push(fund({ ...basis, quelle: p }))
         })
         return funde
     } catch {

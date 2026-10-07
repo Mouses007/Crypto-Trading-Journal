@@ -86,7 +86,9 @@ buyers, mentions across platforms, project substance, momentum — with deductio
 for one-sided buying, circular trading, volume without price movement, serial
 creators and collapses. Tokens that mature enter the next main scan as a source of
 their own; crossing a score threshold sends an alert through the watchdog's
-channels. TikTok and X are not connected — neither offers free access.
+channels. X is available through the paid Grok `x_search` (off by default, own
+interval): only posts the search cited and whose text contains the address count,
+and distinct authors instead of posts. TikTok is not connected — no free access.
 
 **Coin-Radar — which of the tradable coins can be traded best right now?** Walks the
 ~500 pairs that are tradable on Bitunix and measurable on Binance and ranks them by

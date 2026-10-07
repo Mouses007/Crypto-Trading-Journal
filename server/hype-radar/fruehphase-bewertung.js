@@ -102,6 +102,67 @@ export function leseBizKatalog(json) {
     return raus
 }
 
+/** Ab so vielen verschiedenen Autoren legt X einen bisher unbekannten Token an. */
+export const X_MIN_AUTOREN_NEU = 2
+
+/**
+ * X-Posts → Nennungen je Token, gezählt nach VERSCHIEDENEN AUTOREN.
+ *
+ * Die Posts kommen von Grok, also aus einer Modellantwort. Drei Sperren, damit
+ * daraus eine Messung wird und keine Behauptung:
+ *
+ *   1. Nur Posts, die die Suche ZITIERT hat (`zitierteIds`). Ein Post, den das
+ *      Modell nennt, aber nie gesehen hat, ist erfunden. Fehlt die Zitatliste
+ *      ganz (anderer API-Stand), entfällt diese Sperre — die übrigen bleiben.
+ *   2. Gezählt wird, was im TEXT steht (`erwaehnungenIn`), nicht was das
+ *      Modell zuordnet.
+ *   3. Autoren statt Posts: zehn Posts eines Kontos sind ein Shill, kein
+ *      Trend (Qureshi & Zaman 2023). Ein bisher unbekannter Token braucht
+ *      mindestens `X_MIN_AUTOREN_NEU` verschiedene Autoren.
+ *
+ * Ein $KÜRZEL zählt wie überall in der Frühphase nur für einen bekannten
+ * Token, dessen Kürzel eindeutig ist.
+ *
+ * @param {Array<{handle:string, id:string, url:string, text:string}>} posts
+ * @param {Set<string>} zitierteIds
+ * @param {{adressen:Set<string>, symbole:Map<string, string|null>}} bekannt
+ *        Adressen (EVM klein) und Kürzel → Adresse (null = mehrdeutig)
+ * @returns {{adressen:Map<string,{autoren:number, belege:string[]}>, verworfen:number, gezaehlt:number}}
+ */
+export function xNennungen(posts = [], zitierteIds = new Set(), bekannt = {}) {
+    const bekannteAdressen = bekannt.adressen || new Set()
+    const symbole = bekannt.symbole || new Map()
+    const pruefeZitat = zitierteIds && zitierteIds.size > 0
+    const je = new Map()
+    let verworfen = 0
+    let gezaehlt = 0
+    for (const p of (Array.isArray(posts) ? posts : [])) {
+        if (pruefeZitat && !zitierteIds.has(String(p?.id || ''))) { verworfen++; continue }
+        const autor = String(p?.handle || '').toLowerCase()
+        if (!autor) { verworfen++; continue }
+        const e = erwaehnungenIn(p?.text)
+        const ziele = new Set(e.adressen)
+        for (const k of e.kuerzel) {
+            const adr = symbole.get(k)
+            if (adr) ziele.add(adr)
+        }
+        if (!ziele.size) continue
+        gezaehlt++
+        for (const adr of ziele) {
+            if (!je.has(adr)) je.set(adr, { autoren: new Set(), belege: [] })
+            const x = je.get(adr)
+            if (!x.autoren.has(autor) && x.belege.length < 3 && p.url) x.belege.push(String(p.url))
+            x.autoren.add(autor)
+        }
+    }
+    const adressen = new Map()
+    for (const [adr, x] of je) {
+        if (!bekannteAdressen.has(adr) && x.autoren.size < X_MIN_AUTOREN_NEU) continue
+        adressen.set(adr, { autoren: x.autoren.size, belege: x.belege })
+    }
+    return { adressen, verworfen, gezaehlt }
+}
+
 // ── Momentaufnahme ──────────────────────────────────────────────────────
 
 /**

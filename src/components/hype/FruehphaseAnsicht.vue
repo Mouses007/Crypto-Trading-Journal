@@ -29,7 +29,7 @@
         <div v-if="quellen.length" class="fpQuellen">
             <span v-for="q in quellen" :key="q.name" class="fpQuelle" :class="{ aus: !q.ok }"
                 :title="q.ok ? '' : q.fehler">
-                <i class="uil" :class="q.ok ? 'uil-check' : 'uil-times'"></i> {{ q.name }}<template v-if="q.ok"> {{ q.anzahl }}</template>
+                <i class="uil" :class="q.ok ? 'uil-check' : 'uil-times'"></i> {{ q.text }}
             </span>
         </div>
 
@@ -158,8 +158,26 @@ const gestartet = ref(false)
 
 const laeuft = computed(() => gestartet.value || Boolean(stand.value?.laeuft))
 
-const quellen = computed(() => Object.entries(stand.value?.letzter?.quellenStand || {})
-    .map(([name, q]) => ({ name, ok: q.ok, anzahl: (q.anzahl || 0) + (q.kuerzel || 0), fehler: q.fehler || '' })))
+/*
+ * X (Grok) läuft seltener als die Durchgänge und kostet — sein Chip kommt
+ * deshalb aus der letzten X-Abfrage, nicht aus dem letzten Durchgang, und
+ * nennt Zeit und Preis.
+ */
+const quellen = computed(() => {
+    const liste = Object.entries(stand.value?.letzter?.quellenStand || {})
+        .filter(([name]) => name !== 'x')
+        .map(([name, q]) => ({ name, ok: q.ok, text: q.ok ? `${name} ${(q.anzahl || 0) + (q.kuerzel || 0)}` : name, fehler: q.fehler || '' }))
+    const x = stand.value?.x
+    if (x) {
+        liste.push({
+            name: 'x', ok: x.ok, fehler: x.fehler || '',
+            text: x.ok
+                ? t('hypeFrueh.xChip', { n: x.token ?? 0, k: Number(x.kostenUsd || 0).toFixed(3), z: zeitpunkt(x.am) })
+                : 'X (Grok)',
+        })
+    }
+    return liste
+})
 
 let anfrage = 0
 async function lade() {
@@ -268,9 +286,9 @@ function kaeuferText(s) {
     return '—'
 }
 
-const SOZIAL = ['telegram', 'biz', 'reddit']
+const SOZIAL = ['telegram', 'biz', 'reddit', 'x']
 const sozialVon = (z) => SOZIAL.filter((p) => (z.quellen || []).includes(p))
-const SOZIAL_KURZ = { telegram: 'TG', biz: '/biz/', reddit: 'Reddit' }
+const SOZIAL_KURZ = { telegram: 'TG', biz: '/biz/', reddit: 'Reddit', x: 'X' }
 const sozialText = (z) => (sozialVon(z).length ? sozialVon(z).map((p) => SOZIAL_KURZ[p]).join(' · ') : '—')
 const sozialTitel = (z) => (sozialVon(z).length ? t('hypeFrueh.sozialTitel', { p: sozialVon(z).join(', '), n: z.stand?.erw ?? 0 }) : '')
 
@@ -310,6 +328,13 @@ const FruehDetail = defineComponent({
                     h('div', { class: 'fpGrau mt-1' }, `${t('hypeFrueh.quellen')}: ${(z.quellen || []).join(', ') || '—'}`),
                     h('div', { class: 'fpGrau' }, t('hypeFrueh.beobachtetSeit', { z: zeitpunkt(z.ersterBlick) })),
                     h('div', { class: 'mt-2' }, markt),
+                    // X-Belege: die Posts, auf denen die Zählung beruht — zum Nachsehen,
+                    // ob da Menschen reden oder ein Ring.
+                    z.stand?.x?.belege?.length ? h('div', { class: 'fpGrau mt-1' }, [
+                        t('hypeFrueh.xAutoren', { n: z.stand.x.autoren }) + ' ',
+                        ...z.stand.x.belege.filter((u) => /^https:\/\/(x|twitter)\.com\//i.test(u)).map((u, i) =>
+                            h('a', { href: u, target: '_blank', rel: 'noopener noreferrer nofollow', class: 'me-2' }, `${i + 1} ↗`)),
+                    ]) : null,
                     h('div', { class: 'fpGrau fpVertrag', title: z.contract }, z.contract),
                 ]),
                 h('div', [

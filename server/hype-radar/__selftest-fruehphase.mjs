@@ -8,8 +8,8 @@
  * Aufruf: node server/hype-radar/__selftest-fruehphase.mjs
  */
 import {
-    erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh,
-    MAX_VERLAUF, REIF,
+    erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen,
+    MAX_VERLAUF, REIF, X_MIN_AUTOREN_NEU,
 } from './fruehphase-bewertung.js'
 
 let fehler = 0
@@ -43,6 +43,34 @@ console.log('Hype-Radar: Frühphase')
     p('HTML entfernt, Adresse lesbar', erwaehnungenIn(f[0].text).adressen.length === 1)
     p('Antworten und Zeit', f[0].antworten === 120 && f[0].zeit === 1790000000000)
     p('kaputter Katalog ergibt nichts', leseBizKatalog({ fehler: 1 }).length === 0)
+}
+
+// ── X über Grok: zählen, was belegt ist ─────────────────────────────────
+{
+    const BEK = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU'
+    const NEU = '9yKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU'
+    const post = (handle, id, text) => ({ handle, id, url: `https://x.com/${handle}/status/${id}`, text })
+    const posts = [
+        post('alice', '1', `aping ${BEK} now`),
+        post('alice', '2', `${BEK} again!!`),
+        post('alice', '3', `${BEK} third time`),
+        post('bob', '4', 'love $FOO'),
+        post('carol', '5', `new gem ${NEU}`),
+        post('erfunden', '99', `${BEK} ${NEU}`),          // nicht zitiert
+    ]
+    const zitiert = new Set(['1', '2', '3', '4', '5'])
+    const bekannt = { adressen: new Set([BEK]), symbole: new Map([['FOO', BEK], ['BAR', null]]) }
+    const n = xNennungen(posts, zitiert, bekannt)
+    p('X: nicht zitierte Posts fallen weg', n.verworfen === 1, String(n.verworfen))
+    p('X: Autoren statt Posts (alice dreimal = 1)', n.adressen.get(BEK)?.autoren === 2, JSON.stringify(n.adressen.get(BEK)))
+    p('X: Belege je Autor, nicht je Post', n.adressen.get(BEK)?.belege.length === 2)
+    p('X: unbekannter Token mit EINEM Autor wird nicht angelegt', !n.adressen.has(NEU))
+    const zwei = xNennungen([...posts, post('dave', '6', `${NEU} 🚀`)], new Set([...zitiert, '6']), bekannt)
+    p(`X: unbekannter Token ab ${X_MIN_AUTOREN_NEU} Autoren`, zwei.adressen.get(NEU)?.autoren === 2)
+    p('X: mehrdeutiges Kürzel zählt nicht',
+        xNennungen([post('eve', '7', '$BAR moon')], new Set(['7']), bekannt).adressen.size === 0)
+    p('X: ohne Zitatliste entfällt nur diese Sperre',
+        xNennungen(posts, new Set(), bekannt).adressen.get(BEK)?.autoren === 3)
 }
 
 // ── Momentaufnahme und Verlauf ──────────────────────────────────────────

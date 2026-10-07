@@ -925,6 +925,8 @@ const QUELL_DOMAENE = {
     fruehphase: 'onchain',
     telegram: 'social',
     biz: 'social',
+    // X über Grok — nur gezählte, zitierte Posts verschiedener Autoren.
+    x: 'social',
 }
 
 /*

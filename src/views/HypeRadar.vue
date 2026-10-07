@@ -240,6 +240,19 @@
                         <label class="form-check-label small" :for="'hypFQ' + q">{{ t('hype.fruehQuelle_' + q) }}</label>
                     </div>
                 </div>
+                <!-- X kostet je Abfrage — deshalb ein eigener, längerer Takt. -->
+                <div v-if="einst.fruehQuellen?.x" class="row g-3 mt-1 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.fruehXTakt') }}</label>
+                        <select v-model.number="einst.fruehXIntervallMin" class="form-select form-select-sm" @change="speichern">
+                            <option :value="30">30 min</option>
+                            <option :value="60">60 min</option>
+                            <option :value="120">2 h</option>
+                            <option :value="240">4 h</option>
+                        </select>
+                    </div>
+                    <div class="col hypHinweis mb-0">{{ t('hype.fruehXHinweis') }}</div>
+                </div>
                 <label class="form-label small mt-2" for="hypFruehTg">{{ t('hype.fruehTelegram') }}</label>
                 <textarea id="hypFruehTg" class="form-control form-control-sm hypTgListe" rows="2"
                     :value="(einst.fruehTelegram || []).join('\n')"

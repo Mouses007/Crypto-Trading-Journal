@@ -1227,7 +1227,10 @@
     "fruehTelegramPlatzhalter": "{'@'}kanal oder t.me/kanal — einer je Zeile",
     "fruehTelegramHinweis": "Gelesen wird die öffentliche Vorschau (t.me/s/…), die letzten sechs Stunden, höchstens 15 Kanäle. Call-Kanäle werben oft für eigene Token — eine einzelne Nennung ist ein Hinweis, erst mehrere unabhängige Plattformen zählen.",
     "zFrueh": "Frühphase alle {n} min",
-    "zFruehAus": "Frühphase aus"
+    "zFruehAus": "Frühphase aus",
+    "fruehQuelle_x": "X über Grok — kostenpflichtig",
+    "fruehXTakt": "X-Abfrage alle",
+    "fruehXHinweis": "Eine Grok-Suche je Intervall (xAI-Schlüssel unter Einstellungen → KI). Gezählt werden nur zitierte Posts und verschiedene Autoren. Der Preis der letzten Abfrage steht über der Liste."
   },
   "kiUebersicht": {
     "laedt": "Übersicht wird geladen …",
@@ -3445,7 +3448,7 @@
         {
           "g": "SO ARBEITET DIE FRÜHPHASE",
           "h": "QUELLEN",
-          "p": "pump.fun (neueste Starts und die grössten, die noch auf der Bindungskurve stehen), DexScreener (neu bezahlte Profile und Community-Übernahmen), GeckoTerminal (neue Pools mit der Zahl VERSCHIEDENER Käufer), der 4chan-Katalog von /biz/ (welche Vertragsadressen genannt werden), eingestellte öffentliche Telegram-Kanäle und auf Wunsch Reddit. Alle ohne Schlüssel. Eine Kürzel-Nennung („$FROG\") zählt nur für einen bereits bekannten Token und nur, wenn genau einer so heisst."
+          "p": "pump.fun (neueste Starts und die grössten, die noch auf der Bindungskurve stehen), DexScreener (neu bezahlte Profile und Community-Übernahmen), GeckoTerminal (neue Pools mit der Zahl VERSCHIEDENER Käufer), der 4chan-Katalog von /biz/ (welche Vertragsadressen genannt werden), eingestellte öffentliche Telegram-Kanäle, auf Wunsch Reddit — alle ohne Schlüssel — und, kostenpflichtig, X über Grok. Eine Kürzel-Nennung („$FROG\") zählt nur für einen bereits bekannten Token und nur, wenn genau einer so heisst."
         },
         {
           "h": "BESCHLEUNIGUNG STATT GRÖSSE",
@@ -3469,8 +3472,8 @@
           "p": "Steigt die Note über die eingestellte Schwelle, kommt eine Meldung über die Kanäle des Wachhunds (ntfy, Telegram, Webhook) — beim Überschreiten, nicht solange darüber, und je Token höchstens alle zwölf Stunden."
         },
         {
-          "h": "WAS FEHLT",
-          "p": "TikTok und X haben keinen freien Zugang. X liesse sich über die bezahlte Grok-Suche anbinden, die die Nachrichten schon nutzen; TikTok nur über kostenpflichtige Scraping-Dienste. Beides ist bewusst nicht eingebaut."
+          "h": "X UND TIKTOK",
+          "p": "X ist über die bezahlte Grok-Suche angebunden (dieselbe wie in den Nachrichten, ab Werk aus): eine Abfrage je Intervall, gezählt werden nur zitierte Posts, deren Text die Adresse wirklich enthält, und verschiedene Autoren statt Posts — zehn Posts eines Kontos sind ein Shill, kein Trend. TikTok hat keinen freien Zugang und ginge nur über kostenpflichtige Scraping-Dienste; es ist bewusst nicht eingebaut."
         }
       ],
       "caveat": "Frühphasen-Token sind die riskanteste Klasse überhaupt — die meisten sind nach Stunden wertlos. In dieser Spur gibt es noch KEINE Sicherheitsprüfung (Honeypot, Mint- und Freeze-Rechte); die folgt erst in der Hauptprüfung. Die Gewichte sind Setzungen, die sich an der Erfolgskontrolle bewähren müssen. Keine Anlageberatung."
@@ -4286,7 +4289,9 @@
     "befunde": "Befunde",
     "keineBefunde": "Keine Befunde.",
     "spalteHandel": "Handel 1h",
-    "spalteHandelTitel": "Verschiedene Käufer / Verkäufer der letzten Stunde — wo die Quelle das nicht nennt, die Zahl der Transaktionen"
+    "spalteHandelTitel": "Verschiedene Käufer / Verkäufer der letzten Stunde — wo die Quelle das nicht nennt, die Zahl der Transaktionen",
+    "xChip": "X (Grok) {n} · {k} $ · {z}",
+    "xAutoren": "X: {n} verschiedene Autoren"
   },
   "hypeProjekt": {
     "titel": "Projektprüfung",

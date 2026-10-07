@@ -1227,7 +1227,10 @@
     "fruehTelegramPlatzhalter": "{'@'}channel or t.me/channel — one per line",
     "fruehTelegramHinweis": "The public preview (t.me/s/…) is read, last six hours, at most 15 channels. Call channels often promote their own tokens — a single mention is a hint; only several independent platforms count.",
     "zFrueh": "early phase every {n} min",
-    "zFruehAus": "early phase off"
+    "zFruehAus": "early phase off",
+    "fruehQuelle_x": "X via Grok — paid",
+    "fruehXTakt": "X query every",
+    "fruehXHinweis": "One Grok search per interval (xAI key under Settings → AI). Only cited posts and distinct authors are counted. The price of the last query is shown above the list."
   },
   "kiUebersicht": {
     "laedt": "Loading overview …",
@@ -3445,7 +3448,7 @@
         {
           "g": "HOW THE EARLY PHASE WORKS",
           "h": "SOURCES",
-          "p": "pump.fun (newest launches and the largest still on the bonding curve), DexScreener (newly paid profiles and community takeovers), GeckoTerminal (new pools with the number of DISTINCT buyers), the 4chan /biz/ catalog (which contract addresses are mentioned), configured public Telegram channels and, optionally, Reddit. All without keys. A ticker mention (\"$FROG\") only counts for an already known token, and only if exactly one carries that name."
+          "p": "pump.fun (newest launches and the largest still on the bonding curve), DexScreener (newly paid profiles and community takeovers), GeckoTerminal (new pools with the number of DISTINCT buyers), the 4chan /biz/ catalog (which contract addresses are mentioned), configured public Telegram channels, optionally Reddit — all without keys — and, paid, X via Grok. A ticker mention (\"$FROG\") only counts for an already known token, and only if exactly one carries that name."
         },
         {
           "h": "ACCELERATION, NOT SIZE",
@@ -3469,8 +3472,8 @@
           "p": "If the score rises above the configured threshold, an alert goes out through the watchdog's channels (ntfy, Telegram, webhook) — on crossing, not while above, and at most every twelve hours per token."
         },
         {
-          "h": "WHAT IS MISSING",
-          "p": "TikTok and X offer no free access. X could be connected through the paid Grok search the news already uses; TikTok only through paid scraping services. Neither is built in, deliberately."
+          "h": "X AND TIKTOK",
+          "p": "X is connected through the paid Grok search (the same one the news use, off by default): one query per interval; only cited posts whose text really contains the address are counted, and distinct authors instead of posts — ten posts from one account are a shill, not a trend. TikTok offers no free access and would only work through paid scraping services; it is deliberately not built in."
         }
       ],
       "caveat": "Early-phase tokens are the riskiest class there is — most are worthless within hours. This lane has NO safety check yet (honeypot, mint and freeze rights); that only follows in the main check. The weights are assumptions that have to prove themselves in the outcome tracking. Not investment advice."
@@ -4286,7 +4289,9 @@
     "befunde": "Findings",
     "keineBefunde": "No findings.",
     "spalteHandel": "Trading 1h",
-    "spalteHandelTitel": "Distinct buyers / sellers in the last hour — where the source does not provide that, the number of transactions"
+    "spalteHandelTitel": "Distinct buyers / sellers in the last hour — where the source does not provide that, the number of transactions",
+    "xChip": "X (Grok) {n} · {k} $ · {z}",
+    "xAutoren": "X: {n} distinct authors"
   },
   "hypeProjekt": {
     "titel": "Project check",

@@ -110,7 +110,11 @@ export const VORGABEN = {
     fruehQuellen: {
         pumpfunNeu: true, pumpfunAufstieg: true, dexscreenerProfile: true,
         geckoterminalNeu: true, biz: true, telegram: true, reddit: false,
+        // Bezahlt (xAI, Grok `x_search`) — deshalb aus, bis jemand es will.
+        x: false,
     },
+    // Takt der X-Abfrage in Minuten; jede Abfrage kostet Suchpauschale plus Tokens.
+    fruehXIntervallMin: 120,
     fruehTelegram: [],
     fruehAlarmAb: 70,
     llmStufe: 'gruendlich-mittel',
