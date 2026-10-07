@@ -8,9 +8,9 @@
  *
  * Quellen, alle ohne Schlüssel:
  *
- *   pump.fun       die neuesten Starts und die grössten noch auf der Kurve
- *                  (kurz vor dem Abschluss) — mit Ersteller, Kommentarzahl
- *                  und den Links aus den Metadaten
+ *   pump.fun       die neuesten Starts und was gerade auf der Kurve gehandelt
+ *                  wird — mit Ersteller, Kommentarzahl und den Links aus den
+ *                  Metadaten
  *   DexScreener    neue Token-Profile (jemand bezahlt dafür) und
  *                  Community-Übernahmen
  *   GeckoTerminal  neue Pools je Kette — mit der Zahl VERSCHIEDENER Käufer
@@ -22,11 +22,14 @@
  * Scan als eigene Quelle in die Hauptprüfung (`reifeFunde`). Wer über die
  * Alarmschwelle steigt, wird gemeldet — über dieselben Kanäle wie der Wachhund.
  *
- * ⚠ Gegen die Live-Dienste nicht geprüft (keine Verbindung aus der
- * Entwicklungsumgebung am 07.10.2026): die pump.fun-Sortierung `market_cap`,
- * die DexScreener-Endpunkte `community-takeovers` und GeckoTerminal
- * `new_pools`. Jede Quelle fällt einzeln aus, ohne die anderen mitzunehmen;
- * was ausfiel, steht im Ergebnis unter `quellenStand`.
+ * Jede Quelle fällt einzeln aus, ohne die anderen mitzunehmen; was ausfiel,
+ * steht im Ergebnis unter `quellenStand`. Der erste echte Lauf (07.10.2026)
+ * hat pump.fun (beide Listen, nachgemessen), DexScreener-Profile und
+ * -Übernahmen sowie GeckoTerminal `new_pools` bestätigt — und vier Fehler in
+ * der Rechnung gefunden, die jetzt an Ort und Stelle beschrieben sind:
+ * Altersartefakt im Handelsschub (`jeMinute`), Meldungen aus ein, zwei
+ * Teilnoten und ohne Vertragsprüfung (`meldefaehig`), und alte Token aus der
+ * Übernahmen-Liste (`MAX_ALTER_STUNDEN`).
  */
 
 import { getKnex } from '../database.js'
@@ -42,6 +45,7 @@ import { sucheXErwaehnungen } from '../news-recherche.js'
 import { ladeLlmConfig, merkeKiGuthaben, istGuthabenFehler } from '../llm.js'
 import {
     erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen, risikoFrueh,
+    risikoUnpruefbar, meldefaehig, MAX_ALTER_STUNDEN,
 } from './fruehphase-bewertung.js'
 import { ausRugCheck, holeGoPlus } from './sicherheit.js'
 import { smartAbruf, smartKarteLesen } from './smartmoney.js'
@@ -175,25 +179,45 @@ async function jeDrei(liste, fn) {
 async function pumpfun(einst) {
     const q = einst.fruehQuellen || {}
     const listen = []
-    if (q.pumpfunNeu !== false) listen.push(['pumpfun-neu', 'created_timestamp'])
+    if (q.pumpfunNeu !== false) listen.push(['pumpfun-neu', 'sort=created_timestamp'])
     /*
-     * Die grössten Bewertungen, die noch auf der Kurve stehen — die Token
-     * kurz vor dem Abschluss. Graduierte fallen heraus: die sind schon eine
-     * Stufe weiter und kommen über DexScreener und GeckoTerminal.
+     * Was gerade auf der Kurve gehandelt wird. Graduierte fallen heraus: die
+     * sind schon eine Stufe weiter und kommen über DexScreener und
+     * GeckoTerminal.
+     *
+     * Bis 07.10.2026 stand hier `sort=market_cap` mit der Absicht „die
+     * grössten, die noch auf der Kurve stehen". Gemessen liefert das die
+     * fünfzig grössten GRADUIERTEN aller Zeiten (oben USDF mit 959 Mio USD),
+     * die der Filter danach alle verwarf — die Liste war immer leer, und King
+     * of the Hill wurde nie gesehen. Mit `complete=false` kommen Leichen, die
+     * seit über 400 Tagen auf der Kurve hängen; ein Altersfilter in der
+     * Abfrage (`created_timestamp_gte`) wird ignoriert. Die Sortierung nach
+     * dem letzten Handel lieferte 50 Token auf der Kurve, 45 davon jünger als
+     * ein Tag; den Rest nimmt `MAX_ALTER_STUNDEN`.
      */
-    if (q.pumpfunAufstieg !== false) listen.push(['pumpfun-aufstieg', 'market_cap'])
-    const antworten = await Promise.allSettled(listen.map(([, sort]) =>
-        holeJson(`${PUMP}/coins?limit=50&offset=0&sort=${sort}&order=DESC&includeNsfw=false`)))
+    if (q.pumpfunAufstieg !== false) listen.push(['pumpfun-aufstieg', 'sort=last_trade_timestamp&complete=false'])
+    /*
+     * Nacheinander, nicht gleichzeitig: Der zweite gleichzeitige Abruf bekam
+     * HTTP 429 und fiel still aus — die Quelle gilt erst als ausgefallen, wenn
+     * ALLE ihre Abrufe scheitern.
+     */
     const raus = []
-    antworten.forEach((a, i) => {
-        if (a.status !== 'fulfilled') return
-        for (const c of Array.isArray(a.value) ? a.value : []) {
-            if (listen[i][0] === 'pumpfun-aufstieg' && c?.complete === true) continue
-            raus.push(ausPumpCoin(c, listen[i][0]))
+    let ok = 0
+    let letzterFehler = null
+    for (const [quelle, abfrage] of listen) {
+        try {
+            const j = await holeJson(`${PUMP}/coins?limit=50&offset=0&${abfrage}&order=DESC&includeNsfw=false`)
+            ok++
+            for (const c of Array.isArray(j) ? j : []) {
+                if (quelle === 'pumpfun-aufstieg' && c?.complete === true) continue
+                raus.push(ausPumpCoin(c, quelle))
+            }
+        } catch (e) {
+            letzterFehler = e
+            logWarn('hype-frueh', `pump.fun ${quelle}: ${e.message}`)
         }
-    })
-    // Nur wenn ALLES ausfiel, ist die Quelle ausgefallen.
-    if (listen.length && antworten.every((a) => a.status === 'rejected')) throw antworten[0].reason
+    }
+    if (listen.length && !ok) throw letzterFehler
     return raus
 }
 
@@ -542,13 +566,29 @@ async function fruehLaufIntern(einst) {
     // ── Bewerten (erster Durchgang) ─────────────────────────────────────
     const bewerte = (e) => bewerteFrueh({
         stand: e.stand, verlauf: e.verlauf, links: e.x.links, profil: e.x.profil,
-        projektNote: e.projektNote, ersteller: e.bilanz, risiko: e.risiko, smart: e.smart,
+        projektNote: e.projektNote, ersteller: e.bilanz, risiko: e.risiko, smart: e.smart, geborenAm: e.geborenAm,
     })
     const ergebnisse = []
+    let zuAlt = 0
     for (const x of alle.filter((y) => y.chain !== '?' && (y.symbol || y.markt.preisUsd))) {
         const alt = bekanntNach.get(schluessel(x.chain, x.contract))
         const verlauf = sicherJson(alt?.verlauf, [])
         const altStand = sicherJson(alt?.stand, {}) || {}
+
+        /*
+         * Das Alter steht vor der Bewertung fest, weil sie es braucht: die
+         * Stundenzahlen eines Tokens unter einer Stunde decken nur sein Alter
+         * ab. Start von pump.fun oder GeckoTerminal, sonst das Paaralter von
+         * DexScreener, sonst der letzte bekannte Wert. Für den Status zählt
+         * notfalls der erste Blick — das unterschätzt das Alter, nie umgekehrt.
+         */
+        const geborenAm = x.erstelltAm
+            || (Number.isFinite(x.markt.paarAlterStunden) ? jetzt - x.markt.paarAlterStunden * 3600e3 : null)
+            || Number(altStand.geborenAm) || null
+        const alterStunden = (jetzt - (geborenAm || Number(alt?.ersterBlick) || jetzt)) / 3600e3
+        // Älter als drei Tage ist kein Frühphasen-Fund: neu gar nicht erst anlegen.
+        // Ein bekannter wird unten verworfen (`statusFrueh`, Grund „alt").
+        if (!alt && alterStunden > MAX_ALTER_STUNDEN) { zuAlt++; continue }
         /*
          * X läuft seltener als die Durchgänge. Ohne Fortschreiben fiele die
          * Plattform zwischen zwei Abfragen aus der Note und kehrte bei der
@@ -570,7 +610,7 @@ async function fruehLaufIntern(einst) {
         const stand = momentaufnahme(x.markt, { erwaehnungen, plattformen: [...plattformen] }, jetzt)
         const gespeichert = await gespeichertePruefung({ chain: x.chain, contract: x.contract })
         const e = {
-            x, alt, verlauf, stand, graduiert,
+            x, alt, altStand, verlauf, stand, graduiert, geborenAm, alterStunden,
             aufKurve: istPump(x) && !graduiert,
             projektNote: gespeichert?.note ?? alt?.projektNote ?? null,
             bilanz: gespeichert?.fakten?.ersteller || null,
@@ -582,17 +622,21 @@ async function fruehLaufIntern(einst) {
     }
 
     // ── Risiko und Halter für die Besten ────────────────────────────────
+    // Zwei beobachtete Wallets zuerst: deren Meldung wartet auf genau diese Prüfung.
     const zuPruefen = ergebnisse
         .filter((e) => !e.risiko || Number(e.risiko.am) < jetzt - RISIKO_NEU_MS)
-        .sort((a, b) => b.r.note - a.r.note)
+        .sort((a, b) => (Number(b.smart?.wallets >= 2) - Number(a.smart?.wallets >= 2)) || (b.r.note - a.r.note))
         .slice(0, RISIKO_JE_LAUF)
     let risikoOk = 0
+    let unpruefbar = 0
     let risikoFehler = ''
     await jeDrei(zuPruefen, async (e) => {
         try {
             const roh = await holeRisiko(e.x.chain, e.x.contract)
             const r = risikoFrueh(roh, { kurve: e.x.kurve || [], ersteller: e.x.ersteller, aufKurve: e.aufKurve })
-            if (!r) return
+            // Keine Antwort ist kein Fehler, aber auch kein Bestehen — festhalten
+            // statt still übergehen, sonst geht die Meldung ungeprüft hinaus.
+            if (!r) { e.risiko = risikoUnpruefbar(jetzt); unpruefbar++; return }
             e.risiko = { ...r, am: jetzt }
             e.stand.halter = r.halter
             risikoOk++
@@ -602,7 +646,9 @@ async function fruehLaufIntern(einst) {
         }
     })
     if (zuPruefen.length) {
-        quellenStand.risiko = risikoOk || !risikoFehler ? { ok: true, anzahl: risikoOk } : { ok: false, fehler: risikoFehler }
+        quellenStand.risiko = risikoOk || unpruefbar || !risikoFehler
+            ? { ok: true, anzahl: risikoOk, unpruefbar }
+            : { ok: false, fehler: risikoFehler }
     }
 
     // ── Projektprüfung für die Besten ───────────────────────────────────
@@ -638,11 +684,20 @@ async function fruehLaufIntern(einst) {
     const neuGesehen = []
     const gedaechtnis = []
     for (const e of ergebnisse) {
-        const { x, alt, r } = e
+        const { x, alt, altStand, r, alterStunden } = e
         const erster = Number(alt?.ersterBlick) || jetzt
-        const geboren = x.erstelltAm || (Number.isFinite(x.markt.paarAlterStunden) ? jetzt - x.markt.paarAlterStunden * 3600e3 : erster)
-        const alterStunden = (jetzt - geboren) / 3600e3
         const { status, grund } = statusFrueh(e.stand, alterStunden, r.befunde)
+        /*
+         * „Über der Schwelle" heisst: meldefähig UND über der Note. Gemerkt
+         * wird der Zustand, nicht die Note — sonst bliebe ein Token, der
+         * ungeprüft über 70 stand und erst danach geprüft wird, für immer
+         * stumm, weil seine Note die Schwelle nie mehr „überschreitet".
+         * Zeilen ohne den Merker (vor dem 07.10.2026) zählen nach der Note.
+         */
+        const meldung = meldefaehig({ status, abdeckung: r.abdeckung, risiko: e.risiko })
+        const ueber = meldung.ja && r.note >= messSchwelle
+        const vorherUeber = typeof altStand?.ueber === 'boolean' ? altStand.ueber : (Number(alt?.note) || 0) >= messSchwelle
+        const smartMeldung = e.smart?.wallets >= 2 && meldefaehig({ status, risiko: e.risiko, smart: true }).ja
         const verlauf = naechsterVerlauf(e.verlauf, { ...e.stand, note: r.note })
         const quellenAlt = sicherJson(alt?.quellen, [])
         const zeile = {
@@ -655,8 +710,9 @@ async function fruehLaufIntern(einst) {
             ersteller: x.ersteller || alt?.ersteller || '',
             ersterBlick: erster,
             letzterBlick: jetzt,
-            stand: JSON.stringify({ ...e.stand, alterStunden, teilnoten: r.teilnoten, trend: r.trend, x: x.xInfo || null,
-                graduiert: e.graduiert, kurve: x.kurve || null, risiko: e.risiko || null, smart: e.smart || null }),
+            stand: JSON.stringify({ ...e.stand, alterStunden, geborenAm: e.geborenAm, teilnoten: r.teilnoten, abdeckung: r.abdeckung,
+                trend: r.trend, x: x.xInfo || null, graduiert: e.graduiert, kurve: x.kurve || null, risiko: e.risiko || null,
+                smart: e.smart || null, ueber, meldung: meldung.grund }),
             verlauf: JSON.stringify(verlauf),
             note: r.note,
             befunde: JSON.stringify(r.befunde),
@@ -668,11 +724,11 @@ async function fruehLaufIntern(einst) {
         if (!alt) neu++
         const messung = { chain: x.chain, contract: x.contract, symbol: zeile.symbol, note: r.note,
             preis: e.stand.preis, mcap: e.stand.mcap, liq: e.stand.liq }
-        if (status !== 'verworfen' && r.note >= messSchwelle && (Number(alt?.note) || 0) < messSchwelle) ueberSchwelle.push(messung)
+        if (ueber && !vorherUeber) ueberSchwelle.push(messung)
         else if (!alt) neuGesehen.push(messung)
         if (r.note >= MERKEN_AB_NOTE || (e.smart?.wallets >= 2)) {
             gedaechtnis.push({ chain: x.chain, contract: x.contract, symbol: zeile.symbol, quelle: 'frueh',
-                bewertungUsd: e.stand.mcap, gemeldet: status !== 'verworfen' && (r.note >= messSchwelle || e.smart?.wallets >= 2) })
+                bewertungUsd: e.stand.mcap, gemeldet: ueber || smartMeldung })
         }
 
         /*
@@ -680,15 +736,15 @@ async function fruehLaufIntern(einst) {
          * je Token höchstens alle zwölf Stunden, über einen Anspruch in der
          * Datenbank (NAS und Entwicklungsrechner takten beide).
          */
-        const vorher = Number(alt?.note) || 0
-        if (schwelle > 0 && status !== 'verworfen' && r.note >= schwelle && vorher < schwelle
+        if (schwelle > 0 && ueber && !vorherUeber
             && await beansprucheAufgabe(`hypfrueh|${x.chain}|${x.contract}`, ALARM_SPERRE_MS)) {
             alarme++
             await melde(knex, zeile, r, einst, jetzt)
         }
         // Zwei beobachtete Wallets auf demselben Token: sofort melden, ganz
-        // gleich, wo die Note steht — genau dafür beobachtet man sie.
-        if (e.smart?.wallets >= 2 && status !== 'verworfen'
+        // gleich, wo die Note steht — genau dafür beobachtet man sie. Nur der
+        // Vertrag muss geprüft sein.
+        if (smartMeldung
             && await beansprucheAufgabe(`hypsmart|${x.contract}`, ALARM_SPERRE_MS)) {
             alarme++
             await melde(knex, zeile, r, einst, jetzt, e.smart)
@@ -711,7 +767,7 @@ async function fruehLaufIntern(einst) {
     }
 
     await raeumeAuf(knex, jetzt)
-    return { beobachtet: ergebnisse.length, neu, alarme, quellenStand }
+    return { beobachtet: ergebnisse.length, neu, alarme, zuAlt, quellenStand }
 }
 
 /** Einen Frühphasen-Alarm speichern und zustellen. */

@@ -1222,9 +1222,9 @@
     "fruehAn": "Watch the early phase automatically",
     "fruehTakt": "Interval",
     "fruehAlarmAb": "Alert from score",
-    "fruehAlarmHinweis": "Alerts fire when the score crosses the threshold, at most every 12 hours per token, through the watchdog's channels. 0 = watch only.",
+    "fruehAlarmHinweis": "Alerts fire when the score crosses the threshold, at most every 12 hours per token, through the watchdog's channels — only with a checked contract and at least three measured sub-scores. 0 = watch only.",
     "fruehQuelle_pumpfunNeu": "pump.fun — newest launches",
-    "fruehQuelle_pumpfunAufstieg": "pump.fun — close to completion",
+    "fruehQuelle_pumpfunAufstieg": "pump.fun — trading now, still on the curve",
     "fruehQuelle_dexscreenerProfile": "DexScreener — new profiles and takeovers",
     "fruehQuelle_geckoterminalNeu": "GeckoTerminal — new pools with buyer counts",
     "fruehQuelle_biz": "4chan /biz/ — mentioned addresses",
@@ -3625,11 +3625,11 @@
         {
           "g": "HOW THE EARLY PHASE WORKS",
           "h": "SOURCES",
-          "p": "pump.fun (newest launches and the largest still on the bonding curve), DexScreener (newly paid profiles and community takeovers), GeckoTerminal (new pools with the number of DISTINCT buyers), the 4chan /biz/ catalog (which contract addresses are mentioned), configured public Telegram channels, optionally Reddit — all without keys — and, paid, X via Grok. A ticker mention (\"$FROG\") only counts for an already known token, and only if exactly one carries that name."
+          "p": "pump.fun (newest launches and what is trading on the bonding curve right now), DexScreener (newly paid profiles and community takeovers), GeckoTerminal (new pools with the number of DISTINCT buyers), the 4chan /biz/ catalog (which contract addresses are mentioned), configured public Telegram channels, optionally Reddit — all without keys — and, paid, X via Grok. A ticker mention (\"$FROG\") only counts for an already known token, and only if exactly one carries that name. Tokens older than three days are not taken in — they have launched, they are not early."
         },
         {
           "h": "ACCELERATION, NOT SIZE",
-          "p": "Five sub-scores: trading surge (transactions in the last hour against the token's own history — at first sight the last five minutes against the hour), participation (distinct buyers instead of transactions), social (on how many platforms it is mentioned — three platforms weigh more than a hundred mentions on one), team/substance (the project check) and momentum (valuation growth)."
+          "p": "Five sub-scores: trading surge (transactions in the last hour against the token's own history — at first sight the last five minutes against the minutes before; for a token younger than an hour the rate is taken per minute of its age, otherwise steady trading would look like a surge), participation (distinct buyers instead of transactions), social (on how many platforms it is mentioned — three platforms weigh more than a hundred mentions on one), team/substance (the project check) and momentum (valuation growth)."
         },
         {
           "h": "WHAT IS DEDUCTED",
@@ -3650,7 +3650,7 @@
         },
         {
           "h": "ALERTS",
-          "p": "If the score rises above the configured threshold, an alert goes out through the watchdog's channels (ntfy, Telegram, webhook) — on crossing, not while above, and at most every twelve hours per token."
+          "p": "If the score rises above the configured threshold, an alert goes out through the watchdog's channels (ntfy, Telegram, webhook) — on crossing, not while above, and at most every twelve hours per token. Two further conditions apply: the contract must have been checked (if neither RugCheck nor GoPlus knows it, e.g. on a chain without a checking service, nothing is sent), and the score must rest on at least three of the five sub-scores — built from one or two it easily turns extreme. Both show as a note on the token. Outcome tracking counts by the same rule."
         },
         {
           "h": "X AND TIKTOK",
@@ -4491,6 +4491,7 @@
     "status_verworfen": "rejected",
     "grund_eingebrochen": "collapsed",
     "grund_leer": "empty",
+    "grund_alt": "older than 3 days",
     "txKurz": "{n} tx",
     "sozialTitel": "Mentioned on: {p} — {n} mentions in the last run",
     "teilnoten": "Sub-scores",

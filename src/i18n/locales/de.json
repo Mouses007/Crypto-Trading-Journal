@@ -1222,9 +1222,9 @@
     "fruehAn": "Frühphase automatisch beobachten",
     "fruehTakt": "Takt",
     "fruehAlarmAb": "Melden ab Note",
-    "fruehAlarmHinweis": "Gemeldet wird beim Überschreiten, je Token höchstens alle 12 Stunden, über die Kanäle des Wachhunds. 0 = nur beobachten.",
+    "fruehAlarmHinweis": "Gemeldet wird beim Überschreiten, je Token höchstens alle 12 Stunden, über die Kanäle des Wachhunds — nur mit geprüftem Vertrag und mindestens drei gemessenen Teilnoten. 0 = nur beobachten.",
     "fruehQuelle_pumpfunNeu": "pump.fun — neueste Starts",
-    "fruehQuelle_pumpfunAufstieg": "pump.fun — kurz vor dem Abschluss",
+    "fruehQuelle_pumpfunAufstieg": "pump.fun — gerade gehandelt, noch auf der Kurve",
     "fruehQuelle_dexscreenerProfile": "DexScreener — neue Profile und Übernahmen",
     "fruehQuelle_geckoterminalNeu": "GeckoTerminal — neue Pools mit Käuferzahl",
     "fruehQuelle_biz": "4chan /biz/ — genannte Adressen",
@@ -3625,11 +3625,11 @@
         {
           "g": "SO ARBEITET DIE FRÜHPHASE",
           "h": "QUELLEN",
-          "p": "pump.fun (neueste Starts und die grössten, die noch auf der Bindungskurve stehen), DexScreener (neu bezahlte Profile und Community-Übernahmen), GeckoTerminal (neue Pools mit der Zahl VERSCHIEDENER Käufer), der 4chan-Katalog von /biz/ (welche Vertragsadressen genannt werden), eingestellte öffentliche Telegram-Kanäle, auf Wunsch Reddit — alle ohne Schlüssel — und, kostenpflichtig, X über Grok. Eine Kürzel-Nennung („$FROG\") zählt nur für einen bereits bekannten Token und nur, wenn genau einer so heisst."
+          "p": "pump.fun (neueste Starts und was gerade auf der Bindungskurve gehandelt wird), DexScreener (neu bezahlte Profile und Community-Übernahmen), GeckoTerminal (neue Pools mit der Zahl VERSCHIEDENER Käufer), der 4chan-Katalog von /biz/ (welche Vertragsadressen genannt werden), eingestellte öffentliche Telegram-Kanäle, auf Wunsch Reddit — alle ohne Schlüssel — und, kostenpflichtig, X über Grok. Eine Kürzel-Nennung („$FROG\") zählt nur für einen bereits bekannten Token und nur, wenn genau einer so heisst. Token, die älter als drei Tage sind, nimmt die Frühphase nicht auf — sie sind gestartet, nicht früh."
         },
         {
           "h": "BESCHLEUNIGUNG STATT GRÖSSE",
-          "p": "Fünf Teilnoten: Handelsschub (Transaktionen der letzten Stunde gegen den eigenen Verlauf — beim ersten Blick die letzten fünf Minuten gegen die Stunde), Beteiligung (verschiedene Käufer statt Transaktionen), Sozial (auf wie vielen Plattformen genannt — drei Plattformen wiegen mehr als hundert Nennungen auf einer), Team/Substanz (die Projektprüfung) und Momentum (Wachstum der Bewertung)."
+          "p": "Fünf Teilnoten: Handelsschub (Transaktionen der letzten Stunde gegen den eigenen Verlauf — beim ersten Blick die letzten fünf Minuten gegen die Minuten davor; bei einem Token unter einer Stunde wird je Minute seines Alters gerechnet, sonst sähe gleichmässiger Handel wie ein Schub aus), Beteiligung (verschiedene Käufer statt Transaktionen), Sozial (auf wie vielen Plattformen genannt — drei Plattformen wiegen mehr als hundert Nennungen auf einer), Team/Substanz (die Projektprüfung) und Momentum (Wachstum der Bewertung)."
         },
         {
           "h": "WAS ABGEZOGEN WIRD",
@@ -3650,7 +3650,7 @@
         },
         {
           "h": "MELDUNGEN",
-          "p": "Steigt die Note über die eingestellte Schwelle, kommt eine Meldung über die Kanäle des Wachhunds (ntfy, Telegram, Webhook) — beim Überschreiten, nicht solange darüber, und je Token höchstens alle zwölf Stunden."
+          "p": "Steigt die Note über die eingestellte Schwelle, kommt eine Meldung über die Kanäle des Wachhunds (ntfy, Telegram, Webhook) — beim Überschreiten, nicht solange darüber, und je Token höchstens alle zwölf Stunden. Zwei Bedingungen gelten zusätzlich: Der Vertrag muss geprüft sein (kennt ihn weder RugCheck noch GoPlus, etwa auf einer Kette ohne Prüfdienst, wird nichts gemeldet), und die Note muss auf mindestens drei der fünf Teilnoten beruhen — aus einer oder zwei wird sie leicht extrem. Beides steht als Hinweis beim Token. Die Erfolgskontrolle zählt nach derselben Regel."
         },
         {
           "h": "X UND TIKTOK",
@@ -4491,6 +4491,7 @@
     "status_verworfen": "verworfen",
     "grund_eingebrochen": "eingebrochen",
     "grund_leer": "leer",
+    "grund_alt": "älter als 3 Tage",
     "txKurz": "{n} Tx",
     "sozialTitel": "Genannt auf: {p} — {n} Nennungen im letzten Durchgang",
     "teilnoten": "Teilnoten",

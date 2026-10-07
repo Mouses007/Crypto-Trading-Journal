@@ -28,6 +28,20 @@ export const MAX_VERLAUF = 48
 /** Ab hier gilt ein Token als „reif" für die Hauptprüfung (dieselben Werte wie dort). */
 export const REIF = { minAlterStunden: 12, minLiquiditaetUsd: 50000 }
 
+/*
+ * Älter als drei Tage ist ein Token kein Frühphasen-Fund mehr, sondern
+ * gestartet. Im ersten Lauf (07.10.2026) kamen alle sechs „reifen" Token aus
+ * der DexScreener-Liste der Community-Übernahmen, 20 Stunden bis 85 Tage alt —
+ * und einer davon (35 Tage) löste eine „Frühsignal"-Meldung aus.
+ */
+export const MAX_ALTER_STUNDEN = 72
+
+/** Unter so vielen gemessenen Teilnoten meldet die Frühphase nichts. */
+export const MIN_TEILNOTEN_MELDUNG = 3
+
+/** So viele Minuten Handel muss eine Rate abdecken, um als Vergleich zu taugen. */
+const MIN_BASIS_MIN = 10
+
 const zahl = (w) => (w === null || w === undefined || w === '' ? null
     : (Number.isFinite(Number(w)) ? Number(w) : null))
 const klemme = (n) => Math.max(0, Math.min(100, n))
@@ -398,19 +412,48 @@ export const FRUEH_GEWICHTE = { handel: 25, beteiligung: 20, sozial: 25, team: 2
 /** Ab diesem Faktor gilt ein Schub als voll ausgeschlagen. */
 const SCHUB_VOLL = 4
 
+/*
+ * Die Stundenzahlen der Quellen (`tx1h`, `vol1h`, `kaeufer1h`) zählen die
+ * letzten sechzig Minuten — bei einem Token, der erst 18 Minuten existiert,
+ * also nur diese 18. Unumgerechnet wächst jede solche Zahl mit dem Alter, und
+ * gleichmässiger Handel sieht aus wie ein Schub: Im ersten Lauf (07.10.2026)
+ * zeigten 28 von 43 Token unter einer Stunde „Handel ≥ 2×", zwei der drei
+ * Meldungen beruhten darauf. Deshalb wird je Minute gerechnet, über das
+ * Fenster, das die Zahl wirklich abdeckt.
+ *
+ * Ohne bekanntes Alter bleibt es bei der Stunde (das alte Verhalten) — für
+ * einen Token über einer Stunde ist das ohnehin dasselbe.
+ */
+function jeMinute(wert, ts, geborenAm) {
+    if (wert === null || wert === undefined || !(wert >= 0)) return null
+    if (!Number.isFinite(geborenAm)) return wert / 60
+    const alterMin = (ts - geborenAm) / 60e3
+    if (alterMin < MIN_BASIS_MIN) return null
+    return wert / Math.min(60, alterMin)
+}
+
 /**
  * Handelsschub: die letzte Stunde gegen den eigenen Verlauf — oder, solange
- * es keinen gibt, die letzten fünf Minuten gegen die Stunde (×12).
+ * es keinen gibt, die letzten fünf Minuten gegen die Minuten DAVOR.
+ *
+ * Bis 07.10.2026 hiess der zweite Weg „fünf Minuten ×12 gegen die Stunde":
+ * Die Stunde enthält die fünf Minuten selbst, und bei einem jungen Token ist
+ * sie kürzer als sechzig — ein sechs Minuten alter Token kam bei
+ * gleichmässigem Handel auf 10×.
  */
-function handelsSchub(stand, frueher) {
-    const basis = median(frueher.map((s) => s.tx1h).filter((x) => x !== null && x > 0))
-    if (stand.tx1h !== null && basis) {
-        return { faktor: stand.tx1h / basis, quelle: 'verlauf' }
+function handelsSchub(stand, frueher, geborenAm) {
+    const basis = median(frueher.map((s) => jeMinute(s.tx1h, s.ts, geborenAm)).filter((x) => x !== null && x > 0))
+    const jetzt = jeMinute(stand.tx1h, stand.ts, geborenAm)
+    if (jetzt !== null && basis) {
+        return { faktor: jetzt / basis, quelle: 'verlauf' }
     }
-    if (stand.tx5m !== null && stand.tx1h !== null && stand.tx1h >= 20) {
-        return { faktor: (stand.tx5m * 12) / stand.tx1h, quelle: 'innerhalb' }
-    }
-    return null
+    // Ohne Alter keine Aussage: die „Stunde" eines Unbekannten kann zwei Minuten lang sein.
+    if (stand.tx5m === null || stand.tx1h === null || stand.tx1h < 20 || !Number.isFinite(geborenAm)) return null
+    const fenster = Math.min(60, (stand.ts - geborenAm) / 60e3)
+    if (fenster - 5 < MIN_BASIS_MIN) return null
+    // Mindestens ein Handel davor: aus der Stille heraus ist ein Schub echt, aber nicht unendlich.
+    const davor = Math.max(1, stand.tx1h - stand.tx5m) / (fenster - 5)
+    return { faktor: (stand.tx5m / 5) / davor, quelle: 'innerhalb' }
 }
 
 /**
@@ -423,9 +466,11 @@ function handelsSchub(stand, frueher) {
  * @param {object} e.links        {webseiten, kanaele}
  * @param {object} e.ersteller    Ersteller-Bilanz (oder null)
  * @param {boolean} e.profil      bezahltes DexScreener-Profil / Community-Übernahme
- * @returns {{note:number, teilnoten:object, befunde:Array, trend:string}}
+ * @param {number} e.geborenAm    Startzeit des Tokens (ms) oder null — rechnet
+ *                                die Stundenzahlen junger Token auf ihr Alter um
+ * @returns {{note:number, teilnoten:object, abdeckung:number, befunde:Array, trend:string}}
  */
-export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = null, ersteller = null, profil = false, risiko = null, smart = null } = {}) {
+export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = null, ersteller = null, profil = false, risiko = null, smart = null, geborenAm = null } = {}) {
     const befunde = []
     const plus = (schluessel, text) => befunde.push({ art: 'plus', schluessel, text })
     const minus = (schluessel, text) => befunde.push({ art: 'minus', schluessel, text })
@@ -435,7 +480,7 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
     const teilnoten = {}
 
     // ── Handel: beschleunigt er? ────────────────────────────────────────
-    const schub = handelsSchub(stand, frueher)
+    const schub = handelsSchub(stand, frueher, geborenAm)
     if (schub) {
         teilnoten.handel = klemme(Math.min(schub.faktor, SCHUB_VOLL) / SCHUB_VOLL * 100)
         if (schub.faktor >= 2) {
@@ -449,9 +494,11 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
     if (stand.kaeufer1h !== null) {
         // 50 verschiedene Käufer in der Stunde: spürbar; 250: breit getragen.
         teilnoten.beteiligung = klemme((stand.kaeufer1h / 250) * 100)
-        const vorKaeufer = vorige?.kaeufer1h
-        if (vorKaeufer && stand.kaeufer1h >= vorKaeufer * 2 && stand.kaeufer1h >= 30) {
-            plus('kaeuferSchub', `Verschiedene Käufer ${vorKaeufer} → ${stand.kaeufer1h} je Stunde`)
+        // Verglichen wird je Minute: bei einem jungen Token wächst die Stundenzahl allein mit dem Alter.
+        const vorRate = vorige ? jeMinute(vorige.kaeufer1h, vorige.ts, geborenAm) : null
+        const nunRate = jeMinute(stand.kaeufer1h, stand.ts, geborenAm)
+        if (vorRate && nunRate !== null && nunRate >= vorRate * 2 && stand.kaeufer1h >= 30) {
+            plus('kaeuferSchub', `Verschiedene Käufer ${vorige.kaeufer1h} → ${stand.kaeufer1h} je Stunde`)
         }
     } else {
         teilnoten.beteiligung = null
@@ -538,6 +585,17 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
         gewicht += g
     }
     let note = gewicht ? summe / gewicht : 0
+    /*
+     * Gemittelt wird nur über das Gemessene — richtig, denn Unbekanntes ist
+     * keine 0. Die Kehrseite: je weniger gemessen, desto extremer die Note.
+     * Im ersten Lauf kam die 89 aus zwei Teilnoten, eine 70 aus einer
+     * einzigen. Die Note bleibt, wie sie ist; gemeldet wird erst ab
+     * `MIN_TEILNOTEN_MELDUNG` (siehe `meldefaehig`).
+     */
+    const abdeckung = Object.keys(FRUEH_GEWICHTE).filter((k) => teilnoten[k] !== null && teilnoten[k] !== undefined).length
+    if (abdeckung > 0 && abdeckung < MIN_TEILNOTEN_MELDUNG) {
+        info('duenn', `Note aus nur ${abdeckung} von ${Object.keys(FRUEH_GEWICHTE).length} Teilnoten — zu wenig für eine Meldung`)
+    }
 
     // ── Abzüge: Muster, die nach Inszenierung aussehen ──────────────────
     /*
@@ -561,8 +619,9 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
      * Volumen springt, Preis bleibt stehen: das klassische Wash-Trading-
      * Muster (Bitquery: Volumen +500 % bei weniger als 5 % Preisbewegung).
      */
-    const volBasis = median(frueher.map((s) => s.vol1h).filter((x) => x !== null && x > 0))
-    if (volBasis && stand.vol1h !== null && stand.vol1h > volBasis * 5
+    const volBasis = median(frueher.map((s) => jeMinute(s.vol1h, s.ts, geborenAm)).filter((x) => x !== null && x > 0))
+    const volJetzt = jeMinute(stand.vol1h, stand.ts, geborenAm)
+    if (volBasis && volJetzt !== null && volJetzt > volBasis * 5
         && stand.aend1h !== null && Math.abs(stand.aend1h) < 5) {
         note -= 10
         minus('washVerdacht', 'Volumen verfünffacht, Preis kaum bewegt — Verdacht auf Wash-Trading')
@@ -596,15 +655,49 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
     note = Math.round(klemme(note))
     const vorNote = zahl(vorige?.note)
     const trend = vorNote === null ? 'neu' : (note > vorNote + 5 ? 'steigt' : (note < vorNote - 5 ? 'faellt' : 'gleich'))
-    return { note, teilnoten, befunde, trend }
+    return { note, teilnoten, abdeckung, befunde, trend }
+}
+
+/**
+ * Kein Prüfdienst kennt diesen Vertrag — eine Kette ohne RugCheck und GoPlus
+ * (im ersten Lauf: Robinhood), oder der Token ist zu neu, um erfasst zu sein.
+ * Kein Abzug, denn das ist keine Aussage über den Vertrag; aber auch keine
+ * Meldung, denn ungeprüft ist nicht bestanden. Bis 07.10.2026 fiel dieser Fall
+ * still durch (`if (!r) return`), und zwei der drei Meldungen des ersten Laufs
+ * gingen für ungeprüfte Robinhood-Token hinaus.
+ */
+export function risikoUnpruefbar(am) {
+    return {
+        unpruefbar: true, ko: null, halter: null, insiderPct: null, top10Pct: null, devPct: null, abzug: 0, am,
+        befunde: [{ art: 'info', schluessel: 'risikoUnpruefbar', text: 'Vertrag nicht prüfbar (kein Prüfdienst kennt ihn) — deshalb keine Meldung' }],
+    }
+}
+
+/**
+ * Darf dieser Stand gemeldet werden? Dieselbe Antwort entscheidet, ob der
+ * Token in der Erfolgskontrolle und im Gedächtnis als „gemeldet" zählt — sonst
+ * misst die Kontrolle Meldungen, die nie hinausgingen.
+ *
+ * Gesperrt ist, was verworfen ist, was nicht geprüft werden konnte, und eine
+ * Note aus weniger als `MIN_TEILNOTEN_MELDUNG` Teilnoten. Smart Money (zwei
+ * beobachtete Wallets) ist ein eigenes Signal und braucht keine Abdeckung —
+ * die Vertragsprüfung aber schon.
+ *
+ * @returns {{ja:boolean, grund:''|'verworfen'|'ungeprueft'|'duenn'}}
+ */
+export function meldefaehig({ status, abdeckung = 0, risiko = null, smart = false } = {}) {
+    if (status === 'verworfen' || risiko?.ko) return { ja: false, grund: 'verworfen' }
+    if (!risiko || risiko.unpruefbar) return { ja: false, grund: 'ungeprueft' }
+    if (!smart && !(abdeckung >= MIN_TEILNOTEN_MELDUNG)) return { ja: false, grund: 'duenn' }
+    return { ja: true, grund: '' }
 }
 
 /**
  * Status in der Frühphase.
  *
  * `reif`: alt und liquide genug für die Hauptprüfung — der Token wandert
- * beim nächsten Scan als eigene Quelle hinein. `verworfen`: eingebrochen oder
- * tot; er wird nicht weiter verfolgt.
+ * beim nächsten Scan als eigene Quelle hinein. `verworfen`: eingebrochen,
+ * tot oder älter als `MAX_ALTER_STUNDEN`; er wird nicht weiter verfolgt.
  */
 export function statusFrueh(stand, alterStunden, befunde = []) {
     if (befunde.some((b) => b.schluessel === 'sicherheitKo')) return { status: 'verworfen', grund: 'sicherheit' }
@@ -612,6 +705,7 @@ export function statusFrueh(stand, alterStunden, befunde = []) {
     if (stand?.liq !== null && stand?.liq !== undefined && stand.liq <= 0 && stand.mcap !== null && stand.mcap <= 0) {
         return { status: 'verworfen', grund: 'leer' }
     }
+    if (Number(alterStunden) > MAX_ALTER_STUNDEN) return { status: 'verworfen', grund: 'alt' }
     if (Number(alterStunden) >= REIF.minAlterStunden && Number(stand?.liq) >= REIF.minLiquiditaetUsd) {
         return { status: 'reif', grund: '' }
     }

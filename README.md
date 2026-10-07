@@ -78,15 +78,20 @@ next to hype and safety, never merged with either. No keys; cached 24 h.
 
 **Early phase.** The main check only sees tokens from 12 h pair age and USD 50k
 liquidity. A separate lane runs before that (off by default, every 15 min when on):
-new tokens from pump.fun, DexScreener profiles/takeovers, GeckoTerminal new pools
+new tokens from pump.fun (newest launches and what is trading on the bonding curve
+right now), DexScreener profiles/takeovers, GeckoTerminal new pools
 (with *distinct* buyer counts), the 4chan /biz/ catalog, configured public
 Telegram channels and optionally Reddit. Each token gets a snapshot history, and
 the score measures **acceleration** against that history — trading surge, distinct
 buyers, mentions across platforms, project substance, momentum — with deductions
 for one-sided buying, circular trading, volume without price movement, serial
-creators and collapses. Tokens that mature enter the next main scan as a source of
-their own; crossing a score threshold sends an alert through the watchdog's
-channels. X is available through the paid Grok `x_search` (off by default, own
+creators and collapses. For a token younger than an hour, the hourly counts of the
+sources cover only its age, so rates are taken per minute of that age — otherwise
+steady trading reads as a surge (it did, on the first real run, for 28 of 43 such
+tokens). Tokens older than three days are not taken in. Tokens that mature enter
+the next main scan as a source of their own; crossing a score threshold sends an
+alert through the watchdog's channels — only with a checked contract and a score
+resting on at least three of the five sub-scores. X is available through the paid Grok `x_search` (off by default, own
 interval): only posts the search cited and whose text contains the address count,
 and distinct authors instead of posts. TikTok is not connected — no free access.
 For the best tokens of each run the early phase also checks the contract and the
@@ -94,7 +99,8 @@ holder picture (RugCheck, else GoPlus: mint/freeze authority, insider share, top
 share *excluding the bonding curve*, creator share, holder count and its growth),
 counts pump.fun "King of the Hill" as momentum, and optionally watches **smart-money
 wallets** you enter (Solana RPC, public node or your own Helius address; only
-signed, paid purchases count — two watched wallets on one token trigger an alert).
+signed, paid purchases count — two watched wallets on one token trigger an alert
+once its contract is checked).
 Its own **outcome tracking** compares tokens above the threshold with a random
 sample of all newly seen ones after 1, 3 and 7 days (alive, curve completed,
 return, doubled at some point).

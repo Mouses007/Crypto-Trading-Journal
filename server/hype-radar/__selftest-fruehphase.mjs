@@ -10,8 +10,8 @@
 import { ausRugCheck } from './sicherheit.js'
 import {
     erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen, risikoFrueh,
-    kaeufeAusTransaktion, smartSignale, smartWalletListe,
-    MAX_VERLAUF, REIF, X_MIN_AUTOREN_NEU,
+    kaeufeAusTransaktion, smartSignale, smartWalletListe, risikoUnpruefbar, meldefaehig,
+    MAX_VERLAUF, REIF, X_MIN_AUTOREN_NEU, MAX_ALTER_STUNDEN, MIN_TEILNOTEN_MELDUNG,
 } from './fruehphase-bewertung.js'
 
 let fehler = 0
@@ -109,10 +109,86 @@ const stand = (ts, o = {}) => ({ ts, mcap: null, liq: null, preis: null, vol1h: 
     p('hoher Pegel ohne Schub rankt niedriger', flach.note < b.note - 20, `${flach.note} vs ${b.note}`)
 }
 {
-    // Ohne Verlauf: die letzten fünf Minuten gegen die Stunde.
-    const innen = bewerteFrueh({ stand: stand(0, { tx1h: 120, tx5m: 30 }) })
+    // Ohne Verlauf: die letzten fünf Minuten gegen die 55 Minuten davor.
+    // 110 Handel in 55 min = 2/min, 30 in 5 min = 6/min → 3× → 75.
+    const innen = bewerteFrueh({ stand: stand(0, { tx1h: 140, tx5m: 30 }), geborenAm: -3 * H })
     p('erster Blick: Schub innerhalb der Stunde', innen.teilnoten.handel === 75, String(innen.teilnoten.handel))
     p('erster Blick: Trend „neu"', innen.trend === 'neu')
+    p('erster Blick ohne bekanntes Alter: keine Aussage', bewerteFrueh({ stand: stand(0, { tx1h: 140, tx5m: 30 }) }).teilnoten.handel === null)
+}
+
+// ── Junge Token: die „Stunde" deckt nur ihr Alter ab ────────────────────
+{
+    const M = 60e3
+    /*
+     * Der Fall aus dem ersten Lauf (07.10.2026): 18 Minuten alt, gleichmässig
+     * 10 Handel je Minute. Die alte Rechnung (5 min ×12 gegen die Stunde)
+     * ergab 50·12/180 = 3,3× — „Schub", und die Meldung ging hinaus.
+     */
+    const gleich = bewerteFrueh({ stand: stand(18 * M, { tx1h: 180, tx5m: 50 }), geborenAm: 0 })
+    p('junger Token, gleichmässiger Handel: kein Schub', !gleich.befunde.some((x) => x.schluessel === 'handelSchub')
+        && gleich.teilnoten.handel === 25, `${gleich.teilnoten.handel} ${JSON.stringify(gleich.befunde)}`)
+    const sechs = bewerteFrueh({ stand: stand(6 * M, { tx1h: 60, tx5m: 50 }), geborenAm: 0 })
+    p('sechs Minuten alt: zu kurz für einen Vergleich', sechs.teilnoten.handel === null, String(sechs.teilnoten.handel))
+    // Gegenprobe: ein echter Schub bei einem jungen Token bleibt einer.
+    // 150 in 25 min = 6/min davor, 150 in 5 min = 30/min jetzt → 5×.
+    const echt = bewerteFrueh({ stand: stand(30 * M, { tx1h: 300, tx5m: 150 }), geborenAm: 0 })
+    p('junger Token, echter Schub: erkannt', echt.befunde.some((x) => x.schluessel === 'handelSchub') && echt.teilnoten.handel === 100,
+        String(echt.teilnoten.handel))
+
+    // Mit Verlauf: jede Aufnahme deckte nur das Alter bis dahin ab.
+    // Alt: Median(150, 300, 450) = 300, 600 / 300 = 2× — Schub aus dem Nichts.
+    const v = [15, 30, 45].map((m) => stand(m * M, { tx1h: m * 10, kaeufer1h: m * 2 }))
+    const verlaufGleich = bewerteFrueh({ stand: stand(60 * M, { tx1h: 600, kaeufer1h: 120 }), verlauf: v, geborenAm: 0 })
+    p('junger Verlauf, gleichmässig: kein Schub', !verlaufGleich.befunde.some((x) => x.schluessel === 'handelSchub')
+        && Math.round(verlaufGleich.teilnoten.handel) === 25, String(verlaufGleich.teilnoten.handel))
+    p('junger Verlauf, gleichmässig: kein Käuferschub', !verlaufGleich.befunde.some((x) => x.schluessel === 'kaeuferSchub'))
+    const verlaufEcht = bewerteFrueh({ stand: stand(60 * M, { tx1h: 2400, kaeufer1h: 400 }), verlauf: v, geborenAm: 0 })
+    p('junger Verlauf, echter Schub: erkannt', verlaufEcht.befunde.some((x) => x.schluessel === 'handelSchub')
+        && verlaufEcht.befunde.some((x) => x.schluessel === 'kaeuferSchub'))
+    // Volumen eines jungen Tokens wächst mit dem Alter — das ist kein Wash-Trading.
+    const vv = [15, 30, 45].map((m) => stand(m * M, { vol1h: m * 100, tx1h: m * 10 }))
+    const volGleich = bewerteFrueh({ stand: stand(60 * M, { vol1h: 6000, tx1h: 600, aend1h: 1 }), verlauf: vv, geborenAm: 0 })
+    p('junges Volumen, gleichmässig: kein Wash-Verdacht', !volGleich.befunde.some((x) => x.schluessel === 'washVerdacht'))
+
+    // Über einer Stunde ändert das Alter nichts: dieselbe Note wie ohne.
+    const altV = [stand(0, { tx1h: 40 }), stand(H, { tx1h: 50 })]
+    const mitAlter = bewerteFrueh({ stand: stand(2 * H, { tx1h: 400 }), verlauf: altV, geborenAm: -10 * H })
+    const ohneAlter = bewerteFrueh({ stand: stand(2 * H, { tx1h: 400 }), verlauf: altV })
+    p('alter Token: Alter ändert den Schub nicht', mitAlter.teilnoten.handel === ohneAlter.teilnoten.handel && mitAlter.teilnoten.handel === 100)
+}
+
+// ── Meldefähig: Abdeckung, Vertragsprüfung, Status ──────────────────────
+{
+    const nurTeam = bewerteFrueh({ stand: stand(0, {}), projektNote: 90 })
+    p('eine Teilnote: Abdeckung 1', nurTeam.abdeckung === 1)
+    p('… als „dünn" benannt', nurTeam.befunde.some((x) => x.schluessel === 'duenn'))
+    const drei = bewerteFrueh({ stand: stand(0, { tx1h: 140, tx5m: 30, kaeufer1h: 100 }), projektNote: 60, geborenAm: -3 * H })
+    p('drei Teilnoten: Abdeckung 3, nicht dünn', drei.abdeckung === 3 && !drei.befunde.some((x) => x.schluessel === 'duenn'),
+        `${drei.abdeckung} ${JSON.stringify(drei.teilnoten)}`)
+
+    const geprueft = { ko: null, abzug: 0, befunde: [], am: 1 }
+    p('meldefähig: drei Teilnoten, geprüft, beobachtet',
+        meldefaehig({ status: 'beobachtet', abdeckung: MIN_TEILNOTEN_MELDUNG, risiko: geprueft }).ja)
+    p('NICHT meldefähig: zwei Teilnoten', meldefaehig({ status: 'beobachtet', abdeckung: 2, risiko: geprueft }).grund === 'duenn')
+    p('NICHT meldefähig: ungeprüft', meldefaehig({ status: 'beobachtet', abdeckung: 5, risiko: null }).grund === 'ungeprueft')
+    p('NICHT meldefähig: kein Prüfdienst', meldefaehig({ status: 'beobachtet', abdeckung: 5, risiko: risikoUnpruefbar(1) }).grund === 'ungeprueft')
+    p('NICHT meldefähig: verworfen', meldefaehig({ status: 'verworfen', abdeckung: 5, risiko: geprueft }).grund === 'verworfen')
+    p('Smart Money braucht keine Abdeckung', meldefaehig({ status: 'beobachtet', abdeckung: 1, risiko: geprueft, smart: true }).ja)
+    p('… aber die Vertragsprüfung', !meldefaehig({ status: 'beobachtet', abdeckung: 1, risiko: null, smart: true }).ja)
+
+    const u = risikoUnpruefbar(5)
+    const mitU = bewerteFrueh({ stand: stand(0, {}), projektNote: 60, risiko: u })
+    const ohneU = bewerteFrueh({ stand: stand(0, {}), projektNote: 60 })
+    p('nicht prüfbar: kein Abzug', mitU.note === ohneU.note && u.abzug === 0)
+    p('nicht prüfbar: benannt', mitU.befunde.some((x) => x.schluessel === 'risikoUnpruefbar'))
+}
+
+// ── Zu alt für die Frühphase ────────────────────────────────────────────
+{
+    p('älter als drei Tage: verworfen, Grund „alt"', statusFrueh({ liq: 80000, mcap: 1 }, MAX_ALTER_STUNDEN + 1, []).grund === 'alt')
+    p('genau drei Tage: noch dabei', statusFrueh({ liq: 80000, mcap: 1 }, MAX_ALTER_STUNDEN, []).status === 'reif')
+    p('Vertrag geht vor Alter', statusFrueh({ liq: 1, mcap: 1 }, 500, [{ schluessel: 'sicherheitKo' }]).grund === 'sicherheit')
 }
 
 // ── Inszenierung ────────────────────────────────────────────────────────
