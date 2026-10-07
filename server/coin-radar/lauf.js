@@ -125,6 +125,20 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
     }
     const huerden = { ...STANDARD_HUERDEN, ...(einst.huerden || {}) }
 
+    /*
+     * Ohne Umsatz oder Orderbuch-Spitze gibt es keine Hürdenprüfung — dann
+     * wird abgebrochen, nicht weitergerechnet. Bis zum 07.10.2026 scheiterten
+     * bei einem Ausfall von `ticker/24hr` ALLE Coins an „Umsatz zu klein"
+     * (einer Behauptung, die nie gemessen wurde), der Lauf stand als „fertig"
+     * mit null Coins da, verdrängte die letzte gute Rangliste und bezahlte
+     * trotzdem die KI-Einordnung. Ein Fehler hält die alte Liste stehen.
+     */
+    const fehlend = ['umsatz', 'buch'].filter((q) => !quellenStand[q]?.ok)
+    if (fehlend.length) {
+        throw new Error(`Marktdaten unvollständig (${fehlend.join(', ')}): `
+            + fehlend.map((q) => quellenStand[q]?.fehler || 'keine Antwort').join('; '))
+    }
+
     const anwaerter = []
     const gescheitert = []
     for (const symbol of universum) {
@@ -378,8 +392,17 @@ export async function fuehreLaufAus(lauf, einst, melde = () => {}, abbruch = () 
  */
 function ausfuehrungsFelder(a) {
     if (!a?.beste) {
+        /*
+         * Zwei verschiedene Fälle, bis zum 07.10.2026 beide `null`: Kein Buch
+         * gesehen (unbekannt) — oder Bücher gesehen, aber 5 000 USD passen auf
+         * keiner Börse hinein. Das zweite ist eine MESSUNG, und zwar die
+         * schlechteste: dort gibt es keine Ausführung. Sie bekommt die 0, die
+         * `ausfuehrung.js` für diesen Fall verspricht.
+         */
+        const gemessenUnpassend = Object.values(a?.jeBoerse || {})
+            .some((b) => b && b.passt5k === false)
         return {
-            noteAusfuehrung: null, besteBoerse: '', rundlaufBp: null,
+            noteAusfuehrung: gemessenUnpassend ? 0 : null, besteBoerse: '', rundlaufBp: null,
             slippageKaufBp: null, slippageVerkaufBp: null, tiefe25Bp: null,
             jeBoerse: JSON.stringify(a?.jeBoerse || {}),
         }

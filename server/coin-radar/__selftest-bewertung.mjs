@@ -81,6 +81,13 @@ p('0,01 % je 8 h sind knapp 11 % im Jahr',
 p('vierstündliches Funding zählt doppelt',
     Math.abs(fundingJahresRate(0.01, 4) - 21.9) < 0.01)
 p('fehlende Rate ergibt null, nicht null-Komma-null', fundingJahresRate(null) === null)
+/*
+ * Unbekannter Takt (07.10.2026): Fiel `fundingInfo` aus, wurde jeder Markt mit
+ * acht Stunden hochgerechnet — 1h-Märkte achtmal zu billig. `null` heisst
+ * jetzt „Takt unbekannt", und die Jahresrate bleibt es auch.
+ */
+p('unbekannter Takt ergibt unbekannte Jahresrate', fundingJahresRate(0.01, null) === null)
+p('fehlender Takt-Parameter bleibt die 8-h-Vorgabe', Math.abs(fundingJahresRate(0.01) - 10.95) < 0.01)
 
 // ── Hürden ──────────────────────────────────────────────────────────────
 const gut = { umsatz24h: 50e6, spreadBp: 1.2, tiefeUsd: 30000 }

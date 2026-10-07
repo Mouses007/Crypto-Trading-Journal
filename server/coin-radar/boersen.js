@@ -130,9 +130,25 @@ export const bitget = {
         return raus
     },
     async holeTiefe(symbol) {
-        const j = await radarJson(
-            `${BITGET}/api/v2/mix/market/merge-depth?symbol=${encodeURIComponent(symbol)}&productType=USDT-FUTURES&limit=${EBENEN}`)
-        return buch(j?.data?.bids, j?.data?.asks)
+        const tiefe = async (s) => {
+            const j = await radarJson(
+                `${BITGET}/api/v2/mix/market/merge-depth?symbol=${encodeURIComponent(s)}&productType=USDT-FUTURES&limit=${EBENEN}`)
+            return buch(j?.data?.bids, j?.data?.asks)
+        }
+        try {
+            return await tiefe(symbol)
+        } catch (e) {
+            /*
+             * Binance bündelt Kleinstpreis-Coins (`1000PEPEUSDT`), andere
+             * Börsen führen sie oft unter dem blanken Namen. Ohne zweiten
+             * Versuch galt so ein Coin bei Bitget still als „hier nicht
+             * handelbar". Für Slippage und Tiefe ist die Bündelung egal: beide
+             * werden relativ zur Mitte bzw. in Dollar gemessen.
+             */
+            const blank = String(symbol).replace(/^1000+/, '')
+            if (blank === symbol) throw e
+            return tiefe(blank)
+        }
     },
 }
 

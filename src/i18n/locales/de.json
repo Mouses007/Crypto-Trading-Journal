@@ -3281,7 +3281,7 @@
         },
         {
           "h": "DIE BEHARRLICHKEIT PRÜFT SICH SELBST",
-          "p": "Bei den Kennzahlen steht, wie gut der vorige Lauf diesen vorausgesagt hat (Rangkorrelation nach Spearman, gerechnet nur über Coins, die in beiden Läufen bewertet wurden). Nahe 1 heisst: die Liste hält, man kann sich darauf beziehen. Nahe 0 heisst: sie ist Rauschen, und dann sagt sie über die nächsten Stunden nichts. Die Zahl steht bewusst gleichberechtigt neben den anderen und nicht im Kleingedruckten — eine Rangliste, die ihre eigene Aussagekraft verschweigt, ist gefährlicher als gar keine."
+          "p": "Bei den Kennzahlen steht, wie gut der vorige Lauf diesen vorausgesagt hat (Rangkorrelation nach Spearman, gerechnet nur über Coins, die in beiden Läufen bewertet wurden). Nahe 1 heisst: die Liste wiederholt sich. Das ist eine Aussage über Beständigkeit, nicht über Güte — bei Läufen im Stundenabstand teilen sich ATR und ADX dreizehn von vierzehn Kerzen, eine hohe Zahl entsteht also schon durch die Bauart. Nahe 0 heisst: die Liste wechselt so stark, dass sie über die nächsten Stunden kaum etwas sagt. Ob die Rangfolge etwas taugt, misst die Erfolgskontrolle unter Verlauf: die Spitze gegen eine Kontrollgruppe aus der unteren Hälfte und gegen eine Rangfolge nur nach ATR%. Die Zahl steht bewusst gleichberechtigt neben den anderen und nicht im Kleingedruckten — eine Rangliste, die ihre eigene Aussagekraft verschweigt, ist gefährlicher als gar keine."
         },
         {
           "g": "DIE VIER KENNZAHLEN",
@@ -3338,7 +3338,7 @@
         },
         {
           "h": "GILT DER ZUSAMMENHANG ÜBERHAUPT NOCH",
-          "p": "Ein Durchschnitt über einen Monat verbirgt es, wenn die Kopplung mittendrin zerbricht. Deshalb wird der Zeitraum halbiert und jede Hälfte einzeln gerechnet; weichen sie stärker voneinander ab, als der Zufall erklärt (Fisher-z über 1,96), erscheint ein Warndreieck. Ein gemessener Fall: über den Monat 54 % Gleichlauf — in der ersten Hälfte 82 %, in der zweiten 38 %. Die Durchschnittszahl war richtig und als Handelsgrundlage trotzdem wertlos. Eine feste Schwelle täte das nicht: Bei hohem Gleichlauf ist schon eine kleine Abweichung bedeutsam, bei niedrigem ist dieselbe Abweichung Rauschen."
+          "p": "Ein Durchschnitt über einen Monat verbirgt es, wenn die Kopplung mittendrin zerbricht. Deshalb wird der Zeitraum halbiert und jede Hälfte einzeln gerechnet; ist die jüngere Hälfte deutlich schwächer gekoppelt, als der Zufall erklärt (Fisher-z über 1,96), erscheint ein Warndreieck. Eine Kopplung, die stärker wird, ist kein Zerfall und löst keine Warnung aus. Ein gemessener Fall: über den Monat 54 % Gleichlauf — in der ersten Hälfte 82 %, in der zweiten 38 %. Die Durchschnittszahl war richtig und als Handelsgrundlage trotzdem wertlos. Eine feste Schwelle täte das nicht: Bei hohem Gleichlauf ist schon eine kleine Abweichung bedeutsam, bei niedrigem ist dieselbe Abweichung Rauschen."
         },
         {
           "h": "WAS HIER MIT ABSICHT FEHLT",
@@ -3775,13 +3775,13 @@
       "leer": "Noch kein fertiger Coin-Radar-Lauf.",
       "vorMin": "vor {m} min",
       "vorStd": "vor {h} h",
-      "korHoch": "Rangfolge hält",
+      "korHoch": "Rangfolge wiederholt sich",
       "korMittel": "Rangfolge teils beständig",
-      "korTief": "Rangfolge grösstenteils Rauschen",
+      "korTief": "Rangfolge wechselt stark",
       "korFehlt": "Beständigkeit unbekannt",
-      "korTitel": "Rangkorrelation zum vorigen Lauf: 1 = die Reihenfolge hält, 0 = sie ist Rauschen. Sie misst Beständigkeit, nicht Treffsicherheit.",
+      "korTitel": "Rangkorrelation zum vorigen Lauf: 1 = die Reihenfolge wiederholt sich, 0 = sie wechselt völlig. Sie misst Beständigkeit, nicht Treffsicherheit — bei Läufen im Stundenabstand ist sie schon deshalb hoch, weil sich die Kerzen überschneiden. Ob die Liste taugt, zeigt die Erfolgskontrolle im Coin-Radar unter Verlauf.",
       "waehlen": "{s} als Symbol dieses Fensters setzen",
-      "info": "Die zehn bestbewerteten Perpetuals aus dem letzten fertigen Coin-Radar-Lauf. Die Kachel liest nur — sie stösst keinen Lauf an.\nNote 0–100 aus Bewegung, Beteiligung, Trend und Kosten; ATR ist die mittlere Tagesspanne, RVOL das Volumen gegen den eigenen 20-Perioden-Schnitt. Ein Klick auf eine Zeile setzt das Symbol des ganzen Fensters."
+      "info": "Die zehn bestbewerteten Perpetuals aus dem letzten fertigen Coin-Radar-Lauf. Die Kachel liest nur — sie stösst keinen Lauf an.\nNote 0–100 aus Bewegung, Beteiligung, Trend und Kosten; ATR ist die mittlere Spanne einer Kerze der Hauptzeiteinheit (Vorgabe 1 h) in Prozent des Preises, RVOL das Volumen der letzten Kerze gegen den Schnitt der 20 davor. Ein Klick auf eine Zeile setzt das Symbol des ganzen Fensters."
     },
     "kalender": {
       "title": "Termine",
@@ -3883,10 +3883,10 @@
     "ausfuehrung5k": "Order über 5 000 USD",
     "ausloeser_auto": "automatisch",
     "ausloeser_manuell": "von Hand",
-    "beharrlichHoch": "Rangfolge hält gut",
+    "beharrlichHoch": "Rangfolge wiederholt sich",
     "beharrlichKeinVorlauf": "kein Vorlauf zum Vergleich",
-    "beharrlichMittel": "Rangfolge hält teilweise",
-    "beharrlichNiedrig": "Rangfolge ist grösstenteils Rauschen",
+    "beharrlichMittel": "Rangfolge wiederholt sich teilweise",
+    "beharrlichNiedrig": "Rangfolge wechselt stark",
     "bestaetigtHilfe": "Auf beiden Zeiteinheiten im Spiel — nicht nur ein kurzfristiger Ausschlag.",
     "besteBoerseHilfe": "Auf {b} ist die Ausführung günstiger.",
     "dauerhaftHinweis": "Wie oft ein Coin über alle {n} fertigen Läufe unter den ersten zehn stand. Was mehrere Läufe übersteht, ist mehr als ein Ausschlag.",
@@ -4032,7 +4032,7 @@
     "tab_rangliste": "Analyse",
     "tab_verlauf": "Verlauf",
     "teilnoten": "Teilnoten",
-    "verlaufHinweis": "Jeder Lauf vergleicht seine Rangfolge mit der des vorigen. Nahe 1 heisst, die Liste hält; nahe 0 heisst, sie ist Rauschen — und dann sagt sie über morgen nichts.",
+    "verlaufHinweis": "Jeder Lauf vergleicht seine Rangfolge mit der des vorigen. Nahe 1 heisst, sie wiederholt sich — bei Läufen im Stundenabstand zum guten Teil schon deshalb, weil sich die Kerzen überschneiden. Ob die Liste etwas taugt, sagt nicht diese Zahl, sondern die Erfolgskontrolle oben.",
     "verlaufMehr": "Weitere {n} Läufe zeigen",
     "verlaufWeniger": "Weniger zeigen",
     "zeigeHuerden": "An den Hürden gescheitert ({n})",

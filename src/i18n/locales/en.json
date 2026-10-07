@@ -3281,7 +3281,7 @@
         },
         {
           "h": "PERSISTENCE CHECKS ITSELF",
-          "p": "Among the headline figures is how well the previous run predicted this one (Spearman rank correlation, computed only over coins scored in both runs). Near 1 means the list holds and can be relied on. Near 0 means it is noise, and then it says nothing about the coming hours. The number sits deliberately beside the others rather than in the fine print — a ranking that hides its own predictive power is more dangerous than none."
+          "p": "Among the headline figures is how well the previous run predicted this one (Spearman rank correlation, computed only over coins scored in both runs). Near 1 means the list repeats. That is a statement about persistence, not quality — with hourly runs ATR and ADX share thirteen of fourteen candles, so a high number arises from the construction alone. Near 0 means the list changes so much that it says little about the coming hours. Whether the ranking is any good is measured by the outcome tracking under history: the top against a control group from the lower half and against a ranking by ATR% alone. The number sits deliberately beside the others rather than in the fine print — a ranking that hides its own predictive power is more dangerous than none."
         },
         {
           "g": "THE FOUR METRICS",
@@ -3338,7 +3338,7 @@
         },
         {
           "h": "DOES THE RELATIONSHIP STILL HOLD",
-          "p": "An average over a month hides it when the coupling breaks apart midway. So the window is halved and each half computed separately; if they differ more than chance explains (Fisher z above 1.96), a warning triangle appears. A measured case: 54 % co-movement across the month — 82 % in the first half, 38 % in the second. The average was correct and still worthless as a basis for a trade. A fixed threshold would not do this: at high co-movement even a small difference matters, at low co-movement the same difference is noise."
+          "p": "An average over a month hides it when the coupling breaks apart midway. So the window is halved and each half computed separately; if the more recent half is coupled markedly weaker than chance explains (Fisher z above 1.96), a warning triangle appears. A coupling that grows stronger is not a breakdown and raises no warning. A measured case: 54 % co-movement across the month — 82 % in the first half, 38 % in the second. The average was correct and still worthless as a basis for a trade. A fixed threshold would not do this: at high co-movement even a small difference matters, at low co-movement the same difference is noise."
         },
         {
           "h": "WHAT IS DELIBERATELY ABSENT",
@@ -3775,13 +3775,13 @@
       "leer": "No completed coin radar run yet.",
       "vorMin": "{m} min ago",
       "vorStd": "{h} h ago",
-      "korHoch": "ranking holds",
+      "korHoch": "ranking repeats",
       "korMittel": "ranking partly stable",
-      "korTief": "ranking mostly noise",
+      "korTief": "ranking changes a lot",
       "korFehlt": "stability unknown",
-      "korTitel": "Rank correlation with the previous run: 1 = the order holds, 0 = it is noise. It measures persistence, not accuracy.",
+      "korTitel": "Rank correlation with the previous run: 1 = the order repeats, 0 = it changes completely. It measures persistence, not accuracy — with hourly runs it is high by construction because the candles overlap. Whether the list is any good is shown by the outcome tracking in Coin Radar → history.",
       "waehlen": "Set {s} as this window's symbol",
-      "info": "The ten highest-scoring perpetuals from the last completed coin radar run. This tile only reads — it never triggers a run.\nScore 0–100 from movement, participation, trend and cost; ATR is the average daily range, RVOL the volume against its own 20-period average. Clicking a row sets the symbol for the whole window."
+      "info": "The ten highest-scoring perpetuals from the last completed coin radar run. This tile only reads — it never triggers a run.\nScore 0–100 from movement, participation, trend and cost; ATR is the average range of one candle of the main timeframe (default 1 h) as a percentage of price, RVOL the volume of the last candle against the average of the 20 before. Clicking a row sets the symbol for the whole window."
     },
     "kalender": {
       "title": "Events",
@@ -3883,10 +3883,10 @@
     "ausfuehrung5k": "Order of 5,000 USD",
     "ausloeser_auto": "automatic",
     "ausloeser_manuell": "manual",
-    "beharrlichHoch": "ranking holds well",
+    "beharrlichHoch": "ranking repeats",
     "beharrlichKeinVorlauf": "no previous run to compare",
-    "beharrlichMittel": "ranking partly holds",
-    "beharrlichNiedrig": "ranking is mostly noise",
+    "beharrlichMittel": "ranking partly repeats",
+    "beharrlichNiedrig": "ranking changes a lot",
     "bestaetigtHilfe": "In play on both timeframes — not just a short-lived spike.",
     "besteBoerseHilfe": "Execution is cheaper on {b}.",
     "dauerhaftHinweis": "How often a coin was in the top ten across all {n} finished runs. What survives several runs is more than a spike.",
@@ -4032,7 +4032,7 @@
     "tab_rangliste": "Analysis",
     "tab_verlauf": "History",
     "teilnoten": "Sub-scores",
-    "verlaufHinweis": "Every run compares its ranking with the previous one. Near 1 means the list holds; near 0 means it is noise — and then it says nothing about tomorrow.",
+    "verlaufHinweis": "Every run compares its ranking with the previous one. Near 1 means it repeats — with hourly runs largely because the candles overlap. Whether the list is any good is not shown by this number but by the outcome tracking above.",
     "verlaufMehr": "Show {n} more runs",
     "verlaufWeniger": "Show fewer",
     "zeigeHuerden": "Failed the gates ({n})",

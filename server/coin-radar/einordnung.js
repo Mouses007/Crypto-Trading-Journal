@@ -29,6 +29,14 @@ const mittel = (werte) => {
     return z.length ? z.reduce((a, b) => a + b, 0) / z.length : null
 }
 
+/*
+ * Zahl oder null. `Number(null)` ist 0 — bis zum 07.10.2026 sah das Modell
+ * deshalb „Funding 0 % p. a." für Coins, deren Funding gar nicht gemessen
+ * war, und ein fehlendes RVOL zog den Mittelwert nach unten.
+ */
+const zahlOderNull = (w) => (w === null || w === undefined || w === '' ? null
+    : (Number.isFinite(Number(w)) ? Number(w) : null))
+
 /**
  * Die Zahlen zu Textzeilen verdichten — der rein rechnende Teil.
  *
@@ -45,11 +53,11 @@ export function baueEinordnungsBasis(bewertet = [], meta = {}) {
     const kennzahlen = {
         bewertet: b.length,
         verworfen: Number(meta.verworfen) || 0,
-        imSpiel: b.filter((z) => Number(z.rvol) >= ANKER.rvolSchwelle).length,
-        trendend: b.filter((z) => Number(z.adx) >= 25).length,
-        mittelAtrPct: mittel(b.map((z) => Number(z.atrPct))),
-        mittelRvol: mittel(b.map((z) => Number(z.rvol))),
-        teuresFunding: b.filter((z) => Math.abs(Number(z.fundingJahresRate) || 0) >= ANKER.fundingTeuer).length,
+        imSpiel: b.filter((z) => zahlOderNull(z.rvol) >= ANKER.rvolSchwelle).length,
+        trendend: b.filter((z) => zahlOderNull(z.adx) >= ANKER.adxSchwelle).length,
+        mittelAtrPct: mittel(b.map((z) => zahlOderNull(z.atrPct))),
+        mittelRvol: mittel(b.map((z) => zahlOderNull(z.rvol))),
+        teuresFunding: b.filter((z) => Math.abs(zahlOderNull(z.fundingJahresRate) ?? 0) >= ANKER.fundingTeuer).length,
     }
 
     const zahl = (w, n = 1) => (Number.isFinite(w) ? w.toFixed(n) : '—')
@@ -62,7 +70,7 @@ export function baueEinordnungsBasis(bewertet = [], meta = {}) {
          * stünden sie nicht in der Liste.
          */
         `Mit erhöhtem Volumen gegenüber dem eigenen Schnitt (RVOL ≥ ${ANKER.rvolSchwelle}): `
-        + `${kennzahlen.imSpiel} Coins. Trendend (ADX ≥ 25): ${kennzahlen.trendend}.`,
+        + `${kennzahlen.imSpiel} Coins. Trendend (ADX ≥ ${ANKER.adxSchwelle}): ${kennzahlen.trendend}.`,
         `Mittleres ATR: ${zahl(kennzahlen.mittelAtrPct, 2)} %. Mittleres RVOL: ${zahl(kennzahlen.mittelRvol, 2)}.`,
         `Teures Funding (≥ ${ANKER.fundingTeuer} % p. a.): ${kennzahlen.teuresFunding} Coins.`,
         '',
@@ -70,9 +78,10 @@ export function baueEinordnungsBasis(bewertet = [], meta = {}) {
     ]
     for (const z of sortiert.slice(0, TOP_N)) {
         zeilen.push(
-            `  ${z.rang}. ${z.symbol} — Note ${z.note}, ATR ${zahl(Number(z.atrPct), 2)} %, `
-            + `RVOL ${zahl(Number(z.rvol), 1)}, ADX ${zahl(Number(z.adx), 0)}, `
-            + `Funding ${zahl(Number(z.fundingJahresRate), 0)} % p. a.`,
+            `  ${z.rang}. ${z.symbol} — Note ${z.note}, ATR ${zahl(zahlOderNull(z.atrPct), 2)} %, `
+            + `RVOL ${zahl(zahlOderNull(z.rvol), 1)}, ADX ${zahl(zahlOderNull(z.adx), 0)}, `
+            + `Funding ${zahlOderNull(z.fundingJahresRate) === null ? 'unbekannt'
+                : `${zahl(zahlOderNull(z.fundingJahresRate), 0)} % p. a.`}`,
         )
     }
 
@@ -81,7 +90,14 @@ export function baueEinordnungsBasis(bewertet = [], meta = {}) {
         zeilen.push(
             `Rangkorrelation zum vorigen Lauf: ${meta.rangkorrelation.toFixed(2)} `
             + `(über ${meta.gemeinsam || 0} gemeinsame Symbole). `
-            + '1 = Rangfolge hält, 0 = sie ist Rauschen.',
+            /*
+             * Vorher stand hier „1 = Rangfolge hält" — als wäre das ein
+             * Gütesiegel. Läufe im Stundenabstand teilen sich 13 von 14
+             * Kerzen für ATR und ADX; eine hohe Zahl entsteht damit schon
+             * durch die Bauart und sagt nichts darüber, ob die Liste taugt.
+             */
+            + 'Sie misst nur, ob sich die Rangfolge wiederholt (bei Läufen im Stundenabstand '
+            + 'zum guten Teil schon, weil sich die Kerzen überschneiden) — nicht, ob sie taugt.',
         )
     }
 
@@ -99,9 +115,16 @@ export function baueEinordnungsBasis(bewertet = [], meta = {}) {
  * @returns {{ok:boolean, text:string, grund:string}}
  */
 export function pruefeEinordnung(roh) {
-    const text = String(roh?.text || roh?.einordnung || '').trim()
-    if (!text) return { ok: false, text: '', grund: 'leer' }
-    if (text.length > 1200) return { ok: true, text: `${text.slice(0, 1200)}…`, grund: 'gekürzt' }
+    const voll = String(roh?.text || roh?.einordnung || '').trim()
+    if (!voll) return { ok: false, text: '', grund: 'leer' }
+    /*
+     * Geprüft wird der GANZE Text, gekürzt wird erst danach. Bis zum
+     * 07.10.2026 kam ein Text über 1200 Zeichen vor der Prüfung mit „ok"
+     * zurück — „… BTC dürfte steigen, jetzt kaufen." am Ende eines langen
+     * Absatzes ging ungeprüft durch.
+     */
+    const text = voll.length > 1200 ? `${voll.slice(0, 1200)}…` : voll
+    const gekuerzt = voll.length > 1200
 
     /*
      * Zwei getrennte Muster, und beide bewusst eng.
@@ -113,13 +136,42 @@ export function pruefeEinordnung(roh) {
      * der Zukunftsform: es braucht ein „dürfte", ein „wird … steigen", ein
      * Kursziel. Danach wird gesucht.
      */
-    const prognose = /\b(dürfte[nst]?|wird\s+(?:wohl\s+)?(?:weiter\s+)?(?:steigen|fallen|klettern|sinken)|werden\s+(?:wohl\s+)?(?:steigen|fallen)|ist\s+zu\s+erwarten|kursziel|prognose|voraussichtlich)/i
-    const rat = /\b(kaufen|verkaufen|long\s+gehen|short\s+gehen|einsteigen|empfehl|sollte\s+man)/i
+    /*
+     * Bis zum 07.10.2026 fing „wird steigen" nur ohne Einschub — „SOL wird in
+     * den nächsten Stunden steigen" ging durch —, und Englisch gar nicht. Ein
+     * Einschub von bis zu fünf Wörtern ist jetzt erlaubt — aber nicht über ein
+     * Satzzeichen hinweg („wird getragen, die übrigen fallen" ist keine
+     * Prognose) —, die Kursverben sind vollständiger, und die häufigsten
+     * englischen Formen sind dabei.
+     */
+    const KURSVERB = '(?:steigen|fallen|klettern|sinken|zulegen|nachgeben|anziehen|ausbrechen|einbrechen|drehen)'
+    const prognose = new RegExp(
+        '\\b(dürfte[nst]?'
+        + `|wird\\s+(?:[^\\s.,;:!?]+\\s+){0,5}?${KURSVERB}`
+        + `|werden\\s+(?:[^\\s.,;:!?]+\\s+){0,5}?${KURSVERB}`
+        + `|könnte[n]?\\s+(?:[^\\s.,;:!?]+\\s+){0,3}?${KURSVERB}`
+        + '|ist\\s+zu\\s+erwarten|kursziel|prognose|voraussichtlich'
+        + '|(?:will|is\\s+likely\\s+to|should|could)\\s+(?:[^\\s.,;:!?]+\\s+){0,3}?(?:rise|fall|rally|drop|pump|dump|go\\s+(?:up|down)|break\\s+out)'
+        + '|price\\s+target|forecast)', 'i')
+    const rat = /\b(kaufen|verkaufen|long\s+gehen|short\s+gehen|einsteigen|empfehl|sollte\s+man|buy\s+now|go\s+long|go\s+short)/i
 
-    if (prognose.test(text)) return { ok: false, text, grund: 'prognose' }
-    if (rat.test(text)) return { ok: false, text, grund: 'empfehlung' }
+    /*
+     * Verneinte Sätze zählen nicht. Der System-Prompt schreibt „KEINE
+     * Prognose, kein Kursziel" — und das Modell gibt das gern zurück: „Eine
+     * Prognose lässt sich daraus nicht ableiten" wurde verworfen, bezahlt und
+     * weggeworfen. Ein Satz, der „Prognose" oder „Kursziel" zusammen mit einer
+     * Verneinung trägt, verneint die Prognose; er fällt aus der Prüfung heraus.
+     */
+    const gepruefterText = voll
+        .split(/(?<=[.!?])\s+/)
+        .filter((satz) => !(/(prognose|kursziel|forecast)/i.test(satz)
+            && /\b(nicht|kein\w*|ohne|no|not)\b/i.test(satz)))
+        .join(' ')
 
-    return { ok: true, text, grund: '' }
+    if (prognose.test(gepruefterText)) return { ok: false, text, grund: 'prognose' }
+    if (rat.test(gepruefterText)) return { ok: false, text, grund: 'empfehlung' }
+
+    return { ok: true, text, grund: gekuerzt ? 'gekürzt' : '' }
 }
 
 const SYSTEM = `Du beschreibst den aktuellen Zustand eines Krypto-Futures-Marktes für einen erfahrenen Trader.

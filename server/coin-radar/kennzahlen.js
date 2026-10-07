@@ -107,6 +107,9 @@ export function fundingJahresRate(ratePct, intervallStunden = 8) {
      * Daten stünde damit besser da als einer mit gemessen niedrigen Kosten.
      */
     if (ratePct === null || ratePct === undefined || ratePct === '') return null
+    // Ausdrücklich `null` heisst: Takt unbekannt. Hochrechnen mit acht
+    // Stunden wäre eine Annahme, die bei 1h- und 4h-Märkten falsch ist.
+    if (intervallStunden === null) return null
     const r = Number(ratePct)
     const h = Number(intervallStunden) || 8
     if (!Number.isFinite(r)) return null
