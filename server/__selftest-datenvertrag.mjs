@@ -17,7 +17,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ausRugCheck, summeTop10 } from './hype-radar/sicherheit.js'
+import { ausRugCheck, ausGoPlusSolana, summeTop10 } from './hype-radar/sicherheit.js'
 import { ausfuehrungsGuete } from './coin-radar/ausfuehrung.js'
 import { normSymbol, normChain } from './hype-radar/quellen.js'
 
@@ -141,6 +141,18 @@ const liste = (w) => Array.isArray(w)
         for (const f of ['percent', 'address', 'tag', 'is_locked', 'is_contract']) {
             verlange('goplus-evm', d?.holders?.[0], f, (w) => w !== undefined)
         }
+        /*
+         * Die Felder, die bis zum 07.10.2026 in jeder Antwort standen und
+         * nie gelesen wurden. Verschwindet eines, prüft `pruefe` ins Leere —
+         * genau das Muster, das dieser Test fangen soll.
+         */
+        for (const f of ['is_open_source', 'hidden_owner', 'can_take_back_ownership',
+            'owner_change_balance', 'selfdestruct', 'personal_slippage_modifiable',
+            'slippage_modifiable', 'honeypot_with_same_creator', 'is_blacklisted',
+            'trading_cooldown', 'external_call']) {
+            verlange('goplus-evm', d, f)
+        }
+        p('goplus-evm: buy_tax existiert (auch wenn leer)', 'buy_tax' in (d || {}))
     }
 }
 {
@@ -160,6 +172,25 @@ const liste = (w) => Array.isArray(w)
         p('goplus-solana: lp_holders fehlt weiterhin (deshalb RugCheck)',
             d?.lp_holders === undefined,
             `war ${JSON.stringify(d?.lp_holders)?.slice(0, 40)}`)
+        /*
+         * Die Vollmachten, die `ausGoPlusSolana` seit dem 07.10.2026 liest —
+         * vorher fehlte darunter ausgerechnet `freezable`.
+         */
+        for (const f of ['freezable.status', 'balance_mutable_authority.status', 'closable.status',
+            'transfer_fee_upgradable.status', 'transfer_hook_upgradable.status',
+            'default_account_state', 'default_account_state_upgradable.status',
+            'metadata_mutable.status']) {
+            verlange('goplus-solana', d, f)
+        }
+        verlange('goplus-solana', d, 'transfer_fee', (w) => w !== null && typeof w === 'object')
+        verlange('goplus-solana', d, 'transfer_hook', liste)
+        // Die Halteradresse heisst hier `account`, nicht `address`.
+        verlange('goplus-solana', d?.holders?.[0], 'account', (w) => typeof w === 'string' && w.length > 0)
+        const u = ausGoPlusSolana(d, [])
+        p('goplus-solana-Übersetzung liefert Halteradressen',
+            liste(u?.holders) && u.holders.length > 0 && u.holders.every((h) => h.address.length > 0))
+        p('goplus-solana: Gebühr ist bekannt (leeres Objekt = keine)', u?.sell_tax === 0,
+            `war ${JSON.stringify(u?.sell_tax)}`)
     }
 }
 
@@ -178,7 +209,9 @@ const liste = (w) => Array.isArray(w)
         p('rugcheck-Übersetzung liefert Halter mit Anteil',
             liste(u?.holders) && u.holders.every((h) => zahl(h.percent)))
         p('und die Konzentration lässt sich daraus rechnen',
-            summeTop10(u.holders) === null || zahl(summeTop10(u.holders)))
+            summeTop10(u.holders, { skala: u.anteilSkala }) === null
+            || zahl(summeTop10(u.holders, { skala: u.anteilSkala })))
+        p('rugcheck-Übersetzung nennt ihre Skala (Prozent)', u?.anteilSkala === 'prozent')
     }
 }
 

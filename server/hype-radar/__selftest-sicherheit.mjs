@@ -7,7 +7,10 @@
  *
  * Aufruf: node server/hype-radar/__selftest-sicherheit.mjs
  */
-import { pruefe, summeTop10, top10Ausgeschlossen, ausRugCheck, STANDARD_SICHERHEIT } from './sicherheit.js'
+import {
+    pruefe, summeTop10, top10Ausgeschlossen, ausRugCheck, ausGoPlusSolana,
+    STANDARD_SICHERHEIT, SKALA_PROZENT,
+} from './sicherheit.js'
 
 let fehler = 0
 let bestanden = 0
@@ -19,10 +22,14 @@ const p = (name, bedingung, zusatz = '') => {
 
 console.log('Hype-Radar: Sicherheit')
 
-/** Ein unauffälliger Vertrag als Ausgangspunkt. */
+/** Ein unauffälliger Vertrag als Ausgangspunkt (GoPlus-EVM-Sprache, Bruchteile). */
 const sauber = () => ({
     is_honeypot: 0, is_mintable: 0, is_proxy: 0,
     cannot_sell_all: 0, transfer_pausable: 0,
+    is_open_source: '1', hidden_owner: '0', can_take_back_ownership: '0',
+    owner_change_balance: '0', selfdestruct: '0', personal_slippage_modifiable: '0',
+    slippage_modifiable: '0', honeypot_with_same_creator: '0',
+    is_blacklisted: '0', trading_cooldown: '0', external_call: '0', buy_tax: '0.01',
     sell_tax: '0.02', owner_address: '0x0000000000000000000000000000000000000000',
     holder_count: 5000,
     holders: Array.from({ length: 10 }, () => ({ percent: '0.01' })),   // zusammen 10 %
@@ -144,11 +151,18 @@ const einseitig = pruefe(sauber(), { ...marktOk(), kaufVerkaufVerhaeltnis: 20 })
 p('einseitiges Handelsmuster kostet Note', einseitig.safetyScore < gut.safetyScore)
 p('und wird benannt', einseitig.hinweise.some((h) => h.includes('einseitig')))
 
-// ── Zahlenformate: GoPlus liefert Anteile mal als 0..1, mal als 0..100 ──
-p('Anteile als 0..1 werden erkannt',
+// ── Zahlenformate: die Skala steht an der Quelle, sie wird nicht geraten ──
+p('Anteile als Bruchteil (GoPlus, Vorgabe)',
     Math.round(summeTop10([{ percent: '0.25' }, { percent: '0.15' }])) === 40)
-p('Anteile als 0..100 werden erkannt',
-    Math.round(summeTop10([{ percent: '25' }, { percent: '15' }])) === 40)
+p('Anteile in Prozent, wenn die Quelle es sagt',
+    Math.round(summeTop10([{ percent: '25' }, { percent: '15' }], { skala: SKALA_PROZENT })) === 40)
+/*
+ * Der Fall, an dem das Raten scheiterte: kleine Werte in Prozentskala. 0,4 %
+ * plus 0,3 % sind 0,7 % — das alte `summe <= 1 ? summe * 100` machte daraus 70 %.
+ */
+p('kleine Prozentwerte werden nicht hochgerechnet',
+    Math.abs(summeTop10([{ percent: '0.4' }, { percent: '0.3' }], { skala: SKALA_PROZENT }) - 0.7) < 1e-9,
+    String(summeTop10([{ percent: '0.4' }, { percent: '0.3' }], { skala: SKALA_PROZENT })))
 p('leere Halterliste ergibt null', summeTop10([]) === null)
 p('fehlende Halterliste ergibt null', summeTop10(undefined) === null)
 
@@ -165,12 +179,13 @@ const gemischt = [
     { percent: '10', address: '0xCCC', tag: '', is_locked: 0 },
     { percent: '5', address: '0xDDD', tag: '', is_locked: 0 },
 ]
+const PZ = { skala: SKALA_PROZENT }
 p('verbrannt, benannt und gesperrt zählen nicht mit',
-    Math.round(summeTop10(gemischt)) === 15, String(summeTop10(gemischt)))
+    Math.round(summeTop10(gemischt, PZ)) === 15, String(summeTop10(gemischt, PZ)))
 p('die rohe Summe bleibt abrufbar',
-    Math.round(summeTop10(gemischt, { roh: true })) === 80, String(summeTop10(gemischt, { roh: true })))
+    Math.round(summeTop10(gemischt, { roh: true, ...PZ })) === 80, String(summeTop10(gemischt, { roh: true, ...PZ })))
 p('unbekannte Adressen bleiben verdächtig',
-    Math.round(summeTop10([{ percent: '40', address: '0xEEE', tag: '', is_locked: 0 }])) === 40)
+    Math.round(summeTop10([{ percent: '40', address: '0xEEE', tag: '', is_locked: 0 }], PZ)) === 40)
 
 const weg = top10Ausgeschlossen(gemischt)
 p('drei Halter werden ausgewiesen', weg.length === 3, JSON.stringify(weg.map((x) => x.grund)))
@@ -180,14 +195,18 @@ p('die Gründe sind benannt',
 
 // Alles verbrannt heisst 0 % Konzentration — eine Aussage, keine Lücke.
 p('vollständig verbrannt ergibt 0, nicht null',
-    summeTop10([{ percent: '100', address: '0x000000000000000000000000000000000000dEaD' }]) === 0)
+    summeTop10([{ percent: '100', address: '0x000000000000000000000000000000000000dEaD' }], PZ) === 0)
 
 /*
  * Die Wirkung dort, wo sie zählt: Ein Token, dessen Grossteil verbrannt und
  * bei einer Börse liegt, darf dafür keinen Abzug bekommen.
  */
-const sauberVerteilt = pruefe({ ...sauber(), holders: gemischt }, marktOk())
-const rohGerechnet = pruefe({ ...sauber(), holders: [{ percent: '80', address: '0xFFF' }] }, marktOk())
+const inProzent = () => ({
+    ...sauber(), anteilSkala: SKALA_PROZENT,
+    lp_holders: [{ percent: '90', is_locked: 1, address: '0x1' }],
+})
+const sauberVerteilt = pruefe({ ...inProzent(), holders: gemischt }, marktOk())
+const rohGerechnet = pruefe({ ...inProzent(), holders: [{ percent: '80', address: '0xFFF' }] }, marktOk())
 p('bereinigte Verteilung schneidet besser ab als eine echte Ballung',
     sauberVerteilt.safetyScore > rohGerechnet.safetyScore,
     `${sauberVerteilt.safetyScore} vs ${rohGerechnet.safetyScore}`)
@@ -267,6 +286,153 @@ p('RugCheck-Halterprozente werden als 0..100 gelesen',
     JSON.stringify(rcDick.flaggen))
 
 p('leere RugCheck-Antwort ergibt null (= ungeprüft)', ausRugCheck(null) === null)
+
+/*
+ * Der Befund vom 07.10.2026: RugCheck spricht Prozent. 0,9 % gesperrte
+ * Liquidität wurden zu 90 % hochgerechnet und bestanden die Sperrpflicht.
+ */
+const rcFastNichts = pruefe(ausRugCheck({
+    ...sauberRc, markets: [{ lp: { lpLockedPct: 0.9 } }],
+}), marktOk())
+p('0,9 % gesperrt (RugCheck) wird verworfen', rcFastNichts.grund === 'lp_offen',
+    JSON.stringify(rcFastNichts.flaggen))
+const rcStreu = pruefe(ausRugCheck({
+    ...sauberRc, topHolders: [{ pct: 0.4 }, { pct: 0.3 }],
+}), marktOk())
+p('RugCheck-Halter 0,4 % + 0,3 % ergeben 0,7 %, nicht 70 %',
+    Math.abs(rcStreu.flaggen.top10Prozent - 0.7) < 1e-9, String(rcStreu.flaggen.top10Prozent))
+
+// Mehrere Märkte: gezählt wird nach Dollar, nicht der erste in der Liste.
+const rcZwei = ausRugCheck({
+    ...sauberRc,
+    markets: [
+        { lp: { lpLockedPct: 100, lpLockedUSD: 1000, baseUSD: 500, quoteUSD: 500 } },
+        { lp: { lpLockedPct: 0, lpLockedUSD: 0, baseUSD: 50000, quoteUSD: 50000 } },
+    ],
+})
+p('gesperrter Kleinstpool vor offenem Hauptpool ergibt kaum Sperre',
+    rcZwei.lp_holders[0].percent < 2, JSON.stringify(rcZwei.lp_holders))
+const rcOhneUsd = ausRugCheck({
+    ...sauberRc,
+    markets: [{ lp: { lpLockedPct: 100 } }, { lp: { lpLockedPct: 5, baseUSD: 9, quoteUSD: 9 } }],
+})
+p('ohne Dollarangabe zählt der liquideste Markt',
+    rcOhneUsd.lp_holders[0].percent === 5, JSON.stringify(rcOhneUsd.lp_holders))
+
+// Gebühr unbekannt ist nicht null — und eine gemeldete Gebühr kommt an.
+p('RugCheck ohne Gebührangabe: Steuer unbekannt',
+    rcGut.hinweise.includes('Verkaufssteuer unbekannt'), JSON.stringify(rcGut.hinweise))
+const rcGebuehr = pruefe(ausRugCheck({ ...sauberRc, transferFee: { pct: 25 } }), marktOk())
+p('RugCheck-Gebühr 25 % wird als hohe Steuer verworfen', rcGebuehr.grund === 'verkaufssteuer_hoch',
+    JSON.stringify(rcGebuehr.flaggen))
+const rcGefahr = pruefe(ausRugCheck({
+    ...sauberRc, risks: [{ name: 'Copycat token', level: 'danger' }, { name: 'Low liquidity', level: 'warn' }],
+}), marktOk())
+p('RugCheck-Gefahren kosten Note, Warnungen nicht',
+    rcGefahr.status === 'bestanden' && rcGut.safetyScore - rcGefahr.safetyScore === 10,
+    `${rcGut.safetyScore} → ${rcGefahr.safetyScore}`)
+
+/*
+ * ── EVM: Felder, die bis zum 07.10.2026 niemand las ─────────────────────
+ * Jedes davon setzt Käufer fest oder enteignet sie. Einzeln geprüft.
+ */
+const evmKo = [
+    ['honeypot_with_same_creator', 'ersteller_honeypots'],
+    ['hidden_owner', 'verdeckter_eigentuemer'],
+    ['can_take_back_ownership', 'eigentum_rueckholbar'],
+    ['owner_change_balance', 'saldo_aenderbar'],
+    ['selfdestruct', 'selbstzerstoerung'],
+    ['personal_slippage_modifiable', 'steuer_je_adresse'],
+]
+for (const [feld, grund] of evmKo) {
+    const r = pruefe({ ...sauber(), [feld]: '1' }, marktOk())
+    p(`${feld} wird verworfen`, r.grund === grund, r.grund)
+}
+const geschlossen = pruefe({ ...sauber(), is_open_source: '0' }, marktOk())
+p('nicht verifizierter Quelltext wird verworfen', geschlossen.grund === 'nicht_quelloffen')
+const ohneAngabe = { ...sauber() }
+delete ohneAngabe.is_open_source
+p('fehlende Quelltext-Angabe ist kein K.o. (Solana kennt das Feld nicht)',
+    pruefe(ohneAngabe, marktOk()).status === 'bestanden')
+
+const drehbar = pruefe({
+    ...sauber(), slippage_modifiable: '1', owner_address: '0xabc0000000000000000000000000000000000001',
+}, marktOk())
+p('änderbare Steuer mit aktivem Eigentümer wird verworfen', drehbar.grund === 'steuer_aenderbar')
+const drehbarOhne = pruefe({ ...sauber(), slippage_modifiable: '1' }, marktOk())
+p('änderbare Steuer ohne Eigentümer: nur Hinweis',
+    drehbarOhne.status === 'bestanden' && drehbarOhne.hinweise.some((h) => /änderbar/.test(h)))
+
+const sperrliste = pruefe({ ...sauber(), is_blacklisted: '1' }, marktOk())
+p('Sperrliste kostet Note, verwirft aber nicht (das Original PEPE hat eine)',
+    sperrliste.status === 'bestanden' && sperrliste.safetyScore < gut.safetyScore)
+
+const ohneSimulation = pruefe({ ...sauber(), is_honeypot: '' }, marktOk())
+p('fehlende Honeypot-Simulation ist kein „sauber"',
+    ohneSimulation.safetyScore <= gut.safetyScore - 15
+    && ohneSimulation.hinweise.some((h) => /Honeypot-Simulation/.test(h)),
+    `${ohneSimulation.safetyScore} vs ${gut.safetyScore}`)
+
+const kaufTeuer = pruefe({ ...sauber(), buy_tax: '0.2' }, marktOk())
+p('hohe Kaufsteuer kostet Note', kaufTeuer.safetyScore < gut.safetyScore
+    && kaufTeuer.hinweise.some((h) => /Kaufsteuer/.test(h)))
+
+/*
+ * ── Solana über GoPlus ──────────────────────────────────────────────────
+ * Ausgangspunkt ist die Form der echten Antwort (siehe fixtures/goplus-solana).
+ */
+const solSauber = () => ({
+    balance_mutable_authority: { authority: [], status: '0' },
+    closable: { authority: [], status: '0' },
+    default_account_state: '1',
+    default_account_state_upgradable: { authority: [], status: '0' },
+    freezable: { authority: [], status: '0' },
+    holder_count: '10872',
+    holders: [
+        { account: '1nc1nerator11111111111111111111111111111111', percent: '0.30', is_locked: 0, tag: '' },
+        { account: 'Wa11et1111111111111111111111111111111111111', percent: '0.05', is_locked: 0, tag: '' },
+    ],
+    metadata_mutable: { metadata_upgrade_authority: [], status: '0' },
+    mintable: { authority: [], status: '0' },
+    non_transferable: '0',
+    transfer_fee: {},
+    transfer_fee_upgradable: { authority: [], status: '0' },
+    transfer_hook: [],
+    transfer_hook_upgradable: { authority: [], status: '0' },
+})
+const lpSol = [{ percent: 1, is_locked: 1, address: 'rugcheck' }]
+const solGut = pruefe(ausGoPlusSolana(solSauber(), lpSol), marktOk())
+p('sauberer Solana-Token besteht', solGut.status === 'bestanden', `${solGut.grund} ${JSON.stringify(solGut.hinweise)}`)
+p('leere Gebühr heisst: keine Gebühr (bekannt)', solGut.flaggen.verkaufssteuerProzent === 0)
+p('Halteradresse kommt aus `account` — der Verbrenner zählt nicht mit',
+    Math.round(solGut.flaggen.top10Prozent) === 5, String(solGut.flaggen.top10Prozent))
+
+const solFrost = pruefe(ausGoPlusSolana({
+    ...solSauber(), freezable: { authority: [{ address: 'F' }], status: '1' },
+}, lpSol), marktOk())
+p('Freeze-Authority (GoPlus) wird verworfen', solFrost.grund === 'verkauf_sperrbar', solFrost.grund)
+const solEis = pruefe(ausGoPlusSolana({ ...solSauber(), default_account_state: '2' }, lpSol), marktOk())
+p('eingefroren startende Konten werden verworfen', solEis.grund === 'verkauf_sperrbar', solEis.grund)
+const solSaldo = pruefe(ausGoPlusSolana({
+    ...solSauber(), balance_mutable_authority: { authority: [{ address: 'B' }], status: '1' },
+}, lpSol), marktOk())
+p('änderbare Kontostände werden verworfen', solSaldo.grund === 'saldo_aenderbar', solSaldo.grund)
+const solGebuehr = pruefe(ausGoPlusSolana({
+    ...solSauber(), transfer_fee: { current_fee_rate: { transfer_fee_basis_points: 2500 } },
+}, lpSol), marktOk())
+p('Gebühr in Basispunkten wird gelesen (25 % → verworfen)', solGebuehr.grund === 'verkaufssteuer_hoch',
+    JSON.stringify(solGebuehr.flaggen))
+const solGebuehrUnklar = pruefe(ausGoPlusSolana({
+    ...solSauber(), transfer_fee: { current_fee_rate: { irgendwas: 'x' } },
+}, lpSol), marktOk())
+p('Gebühr in unbekannter Form bleibt unbekannt, nicht 0',
+    solGebuehrUnklar.flaggen.verkaufssteuerProzent === null, JSON.stringify(solGebuehrUnklar.flaggen))
+const solSchliessbar = pruefe(ausGoPlusSolana({
+    ...solSauber(), closable: { authority: [{ address: 'C' }], status: '1' },
+}, lpSol), marktOk())
+p('schliessbarer Token kostet Note', solSchliessbar.status === 'bestanden'
+    && solSchliessbar.safetyScore < solGut.safetyScore)
+p('leere GoPlus-Solana-Antwort ergibt null (= ungeprüft)', ausGoPlusSolana(null) === null)
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

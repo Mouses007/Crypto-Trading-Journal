@@ -617,7 +617,7 @@
                         </div>
                         <div class="hypKarteZeile">
                             <span v-if="k.status === 'verworfen'" class="badge bg-danger hypBadge">
-                                {{ t('hype.grund_' + k.verworfenGrund) !== 'hype.grund_' + k.verworfenGrund ? t('hype.grund_' + k.verworfenGrund) : k.verworfenGrund }}
+                                {{ grundText(k.verworfenGrund) }}
                             </span>
                             <span v-else-if="k.status === 'bewertet'" class="badge bg-secondary hypBadge">{{ t('hype.unterSchwelle') }}</span>
                             <span v-else class="badge bg-success hypBadge">{{ t('hype.bestanden') }}</span>
@@ -678,7 +678,7 @@
                                     </td>
                                     <td>
                                         <span v-if="k.status === 'verworfen'" class="badge bg-danger hypBadge"
-                                            :title="k.verworfenGrund">{{ t('hype.grund_' + k.verworfenGrund) !== 'hype.grund_' + k.verworfenGrund ? t('hype.grund_' + k.verworfenGrund) : k.verworfenGrund }}</span>
+                                            :title="k.verworfenGrund">{{ grundText(k.verworfenGrund) }}</span>
                                         <span v-else-if="k.status === 'berichtet'" class="badge bg-primary hypBadge">{{ t('hype.imBericht') }}</span>
                                         <span v-else-if="k.status === 'bewertet'" class="badge bg-secondary hypBadge">{{ t('hype.unterSchwelle') }}</span>
                                         <span v-else class="badge bg-success hypBadge">{{ t('hype.bestanden') }}</span>
@@ -789,7 +789,7 @@
                         <tbody>
                             <tr v-for="(a, i) in offenerBericht.aussortiert" :key="i">
                                 <td style="width: 8rem"><strong>{{ a.symbol }}</strong></td>
-                                <td>{{ t('hype.grund_' + a.grund) !== 'hype.grund_' + a.grund ? t('hype.grund_' + a.grund) : a.grund }}</td>
+                                <td>{{ grundText(a.grund) }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -832,7 +832,10 @@ import {
     boerseUrl, aktivierteBoersen,
 } from '../utils/boersenLinks.js'
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
+
+/** Verwerfungsgrund in Worten — unbekannte Codes bleiben als Code stehen. */
+const grundText = (g) => (g && te('hype.grund_' + g) ? t('hype.grund_' + g) : (g || ''))
 
 const HINWEIS_RUECKFALL = 'Keine Anlageberatung. Frühphasen-Token sind hochriskant.'
 
@@ -1598,11 +1601,24 @@ function verarbeite(e, mitBericht) {
     ladeKandidaten()
 }
 
+/*
+ * Der Zeigertext wird von ECharts per `innerHTML` eingesetzt — alles, was von
+ * aussen kommt, MUSS hier maskiert werden. Token-Namen setzt, wer den Token
+ * auflegt; ein Name wie `<img src=x onerror=…>` lief vorher beim blossen
+ * Überfahren des Punkts als Script im Ursprung der App und hätte jeden
+ * `/api/*`-Endpunkt mit dem Sitzungs-Cookie aufrufen können.
+ */
+const esc = (w) => echarts.format.encodeHTML(String(w ?? ''))
+
+/** Eigenes, bereits gebautes HTML — `zeile` maskiert es nicht ein zweites Mal. */
+const eigenesHtml = (s) => ({ eigenesHtml: s })
+
 /** Ein Wert mit Beschriftung — leere Werte fallen ganz weg. */
 function zeile(label, wert) {
     if (wert === null || wert === undefined || wert === '' || wert === '—') return ''
+    const inhalt = typeof wert === 'object' && 'eigenesHtml' in wert ? wert.eigenesHtml : esc(wert)
     return `<div style="display:flex;gap:.6rem;justify-content:space-between">`
-        + `<span style="opacity:.65">${label}</span><span>${wert}</span></div>`
+        + `<span style="opacity:.65">${esc(label)}</span><span>${inhalt}</span></div>`
 }
 
 /**
@@ -1618,18 +1634,18 @@ function zeigerText(k, value = []) {
     const m = k?.marktDaten || {}
     const tritt = k?.sozialDaten?.trittbrett
 
-    const kopf = `<strong style="font-size:1.05em">${symbol}</strong>`
-        + (k?.chain ? `<span style="opacity:.6;margin-left:.4rem">${k.chain}</span>` : '')
-        + (k?.name && k.name !== symbol ? `<div style="opacity:.7;font-size:.9em">${k.name}</div>` : '')
+    const kopf = `<strong style="font-size:1.05em">${esc(symbol)}</strong>`
+        + (k?.chain ? `<span style="opacity:.6;margin-left:.4rem">${esc(k.chain)}</span>` : '')
+        + (k?.name && k.name !== symbol ? `<div style="opacity:.7;font-size:.9em">${esc(k.name)}</div>` : '')
 
     const noten = zeile(t('hype.spalteHype'), k?.hypeScore)
         + zeile(t('hype.spalteSafety'), k?.status === 'verworfen' ? '—' : k?.safetyScore)
         + zeile(t('hype.achseX'), Math.round(Number(value[0]) || 0))
         + zeile(t('hype.achseY'), Math.round(Number(value[1]) || 0))
 
-    const pct = (w) => (Number.isFinite(Number(w))
-        ? `<span style="color:${Number(w) >= 0 ? '#4caf50' : '#ef5350'}">`
-            + `${Number(w) >= 0 ? '+' : ''}${Number(w).toFixed(1)} %</span>`
+    const pct = (w) => (w !== null && w !== undefined && w !== '' && Number.isFinite(Number(w))
+        ? eigenesHtml(`<span style="color:${Number(w) >= 0 ? '#4caf50' : '#ef5350'}">`
+            + `${Number(w) >= 0 ? '+' : ''}${Number(w).toFixed(1)} %</span>`)
         : null)
 
     const markt = zeile(t('hype.spalteNarrativ'), k?.narrative)
@@ -1652,21 +1668,20 @@ function zeigerText(k, value = []) {
     // Fussnote der Rechnung.
     if (Number(m.boosts) > 0) {
         fuss += `<div style="color:#ffb300;margin-top:.35rem">`
-            + `${t('hype.boostHinweis', { n: m.boosts })}</div>`
+            + `${esc(t('hype.boostHinweis', { n: Number(m.boosts) }))}</div>`
     }
     if (k?.status === 'verworfen') {
-        const g = t('hype.grund_' + k.verworfenGrund)
         fuss += `<div style="color:#ef5350;margin-top:.35rem">✕ `
-            + `${g === 'hype.grund_' + k.verworfenGrund ? k.verworfenGrund : g}</div>`
+            + `${esc(grundText(k.verworfenGrund))}</div>`
     }
     if (tritt?.ja) {
         fuss += `<div style="color:#ffb300;margin-top:.2rem">`
-            + `${t('hype.trittbrettHilfeEinzeln', { v: tritt.vorbild })}</div>`
+            + `${esc(t('hype.trittbrettHilfeEinzeln', { v: tritt.vorbild }))}</div>`
     }
     // Der Hinweis auf den Klick gehört hierher: ohne ihn fände niemand
     // heraus, dass sich ein Fund direkt aus dem Bild anheften lässt.
     fuss += `<div style="opacity:.55;margin-top:.4rem;font-size:.9em">`
-        + `${istFav(k || {}) ? t('hype.zeigerAbheften') : t('hype.zeigerAnheften')}</div>`
+        + `${esc(istFav(k || {}) ? t('hype.zeigerAbheften') : t('hype.zeigerAnheften'))}</div>`
 
     const trenner = '<div style="border-top:1px solid rgba(255,255,255,.12);margin:.35rem 0"></div>'
     return kopf + trenner + noten + (markt ? trenner + markt : '') + fuss

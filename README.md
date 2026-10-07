@@ -60,7 +60,8 @@ Two radars asking opposite questions, sharing one watchlist.
 **Hype-Radar — what is new out there, and what of it has substance?** Collects young
 coin projects from CoinGecko, DexScreener and GeckoTerminal, scores them from five
 sub-scores, then filters hard for scam patterns (GoPlus, RugCheck on Solana:
-honeypot, mint authority, holder concentration) *before* an AI writes a report about
+honeypot, mint and freeze authority, hidden or reclaimable ownership, modifiable
+balances or taxes, unverified source, holder concentration) *before* an AI writes a report about
 the few survivors. The number of independent sources weighs heaviest — a paid
 campaign fills one source, rarely three. A divergence quadrant plots attention
 against market confirmation, so bought noise becomes visible where a sorted list
