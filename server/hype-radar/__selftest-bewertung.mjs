@@ -52,7 +52,34 @@ pruefe('gleicher Vertrag wird zusammengefasst, Schreibweise egal', zusammen.leng
 const pepe = zusammen.find((z) => z.symbol === 'PEPE')
 pruefe('fehlender Name wird nachgetragen', pepe.name === 'Pepe')
 pruefe('fehlendes Paar wird nachgetragen', pepe.pair === 'p1')
-pruefe('Zahlen werden addiert', pepe.sozial.boostGesamt === 25)
+/*
+ * Derselbe Boost zählt einmal. Bis zum 07.10.2026 wurden alle Zahlen
+ * addiert — siehe unten beim Reddit-Rang, warum das nicht taugte.
+ */
+pruefe('Boost wird nicht doppelt gezählt', pepe.sozial.boostGesamt === 15, String(pepe.sozial.boostGesamt))
+
+/*
+ * Der Befund vom 07.10.2026: Der Reddit-RANG wurde addiert. Zwei Erwähnungen
+ * auf Platz 30 und 35 ergaben Platz 65 — und null Punkte. Mehr Gerede machte
+ * die Note schlechter. Jetzt gilt der beste Platz, die Nennungen werden gezählt.
+ */
+{
+    const r = (rang, sub) => ({ symbol: 'FOO', contract: 'So1', chain: '', pair: '',
+        quelle: { quelle: `reddit-${sub}` }, markt: {}, sozial: { redditRang: rang, redditNennungen: 1 } })
+    const einmal = fuehreZusammen([r(30, 'A')])[0]
+    const zweimal = fuehreZusammen([r(30, 'A'), r(35, 'B')])[0]
+    pruefe('Reddit: der beste Platz zählt', zweimal.sozial.redditRang === 30, String(zweimal.sozial.redditRang))
+    pruefe('Reddit: Nennungen werden gezählt', zweimal.sozial.redditNennungen === 2)
+    pruefe('Reddit: eine zweite Erwähnung kostet keine Note',
+        noteSozial(zweimal) >= noteSozial(einmal), `${noteSozial(einmal)} → ${noteSozial(zweimal)}`)
+}
+
+/*
+ * Die Seite des Paars geht beim Zusammenführen nicht mehr verloren.
+ */
+pruefe('Gegenseite bleibt vermerkt',
+    fuehreZusammen([{ symbol: 'X', contract: '0xq', chain: 'base', quelle: { quelle: 'dexscreener' },
+        markt: {}, sozial: {}, seite: 'quote' }])[0].seite === 'quote')
 pruefe('zwei unabhängige Quellen erkannt', pepe.quellenAnzahl === 2)
 
 /*
@@ -232,6 +259,24 @@ pruefe('extremer Schub bleibt gedeckelt',
 pruefe('ohne Stundenauflösung ein schwaches Ja',
     noteVolumen({ markt: { volumen24h: 2400 } }) === 20)
 
+/*
+ * Der Befund vom 07.10.2026: Ein drei Stunden altes Paar mit völlig
+ * gleichmässigem Handel bekam die VOLLE Volumen-Teilnote, weil sein
+ * Gesamtvolumen durch 24 statt durch 3 geteilt wurde.
+ */
+pruefe('junges Paar mit gleichmässigem Handel ist kein Schub',
+    noteVolumen({ markt: { volumen24h: 300, volumen1h: 100, paarAlterStunden: 3 } }) === 25,
+    String(noteVolumen({ markt: { volumen24h: 300, volumen1h: 100, paarAlterStunden: 3 } })))
+pruefe('junges Paar mit echtem Schub bleibt erkennbar',
+    noteVolumen({ markt: { volumen24h: 500, volumen1h: 400, paarAlterStunden: 3 } }) === 100)
+pruefe('unter zwei Stunden fehlt der Vergleich: schwaches Ja',
+    noteVolumen({ markt: { volumen24h: 500, volumen1h: 400, paarAlterStunden: 1 } }) === 20)
+// Die gemessene Stunde steckt nicht mehr in ihrer eigenen Vergleichsbasis:
+// 23 Stunden zu je 100, dann 400 → Faktor 4, nicht 400 / (2700/24) = 3,6.
+pruefe('ein Ausbruch dämpft sich nicht selbst',
+    noteVolumen({ markt: { volumen24h: 2700, volumen1h: 400 } }) === 100,
+    String(noteVolumen({ markt: { volumen24h: 2700, volumen1h: 400 } })))
+
 // ── Neuheit ─────────────────────────────────────────────────────────────
 pruefe('zwei Tage alt ist voll neu', noteNeuheit({ markt: { paarAlterStunden: 48 } }) === 100)
 pruefe('vier Monate alt ist nicht mehr neu', noteNeuheit({ markt: { paarAlterStunden: 24 * 120 } }) === 0)
@@ -279,6 +324,24 @@ for (const [k, erwartet] of [
 pruefe('Wortanfang trifft weiterhin', noteNarrativ({ symbol: 'AIDOG', name: 'AI Dog' }).narrativ !== '')
 
 /*
+ * Kurze Stichwörter als ganzes Wort (07.10.2026): Am Wortanfang trafen sie
+ * „AirDAO" und „Botanix", ohne Anker „Alphabet" (bet) — jeweils 16 Punkte.
+ */
+for (const k of [
+    { symbol: 'AIRDAO', name: 'AirDAO' },
+    { symbol: 'BTNX', name: 'Botanix' },
+    { symbol: 'ABC', name: 'Alphabet' },
+    { symbol: 'MKT', name: 'Marketing Coin' },
+    { symbol: 'MELON', name: 'Melon' },
+    { symbol: 'SWIFT', name: 'Swift' },
+]) {
+    pruefe(`kein Thema aus einem Wortteil: ${k.name}`, noteNarrativ(k).narrativ === '', noteNarrativ(k).narrativ)
+}
+pruefe('Ziffern trennen Wörter (AI16Z)', noteNarrativ({ symbol: 'AI16Z', name: 'ai16z' }).narrativ === 'ai-agents')
+pruefe('Mehrzahl zählt als ganzes Wort',
+    noteNarrativ({ symbol: 'PM', name: 'Prediction Markets' }).narrativ === 'prediction-markets')
+
+/*
  * Die Gegenrichtung, im Livelauf gemessen: Der Anker pauschal für ALLE
  * Stichwörter war zu scharf — „SOLCAT" und „RobinhoodCat" verloren ihre
  * Meme-Einordnung, weil `cat` mitten im Wort steht. Zusammengesetzte Namen
@@ -309,6 +372,9 @@ for (const k of [
     { symbol: 'CYBERTRUMP', name: 'CyberTrump' },
     { symbol: 'ZARD', name: 'CHARIZARD' },
     { symbol: 'BABYDOGE', name: 'Baby Doge' },
+    { symbol: 'BASEDOGE', name: 'BaseDoge' },
+    { symbol: 'EMAX', name: 'Ethereum Max' },
+    { symbol: 'ED', name: 'ElonDoge' },
 ]) {
     pruefe(`Aufguss erkannt: ${k.symbol}`, istTrittbrettfahrer(k).ja, JSON.stringify(istTrittbrettfahrer(k)))
 }
@@ -319,6 +385,21 @@ for (const k of [
     // Und ein eigenständiger Name erst recht nicht.
     { symbol: 'CGX', name: 'CryptoGDEX' },
     { symbol: 'UTANG', name: 'UTANG' },
+    /*
+     * Die Fehltreffer vom 07.10.2026: Eine Teilzeichenkette irgendwo im Namen
+     * genügte, und 35 % der Note waren weg — auch bei den Originalen selbst.
+     */
+    { symbol: 'MELON', name: 'Melon' },
+    { symbol: 'SWIFT', name: 'Swift' },
+    { symbol: 'ETHFI', name: 'ether.fi' },
+    { symbol: 'ENA', name: 'Ethena' },
+    { symbol: 'USDT', name: 'Tether' },
+    { symbol: 'WBTC', name: 'Wrapped Bitcoin' },
+    { symbol: 'METH', name: 'mETH' },
+    { symbol: 'GEMINI', name: 'Gemini AI' },
+    { symbol: 'DOGE', name: 'Dogecoin' },
+    { symbol: 'WIF', name: 'dogwifhat' },
+    { symbol: 'SHIB', name: 'Shiba Inu' },
 ]) {
     pruefe(`kein Aufguss: ${k.symbol}`, !istTrittbrettfahrer(k).ja, JSON.stringify(istTrittbrettfahrer(k)))
 }
@@ -425,7 +506,7 @@ const schwach = bewerte({
 pruefe('starker Fund bekommt eine hohe Note', stark.hypeScore > 45, String(stark.hypeScore))
 const maximum = bewerte({
     symbol: 'AI Agent', name: 'AI Agent', quellenAnzahl: 3,
-    markt: { volumen24h: 1e9, volumen1h: 1e9, paarAlterStunden: 1 },
+    markt: { volumen24h: 1e9, volumen1h: 1e9, paarAlterStunden: 12 },
     sozial: { redditRang: 1 },
 })
 const erwartet = (REDDIT_DECKEL * 30 + 100 * 25 + 75 * 15 + 100 * 20 + 100 * 10) / 100

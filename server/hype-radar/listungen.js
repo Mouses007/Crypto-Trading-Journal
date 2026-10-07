@@ -147,3 +147,33 @@ export function pruefeListung(symbol, listen) {
     }
     return { liste, unbekannt }
 }
+
+/**
+ * Unter dieser Bewertung ist eine Börsenlistung mit gleichem Kürzel fast
+ * sicher ein ANDERER Token.
+ *
+ * Die Börsenlisten kennen nur Kürzel, keine Verträge. Ein pump.fun-Klon, der
+ * sich „WIF" nennt, erschien bis zum 07.10.2026 als „auf Bitunix-Futures
+ * handelbar" — und überstand damit sogar den Filter „nur handelbare Funde".
+ * Ohne Vertrag auf der Börsenseite lässt sich das nicht beweisen, aber
+ * eingrenzen: Terminbörsen listen keine Token mit fünf Millionen Bewertung,
+ * und ein Token mit fünfzigtausend ist nicht der, der dort gehandelt wird.
+ */
+export const MIN_BEWERTUNG_FUER_LISTUNG = 5_000_000
+
+/**
+ * Ist eine gefundene Listung vermutlich bloss ein Namensvetter?
+ *
+ * Nur für Funde MIT Vertrag (also aus einem DEX) — CoinGecko- und
+ * CoinPaprika-Funde tragen die Identität des Projekts selbst. Unbekannte
+ * Bewertung heisst: nicht entscheidbar, die Listung bleibt stehen.
+ *
+ * @returns {boolean}
+ */
+export function nurNamensgleich(kandidat) {
+    if (!String(kandidat?.contract || '').length) return false
+    const m = kandidat?.markt || {}
+    const bewertung = Math.max(Number(m.fdv) || 0, Number(m.marktkapitalisierung) || 0)
+    if (!(bewertung > 0)) return false
+    return bewertung < MIN_BEWERTUNG_FUER_LISTUNG
+}

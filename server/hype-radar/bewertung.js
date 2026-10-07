@@ -127,25 +127,55 @@ export const REDDIT_DECKEL = 60
 /**
  * Zieht der Handel an.
  *
- * Verglichen wird das Volumen der letzten Stunde mit dem Stundenmittel des
- * Tages. Ein Wert von 1 heisst „läuft wie gehabt", 3 heisst „dreimal so viel
- * wie üblich". Fehlt die Stundenangabe, wird auf sechs Stunden ausgewichen.
+ * Verglichen wird das Volumen der letzten Stunde mit dem Stundenmittel der
+ * Stunden DAVOR. Ein Wert von 1 heisst „läuft wie gehabt", 3 heisst „dreimal
+ * so viel wie üblich". Fehlt die Stundenangabe, wird auf sechs Stunden
+ * ausgewichen.
+ *
+ * Zwei Korrekturen vom 07.10.2026:
+ *
+ *   Das Paar existiert erst seit `paarAlterStunden`. Für ein drei Stunden
+ *   altes Paar ist `volumen24h` sein GESAMTES Volumen aus drei Stunden — durch
+ *   24 geteilt, sah jeder gleichmässige Handel nach achtfachem Schub aus und
+ *   bekam die volle Teilnote. Zusammen mit Neuheit 100 war die Note für
+ *   frische Funde damit im Kern eine Alters-Note. Geteilt wird jetzt durch
+ *   die Stunden, die es das Paar tatsächlich gibt.
+ *
+ *   Die Vergleichsbasis enthält die gemessene Stunde nicht mehr. Sonst zieht
+ *   ein Ausbruch seinen eigenen Vergleichswert hoch und dämpft sich selbst —
+ *   dieselbe Regel, nach der der Coin-Radar sein RVOL rechnet.
+ *
+ * Ein Paar, das jünger als zwei Stunden ist, hat keine Vorstunde zum
+ * Vergleichen: dann das schwache Ja wie ohne Stundenauflösung.
  */
 export function noteVolumen(k) {
     const m = k?.markt || {}
     const tag = Number(m.volumen24h) || 0
     if (tag <= 0) return 0
-    const mittelJeStunde = tag / 24
 
-    let faktor = null
-    if (Number(m.volumen1h) > 0) faktor = Number(m.volumen1h) / mittelJeStunde
-    else if (Number(m.volumen6h) > 0) faktor = (Number(m.volumen6h) / 6) / mittelJeStunde
-    if (faktor === null) return 20   // Handel ja, aber keine Auflösung: schwaches Ja
+    const alter = Number(m.paarAlterStunden)
+    const stunden = m.paarAlterStunden !== null && m.paarAlterStunden !== undefined && Number.isFinite(alter)
+        ? Math.min(24, alter)
+        : 24
+    if (stunden < 2) return SCHWACHES_JA
+
+    const faktorFuer = (fenster, fensterStunden) => {
+        if (!(fenster > 0) || stunden <= fensterStunden) return null
+        const basisJeStunde = (tag - fenster) / (stunden - fensterStunden)
+        // Alles Volumen im letzten Fenster: der stärkste Schub, den es gibt.
+        if (!(basisJeStunde > 0)) return Infinity
+        return (fenster / fensterStunden) / basisJeStunde
+    }
+    const faktor = faktorFuer(Number(m.volumen1h), 1) ?? faktorFuer(Number(m.volumen6h), 6)
+    if (faktor === null) return SCHWACHES_JA   // Handel ja, aber keine Auflösung
 
     // Faktor 1 → 25, Faktor 4 → 100. Darüber gedeckelt: was zehnmal über dem
     // Schnitt liegt, ist nicht doppelt so interessant wie fünfmal darüber.
-    return klemme(faktor * 25)
+    return klemme(Math.min(faktor, 4) * 25)
 }
+
+/** Handel ist da, aber er lässt sich mit nichts vergleichen. */
+const SCHWACHES_JA = 20
 
 /**
  * Wie viele unabhängige Quellen.
@@ -168,7 +198,12 @@ export function noteQuellen(k) {
  * @returns {{note:number, narrativ:string}}
  */
 export function noteNarrativ(k, narrative = STANDARD_NARRATIVE) {
-    const text = `${k?.symbol || ''} ${k?.name || ''}`.toLowerCase()
+    // Binnengrossbuchstaben und Ziffern trennen Wörter: „AirDAO" ist „Air DAO",
+    // „AI16Z" ist „AI 16 Z" — sonst entscheidet die Schreibweise über das Thema.
+    const name = String(k?.name || '')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+    const text = `${k?.symbol || ''} ${name}`.toLowerCase()
     if (!text.trim()) return { note: 0, narrativ: '' }
 
     let bestes = ''
@@ -225,22 +260,36 @@ const NARRATIV_FAKTOR = { meme: 0.5 }
  */
 function passt(text, wort) {
     if (wort.includes(' ')) return text.includes(wort)
-    if (!ANKER_WOERTER.has(wort)) return text.includes(wort)
     const escaped = wort.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    return new RegExp(`(^|[^a-z0-9])${escaped}`, 'i').test(text)
+    if (GANZE_WOERTER.has(wort)) return new RegExp(`(^|[^a-z0-9])${escaped}s?(?![a-z0-9])`, 'i').test(text)
+    if (ANFANG_WOERTER.has(wort)) return new RegExp(`(^|[^a-z0-9])${escaped}`, 'i').test(text)
+    return text.includes(wort)
 }
 
 /*
- * Nur DIESE Stichwörter müssen am Wortanfang stehen.
+ * Am Wortanfang, aber nicht als ganzes Wort verlangt: „ElonDoge" und
+ * „WifHat" sollen treffen, „Melon" und „Swift" nicht.
+ */
+const ANFANG_WOERTER = new Set(['elon', 'wif'])
+
+/*
+ * Nur DIESE Stichwörter müssen als ganzes Wort stehen (ein angehängtes
+ * Plural-s ist erlaubt).
  *
  * Der Anker pauschal für alle war zu scharf: „SOLCAT" und „RobinhoodCat"
  * verloren dadurch ihre Meme-Einordnung, weil `cat` mitten im Wort steht —
  * und zusammengesetzte Namen sind in dieser Ecke die Regel, nicht die
- * Ausnahme. Gebraucht wird der Anker dort, wo ein Treffer in der Wortmitte
- * nichts bedeutet: `ai` in „Again", `bot` in „robot", `stake` in „mistake",
- * `ape` in „escape", `play` in „display".
+ * Ausnahme. Gebraucht wird er dort, wo ein Treffer im Wort nichts bedeutet:
+ * `ai` in „Again", `bot` in „robot", `stake` in „mistake", `ape` in „escape",
+ * `play` in „display".
+ *
+ * Bis zum 07.10.2026 genügte hier der WORTANFANG — und damit trafen „AirDAO"
+ * und „Aim" (ai), „Botanix" (bot), „Marketing" (market) und, ganz ohne Anker,
+ * „Alphabet" (bet). Jeder dieser Treffer war 16 Punkte der Gesamtnote wert.
  */
-const ANKER_WOERTER = new Set(['ai', 'zk', 'rwa', 'bot', 'usd', 'pay', 'stake', 'node', 'play', 'ape'])
+const GANZE_WOERTER = new Set([
+    'ai', 'zk', 'rwa', 'bot', 'usd', 'pay', 'stake', 'node', 'play', 'ape', 'bet', 'market',
+])
 
 /**
  * Wie jung ist das Paar.
@@ -267,24 +316,62 @@ export function noteNeuheit(k) {
  * Projekt, sondern ein Aufguss.
  */
 /*
- * Namen bestehender KRYPTO-Marken. Hier ist der exakte Name das Original und
- * kein Aufguss: „DOGE" ist DOGE, erst „DOGEZILLA" fährt mit.
+ * Meme-Marken: Hier ist der exakte Name das Original und kein Aufguss —
+ * „DOGE" ist DOGE, erst „DOGEZILLA" fährt mit. Angeklebt wird vorn wie hinten
+ * („BASEDOGE", „DOGEZILLA"), deshalb zählen Wortanfang UND Wortende.
  */
-const KRYPTO_MARKEN = [
-    'pepe', 'doge', 'shib', 'inu', 'bonk', 'wif', 'floki',
-    'safemoon', 'wojak', 'bitcoin', 'ethereum', 'solana', 'btc', 'eth',
-]
+const MEME_MARKEN = ['pepe', 'doge', 'shib', 'inu', 'bonk', 'wif', 'floki', 'safemoon', 'wojak']
+
+/*
+ * Grundwerte. Als Wortteil wären sie wertlos: „ETHFI", „Ethena", „Tether",
+ * „WBTC" und „mETH" enthalten sie alle und sind eigene Projekte oder
+ * Wertpapier-Hüllen. Ein Aufguss nennt den Grundwert als eigenes Wort neben
+ * einem anderen („Ethereum Max", „BTC Bull") — oder hängt bei den langen
+ * Namen etwas direkt an („BITCOINHYPER").
+ */
+const GRUND_MARKEN = ['bitcoin', 'ethereum', 'solana', 'btc', 'eth']
 
 /*
  * Fremde Marken und Figuren. Hier ist SCHON der exakte Name geborgt — es gibt
  * keinen legitimen „Charizard-Coin", von dem sich ein anderer abheben müsste.
  * Genau daran ist der erste Entwurf gescheitert: „CHARIZARD" entkam dem
  * Abzug, weil der Schutz fürs Original auch für geliehene Namen galt.
+ *
+ * Die kurzen nur am Wortanfang: am Ende trafen sie „Melon" (elon) und
+ * „Gemini" (mini). Die langen auch am Ende („CYBERTRUMP" ohne Binnen-
+ * grossschreibung).
  */
-const FREMD_MARKEN = [
-    'elon', 'trump', 'moon', 'baby', 'mini', 'chad',
-    'pikachu', 'charizard', 'pokemon', 'mario', 'sonic', 'garfield', 'grok',
-]
+const FREMD_KURZ = ['elon', 'moon', 'baby', 'mini', 'chad', 'grok']
+const FREMD_LANG = ['trump', 'pikachu', 'charizard', 'pokemon', 'mario', 'sonic', 'garfield']
+
+/*
+ * Eigenständige Projekte, deren Name zufällig eine Marke enthält. Verglichen
+ * wird der ganze Name ohne Leer- und Sonderzeichen.
+ */
+const ORIGINALE = new Set([
+    'dogecoin', 'dogwifhat', 'shibainu', 'moonbeam', 'babylon', 'minima', 'sonic', 'flokiinu',
+])
+
+/** Hüllen um einen Grundwert sind kein Aufguss („Wrapped Bitcoin"). */
+const HUELLEN = new Set(['wrapped', 'staked', 'bridged', 'liquid', 'restaked'])
+
+/**
+ * Name in Wörter zerlegen — auch an Binnengrossbuchstaben („CyberTrump").
+ */
+function woerterVon(k) {
+    const name = String(k?.name || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+    const woerter = name.split(/[^a-z0-9]+/).filter(Boolean)
+    const symbol = String(k?.symbol || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    return { symbol, woerter, kompakt: woerter.join('') }
+}
+
+/**
+ * Steht die Marke als eigenes Wort neben einem anderen („Baby Doge")?
+ * Ein einzelner Buchstabe davor ist kein Wort, sondern ein Kürzel („mETH").
+ */
+function nebenAnderem(woerter, marke) {
+    return woerter.includes(marke) && woerter.some((w) => w !== marke && w.length >= 2)
+}
 
 /**
  * Fährt der Fund auf einem fremden Namen mit?
@@ -296,23 +383,38 @@ const FREMD_MARKEN = [
  * verschwinden nicht, denn manchmal läuft so ein Aufguss trotzdem, und das
  * still zu verschweigen wäre eine andere Art zu lügen.
  *
- * Der Name muss LÄNGER sein als das Vorbild: „DOGE" selbst ist kein
- * Trittbrettfahrer, „DOGEZILLA" schon.
+ * Bis zum 07.10.2026 genügte eine Teilzeichenkette irgendwo im Namen. Das traf
+ * „Melon" (elon), „Swift" (wif), „Tether", „Ethena" und „ETHFI" (eth),
+ * „WBTC" (btc), „Gemini" (mini) — und sogar die Originale „Dogecoin",
+ * „dogwifhat" und „Shiba Inu" — mit 35 % Abzug. Jetzt zählt die Lage im Wort.
  *
  * @returns {{ja:boolean, vorbild:string}}
  */
 export function istTrittbrettfahrer(k) {
-    const symbol = String(k?.symbol || '').toLowerCase()
-    const name = String(k?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-    const felder = [symbol, name].filter(Boolean)
+    const { symbol, woerter, kompakt } = woerterVon(k)
+    if (ORIGINALE.has(kompakt)) return { ja: false, vorbild: '' }
+    const alle = [symbol, ...woerter].filter(Boolean)
 
-    // Fremde Marken: schon die blosse Verwendung ist geliehen.
-    for (const v of FREMD_MARKEN) {
-        if (felder.some((f) => f.includes(v))) return { ja: true, vorbild: v }
+    for (const v of FREMD_KURZ) {
+        if (alle.some((w) => w.startsWith(v))) return { ja: true, vorbild: v }
     }
-    // Krypto-Marken: nur, wenn noch etwas drangehängt wurde.
-    for (const v of KRYPTO_MARKEN) {
-        if (felder.some((f) => f !== v && f.includes(v))) return { ja: true, vorbild: v }
+    for (const v of FREMD_LANG) {
+        if (alle.some((w) => w.startsWith(v) || w.endsWith(v))) return { ja: true, vorbild: v }
+    }
+    for (const v of MEME_MARKEN) {
+        // Das Kürzel IST die Marke: dann ist es das Original, nicht ein Klon.
+        if (symbol === v) continue
+        const angeklebt = alle.some((w) => w !== v && (w.startsWith(v) || w.endsWith(v)))
+        const daneben = nebenAnderem(woerter, v)
+        if (angeklebt || daneben) return { ja: true, vorbild: v }
+    }
+    if (!HUELLEN.has(woerter[0])) {
+        for (const v of GRUND_MARKEN) {
+            if (symbol === v) continue
+            const daneben = nebenAnderem(woerter, v)
+            const angehaengt = v.length >= 6 && alle.some((w) => w !== v && w.startsWith(v))
+            if (daneben || angehaengt) return { ja: true, vorbild: v }
+        }
     }
     return { ja: false, vorbild: '' }
 }

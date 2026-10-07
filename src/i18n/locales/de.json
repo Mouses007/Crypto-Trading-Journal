@@ -1011,6 +1011,7 @@
     "gelistetAuf": "Als Future/Spot gelistet auf {b}",
     "gewichteHinweis": "Wie stark die Teilnoten in die Gesamtnote eingehen. Die Zahl unabhängiger Quellen ist das stärkste Mittel gegen gekauften Hype.",
     "gewichteTitel": "Gewichtung",
+    "namensgleichTitel": "{b} führt ein gleichnamiges Kürzel — bei dieser Bewertung fast sicher ein anderer Token. Zählt nicht als handelbar.",
     "gueteGruppe": "Gruppe",
     "gueteGruppe_spitze": "Bestanden (Spitze)",
     "gueteGruppe_verworfen": "Verworfen (Sicherheit)",

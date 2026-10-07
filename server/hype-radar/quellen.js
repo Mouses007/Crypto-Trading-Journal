@@ -393,6 +393,38 @@ export async function dexDetailsViele(contracts = [], opts = {}) {
  *                        übernommen werden.
  */
 function ausPaar(p, seite = 'base') {
+    const roh = ausPaarBasis(p, seite)
+    if (seite !== 'quote') return roh
+    /*
+     * Gegenseite: Was DexScreener über das Paar sagt, gilt der BASIS. Bis zum
+     * 07.10.2026 stand hier nur ein Vermerk, und der ging bei der
+     * Zusammenführung verloren — ein Fund auf der Gegenseite bekam still den
+     * Preis, die Kursänderungen und das Kauf/Verkauf-Verhältnis des anderen
+     * Tokens. Umrechnen lässt sich nur der Preis (priceUsd / priceNative);
+     * alles andere gehört nicht ihm und bleibt leer. Volumen und Liquidität
+     * sind Dollarsummen des PAARS und gelten für beide Seiten.
+     */
+    const basisUsd = Number(p?.priceUsd)
+    const basisInGegen = Number(p?.priceNative)
+    const m = roh.markt
+    return {
+        ...roh,
+        markt: {
+            ...m,
+            preisUsd: basisUsd > 0 && basisInGegen > 0 ? basisUsd / basisInGegen : null,
+            aenderung24h: null, aenderung6h: null, aenderung1h: null, aenderung5m: null,
+            fdv: null, marktkapitalisierung: null,
+            // Wer die Basis kauft, verkauft die Gegenseite — das Verhältnis kehrt sich um.
+            kaufVerkaufVerhaeltnis: umgekehrt(m.kaufVerkaufVerhaeltnis),
+            kaufVerkauf1h: umgekehrt(m.kaufVerkauf1h),
+            boosts: 0, webseiten: null, kanaele: null, bild: '',
+        },
+    }
+}
+
+const umgekehrt = (v) => (v === null || v === undefined ? null : (v === 99 ? 0 : (v > 0 ? 1 / v : 99)))
+
+function ausPaarBasis(p, seite) {
     const token = seite === 'quote' ? p?.quoteToken : p?.baseToken
     const kaeufe = Number(p?.txns?.h24?.buys) || 0
     const verkaeufe = Number(p?.txns?.h24?.sells) || 0
@@ -461,7 +493,13 @@ function ausPaar(p, seite = 'base') {
     }
 }
 
-const zahlOderNull = (w) => (Number.isFinite(Number(w)) ? Number(w) : null)
+/*
+ * `Number(null)` ist 0 — und `Number.isFinite(0)` wahr. Ohne die Vorprüfung
+ * wurde eine fehlende Kursänderung zu „0 %", also zu einer Messung.
+ */
+const zahlOderNull = (w) => (w === null || w === undefined || w === ''
+    ? null
+    : (Number.isFinite(Number(w)) ? Number(w) : null))
 
 const verhaeltnis = (t) => {
     const k = Number(t?.buys) || 0
@@ -588,7 +626,7 @@ export async function ausReddit(unterforen = ['CryptoMoonShots', 'SolanaMemeCoin
                          * hot" ist alles, was wir wissen, und genau das steht
                          * jetzt da.
                          */
-                        sozial: { redditRang: rang },
+                        sozial: { redditRang: rang, redditNennungen: 1 },
                     }))
                 }
             }
@@ -716,6 +754,12 @@ export function fuehreZusammen(funde) {
                 chain: f.chain,
                 contract: f.contract,
                 pair: f.pair,
+                /*
+                 * Die Seite des Paars wandert mit. Bis zum 07.10.2026 ging sie
+                 * hier verloren — der Vermerk „Preis und Volumen gehören der
+                 * Gegenseite" kam nie bei der Bewertung an.
+                 */
+                seite: f.seite,
                 quellen: [],
                 markt: {},
                 sozial: {},
@@ -733,14 +777,10 @@ export function fuehreZusammen(funde) {
         if (!k.chain && f.chain) k.chain = f.chain
         if (!k.contract && f.contract) k.contract = f.contract
         if (!k.pair && f.pair) k.pair = f.pair
+        if (!k.seite && f.seite) k.seite = f.seite
         Object.assign(k.markt, Object.fromEntries(
             Object.entries(f.markt || {}).filter(([, v]) => v !== null && v !== undefined)))
-        for (const [feld, wert] of Object.entries(f.sozial || {})) {
-            if (wert === null || wert === undefined) continue
-            // Zahlen aufaddieren (drei Nennungen sind mehr als eine),
-            // alles andere überschreiben.
-            k.sozial[feld] = typeof wert === 'number' ? (k.sozial[feld] || 0) + wert : wert
-        }
+        fuegeSozialHinzu(k.sozial, f.sozial)
     }
 
     /*
@@ -816,6 +856,33 @@ const QUELL_DOMAENE = {
     reddit: 'social',
 }
 
+/*
+ * Wie zwei Angaben desselben Sozialfelds zusammengehen.
+ *
+ * Bis zum 07.10.2026 wurde jede Zahl addiert („drei Nennungen sind mehr als
+ * eine") — auch der Reddit-RANG, bei dem eine kleinere Zahl besser ist. Zwei
+ * Erwähnungen auf Platz 30 und 35 wurden zu Platz 65 und damit zu null
+ * Punkten; ein Fund verlor Note, je öfter über ihn gesprochen wurde. Ränge
+ * nehmen jetzt den besten Platz, Mengen werden gezählt, und derselbe Boost
+ * aus zwei Durchgängen der Zusammenführung zählt einmal.
+ */
+const SOZIAL_ZUSAMMEN = {
+    redditRang: (a, b) => Math.min(a, b),
+    boostGesamt: (a, b) => Math.max(a, b),
+}
+
+export function fuegeSozialHinzu(ziel, quelle) {
+    for (const [feld, wert] of Object.entries(quelle || {})) {
+        if (wert === null || wert === undefined) continue
+        if (typeof wert !== 'number' || !(feld in ziel)) {
+            ziel[feld] = wert
+            continue
+        }
+        const regel = SOZIAL_ZUSAMMEN[feld]
+        ziel[feld] = regel ? regel(ziel[feld], wert) : ziel[feld] + wert
+    }
+}
+
 /** Die belegten Domänen eines Kandidaten, ohne Wiederholung. */
 export function evidenzDomaenen(quellen = []) {
     const raus = new Set()
@@ -851,11 +918,8 @@ function schliesseAn(karte, istVage, passt) {
         for (const [feld, wert] of Object.entries(k.markt)) {
             if (ziel.markt[feld] === undefined) ziel.markt[feld] = wert
         }
-        for (const [feld, wert] of Object.entries(k.sozial)) {
-            ziel.sozial[feld] = typeof wert === 'number'
-                ? (ziel.sozial[feld] || 0) + wert
-                : wert
-        }
+        if (!ziel.seite && k.seite) ziel.seite = k.seite
+        fuegeSozialHinzu(ziel.sozial, k.sozial)
         karte.delete(schluessel)
     }
 }

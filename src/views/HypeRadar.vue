@@ -614,6 +614,8 @@
                             <a v-for="(l, i) in boersenLinksVon(k.marktDaten?.listungen)" :key="i"
                                 class="hypBoerse" :href="listungHref(l, k.symbol)" target="_blank"
                                 rel="noopener noreferrer" @click.stop :title="linkText(l)">{{ linkKuerzel(l) }}</a>
+                            <span v-for="(l, i) in k.marktDaten?.listungNamensgleich || []" :key="'n' + i"
+                                class="hypBoerse namensgleich" :title="t('hype.namensgleichTitel', { b: linkText(l) })">{{ linkKuerzel(l) }}?</span>
                         </div>
                         <div class="hypKarteZeile">
                             <span v-if="k.status === 'verworfen'" class="badge bg-danger hypBadge">
@@ -673,6 +675,8 @@
                                         <a v-for="(l, i) in boersenLinksVon(k.marktDaten?.listungen)" :key="i"
                                             class="hypBoerse" :href="listungHref(l, k.symbol)" target="_blank"
                                             rel="noopener noreferrer" @click.stop :title="linkText(l)">{{ linkKuerzel(l) }}</a>
+                                        <span v-for="(l, i) in k.marktDaten?.listungNamensgleich || []" :key="'n' + i"
+                                            class="hypBoerse namensgleich" :title="t('hype.namensgleichTitel', { b: linkText(l) })">{{ linkKuerzel(l) }}?</span>
                                         <span v-if="!k.marktDaten?.dex && !boersenLinksVon(k.marktDaten?.listungen).length"
                                             class="text-muted">—</span>
                                     </td>
@@ -953,13 +957,15 @@ function listungText(l) {
 
 /**
  * Verlinkte Listungen: die vorhandenen, gefiltert auf das in den Einstellungen
- * Aktivierte, plus TradingView (kein Listungscheck — jeder erfasste Coin
- * kommt über dieselbe Binance-Prüfung wie die drei Börsen).
+ * Aktivierte, plus TradingView — aber nur, wenn der Fund überhaupt an einer
+ * Börse gelistet ist. Die frühere Annahme, jeder Fund komme über eine
+ * Binance-Prüfung, galt für den Coin-Radar, nicht hier: Für einen reinen
+ * DEX-Token öffnete der Link „This symbol doesn't exist".
  */
 function boersenLinksVon(listungen) {
     const aktiv = aktivierteBoersen(currentUser.value?.boersenLinks)
     const geliste = (listungen || []).filter((l) => aktiv.includes(listungBoerse(l)))
-    return aktiv.includes('tradingview') ? [...geliste, 'tradingview'] : geliste
+    return geliste.length && aktiv.includes('tradingview') ? [...geliste, 'tradingview'] : geliste
 }
 
 /**
@@ -2484,6 +2490,13 @@ watch(locale, () => zeichne())
 
 /* Kürzel der eigenen Börsen: gefüllt, damit „hier handelbar" sich von der
    blossen Herkunftsangabe des DEX abhebt. */
+.hypBoerse.namensgleich {
+    background: transparent;
+    color: var(--grey-color, #9aa0a6);
+    border: 1px dashed currentColor;
+    cursor: help;
+}
+
 .hypBoerse {
     display: inline-block;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

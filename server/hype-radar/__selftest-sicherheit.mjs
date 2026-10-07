@@ -8,7 +8,7 @@
  * Aufruf: node server/hype-radar/__selftest-sicherheit.mjs
  */
 import {
-    pruefe, summeTop10, top10Ausgeschlossen, ausRugCheck, ausGoPlusSolana,
+    pruefe, pruefeMarkt, summeTop10, top10Ausgeschlossen, ausRugCheck, ausGoPlusSolana,
     STANDARD_SICHERHEIT, SKALA_PROZENT,
 } from './sicherheit.js'
 
@@ -113,6 +113,17 @@ p('zu wenig Liquidität wird verworfen', zuKlein.grund === 'liquiditaet_zu_klein
 
 const zuJung = pruefe(sauber(), { ...marktOk(), paarAlterStunden: 2 })
 p('zu junges Paar wird verworfen', zuJung.grund === 'zu_jung')
+
+/*
+ * Unbekanntes Alter ist nicht „0 Stunden". `Number(null)` ist 0 — bis zum
+ * 07.10.2026 meldete der Wachhund deshalb „Paar erst 0.0 h alt", sobald
+ * DexScreener kein Erstellungsdatum lieferte.
+ */
+p('unbekanntes Alter ist nicht zu jung',
+    pruefe(sauber(), { ...marktOk(), paarAlterStunden: null }).status === 'bestanden')
+p('Marktprüfung allein: zu jung', pruefeMarkt({ ...marktOk(), paarAlterStunden: 2 })?.grund === 'zu_jung')
+p('Marktprüfung allein: passt', pruefeMarkt(marktOk()) === null)
+p('Marktprüfung allein: zu dünn', pruefeMarkt({ liquiditaetUsd: 10 })?.grund === 'liquiditaet_zu_klein')
 
 /*
  * Der wichtigste Fall überhaupt: keine Sicherheitsdaten. Ungeprüft darf NIE

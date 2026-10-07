@@ -77,5 +77,18 @@ p('halb ausgefallene Börse zählt mit dem, was da ist',
 p('leeres Symbol gibt leere Antwort', pruefeListung('', listen).liste.length === 0)
 p('fehlende Listen werfen nicht', pruefeListung('BTC', undefined).liste.length === 0)
 
+// ── Namensvetter (07.10.2026) ───────────────────────────────────────────
+{
+    const { nurNamensgleich } = await import('./listungen.js')
+    p('pump.fun-Klon mit 50k Bewertung ist ein Namensvetter',
+        nurNamensgleich({ contract: 'So1', markt: { fdv: 50000 } }) === true)
+    p('echter Token mit Milliardenbewertung nicht',
+        nurNamensgleich({ contract: 'So1', markt: { fdv: 2e9 } }) === false)
+    p('unbekannte Bewertung: nicht entscheidbar, Listung bleibt',
+        nurNamensgleich({ contract: 'So1', markt: {} }) === false)
+    p('Fund ohne Vertrag (CoinGecko) trägt seine Identität selbst',
+        nurNamensgleich({ contract: '', markt: { fdv: 1000 } }) === false)
+}
+
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

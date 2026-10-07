@@ -101,19 +101,9 @@ export function pruefe(goplus, markt = {}, regeln = STANDARD_SICHERHEIT) {
     const flaggen = {}
 
     // ── Marktseitige K.-o.-Kriterien ────────────────────────────────────
-    // Sie gelten auch ohne GoPlus-Antwort: zu wenig Liquidität ist zu wenig
-    // Liquidität, ganz gleich wie der Vertrag aussieht.
+    const marktUrteil = pruefeMarkt(markt, r)
+    if (marktUrteil) return marktUrteil
     const liq = Number(markt.liquiditaetUsd) || 0
-    if (liq < r.minLiquiditaetUsd) {
-        return verworfen('liquiditaet_zu_klein',
-            `Liquidität ${Math.round(liq)} USD unter ${r.minLiquiditaetUsd}`, flaggen, hinweise)
-    }
-
-    const alter = Number(markt.paarAlterStunden)
-    if (Number.isFinite(alter) && alter < r.minPaarAlterStunden) {
-        return verworfen('zu_jung',
-            `Paar erst ${alter.toFixed(1)} h alt (Mindestalter ${r.minPaarAlterStunden} h)`, flaggen, hinweise)
-    }
 
     // ── Vertragsseitige K.-o.-Kriterien ─────────────────────────────────
     if (!goplus) {
@@ -404,6 +394,33 @@ export function pruefe(goplus, markt = {}, regeln = STANDARD_SICHERHEIT) {
         flaggen,
         hinweise,
     }
+}
+
+/**
+ * Die marktseitigen K.-o.-Kriterien allein — ohne Netz und ohne Vertrag.
+ *
+ * Sie gelten auch ohne GoPlus-Antwort: zu wenig Liquidität ist zu wenig
+ * Liquidität, ganz gleich wie der Vertrag aussieht. Getrennt, damit der Lauf
+ * sie VOR dem Deckel der Prüfplätze anwenden kann: Bis zum 07.10.2026 belegten
+ * Funde, die schon an Alter oder Liquidität scheitern mussten, Plätze der
+ * vierzig teuren Prüfungen — und verdrängten prüfbare Funde.
+ *
+ * @returns {object|null} ein Verwerfungsurteil, oder null wenn der Markt passt
+ */
+export function pruefeMarkt(markt = {}, regeln = STANDARD_SICHERHEIT) {
+    const r = { ...STANDARD_SICHERHEIT, ...(regeln || {}) }
+    const liq = Number(markt?.liquiditaetUsd) || 0
+    if (liq < r.minLiquiditaetUsd) {
+        return verworfen('liquiditaet_zu_klein',
+            `Liquidität ${Math.round(liq)} USD unter ${r.minLiquiditaetUsd}`, {}, [])
+    }
+    const roh = markt?.paarAlterStunden
+    const alter = Number(roh)
+    if (roh !== null && roh !== undefined && roh !== '' && Number.isFinite(alter) && alter < r.minPaarAlterStunden) {
+        return verworfen('zu_jung',
+            `Paar erst ${alter.toFixed(1)} h alt (Mindestalter ${r.minPaarAlterStunden} h)`, {}, [])
+    }
+    return null
 }
 
 function verworfen(grund, text, flaggen, hinweise) {

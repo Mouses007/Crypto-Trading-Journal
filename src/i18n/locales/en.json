@@ -1011,6 +1011,7 @@
     "gelistetAuf": "Listed as future/spot on {b}",
     "gewichteHinweis": "How strongly each sub-score counts. The number of independent sources is the strongest defence against bought hype.",
     "gewichteTitel": "Weighting",
+    "namensgleichTitel": "{b} lists a ticker with the same name — at this valuation almost certainly a different token. Not counted as tradable.",
     "gueteGruppe": "Group",
     "gueteGruppe_spitze": "Passed (top)",
     "gueteGruppe_verworfen": "Rejected (safety)",
