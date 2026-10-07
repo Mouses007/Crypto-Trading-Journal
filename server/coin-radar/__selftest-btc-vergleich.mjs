@@ -121,6 +121,14 @@ console.log('Coin-Radar: BTC-Vergleich')
     const bruch = zerfallstest(rcBruch, rb)
     p('abgerissener Gleichlauf wird erkannt', bruch.zerfallen === true,
         `z=${bruch.z?.toFixed(2)} r1=${bruch.r1?.toFixed(2)} r2=${bruch.r2?.toFixed(2)}`)
+    /*
+     * Die Gegenrichtung (07.10.2026): Eine Kopplung, die STÄRKER wird, ist
+     * kein Zerfall. Mit `Math.abs` meldete der Test beides gleich.
+     */
+    const staerker = zerfallstest([...rcBruch.slice(rcBruch.length / 2), ...rcBruch.slice(0, rcBruch.length / 2)],
+        [...rb.slice(rb.length / 2), ...rb.slice(0, rb.length / 2)])
+    p('stärker werdende Kopplung gilt nicht als Zerfall', staerker.zerfallen === false && staerker.z < 0,
+        JSON.stringify(staerker))
 
     /*
      * Der Grund für den Fisher-z-Test statt einer rohen Schwelle: Dieselbe

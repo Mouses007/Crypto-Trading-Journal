@@ -23,6 +23,13 @@ import { wachhundLauf, STANDARD_ALARM_REGELN } from './hype-radar/wachhund.js'
 import { testZustellung } from './hype-radar/zustellung.js'
 import { stufenNach, benoetigteAnbieter } from './hype-radar/stufen.js'
 import { keySpalte } from './ai-models.js'
+import { HORIZONTE } from './radar-ergebnisse.js'
+import { werteAusHype, werteAusFrueh } from './radar-guete.js'
+import { pruefeProjekt, kurzfassung, gespeichertePruefungen, schluesselFuer } from './hype-radar/projekt.js'
+import { fruehLauf, fruehStand } from './hype-radar/fruehphase.js'
+import { smartWalletStand } from './hype-radar/smartmoney.js'
+import { boersenLauf, boersenStand, boersenUebersicht, ladeStaende } from './hype-radar/boersenwacht.js'
+import { leiterFuer } from './hype-radar/boersenwacht-bewertung.js'
 // Börsenfavoriten (Coin-Radar) brauchen den anderen Datenweg — siehe `boersenLive`.
 import { holeMarktweit } from './coin-radar/daten.js'
 import { fundingJahresRate } from './coin-radar/kennzahlen.js'
@@ -74,7 +81,9 @@ export function setupHypeRadarRoutes(app) {
     app.put('/api/hype-radar/einstellungen', async (req, res) => {
         try {
             const { schluessel, ...rest } = req.body || {}
-            await schreibeEinstellungen(rest)
+            // Die Alarmschwellen nur als Abweichung speichern — die Vorgaben
+            // leben in `wachhund.js` und sollen dort änderbar bleiben.
+            await schreibeEinstellungen(rest, { alarmRegeln: STANDARD_ALARM_REGELN })
             if (schluessel) await schreibeSchluessel(schluessel)
             const e = await leseEinstellungen()
             res.json({
@@ -112,10 +121,194 @@ export function setupHypeRadarRoutes(app) {
                 marktDaten: sicherParse(z.marktDaten, {}),
                 sozialDaten: sicherParse(z.sozialDaten, {}),
                 sicherheitsDaten: sicherParse(z.sicherheitsDaten, {}),
+                projektDaten: sicherParse(z.projektDaten, {}),
             })))
         } catch (e) {
             logWarn('hype-radar', `Kandidaten lesen: ${e.message}`)
             res.status(500).json({ error: 'Kandidaten konnten nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Projektprüfung auf Abruf — für jeden Fund, nicht nur die bestandenen.
+     *
+     * Liefert die gespeicherte Prüfung, solange sie gilt (24 h); `neu=1`
+     * erzwingt eine frische, frühestens fünf Minuten nach der letzten. Die
+     * Prüfung läuft im Hintergrund weiter, auch wenn die Seite vorher schliesst.
+     */
+    app.get('/api/hype-radar/projekt', async (req, res) => {
+        try {
+            const kandidat = {
+                symbol: String(req.query.symbol || '').slice(0, 30),
+                name: String(req.query.name || '').slice(0, 120),
+                chain: String(req.query.chain || '').slice(0, 30),
+                contract: String(req.query.contract || '').slice(0, 80),
+            }
+            if (!kandidat.contract && !kandidat.symbol) return res.status(400).json({ error: 'Vertrag oder Symbol fehlt' })
+            // Links und Ersteller aus dem jüngsten Lauf, falls der Fund dort stand.
+            if (kandidat.contract) {
+                const zeile = await getKnex()('hype_candidates')
+                    .where('contractAddress', kandidat.contract)
+                    .orderBy('erstelltAm', 'desc').first()
+                    .catch(() => null)
+                const m = sicherParse(zeile?.marktDaten, {})
+                kandidat.links = m.links || null
+                kandidat.ersteller = m.ersteller || ''
+                if (!kandidat.links) {
+                    const f = await getKnex()('hype_frueh').where('contract', kandidat.contract).first().catch(() => null)
+                    kandidat.links = sicherParse(f?.links, null)
+                    kandidat.ersteller = f?.ersteller || kandidat.ersteller
+                }
+            }
+            const e = await pruefeProjekt(kandidat, { neu: req.query.neu === '1' })
+            res.json({ ...kurzfassung(e), auszug: e.fakten?.webseite?.fakten?.beschreibung || '' })
+        } catch (e) {
+            logWarn('hype-radar', `Projektprüfung: ${e.message}`)
+            res.status(500).json({ error: 'Projektprüfung fehlgeschlagen' })
+        }
+    })
+
+    // ── Frühphase ───────────────────────────────────────────────────────
+    /**
+     * Die beobachteten Token der Frühphase, die besten zuerst.
+     *
+     * Vorgabe: was in den letzten 72 Stunden gesehen wurde und nicht verworfen
+     * ist. `alle=1` zeigt die Verworfenen mit — mit Grund, damit sichtbar
+     * bleibt, WARUM ein Token aus dem Rennen ist.
+     */
+    app.get('/api/hype-radar/frueh', async (req, res) => {
+        try {
+            let q = getKnex()('hype_frueh').select('*')
+            if (req.query.alle !== '1') q = q.whereNot('status', 'verworfen')
+            const zeilen = await q.orderBy('note', 'desc').limit(Math.min(300, Number(req.query.limit) || 150))
+            const projekte = await gespeichertePruefungen(zeilen)
+            const staende = await ladeStaende()
+            res.json({
+                stand: fruehStand(),
+                zeilen: zeilen.map((z) => ({
+                    ...z,
+                    quellen: sicherParse(z.quellen, []),
+                    links: sicherParse(z.links, {}),
+                    stand: sicherParse(z.stand, {}),
+                    // Der Verlauf nur als Notenreihe — die vollen Momentaufnahmen
+                    // wären bei 150 Zeilen ein paar hundert Kilobyte.
+                    verlauf: sicherParse(z.verlauf, []).map((v) => ({ ts: v.ts, note: v.note ?? null, mcap: v.mcap ?? null, halter: v.halter ?? null })),
+                    befunde: sicherParse(z.befunde, []),
+                    projekt: kurzfassung(projekte.get(schluesselFuer(z)) || null),
+                    // Auf welchen Börsen der Token schon steht (Alpha nach Vertrag).
+                    leiter: leiterFuer({ symbol: z.symbol, chain: z.chain, contract: z.contract,
+                        bewertungUsd: sicherParse(z.stand, {})?.mcap }, staende),
+                })),
+            })
+        } catch (e) {
+            logWarn('hype-radar', `Frühphase lesen: ${e.message}`)
+            res.status(500).json({ error: 'Frühphase konnte nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Erfolgskontrolle der Frühphase: Schwellen-Überschreiter gegen eine
+     * Zufallsauswahl der neu gesehenen Token, nach 1, 3 und 7 Tagen.
+     */
+    app.get('/api/hype-radar/frueh/guete', async (req, res) => {
+        try {
+            const tage = Math.min(400, Math.max(1, Number(req.query.tage) || 120))
+            const seit = Date.now() - tage * 24 * 3600e3
+            const zeilen = await getKnex()('radar_ergebnisse')
+                .where('art', 'frueh').andWhere('erstelltAm', '>=', seit)
+            const horizonte = Object.keys(HORIZONTE.frueh).filter((h) => zeilen.some((z) => z.horizont === h))
+            res.json({
+                seit, tage, gesamt: zeilen.length,
+                jeHorizont: horizonte.map((h) => werteAusFrueh(zeilen.filter((z) => z.horizont === h), h)),
+            })
+        } catch (e) {
+            logWarn('hype-radar', `Frühphase-Güte lesen: ${e.message}`)
+            res.status(500).json({ error: 'Erfolgskontrolle konnte nicht geladen werden' })
+        }
+    })
+
+    // ── Börsen-Beobachter ───────────────────────────────────────────────
+    app.get('/api/hype-radar/boersen', async (req, res) => {
+        try {
+            res.json(await boersenUebersicht({ tage: Math.min(180, Math.max(1, Number(req.query.tage) || 60)) }))
+        } catch (e) {
+            logWarn('hype-radar', `Börsen lesen: ${e.message}`)
+            res.status(500).json({ error: 'Börsen-Beobachter konnte nicht geladen werden' })
+        }
+    })
+
+    /** Ein Abgleich von Hand, im Hintergrund — höchstens einer je Minute. */
+    app.post('/api/hype-radar/boersen/lauf', async (req, res) => {
+        try {
+            if (boersenStand().laeuft) return res.status(409).json({ error: 'Ein Abgleich läuft bereits' })
+            if (!(await beansprucheAufgabe('hype_boersen_hand', 60e3))) {
+                return res.status(429).json({ error: 'Frühestens eine Minute nach dem letzten Abgleich' })
+            }
+            boersenLauf().catch((e) => logWarn('hype-radar', `Börsen von Hand: ${e.message}`))
+            res.status(202).json({ gestartet: true })
+        } catch (e) {
+            res.status(500).json({ error: 'Abgleich fehlgeschlagen' })
+        }
+    })
+
+    /** Smart Money: je beobachteter Wallet der letzte Abruf und ein etwaiger Fehler. */
+    app.get('/api/hype-radar/smart/wallets', async (req, res) => {
+        try {
+            res.json(await smartWalletStand(await leseEinstellungen()))
+        } catch (e) {
+            res.status(500).json({ error: 'Wallets konnten nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Ein Durchgang von Hand, im Hintergrund. Gebremst auf einen je Minute — die Quellen sind
+     * dieselben, die der Takt alle fünfzehn Minuten fragt, und pump.fun wie
+     * GeckoTerminal drosseln spürbar.
+     */
+    app.post('/api/hype-radar/frueh/lauf', async (req, res) => {
+        try {
+            if (!(await beansprucheAufgabe('hype_frueh_hand', 60e3))) {
+                return res.status(429).json({ error: 'Frühestens eine Minute nach dem letzten Durchgang' })
+            }
+            if (fruehStand().laeuft) return res.status(409).json({ error: 'Ein Durchgang läuft bereits' })
+            /*
+             * Im Hintergrund: mit Projektprüfungen dauert ein Durchgang leicht
+             * eine Minute und mehr. Die Seite fragt `GET /frueh` ab und sieht
+             * am `stand`, wann er fertig ist.
+             */
+            fruehLauf().catch((e) => logWarn('hype-radar', `Frühphase von Hand: ${e.message}`))
+            res.status(202).json({ gestartet: true })
+        } catch (e) {
+            logWarn('hype-radar', `Frühphase von Hand: ${e.message}`)
+            res.status(500).json({ error: 'Durchgang fehlgeschlagen' })
+        }
+    })
+
+    /**
+     * Erfolgskontrolle: Was wurde aus den Funden?
+     *
+     * Bis zum 07.10.2026 sammelte der Radar diese Messungen, und niemand las
+     * sie — es gab weder Endpunkt noch Anzeige. Drei Gruppen je Horizont:
+     * die Spitze, die von der Sicherheitsprüfung Verworfenen und das Feld
+     * unter der Schwelle (siehe `werteAusHype`).
+     */
+    app.get('/api/hype-radar/guete', async (req, res) => {
+        try {
+            const tage = Math.min(400, Math.max(1, Number(req.query.tage) || 120))
+            const seit = Date.now() - tage * 24 * 3600e3
+            const zeilen = await getKnex()('radar_ergebnisse')
+                .where('art', 'hype').andWhere('erstelltAm', '>=', seit)
+            const horizonte = Object.keys(HORIZONTE.hype)
+                .filter((h) => zeilen.some((z) => z.horizont === h))
+            res.json({
+                seit,
+                tage,
+                gesamt: zeilen.length,
+                jeHorizont: horizonte.map((h) => werteAusHype(zeilen.filter((z) => z.horizont === h), h)),
+            })
+        } catch (e) {
+            logWarn('hype-radar', `Güte lesen: ${e.message}`)
+            res.status(500).json({ error: 'Erfolgskontrolle konnte nicht geladen werden' })
         }
     })
 
@@ -176,9 +369,15 @@ export function setupHypeRadarRoutes(app) {
             const s = String(symbol || '').trim().toUpperCase()
             if (!s) return res.status(400).json({ error: 'Symbol fehlt' })
             const knex = getKnex()
-            // Doppelklick auf den Stern darf keine zweite Zeile anlegen.
+            /*
+             * Doppelklick auf den Stern darf keine zweite Zeile anlegen. Der
+             * Vertrag gehört zur Identität: „PEPE auf Solana" gibt es
+             * hundertfach, und bis zum 07.10.2026 bekam, wer das Original nach
+             * einem Klon anheftete, den Klon zurück.
+             */
             const vorhanden = await knex('hype_favoriten')
-                .where({ symbol: s, chain: String(chain || '') }).first()
+                .where({ symbol: s, chain: String(chain || ''), contractAddress: String(contractAddress || '') })
+                .first()
             if (vorhanden) return res.json(vorhanden)
             const [eingefuegt] = await knex('hype_favoriten').insert({
                 symbol: s,
@@ -240,7 +439,12 @@ export function setupHypeRadarRoutes(app) {
                 .limit(Math.min(200, Number(req.query.limit) || 50))
             if (req.query.ungelesen === '1') q = q.where('a.gelesen', 0)
             const zeilen = await q
-            res.json(zeilen.map((z) => ({ ...z, daten: sicherParse(z.daten, {}) })))
+            res.json(zeilen.map((z) => {
+                const daten = sicherParse(z.daten, {})
+                // Frühphasen-Alarme hängen an keinem Favoriten (`favoritId` 0)
+                // — ihr Symbol steht in den Daten.
+                return { ...z, daten, symbol: z.symbol || daten.symbol || '', chain: z.chain || daten.chain || '' }
+            }))
         } catch (e) {
             res.status(500).json({ error: 'Alarme konnten nicht geladen werden' })
         }
@@ -432,24 +636,40 @@ async function laufRoute(req, res, mitBericht) {
     if (laufAktiv) {
         return res.status(429).json({ error: 'Es läuft bereits ein Durchgang. Bitte warten.' })
     }
-
-    let einst
+    /*
+     * Die Sperre greift SOFORT, vor dem ersten `await`. Bis zum 07.10.2026
+     * wurde sie erst nach dem Lesen der Einstellungen gesetzt — über das Netz
+     * zur NAS-Postgres dauert das spürbar, und zwei schnelle Klicks starteten
+     * zwei bezahlte Berichte.
+     */
+    laufAktiv = true
+    let uebergeben = false
     try {
-        einst = await leseEinstellungen()
-    } catch (e) {
-        return res.status(500).json({ error: 'Einstellungen nicht lesbar' })
-    }
-
-    if (mitBericht) {
-        const fehlt = await fehlendeSchluessel(einst)
-        if (fehlt.length) {
-            return res.status(400).json({
-                error: `Für den Bericht fehlen Zugangsdaten: ${fehlt.join(', ')}. `
-                    + 'Bitte in den KI-Einstellungen hinterlegen.',
-            })
+        let einst
+        try {
+            einst = await leseEinstellungen()
+        } catch (e) {
+            return res.status(500).json({ error: 'Einstellungen nicht lesbar' })
         }
-    }
 
+        if (mitBericht) {
+            const fehlt = await fehlendeSchluessel(einst)
+            if (fehlt.length) {
+                return res.status(400).json({
+                    error: `Für den Bericht fehlen Zugangsdaten: ${fehlt.join(', ')}. `
+                        + 'Bitte in den KI-Einstellungen hinterlegen.',
+                })
+            }
+        }
+        uebergeben = true
+        await fuehreLaufRoute(res, einst, mitBericht)
+    } finally {
+        // Den eigentlichen Lauf gibt `fuehreLaufRoute` selbst frei.
+        if (!uebergeben) laufAktiv = false
+    }
+}
+
+async function fuehreLaufRoute(res, einst, mitBericht) {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -459,7 +679,6 @@ async function laufRoute(req, res, mitBericht) {
     const istAbgebrochen = beobachteAbbruch(res)
     const sende = sseSender(res, istAbgebrochen)
 
-    laufAktiv = true
     try {
         sende({ type: 'start', mitBericht })
         const melde = (stand) => sende({ type: 'fortschritt', ...stand })
@@ -510,18 +729,23 @@ export function startHypeTakt() {
             const einst = await leseEinstellungen()
             if (!einst.aktiv) return
 
+            /*
+             * Erst die eigene Sperre, DANN der Anspruch. Andersherum verbrauchte
+             * ein gerade laufender Handlauf den Anspruch des Takts — und der
+             * geplante Bericht fiel für das ganze Intervall (sechs Stunden) aus.
+             */
+            if (laufAktiv) return
             const stunden = Math.max(1, Number(einst.intervallStunden) || 6)
             if (!(await beansprucheAufgabe(ANSPRUCH, stunden * 3600 * 1000))) return
-
             if (laufAktiv) return
-            const fehlt = await fehlendeSchluessel(einst)
-            if (fehlt.length) {
-                await meldeFehler(ANSPRUCH, `Zugangsdaten fehlen: ${fehlt.join(', ')}`)
-                return
-            }
 
             laufAktiv = true
             try {
+                const fehlt = await fehlendeSchluessel(einst)
+                if (fehlt.length) {
+                    await meldeFehler(ANSPRUCH, `Zugangsdaten fehlen: ${fehlt.join(', ')}`)
+                    return
+                }
                 const { id, bericht } = await scanneUndBerichte(einst, () => {}, 'auto')
                 console.log(id
                     ? ` -> Hype-Radar: Bericht ${id} erstellt`

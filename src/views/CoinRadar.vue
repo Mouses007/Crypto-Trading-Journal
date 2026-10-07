@@ -340,7 +340,8 @@
         <!-- ══ Rangliste ═════════════════════════════════════════════ -->
         <div v-show="reiter === 'rangliste'" class="mt-3">
 
-            <div v-if="!lauf && !laeuft" class="text-center text-muted py-5">
+            <div v-if="ladeFehler" class="alert alert-warning py-2 small">{{ ladeFehler }}</div>
+            <div v-if="!lauf && !laeuft && !ladeFehler" class="text-center text-muted py-5">
                 <i class="uil uil-chart-line crLeerIcon"></i>
                 <p class="mb-1">{{ t('coinradar.nochNichts') }}</p>
                 <p class="small mb-0">{{ t('coinradar.nochNichtsHinweis') }}</p>
@@ -350,7 +351,7 @@
                 <!-- Kennzahlen -->
                 <div class="crKennzahlen">
                     <div class="crZelle">
-                        <div class="crWert">{{ zeilen.length }}</div>
+                        <div class="crWert">{{ bewertete.length }}</div>
                         <div class="crLabel">{{ t('coinradar.kzBewertet') }}</div>
                         <div class="crExtra">{{ t('coinradar.kzVonGeprueft', { n: lauf.geprueft }) }}</div>
                     </div>
@@ -423,6 +424,11 @@
                         <i class="uil uil-filter me-1"></i>{{ t('coinradar.zeigeHuerden', { n: lauf.verworfenHuerde }) }}
                     </button>
                 </div>
+                <!-- Der Server liefert höchstens 300 abgelehnte Zeilen; mehr
+                     wären es, ohne dass es jemand merkte. -->
+                <p v-if="zeigeHuerden && lauf.verworfenHuerde > zeilen.length" class="crHinweis mt-2">
+                    {{ t('coinradar.huerdenGekappt', { n: zeilen.length, m: lauf.verworfenHuerde }) }}
+                </p>
 
                 <!-- Am Telefon eine Karte je Coin: neun Spalten auf 375 px
                      wären eine waagerechte Rollleiste, in der man mehr sucht
@@ -465,7 +471,7 @@
                         <!-- Am Telefon in eigener Zeile: die Ausführung ist die
                              zweite Aussage und soll nicht zwischen den anderen
                              untergehen. -->
-                        <div v-if="z.status === 'bewertet' && z.noteAusfuehrung !== null" class="crKarteZeile">
+                        <div v-if="z.status === 'bewertet' && !fehlt(z.noteAusfuehrung)" class="crKarteZeile">
                             <span class="crPaar">
                                 <b>{{ t('coinradar.spalteAusfuehrung') }}</b>
                                 <span class="crNote" :class="noteKlasse(z.noteAusfuehrung)">{{ z.noteAusfuehrung }}</span>
@@ -619,7 +625,7 @@
                                         <span class="crNote" :class="noteKlasse(z.note)">{{ z.note }}</span>
                                     </td>
                                     <td class="text-end">
-                                        <span v-if="z.noteAusfuehrung !== null" class="crNote"
+                                        <span v-if="!fehlt(z.noteAusfuehrung)" class="crNote"
                                             :class="noteKlasse(z.noteAusfuehrung)">{{ z.noteAusfuehrung }}</span>
                                         <span v-else class="text-muted">—</span>
                                         <!-- Wo es günstiger ist. Die Unterschiede sind gross
@@ -862,6 +868,56 @@
                         </template>
                     </div>
                 </div>
+            </div>
+
+            <!-- Erfolgskontrolle: die einzige Zahl, die sagt, ob die Rangfolge
+                 etwas taugt. Beharrlichkeit (Spalte unten) misst nur, ob sie
+                 sich wiederholt — eine stabile Liste kann stabil falsch sein.
+                 Je Horizont: Spitze gegen eine Kontrollgruppe aus der unteren
+                 Hälfte desselben Laufs, und die Note gegen eine Rangfolge nur
+                 nach ATR%. -->
+            <div class="crBlock mb-4">
+                <h6 class="crTitel">{{ t('coinradar.gueteTitel') }}</h6>
+                <p class="crHinweis">{{ t('coinradar.gueteHinweis') }}</p>
+                <div v-if="gueteFehler" class="text-muted small">{{ gueteFehler }}</div>
+                <div v-else-if="!guete" class="text-muted small"><span class="spinner-border spinner-border-sm"></span></div>
+                <div v-else-if="!guete.jeHorizont.length" class="text-muted small">{{ t('coinradar.gueteLeer') }}</div>
+                <template v-else>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle crTabelle">
+                            <thead>
+                                <tr>
+                                    <th>{{ t('coinradar.gueteHorizont') }}</th>
+                                    <th class="text-end" :title="t('coinradar.gueteLaeufeTitel')">{{ t('coinradar.gueteLaeufe') }}</th>
+                                    <th class="text-end" :title="t('coinradar.guetePrecisionTitel')">Precision@10</th>
+                                    <th class="text-end" :title="t('coinradar.gueteSpanneTitel')">{{ t('coinradar.gueteSpanne') }}</th>
+                                    <th class="text-end" :title="t('coinradar.gueteVorneTitel')">{{ t('coinradar.gueteVorne') }}</th>
+                                    <th class="text-end" :title="t('coinradar.gueteRhoTitel')">{{ t('coinradar.gueteRho') }}</th>
+                                    <th>{{ t('coinradar.gueteUrteil') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="h in guete.jeHorizont" :key="h.horizont">
+                                    <td>{{ h.horizont }} <span class="crKlein">≥ {{ n(h.schwellePct, 1) }} %</span></td>
+                                    <td class="text-end crZahl">{{ h.laeufeMitKontrolle }} / {{ h.laeufe }}</td>
+                                    <td class="text-end crZahl">{{ prozentAnteil(h.precision10) }}</td>
+                                    <td class="text-end crZahl">{{ n(h.medianSpanneOben, 2) }} / {{ n(h.medianSpanneKontrolle, 2) }} %</td>
+                                    <td class="text-end crZahl">
+                                        {{ prozentAnteil(h.obenVorneAnteil) }}
+                                        <span v-if="h.vorzeichenP !== null" class="crKlein">p {{ n(h.vorzeichenP, 3) }}</span>
+                                    </td>
+                                    <td class="text-end crZahl">{{ n(h.rangKorrelation, 2) }} / {{ n(h.atrKorrelation, 2) }}</td>
+                                    <td :class="gueteKlasse(h.urteil)">{{ t('coinradar.guete_' + h.urteil) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="crKlein mb-0">{{ t('coinradar.gueteFuss', {
+                        tage: guete.tage,
+                        offen: guete.jeHorizont.reduce((a, h) => a + h.offen, 0),
+                        fehl: guete.jeHorizont.reduce((a, h) => a + h.fehlgeschlagen, 0),
+                    }) }}</p>
+                </template>
             </div>
 
             <div v-if="!laeufe.length" class="text-muted small py-3">{{ t('coinradar.keineLaeufe') }}</div>
@@ -1143,7 +1199,13 @@ const bestaetigt = (z) => z.jeZeiteinheit?.bestaetigt === true
 const hauptZe = computed(() => einst.value.zeiteinheiten?.[0] || '1h')
 
 // ── Kennzahlen des Laufs ────────────────────────────────────────────────
-const bewertete = computed(() => zeilen.value.filter((z) => z.status === 'bewertet'))
+/*
+ * Die Kopfzahlen gehören zur Rangliste, nicht zur gerade gezeigten Tabelle.
+ * In der Hürden-Ansicht stehen dort die ABGELEHNTEN — bis zum 07.10.2026
+ * zeigte „Bewertet" dann deren Zahl, „im Spiel" und „trendend" 0 und ATR „—".
+ */
+const rangZeilen = ref([])
+const bewertete = computed(() => rangZeilen.value.filter((z) => z.status === 'bewertet'))
 const imSpielAnzahl = computed(() => bewertete.value.filter(istImSpiel).length)
 const trendendAnzahl = computed(() => bewertete.value.filter(istTrendend).length)
 /*
@@ -1174,20 +1236,31 @@ const mittelAtr = computed(() => {
  * etwas; „hält kaum" schon — und genau das ist die Aussage, die den Wert
  * der ganzen Liste bestimmt.
  */
+/*
+ * Ein Vergleichslauf heisst noch nicht, dass gerechnet wurde: Unter zehn
+ * gemeinsamen Coins bleibt die Korrelation `null`. `Number(null)` ist 0 — bis
+ * zum 07.10.2026 stand dann „0.00, grösstenteils Rauschen" samt Warnrahmen da,
+ * eine Messung, die nie stattgefunden hatte.
+ */
+const korrelation = computed(() => {
+    const w = lauf.value?.rangkorrelation
+    return w === null || w === undefined || w === '' || !Number.isFinite(Number(w)) ? null : Number(w)
+})
 const beharrlichWert = computed(() => {
-    if (!lauf.value?.vergleichslauf) return '—'
-    return Number(lauf.value.rangkorrelation).toFixed(2)
+    if (!lauf.value?.vergleichslauf || korrelation.value === null) return '—'
+    return korrelation.value.toFixed(2)
 })
 const beharrlichText = computed(() => {
     if (!lauf.value?.vergleichslauf) return t('coinradar.beharrlichKeinVorlauf')
-    const r = Number(lauf.value.rangkorrelation)
+    if (korrelation.value === null) return t('coinradar.beharrlichZuWenig')
+    const r = korrelation.value
     if (r >= 0.7) return t('coinradar.beharrlichHoch')
     if (r >= 0.4) return t('coinradar.beharrlichMittel')
     return t('coinradar.beharrlichNiedrig')
 })
 const beharrlichKlasse = computed(() => {
-    if (!lauf.value?.vergleichslauf) return ''
-    return Number(lauf.value.rangkorrelation) < 0.4 ? 'warnung' : ''
+    if (!lauf.value?.vergleichslauf || korrelation.value === null) return ''
+    return korrelation.value < 0.4 ? 'warnung' : ''
 })
 
 // ── Sortieren & Filtern ─────────────────────────────────────────────────
@@ -1489,15 +1562,33 @@ async function epMessen() {
 }
 
 // ── Laden ───────────────────────────────────────────────────────────────
-async function ladeZeilen(laufId = 0) {
+/*
+ * Ansicht und Zeilen wechseln GEMEINSAM, erst wenn die Antwort da ist — und
+ * nur die jüngste Anfrage zählt. Vorher kippte der Schalter sofort um, und bis
+ * die Zeilen kamen, standen bewertete Zeilen im Spaltensatz der Hürden-Ansicht
+ * (oder abgelehnte im 13-Spalten-Satz, alle „schwach"). Schlug das Laden fehl,
+ * blieb die Seite in diesem Mischzustand.
+ */
+let zeilenAnfrage = 0
+const ladeFehler = ref('')
+
+async function ladeZeilen(laufId = 0, huerden = zeigeHuerden.value) {
+    const meine = ++zeilenAnfrage
     try {
         const r = await axios.get('/api/coin-radar/zeilen', {
-            params: { ...(laufId ? { laufId } : {}), ...(zeigeHuerden.value ? { huerden: 1 } : {}) },
+            params: { ...(laufId ? { laufId } : {}), ...(huerden ? { huerden: 1 } : {}) },
         })
+        if (meine !== zeilenAnfrage) return false
         lauf.value = r.data?.lauf || null
         zeilen.value = r.data?.zeilen || []
+        zeigeHuerden.value = huerden
+        if (!huerden) rangZeilen.value = zeilen.value
+        ladeFehler.value = ''
+        return true
     } catch (e) {
         logWarn('coin-radar', 'Rangliste konnte nicht geladen werden', e)
+        if (meine === zeilenAnfrage) ladeFehler.value = t('coinradar.ladeFehler')
+        return false
     }
 }
 
@@ -1505,11 +1596,33 @@ async function ladeLaeufe() {
     try {
         const r = await axios.get('/api/coin-radar/laeufe')
         laeufe.value = r.data || []
-        await rechneDauerhaft()
+        await Promise.all([rechneDauerhaft(), ladeGuete()])
     } catch (e) {
         logWarn('coin-radar', 'Läufe konnten nicht geladen werden', e)
     }
 }
+
+// ── Erfolgskontrolle ─────────────────────────────────────────────
+const guete = ref(null)
+const gueteFehler = ref('')
+
+async function ladeGuete() {
+    try {
+        const r = await axios.get('/api/coin-radar/guete')
+        guete.value = r.data || { jeHorizont: [] }
+        gueteFehler.value = ''
+    } catch (e) {
+        logWarn('coin-radar', 'Erfolgskontrolle konnte nicht geladen werden', e)
+        gueteFehler.value = t('coinradar.gueteFehler')
+    }
+}
+
+/** Anteil 0..1 als ganze Prozent — unbekannt bleibt ein Strich. */
+const prozentAnteil = (w) => (w === null || w === undefined || !Number.isFinite(Number(w))
+    ? '—' : `${Math.round(Number(w) * 100)} %`)
+
+const gueteKlasse = (urteil) => (urteil === 'traegt' ? 'text-success'
+    : (urteil === 'zuWenig' ? 'text-muted' : 'text-warning'))
 
 async function rechneDauerhaft() {
     // Server rechnet über ALLE fertigen Läufe in einer Abfrage — Vorgänger
@@ -1532,12 +1645,23 @@ async function rechneDauerhaft() {
     }
 }
 
+/*
+ * Erst speichern, wenn gelesen wurde. Das Formular zeigt sofort die
+ * eingebauten Vorgaben; kam die Antwort spät oder gar nicht, schrieb die
+ * erste Änderung diese Vorgaben über die gespeicherten Einstellungen —
+ * Automatik, Gewichte und Hürden auf einen Schlag.
+ */
+const einstGeladen = ref(false)
+
 async function ladeEinstellungen() {
     try {
         const r = await axios.get('/api/coin-radar/einstellungen')
         einst.value = { ...einst.value, ...r.data }
+        einstGeladen.value = true
     } catch (e) {
         logWarn('coin-radar', 'Einstellungen konnten nicht geladen werden', e)
+        meldung.value = t('coinradar.einstNichtGeladen')
+        meldungFehler.value = true
     }
 }
 
@@ -1630,19 +1754,36 @@ function zeUmschalten(ze) {
 }
 
 let speicherUhr = null
+let aenderungen = 0
+
+async function sendeEinstellungen() {
+    speicherUhr = null
+    const stand = aenderungen
+    try {
+        const { vorgaben, ...rest } = einst.value
+        const r = await axios.put('/api/coin-radar/einstellungen', rest)
+        /*
+         * Die Antwort nur übernehmen, wenn seither nichts mehr geändert
+         * wurde. Sonst setzte sie eine Eingabe aus der Wartezeit zurück, und
+         * das nächste Speichern schickte den zurückgesetzten Wert.
+         */
+        if (stand === aenderungen) einst.value = { ...einst.value, ...r.data }
+    } catch (e) {
+        meldung.value = e.response?.data?.error || e.message
+        meldungFehler.value = true
+    }
+}
+
 function speichern() {
+    if (!einstGeladen.value) {
+        meldung.value = t('coinradar.einstNichtGeladen')
+        meldungFehler.value = true
+        return
+    }
+    aenderungen++
     // Sammeln statt bei jedem Reglerpixel schreiben.
     clearTimeout(speicherUhr)
-    speicherUhr = setTimeout(async () => {
-        try {
-            const { vorgaben, ...rest } = einst.value
-            const r = await axios.put('/api/coin-radar/einstellungen', rest)
-            einst.value = { ...einst.value, ...r.data }
-        } catch (e) {
-            meldung.value = e.response?.data?.error || e.message
-            meldungFehler.value = true
-        }
-    }, 400)
+    speicherUhr = setTimeout(sendeEinstellungen, 400)
 }
 
 // ── Lauf ────────────────────────────────────────────────────────────────
@@ -1725,23 +1866,22 @@ function verarbeite(e) {
         .filter(([, s]) => !s.ok).map(([q]) => q)
     meldung.value = t('coinradar.laufFertig', { n: e.bewertet, v: e.verworfen })
         + (ausgefallen.length ? ' ' + t('coinradar.quellenAusgefallen', { q: ausgefallen.join(', ') }) : '')
-    ladeZeilen()
+    ladeZeilen(0, false)
     ladeLaeufe()
 }
 
 function laufOeffnen(l) {
     if (l.status !== 'fertig') return
-    zeigeHuerden.value = false
-    ladeZeilen(l.id)
+    ladeZeilen(l.id, false)
     if (reiter.value !== 'rangliste') router.push('/coin-radar')
 }
 
-function huerdenUmschalten() {
-    zeigeHuerden.value = !zeigeHuerden.value
+async function huerdenUmschalten() {
+    const ziel = !zeigeHuerden.value
+    if (!(await ladeZeilen(lauf.value?.id || 0, ziel))) return
     offen.value = null
-    sortFeld.value = zeigeHuerden.value ? 'umsatz24h' : 'rang'
-    sortAb.value = zeigeHuerden.value
-    ladeZeilen(lauf.value?.id || 0)
+    sortFeld.value = ziel ? 'umsatz24h' : 'rang'
+    sortAb.value = ziel
 }
 
 onMounted(async () => {
@@ -1750,7 +1890,11 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     strom?.abort()
-    clearTimeout(speicherUhr)
+    // Eine Änderung aus den letzten 400 ms nicht verwerfen, sondern abschicken.
+    if (speicherUhr) {
+        clearTimeout(speicherUhr)
+        sendeEinstellungen()
+    }
 })
 </script>
 

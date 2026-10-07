@@ -75,7 +75,7 @@ export function getKnex() {
  * gemischtem `is_called` hinkt der Vergleich um eins.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute', 'hype_projekt', 'hype_frueh', 'hype_smart_kaeufe', 'hype_listungen_neu', 'hype_gedaechtnis']
     let fixed = 0
 
     for (const table of tables) {
@@ -165,7 +165,18 @@ async function fixPostgresSequences(knex) {
 // 'closing' nicht und zählt eine gerade schliessende Position nicht als offen
 // — er könnte daneben eine zweite eröffnen. Solange keine Live-Instanz läuft,
 // ist das folgenlos (paper/shadow benutzen den Status nicht).
-const SCHEMA_VERSION = 19
+// v20: `gruppe`, `atrPct`, `versuche` an `radar_ergebnisse` — Kontrollgruppe,
+// ATR-Gegenprobe und Wiederholung bei vorübergehendem Ausfall. Rein additiv;
+// ein älterer Codestand schreibt `gruppe` nicht (Vorgabe „spitze") und liest
+// die Kontrollzeilen als gewöhnliche Plätze jenseits der zehn.
+// v21: Hype-Radar-Frühphase (`hype_frueh`), Projektprüfung (`hype_projekt`,
+// `projektDaten`/`projektNote` an `hype_candidates`). Rein additiv; ein älterer
+// Codestand kennt die Tabellen nicht und schreibt die Spalten nicht.
+// v22: Smart Money (`hype_smart_stand`, `hype_smart_kaeufe`, Schlüssel
+// `hypeKeySolanaRpc`), Börsen-Beobachter (`hype_boersen_stand`,
+// `hype_listungen_neu`, Gedächtnis `hype_gedaechtnis`) und für die Erfolgskontrolle der Frühphase
+// `graduiert`/`mcapStart`/`mcapEnde` an `radar_ergebnisse`. Rein additiv.
+const SCHEMA_VERSION = 22
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -2813,6 +2824,10 @@ async function runMigrations(knex, client) {
             t.double('liquiditaetEnde')
             t.integer('nochHandelbar')               // 1/0/null
             t.text('fehler').defaultTo('')
+            // spitze | kontrolle (Coin-Radar) — spitze | verworfen | feld (Hype)
+            t.string('gruppe').defaultTo('spitze')
+            t.double('atrPct')                       // Coin-Radar: für die ATR-Gegenprobe
+            t.integer('versuche').defaultTo(0)       // vorübergehende Ausfälle
             t.unique(['art', 'laufId', 'symbol', 'horizont'], 'uq_radar_erg')
             t.index(['status', 'faelligAm'], 'idx_radar_erg_faellig')
         })
@@ -2961,9 +2976,33 @@ async function runMigrations(knex, client) {
             t.string('pairAddress').defaultTo('')
             t.string('narrative').defaultTo('')
             t.bigInteger('erstelltAm').defaultTo(0)
-            t.unique(['symbol', 'chain'], 'uq_hype_fav')
+            // Mit Vertrag: „PEPE auf Solana" gibt es hundertfach (siehe v20 unten).
+            t.unique(['symbol', 'chain', 'contractAddress'], 'uq_hype_fav_vertrag')
         })
         console.log(' -> Created table: hype_favoriten')
+    }
+
+    /*
+     * v20: Ein Favorit ist ein VERTRAG, kein Kürzel.
+     *
+     * Der alte Schlüssel (symbol, chain) liess je Kette genau einen „PEPE" zu.
+     * Wer erst einen Klon und dann das Original anheftete, bekam den Klon
+     * zurück — und der Wachhund beobachtete den falschen Token. Ein älterer
+     * Codestand prüft vor dem Einfügen selbst auf (symbol, chain) und läuft
+     * mit dem weiteren Schlüssel unverändert.
+     */
+    if (await knex.schema.hasTable('hype_favoriten')) {
+        try {
+            // PostgreSQL: knex legt `t.unique` als CONSTRAINT an; zur Sicherheit
+            // fällt auch ein gleichnamiger Index.
+            if (isPg) await knex.raw('ALTER TABLE "hype_favoriten" DROP CONSTRAINT IF EXISTS "uq_hype_fav"')
+            await knex.raw(isPg ? 'DROP INDEX IF EXISTS "uq_hype_fav"' : 'DROP INDEX IF EXISTS `uq_hype_fav`')
+            await knex.raw(isPg
+                ? 'CREATE UNIQUE INDEX IF NOT EXISTS "uq_hype_fav_vertrag" ON "hype_favoriten" ("symbol", "chain", "contractAddress")'
+                : 'CREATE UNIQUE INDEX IF NOT EXISTS `uq_hype_fav_vertrag` ON `hype_favoriten` (`symbol`, `chain`, `contractAddress`)')
+        } catch (e) {
+            console.warn(`[DB] Favoriten-Schlüssel konnte nicht umgestellt werden: ${e.message}`)
+        }
     }
 
     /*
@@ -3117,6 +3156,160 @@ async function runMigrations(knex, client) {
     // Skizze zur Karte (SVG-Quelltext) — siehe createTable oben.
     await addColumnIfNotExists('quiz_karten', 'bild', (t) => t.text('bild').defaultTo(''))
     await addColumnIfNotExists('quiz_karten', 'bildEcht', (t) => t.text('bildEcht').defaultTo(''))
+
+    // v20: Erfolgskontrolle mit Kontrollgruppe, ATR-Gegenprobe und Wiederholung.
+    await addColumnIfNotExists('radar_ergebnisse', 'gruppe', (t) => t.string('gruppe').defaultTo('spitze'))
+    await addColumnIfNotExists('radar_ergebnisse', 'atrPct', (t) => t.double('atrPct'))
+    await addColumnIfNotExists('radar_ergebnisse', 'versuche', (t) => t.integer('versuche').defaultTo(0))
+
+    /*
+     * v21: Projektprüfung — Webseite, Domain-Alter, GitHub, Ersteller-Bilanz.
+     *
+     * Eigene Tabelle als Zwischenspeicher, nicht nur im Speicher: Eine Prüfung
+     * kostet bis zu fünf Fremdabrufe, GitHub erlaubt ohne Schlüssel sechzig je
+     * STUNDE, und ein Neustart soll sie nicht alle wiederholen.
+     */
+    if (!(await knex.schema.hasTable('hype_projekt'))) {
+        await knex.schema.createTable('hype_projekt', (t) => {
+            t.increments('id').primary()
+            t.string('schluessel').notNullable()      // chain|contract (oder sym|SYMBOL)
+            t.integer('note')                         // Substanz 0..100, null = nichts prüfbar
+            t.text('ergebnis').defaultTo('{}')        // {note, befunde, fakten}
+            t.bigInteger('geprueftAm').defaultTo(0)
+            t.unique(['schluessel'], 'uq_hype_projekt')
+        })
+        console.log(' -> Created table: hype_projekt')
+    }
+    await addColumnIfNotExists('hype_candidates', 'projektDaten', (t) => t.text('projektDaten').defaultTo('{}'))
+    await addColumnIfNotExists('hype_candidates', 'projektNote', (t) => t.integer('projektNote'))
+
+    /*
+     * v21: Frühphase — Token, die der Radar beobachtet, BEVOR sie die
+     * Sicherheitsprüfung überhaupt bestehen können (12 h Paaralter, 50 000 USD
+     * Liquidität). Eine Zeile je Vertrag; `verlauf` hält die letzten
+     * Momentaufnahmen, aus denen die Beschleunigung gerechnet wird.
+     */
+    if (!(await knex.schema.hasTable('hype_frueh'))) {
+        await knex.schema.createTable('hype_frueh', (t) => {
+            t.increments('id').primary()
+            t.string('chain').notNullable()
+            t.string('contract').notNullable()
+            t.string('symbol').defaultTo('')
+            t.text('name').defaultTo('')
+            t.text('quellen').defaultTo('[]')         // JSON: Quellennamen, in denen er auftauchte
+            t.text('links').defaultTo('{}')           // JSON: {webseiten, kanaele}
+            t.string('ersteller').defaultTo('')       // Wallet des Erstellers (pump.fun)
+            t.bigInteger('ersterBlick').defaultTo(0)
+            t.bigInteger('letzterBlick').defaultTo(0)
+            t.text('stand').defaultTo('{}')           // JSON: jüngste Messung
+            t.text('verlauf').defaultTo('[]')         // JSON: Momentaufnahmen, älteste zuerst
+            t.integer('note')                         // Frühsignal 0..100
+            t.text('befunde').defaultTo('[]')
+            t.integer('projektNote')
+            t.string('status').defaultTo('beobachtet')  // beobachtet | reif | verworfen
+            t.string('grund').defaultTo('')
+            t.bigInteger('alarmiertAm').defaultTo(0)
+            t.unique(['chain', 'contract'], 'uq_hype_frueh')
+            t.index(['letzterBlick'], 'idx_hype_frueh_blick')
+        })
+        console.log(' -> Created table: hype_frueh')
+    }
+
+    // ── v22 ─────────────────────────────────────────────────────────────
+    /*
+     * Smart Money: je beobachteter Wallet die zuletzt gelesene Signatur — der
+     * nächste Abruf fragt nur, was danach kam —, und die Käufe selbst. Die
+     * Käufe als eigene Tabelle, weil das Signal über mehrere Abrufe reicht
+     * (zwei Wallets, die mit einer Stunde Abstand kaufen, sind EIN Signal).
+     */
+    if (!(await knex.schema.hasTable('hype_smart_stand'))) {
+        await knex.schema.createTable('hype_smart_stand', (t) => {
+            t.string('wallet').primary()
+            t.string('letzteSignatur').defaultTo('')
+            t.bigInteger('aktualisiertAm').defaultTo(0)
+            t.text('fehler').defaultTo('')
+        })
+        console.log(' -> Created table: hype_smart_stand')
+    }
+    if (!(await knex.schema.hasTable('hype_smart_kaeufe'))) {
+        await knex.schema.createTable('hype_smart_kaeufe', (t) => {
+            t.increments('id').primary()
+            t.string('wallet').notNullable()
+            t.string('mint').notNullable()
+            t.string('signatur').notNullable()
+            t.bigInteger('zeit').defaultTo(0)
+            t.double('menge')
+            t.unique(['signatur', 'mint'], 'uq_hype_smart_kauf')
+            t.index(['zeit'], 'idx_hype_smart_zeit')
+        })
+        console.log(' -> Created table: hype_smart_kaeufe')
+    }
+    // Solana-RPC-Adresse für Smart Money. Verschlüsselt wie alle Zugänge —
+    // bei Helius steckt der Schlüssel IN der Adresse.
+    await addColumnIfNotExists('settings', 'hypeKeySolanaRpc', (t) => t.text('hypeKeySolanaRpc').defaultTo(''))
+
+    /*
+     * Börsen-Beobachter: der letzte gute Stand je Börse (welche Kürzel dort
+     * handelbar sind) und die daraus erkannten NEUEN Listungen. Der Stand ist
+     * die Grundlinie — ohne ihn wäre beim ersten Abruf jede Listung „neu".
+     */
+    if (!(await knex.schema.hasTable('hype_boersen_stand'))) {
+        await knex.schema.createTable('hype_boersen_stand', (t) => {
+            t.string('boerse').primary()              // binance-spot, coinbase, binance-alpha …
+            t.text('eintraege').defaultTo('[]')        // JSON: Kürzel (bei Alpha: {symbol, chain, contract})
+            t.integer('anzahl').defaultTo(0)
+            t.bigInteger('aktualisiertAm').defaultTo(0)
+            t.text('fehler').defaultTo('')
+        })
+        console.log(' -> Created table: hype_boersen_stand')
+    }
+    if (!(await knex.schema.hasTable('hype_listungen_neu'))) {
+        await knex.schema.createTable('hype_listungen_neu', (t) => {
+            t.increments('id').primary()
+            t.string('boerse').notNullable()
+            t.string('symbol').notNullable()
+            t.string('chain').defaultTo('')
+            t.string('contract').defaultTo('')
+            t.bigInteger('gesehenAm').notNullable()
+            // Was der Radar vorher wusste — der Massstab für „rechtzeitig".
+            t.bigInteger('radarSeit')                 // erste MELDUNG; null = nie gemeldet
+            t.bigInteger('radarGesehen')              // erster Blick, auch ohne Meldung
+            t.string('radarQuelle').defaultTo('')     // frueh | scan | favorit
+            t.string('treffer').defaultTo('')         // vertrag | kuerzel | namensgleich | ''
+            t.double('bewertungUsd')
+            t.integer('gemeldet').defaultTo(0)
+            t.unique(['boerse', 'symbol'], 'uq_hype_listung_neu')
+            t.index(['gesehenAm'], 'idx_hype_listung_zeit')
+        })
+        console.log(' -> Created table: hype_listungen_neu')
+    }
+    /*
+     * Das Gedächtnis des Radars: welcher Vertrag wann zuerst GESEHEN und wann
+     * zuerst GEMELDET wurde (Frühphasen-Schwelle oder bestandener Scan). Die
+     * Frühphase vergisst nach 72 Stunden Funkstille, Listings kommen oft
+     * Wochen später — ohne Gedächtnis wüsste der Börsen-Beobachter nicht mehr,
+     * dass der Radar den Token kannte. Nur „gemeldet" zählt als rechtzeitig
+     * erkannt; „gesehen" hat der Radar Tausende.
+     */
+    if (!(await knex.schema.hasTable('hype_gedaechtnis'))) {
+        await knex.schema.createTable('hype_gedaechtnis', (t) => {
+            t.increments('id').primary()
+            t.string('chain').notNullable()
+            t.string('contract').notNullable()
+            t.string('symbol').defaultTo('')
+            t.string('quelle').defaultTo('')          // frueh | scan
+            t.bigInteger('ersterBlick').notNullable()
+            t.bigInteger('ersteMeldung')              // null = nie gemeldet
+            t.bigInteger('letzterBlick').defaultTo(0)
+            t.double('bewertungUsd')                  // jüngste bekannte Bewertung
+            t.unique(['chain', 'contract'], 'uq_hype_gedaechtnis')
+            t.index(['symbol'], 'idx_hype_gedaechtnis_symbol')
+        })
+        console.log(' -> Created table: hype_gedaechtnis')
+    }
+    await addColumnIfNotExists('radar_ergebnisse', 'graduiert', (t) => t.integer('graduiert'))
+    await addColumnIfNotExists('radar_ergebnisse', 'mcapStart', (t) => t.double('mcapStart'))
+    await addColumnIfNotExists('radar_ergebnisse', 'mcapEnde', (t) => t.double('mcapEnde'))
 
     /*
      * Eigener Zähler für „Schwer" (05.09.2026). MUSS als `addColumnIfNotExists`

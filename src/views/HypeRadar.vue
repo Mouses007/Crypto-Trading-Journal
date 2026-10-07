@@ -19,6 +19,10 @@
                 </span>
             </div>
             <div class="hypKnoepfe">
+                <!-- Die Scan-Knöpfe gehören zur Hauptprüfung. Auf der
+                     Frühphase stünden sie neben deren eigenem „Jetzt
+                     durchsuchen" und lösten etwas anderes aus. -->
+                <template v-if="!eigeneAnsicht">
                 <span v-if="laeuft" class="hypFortschritt">{{ fortschrittText }}</span>
                 <button type="button" class="ctl-pill" :disabled="laeuft" @click="starte(false)">
                     <i class="uil uil-search me-1"></i>{{ t('hype.nurScannen') }}
@@ -29,14 +33,17 @@
                     <span v-if="laeuft" class="spinner-border spinner-border-sm me-1"></span>
                     <i v-else class="uil uil-file-alt me-1"></i>{{ t('hype.scannenUndBericht') }}
                 </button>
-                <PageInfo section="info.hypeRadar" />
+                </template>
+                <PageInfo :section="infoAbschnitt" />
             </div>
         </div>
 
         <div v-if="meldung" class="alert py-2 small mt-2" :class="meldungFehler ? 'alert-danger' : 'alert-info'">
             {{ meldung }}
         </div>
-        <div v-if="fehlendeSchluessel.length" class="alert alert-warning py-2 small mt-2">
+        <!-- Fehlende KI-Schlüssel betreffen nur den Bericht — die Frühphase
+             ruft kein Sprachmodell. -->
+        <div v-if="fehlendeSchluessel.length && !eigeneAnsicht" class="alert alert-warning py-2 small mt-2">
             <i class="uil uil-exclamation-triangle me-1"></i>
             {{ t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) }}
         </div>
@@ -177,6 +184,132 @@
                             </a>
                         </div>
                         <div class="hypHinweis">{{ t('hype.keyHinweis.' + q) }}</div>
+                    </div>
+                </div>
+
+                <!-- Projektprüfung: Webseite, Domain-Alter, GitHub, Ersteller.
+                     Kostet keinen Schlüssel, aber Fremdabrufe je Fund —
+                     deshalb gedeckelt. -->
+                <h6 class="hypTitel mt-4">{{ t('hype.projektTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.projektHinweis') }}</p>
+                <div class="row g-3 align-items-end">
+                    <div class="col-auto">
+                        <div class="form-check form-switch">
+                            <input id="hypProjekt" class="form-check-input" type="checkbox"
+                                v-model="einst.projektPruefung" @change="speichern">
+                            <label class="form-check-label small" for="hypProjekt">{{ t('hype.projektAn') }}</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.projektMax') }}</label>
+                        <input v-model.number="einst.projektMax" type="number" min="0" max="40"
+                            class="form-control form-control-sm hypZahl" :disabled="!einst.projektPruefung" @change="speichern">
+                    </div>
+                </div>
+
+                <!-- Frühphase: die Spur VOR der Hauptprüfung. Eigener Takt,
+                     eigene Quellen, eigene Alarmschwelle. -->
+                <h6 class="hypTitel mt-4">{{ t('hype.fruehTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.fruehHinweis') }}</p>
+                <div class="form-check form-switch mb-2">
+                    <input id="hypFrueh" class="form-check-input" type="checkbox"
+                        v-model="einst.fruehAktiv" @change="speichern">
+                    <label class="form-check-label small" for="hypFrueh">{{ t('hype.fruehAn') }}</label>
+                </div>
+                <div class="row g-3">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.fruehTakt') }}</label>
+                        <select v-model.number="einst.fruehIntervallMin" class="form-select form-select-sm" @change="speichern">
+                            <option :value="5">5 min</option>
+                            <option :value="15">15 min</option>
+                            <option :value="30">30 min</option>
+                            <option :value="60">60 min</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.fruehAlarmAb') }}</label>
+                        <input v-model.number="einst.fruehAlarmAb" type="number" min="0" max="100"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                </div>
+                <div class="hypHinweisKlein mt-1">{{ t('hype.fruehAlarmHinweis') }}</div>
+                <div class="hypQuellen mt-2">
+                    <div v-for="(_, q) in einst.fruehQuellen" :key="q" class="form-check form-switch">
+                        <input :id="'hypFQ' + q" class="form-check-input" type="checkbox"
+                            v-model="einst.fruehQuellen[q]" @change="speichern">
+                        <label class="form-check-label small" :for="'hypFQ' + q">{{ t('hype.fruehQuelle_' + q) }}</label>
+                    </div>
+                </div>
+                <!-- X kostet je Abfrage — deshalb ein eigener, längerer Takt. -->
+                <div v-if="einst.fruehQuellen?.x" class="row g-3 mt-1 align-items-end">
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.fruehXTakt') }}</label>
+                        <select v-model.number="einst.fruehXIntervallMin" class="form-select form-select-sm" @change="speichern">
+                            <option :value="30">30 min</option>
+                            <option :value="60">60 min</option>
+                            <option :value="120">2 h</option>
+                            <option :value="240">4 h</option>
+                        </select>
+                    </div>
+                    <div class="col hypHinweis mb-0">{{ t('hype.fruehXHinweis') }}</div>
+                </div>
+                <label class="form-label small mt-2" for="hypFruehTg">{{ t('hype.fruehTelegram') }}</label>
+                <textarea id="hypFruehTg" class="form-control form-control-sm hypTgListe" rows="2"
+                    :value="(einst.fruehTelegram || []).join('\n')"
+                    :placeholder="t('hype.fruehTelegramPlatzhalter')"
+                    @change="fruehTelegramGeaendert"></textarea>
+                <div class="hypHinweis">{{ t('hype.fruehTelegramHinweis') }}</div>
+
+                <!-- Smart Money: Wallet-Liste, Takt und RPC-Adresse — nur, wenn
+                     die Quelle eingeschaltet ist. -->
+                <template v-if="einst.fruehQuellen?.smartmoney">
+                    <label class="form-label small mt-2" for="hypSmartW">{{ t('hype.smartWallets') }}</label>
+                    <textarea id="hypSmartW" class="form-control form-control-sm hypTgListe" rows="3"
+                        :value="(einst.smartWallets || []).map((w) => (w.adresse + ' ' + (w.name || '')).trim()).join('\n')"
+                        :placeholder="t('hype.smartWalletsPlatzhalter')"
+                        @change="smartWalletsGeaendert"></textarea>
+                    <div class="row g-3 mt-1 align-items-end">
+                        <div class="col-auto">
+                            <label class="form-label small">{{ t('hype.smartTakt') }}</label>
+                            <select v-model.number="einst.smartIntervallMin" class="form-select form-select-sm" @change="speichern">
+                                <option :value="15">15 min</option>
+                                <option :value="30">30 min</option>
+                                <option :value="60">60 min</option>
+                            </select>
+                        </div>
+                        <div class="col">
+                            <label class="form-label small">{{ t('hype.smartRpc') }}</label>
+                            <input v-model="einst.schluessel.solanaRpc" type="password" class="form-control form-control-sm"
+                                :placeholder="schluesselDa('solanaRpc') ? einst.schluessel.solanaRpc : t('hype.smartRpcPlatzhalter')"
+                                @change="speichern">
+                        </div>
+                    </div>
+                    <div class="hypHinweis">{{ t('hype.smartHinweis') }}</div>
+                </template>
+
+                <!-- Börsen-Beobachter -->
+                <h6 class="hypTitel mt-4">{{ t('hype.boersenwachtTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.boersenwachtHinweis') }}</p>
+                <div class="row g-3 align-items-end">
+                    <div class="col-auto">
+                        <div class="form-check form-switch">
+                            <input id="hypBw" class="form-check-input" type="checkbox" v-model="einst.boersenwachtAn" @change="speichern">
+                            <label class="form-check-label small" for="hypBw">{{ t('hype.boersenwachtAn') }}</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.boersenwachtTakt') }}</label>
+                        <select v-model.number="einst.boersenwachtIntervallMin" class="form-select form-select-sm" @change="speichern">
+                            <option :value="15">15 min</option>
+                            <option :value="30">30 min</option>
+                            <option :value="60">60 min</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <div class="form-check form-switch">
+                            <input id="hypBwAlle" class="form-check-input" type="checkbox" v-model="einst.boersenAlleMelden" @change="speichern">
+                            <label class="form-check-label small" for="hypBwAlle">{{ t('hype.boersenAlleMelden') }}</label>
+                        </div>
                     </div>
                 </div>
 
@@ -443,6 +576,7 @@
                     <span v-if="liveOffen.favorit.name" class="hypKandidatName">{{ liveOffen.favorit.name }}</span>
                     <span class="hypKette">{{ liveOffen.favorit.chain }}</span>
                     <span v-if="liveLaedt" class="spinner-border spinner-border-sm ms-2"></span>
+                    <span v-else-if="liveOffen.fehler" class="hypLiveStand text-warning">{{ t('hype.liveFehler') }}</span>
                     <span v-else class="hypLiveStand">{{ t('hype.liveStand', { z: zeitpunkt(liveOffen.stand) }) }}</span>
                     <span class="ms-auto"></span>
                     <a v-if="liveOffen.dexUrl" class="hypLink me-3" :href="liveOffen.dexUrl"
@@ -614,16 +748,23 @@
                             <a v-for="(l, i) in boersenLinksVon(k.marktDaten?.listungen)" :key="i"
                                 class="hypBoerse" :href="listungHref(l, k.symbol)" target="_blank"
                                 rel="noopener noreferrer" @click.stop :title="linkText(l)">{{ linkKuerzel(l) }}</a>
+                            <span v-for="(l, i) in k.marktDaten?.listungNamensgleich || []" :key="'n' + i"
+                                class="hypBoerse namensgleich" :title="t('hype.namensgleichTitel', { b: linkText(l) })">{{ linkKuerzel(l) }}?</span>
                         </div>
                         <div class="hypKarteZeile">
                             <span v-if="k.status === 'verworfen'" class="badge bg-danger hypBadge">
-                                {{ t('hype.grund_' + k.verworfenGrund) !== 'hype.grund_' + k.verworfenGrund ? t('hype.grund_' + k.verworfenGrund) : k.verworfenGrund }}
+                                {{ grundText(k.verworfenGrund) }}
                             </span>
                             <span v-else-if="k.status === 'bewertet'" class="badge bg-secondary hypBadge">{{ t('hype.unterSchwelle') }}</span>
                             <span v-else class="badge bg-success hypBadge">{{ t('hype.bestanden') }}</span>
                         </div>
                         <div v-if="offen === k.id && k.sicherheitsDaten?.hinweise?.length" class="hypKarteHinweise">
                             {{ k.sicherheitsDaten.hinweise.join(' · ') }}
+                        </div>
+                        <div v-if="offen === k.id" class="hypKarteHinweise" @click.stop>
+                            <ProjektPruefung :projekt="k.projektDaten"
+                                :kandidat="{ symbol: k.symbol, name: k.name, chain: k.chain, contract: k.contractAddress }"
+                                @geprueft="e => { k.projektDaten = e; k.projektNote = e.note }" />
                         </div>
                     </div>
                     <p v-if="!gefiltert.length" class="text-muted small text-center py-3 mb-0">
@@ -638,6 +779,7 @@
                                 <th @click="sortiere('symbol')">{{ t('hype.spalteSymbol') }}</th>
                                 <th @click="sortiere('hypeScore')" class="text-end">{{ t('hype.spalteHype') }}</th>
                                 <th @click="sortiere('safetyScore')" class="text-end">{{ t('hype.spalteSafety') }}</th>
+                                <th @click="sortiere('projektNote')" class="text-end" :title="t('hype.spalteSubstanzTitel')">{{ t('hype.spalteSubstanz') }}</th>
                                 <th>{{ t('hype.spalteNarrativ') }}</th>
                                 <th class="text-end">{{ t('hype.spalteLiq') }}</th>
                                 <th class="text-end">{{ t('hype.spalteAlter') }}</th>
@@ -665,6 +807,11 @@
                                             {{ k.status === 'verworfen' ? '—' : k.safetyScore }}
                                         </span>
                                     </td>
+                                    <td class="text-end">
+                                        <span v-if="k.projektNote !== null && k.projektNote !== undefined"
+                                            :class="k.projektNote >= 65 ? 'text-success' : (k.projektNote >= 40 ? 'text-warning' : 'text-danger')">{{ k.projektNote }}</span>
+                                        <span v-else class="text-muted">—</span>
+                                    </td>
                                     <td><span v-if="k.narrative" class="hypChip klein">{{ k.narrative }}</span></td>
                                     <td class="text-end">{{ geld(k.marktDaten?.liquiditaetUsd) }}</td>
                                     <td class="text-end">{{ alter(k.marktDaten?.paarAlterStunden) }}</td>
@@ -673,12 +820,14 @@
                                         <a v-for="(l, i) in boersenLinksVon(k.marktDaten?.listungen)" :key="i"
                                             class="hypBoerse" :href="listungHref(l, k.symbol)" target="_blank"
                                             rel="noopener noreferrer" @click.stop :title="linkText(l)">{{ linkKuerzel(l) }}</a>
+                                        <span v-for="(l, i) in k.marktDaten?.listungNamensgleich || []" :key="'n' + i"
+                                            class="hypBoerse namensgleich" :title="t('hype.namensgleichTitel', { b: linkText(l) })">{{ linkKuerzel(l) }}?</span>
                                         <span v-if="!k.marktDaten?.dex && !boersenLinksVon(k.marktDaten?.listungen).length"
                                             class="text-muted">—</span>
                                     </td>
                                     <td>
                                         <span v-if="k.status === 'verworfen'" class="badge bg-danger hypBadge"
-                                            :title="k.verworfenGrund">{{ t('hype.grund_' + k.verworfenGrund) !== 'hype.grund_' + k.verworfenGrund ? t('hype.grund_' + k.verworfenGrund) : k.verworfenGrund }}</span>
+                                            :title="k.verworfenGrund">{{ grundText(k.verworfenGrund) }}</span>
                                         <span v-else-if="k.status === 'berichtet'" class="badge bg-primary hypBadge">{{ t('hype.imBericht') }}</span>
                                         <span v-else-if="k.status === 'bewertet'" class="badge bg-secondary hypBadge">{{ t('hype.unterSchwelle') }}</span>
                                         <span v-else class="badge bg-success hypBadge">{{ t('hype.bestanden') }}</span>
@@ -688,7 +837,7 @@
                                     </td>
                                 </tr>
                                 <tr v-if="offen === k.id" :key="k.id + '-d'">
-                                    <td colspan="9" class="hypDetail">
+                                    <td colspan="10" class="hypDetail">
                                         <div class="hypDetailGrid">
                                             <div>
                                                 <div class="hypDetailTitel">{{ t('hype.teilnoten') }}</div>
@@ -717,17 +866,32 @@
                                                         target="_blank" rel="noopener noreferrer">GeckoTerminal ↗</a>
                                                 </div>
                                             </div>
+                                            <div>
+                                                <ProjektPruefung :projekt="k.projektDaten"
+                                                    :kandidat="{ symbol: k.symbol, name: k.name, chain: k.chain, contract: k.contractAddress }"
+                                                    @geprueft="e => { k.projektDaten = e; k.projektNote = e.note }" />
+                                            </div>
                                         </div>
                                     </td>
                                 </tr>
                             </template>
                             <tr v-if="!gefiltert.length">
-                                <td colspan="9" class="text-center text-muted py-3">{{ t('hype.nochKeinScan') }}</td>
+                                <td colspan="10" class="text-center text-muted py-3">{{ t('hype.nochKeinScan') }}</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
+        </div>
+
+        <!-- ══ Frühphase ═════════════════════════════════════════════ -->
+        <div v-show="reiter === 'fruehphase'" class="mt-3">
+            <FruehphaseAnsicht :aktiv="reiter === 'fruehphase'" :einst="einst" />
+        </div>
+
+        <!-- ══ Börsen ═══════════════════════════════════════════════ -->
+        <div v-show="reiter === 'boersen'" class="mt-3">
+            <BoersenAnsicht :aktiv="reiter === 'boersen'" :einst="einst" />
         </div>
 
         <!-- ══ Berichte ══════════════════════════════════════════════ -->
@@ -771,6 +935,9 @@
                         <dt>{{ t('hype.substanz') }}</dt><dd>{{ k.substanz }}</dd>
                         <dt>{{ t('hype.risiken') }}</dt><dd>{{ k.risiken }}</dd>
                     </dl>
+                    <div v-if="k.projekt" class="hypBerichtProjekt">
+                        <ProjektPruefung :projekt="k.projekt" />
+                    </div>
                     <div v-if="k.belege?.length" class="hypBelege">
                         <template v-for="(b, i) in k.belege.slice(0, 6)" :key="i">
                             <!-- Belege stammen aus Perplexity-Zitaten, also aus einer
@@ -789,13 +956,60 @@
                         <tbody>
                             <tr v-for="(a, i) in offenerBericht.aussortiert" :key="i">
                                 <td style="width: 8rem"><strong>{{ a.symbol }}</strong></td>
-                                <td>{{ t('hype.grund_' + a.grund) !== 'hype.grund_' + a.grund ? t('hype.grund_' + a.grund) : a.grund }}</td>
+                                <td>{{ grundText(a.grund) }}</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
 
                 <p class="hypDisclaimer">{{ offenerBericht.hinweis || HINWEIS_RUECKFALL }}</p>
+            </div>
+
+            <!-- Erfolgskontrolle: was aus den Funden wurde. Drei Gruppen, weil
+                 zwei verschiedene Teile geprüft werden — der Sicherheitsfilter
+                 (Spitze gegen Verworfene) und die Hype-Note (Spitze gegen das
+                 Feld unter der Schwelle). Ohne die Vergleichsgruppen hiesse
+                 „30 % leben noch" gar nichts. -->
+            <div class="hypGuete mt-4">
+                <h6 class="hypTitel">{{ t('hype.gueteTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.gueteHinweis') }}</p>
+                <div v-if="gueteFehler" class="text-muted small">{{ gueteFehler }}</div>
+                <div v-else-if="!guete" class="text-muted small"><span class="spinner-border spinner-border-sm"></span></div>
+                <div v-else-if="!guete.jeHorizont.length" class="text-muted small">{{ t('hype.gueteLeer') }}</div>
+                <template v-else>
+                    <div v-for="h in guete.jeHorizont" :key="h.horizont" class="mb-3">
+                        <div class="hypGueteKopf">
+                            <strong>{{ h.horizont }}</strong>
+                            <span v-for="u in h.urteil" :key="u" class="hypGueteUrteil"
+                                :class="gueteKlasse(u)">{{ t('hype.guete_' + u) }}</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm hypTabelle mb-1">
+                                <thead>
+                                    <tr>
+                                        <th>{{ t('hype.gueteGruppe') }}</th>
+                                        <th class="text-end">n</th>
+                                        <th class="text-end">{{ t('hype.gueteUeberlebt') }}</th>
+                                        <th class="text-end">{{ t('hype.gueteRendite') }}</th>
+                                        <th class="text-end">{{ t('hype.gueteImPlus') }}</th>
+                                        <th class="text-end">{{ t('hype.gueteLiquiditaet') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="g in ['spitze', 'verworfen', 'feld']" :key="g">
+                                        <td>{{ t('hype.gueteGruppe_' + g) }}</td>
+                                        <td class="text-end">{{ h[g].n }}</td>
+                                        <td class="text-end">{{ anteilText(h[g].ueberlebt) }}</td>
+                                        <td class="text-end">{{ prozentText(h[g].medianRendite) }}</td>
+                                        <td class="text-end">{{ anteilText(h[g].imPlusAnteil) }}</td>
+                                        <td class="text-end">{{ prozentText(h[g].medianLiquiditaetAenderung) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="hypHinweisKlein">{{ t('hype.gueteFuss', { offen: h.offen, fehl: h.fehlgeschlagen }) }}</div>
+                    </div>
+                </template>
             </div>
         </div>
 
@@ -825,6 +1039,9 @@ import { useKostenAnzeige } from '../utils/formatters.js'
 import { logWarn } from '../utils/logger.js'
 import AnbieterWahl from '../components/AnbieterWahl.vue'
 import PageInfo from '../components/PageInfo.vue'
+import ProjektPruefung from '../components/hype/ProjektPruefung.vue'
+import FruehphaseAnsicht from '../components/hype/FruehphaseAnsicht.vue'
+import BoersenAnsicht from '../components/hype/BoersenAnsicht.vue'
 import { useIstTelefon } from '../utils/geraet.js'
 import { currentUser } from '../stores/globals.js'
 import {
@@ -832,7 +1049,10 @@ import {
     boerseUrl, aktivierteBoersen,
 } from '../utils/boersenLinks.js'
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
+
+/** Verwerfungsgrund in Worten — unbekannte Codes bleiben als Code stehen. */
+const grundText = (g) => (g && te('hype.grund_' + g) ? t('hype.grund_' + g) : (g || ''))
 
 const HINWEIS_RUECKFALL = 'Keine Anlageberatung. Frühphasen-Token sind hochriskant.'
 
@@ -903,13 +1123,15 @@ function listungText(l) {
 
 /**
  * Verlinkte Listungen: die vorhandenen, gefiltert auf das in den Einstellungen
- * Aktivierte, plus TradingView (kein Listungscheck — jeder erfasste Coin
- * kommt über dieselbe Binance-Prüfung wie die drei Börsen).
+ * Aktivierte, plus TradingView — aber nur, wenn der Fund überhaupt an einer
+ * Börse gelistet ist. Die frühere Annahme, jeder Fund komme über eine
+ * Binance-Prüfung, galt für den Coin-Radar, nicht hier: Für einen reinen
+ * DEX-Token öffnete der Link „This symbol doesn't exist".
  */
 function boersenLinksVon(listungen) {
     const aktiv = aktivierteBoersen(currentUser.value?.boersenLinks)
     const geliste = (listungen || []).filter((l) => aktiv.includes(listungBoerse(l)))
-    return aktiv.includes('tradingview') ? [...geliste, 'tradingview'] : geliste
+    return geliste.length && aktiv.includes('tradingview') ? [...geliste, 'tradingview'] : geliste
 }
 
 /**
@@ -919,7 +1141,9 @@ function boersenLinksVon(listungen) {
  * `boersenLinks.js`.
  */
 function listungHref(l, symbol) {
-    return boerseUrl(listungBoerse(l), `${symbol}USDT`)
+    // Coin-Radar-Favoriten tragen das volle Paar schon („BTCUSDT").
+    const s = String(symbol || '')
+    return boerseUrl(listungBoerse(l), /USDT$/.test(s) ? s : `${s}USDT`)
 }
 
 /** Kürzel/Text fürs Badge — TradingView ist keine Listung, deshalb eigene Maps statt `listungKuerzel`/`listungText`. */
@@ -936,7 +1160,11 @@ const liveOffen = ref(null)
 const liveLaedt = ref(false)
 let liveTakt = null
 
-const favSchluessel = (k) => `${k.symbol}|${k.chain || ''}`
+/*
+ * Der Vertrag gehört zum Schlüssel: „PEPE auf Solana" gibt es hundertfach.
+ * Ohne ihn zeigte der Stern eines Klons auch das Original als angeheftet.
+ */
+const favSchluessel = (k) => `${k.symbol}|${k.chain || ''}|${String(k.contractAddress || '').toLowerCase()}`
 const favNach = computed(() => new Map(favoriten.value.map((f) => [favSchluessel(f), f])))
 const istFav = (k) => favNach.value.has(favSchluessel(k))
 
@@ -988,12 +1216,17 @@ async function liveOeffnen(f) {
     liveLaedt.value = true
     // Sofort ein Gerüst zeigen, damit der Klick sichtbar ankommt.
     liveOffen.value = { favorit: f, stand: 0, markt: null, listungen: [], letzterLauf: null }
-    await liveNachladen(f.id)
     /*
      * Alle 60 s nachladen, solange die Ansicht offen ist — im Takt des
      * Server-Zwischenspeichers. Öfter zu fragen brächte nur denselben Stand.
+     *
+     * Der Takt entsteht VOR dem ersten Laden, nicht danach. Vorher wurde er
+     * erst nach dem `await` gesetzt: Wer währenddessen einen anderen Chip
+     * anklickte oder die Seite verliess, fand noch keinen Takt zum Abräumen —
+     * und danach lief ein verwaister Takt bis zum Neuladen der Seite.
      */
     liveTakt = setInterval(() => liveNachladen(f.id), 60000)
+    await liveNachladen(f.id)
 }
 
 async function liveNachladen(id) {
@@ -1003,8 +1236,11 @@ async function liveNachladen(id) {
         if (liveOffen.value?.favorit?.id === id) liveOffen.value = r.data
     } catch (e) {
         logWarn('hype-radar', 'Livedaten konnten nicht geladen werden', e)
+        // Sichtbar machen statt „Stand: 01.01. 01:00" (Zeitstempel 0) zu zeigen.
+        if (liveOffen.value?.favorit?.id === id) liveOffen.value = { ...liveOffen.value, fehler: true }
     } finally {
-        liveLaedt.value = false
+        // Nur der Ladevorgang der offenen Ansicht darf den Kreisel abstellen.
+        if (!liveOffen.value || liveOffen.value.favorit?.id === id) liveLaedt.value = false
     }
 }
 
@@ -1139,9 +1375,19 @@ async function kanaeleTesten() {
     }
 }
 
+/*
+ * Unbekannt ist ein Strich, eine gemessene Null ist eine Null. Bis zum
+ * 07.10.2026 galt beides umgekehrt: `Number(null)` machte aus einem fehlenden
+ * Paaralter „0 h" (ein brandneues Paar), und ein auf null geleerter Pool —
+ * genau das, wofür der Wachhund da ist — stand als „—" da.
+ */
+const fehlt = (w) => w === null || w === undefined || w === ''
+
 const preis = (p) => {
+    if (fehlt(p)) return '—'
     const z = Number(p)
-    if (!Number.isFinite(z) || z === 0) return '—'
+    if (!Number.isFinite(z)) return '—'
+    if (z === 0) return '$0'
     // Kleinstpreise brauchen mehr Stellen, sonst steht da nur „0.00".
     if (z < 0.01) return '$' + z.toPrecision(3)
     if (z < 1000) return '$' + z.toFixed(2)
@@ -1149,6 +1395,7 @@ const preis = (p) => {
 }
 
 const kv = (v) => {
+    if (fehlt(v)) return '—'
     const z = Number(v)
     if (!Number.isFinite(z)) return '—'
     return z.toFixed(2)
@@ -1205,7 +1452,14 @@ const istTelefon = useIstTelefon()
  */
 const route = useRoute()
 const router = useRouter()
-const reiter = computed(() => (route.params.reiter === 'berichte' ? 'berichte' : 'dashboard'))
+const REITER = ['berichte', 'fruehphase', 'boersen']
+/*
+ * Frühphase und Börsen haben eigene Knöpfe und rufen kein Sprachmodell — die
+ * Scan-Knöpfe und die Warnung zu fehlenden KI-Schlüsseln gehören dort nicht hin.
+ */
+const eigeneAnsicht = computed(() => ['fruehphase', 'boersen'].includes(route.params.reiter))
+const infoAbschnitt = computed(() => ({ fruehphase: 'info.hypeFrueh', boersen: 'info.hypeBoersen' }[route.params.reiter] || 'info.hypeRadar'))
+const reiter = computed(() => (REITER.includes(route.params.reiter) ? route.params.reiter : 'dashboard'))
 
 /*
  * Der Quadrant hängt an ECharts und misst beim Zeichnen die Breite seines
@@ -1245,6 +1499,8 @@ const einstZusammenfassung = computed(() => {
         t('hype.zTop', { n: e.berichtTopN ?? 0 }),
         quellen.length ? t('hype.zQuellen', { q: quellen.join(' + ') }) : t('hype.zKeineQuellen'),
         kanaele.length ? t('hype.zKanaele', { k: kanaele.join(', ') }) : t('hype.zKeineKanaele'),
+        e.fruehAktiv ? t('hype.zFrueh', { n: e.fruehIntervallMin || 15 }) : t('hype.zFruehAus'),
+        e.boersenwachtAn ? t('hype.zBoersen') : t('hype.zBoersenAus'),
     ]
     return teile.join(' · ')
 })
@@ -1369,23 +1625,26 @@ const fortschrittText = computed(() => {
 })
 
 const geld = (n) => {
+    if (fehlt(n)) return '—'
     const z = Number(n)
-    if (!Number.isFinite(z) || z === 0) return '—'
+    if (!Number.isFinite(z)) return '—'
+    if (z === 0) return '0'
     if (z >= 1e6) return `${(z / 1e6).toFixed(1)} M`
     if (z >= 1e3) return `${Math.round(z / 1e3)} k`
     return String(Math.round(z))
 }
 
 const alter = (stunden) => {
+    if (fehlt(stunden)) return '—'
     const h = Number(stunden)
     if (!Number.isFinite(h)) return '—'
     if (h < 48) return `${Math.round(h)} h`
     return `${Math.round(h / 24)} d`
 }
 
-const zeitpunkt = (ms) => new Date(Number(ms)).toLocaleString(
+const zeitpunkt = (ms) => (!(Number(ms) > 0) ? '—' : new Date(Number(ms)).toLocaleString(
     locale.value === 'en' ? 'en-GB' : 'de-CH',
-    { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))
 
 function sortiere(feld) {
     if (sortFeld.value === feld) sortAb.value = !sortAb.value
@@ -1404,6 +1663,30 @@ async function ladeKandidaten() {
     }
 }
 
+// ── Erfolgskontrolle ─────────────────────────────────────────────
+const guete = ref(null)
+const gueteFehler = ref('')
+
+async function ladeGuete() {
+    try {
+        const r = await axios.get('/api/hype-radar/guete')
+        guete.value = r.data || { jeHorizont: [] }
+        gueteFehler.value = ''
+    } catch (e) {
+        logWarn('hype-radar', 'Erfolgskontrolle konnte nicht geladen werden', e)
+        gueteFehler.value = t('hype.gueteFehler')
+    }
+}
+
+/** Anteil 0..1 als ganze Prozent; unbekannt bleibt ein Strich, nicht 0 %. */
+const anteilText = (w) => (w === null || w === undefined || !Number.isFinite(Number(w))
+    ? '—' : `${Math.round(Number(w) * 100)} %`)
+/** Prozentwert mit Vorzeichen; unbekannt bleibt ein Strich. */
+const prozentText = (w) => (w === null || w === undefined || !Number.isFinite(Number(w))
+    ? '—' : `${Number(w) >= 0 ? '+' : ''}${Number(w).toFixed(0)} %`)
+const gueteKlasse = (u) => (u === 'filterWirkt' || u === 'noteWirkt' ? 'gut'
+    : (u === 'zuWenig' || u === 'zuWenigVergleich' ? '' : 'warn'))
+
 async function ladeBerichte() {
     try {
         const r = await axios.get('/api/hype-radar/berichte')
@@ -1414,10 +1697,15 @@ async function ladeBerichte() {
     }
 }
 
+// Nur die jüngste Anfrage zählt — zwei schnelle Klicks sollen nicht in der
+// Reihenfolge enden, in der die Antworten zufällig eintreffen.
+let berichtAnfrage = 0
+
 async function berichtOeffnen(id) {
+    const meine = ++berichtAnfrage
     try {
         const r = await axios.get(`/api/hype-radar/berichte/${id}`)
-        offenerBericht.value = r.data
+        if (meine === berichtAnfrage) offenerBericht.value = r.data
     } catch (e) {
         logWarn('hype-radar', 'Bericht konnte nicht geöffnet werden', e)
     }
@@ -1462,9 +1750,27 @@ async function speichern() {
          */
         const r = await axios.put('/api/hype-radar/einstellungen', einst.value)
         fehlendeSchluessel.value = r.data?.fehlendeSchluessel || []
+        // Der Server bereinigt die Kanalliste (nur Namen, höchstens 15) —
+        // die Anzeige soll zeigen, was gilt, nicht was getippt wurde.
+        if (Array.isArray(r.data?.fruehTelegram)) einst.value.fruehTelegram = r.data.fruehTelegram
+        if (Array.isArray(r.data?.smartWallets)) einst.value.smartWallets = r.data.smartWallets
     } catch (e) {
         logWarn('hype-radar', 'Einstellungen konnten nicht gespeichert werden', e)
     }
+}
+
+/** Smart-Money-Wallets: „Adresse Name" je Zeile — der Server prüft und kürzt. */
+function smartWalletsGeaendert(ev) {
+    if (!einst.value) return
+    einst.value.smartWallets = String(ev.target.value || '').split(/\r?\n/).map((z) => z.trim()).filter(Boolean)
+    speichern()
+}
+
+/** Telegram-Kanäle der Frühphase: eine Zeile (oder Komma) je Kanal. */
+function fruehTelegramGeaendert(ev) {
+    if (!einst.value) return
+    einst.value.fruehTelegram = String(ev.target.value || '').split(/[\s,;]+/).filter(Boolean)
+    speichern()
 }
 
 function ordnungWechseln(o) {
@@ -1590,7 +1896,13 @@ function verarbeite(e, mitBericht) {
         meldung.value = t('hype.keinBericht', { v: e.bericht?.aussortiert?.length || 0 }) + teil
     } else if (mitBericht) {
         meldung.value = t('hype.berichtFertig', { n: e.bericht?.kandidaten?.length || 0 }) + teil
-        ladeBerichte()
+        /*
+         * Den NEUEN Bericht öffnen. `ladeBerichte` öffnet nur, wenn gerade
+         * keiner offen ist — und nach dem Laden der Seite ist immer einer
+         * offen. So stand unter „Bericht fertig" weiter der alte.
+         */
+        ladeBerichte().then(() => berichtOeffnen(e.berichtId))
+        ladeGuete()
         if (reiter.value !== 'berichte') router.push('/hype-radar/berichte')
     } else {
         meldung.value = t('hype.scanFertig', { b: e.bestanden, v: e.verworfen }) + teil
@@ -1598,11 +1910,24 @@ function verarbeite(e, mitBericht) {
     ladeKandidaten()
 }
 
+/*
+ * Der Zeigertext wird von ECharts per `innerHTML` eingesetzt — alles, was von
+ * aussen kommt, MUSS hier maskiert werden. Token-Namen setzt, wer den Token
+ * auflegt; ein Name wie `<img src=x onerror=…>` lief vorher beim blossen
+ * Überfahren des Punkts als Script im Ursprung der App und hätte jeden
+ * `/api/*`-Endpunkt mit dem Sitzungs-Cookie aufrufen können.
+ */
+const esc = (w) => echarts.format.encodeHTML(String(w ?? ''))
+
+/** Eigenes, bereits gebautes HTML — `zeile` maskiert es nicht ein zweites Mal. */
+const eigenesHtml = (s) => ({ eigenesHtml: s })
+
 /** Ein Wert mit Beschriftung — leere Werte fallen ganz weg. */
 function zeile(label, wert) {
     if (wert === null || wert === undefined || wert === '' || wert === '—') return ''
+    const inhalt = typeof wert === 'object' && 'eigenesHtml' in wert ? wert.eigenesHtml : esc(wert)
     return `<div style="display:flex;gap:.6rem;justify-content:space-between">`
-        + `<span style="opacity:.65">${label}</span><span>${wert}</span></div>`
+        + `<span style="opacity:.65">${esc(label)}</span><span>${inhalt}</span></div>`
 }
 
 /**
@@ -1618,18 +1943,18 @@ function zeigerText(k, value = []) {
     const m = k?.marktDaten || {}
     const tritt = k?.sozialDaten?.trittbrett
 
-    const kopf = `<strong style="font-size:1.05em">${symbol}</strong>`
-        + (k?.chain ? `<span style="opacity:.6;margin-left:.4rem">${k.chain}</span>` : '')
-        + (k?.name && k.name !== symbol ? `<div style="opacity:.7;font-size:.9em">${k.name}</div>` : '')
+    const kopf = `<strong style="font-size:1.05em">${esc(symbol)}</strong>`
+        + (k?.chain ? `<span style="opacity:.6;margin-left:.4rem">${esc(k.chain)}</span>` : '')
+        + (k?.name && k.name !== symbol ? `<div style="opacity:.7;font-size:.9em">${esc(k.name)}</div>` : '')
 
     const noten = zeile(t('hype.spalteHype'), k?.hypeScore)
         + zeile(t('hype.spalteSafety'), k?.status === 'verworfen' ? '—' : k?.safetyScore)
         + zeile(t('hype.achseX'), Math.round(Number(value[0]) || 0))
         + zeile(t('hype.achseY'), Math.round(Number(value[1]) || 0))
 
-    const pct = (w) => (Number.isFinite(Number(w))
-        ? `<span style="color:${Number(w) >= 0 ? '#4caf50' : '#ef5350'}">`
-            + `${Number(w) >= 0 ? '+' : ''}${Number(w).toFixed(1)} %</span>`
+    const pct = (w) => (w !== null && w !== undefined && w !== '' && Number.isFinite(Number(w))
+        ? eigenesHtml(`<span style="color:${Number(w) >= 0 ? '#4caf50' : '#ef5350'}">`
+            + `${Number(w) >= 0 ? '+' : ''}${Number(w).toFixed(1)} %</span>`)
         : null)
 
     const markt = zeile(t('hype.spalteNarrativ'), k?.narrative)
@@ -1652,21 +1977,20 @@ function zeigerText(k, value = []) {
     // Fussnote der Rechnung.
     if (Number(m.boosts) > 0) {
         fuss += `<div style="color:#ffb300;margin-top:.35rem">`
-            + `${t('hype.boostHinweis', { n: m.boosts })}</div>`
+            + `${esc(t('hype.boostHinweis', { n: Number(m.boosts) }))}</div>`
     }
     if (k?.status === 'verworfen') {
-        const g = t('hype.grund_' + k.verworfenGrund)
         fuss += `<div style="color:#ef5350;margin-top:.35rem">✕ `
-            + `${g === 'hype.grund_' + k.verworfenGrund ? k.verworfenGrund : g}</div>`
+            + `${esc(grundText(k.verworfenGrund))}</div>`
     }
     if (tritt?.ja) {
         fuss += `<div style="color:#ffb300;margin-top:.2rem">`
-            + `${t('hype.trittbrettHilfeEinzeln', { v: tritt.vorbild })}</div>`
+            + `${esc(t('hype.trittbrettHilfeEinzeln', { v: tritt.vorbild }))}</div>`
     }
     // Der Hinweis auf den Klick gehört hierher: ohne ihn fände niemand
     // heraus, dass sich ein Fund direkt aus dem Bild anheften lässt.
     fuss += `<div style="opacity:.55;margin-top:.4rem;font-size:.9em">`
-        + `${istFav(k || {}) ? t('hype.zeigerAbheften') : t('hype.zeigerAnheften')}</div>`
+        + `${esc(istFav(k || {}) ? t('hype.zeigerAbheften') : t('hype.zeigerAnheften'))}</div>`
 
     const trenner = '<div style="border-top:1px solid rgba(255,255,255,.12);margin:.35rem 0"></div>'
     return kopf + trenner + noten + (markt ? trenner + markt : '') + fuss
@@ -1848,15 +2172,22 @@ const beiGroesse = () => diagramm?.resize()
 onMounted(async () => {
     window.addEventListener('resize', beiGroesse)
     await Promise.all([
-        ladeKandidaten(), ladeBerichte(), ladeEinstellungen(),
+        ladeKandidaten(), ladeBerichte(), ladeGuete(), ladeEinstellungen(),
         ladeFavoriten(), ladeAlarme(), ladeKiQuellen(),
     ])
     // Der Wachhund läuft serverseitig weiter — die Liste holt seine Funde in
-    // gemächlichem Takt nach, solange die Seite offen ist.
+    // gemächlichem Takt nach, solange die Seite offen ist. Nicht mehr, wenn
+    // die Seite während des Ladens schon wieder verlassen wurde (z. B. der
+    // Moduswächter im Layout leitet einen kalten Direktaufruf um) — sonst
+    // fragte ein verwaister Takt ewig weiter.
+    if (abgebaut) return
     alarmTakt = setInterval(ladeAlarme, 60000)
 })
 
+let abgebaut = false
+
 onBeforeUnmount(() => {
+    abgebaut = true
     window.removeEventListener('resize', beiGroesse)
     strom?.abort()
     diagramm?.dispose()
@@ -1965,6 +2296,38 @@ watch(locale, () => zeichne())
 .hypQuadrant {
     width: 100%;
     height: 360px;
+}
+
+/* ── Erfolgskontrolle ───────────────────────────────────── */
+.hypGuete {
+    border-top: 1px solid rgba(255, 255, 255, .07);
+    padding-top: 1rem;
+}
+
+.hypGueteKopf {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: .3rem;
+}
+
+.hypGueteUrteil {
+    font-size: .82rem;
+    padding: .05rem .5rem;
+    border-radius: var(--border-radius, 6px);
+    background: rgba(255, 255, 255, .05);
+    color: var(--grey-color, #9aa0a6);
+}
+
+.hypGueteUrteil.gut {
+    color: #4caf50;
+    background: rgba(76, 175, 80, .1);
+}
+
+.hypGueteUrteil.warn {
+    color: #ffb300;
+    background: rgba(255, 179, 0, .1);
 }
 
 .hypChip {
@@ -2366,6 +2729,13 @@ watch(locale, () => zeichne())
 
 /* Kürzel der eigenen Börsen: gefüllt, damit „hier handelbar" sich von der
    blossen Herkunftsangabe des DEX abhebt. */
+.hypBoerse.namensgleich {
+    background: transparent;
+    color: var(--grey-color, #9aa0a6);
+    border: 1px dashed currentColor;
+    cursor: help;
+}
+
 .hypBoerse {
     display: inline-block;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2620,6 +2990,15 @@ watch(locale, () => zeichne())
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: .2rem 1rem;
     max-width: 40rem;
+}
+.hypTgListe {
+    max-width: 28rem;
+    font-family: monospace;
+}
+.hypBerichtProjekt {
+    margin-top: .5rem;
+    padding-top: .5rem;
+    border-top: 1px solid var(--white-10, rgba(255, 255, 255, .1));
 }
 
 /* Zugangsdaten der Quellen: eine Zeile je Quelle, Feld und Bezugsquelle

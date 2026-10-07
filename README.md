@@ -60,11 +60,54 @@ Two radars asking opposite questions, sharing one watchlist.
 **Hype-Radar — what is new out there, and what of it has substance?** Collects young
 coin projects from CoinGecko, DexScreener and GeckoTerminal, scores them from five
 sub-scores, then filters hard for scam patterns (GoPlus, RugCheck on Solana:
-honeypot, mint authority, holder concentration) *before* an AI writes a report about
+honeypot, mint and freeze authority, hidden or reclaimable ownership, modifiable
+balances or taxes, unverified source, holder concentration) *before* an AI writes a report about
 the few survivors. The number of independent sources weighs heaviest — a paid
 campaign fills one source, rarely three. A divergence quadrant plots attention
 against market confirmation, so bought noise becomes visible where a sorted list
 would hide it. Searching is free; the report costs a few cents to about a franc.
+
+**Project check.** For passed finds (and on demand for any other) the radar looks
+at what stands behind a token: the website (roadmap/tokenomics/team sections, does
+it show the right contract address, placeholder text, site builder), the domain
+age via RDAP, the GitHub account (maintained repo, earlier projects with stars)
+and, for pump.fun tokens, the creator wallet's other coins — creators who got one
+through the bonding curve before succeed far more often than the ~1 % base rate,
+serial launchers produce mass goods. The result is a **substance score** shown
+next to hype and safety, never merged with either. No keys; cached 24 h.
+
+**Early phase.** The main check only sees tokens from 12 h pair age and USD 50k
+liquidity. A separate lane runs before that (off by default, every 15 min when on):
+new tokens from pump.fun, DexScreener profiles/takeovers, GeckoTerminal new pools
+(with *distinct* buyer counts), the 4chan /biz/ catalog, configured public
+Telegram channels and optionally Reddit. Each token gets a snapshot history, and
+the score measures **acceleration** against that history — trading surge, distinct
+buyers, mentions across platforms, project substance, momentum — with deductions
+for one-sided buying, circular trading, volume without price movement, serial
+creators and collapses. Tokens that mature enter the next main scan as a source of
+their own; crossing a score threshold sends an alert through the watchdog's
+channels. X is available through the paid Grok `x_search` (off by default, own
+interval): only posts the search cited and whose text contains the address count,
+and distinct authors instead of posts. TikTok is not connected — no free access.
+For the best tokens of each run the early phase also checks the contract and the
+holder picture (RugCheck, else GoPlus: mint/freeze authority, insider share, top-10
+share *excluding the bonding curve*, creator share, holder count and its growth),
+counts pump.fun "King of the Hill" as momentum, and optionally watches **smart-money
+wallets** you enter (Solana RPC, public node or your own Helius address; only
+signed, paid purchases count — two watched wallets on one token trigger an alert).
+Its own **outcome tracking** compares tokens above the threshold with a random
+sample of all newly seen ones after 1, 3 and 7 days (alive, curve completed,
+return, doubled at some point).
+
+**Exchange watcher.** Young projects rarely start on a centralized exchange; they
+climb a ladder — DEX, then Binance Alpha or mid-sized exchanges (KuCoin, Gate,
+MEXC, Bitget), then the large ones (Binance, Coinbase, Upbit, OKX, Bybit, Kraken).
+The goal is to be in *before* the big listing. The watcher compares those public
+market lists (no keys), detects new listings, and checks against the radar's
+memory whether the token was *flagged* before and how many days ahead. Alpha names
+the contract, so matching is certain; ticker matches only count from USD 5 M
+valuation (otherwise a namesake). "On the way up" lists flagged radar tokens that
+are on Alpha or mid-sized exchanges but not yet on a large one.
 
 **Coin-Radar — which of the tradable coins can be traded best right now?** Walks the
 ~500 pairs that are tradable on Bitunix and measurable on Binance and ranks them by
@@ -87,12 +130,17 @@ verified for it — not, as previously stated here, for lack of perpetuals: it
 runs 602 of them. It appears in the exchange filter, just not in the execution
 figures.
 
-**Outcome tracking**: for the top twenty of every run, what actually happened
-afterwards is recorded — 15m/1h/4h for the Coin Radar, 1/7/30 days for the Hype
-Radar. What is measured is the span between best and worst point, not the
-return, and it is compared against the bottom half of the list. Without that
-control group, on a busy day even a random ranking looks brilliant. The weights
-are not auto-optimised against it.
+**Outcome tracking**: for the top twenty of every run *and* a random sample of ten
+from the bottom half, what actually happened afterwards is recorded — 15m/1h/4h for
+the Coin Radar. What is measured is the span between best and worst point inside
+the horizon, not the return. It is evaluated per run: does the top move more than
+the control group (with a sign test across runs), and does the score rank better
+than a plain ATR% ranking? Without that control group, on a busy day even a random
+ranking looks brilliant. The Hype Radar checks after 1/7/30 days whether the pair
+still exists and what became of price and liquidity — for passed finds, a sample of
+those rejected by the safety check, and a sample from the field below the threshold.
+Both tables are on the pages themselves (Coin Radar → history, Hype Radar →
+reports). The weights are not auto-optimised against it.
 
 The page states plainly what it does *not* claim: direction. It carries into the
 present because volatility is persistent — it comes in phases lasting weeks to

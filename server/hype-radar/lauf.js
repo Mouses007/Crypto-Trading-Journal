@@ -15,10 +15,13 @@ import { getKnex } from '../database.js'
 import { logWarn } from '../logger.js'
 import { sammle, dexDetailsViele, fuehreZusammen } from './quellen.js'
 import { bewerte, STANDARD_GEWICHTE, STANDARD_NARRATIVE } from './bewertung.js'
-import { pruefe, holeGoPlus, STANDARD_SICHERHEIT } from './sicherheit.js'
+import { pruefe, pruefeMarkt, holeGoPlus, STANDARD_SICHERHEIT } from './sicherheit.js'
 import { erzeugeBericht } from './bericht.js'
-import { ladeListungen, pruefeListung } from './listungen.js'
+import { ladeListungen, pruefeListung, nurNamensgleich } from './listungen.js'
 import { legeAnHype } from '../radar-ergebnisse.js'
+import { pruefeViele, kurzfassung } from './projekt.js'
+import { reifeFunde } from './fruehphase.js'
+import { merke } from './gedaechtnis.js'
 
 /** Wie viele Kandidaten in die (teure) Sicherheitsprüfung gehen. */
 const MAX_PRUEFUNGEN = 40
@@ -35,11 +38,20 @@ export async function scanne(einst, melde = () => {}) {
 
     // ── Stufe 1 ─────────────────────────────────────────────────────────
     melde({ schritt: 'sammeln' })
-    const { kandidaten: roh, quellenStand } = await sammle({
+    const { kandidaten: gesammelt, quellenStand } = await sammle({
         schluessel: einst.schluessel || {},
         ketten: einst.ketten,
         quellen: einst.quellen || {},
     })
+    /*
+     * Gereifte Token aus der Frühphase: dort seit Stunden beobachtet, jetzt
+     * alt und liquide genug für die volle Prüfung. Sie kommen als eigene
+     * Quelle dazu — auch wenn keine der Trendlisten sie gerade führt; genau
+     * das ist der Sinn der Frühphase.
+     */
+    const reif = await reifeFunde()
+    if (reif.length) quellenStand.fruehphase = { ok: true, anzahl: reif.filter((f) => f.quelle.quelle === 'fruehphase').length }
+    const roh = reif.length ? fuehreZusammen([...gesammelt, ...reif]) : gesammelt
     melde({ schritt: 'gesammelt', anzahl: roh.length })
 
     /*
@@ -78,7 +90,13 @@ export async function scanne(einst, melde = () => {}) {
             // Steht der Fund auf der Gegenseite seines Paars, gehören Preis
             // und Volumen nicht ihm — der Vermerk wandert mit.
             seite: d?.seite || 'base',
-            markt: { ...k.markt, ...(d?.markt || {}) },
+            markt: {
+                ...k.markt,
+                ...(d?.markt || {}),
+                // Ein Detailabruf ohne Linkangaben darf die Links aus einem
+                // Profil oder von pump.fun nicht mit `null` überschreiben.
+                links: d?.markt?.links || k.markt?.links || null,
+            },
         }
     })
 
@@ -116,10 +134,18 @@ export async function scanne(einst, melde = () => {}) {
     const bewertet = vereint
         .map((k) => {
             const { liste, unbekannt } = pruefeListung(k.symbol, listen)
+            // Ein Namensvetter ist keine Listung — er bleibt sichtbar, zählt
+            // aber weder als „handelbar" noch für den Börsenfilter.
+            const vetter = nurNamensgleich(k)
             return {
                 ...k,
                 ...bewerte(k, gewichte, narrative),
-                markt: { ...k.markt, listungen: liste, listungUnbekannt: unbekannt },
+                markt: {
+                    ...k.markt,
+                    listungen: vetter ? [] : liste,
+                    listungNamensgleich: vetter ? liste : [],
+                    listungUnbekannt: unbekannt,
+                },
             }
         })
         .sort((a, b) => b.hypeScore - a.hypeScore)
@@ -149,9 +175,20 @@ export async function scanne(einst, melde = () => {}) {
      * RugCheck-Aufruf. Die Sicherheitsprüfung ist die teuerste Stufe vor der
      * KI — sie gehört gedeckelt, die Anreicherung nicht.
      */
-    const zurPruefung = gefiltert
-        .filter((k) => k.hypeScore >= schwelle)
+    /*
+     * Was schon am Markt scheitert (zu wenig Liquidität, zu jung), braucht
+     * keinen der teuren Prüfplätze: das Urteil steht ohne GoPlus fest. Bis zum
+     * 07.10.2026 belegten gerade die jüngsten Funde — die über die Volumen-
+     * und Neuheits-Teilnote leicht über die Schwelle kamen — die vierzig
+     * Plätze und wurden erst danach an der Altersgrenze verworfen.
+     */
+    const regeln = { ...STANDARD_SICHERHEIT, ...(einst.sicherheit || {}) }
+    const ueberSchwelle = gefiltert.filter((k) => k.hypeScore >= schwelle)
+    const marktUrteil = new Map(ueberSchwelle.map((k) => [k, pruefeMarkt(k.markt, regeln)]))
+    const zurPruefung = ueberSchwelle
+        .filter((k) => !marktUrteil.get(k))
         .slice(0, MAX_PRUEFUNGEN)
+    const amMarktGescheitert = ueberSchwelle.filter((k) => marktUrteil.get(k))
     /*
      * Was die Schwelle reisst, ist nicht „verworfen" im Sinne der Prüfung —
      * es war schlicht nicht interessant genug. Diese Funde tauchen im Bericht
@@ -174,24 +211,27 @@ export async function scanne(einst, melde = () => {}) {
      * im Hintergrundfeld nur handelbare Funde stehen — der Filter gilt dem
      * ganzen Lauf, nicht nur der Prüfliste.
      */
-    const inPruefung = new Set(zurPruefung)
+    const inPruefung = new Set([...zurPruefung, ...amMarktGescheitert])
     const unterSchwelle = gefiltert.filter((k) => !inPruefung.has(k))
     melde({ schritt: 'bewertet', anzahl: zurPruefung.length, verworfenSchwelle: unterSchwelle.length })
 
     // ── Stufe 3 ─────────────────────────────────────────────────────────
     melde({ schritt: 'sicherheit', gesamt: zurPruefung.length })
-    const regeln = { ...STANDARD_SICHERHEIT, ...(einst.sicherheit || {}) }
     const bestanden = []
     const verworfen = []
 
-    for (const [i, k] of zurPruefung.entries()) {
+    const zuUrteilen = [...zurPruefung, ...amMarktGescheitert]
+    for (const [i, k] of zuUrteilen.entries()) {
         let goplus = null
-        try {
-            goplus = await holeGoPlus(k.chain, k.contract)
-        } catch (e) {
-            logWarn('hype-radar', `GoPlus zu ${k.symbol}: ${e.message}`)
+        const marktKo = marktUrteil.get(k)
+        if (!marktKo) {
+            try {
+                goplus = await holeGoPlus(k.chain, k.contract)
+            } catch (e) {
+                logWarn('hype-radar', `GoPlus zu ${k.symbol}: ${e.message}`)
+            }
         }
-        const urteil = pruefe(goplus, k.markt, regeln)
+        const urteil = marktKo || pruefe(goplus, k.markt, regeln)
         const zeile = {
             symbol: k.symbol,
             name: k.name,
@@ -213,7 +253,40 @@ export async function scanne(einst, melde = () => {}) {
             verworfenGrund: urteil.grund,
         }
         ;(urteil.status === 'bestanden' ? bestanden : verworfen).push(zeile)
-        if ((i + 1) % 5 === 0) melde({ schritt: 'sicherheit', fertig: i + 1, gesamt: zurPruefung.length })
+        if ((i + 1) % 5 === 0) melde({ schritt: 'sicherheit', fertig: i + 1, gesamt: zuUrteilen.length })
+    }
+
+    /*
+     * ── Stufe 3b: Projektprüfung ────────────────────────────────────────
+     *
+     * Für die bestandenen Funde: Webseite, Domain-Alter, GitHub, Ersteller.
+     * Erst NACH der Sicherheitsprüfung — sie kostet bis zu fünf Fremdabrufe
+     * je Fund, und für einen Honeypot ist die Frage nach dem Team müssig.
+     * Die Substanz-Note steht neben Hype- und Sicherheitsnote; verrechnet wird
+     * sie mit keiner von beiden.
+     */
+    if (einst.projektPruefung !== false && bestanden.length) {
+        const auswahl = [...bestanden]
+            .sort((a, b) => b.hypeScore - a.hypeScore)
+            .slice(0, Math.max(0, Number(einst.projektMax) || 15))
+        melde({ schritt: 'projekt', gesamt: auswahl.length })
+        await pruefeViele(auswahl.map((z) => ({
+            symbol: z.symbol, name: z.name, chain: z.chain, contract: z.contractAddress,
+            links: z.marktDaten?.links || null, ersteller: z.marktDaten?.ersteller || '',
+        })), {
+            jeFertig: (fertig, e, fehler, i) => {
+                const z = auswahl[i]
+                if (e) {
+                    z.projekt = kurzfassung(e)
+                    z.projektNote = e.note
+                    // Der Seitentext nur für den Bericht, nicht für die Datenbank.
+                    z.projektAuszug = e.fakten?.webseite?.fakten?.textAuszug || ''
+                } else {
+                    logWarn('hype-radar', `Projektprüfung ${z.symbol}: ${fehler?.message}`)
+                }
+                melde({ schritt: 'projekt', fertig, gesamt: auswahl.length })
+            },
+        })
     }
 
     // ── Speichern ───────────────────────────────────────────────────────
@@ -268,6 +341,8 @@ export async function scanne(einst, melde = () => {}) {
             safetyScore: z.safetyScore,
             status: z.status,
             verworfenGrund: z.verworfenGrund,
+            projektDaten: JSON.stringify(z.projekt || {}),
+            projektNote: Number.isFinite(z.projektNote) ? z.projektNote : null,
             erstelltAm: jetzt,
             aktualisiertAm: jetzt,
         }))
@@ -292,8 +367,15 @@ export async function scanne(einst, melde = () => {}) {
     await legeAnHype(jetzt).catch((e) =>
         logWarn('hype-radar', `Erfolgskontrolle nicht angemeldet: ${e.message}`))
 
+    // Gedächtnis: bestanden heisst gemeldet — für die Vorlaufzeit des
+    // Börsen-Beobachters.
+    await merke(bestanden.filter((z) => z.contractAddress).map((z) => ({
+        chain: z.chain, contract: z.contractAddress, symbol: z.symbol, quelle: 'scan',
+        bewertungUsd: Number(z.marktDaten?.marktkapitalisierung) || Number(z.marktDaten?.fdv) || null, gemeldet: true,
+    })))
+
     melde({ schritt: 'fertig', bestanden: bestanden.length, verworfen: verworfen.length })
-    return { bestanden, verworfen, quellenStand }
+    return { bestanden, verworfen, quellenStand, erstelltAm: jetzt }
 }
 
 /**
@@ -304,7 +386,7 @@ export async function scanne(einst, melde = () => {}) {
  * @param {string} ausloeser 'auto' | 'manuell'
  */
 export async function scanneUndBerichte(einst, melde = () => {}, ausloeser = 'auto') {
-    const { bestanden, verworfen, quellenStand } = await scanne(einst, melde)
+    const { bestanden, verworfen, quellenStand, erstelltAm: scanZeit } = await scanne(einst, melde)
 
     const bericht = await erzeugeBericht(
         bestanden, verworfen, { ...einst, _ausloeser: ausloeser }, melde)
@@ -344,12 +426,21 @@ export async function scanneUndBerichte(einst, melde = () => {}, ausloeser = 'au
     // pg gibt ein Objekt zurück, SQLite die blanke Zahl.
     const id = typeof eingefuegt === 'object' ? eingefuegt.id : eingefuegt
 
-    // Berichtete Kandidaten kennzeichnen, damit die Kandidatenliste zeigt,
-    // welche es in einen Bericht geschafft haben.
+    /*
+     * Berichtete Kandidaten kennzeichnen, damit die Kandidatenliste zeigt,
+     * welche es in einen Bericht geschafft haben.
+     *
+     * Nur Zeilen DIESES Scans und nur bestandene. Bis zum 07.10.2026 galt
+     * „alles mit diesem Kürzel aus den letzten zehn Minuten nach dem
+     * Bericht" — damit wurde ein gleichnamiger, von der Sicherheitsprüfung
+     * VERWORFENER Klon zu „berichtet", und ein gründlicher Bericht, der länger
+     * als zehn Minuten brauchte, markierte gar nichts.
+     */
     const symbole = bericht.kandidaten.map((k) => k.symbol)
-    if (symbole.length) {
+    if (symbole.length && scanZeit) {
         await knex('hype_candidates')
-            .where('erstelltAm', '>=', jetzt - 10 * 60 * 1000)
+            .where('erstelltAm', scanZeit)
+            .where('status', 'bestanden')
             .whereIn('symbol', symbole)
             .update({ status: 'berichtet' })
     }

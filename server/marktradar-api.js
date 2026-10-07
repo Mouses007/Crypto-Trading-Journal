@@ -585,6 +585,21 @@ async function holeBitunixFunding(symbole) {
  * wurde. Ein zweiter Abruf dafür wäre Verschwendung, der Cache hält 12 h.
  */
 export async function holeBinanceIntervalle() {
+    const stunden = await holeBinanceIntervalleStreng().catch(() => ({}))
+    return stunden || {}
+}
+
+/**
+ * Wie `holeBinanceIntervalle`, aber ein Ausfall WIRFT.
+ *
+ * `fundingInfo` nennt nur die Märkte mit abweichendem Takt; wer fehlt, zahlt
+ * alle acht Stunden. Ein leeres Ergebnis heisst deshalb „alle 8 h" — und
+ * genau das kam bei einem Ausfall heraus: Jeder 4h- und 1h-Markt wurde mit
+ * acht Stunden hochgerechnet, sein Funding zwei- bis achtmal zu billig und
+ * seine Kosten-Teilnote zu gut. Der Coin-Radar braucht den Unterschied
+ * zwischen „gemessen: Vorgabe" und „unbekannt".
+ */
+export async function holeBinanceIntervalleStreng() {
     const { stunden } = await ausCache('binanceIntervalle', 12 * 60 * 60 * 1000, async () => {
         const r = await holeJson(`${FAPI}/fapi/v1/fundingInfo`)
         const stunden = {}
@@ -593,7 +608,7 @@ export async function holeBinanceIntervalle() {
             if (Number.isFinite(h) && h > 0) stunden[x.symbol] = h
         }
         return { stunden }
-    }).catch(() => ({ stunden: {} }))
+    })
     return stunden || {}
 }
 

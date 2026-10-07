@@ -83,6 +83,14 @@ export const PAGES = [
      * in der ein Liquiditätsabfluss auffallen soll.
      */
     { id: 'hypeRadar', mode: 'research', path: '/hype-radar', icon: 'uil uil-telescope', titleKey: 'nav.hypeRadar', menuKey: 'hype.tab_dashboard', menuIcon: 'uil uil-dashboard', group: 'hypeGruppe' },
+    /*
+     * Die Frühphase: Token, die die Hauptprüfung noch nicht sieht (jünger als
+     * zwölf Stunden oder unter 50 000 USD Liquidität). Zwischen Übersicht und
+     * Berichten, weil sie der Übersicht VORAUS läuft.
+     */
+    { id: 'hypeFrueh', mode: 'research', path: '/hype-radar/fruehphase', icon: 'uil uil-bolt-alt', titleKey: 'hype.tab_fruehphase', group: 'hypeGruppe' },
+    // Börsen-Beobachter: neue Listungen und die Leiter Alpha → mittlere → grosse Börsen.
+    { id: 'hypeBoersen', mode: 'research', path: '/hype-radar/boersen', icon: 'uil uil-building', titleKey: 'hype.tab_boersen', group: 'hypeGruppe' },
     { id: 'hypeBerichte', mode: 'research', path: '/hype-radar/berichte', icon: 'uil uil-file-alt', titleKey: 'hype.tab_berichte', group: 'hypeGruppe' },
     /*
      * Der Coin-Radar steht daneben und nicht darunter: Es sind zwei Fragen,

@@ -3829,7 +3829,7 @@ onBeforeMount(async () => {
 
                     <div class="row mt-3">
                         <div class="col-12 col-md-4">
-                            {{ t('settings.ki.modelOptimization') || 'Modell-Optimierung' }}
+                            {{ t('settings.ki.modelOptimization') }}
                             <small class="d-block text-muted" style="font-size:0.78rem;">
                                 OpenRouter-Modelle pro Aufgabe optimieren
                             </small>

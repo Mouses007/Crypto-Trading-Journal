@@ -49,7 +49,12 @@ export async function holeCoinInfo(symbol, schluessel = '') {
         treffer = kandidaten
             .filter((c) => String(c?.symbol || '').toUpperCase() === basis)
             .sort((a, b) => (a.market_cap_rank ?? Infinity) - (b.market_cap_rank ?? Infinity))[0]
-            || kandidaten[0]
+        /*
+         * Kein exakter Treffer heisst „nicht gefunden" — nicht „der erste
+         * Suchtreffer". Bis zum 07.10.2026 stand hier `|| kandidaten[0]`, und
+         * die Seite zeigte die Beschreibung eines ANDEREN Projekts als
+         * Auskunft über diesen Coin.
+         */
     } catch (e) {
         logWarn('coin-radar', `Coin-Info: Suche nach "${basis}" fehlgeschlagen: ${e.message}`)
         throw e   // Netzfehler ≠ „nicht gefunden" — nicht cachen, nicht als leer melden
@@ -74,7 +79,8 @@ export async function holeCoinInfo(symbol, schluessel = '') {
         name: j?.name || treffer.name || basis,
         symbol: String(j?.symbol || basis).toUpperCase(),
         bild: j?.image?.small || treffer.thumb || '',
-        beschreibung: String(j?.description?.en || '').trim(),
+        // CoinGecko liefert die Beschreibung mit HTML-Links; angezeigt wird Text.
+        beschreibung: String(j?.description?.en || '').replace(/<[^>]*>/g, '').trim(),
         kategorien: Array.isArray(j?.categories) ? j.categories.filter(Boolean) : [],
         marketCapRang: j?.market_cap_rank ?? treffer.market_cap_rank ?? null,
         homepage: (j?.links?.homepage || []).find(Boolean) || '',

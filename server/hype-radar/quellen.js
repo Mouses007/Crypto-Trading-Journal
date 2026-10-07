@@ -53,6 +53,13 @@ export const ERLAUBTE_HOSTS = new Set([
     'www.reddit.com',
     'frontend-api-v3.pump.fun',
     'api.coinpaprika.com',
+    // Projektprüfung und Frühphase (07.10.2026)
+    'api.github.com',
+    'a.4cdn.org',
+    // Börsen-Beobachter: öffentliche Marktlisten, ohne Schlüssel
+    'www.binance.com', 'api.binance.com', 'fapi.binance.com', 'api.exchange.coinbase.com',
+    'api.upbit.com', 'www.okx.com', 'api.bybit.com', 'api.kraken.com', 'api.kucoin.com',
+    'api.gateio.ws', 'api.mexc.com', 'api.bitget.com',
 ])
 
 /**
@@ -92,6 +99,15 @@ const EIMER = {
     'www.reddit.com': new Eimer(1),
     'frontend-api-v3.pump.fun': new Eimer(20),
     'api.coinpaprika.com': new Eimer(10),
+    // Ohne Schlüssel 60 Anfragen je STUNDE — der Zwischenspeicher der
+    // Projektprüfung (24 h) ist die eigentliche Bremse, das hier nur die Reserve.
+    'api.github.com': new Eimer(10),
+    // 4chan verlangt höchstens eine Anfrage je Sekunde.
+    'a.4cdn.org': new Eimer(30),
+    // Eine Marktliste je Börse und Abgleich — die Eimer sind nur Reserve.
+    'www.binance.com': new Eimer(10),
+    'api.binance.com': new Eimer(10),
+    'fapi.binance.com': new Eimer(10),
 }
 
 /**
@@ -213,7 +229,7 @@ export function normChain(roh) {
  * Bewusst flach und tolerant: Fremdantworten haben ständig fehlende Felder,
  * und ein Fund ohne Preis ist immer noch ein Fund.
  */
-function fund({ symbol, name = '', chain = '', contract = '', pair = '', quelle, rang = 0, url = '', markt = {}, sozial = {} }) {
+export function fund({ symbol, name = '', chain = '', contract = '', pair = '', quelle, rang = 0, url = '', markt = {}, sozial = {} }) {
     return {
         symbol: normSymbol(symbol),
         name: String(name || '').slice(0, 120),
@@ -277,6 +293,7 @@ export async function ausDexScreener() {
             quelle: 'dexscreener-boost',
             rang: i + 1,
             url: b?.url || '',
+            markt: { links: linksAusInfo(b) },
             sozial: { boostGesamt: Number(b?.totalAmount) || 0 },
         })))
     }
@@ -289,6 +306,7 @@ export async function ausDexScreener() {
             quelle: 'dexscreener-neu',
             rang: i + 1,
             url: p?.url || '',
+            markt: { links: linksAusInfo(p) },
         })))
     }
     if (!funde.length && boosts.status === 'rejected' && profile.status === 'rejected') {
@@ -304,8 +322,8 @@ export async function ausDexScreener() {
  * Liquidität, Volumen, Alter und das Kauf/Verkauf-Verhältnis dazu — die Zahlen,
  * auf denen Bewertung und Sicherheitsprüfung beruhen.
  */
-export async function dexDetails(contract) {
-    const karte = await dexDetailsViele([contract])
+export async function dexDetails(contract, opts = {}) {
+    const karte = await dexDetailsViele([contract], opts)
     return karte.get(String(contract).toLowerCase()) || null
 }
 
@@ -326,9 +344,11 @@ const SAMMEL_GROESSE = 30
  * Rangfolge entsteht zum ersten Mal auf vergleichbarer Grundlage.
  *
  * @param {string[]} contracts
+ * @param {object} opts  `{streng: true}` reicht Abruffehler weiter, statt sie
+ *                       als „nichts gefunden" zu verschlucken
  * @returns {Promise<Map<string, object>>} Adresse (klein) → Details
  */
-export async function dexDetailsViele(contracts = []) {
+export async function dexDetailsViele(contracts = [], opts = {}) {
     const raus = new Map()
     const liste = [...new Set(contracts.filter(Boolean).map(String))]
 
@@ -340,7 +360,13 @@ export async function dexDetailsViele(contracts = []) {
                 `https://api.dexscreener.com/latest/dex/tokens/${teil.map(encodeURIComponent).join(',')}`)
             paare = Array.isArray(j?.pairs) ? j.pairs : []
         } catch (e) {
-            // Ein Häppchen, das klemmt, darf die übrigen nicht mitnehmen.
+            /*
+             * Ein Häppchen, das klemmt, darf die übrigen nicht mitnehmen —
+             * beim Sammeln. Wer dagegen wissen will, ob es einen Fund noch
+             * GIBT (Erfolgskontrolle, Wachhund), darf einen Ausfall nicht mit
+             * „kein Paar mehr" verwechseln.
+             */
+            if (opts.streng) throw e
             logWarn('hype-radar', `DexScreener-Sammelabruf: ${e.message}`)
             continue
         }
@@ -385,6 +411,38 @@ export async function dexDetailsViele(contracts = []) {
  *                        übernommen werden.
  */
 function ausPaar(p, seite = 'base') {
+    const roh = ausPaarBasis(p, seite)
+    if (seite !== 'quote') return roh
+    /*
+     * Gegenseite: Was DexScreener über das Paar sagt, gilt der BASIS. Bis zum
+     * 07.10.2026 stand hier nur ein Vermerk, und der ging bei der
+     * Zusammenführung verloren — ein Fund auf der Gegenseite bekam still den
+     * Preis, die Kursänderungen und das Kauf/Verkauf-Verhältnis des anderen
+     * Tokens. Umrechnen lässt sich nur der Preis (priceUsd / priceNative);
+     * alles andere gehört nicht ihm und bleibt leer. Volumen und Liquidität
+     * sind Dollarsummen des PAARS und gelten für beide Seiten.
+     */
+    const basisUsd = Number(p?.priceUsd)
+    const basisInGegen = Number(p?.priceNative)
+    const m = roh.markt
+    return {
+        ...roh,
+        markt: {
+            ...m,
+            preisUsd: basisUsd > 0 && basisInGegen > 0 ? basisUsd / basisInGegen : null,
+            aenderung24h: null, aenderung6h: null, aenderung1h: null, aenderung5m: null,
+            fdv: null, marktkapitalisierung: null,
+            // Wer die Basis kauft, verkauft die Gegenseite — das Verhältnis kehrt sich um.
+            kaufVerkaufVerhaeltnis: umgekehrt(m.kaufVerkaufVerhaeltnis),
+            kaufVerkauf1h: umgekehrt(m.kaufVerkauf1h),
+            boosts: 0, webseiten: null, kanaele: null, bild: '', links: null,
+        },
+    }
+}
+
+const umgekehrt = (v) => (v === null || v === undefined ? null : (v === 99 ? 0 : (v > 0 ? 1 / v : 99)))
+
+function ausPaarBasis(p, seite) {
     const token = seite === 'quote' ? p?.quoteToken : p?.baseToken
     const kaeufe = Number(p?.txns?.h24?.buys) || 0
     const verkaeufe = Number(p?.txns?.h24?.sells) || 0
@@ -407,7 +465,10 @@ function ausPaar(p, seite = 'base') {
             // Zusammenführung nur diese Felder überträgt.
             dex: String(p?.dexId || ''),
             preisUsd: Number(p?.priceUsd) || null,
-            liquiditaetUsd: Number(p?.liquidity?.usd) || 0,
+            // Fehlt die Angabe (Bindungskurven nennen keine), bleibt sie
+            // unbekannt — eine 0 hiesse „Pool leer" und löste beim Wachhund
+            // einen kritischen Alarm aus.
+            liquiditaetUsd: zahlOderNull(p?.liquidity?.usd),
             volumen24h: Number(p?.volume?.h24) || 0,
             volumen6h: Number(p?.volume?.h6) || 0,
             volumen1h: Number(p?.volume?.h1) || 0,
@@ -432,6 +493,9 @@ function ausPaar(p, seite = 'base') {
             kaufVerkaufVerhaeltnis: verkaeufe > 0 ? kaeufe / verkaeufe : (kaeufe > 0 ? 99 : null),
             transaktionen24h: kaeufe + verkaeufe,
             transaktionen1h: (Number(p?.txns?.h1?.buys) || 0) + (Number(p?.txns?.h1?.sells) || 0),
+            // Die letzten fünf Minuten — für die Frühphase das Mass, ob der
+            // Handel innerhalb der Stunde gerade anzieht.
+            transaktionen5m: p?.txns?.m5 ? (Number(p.txns.m5.buys) || 0) + (Number(p.txns.m5.sells) || 0) : null,
             kaufVerkauf1h: verhaeltnis(p?.txns?.h1),
             /*
              * BEZAHLTE SICHTBARKEIT — der Wert, um den es hier eigentlich geht.
@@ -449,11 +513,60 @@ function ausPaar(p, seite = 'base') {
             webseiten: (p?.info?.websites || []).length,
             kanaele: (p?.info?.socials || []).length,
             bild: p?.info?.imageUrl || '',
+            /*
+             * Die Adressen selbst, nicht nur ihre Anzahl — die Projektprüfung
+             * liest die Webseite und sucht das Team dahinter. Gedeckelt, damit
+             * die gespeicherten Marktdaten klein bleiben.
+             */
+            links: linksAusInfo(p?.info),
         },
     }
 }
 
-const zahlOderNull = (w) => (Number.isFinite(Number(w)) ? Number(w) : null)
+/*
+ * `Number(null)` ist 0 — und `Number.isFinite(0)` wahr. Ohne die Vorprüfung
+ * wurde eine fehlende Kursänderung zu „0 %", also zu einer Messung.
+ */
+/**
+ * Webseiten und Kanäle eines Tokens in einer Form — gleich, ob sie aus
+ * DexScreener (`info.websites`/`info.socials`, Profile `links`) oder pump.fun
+ * (`website`, `twitter`, `telegram`) kommen.
+ *
+ * @returns {{webseiten:string[], kanaele:Array<{typ:string, url:string}>}|null}
+ */
+export function linksAusInfo(info) {
+    if (!info || typeof info !== 'object') return null
+    const url = (u) => {
+        const t = String(u || '').trim()
+        return /^https?:\/\//i.test(t) ? t.slice(0, 300) : ''
+    }
+    const webseiten = []
+    const kanaele = []
+    for (const w of info.websites || []) if (url(w?.url)) webseiten.push(url(w.url))
+    for (const k of info.socials || []) if (url(k?.url)) kanaele.push({ typ: String(k?.type || '').toLowerCase(), url: url(k.url) })
+    // Profile und Boosts nennen ihre Links gemischt in `links`.
+    for (const l of info.links || []) {
+        const u = url(l?.url)
+        if (!u) continue
+        const typ = String(l?.type || l?.label || '').toLowerCase()
+        if (!typ || typ === 'website' || typ === 'web') webseiten.push(u)
+        else kanaele.push({ typ, url: u })
+    }
+    // pump.fun: einzelne Felder; X manchmal nur als Name.
+    if (url(info.website)) webseiten.push(url(info.website))
+    if (info.twitter) {
+        const t = String(info.twitter).trim()
+        const u = url(t) || (/^@?[A-Za-z0-9_]{1,15}$/.test(t) ? `https://x.com/${t.replace(/^@/, '')}` : '')
+        if (u) kanaele.push({ typ: 'twitter', url: u })
+    }
+    if (url(info.telegram)) kanaele.push({ typ: 'telegram', url: url(info.telegram) })
+    if (!webseiten.length && !kanaele.length) return null
+    return { webseiten: [...new Set(webseiten)].slice(0, 3), kanaele: kanaele.slice(0, 6) }
+}
+
+const zahlOderNull = (w) => (w === null || w === undefined || w === ''
+    ? null
+    : (Number.isFinite(Number(w)) ? Number(w) : null))
 
 const verhaeltnis = (t) => {
     const k = Number(t?.buys) || 0
@@ -580,7 +693,7 @@ export async function ausReddit(unterforen = ['CryptoMoonShots', 'SolanaMemeCoin
                          * hot" ist alles, was wir wissen, und genau das steht
                          * jetzt da.
                          */
-                        sozial: { redditRang: rang },
+                        sozial: { redditRang: rang, redditNennungen: 1 },
                     }))
                 }
             }
@@ -630,6 +743,10 @@ export async function ausPumpFun(anzahl = 50) {
                     // `complete` heisst: die Kurve ist durch, der Token ist an
                     // eine echte Börse gewandert. Das ist ein Reifezeichen.
                     graduiert: c?.complete === true,
+                    links: linksAusInfo(c),
+                    // Die Wallet, die den Token aufgelegt hat — Schlüssel zur
+                    // Frage, was dieses „Team" vorher schon gestartet hat.
+                    ersteller: String(c?.creator || ''),
                 },
             })
         })
@@ -708,6 +825,12 @@ export function fuehreZusammen(funde) {
                 chain: f.chain,
                 contract: f.contract,
                 pair: f.pair,
+                /*
+                 * Die Seite des Paars wandert mit. Bis zum 07.10.2026 ging sie
+                 * hier verloren — der Vermerk „Preis und Volumen gehören der
+                 * Gegenseite" kam nie bei der Bewertung an.
+                 */
+                seite: f.seite,
                 quellen: [],
                 markt: {},
                 sozial: {},
@@ -725,14 +848,10 @@ export function fuehreZusammen(funde) {
         if (!k.chain && f.chain) k.chain = f.chain
         if (!k.contract && f.contract) k.contract = f.contract
         if (!k.pair && f.pair) k.pair = f.pair
+        if (!k.seite && f.seite) k.seite = f.seite
         Object.assign(k.markt, Object.fromEntries(
             Object.entries(f.markt || {}).filter(([, v]) => v !== null && v !== undefined)))
-        for (const [feld, wert] of Object.entries(f.sozial || {})) {
-            if (wert === null || wert === undefined) continue
-            // Zahlen aufaddieren (drei Nennungen sind mehr als eine),
-            // alles andere überschreiben.
-            k.sozial[feld] = typeof wert === 'number' ? (k.sozial[feld] || 0) + wert : wert
-        }
+        fuegeSozialHinzu(k.sozial, f.sozial)
     }
 
     /*
@@ -806,6 +925,45 @@ const QUELL_DOMAENE = {
     coinpaprika: 'discovery',
     // Die einzige Quelle, in der Menschen reden statt Ketten zu handeln.
     reddit: 'social',
+    /*
+     * Aus der Frühphase übernommen (07.10.2026): Der Token wurde dort über
+     * Stunden beobachtet — das ist gehandelte Kette. Wo er in Telegram-Kanälen
+     * oder auf /biz/ genannt wurde, zählt das als eigene Domäne `social`.
+     */
+    fruehphase: 'onchain',
+    telegram: 'social',
+    biz: 'social',
+    // X über Grok — nur gezählte, zitierte Posts verschiedener Autoren.
+    x: 'social',
+}
+
+/*
+ * Wie zwei Angaben desselben Sozialfelds zusammengehen.
+ *
+ * Bis zum 07.10.2026 wurde jede Zahl addiert („drei Nennungen sind mehr als
+ * eine") — auch der Reddit-RANG, bei dem eine kleinere Zahl besser ist. Zwei
+ * Erwähnungen auf Platz 30 und 35 wurden zu Platz 65 und damit zu null
+ * Punkten; ein Fund verlor Note, je öfter über ihn gesprochen wurde. Ränge
+ * nehmen jetzt den besten Platz, Mengen werden gezählt, und derselbe Boost
+ * aus zwei Durchgängen der Zusammenführung zählt einmal.
+ */
+const SOZIAL_ZUSAMMEN = {
+    redditRang: (a, b) => Math.min(a, b),
+    boostGesamt: (a, b) => Math.max(a, b),
+    // Dieselbe Beobachtung, zweimal gemeldet, ist keine zweite Plattform.
+    fruehPlattformen: (a, b) => Math.max(a, b),
+}
+
+export function fuegeSozialHinzu(ziel, quelle) {
+    for (const [feld, wert] of Object.entries(quelle || {})) {
+        if (wert === null || wert === undefined) continue
+        if (typeof wert !== 'number' || !(feld in ziel)) {
+            ziel[feld] = wert
+            continue
+        }
+        const regel = SOZIAL_ZUSAMMEN[feld]
+        ziel[feld] = regel ? regel(ziel[feld], wert) : ziel[feld] + wert
+    }
 }
 
 /** Die belegten Domänen eines Kandidaten, ohne Wiederholung. */
@@ -843,11 +1001,8 @@ function schliesseAn(karte, istVage, passt) {
         for (const [feld, wert] of Object.entries(k.markt)) {
             if (ziel.markt[feld] === undefined) ziel.markt[feld] = wert
         }
-        for (const [feld, wert] of Object.entries(k.sozial)) {
-            ziel.sozial[feld] = typeof wert === 'number'
-                ? (ziel.sozial[feld] || 0) + wert
-                : wert
-        }
+        if (!ziel.seite && k.seite) ziel.seite = k.seite
+        fuegeSozialHinzu(ziel.sozial, k.sozial)
         karte.delete(schluessel)
     }
 }

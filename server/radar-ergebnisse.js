@@ -21,7 +21,7 @@
 
 import { getKnex } from './database.js'
 import { logWarn } from './logger.js'
-import { getClosedCandles } from './market-data.js'
+import { getHistoricalCandles, timeframeMs } from './market-data.js'
 import { beansprucheAufgabe } from './db-claim.js'
 
 /**
@@ -34,28 +34,66 @@ import { beansprucheAufgabe } from './db-claim.js'
 export const HORIZONTE = {
     coinradar: { '15m': 15 * 60e3, '1h': 3600e3, '4h': 4 * 3600e3 },
     hype: { '1d': 24 * 3600e3, '7d': 7 * 24 * 3600e3, '30d': 30 * 24 * 3600e3 },
+    // Frühphase: Memecoins entscheiden sich in Tagen, nicht Wochen.
+    frueh: { '1d': 24 * 3600e3, '3d': 3 * 24 * 3600e3, '7d': 7 * 24 * 3600e3 },
 }
 
 /** Wie viele Spitzenplätze je Lauf verfolgt werden. */
 const VERFOLGT = 20
 
+/** Wie gross die Kontrollgruppe je Lauf ist. */
+const KONTROLLE = 10
+
+/**
+ * Zufällige Stichprobe ohne Zurücklegen.
+ *
+ * Zufällig und nicht „die letzten zehn": Die untersten Plätze sind fast immer
+ * dieselben trägen Grosswerte, und gegen sie würde jede Spitze glänzen.
+ */
+export function stichprobe(liste = [], n = KONTROLLE, zufall = Math.random) {
+    const kopie = [...liste]
+    for (let i = kopie.length - 1; i > 0; i--) {
+        const j = Math.floor(zufall() * (i + 1))
+        ;[kopie[i], kopie[j]] = [kopie[j], kopie[i]]
+    }
+    return kopie.slice(0, Math.max(0, n))
+}
+
+/**
+ * Wer verfolgt wird: die Spitze und eine Kontrollgruppe aus der unteren Hälfte.
+ *
+ * Bis zum 07.10.2026 wurden nur die obersten zwanzig verfolgt, und die
+ * Auswertung verglich Platz 1–10 mit Platz 11–20 — zwei Nachbarn aus demselben
+ * beweglichsten Zehntel, also fast denselben Markt. Die Frage „ist die Spitze
+ * besser als der Rest" liess sich so nicht beantworten. Rein, damit die
+ * Auswahl ohne Datenbank prüfbar ist.
+ *
+ * @param {Array} bewertet  Zeilen eines Laufs, nach Rang aufsteigend
+ */
+export function waehleCoinRadar(bewertet = [], zufall = Math.random) {
+    const spitze = bewertet.slice(0, VERFOLGT)
+    const oben = new Set(spitze.map((z) => z.symbol))
+    const untereHaelfte = bewertet.slice(Math.ceil(bewertet.length / 2)).filter((z) => !oben.has(z.symbol))
+    return [
+        ...spitze.map((z) => ({ ...z, gruppe: 'spitze' })),
+        ...stichprobe(untereHaelfte, KONTROLLE, zufall).map((z) => ({ ...z, gruppe: 'kontrolle' })),
+    ]
+}
+
 /**
  * Aufträge für einen Coin-Radar-Lauf anlegen.
- *
- * Nur die obersten zwanzig: Die Frage ist „taugt die SPITZE der Liste", nicht
- * „was macht Platz 78". Precision@10 und @20 sind die Kennzahlen, die zählen —
- * wer den ganzen Lauf verfolgt, misst vor allem den Markt.
  */
 export async function legeAnCoinRadar(laufId) {
     const knex = getKnex()
     const zeilen = await knex('coinradar_zeilen')
+        .select('symbol', 'rang', 'note', 'noteAusfuehrung', 'atrPct')
         .where({ laufId, status: 'bewertet' })
-        .orderBy('rang', 'asc').limit(VERFOLGT)
+        .orderBy('rang', 'asc')
     if (!zeilen.length) return 0
 
     const jetzt = Date.now()
     const auftraege = []
-    for (const z of zeilen) {
+    for (const z of waehleCoinRadar(zeilen)) {
         for (const [horizont, ms] of Object.entries(HORIZONTE.coinradar)) {
             auftraege.push({
                 art: 'coinradar',
@@ -64,6 +102,8 @@ export async function legeAnCoinRadar(laufId) {
                 rang: z.rang,
                 note: z.note,
                 noteAusfuehrung: z.noteAusfuehrung,
+                atrPct: zahl(z.atrPct),
+                gruppe: z.gruppe,
                 horizont,
                 erstelltAm: jetzt,
                 faelligAm: jetzt + ms,
@@ -74,29 +114,65 @@ export async function legeAnCoinRadar(laufId) {
     return schreibe(knex, auftraege)
 }
 
-/** Dasselbe für die Funde des Hype-Radars, die die Sicherheitsprüfung bestanden. */
+/**
+ * Wer beim Hype-Radar verfolgt wird — drei Gruppen, rein.
+ *
+ *   spitze     die besten bestandenen Funde (worüber der Radar spricht)
+ *   verworfen  Stichprobe der von der Sicherheitsprüfung Aussortierten
+ *   feld       Stichprobe derer unter der Hype-Schwelle
+ *
+ * Ohne die beiden Vergleichsgruppen hiesse „30 % leben nach einem Monat noch"
+ * gar nichts — vielleicht leben 30 % von allem. Nur Funde mit Vertrag: ohne
+ * Adresse lässt sich später nichts nachschlagen.
+ */
+export function waehleHype(kandidaten = [], zufall = Math.random) {
+    const mitVertrag = kandidaten.filter((k) => String(k.contractAddress || '').length > 0)
+    const spitze = mitVertrag
+        .filter((k) => k.status === 'bestanden' || k.status === 'berichtet')
+        .sort((a, b) => (Number(b.hypeScore) || 0) - (Number(a.hypeScore) || 0))
+        .slice(0, VERFOLGT)
+    const verworfen = stichprobe(mitVertrag.filter((k) => k.status === 'verworfen'), KONTROLLE, zufall)
+    const feld = stichprobe(mitVertrag.filter((k) => k.status === 'bewertet'), KONTROLLE, zufall)
+    return [
+        ...spitze.map((k) => ({ ...k, gruppe: 'spitze' })),
+        ...verworfen.map((k) => ({ ...k, gruppe: 'verworfen' })),
+        ...feld.map((k) => ({ ...k, gruppe: 'feld' })),
+    ]
+}
+
+/** Dasselbe für die Funde des Hype-Radars. */
 export async function legeAnHype(erstelltAm) {
     const knex = getKnex()
     const zeilen = await knex('hype_candidates')
         .where('erstelltAm', Number(erstelltAm))
-        .whereIn('status', ['bestanden', 'berichtet'])
-        .orderBy('hypeScore', 'desc').limit(VERFOLGT)
-    if (!zeilen.length) return 0
+        .whereIn('status', ['bestanden', 'berichtet', 'verworfen', 'bewertet'])
+    const auswahl = waehleHype(zeilen)
+    if (!auswahl.length) return 0
 
     const jetzt = Date.now()
     const auftraege = []
-    for (const z of zeilen) {
+    for (const z of auswahl) {
         let markt = {}
         try { markt = JSON.parse(z.marktDaten || '{}') } catch { /* egal */ }
         for (const [horizont, ms] of Object.entries(HORIZONTE.hype)) {
             auftraege.push({
                 art: 'hype',
-                laufId: 0,
+                /*
+                 * Beim Hype-Radar steht hier die KANDIDATEN-Zeile, nicht ein
+                 * Lauf. Bis zum 07.10.2026 stand fest 0 — mit dem eindeutigen
+                 * Schlüssel (art, laufId, symbol, horizont) wurde damit jedes
+                 * Kürzel genau EINMAL im Leben verfolgt; jeder spätere Lauf
+                 * und jeder gleichnamige Vertrag auf einer anderen Kette
+                 * verschwand still im `ignore()`. Die Zeilennummer ist je Lauf
+                 * und Vertrag eindeutig und passt in die bestehende Spalte.
+                 */
+                laufId: z.id,
                 symbol: z.symbol,
                 chain: z.chain || '',
                 contract: z.contractAddress || '',
                 note: z.hypeScore,
                 safetyScore: z.safetyScore,
+                gruppe: z.gruppe,
                 horizont,
                 erstelltAm: jetzt,
                 faelligAm: jetzt + ms,
@@ -109,6 +185,67 @@ export async function legeAnHype(erstelltAm) {
     return schreibe(knex, auftraege)
 }
 
+/** Je Durchgang so viele Token der Kontrollgruppe — Zufallsauswahl der NEU gesehenen. */
+const KONTROLLE_FRUEH = 2
+
+/**
+ * Wer in der Frühphase verfolgt wird — rein.
+ *
+ *   spitze     Token, deren Note in diesem Durchgang die Schwelle ÜBERSCHRITT
+ *   kontrolle  Zufallsauswahl der in diesem Durchgang neu gesehenen Token
+ *
+ * Die Kontrolle stammt aus derselben Grundgesamtheit, aus der die Spitze
+ * kommt — alles, was die Frühphase sieht. Gegen „die schlechtesten" würde
+ * jede Spitze glänzen.
+ */
+export function waehleFrueh(ueberSchwelle = [], neuGesehen = [], zufall = Math.random) {
+    const oben = new Set(ueberSchwelle.map((z) => z.contract))
+    return [
+        ...ueberSchwelle.map((z) => ({ ...z, gruppe: 'spitze' })),
+        ...stichprobe(neuGesehen.filter((z) => !oben.has(z.contract)), KONTROLLE_FRUEH, zufall)
+            .map((z) => ({ ...z, gruppe: 'kontrolle' })),
+    ]
+}
+
+/**
+ * Aufträge für die Frühphase anlegen.
+ *
+ * `laufId` trägt die Zeile in `hype_frueh`; die Kontrollgruppe mit NEGATIVEM
+ * Vorzeichen. Sonst stiesse ein Token, der erst als Kontrolle gezogen wurde
+ * und Stunden später die Schwelle überschreitet, auf den eindeutigen Schlüssel
+ * (art, laufId, symbol, horizont) — und verschwände still aus der Spitze.
+ *
+ * @param {Array<{id, symbol, chain, contract, note, preis, mcap, liq}>} ueberSchwelle
+ * @param {Array} neuGesehen
+ */
+export async function legeAnFrueh(ueberSchwelle = [], neuGesehen = []) {
+    const auswahl = waehleFrueh(ueberSchwelle, neuGesehen).filter((z) => z.contract && z.id)
+    if (!auswahl.length) return 0
+    const jetzt = Date.now()
+    const auftraege = []
+    for (const z of auswahl) {
+        for (const [horizont, ms] of Object.entries(HORIZONTE.frueh)) {
+            auftraege.push({
+                art: 'frueh',
+                laufId: z.gruppe === 'kontrolle' ? -Number(z.id) : Number(z.id),
+                symbol: z.symbol || String(z.contract).slice(0, 10),
+                chain: z.chain || '',
+                contract: z.contract,
+                note: z.note,
+                gruppe: z.gruppe,
+                horizont,
+                erstelltAm: jetzt,
+                faelligAm: jetzt + ms,
+                status: 'offen',
+                preisStart: zahl(z.preis),
+                mcapStart: zahl(z.mcap),
+                liquiditaetStart: zahl(z.liq),
+            })
+        }
+    }
+    return schreibe(getKnex(), auftraege)
+}
+
 async function schreibe(knex, auftraege) {
     for (let i = 0; i < auftraege.length; i += 25) {
         await knex('radar_ergebnisse').insert(auftraege.slice(i, i + 25))
@@ -118,6 +255,12 @@ async function schreibe(knex, auftraege) {
 }
 
 const zahl = (w) => (Number.isFinite(Number(w)) && w !== null ? Number(w) : null)
+
+/** So oft wird ein Auftrag nach einem vorübergehenden Ausfall erneut versucht. */
+const MAX_VERSUCHE = 3
+
+/** Und so lange wird dazwischen gewartet. */
+const WIEDERHOLUNG_MS = 30 * 60 * 1000
 
 /**
  * Fällige Aufträge einlösen.
@@ -139,67 +282,113 @@ export async function messeFaellige(deckel = 30) {
         try {
             const werte = a.art === 'coinradar'
                 ? await messeCoin(a)
-                : await messeHype(a)
+                : (a.art === 'frueh' ? await messeFrueh(a) : await messeHype(a))
             await knex('radar_ergebnisse').where('id', a.id).update({
                 ...werte, status: 'gemessen', gemessenAm: Date.now(),
             })
             gemessen++
         } catch (e) {
             /*
-             * Ein Fehlschlag wird VERMERKT, nicht wiederholt. Sonst hinge ein
-             * delistetes Symbol für immer in der Warteschlange und verdrängte
-             * die Messungen, auf die es ankommt.
+             * Ein Ausfall ist nicht dasselbe wie ein Ergebnis. Bis zum
+             * 07.10.2026 wurde nach dem ersten Fehlschlag aufgegeben — ein
+             * kurzer Aussetzer von Binance oder DexScreener nahm die Messung
+             * für immer aus der Statistik, und zwar bevorzugt in bewegten
+             * Stunden, in denen die Anbieter am ehesten klemmen. Jetzt gibt
+             * es drei Versuche im Abstand einer halben Stunde; danach wird
+             * aufgegeben, damit ein delistetes Symbol nicht ewig in der
+             * Warteschlange hängt. `faelligAm` darf dabei wandern — das
+             * Messfenster hängt am Horizont, nicht am Zeitpunkt der Messung.
              */
+            const versuche = (Number(a.versuche) || 0) + 1
+            const endgueltig = versuche >= MAX_VERSUCHE
             await knex('radar_ergebnisse').where('id', a.id).update({
-                status: 'fehlgeschlagen', gemessenAm: Date.now(),
+                versuche,
                 fehler: String(e.message).slice(0, 200),
+                ...(endgueltig
+                    ? { status: 'fehlgeschlagen', gemessenAm: Date.now() }
+                    : { faelligAm: Date.now() + WIEDERHOLUNG_MS }),
             }).catch(() => {})
-            fehlgeschlagen++
+            if (endgueltig) fehlgeschlagen++
         }
     }
     return { gemessen, fehlgeschlagen }
 }
 
 /**
- * Coin-Radar: Rendite, MAE und MFE aus den Kerzen seit der Aussage.
+ * Das Messfenster eines Coin-Radar-Auftrags — rein, damit prüfbar.
  *
- * MAE und MFE sind wichtiger als die blosse Rendite. Ein Coin, der erst 8 %
- * gegen einen läuft und dann 2 % ins Plus dreht, ist ein anderes Geschäft als
- * einer, der schnurgerade 2 % steigt — und nur die eine Zahl unterscheidet die
- * beiden nicht.
+ * Bis zum 07.10.2026 reichte das Fenster von der Aussage bis JETZT, nicht bis
+ * zum Ende des Horizonts. Der Takt läuft alle fünf Minuten und misst höchstens
+ * dreissig Aufträge je Durchgang; „15 Minuten" waren damit im Schnitt ein
+ * Sechstel länger, nach einer Auszeit des Rechners Stunden oder Tage — und
+ * MFE und MAE wachsen mit der Fensterlänge. Lag die Aussage weiter zurück als
+ * die 500 geholten Kerzen, war sogar der Startpreis falsch, ohne dass es
+ * jemand bemerkt hätte.
+ *
+ * Jetzt: Kerzen mit Eröffnung in [Aussage, Aussage + Horizont), und das
+ * Fenster muss vorn und hinten vollständig sein — sonst wird nicht gemessen.
+ *
+ * @returns {{preisStart, preisEnde, renditePct, mfePct, maePct}}
  */
-async function messeCoin(a) {
-    const spanne = Date.now() - Number(a.erstelltAm)
-    // Feine Auflösung für kurze Horizonte, gröbere für lange.
-    const ze = spanne <= 2 * 3600e3 ? '1m' : (spanne <= 8 * 3600e3 ? '5m' : '15m')
-    const kerzen = await getClosedCandles(a.symbol, ze, 500)
-    if (!Array.isArray(kerzen) || !kerzen.length) throw new Error('keine Kerzen')
+export function rechneFenster(kerzen, von, bis, schrittMs) {
+    const fenster = (Array.isArray(kerzen) ? kerzen : [])
+        .filter((k) => Number(k.t) >= von && Number(k.t) < bis)
+        .sort((a, b) => a.t - b.t)
+    if (fenster.length < 2) throw new Error('zu wenige Kerzen im Messfenster')
+    if (fenster[0].t - von > 2 * schrittMs) throw new Error('Messfenster beginnt zu spät')
+    if (bis - (fenster[fenster.length - 1].t + schrittMs) > 2 * schrittMs) {
+        throw new Error('Messfenster unvollständig')
+    }
 
-    const seit = kerzen.filter((k) => Number(k.t) >= Number(a.erstelltAm))
-    if (seit.length < 2) throw new Error('zu wenige Kerzen seit der Aussage')
-
-    const start = Number(seit[0].o)
-    const ende = Number(seit[seit.length - 1].c)
+    const start = Number(fenster[0].o)
+    const ende = Number(fenster[fenster.length - 1].c)
     if (!(start > 0)) throw new Error('kein Startpreis')
-
-    const hoch = Math.max(...seit.map((k) => Number(k.h)))
-    const tief = Math.min(...seit.map((k) => Number(k.l)))
-
+    const hoch = Math.max(...fenster.map((k) => Number(k.h)))
+    const tief = Math.min(...fenster.map((k) => Number(k.l)))
     return {
         preisStart: start,
         preisEnde: ende,
         renditePct: ((ende - start) / start) * 100,
         mfePct: ((hoch - start) / start) * 100,
         maePct: ((tief - start) / start) * 100,
-        nochHandelbar: 1,
     }
+}
+
+/**
+ * Coin-Radar: Rendite, MAE und MFE aus den Kerzen des Horizonts.
+ *
+ * MAE und MFE sind wichtiger als die blosse Rendite. Ein Coin, der erst 8 %
+ * gegen einen läuft und dann 2 % ins Plus dreht, ist ein anderes Geschäft als
+ * einer, der schnurgerade 2 % steigt — und nur die eine Zahl unterscheidet die
+ * beiden nicht.
+ *
+ * Gelesen wird die HISTORIE des Fensters (`getHistoricalCandles`, gebremst),
+ * nicht „die letzten 500 Kerzen" — so ist eine späte Messung genauso richtig
+ * wie eine pünktliche.
+ */
+async function messeCoin(a) {
+    const dauer = HORIZONTE.coinradar[a.horizont]
+    if (!dauer) throw new Error(`unbekannter Horizont ${a.horizont}`)
+    const von = Number(a.erstelltAm)
+    const bis = von + dauer
+    // Feine Auflösung für kurze Horizonte, gröbere für lange.
+    const ze = dauer <= 3600e3 ? '1m' : '5m'
+    const schritt = timeframeMs(ze)
+    const kerzen = await getHistoricalCandles(a.symbol, ze, von, bis,
+        { seite: Math.ceil(dauer / schritt) + 2 })
+    return { ...rechneFenster(kerzen, von, bis, schritt), nochHandelbar: 1 }
 }
 
 /** Hype-Radar: lebt der Fund noch, und was ist aus Preis und Liquidität geworden? */
 async function messeHype(a) {
     if (!a.contract) throw new Error('keine Vertragsadresse')
     const { dexDetails } = await import('./hype-radar/quellen.js')
-    const d = await dexDetails(a.contract)
+    /*
+     * `streng`: Ein Ausfall von DexScreener muss als Fehler ankommen. Ohne
+     * das schluckte der Sammelabruf ihn, lieferte „nichts gefunden" — und
+     * daraus wurde unten „der Fund ist weg", das härteste Ergebnis überhaupt.
+     */
+    const d = await dexDetails(a.contract, { streng: true })
     if (!d?.markt) {
         /*
          * Kein Paar mehr — das ist keine fehlgeschlagene Messung, sondern das
@@ -209,11 +398,95 @@ async function messeHype(a) {
     }
     const start = zahl(a.preisStart)
     const ende = zahl(d.markt.preisUsd)
+    const liq = d.markt.liquiditaetUsd === null || d.markt.liquiditaetUsd === undefined
+        ? null : zahl(d.markt.liquiditaetUsd)
     return {
         preisEnde: ende,
         renditePct: start > 0 && ende !== null ? ((ende - start) / start) * 100 : null,
-        liquiditaetEnde: zahl(d.markt.liquiditaetUsd),
-        nochHandelbar: (Number(d.markt.liquiditaetUsd) || 0) > 0 ? 1 : 0,
+        liquiditaetEnde: liq,
+        // Ein Paar ohne Liquiditätsangabe (Bindungskurve) gibt es noch — es
+        // ist handelbar; erst eine gemeldete Null heisst „leer".
+        nochHandelbar: liq === null || liq > 0 ? 1 : 0,
+    }
+}
+
+/** GeckoTerminal-Netz je Kette — für die Kerzen des Messfensters. */
+const GECKO_NETZ = { solana: 'solana', ethereum: 'eth', base: 'base', bsc: 'bsc' }
+
+/**
+ * Höchster Kurs im Messfenster aus GeckoTerminal-Stundenkerzen (ohne
+ * Schlüssel) — das Fenster, in dem man hätte verkaufen können. Fällt still
+ * aus: Ohne Kerzen bleibt `mfePct` leer, die übrige Messung gilt.
+ *
+ * ⚠ Endpunkt `/pools/{pool}/ohlcv/hour` nicht live geprüft.
+ */
+export function hochImFenster(ohlcv, von, bis) {
+    const liste = Array.isArray(ohlcv) ? ohlcv : []
+    const im = liste.filter((k) => Array.isArray(k) && Number(k[0]) * 1000 >= von - 3600e3 && Number(k[0]) * 1000 < bis)
+    if (!im.length) return null
+    const hoch = Math.max(...im.map((k) => Number(k[2])).filter((x) => Number.isFinite(x)))
+    const start = Number([...im].sort((a, b) => a[0] - b[0])[0][1])
+    return Number.isFinite(hoch) && start > 0 ? { hoch, start } : null
+}
+
+/**
+ * Frühphase: lebt der Token, hat er die Kurve geschafft, was wurde aus Preis
+ * oder Bewertung — und wie hoch stand er zwischendurch?
+ *
+ * Auf der Kurve gibt es oft keinen Preis von DexScreener; dort ist die
+ * Bewertung der Massstab (bei fester Menge bewegen sich beide gleich).
+ */
+async function messeFrueh(a) {
+    if (!a.contract) throw new Error('keine Vertragsadresse')
+    const { dexDetails, holeJson } = await import('./hype-radar/quellen.js')
+    const d = await dexDetails(a.contract, { streng: true })
+    const istPump = a.chain === 'solana' && /pump$/i.test(String(a.contract))
+
+    let preisEnde = d?.markt ? zahl(d.markt.preisUsd) : null
+    let mcapEnde = d?.markt ? (zahl(d.markt.marktkapitalisierung) || zahl(d.markt.fdv)) : null
+    let liqEnde = d?.markt && d.markt.liquiditaetUsd !== null && d.markt.liquiditaetUsd !== undefined ? zahl(d.markt.liquiditaetUsd) : null
+    let graduiert = null
+    let lebt = d?.markt ? (liqEnde === null || liqEnde > 0 ? 1 : 0) : 0
+
+    if (istPump) {
+        // pump.fun weiss selbst, ob die Kurve durch ist — und kennt Token,
+        // die DexScreener (noch) nicht führt.
+        const coin = await holeJson(`https://frontend-api-v3.pump.fun/coins/${encodeURIComponent(a.contract)}`).catch(() => null)
+        if (coin && typeof coin === 'object') {
+            graduiert = coin.complete === true ? 1 : 0
+            if (mcapEnde === null) mcapEnde = zahl(coin.usd_market_cap) || null
+            if (!d?.markt) lebt = 1
+        } else if (d?.markt) {
+            graduiert = d.markt.dex && d.markt.dex !== 'pumpfun' ? 1 : 0
+        }
+    }
+
+    const preisStart = zahl(a.preisStart)
+    const mcapStart = zahl(a.mcapStart)
+    const renditePct = preisStart > 0 && preisEnde !== null
+        ? ((preisEnde - preisStart) / preisStart) * 100
+        : (mcapStart > 0 && mcapEnde !== null ? ((mcapEnde - mcapStart) / mcapStart) * 100 : null)
+
+    let mfePct = null
+    const netz = GECKO_NETZ[a.chain]
+    if (netz && d?.pair) {
+        const dauer = HORIZONTE.frueh[a.horizont] || 0
+        const von = Number(a.erstelltAm)
+        const bis = von + dauer
+        try {
+            const j = await holeJson(`https://api.geckoterminal.com/api/v2/networks/${netz}/pools/${encodeURIComponent(d.pair)}`
+                + `/ohlcv/hour?aggregate=1&limit=${Math.min(1000, Math.ceil(dauer / 3600e3) + 2)}`
+                + `&before_timestamp=${Math.floor(bis / 1000)}&currency=usd`)
+            const f = hochImFenster(j?.data?.attributes?.ohlcv_list, von, bis)
+            const basis = preisStart > 0 ? preisStart : f?.start
+            if (f && basis > 0) mfePct = ((f.hoch - basis) / basis) * 100
+        } catch { /* ohne Kerzen bleibt mfePct leer */ }
+    }
+
+    return {
+        preisEnde, mcapEnde, liquiditaetEnde: liqEnde,
+        renditePct, mfePct, graduiert,
+        nochHandelbar: lebt,
     }
 }
 

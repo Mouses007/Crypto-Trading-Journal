@@ -7,8 +7,9 @@
  *
  * Aufruf: node server/hype-radar/__selftest-wachhund.mjs
  */
-import { pruefeRegeln, pruefeRegelnBoerse, STANDARD_ALARM_REGELN, SPERRFRIST_MS } from './wachhund.js'
-import { erreichtSchwere } from './zustellung.js'
+import { pruefeRegeln, pruefeRegelnBoerse, naechsteBasis, STANDARD_ALARM_REGELN, SPERRFRIST_MS } from './wachhund.js'
+import { erreichtSchwere, ntfyNachricht } from './zustellung.js'
+import { bereinigeEinstellungen } from './einstellungen.js'
 
 let fehler = 0
 let bestanden = 0
@@ -153,6 +154,97 @@ p('das USDT im Symbol steht nicht in der Meldung',
 p('eigene Schwelle greift auch hier',
     pruefeRegelnBoerse(bx, bAlt, { ...bNeu, umsatz24h: 45e6 },
         { ...STANDARD_ALARM_REGELN, umsatzEinbruchPct: 5 }).some((a) => a.regel === 'umsatzEinbruch'))
+
+/*
+ * ── Befunde vom 07.10.2026 ─────────────────────────────────────────────
+ *
+ * Der langsame Abfluss: je Takt 25 % weniger Liquidität, die Schwelle liegt
+ * bei 30 %. Takt gegen Takt verglichen schlug das NIE an — von 100 000 auf
+ * 31 000 ohne Alarm. Simuliert wird der ganze Verlauf samt Fortschreiben der
+ * Basis, wie `wachhundLauf` es tut.
+ */
+{
+    let stand = { liq: 100000, liqReferenz: 100000 }
+    let alarme = 0
+    let erstesBei = null
+    for (let takt = 1; takt <= 4; takt++) {
+        const neuLiq = Math.round(stand.liq * 0.75)
+        const a = pruefeRegeln(fav, stand, { liquiditaetUsd: neuLiq })
+        const angeschlagen = a.some((x) => x.regel === 'liqAbfluss')
+        if (angeschlagen) { alarme++; erstesBei ??= neuLiq }
+        stand = { liq: neuLiq, liqReferenz: naechsteBasis(stand.liqReferenz, stand.liq, neuLiq, angeschlagen) }
+    }
+    p('langsamer Abfluss schlägt an', alarme >= 1, `${alarme} Alarme`)
+    p('und zwar beim zweiten Takt (−44 % vom Höchststand)', erstesBei === 56250, String(erstesBei))
+    p('nach dem Alarm zählt der Abfluss neu', alarme <= 2, `${alarme} Alarme`)
+}
+p('Basis wandert mit dem Höchststand', naechsteBasis(100, 100, 150, false) === 150)
+p('Basis fällt nicht mit', naechsteBasis(150, 120, 120, false) === 150)
+p('nach Alarm beginnt die Basis beim jetzigen Stand', naechsteBasis(150, 120, 80, true) === 80)
+p('fehlender neuer Wert lässt die Basis stehen', naechsteBasis(150, 120, null, false) === 150)
+p('Altbestand ohne Basis nimmt den letzten Stand', naechsteBasis(undefined, 120, 110, false) === 120)
+
+// Eine fehlende Liquidität ist kein leerer Pool.
+p('fehlende Liquidität löst keinen Abfluss aus',
+    pruefeRegeln(fav, ruhig, { preisUsd: 1, liquiditaetUsd: null }).length === 0)
+
+// Tagesbewegung: beim Überschreiten, nicht solange darüber.
+p('−50 % in 24 h meldet beim ersten Mal',
+    pruefeRegeln(fav, { ...ruhig, aenderung24h: -10 }, { preisUsd: 1, liquiditaetUsd: 100000, aenderung24h: -50 })
+        .some((a) => a.regel === 'preis24h'))
+p('und nicht erneut, solange es so bleibt',
+    !pruefeRegeln(fav, { ...ruhig, aenderung24h: -48 }, { preisUsd: 1, liquiditaetUsd: 100000, aenderung24h: -50 })
+        .some((a) => a.regel === 'preis24h'))
+
+// Sicherheit: nur ein Übergang von BEKANNT bestanden ist kritisch.
+const vertragsKo = { status: 'verworfen', grund: 'honeypot', hinweise: [] }
+p('bestanden → Vertragsbefund ist kritisch',
+    pruefeRegeln(fav, ruhig, { preisUsd: 1, liquiditaetUsd: 100000 }, { status: 'bestanden' }, vertragsKo)
+        .find((a) => a.regel === 'sicherheit')?.schwere === 'kritisch')
+p('frisch angeheftet ohne Vorgeschichte: nur Auskunft',
+    pruefeRegeln(fav, ruhig, { preisUsd: 1, liquiditaetUsd: 100000 }, {}, vertragsKo)
+        .find((a) => a.regel === 'sicherheit')?.schwere === 'info')
+p('GoPlus-Ausfall (ungeprueft) ist kein Befund',
+    !pruefeRegeln(fav, ruhig, { preisUsd: 1, liquiditaetUsd: 100000 }, { status: 'bestanden' },
+        { status: 'verworfen', grund: 'ungeprueft' }).some((a) => a.regel === 'sicherheit'))
+p('Pendeln um die Mindestliquidität ist kein Sicherheitsalarm',
+    !pruefeRegeln(fav, ruhig, { preisUsd: 1, liquiditaetUsd: 49000 }, { status: 'bestanden' },
+        { status: 'verworfen', grund: 'liquiditaet_zu_klein' }).some((a) => a.regel === 'sicherheit'))
+
+// Börsenpfad: der rollierende 24-h-Umsatz gegen seinen Höchststand.
+p('Umsatz halbiert gegenüber dem Höchststand meldet',
+    pruefeRegelnBoerse(bx, { ...bAlt, umsatz: 60e6, umsatzReferenz: 100e6 }, { ...bNeu, umsatz24h: 45e6 })
+        .some((a) => a.regel === 'umsatzEinbruch'))
+
+// ntfy: Titel mit Nicht-Latin-1-Zeichen gehen über JSON.
+{
+    const n = ntfyNachricht({ regel: 'liqAbfluss', schwere: 'kritisch', meldung: 'm' }, { symbol: '币安' })
+    p('ntfy-Titel darf UTF-8 tragen', n.title === '币安 (liqAbfluss)' && n.priority === 5)
+}
+
+/*
+ * Einstellungen: Ein geleertes Zahlenfeld wirkte wie 0 — Alarme bei 0,1 %,
+ * Mindestliquidität aus. Und die aufgefüllten Vorgaben froren beim ersten
+ * Speichern in der Datenbank ein.
+ */
+{
+    const b = bereinigeEinstellungen(
+        {
+            alarmRegeln: { ...STANDARD_ALARM_REGELN, preisSprungPct: '', liqAbflussPct: 25 },
+            sicherheit: { minLiquiditaetUsd: '', maxTop10Prozent: 40, lpMussGesperrtSein: false },
+            minHypeScore: '',
+            wachhundIntervallMin: '30',
+            unbekannt: 1,
+        },
+        { alarmRegeln: STANDARD_ALARM_REGELN })
+    p('leeres Zahlenfeld fällt weg (Vorgabe greift)', !('preisSprungPct' in b.alarmRegeln) && !('minHypeScore' in b))
+    p('nur Abweichungen werden gespeichert',
+        JSON.stringify(b.alarmRegeln) === JSON.stringify({ liqAbflussPct: 25 }), JSON.stringify(b.alarmRegeln))
+    p('Sicherheit: leer fällt weg, Vorgabe fällt weg, Abweichung bleibt',
+        JSON.stringify(b.sicherheit) === JSON.stringify({ lpMussGesperrtSein: false }), JSON.stringify(b.sicherheit))
+    p('Zahl als Text wird Zahl', b.wachhundIntervallMin === 30)
+    p('Unbekannte Schlüssel sickern nicht ein', !('unbekannt' in b))
+}
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

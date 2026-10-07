@@ -30,7 +30,7 @@ export const SPEICHER_MODULE = {
     nachrichten: ['news_items', 'news_digests', 'news_sources', 'news_profile'],
     research: ['hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten',
         'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings',
-        'coin_universen', 'radar_ergebnisse'],
+        'coin_universen', 'radar_ergebnisse', 'hype_frueh', 'hype_projekt', 'hype_smart_stand', 'hype_smart_kaeufe', 'hype_boersen_stand', 'hype_listungen_neu', 'hype_gedaechtnis'],
     strategien: ['strategy_backtests', 'strategy_drafts', 'strategy_instances',
         'strategy_param_history', 'strategy_positions', 'strategy_runs',
         'strategy_setups', 'strategy_suggestions', 'strategy_trades',

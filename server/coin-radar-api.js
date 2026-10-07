@@ -12,7 +12,7 @@
 import { getKnex } from './database.js'
 import { beobachteAbbruch, sseSender } from './sse.js'
 import { logWarn, logError } from './logger.js'
-import { beansprucheAufgabe, beansprucheFuehrung, gibFuehrungFrei, meldeFehler } from './db-claim.js'
+import { beansprucheAufgabe, beansprucheFuehrung, verlaengereFuehrung, gibFuehrungFrei, meldeFehler } from './db-claim.js'
 import { leseEinstellungen, schreibeEinstellungen, VORGABEN } from './coin-radar/einstellungen.js'
 import { ANKER } from './coin-radar/bewertung.js'
 import { KOPPLUNG_FEST, KOPPLUNG_LOSE, BTC_ZEITEINHEIT } from './coin-radar/btc-vergleich.js'
@@ -21,7 +21,7 @@ import { erzeugeEinordnung } from './coin-radar/einordnung.js'
 import { holeCoinInfo } from './coin-radar/coin-info.js'
 import { pruefeEinzeln } from './coin-radar/einzel.js'
 import { leseSchluessel } from './hype-radar/einstellungen.js'
-import { legeAnCoinRadar } from './radar-ergebnisse.js'
+import { legeAnCoinRadar, HORIZONTE } from './radar-ergebnisse.js'
 import { werteAus } from './radar-guete.js'
 import { raeumeRadarAuf } from './radar-aufraeumen.js'
 
@@ -298,12 +298,16 @@ export function setupCoinRadarRoutes(app) {
     app.get('/api/coin-radar/guete', async (req, res) => {
         try {
             const knex = getKnex()
-            const seit = Date.now() - (Number(req.query.tage) || 7) * 24 * 3600e3
+            const tage = Math.min(90, Math.max(1, Number(req.query.tage) || 14))
+            const seit = Date.now() - tage * 24 * 3600e3
             const zeilen = await knex('radar_ergebnisse')
                 .where('art', 'coinradar').andWhere('erstelltAm', '>=', seit)
-            const horizonte = [...new Set(zeilen.map((z) => z.horizont))]
+            // Feste Reihenfolge der Horizonte (kurz → lang), nicht die der Zeilen.
+            const horizonte = Object.keys(HORIZONTE.coinradar)
+                .filter((h) => zeilen.some((z) => z.horizont === h))
             res.json({
                 seit,
+                tage,
                 gesamt: zeilen.length,
                 jeHorizont: horizonte.map((h) => werteAus(zeilen.filter((z) => z.horizont === h), h)),
             })
@@ -318,11 +322,15 @@ export function setupCoinRadarRoutes(app) {
         if (laufAktiv) {
             return res.status(429).json({ error: 'Es läuft bereits ein Durchgang. Bitte warten.' })
         }
+        // Sofort sperren, vor dem ersten `await` — sonst passen zwei schnelle
+        // Klicks (oder Klick und Takt) durch dieselbe Lücke.
+        laufAktiv = true
 
         let einst
         try {
             einst = await leseEinstellungen()
         } catch {
+            laufAktiv = false
             return res.status(500).json({ error: 'Einstellungen nicht lesbar' })
         }
 
@@ -335,8 +343,8 @@ export function setupCoinRadarRoutes(app) {
         const istAbgebrochen = beobachteAbbruch(res)
         const sende = sseSender(res, istAbgebrochen)
 
-        laufAktiv = true
         let hatFuehrung = false
+        let halteFuehrung = null
         try {
             /*
              * Die Führung erst holen, wenn wirklich gearbeitet wird — nicht
@@ -348,6 +356,7 @@ export function setupCoinRadarRoutes(app) {
                 sende({ type: 'fehler', fehler: 'Auf einem anderen Rechner läuft gerade ein Durchgang.' })
                 return
             }
+            halteFuehrung = fuehrungHalten()
             sende({ type: 'start' })
             await laufeMitZustand(einst, 'manuell',
                 (stand) => sende({ type: 'fortschritt', ...stand }),
@@ -357,11 +366,29 @@ export function setupCoinRadarRoutes(app) {
             logWarn('coin-radar', `Lauf fehlgeschlagen: ${e.message}`)
             sende({ type: 'fehler', fehler: e.message })
         } finally {
+            if (halteFuehrung) clearInterval(halteFuehrung)
             if (hatFuehrung) await gibFuehrungFrei(FUEHRUNG_KEY).catch(() => {})
             laufAktiv = false
             res.end()
         }
     })
+}
+
+/**
+ * Die Führung während des Laufs verlängern.
+ *
+ * Sie gilt zehn Minuten. Ein Lauf ist meist in einer Minute durch, aber nicht
+ * immer: Klemmt ein Orderbuch-Anbieter, kosten fünfzig Häppchen mit je zehn
+ * Sekunden Wartezeit schnell eine Viertelstunde. Bis zum 07.10.2026 lief die
+ * Führung dann einfach ab — und der andere Rechner fand den Lauf als
+ * „verwaist" und nahm DENSELBEN Lauf parallel wieder auf.
+ */
+function fuehrungHalten() {
+    const uhr = setInterval(() => {
+        verlaengereFuehrung(FUEHRUNG_KEY).catch(() => {})
+    }, FUEHRUNG_TTL_MS / 3)
+    uhr.unref?.()
+    return uhr
 }
 
 /**
@@ -493,7 +520,16 @@ export function startCoinRadarTakt() {
 
     const uhr = setInterval(async () => {
         if (laufAktiv) return
+        /*
+         * Die Sperre gehört dem, der sie gesetzt hat. Bis zum 07.10.2026 setzte
+         * der Takt sie erst kurz vor dem Lauf, gab sie im `finally` aber
+         * IMMER frei — auch wenn er vorher (Aufräumen dauerte, Radar aus,
+         * Anspruch vergeben) ausgestiegen war und inzwischen ein Handlauf die
+         * Sperre hielt. Der nächste Klick startete dann einen zweiten Lauf.
+         */
+        laufAktiv = true
         let hatFuehrung = false
+        let halteFuehrung = null
         try {
             /*
              * Aufräumen zuerst und unabhängig davon, ob der Radar aktiv ist:
@@ -521,13 +557,14 @@ export function startCoinRadarTakt() {
             hatFuehrung = await beansprucheFuehrung(FUEHRUNG_KEY, FUEHRUNG_TTL_MS)
             if (!hatFuehrung) return
 
-            laufAktiv = true
+            halteFuehrung = fuehrungHalten()
             const { laufId, bewertet } = await laufeMitZustand(einst, 'auto', () => {})
             console.log(` -> Coin-Radar: Lauf ${laufId} fertig, ${bewertet} Coins bewertet`)
         } catch (e) {
             logError('coin-radar', 'Zeitplan fehlgeschlagen', e)
             await meldeFehler('coinradar_lauf', e.message).catch(() => {})
         } finally {
+            if (halteFuehrung) clearInterval(halteFuehrung)
             if (hatFuehrung) await gibFuehrungFrei(FUEHRUNG_KEY).catch(() => {})
             laufAktiv = false
         }

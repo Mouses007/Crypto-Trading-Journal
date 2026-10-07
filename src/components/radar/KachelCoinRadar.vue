@@ -69,9 +69,16 @@ const alterText = computed(() => {
 /** Ab einer Stunde ist der Stand im Handelsfenster nicht mehr frisch. */
 const alterAuf = computed(() => (alterMin.value ?? 0) >= 60)
 
+/*
+ * `null` ist „nicht gerechnet" — und `Number(null)` wäre 0. Bis zum 07.10.2026
+ * las die Kachel deshalb schon nach dem allerersten Lauf „grösstenteils
+ * Rauschen (0.00)", und der Zweig für „unbekannt" war unerreichbar.
+ */
+const fehlt = (w) => w === null || w === undefined || w === ''
+
 const kor = computed(() => {
     const w = lauf.value?.rangkorrelation
-    return Number.isFinite(Number(w)) ? Number(w) : null
+    return !fehlt(w) && Number.isFinite(Number(w)) ? Number(w) : null
 })
 
 /**
@@ -92,12 +99,13 @@ const korKlasse = computed(() => {
     return w >= 0.7 ? 'gut' : w >= 0.4 ? 'mittel' : 'schwach'
 })
 
-const zahl = (w, n = 1) => (Number.isFinite(Number(w)) ? Number(w).toFixed(n) : '—')
-const proz = (w, n = 1) => (Number.isFinite(Number(w)) ? `${Number(w).toFixed(n)} %` : '—')
+const zahl = (w, n = 1) => (!fehlt(w) && Number.isFinite(Number(w)) ? Number(w).toFixed(n) : '—')
+const proz = (w, n = 1) => (!fehlt(w) && Number.isFinite(Number(w)) ? `${Number(w).toFixed(n)} %` : '—')
 
 /** Umsatz kurz — dieselbe Schreibweise wie in der Funding-Kachel. */
 const umsatz = (v) => {
-    const w = Number(v) || 0
+    if (fehlt(v) || !Number.isFinite(Number(v))) return '—'
+    const w = Number(v)
     if (w >= 1e9) return `${(w / 1e9).toFixed(1)} Mrd`
     if (w >= 1e6) return `${Math.round(w / 1e6)} Mio`
     return `${Math.round(w / 1e3)} Tsd`
@@ -167,7 +175,7 @@ function waehle(symbol) {
                     <span class="crWert">{{ zahl(z.adx, 0) }}</span>
                     <span class="crWert">{{ proz(z.fundingJahresRate, 0) }}</span>
                     <span class="crWert crWeit">{{ umsatz(z.umsatz24h) }}</span>
-                    <span class="crWert crWeit">{{ z.besteBoerse || '—' }}</span>
+                    <span class="crWert crWeit">{{ z.besteBoerse ? (BOERSE_KURZ[z.besteBoerse] || z.besteBoerse) : '—' }}</span>
                 </template>
             </div>
         </div>

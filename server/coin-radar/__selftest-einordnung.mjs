@@ -126,5 +126,33 @@ const zeile = (o) => ({
     p('zu lange Antwort gekürzt statt verworfen', lang.ok && lang.text.length <= 1201 && lang.grund === 'gekürzt')
 }
 
+// ── Befunde vom 07.10.2026 ─────────────────────────────────────────────
+{
+    const lang = `${'Die Bewegung ist breit getragen. '.repeat(40)}BTC dürfte steigen.`
+    p('langer Text wird VOR dem Kürzen geprüft', pruefeEinordnung({ text: lang }).ok === false)
+    p('langer harmloser Text wird gekürzt, nicht verworfen',
+        pruefeEinordnung({ text: 'Ruhig. '.repeat(300) }).ok === true)
+    for (const satz of [
+        'SOL wird in den nächsten Stunden steigen.',
+        'Das könnte weiter zulegen.',
+        'BTC will likely rise today.',
+        'Price target 120k.',
+    ]) {
+        p(`Prognose erkannt: ${satz}`, pruefeEinordnung({ text: satz }).ok === false)
+    }
+    for (const satz of [
+        'Eine Prognose lässt sich daraus nicht ableiten.',
+        'Kein Kursziel; die Lage ist ruhig.',
+        'Die Hälfte wird von BTC getragen, die übrigen fallen zurück.',
+    ]) {
+        p(`keine Prognose: ${satz}`, pruefeEinordnung({ text: satz }).ok === true)
+    }
+    const basis = baueEinordnungsBasis(
+        [{ status: 'bewertet', rang: 1, symbol: 'X', note: 50, atrPct: 2, rvol: null, adx: 30, fundingJahresRate: null }])
+    p('unbekanntes Funding heisst „unbekannt", nicht „0 %"',
+        basis.zeilen.some((z) => /Funding unbekannt/.test(z)), JSON.stringify(basis.zeilen))
+    p('fehlendes RVOL zieht den Mittelwert nicht auf 0', basis.kennzahlen.mittelRvol === null)
+}
+
 console.log(`\n${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler ? 1 : 0)

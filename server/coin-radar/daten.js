@@ -3,8 +3,9 @@
  *
  * Zwei Wege, und der Unterschied zwischen ihnen bestimmt den ganzen Aufbau:
  *
- *   MARKTWEIT   Drei Abrufe liefern Umsatz, Spread und Funding für ALLE
- *               Perpetuals auf einen Schlag — zusammen 66 Gewichtseinheiten.
+ *   MARKTWEIT   Vier Abrufe liefern Umsatz, Spread, Funding und Funding-Takt
+ *               für ALLE Perpetuals auf einen Schlag (der Takt ist zwölf
+ *               Stunden zwischengespeichert).
  *               Damit lässt sich das Feld vorfiltern, bevor irgendetwas
  *               Teures passiert.
  *
@@ -16,7 +17,7 @@
  * ansehen. Ein Lauf über das ganze Universum bleibt so unter einer Minute.
  */
 
-import { holeJson, holeBinanceIntervalle } from '../marktradar-api.js'
+import { holeJson, holeBinanceIntervalleStreng } from '../marktradar-api.js'
 import { getClosedCandles } from '../market-data.js'
 import { warteAufGewicht } from '../binance-takt.js'
 import { logWarn } from '../logger.js'
@@ -33,6 +34,13 @@ const FAPI = 'https://fapi.binance.com'
  */
 const GEWICHT_KLEINE_KLINES = 2
 
+/**
+ * Gewicht der drei marktweiten Abrufe ohne Symbol: 24hr (40), bookTicker (5),
+ * premiumIndex (10). `fundingInfo` läuft über einen eigenen Zwölf-Stunden-
+ * Zwischenspeicher und fällt kaum ins Gewicht.
+ */
+const GEWICHT_MARKTWEIT = 55
+
 /** Wie viele Kerzen je Zeiteinheit. 200 reichen für ATR(14), ADX(14), Volumen-Schnitt(20). */
 export const KERZEN_ANZAHL = 200
 
@@ -46,6 +54,32 @@ export const KERZEN_ANZAHL = 200
  * @returns {Promise<{jeSymbol: Map<string, object>, quellenStand: object}>}
  */
 export async function holeMarktweit() {
+    if (letzterStand && Date.now() - letzterStand.ts < MARKTWEIT_FRISCH_MS) return letzterStand.wert
+    if (laufenderAbruf) return laufenderAbruf
+    laufenderAbruf = holeMarktweitFrisch()
+        .then((wert) => {
+            letzterStand = { ts: Date.now(), wert }
+            return wert
+        })
+        .finally(() => { laufenderAbruf = null })
+    return laufenderAbruf
+}
+
+/*
+ * Kurz zwischengespeichert, mit Mitwarten.
+ *
+ * Vier Aufrufer teilen sich diese Abrufe — Lauf, Einzelprüfung, Wachhund und
+ * Live-Ansicht der Favoriten — und keiner ging über eine Bremse oder einen
+ * Zwischenspeicher. Jeder Klick auf „prüfen" kostete rund 55
+ * Gewichtseinheiten. Dreissig Sekunden sind für Umsatz, Spread und Funding
+ * frisch genug; Kerzen und Orderbücher holt jeder Aufrufer weiterhin selbst.
+ */
+const MARKTWEIT_FRISCH_MS = 30 * 1000
+let letzterStand = null
+let laufenderAbruf = null
+
+async function holeMarktweitFrisch() {
+    await warteAufGewicht(GEWICHT_MARKTWEIT)
     const [umsatz, buch, funding, intervalle] = await Promise.allSettled([
         holeJson(`${FAPI}/fapi/v1/ticker/24hr`),
         holeJson(`${FAPI}/fapi/v1/ticker/bookTicker`),
@@ -60,9 +94,10 @@ export async function holeMarktweit() {
          * ist über zwölf Stunden zwischengespeichert und kostet praktisch
          * nichts.
          */
-        holeBinanceIntervalle(),
+        holeBinanceIntervalleStreng(),
     ])
-    const takt = intervalle.status === 'fulfilled' ? (intervalle.value || {}) : {}
+    // `null` heisst: Takt unbekannt — siehe `holeBinanceIntervalleStreng`.
+    const takt = intervalle.status === 'fulfilled' ? (intervalle.value || {}) : null
 
     const quellenStand = {}
     const jeSymbol = new Map()
@@ -127,11 +162,15 @@ export async function holeMarktweit() {
             e.fundingRate = Number.isFinite(rate) ? rate * 100 : null
             // Der Takt gehört an die Rate: getrennt gespeichert wäre jede
             // spätere Hochrechnung wieder eine Gelegenheit, ihn zu vergessen.
-            e.fundingIntervallH = Number(takt[f.symbol]) || 8
+            e.fundingIntervallH = takt ? (Number(takt[f.symbol]) || 8) : null
             e.naechsteZahlung = Number(f.nextFundingTime) || null
             if (!e.preis) e.preis = Number(f.markPrice) || null
         }
         quellenStand.funding = { ok: true, anzahl: funding.value.length }
+        if (!takt) {
+            quellenStand.fundingTakt = { ok: false, fehler: fehlertext(intervalle.reason) }
+            logWarn('coin-radar', `Funding-Takt nicht abrufbar — Jahresraten bleiben unbekannt: ${quellenStand.fundingTakt.fehler}`)
+        }
     } else {
         quellenStand.funding = { ok: false, fehler: fehlertext(funding.reason) }
         logWarn('coin-radar', `Funding nicht abrufbar: ${quellenStand.funding.fehler}`)

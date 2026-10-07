@@ -110,16 +110,7 @@ export async function sucheXPosts({ handles, vonIso, bisIso, modell, apiKey, tim
     if (!r.ok) throw new Error(`xAI HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`)
     const j = await r.json()
 
-    // Responses API: `output` ist eine Liste aus Tool-Aufrufen und Nachrichten;
-    // der Text steckt in den `output_text`-Teilen der Nachricht. `output_text`
-    // auf oberster Ebene gibt es je nach SDK-Stand auch — beides abklappern.
-    const teile = []
-    for (const item of (Array.isArray(j?.output) ? j.output : [])) {
-        for (const c of (Array.isArray(item?.content) ? item.content : [])) {
-            if (c?.type === 'output_text' && c.text) teile.push(c.text)
-        }
-    }
-    const text = teile.join('\n') || j?.output_text || ''
+    const { text } = leseXAntwort(j)
     const roh = parseJsonListe(text) || []
 
     const posts = []
@@ -142,31 +133,120 @@ export async function sucheXPosts({ handles, vonIso, bisIso, modell, apiKey, tim
         })
     }
 
-    // Wie viele Suchen das Modell tatsächlich abgesetzt hat, steht — je nach
-    // API-Stand — als eigene Ausgabezeile drin; sonst konservativ eine.
-    const suchen = Math.max(1, (Array.isArray(j?.output) ? j.output : [])
-        .filter((o) => String(o?.type || '').includes('x_search')).length)
-    const tokens = Number(j?.usage?.total_tokens)
-        || (Number(j?.usage?.input_tokens) || 0) + (Number(j?.usage?.output_tokens) || 0)
-    const kostenUsd = suchen * X_SUCHE_USD
-        + schaetzeKosten(modell || X_STANDARDMODELL, Number(j?.usage?.input_tokens) || 0, Number(j?.usage?.output_tokens) || 0)
-
-    // Die Suchpauschale ist der grössere Posten — deshalb der fertige Preis
-    // statt einer Tokenrechnung, die ihn unterschlagen würde.
-    merkeVerbrauch({
-        funktion: 'x-suche',
-        provider: 'xai',
-        modell: modell || X_STANDARDMODELL,
-        usage: {
-            promptTokens: Number(j?.usage?.input_tokens) || 0,
-            completionTokens: Number(j?.usage?.output_tokens) || 0,
-            totalTokens: tokens,
-        },
-        kostenUsd,
-    })
+    const { tokens, kostenUsd } = xKosten(j, modell, 'x-suche')
 
     if (!posts.length && text) logWarn('news-recherche', `X-Suche ohne verwertbare Posts (${text.slice(0, 120)})`)
     return { posts, tokens, kostenUsd }
+}
+
+/**
+ * Text und zitierte Post-IDs aus einer xAI-Responses-Antwort.
+ *
+ * `output` ist eine Liste aus Tool-Aufrufen und Nachrichten; der Text steckt
+ * in den `output_text`-Teilen der Nachricht (`output_text` auf oberster Ebene
+ * gibt es je nach SDK-Stand auch — beides abklappern). Die Quellen, die die
+ * Suche wirklich gesehen hat, stehen als `citations` auf oberster Ebene und
+ * als `url_citation`-Anmerkungen am Text.
+ */
+export function leseXAntwort(j) {
+    const teile = []
+    const zitiert = new Set()
+    const merke = (u) => { const id = tweetId(typeof u === 'string' ? u : u?.url); if (id) zitiert.add(id) }
+    for (const item of (Array.isArray(j?.output) ? j.output : [])) {
+        for (const c of (Array.isArray(item?.content) ? item.content : [])) {
+            if (c?.type === 'output_text' && c.text) teile.push(c.text)
+            for (const a of (Array.isArray(c?.annotations) ? c.annotations : [])) merke(a)
+        }
+    }
+    for (const u of (Array.isArray(j?.citations) ? j.citations : [])) merke(u)
+    return { text: teile.join('\n') || j?.output_text || '', zitierteIds: zitiert }
+}
+
+/**
+ * Kosten einer X-Suche: Suchpauschale je tatsächlich abgesetzter Suche plus
+ * Tokens. Wie viele Suchen das Modell abgesetzt hat, steht — je nach
+ * API-Stand — als eigene Ausgabezeile drin; sonst konservativ eine. Die
+ * Pauschale ist der grössere Posten — deshalb der fertige Preis statt einer
+ * Tokenrechnung, die ihn unterschlagen würde.
+ */
+function xKosten(j, modell, funktion) {
+    const m = modell || X_STANDARDMODELL
+    const suchen = Math.max(1, (Array.isArray(j?.output) ? j.output : [])
+        .filter((o) => String(o?.type || '').includes('x_search')).length)
+    const ein = Number(j?.usage?.input_tokens) || 0
+    const aus = Number(j?.usage?.output_tokens) || 0
+    const tokens = Number(j?.usage?.total_tokens) || ein + aus
+    const kostenUsd = suchen * X_SUCHE_USD + schaetzeKosten(m, ein, aus)
+    merkeVerbrauch({
+        funktion,
+        provider: 'xai',
+        modell: m,
+        usage: { promptTokens: ein, completionTokens: aus, totalTokens: tokens },
+        kostenUsd,
+    })
+    return { tokens, kostenUsd, suchen }
+}
+
+/**
+ * X nach Nennungen von Token durchsuchen — für die Frühphase des Hype-Radars.
+ *
+ * Anders als `sucheXPosts` ohne Handle-Beschränkung: gefragt wird nach Posts
+ * der letzten Stunden, die einen der genannten Token per Vertragsadresse oder
+ * $KÜRZEL nennen, und nach neu beworbenen Vertragsadressen. EIN Aufruf.
+ *
+ * Grok gibt die Posts wörtlich zurück; ZÄHLEN tut der Aufrufer selbst
+ * (`xNennungen` in `hype-radar/fruehphase-bewertung.js`) — nur Posts, die die
+ * Suche zitiert hat und deren Text die Adresse wirklich enthält. Eine vom
+ * Modell genannte Zahl wäre eine Behauptung, keine Messung.
+ *
+ * @param {object} p
+ * @param {Array<{symbol:string, contract:string}>} p.token  höchstens 15
+ * @param {number} p.stunden  Zeitfenster
+ * @returns {{posts:Array<{handle,id,url,text,zeit}>, zitierteIds:Set<string>, kostenUsd:number}}
+ */
+export async function sucheXErwaehnungen({ token = [], stunden = 6, modell, apiKey, timeoutMs = X_TIMEOUT_MS }) {
+    if (!apiKey) throw new Error('Kein xAI-Schlüssel hinterlegt')
+    const liste = token.filter((t) => t?.contract).slice(0, 15)
+        .map((t) => `${t.symbol ? '$' + t.symbol + ' ' : ''}${t.contract}`)
+    const anweisung = `Suche auf X nach Posts der letzten ${stunden} Stunden zu jungen Krypto-Token (Memecoins auf Solana, Base, BSC, Ethereum):\n`
+        + (liste.length ? `1. Posts, die einen dieser Token per Vertragsadresse oder $KÜRZEL nennen:\n${liste.join('\n')}\n` : '')
+        + `${liste.length ? '2' : '1'}. Posts, die einen NEUEN Token mit vollständiger Vertragsadresse nennen.\n`
+        + 'Gib die Posts WÖRTLICH wieder, höchstens 60. Antworte NUR mit einer JSON-Liste, ohne Kommentar:\n'
+        + '[{"handle": "name_ohne_at", "url": "https://x.com/…/status/…", "datum": "ISO-Zeitpunkt", "text": "voller Wortlaut"}]\n'
+        + 'Retweets ohne eigenen Text lässt du weg. Erfinde nichts; findest du nichts, antworte mit [].'
+
+    const heute = new Date()
+    const von = new Date(heute.getTime() - Math.max(stunden, 24) * 3600e3)
+    const r = await fetchMitTimeout('https://api.x.ai/v1/responses', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+            model: modell || X_STANDARDMODELL,
+            input: anweisung,
+            // Das Werkzeug kennt nur Kalendertage; die Stunden stehen in der Frage.
+            tools: [{ type: 'x_search', from_date: von.toISOString().slice(0, 10), to_date: heute.toISOString().slice(0, 10) }],
+        }),
+    }, timeoutMs)
+    if (!r.ok) throw new Error(`xAI HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`)
+    const j = await r.json()
+
+    const { text, zitierteIds } = leseXAntwort(j)
+    const posts = []
+    for (const p of (parseJsonListe(text) || [])) {
+        const url = String(p?.url || '').trim()
+        const inhalt = String(p?.text || '').trim()
+        const id = tweetId(url)
+        if (!inhalt || !id) continue
+        posts.push({
+            handle: String(p?.handle || '').replace(/^@/, '').trim().toLowerCase()
+                || (url.match(/x\.com\/([^/]+)\/status/i) || [])[1]?.toLowerCase() || '',
+            id, url, text: inhalt.slice(0, 2000),
+            zeit: Date.parse(p?.datum || '') || null,
+        })
+    }
+    const { kostenUsd } = xKosten(j, modell, 'hype-x')
+    if (!posts.length && text && text.trim() !== '[]') logWarn('news-recherche', `X-Nennungen ohne verwertbare Posts (${text.slice(0, 120)})`)
+    return { posts, zitierteIds, kostenUsd }
 }
 
 /** Deutsche Themennamen — auch der Prompt-Baustein für die Sonar-Frage. */

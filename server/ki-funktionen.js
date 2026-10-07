@@ -54,7 +54,9 @@ export const KI_FUNKTIONEN = [
     {
         id: 'xSuche', titelKey: 'kiUebersicht.fn.xSuche', bereich: 'nachrichten',
         fest: { provider: 'xai', feld: 'radarNewsXModell', standard: 'grok-4.6' },
-        funktionen: ['x-suche'],
+        // Die Hype-Frühphase nutzt dieselbe Suche mit demselben Modell —
+        // eine Kostenzeile für „X", eine Stelle für das Modell.
+        funktionen: ['x-suche', 'hype-x'],
     },
     {
         id: 'video', titelKey: 'kiUebersicht.fn.video', bereich: 'nachrichten',

@@ -42,6 +42,7 @@ export const FUNKTIONEN = {
     LAGEBERICHT_PRUEFUNG: 'lagebericht-pruefung',  // eigene Anweisungen vorab prüfen
     VIDEO: 'video',                        // Gemini liest ein YouTube-Video
     X_SUCHE: 'x-suche',                    // Grok durchsucht X
+    HYPE_X: 'hype-x',                      // Grok sucht X nach Token der Hype-Frühphase
     RECHERCHE: 'recherche',                // Perplexity Sonar
     LAGE: 'lage',                          // Marktradar-Gesamtlage
     MECHANIK: 'mechanik',                  // Marktmechanik-Einordnung

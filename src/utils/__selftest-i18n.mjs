@@ -107,5 +107,38 @@ for (const [dateiName, karte] of [['de', dePfade], ['en', enPfade]]) {
 pruefe("kein ungeschütztes @ in den Texten (muss {'@'} heissen)",
     nacktesAt.length === 0, nacktesAt.slice(0, 5).join(', '))
 
+/*
+ * Jeder fest im Code stehende Schlüssel muss existieren.
+ *
+ * Die Parität oben prüft nur, dass beide Dateien GLEICH sind — nicht, dass sie
+ * enthalten, was der Code liest. Am 07.10.2026 fielen so drei Fehler auf, die
+ * kein Test fand: die Texte der Hype-Erfolgskontrolle standen unter
+ * `coinradar` statt `hype` (die Seite zeigte rohe Schlüssel, der Coin-Radar
+ * einen Hype-Text), und `coinradar.ladeFehler` war in `lernen` gelandet und
+ * hatte dort den Text der Lernkarten überschrieben.
+ *
+ * Geprüft wird nur, was sich ohne Ausführen lesen lässt: `t('a.b')` mit
+ * festem Schlüssel. Zusammengesetzte (`t('hype.note_' + feld)`) und
+ * berechnete Schlüssel bleiben aussen vor.
+ */
+const quellOrdner = path.resolve(hier, '..')
+const fehlendImCode = []
+function durchsuche(ordnerPfad) {
+    for (const eintrag of fs.readdirSync(ordnerPfad, { withFileTypes: true })) {
+        const voll = path.join(ordnerPfad, eintrag.name)
+        if (eintrag.isDirectory()) { durchsuche(voll); continue }
+        if (!/\.(vue|js)$/.test(eintrag.name)) continue
+        const text = fs.readFileSync(voll, 'utf8')
+        for (const m of text.matchAll(/\bt\(\s*['"]([a-zA-Z][\w]*\.[\w.]+)['"]\s*[,)]/g)) {
+            if (!dePfade.has(m[1]) && ![...dePfade.keys()].some((k) => k.startsWith(m[1] + '.'))) {
+                fehlendImCode.push(`${m[1]} (${path.relative(quellOrdner, voll)})`)
+            }
+        }
+    }
+}
+durchsuche(quellOrdner)
+pruefe('jeder feste Schlüssel im Code existiert in de.json',
+    fehlendImCode.length === 0, fehlendImCode.slice(0, 8).join(', '))
+
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 if (fehler) process.exit(1)

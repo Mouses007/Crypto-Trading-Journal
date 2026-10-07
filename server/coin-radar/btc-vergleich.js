@@ -187,7 +187,13 @@ export function zerfallstest(rendCoin, rendBtc) {
     const se = Math.sqrt(1 / (haelfte - 3) + 1 / (n - haelfte - 3))
     if (!(se > 0) || !Number.isFinite(se)) return { ...leer, r1, r2 }
 
-    const z = Math.abs(z1 - z2) / se
+    /*
+     * MIT Vorzeichen: positiv heisst, die Kopplung ist schwächer geworden
+     * (ältere Hälfte stärker als die jüngere). Bis zum 07.10.2026 stand hier
+     * `Math.abs` — dann meldete „deutlich abgeschwächt" auch ein Coin, dessen
+     * Kopplung von −0,07 auf 0,98 GESTIEGEN war.
+     */
+    const z = (z1 - z2) / se
     return { r1, r2, z, zerfallen: z > Z_SIGNIFIKANT }
 }
 

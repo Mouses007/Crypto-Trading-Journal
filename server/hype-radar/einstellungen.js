@@ -14,6 +14,7 @@ import { getKnex } from '../database.js'
 import { encrypt, decrypt } from '../crypto.js'
 import { STANDARD_GEWICHTE, STANDARD_NARRATIVE } from './bewertung.js'
 import { STANDARD_SICHERHEIT } from './sicherheit.js'
+import { smartWalletListe } from './fruehphase-bewertung.js'
 
 /** Spalten in `settings`, in denen die Schlüssel der Zusatzquellen liegen. */
 const SCHLUESSEL_SPALTEN = {
@@ -23,6 +24,8 @@ const SCHLUESSEL_SPALTEN = {
     ntfyToken: 'hypeAlarmNtfyToken',
     telegramToken: 'hypeAlarmTelegramToken',
     webhookUrl: 'hypeAlarmWebhookUrl',
+    // Smart Money: eigene Solana-RPC-Adresse (bei Helius steckt der Schlüssel darin).
+    solanaRpc: 'hypeKeySolanaRpc',
 }
 
 export const VORGABEN = {
@@ -90,6 +93,47 @@ export const VORGABEN = {
         webhook: { an: false, minSchwere: 'info' },
     },
     berichtTopN: 7,
+    /*
+     * Projektprüfung der bestandenen Funde: Webseite, Domain-Alter, GitHub,
+     * Ersteller-Vorgeschichte. Kostet keinen Schlüssel, aber bis zu fünf
+     * Abrufe je Fund — deshalb gedeckelt.
+     */
+    projektPruefung: true,
+    projektMax: 15,
+    /*
+     * Die Frühphase: eine eigene Spur VOR der Hauptprüfung, für Token, die
+     * noch keine zwölf Stunden alt sind oder noch keine 50 000 USD Liquidität
+     * haben. Aus als Vorgabe wie der Radar selbst — sie fragt alle fünfzehn
+     * Minuten bis zu sechs Quellen ab.
+     *
+     * `fruehAlarmAb` 0 heisst: beobachten, nicht melden.
+     */
+    fruehAktiv: false,
+    fruehIntervallMin: 15,
+    fruehQuellen: {
+        pumpfunNeu: true, pumpfunAufstieg: true, dexscreenerProfile: true,
+        geckoterminalNeu: true, biz: true, telegram: true, reddit: false,
+        // Bezahlt (xAI, Grok `x_search`) — deshalb aus, bis jemand es will.
+        x: false,
+        // Braucht eine Wallet-Liste; ohne eigene RPC-Adresse der öffentliche Knoten.
+        smartmoney: false,
+    },
+    // Beobachtete Wallets [{adresse, name}] und wie oft ihre Käufe gelesen werden.
+    smartWallets: [],
+    smartIntervallMin: 30,
+    /*
+     * Börsen-Beobachter: neue Listungen auf grossen und mittleren Börsen und
+     * auf Binance Alpha. Ohne Schlüssel; aus als Vorgabe wie alles, was im
+     * Hintergrund abruft. `boersenAlleMelden` meldet auch Listungen, die der
+     * Radar nicht kannte (nur grosse Börsen) — sonst nur Radar-Token.
+     */
+    boersenwachtAn: false,
+    boersenwachtIntervallMin: 30,
+    boersenAlleMelden: false,
+    // Takt der X-Abfrage in Minuten; jede Abfrage kostet Suchpauschale plus Tokens.
+    fruehXIntervallMin: 120,
+    fruehTelegram: [],
+    fruehAlarmAb: 70,
     llmStufe: 'gruendlich-mittel',
     llmModus: 'gruendlich',
     llmRollen: {},                   // leer = die Stufe entscheidet
@@ -172,10 +216,9 @@ export async function leseSchluessel() {
  * sah den zweiten scheinbar nicht wirken. `onConflict().merge()` macht daraus
  * einen Aufruf.
  */
-export async function schreibeEinstellungen(neu = {}) {
+export async function schreibeEinstellungen(neu = {}, zusatzVorgaben = {}) {
     const jetzt = Date.now()
-    const zeilen = Object.entries(neu)
-        .filter(([k]) => k in VORGABEN)
+    const zeilen = Object.entries(bereinigeEinstellungen(neu, zusatzVorgaben))
         .map(([schluessel, v]) => ({ schluessel, wert: JSON.stringify(v), aktualisiertAm: jetzt }))
     if (!zeilen.length) return
 
@@ -183,6 +226,96 @@ export async function schreibeEinstellungen(neu = {}) {
         .insert(zeilen)
         .onConflict('schluessel')
         .merge(['wert', 'aktualisiertAm'])
+}
+
+/*
+ * Diese verschachtelten Einstellungen werden nur mit ihren ABWEICHUNGEN von der
+ * Vorgabe gespeichert.
+ *
+ * Die Oberfläche bekommt beim Lesen die aufgefüllten Werte und schickt beim
+ * Speichern das ganze Objekt zurück. Bis zum 07.10.2026 lag danach jede
+ * Vorgabe als „eigene Einstellung" in der Datenbank — beim ersten Umlegen
+ * irgendeines Schalters. Eine spätere Änderung an `STANDARD_ALARM_REGELN`
+ * oder `STANDARD_SICHERHEIT` erreichte diese Installation nie mehr: genau die
+ * zweite Wahrheit, die der leere `alarmRegeln`-Eintrag oben verhindern sollte.
+ */
+const NUR_ABWEICHUNGEN = new Set(['alarmRegeln', 'sicherheit', 'gewichte'])
+
+/**
+ * `''` und Unzahlen sind keine Einstellung.
+ *
+ * Ein geleertes Zahlenfeld kommt über `v-model.number` als `''` an. Gespeichert
+ * wirkte es wie 0: Alarmregeln schlugen bei 0,1 % an, und `liq < ''` ist
+ * `liq < 0` — die Mindestliquidität der Sicherheitsprüfung war damit still
+ * abgeschaltet. Jetzt fällt so ein Feld auf die Vorgabe zurück.
+ */
+function alsZahl(w) {
+    if (w === '' || w === null || w === undefined || typeof w === 'boolean') return undefined
+    const z = Number(w)
+    return Number.isFinite(z) ? z : undefined
+}
+
+/**
+ * Was gespeichert wird — rein, ohne Datenbank.
+ *
+ * @param {object} neu             was die Oberfläche schickt
+ * @param {object} zusatzVorgaben  Vorgaben, die hier nicht stehen dürfen
+ *                                 (`alarmRegeln` kommt aus `wachhund.js`)
+ */
+export function bereinigeEinstellungen(neu = {}, zusatzVorgaben = {}) {
+    const vorgaben = { ...VORGABEN, ...zusatzVorgaben }
+    const raus = {}
+    for (const [k, v] of Object.entries(neu || {})) {
+        if (!(k in VORGABEN)) continue
+        const vorgabe = vorgaben[k]
+        if (typeof vorgabe === 'number') {
+            const z = alsZahl(v)
+            if (z !== undefined) raus[k] = z
+            continue
+        }
+        if (NUR_ABWEICHUNGEN.has(k) && v && typeof v === 'object' && !Array.isArray(v)) {
+            const abweichung = {}
+            for (const [feld, wert] of Object.entries(v)) {
+                const d = vorgabe?.[feld]
+                if (typeof d === 'number') {
+                    const z = alsZahl(wert)
+                    if (z === undefined || z === d) continue
+                    abweichung[feld] = z
+                } else if (wert !== d) {
+                    abweichung[feld] = wert
+                }
+            }
+            raus[k] = abweichung
+            continue
+        }
+        if (k === 'fruehTelegram') {
+            raus[k] = telegramKanaele(v)
+            continue
+        }
+        if (k === 'smartWallets') {
+            raus[k] = smartWalletListe(v)
+            continue
+        }
+        raus[k] = v
+    }
+    return raus
+}
+
+/**
+ * Telegram-Kanäle der Frühphase: nur Kanalnamen, höchstens fünfzehn.
+ *
+ * Angenommen wird, was jemand aus der Adresszeile kopiert — `@name`,
+ * `t.me/name`, `https://t.me/s/name`. Gespeichert wird nur der Name; was
+ * danach nicht wie ein Telegram-Name aussieht, fällt weg, statt später als
+ * Pfad an `t.me` zu gehen.
+ */
+export function telegramKanaele(liste) {
+    const roh = Array.isArray(liste) ? liste : String(liste || '').split(/[\s,;]+/)
+    const namen = roh
+        .map((x) => String(x || '').trim()
+            .replace(/^(https?:\/\/)?(www\.)?(t\.me|telegram\.me)\/(s\/)?/i, '').replace(/^@/, '').split(/[/?#]/)[0])
+        .filter((n) => /^[A-Za-z0-9_]{4,64}$/.test(n))
+    return [...new Set(namen)].slice(0, 15)
 }
 
 /**
