@@ -19,6 +19,10 @@
                 </span>
             </div>
             <div class="hypKnoepfe">
+                <!-- Die Scan-Knöpfe gehören zur Hauptprüfung. Auf der
+                     Frühphase stünden sie neben deren eigenem „Jetzt
+                     durchsuchen" und lösten etwas anderes aus. -->
+                <template v-if="reiter !== 'fruehphase'">
                 <span v-if="laeuft" class="hypFortschritt">{{ fortschrittText }}</span>
                 <button type="button" class="ctl-pill" :disabled="laeuft" @click="starte(false)">
                     <i class="uil uil-search me-1"></i>{{ t('hype.nurScannen') }}
@@ -29,14 +33,17 @@
                     <span v-if="laeuft" class="spinner-border spinner-border-sm me-1"></span>
                     <i v-else class="uil uil-file-alt me-1"></i>{{ t('hype.scannenUndBericht') }}
                 </button>
-                <PageInfo section="info.hypeRadar" />
+                </template>
+                <PageInfo :section="reiter === 'fruehphase' ? 'info.hypeFrueh' : 'info.hypeRadar'" />
             </div>
         </div>
 
         <div v-if="meldung" class="alert py-2 small mt-2" :class="meldungFehler ? 'alert-danger' : 'alert-info'">
             {{ meldung }}
         </div>
-        <div v-if="fehlendeSchluessel.length" class="alert alert-warning py-2 small mt-2">
+        <!-- Fehlende KI-Schlüssel betreffen nur den Bericht — die Frühphase
+             ruft kein Sprachmodell. -->
+        <div v-if="fehlendeSchluessel.length && reiter !== 'fruehphase'" class="alert alert-warning py-2 small mt-2">
             <i class="uil uil-exclamation-triangle me-1"></i>
             {{ t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) }}
         </div>

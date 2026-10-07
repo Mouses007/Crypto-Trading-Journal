@@ -18,85 +18,18 @@
         <p v-else-if="!daten && !laedt" class="ppLeer">{{ t('hypeProjekt.nochNicht') }}</p>
 
         <template v-if="daten">
-            <!-- Befunde: was für und was gegen Substanz spricht, getrennt.
-                 „info" steht für sich — Bot-Schutz, unbekannte Domain-Endung:
-                 Dinge, die nicht prüfbar waren und deshalb nichts kosten. -->
-            <div class="ppBefunde">
-                <div v-if="befundeVon('plus').length">
-                    <div class="ppSpalte plus"><i class="uil uil-plus-circle"></i> {{ t('hypeProjekt.dafuer') }}</div>
-                    <ul><li v-for="(b, i) in befundeVon('plus')" :key="i">{{ b.text }}</li></ul>
-                </div>
-                <div v-if="befundeVon('minus').length">
-                    <div class="ppSpalte minus"><i class="uil uil-minus-circle"></i> {{ t('hypeProjekt.dagegen') }}</div>
-                    <ul><li v-for="(b, i) in befundeVon('minus')" :key="i">{{ b.text }}</li></ul>
-                </div>
-                <div v-if="befundeVon('info').length">
-                    <div class="ppSpalte"><i class="uil uil-info-circle"></i> {{ t('hypeProjekt.hinweise') }}</div>
-                    <ul><li v-for="(b, i) in befundeVon('info')" :key="i">{{ b.text }}</li></ul>
-                </div>
+            <!-- Eine Liste, Warnungen zuerst. Die Fakten dahinter (Domain-Alter,
+                 Sterne, Ersteller-Bilanz) stehen bereits in den Befunden; die
+                 Links darunter tragen die Einzelheiten im Tooltip. -->
+            <ul v-if="befunde.length" class="ppBefunde">
+                <li v-for="(b, i) in befunde" :key="i" :class="b.art">
+                    <span class="ppZeichen">{{ ZEICHEN[b.art] || '·' }}</span>{{ b.text }}
+                </li>
+            </ul>
+            <div v-if="links.length" class="ppLinks">
+                <a v-for="l in links" :key="l.url" :href="l.url" :title="l.titel" target="_blank"
+                    rel="noopener noreferrer nofollow">{{ l.text }} ↗</a>
             </div>
-
-            <dl class="ppFakten">
-                <template v-if="daten.webseite?.url">
-                    <dt>{{ t('hypeProjekt.webseite') }}</dt>
-                    <dd>
-                        <a v-if="aussen(daten.webseite.url)" :href="aussen(daten.webseite.url)" target="_blank"
-                            rel="noopener noreferrer nofollow">{{ hostVon(daten.webseite.url) }} ↗</a>
-                        <span v-if="daten.webseite.titel" class="ppGrau"> · {{ daten.webseite.titel }}</span>
-                        <span v-if="daten.webseite.status && daten.webseite.status !== 'ok'" class="ppGrau">
-                            · {{ t('hypeProjekt.status_' + daten.webseite.status) }}</span>
-                        <span v-if="daten.webseite.plattform" class="ppGrau"> · {{ t('hypeProjekt.plattform', { p: daten.webseite.plattform }) }}</span>
-                    </dd>
-                </template>
-                <template v-if="daten.webseite && hatZahl(daten.webseite.domainAlterTage)">
-                    <dt>{{ t('hypeProjekt.domainAlter') }}</dt>
-                    <dd>{{ tageText(daten.webseite.domainAlterTage) }}</dd>
-                </template>
-                <template v-if="kanalListe.length">
-                    <dt>{{ t('hypeProjekt.kanaele') }}</dt>
-                    <dd>
-                        <template v-for="k in kanalListe" :key="k.typ">
-                            <a :href="k.url" target="_blank" rel="noopener noreferrer nofollow" class="me-2">{{ k.typ }} ↗</a>
-                        </template>
-                    </dd>
-                </template>
-                <template v-if="daten.github">
-                    <dt>GitHub</dt>
-                    <dd>
-                        <a v-if="aussen(daten.github.link)" :href="aussen(daten.github.link)" target="_blank"
-                            rel="noopener noreferrer nofollow">{{ githubName }} ↗</a>
-                        <span v-if="daten.github.konto" class="ppGrau">
-                            · {{ t('hypeProjekt.ghKonto', { a: tageText(daten.github.konto.alterTage), r: daten.github.konto.oeffentlicheRepos, f: daten.github.konto.follower }) }}
-                        </span>
-                        <div v-if="daten.github.repo" class="ppGrau">
-                            {{ t('hypeProjekt.ghRepo', { s: daten.github.repo.sterne, p: tageText(daten.github.repo.letzterPushTage) }) }}
-                            <span v-if="daten.github.repo.istFork"> · {{ t('hypeProjekt.ghFork') }}</span>
-                        </div>
-                        <div v-if="daten.github.fruehereProjekte?.length">
-                            {{ t('hypeProjekt.ghFrueher') }}:
-                            <span v-for="(p, i) in daten.github.fruehereProjekte" :key="p.name">{{ i ? ', ' : '' }}{{ p.name }} ★{{ p.sterne }}</span>
-                        </div>
-                    </dd>
-                </template>
-                <template v-if="daten.ersteller?.wallet">
-                    <dt>{{ t('hypeProjekt.ersteller') }}</dt>
-                    <dd>
-                        <a :href="'https://pump.fun/profile/' + encodeURIComponent(daten.ersteller.wallet)" target="_blank"
-                            rel="noopener noreferrer nofollow" :title="daten.ersteller.wallet">{{ kurzAdresse(daten.ersteller.wallet) }} ↗</a>
-                        <span v-if="hatZahl(daten.ersteller.andere)" class="ppGrau">
-                            · {{ t('hypeProjekt.erstellerBilanz', {
-                                n: daten.ersteller.andere + (daten.ersteller.vollstaendig === false ? '+' : ''),
-                                g: daten.ersteller.graduiert, h: daten.ersteller.letzte24h }) }}
-                        </span>
-                        <span v-if="daten.ersteller.besteMarktkapUsd" class="ppGrau">
-                            · {{ t('hypeProjekt.erstellerBeste', { m: geld(daten.ersteller.besteMarktkapUsd) }) }}</span>
-                        <div v-if="daten.ersteller.beispiele?.length" class="ppGrau">
-                            {{ t('hypeProjekt.erstellerBeispiele') }}:
-                            <span v-for="(b, i) in daten.ersteller.beispiele" :key="b.mint">{{ i ? ', ' : '' }}{{ b.symbol || kurzAdresse(b.mint) }}</span>
-                        </div>
-                    </dd>
-                </template>
-            </dl>
             <p v-if="daten.auszug" class="ppAuszug">„{{ daten.auszug }}"</p>
         </template>
     </div>
@@ -173,11 +106,57 @@ const aussen = (url) => {
     return s && /^https?:\/\//i.test(s) ? s : null
 }
 
-const befundeVon = (art) => (daten.value?.befunde || []).filter((b) => b.art === art)
+/* Warnungen zuerst: bei jungen Token wiegt ein Minus schwerer als ein Plus. */
+const ZEICHEN = { minus: '−', plus: '+', info: 'i' }
+const REIHE = ['minus', 'plus', 'info']
+const befunde = computed(() => [...(daten.value?.befunde || [])]
+    .sort((a, b) => REIHE.indexOf(a.art) - REIHE.indexOf(b.art)))
 
-const kanalListe = computed(() => Object.entries(daten.value?.kanaele || {})
-    .filter(([, url]) => aussen(url))
-    .map(([typ, url]) => ({ typ, url: aussen(url) })))
+/** Webseite, Kanäle, GitHub, Ersteller — eine Zeile, Einzelheiten im Tooltip. */
+const links = computed(() => {
+    const d = daten.value
+    if (!d) return []
+    const raus = []
+    const w = d.webseite || {}
+    if (aussen(w.url)) {
+        raus.push({
+            url: aussen(w.url), text: hostVon(w.url),
+            titel: [w.titel,
+                hatZahl(w.domainAlterTage) ? `${t('hypeProjekt.domainAlter')}: ${tageText(w.domainAlterTage)}` : '',
+                w.plattform ? t('hypeProjekt.plattform', { p: w.plattform }) : ''].filter(Boolean).join(' · '),
+        })
+    }
+    for (const [typ, url] of Object.entries(d.kanaele || {})) {
+        if (typ === 'github' && d.github) continue
+        if (aussen(url)) raus.push({ url: aussen(url), text: typ, titel: url })
+    }
+    const g = d.github
+    if (g && aussen(g.link)) {
+        raus.push({
+            url: aussen(g.link), text: `GitHub ${githubName.value}`,
+            titel: [
+                g.konto ? t('hypeProjekt.ghKonto', { a: tageText(g.konto.alterTage), r: g.konto.oeffentlicheRepos, f: g.konto.follower }) : '',
+                g.repo ? t('hypeProjekt.ghRepo', { s: g.repo.sterne, p: tageText(g.repo.letzterPushTage) }) + (g.repo.istFork ? ` · ${t('hypeProjekt.ghFork')}` : '') : '',
+                g.fruehereProjekte?.length ? `${t('hypeProjekt.ghFrueher')}: ${g.fruehereProjekte.map((p) => `${p.name} ★${p.sterne}`).join(', ')}` : '',
+            ].filter(Boolean).join('\n'),
+        })
+    }
+    const e = d.ersteller
+    if (e?.wallet) {
+        raus.push({
+            url: `https://pump.fun/profile/${encodeURIComponent(e.wallet)}`,
+            text: `${t('hypeProjekt.ersteller')} ${kurzAdresse(e.wallet)}`,
+            titel: [
+                e.wallet,
+                hatZahl(e.andere) ? t('hypeProjekt.erstellerBilanz', {
+                    n: e.andere + (e.vollstaendig === false ? '+' : ''), g: e.graduiert, h: e.letzte24h }) : '',
+                e.besteMarktkapUsd ? t('hypeProjekt.erstellerBeste', { m: geld(e.besteMarktkapUsd) }) : '',
+                e.beispiele?.length ? `${t('hypeProjekt.erstellerBeispiele')}: ${e.beispiele.map((b) => b.symbol || kurzAdresse(b.mint)).join(', ')}` : '',
+            ].filter(Boolean).join('\n'),
+        })
+    }
+    return raus
+})
 
 const githubName = computed(() => {
     const g = daten.value?.github
@@ -261,37 +240,29 @@ const zeitpunkt = (ms) => new Date(Number(ms)).toLocaleString(
     color: var(--red-color, #e05252);
 }
 .ppBefunde {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: .25rem 1rem;
+    list-style: none;
+    padding-left: 0;
+    margin-bottom: .3rem;
 }
-.ppBefunde ul {
-    padding-left: 1.1rem;
-    margin-bottom: .35rem;
+.ppBefunde li {
+    display: flex;
+    gap: .45rem;
+    margin-bottom: .1rem;
 }
-.ppSpalte {
-    font-size: .805rem;
-    font-weight: 600;
+.ppZeichen {
+    flex: 0 0 .8rem;
+    font-weight: 700;
+    text-align: center;
     color: var(--grey-color, #9aa0a6);
 }
-.ppSpalte.plus { color: #4caf50; }
-.ppSpalte.minus { color: var(--red-color, #e05252); }
-.ppFakten {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: .15rem .75rem;
-    margin: .25rem 0 0;
+.ppBefunde li.plus .ppZeichen { color: #4caf50; }
+.ppBefunde li.minus .ppZeichen { color: var(--red-color, #e05252); }
+.ppLinks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .2rem .8rem;
 }
-.ppFakten dt {
-    font-weight: 500;
-    color: var(--grey-color, #9aa0a6);
-}
-.ppFakten dd {
-    margin: 0;
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-.ppFakten a {
+.ppLinks a {
     text-decoration: none;
 }
 .ppAuszug {
@@ -299,13 +270,5 @@ const zeitpunkt = (ms) => new Date(Number(ms)).toLocaleString(
     font-style: italic;
     color: var(--white-60, rgba(255, 255, 255, .6));
     overflow-wrap: anywhere;
-}
-@media (max-width: 576px) {
-    .ppFakten {
-        grid-template-columns: 1fr;
-    }
-    .ppFakten dd {
-        margin-bottom: .3rem;
-    }
 }
 </style>

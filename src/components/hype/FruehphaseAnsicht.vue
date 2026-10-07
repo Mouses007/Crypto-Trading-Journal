@@ -21,7 +21,6 @@
                     <span v-if="laeuft" class="spinner-border spinner-border-sm me-1"></span>
                     <i v-else class="uil uil-bolt-alt me-1"></i>{{ laeuft ? t('hypeFrueh.laeuft') : t('hypeFrueh.jetzt') }}
                 </button>
-                <PageInfo section="info.hypeFrueh" />
             </div>
         </div>
 
@@ -76,7 +75,7 @@
                         <th class="text-end">{{ t('hypeFrueh.spalteMcap') }}</th>
                         <th class="text-end">{{ t('hypeFrueh.spalteLiq') }}</th>
                         <th class="text-end">{{ t('hypeFrueh.spalteAlter') }}</th>
-                        <th class="text-end">{{ t('hypeFrueh.spalteKaeufer') }}</th>
+                        <th class="text-end" :title="t('hypeFrueh.spalteHandelTitel')">{{ t('hypeFrueh.spalteHandel') }}</th>
                         <th class="text-end">{{ t('hypeFrueh.spalteSozial') }}</th>
                         <th>{{ t('hypeFrueh.spalteStatus') }}</th>
                         <th></th>
@@ -134,10 +133,8 @@
 import { ref, computed, watch, onBeforeUnmount, h, defineComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
-import PageInfo from '../PageInfo.vue'
 import ProjektPruefung from './ProjektPruefung.vue'
 import { useIstTelefon } from '../../utils/geraet.js'
-import { sichereUrl } from '../../utils/sanitize.js'
 import { logWarn } from '../../utils/logger.js'
 
 const props = defineProps({
@@ -273,7 +270,8 @@ function kaeuferText(s) {
 
 const SOZIAL = ['telegram', 'biz', 'reddit']
 const sozialVon = (z) => SOZIAL.filter((p) => (z.quellen || []).includes(p))
-const sozialText = (z) => (sozialVon(z).length ? `${sozialVon(z).length}× · ${z.stand?.erw ?? 0}` : '—')
+const SOZIAL_KURZ = { telegram: 'TG', biz: '/biz/', reddit: 'Reddit' }
+const sozialText = (z) => (sozialVon(z).length ? sozialVon(z).map((p) => SOZIAL_KURZ[p]).join(' · ') : '—')
 const sozialTitel = (z) => (sozialVon(z).length ? t('hypeFrueh.sozialTitel', { p: sozialVon(z).join(', '), n: z.stand?.erw ?? 0 }) : '')
 
 /** Kleiner Notenverlauf als Polylinie — die Beschleunigung auf einen Blick. */
@@ -295,15 +293,7 @@ const FruehDetail = defineComponent({
         return () => {
             const z = p.z
             const teil = z.stand?.teilnoten || {}
-            const links = []
-            for (const w of (z.links?.webseiten || [])) {
-                const u = sichereUrl(w)
-                if (u && /^https?:/i.test(u)) links.push(h('a', { href: u, target: '_blank', rel: 'noopener noreferrer nofollow', class: 'me-2' }, `${hostVon(u)} ↗`))
-            }
-            for (const k of (z.links?.kanaele || [])) {
-                const u = sichereUrl(k.url)
-                if (u && /^https?:/i.test(u)) links.push(h('a', { href: u, target: '_blank', rel: 'noopener noreferrer nofollow', class: 'me-2' }, `${k.typ || hostVon(u)} ↗`))
-            }
+            // Webseite und Kanäle zeigt die Projektprüfung — hier nur, wo gehandelt wird.
             const markt = [
                 h('a', { href: `https://dexscreener.com/${encodeURIComponent(z.chain)}/${encodeURIComponent(z.contract)}`, target: '_blank', rel: 'noopener noreferrer', class: 'me-2' }, 'DexScreener ↗'),
             ]
@@ -319,13 +309,14 @@ const FruehDetail = defineComponent({
                     ])),
                     h('div', { class: 'fpGrau mt-1' }, `${t('hypeFrueh.quellen')}: ${(z.quellen || []).join(', ') || '—'}`),
                     h('div', { class: 'fpGrau' }, t('hypeFrueh.beobachtetSeit', { z: zeitpunkt(z.ersterBlick) })),
-                    h('div', { class: 'mt-2' }, [...markt, ...links]),
+                    h('div', { class: 'mt-2' }, markt),
                     h('div', { class: 'fpGrau fpVertrag', title: z.contract }, z.contract),
                 ]),
                 h('div', [
                     h('div', { class: 'fpDetailTitel' }, t('hypeFrueh.befunde')),
                     (z.befunde || []).length
-                        ? h('ul', { class: 'fpBefunde' }, z.befunde.map((b, i) => h('li', { key: i, class: b.art }, b.text)))
+                        ? h('ul', { class: 'befundListe' }, sortiereBefunde(z.befunde).map((b, i) =>
+                            h('li', { key: i, class: b.art }, [h('span', { class: 'befundZeichen' }, ZEICHEN[b.art] || '·'), b.text])))
                         : h('p', { class: 'fpGrau' }, t('hypeFrueh.keineBefunde')),
                 ]),
                 h('div', [
@@ -340,9 +331,9 @@ const FruehDetail = defineComponent({
     },
 })
 
-function hostVon(url) {
-    try { return new URL(url).hostname.replace(/^www\./, '') } catch { return String(url || '').slice(0, 30) }
-}
+/* Warnungen zuerst: bei Frühphasen-Token wiegt ein Minus schwerer als ein Plus. */
+const ZEICHEN = { minus: '−', plus: '+', info: 'i' }
+const sortiereBefunde = (b) => [...b].sort((x, y) => ['minus', 'plus', 'info'].indexOf(x.art) - ['minus', 'plus', 'info'].indexOf(y.art))
 </script>
 
 <style scoped>
@@ -503,13 +494,25 @@ function hostVon(url) {
     height: 100%;
     background: var(--blue-color, #4da3ff);
 }
-:deep(.fpBefunde) {
-    font-size: .874rem;
-    padding-left: 1.1rem;
+:deep(.befundListe) {
+    list-style: none;
+    padding-left: 0;
     margin-bottom: .25rem;
+    font-size: .874rem;
 }
-:deep(.fpBefunde li.plus)::marker { color: #4caf50; }
-:deep(.fpBefunde li.minus)::marker { color: var(--red-color, #e05252); }
+:deep(.befundListe li) {
+    display: flex;
+    gap: .45rem;
+    margin-bottom: .1rem;
+}
+:deep(.befundZeichen) {
+    flex: 0 0 .8rem;
+    font-weight: 700;
+    text-align: center;
+    color: var(--grey-color, #9aa0a6);
+}
+:deep(.befundListe li.plus .befundZeichen) { color: #4caf50; }
+:deep(.befundListe li.minus .befundZeichen) { color: var(--red-color, #e05252); }
 :deep(.fpGrau) {
     color: var(--grey-color, #9aa0a6);
     font-size: .851rem;
