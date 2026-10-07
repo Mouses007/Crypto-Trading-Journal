@@ -27,6 +27,7 @@ import { HORIZONTE } from './radar-ergebnisse.js'
 import { werteAusHype, werteAusFrueh } from './radar-guete.js'
 import { pruefeProjekt, kurzfassung, gespeichertePruefungen, schluesselFuer } from './hype-radar/projekt.js'
 import { fruehLauf, fruehStand } from './hype-radar/fruehphase.js'
+import { istDuenn } from './hype-radar/fruehphase-bewertung.js'
 import { smartWalletStand } from './hype-radar/smartmoney.js'
 import { boersenLauf, boersenStand, boersenUebersicht, ladeStaende } from './hype-radar/boersenwacht.js'
 import { leiterFuer } from './hype-radar/boersenwacht-bewertung.js'
@@ -183,13 +184,20 @@ export function setupHypeRadarRoutes(app) {
             const zeilen = await q.orderBy('note', 'desc').limit(Math.min(300, Number(req.query.limit) || 150))
             const projekte = await gespeichertePruefungen(zeilen)
             const staende = await ladeStaende()
+            const aufbereitet = zeilen.map((z) => {
+                const stand = sicherParse(z.stand, {})
+                return { z, stand, duenn: istDuenn(stand) }
+            })
+            // Belastbare Noten zuerst; eine Note aus ein, zwei Teilnoten ist leicht extrem.
+            aufbereitet.sort((a, b) => (Number(a.duenn) - Number(b.duenn)) || (b.z.note - a.z.note))
             res.json({
                 stand: fruehStand(),
-                zeilen: zeilen.map((z) => ({
+                zeilen: aufbereitet.map(({ z, stand, duenn }) => ({
                     ...z,
+                    duenn,
                     quellen: sicherParse(z.quellen, []),
                     links: sicherParse(z.links, {}),
-                    stand: sicherParse(z.stand, {}),
+                    stand,
                     // Der Verlauf nur als Notenreihe — die vollen Momentaufnahmen
                     // wären bei 150 Zeilen ein paar hundert Kilobyte.
                     verlauf: sicherParse(z.verlauf, []).map((v) => ({ ts: v.ts, note: v.note ?? null, mcap: v.mcap ?? null, halter: v.halter ?? null })),
@@ -197,7 +205,7 @@ export function setupHypeRadarRoutes(app) {
                     projekt: kurzfassung(projekte.get(schluesselFuer(z)) || null),
                     // Auf welchen Börsen der Token schon steht (Alpha nach Vertrag).
                     leiter: leiterFuer({ symbol: z.symbol, chain: z.chain, contract: z.contract,
-                        bewertungUsd: sicherParse(z.stand, {})?.mcap }, staende),
+                        bewertungUsd: stand?.mcap }, staende),
                 })),
             })
         } catch (e) {

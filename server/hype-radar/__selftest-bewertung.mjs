@@ -13,7 +13,7 @@ import {
     BOOST_DECKEL, REDDIT_DECKEL, FRUEH_DECKEL,
     STANDARD_GEWICHTE,
 } from './bewertung.js'
-import { fuehreZusammen, evidenzDomaenen, normSymbol, normChain } from './quellen.js'
+import { fuehreZusammen, evidenzDomaenen, normSymbol, normChain, dexKette, dexAbfrageGruppen, dexNachfassen } from './quellen.js'
 
 let fehler = 0
 let bestanden = 0
@@ -559,6 +559,48 @@ pruefe('unbrauchbare Eingaben ergeben eine gültige Zahl',
 
 pruefe('Standardgewichte summieren auf 100',
     Object.values(STANDARD_GEWICHTE).reduce((a, b) => a + b, 0) === 100)
+
+// ── DexScreener-Sammelabruf: planen und nachfassen ──────────────────────
+{
+    pruefe('Kette: eth wird ethereum', dexKette('eth') === 'ethereum')
+    pruefe('Kette: DexScreener-eigene Kennung geht durch', dexKette('robinhood') === 'robinhood')
+    pruefe('Kette: unbekannt bleibt leer', dexKette('?') === '' && dexKette('') === '' && dexKette(null) === '')
+
+    const adr = (n, z = 'A') => `${z}${String(n).padStart(43, '0')}`
+    const eintraege = [
+        ...Array.from({ length: 35 }, (_, i) => ({ contract: adr(i), chain: 'solana' })),
+        { contract: '0xABC', chain: 'eth' }, '0xdef',
+        { contract: adr(1), chain: 'solana' },          // doppelt
+        '0xabc',                                         // doppelt, ohne Kette — die Kette bleibt
+    ]
+    const g = dexAbfrageGruppen(eintraege)
+    const sol = g.filter((x) => x.kette === 'solana')
+    pruefe('Planung: je Kette in Häppchen zu dreissig', sol.length === 2 && sol[0].adressen.length === 30 && sol[1].adressen.length === 5,
+        JSON.stringify(g.map((x) => [x.kette, x.adressen.length])))
+    pruefe('Planung: Doppelte zählen einmal', g.reduce((a, x) => a + x.adressen.length, 0) === 37)
+    pruefe('Planung: Kette aus einem der Doppelten gilt', g.some((x) => x.kette === 'ethereum' && x.adressen.includes('0xABC')))
+    pruefe('Planung: ohne Kette eigene Gruppe', g.some((x) => x.kette === '' && x.adressen.join() === '0xdef'))
+
+    /*
+     * Der Fall vom 07.10.2026: 30 Adressen gefragt, 30 PAARE zurück, aber nur
+     * 7 Token getroffen — die übrigen 23 wurden verdrängt, nicht „nicht gefunden".
+     */
+    const gruppe = { kette: '', adressen: Array.from({ length: 30 }, (_, i) => adr(i, 'B')) }
+    const sieben = new Set(gruppe.adressen.slice(0, 7).map((a) => a.toLowerCase()))
+    const weiter = dexNachfassen(gruppe, 30, sieben)
+    pruefe('Nachfassen: volle Antwort, Fehlende noch einmal', weiter && weiter.adressen.length === 23 && weiter.kette === '')
+    // Gegenprobe: Antwort NICHT voll — die Fehlenden kennt DexScreener schlicht nicht.
+    pruefe('Nachfassen: Antwort nicht voll, nichts mehr fragen', dexNachfassen(gruppe, 12, sieben) === null)
+    pruefe('Nachfassen: alles da, nichts mehr fragen',
+        dexNachfassen(gruppe, 30, new Set(gruppe.adressen.map((a) => a.toLowerCase()))) === null)
+    // Volle Antwort ohne einen Treffer: kein Fortschritt, also kein Nachfassen (sonst endlos).
+    pruefe('Nachfassen: kein Fortschritt, keine Schleife', dexNachfassen(gruppe, 30, new Set()) === null)
+    // Mit Kette und ganz ohne Treffer: einmal ohne Kette, danach nicht noch einmal.
+    const kettig = { kette: 'robinhood', adressen: ['0x1', '0x2'] }
+    const rueck = dexNachfassen(kettig, 0, new Set())
+    pruefe('Nachfassen: Kette ohne Treffer, einmal ohne Kette', rueck && rueck.kette === '' && rueck.rueckfall === true)
+    pruefe('… und kein zweites Mal', dexNachfassen(rueck, 0, new Set()) === null)
+}
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

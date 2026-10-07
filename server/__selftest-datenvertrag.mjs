@@ -68,6 +68,27 @@ const liste = (w) => Array.isArray(w)
     }
 }
 {
+    /*
+     * Der Sammelabruf mit bekannter Kette (`dexDetailsViele`). Er setzt zwei
+     * Dinge voraus: Die Antwort ist eine LISTE von Paaren (nicht `{pairs}`
+     * wie oben), und es kommt EIN Paar je Token — für PEPE, das Dutzende
+     * Paare hat, genau eins. Wäre das nicht so, verdrängte ein Token mit
+     * vielen Paaren auch hier die übrigen.
+     */
+    const j = lade('dexscreener-tokens-v1')
+    p('Fixture dexscreener-tokens-v1 vorhanden', Boolean(j))
+    if (j) {
+        p('dexscreener-v1: Antwort ist eine Liste', liste(j))
+        p('dexscreener-v1: ein Paar je angefragtem Token', liste(j) && j.length === 1, `waren ${j?.length}`)
+        const pa = j?.[0]
+        for (const f of ['chainId', 'dexId', 'pairAddress', 'priceUsd', 'baseToken.address', 'baseToken.symbol',
+            'quoteToken.address', 'liquidity.usd', 'volume.h1', 'txns.h1.buys', 'txns.m5.buys', 'priceChange.h1',
+            'marketCap', 'pairCreatedAt']) {
+            verlange('dexscreener-v1', pa, f)
+        }
+    }
+}
+{
     const j = lade('dexscreener-boosts')
     if (j) {
         verlange('dexscreener-boosts', j[0], 'tokenAddress')

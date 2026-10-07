@@ -43,7 +43,7 @@
 
         <!-- Telefon: Karten -->
         <div v-else-if="istTelefon" class="fpKarten">
-            <div v-for="z in zeilen" :key="z.id" class="fpKarte" @click="umschalten(z.id)">
+            <div v-for="z in zeilen" :key="z.id" class="fpKarte" :class="{ fpDuenn: z.duenn }" :title="z.duenn ? t('hypeFrueh.duennTitel') : null" @click="umschalten(z.id)">
                 <div class="fpKarteZeile">
                     <strong>{{ z.symbol || kurz(z.contract) }}</strong>
                     <span class="fpKette">{{ z.chain }}</span>
@@ -84,7 +84,7 @@
                 </thead>
                 <tbody>
                     <template v-for="z in zeilen" :key="z.id">
-                        <tr class="fpZeile" @click="umschalten(z.id)">
+                        <tr class="fpZeile" :class="{ fpDuenn: z.duenn }" :title="z.duenn ? t('hypeFrueh.duennTitel') : null" @click="umschalten(z.id)">
                             <td>
                                 <strong>{{ z.symbol || kurz(z.contract) }}</strong>
                                 <span class="fpKette">{{ z.chain }}</span>
@@ -477,6 +477,10 @@ const sortiereBefunde = (b) => [...b].sort((x, y) => ['minus', 'plus', 'info'].i
 </script>
 
 <style scoped>
+/* Note aus weniger als drei Teilnoten: steht unten, wird nicht gemeldet. */
+.fpDuenn {
+    opacity: .55;
+}
 .fpKopf {
     display: flex;
     align-items: center;

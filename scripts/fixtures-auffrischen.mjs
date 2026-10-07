@@ -30,6 +30,9 @@ const schreiben = process.argv.includes('--schreiben')
 const QUELLEN = [
     ['dexscreener-tokens', 'https://api.dexscreener.com/latest/dex/tokens/0x6982508145454ce325ddbe47a25d4ec3d2311933',
         (j) => ({ pairs: (j.pairs || []).slice(0, 3) })],
+    // Je Kette: ein Paar je Token statt höchstens dreissig Paare je Antwort (`dexDetailsViele`).
+    ['dexscreener-tokens-v1', 'https://api.dexscreener.com/tokens/v1/ethereum/0x6982508145454ce325ddbe47a25d4ec3d2311933',
+        (j) => (Array.isArray(j) ? j.slice(0, 3) : j)],
     ['dexscreener-boosts', 'https://api.dexscreener.com/token-boosts/top/v1',
         (j) => (Array.isArray(j) ? j.slice(0, 3) : j)],
     ['geckoterminal-pools', 'https://api.geckoterminal.com/api/v2/networks/solana/trending_pools?include=base_token',

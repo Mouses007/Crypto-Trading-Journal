@@ -45,7 +45,7 @@ import { sucheXErwaehnungen } from '../news-recherche.js'
 import { ladeLlmConfig, merkeKiGuthaben, istGuthabenFehler } from '../llm.js'
 import {
     erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen, risikoFrueh,
-    risikoUnpruefbar, meldefaehig, MAX_ALTER_STUNDEN,
+    risikoUnpruefbar, meldefaehig, hatMessung, verteilePlaetze, MAX_ALTER_STUNDEN,
 } from './fruehphase-bewertung.js'
 import { ausRugCheck, holeGoPlus } from './sicherheit.js'
 import { smartAbruf, smartKarteLesen } from './smartmoney.js'
@@ -54,6 +54,14 @@ import { merke, MERKEN_AB_NOTE } from './gedaechtnis.js'
 
 /** Höchstens so viele Token werden gleichzeitig beobachtet. */
 const MAX_BEOBACHTET = 150
+
+/*
+ * So viele Plätze je Durchgang gehören NEUEN Token. Bis 07.10.2026 bekamen
+ * bekannte Token alle Plätze zuerst: 142 neue im ersten Durchgang, dann 9,
+ * dann 4 — bei rund hundert Funden allein von pump.fun je Lauf. Eine Spur,
+ * die „früh" heisst, darf nicht nach dem ersten Lauf aufhören zu suchen.
+ */
+const NEU_PLAETZE = 50
 
 /** So viele der Besten bekommen je Lauf eine Projektprüfung (24 h zwischengespeichert). */
 const PROJEKT_JE_LAUF = 8
@@ -259,7 +267,9 @@ async function geckoNeu(einst) {
             for (const p of (Array.isArray(j?.data) ? j.data : []).slice(0, 30)) {
                 const a = p?.attributes || {}
                 const basis = tokens.get(p?.relationships?.base_token?.data?.id) || {}
-                const h1 = a.transactions?.h1 || {}
+                // Fehlt das Fenster, bleibt es unbekannt — als 0 hiesse es „kein
+                // Handel", und das verwirft einen Token (`still`).
+                const h1 = a.transactions?.h1 || null
                 const m5 = a.transactions?.m5 || null
                 raus.push({
                     chain: kette, contract: basis.address, symbol: basis.symbol, name: basis.name,
@@ -270,12 +280,12 @@ async function geckoNeu(einst) {
                         liquiditaetUsd: Number.isFinite(Number(a.reserve_in_usd)) ? Number(a.reserve_in_usd) : null,
                         volumen1h: Number.isFinite(Number(a.volume_usd?.h1)) ? Number(a.volume_usd.h1) : null,
                         marktkapitalisierung: Number(a.market_cap_usd) || Number(a.fdv_usd) || null,
-                        transaktionen1h: (Number(h1.buys) || 0) + (Number(h1.sells) || 0),
+                        transaktionen1h: h1 ? (Number(h1.buys) || 0) + (Number(h1.sells) || 0) : null,
                         transaktionen5m: m5 ? (Number(m5.buys) || 0) + (Number(m5.sells) || 0) : null,
                         // Die Zahl VERSCHIEDENER Wallets — der beste Schutz
                         // gegen Kreishandel, den es ohne Schlüssel gibt.
-                        kaeufer1h: Number.isFinite(Number(h1.buyers)) ? Number(h1.buyers) : null,
-                        verkaeufer1h: Number.isFinite(Number(h1.sellers)) ? Number(h1.sellers) : null,
+                        kaeufer1h: h1 && Number.isFinite(Number(h1.buyers)) ? Number(h1.buyers) : null,
+                        verkaeufer1h: h1 && Number.isFinite(Number(h1.sellers)) ? Number(h1.sellers) : null,
                         aenderung1h: Number.isFinite(Number(a.price_change_percentage?.h1)) ? Number(a.price_change_percentage.h1) : null,
                     },
                 })
@@ -530,19 +540,24 @@ async function fruehLaufIntern(einst) {
         }
     })
 
-    // ── Auswahl: Bekannte zuerst, dann Neue ─────────────────────────────
-    const alle = [...karte.values()]
+    // ── Auswahl: Bekannte nach Note, Neue auf reservierten Plätzen ──────
+    const istBekannt = (x) => bekanntNach.has(schluessel(x.chain, x.contract))
+    const sortiert = [...karte.values()]
         .sort((a, b) => {
             const na = bekanntNach.get(schluessel(a.chain, a.contract))?.note ?? -1
             const nb = bekanntNach.get(schluessel(b.chain, b.contract))?.note ?? -1
             return (nb - na) || (b.plattformen.size - a.plattformen.size) || (b.quellen.size - a.quellen.size)
         })
-        .slice(0, MAX_BEOBACHTET)
+    const alle = verteilePlaetze(sortiert.filter(istBekannt), sortiert.filter((x) => !istBekannt(x)),
+        MAX_BEOBACHTET, NEU_PLAETZE)
 
     // ── Marktdaten nachschlagen (DexScreener, gesammelt) ────────────────
     let details = new Map()
     try {
-        details = await dexDetailsViele(alle.map((x) => x.contract))
+        // Mit Kette: ohne sie deckelt DexScreener auf dreissig Paare je Antwort,
+        // und im Lauf vom 07.10.2026 18:52 fehlten so 62 von 150 Token still.
+        details = await dexDetailsViele(alle.map((x) => ({ contract: x.contract, chain: x.chain })))
+        quellenStand.details = { ok: true, anzahl: details.size }
     } catch (e) {
         quellenStand.details = { ok: false, fehler: String(e.message).slice(0, 160) }
     }
@@ -570,6 +585,7 @@ async function fruehLaufIntern(einst) {
     })
     const ergebnisse = []
     let zuAlt = 0
+    let ohneDaten = 0
     for (const x of alle.filter((y) => y.chain !== '?' && (y.symbol || y.markt.preisUsd))) {
         const alt = bekanntNach.get(schluessel(x.chain, x.contract))
         const verlauf = sicherJson(alt?.verlauf, [])
@@ -608,6 +624,9 @@ async function fruehLaufIntern(einst) {
             || Boolean(x.markt.dex && x.markt.dex !== 'pumpfun')
 
         const stand = momentaufnahme(x.markt, { erwaehnungen, plattformen: [...plattformen] }, jetzt)
+        // Nichts gemessen ist Funkstille, kein Stand: die letzte Aufnahme bleibt,
+        // und nach `VERGESSEN_MS` ohne Messung fällt der Token heraus.
+        if (!hatMessung(stand, x.plattformen.size > 0)) { ohneDaten++; continue }
         const gespeichert = await gespeichertePruefung({ chain: x.chain, contract: x.contract })
         const e = {
             x, alt, altStand, verlauf, stand, graduiert, geborenAm, alterStunden,
@@ -767,7 +786,7 @@ async function fruehLaufIntern(einst) {
     }
 
     await raeumeAuf(knex, jetzt)
-    return { beobachtet: ergebnisse.length, neu, alarme, zuAlt, quellenStand }
+    return { beobachtet: ergebnisse.length, neu, alarme, zuAlt, ohneDaten, quellenStand }
 }
 
 /** Einen Frühphasen-Alarm speichern und zustellen. */

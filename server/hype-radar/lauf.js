@@ -67,13 +67,15 @@ export async function scanne(einst, melde = () => {}) {
      * Der Sammelabruf nimmt dreissig Adressen auf einmal: rund sechzig Funde
      * in zwei Anfragen statt vierzig einzelnen. Damit ist es billiger, ALLE
      * anzureichern, als vorher zu sieben — und die Rangfolge entsteht zum
-     * ersten Mal auf vergleichbarer Grundlage.
+     * ersten Mal auf vergleichbarer Grundlage. Mit Kette, wo sie bekannt ist:
+     * ohne sie gibt DexScreener höchstens dreissig PAARE zurück, und Token mit
+     * vielen Paaren verdrängten still die übrigen (siehe `dexNachfassen`).
      */
     const mitVertrag = roh.filter((k) => k.contract)
     melde({ schritt: 'details', gesamt: mitVertrag.length })
     let detailKarte = new Map()
     try {
-        detailKarte = await dexDetailsViele(mitVertrag.map((k) => k.contract))
+        detailKarte = await dexDetailsViele(mitVertrag.map((k) => ({ contract: k.contract, chain: k.chain })))
     } catch (e) {
         logWarn('hype-radar', `Sammelabruf der Details: ${e.message}`)
     }

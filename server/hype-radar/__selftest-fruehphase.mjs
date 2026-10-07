@@ -10,8 +10,8 @@
 import { ausRugCheck } from './sicherheit.js'
 import {
     erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen, risikoFrueh,
-    kaeufeAusTransaktion, smartSignale, smartWalletListe, risikoUnpruefbar, meldefaehig,
-    MAX_VERLAUF, REIF, X_MIN_AUTOREN_NEU, MAX_ALTER_STUNDEN, MIN_TEILNOTEN_MELDUNG,
+    kaeufeAusTransaktion, smartSignale, smartWalletListe, risikoUnpruefbar, meldefaehig, hatMessung, verteilePlaetze, istDuenn,
+    MAX_VERLAUF, REIF, X_MIN_AUTOREN_NEU, MAX_ALTER_STUNDEN, MIN_TEILNOTEN_MELDUNG, STILL_MIN,
 } from './fruehphase-bewertung.js'
 
 let fehler = 0
@@ -184,6 +184,81 @@ const stand = (ts, o = {}) => ({ ts, mcap: null, liq: null, preis: null, vol1h: 
     p('nicht prüfbar: benannt', mitU.befunde.some((x) => x.schluessel === 'risikoUnpruefbar'))
 }
 
+// ── Ohne Messung kein Stand ─────────────────────────────────────────────
+{
+    // Der Lauf vom 07.10.2026 18:52: lauter null, nur fortgeschriebenes King of the Hill.
+    p('nichts gemessen: keine Messung', !hatMessung(stand(H, { kothMin: 12 })))
+    p('… auch nicht durch fortgeschriebenes X', !hatMessung(stand(H, { plattformen: 1, erw: 3 })))
+    p('Nennung in DIESEM Durchgang zählt', hatMessung(stand(H, {}), true))
+    p('eine Bewertung zählt', hatMessung(stand(H, { mcap: 3256 })))
+    p('null Transaktionen sind eine Messung, kein Fehlen', hatMessung(stand(H, { tx1h: 0 })))
+    p('pump.fun-Kommentare zählen', hatMessung(stand(H, { antworten: 0 })))
+    // Was ohne die Sperre geschah: Team allein trägt die Note.
+    const leer = bewerteFrueh({ stand: stand(H, {}), links: { webseiten: ['https://a.fun'], kanaele: [{ typ: 'twitter' }] } })
+    p('ohne Messung käme die Note allein aus dem Team', leer.abdeckung === 1 && leer.note === 50, `${leer.note}`)
+}
+
+// ── Still: tot, nicht ruhig ─────────────────────────────────────────────
+{
+    const M = 60e3
+    const tot = bewerteFrueh({ stand: stand(40 * M, { tx1h: 0, mcap: 3256 }), geborenAm: 0 })
+    p('40 min ohne einen Handel: still', tot.befunde.some((x) => x.schluessel === 'still'))
+    p('… und verworfen, Grund „still"', statusFrueh({ liq: null, mcap: 3256 }, 0.7, tot.befunde).grund === 'still')
+    // Gegenproben: zu jung, ein einziger Handel, unbekannt.
+    p('20 min ohne Handel: noch nicht still', !bewerteFrueh({ stand: stand(20 * M, { tx1h: 0 }), geborenAm: 0 })
+        .befunde.some((x) => x.schluessel === 'still'))
+    p('ein Handel ist nicht still', !bewerteFrueh({ stand: stand(40 * M, { tx1h: 1 }), geborenAm: 0 })
+        .befunde.some((x) => x.schluessel === 'still'))
+    p('unbekannte Transaktionen sind nicht still', !bewerteFrueh({ stand: stand(3 * H, { tx1h: null }), geborenAm: 0 })
+        .befunde.some((x) => x.schluessel === 'still'))
+    // Ohne Alter: zwei Aufnahmen ohne Handel, mindestens STILL_MIN auseinander.
+    const zwei = bewerteFrueh({ stand: stand(STILL_MIN * M, { tx1h: 0 }), verlauf: [stand(0, { tx1h: 0 })] })
+    p('ohne Alter: zwei stille Aufnahmen über 30 min', zwei.befunde.some((x) => x.schluessel === 'still'))
+    p('ohne Alter: eine stille Aufnahme reicht nicht', !bewerteFrueh({ stand: stand(H, { tx1h: 0 }) })
+        .befunde.some((x) => x.schluessel === 'still'))
+    p('ohne Alter: zu nah beieinander reicht nicht', !bewerteFrueh({ stand: stand(10 * M, { tx1h: 0 }), verlauf: [stand(0, { tx1h: 0 })] })
+        .befunde.some((x) => x.schluessel === 'still'))
+}
+
+// ── Schub braucht eine echte Basis ──────────────────────────────────────
+{
+    const M = 60e3
+    // Der Fall MPAD (07.10.2026): Basis ein einziger Handel, „Schub 199×".
+    const mini = bewerteFrueh({ stand: stand(16 * M, { tx1h: 260, tx5m: 60 }), verlauf: [stand(12 * M, { tx1h: 1 })], geborenAm: 0 })
+    p('Basis aus einem Handel zählt nicht als Verlauf', !mini.befunde.some((x) => x.schluessel === 'handelSchub' && /eigenen Schnitt/.test(x.text)),
+        JSON.stringify(mini.befunde.map((x) => x.text)))
+    // Gegenprobe: eine tragfähige Basis bleibt Basis.
+    const echt = bewerteFrueh({ stand: stand(2 * H, { tx1h: 400 }), verlauf: [stand(0, { tx1h: 40 }), stand(H, { tx1h: 50 })] })
+    p('Basis ab 20 Handel trägt den Verlauf', echt.befunde.some((x) => x.schluessel === 'handelSchub' && /eigenen Schnitt/.test(x.text)))
+}
+
+// ── Liste: dünne Noten nach unten ───────────────────────────────────────
+{
+    p('eine Teilnote ist dünn', istDuenn({ abdeckung: 1 }))
+    p('drei Teilnoten sind belastbar', !istDuenn({ abdeckung: 3 }))
+    p('alter Stand ohne Abdeckung: aus den Teilnoten gezählt',
+        istDuenn({ teilnoten: { handel: null, team: 50 } }) && !istDuenn({ teilnoten: { handel: 10, team: 50, sozial: 0 } }))
+    p('kein Stand ist dünn', istDuenn(null))
+    // Schub gegen eine fast leere Basis: die Richtung zählt, die Zahl nicht.
+    const M = 60e3
+    const riesig = bewerteFrueh({ stand: stand(20 * M, { tx1h: 201, tx5m: 200 }), geborenAm: 0 })
+    p('Schub über 10× wird als „über 10×" genannt', riesig.befunde.some((x) => x.schluessel === 'handelSchub' && /über 10×/.test(x.text)),
+        JSON.stringify(riesig.befunde.map((x) => x.text)))
+    p('… und trägt die Teilnote trotzdem voll', riesig.teilnoten.handel === 100)
+}
+
+// ── Plätze: Neue bekommen ihre reservierten ─────────────────────────────
+{
+    const b = Array.from({ length: 140 }, (_, i) => `b${i}`)
+    const n = Array.from({ length: 100 }, (_, i) => `n${i}`)
+    const v = verteilePlaetze(b, n, 150, 50)
+    p('volle Tabelle: 100 bekannte, 50 neue', v.length === 150 && v.filter((x) => x[0] === 'n').length === 50)
+    p('Bekannte in ihrer Reihenfolge', v[0] === 'b0' && v[99] === 'b99')
+    p('wenige Neue: Bekannte füllen auf', verteilePlaetze(b, n.slice(0, 5), 150, 50).filter((x) => x[0] === 'b').length === 140)
+    p('wenige Bekannte: Neue füllen auf', verteilePlaetze(b.slice(0, 10), n, 150, 50).filter((x) => x[0] === 'n').length === 100)
+    p('nie mehr als das Maximum', verteilePlaetze(b, n, 150, 50).length === 150 && verteilePlaetze([], [], 150, 50).length === 0)
+}
+
 // ── Zu alt für die Frühphase ────────────────────────────────────────────
 {
     p('älter als drei Tage: verworfen, Grund „alt"', statusFrueh({ liq: 80000, mcap: 1 }, MAX_ALTER_STUNDEN + 1, []).grund === 'alt')
@@ -218,7 +293,12 @@ const stand = (ts, o = {}) => ({ ts, mcap: null, liq: null, preis: null, vol1h: 
     const ohneSpuren = bewerteFrueh({ stand: stand(0, {}) })
     p('keine Webseite, keine Kanäle: benannt', ohneSpuren.befunde.some((x) => x.schluessel === 'keineSpuren'))
     const profil = bewerteFrueh({ stand: stand(0, {}), profil: true, links: { webseiten: ['https://a.io'], kanaele: [{}, {}] } })
-    p('Profil und Kanäle heben die Team-Teilnote', profil.teilnoten.team === 100, String(profil.teilnoten.team))
+    const ohneProfil = bewerteFrueh({ stand: stand(0, {}), links: { webseiten: ['https://a.io'], kanaele: [{}, {}] } })
+    p('Webseite und Kanäle tragen die Team-Teilnote', profil.teilnoten.team === 70, String(profil.teilnoten.team))
+    // Ein bezahltes Profil ist Werbebudget: kein Punkt, nur ein Hinweis.
+    p('bezahltes Profil bringt keine Punkte', profil.teilnoten.team === ohneProfil.teilnoten.team && profil.note === ohneProfil.note)
+    p('… und steht als Hinweis, nicht als Plus', profil.befunde.some((x) => x.schluessel === 'profil' && x.art === 'info')
+        && !profil.befunde.some((x) => x.art === 'plus'))
     p('Note bleibt im Bereich', [mitNote, ohneSpuren, profil].every((b) => b.note >= 0 && b.note <= 100))
 
     p('reif ab Alter und Liquidität', statusFrueh({ liq: REIF.minLiquiditaetUsd, mcap: 1 }, REIF.minAlterStunden, []).status === 'reif')

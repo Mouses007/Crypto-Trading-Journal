@@ -43,6 +43,17 @@ if [ -z "$NAS_HOST" ] || [ -z "$NAS_USER" ] || [ -z "$NAS_PROJEKT" ]; then
 fi
 
 ZIEL="$NAS_USER@$NAS_HOST"
+
+# Eine SSH-Verbindung für alle Schritte. Ohne das fragt jeder der vier
+# Aufrufe einzeln nach dem Passwort, solange die NAS den Schlüssel ablehnt
+# (07.10.2026: fünf Abfragen je Deploy, die sudo-Abfrage mitgezählt). Die
+# Master-Verbindung wird in Schritt 1 ausdrücklich aufgebaut, die übrigen
+# laufen durch sie hindurch. 30 Minuten Halt, damit sie einen langen Build
+# übersteht; am Ende räumt die Falle sie ab.
+STEUERUNG="/tmp/.ctj-nas-$(id -u)-%C"
+SSH_OPT=(-o ControlMaster=auto -o "ControlPath=$STEUERUNG" -o ControlPersist=1800)
+ssh() { command ssh "${SSH_OPT[@]}" "$@"; }
+trap 'command ssh "${SSH_OPT[@]}" -O exit "$ZIEL" 2>/dev/null || true' EXIT
 # Bewusst /tmp und NICHT das Projektverzeichnis: das gehoert auf DSM dem
 # Container-Manager (drwx------, uid 999). Der SSH-Benutzer darf dort nicht
 # schreiben, und die Uebertragung laeuft absichtlich ohne sudo.
@@ -58,7 +69,9 @@ DOCKER="${NAS_DOCKER:-/usr/local/bin/docker}"
 NAS_IMAGE_TAG="${NAS_IMAGE_TAG:-mouses007/trading-journal:edge}"
 
 echo "── 1/5  Erreichbarkeit + Architektur ─────────────────────────"
-NAS_ARCH="$(ssh -o ConnectTimeout=8 "$ZIEL" 'uname -m')"
+# Hier kommt die einzige SSH-Passwortabfrage (sudo fragt in Schritt 4 eigens).
+ssh -O check "$ZIEL" 2>/dev/null || ssh -o ConnectTimeout=8 -fN "$ZIEL"
+NAS_ARCH="$(ssh "$ZIEL" 'uname -m')"
 case "$NAS_ARCH" in
     x86_64)  ERWARTET=amd64 ;;
     aarch64) ERWARTET=arm64 ;;

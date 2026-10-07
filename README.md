@@ -85,7 +85,7 @@ Telegram channels and optionally Reddit. Each token gets a snapshot history, and
 the score measures **acceleration** against that history — trading surge, distinct
 buyers, mentions across platforms, project substance, momentum — with deductions
 for one-sided buying, circular trading, volume without price movement, serial
-creators and collapses. For a token younger than an hour, the hourly counts of the
+creators and collapses; a token without a single trade for 30 minutes is dropped, a paid DexScreener profile earns no points, and 50 of the 150 slots per run are reserved for new tokens. For a token younger than an hour, the hourly counts of the
 sources cover only its age, so rates are taken per minute of that age — otherwise
 steady trading reads as a surge (it did, on the first real run, for 28 of 43 such
 tokens). Tokens older than three days are not taken in. Tokens that mature enter

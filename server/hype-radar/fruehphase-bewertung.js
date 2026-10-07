@@ -42,6 +42,21 @@ export const MIN_TEILNOTEN_MELDUNG = 3
 /** So viele Minuten Handel muss eine Rate abdecken, um als Vergleich zu taugen. */
 const MIN_BASIS_MIN = 10
 
+/*
+ * So viele Transaktionen muss eine frühere Aufnahme haben, um Vergleichsbasis
+ * zu sein — dieselbe Hürde wie beim ersten Blick. Gegen eine Basis aus einem
+ * einzigen Handel wurde im Testlauf vom 07.10.2026 ein „Schub 199×".
+ */
+const MIN_TX_BASIS = 20
+
+/*
+ * Kein einziger Handel über so viele Minuten heisst: tot, nicht ruhig. Im Lauf
+ * vom 07.10.2026 hatten 100 von 133 beobachteten Token in der letzten Stunde
+ * keinen Handel — und hielten ihren Platz bis zu 72 Stunden, während je
+ * Durchgang nur noch vier neue Token hineinkamen.
+ */
+export const STILL_MIN = 30
+
 const zahl = (w) => (w === null || w === undefined || w === '' ? null
     : (Number.isFinite(Number(w)) ? Number(w) : null))
 const klemme = (n) => Math.max(0, Math.min(100, n))
@@ -322,6 +337,43 @@ export function momentaufnahme(markt = {}, sozial = {}, ts = Date.now()) {
     }
 }
 
+/**
+ * Plätze eines Durchgangs verteilen: Neue bekommen bis zu `neuPlaetze`
+ * reserviert, Bekannte den Rest (in der übergebenen Reihenfolge, also nach
+ * Note), und was eine Seite nicht braucht, bekommt die andere.
+ *
+ * Bis 07.10.2026 gingen alle Plätze zuerst an Bekannte: 142 neue Token im
+ * ersten Durchgang, dann 9, dann 4.
+ *
+ * @param {Array} bekannte  sortiert, beste zuerst
+ * @param {Array} neue      sortiert, beste zuerst
+ */
+export function verteilePlaetze(bekannte = [], neue = [], max = 150, neuPlaetze = 50) {
+    const alte = bekannte.slice(0, Math.max(0, max - Math.min(neuPlaetze, neue.length)))
+    return [...alte, ...neue.slice(0, max - alte.length)]
+}
+
+/**
+ * Hat diese Momentaufnahme überhaupt etwas gemessen?
+ *
+ * Im Lauf vom 07.10.2026 18:52 kamen für 62 von 150 Token keine Marktdaten an
+ * (der DexScreener-Deckel, siehe `dexNachfassen` in quellen.js). Die Aufnahme
+ * bestand aus lauter `null`, die Note nur noch aus der Team-Teilnote — und die
+ * ist bei Webseite plus X-Konto 50. So standen 22 tote Token mit „50 ↗" oben
+ * in der Liste. Eine Aufnahme ohne Messung ist kein Stand, sondern
+ * Funkstille: Sie wird nicht geschrieben, die letzte bleibt stehen, und nach
+ * `VERGESSEN_MS` fällt der Token heraus.
+ *
+ * Nicht mitgezählt wird, was aus dem letzten Stand übernommen ist — King of
+ * the Hill und die X-Nennungen werden fortgeschrieben und sähen sonst aus wie
+ * eine Messung. Nennungen aus DIESEM Durchgang gibt der Aufrufer mit.
+ */
+export function hatMessung(stand, sozialDiesmal = false) {
+    if (!stand) return false
+    return sozialDiesmal || ['mcap', 'liq', 'preis', 'vol1h', 'tx1h', 'tx5m', 'kaeufer1h', 'antworten']
+        .some((k) => stand[k] !== null && stand[k] !== undefined)
+}
+
 /** Den Verlauf fortschreiben: anhängen, kappen, älteste zuerst. */
 export function naechsterVerlauf(verlauf = [], stand, max = MAX_VERLAUF) {
     const v = (Array.isArray(verlauf) ? verlauf : []).filter((x) => x && Number.isFinite(x.ts))
@@ -442,7 +494,8 @@ function jeMinute(wert, ts, geborenAm) {
  * gleichmässigem Handel auf 10×.
  */
 function handelsSchub(stand, frueher, geborenAm) {
-    const basis = median(frueher.map((s) => jeMinute(s.tx1h, s.ts, geborenAm)).filter((x) => x !== null && x > 0))
+    const basis = median(frueher.filter((s) => s.tx1h >= MIN_TX_BASIS)
+        .map((s) => jeMinute(s.tx1h, s.ts, geborenAm)).filter((x) => x !== null && x > 0))
     const jetzt = jeMinute(stand.tx1h, stand.ts, geborenAm)
     if (jetzt !== null && basis) {
         return { faktor: jetzt / basis, quelle: 'verlauf' }
@@ -484,10 +537,27 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
     if (schub) {
         teilnoten.handel = klemme(Math.min(schub.faktor, SCHUB_VOLL) / SCHUB_VOLL * 100)
         if (schub.faktor >= 2) {
-            plus('handelSchub', `Handel ${schub.faktor.toFixed(1)}× ${schub.quelle === 'verlauf' ? 'über dem eigenen Schnitt' : 'schneller als in der Stunde zuvor'}`)
+            // Gegen eine fast leere Basis ist die genaue Zahl Zufall („53,4×"); die Richtung nicht.
+            const wieviel = schub.faktor > 10 ? 'über 10' : schub.faktor.toFixed(1)
+            plus('handelSchub', `Handel ${wieviel}× ${schub.quelle === 'verlauf' ? 'über dem eigenen Schnitt' : 'schneller als in der Stunde zuvor'}`)
         }
     } else {
         teilnoten.handel = null
+    }
+    /*
+     * Still: kein einziger Handel über mindestens `STILL_MIN` Minuten. Mit
+     * bekanntem Alter genügt eine Aufnahme (die Stunde eines jungen Tokens
+     * reicht bis zu seinem Start zurück), ohne Alter braucht es zwei, die
+     * so weit auseinanderliegen. `null` ist unbekannt, nicht „kein Handel".
+     */
+    if (stand.tx1h === 0) {
+        const fenster = Number.isFinite(geborenAm) ? Math.min(60, (stand.ts - geborenAm) / 60e3) : null
+        const vorMitTx = [...frueher].reverse().find((s) => s.tx1h !== null && s.tx1h !== undefined) || null
+        if (fenster !== null && fenster >= STILL_MIN) {
+            minus('still', `Kein einziger Handel in ${Math.round(fenster)} Minuten`)
+        } else if (fenster === null && vorMitTx?.tx1h === 0 && stand.ts - vorMitTx.ts >= STILL_MIN * 60e3) {
+            minus('still', `Kein einziger Handel in zwei Aufnahmen über ${Math.round((stand.ts - vorMitTx.ts) / 60e3)} Minuten`)
+        }
     }
 
     // ── Beteiligung: viele verschiedene Käufer, nicht viele Klicks ──────
@@ -550,10 +620,17 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
     } else {
         const kanaele = (links?.kanaele || []).length
         const seite = (links?.webseiten || []).length
-        teilnoten.team = klemme((seite ? 30 : 0) + Math.min(40, kanaele * 20) + (profil ? 30 : 0))
+        teilnoten.team = klemme((seite ? 30 : 0) + Math.min(40, kanaele * 20))
         if (!seite && !kanaele) minus('keineSpuren', 'Weder Webseite noch Kanäle angegeben')
     }
-    if (profil) plus('profil', 'Bezahltes DexScreener-Profil oder Community-Übernahme — jemand investiert in Sichtbarkeit')
+    /*
+     * Ein bezahltes DexScreener-Profil ist ein Werbebudget, kein Beleg für ein
+     * Team — Betrüger kaufen es genauso. Bis 07.10.2026 brachte es +30 auf die
+     * Team-Teilnote und einen Pluspunkt; 13 der besten 20 hatten eines. Jetzt
+     * nur noch ein Hinweis. Webseite und Kanäle aus dem Profil zählen weiter,
+     * über `links`.
+     */
+    if (profil) info('profil', 'Bezahltes DexScreener-Profil oder Community-Übernahme — Werbebudget, kein Beleg für ein Team')
     if (ersteller?.graduiert > 0) plus('erstellerErfolg', `Ersteller hat schon ${ersteller.graduiert} Coin(s) durch die Kurve gebracht`)
 
     // ── Momentum: Bewertung seit dem ersten Blick ───────────────────────
@@ -659,6 +736,19 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
 }
 
 /**
+ * Beruht die Note eines gespeicherten Stands auf zu wenigen Teilnoten? Für
+ * die Liste: Solche Noten stehen unten und grau, statt die belastbaren zu
+ * verdrängen — im Testlauf vom 07.10.2026 stand eine 79 aus EINER Teilnote
+ * ganz oben. Ältere Stände ohne `abdeckung` werden aus den Teilnoten gezählt.
+ */
+export function istDuenn(stand) {
+    const s = stand || {}
+    const n = Number.isFinite(s.abdeckung) ? s.abdeckung
+        : Object.keys(FRUEH_GEWICHTE).filter((k) => s.teilnoten?.[k] !== null && s.teilnoten?.[k] !== undefined).length
+    return n < MIN_TEILNOTEN_MELDUNG
+}
+
+/**
  * Kein Prüfdienst kennt diesen Vertrag — eine Kette ohne RugCheck und GoPlus
  * (im ersten Lauf: Robinhood), oder der Token ist zu neu, um erfasst zu sein.
  * Kein Abzug, denn das ist keine Aussage über den Vertrag; aber auch keine
@@ -702,6 +792,7 @@ export function meldefaehig({ status, abdeckung = 0, risiko = null, smart = fals
 export function statusFrueh(stand, alterStunden, befunde = []) {
     if (befunde.some((b) => b.schluessel === 'sicherheitKo')) return { status: 'verworfen', grund: 'sicherheit' }
     if (befunde.some((b) => b.schluessel === 'eingebrochen')) return { status: 'verworfen', grund: 'eingebrochen' }
+    if (befunde.some((b) => b.schluessel === 'still')) return { status: 'verworfen', grund: 'still' }
     if (stand?.liq !== null && stand?.liq !== undefined && stand.liq <= 0 && stand.mcap !== null && stand.mcap <= 0) {
         return { status: 'verworfen', grund: 'leer' }
     }

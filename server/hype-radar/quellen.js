@@ -327,11 +327,97 @@ export async function dexDetails(contract, opts = {}) {
     return karte.get(String(contract).toLowerCase()) || null
 }
 
-/** Wie viele Adressen DexScreener je Abruf annimmt. */
+/** Wie viele Adressen DexScreener je Abruf annimmt — und wie viele PAARE er höchstens zurückgibt. */
 const SAMMEL_GROESSE = 30
 
+/** Unsere Kette als DexScreener-Kennung; '' heisst unbekannt (dann ohne Kette fragen). */
+export function dexKette(chain) {
+    const c = normChain(chain)
+    return c && c !== '?' && /^[a-z0-9-]+$/.test(c) ? c : ''
+}
+
 /**
- * Detaildaten für VIELE Verträge — in Häppchen zu dreissig.
+ * Die Abfragen planen: je Kette in Häppchen zu dreissig, Adressen ohne
+ * bekannte Kette gesammelt für den Weg ohne Kette. Doppelte zählen einmal;
+ * nennt nur einer der Einträge die Kette, gilt sie.
+ *
+ * @param {Array<string|{contract:string, chain?:string}>} eintraege
+ * @returns {Array<{kette:string, adressen:string[]}>}
+ */
+export function dexAbfrageGruppen(eintraege = [], groesse = SAMMEL_GROESSE) {
+    const je = new Map()
+    for (const e of eintraege) {
+        const istObjekt = e !== null && typeof e === 'object'
+        const adresse = String(istObjekt ? e.contract || '' : e || '').trim()
+        if (!adresse) continue
+        const kette = istObjekt ? dexKette(e.chain) : ''
+        const bisher = je.get(adresse.toLowerCase())
+        if (!bisher) je.set(adresse.toLowerCase(), { adresse, kette })
+        else if (!bisher.kette && kette) bisher.kette = kette
+    }
+    const nachKette = new Map()
+    for (const { adresse, kette } of je.values()) {
+        if (!nachKette.has(kette)) nachKette.set(kette, [])
+        nachKette.get(kette).push(adresse)
+    }
+    const gruppen = []
+    for (const [kette, liste] of nachKette) {
+        for (let i = 0; i < liste.length; i += groesse) gruppen.push({ kette, adressen: liste.slice(i, i + groesse) })
+    }
+    return gruppen
+}
+
+/**
+ * Was nach einer Antwort noch einmal gefragt werden muss.
+ *
+ * DexScreener deckelt die Antwort auf DREISSIG PAARE, nicht auf dreissig
+ * Token. Am 07.10.2026 gemessen: Für die 150 Token eines Frühphasen-Laufs
+ * kamen über `/latest/dex/tokens` nur 67 an — ein Token mit fünf Paaren
+ * verdrängt vier andere, und die fehlen still, ohne Fehler, ohne Warnung.
+ * Ist die Antwort voll und fehlt etwas, werden genau die Fehlenden noch einmal
+ * gefragt (das Häppchen schrumpft dabei, also endet es). Bringt eine Kette gar
+ * nichts, wird einmal ohne Kette nachgefragt — die Kennung kann falsch sein.
+ *
+ * @returns {null|{kette:string, adressen:string[], rueckfall:boolean}}
+ */
+export function dexNachfassen({ kette, adressen, rueckfall = false }, paareAnzahl, gefunden, groesse = SAMMEL_GROESSE) {
+    const fehlend = adressen.filter((a) => !gefunden.has(String(a).toLowerCase()))
+    if (!fehlend.length) return null
+    if (paareAnzahl >= groesse && fehlend.length < adressen.length) return { kette, adressen: fehlend, rueckfall }
+    if (kette && fehlend.length === adressen.length && !rueckfall) return { kette: '', adressen: fehlend, rueckfall: true }
+    return null
+}
+
+/**
+ * Jedes Paar der angefragten Adresse zuordnen — und zwar auf DER SEITE, auf
+ * der sie steht.
+ *
+ * `dexDetails` las früher immer `baseToken`. Live geprüft: Für drei
+ * angefragte Adressen kamen vier verschiedene Basis-Token zurück, weil eine
+ * der Adressen in ihrem Paar die GEGENWÄHRUNG ist. Wer blind die Basisseite
+ * nimmt, schreibt einem Fund Symbol, Name und Marktwerte eines fremden Tokens
+ * zu — bei jungen Token ein Vertrauensbruch.
+ */
+function ordnePaareZu(paare, adressen, raus) {
+    const gesucht = new Set(adressen.map((a) => String(a).toLowerCase()))
+    for (const p of paare) {
+        const basis = String(p?.baseToken?.address || '').toLowerCase()
+        const gegen = String(p?.quoteToken?.address || '').toLowerCase()
+        const seite = gesucht.has(basis) ? 'base' : (gesucht.has(gegen) ? 'quote' : null)
+        if (!seite) continue
+        const schluessel = seite === 'base' ? basis : gegen
+
+        // Das liquideste Paar ist das aussagekräftigste: dort findet der
+        // Handel statt.
+        const bisher = raus.get(schluessel)
+        const liqNeu = Number(p?.liquidity?.usd) || 0
+        if (bisher && bisher._liq >= liqNeu) continue
+        raus.set(schluessel, { ...ausPaar(p, seite), _liq: liqNeu })
+    }
+}
+
+/**
+ * Detaildaten für VIELE Verträge — in Häppchen zu dreissig, je Kette.
  *
  * Der Grund ist nicht Geschwindigkeit, sondern Reihenfolge. Die
  * DexScreener-Trendlisten liefern nur Adressen: kein Symbol, kein Alter, kein
@@ -340,26 +426,36 @@ const SAMMEL_GROESSE = 30
  * vierzig, BEVOR die Daten geholt wurden, die sie überhaupt bewertbar machen.
  * Ausgerechnet die frischesten Funde wurden so systematisch aussortiert.
  *
- * Mit dem Sammelabruf sind alle sechzig in zwei Anfragen angereichert, und die
- * Rangfolge entsteht zum ersten Mal auf vergleichbarer Grundlage.
+ * Mit bekannter Kette über `/tokens/v1/{kette}/{adressen}`: ein Paar je
+ * Token, gemessen 149 von 150. Ohne Kette über `/latest/dex/tokens`, der alle
+ * Paare liefert, aber höchstens dreissig — dort fasst `dexNachfassen` nach.
  *
- * @param {string[]} contracts
+ * @param {Array<string|{contract:string, chain?:string}>} eintraege
+ *        Adressen, am besten mit Kette
  * @param {object} opts  `{streng: true}` reicht Abruffehler weiter, statt sie
  *                       als „nichts gefunden" zu verschlucken
  * @returns {Promise<Map<string, object>>} Adresse (klein) → Details
  */
-export async function dexDetailsViele(contracts = [], opts = {}) {
+export async function dexDetailsViele(eintraege = [], opts = {}) {
     const raus = new Map()
-    const liste = [...new Set(contracts.filter(Boolean).map(String))]
+    const offen = dexAbfrageGruppen(eintraege)
 
-    for (let i = 0; i < liste.length; i += SAMMEL_GROESSE) {
-        const teil = liste.slice(i, i + SAMMEL_GROESSE)
+    while (offen.length) {
+        const gruppe = offen.shift()
+        const liste = gruppe.adressen.map(encodeURIComponent).join(',')
         let paare = []
         try {
-            const j = await holeJson(
-                `https://api.dexscreener.com/latest/dex/tokens/${teil.map(encodeURIComponent).join(',')}`)
-            paare = Array.isArray(j?.pairs) ? j.pairs : []
+            const j = await holeJson(gruppe.kette
+                ? `https://api.dexscreener.com/tokens/v1/${encodeURIComponent(gruppe.kette)}/${liste}`
+                : `https://api.dexscreener.com/latest/dex/tokens/${liste}`)
+            paare = Array.isArray(j) ? j : (Array.isArray(j?.pairs) ? j.pairs : [])
         } catch (e) {
+            // Eine Kennung, die DexScreener nicht kennt (400/404), ist kein
+            // Ausfall: dann eben ohne Kette. Ein 429 dagegen schon.
+            if (gruppe.kette && !gruppe.rueckfall && /HTTP 40[04]\b/.test(e.message)) {
+                offen.push({ kette: '', adressen: gruppe.adressen, rueckfall: true })
+                continue
+            }
             /*
              * Ein Häppchen, das klemmt, darf die übrigen nicht mitnehmen —
              * beim Sammeln. Wer dagegen wissen will, ob es einen Fund noch
@@ -370,32 +466,9 @@ export async function dexDetailsViele(contracts = [], opts = {}) {
             logWarn('hype-radar', `DexScreener-Sammelabruf: ${e.message}`)
             continue
         }
-
-        /*
-         * Jedes Paar der angefragten Adresse zuordnen — und zwar auf DER
-         * SEITE, auf der sie steht.
-         *
-         * `dexDetails` las früher immer `baseToken`. Live geprüft: Für drei
-         * angefragte Adressen kamen vier verschiedene Basis-Token zurück, weil
-         * eine der Adressen in ihrem Paar die GEGENWÄHRUNG ist. Wer blind die
-         * Basisseite nimmt, schreibt einem Fund Symbol, Name und Marktwerte
-         * eines fremden Tokens zu — bei jungen Token ein Vertrauensbruch.
-         */
-        const gesucht = new Map(teil.map((a) => [a.toLowerCase(), a]))
-        for (const p of paare) {
-            const basis = String(p?.baseToken?.address || '').toLowerCase()
-            const gegen = String(p?.quoteToken?.address || '').toLowerCase()
-            const seite = gesucht.has(basis) ? 'base' : (gesucht.has(gegen) ? 'quote' : null)
-            if (!seite) continue
-            const schluessel = seite === 'base' ? basis : gegen
-
-            // Das liquideste Paar ist das aussagekräftigste: dort findet der
-            // Handel statt.
-            const bisher = raus.get(schluessel)
-            const liqNeu = Number(p?.liquidity?.usd) || 0
-            if (bisher && bisher._liq >= liqNeu) continue
-            raus.set(schluessel, { ...ausPaar(p, seite), _liq: liqNeu })
-        }
+        ordnePaareZu(paare, gruppe.adressen, raus)
+        const weiter = dexNachfassen(gruppe, paare.length, raus)
+        if (weiter) offen.push(weiter)
     }
 
     for (const d of raus.values()) delete d._liq
@@ -492,7 +565,8 @@ function ausPaarBasis(p, seite) {
                 : null,
             kaufVerkaufVerhaeltnis: verkaeufe > 0 ? kaeufe / verkaeufe : (kaeufe > 0 ? 99 : null),
             transaktionen24h: kaeufe + verkaeufe,
-            transaktionen1h: (Number(p?.txns?.h1?.buys) || 0) + (Number(p?.txns?.h1?.sells) || 0),
+            // Ohne Fenster unbekannt, nicht 0 — die Frühphase verwirft bei 0 („still").
+            transaktionen1h: p?.txns?.h1 ? (Number(p.txns.h1.buys) || 0) + (Number(p.txns.h1.sells) || 0) : null,
             // Die letzten fünf Minuten — für die Frühphase das Mass, ob der
             // Handel innerhalb der Stunde gerade anzieht.
             transaktionen5m: p?.txns?.m5 ? (Number(p.txns.m5.buys) || 0) + (Number(p.txns.m5.sells) || 0) : null,

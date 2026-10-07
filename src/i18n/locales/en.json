@@ -3634,7 +3634,7 @@
         },
         {
           "h": "WHAT IS DEDUCTED",
-          "p": "One-sided buying (more than eight times as many buys as sells — often a bot or a sell block), circular trading (many transactions, few wallets), volume without price movement (wash suspicion), serial creators without a single success, and a collapse below 20 % of the observed peak — then the token is rejected."
+          "p": "One-sided buying (more than eight times as many buys as sells — often a bot or a sell block), circular trading (many transactions, few wallets), volume without price movement (wash suspicion), serial creators without a single success, and a collapse below 20 % of the observed peak — then the token is rejected. A token without a single trade for at least 30 minutes is rejected too: dead, not quiet. A paid DexScreener profile earns no points — it shows an advertising budget, not a team — and appears only as a note on the token. In every run 50 of the 150 slots are reserved for new tokens, so the search does not clog up with old finds after the first run."
         },
         {
           "h": "CONTRACT, HOLDERS, SMART MONEY",
@@ -3651,7 +3651,7 @@
         },
         {
           "h": "ALERTS",
-          "p": "If the score rises above the configured threshold, an alert goes out through the watchdog's channels (ntfy, Telegram, webhook) — on crossing, not while above, and at most every twelve hours per token. Two further conditions apply: the contract must have been checked (if neither RugCheck nor GoPlus knows it, e.g. on a chain without a checking service, nothing is sent), and the score must rest on at least three of the five sub-scores — built from one or two it easily turns extreme. Both show as a note on the token. Outcome tracking counts by the same rule."
+          "p": "If the score rises above the configured threshold, an alert goes out through the watchdog's channels (ntfy, Telegram, webhook) — on crossing, not while above, and at most every twelve hours per token. Two further conditions apply: the contract must have been checked (if neither RugCheck nor GoPlus knows it, e.g. on a chain without a checking service, nothing is sent), and the score must rest on at least three of the five sub-scores — built from one or two it easily turns extreme. Both show as a note on the token; such thin scores sit at the bottom of the list, greyed out. Outcome tracking counts by the same rule."
         },
         {
           "h": "X AND TIKTOK",
@@ -4493,6 +4493,8 @@
     "grund_eingebrochen": "collapsed",
     "grund_leer": "empty",
     "grund_alt": "older than 3 days",
+    "grund_still": "no trading",
+    "duennTitel": "Score from fewer than three of the five sub-scores — easily extreme, so sorted to the bottom and never alerted",
     "txKurz": "{n} tx",
     "sozialTitel": "Mentioned on: {p} — {n} mentions in the last run",
     "teilnoten": "Sub-scores",

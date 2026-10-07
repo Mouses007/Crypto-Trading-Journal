@@ -158,7 +158,7 @@ async function boersenLaufIntern(einst) {
         for (const s of set) gelistet.add(s)
     }
     const auffrischen = wissen.filter((w) => w.contract && w.ersteMeldung && gelistet.has(kuerzel(w.symbol)))
-    const vertraege = [...new Set(auffrischen.map((w) => w.contract))].slice(0, 90)
+    const vertraege = [...new Map(auffrischen.map((w) => [w.contract, { contract: w.contract, chain: w.chain }])).values()].slice(0, 90)
     if (vertraege.length) {
         const d = await dexDetailsViele(vertraege).catch(() => new Map())
         for (const w of auffrischen) {

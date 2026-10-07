@@ -19,11 +19,11 @@
  * Schlüssel sechzig Anfragen je STUNDE, und dieselbe Seite ändert sich in
  * einem Tag selten.
  *
- * ⚠ Nicht gegen die Live-Dienste geprüft (die Entwicklungsumgebung hatte am
- * 07.10.2026 keinen Zugang): die pump.fun-Pfade `/coins/{mint}` und
- * `/coins/user-created-coins/{wallet}` sind dem inoffiziellen Frontend-API
- * entnommen. Jeder Teil fällt einzeln aus — dann bleibt er „unbekannt" und
- * kostet keine Punkte.
+ * Die pump.fun-Pfade stammen aus dem inoffiziellen Frontend-API. Live geprüft
+ * am 07.10.2026: `/coins/user-created-coins/{wallet}` gibt es dort nicht
+ * (404), der Filter `/coins?creator={wallet}` liefert die Starts einer Wallet.
+ * `/coins/{mint}` ist weiter ungeprüft. Jeder Teil fällt einzeln aus — dann
+ * bleibt er „unbekannt" und kostet keine Punkte.
  */
 
 import { getKnex } from '../database.js'
@@ -190,8 +190,15 @@ async function pruefeFrisch(kandidat) {
     // ── Ersteller (pump.fun) ────────────────────────────────────────────
     let erstellerFakten = null
     if (istPump && ersteller) {
+        /*
+         * `/coins/user-created-coins/{wallet}` gibt es auf frontend-api-v3
+         * nicht (07.10.2026: „Cannot GET", HTTP 404 bei jeder Wallet) — die
+         * Ersteller-Bilanz war deshalb immer leer, und „hat schon Coins durch
+         * die Kurve gebracht" fiel nie. Die Coin-Liste nimmt `creator` als
+         * Filter: für eine Wallet mit vier Starts kamen genau diese vier.
+         */
         const coins = await holeJson(
-            `${PUMP}/coins/user-created-coins/${encodeURIComponent(ersteller)}?offset=0&limit=50&includeNsfw=true`)
+            `${PUMP}/coins?creator=${encodeURIComponent(ersteller)}&offset=0&limit=50&sort=created_timestamp&order=DESC&includeNsfw=true`)
             .catch((e) => {
                 logWarn('hype-projekt', `Ersteller-Historie ${ersteller.slice(0, 8)}…: ${e.message}`)
                 return null

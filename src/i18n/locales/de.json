@@ -3634,7 +3634,7 @@
         },
         {
           "h": "WAS ABGEZOGEN WIRD",
-          "p": "Einseitige Käufe (mehr als achtmal so viele Käufe wie Verkäufe — oft ein Bot oder eine Verkaufssperre), Kreishandel (viele Transaktionen, wenige Wallets), Volumen ohne Preisbewegung (Wash-Verdacht), Serien-Ersteller ohne einen einzigen Erfolg, und ein Einbruch auf unter 20 % des beobachteten Höchststands — dann wird der Token verworfen."
+          "p": "Einseitige Käufe (mehr als achtmal so viele Käufe wie Verkäufe — oft ein Bot oder eine Verkaufssperre), Kreishandel (viele Transaktionen, wenige Wallets), Volumen ohne Preisbewegung (Wash-Verdacht), Serien-Ersteller ohne einen einzigen Erfolg, und ein Einbruch auf unter 20 % des beobachteten Höchststands — dann wird der Token verworfen. Verworfen wird auch, wer mindestens 30 Minuten lang keinen einzigen Handel hatte: tot, nicht ruhig. Ein bezahltes DexScreener-Profil bringt keine Punkte — es zeigt ein Werbebudget, kein Team — und steht nur als Hinweis beim Token. Je Durchgang sind 50 der 150 Plätze für neue Token reserviert, damit die Suche nach dem ersten Lauf nicht von alten Funden verstopft wird."
         },
         {
           "h": "VERTRAG, HALTER, SMART MONEY",
@@ -3651,7 +3651,7 @@
         },
         {
           "h": "MELDUNGEN",
-          "p": "Steigt die Note über die eingestellte Schwelle, kommt eine Meldung über die Kanäle des Wachhunds (ntfy, Telegram, Webhook) — beim Überschreiten, nicht solange darüber, und je Token höchstens alle zwölf Stunden. Zwei Bedingungen gelten zusätzlich: Der Vertrag muss geprüft sein (kennt ihn weder RugCheck noch GoPlus, etwa auf einer Kette ohne Prüfdienst, wird nichts gemeldet), und die Note muss auf mindestens drei der fünf Teilnoten beruhen — aus einer oder zwei wird sie leicht extrem. Beides steht als Hinweis beim Token. Die Erfolgskontrolle zählt nach derselben Regel."
+          "p": "Steigt die Note über die eingestellte Schwelle, kommt eine Meldung über die Kanäle des Wachhunds (ntfy, Telegram, Webhook) — beim Überschreiten, nicht solange darüber, und je Token höchstens alle zwölf Stunden. Zwei Bedingungen gelten zusätzlich: Der Vertrag muss geprüft sein (kennt ihn weder RugCheck noch GoPlus, etwa auf einer Kette ohne Prüfdienst, wird nichts gemeldet), und die Note muss auf mindestens drei der fünf Teilnoten beruhen — aus einer oder zwei wird sie leicht extrem. Beides steht als Hinweis beim Token; solche dünnen Noten stehen in der Liste unten und grau. Die Erfolgskontrolle zählt nach derselben Regel."
         },
         {
           "h": "X UND TIKTOK",
@@ -4493,6 +4493,8 @@
     "grund_eingebrochen": "eingebrochen",
     "grund_leer": "leer",
     "grund_alt": "älter als 3 Tage",
+    "grund_still": "kein Handel",
+    "duennTitel": "Note aus weniger als drei der fünf Teilnoten — leicht extrem, deshalb unten einsortiert und nie gemeldet",
     "txKurz": "{n} Tx",
     "sozialTitel": "Genannt auf: {p} — {n} Nennungen im letzten Durchgang",
     "teilnoten": "Teilnoten",
