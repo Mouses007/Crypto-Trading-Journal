@@ -1230,7 +1230,22 @@
     "zFruehAus": "Frühphase aus",
     "fruehQuelle_x": "X über Grok — kostenpflichtig",
     "fruehXTakt": "X-Abfrage alle",
-    "fruehXHinweis": "Eine Grok-Suche je Intervall (xAI-Schlüssel unter Einstellungen → KI). Gezählt werden nur zitierte Posts und verschiedene Autoren. Der Preis der letzten Abfrage steht über der Liste."
+    "fruehXHinweis": "Eine Grok-Suche je Intervall (xAI-Schlüssel unter Einstellungen → KI). Gezählt werden nur zitierte Posts und verschiedene Autoren. Der Preis der letzten Abfrage steht über der Liste.",
+    "tab_boersen": "Börsen",
+    "fruehQuelle_smartmoney": "Smart Money — beobachtete Wallets",
+    "smartWallets": "Beobachtete Wallets (Solana)",
+    "smartWalletsPlatzhalter": "Adresse Name — eine je Zeile",
+    "smartTakt": "Käufe lesen alle",
+    "smartRpc": "Solana-RPC-Adresse (optional)",
+    "smartRpcPlatzhalter": "leer = öffentlicher Knoten · z. B. Helius-Adresse",
+    "smartHinweis": "Wallets aus den Bestenlisten von GMGN, Kolscan oder Cielo. Es zählen nur Käufe, die die Wallet selbst signiert und bezahlt hat. Zwei Wallets auf demselben Token lösen sofort eine Meldung aus. Für mehr als ein paar Wallets eine eigene RPC-Adresse eintragen (z. B. Helius, Gratis-Stufe).",
+    "boersenwachtTitel": "Börsen-Beobachter",
+    "boersenwachtHinweis": "Gleicht die öffentlichen Marktlisten grosser und mittlerer Börsen und Binance Alpha ab, erkennt neue Listungen und prüft, ob der Radar den Token vorher gemeldet hatte. Ohne Schlüssel.",
+    "boersenwachtAn": "Börsen beobachten",
+    "boersenwachtTakt": "Abgleich alle",
+    "boersenAlleMelden": "Auch Listungen melden, die der Radar nicht kannte (nur grosse Börsen)",
+    "zBoersen": "Börsen beobachtet",
+    "zBoersenAus": "Börsen aus"
   },
   "kiUebersicht": {
     "laedt": "Übersicht wird geladen …",
@@ -3459,6 +3474,10 @@
           "p": "Einseitige Käufe (mehr als achtmal so viele Käufe wie Verkäufe — oft ein Bot oder eine Verkaufssperre), Kreishandel (viele Transaktionen, wenige Wallets), Volumen ohne Preisbewegung (Wash-Verdacht), Serien-Ersteller ohne einen einzigen Erfolg, und ein Einbruch auf unter 20 % des beobachteten Höchststands — dann wird der Token verworfen."
         },
         {
+          "h": "VERTRAG, HALTER, SMART MONEY",
+          "p": "Für die Besten jedes Durchgangs wird der Vertrag geprüft (RugCheck, sonst GoPlus): Mint- oder Freeze-Recht, Honeypot und Ähnliches verwerfen den Token sofort. Dazu das Halterbild — Anteil der Insider-Wallets, der zehn grössten Halter (bei pump.fun ohne die Bindungskurve, die naturgemäss das meiste hält) und des Erstellers — und die Halterzahl, deren Wachstum in die Beteiligung eingeht. King of the Hill (die pump.fun-Startseite) zählt als Momentum. Smart Money: Wallets, die du in den Einstellungen einträgst; kaufen zwei davon denselben Token, wird sofort gemeldet."
+        },
+        {
           "h": "PROJEKTPRÜFUNG",
           "p": "Für die Besten jedes Durchgangs: die Webseite (Abschnitte, richtige Vertragsadresse, Platzhaltertext), das Alter der Domain, GitHub (gepflegt, frühere Projekte) und bei pump.fun die anderen Coins derselben Wallet. Das ist die Frage „hat das Team schon einmal etwas zustande gebracht\" — für Token ohne Seite und Code die einzige Spur."
         },
@@ -3474,9 +3493,37 @@
         {
           "h": "X UND TIKTOK",
           "p": "X ist über die bezahlte Grok-Suche angebunden (dieselbe wie in den Nachrichten, ab Werk aus): eine Abfrage je Intervall, gezählt werden nur zitierte Posts, deren Text die Adresse wirklich enthält, und verschiedene Autoren statt Posts — zehn Posts eines Kontos sind ein Shill, kein Trend. TikTok hat keinen freien Zugang und ginge nur über kostenpflichtige Scraping-Dienste; es ist bewusst nicht eingebaut."
+        },
+        {
+          "h": "ERFOLGSKONTROLLE",
+          "p": "Jeder Token, der die Schwelle überschreitet, und eine Zufallsauswahl aller neu gesehenen werden nach 1, 3 und 7 Tagen nachgeprüft: lebt er, hat er die Kurve geschafft, Rendite, und hat er sich zwischendurch verdoppelt. Erst der Vergleich mit der Zufallsauswahl sagt, ob die Note mehr kann als Glück — bei einer Grundrate von rund 1 % Kurvenabschlüssen ist das die einzige ehrliche Frage."
         }
       ],
-      "caveat": "Frühphasen-Token sind die riskanteste Klasse überhaupt — die meisten sind nach Stunden wertlos. In dieser Spur gibt es noch KEINE Sicherheitsprüfung (Honeypot, Mint- und Freeze-Rechte); die folgt erst in der Hauptprüfung. Die Gewichte sind Setzungen, die sich an der Erfolgskontrolle bewähren müssen. Keine Anlageberatung."
+      "caveat": "Frühphasen-Token sind die riskanteste Klasse überhaupt — die meisten sind nach Stunden wertlos. Die Vertragsprüfung hier deckt nur die Besten eines Durchgangs ab; die volle Prüfung (Liquiditätssperre, Steuern, Mindestalter) folgt erst in der Hauptprüfung. Die Gewichte sind Setzungen, die sich an der Erfolgskontrolle bewähren müssen. Keine Anlageberatung."
+    },
+    "hypeBoersen": {
+      "title": "Börsen — vor dem Listing drin sein",
+      "intro": "Fast kein junges Projekt startet auf einer zentralen Börse. Der Weg führt über DEX und Vorstufen nach oben, und ein Listing bei Binance, Coinbase oder Upbit ist für die meisten der Höhepunkt der Aufmerksamkeit. Diese Seite beobachtet die Leiter und misst, wie früh der Radar war.",
+      "sections": [
+        {
+          "g": "SO ARBEITET DER BEOBACHTER",
+          "h": "WAS ABGEGLICHEN WIRD",
+          "p": "Die öffentlichen Marktlisten von Binance (Spot und Futures), Coinbase, Upbit, OKX, Bybit und Kraken (grosse Börsen), KuCoin, Gate, MEXC und Bitget (mittlere) sowie die Token-Liste von Binance Alpha — alle ohne Schlüssel. Der erste Abgleich setzt die Grundlinie; als neu gilt, was danach dazukommt. Eine Börse, die nicht antwortet oder nur einen Teil ihrer Liste liefert, behält ihren letzten guten Stand — sonst gäbe es beim nächsten vollständigen Abruf hunderte scheinbar neue Listungen."
+        },
+        {
+          "h": "BINANCE ALPHA",
+          "p": "Die Vorstufe: Binance nimmt dort Token mit Vertragsadresse auf, bevor (und ob) sie an die eigentliche Börse kommen. Weil Alpha die Adresse nennt, ist die Zuordnung zum Radar sicher. Die Aufnahme eines Radar-Tokens in Alpha wird gemeldet — das ist das eigentliche Frühsignal."
+        },
+        {
+          "h": "KANNTE DER RADAR DEN TOKEN?",
+          "p": "Der Radar merkt sich jeden Vertrag, der ihm auffiel, mit zwei Zeitpunkten: zuerst gesehen und zuerst gemeldet (Frühphasen-Schwelle, bestandener Scan, Favorit). Nur „gemeldet\" zählt als rechtzeitig erkannt. Börsen nennen meist nur das Kürzel; dann gilt ein Radar-Token nur als Treffer, wenn er gross genug für ein Listing ist (ab 5 Mio USD) — sonst ist es wahrscheinlich ein Namensvetter."
+        },
+        {
+          "h": "AUF DEM WEG NACH OBEN",
+          "p": "Gemeldete Radar-Token, die schon auf Alpha oder einer mittleren Börse stehen, aber noch nicht auf einer grossen. Das ist die Liste der Kandidaten — keine Prognose, sondern der Stand auf der Leiter."
+        }
+      ],
+      "caveat": "Ein Listing garantiert nichts; viele Token fallen nach einem grossen Listing. Die Endpunkte der Börsen sind öffentlich, aber nicht für diesen Zweck dokumentiert — fällt einer aus, steht es oben an der Börse. Keine Anlageberatung."
     }
   },
   "news": {
@@ -4254,7 +4301,7 @@
     "gestartet": "Durchgang gestartet — die Liste aktualisiert sich, sobald er fertig ist.",
     "startFehler": "Durchgang konnte nicht gestartet werden.",
     "ladeFehler": "Frühphase konnte nicht geladen werden.",
-    "erklaerung": "Token vor der Hauptprüfung (jünger als 12 h oder unter 50 000 USD Liquidität). Die Note misst Beschleunigung gegen den eigenen Verlauf, nicht Grösse. Noch ohne Sicherheitsprüfung.",
+    "erklaerung": "Token vor der Hauptprüfung (jünger als 12 h oder unter 50 000 USD Liquidität). Die Note misst Beschleunigung gegen den eigenen Verlauf, nicht Grösse. Vertrag und Halter werden für die Besten geprüft; die volle Sicherheitsprüfung folgt in der Hauptprüfung.",
     "leer": "Noch nichts beobachtet. Schalte die Frühphase im Zahnrad ein oder starte einen Durchgang von Hand.",
     "substanzKurz": "Substanz",
     "spalteToken": "Token",
@@ -4291,7 +4338,30 @@
     "spalteHandel": "Handel 1h",
     "spalteHandelTitel": "Verschiedene Käufer / Verkäufer der letzten Stunde — wo die Quelle das nicht nennt, die Zahl der Transaktionen",
     "xChip": "X (Grok) {n} · {k} $ · {z}",
-    "xAutoren": "X: {n} verschiedene Autoren"
+    "xAutoren": "X: {n} verschiedene Autoren",
+    "boersen": "Börsen",
+    "grund_sicherheit": "Vertrag",
+    "halterKurz": "Halter",
+    "spalteHalter": "Halter",
+    "spalteHalterTitel": "Zuletzt gemessene Zahl der Halter (RugCheck/GoPlus, für die Besten jedes Durchgangs)",
+    "signalKoth": "King of the Hill auf pump.fun nach {m} min",
+    "signalSmart": "{n} beobachtete Wallet(s) gekauft: {namen}",
+    "signalBoerse": "Schon gelistet: {b}",
+    "gueteTitel": "Erfolgskontrolle — trifft die Note?",
+    "gueteLeer": "Noch keine Messungen. Gemessen wird nach 1, 3 und 7 Tagen: Token über der Schwelle gegen eine Zufallsauswahl aller neu gesehenen.",
+    "gueteGruppe": "Gruppe",
+    "gueteGruppe_spitze": "über der Schwelle",
+    "gueteGruppe_kontrolle": "Zufallsauswahl",
+    "gueteLebt": "lebt",
+    "gueteKurve": "Kurve geschafft",
+    "gueteRendite": "Rendite (Median)",
+    "gueteVerdoppelt": "zwischenzeitlich ≥ 2×",
+    "gueteOffen": "{n} noch offen",
+    "guete_zuWenig": "zu wenige Messungen für ein Urteil (je Gruppe 10)",
+    "guete_trefferBesser": "Gemeldete verdoppeln sich öfter als der Zufall",
+    "guete_trefferNichtBesser": "Gemeldete verdoppeln sich nicht öfter als der Zufall",
+    "guete_lebtLaenger": "Gemeldete überleben öfter",
+    "guete_lebtNichtLaenger": "Gemeldete überleben nicht öfter"
   },
   "hypeProjekt": {
     "titel": "Projektprüfung",
@@ -4317,5 +4387,42 @@
     "tage": "{n} Tage",
     "monate": "{n} Monate",
     "jahre": "{n} Jahre"
+  },
+  "hypeBoersen": {
+    "aus": "Beobachtung aus — Abgleich nur von Hand (einschalten im Zahnrad oben)",
+    "an": "Abgleich alle {n} min",
+    "letzter": "letzter Abgleich {z}",
+    "jetzt": "Jetzt abgleichen",
+    "laeuft": "Abgleich läuft …",
+    "gestartet": "Abgleich gestartet — die Seite aktualisiert sich, sobald er fertig ist.",
+    "startFehler": "Abgleich konnte nicht gestartet werden.",
+    "ladeFehler": "Börsen-Beobachter konnte nicht geladen werden.",
+    "chipTitel": "{n} Märkte · Stand {z}",
+    "erklaerung": "Junge Projekte steigen eine Leiter hinauf: DEX, dann Binance Alpha oder mittlere Börsen, dann die grossen. Ein Listing ganz oben ist meist das Ende des leichten Teils — investiert sein will man vorher. Gezählt wird nur, was der Radar vor dem Listing gemeldet hat.",
+    "stufe_alpha": "Binance Alpha",
+    "stufe_mittel": "Mittlere Börsen",
+    "stufe_gross": "Grosse Börsen",
+    "erkannt": "vorher gemeldet / neu gelistet",
+    "vorlauf": "im Median {n} vorher",
+    "leiterTitel": "Auf dem Weg nach oben",
+    "leiterHinweis": "Radar-Token, die schon auf Binance Alpha oder einer mittleren Börse stehen. Wer noch nicht auf einer grossen steht, steht oben.",
+    "leiterLeer": "Noch keiner — die Liste füllt sich, sobald gemeldete Radar-Token auf Alpha oder mittleren Börsen auftauchen.",
+    "neuTitel": "Neue Listungen",
+    "neuLeer": "Noch keine. Der erste Abgleich setzt die Grundlinie; neu ist, was danach dazukommt.",
+    "spalteToken": "Token",
+    "spalteBewertung": "Bewertung",
+    "spalteGemeldet": "Radar meldete",
+    "spalteBoersen": "Gelistet auf",
+    "spalteDatum": "Gesehen",
+    "spalteBoerse": "Börse",
+    "spalteRadar": "Radar",
+    "vorTagen": "vor {n}",
+    "vorher": "{n} vorher gemeldet",
+    "ueberKuerzel": "über das Kürzel",
+    "kuerzelTitel": "Zuordnung über das Kürzel: Der gleichnamige Radar-Token ist gross genug, um gelistet zu werden — sicher ist es erst mit Vertragsadresse.",
+    "namensvetter": "Namensvetter? (gleiches Kürzel, zu klein)",
+    "nurGesehen": "gesehen, nicht gemeldet",
+    "stunden": "{n} h",
+    "tage": "{n} Tage"
   }
 }

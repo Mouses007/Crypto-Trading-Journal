@@ -89,6 +89,25 @@ their own; crossing a score threshold sends an alert through the watchdog's
 channels. X is available through the paid Grok `x_search` (off by default, own
 interval): only posts the search cited and whose text contains the address count,
 and distinct authors instead of posts. TikTok is not connected — no free access.
+For the best tokens of each run the early phase also checks the contract and the
+holder picture (RugCheck, else GoPlus: mint/freeze authority, insider share, top-10
+share *excluding the bonding curve*, creator share, holder count and its growth),
+counts pump.fun "King of the Hill" as momentum, and optionally watches **smart-money
+wallets** you enter (Solana RPC, public node or your own Helius address; only
+signed, paid purchases count — two watched wallets on one token trigger an alert).
+Its own **outcome tracking** compares tokens above the threshold with a random
+sample of all newly seen ones after 1, 3 and 7 days (alive, curve completed,
+return, doubled at some point).
+
+**Exchange watcher.** Young projects rarely start on a centralized exchange; they
+climb a ladder — DEX, then Binance Alpha or mid-sized exchanges (KuCoin, Gate,
+MEXC, Bitget), then the large ones (Binance, Coinbase, Upbit, OKX, Bybit, Kraken).
+The goal is to be in *before* the big listing. The watcher compares those public
+market lists (no keys), detects new listings, and checks against the radar's
+memory whether the token was *flagged* before and how many days ahead. Alpha names
+the contract, so matching is certain; ticker matches only count from USD 5 M
+valuation (otherwise a namesake). "On the way up" lists flagged radar tokens that
+are on Alpha or mid-sized exchanges but not yet on a large one.
 
 **Coin-Radar — which of the tradable coins can be traded best right now?** Walks the
 ~500 pairs that are tradable on Bitunix and measurable on Binance and ranks them by

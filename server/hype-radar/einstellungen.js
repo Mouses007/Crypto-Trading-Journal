@@ -14,6 +14,7 @@ import { getKnex } from '../database.js'
 import { encrypt, decrypt } from '../crypto.js'
 import { STANDARD_GEWICHTE, STANDARD_NARRATIVE } from './bewertung.js'
 import { STANDARD_SICHERHEIT } from './sicherheit.js'
+import { smartWalletListe } from './fruehphase-bewertung.js'
 
 /** Spalten in `settings`, in denen die Schlüssel der Zusatzquellen liegen. */
 const SCHLUESSEL_SPALTEN = {
@@ -23,6 +24,8 @@ const SCHLUESSEL_SPALTEN = {
     ntfyToken: 'hypeAlarmNtfyToken',
     telegramToken: 'hypeAlarmTelegramToken',
     webhookUrl: 'hypeAlarmWebhookUrl',
+    // Smart Money: eigene Solana-RPC-Adresse (bei Helius steckt der Schlüssel darin).
+    solanaRpc: 'hypeKeySolanaRpc',
 }
 
 export const VORGABEN = {
@@ -112,7 +115,21 @@ export const VORGABEN = {
         geckoterminalNeu: true, biz: true, telegram: true, reddit: false,
         // Bezahlt (xAI, Grok `x_search`) — deshalb aus, bis jemand es will.
         x: false,
+        // Braucht eine Wallet-Liste; ohne eigene RPC-Adresse der öffentliche Knoten.
+        smartmoney: false,
     },
+    // Beobachtete Wallets [{adresse, name}] und wie oft ihre Käufe gelesen werden.
+    smartWallets: [],
+    smartIntervallMin: 30,
+    /*
+     * Börsen-Beobachter: neue Listungen auf grossen und mittleren Börsen und
+     * auf Binance Alpha. Ohne Schlüssel; aus als Vorgabe wie alles, was im
+     * Hintergrund abruft. `boersenAlleMelden` meldet auch Listungen, die der
+     * Radar nicht kannte (nur grosse Börsen) — sonst nur Radar-Token.
+     */
+    boersenwachtAn: false,
+    boersenwachtIntervallMin: 30,
+    boersenAlleMelden: false,
     // Takt der X-Abfrage in Minuten; jede Abfrage kostet Suchpauschale plus Tokens.
     fruehXIntervallMin: 120,
     fruehTelegram: [],
@@ -273,6 +290,10 @@ export function bereinigeEinstellungen(neu = {}, zusatzVorgaben = {}) {
         }
         if (k === 'fruehTelegram') {
             raus[k] = telegramKanaele(v)
+            continue
+        }
+        if (k === 'smartWallets') {
+            raus[k] = smartWalletListe(v)
             continue
         }
         raus[k] = v

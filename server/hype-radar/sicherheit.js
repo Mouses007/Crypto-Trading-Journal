@@ -520,6 +520,9 @@ export function ausRugCheck(j) {
             .map((h) => ({
                 percent: Number(h?.pct) || 0,
                 address: String(h?.address || h?.owner || ''),
+                // Der Besitzer des Token-Kontos — die Frühphase erkennt daran
+                // die Bindungskurve und den Ersteller.
+                owner: String(h?.owner || ''),
                 // RugCheck kennt keine Tags, aber `insider` — die Antwort auf
                 // dieselbe Frage aus der anderen Richtung.
                 tag: h?.insider ? 'insider' : '',
@@ -527,6 +530,8 @@ export function ausRugCheck(j) {
                 is_contract: 0,
             })),
         lp_holders: lpAusRugCheck(j?.markets),
+        // Nicht im gespeicherten Datenvertrag — nur, wenn die Antwort es nennt.
+        insider_netzwerke: Array.isArray(j?.insiderNetworks) ? j.insiderNetworks.length : null,
         sell_tax: steuerAusRugCheck(j?.transferFee),
         is_proxy: 0,
         gefahren: (Array.isArray(j?.risks) ? j.risks : [])

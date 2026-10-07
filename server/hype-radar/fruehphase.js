@@ -41,8 +41,12 @@ import { pruefeViele, gespeichertePruefung } from './projekt.js'
 import { sucheXErwaehnungen } from '../news-recherche.js'
 import { ladeLlmConfig, merkeKiGuthaben, istGuthabenFehler } from '../llm.js'
 import {
-    erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen,
+    erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen, risikoFrueh,
 } from './fruehphase-bewertung.js'
+import { ausRugCheck, holeGoPlus } from './sicherheit.js'
+import { smartAbruf, smartKarteLesen } from './smartmoney.js'
+import { legeAnFrueh } from '../radar-ergebnisse.js'
+import { merke, MERKEN_AB_NOTE } from './gedaechtnis.js'
 
 /** Höchstens so viele Token werden gleichzeitig beobachtet. */
 const MAX_BEOBACHTET = 150
@@ -65,6 +69,16 @@ const X_GILT_MS = 6 * 3600e3
 const X_FENSTER_STUNDEN = 6
 const X_TOKEN_JE_ABFRAGE = 15
 
+/*
+ * Risiko und Halter (RugCheck / GoPlus): die Besten eines Durchgangs, je
+ * Token höchstens alle 30 Minuten neu — die Halterzahl bewegt sich in der
+ * ersten Stunde schnell, aber nicht im Minutentakt. Ein älteres Urteil gilt
+ * sechs Stunden weiter; die Halterzahl NICHT (siehe `momentaufnahme`).
+ */
+const RISIKO_JE_LAUF = 8
+const RISIKO_NEU_MS = 30 * 60e3
+const RISIKO_GILT_MS = 6 * 3600e3
+
 /** Derselbe Token wird frühestens nach dieser Zeit erneut gemeldet. */
 const ALARM_SPERRE_MS = 12 * 3600e3
 
@@ -86,7 +100,7 @@ function eintragen(karte, f) {
     if (!karte.has(k)) {
         karte.set(k, {
             chain, contract, symbol: '', name: '', quellen: new Set(), plattformen: new Set(),
-            erwaehnungen: 0, links: null, ersteller: '', markt: {}, profil: false, erstelltAm: null,
+            erwaehnungen: 0, links: null, ersteller: '', markt: {}, profil: false, erstelltAm: null, kurve: null,
         })
     }
     const e = karte.get(k)
@@ -98,6 +112,7 @@ function eintragen(karte, f) {
     if (f.ersteller && !e.ersteller) e.ersteller = f.ersteller
     if (f.profil) e.profil = true
     if (f.erstelltAm && !e.erstelltAm) e.erstelltAm = f.erstelltAm
+    if (f.kurve?.length && !e.kurve) e.kurve = f.kurve
     Object.assign(e.markt, Object.fromEntries(Object.entries(f.markt || {}).filter(([, v]) => v !== null && v !== undefined)))
     return e
 }
@@ -115,12 +130,46 @@ function ausPumpCoin(c, quelle) {
         links: linksAusInfo(c),
         ersteller: String(c?.creator || ''),
         erstelltAm: Number(c?.created_timestamp) || null,
+        // Die Bindungskurve als Halter — die Risikoprüfung nimmt sie aus der
+        // Top-10-Rechnung. Felder aus dem pump.fun-Frontend-API, nicht live geprüft.
+        kurve: [c?.bonding_curve, c?.associated_bonding_curve].filter(Boolean).map(String),
         markt: {
             marktKapUsd: Number(c?.usd_market_cap) || null,
             antworten: Number.isFinite(Number(c?.reply_count)) ? Number(c.reply_count) : null,
             graduiert: c?.complete === true,
+            kothMin: kothMinuten(c),
         },
     }
+}
+
+/** Minuten vom Start bis „King of the Hill" — null, wenn nie erreicht. */
+function kothMinuten(c) {
+    const koth = Number(c?.king_of_the_hill_timestamp)
+    const start = Number(c?.created_timestamp)
+    return koth > 0 && start > 0 && koth >= start ? (koth - start) / 60e3 : null
+}
+
+const istPump = (x) => x.chain === 'solana' && /pump$/i.test(String(x.contract || ''))
+
+/**
+ * Vertrag und Halter eines Tokens. Solana zuerst bei RugCheck — nur dort gibt
+ * es die Insider-Markierung —, GoPlus als Rückfall; EVM bei GoPlus.
+ */
+async function holeRisiko(chain, contract) {
+    if (chain === 'solana') {
+        try {
+            const r = ausRugCheck(await holeJson(`https://api.rugcheck.xyz/v1/tokens/${encodeURIComponent(contract)}/report`))
+            if (r) return r
+        } catch { /* GoPlus versuchen */ }
+    }
+    return holeGoPlus(chain, contract)
+}
+
+/** Höchstens drei gleichzeitig — dieselbe Bremse wie bei der Projektprüfung. */
+async function jeDrei(liste, fn) {
+    let i = 0
+    const arbeiter = async () => { while (i < liste.length) await fn(liste[i++]) }
+    await Promise.all(Array.from({ length: Math.min(3, liste.length) }, arbeiter))
 }
 
 async function pumpfun(einst) {
@@ -374,9 +423,30 @@ async function fruehLaufIntern(einst) {
         ['x', xFaellig, () => xQuelle(einst, bekannt)],
     ].filter(([, an]) => an)
 
+    /*
+     * Smart Money: neue Käufe der beobachteten Wallets holen, wenn der eigene
+     * Takt es erlaubt — parallel zu den Quellen, weil ein Abruf je neue
+     * Transaktion einen RPC-Aufruf braucht und dauert. Gelesen wird das
+     * Signal danach in JEDEM Durchgang aus der Datenbank.
+     */
+    const smartAn = q.smartmoney === true && (einst.smartWallets || []).length > 0
+    const smartArbeit = (async () => {
+        if (!smartAn) return
+        const faellig = await beansprucheAufgabe('hype_frueh_smart',
+            Math.max(10, Number(einst.smartIntervallMin) || 30) * 60e3 - 30e3)
+        if (!faellig) return
+        try {
+            const r = await smartAbruf(einst, einst.schluessel?.solanaRpc || '')
+            quellenStand.smartmoney = { ok: true, anzahl: r.neu, wallets: r.wallets, fehler: r.fehler ? `${r.fehler} Wallet(s) nicht lesbar` : '' }
+        } catch (e) {
+            quellenStand.smartmoney = { ok: false, fehler: String(e.message).slice(0, 160) }
+        }
+    })()
+
     const [funde, stimmen] = await Promise.all([
         Promise.allSettled(aufgaben.map(([, , f]) => f())),
         Promise.allSettled(sozial.map(([, , f]) => f())),
+        smartArbeit,
     ])
     funde.forEach((e, i) => {
         const name = aufgaben[i][0]
@@ -387,6 +457,12 @@ async function fruehLaufIntern(einst) {
             quellenStand[name] = { ok: false, fehler: String(e.reason?.message || e.reason).slice(0, 160) }
         }
     })
+
+    // ── Smart-Money-Signal; zwei Wallets auf einem Token legen ihn an ────
+    const smartKarte = smartAn ? await smartKarteLesen(einst, jetzt) : new Map()
+    for (const [mint, sg] of smartKarte) {
+        if (sg.wallets >= 2) eintragen(karte, { chain: 'solana', contract: mint, quelle: 'smartmoney' })
+    }
 
     // ── Bekannte Token dazunehmen ───────────────────────────────────────
     const bekanntNach = new Map(bekannt.map((z) => [schluessel(z.chain, z.contract), z]))
@@ -464,31 +540,72 @@ async function fruehLaufIntern(einst) {
     }
 
     // ── Bewerten (erster Durchgang) ─────────────────────────────────────
+    const bewerte = (e) => bewerteFrueh({
+        stand: e.stand, verlauf: e.verlauf, links: e.x.links, profil: e.x.profil,
+        projektNote: e.projektNote, ersteller: e.bilanz, risiko: e.risiko, smart: e.smart,
+    })
     const ergebnisse = []
     for (const x of alle.filter((y) => y.chain !== '?' && (y.symbol || y.markt.preisUsd))) {
         const alt = bekanntNach.get(schluessel(x.chain, x.contract))
         const verlauf = sicherJson(alt?.verlauf, [])
+        const altStand = sicherJson(alt?.stand, {}) || {}
         /*
          * X läuft seltener als die Durchgänge. Ohne Fortschreiben fiele die
          * Plattform zwischen zwei Abfragen aus der Note und kehrte bei der
          * nächsten als „Schub" zurück — ein Sägezahn aus dem Abfragetakt.
          */
-        const altX = sicherJson(alt?.stand, {})?.x
+        const altX = altStand.x
         x.xInfo = x.xInfo || (altX && Number(altX.am) >= jetzt - X_GILT_MS ? altX : null)
         const plattformen = new Set(x.plattformen)
         let erwaehnungen = x.erwaehnungen
         if (x.xInfo && !plattformen.has('x')) { plattformen.add('x'); erwaehnungen += Number(x.xInfo.autoren) || 0 }
+
+        // Kurve und King of the Hill: aus diesem Lauf, sonst aus dem letzten
+        // (ein bekannter Token steht nicht in jeder pump.fun-Liste).
+        x.kurve = x.kurve || altStand.kurve || null
+        if (x.markt.kothMin === undefined || x.markt.kothMin === null) x.markt.kothMin = altStand.kothMin ?? null
+        const graduiert = x.markt.graduiert === true || altStand.graduiert === true
+            || Boolean(x.markt.dex && x.markt.dex !== 'pumpfun')
+
         const stand = momentaufnahme(x.markt, { erwaehnungen, plattformen: [...plattformen] }, jetzt)
         const gespeichert = await gespeichertePruefung({ chain: x.chain, contract: x.contract })
-        const r = bewerteFrueh({
-            stand, verlauf, links: x.links, profil: x.profil,
+        const e = {
+            x, alt, verlauf, stand, graduiert,
+            aufKurve: istPump(x) && !graduiert,
             projektNote: gespeichert?.note ?? alt?.projektNote ?? null,
-            ersteller: gespeichert?.fakten?.ersteller || null,
-        })
-        ergebnisse.push({ x, alt, verlauf, stand, r, projektNote: gespeichert?.note ?? alt?.projektNote ?? null })
+            bilanz: gespeichert?.fakten?.ersteller || null,
+            risiko: altStand.risiko && Number(altStand.risiko.am) >= jetzt - RISIKO_GILT_MS ? altStand.risiko : null,
+            smart: smartKarte.get(String(x.contract)) || smartKarte.get(String(x.contract).toLowerCase()) || null,
+        }
+        e.r = bewerte(e)
+        ergebnisse.push(e)
     }
 
-    // ── Projektprüfung für die Besten, dann neu bewerten ────────────────
+    // ── Risiko und Halter für die Besten ────────────────────────────────
+    const zuPruefen = ergebnisse
+        .filter((e) => !e.risiko || Number(e.risiko.am) < jetzt - RISIKO_NEU_MS)
+        .sort((a, b) => b.r.note - a.r.note)
+        .slice(0, RISIKO_JE_LAUF)
+    let risikoOk = 0
+    let risikoFehler = ''
+    await jeDrei(zuPruefen, async (e) => {
+        try {
+            const roh = await holeRisiko(e.x.chain, e.x.contract)
+            const r = risikoFrueh(roh, { kurve: e.x.kurve || [], ersteller: e.x.ersteller, aufKurve: e.aufKurve })
+            if (!r) return
+            e.risiko = { ...r, am: jetzt }
+            e.stand.halter = r.halter
+            risikoOk++
+        } catch (err) {
+            risikoFehler = String(err.message).slice(0, 160)
+            logWarn('hype-frueh', `Risiko ${e.x.symbol}: ${err.message}`)
+        }
+    })
+    if (zuPruefen.length) {
+        quellenStand.risiko = risikoOk || !risikoFehler ? { ok: true, anzahl: risikoOk } : { ok: false, fehler: risikoFehler }
+    }
+
+    // ── Projektprüfung für die Besten ───────────────────────────────────
     if (einst.projektPruefung !== false) {
         const kandidaten = [...ergebnisse].sort((a, b) => b.r.note - a.r.note).slice(0, PROJEKT_JE_LAUF)
         await pruefeViele(kandidaten.map((e) => ({
@@ -502,18 +619,24 @@ async function fruehLaufIntern(einst) {
                     return
                 }
                 e.projektNote = p.note
-                e.r = bewerteFrueh({
-                    stand: e.stand, verlauf: e.verlauf, links: e.x.links, profil: e.x.profil,
-                    projektNote: p.note, ersteller: p.fakten?.ersteller || null,
-                })
+                e.bilanz = p.fakten?.ersteller || e.bilanz
             },
         })
     }
+
+    // ── Endgültig bewerten ──────────────────────────────────────────────
+    for (const e of ergebnisse) e.r = bewerte(e)
 
     // ── Schreiben und melden ────────────────────────────────────────────
     let neu = 0
     let alarme = 0
     const schwelle = Number(einst.fruehAlarmAb) || 0
+    // Erfolgskontrolle: wer die Schwelle überschreitet, und wer neu dazukam.
+    // Ohne eingestellte Alarmschwelle gilt 70 — gemessen wird trotzdem.
+    const messSchwelle = schwelle || 70
+    const ueberSchwelle = []
+    const neuGesehen = []
+    const gedaechtnis = []
     for (const e of ergebnisse) {
         const { x, alt, r } = e
         const erster = Number(alt?.ersterBlick) || jetzt
@@ -533,7 +656,7 @@ async function fruehLaufIntern(einst) {
             ersterBlick: erster,
             letzterBlick: jetzt,
             stand: JSON.stringify({ ...e.stand, alterStunden, teilnoten: r.teilnoten, trend: r.trend, x: x.xInfo || null,
-                graduiert: x.markt.graduiert === true }),
+                graduiert: e.graduiert, kurve: x.kurve || null, risiko: e.risiko || null, smart: e.smart || null }),
             verlauf: JSON.stringify(verlauf),
             note: r.note,
             befunde: JSON.stringify(r.befunde),
@@ -543,6 +666,14 @@ async function fruehLaufIntern(einst) {
         }
         await knex('hype_frueh').insert(zeile).onConflict(['chain', 'contract']).merge()
         if (!alt) neu++
+        const messung = { chain: x.chain, contract: x.contract, symbol: zeile.symbol, note: r.note,
+            preis: e.stand.preis, mcap: e.stand.mcap, liq: e.stand.liq }
+        if (status !== 'verworfen' && r.note >= messSchwelle && (Number(alt?.note) || 0) < messSchwelle) ueberSchwelle.push(messung)
+        else if (!alt) neuGesehen.push(messung)
+        if (r.note >= MERKEN_AB_NOTE || (e.smart?.wallets >= 2)) {
+            gedaechtnis.push({ chain: x.chain, contract: x.contract, symbol: zeile.symbol, quelle: 'frueh',
+                bewertungUsd: e.stand.mcap, gemeldet: status !== 'verworfen' && (r.note >= messSchwelle || e.smart?.wallets >= 2) })
+        }
 
         /*
          * Melden beim ÜBERSCHREITEN der Schwelle, nicht solange darüber — und
@@ -555,6 +686,28 @@ async function fruehLaufIntern(einst) {
             alarme++
             await melde(knex, zeile, r, einst, jetzt)
         }
+        // Zwei beobachtete Wallets auf demselben Token: sofort melden, ganz
+        // gleich, wo die Note steht — genau dafür beobachtet man sie.
+        if (e.smart?.wallets >= 2 && status !== 'verworfen'
+            && await beansprucheAufgabe(`hypsmart|${x.contract}`, ALARM_SPERRE_MS)) {
+            alarme++
+            await melde(knex, zeile, r, einst, jetzt, e.smart)
+        }
+    }
+
+    await merke(gedaechtnis)
+
+    // ── Erfolgskontrolle anlegen ─────────────────────────────────────────
+    if (ueberSchwelle.length || neuGesehen.length) {
+        try {
+            const ids = new Map((await knex('hype_frueh').select('id', 'chain', 'contract')
+                .whereIn('contract', [...ueberSchwelle, ...neuGesehen].map((m) => m.contract)))
+                .map((z) => [schluessel(z.chain, z.contract), z.id]))
+            const mitId = (liste) => liste.map((m) => ({ ...m, id: ids.get(schluessel(m.chain, m.contract)) })).filter((m) => m.id)
+            await legeAnFrueh(mitId(ueberSchwelle), mitId(neuGesehen))
+        } catch (e) {
+            logWarn('hype-frueh', `Erfolgskontrolle anlegen: ${e.message}`)
+        }
     }
 
     await raeumeAuf(knex, jetzt)
@@ -562,12 +715,15 @@ async function fruehLaufIntern(einst) {
 }
 
 /** Einen Frühphasen-Alarm speichern und zustellen. */
-async function melde(knex, zeile, r, einst, jetzt) {
+async function melde(knex, zeile, r, einst, jetzt, smart = null) {
     const gruende = r.befunde.filter((b) => b.art === 'plus').slice(0, 3).map((b) => b.text).join('; ')
+    const name = zeile.symbol || zeile.contract.slice(0, 8)
     const alarm = {
-        regel: 'fruehsignal',
+        regel: smart ? 'smartmoney' : 'fruehsignal',
         schwere: 'warnung',
-        meldung: `${zeile.symbol || zeile.contract.slice(0, 8)}: Frühsignal ${r.note}${gruende ? ` — ${gruende}` : ''}`,
+        meldung: smart
+            ? `${name}: ${smart.wallets} beobachtete Wallets gekauft (${smart.namen.slice(0, 3).join(', ')}) — Note ${r.note}`
+            : `${name}: Frühsignal ${r.note}${gruende ? ` — ${gruende}` : ''}`,
         daten: { symbol: zeile.symbol, chain: zeile.chain, contract: zeile.contract, note: r.note },
     }
     try {

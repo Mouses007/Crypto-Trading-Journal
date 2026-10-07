@@ -56,6 +56,10 @@ export const ERLAUBTE_HOSTS = new Set([
     // Projektprüfung und Frühphase (07.10.2026)
     'api.github.com',
     'a.4cdn.org',
+    // Börsen-Beobachter: öffentliche Marktlisten, ohne Schlüssel
+    'www.binance.com', 'api.binance.com', 'fapi.binance.com', 'api.exchange.coinbase.com',
+    'api.upbit.com', 'www.okx.com', 'api.bybit.com', 'api.kraken.com', 'api.kucoin.com',
+    'api.gateio.ws', 'api.mexc.com', 'api.bitget.com',
 ])
 
 /**
@@ -100,6 +104,10 @@ const EIMER = {
     'api.github.com': new Eimer(10),
     // 4chan verlangt höchstens eine Anfrage je Sekunde.
     'a.4cdn.org': new Eimer(30),
+    // Eine Marktliste je Börse und Abgleich — die Eimer sind nur Reserve.
+    'www.binance.com': new Eimer(10),
+    'api.binance.com': new Eimer(10),
+    'fapi.binance.com': new Eimer(10),
 }
 
 /**

@@ -34,6 +34,8 @@ import { beansprucheAufgabe } from './db-claim.js'
 export const HORIZONTE = {
     coinradar: { '15m': 15 * 60e3, '1h': 3600e3, '4h': 4 * 3600e3 },
     hype: { '1d': 24 * 3600e3, '7d': 7 * 24 * 3600e3, '30d': 30 * 24 * 3600e3 },
+    // Frühphase: Memecoins entscheiden sich in Tagen, nicht Wochen.
+    frueh: { '1d': 24 * 3600e3, '3d': 3 * 24 * 3600e3, '7d': 7 * 24 * 3600e3 },
 }
 
 /** Wie viele Spitzenplätze je Lauf verfolgt werden. */
@@ -183,6 +185,67 @@ export async function legeAnHype(erstelltAm) {
     return schreibe(knex, auftraege)
 }
 
+/** Je Durchgang so viele Token der Kontrollgruppe — Zufallsauswahl der NEU gesehenen. */
+const KONTROLLE_FRUEH = 2
+
+/**
+ * Wer in der Frühphase verfolgt wird — rein.
+ *
+ *   spitze     Token, deren Note in diesem Durchgang die Schwelle ÜBERSCHRITT
+ *   kontrolle  Zufallsauswahl der in diesem Durchgang neu gesehenen Token
+ *
+ * Die Kontrolle stammt aus derselben Grundgesamtheit, aus der die Spitze
+ * kommt — alles, was die Frühphase sieht. Gegen „die schlechtesten" würde
+ * jede Spitze glänzen.
+ */
+export function waehleFrueh(ueberSchwelle = [], neuGesehen = [], zufall = Math.random) {
+    const oben = new Set(ueberSchwelle.map((z) => z.contract))
+    return [
+        ...ueberSchwelle.map((z) => ({ ...z, gruppe: 'spitze' })),
+        ...stichprobe(neuGesehen.filter((z) => !oben.has(z.contract)), KONTROLLE_FRUEH, zufall)
+            .map((z) => ({ ...z, gruppe: 'kontrolle' })),
+    ]
+}
+
+/**
+ * Aufträge für die Frühphase anlegen.
+ *
+ * `laufId` trägt die Zeile in `hype_frueh`; die Kontrollgruppe mit NEGATIVEM
+ * Vorzeichen. Sonst stiesse ein Token, der erst als Kontrolle gezogen wurde
+ * und Stunden später die Schwelle überschreitet, auf den eindeutigen Schlüssel
+ * (art, laufId, symbol, horizont) — und verschwände still aus der Spitze.
+ *
+ * @param {Array<{id, symbol, chain, contract, note, preis, mcap, liq}>} ueberSchwelle
+ * @param {Array} neuGesehen
+ */
+export async function legeAnFrueh(ueberSchwelle = [], neuGesehen = []) {
+    const auswahl = waehleFrueh(ueberSchwelle, neuGesehen).filter((z) => z.contract && z.id)
+    if (!auswahl.length) return 0
+    const jetzt = Date.now()
+    const auftraege = []
+    for (const z of auswahl) {
+        for (const [horizont, ms] of Object.entries(HORIZONTE.frueh)) {
+            auftraege.push({
+                art: 'frueh',
+                laufId: z.gruppe === 'kontrolle' ? -Number(z.id) : Number(z.id),
+                symbol: z.symbol || String(z.contract).slice(0, 10),
+                chain: z.chain || '',
+                contract: z.contract,
+                note: z.note,
+                gruppe: z.gruppe,
+                horizont,
+                erstelltAm: jetzt,
+                faelligAm: jetzt + ms,
+                status: 'offen',
+                preisStart: zahl(z.preis),
+                mcapStart: zahl(z.mcap),
+                liquiditaetStart: zahl(z.liq),
+            })
+        }
+    }
+    return schreibe(getKnex(), auftraege)
+}
+
 async function schreibe(knex, auftraege) {
     for (let i = 0; i < auftraege.length; i += 25) {
         await knex('radar_ergebnisse').insert(auftraege.slice(i, i + 25))
@@ -219,7 +282,7 @@ export async function messeFaellige(deckel = 30) {
         try {
             const werte = a.art === 'coinradar'
                 ? await messeCoin(a)
-                : await messeHype(a)
+                : (a.art === 'frueh' ? await messeFrueh(a) : await messeHype(a))
             await knex('radar_ergebnisse').where('id', a.id).update({
                 ...werte, status: 'gemessen', gemessenAm: Date.now(),
             })
@@ -344,6 +407,86 @@ async function messeHype(a) {
         // Ein Paar ohne Liquiditätsangabe (Bindungskurve) gibt es noch — es
         // ist handelbar; erst eine gemeldete Null heisst „leer".
         nochHandelbar: liq === null || liq > 0 ? 1 : 0,
+    }
+}
+
+/** GeckoTerminal-Netz je Kette — für die Kerzen des Messfensters. */
+const GECKO_NETZ = { solana: 'solana', ethereum: 'eth', base: 'base', bsc: 'bsc' }
+
+/**
+ * Höchster Kurs im Messfenster aus GeckoTerminal-Stundenkerzen (ohne
+ * Schlüssel) — das Fenster, in dem man hätte verkaufen können. Fällt still
+ * aus: Ohne Kerzen bleibt `mfePct` leer, die übrige Messung gilt.
+ *
+ * ⚠ Endpunkt `/pools/{pool}/ohlcv/hour` nicht live geprüft.
+ */
+export function hochImFenster(ohlcv, von, bis) {
+    const liste = Array.isArray(ohlcv) ? ohlcv : []
+    const im = liste.filter((k) => Array.isArray(k) && Number(k[0]) * 1000 >= von - 3600e3 && Number(k[0]) * 1000 < bis)
+    if (!im.length) return null
+    const hoch = Math.max(...im.map((k) => Number(k[2])).filter((x) => Number.isFinite(x)))
+    const start = Number([...im].sort((a, b) => a[0] - b[0])[0][1])
+    return Number.isFinite(hoch) && start > 0 ? { hoch, start } : null
+}
+
+/**
+ * Frühphase: lebt der Token, hat er die Kurve geschafft, was wurde aus Preis
+ * oder Bewertung — und wie hoch stand er zwischendurch?
+ *
+ * Auf der Kurve gibt es oft keinen Preis von DexScreener; dort ist die
+ * Bewertung der Massstab (bei fester Menge bewegen sich beide gleich).
+ */
+async function messeFrueh(a) {
+    if (!a.contract) throw new Error('keine Vertragsadresse')
+    const { dexDetails, holeJson } = await import('./hype-radar/quellen.js')
+    const d = await dexDetails(a.contract, { streng: true })
+    const istPump = a.chain === 'solana' && /pump$/i.test(String(a.contract))
+
+    let preisEnde = d?.markt ? zahl(d.markt.preisUsd) : null
+    let mcapEnde = d?.markt ? (zahl(d.markt.marktkapitalisierung) || zahl(d.markt.fdv)) : null
+    let liqEnde = d?.markt && d.markt.liquiditaetUsd !== null && d.markt.liquiditaetUsd !== undefined ? zahl(d.markt.liquiditaetUsd) : null
+    let graduiert = null
+    let lebt = d?.markt ? (liqEnde === null || liqEnde > 0 ? 1 : 0) : 0
+
+    if (istPump) {
+        // pump.fun weiss selbst, ob die Kurve durch ist — und kennt Token,
+        // die DexScreener (noch) nicht führt.
+        const coin = await holeJson(`https://frontend-api-v3.pump.fun/coins/${encodeURIComponent(a.contract)}`).catch(() => null)
+        if (coin && typeof coin === 'object') {
+            graduiert = coin.complete === true ? 1 : 0
+            if (mcapEnde === null) mcapEnde = zahl(coin.usd_market_cap) || null
+            if (!d?.markt) lebt = 1
+        } else if (d?.markt) {
+            graduiert = d.markt.dex && d.markt.dex !== 'pumpfun' ? 1 : 0
+        }
+    }
+
+    const preisStart = zahl(a.preisStart)
+    const mcapStart = zahl(a.mcapStart)
+    const renditePct = preisStart > 0 && preisEnde !== null
+        ? ((preisEnde - preisStart) / preisStart) * 100
+        : (mcapStart > 0 && mcapEnde !== null ? ((mcapEnde - mcapStart) / mcapStart) * 100 : null)
+
+    let mfePct = null
+    const netz = GECKO_NETZ[a.chain]
+    if (netz && d?.pair) {
+        const dauer = HORIZONTE.frueh[a.horizont] || 0
+        const von = Number(a.erstelltAm)
+        const bis = von + dauer
+        try {
+            const j = await holeJson(`https://api.geckoterminal.com/api/v2/networks/${netz}/pools/${encodeURIComponent(d.pair)}`
+                + `/ohlcv/hour?aggregate=1&limit=${Math.min(1000, Math.ceil(dauer / 3600e3) + 2)}`
+                + `&before_timestamp=${Math.floor(bis / 1000)}&currency=usd`)
+            const f = hochImFenster(j?.data?.attributes?.ohlcv_list, von, bis)
+            const basis = preisStart > 0 ? preisStart : f?.start
+            if (f && basis > 0) mfePct = ((f.hoch - basis) / basis) * 100
+        } catch { /* ohne Kerzen bleibt mfePct leer */ }
+    }
+
+    return {
+        preisEnde, mcapEnde, liquiditaetEnde: liqEnde,
+        renditePct, mfePct, graduiert,
+        nochHandelbar: lebt,
     }
 }
 

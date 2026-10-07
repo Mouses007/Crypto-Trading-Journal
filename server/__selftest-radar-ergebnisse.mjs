@@ -7,7 +7,7 @@
  *
  * Aufruf: node server/__selftest-radar-ergebnisse.mjs
  */
-import { waehleCoinRadar, waehleHype, rechneFenster, stichprobe } from './radar-ergebnisse.js'
+import { waehleCoinRadar, waehleHype, rechneFenster, stichprobe, waehleFrueh, hochImFenster } from './radar-ergebnisse.js'
 
 let fehler = 0
 let bestanden = 0
@@ -121,6 +121,20 @@ function festerZufall(start = 1) {
     fehlerText = ''
     try { rechneFenster([], von, bis, MIN) } catch (e) { fehlerText = e.message }
     p('ohne Kerzen keine Messung', /zu wenige/.test(fehlerText), fehlerText)
+}
+
+// ── Frühphase ───────────────────────────────────────────────────────────
+{
+    const t = (c, note) => ({ id: c.length, contract: c, symbol: c.toUpperCase(), note })
+    const wahl = waehleFrueh([t('a', 80)], [t('a', 80), t('b', 20), t('c', 30), t('d', 10)], festerZufall(3))
+    p('Frühphase: Spitze sind die Schwellen-Überschreiter', wahl.filter((z) => z.gruppe === 'spitze').map((z) => z.contract).join() === 'a')
+    p('Frühphase: Kontrolle aus den neu Gesehenen, ohne die Spitze',
+        wahl.filter((z) => z.gruppe === 'kontrolle').length === 2 && !wahl.some((z) => z.gruppe === 'kontrolle' && z.contract === 'a'))
+    const von = 1790000000000
+    const kerzen = [[von / 1000 - 7200, 1, 9, 1, 1], [von / 1000, 1, 3, 0.5, 2], [von / 1000 + 3600, 2, 5, 2, 4], [von / 1000 + 90000, 4, 99, 4, 4]]
+    const f = hochImFenster(kerzen, von, von + 24 * 3600e3)
+    p('Hoch im Fenster: nur Kerzen im Fenster', f?.hoch === 5 && f?.start === 1, JSON.stringify(f))
+    p('Hoch im Fenster: ohne Kerzen null', hochImFenster([], von, von + 1) === null)
 }
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)

@@ -21,6 +21,7 @@ import { ladeListungen, pruefeListung, nurNamensgleich } from './listungen.js'
 import { legeAnHype } from '../radar-ergebnisse.js'
 import { pruefeViele, kurzfassung } from './projekt.js'
 import { reifeFunde } from './fruehphase.js'
+import { merke } from './gedaechtnis.js'
 
 /** Wie viele Kandidaten in die (teure) Sicherheitsprüfung gehen. */
 const MAX_PRUEFUNGEN = 40
@@ -365,6 +366,13 @@ export async function scanne(einst, melde = () => {}) {
      */
     await legeAnHype(jetzt).catch((e) =>
         logWarn('hype-radar', `Erfolgskontrolle nicht angemeldet: ${e.message}`))
+
+    // Gedächtnis: bestanden heisst gemeldet — für die Vorlaufzeit des
+    // Börsen-Beobachters.
+    await merke(bestanden.filter((z) => z.contractAddress).map((z) => ({
+        chain: z.chain, contract: z.contractAddress, symbol: z.symbol, quelle: 'scan',
+        bewertungUsd: Number(z.marktDaten?.marktkapitalisierung) || Number(z.marktDaten?.fdv) || null, gemeldet: true,
+    })))
 
     melde({ schritt: 'fertig', bestanden: bestanden.length, verworfen: verworfen.length })
     return { bestanden, verworfen, quellenStand, erstelltAm: jetzt }

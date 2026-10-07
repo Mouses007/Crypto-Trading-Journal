@@ -22,7 +22,7 @@
                 <!-- Die Scan-Knöpfe gehören zur Hauptprüfung. Auf der
                      Frühphase stünden sie neben deren eigenem „Jetzt
                      durchsuchen" und lösten etwas anderes aus. -->
-                <template v-if="reiter !== 'fruehphase'">
+                <template v-if="!eigeneAnsicht">
                 <span v-if="laeuft" class="hypFortschritt">{{ fortschrittText }}</span>
                 <button type="button" class="ctl-pill" :disabled="laeuft" @click="starte(false)">
                     <i class="uil uil-search me-1"></i>{{ t('hype.nurScannen') }}
@@ -34,7 +34,7 @@
                     <i v-else class="uil uil-file-alt me-1"></i>{{ t('hype.scannenUndBericht') }}
                 </button>
                 </template>
-                <PageInfo :section="reiter === 'fruehphase' ? 'info.hypeFrueh' : 'info.hypeRadar'" />
+                <PageInfo :section="infoAbschnitt" />
             </div>
         </div>
 
@@ -43,7 +43,7 @@
         </div>
         <!-- Fehlende KI-Schlüssel betreffen nur den Bericht — die Frühphase
              ruft kein Sprachmodell. -->
-        <div v-if="fehlendeSchluessel.length && reiter !== 'fruehphase'" class="alert alert-warning py-2 small mt-2">
+        <div v-if="fehlendeSchluessel.length && !eigeneAnsicht" class="alert alert-warning py-2 small mt-2">
             <i class="uil uil-exclamation-triangle me-1"></i>
             {{ t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) }}
         </div>
@@ -259,6 +259,59 @@
                     :placeholder="t('hype.fruehTelegramPlatzhalter')"
                     @change="fruehTelegramGeaendert"></textarea>
                 <div class="hypHinweis">{{ t('hype.fruehTelegramHinweis') }}</div>
+
+                <!-- Smart Money: Wallet-Liste, Takt und RPC-Adresse — nur, wenn
+                     die Quelle eingeschaltet ist. -->
+                <template v-if="einst.fruehQuellen?.smartmoney">
+                    <label class="form-label small mt-2" for="hypSmartW">{{ t('hype.smartWallets') }}</label>
+                    <textarea id="hypSmartW" class="form-control form-control-sm hypTgListe" rows="3"
+                        :value="(einst.smartWallets || []).map((w) => (w.adresse + ' ' + (w.name || '')).trim()).join('\n')"
+                        :placeholder="t('hype.smartWalletsPlatzhalter')"
+                        @change="smartWalletsGeaendert"></textarea>
+                    <div class="row g-3 mt-1 align-items-end">
+                        <div class="col-auto">
+                            <label class="form-label small">{{ t('hype.smartTakt') }}</label>
+                            <select v-model.number="einst.smartIntervallMin" class="form-select form-select-sm" @change="speichern">
+                                <option :value="15">15 min</option>
+                                <option :value="30">30 min</option>
+                                <option :value="60">60 min</option>
+                            </select>
+                        </div>
+                        <div class="col">
+                            <label class="form-label small">{{ t('hype.smartRpc') }}</label>
+                            <input v-model="einst.schluessel.solanaRpc" type="password" class="form-control form-control-sm"
+                                :placeholder="schluesselDa('solanaRpc') ? einst.schluessel.solanaRpc : t('hype.smartRpcPlatzhalter')"
+                                @change="speichern">
+                        </div>
+                    </div>
+                    <div class="hypHinweis">{{ t('hype.smartHinweis') }}</div>
+                </template>
+
+                <!-- Börsen-Beobachter -->
+                <h6 class="hypTitel mt-4">{{ t('hype.boersenwachtTitel') }}</h6>
+                <p class="hypHinweis">{{ t('hype.boersenwachtHinweis') }}</p>
+                <div class="row g-3 align-items-end">
+                    <div class="col-auto">
+                        <div class="form-check form-switch">
+                            <input id="hypBw" class="form-check-input" type="checkbox" v-model="einst.boersenwachtAn" @change="speichern">
+                            <label class="form-check-label small" for="hypBw">{{ t('hype.boersenwachtAn') }}</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.boersenwachtTakt') }}</label>
+                        <select v-model.number="einst.boersenwachtIntervallMin" class="form-select form-select-sm" @change="speichern">
+                            <option :value="15">15 min</option>
+                            <option :value="30">30 min</option>
+                            <option :value="60">60 min</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <div class="form-check form-switch">
+                            <input id="hypBwAlle" class="form-check-input" type="checkbox" v-model="einst.boersenAlleMelden" @change="speichern">
+                            <label class="form-check-label small" for="hypBwAlle">{{ t('hype.boersenAlleMelden') }}</label>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Wachhund & Alarme -->
                 <h6 class="hypTitel mt-4">{{ t('hype.wachhundTitel') }}</h6>
@@ -836,6 +889,11 @@
             <FruehphaseAnsicht :aktiv="reiter === 'fruehphase'" :einst="einst" />
         </div>
 
+        <!-- ══ Börsen ═══════════════════════════════════════════════ -->
+        <div v-show="reiter === 'boersen'" class="mt-3">
+            <BoersenAnsicht :aktiv="reiter === 'boersen'" :einst="einst" />
+        </div>
+
         <!-- ══ Berichte ══════════════════════════════════════════════ -->
         <div v-show="reiter === 'berichte'" class="mt-3">
             <div v-if="!berichte.length" class="text-muted small">{{ t('hype.keineBerichte') }}</div>
@@ -983,6 +1041,7 @@ import AnbieterWahl from '../components/AnbieterWahl.vue'
 import PageInfo from '../components/PageInfo.vue'
 import ProjektPruefung from '../components/hype/ProjektPruefung.vue'
 import FruehphaseAnsicht from '../components/hype/FruehphaseAnsicht.vue'
+import BoersenAnsicht from '../components/hype/BoersenAnsicht.vue'
 import { useIstTelefon } from '../utils/geraet.js'
 import { currentUser } from '../stores/globals.js'
 import {
@@ -1393,7 +1452,13 @@ const istTelefon = useIstTelefon()
  */
 const route = useRoute()
 const router = useRouter()
-const REITER = ['berichte', 'fruehphase']
+const REITER = ['berichte', 'fruehphase', 'boersen']
+/*
+ * Frühphase und Börsen haben eigene Knöpfe und rufen kein Sprachmodell — die
+ * Scan-Knöpfe und die Warnung zu fehlenden KI-Schlüsseln gehören dort nicht hin.
+ */
+const eigeneAnsicht = computed(() => ['fruehphase', 'boersen'].includes(route.params.reiter))
+const infoAbschnitt = computed(() => ({ fruehphase: 'info.hypeFrueh', boersen: 'info.hypeBoersen' }[route.params.reiter] || 'info.hypeRadar'))
 const reiter = computed(() => (REITER.includes(route.params.reiter) ? route.params.reiter : 'dashboard'))
 
 /*
@@ -1435,6 +1500,7 @@ const einstZusammenfassung = computed(() => {
         quellen.length ? t('hype.zQuellen', { q: quellen.join(' + ') }) : t('hype.zKeineQuellen'),
         kanaele.length ? t('hype.zKanaele', { k: kanaele.join(', ') }) : t('hype.zKeineKanaele'),
         e.fruehAktiv ? t('hype.zFrueh', { n: e.fruehIntervallMin || 15 }) : t('hype.zFruehAus'),
+        e.boersenwachtAn ? t('hype.zBoersen') : t('hype.zBoersenAus'),
     ]
     return teile.join(' · ')
 })
@@ -1687,9 +1753,17 @@ async function speichern() {
         // Der Server bereinigt die Kanalliste (nur Namen, höchstens 15) —
         // die Anzeige soll zeigen, was gilt, nicht was getippt wurde.
         if (Array.isArray(r.data?.fruehTelegram)) einst.value.fruehTelegram = r.data.fruehTelegram
+        if (Array.isArray(r.data?.smartWallets)) einst.value.smartWallets = r.data.smartWallets
     } catch (e) {
         logWarn('hype-radar', 'Einstellungen konnten nicht gespeichert werden', e)
     }
+}
+
+/** Smart-Money-Wallets: „Adresse Name" je Zeile — der Server prüft und kürzt. */
+function smartWalletsGeaendert(ev) {
+    if (!einst.value) return
+    einst.value.smartWallets = String(ev.target.value || '').split(/\r?\n/).map((z) => z.trim()).filter(Boolean)
+    speichern()
 }
 
 /** Telegram-Kanäle der Frühphase: eine Zeile (oder Komma) je Kanal. */

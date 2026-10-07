@@ -308,4 +308,55 @@ function urteileHype(spitze, verworfen, feld) {
     return teile.length ? teile : ['zuWenigVergleich']
 }
 
+/**
+ * Frühphase: Was wurde aus den Token, die die Note über die Schwelle trug —
+ * verglichen mit einer Zufallsauswahl aller neu gesehenen Token?
+ *
+ * Die Grundrate ist brutal: Von pump.fun-Starts schafft rund jeder hundertste
+ * die Kurve. „30 % der Gemeldeten leben noch" ist ohne die Kontrollgruppe
+ * nichts wert — vielleicht leben 30 % von allem. Gemessen werden deshalb
+ * Überleben, Kurvenabschluss, Median-Rendite und der Anteil, der sich
+ * zwischenzeitlich mindestens verdoppelt hat (das Fenster, in dem man
+ * verkaufen könnte), in beiden Gruppen.
+ */
+export function werteAusFrueh(zeilen = [], horizont = '') {
+    const gruppe = (name) => {
+        const g = zeilen.filter((z) => (z.gruppe || 'spitze') === name && z.status === 'gemessen')
+        const lebend = g.filter((z) => zahl(z.nochHandelbar) !== null)
+        const kurve = g.filter((z) => zahl(z.graduiert) !== null)
+        const renditen = g.map((z) => zahl(z.renditePct)).filter((w) => w !== null)
+        const hoch = g.map((z) => zahl(z.mfePct) ?? zahl(z.renditePct)).filter((w) => w !== null)
+        return {
+            n: g.length,
+            ueberlebt: lebend.length ? lebend.filter((z) => Number(z.nochHandelbar) === 1).length / lebend.length : null,
+            graduiert: kurve.length ? kurve.filter((z) => Number(z.graduiert) === 1).length / kurve.length : null,
+            medianRendite: median(renditen),
+            verdoppelt: hoch.length ? hoch.filter((r) => r >= 100).length / hoch.length : null,
+        }
+    }
+    const spitze = gruppe('spitze')
+    const kontrolle = gruppe('kontrolle')
+    return {
+        horizont,
+        anzahl: zeilen.filter((z) => z.status === 'gemessen').length,
+        offen: zeilen.filter((z) => z.status === 'offen').length,
+        fehlgeschlagen: zeilen.filter((z) => z.status === 'fehlgeschlagen').length,
+        spitze, kontrolle,
+        urteil: urteileFrueh(spitze, kontrolle),
+    }
+}
+
+/** Kürzel, Worte in `hypeFrueh.guete_*`. Jede Gruppe braucht zehn Messungen. */
+function urteileFrueh(spitze, kontrolle) {
+    if (spitze.n < 10 || kontrolle.n < 10) return ['zuWenig']
+    const teile = []
+    if (spitze.verdoppelt !== null && kontrolle.verdoppelt !== null) {
+        teile.push(spitze.verdoppelt > kontrolle.verdoppelt ? 'trefferBesser' : 'trefferNichtBesser')
+    }
+    if (spitze.ueberlebt !== null && kontrolle.ueberlebt !== null) {
+        teile.push(spitze.ueberlebt > kontrolle.ueberlebt ? 'lebtLaenger' : 'lebtNichtLaenger')
+    }
+    return teile.length ? teile : ['zuWenig']
+}
+
 export { median }

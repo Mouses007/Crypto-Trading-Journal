@@ -7,8 +7,10 @@
  *
  * Aufruf: node server/hype-radar/__selftest-fruehphase.mjs
  */
+import { ausRugCheck } from './sicherheit.js'
 import {
-    erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen,
+    erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen, risikoFrueh,
+    kaeufeAusTransaktion, smartSignale, smartWalletListe,
     MAX_VERLAUF, REIF, X_MIN_AUTOREN_NEU,
 } from './fruehphase-bewertung.js'
 
@@ -152,6 +154,85 @@ const stand = (ts, o = {}) => ({ ts, mcap: null, liq: null, preis: null, vol1h: 
     const v = [{ ...stand(0, { tx1h: 100 }), note: 20 }]
     const t = bewerteFrueh({ stand: stand(H, { tx1h: 500, kaeufer1h: 200, verkaeufer1h: 100, plattformen: 3, erw: 5 }), verlauf: v })
     p('Trend steigt gegen die vorige Note', t.trend === 'steigt', `${t.note} ${t.trend}`)
+}
+
+// ── Risiko: Vertrag, Insider, Kurve, Dev ────────────────────────────────
+{
+    const rc = (holders, extra = {}) => ausRugCheck({ rugged: false, totalHolders: 420,
+        token: { mintAuthority: null, freezeAuthority: null }, topHolders: holders, markets: [], ...extra })
+    const h = (owner, pct, insider = false, address = 'acc-' + owner) => ({ address, owner, pct, insider })
+    const KURVE = 'kurve1'
+    // Kurven-Token: die Kurve hält 80 %, der Rest ist breit verteilt.
+    const sauber = risikoFrueh(rc([h(KURVE, 80), h('a', 2), h('b', 1.5), h('c', 1)]), { kurve: [KURVE], aufKurve: true })
+    p('Kurve zählt nicht als Klumpen', sauber.top10Pct !== null && sauber.top10Pct < 10 && !sauber.befunde.some((b) => b.schluessel === 'top10'), JSON.stringify(sauber))
+    p('Halterzahl aus RugCheck', sauber.halter === 420)
+    p('RugCheck ohne Insider-Markierung: 0 %, gemessen', sauber.insiderPct === 0)
+    const unbekannt = risikoFrueh(rc([h(KURVE, 80), h('a', 2)]), { kurve: [], aufKurve: true })
+    p('Kurve unbekannt: Top-10 bleibt unbekannt statt 80 %', unbekannt.top10Pct === null && unbekannt.abzug === 0)
+    const insider = risikoFrueh(rc([h(KURVE, 60), h('i1', 10, true), h('i2', 8, true), h('a', 1)]), { kurve: [KURVE], aufKurve: true })
+    p('Insider ab 15 % kosten', insider.insiderPct === 18 && insider.befunde.some((b) => b.schluessel === 'insider'))
+    const dev = risikoFrueh(rc([h('dev', 12), h('a', 3)]), { ersteller: 'dev' })
+    p('Dev-Anteil erkannt', dev.devPct === 12 && dev.befunde.some((b) => b.schluessel === 'devAnteil'))
+    const mint = risikoFrueh(ausRugCheck({ rugged: false, totalHolders: 10, token: { mintAuthority: 'X', freezeAuthority: null }, topHolders: [], markets: [] }))
+    p('Mint-Recht ist K.-o.', mint.ko !== null && mint.befunde.some((b) => b.schluessel === 'sicherheitKo'))
+    p('… und verwirft den Token', statusFrueh({ liq: null, mcap: 1 }, 1, mint.befunde).grund === 'sicherheit')
+    p('ohne Antwort: keine Aussage, keine Strafe', risikoFrueh(null) === null)
+    const goplus = risikoFrueh({ quelle: 'goplus-evm', anteilSkala: 'bruch', is_honeypot: '0', holder_count: '50', is_open_source: '1',
+        holders: [{ address: '0xa', percent: '0.05' }, { address: '0xb', percent: '0.04' }] })
+    p('GoPlus kennt keine Insider: unbekannt, nicht 0', goplus.insiderPct === null)
+    p('GoPlus-Bruchteile werden Prozent', Math.round(goplus.top10Pct) === 9, String(goplus.top10Pct))
+}
+
+// ── Halterwachstum, King of the Hill, Smart Money ───────────────────────
+{
+    const vor = { ...stand(0, { halter: 100 }), note: 30 }
+    const jetzt = stand(H, { halter: 260 })
+    const b = bewerteFrueh({ stand: jetzt, verlauf: [vor] })
+    p('Halterschub erkannt', b.befunde.some((x) => x.schluessel === 'halterSchub'))
+    p('Halterwachstum trägt die Beteiligung', b.teilnoten.beteiligung === 100, String(b.teilnoten.beteiligung))
+    const schwund = bewerteFrueh({ stand: stand(H, { halter: 60 }), verlauf: [vor] })
+    p('Halterschwund benannt', schwund.befunde.some((x) => x.schluessel === 'halterSchwund'))
+    const koth = bewerteFrueh({ stand: stand(0, { kothMin: 12 }) })
+    p('King of the Hill: Momentum ohne Verlauf', koth.teilnoten.momentum === 80 && koth.befunde.some((x) => x.schluessel === 'koth'))
+    const s0 = stand(0, { tx1h: 120, tx5m: 30 })
+    const ohne = bewerteFrueh({ stand: s0 }).note
+    const eine = bewerteFrueh({ stand: s0, smart: { wallets: 1 } }).note
+    const zwei = bewerteFrueh({ stand: s0, smart: { wallets: 2, namen: ['alpha'] } }).note
+    p('Smart Money: zwei Wallets wiegen mehr als eine', zwei > eine && eine > ohne, `${ohne} ${eine} ${zwei}`)
+    p('Halter fehlt: bleibt null', momentaufnahme({}, {}, 1).halter === null)
+}
+
+// ── Smart Money ─────────────────────────────────────────────────────────
+{
+    const W = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU'
+    const MINT = '9yKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJospump'
+    const tb = (owner, mint, ui) => ({ owner, mint, uiTokenAmount: { uiAmountString: String(ui) } })
+    const tx = (o = {}) => ({
+        blockTime: 1790000000, meta: { err: null, fee: 5000, preBalances: [5e9, 0], postBalances: [4e9, 0],
+            preTokenBalances: [], postTokenBalances: [tb(W, MINT, 1000)], ...o.meta },
+        transaction: { message: { accountKeys: [{ pubkey: W, signer: o.signer ?? true }, { pubkey: 'x', signer: false }] } },
+    })
+    const k = kaeufeAusTransaktion(tx(), W)
+    p('Kauf erkannt (SOL bezahlt, Bestand gestiegen)', k.length === 1 && k[0].mint === MINT && k[0].menge === 1000 && k[0].zeit === 1790000000000)
+    p('Airdrop (nicht signiert) ist kein Kauf', kaeufeAusTransaktion(tx({ signer: false }), W).length === 0)
+    p('nichts bezahlt ist kein Kauf', kaeufeAusTransaktion(tx({ meta: { preBalances: [5e9, 0], postBalances: [5e9 - 5000, 0] } }), W).length === 0)
+    p('mit USDC bezahlt zählt', kaeufeAusTransaktion(tx({ meta: { preBalances: [5e9, 0], postBalances: [5e9 - 5000, 0],
+        preTokenBalances: [tb(W, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 50)],
+        postTokenBalances: [tb(W, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 0), tb(W, MINT, 10)] } }), W).length === 1)
+    p('fehlgeschlagene Transaktion zählt nicht', kaeufeAusTransaktion(tx({ meta: { err: { x: 1 } } }), W).length === 0)
+    p('Verkauf ist kein Kauf', kaeufeAusTransaktion(tx({ meta: { preTokenBalances: [tb(W, MINT, 1000)], postTokenBalances: [tb(W, MINT, 0)] } }), W).length === 0)
+
+    const j = 1790000000000
+    const sig = smartSignale([
+        { wallet: 'a', mint: 'M', zeit: j - 1000 }, { wallet: 'a', mint: 'M', zeit: j - 500 },
+        { wallet: 'b', mint: 'M', zeit: j - 200 }, { wallet: 'c', mint: 'N', zeit: j - 7 * 3600e3 },
+    ], { jetzt: j, namen: new Map([['a', 'Alpha']]) })
+    p('Signal: verschiedene Wallets, nicht Käufe', sig.get('M')?.wallets === 2)
+    p('Signal: Namen aus der Liste', sig.get('M')?.namen[0] === 'Alpha')
+    p('Signal: ausserhalb des Fensters zählt nicht', !sig.has('N'))
+
+    const liste = smartWalletListe(`${W} Kolscan Top\nkeine-adresse\n${W} doppelt`)
+    p('Wallet-Liste: nur gültige Adressen, ohne Doppelte', liste.length === 1 && liste[0].name === 'Kolscan Top')
 }
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)

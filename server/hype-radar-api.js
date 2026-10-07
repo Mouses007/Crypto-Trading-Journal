@@ -24,9 +24,12 @@ import { testZustellung } from './hype-radar/zustellung.js'
 import { stufenNach, benoetigteAnbieter } from './hype-radar/stufen.js'
 import { keySpalte } from './ai-models.js'
 import { HORIZONTE } from './radar-ergebnisse.js'
-import { werteAusHype } from './radar-guete.js'
+import { werteAusHype, werteAusFrueh } from './radar-guete.js'
 import { pruefeProjekt, kurzfassung, gespeichertePruefungen, schluesselFuer } from './hype-radar/projekt.js'
 import { fruehLauf, fruehStand } from './hype-radar/fruehphase.js'
+import { smartWalletStand } from './hype-radar/smartmoney.js'
+import { boersenLauf, boersenStand, boersenUebersicht, ladeStaende } from './hype-radar/boersenwacht.js'
+import { leiterFuer } from './hype-radar/boersenwacht-bewertung.js'
 // Börsenfavoriten (Coin-Radar) brauchen den anderen Datenweg — siehe `boersenLive`.
 import { holeMarktweit } from './coin-radar/daten.js'
 import { fundingJahresRate } from './coin-radar/kennzahlen.js'
@@ -179,6 +182,7 @@ export function setupHypeRadarRoutes(app) {
             if (req.query.alle !== '1') q = q.whereNot('status', 'verworfen')
             const zeilen = await q.orderBy('note', 'desc').limit(Math.min(300, Number(req.query.limit) || 150))
             const projekte = await gespeichertePruefungen(zeilen)
+            const staende = await ladeStaende()
             res.json({
                 stand: fruehStand(),
                 zeilen: zeilen.map((z) => ({
@@ -188,14 +192,71 @@ export function setupHypeRadarRoutes(app) {
                     stand: sicherParse(z.stand, {}),
                     // Der Verlauf nur als Notenreihe — die vollen Momentaufnahmen
                     // wären bei 150 Zeilen ein paar hundert Kilobyte.
-                    verlauf: sicherParse(z.verlauf, []).map((v) => ({ ts: v.ts, note: v.note ?? null, mcap: v.mcap ?? null })),
+                    verlauf: sicherParse(z.verlauf, []).map((v) => ({ ts: v.ts, note: v.note ?? null, mcap: v.mcap ?? null, halter: v.halter ?? null })),
                     befunde: sicherParse(z.befunde, []),
                     projekt: kurzfassung(projekte.get(schluesselFuer(z)) || null),
+                    // Auf welchen Börsen der Token schon steht (Alpha nach Vertrag).
+                    leiter: leiterFuer({ symbol: z.symbol, chain: z.chain, contract: z.contract,
+                        bewertungUsd: sicherParse(z.stand, {})?.mcap }, staende),
                 })),
             })
         } catch (e) {
             logWarn('hype-radar', `Frühphase lesen: ${e.message}`)
             res.status(500).json({ error: 'Frühphase konnte nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Erfolgskontrolle der Frühphase: Schwellen-Überschreiter gegen eine
+     * Zufallsauswahl der neu gesehenen Token, nach 1, 3 und 7 Tagen.
+     */
+    app.get('/api/hype-radar/frueh/guete', async (req, res) => {
+        try {
+            const tage = Math.min(400, Math.max(1, Number(req.query.tage) || 120))
+            const seit = Date.now() - tage * 24 * 3600e3
+            const zeilen = await getKnex()('radar_ergebnisse')
+                .where('art', 'frueh').andWhere('erstelltAm', '>=', seit)
+            const horizonte = Object.keys(HORIZONTE.frueh).filter((h) => zeilen.some((z) => z.horizont === h))
+            res.json({
+                seit, tage, gesamt: zeilen.length,
+                jeHorizont: horizonte.map((h) => werteAusFrueh(zeilen.filter((z) => z.horizont === h), h)),
+            })
+        } catch (e) {
+            logWarn('hype-radar', `Frühphase-Güte lesen: ${e.message}`)
+            res.status(500).json({ error: 'Erfolgskontrolle konnte nicht geladen werden' })
+        }
+    })
+
+    // ── Börsen-Beobachter ───────────────────────────────────────────────
+    app.get('/api/hype-radar/boersen', async (req, res) => {
+        try {
+            res.json(await boersenUebersicht({ tage: Math.min(180, Math.max(1, Number(req.query.tage) || 60)) }))
+        } catch (e) {
+            logWarn('hype-radar', `Börsen lesen: ${e.message}`)
+            res.status(500).json({ error: 'Börsen-Beobachter konnte nicht geladen werden' })
+        }
+    })
+
+    /** Ein Abgleich von Hand, im Hintergrund — höchstens einer je Minute. */
+    app.post('/api/hype-radar/boersen/lauf', async (req, res) => {
+        try {
+            if (boersenStand().laeuft) return res.status(409).json({ error: 'Ein Abgleich läuft bereits' })
+            if (!(await beansprucheAufgabe('hype_boersen_hand', 60e3))) {
+                return res.status(429).json({ error: 'Frühestens eine Minute nach dem letzten Abgleich' })
+            }
+            boersenLauf().catch((e) => logWarn('hype-radar', `Börsen von Hand: ${e.message}`))
+            res.status(202).json({ gestartet: true })
+        } catch (e) {
+            res.status(500).json({ error: 'Abgleich fehlgeschlagen' })
+        }
+    })
+
+    /** Smart Money: je beobachteter Wallet der letzte Abruf und ein etwaiger Fehler. */
+    app.get('/api/hype-radar/smart/wallets', async (req, res) => {
+        try {
+            res.json(await smartWalletStand(await leseEinstellungen()))
+        } catch (e) {
+            res.status(500).json({ error: 'Wallets konnten nicht geladen werden' })
         }
     })
 

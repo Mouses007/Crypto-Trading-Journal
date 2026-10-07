@@ -25,6 +25,7 @@ import { setupAgentRoutes } from './server/ai-agent.js'
 import { setupAiUebersichtRoutes } from './server/ai-uebersicht.js'
 import { setupHypeRadarRoutes, startHypeTakt, startWachhundTakt } from './server/hype-radar-api.js'
 import { startFruehTakt } from './server/hype-radar/fruehphase.js'
+import { startBoersenTakt } from './server/hype-radar/boersenwacht.js'
 import { setupCoinRadarRoutes, startCoinRadarTakt } from './server/coin-radar-api.js'
 import { startErgebnisTakt } from './server/radar-ergebnisse.js'
 import { startOiArchivTakt, stopOiArchivTakt } from './server/oi-archiv.js'
@@ -168,6 +169,7 @@ const startIndex = async () => {
     startHypeTakt();
     startWachhundTakt();
     startFruehTakt();
+    startBoersenTakt();
     startCoinRadarTakt();
     startErgebnisTakt();
     // 1-Minuten-Open-Interest für die Liquidationskarte — Binance bietet kein

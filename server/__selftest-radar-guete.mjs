@@ -14,7 +14,7 @@
  * Aufruf: node server/__selftest-radar-guete.mjs
  */
 import {
-    precisionAt, rangGegenErgebnis, werteAus, werteLaufAus, werteAusHype, spanne, median,
+    precisionAt, rangGegenErgebnis, werteAus, werteLaufAus, werteAusHype, werteAusFrueh, spanne, median,
     schwelleFuer, vorzeichenTest, MIN_LAEUFE,
 } from './radar-guete.js'
 
@@ -197,6 +197,22 @@ const reihe = (n, f) => Array.from({ length: n }, (_, i) => f(i))
     p('Urteil nennt die Note', a.urteil.includes('noteWirkt'), String(a.urteil))
     p('ohne Gruppe gilt Spitze (Altbestand)', werteAusHype([h(undefined, 1, 5)]).spitze.n === 1)
     p('zu wenige Messungen', werteAusHype([]).urteil[0] === 'zuWenig')
+}
+
+// ── Frühphase ───────────────────────────────────────────────────────────
+{
+    const z = (gruppe, rendite, mfe, lebt, grad) => ({ gruppe, status: 'gemessen', renditePct: rendite, mfePct: mfe, nochHandelbar: lebt, graduiert: grad })
+    const zeilen = [
+        ...Array.from({ length: 10 }, (_, i) => z('spitze', i < 4 ? 150 : -50, i < 6 ? 200 : 10, i < 7 ? 1 : 0, i < 3 ? 1 : 0)),
+        ...Array.from({ length: 10 }, (_, i) => z('kontrolle', -80, i < 1 ? 120 : -50, i < 2 ? 1 : 0, 0)),
+        { gruppe: 'spitze', status: 'offen' },
+    ]
+    const a = werteAusFrueh(zeilen, '1d')
+    p('Frühphase: zwischenzeitlich verdoppelt zählt das Hoch', a.spitze.verdoppelt === 0.6 && a.kontrolle.verdoppelt === 0.1, JSON.stringify(a.spitze))
+    p('Frühphase: Kurvenabschluss als Anteil', a.spitze.graduiert === 0.3)
+    p('Frühphase: Urteil vergleicht mit der Kontrolle', a.urteil.includes('trefferBesser') && a.urteil.includes('lebtLaenger'), a.urteil.join())
+    p('Frühphase: offene Aufträge zählen nicht', a.offen === 1 && a.spitze.n === 10)
+    p('Frühphase: unter zehn je Gruppe kein Urteil', werteAusFrueh(zeilen.slice(0, 15), '1d').urteil[0] === 'zuWenig')
 }
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)

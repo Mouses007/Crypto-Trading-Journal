@@ -20,6 +20,8 @@
  * Rein: Momentaufnahmen und Fakten hinein, Note und Befunde heraus.
  */
 
+import { pruefe, summeTop10, SKALA_PROZENT } from './sicherheit.js'
+
 /** Höchstens so viele Momentaufnahmen je Token. Bei 15 min sind das zwölf Stunden. */
 export const MAX_VERLAUF = 48
 
@@ -163,6 +165,116 @@ export function xNennungen(posts = [], zitierteIds = new Set(), bekannt = {}) {
     return { adressen, verworfen, gezaehlt }
 }
 
+// ── Smart Money: was beobachtete Wallets kaufen ─────────────────────────
+
+/** Womit bezahlt wird — kein Kauf, sondern das Geld dafür. */
+const ZAHLMITTEL = new Set([
+    'So11111111111111111111111111111111111111112',   // wSOL
+    'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',  // USDC
+    'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',  // USDT
+])
+
+const SOLANA_ADRESSE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
+
+/**
+ * Wallet-Liste aus der Oberfläche: „Adresse Name" je Zeile oder Objekte.
+ * Nur Solana-Adressen, ohne Doppelte, höchstens dreissig.
+ */
+export function smartWalletListe(roh) {
+    const zeilen = Array.isArray(roh) ? roh : String(roh || '').split(/\r?\n/)
+    const raus = new Map()
+    for (const z of zeilen) {
+        const [adresse, ...rest] = typeof z === 'object' && z
+            ? [String(z.adresse || '').trim(), String(z.name || '').trim()]
+            : String(z || '').trim().split(/[\s,;]+/)
+        if (!SOLANA_ADRESSE.test(adresse || '') || raus.has(adresse)) continue
+        raus.set(adresse, { adresse, name: rest.join(' ').trim().slice(0, 40) })
+    }
+    return [...raus.values()].slice(0, 30)
+}
+
+/**
+ * Käufe einer Wallet in einer Solana-Transaktion (`getTransaction`, jsonParsed).
+ *
+ * Ein Kauf heisst: Die Wallet hat die Transaktion SELBST signiert, ihr
+ * Bestand eines Tokens ist gestiegen, und sie hat dafür bezahlt (SOL über die
+ * Gebühr hinaus, oder wSOL/USDC/USDT weniger). Ohne Signatur wäre jeder
+ * Airdrop ein „Kauf" — und Betrüger schicken aktiven Wallets laufend Token,
+ * genau damit sie in solchen Listen auftauchen.
+ *
+ * @returns {Array<{mint:string, menge:number, zeit:number|null}>}
+ */
+export function kaeufeAusTransaktion(tx, wallet) {
+    const meta = tx?.meta
+    if (!meta || meta.err) return []
+    const schluessel = tx?.transaction?.message?.accountKeys || []
+    const index = schluessel.findIndex((k) => (typeof k === 'string' ? k : k?.pubkey) === wallet)
+    if (index < 0) return []
+    const eintrag = schluessel[index]
+    // jsonParsed nennt `signer` je Konto; in der Rohform sind die ersten
+    // `numRequiredSignatures` Schlüssel die Signierer.
+    const signiert = typeof eintrag === 'object' && eintrag !== null && 'signer' in eintrag
+        ? eintrag.signer === true
+        : index < (Number(tx?.transaction?.message?.header?.numRequiredSignatures) || 1)
+    if (!signiert) return []
+
+    const menge = (b) => {
+        const t = b?.uiTokenAmount
+        const z = Number(t?.uiAmountString ?? t?.uiAmount)
+        return Number.isFinite(z) ? z : 0
+    }
+    const bestand = (liste) => {
+        const m = new Map()
+        for (const b of liste || []) if (b?.owner === wallet && b?.mint) m.set(b.mint, (m.get(b.mint) || 0) + menge(b))
+        return m
+    }
+    const vor = bestand(meta.preTokenBalances)
+    const nach = bestand(meta.postTokenBalances)
+
+    const solVor = Number(meta.preBalances?.[index])
+    const solNach = Number(meta.postBalances?.[index])
+    const gebuehr = Number(meta.fee) || 0
+    const solBezahlt = Number.isFinite(solVor) && Number.isFinite(solNach) && solVor - solNach > gebuehr + 1e6   // > 0,001 SOL
+    const geldBezahlt = [...ZAHLMITTEL].some((m) => (vor.get(m) || 0) > (nach.get(m) || 0))
+    if (!solBezahlt && !geldBezahlt) return []
+
+    const zeit = Number(tx?.blockTime) > 0 ? Number(tx.blockTime) * 1000 : null
+    const raus = []
+    for (const [mint, n] of nach) {
+        if (ZAHLMITTEL.has(mint)) continue
+        const zuwachs = n - (vor.get(mint) || 0)
+        if (zuwachs > 0) raus.push({ mint, menge: zuwachs, zeit })
+    }
+    return raus
+}
+
+/**
+ * Käufe → Signal je Token: wie viele VERSCHIEDENE beobachtete Wallets im
+ * Zeitfenster gekauft haben.
+ *
+ * @param {Array<{wallet, mint, zeit}>} kaeufe
+ * @returns {Map<string, {wallets:number, namen:string[], erste:number}>}
+ */
+export function smartSignale(kaeufe = [], { jetzt = Date.now(), fensterMs = 6 * 3600e3, namen = new Map() } = {}) {
+    const je = new Map()
+    for (const k of kaeufe) {
+        if (!k?.mint || !k?.wallet || !(Number(k.zeit) >= jetzt - fensterMs)) continue
+        if (!je.has(k.mint)) je.set(k.mint, { wallets: new Set(), erste: Number(k.zeit) })
+        const x = je.get(k.mint)
+        x.wallets.add(k.wallet)
+        x.erste = Math.min(x.erste, Number(k.zeit))
+    }
+    const raus = new Map()
+    for (const [mint, x] of je) {
+        raus.set(mint, {
+            wallets: x.wallets.size,
+            namen: [...x.wallets].map((w) => namen.get(w) || `${w.slice(0, 4)}…${w.slice(-4)}`),
+            erste: x.erste,
+        })
+    }
+    return raus
+}
+
 // ── Momentaufnahme ──────────────────────────────────────────────────────
 
 /**
@@ -186,6 +298,11 @@ export function momentaufnahme(markt = {}, sozial = {}, ts = Date.now()) {
         verkaeufer1h: zahl(markt.verkaeufer1h),
         aend1h: zahl(markt.aenderung1h),
         antworten: zahl(markt.antworten),
+        // Halter: nur, wenn in DIESEM Durchgang gemessen (Risikoprüfung) —
+        // eine fortgeschriebene Zahl sähe aus wie Stillstand.
+        halter: positiv(markt.halter),
+        // Minuten vom Start bis „King of the Hill" (pump.fun-Startseite).
+        kothMin: zahl(markt.kothMin),
         erw: Number(sozial.erwaehnungen) || 0,
         plattformen: Array.isArray(sozial.plattformen) ? sozial.plattformen.length : 0,
     }
@@ -195,6 +312,82 @@ export function momentaufnahme(markt = {}, sozial = {}, ts = Date.now()) {
 export function naechsterVerlauf(verlauf = [], stand, max = MAX_VERLAUF) {
     const v = (Array.isArray(verlauf) ? verlauf : []).filter((x) => x && Number.isFinite(x.ts))
     return [...v, stand].sort((a, b) => a.ts - b.ts).slice(-max)
+}
+
+// ── Risiko: Vertrag und Halter ──────────────────────────────────────────
+
+/*
+ * Prüfregeln der Frühphase: nur der Vertrag, nicht der Markt. Mindest-
+ * liquidität, Mindestalter und LP-Sperre sind genau die Hürden, VOR denen die
+ * Frühphase läuft; die K.-o.-Regeln des Vertrags (Honeypot, Mint, Freeze,
+ * verdeckte Eigentümer …) gelten dagegen von der ersten Minute an.
+ */
+const FRUEH_REGELN = {
+    minLiquiditaetUsd: 0, minPaarAlterStunden: 0, lpMussGesperrtSein: false,
+    maxTop10Prozent: 100, maxFdvLiqVerhaeltnis: Number.POSITIVE_INFINITY,
+}
+
+/** Ab hier kostet ein Halterbild Punkte. Setzungen wie die Gewichte. */
+export const RISIKO_GRENZEN = { insiderProzent: 15, top10Prozent: 50, devProzent: 10 }
+const RISIKO_ABZUG = { sicherheitKo: 60, insider: 15, top10: 10, devAnteil: 10, insiderNetz: 10 }
+
+/**
+ * Insider, Top-10, Dev-Anteil und die Vertrags-K.-o.-Regeln — das, was
+ * Trading-Terminals (GMGN, Axiom) bei einem neuen Token zuerst zeigen.
+ *
+ * Bei pump.fun-Token auf der Kurve hält die BINDUNGSKURVE selbst den grössten
+ * Teil des Angebots. Sie muss aus der Top-10-Rechnung heraus — und ist sie
+ * nicht als Halter erkennbar, bleibt der Top-10-Anteil unbekannt, statt mit
+ * 80 % jeden Kurven-Token als „Klumpen" zu verwerfen.
+ *
+ * @param {object|null} sicherheit  Antwort in GoPlus-Sprache (`ausRugCheck`, `holeGoPlus`)
+ * @param {object} opts  {kurve: Adressen der Bindungskurve, ersteller, aufKurve}
+ * @returns {null|{ko, halter, insiderPct, top10Pct, devPct, abzug, befunde}}
+ */
+export function risikoFrueh(sicherheit, { kurve = [], ersteller = '', aufKurve = false } = {}) {
+    if (!sicherheit || typeof sicherheit !== 'object') return null
+    const befunde = []
+    let abzug = 0
+    const minus = (schluessel, text) => { abzug += RISIKO_ABZUG[schluessel] || 0; befunde.push({ art: 'minus', schluessel, text }) }
+    const info = (schluessel, text) => befunde.push({ art: 'info', schluessel, text })
+
+    const urteil = pruefe(sicherheit, {}, FRUEH_REGELN)
+    const ko = urteil.status === 'verworfen' ? { grund: urteil.grund, text: urteil.hinweise[urteil.hinweise.length - 1] || urteil.grund } : null
+    if (ko) minus('sicherheitKo', ko.text)
+
+    const faktor = sicherheit.anteilSkala === SKALA_PROZENT ? 1 : 100
+    const ausnahmen = new Set((kurve || []).filter(Boolean).map(String))
+    const alle = Array.isArray(sicherheit.holders) ? sicherheit.holders : []
+    const ohneKurve = alle.filter((h) => !ausnahmen.has(String(h?.address || '')) && !ausnahmen.has(String(h?.owner || '')))
+    const kurveErkannt = !aufKurve || ohneKurve.length < alle.length
+    const anteil = (liste) => liste.reduce((a, h) => a + (Number(h?.percent) || 0) * faktor, 0)
+
+    // RugCheck markiert Insider je Halter; GoPlus kennt das Merkmal nicht —
+    // dort bleibt der Anteil unbekannt statt 0.
+    const insiderPct = sicherheit.quelle === 'rugcheck'
+        ? anteil(ohneKurve.filter((h) => h?.tag === 'insider'))
+        : (ohneKurve.some((h) => h?.tag === 'insider') ? anteil(ohneKurve.filter((h) => h?.tag === 'insider')) : null)
+    const top10Pct = kurveErkannt && ohneKurve.length ? summeTop10(ohneKurve, { skala: sicherheit.anteilSkala }) : null
+    const dev = String(ersteller || '')
+    // Nicht unter den grössten Haltern heisst: weniger als der kleinste davon.
+    const devPct = dev && alle.length ? anteil(ohneKurve.filter((h) => h?.address === dev || h?.owner === dev)) : null
+
+    if (insiderPct !== null && insiderPct >= RISIKO_GRENZEN.insiderProzent) {
+        minus('insider', `Als Insider markierte Wallets halten ${insiderPct.toFixed(0)} %`)
+    }
+    if (top10Pct !== null && top10Pct >= RISIKO_GRENZEN.top10Prozent) {
+        minus('top10', `Die zehn grössten Halter halten ${top10Pct.toFixed(0)} %${aufKurve ? ' (ohne Bindungskurve)' : ''}`)
+    }
+    if (devPct !== null && devPct >= RISIKO_GRENZEN.devProzent) {
+        minus('devAnteil', `Der Ersteller hält selbst ${devPct.toFixed(0)} %`)
+    }
+    if (Number(sicherheit.insider_netzwerke) > 0) {
+        minus('insiderNetz', `RugCheck erkennt ${Number(sicherheit.insider_netzwerke)} Netzwerk(e) verbundener Insider-Wallets`)
+    }
+    if (aufKurve && !kurveErkannt) info('top10Unbekannt', 'Top-10-Anteil nicht bestimmbar: die Bindungskurve ist unter den Haltern nicht erkennbar')
+
+    const n = Number(sicherheit.holder_count)
+    return { ko, halter: n > 0 ? n : null, insiderPct, top10Pct, devPct, abzug, befunde }
 }
 
 // ── Bewertung ───────────────────────────────────────────────────────────
@@ -232,7 +425,7 @@ function handelsSchub(stand, frueher) {
  * @param {boolean} e.profil      bezahltes DexScreener-Profil / Community-Übernahme
  * @returns {{note:number, teilnoten:object, befunde:Array, trend:string}}
  */
-export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = null, ersteller = null, profil = false } = {}) {
+export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = null, ersteller = null, profil = false, risiko = null, smart = null } = {}) {
     const befunde = []
     const plus = (schluessel, text) => befunde.push({ art: 'plus', schluessel, text })
     const minus = (schluessel, text) => befunde.push({ art: 'minus', schluessel, text })
@@ -262,6 +455,23 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
         }
     } else {
         teilnoten.beteiligung = null
+    }
+    /*
+     * Halterwachstum — die Zahl, die jedes Terminal neben den Käufern zeigt.
+     * Verglichen mit der letzten Momentaufnahme, die eine Halterzahl hatte
+     * (gemessen wird nur bei den Besten eines Durchgangs). +100 Halter je
+     * Stunde gilt als voll; die bessere der beiden Beteiligungs-Messungen zählt.
+     */
+    const vorHalter = [...frueher].reverse().find((s) => zahl(s.halter) !== null) || null
+    if (stand.halter !== null && stand.halter !== undefined && vorHalter && vorHalter.halter > 0) {
+        const stunden = Math.max(0.25, (stand.ts - vorHalter.ts) / 3600e3)
+        const zuwachs = (stand.halter - vorHalter.halter) / stunden
+        teilnoten.beteiligung = Math.max(teilnoten.beteiligung ?? 0, klemme(zuwachs))
+        if (zuwachs >= 30 && stand.halter >= vorHalter.halter * 1.5) {
+            plus('halterSchub', `Halter ${vorHalter.halter} → ${stand.halter} (+${Math.round(zuwachs)} je Stunde)`)
+        } else if (stand.halter < vorHalter.halter * 0.8) {
+            minus('halterSchwund', `Halter ${vorHalter.halter} → ${stand.halter} — es wird verkauft`)
+        }
     }
 
     // ── Sozial: mehr Plattformen, mehr Erwähnungen als zuvor ────────────
@@ -307,6 +517,16 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
         if (wachstum >= 1) plus('momentum', `Bewertung seit dem ersten Blick +${Math.round(wachstum * 100)} %`)
     } else {
         teilnoten.momentum = null
+    }
+    /*
+     * King of the Hill: der Token stand oben auf der pump.fun-Startseite —
+     * genug Kaufdruck, um alle anderen Starts der Stunde zu überholen. Ohne
+     * Verlauf ist das die einzige Momentum-Messung, die es gibt.
+     */
+    if (stand.kothMin !== null && stand.kothMin !== undefined) {
+        const schnell = stand.kothMin <= 30
+        teilnoten.momentum = Math.max(teilnoten.momentum ?? 0, schnell ? 80 : 60)
+        plus('koth', `King of the Hill auf pump.fun nach ${Math.max(1, Math.round(stand.kothMin))} min`)
     }
 
     // ── Gewichtete Note über das, was messbar war ───────────────────────
@@ -357,6 +577,20 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
         note -= 30
         minus('eingebrochen', `Bewertung ${Math.round((1 - stand.mcap / hoch) * 100)} % unter dem Höchststand der Beobachtung`)
     }
+    // Vertrag und Halter (`risikoFrueh`): Abzüge stehen dort, hier nur verbucht.
+    if (risiko) {
+        note -= Number(risiko.abzug) || 0
+        befunde.push(...(risiko.befunde || []))
+    }
+    /*
+     * Smart Money: beobachtete Wallets haben gekauft. Eine allein ist ein
+     * Hinweis, zwei unabhängige auf denselben Token das stärkste Frühsignal,
+     * das es ohne Insiderwissen gibt.
+     */
+    if (smart?.wallets > 0) {
+        note += smart.wallets >= 2 ? 20 : 8
+        plus('smartMoney', `${smart.wallets} beobachtete Wallet(s) gekauft${smart.namen?.length ? ': ' + smart.namen.slice(0, 3).join(', ') : ''}`)
+    }
     if (!gewicht) info('zuWenig', 'Noch zu wenige Messungen für eine Einschätzung')
 
     note = Math.round(klemme(note))
@@ -373,6 +607,7 @@ export function bewerteFrueh({ stand, verlauf = [], projektNote = null, links = 
  * tot; er wird nicht weiter verfolgt.
  */
 export function statusFrueh(stand, alterStunden, befunde = []) {
+    if (befunde.some((b) => b.schluessel === 'sicherheitKo')) return { status: 'verworfen', grund: 'sicherheit' }
     if (befunde.some((b) => b.schluessel === 'eingebrochen')) return { status: 'verworfen', grund: 'eingebrochen' }
     if (stand?.liq !== null && stand?.liq !== undefined && stand.liq <= 0 && stand.mcap !== null && stand.mcap <= 0) {
         return { status: 'verworfen', grund: 'leer' }

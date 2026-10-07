@@ -47,12 +47,13 @@
                 <div class="fpKarteZeile">
                     <strong>{{ z.symbol || kurz(z.contract) }}</strong>
                     <span class="fpKette">{{ z.chain }}</span>
+                    <FruehSignale :z="z" />
                     <span class="ms-auto fpNote" :class="notenKlasse(z.note)">{{ z.note }}</span>
                     <i class="uil fpTrend" :class="trendIcon(z.stand?.trend)"></i>
                 </div>
                 <div class="fpKarteZeile fpGrau">
                     <span>{{ geld(z.stand?.mcap) }} MC</span>
-                    <span>{{ geld(z.stand?.liq) }} Liq</span>
+                    <span v-if="halterVon(z) !== null">{{ halterVon(z) }} {{ t('hypeFrueh.halterKurz') }}</span>
                     <span>{{ alter(z.stand?.alterStunden) }}</span>
                     <span v-if="z.projektNote !== null && z.projektNote !== undefined">{{ t('hypeFrueh.substanzKurz') }} {{ z.projektNote }}</span>
                     <span class="badge hypBadge ms-auto" :class="statusKlasse(z.status)">{{ statusText(z) }}</span>
@@ -73,7 +74,7 @@
                         <th>{{ t('hypeFrueh.spalteVerlauf') }}</th>
                         <th class="text-end">{{ t('hypeFrueh.spalteSubstanz') }}</th>
                         <th class="text-end">{{ t('hypeFrueh.spalteMcap') }}</th>
-                        <th class="text-end">{{ t('hypeFrueh.spalteLiq') }}</th>
+                        <th class="text-end" :title="t('hypeFrueh.spalteHalterTitel')">{{ t('hypeFrueh.spalteHalter') }}</th>
                         <th class="text-end">{{ t('hypeFrueh.spalteAlter') }}</th>
                         <th class="text-end" :title="t('hypeFrueh.spalteHandelTitel')">{{ t('hypeFrueh.spalteHandel') }}</th>
                         <th class="text-end">{{ t('hypeFrueh.spalteSozial') }}</th>
@@ -89,6 +90,7 @@
                                 <span class="fpKette">{{ z.chain }}</span>
                                 <span v-if="z.stand?.graduiert === false && istPump(z)" class="fpKurve" :title="t('hypeFrueh.kurveTitel')">
                                     <i class="uil uil-chart-growth"></i></span>
+                                <FruehSignale :z="z" />
                             </td>
                             <td class="text-end">
                                 <span class="fpNote" :class="notenKlasse(z.note)">{{ z.note }}</span>
@@ -100,7 +102,7 @@
                                 <span v-else class="fpGrau">—</span>
                             </td>
                             <td class="text-end">{{ geld(z.stand?.mcap) }}</td>
-                            <td class="text-end">{{ geld(z.stand?.liq) }}</td>
+                            <td class="text-end">{{ halterVon(z) ?? '—' }}</td>
                             <td class="text-end">{{ alter(z.stand?.alterStunden) }}</td>
                             <td class="text-end">{{ kaeuferText(z.stand) }}</td>
                             <td class="text-end" :title="sozialTitel(z)">{{ sozialText(z) }}</td>
@@ -113,6 +115,49 @@
                     </template>
                 </tbody>
             </table>
+        </div>
+
+        <!-- Erfolgskontrolle: trifft die Note? Schwellen-Überschreiter gegen
+             eine Zufallsauswahl aller neu gesehenen Token. -->
+        <div class="fpGuete">
+            <div class="fpDetailTitel">{{ t('hypeFrueh.gueteTitel') }}</div>
+            <!-- Ohne eine einzige Messung keine leere Tabelle, sondern ein Satz. -->
+            <p v-if="!gueteGemessen" class="fpGrau small mb-0">
+                {{ t('hypeFrueh.gueteLeer') }}<template v-if="gueteOffen"> {{ t('hypeFrueh.gueteOffen', { n: gueteOffen }) }}.</template>
+            </p>
+            <div v-else class="table-responsive">
+                <table class="table table-sm fpTabelle mb-1">
+                    <thead>
+                        <tr>
+                            <th></th><th>{{ t('hypeFrueh.gueteGruppe') }}</th><th class="text-end">n</th>
+                            <th class="text-end">{{ t('hypeFrueh.gueteLebt') }}</th>
+                            <th class="text-end">{{ t('hypeFrueh.gueteKurve') }}</th>
+                            <th class="text-end">{{ t('hypeFrueh.gueteRendite') }}</th>
+                            <th class="text-end">{{ t('hypeFrueh.gueteVerdoppelt') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template v-for="hz in guete.jeHorizont" :key="hz.horizont">
+                            <tr v-for="(g, i) in ['spitze', 'kontrolle']" :key="hz.horizont + g">
+                                <td><strong v-if="!i">{{ hz.horizont }}</strong></td>
+                                <td>{{ t('hypeFrueh.gueteGruppe_' + g) }}</td>
+                                <td class="text-end">{{ hz[g].n }}</td>
+                                <td class="text-end">{{ anteil(hz[g].ueberlebt) }}</td>
+                                <td class="text-end">{{ anteil(hz[g].graduiert) }}</td>
+                                <td class="text-end">{{ prozent(hz[g].medianRendite) }}</td>
+                                <td class="text-end">{{ anteil(hz[g].verdoppelt) }}</td>
+                            </tr>
+                            <tr>
+                                <td></td>
+                                <td colspan="6" class="fpGrau small">
+                                    {{ hz.urteil.map((u) => t('hypeFrueh.guete_' + u)).join(' · ') }}
+                                    · {{ t('hypeFrueh.gueteOffen', { n: hz.offen }) }}
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </template>
@@ -219,6 +264,23 @@ function plane(ms) {
     if (!props.aktiv) return
     uhr = setTimeout(lade, ms ?? (laeuft.value ? 3000 : 120000))
 }
+const guete = ref(null)
+async function ladeGuete() {
+    try {
+        guete.value = (await axios.get('/api/hype-radar/frueh/guete')).data
+    } catch (e) {
+        logWarn('hype-frueh', 'Erfolgskontrolle konnte nicht geladen werden', e)
+    }
+}
+const gueteGemessen = computed(() => (guete.value?.jeHorizont || []).some((h) => h.anzahl > 0))
+const gueteOffen = computed(() => (guete.value?.jeHorizont || []).reduce((a, h) => a + (h.offen || 0), 0))
+const anteil = (w) => (w === null || w === undefined ? '—' : `${Math.round(w * 100)} %`)
+const prozent = (w) => (w === null || w === undefined ? '—' : `${w > 0 ? '+' : ''}${Math.round(w)} %`)
+
+watch(() => props.aktiv, (a) => {
+    if (a && !guete.value) ladeGuete()
+}, { immediate: true })
+
 watch(() => props.aktiv, (a) => {
     if (a) lade()
     else { clearTimeout(uhr); uhr = null }
@@ -301,6 +363,41 @@ function linie(z) {
 }
 
 // ── Detail: Teilnoten, Befunde, Links, Projektprüfung ───────────────────
+/** Die zuletzt GEMESSENE Halterzahl — gemessen wird nicht in jedem Durchgang. */
+function halterVon(z) {
+    if (hatZahl(z.stand?.halter)) return Number(z.stand.halter)
+    const v = [...(z.verlauf || [])].reverse().find((x) => hatZahl(x.halter))
+    return v ? Number(v.halter) : null
+}
+
+/*
+ * Die Signale, die ein Terminal zuerst zeigt, als drei kleine Zeichen am
+ * Token: Krone = King of the Hill, Brieftasche = beobachtete Wallets haben
+ * gekauft, Gebäude = schon auf Binance Alpha oder einer Börse.
+ */
+const FruehSignale = defineComponent({
+    props: { z: { type: Object, required: true } },
+    setup(p) {
+        return () => {
+            const z = p.z
+            const teile = []
+            if (hatZahl(z.stand?.kothMin)) {
+                teile.push(h('i', { class: 'uil uil-crown fpSignal koth', title: t('hypeFrueh.signalKoth', { m: Math.max(1, Math.round(z.stand.kothMin)) }) }))
+            }
+            if (z.stand?.smart?.wallets > 0) {
+                teile.push(h('span', { class: 'fpSignal smart', title: t('hypeFrueh.signalSmart', { n: z.stand.smart.wallets, namen: (z.stand.smart.namen || []).join(', ') }) },
+                    [h('i', { class: 'uil uil-wallet' }), String(z.stand.smart.wallets)]))
+            }
+            const l = z.leiter || {}
+            const boersen = [...(l.alpha ? ['Binance Alpha'] : []), ...(l.mittel || []), ...(l.gross || [])]
+            if (boersen.length) {
+                teile.push(h('i', { class: 'uil uil-building fpSignal boerse', title: t('hypeFrueh.signalBoerse', { b: boersen.join(', ') }) }))
+            }
+            return teile.length ? h('span', { class: 'fpSignale' }, teile) : null
+        }
+    },
+})
+
 const TEILNOTEN = ['handel', 'beteiligung', 'sozial', 'team', 'momentum']
 
 const FruehDetail = defineComponent({
@@ -325,7 +422,8 @@ const FruehDetail = defineComponent({
                         h('span', { class: 'fpBalken' }, [h('i', { style: { width: `${Math.round(Number(teil[f]) || 0)}%` } })]),
                         h('span', { class: 'fpTeilWert' }, hatZahl(teil[f]) ? String(Math.round(teil[f])) : '—'),
                     ])),
-                    h('div', { class: 'fpGrau mt-1' }, `${t('hypeFrueh.quellen')}: ${(z.quellen || []).join(', ') || '—'}`),
+                    h('div', { class: 'fpGrau mt-1' }, kennzahlen(z)),
+                    h('div', { class: 'fpGrau' }, `${t('hypeFrueh.quellen')}: ${(z.quellen || []).join(', ') || '—'}`),
                     h('div', { class: 'fpGrau' }, t('hypeFrueh.beobachtetSeit', { z: zeitpunkt(z.ersterBlick) })),
                     h('div', { class: 'mt-2' }, markt),
                     // X-Belege: die Posts, auf denen die Zählung beruht — zum Nachsehen,
@@ -355,6 +453,23 @@ const FruehDetail = defineComponent({
         }
     },
 })
+
+/** Liquidität, Halter und Halterbild in einer Zeile — „—" heisst nicht gemessen. */
+function kennzahlen(z) {
+    const r = z.stand?.risiko || {}
+    const pz = (w) => (hatZahl(w) ? `${Math.round(w)} %` : '—')
+    const teile = [
+        `${t('hypeFrueh.spalteLiq')} ${geld(z.stand?.liq)}`,
+        `${t('hypeFrueh.spalteHalter')} ${halterVon(z) ?? '—'}`,
+        `Insider ${pz(r.insiderPct)}`,
+        `Top-10 ${pz(r.top10Pct)}`,
+        `Dev ${pz(r.devPct)}`,
+    ]
+    const l = z.leiter || {}
+    const boersen = [...(l.alpha ? ['Binance Alpha'] : []), ...(l.mittel || []), ...(l.gross || [])]
+    if (boersen.length) teile.push(`${t('hypeFrueh.boersen')}: ${boersen.join(', ')}`)
+    return teile.join(' · ')
+}
 
 /* Warnungen zuerst: bei Frühphasen-Token wiegt ein Minus schwerer als ein Plus. */
 const ZEICHEN = { minus: '−', plus: '+', info: 'i' }
@@ -424,6 +539,22 @@ const sortiereBefunde = (b) => [...b].sort((x, y) => ['minus', 'plus', 'info'].i
 .fpKette {
     font-size: .782rem;
     margin-left: .4rem;
+}
+.fpSignale {
+    margin-left: .35rem;
+    display: inline-flex;
+    gap: .3rem;
+    align-items: center;
+}
+:deep(.fpSignal) {
+    font-size: .82rem;
+    color: var(--grey-color, #9aa0a6);
+}
+:deep(.fpSignal.koth) { color: #e0b030; }
+:deep(.fpSignal.smart) { color: #4caf50; font-weight: 600; }
+:deep(.fpSignal.boerse) { color: var(--blue-color, #4da3ff); }
+.fpGuete {
+    margin-top: 1.25rem;
 }
 .fpKurve {
     margin-left: .3rem;

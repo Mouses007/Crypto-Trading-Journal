@@ -1230,7 +1230,22 @@
     "zFruehAus": "early phase off",
     "fruehQuelle_x": "X via Grok — paid",
     "fruehXTakt": "X query every",
-    "fruehXHinweis": "One Grok search per interval (xAI key under Settings → AI). Only cited posts and distinct authors are counted. The price of the last query is shown above the list."
+    "fruehXHinweis": "One Grok search per interval (xAI key under Settings → AI). Only cited posts and distinct authors are counted. The price of the last query is shown above the list.",
+    "tab_boersen": "Exchanges",
+    "fruehQuelle_smartmoney": "Smart money — watched wallets",
+    "smartWallets": "Watched wallets (Solana)",
+    "smartWalletsPlatzhalter": "address name — one per line",
+    "smartTakt": "Read purchases every",
+    "smartRpc": "Solana RPC address (optional)",
+    "smartRpcPlatzhalter": "empty = public node · e.g. a Helius address",
+    "smartHinweis": "Wallets from the GMGN, Kolscan or Cielo leaderboards. Only purchases the wallet signed and paid for itself count. Two wallets on the same token trigger an alert at once. For more than a few wallets enter your own RPC address (e.g. Helius, free tier).",
+    "boersenwachtTitel": "Exchange watcher",
+    "boersenwachtHinweis": "Compares the public market lists of large and mid-sized exchanges and Binance Alpha, detects new listings and checks whether the radar had flagged the token before. No keys.",
+    "boersenwachtAn": "Watch exchanges",
+    "boersenwachtTakt": "Compare every",
+    "boersenAlleMelden": "Also alert on listings the radar did not know (large exchanges only)",
+    "zBoersen": "exchanges watched",
+    "zBoersenAus": "exchanges off"
   },
   "kiUebersicht": {
     "laedt": "Loading overview …",
@@ -3459,6 +3474,10 @@
           "p": "One-sided buying (more than eight times as many buys as sells — often a bot or a sell block), circular trading (many transactions, few wallets), volume without price movement (wash suspicion), serial creators without a single success, and a collapse below 20 % of the observed peak — then the token is rejected."
         },
         {
+          "h": "CONTRACT, HOLDERS, SMART MONEY",
+          "p": "For the best of each run the contract is checked (RugCheck, otherwise GoPlus): mint or freeze authority, honeypot and the like reject the token at once. Plus the holder picture — share of insider wallets, of the ten largest holders (on pump.fun excluding the bonding curve, which naturally holds most) and of the creator — and the holder count, whose growth feeds participation. King of the Hill (the pump.fun front page) counts as momentum. Smart money: wallets you enter in the settings; if two of them buy the same token, an alert goes out at once."
+        },
+        {
           "h": "PROJECT CHECK",
           "p": "For the best of each run: the website (sections, correct contract address, placeholder text), the domain age, GitHub (maintained, earlier projects) and on pump.fun the other coins of the same wallet. That is the question \"has this team ever delivered anything\" — for tokens without a site or code the only trace."
         },
@@ -3474,9 +3493,37 @@
         {
           "h": "X AND TIKTOK",
           "p": "X is connected through the paid Grok search (the same one the news use, off by default): one query per interval; only cited posts whose text really contains the address are counted, and distinct authors instead of posts — ten posts from one account are a shill, not a trend. TikTok offers no free access and would only work through paid scraping services; it is deliberately not built in."
+        },
+        {
+          "h": "OUTCOME TRACKING",
+          "p": "Every token that crosses the threshold and a random sample of all newly seen ones are re-checked after 1, 3 and 7 days: alive, curve completed, return, and whether it doubled at some point. Only the comparison with the random sample tells whether the score does better than luck — with a base rate of about 1 % curve completions that is the only honest question."
         }
       ],
-      "caveat": "Early-phase tokens are the riskiest class there is — most are worthless within hours. This lane has NO safety check yet (honeypot, mint and freeze rights); that only follows in the main check. The weights are assumptions that have to prove themselves in the outcome tracking. Not investment advice."
+      "caveat": "Early-phase tokens are the riskiest class there is — most are worthless within hours. The contract check here covers only the best of each run; the full check (liquidity lock, taxes, minimum age) only follows in the main check. The weights are assumptions that have to prove themselves in the outcome tracking. Not investment advice."
+    },
+    "hypeBoersen": {
+      "title": "Exchanges — being in before the listing",
+      "intro": "Almost no young project starts on a centralized exchange. The path leads via DEXs and preliminary stages upwards, and a listing on Binance, Coinbase or Upbit is for most the peak of attention. This page watches the ladder and measures how early the radar was.",
+      "sections": [
+        {
+          "g": "HOW THE WATCHER WORKS",
+          "h": "WHAT IS COMPARED",
+          "p": "The public market lists of Binance (spot and futures), Coinbase, Upbit, OKX, Bybit and Kraken (large exchanges), KuCoin, Gate, MEXC and Bitget (mid-sized) plus the Binance Alpha token list — all without keys. The first compare sets the baseline; new is what appears afterwards. An exchange that does not answer or returns only part of its list keeps its last good state — otherwise the next complete fetch would produce hundreds of seemingly new listings."
+        },
+        {
+          "h": "BINANCE ALPHA",
+          "p": "The preliminary stage: Binance adds tokens with their contract address there before (and whether) they reach the actual exchange. Because Alpha names the address, matching it to the radar is certain. A radar token being added to Alpha triggers an alert — that is the real early signal."
+        },
+        {
+          "h": "DID THE RADAR KNOW THE TOKEN?",
+          "p": "The radar remembers every contract that caught its attention, with two times: first seen and first flagged (early-phase threshold, passed scan, favourite). Only \"flagged\" counts as recognised in time. Exchanges mostly name only the ticker; then a radar token only counts as a hit if it is large enough to be listed (from USD 5 M) — otherwise it is probably a namesake."
+        },
+        {
+          "h": "ON THE WAY UP",
+          "p": "Flagged radar tokens that are already on Alpha or a mid-sized exchange but not yet on a large one. This is the list of candidates — not a forecast, just their position on the ladder."
+        }
+      ],
+      "caveat": "A listing guarantees nothing; many tokens fall after a big listing. The exchange endpoints are public but not documented for this purpose — if one fails, it is shown at that exchange. Not investment advice."
     }
   },
   "news": {
@@ -4254,7 +4301,7 @@
     "gestartet": "Run started — the list refreshes as soon as it is done.",
     "startFehler": "Run could not be started.",
     "ladeFehler": "Early phase could not be loaded.",
-    "erklaerung": "Tokens ahead of the main check (younger than 12 h or below USD 50,000 liquidity). The score measures acceleration against the token's own history, not size. No safety check yet.",
+    "erklaerung": "Tokens ahead of the main check (younger than 12 h or below USD 50,000 liquidity). The score measures acceleration against the token's own history, not size. Contract and holders are checked for the best; the full safety check follows in the main check.",
     "leer": "Nothing watched yet. Switch the early phase on via the gear or start a run by hand.",
     "substanzKurz": "Substance",
     "spalteToken": "Token",
@@ -4291,7 +4338,30 @@
     "spalteHandel": "Trading 1h",
     "spalteHandelTitel": "Distinct buyers / sellers in the last hour — where the source does not provide that, the number of transactions",
     "xChip": "X (Grok) {n} · {k} $ · {z}",
-    "xAutoren": "X: {n} distinct authors"
+    "xAutoren": "X: {n} distinct authors",
+    "boersen": "Exchanges",
+    "grund_sicherheit": "contract",
+    "halterKurz": "holders",
+    "spalteHalter": "Holders",
+    "spalteHalterTitel": "Last measured number of holders (RugCheck/GoPlus, for the best of each run)",
+    "signalKoth": "King of the Hill on pump.fun after {m} min",
+    "signalSmart": "{n} watched wallet(s) bought: {namen}",
+    "signalBoerse": "Already listed: {b}",
+    "gueteTitel": "Outcome tracking — does the score hit?",
+    "gueteLeer": "No measurements yet. Measured after 1, 3 and 7 days: tokens above the threshold against a random sample of all newly seen ones.",
+    "gueteGruppe": "Group",
+    "gueteGruppe_spitze": "above threshold",
+    "gueteGruppe_kontrolle": "random sample",
+    "gueteLebt": "alive",
+    "gueteKurve": "curve completed",
+    "gueteRendite": "Return (median)",
+    "gueteVerdoppelt": "at some point ≥ 2×",
+    "gueteOffen": "{n} still open",
+    "guete_zuWenig": "too few measurements for a verdict (10 per group)",
+    "guete_trefferBesser": "flagged tokens double more often than chance",
+    "guete_trefferNichtBesser": "flagged tokens do not double more often than chance",
+    "guete_lebtLaenger": "flagged tokens survive more often",
+    "guete_lebtNichtLaenger": "flagged tokens do not survive more often"
   },
   "hypeProjekt": {
     "titel": "Project check",
@@ -4317,5 +4387,42 @@
     "tage": "{n} days",
     "monate": "{n} months",
     "jahre": "{n} years"
+  },
+  "hypeBoersen": {
+    "aus": "Watching is off — compare by hand only (switch on via the gear above)",
+    "an": "compare every {n} min",
+    "letzter": "last compare {z}",
+    "jetzt": "Compare now",
+    "laeuft": "Comparing …",
+    "gestartet": "Compare started — the page refreshes as soon as it is done.",
+    "startFehler": "Compare could not be started.",
+    "ladeFehler": "Exchange watcher could not be loaded.",
+    "chipTitel": "{n} markets · as of {z}",
+    "erklaerung": "Young projects climb a ladder: DEX, then Binance Alpha or mid-sized exchanges, then the large ones. A listing at the top is usually the end of the easy part — you want to be in before. Only what the radar flagged before the listing counts.",
+    "stufe_alpha": "Binance Alpha",
+    "stufe_mittel": "Mid-sized exchanges",
+    "stufe_gross": "Large exchanges",
+    "erkannt": "flagged before / newly listed",
+    "vorlauf": "median {n} ahead",
+    "leiterTitel": "On the way up",
+    "leiterHinweis": "Radar tokens already on Binance Alpha or a mid-sized exchange. Those not yet on a large one come first.",
+    "leiterLeer": "None yet — the list fills as soon as flagged radar tokens appear on Alpha or mid-sized exchanges.",
+    "neuTitel": "New listings",
+    "neuLeer": "None yet. The first compare sets the baseline; new is what appears afterwards.",
+    "spalteToken": "Token",
+    "spalteBewertung": "Valuation",
+    "spalteGemeldet": "Radar flagged",
+    "spalteBoersen": "Listed on",
+    "spalteDatum": "Seen",
+    "spalteBoerse": "Exchange",
+    "spalteRadar": "Radar",
+    "vorTagen": "{n} ago",
+    "vorher": "flagged {n} before",
+    "ueberKuerzel": "by ticker",
+    "kuerzelTitel": "Matched by ticker: the radar token of the same name is large enough to be listed — certain only with a contract address.",
+    "namensvetter": "namesake? (same ticker, too small)",
+    "nurGesehen": "seen, not flagged",
+    "stunden": "{n} h",
+    "tage": "{n} days"
   }
 }
