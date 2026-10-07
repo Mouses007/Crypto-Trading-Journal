@@ -63,13 +63,75 @@ export const SPERRFRIST_MS = {
     info: 4 * 60 * 60 * 1000,
 }
 
-/** Prozentuale Veränderung, null wenn nicht rechenbar. */
+/** Zahl oder null — `Number(null)` ist 0 und wäre hier eine erfundene Messung. */
+const zahl = (w) => (w === null || w === undefined || w === '' ? null
+    : (Number.isFinite(Number(w)) ? Number(w) : null))
+
+/**
+ * Prozentuale Veränderung, null wenn nicht rechenbar.
+ *
+ * Eine fehlende Angabe ist nicht 0: Bis zum 07.10.2026 wurde eine Liquidität,
+ * die DexScreener gerade nicht nannte, zu „−100 % — auf 0 USD" und damit zu
+ * einem kritischen Alarm.
+ */
 function deltaPct(alt, neu) {
-    const a = Number(alt)
-    const b = Number(neu)
-    if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return null
+    const a = zahl(alt)
+    const b = zahl(neu)
+    if (a === null || b === null || a === 0) return null
     return ((b - a) / Math.abs(a)) * 100
 }
+
+/**
+ * Vergleichsbasis für Abflüsse: der HÖCHSTE Stand seit dem letzten Alarm, nicht
+ * der letzte Blick.
+ *
+ * Bis zum 07.10.2026 wurde jeder Takt nur mit dem vorigen verglichen. Ein Pool,
+ * der je Takt 25 % verliert, riss die 30-%-Schwelle damit nie — von 100 000 auf
+ * 31 000 USD ohne einen einzigen Alarm. Genau der Fall, für den der Wachhund
+ * gebaut ist (44 000 → 2 400 zwischen zwei Blicken), wurde so nur erkannt,
+ * wenn er in einen einzigen Takt passte.
+ *
+ * @param {number|null} referenz  bisherige Basis (oder null)
+ * @param {number|null} letzter   Stand beim letzten Blick (Altbestand ohne Basis)
+ */
+function basis(referenz, letzter) {
+    return zahl(referenz) ?? zahl(letzter)
+}
+
+/**
+ * Die nächste Vergleichsbasis — rein.
+ *
+ * Steigt der Wert, wandert die Basis mit (ein Abfluss vom Höchststand ist der
+ * Befund). Hat die Regel angeschlagen, beginnt die Zählung beim jetzigen Stand
+ * neu — sonst meldete jeder Takt denselben Abfluss erneut.
+ */
+export function naechsteBasis(referenz, letzter, neu, angeschlagen) {
+    const n = zahl(neu)
+    if (n === null) return basis(referenz, letzter)
+    if (angeschlagen) return n
+    const b = basis(referenz, letzter)
+    return b === null ? n : Math.max(b, n)
+}
+
+/**
+ * Wurde eine Schwelle gerade ÜBERSCHRITTEN (und nicht bloss: liegt darüber)?
+ * Unbekannter Vorwert zählt als „darunter" — der erste Blick darf melden.
+ */
+function ueberschreitet(alt, neu, schwelle) {
+    const n = zahl(neu)
+    if (n === null || Math.abs(n) < schwelle) return false
+    const a = zahl(alt)
+    return a === null || Math.abs(a) < schwelle
+}
+
+/*
+ * Verwerfungsgründe, die keine Vertragsfrage sind. Die Liquidität hat eine
+ * eigene Regel; ein Fund, der um 50 000 USD pendelt, kippte sonst bei jeder
+ * Nachprüfung zwischen „bestanden" und „verworfen" hin und her. `ungeprueft`
+ * heisst nur, dass GoPlus und RugCheck nichts geliefert haben — das ist ein
+ * Ausfall, kein Befund über den Token.
+ */
+const KEIN_VERTRAGSBEFUND = new Set(['liquiditaet_zu_klein', 'zu_jung', 'ungeprueft'])
 
 /**
  * Die Regeln — rein.
@@ -99,8 +161,10 @@ export function pruefeRegeln(fav, alt = {}, neu = {}, sichAlt = {}, sichNeu = nu
     }
 
     // ── Preis auf Tagessicht ────────────────────────────────────────────
-    const d24 = Number(neu.aenderung24h)
-    if (Number.isFinite(d24) && Math.abs(d24) >= r.preisSturz24hPct) {
+    // Beim ÜBERSCHREITEN, nicht solange darüber — sonst meldete ein Coin, der
+    // den ganzen Tag 50 % im Minus steht, alle vier Stunden dasselbe.
+    const d24 = zahl(neu.aenderung24h)
+    if (ueberschreitet(alt.aenderung24h, d24, r.preisSturz24hPct)) {
         alarme.push({
             regel: 'preis24h',
             schwere: 'warnung',
@@ -111,28 +175,43 @@ export function pruefeRegeln(fav, alt = {}, neu = {}, sichAlt = {}, sichNeu = nu
 
     // ── Liquidität ──────────────────────────────────────────────────────
     // Nur der ABFLUSS ist ein Alarm. Zufluss ist erfreulich, aber kein
-    // Handlungsdruck — und genau dafür sind Alarme da.
-    const dLiq = deltaPct(alt.liq, neu.liquiditaetUsd)
+    // Handlungsdruck — und genau dafür sind Alarme da. Verglichen wird mit
+    // dem Höchststand seit dem letzten Alarm (siehe `basis`).
+    const liqBasis = basis(alt.liqReferenz, alt.liq)
+    const dLiq = deltaPct(liqBasis, neu.liquiditaetUsd)
     if (dLiq !== null && dLiq <= -r.liqAbflussPct) {
         alarme.push({
             regel: 'liqAbfluss',
             schwere: 'kritisch',
-            meldung: `${s}: Liquidität ${dLiq.toFixed(0)} % — von ${Math.round(alt.liq)} auf ${Math.round(neu.liquiditaetUsd)} USD`,
-            daten: { vorher: Math.round(alt.liq), nachher: Math.round(neu.liquiditaetUsd), pct: Math.round(dLiq) },
+            meldung: `${s}: Liquidität ${dLiq.toFixed(0)} % — von ${Math.round(liqBasis)} auf ${Math.round(neu.liquiditaetUsd)} USD`,
+            daten: { vorher: Math.round(liqBasis), nachher: Math.round(neu.liquiditaetUsd), pct: Math.round(dLiq) },
         })
     }
 
     // ── Sicherheit ──────────────────────────────────────────────────────
-    // Kritisch ist der ÜBERGANG: eben noch in Ordnung, jetzt verworfen. Wer
-    // einen bereits verworfenen Fund anheftet, weiss das — ihn in jedem Takt
-    // erneut zu alarmieren wäre Lärm ohne Neuigkeit.
-    if (sichNeu && sichNeu.status === 'verworfen' && sichAlt?.status !== 'verworfen') {
-        alarme.push({
-            regel: 'sicherheit',
-            schwere: 'kritisch',
-            meldung: `${s}: Sicherheitsprüfung schlägt jetzt fehl — ${sichNeu.grund}`,
-            daten: { vorher: sichAlt?.status || 'unbekannt', grund: sichNeu.grund, hinweise: sichNeu.hinweise || [] },
-        })
+    // Kritisch ist der ÜBERGANG von einem BEKANNTEN „bestanden" zu einem
+    // Vertragsbefund. Bis zum 07.10.2026 genügte „vorher nicht verworfen" —
+    // also auch „vorher unbekannt": Jeder frisch angeheftete Fund, der schon im
+    // Lauf verworfen war, meldete beim ersten Nachprüfen „kritisch", ebenso
+    // jeder GoPlus-Aussetzer (`ungeprueft`) und jedes Pendeln um die
+    // Mindestliquidität.
+    if (sichNeu && sichNeu.status === 'verworfen' && !KEIN_VERTRAGSBEFUND.has(sichNeu.grund)) {
+        if (sichAlt?.status === 'bestanden') {
+            alarme.push({
+                regel: 'sicherheit',
+                schwere: 'kritisch',
+                meldung: `${s}: Sicherheitsprüfung schlägt jetzt fehl — ${sichNeu.grund}`,
+                daten: { vorher: 'bestanden', grund: sichNeu.grund, hinweise: sichNeu.hinweise || [] },
+            })
+        } else if (sichAlt?.status !== 'verworfen') {
+            // Erster Befund ohne Vorgeschichte: eine Auskunft, kein Umschwung.
+            alarme.push({
+                regel: 'sicherheit',
+                schwere: 'info',
+                meldung: `${s}: Nachprüfung — verworfen (${sichNeu.grund})`,
+                daten: { vorher: 'unbekannt', grund: sichNeu.grund, hinweise: sichNeu.hinweise || [] },
+            })
+        }
     }
 
     return alarme
@@ -173,8 +252,8 @@ export function pruefeRegelnBoerse(fav, alt = {}, neu = {}, regeln = STANDARD_AL
         })
     }
 
-    const d24 = Number(neu.aenderung24h)
-    if (Number.isFinite(d24) && Math.abs(d24) >= r.preisSturz24hPct) {
+    const d24 = zahl(neu.aenderung24h)
+    if (ueberschreitet(alt.aenderung24h, d24, r.preisSturz24hPct)) {
         alarme.push({
             regel: 'preis24h',
             schwere: 'warnung',
@@ -187,14 +266,20 @@ export function pruefeRegelnBoerse(fav, alt = {}, neu = {}, regeln = STANDARD_AL
      * Nur der Einbruch. Ein Umsatzanstieg ist eine gute Nachricht und steht
      * ohnehin in der Rangliste — Alarme sind für das, was Handlungsdruck
      * erzeugt.
+     *
+     * Verglichen wird mit dem Höchststand seit dem letzten Alarm. Der Umsatz
+     * ist ein ROLLIERENDER 24-Stunden-Wert: Von einem Takt zum nächsten fällt
+     * nur eine Viertelstunde heraus, eine Halbierung „seit dem letzten Blick"
+     * war damit praktisch unmöglich und die Regel stumm.
      */
-    const dUms = deltaPct(alt.umsatz, neu.umsatz24h)
+    const umsBasis = basis(alt.umsatzReferenz, alt.umsatz)
+    const dUms = deltaPct(umsBasis, neu.umsatz24h)
     if (dUms !== null && dUms <= -r.umsatzEinbruchPct) {
         alarme.push({
             regel: 'umsatzEinbruch',
             schwere: 'warnung',
-            meldung: `${s}: Umsatz ${dUms.toFixed(0)} % — von ${mioText(alt.umsatz)} auf ${mioText(neu.umsatz24h)}`,
-            daten: { vorher: Math.round(alt.umsatz), nachher: Math.round(neu.umsatz24h), pct: Math.round(dUms) },
+            meldung: `${s}: Umsatz ${dUms.toFixed(0)} % — von ${mioText(umsBasis)} auf ${mioText(neu.umsatz24h)}`,
+            daten: { vorher: Math.round(umsBasis), nachher: Math.round(neu.umsatz24h), pct: Math.round(dUms) },
         })
     }
 
@@ -302,12 +387,15 @@ export async function wachhundLauf() {
                 const alarmeB = fav.stumm ? [] : pruefeRegelnBoerse(fav, altB, neuB, regeln)
                 ausgeloest += await meldeAlarme(knex, fav, alarmeB, einst, jetzt)
 
+                const umsatzAlarm = alarmeB.some((a) => a.regel === 'umsatzEinbruch')
                 await knex('hype_favoriten').where('id', fav.id).update({
                     letzteDaten: JSON.stringify({
                         preis: neuB.preisUsd,
                         umsatz: neuB.umsatz24h,
+                        umsatzReferenz: naechsteBasis(altB.umsatzReferenz, altB.umsatz, neuB.umsatz24h, umsatzAlarm),
                         spreadBp: neuB.spreadBp,
                         funding: neuB.fundingJahresRate,
+                        aenderung24h: neuB.aenderung24h,
                         ts: jetzt,
                     }),
                 })
@@ -315,7 +403,12 @@ export async function wachhundLauf() {
             }
 
             if (!fav.contractAddress) continue
-            const details = await dexDetails(fav.contractAddress)
+            /*
+             * `streng`: Ein Ausfall von DexScreener ist kein „Paar weg" — er
+             * wirft und wird unten als Warnung protokolliert, statt dass der
+             * Favorit mit leeren Daten verglichen wird.
+             */
+            const details = await dexDetails(fav.contractAddress, { streng: true })
             if (!details?.markt) continue
             const neu = details.markt
 
@@ -344,13 +437,22 @@ export async function wachhundLauf() {
 
             // Vergleichsbasis fortschreiben — auch bei stummen Favoriten,
             // sonst schlägt nach dem Entstummen alles auf einmal an.
+            const liqAlarm = alarme.some((a) => a.regel === 'liqAbfluss')
             const stand = {
                 preis: neu.preisUsd,
                 liq: neu.liquiditaetUsd,
+                liqReferenz: naechsteBasis(alt.liqReferenz, alt.liq, neu.liquiditaetUsd, liqAlarm),
                 vol24: neu.volumen24h,
+                aenderung24h: neu.aenderung24h,
                 ts: jetzt,
             }
-            const sichStand = sichNeu
+            /*
+             * Ein Prüf-AUSFALL (`ungeprueft`) überschreibt den bekannten Stand
+             * nicht — sonst würde aus „bestanden" still „verworfen", und die
+             * nächste echte Nachprüfung meldete keinen Übergang mehr. Ohne
+             * Zeitstempel wird im nächsten Takt erneut geprüft.
+             */
+            const sichStand = sichNeu && sichNeu.grund !== 'ungeprueft'
                 ? { ...sichNeu, geprueftAm: jetzt }
                 : sichAlt
             await knex('hype_favoriten').where('id', fav.id).update({

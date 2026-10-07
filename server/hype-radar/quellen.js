@@ -447,7 +447,10 @@ function ausPaarBasis(p, seite) {
             // Zusammenführung nur diese Felder überträgt.
             dex: String(p?.dexId || ''),
             preisUsd: Number(p?.priceUsd) || null,
-            liquiditaetUsd: Number(p?.liquidity?.usd) || 0,
+            // Fehlt die Angabe (Bindungskurven nennen keine), bleibt sie
+            // unbekannt — eine 0 hiesse „Pool leer" und löste beim Wachhund
+            // einen kritischen Alarm aus.
+            liquiditaetUsd: zahlOderNull(p?.liquidity?.usd),
             volumen24h: Number(p?.volume?.h24) || 0,
             volumen6h: Number(p?.volume?.h6) || 0,
             volumen1h: Number(p?.volume?.h1) || 0,

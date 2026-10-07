@@ -335,11 +335,15 @@ async function messeHype(a) {
     }
     const start = zahl(a.preisStart)
     const ende = zahl(d.markt.preisUsd)
+    const liq = d.markt.liquiditaetUsd === null || d.markt.liquiditaetUsd === undefined
+        ? null : zahl(d.markt.liquiditaetUsd)
     return {
         preisEnde: ende,
         renditePct: start > 0 && ende !== null ? ((ende - start) / start) * 100 : null,
-        liquiditaetEnde: zahl(d.markt.liquiditaetUsd),
-        nochHandelbar: (Number(d.markt.liquiditaetUsd) || 0) > 0 ? 1 : 0,
+        liquiditaetEnde: liq,
+        // Ein Paar ohne Liquiditätsangabe (Bindungskurve) gibt es noch — es
+        // ist handelbar; erst eine gemeldete Null heisst „leer".
+        nochHandelbar: liq === null || liq > 0 ? 1 : 0,
     }
 }
 

@@ -24,35 +24,70 @@ export function erreichtSchwere(schwere, minSchwere) {
     return (RANG[schwere] ?? 0) >= (RANG[minSchwere] ?? 0)
 }
 
+/** Wiederholbar: Netzfehler, Zeitüberschreitung, Überlast und Serverfehler. */
+const wiederholbar = (status) => status === undefined || status === 429 || status >= 500
+
+/**
+ * POST mit EINER Wiederholung nach kurzer Pause.
+ *
+ * Bis zum 07.10.2026 gab es keinen zweiten Versuch — und die Sperrfrist des
+ * Alarms war beim Zustellen schon verbraucht. Ein einzelner Aussetzer des
+ * ntfy-Servers verschluckte damit einen kritischen Alarm für eine Stunde.
+ */
 async function post(url, { kopf = {}, body }) {
-    const abbruch = new AbortController()
-    const uhr = setTimeout(() => abbruch.abort(), ABRUF_TIMEOUT_MS)
-    try {
-        const r = await fetch(url, { method: 'POST', headers: kopf, body, signal: abbruch.signal })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    } finally {
-        clearTimeout(uhr)
+    let letzter
+    for (let versuch = 0; versuch < 2; versuch++) {
+        const abbruch = new AbortController()
+        const uhr = setTimeout(() => abbruch.abort(), ABRUF_TIMEOUT_MS)
+        let status
+        try {
+            const r = await fetch(url, { method: 'POST', headers: kopf, body, signal: abbruch.signal })
+            if (r.ok) return
+            status = r.status
+            letzter = new Error(`HTTP ${r.status}`)
+        } catch (e) {
+            letzter = e
+        } finally {
+            clearTimeout(uhr)
+        }
+        if (!wiederholbar(status) || versuch === 1) break
+        await new Promise((f) => setTimeout(f, 2000))
     }
+    throw letzter
 }
 
 /**
- * ntfy: POST an <url>/<topic>, Priorität aus der Schwere.
+ * ntfy: als JSON an die Wurzel-Adresse, Priorität aus der Schwere.
  * Kritisches klingelt (urgent), Informatives bleibt still einsortiert.
+ *
+ * JSON statt Kopfzeilen: Ein HTTP-Header darf nur Latin-1 tragen, und ein
+ * Titel wie `币安 (liqAbfluss)` oder ein Emoji-Kürzel warf unter Node 22
+ * „Cannot convert argument to a ByteString" — der Alarm kam nie an, und der
+ * Test-Knopf („TEST") konnte das nicht zeigen. Im JSON-Rumpf ist UTF-8
+ * selbstverständlich.
  */
 async function ntfy(alarm, fav, kanal, geheim) {
     const basis = String(kanal.url || '').replace(/\/+$/, '')
     const topic = String(kanal.topic || 'hype-radar').trim()
     if (!basis) throw new Error('keine ntfy-Adresse hinterlegt')
-    const prioritaet = { kritisch: '5', warnung: '4', info: '3' }[alarm.schwere] || '3'
-    await post(`${basis}/${encodeURIComponent(topic)}`, {
+    await post(basis, {
         kopf: {
-            Title: `${fav.symbol} (${alarm.regel})`,
-            Priority: prioritaet,
-            Tags: alarm.schwere === 'kritisch' ? 'rotating_light' : 'chart_with_downwards_trend',
+            'Content-Type': 'application/json',
             ...(geheim.ntfyToken ? { Authorization: `Bearer ${geheim.ntfyToken}` } : {}),
         },
-        body: alarm.meldung,
+        body: JSON.stringify(ntfyNachricht(alarm, fav, topic)),
     })
+}
+
+/** Der ntfy-Rumpf — rein, damit prüfbar. */
+export function ntfyNachricht(alarm, fav, topic = 'hype-radar') {
+    return {
+        topic,
+        title: `${fav?.symbol || '?'} (${alarm.regel})`,
+        message: alarm.meldung,
+        priority: { kritisch: 5, warnung: 4, info: 3 }[alarm.schwere] || 3,
+        tags: [alarm.schwere === 'kritisch' ? 'rotating_light' : 'chart_with_downwards_trend'],
+    }
 }
 
 /** Telegram: die Bot-API braucht nur Token und Chat-Id. */

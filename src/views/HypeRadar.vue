@@ -992,7 +992,11 @@ const liveOffen = ref(null)
 const liveLaedt = ref(false)
 let liveTakt = null
 
-const favSchluessel = (k) => `${k.symbol}|${k.chain || ''}`
+/*
+ * Der Vertrag gehört zum Schlüssel: „PEPE auf Solana" gibt es hundertfach.
+ * Ohne ihn zeigte der Stern eines Klons auch das Original als angeheftet.
+ */
+const favSchluessel = (k) => `${k.symbol}|${k.chain || ''}|${String(k.contractAddress || '').toLowerCase()}`
 const favNach = computed(() => new Map(favoriten.value.map((f) => [favSchluessel(f), f])))
 const istFav = (k) => favNach.value.has(favSchluessel(k))
 

@@ -172,10 +172,9 @@ export async function leseSchluessel() {
  * sah den zweiten scheinbar nicht wirken. `onConflict().merge()` macht daraus
  * einen Aufruf.
  */
-export async function schreibeEinstellungen(neu = {}) {
+export async function schreibeEinstellungen(neu = {}, zusatzVorgaben = {}) {
     const jetzt = Date.now()
-    const zeilen = Object.entries(neu)
-        .filter(([k]) => k in VORGABEN)
+    const zeilen = Object.entries(bereinigeEinstellungen(neu, zusatzVorgaben))
         .map(([schluessel, v]) => ({ schluessel, wert: JSON.stringify(v), aktualisiertAm: jetzt }))
     if (!zeilen.length) return
 
@@ -183,6 +182,71 @@ export async function schreibeEinstellungen(neu = {}) {
         .insert(zeilen)
         .onConflict('schluessel')
         .merge(['wert', 'aktualisiertAm'])
+}
+
+/*
+ * Diese verschachtelten Einstellungen werden nur mit ihren ABWEICHUNGEN von der
+ * Vorgabe gespeichert.
+ *
+ * Die Oberfläche bekommt beim Lesen die aufgefüllten Werte und schickt beim
+ * Speichern das ganze Objekt zurück. Bis zum 07.10.2026 lag danach jede
+ * Vorgabe als „eigene Einstellung" in der Datenbank — beim ersten Umlegen
+ * irgendeines Schalters. Eine spätere Änderung an `STANDARD_ALARM_REGELN`
+ * oder `STANDARD_SICHERHEIT` erreichte diese Installation nie mehr: genau die
+ * zweite Wahrheit, die der leere `alarmRegeln`-Eintrag oben verhindern sollte.
+ */
+const NUR_ABWEICHUNGEN = new Set(['alarmRegeln', 'sicherheit', 'gewichte'])
+
+/**
+ * `''` und Unzahlen sind keine Einstellung.
+ *
+ * Ein geleertes Zahlenfeld kommt über `v-model.number` als `''` an. Gespeichert
+ * wirkte es wie 0: Alarmregeln schlugen bei 0,1 % an, und `liq < ''` ist
+ * `liq < 0` — die Mindestliquidität der Sicherheitsprüfung war damit still
+ * abgeschaltet. Jetzt fällt so ein Feld auf die Vorgabe zurück.
+ */
+function alsZahl(w) {
+    if (w === '' || w === null || w === undefined || typeof w === 'boolean') return undefined
+    const z = Number(w)
+    return Number.isFinite(z) ? z : undefined
+}
+
+/**
+ * Was gespeichert wird — rein, ohne Datenbank.
+ *
+ * @param {object} neu             was die Oberfläche schickt
+ * @param {object} zusatzVorgaben  Vorgaben, die hier nicht stehen dürfen
+ *                                 (`alarmRegeln` kommt aus `wachhund.js`)
+ */
+export function bereinigeEinstellungen(neu = {}, zusatzVorgaben = {}) {
+    const vorgaben = { ...VORGABEN, ...zusatzVorgaben }
+    const raus = {}
+    for (const [k, v] of Object.entries(neu || {})) {
+        if (!(k in VORGABEN)) continue
+        const vorgabe = vorgaben[k]
+        if (typeof vorgabe === 'number') {
+            const z = alsZahl(v)
+            if (z !== undefined) raus[k] = z
+            continue
+        }
+        if (NUR_ABWEICHUNGEN.has(k) && v && typeof v === 'object' && !Array.isArray(v)) {
+            const abweichung = {}
+            for (const [feld, wert] of Object.entries(v)) {
+                const d = vorgabe?.[feld]
+                if (typeof d === 'number') {
+                    const z = alsZahl(wert)
+                    if (z === undefined || z === d) continue
+                    abweichung[feld] = z
+                } else if (wert !== d) {
+                    abweichung[feld] = wert
+                }
+            }
+            raus[k] = abweichung
+            continue
+        }
+        raus[k] = v
+    }
+    return raus
 }
 
 /**

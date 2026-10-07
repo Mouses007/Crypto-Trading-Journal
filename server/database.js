@@ -2910,9 +2910,33 @@ async function runMigrations(knex, client) {
             t.string('pairAddress').defaultTo('')
             t.string('narrative').defaultTo('')
             t.bigInteger('erstelltAm').defaultTo(0)
-            t.unique(['symbol', 'chain'], 'uq_hype_fav')
+            // Mit Vertrag: „PEPE auf Solana" gibt es hundertfach (siehe v19 unten).
+            t.unique(['symbol', 'chain', 'contractAddress'], 'uq_hype_fav_vertrag')
         })
         console.log(' -> Created table: hype_favoriten')
+    }
+
+    /*
+     * v19: Ein Favorit ist ein VERTRAG, kein Kürzel.
+     *
+     * Der alte Schlüssel (symbol, chain) liess je Kette genau einen „PEPE" zu.
+     * Wer erst einen Klon und dann das Original anheftete, bekam den Klon
+     * zurück — und der Wachhund beobachtete den falschen Token. Ein älterer
+     * Codestand prüft vor dem Einfügen selbst auf (symbol, chain) und läuft
+     * mit dem weiteren Schlüssel unverändert.
+     */
+    if (await knex.schema.hasTable('hype_favoriten')) {
+        try {
+            // PostgreSQL: knex legt `t.unique` als CONSTRAINT an; zur Sicherheit
+            // fällt auch ein gleichnamiger Index.
+            if (isPg) await knex.raw('ALTER TABLE "hype_favoriten" DROP CONSTRAINT IF EXISTS "uq_hype_fav"')
+            await knex.raw(isPg ? 'DROP INDEX IF EXISTS "uq_hype_fav"' : 'DROP INDEX IF EXISTS `uq_hype_fav`')
+            await knex.raw(isPg
+                ? 'CREATE UNIQUE INDEX IF NOT EXISTS "uq_hype_fav_vertrag" ON "hype_favoriten" ("symbol", "chain", "contractAddress")'
+                : 'CREATE UNIQUE INDEX IF NOT EXISTS `uq_hype_fav_vertrag` ON `hype_favoriten` (`symbol`, `chain`, `contractAddress`)')
+        } catch (e) {
+            console.warn(`[DB] Favoriten-Schlüssel konnte nicht umgestellt werden: ${e.message}`)
+        }
     }
 
     /*

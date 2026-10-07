@@ -76,7 +76,9 @@ export function setupHypeRadarRoutes(app) {
     app.put('/api/hype-radar/einstellungen', async (req, res) => {
         try {
             const { schluessel, ...rest } = req.body || {}
-            await schreibeEinstellungen(rest)
+            // Die Alarmschwellen nur als Abweichung speichern — die Vorgaben
+            // leben in `wachhund.js` und sollen dort änderbar bleiben.
+            await schreibeEinstellungen(rest, { alarmRegeln: STANDARD_ALARM_REGELN })
             if (schluessel) await schreibeSchluessel(schluessel)
             const e = await leseEinstellungen()
             res.json({
@@ -206,9 +208,15 @@ export function setupHypeRadarRoutes(app) {
             const s = String(symbol || '').trim().toUpperCase()
             if (!s) return res.status(400).json({ error: 'Symbol fehlt' })
             const knex = getKnex()
-            // Doppelklick auf den Stern darf keine zweite Zeile anlegen.
+            /*
+             * Doppelklick auf den Stern darf keine zweite Zeile anlegen. Der
+             * Vertrag gehört zur Identität: „PEPE auf Solana" gibt es
+             * hundertfach, und bis zum 07.10.2026 bekam, wer das Original nach
+             * einem Klon anheftete, den Klon zurück.
+             */
             const vorhanden = await knex('hype_favoriten')
-                .where({ symbol: s, chain: String(chain || '') }).first()
+                .where({ symbol: s, chain: String(chain || ''), contractAddress: String(contractAddress || '') })
+                .first()
             if (vorhanden) return res.json(vorhanden)
             const [eingefuegt] = await knex('hype_favoriten').insert({
                 symbol: s,
@@ -462,24 +470,40 @@ async function laufRoute(req, res, mitBericht) {
     if (laufAktiv) {
         return res.status(429).json({ error: 'Es läuft bereits ein Durchgang. Bitte warten.' })
     }
-
-    let einst
+    /*
+     * Die Sperre greift SOFORT, vor dem ersten `await`. Bis zum 07.10.2026
+     * wurde sie erst nach dem Lesen der Einstellungen gesetzt — über das Netz
+     * zur NAS-Postgres dauert das spürbar, und zwei schnelle Klicks starteten
+     * zwei bezahlte Berichte.
+     */
+    laufAktiv = true
+    let uebergeben = false
     try {
-        einst = await leseEinstellungen()
-    } catch (e) {
-        return res.status(500).json({ error: 'Einstellungen nicht lesbar' })
-    }
-
-    if (mitBericht) {
-        const fehlt = await fehlendeSchluessel(einst)
-        if (fehlt.length) {
-            return res.status(400).json({
-                error: `Für den Bericht fehlen Zugangsdaten: ${fehlt.join(', ')}. `
-                    + 'Bitte in den KI-Einstellungen hinterlegen.',
-            })
+        let einst
+        try {
+            einst = await leseEinstellungen()
+        } catch (e) {
+            return res.status(500).json({ error: 'Einstellungen nicht lesbar' })
         }
-    }
 
+        if (mitBericht) {
+            const fehlt = await fehlendeSchluessel(einst)
+            if (fehlt.length) {
+                return res.status(400).json({
+                    error: `Für den Bericht fehlen Zugangsdaten: ${fehlt.join(', ')}. `
+                        + 'Bitte in den KI-Einstellungen hinterlegen.',
+                })
+            }
+        }
+        uebergeben = true
+        await fuehreLaufRoute(res, einst, mitBericht)
+    } finally {
+        // Den eigentlichen Lauf gibt `fuehreLaufRoute` selbst frei.
+        if (!uebergeben) laufAktiv = false
+    }
+}
+
+async function fuehreLaufRoute(res, einst, mitBericht) {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -489,7 +513,6 @@ async function laufRoute(req, res, mitBericht) {
     const istAbgebrochen = beobachteAbbruch(res)
     const sende = sseSender(res, istAbgebrochen)
 
-    laufAktiv = true
     try {
         sende({ type: 'start', mitBericht })
         const melde = (stand) => sende({ type: 'fortschritt', ...stand })
@@ -540,18 +563,23 @@ export function startHypeTakt() {
             const einst = await leseEinstellungen()
             if (!einst.aktiv) return
 
+            /*
+             * Erst die eigene Sperre, DANN der Anspruch. Andersherum verbrauchte
+             * ein gerade laufender Handlauf den Anspruch des Takts — und der
+             * geplante Bericht fiel für das ganze Intervall (sechs Stunden) aus.
+             */
+            if (laufAktiv) return
             const stunden = Math.max(1, Number(einst.intervallStunden) || 6)
             if (!(await beansprucheAufgabe(ANSPRUCH, stunden * 3600 * 1000))) return
-
             if (laufAktiv) return
-            const fehlt = await fehlendeSchluessel(einst)
-            if (fehlt.length) {
-                await meldeFehler(ANSPRUCH, `Zugangsdaten fehlen: ${fehlt.join(', ')}`)
-                return
-            }
 
             laufAktiv = true
             try {
+                const fehlt = await fehlendeSchluessel(einst)
+                if (fehlt.length) {
+                    await meldeFehler(ANSPRUCH, `Zugangsdaten fehlen: ${fehlt.join(', ')}`)
+                    return
+                }
                 const { id, bericht } = await scanneUndBerichte(einst, () => {}, 'auto')
                 console.log(id
                     ? ` -> Hype-Radar: Bericht ${id} erstellt`
