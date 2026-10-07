@@ -2319,6 +2319,7 @@
     "reason_weekday_blocked": "Entry fell on a blocked weekday",
     "reason_macd_filter": "Rejected by the MACD filter",
     "reason_macro_ma_filter": "Against the higher-level trend",
+    "reason_phantom_window_edge": "Phantom: level was already consumed (detector bug up to v1, cleaned up)",
     "set_and_forget": {
       "groupZones": "Zones",
       "dirLong": "Long only",

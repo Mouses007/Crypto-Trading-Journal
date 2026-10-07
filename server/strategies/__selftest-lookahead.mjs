@@ -63,7 +63,9 @@ function replay(detect, candles, params, ab = 5) {
         })
 
         for (const s of setups) {
-            const setup = { ...s, id: id++ }
+            // `erkanntBei`: die Kerze, mit deren Schluss das Setup entstand —
+            // für die Prüfung, dass kein Setup verspätet aus Altem entsteht.
+            const setup = { ...s, id: id++, erkanntBei: sicht[sicht.length - 1].t }
             offene.push(setup)
             alle.push(setup)
             bekannt.add(`${s.direction}|${s.obCandleTime}`)
@@ -269,6 +271,7 @@ const safParams = standard(setAndForget, {
 
 let emaEinstiege = 0
 let lsobEinstiege = 0
+let lsobSetups = 0
 let safEinstiege = 0
 
 for (const seed of [42, 1337, 20260816]) {
@@ -302,11 +305,27 @@ for (const seed of [42, 1337, 20260816]) {
     check(`LSOB (Seed ${seed}) — ${lTrig.length} Einstiege, Referenzverhalten unverändert`,
         lFrueh.length === 0,
         lFrueh.length ? `${lFrueh.length} zu früh` : '')
+
+    // Kein Setup aus einem schon verbrauchten Level. Ein Sweep wird erkannt,
+    // sobald Reaktion und Impuls da sind — spätestens `impulseMaxCandles`
+    // Kerzen danach. Detector-Version 1 suchte ab dem Fensteranfang und legte
+    // Setups an, deren Sweep 200 Kerzen zurücklag: das Level war damals schon
+    // abgeräumt, nur lag das inzwischen vor dem Fenster. Im Papierbetrieb
+    // wurden sie rückwirkend ausgelöst und als Trades nachgebucht.
+    const grenze = lsobParams.impulseMaxCandles + lsobParams.oppositeCandles + 2
+    lsobSetups += l.length
+    const verspaetet = l.filter((s) => (s.erkanntBei - Number(s.sweepCandleTime)) / TF_MS > grenze)
+    check(`LSOB (Seed ${seed}) — ${l.length} Setups, keines später als ${grenze} Kerzen nach seinem Sweep`,
+        verspaetet.length === 0,
+        verspaetet.length
+            ? `${verspaetet.length} verspätet, z. B. ${((verspaetet[0].erkanntBei - Number(verspaetet[0].sweepCandleTime)) / TF_MS).toFixed(0)} Kerzen`
+            : '')
 }
 
 // Eine Prüfung, die nie etwas zu prüfen hatte, beweist nichts.
 check(`EMA Touch hat überhaupt gehandelt (${emaEinstiege} Einstiege)`, emaEinstiege > 0)
 check(`LSOB hat überhaupt gehandelt (${lsobEinstiege} Einstiege)`, lsobEinstiege > 0)
+check(`LSOB hat überhaupt Setups erkannt (${lsobSetups})`, lsobSetups > 0)
 check(`Set and Forget hat überhaupt gehandelt (${safEinstiege} Einstiege)`, safEinstiege > 0)
 
 // ── 3. EMA Touch: gebauter Fall ──────────────────────────────────────────

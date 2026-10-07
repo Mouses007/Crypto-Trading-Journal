@@ -128,10 +128,26 @@ console.log('\nOffene und geschlossene Positionen')
 // Maschine), sondern nur, DASS die Ereignisschleife zwischendurch drankommt.
 console.log('\nEreignisschleife während des Backtests')
 {
+    // Fester Zufallsverlauf statt der früheren Sinuskurve: auf der fand LSOB
+    // seit Detector-Version 2 kein einziges Setup mehr — alle Trades, die sie
+    // vorher lieferte, kamen aus längst verbrauchten Levels (siehe lsob.js,
+    // Phase A). „Trades > 0" unten wäre damit eine Prüfung ohne Gegenstand.
+    let zustand = 7 >>> 0
+    const zufall = () => {
+        zustand = (zustand + 0x6D2B79F5) >>> 0
+        let t = Math.imul(zustand ^ (zustand >>> 15), 1 | zustand)
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    let kurs = 60000
     const kerzen = Array.from({ length: 6000 }, (_, i) => {
-        const b = 60000 + Math.sin(i / 13) * 900 + Math.sin(i / 97) * 2500
-        return { t: Date.UTC(2026, 0, 1) + i * STUNDE, o: b, h: b * 1.004, l: b * 0.996,
-                 c: b * 1.0005, v: 100, closeTime: Date.UTC(2026, 0, 1) + (i + 1) * STUNDE - 1 }
+        const o = kurs
+        const c = Math.max(1000, o + (zufall() - 0.5) * 1500)
+        const h = Math.max(o, c) + zufall() * 720
+        const l = Math.min(o, c) - zufall() * 720
+        kurs = c
+        return { t: Date.UTC(2026, 0, 1) + i * STUNDE, o, h, l, c,
+                 v: 100, closeTime: Date.UTC(2026, 0, 1) + (i + 1) * STUNDE - 1 }
     })
 
     let takte = 0

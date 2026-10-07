@@ -25,7 +25,9 @@ import {
     isBull, isBear, bodyHigh, bodyLow, range, hasRejectionCandle, tagGesperrt,
 } from './indicators.js'
 
-export const DETECTOR_VERSION = 1
+// 2 (07.10.2026): Sweep-Suche ab dem Pivot statt ab dem Fensteranfang —
+// Version 1 erzeugte Setups aus längst verbrauchten Levels (siehe Phase A).
+export const DETECTOR_VERSION = 2
 
 /** Gründe, aus denen ein Setup ungültig wird — 1:1 die Fälle aus PDF 1. */
 export const INVALID_REASONS = {
@@ -388,12 +390,25 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
         for (const pivot of pivots) {
             // Kein Blick in die Zukunft: das Pivot gilt erst als bekannt, wenn
             // seine Bestätigungskerzen durch sind.
-            const earliestSweep = Math.max(pivot.index + p.swingConfirmBars + 1, scanFrom)
+            //
+            // Gesucht wird ab dem PIVOT, nicht ab dem Anfang des Suchfensters.
+            // Bis zum 07.10.2026 stand hier `max(…, scanFrom)`: lag der erste
+            // Sweep eines Levels vor dem Fenster, sah die Schleife nicht mehr,
+            // dass das Level schon abgeräumt oder durchbrochen war, und nahm
+            // den nächsten Docht durch dasselbe Level als neuen Sweep. Das
+            // Setup entstand bis zu `scanWindowCandles` Kerzen zu spät, wurde
+            // rückwirkend ausgelöst und im Papierbetrieb nachgebucht —
+            // gemessen 105 von 149 Papier-Trades, und auf 70 Tagen BTC 15m
+            // 413 statt 72 Setups.
+            const earliestSweep = pivot.index + p.swingConfirmBars + 1
             const level = pivot.price
             const tol = Math.abs(level) * (p.equalHighTolerancePct / 100)
 
             for (let i = earliestSweep; i < candles.length; i++) {
                 const k = candles[i]
+                // Vor dem Fenster wird nur festgestellt, OB das Level schon
+                // verbraucht ist — gezählt und angelegt wird nur im Fenster.
+                const imFenster = i >= scanFrom
 
                 // Ein späteres, stärkeres Pivot macht dieses hier gegenstandslos
                 if (direction === 'short' && k.c > level + tol) break
@@ -402,23 +417,29 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
                 const wickBreaks = direction === 'short' ? k.h > level : k.l < level
                 if (!wickBreaks) continue
 
-                diagnostics.sweepsFound++
+                if (imFenster) diagnostics.sweepsFound++
                 const rkey = `${direction}|${k.t}`
 
                 // Fall »Equal Highs«: das Level wird nur egalisiert, nicht
                 // wirklich gesweept → keine Liquidität geholt (PDF 1, INVALID)
                 const exceeded = direction === 'short' ? k.h - level : level - k.l
-                if (exceeded <= tol) { reject(INVALID_REASONS.EQUAL_HIGHS, rkey); continue }
+                if (exceeded <= tol) { if (imFenster) reject(INVALID_REASONS.EQUAL_HIGHS, rkey); continue }
 
                 // Der Docht muss ein echter Docht sein, kein Körperbruch
                 const kRange = range(k)
                 if (kRange > 0 && (exceeded / kRange) * 100 < p.sweepMinWickPct) {
-                    reject(INVALID_REASONS.EQUAL_HIGHS, rkey); continue
+                    if (imFenster) reject(INVALID_REASONS.EQUAL_HIGHS, rkey)
+                    continue
                 }
 
                 // Schlusskurs muss zurück hinter das Level — sonst ist es ein Ausbruch
                 const closedBack = direction === 'short' ? k.c < level : k.c > level
                 if (!closedBack) continue
+
+                // Ab hier endet jeder Weg mit `break`: ob Setup, gescheiterte
+                // Reaktion oder schon bekannt — das Level ist verbraucht. Ein
+                // solcher Sweep vor dem Fenster verbraucht es genauso.
+                if (!imFenster) break
 
                 const reaction = checkReaction(candles, i, direction, p, atrSeries)
                 if (!reaction.ok) { reject(reaction.reason, rkey); break }

@@ -2319,6 +2319,7 @@
     "reason_weekday_blocked": "Einstieg fiel auf einen gesperrten Wochentag",
     "reason_macd_filter": "Vom MACD-Filter abgelehnt",
     "reason_macro_ma_filter": "Gegen den übergeordneten Trend",
+    "reason_phantom_window_edge": "Phantom: Level war schon verbraucht (Detektor-Fehler bis v1, bereinigt)",
     "set_and_forget": {
       "groupZones": "Zonen",
       "dirLong": "Nur Long",
