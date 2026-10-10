@@ -444,6 +444,14 @@ class SymbolRecorder {
     _writeFrame(slot) {
         const { mid } = this.book.bestPrices()
         if (!mid) return
+        // Aufräumen wie im Browser-Feed (liveFeed.js): Diffs legen Level weit
+        // ausserhalb an, die nie wieder ein Delete sehen — ohne Prune wachsen
+        // die Maps über Tage unbegrenzt, und die Binning-Schleifen unten werden
+        // jede Sekunde teurer. Das Band bleibt ein Vielfaches des Aufzeichnungsbereichs.
+        if (slot - (this._letzterPrune || 0) >= 30000) {
+            this._letzterPrune = slot
+            this.book.prune(mid, Math.max(0.03, 3 * this.rangePct / 100))
+        }
         if (!this.bucketSize) {
             this.bucketSize = pickBucketSize(this.tickSize, mid, this.rangePct, this.rows)
         }
