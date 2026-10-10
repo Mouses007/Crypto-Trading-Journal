@@ -342,7 +342,9 @@ const WIEDERHOLUNG_MS = 30 * 60 * 1000
  * ihre Quellen sind die langsamen, und ihre Fenster schliessen sich (ein Token
  * ohne Kerzen in GeckoTerminal ist nach Wochen nicht mehr nachzumessen).
  */
-export const DECKEL_JE_ART = { frueh: 20, hype: 20, coinradar: 40 }
+// Frühphase knapp: jede Messung kostet bis zu zwei GeckoTerminal-Abrufe, und dort
+// gehen nur fünf je Minute — der Durchgang braucht sie für die Käufer.
+export const DECKEL_JE_ART = { frueh: 4, hype: 20, coinradar: 40 }
 
 /** Ein Durchgang hört nach so langer Zeit auf; der Rest wartet auf den nächsten. */
 const DURCHGANG_MS = 150e3

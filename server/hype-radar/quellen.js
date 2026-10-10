@@ -88,7 +88,13 @@ class Eimer {
 const EIMER = {
     'api.dexscreener.com': new Eimer(50),      // Reserve zu den erlaubten 60
     'api.coingecko.com': new Eimer(25),        // Demo-Kontingent ~30
-    'api.geckoterminal.com': new Eimer(25),
+    /*
+     * Gemessen am 10.10.2026 (ruhige NAS, 15 Abrufe je Minute): fünf kamen durch,
+     * dann eine halbe Minute nur 429. Die dokumentierten 30 je Minute gelten nicht —
+     * mit 25 kamen im Lauf die Käufer für 30 von 149 Token an, 4 von 5 Sammelabfragen
+     * scheiterten. Fünf je Minute, ein Abruf alle zwölf Sekunden.
+     */
+    'api.geckoterminal.com': new Eimer(5),
     'api.gopluslabs.io': new Eimer(30),
     /*
      * Reddit drosselt spürbar. Gemessen am 21.08.2026: bei 20 s Abstand kam
@@ -192,13 +198,13 @@ export async function holeJson(url, { timeout = ABRUF_TIMEOUT_MS, kopf = {} } = 
                 const fehler = Object.assign(new Error(`HTTP ${r.status}`), { status: r.status })
                 /*
                  * 429 einmal nachfassen, nach der Wartezeit, die der Dienst
-                 * nennt (höchstens zehn Sekunden). Das Kontingent gilt je IP —
+                 * nennt (höchstens fünfzehn, sonst zwölf Sekunden). Das Kontingent gilt je IP —
                  * NAS und Entwicklungsrechner teilen es —, und GeckoTerminal
                  * lässt am 10.10.2026 nur fünf Abfragen kurz hintereinander durch.
                  */
                 if (r.status === 429) {
                     const sagt = Number(r.headers.get('retry-after'))
-                    throw Object.assign(fehler, { warteMs: Number.isFinite(sagt) && sagt > 0 ? Math.min(10000, sagt * 1000) : 3000 })
+                    throw Object.assign(fehler, { warteMs: Number.isFinite(sagt) && sagt > 0 ? Math.min(15000, sagt * 1000) : 12000 })
                 }
                 // Sonst nur bei Serverfehlern nachfassen.
                 if (r.status < 500) throw Object.assign(fehler, { endgueltig: true })
