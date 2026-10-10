@@ -51,6 +51,7 @@
         <!-- ══ Einstellungen ═════════════════════════════════════════ -->
         <div v-if="einstOffen" class="mt-3">
             <div v-if="einst" class="hypEinst">
+                <div class="hypEinstTeil" :style="teilStil('haupt')" v-show="teilSichtbar('haupt')">
                 <div class="form-check form-switch mb-3">
                     <input id="hypAktiv" class="form-check-input" type="checkbox"
                         v-model="einst.aktiv" @change="speichern">
@@ -186,7 +187,10 @@
                         <div class="hypHinweis">{{ t('hype.keyHinweis.' + q) }}</div>
                     </div>
                 </div>
+                </div>
 
+                <div class="hypEinstTrenner" :style="{ order: 99 }">{{ t('hype.einstGemeinsam') }}</div>
+                <div class="hypEinstTeil" :style="teilStil('projekt')" v-show="teilSichtbar('projekt')">
                 <!-- Projektprüfung: Webseite, Domain-Alter, GitHub, Ersteller.
                      Kostet keinen Schlüssel, aber Fremdabrufe je Fund —
                      deshalb gedeckelt. -->
@@ -206,7 +210,9 @@
                             class="form-control form-control-sm hypZahl" :disabled="!einst.projektPruefung" @change="speichern">
                     </div>
                 </div>
+                </div>
 
+                <div class="hypEinstTeil" :style="teilStil('frueh')" v-show="teilSichtbar('frueh')">
                 <!-- Frühphase: die Spur VOR der Hauptprüfung. Eigener Takt,
                      eigene Quellen, eigene Alarmschwelle. -->
                 <h6 class="hypTitel mt-4">{{ t('hype.fruehTitel') }}</h6>
@@ -292,7 +298,9 @@
                     </div>
                     <div class="hypHinweis">{{ t('hype.smartHinweis') }}</div>
                 </template>
+                </div>
 
+                <div class="hypEinstTeil" :style="teilStil('boersen')" v-show="teilSichtbar('boersen')">
                 <!-- Börsen-Beobachter -->
                 <h6 class="hypTitel mt-4">{{ t('hype.boersenwachtTitel') }}</h6>
                 <p class="hypHinweis">{{ t('hype.boersenwachtHinweis') }}</p>
@@ -318,7 +326,9 @@
                         </div>
                     </div>
                 </div>
+                </div>
 
+                <div class="hypEinstTeil" :style="teilStil('wachhund')" v-show="teilSichtbar('wachhund')">
                 <!-- Wachhund & Alarme -->
                 <h6 class="hypTitel mt-4">{{ t('hype.wachhundTitel') }}</h6>
                 <p class="hypHinweis">{{ t('hype.wachhundHinweis') }}</p>
@@ -378,7 +388,9 @@
                             class="form-control form-control-sm hypZahl" @change="speichern">
                     </div>
                 </div>
+                </div>
 
+                <div class="hypEinstTeil" :style="teilStil('kanaele')" v-show="teilSichtbar('kanaele')">
                 <!-- Zustellkanäle -->
                 <h6 class="hypTitel mt-4">{{ t('hype.kanaeleTitel') }}</h6>
                 <p class="hypHinweis">{{ t('hype.kanaeleHinweis') }}</p>
@@ -452,7 +464,9 @@
                     {{ t('hype.kanaeleTesten') }}
                 </button>
                 <span v-if="testErgebnis" class="ms-2 small">{{ testErgebnis }}</span>
+                </div>
 
+                <div class="hypEinstTeil" :style="teilStil('ki')" v-show="teilSichtbar('ki')">
                 <!-- KI-Stufe -->
                 <h6 class="hypTitel mt-4">{{ t('hype.kiTitel') }}</h6>
                 <p class="hypHinweis">{{ t('hype.kiHinweis') }}</p>
@@ -514,6 +528,7 @@
                         {{ t('hype.schluesselFehlt', { anbieter: fehlendeSchluessel.join(', ') }) }}
                     </p>
                 </div>
+                </div>
             </div>
         </div>
 
@@ -557,7 +572,9 @@
                     <div v-for="a in sichtbareAlarme" :key="a.id" class="hypAlarm"
                         :class="[a.schwere, { gelesen: a.gelesen }]">
                         <span class="hypAlarmSchwere">{{ t('hype.schwere_' + a.schwere) }}</span>
-                        <span class="hypAlarmText">{{ a.meldung }}</span>
+                        <span v-if="alarmZiel(a)" class="hypAlarmText hypAlarmLink" role="button" tabindex="0"
+                            :title="t('hype.alarmOeffnen')" @click="alarmOeffnen(a)" @keydown.enter.prevent="alarmOeffnen(a)">{{ a.meldung }}</span>
+                        <span v-else class="hypAlarmText">{{ a.meldung }}</span>
                         <span class="hypAlarmZeit">{{ zeitpunkt(a.erstelltAm) }}</span>
                         <span role="button" tabindex="0" class="hypAlarmWeg" :class="{ scharf: alarmLoeschId === a.id }"
                             :title="t('hype.loeschen')" @keydown.enter.stop.prevent="alarmLoeschen(a.id)" @keydown.space.stop.prevent="alarmLoeschen(a.id)" @click.stop="alarmLoeschen(a.id)">
@@ -892,7 +909,7 @@
 
         <!-- ══ Frühphase ═════════════════════════════════════════════ -->
         <div v-show="reiter === 'fruehphase'" class="mt-3">
-            <FruehphaseAnsicht :aktiv="reiter === 'fruehphase'" :einst="einst" @favoriten="ladeFavoriten" />
+            <FruehphaseAnsicht :aktiv="reiter === 'fruehphase'" :einst="einst" :fokus="String(route.query.token || '')" @favoriten="ladeFavoriten" />
         </div>
 
         <!-- ══ Börsen ═══════════════════════════════════════════════ -->
@@ -1215,6 +1232,24 @@ async function favEntfernen(f) {
     }
 }
 
+/*
+ * Ein Alarm führt zu seinem Coin: der eines Favoriten in dessen Live-Fenster,
+ * einer der Frühphase oder des Börsen-Beobachters in die Frühphase, dort
+ * aufgeklappt. Ohne Favorit und ohne Vertrag gibt es kein Ziel.
+ */
+function alarmZiel(a) {
+    const fav = a.favoritId ? favoriten.value.find((f) => f.id === a.favoritId) : null
+    if (fav) return { favorit: fav }
+    if (a.daten?.contract) return { contract: String(a.daten.contract) }
+    return null
+}
+function alarmOeffnen(a) {
+    const z = alarmZiel(a)
+    if (!z) return
+    if (z.favorit) liveOeffnen(z.favorit)
+    else router.push({ path: '/hype-radar/fruehphase', query: { token: z.contract } })
+}
+
 async function liveOeffnen(f) {
     // Zweiter Klick auf denselben Chip schliesst.
     if (liveOffen.value?.favorit?.id === f.id) { liveSchliessen(); return }
@@ -1464,6 +1499,21 @@ const REITER = ['berichte', 'fruehphase', 'boersen']
  * Scan-Knöpfe und die Warnung zu fehlenden KI-Schlüsseln gehören dort nicht hin.
  */
 const eigeneAnsicht = computed(() => ['fruehphase', 'boersen'].includes(route.params.reiter))
+
+/*
+ * Das Zahnrad ist ein Feld für alle vier Ansichten. Jede zeigt zuerst ihre
+ * eigenen Einstellungen, darunter, was für alle gilt (Projektprüfung, Wachhund,
+ * Kanäle); die Teile der anderen Ansichten stehen dort. Vorher sah man in der
+ * Frühphase zuerst eine Bildschirmhöhe Regler des Haupt-Scans.
+ */
+const EINST_TEILE = { haupt: ['haupt', 'ki'], frueh: ['frueh'], boersen: ['boersen'] }
+const EINST_GEMEINSAM = ['projekt', 'wachhund', 'kanaele']
+const einstAnsicht = computed(() => ({ fruehphase: 'frueh', boersen: 'boersen' }[route.params.reiter] || 'haupt'))
+const teilSichtbar = (teil) => EINST_GEMEINSAM.includes(teil) || EINST_TEILE[einstAnsicht.value].includes(teil)
+function teilStil(teil) {
+    const i = EINST_TEILE[einstAnsicht.value].indexOf(teil)
+    return { order: i >= 0 ? i : 100 + EINST_GEMEINSAM.indexOf(teil) }
+}
 const infoAbschnitt = computed(() => ({ fruehphase: 'info.hypeFrueh', boersen: 'info.hypeBoersen' }[route.params.reiter] || 'info.hypeRadar'))
 const reiter = computed(() => (REITER.includes(route.params.reiter) ? route.params.reiter : 'dashboard'))
 
@@ -2601,6 +2651,8 @@ watch(locale, () => zeichne())
 .hypAlarm.warnung { border-left-color: var(--orange-color, #ffb300); }
 .hypAlarm.kritisch { border-left-color: var(--red-color, #e06c75); }
 .hypAlarm.gelesen { opacity: .55; }
+.hypAlarmLink { cursor: pointer; }
+.hypAlarmLink:hover { text-decoration: underline; color: var(--blue-color, #01B4FF); }
 
 .hypAlarmSchwere {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2956,6 +3008,17 @@ watch(locale, () => zeichne())
 /* ── Einstellungen ──────────────────────────────────────────────── */
 .hypEinst {
     max-width: 46rem;
+    display: flex;
+    flex-direction: column;
+}
+.hypEinstTrenner {
+    margin-top: 1.75rem;
+    padding-top: .75rem;
+    border-top: 1px solid var(--white-10, rgba(255, 255, 255, .1));
+    font-size: .8rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--grey-text, #8a9199);
 }
 
 .hypZahl {

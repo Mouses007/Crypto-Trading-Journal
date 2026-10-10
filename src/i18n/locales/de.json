@@ -1256,7 +1256,9 @@
     "fruehKandidatAb": "Kandidat ab Note",
     "fruehKandidatHinweis": "Kandidat ist ein meldefähiger Token (Vertrag und Projekt geprüft, mindestens drei Teilnoten, davon zwei aus dem Markt, mindestens 20 Transaktionen in der letzten Stunde) mit einer Note ab diesem Wert. Bewusst tiefer als die Meldeschwelle: die Liste zeigt, was du ansehen solltest, die Meldung, was du nicht verpassen darfst.",
     "guete_filterNichtGesichert": "Filter: kein gesicherter Unterschied",
-    "guete_noteNichtGesichert": "Note: kein gesicherter Unterschied"
+    "guete_noteNichtGesichert": "Note: kein gesicherter Unterschied",
+    "einstGemeinsam": "Gilt für alle Ansichten — die Einstellungen von Übersicht, Frühphase und Börsen stehen jeweils dort",
+    "alarmOeffnen": "Coin öffnen"
   },
   "kiUebersicht": {
     "laedt": "Übersicht wird geladen …",
@@ -4686,7 +4688,8 @@
     "guete_lebt_nichtGesichert": "Leben: kein gesicherter Unterschied",
     "guete_kurve_besser": "Spitze schafft die Kurve gesichert öfter",
     "guete_kurve_schlechter": "Spitze schafft die Kurve gesichert seltener",
-    "guete_kurve_nichtGesichert": "Kurve: kein gesicherter Unterschied"
+    "guete_kurve_nichtGesichert": "Kurve: kein gesicherter Unterschied",
+    "fokusFehlt": "Dieser Token wird nicht mehr beobachtet (verdrängt oder nach drei Tagen Funkstille vergessen)."
   },
   "hypeProjekt": {
     "titel": "Projektprüfung",

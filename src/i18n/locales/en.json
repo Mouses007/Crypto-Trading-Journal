@@ -1256,7 +1256,9 @@
     "fruehKandidatAb": "Candidate from score",
     "fruehKandidatHinweis": "A candidate is an alert-eligible token (contract and project checked, at least three sub-scores, two of them from the market, at least 20 transactions in the last hour) with a score from this value. Deliberately below the alert threshold: the list shows what you should look at, the alert what you must not miss.",
     "guete_filterNichtGesichert": "Filter: no significant difference",
-    "guete_noteNichtGesichert": "Score: no significant difference"
+    "guete_noteNichtGesichert": "Score: no significant difference",
+    "einstGemeinsam": "Applies to all views — the settings of overview, early phase and exchanges are found in each of them",
+    "alarmOeffnen": "Open coin"
   },
   "kiUebersicht": {
     "laedt": "Loading overview …",
@@ -4686,7 +4688,8 @@
     "guete_lebt_nichtGesichert": "Alive: no significant difference",
     "guete_kurve_besser": "Top completes the curve significantly more often",
     "guete_kurve_schlechter": "Top completes the curve significantly less often",
-    "guete_kurve_nichtGesichert": "Curve: no significant difference"
+    "guete_kurve_nichtGesichert": "Curve: no significant difference",
+    "fokusFehlt": "This token is no longer watched (crowded out or forgotten after three quiet days)."
   },
   "hypeProjekt": {
     "titel": "Project check",

@@ -78,6 +78,10 @@
                         <input type="checkbox" v-model="mitVerworfenen" @change="lade"> {{ t('hypeFrueh.verworfeneZeigen') }}
                     </label>
                 </div>
+                <p v-if="fokusFehlt" class="fpHinweis">
+                    {{ t('hypeFrueh.fokusFehlt') }}
+                    <a :href="'https://dexscreener.com/search?q=' + encodeURIComponent(fokusFehlt.contract)" target="_blank" rel="noopener noreferrer">DexScreener ↗</a>
+                </p>
                 <template v-if="rohOffen">
                     <p class="fpGrau small mt-2">{{ t('hypeFrueh.alleHinweis') }}</p>
                     <div v-if="zeilen === null" class="text-muted small"><span class="spinner-border spinner-border-sm"></span></div>
@@ -85,7 +89,7 @@
 
                     <!-- Telefon: Karten -->
                     <div v-else-if="istTelefon" class="fpListe">
-                        <div v-for="z in zeilen" :key="z.id" class="fpKarte" :class="{ fpDuenn: z.duenn }" :title="z.duenn ? t('hypeFrueh.duennTitel') : null" @click="umschalten(z.id)">
+                        <div v-for="z in zeilen" :id="'fp-' + z.id" :key="z.id" class="fpKarte" :class="{ fpDuenn: z.duenn }" :title="z.duenn ? t('hypeFrueh.duennTitel') : null" @click="umschalten(z.id)">
                             <div class="fpKarteZeile">
                                 <SternKnopf :z="z" @stern="sternUmschalten" />
                                 <strong>{{ z.symbol || kurz(z.contract) }}</strong>
@@ -127,7 +131,7 @@
                             </thead>
                             <tbody>
                                 <template v-for="z in zeilen" :key="z.id">
-                                    <tr class="fpZeile" :class="{ fpDuenn: z.duenn }" :title="z.duenn ? t('hypeFrueh.duennTitel') : null" @click="umschalten(z.id)">
+                                    <tr :id="'fp-' + z.id" class="fpZeile" :class="{ fpDuenn: z.duenn, fpFokus: offen === z.id && fokusId === z.id }" :title="z.duenn ? t('hypeFrueh.duennTitel') : null" @click="umschalten(z.id)">
                                         <td>
                                             <SternKnopf :z="z" @stern="sternUmschalten" />
                                             <strong>{{ z.symbol || kurz(z.contract) }}</strong>
@@ -236,7 +240,7 @@
  * Die Daten holt die Seite selbst, sobald sie sichtbar ist, und während eines
  * Durchgangs alle drei Sekunden — danach alle zwei Minuten, solange offen.
  */
-import { ref, computed, watch, onBeforeUnmount, h, defineComponent } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount, h, defineComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import ProjektPruefung from './ProjektPruefung.vue'
@@ -248,6 +252,8 @@ const props = defineProps({
     aktiv: { type: Boolean, default: false },
     /** Die Hype-Radar-Einstellungen (nur gelesen: Takt an/aus, Intervall). */
     einst: { type: Object, default: null },
+    /** Vertrag eines Tokens, der geöffnet werden soll (Klick auf einen Alarm). */
+    fokus: { type: String, default: '' },
 })
 /** `favoriten`: ein Stern wurde gesetzt oder entfernt — die Übersicht lädt ihre Liste neu. */
 const emit = defineEmits(['favoriten'])
@@ -432,6 +438,30 @@ onBeforeUnmount(() => clearTimeout(uhr))
 function umschalten(id) {
     offen.value = offen.value === id ? null : id
 }
+
+/*
+ * Sprung aus einem Alarm: die ganze Liste samt Verworfenen öffnen, den Token
+ * aufklappen und hinscrollen. Ein gemeldeter Token kann inzwischen verworfen
+ * oder vergessen sein — dann steht das da, mit dem Weg zu DexScreener.
+ */
+const fokusId = ref(null)
+const fokusFehlt = ref(null)
+async function fokussiere(contract) {
+    const c = String(contract || '')
+    if (!c) return
+    fokusFehlt.value = null
+    rohOffen.value = true
+    mitVerworfenen.value = true
+    await lade()
+    const gleich = (a) => (/^0x/i.test(c) ? String(a || '').toLowerCase() === c.toLowerCase() : String(a || '') === c)
+    const z = (daten.value?.zeilen || []).find((x) => gleich(x.contract))
+    if (!z) { fokusFehlt.value = { contract: c }; return }
+    offen.value = z.id
+    fokusId.value = z.id
+    await nextTick()
+    document.getElementById('fp-' + z.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+watch(() => [props.aktiv, props.fokus], ([a, f]) => { if (a && f) fokussiere(f) }, { immediate: true })
 
 // ── Darstellung ─────────────────────────────────────────────────────────
 const hatZahl = (w) => w !== null && w !== undefined && w !== '' && Number.isFinite(Number(w))
@@ -827,6 +857,10 @@ const sortiereBefunde = (b) => [...b].sort((x, y) => ['minus', 'plus', 'info'].i
     color: var(--red-color, #e05252);
 }
 /* Geliefert, aber nicht vollständig (z. B. Teilabfragen gedrosselt) — der Hinweis steht im Tooltip. */
+/* Aus einem Alarm angesprungen */
+.fpZeile.fpFokus > td {
+    background: rgba(1, 180, 255, .10);
+}
 .fpQuelle.teils {
     color: #e0b030;
 }
