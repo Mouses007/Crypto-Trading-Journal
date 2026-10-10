@@ -469,13 +469,24 @@ export function setupLivetradingRoutes(app) {
                 const eintraege = await Promise.all(Object.entries(LIMIT).map(async ([z, n]) =>
                     [z, await getClosedCandles(symbol, z, n)]))
                 const kerzen = Object.fromEntries(eintraege)
+                /*
+                 * Zwei Fehler, zwei Bedeutungen: 400 heisst „dieses Symbol gibt
+                 * es am Spotmarkt nicht" (1000PEPE …) und ist ein Dauerzustand.
+                 * Alles andere — Zeitüberschreitung, 429, 5xx — ist eine
+                 * Störung, die beim nächsten Abruf weg sein kann. Beides als
+                 * „kein Spotmarkt" zu melden war falsch: BTC stand nach einem
+                 * Container-Neustart als Münze ohne Spotmarkt da.
+                 */
                 let spot = null
+                let spotStatus = 'ok'
                 try {
                     spot = await getClosedCandles(symbol, tf, 500, { market: 'spot' })
+                    if (!spot?.length) spotStatus = 'fehlt'
                 } catch (e) {
-                    spot = null
+                    spotStatus = e?.response?.status === 400 ? 'fehlt' : 'gestoert'
+                    if (spotStatus === 'gestoert') logWarn('livetrading', `Momentum: Spot ${symbol} ${tf} nicht erreichbar`, e.message)
                 }
-                return { symbol, ...werteMomentumAus({ kerzen, spot, chartTf: tf }), spotVerfuegbar: Boolean(spot?.length) }
+                return { symbol, ...werteMomentumAus({ kerzen, spot, chartTf: tf }), spotVerfuegbar: spotStatus === 'ok', spotStatus }
             })
             sendeRadar(res, nutzlast)
         } catch (e) {

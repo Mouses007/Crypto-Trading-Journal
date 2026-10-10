@@ -4185,6 +4185,7 @@
       "herkunft_spot": "spot unusually high",
       "herkunft_normal": "normal split",
       "herkunft_keinSpot": "no spot market under this symbol",
+      "herkunft_gestoert": "spot data currently unreachable",
       "herkunft_unbekannt": "not enough candles for a verdict yet",
       "keinBruch": "no break yet",
       "vorKerzen": "{n} candles ago",

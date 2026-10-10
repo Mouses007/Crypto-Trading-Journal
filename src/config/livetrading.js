@@ -37,16 +37,15 @@
 import { baueKachelListe, macheSortierer } from './kachel-registry.js'
 
 /**
- * Standardanordnung — die im echten Handel bewährte Aufstellung: die beiden
- * grossen Arbeitsflächen (Bookmap, Hebelkarte) zuoberst, direkt darunter das
- * Kurzfristige (Mechanik, Liquidationen, eigene Positionen), dann Markt-
- * positionierung und Aussenwelt, die Nachschlage-Kacheln zuletzt. Ersetzt die
- * frühere „von innen nach aussen"-Ordnung, bei der die Charts erst nach
- * zweimal Scrollen kamen.
+ * Standardanordnung — die vom Nutzer eingerichtete Aufstellung (10.10.2026):
+ * zuoberst die beiden Arbeitsflächen (Bookmap, Hebelkarte) nebeneinander,
+ * darunter Momentum Radar und Kompakt. Alles Übrige steht in der
+ * Kompakt-Kachel und startet ausgeblendet; die Reihenfolge dahinter gilt
+ * nur noch für den, der eine Einzelkachel wieder einblendet.
  */
 export const STANDARD_REIHENFOLGE = [
     'bookmap', 'hebelkarte',
-    'kompakt', 'momentum',
+    'momentum', 'kompakt',
     'handelslage',
     'mechanik', 'liqticker', 'positionen',
     'coinradar', 'lsoi', 'indizes', 'funding',
@@ -76,10 +75,11 @@ const DEFINITIONEN = [
         icon: 'uil uil-list-ul',
         endpunkt: null,
         intervallMs: Infinity,
-        // Eine Spalte: so steht sie neben dem Momentum Radar, und lange
-        // Zeilen kürzen sich mit „…" statt die Kachel zu verbreitern.
-        spalten: 1,
-        hoehe: 380,
+        // Zwei Spalten, gleich breit wie der Momentum Radar daneben — die vom
+        // Nutzer eingerichtete Aufstellung (10.10.2026): oben Bookmap und
+        // Liquidationskarte, darunter Momentum Radar und Kompakt.
+        spalten: 2,
+        hoehe: 320,
         // Die Gross-Ansicht wäre dieselbe Liste, nur breiter
         gross: false,
         quelle: 'die übrigen Kacheln dieser Seite',
@@ -94,11 +94,12 @@ const DEFINITIONEN = [
         titleKey: 'livetrading.momentum.title',
         icon: 'uil uil-heartbeat',
         endpunkt: '/api/livetrading/momentum',
-        params: { tf: '15m' },
+        // 4h = Swing-Modus: die vom Nutzer gewählte Grundeinstellung
+        params: { tf: '4h' },
         symbolAbhaengig: true,
         intervallMs: 60 * 1000,
         spalten: 2,
-        hoehe: 380,
+        hoehe: 320,
         quelle: 'Binance-Kerzen (Futures + Spot) · Rechnung nach Mo\'s Momentum Radar',
     },
     {
@@ -277,7 +278,7 @@ const DEFINITIONEN = [
         // Standardhöhe in Pixeln (sonst gälte die Rasterhöhe von 270): als
         // oberste Arbeitsfläche braucht der Chart von Anfang an echte Höhe,
         // nicht erst nach dem Ziehen am Anfasser.
-        hoehe: 559,
+        hoehe: 690,
         gross: false,
         // Hängt an einem eigenen Strom und meldet dessen Zustand selbst ans
         // Raster. Siehe `eigenerStrom` in `useKachelRaster.js`.
@@ -295,7 +296,7 @@ const DEFINITIONEN = [
         intervallMs: Infinity,
         spalten: 2,
         minSpalten: 2,
-        hoehe: 546,
+        hoehe: 690,
         gross: false,
         eigenerStrom: true,
         quelle: 'Modell auf Basis der eigenen Aufzeichnung',

@@ -4185,6 +4185,7 @@
       "herkunft_spot": "Spot ungewöhnlich hoch",
       "herkunft_normal": "normale Aufteilung",
       "herkunft_keinSpot": "kein Spotmarkt unter diesem Symbol",
+      "herkunft_gestoert": "Spotdaten gerade nicht erreichbar",
       "herkunft_unbekannt": "noch zu wenig Kerzen für ein Urteil",
       "keinBruch": "noch kein Bruch",
       "vorKerzen": "vor {n} Kerzen",

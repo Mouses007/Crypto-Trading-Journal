@@ -194,6 +194,7 @@ const letzter = computed(() => props.daten?.letzterPunkt || null)
 
 const her = computed(() => props.daten?.herkunft || {})
 const herkunftText = computed(() => {
+    if (props.daten?.spotStatus === 'gestoert') return t('livetrading.momentum.herkunft_gestoert')
     if (!props.daten?.spotVerfuegbar) return t('livetrading.momentum.herkunft_keinSpot')
     if (!her.value.urteil) return t('livetrading.momentum.herkunft_unbekannt')
     return t('livetrading.momentum.herkunft_' + her.value.urteil)
