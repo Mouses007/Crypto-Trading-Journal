@@ -267,11 +267,11 @@ onMounted(async () => {
                 <span class="sf-info" data-bs-toggle="tooltip" data-bs-placement="right" :title="tooltips.periodRange"><i class="uil uil-info-circle"></i></span>
                 <select @input="inputDateRange($event.target.value)" class="form-select form-select-sm sf-select">
                     <option v-for="item in periodRange" :key="item.value" :value="item.value"
-                        :selected="item.value == selectedPeriodRange.value">{{ item.label }}</option>
+                        :selected="item.value == selectedPeriodRange?.value">{{ item.label }}</option>
                 </select>
             </div>
             <!-- Custom date range -->
-            <div v-if="has('periodRange') && selectedPeriodRange.value != 'all'" class="sf-date-range">
+            <div v-if="has('periodRange') && selectedPeriodRange && selectedPeriodRange.value != 'all'" class="sf-date-range">
                 <input type="date" class="form-control form-control-sm sf-date"
                     :value="useDateCalFormat(selectedDateRange.start)"
                     @input="inputDateRangeCal('start', $event.target.value)" />
