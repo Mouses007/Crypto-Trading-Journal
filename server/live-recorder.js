@@ -38,6 +38,13 @@ const WS_BASE = {
 }
 // forceOrder liegt auf der /market-Route, nicht auf /public
 const LIQ_WS_BASE = 'wss://fstream.binance.com/market/ws/'
+// Seitenkanal je Symbol: forceOrder + aggTrade teilen sich EINE Verbindung
+// (beide liegen bei Futures auf /market; Spot kennt keine Routen-Trennung und
+// keine Liquidationen — dort läuft nur aggTrade).
+const SIDE_WS = {
+    futures: (sym) => `wss://fstream.binance.com/market/stream?streams=${sym}@forceOrder/${sym}@aggTrade`,
+    spot: (sym) => `wss://stream.binance.com:9443/stream?streams=${sym}@aggTrade`,
+}
 
 // Sammelstrom: nur diese Symbole werden gespeichert (deckungsgleich mit den
 // Favoriten der Live-Analyse). Symbole mit eigenem Orderbuch-Recorder werden
@@ -62,6 +69,14 @@ const LIQ_RETENTION_DAYS = 365
  * also nur, wenn das Wegschreiben dauerhaft scheitert. Genau dafür ist er da.
  */
 const LIQ_PUFFER_MAX = 5000
+/**
+ * Obergrenze des ungeschriebenen aggTrade-Puffers je Symbol. BTC liegt in
+ * lebhaften Stunden bei 50–150k aggTrades; Crash-Stunden ÜBERSCHREITEN 300k —
+ * der Deckel ist also kein reiner Fehlerfall-Schutz. Getrimmte Stunden werden
+ * zum Re-Merge markiert (siehe Handler), damit die DB-Zeile trotzdem den
+ * vollen Bestand behält; nur der RAM-Puffer bleibt gedeckelt.
+ */
+const TRADE_PUFFER_MAX = 300000
 const MAX_BACKOFF_MS = 60000
 /**
  * Wartezeit vor dem nächsten Verbindungsversuch.
@@ -142,6 +157,13 @@ class SymbolRecorder {
         this.liqTotal = 0
         this.liqReconnect = null
         this.liqAttempt = 0
+        // aggTrades laufen über dieselbe Seitenkanal-Verbindung wie die
+        // Liquidationen; eigener Puffer, eigene Zeile (kind 'trades').
+        this.tradeEvents = []
+        this.tradeUnsaved = 0
+        this.tradeTotal = 0
+        // Stunden, deren DB-Altbestand (voriger Lauf) schon übernommen wurde
+        this._tradesUebernommen = new Set()
         this.pending = []
         this.buffering = true
         this.tickSize = null
@@ -172,8 +194,15 @@ class SymbolRecorder {
         // musste. Ein einzelner Neuaufbau ist Alltag und heilt sich selbst —
         // erst eine Serie heisst, dass wirklich keine Daten mehr kommen.
         this.stilleSerie = 0
-        // Fehlgeschlagene Upserts — beim nächsten Flush erneut versuchen
+        // Fehlgeschlagene Upserts — beim nächsten Flush erneut versuchen.
+        // pendingRows trägt nur noch HEAT-Zeilen: für die ist der Voll-Rewrite
+        // korrekt. Gescheiterte Liquidations-Zeilen wandern als EREIGNISSE in
+        // pendingLiq und werden beim nächsten Flush über buildLiqRow neu gegen
+        // den DB-Bestand gemischt — eine fertig gebaute Alt-Zeile trüge den
+        // Stand von damals, und der .merge() ersetzte das Payload komplett:
+        // alles, was seither für dieselbe Stunde geschrieben wurde, wäre weg.
         this.pendingRows = []
+        this.pendingLiq = []
         // Persistenz läuft seriell: Stundenwechsel-, Intervall- und Stop-Flush
         // dürfen sich nicht überlappen (siehe _flush)
         this._flushChain = Promise.resolve()
@@ -204,6 +233,8 @@ class SymbolRecorder {
         this.frameTimer = this.flushTimer = this.watchdogTimer = this.reconnectTimer = this.snapshotTimer = null
         clearTimeout(this.liqReconnect)
         this.liqReconnect = null
+        clearTimeout(this._kontrolleTimer)
+        this._kontrolleTimer = null
         for (const sock of [this.ws, this.liqWs]) {
             if (!sock) continue
             sock.removeAllListeners()
@@ -216,42 +247,76 @@ class SymbolRecorder {
     // ── Verbindung + Buch ───────────────────────────────────
 
     /**
-     * Zweite, entkoppelte Verbindung für Zwangsliquidationen.
+     * Zweite, entkoppelte Verbindung: Zwangsliquidationen UND aggTrades.
      *
-     * Der Grund, warum das mitgeschnitten wird: Binance gibt Liquidationen
-     * nicht rückwirkend heraus (das Archiv hatte sie nur für Coin-M und hat
-     * im Oktober 2024 aufgehört). Wer ein Modell gegen echte Liquidationen
-     * prüfen will, muss sie selbst sammeln — und das kostet fast nichts,
-     * ein paar Ereignisse je Minute und Symbol.
+     * Der Grund, warum die Liquidationen mitgeschnitten werden: Binance gibt
+     * sie nicht rückwirkend heraus (das Archiv hatte sie nur für Coin-M und
+     * hat im Oktober 2024 aufgehört). Wer ein Modell gegen echte
+     * Liquidationen prüfen will, muss sie selbst sammeln.
      *
-     * Stille ist hier der Normalfall, deshalb kein Watchdog: eine Verbindung,
-     * die minutenlang nichts sendet, ist gesund und darf nicht neu aufgebaut
-     * werden.
+     * Die aggTrades hängen an derselben Verbindung, weil beide Ströme auf
+     * /market liegen — und sie sind das, was der Wiedergabe bisher fehlte:
+     * ohne Trades kann das Replay nicht zeigen, ob eine Wand verteidigt oder
+     * gepullt wurde. Spot kennt keine Liquidationen; dort läuft nur aggTrade.
+     *
+     * Stille ist auf dem forceOrder-Teil der Normalfall, deshalb kein
+     * Watchdog: eine Verbindung, die minutenlang nichts sendet, kann gesund
+     * sein (illiquides Symbol) und darf nicht zwangsweise neu aufgebaut werden.
      */
     _connectLiquidations() {
-        if (this.stopped || !this.isFutures) return   // Spot kennt keine Liquidationen
+        if (this.stopped) return
         clearTimeout(this.liqReconnect)
         this.liqReconnect = null
         loeseSocket(this.liqWs)
-        const liqWs = new WebSocket(`${LIQ_WS_BASE}${this.symbol.toLowerCase()}@forceOrder`)
+        const liqWs = new WebSocket(SIDE_WS[this.market](this.symbol.toLowerCase()))
         this.liqWs = liqWs
 
         liqWs.on('open', () => {
             if (this.liqWs !== liqWs) return
             this.liqAttempt = 0
-            console.log(` -> [recorder] ${this.symbol}: Liquidations-Stream verbunden`)
+            console.log(` -> [recorder] ${this.symbol}: Seitenkanal verbunden (Liquidationen + Trades)`)
         })
         liqWs.on('message', (raw) => {
             if (this.liqWs !== liqWs) return
             let msg
             try { msg = JSON.parse(raw) } catch (e) { return }
-            const o = (msg.data || msg).o
+            const data = msg.data || msg
+            if (data.e === 'aggTrade') {
+                // Kompakt als Array: Zeit, Preis, Menge, Seite.
+                // ACHTUNG andere Seitenkonvention als bei Liquidationen:
+                // hier heisst 1 „Käufer war aggressiv" (m=false → Taker kauft),
+                // exakt wie TradeRing.pushBinanceTrade im Browser.
+                const t = Number(data.T)
+                const p = +data.p
+                const q = +data.q
+                if (!Number.isFinite(t) || !Number.isFinite(p) || !Number.isFinite(q) || q <= 0) return
+                this.tradeEvents.push([t, p, q, data.m ? 0 : 1])
+                // Trim in Blöcken statt shift() je Event: shift ist O(n), und
+                // in einer Crash-Stunde (BTC schafft >300k aggTrades) wäre das
+                // ein memmove-Dauerlauf. Die entfernten Events sind meist schon
+                // persistiert — ihre Stunden werden zum Re-Merge markiert,
+                // damit der nächste Voll-Rewrite sie aus der DB zurückholt
+                // statt sie zu löschen.
+                if (this.tradeEvents.length > TRADE_PUFFER_MAX + 5000) {
+                    const weg = this.tradeEvents.splice(0, this.tradeEvents.length - TRADE_PUFFER_MAX)
+                    for (const e of weg) this._tradesUebernommen.delete(hourFloor(e[0]))
+                    // Zähler für _persist: ein Trim WÄHREND dessen DB-awaits
+                    // darf die Stunde nicht als „vollständig übernommen" enden
+                    this._trimVorgaenge = (this._trimVorgaenge || 0) + 1
+                }
+                this.tradeUnsaved++
+                return
+            }
+            const o = data.o
             if (!o) return
-            // Kompakt als Array: Zeit, Preis, Menge, Seite (1 = Short liquidiert)
+            // Kompakt als Array: Zeit, Preis, Menge, Seite (1 = Short liquidiert).
+            // +ap statt (ap || p): der String "0" ist truthy — eine ungefüllte
+            // Order (ap="0", l="0") landete sonst mit Preis und Menge 0 in der
+            // Aufzeichnung und fiel in der Wiedergabe still aus dem Plot.
             const eintrag = [
                 Number(o.T),
-                +(o.ap || o.p),
-                +(o.l || o.q),
+                +o.ap || +o.p,
+                +o.l || +o.q,
                 o.S === 'BUY' ? 1 : 0,
             ]
             this.liqEvents.push(eintrag)
@@ -354,6 +419,12 @@ class SymbolRecorder {
         this.book.reset()
         this.pending.length = 0
         this.buffering = true
+        // Selbstkontrolle nullen: ein Alt-Treffer von vor Stunden darf nicht
+        // mit einem frischen, harmlosen zum unnötigen Neuaufbau kombinieren —
+        // und der 10-s-Nachprüf-Timer gehört zum alten Buchzustand.
+        this._kontrolleTreffer = 0
+        clearTimeout(this._kontrolleTimer)
+        this._kontrolleTimer = null
         clearTimeout(this.snapshotTimer)
         // Erst puffern, dann Snapshot — andersherum entsteht garantiert eine Lücke
         this.snapshotTimer = setTimeout(() => this._fetchSnapshot(), 250)
@@ -372,6 +443,8 @@ class SymbolRecorder {
             // gehört ins gemeinsame Budget, sonst zahlt der Live-Stream dafür
             notiereGewicht(antwort.headers)
             this.snapshotVersuche = 0
+            // Frischer Anker: der Re-Anker-Cooldown in _writeFrame zählt ab hier
+            this._letzterAnker = Date.now()
             this.book.applySnapshot(data)
             if (!this.tickSize) {
                 const { mid } = this.book.bestPrices()
@@ -401,6 +474,76 @@ class SymbolRecorder {
                     + `(Versuch ${n}, nächster in ${Math.round(wartezeit / 1000)} s)`, error.message)
             }
             this.snapshotTimer = setTimeout(() => this._fetchSnapshot(), wartezeit)
+        }
+    }
+
+    /**
+     * Frischer Anker ohne Neuaufbau: holt einen Snapshot und ergänzt per
+     * OrderBook.mergeSnapshot nur die ruhenden Level, die das Buch nie gesehen
+     * hat. Sync-Zustand, pu-Kette und Frame-Takt bleiben unberührt.
+     */
+    async _refreshAnchor() {
+        if (this._ankerLaeuft) return
+        this._ankerLaeuft = true
+        try {
+            const antwort = await axios.get(`${REST_BASE[this.market]}${REST_PATH[this.market]}`, {
+                params: { symbol: this.symbol, limit: 1000 },
+                timeout: 10000,
+            })
+            notiereGewicht(antwort.headers)
+            // Zwischenzeitlicher Resync/Stop: der Snapshot gehört zu einem
+            // Buchzustand, den es nicht mehr gibt — verwerfen.
+            if (this.stopped || this.buffering || !this.book.synced) return
+
+            // SELBSTKONTROLLE vor dem Merge: der frische Snapshot ist eine
+            // unabhängige zweite Quelle für das Top-of-Book. Weicht unser
+            // Buch dort um mehr als 10 bp ab, ist es kaputt, egal was die
+            // pu-Kette sagt (der Klassiker: doppelt angewandte Diffs) — dann
+            // hilft kein Merge, sondern nur der volle Neuaufbau.
+            const eigen = this.book.bestPrices()
+            const snapBid = Number(antwort.data.bids?.[0]?.[0])
+            const snapAsk = Number(antwort.data.asks?.[0]?.[0])
+            if (eigen.mid && Number.isFinite(snapBid) && Number.isFinite(snapAsk)) {
+                const abweichung = Math.max(
+                    Math.abs(eigen.bestBid - snapBid),
+                    Math.abs(eigen.bestAsk - snapAsk)
+                ) / eigen.mid
+                if (abweichung > 0.001) {
+                    // Zwei Treffer nötig, wie im Browser-Feed: das Buch ist um
+                    // die REST-Laufzeit NEUER als der Snapshot — ein heftiger
+                    // Move in diesem Fenster sähe wie Drift aus, und der volle
+                    // Neuaufbau würfe ausgerechnet dann das Fernfeld weg. Der
+                    // zweite Blick kommt nach 10 s, nicht erst zum nächsten
+                    // Anker-Takt.
+                    this._kontrolleTreffer = (this._kontrolleTreffer || 0) + 1
+                    if (this._kontrolleTreffer >= 2) {
+                        this._kontrolleTreffer = 0
+                        logWarn('live-recorder', `${this.symbol}: Selbstkontrolle — Top-of-Book weicht `
+                            + `${(abweichung * 10000).toFixed(1)} bp vom frischen Snapshot ab, Buch wird neu aufgebaut`)
+                        this.resyncs++
+                        this._beginSync()
+                    } else {
+                        clearTimeout(this._kontrolleTimer)
+                        this._kontrolleTimer = setTimeout(() => {
+                            if (!this.stopped) this._refreshAnchor()
+                        }, 10000)
+                    }
+                    return
+                }
+                this._kontrolleTreffer = 0
+            }
+
+            const neu = this.book.mergeSnapshot(antwort.data)
+            this._ankerZaehler = (this._ankerZaehler || 0) + 1
+            // Bei dichten Büchern feuert der Anker im 5-min-Takt — nicht jede
+            // Zeile loggen, sonst ist das Log nur noch Anker.
+            if (this._ankerZaehler === 1 || this._ankerZaehler % 12 === 0) {
+                console.log(` -> [recorder] ${this.symbol}: Re-Anker Nr. ${this._ankerZaehler}, ${neu} ruhende Level ergänzt`)
+            }
+        } catch (error) {
+            // Kein Drama: der nächste Cooldown versucht es erneut
+        } finally {
+            this._ankerLaeuft = false
         }
     }
 
@@ -439,6 +582,8 @@ class SymbolRecorder {
         // darf nicht unbegrenzt wachsen.
         this.liqTotal += this.liqEvents.filter(e => e[0] < hour).length
         this.liqEvents = this.liqEvents.filter(e => e[0] >= hour)
+        this.tradeTotal += this.tradeEvents.filter(e => e[0] < hour).length
+        this.tradeEvents = this.tradeEvents.filter(e => e[0] >= hour)
     }
 
     _writeFrame(slot) {
@@ -452,6 +597,32 @@ class SymbolRecorder {
             this._letzterPrune = slot
             this.book.prune(mid, Math.max(0.03, 3 * this.rangePct / 100))
         }
+
+        // Re-Anker: der Snapshot deckte nur ein Band um den DAMALIGEN Mid ab
+        // (coverLo/coverHi); ausserhalb kennt das Buch nur diff-berührte Level.
+        // Läuft der Kurs Richtung Bandkante, würden dort ruhende Alt-Wände als
+        // „nicht vorhanden" aufgezeichnet — ein frischer Snapshot um den
+        // aktuellen Mid ist die einzige Abhilfe. Der läuft als MERGE nebenher
+        // (kein _beginSync: das setzte das Buch zurück und löschte damit alle
+        // über Diffs angesammelten Fern-Level — bei dichten Büchern wie BTC,
+        // deren Snapshot-Band nur Zehntelprozente breit ist, feuert der Anker
+        // im Cooldown-Takt, und ein Reset alle 5 min wäre schlimmer als gar
+        // kein Re-Anker). Frames pausieren nicht, Weight 20 je Lauf.
+        // Zweiter Auslöser neben der Kanten-Nähe: alle 30 min ohnehin — der
+        // frische Snapshot dient dann als SELBSTKONTROLLE (Top-of-Book-
+        // Vergleich in _refreshAnchor) gegen stille Drift, die die pu-Kette
+        // nicht sieht (z.B. doppelt angewandte Diffs nach Socket-Wirrwarr).
+        const { coverLo, coverHi } = this.book
+        const seitAnker = slot - (this._letzterAnker || 0)
+        if (coverHi > coverLo && seitAnker >= 5 * 60000) {
+            const spanne = coverHi - coverLo
+            const nahKante = mid < coverLo + spanne * 0.25 || mid > coverHi - spanne * 0.25
+            if (nahKante || seitAnker >= 30 * 60000) {
+                this._letzterAnker = slot
+                this._refreshAnchor()
+            }
+        }
+
         if (!this.bucketSize) {
             this.bucketSize = pickBucketSize(this.tickSize, mid, this.rangePct, this.rows)
         }
@@ -501,9 +672,10 @@ class SymbolRecorder {
     _flush() {
         const heat = this._captureHeat()
         const liq = this._captureLiquidations()
-        if (!heat && !liq && !this.pendingRows.length) return this._flushChain
+        const trades = this._captureTrades()
+        if (!heat && !liq && !trades && !this.pendingRows.length && !this.pendingLiq.length) return this._flushChain
         this._flushChain = this._flushChain
-            .then(() => this._persist(heat, liq))
+            .then(() => this._persist(heat, liq, trades))
             .catch(e => logError('live-recorder', `Flush ${this.symbol} fehlgeschlagen`, e))
         return this._flushChain
     }
@@ -549,17 +721,34 @@ class SymbolRecorder {
         return alle
     }
 
-    async _persist(heat, liq) {
+    /**
+     * Trades nach demselben Muster wie die Liquidationen: kompletten Bestand
+     * mitnehmen, abgeschlossene Stunden aus dem Puffer werfen. Anders als bei
+     * den Liquidationen gibt es hier nur EINEN Schreiber je (Symbol, Stunde) —
+     * _persist darf die Stunde deshalb komplett neu schreiben (wie Heat),
+     * ohne den DB-Bestand zu lesen.
+     */
+    _captureTrades() {
+        if (!this.tradeUnsaved) return null
+        this.tradeUnsaved = 0
+        const alle = this.tradeEvents.slice()
+        const stunde = hourFloor(Date.now())
+        this.tradeTotal += this.tradeEvents.filter(e => e[0] < stunde).length
+        this.tradeEvents = this.tradeEvents.filter(e => e[0] >= stunde)
+        return alle
+    }
+
+    async _persist(heat, liq, trades) {
         const knex = getKnex()
         const rows = []
+        const liqZeilen = new Map()   // Zeile -> Quell-Ereignisse, für den Fehlerpfad
 
-        if (liq?.length) {
-            // Nach Stunde gruppieren und mit dem DB-Bestand zusammenführen
-            // (Fingerprint-Dedup in buildLiqRow): ein Voll-Rewrite würde sonst
-            // Ereignisse überschreiben, die der Sammelstrom vor der Übernahme
-            // dieses Symbols bereits für dieselbe Stunde gespeichert hat.
+        if (trades?.length) {
+            // Ein Schreiber, voller Bestand je Stunde im Capture → Voll-Rewrite
+            // wie bei Heat. Ein Retry über pendingRows ist damit korrekt: die
+            // neuere Zeile derselben Stunde folgt später und trägt mehr.
             const gruppen = new Map()
-            for (const e of liq) {
+            for (const e of trades) {
                 const stunde = hourFloor(e[0])
                 let g = gruppen.get(stunde)
                 if (!g) gruppen.set(stunde, g = [])
@@ -567,8 +756,100 @@ class SymbolRecorder {
             }
             for (const [stunde, events] of gruppen) {
                 try {
-                    rows.push(await buildLiqRow(knex, this.symbol, this.market, stunde, events))
+                    let alle = events
+                    // Neustart mitten in der Stunde: die DB kann vom vorherigen
+                    // Lauf schon eine Zeile dieser Stunde tragen — der blinde
+                    // Voll-Rewrite überschriebe sie mit nur den eigenen Events.
+                    // Deshalb EINMAL je Stunde den Altbestand übernehmen (und
+                    // für die laufende Stunde in den Puffer legen, damit auch
+                    // die folgenden Rewrites ihn tragen). Danach gilt wieder:
+                    // ein Schreiber, Voll-Rewrite korrekt.
+                    if (!this._tradesUebernommen.has(stunde)) {
+                        const trimVorher = this._trimVorgaenge || 0
+                        const vorhanden = await knex('live_recordings')
+                            .where({ symbol: this.symbol, market: this.market, kind: 'trades', hourStart: stunde })
+                            .first()
+                        // Bleibt der Altbestand AUSSERHALB des Puffers (Deckel
+                        // erreicht), darf die Stunde nicht als erledigt gelten:
+                        // der nächste Voll-Rewrite käme sonst wieder nur aus dem
+                        // Puffer und löschte ihn. Dann lieber jeden Flush neu
+                        // mischen — teuer, aber nur in Crash-Stunden.
+                        let imPufferVollstaendig = true
+                        if (vorhanden?.payload) {
+                            const altEvents = JSON.parse((await gunzip(vorhanden.payload)).toString('utf8'))
+                            const eigene = new Set(events.map(e => `${e[0]}|${e[1]}|${e[2]}|${e[3]}`))
+                            const uebernommen = altEvents.filter(e => !eigene.has(`${e[0]}|${e[1]}|${e[2]}|${e[3]}`))
+                            if (uebernommen.length) {
+                                alle = uebernommen.concat(events)
+                                if (stunde === hourFloor(Date.now())) {
+                                    if (this.tradeEvents.length + uebernommen.length <= TRADE_PUFFER_MAX) {
+                                        this.tradeEvents = uebernommen.concat(this.tradeEvents)
+                                    } else {
+                                        imPufferVollstaendig = false
+                                    }
+                                }
+                            }
+                        }
+                        // Erst NACH erfolgreichem Lesen vermerken — wirft die
+                        // DB hier, versucht es der nächste Flush erneut. Und
+                        // nur, wenn zwischenzeitlich kein Trim lief (der hätte
+                        // die Stunde gerade erst zum Re-Merge markiert).
+                        if (imPufferVollstaendig && (this._trimVorgaenge || 0) === trimVorher) {
+                            this._tradesUebernommen.add(stunde)
+                        }
+                    }
+                    alle.sort((a, b) => a[0] - b[0])
+                    const payload = await gzip(Buffer.from(JSON.stringify(alle), 'utf8'))
+                    rows.push({
+                        symbol: this.symbol, market: this.market, kind: 'trades',
+                        hourStart: stunde, frameMs: 0, rows: 0, cols: alle.length,
+                        bucketSize: 0, quantRef: 0,
+                        bytes: payload.length, payload, createdAt: Date.now(),
+                    })
                 } catch (error) {
+                    // NUR abgeschlossene Stunden zurück in den Puffer: die
+                    // laufende steht dort noch (Capture behält sie) und würde
+                    // dupliziert. Eine abgeschlossene ist beim Capture bereits
+                    // getrimmt — ohne Rettung wäre sie nach einem transienten
+                    // DB-Fehler weg; zurückgelegt nimmt der nächste Capture
+                    // sie regulär wieder mit.
+                    if (stunde !== hourFloor(Date.now())
+                        && this.tradeEvents.length + events.length <= TRADE_PUFFER_MAX + 5000) {
+                        this.tradeEvents = events.concat(this.tradeEvents)
+                        this.tradeUnsaved += events.length
+                        this._tradesUebernommen.delete(stunde)
+                    }
+                    logWarn('live-recorder', `Trades ${this.symbol} vorbereiten fehlgeschlagen`, error.message)
+                }
+            }
+        }
+
+        // Liegengebliebene Liquidations-EREIGNISSE des letzten Flushs wieder
+        // einmischen — buildLiqRow dedupliziert per Fingerprint, doppelt
+        // gezählt wird nichts.
+        const liqAlle = this.pendingLiq.length ? this.pendingLiq.concat(liq || []) : (liq || [])
+        this.pendingLiq = []
+
+        if (liqAlle.length) {
+            // Nach Stunde gruppieren und mit dem DB-Bestand zusammenführen
+            // (Fingerprint-Dedup in buildLiqRow): ein Voll-Rewrite würde sonst
+            // Ereignisse überschreiben, die der Sammelstrom vor der Übernahme
+            // dieses Symbols bereits für dieselbe Stunde gespeichert hat.
+            const gruppen = new Map()
+            for (const e of liqAlle) {
+                const stunde = hourFloor(e[0])
+                let g = gruppen.get(stunde)
+                if (!g) gruppen.set(stunde, g = [])
+                g.push(e)
+            }
+            for (const [stunde, events] of gruppen) {
+                try {
+                    const row = await buildLiqRow(knex, this.symbol, this.market, stunde, events)
+                    rows.push(row)
+                    liqZeilen.set(row, events)
+                } catch (error) {
+                    // Nicht verwerfen: die Ereignisse sind nirgends nachbestellbar
+                    this.pendingLiq.push(...events)
                     logWarn('live-recorder', `Liquidationen ${this.symbol} vorbereiten fehlgeschlagen`, error.message)
                 }
             }
@@ -594,8 +875,10 @@ class SymbolRecorder {
             }
         }
 
-        // Fehlgeschlagene Zeilen vom letzten Mal zuerst — neue Zeilen derselben
-        // Stunde folgen danach und tragen den volleren Stand.
+        // Fehlgeschlagene HEAT-Zeilen vom letzten Mal zuerst — neue Zeilen
+        // derselben Stunde folgen danach und tragen den volleren Stand (für
+        // Heat ist der Voll-Rewrite korrekt; Liquidationen laufen über
+        // pendingLiq, siehe oben).
         const anstehend = [...this.pendingRows, ...rows]
         this.pendingRows = []
         for (const row of anstehend) {
@@ -605,12 +888,18 @@ class SymbolRecorder {
                     .onConflict(['symbol', 'market', 'kind', 'hourStart'])
                     .merge()
             } catch (error) {
-                this.pendingRows.push(row)
+                const events = liqZeilen.get(row)
+                if (events) this.pendingLiq.push(...events)
+                else this.pendingRows.push(row)
                 logError('live-recorder', `Speichern ${this.symbol} fehlgeschlagen — nächster Flush versucht es erneut`, error)
             }
         }
-        // Deckel gegen dauerhaft kaputte DB — die neuesten Zeilen behalten
-        if (this.pendingRows.length > 6) this.pendingRows = this.pendingRows.slice(-6)
+        // Deckel gegen dauerhaft kaputte DB — die neuesten behalten. 12 statt
+        // 6, seit Heat- UND Trades-Zeilen hier landen: über eine Stundengrenze
+        // hinweg produziert jeder Flush bis zu drei Zeilen, und die finale
+        // Zeile der abgeschlossenen Stunde soll den Ausfall überleben.
+        if (this.pendingRows.length > 12) this.pendingRows = this.pendingRows.slice(-12)
+        if (this.pendingLiq.length > 5000) this.pendingLiq = this.pendingLiq.slice(-5000)
     }
 }
 
@@ -696,8 +985,9 @@ class MarketLiquidationCollector {
                 if (active.has(`${symbol}|futures`)) continue
 
                 const t = Number(o.T)
-                const preis = +(o.ap || o.p)
-                const menge = +(o.l || o.q)
+                // Wie im SymbolRecorder: "0" ist truthy, +x || +y greift richtig
+                const preis = +o.ap || +o.p
+                const menge = +o.l || +o.q
                 if (!Number.isFinite(t) || !Number.isFinite(preis) || !Number.isFinite(menge)) continue
 
                 let puffer = this.buffers.get(symbol)
@@ -951,8 +1241,13 @@ class BybitLiquidationCollector {
  * Fingerprint-Dedup für Liquidations-Ereignisse. Binance vergibt für
  * forceOrder keine eigene ID — Zeit|Preis|Menge|Seite ist das engste
  * verfügbare Kennzeichen. Zwei ECHTE identische Ereignisse in derselben
- * Millisekunde fielen damit zusammen; praktisch ausgeschlossen, da der
- * Stream ohnehin auf 1 Ereignis/s/Symbol gedrosselt ist.
+ * Millisekunde fielen damit zusammen; bei Binance praktisch ausgeschlossen,
+ * da der Stream auf 1 Ereignis/s/Symbol gedrosselt ist. Bei Bybit (liqB,
+ * ungedrosselte 500-ms-Batches) KANN eine Kaskade identische Kleinst-
+ * Positionen zum selben Bankruptcy-Preis in derselben ms enthalten — die
+ * fallen hier zusammen. Bewusst in Kauf genommen: der Fingerprint ist
+ * zugleich das, was Retries und die Sammelstrom-Übergabe idempotent macht;
+ * ein Laufindex im Tupel bräche die Dedup gegen den gespeicherten Altbestand.
  *
  * Bybit (kind 'liqB') liegt in eigenen Zeilen — die Dedup läuft dadurch immer
  * nur innerhalb EINER Börse und kann nie ein echtes Bybit-Ereignis verwerfen,
@@ -1083,8 +1378,11 @@ export async function sliceRange(rows, from, to, maxCols = REPLAY_MAX_COLS_DEFAU
             truncated = 'Auflösung wurde während des Zeitraums geändert'
             break
         }
-        // Wenn der Bezugswert abweicht, auf den ersten umrechnen
-        const scale = hour.quantRef / quantRef
+        // Wenn der Bezugswert abweicht, auf den ersten umrechnen. Guard: eine
+        // Stunde mit quantRef 0 (leeres Buch beim ersten Frame) ergäbe als
+        // Nenner Infinity bzw. als Zähler eine Nullspalte — dann lieber 1:1
+        // übernehmen statt Müll zu requantisieren.
+        const scale = (hour.quantRef > 0 && quantRef > 0) ? hour.quantRef / quantRef : 1
         for (let c = 0; c < hour.cols; c++) {
             const ts = Number(row.hourStart) + c * frameMs
             const quelle = Math.round((ts - startTs) / frameMs)
@@ -1132,6 +1430,12 @@ export async function sliceRange(rows, from, to, maxCols = REPLAY_MAX_COLS_DEFAU
     }
 
     if (k > 1) {
+        // Zeitliches MITTEL, bewusst kein Max: die Frage der verdichteten
+        // Ansicht ist „wie viel Liquidität stand hier über die Zeit", und eine
+        // Wand, die nur 1 von k Spalten existierte (Flash-/Spoof-Order), SOLL
+        // entsprechend blasser erscheinen. Kehrseite: Kurzzeitstrukturen
+        // verschwinden in stark verdichteten Ansichten — wer sie sucht, muss
+        // das Zeitfenster verkleinern.
         for (let o = 0; o < cols; o++) {
             // Nur tatsächlich vorhandene Quellspalten teilen — Lücken in der
             // Aufzeichnung dürfen echte Daten nicht abdunkeln.
@@ -1303,11 +1607,13 @@ async function runRetention() {
         const { days } = await readConfig()
         const knex = getKnex()
 
-        // Orderbuch-Aufzeichnungen sind gross (~7 MB je Symbol und Tag) und
-        // folgen der eingestellten Aufbewahrung.
+        // Orderbuch- und Trade-Aufzeichnungen sind gross (Heat ~7 MB, Trades
+        // je nach Umsatz bis ~10 MB je Symbol und Tag) und folgen beide der
+        // eingestellten Aufbewahrung — sie gehören zusammen: ein Replay ohne
+        // das jeweils andere ist nur ein halbes Bild.
         const cutoff = Date.now() - days * 24 * HOUR_MS
         const deleted = await knex('live_recordings')
-            .where('hourStart', '<', cutoff).andWhere('kind', 'heat').del()
+            .where('hourStart', '<', cutoff).whereIn('kind', ['heat', 'trades']).del()
         if (deleted) console.log(` -> [recorder] ${deleted} alte Aufzeichnungen gelöscht (älter als ${days} Tage)`)
 
         // Liquidationen sind winzig und der eigentliche Wert der Sammlung:
@@ -1374,6 +1680,7 @@ export function setupLiveRecorder(app) {
                     ungespeichert: r.written,
                     liquidationen: { inStunde: r.liqEvents.length, gesamt: r.liqTotal + r.liqEvents.length,
                         verbunden: r.liqWs?.readyState === WebSocket.OPEN },
+                    trades: { inStunde: r.tradeEvents.length, gesamt: r.tradeTotal + r.tradeEvents.length },
                     mid: r.book.bestPrices().mid,
                     diffs: { angewandt: r.applied, verworfen: r.skipped, resyncs: r.resyncs },
                 })),
@@ -1423,8 +1730,12 @@ export function setupLiveRecorder(app) {
                 .select('hourStart', 'cols', 'frameMs', 'bytes')
                 .where({ symbol, market, kind: 'heat' })
                 .orderBy('hourStart')
-            if (req.query.from) query.where('hourStart', '>=', hourFloor(Number(req.query.from)))
-            if (req.query.to) query.where('hourStart', '<=', hourFloor(Number(req.query.to)))
+            // Nur endliche Zahlen in die Query lassen — hourFloor(NaN) wanderte
+            // sonst als NaN in den Vergleich (die anderen Endpoints prüfen das).
+            const from = Number(req.query.from)
+            const to = Number(req.query.to)
+            if (Number.isFinite(from)) query.where('hourStart', '>=', hourFloor(from))
+            if (Number.isFinite(to)) query.where('hourStart', '<=', hourFloor(to))
 
             const rows = await query
             res.json({
@@ -1490,6 +1801,58 @@ export function setupLiveRecorder(app) {
         } catch (error) {
             logError('live-recorder', 'Wiedergabe fehlgeschlagen', error)
             res.status(500).json({ error: 'Aufzeichnung konnte nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Aufgezeichnete aggTrades für ein Zeitfenster — damit die Wiedergabe
+     * Handelspunkte, Volumenprofil, Säulen und CVD zeigen kann. Seite:
+     * isBuy = Käufer war aggressiv (dieselbe Konvention wie der Live-Feed).
+     */
+    app.get('/api/live/trades', async (req, res) => {
+        try {
+            const symbol = String(req.query.symbol || '').toUpperCase()
+            const market = req.query.market === 'spot' ? 'spot' : 'futures'
+            const from = Number(req.query.from)
+            const to = Number(req.query.to)
+            if (!symbol) return res.status(400).json({ error: 'symbol ist erforderlich' })
+            if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) {
+                return res.status(400).json({ error: 'from und to müssen gültige Zeitstempel (ms) sein, from < to' })
+            }
+            if (to - from > REPLAY_MAX_SPAN_MS) {
+                return res.status(400).json({ error: `Zeitraum zu gross (max. ${REPLAY_MAX_SPAN_MS / HOUR_MS} h)` })
+            }
+
+            const rows = await getKnex()('live_recordings')
+                .where({ symbol, market, kind: 'trades' })
+                .andWhere('hourStart', '>=', hourFloor(from))
+                .andWhere('hourStart', '<=', hourFloor(to))
+                .orderBy('hourStart')
+
+            // Kompaktes Array-Format [t, preis, menge, seite] wie in der
+            // Speicherung — als benannte Objekte wäre die Antwort bei 300k
+            // Ereignissen ~3× so gross (16–20 MB). Einziger Konsument ist
+            // loadReplayTrades, der die Felder positionsweise liest.
+            const events = []
+            // Deckel gegen Speicherfresser-Antworten: 300k Ereignisse tragen
+            // jede sinnvolle Ansicht; wird er erreicht, sagt die Antwort es,
+            // statt still zu kürzen.
+            const MAX_EVENTS = 300000
+            let abgeschnitten = false
+            for (const row of rows) {
+                if (events.length >= MAX_EVENTS) { abgeschnitten = true; break }
+                const roh = JSON.parse((await gunzip(row.payload)).toString('utf8'))
+                for (const e of roh) {
+                    if (e[0] < from || e[0] > to) continue
+                    if (events.length >= MAX_EVENTS) { abgeschnitten = true; break }
+                    events.push(e)
+                }
+            }
+            events.sort((a, b) => a[0] - b[0])
+            res.json({ symbol, market, anzahl: events.length, abgeschnitten, events })
+        } catch (error) {
+            logError('live-recorder', 'Trades lesen fehlgeschlagen', error)
+            res.status(500).json({ error: 'Trades konnten nicht gelesen werden' })
         }
     })
 

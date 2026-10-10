@@ -426,11 +426,10 @@ onMounted(async () => {
                 <input type="checkbox" v-model="liveFremdBuch" class="me-1" />{{ t('live.otherVenues') }}
             </label>
         </template>
-        <label :class="['liveToggle', istWiedergabe ? 'liveToggleAus' : '']"
-            :title="istWiedergabe ? t('live.replayNoTrades') : null">
-            <input type="checkbox" v-model="liveShowProfile" class="me-1" :disabled="istWiedergabe" />{{ t('live.profile') }}
+        <label class="liveToggle" :title="istWiedergabe ? t('live.replayTradesAb') : null">
+            <input type="checkbox" v-model="liveShowProfile" class="me-1" />{{ t('live.profile') }}
         </label>
-        <template v-if="liveShowProfile && !istWiedergabe">
+        <template v-if="liveShowProfile">
             <label class="fw-lighter mt-1" style="font-size:0.72rem;">
                 {{ t('live.laneWidth') }}
                 <span class="threshVal">{{ liveProfileW }} px</span>
@@ -442,13 +441,11 @@ onMounted(async () => {
         <label v-if="liveMarket === 'futures'" class="liveToggle">
             <input type="checkbox" v-model="liveShowLiquidations" class="me-1" />{{ t('live.liquidations') }}
         </label>
-        <label :class="['liveToggle', istWiedergabe ? 'liveToggleAus' : '']"
-            :title="istWiedergabe ? t('live.replayNoTrades') : t('live.volumeBarsTitle')">
-            <input type="checkbox" v-model="liveShowVolumeBars" class="me-1" :disabled="istWiedergabe" />{{ t('live.volumeBars') }}
+        <label class="liveToggle" :title="istWiedergabe ? t('live.replayTradesAb') : t('live.volumeBarsTitle')">
+            <input type="checkbox" v-model="liveShowVolumeBars" class="me-1" />{{ t('live.volumeBars') }}
         </label>
-        <label :class="['liveToggle', istWiedergabe ? 'liveToggleAus' : '']"
-            :title="istWiedergabe ? t('live.replayNoTrades') : t('live.deltaTitle')">
-            <input type="checkbox" v-model="liveShowDelta" class="me-1" :disabled="istWiedergabe" />{{ t('live.delta') }}
+        <label class="liveToggle" :title="istWiedergabe ? t('live.replayTradesAb') : t('live.deltaTitle')">
+            <input type="checkbox" v-model="liveShowDelta" class="me-1" />{{ t('live.delta') }}
         </label>
         <label class="liveToggle" :title="t('live.absorptionTitle')">
             <input type="checkbox" v-model="liveShowAbsorption" class="me-1" />{{ t('live.absorption') }}

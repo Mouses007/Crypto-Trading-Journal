@@ -7,8 +7,12 @@
  * ganzzahliges Vielfaches der tickSize, damit Kanten auf echten Preisen liegen.
  */
 
-// „Runde" Vielfache — vermeidet krumme Bucket-Grössen wie 3.7 × tickSize
-const NICE_MULTIPLES = [1, 2, 2.5, 4, 5, 8, 10, 20, 25, 40, 50, 80, 100, 200, 250, 400, 500, 1000, 2000, 2500, 5000, 10000]
+// „Runde" Vielfache — vermeidet krumme Bucket-Grössen wie 3.7 × tickSize.
+// Nur GANZZAHLIGE Vielfache: 2.5 fiel abwechselnd mit 2 und 3 Ticks in einen
+// Bucket — systematisches ~20-%-Helligkeitsbanding benachbarter Zeilen, und
+// die Zusage im Kopf dieser Datei („immer ein ganzzahliges Vielfaches") war
+// gebrochen. 25/250/2500 sind als Vielfache selbst ganzzahlig und bleiben.
+const NICE_MULTIPLES = [1, 2, 3, 4, 5, 8, 10, 20, 25, 40, 50, 80, 100, 200, 250, 400, 500, 1000, 2000, 2500, 5000, 10000]
 
 /**
  * @param {number} tickSize   kleinste Preisänderung des Symbols

@@ -10,9 +10,10 @@
  * ein mehrstündiger Trade auf ein Bild, und die Auflösung ergibt sich aus dem
  * angefragten Zeitraum statt aus einem Zoomregler.
  *
- * Was fehlt: aggTrades werden nicht mitgeschnitten. Handelspunkte,
- * Volumenprofil und Volumen-Säulen bleiben in der Wiedergabe deshalb leer;
- * Liquidität, Mid-Kurve und Liquidationen sind da.
+ * Seit 10.10.2026 schneidet der Recorder auch aggTrades mit (kind 'trades') —
+ * Handelspunkte, Volumenprofil, Säulen und CVD funktionieren damit auch in
+ * der Wiedergabe. Für Stunden VOR diesem Datum gibt es keine Trades; die
+ * Wiedergabe zeigt dann wie früher nur Liquidität, Mid-Kurve, Liquidationen.
  */
 import axios from 'axios'
 import { HeatmapRing, FLAG_LUECKE, FLAG_OHNE_BUCH } from './heatmapRing.js'
@@ -73,13 +74,40 @@ export async function loadReplay({ symbol, market, from, to, maxCols }) {
  * Sekunde und Symbol. Was hier ankommt, ist eine Stichprobe, keine Vollzählung.
  */
 export async function loadReplayLiquidations({ symbol, market, from, to }) {
-    const { data } = await axios.get('/api/live/liquidations', { params: { symbol, market, from, to } })
+    // BEIDE Quellen laden: die Binance-Aufzeichnung ('liq') ist wegen der
+    // forceOrder-Drossel eine Stichprobe, die Bybit-Sammlung ('liqB') ist
+    // ungedrosselt und deutlich vollständiger. Es sind Ereignisse
+    // verschiedener Börsen — zusammen wird nichts doppelt gezählt, nur mehr
+    // vom selben Marktgeschehen sichtbar. Die Seitenkonvention ist in beiden
+    // Sorten bereits identisch (1 = Short liquidiert, in bybit-liq.js gedreht).
+    const [binance, bybit] = await Promise.all([
+        axios.get('/api/live/liquidations', { params: { symbol, market, from, to } }).catch(() => null),
+        axios.get('/api/live/liquidations', { params: { symbol, market, from, to, venue: 'bybit' } }).catch(() => null),
+    ])
+    const events = [...(binance?.data?.events || []), ...(bybit?.data?.events || [])]
+    if (!events.length) return null
+    // Der Ring wird von hinten gelesen und erwartet Zeit-Sortierung — nach dem
+    // Zusammenlegen der Quellen muss neu sortiert werden.
+    events.sort((a, b) => a.t - b.t)
+    const ring = new TradeRing(Math.max(16, events.length))
+    for (const e of events) ring.push(e.t, e.price, e.qty, e.isBuy)
+    return ring
+}
+
+/**
+ * Aufgezeichnete aggTrades als TradeRing (Seite: isBuy = Käufer aggressiv,
+ * dieselbe Konvention wie der Live-Feed). Null, wenn für das Fenster nichts
+ * aufgezeichnet ist — die Ansicht zeigt dann schlicht keine Punkte.
+ */
+export async function loadReplayTrades({ symbol, market, from, to }) {
+    const { data } = await axios.get('/api/live/trades', { params: { symbol, market, from, to } })
+    // Kompaktes Array-Format [t, preis, menge, seite] — bei 300k Ereignissen
+    // wäre die Objekt-Form ~3× so gross über die Leitung.
     const events = data.events || []
     if (!events.length) return null
     const ring = new TradeRing(Math.max(16, events.length))
-    // Der Server liefert bereits nach Zeit sortiert — der Ring erwartet das,
-    // weil er von hinten gelesen wird.
-    for (const e of events) ring.push(e.t, e.price, e.qty, e.isBuy)
+    // Server liefert zeitsortiert — der Ring wird von hinten gelesen
+    for (const e of events) ring.push(e[0], e[1], e[2], !!e[3])
     return ring
 }
 
