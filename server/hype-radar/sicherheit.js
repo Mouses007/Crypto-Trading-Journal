@@ -180,10 +180,21 @@ export function pruefe(goplus, markt = {}, regeln = STANDARD_SICHERHEIT) {
      */
     flaggen.verkaufSperrbar = jaNein(goplus.transfer_pausable)
     flaggen.kaufGesperrt = jaNein(goplus.cannot_buy)
-    if (flaggen.verkaufSperrbar) {
+    /*
+     * Anhalten kann nur, wer die Rechte hat. Bei einem EVM-Vertrag mit
+     * abgegebenem Eigentümer ist die Pausenfunktion totes Holz — das Original
+     * PEPE (Eigentümer 0x000…0, `transfer_pausable` 1) wurde bis 10.10.2026
+     * trotzdem verworfen. Bei Solana steht die Vollmacht selbst hinter dem
+     * Feld (Freeze-Authority, Hook, eingefrorene Konten): dort bleibt es K.o.
+     */
+    const eigentuemerAktiv = Boolean(goplus.owner_address)
+        && String(goplus.owner_address) !== '0x0000000000000000000000000000000000000000'
+    const pauseGreift = goplus.quelle !== 'goplus-evm' || eigentuemerAktiv
+    if (flaggen.verkaufSperrbar && pauseGreift) {
         return verworfen('verkauf_sperrbar',
             'Übertragung kann angehalten oder der Verkauf begrenzt werden', flaggen, hinweise)
     }
+    if (flaggen.verkaufSperrbar) hinweise.push('Pausenfunktion im Vertrag — ohne aktiven Eigentümer nicht nutzbar')
 
     const verkaufssteuer = prozent(goplus.sell_tax)
     flaggen.verkaufssteuerProzent = verkaufssteuer
@@ -440,7 +451,8 @@ const SYSTEM_TAGS = /burn|null|dead|lock|vest|team|foundation|treasury|binance|c
 /** Ist dieser Halter jemand, der den Markt überrollen könnte? */
 function istGefahr(h) {
     const adresse = String(h?.address || '')
-    if (VERBRANNT.some((r) => r.test(adresse))) return false
+    // Bei RugCheck ist `address` das Token-Konto; der Verbrenner steht als Besitzer.
+    if (VERBRANNT.some((r) => r.test(adresse) || r.test(String(h?.owner || '')))) return false
     // Gesperrt heisst: kann in der Sperrfrist nicht verkaufen.
     if (jaNein(h?.is_locked)) return false
     if (SYSTEM_TAGS.test(String(h?.tag || ''))) return false
@@ -488,7 +500,7 @@ export function top10Ausgeschlossen(halter, opts = {}) {
         adresse: String(h?.address || '').slice(0, 10),
         anteil: (Number(h?.percent) || 0) * prozentFaktor(opts.skala),
         grund: jaNein(h?.is_locked) ? 'gesperrt'
-            : (VERBRANNT.some((r) => r.test(String(h?.address || ''))) ? 'verbrannt' : String(h?.tag || 'benannt')),
+            : (VERBRANNT.some((r) => r.test(String(h?.address || '')) || r.test(String(h?.owner || ''))) ? 'verbrannt' : String(h?.tag || 'benannt')),
     }))
 }
 
@@ -507,37 +519,115 @@ export function top10Ausgeschlossen(halter, opts = {}) {
  * Bruchteilen — die Skala steht deshalb ausdrücklich am Ergebnis.
  */
 export function ausRugCheck(j) {
-    if (!j || typeof j !== 'object') return null
+    /*
+     * Ohne `token` hat RugCheck nichts geprüft. Bis 10.10.2026 nahm die
+     * Übersetzung jedes Objekt — dann war Mint/Freeze „nicht gesetzt", der
+     * Insider-Anteil 0 und der Token galt als geprüft.
+     */
+    if (!j || typeof j !== 'object' || !j.token || typeof j.token !== 'object') return null
+    const supply = Number(j.token.supply) || 0
+    const ext = token2022(j.token_extensions)
+    /*
+     * Bekannte Konten (Pools, Sperren) zählen nicht zu den Haltern, die den
+     * Markt überrollen könnten. RugCheck kennt sie in `knownAccounts` — bei
+     * einem graduierten Token hielt der Pump-Fun-AMM-Pool 23 % und machte aus
+     * 32 % Top-10 einen „Klumpen" von 54 % (gemessen 10.10.2026, CAT).
+     */
+    const bekannt = j.knownAccounts && typeof j.knownAccounts === 'object' ? j.knownAccounts : {}
+    const artVon = (h) => String(bekannt[h?.owner]?.type || bekannt[h?.address]?.type || '').toUpperCase()
+    const halter = Array.isArray(j.topHolders) ? j.topHolders : null
     return {
         quelle: 'rugcheck',
         anteilSkala: SKALA_PROZENT,
-        is_honeypot: j?.rugged ? 1 : 0,
-        transfer_pausable: j?.token?.freezeAuthority ? 1 : 0,
-        is_mintable: j?.token?.mintAuthority ? 1 : 0,
-        owner_address: j?.token?.mintAuthority || '',
-        holder_count: Number(j?.totalHolders) || 0,
-        holders: (Array.isArray(j?.topHolders) ? j.topHolders : [])
-            .map((h) => ({
-                percent: Number(h?.pct) || 0,
-                address: String(h?.address || h?.owner || ''),
-                // Der Besitzer des Token-Kontos — die Frühphase erkennt daran
-                // die Bindungskurve und den Ersteller.
-                owner: String(h?.owner || ''),
-                // RugCheck kennt keine Tags, aber `insider` — die Antwort auf
-                // dieselbe Frage aus der anderen Richtung.
-                tag: h?.insider ? 'insider' : '',
-                is_locked: 0,
-                is_contract: 0,
-            })),
-        lp_holders: lpAusRugCheck(j?.markets),
+        // Nicht übertragbar ist der härteste Honeypot: verkaufen geht gar nicht.
+        is_honeypot: j.rugged || ext.nichtUebertragbar ? 1 : 0,
+        // Freeze-Authority, Übertragungs-Hook, eingefroren startende Konten, anhaltbarer Token.
+        transfer_pausable: j.token.freezeAuthority || ext.hook || ext.standardEingefroren || ext.anhaltbar ? 1 : 0,
+        is_mintable: j.token.mintAuthority ? 1 : 0,
+        owner_address: j.token.mintAuthority || '',
+        // Ein ständiger Bevollmächtigter kann jedem Halter Token wegnehmen oder verbrennen.
+        owner_change_balance: ext.staendigBevollmaechtigt ? 1 : 0,
+        closable: ext.schliessbar ? 1 : 0,
+        transfer_fee_upgradable: ext.gebuehrAenderbar ? 1 : 0,
+        metadata_mutable: ext.metadatenAenderbar ? 1 : 0,
+        holder_count: Number(j.totalHolders) || 0,
+        holders: (halter || [])
+            .map((h) => {
+                const art = artVon(h)
+                return {
+                    percent: Number(h?.pct) || 0,
+                    address: String(h?.address || h?.owner || ''),
+                    // Der Besitzer des Token-Kontos — die Frühphase erkennt daran
+                    // die Bindungskurve und den Ersteller, und `istGefahr` daran
+                    // verbrannte Anteile (der Verbrenner ist der Besitzer).
+                    owner: String(h?.owner || ''),
+                    tag: art === 'AMM' ? 'pool' : (art === 'LOCKER' ? 'lock' : (h?.insider ? 'insider' : '')),
+                    is_locked: art === 'LOCKER' ? 1 : 0,
+                    is_contract: 0,
+                }
+            }),
+        lp_holders: lpAusRugCheck(j.markets),
         // Nicht im gespeicherten Datenvertrag — nur, wenn die Antwort es nennt.
-        insider_netzwerke: Array.isArray(j?.insiderNetworks) ? j.insiderNetworks.length : null,
-        sell_tax: steuerAusRugCheck(j?.transferFee),
+        insider_netzwerke: Array.isArray(j.insiderNetworks) ? j.insiderNetworks.length : null,
+        /*
+         * Insider-Anteil in Prozent des Angebots: was die von RugCheck
+         * erkannten Netzwerke verbundener Wallets gerade halten. Die Markierung
+         * `insider` je Top-Halter war in 136 Prüfungen nie gesetzt — der Anteil
+         * stand immer auf 0, auch bei ROCKETCAT mit 21 Insidern in zwei
+         * Netzwerken (3,2 %). Ohne Netzwerkangabe oder Angebot unbekannt, nicht 0.
+         */
+        insider_anteil_pct: Array.isArray(j.insiderNetworks) && supply > 0
+            ? (j.insiderNetworks.reduce((a, n) => a + (Number(n?.currentHolding) || 0), 0) / supply) * 100
+            : null,
+        // Ersteller und sein Bestand, wie RugCheck ihn kennt (Rohmenge / Angebot).
+        ersteller: String(j.creator || ''),
+        ersteller_anteil_pct: supply > 0 && Number.isFinite(Number(j.creatorBalance))
+            ? (Number(j.creatorBalance) / supply) * 100 : null,
+        sell_tax: steuerAusRugCheck(j.transferFee),
         is_proxy: 0,
-        gefahren: (Array.isArray(j?.risks) ? j.risks : [])
-            .filter((r) => String(r?.level || '').toLowerCase() === 'danger')
-            .map((r) => String(r?.name || '').slice(0, 80))
-            .filter(Boolean),
+        gefahren: [
+            ...(Array.isArray(j.risks) ? j.risks : [])
+                .filter((r) => String(r?.level || '').toLowerCase() === 'danger')
+                .map((r) => String(r?.name || '').slice(0, 80))
+                .filter(Boolean),
+            ...ext.gefahren,
+        ],
+    }
+}
+
+/**
+ * Token-2022-Erweiterungen aus RugCheck (`token_extensions`) — nach ihrem
+ * WERT, nicht nach ihrem Namen: In jeder Antwort stehen alle Schlüssel, bei
+ * einem harmlosen Token mit `null` bzw. `false` (live geprüft 10.10.2026, drei
+ * pump.fun-Token). Bis dahin wurden sie gar nicht gelesen — im GoPlus-Weg
+ * waren dieselben Vollmachten K.o., im RugCheck-Weg (in der Frühphase die
+ * Hauptquelle) unsichtbar.
+ *
+ * Ein gesetzter Wert, dessen Form nicht eindeutig harmlos ist, zählt als
+ * Gefahr: Unbekanntes ist nie gut.
+ */
+export function token2022(e) {
+    const x = e && typeof e === 'object' ? e : {}
+    const gesetzt = (w) => w !== null && w !== undefined && w !== false
+    const mitVollmacht = (w) => gesetzt(w) && (typeof w !== 'object' || w.authority !== null)
+    const zustand = x.defaultAccountState
+    const zustandText = String(zustand?.state ?? zustand?.accountState ?? zustand ?? '').toLowerCase()
+    const gefahren = []
+    if (gesetzt(x.interestBearingConfig) || gesetzt(x.scaledUiAmountConfig)) gefahren.push('Token-2022: Anzeige der Bestände veränderbar')
+    if (gesetzt(x.confidentialTransferMint)) gefahren.push('Token-2022: vertrauliche Überweisungen — Halter nicht prüfbar')
+    return {
+        nichtUebertragbar: x.nonTransferable === true || (gesetzt(x.nonTransferable) && typeof x.nonTransferable === 'object'),
+        staendigBevollmaechtigt: gesetzt(x.permanentDelegate),
+        hook: gesetzt(x.transferHook) && (typeof x.transferHook !== 'object' || x.transferHook.programId !== null),
+        // Gesetzt und nicht ausdrücklich „initialisiert" heisst: Konten können eingefroren starten.
+        standardEingefroren: gesetzt(zustand) && !['1', 'initialized'].includes(zustandText),
+        anhaltbar: mitVollmacht(x.pausableConfig),
+        schliessbar: gesetzt(x.mintCloseAuthority),
+        gebuehrAenderbar: gesetzt(x.transferFeeConfig) && typeof x.transferFeeConfig === 'object'
+            && (x.transferFeeConfig.transferFeeConfigAuthority ?? x.transferFeeConfig.authority) !== null,
+        metadatenAenderbar: [x.metadataPointer, x.tokenMetadata].some((w) => gesetzt(w) && typeof w === 'object'
+            && w.authority !== null && w.authority !== undefined),
+        gefahren,
     }
 }
 

@@ -1206,7 +1206,7 @@
     "wachhundAus": "Off",
     "wachhundAusHinweis": "The watchdog is off. Favourites stay saved and visible — they are simply no longer watched, and no new alerts are raised.",
     "gueteTitel": "What became of the finds? — outcome tracking",
-    "gueteHinweis": "After 1, 7 and 30 days the radar checks: does the pair still exist, how did price and liquidity develop? The best passed finds are compared with a sample of those rejected by the safety check (does the filter work?) and a sample from the field below the threshold (does the score work?).",
+    "gueteHinweis": "After 1, 7 and 30 days we check: does the pair still exist, how did price and liquidity develop? The best passed finds are compared with a sample of those rejected by the safety check (does the filter work?) and a sample of the field below the threshold (does the score work?). A verdict only stands when Fisher's exact test confirms the difference (p < 0.05).",
     "gueteLeer": "No measurements yet. They are created after every scan and redeemed after 1, 7 and 30 days.",
     "gueteFehler": "Outcome tracking could not be loaded.",
     "gueteFuss": "{offen} still open · {fehl} not measurable",
@@ -1222,7 +1222,7 @@
     "fruehAn": "Watch the early phase automatically",
     "fruehTakt": "Interval",
     "fruehAlarmAb": "Alert from score",
-    "fruehAlarmHinweis": "Alerts fire when the score crosses the threshold, at most every 12 hours per token, through the watchdog's channels — only with a checked contract and at least three measured sub-scores. 0 = watch only.",
+    "fruehAlarmHinweis": "Alerts fire when the score crosses the threshold, at most every 12 hours per token, through the watchdog's channels — and only for what could also be a candidate: contract and project checked, at least three sub-scores, two of them from the market, at least 20 transactions in the last hour. 0 = watch only.",
     "fruehQuelle_pumpfunNeu": "pump.fun — newest launches",
     "fruehQuelle_pumpfunAufstieg": "pump.fun — trading now, still on the curve",
     "fruehQuelle_dexscreenerProfile": "DexScreener — new profiles and takeovers",
@@ -1252,7 +1252,11 @@
     "boersenwachtTakt": "Compare every",
     "boersenAlleMelden": "Also alert on listings the radar did not know (large exchanges only)",
     "zBoersen": "exchanges watched",
-    "zBoersenAus": "exchanges off"
+    "zBoersenAus": "exchanges off",
+    "fruehKandidatAb": "Candidate from score",
+    "fruehKandidatHinweis": "A candidate is an alert-eligible token (contract and project checked, at least three sub-scores, two of them from the market, at least 20 transactions in the last hour) with a score from this value. Deliberately below the alert threshold: the list shows what you should look at, the alert what you must not miss.",
+    "guete_filterNichtGesichert": "Filter: no significant difference",
+    "guete_noteNichtGesichert": "Score: no significant difference"
   },
   "kiUebersicht": {
     "laedt": "Loading overview …",
@@ -3624,25 +3628,38 @@
       "intro": "The radar's main check only sees a token from twelve hours of pair age and USD 50,000 liquidity. By then most of the move is often over. The early phase runs before that: every 15 minutes (adjustable) one snapshot per token, and from the history the question whether something is accelerating right now.",
       "sections": [
         {
+          "g": "THE PAGE",
+          "h": "CANDIDATES",
+          "p": "At the top only tokens that meet every condition: contract checked and without a knock-out, project checked, a reliable score (at least three sub-scores, two of them from the market — trading, participation, momentum), at least 20 transactions in the last hour, measured in the last run and a score from the configured threshold (default 50). Two watched smart-money wallets make a token a candidate regardless of its score, as long as its contract is checked. Every candidate is shown in full: key figures, history of score and valuation, sub-scores, findings and project check. Below it stands what the other watched tokens fail on first — an empty list is the normal case, not an error."
+        },
+        {
+          "h": "WATCHLIST",
+          "p": "The star on a token adds it as a favourite — the same one as in the overview. A favourite is measured in every run and never crowded out, and the watchdog watches it by its rules (price, liquidity drain, safety re-check), even after the early phase has dropped it. The list then shows the watchdog's last reading."
+        },
+        {
+          "h": "ALL WATCHED",
+          "p": "The full list of what the early phase is measuring right now is one click away — reliable scores first. In every run 50 of the 150 slots are reserved for new tokens; a token that no longer gets a slot leaves the watch (reason \"crowded out\") instead of staying with stale values."
+        },
+        {
           "g": "HOW THE EARLY PHASE WORKS",
           "h": "SOURCES",
-          "p": "pump.fun (newest launches and what is trading on the bonding curve right now), DexScreener (newly paid profiles and community takeovers), GeckoTerminal (new pools with the number of DISTINCT buyers), the 4chan /biz/ catalog (which contract addresses are mentioned), configured public Telegram channels, optionally Reddit — all without keys — and, paid, X via Grok. A ticker mention (\"$FROG\") only counts for an already known token, and only if exactly one carries that name. Tokens older than three days are not taken in — they have launched, they are not early."
+          "p": "pump.fun (newest launches and what is trading on the bonding curve right now), DexScreener (newly paid profiles and community takeovers), GeckoTerminal (new pools), the 4chan /biz/ catalog (which contract addresses are mentioned), configured public Telegram channels, optionally Reddit — all without keys — and, paid, X via Grok. Buyers and sellers — distinct wallets, not transactions — come from GeckoTerminal for every token. A ticker mention (\"$FROG\") only counts for a token already known, only if exactly one has that symbol and only if no coin of that name is listed on Bitunix, Bitget or Pionex — otherwise every mention of the original would signal its copycats. Tokens older than three days are not taken in — they have launched, they are not early."
         },
         {
           "h": "ACCELERATION, NOT SIZE",
-          "p": "Five sub-scores: trading surge (transactions in the last hour against the token's own history — at first sight the last five minutes against the minutes before; for a token younger than an hour the rate is taken per minute of its age, otherwise steady trading would look like a surge), participation (distinct buyers instead of transactions), social (on how many platforms it is mentioned — three platforms weigh more than a hundred mentions on one), team/substance (the project check) and momentum (valuation growth)."
+          "p": "Five sub-scores: trading surge (last hour's transactions against the token's own history — at first sight the last five minutes against the minutes before; for a token under an hour old it is computed per minute of its age, otherwise steady trading would look like a surge), participation (distinct buyers instead of transactions; holder growth only against a figure from the same source), social (on how many platforms it is mentioned — three platforms outweigh a hundred mentions on one; measured the same for every token as soon as a social source ran), team/substance (the project check) and momentum (valuation against the oldest reading of the last twelve hours; King of the Hill — the pump.fun front page — counts for three hours)."
         },
         {
           "h": "WHAT IS DEDUCTED",
-          "p": "One-sided buying (more than eight times as many buys as sells — often a bot or a sell block), circular trading (many transactions, few wallets), volume without price movement (wash suspicion), serial creators without a single success, and a collapse below 20 % of the observed peak — then the token is rejected. A token without a single trade for at least 30 minutes is rejected too: dead, not quiet. A paid DexScreener profile earns no points — it shows an advertising budget, not a team — and appears only as a note on the token. In every run 50 of the 150 slots are reserved for new tokens, so the search does not clog up with old finds after the first run."
+          "p": "One-sided buying (from 30 transactions in the hour, no sell or more than eight buys per sell — often a bot or a sell lock), circular trading (from 100 pool transactions, more than eight per participating wallet), volume without price movement (wash suspicion), serial creators without a single success (only without a project check — otherwise it is already in the substance score), and a collapse below 20 % of the observed peak — then the token is discarded. A token without a single trade for at least 30 minutes is discarded as well: dead, not quiet. A paid DexScreener profile earns no points — it shows an ad budget, not a team — and is only noted at the token. 50 of the 150 slots per run are reserved for new tokens so the search is not clogged by old finds after the first run."
         },
         {
           "h": "CONTRACT, HOLDERS, SMART MONEY",
-          "p": "For the best of each run the contract is checked (RugCheck, otherwise GoPlus): mint or freeze authority, honeypot and the like reject the token at once. Plus the holder picture — share of insider wallets, of the ten largest holders (on pump.fun excluding the bonding curve, which naturally holds most) and of the creator — and the holder count, whose growth feeds participation. King of the Hill (the pump.fun front page) counts as momentum. Smart money: wallets you enter in the settings; if two of them buy the same token, an alert goes out at once."
+          "p": "For the best of each run the contract is checked (RugCheck, else GoPlus): mint or freeze authority, honeypot and the like discard the token at once, as do Token-2022 extensions that let the issuer freeze or move balances. Plus the holder picture — insider wallets (deduction from 15 %), networks of linked insiders (once they hold 5 % together), the ten largest holders (from 50 %, excluding the bonding curve and known pools; on the curve additionally from 80 % of the sold part once there are 50 holders) and the creator (from 10 %; if not among the largest holders it reads \"below x %\" instead of an invented zero) — and the holder count, whose growth feeds participation. Smart money: wallets you enter in the settings. A buy only counts if the wallet signed it and paid at least 0.005 SOL beyond fee and rent; a wallet that sells half of it again within the window no longer counts. If two wallets buy the same token, it gets a slot in every run and is reported at once as soon as its contract is checked."
         },
         {
           "h": "PROJECT CHECK",
-          "p": "For the best of each run: the website (sections, correct contract address, placeholder text), the domain age, GitHub (maintained, earlier projects) and on pump.fun the other coins of the same wallet. That is the question \"has this team ever delivered anything\" — for tokens without a site or code the only trace."
+          "p": "For the best of each run: the website (sections, correct contract address, placeholder text), the domain age, GitHub (maintained, earlier projects) and for pump.fun the other coins of the same wallet — for tokens without a site or code the only trace of a team. The website has to be its OWN: a tweet, a video, someone else's repository or a trading page counts as \"no own website\", the coin page of another address as the copied details of another coin. Points are only given for a site that demonstrably belongs to the token (contract on it, or the name in domain or title plus \"$symbol\" or a trading link); if several tokens list the same site, only the one whose contract is on it keeps them."
         },
         {
           "g": "AFTERWARDS",
@@ -3651,7 +3668,7 @@
         },
         {
           "h": "ALERTS",
-          "p": "If the score rises above the configured threshold, an alert goes out through the watchdog's channels (ntfy, Telegram, webhook) — on crossing, not while above, and at most every twelve hours per token. Two further conditions apply: the contract must have been checked (if neither RugCheck nor GoPlus knows it, e.g. on a chain without a checking service, nothing is sent), and the score must rest on at least three of the five sub-scores — built from one or two it easily turns extreme. Both show as a note on the token; such thin scores sit at the bottom of the list, greyed out. Outcome tracking counts by the same rule."
+          "p": "When the score rises above the alert threshold, an alert goes out through the watchdog's channels (ntfy, Telegram, webhook) — on crossing, not while above, and at most every twelve hours per token. The same conditions as for candidates apply: contract checked (if neither RugCheck nor GoPlus knows it, nothing is sent), at least three sub-scores, two of them from the market — one or two make the score extreme easily —, project checked and at least 20 transactions in the last hour. What is missing is noted at the token. The outcome tracking counts by the same rule."
         },
         {
           "h": "X AND TIKTOK",
@@ -3659,7 +3676,7 @@
         },
         {
           "h": "OUTCOME TRACKING",
-          "p": "Every token that crosses the threshold and a random sample of all newly seen ones are re-checked after 1, 3 and 7 days: alive, curve completed, return, and whether it doubled at some point. Only the comparison with the random sample tells whether the score does better than luck — with a base rate of about 1 % curve completions that is the only honest question."
+          "p": "Every token that crosses the alert threshold gets a partner from the same run: also reportable, but below the score, in the same state (curve or pool) and of similar age. Both are checked after 1, 3 and 7 days — doubled in between, still traded, curve completed, return. They are compared pairwise with the exact McNemar test; a verdict needs ten complete pairs and only stands at p < 0.05. Not \"do traded tokens live longer than dead ones\" but \"does the score find the better ones among equally well checked tokens\" — with a base rate of about 1 % curve completions that is the only honest question. A random sample of all newly seen tokens stands next to it as the base rate."
         }
       ],
       "caveat": "Early-phase tokens are the riskiest class there is — most are worthless within hours. The contract check here covers only the best of each run; the full check (liquidity lock, taxes, minimum age) only follows in the main check. The weights are assumptions that have to prove themselves in the outcome tracking. Not investment advice."
@@ -4470,7 +4487,7 @@
     "gestartet": "Run started — the list refreshes as soon as it is done.",
     "startFehler": "Run could not be started.",
     "ladeFehler": "Early phase could not be loaded.",
-    "erklaerung": "Tokens ahead of the main check (younger than 12 h or below USD 50,000 liquidity). The score measures acceleration against the token's own history, not size. Contract and holders are checked for the best; the full safety check follows in the main check.",
+    "erklaerung": "Tokens before the main check (younger than 12 h or below USD 50,000 liquidity). The score measures acceleration against the token's own history, not size. At the top only the candidates, below them what you watch with the star; the full list is one click away.",
     "leer": "Nothing watched yet. Switch the early phase on via the gear or start a run by hand.",
     "substanzKurz": "Substance",
     "spalteToken": "Token",
@@ -4495,6 +4512,65 @@
     "grund_alt": "older than 3 days",
     "grund_still": "no trading",
     "duennTitel": "Score from fewer than three of the five sub-scores — easily extreme, so sorted to the bottom and never alerted",
+    "grund_verdraengt": "crowded out",
+    "status_kandidat": "candidate",
+    "kandidatenTitel": "Candidates",
+    "kandidatenRegel": "score from {n}, contract and project checked, at least two market measurements, trading, measured in the last run",
+    "kandidatenLeer": "No token meets all conditions right now. That is the normal case: only about one percent of pump.fun tokens ever completes the curve.",
+    "trichterSatz": "Of {n} watched tokens, the first thing missing is: {teile}.",
+    "trichter_veraltet": "{n} not measured in the last run",
+    "trichter_verworfen": "{n} rejected",
+    "trichter_ungeprueft": "{n} contract not yet checked",
+    "trichter_duenn": "{n} too few measurements",
+    "trichter_projekt": "{n} project not yet checked",
+    "trichter_handel": "{n} no ongoing trading",
+    "trichter_note": "{n} score below {s}",
+    "bedingung_veraltet": "not measured in the last run",
+    "bedingung_verworfen": "rejected",
+    "bedingung_ungeprueft": "contract not yet checked",
+    "bedingung_duenn": "too few measurements (at least three sub-scores, two of them from the market)",
+    "bedingung_projekt": "project not yet checked",
+    "bedingung_handel": "fewer than 20 transactions in the last hour",
+    "bedingung_note": "score below {s}",
+    "keinKandidat": "Not a candidate: {g}",
+    "istKandidat": "Meets every condition of a candidate",
+    "beobachtungTitel": "Watchlist",
+    "beobachtungLeer": "Nothing watched yet. The star on a token adds it here — it is then measured in every run, never crowded out, and the watchdog reports by its rules, even after the early phase drops the token.",
+    "beobachtungNichtMehr": "No longer in the early phase — the watchdog's last reading:",
+    "beobachtungNochKeinStand": "No longer in the early phase, and the watchdog has not measured yet.",
+    "alleZeigen": "Show all watched ({n})",
+    "alleVerbergen": "Hide all watched",
+    "alleHinweis": "The raw list: everything the early phase is measuring right now, reliable scores first. Hover over the status to see which condition for a candidate is missing.",
+    "sternAn": "Watch (star) — always measured, the watchdog reports",
+    "sternAus": "Stop watching",
+    "sternFehler": "The star could not be set. Please try again.",
+    "verlaufEinzeln": "No history yet — only one reading.",
+    "verlaufTitel": "History of score and valuation",
+    "verlaufNote": "score {a} → {b}",
+    "verlaufMcap": "valuation {a} → {b} USD",
+    "verlaufSpanne": "{n} readings over {d}",
+    "kzBewertung": "Valuation",
+    "kzLiquiditaet": "Liquidity",
+    "kzKurve": "on the curve",
+    "kzHandel": "Trades 1 h",
+    "kzKaeufer": "Buyers / sellers 1 h",
+    "kzHalter": "Holders",
+    "kzKurs1h": "Price 1 h",
+    "kzKurs24h": "Price 24 h",
+    "kzAlter": "Age",
+    "kzPreis": "Price",
+    "kzStand": "As of",
+    "quelleName_pumpfun": "pump.fun",
+    "quelleName_dexscreener": "DexScreener",
+    "quelleName_geckoterminal": "GeckoTerminal",
+    "quelleName_biz": "/biz/",
+    "quelleName_telegram": "Telegram",
+    "quelleName_reddit": "Reddit",
+    "quelleName_smartmoney": "Smart money",
+    "quelleName_details": "market data",
+    "quelleName_kaeufer": "buyers",
+    "quelleName_risiko": "contract checked",
+    "quelleName_verdraengt": "crowded out",
     "txKurz": "{n} tx",
     "sozialTitel": "Mentioned on: {p} — {n} mentions in the last run",
     "teilnoten": "Sub-scores",
@@ -4520,20 +4596,29 @@
     "signalSmart": "{n} watched wallet(s) bought: {namen}",
     "signalBoerse": "Already listed: {b}",
     "gueteTitel": "Outcome tracking — does the score hit?",
-    "gueteLeer": "No measurements yet. Measured after 1, 3 and 7 days: tokens above the threshold against a random sample of all newly seen ones.",
+    "gueteLeer": "No measurements under the rules of 10 Oct 2026 yet. Measured after 1, 3 and 7 days.",
     "gueteGruppe": "Group",
     "gueteGruppe_spitze": "above threshold",
-    "gueteGruppe_kontrolle": "random sample",
+    "gueteGruppe_kontrolle": "Partner (below the score)",
     "gueteLebt": "alive",
     "gueteKurve": "curve completed",
     "gueteRendite": "Return (median)",
     "gueteVerdoppelt": "at some point ≥ 2×",
     "gueteOffen": "{n} still open",
-    "guete_zuWenig": "too few measurements for a verdict (10 per group)",
-    "guete_trefferBesser": "flagged tokens double more often than chance",
-    "guete_trefferNichtBesser": "flagged tokens do not double more often than chance",
-    "guete_lebtLaenger": "flagged tokens survive more often",
-    "guete_lebtNichtLaenger": "flagged tokens do not survive more often"
+    "guete_zuWenig": "too few pairs for a verdict (at least 10)",
+    "gueteHinweis": "Every token above the threshold is compared with a partner from the same run: also reportable (contract checked, reliably measured, traded) but below the score, in the same state (curve or pool) and of similar age. Measured after 1, 3 and 7 days. \"Alive\" means at least 5 transactions in the last 6 hours. \"Curve completed\" only counts tokens still on the curve at the start. A verdict needs ten complete pairs and only stands when the exact McNemar test confirms the difference (p < 0.05). The field — a random sample of all newly seen tokens — is the base rate, not a comparison.",
+    "gueteGruppe_feld": "Field (base rate)",
+    "guetePaare": "pairs: {n}",
+    "gueteAltbestand": "under old rules, not evaluated: {n}",
+    "guete_treffer_besser": "Top doubles significantly more often than its partner",
+    "guete_treffer_schlechter": "Top doubles significantly less often than its partner",
+    "guete_treffer_nichtGesichert": "Hits: no significant difference",
+    "guete_lebt_besser": "Top is significantly more often still traded",
+    "guete_lebt_schlechter": "Top is significantly less often still traded",
+    "guete_lebt_nichtGesichert": "Alive: no significant difference",
+    "guete_kurve_besser": "Top completes the curve significantly more often",
+    "guete_kurve_schlechter": "Top completes the curve significantly less often",
+    "guete_kurve_nichtGesichert": "Curve: no significant difference"
   },
   "hypeProjekt": {
     "titel": "Project check",

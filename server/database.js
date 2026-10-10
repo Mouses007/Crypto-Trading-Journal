@@ -176,7 +176,12 @@ async function fixPostgresSequences(knex) {
 // `hypeKeySolanaRpc`), Börsen-Beobachter (`hype_boersen_stand`,
 // `hype_listungen_neu`, Gedächtnis `hype_gedaechtnis`) und für die Erfolgskontrolle der Frühphase
 // `graduiert`/`mcapStart`/`mcapEnde` an `radar_ergebnisse`. Rein additiv.
-const SCHEMA_VERSION = 22
+// v23: `host` an `hype_projekt` (welche Token dieselbe Webseite angeben), aus dem
+// Bestand nachgetragen; `regel`/`graduiertStart`/`alterStartH`/`pumpFun` an
+// `radar_ergebnisse` und ein Index je Art. Rein additiv; ein älterer Codestand
+// schreibt die Spalten nicht — seine Prüfungen zählen beim Teilen nicht mit,
+// seine Frühphasen-Aufträge nicht in der Auswertung (ohne Regelstand).
+const SCHEMA_VERSION = 23
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -3327,6 +3332,54 @@ async function runMigrations(knex, client) {
 
     // Modus-Schalter, gleiches Muster wie modusLiveAn/modusResearchAn/modusStrategieAn oben.
     await addColumnIfNotExists('settings', 'modusLernenAn', (t) => t.integer('modusLernenAn').defaultTo(1))
+
+    // ── v23 ─────────────────────────────────────────────────────────────
+    /*
+     * Projektprüfung: der Host der angegebenen eigenen Webseite. Gemessen am
+     * 10.10.2026 nannten fünf Token dieselbe Seite (tootincoin.money), drei
+     * denselben Forschungsartikel, 29 die Seiten derselben Coin-Plattform —
+     * höchstens einer ist jeweils das Original. Die Frage, wer eine Seite noch
+     * nennt, braucht eine Spalte mit Index; im JSON gesucht, läse sie jede Zeile.
+     */
+    if (!(await knex.schema.hasColumn('hype_projekt', 'host'))) {
+        await knex.schema.alterTable('hype_projekt', (t) => {
+            t.string('host')
+            t.index(['host'], 'idx_hype_projekt_host')
+        })
+        const { ordneWebseite } = await import('./hype-radar/projekt-bewertung.js')
+        const zeilen = await knex('hype_projekt').select('id', 'schluessel', 'ergebnis')
+        let gesetzt = 0
+        for (const z of zeilen) {
+            let w = null
+            try { w = JSON.parse(z.ergebnis || '{}')?.fakten?.webseite || null } catch { /* kaputte Zeile */ }
+            if (!w?.url || w.status === 'keine') continue
+            // Dieselbe Regel wie beim Schreiben: nur eine Seite, die eine eigene sein KANN.
+            const o = ordneWebseite(w.url, String(z.schluessel || '').split('|').slice(1).join('|'))
+            if (o.grund || !o.host) continue
+            await knex('hype_projekt').where('id', z.id).update({ host: o.host })
+            gesetzt++
+        }
+        console.log(` -> Added column hype_projekt.host (${gesetzt} von ${zeilen.length} nachgetragen)`)
+    }
+
+    /*
+     * Erfolgskontrolle der Frühphase, neu aufgesetzt (10.10.2026): Regelstand
+     * (ältere Aufträge werden gemessen, aber nicht ausgewertet) und der Zustand
+     * am Start, ohne den „hat die Kurve geschafft" nichts heisst. Dazu ein Index
+     * je Art — die Warteschlangen sind getrennt, und eine Abfrage „offen,
+     * Frühphase, fällig" läse über den alten Index (status, faelligAm) zuerst
+     * Hunderttausende Coin-Radar-Aufträge.
+     */
+    if (!(await knex.schema.hasColumn('radar_ergebnisse', 'regel'))) {
+        await knex.schema.alterTable('radar_ergebnisse', (t) => {
+            t.integer('regel')
+            t.index(['art', 'status', 'faelligAm'], 'idx_radar_erg_art_faellig')
+        })
+        console.log(' -> Added column radar_ergebnisse.regel + Index je Art')
+    }
+    await addColumnIfNotExists('radar_ergebnisse', 'graduiertStart', (t) => t.integer('graduiertStart'))
+    await addColumnIfNotExists('radar_ergebnisse', 'alterStartH', (t) => t.double('alterStartH'))
+    await addColumnIfNotExists('radar_ergebnisse', 'pumpFun', (t) => t.integer('pumpFun'))
 
     // ==================== SCHEMA-ANKER ====================
     // Ganz am Ende, damit die Version erst steht, wenn alle Checks durch sind.

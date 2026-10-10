@@ -188,8 +188,19 @@ export async function holeJson(url, { timeout = ABRUF_TIMEOUT_MS, kopf = {} } = 
                 },
             })
             if (!r.ok) {
-                const fehler = new Error(`HTTP ${r.status}`)
-                // Nur bei Serverfehlern nachfassen.
+                // Der Status am Fehler: „gibt es nicht" (404) ist für den Aufrufer etwas anderes als „gerade nicht".
+                const fehler = Object.assign(new Error(`HTTP ${r.status}`), { status: r.status })
+                /*
+                 * 429 einmal nachfassen, nach der Wartezeit, die der Dienst
+                 * nennt (höchstens zehn Sekunden). Das Kontingent gilt je IP —
+                 * NAS und Entwicklungsrechner teilen es —, und GeckoTerminal
+                 * lässt am 10.10.2026 nur fünf Abfragen kurz hintereinander durch.
+                 */
+                if (r.status === 429) {
+                    const sagt = Number(r.headers.get('retry-after'))
+                    throw Object.assign(fehler, { warteMs: Number.isFinite(sagt) && sagt > 0 ? Math.min(10000, sagt * 1000) : 3000 })
+                }
+                // Sonst nur bei Serverfehlern nachfassen.
                 if (r.status < 500) throw Object.assign(fehler, { endgueltig: true })
                 throw fehler
             }
@@ -197,12 +208,35 @@ export async function holeJson(url, { timeout = ABRUF_TIMEOUT_MS, kopf = {} } = 
         } catch (e) {
             letzterFehler = e
             if (e.endgueltig || versuch === 1) break
-            await new Promise((r) => setTimeout(r, 800))
+            await new Promise((r) => setTimeout(r, e.warteMs || 800))
         } finally {
             clearTimeout(uhr)
         }
     }
     throw letzterFehler
+}
+
+/**
+ * Ein einzelner pump.fun-Coin, über `/coins-v2/{mint}`.
+ *
+ * `/coins/{mint}` antwortet für JEDEN Coin mit 404 — gemessen am 10.10.2026
+ * am meistgehandelten des Augenblicks, auch mit `?sync=true`. Projektprüfung
+ * (Links, Ersteller) und Erfolgskontrolle (Kurve geschafft, lebt) bekamen bis
+ * dahin still „gibt es nicht". Die Filter `?mint=` und `?searchTerm=` der
+ * Liste werden ignoriert (sie liefern irgendwelche Coins) — deshalb die
+ * Gegenprobe über `mint`.
+ *
+ * @returns {Promise<object|null>} der Coin; null, wenn pump.fun ihn nicht kennt (404)
+ * @throws bei jedem anderen Fehler — „gerade nicht erreichbar" ist nicht „gibt es nicht"
+ */
+export async function pumpCoin(mint) {
+    try {
+        const c = await holeJson(`https://frontend-api-v3.pump.fun/coins-v2/${encodeURIComponent(mint)}`)
+        return c && typeof c === 'object' && String(c.mint || '') === String(mint) ? c : null
+    } catch (e) {
+        if (Number(e.status) === 404) return null
+        throw e
+    }
 }
 
 /** Symbol vereinheitlichen — „$PEPE" und „pepe" sind derselbe Fund. */
@@ -508,6 +542,8 @@ function ausPaar(p, seite = 'base') {
             // Wer die Basis kauft, verkauft die Gegenseite — das Verhältnis kehrt sich um.
             kaufVerkaufVerhaeltnis: umgekehrt(m.kaufVerkaufVerhaeltnis),
             kaufVerkauf1h: umgekehrt(m.kaufVerkauf1h),
+            kaeufe1h: m.verkaeufe1h,
+            verkaeufe1h: m.kaeufe1h,
             boosts: 0, webseiten: null, kanaele: null, bild: '', links: null,
         },
     }
@@ -567,10 +603,16 @@ function ausPaarBasis(p, seite) {
             transaktionen24h: kaeufe + verkaeufe,
             // Ohne Fenster unbekannt, nicht 0 — die Frühphase verwirft bei 0 („still").
             transaktionen1h: p?.txns?.h1 ? (Number(p.txns.h1.buys) || 0) + (Number(p.txns.h1.sells) || 0) : null,
+            // Die Erfolgskontrolle fragt „wird noch gehandelt" — dafür die letzten sechs Stunden.
+            transaktionen6h: p?.txns?.h6 ? (Number(p.txns.h6.buys) || 0) + (Number(p.txns.h6.sells) || 0) : null,
             // Die letzten fünf Minuten — für die Frühphase das Mass, ob der
             // Handel innerhalb der Stunde gerade anzieht.
             transaktionen5m: p?.txns?.m5 ? (Number(p.txns.m5.buys) || 0) + (Number(p.txns.m5.sells) || 0) : null,
             kaufVerkauf1h: verhaeltnis(p?.txns?.h1),
+            // Rohe Zahlen: das Verhältnis ist bei null Verkäufen 99 und taugt
+            // ohne Mindestmenge nicht als Befund (Frühphase, „einseitig").
+            kaeufe1h: p?.txns?.h1 ? Number(p.txns.h1.buys) || 0 : null,
+            verkaeufe1h: p?.txns?.h1 ? Number(p.txns.h1.sells) || 0 : null,
             /*
              * BEZAHLTE SICHTBARKEIT — der Wert, um den es hier eigentlich geht.
              *

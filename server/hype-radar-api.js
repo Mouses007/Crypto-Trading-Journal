@@ -17,7 +17,7 @@ import { logWarn } from './logger.js'
 import { beansprucheAufgabe, meldeFehler } from './db-claim.js'
 import { leseEinstellungen, schreibeEinstellungen, schreibeSchluessel, maskiere } from './hype-radar/einstellungen.js'
 import { scanne, scanneUndBerichte } from './hype-radar/lauf.js'
-import { dexDetails } from './hype-radar/quellen.js'
+import { dexDetails, normChain } from './hype-radar/quellen.js'
 import { ladeListungen, pruefeListung } from './hype-radar/listungen.js'
 import { wachhundLauf, STANDARD_ALARM_REGELN } from './hype-radar/wachhund.js'
 import { testZustellung } from './hype-radar/zustellung.js'
@@ -27,7 +27,13 @@ import { HORIZONTE } from './radar-ergebnisse.js'
 import { werteAusHype, werteAusFrueh } from './radar-guete.js'
 import { pruefeProjekt, kurzfassung, gespeichertePruefungen, schluesselFuer } from './hype-radar/projekt.js'
 import { fruehLauf, fruehStand } from './hype-radar/fruehphase.js'
-import { istDuenn } from './hype-radar/fruehphase-bewertung.js'
+import { istDuenn, kandidatStatus, KANDIDAT_AB } from './hype-radar/fruehphase-bewertung.js'
+
+/** Vertrag als Schlüssel: Solana unterscheidet Gross/Klein, EVM nicht. */
+const vertragsSchluessel = (chain, contract) => {
+    const c = normChain(chain)
+    return `${c}|${c === 'solana' ? String(contract || '') : String(contract || '').toLowerCase()}`
+}
 import { smartWalletStand } from './hype-radar/smartmoney.js'
 import { boersenLauf, boersenStand, boersenUebersicht, ladeStaende } from './hype-radar/boersenwacht.js'
 import { leiterFuer } from './hype-radar/boersenwacht-bewertung.js'
@@ -155,11 +161,13 @@ export function setupHypeRadarRoutes(app) {
                 const m = sicherParse(zeile?.marktDaten, {})
                 kandidat.links = m.links || null
                 kandidat.ersteller = m.ersteller || ''
+                const f = await getKnex()('hype_frueh').where('contract', kandidat.contract).first().catch(() => null)
                 if (!kandidat.links) {
-                    const f = await getKnex()('hype_frueh').where('contract', kandidat.contract).first().catch(() => null)
                     kandidat.links = sicherParse(f?.links, null)
                     kandidat.ersteller = f?.ersteller || kandidat.ersteller
                 }
+                // Die Frühphase weiss, ob es ein pump.fun-Token ist — die Endung „pump" trägt nicht jeder.
+                if (sicherParse(f?.stand, {}).pump === true) kandidat.pump = true
             }
             const e = await pruefeProjekt(kandidat, { neu: req.query.neu === '1' })
             res.json({ ...kurzfassung(e), auszug: e.fakten?.webseite?.fakten?.beschreibung || '' })
@@ -171,42 +179,111 @@ export function setupHypeRadarRoutes(app) {
 
     // ── Frühphase ───────────────────────────────────────────────────────
     /**
-     * Die beobachteten Token der Frühphase, die besten zuerst.
+     * Die Frühphase in drei Teilen.
      *
-     * Vorgabe: was in den letzten 72 Stunden gesehen wurde und nicht verworfen
-     * ist. `alle=1` zeigt die Verworfenen mit — mit Grund, damit sichtbar
-     * bleibt, WARUM ein Token aus dem Rennen ist.
+     * - `kandidaten`: nur, was `kandidatStatus` besteht — meldefähig (Vertrag
+     *   und Projekt geprüft, belastbare Note, laufender Handel), im letzten
+     *   Durchgang gemessen und mit einer Note ab `fruehKandidatAb`. Mit vollem
+     *   Verlauf für das Diagramm.
+     * - `beobachtung`: die Favoriten (Stern), jeweils mit ihrer Frühphasen-Zeile,
+     *   wo es eine gibt — auch wenn die Frühphase den Token längst verworfen hat.
+     * - `trichter`: wie viele beobachtete Token an welcher Bedingung scheitern.
+     *   Eine leere Kandidatenliste ist sonst nicht von einer kaputten zu
+     *   unterscheiden.
+     *
+     * Die ganze Liste (`zeilen`) nur mit `roh=1`; `alle=1` nimmt die
+     * Verworfenen dazu — mit Grund, damit sichtbar bleibt, WARUM ein Token aus
+     * dem Rennen ist.
      */
     app.get('/api/hype-radar/frueh', async (req, res) => {
         try {
-            let q = getKnex()('hype_frueh').select('*')
-            if (req.query.alle !== '1') q = q.whereNot('status', 'verworfen')
-            const zeilen = await q.orderBy('note', 'desc').limit(Math.min(300, Number(req.query.limit) || 150))
-            const projekte = await gespeichertePruefungen(zeilen)
-            const staende = await ladeStaende()
-            const aufbereitet = zeilen.map((z) => {
+            const knex = getKnex()
+            const einst = await leseEinstellungen()
+            const schwelle = Number(einst.fruehKandidatAb) || KANDIDAT_AB
+            const projektPflicht = einst.projektPruefung !== false
+            const aktiv = await knex('hype_frueh').select('*').whereNot('status', 'verworfen')
+            /*
+             * Der letzte Durchgang ist der jüngste `letzterBlick` — aus der
+             * Datenbank, nicht aus dem Prozess: NAS und Entwicklungsrechner
+             * schreiben in dieselbe Tabelle.
+             */
+            const letzterLauf = aktiv.reduce((m, z) => Math.max(m, Number(z.letzterBlick) || 0), 0)
+
+            const favoriten = await knex('hype_favoriten').select('*').whereNot('quelle', 'coinradar').catch(() => [])
+            const favNach = new Map(favoriten.filter((f) => f.contractAddress)
+                .map((f) => [vertragsSchluessel(f.chain, f.contractAddress), f]))
+            const favVon = (z) => favNach.get(vertragsSchluessel(z.chain, z.contract)) || null
+
+            const pruefe = (z, stand) => kandidatStatus({ ...z, stand }, { letzterLauf, schwelle, projektPflicht })
+            const geparst = aktiv.map((z) => {
                 const stand = sicherParse(z.stand, {})
-                return { z, stand, duenn: istDuenn(stand) }
+                return { z, stand, k: pruefe(z, stand) }
             })
+            const trichter = {}
+            for (const g of geparst) {
+                const grund = g.k.ja ? 'kandidat' : g.k.grund
+                trichter[grund] = (trichter[grund] || 0) + 1
+            }
+            const kandidaten = geparst.filter((g) => g.k.ja).sort((a, b) => b.z.note - a.z.note)
+
+            // Favoriten: ihre Zeile auch dann, wenn sie verworfen ist.
+            const favVertraege = favoriten.filter((f) => f.contractAddress)
+                .flatMap((f) => [String(f.contractAddress), String(f.contractAddress).toLowerCase()])
+            const favZeilen = favVertraege.length
+                ? (await knex('hype_frueh').select('*').whereIn('contract', [...new Set(favVertraege)]))
+                    .filter((z) => favVon(z))
+                : []
+            const zeileZuFav = new Map(favZeilen.map((z) => [vertragsSchluessel(z.chain, z.contract), z]))
+
+            let roh = []
+            if (req.query.roh === '1') {
+                let q = knex('hype_frueh').select('*')
+                if (req.query.alle !== '1') q = q.whereNot('status', 'verworfen')
+                roh = await q.orderBy('note', 'desc').limit(Math.min(300, Number(req.query.limit) || 150))
+            }
+
+            const projekte = await gespeichertePruefungen([...kandidaten.map((g) => g.z), ...favZeilen, ...roh])
+            const staende = await ladeStaende()
+            const VOLLER_VERLAUF = ['ts', 'note', 'mcap', 'liq', 'halter', 'tx1h', 'kaeufer1h', 'verkaeufer1h']
+            const ansicht = (z, stand = sicherParse(z.stand, {}), { voll = false } = {}) => ({
+                ...z,
+                stand,
+                duenn: istDuenn(stand),
+                kandidat: pruefe(z, stand),
+                favoritId: favVon(z)?.id ?? null,
+                quellen: sicherParse(z.quellen, []),
+                links: sicherParse(z.links, {}),
+                // Für die Liste nur die Notenreihe — die vollen Momentaufnahmen wären
+                // bei 150 Zeilen ein paar hundert Kilobyte. Kandidaten bekommen mehr.
+                verlauf: sicherParse(z.verlauf, []).map((v) => Object.fromEntries((voll ? VOLLER_VERLAUF : ['ts', 'note', 'mcap', 'halter'])
+                    .map((f) => [f, v[f] ?? null]))),
+                befunde: sicherParse(z.befunde, []),
+                projekt: kurzfassung(projekte.get(schluesselFuer(z)) || null),
+                // Auf welchen Börsen der Token schon steht (Alpha nach Vertrag).
+                leiter: leiterFuer({ symbol: z.symbol, chain: z.chain, contract: z.contract,
+                    bewertungUsd: stand?.mcap }, staende),
+            })
+
+            const zeilen = roh.map((z) => ansicht(z))
             // Belastbare Noten zuerst; eine Note aus ein, zwei Teilnoten ist leicht extrem.
-            aufbereitet.sort((a, b) => (Number(a.duenn) - Number(b.duenn)) || (b.z.note - a.z.note))
+            zeilen.sort((a, b) => (Number(a.duenn) - Number(b.duenn)) || (b.note - a.note))
+
             res.json({
                 stand: fruehStand(),
-                zeilen: aufbereitet.map(({ z, stand, duenn }) => ({
-                    ...z,
-                    duenn,
-                    quellen: sicherParse(z.quellen, []),
-                    links: sicherParse(z.links, {}),
-                    stand,
-                    // Der Verlauf nur als Notenreihe — die vollen Momentaufnahmen
-                    // wären bei 150 Zeilen ein paar hundert Kilobyte.
-                    verlauf: sicherParse(z.verlauf, []).map((v) => ({ ts: v.ts, note: v.note ?? null, mcap: v.mcap ?? null, halter: v.halter ?? null })),
-                    befunde: sicherParse(z.befunde, []),
-                    projekt: kurzfassung(projekte.get(schluesselFuer(z)) || null),
-                    // Auf welchen Börsen der Token schon steht (Alpha nach Vertrag).
-                    leiter: leiterFuer({ symbol: z.symbol, chain: z.chain, contract: z.contract,
-                        bewertungUsd: stand?.mcap }, staende),
-                })),
+                letzterLauf,
+                schwelle,
+                beobachtet: aktiv.length,
+                trichter,
+                kandidaten: kandidaten.map((g) => ansicht(g.z, g.stand, { voll: true })),
+                beobachtung: favoriten.map((f) => {
+                    const z = f.contractAddress ? zeileZuFav.get(vertragsSchluessel(f.chain, f.contractAddress)) : null
+                    return {
+                        favorit: { id: f.id, symbol: f.symbol, name: f.name, chain: f.chain, contractAddress: f.contractAddress,
+                            stumm: Boolean(f.stumm), erstelltAm: f.erstelltAm, letzteDaten: sicherParse(f.letzteDaten, {}) },
+                        zeile: z ? ansicht(z, undefined, { voll: true }) : null,
+                    }
+                }),
+                zeilen,
             })
         } catch (e) {
             logWarn('hype-radar', `Frühphase lesen: ${e.message}`)

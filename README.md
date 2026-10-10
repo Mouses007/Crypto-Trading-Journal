@@ -75,6 +75,23 @@ and, for pump.fun tokens, the creator wallet's other coins — creators who got 
 through the bonding curve before succeed far more often than the ~1 % base rate,
 serial launchers produce mass goods. The result is a **substance score** shown
 next to hype and safety, never merged with either. No keys; cached 24 h.
+The website has to be the token's *own*: a tweet, a TikTok video, somebody
+else's GitHub repository or a trading/explorer page counts as "no own website";
+the coin page of *another* address (the copied details of another coin — 49 of
+the stored checks on 10 Oct 2026, 25 of them with the same symbol) is penalised
+like a foreign contract address; a page listing many contracts (launchpad,
+trading venue) is not a project page; and if several tokens name the same site,
+only the one whose contract is on it keeps the points. Points for the site itself
+(text, sections, domain age) require evidence that it belongs to the token — the
+contract on the page, or name/symbol in domain or title *plus* "$symbol" or a link
+to a trading venue; an article deep inside someone else's site or a years-old
+brand domain counts as no website. X counts as a channel only for an account or
+community, not a single post; a Telegram trading bot is no community; GitHub only
+scores when the own site links it or the repository names the contract or site.
+"Unreachable" only costs points when the site really does not exist (404/410,
+server error, refused connection, a domain two independent DNS-over-HTTPS
+resolvers confirm as non-existent) — timeouts, bot protection, oversized pages or
+a local DNS filter answering 0.0.0.0 cost nothing.
 
 **Early phase.** The main check only sees tokens from 12 h pair age and USD 50k
 liquidity. A separate lane runs before that (off by default, every 15 min when on):
@@ -89,21 +106,36 @@ creators and collapses; a token without a single trade for 30 minutes is dropped
 sources cover only its age, so rates are taken per minute of that age — otherwise
 steady trading reads as a surge (it did, on the first real run, for 28 of 43 such
 tokens). Tokens older than three days are not taken in. Tokens that mature enter
-the next main scan as a source of their own; crossing a score threshold sends an
-alert through the watchdog's channels — only with a checked contract and a score
-resting on at least three of the five sub-scores. X is available through the paid Grok `x_search` (off by default, own
+the next main scan as a source of their own. The page leads with **candidates** —
+only tokens that pass every gate (contract checked, at least three sub-scores
+with two of them from the market, project checked, at least 20 transactions in
+the last hour, measured in the latest run, score from the candidate threshold,
+default 50) — each in detail with its history, findings and project check, plus
+one sentence on why the others fail. Below sits the **watchlist** (starred tokens:
+measured every run, never crowded out, watched by the watchdog); the raw list of
+everything observed opens on click. A token that gets none of the 150 slots drops
+out ("crowded out") instead of lingering with stale numbers. Crossing the alert
+threshold sends an alert through the watchdog's channels under the same gates.
+A ticker mention only counts for a known token and only if no coin of that name is
+listed on Bitunix, Bitget or Pionex. X is available through the paid Grok `x_search` (off by default, own
 interval): only posts the search cited and whose text contains the address count,
 and distinct authors instead of posts. TikTok is not connected — no free access.
 For the best tokens of each run the early phase also checks the contract and the
-holder picture (RugCheck, else GoPlus: mint/freeze authority, insider share, top-10
-share *excluding the bonding curve*, creator share, holder count and its growth),
-counts pump.fun "King of the Hill" as momentum, and optionally watches **smart-money
-wallets** you enter (Solana RPC, public node or your own Helius address; only
-signed, paid purchases count — two watched wallets on one token trigger an alert
-once its contract is checked).
-Its own **outcome tracking** compares tokens above the threshold with a random
-sample of all newly seen ones after 1, 3 and 7 days (alive, curve completed,
-return, doubled at some point).
+holder picture (RugCheck, else GoPlus: mint/freeze authority and Token-2022
+extensions that let the issuer freeze or move balances, insider share and linked
+insider networks, top-10 share *excluding the bonding curve and known pools*,
+creator share, holder count and its growth), counts pump.fun "King of the Hill" as
+momentum for three hours, and optionally watches **smart-money wallets** you enter
+(Solana RPC, public node or your own Helius address; only signed purchases paying
+at least 0.005 SOL beyond fee and account rent count, a wallet that sells half of
+it again within the window no longer counts, and two watched wallets on one token
+secure it a slot and trigger an alert once its contract is checked).
+Its own **outcome tracking** pairs every token that crosses the threshold with a
+partner from the same run — equally reportable, below the score, same state
+(curve or pool), similar age — and checks both after 1, 3 and 7 days (doubled at
+some point from 15-minute candles, still traded, curve completed, return). Pairs
+are compared with the exact McNemar test; a verdict needs ten complete pairs and
+p < 0.05. A random sample of all newly seen tokens is shown as the base rate.
 
 **Exchange watcher.** Young projects rarely start on a centralized exchange; they
 climb a ladder — DEX, then Binance Alpha or mid-sized exchanges (KuCoin, Gate,
@@ -142,9 +174,13 @@ the Coin Radar. What is measured is the span between best and worst point inside
 the horizon, not the return. It is evaluated per run: does the top move more than
 the control group (with a sign test across runs), and does the score rank better
 than a plain ATR% ranking? Without that control group, on a busy day even a random
-ranking looks brilliant. The Hype Radar checks after 1/7/30 days whether the pair
-still exists and what became of price and liquidity — for passed finds, a sample of
-those rejected by the safety check, and a sample from the field below the threshold.
+ranking looks brilliant. At most one Coin Radar run per hour is tracked — runs every
+five minutes produced three times more jobs than could ever be measured, and the
+runs of one hour share almost all candles. Each kind of job has its own queue. The
+Hype Radar checks after 1/7/30 days whether the pair still exists and what became
+of price and liquidity — for passed finds, a sample of those rejected by the safety
+check, and a sample from the field below the threshold; a verdict there needs
+Fisher's exact test at p < 0.05.
 Both tables are on the pages themselves (Coin Radar → history, Hype Radar →
 reports). The weights are not auto-optimised against it.
 

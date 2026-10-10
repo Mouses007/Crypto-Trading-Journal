@@ -7,7 +7,10 @@
  *
  * Aufruf: node server/__selftest-radar-ergebnisse.mjs
  */
-import { waehleCoinRadar, waehleHype, rechneFenster, stichprobe, waehleFrueh, hochImFenster } from './radar-ergebnisse.js'
+import {
+    waehleCoinRadar, waehleHype, rechneFenster, stichprobe, waehleFrueh, hochImFenster, laufIdFrueh, FELD_VERSATZ,
+    lebtNoch, renditeGleichesMass, duenneLaeufe, DECKEL_JE_ART,
+} from './radar-ergebnisse.js'
 
 let fehler = 0
 let bestanden = 0
@@ -123,18 +126,61 @@ function festerZufall(start = 1) {
     p('ohne Kerzen keine Messung', /zu wenige/.test(fehlerText), fehlerText)
 }
 
-// ── Frühphase ───────────────────────────────────────────────────────────
+// ── Frühphase: gepaarte Kontrolle (10.10.2026) ──────────────────────────
 {
-    const t = (c, note) => ({ id: c.length, contract: c, symbol: c.toUpperCase(), note })
-    const wahl = waehleFrueh([t('a', 80)], [t('a', 80), t('b', 20), t('c', 30), t('d', 10)], festerZufall(3))
-    p('Frühphase: Spitze sind die Schwellen-Überschreiter', wahl.filter((z) => z.gruppe === 'spitze').map((z) => z.contract).join() === 'a')
-    p('Frühphase: Kontrolle aus den neu Gesehenen, ohne die Spitze',
-        wahl.filter((z) => z.gruppe === 'kontrolle').length === 2 && !wahl.some((z) => z.gruppe === 'kontrolle' && z.contract === 'a'))
+    const t = (id, c, alter, aufKurve = true, note = 40) => ({ id, contract: c, symbol: c.toUpperCase(), note, alterStunden: alter, aufKurve })
+    const spitze = [t(10, 's1', 5)]
+    const vergleichbar = [t(21, 'zuAlt', 30), t(22, 'imPool', 5.2, false), t(23, 'k3', 4), t(24, 'k4', 5.5)]
+    const neu = [t(31, 'n1', 0.2), t(32, 'n2', 0.1), t(24, 'k4', 5.5)]
+    const wahl = waehleFrueh(spitze, vergleichbar, neu, festerZufall(3))
+    const kontrolle = wahl.filter((z) => z.gruppe === 'kontrolle')
+    p('Partner: gleicher Zustand, nächstes Alter', kontrolle.length === 1 && kontrolle[0].contract === 'k4' && kontrolle[0].paar === 10,
+        JSON.stringify(kontrolle))
+    p('Partner nicht aus einem anderen Zustand (Pool statt Kurve)', !kontrolle.some((z) => z.contract === 'imPool'))
+    p('Partner nicht mit zu grossem Altersabstand', waehleFrueh([t(10, 's1', 5)], [t(21, 'zuAlt', 30)], []).filter((z) => z.gruppe === 'kontrolle').length === 0)
+    const feld = wahl.filter((z) => z.gruppe === 'feld')
+    p('Feld: einer aus den neu Gesehenen, nicht der Partner', feld.length === 1 && feld[0].contract !== 'k4' && feld[0].contract !== 's1')
+    p('laufId: Spitze positiv, Partner minus Spitzenzeile, Feld mit Versatz',
+        laufIdFrueh(wahl.find((z) => z.gruppe === 'spitze')) === 10 && laufIdFrueh(kontrolle[0]) === -10
+        && laufIdFrueh(feld[0]) === -(FELD_VERSATZ + feld[0].id))
+    const zwei = waehleFrueh([t(10, 's1', 5), t(11, 's2', 5)], [t(24, 'k4', 5.5)], [])
+    p('ein Partner gehört nur einem Spitzen-Token', zwei.filter((z) => z.gruppe === 'kontrolle').length === 1)
+    p('ein Spitzen-Token ist nie sein eigener Partner', waehleFrueh([t(10, 's1', 5)], [t(10, 's1', 5)], []).filter((z) => z.gruppe === 'kontrolle').length === 0)
+}
+
+// ── Frühphase: Messung ──────────────────────────────────────────────────
+{
     const von = 1790000000000
-    const kerzen = [[von / 1000 - 7200, 1, 9, 1, 1], [von / 1000, 1, 3, 0.5, 2], [von / 1000 + 3600, 2, 5, 2, 4], [von / 1000 + 90000, 4, 99, 4, 4]]
+    // [Sekunden, o, h, l, c] — die Kerze VOR dem Start (Hoch 9) darf nicht zählen.
+    const kerzen = [[von / 1000 - 900, 1, 9, 1, 1], [von / 1000, 1, 3, 0.5, 2], [von / 1000 + 900, 2, 5, 2, 4], [von / 1000 + 90000, 4, 99, 4, 4]]
     const f = hochImFenster(kerzen, von, von + 24 * 3600e3)
-    p('Hoch im Fenster: nur Kerzen im Fenster', f?.hoch === 5 && f?.start === 1, JSON.stringify(f))
+    p('Hoch im Fenster: nur Kerzen, die im Fenster beginnen', f?.hoch === 5 && f?.erstesOpen === 1, JSON.stringify(f))
     p('Hoch im Fenster: ohne Kerzen null', hochImFenster([], von, von + 1) === null)
+
+    const jetzt = von + 3 * 86400e3
+    p('lebt: gehandelt in sechs Stunden', lebtNoch({ markt: { liquiditaetUsd: 5000, transaktionen6h: 12 } }) === 1)
+    // Gesperrte Liquidität hält einen toten Token sonst für immer am Leben.
+    p('lebt nicht: Paar mit Liquidität, aber kaum Handel', lebtNoch({ markt: { liquiditaetUsd: 5000, transaktionen6h: 2 } }) === 0)
+    p('lebt nicht: leerer Pool', lebtNoch({ markt: { liquiditaetUsd: 0, transaktionen6h: 40 } }) === 0)
+    p('Kurve: letzter Handel vor einer Stunde', lebtNoch({ coin: { last_trade_timestamp: jetzt - 3600e3 }, jetzt }) === 1)
+    p('Kurve: letzter Handel vor sieben Stunden', lebtNoch({ coin: { last_trade_timestamp: jetzt - 7 * 3600e3 }, jetzt }) === 0)
+    p('weder DexScreener noch pump.fun kennt ihn: weg', lebtNoch({}) === 0)
+    p('Paar ohne Angabe zum Handel: unbekannt, nicht tot', lebtNoch({ markt: { liquiditaetUsd: null } }) === null)
+
+    p('Rendite: Preis gegen Preis', renditeGleichesMass({ preisStart: 2, mcapStart: 100 }, { preisEnde: 3, mcapEnde: 900 }).mass === 'preis')
+    const bew = renditeGleichesMass({ preisStart: null, mcapStart: 100 }, { preisEnde: 3, mcapEnde: 150 })
+    p('Rendite: ohne Startpreis Bewertung gegen Bewertung, nie gemischt', bew.mass === 'bewertung' && bew.renditePct === 50)
+    p('Rendite: eine Null ist keine Messung', renditeGleichesMass({ preisStart: 0, mcapStart: 0 }, { preisEnde: 3, mcapEnde: 9 }).renditePct === null)
+}
+
+// ── Coin-Radar: Rückstand ausdünnen ─────────────────────────────────────
+{
+    const h = Date.parse('2026-10-01T10:00:00Z')
+    const weg = duenneLaeufe([
+        { laufId: 1, am: h }, { laufId: 2, am: h + 5 * 60e3 }, { laufId: 3, am: h + 55 * 60e3 }, { laufId: 4, am: h + 61 * 60e3 },
+    ])
+    p('je Stunde bleibt der erste Lauf', weg.join() === '2,3', weg.join())
+    p('Warteschlange je Art: Frühphase und Hype haben eigene Plätze', DECKEL_JE_ART.frueh > 0 && DECKEL_JE_ART.hype > 0)
 }
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)

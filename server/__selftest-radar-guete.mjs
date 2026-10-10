@@ -15,7 +15,7 @@
  */
 import {
     precisionAt, rangGegenErgebnis, werteAus, werteLaufAus, werteAusHype, werteAusFrueh, spanne, median,
-    schwelleFuer, vorzeichenTest, MIN_LAEUFE,
+    schwelleFuer, vorzeichenTest, MIN_LAEUFE, fisherExakt, FRUEH_REGEL_AUSWERTUNG,
 } from './radar-guete.js'
 
 let fehler = 0
@@ -195,24 +195,67 @@ const reihe = (n, f) => Array.from({ length: n }, (_, i) => f(i))
     p('Liquiditätsänderung in Prozent', a.spitze.medianLiquiditaetAenderung === 20)
     p('Urteil nennt den Filter', a.urteil.includes('filterWirkt'), String(a.urteil))
     p('Urteil nennt die Note', a.urteil.includes('noteWirkt'), String(a.urteil))
+    p('Anteile tragen Zähler und Nenner', a.spitze.ueberlebtAnteil.k === 9 && a.spitze.ueberlebtAnteil.n === 12)
     p('ohne Gruppe gilt Spitze (Altbestand)', werteAusHype([h(undefined, 1, 5)]).spitze.n === 1)
     p('zu wenige Messungen', werteAusHype([]).urteil[0] === 'zuWenig')
+    /*
+     * Bis 10.10.2026 genügte „grösser": 4 von 12 gegen 2 von 10 hiess
+     * „Filter wirkt". Fisher: p ≈ 0,65 — nicht gesichert.
+     */
+    const knapp = werteAusHype([
+        ...reihe(12, (i) => h('spitze', i < 4 ? 1 : 0, i < 4 ? 10 : -10)),
+        ...reihe(10, (i) => h('verworfen', i < 2 ? 1 : 0, -10)),
+        ...reihe(10, (i) => h('feld', i < 3 ? 1 : 0, i < 3 ? 5 : -5)),
+    ], '7d')
+    p('knapper Vorsprung: Filter nicht gesichert', knapp.urteil.includes('filterNichtGesichert'), knapp.urteil.join())
+    p('knapper Vorsprung: Note nicht gesichert', knapp.urteil.includes('noteNichtGesichert'), knapp.urteil.join())
 }
 
-// ── Frühphase ───────────────────────────────────────────────────────────
+// ── Fisher, exakt ───────────────────────────────────────────────────────
 {
-    const z = (gruppe, rendite, mfe, lebt, grad) => ({ gruppe, status: 'gemessen', renditePct: rendite, mfePct: mfe, nochHandelbar: lebt, graduiert: grad })
+    // Fishers Teeprobe: 3 von 4 richtig erkannt — zweiseitig p = 34/70 ≈ 0,4857.
+    p('Fisher: Teeprobe', Math.abs(fisherExakt(3, 1, 1, 3) - 34 / 70) < 1e-9, String(fisherExakt(3, 1, 1, 3)))
+    p('Fisher: klare Tafel', Math.abs(fisherExakt(8, 2, 1, 9) - 0.005477) < 1e-5, String(fisherExakt(8, 2, 1, 9)))
+    p('Fisher: gleiche Anteile ergeben p = 1', Math.abs(fisherExakt(5, 5, 5, 5) - 1) < 1e-9)
+    p('Fisher: leer ergibt null', fisherExakt(0, 0, 0, 0) === null)
+}
+
+// ── Frühphase: gepaart (10.10.2026) ─────────────────────────────────────
+{
+    const z = (laufId, gruppe, o = {}) => ({ laufId, gruppe, status: 'gemessen', regel: FRUEH_REGEL_AUSWERTUNG, pumpFun: 1, graduiertStart: 0, ...o })
+    const paare = []
+    for (let i = 1; i <= 14; i++) {
+        // Treffer: Spitze in 12 Paaren verdoppelt, Kontrolle in 2 (beide in Paar 1 und 2) — 10 nur Spitze, 0 nur Kontrolle.
+        // Leben: 3 Paare nur Spitze, 2 nur Kontrolle — kein gesicherter Unterschied.
+        paarr(i)
+    }
+    function paarr(i) {
+        paare.push(z(i, 'spitze', { mfePct: i <= 12 ? 250 : 20, nochHandelbar: i <= 3 || i >= 9 ? 1 : 0, graduiert: i <= 4 ? 1 : 0, renditePct: 10 }))
+        paare.push(z(-i, 'kontrolle', { mfePct: i <= 2 ? 150 : -40, nochHandelbar: (i >= 4 && i <= 5) || i >= 9 ? 1 : 0, graduiert: 0, renditePct: -10 }))
+    }
     const zeilen = [
-        ...Array.from({ length: 10 }, (_, i) => z('spitze', i < 4 ? 150 : -50, i < 6 ? 200 : 10, i < 7 ? 1 : 0, i < 3 ? 1 : 0)),
-        ...Array.from({ length: 10 }, (_, i) => z('kontrolle', -80, i < 1 ? 120 : -50, i < 2 ? 1 : 0, 0)),
-        { gruppe: 'spitze', status: 'offen' },
+        ...paare,
+        z(99, 'spitze', { mfePct: null, renditePct: 500, nochHandelbar: 1 }),           // ohne MFE — zählt nicht als Treffer
+        z(-(1e9 + 5), 'feld', { mfePct: 30, nochHandelbar: 0 }),
+        { laufId: 7, gruppe: 'spitze', status: 'gemessen', mfePct: 999, nochHandelbar: 1 },  // Altbestand ohne Regelstand
+        { laufId: -7, gruppe: 'kontrolle', status: 'gemessen', mfePct: 0, nochHandelbar: 0 },
+        z(50, 'spitze', { status: 'offen' }),
     ]
     const a = werteAusFrueh(zeilen, '1d')
-    p('Frühphase: zwischenzeitlich verdoppelt zählt das Hoch', a.spitze.verdoppelt === 0.6 && a.kontrolle.verdoppelt === 0.1, JSON.stringify(a.spitze))
-    p('Frühphase: Kurvenabschluss als Anteil', a.spitze.graduiert === 0.3)
-    p('Frühphase: Urteil vergleicht mit der Kontrolle', a.urteil.includes('trefferBesser') && a.urteil.includes('lebtLaenger'), a.urteil.join())
-    p('Frühphase: offene Aufträge zählen nicht', a.offen === 1 && a.spitze.n === 10)
-    p('Frühphase: unter zehn je Gruppe kein Urteil', werteAusFrueh(zeilen.slice(0, 15), '1d').urteil[0] === 'zuWenig')
+    p('Frühphase: Paare über laufId und minus laufId', a.paare === 14, String(a.paare))
+    p('Frühphase: Altbestand ohne Regelstand gezählt, nicht ausgewertet', a.altbestand === 2 && a.spitze.n === 15)
+    p('Frühphase: verdoppelt nur über Aufträge MIT Höchststand', a.spitze.verdoppelt.n === 14 && a.spitze.verdoppelt.k === 12,
+        JSON.stringify(a.spitze.verdoppelt))
+    const v = a.vergleich.verdoppelt
+    p('Frühphase: McNemar zählt die unstimmigen Paare', v.nurSpitze === 10 && v.nurKontrolle === 0 && v.gleich === 4, JSON.stringify(v))
+    p('Frühphase: 10 zu 0 ist gesichert besser', v.urteil === 'besser' && v.p < 0.01, String(v.p))
+    p('Frühphase: 3 zu 2 ist nicht gesichert', a.vergleich.lebt.urteil === 'nichtGesichert', JSON.stringify(a.vergleich.lebt))
+    p('Frühphase: Urteilskürzel je Frage', a.urteil.includes('treffer_besser') && a.urteil.includes('lebt_nichtGesichert'), a.urteil.join())
+    p('Frühphase: offene Aufträge nur aus dem aktuellen Stand', a.offen === 1)
+    p('Frühphase: das Feld ist Grundrate, kein Vergleich', a.feld.n === 1 && !a.urteil.some((u) => /feld/.test(u)))
+    const kurveNichtAufKurve = werteAusFrueh(zeilen.map((x) => ({ ...x, graduiertStart: 1 })), '1d')
+    p('Frühphase: Kurvenabschluss zählt nur, wer am Start noch darauf war', kurveNichtAufKurve.spitze.kurve.n === 0)
+    p('Frühphase: unter zehn Paaren kein Urteil', werteAusFrueh(paare.slice(0, 18), '1d').urteil[0] === 'zuWenig')
 }
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)

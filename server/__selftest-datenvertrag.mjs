@@ -236,6 +236,38 @@ const liste = (w) => Array.isArray(w)
     }
 }
 
+{
+    /*
+     * Volle RugCheck-Antworten (10.10.2026). Hier stehen die Felder, an denen
+     * die Frühphase hängt und die die gekürzte Fixture oben nie enthielt — so
+     * blieben Insider-Anteil (immer 0) und Token-2022-Rechte (nie gelesen)
+     * monatelang unbemerkt.
+     */
+    const netz = lade('rugcheck-netzwerk')
+    const pool = lade('rugcheck-pool')
+    p('Fixtures rugcheck-netzwerk und rugcheck-pool vorhanden', Boolean(netz && pool))
+    if (netz && pool) {
+        for (const j of [netz, pool]) {
+            verlange('rugcheck-voll', j, 'token.supply', zahl)
+            verlange('rugcheck-voll', j, 'token_extensions', (w) => w && typeof w === 'object')
+            for (const f of ['permanentDelegate', 'nonTransferable', 'transferHook', 'defaultAccountState', 'pausableConfig', 'mintCloseAuthority']) {
+                p(`rugcheck-voll: token_extensions.${f} als Schlüssel vorhanden`, f in (j.token_extensions || {}))
+            }
+            verlange('rugcheck-voll', j, 'knownAccounts', (w) => w && typeof w === 'object')
+            verlange('rugcheck-voll', j, 'topHolders.0.owner')
+        }
+        verlange('rugcheck-netzwerk', netz, 'insiderNetworks', liste)
+        verlange('rugcheck-netzwerk', netz, 'insiderNetworks.0.currentHolding', zahl)
+        verlange('rugcheck-pool', pool, 'creatorBalance', zahl)
+        p('rugcheck-pool: ein Konto ist als AMM bekannt', Object.values(pool.knownAccounts || {}).some((k) => k?.type === 'AMM'))
+        const u = ausRugCheck(netz)
+        p('Übersetzung: Insider-Anteil gerechnet', zahl(u?.insider_anteil_pct) && u.insider_anteil_pct > 0, String(u?.insider_anteil_pct))
+        const v = ausRugCheck(pool)
+        p('Übersetzung: Pool als „pool" markiert', (v?.holders || []).some((h) => h.tag === 'pool'))
+        p('Übersetzung: Ersteller-Anteil gerechnet', zahl(v?.ersteller_anteil_pct) && v.ersteller_anteil_pct > 0)
+    }
+}
+
 // ── Binance ─────────────────────────────────────────────────────────────
 {
     const t = lade('binance-24hr')

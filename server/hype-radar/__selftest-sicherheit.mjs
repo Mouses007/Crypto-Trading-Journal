@@ -8,7 +8,7 @@
  * Aufruf: node server/hype-radar/__selftest-sicherheit.mjs
  */
 import {
-    pruefe, pruefeMarkt, summeTop10, top10Ausgeschlossen, ausRugCheck, ausGoPlusSolana,
+    pruefe, pruefeMarkt, summeTop10, top10Ausgeschlossen, ausRugCheck, ausGoPlusSolana, token2022,
     STANDARD_SICHERHEIT, SKALA_PROZENT,
 } from './sicherheit.js'
 
@@ -444,6 +444,61 @@ const solSchliessbar = pruefe(ausGoPlusSolana({
 p('schliessbarer Token kostet Note', solSchliessbar.status === 'bestanden'
     && solSchliessbar.safetyScore < solGut.safetyScore)
 p('leere GoPlus-Solana-Antwort ergibt null (= ungeprüft)', ausGoPlusSolana(null) === null)
+
+// ── RugCheck: Token-2022, Insider-Netzwerke, bekannte Konten (10.10.2026) ─
+{
+    const harmlos = {
+        nonTransferable: false, transferFeeConfig: null, defaultAccountState: null, permanentDelegate: null,
+        metadataPointer: { authority: null, metadataAddress: 'x' }, tokenMetadata: { authority: null, mint: 'x' },
+        mintCloseAuthority: null, confidentialTransferMint: null, interestBearingConfig: null, transferHook: null,
+        scaledUiAmountConfig: null, pausableConfig: null,
+    }
+    const t = token2022(harmlos)
+    p('Token-2022: alle Schlüssel da, alle harmlos → nichts gesetzt',
+        !t.nichtUebertragbar && !t.staendigBevollmaechtigt && !t.hook && !t.standardEingefroren && !t.anhaltbar
+        && !t.schliessbar && !t.gebuehrAenderbar && !t.metadatenAenderbar && !t.gefahren.length, JSON.stringify(t))
+    // Auf dem sauberen Befund von oben aufgebaut (gesperrte Liquidität, breite Verteilung).
+    const rc = (ext, extra = {}) => ({
+        ...sauberRc, token: { ...sauberRc.token, supply: 1000 }, token_extensions: { ...harmlos, ...ext }, ...extra,
+    })
+    p('ständiger Bevollmächtigter ist K.o.', pruefe(ausRugCheck(rc({ permanentDelegate: { delegate: 'D' } })), marktOk()).grund === 'saldo_aenderbar')
+    p('nicht übertragbar ist K.o. (Honeypot)', pruefe(ausRugCheck(rc({ nonTransferable: true })), marktOk()).grund === 'honeypot')
+    p('Übertragungs-Hook ist K.o.', pruefe(ausRugCheck(rc({ transferHook: { programId: 'P', authority: 'A' } })), marktOk()).grund === 'verkauf_sperrbar')
+    p('eingefroren startende Konten sind K.o.', pruefe(ausRugCheck(rc({ defaultAccountState: { state: 'frozen' } })), marktOk()).grund === 'verkauf_sperrbar')
+    p('… initialisiert startende nicht', pruefe(ausRugCheck(rc({ defaultAccountState: { state: 'initialized' } })), marktOk()).status === 'bestanden')
+    p('anhaltbar mit Vollmacht ist K.o.', pruefe(ausRugCheck(rc({ pausableConfig: { authority: 'A', paused: false } })), marktOk()).grund === 'verkauf_sperrbar')
+    p('… ohne Vollmacht nicht', pruefe(ausRugCheck(rc({ pausableConfig: { authority: null } })), marktOk()).status === 'bestanden')
+    const schliess = pruefe(ausRugCheck(rc({ mintCloseAuthority: 'C' })), marktOk())
+    const sauber = pruefe(ausRugCheck(rc({})), marktOk())
+    p('schliessbarer Mint kostet Punkte, kein K.o.', schliess.status === 'bestanden' && schliess.safetyScore < sauber.safetyScore)
+
+    p('RugCheck ohne `token`: nicht geprüft (null)', ausRugCheck({ topHolders: [], rugged: false }) === null)
+
+    const netz = ausRugCheck({ ...rc({}), token: { supply: 1000, mintAuthority: null, freezeAuthority: null },
+        insiderNetworks: [{ size: 17, currentHolding: 22 }, { size: 4, currentHolding: 10 }] })
+    p('Insider-Anteil aus den Netzwerken (Rohmenge / Angebot)', Math.abs(netz.insider_anteil_pct - 3.2) < 1e-9, String(netz.insider_anteil_pct))
+    p('ohne Netzwerkangabe: Insider unbekannt, nicht 0', ausRugCheck(rc({})).insider_anteil_pct === null)
+    const erst = ausRugCheck({ ...rc({}), creator: 'C', creatorBalance: 28, token: { supply: 1000 } })
+    p('Ersteller-Anteil aus creatorBalance', Math.abs(erst.ersteller_anteil_pct - 2.8) < 1e-9 && erst.ersteller === 'C')
+
+    // Der Pool eines graduierten Tokens ist kein Klumpen (CAT, 10.10.2026: 23,4 % im Pump-Fun-AMM).
+    const pool = ausRugCheck({ ...rc({}), knownAccounts: { POOL: { name: 'Pump Fun AMM', type: 'AMM' } },
+        topHolders: [{ address: 'k1', owner: 'POOL', pct: 23.38 }, { address: 'k2', owner: 'w1', pct: 7.81 }, { address: 'k3', owner: 'w2', pct: 6.07 }] })
+    p('bekannter AMM-Pool zählt nicht zu den Top-10', Math.abs(summeTop10(pool.holders, { skala: pool.anteilSkala }) - 13.88) < 1e-9,
+        String(summeTop10(pool.holders, { skala: pool.anteilSkala })))
+    // Verbrannt: bei RugCheck steht der Verbrenner als Besitzer, nicht als Konto.
+    const brand = ausRugCheck({ ...rc({}), topHolders: [{ address: 'konto', owner: '1nc1nerator11111111111111111111111111111111', pct: 40 }, { address: 'b', owner: 'w', pct: 5 }] })
+    p('verbrannter Anteil (Besitzer) zählt nicht', summeTop10(brand.holders, { skala: brand.anteilSkala }) === 5)
+}
+
+// ── Pausenfunktion ohne Eigentümer (PEPE) ───────────────────────────────
+{
+    const pepe = pruefe({ ...sauber(), quelle: 'goplus-evm', transfer_pausable: 1, owner_address: '0x0000000000000000000000000000000000000000' }, marktOk())
+    p('EVM: anhaltbar, aber Eigentümer abgegeben → kein K.o.', pepe.status === 'bestanden', pepe.grund)
+    p('… und als Hinweis sichtbar', pepe.hinweise.some((h) => /Pausenfunktion/.test(h)))
+    const aktiv = pruefe({ ...sauber(), quelle: 'goplus-evm', transfer_pausable: 1, owner_address: '0x1234567890123456789012345678901234567890' }, marktOk())
+    p('EVM: anhaltbar mit aktivem Eigentümer → K.o.', aktiv.grund === 'verkauf_sperrbar')
+}
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

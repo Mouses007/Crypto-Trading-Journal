@@ -18,16 +18,16 @@
  * Adresse kommt vom Nutzer und läuft deshalb durch `net-guard` — sonst wäre
  * das Feld ein bequemer Weg, den Server ins eigene Netz zu schicken.
  *
- * ⚠ Nicht gegen einen Live-Knoten geprüft (keine Verbindung aus der
- * Entwicklungsumgebung am 07.10.2026). Die Antwortform ist die dokumentierte
- * JSON-RPC-Form; `kaeufeAusTransaktion` ist mit nachgebauten Transaktionen
- * getestet.
+ * Gegen den öffentlichen Knoten geprüft am 10.10.2026, an Käufen und
+ * Verkäufen auf zwei pump.fun-Kurven: Felder wie dokumentiert, Mengen
+ * stimmen, und fünf von sechs Transaktionen waren Version 1 — siehe
+ * `maxSupportedTransactionVersion` unten.
  */
 
 import { getKnex } from '../database.js'
 import { logWarn } from '../logger.js'
 import { pruefeOeffentlicheUrl } from '../net-guard.js'
-import { kaeufeAusTransaktion, smartSignale, smartWalletListe } from './fruehphase-bewertung.js'
+import { handelAusTransaktion, smartSignale, smartWalletListe } from './fruehphase-bewertung.js'
 
 /** Ohne eigene Adresse: der öffentliche Knoten. Gedrosselt, aber ohne Schlüssel. */
 const OEFFENTLICH = 'https://api.mainnet-beta.solana.com'
@@ -43,28 +43,48 @@ const NEU_JE_WALLET = 25
 export const SMART_FENSTER_MS = 6 * 3600e3
 
 const AUFBEWAHREN_MS = 7 * 24 * 3600e3
-const PAUSE_MS = 150
+
+/*
+ * Abstand zwischen zwei Transaktionsabrufen. Der öffentliche Knoten erlaubt
+ * rund 40 Aufrufe je Methode in zehn Sekunden; 150 ms (fast 70) liefen am
+ * 10.10.2026 in HTTP 429. Eine eigene Adresse (Helius & Co.) darf schneller.
+ */
+const PAUSE_OEFFENTLICH_MS = 300
+const PAUSE_EIGEN_MS = 120
+
+/** Bei HTTP 429 so lange warten, dann erneut — danach gilt der Abruf als gescheitert. */
+const WARTEN_BEI_429_MS = [2000, 6000]
 
 const pause = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/** Ein JSON-RPC-Aufruf — ohne Umleitungen, mit harter Zeitgrenze. */
+/** Ein JSON-RPC-Aufruf — ohne Umleitungen, mit harter Zeitgrenze, zweimal geduldig bei 429. */
 async function rpc(url, method, params, timeout = 15000) {
-    const ctrl = new AbortController()
-    const uhr = setTimeout(() => ctrl.abort(), timeout)
-    try {
-        const r = await fetch(url, {
-            method: 'POST',
-            redirect: 'error',
-            signal: ctrl.signal,
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-        })
-        if (!r.ok) throw new Error(`RPC HTTP ${r.status}`)
-        const j = await r.json()
-        if (j?.error) throw new Error(`RPC ${j.error.code ?? ''} ${String(j.error.message || '').slice(0, 120)}`)
-        return j?.result ?? null
-    } finally {
-        clearTimeout(uhr)
+    for (let versuch = 0; ; versuch++) {
+        const ctrl = new AbortController()
+        const uhr = setTimeout(() => ctrl.abort(), timeout)
+        try {
+            const r = await fetch(url, {
+                method: 'POST',
+                redirect: 'error',
+                signal: ctrl.signal,
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+            })
+            if (r.status === 429 && versuch < WARTEN_BEI_429_MS.length) {
+                const sagt = Number(r.headers.get('retry-after')) * 1000
+                await pause(Number.isFinite(sagt) && sagt > 0 ? Math.min(sagt, 15000) : WARTEN_BEI_429_MS[versuch])
+                continue
+            }
+            if (!r.ok) throw new Error(`RPC HTTP ${r.status}`)
+            const j = await r.json()
+            if (j?.error) {
+                // Eine Antwort des Knotens, kein Ausfall — der Aufrufer darf sie überspringen.
+                throw Object.assign(new Error(`RPC ${j.error.code ?? ''} ${String(j.error.message || '').slice(0, 120)}`), { rpcAntwort: true })
+            }
+            return j?.result ?? null
+        } finally {
+            clearTimeout(uhr)
+        }
     }
 }
 
@@ -79,6 +99,7 @@ export async function smartAbruf(einst, rpcUrl = '') {
     const wallets = smartWalletListe(einst?.smartWallets)
     if (!wallets.length) return { wallets: 0, neu: 0, fehler: 0 }
     const url = String(rpcUrl || '').trim() || OEFFENTLICH
+    const abstand = url === OEFFENTLICH ? PAUSE_OEFFENTLICH_MS : PAUSE_EIGEN_MS
     await pruefeOeffentlicheUrl(url)
 
     const knex = getKnex()
@@ -89,19 +110,47 @@ export async function smartAbruf(einst, rpcUrl = '') {
     let fehler = 0
     let letzterFehler = ''
 
-    for (const w of wallets) {
+    /*
+     * Reihum: die am längsten nicht gelesene Wallet zuerst. Bis 10.10.2026 galt
+     * die Reihenfolge der Liste — zwei rege Wallets oben verbrauchten das
+     * Budget von 120 Transaktionen, und die Wallets weiter unten kamen nie dran.
+     */
+    const reihe = [...wallets].sort((a, b) =>
+        (Number(staende.get(a.adresse)?.aktualisiertAm) || 0) - (Number(staende.get(b.adresse)?.aktualisiertAm) || 0))
+
+    for (const w of reihe) {
         if (budget <= 0) break
         const alt = staende.get(w.adresse)
         try {
             const opts = { limit: alt?.letzteSignatur ? NEU_JE_WALLET : ERSTER_BLICK }
             if (alt?.letzteSignatur) opts.until = alt.letzteSignatur
             const sigs = (await rpc(url, 'getSignaturesForAddress', [w.adresse, opts])) || []
+            let unlesbar = ''
             for (const sg of sigs.filter((x) => !x?.err).slice(0, budget)) {
                 budget--
-                await pause(PAUSE_MS)
-                const tx = await rpc(url, 'getTransaction', [sg.signature,
-                    { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }])
-                for (const k of kaeufeAusTransaktion(tx, w.adresse)) {
+                await pause(abstand)
+                /*
+                 * Version 1: Gemessen am 10.10.2026 waren fünf von sechs
+                 * pump.fun-Käufen v1-Transaktionen. Mit „höchstens 0" lehnt der
+                 * Knoten jede davon ab (-32015) — und weil der Fehler die ganze
+                 * Wallet abbrach, rückte ihr Lesezeichen nie vor: Sie hing für
+                 * immer an derselben Transaktion.
+                 */
+                let tx
+                try {
+                    tx = await rpc(url, 'getTransaction', [sg.signature,
+                        { encoding: 'jsonParsed', maxSupportedTransactionVersion: 1, commitment: 'confirmed' }])
+                } catch (e) {
+                    // Der Knoten antwortet, kann aber DIESE Transaktion nicht liefern
+                    // (künftige Version, übersprungener Slot): überspringen statt festhängen.
+                    // Netz- und HTTP-Fehler brechen die Wallet ab; das Lesezeichen bleibt.
+                    if (!e.rpcAntwort) throw e
+                    unlesbar = e.message
+                    continue
+                }
+                // Käufe UND Abgänge (negative Menge) — ein Kauf, der fünf Minuten
+                // später wieder verkauft ist, darf nicht sechs Stunden lang zählen.
+                for (const k of handelAusTransaktion(tx, w.adresse)) {
                     await knex('hype_smart_kaeufe').insert({
                         wallet: w.adresse, mint: k.mint, signatur: sg.signature,
                         zeit: k.zeit || (Number(sg.blockTime) > 0 ? Number(sg.blockTime) * 1000 : Date.now()),
@@ -118,7 +167,7 @@ export async function smartAbruf(einst, rpcUrl = '') {
              */
             await knex('hype_smart_stand').insert({
                 wallet: w.adresse, letzteSignatur: sigs[0]?.signature || alt?.letzteSignatur || '',
-                aktualisiertAm: Date.now(), fehler: '',
+                aktualisiertAm: Date.now(), fehler: unlesbar ? `Transaktion übersprungen: ${unlesbar}`.slice(0, 200) : '',
             }).onConflict('wallet').merge()
         } catch (e) {
             fehler++

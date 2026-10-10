@@ -227,11 +227,17 @@
                         </select>
                     </div>
                     <div class="col-auto">
+                        <label class="form-label small">{{ t('hype.fruehKandidatAb') }}</label>
+                        <input v-model.number="einst.fruehKandidatAb" type="number" min="1" max="100"
+                            class="form-control form-control-sm hypZahl" @change="speichern">
+                    </div>
+                    <div class="col-auto">
                         <label class="form-label small">{{ t('hype.fruehAlarmAb') }}</label>
                         <input v-model.number="einst.fruehAlarmAb" type="number" min="0" max="100"
                             class="form-control form-control-sm hypZahl" @change="speichern">
                     </div>
                 </div>
+                <div class="hypHinweisKlein mt-1">{{ t('hype.fruehKandidatHinweis') }}</div>
                 <div class="hypHinweisKlein mt-1">{{ t('hype.fruehAlarmHinweis') }}</div>
                 <div class="hypQuellen mt-2">
                     <div v-for="(_, q) in einst.fruehQuellen" :key="q" class="form-check form-switch">
@@ -886,7 +892,7 @@
 
         <!-- ══ Frühphase ═════════════════════════════════════════════ -->
         <div v-show="reiter === 'fruehphase'" class="mt-3">
-            <FruehphaseAnsicht :aktiv="reiter === 'fruehphase'" :einst="einst" />
+            <FruehphaseAnsicht :aktiv="reiter === 'fruehphase'" :einst="einst" @favoriten="ladeFavoriten" />
         </div>
 
         <!-- ══ Börsen ═══════════════════════════════════════════════ -->
@@ -999,9 +1005,9 @@
                                     <tr v-for="g in ['spitze', 'verworfen', 'feld']" :key="g">
                                         <td>{{ t('hype.gueteGruppe_' + g) }}</td>
                                         <td class="text-end">{{ h[g].n }}</td>
-                                        <td class="text-end">{{ anteilText(h[g].ueberlebt) }}</td>
+                                        <td class="text-end">{{ anteilKnText(h[g].ueberlebtAnteil, h[g].ueberlebt) }}</td>
                                         <td class="text-end">{{ prozentText(h[g].medianRendite) }}</td>
-                                        <td class="text-end">{{ anteilText(h[g].imPlusAnteil) }}</td>
+                                        <td class="text-end">{{ anteilKnText(h[g].imPlus, h[g].imPlusAnteil) }}</td>
                                         <td class="text-end">{{ prozentText(h[g].medianLiquiditaetAenderung) }}</td>
                                     </tr>
                                 </tbody>
@@ -1684,8 +1690,11 @@ const anteilText = (w) => (w === null || w === undefined || !Number.isFinite(Num
 /** Prozentwert mit Vorzeichen; unbekannt bleibt ein Strich. */
 const prozentText = (w) => (w === null || w === undefined || !Number.isFinite(Number(w))
     ? '—' : `${Number(w) >= 0 ? '+' : ''}${Number(w).toFixed(0)} %`)
+// Nicht gesichert ist keine Warnung, sondern noch keine Aussage.
 const gueteKlasse = (u) => (u === 'filterWirkt' || u === 'noteWirkt' ? 'gut'
-    : (u === 'zuWenig' || u === 'zuWenigVergleich' ? '' : 'warn'))
+    : (u === 'zuWenig' || u === 'zuWenigVergleich' || /NichtGesichert$/.test(u) ? '' : 'warn'))
+/** Anteil mit Zähler und Nenner; Altbestand der Antwort ohne beides fällt auf den blossen Anteil zurück. */
+const anteilKnText = (a, w) => (a && a.n ? `${Math.round((a.k / a.n) * 100)} % (${a.k}/${a.n})` : anteilText(w))
 
 async function ladeBerichte() {
     try {

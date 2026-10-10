@@ -134,6 +134,13 @@ export const VORGABEN = {
     fruehXIntervallMin: 120,
     fruehTelegram: [],
     fruehAlarmAb: 70,
+    /*
+     * Ab dieser Note steht ein meldefähiger Token in der Kandidatenliste
+     * (Vertrag und Projekt geprüft, belastbare Note, Handel läuft). Bewusst
+     * unter der Meldeschwelle: die Liste zeigt, was man ansehen sollte, die
+     * Meldung, was man nicht verpassen darf.
+     */
+    fruehKandidatAb: 50,
     llmStufe: 'gruendlich-mittel',
     llmModus: 'gruendlich',
     llmRollen: {},                   // leer = die Stufe entscheidet

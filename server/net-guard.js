@@ -18,6 +18,14 @@
 import dns from 'dns'
 import { logWarn } from './logger.js'
 
+/*
+ * Fehler mit Kennung: `art` (gesperrt, dns, netz, zeit, zuGross, umleitung),
+ * dazu `code` und `adresse` wo bekannt. Der Text bleibt, wie er war — er
+ * landet in der Oberfläche; die Kennung braucht, wer Fehler EINORDNEN muss
+ * (Projektprüfung: ist die Seite tot oder nur von hier aus nicht lesbar?).
+ */
+const fehlerMit = (text, felder) => Object.assign(new Error(text), felder)
+
 const HTTP_TIMEOUT = 10000
 const MAX_BYTES = 2 * 1024 * 1024
 const MAX_UMLEITUNGEN = 3
@@ -79,18 +87,18 @@ export async function pruefeOeffentlicheUrl(rawUrl) {
     try {
         url = new URL(String(rawUrl || '').trim())
     } catch {
-        throw new Error('Keine gültige Adresse')
+        throw fehlerMit('Keine gültige Adresse', { art: 'gesperrt' })
     }
 
     if (!['http:', 'https:'].includes(url.protocol)) {
-        throw new Error(`Nur http und https sind erlaubt (nicht ${url.protocol.replace(':', '')})`)
+        throw fehlerMit(`Nur http und https sind erlaubt (nicht ${url.protocol.replace(':', '')})`, { art: 'gesperrt' })
     }
     if (url.username || url.password) {
-        throw new Error('Zugangsdaten in der Adresse sind nicht erlaubt')
+        throw fehlerMit('Zugangsdaten in der Adresse sind nicht erlaubt', { art: 'gesperrt' })
     }
     if (url.port && !['80', '443'].includes(url.port)) {
         // Ein freier Port machte den Server zum Portscanner im eigenen Netz
-        throw new Error(`Nur Port 80 und 443 sind erlaubt (nicht ${url.port})`)
+        throw fehlerMit(`Nur Port 80 und 443 sind erlaubt (nicht ${url.port})`, { art: 'gesperrt' })
     }
 
     // IPv6 steht in der URL in eckigen Klammern — die muss der Namensauflöser
@@ -98,7 +106,7 @@ export async function pruefeOeffentlicheUrl(rawUrl) {
     // als intern zu erkennen.
     const host = url.hostname.toLowerCase().replace(/\.$/, '').replace(/^\[|\]$/g, '')
     if (host === 'localhost' || VERBOTENE_ENDUNGEN.some(e => host.endsWith(e))) {
-        throw new Error(`„${host}" zeigt ins eigene Netz`)
+        throw fehlerMit(`„${host}" zeigt ins eigene Netz`, { art: 'gesperrt' })
     }
 
     if (FESTE_HOSTS.has(host)) return { ok: true, host, adressen: [] }
@@ -107,15 +115,17 @@ export async function pruefeOeffentlicheUrl(rawUrl) {
     try {
         adressen = await dns.promises.lookup(host, { all: true })
     } catch (e) {
-        throw new Error(`Name „${host}" nicht auflösbar`)
+        // ENOTFOUND heisst „Name gibt es nicht", EAI_AGAIN „Namensdienst gerade nicht
+        // erreichbar" — für den Aufrufer ein Unterschied zwischen tot und unbekannt.
+        throw fehlerMit(`Name „${host}" nicht auflösbar`, { art: 'dns', code: e.code })
     }
-    if (!adressen.length) throw new Error(`Name „${host}" liefert keine Adresse`)
+    if (!adressen.length) throw fehlerMit(`Name „${host}" liefert keine Adresse`, { art: 'dns', code: 'ENODATA' })
 
     // JEDE Adresse prüfen: ein Name kann auf mehrere zeigen, und es genügt
     // eine interne, um den Abruf zum Einfallstor zu machen.
     for (const { address, family } of adressen) {
         const privat = family === 6 ? istPrivatV6(address) : istPrivatV4(address)
-        if (privat) throw new Error(`„${host}" zeigt auf eine interne Adresse (${address})`)
+        if (privat) throw fehlerMit(`„${host}" zeigt auf eine interne Adresse (${address})`, { art: 'gesperrt', adresse: address })
     }
 
     return { ok: true, host, adressen: adressen.map(a => a.address) }
@@ -202,6 +212,12 @@ async function einAbruf(rawUrl, timeout) {
             // Abbruch durch die Zeitgrenze und Netzfehler sind beide
             // vorübergehend — der nächste Anlauf darf sie sehen.
             e.wiederholbar = true
+            e.art = e.name === 'AbortError' ? 'zeit' : 'netz'
+            // Der Abbruch ist eine DOMException, deren `code` nur einen Getter
+            // hat — eine Zuweisung würfe hier einen NEUEN Fehler, ohne `wiederholbar`.
+            if (e.code === undefined && e.cause?.code) {
+                try { e.code = e.cause.code } catch { /* nur lesbar */ }
+            }
             throw e
         } finally {
             clearTimeout(timer)
@@ -209,7 +225,7 @@ async function einAbruf(rawUrl, timeout) {
 
         if ([301, 302, 303, 307, 308].includes(antwort.status)) {
             const ort = antwort.headers.get('location')
-            if (!ort) throw new Error(`Umleitung ohne Ziel (HTTP ${antwort.status})`)
+            if (!ort) throw fehlerMit(`Umleitung ohne Ziel (HTTP ${antwort.status})`, { art: 'umleitung' })
             ziel = new URL(ort, ziel).toString()
             continue
         }
@@ -222,7 +238,7 @@ async function einAbruf(rawUrl, timeout) {
         }
 
         const laenge = Number(antwort.headers.get('content-length') || 0)
-        if (laenge > MAX_BYTES) throw new Error(`Antwort zu gross (${Math.round(laenge / 1024)} kB)`)
+        if (laenge > MAX_BYTES) throw fehlerMit(`Antwort zu gross (${Math.round(laenge / 1024)} kB)`, { art: 'zuGross' })
 
         /*
          * Strömend lesen und beim Überschreiten abbrechen.
@@ -244,7 +260,7 @@ async function einAbruf(rawUrl, timeout) {
                 if (done) break
                 bytes += value.byteLength
                 if (bytes > MAX_BYTES) {
-                    throw new Error(`Antwort zu gross (über ${Math.round(MAX_BYTES / 1024)} kB)`)
+                    throw fehlerMit(`Antwort zu gross (über ${Math.round(MAX_BYTES / 1024)} kB)`, { art: 'zuGross' })
                 }
                 text += dekoder.decode(value, { stream: true })
             }
@@ -255,6 +271,6 @@ async function einAbruf(rawUrl, timeout) {
         return text
     }
 
-    throw new Error(`Mehr als ${MAX_UMLEITUNGEN} Umleitungen`)
+    throw fehlerMit(`Mehr als ${MAX_UMLEITUNGEN} Umleitungen`, { art: 'umleitung' })
 }
 

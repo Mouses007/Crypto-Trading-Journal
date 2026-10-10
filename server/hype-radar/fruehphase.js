@@ -48,6 +48,7 @@ import {
     risikoUnpruefbar, meldefaehig, hatMessung, verteilePlaetze, MAX_ALTER_STUNDEN,
 } from './fruehphase-bewertung.js'
 import { ausRugCheck, holeGoPlus } from './sicherheit.js'
+import { ladeListungen, pruefeListung } from './listungen.js'
 import { smartAbruf, smartKarteLesen } from './smartmoney.js'
 import { legeAnFrueh } from '../radar-ergebnisse.js'
 import { merke, MERKEN_AB_NOTE } from './gedaechtnis.js'
@@ -65,6 +66,9 @@ const NEU_PLAETZE = 50
 
 /** So viele der Besten bekommen je Lauf eine Projektprüfung (24 h zwischengespeichert). */
 const PROJEKT_JE_LAUF = 8
+
+/** So lange bleibt eine Projektprüfung in `hype_projekt` stehen. */
+const PROJEKT_AUFBEWAHREN_MS = 90 * 24 * 3600e3
 
 /** Nach so langer Funkstille fliegt ein Token aus der Beobachtung. */
 const VERGESSEN_MS = 72 * 3600e3
@@ -100,6 +104,32 @@ const GECKO = 'https://api.geckoterminal.com/api/v2'
 
 const sicherJson = (t, r) => { try { return JSON.parse(t) ?? r } catch { return r } }
 const schluessel = (chain, contract) => `${chain}|${contract}`
+
+/*
+ * Zahl oder unbekannt. `Number(null)` ist 0 und `Number.isFinite(0)` wahr —
+ * bis 10.10.2026 wurde so ein fehlendes `reserve_in_usd` zu „0 USD
+ * Liquidität", eine fehlende Kursänderung zu „Preis steht" (und damit zum
+ * halben Wash-Verdacht), eine fehlende Käuferzahl zu „0 Käufer".
+ */
+const zn = (w) => (w === null || w === undefined || w === '' || !Number.isFinite(Number(w)) ? null : Number(w))
+
+/*
+ * Kauf-/Verkaufszahlen eines GeckoTerminal-Pools für ein Stundenfenster. Alle
+ * Werte aus DEMSELBEN Pool — Wallets und Transaktionen gehören für den
+ * Kreishandel-Vergleich zusammen.
+ */
+function geckoFenster(h1) {
+    if (!h1) return {}
+    const kaeufe = zn(h1.buys)
+    const verkaeufe = zn(h1.sells)
+    return {
+        kaeufe1h: kaeufe, verkaeufe1h: verkaeufe,
+        poolTx1h: kaeufe !== null && verkaeufe !== null ? kaeufe + verkaeufe : null,
+        // Die Zahl VERSCHIEDENER Wallets — der beste Schutz gegen
+        // Kreishandel, den es ohne Schlüssel gibt.
+        kaeufer1h: zn(h1.buyers), verkaeufer1h: zn(h1.sellers),
+    }
+}
 
 /**
  * Einen Fund in die Sammelkarte eintragen oder ergänzen.
@@ -147,9 +177,11 @@ function ausPumpCoin(c, quelle) {
         kurve: [c?.bonding_curve, c?.associated_bonding_curve].filter(Boolean).map(String),
         markt: {
             marktKapUsd: Number(c?.usd_market_cap) || null,
-            antworten: Number.isFinite(Number(c?.reply_count)) ? Number(c.reply_count) : null,
+            antworten: zn(c?.reply_count),
             graduiert: c?.complete === true,
             kothMin: kothMinuten(c),
+            // Millisekunden (live geprüft 10.10.2026) — der Zeitpunkt, nicht nur die Dauer.
+            kothAm: Number(c?.king_of_the_hill_timestamp) > 0 ? Number(c.king_of_the_hill_timestamp) : null,
         },
     }
 }
@@ -161,7 +193,17 @@ function kothMinuten(c) {
     return koth > 0 && start > 0 && koth >= start ? (koth - start) / 60e3 : null
 }
 
-const istPump = (x) => x.chain === 'solana' && /pump$/i.test(String(x.contract || ''))
+/*
+ * pump.fun-Token erkennt man an der Kurve, an der Quelle oder am Handelsplatz —
+ * nicht an der Endung „pump": 390 von 1730 Solana-Token mit pump.fun-Kurve
+ * endeten anders (gemessen 10.10.2026). Für sie wurde nie eine
+ * Ersteller-Bilanz geholt, und die Bindungskurve galt nicht als Kurve.
+ */
+const istPump = (x, quellenAlt = []) => x.chain === 'solana' && (
+    /pump$/i.test(String(x.contract || ''))
+    || (Array.isArray(x.kurve) && x.kurve.length > 0)
+    || [...(x.quellen || []), ...quellenAlt].some((q) => String(q).startsWith('pumpfun'))
+    || ['pumpfun', 'pumpswap'].includes(String(x.markt?.dex || '')))
 
 /**
  * Vertrag und Halter eines Tokens. Solana zuerst bei RugCheck — nur dort gibt
@@ -276,17 +318,14 @@ async function geckoNeu(einst) {
                     quelle: 'geckoterminal-neu',
                     erstelltAm: Date.parse(a.pool_created_at || '') || null,
                     markt: {
-                        preisUsd: Number(a.base_token_price_usd) || null,
-                        liquiditaetUsd: Number.isFinite(Number(a.reserve_in_usd)) ? Number(a.reserve_in_usd) : null,
-                        volumen1h: Number.isFinite(Number(a.volume_usd?.h1)) ? Number(a.volume_usd.h1) : null,
-                        marktkapitalisierung: Number(a.market_cap_usd) || Number(a.fdv_usd) || null,
-                        transaktionen1h: h1 ? (Number(h1.buys) || 0) + (Number(h1.sells) || 0) : null,
-                        transaktionen5m: m5 ? (Number(m5.buys) || 0) + (Number(m5.sells) || 0) : null,
-                        // Die Zahl VERSCHIEDENER Wallets — der beste Schutz
-                        // gegen Kreishandel, den es ohne Schlüssel gibt.
-                        kaeufer1h: h1 && Number.isFinite(Number(h1.buyers)) ? Number(h1.buyers) : null,
-                        verkaeufer1h: h1 && Number.isFinite(Number(h1.sellers)) ? Number(h1.sellers) : null,
-                        aenderung1h: Number.isFinite(Number(a.price_change_percentage?.h1)) ? Number(a.price_change_percentage.h1) : null,
+                        preisUsd: zn(a.base_token_price_usd) || null,
+                        liquiditaetUsd: zn(a.reserve_in_usd),
+                        volumen1h: zn(a.volume_usd?.h1),
+                        marktkapitalisierung: zn(a.market_cap_usd) || zn(a.fdv_usd) || null,
+                        transaktionen1h: h1 ? (zn(h1.buys) ?? 0) + (zn(h1.sells) ?? 0) : null,
+                        transaktionen5m: m5 ? (zn(m5.buys) ?? 0) + (zn(m5.sells) ?? 0) : null,
+                        ...geckoFenster(h1),
+                        aenderung1h: zn(a.price_change_percentage?.h1),
                     },
                 })
             }
@@ -298,6 +337,64 @@ async function geckoNeu(einst) {
     // Alle Ketten ausgefallen ist ein Ausfall, nicht „nichts Neues".
     if (versucht && !raus.length && letzterFehler) throw letzterFehler
     return raus
+}
+
+/** So viele Adressen nimmt GeckoTerminal je Sammelabruf. */
+const GECKO_SAMMEL = 30
+
+/**
+ * Käufer, Verkäufer und Transaktionen des Hauptpools für ALLE beobachteten
+ * Token — `tokens/multi/{adressen}?include=top_pools`, je Kette in Häppchen
+ * zu dreissig, auch für pump.fun-Kurven (Dex `pump-fun`, live geprüft am
+ * 10.10.2026).
+ *
+ * Bis dahin kamen diese Zahlen nur aus `new_pools`, also nur im ersten
+ * Durchgang eines ganz neuen Pools. Die Teilnote Beteiligung war danach
+ * „unbekannt", die Note sprang zwischen zwei Mittelwerten hin und her, und
+ * der Kreishandel-Abzug galt nur für Neue — HOTBOT (274 Transaktionen von 11
+ * Wallets) und XBC (277 von 10) liefen durch.
+ *
+ * @returns {Promise<{karte: Map<string, object>, versucht:number, fehler:string}>}
+ *          Adresse (klein) → Marktfelder
+ */
+async function geckoMarkt(eintraege) {
+    const karte = new Map()
+    const jeNetz = new Map()
+    for (const x of eintraege) {
+        const netz = GECKO_NETZ[x.chain]
+        if (!netz || !x.contract) continue
+        if (!jeNetz.has(netz)) jeNetz.set(netz, [])
+        jeNetz.get(netz).push(String(x.contract))
+    }
+    let versucht = 0
+    let gescheitert = 0
+    let fehler = ''
+    let gefragt = 0
+    for (const [netz, adressen] of jeNetz) {
+        gefragt += adressen.length
+        for (let i = 0; i < adressen.length; i += GECKO_SAMMEL) {
+            const teil = adressen.slice(i, i + GECKO_SAMMEL)
+            versucht++
+            try {
+                const j = await holeJson(`${GECKO}/networks/${netz}/tokens/multi/${teil.map(encodeURIComponent).join(',')}?include=top_pools`)
+                const pools = new Map((Array.isArray(j?.included) ? j.included : [])
+                    .filter((p) => p?.type === 'pool').map((p) => [p.id, p]))
+                for (const t of Array.isArray(j?.data) ? j.data : []) {
+                    const adresse = String(t?.attributes?.address || '').toLowerCase()
+                    // Der erste der Hauptpools ist der liquideste — dort findet der Handel statt.
+                    const pool = (t?.relationships?.top_pools?.data || []).map((r) => pools.get(r.id)).find(Boolean)
+                    const h1 = pool?.attributes?.transactions?.h1 || null
+                    if (!adresse || !h1) continue
+                    karte.set(adresse, geckoFenster(h1))
+                }
+            } catch (e) {
+                gescheitert++
+                fehler = String(e.message).slice(0, 160)
+                logWarn('hype-frueh', `GeckoTerminal Käufer ${netz}: ${e.message}`)
+            }
+        }
+    }
+    return { karte, versucht, gescheitert, gefragt, fehler }
 }
 
 /**
@@ -354,7 +451,7 @@ async function reddit() {
  * die Zahl VERSCHIEDENER Autoren. `belege` trägt je Adresse bis zu drei
  * Post-Adressen für die Anzeige.
  */
-async function xQuelle(einst, bekannt) {
+async function xQuelle(einst, bekannt, kuerzelErlaubt = () => false) {
     const beginn = Date.now()
     try {
         const cfg = await ladeLlmConfig({ provider: 'xai' })
@@ -369,9 +466,10 @@ async function xQuelle(einst, bekannt) {
             modell: s?.radarNewsXModell || undefined,
         })
         merkeKiGuthaben('xai').catch(() => {})
+        // Kürzel nur eindeutig unter den Bekannten und ohne gelisteten Namensvetter.
         const symbole = new Map()
         for (const z of bekannt) {
-            if (!z.symbol) continue
+            if (!z.symbol || !kuerzelErlaubt(z.symbol)) continue
             symbole.set(z.symbol, symbole.has(z.symbol) ? null : z.contract)
         }
         const n = xNennungen(posts, zitierteIds, { adressen: new Set(bekannt.map((z) => z.contract)), symbole })
@@ -432,13 +530,41 @@ async function fruehLaufIntern(einst) {
     const quellenStand = {}
     const karte = new Map()
 
+    /*
+     * Favoriten (Stern) werden immer gemessen und nie verdrängt: Wer einen
+     * Token beobachten will, will ihn auch dann sehen, wenn seine Note fällt.
+     */
+    const favoriten = await knex('hype_favoriten').select('chain', 'contractAddress')
+        .whereNot('quelle', 'coinradar').catch(() => [])
+    const favorit = new Set(favoriten.filter((f) => f.contractAddress)
+        .map((f) => schluessel(normChain(f.chain), normChain(f.chain) === 'solana' ? f.contractAddress : String(f.contractAddress).toLowerCase())))
+
     // Die beobachteten Token — vor den Quellen, weil die X-Abfrage nach
-    // genau ihnen fragt.
-    const bekannt = await knex('hype_frueh')
+    // genau ihnen fragt. Favoriten dazu, auch wenn ihre Note niedrig ist.
+    const nachNote = await knex('hype_frueh')
         .whereNot('status', 'verworfen')
         .andWhere('letzterBlick', '>=', jetzt - VERGESSEN_MS)
         .orderBy('note', 'desc')
         .limit(MAX_BEOBACHTET)
+    const favZeilen = favorit.size
+        ? (await knex('hype_frueh').whereNot('status', 'verworfen').andWhere('letzterBlick', '>=', jetzt - VERGESSEN_MS)
+            .whereIn('contract', [...favorit].map((k) => k.split('|')[1])))
+            .filter((z) => favorit.has(schluessel(z.chain, z.contract)))
+        : []
+    const bekannt = [...new Map([...favZeilen, ...nachNote].map((z) => [schluessel(z.chain, z.contract), z])).values()]
+
+    /*
+     * Ein $KÜRZEL ist nur dann ein Hinweis auf UNSEREN Token, wenn kein
+     * gelisteter Coin so heisst. Bis 10.10.2026 zählte jede „$SOL"-Nennung
+     * für einen pump.fun-Klon namens SOL. Ohne Börsenlisten lässt sich das
+     * nicht ausschliessen — dann zählen Kürzel gar nicht.
+     */
+    const listen = await ladeListungen().catch(() => null)
+    const kuerzelErlaubt = (sym) => {
+        if (!listen || !sym) return false
+        const p = pruefeListung(sym, listen)
+        return p.unbekannt.length === 0 && p.liste.length === 0
+    }
 
     // X ist bezahlt und hat seinen eigenen Takt (Anspruch in der Datenbank).
     const xFaellig = q.x === true && await beansprucheAufgabe('hype_frueh_x',
@@ -454,7 +580,7 @@ async function fruehLaufIntern(einst) {
         ['biz', q.biz !== false, biz],
         ['telegram', (einst.fruehTelegram || []).length > 0 && q.telegram !== false, () => telegram(einst.fruehTelegram)],
         ['reddit', q.reddit === true, reddit],
-        ['x', xFaellig, () => xQuelle(einst, bekannt)],
+        ['x', xFaellig, () => xQuelle(einst, bekannt, kuerzelErlaubt)],
     ].filter(([, an]) => an)
 
     /*
@@ -529,9 +655,16 @@ async function fruehLaufIntern(einst) {
             const beleg = belege?.get(adresse)
             if (eintrag && beleg) eintrag.xInfo = { autoren: beleg.autoren, belege: beleg.belege, am: jetzt }
         }
+        /*
+         * Kürzel: nur für BEKANNTE Token (mindestens einen Durchgang
+         * beobachtet), nur wenn genau einer so heisst, und nur ohne gelisteten
+         * Namensvetter (`kuerzelErlaubt`). Bis 10.10.2026 galt jeder Eintrag der
+         * Sammelkarte, auch die Neuen dieses Laufs.
+         */
         const nachSymbol = new Map()
-        for (const x of karte.values()) {
-            if (!x.symbol) continue
+        for (const z of bekannt) {
+            const x = karte.get(schluessel(z.chain, z.contract))
+            if (!x?.symbol || !kuerzelErlaubt(x.symbol)) continue
             nachSymbol.set(x.symbol, nachSymbol.has(x.symbol) ? null : x)
         }
         for (const [k, anzahl] of kuerzel) {
@@ -540,16 +673,43 @@ async function fruehLaufIntern(einst) {
         }
     })
 
-    // ── Auswahl: Bekannte nach Note, Neue auf reservierten Plätzen ──────
+    // ── Auswahl: Favoriten, Smart Money, Bekannte nach Note, Neue auf reservierten Plätzen ─
     const istBekannt = (x) => bekanntNach.has(schluessel(x.chain, x.contract))
+    const istFavorit = (x) => favorit.has(schluessel(x.chain, x.contract))
+    /*
+     * Zwei beobachtete Wallets auf einem Token sind das stärkste Frühsignal,
+     * das der Radar kennt — bis 10.10.2026 stand ein solcher Token unter den
+     * Neuen hinten an (Note unbekannt, eine Quelle) und konnte leer ausgehen.
+     */
+    const istSmart = (x) => (smartKarte.get(String(x.contract))?.wallets || 0) >= 2
     const sortiert = [...karte.values()]
         .sort((a, b) => {
             const na = bekanntNach.get(schluessel(a.chain, a.contract))?.note ?? -1
             const nb = bekanntNach.get(schluessel(b.chain, b.contract))?.note ?? -1
-            return (nb - na) || (b.plattformen.size - a.plattformen.size) || (b.quellen.size - a.quellen.size)
+            return (Number(istFavorit(b)) - Number(istFavorit(a))) || (Number(istSmart(b)) - Number(istSmart(a))) || (nb - na)
+                || (b.plattformen.size - a.plattformen.size) || (b.quellen.size - a.quellen.size)
         })
     const alle = verteilePlaetze(sortiert.filter(istBekannt), sortiert.filter((x) => !istBekannt(x)),
         MAX_BEOBACHTET, NEU_PLAETZE)
+
+    /*
+     * Wer keinen Platz bekommt, fällt aus der Beobachtung. Bis 10.10.2026
+     * blieb er bis zu 72 Stunden „beobachtet", ohne gemessen zu werden: 788
+     * von 954 Zeilen waren über zwei Stunden alt, 36 der 150 gezeigten
+     * veraltet. Verworfen (Grund „verdrängt") verschwindet er nach einem Tag;
+     * taucht er in einer Quelle wieder auf, beginnt er neu. Favoriten nie.
+     */
+    const gewaehlt = new Set(alle.map((x) => schluessel(x.chain, x.contract)))
+    try {
+        const offen = await knex('hype_frueh').select('id', 'chain', 'contract').whereNot('status', 'verworfen')
+        const weg = offen.filter((z) => !gewaehlt.has(schluessel(z.chain, z.contract)) && !favorit.has(schluessel(z.chain, z.contract)))
+        for (let i = 0; i < weg.length; i += 500) {
+            await knex('hype_frueh').whereIn('id', weg.slice(i, i + 500).map((z) => z.id)).update({ status: 'verworfen', grund: 'verdraengt' })
+        }
+        quellenStand.verdraengt = { ok: true, anzahl: weg.length }
+    } catch (e) {
+        logWarn('hype-frueh', `Verdrängen: ${e.message}`)
+    }
 
     // ── Marktdaten nachschlagen (DexScreener, gesammelt) ────────────────
     let details = new Map()
@@ -561,6 +721,13 @@ async function fruehLaufIntern(einst) {
     } catch (e) {
         quellenStand.details = { ok: false, fehler: String(e.message).slice(0, 160) }
     }
+    /*
+     * DexScreener ist für Handel, Liquidität, Preis UND Bewertung die
+     * Hauptquelle; bis 10.10.2026 füllte er die Bewertung nur, wo noch nichts
+     * stand — je nach Lauf kam sie dann von pump.fun oder von DexScreener.
+     */
+    const DEX_VORRANG = ['liquiditaetUsd', 'volumen1h', 'transaktionen1h', 'transaktionen5m', 'preisUsd', 'aenderung1h',
+        'kaufVerkauf1h', 'marktkapitalisierung', 'fdv']
     for (const x of alle) {
         const d = details.get(String(x.contract).toLowerCase())
         if (!d) continue
@@ -568,20 +735,48 @@ async function fruehLaufIntern(einst) {
         if (!x.symbol && d.symbol) x.symbol = d.symbol
         if (!x.name && d.name) x.name = d.name
         if (!x.links && d.markt?.links) x.links = d.markt.links
-        // GeckoTerminal-Käuferzahlen nicht mit `null` aus DexScreener überschreiben.
         for (const [f, w] of Object.entries(d.markt || {})) {
             if (w === null || w === undefined) continue
-            if (x.markt[f] === undefined || x.markt[f] === null) x.markt[f] = w
-            else if (['liquiditaetUsd', 'volumen1h', 'transaktionen1h', 'transaktionen5m', 'preisUsd', 'aenderung1h', 'kaufVerkauf1h'].includes(f)) {
-                x.markt[f] = w   // DexScreener ist für diese Felder die aktuellere Quelle
-            }
+            // Eine 0 bei der Bewertung ist ein fehlendes Feld, kein Vorrang.
+            if ((f === 'marktkapitalisierung' || f === 'fdv') && !(Number(w) > 0)) continue
+            if (x.markt[f] === undefined || x.markt[f] === null || DEX_VORRANG.includes(f)) x.markt[f] = w
         }
     }
+
+    // ── Käufer und Pool-Transaktionen (GeckoTerminal, für alle) ─────────
+    const gecko = await geckoMarkt(alle)
+    for (const x of alle) {
+        const g = gecko.karte.get(String(x.contract).toLowerCase())
+        if (!g) continue
+        // Ersetzt auch, was `new_pools` oder DexScreener gesetzt hat: Wallets und
+        // Transaktionen sollen aus demselben, frischen Abruf desselben Pools stammen.
+        for (const [f, w] of Object.entries(g)) if (w !== null && w !== undefined) x.markt[f] = w
+    }
+    if (gecko.versucht) {
+        /*
+         * Wie viele von wie vielen — und ob Teilabfragen scheiterten. Bis
+         * 10.10.2026 stand „ok", sobald irgendeine Antwort kam; im Lauf des
+         * Tages fehlten so die Käufer für 90 von 140 Token, unsichtbar.
+         */
+        const teilweise = gecko.gescheitert ? `${gecko.gescheitert} von ${gecko.versucht} Abfragen gescheitert — ${gecko.fehler}` : ''
+        quellenStand.kaeufer = gecko.karte.size || !gecko.fehler
+            ? { ok: true, anzahl: gecko.karte.size, von: gecko.gefragt, fehler: teilweise }
+            : { ok: false, fehler: gecko.fehler }
+    }
+
+    /*
+     * Lief in diesem Durchgang eine soziale Quelle? Dann ist „nirgends
+     * genannt" eine Messung — für jeden Token. Eine noch gültige X-Messung
+     * (fortgeschrieben, `X_GILT_MS`) zählt mit.
+     */
+    const sozialGeprueft = ['biz', 'telegram', 'reddit', 'x'].some((q) => quellenStand[q]?.ok)
+        || Boolean(letzteX?.ok && Number(letzteX.am) >= jetzt - X_GILT_MS)
 
     // ── Bewerten (erster Durchgang) ─────────────────────────────────────
     const bewerte = (e) => bewerteFrueh({
         stand: e.stand, verlauf: e.verlauf, links: e.x.links, profil: e.x.profil,
         projektNote: e.projektNote, ersteller: e.bilanz, risiko: e.risiko, smart: e.smart, geborenAm: e.geborenAm,
+        sozialGeprueft,
     })
     const ergebnisse = []
     let zuAlt = 0
@@ -620,19 +815,33 @@ async function fruehLaufIntern(einst) {
         // (ein bekannter Token steht nicht in jeder pump.fun-Liste).
         x.kurve = x.kurve || altStand.kurve || null
         if (x.markt.kothMin === undefined || x.markt.kothMin === null) x.markt.kothMin = altStand.kothMin ?? null
+        if (x.markt.kothAm === undefined || x.markt.kothAm === null) x.markt.kothAm = altStand.kothAm ?? null
         const graduiert = x.markt.graduiert === true || altStand.graduiert === true
             || Boolean(x.markt.dex && x.markt.dex !== 'pumpfun')
 
-        const stand = momentaufnahme(x.markt, { erwaehnungen, plattformen: [...plattformen] }, jetzt)
+        /*
+         * Wie viele Minuten die Stundenzahlen dieser Aufnahme abdecken: das
+         * Alter des PAARS, aus dem sie stammen (DexScreener), höchstens sechzig.
+         * Nach dem Abschluss der Kurve ist das der neue Pool, nicht der Token.
+         */
+        const paarMin = Number.isFinite(x.markt.paarAlterStunden) ? x.markt.paarAlterStunden * 60 : null
+        const fenster = paarMin !== null ? Math.min(60, paarMin)
+            : (geborenAm ? Math.min(60, (jetzt - geborenAm) / 60e3) : null)
+
+        const stand = momentaufnahme(x.markt, { erwaehnungen, plattformen: [...plattformen] }, jetzt, { fenster })
         // Nichts gemessen ist Funkstille, kein Stand: die letzte Aufnahme bleibt,
         // und nach `VERGESSEN_MS` ohne Messung fällt der Token heraus.
         if (!hatMessung(stand, x.plattformen.size > 0)) { ohneDaten++; continue }
+        // Eine Prüfung nach alten Regeln (`veraltet`) zählt nicht — auch nicht
+        // über den Umweg der Note, die `hype_frueh` sich von ihr gemerkt hat.
         const gespeichert = await gespeichertePruefung({ chain: x.chain, contract: x.contract })
+        const gilt = gespeichert && !gespeichert.veraltet ? gespeichert : null
         const e = {
             x, alt, altStand, verlauf, stand, graduiert, geborenAm, alterStunden,
-            aufKurve: istPump(x) && !graduiert,
-            projektNote: gespeichert?.note ?? alt?.projektNote ?? null,
-            bilanz: gespeichert?.fakten?.ersteller || null,
+            pump: istPump(x, sicherJson(alt?.quellen, [])),
+            aufKurve: istPump(x, sicherJson(alt?.quellen, [])) && !graduiert,
+            projektNote: gilt ? gilt.note : (gespeichert ? null : alt?.projektNote ?? null),
+            bilanz: gilt?.fakten?.ersteller || null,
             risiko: altStand.risiko && Number(altStand.risiko.am) >= jetzt - RISIKO_GILT_MS ? altStand.risiko : null,
             smart: smartKarte.get(String(x.contract)) || smartKarte.get(String(x.contract).toLowerCase()) || null,
         }
@@ -658,6 +867,7 @@ async function fruehLaufIntern(einst) {
             if (!r) { e.risiko = risikoUnpruefbar(jetzt); unpruefbar++; return }
             e.risiko = { ...r, am: jetzt }
             e.stand.halter = r.halter
+            e.stand.halterQuelle = r.quelle || null
             risikoOk++
         } catch (err) {
             risikoFehler = String(err.message).slice(0, 160)
@@ -675,7 +885,7 @@ async function fruehLaufIntern(einst) {
         const kandidaten = [...ergebnisse].sort((a, b) => b.r.note - a.r.note).slice(0, PROJEKT_JE_LAUF)
         await pruefeViele(kandidaten.map((e) => ({
             symbol: e.x.symbol, name: e.x.name, chain: e.x.chain, contract: e.x.contract,
-            links: e.x.links, ersteller: e.x.ersteller,
+            links: e.x.links, ersteller: e.x.ersteller, pump: e.pump,
         })), {
             jeFertig: (_, p, fehler, i) => {
                 const e = kandidaten[i]
@@ -700,12 +910,14 @@ async function fruehLaufIntern(einst) {
     // Ohne eingestellte Alarmschwelle gilt 70 — gemessen wird trotzdem.
     const messSchwelle = schwelle || 70
     const ueberSchwelle = []
+    // Meldefähig, aber unter der Note — aus ihnen kommt der Partner jedes Spitzen-Tokens.
+    const vergleichbar = []
     const neuGesehen = []
     const gedaechtnis = []
     for (const e of ergebnisse) {
         const { x, alt, altStand, r, alterStunden } = e
         const erster = Number(alt?.ersterBlick) || jetzt
-        const { status, grund } = statusFrueh(e.stand, alterStunden, r.befunde)
+        const { status, grund } = statusFrueh(e.stand, alterStunden, r.befunde, { aufKurve: e.aufKurve })
         /*
          * „Über der Schwelle" heisst: meldefähig UND über der Note. Gemerkt
          * wird der Zustand, nicht die Note — sonst bliebe ein Token, der
@@ -713,7 +925,11 @@ async function fruehLaufIntern(einst) {
          * stumm, weil seine Note die Schwelle nie mehr „überschreitet".
          * Zeilen ohne den Merker (vor dem 07.10.2026) zählen nach der Note.
          */
-        const meldung = meldefaehig({ status, abdeckung: r.abdeckung, risiko: e.risiko })
+        const meldung = meldefaehig({
+            status, belastbar: r.belastbar, risiko: e.risiko, tx1h: e.stand.tx1h,
+            // Ist die Projektprüfung abgeschaltet, kann sie keine Bedingung sein.
+            projektGeprueft: einst.projektPruefung === false || Number.isFinite(e.projektNote),
+        })
         const ueber = meldung.ja && r.note >= messSchwelle
         const vorherUeber = typeof altStand?.ueber === 'boolean' ? altStand.ueber : (Number(alt?.note) || 0) >= messSchwelle
         const smartMeldung = e.smart?.wallets >= 2 && meldefaehig({ status, risiko: e.risiko, smart: true }).ja
@@ -730,8 +946,8 @@ async function fruehLaufIntern(einst) {
             ersterBlick: erster,
             letzterBlick: jetzt,
             stand: JSON.stringify({ ...e.stand, alterStunden, geborenAm: e.geborenAm, teilnoten: r.teilnoten, abdeckung: r.abdeckung,
-                trend: r.trend, x: x.xInfo || null, graduiert: e.graduiert, kurve: x.kurve || null, risiko: e.risiko || null,
-                smart: e.smart || null, ueber, meldung: meldung.grund }),
+                marktTeilnoten: r.markt, trend: r.trend, x: x.xInfo || null, graduiert: e.graduiert, aufKurve: e.aufKurve, pump: e.pump,
+                kurve: x.kurve || null, risiko: e.risiko || null, smart: e.smart || null, ueber, meldung: meldung.grund }),
             verlauf: JSON.stringify(verlauf),
             note: r.note,
             befunde: JSON.stringify(r.befunde),
@@ -742,12 +958,20 @@ async function fruehLaufIntern(einst) {
         await knex('hype_frueh').insert(zeile).onConflict(['chain', 'contract']).merge()
         if (!alt) neu++
         const messung = { chain: x.chain, contract: x.contract, symbol: zeile.symbol, note: r.note,
-            preis: e.stand.preis, mcap: e.stand.mcap, liq: e.stand.liq }
+            preis: e.stand.preis, mcap: e.stand.mcap, liq: e.stand.liq,
+            alterStunden, aufKurve: e.aufKurve, graduiert: e.graduiert, pump: e.pump }
         if (ueber && !vorherUeber) ueberSchwelle.push(messung)
-        else if (!alt) neuGesehen.push(messung)
+        else if (meldung.ja && !ueber) vergleichbar.push(messung)
+        if (!alt && !(ueber && !vorherUeber)) neuGesehen.push(messung)
         if (r.note >= MERKEN_AB_NOTE || (e.smart?.wallets >= 2)) {
+            /*
+             * „Gemeldet" heisst: Es ging eine Meldung hinaus. Bis 10.10.2026
+             * zählte die Messschwelle (70, auch bei ausgeschalteten Meldungen) —
+             * der Börsen-Beobachter rechnete dann Vorläufe für Meldungen, die
+             * nie jemand bekam.
+             */
             gedaechtnis.push({ chain: x.chain, contract: x.contract, symbol: zeile.symbol, quelle: 'frueh',
-                bewertungUsd: e.stand.mcap, gemeldet: ueber || smartMeldung })
+                bewertungUsd: e.stand.mcap, gemeldet: (schwelle > 0 && ueber) || smartMeldung })
         }
 
         /*
@@ -776,10 +1000,10 @@ async function fruehLaufIntern(einst) {
     if (ueberSchwelle.length || neuGesehen.length) {
         try {
             const ids = new Map((await knex('hype_frueh').select('id', 'chain', 'contract')
-                .whereIn('contract', [...ueberSchwelle, ...neuGesehen].map((m) => m.contract)))
+                .whereIn('contract', [...ueberSchwelle, ...vergleichbar, ...neuGesehen].map((m) => m.contract)))
                 .map((z) => [schluessel(z.chain, z.contract), z.id]))
             const mitId = (liste) => liste.map((m) => ({ ...m, id: ids.get(schluessel(m.chain, m.contract)) })).filter((m) => m.id)
-            await legeAnFrueh(mitId(ueberSchwelle), mitId(neuGesehen))
+            await legeAnFrueh(mitId(ueberSchwelle), mitId(vergleichbar), mitId(neuGesehen))
         } catch (e) {
             logWarn('hype-frueh', `Erfolgskontrolle anlegen: ${e.message}`)
         }
@@ -825,6 +1049,9 @@ async function raeumeAuf(knex, jetzt) {
             const weg = await knex('hype_frueh').select('id').orderBy('letzterBlick', 'asc').limit(n - MAX_ZEILEN)
             await knex('hype_frueh').whereIn('id', weg.map((z) => z.id)).del()
         }
+        // Projektprüfungen wuchsen ohne Grenze. Neunzig Tage reichen für die
+        // Frage, wer eine Seite schon einmal angegeben hat; gültig ist eine ohnehin nur einen Tag.
+        await knex('hype_projekt').where('geprueftAm', '<', jetzt - PROJEKT_AUFBEWAHREN_MS).del()
     } catch (e) {
         logWarn('hype-frueh', `Aufräumen: ${e.message}`)
     }

@@ -26,6 +26,19 @@ const wurzel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const ordner = path.join(wurzel, 'server', 'fixtures')
 const schreiben = process.argv.includes('--schreiben')
 
+/** RugCheck gekürzt: die ersten zehn Halter und nur die bekannten Konten, die unter ihnen vorkommen. */
+function kuerzeRugCheck(j) {
+    const holders = (j.topHolders || []).slice(0, 10)
+    const benoetigt = new Set(holders.flatMap((h) => [h.owner, h.address]))
+    return {
+        mint: j.mint, creator: j.creator, creatorBalance: j.creatorBalance, token: j.token, token_extensions: j.token_extensions,
+        tokenProgram: j.tokenProgram, rugged: j.rugged, totalHolders: j.totalHolders, topHolders: holders,
+        knownAccounts: Object.fromEntries(Object.entries(j.knownAccounts || {}).filter(([a]) => benoetigt.has(a))),
+        insiderNetworks: j.insiderNetworks, graphInsidersDetected: j.graphInsidersDetected,
+        markets: (j.markets || []).slice(0, 1), risks: j.risks, transferFee: j.transferFee,
+    }
+}
+
 /** Dieselben Antworten wie beim ersten Einfangen — Reihenfolge egal. */
 const QUELLEN = [
     ['dexscreener-tokens', 'https://api.dexscreener.com/latest/dex/tokens/0x6982508145454ce325ddbe47a25d4ec3d2311933',
@@ -43,6 +56,10 @@ const QUELLEN = [
     ['goplus-solana', 'https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=LFEJTxJ9yi6ojGDFpjbGfABLbH55Fc3oEK8syJJpump', null],
     ['rugcheck', 'https://api.rugcheck.xyz/v1/tokens/LFEJTxJ9yi6ojGDFpjbGfABLbH55Fc3oEK8syJJpump/report',
         (j) => ({ rugged: j.rugged, token: j.token, totalHolders: j.totalHolders, topHolders: (j.topHolders || []).slice(0, 3), markets: (j.markets || []).slice(0, 1) })],
+    // Volle RugCheck-Antworten, gekürzt auf das, was gelesen wird: ROCKETCAT mit
+    // Insider-Netzwerken, CAT (graduiert) mit dem Pump-Fun-AMM-Pool in `knownAccounts`.
+    ['rugcheck-netzwerk', 'https://api.rugcheck.xyz/v1/tokens/Gwie4jhUTdCbMLjHyxVdJYi7MsH5tfsc7a7RiFy1pump/report', kuerzeRugCheck],
+    ['rugcheck-pool', 'https://api.rugcheck.xyz/v1/tokens/6KBDqTzgRPpa6xWeS5nPCxPwZHCRu1C51mV3S9r3pump/report', kuerzeRugCheck],
     ['binance-24hr', 'https://fapi.binance.com/fapi/v1/ticker/24hr', (j) => j.slice(0, 2)],
     ['binance-bookticker', 'https://fapi.binance.com/fapi/v1/ticker/bookTicker', (j) => j.slice(0, 2)],
     ['binance-premiumindex', 'https://fapi.binance.com/fapi/v1/premiumIndex', (j) => j.slice(0, 2)],

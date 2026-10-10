@@ -176,6 +176,49 @@ const mittel = (werte) => {
 }
 
 /**
+ * Exakter Test nach Fisher für eine Vierfeldertafel, zweiseitig.
+ *
+ *              ja   nein
+ *   Gruppe A    a     b
+ *   Gruppe B    c     d
+ *
+ * Für ungepaarte Anteile („lebt" bei Spitze gegen Verworfene). Exakt statt
+ * Chi-Quadrat, weil die Gruppen hier zehn bis fünfzig Token gross sind und die
+ * Näherung dort nicht trägt. Zweiseitig: alle Tafeln mit denselben Rändern, die
+ * höchstens so wahrscheinlich sind wie die beobachtete.
+ *
+ * @returns {number|null} p-Wert
+ */
+export function fisherExakt(a, b, c, d) {
+    const [x, y, z, w] = [a, b, c, d].map((v) => Math.max(0, Math.round(Number(v) || 0)))
+    const n = x + y + z + w
+    if (!(n > 0)) return null
+    const zeile = x + y
+    const spalte = x + z
+    const logFak = [0]
+    for (let i = 1; i <= n; i++) logFak[i] = logFak[i - 1] + Math.log(i)
+    const logP = (k) => logFak[zeile] + logFak[n - zeile] + logFak[spalte] + logFak[n - spalte]
+        - logFak[n] - logFak[k] - logFak[zeile - k] - logFak[spalte - k] - logFak[n - zeile - spalte + k]
+    const beobachtet = logP(x)
+    let summe = 0
+    for (let k = Math.max(0, zeile + spalte - n); k <= Math.min(zeile, spalte); k++) {
+        const lp = logP(k)
+        if (lp <= beobachtet + 1e-9) summe += Math.exp(lp)
+    }
+    return Math.min(1, summe)
+}
+
+/** Unterhalb dieses p-Werts gilt ein Unterschied als gesichert. */
+export const P_GRENZE = 0.05
+
+/** Ein Anteil mit Zähler und Nenner — die Oberfläche zeigt beides, nicht nur Prozent. */
+const anteilVon = (liste, ja) => {
+    const n = liste.length
+    const k = liste.filter(ja).length
+    return { k, n, wert: n ? k / n : null }
+}
+
+/**
  * Die Auswertung eines Horizonts über alle Läufe.
  *
  * Erst je Lauf, dann zusammengefasst — siehe Dateikopf. Die Kontrollgruppe
@@ -270,11 +313,16 @@ export function werteAusHype(zeilen = [], horizont = '') {
             const b = zahl(z.liquiditaetEnde)
             return a > 0 && b !== null ? ((b - a) / a) * 100 : null
         })
+        const ueberlebtAnteil = anteilVon(lebend, (z) => Number(z.nochHandelbar) === 1)
+        const imPlus = anteilVon(renditen, (r) => r > 0)
         return {
             n: g.length,
-            ueberlebt: lebend.length ? lebend.filter((z) => Number(z.nochHandelbar) === 1).length / lebend.length : null,
+            ueberlebt: ueberlebtAnteil.wert,
+            ueberlebtAnteil,
             medianRendite: median(renditen),
-            imPlusAnteil: renditen.length ? renditen.filter((r) => r > 0).length / renditen.length : null,
+            nRendite: renditen.length,
+            imPlusAnteil: imPlus.wert,
+            imPlus,
             medianLiquiditaetAenderung: median(liq),
         }
     }
@@ -295,66 +343,138 @@ export function werteAusHype(zeilen = [], horizont = '') {
  * Urteile als Kürzel (Worte in `hype.guete_*`). Zwei getrennte Aussagen, weil
  * zwei verschiedene Teile des Radars geprüft werden: der Sicherheitsfilter
  * (Spitze gegen Verworfene) und die Hype-Note (Spitze gegen Feld).
+ *
+ * Bis 10.10.2026 genügte „grösser" — bei zehn Funden je Gruppe hiess
+ * 3 von 10 gegen 2 von 10 „Filter wirkt". Jetzt entscheidet der exakte Test
+ * nach Fisher; was nicht gesichert ist, heisst so. Die Note wird am Anteil im
+ * Plus geprüft (ja/nein je Fund), nicht am Median — für einen Median gibt es
+ * bei so kleinen Gruppen keinen ehrlichen Test, der hier passt.
  */
 function urteileHype(spitze, verworfen, feld) {
     if (spitze.n < 10) return ['zuWenig']
     const teile = []
-    if (verworfen.n >= 10 && spitze.ueberlebt !== null && verworfen.ueberlebt !== null) {
-        teile.push(spitze.ueberlebt > verworfen.ueberlebt ? 'filterWirkt' : 'filterWirktNicht')
+    const vergleiche = (a, b, wirkt, wirktNicht, offen) => {
+        const p = fisherExakt(a.k, a.n - a.k, b.k, b.n - b.k)
+        if (!(p < P_GRENZE)) return offen
+        return a.wert > b.wert ? wirkt : wirktNicht
     }
-    if (feld.n >= 10 && spitze.medianRendite !== null && feld.medianRendite !== null) {
-        teile.push(spitze.medianRendite > feld.medianRendite ? 'noteWirkt' : 'noteWirktNicht')
+    if (verworfen.n >= 10 && spitze.ueberlebtAnteil.n && verworfen.ueberlebtAnteil.n) {
+        teile.push(vergleiche(spitze.ueberlebtAnteil, verworfen.ueberlebtAnteil, 'filterWirkt', 'filterWirktNicht', 'filterNichtGesichert'))
+    }
+    if (feld.n >= 10 && spitze.imPlus.n && feld.imPlus.n) {
+        teile.push(vergleiche(spitze.imPlus, feld.imPlus, 'noteWirkt', 'noteWirktNicht', 'noteNichtGesichert'))
     }
     return teile.length ? teile : ['zuWenigVergleich']
 }
 
-/**
- * Frühphase: Was wurde aus den Token, die die Note über die Schwelle trug —
- * verglichen mit einer Zufallsauswahl aller neu gesehenen Token?
- *
- * Die Grundrate ist brutal: Von pump.fun-Starts schafft rund jeder hundertste
- * die Kurve. „30 % der Gemeldeten leben noch" ist ohne die Kontrollgruppe
- * nichts wert — vielleicht leben 30 % von allem. Gemessen werden deshalb
- * Überleben, Kurvenabschluss, Median-Rendite und der Anteil, der sich
- * zwischenzeitlich mindestens verdoppelt hat (das Fenster, in dem man
- * verkaufen könnte), in beiden Gruppen.
- */
-export function werteAusFrueh(zeilen = [], horizont = '') {
-    const gruppe = (name) => {
-        const g = zeilen.filter((z) => (z.gruppe || 'spitze') === name && z.status === 'gemessen')
-        const lebend = g.filter((z) => zahl(z.nochHandelbar) !== null)
-        const kurve = g.filter((z) => zahl(z.graduiert) !== null)
-        const renditen = g.map((z) => zahl(z.renditePct)).filter((w) => w !== null)
-        const hoch = g.map((z) => zahl(z.mfePct) ?? zahl(z.renditePct)).filter((w) => w !== null)
-        return {
-            n: g.length,
-            ueberlebt: lebend.length ? lebend.filter((z) => Number(z.nochHandelbar) === 1).length / lebend.length : null,
-            graduiert: kurve.length ? kurve.filter((z) => Number(z.graduiert) === 1).length / kurve.length : null,
-            medianRendite: median(renditen),
-            verdoppelt: hoch.length ? hoch.filter((r) => r >= 100).length / hoch.length : null,
-        }
-    }
-    const spitze = gruppe('spitze')
-    const kontrolle = gruppe('kontrolle')
+/** Regelstand der Frühphasen-Aufträge, die ausgewertet werden (siehe `FRUEH_REGEL` in radar-ergebnisse.js). */
+export const FRUEH_REGEL_AUSWERTUNG = 2
+
+/** Unter so vielen vollständigen Paaren je Frage gibt es kein Urteil. */
+export const MIN_PAARE = 10
+
+/** Was in der Frühphase als Treffer, Leben und Kurvenabschluss zählt — je Auftrag, oder null. */
+const verdoppelt = (z) => (zahl(z.mfePct) === null ? null : zahl(z.mfePct) >= 100)
+const lebt = (z) => (zahl(z.nochHandelbar) === null ? null : Number(z.nochHandelbar) === 1)
+// Kurvenabschluss heisst nur etwas für einen pump.fun-Token, der beim Start noch auf der Kurve war.
+const kurveGeschafft = (z) => (Number(z.pumpFun) === 1 && Number(z.graduiertStart) === 0 && zahl(z.graduiert) !== null
+    ? Number(z.graduiert) === 1 : null)
+
+/** Kennzahlen einer Gruppe — jede mit ihrem eigenen Nenner. */
+function frueheGruppe(g) {
+    const mit = (f) => g.filter((z) => f(z) !== null)
+    const renditen = g.map((z) => zahl(z.renditePct)).filter((w) => w !== null)
     return {
-        horizont,
-        anzahl: zeilen.filter((z) => z.status === 'gemessen').length,
-        offen: zeilen.filter((z) => z.status === 'offen').length,
-        fehlgeschlagen: zeilen.filter((z) => z.status === 'fehlgeschlagen').length,
-        spitze, kontrolle,
-        urteil: urteileFrueh(spitze, kontrolle),
+        n: g.length,
+        lebt: anteilVon(mit(lebt), lebt),
+        kurve: anteilVon(mit(kurveGeschafft), kurveGeschafft),
+        verdoppelt: anteilVon(mit(verdoppelt), verdoppelt),
+        medianRendite: median(renditen),
+        nRendite: renditen.length,
+        medianMfe: median(g.map((z) => zahl(z.mfePct)).filter((w) => w !== null)),
     }
 }
 
-/** Kürzel, Worte in `hypeFrueh.guete_*`. Jede Gruppe braucht zehn Messungen. */
-function urteileFrueh(spitze, kontrolle) {
-    if (spitze.n < 10 || kontrolle.n < 10) return ['zuWenig']
-    const teile = []
-    if (spitze.verdoppelt !== null && kontrolle.verdoppelt !== null) {
-        teile.push(spitze.verdoppelt > kontrolle.verdoppelt ? 'trefferBesser' : 'trefferNichtBesser')
+/**
+ * Gepaarter Vergleich für eine Ja/Nein-Frage: McNemar, exakt — gezählt werden
+ * nur die Paare, in denen genau EINER ja sagt; der Vorzeichentest darüber ist
+ * der exakte McNemar-Test.
+ */
+function paarVergleich(paare, frage) {
+    let nurSpitze = 0
+    let nurKontrolle = 0
+    let gleich = 0
+    for (const [s, k] of paare) {
+        const a = frage(s)
+        const b = frage(k)
+        if (a === null || b === null) continue
+        if (a && !b) nurSpitze++
+        else if (!a && b) nurKontrolle++
+        else gleich++
     }
-    if (spitze.ueberlebt !== null && kontrolle.ueberlebt !== null) {
-        teile.push(spitze.ueberlebt > kontrolle.ueberlebt ? 'lebtLaenger' : 'lebtNichtLaenger')
+    const n = nurSpitze + nurKontrolle + gleich
+    const p = nurSpitze + nurKontrolle ? vorzeichenTest(nurSpitze, nurKontrolle) : null
+    let urteil = 'zuWenig'
+    if (n >= MIN_PAARE) urteil = p !== null && p < P_GRENZE ? (nurSpitze > nurKontrolle ? 'besser' : 'schlechter') : 'nichtGesichert'
+    return { paare: n, nurSpitze, nurKontrolle, gleich, p, urteil }
+}
+
+/**
+ * Frühphase: Findet die Note unter gleich gut geprüften Token die besseren?
+ *
+ * Jeder Spitzen-Token (Schwelle überschritten, meldefähig) hat einen Partner
+ * aus demselben Durchgang: ebenfalls meldefähig, unter der Note, gleicher
+ * Zustand, ähnliches Alter (`waehleFrueh`). Verglichen wird PAARWEISE — Treffer
+ * (zwischendurch mindestens verdoppelt), Leben (wird noch gehandelt),
+ * Kurvenabschluss (nur wer am Start noch darauf war) — mit dem exakten
+ * McNemar-Test. Ein Urteil gibt es erst ab zehn vollständigen Paaren und nur
+ * bei p < 0,05; davor heisst es „zu wenig" oder „nicht gesichert".
+ *
+ * Das Feld (Zufallsauswahl aller neu gesehenen Token) ist die Grundrate, kein
+ * Vergleich: Von pump.fun-Starts schafft rund jeder hundertste die Kurve.
+ *
+ * Aufträge vor dem Regelstand `FRUEH_REGEL_AUSWERTUNG` (ohne `regel`) werden
+ * gezählt, aber nicht ausgewertet — ihre Spitze und ihre Kontrolle waren
+ * anders bestimmt.
+ */
+export function werteAusFrueh(zeilen = [], horizont = '') {
+    const aktuell = zeilen.filter((z) => Number(z.regel) === FRUEH_REGEL_AUSWERTUNG)
+    const gemessenAktuell = aktuell.filter((z) => z.status === 'gemessen')
+    const nach = (name) => gemessenAktuell.filter((z) => z.gruppe === name)
+    const spitzeZeilen = nach('spitze')
+    const kontrolleZeilen = nach('kontrolle')
+
+    // Ein Paar: Spitze mit laufId X, Kontrolle mit laufId −X (gleicher Horizont — der Aufrufer filtert ihn).
+    const spitzeNach = new Map(spitzeZeilen.map((z) => [Number(z.laufId), z]))
+    const paare = kontrolleZeilen.map((k) => [spitzeNach.get(-Number(k.laufId)), k]).filter(([s]) => s)
+
+    const vergleich = {
+        verdoppelt: paarVergleich(paare, verdoppelt),
+        lebt: paarVergleich(paare, lebt),
+        kurve: paarVergleich(paare, kurveGeschafft),
+    }
+    return {
+        horizont,
+        anzahl: gemessenAktuell.length,
+        offen: aktuell.filter((z) => z.status === 'offen').length,
+        fehlgeschlagen: aktuell.filter((z) => z.status === 'fehlgeschlagen').length,
+        altbestand: zeilen.length - aktuell.length,
+        paare: paare.length,
+        spitze: frueheGruppe(spitzeZeilen),
+        kontrolle: frueheGruppe(kontrolleZeilen),
+        feld: frueheGruppe(nach('feld')),
+        vergleich,
+        urteil: urteileFrueh(vergleich),
+    }
+}
+
+/** Kürzel, Worte in `hypeFrueh.guete_*`. */
+function urteileFrueh(v) {
+    const teile = []
+    const wort = { verdoppelt: 'treffer', lebt: 'lebt', kurve: 'kurve' }
+    for (const [frage, ergebnis] of Object.entries(v)) {
+        if (ergebnis.urteil === 'zuWenig') continue
+        teile.push(`${wort[frage]}_${ergebnis.urteil}`)
     }
     return teile.length ? teile : ['zuWenig']
 }

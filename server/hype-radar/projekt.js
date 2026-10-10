@@ -22,17 +22,18 @@
  * Die pump.fun-Pfade stammen aus dem inoffiziellen Frontend-API. Live geprüft
  * am 07.10.2026: `/coins/user-created-coins/{wallet}` gibt es dort nicht
  * (404), der Filter `/coins?creator={wallet}` liefert die Starts einer Wallet.
- * `/coins/{mint}` ist weiter ungeprüft. Jeder Teil fällt einzeln aus — dann
+ * `/coins/{mint}` antwortet für jeden Coin mit 404 (10.10.2026), gelesen wird
+ * `/coins-v2/{mint}` (`pumpCoin` in quellen.js). Jeder Teil fällt einzeln aus — dann
  * bleibt er „unbekannt" und kostet keine Punkte.
  */
 
 import { getKnex } from '../database.js'
 import { logWarn } from '../logger.js'
 import { holeText as holeGeschuetzt } from '../net-guard.js'
-import { holeJson, dexDetails, linksAusInfo } from './quellen.js'
+import { holeJson, dexDetails, linksAusInfo, pumpCoin } from './quellen.js'
 import {
-    leseWebseite, registrierbareDomain, gratisPlattform, rdapRegistriert,
-    githubZiel, githubFakten, erstellerBilanz, bewerteProjekt,
+    leseWebseite, registrierbareDomain, gratisPlattform, rdapRegistriert, ordneWebseite, ordneAbruffehler,
+    kanalAus, seitenBeleg, githubZiel, githubFakten, githubBeleg, erstellerBilanz, bewerteProjekt, PROJEKT_REGELN,
 } from './projekt-bewertung.js'
 
 /** So lange gilt eine Prüfung. */
@@ -46,22 +47,35 @@ const AUSZUG_ZEICHEN = 1500
 
 const PUMP = 'https://frontend-api-v3.pump.fun'
 
+/** EVM-Adressen ohne Rücksicht auf Gross/Klein — DexScreener schreibt sie mit Prüfsumme, andere klein. */
+const vertragKern = (c) => (/^0x[0-9a-f]{40}$/i.test(String(c || '')) ? String(c).toLowerCase() : String(c || ''))
+
 export const schluesselFuer = (k) => (k.contract
-    ? `${String(k.chain || '?').toLowerCase()}|${String(k.contract)}`
+    ? `${String(k.chain || '?').toLowerCase()}|${vertragKern(k.contract)}`
     : `sym|${String(k.symbol || '').toUpperCase()}`)
 
 /** Wie lange etwas her ist, in Tagen. */
 const tageSeit = (ms) => (Number.isFinite(ms) ? Math.max(0, (Date.now() - ms) / 86400e3) : null)
 
 /**
+ * Eine gespeicherte Zeile lesen. Nach einer Regeländerung (`PROJEKT_REGELN`)
+ * ist sie `veraltet`: ihre Note ist nach Regeln gerechnet, die nicht mehr
+ * gelten, und darf weder angezeigt noch weitergerechnet werden.
+ */
+function ausZeile(z) {
+    const e = { ...JSON.parse(z.ergebnis || '{}'), geprueftAm: Number(z.geprueftAm) || 0 }
+    if (Number(e.regel) !== PROJEKT_REGELN) e.veraltet = true
+    return e
+}
+
+/**
  * Gespeicherte Prüfung lesen.
- * @returns {Promise<object|null>} das Ergebnis samt `geprueftAm`, oder null
+ * @returns {Promise<object|null>} das Ergebnis samt `geprueftAm` (und `veraltet`), oder null
  */
 export async function gespeichertePruefung(kandidat) {
     try {
         const z = await getKnex()('hype_projekt').where('schluessel', schluesselFuer(kandidat)).first()
-        if (!z) return null
-        return { ...JSON.parse(z.ergebnis || '{}'), geprueftAm: Number(z.geprueftAm) || 0 }
+        return z ? ausZeile(z) : null
     } catch {
         return null
     }
@@ -70,7 +84,9 @@ export async function gespeichertePruefung(kandidat) {
 /**
  * Gespeicherte Prüfungen für viele Token auf einmal — eine Abfrage statt einer
  * je Zeile. Abgelaufene kommen mit: eine zwei Tage alte Prüfung ist für die
- * Anzeige besser als keine, und `geprueftAm` sagt, wie alt sie ist.
+ * Anzeige besser als keine, und `geprueftAm` sagt, wie alt sie ist. Nicht mit
+ * kommen Prüfungen nach alten Regeln — die zeigten Pluspunkte, die es nicht
+ * mehr gibt.
  *
  * @returns {Promise<Map<string, object>>} Schlüssel (`schluesselFuer`) → Ergebnis
  */
@@ -82,7 +98,8 @@ export async function gespeichertePruefungen(kandidaten = []) {
         const zeilen = await getKnex()('hype_projekt').whereIn('schluessel', schluessel)
         for (const z of zeilen) {
             try {
-                raus.set(z.schluessel, { ...JSON.parse(z.ergebnis || '{}'), geprueftAm: Number(z.geprueftAm) || 0 })
+                const e = ausZeile(z)
+                if (!e.veraltet) raus.set(z.schluessel, e)
             } catch { /* eine kaputte Zeile fehlt eben */ }
         }
     } catch { /* Tabelle fehlt: dann gibt es keine */ }
@@ -90,29 +107,63 @@ export async function gespeichertePruefungen(kandidaten = []) {
 }
 
 /**
+ * Wie viele ANDERE Token dieselbe Webseite angeben (gezählt nach Vertrag, nicht
+ * nach Schlüssel — derselbe Vertrag auf zwei Ketten ist ein Token).
+ * Unbekannt (Tabelle ohne Spalte, Datenbank weg) ist 0, nicht „geteilt".
+ */
+async function geteiltMit(host, kandidat) {
+    if (!host) return 0
+    try {
+        const zeilen = await getKnex()('hype_projekt').where('host', host).select('schluessel')
+        const eigen = vertragKern(kandidat.contract)
+        const andere = new Set(zeilen
+            .map((z) => String(z.schluessel || ''))
+            .filter((s) => !s.startsWith('sym|'))
+            .map((s) => vertragKern(s.slice(s.indexOf('|') + 1)))
+            .filter((c) => c && c !== eigen))
+        return andere.size
+    } catch {
+        return 0
+    }
+}
+
+/**
  * Ein Projekt prüfen — oder die gespeicherte Prüfung liefern, solange sie gilt.
  *
- * @param {object} kandidat  {symbol, name, chain, contract, links?, ersteller?}
+ * Eine gespeicherte Prüfung gilt nicht mehr, wenn sie abgelaufen ist, nach
+ * alten Regeln gerechnet wurde, oder wenn seither ein weiterer Token dieselbe
+ * Webseite angibt: Wer zuerst geprüft wurde, sah die Nachahmer noch nicht und
+ * behielte sonst einen Tag lang Pluspunkte für eine Seite, die nun drei Token
+ * für sich beanspruchen.
+ *
+ * @param {object} kandidat  {symbol, name, chain, contract, links?, ersteller?, pump?}
  * @param {object} opts      {neu: true} erzwingt eine frische Prüfung (gebremst)
  * @returns {Promise<{note:number|null, befunde:Array, fakten:object, geprueftAm:number}>}
  */
 export async function pruefeProjekt(kandidat, opts = {}) {
     const alt = await gespeichertePruefung(kandidat)
     const alter = alt ? Date.now() - alt.geprueftAm : Infinity
-    if (alt && (alter < (opts.neu ? ERZWINGEN_AB_MS : PRUEFUNG_GUELTIG_MS))) return alt
+    if (alt && !alt.veraltet && alter < (opts.neu ? ERZWINGEN_AB_MS : PRUEFUNG_GUELTIG_MS)) {
+        const w = alt.fakten?.webseite || {}
+        const bisher = Number(w.geteilt) || 0
+        if (!w.host || w.status === 'keine' || await geteiltMit(w.host, kandidat) === bisher) return alt
+    }
 
     const ergebnis = await pruefeFrisch(kandidat)
     try {
         const knex = getKnex()
+        const w = ergebnis.fakten?.webseite || {}
         await knex('hype_projekt')
             .insert({
                 schluessel: schluesselFuer(kandidat),
                 note: ergebnis.note,
                 ergebnis: JSON.stringify(ergebnis),
                 geprueftAm: ergebnis.geprueftAm,
+                // Nur eine geprüfte eigene Seite zählt fürs Teilen — x.com teilen alle.
+                host: w.status !== 'keine' && w.host ? w.host : null,
             })
             .onConflict('schluessel')
-            .merge(['note', 'ergebnis', 'geprueftAm'])
+            .merge(['note', 'ergebnis', 'geprueftAm', 'host'])
     } catch (e) {
         logWarn('hype-projekt', `Prüfung nicht gespeichert: ${e.message}`)
     }
@@ -153,14 +204,20 @@ export async function pruefeViele(kandidaten = [], { parallel = 3, jeFertig = ()
 /** Die eigentliche Prüfung, ohne Zwischenspeicher. */
 async function pruefeFrisch(kandidat) {
     const k = { ...kandidat }
-    const istPump = k.chain === 'solana' && /pump$/i.test(String(k.contract || ''))
+    const token = { symbol: String(k.symbol || ''), name: String(k.name || ''), contract: String(k.contract || '') }
+    // Die Frühphase weiss es genauer (Kurve, Quelle, Handelsplatz) — die Endung „pump" trägt nur jeder vierte nicht.
+    const istPump = k.chain === 'solana' && (k.pump === true || /pump$/i.test(String(k.contract || '')))
 
     // ── Links und Ersteller zusammentragen ──────────────────────────────
     let links = k.links || null
     let ersteller = String(k.ersteller || '')
     if (istPump && (!links || !ersteller)) {
-        const coin = await holeJson(`${PUMP}/coins/${encodeURIComponent(k.contract)}`).catch(() => null)
-        if (coin && typeof coin === 'object') {
+        // Ausfall von pump.fun: dann eben ohne — die Prüfung soll nicht daran scheitern.
+        const coin = await pumpCoin(k.contract).catch((e) => {
+            logWarn('hype-projekt', `pump.fun ${String(k.contract).slice(0, 8)}…: ${e.message}`)
+            return null
+        })
+        if (coin) {
             links = links || linksAusInfo(coin)
             ersteller = ersteller || String(coin.creator || '')
         }
@@ -172,20 +229,37 @@ async function pruefeFrisch(kandidat) {
     links = links || { webseiten: [], kanaele: [] }
 
     // ── Webseite ────────────────────────────────────────────────────────
-    const webseite = await pruefeWebseite(links.webseiten?.[0] || '', k.contract)
+    const webseite = await pruefeWebseite(links.webseiten || [], token)
+    if (webseite.status !== 'keine') webseite.geteilt = await geteiltMit(webseite.host, k)
+    const beleg = seitenBeleg(webseite, token)
+    webseite.beleg = beleg.wie
+    webseite.fremd = beleg.fremd
 
-    // ── Kanäle: aus den Token-Angaben UND von der Seite ─────────────────
-    const typen = (re) => (links.kanaele || []).filter((x) => re.test(x.typ) || re.test(x.url)).map((x) => x.url)
-    const vonSeite = webseite.fakten?.kanaele || {}
-    const kanaele = {
-        x: [...typen(/twitter|x\.com/i), ...(vonSeite.x || [])][0] || '',
-        telegram: [...typen(/telegram|t\.me/i), ...(vonSeite.telegram || [])][0] || '',
-        discord: [...typen(/discord/i), ...(vonSeite.discord || [])][0] || '',
-        github: [...typen(/github/i), ...(vonSeite.github || [])][0] || '',
+    /*
+     * ── Kanäle: aus den Token-Angaben, von der Seite nur, wenn sie seine ist ─
+     *
+     * Von einer fremden Seite übernommen, gehörten die Kanäle dem, der sie
+     * betreibt: Ein Forschungsartikel brachte drei Token das GitHub-Konto des
+     * Verlags samt seiner bekannten Repositories ein — Note 92.
+     */
+    const angegeben = (links.kanaele || []).map((x) => ({ url: x.url, ...kanalAus(x.url) }))
+    const vonSeite = beleg.eigen ? (webseite.fakten?.kanaele || {}) : {}
+    const erster = (art) => angegeben.find((x) => x.art === art && x.gueltig)?.url
+        || (vonSeite[art] || []).find((u) => kanalAus(u).gueltig) || ''
+    const kanaele = { x: erster('x'), telegram: erster('telegram'), discord: erster('discord') }
+    const verworfen = angegeben.filter((x) => x.art && !x.gueltig && x.art !== 'github')
+        .map((x) => ({ art: x.art, grund: x.grund, url: x.url }))
+
+    // ── GitHub: der Link der eigenen Seite zuerst, sonst der angegebene ──
+    const ghSeite = (vonSeite.github || []).find((u) => githubZiel(u)) || ''
+    const ghLink = ghSeite || angegeben.find((x) => x.art === 'github' && x.gueltig)?.url || ''
+    kanaele.github = ghLink
+    const github = ghLink ? await pruefeGithub(ghLink) : null
+    if (github) {
+        github.beleg = githubBeleg(github, {
+            vonSeite: Boolean(ghSeite), contract: token.contract, seitenHost: beleg.eigen ? webseite.host : '',
+        })
     }
-
-    // ── GitHub ──────────────────────────────────────────────────────────
-    const github = kanaele.github ? await pruefeGithub(kanaele.github) : null
 
     // ── Ersteller (pump.fun) ────────────────────────────────────────────
     let erstellerFakten = null
@@ -195,7 +269,10 @@ async function pruefeFrisch(kandidat) {
          * nicht (07.10.2026: „Cannot GET", HTTP 404 bei jeder Wallet) — die
          * Ersteller-Bilanz war deshalb immer leer, und „hat schon Coins durch
          * die Kurve gebracht" fiel nie. Die Coin-Liste nimmt `creator` als
-         * Filter: für eine Wallet mit vier Starts kamen genau diese vier.
+         * Filter: für eine Wallet mit vier Starts kamen genau diese vier. Ein
+         * vertippter Filter liefert dagegen still die fünfzig neuesten Coins
+         * ALLER Ersteller (gemessen 10.10.2026) — daher die Gegenprobe über
+         * `wallet` in `erstellerBilanz`.
          */
         const coins = await holeJson(
             `${PUMP}/coins?creator=${encodeURIComponent(ersteller)}&offset=0&limit=50&sort=created_timestamp&order=DESC&includeNsfw=true`)
@@ -203,33 +280,52 @@ async function pruefeFrisch(kandidat) {
                 logWarn('hype-projekt', `Ersteller-Historie ${ersteller.slice(0, 8)}…: ${e.message}`)
                 return null
             })
-        erstellerFakten = erstellerBilanz(coins, { mint: k.contract })
+        erstellerFakten = erstellerBilanz(coins, { mint: k.contract, wallet: ersteller })
     }
 
     const fakten = {
+        token,
         webseite,
         kanaele,
+        kanaeleVerworfen: verworfen,
         github,
         ersteller: erstellerFakten ? { wallet: ersteller, ...erstellerFakten } : (ersteller ? { wallet: ersteller } : null),
     }
     const urteil = bewerteProjekt({
+        token,
         webseite,
         // Kanäle nur dann werten, wenn es überhaupt Angaben zum Token gab.
         kanaele: (links.kanaele?.length || links.webseiten?.length || webseite.status === 'ok') ? kanaele : null,
+        kanaeleVerworfen: verworfen,
         github,
         ersteller: erstellerFakten,
     })
-    return { ...urteil, fakten, geprueftAm: Date.now() }
+    return { ...urteil, regel: PROJEKT_REGELN, fakten, geprueftAm: Date.now() }
 }
 
 /**
- * Webseite lesen und das Alter ihrer Domain bestimmen.
- * @returns {Promise<object>} {status:'keine'|'fehler'|'ok', url, host, fakten?, domain, domainAlterTage, plattform}
+ * Die angegebene Webseite einordnen, lesen und das Alter ihrer Domain bestimmen.
+ *
+ * Von mehreren Adressen zählt die erste, die eine eigene Seite sein kann.
+ * Steht keine solche da, wird die aussagekräftigste fremde benannt: die Seite
+ * eines ANDEREN Tokens vor der Seite dieses Tokens vor einer Plattform.
+ *
+ * @returns {Promise<object>} {status:'keine'|'fehler'|'geschuetzt'|'unpruefbar'|'ok', grund?, url, host,
+ *                             fakten?, domain, domainAlterTage, plattform}
  */
-async function pruefeWebseite(url, contract) {
-    if (!url) return { status: 'keine' }
-    let host = ''
-    try { host = new URL(url).hostname.toLowerCase() } catch { return { status: 'fehler', url, fehler: 'ungültige Adresse' } }
+async function pruefeWebseite(webseiten, token) {
+    if (!webseiten.length) return { status: 'keine' }
+    const geordnet = webseiten.map((url) => ({ url, ...ordneWebseite(url, token.contract) }))
+    const eigene = geordnet.find((x) => !x.grund)
+    if (!eigene) {
+        const RANG = { fremderToken: 0, tokenSeite: 1, plattform: 2, ungueltig: 3 }
+        const x = [...geordnet].sort((a, b) => RANG[a.grund] - RANG[b.grund])[0]
+        return {
+            status: 'keine', grund: x.grund, url: x.url, host: x.host,
+            plattform: x.plattform || '', art: x.art || '', adresse: x.adresse || '',
+        }
+    }
+    const { url, host } = eigene
     const plattform = gratisPlattform(host)
     const domain = registrierbareDomain(host)
 
@@ -238,19 +334,19 @@ async function pruefeWebseite(url, contract) {
         html = await holeGeschuetzt(url, { timeout: 10000, versuche: 2 })
     } catch (e) {
         /*
-         * Bot-Schutz ist kein toter Link. Hinter Cloudflare antworten auch
-         * gepflegte Seiten einem Server ohne Browser mit 403 oder 503 — das ist
-         * „nicht prüfbar", nicht „nicht erreichbar", und kostet keine Punkte.
+         * Bot-Schutz ist kein toter Link, eine Zeitüberschreitung auch nicht —
+         * `ordneAbruffehler` zieht die Grenze: nur was sagt „diese Seite gibt
+         * es nicht", kostet Punkte.
          */
-        const status = [401, 403, 429, 503].includes(Number(e.status)) ? 'geschuetzt' : 'fehler'
-        return { status, url, host, plattform, domain, fehler: String(e.message || e).slice(0, 80) }
+        const nxdomain = e?.art === 'dns' && e?.code === 'ENOTFOUND' ? await nxdomainLaut(host) : null
+        return { ...ordneAbruffehler(e, { nxdomain }), url, host, plattform, domain }
     }
-    const f = leseWebseite(html, { contract, url })
+    const f = leseWebseite(html, { contract: token.contract, url })
 
     // Domain-Alter nur bei eigener Domain — bei einer Gratis-Plattform wäre
-    // es das Alter der Plattform.
+    // es das Alter der Plattform, bei einer Sammelseite das des Betreibers.
     let domainAlterTage = null
-    if (domain && !plattform) {
+    if (domain && !plattform && !f.sammelseite) {
         try {
             const rdap = JSON.parse(await holeGeschuetzt(`https://rdap.org/domain/${encodeURIComponent(domain)}`,
                 { timeout: 8000, versuche: 1 }))
@@ -266,6 +362,31 @@ async function pruefeWebseite(url, contract) {
         status: 'ok', url, host, domain, plattform, domainAlterTage,
         fakten: { ...f, textAuszug: f.textAuszug.slice(0, AUSZUG_ZEICHEN) },
     }
+}
+
+/*
+ * Gegenprobe für „Name gibt es nicht": zwei unabhängige Resolver über HTTPS.
+ * Die eigene Namensauflösung meldete am 10.10.2026 für bestehende Domains
+ * vorübergehend ENOTFOUND — ohne Gegenprobe kostete das zehn Punkte und stand
+ * einen Tag lang als „Webseite tot" da. Feste Adressen, keine Nutzereingabe.
+ */
+const DOH = [
+    ['https://dns.google/resolve?type=A&name=', {}],
+    ['https://cloudflare-dns.com/dns-query?type=A&name=', { accept: 'application/dns-json' }],
+]
+
+/** @returns {Promise<boolean|null>} true = NXDOMAIN bestätigt, false = Name existiert, null = unbekannt */
+async function nxdomainLaut(host) {
+    for (const [basis, kopf] of DOH) {
+        try {
+            const r = await fetch(basis + encodeURIComponent(host), { headers: kopf, signal: AbortSignal.timeout(6000) })
+            if (!r.ok) continue
+            const status = Number((await r.json())?.Status)
+            if (status === 3) return true
+            if (status === 0) return false
+        } catch { /* nächster Resolver */ }
+    }
+    return null
 }
 
 /** GitHub: Konto, Repository, frühere Projekte. Höchstens drei Anfragen. */
@@ -295,8 +416,11 @@ export function kurzfassung(ergebnis) {
         befunde: ergebnis.befunde || [],
         geprueftAm: ergebnis.geprueftAm || 0,
         webseite: w.status === 'ok'
-            ? { url: w.url, titel: w.fakten?.titel || '', domainAlterTage: w.domainAlterTage, plattform: w.plattform }
-            : { url: w.url || '', status: w.status },
+            ? {
+                url: w.url, titel: w.fakten?.titel || '', domainAlterTage: w.domainAlterTage, plattform: w.plattform,
+                beleg: w.beleg || '', fremd: w.fremd || '', geteilt: Number(w.geteilt) || 0,
+            }
+            : { url: w.url || '', status: w.status, grund: w.grund || '', plattform: w.plattform || '', geteilt: Number(w.geteilt) || 0 },
         kanaele: ergebnis.fakten?.kanaele || {},
         github: ergebnis.fakten?.github ? {
             link: ergebnis.fakten.github.link,
