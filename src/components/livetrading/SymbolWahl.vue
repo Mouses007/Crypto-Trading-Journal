@@ -20,7 +20,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { liveSymbol, FAVORITE_SYMBOLS } from '../../stores/live.js'
 import { loadSymbolMeta } from '../../utils/liveSymbols.js'
-import { boerseUrl } from '../../utils/boersenLinks.js'
+import { boerseUrl, aktivierteBoersen, BOERSE_NAME } from '../../utils/boersenLinks.js'
+import { currentUser } from '../../stores/globals.js'
 
 const { t } = useI18n()
 
@@ -33,11 +34,23 @@ const wurzel = ref(null)
 const kurz = (s) => String(s || '').replace(/USDT$/, '')
 
 /*
- * Direkt in Bitunix öffnen: die Handelsbörse des Journals. Steht neben der
- * Wahl, weil das Symbol die ganze Seite steuert — wer hier wechselt, will
- * genau dieses Symbol auch handeln. Neuer Tab, damit das Cockpit bleibt.
+ * Direkt öffnen: Bitunix (die Handelsbörse des Journals) und TradingView.
+ * Stehen neben der Wahl, weil das Symbol die ganze Seite steuert — wer hier
+ * wechselt, will genau dieses Symbol auch handeln oder im Chart sehen. Neuer
+ * Tab, damit das Cockpit bleibt.
+ *
+ * Welche erscheinen, entscheidet dieselbe Einstellung „Börsen-Links" wie im
+ * Coin-Radar — TradingView ist damit abwählbar. Der Chart ist der
+ * Binance-Perpetual (Vorgabe von `boerseUrl`): die Symbolliste hier kommt aus
+ * Binance-Futures, ein solcher Chart existiert also immer.
  */
-const bitunixUrl = computed(() => boerseUrl('bitunix', liveSymbol.value))
+const OEFFNEN = ['bitunix', 'tradingview']
+const oeffnen = computed(() => {
+    const aktiv = aktivierteBoersen(currentUser.value?.boersenLinks)
+    return OEFFNEN.filter(b => aktiv.includes(b))
+        .map(b => ({ b, name: BOERSE_NAME[b], url: boerseUrl(b, liveSymbol.value) }))
+        .filter(x => x.url)
+})
 
 const treffer = computed(() => {
     const q = suche.value.trim().toUpperCase()
@@ -86,10 +99,16 @@ onBeforeUnmount(() => document.removeEventListener('click', beiKlickAussen))
             <b>{{ kurz(liveSymbol) }}</b>
             <i class="uil" :class="offen ? 'uil-angle-up' : 'uil-angle-down'"></i>
         </button>
-        <a v-if="bitunixUrl" class="swBoerse" :href="bitunixUrl" target="_blank" rel="noopener noreferrer"
-            :title="t('live.inBitunix', { s: kurz(liveSymbol) })">
-            Bitunix <i class="uil uil-external-link-alt"></i>
-        </a>
+        <!-- Links LINKS vom Symbol und ausserhalb des Flusses: das Symbol sitzt
+             exakt in der Seitenmitte, rechts davon steht die breite Knopfleiste.
+             Nach beiden Seiten gewachsen, schob die Gruppe sich bei 1600 px in
+             „Raster/Pult". Links ist Platz. -->
+        <span v-if="oeffnen.length" class="swOeffnen">
+            <a v-for="o in oeffnen" :key="o.b" class="swBoerse" :href="o.url" target="_blank" rel="noopener noreferrer"
+                :title="t('live.inBoerse', { s: kurz(liveSymbol), b: o.name })">
+                {{ o.name }} <i class="uil uil-external-link-alt"></i>
+            </a>
+        </span>
 
         <div v-if="offen" class="swListe" @click.stop>
             <div class="swFavoriten">
@@ -111,9 +130,22 @@ onBeforeUnmount(() => document.removeEventListener('click', beiKlickAussen))
 <style scoped>
 .swWrap {
     position: relative;
-    display: inline-flex;
-    align-items: center;
+}
+
+.swOeffnen {
+    position: absolute;
+    right: calc(100% + 0.35rem);
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
     gap: 0.3rem;
+}
+
+/* Unter 992 px läuft die Kopfzeile ohnehin mit (siehe Livetrading.vue) —
+   dann stehen die Links im Fluss vor dem Symbol. */
+@media (max-width: 991.98px) {
+    .swWrap { display: inline-flex; align-items: center; gap: 0.3rem; flex-direction: row-reverse; }
+    .swOeffnen { position: static; transform: none; }
 }
 
 .swBoerse {

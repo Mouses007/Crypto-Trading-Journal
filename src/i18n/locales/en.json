@@ -1612,7 +1612,7 @@
     "imbalanceBuy": "{pct}% buy",
     "imbalanceSell": "{pct}% sell",
     "imbalanceTitle": "Buy vs. sell volume near the mid price",
-    "inBitunix": "Open {s} in Bitunix (new tab)"
+    "inBoerse": "Open {s} in {b} (new tab)"
   },
   "strategies": {
     "labTitle": "Lab",

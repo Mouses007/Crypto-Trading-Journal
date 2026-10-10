@@ -24,7 +24,7 @@ import dayjs from '../../utils/dayjs-setup.js'
 import { lageZu } from '../../../shared/handelszeiten.js'
 import { liveSymbol } from '../../stores/live.js'
 import { currentUser } from '../../stores/globals.js'
-import { boerseUrl, aktivierteBoersen } from '../../utils/boersenLinks.js'
+import { boerseUrl, boersenLinksVon, BOERSE_KURZ, BOERSE_NAME } from '../../utils/boersenLinks.js'
 
 const props = defineProps({
     daten: { type: Object, default: null },
@@ -142,13 +142,15 @@ const alter = (ms) => {
 const LAGE_FARBE = { trend_auf: 'kpPlus', trend_ab: 'kpMinus', nachrichtenrisiko: 'kpGelb', quetsche: 'kpGelb' }
 
 /**
- * BX-Link je Coin wie in der Coin-Radar-Kachel — nur wenn der Lauf den Coin
- * auf Bitunix gelistet gefunden hat und Bitunix unter den Börsen-Links
- * eingeschaltet ist. Ein Link auf eine nicht gelistete Seite wäre ein 404.
+ * BX/TV je Coin wie in der Coin-Radar-Kachel: Bitunix nur, wenn der Lauf den
+ * Coin dort gelistet gefunden hat (sonst ein 404), TradingView immer — beides
+ * nur, wenn es unter den Börsen-Links eingeschaltet ist. Bitget und Pionex
+ * bleiben hier weg: die Zeile soll kurz bleiben, und gehandelt wird auf
+ * Bitunix.
  */
-const bitunixAn = computed(() => aktivierteBoersen(currentUser.value?.boersenLinks).includes('bitunix'))
-const aufBitunix = (z) => bitunixAn.value
-    && (z?.boersen?.liste || []).some(e => e.boerse === 'bitunix')
+const OEFFNEN = ['bitunix', 'tradingview']
+const coinLinks = (z) => boersenLinksVon(z, currentUser.value?.boersenLinks)
+    .filter(e => OEFFNEN.includes(e.boerse))
 
 /** Coin-Radar: Klick auf den Coin wählt ihn wie in der eigenen Kachel. */
 function waehle(symbol) { liveSymbol.value = symbol }
@@ -250,8 +252,9 @@ function waehle(symbol) { liveSymbol.value = symbol }
                         @click.stop="waehle(z.symbol)">
                         {{ kurz(z.symbol) }} <small v-if="Number.isFinite(Number(z.note))">{{ Math.round(z.note) }}</small>
                     </button>
-                    <a v-if="aufBitunix(z)" class="kpBx" :href="boerseUrl('bitunix', z.symbol)" target="_blank"
-                        rel="noopener noreferrer" :title="t('live.inBitunix', { s: kurz(z.symbol) })" @click.stop>BX</a>
+                    <a v-for="e in coinLinks(z)" :key="e.boerse" class="kpBx" :href="boerseUrl(e.boerse, z.symbol)" target="_blank"
+                        rel="noopener noreferrer" :title="t('live.inBoerse', { s: kurz(z.symbol), b: BOERSE_NAME[e.boerse] })"
+                        @click.stop>{{ BOERSE_KURZ[e.boerse] }}</a>
                 </span>
             </span>
         </div>
@@ -407,6 +410,7 @@ function waehle(symbol) { liveSymbol.value = symbol }
 }
 
 .kpBx:hover { background: rgba(90, 156, 255, 0.3); color: rgb(140, 185, 255); }
+.kpBx + .kpBx { margin-left: 0.15rem; }
 .kpCoin:hover { background: rgba(255, 255, 255, 0.1); }
 .kpCoin.aktiv { background: rgba(90, 156, 255, 0.25); }
 

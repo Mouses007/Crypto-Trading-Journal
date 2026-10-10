@@ -1612,7 +1612,7 @@
     "imbalanceBuy": "{pct} % Kauf",
     "imbalanceSell": "{pct} % Verkauf",
     "imbalanceTitle": "Kauf- zu Verkaufsvolumen nahe am Mittelkurs",
-    "inBitunix": "{s} in Bitunix öffnen (neuer Tab)"
+    "inBoerse": "{s} in {b} öffnen (neuer Tab)"
   },
   "strategies": {
     "labTitle": "Labor",
