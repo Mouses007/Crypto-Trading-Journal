@@ -994,7 +994,7 @@ async function fruehLaufIntern(einst) {
         }
     }
 
-    await merke(gedaechtnis)
+    await merke(gedaechtnis, jetzt)
 
     // ── Erfolgskontrolle anlegen ─────────────────────────────────────────
     if (ueberSchwelle.length || neuGesehen.length) {

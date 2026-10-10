@@ -374,7 +374,7 @@ export async function scanne(einst, melde = () => {}) {
     await merke(bestanden.filter((z) => z.contractAddress).map((z) => ({
         chain: z.chain, contract: z.contractAddress, symbol: z.symbol, quelle: 'scan',
         bewertungUsd: Number(z.marktDaten?.marktkapitalisierung) || Number(z.marktDaten?.fdv) || null, gemeldet: true,
-    })))
+    })), jetzt)
 
     melde({ schritt: 'fertig', bestanden: bestanden.length, verworfen: verworfen.length })
     return { bestanden, verworfen, quellenStand, erstelltAm: jetzt }

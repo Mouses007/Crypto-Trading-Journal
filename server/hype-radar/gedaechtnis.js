@@ -29,15 +29,19 @@ const normVertrag = (chain, c) => (chain === 'solana' ? String(c || '') : String
  * `ersterBlick` und `ersteMeldung` werden nie überschrieben — der erste
  * Zeitpunkt ist der, auf den es ankommt. Fortgeschrieben werden nur Symbol,
  * letzter Blick und Bewertung (eine fehlende Bewertung löscht die bekannte
- * nicht).
+ * nicht). `letzterBlick` heisst „zuletzt AUFFÄLLIG": gemerkt wird nur, wer ab
+ * Note 40 steht oder bestanden hat; ein Token, der danach darunter fällt, behält
+ * seinen alten Wert, während der Börsen-Beobachter die Bewertung weiter nachträgt.
  *
  * @param {Array<{chain, contract, symbol, quelle, bewertungUsd, gemeldet}>} eintraege
+ * @param {number} jetzt  Zeitpunkt des Durchgangs — derselbe, den seine Alarme
+ *   tragen. Mit `Date.now()` am Ende des Durchgangs lag die „erste Meldung"
+ *   um die Laufzeit NACH dem Alarm (gesehen 10.10.2026 bei CLANKER, zwei Minuten).
  */
-export async function merke(eintraege = []) {
+export async function merke(eintraege = [], jetzt = Date.now()) {
     const liste = eintraege.filter((e) => e?.chain && e?.contract && e.chain !== '?')
     if (!liste.length) return
     const knex = getKnex()
-    const jetzt = Date.now()
     try {
         const zeilen = liste.map((e) => ({
             chain: e.chain,
