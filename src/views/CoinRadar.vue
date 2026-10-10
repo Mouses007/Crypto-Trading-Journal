@@ -151,7 +151,7 @@
                 </div>
             </div>
 
-            <div v-if="ep" class="crEinzelKarte">
+            <div v-if="ep" ref="epKarte" class="crEinzelKarte">
                 <!-- Kopf: Symbol, Note, Preis — und woher gemessen wurde -->
                 <div class="crEinzelTitel">
                     <span class="crEinzelSymbol">{{ kurz(ep.symbol) }}</span>
@@ -487,7 +487,7 @@
                      als liest. -->
                 <div v-if="istTelefon" class="crKarten">
                     <div v-for="z in gefiltert" :key="z.id" class="crKarte"
-                        @click="offen = offen === z.id ? null : z.id">
+                        @click="zeileGeklickt(z)">
                         <div class="crKarteKopf">
                             <span v-if="z.status === 'bewertet'" class="crRang">{{ z.rang }}</span>
                             <!-- role/tabindex/keydown: ein klickbares <i> ist per Tastatur
@@ -648,7 +648,7 @@
                                     <td class="text-end crZahl">{{ n(z.spreadBp, 2) }}</td>
                                     <td class="text-end crZahl">{{ n(z.tiefeUsd, 0) }}</td>
                                 </tr>
-                                <tr v-else class="crZeile" @click="offen = offen === z.id ? null : z.id">
+                                <tr v-else class="crZeile" @click="zeileGeklickt(z)">
                                     <td class="text-end crRangZelle">{{ z.rang || '—' }}</td>
                                     <td>
                                         <i class="uil crStern" :class="istFav(z) ? 'uil-favorite aktiv' : 'uil-star'"
@@ -1043,7 +1043,7 @@
  * Was die Seite ausdrücklich NICHT behauptet: wohin ein Kurs geht. Sie misst
  * einen Zustand.
  */
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { sichereUrl } from '../utils/sanitize.js'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -1604,6 +1604,22 @@ const pct = (w) => (w === null || w === undefined || !Number.isFinite(Number(w))
 const zahlKurz = (w) => (w === null || w === undefined || !Number.isFinite(Number(w)) ? '—'
     : (Number(w) >= 1e6 ? `${(Number(w) / 1e6).toFixed(1)} Mio` : (Number(w) >= 1e3 ? `${(Number(w) / 1e3).toFixed(0)} k` : String(Number(w)))))
 const geldKurz = (w) => `${zahlKurz(w)} USD`
+
+/*
+ * Ein Klick auf einen Coin der Rangliste klappt ihn auf UND misst ihn oben in
+ * der Einzelprüfung — dort steht die Tiefensuche. Die Seite springt hin, sobald
+ * die Messung da ist; beim Zuklappen passiert nichts.
+ */
+const epKarte = ref(null)
+async function zeileGeklickt(z) {
+    const auf = offen.value !== z.id
+    offen.value = auf ? z.id : null
+    if (!auf || !z?.symbol) return
+    epEingabe.value = z.symbol
+    await epMessen()
+    await nextTick()
+    epKarte.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 function epNimm(symbol) {
     epEingabe.value = symbol
