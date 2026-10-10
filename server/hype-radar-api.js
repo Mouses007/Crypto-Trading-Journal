@@ -292,6 +292,86 @@ export function setupHypeRadarRoutes(app) {
     })
 
     /**
+     * Ein einzelner Token, auch wenn die Frühphase ihn nicht mehr führt.
+     *
+     * Wer auf einen Alarm klickt, will wissen, was aus dem Token geworden ist.
+     * `hype_frueh` vergisst aber nach drei Tagen Funkstille (verworfene schon
+     * nach einem) — dann stand dort nur „nicht mehr beobachtet". Was bleibt,
+     * liegt anderswo: die Alarme selbst, das Gedächtnis (erster Blick, erste
+     * Meldung, letzte Bewertung), die Messungen der Erfolgskontrolle — und der
+     * Markt jetzt, live von DexScreener. Ein Abruf je Klick, kein Takt.
+     */
+    app.get('/api/hype-radar/frueh/token', async (req, res) => {
+        const contract = String(req.query.contract || '').trim()
+        if (!/^[A-Za-z0-9]{20,80}$/.test(contract)) return res.status(400).json({ error: 'Ungültiger Vertrag' })
+        try {
+            const knex = getKnex()
+            const evm = /^0x/i.test(contract)
+            const mitVertrag = (q) => (evm ? q.whereRaw('lower(contract) = ?', [contract.toLowerCase()]) : q.where('contract', contract))
+            const [gedaechtnis, alarmeRoh, ergebnisse] = await Promise.all([
+                mitVertrag(knex('hype_gedaechtnis')).first().catch(() => null),
+                // `daten` ist JSON als Text; der Vertrag steht darin wörtlich.
+                knex('hype_alarme').where('daten', 'like', `%${contract}%`)
+                    .orderBy('erstelltAm', 'desc').limit(10).catch(() => []),
+                mitVertrag(knex('radar_ergebnisse')).whereIn('art', ['frueh', 'hype'])
+                    .orderBy('erstelltAm', 'asc').limit(40).catch(() => []),
+            ])
+            let markt = null
+            let marktFehler = ''
+            try {
+                const d = await dexDetails(contract, { streng: true })
+                if (d) {
+                    const m = d.markt || {}
+                    markt = {
+                        symbol: d.symbol, name: d.name, chain: d.chain, url: d.url, dex: m.dex || '',
+                        seite: d.seite,
+                        preisUsd: m.preisUsd ?? null,
+                        bewertungUsd: m.marktkapitalisierung || m.fdv || null,
+                        liquiditaetUsd: m.liquiditaetUsd ?? null,
+                        volumen24h: m.volumen24h ?? null,
+                        volumen1h: m.volumen1h ?? null,
+                        aenderung1h: m.aenderung1h ?? null,
+                        aenderung24h: m.aenderung24h ?? null,
+                        transaktionen24h: m.transaktionen24h ?? null,
+                        transaktionen1h: m.transaktionen1h ?? null,
+                        paarAlterStunden: m.paarAlterStunden ?? null,
+                    }
+                }
+            } catch (e) {
+                marktFehler = e.message
+            }
+            const zahl = (v) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v))
+            res.json({
+                contract,
+                gedaechtnis: gedaechtnis ? {
+                    symbol: gedaechtnis.symbol || '',
+                    chain: gedaechtnis.chain,
+                    ersterBlick: zahl(gedaechtnis.ersterBlick),
+                    ersteMeldung: zahl(gedaechtnis.ersteMeldung),
+                    letzterBlick: zahl(gedaechtnis.letzterBlick),
+                    bewertungUsd: zahl(gedaechtnis.bewertungUsd),
+                } : null,
+                alarme: alarmeRoh.map((a) => ({
+                    id: a.id, regel: a.regel, meldung: a.meldung, erstelltAm: zahl(a.erstelltAm),
+                })),
+                ergebnisse: ergebnisse.map((e) => ({
+                    art: e.art, gruppe: e.gruppe || 'spitze', horizont: e.horizont, status: e.status,
+                    note: zahl(e.note), erstelltAm: zahl(e.erstelltAm), gemessenAm: zahl(e.gemessenAm),
+                    renditePct: zahl(e.renditePct), mfePct: zahl(e.mfePct), maePct: zahl(e.maePct),
+                    nochHandelbar: e.nochHandelbar === null || e.nochHandelbar === undefined ? null : Number(e.nochHandelbar) === 1,
+                    mcapStart: zahl(e.mcapStart), mcapEnde: zahl(e.mcapEnde),
+                    fehler: e.fehler || '',
+                })),
+                markt,
+                marktFehler,
+            })
+        } catch (e) {
+            logWarn('hype-radar', `Frühphase-Token ${contract}: ${e.message}`)
+            res.status(500).json({ error: 'Token konnte nicht geladen werden' })
+        }
+    })
+
+    /**
      * Erfolgskontrolle der Frühphase: Schwellen-Überschreiter gegen eine
      * Zufallsauswahl der neu gesehenen Token, nach 1, 3 und 7 Tagen.
      */

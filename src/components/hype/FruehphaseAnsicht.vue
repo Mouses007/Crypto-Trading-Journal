@@ -21,6 +21,94 @@
             </div>
         </div>
 
+        <!-- Aus einem Alarm angesprungen, aber der Token ist vergessen: was es
+             noch über ihn gibt — Alarme, Gedächtnis, Erfolgskontrolle und der
+             Markt jetzt. Oben, damit man es nicht unter der Rohliste sucht. -->
+        <section v-if="fokusFehlt" id="fp-fokus" class="fpFokusKarte">
+            <div class="fpFokusKopf">
+                <b>{{ fokusName }}</b>
+                <span class="fpGrau">{{ fokusInfo?.markt?.chain || fokusInfo?.gedaechtnis?.chain || '' }} · {{ kurz(fokusFehlt.contract) }}</span>
+                <span class="fpFokusLinks">
+                    <a :href="fokusInfo?.markt?.url || ('https://dexscreener.com/search?q=' + encodeURIComponent(fokusFehlt.contract))"
+                        target="_blank" rel="noopener noreferrer">DexScreener ↗</a>
+                    <a v-if="/pump$/i.test(fokusFehlt.contract)" :href="'https://pump.fun/coin/' + encodeURIComponent(fokusFehlt.contract)"
+                        target="_blank" rel="noopener noreferrer">pump.fun ↗</a>
+                </span>
+                <button type="button" class="fpFokusZu" :title="t('hypeFrueh.fokusSchliessen')" @click="fokusFehlt = null">
+                    <i class="uil uil-times"></i>
+                </button>
+            </div>
+            <p class="fpGrau small mb-2">{{ t('hypeFrueh.fokusFehlt') }}</p>
+
+            <div v-if="fokusInfo === null" class="text-muted small"><span class="spinner-border spinner-border-sm"></span></div>
+            <p v-else-if="fokusInfo.fehler" class="text-danger small">{{ fokusInfo.fehler }}</p>
+            <div v-else class="fpFokusRaster">
+                <!-- Damals: was der Radar wusste -->
+                <div class="fpFokusSpalte">
+                    <div class="fpFokusTitel">{{ t('hypeFrueh.fokusDamals') }}</div>
+                    <div v-for="a in fokusInfo.alarme.slice(0, 3)" :key="a.id" class="fpFokusZeile">
+                        <span class="fpGrau">{{ zeitpunkt(a.erstelltAm) }}</span> {{ a.meldung }}
+                    </div>
+                    <!-- Nur wenn er VOR dem Alarm liegt: das Gedächtnis wird erst am
+                         Ende des Durchgangs geschrieben, im selben Lauf stünde sonst
+                         „erster Blick" zwei Minuten nach der Meldung. -->
+                    <div v-if="fokusInfo.gedaechtnis && (!fokusInfo.alarme.length
+                        || fokusInfo.gedaechtnis.ersterBlick < Math.min(...fokusInfo.alarme.map(a => a.erstelltAm)) - 10 * 60e3)" class="fpFokusZeile">
+                        <span class="fpGrau">{{ t('hypeFrueh.fokusErsterBlick') }}</span> {{ zeitpunkt(fokusInfo.gedaechtnis.ersterBlick) }}
+                    </div>
+                    <div v-if="fokusBasis" class="fpFokusZeile">
+                        <span class="fpGrau">{{ t('hypeFrueh.fokusBewertungMeldung') }}</span> {{ geld(fokusBasis) }}
+                    </div>
+                </div>
+
+                <!-- Jetzt: DexScreener live -->
+                <div class="fpFokusSpalte">
+                    <div class="fpFokusTitel">{{ t('hypeFrueh.fokusJetzt') }}</div>
+                    <p v-if="fokusInfo.marktFehler" class="text-danger small">{{ t('hypeFrueh.fokusMarktFehler', { f: fokusInfo.marktFehler }) }}</p>
+                    <p v-else-if="!fokusInfo.markt" class="fpGrau small">{{ t('hypeFrueh.fokusUnbekannt') }}</p>
+                    <template v-else>
+                        <div class="fpFokusZeile">
+                            <span class="fpGrau">{{ t('hypeFrueh.fokusBewertung') }}</span> <b>{{ geld(fokusInfo.markt.bewertungUsd) }}</b>
+                            <span v-if="fokusSeitDamals !== null" :class="fokusSeitDamals >= 0 ? 'text-success' : 'text-danger'">
+                                {{ prozent(fokusSeitDamals) }} {{ t('hypeFrueh.fokusSeitMeldung') }}
+                            </span>
+                        </div>
+                        <div class="fpFokusZeile">
+                            <span class="fpGrau">{{ t('hypeFrueh.fokusKurs') }}</span>
+                            1h <span :class="farbeVz(fokusInfo.markt.aenderung1h)">{{ prozent(fokusInfo.markt.aenderung1h) }}</span>
+                            · 24h <span :class="farbeVz(fokusInfo.markt.aenderung24h)">{{ prozent(fokusInfo.markt.aenderung24h) }}</span>
+                        </div>
+                        <div class="fpFokusZeile">
+                            <span class="fpGrau">{{ t('hypeFrueh.fokusLiq') }}</span> {{ geld(fokusInfo.markt.liquiditaetUsd) }}
+                            · <span class="fpGrau">{{ t('hypeFrueh.fokusVol') }}</span> {{ geld(fokusInfo.markt.volumen24h) }}
+                        </div>
+                        <div class="fpFokusZeile">
+                            <span class="fpGrau">{{ t('hypeFrueh.fokusTx') }}</span> {{ hatZahl(fokusInfo.markt.transaktionen1h) ? fokusInfo.markt.transaktionen1h : '—' }}
+                            · <span class="fpGrau">{{ t('hypeFrueh.fokusPaar') }}</span> {{ alter(fokusInfo.markt.paarAlterStunden) }}
+                            <template v-if="fokusInfo.markt.dex"> · {{ fokusInfo.markt.dex }}</template>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Erfolgskontrolle: was die Messung danach ergab -->
+                <div v-if="fokusErgebnisse.length" class="fpFokusSpalte">
+                    <div class="fpFokusTitel">{{ t('hypeFrueh.fokusErgebnis') }}</div>
+                    <template v-for="g in fokusErgebnisse" :key="g.gruppe">
+                        <div class="fpFokusGruppe">{{ t('hypeFrueh.fokusGruppe_' + g.gruppe) }} <span class="fpGrau">· {{ t('hypeFrueh.fokusNote', { n: g.note }) }}</span></div>
+                        <div v-for="e in g.zeilen" :key="e.horizont" class="fpFokusZeile" :title="e.fehler || null">
+                            <span class="fpGrau">{{ e.horizont }}</span>
+                            <template v-if="e.status === 'gemessen'">
+                                <span :class="farbeVz(e.renditePct)">{{ prozent(e.renditePct) }}</span>
+                                <template v-if="hatZahl(e.mfePct)"> · {{ t('hypeFrueh.fokusBestes') }} {{ prozent(e.mfePct) }}</template>
+                                <template v-if="e.nochHandelbar !== null"> · {{ e.nochHandelbar ? t('hypeFrueh.fokusLebt') : t('hypeFrueh.fokusTot') }}</template>
+                            </template>
+                            <span v-else class="fpGrau">{{ t('hypeFrueh.fokusStatus_' + (['offen', 'ausgelassen'].includes(e.status) ? e.status : 'fehlgeschlagen')) }}</span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </section>
+
         <!-- Welche Quelle lieferte, welche fiel aus — ohne das sieht eine
              leere Liste aus wie „nichts los". -->
         <div v-if="quellen.length" class="fpQuellen">
@@ -78,10 +166,6 @@
                         <input type="checkbox" v-model="mitVerworfenen" @change="lade"> {{ t('hypeFrueh.verworfeneZeigen') }}
                     </label>
                 </div>
-                <p v-if="fokusFehlt" class="fpHinweis">
-                    {{ t('hypeFrueh.fokusFehlt') }}
-                    <a :href="'https://dexscreener.com/search?q=' + encodeURIComponent(fokusFehlt.contract)" target="_blank" rel="noopener noreferrer">DexScreener ↗</a>
-                </p>
                 <template v-if="rohOffen">
                     <p class="fpGrau small mt-2">{{ t('hypeFrueh.alleHinweis') }}</p>
                     <div v-if="zeilen === null" class="text-muted small"><span class="spinner-border spinner-border-sm"></span></div>
@@ -455,13 +539,70 @@ async function fokussiere(contract) {
     await lade()
     const gleich = (a) => (/^0x/i.test(c) ? String(a || '').toLowerCase() === c.toLowerCase() : String(a || '') === c)
     const z = (daten.value?.zeilen || []).find((x) => gleich(x.contract))
-    if (!z) { fokusFehlt.value = { contract: c }; return }
+    if (!z) {
+        // Vergessen: die Rohliste hilft dann nicht, die Karte oben schon
+        rohOffen.value = false
+        fokusFehlt.value = { contract: c }
+        ladeFokusInfo(c)
+        await nextTick()
+        document.getElementById('fp-fokus')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        return
+    }
     offen.value = z.id
     fokusId.value = z.id
     await nextTick()
     document.getElementById('fp-' + z.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 watch(() => [props.aktiv, props.fokus], ([a, f]) => { if (a && f) fokussiere(f) }, { immediate: true })
+
+/** Was es über einen vergessenen Token noch gibt (`/api/hype-radar/frueh/token`). */
+const fokusInfo = ref(null)
+async function ladeFokusInfo(contract) {
+    fokusInfo.value = null
+    try {
+        const { data } = await axios.get('/api/hype-radar/frueh/token', { params: { contract } })
+        if (fokusFehlt.value?.contract === contract) fokusInfo.value = data
+    } catch (e) {
+        if (fokusFehlt.value?.contract === contract) fokusInfo.value = { fehler: e.response?.data?.error || e.message }
+    }
+}
+const fokusName = computed(() => fokusInfo.value?.markt?.symbol || fokusInfo.value?.gedaechtnis?.symbol
+    || kurz(fokusFehlt.value?.contract))
+/**
+ * Bewertung BEI DER MELDUNG — eingefroren von der Erfolgskontrolle
+ * (`mcapStart` der Gruppe „spitze"). Nicht `gedaechtnis.bewertungUsd`: die
+ * schreibt jede spätere Messung fort, als Bezug für „was ist seither
+ * passiert" wäre sie ein wandernder Nullpunkt.
+ */
+const fokusBasis = computed(() => {
+    const e = (fokusInfo.value?.ergebnisse || []).find(x => x.gruppe === 'spitze' && Number(x.mcapStart) > 0)
+    return e ? Number(e.mcapStart) : null
+})
+const fokusSeitDamals = computed(() => {
+    const jetzt = Number(fokusInfo.value?.markt?.bewertungUsd)
+    const damals = fokusBasis.value
+    return jetzt > 0 && damals > 0 ? ((jetzt - damals) / damals) * 100 : null
+})
+/**
+ * Messungen nach Gruppe: „nach Meldung" (spitze) zuerst, dann die Rollen als
+ * Vergleich. Ein Token kann in beiden stehen — CLANKER war erst Kontrolle
+ * (Note 22), Stunden später Meldung (Note 71). Durcheinander gelistet hiessen
+ * zwei 1d-Zeilen mit verschiedenen Zahlen dasselbe.
+ */
+const HORIZONT_RANG = { '1h': 0, '4h': 1, '1d': 2, '3d': 3, '7d': 4, '30d': 5 }
+const GRUPPEN_RANG = { spitze: 0, kontrolle: 1, feld: 2 }
+const fokusErgebnisse = computed(() => {
+    const gruppen = new Map()
+    for (const e of fokusInfo.value?.ergebnisse || []) {
+        const g = gruppen.get(e.gruppe) || { gruppe: e.gruppe, note: e.note, zeilen: [] }
+        g.zeilen.push(e)
+        gruppen.set(e.gruppe, g)
+    }
+    return [...gruppen.values()]
+        .sort((a, b) => (GRUPPEN_RANG[a.gruppe] ?? 9) - (GRUPPEN_RANG[b.gruppe] ?? 9))
+        .map(g => ({ ...g, zeilen: g.zeilen.sort((a, b) => (HORIZONT_RANG[a.horizont] ?? 9) - (HORIZONT_RANG[b.horizont] ?? 9)) }))
+})
+const farbeVz = (w) => (!hatZahl(w) || Number(w) === 0 ? '' : Number(w) > 0 ? 'text-success' : 'text-danger')
 
 // ── Darstellung ─────────────────────────────────────────────────────────
 const hatZahl = (w) => w !== null && w !== undefined && w !== '' && Number.isFinite(Number(w))
@@ -863,6 +1004,48 @@ const sortiereBefunde = (b) => [...b].sort((x, y) => ['minus', 'plus', 'info'].i
 }
 .fpQuelle.teils {
     color: #e0b030;
+}
+.fpFokusKarte {
+    margin: .8rem 0 1rem;
+    padding: .7rem .9rem;
+    border: 1px solid rgba(1, 180, 255, .35);
+    border-radius: var(--border-radius, 6px);
+    background: rgba(1, 180, 255, .05);
+}
+.fpFokusKopf {
+    display: flex;
+    align-items: baseline;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+.fpFokusKopf b { font-size: 1.05rem; }
+.fpFokusLinks { display: flex; gap: .7rem; }
+.fpFokusZu {
+    margin-left: auto;
+    border: none;
+    background: none;
+    color: var(--grey-color, #9aa0a6);
+}
+.fpFokusRaster {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: .4rem 1.4rem;
+}
+.fpFokusTitel {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--grey-color, #9aa0a6);
+    margin-bottom: .2rem;
+}
+.fpFokusGruppe {
+    font-size: .78rem;
+    margin-top: .3rem;
+}
+.fpFokusZeile {
+    font-size: .86rem;
+    padding: .12rem 0;
+    border-top: 1px solid rgba(255, 255, 255, .06);
 }
 .fpHinweis {
     font-size: .874rem;
