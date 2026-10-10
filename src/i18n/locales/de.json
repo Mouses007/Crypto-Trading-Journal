@@ -3340,7 +3340,7 @@
         },
         {
           "h": "KOMPAKT & MOMENTUM RADAR",
-          "p": "Die Kompakt-Kachel fasst die Nebenkacheln (Sitzung, Handelszeiten, Termine, Mechanik, Liquidationen, Long/Short, Funding, Indizes, Coin-Radar, Handelslage, Gesamtlage) als je eine Zeile zusammen; ein Klick öffnet die volle Kachel, und die Einzelkacheln bleiben unter „Kacheln“ zuschaltbar. Die Automatik der Handelslage läuft nur, solange deren eigene Kachel sichtbar ist. Der Momentum Radar zeigt Welle, Geldfluss, Punkte und Schienen der gewählten Zeitebene (5m–4h) und darunter das Panel mit Status, SWING/DAY-Setup, Spot gegen Futures, VWAP und 4h-Struktur — gerechnet nur auf geschlossenen Kerzen."
+          "p": "Die Kompakt-Kachel fasst die Nebenkacheln (Handelszeiten, Termine, Mechanik, Liquidationen, Long/Short, Funding, Indizes, Coin-Radar, Handelslage, Gesamtlage) als je eine Zeile zusammen; ein Klick öffnet die volle Kachel, und die Einzelkacheln bleiben unter „Kacheln“ zuschaltbar. Die Automatik der Handelslage läuft nur, solange deren eigene Kachel sichtbar ist. Der Momentum Radar zeigt Welle, Geldfluss, Punkte und Schienen der gewählten Zeitebene (5m–4h) und darunter das Panel mit Status, SWING/DAY-Setup, Spot gegen Futures, VWAP und 4h-Struktur — gerechnet nur auf geschlossenen Kerzen."
         }
       ],
       "caveat": "Die Zahlen der Fremdquellen (Indizes, Funding, Kalender) versprechen nichts und können veralten — der Punkt in der Kachel sagt, wie frisch sie sind. Die Hebelkarte ist ein Modell, kein Messwert. Diese Seite ist Werkzeug, kein Signalgeber: den Auslöser liefert weiterhin deine Strategie."
@@ -4141,12 +4141,7 @@
     },
     "kompakt": {
       "title": "Kompakt",
-      "info": "Die Nebenkacheln dieser Seite als je eine Zeile: Sitzung, Handelszeit, nächster Termin, Mechanik, Liquidationen, Long/Short, Funding, Indizes, Coin-Radar und die beiden KI-Einordnungen.\nDieselben Daten wie die Einzelkacheln, die dafür im Hintergrund weiterlaufen. Ein Klick auf eine Zeile öffnet die volle Kachel; die Einzelkacheln lassen sich unter „Kacheln“ jederzeit wieder einblenden.",
-      "sitzung": "Sitzung",
-      "real": "real.",
-      "offen": "{n} offen",
-      "trades": "{n} Trades",
-      "budget": "Verbrauchtes Verlustbudget der Sitzung",
+      "info": "Die Nebenkacheln dieser Seite als je eine Zeile: Handelszeit, nächster Termin, Mechanik, Liquidationen, Long/Short, Funding, Indizes, Coin-Radar und die beiden KI-Einordnungen.\nDieselben Daten wie die Einzelkacheln, die dafür im Hintergrund weiterlaufen. Ein Klick auf eine Zeile öffnet die volle Kachel; die Einzelkacheln lassen sich unter „Kacheln“ jederzeit wieder einblenden.",
       "zeit": "Zeit",
       "in": "in {zeit}",
       "termin": "Termin",

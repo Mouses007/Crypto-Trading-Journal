@@ -3340,7 +3340,7 @@
         },
         {
           "h": "COMPACT & MOMENTUM RADAR",
-          "p": "The Compact tile sums up the side tiles (session, trading hours, events, mechanics, liquidations, long/short, funding, indices, Coin Radar, trading view, overall view) as one line each; a click opens the full tile, and the single tiles can still be switched on under “Cards”. The trading-view automation only runs while its own tile is visible. The Momentum Radar shows wave, money flow, dots and rails of the chosen timeframe (5m–4h) and below it the panel with status, SWING/DAY setup, spot vs futures, VWAP and 4h structure — computed on closed candles only."
+          "p": "The Compact tile sums up the side tiles (trading hours, events, mechanics, liquidations, long/short, funding, indices, Coin Radar, trading view, overall view) as one line each; a click opens the full tile, and the single tiles can still be switched on under “Cards”. The trading-view automation only runs while its own tile is visible. The Momentum Radar shows wave, money flow, dots and rails of the chosen timeframe (5m–4h) and below it the panel with status, SWING/DAY setup, spot vs futures, VWAP and 4h structure — computed on closed candles only."
         }
       ],
       "caveat": "The third-party figures (indices, funding, calendar) promise nothing and can go stale — the dot on the tile tells you how fresh they are. The leverage map is a model, not a measurement. This page is a tool, not a signal generator: your strategy still supplies the trigger."
@@ -4141,12 +4141,7 @@
     },
     "kompakt": {
       "title": "Compact",
-      "info": "The side tiles of this page as one line each: session, trading hours, next event, mechanics, liquidations, long/short, funding, indices, Coin Radar and the two AI assessments.\nSame data as the single tiles, which keep loading in the background. Click a line to open the full tile; the single tiles can be shown again under “Cards” at any time.",
-      "sitzung": "Session",
-      "real": "real.",
-      "offen": "{n} open",
-      "trades": "{n} trades",
-      "budget": "Loss budget used in this session",
+      "info": "The side tiles of this page as one line each: trading hours, next event, mechanics, liquidations, long/short, funding, indices, Coin Radar and the two AI assessments.\nSame data as the single tiles, which keep loading in the background. Click a line to open the full tile; the single tiles can be shown again under “Cards” at any time.",
       "zeit": "Time",
       "in": "in {zeit}",
       "termin": "Event",

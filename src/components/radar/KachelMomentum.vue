@@ -260,8 +260,6 @@ const strNeben = computed(() => {
     ].filter(Boolean).join(' · ')
 })
 
-/** Die Level selbst unter den Abständen — wer handelt, will die Zahl. */
-const vwNeben = computed(() => `W ${kurs(vw.value.woche)} · M ${kurs(vw.value.monat)}`)
 </script>
 
 <template>
@@ -379,9 +377,9 @@ const vwNeben = computed(() => `W ${kurs(vw.value.woche)} · M ${kurs(vw.value.m
             <div class="mrFeld" :title="vwTitel">
                 <span class="mrLabel">VWAP</span>
                 <span class="mrWert">
-                    W <b :class="vwKlasse(vwW)">{{ prozent(vwW) }}</b>
-                    · M <b :class="vwKlasse(vwM)">{{ prozent(vwM) }}</b>
-                    <small>{{ vwNeben }}</small>
+                    <!-- Je VWAP Abstand und Kurs nebeneinander — wer handelt, will die Zahl -->
+                    W <b :class="vwKlasse(vwW)">{{ prozent(vwW) }}</b> <small class="mrKurs">{{ kurs(vw.woche) }}</small>
+                    · M <b :class="vwKlasse(vwM)">{{ prozent(vwM) }}</b> <small class="mrKurs">{{ kurs(vw.monat) }}</small>
                 </span>
             </div>
             <div class="mrFeld" :title="strHaupt + ' · ' + strNeben">
@@ -555,6 +553,7 @@ const vwNeben = computed(() => `W ${kurs(vw.value.woche)} · M ${kurs(vw.value.m
 
 .mrWert b { font-weight: 600; }
 .mrWert small { margin-left: 0.35rem; font-size: 0.7rem; color: var(--white-60); }
+.mrWert small.mrKurs { margin-left: 0.15rem; margin-right: 0.1rem; }
 
 .gross .mrWert { font-size: 0.92rem; }
 

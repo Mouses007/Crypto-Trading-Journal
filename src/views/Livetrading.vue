@@ -51,7 +51,7 @@ import { speichereCockpitFoto } from '../utils/cockpitFoto.js'
 import { kopiertesBild } from '../stores/ui.js'
 import { aktiveSitzung, merkeSymbol, protokolliere } from '../stores/livetrading.js'
 import PultAnsicht from '../components/livetrading/PultAnsicht.vue'
-import { KACHELN, sortiereKacheln, KOMPAKT_QUELLEN } from '../config/livetrading.js'
+import { KACHELN, sortiereKacheln, KOMPAKT_QUELLEN, KOMPAKT_AUSGEBLENDET } from '../config/livetrading.js'
 import { PULT_KACHELN } from '../config/pult.js'
 import { useKachelRaster } from '../composables/useKachelRaster.js'
 
@@ -176,7 +176,7 @@ try {
     if (!localStorage.getItem(KOMPAKT_MERKER)) {
         const roh = JSON.parse(localStorage.getItem('livetrading_hidden_cards') || 'null')
         const versteckt = new Set(Array.isArray(roh) ? roh : ['lage'])
-        for (const id of KOMPAKT_QUELLEN) versteckt.add(id)
+        for (const id of KOMPAKT_AUSGEBLENDET) versteckt.add(id)
         versteckt.delete('kompakt')
         versteckt.delete('momentum')
         localStorage.setItem('livetrading_hidden_cards', JSON.stringify([...versteckt]))

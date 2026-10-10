@@ -59,9 +59,18 @@ export const STANDARD_REIHENFOLGE = [
  * werden geholt, solange die Kompakt-Kachel sichtbar ist.
  */
 export const KOMPAKT_QUELLEN = [
-    'positionen', 'handelszeiten', 'kalender', 'mechanik', 'liqticker',
+    'handelszeiten', 'kalender', 'mechanik', 'liqticker',
     'lsoi', 'funding', 'indizes', 'makro', 'coinradar', 'handelslage', 'lage',
 ]
+
+/**
+ * Was beim Umstieg auf die Kompakt-Kachel ausgeblendet wird: ihre Quellen und
+ * die Positionen. Die Positionen stehen nicht mehr in der Karte (der Nutzer
+ * braucht sie dort nicht, 10.10.2026) und werden deshalb auch nicht geholt —
+ * das spart den Bitunix-Abruf alle zehn Sekunden. Als Einzelkachel bleiben sie
+ * zuschaltbar.
+ */
+export const KOMPAKT_AUSGEBLENDET = [...KOMPAKT_QUELLEN, 'positionen']
 
 const DEFINITIONEN = [
     {

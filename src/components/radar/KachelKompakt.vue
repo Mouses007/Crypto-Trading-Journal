@@ -35,7 +35,7 @@ const { t } = useI18n()
 
 const q = (id) => props.quellen?.[id] || null
 
-// Uhr für Countdown und Sitzungsphase — Minutenauflösung reicht hier
+// Uhr für Countdown und Handelsphase — Minutenauflösung reicht hier
 const jetzt = ref(Date.now())
 let uhr = null
 const tick = () => { if (!document.hidden) jetzt.value = Date.now() }
@@ -56,22 +56,6 @@ const rest = (ms) => {
     const m = Math.max(0, Math.round(ms / 60000))
     return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`
 }
-
-// ── Sitzung ───────────────────────────────────────────────────────────────
-const sitzung = computed(() => {
-    const p = q('positionen')
-    if (!p) return null
-    return {
-        hinweis: p.hinweis || '',
-        gesamt: Number(p.gesamtUsd) || 0,
-        real: Number(p.realisiertUsd) || 0,
-        offen: Number(p.unrealisiertUsd) || 0,
-        anzahl: (p.offen || []).length,
-        trades: Number(p.tradeAnzahl) || 0,
-        verlust: p.plan?.verlustAnteil ?? null,
-        verletzt: Boolean(p.plan?.verletzt),
-    }
-})
 
 // ── Zeit und Termine ──────────────────────────────────────────────────────
 const zeit = computed(() => {
@@ -161,22 +145,6 @@ function waehle(symbol) { liveSymbol.value = symbol }
 
 <template>
     <div class="kpWrap" :class="{ gross }">
-        <!-- Sitzung: das eigene Geld zuerst -->
-        <div v-if="sitzung" class="kpZeile" @click="emit('oeffne', 'positionen')">
-            <span class="kpLabel">{{ t('livetrading.kompakt.sitzung') }}</span>
-            <span v-if="sitzung.hinweis && !sitzung.anzahl && !sitzung.trades" class="kpWert kpLeise">{{ sitzung.hinweis }}</span>
-            <span v-else class="kpWert">
-                <b :class="farbe(sitzung.gesamt)">{{ vz(sitzung.gesamt) }} $</b>
-                <span class="kpNeben">{{ t('livetrading.kompakt.real') }} {{ vz(sitzung.real) }}
-                    · {{ t('livetrading.kompakt.offen', { n: sitzung.anzahl }) }} {{ vz(sitzung.offen) }}
-                    · {{ t('livetrading.kompakt.trades', { n: sitzung.trades }) }}</span>
-            </span>
-            <span v-if="sitzung.verlust !== null" class="kpBudget" :class="{ kpUeber: sitzung.verletzt || sitzung.verlust >= 1, kpNah: sitzung.verlust >= 0.7 }"
-                :title="t('livetrading.kompakt.budget')">
-                <span :style="{ width: Math.min(100, sitzung.verlust * 100) + '%' }"></span>
-            </span>
-        </div>
-
         <!-- Zeit: Warnung vor allem anderen -->
         <div class="kpZeile" @click="emit('oeffne', 'handelszeiten')">
             <span class="kpLabel">{{ t('livetrading.kompakt.zeit') }}</span>
@@ -319,7 +287,7 @@ function waehle(symbol) { liveSymbol.value = symbol }
 
 /* Feine Linie zwischen benachbarten Zeilen. Nach einem kpTrenner greift die Regel
    nicht, dort trennt schon der Gruppenstrich - der ist deshalb etwas kraeftiger. */
-.kpZeile + .kpZeile { border-top: 1px solid rgba(255, 255, 255, 0.05); }
+.kpZeile + .kpZeile { border-top: 1px solid rgba(255, 255, 255, 0.12); }
 
 .kpZeile:hover { background: rgba(255, 255, 255, 0.04); }
 .kpOhneHover { cursor: default; }
@@ -355,12 +323,12 @@ function waehle(symbol) { liveSymbol.value = symbol }
 
 .kpTrenner {
     height: 1px;
-    margin: 0.3rem 0.3rem;
-    background: rgba(255, 255, 255, 0.13);
+    margin: 0.3rem 0;
+    background: rgba(255, 255, 255, 0.28);
 }
 
-/* Messbalken rechts in der Zeile: Budget und Seitenverteilung */
-.kpBudget, .kpSplit {
+/* Messbalken rechts in der Zeile: Seitenverteilung */
+.kpSplit {
     align-self: center;
     width: 4.5rem;
     height: 4px;
@@ -369,9 +337,6 @@ function waehle(symbol) { liveSymbol.value = symbol }
     overflow: hidden;
 }
 
-.kpBudget > span { display: block; height: 100%; background: rgba(255, 255, 255, 0.45); }
-.kpBudget.kpNah > span { background: #ffc93c; }
-.kpBudget.kpUeber > span { background: rgb(255, 95, 86); }
 .kpSplit { background: rgba(38, 190, 150, 0.6); }
 .kpSplitL { display: block; height: 100%; background: rgba(255, 95, 86, 0.75); }
 .kpSplit:has(.kpSplitBlau) { background: rgba(255, 255, 255, 0.15); }
