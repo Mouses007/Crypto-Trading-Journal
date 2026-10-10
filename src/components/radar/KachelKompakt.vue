@@ -307,13 +307,19 @@ function waehle(symbol) { liveSymbol.value = symbol }
 .kpZeile {
     position: relative;
     display: grid;
-    grid-template-columns: 6.4rem minmax(0, 1fr);
+    /* Dritte Spalte: Messbalken (Budget, Seitenverteilung) rechts in der
+       Zeile. Unter der Zeile sahen sie aus wie Trennlinien. */
+    grid-template-columns: 6.4rem minmax(0, 1fr) auto;
     align-items: baseline;
     gap: 0.5rem;
     padding: 0.2rem 0.3rem;
     border-radius: 4px;
     cursor: pointer;
 }
+
+/* Feine Linie zwischen benachbarten Zeilen. Nach einem kpTrenner greift die Regel
+   nicht, dort trennt schon der Gruppenstrich - der ist deshalb etwas kraeftiger. */
+.kpZeile + .kpZeile { border-top: 1px solid rgba(255, 255, 255, 0.05); }
 
 .kpZeile:hover { background: rgba(255, 255, 255, 0.04); }
 .kpOhneHover { cursor: default; }
@@ -349,18 +355,16 @@ function waehle(symbol) { liveSymbol.value = symbol }
 
 .kpTrenner {
     height: 1px;
-    margin: 0.2rem 0.3rem;
-    background: rgba(255, 255, 255, 0.07);
+    margin: 0.3rem 0.3rem;
+    background: rgba(255, 255, 255, 0.13);
 }
 
-/* Zwei dünne Mess-Striche unter der Zeile: Budget und Seitenverteilung */
+/* Messbalken rechts in der Zeile: Budget und Seitenverteilung */
 .kpBudget, .kpSplit {
-    position: absolute;
-    left: calc(6.4rem + 0.8rem);
-    right: 0.3rem;
-    bottom: 0;
-    height: 2px;
-    border-radius: 1px;
+    align-self: center;
+    width: 4.5rem;
+    height: 4px;
+    border-radius: 2px;
     background: rgba(255, 255, 255, 0.08);
     overflow: hidden;
 }

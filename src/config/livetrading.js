@@ -100,7 +100,7 @@ const DEFINITIONEN = [
         intervallMs: 60 * 1000,
         spalten: 2,
         hoehe: 320,
-        quelle: 'Binance-Kerzen (Futures + Spot) · Rechnung nach Mo\'s Momentum Radar',
+        quelle: 'Binance-Kerzen (Futures + Spot)',
     },
     {
         id: 'handelszeiten',

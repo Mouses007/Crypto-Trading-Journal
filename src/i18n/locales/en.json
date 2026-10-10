@@ -3340,7 +3340,7 @@
         },
         {
           "h": "COMPACT & MOMENTUM RADAR",
-          "p": "The Compact tile sums up the side tiles (session, trading hours, events, mechanics, liquidations, long/short, funding, indices, Coin Radar, trading view, overall view) as one line each; a click opens the full tile, and the single tiles can still be switched on under “Cards”. The trading-view automation only runs while its own tile is visible. The Momentum Radar is Mo's Pine indicator as a tile: wave, money flow, dots and rails of the chosen timeframe (5m–4h) and below it the panel with status, SWING/DAY setup, spot vs futures, VWAP and 4h structure — computed on closed candles only."
+          "p": "The Compact tile sums up the side tiles (session, trading hours, events, mechanics, liquidations, long/short, funding, indices, Coin Radar, trading view, overall view) as one line each; a click opens the full tile, and the single tiles can still be switched on under “Cards”. The trading-view automation only runs while its own tile is visible. The Momentum Radar shows wave, money flow, dots and rails of the chosen timeframe (5m–4h) and below it the panel with status, SWING/DAY setup, spot vs futures, VWAP and 4h structure — computed on closed candles only."
         }
       ],
       "caveat": "The third-party figures (indices, funding, calendar) promise nothing and can go stale — the dot on the tile tells you how fresh they are. The leverage map is a model, not a measurement. This page is a tool, not a signal generator: your strategy still supplies the trigger."
@@ -4166,7 +4166,7 @@
     },
     "momentum": {
       "title": "Momentum Radar",
-      "info": "Mo's Momentum Radar as a tile: a WaveTrend wave on six timeframes, cross-checked with volume-weighted money flow.\nTop: the history of the chosen timeframe (dots = signals, large = higher timeframes agree, diamond = extreme, rails = signals of higher timeframes, bottom strip = 4h money flow). Below: the panel — state per timeframe, SWING and DAY setup, volume origin (spot vs futures), VWAP and 4h structure.\nComputed on closed candles only. The radar says WHEN, not WHERE — the level comes from the VWAP.",
+      "info": "A WaveTrend wave on six timeframes, cross-checked with volume-weighted money flow.\nTop: the history of the chosen timeframe (dots = signals, large = higher timeframes agree, diamond = extreme, rails = signals of higher timeframes, bottom strip = 4h money flow). Below: the panel — state per timeframe, SWING and DAY setup, volume origin (spot vs futures), VWAP and 4h structure.\nComputed on closed candles only. The radar says WHEN, not WHERE — the level comes from the VWAP.",
       "welle": "Wave",
       "fluss": "Money flow",
       "status_long": "LOOK FOR LONG",

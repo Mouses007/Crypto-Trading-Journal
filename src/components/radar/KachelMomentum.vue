@@ -211,26 +211,57 @@ const herkunftZahl = computed(() => {
     if (a === null || a === undefined || r === null || r === undefined) return ''
     const s = her.value.schnitt
     const x = (w) => `${w.toFixed(w >= 10 ? 0 : 1)}×`
-    return `Fut ${Math.round(a * 100)} % · Spot ${Math.round(100 - a * 100)} % · ${x(r)}`
-        + (s ? ` (Ø ${x(s)})` : '')
+    // Nur das Verhältnis gegen sein Normalmass — danach wird geurteilt. Die
+    // Aufteilung in Prozent steht im Tooltip des Feldes (`herkunftTitel`).
+    return `${x(r)}${s ? ` · Ø ${x(s)}` : ''}`
+})
+
+const herkunftTitel = computed(() => {
+    const a = her.value.anteil
+    const teile = [herkunftText.value, herkunftZahl.value]
+    if (a !== null && a !== undefined) teile.push(`Fut ${Math.round(a * 100)} % · Spot ${Math.round(100 - a * 100)} %`)
+    return teile.filter(Boolean).join(' · ')
 })
 
 const fluss = computed(() => props.daten?.geldfluss || {})
 const zahl = (w) => (w === null || w === undefined ? '—' : `${w > 0 ? '+' : ''}${w.toFixed(1)}`)
 
 const vw = computed(() => props.daten?.vwap || {})
-const vwPfeil = (ueber) => (ueber === null || ueber === undefined ? '—' : ueber ? '▲' : '▼')
+// Ein blosser Pfeil sagt nur "drueber" oder "drunter" - der Abstand sagt, wie weit.
+const istZahl = (x) => typeof x === 'number' && Number.isFinite(x)
+const vwAbw = (kurs) => (istZahl(kurs) && kurs !== 0 && istZahl(vw.value.preis)
+    ? ((vw.value.preis - kurs) / kurs) * 100 : null)
+const vwW = computed(() => vwAbw(vw.value.woche))
+const vwM = computed(() => vwAbw(vw.value.monat))
+const prozent = (w) => (w === null ? '—' : `${w > 0 ? '+' : ''}${w.toFixed(1)} %`)
+const vwKlasse = (w) => (w === null ? 'mrNeutral' : w >= 0 ? 'mrLong' : 'mrShort')
+// Die Kurse selbst beim Darueberfahren, damit die Zeile kurz bleibt
+const vwTitel = computed(() => {
+    const k = (x) => (istZahl(x) ? Math.round(x).toLocaleString('de-CH') : '—')
+    return `Wochen-VWAP ${k(vw.value.woche)} · Monats-VWAP ${k(vw.value.monat)} · Kurs ${k(vw.value.preis)}`
+})
 
 const str = computed(() => props.daten?.struktur || null)
-const strText = computed(() => {
+/** Kurs lesbar: ab 1000 ganze Zahl mit Tausenderlücke, darunter fünf Stellen. */
+const kurs = (x) => (!istZahl(x) ? '—'
+    : x >= 1000 ? Math.round(x).toLocaleString('de-CH').replace(/['’]/g, ' ') : x.toPrecision(5))
+const strHaupt = computed(() => {
     const s = str.value
     if (!s) return '—'
-    const ema = `EMA50 ${pfeil(s.emaRichtung)}`
-    if (!s.richtung || s.level === null) return `4h · ${t('livetrading.momentum.keinBruch')} · ${ema}`
-    const lvl = s.level >= 1000 ? Math.round(s.level).toLocaleString('de-CH').replace(/'/g, ' ')
-        : s.level.toPrecision(5)
-    return `4h · ${s.choch ? 'CHoCH' : 'BOS'} ${pfeil(s.richtung)} ${lvl} · ${t('livetrading.momentum.vorKerzen', { n: s.alterKerzen })} · ${ema}`
+    if (!s.richtung || s.level === null) return t('livetrading.momentum.keinBruch')
+    return `${s.choch ? 'CHoCH' : 'BOS'} ${pfeil(s.richtung)} ${kurs(s.level)}`
 })
+const strNeben = computed(() => {
+    const s = str.value
+    if (!s) return ''
+    return [
+        s.richtung && s.alterKerzen !== null ? t('livetrading.momentum.vorKerzen', { n: s.alterKerzen }) : null,
+        `EMA50 ${pfeil(s.emaRichtung)}`,
+    ].filter(Boolean).join(' · ')
+})
+
+/** Die Level selbst unter den Abständen — wer handelt, will die Zahl. */
+const vwNeben = computed(() => `W ${kurs(vw.value.woche)} · M ${kurs(vw.value.monat)}`)
 </script>
 
 <template>
@@ -304,37 +335,61 @@ const strText = computed(() => {
             </div>
         </div>
 
-        <div class="mrZeilen">
-            <div class="mrZeile">
-                <span class="mrLabel">SWING <small>D/4h/1h</small></span>
+        <!--
+            Panel als Felder: Beschriftung klein oben, darunter der Wert und
+            grau die Nebenangabe. Vier Spalten, zwei Reihen, feine Linien
+            dazwischen — die frühere Fassung reihte Beschriftung und Wert
+            abwechselnd in einer Zeile, und die vier Spalten liefen ineinander.
+        -->
+        <div class="mrFelder">
+            <div class="mrFeld mrErste">
+                <span class="mrLabel">Swing <small>D/4h/1h</small></span>
                 <span class="mrWert" :class="richtungKlasse(daten.swing)">{{ setupText(daten.swing) }}</span>
-                <span class="mrLabel">DAY <small>15m/5m</small></span>
+            </div>
+            <div class="mrFeld">
+                <span class="mrLabel">Day <small>15m/5m</small></span>
                 <span class="mrWert" :class="richtungKlasse(daten.day)">{{ setupText(daten.day) }}</span>
             </div>
-            <div class="mrZeile">
+            <div class="mrFeld">
                 <span class="mrLabel">{{ t('livetrading.momentum.letzterPunkt') }}</span>
-                <span v-if="letzter" class="mrWert" :class="richtungKlasse(letzter.seite === 'long' ? 1 : -1)">
-                    {{ letzter.seite === 'long' ? 'Long' : 'Short' }}{{ letzter.stark ? ' · ' + t('livetrading.momentum.stark') : '' }}
-                    · {{ t('livetrading.momentum.vorKerzen', { n: letzter.vorKerzen }) }}
+                <span v-if="letzter" class="mrWert">
+                    <b :class="richtungKlasse(letzter.seite === 'long' ? 1 : -1)">{{ letzter.seite === 'long' ? 'Long' : 'Short' }}{{ letzter.stark ? ' · ' + t('livetrading.momentum.stark') : '' }}</b>
+                    <small>{{ t('livetrading.momentum.vorKerzen', { n: letzter.vorKerzen }) }}</small>
                 </span>
                 <span v-else class="mrWert mrNeutral">—</span>
+            </div>
+            <div class="mrFeld">
                 <span class="mrLabel">{{ t('livetrading.momentum.fluss') }}</span>
                 <span class="mrWert">
-                    <b :class="fluss.wert >= 0 ? 'mrLong' : 'mrShort'">{{ zahl(fluss.wert) }}</b>
-                    <small> · 4h {{ zahl(fluss.h4) }}</small>
+                    <b :class="fluss.wert === null || fluss.wert === undefined ? 'mrNeutral' : fluss.wert >= 0 ? 'mrLong' : 'mrShort'">{{ zahl(fluss.wert) }}</b>
+                    <small>4h {{ zahl(fluss.h4) }}<template v-if="fluss.spot !== null && fluss.spot !== undefined"> · Spot {{ zahl(fluss.spot) }}</template></small>
                 </span>
             </div>
-            <div class="mrZeile">
+
+        </div>
+        <!-- Untere Reihe dreigeteilt: VWAP und Struktur brauchen mehr als ein Viertel -->
+        <div class="mrFelder mrDrei">
+            <div class="mrFeld mrErste" :title="herkunftTitel">
                 <span class="mrLabel">{{ t('livetrading.momentum.herkunft') }}</span>
-                <span class="mrWert mrBreit" :class="{ mrViolett: her.urteil === 'futures', mrLong: her.urteil === 'spot' }">
-                    {{ herkunftText }} <small v-if="herkunftZahl">{{ herkunftZahl }}</small>
+                <span class="mrWert">
+                    <b :class="{ mrViolett: her.urteil === 'futures', mrLong: her.urteil === 'spot', mrNeutral: !her.urteil }">{{ herkunftText }}</b>
+                    <small v-if="herkunftZahl">{{ herkunftZahl }}</small>
                 </span>
             </div>
-            <div class="mrZeile">
+            <div class="mrFeld" :title="vwTitel">
                 <span class="mrLabel">VWAP</span>
-                <span class="mrWert">W {{ vwPfeil(vw.ueberWoche) }} · M {{ vwPfeil(vw.ueberMonat) }}</span>
-                <span class="mrLabel">{{ t('livetrading.momentum.struktur') }}</span>
-                <span class="mrWert" :class="richtungKlasse(str?.richtung || 0)">{{ strText }}</span>
+                <span class="mrWert">
+                    W <b :class="vwKlasse(vwW)">{{ prozent(vwW) }}</b>
+                    · M <b :class="vwKlasse(vwM)">{{ prozent(vwM) }}</b>
+                    <small>{{ vwNeben }}</small>
+                </span>
+            </div>
+            <div class="mrFeld" :title="strHaupt + ' · ' + strNeben">
+                <span class="mrLabel">{{ t('livetrading.momentum.struktur') }} <small>4h</small></span>
+                <span class="mrWert">
+                    <b :class="richtungKlasse(str?.richtung || 0)">{{ strHaupt }}</b>
+                    <small>{{ strNeben }}</small>
+                </span>
             </div>
         </div>
 
@@ -352,7 +407,7 @@ const strText = computed(() => {
     height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 0.25rem;
     min-height: 0;
     font-variant-numeric: tabular-nums;
 }
@@ -431,10 +486,10 @@ const strText = computed(() => {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 0.12rem 0.1rem;
+    padding: 0.06rem 0.1rem;
     border-radius: 4px;
     font-size: 0.7rem;
-    line-height: 1.2;
+    line-height: 1.15;
     background: rgba(120, 123, 134, 0.12);
 }
 
@@ -456,25 +511,52 @@ const strText = computed(() => {
     background: rgba(255, 255, 255, 0.6);
 }
 
-.mrZeilen {
+.mrFelder {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mrFeld {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
-    font-size: 0.78rem;
+    gap: 0;
+    min-width: 0;
+    padding: 0.16rem 0.55rem;
+    line-height: 1.25;
+    border-left: 1px solid rgba(255, 255, 255, 0.07);
 }
 
-.mrZeile {
-    display: grid;
-    grid-template-columns: 5.6rem minmax(0, 1fr) 5.6rem minmax(0, 1fr);
-    gap: 0.4rem;
-    align-items: baseline;
+.mrFeld.mrErste { border-left: 0; padding-left: 0.1rem; }
+.mrFelder.mrDrei { grid-template-columns: minmax(0, 0.92fr) minmax(0, 1fr) minmax(0, 1.08fr); border-top-color: rgba(255, 255, 255, 0.07); margin-top: -0.25rem; }
+
+.mrLabel {
+    color: var(--white-60);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
 }
 
-.mrLabel { color: var(--white-60); white-space: nowrap; }
-.mrLabel small { color: var(--white-38, rgba(255, 255, 255, 0.38)); font-size: 0.66rem; }
-.mrWert { color: var(--white-87); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mrWert small { color: var(--white-60); }
-.mrBreit { grid-column: 2 / 5; }
+.mrLabel small {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.62rem;
+    color: var(--white-38, rgba(255, 255, 255, 0.38));
+}
+
+.mrWert {
+    font-size: 0.82rem;
+    color: var(--white-87);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mrWert b { font-weight: 600; }
+.mrWert small { margin-left: 0.35rem; font-size: 0.7rem; color: var(--white-60); }
+
+.gross .mrWert { font-size: 0.92rem; }
 
 .mrLong { color: #4caf50; }
 .mrShort { color: #ef5350; }

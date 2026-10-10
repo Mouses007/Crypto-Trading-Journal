@@ -3340,7 +3340,7 @@
         },
         {
           "h": "KOMPAKT & MOMENTUM RADAR",
-          "p": "Die Kompakt-Kachel fasst die Nebenkacheln (Sitzung, Handelszeiten, Termine, Mechanik, Liquidationen, Long/Short, Funding, Indizes, Coin-Radar, Handelslage, Gesamtlage) als je eine Zeile zusammen; ein Klick öffnet die volle Kachel, und die Einzelkacheln bleiben unter „Kacheln“ zuschaltbar. Die Automatik der Handelslage läuft nur, solange deren eigene Kachel sichtbar ist. Der Momentum Radar ist Mo's Pine-Indikator als Kachel: Welle, Geldfluss, Punkte und Schienen der gewählten Zeitebene (5m–4h) und darunter das Panel mit Status, SWING/DAY-Setup, Spot gegen Futures, VWAP und 4h-Struktur — gerechnet nur auf geschlossenen Kerzen."
+          "p": "Die Kompakt-Kachel fasst die Nebenkacheln (Sitzung, Handelszeiten, Termine, Mechanik, Liquidationen, Long/Short, Funding, Indizes, Coin-Radar, Handelslage, Gesamtlage) als je eine Zeile zusammen; ein Klick öffnet die volle Kachel, und die Einzelkacheln bleiben unter „Kacheln“ zuschaltbar. Die Automatik der Handelslage läuft nur, solange deren eigene Kachel sichtbar ist. Der Momentum Radar zeigt Welle, Geldfluss, Punkte und Schienen der gewählten Zeitebene (5m–4h) und darunter das Panel mit Status, SWING/DAY-Setup, Spot gegen Futures, VWAP und 4h-Struktur — gerechnet nur auf geschlossenen Kerzen."
         }
       ],
       "caveat": "Die Zahlen der Fremdquellen (Indizes, Funding, Kalender) versprechen nichts und können veralten — der Punkt in der Kachel sagt, wie frisch sie sind. Die Hebelkarte ist ein Modell, kein Messwert. Diese Seite ist Werkzeug, kein Signalgeber: den Auslöser liefert weiterhin deine Strategie."
@@ -4166,7 +4166,7 @@
     },
     "momentum": {
       "title": "Momentum Radar",
-      "info": "Mo's Momentum Radar als Kachel: eine WaveTrend-Welle auf sechs Zeitebenen, gegengeprüft mit dem volumengewichteten Geldfluss.\nOben der Verlauf der gewählten Zeitebene (Punkte = Signale, gross = die höheren Zeitebenen stützen, Raute = Extremwert, Schienen = Signale der höheren Zeitebenen, unten die 4h-Farbleiste). Darunter das Panel: Zustand je Zeitebene, SWING- und DAY-Setup, Herkunft des Volumens (Spot gegen Futures), VWAP und 4h-Struktur.\nGerechnet wird nur auf geschlossenen Kerzen. Der Radar sagt WANN, nicht WO — das Level kommt vom VWAP.",
+      "info": "Eine WaveTrend-Welle auf sechs Zeitebenen, gegengeprüft mit dem volumengewichteten Geldfluss.\nOben der Verlauf der gewählten Zeitebene (Punkte = Signale, gross = die höheren Zeitebenen stützen, Raute = Extremwert, Schienen = Signale der höheren Zeitebenen, unten die 4h-Farbleiste). Darunter das Panel: Zustand je Zeitebene, SWING- und DAY-Setup, Herkunft des Volumens (Spot gegen Futures), VWAP und 4h-Struktur.\nGerechnet wird nur auf geschlossenen Kerzen. Der Radar sagt WANN, nicht WO — das Level kommt vom VWAP.",
       "welle": "Welle",
       "fluss": "Geldfluss",
       "status_long": "LONG SUCHEN",
