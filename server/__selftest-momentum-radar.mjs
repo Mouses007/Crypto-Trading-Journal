@@ -107,20 +107,36 @@ console.log('\nHerkunft Spot/Futures')
     check('gleichbleibend 90 % Futures ist normal', herkunft(fut, spot, mfStark).urteil === 'normal')
 
     /*
-     * Eigenschaft der Pine-Regel, kein Fehler hier: die Schwelle ist
-     * Schnitt × 1,15. Bei 90 % Futures im Normalmass läge sie bei 103,5 % —
-     * unerreichbar. Auf Münzen mit sehr hohem Futures-Anteil kann „Futures
-     * ungewöhnlich hoch" deshalb nie erscheinen; nur „Spot ungewöhnlich hoch".
+     * Die Wand, an der die alte Anteils-Rechnung scheiterte: bei 90 %
+     * Normalmass lag die Schwelle bei 103,5 %. Als Verhältnis (9×) liegt sie
+     * bei 10,35× — erreichbar.
      */
-    const futHoch = fut.map((k, i) => (i === n - 1 ? { ...k, v: 990 } : k))   // 99 %
-    check('bei 90 % Normalmass ist „Futures treiben" unerreichbar (Pine-Regel)',
-        herkunft(futHoch, spot, mfStark).urteil === 'normal')
+    const futHoch = fut.map((k, i) => (i === n - 1 ? { ...k, v: 990 } : k))   // 99×
+    check('bei 90 % Normalmass: plötzlich 99 % → Futures treiben (Anteil konnte das nie)',
+        herkunft(futHoch, spot, mfStark).urteil === 'futures')
+    check('…aber nicht bei schwachem Geldfluss', herkunft(futHoch, spot, Array(n).fill(2)).urteil === 'normal')
+    const knapp = fut.map((k, i) => (i === n - 1 ? { ...k, v: 100 } : k))       // 10× gegen 9×
+    check('10× gegen 9× liegt unter der Schwelle 1,15', herkunft(knapp, spot, mfStark).urteil === 'normal')
 
-    const fut70 = fut.map(k => ({ ...k, v: 70 }))
-    const spot30 = fut.map(k => ({ ...k, v: 30 }))
-    const fut70Hoch = fut70.map((k, i) => (i === n - 1 ? { ...k, v: 970 } : k))  // 97 %
-    check('bei 70 % Normalmass: plötzlich 97 % → Futures treiben', herkunft(fut70Hoch, spot30, mfStark).urteil === 'futures')
-    check('…aber nicht bei schwachem Geldfluss', herkunft(fut70Hoch, spot30, Array(n).fill(2)).urteil === 'normal')
+    /*
+     * Gleiche Empfindlichkeit auf jeder Münze: dieselbe RELATIVE Verschiebung
+     * des Verhältnisses (×1,2) löst bei 1:1 und bei 9:1 gleich aus. Mit dem
+     * Anteil brauchte 50 % → 57,5 % sieben Punkte, 75 % → 86,2 % elf.
+     */
+    for (const [f, sp] of [[50, 50], [75, 25], [90, 10], [97, 3]]) {
+        const basisF = fut.map(k => ({ ...k, v: f }))
+        const basisS = fut.map(k => ({ ...k, v: sp }))
+        const hoch = basisF.map((k, i) => (i === n - 1 ? { ...k, v: f * 1.2 } : k))
+        const tief = basisF.map((k, i) => (i === n - 1 ? { ...k, v: f / 1.2 } : k))
+        check(`${f} % Normalmass: ×1,2 → Futures, ÷1,2 → Spot`,
+            herkunft(hoch, basisS, mfStark).urteil === 'futures' && herkunft(tief, basisS, mfStark).urteil === 'spot')
+    }
+
+    const v = herkunft(futHoch, spot, mfStark)
+    check('Anteil zum Ablesen bleibt Fut/(Fut+Spot)', Math.abs(v.anteil - 0.99) < 1e-9 && v.verhaeltnis === 99)
+
+    const ohneSpotVolumen = spot.map((k, i) => (i === n - 1 ? { ...k, v: 0 } : k))
+    check('Spot-Volumen 0 → kein Verhältnis statt Unendlich', herkunft(fut, ohneSpotVolumen, mfStark).verhaeltnis === null)
 
     const spotHoch = spot.map((k, i) => (i === n - 1 ? { ...k, v: 90 } : k))  // 50 %
     check('plötzlich 50 % → Spot trägt', herkunft(fut, spotHoch, mfStark).urteil === 'spot')

@@ -198,12 +198,20 @@ const herkunftText = computed(() => {
     if (!her.value.urteil) return t('livetrading.momentum.herkunft_unbekannt')
     return t('livetrading.momentum.herkunft_' + her.value.urteil)
 })
+/**
+ * Zum Ablesen die Aufteilung (Fut + Spot = 100 %), geurteilt wird aber über
+ * das Verhältnis gegen sein Normalmass — deshalb steht das daneben: „9,0×
+ * (Ø 6,7×)" sagt, wie weit es vom Üblichen weg ist, ein Anteil nahe 100 %
+ * sagt das nicht mehr.
+ */
 const herkunftZahl = computed(() => {
     const a = her.value.anteil
-    if (a === null || a === undefined) return ''
+    const r = her.value.verhaeltnis
+    if (a === null || a === undefined || r === null || r === undefined) return ''
     const s = her.value.schnitt
-    return `Fut ${Math.round(a * 100)} % · Spot ${Math.round(100 - a * 100)} %`
-        + (s ? ` (Ø ${Math.round(s * 100)} %)` : '')
+    const x = (w) => `${w.toFixed(w >= 10 ? 0 : 1)}×`
+    return `Fut ${Math.round(a * 100)} % · Spot ${Math.round(100 - a * 100)} % · ${x(r)}`
+        + (s ? ` (Ø ${x(s)})` : '')
 })
 
 const fluss = computed(() => props.daten?.geldfluss || {})

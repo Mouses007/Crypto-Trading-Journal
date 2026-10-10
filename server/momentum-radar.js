@@ -164,43 +164,57 @@ export function geldfluss(kerzen) {
 }
 
 /**
- * Spot gegen Futures (Pine Gruppe 3): Futures-Anteil am Volumen gegen sein
- * eigenes Normalmass der letzten 200 Kerzen. Der nackte Anteil sagt nichts —
- * 91 % Futures sind bei der einen Münze normal, bei der nächsten ein Signal.
+ * Spot gegen Futures (Pine Gruppe 3): das VERHÄLTNIS Futures- zu Spot-Volumen
+ * gegen sein eigenes Normalmass der letzten 200 Kerzen.
+ *
+ * ## Warum Verhältnis und nicht Anteil
+ *
+ * Die erste Fassung (wie das Pine bis 10.10.2026) mass den Anteil
+ * fut / (fut + spot). Ein Anteil endet bei 1,0, die Schwelle war aber
+ * multiplikativ (Schnitt × 1,15): ab einem Normalmass von 86,96 % lag sie über
+ * 100 % und war unerreichbar — auf BNB (~91 %) konnte „Futures ungewöhnlich
+ * hoch" nie erscheinen. Und auch darunter war die Empfindlichkeit zufällig:
+ * bei 50 % genügten 7,5 Punkte, bei 75 % brauchte es 11,2. Ein Verhältnis
+ * (9 statt 90 %) hat keine Obergrenze, also gilt dieselbe Schwelle auf jeder
+ * Münze und in beide Richtungen gleich weit.
+ *
+ * Kerzen ohne Spot-Volumen (fehlt, oder 0 — Division durch null) haben kein
+ * Verhältnis; der Schnitt hält den letzten gültigen Wert (Pine `fsHold`).
  *
  * @param {Array} fut  Futures-Kerzen der Chart-Zeitebene
  * @param {Array|null} spot Spot-Kerzen derselben Zeitebene (oder null)
  * @param {Array<number|null>} mf Geldfluss der Futures (für die Mindeststärke)
- * @returns {{ anteil:number|null, schnitt:number|null, urteil:'futures'|'spot'|'normal'|null, reihe:Array|null }}
+ * @returns {{ anteil:number|null, verhaeltnis:number|null, schnitt:number|null,
+ *   urteil:'futures'|'spot'|'normal'|null, reihe:Array|null }}
+ *   `anteil` steht nur zum Ablesen da (Fut + Spot = 100 %), geurteilt wird
+ *   über `verhaeltnis` gegen `schnitt` (beides Futures je Spot-Einheit).
  */
 export function herkunft(fut, spot, mf) {
-    const leer = { anteil: null, schnitt: null, urteil: null, reihe: null }
+    const leer = { anteil: null, verhaeltnis: null, schnitt: null, urteil: null, reihe: null }
     if (!Array.isArray(spot) || !spot.length) return leer
     const spotNachT = new Map(spot.map(k => [k.t, Number(k.v) || 0]))
-    // Anteil je Kerze; fehlt Spot dort, ist er unbekannt
-    const anteile = fut.map(k => {
+    const verhaeltnisse = fut.map(k => {
         const sv = spotNachT.get(k.t)
-        const fv = Number(k.v) || 0
-        return sv !== undefined && fv + sv > 0 ? fv / (fv + sv) : null
+        return sv !== undefined && sv > 0 ? (Number(k.v) || 0) / sv : null
     })
-    // Eine einzelne Lücke darf nicht 200 Kerzen lang das Normalmass löschen —
-    // für den Schnitt wird der letzte gültige Wert gehalten (Pine `fsHold`).
     let halt = null
-    const gehalten = anteile.map(a => (a !== null ? (halt = a) : halt))
+    const gehalten = verhaeltnisse.map(r => (r !== null ? (halt = r) : halt))
     const schnitte = smaSerie(gehalten, SF_NORM)
     const urteilAn = (i) => {
-        const a = anteile[i]
+        const r = verhaeltnisse[i]
         const s = schnitte[i]
-        if (!ok(a) || !ok(s) || s <= 0) return null
+        if (!ok(r) || !ok(s) || s <= 0) return null
         if (Math.abs(mf[i] ?? 0) < MF_MIN) return 'normal'
-        if (a > s * SF_EXCESS) return 'futures'
-        if (a < s / SF_EXCESS) return 'spot'
+        if (r > s * SF_EXCESS) return 'futures'
+        if (r < s / SF_EXCESS) return 'spot'
         return 'normal'
     }
     const reihe = fut.map((_, i) => urteilAn(i))
     const i = fut.length - 1
+    const r = verhaeltnisse[i]
     return {
-        anteil: anteile[i],
+        anteil: ok(r) ? r / (1 + r) : null,
+        verhaeltnis: r,
         schnitt: ok(schnitte[i]) ? schnitte[i] : null,
         urteil: reihe[i],
         reihe,
@@ -479,7 +493,7 @@ export function werteAus({ kerzen, spot = null, chartTf, vwapKerzen = null, punk
             h4: rund(mf4[mf4.length - 1]),
             extrem: Math.abs(mf[mf.length - 1] ?? 0) >= 60,
         },
-        herkunft: { anteil: her.anteil, schnitt: her.schnitt, urteil: her.urteil },
+        herkunft: { anteil: her.anteil, verhaeltnis: her.verhaeltnis, schnitt: her.schnitt, urteil: her.urteil },
         vwap: { preis, woche, monat, ueberWoche: ok(woche) ? preis > woche : null, ueberMonat: ok(monat) ? preis > monat : null },
         struktur: str,
         verlauf,
