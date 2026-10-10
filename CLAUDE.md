@@ -200,6 +200,7 @@ Bootstrap loaded from CDN (not bundled).
 - `CTJ_HOST` — Bind address (default 127.0.0.1; use 0.0.0.0 for network access)
 - `CTJ_SECRET` — Secret for session token / crypto key derivation (required in production)
 - `NODE_ENV=dev` — Enable Vite dev server with HMR
+- `CTJ_NO_ENGINE=1` / `CTJ_NO_GUARD=1` / `CTJ_NO_RECORDER=1` — keep this process out of the strategy engine, the stop watcher, or the live recorder. All three use DB leadership claims across processes sharing one PostgreSQL; a local test container should run with `CTJ_NO_ENGINE=1 CTJ_NO_RECORDER=1`, otherwise it can win the recorder lead after a NAS restart and the NAS's in-memory liquidation ticker stays empty.
 
 No `.env` files — runtime config stored in DB (settings table) and localStorage. Optional DB: `db-config.json` for PostgreSQL.
 

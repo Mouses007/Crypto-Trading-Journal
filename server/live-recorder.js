@@ -1201,6 +1201,8 @@ async function readConfig() {
  * rangliste-api.js; der Abgleich alle RECONCILE_MS wirkt als Verlängerung.
  */
 const FUEHRUNG_KEY = 'live_recorder'
+/** Prozess zeichnet nie auf und hält nie die Führung (siehe `reconcile`). */
+const RECORDER_AUS = process.env.CTJ_NO_RECORDER === '1'
 const FUEHRUNG_TTL_MS = 3 * RECONCILE_MS
 let hatFuehrung = false
 
@@ -1214,7 +1216,14 @@ async function reconcile() {
 
     // Führung nur holen (und halten), wenn es Arbeit gibt — sonst blockierte
     // ein Prozess mit abgeschalteter Aufzeichnung den, der sie führen soll.
-    const arbeit = (config.enabled && config.symbols.length > 0) || config.allLiq
+    //
+    // `CTJ_NO_RECORDER=1` nimmt einen Prozess ganz aus dem Rennen. Gebraucht
+    // für den lokalen Test-Container: er hängt an derselben PostgreSQL wie die
+    // NAS, und wer beim Neustart der NAS zufällig gerade lief, hielt danach
+    // die Führung. Die Aufzeichnung in die DB lief dann zwar weiter, aber der
+    // Liquidations-Ticker liest aus dem Arbeitsspeicher DIESES Prozesses — auf
+    // der NAS stand „0 Ereignisse", stundenlang (gesehen 10.10.2026).
+    const arbeit = !RECORDER_AUS && ((config.enabled && config.symbols.length > 0) || config.allLiq)
     if (arbeit) {
         const vorher = hatFuehrung
         hatFuehrung = await beansprucheFuehrung(FUEHRUNG_KEY, FUEHRUNG_TTL_MS)
@@ -1229,6 +1238,8 @@ async function reconcile() {
         await gibFuehrungFrei(FUEHRUNG_KEY)
         hatFuehrung = false
     }
+    // Mit CTJ_NO_RECORDER auch nichts selbst starten — wie ein Nicht-Führer.
+    if (RECORDER_AUS) config = { ...config, enabled: false, allLiq: false, symbols: [] }
 
     const wanted = new Map()
     if (config.enabled) {

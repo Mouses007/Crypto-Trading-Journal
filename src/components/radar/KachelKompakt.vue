@@ -23,6 +23,8 @@ import { useI18n } from 'vue-i18n'
 import dayjs from '../../utils/dayjs-setup.js'
 import { lageZu } from '../../../shared/handelszeiten.js'
 import { liveSymbol } from '../../stores/live.js'
+import { currentUser } from '../../stores/globals.js'
+import { boerseUrl, aktivierteBoersen } from '../../utils/boersenLinks.js'
 
 const props = defineProps({
     daten: { type: Object, default: null },
@@ -139,6 +141,15 @@ const alter = (ms) => {
 
 const LAGE_FARBE = { trend_auf: 'kpPlus', trend_ab: 'kpMinus', nachrichtenrisiko: 'kpGelb', quetsche: 'kpGelb' }
 
+/**
+ * BX-Link je Coin wie in der Coin-Radar-Kachel — nur wenn der Lauf den Coin
+ * auf Bitunix gelistet gefunden hat und Bitunix unter den Börsen-Links
+ * eingeschaltet ist. Ein Link auf eine nicht gelistete Seite wäre ein 404.
+ */
+const bitunixAn = computed(() => aktivierteBoersen(currentUser.value?.boersenLinks).includes('bitunix'))
+const aufBitunix = (z) => bitunixAn.value
+    && (z?.boersen?.liste || []).some(e => e.boerse === 'bitunix')
+
 /** Coin-Radar: Klick auf den Coin wählt ihn wie in der eigenen Kachel. */
 function waehle(symbol) { liveSymbol.value = symbol }
 </script>
@@ -232,11 +243,16 @@ function waehle(symbol) { liveSymbol.value = symbol }
         <div v-if="coins.length" class="kpZeile kpOhneHover">
             <span class="kpLabel kpKlick" @click="emit('oeffne', 'coinradar')">{{ t('livetrading.kompakt.coinradar') }}</span>
             <span class="kpWert kpCoins">
-                <button v-for="z in coins" :key="z.symbol" type="button" class="kpCoin"
-                    :class="{ aktiv: z.symbol === liveSymbol }" :title="t('livetrading.coinradar.waehlen', { s: kurz(z.symbol) })"
-                    @click.stop="waehle(z.symbol)">
-                    {{ kurz(z.symbol) }} <small v-if="Number.isFinite(Number(z.note))">{{ Math.round(z.note) }}</small>
-                </button>
+                <!-- Wählen und Öffnen nebeneinander, nicht ineinander: ein Link
+                     in einem Knopf ist ungültig, und Chrome schluckt den Klick -->
+                <span v-for="z in coins" :key="z.symbol" class="kpCoin" :class="{ aktiv: z.symbol === liveSymbol }">
+                    <button type="button" class="kpCoinWahl" :title="t('livetrading.coinradar.waehlen', { s: kurz(z.symbol) })"
+                        @click.stop="waehle(z.symbol)">
+                        {{ kurz(z.symbol) }} <small v-if="Number.isFinite(Number(z.note))">{{ Math.round(z.note) }}</small>
+                    </button>
+                    <a v-if="aufBitunix(z)" class="kpBx" :href="boerseUrl('bitunix', z.symbol)" target="_blank"
+                        rel="noopener noreferrer" :title="t('live.inBitunix', { s: kurz(z.symbol) })" @click.stop>BX</a>
+                </span>
             </span>
         </div>
 
@@ -360,16 +376,37 @@ function waehle(symbol) { liveSymbol.value = symbol }
 .kpCoins { display: flex; flex-wrap: wrap; gap: 0.25rem; white-space: normal; }
 
 .kpCoin {
-    border: none;
+    display: inline-flex;
+    align-items: center;
     background: rgba(255, 255, 255, 0.05);
-    color: var(--white-87);
     border-radius: 3px;
-    padding: 0 0.35rem;
+    padding-right: 0.2rem;
     font-size: 0.74rem;
     line-height: 1.5;
 }
 
+.kpCoinWahl {
+    border: none;
+    background: none;
+    color: var(--white-87);
+    padding: 0 0.35rem;
+    font-size: inherit;
+    line-height: inherit;
+}
+
 .kpCoin small { color: var(--white-60); }
+
+.kpBx {
+    padding: 0 0.2rem;
+    border-radius: 2px;
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: rgb(90, 156, 255);
+    background: rgba(90, 156, 255, 0.14);
+    text-decoration: none;
+}
+
+.kpBx:hover { background: rgba(90, 156, 255, 0.3); color: rgb(140, 185, 255); }
 .kpCoin:hover { background: rgba(255, 255, 255, 0.1); }
 .kpCoin.aktiv { background: rgba(90, 156, 255, 0.25); }
 

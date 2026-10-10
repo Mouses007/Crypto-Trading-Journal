@@ -20,6 +20,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { liveSymbol, FAVORITE_SYMBOLS } from '../../stores/live.js'
 import { loadSymbolMeta } from '../../utils/liveSymbols.js'
+import { boerseUrl } from '../../utils/boersenLinks.js'
 
 const { t } = useI18n()
 
@@ -30,6 +31,13 @@ const laedt = ref(false)
 const wurzel = ref(null)
 
 const kurz = (s) => String(s || '').replace(/USDT$/, '')
+
+/*
+ * Direkt in Bitunix öffnen: die Handelsbörse des Journals. Steht neben der
+ * Wahl, weil das Symbol die ganze Seite steuert — wer hier wechselt, will
+ * genau dieses Symbol auch handeln. Neuer Tab, damit das Cockpit bleibt.
+ */
+const bitunixUrl = computed(() => boerseUrl('bitunix', liveSymbol.value))
 
 const treffer = computed(() => {
     const q = suche.value.trim().toUpperCase()
@@ -78,6 +86,10 @@ onBeforeUnmount(() => document.removeEventListener('click', beiKlickAussen))
             <b>{{ kurz(liveSymbol) }}</b>
             <i class="uil" :class="offen ? 'uil-angle-up' : 'uil-angle-down'"></i>
         </button>
+        <a v-if="bitunixUrl" class="swBoerse" :href="bitunixUrl" target="_blank" rel="noopener noreferrer"
+            :title="t('live.inBitunix', { s: kurz(liveSymbol) })">
+            Bitunix <i class="uil uil-external-link-alt"></i>
+        </a>
 
         <div v-if="offen" class="swListe" @click.stop>
             <div class="swFavoriten">
@@ -99,7 +111,25 @@ onBeforeUnmount(() => document.removeEventListener('click', beiKlickAussen))
 <style scoped>
 .swWrap {
     position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
 }
+
+.swBoerse {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.12rem 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    font-size: 0.8rem;
+    color: var(--white-87);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.swBoerse:hover { background: rgba(255, 255, 255, 0.1); color: var(--white-87); }
 
 .swAktuell {
     display: inline-flex;

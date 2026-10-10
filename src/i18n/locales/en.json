@@ -1611,7 +1611,8 @@
     "replayHint": "Replay: liquidity, price path and liquidations. Trade dots, volume profile and bars need data that is not recorded.",
     "imbalanceBuy": "{pct}% buy",
     "imbalanceSell": "{pct}% sell",
-    "imbalanceTitle": "Buy vs. sell volume near the mid price"
+    "imbalanceTitle": "Buy vs. sell volume near the mid price",
+    "inBitunix": "Open {s} in Bitunix (new tab)"
   },
   "strategies": {
     "labTitle": "Lab",
