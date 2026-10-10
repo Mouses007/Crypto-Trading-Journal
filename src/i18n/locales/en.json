@@ -4458,7 +4458,22 @@
     "epUmsatz": "24h turnover",
     "epGelistet": "Tradable on:",
     "epChartOeffnen": "Open the chart on TradingView — prices from {q}",
-    "ladeFehler": "Ranking could not be loaded — showing the last state."
+    "ladeFehler": "Ranking could not be loaded — showing the last state.",
+    "tsKnopf": "Deep check",
+    "tsHinweis": "Checks the token behind the perpetual like the early phase: contract, holders, on-chain pools, project.",
+    "tsNichtGefunden": "CoinGecko does not know this coin — without a contract address there is no deep check.",
+    "tsVertrag": "Contracts",
+    "tsNichtPruefbar": "No chain whose contract can be checked.",
+    "tsKetteNichtPruefbar": "not checkable",
+    "tsLiq": "DEX",
+    "tsRisiko": "Contract and holders",
+    "tsKo": "Knock-out: {g}",
+    "tsOk": "No knock-out traits in the contract",
+    "tsHalter": "Holders",
+    "tsTop10": "Top 10",
+    "tsInsider": "Insiders",
+    "tsDev": "Creator",
+    "tsProjekt": "Project"
   },
   "lernen": {
     "tabKarten": "Cards",

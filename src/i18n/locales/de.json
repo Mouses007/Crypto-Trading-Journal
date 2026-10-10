@@ -4458,7 +4458,22 @@
     "epUmsatz": "Umsatz 24 h",
     "epGelistet": "Handelbar auf:",
     "epChartOeffnen": "Chart auf TradingView öffnen — Kurse von {q}",
-    "ladeFehler": "Rangliste konnte nicht geladen werden — angezeigt wird der letzte Stand."
+    "ladeFehler": "Rangliste konnte nicht geladen werden — angezeigt wird der letzte Stand.",
+    "tsKnopf": "Tiefensuche",
+    "tsHinweis": "Prüft den Token hinter dem Perpetual wie die Frühphase: Vertrag, Halter, On-Chain-Pools, Projekt.",
+    "tsNichtGefunden": "CoinGecko kennt diesen Coin nicht — ohne Vertragsadresse keine Tiefensuche.",
+    "tsVertrag": "Verträge",
+    "tsNichtPruefbar": "Keine Kette, deren Vertrag sich prüfen lässt.",
+    "tsKetteNichtPruefbar": "nicht prüfbar",
+    "tsLiq": "DEX",
+    "tsRisiko": "Vertrag und Halter",
+    "tsKo": "K.-o.: {g}",
+    "tsOk": "Keine K.-o.-Merkmale im Vertrag",
+    "tsHalter": "Halter",
+    "tsTop10": "Top-10",
+    "tsInsider": "Insider",
+    "tsDev": "Ersteller",
+    "tsProjekt": "Projekt"
   },
   "lernen": {
     "tabKarten": "Karten",

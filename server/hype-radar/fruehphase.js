@@ -209,7 +209,7 @@ const istPump = (x, quellenAlt = []) => x.chain === 'solana' && (
  * Vertrag und Halter eines Tokens. Solana zuerst bei RugCheck — nur dort gibt
  * es die Insider-Markierung —, GoPlus als Rückfall; EVM bei GoPlus.
  */
-async function holeRisiko(chain, contract) {
+export async function holeRisiko(chain, contract) {
     if (chain === 'solana') {
         try {
             const r = ausRugCheck(await holeJson(`https://api.rugcheck.xyz/v1/tokens/${encodeURIComponent(contract)}/report`))

@@ -508,6 +508,13 @@ export function seitenBeleg(w = {}, token = {}) {
     const s = w?.fakten
     if (w?.status !== 'ok' || !s || s.sammelseite) return { eigen: false, wie: '', fremd: '' }
     if (s.vertragAufSeite === 'passt') return { eigen: true, wie: 'vertrag', fremd: '' }
+    /*
+     * Von einer kuratierten Quelle zugeordnet (CoinGecko führt die Seite beim
+     * Coin): belegt — auch wenn sie den Vertrag einer ANDEREN Kette nennt, denn
+     * gelistete Coins laufen auf mehreren. Ohne das galt lumia.org als „fremde,
+     * alte Seite", weil sie weder $LUMIA noch einen Handelslink trägt.
+     */
+    if (token.seiteBelegt && ohneWww(token.seiteBelegt) === ohneWww(w.host)) return { eigen: true, wie: 'quelle', fremd: '' }
     const sym = norm(token.symbol)
     if (s.vertragAufSeite !== 'fremd' && !(Number(w.geteilt) > 0)) {
         const bezug = (sym && (s.cashtags || []).includes(sym)) || Number(s.handelsLinks) > 0
@@ -811,7 +818,7 @@ export function bewerteProjekt(f = {}) {
         gemessen++
         minus('keineWebseite', PUNKTE.keineWebseite,
             `Keine eigene Webseite — die angegebene Seite listet ${s.adressen} Vertragsadressen (Sammel- oder Handelsseite)`)
-    } else if (s && s.vertragAufSeite === 'fremd') {
+    } else if (s && s.vertragAufSeite === 'fremd' && beleg.wie !== 'quelle') {
         // Die Seite eines anderen Tokens: was auf ihr steht, ist nicht seins — weder Plus noch Minus.
         gemessen++
         minus('vertragFremd', PUNKTE.vertragFremd,
@@ -864,7 +871,7 @@ export function bewerteProjekt(f = {}) {
      */
     if (geteilt && !beleg.fremd && s?.vertragAufSeite !== 'fremd' && !sammel) {
         gemessen++
-        if (beleg.wie === 'vertrag') {
+        if ((beleg.wie === 'vertrag' || beleg.wie === 'quelle')) {
             info('seiteGeteilt', `${geteilt} weitere${geteilt === 1 ? 'r' : ''} Token ${geteilt === 1 ? 'nennt' : 'nennen'} dieselbe Seite — dieser steht darauf, die anderen nicht`)
         } else {
             minus('seiteGeteilt', PUNKTE.seiteGeteilt,
@@ -875,7 +882,7 @@ export function bewerteProjekt(f = {}) {
     // Domain-Alter nur bei eigener, nicht geteilter Domain — eine Gratis-Plattform ist alt, die Seite darauf nicht.
     const alter = Number(w.domainAlterTage)
     const domainZaehlt = s && !sammel && !beleg.fremd && s.vertragAufSeite !== 'fremd' && !w.plattform
-        && (!geteilt || beleg.wie === 'vertrag')
+        && (!geteilt || (beleg.wie === 'vertrag' || beleg.wie === 'quelle'))
         && w.domainAlterTage !== null && w.domainAlterTage !== undefined && Number.isFinite(alter)
     if (domainZaehlt) {
         if (alter < 3) minus('domainNeu', PUNKTE.domainNeu, `Domain erst ${alter.toFixed(1)} Tage registriert`)

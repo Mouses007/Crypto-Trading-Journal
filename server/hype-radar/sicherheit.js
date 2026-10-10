@@ -575,10 +575,17 @@ export function ausRugCheck(j) {
          * `insider` je Top-Halter war in 136 Prüfungen nie gesetzt — der Anteil
          * stand immer auf 0, auch bei ROCKETCAT mit 21 Insidern in zwei
          * Netzwerken (3,2 %). Ohne Netzwerkangabe oder Angebot unbekannt, nicht 0.
+         *
+         * Über dem Angebot ist es kein Anteil: Bei WIF (10.10.2026) „hielt" ein
+         * Netzwerk aus 6 590 Konten das Dreifache des Gesamtangebots — ein
+         * Verteilungsgraph, keine Insider-Gruppe, und die Seite zeigte „307 %".
+         * Dann unbekannt, nicht gedeckelt.
          */
-        insider_anteil_pct: Array.isArray(j.insiderNetworks) && supply > 0
-            ? (j.insiderNetworks.reduce((a, n) => a + (Number(n?.currentHolding) || 0), 0) / supply) * 100
-            : null,
+        insider_anteil_pct: (() => {
+            if (!Array.isArray(j.insiderNetworks) || !(supply > 0)) return null
+            const pct = (j.insiderNetworks.reduce((a, n) => a + (Number(n?.currentHolding) || 0), 0) / supply) * 100
+            return pct <= 100 ? pct : null
+        })(),
         // Ersteller und sein Bestand, wie RugCheck ihn kennt (Rohmenge / Angebot).
         ersteller: String(j.creator || ''),
         ersteller_anteil_pct: supply > 0 && Number.isFinite(Number(j.creatorBalance))

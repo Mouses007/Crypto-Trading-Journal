@@ -90,6 +90,8 @@ export async function holeCoinInfo(symbol, schluessel = '') {
         github: (j?.links?.repos_url?.github || []).find(Boolean) || '',
         explorer: (j?.links?.blockchain_site || []).find(Boolean) || '',
         coingeckoUrl: `https://www.coingecko.com/en/coins/${treffer.id}`,
+        // Verträge je Kette, wie CoinGecko sie führt — für die Tiefensuche.
+        plattformen: j?.platforms && typeof j.platforms === 'object' ? j.platforms : {},
     }
     cache.set(basis, { ts: Date.now(), daten })
     return daten

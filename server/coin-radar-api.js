@@ -19,6 +19,7 @@ import { KOPPLUNG_FEST, KOPPLUNG_LOSE, BTC_ZEITEINHEIT } from './coin-radar/btc-
 import { fuehreLaufAus } from './coin-radar/lauf.js'
 import { erzeugeEinordnung } from './coin-radar/einordnung.js'
 import { holeCoinInfo } from './coin-radar/coin-info.js'
+import { tiefensuche } from './coin-radar/tiefensuche.js'
 import { pruefeEinzeln } from './coin-radar/einzel.js'
 import { leseSchluessel } from './hype-radar/einstellungen.js'
 import { legeAnCoinRadar, HORIZONTE } from './radar-ergebnisse.js'
@@ -177,6 +178,24 @@ export function setupCoinRadarRoutes(app) {
         } catch (e) {
             logWarn('coin-radar', `Coin-Info: ${e.message}`)
             res.status(502).json({ error: 'Projekt-Infos konnten nicht geladen werden' })
+        }
+    })
+
+    /**
+     * Tiefensuche: was hinter dem Coin steht — Verträge je Kette, Vertrags-
+     * und Halterprüfung, On-Chain-Pools, Projektprüfung (`coin-radar/tiefensuche.js`).
+     * GET wie die Einzelprüfung: schreibt nur in den Zwischenspeicher der
+     * Projektprüfung, kostet kein Geld, nur Abrufe ohne Schlüssel.
+     */
+    app.get('/api/coin-radar/tiefensuche', async (req, res) => {
+        try {
+            const symbol = String(req.query.symbol || '').trim()
+            if (!symbol) return res.status(400).json({ error: 'Symbol fehlt' })
+            const { coingecko } = await leseSchluessel()
+            res.json(await tiefensuche(symbol, coingecko))
+        } catch (e) {
+            logWarn('coin-radar', `Tiefensuche: ${e.message}`)
+            res.status(502).json({ error: 'Die Tiefensuche ist fehlgeschlagen' })
         }
     })
 

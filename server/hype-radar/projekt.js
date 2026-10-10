@@ -33,7 +33,7 @@ import { holeText as holeGeschuetzt } from '../net-guard.js'
 import { holeJson, dexDetails, linksAusInfo, pumpCoin } from './quellen.js'
 import {
     leseWebseite, registrierbareDomain, gratisPlattform, rdapRegistriert, ordneWebseite, ordneAbruffehler,
-    kanalAus, seitenBeleg, githubZiel, githubFakten, githubBeleg, erstellerBilanz, bewerteProjekt, PROJEKT_REGELN,
+    kanalAus, seitenBeleg, githubZiel, githubFakten, githubBeleg, erstellerBilanz, bewerteProjekt, PROJEKT_REGELN, hostVon,
 } from './projekt-bewertung.js'
 
 /** So lange gilt eine Prüfung. */
@@ -146,7 +146,8 @@ export async function pruefeProjekt(kandidat, opts = {}) {
     if (alt && !alt.veraltet && alter < (opts.neu ? ERZWINGEN_AB_MS : PRUEFUNG_GUELTIG_MS)) {
         const w = alt.fakten?.webseite || {}
         const bisher = Number(w.geteilt) || 0
-        if (!w.host || w.status === 'keine' || await geteiltMit(w.host, kandidat) === bisher) return alt
+        const belegtGleich = (alt.fakten?.token?.seiteBelegt || '') === (kandidat.seiteBelegt ? hostVon(kandidat.seiteBelegt) : '')
+        if (belegtGleich && (!w.host || w.status === 'keine' || await geteiltMit(w.host, kandidat) === bisher)) return alt
     }
 
     const ergebnis = await pruefeFrisch(kandidat)
@@ -204,7 +205,11 @@ export async function pruefeViele(kandidaten = [], { parallel = 3, jeFertig = ()
 /** Die eigentliche Prüfung, ohne Zwischenspeicher. */
 async function pruefeFrisch(kandidat) {
     const k = { ...kandidat }
-    const token = { symbol: String(k.symbol || ''), name: String(k.name || ''), contract: String(k.contract || '') }
+    const token = {
+        symbol: String(k.symbol || ''), name: String(k.name || ''), contract: String(k.contract || ''),
+        // Host einer Seite, die eine kuratierte Quelle (CoinGecko) dem Coin zuordnet.
+        seiteBelegt: k.seiteBelegt ? hostVon(k.seiteBelegt) : '',
+    }
     // Die Frühphase weiss es genauer (Kurve, Quelle, Handelsplatz) — die Endung „pump" trägt nur jeder vierte nicht.
     const istPump = k.chain === 'solana' && (k.pump === true || /pump$/i.test(String(k.contract || '')))
 
@@ -256,7 +261,8 @@ async function pruefeFrisch(kandidat) {
     kanaele.github = ghLink
     const github = ghLink ? await pruefeGithub(ghLink) : null
     if (github) {
-        github.beleg = githubBeleg(github, {
+        // Von einer kuratierten Quelle (CoinGecko) als Repository des Coins geführt: ebenfalls belegt.
+        github.beleg = (k.githubBelegt === true && !ghSeite) || githubBeleg(github, {
             vonSeite: Boolean(ghSeite), contract: token.contract, seitenHost: beleg.eigen ? webseite.host : '',
         })
     }
