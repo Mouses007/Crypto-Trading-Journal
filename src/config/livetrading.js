@@ -46,6 +46,7 @@ import { baueKachelListe, macheSortierer } from './kachel-registry.js'
  */
 export const STANDARD_REIHENFOLGE = [
     'bookmap', 'hebelkarte',
+    'kompakt', 'momentum',
     'handelslage',
     'mechanik', 'liqticker', 'positionen',
     'coinradar', 'lsoi', 'indizes', 'funding',
@@ -53,7 +54,53 @@ export const STANDARD_REIHENFOLGE = [
     'lage',
 ]
 
+/**
+ * Was die Kompakt-Kachel zusammenfasst. Diese Kacheln bleiben einzeln
+ * zuschaltbar, starten aber ausgeblendet (`Livetrading.vue`), und ihre Daten
+ * werden geholt, solange die Kompakt-Kachel sichtbar ist.
+ */
+export const KOMPAKT_QUELLEN = [
+    'positionen', 'handelszeiten', 'kalender', 'mechanik', 'liqticker',
+    'lsoi', 'funding', 'indizes', 'makro', 'coinradar', 'handelslage', 'lage',
+]
+
 const DEFINITIONEN = [
+    {
+        /*
+         * Die Nebenkacheln als je eine Zeile. Holt nichts selbst (`endpunkt:
+         * null`), die Seite reicht die Nutzlasten der Quellen durch. Ein Klick
+         * auf eine Zeile öffnet die volle Kachel in der Gross-Ansicht.
+         */
+        id: 'kompakt',
+        titleKey: 'livetrading.kompakt.title',
+        icon: 'uil uil-list-ul',
+        endpunkt: null,
+        intervallMs: Infinity,
+        // Eine Spalte: so steht sie neben dem Momentum Radar, und lange
+        // Zeilen kürzen sich mit „…" statt die Kachel zu verbreitern.
+        spalten: 1,
+        hoehe: 380,
+        // Die Gross-Ansicht wäre dieselbe Liste, nur breiter
+        gross: false,
+        quelle: 'die übrigen Kacheln dieser Seite',
+    },
+    {
+        /*
+         * Mo's Momentum Radar (Pine) als Kachel. Rechnet auf dem Server über
+         * sechs Zeitebenen, nur auf geschlossenen Kerzen. 60 s reichen: die
+         * kleinste Zeitebene ist 5m, und vor ihrem Schluss ändert sich nichts.
+         */
+        id: 'momentum',
+        titleKey: 'livetrading.momentum.title',
+        icon: 'uil uil-heartbeat',
+        endpunkt: '/api/livetrading/momentum',
+        params: { tf: '15m' },
+        symbolAbhaengig: true,
+        intervallMs: 60 * 1000,
+        spalten: 2,
+        hoehe: 380,
+        quelle: 'Binance-Kerzen (Futures + Spot) · Rechnung nach Mo\'s Momentum Radar',
+    },
     {
         id: 'handelszeiten',
         titleKey: 'livetrading.handelszeiten.title',

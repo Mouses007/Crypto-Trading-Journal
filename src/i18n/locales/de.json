@@ -3335,6 +3335,10 @@
         {
           "h": "GESAMTLAGE (KI)",
           "p": "Dieselbe KI-Kachel wie im Marktradar: sie liest den aktuellen Stand der übrigen Kacheln und ordnet ihn ein. Erzeugt wird ausschliesslich per Knopf — der Drei-Sekunden-Takt löst keine KI-Anfrage aus, sonst würde jede Sitzung ein Vermögen kosten."
+        },
+        {
+          "h": "KOMPAKT & MOMENTUM RADAR",
+          "p": "Die Kompakt-Kachel fasst die Nebenkacheln (Sitzung, Handelszeiten, Termine, Mechanik, Liquidationen, Long/Short, Funding, Indizes, Coin-Radar, Handelslage, Gesamtlage) als je eine Zeile zusammen; ein Klick öffnet die volle Kachel, und die Einzelkacheln bleiben unter „Kacheln“ zuschaltbar. Die Automatik der Handelslage läuft nur, solange deren eigene Kachel sichtbar ist. Der Momentum Radar ist Mo's Pine-Indikator als Kachel: Welle, Geldfluss, Punkte und Schienen der gewählten Zeitebene (5m–4h) und darunter das Panel mit Status, SWING/DAY-Setup, Spot gegen Futures, VWAP und 4h-Struktur — gerechnet nur auf geschlossenen Kerzen."
         }
       ],
       "caveat": "Die Zahlen der Fremdquellen (Indizes, Funding, Kalender) versprechen nichts und können veralten — der Punkt in der Kachel sagt, wie frisch sie sind. Die Hebelkarte ist ein Modell, kein Messwert. Diese Seite ist Werkzeug, kein Signalgeber: den Auslöser liefert weiterhin deine Strategie."
@@ -4132,6 +4136,69 @@
     },
     "hebelkarte": {
       "info": "Modell, wo gehebelte Positionen liquidiert würden — eine Landkarte der Stopps der Gegenseite.\nCluster von Liquidationspreisen wirken oft wie ein Magnet: der Kurs steuert sie an, weil ihr Auslösen selbst neue Bewegung erzeugt."
+    },
+    "kompakt": {
+      "title": "Kompakt",
+      "info": "Die Nebenkacheln dieser Seite als je eine Zeile: Sitzung, Handelszeit, nächster Termin, Mechanik, Liquidationen, Long/Short, Funding, Indizes, Coin-Radar und die beiden KI-Einordnungen.\nDieselben Daten wie die Einzelkacheln, die dafür im Hintergrund weiterlaufen. Ein Klick auf eine Zeile öffnet die volle Kachel; die Einzelkacheln lassen sich unter „Kacheln“ jederzeit wieder einblenden.",
+      "sitzung": "Sitzung",
+      "real": "real.",
+      "offen": "{n} offen",
+      "trades": "{n} Trades",
+      "budget": "Verbrauchtes Verlustbudget der Sitzung",
+      "zeit": "Zeit",
+      "in": "in {zeit}",
+      "termin": "Termin",
+      "keinTermin": "keine wichtigen Termine in {h} h",
+      "mechanik": "Mechanik",
+      "preis": "Preis",
+      "liq": "Liq live",
+      "liqAus": "Aufzeichnung aus",
+      "ereignisse": "{n} Ereignisse",
+      "lsoi": "Long/Short",
+      "funding": "Funding",
+      "indizes": "Indizes",
+      "coinradar": "Coin-Radar",
+      "handelslage": "Handelslage",
+      "einordnen": "noch nicht eingeordnet — öffnen",
+      "gesamtlage": "Gesamtlage"
+    },
+    "momentum": {
+      "title": "Momentum Radar",
+      "info": "Mo's Momentum Radar als Kachel: eine WaveTrend-Welle auf sechs Zeitebenen, gegengeprüft mit dem volumengewichteten Geldfluss.\nOben der Verlauf der gewählten Zeitebene (Punkte = Signale, gross = die höheren Zeitebenen stützen, Raute = Extremwert, Schienen = Signale der höheren Zeitebenen, unten die 4h-Farbleiste). Darunter das Panel: Zustand je Zeitebene, SWING- und DAY-Setup, Herkunft des Volumens (Spot gegen Futures), VWAP und 4h-Struktur.\nGerechnet wird nur auf geschlossenen Kerzen. Der Radar sagt WANN, nicht WO — das Level kommt vom VWAP.",
+      "welle": "Welle",
+      "fluss": "Geldfluss",
+      "status_long": "LONG SUCHEN",
+      "status_short": "SHORT SUCHEN",
+      "status_warten": "ABWARTEN",
+      "modus_day": "Day",
+      "modus_swing": "Swing",
+      "setup_long": "Long Setup",
+      "setup_short": "Short Setup",
+      "setup_kein": "kein Setup",
+      "zustand_long": "Long-Zone",
+      "zustand_fastLong": "fast Long",
+      "zustand_neutral": "neutral",
+      "zustand_fastShort": "fast Short",
+      "zustand_short": "Short-Zone",
+      "herkunft": "Herkunft",
+      "herkunft_futures": "Futures ungewöhnlich hoch",
+      "herkunft_spot": "Spot ungewöhnlich hoch",
+      "herkunft_normal": "normale Aufteilung",
+      "herkunft_keinSpot": "kein Spotmarkt unter diesem Symbol",
+      "herkunft_unbekannt": "noch zu wenig Kerzen für ein Urteil",
+      "keinBruch": "noch kein Bruch",
+      "vorKerzen": "vor {n} Kerzen",
+      "zaehlt": "zählt für die Punktstärke",
+      "letzterPunkt": "Letzter Punkt",
+      "stark": "stark",
+      "struktur": "Struktur",
+      "legende_punkte": "PUNKTE: grün = Long suchen, rot = Short suchen. Gross = mindestens 60 % der mitzählenden höheren Zeitebenen plus Geldfluss stimmen zu. Orange Raute = Extremwert jenseits ±100, ausgereizt, kein Einstieg.",
+      "legende_flaeche": "FLÄCHE = GELDFLUSS: grün rein, rot raus, violett = nur die Futures treiben, die Bewegung läuft auf Hebel. Steigt sie, während der Kurs fällt, sammelt jemand ein.",
+      "legende_spot": "WEISSE LINIE = Spotmarkt. Unter der Fläche: die Futures sind vorausgelaufen. Darüber: Spot kauft stärker als die Perps. Laufen beide zusammen, trägt die Bewegung.",
+      "legende_schienen": "SCHIENEN (oben Short, unten Long): Signale der HÖHEREN Zeitebenen — 1h orange und klein, 4h violett, Tag weiss, Woche gelb und gross. Ganz unten die Farbleiste: Geldfluss der letzten geschlossenen 4h-Kerze.",
+      "legende_linien": "LINIEN: Divergenz der gewählten Zeitebene — der Preis macht ein neues Extrem, die Welle nicht mehr. Nachlassende Kraft, kein Wendepunkt.",
+      "legende_kopf": "KOPFZEILE: der Status. Bis 15m gilt DAY (15m und 5m müssen übereinstimmen), darüber SWING (Tag/4h/1h). Steht dort ABWARTEN, machst du nichts.",
+      "legende_wann": "Gerechnet wird nur auf geschlossenen Kerzen, auch auf der gewählten Zeitebene — keine Vorschau-Kreise, nichts, was bis zum Kerzenschluss noch kippen kann."
     }
   },
   "liveSessions": {

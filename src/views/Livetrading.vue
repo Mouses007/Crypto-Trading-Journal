@@ -16,7 +16,7 @@
  * Deep-Links sind die Einstellungen unter Umständen noch nicht geladen, und
  * ein Router-Guard würde dann fälschlich umleiten.
  */
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import PageInfo from '../components/PageInfo.vue'
@@ -39,6 +39,8 @@ import KachelHebelkarte from '../components/radar/KachelHebelkarte.vue'
 import KachelLage from '../components/radar/KachelLage.vue'
 import KachelHandelslage from '../components/radar/KachelHandelslage.vue'
 import KachelCoinRadar from '../components/radar/KachelCoinRadar.vue'
+import KachelKompakt from '../components/radar/KachelKompakt.vue'
+import KachelMomentum from '../components/radar/KachelMomentum.vue'
 import BookmapKopf from '../components/radar/kopf/BookmapKopf.vue'
 import LiqkarteKopf from '../components/radar/kopf/LiqkarteKopf.vue'
 import { liveSymbol } from '../stores/live.js'
@@ -49,7 +51,7 @@ import { speichereCockpitFoto } from '../utils/cockpitFoto.js'
 import { kopiertesBild } from '../stores/ui.js'
 import { aktiveSitzung, merkeSymbol, protokolliere } from '../stores/livetrading.js'
 import PultAnsicht from '../components/livetrading/PultAnsicht.vue'
-import { KACHELN, sortiereKacheln } from '../config/livetrading.js'
+import { KACHELN, sortiereKacheln, KOMPAKT_QUELLEN } from '../config/livetrading.js'
 import { PULT_KACHELN } from '../config/pult.js'
 import { useKachelRaster } from '../composables/useKachelRaster.js'
 
@@ -74,6 +76,8 @@ const KOMPONENTEN = {
     indizes: KachelIndizes,
     funding: KachelFunding,
     coinradar: KachelCoinRadar,
+    kompakt: KachelKompakt,
+    momentum: KachelMomentum,
     lsoi: KachelLsOi,
     makro: KachelMakro,
     bookmap: KachelBookmap,
@@ -148,7 +152,37 @@ function waehleAnsicht(wert) {
  * den Grund. Im Raster bleibt die Liste leer, damit ausgeblendete Kacheln wie
  * bisher gar nicht erst geholt werden.
  */
-const immerLaden = computed(() => ansicht.value === 'pult' ? PULT_KACHELN : [])
+/*
+ * Die Kompakt-Kachel zeichnet die Daten der Kacheln, die sie zusammenfasst —
+ * die müssen also geholt werden, auch wenn sie selbst ausgeblendet sind.
+ * `kompaktSichtbar` wird erst nach dem Composable gesetzt (dort entsteht
+ * `isVisible`), deshalb hier ein eigener Ref statt eines direkten Aufrufs.
+ */
+const kompaktSichtbar = ref(false)
+const immerLaden = computed(() => {
+    if (ansicht.value === 'pult') return PULT_KACHELN
+    return kompaktSichtbar.value ? KOMPAKT_QUELLEN : []
+})
+
+/*
+ * Einmalige Umstellung auf die Kompakt-Kachel: die zusammengefassten Kacheln
+ * werden ausgeblendet, die beiden neuen sichtbar. Läuft genau einmal je Gerät
+ * (Merker in localStorage) und VOR dem Composable, das die Sichtbarkeit beim
+ * Start liest. Alles bleibt im Kachel-Menü einzeln zuschaltbar — wer eine
+ * Kachel danach wieder einblendet, behält sie.
+ */
+const KOMPAKT_MERKER = 'livetrading_kompakt_v1'
+try {
+    if (!localStorage.getItem(KOMPAKT_MERKER)) {
+        const roh = JSON.parse(localStorage.getItem('livetrading_hidden_cards') || 'null')
+        const versteckt = new Set(Array.isArray(roh) ? roh : ['lage'])
+        for (const id of KOMPAKT_QUELLEN) versteckt.add(id)
+        versteckt.delete('kompakt')
+        versteckt.delete('momentum')
+        localStorage.setItem('livetrading_hidden_cards', JSON.stringify([...versteckt]))
+        localStorage.setItem(KOMPAKT_MERKER, '1')
+    }
+} catch { /* gesperrter Speicher: dann eben die bisherige Aufstellung */ }
 
 const {
     gridEl, daten, zustand, stand, fehler, kachelParams,
@@ -181,6 +215,23 @@ const {
     standardVersteckt: ['lage'],
     immerLaden,
 })
+
+watchEffect(() => { kompaktSichtbar.value = isVisible('kompakt') })
+
+/**
+ * Aktualisieren im Kachelkopf. Die Kompakt-Kachel hat keinen eigenen Abruf —
+ * bei ihr heisst „aktualisieren", alle zusammengefassten Quellen neu zu holen.
+ */
+function neuLaden(id) {
+    if (id !== 'kompakt') return ladeKachel(id, true)
+    for (const q of KOMPAKT_QUELLEN) ladeKachel(q, true)
+}
+
+/** Zeile der Kompakt-Kachel angeklickt → die volle Kachel gross zeigen. */
+function oeffneQuelle(id) {
+    offeneKachel.value = id
+    if (!daten[id]) ladeKachel(id, true)
+}
 
 /**
  * Startet oder endet eine Sitzung, muss die Positionen-Kachel sofort neu
@@ -416,7 +467,7 @@ const interaktiv = (kachel) => kachel.gross === false
                 <RadarKachel :titel="t(kachel.titleKey)" :icon="kachel.icon" :info-key="kachel.infoKey" :zustand="zustand[kachel.id] || 'idle'"
                     :stand="stand[kachel.id] || 0" :fehler="fehler[kachel.id] || ''" :hat-daten="!!daten[kachel.id]"
                     :eigenstaendig="eigenstaendig(kachel)" :interaktiv="interaktiv(kachel)"
-                    @gross="offeneKachel = kachel.id" @neuladen="ladeKachel(kachel.id, true)"
+                    @gross="offeneKachel = kachel.id" @neuladen="neuLaden(kachel.id)"
                     @groesse-start="starteGroesse(kachel, $event)" @groesse-zurueck="setzeGroesseZurueck(kachel)">
                     <!-- Regler in der Kopfzeile: dieselben `params` wie der
                          Körper, damit beide Seiten denselben Wert sehen. -->
@@ -429,6 +480,8 @@ const interaktiv = (kachel) => kachel.gross === false
                          Stand sehen. -->
                     <component :is="KOMPONENTEN[kachel.id]" :daten="daten[kachel.id]" :gross="false"
                         :params="kachelParams[kachel.id] || {}"
+                        v-bind="kachel.id === 'kompakt' ? { quellen: daten } : {}"
+                        @oeffne="oeffneQuelle"
                         @params="setzeParams(kachel.id, $event)"
                         @anzeige="setzeAnzeige(kachel.id, $event)"
                         @zustand="(z, extra) => setzeKachelZustand(kachel.id, z, extra)"

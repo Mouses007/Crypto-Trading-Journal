@@ -1,12 +1,13 @@
 /**
  * Endpunkte des Live-Trading-Fensters.
  *
- * Vier Kacheln brauchen Daten, die es sonst nirgends gibt:
+ * Fünf Kacheln brauchen Daten, die es sonst nirgends gibt:
  *
  *   /indizes           Intraday-Kerzen von ES, NQ und DXY (Yahoo, ohne Schlüssel)
  *   /kalender-countdown Nur die Termine der nächsten Stunden, mit Restzeit
  *   /liq-ticker        Liquidationen der letzten Minuten aus dem Arbeitsspeicher
  *   /session-stand     Offene Positionen und die P&L der laufenden Sitzung
+ *   /momentum          Mo's Momentum Radar auf sechs Zeitebenen (`momentum-radar.js`)
  *
  * Alle liefern die Form `{stand, veraltet, hinweis?, …}` und laufen über
  * `ausCache` aus `marktradar-api.js` — damit teilen sich alle offenen Fenster
@@ -22,6 +23,8 @@ import { getDecryptedConfig, getPendingPositions, getHistoryPositions } from './
 import { getKnex } from './database.js'
 import { logWarn } from './logger.js'
 import { berechneSitzung } from './sitzung-rechnung.js'
+import { getClosedCandles } from './market-data.js'
+import { werteAus as werteMomentumAus, CHART_ZEITEBENEN } from './momentum-radar.js'
 
 /**
  * Liest ALLE geschlossenen Positionen im Fenster, nicht nur die erste Seite.
@@ -443,6 +446,43 @@ export function setupLivetradingRoutes(app) {
      * DB-Abruf hinkte also nach. Die kurze TTL ist nur dafür da, dass mehrere
      * Tabs nicht jede Sekunde dieselbe Rechnung anstossen.
      */
+    /**
+     * Momentum Radar — Mo's Pine-Indikator als Kachel.
+     *
+     * Geholt wird je Zeitebene über `getClosedCandles`: der Kerzenspeicher dort
+     * hält eine Reihe bis zur nächsten Kerze, ein 5-Minuten-Takt der Kachel
+     * kostet also nur die Zeitebenen, deren Kerze gerade geschlossen hat. Die
+     * 1h-Reihe ist länger (1000), weil der Monats-VWAP bis zu 31 Tage zurück
+     * braucht. Spot nur für die Chart-Zeitebene, und sein Ausfall ist kein
+     * Fehler: viele Perps (1000PEPE, …) haben gar keinen Spotmarkt unter
+     * demselben Namen — dann fehlt eben die Herkunft.
+     */
+    app.get('/api/livetrading/momentum', async (req, res) => {
+        try {
+            const symbol = String(req.query.symbol || 'BTCUSDT').toUpperCase()
+            if (!/^[A-Z0-9]{2,20}$/.test(symbol)) return res.status(400).json({ error: 'Ungültiges Symbol' })
+            const tf = CHART_ZEITEBENEN.includes(String(req.query.tf)) ? String(req.query.tf) : '15m'
+            const key = `lt_momentum|${symbol}|${tf}`
+            if (req.query.force) verwerfeCache(key)
+            const nutzlast = await ausCache(key, 30 * 1000, async () => {
+                const LIMIT = { '1w': 300, '1d': 500, '4h': 500, '1h': 1000, '15m': 500, '5m': 500 }
+                const eintraege = await Promise.all(Object.entries(LIMIT).map(async ([z, n]) =>
+                    [z, await getClosedCandles(symbol, z, n)]))
+                const kerzen = Object.fromEntries(eintraege)
+                let spot = null
+                try {
+                    spot = await getClosedCandles(symbol, tf, 500, { market: 'spot' })
+                } catch (e) {
+                    spot = null
+                }
+                return { symbol, ...werteMomentumAus({ kerzen, spot, chartTf: tf }), spotVerfuegbar: Boolean(spot?.length) }
+            })
+            sendeRadar(res, nutzlast)
+        } catch (e) {
+            sendRadarError(res, e, 'Momentum Radar')
+        }
+    })
+
     app.get('/api/livetrading/liq-ticker', async (req, res) => {
         try {
             const minuten = Math.max(1, Math.min(30, Number(req.query.minuten) || 15))
