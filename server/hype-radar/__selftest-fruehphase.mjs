@@ -11,7 +11,7 @@ import { ausRugCheck } from './sicherheit.js'
 import {
     erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen, risikoFrueh,
     kaeufeAusTransaktion, handelAusTransaktion, smartSignale, smartWalletListe, risikoUnpruefbar, meldefaehig, hatMessung, verteilePlaetze, istDuenn, kandidatStatus, belastbarkeit,
-    RENT_KONTO_LAMPORTS, MIN_KAUF_LAMPORTS,
+    RENT_KONTO_LAMPORTS, MIN_KAUF_LAMPORTS, tokenGeburt,
     MAX_VERLAUF, REIF, X_MIN_AUTOREN_NEU, MAX_ALTER_STUNDEN, MIN_TEILNOTEN_MELDUNG, STILL_MIN, MIN_TX_AKTIV, KANDIDAT_AB,
 } from './fruehphase-bewertung.js'
 
@@ -346,6 +346,22 @@ const stand = (ts, o = {}) => ({ ts, mcap: null, liq: null, preis: null, vol1h: 
     p('älter als drei Tage: verworfen, Grund „alt"', statusFrueh({ liq: 80000, mcap: 1 }, MAX_ALTER_STUNDEN + 1, []).grund === 'alt')
     p('genau drei Tage: noch dabei', statusFrueh({ liq: 80000, mcap: 1 }, MAX_ALTER_STUNDEN, []).status === 'reif')
     p('Vertrag geht vor Alter', statusFrueh({ liq: 1, mcap: 1 }, 500, [{ schluessel: 'sicherheitKo' }]).grund === 'sicherheit')
+}
+
+// ── Alter = frühester bekannter Start, nicht der neueste Pool ────────────
+{
+    const jetzt = Date.UTC(2026, 9, 11, 12)
+    const h = 3600e3
+    // PEPE (11.10.2026): neuer Pool vor 27 min, Hauptpaar seit 2023
+    const pepe = tokenGeburt({ erstelltAm: jetzt - 27 * 60e3, paarStarts: [Date.UTC(2023, 3, 17)] })
+    p('neuer Pool eines alten Tokens: das alte Paar zählt', pepe === Date.UTC(2023, 3, 17))
+    p('… und das ist zu alt für die Frühphase', (jetzt - pepe) / h > MAX_ALTER_STUNDEN)
+    // Gegenprobe: ein wirklich junger Token bleibt jung
+    p('junger Token: pump.fun-Start vor dem ersten Pool gilt', tokenGeburt({ erstelltAm: jetzt - 2 * h, paarStarts: [jetzt - 1 * h] }) === jetzt - 2 * h)
+    p('nur ein Pool bekannt: dessen Anlage', tokenGeburt({ erstelltAm: jetzt - 40 * 60e3 }) === jetzt - 40 * 60e3)
+    p('gespeicherter früherer Wert bleibt', tokenGeburt({ erstelltAm: jetzt - h, bekannt: jetzt - 30 * h }) === jetzt - 30 * h)
+    p('nichts bekannt: null, nicht jetzt', tokenGeburt({}) === null)
+    p('0 und Sekunden statt ms sind kein Datum', tokenGeburt({ erstelltAm: 0, paarStarts: [1_700_000_000, NaN], bekannt: jetzt - h }) === jetzt - h)
 }
 
 // ── Inszenierung ────────────────────────────────────────────────────────

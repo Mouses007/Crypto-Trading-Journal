@@ -45,7 +45,7 @@ import { sucheXErwaehnungen } from '../news-recherche.js'
 import { ladeLlmConfig, merkeKiGuthaben, istGuthabenFehler } from '../llm.js'
 import {
     erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen, risikoFrueh,
-    risikoUnpruefbar, meldefaehig, hatMessung, verteilePlaetze, MAX_ALTER_STUNDEN,
+    risikoUnpruefbar, meldefaehig, hatMessung, verteilePlaetze, MAX_ALTER_STUNDEN, tokenGeburt,
 } from './fruehphase-bewertung.js'
 import { ausRugCheck, holeGoPlus } from './sicherheit.js'
 import { ladeListungen, pruefeListung } from './listungen.js'
@@ -382,10 +382,15 @@ async function geckoMarkt(eintraege) {
                 for (const t of Array.isArray(j?.data) ? j.data : []) {
                     const adresse = String(t?.attributes?.address || '').toLowerCase()
                     // Der erste der Hauptpools ist der liquideste — dort findet der Handel statt.
-                    const pool = (t?.relationships?.top_pools?.data || []).map((r) => pools.get(r.id)).find(Boolean)
+                    const alle = (t?.relationships?.top_pools?.data || []).map((r) => pools.get(r.id)).filter(Boolean)
+                    const pool = alle[0]
+                    // Der älteste der Hauptpools: der Token ist mindestens so alt (`tokenGeburt`).
+                    const starts = alle.map((p) => Date.parse(p?.attributes?.pool_created_at || '')).filter(Number.isFinite)
+                    const aeltesterPoolAm = starts.length ? Math.min(...starts) : null
                     const h1 = pool?.attributes?.transactions?.h1 || null
-                    if (!adresse || !h1) continue
-                    karte.set(adresse, geckoFenster(h1))
+                    if (!adresse) continue
+                    if (!h1 && !aeltesterPoolAm) continue
+                    karte.set(adresse, { markt: h1 ? geckoFenster(h1) : {}, aeltesterPoolAm })
                 }
             } catch (e) {
                 gescheitert++
@@ -735,6 +740,7 @@ async function fruehLaufIntern(einst) {
         if (!x.symbol && d.symbol) x.symbol = d.symbol
         if (!x.name && d.name) x.name = d.name
         if (!x.links && d.markt?.links) x.links = d.markt.links
+        if (Number.isFinite(d.markt?.paarAlterStunden)) x.paarStarts = [...(x.paarStarts || []), jetzt - d.markt.paarAlterStunden * 3600e3]
         for (const [f, w] of Object.entries(d.markt || {})) {
             if (w === null || w === undefined) continue
             // Eine 0 bei der Bewertung ist ein fehlendes Feld, kein Vorrang.
@@ -750,7 +756,8 @@ async function fruehLaufIntern(einst) {
         if (!g) continue
         // Ersetzt auch, was `new_pools` oder DexScreener gesetzt hat: Wallets und
         // Transaktionen sollen aus demselben, frischen Abruf desselben Pools stammen.
-        for (const [f, w] of Object.entries(g)) if (w !== null && w !== undefined) x.markt[f] = w
+        for (const [f, w] of Object.entries(g.markt)) if (w !== null && w !== undefined) x.markt[f] = w
+        if (g.aeltesterPoolAm) x.paarStarts = [...(x.paarStarts || []), g.aeltesterPoolAm]
     }
     if (gecko.versucht) {
         /*
@@ -759,8 +766,10 @@ async function fruehLaufIntern(einst) {
          * Tages fehlten so die Käufer für 90 von 140 Token, unsichtbar.
          */
         const teilweise = gecko.gescheitert ? `${gecko.gescheitert} von ${gecko.versucht} Abfragen gescheitert — ${gecko.fehler}` : ''
-        quellenStand.kaeufer = gecko.karte.size || !gecko.fehler
-            ? { ok: true, anzahl: gecko.karte.size, von: gecko.gefragt, fehler: teilweise }
+        // Gezählt wird, wofür Käufer kamen — ein Eintrag kann auch nur das Poolalter tragen.
+        const mitKaeufern = [...gecko.karte.values()].filter((g) => Object.keys(g.markt).length).length
+        quellenStand.kaeufer = mitKaeufern || !gecko.fehler
+            ? { ok: true, anzahl: mitKaeufern, von: gecko.gefragt, fehler: teilweise }
             : { ok: false, fehler: gecko.fehler }
     }
 
@@ -789,13 +798,18 @@ async function fruehLaufIntern(einst) {
         /*
          * Das Alter steht vor der Bewertung fest, weil sie es braucht: die
          * Stundenzahlen eines Tokens unter einer Stunde decken nur sein Alter
-         * ab. Start von pump.fun oder GeckoTerminal, sonst das Paaralter von
-         * DexScreener, sonst der letzte bekannte Wert. Für den Status zählt
-         * notfalls der erste Blick — das unterschätzt das Alter, nie umgekehrt.
+         * ab. Der FRÜHESTE bekannte Start (`tokenGeburt`): pump.fun bzw. der
+         * neue Pool, das DexScreener-Paar, der älteste GeckoTerminal-Hauptpool,
+         * der letzte gespeicherte Wert. Ein neuer Pool allein machte PEPE und
+         * POL zu Minuten alten Token. Für den Status zählt notfalls der erste
+         * Blick — das unterschätzt das Alter, nie umgekehrt.
          */
-        const geborenAm = x.erstelltAm
-            || (Number.isFinite(x.markt.paarAlterStunden) ? jetzt - x.markt.paarAlterStunden * 3600e3 : null)
-            || Number(altStand.geborenAm) || null
+        const geborenAm = tokenGeburt({
+            erstelltAm: x.erstelltAm,
+            paarStarts: [...(x.paarStarts || []),
+                ...(Number.isFinite(x.markt.paarAlterStunden) ? [jetzt - x.markt.paarAlterStunden * 3600e3] : [])],
+            bekannt: Number(altStand.geborenAm) || null,
+        })
         const alterStunden = (jetzt - (geborenAm || Number(alt?.ersterBlick) || jetzt)) / 3600e3
         // Älter als drei Tage ist kein Frühphasen-Fund: neu gar nicht erst anlegen.
         // Ein bekannter wird unten verworfen (`statusFrueh`, Grund „alt").

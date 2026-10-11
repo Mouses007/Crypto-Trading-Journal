@@ -1058,6 +1058,31 @@ export function kandidatStatus(z, { letzterLauf = 0, schwelle = KANDIDAT_AB, pro
     return { ja: true, grund: '' }
 }
 
+/** Was davor liegt, ist ein Lesefehler (0, Sekunden statt Millisekunden), kein Datum. */
+export const FRUEHESTER_SINNVOLLER_START = Date.UTC(2015, 0, 1)
+
+/**
+ * Wann ein Token entstanden ist — der FRÜHESTE bekannte Zeitpunkt.
+ *
+ * Ein Token ist mindestens so alt wie sein ältester Pool, nie jünger. Bis
+ * 11.10.2026 hatte das Anlagedatum aus GeckoTerminals `new_pools` Vorrang vor
+ * allem anderen; legte jemand einen neuen Pool für PEPE oder POL an, war der
+ * Token „27 Minuten" alt, kam als Kandidat in die Frühphase und trug dort eine
+ * Bewertung von 1,6 Mrd. USD. Ein neuer Pool ist ein neuer Handelsplatz, keine
+ * Geburt.
+ *
+ * @param {object} q
+ * @param {number|null} q.erstelltAm  Token-Start (pump.fun) oder Pool-Anlage (`new_pools`)
+ * @param {number[]}    q.paarStarts  Anlage weiterer Paare/Pools (DexScreener, GeckoTerminal-Hauptpools)
+ * @param {number|null} q.bekannt     zuletzt gespeicherter Wert
+ * @returns {number|null} ms, null wenn nichts bekannt
+ */
+export function tokenGeburt({ erstelltAm = null, paarStarts = [], bekannt = null } = {}) {
+    const zeiten = [erstelltAm, ...(paarStarts || []), bekannt]
+        .map(Number).filter((t) => Number.isFinite(t) && t > FRUEHESTER_SINNVOLLER_START)
+    return zeiten.length ? Math.min(...zeiten) : null
+}
+
 /**
  * Status in der Frühphase.
  *
