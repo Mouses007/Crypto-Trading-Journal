@@ -4558,6 +4558,12 @@
     "ladeFehler": "Could not load the flashcards."
   },
   "hypeFrueh": {
+    "tiefeHinweis": "Check contract, holders and project afresh — free, takes up to half a minute.",
+    "ausgeblendetZeigen": "{n} hidden — show",
+    "alleAusgeblendet": "All candidates hidden. A token returns as soon as its score rises.",
+    "karteAuf": "Expand",
+    "karteZu": "Collapse",
+    "karteWeg": "Hide until the score rises",
     "taktAus": "Interval off — runs by hand only (switch on via the gear above)",
     "taktAn": "watching every {n} min",
     "letzter": "last run {z}",

@@ -150,3 +150,59 @@ export async function tiefensuche(symbol, schluessel = '') {
         geprueftAm: Date.now(),
     }
 }
+
+/**
+ * Tiefensuche für einen Vertrag statt eines Symbols — für Token, die nicht
+ * bei CoinGecko stehen: Frühphasen-Funde, auf die ein Alarm zeigt, oft längst
+ * aus der Beobachtung gefallen. Dieselbe Antwortform wie `tiefensuche`, damit
+ * die Anzeige beide gleich liest.
+ *
+ * Name, Bild und Links kommen hier von DexScreener statt von CoinGecko. Die
+ * Webseite gilt deshalb NICHT als belegt (`seiteBelegt` bleibt leer): auf
+ * DexScreener kann jeder Herausgeber eintragen, was er will — genau das prüft
+ * die Projektprüfung erst.
+ */
+export async function tiefensucheVertrag(chain, contract) {
+    const c = String(contract || '').trim()
+    if (!c) return { gefunden: false, symbol: '' }
+    const d = await dexDetails(c).catch(() => null)
+    const kette = normChain(chain || d?.chain || '')
+    const m = d?.markt || {}
+    if (!d && !kette) return { gefunden: false, symbol: '' }
+    const pruefbar = PRUEFBARE_KETTEN.includes(kette)
+    const gewaehlt = pruefbar ? { chain: kette, contract: c } : null
+
+    let risiko = null
+    let risikoFehler = ''
+    if (gewaehlt) {
+        try {
+            const roh = await holeRisiko(kette, c)
+            risiko = roh ? risikoFrueh(roh) : null
+            if (!roh) risikoFehler = 'Kein Prüfdienst kennt diesen Vertrag'
+        } catch (e) {
+            risikoFehler = String(e.message || e).slice(0, 120)
+        }
+    }
+
+    let projekt = null
+    try {
+        projekt = kurzfassung(await pruefeProjekt({
+            symbol: d?.symbol || '', name: d?.name || '', chain: kette, contract: c,
+            links: m.links || { webseiten: [], kanaele: [] },
+        }))
+    } catch { /* ohne Projektprüfung: der Rest gilt */ }
+
+    return {
+        gefunden: true,
+        coin: { name: d?.name || '', symbol: d?.symbol || '', bild: m.bild || '' },
+        vertraege: [{
+            chain: kette, contract: c, pruefbar,
+            liquiditaetUsd: m.liquiditaetUsd ?? null, volumen24h: m.volumen24h ?? null, dex: m.dex || '', url: d?.url || '',
+        }],
+        gewaehlt,
+        risiko,
+        risikoFehler,
+        projekt,
+        geprueftAm: Date.now(),
+    }
+}

@@ -34,11 +34,22 @@
                     <a v-if="/pump$/i.test(fokusFehlt.contract)" :href="'https://pump.fun/coin/' + encodeURIComponent(fokusFehlt.contract)"
                         target="_blank" rel="noopener noreferrer">pump.fun ↗</a>
                 </span>
-                <button type="button" class="fpFokusZu" :title="t('hypeFrueh.fokusSchliessen')" @click="fokusFehlt = null">
+                <button type="button" class="fpFokusZu" :title="t('hypeFrueh.fokusSchliessen')" @click="fokusFehlt = null; tiefe = null">
                     <i class="uil uil-times"></i>
                 </button>
             </div>
             <p class="fpGrau small mb-2">{{ t('hypeFrueh.fokusFehlt') }}</p>
+            <!-- Tiefensuche: Vertrag, Halter und Projekt des vergessenen Tokens,
+                 frisch geprüft — die Frühphase hat davon nichts mehr gespeichert. -->
+            <div class="fpTiefe">
+                <button type="button" class="ctl-pill klein" :disabled="tiefeLaeuft" @click="tiefensuche">
+                    <span v-if="tiefeLaeuft" class="spinner-border spinner-border-sm me-1"></span>
+                    <i v-else class="uil uil-search-plus me-1"></i>{{ t('coinradar.tsKnopf') }}
+                </button>
+                <span class="fpGrau small">{{ t('hypeFrueh.tiefeHinweis') }}</span>
+            </div>
+            <p v-if="tiefeFehler" class="small text-warning mb-0">{{ tiefeFehler }}</p>
+            <TiefensucheErgebnis v-if="tiefe && tiefe.contract === fokusFehlt.contract" :daten="tiefe.daten" class="mb-2" />
 
             <div v-if="fokusInfo === null" class="text-muted small"><span class="spinner-border spinner-border-sm"></span></div>
             <p v-else-if="fokusInfo.fehler" class="text-danger small">{{ fokusInfo.fehler }}</p>
@@ -131,11 +142,16 @@
                     <span class="fpBlockTitel"><i class="uil uil-bullseye me-1"></i>{{ t('hypeFrueh.kandidatenTitel') }}</span>
                     <span class="fpZahl">{{ daten.kandidaten.length }}</span>
                     <span class="fpGrau small">{{ t('hypeFrueh.kandidatenRegel', { n: daten.schwelle }) }}</span>
+                    <button v-if="ausgeblendetZahl" type="button" class="ctl-pill klein ms-auto" @click="ausgeblendetZeigen">
+                        <i class="uil uil-eye me-1"></i>{{ t('hypeFrueh.ausgeblendetZeigen', { n: ausgeblendetZahl }) }}
+                    </button>
                 </div>
                 <p v-if="!daten.kandidaten.length" class="fpGrau small mb-1">{{ t('hypeFrueh.kandidatenLeer') }}</p>
-                <div v-else class="fpKandidaten">
-                    <FruehKarte v-for="z in daten.kandidaten" :key="'k' + z.id" :z="z" @stern="sternUmschalten" />
+                <div v-else-if="sichtbareKandidaten.length" class="fpKandidaten">
+                    <FruehKarte v-for="z in sichtbareKandidaten" :key="'k' + z.id" :z="z" :zu="istZu(z.id)" schliessbar
+                        @stern="sternUmschalten" @zu="zuUmschalten(z.id)" @weg="ausblenden(z)" />
                 </div>
+                <p v-else class="fpGrau small mb-1">{{ t('hypeFrueh.alleAusgeblendet') }}</p>
                 <!-- Warum die Liste so kurz ist: die erste Bedingung, an der jeder Token scheitert. -->
                 <p v-if="trichterText" class="fpGrau small mt-2 mb-0">{{ trichterText }}</p>
             </section>
@@ -149,7 +165,7 @@
                 <p v-if="!daten.beobachtung.length" class="fpGrau small mb-0">{{ t('hypeFrueh.beobachtungLeer') }}</p>
                 <div v-else class="fpKandidaten">
                     <template v-for="b in daten.beobachtung" :key="'f' + b.favorit.id">
-                        <FruehKarte v-if="b.zeile" :z="b.zeile" @stern="sternUmschalten" />
+                        <FruehKarte v-if="b.zeile" :z="b.zeile" :zu="istZu(b.zeile.id)" @stern="sternUmschalten" @zu="zuUmschalten(b.zeile.id)" />
                         <FavoritKarte v-else :f="b.favorit" @stern="favoritEntfernen" />
                     </template>
                 </div>
@@ -328,6 +344,7 @@ import { ref, computed, watch, nextTick, onBeforeUnmount, h, defineComponent } f
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import ProjektPruefung from './ProjektPruefung.vue'
+import TiefensucheErgebnis from './TiefensucheErgebnis.vue'
 import { useIstTelefon } from '../../utils/geraet.js'
 import { logWarn } from '../../utils/logger.js'
 
@@ -566,6 +583,55 @@ async function ladeFokusInfo(contract) {
         if (fokusFehlt.value?.contract === contract) fokusInfo.value = { fehler: e.response?.data?.error || e.message }
     }
 }
+/** Tiefensuche für den vergessenen Token (dieselbe Prüfung wie im Coin-Radar, nach Vertrag). */
+const tiefe = ref(null)
+const tiefeLaeuft = ref(false)
+const tiefeFehler = ref('')
+async function tiefensuche() {
+    const contract = fokusFehlt.value?.contract
+    if (!contract || tiefeLaeuft.value) return
+    const chain = fokusInfo.value?.markt?.chain || fokusInfo.value?.gedaechtnis?.chain || ''
+    tiefeLaeuft.value = true
+    tiefeFehler.value = ''
+    try {
+        const { data } = await axios.get('/api/coin-radar/tiefensuche', { params: { contract, chain } })
+        tiefe.value = { contract, daten: data }
+    } catch (e) {
+        tiefeFehler.value = e.response?.data?.error || e.message
+    } finally {
+        tiefeLaeuft.value = false
+    }
+}
+
+/*
+ * Kandidaten-Karten einklappen und ausblenden. Beides merkt sich der Browser:
+ * eine Karte, die man gelesen hat, soll nicht bei jedem Abruf wieder offen
+ * dastehen. Ausgeblendet heisst „bis die Note steigt" — wird derselbe Token
+ * stärker, ist das neu und kommt zurück.
+ */
+const ZU_SCHLUESSEL = 'hypeFruehZu'
+const WEG_SCHLUESSEL = 'hypeFruehWeg'
+const lies = (k, leer) => { try { return JSON.parse(localStorage.getItem(k) || '') || leer } catch { return leer } }
+const schreib = (k, w) => { try { localStorage.setItem(k, JSON.stringify(w)) } catch { /* ohne Speicher gilt es nur für diese Sitzung */ } }
+const zugeklappt = ref(lies(ZU_SCHLUESSEL, []))
+const ausgeblendet = ref(lies(WEG_SCHLUESSEL, {}))
+const istZu = (id) => zugeklappt.value.includes(id)
+function zuUmschalten(id) {
+    zugeklappt.value = istZu(id) ? zugeklappt.value.filter((x) => x !== id) : [...zugeklappt.value, id].slice(-200)
+    schreib(ZU_SCHLUESSEL, zugeklappt.value)
+}
+function ausblenden(z) {
+    ausgeblendet.value = { ...ausgeblendet.value, [z.id]: Number(z.note) || 0 }
+    schreib(WEG_SCHLUESSEL, ausgeblendet.value)
+}
+const istWeg = (z) => z.id in ausgeblendet.value && Number(z.note) <= ausgeblendet.value[z.id]
+const sichtbareKandidaten = computed(() => (daten.value?.kandidaten || []).filter((z) => !istWeg(z)))
+const ausgeblendetZahl = computed(() => (daten.value?.kandidaten || []).filter(istWeg).length)
+function ausgeblendetZeigen() {
+    ausgeblendet.value = {}
+    schreib(WEG_SCHLUESSEL, {})
+}
+
 const fokusName = computed(() => fokusInfo.value?.markt?.symbol || fokusInfo.value?.gedaechtnis?.symbol
     || kurz(fokusFehlt.value?.contract))
 /**
@@ -866,13 +932,23 @@ function kennzahlKacheln(z) {
 
 /** Ein Kandidat (oder Favorit mit Frühphasen-Zeile), ausführlich. */
 const FruehKarte = defineComponent({
-    props: { z: { type: Object, required: true } },
-    emits: ['stern'],
+    props: {
+        z: { type: Object, required: true },
+        /** Eingeklappt: nur Kopf und Kennzahlen. */
+        zu: { type: Boolean, default: false },
+        /** Mit Schliessen-Knopf (Kandidaten; die Beobachtungsliste schliesst man über den Stern). */
+        schliessbar: { type: Boolean, default: false },
+    },
+    emits: ['stern', 'zu', 'weg'],
     setup(p, { emit: sende }) {
         return () => {
             const z = p.z
             const s = z.stand || {}
-            return h('div', { class: ['fpKandidat', { fpDuenn: z.duenn && !z.kandidat?.ja }] }, [
+            const knopf = (icon, titel, ereignis) => h('button', {
+                type: 'button', class: 'fpKartenKnopf', title: titel, 'aria-label': titel,
+                onClick: (ev) => { ev.stopPropagation(); sende(ereignis) },
+            }, [h('i', { class: ['uil', icon] })])
+            return h('div', { class: ['fpKandidat', { fpDuenn: z.duenn && !z.kandidat?.ja, fpZu: p.zu }] }, [
                 h('div', { class: 'fpKandidatKopf' }, [
                     h(SternKnopf, { z, onStern: (x) => sende('stern', x) }),
                     h('strong', { class: 'fpKandidatName' }, z.symbol || kurz(z.contract)),
@@ -885,12 +961,14 @@ const FruehKarte = defineComponent({
                         h('span', { class: ['fpNote', notenKlasse(z.note)] }, String(z.note)),
                         h('i', { class: ['uil fpTrend', trendIcon(s.trend)] }),
                     ]),
+                    knopf(p.zu ? 'uil-angle-down' : 'uil-angle-up', p.zu ? t('hypeFrueh.karteAuf') : t('hypeFrueh.karteZu'), 'zu'),
+                    p.schliessbar ? knopf('uil-times', t('hypeFrueh.karteWeg'), 'weg') : null,
                 ]),
                 // Nicht (mehr) Kandidat — z. B. in der Beobachtungsliste: warum.
                 !z.kandidat?.ja && warumNicht(z) ? h('div', { class: 'fpGrau small' }, warumNicht(z)) : null,
                 h('div', { class: 'fpKennzahlen' }, kennzahlKacheln(z)),
-                h(VerlaufDiagramm, { verlauf: z.verlauf }),
-                h(FruehDetail, { z }),
+                p.zu ? null : h(VerlaufDiagramm, { verlauf: z.verlauf }),
+                p.zu ? null : h(FruehDetail, { z }),
             ])
         }
     },
@@ -1085,28 +1163,45 @@ const sortiereBefunde = (b) => [...b].sort((x, y) => ['minus', 'plus', 'info'].i
     padding: .7rem .85rem;
     min-width: 0;
 }
-.fpKandidatKopf {
+:deep(.fpKandidatKopf) {
     display: flex;
     align-items: center;
     gap: .5rem;
     flex-wrap: wrap;
     margin-bottom: .35rem;
 }
-.fpKandidatName {
+:deep(.fpKandidatName) {
     font-size: 1.05rem;
 }
-.fpLangName {
+:deep(.fpLangName) {
     font-size: .851rem;
     max-width: 16rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.fpKandidatNote {
+:deep(.fpKandidatNote) {
     margin-left: auto;
     font-size: 1.25rem;
 }
-.fpKennzahlen {
+:deep(.fpKartenKnopf) {
+    background: none;
+    border: 1px solid var(--white-10, rgba(255, 255, 255, .12));
+    border-radius: 4px;
+    color: var(--grey-color, #9aa0a6);
+    padding: 0 .35rem;
+    line-height: 1.4;
+    font-size: 1rem;
+}
+:deep(.fpKartenKnopf:hover) { color: var(--white-87, #fff); }
+.fpTiefe {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+    margin-bottom: .5rem;
+}
+:deep(.fpKennzahlen) {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 7.5rem), 1fr));
     gap: .4rem;

@@ -19,7 +19,7 @@ import { KOPPLUNG_FEST, KOPPLUNG_LOSE, BTC_ZEITEINHEIT } from './coin-radar/btc-
 import { fuehreLaufAus } from './coin-radar/lauf.js'
 import { erzeugeEinordnung } from './coin-radar/einordnung.js'
 import { holeCoinInfo } from './coin-radar/coin-info.js'
-import { tiefensuche } from './coin-radar/tiefensuche.js'
+import { tiefensuche, tiefensucheVertrag } from './coin-radar/tiefensuche.js'
 import { pruefeEinzeln } from './coin-radar/einzel.js'
 import { leseSchluessel } from './hype-radar/einstellungen.js'
 import { legeAnCoinRadar, HORIZONTE } from './radar-ergebnisse.js'
@@ -189,6 +189,12 @@ export function setupCoinRadarRoutes(app) {
      */
     app.get('/api/coin-radar/tiefensuche', async (req, res) => {
         try {
+            // Nach Vertrag (Frühphasen-Token ohne CoinGecko-Eintrag) oder nach Symbol
+            const contract = String(req.query.contract || '').trim()
+            if (contract) {
+                if (!/^[A-Za-z0-9]{20,64}$/.test(contract)) return res.status(400).json({ error: 'Ungültige Vertragsadresse' })
+                return res.json(await tiefensucheVertrag(String(req.query.chain || '').trim().toLowerCase(), contract))
+            }
             const symbol = String(req.query.symbol || '').trim()
             if (!symbol) return res.status(400).json({ error: 'Symbol fehlt' })
             const { coingecko } = await leseSchluessel()

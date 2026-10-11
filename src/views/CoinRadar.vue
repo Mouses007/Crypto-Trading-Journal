@@ -345,46 +345,7 @@
                         <span class="crTiefeHinweis">{{ t('coinradar.tsHinweis') }}</span>
                     </div>
                     <p v-if="tsFehler" class="small text-warning mb-0">{{ tsFehler }}</p>
-                    <div v-if="tsDaten" class="crTiefeErgebnis">
-                        <p v-if="!tsDaten.gefunden" class="small mb-0">{{ t('coinradar.tsNichtGefunden') }}</p>
-                        <template v-else>
-                            <div class="crTiefeBlock">
-                                <div class="crTiefeTitel">{{ t('coinradar.tsVertrag') }}</div>
-                                <div v-if="!tsDaten.gewaehlt" class="small">{{ t('coinradar.tsNichtPruefbar') }}</div>
-                                <div v-for="v in tsDaten.vertraege" :key="v.chain + v.contract" class="crTiefeZeile"
-                                    :class="{ gewaehlt: tsDaten.gewaehlt && v.contract === tsDaten.gewaehlt.contract }">
-                                    <span class="crTiefeKette">{{ v.chain }}</span>
-                                    <code>{{ v.contract }}</code>
-                                    <span v-if="v.liquiditaetUsd" class="crTiefeGrau">{{ t('coinradar.tsLiq') }} {{ geldKurz(v.liquiditaetUsd) }}<template v-if="v.dex"> · {{ v.dex }}</template></span>
-                                    <span v-else-if="!v.pruefbar" class="crTiefeGrau">{{ t('coinradar.tsKetteNichtPruefbar') }}</span>
-                                    <a v-if="v.url" :href="v.url" target="_blank" rel="noopener noreferrer">DexScreener ↗</a>
-                                </div>
-                            </div>
-                            <div v-if="tsDaten.gewaehlt" class="crTiefeBlock">
-                                <div class="crTiefeTitel">{{ t('coinradar.tsRisiko') }}</div>
-                                <p v-if="tsDaten.risikoFehler" class="small mb-1">{{ tsDaten.risikoFehler }}</p>
-                                <template v-else-if="tsDaten.risiko">
-                                    <p class="small mb-1" :class="tsDaten.risiko.ko ? 'text-danger' : 'crTiefeGut'">
-                                        {{ tsDaten.risiko.ko ? t('coinradar.tsKo', { g: tsDaten.risiko.ko.text }) : t('coinradar.tsOk') }}
-                                    </p>
-                                    <p class="small mb-1 crTiefeGrau">
-                                        {{ t('coinradar.tsHalter') }} {{ zahlKurz(tsDaten.risiko.halter) }}
-                                        · {{ t('coinradar.tsTop10') }} {{ pct(tsDaten.risiko.top10Pct) }}
-                                        · {{ t('coinradar.tsInsider') }} {{ pct(tsDaten.risiko.insiderPct) }}
-                                        · {{ t('coinradar.tsDev') }} {{ tsDaten.risiko.devPct !== null && tsDaten.risiko.devPct !== undefined ? pct(tsDaten.risiko.devPct) : (tsDaten.risiko.devUnterPct ? '< ' + pct(tsDaten.risiko.devUnterPct) : '—') }}
-                                    </p>
-                                    <ul class="crTiefeBefunde">
-                                        <li v-for="(b, i) in tsDaten.risiko.befunde" :key="i" :class="b.art">{{ b.art === 'minus' ? '−' : (b.art === 'plus' ? '+' : 'i') }} {{ b.text }}</li>
-                                    </ul>
-                                </template>
-                            </div>
-                            <div class="crTiefeBlock">
-                                <div class="crTiefeTitel">{{ t('coinradar.tsProjekt') }}</div>
-                                <ProjektPruefung v-if="tsDaten.projekt" :projekt="tsDaten.projekt" />
-                                <p v-else class="small mb-0">—</p>
-                            </div>
-                        </template>
-                    </div>
+                    <TiefensucheErgebnis v-if="tsDaten" :daten="tsDaten" />
                 </template>
             </div>
         </div>
@@ -1050,7 +1011,7 @@ import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import PageInfo from '../components/PageInfo.vue'
 import InfoTipp from '../components/InfoTipp.vue'
-import ProjektPruefung from '../components/hype/ProjektPruefung.vue'
+import TiefensucheErgebnis from '../components/hype/TiefensucheErgebnis.vue'
 import { useKostenAnzeige } from '../utils/formatters.js'
 import { useIstTelefon } from '../utils/geraet.js'
 import { logWarn } from '../utils/logger.js'
@@ -1600,10 +1561,6 @@ async function tiefensucheStarten() {
         tsLaeuft.value = false
     }
 }
-const pct = (w) => (w === null || w === undefined || !Number.isFinite(Number(w)) ? '—' : `${Number(w).toFixed(Number(w) < 10 ? 1 : 0)} %`)
-const zahlKurz = (w) => (w === null || w === undefined || !Number.isFinite(Number(w)) ? '—'
-    : (Number(w) >= 1e6 ? `${(Number(w) / 1e6).toFixed(1)} Mio` : (Number(w) >= 1e3 ? `${(Number(w) / 1e3).toFixed(0)} k` : String(Number(w)))))
-const geldKurz = (w) => `${zahlKurz(w)} USD`
 
 /*
  * Ein Klick auf einen Coin der Rangliste klappt ihn auf UND misst ihn oben in
@@ -2957,15 +2914,4 @@ a.crBoerse:hover, a.crBoerse:active {
 /* ── Tiefensuche ── */
 .crTiefe { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .75rem; }
 .crTiefeHinweis { font-size: .8rem; color: var(--grey-text, #8a9199); }
-.crTiefeErgebnis { margin-top: .6rem; padding-top: .6rem; border-top: 1px solid var(--white-10, rgba(255, 255, 255, .1)); display: grid; gap: .75rem; }
-.crTiefeTitel { font-size: .75rem; letter-spacing: .05em; text-transform: uppercase; color: var(--grey-text, #8a9199); margin-bottom: .3rem; }
-.crTiefeZeile { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; font-size: .85rem; padding: .1rem 0; opacity: .7; }
-.crTiefeZeile.gewaehlt { opacity: 1; }
-.crTiefeZeile code { font-size: .8rem; word-break: break-all; }
-.crTiefeKette { min-width: 5.5rem; font-weight: 600; }
-.crTiefeGrau { color: var(--grey-text, #8a9199); }
-.crTiefeGut { color: var(--green, #26a69a); }
-.crTiefeBefunde { list-style: none; padding: 0; margin: 0; font-size: .85rem; }
-.crTiefeBefunde li.minus { color: var(--red-color, #FF6960); }
-.crTiefeBefunde li.info { color: var(--grey-text, #8a9199); }
 </style>

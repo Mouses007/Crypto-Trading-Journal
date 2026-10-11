@@ -4558,6 +4558,12 @@
     "ladeFehler": "Die Lernkarten konnten nicht geladen werden."
   },
   "hypeFrueh": {
+    "tiefeHinweis": "Vertrag, Halter und Projekt frisch prüfen — kostet nichts, dauert bis zu einer halben Minute.",
+    "ausgeblendetZeigen": "{n} ausgeblendet — zeigen",
+    "alleAusgeblendet": "Alle Kandidaten ausgeblendet. Ein Token kommt zurück, sobald seine Note steigt.",
+    "karteAuf": "Aufklappen",
+    "karteZu": "Einklappen",
+    "karteWeg": "Ausblenden, bis die Note steigt",
     "taktAus": "Takt aus — Durchgänge nur von Hand (einschalten im Zahnrad oben)",
     "taktAn": "beobachtet alle {n} min",
     "letzter": "letzter Durchgang {z}",
