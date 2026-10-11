@@ -162,6 +162,60 @@ const divergenzen = computed(() => (v.value?.divergenzen || []).map(d => ({
     farbe: d.seite === 'long' ? F.long : F.short,
 })))
 
+// ── Kurschart (nur gross) ──────────────────────────────────────────────────
+/*
+ * Kerzen der Chart-Zeitebene über der Welle, auf derselben x-Achse: eine
+ * Divergenz, ein Punkt oder eine Raute wird erst am Kurs beurteilbar. Nur in
+ * der grossen Ansicht — in der Kachel wäre beides zu flach, um etwas zu lesen.
+ * Skaliert auf die sichtbaren Kerzen; Wochen-/Monats-VWAP und das 4h-
+ * Strukturlevel stehen nur, wenn sie in diesem Bereich liegen, sonst würden
+ * sie die Kerzen zu einem Strich stauchen.
+ */
+const KURS_H = 230
+const kerzen = computed(() => v.value?.ohlc || [])
+const kursBereich = computed(() => {
+    const k = kerzen.value
+    if (!k.length) return null
+    let lo = Infinity, hi = -Infinity
+    for (const [, h, l] of k) { if (h > hi) hi = h; if (l < lo) lo = l }
+    if (!(hi > lo)) return null
+    const rand = (hi - lo) * 0.06
+    return { lo: lo - rand, hi: hi + rand }
+})
+const ky = (p) => {
+    const b = kursBereich.value
+    return b ? ((b.hi - p) / (b.hi - b.lo)) * KURS_H : 0
+}
+const kerzenFormen = computed(() => {
+    if (!kursBereich.value) return []
+    const b = Math.max(1, schritt.value * 0.7)
+    return kerzen.value.map(([o, h, l, c], i) => ({
+        x: x(i), b,
+        yH: ky(h), yL: ky(l),
+        yK: ky(Math.max(o, c)), hK: Math.max(1, Math.abs(ky(o) - ky(c))),
+        farbe: c >= o ? F.long : F.short,
+    }))
+})
+const kursLinien = computed(() => {
+    const b = kursBereich.value
+    if (!b) return []
+    const im = (p) => istZahl(p) && p >= b.lo && p <= b.hi
+    const l = []
+    if (im(vw.value.woche)) l.push({ y: ky(vw.value.woche), text: 'VWAP W', farbe: '#ffd54f' })
+    if (im(vw.value.monat)) l.push({ y: ky(vw.value.monat), text: 'VWAP M', farbe: '#ba68c8' })
+    if (im(str.value?.level)) l.push({ y: ky(str.value.level), text: str.value.choch ? 'CHoCH 4h' : 'BOS 4h', farbe: '#9aa0a6' })
+    // Beschriftungen nicht übereinander: liegen zwei Linien eng, rückt die untere nach.
+    l.sort((a, b) => a.y - b.y)
+    let unten = -Infinity
+    for (const e of l) { e.ty = Math.max(e.y - 3, unten + 11); unten = e.ty }
+    return l
+})
+const kursSkala = computed(() => {
+    const b = kursBereich.value
+    if (!b) return []
+    return [0.1, 0.5, 0.9].map(f => { const p = b.hi - (b.hi - b.lo) * f; return { y: ky(p), text: kurs(p) } })
+})
+
 // ── Fadenkreuz ─────────────────────────────────────────────────────────────
 const zeiger = ref(null)
 function beiBewegung(e) {
@@ -174,7 +228,9 @@ const zeigerText = computed(() => {
     const i = zeiger.value
     if (i === null || !v.value) return ''
     const z = (w) => (w === null || w === undefined ? '—' : `${w > 0 ? '+' : ''}${w.toFixed(1)}`)
-    return `${dayjs(v.value.t[i]).format('DD.MM. HH:mm')} · ${t('livetrading.momentum.welle')} ${z(v.value.w1[i])}`
+    const k = props.gross ? v.value.ohlc?.[i] : null
+    const ohlc = k ? ` · O ${kurs(k[0])} H ${kurs(k[1])} L ${kurs(k[2])} C ${kurs(k[3])}` : ''
+    return `${dayjs(v.value.t[i]).format('DD.MM. HH:mm')}${ohlc} · ${t('livetrading.momentum.welle')} ${z(v.value.w1[i])}`
         + ` · ${t('livetrading.momentum.fluss')} ${z(v.value.mf[i])}`
         + (v.value.mfSpot ? ` · Spot ${z(v.value.mfSpot[i])}` : '')
 })
@@ -272,6 +328,24 @@ const strNeben = computed(() => {
                 ▶ {{ statusText }} · {{ modusText }}
             </span>
             <span class="mrSymbol">{{ daten.symbol?.replace(/USDT$/, '') }}</span>
+        </div>
+
+        <!-- Kurs der Chart-Zeitebene, nur gross: dieselbe x-Achse wie die Welle -->
+        <div v-if="gross && kerzenFormen.length" class="mrKurs" :style="{ height: KURS_H + 'px' }"
+            @mousemove="beiBewegung" @mouseleave="zeiger = null">
+            <svg :width="breite" :height="KURS_H" class="mrSvg">
+                <line v-for="(m, i) in kursSkala" :key="'ks' + i" x1="0" :x2="breite - RAND_R" :y1="m.y" :y2="m.y" class="mrLinieZone" />
+                <text v-for="(m, i) in kursSkala" :key="'kt' + i" :x="breite - RAND_R + 4" :y="m.y + 3" class="mrSkala">{{ m.text }}</text>
+                <g v-for="(l, i) in kursLinien" :key="'kl' + i">
+                    <line x1="0" :x2="breite - RAND_R" :y1="l.y" :y2="l.y" :stroke="l.farbe" stroke-width="1" stroke-dasharray="4 3" opacity="0.8" />
+                    <text x="4" :y="l.ty" class="mrSkala" :fill="l.farbe">{{ l.text }}</text>
+                </g>
+                <g v-for="(k, i) in kerzenFormen" :key="'kz' + i">
+                    <line :x1="k.x" :x2="k.x" :y1="k.yH" :y2="k.yL" :stroke="k.farbe" stroke-width="1" />
+                    <rect :x="k.x - k.b / 2" :y="k.yK" :width="k.b" :height="k.hK" :fill="k.farbe" />
+                </g>
+                <line v-if="zeiger !== null" :x1="x(zeiger)" :x2="x(zeiger)" y1="0" :y2="KURS_H" class="mrZeiger" />
+            </svg>
         </div>
 
         <!-- Verlauf der Chart-Zeitebene -->
@@ -447,6 +521,7 @@ const strNeben = computed(() => {
 }
 
 .mrWrap.gross .mrFlaeche { flex: 0 0 auto; }
+.mrKurs { position: relative; flex: 0 0 auto; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 4px; }
 
 .mrSvg { display: block; position: absolute; inset: 0; }
 

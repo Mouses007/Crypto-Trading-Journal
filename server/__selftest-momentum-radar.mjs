@@ -216,6 +216,8 @@ console.log('\nGesamtauswertung')
     check('Status ist das Day-Setup', r.status === r.day)
     check('sechs Zeitebenen im Panel', r.zeitebenen.length === 6)
     check('Verlauf auf 150 Kerzen geschnitten', r.verlauf.w1.length === 150 && r.verlauf.t.length === 150)
+    check('Kerzen im Verlauf deckungsgleich mit der Welle', r.verlauf.ohlc.length === 150
+        && r.verlauf.ohlc.every(k => k.length === 4 && k[1] >= Math.max(k[0], k[3]) && k[2] <= Math.min(k[0], k[3])))
     check('Punkte liegen im Fenster', r.verlauf.punkte.every(p => p.i >= 0 && p.i < 150))
     check('Schienen nur von Zeitebenen über dem Chart',
         r.verlauf.schienen.every(s => ['1h', '4h', '1d'].includes(s.tf)), JSON.stringify(r.verlauf.schienen))

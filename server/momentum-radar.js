@@ -447,6 +447,10 @@ export function werteAus({ kerzen, spot = null, chartTf, vwapKerzen = null, punk
     const verschiebe = (x) => ({ ...x, i: x.i - ab })
     const verlauf = {
         t: chart.slice(ab).map(k => k.t),
+        // Kerzen der Chart-Zeitebene für den Kurschart über der Welle (grosse
+        // Ansicht): [o, h, l, c], auf denselben Indizes wie w1 — so liest man
+        // eine Divergenz am Kurs ab statt sie zu glauben.
+        ohlc: chart.slice(ab).map(k => [k.o, k.h, k.l, k.c]),
         w1: w1.slice(ab).map(rund),
         w2: w2.slice(ab).map(rund),
         mf: mf.slice(ab).map(rund),
