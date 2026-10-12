@@ -9,7 +9,7 @@
  */
 import {
     LESER, basisAusPaar, kuerzel, neueEintraege, ordneZu, leiterFuer, vorlaufStatistik,
-    MAX_NEU_JE_ABRUF, MIN_BEWERTUNG_KUERZEL,
+    MAX_NEU_JE_ABRUF, MIN_BEWERTUNG_KUERZEL, STARTS, auchGelistetAuf,
 } from './boersenwacht-bewertung.js'
 
 let fehler = 0
@@ -99,6 +99,69 @@ const s = vorlaufStatistik([
 p('Vorlauf: Namensvetter zählen nicht', s.gross.neu === 4 && s.gross.erkannt === 2)
 p('Vorlauf: Median in Tagen', s.gross.medianVorlaufTage === 3, String(s.gross.medianVorlaufTage))
 p('Vorlauf: erst nach dem Listing gesehen ist kein Vorlauf', s.mittel.erkannt === 0)
+
+// ── Handelsstart (Formen der Live-Antworten vom 12.10.2026) ──────────────
+{
+    const J = Date.UTC(2026, 9, 12, 9)
+    const bf = { symbols: [
+        { symbol: 'AKAMUSDT', status: 'TRADING', onboardDate: Date.UTC(2026, 9, 6, 9, 15) },
+        { symbol: 'GAIBUSDT', status: 'PENDING_TRADING', onboardDate: Date.UTC(2026, 10, 20, 9) },
+        // Live-Fund 12.10.2026: seit fast einem Jahr „ausstehend" — keine Ankündigung
+        { symbol: 'LEICHEUSDT', status: 'PENDING_TRADING', onboardDate: Date.UTC(2025, 10, 20, 9) },
+        { symbol: 'OLDUSDT', status: 'SETTLING', onboardDate: Date.UTC(2023, 0, 1) },
+    ] }
+    p('Binance Futures aus exchangeInfo: nur TRADING ist gelistet', LESER['binance-futures'](bf).join() === 'AKAM')
+    p('Binance Futures: alte ticker/price-Form geht weiter', LESER['binance-futures']([{ symbol: 'PEPEUSDT' }]).join() === 'PEPE')
+    const sbf = STARTS['binance-futures'](bf, J)
+    p('Binance Futures: Start eines handelnden Kontrakts', sbf.laufend.get('AKAM') === Date.UTC(2026, 9, 6, 9, 15))
+    p('Binance Futures: PENDING_TRADING ist angekündigt, mit Start',
+        sbf.angekuendigt.length === 1 && sbf.angekuendigt[0].symbol === 'GAIB' && sbf.angekuendigt[0].start === Date.UTC(2026, 10, 20, 9))
+    p('Binance Futures: Start vor fast einem Jahr, immer noch ausstehend: keine Ankündigung', !sbf.angekuendigt.some((x) => x.symbol === 'LEICHE'))
+    p('… wohl aber ein Start, der erst gestern verstrich', STARTS['binance-futures']({ symbols: [{ symbol: 'SPAETUSDT', status: 'PENDING_TRADING', onboardDate: J - 86400e3 }] }, J).angekuendigt.length === 1)
+    p('Binance Futures: SETTLING ist weder offen noch angekündigt', !sbf.laufend.has('OLD') && !sbf.angekuendigt.some((x) => x.symbol === 'OLD'))
+
+    const okx = STARTS.okx({ data: [
+        { baseCcy: 'XINFQ', state: 'preopen', listTime: String(Date.UTC(2026, 9, 12, 9, 30)) },
+        { baseCcy: 'BTC', state: 'live', listTime: '1548133413000' },
+        { baseCcy: 'BTC', state: 'preopen', listTime: String(J + 3600e3) },   // neues Paar eines laufenden Coins
+    ] }, J)
+    p('OKX: preopen ist angekündigt', okx.angekuendigt.map((x) => x.symbol).join() === 'XINFQ')
+    p('OKX: ein neues Paar eines laufenden Coins ist nicht angekündigt', !okx.angekuendigt.some((x) => x.symbol === 'BTC'))
+    p('OKX: Start laufend in ms', okx.laufend.get('BTC') === 1548133413000)
+
+    const gate = STARTS.gate([
+        { base: 'CENT', trade_status: 'sellable', buy_start: Math.floor((J + 1800e3) / 1000) },
+        { base: 'MSP', trade_status: 'tradable', buy_start: Math.floor(Date.UTC(2026, 9, 7, 6) / 1000) },
+        { base: 'DEAD', trade_status: 'untradable', buy_start: 1600000000 },
+        { base: 'NULL', trade_status: 'tradable', buy_start: 0 },
+    ], J)
+    p('Gate: Sekunden werden ms', gate.laufend.get('MSP') === Date.UTC(2026, 9, 7, 6))
+    p('Gate: sellable mit Start in der Zukunft ist angekündigt', gate.angekuendigt.map((x) => x.symbol).join() === 'CENT')
+    p('Gate: untradable mit altem Start ist abgekündigt, nicht angekündigt', !gate.angekuendigt.some((x) => x.symbol === 'DEAD'))
+    p('Gate: Start 0 ist kein Datum', !gate.laufend.has('NULL'))
+
+    const bg = STARTS.bitget({ data: [
+        { baseCoin: 'RETHA', status: 'online', openTime: String(Date.UTC(2026, 9, 6, 13, 33)) },
+        { baseCoin: 'SOON', status: 'online', openTime: String(J + 86400e3) },
+    ] }, J)
+    p('Bitget: openTime eines offenen Paars', bg.laufend.get('RETHA') === Date.UTC(2026, 9, 6, 13, 33))
+    p('Bitget: Start in der Zukunft ist angekündigt, nicht offen', bg.angekuendigt[0]?.symbol === 'SOON' && !bg.laufend.has('SOON'))
+}
+
+// ── Auch gelistet auf ───────────────────────────────────────────────────
+{
+    const staende = new Map([
+        ['mexc', new Set(['DRV', 'QI'])],
+        ['gate', new Set(['QI'])],
+        ['okx', new Set(['DRV'])],
+        ['binance-alpha', new Set(['bsc|0xabc', 'sym|ZED'])],
+    ])
+    p('andere Börsen mit demselben Kürzel', auchGelistetAuf({ boerse: 'mexc', symbol: 'qi' }, staende).join() === 'Gate')
+    p('die eigene Börse zählt nicht', auchGelistetAuf({ boerse: 'okx', symbol: 'DRV' }, staende).join() === 'MEXC')
+    p('Alpha über den Vertrag', auchGelistetAuf({ boerse: 'mexc', symbol: 'X', chain: 'bsc', contract: '0xABC' }, staende).join() === 'Binance Alpha')
+    p('Alpha ohne Vertrag nur über sym|', auchGelistetAuf({ boerse: 'mexc', symbol: 'ZED' }, staende).join() === 'Binance Alpha')
+    p('nirgends sonst: leer', auchGelistetAuf({ boerse: 'mexc', symbol: 'NEU' }, staende).length === 0)
+}
 
 console.log(`  ${bestanden} bestanden, ${fehler} fehlgeschlagen`)
 process.exit(fehler === 0 ? 0 : 1)

@@ -30,14 +30,15 @@ import { leseEinstellungen } from './einstellungen.js'
 import { stelleZu } from './zustellung.js'
 import { radarWissen } from './gedaechtnis.js'
 import {
-    BOERSEN, BOERSE_NACH_ID, LESER, neueEintraege, ordneZu, istTreffer, leiterFuer, vorlaufStatistik,
-    eintragSchluessel, kuerzel,
+    BOERSEN, BOERSE_NACH_ID, LESER, STARTS, neueEintraege, ordneZu, istTreffer, leiterFuer, vorlaufStatistik,
+    eintragSchluessel, kuerzel, auchGelistetAuf,
 } from './boersenwacht-bewertung.js'
 
 export const QUELLEN = {
     'binance-alpha': 'https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list',
     'binance-spot': 'https://api.binance.com/api/v3/ticker/price',
-    'binance-futures': 'https://fapi.binance.com/fapi/v1/ticker/price',
+    // exchangeInfo statt ticker/price: nur sie nennt Startzeit und angekündigte Kontrakte (Gewicht 1)
+    'binance-futures': 'https://fapi.binance.com/fapi/v1/exchangeInfo',
     coinbase: 'https://api.exchange.coinbase.com/products',
     upbit: 'https://api.upbit.com/v1/market/all',
     okx: 'https://www.okx.com/api/v5/public/instruments?instType=SPOT',
@@ -104,8 +105,11 @@ async function boersenLaufIntern(einst) {
     const jetzt = Date.now()
     const alt = new Map((await knex('hype_boersen_stand').select('*')).map((z) => [z.boerse, z]))
 
-    const antworten = await Promise.allSettled(BOERSEN.map(async (b) =>
-        LESER[b.id](await holeJson(QUELLEN[b.id], { timeout: 20000 }))))
+    // Eine Antwort, zwei Leser: was gelistet ist und — wo die Börse es nennt — seit wann.
+    const antworten = await Promise.allSettled(BOERSEN.map(async (b) => {
+        const roh = await holeJson(QUELLEN[b.id], { timeout: 20000 })
+        return { liste: LESER[b.id](roh), starts: STARTS[b.id] ? STARTS[b.id](roh, jetzt) : null }
+    }))
 
     const quellenStand = {}
     const neue = []
@@ -120,12 +124,13 @@ async function boersenLaufIntern(einst) {
                 .onConflict('boerse').merge(['fehler']).catch(() => {})
             continue
         }
-        const liste = a.value
+        const { liste, starts } = a.value
         const r = neueEintraege(sicherJson(bisher?.eintraege, []), liste)
         if (r.uebernehmen) {
             await knex('hype_boersen_stand').insert({
                 boerse: b.id, eintraege: JSON.stringify(liste), anzahl: liste.length,
                 aktualisiertAm: jetzt, fehler: '',
+                angekuendigt: JSON.stringify(starts?.angekuendigt || []),
             }).onConflict('boerse').merge()
         } else {
             await knex('hype_boersen_stand').where('boerse', b.id).update({ fehler: r.hinweis }).catch(() => {})
@@ -134,9 +139,11 @@ async function boersenLaufIntern(einst) {
             ? { ok: true, anzahl: liste.length, neu: r.neu.length, hinweis: r.hinweis }
             : { ok: false, anzahl: liste.length, fehler: r.hinweis }
         for (const n of r.neu) {
-            neue.push(typeof n === 'string'
+            const l = typeof n === 'string'
                 ? { boerse: b.id, symbol: n }
-                : { boerse: b.id, symbol: n.symbol, chain: n.chain, contract: n.contract })
+                : { boerse: b.id, symbol: n.symbol, chain: n.chain, contract: n.contract }
+            l.handelsStart = starts?.laufend.get(kuerzel(l.symbol)) ?? null
+            neue.push(l)
         }
     }
     staendeCache = null
@@ -181,6 +188,7 @@ async function boersenLaufIntern(einst) {
                 chain: z.chain || l.chain || '', contract: z.contract || l.contract || '',
                 gesehenAm: jetzt, radarSeit: z.radarSeit, radarGesehen: z.radarGesehen,
                 radarQuelle: z.radarQuelle, treffer: z.treffer, bewertungUsd: z.bewertungUsd, gemeldet: 0,
+                handelsStart: l.handelsStart,
             }
             await knex('hype_listungen_neu').insert(zeile).onConflict(['boerse', 'symbol']).ignore()
             const alleMelden = einst.boersenAlleMelden === true && BOERSE_NACH_ID.get(l.boerse)?.stufe === 'gross'
@@ -230,12 +238,30 @@ async function melde(knex, zeile, einst) {
 export async function boersenUebersicht({ tage = 60 } = {}) {
     const knex = getKnex()
     const seit = Date.now() - tage * 86400e3
-    const staendeRoh = await knex('hype_boersen_stand').select('boerse', 'anzahl', 'aktualisiertAm', 'fehler').catch(() => [])
+    const staendeRoh = await knex('hype_boersen_stand').select('boerse', 'anzahl', 'aktualisiertAm', 'fehler', 'angekuendigt').catch(() => [])
     const nach = new Map(staendeRoh.map((z) => [z.boerse, z]))
     const listungen = await knex('hype_listungen_neu').where('gesehenAm', '>=', seit).orderBy('gesehenAm', 'desc').limit(300)
 
     const staende = await ladeStaende()
-    const wissen = (await radarWissen()).filter((w) => w.ersteMeldung)
+    const alleWissen = await radarWissen()
+    const wissen = alleWissen.filter((w) => w.ersteMeldung)
+    // Wo dasselbe Kürzel sonst noch steht — für neue wie für angekündigte Listungen.
+    for (const z of listungen) z.auchAuf = auchGelistetAuf(z, staende)
+    /*
+     * Angekündigt: angelegt, aber noch nicht offen — mit Startzeit, wo die
+     * Börse sie nennt. Was schon begonnen hat, fällt beim nächsten Abgleich
+     * heraus und steht dann unter den neuen Listungen.
+     */
+    const angekuendigt = []
+    for (const z of staendeRoh) {
+        for (const a of sicherJson(z.angekuendigt, [])) {
+            const r = ordneZu({ boerse: z.boerse, symbol: a.symbol }, alleWissen)
+            angekuendigt.push({ boerse: z.boerse, symbol: a.symbol, start: a.start ?? null,
+                auchAuf: auchGelistetAuf({ boerse: z.boerse, symbol: a.symbol }, staende),
+                treffer: r.treffer, radarSeit: r.radarSeit, radarGesehen: r.radarGesehen })
+        }
+    }
+    angekuendigt.sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity))
     // Je Vertrag einmal, mit der grössten bekannten Bewertung.
     const jeVertrag = new Map()
     for (const w of wissen) {
@@ -263,6 +289,7 @@ export async function boersenUebersicht({ tage = 60 } = {}) {
             fehler: nach.get(b.id)?.fehler || '',
         })),
         listungen,
+        angekuendigt,
         statistik: vorlaufStatistik(listungen),
         leiter: leiter.slice(0, 50),
     }

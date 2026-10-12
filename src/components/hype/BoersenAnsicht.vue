@@ -75,6 +75,44 @@
             </div>
         </div>
 
+        <!-- Angekündigt: angelegt, aber noch nicht offen — mit Startzeit, wo die Börse sie nennt. -->
+        <div class="bwAbschnitt">
+            <div class="bwTitel">{{ t('hypeBoersen.angekuendigtTitel') }}</div>
+            <p class="bwGrau small mb-1">{{ t('hypeBoersen.angekuendigtHinweis') }}</p>
+            <p v-if="!daten?.angekuendigt?.length" class="bwGrau small">{{ t('hypeBoersen.angekuendigtLeer') }}</p>
+            <div v-else class="table-responsive">
+                <table class="table table-sm align-middle bwTabelle">
+                    <thead>
+                        <tr>
+                            <th>{{ t('hypeBoersen.spalteStart') }}</th>
+                            <th>{{ t('hypeBoersen.spalteBoerse') }}</th>
+                            <th>{{ t('hypeBoersen.spalteToken') }}</th>
+                            <th :title="t('hypeBoersen.auchAufTitel')">{{ t('hypeBoersen.spalteAuchAuf') }}</th>
+                            <th>{{ t('hypeBoersen.spalteRadar') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="a in daten.angekuendigt" :key="a.boerse + a.symbol">
+                            <td class="text-nowrap">
+                                <template v-if="a.start">{{ zeitpunkt(a.start) }} <span class="bwGrau">· {{ bisDahin(a.start) }}</span></template>
+                                <span v-else class="bwGrau">{{ t('hypeBoersen.startOffen') }}</span>
+                            </td>
+                            <td><span class="bwStufe" :class="stufeVon(a.boerse)">{{ boerseName(a.boerse) }}</span></td>
+                            <td><strong>{{ a.symbol }}</strong></td>
+                            <td><AuchAuf :liste="a.auchAuf" /></td>
+                            <td :title="a.treffer === 'kuerzel' ? t('hypeBoersen.kuerzelTitel') : ''">
+                                <template v-if="istTreffer(a) && a.radarSeit">
+                                    <i class="uil uil-check-circle text-success me-1"></i>{{ t('hypeBoersen.gemeldetVor', { n: tageText((Date.now() - a.radarSeit) / 86400e3) }) }}
+                                </template>
+                                <span v-else-if="a.treffer === 'namensgleich'" class="bwGrau">{{ t('hypeBoersen.namensvetter') }}</span>
+                                <span v-else class="bwGrau">—</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Neue Listungen der letzten Wochen. -->
         <div class="bwAbschnitt">
             <div class="bwTitel">{{ t('hypeBoersen.neuTitel') }}</div>
@@ -84,16 +122,20 @@
                     <thead>
                         <tr>
                             <th>{{ t('hypeBoersen.spalteDatum') }}</th>
+                            <th :title="t('hypeBoersen.handelsStartTitel')">{{ t('hypeBoersen.spalteHandelsStart') }}</th>
                             <th>{{ t('hypeBoersen.spalteBoerse') }}</th>
                             <th>{{ t('hypeBoersen.spalteToken') }}</th>
+                            <th :title="t('hypeBoersen.auchAufTitel')">{{ t('hypeBoersen.spalteAuchAuf') }}</th>
                             <th>{{ t('hypeBoersen.spalteRadar') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="z in daten.listungen" :key="z.id" :class="{ blass: !istTreffer(z) }">
                             <td class="text-nowrap">{{ zeitpunkt(z.gesehenAm) }}</td>
+                            <td class="text-nowrap">{{ z.handelsStart ? zeitpunkt(z.handelsStart) : '—' }}</td>
                             <td><span class="bwStufe" :class="stufeVon(z.boerse)">{{ boerseName(z.boerse) }}</span></td>
                             <td><strong>{{ z.symbol }}</strong> <span v-if="z.chain" class="bwKette">{{ z.chain }}</span></td>
+                            <td><AuchAuf :liste="z.auchAuf" /></td>
                             <td :title="z.treffer === 'kuerzel' ? t('hypeBoersen.kuerzelTitel') : ''">
                                 <template v-if="istTreffer(z) && z.radarSeit">
                                     <i class="uil uil-check-circle text-success me-1"></i>{{ t('hypeBoersen.vorher', { n: tageText((z.gesehenAm - z.radarSeit) / 86400e3) }) }}
@@ -125,7 +167,7 @@
  *   „Neue Listungen"         was neu dazukam, und ob der Radar es vorher
  *                            gemeldet hatte — der Massstab für „rechtzeitig"
  */
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, h, defineComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import { logWarn } from '../../utils/logger.js'
@@ -191,9 +233,35 @@ watch(() => props.aktiv, (a) => {
 onBeforeUnmount(() => clearTimeout(uhr))
 
 // ── Darstellung ─────────────────────────────────────────────────────────
+/*
+ * Auf welchen anderen Börsen dasselbe Kürzel steht, als Kürzel-Chips in der
+ * Farbe der Sprosse. Leer heisst: Erstauftritt unter den beobachteten Börsen.
+ * Klassen über `:deep` im Stil — die Elemente entstehen in einer Render-Funktion.
+ */
+const AuchAuf = defineComponent({
+    props: { liste: { type: Array, default: () => [] } },
+    setup(p) {
+        return () => (p.liste?.length
+            ? h('span', { class: 'bwAuch' }, p.liste.map((name) =>
+                h('span', { class: ['bwStufe', stufeNachName.value.get(name) || ''], key: name }, name)))
+            : h('span', { class: 'bwGrau', title: t('hypeBoersen.erstauftrittTitel') }, t('hypeBoersen.erstauftritt')))
+    },
+})
+
 const nachId = computed(() => new Map((daten.value?.boersen || []).map((b) => [b.id, b])))
 const boerseName = (id) => nachId.value.get(id)?.name || id
 const stufeVon = (id) => nachId.value.get(id)?.stufe || ''
+const stufeNachName = computed(() => new Map((daten.value?.boersen || []).map((b) => [b.name, b.stufe])))
+
+/** „in 3 h", „in 5 Tagen" — oder „läuft", wenn der Start vorbei ist. */
+function bisDahin(start) {
+    const d = (Number(start) - Date.now()) / 86400e3
+    if (!Number.isFinite(d)) return ''
+    if (d <= 0) return t('hypeBoersen.startVorbei')
+    if (d * 24 < 1) return t('hypeBoersen.inMinuten', { n: Math.max(1, Math.round(d * 1440)) })
+    if (d < 1) return t('hypeBoersen.inStunden', { n: Math.round(d * 24) })
+    return t('hypeBoersen.inTagen', { n: d < 10 ? String(Math.round(d * 10) / 10) : Math.round(d) })
+}
 const istTreffer = (z) => z.treffer === 'vertrag' || z.treffer === 'kuerzel'
 
 function geld(n) {
@@ -291,12 +359,15 @@ const zeitpunkt = (ms) => new Date(Number(ms)).toLocaleString(
 .bwTabelle tr.oben td, .bwTabelle tr.blass td {
     opacity: .55;
 }
+:deep(.bwGrau) {
+    color: var(--grey-color, #9aa0a6);
+}
 .bwKette {
     font-size: .782rem;
     color: var(--grey-color, #9aa0a6);
     margin-left: .3rem;
 }
-.bwStufe {
+.bwStufe, :deep(.bwStufe) {
     display: inline-block;
     font-size: .74rem;
     padding: .02rem .4rem;
@@ -304,9 +375,9 @@ const zeitpunkt = (ms) => new Date(Number(ms)).toLocaleString(
     margin-right: .25rem;
     background: var(--white-10, rgba(255, 255, 255, .08));
 }
-.bwStufe.alpha { color: #e0b030; }
-.bwStufe.mittel { color: var(--blue-color, #4da3ff); }
-.bwStufe.gross { color: #4caf50; }
+.bwStufe.alpha, :deep(.bwStufe.alpha) { color: #e0b030; }
+.bwStufe.mittel, :deep(.bwStufe.mittel) { color: var(--blue-color, #4da3ff); }
+.bwStufe.gross, :deep(.bwStufe.gross) { color: #4caf50; }
 .bwTabelle a {
     text-decoration: none;
 }

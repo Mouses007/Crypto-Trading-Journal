@@ -181,7 +181,10 @@ async function fixPostgresSequences(knex) {
 // `radar_ergebnisse` und ein Index je Art. Rein additiv; ein älterer Codestand
 // schreibt die Spalten nicht — seine Prüfungen zählen beim Teilen nicht mit,
 // seine Frühphasen-Aufträge nicht in der Auswertung (ohne Regelstand).
-const SCHEMA_VERSION = 23
+// v24: Börsen-Beobachter mit Handelsstart — `angekuendigt` an
+// `hype_boersen_stand` (Paare, die angelegt, aber noch nicht offen sind) und
+// `handelsStart` an `hype_listungen_neu`. Rein additiv.
+const SCHEMA_VERSION = 24
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -3380,6 +3383,15 @@ async function runMigrations(knex, client) {
     await addColumnIfNotExists('radar_ergebnisse', 'graduiertStart', (t) => t.integer('graduiertStart'))
     await addColumnIfNotExists('radar_ergebnisse', 'alterStartH', (t) => t.double('alterStartH'))
     await addColumnIfNotExists('radar_ergebnisse', 'pumpFun', (t) => t.integer('pumpFun'))
+
+    // ── v24 ─────────────────────────────────────────────────────────────
+    /*
+     * Wann eine Listung handelt. Binance Futures, OKX, Gate und Bitget nennen
+     * den Zeitpunkt in derselben Liste, auch für Paare, die erst angelegt sind
+     * (gemessen 12.10.2026: GAIBUSDT stand fünf Wochen vor dem Start drin).
+     */
+    await addColumnIfNotExists('hype_boersen_stand', 'angekuendigt', (t) => t.text('angekuendigt').defaultTo('[]'))
+    await addColumnIfNotExists('hype_listungen_neu', 'handelsStart', (t) => t.bigInteger('handelsStart'))
 
     // ==================== SCHEMA-ANKER ====================
     // Ganz am Ende, damit die Version erst steht, wenn alle Checks durch sind.

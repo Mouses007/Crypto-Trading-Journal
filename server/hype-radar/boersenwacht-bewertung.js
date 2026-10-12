@@ -84,7 +84,10 @@ const eindeutig = (liste) => [...new Set(liste.filter(Boolean))].sort()
  */
 export const LESER = {
     'binance-spot': (j) => eindeutig((Array.isArray(j) ? j : []).map((x) => basisAusPaar(x?.symbol))),
-    'binance-futures': (j) => eindeutig((Array.isArray(j) ? j : []).map((x) => basisAusPaar(x?.symbol))),
+    // `exchangeInfo` (seit 12.10.2026, wegen der Startzeiten); die alte Form von
+    // `ticker/price` (ein Array) wird weiter gelesen.
+    'binance-futures': (j) => eindeutig((Array.isArray(j) ? j : (Array.isArray(j?.symbols) ? j.symbols : []))
+        .filter((x) => !x?.status || x.status === 'TRADING').map((x) => basisAusPaar(x?.symbol))),
     'binance-alpha': (j) => {
         const liste = Array.isArray(j?.data) ? j.data : (Array.isArray(j) ? j : [])
         const raus = new Map()
@@ -117,6 +120,82 @@ export const LESER = {
     mexc: (j) => eindeutig((Array.isArray(j?.data) ? j.data : []).map((s) => basisAusPaar(s))),
     bitget: (j) => eindeutig((Array.isArray(j?.data) ? j.data : [])
         .filter((x) => String(x?.status || 'online') === 'online').map((x) => kuerzel(x?.baseCoin))),
+}
+
+// ── Handelsstart ────────────────────────────────────────────────────────
+/*
+ * Vier Börsen nennen in derselben Liste, WANN ein Paar zu handeln beginnt —
+ * auch für Paare, die angelegt, aber noch nicht offen sind. Geprüft gegen die
+ * Live-Antworten am 12.10.2026:
+ *
+ *   Binance Futures  `onboardDate` (ms), `status: PENDING_TRADING` vor dem Start
+ *                    (GAIBUSDT stand fünf Wochen vorher drin)
+ *   OKX              `listTime` (ms), `state: preopen` vor dem Start
+ *   Gate             `buy_start` (s), `trade_status: sellable` bis Kaufstart
+ *   Bitget           `openTime` (ms); angekündigte Paare stehen nicht drin
+ *
+ * Coinbase, Upbit, Bybit, Kraken, MEXC und Binance Spot führen keinen Zeitpunkt.
+ * Ein Zeitpunkt vor 2015 ist ein Lesefehler (0, Sekunden statt ms), kein Start.
+ */
+const NACH_2015 = Date.UTC(2015, 0, 1)
+const ms = (w, faktor = 1) => {
+    const z = Number(w) * faktor
+    return Number.isFinite(z) && z > NACH_2015 ? z : null
+}
+
+/**
+ * @returns {{laufend: Map<string, number>, angekuendigt: Array<{symbol:string, start:number|null}>}}
+ *          laufend: Kürzel → Handelsstart der offenen Paare (frühestes Paar je Kürzel)
+ */
+export const STARTS = {
+    'binance-futures': (j, jetzt = Date.now()) => sammleStarts((Array.isArray(j?.symbols) ? j.symbols : []).map((x) => ({
+        symbol: basisAusPaar(x?.symbol), start: ms(x?.onboardDate),
+        offen: x?.status === 'TRADING', vorher: x?.status === 'PENDING_TRADING',
+    })), jetzt),
+    okx: (j, jetzt = Date.now()) => sammleStarts((Array.isArray(j?.data) ? j.data : []).map((x) => ({
+        symbol: kuerzel(x?.baseCcy), start: ms(x?.listTime),
+        offen: x?.state === 'live', vorher: x?.state === 'preopen',
+    })), jetzt),
+    gate: (j, jetzt = Date.now()) => sammleStarts((Array.isArray(j) ? j : []).map((x) => {
+        const start = ms(x?.buy_start, 1000)
+        return {
+            symbol: kuerzel(x?.base), start,
+            offen: x?.trade_status === 'tradable',
+            // `untradable` heisst auch „abgekündigt" — angekündigt nur mit Start in der Zukunft
+            vorher: x?.trade_status !== 'tradable' && start !== null && start > jetzt,
+        }
+    }), jetzt),
+    bitget: (j, jetzt = Date.now()) => sammleStarts((Array.isArray(j?.data) ? j.data : []).map((x) => {
+        const start = ms(x?.openTime)
+        return { symbol: kuerzel(x?.baseCoin), start, offen: x?.status === 'online' && !(start > jetzt), vorher: start !== null && start > jetzt }
+    }), jetzt),
+}
+
+/**
+ * Länger als das vorbei und noch immer nicht offen ist keine Ankündigung mehr,
+ * sondern eine Leiche: GAIBUSDT stand am 12.10.2026 als PENDING_TRADING mit
+ * Start 20.11.2025 in der Binance-Liste.
+ */
+export const ANGEKUENDIGT_VERFALL_MS = 7 * 86400e3
+
+function sammleStarts(zeilen, jetzt = Date.now()) {
+    const laufend = new Map()
+    const vorher = new Map()
+    for (const z of zeilen) {
+        if (!z.symbol) continue
+        if (z.offen && z.start !== null) {
+            const a = laufend.get(z.symbol)
+            if (a === undefined || z.start < a) laufend.set(z.symbol, z.start)
+        } else if (z.vorher && !(z.start !== null && z.start < jetzt - ANGEKUENDIGT_VERFALL_MS)) {
+            const a = vorher.get(z.symbol)
+            if (a === undefined || (z.start !== null && (a === null || z.start < a))) vorher.set(z.symbol, z.start)
+        }
+    }
+    // Wer schon unter einem anderen Paar handelt, ist nicht angekündigt (BTC-USDC neu, BTC-USDT läuft).
+    const angekuendigt = [...vorher.entries()].filter(([sym]) => !laufend.has(sym))
+        .map(([symbol, start]) => ({ symbol, start }))
+        .sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity))
+    return { laufend, angekuendigt }
 }
 
 /** Binance-Alpha-Ketten-Kennung → unsere Kette. */
@@ -247,6 +326,32 @@ export function leiterFuer(token, staende) {
             continue
         }
         if (kuerzelZaehlt && eintraege.has(symbol)) raus[b.stufe].push(b.name)
+    }
+    return raus
+}
+
+/**
+ * Auf welchen ANDEREN Börsen steht dasselbe Kürzel schon? Für eine neue oder
+ * angekündigte Listung: ist sie ein Erstauftritt oder zieht sie nach?
+ *
+ * Über das Kürzel, also ohne Gewähr: QI auf MEXC und QI auf einer anderen
+ * Börse können verschiedene Token sein. Binance Alpha zählt nur über den
+ * Vertrag, weil es dort Schlüssel aus Kette und Vertrag führt.
+ *
+ * @returns {string[]} Börsennamen in der Reihenfolge von `BOERSEN`
+ */
+export function auchGelistetAuf(listung, staende) {
+    const symbol = kuerzel(listung.symbol)
+    const v = normVertrag(listung.chain, listung.contract)
+    const raus = []
+    for (const b of BOERSEN) {
+        if (b.id === listung.boerse) continue
+        const eintraege = staende?.get(b.id)
+        if (!eintraege) continue
+        const da = b.stufe === 'alpha'
+            ? (v && eintraege.has(`${listung.chain}|${v}`)) || eintraege.has(`sym|${symbol}`)
+            : eintraege.has(symbol)
+        if (da) raus.push(b.name)
     }
     return raus
 }
