@@ -10,7 +10,11 @@
 import { useI18n } from 'vue-i18n'
 import ProjektPruefung from './ProjektPruefung.vue'
 
-defineProps({ daten: { type: Object, required: true } })
+defineProps({
+    daten: { type: Object, required: true },
+    /** Kopf mit dem gefundenen Coin — in der Einzelprüfung steht er schon darüber. */
+    mitKopf: { type: Boolean, default: false },
+})
 const { t } = useI18n()
 
 const pct = (w) => (w === null || w === undefined || !Number.isFinite(Number(w)) ? '—' : `${Number(w).toFixed(Number(w) < 10 ? 1 : 0)} %`)
@@ -24,6 +28,14 @@ const devText = (r) => (r.devPct !== null && r.devPct !== undefined ? pct(r.devP
     <div class="tsErgebnis">
         <p v-if="!daten.gefunden" class="small mb-0">{{ t('coinradar.tsNichtGefunden') }}</p>
         <template v-else>
+            <!-- Welcher Coin gefunden wurde: bei Suche über das Kürzel kann es ein anderer sein als gemeint. -->
+            <div v-if="mitKopf && (daten.coin?.name || daten.coin?.symbol)" class="tsKopf">
+                <img v-if="daten.coin.bild" :src="daten.coin.bild" alt="" class="tsBild">
+                <strong>{{ daten.coin.name || daten.coin.symbol }}</strong>
+                <span v-if="daten.coin.symbol" class="tsGrau">{{ daten.coin.symbol }}</span>
+                <span v-if="daten.coin.rang" class="tsGrau">#{{ daten.coin.rang }}</span>
+                <a v-if="daten.coin.coingeckoUrl" :href="daten.coin.coingeckoUrl" target="_blank" rel="noopener noreferrer">CoinGecko ↗</a>
+            </div>
             <div class="tsBlock">
                 <div class="tsTitel">{{ t('coinradar.tsVertrag') }}</div>
                 <div v-if="!daten.gewaehlt" class="small">{{ t('coinradar.tsNichtPruefbar') }}</div>
@@ -65,6 +77,8 @@ const devText = (r) => (r.devPct !== null && r.devPct !== undefined ? pct(r.devP
 
 <style scoped>
 .tsErgebnis { margin-top: .6rem; padding-top: .6rem; border-top: 1px solid var(--white-10, rgba(255, 255, 255, .1)); display: grid; gap: .75rem; }
+.tsKopf { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .9rem; }
+.tsBild { width: 20px; height: 20px; border-radius: 50%; }
 .tsTitel { font-size: .75rem; letter-spacing: .05em; text-transform: uppercase; color: var(--grey-text, #8a9199); margin-bottom: .3rem; }
 .tsZeile { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; font-size: .85rem; padding: .1rem 0; opacity: .7; }
 .tsZeile.gewaehlt { opacity: 1; }

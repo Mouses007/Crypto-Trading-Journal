@@ -89,17 +89,19 @@
                             <th>{{ t('hypeBoersen.spalteToken') }}</th>
                             <th :title="t('hypeBoersen.auchAufTitel')">{{ t('hypeBoersen.spalteAuchAuf') }}</th>
                             <th>{{ t('hypeBoersen.spalteRadar') }}</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="a in daten.angekuendigt" :key="a.boerse + a.symbol">
+                        <template v-for="a in daten.angekuendigt" :key="a.boerse + a.symbol">
+                        <tr>
                             <td class="text-nowrap">
                                 <template v-if="a.start">{{ zeitpunkt(a.start) }} <span class="bwGrau">· {{ bisDahin(a.start) }}</span></template>
                                 <span v-else class="bwGrau">{{ t('hypeBoersen.startOffen') }}</span>
                             </td>
                             <td><span class="bwStufe" :class="stufeVon(a.boerse)">{{ boerseName(a.boerse) }}</span></td>
-                            <td><strong>{{ a.symbol }}</strong></td>
-                            <td><AuchAuf :liste="a.auchAuf" /></td>
+                            <td><TokenZelle :z="a" /></td>
+                            <td><AuchAuf :liste="a.auchAuf" :symbol="a.symbol" /></td>
                             <td :title="a.treffer === 'kuerzel' ? t('hypeBoersen.kuerzelTitel') : ''">
                                 <template v-if="istTreffer(a) && a.radarSeit">
                                     <i class="uil uil-check-circle text-success me-1"></i>{{ t('hypeBoersen.gemeldetVor', { n: tageText((Date.now() - a.radarSeit) / 86400e3) }) }}
@@ -107,7 +109,12 @@
                                 <span v-else-if="a.treffer === 'namensgleich'" class="bwGrau">{{ t('hypeBoersen.namensvetter') }}</span>
                                 <span v-else class="bwGrau">—</span>
                             </td>
+                            <td class="text-end"><TiefeKnopf :z="a" /></td>
                         </tr>
+                        <tr v-if="tiefeOffen === tiefeSchluessel(a)" class="bwTiefeZeile">
+                            <td colspan="6"><TiefeInhalt :z="a" /></td>
+                        </tr>
+                        </template>
                     </tbody>
                 </table>
             </div>
@@ -127,15 +134,17 @@
                             <th>{{ t('hypeBoersen.spalteToken') }}</th>
                             <th :title="t('hypeBoersen.auchAufTitel')">{{ t('hypeBoersen.spalteAuchAuf') }}</th>
                             <th>{{ t('hypeBoersen.spalteRadar') }}</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="z in daten.listungen" :key="z.id" :class="{ blass: !istTreffer(z) }">
+                        <template v-for="z in daten.listungen" :key="z.id">
+                        <tr :class="{ blass: !istTreffer(z) && tiefeOffen !== tiefeSchluessel(z) }">
                             <td class="text-nowrap">{{ zeitpunkt(z.gesehenAm) }}</td>
                             <td class="text-nowrap">{{ z.handelsStart ? zeitpunkt(z.handelsStart) : '—' }}</td>
                             <td><span class="bwStufe" :class="stufeVon(z.boerse)">{{ boerseName(z.boerse) }}</span></td>
-                            <td><strong>{{ z.symbol }}</strong> <span v-if="z.chain" class="bwKette">{{ z.chain }}</span></td>
-                            <td><AuchAuf :liste="z.auchAuf" /></td>
+                            <td><TokenZelle :z="z" /></td>
+                            <td><AuchAuf :liste="z.auchAuf" :symbol="z.symbol" /></td>
                             <td :title="z.treffer === 'kuerzel' ? t('hypeBoersen.kuerzelTitel') : ''">
                                 <template v-if="istTreffer(z) && z.radarSeit">
                                     <i class="uil uil-check-circle text-success me-1"></i>{{ t('hypeBoersen.vorher', { n: tageText((z.gesehenAm - z.radarSeit) / 86400e3) }) }}
@@ -145,7 +154,12 @@
                                 <span v-else-if="z.radarGesehen" class="bwGrau">{{ t('hypeBoersen.nurGesehen') }}</span>
                                 <span v-else class="bwGrau">—</span>
                             </td>
+                            <td class="text-end"><TiefeKnopf :z="z" /></td>
                         </tr>
+                        <tr v-if="tiefeOffen === tiefeSchluessel(z)" class="bwTiefeZeile">
+                            <td colspan="7"><TiefeInhalt :z="z" /></td>
+                        </tr>
+                        </template>
                     </tbody>
                 </table>
             </div>
@@ -167,10 +181,12 @@
  *   „Neue Listungen"         was neu dazukam, und ob der Radar es vorher
  *                            gemeldet hatte — der Massstab für „rechtzeitig"
  */
-import { ref, computed, watch, onBeforeUnmount, h, defineComponent } from 'vue'
+import { ref, reactive, computed, watch, onBeforeUnmount, h, defineComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import { logWarn } from '../../utils/logger.js'
+import { listungUrl, coingeckoSuche } from '../../utils/boersenLinks.js'
+import TiefensucheErgebnis from './TiefensucheErgebnis.vue'
 
 const props = defineProps({
     aktiv: { type: Boolean, default: false },
@@ -239,12 +255,88 @@ onBeforeUnmount(() => clearTimeout(uhr))
  * Klassen über `:deep` im Stil — die Elemente entstehen in einer Render-Funktion.
  */
 const AuchAuf = defineComponent({
-    props: { liste: { type: Array, default: () => [] } },
+    props: { liste: { type: Array, default: () => [] }, symbol: { type: String, default: '' } },
     setup(p) {
         return () => (p.liste?.length
-            ? h('span', { class: 'bwAuch' }, p.liste.map((name) =>
-                h('span', { class: ['bwStufe', stufeNachName.value.get(name) || ''], key: name }, name)))
+            ? h('span', { class: 'bwAuch' }, p.liste.map((name) => {
+                // Jede Börse ein Link auf ihre Handelsseite, wo es eine gibt (Alpha nur über den Vertrag).
+                const url = listungUrl(idNachName.value.get(name), p.symbol)
+                const klasse = ['bwStufe', stufeNachName.value.get(name) || '']
+                return url
+                    ? h('a', { class: klasse, key: name, href: url, target: '_blank', rel: 'noopener noreferrer', title: t('hypeBoersen.handelsseite', { b: name }) }, name)
+                    : h('span', { class: klasse, key: name }, name)
+            }))
             : h('span', { class: 'bwGrau', title: t('hypeBoersen.erstauftrittTitel') }, t('hypeBoersen.erstauftritt')))
+    },
+})
+
+/** Kürzel als Link zur Handelsseite der eigenen Börse, dazu CoinGecko und — mit Vertrag — DexScreener. */
+const TokenZelle = defineComponent({
+    props: { z: { type: Object, required: true } },
+    setup(p) {
+        return () => {
+            const z = p.z
+            const url = listungUrl(z.boerse, z.symbol, { chain: z.chain, contract: z.contract })
+            const teile = [url
+                ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', class: 'bwToken', title: t('hypeBoersen.handelsseite', { b: boerseName(z.boerse) }) }, [h('strong', z.symbol)])
+                : h('strong', z.symbol)]
+            if (z.chain) teile.push(h('span', { class: 'bwKette' }, z.chain))
+            teile.push(h('a', { href: coingeckoSuche(z.symbol), target: '_blank', rel: 'noopener noreferrer', class: 'bwNebenLink', title: t('hypeBoersen.coingeckoTitel') }, 'CG'))
+            if (z.contract && z.boerse !== 'binance-alpha') {
+                teile.push(h('a', { href: `https://dexscreener.com/${encodeURIComponent(z.chain || 'solana')}/${encodeURIComponent(z.contract)}`,
+                    target: '_blank', rel: 'noopener noreferrer', class: 'bwNebenLink', title: 'DexScreener' }, 'DEX'))
+            }
+            return h('span', { class: 'bwTokenZelle' }, teile)
+        }
+    },
+})
+
+// ── Tiefensuche je Zeile ────────────────────────────────────────────────
+/*
+ * Dieselbe Prüfung wie im Coin-Radar: mit Vertrag nach Vertrag, sonst nach
+ * Kürzel über CoinGecko — dann steht im Kopf, WELCHER Coin gefunden wurde,
+ * denn bei einem Kürzel wie CENT kann es ein anderer sein als der gelistete.
+ */
+const tiefeOffen = ref('')
+const tiefen = reactive({})
+const tiefeSchluessel = (z) => `${z.boerse}|${z.symbol}`
+async function tiefensuche(z) {
+    const k = tiefeSchluessel(z)
+    if (tiefeOffen.value === k) { tiefeOffen.value = ''; return }
+    tiefeOffen.value = k
+    if (tiefen[k]?.daten || tiefen[k]?.laeuft) return
+    tiefen[k] = { laeuft: true, fehler: '', daten: null }
+    try {
+        const params = z.contract ? { contract: z.contract, chain: z.chain } : { symbol: z.symbol }
+        const r = await axios.get('/api/coin-radar/tiefensuche', { params })
+        tiefen[k] = { laeuft: false, fehler: '', daten: r.data }
+    } catch (e) {
+        tiefen[k] = { laeuft: false, fehler: e.response?.data?.error || e.message, daten: null }
+    }
+}
+const TiefeKnopf = defineComponent({
+    props: { z: { type: Object, required: true } },
+    setup(p) {
+        return () => {
+            const k = tiefeSchluessel(p.z)
+            const offen = tiefeOffen.value === k
+            return h('button', { type: 'button', class: ['ctl-pill', 'klein', { active: offen }], title: t('hypeBoersen.tiefeTitel'),
+                onClick: () => tiefensuche(p.z) }, [
+                tiefen[k]?.laeuft ? h('span', { class: 'spinner-border spinner-border-sm me-1' }) : h('i', { class: 'uil uil-search-plus me-1' }),
+                t('coinradar.tsKnopf'),
+            ])
+        }
+    },
+})
+const TiefeInhalt = defineComponent({
+    props: { z: { type: Object, required: true } },
+    setup(p) {
+        return () => {
+            const e = tiefen[tiefeSchluessel(p.z)]
+            if (!e || e.laeuft) return h('div', { class: 'bwGrau small' }, [h('span', { class: 'spinner-border spinner-border-sm me-1' }), t('hypeBoersen.tiefeLaeuft')])
+            if (e.fehler) return h('div', { class: 'text-warning small' }, e.fehler)
+            return h(TiefensucheErgebnis, { daten: e.daten, mitKopf: true })
+        }
     },
 })
 
@@ -252,6 +344,7 @@ const nachId = computed(() => new Map((daten.value?.boersen || []).map((b) => [b
 const boerseName = (id) => nachId.value.get(id)?.name || id
 const stufeVon = (id) => nachId.value.get(id)?.stufe || ''
 const stufeNachName = computed(() => new Map((daten.value?.boersen || []).map((b) => [b.name, b.stufe])))
+const idNachName = computed(() => new Map((daten.value?.boersen || []).map((b) => [b.name, b.id])))
 
 /** „in 3 h", „in 5 Tagen" — oder „läuft", wenn der Start vorbei ist. */
 function bisDahin(start) {
@@ -378,7 +471,14 @@ const zeitpunkt = (ms) => new Date(Number(ms)).toLocaleString(
 .bwStufe.alpha, :deep(.bwStufe.alpha) { color: #e0b030; }
 .bwStufe.mittel, :deep(.bwStufe.mittel) { color: var(--blue-color, #4da3ff); }
 .bwStufe.gross, :deep(.bwStufe.gross) { color: #4caf50; }
-.bwTabelle a {
+.bwTabelle a, :deep(.bwTabelle a), :deep(a.bwStufe), :deep(a.bwToken), :deep(a.bwNebenLink) {
     text-decoration: none;
 }
+:deep(.bwTokenZelle) { display: inline-flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+:deep(a.bwToken) { color: inherit; }
+:deep(a.bwToken:hover), :deep(a.bwStufe:hover) { text-decoration: underline; }
+:deep(.bwNebenLink) { font-size: .7rem; padding: 0 .3rem; border-radius: 3px; background: var(--white-10, rgba(255, 255, 255, .08));
+    color: var(--grey-color, #9aa0a6); }
+:deep(.bwKette) { font-size: .782rem; color: var(--grey-color, #9aa0a6); }
+.bwTiefeZeile td { background: var(--black-bg-2, rgba(255, 255, 255, .03)); }
 </style>

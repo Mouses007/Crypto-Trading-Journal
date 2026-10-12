@@ -4826,6 +4826,10 @@
     "g_kontrolle": "comparison (pumped, not tipped)"
   },
   "hypeBoersen": {
+    "handelsseite": "trading page on {b}",
+    "coingeckoTitel": "search on CoinGecko",
+    "tiefeTitel": "Check contract, holders and project — by contract where known, otherwise by ticker on CoinGecko",
+    "tiefeLaeuft": "checking … (up to half a minute)",
     "angekuendigtTitel": "Announced",
     "angekuendigtHinweis": "Pairs an exchange has already created but which do not trade yet — with the start time where the exchange states it (Binance Futures, OKX, Gate, Bitget). Once trading starts they move to the new listings.",
     "angekuendigtLeer": "Nothing announced right now.",

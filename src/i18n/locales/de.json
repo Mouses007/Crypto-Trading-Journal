@@ -4826,6 +4826,10 @@
     "g_kontrolle": "Vergleich (gepumpt, nicht gekippt)"
   },
   "hypeBoersen": {
+    "handelsseite": "Handelsseite auf {b}",
+    "coingeckoTitel": "auf CoinGecko suchen",
+    "tiefeTitel": "Vertrag, Halter und Projekt prüfen — mit Vertrag nach Vertrag, sonst über das Kürzel bei CoinGecko",
+    "tiefeLaeuft": "prüft … (bis zu einer halben Minute)",
     "angekuendigtTitel": "Angekündigt",
     "angekuendigtHinweis": "Paare, die eine Börse schon angelegt hat, die aber noch nicht handeln — mit Startzeit, wo die Börse sie nennt (Binance Futures, OKX, Gate, Bitget). Sobald der Handel beginnt, wandern sie zu den neuen Listungen.",
     "angekuendigtLeer": "Gerade nichts angekündigt.",
