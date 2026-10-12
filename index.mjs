@@ -28,6 +28,7 @@ import { startFruehTakt } from './server/hype-radar/fruehphase.js'
 import { startBoersenTakt } from './server/hype-radar/boersenwacht.js'
 import { setupCoinRadarRoutes, startCoinRadarTakt } from './server/coin-radar-api.js'
 import { startErgebnisTakt } from './server/radar-ergebnisse.js'
+import { startAbverkaufTakt } from './server/coin-radar/abverkauf.js'
 import { startOiArchivTakt, stopOiArchivTakt } from './server/oi-archiv.js'
 import { setupUpdateRoutes } from './server/update-api.js'
 import { setupSpeicherRoutes } from './server/speicher-api.js'
@@ -173,6 +174,7 @@ const startIndex = async () => {
     startBoersenTakt();
     startCoinRadarTakt();
     startErgebnisTakt();
+    startAbverkaufTakt();
     // 1-Minuten-Open-Interest für die Liquidationskarte — Binance bietet kein
     // 1m-OI, die feinste Historie ist 5m; deshalb pollt der Takt selbst.
     startOiArchivTakt();

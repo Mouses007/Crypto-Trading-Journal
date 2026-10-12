@@ -101,6 +101,8 @@ export const PAGES = [
      */
     { id: 'coinRadar', mode: 'research', path: '/coin-radar', icon: 'uil uil-chart-line', titleKey: 'nav.coinRadar', menuKey: 'coinradar.tab_rangliste', menuIcon: 'uil uil-list-ol-alt', group: 'coinGruppe' },
     { id: 'coinVerlauf', mode: 'research', path: '/coin-radar/verlauf', icon: 'uil uil-history', titleKey: 'coinradar.tab_verlauf', group: 'coinGruppe' },
+    // Abverkaufs-Wache: gepumpte Perps, die zu kippen beginnen (`server/coin-radar/abverkauf.js`).
+    { id: 'coinAbverkauf', mode: 'research', path: '/coin-radar/abverkauf', icon: 'uil uil-arrow-down-right', titleKey: 'coinradar.tab_abverkauf', group: 'coinGruppe' },
 
     // ── Agent-Trading ───────────────────────────────────────
     { id: 'agentStrategies', mode: 'agent', path: '/agent/strategies', icon: 'uil uil-processor', titleKey: 'nav.agentStrategies', group: 'agentRun' },

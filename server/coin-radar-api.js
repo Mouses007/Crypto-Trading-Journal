@@ -25,6 +25,8 @@ import { leseSchluessel } from './hype-radar/einstellungen.js'
 import { legeAnCoinRadar, HORIZONTE } from './radar-ergebnisse.js'
 import { werteAus } from './radar-guete.js'
 import { raeumeRadarAuf } from './radar-aufraeumen.js'
+import { abverkaufLauf, abverkaufUebersicht, abverkaufStand } from './coin-radar/abverkauf.js'
+import { bereinigeAbverkauf } from './coin-radar/abverkauf-bewertung.js'
 
 /**
  * Die Schwellen, nach denen die Oberfläche filtert und einfärbt.
@@ -83,6 +85,7 @@ export function setupCoinRadarRoutes(app) {
             if (neu.zeiteinheiten && (!Array.isArray(neu.zeiteinheiten) || !neu.zeiteinheiten.length)) {
                 return res.status(400).json({ error: 'Mindestens eine Zeiteinheit wird gebraucht.' })
             }
+            if (neu.abverkauf) neu.abverkauf = bereinigeAbverkauf(neu.abverkauf, (await leseEinstellungen()).abverkauf)
             await schreibeEinstellungen(neu)
             res.json({ ...(await leseEinstellungen()), vorgaben: VORGABEN, konstanten: KONSTANTEN })
         } catch (e) {
@@ -340,6 +343,26 @@ export function setupCoinRadarRoutes(app) {
             logWarn('coin-radar', `Güte lesen: ${e.message}`)
             res.status(500).json({ error: 'Erfolgskontrolle konnte nicht geladen werden' })
         }
+    })
+
+    // ── Abverkaufs-Wache ────────────────────────────────────────────────
+    app.get('/api/coin-radar/abverkauf', async (req, res) => {
+        try {
+            res.json(await abverkaufUebersicht())
+        } catch (e) {
+            logWarn('coin-radar', `Abverkauf lesen: ${e.message}`)
+            res.status(500).json({ error: 'Die Abverkaufs-Wache konnte nicht geladen werden' })
+        }
+    })
+
+    /** Von Hand: im Hintergrund (202), die Seite fragt `stand.laeuft` ab. */
+    app.post('/api/coin-radar/abverkauf/lauf', async (req, res) => {
+        if (abverkaufStand().laeuft) return res.status(429).json({ error: 'Es läuft bereits ein Durchgang.' })
+        if (!(await beansprucheAufgabe('coinradar_abverkauf_hand', 60e3))) {
+            return res.status(429).json({ error: 'Frühestens eine Minute nach dem letzten Durchgang' })
+        }
+        abverkaufLauf().catch((e) => logWarn('coin-radar', `Abverkauf von Hand: ${e.message}`))
+        res.status(202).json({ gestartet: true })
     })
 
     // ── Lauf starten ────────────────────────────────────────────────────

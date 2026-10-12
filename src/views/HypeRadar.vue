@@ -1240,6 +1240,8 @@ async function favEntfernen(f) {
 function alarmZiel(a) {
     const fav = a.favoritId ? favoriten.value.find((f) => f.id === a.favoritId) : null
     if (fav) return { favorit: fav }
+    // Abverkaufs-Wache (Coin-Radar): ein Perpetual, kein Vertrag
+    if (a.regel === 'abverkauf') return { abverkauf: true }
     if (a.daten?.contract) return { contract: String(a.daten.contract) }
     return null
 }
@@ -1247,6 +1249,7 @@ function alarmOeffnen(a) {
     const z = alarmZiel(a)
     if (!z) return
     if (z.favorit) liveOeffnen(z.favorit)
+    else if (z.abverkauf) router.push({ path: '/coin-radar/abverkauf' })
     else router.push({ path: '/hype-radar/fruehphase', query: { token: z.contract } })
 }
 

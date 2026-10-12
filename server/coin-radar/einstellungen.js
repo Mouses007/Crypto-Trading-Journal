@@ -36,6 +36,13 @@ export const VORGABEN = {
      * zusammen bedeuten. Wer nicht zahlen will, schaltet ihn ab.
      */
     einordnungAn: true,
+    /*
+     * Abverkaufs-Wache (`abverkauf.js`). Hier an als Vorgabe, anders als die
+     * Rangliste: Sie ist ausdrücklich bestellt worden, und eine Wache, die erst
+     * eingeschaltet werden muss, verpasst genau den ersten Abverkauf. Ihr
+     * Verbrauch ist klein (rund zwanzig Coins alle zehn Minuten).
+     */
+    abverkauf: { an: true, intervallMin: 10, minAnstieg: 20, minUmsatz: 10_000_000, schwelle: 45, maxKandidaten: 20, vorwarnung: false },
 }
 
 /** Alle Einstellungen, mit Vorgaben aufgefüllt. */

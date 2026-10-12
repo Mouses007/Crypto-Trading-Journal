@@ -168,6 +168,21 @@ verified for it — not, as previously stated here, for lack of perpetuals: it
 runs 602 of them. It appears in the exchange filter, just not in the execution
 figures.
 
+**Dump watch (Coin-Radar → Abverkauf)**: coins are often pumped and then sold off.
+Every ten minutes the watch takes the Binance perpetuals that rose strongly (default
++20 % in 24 h, 10M USD turnover) and checks two things per coin. **Fuel**: stretch
+against the 1h EMA in ATR, overheated RSI, funding (per 8 h, by the market's own
+cycle), freshly built open interest (in contracts, not USD), long overhang (accounts and
+top traders), a rise carried by futures rather than spot, a fresh listing. **Tipping**:
+distance from the high, lower high, structure break, taker buying gone, bearish
+divergence, a rejected spike, falling open interest, exhausted volume, long
+liquidations. "Dump starting" is alerted only when both meet *and* price itself
+confirms; counter-signs — new highs, strongly negative funding (a short squeeze in
+waiting: RSR paid shorts −2 % per 8 h on 12.10.2026) — block it. Alerts go through the
+Hype-Radar channels, at most once per coin in six hours, with the mark above which the
+reading is void (the 24h high). Every alert is measured after 1/4/24 h against a pumped
+coin from the same pass that did not tip.
+
 **Outcome tracking**: for the top twenty of every run *and* a random sample of ten
 from the bottom half, what actually happened afterwards is recorded — 15m/1h/4h for
 the Coin Radar. What is measured is the span between best and worst point inside

@@ -1,7 +1,9 @@
 <template>
     <div class="cr">
         <!-- ── Kopf ──────────────────────────────────────────────────── -->
-        <div class="crKopf">
+        <!-- Die Abverkaufs-Wache hat eigene Einstellungen und einen eigenen
+             Knopf; der Kopf der Rangliste stünde dort als zweiter „Jetzt"-Knopf. -->
+        <div v-if="reiter !== 'abverkauf'" class="crKopf">
             <!-- Rangliste und Verlauf stehen als eigene Einträge im
                  Seitenmenü. Was bleibt, sind die Einstellungen — und die
                  verhalten sich wie in den Nachrichten: ein Zahnrad und eine
@@ -29,7 +31,7 @@
         </div>
 
         <!-- ══ Einstellungen ═════════════════════════════════════════ -->
-        <div v-if="einstOffen" class="mt-3 crEinst">
+        <div v-if="einstOffen && reiter !== 'abverkauf'" class="mt-3 crEinst">
             <div class="crBlock">
                 <h6 class="crTitel">{{ t('coinradar.eAutomatik') }}</h6>
                 <div class="form-check form-switch">
@@ -800,6 +802,11 @@
             </template>
         </div>
 
+        <!-- ══ Abverkauf ═════════════════════════════════════════════ -->
+        <div v-if="reiter === 'abverkauf'" class="mt-3">
+            <AbverkaufAnsicht :aktiv="reiter === 'abverkauf'" />
+        </div>
+
         <!-- ══ Verlauf ═══════════════════════════════════════════════ -->
         <div v-show="reiter === 'verlauf'" class="mt-3">
             <p class="crHinweis">{{ t('coinradar.verlaufHinweis') }}</p>
@@ -1012,6 +1019,7 @@ import axios from 'axios'
 import PageInfo from '../components/PageInfo.vue'
 import InfoTipp from '../components/InfoTipp.vue'
 import TiefensucheErgebnis from '../components/hype/TiefensucheErgebnis.vue'
+import AbverkaufAnsicht from '../components/coinradar/AbverkaufAnsicht.vue'
 import { useKostenAnzeige } from '../utils/formatters.js'
 import { useIstTelefon } from '../utils/geraet.js'
 import { logWarn } from '../utils/logger.js'
@@ -1062,7 +1070,7 @@ const ZE_AUSWAHL = ['5m', '15m', '1h', '4h']
  */
 const route = useRoute()
 const router = useRouter()
-const reiter = computed(() => (route.params.reiter === 'verlauf' ? 'verlauf' : 'rangliste'))
+const reiter = computed(() => (['verlauf', 'abverkauf'].includes(route.params.reiter) ? route.params.reiter : 'rangliste'))
 const laeuft = ref(false)
 const fortschritt = ref(null)
 const meldung = ref('')

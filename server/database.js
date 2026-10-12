@@ -184,7 +184,9 @@ async function fixPostgresSequences(knex) {
 // v24: Börsen-Beobachter mit Handelsstart — `angekuendigt` an
 // `hype_boersen_stand` (Paare, die angelegt, aber noch nicht offen sind) und
 // `handelsStart` an `hype_listungen_neu`. Rein additiv.
-const SCHEMA_VERSION = 24
+// v25: Abverkaufs-Wache (`abverkauf_stand`) — je beobachtetem Perpetual
+// Phase, Treibstoff-Note und das letzte Urteil. Rein additiv.
+const SCHEMA_VERSION = 25
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -3392,6 +3394,27 @@ async function runMigrations(knex, client) {
      */
     await addColumnIfNotExists('hype_boersen_stand', 'angekuendigt', (t) => t.text('angekuendigt').defaultTo('[]'))
     await addColumnIfNotExists('hype_listungen_neu', 'handelsStart', (t) => t.bigInteger('handelsStart'))
+
+    // ── v25 ─────────────────────────────────────────────────────────────
+    /*
+     * Abverkaufs-Wache: eine Zeile je Perpetual, das gerade beobachtet wird.
+     * `phase` keine | ueberdehnt | kippt; `letzterTreffer` hält einen Coin im
+     * Blick, auch wenn sein 24h-Anstieg im Abverkauf schrumpft.
+     */
+    if (!(await knex.schema.hasTable('abverkauf_stand'))) {
+        await knex.schema.createTable('abverkauf_stand', (t) => {
+            t.string('symbol').primary()
+            t.string('phase').defaultTo('keine')
+            t.integer('note').defaultTo(0)
+            t.double('anstieg24h')
+            t.text('ergebnis').defaultTo('{}')       // JSON: Signale, Kennzahlen, Börsen
+            t.bigInteger('phaseSeit').defaultTo(0)
+            t.bigInteger('letzterTreffer').defaultTo(0)
+            t.bigInteger('aktualisiertAm').defaultTo(0)
+            t.bigInteger('alarmiertAm').defaultTo(0)
+        })
+        console.log(' -> Created table: abverkauf_stand')
+    }
 
     // ==================== SCHEMA-ANKER ====================
     // Ganz am Ende, damit die Version erst steht, wenn alle Checks durch sind.

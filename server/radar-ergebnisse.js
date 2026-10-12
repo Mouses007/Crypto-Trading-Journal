@@ -37,6 +37,8 @@ export const HORIZONTE = {
     hype: { '1d': 24 * 3600e3, '7d': 7 * 24 * 3600e3, '30d': 30 * 24 * 3600e3 },
     // Frühphase: Memecoins entscheiden sich in Tagen, nicht Wochen.
     frueh: { '1d': 24 * 3600e3, '3d': 3 * 24 * 3600e3, '7d': 7 * 24 * 3600e3 },
+    // Abverkaufs-Wache: kippt der Coin, zeigt es sich in Stunden (siehe `coin-radar/abverkauf.js`).
+    abverkauf: { '1h': 3600e3, '4h': 4 * 3600e3, '24h': 24 * 3600e3 },
 }
 
 /** Wie viele Spitzenplätze je Lauf verfolgt werden. */
@@ -344,7 +346,7 @@ const WIEDERHOLUNG_MS = 30 * 60 * 1000
  */
 // Frühphase knapp: jede Messung kostet bis zu zwei GeckoTerminal-Abrufe, und dort
 // gehen nur fünf je Minute — der Durchgang braucht sie für die Käufer.
-export const DECKEL_JE_ART = { frueh: 4, hype: 20, coinradar: 40 }
+export const DECKEL_JE_ART = { frueh: 4, hype: 20, coinradar: 40, abverkauf: 10 }
 
 /** Ein Durchgang hört nach so langer Zeit auf; der Rest wartet auf den nächsten. */
 const DURCHGANG_MS = 150e3
@@ -390,7 +392,7 @@ export async function messeFaellige(deckel = DECKEL_JE_ART) {
             continue
         }
         try {
-            const werte = a.art === 'coinradar'
+            const werte = a.art === 'coinradar' || a.art === 'abverkauf'
                 ? await messeCoin(a)
                 : (a.art === 'frueh' ? await messeFrueh(a) : await messeHype(a))
             await knex('radar_ergebnisse').where('id', a.id).update({
@@ -513,7 +515,8 @@ export function rechneFenster(kerzen, von, bis, schrittMs) {
  * wie eine pünktliche.
  */
 async function messeCoin(a) {
-    const dauer = HORIZONTE.coinradar[a.horizont]
+    // Dieselbe Messung für den Coin-Radar und die Abverkaufs-Wache — beide sind Binance-Perps.
+    const dauer = (HORIZONTE[a.art] || HORIZONTE.coinradar)[a.horizont]
     if (!dauer) throw new Error(`unbekannter Horizont ${a.horizont}`)
     const von = Number(a.erstelltAm)
     const bis = von + dauer
