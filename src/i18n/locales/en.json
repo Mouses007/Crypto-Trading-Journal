@@ -5549,6 +5549,19 @@
       "showVliq": "Each vector candle becomes a zone; later candles eat the traded part away — only untouched liquidity remains.",
       "showDOpen": "Today's opening price (UTC) as a dashed line. Intraday charts only."
     },
+    "indBox": {
+      "titel": "Indicators",
+      "zu": "Collapse",
+      "auf": "Expand",
+      "k_ma": "MA",
+      "k_long": "Long",
+      "k_short": "Short",
+      "k_verworfen": "Rejected",
+      "k_emas": "EMAs",
+      "k_signale": "Signals",
+      "k_labels": "Labels",
+      "k_vorwarn": "Pre-warning"
+    },
     "vvBox": {
       "titel": "VWAP Vector",
       "g_labels": "Labels",

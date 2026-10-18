@@ -5549,6 +5549,19 @@
       "vliqBody": "An = Zone ist der Kerzenkörper, aus = ganze Kerze mit Dochten.",
       "showDOpen": "Eröffnungskurs des heutigen Tages (UTC) als gestrichelte Linie. Kurs darüber = Käufer haben die Kontrolle. Nur auf Intraday-Charts."
     },
+    "indBox": {
+      "titel": "Indikatoren",
+      "zu": "Einklappen",
+      "auf": "Ausklappen",
+      "k_ma": "MA",
+      "k_long": "Long",
+      "k_short": "Short",
+      "k_verworfen": "Verworfen",
+      "k_emas": "EMAs",
+      "k_signale": "Signale",
+      "k_labels": "Labels",
+      "k_vorwarn": "Vorwarnung"
+    },
     "vvBox": {
       "titel": "VWAP Vector",
       "g_labels": "Labels",
