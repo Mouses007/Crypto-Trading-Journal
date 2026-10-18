@@ -23,7 +23,7 @@
 
 import axios from 'axios'
 import { getKnex } from './database.js'
-import { notiereGewicht, melde429, pausiertBis } from './binance-takt.js'
+import { notiereGewicht, melde429, pausiertBis, warteAufGewicht } from './binance-takt.js'
 import { ladeListungen } from './hype-radar/listungen.js'
 import { logWarn } from './logger.js'
 import { tradesAusZeilen, mitNotizen } from './chart-journal.js'
@@ -137,6 +137,8 @@ async function holeBitget(symbol, interval, limit, endTime) {
         // Jenseits der Reichweite von `candles` hilft `history-candles` weiter.
         ;({ data } = await axios.get('https://api.bitget.com/api/v2/mix/market/history-candles',
             { params: { ...params, limit: Math.min(limit, 200) }, timeout: HTTP_TIMEOUT }))
+        // Fehler sagen statt „keine älteren Kerzen" — sonst hielt der Chart ein Bitget-Problem für das Ende der Historie.
+        if (data?.code !== '00000') throw Object.assign(new Error(data?.msg || 'Bitget-Fehler'), { status: 400 })
         kerzen = kerzenAusBitget(data?.data)
     }
     return { kerzen }
@@ -184,7 +186,37 @@ function vorlageZeile(r) {
 }
 
 function watchlistZeile(r) {
-    return { id: r.id, name: r.name, symbole: parse(r.symbole, []), reihenfolge: Number(r.reihenfolge) || 0 }
+    return { id: r.id, name: r.name, symbole: parse(r.symbole, []), reihenfolge: Number(r.reihenfolge) || 0, geaendertAm: Number(r.geaendertAm) || 0 }
+}
+
+/** Ganzzahlige, positive ID aus dem Pfad — sonst null (→ 400 statt eines 500 aus der Datenbank). */
+function idAus(req) {
+    const id = Number(req.params.id)
+    return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
+/*
+ * Versionsprüfung für Layout und Watchlist. `geaendertAm` ist der Stand: der
+ * Browser schickt mit, welchen er zuletzt gesehen hat, und das Update greift
+ * nur, wenn die Zeile noch so ist. Vorher gewann still der letzte Schreiber —
+ * zwei offene Fenster (oder NAS und Testcontainer) überschrieben sich
+ * gegenseitig das ganze Layout, und der Abbau der Seite speicherte den alten
+ * Stand eines Hintergrund-Tabs über den neuen.
+ * Streng steigend, damit zwei Speicherungen in derselben Millisekunde nicht
+ * denselben Stand tragen.
+ */
+function naechsterStand(alt) {
+    return Math.max(Date.now(), (Number(alt?.geaendertAm) || 0) + 1)
+}
+async function aktualisiereMitStand(knex, tabelle, alt, patch, stand) {
+    let q = knex(tabelle).where('id', alt.id)
+    if (stand !== undefined && stand !== null) {
+        const s = Number(stand)
+        if (!Number.isFinite(s)) return { fehler: 400 }
+        q = q.andWhere('geaendertAm', s)
+    }
+    const n = await q.update(patch)
+    return { getroffen: n === 1 }
 }
 
 /** Watchlist-Einträge säubern: {symbol, markt}, ohne Doppelte, nur gültige Symbole. */
@@ -270,7 +302,82 @@ function name(eingabe, ersatz) {
     return n || ersatz
 }
 
+/*
+ * Binance-Gewicht. Der Takt in `binance-takt.js` zählt das FUTURES-Budget der
+ * IP (Engine, Ranglisten, Radar teilen es); Spot hat ein eigenes, viel
+ * grösseres. Deshalb meldet nur ein Futures-Abruf sein Gewicht und seine
+ * Strafe dorthin — ein Spot-429 sperrte vorher 30 s alle Futures-Abrufe, und
+ * die Spot-Header überschrieben die Futures-Zählung.
+ * Kosten der Futures-Klines: < 100 → 1, < 500 → 2, ≤ 1000 → 5, darüber 10.
+ */
+export function klinesGewicht(limit) {
+    return limit < 100 ? 1 : limit < 500 ? 2 : limit <= 1000 ? 5 : 10
+}
+const GEWICHT_WARTEN_MS = 15_000
+/** Auf Kopfraum warten, aber eine Browser-Anfrage nicht minutenlang hängen lassen. */
+async function futuresGewicht(kosten) {
+    if (pausiertBis()) return false
+    let uhr
+    const frist = new Promise((r) => { uhr = setTimeout(() => r(false), GEWICHT_WARTEN_MS) })
+    try {
+        return await Promise.race([warteAufGewicht(kosten).then(() => true), frist])
+    } catch { return false } finally { clearTimeout(uhr) }
+}
+function sendeGedrosselt(res) {
+    const bis = pausiertBis()
+    if (bis) res.setHeader('Retry-After', String(Math.max(1, Math.ceil((bis - Date.now()) / 1000))))
+    return res.status(429).json({ error: 'Binance-Rate-Limit erreicht. Bitte kurz warten.', gedrosselt: true })
+}
+
+// Orderbuch fürs Chart (Wände): kurz zwischengespeichert, gleichzeitige Abrufe geteilt —
+// jedes offene Panel fragte alle 5 s selbst (Futures limit 500 = Gewicht 10, Spot 25).
+// Bewusst NICHT in /api/binance/depth: der Bookmap-Abgleich braucht einen frischen Snapshot,
+// ein älterer liesse die Update-Ids nicht anschliessen.
+const TIEFE_TTL_MS = 4000
+const tiefeCache = new Map()     // markt|symbol → { t, daten, laeuft }
+const TIEFE_BASIS = { futures: 'https://fapi.binance.com/fapi/v1/depth', spot: 'https://api.binance.com/api/v3/depth' }
+
 export function setupChartRoutes(app) {
+
+    /**
+     * GET /api/chart/tiefe?symbol=BTCUSDT&markt=futures
+     * Binance-Orderbuch (500 Stufen) für die Wände im Chart; 4 s Cache.
+     */
+    app.get('/api/chart/tiefe', async (req, res) => {
+        const symbol = String(req.query.symbol || '').toUpperCase()
+        if (!SYMBOL_RE.test(symbol)) return res.status(400).json({ error: 'symbol fehlt oder ist ungültig' })
+        const markt = req.query.markt === 'spot' ? 'spot' : 'futures'
+        const k = `${markt}|${symbol}`
+        const c = tiefeCache.get(k)
+        if (c?.daten && Date.now() - c.t < TIEFE_TTL_MS) return res.json(c.daten)
+        if (c?.laeuft) {
+            try { return res.json(await c.laeuft) } catch (e) { return res.status(e.status || 502).json({ error: e.message }) }
+        }
+        const laeuft = (async () => {
+            if (markt === 'futures' && !(await futuresGewicht(10))) {
+                const e = new Error('Binance-Rate-Limit erreicht. Bitte kurz warten.'); e.status = 429; throw e
+            }
+            try {
+                const antwort = await axios.get(TIEFE_BASIS[markt], { params: { symbol, limit: 500 }, timeout: HTTP_TIMEOUT })
+                if (markt === 'futures') notiereGewicht(antwort.headers)
+                return antwort.data
+            } catch (e) {
+                const st = e.response?.status
+                if (markt === 'futures' && (st === 429 || st === 418)) melde429(st, e.response.headers)
+                const f = new Error(e.response?.data?.msg || e.message); f.status = st >= 400 && st < 500 ? st : 502; throw f
+            }
+        })()
+        tiefeCache.set(k, { ...(c || {}), laeuft })
+        try {
+            const daten = await laeuft
+            tiefeCache.set(k, { t: Date.now(), daten })
+            if (tiefeCache.size > 200) tiefeCache.delete(tiefeCache.keys().next().value)
+            res.json(daten)
+        } catch (e) {
+            tiefeCache.delete(k)
+            res.status(e.status || 502).json({ error: e.message })
+        }
+    })
 
     /**
      * GET /api/chart/kerzen?quelle=binance-futures&symbol=BTCUSDT&interval=1h&endTime=&limit=
@@ -310,15 +417,17 @@ export function setupChartRoutes(app) {
                 return res.status(status >= 400 && status < 500 ? status : 502).json({ error: e.response?.data?.msg || e.message })
             }
         }
+        const futures = quelle === 'binance-futures'
+        if (futures && !(await futuresGewicht(klinesGewicht(limit)))) return sendeGedrosselt(res)
         try {
             const antwort = await axios.get(q.basis + q.pfad, { params, timeout: HTTP_TIMEOUT })
-            notiereGewicht(antwort.headers)
+            if (futures) notiereGewicht(antwort.headers)
             res.setHeader('Cache-Control', 'no-store')
             res.json({ quelle, symbol, interval, kerzen: kerzenAusBinance(antwort.data) })
         } catch (e) {
             const status = e.response?.status || 502
             if (status === 429 || status === 418) {
-                melde429(status, e.response?.headers)
+                if (futures) melde429(status, e.response?.headers)
                 return res.status(429).json({ error: 'Binance-Rate-Limit erreicht. Bitte kurz warten.' })
             }
             // Binance antwortet auf ein unbekanntes Symbol mit 400 / Code -1121.
@@ -376,11 +485,14 @@ export function setupChartRoutes(app) {
 
     app.put('/api/chart/layouts/:id', async (req, res) => {
         try {
-            const id = Number(req.params.id)
+            const id = idAus(req)
+            if (!id) return res.status(400).json({ error: 'ungültige id' })
             const knex = getKnex()
             const alt = await knex('chart_layouts').where('id', id).first()
             if (!alt) return res.status(404).json({ error: 'Layout nicht gefunden' })
-            const patch = { geaendertAm: Date.now() }
+            // Nur Inhalt und Name ändern den Stand — „aktiv" setzen ist kein Bearbeiten, sonst
+            // liefe nach jedem Layoutwechsel die nächste Speicherung des eigenen Fensters auf 409.
+            const patch = {}
             if (req.body?.name !== undefined) patch.name = name(req.body.name, alt.name)
             if (req.body?.daten !== undefined) {
                 if (!req.body.daten || typeof req.body.daten !== 'object') return res.status(400).json({ error: 'daten muss ein Objekt sein' })
@@ -388,7 +500,17 @@ export function setupChartRoutes(app) {
                 if (text.length > MAX_LAYOUT_BYTES) return res.status(413).json({ error: 'Layout zu gross' })
                 patch.daten = text
             }
-            await knex('chart_layouts').where('id', id).update(patch)
+            // Geprüft wird nur der Inhalt — ein Umbenennen überschreibt nichts.
+            const stand = patch.daten !== undefined ? req.body?.stand : undefined
+            let fehler, getroffen = true
+            if (Object.keys(patch).length) {
+                patch.geaendertAm = naechsterStand(alt);
+                ({ fehler, getroffen } = await aktualisiereMitStand(knex, 'chart_layouts', alt, patch, stand))
+            }
+            if (fehler) return res.status(400).json({ error: 'stand muss eine Zahl sein' })
+            if (!getroffen) {
+                return res.status(409).json({ error: 'Layout wurde inzwischen anderswo geändert', aktuell: layoutZeile(await knex('chart_layouts').where('id', id).first()) })
+            }
             if (req.body?.aktiv) {
                 await knex('chart_layouts').whereNot('id', id).update({ aktiv: 0 })
                 await knex('chart_layouts').where('id', id).update({ aktiv: 1 })
@@ -399,7 +521,9 @@ export function setupChartRoutes(app) {
 
     app.delete('/api/chart/layouts/:id', async (req, res) => {
         try {
-            await getKnex()('chart_layouts').where('id', Number(req.params.id)).del()
+            const id = idAus(req)
+            if (!id) return res.status(400).json({ error: 'ungültige id' })
+            await getKnex()('chart_layouts').where('id', id).del()
             res.json({ ok: true })
         } catch (e) { res.status(500).json({ error: e.message }) }
     })
@@ -428,22 +552,30 @@ export function setupChartRoutes(app) {
 
     app.put('/api/chart/watchlists/:id', async (req, res) => {
         try {
-            const id = Number(req.params.id)
+            const id = idAus(req)
+            if (!id) return res.status(400).json({ error: 'ungültige id' })
             const knex = getKnex()
             const alt = await knex('chart_watchlists').where('id', id).first()
             if (!alt) return res.status(404).json({ error: 'Watchlist nicht gefunden' })
-            const patch = { geaendertAm: Date.now() }
+            const patch = { geaendertAm: naechsterStand(alt) }
             if (req.body?.name !== undefined) patch.name = name(req.body.name, alt.name)
             if (req.body?.symbole !== undefined) patch.symbole = JSON.stringify(saubereSymbole(req.body.symbole))
             if (req.body?.reihenfolge !== undefined) patch.reihenfolge = Number(req.body.reihenfolge) || 0
-            await knex('chart_watchlists').where('id', id).update(patch)
+            const stand = patch.symbole !== undefined ? req.body?.stand : undefined
+            const { fehler, getroffen } = await aktualisiereMitStand(knex, 'chart_watchlists', alt, patch, stand)
+            if (fehler) return res.status(400).json({ error: 'stand muss eine Zahl sein' })
+            if (!getroffen) {
+                return res.status(409).json({ error: 'Watchlist wurde inzwischen anderswo geändert', aktuell: watchlistZeile(await knex('chart_watchlists').where('id', id).first()) })
+            }
             res.json(watchlistZeile(await knex('chart_watchlists').where('id', id).first()))
         } catch (e) { res.status(500).json({ error: e.message }) }
     })
 
     app.delete('/api/chart/watchlists/:id', async (req, res) => {
         try {
-            await getKnex()('chart_watchlists').where('id', Number(req.params.id)).del()
+            const id = idAus(req)
+            if (!id) return res.status(400).json({ error: 'ungültige id' })
+            await getKnex()('chart_watchlists').where('id', id).del()
             res.json({ ok: true })
         } catch (e) { res.status(500).json({ error: e.message }) }
     })
@@ -469,7 +601,7 @@ export function setupChartRoutes(app) {
                 const c = tickerCache.get(k)
                 if (c && Date.now() - c.zeit < (c.fehlt ? 5 * 60_000 : 10_000)) { if (c.wert) aus[sym] = c.wert; return }
                 // Während einer Binance-Strafe gar nicht erst fragen — jeder weitere Abruf verlängert sie.
-                if (pausiertBis()) { if (c?.wert) aus[sym] = c.wert; return }
+                if (markt === 'futures' && pausiertBis()) { if (c?.wert) aus[sym] = c.wert; return }
                 try {
                     const antwort = await axios.get(basis, { params: { symbol: sym }, timeout: HTTP_TIMEOUT })
                     if (markt === 'futures') notiereGewicht(antwort.headers)
@@ -516,7 +648,8 @@ export function setupChartRoutes(app) {
 
     app.put('/api/chart/vorlagen/:id', async (req, res) => {
         try {
-            const id = Number(req.params.id)
+            const id = idAus(req)
+            if (!id) return res.status(400).json({ error: 'ungültige id' })
             const knex = getKnex()
             const alt = await knex('chart_vorlagen').where('id', id).first()
             if (!alt) return res.status(404).json({ error: 'Vorlage nicht gefunden' })
@@ -534,7 +667,9 @@ export function setupChartRoutes(app) {
 
     app.delete('/api/chart/vorlagen/:id', async (req, res) => {
         try {
-            await getKnex()('chart_vorlagen').where('id', Number(req.params.id)).del()
+            const id = idAus(req)
+            if (!id) return res.status(400).json({ error: 'ungültige id' })
+            await getKnex()('chart_vorlagen').where('id', id).del()
             res.json({ ok: true })
         } catch (e) { res.status(500).json({ error: e.message }) }
     })
@@ -643,9 +778,9 @@ export function setupChartRoutes(app) {
 
     app.put('/api/chart/zeichnungen/:id', async (req, res) => {
         try {
-            const id = Number(req.params.id)
+            const id = idAus(req)
+            if (!id) return res.status(400).json({ error: 'ungültige id' })
             const knex = getKnex()
-            if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'id ungültig' })
             const alt = await knex('chart_zeichnungen').where('id', id).first()
             if (!alt) return res.status(404).json({ error: 'Zeichnung nicht gefunden' })
             // Typ und Symbol sind fest: ein Alarm auf dieser Linie prüft die Passung nur beim
@@ -664,7 +799,8 @@ export function setupChartRoutes(app) {
 
     app.delete('/api/chart/zeichnungen/:id', async (req, res) => {
         try {
-            const id = Number(req.params.id)
+            const id = idAus(req)
+            if (!id) return res.status(400).json({ error: 'ungültige id' })
             const knex = getKnex()
             // Ein Alarm auf dieser Linie hätte danach keine Geometrie mehr —
             // er geht mit, statt still nie wieder auszulösen.

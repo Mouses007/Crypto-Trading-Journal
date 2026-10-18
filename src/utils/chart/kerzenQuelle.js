@@ -62,16 +62,27 @@ export async function ladeKerzen({ markt, symbol, interval, endTime, limit = 100
  * Tickerpreis, und die Kerze wird hier gebaut: Eröffnung = Schluss der
  * vorigen, Hoch/Tief aus den Preisen, die diese Seite gesehen hat. Sie ist
  * damit erst ab dem Öffnen genau; das steht im Kopf des Charts.
+ *
+ * Abgefragt werden nur die letzten drei Kerzen. Lag dazwischen mehr als eine
+ * Kerze Pause (Netz weg, Hintergrund-Tab — der Browser drosselt dort den
+ * Takt auf eine Minute), ruft `onLuecke()` wie beim Websocket: sonst blieb
+ * genau diese Zeit als Loch im Chart stehen.
  */
 export class RestKerze {
-    constructor({ markt, symbol, interval, boerse, onKerze, onStatus }) {
+    constructor({ markt, symbol, interval, boerse, onKerze, onLuecke, onStatus }) {
         this.aus = false
         this.gebaut = null
+        this.letzteT = 0
+        const iv = INTERVALL_MS[interval] || MIN
         const runde = async () => {
             if (this.aus) return
             try {
                 const { kerzen, lauf } = await ladeKerzen({ markt, symbol, interval, boerse, limit: 3, mitLauf: true })
                 if (this.aus) return
+                const erste = kerzen[0]
+                if (this.letzteT && erste && erste.t > this.letzteT + iv * 1.5) onLuecke?.()
+                const neueste = Math.max(kerzen[kerzen.length - 1]?.t || 0, lauf?.t || 0)
+                if (neueste) this.letzteT = Math.max(this.letzteT, neueste)
                 for (const k of kerzen) onKerze({ ...k, geschlossen: false })
                 const letzte = kerzen[kerzen.length - 1]
                 if (lauf && letzte && lauf.t > letzte.t) {

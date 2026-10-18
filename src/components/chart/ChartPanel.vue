@@ -345,7 +345,7 @@ async function ladeWaende() {
         // zeigt der Chart ohnehin nicht.
         const m = markt === 'spot' ? 'spot' : 'futures'
         const [{ data }, proMin] = await Promise.all([
-            axios.get('/api/binance/depth', { params: { symbol, market: m, limit: 500 } }),
+            axios.get('/api/chart/tiefe', { params: { symbol, markt: m } }),
             umsatzJeMinute(symbol, m),
         ])
         if (symbol !== props.panel.symbol) return
@@ -904,7 +904,8 @@ function starteLive(nr) {
             // Nach einem Abriss die letzten Kerzen neu holen, sonst bliebe
             // genau die Zeit ohne Verbindung als Loch stehen.
             try {
-                const frisch = await ladeKerzen({ symbol, markt, interval, limit: 500 })
+                // Von DERSELBEN Börse — ohne `boerse` kamen in ein Bitunix-Chart Binance-Kerzen.
+                const frisch = await ladeKerzen({ symbol, markt, interval, limit: 500, boerse: boerseVon() })
                 if (nr !== ladeNummer) return
                 const ts = chart.value.timeScale()
                 const vorher = ts.getVisibleLogicalRange()

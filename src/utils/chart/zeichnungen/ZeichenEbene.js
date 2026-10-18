@@ -422,7 +422,9 @@ export class ZeichenEbene {
         this.ziehen = null
         try { this.huelle.releasePointerCapture(e.pointerId) } catch { /* egal */ }
         const neu = this.vorschau.get(z.id)
-        if (z.bewegt && neu) this.rueckruf.aendern?.(z.id, { punkte: neu })
+        // pointercancel (Touch-Geste vom Browser übernommen, Fenster verliert den Fokus)
+        // ist ein Abbruch, kein Loslassen — die halbe Ziehvorschau wurde sonst gespeichert.
+        if (z.bewegt && neu && e.type !== 'pointercancel') this.rueckruf.aendern?.(z.id, { punkte: neu })
         else this.vorschau.delete(z.id)
         this.requestUpdate()
     }

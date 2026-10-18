@@ -138,7 +138,9 @@ export function setupChartStrategieRoutes(app) {
 
     app.get('/api/chart/strategie/backtest/:id', async (req, res) => {
         try {
-            const b = await getKnex()('strategy_backtests').where('id', Number(req.params.id)).first()
+            const id = Number(req.params.id)
+            if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'ungültige id' })
+            const b = await getKnex()('strategy_backtests').where('id', id).first()
             if (!b) return res.status(404).json({ error: 'Backtest nicht gefunden' })
             const trades = parse(b.trades, []).map((t) => ({
                 richtung: t.direction || t.richtung,
@@ -202,6 +204,13 @@ export function setupChartStrategieRoutes(app) {
                 verworfen: diagnostics?.rejected || {},
                 overlays: overlaysFuer(strategie.id, { candles, params, htfCandles }),
             })
-        } catch (e) { res.status(500).json({ error: e.message }) }
+        } catch (e) {
+            // Ein Symbol, das Binance nicht führt (400 / -1121), ist ein Eingabefehler, kein Serverfehler.
+            const st = e.response?.status || e.status
+            if (st === 400 || /invalid symbol|-1121/i.test(String(e.response?.data?.msg || e.message))) {
+                return res.status(400).json({ error: `${req.body?.symbol || 'Symbol'} gibt es bei Binance nicht` })
+            }
+            res.status(500).json({ error: e.message })
+        }
     })
 }

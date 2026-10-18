@@ -354,6 +354,7 @@ export function setupChartAlarmRoutes(app) {
     app.put('/api/chart/alarme/:id', async (req, res) => {
         try {
             const id = Number(req.params.id)
+            if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'ungültige id' })
             const knex = getKnex()
             const alt = await knex('chart_alarme').where('id', id).first()
             if (!alt) return res.status(404).json({ error: 'Alarm nicht gefunden' })
@@ -371,7 +372,9 @@ export function setupChartAlarmRoutes(app) {
 
     app.delete('/api/chart/alarme/:id', async (req, res) => {
         try {
-            await getKnex()('chart_alarme').where('id', Number(req.params.id)).del()
+            const id = Number(req.params.id)
+            if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'ungültige id' })
+            await getKnex()('chart_alarme').where('id', id).del()
             res.json({ ok: true })
         } catch (e) { res.status(500).json({ error: e.message }) }
     })

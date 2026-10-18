@@ -64,6 +64,11 @@ const REITER = [
 // ── Laden und Speichern ─────────────────────────────────────────────────
 let speicherUhr = null
 let ignoriereNaechsteAenderung = false
+// Stand des Layouts, wie er zuletzt gespeichert oder geladen wurde — gespeichert wird nur,
+// was davon abweicht (vorher speicherte jeder Seitenabbau, auch ein unberührter Hintergrund-Tab).
+let gespeichertText = ''
+const konfliktHinweis = ref('')
+const standVon = (id) => layouts.value.find((l) => l.id === id)?.geaendertAm
 
 async function lade() {
     try {
@@ -86,6 +91,9 @@ function waehleLayout(layout) {
     ignoriereNaechsteAenderung = true
     layoutId.value = layout.id
     daten.value = vervollstaendige(layout.daten)
+    gespeichertText = JSON.stringify(daten.value)
+    const i = layouts.value.findIndex((l) => l.id === layout.id)
+    if (i >= 0) layouts.value[i] = { ...layouts.value[i], geaendertAm: layout.geaendertAm }
 }
 
 /*
@@ -169,13 +177,35 @@ watch(daten, () => {
     speicherUhr = setTimeout(speichere, 800)
 }, { deep: true })
 
-async function speichere() {
-    if (!layoutId.value) return
+/*
+ * Speichern in einer Reihe: zwei gleichzeitige Speicherungen (Takt + Seitenabbau)
+ * trügen denselben Stand, und die zweite liefe auf 409 gegen das eigene Fenster.
+ */
+let speicherKette = Promise.resolve()
+function speichere() {
+    speicherKette = speicherKette.then(speichereJetzt, speichereJetzt)
+    return speicherKette
+}
+async function speichereJetzt() {
+    const id = layoutId.value
+    if (!id) return
+    const text = JSON.stringify(daten.value)
+    if (text === gespeichertText) return
     try {
-        const neu = await api.layoutSpeichern(layoutId.value, { daten: daten.value })
+        const neu = await api.layoutSpeichern(id, { daten: JSON.parse(text), stand: standVon(id) })
+        if (layoutId.value === id) gespeichertText = text
         const i = layouts.value.findIndex((l) => l.id === neu.id)
         if (i >= 0) layouts.value[i] = { ...layouts.value[i], geaendertAm: neu.geaendertAm }
-    } catch { /* nächste Änderung versucht es erneut */ }
+    } catch (e) {
+        // Ein anderes Fenster hat dieses Layout inzwischen gespeichert: dessen Stand
+        // übernehmen und es sagen — still überschreiben verlor dort die Arbeit.
+        const aktuell = e.response?.status === 409 ? e.response.data?.aktuell : null
+        if (aktuell && layoutId.value === id) {
+            waehleLayout(aktuell)
+            konfliktHinweis.value = t('chart.layoutKonflikt')
+        }
+        // sonst: nächste Änderung versucht es erneut
+    }
 }
 
 async function layoutWechsel(id) {
@@ -199,7 +229,7 @@ async function layoutNeu(name) {
 
 async function layoutUmbenennen(name) {
     const neu = await api.layoutSpeichern(layoutId.value, { name })
-    layouts.value = layouts.value.map((l) => (l.id === neu.id ? { ...l, name: neu.name } : l))
+    layouts.value = layouts.value.map((l) => (l.id === neu.id ? { ...l, name: neu.name, geaendertAm: neu.geaendertAm } : l))
 }
 
 async function layoutLoeschen() {
@@ -366,9 +396,29 @@ function bereich(i) {
 }
 
 // ── Watchlists ──────────────────────────────────────────────────────────
+const wlSchluessel = (e) => `${e.markt}|${e.symbol}`
+/*
+ * Mit Stand speichern. Hat ein anderes Fenster die Liste inzwischen geändert (409),
+ * wird die EIGENE Änderung — hinzugefügt/entfernt — auf deren Stand neu angewandt,
+ * statt sie zu verwerfen oder die fremde zu überschreiben. Die Reihenfolge der
+ * fremden Liste bleibt, eigene Neuzugänge kommen ans Ende.
+ */
 async function watchlistAendern(id, symbole) {
-    const neu = await api.watchlistSpeichern(id, { symbole })
-    watchlists.value = watchlists.value.map((w) => (w.id === id ? neu : w))
+    const alt = watchlists.value.find((w) => w.id === id)
+    try {
+        const neu = await api.watchlistSpeichern(id, { symbole, stand: alt?.geaendertAm })
+        watchlists.value = watchlists.value.map((w) => (w.id === id ? neu : w))
+    } catch (e) {
+        const aktuell = e.response?.status === 409 ? e.response.data?.aktuell : null
+        if (!aktuell || !alt) throw e
+        const vorher = new Set(alt.symbole.map(wlSchluessel))
+        const nachher = new Set(symbole.map(wlSchluessel))
+        const weg = new Set([...vorher].filter((k) => !nachher.has(k)))
+        const dazu = symbole.filter((x) => !vorher.has(wlSchluessel(x)))
+        const zusammen = [...aktuell.symbole.filter((x) => !weg.has(wlSchluessel(x))), ...dazu]
+        const neu = await api.watchlistSpeichern(id, { symbole: zusammen, stand: aktuell.geaendertAm })
+        watchlists.value = watchlists.value.map((w) => (w.id === id ? neu : w))
+    }
 }
 
 async function watchlistNeu(name) {
@@ -479,6 +529,10 @@ watch(sichtbareAnzahl, async () => {
 <template>
     <div ref="seite" class="chartSeite" :class="{ telefon }">
         <div v-if="ladeFehler" class="alert alert-warning m-2">{{ t('chart.arbeitsplatzFehler') }}: {{ ladeFehler }}</div>
+        <div v-if="konfliktHinweis" class="alert alert-info m-2 py-1 d-flex align-items-center gap-2">
+            <i class="uil uil-sync"></i><span class="flex-grow-1">{{ konfliktHinweis }}</span>
+            <button type="button" class="btn-close btn-close-white" :aria-label="t('chart.schliessen')" @click="konfliktHinweis = ''"></button>
+        </div>
 
         <template v-if="bereit">
             <ChartKopfleiste ref="kopf" :panel="aktivesPanel" :raster="daten.raster" :sync="daten.sync" :layouts="layouts"

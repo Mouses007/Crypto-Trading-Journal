@@ -5428,6 +5428,8 @@
     },
     "watchlistCoinHinzu": "Add coin",
     "watchlistSucheZu": "Close search",
-    "watchlistBoerse": "Open on {boerse} (trading page)"
+    "watchlistBoerse": "Open on {boerse} (trading page)",
+    "layoutKonflikt": "This layout was changed in another window — its state is now loaded.",
+    "schliessen": "Close"
   }
 }
