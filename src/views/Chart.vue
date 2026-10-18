@@ -20,6 +20,7 @@ import WatchlistReiter from '../components/chart/WatchlistReiter.vue'
 import IndikatorDialog from '../components/chart/IndikatorDialog.vue'
 import Zeichenleiste from '../components/chart/Zeichenleiste.vue'
 import ObjektReiter from '../components/chart/ObjektReiter.vue'
+import StrategieReiter from '../components/chart/StrategieReiter.vue'
 import { zeichnungenVon, aendere as zeichnungAendern, loesche as zeichnungLoeschen, macheRueckgaengig, macheWiederholen, fehlerMeldung } from '../stores/chartZeichnungen.js'
 import { neueInstanz } from '../utils/chart/indikatorRegister.js'
 import { useIstTelefon } from '../utils/geraet.js'
@@ -50,6 +51,7 @@ const rasterKlasse = computed(() => (telefon.value ? 'r1' : 'r' + daten.value.ra
 const REITER = [
     { id: 'watchlist', icon: 'uil uil-star' },
     { id: 'objekte', icon: 'uil uil-layer-group' },
+    { id: 'strategien', icon: 'uil uil-robot' },
 ]
 
 // ── Laden und Speichern ─────────────────────────────────────────────────
@@ -174,6 +176,12 @@ function alleLoeschen() {
     if (!liste.length) return
     if (!window.confirm(t('chart.alleLoeschenFrage', { n: liste.length, symbol }))) return
     for (const z of liste) zeichnungLoeschen(symbol, z.id)
+}
+
+const aktivesPanelRef = computed(() => panelRefs.value[aktivIndex.value] || null)
+
+function strategieFilter(f) {
+    daten.value.panels[aktivIndex.value].strategieFilter = f
 }
 
 function objektWaehlen(z) {
@@ -348,6 +356,11 @@ watch(sichtbareAnzahl, async () => {
                         :zeichnungen="aktiveZeichnungen" :auswahl-id="aktiveAuswahl" @waehle="objektWaehlen"
                         @aendere="(z, patch) => zeichnungAendern(z.symbol, z.id, patch)"
                         @loesche="(z) => zeichnungLoeschen(z.symbol, z.id)" />
+                    <StrategieReiter v-else-if="daten.seitenleiste.reiter === 'strategien'" :panel="aktivesPanel"
+                        :daten="aktivesPanelRef?.strategieDaten" :vorschau="aktivesPanelRef?.strategieVorschau"
+                        :backtest="aktivesPanelRef?.strategieBacktest" @filter="strategieFilter"
+                        @vorschau="(v) => aktivesPanelRef?.setzeStrategieVorschau(v)"
+                        @backtest="(b) => aktivesPanelRef?.setzeBacktest(b)" />
                 </aside>
             </div>
         </template>

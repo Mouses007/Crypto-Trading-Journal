@@ -8,6 +8,8 @@
 export const OVERLAYS = [
     { id: 'journal', icon: 'uil uil-book-alt', vorgabe: true },
     { id: 'positionen', icon: 'uil uil-crosshair', vorgabe: true },
+    // Nur Datenbank, kein Fremdabruf — deshalb ebenfalls ab Werk an.
+    { id: 'strategie', icon: 'uil uil-robot', vorgabe: true },
 ]
 
 export function overlayAn(panel, id) {

@@ -4839,7 +4839,8 @@
     "seitenleiste": "Toggle sidebar",
     "reiter": {
       "watchlist": "Watchlist",
-      "objekte": "Drawings"
+      "objekte": "Drawings",
+      "strategien": "Strategies"
     },
     "watchlistName": "Watchlist name",
     "watchlistNeuVorgabe": "New list",
@@ -5035,7 +5036,26 @@
     "overlaysTitel": "Show/hide own data on the chart",
     "overlay": {
       "journal": "Journal trades",
-      "positionen": "Open positions"
+      "positionen": "Open positions",
+      "strategie": "Strategy layer"
+    },
+    "str": {
+      "instanzen": "Instances on this symbol",
+      "keineInstanz": "No strategy instance trades {symbol}.",
+      "alleZeiteinheiten": "Show setups of all timeframes",
+      "erkennen": "Detect now (without saving)",
+      "waehlen": "Pick an instance or strategy …",
+      "strategienVorgabe": "Strategies with default settings",
+      "jetztErkennen": "Detect on {tf}",
+      "kerzen": "candles",
+      "setupsGefunden": "{n} setups",
+      "kandidaten": "{n} candidates checked",
+      "zonen": "{n} zones",
+      "trend": "Trend",
+      "htfFehlt": "Higher-timeframe candles missing — no zones, no setup (the strategy would not trade either).",
+      "vorschauWeg": "Remove preview",
+      "backtests": "Saved backtests",
+      "keinBacktest": "No saved backtest for this symbol."
     }
   }
 }

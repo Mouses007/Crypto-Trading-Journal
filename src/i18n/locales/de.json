@@ -4839,7 +4839,8 @@
     "seitenleiste": "Seitenleiste ein/aus",
     "reiter": {
       "watchlist": "Watchlist",
-      "objekte": "Zeichnungen"
+      "objekte": "Zeichnungen",
+      "strategien": "Strategien"
     },
     "watchlistName": "Name der Watchlist",
     "watchlistNeuVorgabe": "Neue Liste",
@@ -5035,7 +5036,26 @@
     "overlaysTitel": "Eigene Daten im Chart ein-/ausblenden",
     "overlay": {
       "journal": "Journal-Trades",
-      "positionen": "Offene Positionen"
+      "positionen": "Offene Positionen",
+      "strategie": "Strategie-Schicht"
+    },
+    "str": {
+      "instanzen": "Instanzen auf diesem Symbol",
+      "keineInstanz": "Keine Strategie-Instanz führt {symbol}.",
+      "alleZeiteinheiten": "Setups aller Zeiteinheiten zeigen",
+      "erkennen": "Jetzt erkennen (ohne zu speichern)",
+      "waehlen": "Instanz oder Strategie wählen …",
+      "strategienVorgabe": "Strategien mit Vorgabe-Einstellung",
+      "jetztErkennen": "Auf {tf} erkennen",
+      "kerzen": "Kerzen",
+      "setupsGefunden": "{n} Setups",
+      "kandidaten": "{n} Kandidaten geprüft",
+      "zonen": "{n} Zonen",
+      "trend": "Trend",
+      "htfFehlt": "Kerzen der höheren Zeiteinheit fehlen — keine Zonen, kein Setup (die Strategie handelt dann auch nicht).",
+      "vorschauWeg": "Vorschau entfernen",
+      "backtests": "Gespeicherte Backtests",
+      "keinBacktest": "Kein gespeicherter Backtest für dieses Symbol."
     }
   }
 }

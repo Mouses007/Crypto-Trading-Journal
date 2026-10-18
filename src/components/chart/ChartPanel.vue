@@ -29,6 +29,7 @@ import ZeichnungStil from './ZeichnungStil.vue'
 import TradeKarte from './TradeKarte.vue'
 import axios from 'axios'
 import { JournalEbene } from '../../utils/chart/overlays/JournalEbene.js'
+import { StrategieEbene } from '../../utils/chart/overlays/StrategieEbene.js'
 import { ladeOffenePositionen } from '../../utils/chart/overlays/positionen.js'
 import { overlayAn as overlayAnFuer } from '../../utils/chart/overlays/liste.js'
 
@@ -65,6 +66,10 @@ let journalTakt = null
 let positionsTakt = null
 let positionsLinien = []               // [{ linie, art, pos }]
 let positionen = []
+let strategieEbene = null
+const strategieDaten = shallowRef(null)  // Antwort von /api/chart/strategie (für die Seitenleiste)
+const strategieVorschau = shallowRef(null)
+const strategieBacktest = shallowRef(null)
 let kreuzZeit = null                 // t (ms) unter dem Fadenkreuz; null = letzte Kerze
 let nachfuehrUhr = null
 
@@ -178,6 +183,7 @@ function baueChart() {
             textBearbeiten: textBearbeiten,
         },
     })
+    strategieEbene = new StrategieEbene({ chart: c, serie: ks, formatPreis: (p) => ks.priceFormatter().format(p) })
     journalEbene = new JournalEbene({ chart: c, serie: ks, formatPreis: (p) => ks.priceFormatter().format(p) })
     c.subscribeClick((p) => {
         if (!p?.point || props.werkzeug) return
@@ -209,6 +215,7 @@ function setzeDaten(liste) {
     if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
     ebene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
     journalEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
+    strategieEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
     planeJournal()
     emit('kerzen', liste)
 }
@@ -216,11 +223,53 @@ function setzeDaten(liste) {
 // ── Journal und offene Positionen ────────────────────────────────────────
 const overlayAn = (name) => overlayAnFuer(props.panel, name)
 
-/** Journal für den geladenen Zeitraum holen — entprellt, weil Nachladen und Live-Neuaufbau kurz hintereinander kommen. */
+/** Journal und Strategie für den geladenen Zeitraum holen — entprellt, weil Nachladen und Live-Neuaufbau kurz hintereinander kommen. */
 function planeJournal() {
     clearTimeout(journalUhr)
-    journalUhr = setTimeout(ladeJournal, 300)
+    journalUhr = setTimeout(() => { ladeJournal(); ladeStrategie() }, 300)
 }
+
+// ── Strategie-Schicht ────────────────────────────────────────────────────
+function strategieGefiltert() {
+    const d = strategieDaten.value
+    if (!d) return { setups: [], positionen: [], trades: [] }
+    const f = props.panel.strategieFilter || {}
+    const verborgen = new Set(f.verborgen || [])
+    const passt = (x) => !verborgen.has(x.instanceId) && (f.alleZeiteinheiten || !x.timeframe || x.timeframe === props.panel.interval)
+    return { setups: d.setups.filter(passt), positionen: d.positionen.filter(passt), trades: d.trades.filter(passt) }
+}
+
+function zeigeStrategie() {
+    if (!strategieEbene) return
+    const namen = new Map((strategieDaten.value?.instanzen || []).map((i) => [i.id, i.strategieName]))
+    strategieEbene.setzeDaten(overlayAn('strategie') ? strategieGefiltert() : null, namen)
+}
+
+async function ladeStrategie() {
+    if (!strategieEbene || !kerzen.value.length) return
+    if (!overlayAn('strategie')) { strategieDaten.value = null; zeigeStrategie(); return }
+    const nr = ladeNummer
+    try {
+        const { data } = await axios.get('/api/chart/strategie', {
+            params: { symbol: props.panel.symbol, von: kerzen.value[0].t, bis: Date.now() + (INTERVALL_MS[props.panel.interval] || 0) },
+        })
+        if (nr !== ladeNummer) return
+        strategieDaten.value = data
+        zeigeStrategie()
+    } catch { /* Beiwerk */ }
+}
+
+function setzeStrategieVorschau(v) {
+    strategieVorschau.value = v
+    strategieEbene?.setzeVorschau(v)
+}
+
+function setzeBacktest(b) {
+    strategieBacktest.value = b
+    strategieEbene?.setzeBacktest(b)
+}
+
+watch(() => props.panel.strategieFilter, zeigeStrategie, { deep: true })
 
 async function ladeJournal() {
     if (!journalEbene) return
@@ -292,13 +341,20 @@ function starteTakte() {
     clearInterval(journalTakt)
     clearInterval(positionsTakt)
     // Neue Trades kommen über den Import ins Journal; alle zwei Minuten reicht.
-    journalTakt = setInterval(ladeJournal, 120_000)
+    journalTakt = setInterval(() => { ladeJournal(); ladeStrategie() }, 120_000)
     positionsTakt = setInterval(ladePositionen, 15_000)
     ladePositionen()
 }
 
-watch(() => props.panel.overlays, () => { ladeJournal(); ladePositionen() }, { deep: true })
-watch(() => props.panel.symbol, () => { gewaehlterTrade.value = null; entfernePositionsLinien(); ladePositionen() })
+watch(() => props.panel.overlays, () => { ladeJournal(); ladePositionen(); ladeStrategie() }, { deep: true })
+watch(() => props.panel.symbol, () => {
+    gewaehlterTrade.value = null
+    entfernePositionsLinien()
+    ladePositionen()
+    setzeStrategieVorschau(null)
+    setzeBacktest(null)
+})
+watch(() => props.panel.interval, () => setzeStrategieVorschau(null))
 
 function schliesseTrade() {
     gewaehlterTrade.value = null
@@ -465,6 +521,7 @@ function starteLive(nr) {
                 liste.push(bar)
                 ebene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
                 journalEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
+                strategieEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
             }
             kerzenSerie.value?.update({ time: zuLwc(bar.t), open: bar.o, high: bar.h, low: bar.l, close: bar.c })
             volumenSerie.value?.update(volumenBalken(bar))
@@ -574,6 +631,8 @@ onBeforeUnmount(() => {
     clearInterval(positionsTakt)
     journalEbene?.abbauen()
     journalEbene = null
+    strategieEbene?.abbauen()
+    strategieEbene = null
     live?.stop()
     chart.value?.remove()
     chart.value = null
@@ -583,6 +642,7 @@ defineExpose({
     chart, kerzenSerie, kerzen, zuLwc, vonLwc, kerzeBei,
     setzeKreuz, setzeZeitraum, sichtbarerZeitraum, zurJetztzeit, bildschirmfoto, ladeNeu,
     loescheAuswahl, abbrechen, waehleZeichnung, auswahlId,
+    strategieDaten, strategieVorschau, strategieBacktest, setzeStrategieVorschau, setzeBacktest, ladeStrategie,
 })
 </script>
 

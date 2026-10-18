@@ -805,6 +805,50 @@ export function kerzenAbstand(kerzen) {
     return d[Math.floor(d.length / 2)] || 0
 }
 
+// ── Trend und Zonen ──────────────────────────────────────────────────────
+
+/**
+ * Trend beider Ebenen und die geführten Zonen — das, worauf `detect()` seine
+ * Entscheidungen stützt. Ausgelagert, damit der Chart-Arbeitsplatz die Zonen
+ * zeigen kann, OHNE eine zweite Fassung dieser Rechnung zu führen: eine Zone
+ * im Bild, die von der Zone der Strategie abweicht, wäre schlimmer als keine.
+ *
+ * Mit eingeschaltetem HTF-Filter kommen Trend und Zonen aus der höheren
+ * Zeiteinheit. Fehlen deren Kerzen, liefert die Funktion `htfFehlt: true` —
+ * ein Filter, der sich bei fehlenden Daten selbst abschaltet, machte aus einem
+ * gefilterten Lauf stillschweigend einen ungefilterten.
+ *
+ * @returns {{ htfFehlt?: true, basis?: Array, trend1?: number, trend2?: number, masse?: object, zonen?: Array }}
+ */
+export function zonenLage({ candles, params: p, htfCandles = null }) {
+    let basis = candles
+    let zweite = null
+    if (p.htfTrendFilter) {
+        const noetigHtf = Math.max(p.pivotLinks + p.pivotRechts + 10,
+            p.zweiteEbene ? (p.pivotLinks + p.pivotRechts + 4) * p.zweiteEbeneFaktor : 0)
+        if (!Array.isArray(htfCandles) || htfCandles.length < noetigHtf) return { htfFehlt: true }
+        basis = htfCandles.slice(-p.zonenFensterHtf)
+        if (p.zweiteEbene) {
+            const ms = kerzenAbstand(htfCandles)
+            zweite = aggregiereKerzen(htfCandles, ms, p.zweiteEbeneFaktor)
+        }
+    } else if (p.zweiteEbene) {
+        const ms = kerzenAbstand(candles)
+        zweite = aggregiereKerzen(candles, ms, p.zweiteEbeneFaktor)
+        basis = candles.slice(-p.zonenFensterHtf)
+    }
+
+    const trendVon = p.trendModus === 'momentaufnahme' ? strukturTrend : trendZustand
+    const trendKerzen = p.nurKoerper ? koerperKerzen(basis) : basis
+    const trend1 = trendVon(trendKerzen, p.pivotLinks, p.pivotRechts)
+    const trend2 = zweite
+        ? trendVon(p.nurKoerper ? koerperKerzen(zweite) : zweite, p.pivotLinks, p.pivotRechts)
+        : trend1
+    const masse = zonenMasse(basis, p)
+    const zonen = zonenNachGuete(basis, findeZonen(basis, p, masse), p, masse)
+    return { basis, trend1, trend2, masse, zonen }
+}
+
 // ── detect ───────────────────────────────────────────────────────────────
 
 /**
@@ -832,47 +876,20 @@ function detect({ candles, params: p, openSetups = [], knownSetupKeys = [], htfC
         return { setups, events, diagnostics }
     }
 
-    // ── Trend und Zonen: welche Reihe liefert sie? ────────────────────────
-    // Mit eingeschaltetem HTF-Filter kommen beide aus der höheren
-    // Zeiteinheit. Fehlen deren Kerzen, wird NICHT gehandelt: ein Filter, der
-    // sich bei fehlenden Daten selbst abschaltet, macht aus einem gefilterten
-    // Lauf stillschweigend einen ungefilterten — und der sieht im Ergebnis
-    // genauso aus.
-    let basis = candles
-    let zweite = null
-    if (p.htfTrendFilter) {
-        const noetigHtf = Math.max(p.pivotLinks + p.pivotRechts + 10,
-            p.zweiteEbene ? (p.pivotLinks + p.pivotRechts + 4) * p.zweiteEbeneFaktor : 0)
-        if (!Array.isArray(htfCandles) || htfCandles.length < noetigHtf) {
-            // Gezählt, aber NICHT in `rejections` gelegt: der Backtest macht
-            // aus jedem Eintrag dort einen gefundenen Kandidaten, und am
-            // Anfang eines Laufs fehlt der Vorlauf der höheren Zeiteinheit
-            // schlicht — das sind keine abgelehnten Setups, sondern Takte
-            // ohne Datenlage. Vermischt sähe der Trichter aus, als hätte die
-            // Strategie hunderte Signale verworfen.
-            diagnostics.rejected[INVALID_REASONS.HTF_FEHLT] =
-                (diagnostics.rejected[INVALID_REASONS.HTF_FEHLT] || 0) + 1
-            return { setups, events, diagnostics }
-        }
-        basis = htfCandles.slice(-p.zonenFensterHtf)
-        if (p.zweiteEbene) {
-            const ms = kerzenAbstand(htfCandles)
-            zweite = aggregiereKerzen(htfCandles, ms, p.zweiteEbeneFaktor)
-        }
-    } else if (p.zweiteEbene) {
-        const ms = kerzenAbstand(candles)
-        zweite = aggregiereKerzen(candles, ms, p.zweiteEbeneFaktor)
-        basis = candles.slice(-p.zonenFensterHtf)
+    // ── Trend und Zonen ──────────────────────────────────────────────────
+    const lage = zonenLage({ candles, params: p, htfCandles })
+    if (lage.htfFehlt) {
+        // Gezählt, aber NICHT in `rejections` gelegt: der Backtest macht
+        // aus jedem Eintrag dort einen gefundenen Kandidaten, und am
+        // Anfang eines Laufs fehlt der Vorlauf der höheren Zeiteinheit
+        // schlicht — das sind keine abgelehnten Setups, sondern Takte
+        // ohne Datenlage. Vermischt sähe der Trichter aus, als hätte die
+        // Strategie hunderte Signale verworfen.
+        diagnostics.rejected[INVALID_REASONS.HTF_FEHLT] =
+            (diagnostics.rejected[INVALID_REASONS.HTF_FEHLT] || 0) + 1
+        return { setups, events, diagnostics }
     }
-
-    const trendVon = p.trendModus === 'momentaufnahme' ? strukturTrend : trendZustand
-    const trendKerzen = p.nurKoerper ? koerperKerzen(basis) : basis
-    const trend1 = trendVon(trendKerzen, p.pivotLinks, p.pivotRechts)
-    const trend2 = zweite
-        ? trendVon(p.nurKoerper ? koerperKerzen(zweite) : zweite, p.pivotLinks, p.pivotRechts)
-        : trend1
-    const masse = zonenMasse(basis, p)
-    const zonen = zonenNachGuete(basis, findeZonen(basis, p, masse), p, masse)
+    const { trend1, trend2, masse, zonen } = lage
 
     const bekannt = new Set(knownSetupKeys)
     for (const s of openSetups) bekannt.add(`${s.direction}|${s.obCandleTime}`)
