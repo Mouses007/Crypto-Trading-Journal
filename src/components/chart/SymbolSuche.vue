@@ -85,7 +85,7 @@ defineExpose({ oeffne, schliesse: () => { offen.value = false }, istOffen: () =>
 
 <template>
     <div class="symbolSuche">
-        <button v-if="!ohneKnopf" class="knopf" @click="oeffne" :title="t('chart.symbolSuchen')">
+        <button v-if="!ohneKnopf" class="knopf" @click="oeffne" :title="t('chart.symbolSuchen')" :aria-label="t('chart.symbolSuchen')">
             <i class="uil uil-search"></i>
             <span class="sym">{{ symbol }}</span>
             <span class="markt">{{ markt === 'spot' ? 'Spot' : 'Perp' }}</span>

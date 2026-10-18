@@ -54,6 +54,7 @@ async function erstelle() {
     const fuer = stand()
     laeuft.value = true
     fehler.value = ''
+    const beginn = Date.now()
     try {
         const { data } = await axios.post('/api/chart/ki-analyse', { symbol: props.panel.symbol, interval: props.panel.interval, markt: props.panel.markt })
         // Inzwischen anderes Symbol: verwerfen. Der Server hat sie abgelegt — zurück
@@ -63,10 +64,36 @@ async function erstelle() {
         uebernommen.value = new Set()
         emit('vorschau', data)
     } catch (e) {
+        // Brach nur der Browser ab, rechnet der Server weiter und legt das Ergebnis ab —
+        // dann nachsehen statt einen Fehler für bezahlte Arbeit zu zeigen.
+        if (e.code === 'ECONNABORTED' && meine === nr && fuer === stand()) {
+            if (await warteAufErgebnis(beginn, meine, fuer)) return
+        }
         if (meine === nr && fuer === stand()) fehler.value = e.response?.data?.error || e.message
     } finally {
         laeuft.value = false
     }
+}
+
+/** Nach einem Abbruch im Browser bis zu 5 Minuten im Server-Cache nachsehen. */
+async function warteAufErgebnis(beginn, meine, fuer) {
+    fehler.value = t('chart.ki.dauertLaenger')
+    for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 10_000))
+        if (meine !== nr || fuer !== stand()) return true
+        try {
+            const { data } = await axios.get('/api/chart/ki-analyse', { params: { symbol: props.panel.symbol, interval: props.panel.interval, markt: props.panel.markt } })
+            // 30 s Spielraum für eine abweichende Server-Uhr
+            if (!data.leer && data.stand >= beginn - 30_000) {
+                fehler.value = ''
+                analyse.value = data
+                uebernommen.value = new Set()
+                emit('vorschau', data)
+                return true
+            }
+        } catch { /* weiter warten */ }
+    }
+    return false
 }
 
 async function uebernimm(art, i) {

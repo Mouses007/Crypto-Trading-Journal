@@ -32,12 +32,12 @@ function umschalten() {
 
 <template>
     <div class="zeichenleiste" :class="{ offen }">
-        <button class="w klappe" :title="t(offen ? 'chart.wzKurz.einklappen' : 'chart.wzKurz.ausklappen')" @click="umschalten">
+        <button class="w klappe" :title="t(offen ? 'chart.wzKurz.einklappen' : 'chart.wzKurz.ausklappen')" @click="umschalten" :aria-label="t(offen ? 'chart.wzKurz.einklappen' : 'chart.wzKurz.ausklappen')">
             <i :class="offen ? 'uil uil-angle-double-left' : 'uil uil-angle-double-right'"></i>
             <span v-if="offen" class="name">{{ t('chart.wzKurz.einklappen') }}</span>
         </button>
         <hr />
-        <button class="w" :class="{ an: !werkzeug }" :title="t('chart.wz.zeiger')" @click="emit('werkzeug', null)">
+        <button class="w" :class="{ an: !werkzeug }" :title="t('chart.wz.zeiger')" @click="emit('werkzeug', null)" :aria-label="t('chart.wz.zeiger')">
             <i class="uil uil-mouse-alt"></i>
             <span v-if="offen" class="name">{{ t('chart.wz.zeiger') }}</span>
         </button>
@@ -45,13 +45,13 @@ function umschalten() {
         <template v-for="(w, i) in WERKZEUGE" :key="w.typ">
             <hr v-if="i > 0 && WERKZEUGE[i - 1].gruppe !== w.gruppe" />
             <button class="w" :class="{ an: werkzeug === w.typ }" :title="t('chart.wz.' + w.typ)"
-                @click="emit('werkzeug', werkzeug === w.typ ? null : w.typ)">
+                @click="emit('werkzeug', werkzeug === w.typ ? null : w.typ)" :aria-label="t('chart.wz.' + w.typ)">
                 <i :class="w.icon"></i>
                 <span v-if="offen" class="name">{{ t('chart.wz.' + w.typ) }}</span>
             </button>
         </template>
         <hr />
-        <button class="w" :class="{ an: magnet }" :title="t('chart.wz.magnet')" @click="emit('magnet')">
+        <button class="w" :class="{ an: magnet }" :title="t('chart.wz.magnet')" @click="emit('magnet')" :aria-label="t('chart.wz.magnet')">
             <!-- Eigenes Symbol: `uil-magnet` gibt es im geladenen Unicons-Satz nicht (der Knopf war leer). -->
             <svg class="svgSymbol" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M6 3h4v8a2 2 0 0 0 4 0V3h4v8a6 6 0 0 1-12 0V3z" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -60,11 +60,11 @@ function umschalten() {
             </svg>
             <span v-if="offen" class="name">{{ t('chart.wzKurz.magnet') }}</span>
         </button>
-        <button class="w" :class="{ an: versteckt }" :title="t('chart.wz.allesVerstecken')" @click="emit('versteckt')">
+        <button class="w" :class="{ an: versteckt }" :title="t('chart.wz.allesVerstecken')" @click="emit('versteckt')" :aria-label="t('chart.wz.allesVerstecken')">
             <i :class="versteckt ? 'uil uil-eye-slash' : 'uil uil-eye'"></i>
             <span v-if="offen" class="name">{{ t(versteckt ? 'chart.wzKurz.einblenden' : 'chart.wzKurz.ausblenden') }}</span>
         </button>
-        <button class="w" :title="t('chart.wz.alleLoeschen')" @click="emit('alleLoeschen')">
+        <button class="w" :title="t('chart.wz.alleLoeschen')" @click="emit('alleLoeschen')" :aria-label="t('chart.wz.alleLoeschen')">
             <i class="uil uil-trash-alt"></i>
             <span v-if="offen" class="name">{{ t('chart.wzKurz.alleLoeschen') }}</span>
         </button>

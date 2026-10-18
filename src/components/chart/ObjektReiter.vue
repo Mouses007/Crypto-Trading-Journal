@@ -42,12 +42,12 @@ function beschreibung(z) {
             <span v-if="Array.isArray(z.sichtbarAuf) && z.sichtbarAuf.length" class="tf">{{ z.sichtbarAuf.join(',') }}</span>
             <span class="werkzeug" @click.stop>
                 <button :title="t(z.versteckt ? 'chart.einblenden' : 'chart.ausblenden')"
-                    @click="emit('aendere', z, { versteckt: !z.versteckt })">
+                    @click="emit('aendere', z, { versteckt: !z.versteckt })" :aria-label="t(z.versteckt ? 'chart.einblenden' : 'chart.ausblenden')">
                     <i :class="z.versteckt ? 'uil uil-eye-slash' : 'uil uil-eye'"></i></button>
                 <button :title="t(z.gesperrt ? 'chart.stil.entsperren' : 'chart.stil.sperren')"
-                    @click="emit('aendere', z, { gesperrt: !z.gesperrt })">
+                    @click="emit('aendere', z, { gesperrt: !z.gesperrt })" :aria-label="t(z.gesperrt ? 'chart.stil.entsperren' : 'chart.stil.sperren')">
                     <i :class="z.gesperrt ? 'uil uil-lock' : 'uil uil-unlock'"></i></button>
-                <button :title="t('chart.entfernen')" @click="emit('loesche', z)"><i class="uil uil-trash-alt"></i></button>
+                <button :title="t('chart.entfernen')" @click="emit('loesche', z)" :aria-label="t('chart.entfernen')"><i class="uil uil-trash-alt"></i></button>
             </span>
         </div>
     </div>

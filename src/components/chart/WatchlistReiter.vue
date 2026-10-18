@@ -139,8 +139,8 @@ function loescheListe() {
             <select v-model="listeId" class="form-select form-select-sm">
                 <option v-for="w in watchlists" :key="w.id" :value="w.id">{{ w.name }}</option>
             </select>
-            <button class="icon" :title="t('chart.watchlistNeu')" @click="neueListe"><i class="uil uil-plus"></i></button>
-            <button class="icon" :title="t('chart.watchlistLoeschen')" :disabled="watchlists.length <= 1" @click="loescheListe"><i
+            <button class="icon" :title="t('chart.watchlistNeu')" @click="neueListe" :aria-label="t('chart.watchlistNeu')"><i class="uil uil-plus"></i></button>
+            <button class="icon" :title="t('chart.watchlistLoeschen')" :disabled="watchlists.length <= 1" @click="loescheListe" :aria-label="t('chart.watchlistLoeschen')"><i
                     class="uil uil-trash-alt"></i></button>
         </div>
         <button class="hinzu" :disabled="enthaeltAktives || !liste" @click="fuegeHinzu">

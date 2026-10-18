@@ -108,21 +108,21 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
         <div class="gruppe">
             <button v-for="i in sichtbareIntervalle" :key="i" class="tf" :class="{ an: panel.interval === i }"
                 :disabled="gesperrt.has(i)" :title="gesperrt.has(i) ? t('chart.quelle.tfFehlt') : ''"
-                @click="intervall(i)">{{ i }}</button>
+                @click="intervall(i)" :aria-label="gesperrt.has(i) ? t('chart.quelle.tfFehlt') : ''">{{ i }}</button>
             <div class="aufklapp">
                 <button class="tf" :class="{ an: verborgeneIntervalle.includes(panel.interval) }" :title="t('chart.tfFavoritenTitel')"
-                    @click="mehrOffen = !mehrOffen">
+                    @click="mehrOffen = !mehrOffen" :aria-label="t('chart.tfFavoritenTitel')">
                     {{ verborgeneIntervalle.includes(panel.interval) ? panel.interval : '…' }}
                 </button>
                 <div v-if="mehrOffen" class="menue tfMenue">
                     <div class="tfKopf">{{ t('chart.tfFavoriten') }}</div>
                     <div v-for="i in INTERVALLE" :key="i" class="tfZeile">
                         <button class="tf" :class="{ an: panel.interval === i }" :disabled="gesperrt.has(i)"
-                            :title="gesperrt.has(i) ? t('chart.quelle.tfFehlt') : ''" @click="intervall(i)">{{ i }}</button>
+                            :title="gesperrt.has(i) ? t('chart.quelle.tfFehlt') : ''" @click="intervall(i)" :aria-label="gesperrt.has(i) ? t('chart.quelle.tfFehlt') : ''">{{ i }}</button>
                         <button class="stern" :class="{ an: favoriten.includes(i) }"
                             :disabled="favoriten.includes(i) && favoriten.length <= 1"
                             :title="t(favoriten.includes(i) ? 'chart.tfFavoritWeg' : 'chart.tfFavoritHinzu')"
-                            @click.stop="schalteFavorit(i)">
+                            @click.stop="schalteFavorit(i)" :aria-label="t(favoriten.includes(i) ? 'chart.tfFavoritWeg' : 'chart.tfFavoritHinzu')">
                             <i class="uil uil-star"></i>
                         </button>
                     </div>
@@ -132,13 +132,13 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
 
         <div class="gruppe">
             <button v-for="s in SKALEN" :key="s" class="tf" :class="{ an: (panel.skala || 'normal') === s }"
-                :title="t('chart.skala.' + s)" @click="emit('panel', { skala: s })">{{ t('chart.skalaKurz.' + s) }}</button>
+                :title="t('chart.skala.' + s)" @click="emit('panel', { skala: s })" :aria-label="t('chart.skala.' + s)">{{ t('chart.skalaKurz.' + s) }}</button>
             <button class="tf" :class="{ an: panel.autoSkala !== false }" :title="t(panel.autoSkala !== false ? 'chart.autoAn' : 'chart.autoAus')"
-                @click="emit('panel', { autoSkala: panel.autoSkala === false })">{{ t('chart.autoKurz') }}</button>
+                @click="emit('panel', { autoSkala: panel.autoSkala === false })" :aria-label="t(panel.autoSkala !== false ? 'chart.autoAn' : 'chart.autoAus')">{{ t('chart.autoKurz') }}</button>
         </div>
 
         <div class="gruppe">
-            <button class="tf" :title="t('chart.indikatorenTitel')" @click="emit('indikatoren')">
+            <button class="tf" :title="t('chart.indikatorenTitel')" @click="emit('indikatoren')" :aria-label="t('chart.indikatorenTitel')">
                 <i class="uil uil-chart-growth"></i> {{ t('chart.indikatoren') }}
             </button>
             <VorlagenMenue :aktuelle="panel.indikatoren || []" @anwenden="emit('vorlage', $event)" />
@@ -148,7 +148,7 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
         <div class="gruppe schnell" :title="t('chart.overlaysTitel')">
             <button v-for="o in OVERLAYS" :key="o.id" class="tf" :class="{ an: overlayAn(panel, o.id) }"
                 :title="t('chart.overlay.' + o.id) + ' — ' + t(overlayAn(panel, o.id) ? 'chart.ausblenden' : 'chart.einblenden')"
-                @click="schalteOverlay(o.id, !overlayAn(panel, o.id))"><i :class="o.icon"></i></button>
+                @click="schalteOverlay(o.id, !overlayAn(panel, o.id))" :aria-label="t('chart.overlay.' + o.id) + ' — ' + t(overlayAn(panel, o.id) ? 'chart.ausblenden' : 'chart.einblenden')"><i :class="o.icon"></i></button>
         </div>
 
         <slot />
@@ -157,7 +157,7 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
             <div v-if="!telefon" class="gruppe">
                 <!-- Raster im Ausklappmenü: der Knopf zeigt das aktuelle, die Leiste hat Platz für die Schnellschalter. -->
                 <div class="aufklapp">
-                    <button class="tf" :class="{ an: rasterOffen }" :title="t('chart.rasterTitel')" @click="rasterOffen = !rasterOffen">
+                    <button class="tf" :class="{ an: rasterOffen }" :title="t('chart.rasterTitel')" @click="rasterOffen = !rasterOffen" :aria-label="t('chart.rasterTitel')">
                         <i :class="RASTER.find((r) => r.id === raster)?.icon || RASTER[0].icon"></i> <i class="uil uil-angle-down pfeil"></i>
                     </button>
                     <div v-if="rasterOffen" class="menue rechtsbuendig spalte">
@@ -166,7 +166,7 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
                     </div>
                 </div>
                 <div class="aufklapp">
-                    <button class="tf" :class="{ an: syncOffen }" :title="t('chart.sync.titel')" @click="syncOffen = !syncOffen">
+                    <button class="tf" :class="{ an: syncOffen }" :title="t('chart.sync.titel')" @click="syncOffen = !syncOffen" :aria-label="t('chart.sync.titel')">
                         <i class="uil uil-link-h"></i>
                     </button>
                     <div v-if="syncOffen" class="menue rechtsbuendig spalte">
@@ -179,7 +179,7 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
             </div>
 
             <div class="aufklapp">
-                <button class="tf layout" @click="layoutOffen = !layoutOffen" :title="t('chart.layouts')">
+                <button class="tf layout" @click="layoutOffen = !layoutOffen" :title="t('chart.layouts')" :aria-label="t('chart.layouts')">
                     <i class="uil uil-window"></i> {{ aktuellesLayout?.name || '…' }}
                 </button>
                 <div v-if="layoutOffen" class="menue rechtsbuendig spalte">
@@ -193,9 +193,9 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
                 </div>
             </div>
 
-            <button class="tf" :title="t('chart.foto')" @click="emit('foto')"><i class="uil uil-camera"></i></button>
+            <button class="tf" :title="t('chart.foto')" @click="emit('foto')" :aria-label="t('chart.foto')"><i class="uil uil-camera"></i></button>
             <button class="tf" :class="{ an: seitenleisteOffen }" :title="t('chart.seitenleiste')"
-                @click="emit('seitenleiste')"><i class="uil uil-sidebar"></i></button>
+                @click="emit('seitenleiste')" :aria-label="t('chart.seitenleiste')"><i class="uil uil-sidebar"></i></button>
         </div>
     </div>
 </template>

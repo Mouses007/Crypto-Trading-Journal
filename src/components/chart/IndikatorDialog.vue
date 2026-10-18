@@ -116,10 +116,10 @@ onMounted(async () => {
                     <div class="aktiveListe">
                         <div v-for="a in aktive" :key="a.id" class="aktiv" :class="{ aus: a.sichtbar === false }">
                             <span class="name">{{ kurzname(a.typ, a.params, t('chart.ind.' + a.typ + '.kurz')) }}</span>
-                            <button :title="t(a.sichtbar === false ? 'chart.einblenden' : 'chart.ausblenden')" @click="emit('umschalten', a.id)">
+                            <button :title="t(a.sichtbar === false ? 'chart.einblenden' : 'chart.ausblenden')" @click="emit('umschalten', a.id)" :aria-label="t(a.sichtbar === false ? 'chart.einblenden' : 'chart.ausblenden')">
                                 <i :class="a.sichtbar === false ? 'uil uil-eye-slash' : 'uil uil-eye'"></i></button>
-                            <button :title="t('chart.einstellungen')" @click="emit('bearbeite', a.id)"><i class="uil uil-setting"></i></button>
-                            <button class="weg" :title="t('chart.entfernen')" @click="emit('entferne', a.id)"><i class="uil uil-trash-alt"></i></button>
+                            <button :title="t('chart.einstellungen')" @click="emit('bearbeite', a.id)" :aria-label="t('chart.einstellungen')"><i class="uil uil-setting"></i></button>
+                            <button class="weg" :title="t('chart.entfernen')" @click="emit('entferne', a.id)" :aria-label="t('chart.entfernen')"><i class="uil uil-trash-alt"></i></button>
                         </div>
                     </div>
                     <div class="abschnitt">{{ t('chart.indHinzu') }}</div>

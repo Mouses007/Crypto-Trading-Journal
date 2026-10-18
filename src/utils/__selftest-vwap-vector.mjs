@@ -52,7 +52,14 @@ console.log('\nMTF-EMA (kein Blick in die Zukunft)\n')
     const m = emaHoehereTf(chart, tage, 5, D, H)
     // Kerze 0 liegt in Tag 28, der erst mit Kerze 23 schliesst → laufend, Basis = Tag 27
     const a = 2 / 6
-    check('laufender Tag: EMA von gestern + vorläufiger Schluss', Math.abs(m[0] - (e[27] + a * (50 - e[27]))) < 1e-9, `${m[0]} vs ${e[27]}`)
+    check('historische Kerze im laufenden Tag: EMA von gestern (Treppe wie im Pine)', Math.abs(m[0] - e[27]) < 1e-9, `${m[0]} vs ${e[27]}`)
+    check('Treppe: alle Stunden von Tag 28 vor seinem Schluss tragen denselben Wert', m.slice(0, 23).every((x) => Math.abs(x - e[27]) < 1e-9))
+    // Chart endet eine Stunde vor Schluss von Tag 29: die letzte Kerze ist Echtzeit
+    const live = emaHoehereTf(chart.slice(0, 47), tage, 5, D, H)
+    check('letzte Chartkerze (Echtzeit) im laufenden Tag 29: vorläufiger Schluss eingerechnet',
+        Math.abs(live[46] - (e[28] + a * (50 - e[28]))) < 1e-9, `${live[46]} vs ${e[28]}`)
+    check('Gegenprobe: dieselbe Kerze historisch (Chart geht weiter) bleibt auf der Stufe', Math.abs(m[46] - e[28]) < 1e-9)
+    check('Gegenprobe: vorletzte Kerze im Echtzeit-Fall bleibt auf der Stufe', Math.abs(live[45] - e[28]) < 1e-9)
     check('letzte Stunde des Tages: der Tag ist fertig → EMA genau dieses Tages', Math.abs(m[23] - e[28]) < 1e-9, `${m[23]} vs ${e[28]}`)
     check('Gegenprobe: NICHT schon die EMA des laufenden Tages vor seinem Schluss', Math.abs(m[0] - e[28]) > 1e-6)
     check('zu wenig höhere Kerzen → null statt Fantasiewert', emaHoehereTf(chart, tage.slice(0, 3), 5, D, H).every((x) => x === null))

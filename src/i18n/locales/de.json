@@ -5352,7 +5352,8 @@
       },
       "zone": "Zone",
       "verworfen": "{n} Vorschläge verworfen (ausserhalb der Kerzen oder Prognose)",
-      "vorschauWeg": "Vorschau ausblenden"
+      "vorschauWeg": "Vorschau ausblenden",
+      "dauertLaenger": "Die Analyse dauert länger — das Ergebnis wird nachgeladen, sobald der Server fertig ist …"
     },
     "indAktiv": "Aktiv in diesem Chart",
     "indHinzu": "Hinzufügen",
@@ -5430,6 +5431,9 @@
     "watchlistSucheZu": "Suche schliessen",
     "watchlistBoerse": "Auf {boerse} öffnen (Handelsseite)",
     "layoutKonflikt": "Dieses Layout wurde in einem anderen Fenster geändert — dessen Stand ist jetzt geladen.",
-    "schliessen": "Schliessen"
+    "schliessen": "Schliessen",
+    "richtungLong": "Long",
+    "richtungShort": "Short",
+    "playbook": "Playbook"
   }
 }

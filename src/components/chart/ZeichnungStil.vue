@@ -52,29 +52,29 @@ function nurDieseZeiteinheit() {
                 @click="stil({ farbe: f })"></button>
             <span class="trenn"></span>
         </template>
-        <button v-if="hatStrich" class="k" :title="t('chart.stil.breite')" @click="naechsteBreite">
+        <button v-if="hatStrich" class="k" :title="t('chart.stil.breite')" @click="naechsteBreite" :aria-label="t('chart.stil.breite')">
             <span class="breite" :style="{ height: (s.breite || 1) + 'px' }"></span>
         </button>
-        <button v-if="hatStrich" class="k" :title="t('chart.stil.strich.' + (s.strich || 'voll'))" @click="naechsterStrich">
+        <button v-if="hatStrich" class="k" :title="t('chart.stil.strich.' + (s.strich || 'voll'))" @click="naechsterStrich" :aria-label="t('chart.stil.strich.' + (s.strich || 'voll'))">
             {{ s.strich === 'gestrichelt' ? '╌' : s.strich === 'gepunktet' ? '┈' : '─' }}
         </button>
         <button v-if="hatVerlaengern" class="k" :class="{ an: s.rechts }" :title="t('chart.stil.rechts')"
-            @click="stil({ rechts: !s.rechts })"><i class="uil uil-arrow-to-right"></i></button>
+            @click="stil({ rechts: !s.rechts })" :aria-label="t('chart.stil.rechts')"><i class="uil uil-arrow-to-right"></i></button>
         <button v-if="typ === 'trendlinie'" class="k" :class="{ an: s.links }" :title="t('chart.stil.links')"
-            @click="stil({ links: !s.links })"><i class="uil uil-left-arrow-to-left"></i></button>
+            @click="stil({ links: !s.links })" :aria-label="t('chart.stil.links')"><i class="uil uil-left-arrow-to-left"></i></button>
         <button v-if="hatFuellung" class="k" :class="{ an: s.fuellung }" :title="t('chart.stil.fuellung')"
-            @click="stil({ fuellung: !s.fuellung })"><i class="uil uil-tear"></i></button>
-        <button v-if="hatText" class="k" :title="t('chart.stil.text')" @click="emit('text')"><i class="uil uil-text"></i></button>
+            @click="stil({ fuellung: !s.fuellung })" :aria-label="t('chart.stil.fuellung')"><i class="uil uil-tear"></i></button>
+        <button v-if="hatText" class="k" :title="t('chart.stil.text')" @click="emit('text')" :aria-label="t('chart.stil.text')"><i class="uil uil-text"></i></button>
         <span class="trenn"></span>
-        <button class="k" :class="{ an: nurHier }" :title="t('chart.stil.nurHier', { tf: interval })" @click="nurDieseZeiteinheit">
+        <button class="k" :class="{ an: nurHier }" :title="t('chart.stil.nurHier', { tf: interval })" @click="nurDieseZeiteinheit" :aria-label="t('chart.stil.nurHier', { tf: interval })">
             {{ interval }}
         </button>
-        <button v-if="alarmMoeglich" class="k" :title="t('chart.stil.alarm')" @click="emit('alarm')"><i class="uil uil-bell"></i></button>
+        <button v-if="alarmMoeglich" class="k" :title="t('chart.stil.alarm')" @click="emit('alarm')" :aria-label="t('chart.stil.alarm')"><i class="uil uil-bell"></i></button>
         <button class="k" :class="{ an: zeichnung.gesperrt }" :title="t(zeichnung.gesperrt ? 'chart.stil.entsperren' : 'chart.stil.sperren')"
-            @click="emit('aendere', { gesperrt: !zeichnung.gesperrt })">
+            @click="emit('aendere', { gesperrt: !zeichnung.gesperrt })" :aria-label="t(zeichnung.gesperrt ? 'chart.stil.entsperren' : 'chart.stil.sperren')">
             <i :class="zeichnung.gesperrt ? 'uil uil-lock' : 'uil uil-unlock'"></i></button>
-        <button class="k" :title="t('chart.ausblenden')" @click="emit('aendere', { versteckt: true })"><i class="uil uil-eye-slash"></i></button>
-        <button class="k loeschen" :title="t('chart.entfernen')" @click="emit('loesche')"><i class="uil uil-trash-alt"></i></button>
+        <button class="k" :title="t('chart.ausblenden')" @click="emit('aendere', { versteckt: true })" :aria-label="t('chart.ausblenden')"><i class="uil uil-eye-slash"></i></button>
+        <button class="k loeschen" :title="t('chart.entfernen')" @click="emit('loesche')" :aria-label="t('chart.entfernen')"><i class="uil uil-trash-alt"></i></button>
     </div>
 </template>
 

@@ -573,7 +573,7 @@ watch(sichtbareAnzahl, async () => {
                         @dblclick="leisteZuruecksetzen"></div>
                     <div v-if="REITER.length > 1" class="reiter">
                         <button v-for="r in REITER" :key="r.id" :class="{ an: daten.seitenleiste.reiter === r.id }"
-                            :title="t('chart.reiter.' + r.id)" @click="daten.seitenleiste.reiter = r.id">
+                            :title="t('chart.reiter.' + r.id)" @click="daten.seitenleiste.reiter = r.id" :aria-label="t('chart.reiter.' + r.id)">
                             <i :class="r.icon"></i>
                         </button>
                     </div>
@@ -602,7 +602,7 @@ watch(sichtbareAnzahl, async () => {
                         @pointerup="boxZiehenEnde" @pointercancel="boxZiehenEnde" @dblclick="boxHoeheZurueck"
                         :title="t('chart.mbox.trenner')">
                         <span>{{ t('chart.mbox.titel') }}</span>
-                        <button @pointerdown.stop @click.stop="schalteBox" :title="t(boxOffen ? 'chart.mbox.zu' : 'chart.mbox.auf')">
+                        <button @pointerdown.stop @click.stop="schalteBox" :title="t(boxOffen ? 'chart.mbox.zu' : 'chart.mbox.auf')" :aria-label="t(boxOffen ? 'chart.mbox.zu' : 'chart.mbox.auf')">
                             <i :class="boxOffen ? 'uil uil-angle-down' : 'uil uil-angle-up'"></i></button>
                     </div>
                     <div v-if="boxOffen" class="boxBereich" :style="{ height: boxHoehe + 'px' }">

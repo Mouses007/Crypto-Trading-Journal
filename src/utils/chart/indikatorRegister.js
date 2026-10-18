@@ -61,13 +61,22 @@ function mitQuelle(kerzen, quelle) {
  * letzten Wert, der zu ihrer Eröffnung bekannt war. Vor dem ersten Punkt null
  * — nicht 0, sonst sähe der Anfang wie ein Einbruch aus.
  */
-export function aufKerzen(kerzen, punkte, feld) {
+export function aufKerzen(kerzen, punkte, feld, { amSchluss = false } = {}) {
     const aus = new Array(kerzen.length).fill(null)
     if (!Array.isArray(punkte) || !punkte.length) return aus
     const p = [...punkte].sort((a, b) => a.t - b.t)
+    // Kerzenlänge aus den Nachbarn (der Register kennt die Zeiteinheit nicht).
+    const laenge = (i) => (kerzen[i + 1] ? kerzen[i + 1].t - kerzen[i].t : i > 0 ? kerzen[i].t - kerzen[i - 1].t : 0)
     let j = -1
     for (let i = 0; i < kerzen.length; i++) {
-        while (j + 1 < p.length && p[j + 1].t <= kerzen[i].t) j++
+        // `amSchluss`: ein Messpunkt ist ein STAND zur Zeit t (OI, Long/Short) und gehört
+        // zur Kerze, die um t SCHLIESST — das OI von 14:00 ist der Stand am Ende der
+        // 13-Uhr-Kerze (gemessen 18.10.2026: der 5m-Eintrag „13:15" erscheint um 13:17,
+        // vor dem Ende von 13:15–13:20, ist also kein Periodenbeginn). Vorher stand er
+        // auf der 14-Uhr-Kerze, eine Kerze zu spät, und der Balken „Positionen kamen
+        // dazu" sass neben der Kerze, in der es geschah.
+        const grenze = amSchluss ? kerzen[i].t + laenge(i) : kerzen[i].t
+        while (j + 1 < p.length && p[j + 1].t <= grenze) j++
         if (j >= 0) {
             const v = Number(p[j][feld])
             aus[i] = Number.isFinite(v) ? v : null
@@ -319,7 +328,9 @@ export const INDIKATOREN = {
     },
     stoch: {
         ort: 'eigen',
-        params: [P_LAENGE(14), { key: 'glaettK', typ: 'zahl', vorgabe: 3, min: 1, max: 20, schritt: 1 },
+        // Vorgabe wie TradingView: %K 14, %K-Glättung 1, %D 3 (vorher 3 — eine „Slow"-Stochastik
+        // unter dem Namen der normalen, und die Werte wichen vom TradingView-Chart ab).
+        params: [P_LAENGE(14), { key: 'glaettK', typ: 'zahl', vorgabe: 1, min: 1, max: 20, schritt: 1 },
             { key: 'glaettD', typ: 'zahl', vorgabe: 3, min: 1, max: 20, schritt: 1 }],
         ausgaben: [
             { key: 'k', art: 'linie', farbe: '#2962ff', breite: 1 },
@@ -396,7 +407,7 @@ export const INDIKATOREN = {
         ],
         kompakt: true,
         rechne: (k, _p, ext) => {
-            const wert = aufKerzen(k, ext, 'oi')
+            const wert = aufKerzen(k, ext, 'oi', { amSchluss: true })
             return { wert, delta: veraenderung(wert) }
         },
     },
@@ -406,7 +417,7 @@ export const INDIKATOREN = {
         params: [],
         ausgaben: [{ key: 'wert', art: 'linie', farbe: '#26a69a', breite: 2 }],
         linien: [50],
-        rechne: (k, _p, ext) => ({ wert: aufKerzen(k, ext, 'longPct') }),
+        rechne: (k, _p, ext) => ({ wert: aufKerzen(k, ext, 'longPct', { amSchluss: true }) }),
     },
     funding: {
         ort: 'eigen',

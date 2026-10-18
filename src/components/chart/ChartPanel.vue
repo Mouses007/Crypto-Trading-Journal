@@ -445,6 +445,10 @@ async function ladeVwapVector() {
 
 /** Ein Takt, verschiedene Abstände: Wände 10 s, Liquidationen 30 s, Momentum 60 s, Hebel 2 min, OI 5 min, Funding 10 min. */
 function marktTick() {
+    // Im Hintergrund-Tab nichts holen — vier Panels fragten dort weiter alle 10 s Orderbuch,
+    // Liquidationen und Momentum ab, für ein Bild, das niemand sieht. Beim Zurückkommen
+    // holt `sichtbarkeitGeaendert` alles einmal frisch.
+    if (document.hidden) return
     const n = marktZaehler++
     ladeWaende()
     if (n % 3 === 0) ladeLiquidationen()
@@ -626,9 +630,18 @@ function starteTakte() {
     clearInterval(journalTakt)
     clearInterval(positionsTakt)
     // Neue Trades kommen über den Import ins Journal; alle zwei Minuten reicht.
-    journalTakt = setInterval(() => { ladeJournal(); ladeStrategie() }, 120_000)
-    positionsTakt = setInterval(ladePositionen, 15_000)
+    journalTakt = setInterval(() => { if (!document.hidden) { ladeJournal(); ladeStrategie() } }, 120_000)
+    positionsTakt = setInterval(() => { if (!document.hidden) ladePositionen() }, 15_000)
     ladePositionen()
+}
+
+let warVersteckt = false
+function sichtbarkeitGeaendert() {
+    if (document.hidden) { warVersteckt = true; return }
+    if (!warVersteckt) return
+    warVersteckt = false
+    ladePositionen()
+    marktNeu()
 }
 
 watch(() => props.panel.overlays, () => { ladeJournal(); ladePositionen(); ladeStrategie(); marktNeu() }, { deep: true })
@@ -995,11 +1008,14 @@ onMounted(() => {
     baueChart()
     ladeNeu()
     starteTakte()
-    setTimeout(marktNeu, 1500)
+    clearTimeout(marktNeuUhr)
+    marktNeuUhr = setTimeout(marktNeu, 1500)
     zeichneAlarmLinien()
     huelle.value.addEventListener('contextmenu', rechtsklick)
+    document.addEventListener('visibilitychange', sichtbarkeitGeaendert)
 })
 onBeforeUnmount(() => {
+    document.removeEventListener('visibilitychange', sichtbarkeitGeaendert)
     ladeNummer++
     clearTimeout(nachfuehrUhr)
     zeichner?.abbauen()
@@ -1034,7 +1050,7 @@ defineExpose({
     <div class="chartPanel" :class="{ aktiv }" @mousedown="emit('fokus')" @touchstart.passive="emit('fokus')">
         <div ref="huelle" class="flaeche" @pointerup="pruefeAutoSkala" @wheel.passive="pruefeAutoSkala" @dblclick="pruefeAutoSkala"></div>
         <button class="autoKnopf" :class="{ an: autoSkala }" :title="t(autoSkala ? 'chart.autoAn' : 'chart.autoAus')"
-            @click.stop="autoEinpassen(!autoSkala)">A</button>
+            @click.stop="autoEinpassen(!autoSkala)" :aria-label="t(autoSkala ? 'chart.autoAn' : 'chart.autoAus')">A</button>
 
         <div class="legende">
             <span class="sym">{{ panel.symbol }}</span>
@@ -1062,7 +1078,7 @@ defineExpose({
             <div class="indZeile" :class="{ aus: !volumenAn }">
                 <span class="indName">{{ t('chart.volumen') }}</span>
                 <span class="indKnoepfe">
-                    <button :title="t(volumenAn ? 'chart.ausblenden' : 'chart.einblenden')" @click.stop="emit('indikator', { aktion: 'volumen' })">
+                    <button :title="t(volumenAn ? 'chart.ausblenden' : 'chart.einblenden')" @click.stop="emit('indikator', { aktion: 'volumen' })" :aria-label="t(volumenAn ? 'chart.ausblenden' : 'chart.einblenden')">
                         <i :class="volumenAn ? 'uil uil-eye' : 'uil uil-eye-slash'"></i></button>
                 </span>
             </div>
@@ -1071,11 +1087,11 @@ defineExpose({
                 <span v-for="w in (indikatorWerte[ind.id] || [])" :key="w.key" :style="{ color: w.farbe }">{{ wertText(w.wert, ind.typ) }}</span>
                 <span class="indKnoepfe">
                     <button :title="t(ind.sichtbar === false ? 'chart.einblenden' : 'chart.ausblenden')"
-                        @click.stop="emit('indikator', { aktion: 'umschalten', id: ind.id })">
+                        @click.stop="emit('indikator', { aktion: 'umschalten', id: ind.id })" :aria-label="t(ind.sichtbar === false ? 'chart.einblenden' : 'chart.ausblenden')">
                         <i :class="ind.sichtbar === false ? 'uil uil-eye-slash' : 'uil uil-eye'"></i></button>
-                    <button :title="t('chart.einstellungen')" @click.stop="emit('indikator', { aktion: 'bearbeiten', id: ind.id })"><i
+                    <button :title="t('chart.einstellungen')" @click.stop="emit('indikator', { aktion: 'bearbeiten', id: ind.id })" :aria-label="t('chart.einstellungen')"><i
                             class="uil uil-setting"></i></button>
-                    <button :title="t('chart.entfernen')" @click.stop="emit('indikator', { aktion: 'entfernen', id: ind.id })"><i
+                    <button :title="t('chart.entfernen')" @click.stop="emit('indikator', { aktion: 'entfernen', id: ind.id })" :aria-label="t('chart.entfernen')"><i
                             class="uil uil-times"></i></button>
                 </span>
             </div>

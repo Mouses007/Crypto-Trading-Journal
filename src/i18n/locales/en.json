@@ -5352,7 +5352,8 @@
       },
       "zone": "Zone",
       "verworfen": "{n} suggestions discarded (outside the candles or a forecast)",
-      "vorschauWeg": "Hide preview"
+      "vorschauWeg": "Hide preview",
+      "dauertLaenger": "The analysis takes longer — the result loads as soon as the server is done …"
     },
     "indAktiv": "Active in this chart",
     "indHinzu": "Add",
@@ -5430,6 +5431,9 @@
     "watchlistSucheZu": "Close search",
     "watchlistBoerse": "Open on {boerse} (trading page)",
     "layoutKonflikt": "This layout was changed in another window — its state is now loaded.",
-    "schliessen": "Close"
+    "schliessen": "Close",
+    "richtungLong": "Long",
+    "richtungShort": "Short",
+    "playbook": "Playbook"
   }
 }

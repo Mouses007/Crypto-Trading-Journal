@@ -36,11 +36,13 @@ pruefe('Beiträge holen: 3 Minuten', langsameFrist('/api/marktradar/news/holen')
 pruefe('Agent-Chat fällt unter /api/ai/', langsameFrist('/api/ai/agent/chat') === 10 * MIN)
 pruefe('Backtest: 15 Minuten', langsameFrist('/api/strategies/backtest') === 15 * MIN)
 pruefe('Hype-Radar-Scan: 15 Minuten', langsameFrist('/api/hype-radar/scan') === 15 * MIN)
+pruefe('Chart-KI-Analyse: 5 Minuten (brach bis 18.10.2026 nach 20 s ab)', langsameFrist('/api/chart/ki-analyse') === 5 * MIN)
+pruefe('Chart-Strategie erkennen: 2 Minuten', langsameFrist('/api/chart/strategie/erkennen') === 2 * MIN)
 
 // ── 2) Gewöhnliche Abrufe bleiben beim Hausstandard ──────────────────────
 // Das ist der Sinn der Liste: Ein hängender Datenabruf soll weiterhin nach 20
 // Sekunden als Fehler sichtbar werden statt als Stillstand.
-for (const pfad of ['/api/db/trades', '/api/marktradar/fear-greed', '/api/settings',
+for (const pfad of ['/api/chart/kerzen', '/api/chart/strategie', '/api/db/trades', '/api/marktradar/fear-greed', '/api/settings',
     '/api/bitunix/positions', '/api/marktradar/lagebericht', '/api/marktradar/kalender']) {
     pruefe(`${pfad} bleibt beim Standard`, langsameFrist(pfad) === null, String(langsameFrist(pfad)))
 }

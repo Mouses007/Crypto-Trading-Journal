@@ -56,8 +56,14 @@ async function lade() {
     }
 }
 watch(() => [props.symbol, radarTf.value, props.markt], () => { daten.value = null; lade() })
-onMounted(() => { lade(); uhr = setInterval(lade, 60_000) })
-onBeforeUnmount(() => clearInterval(uhr))
+// Im Hintergrund-Tab nicht nachladen; beim Zurückkommen einmal frisch.
+function sichtbarkeit() { if (!document.hidden) lade() }
+onMounted(() => {
+    lade()
+    uhr = setInterval(() => { if (!document.hidden) lade() }, 60_000)
+    document.addEventListener('visibilitychange', sichtbarkeit)
+})
+onBeforeUnmount(() => { clearInterval(uhr); document.removeEventListener('visibilitychange', sichtbarkeit) })
 
 // ── Farben wie im Pine ────────────────────────────────────────────────────
 const F = { long: '#4caf50', short: '#ef5350', longS: '#00e676', shortS: '#ff1744', grau: '#787b86', rein: '#4caf50', raus: '#ef5350', fut: '#8e6cef', spot: '#26a69a' }

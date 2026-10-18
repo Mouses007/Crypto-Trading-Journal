@@ -57,10 +57,10 @@ function loesche(a) {
                 <span class="was">{{ beschreibe(a) }}</span>
                 <span class="werkzeug" @click.stop>
                     <button :title="t(a.aktiv ? 'chart.alarm.ausschalten' : 'chart.alarm.einschalten')"
-                        @click="aendereAlarm(a.id, { aktiv: !a.aktiv })">
+                        @click="aendereAlarm(a.id, { aktiv: !a.aktiv })" :aria-label="t(a.aktiv ? 'chart.alarm.ausschalten' : 'chart.alarm.einschalten')">
                         <i :class="a.aktiv ? 'uil uil-bell' : 'uil uil-bell-slash'"></i></button>
-                    <button :title="t('chart.einstellungen')" @click="emit('bearbeite', a)"><i class="uil uil-pen"></i></button>
-                    <button :title="t('chart.entfernen')" @click="loesche(a)"><i class="uil uil-trash-alt"></i></button>
+                    <button :title="t('chart.einstellungen')" @click="emit('bearbeite', a)" :aria-label="t('chart.einstellungen')"><i class="uil uil-pen"></i></button>
+                    <button :title="t('chart.entfernen')" @click="loesche(a)" :aria-label="t('chart.entfernen')"><i class="uil uil-trash-alt"></i></button>
                 </span>
             </div>
             <div v-if="offen === a.id" class="details">

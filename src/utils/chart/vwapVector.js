@@ -108,11 +108,15 @@ export function swingFaecher(kerzen, { seite, staerke = 20, anzahl = 1, minSepAt
 /**
  * EMA einer höheren Zeiteinheit, auf die Chartkerzen gelegt.
  *
- * Wie `request.security(…, lookahead_off)`: eine Chartkerze sieht die EMA der
- * höheren Kerzen, die bis zu ihrem EIGENEN Schluss geschlossen waren. In der
- * noch laufenden höheren Kerze zählt der Schluss der Chartkerze als deren
- * vorläufiger Schluss (Echtzeit-Verhalten im Pine) — so folgt die Linie dem
- * Kurs, ohne in der Vergangenheit von der Zukunft zu wissen.
+ * Wie `request.security(…, lookahead_off)` im Pine: auf HISTORISCHEN Kerzen
+ * sieht eine Chartkerze die EMA der höheren Kerzen, die bis zu ihrem eigenen
+ * Schluss geschlossen waren — innerhalb einer höheren Kerze also deren
+ * Vorgänger, und der neue Wert erscheint auf der Chartkerze, mit der die höhere
+ * schliesst. Das ergibt die Treppe, die TradingView zeigt. Nur die LETZTE
+ * Chartkerze (Echtzeit im Pine) rechnet ihren Schluss als vorläufigen Schluss
+ * der laufenden höheren Kerze ein und folgt dem Kurs.
+ * Bis 18.10.2026 rechnete jede historische Kerze so — eine glatte Linie, die im
+ * Pine nicht vorkommt, und Abstände zur Linie, die dort anders aussahen.
  */
 export function emaHoehereTf(kerzen, htf, laenge, htfMs, ivMs) {
     const out = new Array(kerzen.length).fill(null)
@@ -125,9 +129,9 @@ export function emaHoehereTf(kerzen, htf, laenge, htfMs, ivMs) {
         // letzte höhere Kerze, die bis zum Schluss dieser Chartkerze GESCHLOSSEN war
         while (j + 1 < htf.length && htf[j + 1].t + htfMs <= schluss) j++
         const laufend = j + 1 < htf.length && htf[j + 1].t < schluss
-        if (laufend && j >= 0 && e[j] != null) out[i] = e[j] + a * (kerzen[i].c - e[j])
-        else if (!laufend && j >= 0) out[i] = e[j]
-        else if (laufend && j < 0) out[i] = null
+        if (j < 0) continue
+        const echtzeit = laufend && i === kerzen.length - 1
+        out[i] = echtzeit && e[j] != null ? e[j] + a * (kerzen[i].c - e[j]) : e[j]
     }
     return out
 }

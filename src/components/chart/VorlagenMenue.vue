@@ -93,23 +93,23 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', draussen))
 
 <template>
     <div ref="wurzel" class="aufklapp">
-        <button class="tf" :class="{ an: offen }" :title="t('chart.vorlage.titel')" @click="umschalten">
+        <button class="tf" :class="{ an: offen }" :title="t('chart.vorlage.titel')" @click="umschalten" :aria-label="t('chart.vorlage.titel')">
             <i class="uil uil-bookmark"></i> {{ t('chart.vorlage.knopf') }}
         </button>
         <div v-if="offen" class="menue vorlagenMenue">
             <div class="kopf">{{ t('chart.vorlage.titel') }}</div>
             <div v-if="!vorlagen.length" class="leer">{{ t('chart.vorlage.leer') }}</div>
             <div v-for="v in vorlagen" :key="v.id" class="zeile">
-                <button class="name" :title="t('chart.vorlage.anwendenTitel', { n: v.indikatoren.length })" @click="anwenden(v, 'ersetzen')">
+                <button class="name" :title="t('chart.vorlage.anwendenTitel', { n: v.indikatoren.length })" @click="anwenden(v, 'ersetzen')" :aria-label="t('chart.vorlage.anwendenTitel', { n: v.indikatoren.length })">
                     {{ v.name }} <small>{{ v.indikatoren.length }}</small>
                 </button>
                 <button class="mini stern" :class="{ an: favoriten.includes(v.id) }"
                     :title="t(favoriten.includes(v.id) ? 'chart.vorlage.favoritWeg' : 'chart.vorlage.favoritHinzu')"
-                    @click="schalteFavorit(v)"><i class="uil uil-star"></i></button>
-                <button class="mini" :title="t('chart.vorlage.hinzufuegen')" @click="anwenden(v, 'hinzu')"><i class="uil uil-plus"></i></button>
-                <button class="mini" :disabled="!aktuelle.length" :title="t('chart.vorlage.ueberschreiben')" @click="ueberschreiben(v)"><i class="uil uil-sync"></i></button>
-                <button class="mini" :title="t('chart.vorlage.umbenennen')" @click="umbenennen(v)"><i class="uil uil-pen"></i></button>
-                <button class="mini weg" :title="t('chart.vorlage.loeschen')" @click="loeschen(v)"><i class="uil uil-trash-alt"></i></button>
+                    @click="schalteFavorit(v)" :aria-label="t(favoriten.includes(v.id) ? 'chart.vorlage.favoritWeg' : 'chart.vorlage.favoritHinzu')"><i class="uil uil-star"></i></button>
+                <button class="mini" :title="t('chart.vorlage.hinzufuegen')" @click="anwenden(v, 'hinzu')" :aria-label="t('chart.vorlage.hinzufuegen')"><i class="uil uil-plus"></i></button>
+                <button class="mini" :disabled="!aktuelle.length" :title="t('chart.vorlage.ueberschreiben')" @click="ueberschreiben(v)" :aria-label="t('chart.vorlage.ueberschreiben')"><i class="uil uil-sync"></i></button>
+                <button class="mini" :title="t('chart.vorlage.umbenennen')" @click="umbenennen(v)" :aria-label="t('chart.vorlage.umbenennen')"><i class="uil uil-pen"></i></button>
+                <button class="mini weg" :title="t('chart.vorlage.loeschen')" @click="loeschen(v)" :aria-label="t('chart.vorlage.loeschen')"><i class="uil uil-trash-alt"></i></button>
             </div>
             <hr />
             <button class="eintrag" :disabled="!aktuelle.length" @click="speichern">
@@ -120,7 +120,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', draussen))
     </div>
     <!-- Favoriten direkt in der Leiste: ein Klick ersetzt die Indikatoren des aktiven Charts. -->
     <button v-for="v in favoritVorlagen" :key="'fav' + v.id" class="tf favorit"
-        :title="t('chart.vorlage.anwendenTitel', { n: v.indikatoren.length })" @click="anwenden(v, 'ersetzen')">
+        :title="t('chart.vorlage.anwendenTitel', { n: v.indikatoren.length })" @click="anwenden(v, 'ersetzen')" :aria-label="t('chart.vorlage.anwendenTitel', { n: v.indikatoren.length })">
         <i class="uil uil-star"></i> {{ v.name }}
     </button>
 </template>

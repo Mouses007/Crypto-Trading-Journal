@@ -49,7 +49,7 @@ function zumJournal() {
 <template>
     <div class="tradeKarte" @mousedown.stop @pointerdown.stop>
         <div class="kopf">
-            <span class="richtung" :class="tr.richtung">{{ tr.richtung === 'long' ? 'Long' : 'Short' }}</span>
+            <span class="richtung" :class="tr.richtung">{{ t(tr.richtung === 'long' ? 'chart.richtungLong' : 'chart.richtungShort') }}</span>
             <span class="broker">{{ tr.broker }}</span>
             <button class="zu" @click="emit('schliesse')"><i class="uil uil-times"></i></button>
         </div>
@@ -68,7 +68,7 @@ function zumJournal() {
         </tbody></table>
         <div v-if="tr.r == null && tr.ausstieg" class="hinweis">{{ t('chart.trade.keinR') }}</div>
         <template v-if="tr.notiz">
-            <div v-if="tr.notiz.playbook" class="feld"><b>Playbook</b> {{ tr.notiz.playbook }}</div>
+            <div v-if="tr.notiz.playbook" class="feld"><b>{{ t('chart.playbook') }}</b> {{ tr.notiz.playbook }}</div>
             <div v-if="tr.notiz.einstieg" class="feld"><b>{{ t('chart.trade.notizEinstieg') }}</b> {{ tr.notiz.einstieg }}</div>
             <div v-if="tr.notiz.ausstieg" class="feld"><b>{{ t('chart.trade.notizAusstieg') }}</b> {{ tr.notiz.ausstieg }}</div>
             <div v-if="tr.notiz.regelTreu != null && tr.notiz.regelTreu >= 0" class="feld">

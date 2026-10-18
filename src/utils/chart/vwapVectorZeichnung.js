@@ -50,6 +50,16 @@ export class VwapVectorZeichnung {
     }
 
     X(i) { return logischZuX(this.chart.timeScale(), i) }
+    /**
+     * Sichtbare Kerzen [von, bis] mit einer Kerze Rand — Schleifen über alle Kerzen
+     * (Fächer, Candle-POC) rechneten bei 3000 geladenen Kerzen je Bild 3000 × 6
+     * Koordinaten, von denen meist 150 zu sehen sind.
+     */
+    sichtbar(n) {
+        const r = this.chart.timeScale().getVisibleLogicalRange()
+        if (!r) return [0, n - 1]
+        return [Math.max(0, Math.floor(r.from) - 1), Math.min(n - 1, Math.ceil(r.to) + 1)]
+    }
     Y(p) { return p == null ? null : this.serie.priceToCoordinate(p) }
     schritt() {
         const a = this.X(0), b = this.X(1)
@@ -123,6 +133,7 @@ export class VwapVectorZeichnung {
         const schritt = this.schritt()
         const kurs = this.kerzen[letzte].c
         const atr = r.atrLetzte
+        const [von, bis] = this.sichtbar(n)
 
         // 2 Swing-VWAP-Fächer: jüngster voll, ältere blasser (wie color.new(col, 35/60))
         const deck = [1, 0.65, 0.4]
@@ -134,7 +145,7 @@ export class VwapVectorZeichnung {
                 ctx.setLineDash(this.strich(p.swingStyle, p.swingWidth))
                 ctx.beginPath()
                 let offen = false
-                for (let i = l.anker; i < n; i++) {
+                for (let i = Math.max(l.anker, von); i <= bis; i++) {
                     const x = this.X(i), y = this.Y(l.werte[i])
                     if (x == null || y == null) { offen = false; continue }
                     if (offen) ctx.lineTo(x, y); else ctx.moveTo(x, y)
@@ -166,7 +177,7 @@ export class VwapVectorZeichnung {
         if (r.candlePoc) {
             ctx.fillStyle = rgba(p.cPocCAll, 0.75)
             const rad = Math.max(1, Math.min(schritt * 0.35, 1 + p.pocCAllW))
-            for (let i = 0; i < n; i++) {
+            for (let i = von; i <= bis; i++) {
                 const y = this.Y(r.candlePoc[i])
                 const x = this.X(i)
                 if (x == null || y == null || x < -5 || x > breite + 5) continue
