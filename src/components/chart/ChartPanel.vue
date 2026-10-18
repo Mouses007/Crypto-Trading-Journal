@@ -23,13 +23,19 @@ import { ladeKerzen, LiveKerze, fuegeZusammen, INTERVALL_MS } from '../../utils/
 import { loadSymbolMeta } from '../../utils/liveSymbols.js'
 import { IndikatorZeichner } from '../../utils/chart/indikatorZeichner.js'
 import { kurzname } from '../../utils/chart/indikatorRegister.js'
+import { ZeichenEbene } from '../../utils/chart/zeichnungen/ZeichenEbene.js'
+import { zeichnungenVon, legeAn, aendere, loesche } from '../../stores/chartZeichnungen.js'
+import ZeichnungStil from './ZeichnungStil.vue'
 
 const props = defineProps({
     panel: { type: Object, required: true },     // { symbol, markt, interval, skala }
     aktiv: { type: Boolean, default: false },
     nummer: { type: Number, default: 0 },
+    werkzeug: { type: String, default: null },      // nur im aktiven Panel gesetzt
+    magnet: { type: Boolean, default: false },
+    zeichnungenVersteckt: { type: Boolean, default: false },
 })
-const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen', 'indikator'])
+const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen', 'indikator', 'werkzeugFertig', 'alarmAufZeichnung'])
 const { t, locale } = useI18n()
 
 const huelle = ref(null)
@@ -44,6 +50,8 @@ const legende = ref(null)            // Kerze unter dem Fadenkreuz (oder die let
 const preisStellen = ref(2)
 const indikatorWerte = ref({})       // id → [{key, farbe, wert}] unter dem Fadenkreuz
 let zeichner = null
+let ebene = null
+const auswahlId = ref(null)
 let kreuzZeit = null                 // t (ms) unter dem Fadenkreuz; null = letzte Kerze
 let nachfuehrUhr = null
 
@@ -144,6 +152,22 @@ function baueChart() {
     kerzenSerie.value = ks
     volumenSerie.value = vs
     zeichner = new IndikatorZeichner(c, zuLwc)
+    ebene = new ZeichenEbene({
+        huelle: huelle.value,
+        chart: c,
+        serie: ks,
+        formatPreis: (p) => ks.priceFormatter().format(p),
+        rueckruf: {
+            neu: zeichnungNeu,
+            aendern: (id, patch) => aendere(props.panel.symbol, id, patch),
+            auswahl: (id) => { auswahlId.value = id },
+            werkzeugFertig: () => emit('werkzeugFertig'),
+            textBearbeiten: textBearbeiten,
+        },
+    })
+    ebene.setzeWerkzeug(props.werkzeug)
+    ebene.setzeMagnet(props.magnet)
+    ebene.setzeZeichnungen(sichtbareZeichnungen.value)
     wendeSkalaAn()
 }
 
@@ -163,7 +187,64 @@ function setzeDaten(liste) {
     legende.value = letzteLegende()
     zeichner?.setze(props.panel.indikatoren, liste)
     if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
+    ebene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
     emit('kerzen', liste)
+}
+
+// ── Zeichnungen ──────────────────────────────────────────────────────────
+const alleZeichnungen = computed(() => zeichnungenVon(props.panel.symbol).value)
+const sichtbareZeichnungen = computed(() => (props.zeichnungenVersteckt ? [] : alleZeichnungen.value.filter((z) =>
+    !z.versteckt && (!Array.isArray(z.sichtbarAuf) || !z.sichtbarAuf.length || z.sichtbarAuf.includes(props.panel.interval)))))
+const ausgewaehlt = computed(() => sichtbareZeichnungen.value.find((z) => z.id === auswahlId.value) || null)
+
+watch(sichtbareZeichnungen, (l) => ebene?.setzeZeichnungen(l))
+watch(() => props.werkzeug, (w) => { ebene?.setzeWerkzeug(w); if (w) auswahlId.value = null })
+watch(() => props.magnet, (m) => ebene?.setzeMagnet(m))
+watch(() => props.panel.symbol, () => { auswahlId.value = null; ebene?.setzeAuswahl(null) })
+
+async function zeichnungNeu({ typ, punkte }) {
+    let stil = {}
+    if (typ === 'text') {
+        const text = window.prompt(t('chart.textEingeben'), '')
+        if (!text) return
+        stil = { text: text.slice(0, 200) }
+    }
+    const z = await legeAn({ symbol: props.panel.symbol, typ, punkte, stil, sichtbarAuf: null, gesperrt: false, versteckt: false })
+    if (z) { auswahlId.value = z.id; ebene?.setzeAuswahl(z.id) }
+}
+
+function textBearbeiten(id) {
+    const z = alleZeichnungen.value.find((x) => x.id === id)
+    if (!z) return
+    const text = window.prompt(t('chart.textEingeben'), z.stil?.text || '')
+    if (text === null) return
+    aendere(props.panel.symbol, id, { stil: { ...(z.stil || {}), text: text.slice(0, 200) } })
+}
+
+function aendereAuswahl(patch) {
+    if (!ausgewaehlt.value) return
+    aendere(props.panel.symbol, ausgewaehlt.value.id, patch)
+    if (patch.versteckt) { auswahlId.value = null; ebene?.setzeAuswahl(null) }
+}
+
+function loescheAuswahl() {
+    if (!ausgewaehlt.value || ausgewaehlt.value.gesperrt) return false
+    loesche(props.panel.symbol, ausgewaehlt.value.id)
+    auswahlId.value = null
+    ebene?.setzeAuswahl(null)
+    return true
+}
+
+/** Escape: laufende Zeichnung oder Messung verwerfen, sonst Auswahl lösen. */
+function abbrechen() {
+    if (ebene?.abbrechen()) return true
+    if (auswahlId.value != null) { auswahlId.value = null; ebene?.setzeAuswahl(null); return true }
+    return false
+}
+
+function waehleZeichnung(id) {
+    auswahlId.value = id
+    ebene?.setzeAuswahl(id)
 }
 
 /*
@@ -265,7 +346,7 @@ function starteLive(nr) {
             if (letzte && k.t < letzte.t) return
             const bar = { t: k.t, o: k.o, h: k.h, l: k.l, c: k.c, v: k.v }
             if (letzte && k.t === letzte.t) liste[liste.length - 1] = bar
-            else liste.push(bar)
+            else { liste.push(bar); ebene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval]) }
             kerzenSerie.value?.update({ time: zuLwc(bar.t), open: bar.o, high: bar.h, low: bar.l, close: bar.c })
             volumenSerie.value?.update(volumenBalken(bar))
             if (!extern) legende.value = letzteLegende()
@@ -366,6 +447,8 @@ onBeforeUnmount(() => {
     clearTimeout(nachfuehrUhr)
     zeichner?.abbauen()
     zeichner = null
+    ebene?.abbauen()
+    ebene = null
     live?.stop()
     chart.value?.remove()
     chart.value = null
@@ -374,6 +457,7 @@ onBeforeUnmount(() => {
 defineExpose({
     chart, kerzenSerie, kerzen, zuLwc, vonLwc, kerzeBei,
     setzeKreuz, setzeZeitraum, sichtbarerZeitraum, zurJetztzeit, bildschirmfoto, ladeNeu,
+    loescheAuswahl, abbrechen, waehleZeichnung, auswahlId,
 })
 </script>
 
@@ -409,6 +493,11 @@ defineExpose({
                 </span>
             </div>
         </div>
+
+        <ZeichnungStil v-if="ausgewaehlt" :zeichnung="ausgewaehlt" :interval="panel.interval"
+            :alarm-moeglich="['horizontale', 'strahlH', 'trendlinie', 'strahl', 'rechteck', 'kanal'].includes(ausgewaehlt.typ)"
+            @aendere="aendereAuswahl" @loesche="loescheAuswahl" @text="textBearbeiten(ausgewaehlt.id)"
+            @alarm="emit('alarmAufZeichnung', ausgewaehlt)" />
 
         <div v-if="laedt" class="hinweis"><span class="spinner-border spinner-border-sm"></span></div>
         <div v-else-if="fehler" class="hinweis fehler">

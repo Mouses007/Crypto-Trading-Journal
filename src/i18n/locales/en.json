@@ -4838,7 +4838,8 @@
     "foto": "Save chart as image",
     "seitenleiste": "Toggle sidebar",
     "reiter": {
-      "watchlist": "Watchlist"
+      "watchlist": "Watchlist",
+      "objekte": "Drawings"
     },
     "watchlistName": "Watchlist name",
     "watchlistNeuVorgabe": "New list",
@@ -4976,6 +4977,43 @@
     "einblenden": "Show",
     "ausblenden": "Hide",
     "einstellungen": "Settings",
-    "entfernen": "Remove"
+    "entfernen": "Remove",
+    "wz": {
+      "zeiger": "Pointer (Esc)",
+      "trendlinie": "Trend line",
+      "strahl": "Ray",
+      "horizontale": "Horizontal line",
+      "strahlH": "Horizontal ray",
+      "vertikale": "Vertical line",
+      "kanal": "Parallel channel",
+      "rechteck": "Rectangle / zone",
+      "fib": "Fibonacci retracement",
+      "position": "Long/short position",
+      "text": "Text / note",
+      "messen": "Measure",
+      "magnet": "Magnet (snaps to open/high/low/close)",
+      "allesVerstecken": "Hide/show all drawings",
+      "alleLoeschen": "Delete all drawings on this symbol"
+    },
+    "stil": {
+      "breite": "Line width",
+      "strich": {
+        "voll": "Solid",
+        "gestrichelt": "Dashed",
+        "gepunktet": "Dotted"
+      },
+      "rechts": "Extend right",
+      "links": "Extend left",
+      "fuellung": "Fill",
+      "text": "Edit text",
+      "nurHier": "Show on {tf} only",
+      "alarm": "Alert on this drawing",
+      "sperren": "Lock",
+      "entsperren": "Unlock"
+    },
+    "textEingeben": "Text:",
+    "alleLoeschenFrage": "Delete {n} drawings on {symbol}? Locked ones stay.",
+    "objekteLeer": "No drawings on {symbol} yet.",
+    "zeichnungFehler": "Drawing not saved"
   }
 }

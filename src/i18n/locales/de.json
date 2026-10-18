@@ -4838,7 +4838,8 @@
     "foto": "Chart als Bild speichern",
     "seitenleiste": "Seitenleiste ein/aus",
     "reiter": {
-      "watchlist": "Watchlist"
+      "watchlist": "Watchlist",
+      "objekte": "Zeichnungen"
     },
     "watchlistName": "Name der Watchlist",
     "watchlistNeuVorgabe": "Neue Liste",
@@ -4976,6 +4977,43 @@
     "einblenden": "Einblenden",
     "ausblenden": "Ausblenden",
     "einstellungen": "Einstellungen",
-    "entfernen": "Entfernen"
+    "entfernen": "Entfernen",
+    "wz": {
+      "zeiger": "Zeiger (Esc)",
+      "trendlinie": "Trendlinie",
+      "strahl": "Strahl",
+      "horizontale": "Horizontale Linie",
+      "strahlH": "Horizontaler Strahl",
+      "vertikale": "Vertikale Linie",
+      "kanal": "Parallelkanal",
+      "rechteck": "Rechteck / Zone",
+      "fib": "Fibonacci-Retracement",
+      "position": "Long/Short-Position",
+      "text": "Text / Notiz",
+      "messen": "Messen",
+      "magnet": "Magnet (rastet auf Eröffnung/Hoch/Tief/Schluss ein)",
+      "allesVerstecken": "Alle Zeichnungen aus-/einblenden",
+      "alleLoeschen": "Alle Zeichnungen dieses Symbols löschen"
+    },
+    "stil": {
+      "breite": "Strichstärke",
+      "strich": {
+        "voll": "Durchgezogen",
+        "gestrichelt": "Gestrichelt",
+        "gepunktet": "Gepunktet"
+      },
+      "rechts": "Nach rechts verlängern",
+      "links": "Nach links verlängern",
+      "fuellung": "Füllung",
+      "text": "Text bearbeiten",
+      "nurHier": "Nur auf {tf} zeigen",
+      "alarm": "Alarm auf diese Zeichnung",
+      "sperren": "Sperren",
+      "entsperren": "Entsperren"
+    },
+    "textEingeben": "Text:",
+    "alleLoeschenFrage": "{n} Zeichnungen auf {symbol} löschen? Gesperrte bleiben stehen.",
+    "objekteLeer": "Noch keine Zeichnungen auf {symbol}.",
+    "zeichnungFehler": "Zeichnung nicht gespeichert"
   }
 }

@@ -18,6 +18,9 @@ import ChartPanel from '../components/chart/ChartPanel.vue'
 import ChartKopfleiste from '../components/chart/ChartKopfleiste.vue'
 import WatchlistReiter from '../components/chart/WatchlistReiter.vue'
 import IndikatorDialog from '../components/chart/IndikatorDialog.vue'
+import Zeichenleiste from '../components/chart/Zeichenleiste.vue'
+import ObjektReiter from '../components/chart/ObjektReiter.vue'
+import { zeichnungenVon, aendere as zeichnungAendern, loesche as zeichnungLoeschen, macheRueckgaengig, macheWiederholen, fehlerMeldung } from '../stores/chartZeichnungen.js'
 import { neueInstanz } from '../utils/chart/indikatorRegister.js'
 import { useIstTelefon } from '../utils/geraet.js'
 import { api, standardLayout, vervollstaendige, passeAnRaster, PANELS_JE_RASTER, STANDARD_WATCHLIST } from '../utils/chart/arbeitsplatz.js'
@@ -46,6 +49,7 @@ const rasterKlasse = computed(() => (telefon.value ? 'r1' : 'r' + daten.value.ra
  */
 const REITER = [
     { id: 'watchlist', icon: 'uil uil-star' },
+    { id: 'objekte', icon: 'uil uil-layer-group' },
 ]
 
 // ── Laden und Speichern ─────────────────────────────────────────────────
@@ -149,6 +153,34 @@ function fokus(i) {
     if (daten.value.aktiv !== i) daten.value.aktiv = i
 }
 
+// ── Zeichnen ────────────────────────────────────────────────────────────
+// Das Werkzeug gilt nur im aktiven Panel; Magnet und „alles verstecken"
+// stehen im Layout, damit sie einen Neustart überleben.
+const werkzeug = ref(null)
+const aktiveZeichnungen = computed(() => zeichnungenVon(aktivesPanel.value.symbol).value)
+const aktiveAuswahl = computed(() => panelRefs.value[aktivIndex.value]?.auswahlId ?? null)
+
+function waehleWerkzeug(typ) {
+    werkzeug.value = typ
+}
+
+function fehlerSchliessen() {
+    fehlerMeldung.value = ''
+}
+
+function alleLoeschen() {
+    const symbol = aktivesPanel.value.symbol
+    const liste = aktiveZeichnungen.value.filter((z) => !z.gesperrt)
+    if (!liste.length) return
+    if (!window.confirm(t('chart.alleLoeschenFrage', { n: liste.length, symbol }))) return
+    for (const z of liste) zeichnungLoeschen(symbol, z.id)
+}
+
+function objektWaehlen(z) {
+    if (z.versteckt) zeichnungAendern(z.symbol, z.id, { versteckt: false })
+    panelRefs.value[aktivIndex.value]?.waehleZeichnung(z.id)
+}
+
 // ── Indikatoren ─────────────────────────────────────────────────────────
 // `dialog` = null | { panel, instanz: null (hinzufügen) | Objekt (einstellen) }
 const dialog = ref(null)
@@ -231,9 +263,26 @@ function foto() {
  * Eingabefeld den Fokus hat, sonst frässe die Suche jede Notiz auf.
  */
 function taste(e) {
-    if (e.ctrlKey || e.metaKey || e.altKey) return
     const ziel = e.target
     if (ziel && (ziel.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(ziel.tagName))) return
+    if (dialog.value) return
+    const panel = panelRefs.value[aktivIndex.value]
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const k = e.key.toLowerCase()
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); macheRueckgaengig() }
+        else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); macheWiederholen() }
+        return
+    }
+    if (e.altKey) return
+    if (e.key === 'Escape') {
+        if (panel?.abbrechen()) return
+        werkzeug.value = null
+        return
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (panel?.loescheAuswahl()) e.preventDefault()
+        return
+    }
     if (/^[a-z0-9]$/i.test(e.key)) kopf.value?.oeffneSuche()
 }
 
@@ -265,12 +314,22 @@ watch(sichtbareAnzahl, async () => {
                 @layout-neu="layoutNeu" @layout-umbenennen="layoutUmbenennen" @layout-loeschen="layoutLoeschen"
                 @seitenleiste="daten.seitenleiste.offen = !daten.seitenleiste.offen" @foto="foto" />
 
+            <div v-if="fehlerMeldung" class="alert alert-warning py-1 px-2 my-1 small" @click="fehlerSchliessen">
+                {{ t('chart.zeichnungFehler') }}: {{ fehlerMeldung }}</div>
+
             <div class="arbeitsflaeche" :class="{ mitLeiste: daten.seitenleiste.offen }">
+                <Zeichenleiste class="werkzeuge" :werkzeug="werkzeug" :magnet="!!daten.zeichnen?.magnet"
+                    :versteckt="!!daten.zeichnen?.versteckt" @werkzeug="waehleWerkzeug"
+                    @magnet="daten.zeichnen = { ...(daten.zeichnen || {}), magnet: !daten.zeichnen?.magnet }"
+                    @versteckt="daten.zeichnen = { ...(daten.zeichnen || {}), versteckt: !daten.zeichnen?.versteckt }"
+                    @alle-loeschen="alleLoeschen" />
                 <div class="raster" :class="rasterKlasse">
                     <ChartPanel v-for="(p, i) in sichtbarePanels" :key="layoutId + '-' + i"
                         :ref="(el) => { if (el) panelRefs[i] = el }" :panel="p" :nummer="i"
                         :aktiv="sichtbareAnzahl > 1 && i === aktivIndex" @fokus="fokus(i)" @kreuz="kreuz(i, $event)"
-                        @bereich="bereich(i)" @indikator="indikatorAktion(i, $event)" />
+                        @bereich="bereich(i)" @indikator="indikatorAktion(i, $event)"
+                        :werkzeug="i === aktivIndex ? werkzeug : null" :magnet="!!daten.zeichnen?.magnet"
+                        :zeichnungen-versteckt="!!daten.zeichnen?.versteckt" @werkzeug-fertig="werkzeug = null" />
                 </div>
 
                 <aside v-if="daten.seitenleiste.offen" class="seitenleiste">
@@ -285,6 +344,10 @@ watch(sichtbareAnzahl, async () => {
                         :aktives-symbol="aktivesPanel.symbol" :aktiver-markt="aktivesPanel.markt"
                         @waehle="setzePanel({ symbol: $event.symbol, markt: $event.markt })" @aendere="watchlistAendern"
                         @neu="watchlistNeu" @loesche="watchlistLoeschen" />
+                    <ObjektReiter v-else-if="daten.seitenleiste.reiter === 'objekte'" :symbol="aktivesPanel.symbol"
+                        :zeichnungen="aktiveZeichnungen" :auswahl-id="aktiveAuswahl" @waehle="objektWaehlen"
+                        @aendere="(z, patch) => zeichnungAendern(z.symbol, z.id, patch)"
+                        @loesche="(z) => zeichnungLoeschen(z.symbol, z.id)" />
                 </aside>
             </div>
         </template>
@@ -306,12 +369,12 @@ watch(sichtbareAnzahl, async () => {
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
+    grid-template-columns: auto 1fr;
+    gap: 6px;
 }
 
 .arbeitsflaeche.mitLeiste {
-    grid-template-columns: 1fr 260px;
+    grid-template-columns: auto 1fr 260px;
 }
 
 .raster {
@@ -389,7 +452,11 @@ watch(sichtbareAnzahl, async () => {
 
 .chartSeite.telefon .arbeitsflaeche,
 .chartSeite.telefon .arbeitsflaeche.mitLeiste {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto 1fr;
+}
+
+.chartSeite.telefon .seitenleiste {
+    grid-column: 1 / -1;
 }
 
 .chartSeite.telefon .raster {
@@ -402,8 +469,13 @@ watch(sichtbareAnzahl, async () => {
 }
 
 @media (max-width: 991px) {
+    .arbeitsflaeche,
     .arbeitsflaeche.mitLeiste {
-        grid-template-columns: 1fr;
+        grid-template-columns: auto 1fr;
+    }
+
+    .seitenleiste {
+        grid-column: 1 / -1;
     }
 
     .chartSeite {

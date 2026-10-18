@@ -13,6 +13,7 @@
  *   GET  /api/chart/handelbar    welche Basiswährungen Bitunix/Bitget/Pionex führen
  *   CRUD /api/chart/layouts      Raster, Panels, Indikatoren, Overlay-Schalter
  *   CRUD /api/chart/watchlists   Symbol-Listen
+ *   CRUD /api/chart/zeichnungen  Linien, Zonen, Fibonacci … je Symbol
  */
 
 import axios from 'axios'
@@ -95,6 +96,63 @@ export function saubereSymbole(eingabe) {
         if (aus.length >= MAX_WATCHLIST_SYMBOLE) break
     }
     return aus
+}
+
+/** Werkzeuge, die gespeichert werden dürfen (`messen` ist flüchtig). */
+export const ZEICHEN_TYPEN = ['horizontale', 'strahlH', 'vertikale', 'trendlinie', 'strahl', 'kanal', 'rechteck', 'fib', 'position', 'text']
+const MAX_PUNKTE = 4
+const MAX_STIL_BYTES = 4096
+
+/**
+ * Eine Zeichnung aus dem Browser prüfen. Punkte stehen in Zeit (ms) + Preis;
+ * alles andere wäre beim Wechsel der Zeiteinheit falsch. Gibt `{fehler}` oder
+ * die gesäuberten Felder zurück.
+ */
+export function pruefeZeichnung(roh, { teilweise = false } = {}) {
+    const aus = {}
+    if (!teilweise || roh.symbol !== undefined) {
+        const symbol = String(roh.symbol || '').toUpperCase()
+        if (!SYMBOL_RE.test(symbol)) return { fehler: 'symbol ungültig' }
+        aus.symbol = symbol
+    }
+    if (!teilweise || roh.typ !== undefined) {
+        if (!ZEICHEN_TYPEN.includes(roh.typ)) return { fehler: `typ unbekannt: ${roh.typ}` }
+        aus.typ = roh.typ
+    }
+    if (!teilweise || roh.punkte !== undefined) {
+        if (!Array.isArray(roh.punkte) || !roh.punkte.length || roh.punkte.length > MAX_PUNKTE) return { fehler: 'punkte ungültig' }
+        const punkte = []
+        for (const x of roh.punkte) {
+            const t = Number(x?.t)
+            const p = Number(x?.p)
+            if (!Number.isFinite(t) || !Number.isFinite(p)) return { fehler: 'punkt ohne Zeit oder Preis' }
+            punkte.push({ t: Math.round(t), p })
+        }
+        aus.punkte = JSON.stringify(punkte)
+    }
+    if (roh.stil !== undefined) {
+        const text = JSON.stringify(roh.stil && typeof roh.stil === 'object' ? roh.stil : {})
+        if (text.length > MAX_STIL_BYTES) return { fehler: 'stil zu gross' }
+        aus.stil = text
+    }
+    if (roh.sichtbarAuf !== undefined) {
+        aus.sichtbarAuf = Array.isArray(roh.sichtbarAuf)
+            ? JSON.stringify(roh.sichtbarAuf.filter((i) => INTERVALLE.includes(i)))
+            : null
+    }
+    if (roh.gesperrt !== undefined) aus.gesperrt = roh.gesperrt ? 1 : 0
+    if (roh.versteckt !== undefined) aus.versteckt = roh.versteckt ? 1 : 0
+    return { daten: aus }
+}
+
+function zeichnungZeile(r) {
+    return {
+        id: r.id, symbol: r.symbol, typ: r.typ,
+        punkte: parse(r.punkte, []), stil: parse(r.stil, {}),
+        sichtbarAuf: parse(r.sichtbarAuf, null),
+        gesperrt: Number(r.gesperrt) === 1, versteckt: Number(r.versteckt) === 1,
+        erstelltAm: Number(r.erstelltAm) || 0, geaendertAm: Number(r.geaendertAm) || 0,
+    }
 }
 
 function name(eingabe, ersatz) {
@@ -263,6 +321,57 @@ export function setupChartRoutes(app) {
     app.delete('/api/chart/watchlists/:id', async (req, res) => {
         try {
             await getKnex()('chart_watchlists').where('id', Number(req.params.id)).del()
+            res.json({ ok: true })
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    // ── Zeichnungen ──────────────────────────────────────────────────────
+    app.get('/api/chart/zeichnungen', async (req, res) => {
+        try {
+            const symbol = String(req.query.symbol || '').toUpperCase()
+            let q = getKnex()('chart_zeichnungen').orderBy('id')
+            if (symbol) {
+                if (!SYMBOL_RE.test(symbol)) return res.status(400).json({ error: 'symbol ungültig' })
+                q = q.where('symbol', symbol)
+            }
+            res.json((await q).map(zeichnungZeile))
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    app.post('/api/chart/zeichnungen', async (req, res) => {
+        try {
+            const { fehler, daten } = pruefeZeichnung(req.body || {})
+            if (fehler) return res.status(400).json({ error: fehler })
+            const jetzt = Date.now()
+            const knex = getKnex()
+            const [zeile] = await knex('chart_zeichnungen')
+                .insert({ stil: '{}', ...daten, erstelltAm: jetzt, geaendertAm: jetzt })
+                .returning('id')
+            const id = typeof zeile === 'object' ? zeile.id : zeile
+            res.json(zeichnungZeile(await knex('chart_zeichnungen').where('id', id).first()))
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    app.put('/api/chart/zeichnungen/:id', async (req, res) => {
+        try {
+            const id = Number(req.params.id)
+            const knex = getKnex()
+            if (!(await knex('chart_zeichnungen').where('id', id).first())) return res.status(404).json({ error: 'Zeichnung nicht gefunden' })
+            const { fehler, daten } = pruefeZeichnung(req.body || {}, { teilweise: true })
+            if (fehler) return res.status(400).json({ error: fehler })
+            await knex('chart_zeichnungen').where('id', id).update({ ...daten, geaendertAm: Date.now() })
+            res.json(zeichnungZeile(await knex('chart_zeichnungen').where('id', id).first()))
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    app.delete('/api/chart/zeichnungen/:id', async (req, res) => {
+        try {
+            const id = Number(req.params.id)
+            const knex = getKnex()
+            // Ein Alarm auf dieser Linie hätte danach keine Geometrie mehr —
+            // er geht mit, statt still nie wieder auszulösen.
+            await knex('chart_alarme').where('zeichnungId', id).del()
+            await knex('chart_zeichnungen').where('id', id).del()
             res.json({ ok: true })
         } catch (e) { res.status(500).json({ error: e.message }) }
     })
