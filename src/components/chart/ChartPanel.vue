@@ -204,7 +204,7 @@ function baueChart() {
     chart.value = c
     kerzenSerie.value = ks
     volumenSerie.value = vs
-    zeichner = new IndikatorZeichner(c, zuLwc)
+    zeichner = new IndikatorZeichner(c, zuLwc, (ind) => kurzname(ind.typ, ind.params, t('chart.ind.' + ind.typ + '.name')))
     ebene = new ZeichenEbene({
         huelle: huelle.value,
         chart: c,

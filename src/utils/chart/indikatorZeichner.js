@@ -36,14 +36,52 @@ function mitAlpha(farbe, a) {
     return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
 }
 
+/**
+ * Titel oben links in einem Indikator-Fenster. Als Primitive mit zOrder
+ * „top" und eigenem Hintergrund: ein Wasserzeichen der Bibliothek liegt
+ * HINTER den Serien und verschwände unter der OI-Fläche oder der Momentum-Welle.
+ */
+class FensterTitel {
+    constructor(serie, text) {
+        this.serie = serie
+        this.text = text
+        this.requestUpdate = () => {}
+        this._ansichten = [{
+            zOrder: () => 'top',
+            renderer: () => ({ draw: (ziel) => ziel.useMediaCoordinateSpace(({ context }) => this.zeichne(context)) }),
+        }]
+        serie.attachPrimitive(this)
+    }
+    attached({ requestUpdate }) { this.requestUpdate = requestUpdate }
+    detached() { this.requestUpdate = () => {} }
+    paneViews() { return this._ansichten }
+    updateAllViews() {}
+    zeichne(ctx) {
+        if (!this.text) return
+        ctx.save()
+        ctx.font = '600 11px -apple-system, "Segoe UI", Roboto, sans-serif'
+        const b = ctx.measureText(this.text).width
+        ctx.fillStyle = 'rgba(10,14,22,0.78)'
+        ctx.beginPath()
+        if (ctx.roundRect) ctx.roundRect(4, 4, b + 12, 18, 4); else ctx.rect(4, 4, b + 12, 18)
+        ctx.fill()
+        ctx.fillStyle = 'rgba(209,212,220,0.92)'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(this.text, 10, 13.5)
+        ctx.restore()
+    }
+    abbauen() { try { this.serie.detachPrimitive(this) } catch { /* Chart schon weg */ } }
+}
+
 export class IndikatorZeichner {
     /**
      * @param {object} chart  Lightweight-Charts-Instanz
      * @param {function} zuLwc  ms → Sekunden
      */
-    constructor(chart, zuLwc) {
+    constructor(chart, zuLwc, titelFuer = null) {
         this.chart = chart
         this.zuLwc = zuLwc
+        this.titelFuer = titelFuer   // instanz → Text für den Fenstertitel (i18n kommt von aussen)
         this.signatur = ''
         this.eintraege = []          // [{ instanz, def, serien: {key: series}, werte: {key: Array} }]
         this.zeiten = []             // t (ms) der Kerzen, für die Legende
@@ -121,7 +159,8 @@ export class IndikatorZeichner {
             const zeichnung = def.zeichner === 'momentum' && serien.w1
                 ? new MomentumZeichnung({ chart: this.chart, serie: serien.w1 })
                 : null
-            this.eintraege.push({ instanz, def, serien, werte: {}, zeichnung })
+            const titel = def.ort === 'eigen' && erste && this.titelFuer ? new FensterTitel(erste, this.titelFuer(instanz)) : null
+            this.eintraege.push({ instanz, def, serien, werte: {}, zeichnung, titel })
         }
         // Das Kerzen-Pane soll den Löwenanteil behalten.
         const panes = this.chart.panes()
@@ -134,6 +173,7 @@ export class IndikatorZeichner {
     abbauen() {
         for (const e of this.eintraege) {
             e.zeichnung?.abbauen()
+            e.titel?.abbauen()
             for (const s of Object.values(e.serien)) {
                 try { this.chart.removeSeries(s) } catch { /* Chart schon weg */ }
             }
