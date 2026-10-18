@@ -5423,6 +5423,7 @@
       "zeitebenen": "Timeframes"
     },
     "watchlistCoinHinzu": "Add coin",
-    "watchlistSucheZu": "Close search"
+    "watchlistSucheZu": "Close search",
+    "watchlistBoerse": "Open on {boerse} (trading page)"
   }
 }

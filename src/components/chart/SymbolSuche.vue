@@ -7,9 +7,9 @@
  * und Bitunix schreiben Kleinstpreis-Coins nicht immer gleich (`1000PEPE` vs.
  * `PEPE`), deshalb wird beides geprüft, wie in `pruefeListung` auf dem Server.
  */
+import { ladeHandelbar, boersenFuerSymbol } from '../../utils/chart/handelbar.js'
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import axios from 'axios'
 import { loadSymbolMeta } from '../../utils/liveSymbols.js'
 
 const props = defineProps({
@@ -29,34 +29,8 @@ const feld = ref(null)
 const markiert = ref(0)
 const futures = ref([])
 const spot = ref([])
-const handelbar = ref({ bitunix: null, bitget: null, pionex: null })
-
-const BOERSEN = [
-    { id: 'bitunix', kurz: 'BX' },
-    { id: 'bitget', kurz: 'BG' },
-    { id: 'pionex', kurz: 'PX' },
-]
-
-const sets = computed(() => {
-    const aus = {}
-    for (const b of BOERSEN) aus[b.id] = handelbar.value[b.id] ? new Set(handelbar.value[b.id]) : null
-    return aus
-})
-
-/*
- * Kennzeichen nur für USDT-Perpetuals: Bitunix, Bitget und Pionex führen
- * USDT-margined Kontrakte. Hinge das Kennzeichen nur an der Basis, trüge auch
- * SOLUSDC „BX" — handelbar ist dort aber SOLUSDT.
- */
-function boersenFuer(s) {
-    if (s.markt !== 'futures' || s.quote !== 'USDT') return []
-    const base = s.base
-    const ohne = base.replace(/^1000+/, '')
-    return BOERSEN.filter((b) => {
-        const s = sets.value[b.id]
-        return s && (s.has(base) || s.has(ohne) || s.has(`1000${ohne}`))
-    })
-}
+/* Kennzeichen BX/BG/PX: dieselbe Regel wie die Watchlist (`utils/chart/handelbar.js`). */
+const boersenFuer = (s) => boersenFuerSymbol(s.symbol, s.markt)
 
 const treffer = computed(() => {
     const q = suche.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
@@ -103,10 +77,7 @@ onMounted(async () => {
     const [f, s] = await Promise.all([loadSymbolMeta('futures'), loadSymbolMeta('spot')])
     futures.value = f
     spot.value = s
-    try {
-        const { data } = await axios.get('/api/chart/handelbar')
-        handelbar.value = data
-    } catch { /* ohne Kennzeichen weiter */ }
+    ladeHandelbar()
 })
 
 defineExpose({ oeffne, schliesse: () => { offen.value = false }, istOffen: () => offen.value })

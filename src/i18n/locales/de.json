@@ -5423,6 +5423,7 @@
       "zeitebenen": "Zeitebenen"
     },
     "watchlistCoinHinzu": "Coin hinzufügen",
-    "watchlistSucheZu": "Suche schliessen"
+    "watchlistSucheZu": "Suche schliessen",
+    "watchlistBoerse": "Auf {boerse} öffnen (Handelsseite)"
   }
 }

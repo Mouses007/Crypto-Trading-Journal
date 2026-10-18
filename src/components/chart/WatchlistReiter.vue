@@ -10,6 +10,9 @@ import { useI18n } from 'vue-i18n'
 import { BinanceStream, buildMiniTickerUrl } from '../../utils/binanceStream.js'
 import axios from 'axios'
 import SymbolSuche from './SymbolSuche.vue'
+import { ladeHandelbar, boersenFuerSymbol } from '../../utils/chart/handelbar.js'
+import { currentUser } from '../../stores/globals.js'
+import { aktivierteBoersen } from '../../utils/boersenLinks.js'
 
 const props = defineProps({
     watchlists: { type: Array, default: () => [] },
@@ -60,6 +63,14 @@ function verbinde() {
 
 watch(() => symbole.value.map((s) => s.markt + s.symbol).join(','), verbinde, { immediate: true })
 onBeforeUnmount(() => { for (const s of streams) s.stop() })
+
+// Börsenlinks je Zeile: nur wo der Coin gelistet ist, und nur die Börsen, die in den
+// Einstellungen für Börsenlinks aktiviert sind (dieselbe Einstellung wie im Coin-Radar).
+ladeHandelbar()
+function boersen(s) {
+    const aktiv = aktivierteBoersen(currentUser.value?.boersenLinks)
+    return boersenFuerSymbol(s.symbol, s.markt).filter((b) => aktiv.includes(b.id))
+}
 
 function kurs(s) {
     return kurse.value[`${s.markt}|${s.symbol}`]
@@ -138,7 +149,10 @@ function loescheListe() {
         <div class="zeilen">
             <div v-for="(s, i) in symbole" :key="s.markt + s.symbol" class="zeile"
                 :class="{ an: s.symbol === aktivesSymbol && s.markt === aktiverMarkt }" @click="emit('waehle', s)">
-                <span class="sym">{{ s.symbol }}<small v-if="s.markt === 'spot'"> Spot</small></span>
+                <span class="sym">{{ s.symbol }}<small v-if="s.markt === 'spot'"> Spot</small>
+                    <a v-for="b in boersen(s)" :key="b.id" class="boerse" :class="b.id" :href="b.url" target="_blank" rel="noopener"
+                        :title="t('chart.watchlistBoerse', { boerse: b.name })" @click.stop>{{ b.kurz }}</a>
+                </span>
                 <span class="preis">{{ kurs(s) ? kurs(s).c.toFixed(stellen(kurs(s).c)) : '—' }}</span>
                 <span class="delta" :class="aenderung(s) == null ? '' : aenderung(s) >= 0 ? 'greenTrade' : 'redTrade'">
                     {{ aenderung(s) == null ? '' : (aenderung(s) >= 0 ? '+' : '') + aenderung(s).toFixed(2) + ' %' }}
@@ -239,6 +253,34 @@ function loescheListe() {
 .zeile.an {
     background: rgba(1, 180, 255, 0.1);
 }
+
+.sym {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.boerse {
+    font-size: 8.5px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 2px 3px;
+    border-radius: 3px;
+    text-decoration: none;
+    opacity: 0.75;
+    border: 1px solid currentColor;
+}
+
+.boerse:hover {
+    opacity: 1;
+}
+
+/* Hausfarben gedämpft: Bitunix Grün, Bitget Türkis, Pionex Orange */
+.boerse.bitunix { color: #5fd38d; }
+.boerse.bitget { color: #36c2d6; }
+.boerse.pionex { color: #f0a04b; }
 
 .sym small {
     color: var(--grey-text);
