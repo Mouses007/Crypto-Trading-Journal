@@ -797,6 +797,11 @@ watch(sichtbareAnzahl, async () => {
     cursor: pointer;
 }
 
+.boxTrenner button i {
+    font-size: 20px;
+    line-height: 14px;
+}
+
 .vvSchalter {
     flex-shrink: 0;
     margin: 0 8px;

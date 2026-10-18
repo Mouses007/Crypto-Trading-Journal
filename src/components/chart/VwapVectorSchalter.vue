@@ -3,10 +3,11 @@
   aus, ohne den Einstellungsdialog mit seinen 114 Feldern zu öffnen. Ein
   Schalter kann mehrere Parameter zusammenfassen (Swing-VWAP Hoch + Tief);
   er gilt als an, wenn alle an sind, und ein Klick setzt alle gleich.
-  Nur sichtbar, wenn auf dem Chart ein VWAP Vector liegt.
+  Nur sichtbar, wenn auf dem Chart ein VWAP Vector liegt. Ein Klick auf den
+  Titel klappt die Box ein und aus (gemerkt im Browser).
 -->
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps({ panel: { type: Object, required: true } })
@@ -23,7 +24,14 @@ const GRUPPEN = [
     { key: 'marken', schalter: [
         { key: 'fib', p: ['showFib'] }, { key: 'pocPer', p: ['showPocPer'] }, { key: 'pocC', p: ['showPocC'] }, { key: 'dopen', p: ['showDOpen'] },
     ] },
+    { key: 'labels', schalter: [
+        { key: 'lVwap', p: ['labelVWAPS'] }, { key: 'lEma', p: ['labelEMAS'] }, { key: 'lPoc', p: ['pocPerLbl'] }, { key: 'lDopen', p: ['dOpenLbl'] },
+    ] },
 ]
+
+const SPEICHER = 'ctj.chart.vvBoxOffen'
+const offen = ref((() => { try { return localStorage.getItem(SPEICHER) !== '0' } catch { return true } })())
+watch(offen, (v) => { try { localStorage.setItem(SPEICHER, v ? '1' : '0') } catch { /* privat */ } })
 
 const instanz = computed(() => (props.panel?.indikatoren || []).find((i) => i.typ === 'vwapVector' && i.sichtbar !== false) || null)
 
@@ -44,11 +52,16 @@ function schalte(s) {
 
 <template>
     <div v-if="instanz" class="vvs">
-        <div class="kopf">{{ t('chart.vvBox.titel') }}</div>
-        <div v-for="g in GRUPPEN" :key="g.key" class="zeile">
-            <span class="gruppe">{{ t('chart.vvBox.g_' + g.key) }}</span>
-            <button v-for="s in g.schalter" :key="s.key" class="chip" :class="{ an: an(s) }" :aria-pressed="an(s)"
-                :title="t('chart.vvBox.s_' + s.key)" @click="schalte(s)">{{ t('chart.vvBox.k_' + s.key) }}</button>
+        <button class="kopf" :aria-expanded="offen" :title="t(offen ? 'chart.vvBox.zu' : 'chart.vvBox.auf')" @click="offen = !offen">
+            <span>{{ t('chart.vvBox.titel') }}</span>
+            <i :class="offen ? 'uil uil-angle-down' : 'uil uil-angle-up'"></i>
+        </button>
+        <div v-if="offen" class="inhalt">
+            <div v-for="g in GRUPPEN" :key="g.key" class="zeile">
+                <span class="gruppe">{{ t('chart.vvBox.g_' + g.key) }}</span>
+                <button v-for="s in g.schalter" :key="s.key" class="chip" :class="{ an: an(s) }" :aria-pressed="an(s)"
+                    :title="t('chart.vvBox.s_' + s.key)" @click="schalte(s)">{{ t('chart.vvBox.k_' + s.key) }}</button>
+            </div>
         </div>
     </div>
 </template>
@@ -66,11 +79,26 @@ function schalte(s) {
     font-size: 11px;
 }
 .kopf {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
     color: var(--grey-text);
     letter-spacing: 0.04em;
     text-transform: uppercase;
     font-size: 10px;
-    margin-bottom: 2px;
+    cursor: pointer;
+}
+.kopf:hover { color: #e6e6e6; }
+.kopf i { font-size: 20px; line-height: 14px; }
+.inhalt {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 2px;
 }
 .zeile {
     display: flex;
