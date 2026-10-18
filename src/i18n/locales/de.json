@@ -5185,7 +5185,8 @@
       "messen": "Messen",
       "magnet": "Magnet (rastet auf Eröffnung/Hoch/Tief/Schluss ein; Strg gedrückt halten kehrt ihn um)",
       "allesVerstecken": "Alle Zeichnungen aus-/einblenden",
-      "alleLoeschen": "Alle Zeichnungen dieses Symbols löschen"
+      "alleLoeschen": "Alle Zeichnungen dieses Symbols löschen",
+      "volprofil": "Volumenprofil Fixed-Range"
     },
     "stil": {
       "breite": "Strichstärke",
@@ -5201,7 +5202,8 @@
       "nurHier": "Nur auf {tf} zeigen",
       "alarm": "Alarm auf diese Zeichnung",
       "sperren": "Sperren",
-      "entsperren": "Entsperren"
+      "entsperren": "Entsperren",
+      "zeilen": "Zeilen des Volumenprofils"
     },
     "textEingeben": "Text:",
     "alleLoeschenFrage": "Eine Zeichnung auf {symbol} löschen? Gesperrte bleiben stehen. | {n} Zeichnungen auf {symbol} löschen? Gesperrte bleiben stehen.",

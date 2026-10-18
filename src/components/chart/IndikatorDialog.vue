@@ -229,12 +229,20 @@ onMounted(async () => {
     color: var(--grey-text);
 }
 
+/* Die aktiven Indikatoren schrumpfen NICHT — vorher drückte der lange Katalog darunter
+   sie im 80vh-Dialog auf zwei Zeilen mit eigener Mini-Scrollleiste. Scrollen soll nur der
+   Katalog; die Aktiv-Liste erst ab 40vh (sehr viele Indikatoren). */
 .aktiveListe {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    max-height: 30vh;
+    flex-shrink: 0;
+    max-height: 40vh;
     overflow-y: auto;
+}
+
+.kopf, .abschnitt, .dialog > input {
+    flex-shrink: 0;
 }
 
 .aktiv {
@@ -274,6 +282,8 @@ onMounted(async () => {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 120px;
 }
 
 .eintrag {

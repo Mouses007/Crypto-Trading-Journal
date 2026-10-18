@@ -16,6 +16,7 @@ import {
     fibPreise, positionWerte, magnet, imRechteck, messung, dauerText,
 } from './geometrie.js'
 import { werkzeug, stilFuer } from './werkzeuge.js'
+import { volumenprofil } from '../../../../shared/volumenprofil.js'
 
 const ANKER = 5
 const TREFFER = 6
@@ -317,6 +318,12 @@ export class ZeichenEbene {
                 const x2 = s.rechts ? breite : X(pk[1].t)
                 return [x1, y1, x2, y2].every((v) => v != null) && imRechteck(x, y, x1, y1, x2, y2, TREFFER)
             }
+            case 'volprofil': {
+                const x1 = X(Math.min(pk[0].t, pk[1].t)), x2 = X(Math.max(pk[0].t, pk[1].t))
+                const vp = this.profilFuer(pk, s)
+                if (x1 == null || x2 == null || !vp) return false
+                return imRechteck(x, y, x1, this.zuY(vp.oben), x2, this.zuY(vp.unten), TREFFER)
+            }
             case 'fib': {
                 const x1 = X(pk[0].t), x2 = s.rechts ? breite : X(pk[1].t)
                 if (x1 == null || x2 == null) return false
@@ -574,6 +581,19 @@ export class ZeichenEbene {
         ctx.fillText(text, xx, y)
     }
 
+    /** Volumenprofil der geladenen Kerzen zwischen den beiden Zeitpunkten (zwischengespeichert). */
+    profilFuer(pk, s) {
+        const von = Math.min(pk[0].t, pk[1].t), bis = Math.max(pk[0].t, pk[1].t)
+        const letzte = this.kerzen[this.kerzen.length - 1]
+        const schluessel = `${von}|${bis}|${s.zeilen}|${this.kerzen.length}|${letzte?.t}|${letzte?.v}`
+        this._vpCache ??= new Map()
+        if (this._vpCache.has(schluessel)) return this._vpCache.get(schluessel)
+        const vp = volumenprofil(this.kerzen.filter((k) => k.t >= von && k.t <= bis), { zeilen: s.zeilen || 24 })
+        if (this._vpCache.size > 50) this._vpCache.clear()
+        this._vpCache.set(schluessel, vp)
+        return vp
+    }
+
     zeichneEine(ctx, z, pk, breite, hoehe, ausgewaehlt) {
         const s = stilFuer(z)
         const X = (t) => this.zuX(t)
@@ -638,6 +658,42 @@ export class ZeichenEbene {
                 ctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1))
                 ctx.setLineDash([])
                 if (s.text) this.beschriftung(ctx, s.text, Math.min(x1, x2) + 6, Math.min(y1, y2) + 14, s.farbe)
+                break
+            }
+            case 'volprofil': {
+                const x1 = X(Math.min(pk[0].t, pk[1].t)), x2 = X(Math.max(pk[0].t, pk[1].t))
+                const vp = this.profilFuer(pk, s)
+                if (fehlt(x1, x2) || !vp) return
+                const yo = Y(vp.oben), yu = Y(vp.unten)
+                if (fehlt(yo, yu)) return
+                // Rahmen des Bereichs
+                ctx.fillStyle = 'rgba(41,98,255,0.05)'
+                ctx.fillRect(x1, yo, x2 - x1, yu - yo)
+                // Balken von links, längster = 40 % der Bereichsbreite (mindestens 60 px)
+                const max = Math.max(...vp.zeilen.map((r) => r.summe))
+                const lang = Math.max(60, (x2 - x1) * 0.4)
+                for (let i = 0; i < vp.zeilen.length; i++) {
+                    const r = vp.zeilen[i]
+                    const ya = Y(r.bis), yb = Y(r.von)
+                    if (fehlt(ya, yb) || !r.summe) continue
+                    const h = Math.max(1, Math.abs(yb - ya) - 1)
+                    const inVa = i >= vp.vaVon && i <= vp.vaBis
+                    const wAuf = lang * r.auf / max, wAb = lang * r.ab / max
+                    ctx.fillStyle = mitAlpha(s.farbe, inVa ? 0.6 : 0.25)
+                    ctx.fillRect(x1, Math.min(ya, yb), wAuf, h)
+                    ctx.fillStyle = mitAlpha('#ef5350', inVa ? 0.6 : 0.25)
+                    ctx.fillRect(x1 + wAuf, Math.min(ya, yb), wAb, h)
+                }
+                const ende = s.rechts ? breite : x2
+                const marke = (p, farbe, text, strich) => {
+                    const y = Y(p)
+                    if (fehlt(y)) return
+                    this.linie(ctx, x1, y, ende, y, { farbe, breite: 1, strich })
+                    this.beschriftung(ctx, `${text} ${this.formatPreis(p)}`, Math.min(ende, breite) - 4, y - 3, farbe, { rechtsbuendig: true, hinten: 'rgba(0,0,0,0.45)' })
+                }
+                marke(vp.poc, '#f5c542', 'POC', 'voll')
+                marke(vp.vah, '#8a9199', 'VAH', 'gestrichelt')
+                marke(vp.val, '#8a9199', 'VAL', 'gestrichelt')
                 break
             }
             case 'fib': {

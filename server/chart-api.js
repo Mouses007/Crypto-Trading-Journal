@@ -238,7 +238,7 @@ export function saubereSymbole(eingabe) {
 }
 
 /** Werkzeuge, die gespeichert werden dürfen (`messen` ist flüchtig). */
-export const ZEICHEN_TYPEN = ['horizontale', 'strahlH', 'vertikale', 'trendlinie', 'strahl', 'kanal', 'rechteck', 'fib', 'position', 'text']
+export const ZEICHEN_TYPEN = ['horizontale', 'strahlH', 'vertikale', 'trendlinie', 'strahl', 'kanal', 'rechteck', 'fib', 'position', 'text', 'volprofil']
 const MAX_PUNKTE = 4
 const MAX_STIL_BYTES = 4096
 

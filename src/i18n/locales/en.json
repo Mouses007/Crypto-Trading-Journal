@@ -5185,7 +5185,8 @@
       "messen": "Measure",
       "magnet": "Magnet (snaps to open/high/low/close; hold Ctrl to invert)",
       "allesVerstecken": "Hide/show all drawings",
-      "alleLoeschen": "Delete all drawings on this symbol"
+      "alleLoeschen": "Delete all drawings on this symbol",
+      "volprofil": "Fixed Range Volume Profile"
     },
     "stil": {
       "breite": "Line width",
@@ -5201,7 +5202,8 @@
       "nurHier": "Show on {tf} only",
       "alarm": "Alert on this drawing",
       "sperren": "Lock",
-      "entsperren": "Unlock"
+      "entsperren": "Unlock",
+      "zeilen": "Volume profile rows"
     },
     "textEingeben": "Text:",
     "alleLoeschenFrage": "Delete one drawing on {symbol}? Locked ones stay. | Delete {n} drawings on {symbol}? Locked ones stay.",

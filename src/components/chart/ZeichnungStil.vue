@@ -20,8 +20,14 @@ const { t } = useI18n()
 const s = computed(() => stilFuer(props.zeichnung))
 const typ = computed(() => props.zeichnung.typ)
 const hatFarbe = computed(() => !['position', 'fib'].includes(typ.value))
-const hatStrich = computed(() => !['position', 'text'].includes(typ.value))
-const hatVerlaengern = computed(() => ['trendlinie', 'rechteck', 'fib'].includes(typ.value))
+const hatStrich = computed(() => !['position', 'text', 'volprofil'].includes(typ.value))
+const hatVerlaengern = computed(() => ['trendlinie', 'rechteck', 'fib', 'volprofil'].includes(typ.value))
+// Volumenprofil: Zeilenzahl im Kreis 12 → 24 → 48 → 96
+const ZEILEN = [12, 24, 48, 96]
+function naechsteZeilen() {
+    const jetzt = s.value.zeilen || 24
+    stil({ zeilen: ZEILEN[(ZEILEN.indexOf(jetzt) + 1) % ZEILEN.length] })
+}
 const hatFuellung = computed(() => ['rechteck', 'kanal'].includes(typ.value))
 const hatText = computed(() => ['text', 'horizontale', 'strahlH', 'rechteck'].includes(typ.value))
 const nurHier = computed(() => Array.isArray(props.zeichnung.sichtbarAuf) && props.zeichnung.sichtbarAuf.length > 0)
@@ -62,6 +68,8 @@ function nurDieseZeiteinheit() {
             @click="stil({ rechts: !s.rechts })" :aria-label="t('chart.stil.rechts')"><i class="uil uil-arrow-to-right"></i></button>
         <button v-if="typ === 'trendlinie'" class="k" :class="{ an: s.links }" :title="t('chart.stil.links')"
             @click="stil({ links: !s.links })" :aria-label="t('chart.stil.links')"><i class="uil uil-left-arrow-to-left"></i></button>
+ <button v-if="typ === 'volprofil'" class="k" :title="t('chart.stil.zeilen')" @click="naechsteZeilen" :aria-label="t('chart.stil.zeilen')">
+            {{ s.zeilen || 24 }}</button>
         <button v-if="hatFuellung" class="k" :class="{ an: s.fuellung }" :title="t('chart.stil.fuellung')"
             @click="stil({ fuellung: !s.fuellung })" :aria-label="t('chart.stil.fuellung')"><i class="uil uil-tear"></i></button>
         <button v-if="hatText" class="k" :title="t('chart.stil.text')" @click="emit('text')" :aria-label="t('chart.stil.text')"><i class="uil uil-text"></i></button>

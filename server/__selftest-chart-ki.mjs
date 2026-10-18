@@ -41,6 +41,12 @@ console.log('\nEingabe\n')
     check('System mit Empfehlungen lässt die Sperre weg', !systemText(false, true).includes('KEINE Prognose'))
 }
 
+{
+    const mitVp = baueChartEingabe({ symbol: 'X', interval: '1h', kerzen, zeichnungen: [{ typ: 'volprofil', punkte: [{ t: kerzen[10].t, p: 0 }, { t: kerzen[30].t, p: 0 }], stil: {} }] })
+    check('Eingabe enthält das Volumenprofil des ganzen Bereichs mit POC', /VOLUMENPROFIL/.test(mitVp) && /ganzer Bereich: POC/.test(mitVp))
+    check('… und das vom Nutzer gezogene Profil', /vom Nutzer gezogen/.test(mitVp))
+}
+
 console.log('\nAntwortprüfung\n')
 {
     const gut = pruefeChartAntwort({

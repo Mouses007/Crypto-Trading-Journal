@@ -100,7 +100,7 @@ console.log('\nFibonacci, Position, Magnet, Messen\n')
 
 console.log('\nWerkzeuge\n')
 {
-    const gespeichert = ['horizontale', 'strahlH', 'vertikale', 'trendlinie', 'strahl', 'kanal', 'rechteck', 'fib', 'position', 'text']
+    const gespeichert = ['horizontale', 'strahlH', 'vertikale', 'trendlinie', 'strahl', 'kanal', 'rechteck', 'fib', 'position', 'text', 'volprofil']
     const fluechtig = WERKZEUGE.filter((w) => w.fluechtig).map((w) => w.typ)
     const alle = WERKZEUGE.map((w) => w.typ)
     check('Jedes speicherbare Werkzeug hat eine Vorgabe-Gestaltung', gespeichert.every((t) => STANDARD_STIL[t]))

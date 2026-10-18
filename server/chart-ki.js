@@ -27,6 +27,8 @@ import { getClosedCandles, isValidTimeframe, timeframeMs } from './market-data.j
 import { holeHebelzonen } from './hebelzonen.js'
 import { pruefeEinordnung } from './coin-radar/einordnung.js'
 import { tradesAusZeilen } from './chart-journal.js'
+import { richteTrendAus } from './chart-trendlinien.js'
+import { volumenprofil } from '../shared/volumenprofil.js'
 
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
 const KERZEN = 150
@@ -76,6 +78,20 @@ export function baueChartEingabe({ symbol, interval, kerzen, zeichnungen = [], h
             else if (p.length) zeilen.push(`- ${z.typ} bei ${kurz(p[0].p)}${text}`)
         }
     }
+    // Volumenprofil: über den ganzen gezeigten Bereich, dazu jedes vom Nutzer gezogene Profil —
+    // dieselbe Rechnung wie das Zeichenwerkzeug, damit KI und Chart dasselbe Profil lesen.
+    const profilZeile = (name, vp) => `- ${name}: POC ${kurz(vp.poc)}, Value Area ${kurz(vp.val)}–${kurz(vp.vah)} (70 % des Volumens), Spanne ${kurz(vp.unten)}–${kurz(vp.oben)}`
+    const gesamt = volumenprofil(kerzen, { zeilen: 48 })
+    const eigene = zeichnungen.filter((z) => z.typ === 'volprofil' && (z.punkte || []).length >= 2).slice(0, 5)
+    if (gesamt || eigene.length) {
+        zeilen.push('', 'VOLUMENPROFIL (aus den Kerzen geschätzt; POC = Preis mit dem meisten Volumen — dort und an den Rändern der Value Area reagiert der Kurs oft):')
+        if (gesamt) zeilen.push(profilZeile('ganzer Bereich', gesamt))
+        for (const z of eigene) {
+            const von = Math.min(z.punkte[0].t, z.punkte[1].t), bis = Math.max(z.punkte[0].t, z.punkte[1].t)
+            const vp = volumenprofil(kerzen.filter((k) => k.t >= von && k.t <= bis), { zeilen: z.stil?.zeilen || 24 })
+            if (vp) zeilen.push(profilZeile(`vom Nutzer gezogen ${isoKurz(von)} → ${isoKurz(bis)}`, vp))
+        }
+    }
     if (hebelzonen && (hebelzonen.oben?.length || hebelzonen.unten?.length)) {
         zeilen.push('', 'GESCHÄTZTE LIQUIDATIONSZONEN (Modell aus Open Interest, keine Messung):')
         for (const z of (hebelzonen.oben || []).slice(0, 3)) zeilen.push(`- darüber ${kurz(z.preis)} (~${Math.round(z.usd / 1e6)} Mio USD Shorts)`)
@@ -98,6 +114,7 @@ Regeln:
 - Stütze dich NUR auf die gelieferten Kerzen, Linien und Zonen. Keine Nachrichten, kein Allgemeinwissen über den Coin.
 - Linien: Unterstützung und Widerstand sind WAAGERECHT — ein Preis "p" und die Zeit "t1", ab der die Marke gilt; kein t2/p2. Ein Bereich mit mehreren nahen Preisen ist eine ZONE, keine Linie.
 - Trendlinien ("art": "trend") verbinden zwei echte Hochs bzw. zwei echte Tiefs, mindestens ${MIN_TREND_KERZEN} Kerzen auseinander, beide auf Kerzen im gezeigten Bereich; die Linie wird nach rechts verlängert.
+- Volumenprofil: POC und Value-Area-Ränder sind starke Marken; nutze sie für Linien und Zonen und nenne sie im Grund (z. B. "POC des Bereichs").
 - Zonen: Preisbereiche mit mehrfacher Reaktion, mit "art" unterstuetzung (unter dem Kurs, hat gehalten) oder widerstand (darüber, hat abgewiesen).
 - Bedingungen: "wenn … dann …" — beobachtbar, an eine Zahl gebunden.
 ${empfehlungen ? '' : '- KEINE Prognose, KEIN Kursziel, KEINE Handelsempfehlung, kein "dürfte", kein "kaufen/verkaufen". Beschreibe Marken und was ihr Bruch bedeuten würde.\n'}- Jede Linie und Zone bekommt eine kurze Beschriftung (max. 40 Zeichen) und einen Grund (max. 200 Zeichen), WARUM sie dort liegt (z. B. "drei Tiefs bei 101,2 am 12., 14. und 16.").
@@ -129,7 +146,7 @@ const zeitAus = (v) => {
  * @param {object} json
  * @param {{vonT:number, bisT:number, iv:number, preisMin:number, preisMax:number, empfehlungen?:boolean}} rahmen
  */
-export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, kurs = null, empfehlungen = false }) {
+export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, kurs = null, kerzen = null, empfehlungen = false }) {
     const verworfen = []
     const textOk = (s) => empfehlungen || pruefeEinordnung({ text: s }).ok
     const spanne = preisMax - preisMin
@@ -164,6 +181,15 @@ export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, k
             continue
         }
         if (iv > 0 && (t2 - t1) / iv < MIN_TREND_KERZEN) { verworfen.push({ art: 'linie', grund: 'trendZuKurz', inhalt: label }); continue }
+        // An den Kerzen prüfen: eine Linie, durch die die Kerzen wachsen, ist kein Widerstand.
+        // Hält sie nicht, kommt die beste echte Linie derselben Seite und Richtung an ihre Stelle.
+        if (Array.isArray(kerzen) && kerzen.length) {
+            const r = richteTrendAus(kerzen, { t1, p1, t2, p2 }, iv)
+            if (!r) { verworfen.push({ art: 'linie', grund: 'trendBricht', inhalt: label }); continue }
+            if (linien.some((x) => x.art === 'trend' && x.t1 === r.t1 && x.t2 === r.t2)) continue
+            linien.push({ art, t1: r.t1, p1: r.p1, t2: r.t2, p2: r.p2, label, grund: r.ersetzt ? wort(`An den Hochs/Tiefs ausgerichtet (${r.beruehrungen} Berührungen, kein Bruch). ${grund}`, 200) : grund, ausgerichtet: r.ersetzt })
+            continue
+        }
         linien.push({ art, t1, p1, t2, p2, label, grund })
     }
 
@@ -264,7 +290,7 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
         }
         const preise = kerzen.flatMap((k) => [k.h, k.l])
         const ergebnis = pruefeChartAntwort(antwort.json, {
-            vonT, bisT, iv, preisMin: Math.min(...preise), preisMax: Math.max(...preise), kurs: kerzen[kerzen.length - 1]?.c, empfehlungen,
+            vonT, bisT, iv, preisMin: Math.min(...preise), preisMax: Math.max(...preise), kurs: kerzen[kerzen.length - 1]?.c, kerzen, empfehlungen,
         })
         for (const v of ergebnis.verworfen) logWarn('chart-ki', `${symbol} ${interval}: ${v.art} verworfen (${v.grund}) — ${v.inhalt}`)
         if (ergebnis.leer) throw new Error('Die KI hat keine verwertbare Analyse geliefert')

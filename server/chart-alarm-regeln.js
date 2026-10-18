@@ -45,7 +45,7 @@ export function geradePreis(a, b, t, log = false) {
  */
 export function ordnePunkte(typ, punkte) {
     if (!Array.isArray(punkte) || punkte.length < 2) return punkte
-    if (typ === 'trendlinie' || typ === 'rechteck' || typ === 'messen' || typ === 'position') {
+    if (typ === 'trendlinie' || typ === 'rechteck' || typ === 'messen' || typ === 'position' || typ === 'volprofil') {
         if (typ === 'position') return punkte          // Einstieg/Ziel/Stop: feste Rollen
         return punkte[0].t <= punkte[1].t ? punkte : [punkte[1], punkte[0], ...punkte.slice(2)]
     }

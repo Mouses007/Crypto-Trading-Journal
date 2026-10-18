@@ -15,6 +15,8 @@ export const WERKZEUGE = [
     { typ: 'kanal', icon: 'uil uil-chart-down', klicks: 3, gruppe: 'formen' },
     { typ: 'rechteck', icon: 'uil uil-square-shape', klicks: 2, gruppe: 'formen' },
     { typ: 'fib', icon: 'uil uil-percentage', klicks: 2, gruppe: 'formen' },
+    // Fixed-Range-Volumenprofil: zwei Klicks setzen Anfang und Ende des Bereichs (der Preis ist egal)
+    { typ: 'volprofil', icon: 'uil uil-chart-bar-alt', klicks: 2, gruppe: 'formen' },
     { typ: 'position', icon: 'uil uil-crosshair-alt', klicks: 2, gruppe: 'handel' },
     { typ: 'text', icon: 'uil uil-text', klicks: 1, gruppe: 'notiz' },
     { typ: 'messen', icon: 'uil uil-ruler', klicks: 2, gruppe: 'notiz', fluechtig: true },
@@ -33,6 +35,8 @@ export const STANDARD_STIL = {
     kanal: { farbe: '#2962ff', breite: 1, strich: 'voll', fuellung: true },
     rechteck: { farbe: '#ab47bc', breite: 1, strich: 'voll', fuellung: true, rechts: false, text: '' },
     fib: { farbe: '#8a9199', breite: 1, strich: 'voll', rechts: false },
+    // farbe = Kaufvolumen; Verkauf rot, POC gelb. rechts = POC/VAH/VAL bis zum rechten Rand verlängern.
+    volprofil: { farbe: '#26a69a', zeilen: 24, rechts: true },
     position: { breite: 1 },
     text: { farbe: '#e0e0e0', groesse: 13, text: '' },
     messen: { farbe: '#29b6f6' },
