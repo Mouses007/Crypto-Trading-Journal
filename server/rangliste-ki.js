@@ -22,7 +22,7 @@
  * nachprüfen kann.
  */
 
-import { ladeLlmConfig, callLLMJson } from './llm.js'
+import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson } from './llm.js'
 import { holeHandelbar, holeTestbar } from './coin-universum.js'
 import { logWarn } from './logger.js'
 
@@ -73,7 +73,9 @@ export async function schlageUniversumVor(thema, opts = {}) {
     const ruf = opts.llm || (async (cfg, auftrag) => callLLMJson(cfg, auftrag))
     const cfg = opts.llm
         ? { provider: 'test', model: 'test' }
-        : await ladeLlmConfig({ provider: opts.provider || undefined, model: opts.modell || undefined })
+        : opts.provider
+            ? await ladeLlmConfig({ provider: opts.provider, model: opts.modell || undefined })
+            : await ladeLlmConfigFuerAufgabe('rangliste', { model: opts.modell || undefined })
     if (!opts.llm) cfg.maxTokens = 2000
 
     const antwort = await ruf(cfg, {

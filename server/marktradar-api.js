@@ -29,7 +29,7 @@ import {
     reiheAusChart, deltaAusReihe, korrelationAusReihen, deuteKorrelation,
     stableFluss, waehleDominanzPunkte, zerlegeDominanz,
 } from './makro.js'
-import { ladeLlmConfig, callLLMJson } from './llm.js'
+import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson } from './llm.js'
 import { parseWalBeitrag } from './wal-parser.js'
 
 const HTTP_TIMEOUT = 10000
@@ -1376,7 +1376,7 @@ async function holeMechanikErklaerung(symbol, fenster) {
         return { ...alt.payload, cached: true }
     }
 
-    const cfg = await ladeLlmConfig()
+    const cfg = await ladeLlmConfigFuerAufgabe('mechanik')
     cfg.maxTokens = 300
 
     const s = await getKnex()('settings').select('language').where('id', 1).first().catch(() => null)

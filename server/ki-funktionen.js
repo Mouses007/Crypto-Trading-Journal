@@ -30,17 +30,18 @@ export const KI_FUNKTIONEN = [
     },
     {
         id: 'tradeAnalyse', titelKey: 'kiUebersicht.fn.tradeAnalyse', bereich: 'berichte',
-        rolle: 'Bericht', funktionen: ['trade-analyse', 'trade-chat'],
+        rolle: 'Bericht', aufgabe: 'trade-analyse', funktionen: ['trade-analyse', 'trade-chat'],
     },
     {
         id: 'agent', titelKey: 'kiUebersicht.fn.agent', bereich: 'agent',
-        rolle: 'Agent', funktionen: ['agent'],
+        rolle: 'Agent', aufgabe: 'agent', funktionen: ['agent', 'chart-chat'],
     },
     {
         id: 'lagebericht', titelKey: 'kiUebersicht.fn.lagebericht', bereich: 'nachrichten',
         // Die Nachrichten wählen ihren Anbieter über eigene Felder statt über
         // `waehleAnbieter` — deshalb hier ausdrücklich benannt.
         felder: { provider: 'radarNewsBerichtProvider', modell: 'radarNewsBerichtModell' },
+        aufgabe: 'lagebericht',
         // Die Aktualisierung ist derselbe Vorgang mit anderem Zuschnitt — sie
         // gehört in dieselbe Kostenzeile, sonst sucht man den Nachmittag im
         // Verbrauch vergeblich.
@@ -53,7 +54,7 @@ export const KI_FUNKTIONEN = [
     },
     {
         id: 'xSuche', titelKey: 'kiUebersicht.fn.xSuche', bereich: 'nachrichten',
-        fest: { provider: 'xai', feld: 'radarNewsXModell', standard: 'grok-4.6' },
+        fest: { provider: 'xai', feld: 'radarNewsXModell', standard: 'grok-4.20-0309-non-reasoning' },
         // Die Hype-Frühphase nutzt dieselbe Suche mit demselben Modell —
         // eine Kostenzeile für „X", eine Stelle für das Modell.
         funktionen: ['x-suche', 'hype-x'],
@@ -63,15 +64,26 @@ export const KI_FUNKTIONEN = [
         // Nur Gemini öffnet eine YouTube-Adresse selbst. Deckt auch die
         // Chartbild-Prüfung ab, die denselben Anbieter benutzt.
         fest: { provider: 'gemini', feld: 'radarNewsModel', standard: 'gemini-3.5-flash-lite' },
-        funktionen: ['video'],
+        funktionen: ['video', 'chartbild-pruefung', 'chartbild-judge'],
     },
     {
         id: 'strategie', titelKey: 'kiUebersicht.fn.strategie', bereich: 'strategie',
-        rolle: 'Strategie', funktionen: ['strategie-veto', 'regel-baukasten', 'strategie-baukasten'],
+        rolle: 'Strategie', aufgabe: 'strategie-baukasten',
+        funktionen: ['strategie-veto', 'regel-baukasten', 'strategie-baukasten'],
     },
     {
         id: 'radar', titelKey: 'kiUebersicht.fn.radar', bereich: 'allgemein',
-        rolle: '', funktionen: ['lage', 'mechanik', 'rangliste'],
+        rolle: '', aufgabe: 'marktradar-lage', funktionen: ['lage', 'handelslage', 'mechanik', 'rangliste'],
+    },
+    {
+        id: 'chart', titelKey: 'kiUebersicht.fn.chart', bereich: 'allgemein',
+        rolle: '', aufgabe: 'chart-analyse', funktionen: ['chart-analyse'],
+    },
+    {
+        // Hing bis 18.10.2026 nur an der Editor-Rolle des Hype-Radars — und
+        // fehlte hier ganz, obwohl er der grösste Einzelposten im Verbrauch war.
+        id: 'coinRadar', titelKey: 'kiUebersicht.fn.coinRadar', bereich: 'allgemein',
+        rolle: '', aufgabe: 'coin-radar', funktionen: ['coin-radar'],
     },
     {
         id: 'bild', titelKey: 'kiUebersicht.fn.bild', bereich: 'bilder',
@@ -82,7 +94,7 @@ export const KI_FUNKTIONEN = [
         fest: {
             feldProvider: 'shareCardProvider',
             feldJeProvider: { flux: 'fluxModel', gemini: 'geminiImageModel' },
-            standardJeProvider: { flux: 'flux-2-pro', gemini: 'gemini-2.5-flash-image' },
+            standardJeProvider: { flux: 'flux-2-pro', gemini: 'gemini-3.1-flash-image' },
         },
         funktionen: ['bild'],
     },
@@ -102,6 +114,14 @@ export const KI_FUNKTIONEN = [
 export function anbieterVon(eintrag, settings) {
     const s = settings || {}
     const global = String(s.aiProvider || '').trim() || 'ollama'
+    // Eine Zeile der Aufgaben-Tabelle schlägt alles Übrige (wie in `llm.js`).
+    // Hier ohne Import nachgelesen — das Modul bleibt ein Blatt.
+    if (eintrag.aufgabe) {
+        let karte = s.aiTaskProviders
+        if (typeof karte === 'string') { try { karte = JSON.parse(karte || '{}') } catch { karte = {} } }
+        const wert = String(karte?.[eintrag.aufgabe] || '').trim()
+        if (wert) return wert.split('/')[0].trim()
+    }
     if (eintrag.fest) {
         return eintrag.fest.provider || String(s[eintrag.fest.feldProvider] || '').trim() || ''
     }

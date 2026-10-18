@@ -22,6 +22,7 @@ import { istAgentAktiv } from './ai-agent.js'
 import { engineStatus } from './strategy-engine.js'
 import { leseUpdateStunden, leseRhythmus } from './marktradar-news.js'
 import { KI_FUNKTIONEN, anbieterVon } from './ki-funktionen.js'
+import { aufgabenWahl } from './ai-task-config.js'
 import { logWarn } from './logger.js'
 
 const TAG_MS = 24 * 60 * 60 * 1000
@@ -122,6 +123,10 @@ function zeitplanVon(a, s) {
  */
 function loeseAnbieter(eintrag, s) {
     const provider = anbieterVon(eintrag, s)
+
+    // Aufgaben-Zeile gesetzt → sie gilt, genau wie zur Laufzeit.
+    const wahl = eintrag.aufgabe ? aufgabenWahl(s?.aiTaskProviders, eintrag.aufgabe) : null
+    if (wahl) return { provider: wahl.provider, modell: wahl.model, folgtGlobal: false }
 
     if (eintrag.fest) {
         // `feldJeProvider`/`standardJeProvider` (mehrere Anbieter mit je

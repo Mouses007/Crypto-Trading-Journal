@@ -35,7 +35,10 @@ import { beobachteAbbruch } from './sse.js'
  *   abgekuendigt  nicht mehr wählbar, aber zur Laufzeit weiter bedient
  *
  * Modell-Listen bewusst kurz: was fehlt, trägt man in den Einstellungen nach.
- * Stand 16.08.2026, gegen die Anbieter-Seiten geprüft.
+ * Stand 18.10.2026, gegen die Anbieter-Seiten geprüft; Anthropic zusätzlich
+ * gegen den Live-Katalog mit dem hinterlegten Schlüssel. Das ERSTE Modell je
+ * Anbieter ist sein Standard (`standardModell`) — darum steht vorn der
+ * günstige Allrounder, nicht das Flaggschiff.
  */
 export const ANBIETER_REG = {
     ollama: {
@@ -47,13 +50,16 @@ export const ANBIETER_REG = {
         name: 'Anthropic (Claude)', art: 'anthropic', keySpalte: 'aiKeyAnthropic',
         keyUrl: 'console.anthropic.com/settings/keys',
         anhang: { image: true, pdf: true }, jsonModus: false, katalog: true,
-        modelle: ['claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'claude-haiku-4-5'],
+        // Fähigkeit → Wahl: Haiku 5.5 für Masse (0,10/0,50), Sonnet 5.5 für
+        // Schreiben und Alltag, Opus 5.5 für Agent/Code/Urteil, Fable 5.1 nur
+        // auf ausdrücklichen Wunsch (2,5× Opus, lange Läufe).
+        modelle: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', 'claude-fable-5-1', 'claude-opus-5'],
     },
     openai: {
         name: 'OpenAI', art: 'openai', keySpalte: 'aiKeyOpenai',
         basisUrl: 'https://api.openai.com/v1', keyUrl: 'platform.openai.com/api-keys',
         anhang: { image: true, pdf: false }, jsonModus: true, katalog: true,
-        modelle: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+        modelle: ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-5.6-sol'],
     },
     gemini: {
         name: 'Google Gemini', art: 'gemini', keySpalte: 'aiKeyGemini',
@@ -62,13 +68,12 @@ export const ANBIETER_REG = {
         // `gemini-2.x` fehlt bewusst: Google antwortet darauf mit 404
         // („no longer available to new users").
         modelle: [
-            'gemini-3.8-flash',        // neuestes Flash (04.09.2026), gleicher Preis wie 3.7
-            'gemini-3.7-flash',        // im Gratis-Kontingent oft 503
+            'gemini-3.8-flash',        // neuestes Flash; Video, Bild, PDF
+            'gemini-4-argon',          // Flaggschiff (Okt. 2026), 2/10 bis 30.11., danach 4/20
             'gemini-3.6-flash',
-            'gemini-3.5-flash',
-            'gemini-3.5-flash-lite',
-            'gemini-3.1-flash-lite',
-            'gemini-3.1-pro-preview',  // Pro-Modelle brauchen ein Abrechnungskonto
+            'gemini-3.5-flash-lite',   // billigstes, reicht für Video-Zusammenfassungen
+            'gemini-3.1-flash-lite',   // Abschaltung 07.05.2027
+            'gemini-3.1-pro-preview',
         ],
     },
     mistral: {
@@ -76,7 +81,9 @@ export const ANBIETER_REG = {
         basisUrl: 'https://api.mistral.ai/v1', keyUrl: 'console.mistral.ai/api-keys',
         anhang: { image: false, pdf: false },   // ungetestet, siehe unten
         jsonModus: true, katalog: true,
-        modelle: ['mistral-medium-2508', 'mistral-large-2411', 'mistral-small-2506'],
+        // Die drei alten (medium-2508, large-2411, small-2506) sind seit Sommer
+        // 2026 abgeschaltet. Ohne Schlüssel nicht live geprüft.
+        modelle: ['mistral-medium-2604', 'mistral-large-2512', 'mistral-small-2603'],
     },
     xai: {
         name: 'xAI (Grok)', art: 'openai', keySpalte: 'aiKeyXai',
@@ -89,8 +96,8 @@ export const ANBIETER_REG = {
          * wie die X-Suche die richtige: gemessen am 04.09.2026 lieferte sie
          * dieselben 39 Posts wie grok-4.6, in 34 statt 206 Sekunden.
          */
-        modelle: ['grok-4.20-0309-non-reasoning', 'grok-4.20-0309-reasoning',
-            'grok-4.20-multi-agent-0309', 'grok-4.6', 'grok-4.5', 'grok-4.3'],
+        modelle: ['grok-4.20-0309-non-reasoning', 'grok-4.7', 'grok-4.20-0309-reasoning',
+            'grok-4.6'],
     },
     qwen: {
         name: 'Qwen (Alibaba)', art: 'openai', keySpalte: 'aiKeyQwen',
@@ -102,7 +109,7 @@ export const ANBIETER_REG = {
         // DashScope nimmt `response_format` nicht durchgängig an — ein 400
         // legt sonst die Strategie-Agenten lahm.
         jsonModus: false, katalog: false,
-        modelle: ['qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash'],
+        modelle: ['qwen3.7-plus', 'qwen3.8-max', 'qwen3.8-flash'],
     },
     perplexity: {
         name: 'Perplexity (Sonar)', art: 'openai', keySpalte: 'aiKeyPerplexity',
@@ -113,6 +120,8 @@ export const ANBIETER_REG = {
         // für die Themen-Recherche des Lageberichts gedacht; als Chat-Anbieter
         // wählbar, aber ohne Anhänge und ohne festen JSON-Modus.
         anhang: { image: false, pdf: false }, jsonModus: false, katalog: false,
+        // Seit 27.09.2026 leitet Perplexity Chat-Completions auf seine
+        // Agent-API um (Sonar → Preset); die Namen hier bleiben gültig.
         // Vier Stufen, nicht zwei. `sonar-deep-research` rechnet zusaetzlich
         // Reasoning und Suchanfragen ab -- fuer einen Rechercheabsatz je Thema
         // ist `sonar-pro` weiterhin die richtige Wahl.
@@ -139,7 +148,8 @@ export const ANBIETER_REG = {
         name: 'DeepSeek', art: 'openai', keySpalte: 'aiKeyDeepseek',
         basisUrl: 'https://api.deepseek.com/v1', keyUrl: 'platform.deepseek.com/api_keys',
         anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
-        modelle: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+        // `deepseek-v4-flash` ist nur noch Alias von `deepseek-flash`.
+        modelle: ['deepseek-flash', 'deepseek-v4-pro'],
     },
     /*
      * Die drei Neuen sind alle OpenAI-kompatibel und teilen sich damit den
@@ -151,29 +161,34 @@ export const ANBIETER_REG = {
         name: 'Moonshot (Kimi)', art: 'openai', keySpalte: 'aiKeyMoonshot',
         basisUrl: 'https://api.moonshot.ai/v1', keyUrl: 'platform.moonshot.ai/console/api-keys',
         anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
-        modelle: ['kimi-k2.6', 'kimi-k2.7'],
+        modelle: ['kimi-k2.6', 'kimi-k3', 'kimi-k2.7-code'],
     },
     zai: {
         name: 'Z.ai (GLM)', art: 'openai', keySpalte: 'aiKeyZai',
         basisUrl: 'https://api.z.ai/api/paas/v4', keyUrl: 'z.ai/manage-apikey/apikey-list',
         anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
-        modelle: ['glm-5.2', 'glm-5.1'],
+        modelle: ['glm-5.3', 'glm-5.2'],
     },
     minimax: {
         name: 'MiniMax', art: 'openai', keySpalte: 'aiKeyMinimax',
         basisUrl: 'https://api.minimax.io/v1', keyUrl: 'platform.minimax.io/user-center/basic-information',
         anhang: { image: false, pdf: false }, jsonModus: true, katalog: true,
-        modelle: ['minimax-m3', 'minimax-m2.7'],
+        modelle: ['MiniMax-M3'],   // Schreibweise laut Anbieter
     },
     openrouter: {
         name: 'OpenRouter', art: 'openai', keySpalte: 'aiKeyOpenrouter',
         basisUrl: 'https://openrouter.ai/api/v1', keyUrl: 'openrouter.ai/keys',
         anhang: { image: true, pdf: false }, jsonModus: false, katalog: true,
         modelle: [
-            'anthropic/claude-opus-5',
-            'openai/gpt-4o',
-            'meta-llama/llama-3.1-70b',
-            'deepseek/deepseek-chat',
+            // Kennungen aus dem OpenRouter-Katalog, 18.10.2026 (Punkt statt
+            // Bindestrich in der Version — anders als bei Anthropic direkt).
+            'anthropic/claude-sonnet-5.5',
+            'anthropic/claude-opus-5.5',
+            'anthropic/claude-haiku-5.5',
+            'openai/gpt-6.1-sol',
+            'google/gemini-4-argon',
+            'deepseek/deepseek-v4-pro',
+            'moonshotai/kimi-k3',
         ],
     },
 }
@@ -197,19 +212,20 @@ export const STANDARD_MODELLE = Object.fromEntries(
 export const BILD_MODELL_REG = {
     flux: {
         name: 'FLUX.2 (Bild)',
-        modelle: ['flux-2-pro', 'flux-2-flex', 'flux-2-max'],
+        modelle: ['flux-2-pro', 'flux-2-flex', 'flux-2-max', 'flux-3-image'],
         // BFL führt keinen abrufbaren Katalog (kein `GET /models` — geprüft
         // gegen docs.bfl.ml, Stand 29.08.2026: 404). „Vom Anbieter holen"
         // zeigt deshalb diese von Hand gepflegte Liste der offiziell
         // dokumentierten Endpunkt-Namen statt eines Live-Aufrufs.
         katalog: [
-            'flux-2-max', 'flux-2-pro-preview', 'flux-2-pro', 'flux-2-flex',
+            'flux-3-image', 'flux-2-max', 'flux-2-pro-preview', 'flux-2-pro', 'flux-2-flex',
             'flux-2-klein-4b', 'flux-2-klein-9b-preview', 'flux-2-klein-9b',
         ],
     },
     geminiBild: {
         name: 'Google Gemini (Bild)',
-        modelle: ['gemini-2.5-flash-image', 'gemini-3.1-flash-lite-image', 'gemini-3.1-flash-image', 'gemini-3-pro-image'],
+        // `gemini-2.5-flash-image` ist abgeschaltet (Preisseite: 02.10.2026).
+        modelle: ['gemini-3.1-flash-image', 'gemini-3-pro-image', 'gemini-nano-banana-2.1', 'gemini-3.1-flash-lite-image'],
         // Gemini führt sehr wohl einen Katalog — derselbe `/models`-Endpunkt,
         // den `/api/flux/test-gemini` schon zum Schlüssel-Test nutzt, nur mit
         // dem Bild-Schlüssel statt des Chat-Schlüssels.
@@ -291,8 +307,15 @@ export const GEMINI_STANDARDMODELL = 'gemini-3.5-flash-lite'
  * (`claude-opus-5-20260101`) mitgefangen werden.
  */
 const OHNE_SAMPLING = [
+    // Präfix fängt auch die 5.5/5.1 (`claude-opus-5-5`, `claude-fable-5-1`).
     'claude-opus-5', 'claude-fable-5', 'claude-mythos-5', 'claude-sonnet-5',
-    'claude-opus-4-8', 'claude-opus-4-7',
+    'claude-haiku-5', 'claude-opus-4-8', 'claude-opus-4-7',
+    // OpenRouter-Schreibweise derselben Modelle.
+    'anthropic/claude-opus-5', 'anthropic/claude-sonnet-5', 'anthropic/claude-haiku-5',
+    'anthropic/claude-fable-5',
+    // Reasoning-Modelle anderer Häuser: Kimi K3 fixiert temperature auf 1.0,
+    // OpenAI nennt es für GPT-6/5.6 nicht — weglassen ist dort der sichere Weg.
+    'kimi-k3', 'moonshotai/kimi-k3', 'gpt-6', 'gpt-5.6', 'openai/gpt-6',
 ]
 
 /** @returns {boolean} true, wenn `temperature` weggelassen werden MUSS. */
@@ -308,6 +331,41 @@ export function lehntSamplingAb(model) {
  */
 export function samplingFelder(model, temperature) {
     return lehntSamplingAb(model) ? {} : { temperature }
+}
+
+/**
+ * Modelle, die `output_config.effort` kennen (Opus 4.6+, Sonnet 4.6+, Haiku 5.5,
+ * Fable). Haiku 4.5 und Sonnet 4.5 lehnen das Feld ab — darum Präfixliste statt
+ * „alles was claude- heisst".
+ */
+const MIT_AUFWAND = [
+    'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-5', 'claude-fable-5', 'claude-mythos-5',
+    'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6',
+]
+
+/**
+ * Denk-Aufwand für Claude.
+ *
+ * Bei Opus/Sonnet/Haiku 5.5 und Fable 5.1 lässt sich das Denken nicht mehr
+ * abschalten, und die Denk-Token zählen in `max_tokens`. Ein Deckel von 800
+ * für eine kurze JSON-Antwort wird dann vom Denken aufgebraucht, die Antwort
+ * kommt leer — bezahlt (dieselbe Falle wie bei den Reasoning-Modellen über
+ * OpenRouter, September 2026). Der Aufwand ist der einzige Hebel.
+ *
+ * Ohne Angabe: kleiner Deckel → `low` (kurze Automatik-Antwort), sonst
+ * `medium`. Opus 5.5 und Haiku 5.5 hätten ohnehin `medium` als Vorgabe,
+ * Sonnet 5.5 und Fable `high` — ausdrücklich setzen macht alle gleich.
+ *
+ * @param {string} model
+ * @param {number} maxTokens
+ * @param {'low'|'medium'|'high'|'xhigh'|'max'} [aufwand]
+ * @returns {object} Teil des Anfrage-Bodys, `{}` für Modelle ohne Effort
+ */
+export function aufwandFelder(model, maxTokens, aufwand) {
+    const m = String(model || '')
+    if (!MIT_AUFWAND.some((p) => m.startsWith(p))) return {}
+    const stufe = aufwand || (Number(maxTokens) <= 1500 ? 'low' : 'medium')
+    return { output_config: { effort: stufe } }
 }
 
 const parse = (v, f) => {
@@ -409,7 +467,20 @@ export function setupAiModelRoutes(app) {
             // eigenem "nur einmal aus der DB gelesen").
             const gespeichert = await ladeGespeicherteListen()
             const [modelle, bildModelle] = await Promise.all([ladeModelle(gespeichert), ladeBildModelle(gespeichert)])
+            // Dynamisch: `ai-task-config.js` importiert seinerseits von hier —
+            // statisch wäre das ein Zyklus, und `ANBIETER_REG` noch undefiniert.
+            const { AI_TASKS } = await import('./ai-task-config.js')
             res.json({
+                // Die Aufgaben-Tabelle der Einstellungen wird hieraus gebaut,
+                // damit jede Zeile, die dort steht, auch eine Funktion steuert.
+                aufgaben: Object.values(AI_TASKS).map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    beschreibung: t.description,
+                    empfohlen: t.recommendedModels?.[0] || '',
+                    nur: t.supportedProviders || null,
+                    rueckfall: t.rueckfallFeld || '',
+                })),
                 modelle,
                 standard: STANDARD_MODELLE,
                 bildModelle,

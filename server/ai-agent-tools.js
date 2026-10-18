@@ -1063,10 +1063,13 @@ async function toolAnalyzeModelPerformance(knex, params) {
 
     const startDate = Date.now() - (daysBack * 24 * 60 * 60 * 1000)
 
+    // Spalten wie in `ai-usage.js`: `erstelltAm` (ms) und die Token einzeln —
+    // `createdAt`/`usage` gibt es in dieser Tabelle nicht (die Abfrage schlug
+    // bis 18.10.2026 bei jedem Aufruf fehl).
     const records = await knex('ai_usage')
         .where('funktion', task)
-        .where('createdAt', '>=', new Date(startDate))
-        .select('provider', 'modell', 'usage', 'kostenUsd')
+        .where('erstelltAm', '>=', startDate)
+        .select('provider', 'modell', 'totalTokens', 'kostenUsd')
 
     if (records.length === 0) {
         return { hinweis: `Keine Nutzungsdaten für "${task}" in den letzten ${daysBack} Tagen` }
@@ -1080,9 +1083,8 @@ async function toolAnalyzeModelPerformance(knex, params) {
             byModel[key] = { count: 0, totalTokens: 0, totalCost: 0, kostenProMillionTokens: 0 }
         }
         byModel[key].count++
-        const usage = r.usage || {}
-        byModel[key].totalTokens += (usage.totalTokens || 0)
-        byModel[key].totalCost += (r.kostenUsd || 0)
+        byModel[key].totalTokens += Number(r.totalTokens) || 0
+        byModel[key].totalCost += Number(r.kostenUsd) || 0
     }
 
     // Metriken berechnen
@@ -1154,14 +1156,9 @@ async function toolRecommendModelAllocation(knex, params) {
     const { optimizeFor = 'balance' } = params
     const { AI_TASKS } = await import('./ai-task-config.js')
     const { PREISE } = await import('./ai-preise.js')
-
-    const settings = await knex('settings').select('aiOpenrouterCatalog').where('id', 1).first()
-    let cached = {}
-    try { cached = JSON.parse(settings?.aiOpenrouterCatalog || '{}') } catch {}
-
-    if (!cached.models || cached.models.length === 0) {
-        return { error: 'OpenRouter-Katalog nicht gecacht. Erst /api/ai/openrouter/models aufrufen.' }
-    }
+    // Der OpenRouter-Katalog war hier Pflicht, obwohl die Empfehlung nur aus
+    // Registry und Preistabelle rechnet — ohne OpenRouter-Schlüssel gab es
+    // deshalb gar keine Empfehlung.
 
     // Scoring pro Modell für Aufgabe
     const recommendations = {}
@@ -1169,9 +1166,12 @@ async function toolRecommendModelAllocation(knex, params) {
         if (!task.recommendedModels || task.recommendedModels.length === 0) continue
 
         let candidates = []
-        for (const modelName of task.recommendedModels) {
-            const fullName = `anthropic/${modelName}` // Vereinfachung: nur OpenRouter-Namen
-            const preis = Object.entries(PREISE).find(([k]) => k.includes(modelName))
+        for (const fullName of task.recommendedModels) {
+            // Empfehlungen stehen als `anbieter/modell` in der Registry — im
+            // selben Format wie die Aufgaben-Tabelle, also direkt eintragbar.
+            // Vorher wurde jedem Namen `anthropic/` vorangestellt, auch Gemini.
+            const modelName = fullName.slice(fullName.indexOf('/') + 1)
+            const preis = Object.entries(PREISE).find(([k]) => modelName.includes(k))
             if (preis) {
                 candidates.push({
                     model: modelName,
@@ -1201,8 +1201,8 @@ async function toolRecommendModelAllocation(knex, params) {
             recommendations[taskId] = {
                 aufgabe: task.name,
                 empfohleneModelle: {
-                    eins: `openrouter/${selected.fullName}`,
-                    alternativ: candidates.slice(1).map(c => `openrouter/${c.fullName}`),
+                    eins: selected.fullName,
+                    alternativ: candidates.filter(c => c !== selected).map(c => c.fullName),
                 },
                 gruende: [
                     task.importance === 'high' ? 'Hohe Anforderungen an Qualität' : undefined,

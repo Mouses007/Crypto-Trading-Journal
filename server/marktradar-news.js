@@ -31,6 +31,7 @@ import {
     holeMarkt,
 } from './marktradar-api.js'
 import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson, istGuthabenFehler, merkeKiGuthaben, schaetzeKosten } from './llm.js'
+import { aufgabenWahl } from './ai-task-config.js'
 /*
  * Die beiden KI-Kacheln. Der Bericht laesst sie neu rechnen statt einen
  * Knopfdruck von gestern zu uebernehmen — Einzelheiten in `holeLagenBlock`.
@@ -46,7 +47,7 @@ import { darfLaufen, sendeZuFrueh } from './drossel.js'
 import { merkeVerbrauch } from './ai-usage.js'
 import { samplingFelder, GEMINI_STANDARDMODELL } from './ai-models.js'
 import {
-    sucheXPosts, rechercheThema, istGefiltert, istFokusTreffer, zerlegeWoerter, baueRechercheZitate, THEMEN_NAMEN,
+    sucheXPosts, rechercheThema, istGefiltert, istFokusTreffer, zerlegeWoerter, baueRechercheZitate, THEMEN_NAMEN, X_STANDARDMODELL,
 } from './news-recherche.js'
 
 const TAG = 24 * 60 * 60 * 1000
@@ -250,7 +251,9 @@ export async function laufeNewsAbruf({ manuell = false } = {}) {
                 handles: xQuellen.map(q => q.url),
                 vonIso: new Date(Date.now() - MAX_ALTER).toISOString().slice(0, 10),
                 bisIso: new Date().toISOString().slice(0, 10),
-                modell: s?.radarNewsXModell || 'grok-4.3',
+                // Aufgaben-Zeile „x-suche" → Einzelfeld → Vorgabe
+                modell: aufgabenWahl(s?.aiTaskProviders, 'x-suche')?.model
+                    || s?.radarNewsXModell || X_STANDARDMODELL,
                 apiKey: xCfg.apiKey,
             })
             letzteXKostenUsd = kostenUsd
@@ -2262,7 +2265,8 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         try {
             const geminiCfg = await ladeLlmConfig({
                 provider: 'gemini',
-                model: s?.radarNewsModel || 'gemini-3.5-flash-lite',
+                model: aufgabenWahl(s?.aiTaskProviders, 'video')?.model
+                    || s?.radarNewsModel || GEMINI_STANDARDMODELL,
             })
             if (!geminiCfg.apiKey) throw new Error('Kein Gemini-Schlüssel hinterlegt')
 
@@ -2564,7 +2568,8 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                     }
                     const r = await rechercheThema({
                         thema, zeitraumText, apiKey: pCfg.apiKey,
-                        modell: s?.radarNewsRechercheModell || undefined,
+                        modell: aufgabenWahl(s?.aiTaskProviders, 'recherche')?.model
+                            || s?.radarNewsRechercheModell || undefined,
                         aktualitaet: aktualitaetFuer({ thema, rhythmus, istUpdate, chartFrische }),
                         ...extra,
                     })
@@ -2579,7 +2584,9 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                     if (thema === 'chartanalyse' && r.bilder?.length) {
                         try {
                             const visionCfg = await ladeLlmConfig({
-                                provider: 'gemini', model: s?.radarNewsModel || 'gemini-3.5-flash-lite',
+                                provider: 'gemini',
+                                model: aufgabenWahl(s?.aiTaskProviders, 'video')?.model
+                                    || s?.radarNewsModel || GEMINI_STANDARDMODELL,
                             })
                             // Gleiche Falle wie bei `fasseVideoZusammen`: ein
                             // "Denk"-Modell (hier live beobachtet mit
@@ -2710,9 +2717,9 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         istUpdate ? 'NEUE BEITRÄGE (seit dem bisherigen Bericht)' : 'BEITRÄGE',
         zeilen.join('\n---\n')))
 
-    // Eigene Modellwahl für den Bericht; leer heisst: der allgemein
-    // eingestellte Anbieter des Journals
-    const cfg = await ladeLlmConfig({
+    // Aufgaben-Zeile (Bericht oder Zwischenmeldung) → eigene Modellwahl des
+    // Berichts → der allgemein eingestellte Anbieter des Journals
+    const cfg = await ladeLlmConfigFuerAufgabe(istUpdate ? 'lagebericht-update' : 'lagebericht', {
         provider: s?.radarNewsBerichtProvider || undefined,
         model: s?.radarNewsBerichtModell || undefined,
     })
@@ -3420,13 +3427,17 @@ export function setupNewsRoutes(app) {
             if (!frei.ok) return sendeZuFrueh(res, frei.wartenMs)
 
             const s = await getKnex()('settings').where('id', 1).first()
-            const cfg = await ladeLlmConfig({
-                provider: s?.radarNewsBerichtProvider || undefined,
-                model: s?.radarNewsBerichtModell || undefined,
-            })
             // Geprüft wird von dem Modell, das die Anweisung später auch
             // befolgen muss — ein anderes könnte etwas zusagen, woran sich der
-            // Schreiber nicht hält.
+            // Schreiber nicht hält. Darum: eigene Zeile nur, wenn ausdrücklich
+            // gesetzt, sonst dieselbe Wahl wie der Bericht.
+            const cfg = await ladeLlmConfig(
+                aufgabenWahl(s?.aiTaskProviders, 'lagebericht-pruefung')
+                || aufgabenWahl(s?.aiTaskProviders, 'lagebericht')
+                || {
+                    provider: s?.radarNewsBerichtProvider || undefined,
+                    model: s?.radarNewsBerichtModell || undefined,
+                })
             cfg.maxTokens = 1500
             const antwort = await callLLMJson(cfg, {
                 system: bauAnweisungPruefPrompt({

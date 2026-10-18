@@ -17,6 +17,7 @@ import {
     samplingFelder, aufwandFelder, KEY_SPALTEN, KI_URL_SPALTEN,
     keySpalte, istOpenAiKompatibel, chatEndpunkt,
 } from './ai-models.js'
+import { aufgabenWahl } from './ai-task-config.js'
 import { beobachteAbbruch, sseSender } from './sse.js'
 import { merkeVerbrauch } from './ai-usage.js'
 import { isValidTimeframe } from './market-data.js'
@@ -58,26 +59,10 @@ async function loadAiSettings() {
     // Eigener Anbieter für den Agenten; leer = der global eingestellte.
     // Der Agent ist der teuerste Verbraucher (Werkzeugschleife über mehrere
     // Runden), deshalb lohnt hier eine eigene Wahl besonders.
-    let provider, model
-    // Erste Priorität: aiAgentProvider (legacy separate setting)
-    if (settings.aiAgentProvider) {
-        ({ provider, model } = waehleAnbieter(settings, 'Agent'))
-    } else {
-        // Zweite Priorität: aiTaskProviders['agent'] (neues task-spezifisches System)
-        try {
-            const taskProviders = settings.aiTaskProviders ? JSON.parse(settings.aiTaskProviders) : {}
-            const taskAssignment = taskProviders['agent']
-            if (taskAssignment && typeof taskAssignment === 'string' && taskAssignment.includes('/')) {
-                // nur am ersten Schrägstrich trennen: `openrouter/anthropic/claude-…` behält sein Modell
-                    { const i = taskAssignment.indexOf('/'); provider = taskAssignment.slice(0, i).trim(); model = taskAssignment.slice(i + 1).trim() }
-            }
-        } catch (e) { /* JSON parse error */ }
-        
-        // Fallback: global
-        if (!provider) {
-            ({ provider, model } = waehleAnbieter(settings, 'Agent'))
-        }
-    }
+    // Rangfolge wie überall: Aufgaben-Zeile „agent" → `aiAgentProvider` →
+    // global (die beiden letzten erledigt `waehleAnbieter`).
+    let { provider, model } = aufgabenWahl(settings.aiTaskProviders, 'agent') || {}
+    if (!provider) ({ provider, model } = waehleAnbieter(settings, 'Agent'))
     const col = keySpalte(provider)
     let apiKey = ''
     if (col && settings[col]) {

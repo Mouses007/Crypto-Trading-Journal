@@ -3,7 +3,7 @@ import { encrypt, decrypt } from './crypto.js'
 import { logWarn, logError } from './logger.js'
 import { isAllowedOllamaUrl, pruefeKiEndpunkt } from './ollama-url.js'
 import {
-    samplingFelder, basisUrl, GEMINI_STANDARDMODELL,
+    samplingFelder, aufwandFelder, basisUrl, GEMINI_STANDARDMODELL,
     ANBIETER_REG, KEY_SPALTEN, KI_URL_SPALTEN,
     keySpalte, istOpenAiKompatibel, kannBilder, standardModell,
     anbieterBasis, chatEndpunkt,
@@ -17,6 +17,7 @@ import {
 import { anbieterBereiche, nachrichtenAnbieter } from './ki-funktionen.js'
 import { merkeVerbrauch, verbrauchJeFunktion } from './ai-usage.js'
 import { PREISE, BILD_PREISE } from './ai-preise.js'
+import { aufgabenWahl } from './ai-task-config.js'
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
 
@@ -82,6 +83,9 @@ const KI_SPALTEN = [
     'aiOllamaUrl', 'aiScreenshots', 'aiReportPrompt', 'aiChatEnabled',
     'aiBerichtProvider', 'aiBerichtModell', 'aiAgentProvider', 'aiAgentModell',
     'aiStrategieProvider', 'aiStrategieModell',
+    // Fehlte bis 18.10.2026 — die Zeile „trade-analyse" der Aufgaben-Tabelle
+    // wurde darum nie gelesen, egal was dort stand.
+    'aiTaskProviders',
     ...KEY_SPALTEN, ...KI_URL_SPALTEN,
 ]
 
@@ -235,8 +239,13 @@ export function setupOllamaRoutes(app) {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: model || 'claude-sonnet-4-5-20250929',
-                        max_tokens: 10,
+                        model: model || standardModell('anthropic'),
+                        // 10 reichte, solange Modelle nicht vor der Antwort
+                        // dachten; bei den 5.5ern frisst das Denken den Deckel.
+                        // Für den Verbindungstest egal (200 bleibt 200), aber
+                        // so kommt auch Text zurück.
+                        max_tokens: 64,
+                        ...aufwandFelder(model || standardModell('anthropic'), 64, 'low'),
                         messages: [{ role: 'user', content: 'Hi' }]
                     }),
                     signal: AbortSignal.timeout(10000)
@@ -371,7 +380,7 @@ export function setupOllamaRoutes(app) {
                 report = result.text
                 tokenUsage = result.usage
             } else if (provider === 'anthropic') {
-                const result = await generateAnthropic(prompt, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens, screenshots)
+                const result = await generateAnthropic(prompt, apiKey, model || standardModell('anthropic'), temperature, maxTokens, screenshots)
                 report = result.text
                 tokenUsage = result.usage
             } else if (provider === 'gemini') {
@@ -479,18 +488,9 @@ export function setupOllamaRoutes(app) {
                 knex('tags').where('tradeId', tradeId).first(),
             ])
 
-            // Task-spezifischer Anbieter für Trade-Analyse; leer = global
-            // Resolves aiTaskProviders['trade-analyse'] → provider/modell oder fallback zu global
-            let provider, model
-            try {
-                const taskProviders = settings.aiTaskProviders ? JSON.parse(settings.aiTaskProviders) : {}
-                const taskAssignment = taskProviders['trade-analyse']
-                if (taskAssignment && typeof taskAssignment === 'string' && taskAssignment.includes('/')) {
-                    // nur am ersten Schrägstrich trennen: `openrouter/anthropic/claude-…` behält sein Modell
-                    { const i = taskAssignment.indexOf('/'); provider = taskAssignment.slice(0, i).trim(); model = taskAssignment.slice(i + 1).trim() }
-                }
-            } catch (e) { /* JSON parse error – fallback */ }
-            
+            // Aufgaben-Zeile „trade-analyse" → Berichts-Anbieter → global
+            let { provider, model } = aufgabenWahl(settings.aiTaskProviders, 'trade-analyse') || {}
+
             if (!provider) {
                 // Fallback zu globalem Anbieter (für Berichte ist meist gute Wahl)
                 ({ provider, model } = waehleAnbieter(settings, 'Bericht'))
@@ -733,7 +733,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             if (provider === 'ollama') {
                 result = await generateOllama(reviewPrompt, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
             } else if (provider === 'anthropic') {
-                result = await generateAnthropic(reviewPrompt, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens, screenshots)
+                result = await generateAnthropic(reviewPrompt, apiKey, model || standardModell('anthropic'), temperature, maxTokens, screenshots)
             } else if (provider === 'gemini') {
                 result = await generateGemini(reviewPrompt, apiKey, model || GEMINI_STANDARDMODELL, temperature, maxTokens, screenshots)
             } else if (istOpenAiKompatibel(provider)) {
@@ -882,7 +882,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             if (provider === 'ollama') {
                 result = await chatOllama(systemMsg, messages, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
             } else if (provider === 'anthropic') {
-                result = await chatAnthropic(systemMsg, messages, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens)
+                result = await chatAnthropic(systemMsg, messages, apiKey, model || standardModell('anthropic'), temperature, maxTokens)
             } else if (provider === 'gemini') {
                 result = await chatGemini(systemMsg, messages, apiKey, model || GEMINI_STANDARDMODELL, temperature, maxTokens)
             } else if (istOpenAiKompatibel(provider)) {
@@ -1383,7 +1383,7 @@ Antworte auf Deutsch. Kompakt (max 500 Woerter). Markdown.`
             if (provider === 'ollama') {
                 result = await chatOllama(systemMsg, messages, model || 'llama3.2:latest', temperature, maxTokens, ollamaUrl)
             } else if (provider === 'anthropic') {
-                result = await chatAnthropic(systemMsg, messages, apiKey, model || 'claude-sonnet-4-5-20250929', temperature, maxTokens)
+                result = await chatAnthropic(systemMsg, messages, apiKey, model || standardModell('anthropic'), temperature, maxTokens)
             } else if (provider === 'gemini') {
                 result = await chatGemini(systemMsg, messages, apiKey, model || GEMINI_STANDARDMODELL, temperature, maxTokens)
             } else if (istOpenAiKompatibel(provider)) {
@@ -1710,7 +1710,8 @@ async function generateAnthropic(prompt, apiKey, model, temperature, maxTokens, 
                 system: 'Du bist ein erfahrener Trading-Analyst und Coach. Antworte auf Deutsch. Verwende Markdown-Formatierung.',
                 messages: [{ role: 'user', content: screenshots.length > 0 ? userContent : prompt }],
                 // Neuere Modelle lehnen Sampling-Parameter mit 400 ab
-                ...samplingFelder(model, temperature)
+                ...samplingFelder(model, temperature),
+                ...aufwandFelder(model, budget)
             })
         })
 
@@ -1921,7 +1922,8 @@ async function chatAnthropic(systemMsg, messages, apiKey, model, temperature, ma
                 max_tokens: budget,
                 system: systemMsg,
                 messages,
-                ...samplingFelder(model, temperature)
+                ...samplingFelder(model, temperature),
+                ...aufwandFelder(model, budget)
             })
         })
 

@@ -26,10 +26,13 @@ const SONAR_ANFRAGE_USD = 0.005
 
 /**
  * Rückfall-Modell der X-Suche. Bewusst nicht das teuerste: Grok holt hier nur
- * die Posts ab, zusammengefasst wird im Journal selbst — dafür reicht das
- * kleinere Modell zum halben Eingabepreis.
+ * die Posts ab, zusammengefasst wird im Journal selbst. Die Non-Reasoning-
+ * Variante von 4.20 lieferte am 04.09.2026 dieselben Posts wie grok-4.6 in
+ * einem Sechstel der Zeit; ab 4.5 denkt Grok immer und rechnet das ab.
+ * Bis 18.10.2026 stand hier `grok-4.3`, in den Einstellungen `grok-4.6` —
+ * drei Vorgaben für dieselbe Frage. Jetzt die eine, überall importiert.
  */
-const X_STANDARDMODELL = 'grok-4.3'
+export const X_STANDARDMODELL = 'grok-4.20-0309-non-reasoning'
 
 /** fetch mit hartem Timeout — die Kopie in llm.js ist modulintern. */
 async function fetchMitTimeout(url, options, timeoutMs) {

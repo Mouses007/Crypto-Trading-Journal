@@ -224,6 +224,7 @@ async function loadModelLists() {
     try {
         const r = await axios.get('/api/ai/models')
         modellListen.value = r.data.modelle || {}
+        aufgabenListe.value = r.data.aufgaben || []
         // Getrennt gehalten: `bildModelle` (FLUX/Gemini-Bild) landet NICHT in
         // `modellListen` — das speist u.a. `AnbieterWahl.vue`, die ihre
         // Anbieter-Auswahl per `Object.keys(modellListen)` bildet. Ein
@@ -405,13 +406,9 @@ let aiAgentModell = ref('')
 let aiAgentTokenBudget = ref(80000)
 let modelAnalysisRunning = ref(false)
 let modelAnalysisResult = ref(null)
-let aiTaskProviders = ref({
-    lagebericht: '',
-    'trade-analyse': '',
-    'marktradar-lage': '',
-    'livetrading-handelslage': '',
-    'chart-analyse': '',
-})
+let aiTaskProviders = ref({})
+/** Zeilen der Aufgaben-Tabelle — vom Server (`AI_TASKS`), nicht von Hand gepflegt. */
+const aufgabenListe = ref([])
 let aiStrategieProvider = ref('')
 let aiStrategieModell = ref('')
 let radarNewsRechercheModell = ref('sonar')
@@ -658,7 +655,7 @@ let fluxUseCustomAvatar = ref(false)
 let fluxTestLoading = ref(false)
 let fluxTestResult = ref(null)
 let geminiImageApiKey = ref('')
-let geminiImageModel = ref('gemini-2.5-flash-image')
+let geminiImageModel = ref('gemini-3.1-flash-image')
 let geminiTestLoading = ref(false)
 let geminiTestResult = ref(null)
 
@@ -685,9 +682,10 @@ const FLUX_PREISHINWEIS = {
     'flux-2-pro': 'FLUX.2 Pro (~$0.03)',
     'flux-2-flex': 'FLUX.2 Flex (~$0.05)',
     'flux-2-max': 'FLUX.2 Max (~$0.07)',
+    'flux-3-image': 'FLUX.3 (neu, Okt. 2026)',
 }
 const GEMINI_BILD_NAME = {
-    'gemini-2.5-flash-image': 'Nano Banana (Gemini 2.5 Flash)',
+    'gemini-nano-banana-2.1': 'Nano Banana 2.1 (~$0.034)',
     'gemini-3.1-flash-lite-image': 'Nano Banana 2 Lite (Gemini 3.1 Flash Lite)',
     'gemini-3.1-flash-image': 'Nano Banana 2 (Gemini 3.1 Flash)',
     'gemini-3-pro-image': 'Nano Banana Pro (Gemini 3 Pro)',
@@ -717,7 +715,7 @@ const geminiImageModels = computed(() => {
  */
 function gueltigesBildmodell(m) {
     const s = String(m || '').replace(/-preview$/, '')
-    return geminiImageModels.value.some((e) => e.value === s) ? s : 'gemini-2.5-flash-image'
+    return geminiImageModels.value.some((e) => e.value === s) ? s : 'gemini-3.1-flash-image'
 }
 
 /**
@@ -737,7 +735,7 @@ function fluxModelleGeaendert(liste) {
 }
 function geminiBildModelleGeaendert(liste) {
     bildModellListen.value = { ...bildModellListen.value, geminiBild: liste }
-    if (!liste.includes(geminiImageModel.value)) geminiImageModel.value = liste[0] || 'gemini-2.5-flash-image'
+    if (!liste.includes(geminiImageModel.value)) geminiImageModel.value = liste[0] || 'gemini-3.1-flash-image'
 }
 
 async function loadFluxSettings() {
@@ -1028,7 +1026,7 @@ function anweisungUebernehmen() {
 let radarNewsThemen = ref(['crypto'])
 let radarNewsLaenge = ref('kurz')
 
-let radarNewsXModell = ref('grok-4.6')
+let radarNewsXModell = ref('grok-4.20-0309-non-reasoning')
 /* Umfangs- und Darstellungsregler. Überall heisst 0 bzw. leer „Vorgabe der
    gewählten Länge" — wer nichts einstellt, bekommt exakt das bisherige
    Verhalten. Dieselben Werte stehen auch in der Schnellleiste auf
@@ -1202,7 +1200,7 @@ function loadRadarSettings() {
         .map(t => t.trim()).filter(t => ['crypto', 'finanzen', 'tech', 'chartanalyse'].includes(t))
     if (!radarNewsThemen.value.length) radarNewsThemen.value = ['crypto']
     radarNewsLaenge.value = ['kurz', 'mittel', 'lang'].includes(s.radarNewsLaenge) ? s.radarNewsLaenge : 'kurz'
-    radarNewsXModell.value = s.radarNewsXModell || 'grok-4.6'
+    radarNewsXModell.value = s.radarNewsXModell || 'grok-4.20-0309-non-reasoning'
     // Grenzen wie auf dem Server (budgetsAus/punkteVorgabe/videoTiefeAus in
     // server/marktradar-news.js) — die Oberfläche soll ihm keinen Unsinn schicken.
     // Unbekannt (auch das kurzzeitig gespeicherte „zeitung") → dossier, die Vorgabe.
@@ -1366,7 +1364,7 @@ async function radarSpeichern(feld) {
         radarNewsThemen: ['crypto', 'finanzen', 'tech', 'chartanalyse'].filter(t => radarNewsThemen.value.includes(t)).join(','),
         boersenLinks: ['bitunix', 'bitget', 'pionex', 'tradingview'].filter(b => boersenLinks.value.includes(b)).join(','),
         radarNewsLaenge: radarNewsLaenge.value,
-        radarNewsXModell: radarNewsXModell.value.trim() || 'grok-4.6',
+        radarNewsXModell: radarNewsXModell.value.trim() || 'grok-4.20-0309-non-reasoning',
         radarNewsRuheAn: radarNewsRuheAn.value ? 1 : 0,
         radarNewsRuheWoerter: radarNewsRuheWoerter.value,
         radarNewsFokusAn: radarNewsFokusAn.value ? 1 : 0,
@@ -3852,150 +3850,28 @@ onBeforeMount(async () => {
                         <div class="col-12">
                             <p class="fs-6 fw-bold">Aufgaben-spezifische Modelle</p>
                             <small class="text-muted d-block mb-2">
-                                Leer = globales Modell. Format: openrouter/model-id oder provider/model-id
+                                Format <code>anbieter/modell</code> (z.&nbsp;B. <code>anthropic/claude-haiku-5-5</code>,
+                                <code>openrouter/anthropic/claude-opus-5.5</code>) oder nur <code>anbieter</code> für dessen Standardmodell.
+                                Eine Zeile hier schlägt das Einzelfeld der Funktion; leer = Einzelfeld, sonst das globale Modell.
+                                Der grau vorgeschlagene Wert ist die Empfehlung.
                             </small>
                             <div class="table-responsive">
                                 <table class="table table-sm table-borderless">
                                     <thead style="border-bottom: 1px solid var(--grey-color);">
                                         <tr>
                                             <th>Aufgabe</th>
-                                            <th>Aktuelles Modell</th>
+                                            <th>Aktuell</th>
                                             <th>Ändern</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr>
-                                            <td><small>Nachrichten-Lagebericht</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders?.lagebericht || '(global)' }}</code></td>
+                                        <tr v-for="a in aufgabenListe" :key="a.id">
+                                            <td><small :title="a.beschreibung">{{ a.name }}</small>
+                                                <small v-if="a.nur && a.nur.length === 1" class="text-muted"> · nur {{ a.nur[0] }}</small></td>
+                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders[a.id] || (a.rueckfall ? '(' + a.rueckfall + ')' : '(global)') }}</code></td>
                                             <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="openrouter/..." v-model="aiTaskProviders.lagebericht"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Lagebericht-Update</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['lagebericht-update'] || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="openrouter/..." v-model="aiTaskProviders['lagebericht-update']"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Trade-Analyse</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['trade-analyse'] || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="openrouter/..." v-model="aiTaskProviders['trade-analyse']"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Marktradar-Gesamtlage</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['marktradar-lage'] || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="openrouter/..." v-model="aiTaskProviders['marktradar-lage']"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Live-Trading-Handelslage</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['livetrading-handelslage'] || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="openrouter/..." v-model="aiTaskProviders['livetrading-handelslage']"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Chart-Analyse</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['chart-analyse'] || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="openrouter/..." v-model="aiTaskProviders['chart-analyse']"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Video-Zusammenfassung</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders?.video || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="gemini/..." v-model="aiTaskProviders.video"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>X (Twitter) Suche</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['x-suche'] || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="xai/..." v-model="aiTaskProviders['x-suche']"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Web-Recherche</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders?.recherche || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="perplexity/..." v-model="aiTaskProviders.recherche"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>KI-Agent (Tool-Loop)</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders?.agent || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="anthropic/..." v-model="aiTaskProviders.agent"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Markt-Mechanik-Analyse</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders?.mechanik || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="anthropic/..." v-model="aiTaskProviders.mechanik"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Strategie-Sentiment (Veto)</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['strategie-veto'] || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="deepseek/..." v-model="aiTaskProviders['strategie-veto']"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Regel-Baukasten</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['regel-baukasten'] || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="anthropic/..." v-model="aiTaskProviders['regel-baukasten']"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Strategie-Baukasten</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders['strategie-baukasten'] || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="anthropic/..." v-model="aiTaskProviders['strategie-baukasten']"
-                                                    @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><small>Universum-Rangliste</small></td>
-                                            <td><code style="font-size:0.8rem;">{{ aiTaskProviders?.rangliste || '(global)' }}</code></td>
-                                            <td>
-                                                <input type="text" class="form-control form-control-sm" style="max-width: 200px; font-size:0.8rem;"
-                                                    placeholder="deepseek/..." v-model="aiTaskProviders.rangliste"
+                                                <input type="text" class="form-control form-control-sm" style="max-width: 260px; font-size:0.8rem;"
+                                                    :placeholder="a.empfohlen || 'anbieter/modell'" v-model="aiTaskProviders[a.id]"
                                                     @blur="kiSpeichern('aiTaskProviders', JSON.stringify(aiTaskProviders))" />
                                             </td>
                                         </tr>
@@ -4923,8 +4799,7 @@ onBeforeMount(async () => {
                             <select class="form-select form-select-sm" style="max-width:10rem;"
                                 v-model="radarNewsRechercheModell"
                                 @change="kiSpeichern('radarNewsRechercheModell', radarNewsRechercheModell)">
-                                <option value="sonar">sonar</option>
-                                <option value="sonar-pro">sonar-pro</option>
+                                <option v-for="m in (modellListen.perplexity || ['sonar', 'sonar-pro'])" :key="m" :value="m">{{ m }}</option>
                             </select>
                         </div>
                     </div>

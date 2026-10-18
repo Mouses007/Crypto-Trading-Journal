@@ -18,8 +18,8 @@
 
 import { getKnex } from './database.js'
 import {
-    samplingFelder, ANBIETER_REG, KEY_SPALTEN, KI_URL_SPALTEN,
-    keySpalte, istOpenAiKompatibel, chatEndpunkt,
+    samplingFelder, aufwandFelder, ANBIETER_REG, KEY_SPALTEN, KI_URL_SPALTEN,
+    keySpalte, istOpenAiKompatibel, chatEndpunkt, standardModell,
 } from './ai-models.js'
 import { decrypt } from './crypto.js'
 // Direkt aus `ollama-url.js`, nicht über `ollama-api.js`: dort wird die
@@ -29,6 +29,7 @@ import { assertAllowedOllamaUrl } from './ollama-url.js'
 import { logWarn } from './logger.js'
 import { schaetzeKosten } from './ai-preise.js'
 import { merkeVerbrauch } from './ai-usage.js'
+import { aufgabenWahl } from './ai-task-config.js'
 
 const DEFAULT_TIMEOUT_MS = 30000
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
@@ -162,9 +163,12 @@ export async function loescheKiGuthabenVermerk(provider) {
  * während die Routine-Arbeit anderswo billiger laufen darf. Leer eingestellt
  * heisst weiterhin: der globale Anbieter.
  */
-export async function ladeStrategieLlmConfig() {
+export async function ladeStrategieLlmConfig(aufgabe = 'strategie-baukasten') {
     const s = await getKnex()('settings')
-        .select('aiStrategieProvider', 'aiStrategieModell').where('id', 1).first()
+        .select('aiStrategieProvider', 'aiStrategieModell', 'aiTaskProviders').where('id', 1).first()
+    // Zeile der Aufgaben-Tabelle schlägt das Einzelfeld.
+    const wahl = aufgabenWahl(s?.aiTaskProviders, aufgabe)
+    if (wahl) return ladeLlmConfig(wahl)
     const provider = String(s?.aiStrategieProvider || '').trim()
     // Modell nur zusammen mit eigenem Anbieter — ein Modellname aus einem
     // anderen Haus wäre bei jedem Aufruf ein 404.
@@ -197,9 +201,14 @@ export async function ladeLlmConfig({ provider, model } = {}) {
     // fremde Hosts.
     else if (gewaehlt === 'openai' && s.aiApiKey) apiKey = decrypt(s.aiApiKey)
 
+    // Ohne Modell: das globale nur, wenn es zum gewählten Anbieter gehört —
+    // sonst bekäme etwa xAI einen Gemini-Namen und antwortete mit 404.
+    const eigenesModell = !provider || provider === s.aiProvider
+        ? (s.aiModel || standardModell(gewaehlt))
+        : standardModell(gewaehlt)
     return {
         provider: gewaehlt,
-        model: model || s.aiModel || '',
+        model: model || eigenesModell || '',
         apiKey,
         temperature: 0,                 // Entscheidungen sollen reproduzierbar sein
         maxTokens: 800,                 // eine JSON-Antwort braucht nicht mehr
@@ -297,6 +306,7 @@ async function anthropic(cfg, system, user, timeoutMs, anhaenge = []) {
             // Neuere Modelle (Opus 5, Sonnet 5, Fable 5 …) lehnen Sampling-
             // Parameter mit 400 ab — dann muss das Feld ganz fehlen.
             ...samplingFelder(cfg.model, cfg.temperature),
+            ...aufwandFelder(cfg.model, cfg.maxTokens, cfg.aufwand),
             system,
             // Bewusst OHNE vorbelegte Assistant-Nachricht: der Prefill-Trick
             // ("{" vorgeben, damit die Antwort mit JSON beginnt) wird von
@@ -313,6 +323,12 @@ async function anthropic(cfg, system, user, timeoutMs, anhaenge = []) {
         throw new Error('Anthropic: ' + (e.error?.message || r.statusText))
     }
     const d = await r.json()
+    // Eine Ablehnung kommt als HTTP 200 mit leerem Inhalt — ohne eigenen
+    // Fehler läse sie sich wie „kein verwertbares JSON".
+    if (d.stop_reason === 'refusal') {
+        const kat = d.stop_details?.category ? ` (${d.stop_details.category})` : ''
+        throw new Error(`Anthropic: Anfrage vom Modell abgelehnt${kat}`)
+    }
     const text = d.content?.filter((b) => b.type === 'text').map((b) => b.text).join('') || ''
     return {
         text,
@@ -341,7 +357,11 @@ async function openaiKompatibel(cfg, system, user, timeoutMs, endpoint, anhaenge
     }, timeoutMs)
     if (!r.ok) {
         const e = await r.json().catch(() => ({}))
-        throw new Error('OpenAI-kompatibel: ' + (e.error?.message || r.statusText))
+        // xAI liefert `error` als blanke Zeichenkette („…used all available
+        // credits…") — mit nur `error.message` kam davon „Forbidden" an, und
+        // der Guthaben-Vermerk sprang nie an (gesehen 18.10.2026).
+        const text = e.error?.message || (typeof e.error === 'string' ? e.error : '') || r.statusText
+        throw new Error('OpenAI-kompatibel: ' + text)
     }
     const d = await r.json()
     return {
@@ -436,16 +456,36 @@ export async function callLLMJson(cfg, {
         }
     }
 
-    let antwort
-    try {
-        if (cfg.provider === 'anthropic') antwort = await anthropic(cfg, system, user, timeoutMs, anhaenge)
-        else if (cfg.provider === 'gemini') antwort = await gemini(cfg, system, user, timeoutMs, anhaenge)
-        else if (cfg.provider === 'ollama') antwort = await ollama(cfg, system, user, timeoutMs, anhaenge)
-        else if (istOpenAiKompatibel(cfg.provider)) {
+    const rufe = async (c) => {
+        if (c.provider === 'anthropic') return anthropic(c, system, user, timeoutMs, anhaenge)
+        if (c.provider === 'gemini') return gemini(c, system, user, timeoutMs, anhaenge)
+        if (c.provider === 'ollama') return ollama(c, system, user, timeoutMs, anhaenge)
+        if (istOpenAiKompatibel(c.provider)) {
             // openai, mistral, xai, qwen, custom — und deepseek aus dem Altbestand
-            if (!cfg.endpunkt) throw new Error(`Für ${cfg.provider} ist keine Basis-URL hinterlegt`)
-            antwort = await openaiKompatibel(cfg, system, user, timeoutMs, cfg.endpunkt, anhaenge)
-        } else throw new Error(`Unbekannter Provider: ${cfg.provider}`)
+            if (!c.endpunkt) throw new Error(`Für ${c.provider} ist keine Basis-URL hinterlegt`)
+            return openaiKompatibel(c, system, user, timeoutMs, c.endpunkt, anhaenge)
+        }
+        throw new Error(`Unbekannter Provider: ${c.provider}`)
+    }
+
+    let antwort
+    let nachfass = null
+    try {
+        antwort = await rufe(cfg)
+        /*
+         * Leer UND am Deckel = das Denken hat das ganze Budget gefressen.
+         * Einmal mit dreifachem Deckel nachfassen statt eine bezahlte, leere
+         * Antwort als „kein JSON" zu melden. Nur bei LEEREM Text: eine
+         * abgeschnittene, aber begonnene Antwort hat ein anderes Problem
+         * (Aufrufer mit eigenem Nachfass-Muster, z. B. chart-ki, regeln das).
+         */
+        if (!String(antwort.text || '').trim()
+            && ['max_tokens', 'length', 'MAX_TOKENS'].includes(antwort.stopReason)) {
+            nachfass = antwort
+            logWarn('llm', `${cfg.provider}/${cfg.model}: leere Antwort am Deckel `
+                + `(${cfg.maxTokens}) — einmal mit dreifachem Deckel`)
+            antwort = await rufe({ ...cfg, maxTokens: Math.min(16000, (cfg.maxTokens || 800) * 3) })
+        }
     } catch (e) {
         if (istGuthabenFehler(e.message)) await merkeKiGuthaben(cfg.provider, e.message)
         throw e
@@ -466,11 +506,13 @@ export async function callLLMJson(cfg, {
             + `${antwort.completionTokens} Token) — Anfang: ${String(antwort.text).slice(0, 300)}`)
     }
 
+    // Der leere Erstversuch wurde ebenfalls bezahlt — mitzählen.
+    const vorher = nachfass || { promptTokens: 0, completionTokens: 0 }
     const usage = {
-        promptTokens: antwort.promptTokens,
-        completionTokens: antwort.completionTokens,
-        totalTokens: antwort.promptTokens + antwort.completionTokens,
+        promptTokens: antwort.promptTokens + vorher.promptTokens,
+        completionTokens: antwort.completionTokens + vorher.completionTokens,
     }
+    usage.totalTokens = usage.promptTokens + usage.completionTokens
     const costUsd = schaetzeKosten(cfg.model, usage.promptTokens, usage.completionTokens)
 
     /*
@@ -507,57 +549,20 @@ export async function callLLMJson(cfg, {
 }
 
 /**
- * LLM-Konfiguration für eine spezifische KI-Aufgabe.
+ * LLM-Konfiguration für eine KI-Aufgabe.
  *
- * Prüft zuerst, ob diese Aufgabe einen eigenen Provider-Override hat
- * (gespeichert in `settings.aiTaskProviders`). Falls ja, nutzt diesen.
- * Sonst fällt auf den globalen Provider zurück.
+ * Rangfolge überall gleich: Zeile der Aufgaben-Tabelle (`aiTaskProviders`) →
+ * das ältere Einzelfeld der Funktion (`rueckfall`, vom Aufrufer gelesen) →
+ * der globale Anbieter. Die Auswahl selbst ist `aufgabenWahl` in
+ * `ai-task-config.js` (rein, selbstgetestet).
  *
- * Das ermöglicht: "News-Berichte mit Claude, Trade-Analyse mit Llama".
- *
- * @param {string} aufgabenId - Aufgaben-ID (z.B. 'lagebericht', 'trade-analyse')
+ * @param {string} aufgabenId  z. B. 'lagebericht', 'video', 'x-suche'
+ * @param {{provider?: string, model?: string}} [rueckfall]  Einzelfeld der Funktion
  * @returns {Promise<{provider, model, apiKey, temperature, maxTokens, ollamaUrl, endpunkt}>}
  */
-export async function ladeLlmConfigFuerAufgabe(aufgabenId = '') {
-    const knex = getKnex()
-    const s = await knex('settings')
-        .select('aiProvider', 'aiModel', 'aiApiKey', 'aiTemperature', 'aiMaxTokens', 'aiOllamaUrl',
-            'aiTaskProviders', ...KEY_SPALTEN, ...KI_URL_SPALTEN)
-        .where('id', 1).first()
-    if (!s) throw new Error('Keine KI-Einstellungen gefunden')
-
-    // Task-spezifische Overrides laden
-    let taskProviders = {}
-    try { taskProviders = JSON.parse(s.aiTaskProviders || '{}') } catch { /* ignore */ }
-
-    // 1. Task-spezifischer Provider (falls gesetzt)
-    const override = aufgabenId ? taskProviders[aufgabenId] : ''
-    if (override) {
-        // Format: 'provider/modell' oder 'provider'
-        // Nur am ERSTEN „/" trennen: `openrouter/anthropic/claude-…` ist Anbieter
-        // `openrouter` mit Modell `anthropic/claude-…` — split('/') schnitt das Modell ab.
-        const roh = String(override)
-        const i = roh.indexOf('/')
-        const provider = (i < 0 ? roh : roh.slice(0, i)).trim()
-        const model = i < 0 ? undefined : roh.slice(i + 1).trim()
-        if (provider) {
-            const spalte = keySpalte(provider)
-            let apiKey = ''
-            if (spalte && s[spalte]) apiKey = decrypt(s[spalte])
-            else if (provider === 'openai' && s.aiApiKey) apiKey = decrypt(s.aiApiKey)
-
-            return {
-                provider,
-                model: model || s.aiModel || '',
-                apiKey,
-                temperature: 0,
-                maxTokens: 800,
-                ollamaUrl: s.aiOllamaUrl || DEFAULT_OLLAMA_URL,
-                endpunkt: chatEndpunkt(provider, s),
-            }
-        }
-    }
-
-    // 2. Fallback: globaler Provider
-    return ladeLlmConfig()
+export async function ladeLlmConfigFuerAufgabe(aufgabenId = '', rueckfall = {}) {
+    const s = await getKnex()('settings').select('aiTaskProviders').where('id', 1).first()
+    const wahl = aufgabenWahl(s?.aiTaskProviders, aufgabenId)
+    return ladeLlmConfig(wahl || rueckfall || {})
 }
+

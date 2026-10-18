@@ -43,6 +43,7 @@ import { stelleZu } from './zustellung.js'
 import { pruefeViele, gespeichertePruefung } from './projekt.js'
 import { sucheXErwaehnungen } from '../news-recherche.js'
 import { ladeLlmConfig, merkeKiGuthaben, istGuthabenFehler } from '../llm.js'
+import { aufgabenWahl } from '../ai-task-config.js'
 import {
     erwaehnungenIn, leseBizKatalog, momentaufnahme, naechsterVerlauf, bewerteFrueh, statusFrueh, xNennungen, risikoFrueh,
     risikoUnpruefbar, meldefaehig, hatMessung, verteilePlaetze, MAX_ALTER_STUNDEN, tokenGeburt,
@@ -462,13 +463,13 @@ async function xQuelle(einst, bekannt, kuerzelErlaubt = () => false) {
         const cfg = await ladeLlmConfig({ provider: 'xai' })
         if (!cfg.apiKey) throw new Error('Kein xAI-Schlüssel hinterlegt (Einstellungen → KI)')
         // Dasselbe Modell wie die X-Suche der Nachrichten — eine Einstellung für „X".
-        const s = await getKnex()('settings').select('radarNewsXModell').where('id', 1).first().catch(() => null)
+        const s = await getKnex()('settings').select('radarNewsXModell', 'aiTaskProviders').where('id', 1).first().catch(() => null)
         const auswahl = bekannt.filter((z) => z.contract).slice(0, X_TOKEN_JE_ABFRAGE)
         const { posts, zitierteIds, kostenUsd } = await sucheXErwaehnungen({
             token: auswahl.map((z) => ({ symbol: z.symbol, contract: z.contract })),
             stunden: X_FENSTER_STUNDEN,
             apiKey: cfg.apiKey,
-            modell: s?.radarNewsXModell || undefined,
+            modell: aufgabenWahl(s?.aiTaskProviders, 'x-suche')?.model || s?.radarNewsXModell || undefined,
         })
         merkeKiGuthaben('xai').catch(() => {})
         // Kürzel nur eindeutig unter den Bekannten und ohne gelisteten Namensvetter.

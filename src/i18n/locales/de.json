@@ -1300,7 +1300,9 @@
       "xSuche": "Nachrichten: X-Suche",
       "video": "Nachrichten: Videoanalyse",
       "strategie": "Strategie: Veto-Agenten und Baukästen",
-      "radar": "Live-Analyse: Lage, Mechanik, Rangliste",
+      "radar": "Live-Analyse: Lage, Handelslage, Mechanik, Rangliste",
+      "chart": "Chart: KI-Analyse",
+      "coinRadar": "Coin-Radar: Einordnung",
       "bild": "Bilder (Share-Karten)",
       "uebrige": "Übrige (noch ohne eigene Zeile)"
     },

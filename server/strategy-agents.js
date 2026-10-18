@@ -18,7 +18,7 @@
 
 import { getKnex } from './database.js'
 import { logWarn } from './logger.js'
-import { ladeLlmConfig, callLLMJson } from './llm.js'
+import { ladeLlmConfig, ladeLlmConfigFuerAufgabe, callLLMJson } from './llm.js'
 import { getFundingRate } from './market-data.js'
 import { startOfDayUtc } from './risk-engine.js'
 
@@ -198,10 +198,10 @@ export async function agentenVeto({ instance, setup }) {
     if (sentimentAn) {
         sentimentDaten = await sammleSentiment(setup.symbol, konf.sentiment.sources || {})
         try {
-            const cfg = await ladeLlmConfig({
-                provider: konf.sentiment.provider || undefined,
-                model: konf.sentiment.model || undefined,
-            })
+            // Rolle der Instanz → Aufgaben-Zeile „strategie-veto" → global
+            const cfg = konf.sentiment.provider
+                ? await ladeLlmConfig({ provider: konf.sentiment.provider, model: konf.sentiment.model || undefined })
+                : await ladeLlmConfigFuerAufgabe('strategie-veto')
             const antwort = await callLLMJson(cfg, {
                 system: SYSTEM_SENTIMENT,
                 user: `Setup:\n${beschreibeSetup(setup, instance)}\n\nMarktumfeld:\n${JSON.stringify(sentimentDaten, null, 1)}`,
@@ -228,10 +228,9 @@ export async function agentenVeto({ instance, setup }) {
     // ── Portfolio ────────────────────────────────────────────────────
     if (portfolioAn) {
         try {
-            const cfg = await ladeLlmConfig({
-                provider: konf.portfolio.provider || undefined,
-                model: konf.portfolio.model || undefined,
-            })
+            const cfg = konf.portfolio.provider
+                ? await ladeLlmConfig({ provider: konf.portfolio.provider, model: konf.portfolio.model || undefined })
+                : await ladeLlmConfigFuerAufgabe('strategie-veto')
             const antwort = await callLLMJson(cfg, {
                 system: SYSTEM_PORTFOLIO,
                 user: [

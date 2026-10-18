@@ -372,7 +372,7 @@ async function generateBackgroundImage(provider, settings, prompt) {
     if (provider === 'gemini') {
         const apiKey = settings.geminiImageApiKey ? decrypt(settings.geminiImageApiKey) : ''
         if (!apiKey) throw new Error('Kein Gemini API-Key konfiguriert. Bitte in den Einstellungen hinterlegen.')
-        const model = settings.geminiImageModel || 'gemini-2.5-flash-image'
+        const model = settings.geminiImageModel || 'gemini-3.1-flash-image'
         console.log(` -> Gemini generating share card (${model})...`)
         const bild = await callGeminiApi(apiKey, model, prompt)
         verbuche(model)
@@ -416,7 +416,7 @@ export async function setupFluxRoutes(app) {
                 fluxAvatar: settings?.fluxAvatar || '',
                 fluxUseCustomAvatar: !!settings?.fluxUseCustomAvatar,
                 geminiImageApiKey: maskKey(settings?.geminiImageApiKey),
-                geminiImageModel: settings?.geminiImageModel || 'gemini-2.5-flash-image'
+                geminiImageModel: settings?.geminiImageModel || 'gemini-3.1-flash-image'
             })
         } catch (e) {
             console.error('Load share card settings error:', e)

@@ -48,16 +48,16 @@ export const ROLLEN = ['research', 'editor']
  */
 export const PROFILE = {
     guenstig: {
-        research: { provider: 'deepseek', modell: 'deepseek-v4-flash' },
+        research: { provider: 'deepseek', modell: 'deepseek-flash' },
         editor: { provider: 'deepseek', modell: 'deepseek-v4-pro' },
     },
     mittel: {
         research: { provider: 'moonshot', modell: 'kimi-k2.6' },
-        editor: { provider: 'anthropic', modell: 'claude-sonnet-5' },
+        editor: { provider: 'anthropic', modell: 'claude-sonnet-5-5' },
     },
     teuer: {
-        research: { provider: 'zai', modell: 'glm-5.2' },
-        editor: { provider: 'anthropic', modell: 'claude-opus-5' },
+        research: { provider: 'zai', modell: 'glm-5.3' },
+        editor: { provider: 'anthropic', modell: 'claude-opus-5-5' },
     },
 }
 

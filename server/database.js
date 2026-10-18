@@ -824,7 +824,7 @@ async function runMigrations(knex, client) {
     // ==================== SETTINGS: GEMINI IMAGE GENERATION ====================
     await addColumnIfNotExists('settings', 'shareCardProvider', (t) => t.text('shareCardProvider').defaultTo('flux'))
     await addColumnIfNotExists('settings', 'geminiImageApiKey', (t) => t.text('geminiImageApiKey').defaultTo(''))
-    await addColumnIfNotExists('settings', 'geminiImageModel', (t) => t.text('geminiImageModel').defaultTo('gemini-2.5-flash-image'))
+    await addColumnIfNotExists('settings', 'geminiImageModel', (t) => t.text('geminiImageModel').defaultTo('gemini-3.1-flash-image'))
 
     // ==================== SETTINGS: ESP32 DISPLAY ====================
     await addColumnIfNotExists('settings', 'esp32ApiKey', (t) => t.text('esp32ApiKey').defaultTo(''))
@@ -2197,7 +2197,7 @@ async function runMigrations(knex, client) {
     // X-Suche läuft über die xAI Responses API — Modellname drifted, daher Feld.
     // Grok holt die X-Posts nur ab, zusammengefasst wird hier — dafür reicht das
     // günstigere Modell (1,25 statt 2 USD je Mio. Eingabe-Token).
-    await addColumnIfNotExists('settings', 'radarNewsXModell', (t) => t.text('radarNewsXModell').defaultTo('grok-4.3'))
+    await addColumnIfNotExists('settings', 'radarNewsXModell', (t) => t.text('radarNewsXModell').defaultTo('grok-4.20-0309-non-reasoning'))
     // Guthaben-Status je KI-Anbieter (JSON, nur der Server schreibt hier):
     // „letzter Aufruf scheiterte an fehlendem Guthaben" — mehr geben die
     // Anbieter über den normalen API-Key nicht her.

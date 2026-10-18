@@ -1300,7 +1300,9 @@
       "xSuche": "News: X search",
       "video": "News: video analysis",
       "strategie": "Strategy: veto agents and builders",
-      "radar": "Live analysis: situation, mechanics, ranking",
+      "radar": "Live analysis: overview, trading picture, mechanics, ranking",
+      "chart": "Chart: AI analysis",
+      "coinRadar": "Coin radar: summary",
       "bild": "Images (share cards)",
       "uebrige": "Other (no dedicated row yet)"
     },

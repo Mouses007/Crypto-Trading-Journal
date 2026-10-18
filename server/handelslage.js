@@ -446,6 +446,11 @@ export async function erzeugeHandelslage(symbol, { erzwingen = false, auto = fal
         // Gleiche Begründung wie bei der Gesamtlage: die bestellte Antwort ist
         // lang, und ein abgeschnittenes JSON ist bezahlt und wertlos.
         cfg.maxTokens = 3000
+        // Claude 5.5 denkt immer mit; bei `medium` frass Haiku am 18.10.2026
+        // die vollen 3000 fürs Denken, und erst der zweite Anlauf (6000)
+        // brachte Text — doppelt bezahlt. Die Antwort braucht Ordnung, keine
+        // lange Herleitung: `low` reicht.
+        cfg.aufwand = 'low'
 
         const system = baueSystem(englisch, empfehlungen)
         const user = [

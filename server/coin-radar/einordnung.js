@@ -15,7 +15,7 @@
  * pflegen will — es ist dieselbe Aufgabe: kurz und nüchtern zusammenfassen.
  */
 
-import { ladeLlmConfig, callLLMJson } from '../llm.js'
+import { ladeLlmConfigFuerAufgabe, callLLMJson } from '../llm.js'
 import { rollenAnbieter } from '../hype-radar/stufen.js'
 import { leseEinstellungen as leseHypeEinstellungen } from '../hype-radar/einstellungen.js'
 import { logWarn } from '../logger.js'
@@ -195,11 +195,18 @@ Antworte als JSON: {"text": "..."}`
  */
 export async function erzeugeEinordnung(bewertet, meta = {}, laufId = 0) {
     try {
+        /*
+         * Eigene Aufgaben-Zeile „coin-radar" vor der Editor-Rolle des Hype-Radars.
+         * Bis 18.10.2026 hing der Coin-Radar NUR an `llmRollen.editor` — und
+         * damit am selben Modell wie der seltene, anspruchsvolle Hype-Bericht.
+         * Der eine läuft ~340-mal am Tag für vier Sätze, der andere braucht
+         * Urteil: zwei Aufgaben, die ein Modell nie beide gut bedient.
+         */
         const hype = await leseHypeEinstellungen()
         const { provider, modell } = rollenAnbieter(hype, 'editor')
-        if (!provider) return null
-
-        const cfg = await ladeLlmConfig({ provider, model: modell })
+        const cfg = await ladeLlmConfigFuerAufgabe('coin-radar',
+            provider ? { provider, model: modell } : {})
+        if (!cfg.provider) return null
         /*
          * Vier Sätze brauchen keine 3000 Token — das Denken davor schon.
          *
@@ -226,6 +233,9 @@ export async function erzeugeEinordnung(bewertet, meta = {}, laufId = 0) {
          * `maxTokens` der Lage-Kachel in `marktradar-lage.js`.
          */
         cfg.maxTokens = 3000
+        // Bei Claude den Denk-Aufwand dennoch klein halten: der grosse Deckel
+        // ist Luft für Modelle, die man nicht steuern kann, keine Einladung.
+        cfg.aufwand = 'low'
 
         const { zeilen } = baueEinordnungsBasis(bewertet, meta)
         const antwort = await callLLMJson(cfg, {
