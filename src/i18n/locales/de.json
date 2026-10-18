@@ -4796,6 +4796,10 @@
     "tage": "{n} Tage"
   },
   "chart": {
+    "tfFavoriten": "Zeiteinheiten — Stern = in der Leiste",
+    "tfFavoritenTitel": "Alle Zeiteinheiten und Favoriten",
+    "tfFavoritHinzu": "In die Leiste aufnehmen",
+    "tfFavoritWeg": "Aus der Leiste nehmen",
     "leisteBreite": "Breite ziehen (Doppelklick: zurücksetzen)",
     "status": {
       "connecting": "Verbinde …",
@@ -5009,6 +5013,14 @@
     "ausblenden": "Ausblenden",
     "einstellungen": "Einstellungen",
     "entfernen": "Entfernen",
+    "wzKurz": {
+      "ausklappen": "Werkzeugleiste ausklappen (mit Namen)",
+      "einklappen": "Einklappen",
+      "magnet": "Magnet",
+      "ausblenden": "Alle ausblenden",
+      "einblenden": "Alle einblenden",
+      "alleLoeschen": "Alle löschen"
+    },
     "wz": {
       "zeiger": "Zeiger (Esc)",
       "trendlinie": "Trendlinie",

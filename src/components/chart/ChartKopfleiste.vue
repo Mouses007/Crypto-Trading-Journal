@@ -39,7 +39,31 @@ const RASTER = [
 ]
 const SKALEN = ['normal', 'log', 'prozent']
 
-const verborgeneIntervalle = computed(() => INTERVALLE.filter((i) => !INTERVALLE_SICHTBAR.includes(i)))
+/*
+ * Favoriten: welche Zeiteinheiten direkt in der Leiste stehen. Gewählt im
+ * Menü „…" per Stern; gemerkt im Browser (eine Vorliebe, kein Layout-Inhalt).
+ * Mindestens eine bleibt immer stehen, sonst gäbe es nichts mehr zu klicken.
+ */
+const FAV_SCHLUESSEL = 'chartTfFavoriten'
+function leseFavoriten() {
+    try {
+        const roh = JSON.parse(localStorage.getItem(FAV_SCHLUESSEL) || 'null')
+        if (Array.isArray(roh)) {
+            const gueltig = roh.filter((i) => INTERVALLE.includes(i))
+            if (gueltig.length) return gueltig
+        }
+    } catch { /* kaputt oder kein Speicher */ }
+    return [...INTERVALLE_SICHTBAR]
+}
+const favoriten = ref(leseFavoriten())
+const sichtbareIntervalle = computed(() => INTERVALLE.filter((i) => favoriten.value.includes(i)))
+function schalteFavorit(i) {
+    const an = favoriten.value.includes(i)
+    if (an && favoriten.value.length <= 1) return
+    favoriten.value = an ? favoriten.value.filter((x) => x !== i) : [...favoriten.value, i]
+    try { localStorage.setItem(FAV_SCHLUESSEL, JSON.stringify(favoriten.value)) } catch { /* kein Speicher */ }
+}
+const verborgeneIntervalle = computed(() => INTERVALLE.filter((i) => !favoriten.value.includes(i)))
 /** Zeiteinheiten, die die gewählte Kursquelle nicht kennt (Bitget: kein 8h). */
 const gesperrt = computed(() => new Set(props.panel.markt === 'spot' ? [] : (QUELLEN_OHNE[props.panel.boerse] || [])))
 const aktuellesLayout = computed(() => props.layouts.find((l) => l.id === props.layoutId))
@@ -81,16 +105,26 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
         </select>
 
         <div class="gruppe">
-            <button v-for="i in INTERVALLE_SICHTBAR" :key="i" class="tf" :class="{ an: panel.interval === i }"
+            <button v-for="i in sichtbareIntervalle" :key="i" class="tf" :class="{ an: panel.interval === i }"
+                :disabled="gesperrt.has(i)" :title="gesperrt.has(i) ? t('chart.quelle.tfFehlt') : ''"
                 @click="intervall(i)">{{ i }}</button>
             <div class="aufklapp">
-                <button class="tf" :class="{ an: verborgeneIntervalle.includes(panel.interval) }" @click="mehrOffen = !mehrOffen">
+                <button class="tf" :class="{ an: verborgeneIntervalle.includes(panel.interval) }" :title="t('chart.tfFavoritenTitel')"
+                    @click="mehrOffen = !mehrOffen">
                     {{ verborgeneIntervalle.includes(panel.interval) ? panel.interval : '…' }}
                 </button>
-                <div v-if="mehrOffen" class="menue">
-                    <button v-for="i in verborgeneIntervalle" :key="i" class="tf" :class="{ an: panel.interval === i }"
-                        :disabled="gesperrt.has(i)" :title="gesperrt.has(i) ? t('chart.quelle.tfFehlt') : ''"
-                        @click="intervall(i)">{{ i }}</button>
+                <div v-if="mehrOffen" class="menue tfMenue">
+                    <div class="tfKopf">{{ t('chart.tfFavoriten') }}</div>
+                    <div v-for="i in INTERVALLE" :key="i" class="tfZeile">
+                        <button class="tf" :class="{ an: panel.interval === i }" :disabled="gesperrt.has(i)"
+                            :title="gesperrt.has(i) ? t('chart.quelle.tfFehlt') : ''" @click="intervall(i)">{{ i }}</button>
+                        <button class="stern" :class="{ an: favoriten.includes(i) }"
+                            :disabled="favoriten.includes(i) && favoriten.length <= 1"
+                            :title="t(favoriten.includes(i) ? 'chart.tfFavoritWeg' : 'chart.tfFavoritHinzu')"
+                            @click.stop="schalteFavorit(i)">
+                            <i class="uil uil-star"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -237,6 +271,52 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
     border-radius: 8px;
     padding: 6px;
     box-shadow: var(--shadow-sm);
+}
+
+.menue.tfMenue {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px 6px;
+    width: 246px;
+}
+
+.tfKopf {
+    grid-column: 1 / -1;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--grey-text);
+    padding: 0 2px 4px;
+}
+
+.tfZeile {
+    display: flex;
+    align-items: center;
+}
+
+.tfZeile .tf {
+    flex: 1;
+    text-align: left;
+}
+
+.stern {
+    background: transparent;
+    border: none;
+    padding: 0 4px;
+    color: var(--white-38, rgba(255, 255, 255, 0.3));
+    font-size: 13px;
+}
+
+.stern:hover:not(:disabled) {
+    color: #ffd54f;
+}
+
+.stern.an {
+    color: #ffd54f;
+}
+
+.stern:disabled {
+    cursor: default;
 }
 
 .menue.rechtsbuendig {

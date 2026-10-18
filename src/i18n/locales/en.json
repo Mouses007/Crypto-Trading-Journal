@@ -4796,6 +4796,10 @@
     "tage": "{n} days"
   },
   "chart": {
+    "tfFavoriten": "Timeframes — star = in the bar",
+    "tfFavoritenTitel": "All timeframes and favourites",
+    "tfFavoritHinzu": "Add to the bar",
+    "tfFavoritWeg": "Remove from the bar",
     "leisteBreite": "Drag to resize (double-click: reset)",
     "status": {
       "connecting": "Connecting …",
@@ -5009,6 +5013,14 @@
     "ausblenden": "Hide",
     "einstellungen": "Settings",
     "entfernen": "Remove",
+    "wzKurz": {
+      "ausklappen": "Expand toolbar (with names)",
+      "einklappen": "Collapse",
+      "magnet": "Magnet",
+      "ausblenden": "Hide all",
+      "einblenden": "Show all",
+      "alleLoeschen": "Delete all"
+    },
     "wz": {
       "zeiger": "Pointer (Esc)",
       "trendlinie": "Trend line",
