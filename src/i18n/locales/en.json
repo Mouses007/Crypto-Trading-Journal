@@ -5413,7 +5413,8 @@
       "tipHerkunft": "Right: split of trading volume between perpetual and spot. Left: the verdict — a signal is only a SHIFT of the ratio against its 200-candle average (1.5× as skewed, three candles in a row). \"Spot share high\" says nothing about direction; it is followed by whether spot buys or sells.",
       "tipVwap": "Is price above or below the weekly and monthly VWAP? The radar says WHEN, this row whether the big picture fits. Right: money flow as a number (violet = futures driving).",
       "tipStruktur": "BOS = break of a high/low WITH the trend, CHoCH = break AGAINST it. Then the broken level, how many candles ago, and the position relative to EMA50 — computed on 4h.",
-      "tipTf": "Where is the wave of this timeframe? Long zone below −50, short zone above +50, \"near\" = 70 % of the way. Closed candles only."
+      "tipTf": "Where is the wave of this timeframe? Long zone below −50, short zone above +50, \"near\" = 70 % of the way. Closed candles only.",
+      "zeitebenen": "Timeframes"
     }
   }
 }

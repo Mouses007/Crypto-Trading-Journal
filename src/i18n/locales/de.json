@@ -5413,7 +5413,8 @@
       "tipHerkunft": "Rechts die Aufteilung des Handelsvolumens zwischen Perpetual und Spotmarkt. Links das Urteil: ein Signal ist erst die VERSCHIEBUNG des Verhältnisses gegen seinen Schnitt der letzten 200 Kerzen (1,5-mal so schief, drei Kerzen am Stück). „Spot-Anteil hoch\" sagt nichts über die Richtung — dahinter steht, ob der Spot kauft oder verkauft.",
       "tipVwap": "Steht der Kurs über oder unter dem Wochen- und Monats-VWAP? Das Umfeld: der Radar sagt WANN, diese Zeile, ob das grosse Bild passt. Rechts der Geldfluss als Zahl (violett = Futures treiben).",
       "tipStruktur": "BOS = Bruch eines Hochs/Tiefs IN Trendrichtung, CHoCH = Bruch GEGEN die bisherige Richtung. Dahinter das gebrochene Niveau, wie viele Kerzen her, und die Lage zur EMA50 — gerechnet auf 4h.",
-      "tipTf": "Wo steht die Welle dieser Zeitebene? Long-Zone unter −50, Short-Zone über +50, „fast\" = 70 % des Weges dorthin. Gelesen nur über geschlossene Kerzen."
+      "tipTf": "Wo steht die Welle dieser Zeitebene? Long-Zone unter −50, Short-Zone über +50, „fast\" = 70 % des Weges dorthin. Gelesen nur über geschlossene Kerzen.",
+      "zeitebenen": "Zeitebenen"
     }
   }
 }
