@@ -5321,8 +5321,11 @@
       "titel": {
         "liquidationen": "Recorded forced liquidations (Binance, sample: at most one per second). Only for symbols the recorder records (Settings → Live analysis).",
         "hebelzonen": "Estimated liquidation zones from open-interest history and candles — a model, not a measurement. Below price long liquidations (forced sells), above shorts (forced buys).",
-        "momentum": "Momentum Radar only computes on 5m, 15m, 1h and 4h."
-      }
+        "momentum": "Momentum Radar only computes on 5m, 15m, 1h and 4h.",
+        "orderbuch": "Resting walls from the Binance order book (500 levels per side, every 10 s). A wall is a price zone with at least 2.5× the typical zone of its side. The snapshot reaches no further than ±… % — for BTC only a few hundredths of a percent."
+      },
+      "buchReicht": "Order book: walls ±{p} %",
+      "buchKeineWand": "Order book: no wall within ±{p} %"
     },
     "ki": {
       "erstellen": "AI analysis for {symbol} {tf}",

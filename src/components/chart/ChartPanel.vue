@@ -317,15 +317,19 @@ async function ladeHebelzonen() {
 
 async function ladeWaende() {
     if (!marktEbene) return
-    if (!overlayAn('orderbuch')) { marktEbene.setzeWaende(null); return }
+    if (!overlayAn('orderbuch')) { marktEbene.setzeWaende(null); hinweis('orderbuch', null); return }
     const { symbol, markt } = props.panel
     try {
         // limit 500 statt 1000: halbes Gewicht, und Wände jenseits von ±5 %
         // zeigt der Chart ohnehin nicht.
         const { data } = await axios.get('/api/binance/depth', { params: { symbol, market: markt === 'spot' ? 'spot' : 'futures', limit: 500 } })
         if (symbol !== props.panel.symbol) return
-        marktEbene.setzeWaende(waendeAusBuch(data))
-    } catch { marktEbene.setzeWaende(null) }
+        const w = waendeAusBuch(data)
+        marktEbene.setzeWaende(w)
+        // Wie weit der Snapshot reicht — bei BTC nur ±0,07 %, dahinter kann er keine Wand zeigen.
+        if (w.spanne) hinweis('orderbuch', t(w.kaeufe.length || w.verkaeufe.length ? 'chart.markt.buchReicht' : 'chart.markt.buchKeineWand',
+            { p: Math.min(w.spanne.unten, w.spanne.oben).toFixed(w.spanne.unten < 1 ? 2 : 1) }))
+    } catch { marktEbene.setzeWaende(null); hinweis('orderbuch', null) }
 }
 
 async function ladeExtern(nurWelche = null) {
