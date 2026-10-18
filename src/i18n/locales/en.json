@@ -4796,6 +4796,7 @@
     "tage": "{n} days"
   },
   "chart": {
+    "rasterTitel": "Grid: how many charts side by side / stacked",
     "autoKurz": "Auto",
     "volumen": "Volume",
     "autoAn": "Auto-fit is on (click: off)",

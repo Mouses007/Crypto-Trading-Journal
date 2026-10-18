@@ -26,7 +26,7 @@ const suche = ref(null)
 const mehrOffen = ref(false)
 const layoutOffen = ref(false)
 const syncOffen = ref(false)
-const overlayOffen = ref(false)
+const rasterOffen = ref(false)
 
 function schalteOverlay(id, an) {
     emit('panel', { overlays: { ...(props.panel.overlays || {}), [id]: an } })
@@ -142,25 +142,29 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
                 <i class="uil uil-chart-growth"></i> {{ t('chart.indikatoren') }}
             </button>
             <VorlagenMenue :aktuelle="panel.indikatoren || []" @anwenden="emit('vorlage', $event)" />
-            <div class="aufklapp">
-                <button class="tf" :class="{ an: overlayOffen }" :title="t('chart.overlaysTitel')" @click="overlayOffen = !overlayOffen">
-                    <i class="uil uil-layers"></i> {{ t('chart.overlays') }}
-                </button>
-                <div v-if="overlayOffen" class="menue spalte">
-                    <label v-for="o in OVERLAYS" :key="o.id" class="schalter">
-                        <input type="checkbox" :checked="overlayAn(panel, o.id)" @change="schalteOverlay(o.id, $event.target.checked)" />
-                        <i :class="o.icon"></i> {{ t('chart.overlay.' + o.id) }}
-                    </label>
-                </div>
-            </div>
+        </div>
+
+        <!-- Eigene Daten als Schnellschalter: ein Klick statt Menü öffnen, Häkchen setzen, zuklicken. -->
+        <div class="gruppe schnell" :title="t('chart.overlaysTitel')">
+            <button v-for="o in OVERLAYS" :key="o.id" class="tf" :class="{ an: overlayAn(panel, o.id) }"
+                :title="t('chart.overlay.' + o.id) + ' — ' + t(overlayAn(panel, o.id) ? 'chart.ausblenden' : 'chart.einblenden')"
+                @click="schalteOverlay(o.id, !overlayAn(panel, o.id))"><i :class="o.icon"></i></button>
         </div>
 
         <slot />
 
         <div class="rechts">
             <div v-if="!telefon" class="gruppe">
-                <button v-for="r in RASTER" :key="r.id" class="tf" :class="{ an: raster === r.id }"
-                    :title="t('chart.raster.' + r.id)" @click="emit('raster', r.id)"><i :class="r.icon"></i></button>
+                <!-- Raster im Ausklappmenü: der Knopf zeigt das aktuelle, die Leiste hat Platz für die Schnellschalter. -->
+                <div class="aufklapp">
+                    <button class="tf" :class="{ an: rasterOffen }" :title="t('chart.rasterTitel')" @click="rasterOffen = !rasterOffen">
+                        <i :class="RASTER.find((r) => r.id === raster)?.icon || RASTER[0].icon"></i> <i class="uil uil-angle-down pfeil"></i>
+                    </button>
+                    <div v-if="rasterOffen" class="menue rechtsbuendig spalte">
+                        <button v-for="r in RASTER" :key="r.id" class="eintrag" :class="{ an: raster === r.id }"
+                            @click="emit('raster', r.id); rasterOffen = false"><i :class="r.icon"></i> {{ t('chart.raster.' + r.id) }}</button>
+                    </div>
+                </div>
                 <div class="aufklapp">
                     <button class="tf" :class="{ an: syncOffen }" :title="t('chart.sync.titel')" @click="syncOffen = !syncOffen">
                         <i class="uil uil-link-h"></i>
@@ -321,6 +325,12 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
 
 .stern:disabled {
     cursor: default;
+}
+
+.pfeil {
+    font-size: 10px;
+    opacity: 0.6;
+    margin-left: -2px;
 }
 
 .menue.rechtsbuendig {
