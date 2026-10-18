@@ -633,14 +633,18 @@ async function ladePositionen() {
     const liste = overlayAn('positionen') ? await ladeOffenePositionen(symbol) : []
     if (symbol !== props.panel.symbol || !kerzenSerie.value) return
     positionen = liste
+    journalEbene?.setzeOffene(liste)
     entfernePositionsLinien()
     const kurs = kerzen.value[kerzen.value.length - 1]?.c
     for (const pos of liste) {
+        // Einstieg, SL und TP zeichnet die Journal-Ebene als Box ab dem Einstieg —
+        // hier nur noch ihre Schilder an der Achse, keine Linie über den ganzen Chart.
+        // Die Liquidation bleibt als Linie: sie ist keine Grenze der Box.
         const linie = (preis, farbe, titel, art, stil = LineStyle.Solid) => {
             if (!preis) return
             positionsLinien.push({
                 art, pos,
-                linie: kerzenSerie.value.createPriceLine({ price: preis, color: farbe, lineWidth: 1, lineStyle: stil, axisLabelVisible: true, title: titel }),
+                linie: kerzenSerie.value.createPriceLine({ price: preis, color: farbe, lineWidth: 1, lineStyle: stil, axisLabelVisible: true, title: titel, lineVisible: art === 'liq' }),
             })
         }
         linie(pos.einstieg, pos.richtung === 'long' ? '#26a69a' : '#ff6960', positionsTitel(pos, kurs), 'einstieg', LineStyle.Solid)

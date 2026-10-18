@@ -7,10 +7,11 @@
  * Bitunix-Verlauf (`tpslStufen`), ausgelöste als ✕ —, Teil-Fills als kleine Punkte und am Ausstieg
  * das Ergebnis in R (wenn ein Stop bekannt ist) und in USDT.
  *
- * Offene Positionen zeichnet diese Ebene NICHT selbst: dafür nimmt das Panel
- * Preislinien der Bibliothek, die bringen die Achsenbeschriftung mit — und
- * Einstieg, Stop, Ziel und Liquidation einer offenen Position will man an der
- * Achse ablesen.
+ * Offene Positionen: die Preislinien (Achsenbeschriftung für Einstieg, Stop,
+ * Ziel, Liquidation) setzt das Panel; diese Ebene zeichnet dazu den Trade
+ * selbst — Dreieck an der Einstiegskerze und die Flächen wie beim
+ * Positionswerkzeug von dort bis jetzt (aktueller Stop/Ziel von der Börse),
+ * dazu frühere Stufen aus dem Bitunix-Verlauf, falls verschoben wurde.
  *
  * Zeiten in ms; Umrechnung über dieselbe Geometrie wie die Zeichnungen.
  */
@@ -27,6 +28,7 @@ export class JournalEbene {
         this.serie = serie
         this.formatPreis = formatPreis
         this.trades = []
+        this.offene = []
         this.zeiten = []
         this.iv = 3_600_000
         this.hervor = null           // id des hervorgehobenen Trades
@@ -45,6 +47,13 @@ export class JournalEbene {
     paneViews() { return this._ansichten }
     updateAllViews() {}
 
+    /** Offene Position: Stop und Ziel gehören ins Bild, auch wenn „Auto" nur die Kerzen einpassen würde. */
+    autoscaleInfo() {
+        const preise = this.offene.flatMap((p) => [p.einstieg, p.sl, p.tp]).filter((p) => p > 0)
+        if (!preise.length) return null
+        return { priceRange: { minValue: Math.min(...preise), maxValue: Math.max(...preise) } }
+    }
+
     hitTest(x, y) {
         const t = this.trefferTest(x, y)
         return t ? { cursorStyle: 'pointer', externalId: 'trade:' + t.id, zOrder: 'normal' } : null
@@ -62,6 +71,11 @@ export class JournalEbene {
 
     setzeTrades(trades) {
         this.trades = trades || []
+        this.requestUpdate()
+    }
+
+    setzeOffene(liste) {
+        this.offene = (liste || []).filter((p) => p.einstiegT && p.einstieg)
         this.requestUpdate()
     }
 
@@ -92,10 +106,11 @@ export class JournalEbene {
     }
 
     zeichne(ctx, groesse) {
-        if (!this.trades.length || !this.zeiten.length) return
+        if ((!this.trades.length && !this.offene.length) || !this.zeiten.length) return
         ctx.save()
         ctx.font = SCHRIFT
         for (const tr of this.trades) this.zeichneTrade(ctx, tr, groesse.width)
+        for (const pos of this.offene) this.zeichneOffen(ctx, pos, groesse.width)
         ctx.restore()
     }
 
@@ -205,5 +220,63 @@ export class JournalEbene {
                 ctx.fillText(text, tx, ty)
             }
         }
+    }
+
+    /** Offene Position wie das Positionswerkzeug: Flächen ab Einstieg bis 20 Kerzen nach jetzt. */
+    zeichneOffen(ctx, pos, breite) {
+        const jetzt = Date.now()
+        const ex = this.zuX(pos.einstiegT), ey = this.zuY(pos.einstieg), xj = this.zuX(jetzt + 20 * this.iv)
+        if (ex == null || ey == null || xj == null) return
+        const long = pos.richtung === 'long'
+        // Rechts endet die Box am Bildrand — sonst stünden Fläche und Schilder halb ausserhalb.
+        const b = Math.max(Math.min(xj, breite - 2) - ex, 12)
+        const yz = this.zuY(pos.tp), ys = this.zuY(pos.sl)
+        if (yz != null) { ctx.fillStyle = 'rgba(38,166,154,0.18)'; ctx.fillRect(ex, Math.min(ey, yz), b, Math.abs(yz - ey)) }
+        if (ys != null) { ctx.fillStyle = 'rgba(255,105,96,0.18)'; ctx.fillRect(ex, Math.min(ey, ys), b, Math.abs(ys - ey)) }
+        ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 1
+        ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + b, ey); ctx.stroke()
+
+        // Frühere Stufen (verschoben): nur die, die schon geendet haben — die aktuelle ist die Fläche.
+        const { stufen, ausgeloest } = tpslStufen(pos.tpslVerlauf, pos.einstiegT, jetzt)
+        const letzteTp = [...(pos.tpslVerlauf || [])].filter((h) => h.art === 'TP' && (h.aktion === 'set' || h.aktion === 'moved')).sort((a, c) => a.t - c.t).pop()
+        for (const s of stufen) {
+            if (s.bis >= jetzt - 1000) continue
+            const x1 = this.zuX(s.von), x2 = this.zuX(s.bis), y = this.zuY(s.preis)
+            if (x1 == null || x2 == null || y == null) continue
+            ctx.strokeStyle = s.art === 'SL' ? 'rgba(255,105,96,0.75)' : 'rgba(38,166,154,0.75)'
+            ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke(); ctx.setLineDash([])
+        }
+        for (const a of ausgeloest) {
+            const x = this.zuX(a.t), y = this.zuY(a.preis)
+            if (x == null || y == null) continue
+            ctx.strokeStyle = a.art === 'SL' ? ROT : GRUEN
+            ctx.beginPath(); ctx.moveTo(x - 4, y - 4); ctx.lineTo(x + 4, y + 4); ctx.moveTo(x - 4, y + 4); ctx.lineTo(x + 4, y - 4); ctx.stroke()
+        }
+
+        // Beschriftung wie beim Werkzeug: Richtung · R (Ziel gegen Stop), Teil-Ziel mit Anteil.
+        const rr = pos.tp && pos.sl && Math.abs(pos.einstieg - pos.sl) > 0 ? Math.abs(pos.tp - pos.einstieg) / Math.abs(pos.einstieg - pos.sl) : null
+        // Schilder in die Box; ist rechts zu wenig Platz, links davor (rechtsbündig).
+        const schild = (text, x, y, farbe) => {
+            const w = ctx.measureText(text).width
+            if (x + w + 6 > breite - 2) x = Math.max(2, ex - w - 10)
+            ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x - 2, y - 11, w + 6, 15)
+            ctx.fillStyle = farbe; ctx.fillText(text, x + 1, y)
+        }
+        const pct = (p) => { const v = ((p - pos.einstieg) / pos.einstieg) * 100; return `${v >= 0 ? '+' : ''}${v.toFixed(2)} %` }
+        schild(`${long ? 'Long' : 'Short'}${rr != null ? ` · ${rr.toFixed(2)} R` : ''}`, ex + 4, ey - 4, '#e0e0e0')
+        if (yz != null) {
+            const anteil = letzteTp && letzteTp.menge > 0 && letzteTp.posMenge > 0 && letzteTp.menge < letzteTp.posMenge * 0.999 ? ` · ${Math.round((letzteTp.menge / letzteTp.posMenge) * 100)} % der Position` : ''
+            schild(`Ziel ${this.formatPreis(pos.tp)} (${pct(pos.tp)})${anteil}`, ex + 4, yz + (yz < ey ? 13 : -4), GRUEN)
+        }
+        if (ys != null) schild(`Stop ${this.formatPreis(pos.sl)} (${pct(pos.sl)})`, ex + 4, ys + (ys < ey ? 13 : -4), ROT)
+
+        // Einstieg: Dreieck in Handelsrichtung.
+        const g = 6
+        ctx.fillStyle = long ? GRUEN : ROT
+        ctx.beginPath()
+        if (long) { ctx.moveTo(ex, ey - g); ctx.lineTo(ex - g, ey + g * 0.6); ctx.lineTo(ex + g, ey + g * 0.6) }
+        else { ctx.moveTo(ex, ey + g); ctx.lineTo(ex - g, ey - g * 0.6); ctx.lineTo(ex + g, ey - g * 0.6) }
+        ctx.closePath(); ctx.fill()
+        ctx.strokeStyle = '#131722'; ctx.stroke()
     }
 }

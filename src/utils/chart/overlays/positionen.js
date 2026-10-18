@@ -52,6 +52,17 @@ function offenePositionenRoh() {
     return offenAbruf
 }
 
+/** `tpslHistory` der Position in die Form, die `tpslStufen` liest (wie /api/chart/journal). */
+function tpslVerlaufVon(roh) {
+    let h = roh
+    if (typeof h === 'string') { try { h = JSON.parse(h) } catch { h = [] } }
+    if (!Array.isArray(h)) return []
+    return h.map((e) => ({
+        t: Number(e.time), art: String(e.type || '').toUpperCase(), aktion: e.action || null,
+        wert: zahl(e.newVal), alt: zahl(e.oldVal), menge: zahl(e.qty), posMenge: zahl(e.posQty),
+    })).filter((e) => Number.isFinite(e.t))
+}
+
 export async function ladeOffenePositionen(symbol) {
     const ziel = normSymbol(symbol)
     const zeilen = await offenePositionenRoh()
@@ -70,6 +81,9 @@ export async function ladeOffenePositionen(symbol) {
             upnl: Number(p.unrealizedPNL) || 0,
             sl,
             tp,
+            // Einstiegszeit von der Börse (Bitunix `ctime`), sonst die erste Erfassung
+            einstiegT: Number(roh.ctime) || Date.parse(p.createdAt) || null,
+            tpslVerlauf: tpslVerlaufVon(p.tpslHistory),
         }
     }))
 }
