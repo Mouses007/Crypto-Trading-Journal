@@ -7,7 +7,7 @@
  *   /kalender-countdown Nur die Termine der nächsten Stunden, mit Restzeit
  *   /liq-ticker        Liquidationen der letzten Minuten aus dem Arbeitsspeicher
  *   /session-stand     Offene Positionen und die P&L der laufenden Sitzung
- *   /momentum          Mo's Momentum Radar auf sechs Zeitebenen (`momentum-radar.js`)
+ *   /momentum          Momentum Radar auf sechs Zeitebenen (`momentum-radar.js`)
  *
  * Alle liefern die Form `{stand, veraltet, hinweis?, …}` und laufen über
  * `ausCache` aus `marktradar-api.js` — damit teilen sich alle offenen Fenster
@@ -447,7 +447,7 @@ export function setupLivetradingRoutes(app) {
      * Tabs nicht jede Sekunde dieselbe Rechnung anstossen.
      */
     /**
-     * Momentum Radar — Mo's Pine-Indikator als Kachel.
+     * Momentum Radar als Kachel.
      *
      * Geholt wird je Zeitebene über `getClosedCandles`: der Kerzenspeicher dort
      * hält eine Reihe bis zur nächsten Kerze, ein 5-Minuten-Takt der Kachel

@@ -1,16 +1,16 @@
 <script setup>
 /**
- * Das Info-Panel des Momentum Radar (Pine des Users, Ansicht „Ausführlich")
+ * Das Info-Panel des Momentum Radar (Ansicht „Ausführlich")
  * für die Seitenleiste des Charts: Kopfzeile mit Urteil, SWING/DAY-Setup,
  * Herkunft des Volumens, VWAP-Lage mit Geldfluss, 4h-Struktur und die
  * Zeitebenen W bis 5m.
  *
  * Gerechnet wird auf dem Server (`server/momentum-radar.js`, dieselbe Route
- * wie die Live-Trading-Kachel). Inhalt wie im Pine, Form als Karte: Setups als
+ * wie die Live-Trading-Kachel). Inhalt wie in der Vorlage, Form als Karte: Setups als
  * Kacheln, die Herkunft als geteilter Balken, der Geldfluss als Zeiger um die
  * Null, und jede Zeitebene als Leiste von −100 bis +100 mit den Zonen ±50 —
  * „fast Long-Zone" sagt, DASS es knapp ist, der Punkt auf der Leiste, WIE knapp.
- * Farben der Zeitebenen und der Signale wie im Pine (Gruppe 6/7).
+ * Farben der Zeitebenen und der Signale wie in der Vorlage (Gruppe 6/7).
  *
  * Der Radar rechnet auf 5m/15m/1h/4h. Auf einem anderen Chart wird die
  * nächstliegende genommen (1m/3m → 5m, alles über 4h → 4h) — das Panel
@@ -65,7 +65,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => { clearInterval(uhr); document.removeEventListener('visibilitychange', sichtbarkeit) })
 
-// ── Farben wie im Pine ────────────────────────────────────────────────────
+// ── Farben wie in der Vorlage ────────────────────────────────────────────────────
 const F = { long: '#4caf50', short: '#ef5350', longS: '#00e676', shortS: '#ff1744', grau: '#787b86', rein: '#4caf50', raus: '#ef5350', fut: '#8e6cef', spot: '#26a69a' }
 const TF_FARBE = { '1w': '#ffd54f', '1d': '#ffffff', '4h': '#ba68c8', '1h': '#ffa726', '15m': '#bdbdbd', '5m': '#bdbdbd' }
 const NAME = { '1w': 'W', '1d': 'D', '4h': '4h', '1h': '1h', '15m': '15m', '5m': '5m' }
@@ -113,7 +113,7 @@ const prozent = (w) => (w == null ? '—' : `${w > 0 ? '+' : ''}${w.toFixed(Math
 const mfWert = computed(() => fluss.value.wert)
 const mfText = computed(() => (mfWert.value == null ? '—' : `${mfWert.value >= 0 ? '+' : ''}${mfWert.value.toFixed(1)}`))
 const mfFarbe = computed(() => (her.value.urteil === 'futures' ? F.fut : (mfWert.value ?? 0) >= 0 ? F.rein : F.raus))
-/** Geldfluss als Balken ab der Mitte: ±60 (Extrembereich im Pine) füllt eine Hälfte. */
+/** Geldfluss als Balken ab der Mitte: ±60 (Extrembereich in der Vorlage) füllt eine Hälfte. */
 const mfBalken = computed(() => {
     const w = mfWert.value
     if (w == null) return null

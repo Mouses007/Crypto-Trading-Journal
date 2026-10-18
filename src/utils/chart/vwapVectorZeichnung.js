@@ -1,11 +1,11 @@
 /**
- * Mo's VWAP Vector — was nicht als Serie geht, zeichnet dieses Primitive im
+ * VWAP Vector — was nicht als Serie geht, zeichnet dieses Primitive im
  * Kerzen-Pane: Swing-VWAP-Fächer, Vektorkerzen-Zonen, naked POCs (Periode und
  * Docht), Candle-POC-Punkte, Fibonacci, Engulfing-Dreiecke, Daily Open und die
  * Schilder rechts an den Linien. Gerechnet ist alles in `vwapVector.js`.
  *
  * Schilder, die weiter rechts lägen als der sichtbare Bereich, werden an den
- * rechten Rand geklemmt — im Pine stehen sie 12–22 Kerzen rechts vom Kurs,
+ * rechten Rand geklemmt — in der Vorlage stehen sie 12–22 Kerzen rechts vom Kurs,
  * und so viel Leerraum zeigt der Chart nicht immer.
  */
 import { logischZuX } from './zeichnungen/geometrie.js'

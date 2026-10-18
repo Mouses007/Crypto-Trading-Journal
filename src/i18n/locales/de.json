@@ -4972,7 +4972,7 @@
       "vwapVector": {
         "name": "VWAP Vector",
         "kurz": "VWAP Vector",
-        "text": "Dein Pine-Indikator: PVSRA-Vektorkerzen, Anchored VWAPs mit Swing-Fächer, EMAs (auch aus höheren Zeiteinheiten), Fibonacci, Engulfing, naked POCs, Candle-POC, Vektorkerzen-Zonen und Daily Open."
+        "text": "PVSRA-Vektorkerzen, Anchored VWAPs mit Swing-Fächer, EMAs (auch aus höheren Zeiteinheiten), Fibonacci, Engulfing, naked POCs, Candle-POC, Vektorkerzen-Zonen und Daily Open."
       },
       "lsob": {
         "name": "LSOB — Liquidity Sweep + Order Block",
@@ -4985,14 +4985,14 @@
         "text": "Signale der Strategie EMA Touch („GUSS Sniperentry\"): neues Hoch, Korrektur in einem Guss an die EMA 50, Einstieg mit Stop und Ziel. Dazu EMA 21/50/200."
       },
       "lsobCv": {
-        "name": "LSOB V3 — Nachbau (Claudius Vertesi)",
-        "kurz": "LSOB V3",
-        "text": "Nachbau des TradingView-Indikators: Liquidity-Sweep-Boxen an Pivot-Hochs/-Tiefs, die das vorige Pivot überbieten; Box = ganze Kerze, ungültig bei Körper-Eindringen über die Toleranz; Signal beim ersten Retest; Vorwarnlinie. Gegen das Original auf ETH 1h und BTC 4h geprüft."
+        "name": "LSOB-Boxen (Sweep + Retest)",
+        "kurz": "LSOB-Box",
+        "text": "Liquidity-Sweep-Boxen an Pivot-Hochs/-Tiefs, die das vorige Pivot überbieten; Box = ganze Kerze, ungültig bei Körper-Eindringen über die Toleranz; Signal beim ersten Retest; Vorwarnlinie."
       },
       "gussCv": {
-        "name": "GUSS V8 — Nachbau (Claudius Vertesi)",
-        "kurz": "GUSS V8",
-        "text": "Nachbau des TradingView-Indikators: Start beim höchsten/tiefsten Schluss der letzten Kerzen in EMA-Trendordnung mit ATR-Abständen, Rücklauf „in einem Guss\" an die Ziel-EMA (Gegenkerzen-Logik), Label Start/Entry. Gegen das Original geprüft."
+        "name": "GUSS-Rücklauf (Start/Entry)",
+        "kurz": "GUSS-Lauf",
+        "text": "Start beim höchsten/tiefsten Schluss der letzten Kerzen in EMA-Trendordnung mit ATR-Abständen, Rücklauf „in einem Guss\" an die Ziel-EMA (Gegenkerzen-Logik), Label Start/Entry."
       }
     },
     "indParam": {

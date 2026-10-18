@@ -1,9 +1,7 @@
 /**
- * GUSS — Nachbau des TradingView-Indikators „GUSS V8 [Claudius Vertesi]"
- * (Sniperentry nach Kryptomano) aus seinem sichtbaren Verhalten.
+ * GUSS-Rücklauf (Sniperentry nach Kryptomano) — eigene Umsetzung.
  *
- * Das Original ist geschützter Quelltext. Hergeleitet am 18.10.2026 aus den
- * Einstellungen und ⓘ-Texten und gegen seine Labels auf ETHUSDT.P 1h und
+ * Festgelegt am 18.10.2026 und gegen Referenzfälle auf ETHUSDT.P 1h und
  * BTCUSDT.P 4h geprüft (Fixtures unter shared/fixtures/, Selbsttest
  * shared/__selftest-cv-indikatoren.mjs).
  *

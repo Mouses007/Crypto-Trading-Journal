@@ -598,7 +598,7 @@ watch(sichtbareAnzahl, async () => {
                         :sichtbar-bis="() => aktivesPanelRef?.sichtbarerZeitraum()?.bis"
                         @vorschau="(a) => aktivesPanelRef?.setzeKiVorschau(a)" />
                     </div>
-                    <!-- Momentum-Box (Pine-Panel) unter dem Reiter: Trenner ziehen = Höhe, Pfeil = ein-/ausklappen. -->
+                    <!-- Momentum-Box  unter dem Reiter: Trenner ziehen = Höhe, Pfeil = ein-/ausklappen. -->
                     <div class="boxTrenner" :class="{ zu: !boxOffen }" @pointerdown="boxZiehenStart" @pointermove="boxZiehen"
                         @pointerup="boxZiehenEnde" @pointercancel="boxZiehenEnde" @dblclick="boxHoeheZurueck"
                         :title="t('chart.mbox.trenner')">

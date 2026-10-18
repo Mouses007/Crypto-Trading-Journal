@@ -1,5 +1,5 @@
 /**
- * Selbsttest „Mo's VWAP Vector" (Rechnung, ohne Chart).
+ * Selbsttest „VWAP Vector" (Rechnung, ohne Chart).
  *
  *   node src/utils/__selftest-vwap-vector.mjs
  *
@@ -52,7 +52,7 @@ console.log('\nMTF-EMA (kein Blick in die Zukunft)\n')
     const m = emaHoehereTf(chart, tage, 5, D, H)
     // Kerze 0 liegt in Tag 28, der erst mit Kerze 23 schliesst → laufend, Basis = Tag 27
     const a = 2 / 6
-    check('historische Kerze im laufenden Tag: EMA von gestern (Treppe wie im Pine)', Math.abs(m[0] - e[27]) < 1e-9, `${m[0]} vs ${e[27]}`)
+    check('historische Kerze im laufenden Tag: EMA von gestern (Treppe wie in der Vorlage)', Math.abs(m[0] - e[27]) < 1e-9, `${m[0]} vs ${e[27]}`)
     check('Treppe: alle Stunden von Tag 28 vor seinem Schluss tragen denselben Wert', m.slice(0, 23).every((x) => Math.abs(x - e[27]) < 1e-9))
     // Chart endet eine Stunde vor Schluss von Tag 29: die letzte Kerze ist Echtzeit
     const live = emaHoehereTf(chart.slice(0, 47), tage, 5, D, H)
@@ -145,7 +145,7 @@ console.log('\nEngulfing, Daily Open, ZigZag\n')
 console.log('\nRegister\n')
 {
     const p = vorgaben('vwapVector')
-    check('Vorgaben wie im Pine: Swing-VWAPs, EMA 21/50/200, MTF 1+2 an; Daily/ATH aus', p.showSwingHi && p.showEma21 && p.showMtfE2 && !p.showDaily && !p.showATH && !p.showFib)
+    check('Vorgaben wie in der Vorlage: Swing-VWAPs, EMA 21/50/200, MTF 1+2 an; Daily/ATH aus', p.showSwingHi && p.showEma21 && p.showMtfE2 && !p.showDaily && !p.showATH && !p.showFib)
     check('Ausgaben nur für eingeschaltete Linien', ausgabenVon('vwapVector', p).map((x) => x.key).join() === 'ema21,ema50,ema200,mtf1,mtf2')
     check('Schalter und Farben werden gesäubert', saubereParams('vwapVector', { showDaily: 'ja', cDaily: 'rot' }).showDaily === false && saubereParams('vwapVector', { cDaily: 'rot' }).cDaily === '#70ccbd')
     const q = vwapVectorQuellen(p, H, { '1m': 60_000, '1h': H, '1d': 24 * H, '4h': 4 * H })

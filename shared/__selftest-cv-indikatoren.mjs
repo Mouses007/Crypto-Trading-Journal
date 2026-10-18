@@ -1,6 +1,6 @@
 /**
- * Selbsttest: Nachbau von „LSOB V3" und „GUSS V8" (Claudius Vertesi) gegen
- * das Original.
+ * Selbsttest: LSOB-Boxen (lsobCv) und GUSS-Rücklauf (gussCv) gegen feste
+ * Referenzfälle.
  *
  *   node shared/__selftest-cv-indikatoren.mjs
  *
@@ -73,7 +73,7 @@ console.log('\nGUSS — BTCUSDT.P 4h\n')
 {
     const ev = gussCv(btc).ereignisse.filter((e) => e.startT >= ab('2026-09-25T00:00')).map((e) => `${e.seite} ${zeit(e.startT)} → ${e.status === 'entry' ? zeit(e.entryT) + ' ' + e.ziel : e.status}`)
     check('GUSS-Start 02.10. 08:00 mit Entry an der EMA 50 (TradingView: Start + Entry am 01./02.10.)', ev.includes('long 10-02 08:00 → 10-02 16:00 EMA 50'), JSON.stringify(ev))
-    // Was das Bild zeigt: nur Starts mit Einstieg und der offene (verfallene blendet das Original aus)
+    // Was das Bild zeigt: nur Starts mit Einstieg und der offene (verfallene werden ausgeblendet)
     const sichtbar = gussCv(btc).ereignisse.filter((e) => e.startT >= ab('2026-09-25T00:00') && e.status !== 'verfallen')
     check('sichtbar nur ein GUSS-Start im Bereich (wie TradingView)', sichtbar.filter((e) => e.seite === 'long').length === 1, JSON.stringify(sichtbar.map((e) => zeit(e.startT))))
 }

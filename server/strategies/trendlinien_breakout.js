@@ -283,7 +283,7 @@ export function obvAmpel(candles, { laenge = 200, art = 'ema' } = {}) {
  *
  * Beide Quellen sagen 'austritt', und beide sagen es ausdrücklich: der Scanner
  * aus dem Video (Trader XO) wirbt mit dem Alarm „war über 80 und fällt
- * darunter — rot", und das Referenz-Skript („Mo's Swing Game") markiert
+ * darunter — rot", und das Referenz-Skript markiert
  * dasselbe: %K unter das obere Band = rot, %K über das untere = grün, die
  * Gegenrichtung nur auf ausdrücklichen Wunsch. Das ist die Vorgabe hier.
  *

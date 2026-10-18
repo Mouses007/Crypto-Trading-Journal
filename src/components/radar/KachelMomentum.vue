@@ -1,9 +1,9 @@
 <script setup>
 /**
- * Momentum Radar — Mo's Pine-Indikator als Kachel.
+ * Momentum Radar als Kachel.
  *
  * Gerechnet wird auf dem Server (`server/momentum-radar.js`), hier wird nur
- * gezeichnet: oben der Verlauf der gewählten Chart-Zeitebene wie im Pine-Panel
+ * gezeichnet: oben der Verlauf der gewählten Chart-Zeitebene wie im Panel der Vorlage
  * (Welle, Geldfluss, Punkte, Rauten, Schienen, Divergenzen, Farbleiste),
  * darunter das Panel in Kurzform.
  *
@@ -31,7 +31,7 @@ const { t } = useI18n()
 
 const CHART_TF = ['5m', '15m', '1h', '4h']
 
-/** Farben aus dem Pine (Gruppe 7), damit Kachel und TradingView gleich lesen. */
+/** Farben aus der Vorlage (Gruppe 7), damit Kachel und TradingView gleich lesen. */
 const F = {
     welle: '#6fa8ff',
     schatten: '#1f3a8a',
@@ -465,7 +465,7 @@ const strNeben = computed(() => {
             </div>
         </div>
 
-        <!-- Gross: die Zeichenerklärung, im Pine das „?" am Rand -->
+        <!-- Gross: die Zeichenerklärung, in der Vorlage das „?" am Rand -->
         <div v-if="gross" class="mrLegende">
             <p v-for="z in ['punkte', 'flaeche', 'spot', 'schienen', 'linien', 'kopf', 'wann']" :key="z">
                 {{ t('livetrading.momentum.legende_' + z) }}

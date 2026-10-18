@@ -89,9 +89,9 @@ console.log('\nGeldfluss')
     check('Selbstskalierung: Dauerzufluss landet bei der Zielgrösse 22', Math.abs(mfAuf[299] - 22) < 0.5, String(mfAuf[299]))
     const ab = auf.map(k => ({ ...k, o: 100.9, c: 100 }))
     check('Schluss unten → negativer Geldfluss', geldfluss(ab)[299] < 0)
-    // Wie im Pine: ohne Normalmass `0.0`, nicht na — die Fläche liegt am
+    // Wie in der Vorlage: ohne Normalmass `0.0`, nicht na — die Fläche liegt am
     // linken Rand auf der Nulllinie statt zu fehlen.
-    check('vor 60 Kerzen 0 wie im Pine', geldfluss(auf)[30] === 0)
+    check('vor 60 Kerzen 0 wie in der Vorlage', geldfluss(auf)[30] === 0)
 
     // Volumen gewichtet: eine starke Abflusskerze mit viel Volumen dreht mehr
     const gemischt = auf.map((k, i) => (i % 2 ? { ...k, o: 100.9, c: 100, v: 30 } : k))

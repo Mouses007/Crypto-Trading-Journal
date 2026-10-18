@@ -133,7 +133,7 @@ function nachZeit(kerzen, zeiten, werte) {
 
 const P_LAENGE = (vorgabe, max = 500) => ({ key: 'laenge', typ: 'zahl', vorgabe, min: 1, max, schritt: 1 })
 const P_QUELLE = { key: 'quelle', typ: 'wahl', vorgabe: 'c', optionen: Object.keys(QUELLEN) }
-// ── Mo's VWAP Vector (Pine des Users, Rechnung in vwapVector.js) ─────────
+// ── VWAP Vector (Rechnung in vwapVector.js) ─────────
 const TFS = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M']
 const S = (key, vorgabe, gruppe) => ({ key, typ: 'schalter', vorgabe, gruppe })
 const F = (key, vorgabe, gruppe) => ({ key, typ: 'farbe', vorgabe, gruppe })
@@ -160,7 +160,7 @@ export const VV_LINIEN = [
 /*
  * Dialog-Aufbau: `haupt` = Hauptschalter der Gruppe (steht in der Überschrift),
  * `mit` = gehört in die Zeile des Parameters davor (Schalter · Länge · Farbe
- * in EINER Zeile statt drei). Die Werte selbst sind die des Pine.
+ * in EINER Zeile statt drei). Die Werte selbst sind die der Vorlage.
  */
 const H = (p) => ({ ...p, haupt: true })
 const M = (p) => ({ ...p, mit: true })
@@ -281,14 +281,14 @@ export const GUSS_PARAMS = [
     { key: 'gussEmas', typ: 'schalter', vorgabe: true, gruppe: 'sigBild' },
     ...SIGNAL_DARSTELLUNG,
 ]
-// ── Nachbauten der TradingView-Indikatoren LSOB V3 / GUSS V8 (Claudius Vertesi) ──
+// ── LSOB-Boxen / GUSS-Rücklauf ──
 /** Letzte Kerze weglassen, wenn sie noch läuft (ihr Schluss liegt in der Zukunft). */
 function laufendRaus(k) {
     if (k.length < 2) return k
     const iv = k[k.length - 1].t - k[k.length - 2].t
     return k[k.length - 1].t + iv > Date.now() ? k.slice(0, -1) : k
 }
-// Rechnung in shared/lsobCv.js / shared/gussCv.js, Selbsttest gegen das Original.
+// Rechnung in shared/lsobCv.js / shared/gussCv.js, Selbsttest mit Referenzfällen.
 const CZ = (key, vorgabe, min, max, schritt, gruppe) => ({ key, typ: 'zahl', vorgabe, min, max, schritt, gruppe })
 const CS = (key, vorgabe, gruppe) => ({ key, typ: 'schalter', vorgabe, gruppe })
 const CF = (key, vorgabe, gruppe) => ({ key, typ: 'farbe', vorgabe, gruppe })
@@ -526,7 +526,7 @@ export const INDIKATOREN = {
         ort: 'eigen',
         extern: 'momentum',
         params: [],
-        // Eigene Zeichnung wie im Pine (`momentumZeichnung.js`): Flächen bis zur
+        // Eigene Zeichnung wie in der Vorlage (`momentumZeichnung.js`): Flächen bis zur
         // Nulllinie, Geldfluss je Kerze mit violetter Futures-Phase, Spot-Linie,
         // Punkte, Rauten, Schienen, Divergenzen, 4h-Farbleiste. Als Serien
         // bleiben nur Welle und Signallinie; der Geldfluss steht als Wert in der
@@ -591,7 +591,7 @@ export const INDIKATOREN = {
         params: LSOB_CV_PARAMS,
         ausgaben: [],
         // Ohne die laufende Kerze: sonst gilt ein frisches Pivot zu früh als bestätigt (5 Kerzen
-        // rechts, davon eine unfertig) und eine Box erscheint, die das Original noch nicht zeigt.
+        // rechts, davon eine unfertig) und eine Box erscheint, die die Referenz noch nicht zeigt.
         rechne: (k, p) => ({ _cv: { art: 'lsob', ...lsobCv(laufendRaus(k), p) } }),
     },
     gussCv: {

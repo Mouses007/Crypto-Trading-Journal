@@ -4972,7 +4972,7 @@
       "vwapVector": {
         "name": "VWAP Vector",
         "kurz": "VWAP Vector",
-        "text": "Your Pine indicator: PVSRA vector candles, anchored VWAPs with swing fan, EMAs (also from higher timeframes), Fibonacci, engulfing, naked POCs, candle POC, vector candle zones and daily open."
+        "text": "PVSRA vector candles, anchored VWAPs with swing fan, EMAs (also from higher timeframes), Fibonacci, engulfing, naked POCs, candle POC, vector candle zones and daily open."
       },
       "lsob": {
         "name": "LSOB — Liquidity Sweep + Order Block",
@@ -4985,14 +4985,14 @@
         "text": "Signals of the EMA Touch strategy (\"GUSS Sniperentry\"): new high, pullback \"in one pour\" to the EMA 50, entry with stop and target. Plus EMA 21/50/200."
       },
       "lsobCv": {
-        "name": "LSOB V3 — rebuild (Claudius Vertesi)",
-        "kurz": "LSOB V3",
-        "text": "Rebuild of the TradingView indicator: liquidity sweep boxes at pivot highs/lows that exceed the previous pivot; box = whole candle, invalid when a body penetrates beyond the tolerance; signal on the first retest; pre-warn line. Checked against the original on ETH 1h and BTC 4h."
+        "name": "LSOB boxes (sweep + retest)",
+        "kurz": "LSOB box",
+        "text": "Liquidity sweep boxes at pivot highs/lows that exceed the previous pivot; box = whole candle, invalid when a body penetrates beyond the tolerance; signal on the first retest; pre-warn line."
       },
       "gussCv": {
-        "name": "GUSS V8 — rebuild (Claudius Vertesi)",
-        "kurz": "GUSS V8",
-        "text": "Rebuild of the TradingView indicator: start at the highest/lowest close of the last candles with EMAs in trend order and ATR distances, pullback \"in one pour\" to the target EMA (counter candle logic), start/entry labels. Checked against the original."
+        "name": "GUSS pullback (start/entry)",
+        "kurz": "GUSS run",
+        "text": "Start at the highest/lowest close of the last candles with EMAs in trend order and ATR distances, pullback \"in one pour\" to the target EMA (counter candle logic), start/entry labels."
       }
     },
     "indParam": {

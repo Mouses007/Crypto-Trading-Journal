@@ -1,7 +1,7 @@
 /**
  * Signalverlauf einer Strategie für den Chart — die Indikatoren „LSOB" und
  * „GUSS" (EMA Touch) zeigen jedes Setup, das die Strategie über die geladene
- * Historie gefunden hätte, wie ein Pine-Indikator seine Signale.
+ * Historie gefunden hätte, wie ein TradingView-Indikator seine Signale.
  *
  * Gerechnet wird genau wie im Backtest (`strategy-backtest.js`, Schritt 2–3):
  * je geschlossene Kerze `detect()` auf dem Fenster bis einschliesslich dieser

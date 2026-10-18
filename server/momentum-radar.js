@@ -1,22 +1,21 @@
 /**
- * Mo's Momentum Radar — die Rechnung des Pine-Indikators, ohne Netz und ohne DB.
+ * Momentum Radar — die Rechnung, ohne Netz und ohne DB.
  *
- * Vorlage ist `Mo's Momentum Radar` (Pine v5) des Nutzers. Übernommen sind das
- * Rechenwerk und seine Konstanten 1:1, nicht die Darstellung: die Kachel
+ * Nur das Rechenwerk und seine Konstanten, nicht die Darstellung: die Kachel
  * `KachelMomentum.vue` zeichnet daraus Welle, Geldfluss, Punkte und das Panel.
- * Wer hier an einer Konstante dreht, ändert die Aussage — die Werte stehen im
- * Pine bewusst nicht im Dialog, und hier auch nicht.
+ * Wer hier an einer Konstante dreht, ändert die Aussage — die Werte stehen
+ * bewusst nicht im Dialog, und hier auch nicht.
  *
- * ## Repaint-Schutz, strenger als im Pine
+ * ## Repaint-Schutz, strenger als in der Vorlage
  *
  * Gerechnet wird AUSSCHLIESSLICH auf geschlossenen Kerzen (`getClosedCandles`).
- * Im Pine gilt das nur für die Zeitebenen über dem Chart; die Chart-Zeitebene
+ * In der Vorlage gilt das nur für die Zeitebenen über dem Chart; die Chart-Zeitebene
  * selbst liest dort die laufende Kerze mit (und zeigt sie als hohlen Kreis).
  * Die Kachel hat keine Kerze, auf die man zeigen könnte — eine Aussage, die
  * bis zum Kerzenschluss noch kippen kann, hätte hier keinen sichtbaren Ort
  * für ihr „noch nicht verlässlich". Also gibt es sie nicht.
  *
- * Höhere Zeitebenen werden im Verlauf genauso ausgerichtet wie im Pine mit
+ * Höhere Zeitebenen werden im Verlauf genauso ausgerichtet wie in der Vorlage mit
  * `[1]` + `lookahead_on`: an einer Chart-Kerze gilt die letzte höhere Kerze,
  * die bei deren BEGINN schon geschlossen war. Der Selbsttest prüft genau das,
  * denn ein Versatz um eine Kerze sieht im Verlauf besser aus, als es live war.
@@ -26,7 +25,7 @@
 
 import { emaSerie, smaSerie, pivotHighs, pivotLows } from './strategies/indicators.js'
 
-// ── Rechenwerk (Konstanten aus dem Pine) ──────────────────────────────────
+// ── Rechenwerk (Konstanten aus der Vorlage) ──────────────────────────────────
 export const WT_CH = 9
 export const WT_AVG = 12
 export const WT_SIG = 3
@@ -61,7 +60,7 @@ const TF_MS = Object.fromEntries(ZEITEBENEN.map(z => [z.tf, z.ms]))
 /** Zeitebenen, die als Chart-Zeitebene der Kachel wählbar sind. */
 export const CHART_ZEITEBENEN = ['5m', '15m', '1h', '4h']
 
-/** Auf diesen Zeitebenen erscheinen Signale auf den Schienen (Pine: use1/4/D/W). */
+/** Auf diesen Zeitebenen erscheinen Signale auf den Schienen (Vorlage: use1/4/D/W). */
 const SCHIENEN_TF = ['1h', '4h', '1d', '1w']
 
 const ok = (v) => v !== null && v !== undefined && Number.isFinite(v)
@@ -92,7 +91,7 @@ const kreuztRunter = (a, b, i) => i > 0 && ok(a[i]) && ok(b[i]) && ok(a[i - 1]) 
     && a[i] < b[i] && a[i - 1] >= b[i - 1]
 
 /**
- * Signale einer Zeitebene je Kerze (Pine `f_sig`): Kreuz nach oben IN der
+ * Signale einer Zeitebene je Kerze (Vorlage `f_sig`): Kreuz nach oben IN der
  * Long-Zone (≤ −50), Kreuz nach unten IN der Short-Zone (≥ +50).
  */
 export function signale(w1, w2) {
@@ -103,7 +102,7 @@ export function signale(w1, w2) {
 }
 
 /**
- * Zustand aus dem Wellenwert (Pine `f_state`). `dir` 1 = Long-Seite,
+ * Zustand aus dem Wellenwert (Vorlage `f_state`). `dir` 1 = Long-Seite,
  * −1 = Short-Seite, 0 = neutral. `null` heisst unbekannt, nicht neutral.
  */
 export function zustand(w) {
@@ -118,7 +117,7 @@ export function zustand(w) {
 }
 
 /**
- * Setup aus zwei oder drei Richtungen (Pine `f_setup`): mindestens zwei
+ * Setup aus zwei oder drei Richtungen (Vorlage `f_setup`): mindestens zwei
  * Zeitebenen haben eine Richtung, und ALLE mit Richtung zeigen in dieselbe.
  * Für DAY wird mit `c = 0` gerufen — dort müssen also 15m UND 5m stimmen.
  */
@@ -133,7 +132,7 @@ export function setup(a, b, c = 0) {
 // ── Geldfluss ─────────────────────────────────────────────────────────────
 
 /**
- * Geldfluss (Pine `f_mf`): wo schliesst die Kerze in ihrer Spanne, gewichtet
+ * Geldfluss (Vorlage `f_mf`): wo schliesst die Kerze in ihrer Spanne, gewichtet
  * mit dem Volumen, selbstskaliert am eigenen Mittel der letzten 200 Kerzen.
  * Solange die 200 nicht da sind, gilt der laufende Mittelwert seit Beginn —
  * sonst gäbe es am linken Rand einen Sprung.
@@ -164,12 +163,12 @@ export function geldfluss(kerzen) {
 }
 
 /**
- * Spot gegen Futures (Pine Gruppe 3): das VERHÄLTNIS Futures- zu Spot-Volumen
+ * Spot gegen Futures (Vorlage Gruppe 3): das VERHÄLTNIS Futures- zu Spot-Volumen
  * gegen sein eigenes Normalmass der letzten 200 Kerzen.
  *
  * ## Warum Verhältnis und nicht Anteil
  *
- * Die erste Fassung (wie das Pine bis 10.10.2026) mass den Anteil
+ * Die erste Fassung (wie die Vorlage bis 10.10.2026) mass den Anteil
  * fut / (fut + spot). Ein Anteil endet bei 1,0, die Schwelle war aber
  * multiplikativ (Schnitt × 1,15): ab einem Normalmass von 86,96 % lag sie über
  * 100 % und war unerreichbar — auf BNB (~91 %) konnte „Futures ungewöhnlich
@@ -179,7 +178,7 @@ export function geldfluss(kerzen) {
  * Münze und in beide Richtungen gleich weit.
  *
  * Kerzen ohne Spot-Volumen (fehlt, oder 0 — Division durch null) haben kein
- * Verhältnis; der Schnitt hält den letzten gültigen Wert (Pine `fsHold`).
+ * Verhältnis; der Schnitt hält den letzten gültigen Wert (Vorlage `fsHold`).
  *
  * @param {Array} fut  Futures-Kerzen der Chart-Zeitebene
  * @param {Array|null} spot Spot-Kerzen derselben Zeitebene (oder null)
@@ -263,9 +262,9 @@ export function vwapSeit(kerzen, seitMs) {
 }
 
 /**
- * Struktur auf der Strukturzeitebene (Pine: 4h, Pivot-Breite 5, EMA 50).
+ * Struktur auf der Strukturzeitebene (Vorlage: 4h, Pivot-Breite 5, EMA 50).
  *
- * Zustandsmaschine wie im Pine, auf der Ebene der 4h-Kerzen: ein Pivot gilt
+ * Zustandsmaschine wie in der Vorlage, auf der Ebene der 4h-Kerzen: ein Pivot gilt
  * erst `BOS_LEN` Kerzen nach seiner Spitze, ein Bruch zählt nur beim
  * ÜBERQUEREN des Levels (nicht, solange der Kurs jenseits bleibt). CHoCH =
  * Bruch gegen die bisherige Richtung, BOS = in Richtung.
@@ -308,7 +307,7 @@ export function struktur(kerzen) {
 
 // ── Gesamtauswertung ──────────────────────────────────────────────────────
 
-/** Zählt diese Zeitebene für die Punktstärke? (Pine c15/c05/cW/cD/c4/c1) */
+/** Zählt diese Zeitebene für die Punktstärke? (Vorlage c15/c05/cW/cD/c4/c1) */
 export function zaehltFuerStaerke(tf, chartTf) {
     if (TF_MS[tf] <= TF_MS[chartTf]) return false    // nur ECHT darüber
     if (tf === '15m' || tf === '5m') return false     // only15/only5: nur anzeigen

@@ -1,10 +1,10 @@
 /**
- * Mo's Momentum Radar als Datenfenster im Chart — gezeichnet wie der Pine-
+ * Momentum Radar als Datenfenster im Chart — gezeichnet wie die Vorlage
  * Indikator (und wie die Kachel `KachelMomentum.vue`), nicht als zwei nackte
  * Linien.
  *
  * Die Rechnung kommt fertig vom Server (`server/momentum-radar.js`, Konstanten
- * 1:1 aus dem Pine); hier wird nur gezeichnet, in der Reihenfolge des Pine:
+ * 1:1 aus der Vorlage); hier wird nur gezeichnet, in der Reihenfolge der Vorlage:
  *   unten   Marken ±100/±50/0, Schienen ±115, Schatten (Signallinie als Fläche),
  *           helle Wellenfläche, Geldfluss je Kerze (violett = Futures treiben),
  *           weisse Spot-Linie, 4h-Farbleiste am unteren Rand
@@ -18,7 +18,7 @@
  */
 import { zeitZuLogisch, logischZuX } from './zeichnungen/geometrie.js'
 
-/** Farben aus dem Pine (Gruppe 7) — dieselben wie in der Kachel. */
+/** Farben aus der Vorlage (Gruppe 7) — dieselben wie in der Kachel. */
 export const MOMENTUM_FARBEN = {
     welle: '#6fa8ff',
     schatten: '#1f3a8a',
@@ -36,7 +36,7 @@ const TF_FARBE = { '1h': '#ffa726', '4h': '#ba68c8', '1d': '#ffffff', '1w': '#ff
 const TF_RADIUS = { '1h': 2.5, '4h': 3.5, '1d': 4.5, '1w': 5.5 }
 const F = MOMENTUM_FARBEN
 
-/** Wertebereich des Fensters: Schienen bei ±115, Farbleiste darunter — wie im Pine. */
+/** Wertebereich des Fensters: Schienen bei ±115, Farbleiste darunter — wie in der Vorlage. */
 export const MOMENTUM_BEREICH = [-140, 128]
 const SCHIENE = 115
 
@@ -142,7 +142,7 @@ export class MomentumZeichnung {
     unten(ctx, groesse) {
         const v = this.v
         const breite = groesse.width
-        // Marken wie im Pine: ±100 Extrem, ±50 überkauft/-verkauft (kräftig), 0 gestrichelt.
+        // Marken wie in der Vorlage: ±100 Extrem, ±50 überkauft/-verkauft (kräftig), 0 gestrichelt.
         this.waagerecht(ctx, 100, breite, alpha('#e0e0e0', 0.65), 1)
         this.waagerecht(ctx, -100, breite, alpha('#e0e0e0', 0.65), 1)
         this.waagerecht(ctx, 50, breite, 'rgba(255,255,255,0.75)', 2)

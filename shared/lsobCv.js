@@ -1,12 +1,10 @@
 /**
- * LSOB (Liquidity Sweep Order Block) — Nachbau des TradingView-Indikators
- * „LSOB V3 [Claudius Vertesi]" aus seinem sichtbaren Verhalten.
+ * LSOB-Boxen (Liquidity Sweep Order Block) — eigene Umsetzung.
  *
- * Das Original ist geschützter Quelltext. Hergeleitet am 18.10.2026 aus den
- * Einstellungen und ⓘ-Texten des Indikators und Kerze für Kerze gegen seine
- * Boxen und Signale auf ETHUSDT.P 1h und BTCUSDT.P 4h (Binance) geprüft — die
- * Kerzen liegen als Fixture unter shared/fixtures/, der Selbsttest
- * shared/__selftest-cv-indikatoren.mjs hält die Übereinstimmung fest.
+ * Festgelegt am 18.10.2026 und Kerze für Kerze gegen Referenzfälle auf
+ * ETHUSDT.P 1h und BTCUSDT.P 4h (Binance) geprüft — die Kerzen liegen als
+ * Fixture unter shared/fixtures/, der Selbsttest
+ * shared/__selftest-cv-indikatoren.mjs hält die Fälle fest.
  *
  *   Box        ein Pivot-Hoch (Short) bzw. -Tief (Long) mit `pivotLaenge`
  *              Kerzen zu beiden Seiten, das das VORIGE Pivot-Hoch überbietet
@@ -14,8 +12,7 @@
  *              ganze Spanne dieser Kerze (Tief bis Hoch) und beginnt an ihr.
  *   Ungültig   ab der Bestätigung (Pivot + pivotLaenge + 1): ein Kerzenkörper
  *              dringt mehr als `invalidierungPct` der Boxhöhe ein (Short: von
- *              unten, Long: von oben). Ungültige Boxen verschwinden, wie im
- *              Original. Mit `strengDocht` macht das auch ein Docht über
+ *              unten, Long: von oben). Ungültige Boxen verschwinden. Mit `strengDocht` macht das auch ein Docht über
  *              `maxDochtPct` der Boxhöhe.
  *   Signal     der erste Retest — frühestens zwei Kerzen nach der Bestätigung —:
  *              der Docht erreicht die Box, der Körper bleibt innerhalb von
@@ -24,8 +21,8 @@
  *              darunter, Long: darüber), ab Bestätigung + `vorwarnVerzoegerung`
  *              bis `vorwarnAblauf` Kerzen danach oder bis zum Signal.
  *
- * Bekannte Abweichung: BTCUSDT 4h, Box vom 03.09.2026 20:00 — der Nachbau
- * meldet am 18.09. 12:00 einen Retest, das Original nicht (dieselbe Kerze
+ * Bekannte Abweichung: BTCUSDT 4h, Box vom 03.09.2026 20:00 — die Umsetzung
+ * meldet am 18.09. 12:00 einen Retest, die Referenz nicht (dieselbe Kerze
  * macht eine darunterliegende Box ungültig; die Regel dahinter ist nicht
  * sichtbar).
  *

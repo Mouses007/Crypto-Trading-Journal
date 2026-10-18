@@ -95,7 +95,7 @@ const DEFINITIONEN = [
     },
     {
         /*
-         * Mo's Momentum Radar (Pine) als Kachel. Rechnet auf dem Server über
+         * Momentum Radar als Kachel. Rechnet auf dem Server über
          * sechs Zeitebenen, nur auf geschlossenen Kerzen. 60 s reichen: die
          * kleinste Zeitebene ist 5m, und vor ihrem Schluss ändert sich nichts.
          */

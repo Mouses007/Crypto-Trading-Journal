@@ -1,6 +1,6 @@
 /**
- * Zeichnung der Nachbauten „LSOB V3" und „GUSS V8" (shared/lsobCv.js,
- * shared/gussCv.js) im Kerzen-Pane — so nah am Original-Bild, dass man beide
+ * Zeichnung der Indikatoren „LSOB-Boxen" und „GUSS-Rücklauf" (shared/lsobCv.js,
+ * shared/gussCv.js) im Kerzen-Pane — so nah am gewohnten TradingView-Bild, dass man beide
  * nebeneinander lesen kann:
  *
  *   LSOB   gültige Boxen von der Pivot-Kerze bis zum rechten Rand, Label
@@ -132,7 +132,7 @@ export class CvZeichnung {
 
     guss(ctx, d) {
         for (const e of d.ereignisse || []) {
-            // Verfallene Starts zeigt das Original nicht — nur die mit Einstieg und den offenen.
+            // Verfallene Starts werden nicht gezeichnet — nur die mit Einstieg und den offenen.
             if (e.status === 'verfallen') continue
             const lang = e.seite === 'long'
             const name = lang ? 'GUSS' : 'R-GUSS'

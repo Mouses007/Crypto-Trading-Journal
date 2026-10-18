@@ -1,7 +1,7 @@
 /**
- * Mo's VWAP Vector — Rechnung (pur: keine Bibliothek, kein Netz).
+ * VWAP Vector — Rechnung (pur: keine Bibliothek, kein Netz).
  *
- * Nachbau des Pine-Indikators „Mo's VWAP Vector" des Users, Modul für Modul:
+ * Modul für Modul:
  *   1  PVSRA-Vektorkerzen        Kerzenfarbe nach Volumen
  *   2  Anchored VWAPs            Tag/Woche/Monat/ATH/ATL + Swing-Fächer (Leiter-Logik)
  *   3  EMAs                      21/50/200, zwei freie, drei aus höheren Zeiteinheiten
@@ -11,10 +11,10 @@
  *   7  Candle-POC                POC INNERHALB der Kerze aus Intrabar-Kerzen
  *   8  Vektorkerzen-Zonen        unabgeholte Rest-Liquidität
  *   9  Daily Open
- * Die Alarm-Bedingungen (Abschnitt 10 im Pine) sind hier nicht nachgebaut.
+ * Die Alarm-Bedingungen (Abschnitt 10 in der Vorlage) sind hier nicht nachgebaut.
  *
  * Gerechnet wird mit `shared/indicators.js` (VWAP-Anker und Swing-Leiter
- * stammen dort bereits aus diesem Pine), damit Chart und Strategien dieselbe
+ * stammen dort bereits), damit Chart und Strategien dieselbe
  * Linie sehen.
  *
  * Zeit: Perioden (Tag, Woche, Monat) in UTC, wie `timeframe.change` bei einer
@@ -80,7 +80,7 @@ export function pvsra(kerzen, { len = 10, climaxMult = 2, risingMult = 1.5 } = {
 // ── 2 Swing-VWAP-Fächer ──────────────────────────────────────────────────
 /**
  * Linien des Fächers je Seite, Stand der LETZTEN Kerze: wie die Polylines
- * im Pine, die bei `barstate.islast` neu gezeichnet werden. Eine Linie
+ * in der Vorlage, die bei `barstate.islast` neu gezeichnet werden. Eine Linie
  * beginnt am Pivot selbst (dort liegt der Anker), nicht erst an der
  * Bestätigung — im Chart soll sie zeigen, wo der Einstand herkommt.
  */
@@ -108,15 +108,15 @@ export function swingFaecher(kerzen, { seite, staerke = 20, anzahl = 1, minSepAt
 /**
  * EMA einer höheren Zeiteinheit, auf die Chartkerzen gelegt.
  *
- * Wie `request.security(…, lookahead_off)` im Pine: auf HISTORISCHEN Kerzen
+ * Wie `request.security(…, lookahead_off)` in der Vorlage: auf HISTORISCHEN Kerzen
  * sieht eine Chartkerze die EMA der höheren Kerzen, die bis zu ihrem eigenen
  * Schluss geschlossen waren — innerhalb einer höheren Kerze also deren
  * Vorgänger, und der neue Wert erscheint auf der Chartkerze, mit der die höhere
  * schliesst. Das ergibt die Treppe, die TradingView zeigt. Nur die LETZTE
- * Chartkerze (Echtzeit im Pine) rechnet ihren Schluss als vorläufigen Schluss
+ * Chartkerze (Echtzeit in der Vorlage) rechnet ihren Schluss als vorläufigen Schluss
  * der laufenden höheren Kerze ein und folgt dem Kurs.
- * Bis 18.10.2026 rechnete jede historische Kerze so — eine glatte Linie, die im
- * Pine nicht vorkommt, und Abstände zur Linie, die dort anders aussahen.
+ * Bis 18.10.2026 rechnete jede historische Kerze so — eine glatte Linie, die in
+ * der Vorlage nicht vorkommt, und Abstände zur Linie, die dort anders aussahen.
  */
 export function emaHoehereTf(kerzen, htf, laenge, htfMs, ivMs) {
     const out = new Array(kerzen.length).fill(null)
@@ -137,7 +137,7 @@ export function emaHoehereTf(kerzen, htf, laenge, htfMs, ivMs) {
 }
 
 // ── 4 Fibonacci aus dem ATR-ZigZag ───────────────────────────────────────
-/** `f_zigzag` aus dem Pine: die letzten beiden Wendepunkte [piv1, piv0]. */
+/** `f_zigzag` aus der Vorlage: die letzten beiden Wendepunkte [piv1, piv0]. */
 export function zigzag(kerzen, mult = 3) {
     const a = atr(kerzen, 14)
     let dir = 1
@@ -180,7 +180,7 @@ export function fibLevel(kerzen, htf, mult, an) {
 // ── 5 Engulfing ──────────────────────────────────────────────────────────
 export function engulfing(kerzen, { minKoerperAtr = 1, nurVolumen = false, stufen, a }) {
     const aus = []
-    // Die letzte Kerze läuft noch: im Pine erscheint das Signal erst mit Kerzenschluss.
+    // Die letzte Kerze läuft noch: in der Vorlage erscheint das Signal erst mit Kerzenschluss.
     for (let i = 1; i < kerzen.length - 1; i++) {
         const k = kerzen[i], v = kerzen[i - 1]
         const bull = k.c > k.o && v.c < v.o && k.c >= v.o && k.o <= v.c
@@ -242,7 +242,7 @@ export function periodenPoc(kerzen, { tf = '1d', bins = 50, max = 20 }) {
 /**
  * POC je Chartkerze aus den Intrabar-Kerzen, die in sie fallen. Eine Kerze
  * ohne Intrabar-Daten (älter als das, was geladen wurde) bekommt keinen —
- * wie im Pine, wenn das Intrabar-Budget aufgebraucht ist.
+ * wie in der Vorlage, wenn das Intrabar-Budget aufgebraucht ist.
  */
 export function candlePocs(kerzen, intra, ivMs, bins = 25) {
     const out = new Array(kerzen.length).fill(null)

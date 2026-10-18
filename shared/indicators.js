@@ -266,7 +266,7 @@ function extremBis(candles, ende, laenge, hoch) {
 /**
  * Ankerpunkte des Swing-VWAP-Fächers, Kerze für Kerze.
  *
- * Nachbau der Leiter-Logik aus dem Pine-Indikator „Mo's VWAP Vector": Anker
+ * Leiter-Logik des VWAP Vector: Anker
  * sind markante Pivots, und ältere Anker müssen strukturell HÖHER (Hochs) bzw.
  * TIEFER (Tiefs) liegen als der jüngste. Wer das weglässt, bekommt drei fast
  * deckungsgleiche Linien statt eines Fächers.
@@ -335,7 +335,7 @@ function istPeriodenanfang(t, anchor) {
  * Startkerze des laufenden VWAP-Abschnitts, Kerze für Kerze.
  *
  * Alle Anker ausser 'rolling' sind dasselbe Verfahren mit unterschiedlicher
- * Rücksetzbedingung — genau wie `f_avwap(resetCond)` im Pine-Indikator.
+ * Rücksetzbedingung — genau wie `f_avwap(resetCond)` in der Vorlage.
  *
  * `null` heisst: KEIN gültiger Anker. Das ist der wichtige Teil. Backtest und
  * Engine rufen den Detektor mit einem gleitenden AUSSCHNITT auf, nicht mit der
@@ -461,7 +461,7 @@ export function vwap(candles, { anchor = 'session', period = 20, pivot = 20, nth
     // Abschnittsweise: die Summen laufen fortlaufend weiter und werden nur beim
     // Ankerwechsel neu gebildet. Beim Swing-Anker liegt der neue Anker in der
     // VERGANGENHEIT (der Pivot selbst), deshalb wird dort über die Kerzen seit
-    // dem Pivot nachgerechnet — dieselben paar Kerzen wie in der Pine-Fassung.
+    // dem Pivot nachgerechnet — dieselben paar Kerzen wie in der Vorlage.
     const starts = ankerStarts(candles, { anchor, pivot, nth, minSepAtr, verkuerzt })
     let aktuell = -1
     let summePV = 0

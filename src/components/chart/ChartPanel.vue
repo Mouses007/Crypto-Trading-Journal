@@ -253,7 +253,7 @@ watch(volumenAn, (an) => volumenSerie.value?.applyOptions({ visible: an }))
 
 /*
  * Vektorkerzen (VWAP Vector): Farbe je Kerze für Körper, Rand und Docht —
- * wie `barcolor` im Pine. `null` = zurück zu den normalen Farben.
+ * wie `barcolor` in der Vorlage. `null` = zurück zu den normalen Farben.
  */
 let kerzenFarben = null
 function kerzenPunkt(k, i) {
@@ -427,7 +427,7 @@ async function ladeExtern(nurWelche = null) {
  * Intrabar-Kerzen (Candle-POC). Immer von Binance — Bitunix/Bitget liefern
  * zu wenig Historie für eine EMA 50 auf dem Tag. Intrabar höchstens drei
  * Seiten (3000 Kerzen — Binance-Abrufe sind hier auf 1000 je Seite gedeckelt): ältere Chartkerzen bekommen keinen Candle-POC, wie
- * im Pine, wenn das Intrabar-Budget aufgebraucht ist.
+ * in der Vorlage, wenn das Intrabar-Budget aufgebraucht ist.
  */
 const vvCache = { schluessel: '', htf: {}, intra: [] }
 async function ladeVwapVector() {

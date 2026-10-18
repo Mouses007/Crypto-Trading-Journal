@@ -1,7 +1,7 @@
 /**
  * LSOB — Liquidity Sweep + Order Block.
  *
- * Regelwerk aus den beiden Referenz-PDFs (Claudius Vertesi / Kryptomano):
+ * Regelwerk aus den beiden Referenz-PDFs (Kryptomano):
  *
  *   1. Markantes Swing-Hoch/-Tief mit gesammelter Liquidität
  *   2. Liquidity Sweep: Docht durchbricht das Level, Kerze SCHLIESST zurück

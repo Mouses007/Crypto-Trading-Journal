@@ -71,7 +71,7 @@ console.log('\nBollinger')
 console.log('\nATR (wie ta.atr)')
 
 {
-    // Von Hand nach Pine: tr[0] = h − l, rma startet mit dem Schnitt von tr[0..n−1] bei Index n−1.
+    // Von Hand nach TradingView: tr[0] = h − l, rma startet mit dem Schnitt von tr[0..n−1] bei Index n−1.
     const k = [
         { o: 10, h: 12, l: 9, c: 11 },    // tr 3 (h − l, kein Vorschluss)
         { o: 11, h: 13, l: 10, c: 12 },   // tr max(3, 2, 1) = 3
@@ -247,7 +247,7 @@ const zeitreihe = (preise, schrittMs, t0 = MONTAG, vol = null) => preise.map((p,
 
 {
     // Zwei Pivot-Hochs, das zweite TIEFER: der ältere, höhere bleibt als
-    // zweite Fächerlinie stehen (Leiter-Logik des Pine-Indikators)
+    // zweite Fächerlinie stehen (Leiter-Logik der Vorlage)
     const preise = Array.from({ length: 60 }, (_, i) => {
         if (i === 15) return 300
         if (i === 40) return 200
