@@ -4796,10 +4796,11 @@ onBeforeMount(async () => {
                             <input class="form-control form-control-sm" style="max-width:12rem;"
                                 v-model="radarNewsXModell" @change="radarSpeichern('radarNewsXModell')">
                             <span class="small text-muted">{{ t('settings.ki.news.perplexityModel') }}</span>
-                            <select class="form-select form-select-sm" style="max-width:10rem;"
+                            <select class="form-select form-select-sm" style="max-width:16rem;"
                                 v-model="radarNewsRechercheModell"
                                 @change="kiSpeichern('radarNewsRechercheModell', radarNewsRechercheModell)">
                                 <option v-for="m in (modellListen.perplexity || ['sonar', 'sonar-pro'])" :key="m" :value="m">{{ m }}</option>
+                                <option value="deepseek-suche">DeepSeek-Suche + Haiku (billiger)</option>
                             </select>
                         </div>
                     </div>

@@ -50,6 +50,9 @@ export const KI_FUNKTIONEN = [
     {
         id: 'recherche', titelKey: 'kiUebersicht.fn.recherche', bereich: 'nachrichten',
         fest: { provider: 'perplexity', feld: 'radarNewsRechercheModell', standard: 'sonar' },
+        aufgabe: 'recherche',
+        // `deepseek-suche` im Modellfeld heisst: Recherche über DeepSeek.
+        umschalter: { wert: 'deepseek-suche', provider: 'deepseek' },
         funktionen: ['recherche'],
     },
     {
@@ -121,6 +124,9 @@ export function anbieterVon(eintrag, settings) {
         if (typeof karte === 'string') { try { karte = JSON.parse(karte || '{}') } catch { karte = {} } }
         const wert = String(karte?.[eintrag.aufgabe] || '').trim()
         if (wert) return wert.split('/')[0].trim()
+    }
+    if (eintrag.umschalter && s[eintrag.fest?.feld] === eintrag.umschalter.wert) {
+        return eintrag.umschalter.provider
     }
     if (eintrag.fest) {
         return eintrag.fest.provider || String(s[eintrag.fest.feldProvider] || '').trim() || ''

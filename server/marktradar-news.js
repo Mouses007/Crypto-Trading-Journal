@@ -47,7 +47,7 @@ import { darfLaufen, sendeZuFrueh } from './drossel.js'
 import { merkeVerbrauch } from './ai-usage.js'
 import { samplingFelder, GEMINI_STANDARDMODELL } from './ai-models.js'
 import {
-    sucheXPosts, rechercheThema, istGefiltert, istFokusTreffer, zerlegeWoerter, baueRechercheZitate, THEMEN_NAMEN, X_STANDARDMODELL,
+    sucheXPosts, rechercheThema, rechercheDeepseek, DEEPSEEK_SUCHE, istGefiltert, istFokusTreffer, zerlegeWoerter, baueRechercheZitate, THEMEN_NAMEN, X_STANDARDMODELL,
 } from './news-recherche.js'
 
 const TAG = 24 * 60 * 60 * 1000
@@ -2485,8 +2485,26 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
     let taBilder = []              // Chart-Grafiken aus den Analyse-Artikeln (Perplexity-Bilder)
     try {
         const pCfg = await ladeLlmConfig({ provider: 'perplexity' })
-        if (pCfg.apiKey) {
+        /*
+         * Zwei Wege: Perplexity (Vorgabe) oder DeepSeek-Suche + Schreibmodell.
+         * Gewählt über die Aufgaben-Zeile „recherche" (`deepseek`) oder im
+         * Nachrichten-Reiter (`radarNewsRechercheModell = deepseek-suche`).
+         * Die Chartanalyse braucht Bilder, die nur Perplexity liefert — sie
+         * bleibt dort, solange ein Perplexity-Schlüssel da ist.
+         */
+        const rWahl = aufgabenWahl(s?.aiTaskProviders, 'recherche')
+        const dsWeg = rWahl ? rWahl.provider === 'deepseek' : s?.radarNewsRechercheModell === DEEPSEEK_SUCHE
+        const pModell = rWahl?.provider === 'perplexity' ? rWahl.model
+            : (s?.radarNewsRechercheModell && s.radarNewsRechercheModell !== DEEPSEEK_SUCHE
+                ? s.radarNewsRechercheModell : undefined)
+        const dsCfg = dsWeg ? await ladeLlmConfig({ provider: 'deepseek' }) : null
+        const schreiberCfg = dsWeg
+            ? await ladeLlmConfigFuerAufgabe('recherche-schreiber', { provider: 'anthropic', model: 'claude-haiku-5-5' })
+            : null
+        if (dsWeg ? dsCfg.apiKey : pCfg.apiKey) {
             for (const thema of themen) {
+                const ueberDs = dsWeg && !(thema === 'chartanalyse' && pCfg.apiKey)
+                const rAnbieter = ueberDs ? 'deepseek' : 'perplexity'
                 try {
                     // Chartanalyse: eigene Frage mit den ECHTEN Top 5 nach
                     // Marktkapitalisierung (holeMarkt filtert Stablecoins und
@@ -2566,13 +2584,15 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                             }
                         }
                     }
-                    const r = await rechercheThema({
-                        thema, zeitraumText, apiKey: pCfg.apiKey,
-                        modell: aufgabenWahl(s?.aiTaskProviders, 'recherche')?.model
-                            || s?.radarNewsRechercheModell || undefined,
-                        aktualitaet: aktualitaetFuer({ thema, rhythmus, istUpdate, chartFrische }),
-                        ...extra,
-                    })
+                    const aktualitaet = aktualitaetFuer({ thema, rhythmus, istUpdate, chartFrische })
+                    const r = ueberDs
+                        ? await rechercheDeepseek({
+                            thema, zeitraumText, aktualitaet, frage: extra.frage || '',
+                            dsKey: dsCfg.apiKey, schreiberCfg, ausloeser: manuell ? 'manuell' : 'auto',
+                        })
+                        : await rechercheThema({
+                            thema, zeitraumText, apiKey: pCfg.apiKey, modell: pModell, aktualitaet, ...extra,
+                        })
                     /*
                      * Vor jeder Verwendung durchs Modell selbst prüfen lassen —
                      * siehe Kommentar bei `pruefeChartBilder`. Ein Fehlschlag
@@ -2609,19 +2629,20 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
                         taBilder = gepruefteBilder
                     }
                     if (r.text) {
-                        recherchen.push({ thema, text: r.text })
+                        recherchen.push({ thema, text: r.text, quelle: ueberDs ? 'DeepSeek-Suche' : 'Perplexity' })
                         // Bilder wandern hier an ihren Beleg, wo die Herkunft
                         // zum Zitat passt — siehe Kommentar in `baueRechercheZitate`.
                         // Nur die geprüften: ein Bild ohne Modell-Erklärung soll
                         // auch als Beleg-Bild nicht auftauchen.
                         rechercheZitate.push(...baueRechercheZitate(
-                            r.citations.slice(0, 8), gepruefteBilder, r.quellenDaten))
+                            r.citations.slice(0, 8), gepruefteBilder, r.quellenDaten,
+                            ueberDs ? 'DeepSeek-Recherche' : 'Perplexity-Recherche'))
                     }
                     rechercheKostenUsd += r.kostenUsd
                     rechercheTokens += r.tokens
-                    merkeKiGuthaben('perplexity').catch(() => { })
+                    merkeKiGuthaben(rAnbieter).catch(() => { })
                 } catch (e) {
-                    if (istGuthabenFehler(e.message)) await merkeKiGuthaben('perplexity', e.message)
+                    if (istGuthabenFehler(e.message)) await merkeKiGuthaben(rAnbieter, e.message)
                     logWarn('news', `Recherche ${thema}: ${e.message}`)
                 }
             }
@@ -2702,7 +2723,7 @@ async function baueLagebericht(s, { manuell = false, basis = null } = {}) {
         // Perplexity-Freitext ist Fremdtext wie jeder Beitrag auch.
         teile.push(zitatBlock(
             `RECHERCHE zum Thema ${THEMEN_NAMEN[r.thema] || r.thema} `
-            + '(Perplexity, Belege siehe nummerierte Recherche-Quellen)',
+            + `(${r.quelle || 'Perplexity'}, Belege siehe nummerierte Recherche-Quellen)`,
             r.text))
     }
     const regel = themenRegel(themenGruppen)
