@@ -106,7 +106,9 @@
     "liveAuswertung": "Evaluation",
     "lernen": "Learn",
     "lernenGruppe": "LEARN",
-    "chart": "Chart"
+    "chart": "Chart",
+    "menuEinklappen": "Collapse menu",
+    "menuAusklappen": "Expand menu"
   },
   "filters": {
     "periodRange": "Time period of displayed trades",

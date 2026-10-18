@@ -20,6 +20,19 @@ export const itemToEditId = ref(typeof sessionStorage !== 'undefined' ? sessionS
 export const currentDate = ref()
 export const quill = ref()
 export const sideMenuMobileOut = ref(false)
+/*
+ * Seitenmenü am Desktop eingeklappt (nur Symbole). Im localStorage, weil es
+ * eine Vorliebe dieses Bildschirms ist und vor dem Laden der Einstellungen
+ * feststehen muss — sonst springt das Layout beim Öffnen einmal auf und zu.
+ */
+function leseEingeklappt() {
+    try { return typeof localStorage !== 'undefined' && localStorage.getItem('sideMenuEingeklappt') === '1' } catch { return false }
+}
+export const sideMenuEingeklappt = ref(leseEingeklappt())
+export function schalteSideMenu() {
+    sideMenuEingeklappt.value = !sideMenuEingeklappt.value
+    try { localStorage.setItem('sideMenuEingeklappt', sideMenuEingeklappt.value ? '1' : '0') } catch { /* egal */ }
+}
 export const screenType = ref()
 export const saveButton = ref(false)
 export const windowIsScrolled = ref()

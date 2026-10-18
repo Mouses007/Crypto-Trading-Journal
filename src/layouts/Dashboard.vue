@@ -9,6 +9,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useCreatedDateFormat, useTimeFormat, useHourMinuteFormat } from '../utils/formatters.js'
 import { useInitParse, usePageId, useScreenType, useGetTimeZone, useGetPeriods, useSetValues, useCloseMobileMenu } from '../utils/utils.js'
 import { screenType, sideMenuMobileOut, pageId, selectedScreenshotIndex, appMode, privacyMode } from '../stores/ui.js'
+import { sideMenuEingeklappt } from '../stores/globals.js'
 import { starteZensur } from '../utils/privacy.js'
 import { getMore } from '../stores/filters.js'
 import { screenshots, selectedScreenshot, screenshot } from '../stores/trades.js'
@@ -236,11 +237,12 @@ watch([aiReportGenerating, pageId], ([generating, page]) => {
   <div v-cloak class="container-fluid g-0">
     <div class="row g-0">
       <div v-if="!chromeAus" id="sideMenu" v-bind:class="'min-vh-100 ' +
-        (screenType == 'computer' ? 'sideMenu col-2' : 'sideMenuMobile')
+        (screenType == 'computer' ? (sideMenuEingeklappt ? 'sideMenu sideMenuSchmal' : 'sideMenu col-2') : 'sideMenuMobile')
         ">
         <SideMenu />
       </div>
-      <div :class="[chromeAus ? 'col-12' : 'col-12 col-lg-10', 'position-relative']">
+      <!-- Eingeklappt nimmt der Inhalt den ganzen Rest (`col`), statt bei 10/12 zu bleiben. -->
+      <div :class="[chromeAus ? 'col-12' : (screenType == 'computer' && sideMenuEingeklappt ? 'col inhaltNebenSchmal' : 'col-12 col-lg-10'), 'position-relative']">
         <!-- Tippen neben das ausgefahrene Menü schliesst es. Vorher stand hier
              ein Name, den es im Setup nie gab — der Klick lief ins Leere. -->
         <div v-show="sideMenuMobileOut" class="sideMenuMobileOut position-absolute" v-on:click="useCloseMobileMenu"></div>

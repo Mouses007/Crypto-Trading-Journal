@@ -106,7 +106,9 @@
     "liveAuswertung": "Auswertung",
     "lernen": "Lernen",
     "lernenGruppe": "LERNEN",
-    "chart": "Chart"
+    "chart": "Chart",
+    "menuEinklappen": "Menü einklappen",
+    "menuAusklappen": "Menü ausklappen"
   },
   "filters": {
     "periodRange": "Zeitraum der angezeigten Trades",

@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 import { pageId, screenType, appMode } from "../stores/ui.js"
+import { sideMenuEingeklappt, schalteSideMenu } from '../stores/globals.js'
 import { currentUser } from "../stores/settings.js"
 import { useIstTelefon } from '../utils/geraet.js'
 import { selectedBroker, brokers, selectedTradeCategory, BOT_BROKERS } from "../stores/filters.js"
@@ -312,7 +313,7 @@ function goToDashboard() {
 <template>
     <!-- Der Modus-Umschalter sitzt auf jedem Bildschirm zuoberst im Inhalt
          (Nav.vue), nicht mehr in der Seitenleiste. -->
-    <div class="col-2 logoDiv">
+    <div class="col-2 logoDiv" :class="{ schmal: sideMenuEingeklappt && screenType === 'computer' }">
         <a class="logo-area pointerClass text-decoration-none" :href="logoZiel" @click.prevent="goToDashboard">
             <div class="d-flex align-items-center">
                 <span v-if="currentUser?.avatar"><img class="logoProfileImg me-2" v-bind:src="currentUser.avatar" /></span>
@@ -324,7 +325,13 @@ function goToDashboard() {
             </div>
         </a>
     </div>
-    <div id="step2" class="mt-2">
+    <!-- Ein-/Ausklappen nur am Desktop; am Telefon fährt das Menü ohnehin ganz weg. -->
+    <button v-if="screenType === 'computer'" type="button" class="menuKlappe"
+        :title="sideMenuEingeklappt ? t('nav.menuAusklappen') : t('nav.menuEinklappen')" @click="schalteSideMenu">
+        <i :class="sideMenuEingeklappt ? 'uil uil-angle-double-right' : 'uil uil-angle-double-left'"></i>
+        <span class="menuText">{{ t('nav.menuEinklappen') }}</span>
+    </button>
+    <div id="step2" class="mt-2" :class="{ menuSchmal: sideMenuEingeklappt && screenType === 'computer' }">
         <!-- ===== JOURNAL (auch auf der Übersicht/Startseite: von dort will
              man direkt ins Journal springen können, ohne Modus-Wechsel) ===== -->
         <template v-if="appMode === 'journal' || appMode === 'start'">
@@ -365,13 +372,13 @@ function goToDashboard() {
             <div class="sideMenuDivContent">
                 <label class="fw-lighter">{{ t('nav.analyze') }}</label>
                 <a id="step3" v-bind:class="[pageId === 'dashboard' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/dashboard">
+                    href="/dashboard" :title="t('nav.dashboard')">
                     <i class="uil uil-apps me-2"></i>{{ t('nav.dashboard') }}</a>
-                <a id="step4" v-bind:class="[pageId === 'daily' ? 'activeNavCss' : '', 'nav-link', 'mb-2']" href="/daily">
+                <a id="step4" v-bind:class="[pageId === 'daily' ? 'activeNavCss' : '', 'nav-link', 'mb-2']" href="/daily" :title="t('nav.dailyView')">
                     <i class="uil uil-signal-alt-3 me-2"></i>{{ t('nav.dailyView') }}
                 </a>
                 <a id="step5" v-bind:class="[pageId === 'calendar' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/calendar">
+                    href="/calendar" :title="t('nav.calendar')">
                     <i class="uil uil-calendar-alt me-2"></i>{{ t('nav.calendar') }}</a>
             </div>
         </div>
@@ -380,19 +387,19 @@ function goToDashboard() {
             <div class="sideMenuDivContent">
                 <label class="fw-lighter">{{ t('nav.reflect') }}</label>
                 <a v-bind:class="[pageId === 'playbook' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/playbook">
+                    href="/playbook" :title="t('nav.playbook')">
                     <i class="uil uil-compass me-2"></i>{{ t('nav.playbook') }}
                 </a>
                 <a v-bind:class="[pageId === 'auswertung' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/auswertung">
+                    href="/auswertung" :title="t('nav.evaluation')">
                     <i class="uil uil-chart-pie me-2"></i>{{ t('nav.evaluation') }}
                 </a>
                 <a v-if="currentUser?.aiEnabled !== false && currentUser?.aiEnabled !== 0"
                     v-bind:class="[pageId === 'kiAgent' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/ki-coach">
+                    href="/ki-coach" :title="t('nav.kiAgent')">
                     <i class="uil uil-robot me-2"></i>{{ t('nav.kiAgent') }}</a>
                 <a id="step7" v-bind:class="[pageId === 'screenshots' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/screenshots">
+                    href="/screenshots" title="Screenshots">
                     <i class="uil uil-image-v me-2"></i>Screenshots
                 </a>
             </div>
@@ -402,11 +409,11 @@ function goToDashboard() {
             <div class="sideMenuDivContent">
                 <label class="fw-lighter">{{ t('nav.add') }}</label>
                 <a v-bind:class="[pageId === 'incoming' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/incoming">
+                    href="/incoming" :title="t('nav.pendingTrades')">
                     <i class="uil uil-arrow-circle-down me-2"></i>{{ t('nav.pendingTrades') }}
                 </a>
                 <a v-bind:class="[pageId === 'addTrades' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/addTrades">
+                    href="/addTrades" :title="t('nav.manualImport')">
                     <i class="uil uil-plus-circle me-2"></i>{{ t('nav.manualImport') }}
                 </a>
             </div>
@@ -418,7 +425,7 @@ function goToDashboard() {
             <div v-for="group in liveGroups" :key="group.labelKey" class="sideMenuDiv">
                 <div class="sideMenuDivContent">
                     <label class="fw-lighter">{{ t(group.labelKey) }}</label>
-                    <a v-for="page in group.items" :key="page.id" :href="page.path"
+                    <a v-for="page in group.items" :key="page.id" :href="page.path" :title="t(page.menuKey || page.titleKey)"
                         v-bind:class="[istAktiv(page) ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
                         <i v-bind:class="[page.menuIcon || page.icon, 'me-2']"></i>{{ t(page.menuKey || page.titleKey) }}
                     </a>
@@ -436,7 +443,7 @@ function goToDashboard() {
             <div v-for="group in agentGroups" :key="group.labelKey" class="sideMenuDiv">
                 <div class="sideMenuDivContent">
                     <label class="fw-lighter">{{ t(group.labelKey) }}</label>
-                    <a v-for="page in group.items" :key="page.id" :href="page.path"
+                    <a v-for="page in group.items" :key="page.id" :href="page.path" :title="t(page.menuKey || page.titleKey)"
                         v-bind:class="[istAktiv(page) ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
                         <i v-bind:class="[page.menuIcon || page.icon, 'me-2']"></i>{{ t(page.menuKey || page.titleKey) }}
                     </a>
@@ -449,7 +456,7 @@ function goToDashboard() {
             <div v-for="group in researchGroups" :key="group.labelKey" class="sideMenuDiv">
                 <div class="sideMenuDivContent">
                     <label class="fw-lighter">{{ t(group.labelKey) }}</label>
-                    <a v-for="page in group.items" :key="page.id" :href="page.path"
+                    <a v-for="page in group.items" :key="page.id" :href="page.path" :title="t(page.menuKey || page.titleKey)"
                         v-bind:class="[istAktiv(page) ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
                         <i v-bind:class="[page.menuIcon || page.icon, 'me-2']"></i>{{ t(page.menuKey || page.titleKey) }}
                     </a>
@@ -462,7 +469,7 @@ function goToDashboard() {
             <div v-for="group in lernenGroups" :key="group.labelKey" class="sideMenuDiv">
                 <div class="sideMenuDivContent">
                     <label class="fw-lighter">{{ t(group.labelKey) }}</label>
-                    <a v-for="page in group.items" :key="page.id" :href="page.path"
+                    <a v-for="page in group.items" :key="page.id" :href="page.path" :title="t(page.menuKey || page.titleKey)"
                         v-bind:class="[istAktiv(page) ? 'activeNavCss' : '', 'nav-link', 'mb-2']">
                         <i v-bind:class="[page.menuIcon || page.icon, 'me-2']"></i>{{ t(page.menuKey || page.titleKey) }}
                     </a>
@@ -475,10 +482,10 @@ function goToDashboard() {
             <div class="sideMenuDivContent">
                 <label class="fw-lighter">{{ t('nav.manage') }}</label>
                 <a v-bind:class="[pageId === 'settings' ? 'activeNavCss' : '', 'nav-link', 'mb-2']"
-                    href="/settings">
+                    href="/settings" :title="t('nav.settings')">
                     <i class="uil uil-setting me-2"></i>{{ t('nav.settings') }}
                 </a>
-                <a v-if="authEnabled" class="nav-link mb-2 pointerClass" @click="logout">
+                <a v-if="authEnabled" class="nav-link mb-2 pointerClass" title="Abmelden" @click="logout">
                     <i class="uil uil-signout me-2"></i>Abmelden
                 </a>
             </div>
@@ -581,6 +588,30 @@ function goToDashboard() {
     text-decoration: none;
     display: inline-flex;
     align-items: center;
+}
+
+/* ── Ein-/Ausklappen ─────────────────────────────────────────────────── */
+.menuKlappe {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: calc(100% - 1rem);
+    margin: -1.6rem 0.5rem 0.4rem;
+    padding: 0.25rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--white-38);
+    font-size: 0.72rem;
+}
+
+.menuKlappe:hover {
+    color: var(--white-87);
+    background: var(--black-bg-12);
+}
+
+.menuKlappe i {
+    font-size: 1.1rem;
 }
 
 /* Footer */

@@ -533,6 +533,82 @@ input:checked+.slider:before {
     background-color: transparent;
 }
 
+/* Eingeklapptes Seitenmenü: nur Symbole. Beschriftungen, Filter und
+   Fusszeile fallen weg; der Seitenname steht im Tooltip (`title`). */
+.sideMenu.sideMenuSchmal {
+    flex: 0 0 64px;
+    width: 64px;
+    max-width: 64px;
+    overflow-x: hidden;
+}
+
+.inhaltNebenSchmal {
+    min-width: 0;
+}
+
+.logoDiv.schmal {
+    /* `col-2` hiesse hier ein Sechstel von 64 px — das Bild würde abgeschnitten. */
+    width: 64px !important;
+    max-width: 64px;
+    flex: none;
+    padding: 0.75rem 0 1.4rem;
+    margin-bottom: 1.6rem;
+}
+
+.logoDiv.schmal .logo-area > div {
+    justify-content: center;
+    width: 100%;
+}
+
+.logoDiv.schmal .logoProfileImg {
+    width: 40px;
+    height: 40px;
+}
+
+.logoDiv.schmal .logo-text {
+    display: none;
+}
+
+.logoDiv.schmal .logoProfileImg {
+    margin: 0 auto !important;
+}
+
+.sideMenuSchmal .menuKlappe {
+    justify-content: center;
+    padding: 0.3rem 0;
+}
+
+.sideMenuSchmal .menuKlappe .menuText,
+.menuSchmal .sideMenuDiv label,
+.menuSchmal .category-pills,
+.menuSchmal .sidebar-footer,
+.menuSchmal .sideMenuDiv:has(.category-pills),
+.menuSchmal .sideMenuDiv:has(.livePicker) {
+    display: none !important;
+}
+
+.menuSchmal .sideMenuDiv {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+}
+
+.menuSchmal .sideMenuDivContent {
+    padding: 0;
+}
+
+.menuSchmal .sideMenuDiv a.nav-link {
+    font-size: 0;
+    display: flex;
+    justify-content: center;
+    margin: 2px 8px;
+    padding: 0.5rem 0;
+}
+
+.menuSchmal .sideMenuDiv a.nav-link i {
+    font-size: 1.25rem;
+    margin: 0 !important;
+}
+
 .sideMenuMobile {
     background-color: var(--black-bg-5);
     box-shadow: 2px 0 12px rgba(0, 0, 0, 0.3);
