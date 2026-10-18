@@ -8,7 +8,7 @@
  * 1.00. Jede Wand lag weit unter dem Bild, das Overlay zeigte nichts, und
  * niemand merkte es, weil „nichts" bei einem Orderbuch plausibel aussieht.
  */
-import { waendeAusBuch, liqJeKerze } from './chart/overlays/MarktEbene.js'
+import { waendeAusBuch, liqJeKerze, platziereSchilder } from './chart/overlays/MarktEbene.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -33,6 +33,20 @@ console.log('\nOrderbuch-Wände\n')
     const glatt = waendeAusBuch({ bids: bids.map(([p]) => [p, '10']), asks: asks.map(([p]) => [p, '10']) })
     check('Gegenprobe: gleichmässiges Buch → keine Wand', glatt.kaeufe.length === 0 && glatt.verkaeufe.length === 0)
     check('leeres Buch bricht nicht', waendeAusBuch({ bids: [], asks: [] }).kaeufe.length === 0)
+}
+
+console.log('\nSchilder ohne Überlappung\n')
+{
+    // BTC-Fall: vier Wände in 10 px um den Kurs
+    const p = platziereSchilder([
+        { y: 100, usd: 1.2e6, seite: 'Bid' }, { y: 102, usd: 0.5e6, seite: 'Bid' },
+        { y: 96, usd: 0.59e6, seite: 'Ask' }, { y: 108, usd: 0.76e6, seite: 'Bid' }, { y: 200, usd: 0.3e6, seite: 'Ask' },
+    ])
+    check('gleiche Seite unter 4 px → eine Wand, USD addiert', p.filter((w) => w.seite === 'Bid').length === 2 && p.some((w) => w.usd === 1.7e6))
+    check('grösste bekommt das Schild', p.find((w) => w.usd === 1.7e6).schild === true)
+    check('zu nahe Schilder bleiben weg', p.filter((w) => w.y < 120 && w.schild).length === 1, JSON.stringify(p))
+    check('Gegenprobe: Wand weit weg behält ihr Schild', p.find((w) => w.y === 200).schild === true)
+    check('Gegenprobe: andere Seite wird NICHT zusammengefasst', p.some((w) => w.seite === 'Ask' && w.y === 96))
 }
 
 console.log('\nLiquidationen je Kerze\n')

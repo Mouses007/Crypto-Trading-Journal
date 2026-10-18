@@ -116,6 +116,33 @@ export function liqJeKerze(liq, zeiten) {
     return [...aus.values()].map(({ pUsd, ...b }) => ({ ...b, preis: pUsd / b.usd }))
 }
 
+/**
+ * Wände auf dem Bildschirm entzerren. Bei BTC reicht das Buch nur ±0,07 %:
+ * alle Wände liegen in wenigen Pixeln um den Kurs, und ihre Schilder standen
+ * übereinander („Bid … Bid 1.2 B…"). Darum:
+ *   1. Wände DERSELBEN Seite, die näher als `zusammen` px liegen, werden eine
+ *      (USD addiert, Höhe der grösseren) — auf diesem Zoom sind sie eine.
+ *   2. Schilder nach Grösse vergeben; liegt ein Schild näher als `abstand` px
+ *      an einem schon vergebenen, bleibt es weg — Linie und Balken nicht.
+ * @param {Array<{y, usd, seite}>} wände
+ * @returns dieselben (zusammengefasst) mit `schild: bool`
+ */
+export function platziereSchilder(waende, { zusammen = 4, abstand = 13 } = {}) {
+    const sortiert = [...waende].sort((a, b) => b.usd - a.usd)
+    const eins = []
+    for (const w of sortiert) {
+        const nah = eins.find((e) => e.seite === w.seite && Math.abs(e.y - w.y) < zusammen)
+        if (nah) nah.usd += w.usd
+        else eins.push({ ...w })
+    }
+    const belegt = []
+    for (const w of eins) {
+        w.schild = !belegt.some((y) => Math.abs(y - w.y) < abstand)
+        if (w.schild) belegt.push(w.y)
+    }
+    return eins
+}
+
 export class MarktEbene {
     constructor({ chart, serie }) {
         this.chart = chart
@@ -179,13 +206,13 @@ export class MarktEbene {
         const alle = [
             ...this.waende.kaeufe.map((w) => ({ ...w, rgb: GRUEN, seite: 'Bid' })),
             ...this.waende.verkaeufe.map((w) => ({ ...w, rgb: ROT, seite: 'Ask' })),
-        ]
+        ].map((w) => ({ ...w, y: this.zuY(w.preis) })).filter((w) => w.y != null)
         if (!alle.length) return
-        const max = Math.max(...alle.map((e) => e.usd), 1)
+        const platz = platziereSchilder(alle)
+        const max = Math.max(...platz.map((e) => e.usd), 1)
         const lang = Math.min(120, breite * 0.18)
-        for (const w of alle) {
-            const y = this.zuY(w.preis)
-            if (y == null) continue
+        for (const w of platz) {
+            const y = w.y
             ctx.strokeStyle = `rgba(${w.rgb},0.35)`
             ctx.lineWidth = 1
             ctx.setLineDash([2, 4])
@@ -194,6 +221,7 @@ export class MarktEbene {
             const l = Math.max(10, (w.usd / max) * lang)
             ctx.fillStyle = `rgba(${w.rgb},0.75)`
             ctx.fillRect(breite - l, y - 2, l, 4)
+            if (!w.schild) continue
             const text = `${w.seite} ${usdKurz(w.usd)}`
             const b = ctx.measureText(text).width
             ctx.fillStyle = 'rgba(10,14,22,0.75)'
