@@ -133,6 +133,8 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
         <div class="gruppe">
             <button v-for="s in SKALEN" :key="s" class="tf" :class="{ an: (panel.skala || 'normal') === s }"
                 :title="t('chart.skala.' + s)" @click="emit('panel', { skala: s })">{{ t('chart.skalaKurz.' + s) }}</button>
+            <button class="tf" :class="{ an: panel.autoSkala !== false }" :title="t(panel.autoSkala !== false ? 'chart.autoAn' : 'chart.autoAus')"
+                @click="emit('panel', { autoSkala: panel.autoSkala === false })">{{ t('chart.autoKurz') }}</button>
         </div>
 
         <div class="gruppe">

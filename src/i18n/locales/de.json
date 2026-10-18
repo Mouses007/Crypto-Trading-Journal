@@ -4796,6 +4796,7 @@
     "tage": "{n} Tage"
   },
   "chart": {
+    "autoKurz": "Auto",
     "volumen": "Volumen",
     "autoAn": "Automatisch einpassen ist an (Klick: aus)",
     "autoAus": "Automatisch einpassen — Klick passt den Kurs wieder ins Bild",

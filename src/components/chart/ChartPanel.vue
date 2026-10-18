@@ -46,7 +46,7 @@ const props = defineProps({
     zeichnungenVersteckt: { type: Boolean, default: false },
     alarmLinien: { type: Array, default: () => [] },  // aktive Preis-Alarme dieses Symbols
 })
-const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen', 'indikator', 'werkzeugFertig', 'alarmAufZeichnung', 'alarmBeiPreis', 'alleLoeschen'])
+const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen', 'indikator', 'werkzeugFertig', 'alarmAufZeichnung', 'alarmBeiPreis', 'alleLoeschen', 'panel'])
 const { t, locale } = useI18n()
 
 const huelle = ref(null)
@@ -722,24 +722,35 @@ function wendeSkalaAn() {
  * aus (ETH auf der BTC-Skala 77 000–87 500, also leer). Darum bei jedem
  * Neuladen wieder an, und der Knopf „A" unten rechts zeigt und schaltet es.
  */
-const autoSkala = ref(true)
+const autoSkala = ref(props.panel.autoSkala !== false)
 function preisSkalen() {
     const c = chart.value
     if (!c) return []
     return c.panes().map((_, i) => c.priceScale('right', i))
 }
+/** Zustand ins Layout melden (`panel.autoSkala`) — dort liest ihn der „Auto"-Schalter der Kopfleiste. */
+function meldeAutoSkala() {
+    if ((props.panel.autoSkala !== false) !== autoSkala.value) emit('panel', { autoSkala: autoSkala.value })
+}
 function pruefeAutoSkala() {
     const s0 = preisSkalen()[0]
     if (s0) autoSkala.value = !!s0.options().autoScale
+    meldeAutoSkala()
 }
 function autoEinpassen(an = true) {
     for (const s of preisSkalen()) s.applyOptions({ autoScale: an })
     autoSkala.value = an
+    meldeAutoSkala()
 }
+// Schalter in der Kopfleiste (oder ein anderes Gerät) hat umgestellt
+watch(() => props.panel.autoSkala !== false, (an) => { if (an !== autoSkala.value) autoEinpassen(an) })
 
 async function ladeNeu() {
     const nr = ++ladeNummer
-    autoEinpassen(true)
+    // Jedes Neuladen passt EINMAL ein — sonst zeigte die alte Skala den leeren
+    // Bereich des vorigen Symbols. Ist „Auto" aus, friert die Skala danach an
+    // dieser Stelle ein (siehe unten nach setzeDaten), statt dem Kurs zu folgen.
+    for (const s of preisSkalen()) s.applyOptions({ autoScale: true })
     live?.stop()
     live = null
     historieZuEnde = false
@@ -766,6 +777,12 @@ async function ladeNeu() {
         // Die jüngsten ~150 Kerzen zeigen, nicht alle tausend gequetscht.
         const n = liste.length
         if (n) chart.value?.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 8 })
+        if (props.panel.autoSkala === false) {
+            // Erst zeichnen lassen (die Skala übernimmt den eingepassten Bereich), dann einfrieren.
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                if (nr === ladeNummer && props.panel.autoSkala === false) for (const s of preisSkalen()) s.applyOptions({ autoScale: false })
+            }))
+        }
         wendePreisformatAn()
         starteLive(nr)
     } catch (e) {
