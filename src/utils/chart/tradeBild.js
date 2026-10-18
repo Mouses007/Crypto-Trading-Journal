@@ -2,7 +2,9 @@
  * Chartbild zu einem Trade — ohne sichtbares Panel.
  *
  * Für die Einstiegsbewertung auf „Pendente Trades": das System holt den Chart
- * der gewählten Zeiteinheit selbst, zeichnet Einstieg, Stop und Ziel ein und —
+ * der gewählten Zeiteinheit selbst, zeichnet den Trade mit dem Long/Short-
+ * Positionswerkzeug des Charts ein (dieselbe ZeichenEbene, also dieselben
+ * Flächen und dieselbe R-Angabe; fehlt Stop oder Ziel, als Preislinien) und —
  * wenn ein Strategie-Tag gesetzt ist (LSOB, GUSS) — die Setups der Strategie
  * mit ihrem Order Block bzw. ihrer EMA-Zone. Das Bild wird wie ein von Hand
  * hochgeladener Screenshot am Trade abgelegt und wandert beim Abschluss mit
@@ -19,6 +21,7 @@ import axios from 'axios'
 import dayjs from 'dayjs'
 import { ladeKerzen, INTERVALL_MS } from './kerzenQuelle.js'
 import { SignalZeichnung } from './signalZeichnung.js'
+import { ZeichenEbene } from './zeichnungen/ZeichenEbene.js'
 import { ema } from '../../../shared/indicators.js'
 import { normSymbol } from '../../../shared/symbol.js'
 
@@ -92,6 +95,7 @@ export async function erzeugeTradeBild({ symbol, interval, richtung, einstiegT, 
         },
         localization: { locale: 'de-CH', timeFormatter: (z) => dayjs.unix(z).format('DD.MM.YY HH:mm') },
     })
+    let zeichenEbene = null
     try {
         const zuLwc = (t) => Math.floor(t / 1000)
         const serie = chart.addSeries(CandlestickSeries, {
@@ -109,17 +113,29 @@ export async function erzeugeTradeBild({ symbol, interval, richtung, einstiegT, 
             }
         }
 
-        // Einstieg, Stop, Ziel — beschriftet an der Preisachse
         const long = richtung === 'long'
-        const linie = (preis, farbe, titel, stil) => {
-            if (!(preis > 0)) return
-            serie.createPriceLine({ price: preis, color: farbe, lineWidth: 2, lineStyle: stil, axisLabelVisible: true, title: titel })
-        }
-        linie(einstiegP, '#e0e0e0', `Einstieg ${long ? 'Long' : 'Short'}`, LineStyle.Solid)
-        linie(sl, '#ef5350', 'Stop', LineStyle.Dashed)
-        linie(tp, '#26a69a', 'Ziel', LineStyle.Dashed)
-        // Pfeil an der Einstiegskerze
         const iE = kerzen.reduce((b, k, i) => (k.t <= einstiegT ? i : b), 0)
+        if (sl > 0 && tp > 0 && einstiegP > 0) {
+            // Wie das Positionswerkzeug: Fläche ab der Einstiegskerze bis zur letzten
+            // Kerze (mindestens 20 Kerzen breit), Punkte = Einstieg, Ziel, Stop.
+            const ende = Math.max(kerzen[kerzen.length - 1].t, kerzen[iE].t + 20 * iv)
+            zeichenEbene = new ZeichenEbene({ huelle, chart, serie, rueckruf: {}, formatPreis: (p) => serie.priceFormatter().format(p) })
+            zeichenEbene.setzeKerzen(kerzen, iv)
+            zeichenEbene.setzeZeichnungen([{
+                id: 1, typ: 'position', stil: {}, gesperrt: true,
+                punkte: [{ t: kerzen[iE].t, p: einstiegP }, { t: ende, p: tp }, { t: ende, p: sl }],
+            }])
+        } else {
+            // Ohne Stop oder Ziel gibt es keine Position — dann Linien an der Preisachse.
+            const linie = (preis, farbe, titel, stil) => {
+                if (!(preis > 0)) return
+                serie.createPriceLine({ price: preis, color: farbe, lineWidth: 2, lineStyle: stil, axisLabelVisible: true, title: titel })
+            }
+            linie(einstiegP, '#e0e0e0', `Einstieg ${long ? 'Long' : 'Short'}`, LineStyle.Solid)
+            linie(sl, '#ef5350', 'Stop', LineStyle.Dashed)
+            linie(tp, '#26a69a', 'Ziel', LineStyle.Dashed)
+        }
+        // Pfeil an der Einstiegskerze
         createSeriesMarkers(serie, [{
             time: zuLwc(kerzen[iE].t), position: long ? 'belowBar' : 'aboveBar',
             color: long ? '#26a69a' : '#ef5350', shape: long ? 'arrowUp' : 'arrowDown', text: long ? 'Long' : 'Short',
@@ -145,6 +161,7 @@ export async function erzeugeTradeBild({ symbol, interval, richtung, einstiegT, 
         await warteFrame(); await warteFrame()
         return chart.takeScreenshot(true).toDataURL('image/jpeg', 0.88)
     } finally {
+        zeichenEbene?.abbauen()
         chart.remove()
         huelle.remove()
     }
