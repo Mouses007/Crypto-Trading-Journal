@@ -166,3 +166,75 @@ export async function erzeugeTradeBild({ symbol, interval, richtung, einstiegT, 
         huelle.remove()
     }
 }
+
+/**
+ * Chartbild aus dem ECHTEN Chart: ein ChartPanel mit den Indikatoren und
+ * Overlays des aktiven Layouts (wie auf /chart eingestellt), unsichtbar
+ * gerendert. Die offene Position zeichnet die Journal-Ebene des Panels als
+ * Box wie das Positionswerkzeug; rechts bleibt Platz, damit Box und Schilder
+ * ganz im Bild stehen. Mit Strategie-Tag kommt deren Signal-Indikator dazu.
+ * Schlägt etwas fehl, das schlanke Bild von `erzeugeTradeBild`.
+ *
+ * @param {object} o wie `erzeugeTradeBild`
+ */
+export async function erzeugeChartBild(o) {
+    try {
+        return await chartBildAusPanel(o)
+    } catch (e) {
+        console.warn(' -> Chartbild aus dem Layout fehlgeschlagen, schlankes Bild:', e?.message || e)
+        return erzeugeTradeBild(o)
+    }
+}
+
+const STRATEGIE_INDIKATOR = { lsob: 'lsob', ema_touch: 'guss' }
+const pause = (ms) => new Promise((r) => setTimeout(r, ms))
+
+async function chartBildAusPanel({ symbol, interval, strategie = null, breite = 1600, hoehe = 900 }) {
+    const [{ createApp, h, ref }, { default: ChartPanel }, { default: i18n }, { neueInstanz, INDIKATOREN }] = await Promise.all([
+        import('vue'), import('../../components/chart/ChartPanel.vue'), import('../../i18n/index.js'), import('./indikatorRegister.js'),
+    ])
+    const sym = normSymbol(symbol)
+    if (!sym || !INTERVALL_MS[interval]) throw new Error(`Zeiteinheit ${interval} wird für das Chartbild nicht unterstützt`)
+
+    // Indikatoren und Overlays des aktiven Layouts — bevorzugt vom Panel mit demselben Symbol.
+    let vorlage = null
+    try {
+        const { data } = await axios.get('/api/chart/layouts')
+        const layout = (data || []).find((l) => l.aktiv) || (data || [])[0]
+        const panels = layout?.daten?.panels || []
+        vorlage = panels.find((p) => normSymbol(p.symbol) === sym) || panels[layout?.daten?.aktiv || 0] || panels[0] || null
+    } catch { vorlage = null }
+    const indikatoren = (vorlage?.indikatoren || []).filter((i) => INDIKATOREN[i.typ] && i.sichtbar !== false)
+    const sTyp = STRATEGIE_INDIKATOR[strategie]
+    if (sTyp && INDIKATOREN[sTyp] && !indikatoren.some((i) => i.typ === sTyp)) indikatoren.push(neueInstanz(sTyp))
+    const panel = ref({
+        symbol: sym, markt: 'futures', boerse: 'binance', interval, skala: vorlage?.skala || 'normal',
+        indikatoren, overlays: { ...(vorlage?.overlays || {}), journal: true, positionen: true }, autoSkala: true,
+    })
+
+    const huelle = document.createElement('div')
+    huelle.style.cssText = `position:fixed;left:-20000px;top:0;width:${breite}px;height:${hoehe}px;pointer-events:none;display:flex;`
+    document.body.appendChild(huelle)
+    const panelRef = ref(null)
+    const app = createApp({ render: () => h(ChartPanel, { ref: panelRef, panel: panel.value, nummer: 0, aktiv: false, style: 'flex:1;min-width:0;' }) })
+    app.use(i18n)
+    try {
+        app.mount(huelle)
+        // Kerzen abwarten, dann die nachgeladenen Daten (höhere Zeiteinheiten, Positionen, Journal).
+        const bis = Date.now() + 20_000
+        while (Date.now() < bis && !(panelRef.value?.kerzen?.length > 20)) await pause(200)
+        const p = panelRef.value
+        if (!(p?.kerzen?.length > 20)) throw new Error('keine Kerzen')
+        await pause(3500)
+        const n = p.kerzen.length
+        // Rechts Platz für die Box (20 Kerzen) und ihre Schilder.
+        p.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 160), to: n + 32 })
+        await warteFrame(); await warteFrame(); await pause(150)
+        const leinwand = p.bildschirmfoto()
+        if (!leinwand) throw new Error('kein Bild')
+        return leinwand.toDataURL('image/jpeg', 0.88)
+    } finally {
+        app.unmount()
+        huelle.remove()
+    }
+}

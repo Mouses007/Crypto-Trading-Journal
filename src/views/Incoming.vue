@@ -53,7 +53,7 @@ useVerlassenSchutz(() => {
 // ===== COMPOUND/FILLS TRACKING =====
 import axios from 'axios'
 import { holeTpSlOrders, aggregiereTpSl } from '../utils/positionTpsl.js'
-import { erzeugeTradeBild, chartZeiteinheit, strategieAusTags } from '../utils/chart/tradeBild.js'
+import { erzeugeChartBild, chartZeiteinheit, strategieAusTags } from '../utils/chart/tradeBild.js'
 const positionFills = ref({}) // Map: positionId → { loading, trades[], error }
 
 async function fetchPositionFills(positionId, force = false, broker = 'bitunix', symbol = '', openTime = null, posSide = '') {
@@ -812,7 +812,7 @@ async function chartBildErzeugen(pos, { auto = false } = {}) {
         await fetchPositionTpSl(pos.positionId, true, pos.broker, pos.symbol).catch(() => {})
         const { sl, tp } = getTpSlForPosition(pos.positionId)
         const strategie = strategieAusTags(pos.tags)
-        const bild = await erzeugeTradeBild({
+        const bild = await erzeugeChartBild({
             symbol: pos.symbol, interval: tf, richtung: pos.side === 'SHORT' ? 'short' : 'long',
             einstiegT: einstiegsZeit(pos), einstiegP: parseFloat(pos.entryPrice),
             sl: parseFloat(sl) || null, tp: parseFloat(tp) || null, strategie,
