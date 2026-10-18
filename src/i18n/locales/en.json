@@ -402,7 +402,7 @@
         "researchLabel": "Research & X search",
         "researchHint": "With a Perplexity key the briefing additionally researches each topic on the web (sources included); with an xAI key, X sources are fetched via Grok — once a day. Both keys live under Access. Without a key the respective step is skipped silently.",
         "grokModel": "Grok model for the X search:",
-        "perplexityModel": "Perplexity model:",
+        "perplexityModel": "Research:",
         "videosLabel": "Videos per run to Gemini",
         "videosHint": "Video is the most expensive input type — billed by length. 0 = watch no videos; the briefing then uses only titles and video descriptions.",
         "geminiDefault": "Gemini default",
@@ -940,7 +940,12 @@
     "strategyNo": "No",
     "closingEmotionLevel": "Emotion Level (Closing)",
     "closingEmotions": "Emotions (Closing)",
-    "closingEmotionsPlaceholder": "How did you feel at closing?"
+    "closingEmotionsPlaceholder": "How did you feel at closing?",
+    "chartBild": "Create chart image",
+    "chartBildTipp": "Fetches the chart of the selected timeframe with entry, stop and target — with tag \"LSOB\" or \"GUSS\" also their setups including the order block — and stores it as a screenshot.",
+    "chartBildHinweis": "Automatic when choosing the timeframe; an LSOB/GUSS tag adds the strategy.",
+    "chartBildTf": "Choose a timeframe first.",
+    "chartBildVoll": "Both screenshot slots are taken — remove one."
   },
   "addTrades": {
     "apiImport": "API Import",

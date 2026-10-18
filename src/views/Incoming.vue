@@ -53,6 +53,7 @@ useVerlassenSchutz(() => {
 // ===== COMPOUND/FILLS TRACKING =====
 import axios from 'axios'
 import { holeTpSlOrders, aggregiereTpSl } from '../utils/positionTpsl.js'
+import { erzeugeTradeBild, chartZeiteinheit, strategieAusTags } from '../utils/chart/tradeBild.js'
 const positionFills = ref({}) // Map: positionId → { loading, trades[], error }
 
 async function fetchPositionFills(positionId, force = false, broker = 'bitunix', symbol = '', openTime = null, posSide = '') {
@@ -764,6 +765,76 @@ function updateTimeframe(pos, value) {
     const newValue = pos.entryTimeframe === value ? '' : value
     pos.entryTimeframe = newValue
     useUpdateIncomingPosition(pos.objectId, { entryTimeframe: newValue })
+    // Zeiteinheit gewählt → Chartbild automatisch (ersetzt nur ein selbst erzeugtes, nie ein hochgeladenes)
+    if (newValue) chartBildErzeugen(pos, { auto: true })
+}
+
+// ===== CHARTBILD (automatisch) =====
+/*
+ * Bei der Einstiegsbewertung holt das System den Chart der gewählten
+ * Zeiteinheit selbst — mit Einstieg, Stop, Ziel und, wenn ein Strategie-Tag
+ * gesetzt ist (LSOB / GUSS), deren Setups samt Order Block. Das Bild liegt in
+ * einem der beiden Screenshot-Felder und geht beim Abschluss wie ein
+ * hochgeladenes mit ins Journal.
+ * `autoBild` merkt sich je Position, welches Feld das selbst erzeugte Bild hält
+ * (Name `incoming_chart_<positionId>` in der DB) — nur dieses wird ersetzt.
+ */
+const autoBild = ref({})       // positionId → 'entry' | 'trend'
+const chartBildStand = ref({})  // positionId → { laeuft, fehler }
+
+function einstiegsZeit(pos) {
+    const d = pos.bitunixData || {}
+    const t = Number(d.ctime ?? d.cTime ?? d.createTime ?? d.openTime)
+    if (Number.isFinite(t) && t > 0) return t < 1e12 ? t * 1000 : t
+    return pos.createdAt ? dayjs(pos.createdAt).valueOf() : Date.now()
+}
+
+async function autoSlotErmitteln(pos) {
+    if (autoBild.value[pos.positionId]) return autoBild.value[pos.positionId]
+    // Nach einem Neuladen: am Namen erkennen, ob ein Feld schon ein selbst erzeugtes Bild hält
+    for (const [slot, id] of [['entry', pos.entryScreenshotId], ['trend', pos.trendScreenshotId]]) {
+        if (!id) continue
+        try { const sc = await dbGet('screenshots', id); if (sc?.name === `incoming_chart_${pos.positionId}`) return slot } catch { /* weg */ }
+    }
+    return null
+}
+
+async function chartBildErzeugen(pos, { auto = false } = {}) {
+    if (!pos || isBotPosition(pos)) return
+    const tf = chartZeiteinheit(pos.entryTimeframe)
+    if (!tf) { if (!auto) chartBildStand.value[pos.positionId] = { fehler: t('incoming.chartBildTf') }; return }
+    if (chartBildStand.value[pos.positionId]?.laeuft) return
+    let slot = await autoSlotErmitteln(pos)
+    if (!slot) slot = !pos.entryScreenshotId ? 'entry' : !pos.trendScreenshotId ? 'trend' : null
+    if (!slot) { if (!auto) chartBildStand.value[pos.positionId] = { fehler: t('incoming.chartBildVoll') }; return }
+    chartBildStand.value[pos.positionId] = { laeuft: true }
+    try {
+        await fetchPositionTpSl(pos.positionId, true, pos.broker, pos.symbol).catch(() => {})
+        const { sl, tp } = getTpSlForPosition(pos.positionId)
+        const strategie = strategieAusTags(pos.tags)
+        const bild = await erzeugeTradeBild({
+            symbol: pos.symbol, interval: tf, richtung: pos.side === 'SHORT' ? 'short' : 'long',
+            einstiegT: einstiegsZeit(pos), einstiegP: parseFloat(pos.entryPrice),
+            sl: parseFloat(sl) || null, tp: parseFloat(tp) || null, strategie,
+        })
+        const sc = await dbCreate('screenshots', {
+            name: `incoming_chart_${pos.positionId}`,
+            symbol: pos.symbol,
+            side: pos.side === 'LONG' ? 'B' : 'SS',
+            broker: pos.broker || selectedBroker.value || 'bitunix',
+            originalBase64: bild, annotatedBase64: '', markersOnly: 1, maState: {},
+            dateUnix: Math.floor(einstiegsZeit(pos) / 1000),
+            dateUnixDay: dayjs(einstiegsZeit(pos)).utc().startOf('day').unix(),
+        })
+        const feld = slot === 'entry' ? 'entryScreenshotId' : 'trendScreenshotId'
+        await useUpdateIncomingPosition(pos.objectId, { [feld]: sc.objectId })
+        pos[feld] = sc.objectId
+        ;(slot === 'entry' ? entryScreenshotPreviews : trendScreenshotPreviews).value[pos.positionId] = bild
+        autoBild.value[pos.positionId] = slot
+        chartBildStand.value[pos.positionId] = { laeuft: false, fehler: '' }
+    } catch (e) {
+        chartBildStand.value[pos.positionId] = { laeuft: false, fehler: e.response?.data?.error || e.message }
+    }
 }
 
 // ===== CLOSING FIELD HANDLERS =====
@@ -880,7 +951,10 @@ function addTag(pos, tag) {
     if (pos.tags === pos.closingTags) pos.closingTags = Array.isArray(pos.closingTags) ? JSON.parse(JSON.stringify(pos.closingTags)) : []
     if (!Array.isArray(pos.tags)) pos.tags = []
     if (pos.tags.some(t => t.id === tag.id)) return
+    const vorher = strategieAusTags(pos.tags)
     pos.tags.push({ id: tag.id, name: tag.name })
+    // Strategie-Tag (LSOB/GUSS) dazu → Chartbild mit deren Setups neu, wenn eine Zeiteinheit steht
+    if (strategieAusTags(pos.tags) !== vorher && pos.entryTimeframe) chartBildErzeugen(pos, { auto: true })
 }
 
 function removeTag(pos, idx) {
@@ -1781,6 +1855,16 @@ function getPositionDate(pos) {
                             @click.stop="kopiertesBildEinfuegen(pos, pos.entryScreenshotId ? 'trend' : 'entry')">
                             <i class="uil uil-clipboard-notes me-1"></i>Kopiertes Bild einfügen
                         </button>
+                        <!-- Chartbild: Einstieg/Stop/Ziel + Strategie-Setups (LSOB/GUSS-Tag) automatisch -->
+                        <div class="d-flex align-items-center gap-2 mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-info" :disabled="chartBildStand[pos.positionId]?.laeuft"
+                                :title="t('incoming.chartBildTipp')" @click.stop="chartBildErzeugen(pos)">
+                                <span v-if="chartBildStand[pos.positionId]?.laeuft" class="spinner-border spinner-border-sm me-1"></span>
+                                <i v-else class="uil uil-chart me-1"></i>{{ t('incoming.chartBild') }}
+                            </button>
+                            <small v-if="chartBildStand[pos.positionId]?.fehler" class="text-warning">{{ chartBildStand[pos.positionId].fehler }}</small>
+                            <small v-else class="text-muted">{{ t('incoming.chartBildHinweis') }}</small>
+                        </div>
                     </div>
 
                     </div><!-- /opening-eval-section -->

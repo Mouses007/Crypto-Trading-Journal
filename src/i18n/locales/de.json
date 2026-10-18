@@ -402,7 +402,7 @@
         "researchLabel": "Recherche & X-Suche",
         "researchHint": "Mit Perplexity-Schlüssel recherchiert der Bericht je Thema zusätzlich im Web (Belege inklusive); mit xAI-Schlüssel werden X-Quellen über Grok geholt — einmal am Tag. Beide Schlüssel stehen unter Zugang. Ohne Schlüssel entfällt der jeweilige Schritt still.",
         "grokModel": "Grok-Modell für die X-Suche:",
-        "perplexityModel": "Perplexity-Modell:",
+        "perplexityModel": "Recherche:",
         "videosLabel": "Videos je Lauf an Gemini",
         "videosHint": "Video ist der teuerste Eingabetyp — abgerechnet nach Länge. 0 = keine Videos ansehen, dann nutzt der Bericht nur Titel und Videobeschreibung.",
         "geminiDefault": "Gemini-Vorgabe",
@@ -940,7 +940,12 @@
     "strategyNo": "Nein",
     "closingEmotionLevel": "Emotionslevel (Abschluss)",
     "closingEmotions": "Emotionen (Abschluss)",
-    "closingEmotionsPlaceholder": "Wie hast du dich beim Abschluss gefühlt?"
+    "closingEmotionsPlaceholder": "Wie hast du dich beim Abschluss gefühlt?",
+    "chartBild": "Chartbild erzeugen",
+    "chartBildTipp": "Holt den Chart der gewählten Zeiteinheit mit Einstieg, Stop und Ziel — mit Tag „LSOB\" oder „GUSS\" auch deren Setups samt Order Block — und legt ihn als Screenshot ab.",
+    "chartBildHinweis": "Automatisch bei Wahl der Zeiteinheit; ein LSOB-/GUSS-Tag zeichnet die Strategie mit ein.",
+    "chartBildTf": "Erst eine Zeiteinheit wählen.",
+    "chartBildVoll": "Beide Screenshot-Felder sind belegt — eines entfernen."
   },
   "addTrades": {
     "apiImport": "API Import",
