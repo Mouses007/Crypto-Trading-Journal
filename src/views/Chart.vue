@@ -424,12 +424,44 @@ function taste(e) {
     if (/^[a-z0-9]$/i.test(e.key)) kopf.value?.oeffneSuche()
 }
 
+/*
+ * Höhe der Seite: genau das, was unter dem Kopf bleibt. Eine feste Abzugszahl
+ * (früher 100dvh − 130px) stimmte nie ganz — Kopf und Moduszeile sind 147 px
+ * hoch, auf schmalen Fenstern bricht die Kopfleiste um — und die Seite liess
+ * sich 30 px scrollen. Gemessen wird die Lage der Seite und der Rand darunter.
+ */
+const seite = ref(null)
+let randUnten = 13          // Polster des Layouts unter der Seite (gemessen: 13 px)
+let hoehenWaechter = null
+function passeHoehe() {
+    const el = seite.value
+    if (!el) return
+    // Telefon und schmale Fenster: Chart und Leiste untereinander, die Seite darf scrollen.
+    if (telefon.value || window.innerWidth <= 991) { el.style.height = ''; return }
+    const r = el.getBoundingClientRect()
+    const oben = r.top + window.scrollY
+    // Den Rand nur messen, solange die Seite überläuft — passt sie, enthielte die
+    // Messung den leeren Platz darunter, und die Seite schrumpfte bei jedem Aufruf.
+    const sh = document.scrollingElement.scrollHeight
+    if (sh > window.innerHeight + 1) randUnten = Math.max(0, Math.min(60, sh - (r.bottom + window.scrollY)))
+    el.style.height = Math.max(460, Math.floor(window.innerHeight - oben - randUnten)) + 'px'
+}
+watch(telefon, () => nextTick(passeHoehe))
+
 onMounted(() => {
     lade()
+    nextTick(passeHoehe)
+    window.addEventListener('resize', passeHoehe)
+    // Nicht jede Grössenänderung schickt ein resize-Ereignis (Zoom, Geräte-Emulation,
+    // ein- und ausgeklapptes Seitenmenü) — die Grösse des Dokuments selbst schon.
+    hoehenWaechter = new ResizeObserver(() => passeHoehe())
+    hoehenWaechter.observe(document.documentElement)
     window.addEventListener('keydown', taste)
     alarmAbo = abonniereAlarme()
 })
 onBeforeUnmount(() => {
+    window.removeEventListener('resize', passeHoehe)
+    hoehenWaechter?.disconnect()
     window.removeEventListener('keydown', taste)
     alarmAbo?.()
     clearTimeout(speicherUhr)
@@ -444,7 +476,7 @@ watch(sichtbareAnzahl, async () => {
 </script>
 
 <template>
-    <div class="chartSeite" :class="{ telefon }">
+    <div ref="seite" class="chartSeite" :class="{ telefon }">
         <div v-if="ladeFehler" class="alert alert-warning m-2">{{ t('chart.arbeitsplatzFehler') }}: {{ ladeFehler }}</div>
 
         <template v-if="bereit">
@@ -543,7 +575,8 @@ watch(sichtbareAnzahl, async () => {
 .chartSeite {
     display: flex;
     flex-direction: column;
-    height: calc(100dvh - 130px);
+    /* Vorläufig — passeHoehe() setzt die gemessene Höhe. */
+    height: calc(100dvh - 160px);
     min-height: 460px;
 }
 

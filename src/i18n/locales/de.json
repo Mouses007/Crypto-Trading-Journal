@@ -5157,7 +5157,9 @@
       "nameFrage": "Name der Vorlage",
       "nameVorgabe": "Meine Vorlage",
       "ueberschreibenFrage": "Vorlage „{name}\" mit den Indikatoren dieses Charts überschreiben?",
-      "loeschenFrage": "Vorlage „{name}\" löschen?"
+      "loeschenFrage": "Vorlage „{name}\" löschen?",
+      "favoritHinzu": "Als Favorit in die Leiste",
+      "favoritWeg": "Aus der Leiste nehmen"
     },
     "wzKurz": {
       "alleZeichnungenLoeschen": "Alle Zeichnungen löschen",

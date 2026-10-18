@@ -7,8 +7,11 @@
  * Anwenden ERSETZT die Indikatoren des aktiven Charts; das Plus daneben fügt
  * sie hinzu. Gespeichert wird in der Datenbank (`/api/chart/vorlagen`), damit
  * eine Vorlage auf NAS, Rechner und Handy dieselbe ist.
+ *
+ * Favoriten (Stern) stehen als Knöpfe direkt in der Kopfleiste — ein Klick
+ * wendet sie an, wie die Zeiteinheit-Favoriten. Gemerkt im Browser, wie dort.
  */
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '../../utils/chart/arbeitsplatz.js'
 
@@ -17,6 +20,18 @@ const props = defineProps({
 })
 const emit = defineEmits(['anwenden'])
 const { t } = useI18n()
+
+const FAV_SCHLUESSEL = 'chartVorlagenFavoriten'
+function leseFavoriten() {
+    try { const v = JSON.parse(localStorage.getItem(FAV_SCHLUESSEL) || '[]'); return Array.isArray(v) ? v.filter(Number.isFinite) : [] } catch { return [] }
+}
+const favoriten = ref(leseFavoriten())
+function schalteFavorit(v) {
+    favoriten.value = favoriten.value.includes(v.id) ? favoriten.value.filter((x) => x !== v.id) : [...favoriten.value, v.id]
+    try { localStorage.setItem(FAV_SCHLUESSEL, JSON.stringify(favoriten.value)) } catch { /* kein Speicher */ }
+}
+// Gelöschte Vorlagen fallen aus den Favoriten einfach heraus (nur Vorhandenes wird gezeigt).
+const favoritVorlagen = computed(() => vorlagen.value.filter((v) => favoriten.value.includes(v.id)))
 
 const offen = ref(false)
 const vorlagen = ref([])
@@ -88,6 +103,9 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', draussen))
                 <button class="name" :title="t('chart.vorlage.anwendenTitel', { n: v.indikatoren.length })" @click="anwenden(v, 'ersetzen')">
                     {{ v.name }} <small>{{ v.indikatoren.length }}</small>
                 </button>
+                <button class="mini stern" :class="{ an: favoriten.includes(v.id) }"
+                    :title="t(favoriten.includes(v.id) ? 'chart.vorlage.favoritWeg' : 'chart.vorlage.favoritHinzu')"
+                    @click="schalteFavorit(v)"><i class="uil uil-star"></i></button>
                 <button class="mini" :title="t('chart.vorlage.hinzufuegen')" @click="anwenden(v, 'hinzu')"><i class="uil uil-plus"></i></button>
                 <button class="mini" :disabled="!aktuelle.length" :title="t('chart.vorlage.ueberschreiben')" @click="ueberschreiben(v)"><i class="uil uil-sync"></i></button>
                 <button class="mini" :title="t('chart.vorlage.umbenennen')" @click="umbenennen(v)"><i class="uil uil-pen"></i></button>
@@ -100,6 +118,11 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', draussen))
             <div v-if="fehler" class="fehler">{{ fehler }}</div>
         </div>
     </div>
+    <!-- Favoriten direkt in der Leiste: ein Klick ersetzt die Indikatoren des aktiven Charts. -->
+    <button v-for="v in favoritVorlagen" :key="'fav' + v.id" class="tf favorit"
+        :title="t('chart.vorlage.anwendenTitel', { n: v.indikatoren.length })" @click="anwenden(v, 'ersetzen')">
+        <i class="uil uil-star"></i> {{ v.name }}
+    </button>
 </template>
 
 <style scoped>
@@ -223,6 +246,22 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', draussen))
     padding: 3px 5px;
     border-radius: 4px;
     font-size: 13px;
+}
+
+.mini.stern.an,
+.mini.stern:hover {
+    color: #ffd54f;
+}
+
+.favorit {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.favorit i {
+    color: #ffd54f;
+    font-size: 10px;
 }
 
 .mini.weg:hover {

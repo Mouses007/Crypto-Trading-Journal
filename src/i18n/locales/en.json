@@ -5157,7 +5157,9 @@
       "nameFrage": "Template name",
       "nameVorgabe": "My template",
       "ueberschreibenFrage": "Overwrite template \"{name}\" with this chart's indicators?",
-      "loeschenFrage": "Delete template \"{name}\"?"
+      "loeschenFrage": "Delete template \"{name}\"?",
+      "favoritHinzu": "Pin to the bar as favourite",
+      "favoritWeg": "Remove from the bar"
     },
     "wzKurz": {
       "alleZeichnungenLoeschen": "Delete all drawings",
