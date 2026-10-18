@@ -57,6 +57,23 @@ console.log('\nAntwortprüfung\n')
     check('vertauschte Zonengrenzen werden umgedreht', gut.zonen[0].tief === 103 && gut.zonen[0].hoch === 104)
     check('nichts verworfen', gut.verworfen.length === 0)
 
+    // Waagerechte Marken mit zwei Preisen (Gemini 18.10.2026: „Widerstand 82.900" als 82 639 → 82 900)
+    const zwei = pruefeChartAntwort({ linien: [
+        { art: 'widerstand', t1: iso(T0 + 20 * H), p1: 104.2, t2: iso(T0 + 24 * H), p2: 104.8, label: 'Widerstand' },
+        { art: 'unterstuetzung', t1: iso(T0 + 5 * H), p1: 99.6, t2: iso(T0 + 30 * H), p2: 99.2, label: 'Boden' },
+        { art: 'unterstuetzung', t1: iso(T0 + 5 * H), p: 99.5, label: 'nur p' },
+    ] }, rahmen)
+    check('Widerstand mit zwei Preisen → waagerecht am höheren', zwei.linien[0].p1 === 104.8 && zwei.linien[0].p2 === 104.8, JSON.stringify(zwei.linien[0]))
+    check('Unterstützung mit zwei Preisen → waagerecht am tieferen', zwei.linien[1].p1 === 99.2 && zwei.linien[1].p2 === 99.2)
+    check('Unterstützung mit nur "p" (neues Format) wird gelesen', zwei.linien[2]?.p1 === 99.5, JSON.stringify(zwei.verworfen))
+    const kurz = pruefeChartAntwort({ linien: [{ art: 'trend', t1: iso(T0 + 20 * H), p1: 102, t2: iso(T0 + 24 * H), p2: 104, label: 'steil' }] }, rahmen)
+    check('Trend über 4 Kerzen → verworfen (trendZuKurz), kein Strahl ins Nichts', !kurz.linien.length && kurz.verworfen[0]?.grund === 'trendZuKurz')
+    const lang = pruefeChartAntwort({ linien: [{ art: 'trend', t1: iso(T0 + 10 * H), p1: 100, t2: iso(T0 + 30 * H), p2: 103, label: 'ok' }] }, rahmen)
+    check('Gegenprobe: Trend über 20 Kerzen bleibt', lang.linien.length === 1)
+    const zArt = pruefeChartAntwort({ zonen: [{ tief: 99, hoch: 100, label: 'a' }, { tief: 105, hoch: 106, label: 'b' }, { art: 'widerstand', tief: 99, hoch: 100, label: 'c' }] }, { ...rahmen, kurs: 102 })
+    check('Zone ohne Art: unter dem Kurs → Unterstützung, darüber → Widerstand', zArt.zonen[0].art === 'unterstuetzung' && zArt.zonen[1].art === 'widerstand')
+    check('Zone mit Art vom Modell behält sie', zArt.zonen[2].art === 'widerstand')
+
     const schlecht = pruefeChartAntwort({
         text: 'SOL dürfte in den nächsten Stunden auf 120 steigen.',
         linien: [

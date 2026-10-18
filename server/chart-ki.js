@@ -34,6 +34,10 @@ const TTL_MS = 30 * 60 * 1000
 const SPERRE_MS = 45 * 1000
 const CACHE_MAX = 12
 const MAX_LINIEN = 8
+// Eine Trendlinie braucht zwei Berührungen mit Abstand — zwei Hochs vier Kerzen
+// auseinander sind eine Zone, keine Richtung. Verlängert nach rechts wurde aus
+// 82 639 → 82 900 in vier 4h-Kerzen ein Strahl bis 87 000 (18.10.2026).
+export const MIN_TREND_KERZEN = 10
 const MAX_ZONEN = 5
 const MAX_BEDINGUNGEN = 5
 
@@ -92,8 +96,9 @@ export function systemText(englisch, empfehlungen) {
 
 Regeln:
 - Stütze dich NUR auf die gelieferten Kerzen, Linien und Zonen. Keine Nachrichten, kein Allgemeinwissen über den Coin.
-- Linien: Unterstützung, Widerstand, Trendlinien an echten Hochs/Tiefs der Kerzen. Zeiten und Preise müssen aus dem gezeigten Bereich stammen (Trendlinien dürfen in die Zukunft verlängert gemeint sein, ihre Punkte liegen aber auf Kerzen).
-- Zonen: Preisbereiche mit mehrfacher Reaktion.
+- Linien: Unterstützung und Widerstand sind WAAGERECHT — ein Preis "p" und die Zeit "t1", ab der die Marke gilt; kein t2/p2. Ein Bereich mit mehreren nahen Preisen ist eine ZONE, keine Linie.
+- Trendlinien ("art": "trend") verbinden zwei echte Hochs bzw. zwei echte Tiefs, mindestens ${MIN_TREND_KERZEN} Kerzen auseinander, beide auf Kerzen im gezeigten Bereich; die Linie wird nach rechts verlängert.
+- Zonen: Preisbereiche mit mehrfacher Reaktion, mit "art" unterstuetzung (unter dem Kurs, hat gehalten) oder widerstand (darüber, hat abgewiesen).
 - Bedingungen: "wenn … dann …" — beobachtbar, an eine Zahl gebunden.
 ${empfehlungen ? '' : '- KEINE Prognose, KEIN Kursziel, KEINE Handelsempfehlung, kein "dürfte", kein "kaufen/verkaufen". Beschreibe Marken und was ihr Bruch bedeuten würde.\n'}- Jede Linie und Zone bekommt eine kurze Beschriftung (max. 40 Zeichen) und einen Grund (max. 200 Zeichen), WARUM sie dort liegt (z. B. "drei Tiefs bei 101,2 am 12., 14. und 16.").
 - Höchstens ${MAX_LINIEN} Linien, ${MAX_ZONEN} Zonen, ${MAX_BEDINGUNGEN} Bedingungen. Lieber wenige gute.
@@ -101,8 +106,9 @@ ${empfehlungen ? '' : '- KEINE Prognose, KEIN Kursziel, KEINE Handelsempfehlung,
 
 Antworte NUR mit JSON:
 {"text": "2–4 Sätze zur Lage",
- "linien": [{"art": "unterstuetzung|widerstand|trend", "t1": "YYYY-MM-DDTHH:MMZ", "p1": 0, "t2": "YYYY-MM-DDTHH:MMZ", "p2": 0, "label": "...", "grund": "..."}],
- "zonen": [{"tief": 0, "hoch": 0, "label": "...", "grund": "..."}],
+ "linien": [{"art": "unterstuetzung|widerstand", "t1": "YYYY-MM-DDTHH:MMZ", "p": 0, "label": "...", "grund": "..."},
+            {"art": "trend", "t1": "YYYY-MM-DDTHH:MMZ", "p1": 0, "t2": "YYYY-MM-DDTHH:MMZ", "p2": 0, "label": "...", "grund": "..."}],
+ "zonen": [{"art": "unterstuetzung|widerstand", "tief": 0, "hoch": 0, "label": "...", "grund": "..."}],
  "bedingungen": [{"wenn": "...", "dann": "..."}]}`
 }
 
@@ -123,7 +129,7 @@ const zeitAus = (v) => {
  * @param {object} json
  * @param {{vonT:number, bisT:number, iv:number, preisMin:number, preisMax:number, empfehlungen?:boolean}} rahmen
  */
-export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, empfehlungen = false }) {
+export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, kurs = null, empfehlungen = false }) {
     const verworfen = []
     const textOk = (s) => empfehlungen || pruefeEinordnung({ text: s }).ok
     const spanne = preisMax - preisMin
@@ -140,7 +146,7 @@ export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, e
     for (const l of Array.isArray(json?.linien) ? json.linien : []) {
         if (linien.length >= MAX_LINIEN) break
         let t1 = zeitAus(l?.t1), t2 = zeitAus(l?.t2)
-        let p1 = Number(l?.p1), p2 = Number(l?.p2)
+        let p1 = Number(l?.p1 ?? l?.p), p2 = Number(l?.p2 ?? l?.p1 ?? l?.p)
         if (t1 != null && t2 == null) { t2 = bisT; p2 = p1 }
         if (!zeitOk(t1) || !zeitOk(t2)) { verworfen.push({ art: 'linie', grund: 'zeit', inhalt: wort(l?.label, 40) }); continue }
         if (!preisOk(p1) || !preisOk(p2)) { verworfen.push({ art: 'linie', grund: 'preis', inhalt: wort(l?.label, 40) }); continue }
@@ -149,6 +155,15 @@ export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, e
         const grund = wort(l?.grund, 200)
         if (!textOk(`${label}. ${grund}`)) { verworfen.push({ art: 'linie', grund: 'prognose', inhalt: label }); continue }
         const art = ['unterstuetzung', 'widerstand', 'trend'].includes(l?.art) ? l.art : (p1 === p2 ? 'unterstuetzung' : 'trend')
+        if (art !== 'trend') {
+            // Unterstützung/Widerstand ist eine waagerechte Marke. Kommen zwei Preise, gilt der
+            // äussere (Widerstand: der höhere, Unterstützung: der tiefere) — die Modelle schreiben
+            // „Widerstand 82.900" und liefern 82 639 → 82 900, was als Schräge ins Nichts lief.
+            const p = art === 'widerstand' ? Math.max(p1, p2) : Math.min(p1, p2)
+            linien.push({ art, t1, p1: p, t2: bisT, p2: p, label, grund })
+            continue
+        }
+        if (iv > 0 && (t2 - t1) / iv < MIN_TREND_KERZEN) { verworfen.push({ art: 'linie', grund: 'trendZuKurz', inhalt: label }); continue }
         linien.push({ art, t1, p1, t2, p2, label, grund })
     }
 
@@ -161,7 +176,10 @@ export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, e
         const label = wort(z?.label, 40)
         const grund = wort(z?.grund, 200)
         if (!textOk(`${label}. ${grund}`)) { verworfen.push({ art: 'zone', grund: 'prognose', inhalt: label }); continue }
-        zonen.push({ tief, hoch, label, grund })
+        // Ohne Angabe entscheidet die Lage zum letzten Kurs (für die Farbe im Chart).
+        const art = ['unterstuetzung', 'widerstand'].includes(z?.art) ? z.art
+            : Number.isFinite(kurs) ? ((tief + hoch) / 2 <= kurs ? 'unterstuetzung' : 'widerstand') : null
+        zonen.push({ art, tief, hoch, label, grund })
     }
 
     const bedingungen = []
@@ -246,7 +264,7 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
         }
         const preise = kerzen.flatMap((k) => [k.h, k.l])
         const ergebnis = pruefeChartAntwort(antwort.json, {
-            vonT, bisT, iv, preisMin: Math.min(...preise), preisMax: Math.max(...preise), empfehlungen,
+            vonT, bisT, iv, preisMin: Math.min(...preise), preisMax: Math.max(...preise), kurs: kerzen[kerzen.length - 1]?.c, empfehlungen,
         })
         for (const v of ergebnis.verworfen) logWarn('chart-ki', `${symbol} ${interval}: ${v.art} verworfen (${v.grund}) — ${v.inhalt}`)
         if (ergebnis.leer) throw new Error('Die KI hat keine verwertbare Analyse geliefert')
