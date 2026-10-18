@@ -17,6 +17,8 @@ import { useI18n } from 'vue-i18n'
 import ChartPanel from '../components/chart/ChartPanel.vue'
 import ChartKopfleiste from '../components/chart/ChartKopfleiste.vue'
 import WatchlistReiter from '../components/chart/WatchlistReiter.vue'
+import IndikatorDialog from '../components/chart/IndikatorDialog.vue'
+import { neueInstanz } from '../utils/chart/indikatorRegister.js'
 import { useIstTelefon } from '../utils/geraet.js'
 import { api, standardLayout, vervollstaendige, passeAnRaster, PANELS_JE_RASTER, STANDARD_WATCHLIST } from '../utils/chart/arbeitsplatz.js'
 
@@ -147,6 +149,35 @@ function fokus(i) {
     if (daten.value.aktiv !== i) daten.value.aktiv = i
 }
 
+// ── Indikatoren ─────────────────────────────────────────────────────────
+// `dialog` = null | { panel, instanz: null (hinzufügen) | Objekt (einstellen) }
+const dialog = ref(null)
+
+function oeffneIndikatoren() {
+    dialog.value = { panel: aktivIndex.value, instanz: null }
+}
+
+function indikatorHinzu(typ) {
+    const p = daten.value.panels[dialog.value.panel]
+    p.indikatoren = [...(p.indikatoren || []), neueInstanz(typ)]
+    dialog.value = null
+}
+
+function indikatorSpeichern(instanz) {
+    const p = daten.value.panels[dialog.value.panel]
+    p.indikatoren = p.indikatoren.map((x) => (x.id === instanz.id ? instanz : x))
+    dialog.value = null
+}
+
+function indikatorAktion(i, { aktion, id }) {
+    const p = daten.value.panels[i]
+    const inst = (p.indikatoren || []).find((x) => x.id === id)
+    if (!inst) return
+    if (aktion === 'entfernen') p.indikatoren = p.indikatoren.filter((x) => x.id !== id)
+    else if (aktion === 'umschalten') inst.sichtbar = inst.sichtbar === false
+    else if (aktion === 'bearbeiten') dialog.value = { panel: i, instanz: inst }
+}
+
 // ── Synchronisation ─────────────────────────────────────────────────────
 function kreuz(i, info) {
     if (!daten.value.sync.kreuz) return
@@ -230,7 +261,7 @@ watch(sichtbareAnzahl, async () => {
         <template v-if="bereit">
             <ChartKopfleiste ref="kopf" :panel="aktivesPanel" :raster="daten.raster" :sync="daten.sync" :layouts="layouts"
                 :layout-id="layoutId" :seitenleiste-offen="daten.seitenleiste.offen" :telefon="telefon"
-                @panel="setzePanel" @raster="setzeRaster" @sync="setzeSync" @layout-wechsel="layoutWechsel"
+                @panel="setzePanel" @indikatoren="oeffneIndikatoren" @raster="setzeRaster" @sync="setzeSync" @layout-wechsel="layoutWechsel"
                 @layout-neu="layoutNeu" @layout-umbenennen="layoutUmbenennen" @layout-loeschen="layoutLoeschen"
                 @seitenleiste="daten.seitenleiste.offen = !daten.seitenleiste.offen" @foto="foto" />
 
@@ -239,7 +270,7 @@ watch(sichtbareAnzahl, async () => {
                     <ChartPanel v-for="(p, i) in sichtbarePanels" :key="layoutId + '-' + i"
                         :ref="(el) => { if (el) panelRefs[i] = el }" :panel="p" :nummer="i"
                         :aktiv="sichtbareAnzahl > 1 && i === aktivIndex" @fokus="fokus(i)" @kreuz="kreuz(i, $event)"
-                        @bereich="bereich(i)" />
+                        @bereich="bereich(i)" @indikator="indikatorAktion(i, $event)" />
                 </div>
 
                 <aside v-if="daten.seitenleiste.offen" class="seitenleiste">
@@ -257,7 +288,9 @@ watch(sichtbareAnzahl, async () => {
                 </aside>
             </div>
         </template>
-        <div v-else-if="!ladeFehler" class="laden"><span class="spinner-border spinner-border-sm"></span></div>
+        <IndikatorDialog v-if="dialog" :instanz="dialog.instanz" @hinzu="indikatorHinzu" @speichere="indikatorSpeichern"
+            @schliesse="dialog = null" />
+        <div v-else-if="!ladeFehler && !bereit" class="laden"><span class="spinner-border spinner-border-sm"></span></div>
     </div>
 </template>
 

@@ -21,13 +21,15 @@ import {
 } from 'lightweight-charts'
 import { ladeKerzen, LiveKerze, fuegeZusammen, INTERVALL_MS } from '../../utils/chart/kerzenQuelle.js'
 import { loadSymbolMeta } from '../../utils/liveSymbols.js'
+import { IndikatorZeichner } from '../../utils/chart/indikatorZeichner.js'
+import { kurzname } from '../../utils/chart/indikatorRegister.js'
 
 const props = defineProps({
     panel: { type: Object, required: true },     // { symbol, markt, interval, skala }
     aktiv: { type: Boolean, default: false },
     nummer: { type: Number, default: 0 },
 })
-const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen'])
+const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen', 'indikator'])
 const { t, locale } = useI18n()
 
 const huelle = ref(null)
@@ -40,6 +42,10 @@ const fehler = ref('')
 const status = ref('')               // connecting | open | closed
 const legende = ref(null)            // Kerze unter dem Fadenkreuz (oder die letzte)
 const preisStellen = ref(2)
+const indikatorWerte = ref({})       // id → [{key, farbe, wert}] unter dem Fadenkreuz
+let zeichner = null
+let kreuzZeit = null                 // t (ms) unter dem Fadenkreuz; null = letzte Kerze
+let nachfuehrUhr = null
 
 let live = null
 let ladeNummer = 0                   // verwirft Antworten auf überholte Anfragen
@@ -122,6 +128,8 @@ function baueChart() {
     c.subscribeCrosshairMove((p) => {
         const bar = p?.time != null ? p.seriesData?.get(ks) : null
         legende.value = bar ? { ...bar, t: vonLwc(p.time) } : letzteLegende()
+        kreuzZeit = p?.time != null ? vonLwc(p.time) : null
+        if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
         if (extern) return
         if (p?.time == null || !p.point) { emit('kreuz', null); return }
         emit('kreuz', { t: vonLwc(p.time), preis: ks.coordinateToPrice(p.point.y) })
@@ -135,6 +143,7 @@ function baueChart() {
     chart.value = c
     kerzenSerie.value = ks
     volumenSerie.value = vs
+    zeichner = new IndikatorZeichner(c, zuLwc)
     wendeSkalaAn()
 }
 
@@ -152,7 +161,23 @@ function setzeDaten(liste) {
     kerzenSerie.value?.setData(liste.map((k) => ({ time: zuLwc(k.t), open: k.o, high: k.h, low: k.l, close: k.c })))
     volumenSerie.value?.setData(liste.map(volumenBalken))
     legende.value = letzteLegende()
+    zeichner?.setze(props.panel.indikatoren, liste)
+    if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
     emit('kerzen', liste)
+}
+
+/*
+ * Indikatoren bei der laufenden Kerze höchstens viermal je Sekunde
+ * nachrechnen — der Kline-Stream schickt bei lebhaftem Markt deutlich mehr,
+ * und für das Auge ändert sich unterhalb davon nichts.
+ */
+function planeNachfuehren() {
+    if (nachfuehrUhr) return
+    nachfuehrUhr = setTimeout(() => {
+        nachfuehrUhr = null
+        zeichner?.nachfuehren(kerzen.value)
+        if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
+    }, 250)
 }
 
 async function wendePreisformatAn() {
@@ -244,6 +269,7 @@ function starteLive(nr) {
             kerzenSerie.value?.update({ time: zuLwc(bar.t), open: bar.o, high: bar.h, low: bar.l, close: bar.c })
             volumenSerie.value?.update(volumenBalken(bar))
             if (!extern) legende.value = letzteLegende()
+            planeNachfuehren()
             emit('kerzen', liste)
         },
         onLuecke: async () => {
@@ -317,6 +343,19 @@ const legendeDelta = computed(() => {
 
 watch(() => [props.panel.symbol, props.panel.markt, props.panel.interval], ladeNeu)
 watch(() => props.panel.skala, wendeSkalaAn)
+watch(() => props.panel.indikatoren, (inst) => {
+    zeichner?.setze(inst, kerzen.value)
+    if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
+}, { deep: true })
+
+function wertText(w) {
+    if (w == null || !Number.isFinite(w)) return '—'
+    const a = Math.abs(w)
+    if (a >= 1e9) return (w / 1e9).toFixed(2) + 'B'
+    if (a >= 1e6) return (w / 1e6).toFixed(2) + 'M'
+    if (a >= 1e4) return (w / 1e3).toFixed(1) + 'K'
+    return w.toFixed(a >= 100 ? 2 : a >= 1 ? Math.max(2, preisStellen.value > 4 ? 4 : preisStellen.value) : Math.min(8, preisStellen.value + 2))
+}
 
 onMounted(() => {
     baueChart()
@@ -324,6 +363,9 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
     ladeNummer++
+    clearTimeout(nachfuehrUhr)
+    zeichner?.abbauen()
+    zeichner = null
     live?.stop()
     chart.value?.remove()
     chart.value = null
@@ -353,6 +395,19 @@ defineExpose({
                     {{ legendeDelta >= 0 ? '+' : '' }}{{ legendeDelta.toFixed(2) }} %
                 </span>
             </template>
+            <div v-for="ind in (panel.indikatoren || [])" :key="ind.id" class="indZeile" :class="{ aus: ind.sichtbar === false }">
+                <span class="indName">{{ kurzname(ind.typ, ind.params, t('chart.ind.' + ind.typ + '.kurz')) }}</span>
+                <span v-for="w in (indikatorWerte[ind.id] || [])" :key="w.key" :style="{ color: w.farbe }">{{ wertText(w.wert) }}</span>
+                <span class="indKnoepfe">
+                    <button :title="t(ind.sichtbar === false ? 'chart.einblenden' : 'chart.ausblenden')"
+                        @click.stop="emit('indikator', { aktion: 'umschalten', id: ind.id })">
+                        <i :class="ind.sichtbar === false ? 'uil uil-eye-slash' : 'uil uil-eye'"></i></button>
+                    <button :title="t('chart.einstellungen')" @click.stop="emit('indikator', { aktion: 'bearbeiten', id: ind.id })"><i
+                            class="uil uil-setting"></i></button>
+                    <button :title="t('chart.entfernen')" @click.stop="emit('indikator', { aktion: 'entfernen', id: ind.id })"><i
+                            class="uil uil-times"></i></button>
+                </span>
+            </div>
         </div>
 
         <div v-if="laedt" class="hinweis"><span class="spinner-border spinner-border-sm"></span></div>
@@ -402,6 +457,50 @@ defineExpose({
 .legende b {
     color: var(--white-87, #ddd);
     font-weight: 500;
+}
+
+.indZeile {
+    flex-basis: 100%;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    pointer-events: auto;
+    width: fit-content;
+    padding: 0 4px;
+    border-radius: 3px;
+}
+
+.indZeile:hover {
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.indZeile.aus {
+    opacity: 0.45;
+}
+
+.indName {
+    color: var(--white-87, #ddd);
+}
+
+.indKnoepfe {
+    display: none;
+    gap: 2px;
+}
+
+.indZeile:hover .indKnoepfe {
+    display: inline-flex;
+}
+
+.indKnoepfe button {
+    background: transparent;
+    border: none;
+    color: var(--grey-text);
+    padding: 0 3px;
+    font-size: 12px;
+}
+
+.indKnoepfe button:hover {
+    color: var(--white-87, #eee);
 }
 
 .legende .sym {

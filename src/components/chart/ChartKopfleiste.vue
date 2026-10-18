@@ -17,7 +17,7 @@ const props = defineProps({
     seitenleisteOffen: { type: Boolean, default: true },
     telefon: { type: Boolean, default: false },
 })
-const emit = defineEmits(['panel', 'raster', 'sync', 'layoutWechsel', 'layoutNeu', 'layoutUmbenennen', 'layoutLoeschen', 'seitenleiste', 'foto'])
+const emit = defineEmits(['panel', 'indikatoren', 'raster', 'sync', 'layoutWechsel', 'layoutNeu', 'layoutUmbenennen', 'layoutLoeschen', 'seitenleiste', 'foto'])
 const { t } = useI18n()
 
 const suche = ref(null)
@@ -83,6 +83,12 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
         <div class="gruppe">
             <button v-for="s in SKALEN" :key="s" class="tf" :class="{ an: (panel.skala || 'normal') === s }"
                 :title="t('chart.skala.' + s)" @click="emit('panel', { skala: s })">{{ t('chart.skalaKurz.' + s) }}</button>
+        </div>
+
+        <div class="gruppe">
+            <button class="tf" :title="t('chart.indikatorenTitel')" @click="emit('indikatoren')">
+                <i class="uil uil-chart-growth"></i> {{ t('chart.indikatoren') }}
+            </button>
         </div>
 
         <slot />

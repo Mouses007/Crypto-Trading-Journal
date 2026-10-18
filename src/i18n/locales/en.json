@@ -4848,6 +4848,134 @@
     "watchlistHinzu": "Add {symbol}",
     "watchlistLeer": "Empty — pick a symbol and add it above.",
     "watchlistStandard": "Favourites",
-    "arbeitsplatzFehler": "Could not load workspace"
+    "arbeitsplatzFehler": "Could not load workspace",
+    "indikatoren": "Indicators",
+    "indikatorenTitel": "Add indicator",
+    "indSuchen": "Search indicator …",
+    "indOrt": {
+      "preis": "on price",
+      "eigen": "own pane"
+    },
+    "ind": {
+      "sma": {
+        "name": "Simple Moving Average (SMA)",
+        "kurz": "SMA",
+        "text": "Plain average of the last n candles."
+      },
+      "ema": {
+        "name": "Exponential Moving Average (EMA)",
+        "kurz": "EMA",
+        "text": "Weights recent candles more, reacts faster than the SMA."
+      },
+      "bb": {
+        "name": "Bollinger Bands",
+        "kurz": "BB",
+        "text": "Average ± a multiple of the standard deviation — how far price is from normal."
+      },
+      "vwap": {
+        "name": "VWAP",
+        "kurz": "VWAP",
+        "text": "Volume-weighted average price from the anchor (day, week, month, swing), optionally with bands."
+      },
+      "rsi": {
+        "name": "RSI",
+        "kurz": "RSI",
+        "text": "Wilder's relative strength, 0–100; marks at 70 and 30."
+      },
+      "macd": {
+        "name": "MACD",
+        "kurz": "MACD",
+        "text": "Distance between two EMAs, signal line and histogram."
+      },
+      "stoch": {
+        "name": "Stochastic",
+        "kurz": "Stoch",
+        "text": "Where the close sits within the range of the last n candles, 0–100."
+      },
+      "stochRsi": {
+        "name": "Stochastic RSI",
+        "kurz": "StochRSI",
+        "text": "Stochastic applied to the RSI instead of price — hits the extremes more often."
+      },
+      "atr": {
+        "name": "ATR",
+        "kurz": "ATR",
+        "text": "Average true range — how much price moves per candle."
+      },
+      "adx": {
+        "name": "ADX / DMI",
+        "kurz": "ADX",
+        "text": "Trend strength (ADX) and direction (+DI/−DI); mark at 25."
+      },
+      "mfi": {
+        "name": "Money Flow Index",
+        "kurz": "MFI",
+        "text": "Volume-weighted RSI, 0–100."
+      },
+      "obv": {
+        "name": "On Balance Volume",
+        "kurz": "OBV",
+        "text": "Cumulative volume signed by price change — the direction matters, not the level."
+      },
+      "volSma": {
+        "name": "Volume with average",
+        "kurz": "Vol",
+        "text": "Volume in its own pane with a moving average."
+      }
+    },
+    "indParam": {
+      "laenge": "Length",
+      "quelle": "Source",
+      "mult": "Multiplier",
+      "basis": "Basis",
+      "anker": "Anchor",
+      "band": "Band (σ, 0 = off)",
+      "schnell": "Fast EMA",
+      "langsam": "Slow EMA",
+      "signal": "Signal",
+      "glaettK": "%K smoothing",
+      "glaettD": "%D smoothing",
+      "rsiLaenge": "RSI length"
+    },
+    "indWahl": {
+      "c": "Close",
+      "o": "Open",
+      "h": "High",
+      "l": "Low",
+      "hl2": "(H+L)/2",
+      "hlc3": "(H+L+C)/3",
+      "ohlc4": "(O+H+L+C)/4",
+      "sma": "SMA",
+      "ema": "EMA",
+      "session": "Day (UTC)",
+      "week": "Week",
+      "month": "Month",
+      "swingHigh": "Swing high",
+      "swingLow": "Swing low",
+      "ath": "All-time high",
+      "atl": "All-time low"
+    },
+    "indAusgabe": {
+      "wert": "Line",
+      "oben": "Upper band",
+      "mitte": "Middle",
+      "unten": "Lower band",
+      "hist": "Histogram",
+      "macd": "MACD",
+      "signal": "Signal",
+      "k": "%K",
+      "d": "%D",
+      "adx": "ADX",
+      "plus": "+DI",
+      "minus": "−DI",
+      "vol": "Volume"
+    },
+    "farben": "Colours",
+    "standard": "Default",
+    "uebernehmen": "Apply",
+    "einblenden": "Show",
+    "ausblenden": "Hide",
+    "einstellungen": "Settings",
+    "entfernen": "Remove"
   }
 }

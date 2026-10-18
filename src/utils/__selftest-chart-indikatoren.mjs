@@ -1,0 +1,102 @@
+/**
+ * Selbsttest der Chart-Indikatoren — ohne Browser, ohne Chart-Bibliothek.
+ *
+ *   node src/utils/__selftest-chart-indikatoren.mjs
+ *
+ * Geprüft wird, was beim Zeichnen nicht auffällt, aber falsche Linien ergibt:
+ * dass der Chart DIESELBE Rechnung benutzt wie die Strategie-Detektoren, dass
+ * jede Ausgabe genau so lang ist wie die Kerzenreihe (sonst rutscht die Linie
+ * gegen die Kerzen), dass die Preisquelle wirklich wirkt, und dass kaputte
+ * gespeicherte Parameter nicht durchschlagen.
+ */
+import { INDIKATOREN, rechneIndikator, saubereParams, vorgaben, kurzname, neueInstanz } from './chart/indikatorRegister.js'
+import { ema, rsi, macd, bollinger } from '../../shared/indicators.js'
+import { ema as serverEma } from '../../server/strategies/indicators.js'
+
+let bestanden = 0
+let fehlgeschlagen = 0
+const fehler = []
+
+function check(name, ok, detail) {
+    if (ok) { bestanden++; console.log(`  \x1b[32m✓\x1b[0m ${name}`) }
+    else { fehlgeschlagen++; fehler.push(name); console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ''}`) }
+}
+
+const gleich = (a, b) => a.length === b.length && a.every((x, i) => (x === null && b[i] === null) || Math.abs(x - b[i]) < 1e-12)
+
+// Deterministische Kerzen: Welle mit Trend, Volumen schwankend.
+const kerzen = Array.from({ length: 300 }, (_, i) => {
+    const basis = 100 + i * 0.05 + Math.sin(i / 7) * 3
+    const o = basis + Math.sin(i / 3)
+    const c = basis + Math.cos(i / 4)
+    return { t: 1_700_000_000_000 + i * 3_600_000, o, h: Math.max(o, c) + 0.8, l: Math.min(o, c) - 0.6, c, v: 1000 + (i % 17) * 40 }
+})
+
+console.log('\nEine Rechnung für Chart und Strategie\n')
+check('Weiterleitung server/strategies/indicators.js zeigt auf shared/', serverEma === ema)
+check('EMA im Chart == EMA der Detektoren', gleich(rechneIndikator('ema', kerzen, { laenge: 21 }).wert, ema(kerzen, 21)))
+check('RSI im Chart == RSI der Detektoren', gleich(rechneIndikator('rsi', kerzen, { laenge: 14 }).wert, rsi(kerzen, 14)))
+{
+    const m = rechneIndikator('macd', kerzen, { schnell: 12, langsam: 26, signal: 9 })
+    check('MACD-Linie, Signal und Histogramm == Detektoren',
+        gleich(m.macd, macd(kerzen, { line: 'macd' })) && gleich(m.signal, macd(kerzen, { line: 'signal' })) && gleich(m.hist, macd(kerzen, { line: 'hist' })))
+}
+{
+    const b = rechneIndikator('bb', kerzen, { laenge: 20, mult: 2, basis: 'sma' })
+    const r = bollinger(kerzen, { period: 20, mult: 2 })
+    check('Bollinger oben/mitte/unten == Detektoren', gleich(b.oben, r.upper) && gleich(b.mitte, r.middle) && gleich(b.unten, r.lower))
+}
+
+console.log('\nJede Ausgabe so lang wie die Kerzenreihe\n')
+for (const typ of Object.keys(INDIKATOREN)) {
+    const params = { ...vorgaben(typ), ...(typ === 'vwap' ? { band: 2 } : {}) }
+    const aus = rechneIndikator(typ, kerzen, params)
+    const pflicht = INDIKATOREN[typ].ausgaben.filter((a) => !a.optional || typ === 'vwap')
+    const fehlt = pflicht.filter((a) => !Array.isArray(aus[a.key]) || aus[a.key].length !== kerzen.length).map((a) => a.key)
+    const zahlen = pflicht.every((a) => (aus[a.key] || []).some((x) => Number.isFinite(x)))
+    check(`${typ}: alle Ausgaben vorhanden, Länge ${kerzen.length}, mit Werten`, !fehlt.length && zahlen, fehlt.join(','))
+}
+{
+    const ohneBand = rechneIndikator('vwap', kerzen, { anker: 'session', band: 0 })
+    check('VWAP ohne Band liefert keine leeren Bandreihen', !('oben' in ohneBand) && !('unten' in ohneBand))
+    const mitBand = rechneIndikator('vwap', kerzen, { anker: 'session', band: 1 })
+    const i = kerzen.length - 1
+    check('VWAP-Band liegt um die Linie (oben > Linie > unten)', mitBand.oben[i] > mitBand.wert[i] && mitBand.wert[i] > mitBand.unten[i])
+}
+
+console.log('\nPreisquelle wirkt\n')
+{
+    const c = rechneIndikator('sma', kerzen, { laenge: 10, quelle: 'c' }).wert
+    const h = rechneIndikator('sma', kerzen, { laenge: 10, quelle: 'h' }).wert
+    const hl2 = rechneIndikator('sma', kerzen, { laenge: 10, quelle: 'hl2' }).wert
+    const i = 200
+    const erwartetHl2 = kerzen.slice(i - 9, i + 1).reduce((s, k) => s + (k.h + k.l) / 2, 0) / 10
+    check('SMA auf Hoch liegt über SMA auf Schluss', h[i] > c[i])
+    check('SMA hl2 nachgerechnet', Math.abs(hl2[i] - erwartetHl2) < 1e-9, `${hl2[i]} vs ${erwartetHl2}`)
+    check('Quelle verändert die Kerzen des Aufrufers nicht', kerzen[i].c !== (kerzen[i].h + kerzen[i].l) / 2)
+}
+
+console.log('\nGespeicherte Parameter säubern\n')
+{
+    const p = saubereParams('ema', { laenge: '9999', quelle: 'quatsch', fremd: 1 })
+    check('Zahl auf Maximum begrenzt', p.laenge === 500, String(p.laenge))
+    check('unbekannte Wahl fällt auf Vorgabe', p.quelle === 'c')
+    check('unbekannter Schlüssel fällt weg', !('fremd' in p))
+    check('Text statt Zahl → Vorgabe', saubereParams('rsi', { laenge: 'abc' }).laenge === 14)
+    check('unbekannter Indikator → leeres Ergebnis statt Absturz', Object.keys(rechneIndikator('gibtsnicht', kerzen, {})).length === 0)
+    check('leere Kerzenreihe → leeres Ergebnis', Object.keys(rechneIndikator('ema', [], { laenge: 5 })).length === 0)
+}
+
+console.log('\nBeschriftung und Instanzen\n')
+check('Kurzname EMA', kurzname('ema', { laenge: 21, quelle: 'c' }, 'EMA') === 'EMA 21')
+check('Kurzname zeigt abweichende Quelle', kurzname('sma', { laenge: 50, quelle: 'hl2' }, 'SMA') === 'SMA 50 hl2')
+check('Kurzname BB', kurzname('bb', { laenge: 20, mult: 2, basis: 'sma' }, 'BB') === 'BB 20 2')
+{
+    const a = neueInstanz('ema')
+    const b = neueInstanz('ema')
+    check('zwei Instanzen desselben Typs haben verschiedene ids', a.id !== b.id)
+    check('neue Instanz trägt die Vorgaben', a.params.laenge === 21 && a.sichtbar === true)
+}
+
+console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
+if (fehlgeschlagen) { console.log('Fehler:', fehler.join(', ')); process.exit(1) }

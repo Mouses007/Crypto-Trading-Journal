@@ -4848,6 +4848,134 @@
     "watchlistHinzu": "{symbol} hinzufügen",
     "watchlistLeer": "Noch leer — Symbol wählen und oben hinzufügen.",
     "watchlistStandard": "Favoriten",
-    "arbeitsplatzFehler": "Arbeitsstand nicht ladbar"
+    "arbeitsplatzFehler": "Arbeitsstand nicht ladbar",
+    "indikatoren": "Indikatoren",
+    "indikatorenTitel": "Indikator hinzufügen",
+    "indSuchen": "Indikator suchen …",
+    "indOrt": {
+      "preis": "im Kursbild",
+      "eigen": "eigenes Fenster"
+    },
+    "ind": {
+      "sma": {
+        "name": "Gleitender Durchschnitt (SMA)",
+        "kurz": "SMA",
+        "text": "Einfacher Durchschnitt der letzten n Kerzen."
+      },
+      "ema": {
+        "name": "Exponentieller Durchschnitt (EMA)",
+        "kurz": "EMA",
+        "text": "Gewichtet jüngere Kerzen stärker, reagiert schneller als der SMA."
+      },
+      "bb": {
+        "name": "Bollinger-Bänder",
+        "kurz": "BB",
+        "text": "Durchschnitt ± Vielfaches der Standardabweichung — zeigt, wie weit der Kurs vom Üblichen weg ist."
+      },
+      "vwap": {
+        "name": "VWAP",
+        "kurz": "VWAP",
+        "text": "Volumengewichteter Durchschnittspreis ab dem Anker (Tag, Woche, Monat, Swing), wahlweise mit Bändern."
+      },
+      "rsi": {
+        "name": "RSI",
+        "kurz": "RSI",
+        "text": "Relative Stärke nach Wilder, 0–100; Marken bei 70 und 30."
+      },
+      "macd": {
+        "name": "MACD",
+        "kurz": "MACD",
+        "text": "Abstand zweier EMAs, Signallinie und Histogramm."
+      },
+      "stoch": {
+        "name": "Stochastik",
+        "kurz": "Stoch",
+        "text": "Lage des Schlusskurses in der Spanne der letzten n Kerzen, 0–100."
+      },
+      "stochRsi": {
+        "name": "Stochastik-RSI",
+        "kurz": "StochRSI",
+        "text": "Stochastik auf den RSI statt auf den Kurs — schlägt häufiger an den Rändern an."
+      },
+      "atr": {
+        "name": "ATR",
+        "kurz": "ATR",
+        "text": "Durchschnittliche wahre Spanne — wie viel sich der Kurs je Kerze bewegt."
+      },
+      "adx": {
+        "name": "ADX / DMI",
+        "kurz": "ADX",
+        "text": "Trendstärke (ADX) und Richtung (+DI/−DI); Marke bei 25."
+      },
+      "mfi": {
+        "name": "Money Flow Index",
+        "kurz": "MFI",
+        "text": "RSI mit Volumengewicht, 0–100."
+      },
+      "obv": {
+        "name": "On Balance Volume",
+        "kurz": "OBV",
+        "text": "Kumuliertes Volumen mit dem Vorzeichen der Kursänderung — aussagekräftig ist die Richtung, nicht die Höhe."
+      },
+      "volSma": {
+        "name": "Volumen mit Durchschnitt",
+        "kurz": "Vol",
+        "text": "Volumen als eigenes Fenster mit gleitendem Durchschnitt."
+      }
+    },
+    "indParam": {
+      "laenge": "Länge",
+      "quelle": "Quelle",
+      "mult": "Faktor",
+      "basis": "Basis",
+      "anker": "Anker",
+      "band": "Band (σ, 0 = aus)",
+      "schnell": "Schnelle EMA",
+      "langsam": "Langsame EMA",
+      "signal": "Signal",
+      "glaettK": "Glättung %K",
+      "glaettD": "Glättung %D",
+      "rsiLaenge": "RSI-Länge"
+    },
+    "indWahl": {
+      "c": "Schluss",
+      "o": "Eröffnung",
+      "h": "Hoch",
+      "l": "Tief",
+      "hl2": "(H+L)/2",
+      "hlc3": "(H+L+C)/3",
+      "ohlc4": "(O+H+L+C)/4",
+      "sma": "SMA",
+      "ema": "EMA",
+      "session": "Tag (UTC)",
+      "week": "Woche",
+      "month": "Monat",
+      "swingHigh": "Swing-Hoch",
+      "swingLow": "Swing-Tief",
+      "ath": "Allzeithoch",
+      "atl": "Allzeittief"
+    },
+    "indAusgabe": {
+      "wert": "Linie",
+      "oben": "Oberes Band",
+      "mitte": "Mitte",
+      "unten": "Unteres Band",
+      "hist": "Histogramm",
+      "macd": "MACD",
+      "signal": "Signal",
+      "k": "%K",
+      "d": "%D",
+      "adx": "ADX",
+      "plus": "+DI",
+      "minus": "−DI",
+      "vol": "Volumen"
+    },
+    "farben": "Farben",
+    "standard": "Standard",
+    "uebernehmen": "Übernehmen",
+    "einblenden": "Einblenden",
+    "ausblenden": "Ausblenden",
+    "einstellungen": "Einstellungen",
+    "entfernen": "Entfernen"
   }
 }
