@@ -13,12 +13,28 @@
  * Bei der laufenden Kerze wird neu gerechnet (ein paar tausend Werte, im
  * Millisekundenbereich) und nur der letzte Punkt jeder Serie aktualisiert.
  */
-import { LineSeries, HistogramSeries, LineStyle } from 'lightweight-charts'
+import { LineSeries, HistogramSeries, AreaSeries, LineStyle } from 'lightweight-charts'
 import { INDIKATOREN, rechneIndikator } from './indikatorRegister.js'
 import { MomentumZeichnung } from './momentumZeichnung.js'
 
 const GRUEN = 'rgba(38,166,154,0.7)'
 const ROT = 'rgba(255,105,96,0.7)'
+
+/** 93673 → „93.67K" — grosse Bestände (OI) lesbar statt sechsstellig. */
+function kompakt(v) {
+    const a = Math.abs(v)
+    if (a >= 1e9) return (v / 1e9).toFixed(2) + 'B'
+    if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M'
+    if (a >= 1e4) return (v / 1e3).toFixed(2) + 'K'
+    return a >= 100 ? v.toFixed(0) : v.toFixed(2)
+}
+
+function mitAlpha(farbe, a) {
+    const m = /^#([0-9a-f]{6})$/i.exec(farbe)
+    if (!m) return farbe
+    const n = parseInt(m[1], 16)
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+}
 
 export class IndikatorZeichner {
     /**
@@ -76,11 +92,29 @@ export class IndikatorZeichner {
                     // wie ein Ausschlag aus.
                     ...(def.bereich ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: def.bereich[0], maxValue: def.bereich[1] } }) } : {}),
                 }
-                serien[a.key] = a.art === 'histogramm'
-                    ? this.chart.addSeries(HistogramSeries, { ...gemeinsam, color: farbe, priceFormat: { type: 'price', precision: 4, minMove: 0.0001 } }, pane)
-                    : this.chart.addSeries(LineSeries, { ...gemeinsam, color: farbe, lineWidth: a.breite || 1 }, pane)
+                const format = def.kompakt
+                    ? { priceFormat: { type: 'custom', formatter: kompakt, minMove: 0.01 } }
+                    : null
+                if (a.art === 'histogramm') {
+                    serien[a.key] = this.chart.addSeries(HistogramSeries, {
+                        ...gemeinsam, color: farbe,
+                        ...(format || { priceFormat: { type: 'price', precision: 4, minMove: 0.0001 } }),
+                        // `unten`: eigene Skala im unteren Drittel des Panes, unter der Fläche.
+                        ...(a.unten ? { priceScaleId: `unten-${instanz.id}`, lastValueVisible: false } : {}),
+                    }, pane)
+                    if (a.unten) serien[a.key].priceScale().applyOptions({ scaleMargins: { top: 0.72, bottom: 0 } })
+                } else if (a.art === 'flaeche') {
+                    serien[a.key] = this.chart.addSeries(AreaSeries, {
+                        ...gemeinsam, ...(format || {}),
+                        lineColor: farbe, lineWidth: a.breite || 2,
+                        topColor: mitAlpha(farbe, 0.38), bottomColor: mitAlpha(farbe, 0.02),
+                    }, pane)
+                    serien[a.key].priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.3 } })
+                } else {
+                    serien[a.key] = this.chart.addSeries(LineSeries, { ...gemeinsam, ...(format || {}), color: farbe, lineWidth: a.breite || 1 }, pane)
+                }
             }
-            const erste = serien[def.ausgaben.find((a) => a.art === 'linie')?.key] || Object.values(serien)[0]
+            const erste = serien[def.ausgaben.find((a) => a.art === 'linie' || a.art === 'flaeche')?.key] || Object.values(serien)[0]
             for (const marke of def.linien || []) {
                 erste?.createPriceLine({ price: marke, color: 'rgba(255,255,255,0.18)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
             }
@@ -112,8 +146,9 @@ export class IndikatorZeichner {
         const wert = e.werte[key]?.[i]
         const time = this.zuLwc(kerzen[i].t)
         if (wert == null || !Number.isFinite(wert)) return { time }
-        const art = e.def.ausgaben.find((a) => a.key === key)?.art
-        if (art === 'histogramm' && key === 'hist') return { time, value: wert, color: wert >= 0 ? GRUEN : ROT }
+        const a = e.def.ausgaben.find((x) => x.key === key)
+        if (a?.art === 'histogramm' && a.vorzeichen) return { time, value: wert, color: wert >= 0 ? '#26a69a' : '#ef5350' }
+        if (a?.art === 'histogramm' && key === 'hist') return { time, value: wert, color: wert >= 0 ? GRUEN : ROT }
         return { time, value: wert }
     }
 

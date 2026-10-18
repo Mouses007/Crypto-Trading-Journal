@@ -9,7 +9,7 @@
  * gegen die Kerzen), dass die Preisquelle wirklich wirkt, und dass kaputte
  * gespeicherte Parameter nicht durchschlagen.
  */
-import { INDIKATOREN, rechneIndikator, saubereParams, vorgaben, kurzname, neueInstanz, aufKerzen, jeKerzeSumme, benoetigteQuellen } from './chart/indikatorRegister.js'
+import { INDIKATOREN, rechneIndikator, saubereParams, vorgaben, kurzname, neueInstanz, aufKerzen, jeKerzeSumme, benoetigteQuellen, veraenderung } from './chart/indikatorRegister.js'
 import { ema, rsi, macd, bollinger } from '../../shared/indicators.js'
 import { ema as serverEma } from '../../server/strategies/indicators.js'
 
@@ -81,6 +81,8 @@ console.log('\nDatenfenster: fremde Reihen auf Kerzen\n')
     const f = jeKerzeSumme(k, [{ t: 210, rate: 0.0001 }, { t: 290, rate: 0.0002 }, { t: 50, rate: 1 }], 'rate', 100)
     check('Funding in der Kerze, in die es fällt, summiert (in %)', Math.abs(f[1] - 0.03) < 1e-12 && f[0] === null && f[2] === null, JSON.stringify(f))
     check('Zahlung vor der ersten Kerze wird nicht der ersten zugeschlagen', f[0] === null)
+    const d = veraenderung([null, 7, 7, 9, 8])
+    check('OI-Veränderung: fortgeschriebener Wert ist keine Messung (null statt 0)', d[0] === null && d[1] === null && d[2] === null && d[3] === 2 && d[4] === -1, JSON.stringify(d))
     check('Ohne Fremddaten: Reihe aus null statt Absturz', rechneIndikator('oi', kerzen, {}, {}).wert.every((v) => v === null))
     const m = rechneIndikator('momentum', kerzen.slice(0, 5), {}, { momentum: { t: [kerzen[1].t, kerzen[3].t], w1: [10, 20], w2: [1, 2], mf: [3, 4] } })
     check('Momentum nur an exakt passenden Kerzenzeiten (andere Zeiteinheit → leer)', m.w1[0] === null && m.w1[1] === 10 && m.w1[3] === 20 && m.w1[2] === null)

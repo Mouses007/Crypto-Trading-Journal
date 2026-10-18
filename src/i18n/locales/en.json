@@ -4938,7 +4938,7 @@
       "oi": {
         "name": "Open interest",
         "kurz": "OI",
-        "text": "Open contracts (Binance, hourly, last ~8 days) — OI rising with price means new positions."
+        "text": "Open contracts (Binance, hourly, last ~8 days) — OI rising with price means new positions. The bars below show the change per candle: green = positions added, red = positions closed."
       },
       "longShort": {
         "name": "Long share of accounts",
@@ -4989,6 +4989,7 @@
       "atl": "All-time low"
     },
     "indAusgabe": {
+      "delta": "Change",
       "wert": "Line",
       "oben": "Upper band",
       "mitte": "Middle",

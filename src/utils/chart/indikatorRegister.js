@@ -67,6 +67,19 @@ export function aufKerzen(kerzen, punkte, feld) {
 }
 
 /**
+ * Veränderung zur Vorkerze. Ein fortgeschriebener Wert (stündliches OI auf
+ * 15m-Kerzen) ist keine Veränderung von 0, sondern keine Messung → null;
+ * sonst stünden drei von vier Balken als flache Null da.
+ */
+export function veraenderung(werte) {
+    return werte.map((w, i) => {
+        const v = werte[i - 1]
+        if (i === 0 || w == null || v == null || w === v) return null
+        return w - v
+    })
+}
+
+/**
  * Ereignisse (Funding-Zahlungen) der Kerze zuordnen, in die sie fallen, und
  * je Kerze summieren. Kerzen ohne Zahlung bleiben leer: auf 15m zahlt nur
  * jede 16. bzw. 32. Kerze.
@@ -247,8 +260,18 @@ export const INDIKATOREN = {
         ort: 'eigen',
         extern: 'oi',
         params: [],
-        ausgaben: [{ key: 'wert', art: 'linie', farbe: '#ffb74d', breite: 2 }],
-        rechne: (k, _p, ext) => ({ wert: aufKerzen(k, ext, 'oi') }),
+        // Fläche mit Verlauf für den Bestand, darunter die Veränderung je Kerze
+        // als Balken (grün = Positionen kommen dazu, rot = sie werden
+        // geschlossen) — die Veränderung ist die eigentliche Aussage.
+        ausgaben: [
+            { key: 'wert', art: 'flaeche', farbe: '#ffb74d', breite: 2 },
+            { key: 'delta', art: 'histogramm', farbe: '#26a69a', vorzeichen: true, unten: true },
+        ],
+        kompakt: true,
+        rechne: (k, _p, ext) => {
+            const wert = aufKerzen(k, ext, 'oi')
+            return { wert, delta: veraenderung(wert) }
+        },
     },
     longShort: {
         ort: 'eigen',

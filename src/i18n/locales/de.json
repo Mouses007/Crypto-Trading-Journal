@@ -4938,7 +4938,7 @@
       "oi": {
         "name": "Open Interest",
         "kurz": "OI",
-        "text": "Offene Kontrakte (Binance, stündlich, letzte ~8 Tage) — steigt OI mit dem Preis, kommen neue Positionen dazu."
+        "text": "Offene Kontrakte (Binance, stündlich, letzte ~8 Tage) — steigt OI mit dem Preis, kommen neue Positionen dazu. Die Balken unten zeigen die Veränderung je Kerze: grün = Positionen kommen dazu, rot = sie werden geschlossen."
       },
       "longShort": {
         "name": "Long-Anteil der Konten",
@@ -4989,6 +4989,7 @@
       "atl": "Allzeittief"
     },
     "indAusgabe": {
+      "delta": "Veränderung",
       "wert": "Linie",
       "oben": "Oberes Band",
       "mitte": "Mitte",
