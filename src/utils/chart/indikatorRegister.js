@@ -208,7 +208,7 @@ const VV_PARAMS = [
     S('pocPerExt', true, 'pocPer'), S('pocPerLbl', true, 'pocPer'), M(Z('lblOffPocPer', 22, 0, 100, 1, 'pocPer')),
     F('cPocPer', '#ab47bc', 'pocPer'), M(Z('pocPerWid', 2, 1, 4, 1, 'pocPer')), Z('pocPerDist', 4, 0, 50, 0.5, 'pocPer'),
     // 7 Candle-POC
-    H(S('showPocC', true, 'pocC')), Z('pocCPiv', 5, 1, 20, 1, 'pocC'), W('pocCTf', '1m', ['1m', '3m', '5m', '15m'], 'pocC', true),
+    H(S('showPocC', true, 'pocC')), Z('pocCPiv', 5, 1, 20, 1, 'pocC'), W('pocCTf', 'auto', ['auto', '1m', '3m', '5m', '15m', '30m', '1h'], 'pocC', true),
     Z('pocCBins', 25, 5, 100, 1, 'pocC'), Z('pocCMax', 60, 5, 300, 1, 'pocC'),
     S('pocCLabel', false, 'pocC'), M(Z('lblOffPocC', 22, 0, 100, 1, 'pocC')),
     F('cPocC', '#26c6da', 'pocC'), M(Z('pocCWidth', 2, 1, 4, 1, 'pocC')),
@@ -221,14 +221,34 @@ const VV_PARAMS = [
     H(S('showDOpen', true, 'dopen')), F('cDOpen', '#ffffff', 'dopen'), S('dOpenLbl', true, 'dopen'), M(Z('lblOffDO', 12, 0, 100, 1, 'dopen')),
 ]
 
+/** Höchstzahl Intrabar-Kerzen je Abruf-Folge (4 Seiten à 1500, Binance Futures). */
+export const INTRA_BUDGET = 6000
+/** So viele Chartkerzen soll der Candle-POC bei „auto" abdecken. */
+const INTRA_ZIEL_KERZEN = 300
+const INTRA_STUFEN = ['1m', '3m', '5m', '15m', '30m', '1h']
+
+/**
+ * Intrabar-Zeiteinheit für den Candle-POC. „auto" nimmt die feinste, mit der
+ * das Budget noch `INTRA_ZIEL_KERZEN` Chartkerzen abdeckt (bzw. alle geladenen,
+ * wenn es weniger sind). Fest 1m auf 4h hiess: 240 je Kerze, Budget nach
+ * 18 Kerzen erschöpft — nur die letzten Kerzen hatten einen POC.
+ */
+export function intrabarTf(wahl, ivMs, tfMs, anzahlKerzen = INTRA_ZIEL_KERZEN) {
+    if (wahl !== 'auto') return tfMs[wahl] < ivMs ? wahl : null
+    const ziel = Math.max(1, Math.min(INTRA_ZIEL_KERZEN, anzahlKerzen || INTRA_ZIEL_KERZEN))
+    const kleiner = INTRA_STUFEN.filter((tf) => tfMs[tf] && tfMs[tf] < ivMs)
+    if (!kleiner.length) return null
+    return kleiner.find((tf) => (ivMs / tfMs[tf]) * ziel <= INTRA_BUDGET) || kleiner[kleiner.length - 1]
+}
+
 /** Welche Zeiteinheiten der VWAP Vector nachladen muss (höhere + Intrabar). */
-export function vwapVectorQuellen(p, ivMs, tfMs) {
+export function vwapVectorQuellen(p, ivMs, tfMs, anzahlKerzen) {
     const htf = new Set()
     for (const x of [1, 2, 3]) if (p[`showMtfE${x}`]) htf.add(p[`tfMtfE${x}`])
     if (p.showFib) htf.add(p.fibTf)
     // Eine „höhere" Zeiteinheit, die gar nicht höher ist, rechnet der Chart selbst.
     const hoeher = [...htf].filter((tf) => tfMs[tf] > ivMs)
-    const intra = p.showPocC && tfMs[p.pocCTf] < ivMs ? p.pocCTf : null
+    const intra = p.showPocC ? intrabarTf(p.pocCTf, ivMs, tfMs, anzahlKerzen) : null
     return { htf: hoeher, intra }
 }
 

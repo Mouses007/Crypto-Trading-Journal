@@ -33,7 +33,7 @@ import axios from 'axios'
 import { JournalEbene } from '../../utils/chart/overlays/JournalEbene.js'
 import { StrategieEbene } from '../../utils/chart/overlays/StrategieEbene.js'
 import { MarktEbene, waendeAusBuch } from '../../utils/chart/overlays/MarktEbene.js'
-import { benoetigteQuellen, vwapVectorQuellen, saubereParams, INDIKATOREN, strategieParams } from '../../utils/chart/indikatorRegister.js'
+import { benoetigteQuellen, vwapVectorQuellen, INTRA_BUDGET, saubereParams, INDIKATOREN, strategieParams } from '../../utils/chart/indikatorRegister.js'
 import { ladeOffenePositionen } from '../../utils/chart/overlays/positionen.js'
 import { overlayAn as overlayAnFuer } from '../../utils/chart/overlays/liste.js'
 
@@ -425,9 +425,9 @@ async function ladeExtern(nurWelche = null) {
 /*
  * VWAP Vector: Kerzen höherer Zeiteinheiten (MTF-EMA, Fibonacci) und
  * Intrabar-Kerzen (Candle-POC). Immer von Binance — Bitunix/Bitget liefern
- * zu wenig Historie für eine EMA 50 auf dem Tag. Intrabar höchstens drei
- * Seiten (3000 Kerzen — Binance-Abrufe sind hier auf 1000 je Seite gedeckelt): ältere Chartkerzen bekommen keinen Candle-POC, wie
- * in der Vorlage, wenn das Intrabar-Budget aufgebraucht ist.
+ * zu wenig Historie für eine EMA 50 auf dem Tag. Intrabar höchstens
+ * INTRA_BUDGET Kerzen (Seiten à 1500); ältere Chartkerzen bekommen keinen
+ * Candle-POC. „auto" wählt die Auflösung so, dass das Budget reicht.
  */
 const vvCache = { schluessel: '', htf: {}, intra: [] }
 async function ladeVwapVector() {
@@ -437,7 +437,7 @@ async function ladeVwapVector() {
     const htf = new Set()
     let intra = null
     for (const i of instanzen) {
-        const q = vwapVectorQuellen(saubereParams('vwapVector', i.params), ivMs, INTERVALL_MS)
+        const q = vwapVectorQuellen(saubereParams('vwapVector', i.params), ivMs, INTERVALL_MS, kerzen.value.length)
         q.htf.forEach((tf) => htf.add(tf))
         if (q.intra && (!intra || INTERVALL_MS[q.intra] < INTERVALL_MS[intra])) intra = q.intra
     }
@@ -459,7 +459,7 @@ async function ladeVwapVector() {
                 // Nur so weit zurück, wie Chartkerzen da sind.
                 let liste = await ladeKerzen({ symbol, markt: m, interval: intra, limit: 1500 })
                 const ab = kerzen.value[0]?.t ?? 0
-                for (let s = 0; s < 2 && liste.length && liste[0].t > ab; s++) {
+                for (let s = 1; s * 1500 < INTRA_BUDGET && liste.length && liste[0].t > ab; s++) {
                     const alt = await ladeKerzen({ symbol, markt: m, interval: intra, limit: 1500, endTime: liste[0].t - 1 })
                     if (!alt.length) break
                     liste = fuegeZusammen(alt, liste)

@@ -14,7 +14,7 @@ import {
     candlePocs, periodeVon, rechneVwapVector,
 } from './chart/vwapVector.js'
 import { swingAnker, ema, atr } from '../../shared/indicators.js'
-import { vorgaben, rechneIndikator, ausgabenVon, vwapVectorQuellen, saubereParams } from './chart/indikatorRegister.js'
+import { vorgaben, rechneIndikator, ausgabenVon, vwapVectorQuellen, saubereParams, intrabarTf } from './chart/indikatorRegister.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -148,8 +148,14 @@ console.log('\nRegister\n')
     check('Vorgaben wie in der Vorlage: Swing-VWAPs, EMA 21/50/200, MTF 1+2 an; Daily/ATH aus', p.showSwingHi && p.showEma21 && p.showMtfE2 && !p.showDaily && !p.showATH && !p.showFib)
     check('Ausgaben nur für eingeschaltete Linien', ausgabenVon('vwapVector', p).map((x) => x.key).join() === 'ema21,ema50,ema200,mtf1,mtf2')
     check('Schalter und Farben werden gesäubert', saubereParams('vwapVector', { showDaily: 'ja', cDaily: 'rot' }).showDaily === false && saubereParams('vwapVector', { cDaily: 'rot' }).cDaily === '#70ccbd')
-    const q = vwapVectorQuellen(p, H, { '1m': 60_000, '1h': H, '1d': 24 * H, '4h': 4 * H })
-    check('Nachladen: 1d für MTF, 1m für Candle-POC', q.htf.join() === '1d' && q.intra === '1m')
+    const TF = { '1m': 60_000, '3m': 180_000, '5m': 300_000, '15m': 900_000, '30m': 1_800_000, '1h': H, '4h': 4 * H, '1d': 24 * H }
+    const q = vwapVectorQuellen(p, H, TF)
+    check('Nachladen: 1d für MTF, auto → 3m für Candle-POC auf 1h (20 × 300 = 6000)', q.htf.join() === '1d' && q.intra === '3m', JSON.stringify(q))
+    check('auto auf 4h: 15m (16 je Kerze, 300 Kerzen = 4800 ≤ 6000) statt 1m', intrabarTf('auto', 4 * H, TF) === '15m')
+    check('auto auf 15m: 1m', intrabarTf('auto', 900_000, TF) === '1m')
+    check('auto mit nur 50 Chartkerzen auf 4h: feiner (3m, 80 × 50 = 4000)', intrabarTf('auto', 4 * H, TF, 50) === '3m')
+    check('feste Wahl bleibt fest, aber nie ≥ Chart-Zeiteinheit', intrabarTf('1m', 4 * H, TF) === '1m' && intrabarTf('1h', H, TF) === null)
+    check('auf 1m-Chart kein Candle-POC', intrabarTf('auto', 60_000, TF) === null)
     check('auf dem Tageschart keine „höhere" Zeiteinheit 1d', vwapVectorQuellen(p, 24 * H, { '1m': 60_000, '1d': 24 * H }).htf.length === 0)
     const r = Array.from({ length: 300 }, (_, i) => k(i, 100 + Math.sin(i / 7) * 3, 101 + Math.sin(i / 7) * 3, 99 + Math.sin(i / 7) * 3, 100 + Math.sin((i + 1) / 7) * 3, 100 + (i % 9) * 40))
     const w = rechneIndikator('vwapVector', r, p, {})
