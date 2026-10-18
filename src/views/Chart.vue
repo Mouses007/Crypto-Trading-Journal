@@ -611,7 +611,9 @@ watch(sichtbareAnzahl, async () => {
                     <div class="boxTrenner" :class="{ zu: !boxOffen }" @pointerdown="boxZiehenStart" @pointermove="boxZiehen"
                         @pointerup="boxZiehenEnde" @pointercancel="boxZiehenEnde" @dblclick="boxHoeheZurueck"
                         :title="t('chart.mbox.trenner')">
-                        <span>{{ t('chart.mbox.titel') }}</span>
+                        <!-- Titel klappt ein/aus wie bei der VWAP-Vector-Box; ziehen geht über den Rest der Leiste. -->
+                        <span class="boxTitel" role="button" tabindex="0" :aria-expanded="boxOffen" :title="t(boxOffen ? 'chart.mbox.zu' : 'chart.mbox.auf')"
+                            @pointerdown.stop @dblclick.stop @click.stop="schalteBox" @keydown.enter.prevent="schalteBox">{{ t('chart.mbox.titel') }}</span>
                         <button @pointerdown.stop @click.stop="schalteBox" :title="t(boxOffen ? 'chart.mbox.zu' : 'chart.mbox.auf')" :aria-label="t(boxOffen ? 'chart.mbox.zu' : 'chart.mbox.auf')">
                             <i :class="boxOffen ? 'uil uil-angle-down' : 'uil uil-angle-up'"></i></button>
                     </div>
@@ -795,6 +797,14 @@ watch(sichtbareAnzahl, async () => {
     color: var(--grey-text);
     padding: 0 4px;
     cursor: pointer;
+}
+
+.boxTitel {
+    cursor: pointer;
+}
+
+.boxTitel:hover {
+    color: var(--white-87, #e6e6e6);
 }
 
 .boxTrenner button i {
