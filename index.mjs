@@ -16,6 +16,7 @@ import { setupFremdbuchRoute } from './server/fremdbuch.js'
 import { setupChartRoutes } from './server/chart-api.js'
 import { setupChartStrategieRoutes } from './server/chart-strategie.js'
 import { setupChartAlarmRoutes, startChartAlarmTakt, stopChartAlarmTakt } from './server/chart-alarme.js'
+import { setupChartKiRoutes } from './server/chart-ki.js'
 import { setupLageRoutes } from './server/marktradar-lage.js'
 import { setupHandelslageRoutes } from './server/handelslage.js'
 import { setupNewsRoutes, startNewsTakt, stopNews } from './server/marktradar-news.js'
@@ -160,6 +161,7 @@ const startIndex = async () => {
     setupChartRoutes(app);
     setupChartStrategieRoutes(app);
     setupChartAlarmRoutes(app);
+    setupChartKiRoutes(app);
     // Fremde Orderbücher zum Vergleich — bewusst NICHT in die Karte gemischt,
     // die Begründung steht im Kopf von server/fremdbuch.js.
     setupFremdbuchRoute(app);

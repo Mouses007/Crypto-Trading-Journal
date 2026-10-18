@@ -22,6 +22,7 @@ import Zeichenleiste from '../components/chart/Zeichenleiste.vue'
 import ObjektReiter from '../components/chart/ObjektReiter.vue'
 import StrategieReiter from '../components/chart/StrategieReiter.vue'
 import AlarmReiter from '../components/chart/AlarmReiter.vue'
+import KiReiter from '../components/chart/KiReiter.vue'
 import AlarmDialog from '../components/chart/AlarmDialog.vue'
 import { alarme, abonniereAlarme, neueAusloesungen, quittiere } from '../stores/chartAlarme.js'
 import { zeichnungenVon, aendere as zeichnungAendern, loesche as zeichnungLoeschen, macheRueckgaengig, macheWiederholen, fehlerMeldung } from '../stores/chartZeichnungen.js'
@@ -56,6 +57,7 @@ const REITER = [
     { id: 'objekte', icon: 'uil uil-layer-group' },
     { id: 'strategien', icon: 'uil uil-robot' },
     { id: 'alarme', icon: 'uil uil-bell' },
+    { id: 'ki', icon: 'uil uil-brain' },
 ]
 
 // ── Laden und Speichern ─────────────────────────────────────────────────
@@ -403,6 +405,8 @@ watch(sichtbareAnzahl, async () => {
                         @backtest="(b) => aktivesPanelRef?.setzeBacktest(b)" />
                     <AlarmReiter v-else-if="daten.seitenleiste.reiter === 'alarme'" :symbol="aktivesPanel.symbol"
                         :markt="aktivesPanel.markt" :kurs="aktuellerKurs" @neu="alarmBeiPreis" @bearbeite="alarmBearbeiten" />
+                    <KiReiter v-else-if="daten.seitenleiste.reiter === 'ki'" :panel="aktivesPanel"
+                        @vorschau="(a) => aktivesPanelRef?.setzeKiVorschau(a)" />
                 </aside>
             </div>
         </template>

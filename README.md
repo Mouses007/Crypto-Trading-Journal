@@ -25,6 +25,19 @@ Vue 3 + Express, SQLite or PostgreSQL, GPL-3.0.
 
 ## Features
 
+### Chart workspace (landing page)
+
+A TradingView-style chart workspace built on TradingView's free [Lightweight Charts](https://github.com/tradingview/lightweight-charts) library (Apache-2.0) — not a copy of TradingView's code, but the same functions plus what TradingView does not have: **your journal, your strategies and your own market data in the same picture.** It replaces the former overview page.
+
+- **Charts**: Binance futures/spot candles with the running candle via websocket, history loaded while scrolling back, 1m–1M, linear/log/% scale, 1, 2 or 4 charts with synced crosshair, range, symbol or timeframe, layouts and watchlists saved in the database. Alternative price source per chart: Bitunix or Bitget (REST, every 3 s — Bitunix delivers no running candle, it is built from the ticker; Bitget has no 8h).
+- **Indicators** with settings (length, source, colours): SMA, EMA, Bollinger, VWAP with bands, RSI, MACD, Stochastic, Stoch-RSI, ATR, ADX, MFI, OBV, volume — computed by the same code as the strategy detectors (`shared/indicators.js`). Data panes: open interest, long share of accounts, funding, Mo's Momentum Radar.
+- **Drawing tools**: trend line, ray, horizontal, horizontal ray, vertical, parallel channel, rectangle, Fibonacci, long/short position with R, text, measure — anchors and body draggable, style bar, magnet, lock, per-timeframe visibility, undo/redo. Drawings belong to the symbol (time + price), so they show on every timeframe and in every chart of that symbol.
+- **Your journal in the chart**: your trades with entry/exit markers, initial stop and target, partial fills and result in R (against the stop the trade *started* with) and USDT; click for notes, playbook, tags and a jump to the daily view. Open positions as price lines with live P&L, SL/TP and liquidation.
+- **Strategy layer**: setups of your instances as zones (Swing Game as a slanted trend line), paper/shadow/live positions, strategy trades, saved backtests; "detect now" runs a strategy on the current candles without saving and shows the zones Set and Forget is tracking, with quality and trend — so you see *why* there was no setup.
+- **Alerts**: price, line (incl. slanted lines and channel edges) and zone alerts, checked on the server every 5 s even with the page closed; fire on the crossing, not on staying above; delivered via ntfy/Telegram/webhook and mail.
+- **Own market data**: recorded liquidations as bubbles, modelled leverage zones and order book walls at the right edge.
+- **AI analysis**: the model reads the chart and proposes lines, zones and if/then conditions; shown dashed, adopted one by one into your own drawings. No forecasts or price targets (same guard as the Coin-Radar).
+
 ### Dashboard & Analytics
 - **P&L Overview** — total profit/loss, win rate, profit factor, ROI%, equity curve
 - **Account Balance** — auto-calculated from start deposit + trade P&L, or fetched via exchange API
@@ -323,7 +336,7 @@ presented as a finding — three sessions on a Tuesday are noise.
 - **First-Run Setup** — guided initial configuration wizard
 - **Multi-Language** — German (default) and English
 - **Extended info** — a small "i" next to values and controls; hover (tap on phones) explains what the number means. Switchable off in one place for the whole app (Settings → General → Layout & Style); button labels and the full info panels at the top of each page stay either way.
-- **Switch modes off** — every mode except the journal can be turned off individually (Übersicht, Live-Analyse, Research, Strategien). Off means off, not hidden: the tab disappears, the side menu renders nothing, and even a direct link leads back to the journal. For anyone who only wants the journal.
+- **Switch modes off** — every mode except the journal can be turned off individually (Chart, Live-Analyse, Research, Strategien). Off means off, not hidden: the tab disappears, the side menu renders nothing, and even a direct link leads back to the journal. For anyone who only wants the journal.
 
 ---
 
@@ -341,7 +354,7 @@ Your open positions outside the browser — all three companions live in this re
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Vue 3 (Composition API), Vue Router, ECharts, Bootstrap (dark theme) |
+| Frontend | Vue 3 (Composition API), Vue Router, ECharts, Lightweight Charts (chart workspace), Bootstrap (dark theme) |
 | Backend | Express.js, Knex.js |
 | Database | SQLite (default) or PostgreSQL (optional) |
 | Rich Text | Quill |
@@ -556,6 +569,7 @@ Based on [TradeNote](https://github.com/Eleven-Trading/TradeNote) by eleven.trad
 - Replaced MongoDB/Parse Server with SQLite/PostgreSQL (Knex)
 - Removed cloud auth, payments, analytics; simplified to single-user
 - Multi-broker support (Bitunix + Bitget) with encrypted API key storage
+- Chart workspace on [Lightweight Charts](https://github.com/tradingview/lightweight-charts) by TradingView (Apache-2.0; the TradingView attribution logo stays visible in every chart)
 - Added: KI-Agent, Share Cards, Incoming Positions, Performance Heatmap, Trade-Type Statistics, Backup/Restore, Auto-Update, Docker support, and more
 
 ## License

@@ -4843,7 +4843,8 @@
       "watchlist": "Watchlist",
       "objekte": "Zeichnungen",
       "strategien": "Strategien",
-      "alarme": "Alarme"
+      "alarme": "Alarme",
+      "ki": "KI-Analyse"
     },
     "watchlistName": "Name der Watchlist",
     "watchlistNeuVorgabe": "Neue Liste",
@@ -5159,6 +5160,23 @@
         "hebelzonen": "Geschätzte Liquidationszonen aus Open-Interest-Verlauf und Kerzen — ein Modell, keine Messung. Unter dem Preis Long-Liquidationen (Zwangsverkäufe), darüber Shorts (Zwangskäufe).",
         "momentum": "Mo's Momentum Radar rechnet nur auf 5m, 15m, 1h und 4h."
       }
+    },
+    "ki": {
+      "erstellen": "KI-Analyse für {symbol} {tf}",
+      "hinweis": "Kostet einen KI-Aufruf (Anbieter unter Einstellungen → KI → „Chart-Analyse“). Die KI liest nur die Kerzen, deine Linien und die Hebelzonen — keine Nachrichten. Vorschläge erscheinen gestrichelt; übernehmen macht sie zu eigenen Zeichnungen.",
+      "bedingungen": "Bedingungen",
+      "wenn": "Wenn",
+      "vorschlaege": "Vorschläge",
+      "alleUebernehmen": "alle übernehmen",
+      "uebernehmen": "übernehmen",
+      "art": {
+        "unterstuetzung": "Unterstützung",
+        "widerstand": "Widerstand",
+        "trend": "Trend"
+      },
+      "zone": "Zone",
+      "verworfen": "{n} Vorschläge verworfen (ausserhalb der Kerzen oder Prognose)",
+      "vorschauWeg": "Vorschau ausblenden"
     }
   }
 }

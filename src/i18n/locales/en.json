@@ -4843,7 +4843,8 @@
       "watchlist": "Watchlist",
       "objekte": "Drawings",
       "strategien": "Strategies",
-      "alarme": "Alerts"
+      "alarme": "Alerts",
+      "ki": "AI analysis"
     },
     "watchlistName": "Watchlist name",
     "watchlistNeuVorgabe": "New list",
@@ -5159,6 +5160,23 @@
         "hebelzonen": "Estimated liquidation zones from open-interest history and candles — a model, not a measurement. Below price long liquidations (forced sells), above shorts (forced buys).",
         "momentum": "Mo's Momentum Radar only computes on 5m, 15m, 1h and 4h."
       }
+    },
+    "ki": {
+      "erstellen": "AI analysis for {symbol} {tf}",
+      "hinweis": "Costs one AI call (provider under Settings → AI → “Chart analysis”). The AI only reads the candles, your lines and the leverage zones — no news. Suggestions appear dashed; adopting turns them into your own drawings.",
+      "bedingungen": "Conditions",
+      "wenn": "If",
+      "vorschlaege": "Suggestions",
+      "alleUebernehmen": "adopt all",
+      "uebernehmen": "adopt",
+      "art": {
+        "unterstuetzung": "Support",
+        "widerstand": "Resistance",
+        "trend": "Trend"
+      },
+      "zone": "Zone",
+      "verworfen": "{n} suggestions discarded (outside the candles or a forecast)",
+      "vorschauWeg": "Hide preview"
     }
   }
 }

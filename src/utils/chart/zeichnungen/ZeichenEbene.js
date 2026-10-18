@@ -61,6 +61,7 @@ export class ZeichenEbene {
         this.magnetAn = false
         this.ziehen = null            // { id, anker, x0, y0, L0, p0, orig }
         this.vorschau = new Map()     // id → punkte während des Ziehens
+        this.temporaer = []           // Vorschau (KI-Analyse): gezeichnet, nicht bedienbar
         this.verschlucke = false
         this.preisAchsen = []
         this.requestUpdate = () => {}
@@ -147,6 +148,11 @@ export class ZeichenEbene {
     }
 
     setzeMagnet(an) { this.magnetAn = !!an }
+
+    setzeTemporaer(liste) {
+        this.temporaer = liste || []
+        this.requestUpdate()
+    }
 
     abbrechen() {
         const etwas = !!(this.entwurf || this.messErgebnis || this.werkzeugTyp)
@@ -451,6 +457,7 @@ export class ZeichenEbene {
         const hoehe = groesse.height
         ctx.save()
         ctx.font = SCHRIFT
+        for (const z of this.temporaer) this.zeichneEine(ctx, z, z.punkte, breite, hoehe, false)
         for (const z of this.zeichnungen) {
             this.zeichneEine(ctx, z, this.punkteVon(z), breite, hoehe, z.id === this.auswahlId)
         }
@@ -525,6 +532,7 @@ export class ZeichenEbene {
                 if (fehlt(ax, ay, bx, by)) return
                 const v = verlaengere(ax, ay, bx, by, breite, { links: !!s.links, rechts: z.typ === 'strahl' || !!s.rechts })
                 this.linie(ctx, v.ax, v.ay, v.bx, v.by, s)
+                if (s.text) this.beschriftung(ctx, s.text, bx + 6, by - 4, s.farbe, { hinten: 'rgba(0,0,0,0.45)' })
                 break
             }
             case 'kanal': {

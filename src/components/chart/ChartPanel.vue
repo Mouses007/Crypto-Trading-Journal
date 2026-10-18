@@ -26,6 +26,7 @@ import { kurzname } from '../../utils/chart/indikatorRegister.js'
 import { ZeichenEbene } from '../../utils/chart/zeichnungen/ZeichenEbene.js'
 import { zeichnungenVon, legeAn, aendere, loesche } from '../../stores/chartZeichnungen.js'
 import ZeichnungStil from './ZeichnungStil.vue'
+import { kiVorschau } from '../../utils/chart/kiZeichnungen.js'
 import TradeKarte from './TradeKarte.vue'
 import axios from 'axios'
 import { JournalEbene } from '../../utils/chart/overlays/JournalEbene.js'
@@ -502,7 +503,7 @@ watch(() => props.panel.symbol, () => {
     setzeStrategieVorschau(null)
     setzeBacktest(null)
 })
-watch(() => props.panel.interval, () => setzeStrategieVorschau(null))
+watch(() => props.panel.interval, () => { setzeStrategieVorschau(null); setzeKiVorschau(null) })
 watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], () => {
     marktEbene?.setzeLiquidationen([])
     marktEbene?.setzeZonen(null)
@@ -566,6 +567,11 @@ function abbrechen() {
     if (ebene?.abbrechen()) return true
     if (auswahlId.value != null) { auswahlId.value = null; ebene?.setzeAuswahl(null); return true }
     return false
+}
+
+/** KI-Vorschläge gestrichelt einblenden (oder mit null entfernen). */
+function setzeKiVorschau(analyse) {
+    ebene?.setzeTemporaer(analyse && analyse.symbol === props.panel.symbol && analyse.interval === props.panel.interval ? kiVorschau(analyse) : [])
 }
 
 function waehleZeichnung(id) {
@@ -825,7 +831,7 @@ onBeforeUnmount(() => {
 defineExpose({
     chart, kerzenSerie, kerzen, zuLwc, vonLwc, kerzeBei,
     setzeKreuz, setzeZeitraum, sichtbarerZeitraum, zurJetztzeit, bildschirmfoto, ladeNeu,
-    loescheAuswahl, abbrechen, waehleZeichnung, auswahlId,
+    loescheAuswahl, abbrechen, waehleZeichnung, auswahlId, setzeKiVorschau,
     strategieDaten, strategieVorschau, strategieBacktest, setzeStrategieVorschau, setzeBacktest, ladeStrategie,
 })
 </script>
