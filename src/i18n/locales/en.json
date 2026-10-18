@@ -4966,6 +4966,16 @@
         "name": "VWAP Vector",
         "kurz": "VWAP Vector",
         "text": "Your Pine indicator: PVSRA vector candles, anchored VWAPs with swing fan, EMAs (also from higher timeframes), Fibonacci, engulfing, naked POCs, candle POC, vector candle zones and daily open."
+      },
+      "lsob": {
+        "name": "LSOB — Liquidity Sweep + Order Block",
+        "kurz": "LSOB",
+        "text": "Signals of the LSOB strategy over the loaded history: sweep level, order block zone, entry with stop and target, outcome. Computed like the backtest, with default parameters."
+      },
+      "guss": {
+        "name": "GUSS — EMA Touch (Sniperentry)",
+        "kurz": "GUSS",
+        "text": "Signals of the EMA Touch strategy (\"GUSS Sniperentry\"): new high, pullback \"in one pour\" to the EMA 50, entry with stop and target. Plus EMA 21/50/200."
       }
     },
     "indParam": {
@@ -5096,7 +5106,8 @@
       "dOpenLbl": "Label (offset in candles)",
       "lblOffDO": "Label offset (candles)",
       "maAn": "Moving average (SMA of RSI)",
-      "maLaenge": "Moving average length"
+      "maLaenge": "Moving average length",
+      "gussEmas": "Show EMA 21/50/200"
     },
     "indWahl": {
       "c": "Close",

@@ -463,6 +463,33 @@ export const INDIKATOREN = {
             return { ...r.linien, _vv: r }
         },
     },
+    // ── Strategie-Signale (server/chart-signale.js) ─────────────────────
+    // Jedes Setup, das die Strategie über die geladene Historie gefunden hätte —
+    // gerechnet wie im Backtest, ohne Blick in die Zukunft, mit Standardparametern.
+    lsob: {
+        ort: 'preis',
+        extern: 'signale_lsob',
+        zeichner: 'signale',
+        kurzOhneParams: true,
+        params: [],
+        ausgaben: [],
+        rechne: () => ({}),
+    },
+    guss: {
+        ort: 'preis',
+        extern: 'signale_ema_touch',
+        zeichner: 'signale',
+        kurzOhneParams: true,
+        // Die drei EMAs der Strategie (Vorgaben aus ema_touch.js: 21 / 50 / 200)
+        params: [{ key: 'gussEmas', typ: 'schalter', vorgabe: true }],
+        ausgaben: [],
+        ausgabenFuer: (p) => (p.gussEmas ? [
+            { key: 'ema21', art: 'linie', farbe: '#29b6f6', breite: 1 },
+            { key: 'ema50', art: 'linie', farbe: '#f5c542', breite: 2 },
+            { key: 'ema200', art: 'linie', farbe: '#ab47bc', breite: 1 },
+        ] : []),
+        rechne: (k, p) => (p.gussEmas ? { ema21: ema(k, 21), ema50: ema(k, 50), ema200: ema(k, 200) } : {}),
+    },
     volSma: {
         ort: 'eigen',
         params: [P_LAENGE(20)],

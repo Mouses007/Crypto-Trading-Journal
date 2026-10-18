@@ -357,6 +357,24 @@ async function ladeWaende() {
     } catch { marktEbene.setzeWaende(null); hinweis('orderbuch', null) }
 }
 
+/*
+ * Schlägt ein Abruf fehl (Server-Neustart, Netz), blieb das Datenfenster bis zum
+ * nächsten regulären Takt leer — bei OI fünf, bei Funding zehn Minuten, mit
+ * dem Wert der letzten Kerze in der Legende, aber ohne Linie. Jetzt: nach 20 s
+ * erneut, höchstens dreimal hintereinander.
+ */
+const externNochmal = new Map()   // quelle → { uhr, versuche }
+function externSpaeter(quelle) {
+    const alt = externNochmal.get(quelle) || { versuche: 0 }
+    if (alt.versuche >= 3) return
+    clearTimeout(alt.uhr)
+    externNochmal.set(quelle, { versuche: alt.versuche + 1, uhr: setTimeout(() => ladeExtern([quelle]), 20_000) })
+}
+function externGeladen(quelle) {
+    const alt = externNochmal.get(quelle)
+    if (alt) { clearTimeout(alt.uhr); externNochmal.delete(quelle) }
+}
+
 async function ladeExtern(nurWelche = null) {
     if (!zeichner) return
     const { symbol, interval } = props.panel
@@ -370,6 +388,17 @@ async function ladeExtern(nurWelche = null) {
             } else if (quelle === 'funding') {
                 const { data } = await axios.get('/api/chart/funding', { params: { symbol } })
                 if (symbol === props.panel.symbol) zeichner.setzeExtern('funding', data.punkte || [])
+            } else if (quelle.startsWith('signale_')) {
+                // Strategie-Signale (LSOB, GUSS) — nur Binance und nur auf den Zeiteinheiten der Strategie
+                const strategie = quelle.slice('signale_'.length)
+                try {
+                    const { data } = await axios.get('/api/chart/signale', { params: { strategie, symbol, interval, markt: props.panel.markt } })
+                    if (symbol === props.panel.symbol && interval === props.panel.interval) { zeichner.setzeExtern(quelle, data); hinweis(quelle, null) }
+                } catch (e) {
+                    if (e.response?.status !== 400) throw e
+                    zeichner.setzeExtern(quelle, null)
+                    hinweis(quelle, e.response.data?.error || null)
+                }
             } else if (quelle === 'vwapVector') {
                 await ladeVwapVector()
             } else if (quelle === 'momentum') {
@@ -385,7 +414,8 @@ async function ladeExtern(nurWelche = null) {
                     hinweis('momentum', null)
                 }
             }
-        } catch { /* Fenster bleibt leer — die Legende zeigt „—" */ }
+            externGeladen(quelle)
+        } catch { externSpaeter(quelle) }
     }
     if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
 }
@@ -452,7 +482,7 @@ function marktTick() {
     const n = marktZaehler++
     ladeWaende()
     if (n % 3 === 0) ladeLiquidationen()
-    if (n % 6 === 0) ladeExtern(['momentum', 'vwapVector'])
+    if (n % 6 === 0) ladeExtern(['momentum', 'vwapVector', 'signale_lsob', 'signale_ema_touch'])
     if (n % 12 === 0) ladeHebelzonen()
     if (n % 30 === 0) ladeExtern(['oi'])
     if (n % 60 === 0) ladeExtern(['funding'])
@@ -1031,6 +1061,8 @@ onBeforeUnmount(() => {
     strategieEbene = null
     clearInterval(marktTakt)
     clearTimeout(marktNeuUhr)
+    for (const x of externNochmal.values()) clearTimeout(x.uhr)
+    externNochmal.clear()
     marktEbene?.abbauen()
     marktEbene = null
     live?.stop()

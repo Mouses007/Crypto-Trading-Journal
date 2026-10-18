@@ -4966,6 +4966,16 @@
         "name": "VWAP Vector",
         "kurz": "VWAP Vector",
         "text": "Dein Pine-Indikator: PVSRA-Vektorkerzen, Anchored VWAPs mit Swing-Fächer, EMAs (auch aus höheren Zeiteinheiten), Fibonacci, Engulfing, naked POCs, Candle-POC, Vektorkerzen-Zonen und Daily Open."
+      },
+      "lsob": {
+        "name": "LSOB — Liquidity Sweep + Order Block",
+        "kurz": "LSOB",
+        "text": "Signale der Strategie LSOB über den geladenen Verlauf: Sweep-Marke, Order-Block-Zone, Einstieg mit Stop und Ziel, Ausgang. Gerechnet wie im Backtest, mit den Standardparametern."
+      },
+      "guss": {
+        "name": "GUSS — EMA Touch (Sniperentry)",
+        "kurz": "GUSS",
+        "text": "Signale der Strategie EMA Touch („GUSS Sniperentry\"): neues Hoch, Korrektur in einem Guss an die EMA 50, Einstieg mit Stop und Ziel. Dazu EMA 21/50/200."
       }
     },
     "indParam": {
@@ -5096,7 +5106,8 @@
       "dOpenLbl": "Schild (Abstand in Kerzen)",
       "lblOffDO": "Schild-Abstand (Kerzen)",
       "maAn": "Gleitende Linie (SMA des RSI)",
-      "maLaenge": "Länge der gleitenden Linie"
+      "maLaenge": "Länge der gleitenden Linie",
+      "gussEmas": "EMA 21/50/200 zeigen"
     },
     "indWahl": {
       "c": "Schluss",

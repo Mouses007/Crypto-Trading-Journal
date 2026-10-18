@@ -17,6 +17,7 @@ import { LineSeries, HistogramSeries, AreaSeries, LineStyle } from 'lightweight-
 import { INDIKATOREN, rechneIndikator, ausgabenVon, saubereParams } from './indikatorRegister.js'
 import { MomentumZeichnung } from './momentumZeichnung.js'
 import { VwapVectorZeichnung, vektorFarben } from './vwapVectorZeichnung.js'
+import { SignalZeichnung } from './signalZeichnung.js'
 import { logischZuX } from './zeichnungen/geometrie.js'
 
 const GRUEN = 'rgba(38,166,154,0.7)'
@@ -263,7 +264,9 @@ export class IndikatorZeichner {
                 ? new MomentumZeichnung({ chart: this.chart, serie: serien.w1 })
                 : def.zeichner === 'vwapVector' && this.kerzenSerie
                     ? new VwapVectorZeichnung({ chart: this.chart, serie: this.kerzenSerie })
-                    : null
+                    : def.zeichner === 'signale' && this.kerzenSerie
+                        ? new SignalZeichnung({ chart: this.chart, serie: this.kerzenSerie })
+                        : null
             const titel = def.ort === 'eigen' && erste && this.titelFuer ? new FensterTitel(erste, this.titelFuer(instanz)) : null
             this.eintraege.push({ instanz, def, ausgaben, serien, werte: {}, zeichnung, titel, band })
         }
