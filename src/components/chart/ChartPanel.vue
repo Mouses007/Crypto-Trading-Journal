@@ -220,7 +220,10 @@ function baueChart() {
             textBearbeiten: textBearbeiten,
         },
     })
-    marktEbene = new MarktEbene({ chart: c, serie: ks })
+    marktEbene = new MarktEbene({
+        chart: c, serie: ks,
+        texte: { kauf: t('chart.markt.kaufwand'), verkauf: t('chart.markt.verkaufswand'), liqLong: t('chart.markt.liqLong'), liqShort: t('chart.markt.liqShort') },
+    })
     strategieEbene = new StrategieEbene({ chart: c, serie: ks, formatPreis: (p) => ks.priceFormatter().format(p) })
     journalEbene = new JournalEbene({ chart: c, serie: ks, formatPreis: (p) => ks.priceFormatter().format(p) })
     c.subscribeClick((p) => {

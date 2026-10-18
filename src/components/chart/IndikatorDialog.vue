@@ -4,7 +4,7 @@
  * (Parameter, Farben). Was hier gewählt wird, landet im Layout des aktiven
  * Panels — gerechnet wird in `indikatorRegister.js`.
  */
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { INDIKATOREN, saubereParams, kurzname } from '../../utils/chart/indikatorRegister.js'
 
@@ -27,16 +27,36 @@ const entwurf = ref(props.instanz ? kopie(props.instanz) : null)
 const def = computed(() => (entwurf.value ? INDIKATOREN[entwurf.value.typ] : null))
 
 /** Parameter nach `gruppe` geordnet (VWAP Vector hat neun Module); ohne Gruppe eine namenlose. */
+/*
+ * Parameter nach `gruppe` und in ZEILEN: ein Parameter mit `mit` gehört in die
+ * Zeile davor (Schalter · Länge · Zeiteinheit · Farbe nebeneinander statt
+ * untereinander). Der Parameter mit `haupt` steht in der Gruppenüberschrift.
+ * VWAP Vector hat 114 Einstellungen — als Liste untereinander waren sie
+ * nicht mehr zu überblicken.
+ */
 const gruppen = computed(() => {
     const aus = []
     for (const x of def.value?.params || []) {
         const g = x.gruppe || ''
         let ziel = aus.find((a) => a.id === g)
-        if (!ziel) { ziel = { id: g, params: [] }; aus.push(ziel) }
-        ziel.params.push(x)
+        if (!ziel) { ziel = { id: g, haupt: null, zeilen: [] }; aus.push(ziel) }
+        if (x.haupt) { ziel.haupt = x; continue }
+        const letzte = ziel.zeilen[ziel.zeilen.length - 1]
+        if (x.mit && letzte) letzte.push(x)
+        else ziel.zeilen.push([x])
     }
     return aus
 })
+// Aufgeklappt: die erste Gruppe; der Rest auf Klick (gemerkt, solange der Dialog offen ist).
+const offen = ref(new Set())
+watch(gruppen, (g) => { if (!offen.value.size && g[0]) offen.value = new Set([g[0].id]) }, { immediate: true })
+function klappe(id) {
+    const n = new Set(offen.value)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    offen.value = n
+}
+const zeileAus = (z) => z[0].typ === 'schalter' && z.length > 1 && entwurf.value.params[z[0].key] === false
+const gruppeAus = (g) => g.haupt && entwurf.value.params[g.haupt.key] === false
 const hilfe = (key) => (te('chart.indHilfe.' + key) ? t('chart.indHilfe.' + key) : '')
 
 const liste = computed(() => {
@@ -121,20 +141,34 @@ onMounted(async () => {
                     <button class="zu" @click="emit('schliesse')"><i class="uil uil-times"></i></button>
                 </div>
                 <div class="form">
-                    <template v-for="g in gruppen" :key="g.id">
-                        <div v-if="g.id" class="trenner">{{ t('chart.indGruppe.' + g.id) }}</div>
-                        <label v-for="p in g.params" :key="p.key" class="zeile" :title="hilfe(p.key)">
-                            <span>{{ t('chart.indParam.' + p.key) }}<i v-if="hilfe(p.key)" class="uil uil-info-circle hinweisI"></i></span>
-                            <input v-if="p.typ === 'zahl'" v-model.number="entwurf.params[p.key]" type="number"
-                                class="form-control form-control-sm" :min="p.min" :max="p.max" :step="p.schritt" />
-                            <input v-else-if="p.typ === 'schalter'" v-model="entwurf.params[p.key]" type="checkbox"
-                                class="form-check-input schalter" />
-                            <input v-else-if="p.typ === 'farbe'" v-model="entwurf.params[p.key]" type="color" />
-                            <select v-else v-model="entwurf.params[p.key]" class="form-select form-select-sm">
-                                <option v-for="o in p.optionen" :key="o" :value="o">{{ p.roh ? o : t('chart.indWahl.' + o) }}</option>
-                            </select>
-                        </label>
-                    </template>
+                    <section v-for="g in gruppen" :key="g.id" class="gruppe" :class="{ zu: g.id && !offen.has(g.id) }">
+                        <div v-if="g.id" class="gKopf" @click="klappe(g.id)">
+                            <i class="uil uil-angle-right pfeil"></i>
+                            <span class="gName">{{ t('chart.indGruppe.' + g.id) }}</span>
+                            <input v-if="g.haupt" v-model="entwurf.params[g.haupt.key]" type="checkbox" class="form-check-input schalter"
+                                :title="t('chart.indParam.' + g.haupt.key)" @click.stop />
+                        </div>
+                        <div v-show="!g.id || offen.has(g.id)" class="gInhalt" :class="{ aus: gruppeAus(g) }">
+                            <div v-for="z in g.zeilen" :key="z[0].key" class="zeile" :class="{ aus: zeileAus(z) }" :title="hilfe(z[0].key)">
+                                <span class="zName">{{ t('chart.indParam.' + z[0].key) }}<i v-if="hilfe(z[0].key)" class="uil uil-info-circle hinweisI"></i></span>
+                                <span class="regler">
+                                    <template v-for="p in z" :key="p.key">
+                                        <input v-if="p.typ === 'zahl'" v-model.number="entwurf.params[p.key]" type="number"
+                                            class="form-control form-control-sm zahl" :min="p.min" :max="p.max" :step="p.schritt"
+                                            :title="t('chart.indParam.' + p.key)" />
+                                        <input v-else-if="p.typ === 'schalter'" v-model="entwurf.params[p.key]" type="checkbox"
+                                            class="form-check-input schalter" :title="t('chart.indParam.' + p.key)" />
+                                        <input v-else-if="p.typ === 'farbe'" v-model="entwurf.params[p.key]" type="color"
+                                            :title="t('chart.indParam.' + p.key)" />
+                                        <select v-else v-model="entwurf.params[p.key]" class="form-select form-select-sm wahl"
+                                            :title="t('chart.indParam.' + p.key)">
+                                            <option v-for="o in p.optionen" :key="o" :value="o">{{ p.roh ? o : t('chart.indWahl.' + o) }}</option>
+                                        </select>
+                                    </template>
+                                </span>
+                            </div>
+                        </div>
+                    </section>
                     <div v-if="def.ausgaben.length" class="trenner">{{ t('chart.farben') }}</div>
                     <label v-for="a in def.ausgaben" :key="a.key" class="zeile">
                         <span>{{ t('chart.indAusgabe.' + a.key) }}</span>
@@ -163,7 +197,7 @@ onMounted(async () => {
 }
 
 .dialog {
-    width: 420px;
+    width: 460px;
     max-width: 100%;
     max-height: 80vh;
     display: flex;
@@ -283,10 +317,86 @@ onMounted(async () => {
 
 .zeile {
     display: grid;
-    grid-template-columns: 1fr 140px;
+    grid-template-columns: 1fr auto;
+    min-height: 26px;
     align-items: center;
     gap: 8px;
     font-size: 12px;
+}
+
+.gruppe {
+    border: 1px solid var(--white-10);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.gruppe:not(:has(.gKopf)) {
+    border: none;
+    background: transparent;
+}
+
+.gKopf {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--white-87, #ddd);
+}
+
+.gKopf:hover {
+    background: var(--white-10);
+    border-radius: 7px;
+}
+
+.gKopf .pfeil {
+    transition: transform 0.15s;
+    transform: rotate(90deg);
+    color: var(--grey-text);
+}
+
+.gruppe.zu .gKopf .pfeil {
+    transform: rotate(0deg);
+}
+
+.gName {
+    flex: 1;
+}
+
+.gInhalt {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 2px 10px 8px;
+}
+
+.gruppe:not(:has(.gKopf)) .gInhalt {
+    padding: 0;
+}
+
+.gInhalt.aus,
+.zeile.aus .regler > :not(:first-child) {
+    opacity: 0.4;
+}
+
+.zeile .regler {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.regler .zahl {
+    width: 68px;
+}
+
+.regler .wahl {
+    width: auto;
+    min-width: 70px;
 }
 
 .zeile .schalter {
@@ -298,6 +408,14 @@ onMounted(async () => {
     margin-left: 4px;
     opacity: 0.5;
     font-size: 11px;
+}
+
+.regler input[type='color'] {
+    width: 30px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    background: transparent;
 }
 
 .zeile input[type='color'] {

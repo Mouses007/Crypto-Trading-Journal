@@ -144,9 +144,15 @@ export function platziereSchilder(waende, { zusammen = 4, abstand = 13 } = {}) {
 }
 
 export class MarktEbene {
-    constructor({ chart, serie }) {
+    /**
+     * @param {object} [o.texte]  Beschriftungen (aus der Übersetzung):
+     *   { kauf, verkauf, liqLong, liqShort } — „Bid/Ask" und ein nacktes „~18 Mio"
+     *   musste man erst nachfragen.
+     */
+    constructor({ chart, serie, texte = {} }) {
         this.chart = chart
         this.serie = serie
+        this.texte = { kauf: 'Kaufwand', verkauf: 'Verkaufswand', liqLong: 'Liq. Longs', liqShort: 'Liq. Shorts', ...texte }
         this.zeiten = []
         this.iv = 3_600_000
         this.liq = []            // [{t, price, qty, isBuy}]
@@ -187,9 +193,10 @@ export class MarktEbene {
         if (!this.zonen) return
         ctx.save()
         ctx.font = SCHRIFT
+        // Unter dem Kurs würden Longs liquidiert (Zwangsverkäufe), darüber Shorts (Zwangskäufe).
         this.zeichneBalken(ctx, groesse.width, [
-            ...(this.zonen.unten || []).map((z) => ({ ...z, rgb: ROT })),
-            ...(this.zonen.oben || []).map((z) => ({ ...z, rgb: GRUEN })),
+            ...(this.zonen.unten || []).map((z) => ({ ...z, rgb: ROT, vorsilbe: `${this.texte.liqLong} ~` })),
+            ...(this.zonen.oben || []).map((z) => ({ ...z, rgb: GRUEN, vorsilbe: `${this.texte.liqShort} ~` })),
         ], 0.28, 6, '~', 160)
         ctx.restore()
     }
@@ -204,8 +211,8 @@ export class MarktEbene {
 
     zeichneWaende(ctx, breite) {
         const alle = [
-            ...this.waende.kaeufe.map((w) => ({ ...w, rgb: GRUEN, seite: 'Bid' })),
-            ...this.waende.verkaeufe.map((w) => ({ ...w, rgb: ROT, seite: 'Ask' })),
+            ...this.waende.kaeufe.map((w) => ({ ...w, rgb: GRUEN, seite: 'Bid', name: this.texte.kauf })),
+            ...this.waende.verkaeufe.map((w) => ({ ...w, rgb: ROT, seite: 'Ask', name: this.texte.verkauf })),
         ].map((w) => ({ ...w, y: this.zuY(w.preis) })).filter((w) => w.y != null)
         if (!alle.length) return
         const platz = platziereSchilder(alle)
@@ -222,7 +229,7 @@ export class MarktEbene {
             ctx.fillStyle = `rgba(${w.rgb},0.75)`
             ctx.fillRect(breite - l, y - 2, l, 4)
             if (!w.schild) continue
-            const text = `${w.seite} ${usdKurz(w.usd)}`
+            const text = `${w.name} ${usdKurz(w.usd)}`
             const b = ctx.measureText(text).width
             ctx.fillStyle = 'rgba(10,14,22,0.75)'
             ctx.fillRect(breite - l - b - 10, y - 7, b + 6, 13)
@@ -275,7 +282,7 @@ export class MarktEbene {
             ctx.fillStyle = `rgba(${e.rgb},${alpha})`
             ctx.fillRect(breite - l, y - dicke / 2, l, dicke)
             if (beschriften.has(e)) {
-                const text = `${vorsilbe}${usdKurz(e.usd)}`
+                const text = `${e.vorsilbe ?? vorsilbe}${usdKurz(e.usd)}`
                 const b = ctx.measureText(text).width
                 ctx.fillStyle = `rgba(${e.rgb},0.95)`
                 ctx.fillText(text, breite - l - b - 4, y + 3)

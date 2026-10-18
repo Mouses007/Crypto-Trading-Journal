@@ -146,60 +146,68 @@ export const VV_LINIEN = [
     ['mtf3', 'showMtfE3', 'cMtfE3', (p) => `EMA ${p.lenMtfE3} ${p.tfMtfE3}`, 'ema'],
 ]
 
+/*
+ * Dialog-Aufbau: `haupt` = Hauptschalter der Gruppe (steht in der Überschrift),
+ * `mit` = gehört in die Zeile des Parameters davor (Schalter · Länge · Farbe
+ * in EINER Zeile statt drei). Die Werte selbst sind die des Pine.
+ */
+const H = (p) => ({ ...p, haupt: true })
+const M = (p) => ({ ...p, mit: true })
 const VV_PARAMS = [
     // 1 PVSRA
-    S('showVector', true, 'pvsra'), Z('climaxMult', 2, 0.5, 10, 0.1, 'pvsra'), Z('risingMult', 1.5, 0.5, 10, 0.1, 'pvsra'),
+    H(S('showVector', true, 'pvsra')), Z('climaxMult', 2, 0.5, 10, 0.1, 'pvsra'), Z('risingMult', 1.5, 0.5, 10, 0.1, 'pvsra'),
     Z('pvsraLen', 10, 1, 200, 1, 'pvsra'),
-    F('cClimaxBull', '#00e600', 'pvsra'), F('cClimaxBear', '#ff0000', 'pvsra'),
-    F('cRisingBull', '#0000ff', 'pvsra'), F('cRisingBear', '#da00ff', 'pvsra'),
-    F('cNeutBull', '#999999', 'pvsra'), F('cNeutBear', '#4d4d4d', 'pvsra'),
+    F('cClimaxBull', '#00e600', 'pvsra'), M(F('cClimaxBear', '#ff0000', 'pvsra')),
+    F('cRisingBull', '#0000ff', 'pvsra'), M(F('cRisingBear', '#da00ff', 'pvsra')),
+    F('cNeutBull', '#999999', 'pvsra'), M(F('cNeutBear', '#4d4d4d', 'pvsra')),
     Z('vecDeckkraft', 80, 0, 100, 5, 'pvsra'),
     // 2 VWAP
-    S('showDaily', false, 'vwap'), F('cDaily', '#70ccbd', 'vwap'),
-    S('showWeekly', false, 'vwap'), F('cWeekly', '#ffffff', 'vwap'),
-    S('showMonthly', false, 'vwap'), F('cMonthly', '#f06292', 'vwap'),
-    S('showATH', false, 'vwap'), F('cATH', '#00bcd4', 'vwap'),
-    S('showATL', false, 'vwap'), F('cATL', '#3355ff', 'vwap'),
-    S('showSwingHi', true, 'vwap'), F('cSwingHi', '#5cb85c', 'vwap'),
-    S('showSwingLo', true, 'vwap'), F('cSwingLo', '#880e4f', 'vwap'),
-    Z('swingWidth', 2, 1, 5, 1, 'vwap'), W('swingStyle', 'gestrichelt', ['gestrichelt', 'durchgezogen', 'gepunktet'], 'vwap'),
+    S('showDaily', false, 'vwap'), M(F('cDaily', '#70ccbd', 'vwap')),
+    S('showWeekly', false, 'vwap'), M(F('cWeekly', '#ffffff', 'vwap')),
+    S('showMonthly', false, 'vwap'), M(F('cMonthly', '#f06292', 'vwap')),
+    S('showATH', false, 'vwap'), M(F('cATH', '#00bcd4', 'vwap')),
+    S('showATL', false, 'vwap'), M(F('cATL', '#3355ff', 'vwap')),
+    S('showSwingHi', true, 'vwap'), M(F('cSwingHi', '#5cb85c', 'vwap')),
+    S('showSwingLo', true, 'vwap'), M(F('cSwingLo', '#880e4f', 'vwap')),
+    Z('swingWidth', 2, 1, 5, 1, 'vwap'), M(W('swingStyle', 'gestrichelt', ['gestrichelt', 'durchgezogen', 'gepunktet'], 'vwap')),
     Z('swingPivLen', 20, 2, 200, 1, 'vwap'), Z('swingCnt', 1, 1, 3, 1, 'vwap'), Z('swingMinSep', 1, 0, 20, 0.1, 'vwap'),
-    S('labelVWAPS', true, 'vwap'), Z('lblOffVwap', 12, 0, 100, 1, 'vwap'),
+    S('labelVWAPS', true, 'vwap'), M(Z('lblOffVwap', 12, 0, 100, 1, 'vwap')),
     // 3 EMA
-    S('showEma21', true, 'ema'), F('cEma21', '#f5d300', 'ema'),
-    S('showEma50', true, 'ema'), F('cEma50', '#ff9800', 'ema'),
-    S('showEma200', true, 'ema'), F('cEma200', '#e0e0e0', 'ema'),
-    S('showEmaC1', false, 'ema'), Z('lenEmaC1', 200, 1, 2000, 1, 'ema'), F('cEmaC1', '#7b2fbe', 'ema'),
-    S('showEmaC2', false, 'ema'), Z('lenEmaC2', 800, 1, 2000, 1, 'ema'), F('cEmaC2', '#a52020', 'ema'),
-    S('showMtfE1', true, 'ema'), Z('lenMtfE1', 13, 1, 1000, 1, 'ema'), W('tfMtfE1', '1d', TFS, 'ema', true), F('cMtfE1', '#00bcd4', 'ema'),
-    S('showMtfE2', true, 'ema'), Z('lenMtfE2', 50, 1, 1000, 1, 'ema'), W('tfMtfE2', '1d', TFS, 'ema', true), F('cMtfE2', '#e65100', 'ema'),
-    S('showMtfE3', false, 'ema'), Z('lenMtfE3', 200, 1, 1000, 1, 'ema'), W('tfMtfE3', '1d', TFS, 'ema', true), F('cMtfE3', '#b388ff', 'ema'),
-    S('labelEMAS', true, 'ema'), Z('lblOffEma', 3, 0, 100, 1, 'ema'),
+    S('showEma21', true, 'ema'), M(F('cEma21', '#f5d300', 'ema')),
+    S('showEma50', true, 'ema'), M(F('cEma50', '#ff9800', 'ema')),
+    S('showEma200', true, 'ema'), M(F('cEma200', '#e0e0e0', 'ema')),
+    S('showEmaC1', false, 'ema'), M(Z('lenEmaC1', 200, 1, 2000, 1, 'ema')), M(F('cEmaC1', '#7b2fbe', 'ema')),
+    S('showEmaC2', false, 'ema'), M(Z('lenEmaC2', 800, 1, 2000, 1, 'ema')), M(F('cEmaC2', '#a52020', 'ema')),
+    S('showMtfE1', true, 'ema'), M(Z('lenMtfE1', 13, 1, 1000, 1, 'ema')), M(W('tfMtfE1', '1d', TFS, 'ema', true)), M(F('cMtfE1', '#00bcd4', 'ema')),
+    S('showMtfE2', true, 'ema'), M(Z('lenMtfE2', 50, 1, 1000, 1, 'ema')), M(W('tfMtfE2', '1d', TFS, 'ema', true)), M(F('cMtfE2', '#e65100', 'ema')),
+    S('showMtfE3', false, 'ema'), M(Z('lenMtfE3', 200, 1, 1000, 1, 'ema')), M(W('tfMtfE3', '1d', TFS, 'ema', true)), M(F('cMtfE3', '#b388ff', 'ema')),
+    S('labelEMAS', true, 'ema'), M(Z('lblOffEma', 3, 0, 100, 1, 'ema')),
     // 4 Fibonacci
-    S('showFib', false, 'fib'), W('fibTf', '4h', TFS, 'fib', true), Z('fibAtrMult', 3, 0.5, 20, 0.5, 'fib'),
-    S('fL0', true, 'fib'), F('cL0', '#787b86', 'fib'), S('fL236', false, 'fib'), F('cL236', '#f23645', 'fib'),
-    S('fL382', false, 'fib'), F('cL382', '#ff9800', 'fib'), S('fL5', false, 'fib'), F('cL5', '#4caf50', 'fib'),
-    S('fL618', true, 'fib'), F('cL618', '#089981', 'fib'), S('fL786', true, 'fib'), F('cL786', '#64b5f6', 'fib'),
-    S('fL1', true, 'fib'), F('cL1', '#787b86', 'fib'),
+    H(S('showFib', false, 'fib')), W('fibTf', '4h', TFS, 'fib', true), Z('fibAtrMult', 3, 0.5, 20, 0.5, 'fib'),
+    S('fL0', true, 'fib'), M(F('cL0', '#787b86', 'fib')), S('fL236', false, 'fib'), M(F('cL236', '#f23645', 'fib')),
+    S('fL382', false, 'fib'), M(F('cL382', '#ff9800', 'fib')), S('fL5', false, 'fib'), M(F('cL5', '#4caf50', 'fib')),
+    S('fL618', true, 'fib'), M(F('cL618', '#089981', 'fib')), S('fL786', true, 'fib'), M(F('cL786', '#64b5f6', 'fib')),
+    S('fL1', true, 'fib'), M(F('cL1', '#787b86', 'fib')),
     // 5 Engulfing
-    S('showEng', true, 'eng'), Z('engMinBody', 1, 0, 10, 0.1, 'eng'), S('engVolConf', false, 'eng'),
-    F('cEngBull', '#00e676', 'eng'), F('cEngBear', '#ff1744', 'eng'),
+    H(S('showEng', true, 'eng')), Z('engMinBody', 1, 0, 10, 0.1, 'eng'), S('engVolConf', false, 'eng'),
+    F('cEngBull', '#00e676', 'eng'), M(F('cEngBear', '#ff1744', 'eng')),
     // 6 Perioden-POC
-    S('showPocPer', true, 'pocPer'), W('pocPerTf', '1d', ['4h', '12h', '1d', '1w', '1M'], 'pocPer', true),
+    H(S('showPocPer', true, 'pocPer')), W('pocPerTf', '1d', ['4h', '12h', '1d', '1w', '1M'], 'pocPer', true),
     Z('pocPerBins', 50, 10, 200, 1, 'pocPer'), Z('pocPerMax', 20, 1, 100, 1, 'pocPer'),
-    S('pocPerExt', true, 'pocPer'), S('pocPerLbl', true, 'pocPer'), F('cPocPer', '#ab47bc', 'pocPer'),
-    Z('pocPerWid', 2, 1, 4, 1, 'pocPer'), Z('pocPerDist', 4, 0, 50, 0.5, 'pocPer'), Z('lblOffPocPer', 22, 0, 100, 1, 'pocPer'),
+    S('pocPerExt', true, 'pocPer'), S('pocPerLbl', true, 'pocPer'), M(Z('lblOffPocPer', 22, 0, 100, 1, 'pocPer')),
+    F('cPocPer', '#ab47bc', 'pocPer'), M(Z('pocPerWid', 2, 1, 4, 1, 'pocPer')), Z('pocPerDist', 4, 0, 50, 0.5, 'pocPer'),
     // 7 Candle-POC
-    S('showPocC', true, 'pocC'), Z('pocCPiv', 5, 1, 20, 1, 'pocC'), W('pocCTf', '1m', ['1m', '3m', '5m', '15m'], 'pocC', true),
-    Z('pocCBins', 25, 5, 100, 1, 'pocC'), Z('pocCMax', 60, 5, 300, 1, 'pocC'), S('pocCLabel', false, 'pocC'),
-    F('cPocC', '#26c6da', 'pocC'), Z('pocCWidth', 2, 1, 4, 1, 'pocC'),
-    S('pocCAll', true, 'pocC'), F('cPocCAll', '#26c6da', 'pocC'), Z('pocCAllW', 1, 1, 4, 1, 'pocC'), Z('lblOffPocC', 22, 0, 100, 1, 'pocC'),
+    H(S('showPocC', true, 'pocC')), Z('pocCPiv', 5, 1, 20, 1, 'pocC'), W('pocCTf', '1m', ['1m', '3m', '5m', '15m'], 'pocC', true),
+    Z('pocCBins', 25, 5, 100, 1, 'pocC'), Z('pocCMax', 60, 5, 300, 1, 'pocC'),
+    S('pocCLabel', false, 'pocC'), M(Z('lblOffPocC', 22, 0, 100, 1, 'pocC')),
+    F('cPocC', '#26c6da', 'pocC'), M(Z('pocCWidth', 2, 1, 4, 1, 'pocC')),
+    S('pocCAll', true, 'pocC'), M(F('cPocCAll', '#26c6da', 'pocC')), M(Z('pocCAllW', 1, 1, 4, 1, 'pocC')),
     // 8 Vektorkerzen-Zonen
-    S('showVliq', true, 'vliq'), S('vliqClimax', true, 'vliq'), S('vliqBody', true, 'vliq'),
+    H(S('showVliq', true, 'vliq')), S('vliqClimax', true, 'vliq'), S('vliqBody', true, 'vliq'),
     Z('vliqTransp', 85, 0, 100, 5, 'vliq'), S('vliqBorder', false, 'vliq'),
-    F('cVliqBull', '#26a69a', 'vliq'), F('cVliqBear', '#ef5350', 'vliq'), Z('vliqMax', 30, 2, 300, 1, 'vliq'),
+    F('cVliqBull', '#26a69a', 'vliq'), M(F('cVliqBear', '#ef5350', 'vliq')), Z('vliqMax', 30, 2, 300, 1, 'vliq'),
     // 9 Daily Open
-    S('showDOpen', true, 'dopen'), F('cDOpen', '#ffffff', 'dopen'), S('dOpenLbl', true, 'dopen'), Z('lblOffDO', 12, 0, 100, 1, 'dopen'),
+    H(S('showDOpen', true, 'dopen')), F('cDOpen', '#ffffff', 'dopen'), S('dOpenLbl', true, 'dopen'), M(Z('lblOffDO', 12, 0, 100, 1, 'dopen')),
 ]
 
 /** Welche Zeiteinheiten der VWAP Vector nachladen muss (höhere + Intrabar). */
