@@ -87,6 +87,47 @@ function waehleLayout(layout) {
     daten.value = vervollstaendige(layout.daten)
 }
 
+/*
+ * Breite der Seitenleiste: am linken Rand ziehbar. Bewusst im Browser statt im
+ * Layout — sie hängt am Bildschirm, nicht am Arbeitsplatz (Handy ≠ Monitor).
+ */
+const LEISTE_MIN = 200
+const LEISTE_MAX = 720
+const LEISTE_SCHLUESSEL = 'chartLeisteBreite'
+function leseLeistenBreite() {
+    try {
+        const n = Number(localStorage.getItem(LEISTE_SCHLUESSEL))
+        if (n >= LEISTE_MIN && n <= LEISTE_MAX) return n
+    } catch { /* kein Speicher */ }
+    return 260
+}
+const leisteBreite = ref(leseLeistenBreite())
+let leisteZug = null
+
+function leisteZiehenStart(e) {
+    leisteZug = { x: e.clientX, breite: leisteBreite.value }
+    e.target.setPointerCapture?.(e.pointerId)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+}
+function leisteZiehen(e) {
+    if (!leisteZug) return
+    // Griff sitzt links: nach links ziehen macht die Leiste breiter.
+    const max = Math.min(LEISTE_MAX, window.innerWidth * 0.6)
+    leisteBreite.value = Math.round(Math.max(LEISTE_MIN, Math.min(max, leisteZug.breite + leisteZug.x - e.clientX)))
+}
+function leisteZiehenEnde() {
+    if (!leisteZug) return
+    leisteZug = null
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    try { localStorage.setItem(LEISTE_SCHLUESSEL, String(leisteBreite.value)) } catch { /* kein Speicher */ }
+}
+function leisteZuruecksetzen() {
+    leisteBreite.value = 260
+    try { localStorage.removeItem(LEISTE_SCHLUESSEL) } catch { /* kein Speicher */ }
+}
+
 watch(daten, () => {
     if (ignoriereNaechsteAenderung) { ignoriereNaechsteAenderung = false; return }
     clearTimeout(speicherUhr)
@@ -365,7 +406,8 @@ watch(sichtbareAnzahl, async () => {
             <div v-if="fehlerMeldung" class="alert alert-warning py-1 px-2 my-1 small" @click="fehlerSchliessen">
                 {{ t('chart.zeichnungFehler') }}: {{ fehlerMeldung }}</div>
 
-            <div class="arbeitsflaeche" :class="{ mitLeiste: daten.seitenleiste.offen }">
+            <div class="arbeitsflaeche" :class="{ mitLeiste: daten.seitenleiste.offen }"
+                :style="{ '--leisteBreite': leisteBreite + 'px' }">
                 <Zeichenleiste class="werkzeuge" :werkzeug="werkzeug" :magnet="!!daten.zeichnen?.magnet"
                     :versteckt="!!daten.zeichnen?.versteckt" @werkzeug="waehleWerkzeug"
                     @magnet="daten.zeichnen = { ...(daten.zeichnen || {}), magnet: !daten.zeichnen?.magnet }"
@@ -383,6 +425,9 @@ watch(sichtbareAnzahl, async () => {
                 </div>
 
                 <aside v-if="daten.seitenleiste.offen" class="seitenleiste">
+                    <div class="leisteGriff" :title="t('chart.leisteBreite')" @pointerdown.prevent="leisteZiehenStart"
+                        @pointermove="leisteZiehen" @pointerup="leisteZiehenEnde" @pointercancel="leisteZiehenEnde"
+                        @dblclick="leisteZuruecksetzen"></div>
                     <div v-if="REITER.length > 1" class="reiter">
                         <button v-for="r in REITER" :key="r.id" :class="{ an: daten.seitenleiste.reiter === r.id }"
                             :title="t('chart.reiter.' + r.id)" @click="daten.seitenleiste.reiter = r.id">
@@ -442,7 +487,7 @@ watch(sichtbareAnzahl, async () => {
 }
 
 .arbeitsflaeche.mitLeiste {
-    grid-template-columns: auto 1fr 260px;
+    grid-template-columns: auto 1fr var(--leisteBreite, 260px);
 }
 
 .raster {
@@ -477,6 +522,38 @@ watch(sichtbareAnzahl, async () => {
     border-radius: 6px;
     padding: 8px;
     background: var(--black-bg-7, #131722);
+    position: relative;
+    min-width: 0;
+}
+
+/* Griff zum Ziehen der Breite, über dem linken Rand. */
+.leisteGriff {
+    position: absolute;
+    left: -6px;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    cursor: col-resize;
+    z-index: 5;
+    touch-action: none;
+}
+
+.leisteGriff::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    width: 2px;
+    height: 36px;
+    transform: translateY(-50%);
+    border-radius: 2px;
+    background: var(--white-18, rgba(255, 255, 255, 0.18));
+    transition: background 0.15s, height 0.15s;
+}
+
+.leisteGriff:hover::after {
+    background: var(--blue-color);
+    height: 64px;
 }
 
 .reiter {
@@ -548,6 +625,10 @@ watch(sichtbareAnzahl, async () => {
     max-height: 50dvh;
 }
 
+.chartSeite.telefon .leisteGriff {
+    display: none;
+}
+
 @media (max-width: 991px) {
     .arbeitsflaeche,
     .arbeitsflaeche.mitLeiste {
@@ -556,6 +637,10 @@ watch(sichtbareAnzahl, async () => {
 
     .seitenleiste {
         grid-column: 1 / -1;
+    }
+
+    .leisteGriff {
+        display: none;
     }
 
     .chartSeite {

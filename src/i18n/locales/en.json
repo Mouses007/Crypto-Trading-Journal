@@ -4796,6 +4796,7 @@
     "tage": "{n} days"
   },
   "chart": {
+    "leisteBreite": "Drag to resize (double-click: reset)",
     "status": {
       "connecting": "Connecting …",
       "open": "Live",

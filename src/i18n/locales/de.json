@@ -4796,6 +4796,7 @@
     "tage": "{n} Tage"
   },
   "chart": {
+    "leisteBreite": "Breite ziehen (Doppelklick: zurücksetzen)",
     "status": {
       "connecting": "Verbinde …",
       "open": "Live",
