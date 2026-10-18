@@ -14,7 +14,7 @@ import { seitenKontext } from './app-hilfe.js'
 import { resetBacktestKontingent } from './strategy-tools.js'
 import { assertAllowedOllamaUrl, waehleAnbieter } from './ollama-api.js'
 import {
-    samplingFelder, KEY_SPALTEN, KI_URL_SPALTEN,
+    samplingFelder, aufwandFelder, KEY_SPALTEN, KI_URL_SPALTEN,
     keySpalte, istOpenAiKompatibel, chatEndpunkt,
 } from './ai-models.js'
 import { beobachteAbbruch, sseSender } from './sse.js'
@@ -261,7 +261,10 @@ async function callAnthropicWithTools(messages, config) {
             // ohne `tools` lehnt Anthropic sie ab), aber der Aufruf wird gesperrt.
             ...(config.ohneTools ? { tool_choice: { type: 'none' } } : {}),
             // Neuere Modelle lehnen Sampling-Parameter mit 400 ab
-            ...samplingFelder(config.model, config.temperature)
+            ...samplingFelder(config.model, config.temperature),
+            // Werkzeugketten brauchen Urteil, aber `high` würde bei 4000
+            // Token Deckel das Antwortbudget ins Denken verschieben.
+            ...aufwandFelder(config.model, config.maxTokens, 'medium')
         })
     })
 
@@ -347,13 +350,22 @@ async function callGeminiWithTools(messages, config) {
         if (msg.role === 'user') {
             contents.push({ role: 'user', parts: [{ text: msg.content }] })
         } else if (msg.role === 'assistant') {
+            // Gemini 3 hängt an Funktionsaufrufe eine `thoughtSignature` und lehnt die
+            // nächste Runde ab, wenn sie fehlt („Function call is missing a
+            // thought_signature", 18.10.2026 im Chart-Chat). Deshalb die Teile der
+            // Antwort UNVERÄNDERT zurückgeben — Text, Aufrufe und Signaturen in einer Runde.
+            if (msg.geminiParts?.length) {
+                contents.push({ role: 'model', parts: msg.geminiParts })
+                continue
+            }
             if (msg.content) {
                 contents.push({ role: 'model', parts: [{ text: msg.content }] })
             }
-            // If there were function calls, add them
+            // Fortgesetzte Sitzung aus der Datenbank: keine Originalteile mehr
             if (msg.functionCalls) {
                 contents.push({ role: 'model', parts: msg.functionCalls.map(fc => ({
-                    functionCall: { name: fc.name, args: fc.params }
+                    functionCall: { name: fc.name, args: fc.params },
+                    ...(fc.thoughtSignature ? { thoughtSignature: fc.thoughtSignature } : {}),
                 })) })
             }
         } else if (msg.role === 'tool') {
@@ -409,8 +421,10 @@ async function callGeminiWithTools(messages, config) {
         toolCalls: fcParts.map((p, i) => ({
             id: `gemini_${Date.now()}_${i}`,
             name: p.functionCall.name,
-            params: p.functionCall.args || {}
+            params: p.functionCall.args || {},
+            thoughtSignature: p.thoughtSignature || null,
         })),
+        rawParts: parts,
         stopReason: data.candidates?.[0]?.finishReason,
         usage: {
             promptTokens: data.usageMetadata?.promptTokenCount || 0,
@@ -693,7 +707,8 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE, i
             content: response.text || '',
             rawContent: response.rawContent, // For Anthropic
             toolCallsRaw: response.rawMessage?.tool_calls, // For OpenAI
-            functionCalls: response.toolCalls // For Gemini
+            functionCalls: response.toolCalls, // For Gemini
+            geminiParts: response.rawParts, // Gemini: Originalteile samt thoughtSignature
         }
         history.push(assistantMsg)
 
