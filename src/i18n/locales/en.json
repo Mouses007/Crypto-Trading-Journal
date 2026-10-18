@@ -4796,6 +4796,8 @@
     "tage": "{n} days"
   },
   "chart": {
+    "autoAn": "Auto-fit is on (click: off)",
+    "autoAus": "Auto-fit — click to fit the price back into view",
     "tfFavoriten": "Timeframes — star = in the bar",
     "tfFavoritenTitel": "All timeframes and favourites",
     "tfFavoritHinzu": "Add to the bar",

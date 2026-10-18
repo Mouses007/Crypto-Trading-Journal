@@ -711,8 +711,30 @@ function wendeSkalaAn() {
     chart.value?.priceScale('right').applyOptions({ mode: modus })
 }
 
+/*
+ * Automatisch einpassen: Zieht oder staucht man die Preisachse, schaltet die
+ * Bibliothek das Einpassen ab — und es bliebe auch nach einem Symbolwechsel
+ * aus (ETH auf der BTC-Skala 77 000–87 500, also leer). Darum bei jedem
+ * Neuladen wieder an, und der Knopf „A" unten rechts zeigt und schaltet es.
+ */
+const autoSkala = ref(true)
+function preisSkalen() {
+    const c = chart.value
+    if (!c) return []
+    return c.panes().map((_, i) => c.priceScale('right', i))
+}
+function pruefeAutoSkala() {
+    const s0 = preisSkalen()[0]
+    if (s0) autoSkala.value = !!s0.options().autoScale
+}
+function autoEinpassen(an = true) {
+    for (const s of preisSkalen()) s.applyOptions({ autoScale: an })
+    autoSkala.value = an
+}
+
 async function ladeNeu() {
     const nr = ++ladeNummer
+    autoEinpassen(true)
     live?.stop()
     live = null
     historieZuEnde = false
@@ -939,7 +961,9 @@ defineExpose({
 
 <template>
     <div class="chartPanel" :class="{ aktiv }" @mousedown="emit('fokus')" @touchstart.passive="emit('fokus')">
-        <div ref="huelle" class="flaeche"></div>
+        <div ref="huelle" class="flaeche" @pointerup="pruefeAutoSkala" @wheel.passive="pruefeAutoSkala" @dblclick="pruefeAutoSkala"></div>
+        <button class="autoKnopf" :class="{ an: autoSkala }" :title="t(autoSkala ? 'chart.autoAn' : 'chart.autoAus')"
+            @click.stop="autoEinpassen(!autoSkala)">A</button>
 
         <div class="legende">
             <span class="sym">{{ panel.symbol }}</span>
@@ -1004,6 +1028,28 @@ defineExpose({
 </template>
 
 <style scoped>
+.autoKnopf {
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    z-index: 6;
+    width: 20px;
+    height: 18px;
+    padding: 0;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 18px;
+    border: 1px solid var(--white-18, rgba(255, 255, 255, 0.18));
+    border-radius: 3px;
+    background: rgba(10, 14, 22, 0.85);
+    color: var(--grey-text);
+}
+
+.autoKnopf.an {
+    color: var(--blue-color);
+    border-color: var(--blue-color);
+}
+
 .chartPanel {
     position: relative;
     min-width: 0;

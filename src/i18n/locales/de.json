@@ -4796,6 +4796,8 @@
     "tage": "{n} Tage"
   },
   "chart": {
+    "autoAn": "Automatisch einpassen ist an (Klick: aus)",
+    "autoAus": "Automatisch einpassen — Klick passt den Kurs wieder ins Bild",
     "tfFavoriten": "Zeiteinheiten — Stern = in der Leiste",
     "tfFavoritenTitel": "Alle Zeiteinheiten und Favoriten",
     "tfFavoritHinzu": "In die Leiste aufnehmen",
