@@ -25,21 +25,79 @@ export const INTERVALL_MS = {
     '1M': 30.44 * 1440 * MIN,
 }
 
-/** Quelle aus dem Markt — Binance ist die Datenbasis. */
-export function quelleFuer(markt) {
+/**
+ * Quelle aus Börse und Markt. Binance ist die Datenbasis; Bitunix und Bitget
+ * gibt es nur als Futures und nur per REST (siehe `server/chart-api.js`).
+ */
+export function quelleFuer(markt, boerse = 'binance') {
+    if (boerse === 'bitunix' || boerse === 'bitget') return boerse
     return markt === 'spot' ? 'binance-spot' : 'binance-futures'
 }
+
+export const istRestQuelle = (boerse) => boerse === 'bitunix' || boerse === 'bitget'
+
+/** Wie viele Kerzen eine Quelle je Abruf hergibt. */
+export const QUELLEN_MAX = { binance: 1000, bitunix: 200, bitget: 1000 }
+
+/** Zeiteinheiten, die eine Quelle nicht kennt. */
+export const QUELLEN_OHNE = { bitget: ['8h'] }
 
 /**
  * Kerzen holen. Ohne `endTime` die jüngsten (inkl. laufender), mit `endTime`
  * die davor — für das Nachladen beim Zurückscrollen.
  * @returns {Promise<Array<{t,o,h,l,c,v}>>}
  */
-export async function ladeKerzen({ markt, symbol, interval, endTime, limit = 1000 }) {
-    const params = { quelle: quelleFuer(markt), symbol, interval, limit }
+export async function ladeKerzen({ markt, symbol, interval, endTime, limit = 1000, boerse = 'binance', mitLauf = false }) {
+    const params = { quelle: quelleFuer(markt, boerse), symbol, interval, limit: Math.min(limit, QUELLEN_MAX[boerse] || 1000) }
     if (endTime) params.endTime = endTime
     const { data } = await axios.get('/api/chart/kerzen', { params })
-    return (data?.kerzen || []).map(([t, o, h, l, c, v]) => ({ t, o, h, l, c, v }))
+    const kerzen = (data?.kerzen || []).map(([t, o, h, l, c, v]) => ({ t, o, h, l, c, v }))
+    return mitLauf ? { kerzen, lauf: data?.lauf || null } : kerzen
+}
+
+/**
+ * Laufende Kerze per Abfrage statt Websocket (Bitunix, Bitget), alle 3 s.
+ *
+ * Bitget liefert die laufende Kerze mit. Bitunix nicht — dort kommt nur der
+ * Tickerpreis, und die Kerze wird hier gebaut: Eröffnung = Schluss der
+ * vorigen, Hoch/Tief aus den Preisen, die diese Seite gesehen hat. Sie ist
+ * damit erst ab dem Öffnen genau; das steht im Kopf des Charts.
+ */
+export class RestKerze {
+    constructor({ markt, symbol, interval, boerse, onKerze, onStatus }) {
+        this.aus = false
+        this.gebaut = null
+        const runde = async () => {
+            if (this.aus) return
+            try {
+                const { kerzen, lauf } = await ladeKerzen({ markt, symbol, interval, boerse, limit: 3, mitLauf: true })
+                if (this.aus) return
+                for (const k of kerzen) onKerze({ ...k, geschlossen: false })
+                const letzte = kerzen[kerzen.length - 1]
+                if (lauf && letzte && lauf.t > letzte.t) {
+                    if (!this.gebaut || this.gebaut.t !== lauf.t) {
+                        this.gebaut = { t: lauf.t, o: letzte.c, h: Math.max(letzte.c, lauf.preis), l: Math.min(letzte.c, lauf.preis), c: lauf.preis, v: 0 }
+                    } else {
+                        this.gebaut.h = Math.max(this.gebaut.h, lauf.preis)
+                        this.gebaut.l = Math.min(this.gebaut.l, lauf.preis)
+                        this.gebaut.c = lauf.preis
+                    }
+                    onKerze({ ...this.gebaut, geschlossen: false })
+                }
+                onStatus?.('open')
+            } catch {
+                onStatus?.('closed')
+            }
+            if (!this.aus) this.uhr = setTimeout(runde, 3000)
+        }
+        onStatus?.('connecting')
+        runde()
+    }
+
+    stop() {
+        this.aus = true
+        clearTimeout(this.uhr)
+    }
 }
 
 /**

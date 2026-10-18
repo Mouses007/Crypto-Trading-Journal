@@ -6,7 +6,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SymbolSuche from './SymbolSuche.vue'
-import { INTERVALLE, INTERVALLE_SICHTBAR } from '../../utils/chart/kerzenQuelle.js'
+import { INTERVALLE, INTERVALLE_SICHTBAR, QUELLEN_OHNE } from '../../utils/chart/kerzenQuelle.js'
 import { OVERLAYS, overlayAn } from '../../utils/chart/overlays/liste.js'
 
 const props = defineProps({
@@ -40,6 +40,8 @@ const RASTER = [
 const SKALEN = ['normal', 'log', 'prozent']
 
 const verborgeneIntervalle = computed(() => INTERVALLE.filter((i) => !INTERVALLE_SICHTBAR.includes(i)))
+/** Zeiteinheiten, die die gewählte Kursquelle nicht kennt (Bitget: kein 8h). */
+const gesperrt = computed(() => new Set(props.panel.markt === 'spot' ? [] : (QUELLEN_OHNE[props.panel.boerse] || [])))
 const aktuellesLayout = computed(() => props.layouts.find((l) => l.id === props.layoutId))
 
 function intervall(i) {
@@ -71,6 +73,12 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
 <template>
     <div class="kopfleiste">
         <SymbolSuche ref="suche" :symbol="panel.symbol" :markt="panel.markt" @waehle="emit('panel', $event)" />
+        <select class="quelle" :value="panel.markt === 'spot' ? 'binance' : (panel.boerse || 'binance')" :disabled="panel.markt === 'spot'"
+            :title="t('chart.quelle.titel')" @change="emit('panel', { boerse: $event.target.value })">
+            <option value="binance">{{ t('chart.quelle.binance') }}</option>
+            <option value="bitunix">{{ t('chart.quelle.bitunix') }}</option>
+            <option value="bitget">{{ t('chart.quelle.bitget') }}</option>
+        </select>
 
         <div class="gruppe">
             <button v-for="i in INTERVALLE_SICHTBAR" :key="i" class="tf" :class="{ an: panel.interval === i }"
@@ -81,6 +89,7 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
                 </button>
                 <div v-if="mehrOffen" class="menue">
                     <button v-for="i in verborgeneIntervalle" :key="i" class="tf" :class="{ an: panel.interval === i }"
+                        :disabled="gesperrt.has(i)" :title="gesperrt.has(i) ? t('chart.quelle.tfFehlt') : ''"
                         @click="intervall(i)">{{ i }}</button>
                 </div>
             </div>
@@ -158,6 +167,19 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
     padding: 6px 4px;
 }
 
+.quelle {
+    background: transparent;
+    border: 1px solid var(--white-10);
+    border-radius: 6px;
+    color: var(--grey-text);
+    font-size: 12px;
+    padding: 3px 6px;
+}
+
+.quelle option {
+    background: var(--black-bg-5, #1e222d);
+}
+
 .gruppe {
     display: flex;
     align-items: center;
@@ -186,6 +208,10 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
 .tf:hover {
     color: var(--white-87, #eee);
     background: var(--white-10);
+}
+
+.tf:disabled {
+    opacity: 0.3;
 }
 
 .tf.an {

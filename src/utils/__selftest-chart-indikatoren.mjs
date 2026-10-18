@@ -9,7 +9,7 @@
  * gegen die Kerzen), dass die Preisquelle wirklich wirkt, und dass kaputte
  * gespeicherte Parameter nicht durchschlagen.
  */
-import { INDIKATOREN, rechneIndikator, saubereParams, vorgaben, kurzname, neueInstanz } from './chart/indikatorRegister.js'
+import { INDIKATOREN, rechneIndikator, saubereParams, vorgaben, kurzname, neueInstanz, aufKerzen, jeKerzeSumme, benoetigteQuellen } from './chart/indikatorRegister.js'
 import { ema, rsi, macd, bollinger } from '../../shared/indicators.js'
 import { ema as serverEma } from '../../server/strategies/indicators.js'
 
@@ -47,10 +47,17 @@ check('RSI im Chart == RSI der Detektoren', gleich(rechneIndikator('rsi', kerzen
     check('Bollinger oben/mitte/unten == Detektoren', gleich(b.oben, r.upper) && gleich(b.mitte, r.middle) && gleich(b.unten, r.lower))
 }
 
+// Fremddaten für die Datenfenster: stündliches OI, Funding alle 8 h, Momentum je Kerze.
+const extern = {
+    oi: kerzen.filter((_, i) => i % 1 === 0).map((k, i) => ({ t: k.t, oi: 1000 + i, longPct: 50 + (i % 10) })),
+    funding: kerzen.filter((_, i) => i % 8 === 0).map((k) => ({ t: k.t + 60_000, rate: 0.0001 })),
+    momentum: { t: kerzen.map((k) => k.t), w1: kerzen.map((_, i) => Math.sin(i / 5) * 50), w2: kerzen.map((_, i) => Math.sin(i / 5 - 0.3) * 50), mf: kerzen.map((_, i) => Math.cos(i / 7) * 20) },
+}
+
 console.log('\nJede Ausgabe so lang wie die Kerzenreihe\n')
 for (const typ of Object.keys(INDIKATOREN)) {
     const params = { ...vorgaben(typ), ...(typ === 'vwap' ? { band: 2 } : {}) }
-    const aus = rechneIndikator(typ, kerzen, params)
+    const aus = rechneIndikator(typ, kerzen, params, extern)
     const pflicht = INDIKATOREN[typ].ausgaben.filter((a) => !a.optional || typ === 'vwap')
     const fehlt = pflicht.filter((a) => !Array.isArray(aus[a.key]) || aus[a.key].length !== kerzen.length).map((a) => a.key)
     const zahlen = pflicht.every((a) => (aus[a.key] || []).some((x) => Number.isFinite(x)))
@@ -62,6 +69,23 @@ for (const typ of Object.keys(INDIKATOREN)) {
     const mitBand = rechneIndikator('vwap', kerzen, { anker: 'session', band: 1 })
     const i = kerzen.length - 1
     check('VWAP-Band liegt um die Linie (oben > Linie > unten)', mitBand.oben[i] > mitBand.wert[i] && mitBand.wert[i] > mitBand.unten[i])
+}
+
+console.log('\nDatenfenster: fremde Reihen auf Kerzen\n')
+{
+    const k = [{ t: 100 }, { t: 200 }, { t: 300 }, { t: 400 }]
+    const oi = aufKerzen(k, [{ t: 150, oi: 7 }, { t: 300, oi: 9 }], 'oi')
+    check('Vor dem ersten Punkt null, nicht 0', oi[0] === null)
+    check('Letzter bekannter Wert zur Kerzeneröffnung', oi[1] === 7 && oi[2] === 9 && oi[3] === 9, JSON.stringify(oi))
+    check('Unsortierte Punkte werden sortiert', aufKerzen(k, [{ t: 300, oi: 9 }, { t: 150, oi: 7 }], 'oi')[1] === 7)
+    const f = jeKerzeSumme(k, [{ t: 210, rate: 0.0001 }, { t: 290, rate: 0.0002 }, { t: 50, rate: 1 }], 'rate', 100)
+    check('Funding in der Kerze, in die es fällt, summiert (in %)', Math.abs(f[1] - 0.03) < 1e-12 && f[0] === null && f[2] === null, JSON.stringify(f))
+    check('Zahlung vor der ersten Kerze wird nicht der ersten zugeschlagen', f[0] === null)
+    check('Ohne Fremddaten: Reihe aus null statt Absturz', rechneIndikator('oi', kerzen, {}, {}).wert.every((v) => v === null))
+    const m = rechneIndikator('momentum', kerzen.slice(0, 5), {}, { momentum: { t: [kerzen[1].t, kerzen[3].t], w1: [10, 20], w2: [1, 2], mf: [3, 4] } })
+    check('Momentum nur an exakt passenden Kerzenzeiten (andere Zeiteinheit → leer)', m.w1[0] === null && m.w1[1] === 10 && m.w1[3] === 20 && m.w1[2] === null)
+    check('Benötigte Quellen ohne Doppelte, ausgeblendete zählen nicht',
+        benoetigteQuellen([{ typ: 'oi' }, { typ: 'longShort' }, { typ: 'funding', sichtbar: false }, { typ: 'ema' }]).join() === 'oi')
 }
 
 console.log('\nPreisquelle wirkt\n')

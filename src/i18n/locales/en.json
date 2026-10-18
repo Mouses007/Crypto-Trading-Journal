@@ -4926,6 +4926,26 @@
         "name": "Volume with average",
         "kurz": "Vol",
         "text": "Volume in its own pane with a moving average."
+      },
+      "oi": {
+        "name": "Open interest",
+        "kurz": "OI",
+        "text": "Open contracts (Binance, hourly, last ~8 days) — OI rising with price means new positions."
+      },
+      "longShort": {
+        "name": "Long share of accounts",
+        "kurz": "Long %",
+        "text": "Share of Binance accounts holding a long (hourly) — sentiment, not volume."
+      },
+      "funding": {
+        "name": "Funding",
+        "kurz": "Funding %",
+        "text": "Funding rate per payment in percent (Binance, 180 days); several payments within one candle are summed."
+      },
+      "momentum": {
+        "name": "Mo's Momentum Radar",
+        "kurz": "Momentum",
+        "text": "Wave (WaveTrend) and money flow from the live-trading momentum radar — only 5m, 15m, 1h, 4h."
       }
     },
     "indParam": {
@@ -4973,7 +4993,9 @@
       "adx": "ADX",
       "plus": "+DI",
       "minus": "−DI",
-      "vol": "Volume"
+      "vol": "Volume",
+      "w1": "Wave",
+      "w2": "Signal"
     },
     "farben": "Colours",
     "standard": "Default",
@@ -5040,7 +5062,10 @@
     "overlay": {
       "journal": "Journal trades",
       "positionen": "Open positions",
-      "strategie": "Strategy layer"
+      "strategie": "Strategy layer",
+      "liquidationen": "Liquidations (recorded)",
+      "hebelzonen": "Leverage zones (model)",
+      "orderbuch": "Order book walls"
     },
     "str": {
       "instanzen": "Instances on this symbol",
@@ -5110,6 +5135,30 @@
       "loeschenFrage": "Delete alert “{was}”?",
       "quittieren": "click to dismiss",
       "hier": "Alert at this price"
+    },
+    "quelle": {
+      "titel": "Price source: Binance (live via websocket, deep history) or your trading exchange's prices (polled)",
+      "binance": "Binance",
+      "bitunix": "Bitunix",
+      "bitget": "Bitget",
+      "restTitel": {
+        "bitunix": "Bitunix prices polled every 3 s. Bitunix does not deliver the running candle — it is built here from the ticker price and is only exact from the moment the page was opened. At most 200 candles per request.",
+        "bitget": "Bitget prices polled every 3 s, including the running candle. No 8h candles."
+      },
+      "tfFehlt": "This price source does not offer this timeframe"
+    },
+    "markt": {
+      "liqAnzahl": "{n} liquidations",
+      "liqKeine": "Liquidations: not recorded",
+      "hebelModell": "Leverage zones: model",
+      "hebelDuenn": "Leverage zones: model, thin data",
+      "hebelKeine": "Leverage zones: none",
+      "momentumTf": "Momentum only on 5m/15m/1h/4h",
+      "titel": {
+        "liquidationen": "Recorded forced liquidations (Binance, sample: at most one per second). Only for symbols the recorder records (Settings → Live analysis).",
+        "hebelzonen": "Estimated liquidation zones from open-interest history and candles — a model, not a measurement. Below price long liquidations (forced sells), above shorts (forced buys).",
+        "momentum": "Mo's Momentum Radar only computes on 5m, 15m, 1h and 4h."
+      }
     }
   }
 }

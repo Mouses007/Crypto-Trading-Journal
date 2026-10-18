@@ -29,19 +29,32 @@ async function tpslVon(pos) {
         tpslZwischenspeicher.set(pos.positionId, neu)
         return neu
     } catch {
-        // Kein Schlüssel oder Börse weg: ohne SL/TP zeichnen, nicht ohne Position.
-        return { ts: Date.now(), sl: null, tp: null }
+        // Kein Schlüssel oder Börse weg: ohne SL/TP zeichnen, nicht ohne
+        // Position. Auch der Fehlschlag wird gemerkt — sonst fragte jedes
+        // Panel alle 15 s erneut eine Börse, die gerade Nein gesagt hat.
+        const leer = { ts: Date.now(), sl: null, tp: null }
+        tpslZwischenspeicher.set(pos.positionId, leer)
+        return leer
     }
+}
+
+/*
+ * Mehrere Panels zeigen oft dasselbe Symbol — sie teilen sich eine Abfrage
+ * der offenen Positionen, statt jede für sich die Datenbank zu fragen.
+ */
+let offenAbruf = null
+let offenStand = 0
+function offenePositionenRoh() {
+    if (!offenAbruf || Date.now() - offenStand > 5000) {
+        offenStand = Date.now()
+        offenAbruf = dbFind('incoming_positions', { equalTo: { status: 'open' } }).catch(() => [])
+    }
+    return offenAbruf
 }
 
 export async function ladeOffenePositionen(symbol) {
     const ziel = normSymbol(symbol)
-    let zeilen = []
-    try {
-        zeilen = await dbFind('incoming_positions', { equalTo: { status: 'open' } })
-    } catch {
-        return []
-    }
+    const zeilen = await offenePositionenRoh()
     const passende = zeilen.filter((p) => normSymbol(p.symbol) === ziel)
     return Promise.all(passende.map(async (p) => {
         const roh = p.bitunixData || {}

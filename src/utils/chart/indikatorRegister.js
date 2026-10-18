@@ -15,7 +15,10 @@
  *   params    [{ key, typ: 'zahl'|'wahl', vorgabe, min, max, schritt, optionen }]
  *   ausgaben  [{ key, art: 'linie'|'histogramm', farbe, breite }]
  *   linien    feste Marken im Pane (z. B. 70/30 beim RSI)
- *   rechne(kerzen, p) → { [ausgabeKey]: Array<number|null> } gleich lang wie kerzen
+ *   rechne(kerzen, p, ext) → { [ausgabeKey]: Array<number|null> } gleich lang wie kerzen
+ *   extern    (optional) Name einer Datenquelle, die das Panel nachlädt — Open
+ *             Interest, Funding, Momentum. `ext` sind dann deren Punkte; sie
+ *             werden hier auf die Kerzenzeiten gelegt.
  */
 import {
     sma, ema, bollinger, vwap, vwapBand, rsi, macd, stochastic, stochRsi, atr, adx, obv, mfi, volumeSma,
@@ -41,6 +44,57 @@ function mitQuelle(kerzen, quelle) {
     if (!quelle || quelle === 'c') return kerzen
     const f = QUELLEN[quelle] || QUELLEN.c
     return kerzen.map((k) => ({ ...k, c: f(k) }))
+}
+
+/**
+ * Punkte einer fremden Reihe auf die Kerzen legen: jede Kerze bekommt den
+ * letzten Wert, der zu ihrer Eröffnung bekannt war. Vor dem ersten Punkt null
+ * — nicht 0, sonst sähe der Anfang wie ein Einbruch aus.
+ */
+export function aufKerzen(kerzen, punkte, feld) {
+    const aus = new Array(kerzen.length).fill(null)
+    if (!Array.isArray(punkte) || !punkte.length) return aus
+    const p = [...punkte].sort((a, b) => a.t - b.t)
+    let j = -1
+    for (let i = 0; i < kerzen.length; i++) {
+        while (j + 1 < p.length && p[j + 1].t <= kerzen[i].t) j++
+        if (j >= 0) {
+            const v = Number(p[j][feld])
+            aus[i] = Number.isFinite(v) ? v : null
+        }
+    }
+    return aus
+}
+
+/**
+ * Ereignisse (Funding-Zahlungen) der Kerze zuordnen, in die sie fallen, und
+ * je Kerze summieren. Kerzen ohne Zahlung bleiben leer: auf 15m zahlt nur
+ * jede 16. bzw. 32. Kerze.
+ */
+export function jeKerzeSumme(kerzen, punkte, feld, faktor = 1) {
+    const aus = new Array(kerzen.length).fill(null)
+    if (!Array.isArray(punkte) || !punkte.length || !kerzen.length) return aus
+    let i = 0
+    for (const pkt of [...punkte].sort((a, b) => a.t - b.t)) {
+        if (pkt.t < kerzen[0].t) continue
+        while (i + 1 < kerzen.length && kerzen[i + 1].t <= pkt.t) i++
+        const v = Number(pkt[feld]) * faktor
+        if (!Number.isFinite(v)) continue
+        aus[i] = (aus[i] ?? 0) + v
+    }
+    return aus
+}
+
+/** Werte, die genau zu Kerzenzeiten gehören (Momentum: gleiche Zeiteinheit). */
+function nachZeit(kerzen, zeiten, werte) {
+    const aus = new Array(kerzen.length).fill(null)
+    if (!Array.isArray(zeiten) || !Array.isArray(werte)) return aus
+    const karte = new Map(zeiten.map((t, i) => [t, werte[i]]))
+    for (let i = 0; i < kerzen.length; i++) {
+        const v = karte.get(kerzen[i].t)
+        if (Number.isFinite(v)) aus[i] = v
+    }
+    return aus
 }
 
 const P_LAENGE = (vorgabe, max = 500) => ({ key: 'laenge', typ: 'zahl', vorgabe, min: 1, max, schritt: 1 })
@@ -188,6 +242,47 @@ export const INDIKATOREN = {
         ausgaben: [{ key: 'wert', art: 'linie', farbe: '#8d6e63', breite: 1 }],
         rechne: (k) => ({ wert: obv(k) }),
     },
+    // ── Daten-Fenster aus eigenen Quellen ────────────────────────────────
+    oi: {
+        ort: 'eigen',
+        extern: 'oi',
+        params: [],
+        ausgaben: [{ key: 'wert', art: 'linie', farbe: '#ffb74d', breite: 2 }],
+        rechne: (k, _p, ext) => ({ wert: aufKerzen(k, ext, 'oi') }),
+    },
+    longShort: {
+        ort: 'eigen',
+        extern: 'oi',
+        params: [],
+        ausgaben: [{ key: 'wert', art: 'linie', farbe: '#26a69a', breite: 2 }],
+        linien: [50],
+        rechne: (k, _p, ext) => ({ wert: aufKerzen(k, ext, 'longPct') }),
+    },
+    funding: {
+        ort: 'eigen',
+        extern: 'funding',
+        params: [],
+        ausgaben: [{ key: 'hist', art: 'histogramm', farbe: '#26a69a' }],
+        linien: [0],
+        // In Prozent je Zahlung; mehrere Zahlungen in einer Kerze summiert.
+        rechne: (k, _p, ext) => ({ hist: jeKerzeSumme(k, ext, 'rate', 100) }),
+    },
+    momentum: {
+        ort: 'eigen',
+        extern: 'momentum',
+        params: [],
+        ausgaben: [
+            { key: 'hist', art: 'histogramm', farbe: '#26a69a' },
+            { key: 'w1', art: 'linie', farbe: '#29b6f6', breite: 2 },
+            { key: 'w2', art: 'linie', farbe: '#ff9800', breite: 1 },
+        ],
+        linien: [60, 0, -60],
+        rechne: (k, _p, ext) => ({
+            w1: nachZeit(k, ext?.t, ext?.w1),
+            w2: nachZeit(k, ext?.t, ext?.w2),
+            hist: nachZeit(k, ext?.t, ext?.mf),
+        }),
+    },
     volSma: {
         ort: 'eigen',
         params: [P_LAENGE(20)],
@@ -228,10 +323,15 @@ export function saubereParams(typ, roh) {
 }
 
 /** Rechnet eine Instanz; unbekannter Typ → leeres Ergebnis statt Absturz. */
-export function rechneIndikator(typ, kerzen, params) {
+export function rechneIndikator(typ, kerzen, params, extern = {}) {
     const def = INDIKATOREN[typ]
     if (!def || !kerzen.length) return {}
-    return def.rechne(kerzen, saubereParams(typ, params))
+    return def.rechne(kerzen, saubereParams(typ, params), def.extern ? extern?.[def.extern] : undefined)
+}
+
+/** Welche fremden Datenquellen braucht eine Indikatorliste? */
+export function benoetigteQuellen(instanzen) {
+    return [...new Set((instanzen || []).filter((i) => i.sichtbar !== false).map((i) => INDIKATOREN[i.typ]?.extern).filter(Boolean))]
 }
 
 /** Kurzbeschriftung für die Legende, z. B. „EMA 21" oder „BB 20 2". */

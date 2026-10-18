@@ -19,7 +19,7 @@ import dayjs from 'dayjs'
 import {
     createChart, CandlestickSeries, HistogramSeries, CrosshairMode, PriceScaleMode, LineStyle,
 } from 'lightweight-charts'
-import { ladeKerzen, LiveKerze, fuegeZusammen, INTERVALL_MS } from '../../utils/chart/kerzenQuelle.js'
+import { ladeKerzen, LiveKerze, RestKerze, fuegeZusammen, INTERVALL_MS, istRestQuelle, QUELLEN_MAX } from '../../utils/chart/kerzenQuelle.js'
 import { loadSymbolMeta } from '../../utils/liveSymbols.js'
 import { IndikatorZeichner } from '../../utils/chart/indikatorZeichner.js'
 import { kurzname } from '../../utils/chart/indikatorRegister.js'
@@ -30,6 +30,8 @@ import TradeKarte from './TradeKarte.vue'
 import axios from 'axios'
 import { JournalEbene } from '../../utils/chart/overlays/JournalEbene.js'
 import { StrategieEbene } from '../../utils/chart/overlays/StrategieEbene.js'
+import { MarktEbene, waendeAusBuch } from '../../utils/chart/overlays/MarktEbene.js'
+import { benoetigteQuellen } from '../../utils/chart/indikatorRegister.js'
 import { ladeOffenePositionen } from '../../utils/chart/overlays/positionen.js'
 import { overlayAn as overlayAnFuer } from '../../utils/chart/overlays/liste.js'
 
@@ -71,6 +73,11 @@ let strategieEbene = null
 const strategieDaten = shallowRef(null)  // Antwort von /api/chart/strategie (für die Seitenleiste)
 const strategieVorschau = shallowRef(null)
 const strategieBacktest = shallowRef(null)
+let marktEbene = null
+let marktTakt = null
+let marktZaehler = 0
+const marktHinweise = ref({})          // liquidationen/hebelzonen/momentum → Text für die Legende
+const MOMENTUM_TF = ['5m', '15m', '1h', '4h']
 let kreuzZeit = null                 // t (ms) unter dem Fadenkreuz; null = letzte Kerze
 let nachfuehrUhr = null
 
@@ -184,6 +191,7 @@ function baueChart() {
             textBearbeiten: textBearbeiten,
         },
     })
+    marktEbene = new MarktEbene({ chart: c, serie: ks })
     strategieEbene = new StrategieEbene({ chart: c, serie: ks, formatPreis: (p) => ks.priceFormatter().format(p) })
     journalEbene = new JournalEbene({ chart: c, serie: ks, formatPreis: (p) => ks.priceFormatter().format(p) })
     c.subscribeClick((p) => {
@@ -217,8 +225,104 @@ function setzeDaten(liste) {
     ebene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
     journalEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
     strategieEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
+    marktEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
     planeJournal()
     emit('kerzen', liste)
+}
+
+// ── Eigene Marktdaten und Datenfenster ───────────────────────────────────
+function hinweis(name, text) {
+    marktHinweise.value = { ...marktHinweise.value, [name]: text }
+}
+
+async function ladeLiquidationen() {
+    if (!marktEbene) return
+    if (!overlayAn('liquidationen') || props.panel.markt === 'spot' || !kerzen.value.length) {
+        marktEbene.setzeLiquidationen([]); hinweis('liquidationen', null); return
+    }
+    const symbol = props.panel.symbol
+    // Höchstens eine Woche: der Rekorder hält eine Stichprobe je Sekunde, und
+    // auf einem Wochenchart über Jahre gäbe es ohnehin nur die letzten Tage.
+    const von = Math.max(kerzen.value[0].t, Date.now() - 7 * 86_400_000)
+    try {
+        const { data } = await axios.get('/api/live/liquidations', { params: { symbol, from: von, to: Date.now(), venue: 'binance' } })
+        if (symbol !== props.panel.symbol) return
+        marktEbene.setzeLiquidationen(data.events)
+        hinweis('liquidationen', data.events.length ? t('chart.markt.liqAnzahl', { n: data.events.length }) : t('chart.markt.liqKeine'))
+    } catch { hinweis('liquidationen', t('chart.markt.liqKeine')) }
+}
+
+async function ladeHebelzonen() {
+    if (!marktEbene) return
+    if (!overlayAn('hebelzonen') || props.panel.markt === 'spot') { marktEbene.setzeZonen(null); hinweis('hebelzonen', null); return }
+    const symbol = props.panel.symbol
+    try {
+        const { data } = await axios.get('/api/chart/hebelzonen', { params: { symbol } })
+        if (symbol !== props.panel.symbol) return
+        marktEbene.setzeZonen(data.zonen)
+        hinweis('hebelzonen', data.zonen ? t(data.zonen.duenn ? 'chart.markt.hebelDuenn' : 'chart.markt.hebelModell') : t('chart.markt.hebelKeine'))
+    } catch { marktEbene.setzeZonen(null); hinweis('hebelzonen', t('chart.markt.hebelKeine')) }
+}
+
+async function ladeWaende() {
+    if (!marktEbene) return
+    if (!overlayAn('orderbuch')) { marktEbene.setzeWaende(null); return }
+    const { symbol, markt } = props.panel
+    try {
+        // limit 500 statt 1000: halbes Gewicht, und Wände jenseits von ±5 %
+        // zeigt der Chart ohnehin nicht.
+        const { data } = await axios.get('/api/binance/depth', { params: { symbol, market: markt === 'spot' ? 'spot' : 'futures', limit: 500 } })
+        if (symbol !== props.panel.symbol) return
+        marktEbene.setzeWaende(waendeAusBuch(data))
+    } catch { marktEbene.setzeWaende(null) }
+}
+
+async function ladeExtern(nurWelche = null) {
+    if (!zeichner) return
+    const { symbol, interval } = props.panel
+    for (const quelle of benoetigteQuellen(props.panel.indikatoren)) {
+        if (nurWelche && !nurWelche.includes(quelle)) continue
+        try {
+            if (quelle === 'oi') {
+                const { data } = await axios.get('/api/marktradar/ls-oi', { params: { symbol, stunden: 200 } })
+                if (symbol === props.panel.symbol) zeichner.setzeExtern('oi', data.punkte || [])
+            } else if (quelle === 'funding') {
+                const { data } = await axios.get('/api/chart/funding', { params: { symbol } })
+                if (symbol === props.panel.symbol) zeichner.setzeExtern('funding', data.punkte || [])
+            } else if (quelle === 'momentum') {
+                if (!MOMENTUM_TF.includes(interval)) {
+                    zeichner.setzeExtern('momentum', null)
+                    hinweis('momentum', t('chart.markt.momentumTf'))
+                    continue
+                }
+                const { data } = await axios.get('/api/livetrading/momentum', { params: { symbol, tf: interval } })
+                if (symbol === props.panel.symbol && interval === props.panel.interval) {
+                    zeichner.setzeExtern('momentum', data.verlauf || null)
+                    hinweis('momentum', null)
+                }
+            }
+        } catch { /* Fenster bleibt leer — die Legende zeigt „—" */ }
+    }
+    if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
+}
+
+/** Ein Takt, verschiedene Abstände: Wände 10 s, Liquidationen 30 s, Momentum 60 s, Hebel 2 min, OI 5 min, Funding 10 min. */
+function marktTick() {
+    const n = marktZaehler++
+    ladeWaende()
+    if (n % 3 === 0) ladeLiquidationen()
+    if (n % 6 === 0) ladeExtern(['momentum'])
+    if (n % 12 === 0) ladeHebelzonen()
+    if (n % 30 === 0) ladeExtern(['oi'])
+    if (n % 60 === 0) ladeExtern(['funding'])
+}
+
+function marktNeu() {
+    marktZaehler = 0
+    marktHinweise.value = {}
+    clearInterval(marktTakt)
+    marktTick()
+    marktTakt = setInterval(marktTick, 10_000)
 }
 
 // ── Journal und offene Positionen ────────────────────────────────────────
@@ -389,7 +493,8 @@ function starteTakte() {
     ladePositionen()
 }
 
-watch(() => props.panel.overlays, () => { ladeJournal(); ladePositionen(); ladeStrategie() }, { deep: true })
+watch(() => props.panel.overlays, () => { ladeJournal(); ladePositionen(); ladeStrategie(); marktNeu() }, { deep: true })
+watch(() => benoetigteQuellen(props.panel.indikatoren).join(), () => ladeExtern())
 watch(() => props.panel.symbol, () => {
     gewaehlterTrade.value = null
     entfernePositionsLinien()
@@ -398,6 +503,14 @@ watch(() => props.panel.symbol, () => {
     setzeBacktest(null)
 })
 watch(() => props.panel.interval, () => setzeStrategieVorschau(null))
+watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], () => {
+    marktEbene?.setzeLiquidationen([])
+    marktEbene?.setzeZonen(null)
+    marktEbene?.setzeWaende(null)
+    // Kurz warten, bis die neuen Kerzen da sind — Liquidationen und
+    // Datenfenster richten sich nach deren Zeitraum.
+    setTimeout(marktNeu, 1500)
+})
 
 function schliesseTrade() {
     gewaehlterTrade.value = null
@@ -504,11 +617,23 @@ async function ladeNeu() {
     fehler.value = ''
     laedt.value = true
     const { symbol, markt, interval } = props.panel
+    const boerse = boerseVon()
+    const max = QUELLEN_MAX[boerse] || 1000
     try {
-        const liste = await ladeKerzen({ symbol, markt, interval, limit: 1000 })
+        let liste = await ladeKerzen({ symbol, markt, interval, limit: max, boerse })
+        // Bei 200 Kerzen je Abruf (Bitunix) wäre der Chart halb leer — gleich
+        // ein paar Seiten nachlegen, damit Indikatoren Vorlauf haben.
+        for (let i = 0; i < 4 && istRestQuelle(boerse) && liste.length >= max && liste.length < 800; i++) {
+            const aeltere = await ladeKerzen({ symbol, markt, interval, limit: max, boerse, endTime: liste[0].t - 1 })
+            if (nr !== ladeNummer || !aeltere.length) break
+            liste = fuegeZusammen(aeltere, liste)
+        }
         if (nr !== ladeNummer) return
         setzeDaten(liste)
-        if (liste.length < 1000) historieZuEnde = true
+        // Bei den REST-Quellen sagt eine kurze erste Seite nichts: Bitget hält
+        // die älteren Kerzen unter einem anderen Endpunkt bereit. Dort ist erst
+        // Schluss, wenn das Nachladen leer zurückkommt.
+        if (!istRestQuelle(boerse) && liste.length < max) historieZuEnde = true
         // Die jüngsten ~150 Kerzen zeigen, nicht alle tausend gequetscht.
         const n = liste.length
         if (n) chart.value?.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 8 })
@@ -528,10 +653,12 @@ async function ladeAeltere() {
     nachladenLaeuft = true
     const nr = ladeNummer
     const { symbol, markt, interval } = props.panel
+    const boerse = boerseVon()
+    const max = QUELLEN_MAX[boerse] || 1000
     try {
-        const aeltere = await ladeKerzen({ symbol, markt, interval, endTime: kerzen.value[0].t - 1, limit: 1000 })
+        const aeltere = await ladeKerzen({ symbol, markt, interval, endTime: kerzen.value[0].t - 1, limit: max, boerse })
         if (nr !== ladeNummer) return
-        if (aeltere.length < 1000) historieZuEnde = true
+        if (istRestQuelle(boerse) ? !aeltere.length : aeltere.length < max) historieZuEnde = true
         if (!aeltere.length) return
         const ts = chart.value.timeScale()
         const vorher = ts.getVisibleLogicalRange()
@@ -548,10 +675,17 @@ async function ladeAeltere() {
     }
 }
 
+/** Börse der Kerzen: Binance, oder Bitunix/Bitget (nur Futures). */
+function boerseVon() {
+    const b = props.panel.boerse
+    return props.panel.markt !== 'spot' && istRestQuelle(b) ? b : 'binance'
+}
+
 function starteLive(nr) {
     const { symbol, markt, interval } = props.panel
-    live = new LiveKerze({
-        symbol, markt, interval,
+    const Klasse = istRestQuelle(boerseVon()) ? RestKerze : LiveKerze
+    live = new Klasse({
+        symbol, markt, interval, boerse: boerseVon(),
         onStatus: (s) => { if (nr === ladeNummer) status.value = s },
         onKerze: (k) => {
             if (nr !== ladeNummer) return
@@ -565,6 +699,7 @@ function starteLive(nr) {
                 ebene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
                 journalEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
                 strategieEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
+                marktEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
             }
             kerzenSerie.value?.update({ time: zuLwc(bar.t), open: bar.o, high: bar.h, low: bar.l, close: bar.c })
             volumenSerie.value?.update(volumenBalken(bar))
@@ -641,7 +776,7 @@ const legendeDelta = computed(() => {
     return ((l.close - l.open) / l.open) * 100
 })
 
-watch(() => [props.panel.symbol, props.panel.markt, props.panel.interval], ladeNeu)
+watch(() => [props.panel.symbol, props.panel.markt, props.panel.interval, props.panel.boerse], ladeNeu)
 watch(() => props.panel.skala, wendeSkalaAn)
 watch(() => props.panel.indikatoren, (inst) => {
     zeichner?.setze(inst, kerzen.value)
@@ -661,6 +796,7 @@ onMounted(() => {
     baueChart()
     ladeNeu()
     starteTakte()
+    setTimeout(marktNeu, 1500)
     zeichneAlarmLinien()
     huelle.value.addEventListener('contextmenu', rechtsklick)
 })
@@ -678,6 +814,9 @@ onBeforeUnmount(() => {
     journalEbene = null
     strategieEbene?.abbauen()
     strategieEbene = null
+    clearInterval(marktTakt)
+    marktEbene?.abbauen()
+    marktEbene = null
     live?.stop()
     chart.value?.remove()
     chart.value = null
@@ -699,6 +838,8 @@ defineExpose({
             <span class="sym">{{ panel.symbol }}</span>
             <span class="tf">{{ panel.interval }}</span>
             <span class="markt">{{ panel.markt === 'spot' ? 'Spot' : 'Perp' }}</span>
+            <span v-if="boerseVon() !== 'binance'" class="quelleHinweis" :title="t('chart.quelle.restTitel.' + boerseVon())">
+                {{ t('chart.quelle.' + boerseVon()) }} · REST ~3 s</span>
             <span class="punkt" :class="status" :title="t('chart.status.' + (status || 'connecting'))"></span>
             <template v-if="legende">
                 <span>O <b>{{ fmt(legende.open) }}</b></span>
@@ -708,6 +849,9 @@ defineExpose({
                 <span v-if="legendeDelta != null" :class="legendeDelta >= 0 ? 'greenTrade' : 'redTrade'">
                     {{ legendeDelta >= 0 ? '+' : '' }}{{ legendeDelta.toFixed(2) }} %
                 </span>
+            </template>
+            <template v-for="(text, name) in marktHinweise" :key="name">
+                <span v-if="text" class="marktHinweis" :title="t('chart.markt.titel.' + name)">{{ text }}</span>
             </template>
             <span v-if="journalInfo && journalInfo.anzahl" class="journalHinweis" :title="t('chart.journalHinweis')">
                 <i class="uil uil-book-alt"></i> {{ journalInfo.anzahl }}{{ journalInfo.gekappt ? '+' : '' }}
@@ -830,6 +974,15 @@ defineExpose({
 
 .kontextMenue button:hover {
     background: var(--white-10);
+}
+
+.marktHinweis {
+    color: #ff9800;
+    font-size: 10px;
+}
+
+.quelleHinweis {
+    color: #ff9800;
 }
 
 .journalHinweis {

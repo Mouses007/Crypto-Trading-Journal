@@ -4926,6 +4926,26 @@
         "name": "Volumen mit Durchschnitt",
         "kurz": "Vol",
         "text": "Volumen als eigenes Fenster mit gleitendem Durchschnitt."
+      },
+      "oi": {
+        "name": "Open Interest",
+        "kurz": "OI",
+        "text": "Offene Kontrakte (Binance, stündlich, letzte ~8 Tage) — steigt OI mit dem Preis, kommen neue Positionen dazu."
+      },
+      "longShort": {
+        "name": "Long-Anteil der Konten",
+        "kurz": "Long %",
+        "text": "Anteil der Binance-Konten mit Long-Position (stündlich) — eine Stimmung, kein Volumen."
+      },
+      "funding": {
+        "name": "Funding",
+        "kurz": "Funding %",
+        "text": "Funding-Satz je Zahlung in Prozent (Binance, 180 Tage); fallen mehrere Zahlungen in eine Kerze, summiert."
+      },
+      "momentum": {
+        "name": "Mo's Momentum Radar",
+        "kurz": "Momentum",
+        "text": "Welle (WaveTrend) und Geldfluss aus dem Momentum-Radar des Live-Tradings — nur 5m, 15m, 1h, 4h."
       }
     },
     "indParam": {
@@ -4973,7 +4993,9 @@
       "adx": "ADX",
       "plus": "+DI",
       "minus": "−DI",
-      "vol": "Volumen"
+      "vol": "Volumen",
+      "w1": "Welle",
+      "w2": "Signal"
     },
     "farben": "Farben",
     "standard": "Standard",
@@ -5040,7 +5062,10 @@
     "overlay": {
       "journal": "Journal-Trades",
       "positionen": "Offene Positionen",
-      "strategie": "Strategie-Schicht"
+      "strategie": "Strategie-Schicht",
+      "liquidationen": "Liquidationen (aufgezeichnet)",
+      "hebelzonen": "Hebelzonen (Modell)",
+      "orderbuch": "Orderbuch-Wände"
     },
     "str": {
       "instanzen": "Instanzen auf diesem Symbol",
@@ -5110,6 +5135,30 @@
       "loeschenFrage": "Alarm „{was}“ löschen?",
       "quittieren": "Klick zum Schliessen",
       "hier": "Alarm bei diesem Preis"
+    },
+    "quelle": {
+      "titel": "Kursquelle: Binance (live per Websocket, tiefe Historie) oder die Kurse deiner Handelsbörse (per Abfrage)",
+      "binance": "Binance",
+      "bitunix": "Bitunix",
+      "bitget": "Bitget",
+      "restTitel": {
+        "bitunix": "Bitunix-Kurse per Abfrage alle 3 s. Bitunix liefert die laufende Kerze nicht — sie wird hier aus dem Tickerpreis gebaut und ist erst ab dem Öffnen der Seite genau. Höchstens 200 Kerzen je Abruf.",
+        "bitget": "Bitget-Kurse per Abfrage alle 3 s, mit laufender Kerze. Keine 8h-Kerzen."
+      },
+      "tfFehlt": "Diese Kursquelle kennt die Zeiteinheit nicht"
+    },
+    "markt": {
+      "liqAnzahl": "{n} Liquidationen",
+      "liqKeine": "Liquidationen: nicht aufgezeichnet",
+      "hebelModell": "Hebelzonen: Modell",
+      "hebelDuenn": "Hebelzonen: Modell, dünne Datenlage",
+      "hebelKeine": "Hebelzonen: keine",
+      "momentumTf": "Momentum nur auf 5m/15m/1h/4h",
+      "titel": {
+        "liquidationen": "Aufgezeichnete Zwangsliquidationen (Binance, Stichprobe: höchstens eine je Sekunde). Nur für Symbole, die der Rekorder aufzeichnet (Einstellungen → Live-Analyse).",
+        "hebelzonen": "Geschätzte Liquidationszonen aus Open-Interest-Verlauf und Kerzen — ein Modell, keine Messung. Unter dem Preis Long-Liquidationen (Zwangsverkäufe), darüber Shorts (Zwangskäufe).",
+        "momentum": "Mo's Momentum Radar rechnet nur auf 5m, 15m, 1h und 4h."
+      }
     }
   }
 }

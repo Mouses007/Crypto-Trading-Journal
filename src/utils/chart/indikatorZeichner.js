@@ -30,6 +30,14 @@ export class IndikatorZeichner {
         this.signatur = ''
         this.eintraege = []          // [{ instanz, def, serien: {key: series}, werte: {key: Array} }]
         this.zeiten = []             // t (ms) der Kerzen, für die Legende
+        this.extern = {}             // nachgeladene Datenquellen (oi, funding, momentum)
+        this.kerzen = []
+    }
+
+    /** Eine fremde Datenquelle setzen und die betroffenen Reihen neu rechnen. */
+    setzeExtern(name, daten) {
+        this.extern = { ...this.extern, [name]: daten }
+        if (this.eintraege.some((e) => e.def.extern === name)) this.daten(this.kerzen)
     }
 
     /**
@@ -102,9 +110,10 @@ export class IndikatorZeichner {
     }
 
     daten(kerzen) {
+        this.kerzen = kerzen
         this.zeiten = kerzen.map((k) => k.t)
         for (const e of this.eintraege) {
-            e.werte = rechneIndikator(e.instanz.typ, kerzen, e.instanz.params)
+            e.werte = rechneIndikator(e.instanz.typ, kerzen, e.instanz.params, this.extern)
             for (const [key, serie] of Object.entries(e.serien)) {
                 serie.setData(kerzen.map((_, i) => this.punkt(e, key, i, kerzen)))
             }
@@ -115,9 +124,10 @@ export class IndikatorZeichner {
     nachfuehren(kerzen) {
         if (!this.eintraege.length || !kerzen.length) return
         const neueKerze = kerzen.length !== this.zeiten.length
+        this.kerzen = kerzen
         this.zeiten = kerzen.map((k) => k.t)
         for (const e of this.eintraege) {
-            e.werte = rechneIndikator(e.instanz.typ, kerzen, e.instanz.params)
+            e.werte = rechneIndikator(e.instanz.typ, kerzen, e.instanz.params, this.extern)
             const n = kerzen.length
             for (const [key, serie] of Object.entries(e.serien)) {
                 // Beim Wechsel auf eine neue Kerze ist die vorige gerade

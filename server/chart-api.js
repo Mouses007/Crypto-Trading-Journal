@@ -15,6 +15,8 @@
  *   CRUD /api/chart/watchlists   Symbol-Listen
  *   CRUD /api/chart/zeichnungen  Linien, Zonen, Fibonacci … je Symbol
  *   GET  /api/chart/journal      eigene Trades eines Symbols im sichtbaren Zeitraum
+ *   GET  /api/chart/hebelzonen   modellierte Liquidationszonen (Hebelkarte, verdichtet)
+ *   GET  /api/chart/funding      Funding-Verlauf eines Perpetuals
  */
 
 import axios from 'axios'
@@ -23,6 +25,9 @@ import { notiereGewicht, melde429 } from './binance-takt.js'
 import { ladeListungen } from './hype-radar/listungen.js'
 import { logWarn } from './logger.js'
 import { tradesAusZeilen, mitNotizen } from './chart-journal.js'
+import { holeHebelzonen } from './hebelzonen.js'
+import { getFundingHistory } from './market-data.js'
+import { ausCache } from './marktradar-api.js'
 
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
 const HTTP_TIMEOUT = 10000
@@ -35,10 +40,97 @@ export const INTERVALLE = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h
  * Historie, Websocket für die laufende Kerze. Bitunix und Bitget folgen als
  * wählbare REST-Quellen — sie haben öffentlich weniger Tiefe und keinen
  * angebundenen Websocket, und das wird im Kopf des Charts auch so gesagt.
+ *
+ * Gemessen 18.10.2026 gegen die Live-APIs:
+ *   Bitunix  /api/v1/futures/market/kline — neueste ZUERST, höchstens 200,
+ *            `endTime` blättert zurück, alle 15 Zeiteinheiten UTC-geschnitten,
+ *            die LAUFENDE Kerze fehlt immer (auch mit endTime in der Zukunft:
+ *            dann kommt gar nichts). Den laufenden Kurs liefert der Ticker.
+ *   Bitget   /api/v2/mix/market/candles — aufsteigend, bis 1000, MIT laufender
+ *            Kerze. Kein 8h. Ab 6h nur über die `…utc`-Varianten UTC-geschnitten
+ *            (`1D` schneidet um 16:00 UTC, also UTC+8). Ältere Kerzen unter
+ *            `history-candles` (höchstens 200).
  */
 const QUELLEN = {
     'binance-futures': { basis: 'https://fapi.binance.com', pfad: '/fapi/v1/klines', max: 1500 },
     'binance-spot': { basis: 'https://api.binance.com', pfad: '/api/v3/klines', max: 1000 },
+    'bitunix': { max: 200 },
+    'bitget': { max: 1000 },
+}
+
+const BITGET_GRANULARITAET = {
+    '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '2h': '2H', '4h': '4H',
+    '6h': '6Hutc', '12h': '12Hutc', '1d': '1Dutc', '3d': '3Dutc', '1w': '1Wutc', '1M': '1Mutc',
+}
+
+/** Bitunix-Antwort ({time, open, …} neueste zuerst) → [[t,o,h,l,c,v]] aufsteigend. */
+export function kerzenAusBitunix(roh) {
+    const aus = []
+    for (const k of Array.isArray(roh) ? roh : []) {
+        const z = [Number(k.time), Number(k.open), Number(k.high), Number(k.low), Number(k.close), Number(k.baseVol)]
+        if (z.every(Number.isFinite)) aus.push(z)
+    }
+    return aus.sort((a, b) => a[0] - b[0])
+}
+
+/** Bitget-Antwort ([ts, o, h, l, c, baseVol, quoteVol]) → [[t,o,h,l,c,v]] aufsteigend. */
+export function kerzenAusBitget(roh) {
+    const aus = []
+    for (const k of Array.isArray(roh) ? roh : []) {
+        if (!Array.isArray(k)) continue
+        const z = [Number(k[0]), Number(k[1]), Number(k[2]), Number(k[3]), Number(k[4]), Number(k[5])]
+        if (z.every(Number.isFinite)) aus.push(z)
+    }
+    return aus.sort((a, b) => a[0] - b[0])
+}
+
+const IV_MS = {
+    '1m': 6e4, '3m': 18e4, '5m': 3e5, '15m': 9e5, '30m': 18e5, '1h': 36e5, '2h': 72e5, '4h': 144e5,
+    '6h': 216e5, '8h': 288e5, '12h': 432e5, '1d': 864e5, '3d': 2592e5, '1w': 6048e5,
+}
+
+async function holeBitunix(symbol, interval, limit, endTime) {
+    const params = { symbol, interval, limit }
+    if (endTime) params.endTime = endTime
+    const { data } = await axios.get('https://fapi.bitunix.com/api/v1/futures/market/kline', { params, timeout: HTTP_TIMEOUT })
+    if (data?.code !== 0) throw Object.assign(new Error(data?.msg || 'Bitunix-Fehler'), { status: 400 })
+    const kerzen = kerzenAusBitunix(data.data)
+    if (endTime) return { kerzen }
+    // Laufende Kerze: Bitunix liefert sie nicht. Mitgegeben wird der
+    // Tickerpreis und die Eröffnungszeit der laufenden Kerze — der Browser
+    // baut daraus die Kerze und führt Hoch/Tief über seine Abfragen nach.
+    // Dass sie damit erst ab dem Öffnen der Seite stimmt, sagt der Kopf.
+    let lauf = null
+    try {
+        const t = await axios.get('https://fapi.bitunix.com/api/v1/futures/market/tickers', { params: { symbols: symbol }, timeout: HTTP_TIMEOUT })
+        const preis = Number(t.data?.data?.[0]?.lastPrice)
+        const iv = IV_MS[interval]
+        const letzte = kerzen[kerzen.length - 1]
+        // Monatskerzen haben keine feste Länge — dort keine gebaute Kerze,
+        // lieber keine als eine mit falscher Eröffnungszeit.
+        if (preis > 0 && letzte && iv) {
+            const ab = Math.floor(Date.now() / iv) * iv
+            lauf = { t: Math.max(ab, letzte[0]), preis }
+        }
+    } catch { /* ohne Ticker eben ohne laufende Kerze */ }
+    return { kerzen, lauf }
+}
+
+async function holeBitget(symbol, interval, limit, endTime) {
+    const granularity = BITGET_GRANULARITAET[interval]
+    if (!granularity) throw Object.assign(new Error(`Bitget kennt keine Zeiteinheit ${interval}`), { status: 400 })
+    const params = { symbol, productType: 'USDT-FUTURES', granularity, limit }
+    if (endTime) params.endTime = endTime
+    let { data } = await axios.get('https://api.bitget.com/api/v2/mix/market/candles', { params, timeout: HTTP_TIMEOUT })
+    if (data?.code !== '00000') throw Object.assign(new Error(data?.msg || 'Bitget-Fehler'), { status: 400 })
+    let kerzen = kerzenAusBitget(data.data)
+    if (!kerzen.length && endTime) {
+        // Jenseits der Reichweite von `candles` hilft `history-candles` weiter.
+        ;({ data } = await axios.get('https://api.bitget.com/api/v2/mix/market/history-candles',
+            { params: { ...params, limit: Math.min(limit, 200) }, timeout: HTTP_TIMEOUT }))
+        kerzen = kerzenAusBitget(data?.data)
+    }
+    return { kerzen }
 }
 
 /**
@@ -188,6 +280,19 @@ export function setupChartRoutes(app) {
             const end = Number(req.query.endTime)
             if (!Number.isFinite(end) || end <= 0) return res.status(400).json({ error: 'endTime muss Unix-Millisekunden sein' })
             params.endTime = Math.floor(end)
+        }
+        if (quelle === 'bitunix' || quelle === 'bitget') {
+            try {
+                const erg = quelle === 'bitunix'
+                    ? await holeBitunix(symbol, interval, limit, params.endTime)
+                    : await holeBitget(symbol, interval, limit, params.endTime)
+                res.setHeader('Cache-Control', 'no-store')
+                return res.json({ quelle, symbol, interval, ...erg })
+            } catch (e) {
+                const status = e.status || e.response?.status || 502
+                if (status >= 500 || !e.response) logWarn('chart', `Kerzen ${quelle} ${symbol} ${interval}: ${e.message}`)
+                return res.status(status >= 400 && status < 500 ? status : 502).json({ error: e.response?.data?.msg || e.message })
+            }
         }
         try {
             const antwort = await axios.get(q.basis + q.pfad, { params, timeout: HTTP_TIMEOUT })
@@ -365,6 +470,41 @@ export function setupChartRoutes(app) {
             }
             res.json({ symbol, von, bis, gekappt: trades.length > begrenzt.length, trades: mitNotizen(begrenzt, notizen, tags) })
         } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    /**
+     * GET /api/chart/hebelzonen?symbol=
+     * Dieselbe Verdichtung wie in der Handelslage — ein MODELL aus OI-Verlauf
+     * und Kerzen, keine Messung (siehe `shared/leverageMap.js`). Zwischen-
+     * gespeichert 2 min; die Rohpunkte teilen sich ohnehin den Cache der
+     * Liquidationskarte.
+     */
+    app.get('/api/chart/hebelzonen', async (req, res) => {
+        const symbol = String(req.query.symbol || '').toUpperCase()
+        if (!SYMBOL_RE.test(symbol)) return res.status(400).json({ error: 'symbol ungültig' })
+        try {
+            // `ausCache` verteilt die Antwort per Spread — deshalb verpackt,
+            // sonst würde aus `null` ein leeres Objekt mit Zeitstempel.
+            const { zonen, veraltet } = await ausCache(`chart_hebelzonen|${symbol}`, 2 * 60 * 1000,
+                async () => ({ zonen: await holeHebelzonen(symbol) }))
+            res.json({ symbol, zonen: zonen || null, veraltet: !!veraltet })
+        } catch (e) { res.status(502).json({ error: e.message }) }
+    })
+
+    /**
+     * GET /api/chart/funding?symbol=
+     * Die letzten 180 Tage, 10 min zwischengespeichert. Der Satz bleibt
+     * Rohwert je Zahlung; die Umrechnung auf 8 h macht der Browser mit dem
+     * gemessenen Abstand der Zahlungen (31 von 50 Top-Perps zahlen 4-stündlich).
+     */
+    app.get('/api/chart/funding', async (req, res) => {
+        const symbol = String(req.query.symbol || '').toUpperCase()
+        if (!SYMBOL_RE.test(symbol)) return res.status(400).json({ error: 'symbol ungültig' })
+        try {
+            const { punkte } = await ausCache(`chart_funding|${symbol}`, 10 * 60 * 1000,
+                async () => ({ punkte: await getFundingHistory(symbol, Date.now() - 180 * 86_400_000, Date.now()) }))
+            res.json({ symbol, punkte: punkte || [] })
+        } catch (e) { res.status(502).json({ error: e.message }) }
     })
 
     // ── Zeichnungen ──────────────────────────────────────────────────────

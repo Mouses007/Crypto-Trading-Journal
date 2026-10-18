@@ -10,6 +10,11 @@ export const OVERLAYS = [
     { id: 'positionen', icon: 'uil uil-crosshair', vorgabe: true },
     // Nur Datenbank, kein Fremdabruf — deshalb ebenfalls ab Werk an.
     { id: 'strategie', icon: 'uil uil-robot', vorgabe: true },
+    // Kosten Abrufe (Orderbuch alle 10 s, Gewicht 10) oder sind ein Modell —
+    // deshalb ab Werk aus.
+    { id: 'liquidationen', icon: 'uil uil-fire', vorgabe: false },
+    { id: 'hebelzonen', icon: 'uil uil-layer-group', vorgabe: false },
+    { id: 'orderbuch', icon: 'uil uil-list-ul', vorgabe: false },
 ]
 
 export function overlayAn(panel, id) {
