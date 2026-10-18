@@ -12,7 +12,11 @@
  *
  * Aufbau einer Definition:
  *   ort       'preis' (im Kerzen-Pane) | 'eigen' (eigenes Pane darunter)
- *   params    [{ key, typ: 'zahl'|'wahl', vorgabe, min, max, schritt, optionen }]
+ *   params    [{ key, typ: 'zahl'|'wahl'|'schalter'|'farbe', vorgabe, min, max, schritt, optionen, gruppe, roh }]
+ *             `gruppe` ordnet im Dialog unter eine Überschrift, `roh` zeigt die
+ *             Optionen einer Wahl unübersetzt (Zeiteinheiten).
+ *   ausgabenFuer(p)  (optional) Ausgaben je nach Einstellung — nur was an ist,
+ *             bekommt eine Serie (VWAP Vector: 13 schaltbare Linien)
  *   ausgaben  [{ key, art: 'linie'|'histogramm', farbe, breite }]
  *   linien    feste Marken im Pane (z. B. 70/30 beim RSI)
  *   rechne(kerzen, p, ext) → { [ausgabeKey]: Array<number|null> } gleich lang wie kerzen
@@ -23,6 +27,7 @@
 import {
     sma, ema, bollinger, vwap, vwapBand, rsi, macd, stochastic, stochRsi, atr, adx, obv, mfi, volumeSma,
 } from '../../../shared/indicators.js'
+import { rechneVwapVector } from './vwapVector.js'
 
 /** Preisquelle — wie bei TradingView wählbar. */
 export const QUELLEN = {
@@ -112,6 +117,97 @@ function nachZeit(kerzen, zeiten, werte) {
 
 const P_LAENGE = (vorgabe, max = 500) => ({ key: 'laenge', typ: 'zahl', vorgabe, min: 1, max, schritt: 1 })
 const P_QUELLE = { key: 'quelle', typ: 'wahl', vorgabe: 'c', optionen: Object.keys(QUELLEN) }
+// ── Mo's VWAP Vector (Pine des Users, Rechnung in vwapVector.js) ─────────
+const TFS = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M']
+const S = (key, vorgabe, gruppe) => ({ key, typ: 'schalter', vorgabe, gruppe })
+const F = (key, vorgabe, gruppe) => ({ key, typ: 'farbe', vorgabe, gruppe })
+const Z = (key, vorgabe, min, max, schritt, gruppe) => ({ key, typ: 'zahl', vorgabe, min, max, schritt, gruppe })
+const W = (key, vorgabe, optionen, gruppe, roh = false) => ({ key, typ: 'wahl', vorgabe, optionen, gruppe, roh })
+
+/** Linien des VWAP Vector: Ausgabe-Key → [Schalter, Farb-Param, Beschriftung]. */
+export const VV_LINIEN = [
+    ['vwapD', 'showDaily', 'cDaily', 'VWAP-D', 'vwap'],
+    ['vwapW', 'showWeekly', 'cWeekly', 'VWAP-W', 'vwap'],
+    ['vwapM', 'showMonthly', 'cMonthly', 'VWAP-M', 'vwap'],
+    ['vwapATH', 'showATH', 'cATH', 'VWAP-ATH', 'vwap'],
+    ['vwapATL', 'showATL', 'cATL', 'VWAP-ATL', 'vwap'],
+    ['ema21', 'showEma21', 'cEma21', 'EMA 21', 'ema'],
+    ['ema50', 'showEma50', 'cEma50', 'EMA 50', 'ema'],
+    ['ema200', 'showEma200', 'cEma200', 'EMA 200', 'ema'],
+    ['emaC1', 'showEmaC1', 'cEmaC1', (p) => `EMA ${p.lenEmaC1}`, 'ema'],
+    ['emaC2', 'showEmaC2', 'cEmaC2', (p) => `EMA ${p.lenEmaC2}`, 'ema'],
+    ['mtf1', 'showMtfE1', 'cMtfE1', (p) => `EMA ${p.lenMtfE1} ${p.tfMtfE1}`, 'ema'],
+    ['mtf2', 'showMtfE2', 'cMtfE2', (p) => `EMA ${p.lenMtfE2} ${p.tfMtfE2}`, 'ema'],
+    ['mtf3', 'showMtfE3', 'cMtfE3', (p) => `EMA ${p.lenMtfE3} ${p.tfMtfE3}`, 'ema'],
+]
+
+const VV_PARAMS = [
+    // 1 PVSRA
+    S('showVector', true, 'pvsra'), Z('climaxMult', 2, 0.5, 10, 0.1, 'pvsra'), Z('risingMult', 1.5, 0.5, 10, 0.1, 'pvsra'),
+    Z('pvsraLen', 10, 1, 200, 1, 'pvsra'),
+    F('cClimaxBull', '#00e600', 'pvsra'), F('cClimaxBear', '#ff0000', 'pvsra'),
+    F('cRisingBull', '#0000ff', 'pvsra'), F('cRisingBear', '#da00ff', 'pvsra'),
+    F('cNeutBull', '#999999', 'pvsra'), F('cNeutBear', '#4d4d4d', 'pvsra'),
+    Z('vecDeckkraft', 80, 0, 100, 5, 'pvsra'),
+    // 2 VWAP
+    S('showDaily', false, 'vwap'), F('cDaily', '#70ccbd', 'vwap'),
+    S('showWeekly', false, 'vwap'), F('cWeekly', '#ffffff', 'vwap'),
+    S('showMonthly', false, 'vwap'), F('cMonthly', '#f06292', 'vwap'),
+    S('showATH', false, 'vwap'), F('cATH', '#00bcd4', 'vwap'),
+    S('showATL', false, 'vwap'), F('cATL', '#3355ff', 'vwap'),
+    S('showSwingHi', true, 'vwap'), F('cSwingHi', '#5cb85c', 'vwap'),
+    S('showSwingLo', true, 'vwap'), F('cSwingLo', '#880e4f', 'vwap'),
+    Z('swingWidth', 2, 1, 5, 1, 'vwap'), W('swingStyle', 'gestrichelt', ['gestrichelt', 'durchgezogen', 'gepunktet'], 'vwap'),
+    Z('swingPivLen', 20, 2, 200, 1, 'vwap'), Z('swingCnt', 1, 1, 3, 1, 'vwap'), Z('swingMinSep', 1, 0, 20, 0.1, 'vwap'),
+    S('labelVWAPS', true, 'vwap'), Z('lblOffVwap', 12, 0, 100, 1, 'vwap'),
+    // 3 EMA
+    S('showEma21', true, 'ema'), F('cEma21', '#f5d300', 'ema'),
+    S('showEma50', true, 'ema'), F('cEma50', '#ff9800', 'ema'),
+    S('showEma200', true, 'ema'), F('cEma200', '#e0e0e0', 'ema'),
+    S('showEmaC1', false, 'ema'), Z('lenEmaC1', 200, 1, 2000, 1, 'ema'), F('cEmaC1', '#7b2fbe', 'ema'),
+    S('showEmaC2', false, 'ema'), Z('lenEmaC2', 800, 1, 2000, 1, 'ema'), F('cEmaC2', '#a52020', 'ema'),
+    S('showMtfE1', true, 'ema'), Z('lenMtfE1', 13, 1, 1000, 1, 'ema'), W('tfMtfE1', '1d', TFS, 'ema', true), F('cMtfE1', '#00bcd4', 'ema'),
+    S('showMtfE2', true, 'ema'), Z('lenMtfE2', 50, 1, 1000, 1, 'ema'), W('tfMtfE2', '1d', TFS, 'ema', true), F('cMtfE2', '#e65100', 'ema'),
+    S('showMtfE3', false, 'ema'), Z('lenMtfE3', 200, 1, 1000, 1, 'ema'), W('tfMtfE3', '1d', TFS, 'ema', true), F('cMtfE3', '#b388ff', 'ema'),
+    S('labelEMAS', true, 'ema'), Z('lblOffEma', 3, 0, 100, 1, 'ema'),
+    // 4 Fibonacci
+    S('showFib', false, 'fib'), W('fibTf', '4h', TFS, 'fib', true), Z('fibAtrMult', 3, 0.5, 20, 0.5, 'fib'),
+    S('fL0', true, 'fib'), F('cL0', '#787b86', 'fib'), S('fL236', false, 'fib'), F('cL236', '#f23645', 'fib'),
+    S('fL382', false, 'fib'), F('cL382', '#ff9800', 'fib'), S('fL5', false, 'fib'), F('cL5', '#4caf50', 'fib'),
+    S('fL618', true, 'fib'), F('cL618', '#089981', 'fib'), S('fL786', true, 'fib'), F('cL786', '#64b5f6', 'fib'),
+    S('fL1', true, 'fib'), F('cL1', '#787b86', 'fib'),
+    // 5 Engulfing
+    S('showEng', true, 'eng'), Z('engMinBody', 1, 0, 10, 0.1, 'eng'), S('engVolConf', false, 'eng'),
+    F('cEngBull', '#00e676', 'eng'), F('cEngBear', '#ff1744', 'eng'),
+    // 6 Perioden-POC
+    S('showPocPer', true, 'pocPer'), W('pocPerTf', '1d', ['4h', '12h', '1d', '1w', '1M'], 'pocPer', true),
+    Z('pocPerBins', 50, 10, 200, 1, 'pocPer'), Z('pocPerMax', 20, 1, 100, 1, 'pocPer'),
+    S('pocPerExt', true, 'pocPer'), S('pocPerLbl', true, 'pocPer'), F('cPocPer', '#ab47bc', 'pocPer'),
+    Z('pocPerWid', 2, 1, 4, 1, 'pocPer'), Z('pocPerDist', 4, 0, 50, 0.5, 'pocPer'), Z('lblOffPocPer', 22, 0, 100, 1, 'pocPer'),
+    // 7 Candle-POC
+    S('showPocC', true, 'pocC'), Z('pocCPiv', 5, 1, 20, 1, 'pocC'), W('pocCTf', '1m', ['1m', '3m', '5m', '15m'], 'pocC', true),
+    Z('pocCBins', 25, 5, 100, 1, 'pocC'), Z('pocCMax', 60, 5, 300, 1, 'pocC'), S('pocCLabel', false, 'pocC'),
+    F('cPocC', '#26c6da', 'pocC'), Z('pocCWidth', 2, 1, 4, 1, 'pocC'),
+    S('pocCAll', true, 'pocC'), F('cPocCAll', '#26c6da', 'pocC'), Z('pocCAllW', 1, 1, 4, 1, 'pocC'), Z('lblOffPocC', 22, 0, 100, 1, 'pocC'),
+    // 8 Vektorkerzen-Zonen
+    S('showVliq', true, 'vliq'), S('vliqClimax', true, 'vliq'), S('vliqBody', true, 'vliq'),
+    Z('vliqTransp', 85, 0, 100, 5, 'vliq'), S('vliqBorder', false, 'vliq'),
+    F('cVliqBull', '#26a69a', 'vliq'), F('cVliqBear', '#ef5350', 'vliq'), Z('vliqMax', 30, 2, 300, 1, 'vliq'),
+    // 9 Daily Open
+    S('showDOpen', true, 'dopen'), F('cDOpen', '#ffffff', 'dopen'), S('dOpenLbl', true, 'dopen'), Z('lblOffDO', 12, 0, 100, 1, 'dopen'),
+]
+
+/** Welche Zeiteinheiten der VWAP Vector nachladen muss (höhere + Intrabar). */
+export function vwapVectorQuellen(p, ivMs, tfMs) {
+    const htf = new Set()
+    for (const x of [1, 2, 3]) if (p[`showMtfE${x}`]) htf.add(p[`tfMtfE${x}`])
+    if (p.showFib) htf.add(p.fibTf)
+    // Eine „höhere" Zeiteinheit, die gar nicht höher ist, rechnet der Chart selbst.
+    const hoeher = [...htf].filter((tf) => tfMs[tf] > ivMs)
+    const intra = p.showPocC && tfMs[p.pocCTf] < ivMs ? p.pocCTf : null
+    return { htf: hoeher, intra }
+}
+
 
 export const INDIKATOREN = {
     sma: {
@@ -312,6 +408,19 @@ export const INDIKATOREN = {
             mf: nachZeit(k, ext?.t, ext?.mf),
         }),
     },
+    vwapVector: {
+        ort: 'preis',
+        extern: 'vwapVector',
+        zeichner: 'vwapVector',
+        kurzOhneParams: true,
+        params: VV_PARAMS,
+        ausgaben: [],
+        ausgabenFuer: (p) => VV_LINIEN.filter(([, an]) => p[an]).map(([key, , farbe]) => ({ key, art: 'linie', farbe: p[farbe], breite: 1 })),
+        rechne: (k, p, ext) => {
+            const r = rechneVwapVector(k, p, ext || {}, ext?.ivMs || (k.length > 1 ? k[k.length - 1].t - k[k.length - 2].t : 3_600_000))
+            return { ...r.linien, _vv: r }
+        },
+    },
     volSma: {
         ort: 'eigen',
         params: [P_LAENGE(20)],
@@ -344,6 +453,10 @@ export function saubereParams(typ, roh) {
         if (x.typ === 'zahl') {
             const n = Number(v)
             p[x.key] = Number.isFinite(n) ? Math.min(x.max, Math.max(x.min, n)) : x.vorgabe
+        } else if (x.typ === 'schalter') {
+            p[x.key] = typeof v === 'boolean' ? v : x.vorgabe
+        } else if (x.typ === 'farbe') {
+            p[x.key] = /^#[0-9a-f]{6}$/i.test(v || '') ? v : x.vorgabe
         } else {
             p[x.key] = x.optionen.includes(v) ? v : x.vorgabe
         }
@@ -358,6 +471,13 @@ export function rechneIndikator(typ, kerzen, params, extern = {}) {
     return def.rechne(kerzen, saubereParams(typ, params), def.extern ? extern?.[def.extern] : undefined)
 }
 
+/** Ausgaben einer Instanz — je nach Einstellung, wenn die Definition das vorsieht. */
+export function ausgabenVon(typ, params) {
+    const def = INDIKATOREN[typ]
+    if (!def) return []
+    return def.ausgabenFuer ? def.ausgabenFuer(saubereParams(typ, params)) : def.ausgaben
+}
+
 /** Welche fremden Datenquellen braucht eine Indikatorliste? */
 export function benoetigteQuellen(instanzen) {
     return [...new Set((instanzen || []).filter((i) => i.sichtbar !== false).map((i) => INDIKATOREN[i.typ]?.extern).filter(Boolean))]
@@ -365,6 +485,7 @@ export function benoetigteQuellen(instanzen) {
 
 /** Kurzbeschriftung für die Legende, z. B. „EMA 21" oder „BB 20 2". */
 export function kurzname(typ, params, name) {
+    if (INDIKATOREN[typ]?.kurzOhneParams) return name
     const p = saubereParams(typ, params)
     const zahlen = (INDIKATOREN[typ]?.params || []).filter((x) => x.typ === 'zahl').map((x) => p[x.key])
     const quelle = p.quelle && p.quelle !== 'c' ? ` ${p.quelle}` : ''

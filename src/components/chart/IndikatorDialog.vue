@@ -13,12 +13,31 @@ const props = defineProps({
     aktive: { type: Array, default: () => [] },  // Indikatoren des Panels — zum Einstellen und Entfernen
 })
 const emit = defineEmits(['hinzu', 'speichere', 'schliesse', 'bearbeite', 'entferne', 'umschalten'])
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const suche = ref('')
 const feld = ref(null)
-const entwurf = ref(props.instanz ? JSON.parse(JSON.stringify(props.instanz)) : null)
+function kopie(i) {
+    const k = JSON.parse(JSON.stringify(i))
+    // Ältere Layouts kennen neu hinzugekommene Einstellungen nicht — mit Vorgaben auffüllen.
+    k.params = saubereParams(k.typ, k.params)
+    return k
+}
+const entwurf = ref(props.instanz ? kopie(props.instanz) : null)
 const def = computed(() => (entwurf.value ? INDIKATOREN[entwurf.value.typ] : null))
+
+/** Parameter nach `gruppe` geordnet (VWAP Vector hat neun Module); ohne Gruppe eine namenlose. */
+const gruppen = computed(() => {
+    const aus = []
+    for (const x of def.value?.params || []) {
+        const g = x.gruppe || ''
+        let ziel = aus.find((a) => a.id === g)
+        if (!ziel) { ziel = { id: g, params: [] }; aus.push(ziel) }
+        ziel.params.push(x)
+    }
+    return aus
+})
+const hilfe = (key) => (te('chart.indHilfe.' + key) ? t('chart.indHilfe.' + key) : '')
 
 const liste = computed(() => {
     const q = suche.value.trim().toLowerCase()
@@ -102,15 +121,21 @@ onMounted(async () => {
                     <button class="zu" @click="emit('schliesse')"><i class="uil uil-times"></i></button>
                 </div>
                 <div class="form">
-                    <label v-for="p in def.params" :key="p.key" class="zeile">
-                        <span>{{ t('chart.indParam.' + p.key) }}</span>
-                        <input v-if="p.typ === 'zahl'" v-model.number="entwurf.params[p.key]" type="number"
-                            class="form-control form-control-sm" :min="p.min" :max="p.max" :step="p.schritt" />
-                        <select v-else v-model="entwurf.params[p.key]" class="form-select form-select-sm">
-                            <option v-for="o in p.optionen" :key="o" :value="o">{{ t('chart.indWahl.' + o) }}</option>
-                        </select>
-                    </label>
-                    <div class="trenner">{{ t('chart.farben') }}</div>
+                    <template v-for="g in gruppen" :key="g.id">
+                        <div v-if="g.id" class="trenner">{{ t('chart.indGruppe.' + g.id) }}</div>
+                        <label v-for="p in g.params" :key="p.key" class="zeile" :title="hilfe(p.key)">
+                            <span>{{ t('chart.indParam.' + p.key) }}<i v-if="hilfe(p.key)" class="uil uil-info-circle hinweisI"></i></span>
+                            <input v-if="p.typ === 'zahl'" v-model.number="entwurf.params[p.key]" type="number"
+                                class="form-control form-control-sm" :min="p.min" :max="p.max" :step="p.schritt" />
+                            <input v-else-if="p.typ === 'schalter'" v-model="entwurf.params[p.key]" type="checkbox"
+                                class="form-check-input schalter" />
+                            <input v-else-if="p.typ === 'farbe'" v-model="entwurf.params[p.key]" type="color" />
+                            <select v-else v-model="entwurf.params[p.key]" class="form-select form-select-sm">
+                                <option v-for="o in p.optionen" :key="o" :value="o">{{ p.roh ? o : t('chart.indWahl.' + o) }}</option>
+                            </select>
+                        </label>
+                    </template>
+                    <div v-if="def.ausgaben.length" class="trenner">{{ t('chart.farben') }}</div>
                     <label v-for="a in def.ausgaben" :key="a.key" class="zeile">
                         <span>{{ t('chart.indAusgabe.' + a.key) }}</span>
                         <input type="color" :value="hexFuer(farbeVon(a))" @input="setzeFarbe(a.key, $event.target.value)" />
@@ -262,6 +287,17 @@ onMounted(async () => {
     align-items: center;
     gap: 8px;
     font-size: 12px;
+}
+
+.zeile .schalter {
+    justify-self: end;
+    margin: 0;
+}
+
+.hinweisI {
+    margin-left: 4px;
+    opacity: 0.5;
+    font-size: 11px;
 }
 
 .zeile input[type='color'] {

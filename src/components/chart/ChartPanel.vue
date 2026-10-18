@@ -33,7 +33,7 @@ import axios from 'axios'
 import { JournalEbene } from '../../utils/chart/overlays/JournalEbene.js'
 import { StrategieEbene } from '../../utils/chart/overlays/StrategieEbene.js'
 import { MarktEbene, waendeAusBuch } from '../../utils/chart/overlays/MarktEbene.js'
-import { benoetigteQuellen } from '../../utils/chart/indikatorRegister.js'
+import { benoetigteQuellen, vwapVectorQuellen, saubereParams, INDIKATOREN } from '../../utils/chart/indikatorRegister.js'
 import { ladeOffenePositionen } from '../../utils/chart/overlays/positionen.js'
 import { overlayAn as overlayAnFuer } from '../../utils/chart/overlays/liste.js'
 
@@ -204,7 +204,8 @@ function baueChart() {
     chart.value = c
     kerzenSerie.value = ks
     volumenSerie.value = vs
-    zeichner = new IndikatorZeichner(c, zuLwc, (ind) => kurzname(ind.typ, ind.params, t('chart.ind.' + ind.typ + '.name')))
+    zeichner = new IndikatorZeichner(c, zuLwc, (ind) => kurzname(ind.typ, ind.params, t('chart.ind.' + ind.typ + '.name')),
+        { kerzenSerie: ks, faerbeKerzen })
     ebene = new ZeichenEbene({
         huelle: huelle.value,
         chart: c,
@@ -242,9 +243,27 @@ function volumenBalken(k) {
     return { time: zuLwc(k.t), value: k.v, color: k.c >= k.o ? 'rgba(38,166,154,0.28)' : 'rgba(255,105,96,0.28)' }
 }
 
+/*
+ * Vektorkerzen (VWAP Vector): Farbe je Kerze für Körper, Rand und Docht —
+ * wie `barcolor` im Pine. `null` = zurück zu den normalen Farben.
+ */
+let kerzenFarben = null
+function kerzenPunkt(k, i) {
+    const f = kerzenFarben?.[i]
+    const p = { time: zuLwc(k.t), open: k.o, high: k.h, low: k.l, close: k.c }
+    return f ? { ...p, color: f, borderColor: f, wickColor: f } : p
+}
+function faerbeKerzen(farben, nurLetzte) {
+    kerzenFarben = farben
+    const liste = kerzen.value
+    if (!kerzenSerie.value || !liste.length) return
+    if (nurLetzte && farben) kerzenSerie.value.update(kerzenPunkt(liste[liste.length - 1], liste.length - 1))
+    else kerzenSerie.value.setData(liste.map(kerzenPunkt))
+}
+
 function setzeDaten(liste) {
     kerzen.value = liste
-    kerzenSerie.value?.setData(liste.map((k) => ({ time: zuLwc(k.t), open: k.o, high: k.h, low: k.l, close: k.c })))
+    kerzenSerie.value?.setData(liste.map(kerzenPunkt))
     volumenSerie.value?.setData(liste.map(volumenBalken))
     legende.value = letzteLegende()
     zeichner?.setze(props.panel.indikatoren, liste)
@@ -316,6 +335,8 @@ async function ladeExtern(nurWelche = null) {
             } else if (quelle === 'funding') {
                 const { data } = await axios.get('/api/chart/funding', { params: { symbol } })
                 if (symbol === props.panel.symbol) zeichner.setzeExtern('funding', data.punkte || [])
+            } else if (quelle === 'vwapVector') {
+                await ladeVwapVector()
             } else if (quelle === 'momentum') {
                 if (!MOMENTUM_TF.includes(interval)) {
                     zeichner.setzeExtern('momentum', null)
@@ -333,12 +354,58 @@ async function ladeExtern(nurWelche = null) {
     if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
 }
 
+/*
+ * VWAP Vector: Kerzen höherer Zeiteinheiten (MTF-EMA, Fibonacci) und
+ * Intrabar-Kerzen (Candle-POC). Immer von Binance — Bitunix/Bitget liefern
+ * zu wenig Historie für eine EMA 50 auf dem Tag. Intrabar höchstens drei
+ * Seiten (4500 Kerzen): ältere Chartkerzen bekommen keinen Candle-POC, wie
+ * im Pine, wenn das Intrabar-Budget aufgebraucht ist.
+ */
+const vvCache = { schluessel: '', htf: {}, intra: [] }
+async function ladeVwapVector() {
+    const { symbol, markt, interval } = props.panel
+    const ivMs = INTERVALL_MS[interval]
+    const instanzen = (props.panel.indikatoren || []).filter((i) => i.typ === 'vwapVector' && i.sichtbar !== false)
+    const htf = new Set()
+    let intra = null
+    for (const i of instanzen) {
+        const q = vwapVectorQuellen(saubereParams('vwapVector', i.params), ivMs, INTERVALL_MS)
+        q.htf.forEach((tf) => htf.add(tf))
+        if (q.intra && (!intra || INTERVALL_MS[q.intra] < INTERVALL_MS[intra])) intra = q.intra
+    }
+    const schluessel = `${symbol}|${markt}|${interval}|${intra}`
+    if (vvCache.schluessel !== schluessel) { vvCache.schluessel = schluessel; vvCache.htf = {}; vvCache.intra = [] }
+    const m = markt === 'spot' ? 'spot' : 'futures'
+    await Promise.all([...htf].map(async (tf) => {
+        try { vvCache.htf[tf] = await ladeKerzen({ symbol, markt: m, interval: tf, limit: 1000 }) } catch { /* Modul bleibt leer */ }
+    }))
+    if (intra) {
+        try {
+            if (!vvCache.intra.length) {
+                // Nur so weit zurück, wie Chartkerzen da sind.
+                let liste = await ladeKerzen({ symbol, markt: m, interval: intra, limit: 1500 })
+                const ab = kerzen.value[0]?.t ?? 0
+                for (let s = 0; s < 2 && liste.length && liste[0].t > ab; s++) {
+                    const alt = await ladeKerzen({ symbol, markt: m, interval: intra, limit: 1500, endTime: liste[0].t - 1 })
+                    if (!alt.length) break
+                    liste = fuegeZusammen(alt, liste)
+                }
+                vvCache.intra = liste
+            } else {
+                vvCache.intra = fuegeZusammen(vvCache.intra, await ladeKerzen({ symbol, markt: m, interval: intra, limit: 200 }))
+            }
+        } catch { /* ohne Intrabar-Daten kein Candle-POC */ }
+    }
+    if (symbol !== props.panel.symbol || interval !== props.panel.interval) return
+    zeichner.setzeExtern('vwapVector', { htf: { ...vvCache.htf }, intra: intra ? vvCache.intra : [], ivMs })
+}
+
 /** Ein Takt, verschiedene Abstände: Wände 10 s, Liquidationen 30 s, Momentum 60 s, Hebel 2 min, OI 5 min, Funding 10 min. */
 function marktTick() {
     const n = marktZaehler++
     ladeWaende()
     if (n % 3 === 0) ladeLiquidationen()
-    if (n % 6 === 0) ladeExtern(['momentum'])
+    if (n % 6 === 0) ladeExtern(['momentum', 'vwapVector'])
     if (n % 12 === 0) ladeHebelzonen()
     if (n % 30 === 0) ladeExtern(['oi'])
     if (n % 60 === 0) ladeExtern(['funding'])
@@ -522,6 +589,9 @@ function starteTakte() {
 
 watch(() => props.panel.overlays, () => { ladeJournal(); ladePositionen(); ladeStrategie(); marktNeu() }, { deep: true })
 watch(() => benoetigteQuellen(props.panel.indikatoren).join(), () => ladeExtern())
+// VWAP Vector: andere Zeiteinheiten (MTF-EMA, Fib, Intrabar) brauchen neue Kerzen.
+watch(() => JSON.stringify((props.panel.indikatoren || []).filter((i) => i.typ === 'vwapVector').map((i) => [i.sichtbar, i.params])),
+    () => ladeExtern(['vwapVector']))
 watch(() => props.panel.symbol, () => {
     gewaehlterTrade.value = null
     entfernePositionsLinien()
@@ -733,7 +803,7 @@ function starteLive(nr) {
                 strategieEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
                 marktEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
             }
-            kerzenSerie.value?.update({ time: zuLwc(bar.t), open: bar.o, high: bar.h, low: bar.l, close: bar.c })
+            kerzenSerie.value?.update(kerzenPunkt(bar, liste.length - 1))
             volumenSerie.value?.update(volumenBalken(bar))
             if (!extern) legende.value = letzteLegende()
             planeNachfuehren()
@@ -818,8 +888,10 @@ watch(() => props.panel.indikatoren, (inst) => {
     if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
 }, { deep: true })
 
-function wertText(w) {
+function wertText(w, typ) {
     if (w == null || !Number.isFinite(w)) return '—'
+    // Linien im Kerzen-Pane (EMA, VWAP …) sind Kurse: wie der Kurs schreiben, nicht „83.5K".
+    if (INDIKATOREN[typ]?.ort === 'preis') return w.toFixed(preisStellen.value)
     const a = Math.abs(w)
     if (a >= 1e9) return (w / 1e9).toFixed(2) + 'B'
     if (a >= 1e6) return (w / 1e6).toFixed(2) + 'M'
@@ -893,7 +965,7 @@ defineExpose({
             </span>
             <div v-for="ind in (panel.indikatoren || [])" :key="ind.id" class="indZeile" :class="{ aus: ind.sichtbar === false }">
                 <span class="indName">{{ kurzname(ind.typ, ind.params, t('chart.ind.' + ind.typ + '.kurz')) }}</span>
-                <span v-for="w in (indikatorWerte[ind.id] || [])" :key="w.key" :style="{ color: w.farbe }">{{ wertText(w.wert) }}</span>
+                <span v-for="w in (indikatorWerte[ind.id] || [])" :key="w.key" :style="{ color: w.farbe }">{{ wertText(w.wert, ind.typ) }}</span>
                 <span class="indKnoepfe">
                     <button :title="t(ind.sichtbar === false ? 'chart.einblenden' : 'chart.ausblenden')"
                         @click.stop="emit('indikator', { aktion: 'umschalten', id: ind.id })">

@@ -14,8 +14,9 @@
  * Millisekundenbereich) und nur der letzte Punkt jeder Serie aktualisiert.
  */
 import { LineSeries, HistogramSeries, AreaSeries, LineStyle } from 'lightweight-charts'
-import { INDIKATOREN, rechneIndikator } from './indikatorRegister.js'
+import { INDIKATOREN, rechneIndikator, ausgabenVon, saubereParams } from './indikatorRegister.js'
 import { MomentumZeichnung } from './momentumZeichnung.js'
+import { VwapVectorZeichnung, vektorFarben } from './vwapVectorZeichnung.js'
 
 const GRUEN = 'rgba(38,166,154,0.7)'
 const ROT = 'rgba(255,105,96,0.7)'
@@ -78,9 +79,17 @@ export class IndikatorZeichner {
      * @param {object} chart  Lightweight-Charts-Instanz
      * @param {function} zuLwc  ms → Sekunden
      */
-    constructor(chart, zuLwc, titelFuer = null) {
+    /**
+     * @param {object} [o]  { kerzenSerie, faerbeKerzen(farben|null, nurLetzte) } —
+     *                      für Indikatoren, die im Kerzen-Pane selbst zeichnen
+     *                      oder die Kerzen einfärben (VWAP Vector).
+     */
+    constructor(chart, zuLwc, titelFuer = null, o = {}) {
         this.chart = chart
         this.zuLwc = zuLwc
+        this.kerzenSerie = o.kerzenSerie || null
+        this.faerbeKerzen = o.faerbeKerzen || (() => {})
+        this.hatteFarben = false
         this.titelFuer = titelFuer   // instanz → Text für den Fenstertitel (i18n kommt von aussen)
         this.signatur = ''
         this.eintraege = []          // [{ instanz, def, serien: {key: series}, werte: {key: Array} }]
@@ -101,7 +110,7 @@ export class IndikatorZeichner {
      */
     setze(instanzen, kerzen) {
         const sichtbar = (instanzen || []).filter((i) => i.sichtbar !== false && INDIKATOREN[i.typ])
-        const sig = JSON.stringify(sichtbar.map((i) => [i.id, i.typ, i.params, i.farben]))
+        const sig = JSON.stringify(sichtbar.map((i) => [i.id, i.typ, saubereParams(i.typ, i.params), i.farben]))
         if (sig !== this.signatur) {
             this.abbauen()
             this.aufbauen(sichtbar)
@@ -116,7 +125,8 @@ export class IndikatorZeichner {
             const def = INDIKATOREN[instanz.typ]
             const pane = def.ort === 'eigen' ? naechstesPane++ : 0
             const serien = {}
-            for (const a of def.ausgaben) {
+            const ausgaben = ausgabenVon(instanz.typ, instanz.params)
+            for (const a of ausgaben) {
                 // „wert": nur für die Legende gerechnet, gezeichnet wird es von
                 // einer eigenen Zeichnung (Momentum-Geldfluss).
                 if (a.art === 'wert') continue
@@ -152,15 +162,17 @@ export class IndikatorZeichner {
                     serien[a.key] = this.chart.addSeries(LineSeries, { ...gemeinsam, ...(format || {}), color: farbe, lineWidth: a.breite || 1 }, pane)
                 }
             }
-            const erste = serien[def.ausgaben.find((a) => a.art === 'linie' || a.art === 'flaeche')?.key] || Object.values(serien)[0]
+            const erste = serien[ausgaben.find((a) => a.art === 'linie' || a.art === 'flaeche')?.key] || Object.values(serien)[0]
             for (const marke of def.linien || []) {
                 erste?.createPriceLine({ price: marke, color: 'rgba(255,255,255,0.18)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
             }
             const zeichnung = def.zeichner === 'momentum' && serien.w1
                 ? new MomentumZeichnung({ chart: this.chart, serie: serien.w1 })
-                : null
+                : def.zeichner === 'vwapVector' && this.kerzenSerie
+                    ? new VwapVectorZeichnung({ chart: this.chart, serie: this.kerzenSerie })
+                    : null
             const titel = def.ort === 'eigen' && erste && this.titelFuer ? new FensterTitel(erste, this.titelFuer(instanz)) : null
-            this.eintraege.push({ instanz, def, serien, werte: {}, zeichnung, titel })
+            this.eintraege.push({ instanz, def, ausgaben, serien, werte: {}, zeichnung, titel })
         }
         // Das Kerzen-Pane soll den Löwenanteil behalten.
         const panes = this.chart.panes()
@@ -186,7 +198,7 @@ export class IndikatorZeichner {
         const wert = e.werte[key]?.[i]
         const time = this.zuLwc(kerzen[i].t)
         if (wert == null || !Number.isFinite(wert)) return { time }
-        const a = e.def.ausgaben.find((x) => x.key === key)
+        const a = e.ausgaben.find((x) => x.key === key)
         if (a?.art === 'histogramm' && a.vorzeichen) return { time, value: wert, color: wert >= 0 ? '#26a69a' : '#ef5350' }
         if (a?.art === 'histogramm' && key === 'hist') return { time, value: wert, color: wert >= 0 ? GRUEN : ROT }
         return { time, value: wert }
@@ -200,8 +212,23 @@ export class IndikatorZeichner {
             for (const [key, serie] of Object.entries(e.serien)) {
                 serie.setData(kerzen.map((_, i) => this.punkt(e, key, i, kerzen)))
             }
-            e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand())
+            this.zeichnungSetzen(e)
         }
+        this.farbenMelden(false)
+    }
+
+    zeichnungSetzen(e) {
+        if (e.def.zeichner === 'vwapVector') e.zeichnung?.setze(e.werte._vv, this.kerzen, saubereParams(e.instanz.typ, e.instanz.params))
+        else e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand())
+    }
+
+    /** Vektorkerzen: Farben an das Panel geben; ohne VWAP Vector einmal null (zurück zur Vorgabe). */
+    farbenMelden(nurLetzte) {
+        const e = this.eintraege.find((x) => x.def.zeichner === 'vwapVector' && x.werte._vv?.stufen)
+        const farben = e ? vektorFarben(e.werte._vv.stufen, saubereParams(e.instanz.typ, e.instanz.params)) : null
+        if (!farben && !this.hatteFarben) return
+        this.hatteFarben = !!farben
+        this.faerbeKerzen(farben, nurLetzte)
     }
 
     kerzenAbstand() {
@@ -224,8 +251,9 @@ export class IndikatorZeichner {
                 if (neueKerze && n > 1) serie.update(this.punkt(e, key, n - 2, kerzen))
                 serie.update(this.punkt(e, key, n - 1, kerzen))
             }
-            if (neueKerze) e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand())
+            if (neueKerze || e.def.zeichner === 'vwapVector') this.zeichnungSetzen(e)
         }
+        this.farbenMelden(!neueKerze)
     }
 
     /** Werte unter dem Fadenkreuz (oder der letzten Kerze) für die Legende. */
@@ -241,7 +269,7 @@ export class IndikatorZeichner {
         }
         const aus = {}
         for (const e of this.eintraege) {
-            aus[e.instanz.id] = e.def.ausgaben
+            aus[e.instanz.id] = e.ausgaben
                 .filter((a) => e.werte[a.key])
                 .map((a) => {
                     const reihe = e.werte[a.key]
