@@ -46,7 +46,7 @@ const props = defineProps({
     zeichnungenVersteckt: { type: Boolean, default: false },
     alarmLinien: { type: Array, default: () => [] },  // aktive Preis-Alarme dieses Symbols
 })
-const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen', 'indikator', 'werkzeugFertig', 'alarmAufZeichnung', 'alarmBeiPreis'])
+const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen', 'indikator', 'werkzeugFertig', 'alarmAufZeichnung', 'alarmBeiPreis', 'alleLoeschen'])
 const { t, locale } = useI18n()
 
 const huelle = ref(null)
@@ -1016,6 +1016,9 @@ defineExpose({
             <button @click="alarmHier"><i class="uil uil-bell"></i> {{ t('chart.alarm.hier') }}</button>
             <button @click="zeichnungHier('horizontale')"><i class="uil uil-minus"></i> {{ t('chart.wz.horizontale') }}</button>
             <button @click="zeichnungHier('strahlH')"><i class="uil uil-arrow-right"></i> {{ t('chart.wz.strahlH') }}</button>
+            <hr />
+            <!-- Fragt nach (Chart.vue) und lässt gesperrte Zeichnungen stehen — wie der Mülleimer in der Werkzeugleiste. -->
+            <button class="gefahr" @click="kontext = null; emit('alleLoeschen')"><i class="uil uil-trash-alt"></i> {{ t('chart.wzKurz.alleZeichnungenLoeschen') }}</button>
         </div>
 
         <div v-if="laedt" class="hinweis"><span class="spinner-border spinner-border-sm"></span></div>
@@ -1125,6 +1128,15 @@ defineExpose({
     text-align: left;
     padding: 5px 8px;
     border-radius: 4px;
+}
+
+.kontextMenue hr {
+    margin: 4px 0;
+    border-color: var(--white-18);
+}
+
+.kontextMenue button.gefahr:hover {
+    color: var(--red-color);
 }
 
 .kontextMenue button:hover {

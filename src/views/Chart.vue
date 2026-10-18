@@ -221,7 +221,7 @@ function alleLoeschen() {
     const symbol = aktivesPanel.value.symbol
     const liste = aktiveZeichnungen.value.filter((z) => !z.gesperrt)
     if (!liste.length) return
-    if (!window.confirm(t('chart.alleLoeschenFrage', { n: liste.length, symbol }))) return
+    if (!window.confirm(t('chart.alleLoeschenFrage', { n: liste.length, symbol }, liste.length))) return
     for (const z of liste) zeichnungLoeschen(symbol, z.id)
 }
 
@@ -421,7 +421,8 @@ watch(sichtbareAnzahl, async () => {
                         :werkzeug="i === aktivIndex ? werkzeug : null" :magnet="!!daten.zeichnen?.magnet"
                         :zeichnungen-versteckt="!!daten.zeichnen?.versteckt" @werkzeug-fertig="werkzeug = null"
                         :alarm-linien="alarmLinienFuer(p)" @alarm-bei-preis="(x) => { fokus(i); alarmBeiPreis(x) }"
-                        @alarm-auf-zeichnung="(z) => { fokus(i); alarmAufZeichnung(z) }" />
+                        @alarm-auf-zeichnung="(z) => { fokus(i); alarmAufZeichnung(z) }"
+                        @alle-loeschen="() => { fokus(i); alleLoeschen() }" />
                 </div>
 
                 <aside v-if="daten.seitenleiste.offen" class="seitenleiste">

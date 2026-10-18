@@ -5139,6 +5139,7 @@
     "einstellungen": "Einstellungen",
     "entfernen": "Entfernen",
     "wzKurz": {
+      "alleZeichnungenLoeschen": "Alle Zeichnungen löschen",
       "ausklappen": "Werkzeugleiste ausklappen (mit Namen)",
       "einklappen": "Einklappen",
       "magnet": "Magnet",
@@ -5180,7 +5181,7 @@
       "entsperren": "Entsperren"
     },
     "textEingeben": "Text:",
-    "alleLoeschenFrage": "{n} Zeichnungen auf {symbol} löschen? Gesperrte bleiben stehen.",
+    "alleLoeschenFrage": "Eine Zeichnung auf {symbol} löschen? Gesperrte bleiben stehen. | {n} Zeichnungen auf {symbol} löschen? Gesperrte bleiben stehen.",
     "objekteLeer": "Noch keine Zeichnungen auf {symbol}.",
     "zeichnungFehler": "Zeichnung nicht gespeichert",
     "trade": {
