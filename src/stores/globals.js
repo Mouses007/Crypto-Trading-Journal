@@ -344,6 +344,9 @@ export const pendingOpeningByBroker = ref({})
 export const pendingClosingByBroker = ref({})
 export const evalNotificationShown = ref(false)
 export const evalNotificationDismissed = ref(false)
+// Was das Popup zeigt: nur die NEU hinzugekommenen Bewertungen, nicht alle offenen —
+// eine seit Wochen laufende Position zählte sonst bei jeder neuen wieder mit.
+export const evalNeu = ref({ oeffnung: { anzahl: 0, jeBroker: {} }, schluss: { anzahl: 0, jeBroker: {} } })
 
 // Persistent set of position IDs that have already triggered a popup notification.
 // Stored in localStorage so dismissal survives page reloads and navigation.

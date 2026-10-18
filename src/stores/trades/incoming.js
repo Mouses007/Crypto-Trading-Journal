@@ -12,6 +12,7 @@ export {
     pendingClosingByBroker,
     evalNotificationShown,
     evalNotificationDismissed,
+    evalNeu,
     getNotifiedPositionIds,
     addNotifiedPositionIds,
     removeNotifiedPositionIds,

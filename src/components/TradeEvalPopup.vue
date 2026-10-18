@@ -15,24 +15,24 @@
                 <!-- Body -->
                 <div class="modal-body pt-1">
                     <div class="eval-counts">
-                        <div v-if="pendingOpeningCount > 0" class="mb-2">
+                        <div v-if="evalNeu.oeffnung.anzahl > 0" class="mb-2">
                             <div class="d-flex align-items-center mb-1">
                                 <span class="eval-dot eval-dot-opening me-2"></span>
-                                <span>{{ pendingOpeningCount }} {{ pendingOpeningCount > 1 ? t('incoming.openingEvaluations') : t('incoming.openingEvaluation') }}</span>
+                                <span>{{ evalNeu.oeffnung.anzahl }} {{ evalNeu.oeffnung.anzahl > 1 ? t('incoming.openingEvaluations') : t('incoming.openingEvaluation') }}</span>
                             </div>
                             <div class="broker-breakdown">
-                                <span v-for="(cnt, broker) in pendingOpeningByBroker" :key="'o_' + broker" class="broker-chip">
+                                <span v-for="(cnt, broker) in evalNeu.oeffnung.jeBroker" :key="'o_' + broker" class="broker-chip">
                                     {{ brokerLabel(broker) }} <strong>{{ cnt }}</strong>
                                 </span>
                             </div>
                         </div>
-                        <div v-if="pendingClosingCount > 0" class="mb-2">
+                        <div v-if="evalNeu.schluss.anzahl > 0" class="mb-2">
                             <div class="d-flex align-items-center mb-1">
                                 <span class="eval-dot eval-dot-closing me-2"></span>
-                                <span>{{ pendingClosingCount }} {{ pendingClosingCount > 1 ? t('incoming.closingEvaluations') : t('incoming.closingEvaluation') }}</span>
+                                <span>{{ evalNeu.schluss.anzahl }} {{ evalNeu.schluss.anzahl > 1 ? t('incoming.closingEvaluations') : t('incoming.closingEvaluation') }}</span>
                             </div>
                             <div class="broker-breakdown">
-                                <span v-for="(cnt, broker) in pendingClosingByBroker" :key="'c_' + broker" class="broker-chip">
+                                <span v-for="(cnt, broker) in evalNeu.schluss.jeBroker" :key="'c_' + broker" class="broker-chip">
                                     {{ brokerLabel(broker) }} <strong>{{ cnt }}</strong>
                                 </span>
                             </div>
@@ -55,7 +55,7 @@
 import { watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { pendingOpeningCount, pendingClosingCount, pendingOpeningByBroker, pendingClosingByBroker, evalNotificationShown, evalNotificationDismissed } from '../stores/trades.js'
+import { evalNeu, evalNotificationShown, evalNotificationDismissed } from '../stores/trades.js'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -75,7 +75,7 @@ onMounted(() => {
     })
 
     // If notification already pending on mount, show it
-    if (evalNotificationShown.value && !evalNotificationDismissed.value && (pendingOpeningCount.value > 0 || pendingClosingCount.value > 0)) {
+    if (evalNotificationShown.value && !evalNotificationDismissed.value && (evalNeu.value.oeffnung.anzahl > 0 || evalNeu.value.schluss.anzahl > 0)) {
         nextTick(() => {
             if (modalInstance) modalInstance.show()
         })

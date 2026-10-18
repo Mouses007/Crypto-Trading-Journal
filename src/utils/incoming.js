@@ -1,7 +1,7 @@
 import axios from 'axios'
 import dayjs from './dayjs-setup.js'
 import { dbFind, dbFirst, dbCreate, dbUpdate, dbDelete, dbFindTradeIdByPositionId } from './db.js'
-import { incomingPositions, incomingPollingActive, incomingLastFetched, incomingBrokerFehler, pendingOpeningCount, pendingClosingCount, pendingOpeningByBroker, pendingClosingByBroker, evalNotificationShown, evalNotificationDismissed, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
+import { incomingPositions, incomingPollingActive, incomingLastFetched, incomingBrokerFehler, pendingOpeningCount, pendingClosingCount, pendingOpeningByBroker, pendingClosingByBroker, evalNotificationShown, evalNotificationDismissed, evalNeu, getNotifiedPositionIds, addNotifiedPositionIds, removeNotifiedPositionIds } from '../stores/trades.js'
 import { expandedId } from '../stores/ui.js'
 import { currentUser } from '../stores/settings.js'
 import { selectedBroker, brokers } from '../stores/filters.js'
@@ -52,6 +52,13 @@ export async function useUpdatePendingCounts() {
         if (brandNewIds.length > 0) {
             // Mark them as notified so popup won't fire again for these
             addNotifiedPositionIds(brandNewIds)
+            const neu = new Set(brandNewIds)
+            const neuOffen = openPositions.filter(p => neu.has('open_' + p.positionId))
+            const neuSchluss = pendingPositions.filter(p => neu.has('close_' + p.positionId))
+            evalNeu.value = {
+                oeffnung: { anzahl: neuOffen.length, jeBroker: byBroker(neuOffen) },
+                schluss: { anzahl: neuSchluss.length, jeBroker: byBroker(neuSchluss) },
+            }
             evalNotificationShown.value = true
             evalNotificationDismissed.value = false
         }
