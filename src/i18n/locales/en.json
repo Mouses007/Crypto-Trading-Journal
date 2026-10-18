@@ -4856,7 +4856,7 @@
       "objekte": "Drawings",
       "strategien": "Strategies",
       "alarme": "Alerts",
-      "ki": "AI analysis"
+      "ki": "AI"
     },
     "watchlistName": "Watchlist name",
     "watchlistNeuVorgabe": "New list",
@@ -5355,7 +5355,18 @@
       "zone": "Zone",
       "verworfen": "{n} suggestions discarded (outside the candles or a forecast)",
       "vorschauWeg": "Hide preview",
-      "dauertLaenger": "The analysis takes longer — the result loads as soon as the server is done …"
+      "dauertLaenger": "The analysis takes longer — the result loads as soon as the server is done …",
+      "modusAnalyse": "AI analysis",
+      "modusChat": "AI chat",
+      "chatHinweis": "Questions about the open chart ({symbol} {tf}). Each question costs one agent run (provider under Settings → AI → \"Agent\").",
+      "chatNeu": "New conversation",
+      "chatLeer": "Ask something about this chart, for example:",
+      "chatPlatzhalter": "Question about the chart … (Enter sends, Shift+Enter = new line)",
+      "chatSenden": "Send",
+      "chatBelegt": "An agent run is already in progress (AI agent page or another window) — please wait.",
+      "frageStruktur": "What is the structure right now: trend, range, last breaks?",
+      "frageMarken": "Which levels near the price matter and why?",
+      "frageLinien": "Do my drawn lines fit the highs and lows?"
     },
     "indAktiv": "Active in this chart",
     "indHinzu": "Add",

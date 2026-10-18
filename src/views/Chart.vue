@@ -595,6 +595,7 @@ watch(sichtbareAnzahl, async () => {
                     <AlarmReiter v-else-if="daten.seitenleiste.reiter === 'alarme'" :symbol="aktivesPanel.symbol"
                         :markt="aktivesPanel.markt" :kurs="aktuellerKurs" @neu="alarmBeiPreis" @bearbeite="alarmBearbeiten" />
                     <KiReiter v-else-if="daten.seitenleiste.reiter === 'ki'" :panel="aktivesPanel"
+                        :sichtbar-bis="() => aktivesPanelRef?.sichtbarerZeitraum()?.bis"
                         @vorschau="(a) => aktivesPanelRef?.setzeKiVorschau(a)" />
                     </div>
                     <!-- Momentum-Box (Pine-Panel) unter dem Reiter: Trenner ziehen = Höhe, Pfeil = ein-/ausklappen. -->

@@ -37,6 +37,7 @@ export const FUNKTIONEN = {
     TRADE_ANALYSE: 'trade-analyse',        // Erstbewertung eines Trades
     TRADE_CHAT: 'trade-chat',              // Rückfragen zu einem Trade
     AGENT: 'agent',                        // KI-Agent mit Werkzeugen
+    CHART_CHAT: 'chart-chat',              // KI-Agent aus dem Chart-Arbeitsplatz (KI-Chat-Reiter)
     LAGEBERICHT: 'lagebericht',            // Nachrichten-Zeitungsbericht
     LAGEBERICHT_UPDATE: 'lagebericht-update',  // dessen Aktualisierung im Tagesverlauf
     LAGEBERICHT_PRUEFUNG: 'lagebericht-pruefung',  // eigene Anweisungen vorab prüfen

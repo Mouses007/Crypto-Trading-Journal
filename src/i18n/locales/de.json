@@ -4856,7 +4856,7 @@
       "objekte": "Zeichnungen",
       "strategien": "Strategien",
       "alarme": "Alarme",
-      "ki": "KI-Analyse"
+      "ki": "KI"
     },
     "watchlistName": "Name der Watchlist",
     "watchlistNeuVorgabe": "Neue Liste",
@@ -5355,7 +5355,18 @@
       "zone": "Zone",
       "verworfen": "{n} Vorschläge verworfen (ausserhalb der Kerzen oder Prognose)",
       "vorschauWeg": "Vorschau ausblenden",
-      "dauertLaenger": "Die Analyse dauert länger — das Ergebnis wird nachgeladen, sobald der Server fertig ist …"
+      "dauertLaenger": "Die Analyse dauert länger — das Ergebnis wird nachgeladen, sobald der Server fertig ist …",
+      "modusAnalyse": "KI-Analyse",
+      "modusChat": "KI-Chat",
+      "chatHinweis": "Fragen zum offenen Chart ({symbol} {tf}). Kostet je Frage einen Agent-Lauf (Anbieter unter Einstellungen → KI → „Agent\").",
+      "chatNeu": "Neues Gespräch",
+      "chatLeer": "Frag etwas zu diesem Chart, zum Beispiel:",
+      "chatPlatzhalter": "Frage zum Chart … (Enter sendet, Umschalt+Enter = neue Zeile)",
+      "chatSenden": "Senden",
+      "chatBelegt": "Gerade läuft schon ein Agent-Lauf (KI-Agent-Seite oder anderes Fenster) — kurz warten.",
+      "frageStruktur": "Wie ist die Struktur gerade: Trend, Range, letzte Brüche?",
+      "frageMarken": "Welche Marken sind in der Nähe des Kurses wichtig und warum?",
+      "frageLinien": "Passen meine eingezeichneten Linien zu den Hochs und Tiefs?"
     },
     "indAktiv": "Aktiv in diesem Chart",
     "indHinzu": "Hinzufügen",

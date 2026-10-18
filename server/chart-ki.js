@@ -240,6 +240,33 @@ export function letzteChartAnalyse(symbol, interval, markt = 'futures') {
     return { ...e.payload, stand: e.ts, alterMs: Date.now() - e.ts }
 }
 
+/**
+ * Alles, was die KI über einen Chart liest — für die Analyse und für den
+ * KI-Chat (Tool `query_chart`), damit beide dieselben Daten sehen.
+ * @param {{ symbol, interval, markt?, anzahl?, bisT? }} p  `bisT`: nur Kerzen bis dahin (sichtbarer Bereich)
+ */
+export async function ladeChartDaten({ symbol, interval, markt = 'futures', anzahl = KERZEN, bisT = null }) {
+    let kerzen = await getClosedCandles(symbol, interval, Math.min(1000, anzahl + (bisT ? 500 : 0)), { market: markt })
+    if (bisT) kerzen = kerzen.filter((k) => k.t <= bisT)
+    kerzen = kerzen.slice(-anzahl)
+    const vonT = kerzen[0]?.t ?? Date.now()
+    const knex = getKnex()
+    const [zeichnungenRoh, hebel, tagesZeilen, s] = await Promise.all([
+        knex('chart_zeichnungen').where('symbol', symbol).catch(() => []),
+        markt === 'spot' ? null : holeHebelzonen(symbol).catch(() => null),
+        knex('trades').select('dateUnix', 'broker', 'trades')
+            .where('dateUnix', '>=', Math.floor(vonT / 1000) - 7 * 86400).catch(() => []),
+        knex('settings').select('language', 'kiEmpfehlungenAn').where('id', 1).first().catch(() => null),
+    ])
+    const zeichnungen = zeichnungenRoh.map((z) => ({ ...z, punkte: JSON.parse(z.punkte || '[]'), stil: JSON.parse(z.stil || '{}') }))
+    const trades = tradesAusZeilen(tagesZeilen, symbol, vonT, Date.now())
+    return {
+        kerzen, zeichnungen, hebel, trades,
+        englisch: s?.language === 'en',
+        empfehlungen: Number(s?.kiEmpfehlungenAn ?? 0) === 1,
+    }
+}
+
 export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' }) {
     const schluessel = schluesselVon(symbol, interval, markt)
     const alt = cache.get(schluessel)
@@ -254,22 +281,10 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
 
     const lauf = (async () => {
         const iv = timeframeMs(interval)
-        const kerzen = await getClosedCandles(symbol, interval, KERZEN, { market: markt })
+        const { kerzen, zeichnungen, hebel, trades, englisch, empfehlungen } = await ladeChartDaten({ symbol, interval, markt })
         if (kerzen.length < 30) throw new Error('Zu wenige Kerzen für eine Analyse')
         const vonT = kerzen[0].t
         const bisT = kerzen[kerzen.length - 1].t
-        const knex = getKnex()
-        const [zeichnungenRoh, hebel, tagesZeilen, s] = await Promise.all([
-            knex('chart_zeichnungen').where('symbol', symbol).catch(() => []),
-            markt === 'spot' ? null : holeHebelzonen(symbol).catch(() => null),
-            knex('trades').select('dateUnix', 'broker', 'trades')
-                .where('dateUnix', '>=', Math.floor(vonT / 1000) - 7 * 86400).catch(() => []),
-            knex('settings').select('language', 'kiEmpfehlungenAn').where('id', 1).first().catch(() => null),
-        ])
-        const zeichnungen = zeichnungenRoh.map((z) => ({ ...z, punkte: JSON.parse(z.punkte || '[]'), stil: JSON.parse(z.stil || '{}') }))
-        const trades = tradesAusZeilen(tagesZeilen, symbol, vonT, Date.now())
-        const englisch = s?.language === 'en'
-        const empfehlungen = Number(s?.kiEmpfehlungenAn ?? 0) === 1
 
         const cfg = await ladeLlmConfigFuerAufgabe('chart-analyse')
         // Die bestellte Antwort ist lang (Linien mit Gründen). Nach Textlänge

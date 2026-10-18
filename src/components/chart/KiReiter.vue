@@ -14,12 +14,25 @@ import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import { linieAlsZeichnung, zoneAlsZeichnung } from '../../utils/chart/kiZeichnungen.js'
 import { legeAn } from '../../stores/chartZeichnungen.js'
+import KiChat from './KiChat.vue'
 
 const props = defineProps({
     panel: { type: Object, required: true },
+    // rechter Rand des sichtbaren Bereichs (ms) — für den Chat
+    sichtbarBis: { type: Function, default: null },
 })
 const emit = defineEmits(['vorschau'])
 const { t } = useI18n()
+
+/*
+ * Analyse oder Chat — eine Frage des Bildschirms, nicht des Layouts, daher im
+ * Browser gemerkt. Die Vorschau der Analyse bleibt im Chart stehen, während
+ * man chattet: der Chat liest dieselbe Analyse mit.
+ */
+const MODUS_SCHLUESSEL = 'chartKiModus'
+function leseModus() { try { return localStorage.getItem(MODUS_SCHLUESSEL) === 'chat' ? 'chat' : 'analyse' } catch { return 'analyse' } }
+const modus = ref(leseModus())
+function setzeModus(m) { modus.value = m; try { localStorage.setItem(MODUS_SCHLUESSEL, m) } catch { /* kein Speicher */ } }
 
 const analyse = ref(null)
 const laeuft = ref(false)
@@ -128,6 +141,14 @@ watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], ladeL
 
 <template>
     <div class="kiReiter">
+        <div class="btn-group btn-group-sm modus" role="group">
+            <button type="button" class="btn" :class="modus === 'analyse' ? 'btn-primary' : 'btn-outline-secondary'" @click="setzeModus('analyse')">
+                <i class="uil uil-chart-line"></i> {{ t('chart.ki.modusAnalyse') }}</button>
+            <button type="button" class="btn" :class="modus === 'chat' ? 'btn-primary' : 'btn-outline-secondary'" @click="setzeModus('chat')">
+                <i class="uil uil-comment-dots"></i> {{ t('chart.ki.modusChat') }}</button>
+        </div>
+        <KiChat v-if="modus === 'chat'" class="chatFlaeche" :panel="panel" :sichtbar-bis="sichtbarBis" />
+        <template v-else>
         <button class="btn btn-sm btn-outline-primary" :disabled="laeuft" @click="erstelle">
             <span v-if="laeuft" class="spinner-border spinner-border-sm"></span>
             <template v-else><i class="uil uil-robot"></i> {{ t('chart.ki.erstellen', { symbol: panel.symbol, tf: panel.interval }) }}</template>
@@ -174,6 +195,7 @@ watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], ladeL
             <div v-if="analyse.verworfen?.length" class="verworfen">{{ t('chart.ki.verworfen', { n: analyse.verworfen.length }) }}</div>
             <button class="btn btn-sm btn-link p-0" @click="verwerfen">{{ t('chart.ki.vorschauWeg') }}</button>
         </template>
+        </template>
     </div>
 </template>
 
@@ -184,6 +206,21 @@ watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], ladeL
     gap: 6px;
     overflow-y: auto;
     min-height: 0;
+    height: 100%;
+    font-size: 12px;
+}
+
+.kiReiter:has(.chatFlaeche) {
+    overflow: hidden;
+}
+
+.modus {
+    display: flex;
+    flex-shrink: 0;
+}
+
+.modus .btn {
+    flex: 1;
     font-size: 12px;
 }
 

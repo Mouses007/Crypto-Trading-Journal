@@ -19,6 +19,7 @@ import {
 } from './ai-models.js'
 import { beobachteAbbruch, sseSender } from './sse.js'
 import { merkeVerbrauch } from './ai-usage.js'
+import { isValidTimeframe } from './market-data.js'
 
 const MAX_ITERATIONS = 10
 // Voreinstellung des Token-Budgets je Lauf — überschreibbar in den
@@ -101,7 +102,7 @@ async function loadAiSettings() {
 
 // ==================== SYSTEM PROMPT ====================
 
-function buildSystemPrompt(seitenKontext) {
+function buildSystemPrompt(seitenKontext, chartKontext = null) {
     const now = new Date()
     const dateStr = now.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     const year = now.getFullYear()
@@ -140,6 +141,10 @@ Deine Aufgabe:
 
 ${seitenKontext ? `AKTUELLER KONTEXT:
 Der Nutzer hat dich gerade von der Seite „${seitenKontext.themaTitel}" aus geöffnet. Bezieht sich seine Frage erkennbar darauf, was dort zu sehen ist, zieh bevorzugt query_app_help(topic="${seitenKontext.thema}") heran.${seitenKontext.hinweis ? ' ' + seitenKontext.hinweis : ''}
+
+` : ''}${chartKontext ? `OFFENER CHART:
+Der Nutzer chattet aus dem Chart-Arbeitsplatz. Offen ist ${chartKontext.symbol} auf ${chartKontext.interval} (${chartKontext.markt === 'spot' ? 'Spot' : 'Perpetual'})${chartKontext.bis ? `, rechter Rand des sichtbaren Bereichs ${new Date(chartKontext.bis).toISOString().slice(0, 16)}Z` : ''}.
+Fragen zu „diesem Chart", einer Linie, Zone, Marke oder der Struktur beantwortest du mit query_chart(symbol="${chartKontext.symbol}", interval="${chartKontext.interval}", markt="${chartKontext.markt}"${chartKontext.bis ? `, bis=${chartKontext.bis}` : ''}) — rufe es auf, bevor du über den Chart sprichst. Nenne nur Preise, die in den Daten stehen (Hochs, Tiefs, POC, Value Area, eigene Linien), mit Datum. Keine Kursziele, keine Prognose, keine Handelsempfehlung — beschreibe Marken und was ihr Bruch bedeuten würde. Antworte knapp: der Chat steht in einer schmalen Seitenleiste.
 
 ` : ''}Regeln:
 - Nutze immer zuerst die passenden Tools, bevor du antwortest
@@ -249,7 +254,7 @@ async function callAnthropicWithTools(messages, config) {
         body: JSON.stringify({
             model: config.model,
             max_tokens: config.maxTokens,
-            system: buildSystemPrompt(config.seitenKontext),
+            system: buildSystemPrompt(config.seitenKontext, config.chartKontext),
             messages,
             tools: toolsToAnthropic(),
             // Werkzeuge bleiben im Request (die Historie enthält tool_use-Blöcke,
@@ -289,7 +294,7 @@ async function callAnthropicWithTools(messages, config) {
 
 async function callOpenAIWithTools(messages, config, endpoint = 'https://api.openai.com/v1/chat/completions') {
     const apiMessages = [
-        { role: 'system', content: buildSystemPrompt(config.seitenKontext) },
+        { role: 'system', content: buildSystemPrompt(config.seitenKontext, config.chartKontext) },
         ...messages
     ]
 
@@ -376,7 +381,7 @@ async function callGeminiWithTools(messages, config) {
             'x-goog-api-key': config.apiKey
         },
         body: JSON.stringify({
-            systemInstruction: { parts: [{ text: buildSystemPrompt(config.seitenKontext) }] },
+            systemInstruction: { parts: [{ text: buildSystemPrompt(config.seitenKontext, config.chartKontext) }] },
             contents,
             tools: toolsToGemini(),
             ...(config.ohneTools ? { toolConfig: { functionCallingConfig: { mode: 'NONE' } } } : {}),
@@ -422,7 +427,7 @@ async function callOllamaWithTools(messages, config) {
     assertAllowedOllamaUrl(url)
 
     // Ollama: inject tools into system prompt
-    const enrichedSystem = config.ohneTools ? buildSystemPrompt(config.seitenKontext) : buildSystemPrompt(config.seitenKontext) + '\n\n' + toolsToPromptText()
+    const enrichedSystem = config.ohneTools ? buildSystemPrompt(config.seitenKontext, config.chartKontext) : buildSystemPrompt(config.seitenKontext, config.chartKontext) + '\n\n' + toolsToPromptText()
     const ollamaMessages = [
         { role: 'system', content: enrichedSystem },
         ...messages.map(m => {
@@ -785,8 +790,9 @@ async function runAgentLoop(userMessage, conversationHistory, config, sendSSE, i
      * gerechnet und bezahlt.
      */
     merkeVerbrauch({
-        funktion: 'agent',
+        funktion: config.chartKontext ? 'chart-chat' : 'agent',
         ausloeser: 'manuell',
+        ...(config.chartKontext ? { bezug: { typ: 'symbol', id: config.chartKontext.symbol } } : {}),
         provider: config.provider,
         modell: config.model,
         usage: { promptTokens, completionTokens, totalTokens },
@@ -814,7 +820,7 @@ export function setupAgentRoutes(app) {
             return res.status(429).json({ error: 'Ein Agent-Lauf läuft bereits. Bitte warten.' })
         }
 
-        const { sessionId, message, pageId } = req.body
+        const { sessionId, message, pageId, chart } = req.body
         if (!message || !message.trim()) {
             return res.status(400).json({ error: 'Nachricht darf nicht leer sein.' })
         }
@@ -846,6 +852,14 @@ export function setupAgentRoutes(app) {
             // Load AI config
             const config = await loadAiSettings()
             config.seitenKontext = pageId ? seitenKontext(pageId) : null
+            // Chart-Kontext aus dem KI-Chat-Reiter: geprüft, bevor er in den Systemprompt geht.
+            if (chart && /^[A-Z0-9]{2,20}$/.test(String(chart.symbol || '')) && isValidTimeframe(String(chart.interval || ''))) {
+                config.chartKontext = {
+                    symbol: chart.symbol, interval: chart.interval,
+                    markt: chart.markt === 'spot' ? 'spot' : 'futures',
+                    bis: Number(chart.bis) > 0 ? Math.round(Number(chart.bis)) : null,
+                }
+            }
             sendSSE({ type: 'status', provider: config.provider, model: config.model })
 
             // Load or create session

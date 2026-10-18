@@ -34,6 +34,8 @@ import { sammleKacheln, normSymbol } from './marktradar-lage.js'
 import { baueZeilen } from './lagebild.js'
 import { ANKER } from './coin-radar/bewertung.js'
 import { KOPPLUNG_FEST, KOPPLUNG_LOSE, deuteKopplung } from './coin-radar/btc-vergleich.js'
+import { ladeChartDaten, baueChartEingabe, letzteChartAnalyse } from './chart-ki.js'
+import { isValidTimeframe } from './market-data.js'
 
 // ==================== TOOL DEFINITIONS (for LLM) ====================
 
@@ -219,6 +221,22 @@ export const AGENT_TOOLS = [
             }
         }
     },
+    // ── Chart-Arbeitsplatz ──────────────────────────────────────────
+    {
+        name: 'query_chart',
+        description: 'Read the chart the user has open in the chart workspace: candles (time,open,high,low,close,volume), the user\'s own drawings (lines, zones, volume profiles), the volume profile of the range (POC, value area), estimated liquidation zones, the user\'s own trades on the symbol, and the last AI chart analysis if one exists. Use this for any question about "this chart", a level, a line, a zone or the current structure. Only state what the data shows; no price targets or predictions.',
+        parameters: {
+            type: 'object',
+            properties: {
+                symbol: { type: 'string', description: 'e.g. BTCUSDT' },
+                interval: { type: 'string', description: 'timeframe, e.g. 15m, 1h, 4h, 1d' },
+                markt: { type: 'string', enum: ['futures', 'spot'] },
+                bis: { type: 'number', description: 'Optional: only candles up to this time (Unix ms) — the right edge of what the user sees.' },
+                kerzen: { type: 'number', description: 'How many candles, default 150, max 200.' },
+            },
+            required: ['symbol', 'interval'],
+        },
+    },
     // ── Modell-Optimierung: OpenRouter-Analyse ──────────────────────
     {
         name: 'analyze_model_performance',
@@ -299,6 +317,7 @@ export async function executeTool(toolName, params, knex) {
         query_app_help: toolQueryAppHelp,
         query_marktradar: toolQueryMarktradar,
         query_coin_radar: toolQueryCoinRadar,
+        query_chart: toolQueryChart,
         analyze_model_performance: toolAnalyzeModelPerformance,
         get_openrouter_models: toolGetOpenrouterModels,
         recommend_model_allocation: toolRecommendModelAllocation,
@@ -321,6 +340,42 @@ export async function executeTool(toolName, params, knex) {
 }
 
 // ==================== TOOL IMPLEMENTATIONS ====================
+
+// Der offene Chart — dieselben Daten, die die KI-Analyse liest (`ladeChartDaten`),
+// dazu die letzte Analyse aus deren Cache. Kerzen gedeckelt, damit das Ergebnis
+// unter der 15k-Grenze für Tool-Ergebnisse bleibt.
+async function toolQueryChart(_knex, params) {
+    const symbol = String(params.symbol || '').toUpperCase()
+    if (!/^[A-Z0-9]{2,20}$/.test(symbol)) return { error: 'symbol ungültig' }
+    const interval = String(params.interval || '')
+    if (!isValidTimeframe(interval)) return { error: `Zeiteinheit unbekannt: ${interval}` }
+    const markt = params.markt === 'spot' ? 'spot' : 'futures'
+    const anzahl = Math.max(20, Math.min(200, Math.round(Number(params.kerzen) || 150)))
+    const bisT = Number(params.bis) > 0 ? Number(params.bis) : null
+    let d
+    try { d = await ladeChartDaten({ symbol, interval, markt, anzahl, bisT }) } catch (e) {
+        if (e.response?.status === 400) return { error: `${symbol} gibt es bei Binance ${markt === 'spot' ? 'Spot' : 'Futures'} nicht` }
+        throw e
+    }
+    if (!d.kerzen.length) return { error: 'keine Kerzen' }
+    const erste = d.kerzen[0], letzte = d.kerzen[d.kerzen.length - 1]
+    const hoch = Math.max(...d.kerzen.map((k) => k.h)), tief = Math.min(...d.kerzen.map((k) => k.l))
+    const a = letzteChartAnalyse(symbol, interval, markt)
+    return {
+        symbol, interval, markt, count: d.kerzen.length,
+        kennzahlen: {
+            letzterSchluss: letzte.c, hochImBereich: hoch, tiefImBereich: tief,
+            veraenderungPct: Math.round((letzte.c / erste.o - 1) * 10000) / 100,
+        },
+        text: baueChartEingabe({ symbol, interval, kerzen: d.kerzen, zeichnungen: d.zeichnungen, hebelzonen: d.hebel, trades: d.trades }),
+        letzteAnalyse: a ? {
+            alterMin: Math.round(a.alterMs / 60000), text: a.text,
+            linien: a.linien.map((l) => ({ art: l.art, label: l.label, p1: l.p1, p2: l.p2 })),
+            zonen: a.zonen.map((z) => ({ art: z.art, label: z.label, tief: z.tief, hoch: z.hoch })),
+            bedingungen: a.bedingungen,
+        } : null,
+    }
+}
 
 // Bedienungsfragen zur Software — Antwort ausschliesslich aus der eingebauten
 // Doku, damit der Agent nicht aus Allgemeinwissen über eine App rät, die es
