@@ -158,6 +158,9 @@ export class ZeichenEbene {
         this.requestUpdate()
     }
 
+    /** Skala des Panels ('normal' | 'log' | 'prozent') — neue Linien merken sie sich (siehe fertig). */
+    setzeSkala(skala) { this.skala = skala || 'normal' }
+
     setzeMagnet(an) {
         this.magnetAn = !!an
         if (!this.magnetAn) this.fang = null
@@ -499,7 +502,9 @@ export class ZeichenEbene {
             if (typ === 'rechteck' || typ === 'fib' || typ === 'trendlinie' || typ === 'strahl') {
                 if (pk[0].t === pk[1].t && pk[0].p === pk[1].p) { this.rueckruf.werkzeugFertig?.(); this.requestUpdate(); return }
             }
-            this.rueckruf.neu?.({ typ, punkte: pk })
+            // Auf einer Log-Skala gezeichnet: der Alarm rechnet die Linie dann ebenfalls im
+            // Logarithmus, so wie sie im Bild gerade ist (chart-alarm-regeln.js geradePreis).
+            this.rueckruf.neu?.({ typ, punkte: pk, ...(this.skala === 'log' ? { stil: { skala: 'log' } } : {}) })
         }
         this.rueckruf.werkzeugFertig?.()
         this.requestUpdate()

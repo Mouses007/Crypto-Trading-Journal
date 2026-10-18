@@ -5300,7 +5300,11 @@
       "testOk": "Test message sent.",
       "loeschenFrage": "Delete alert “{was}”?",
       "quittieren": "click to dismiss",
-      "hier": "Alert at this price"
+      "hier": "Alert at this price",
+      "testFehler": "No channel delivered",
+      "testKeinKanal": "No push channel enabled (Hype-Radar → Settings → alert channels)",
+      "geometrieEndet": "line/zone ended — switched off",
+      "nichtZugestellt": "not delivered"
     },
     "quelle": {
       "titel": "Price source: Binance (live via websocket, deep history) or your trading exchange's prices (polled)",

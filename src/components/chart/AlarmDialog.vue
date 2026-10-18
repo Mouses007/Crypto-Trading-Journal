@@ -6,7 +6,7 @@
  *          rechnet den Linienpreis zur jeweiligen Zeit)
  *   zone   Rechteck oder Kanal betreten/verlassen
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { legeAlarmAn, aendereAlarm } from '../../stores/chartAlarme.js'
 
@@ -15,6 +15,11 @@ const props = defineProps({
     vorlage: { type: Object, required: true },
 })
 const emit = defineEmits(['schliesse'])
+
+// Esc schliesst — im Erfassungsmodus, damit die Chart-Tastatur (Entf, Strg+Z) es nicht zuerst sieht.
+function esc(e) { if (e.key === 'Escape') { e.stopPropagation(); emit('schliesse') } }
+onMounted(() => window.addEventListener('keydown', esc, true))
+onBeforeUnmount(() => window.removeEventListener('keydown', esc, true))
 const { t } = useI18n()
 
 const istNeu = !props.vorlage.id

@@ -27,8 +27,12 @@ const zeit = (ms) => (ms ? new Date(ms).toLocaleString() : '—')
 async function test() {
     testStand.value = '…'
     try {
-        await axios.post('/api/chart/alarme/test')
-        testStand.value = t('chart.alarm.testOk')
+        const { data } = await axios.post('/api/chart/alarme/test')
+        // Je Kanal sagen, was passiert ist — „verschickt" ohne einen einzigen Kanal war eine Lüge.
+        const teile = Object.entries(data?.ergebnis || {}).filter(([, v]) => v !== 'aus')
+            .map(([k, v]) => `${k}: ${v === 'ok' ? '✓' : v}`)
+        testStand.value = data?.ok ? `${t('chart.alarm.testOk')} (${teile.join(', ')})`
+            : teile.length ? `${t('chart.alarm.testFehler')} — ${teile.join(', ')}` : t('chart.alarm.testKeinKanal')
     } catch (e) {
         testStand.value = e.response?.data?.error || e.message
     }
@@ -63,7 +67,7 @@ function loesche(a) {
                 <div>{{ a.einmalig ? t('chart.alarm.einmalig') : t('chart.alarm.wiederholend', { min: a.bedingung.sperreMin ?? 15 }) }}</div>
                 <div v-if="a.notiz">{{ a.notiz }}</div>
                 <div>{{ t('chart.alarm.zuletzt') }}: {{ zeit(a.ausgeloestAm) }} ({{ a.anzahlAusgeloest }}×)</div>
-                <div v-for="(v, i) in [...a.verlauf].reverse().slice(0, 5)" :key="i" class="verlauf">{{ zeit(v.t) }} · {{ v.p }}</div>
+                <div v-for="(v, i) in [...a.verlauf].reverse().slice(0, 5)" :key="i" class="verlauf">{{ zeit(v.t) }} · {{ v.p }}<template v-if="v.hinweis === 'geometrieEndet'"> · {{ t('chart.alarm.geometrieEndet') }}</template><template v-else-if="v.zugestellt === false"> · <span class="text-warning">{{ t('chart.alarm.nichtZugestellt') }}</span></template></div>
             </div>
         </div>
         <div class="testZeile">

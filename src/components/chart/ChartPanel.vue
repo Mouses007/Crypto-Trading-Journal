@@ -676,12 +676,12 @@ watch(() => props.werkzeug, (w) => { ebene?.setzeWerkzeug(w); if (w) auswahlId.v
 watch(() => props.magnet, (m) => ebene?.setzeMagnet(m))
 watch(() => props.panel.symbol, () => { auswahlId.value = null; ebene?.setzeAuswahl(null) })
 
-async function zeichnungNeu({ typ, punkte }) {
-    let stil = {}
+async function zeichnungNeu({ typ, punkte, stil: vorgabeStil = {} }) {
+    let stil = { ...vorgabeStil }
     if (typ === 'text') {
         const text = window.prompt(t('chart.textEingeben'), '')
         if (!text) return
-        stil = { text: text.slice(0, 200) }
+        stil = { ...stil, text: text.slice(0, 200) }
     }
     const z = await legeAn({ symbol: props.panel.symbol, typ, punkte, stil, sichtbarAuf: null, gesperrt: false, versteckt: false })
     if (z) { auswahlId.value = z.id; ebene?.setzeAuswahl(z.id) }
@@ -760,6 +760,7 @@ function wendeSkalaAn() {
         : props.panel.skala === 'prozent' ? PriceScaleMode.Percentage
             : PriceScaleMode.Normal
     chart.value?.priceScale('right').applyOptions({ mode: modus })
+    ebene?.setzeSkala(props.panel.skala)
 }
 
 /*

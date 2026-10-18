@@ -22,9 +22,9 @@
  */
 import axios from 'axios'
 import { getKnex } from './database.js'
-import { beansprucheFuehrung } from './db-claim.js'
+import { beansprucheFuehrung, verlaengereFuehrung } from './db-claim.js'
 import { notiereGewicht, melde429, warteAufGewicht } from './binance-takt.js'
-import { pruefeAlarm, sperreAbgelaufen } from './chart-alarm-regeln.js'
+import { pruefeAlarm, sperreAbgelaufen, geometrieVorbei, MIN_SPERRE_MIN } from './chart-alarm-regeln.js'
 import { stelleZu } from './hype-radar/zustellung.js'
 import { leseEinstellungen } from './hype-radar/einstellungen.js'
 import { melde } from './benachrichtigungen.js'
@@ -96,7 +96,7 @@ async function pruefeEingabe(roh, knex, teilweise = false) {
             bed.preis = p
         }
         if (b.kante !== undefined) bed.kante = ['oben', 'unten', 'mitte'].includes(b.kante) ? b.kante : 'oben'
-        if (b.sperreMin !== undefined) bed.sperreMin = Math.max(0, Math.min(10080, Number(b.sperreMin) || 0))
+        if (b.sperreMin !== undefined) bed.sperreMin = Math.max(MIN_SPERRE_MIN, Math.min(10080, Number(b.sperreMin) || 0))
         if (b.schwere !== undefined) bed.schwere = ['info', 'warnung', 'kritisch'].includes(b.schwere) ? b.schwere : 'warnung'
         aus.bedingung = JSON.stringify(bed)
     }
@@ -107,6 +107,11 @@ async function pruefeEingabe(roh, knex, teilweise = false) {
         const erlaubt = aus.art === 'linie' ? LINIEN_TYPEN : ZONEN_TYPEN
         if (!erlaubt.includes(z.typ)) return { fehler: `ein ${aus.art}-Alarm geht nicht auf ${z.typ}` }
         if (z.symbol !== aus.symbol) return { fehler: 'zeichnung gehört zu einem anderen Symbol' }
+        // Eine Linie/Zone, die schon zu Ende ist, kann nie auslösen — sagen statt still anlegen.
+        const geo = { ...z, punkte: parse(z.punkte, []), stil: parse(z.stil, {}) }
+        if (geometrieVorbei({ art: aus.art, bedingung: parse(aus.bedingung, {}) }, geo, Date.now())) {
+            return { fehler: 'Die Linie bzw. Zone endet vor jetzt — „Nach rechts verlängern" einschalten, sonst kann der Alarm nie auslösen' }
+        }
         aus.zeichnungId = id
     }
     if (roh.kanaele !== undefined) {
@@ -120,6 +125,18 @@ async function pruefeEingabe(roh, knex, teilweise = false) {
 }
 
 // ── Preise ───────────────────────────────────────────────────────────────
+// Letzter Sammelabruf je Markt — fürs Anlegen (gibt es das Symbol bei Binance?) ohne Extraabruf.
+const letztePreise = { futures: { t: 0, karte: null }, spot: { t: 0, karte: null } }
+
+/** Führt Binance das Symbol? null = unbekannt (kein frischer Abruf, dann nicht ablehnen). */
+async function symbolBeiBinance(symbol, markt) {
+    const l = letztePreise[markt]
+    try {
+        if (!l.karte || Date.now() - l.t > 10 * 60_000) await holePreise(markt)
+    } catch { return null }
+    return letztePreise[markt].karte ? letztePreise[markt].karte.has(symbol) : null
+}
+
 async function holePreise(markt) {
     await warteAufGewicht(PREIS_GEWICHT[markt])
     try {
@@ -130,6 +147,7 @@ async function holePreise(markt) {
             const p = Number(x.price)
             if (x.symbol && p > 0) karte.set(x.symbol, p)
         }
+        letztePreise[markt] = { t: Date.now(), karte }
         return karte
     } catch (e) {
         const status = e.response?.status
@@ -161,26 +179,52 @@ export function meldungsText(alarm, zeichnung, erg, preis) {
     return { titel, text }
 }
 
+/**
+ * Zustellen und das Ergebnis zurückgeben — es kommt in den Verlauf des Alarms.
+ * Vorher verschwand eine Meldung an einen toten Kanal spurlos (der einmalige
+ * Alarm war da schon abgeschaltet), und ein Mailfehler warf aus `melde` heraus
+ * und brach den ganzen Takt ab: die übrigen Alarme dieses Takts blieben ungeprüft.
+ */
 async function melden(alarm, zeichnung, erg, preis, t) {
     const { titel, text } = meldungsText(alarm, zeichnung, erg, preis)
     const kanaele = alarm.kanaele || { push: true, mail: true }
+    const zustellung = {}
     if (kanaele.push !== false) {
         try {
-            await stelleZu({
+            zustellung.push = await stelleZu({
                 regel: 'chartAlarm', schwere: alarm.bedingung?.schwere || 'warnung',
                 meldung: text, titel, quelle: 'chart',
                 daten: { alarmId: alarm.id, art: alarm.art, symbol: alarm.symbol, preis, niveau: erg.niveau ?? null },
             }, { symbol: alarm.symbol, chain: alarm.markt }, await leseEinstellungen())
-        } catch (e) { logWarn('chart-alarme', `Push: ${e.message}`) }
+        } catch (e) { logWarn('chart-alarme', `Push: ${e.message}`); zustellung.push = { fehler: e.message } }
     }
     if (kanaele.mail !== false) {
-        await melde('chartAlarm', { betreff: titel, text, schluessel: `${alarm.id}|${t}`, ttlMs: 60_000 })
+        try {
+            zustellung.mail = (await melde('chartAlarm', { betreff: titel, text, schluessel: `${alarm.id}|${t}`, ttlMs: 60_000 })) ? 'ok' : 'nicht verschickt'
+        } catch (e) { logWarn('chart-alarme', `Mail: ${e.message}`); zustellung.mail = String(e.message).slice(0, 200) }
     }
+    return zustellung
+}
+
+/** Wurde die Meldung irgendwo zugestellt? */
+function zugestellt(z) {
+    if (z.mail === 'ok') return true
+    return Object.values(z.push || {}).some((v) => v === 'ok')
 }
 
 // ── Takt ─────────────────────────────────────────────────────────────────
 let taktUhr = null
 let laeuft = false
+/*
+ * Letzte Messung je Alarm im Speicher. In die Datenbank kommt sie nur alle
+ * `PERSIST_MS` oder beim Auslösen — vorher schrieb jeder aktive Alarm alle
+ * 5 s eine Zeile (20 Alarme ≈ 345 600 Schreibvorgänge am Tag auf die NAS).
+ * Übernimmt ein anderer Prozess, setzt er auf dem höchstens eine Minute alten
+ * Stand an: eine Kreuzung in dieser Minute meldet er noch, eine Lücke über
+ * 10 Minuten setzt neu an (pruefeAlarm).
+ */
+const PERSIST_MS = 60_000
+const messung = new Map()      // alarmId → { p, t, gespeichert }
 
 async function einTakt() {
     if (laeuft) return
@@ -208,6 +252,8 @@ async function einTakt() {
         }
 
         const t = Date.now()
+        const aktiveIds = new Set(alarme.map((a) => a.id))
+        for (const id of messung.keys()) if (!aktiveIds.has(id)) messung.delete(id)
         for (const a of alarme) {
             const p = preise[a.markt]?.get(a.symbol)
             if (!p) continue
@@ -217,18 +263,45 @@ async function einTakt() {
                 await knex('chart_alarme').where('id', a.id).update({ aktiv: 0 })
                 continue
             }
-            const vorher = a.letzterPreis != null && a.letzteZeit ? { p: a.letzterPreis, t: a.letzteZeit } : null
+            if (geometrieVorbei(a, z, t)) {
+                // Linie/Zone ohne Verlängerung ist zu Ende: abschalten und sagen, warum —
+                // vorher lief der Alarm still weiter und konnte nie mehr auslösen.
+                await knex('chart_alarme').where('id', a.id).update({
+                    aktiv: 0, verlauf: JSON.stringify([...a.verlauf, { t, p, hinweis: 'geometrieEndet' }].slice(-MAX_VERLAUF)),
+                })
+                messung.delete(a.id)
+                continue
+            }
+            // Die eigene, frischere Messung vor der gespeicherten — ausser die Datenbank ist neuer
+            // (ein anderer Prozess hat geführt), dann deren Stand.
+            const m = messung.get(a.id)
+            const db = a.letzterPreis != null && a.letzteZeit ? { p: a.letzterPreis, t: a.letzteZeit } : null
+            const vorher = m && (!db || m.t >= db.t) ? m : db
             const erg = pruefeAlarm(a, z, vorher, { p, t })
-            const patch = { letzterPreis: p, letzteZeit: t }
             if (erg.ausloesen && sperreAbgelaufen(a, t)) {
-                patch.ausgeloestAm = t
-                patch.anzahlAusgeloest = a.anzahlAusgeloest + 1
-                patch.verlauf = JSON.stringify([...a.verlauf, { t, p, niveau: erg.niveau ?? null }].slice(-MAX_VERLAUF))
-                if (a.einmalig) patch.aktiv = 0
-                await knex('chart_alarme').where('id', a.id).update(patch)
-                await melden(a, z, erg, p, t)
+                // Führung vor dem Melden verlängern — ein Takt kann (Gewichtswarten, langsame
+                // Kanäle) länger dauern als die TTL, und dann meldete der andere Prozess dasselbe.
+                if (!(await verlaengereFuehrung(FUEHRUNG_KEY))) break
+                const patch = {
+                    letzterPreis: p, letzteZeit: t, ausgeloestAm: t, anzahlAusgeloest: a.anzahlAusgeloest + 1,
+                    ...(a.einmalig ? { aktiv: 0 } : {}),
+                }
+                // Nur melden, wenn niemand die Zeile seit dem Lesen geändert hat.
+                const getroffen = await knex('chart_alarme').where({ id: a.id, letzteZeit: a.letzteZeit }).update(patch)
+                messung.set(a.id, { p, t, gespeichert: t })
+                if (getroffen !== 1) continue
+                const zustellung = await melden(a, z, erg, p, t)
+                const eintrag = { t, p, niveau: erg.niveau ?? null, zustellung, zugestellt: zugestellt(zustellung) }
+                await knex('chart_alarme').where('id', a.id).update({
+                    verlauf: JSON.stringify([...a.verlauf, eintrag].slice(-MAX_VERLAUF)),
+                })
             } else {
-                await knex('chart_alarme').where('id', a.id).update(patch)
+                const gespeichert = m?.gespeichert || a.letzteZeit || 0
+                messung.set(a.id, { p, t, gespeichert })
+                if (t - gespeichert >= PERSIST_MS) {
+                    await knex('chart_alarme').where('id', a.id).update({ letzterPreis: p, letzteZeit: t })
+                    messung.set(a.id, { p, t, gespeichert: t })
+                }
             }
         }
     } catch (e) {
@@ -264,6 +337,11 @@ export function setupChartAlarmRoutes(app) {
             const knex = getKnex()
             const { fehler, daten } = await pruefeEingabe(req.body || {}, knex)
             if (fehler) return res.status(400).json({ error: fehler })
+            // Die Alarme laufen auf Binance-Kursen; ein Symbol, das Binance nicht führt
+            // (nur Bitunix/Bitget), käme im Takt nie an — sagen statt still nie auslösen.
+            if ((await symbolBeiBinance(daten.symbol, daten.markt)) === false) {
+                return res.status(400).json({ error: `${daten.symbol} gibt es bei Binance ${daten.markt === 'spot' ? 'Spot' : 'Futures'} nicht — die Alarme laufen auf Binance-Kursen` })
+            }
             const [zeile] = await knex('chart_alarme').insert({
                 einmalig: 1, aktiv: 1, kanaele: JSON.stringify({ push: true, mail: true }),
                 ...daten, erstelltAm: Date.now(),
@@ -285,7 +363,7 @@ export function setupChartAlarmRoutes(app) {
             // Wieder eingeschaltet: neu ansetzen. Der gespeicherte Preis ist
             // womöglich Tage alt, und ein Vergleich damit wäre eine Kreuzung,
             // die niemand gesehen hat.
-            if (daten.aktiv === 1 && Number(alt.aktiv) !== 1) { daten.letzterPreis = null; daten.letzteZeit = 0 }
+            if (daten.aktiv === 1 && Number(alt.aktiv) !== 1) { daten.letzterPreis = null; daten.letzteZeit = 0; messung.delete(id) }
             await knex('chart_alarme').where('id', id).update(daten)
             res.json(alarmZeile(await knex('chart_alarme').where('id', id).first()))
         } catch (e) { res.status(500).json({ error: e.message }) }
@@ -300,12 +378,15 @@ export function setupChartAlarmRoutes(app) {
 
     app.post('/api/chart/alarme/test', async (_req, res) => {
         try {
-            await stelleZu({
+            // Ergebnis je Kanal zurückgeben — vorher hiess es „verschickt", auch wenn alle Kanäle aus waren.
+            // Die Mindest-Schwere gilt beim Test nicht: wer drückt, will wissen, ob der Draht steht.
+            const ergebnis = await stelleZu({
                 regel: 'chartAlarm', schwere: 'kritisch', quelle: 'chart',
                 titel: 'Chart-Alarm: Test', meldung: 'Testmeldung vom Chart-Arbeitsplatz — die Zustellung funktioniert.',
                 daten: { test: true },
-            }, { symbol: 'TEST', chain: '—' }, await leseEinstellungen())
-            res.json({ ok: true })
+            }, { symbol: 'TEST', chain: '—' }, await leseEinstellungen(), { alleSchweren: true })
+            const ok = Object.values(ergebnis).some((v) => v === 'ok')
+            res.json({ ok, ergebnis })
         } catch (e) { res.status(500).json({ error: e.message }) }
     })
 }

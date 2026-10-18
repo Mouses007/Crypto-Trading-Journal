@@ -7,7 +7,7 @@
  * — ein Alarm, der zu oft meldet, wird abgeschaltet, und dann meldet er auch
  * den einen Fall nicht mehr, auf den es ankam.
  */
-import { geradePreis, linienPreis, kanalBei, zoneBei, pruefeAlarm, sperreAbgelaufen, MAX_LUECKE_MS } from './chart-alarm-regeln.js'
+import { geradePreis, linienPreis, kanalBei, zoneBei, pruefeAlarm, sperreAbgelaufen, geometrieVorbei, ordnePunkte, MAX_LUECKE_MS } from './chart-alarm-regeln.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -82,6 +82,57 @@ console.log('\nSperrfrist\n')
     check('vor 10 min ausgelöst, Vorgabe 15 → darf nicht', !sperreAbgelaufen({ ausgeloestAm: T, bedingung: {} }, T + 10 * M))
     check('nach 15 min → darf wieder', sperreAbgelaufen({ ausgeloestAm: T, bedingung: {} }, T + 15 * M))
     check('eigene Sperre 60 min', !sperreAbgelaufen({ ausgeloestAm: T, bedingung: { sperreMin: 60 } }, T + 30 * M))
+}
+
+console.log('\nSperrfrist: Untergrenze und einmalige Alarme\n')
+{
+    check('sperreMin 0 → trotzdem 1 min (kein Dauerfeuer)', !sperreAbgelaufen({ ausgeloestAm: T, bedingung: { sperreMin: 0 } }, T + 30_000))
+    check('sperreMin 0 → nach 1 min wieder', sperreAbgelaufen({ ausgeloestAm: T, bedingung: { sperreMin: 0 } }, T + M))
+    check('einmaliger Alarm, wieder eingeschaltet → keine Sperre', sperreAbgelaufen({ einmalig: 1, ausgeloestAm: T, bedingung: {} }, T + M))
+    check('Gegenprobe: wiederholender Alarm nach 1 min → gesperrt', !sperreAbgelaufen({ einmalig: 0, ausgeloestAm: T, bedingung: {} }, T + M))
+}
+
+console.log('\nZeichenrichtung\n')
+{
+    const vor = [{ t: T, p: 100 }, { t: T + 10 * M, p: 110 }]
+    const rueck = [vor[1], vor[0]]
+    check('ordnePunkte: Trendlinie rückwärts → nach Zeit', ordnePunkte('trendlinie', rueck)[0].t === T)
+    check('ordnePunkte: Strahl bleibt, wie gezeichnet', ordnePunkte('strahl', rueck)[0].t === T + 10 * M)
+    check('ordnePunkte: Kanal tauscht nur a/b, c bleibt dritter',
+        ordnePunkte('kanal', [rueck[0], rueck[1], { t: T + 5 * M, p: 90 }])[2].p === 90)
+    const tl = (pk) => ({ typ: 'trendlinie', punkte: pk, stil: { rechts: true } })
+    check('Trendlinie rückwärts gezeichnet, „rechts" → gilt in der Zukunft', nahe(linienPreis(tl(rueck), T + 20 * M), 120))
+    check('Gegenprobe: dieselbe Linie links vom Anfang → null', linienPreis(tl(rueck), T - M) === null)
+    const sr = { typ: 'strahl', punkte: rueck }
+    check('Strahl nach LINKS gezeichnet → links vom Start gültig', nahe(linienPreis(sr, T - 10 * M), 90))
+    check('Gegenprobe: Strahl nach links → rechts vom Start null', linienPreis(sr, T + 20 * M) === null)
+}
+
+console.log('\nLog-Skala\n')
+{
+    const a = { t: T, p: 100 }, b = { t: T + 10 * M, p: 200 }
+    check('linear: Mitte 100→200 = 150', nahe(geradePreis(a, b, T + 5 * M), 150))
+    check('log: Mitte 100→200 = 141,42', Math.abs(geradePreis(a, b, T + 5 * M, true) - Math.SQRT2 * 100) < 1e-9)
+    const z = { typ: 'trendlinie', punkte: [a, b], stil: { skala: 'log' } }
+    check('Trendlinie mit stil.skala log rechnet log', Math.abs(linienPreis(z, T + 5 * M) - 141.4213562) < 1e-6)
+    const k = { typ: 'kanal', punkte: [a, b, { t: T, p: 50 }], stil: { skala: 'log' } }
+    const g = kanalBei(k, T + 5 * M)
+    check('Log-Kanal: Parallele mit Faktor ½ → 70,71', Math.abs(g.unten - 70.710678) < 1e-5 && Math.abs(g.oben - 141.421356) < 1e-5)
+}
+
+console.log('\nGeometrie zu Ende\n')
+{
+    const linie = { art: 'linie', bedingung: {} }
+    const strecke = { typ: 'trendlinie', punkte: [{ t: T, p: 100 }, { t: T + 10 * M, p: 110 }], stil: {} }
+    check('Strecke ohne Verlängerung, Ende vorbei → vorbei', geometrieVorbei(linie, strecke, T + 11 * M))
+    check('Gegenprobe: innerhalb der Strecke → nicht vorbei', !geometrieVorbei(linie, strecke, T + 5 * M))
+    check('Gegenprobe: vor dem Start → nicht vorbei (beginnt noch)', !geometrieVorbei(linie, strecke, T - M))
+    check('Gegenprobe: mit „rechts" → nie vorbei', !geometrieVorbei(linie, { ...strecke, stil: { rechts: true } }, T + 999 * M))
+    check('Horizontale → nie vorbei', !geometrieVorbei(linie, { typ: 'horizontale', punkte: [{ t: T, p: 1 }] }, T + 999 * M))
+    const zone = { art: 'zone', bedingung: {} }
+    const re = { typ: 'rechteck', punkte: [{ t: T, p: 100 }, { t: T + 10 * M, p: 110 }], stil: {} }
+    check('Rechteck zu Ende → vorbei', geometrieVorbei(zone, re, T + 11 * M))
+    check('Gegenprobe: Rechteck mit „rechts" → nicht vorbei', !geometrieVorbei(zone, { ...re, stil: { rechts: true } }, T + 11 * M))
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)

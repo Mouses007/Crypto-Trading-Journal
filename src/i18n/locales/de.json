@@ -5300,7 +5300,11 @@
       "testOk": "Testmeldung verschickt.",
       "loeschenFrage": "Alarm „{was}“ löschen?",
       "quittieren": "Klick zum Schliessen",
-      "hier": "Alarm bei diesem Preis"
+      "hier": "Alarm bei diesem Preis",
+      "testFehler": "Kein Kanal hat zugestellt",
+      "testKeinKanal": "Kein Push-Kanal eingeschaltet (Hype-Radar → Einstellungen → Alarmkanäle)",
+      "geometrieEndet": "Linie/Zone zu Ende — abgeschaltet",
+      "nichtZugestellt": "nicht zugestellt"
     },
     "quelle": {
       "titel": "Kursquelle: Binance (live per Websocket, tiefe Historie) oder die Kurse deiner Handelsbörse (per Abfrage)",

@@ -31,6 +31,7 @@ import { holeHebelzonen } from './hebelzonen.js'
 import { getFundingHistory } from './market-data.js'
 import { ausCache } from './marktradar-api.js'
 import { saubereVorlage } from './chart-vorlagen.js'
+import { ordnePunkte } from './chart-alarm-regeln.js'
 
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
 const HTTP_TIMEOUT = 10000
@@ -214,7 +215,7 @@ const MAX_STIL_BYTES = 4096
  * alles andere wäre beim Wechsel der Zeiteinheit falsch. Gibt `{fehler}` oder
  * die gesäuberten Felder zurück.
  */
-export function pruefeZeichnung(roh, { teilweise = false } = {}) {
+export function pruefeZeichnung(roh, { teilweise = false, typ: altTyp = null } = {}) {
     const aus = {}
     if (!teilweise || roh.symbol !== undefined) {
         const symbol = String(roh.symbol || '').toUpperCase()
@@ -234,7 +235,9 @@ export function pruefeZeichnung(roh, { teilweise = false } = {}) {
             if (!Number.isFinite(t) || !Number.isFinite(p)) return { fehler: 'punkt ohne Zeit oder Preis' }
             punkte.push({ t: Math.round(t), p })
         }
-        aus.punkte = JSON.stringify(punkte)
+        // Nach der Zeit ordnen (ausser Strahl/Fibonacci/Position): „rechts" heisst dann
+        // in Bild, Treffertest und Alarm dasselbe — über den SPÄTEREN Punkt hinaus.
+        aus.punkte = JSON.stringify(ordnePunkte(aus.typ || roh.typ || altTyp, punkte))
     }
     if (roh.stil !== undefined) {
         const text = JSON.stringify(roh.stil && typeof roh.stil === 'object' ? roh.stil : {})
@@ -254,7 +257,8 @@ export function pruefeZeichnung(roh, { teilweise = false } = {}) {
 function zeichnungZeile(r) {
     return {
         id: r.id, symbol: r.symbol, typ: r.typ,
-        punkte: parse(r.punkte, []), stil: parse(r.stil, {}),
+        // ältere Zeichnungen (vor der Ordnung beim Speichern) beim Lesen ordnen
+        punkte: ordnePunkte(r.typ, parse(r.punkte, [])), stil: parse(r.stil, {}),
         sichtbarAuf: parse(r.sichtbarAuf, null),
         gesperrt: Number(r.gesperrt) === 1, versteckt: Number(r.versteckt) === 1,
         erstelltAm: Number(r.erstelltAm) || 0, geaendertAm: Number(r.geaendertAm) || 0,
@@ -641,8 +645,17 @@ export function setupChartRoutes(app) {
         try {
             const id = Number(req.params.id)
             const knex = getKnex()
-            if (!(await knex('chart_zeichnungen').where('id', id).first())) return res.status(404).json({ error: 'Zeichnung nicht gefunden' })
-            const { fehler, daten } = pruefeZeichnung(req.body || {}, { teilweise: true })
+            if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'id ungültig' })
+            const alt = await knex('chart_zeichnungen').where('id', id).first()
+            if (!alt) return res.status(404).json({ error: 'Zeichnung nicht gefunden' })
+            // Typ und Symbol sind fest: ein Alarm auf dieser Linie prüft die Passung nur beim
+            // Anlegen und rechnete danach mit einer Geometrie, die nicht mehr passt.
+            const koerper = { ...(req.body || {}) }
+            if (koerper.typ !== undefined && koerper.typ !== alt.typ) return res.status(400).json({ error: 'typ einer Zeichnung ist nicht änderbar' })
+            if (koerper.symbol !== undefined && String(koerper.symbol).toUpperCase() !== alt.symbol) return res.status(400).json({ error: 'symbol einer Zeichnung ist nicht änderbar' })
+            delete koerper.typ
+            delete koerper.symbol
+            const { fehler, daten } = pruefeZeichnung(koerper, { teilweise: true, typ: alt.typ })
             if (fehler) return res.status(400).json({ error: fehler })
             await knex('chart_zeichnungen').where('id', id).update({ ...daten, geaendertAm: Date.now() })
             res.json(zeichnungZeile(await knex('chart_zeichnungen').where('id', id).first()))

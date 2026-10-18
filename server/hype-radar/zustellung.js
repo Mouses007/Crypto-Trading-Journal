@@ -143,21 +143,27 @@ const KANAELE = { ntfy, telegram, webhook }
  * @param {object} fav    Favorit
  * @param {object} einst  Einstellungen inkl. alarmKanaele und schluessel
  */
-export async function stelleZu(alarm, fav, einst) {
+export async function stelleZu(alarm, fav, einst, { alleSchweren = false } = {}) {
     const kanaele = einst?.alarmKanaele || {}
     const geheim = einst?.schluessel || {}
+    // Ergebnis je Kanal: 'ok' | 'aus' | 'gefiltert' | Fehlertext — der Chart-Alarm
+    // vermerkt es im Verlauf, sein Test-Knopf zeigt es an (vorher hiess es immer „verschickt").
+    const ergebnis = {}
     for (const [name, senden] of Object.entries(KANAELE)) {
         const kanal = kanaele[name]
-        if (!kanal?.an) continue
-        if (!erreichtSchwere(alarm.schwere, kanal.minSchwere || 'info')) continue
+        if (!kanal?.an) { ergebnis[name] = 'aus'; continue }
+        if (!alleSchweren && !erreichtSchwere(alarm.schwere, kanal.minSchwere || 'info')) { ergebnis[name] = 'gefiltert'; continue }
         try {
             await senden(alarm, fav, kanal, geheim)
+            ergebnis[name] = 'ok'
         } catch (e) {
             // Der Alarm ist gespeichert; ein tauber Kanal ist eine Warnung
             // wert, kein Abbruchgrund für die übrigen.
             logWarn('hype-zustellung', `${name}: ${e.message}`)
+            ergebnis[name] = String(e.message || e).slice(0, 200)
         }
     }
+    return ergebnis
 }
 
 /** Für den Test-Knopf: eine harmlose Meldung über die echten Kanäle. */

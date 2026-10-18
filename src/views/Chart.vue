@@ -403,7 +403,8 @@ function foto() {
 function taste(e) {
     const ziel = e.target
     if (ziel && (ziel.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(ziel.tagName))) return
-    if (dialog.value) return
+    // Auch hinter dem Alarm-Dialog: Entf löschte sonst die Linie, auf die gerade ein Alarm entsteht.
+    if (dialog.value || alarmVorlage.value) return
     const panel = panelRefs.value[aktivIndex.value]
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
         const k = e.key.toLowerCase()

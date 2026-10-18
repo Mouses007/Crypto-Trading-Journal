@@ -21,10 +21,39 @@
 export const MAX_LUECKE_MS = 10 * 60 * 1000
 export const STANDARD_SPERRE_MIN = 15
 
-/** Preis der Geraden durch a und b zur Zeit t (linear in der Zeit). */
-export function geradePreis(a, b, t) {
+/**
+ * Preis der Geraden durch a und b zur Zeit t. Auf einer LOG-Skala gezeichnete
+ * Linie ist im Bild gerade im Logarithmus des Preises — linear gerechnet lag
+ * die Mitte von 100→200 bei 150 statt 141,4, und der Alarm feuerte neben der
+ * gezeichneten Linie.
+ */
+export function geradePreis(a, b, t, log = false) {
     if (b.t === a.t) return a.p
-    return a.p + ((b.p - a.p) * (t - a.t)) / (b.t - a.t)
+    const f = (t - a.t) / (b.t - a.t)
+    if (log && a.p > 0 && b.p > 0) return Math.exp(Math.log(a.p) + (Math.log(b.p) - Math.log(a.p)) * f)
+    return a.p + (b.p - a.p) * f
+}
+
+/**
+ * Punkte einer Zeichnung nach der Zeit ordnen — damit „rechts verlängern"
+ * überall „über den SPÄTEREN Punkt hinaus" heisst. Vorher verlängerte das Bild
+ * über den zweiten GEZEICHNETEN Punkt, der Alarm über den späteren: eine von
+ * rechts nach links gezogene Trendlinie mit „rechts" wuchs im Bild nach links,
+ * der Alarm rechnete nach rechts, wo nichts zu sehen war.
+ * Ausgenommen: Strahl (die Richtung IST die Aussage) und Fibonacci (die
+ * Reihenfolge legt fest, wo 0 und 1 liegen).
+ */
+export function ordnePunkte(typ, punkte) {
+    if (!Array.isArray(punkte) || punkte.length < 2) return punkte
+    if (typ === 'trendlinie' || typ === 'rechteck' || typ === 'messen' || typ === 'position') {
+        if (typ === 'position') return punkte          // Einstieg/Ziel/Stop: feste Rollen
+        return punkte[0].t <= punkte[1].t ? punkte : [punkte[1], punkte[0], ...punkte.slice(2)]
+    }
+    if (typ === 'kanal') {
+        // a, b = Basislinie, c = Versatzpunkt — nur a/b tauschen
+        return punkte[0].t <= punkte[1].t ? punkte : [punkte[1], punkte[0], ...punkte.slice(2)]
+    }
+    return punkte
 }
 
 /**
@@ -33,20 +62,25 @@ export function geradePreis(a, b, t) {
  * Beim Kanal wählt `kante` 'oben' | 'unten' | 'mitte'.
  */
 export function linienPreis(z, t, kante = 'oben') {
-    const pk = z?.punkte || []
+    const pk = ordnePunkte(z?.typ, z?.punkte || []) || []
     const stil = z?.stil || {}
+    const log = stil.skala === 'log'
     if (!pk.length) return null
     switch (z.typ) {
         case 'horizontale': return pk[0].p
         case 'strahlH': return t >= pk[0].t ? pk[0].p : null
-        case 'strahl': return pk.length > 1 && t >= pk[0].t ? geradePreis(pk[0], pk[1], t) : null
+        case 'strahl': {
+            // Der Strahl gilt in seiner GEZEICHNETEN Richtung: von pk[0] über pk[1] hinaus.
+            if (pk.length < 2) return null
+            const vorwaerts = pk[1].t >= pk[0].t
+            if (vorwaerts ? t < pk[0].t : t > pk[0].t) return null
+            return geradePreis(pk[0], pk[1], t, log)
+        }
         case 'trendlinie': {
             if (pk.length < 2) return null
-            const von = Math.min(pk[0].t, pk[1].t)
-            const bis = Math.max(pk[0].t, pk[1].t)
-            if (t < von && !stil.links) return null
-            if (t > bis && !stil.rechts) return null
-            return geradePreis(pk[0], pk[1], t)
+            if (t < pk[0].t && !stil.links) return null
+            if (t > pk[1].t && !stil.rechts) return null
+            return geradePreis(pk[0], pk[1], t, log)
         }
         case 'kanal': {
             const g = kanalBei(z, t)
@@ -59,12 +93,17 @@ export function linienPreis(z, t, kante = 'oben') {
 
 /** Unter- und Oberkante eines Kanals zur Zeit t (nur innerhalb seiner Strecke). */
 export function kanalBei(z, t) {
-    const [a, b, c] = z?.punkte || []
+    const [a, b, c] = ordnePunkte('kanal', z?.punkte || []) || []
     if (!a || !b) return null
-    if (t < Math.min(a.t, b.t) || t > Math.max(a.t, b.t)) return null
-    const basis = geradePreis(a, b, t)
-    const versatz = c ? c.p - geradePreis(a, b, c.t) : 0
-    const zweite = basis + versatz
+    const stil = z?.stil || {}
+    if (t < a.t && !stil.links) return null
+    if (t > b.t && !stil.rechts) return null
+    const log = stil.skala === 'log' && a.p > 0 && b.p > 0 && (!c || c.p > 0)
+    const basis = geradePreis(a, b, t, log)
+    // Auf der Log-Skala ist der Abstand der Parallelen ein FAKTOR, kein Betrag.
+    const zweite = !c ? basis
+        : log ? basis * (c.p / geradePreis(a, b, c.t, true))
+            : basis + (c.p - geradePreis(a, b, c.t))
     return { unten: Math.min(basis, zweite), oben: Math.max(basis, zweite) }
 }
 
@@ -131,11 +170,43 @@ export function pruefeAlarm(alarm, zeichnung, vorher, jetzt, { maxLueckeMs = MAX
     return { ausloesen: treffer, niveau: neuNiveau, richtung: neu.abstand >= 0 ? 'ueber' : 'unter' }
 }
 
-/** Darf ein wiederholender Alarm wieder melden? */
+/**
+ * Darf ein wiederholender Alarm wieder melden? Einmalige Alarme sperren nie —
+ * sie schalten sich beim Auslösen ab; wer sie wieder einschaltet, will die
+ * nächste Kreuzung, auch wenn die letzte Auslösung erst zehn Minuten her ist.
+ * Mindestens eine Minute: mit 0 meldete ein Kurs, der um das Niveau pendelt,
+ * alle zehn Sekunden.
+ */
+export const MIN_SPERRE_MIN = 1
 export function sperreAbgelaufen(alarm, jetztMs) {
+    if (alarm.einmalig) return true
     const zuletzt = Number(alarm.ausgeloestAm) || 0
     if (!zuletzt) return true
     const min = Number(alarm.bedingung?.sperreMin)
-    const sperre = (Number.isFinite(min) && min >= 0 ? min : STANDARD_SPERRE_MIN) * 60_000
+    const sperre = Math.max(MIN_SPERRE_MIN, Number.isFinite(min) && min >= 0 ? min : STANDARD_SPERRE_MIN) * 60_000
     return jetztMs - zuletzt >= sperre
+}
+
+/**
+ * Ist die Geometrie, auf die der Alarm schaut, zur Zeit t schon VORBEI
+ * (Strecke/Rechteck/Kanal ohne Verlängerung, Ende in der Vergangenheit)? Dann
+ * kann der Alarm nie wieder auslösen — er wird abgeschaltet und sagt warum,
+ * statt still für immer weiterzulaufen.
+ */
+export function geometrieVorbei(alarm, z, t) {
+    if (!z) return false
+    if (alarm.art === 'linie') {
+        if (linienPreis(z, t, alarm.bedingung?.kante) != null) return false
+        // vorbei = es gibt einen früheren Zeitpunkt, an dem die Linie existierte, und t liegt danach
+        const pk = ordnePunkte(z.typ, z.punkte || []) || []
+        const ende = Math.max(...pk.map((q) => q.t))
+        return Number.isFinite(ende) && t > ende
+    }
+    if (alarm.art === 'zone') {
+        if (zoneBei(z, t)) return false
+        const pk = z.punkte || []
+        const ende = Math.max(...pk.map((q) => q.t))
+        return Number.isFinite(ende) && t > ende
+    }
+    return false
 }
