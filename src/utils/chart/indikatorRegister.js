@@ -19,13 +19,18 @@
  *             bekommt eine Serie (VWAP Vector: 13 schaltbare Linien)
  *   ausgaben  [{ key, art: 'linie'|'histogramm', farbe, breite }]
  *   linien    feste Marken im Pane (z. B. 70/30 beim RSI)
+ *   band      (optional) { oben, unten, linie } — getöntes Band zwischen den
+ *             Marken und gefüllte Ausschläge der `linie` darüber/darunter, wie
+ *             TradingView RSI und Stochastik zeichnet
+ *   ausgaben[].vierFarben  Histogramm in vier Stufen (über/unter null ×
+ *             steigend/fallend) — das MACD-Histogramm von TradingView
  *   rechne(kerzen, p, ext) → { [ausgabeKey]: Array<number|null> } gleich lang wie kerzen
  *   extern    (optional) Name einer Datenquelle, die das Panel nachlädt — Open
  *             Interest, Funding, Momentum. `ext` sind dann deren Punkte; sie
  *             werden hier auf die Kerzenzeiten gelegt.
  */
 import {
-    sma, ema, bollinger, vwap, vwapBand, rsi, macd, stochastic, stochRsi, atr, adx, obv, mfi, volumeSma,
+    sma, ema, bollinger, vwap, vwapBand, rsi, macd, stochastic, stochRsi, atr, adx, obv, mfi, volumeSma, smaSerie,
 } from '../../../shared/indicators.js'
 import { rechneVwapVector } from './vwapVector.js'
 
@@ -259,11 +264,26 @@ export const INDIKATOREN = {
     },
     rsi: {
         ort: 'eigen',
-        params: [P_LAENGE(14), P_QUELLE],
-        ausgaben: [{ key: 'wert', art: 'linie', farbe: '#ab47bc', breite: 1 }],
+        params: [P_LAENGE(14), P_QUELLE,
+            { key: 'maAn', typ: 'schalter', vorgabe: true },
+            // Nicht im Legendennamen: „RSI 14 14" liest sich wie ein Tippfehler.
+            { key: 'maLaenge', typ: 'zahl', vorgabe: 14, min: 1, max: 200, schritt: 1, nichtImNamen: true }],
+        ausgaben: [
+            { key: 'wert', art: 'linie', farbe: '#7e57c2', breite: 1 },
+            { key: 'ma', art: 'linie', farbe: '#f7df1e', breite: 1 },
+        ],
+        // Die gleitende Linie nur, wenn sie an ist — sonst stünde eine leere Serie in der Legende.
+        ausgabenFuer: (p) => [
+            { key: 'wert', art: 'linie', farbe: '#7e57c2', breite: 1 },
+            ...(p.maAn ? [{ key: 'ma', art: 'linie', farbe: '#f7df1e', breite: 1 }] : []),
+        ],
         linien: [70, 50, 30],
+        band: { oben: 70, unten: 30, linie: 'wert' },
         bereich: [0, 100],
-        rechne: (k, p) => ({ wert: rsi(mitQuelle(k, p.quelle), p.laenge) }),
+        rechne: (k, p) => {
+            const wert = rsi(mitQuelle(k, p.quelle), p.laenge)
+            return p.maAn ? { wert, ma: smaSerie(wert, p.maLaenge) } : { wert }
+        },
     },
     macd: {
         ort: 'eigen',
@@ -274,7 +294,7 @@ export const INDIKATOREN = {
             P_QUELLE,
         ],
         ausgaben: [
-            { key: 'hist', art: 'histogramm', farbe: '#26a69a' },
+            { key: 'hist', art: 'histogramm', farbe: '#26a69a', vierFarben: true },
             { key: 'macd', art: 'linie', farbe: '#2962ff', breite: 1 },
             { key: 'signal', art: 'linie', farbe: '#ff6d00', breite: 1 },
         ],
@@ -298,6 +318,7 @@ export const INDIKATOREN = {
             { key: 'd', art: 'linie', farbe: '#ff6d00', breite: 1 },
         ],
         linien: [80, 20],
+        band: { oben: 80, unten: 20, linie: 'k' },
         bereich: [0, 100],
         rechne: (k, p) => stochastic(k, { period: p.laenge, smoothK: p.glaettK, smoothD: p.glaettD }),
     },
@@ -314,6 +335,7 @@ export const INDIKATOREN = {
             { key: 'd', art: 'linie', farbe: '#ff6d00', breite: 1 },
         ],
         linien: [80, 20],
+        band: { oben: 80, unten: 20, linie: 'k' },
         bereich: [0, 100],
         rechne: (k, p) => stochRsi(k, { rsiPeriod: p.rsiLaenge, stochPeriod: p.laenge, smoothK: p.glaettK, smoothD: p.glaettD }),
     },
@@ -342,6 +364,7 @@ export const INDIKATOREN = {
         params: [P_LAENGE(14)],
         ausgaben: [{ key: 'wert', art: 'linie', farbe: '#00bcd4', breite: 1 }],
         linien: [80, 20],
+        band: { oben: 80, unten: 20, linie: 'wert' },
         bereich: [0, 100],
         rechne: (k, p) => ({ wert: mfi(k, p.laenge) }),
     },
@@ -487,7 +510,7 @@ export function benoetigteQuellen(instanzen) {
 export function kurzname(typ, params, name) {
     if (INDIKATOREN[typ]?.kurzOhneParams) return name
     const p = saubereParams(typ, params)
-    const zahlen = (INDIKATOREN[typ]?.params || []).filter((x) => x.typ === 'zahl').map((x) => p[x.key])
+    const zahlen = (INDIKATOREN[typ]?.params || []).filter((x) => x.typ === 'zahl' && !x.nichtImNamen).map((x) => p[x.key])
     const quelle = p.quelle && p.quelle !== 'c' ? ` ${p.quelle}` : ''
     const anker = p.anker ? ` ${p.anker}` : ''
     return `${name}${zahlen.length ? ' ' + zahlen.join(' ') : ''}${anker}${quelle}`

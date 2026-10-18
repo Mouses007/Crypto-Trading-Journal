@@ -17,9 +17,86 @@ import { LineSeries, HistogramSeries, AreaSeries, LineStyle } from 'lightweight-
 import { INDIKATOREN, rechneIndikator, ausgabenVon, saubereParams } from './indikatorRegister.js'
 import { MomentumZeichnung } from './momentumZeichnung.js'
 import { VwapVectorZeichnung, vektorFarben } from './vwapVectorZeichnung.js'
+import { logischZuX } from './zeichnungen/geometrie.js'
 
 const GRUEN = 'rgba(38,166,154,0.7)'
 const ROT = 'rgba(255,105,96,0.7)'
+
+/*
+ * MACD-Histogramm in vier Stufen wie bei TradingView: über null kräftig grün,
+ * solange es wächst, blass, wenn es schrumpft; unter null kräftig rot, solange
+ * es fällt, blass, wenn es sich null nähert. So sieht man das Nachlassen des
+ * Schwungs, bevor das Histogramm die Seite wechselt.
+ */
+const HIST4 = { hochSteigt: '#26a69a', hochFaellt: '#b2dfdb', tiefSteigt: '#ffcdd2', tiefFaellt: '#ff5252' }
+function vierFarben(w, vorher) {
+    const steigt = vorher == null || w >= vorher
+    if (w >= 0) return steigt ? HIST4.hochSteigt : HIST4.hochFaellt
+    return steigt ? HIST4.tiefSteigt : HIST4.tiefFaellt
+}
+
+/**
+ * Band eines Oszillators (RSI 30–70, Stochastik 20–80) wie bei TradingView:
+ * getönter Streifen zwischen den Marken, Ausschläge darüber grün, darunter rot
+ * gefüllt — bis zur Marke, nicht bis zum Rand.
+ */
+class BandZeichnung {
+    constructor({ chart, serie, band }) {
+        this.chart = chart
+        this.serie = serie
+        this.band = band
+        this.werte = []
+        this.requestUpdate = () => {}
+        this._ansichten = [{
+            zOrder: () => 'bottom',
+            renderer: () => ({ draw: (ziel) => ziel.useMediaCoordinateSpace(({ context, mediaSize }) => this.zeichne(context, mediaSize)) }),
+        }]
+        serie.attachPrimitive(this)
+    }
+    attached({ requestUpdate }) { this.requestUpdate = requestUpdate }
+    detached() { this.requestUpdate = () => {} }
+    paneViews() { return this._ansichten }
+    updateAllViews() {}
+    abbauen() { try { this.serie.detachPrimitive(this) } catch { /* weg */ } }
+    setze(werte) { this.werte = werte || []; this.requestUpdate() }
+
+    zeichne(ctx, g) {
+        const yO = this.serie.priceToCoordinate(this.band.oben)
+        const yU = this.serie.priceToCoordinate(this.band.unten)
+        if (yO == null || yU == null) return
+        ctx.fillStyle = 'rgba(126,87,194,0.10)'
+        ctx.fillRect(0, Math.min(yO, yU), g.width, Math.abs(yU - yO))
+        const ts = this.chart.timeScale()
+        const fuelle = (grenze, yGrenze, ueber, farbe) => {
+            ctx.fillStyle = farbe
+            let stueck = []
+            const zu = () => {
+                if (stueck.length > 1) {
+                    ctx.beginPath()
+                    ctx.moveTo(stueck[0][0], yGrenze)
+                    for (const [x, y] of stueck) ctx.lineTo(x, y)
+                    ctx.lineTo(stueck[stueck.length - 1][0], yGrenze)
+                    ctx.closePath()
+                    ctx.fill()
+                }
+                stueck = []
+            }
+            for (let i = 0; i < this.werte.length; i++) {
+                const w = this.werte[i]
+                const x = logischZuX(ts, i)
+                if (w == null || x == null) { zu(); continue }
+                const drin = ueber ? w > grenze : w < grenze
+                const y = this.serie.priceToCoordinate(drin ? w : grenze)
+                if (y == null) { zu(); continue }
+                // An der Marke abgeschnitten: wo die Linie innerhalb liegt, hat die Fläche die Höhe null.
+                stueck.push([x, y])
+            }
+            zu()
+        }
+        fuelle(this.band.oben, yO, true, 'rgba(38,166,154,0.28)')
+        fuelle(this.band.unten, yU, false, 'rgba(255,82,82,0.28)')
+    }
+}
 
 /** 93673 → „93.67K" — grosse Bestände (OI) lesbar statt sechsstellig. */
 function kompakt(v) {
@@ -164,15 +241,24 @@ export class IndikatorZeichner {
             }
             const erste = serien[ausgaben.find((a) => a.art === 'linie' || a.art === 'flaeche')?.key] || Object.values(serien)[0]
             for (const marke of def.linien || []) {
-                erste?.createPriceLine({ price: marke, color: 'rgba(255,255,255,0.18)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
+                // Mit Band: Grenzen gestrichelt, Mitte gepunktet — wie TradingView.
+                const mitte = def.band && marke !== def.band.oben && marke !== def.band.unten
+                erste?.createPriceLine({
+                    price: marke, lineWidth: 1, axisLabelVisible: false,
+                    color: def.band ? 'rgba(120,123,134,0.75)' : 'rgba(255,255,255,0.18)',
+                    lineStyle: mitte ? LineStyle.Dotted : LineStyle.Dashed,
+                })
             }
+            // Fester Bereich (0–100): wenig Rand, sonst beschriftet die Achse bis 125.
+            if (def.bereich && erste) erste.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.06 } })
+            const band = def.band && serien[def.band.linie] ? new BandZeichnung({ chart: this.chart, serie: serien[def.band.linie], band: def.band }) : null
             const zeichnung = def.zeichner === 'momentum' && serien.w1
                 ? new MomentumZeichnung({ chart: this.chart, serie: serien.w1 })
                 : def.zeichner === 'vwapVector' && this.kerzenSerie
                     ? new VwapVectorZeichnung({ chart: this.chart, serie: this.kerzenSerie })
                     : null
             const titel = def.ort === 'eigen' && erste && this.titelFuer ? new FensterTitel(erste, this.titelFuer(instanz)) : null
-            this.eintraege.push({ instanz, def, ausgaben, serien, werte: {}, zeichnung, titel })
+            this.eintraege.push({ instanz, def, ausgaben, serien, werte: {}, zeichnung, titel, band })
         }
         // Das Kerzen-Pane soll den Löwenanteil behalten.
         const panes = this.chart.panes()
@@ -186,6 +272,7 @@ export class IndikatorZeichner {
         for (const e of this.eintraege) {
             e.zeichnung?.abbauen()
             e.titel?.abbauen()
+            e.band?.abbauen()
             for (const s of Object.values(e.serien)) {
                 try { this.chart.removeSeries(s) } catch { /* Chart schon weg */ }
             }
@@ -199,6 +286,7 @@ export class IndikatorZeichner {
         const time = this.zuLwc(kerzen[i].t)
         if (wert == null || !Number.isFinite(wert)) return { time }
         const a = e.ausgaben.find((x) => x.key === key)
+        if (a?.vierFarben) return { time, value: wert, color: vierFarben(wert, e.werte[key]?.[i - 1]) }
         if (a?.art === 'histogramm' && a.vorzeichen) return { time, value: wert, color: wert >= 0 ? '#26a69a' : '#ef5350' }
         if (a?.art === 'histogramm' && key === 'hist') return { time, value: wert, color: wert >= 0 ? GRUEN : ROT }
         return { time, value: wert }
@@ -218,6 +306,7 @@ export class IndikatorZeichner {
     }
 
     zeichnungSetzen(e) {
+        if (e.band) e.band.setze(e.werte[e.def.band.linie])
         if (e.def.zeichner === 'vwapVector') e.zeichnung?.setze(e.werte._vv, this.kerzen, saubereParams(e.instanz.typ, e.instanz.params))
         else e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand())
     }
@@ -251,7 +340,7 @@ export class IndikatorZeichner {
                 if (neueKerze && n > 1) serie.update(this.punkt(e, key, n - 2, kerzen))
                 serie.update(this.punkt(e, key, n - 1, kerzen))
             }
-            if (neueKerze || e.def.zeichner === 'vwapVector') this.zeichnungSetzen(e)
+            if (neueKerze || e.def.zeichner === 'vwapVector' || e.band) this.zeichnungSetzen(e)
         }
         this.farbenMelden(!neueKerze)
     }

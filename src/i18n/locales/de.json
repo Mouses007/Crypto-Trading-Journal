@@ -5090,7 +5090,9 @@
       "showDOpen": "Daily Open anzeigen",
       "cDOpen": "Farbe",
       "dOpenLbl": "Schild",
-      "lblOffDO": "Schild-Abstand (Kerzen)"
+      "lblOffDO": "Schild-Abstand (Kerzen)",
+      "maAn": "Gleitende Linie (SMA des RSI)",
+      "maLaenge": "Länge der gleitenden Linie"
     },
     "indWahl": {
       "c": "Schluss",
@@ -5130,7 +5132,8 @@
       "vol": "Volumen",
       "w1": "Welle",
       "w2": "Signal",
-      "mf": "Geldfluss"
+      "mf": "Geldfluss",
+      "ma": "Gleitende Linie"
     },
     "farben": "Farben",
     "standard": "Standard",
