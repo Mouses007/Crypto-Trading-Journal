@@ -15,6 +15,7 @@ import { setupLivetradingRoutes } from './server/livetrading-api.js'
 import { setupFremdbuchRoute } from './server/fremdbuch.js'
 import { setupChartRoutes } from './server/chart-api.js'
 import { setupChartStrategieRoutes } from './server/chart-strategie.js'
+import { setupChartAlarmRoutes, startChartAlarmTakt, stopChartAlarmTakt } from './server/chart-alarme.js'
 import { setupLageRoutes } from './server/marktradar-lage.js'
 import { setupHandelslageRoutes } from './server/handelslage.js'
 import { setupNewsRoutes, startNewsTakt, stopNews } from './server/marktradar-news.js'
@@ -158,6 +159,7 @@ const startIndex = async () => {
     setupLivetradingRoutes(app);
     setupChartRoutes(app);
     setupChartStrategieRoutes(app);
+    setupChartAlarmRoutes(app);
     // Fremde Orderbücher zum Vergleich — bewusst NICHT in die Karte gemischt,
     // die Begründung steht im Kopf von server/fremdbuch.js.
     setupFremdbuchRoute(app);
@@ -182,6 +184,9 @@ const startIndex = async () => {
     // 1-Minuten-Open-Interest für die Liquidationskarte — Binance bietet kein
     // 1m-OI, die feinste Historie ist 5m; deshalb pollt der Takt selbst.
     startOiArchivTakt();
+    // Chart-Alarme: prüft nur, wenn es aktive gibt, und nur in einem Prozess
+    // (Führung über db-claim) — NAS und Testcontainer teilen eine Datenbank.
+    startChartAlarmTakt();
     setupBenachrichtigungsRoutes(app);
     startBenachrichtigungsTakt();
     setupOllamaRoutes(app);
@@ -367,6 +372,7 @@ const startIndex = async () => {
         // ist einzeln gesichert, der nächste Start nimmt ihn wieder auf.
         try { stopRanglisteTakt() } catch (e) { /* trotzdem beenden */ }
         try { stopOiArchivTakt() } catch (e) { /* trotzdem beenden */ }
+        try { stopChartAlarmTakt() } catch (e) { /* trotzdem beenden */ }
         try { stopMarktradar() } catch (e) { /* trotzdem beenden */ }
         try { stopKalender(); stopNews(); stopBenachrichtigungen(); stopCryptoquant() } catch (e) { /* trotzdem beenden */ }
         process.exit(code)

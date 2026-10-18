@@ -79,11 +79,17 @@ async function ntfy(alarm, fav, kanal, geheim) {
     })
 }
 
-/** Der ntfy-Rumpf — rein, damit prüfbar. */
+/**
+ * Der ntfy-Rumpf — rein, damit prüfbar.
+ *
+ * `alarm.titel` überschreibt den Titel: der Chart-Arbeitsplatz schickt seine
+ * Preis-Alarme über dieselben Kanäle, und „BTCUSDT (linie)" sagt dort weniger
+ * als „BTCUSDT kreuzt 64 000 nach oben".
+ */
 export function ntfyNachricht(alarm, fav, topic = 'hype-radar') {
     return {
         topic,
-        title: `${fav?.symbol || '?'} (${alarm.regel})`,
+        title: alarm.titel || `${fav?.symbol || '?'} (${alarm.regel})`,
         message: alarm.meldung,
         priority: { kritisch: 5, warnung: 4, info: 3 }[alarm.schwere] || 3,
         tags: [alarm.schwere === 'kritisch' ? 'rotating_light' : 'chart_with_downwards_trend'],
@@ -115,7 +121,7 @@ async function webhook(alarm, fav, kanal, geheim) {
     await post(geheim.webhookUrl, {
         kopf: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            quelle: 'hype-radar',
+            quelle: alarm.quelle || 'hype-radar',
             regel: alarm.regel,
             schwere: alarm.schwere,
             symbol: fav.symbol,

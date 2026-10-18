@@ -3478,12 +3478,18 @@ async function runMigrations(knex, client) {
             t.double('letzterPreis')
             t.bigInteger('ausgeloestAm').defaultTo(0)
             t.integer('anzahlAusgeloest').defaultTo(0)
+            t.bigInteger('letzteZeit').defaultTo(0)  // wann `letzterPreis` gemessen wurde
+            t.text('verlauf').defaultTo('[]')        // JSON: letzte Auslösungen
             t.text('notiz')
             t.bigInteger('erstelltAm').defaultTo(0)
             t.index(['aktiv'], 'idx_chart_alarme_aktiv')
         })
         console.log(' -> Created table: chart_alarme')
     }
+    // Nachgetragen, solange v26 noch nicht freigegeben war — Prüfstände, die
+    // die Tabelle schon ohne diese Spalten angelegt haben, bekommen sie hier.
+    await addColumnIfNotExists('chart_alarme', 'letzteZeit', (t) => t.bigInteger('letzteZeit').defaultTo(0))
+    await addColumnIfNotExists('chart_alarme', 'verlauf', (t) => t.text('verlauf').defaultTo('[]'))
 
     // ==================== SCHEMA-ANKER ====================
     // Ganz am Ende, damit die Version erst steht, wenn alle Checks durch sind.

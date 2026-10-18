@@ -731,7 +731,9 @@
       "schriftNormal": "Normal",
       "schriftGross": "Large",
       "schriftSehrGross": "Extra large",
-      "mailSecurityNone": "none"
+      "mailSecurityNone": "none",
+      "typ_chartAlarm": "Chart alert (price, line, zone)",
+      "hinweis_chartAlarm": "You create the alerts on the chart — this only decides whether they also arrive by mail. Push (ntfy, Telegram, webhook) uses the channels from Research → Hype radar → Alerts."
     },
     "erweiterteInfos": "Extended info",
     "erweiterteInfosHint": "Shows a small \"i\" next to values and controls. Hover (tap on phone) explains what the number means.",
@@ -4840,7 +4842,8 @@
     "reiter": {
       "watchlist": "Watchlist",
       "objekte": "Drawings",
-      "strategien": "Strategies"
+      "strategien": "Strategies",
+      "alarme": "Alerts"
     },
     "watchlistName": "Watchlist name",
     "watchlistNeuVorgabe": "New list",
@@ -5056,6 +5059,57 @@
       "vorschauWeg": "Remove preview",
       "backtests": "Saved backtests",
       "keinBacktest": "No saved backtest for this symbol."
+    },
+    "alarm": {
+      "neu": "New alert",
+      "aendern": "Edit alert",
+      "art": {
+        "preis": "Price alert",
+        "linie": "Line alert",
+        "zone": "Zone alert"
+      },
+      "bedingung": "Trigger when price",
+      "richtung": {
+        "kreuzt": "crosses (either way)",
+        "ueber": "crosses upwards",
+        "unter": "crosses downwards",
+        "betreten": "enters the zone",
+        "verlassen": "leaves the zone"
+      },
+      "preis": "Price",
+      "kante": "Channel edge",
+      "kanten": {
+        "oben": "upper",
+        "mitte": "middle",
+        "unten": "lower"
+      },
+      "einmalig": "Trigger only once",
+      "wiederholend": "Repeating, at most every {min} min",
+      "sperre": "Earliest again after (min)",
+      "schwere": "Urgency",
+      "schweren": {
+        "info": "Info",
+        "warnung": "Warning",
+        "kritisch": "Critical"
+      },
+      "push": "Push (ntfy/Telegram/webhook)",
+      "mail": "Mail",
+      "notiz": "Note for the message (optional)",
+      "hinweis": "Checked on the server every 5 s, even with the page closed. The crossing is reported, not staying above; after a pause of more than 10 min the alert re-bases instead of reporting a missed crossing.",
+      "abbrechen": "Cancel",
+      "speichern": "Save",
+      "neuPreis": "Price alert on {symbol}",
+      "tipp": "Line and zone alerts: select a drawing → bell. Right-click on the chart creates a price alert.",
+      "alleSymbole": "Show alerts of all symbols",
+      "leer": "No alerts.",
+      "ausschalten": "Switch off",
+      "einschalten": "Switch on",
+      "zuletzt": "Last triggered",
+      "test": "Test push channels",
+      "testOk": "Test message sent.",
+      "loeschenFrage": "Delete alert “{was}”?",
+      "quittieren": "click to dismiss",
+      "hier": "Alert at this price"
     }
   }
 }

@@ -731,7 +731,9 @@
       "schriftNormal": "Normal",
       "schriftGross": "Gross",
       "schriftSehrGross": "Sehr gross",
-      "mailSecurityNone": "ohne"
+      "mailSecurityNone": "ohne",
+      "typ_chartAlarm": "Chart-Alarm (Preis, Linie, Zone)",
+      "hinweis_chartAlarm": "Die Alarme selbst legst du im Chart an — hier steht nur, ob sie auch per Mail kommen. Push (ntfy, Telegram, Webhook) läuft über die Kanäle aus Research → Hype-Radar → Alarme."
     },
     "erweiterteInfos": "Erweiterte Infos",
     "erweiterteInfosHint": "Zeigt ein kleines „i“ an Werten und Bedienelementen. Mauszeiger darüber (am Telefon: antippen) erklärt, was die Zahl bedeutet.",
@@ -4840,7 +4842,8 @@
     "reiter": {
       "watchlist": "Watchlist",
       "objekte": "Zeichnungen",
-      "strategien": "Strategien"
+      "strategien": "Strategien",
+      "alarme": "Alarme"
     },
     "watchlistName": "Name der Watchlist",
     "watchlistNeuVorgabe": "Neue Liste",
@@ -5056,6 +5059,57 @@
       "vorschauWeg": "Vorschau entfernen",
       "backtests": "Gespeicherte Backtests",
       "keinBacktest": "Kein gespeicherter Backtest für dieses Symbol."
+    },
+    "alarm": {
+      "neu": "Neuer Alarm",
+      "aendern": "Alarm ändern",
+      "art": {
+        "preis": "Preis-Alarm",
+        "linie": "Linien-Alarm",
+        "zone": "Zonen-Alarm"
+      },
+      "bedingung": "Auslösen, wenn der Kurs",
+      "richtung": {
+        "kreuzt": "kreuzt (beide Richtungen)",
+        "ueber": "nach oben kreuzt",
+        "unter": "nach unten kreuzt",
+        "betreten": "die Zone betritt",
+        "verlassen": "die Zone verlässt"
+      },
+      "preis": "Preis",
+      "kante": "Kante des Kanals",
+      "kanten": {
+        "oben": "obere",
+        "mitte": "Mitte",
+        "unten": "untere"
+      },
+      "einmalig": "Nur einmal auslösen",
+      "wiederholend": "Wiederholend, frühestens alle {min} min",
+      "sperre": "Frühestens wieder nach (min)",
+      "schwere": "Dringlichkeit",
+      "schweren": {
+        "info": "Info",
+        "warnung": "Warnung",
+        "kritisch": "Kritisch"
+      },
+      "push": "Push (ntfy/Telegram/Webhook)",
+      "mail": "Mail",
+      "notiz": "Notiz zur Meldung (optional)",
+      "hinweis": "Geprüft wird auf dem Server alle 5 s, auch bei geschlossener Seite. Gemeldet wird das Kreuzen, nicht das Darüberstehen; nach einer Pause von über 10 min setzt der Alarm neu an, statt eine verpasste Kreuzung nachzumelden.",
+      "abbrechen": "Abbrechen",
+      "speichern": "Speichern",
+      "neuPreis": "Preis-Alarm auf {symbol}",
+      "tipp": "Linien- und Zonenalarme: Zeichnung auswählen → Glocke. Rechtsklick in den Chart legt einen Preis-Alarm an.",
+      "alleSymbole": "Alarme aller Symbole zeigen",
+      "leer": "Keine Alarme.",
+      "ausschalten": "Ausschalten",
+      "einschalten": "Einschalten",
+      "zuletzt": "Zuletzt ausgelöst",
+      "test": "Push-Kanäle testen",
+      "testOk": "Testmeldung verschickt.",
+      "loeschenFrage": "Alarm „{was}“ löschen?",
+      "quittieren": "Klick zum Schliessen",
+      "hier": "Alarm bei diesem Preis"
     }
   }
 }

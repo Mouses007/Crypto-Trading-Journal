@@ -56,6 +56,10 @@ export const REGISTER = [
     { id: 'picycleKreuzung', gruppe: 'markt', email: true, symbol: '\u{1F53A}', ton: 'warnung', bereich: 'Markt · Pi-Cycle' },
     { id: 'picycleVorwarnung', gruppe: 'markt', email: true, schwelleSpalte: 'radarPicycleSchwelle', symbol: '\u{1F441}\uFE0F', ton: 'info', bereich: 'Markt · Pi-Cycle' },
     { id: 'fundingDivergenz', gruppe: 'markt', email: true, schwelleSpalte: 'radarFundingDivergenz', symbol: '\u2696\uFE0F', ton: 'info', bereich: 'Markt · Funding' },
+    // Preis-, Linien- und Zonenalarme des Chart-Arbeitsplatzes. Die
+    // Sperrfrist hängt am einzelnen Alarm (`schluessel` = Alarm-Id + Auslösung),
+    // nicht am Typ: zwei Linien auf zwei Coins sind zwei Meldungen.
+    { id: 'chartAlarm', gruppe: 'markt', email: true, symbol: '\u23F0', ton: 'warnung', bereich: 'Markt · Chart-Alarm' },
     // ── System ───────────────────────────────────────────────────────────
     // Einziger Eintrag mit EIGENER Stelle: Der Lagebericht geht oft an mehrere
     // Leser, und ein Empfängerfeld je Ereignis waere fuer die anderen zehn

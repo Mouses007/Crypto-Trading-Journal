@@ -40,8 +40,9 @@ const props = defineProps({
     werkzeug: { type: String, default: null },      // nur im aktiven Panel gesetzt
     magnet: { type: Boolean, default: false },
     zeichnungenVersteckt: { type: Boolean, default: false },
+    alarmLinien: { type: Array, default: () => [] },  // aktive Preis-Alarme dieses Symbols
 })
-const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen', 'indikator', 'werkzeugFertig', 'alarmAufZeichnung'])
+const emit = defineEmits(['fokus', 'kreuz', 'bereich', 'kerzen', 'indikator', 'werkzeugFertig', 'alarmAufZeichnung', 'alarmBeiPreis'])
 const { t, locale } = useI18n()
 
 const huelle = ref(null)
@@ -270,6 +271,48 @@ function setzeBacktest(b) {
 }
 
 watch(() => props.panel.strategieFilter, zeigeStrategie, { deep: true })
+
+// ── Alarme ───────────────────────────────────────────────────────────────
+let alarmPreisLinien = []
+const kontext = ref(null)              // { x, y, preis } — Rechtsklick-Menü
+
+function zeichneAlarmLinien() {
+    const serie = kerzenSerie.value
+    if (!serie) return
+    for (const l of alarmPreisLinien) { try { serie.removePriceLine(l) } catch { /* weg */ } }
+    alarmPreisLinien = props.alarmLinien.map((a) => serie.createPriceLine({
+        price: a.bedingung.preis, color: '#ff9800', lineWidth: 1, lineStyle: LineStyle.SparseDotted,
+        axisLabelVisible: true, title: '⏰',
+    }))
+}
+watch(() => props.alarmLinien, zeichneAlarmLinien, { deep: true })
+
+function rechtsklick(e) {
+    const r = huelle.value.getBoundingClientRect()
+    const y = e.clientY - r.top
+    const hoehe = chart.value?.panes()[0]?.getHeight() ?? r.height
+    if (y < 0 || y > hoehe) return
+    const preis = kerzenSerie.value?.coordinateToPrice(y)
+    if (preis == null) return
+    e.preventDefault()
+    // Am rechten oder unteren Rand nach innen klappen — das Panel schneidet
+    // über seinen Rand hinausragende Teile ab.
+    const x = Math.min(e.clientX - r.left, r.width - 190)
+    const yMenue = Math.min(y, r.height - 130)
+    kontext.value = { x: Math.max(4, x), y: Math.max(4, yMenue), preis }
+}
+
+function alarmHier() {
+    if (kontext.value) emit('alarmBeiPreis', Number(kontext.value.preis.toFixed(preisStellen.value)))
+    kontext.value = null
+}
+
+function zeichnungHier(typ) {
+    if (!kontext.value) return
+    const k = kerzen.value[kerzen.value.length - 1]
+    if (k) zeichnungNeu({ typ, punkte: [{ t: k.t, p: kontext.value.preis }] })
+    kontext.value = null
+}
 
 async function ladeJournal() {
     if (!journalEbene) return
@@ -618,6 +661,8 @@ onMounted(() => {
     baueChart()
     ladeNeu()
     starteTakte()
+    zeichneAlarmLinien()
+    huelle.value.addEventListener('contextmenu', rechtsklick)
 })
 onBeforeUnmount(() => {
     ladeNummer++
@@ -690,6 +735,14 @@ defineExpose({
         <TradeKarte v-if="gewaehlterTrade" :trade="gewaehlterTrade" :format-preis="(p) => kerzenSerie?.priceFormatter().format(p) ?? String(p)"
             @schliesse="schliesseTrade" />
 
+        <div v-if="kontext" class="kontextHintergrund" @mousedown.stop="kontext = null" @contextmenu.prevent="kontext = null"></div>
+        <div v-if="kontext" class="kontextMenue" :style="{ left: kontext.x + 'px', top: kontext.y + 'px' }" @mousedown.stop>
+            <div class="kopfzeile">{{ kerzenSerie?.priceFormatter().format(kontext.preis) }}</div>
+            <button @click="alarmHier"><i class="uil uil-bell"></i> {{ t('chart.alarm.hier') }}</button>
+            <button @click="zeichnungHier('horizontale')"><i class="uil uil-minus"></i> {{ t('chart.wz.horizontale') }}</button>
+            <button @click="zeichnungHier('strahlH')"><i class="uil uil-arrow-right"></i> {{ t('chart.wz.strahlH') }}</button>
+        </div>
+
         <div v-if="laedt" class="hinweis"><span class="spinner-border spinner-border-sm"></span></div>
         <div v-else-if="fehler" class="hinweis fehler">
             {{ t('chart.ladeFehler') }}: {{ fehler }}
@@ -737,6 +790,46 @@ defineExpose({
 .legende b {
     color: var(--white-87, #ddd);
     font-weight: 500;
+}
+
+.kontextHintergrund {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+}
+
+.kontextMenue {
+    position: absolute;
+    z-index: 9;
+    display: flex;
+    flex-direction: column;
+    min-width: 170px;
+    background: var(--black-bg-5, #1e222d);
+    border: 1px solid var(--white-18);
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: var(--shadow-sm);
+    font-size: 12px;
+}
+
+.kontextMenue .kopfzeile {
+    color: var(--grey-text);
+    padding: 2px 8px 4px;
+    border-bottom: 1px solid var(--white-10);
+    margin-bottom: 2px;
+}
+
+.kontextMenue button {
+    background: transparent;
+    border: none;
+    color: var(--white-87, #ddd);
+    text-align: left;
+    padding: 5px 8px;
+    border-radius: 4px;
+}
+
+.kontextMenue button:hover {
+    background: var(--white-10);
 }
 
 .journalHinweis {

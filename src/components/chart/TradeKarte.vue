@@ -57,7 +57,7 @@ function zumJournal() {
             {{ geld(tr.netto) }}
             <span v-if="tr.r != null" class="r">{{ tr.r >= 0 ? '+' : '' }}{{ tr.r.toFixed(2) }} R</span>
         </div>
-        <table>
+        <table><tbody>
             <tr><td>{{ t('chart.trade.einstieg') }}</td><td>{{ formatPreis(tr.einstieg.p) }}</td><td>{{ zeit(tr.einstieg.t) }}</td></tr>
             <tr v-if="tr.ausstieg"><td>{{ t('chart.trade.ausstieg') }}</td><td>{{ formatPreis(tr.ausstieg.p) }}</td><td>{{ zeit(tr.ausstieg.t) }}</td></tr>
             <tr v-if="tr.anfangsStop"><td>{{ t('chart.trade.stop') }}</td><td>{{ formatPreis(tr.anfangsStop) }}</td><td></td></tr>
@@ -65,7 +65,7 @@ function zumJournal() {
             <tr v-if="dauer"><td>{{ t('chart.trade.dauer') }}</td><td colspan="2">{{ dauer }}</td></tr>
             <tr v-if="tr.gebuehren || tr.funding"><td>{{ t('chart.trade.kosten') }}</td>
                 <td colspan="2">{{ (tr.gebuehren || 0).toFixed(2) }} + {{ (tr.funding || 0).toFixed(2) }} Funding</td></tr>
-        </table>
+        </tbody></table>
         <div v-if="tr.r == null && tr.ausstieg" class="hinweis">{{ t('chart.trade.keinR') }}</div>
         <template v-if="tr.notiz">
             <div v-if="tr.notiz.playbook" class="feld"><b>Playbook</b> {{ tr.notiz.playbook }}</div>

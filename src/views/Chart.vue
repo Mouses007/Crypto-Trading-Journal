@@ -21,6 +21,9 @@ import IndikatorDialog from '../components/chart/IndikatorDialog.vue'
 import Zeichenleiste from '../components/chart/Zeichenleiste.vue'
 import ObjektReiter from '../components/chart/ObjektReiter.vue'
 import StrategieReiter from '../components/chart/StrategieReiter.vue'
+import AlarmReiter from '../components/chart/AlarmReiter.vue'
+import AlarmDialog from '../components/chart/AlarmDialog.vue'
+import { alarme, abonniereAlarme, neueAusloesungen, quittiere } from '../stores/chartAlarme.js'
 import { zeichnungenVon, aendere as zeichnungAendern, loesche as zeichnungLoeschen, macheRueckgaengig, macheWiederholen, fehlerMeldung } from '../stores/chartZeichnungen.js'
 import { neueInstanz } from '../utils/chart/indikatorRegister.js'
 import { useIstTelefon } from '../utils/geraet.js'
@@ -52,6 +55,7 @@ const REITER = [
     { id: 'watchlist', icon: 'uil uil-star' },
     { id: 'objekte', icon: 'uil uil-layer-group' },
     { id: 'strategien', icon: 'uil uil-robot' },
+    { id: 'alarme', icon: 'uil uil-bell' },
 ]
 
 // ── Laden und Speichern ─────────────────────────────────────────────────
@@ -180,6 +184,35 @@ function alleLoeschen() {
 
 const aktivesPanelRef = computed(() => panelRefs.value[aktivIndex.value] || null)
 
+// ── Alarme ──────────────────────────────────────────────────────────────
+const alarmVorlage = ref(null)
+let alarmAbo = null
+
+/** Aktive Preis-Alarme je Panel — als Linien im Chart. */
+function alarmLinienFuer(p) {
+    return alarme.value.filter((a) => a.aktiv && a.art === 'preis' && a.symbol === p.symbol && a.markt === p.markt)
+}
+
+function alarmBeiPreis(preis) {
+    const p = aktivesPanel.value
+    alarmVorlage.value = { symbol: p.symbol, markt: p.markt, art: 'preis', preis }
+}
+
+function alarmAufZeichnung(z) {
+    const p = aktivesPanel.value
+    const art = z.typ === 'rechteck' || z.typ === 'kanal' ? 'zone' : 'linie'
+    alarmVorlage.value = { symbol: p.symbol, markt: p.markt, art, zeichnung: z }
+}
+
+function alarmBearbeiten(a) {
+    alarmVorlage.value = { ...a }
+}
+
+const aktuellerKurs = computed(() => {
+    const k = panelRefs.value[aktivIndex.value]?.kerzen
+    return k?.length ? k[k.length - 1].c : null
+})
+
 function strategieFilter(f) {
     daten.value.panels[aktivIndex.value].strategieFilter = f
 }
@@ -297,9 +330,11 @@ function taste(e) {
 onMounted(() => {
     lade()
     window.addEventListener('keydown', taste)
+    alarmAbo = abonniereAlarme()
 })
 onBeforeUnmount(() => {
     window.removeEventListener('keydown', taste)
+    alarmAbo?.()
     clearTimeout(speicherUhr)
     cancelAnimationFrame(zeitRahmen)
     speichere()
@@ -322,6 +357,9 @@ watch(sichtbareAnzahl, async () => {
                 @layout-neu="layoutNeu" @layout-umbenennen="layoutUmbenennen" @layout-loeschen="layoutLoeschen"
                 @seitenleiste="daten.seitenleiste.offen = !daten.seitenleiste.offen" @foto="foto" />
 
+            <div v-for="n in neueAusloesungen" :key="n.id + '-' + n.t" class="alert alert-warning py-1 px-2 my-1 small alarmBanner"
+                @click="quittiere(n.id)">
+                <i class="uil uil-bell"></i> {{ n.text }} <small>({{ t('chart.alarm.quittieren') }})</small></div>
             <div v-if="fehlerMeldung" class="alert alert-warning py-1 px-2 my-1 small" @click="fehlerSchliessen">
                 {{ t('chart.zeichnungFehler') }}: {{ fehlerMeldung }}</div>
 
@@ -337,7 +375,9 @@ watch(sichtbareAnzahl, async () => {
                         :aktiv="sichtbareAnzahl > 1 && i === aktivIndex" @fokus="fokus(i)" @kreuz="kreuz(i, $event)"
                         @bereich="bereich(i)" @indikator="indikatorAktion(i, $event)"
                         :werkzeug="i === aktivIndex ? werkzeug : null" :magnet="!!daten.zeichnen?.magnet"
-                        :zeichnungen-versteckt="!!daten.zeichnen?.versteckt" @werkzeug-fertig="werkzeug = null" />
+                        :zeichnungen-versteckt="!!daten.zeichnen?.versteckt" @werkzeug-fertig="werkzeug = null"
+                        :alarm-linien="alarmLinienFuer(p)" @alarm-bei-preis="(x) => { fokus(i); alarmBeiPreis(x) }"
+                        @alarm-auf-zeichnung="(z) => { fokus(i); alarmAufZeichnung(z) }" />
                 </div>
 
                 <aside v-if="daten.seitenleiste.offen" class="seitenleiste">
@@ -361,9 +401,12 @@ watch(sichtbareAnzahl, async () => {
                         :backtest="aktivesPanelRef?.strategieBacktest" @filter="strategieFilter"
                         @vorschau="(v) => aktivesPanelRef?.setzeStrategieVorschau(v)"
                         @backtest="(b) => aktivesPanelRef?.setzeBacktest(b)" />
+                    <AlarmReiter v-else-if="daten.seitenleiste.reiter === 'alarme'" :symbol="aktivesPanel.symbol"
+                        :markt="aktivesPanel.markt" :kurs="aktuellerKurs" @neu="alarmBeiPreis" @bearbeite="alarmBearbeiten" />
                 </aside>
             </div>
         </template>
+        <AlarmDialog v-if="alarmVorlage" :vorlage="alarmVorlage" @schliesse="alarmVorlage = null" />
         <IndikatorDialog v-if="dialog" :instanz="dialog.instanz" @hinzu="indikatorHinzu" @speichere="indikatorSpeichern"
             @schliesse="dialog = null" />
         <div v-else-if="!ladeFehler && !bereit" class="laden"><span class="spinner-border spinner-border-sm"></span></div>
