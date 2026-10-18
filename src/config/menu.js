@@ -29,10 +29,11 @@
 
 export const PAGES = [
     // ── Start ───────────────────────────────────────────────
-    // Landing-Page der App, eigener Modus. `group: null` → kein Seitenmenü-
-    // Eintrag: die Kacheln sind die Navigation. Der Eintrag existiert trotzdem,
-    // damit Nav.vue Titel und Icon der Seite findet.
-    { id: 'startseite', mode: 'start', path: '/startseite', icon: 'uil uil-estate', titleKey: 'nav.startseite', group: null },
+    // Landing-Page der App, eigener Modus: der Chart-Arbeitsplatz (ersetzt seit
+    // 18.10.2026 die Übersicht). `group: null` → kein Seitenmenü-Eintrag, der
+    // Chart braucht die Breite. Der Eintrag existiert trotzdem, damit Nav.vue
+    // Titel und Icon der Seite findet.
+    { id: 'chart', mode: 'start', path: '/chart', icon: 'uil uil-chart', titleKey: 'nav.chart', group: null },
 
     // ── Journal ─────────────────────────────────────────────
     { id: 'dashboard', mode: 'journal', path: '/dashboard', icon: 'uil uil-apps', titleKey: 'nav.dashboard', group: 'analyze' },
@@ -148,9 +149,10 @@ export const PAGES = [
 // Modus um. Der frühere Schalter „Beta-Funktionen ausblenden" konnte das
 // nicht — er nahm nur den Tab weg, `/hype-radar` blieb per URL erreichbar.
 export const MODES = [
-    // Landing-Page der App: frei konfigurierbares Kachelraster (Kontostand,
-    // Marktlage, News-Zusammenfassung …).
-    { id: 'start', titleKey: 'modes.start', icon: 'uil uil-estate', home: '/startseite', enabled: true, flag: 'startseiteAn' },
+    // Landing-Page der App: der Chart-Arbeitsplatz. Die Modus-ID bleibt
+    // `start` und das Flag `startseiteAn` — beide stehen in gespeicherten
+    // Einstellungen und im localStorage bestehender Installationen.
+    { id: 'start', titleKey: 'modes.start', icon: 'uil uil-chart', home: '/chart', enabled: true, flag: 'startseiteAn' },
     { id: 'journal', titleKey: 'modes.journal', icon: 'uil uil-book-alt', home: '/dashboard', enabled: true },
     { id: 'live', titleKey: 'modes.live', shortKey: 'modes.liveShort', icon: 'uil uil-chart-line', home: '/marktradar', enabled: true, flag: 'modusLiveAn' },
     /*

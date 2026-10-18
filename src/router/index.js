@@ -9,26 +9,33 @@ const router = createRouter({
         import.meta.env.BASE_URL),
     routes: [{
         path: '/',
-        // Landing-Page: normalerweise die Startseite. Ist sie in den
-        // Einstellungen abgeschaltet (`startseiteAn = 0`), landet man wie früher
-        // im Journal. Der Wert wird beim App-Start nach localStorage gespiegelt
-        // (siehe useInitApp), damit hier synchron entschieden werden kann.
-        redirect: () => (localStorage.getItem('startseiteAn') === '0' ? '/dashboard' : '/startseite'),
+        // Landing-Page: normalerweise der Chart-Arbeitsplatz (Modus `start`).
+        // Ist er in den Einstellungen abgeschaltet (`startseiteAn = 0`), landet
+        // man im Journal. Der Wert wird beim App-Start nach localStorage
+        // gespiegelt (siehe useInitApp), damit hier synchron entschieden werden
+        // kann. Spalte und Schlüssel heissen aus Rücksicht auf bestehende
+        // Einstellungen weiter `startseiteAn`.
+        redirect: () => (localStorage.getItem('startseiteAn') === '0' ? '/dashboard' : '/chart'),
     },
     {
-        // Startseite: frei konfigurierbares Kachelraster, die Landing-Page der
-        // App. Eigener Modus `start` (siehe menu.js) — deshalb lädt das
-        // Dashboard-Layout hier KEINE Journal-Daten; die Seite versorgt ihre
-        // Journal-Kacheln selbst.
-        path: '/startseite',
-        name: 'startseite',
+        // Chart-Arbeitsplatz: ersetzt seit 18.10.2026 die frühere Übersicht
+        // (Kachelraster). Eigener Modus `start` — das Dashboard-Layout lädt
+        // hier KEINE Journal-Daten; Journal-Overlays holt der Chart selbst.
+        path: '/chart',
+        name: 'chart',
         meta: {
-            title: "Start", titleKey: "nav.startseite",
+            title: "Chart", titleKey: "nav.chart",
             mode: 'start',
             layout: DashboardLayout
         },
         component: () =>
-            import('../views/Startseite.vue')
+            import('../views/Chart.vue')
+    },
+    {
+        // Alte Adresse der Übersicht: Lesezeichen und die Logo-Verlinkung
+        // älterer Stände führen weiter hierher.
+        path: '/startseite',
+        redirect: '/chart',
     },
     {
         path: '/setup',

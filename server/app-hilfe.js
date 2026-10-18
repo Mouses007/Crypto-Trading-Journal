@@ -19,7 +19,7 @@ export const HILFE_THEMEN = {
         text: `Das Crypto Trading Journal ist eine lokale Einzelnutzer-App für Bitunix-Futures-Trading (zusätzlich werden Bitget und Pionex unterstützt). Es läuft auf dem eigenen Rechner oder NAS — keine Cloud, kein fremder Server; die Daten liegen in einer lokalen Datenbank.
 
 Oben in der Leiste wird zwischen den Modi umgeschaltet:
-- **Übersicht** — Landing-Page mit frei konfigurierbarem Kachelraster (Kontostand, Marktlage, News-Zusammenfassung); links steht dort dasselbe Seitenmenü wie im Journal.
+- **Chart** — Landing-Page: ein Chart-Arbeitsplatz im Stil von TradingView mit Watchlist, mehreren Charts nebeneinander und gespeicherten Layouts; links steht dasselbe Seitenmenü wie im Journal. Er ersetzt seit Oktober 2026 die frühere Übersicht (deren Marktkacheln stehen im Marktradar). Siehe Thema "chart".
 - **Journal** — das eigentliche Trading-Journal: Dashboard, Tages-Ansicht, Kalender, Playbook, Auswertung, KI-Coach, Screenshots, Import.
 - **Live-Analyse** — Marktradar (Kachelraster mit Marktdaten), Nachrichten, Open Interest, Liquidität (Bookmap), Liquidationen sowie das Live-Trading-Fenster mit Session-Archiv und -Auswertung.
 - **Strategien (Beta)** — automatisch handelnde Strategie-Instanzen: Strategien, Setups, Editor, Baukasten, Performance, Labor, Coin-Rangliste.
@@ -28,6 +28,19 @@ Oben in der Leiste wird zwischen den Modi umgeschaltet:
 Jeder Modus ausser dem Journal lässt sich einzeln abschalten (Einstellungen → Allgemein → Layout & Stil → „Modi ein-/ausblenden"). Abgeschaltet heisst wirklich aus: der Tab verschwindet, das Seitenmenü zeigt nichts mehr, und auch ein direkt aufgerufener Link führt zurück ins Journal. Das Journal selbst hat keinen Schalter. Wer also nach einem Bereich fragt, den es hier nicht gibt, hat ihn möglicherweise abgeschaltet.
 
 Links im Seitenmenü: Börsen-Umschalter (Bitunix/Bitget/Pionex), Pille „Kontoübersicht", darunter die Seiten des aktiven Modus. Die Einstellungen sind modusübergreifend immer erreichbar. Oben rechts sitzt der Augen-Button (Zensur-Modus: verbirgt Kontostände und Beträge, z.B. für Screenshots) und daneben der Roboter-Button als Schnellzugriff auf den KI-Agenten.`,
+    },
+    chart: {
+        titel: 'Chart-Arbeitsplatz',
+        text: `Der Chart (erster Tab oben, zugleich die Seite nach dem Öffnen der App) ist ein Kerzenchart im Stil von TradingView, gebaut auf der freien Bibliothek Lightweight Charts von TradingView. Er ersetzt die frühere Übersicht.
+
+- **Daten**: Kerzen und laufende Kerze kommen von Binance (Futures = Perpetuals, oder Spot), live per Websocket. Beim Zurückscrollen lädt der Chart ältere Kerzen nach. Der farbige Punkt in der Legende zeigt die Verbindung (grün = live). Angezeigt wird die Ortszeit des Browsers.
+- **Symbol**: Klick auf das Symbol oben links oder einfach lostippen öffnet die Suche über alle Binance-Futures und -Spot-Paare. Die Kennzeichen BX/BG/PX sagen, ob der Coin auf Bitunix, Bitget oder Pionex als Future handelbar ist.
+- **Zeiteinheit** 1m bis 1M (die gängigen als Knöpfe, der Rest unter „…"), **Skala** linear, logarithmisch oder in Prozent.
+- **Mehrere Charts**: 1, 2 nebeneinander, 2 übereinander oder 4. Der blau umrandete Chart ist der aktive — auf ihn wirkt die Kopfleiste. Unter dem Ketten-Symbol lässt sich einstellen, was zwischen den Charts mitläuft: Fadenkreuz, sichtbarer Zeitraum, Symbol, Zeiteinheit.
+- **Layouts**: Raster, Symbole, Zeiteinheiten und Einstellungen werden automatisch gespeichert (in der Datenbank, also auf jedem Gerät gleich). Unter dem Fenster-Symbol lassen sich mehrere Layouts anlegen, umbenennen und wechseln.
+- **Watchlist** (rechte Seitenleiste): eigene Listen mit Live-Kurs und 24h-Veränderung; Klick wechselt das Symbol des aktiven Charts, „hinzufügen" nimmt das aktuelle Symbol auf. Die Seitenleiste lässt sich über das Symbol ganz rechts ein- und ausblenden.
+- **Kamera-Knopf**: speichert den aktiven Chart als Bild.
+- Am Telefon zeigt die Seite einen Chart, die Seitenleiste steht darunter.`,
     },
     journal: {
         titel: 'Journal: Dashboard, Tages-Ansicht, Kalender, Playbook, Auswertung, Screenshots',
@@ -162,7 +175,7 @@ Drei Seiten im Seitenmenü:
 - **Karten** — Verwaltung. Oben die eigenen Karten (anlegen, bearbeiten, löschen), darunter die mitgelieferten. Mitgelieferte Karten lassen sich nicht bearbeiten, aber per Schalter ausblenden — sie zählen dann nicht mehr als fällig, ihr bisheriger Lernverlauf bleibt aber erhalten. Gefiltert wird nach Level: **Level 1** sind Grundbegriffe, ohne die sich nichts anderes lesen lässt, **Level 2** vertiefte Konzepte (On-Chain-Kennzahlen, Derivate-Feinheiten, Risikokennzahlen), **Level 3** Spezialwissen (Orderfluss, Optionen, Börsen-Innenmechanik, Backtest-Fallen, Zyklusmodelle). Der Filter hier wirkt nur auf diese Liste. Für die Sitzung selbst gibt es eine eigene Stufenwahl auf der Lernseite: Über dem Knopf „Sitzung starten" lässt sich auswählen, welche Level in der nächsten Runde drankommen — mit der Zahl der fälligen Karten je Stufe daneben. Ohne Auswahl laufen alle Stufen; die Wahl wird gemerkt.
 - **Statistik** — vier Kopfzahlen (Karten insgesamt, gemeisterte Karten in Box 4, Erfolgsquote, Lernserie in Tagen), ein Balkendiagramm der Wiederholungen der letzten 14 Tage und der Erfolg je Kategorie, schwächste zuerst. Kategorien mit sehr wenigen Bewertungen sind ausgegraut und mit „zu wenig Daten" markiert, statt eine Quote zu behaupten, die noch Zufall sein kann. In der Erfolgsquote zählt **„Schwer" nicht als Treffer**: eine Karte, die man nur mit Mühe wusste, kann man noch nicht. Bewertungen von vor dem 05.09.2026 wurden anders gezählt, weshalb die Quote am Anfang etwas zu gut aussehen kann und sich mit jeder neuen Runde zurechtrückt.
 
-Auf der Übersichtsseite gibt es zusätzlich die Kachel **Quiz**: klein zeigt sie nur, wie viele Karten fällig sind; ein Klick vergrössert sie, und dort läuft eine vollwertige Sitzung mit denselben Regeln und denselben Knöpfen wie auf der Lernseite, ohne die Übersicht zu verlassen. Eigene Karten und der Lernfortschritt liegen in der Datensicherung.`,
+Eigene Karten und der Lernfortschritt liegen in der Datensicherung.`,
     },
     einstellungen: {
         titel: 'Einstellungen, Sicherheit, Backup, Update, Extras',
@@ -170,7 +183,7 @@ Auf der Übersichtsseite gibt es zusätzlich die Kachel **Quiz**: klein zeigt si
 
 - **Börsen/API-Schlüssel**: Bitunix, Bitget, Pionex — Schlüssel werden verschlüsselt gespeichert.
 - **KI**: Anbieter, Schlüssel, Modelle und Optionen je Funktion (siehe Thema "ki").
-- **Layout & Stil**: dunkles Design, „Erweiterte Infos" (das kleine „i" an Werten und Bedienelementen — Mauszeiger darüber bzw. antippen zeigt, was die Zahl bedeutet; ab Werk an), „Modi ein-/ausblenden" (Übersicht, Live-Analyse, Research, Strategien einzeln; Journal ist nicht abschaltbar), Live-Trading auf dem Handy freischalten, Sprache (Deutsch/Englisch).
+- **Layout & Stil**: dunkles Design, „Erweiterte Infos" (das kleine „i" an Werten und Bedienelementen — Mauszeiger darüber bzw. antippen zeigt, was die Zahl bedeutet; ab Werk an), „Modi ein-/ausblenden" (Chart, Live-Analyse, Research, Strategien einzeln; Journal ist nicht abschaltbar), Live-Trading auf dem Handy freischalten, Sprache (Deutsch/Englisch).
 - **Sicherheit**: optionales Passwort-Login (Auth-Gate) für den Zugriff übers Netz; Update-PIN.
 - **Backup**: JSON-Export/-Import aller Daten. Sensible Schlüssel werden beim Export ausgelassen.
 - **Update**: Prüfung auf neue Versionen (GitHub) und Ein-Klick-Update.
@@ -209,7 +222,7 @@ export function hilfeThema(thema) {
 // dortigen `id`s (== route.name), siehe Kommentar dort.
 
 const MODE_ZU_THEMA = {
-    start: 'ueberblick',
+    start: 'chart',
     journal: 'journal',
     live: 'live_analyse',
     research: 'entdecken',
@@ -218,7 +231,7 @@ const MODE_ZU_THEMA = {
 }
 
 const SEITEN_ZU_MODUS = {
-    startseite: 'start',
+    chart: 'start',
     dashboard: 'journal', daily: 'journal', calendar: 'journal', playbook: 'journal',
     auswertung: 'journal', kiAgent: 'journal', screenshots: 'journal', incoming: 'journal',
     addTrades: 'journal', accounts: 'journal', addExcursions: 'journal', setup: 'journal',

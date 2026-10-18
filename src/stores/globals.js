@@ -214,7 +214,7 @@ export const selectedAccounts = typeof localStorage !== 'undefined' ? localStora
 export const selectedGrossNet = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedGrossNet')) : ""
 export const selectedPlSatisfaction = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedPlSatisfaction')) : ""
 export const selectedBroker = typeof localStorage !== 'undefined' ? ref(localStorage.getItem('selectedBroker')) : ref()
-// Top-Level-Modus der App: 'start' (Startseite/Landing) | 'journal'
+// Top-Level-Modus der App: 'start' (Chart-Arbeitsplatz/Landing) | 'journal'
 // (Nachbetrachtung) | 'live' (Live-Analyse) | 'research' (Entdecken) |
 // 'agent' (Agent-Trading). Steuert,
 // welches Seitenmenü das SideMenu rendert. Die Route ist die Wahrheit

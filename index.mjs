@@ -13,6 +13,7 @@ import { setupMarktradarRoutes, stopMarktradar } from './server/marktradar-api.j
 import { setupKalenderRoutes, stopKalender } from './server/marktradar-kalender.js'
 import { setupLivetradingRoutes } from './server/livetrading-api.js'
 import { setupFremdbuchRoute } from './server/fremdbuch.js'
+import { setupChartRoutes } from './server/chart-api.js'
 import { setupLageRoutes } from './server/marktradar-lage.js'
 import { setupHandelslageRoutes } from './server/handelslage.js'
 import { setupNewsRoutes, startNewsTakt, stopNews } from './server/marktradar-news.js'
@@ -154,6 +155,7 @@ const startIndex = async () => {
     // Nach dem Kalender: die Termin-Kachel des Live-Fensters liest über
     // `leseKalender` mit, statt eine zweite Abfrage aufzubauen.
     setupLivetradingRoutes(app);
+    setupChartRoutes(app);
     // Fremde Orderbücher zum Vergleich — bewusst NICHT in die Karte gemischt,
     // die Begründung steht im Kopf von server/fremdbuch.js.
     setupFremdbuchRoute(app);

@@ -1,0 +1,385 @@
+<script setup>
+/**
+ * Chart-Arbeitsplatz — ersetzt seit 18.10.2026 die frühere Übersicht.
+ *
+ * Deren Marktkacheln stehen alle auch im Marktradar, ihre Journal-Kacheln im
+ * Journal selbst; doppelt war sie überflüssig. Was hier stattdessen steht, ist
+ * ein Chart im Stil von TradingView — aber mit dem, was TradingView nicht hat:
+ * Journal, Strategie-Schicht und eigene Marktdaten im selben Bild.
+ *
+ * Aufteilung: diese Seite hält den Arbeitsstand (Layout, Watchlists) und die
+ * Synchronisation zwischen den Panels; jedes `ChartPanel` holt und zeichnet
+ * seine Kerzen selbst. Gespeichert wird in der Datenbank, nicht im
+ * localStorage — ein Layout soll auf NAS, Dev-Rechner und Handy dasselbe sein.
+ */
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
+import ChartPanel from '../components/chart/ChartPanel.vue'
+import ChartKopfleiste from '../components/chart/ChartKopfleiste.vue'
+import WatchlistReiter from '../components/chart/WatchlistReiter.vue'
+import { useIstTelefon } from '../utils/geraet.js'
+import { api, standardLayout, vervollstaendige, passeAnRaster, PANELS_JE_RASTER, STANDARD_WATCHLIST } from '../utils/chart/arbeitsplatz.js'
+
+const { t } = useI18n()
+const telefon = useIstTelefon()
+
+const layouts = ref([])
+const layoutId = ref(null)
+const daten = ref(standardLayout())
+const watchlists = ref([])
+const bereit = ref(false)
+const ladeFehler = ref('')
+const kopf = ref(null)
+const panelRefs = ref([])
+
+const sichtbareAnzahl = computed(() => (telefon.value ? 1 : PANELS_JE_RASTER[daten.value.raster] || 1))
+const sichtbarePanels = computed(() => daten.value.panels.slice(0, sichtbareAnzahl.value))
+const aktivIndex = computed(() => Math.min(daten.value.aktiv, sichtbareAnzahl.value - 1))
+const aktivesPanel = computed(() => daten.value.panels[aktivIndex.value])
+const rasterKlasse = computed(() => (telefon.value ? 'r1' : 'r' + daten.value.raster))
+
+/*
+ * Seitenleisten-Reiter. Weitere (Journal, Strategien, Alarme, Objekte) kommen
+ * mit ihren Ausbaustufen dazu; ein leerer Reiter wird gar nicht erst gezeigt.
+ */
+const REITER = [
+    { id: 'watchlist', icon: 'uil uil-star' },
+]
+
+// ── Laden und Speichern ─────────────────────────────────────────────────
+let speicherUhr = null
+let ignoriereNaechsteAenderung = false
+
+async function lade() {
+    try {
+        let liste = await api.layouts()
+        if (!liste.length) liste = [await api.layoutNeu(t('chart.layoutStandard'), standardLayout(), true)]
+        layouts.value = liste
+        const aktiv = liste.find((l) => l.aktiv) || liste[0]
+        waehleLayout(aktiv)
+
+        let wl = await api.watchlists()
+        if (!wl.length) wl = [await api.watchlistNeu(t('chart.watchlistStandard'), STANDARD_WATCHLIST)]
+        watchlists.value = wl
+        bereit.value = true
+    } catch (e) {
+        ladeFehler.value = e.response?.data?.error || e.message
+    }
+}
+
+function waehleLayout(layout) {
+    ignoriereNaechsteAenderung = true
+    layoutId.value = layout.id
+    daten.value = vervollstaendige(layout.daten)
+}
+
+watch(daten, () => {
+    if (ignoriereNaechsteAenderung) { ignoriereNaechsteAenderung = false; return }
+    clearTimeout(speicherUhr)
+    speicherUhr = setTimeout(speichere, 800)
+}, { deep: true })
+
+async function speichere() {
+    if (!layoutId.value) return
+    try {
+        const neu = await api.layoutSpeichern(layoutId.value, { daten: daten.value })
+        const i = layouts.value.findIndex((l) => l.id === neu.id)
+        if (i >= 0) layouts.value[i] = { ...layouts.value[i], geaendertAm: neu.geaendertAm }
+    } catch { /* nächste Änderung versucht es erneut */ }
+}
+
+async function layoutWechsel(id) {
+    await speichere()
+    const l = layouts.value.find((x) => x.id === id)
+    if (!l) return
+    // Den gespeicherten Stand frisch holen — ein anderes Gerät kann ihn
+    // inzwischen geändert haben.
+    const frisch = (await api.layouts()).find((x) => x.id === id) || l
+    waehleLayout(frisch)
+    await api.layoutSpeichern(id, { aktiv: true })
+}
+
+async function layoutNeu(name) {
+    await speichere()
+    const kopie = JSON.parse(JSON.stringify(daten.value))
+    const neu = await api.layoutNeu(name, kopie, true)
+    layouts.value = [...layouts.value.map((l) => ({ ...l, aktiv: false })), neu]
+    waehleLayout(neu)
+}
+
+async function layoutUmbenennen(name) {
+    const neu = await api.layoutSpeichern(layoutId.value, { name })
+    layouts.value = layouts.value.map((l) => (l.id === neu.id ? { ...l, name: neu.name } : l))
+}
+
+async function layoutLoeschen() {
+    const weg = layoutId.value
+    await api.layoutLoeschen(weg)
+    layouts.value = layouts.value.filter((l) => l.id !== weg)
+    if (layouts.value.length) await layoutWechsel(layouts.value[0].id)
+}
+
+// ── Panels ──────────────────────────────────────────────────────────────
+function setzePanel(patch) {
+    const d = daten.value
+    const ziele = new Set([aktivIndex.value])
+    if (d.sync.symbol && (patch.symbol || patch.markt)) d.panels.forEach((_, i) => ziele.add(i))
+    if (d.sync.interval && patch.interval) d.panels.forEach((_, i) => ziele.add(i))
+    for (const i of ziele) {
+        const p = d.panels[i]
+        const eigen = i === aktivIndex.value ? patch : {
+            ...(d.sync.symbol && patch.symbol ? { symbol: patch.symbol, markt: patch.markt || p.markt } : {}),
+            ...(d.sync.interval && patch.interval ? { interval: patch.interval } : {}),
+        }
+        Object.assign(p, eigen)
+    }
+}
+
+function setzeRaster(r) {
+    passeAnRaster(daten.value, r)
+}
+
+function setzeSync(patch) {
+    Object.assign(daten.value.sync, patch)
+}
+
+function fokus(i) {
+    if (daten.value.aktiv !== i) daten.value.aktiv = i
+}
+
+// ── Synchronisation ─────────────────────────────────────────────────────
+function kreuz(i, info) {
+    if (!daten.value.sync.kreuz) return
+    panelRefs.value.forEach((p, j) => { if (j !== i) p?.setzeKreuz(info) })
+}
+
+let zeitRahmen = 0
+function bereich(i) {
+    if (!daten.value.sync.zeit || i !== aktivIndex.value || zeitRahmen) return
+    zeitRahmen = requestAnimationFrame(() => {
+        zeitRahmen = 0
+        const r = panelRefs.value[i]?.sichtbarerZeitraum()
+        if (!r) return
+        panelRefs.value.forEach((p, j) => { if (j !== i) p?.setzeZeitraum(r.von, r.bis) })
+    })
+}
+
+// ── Watchlists ──────────────────────────────────────────────────────────
+async function watchlistAendern(id, symbole) {
+    const neu = await api.watchlistSpeichern(id, { symbole })
+    watchlists.value = watchlists.value.map((w) => (w.id === id ? neu : w))
+}
+
+async function watchlistNeu(name) {
+    const neu = await api.watchlistNeu(name, [])
+    watchlists.value = [...watchlists.value, neu]
+}
+
+async function watchlistLoeschen(id) {
+    await api.watchlistLoeschen(id)
+    watchlists.value = watchlists.value.filter((w) => w.id !== id)
+}
+
+// ── Sonstiges ───────────────────────────────────────────────────────────
+function foto() {
+    const leinwand = panelRefs.value[aktivIndex.value]?.bildschirmfoto()
+    if (!leinwand) return
+    leinwand.toBlob((blob) => {
+        if (!blob) return
+        const p = aktivesPanel.value
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = `${p.symbol}_${p.interval}_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.png`
+        a.click()
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+    })
+}
+
+/*
+ * Tippen öffnet die Symbolsuche — wie bei TradingView. Nur wenn kein
+ * Eingabefeld den Fokus hat, sonst frässe die Suche jede Notiz auf.
+ */
+function taste(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    const ziel = e.target
+    if (ziel && (ziel.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(ziel.tagName))) return
+    if (/^[a-z0-9]$/i.test(e.key)) kopf.value?.oeffneSuche()
+}
+
+onMounted(() => {
+    lade()
+    window.addEventListener('keydown', taste)
+})
+onBeforeUnmount(() => {
+    window.removeEventListener('keydown', taste)
+    clearTimeout(speicherUhr)
+    cancelAnimationFrame(zeitRahmen)
+    speichere()
+})
+
+watch(sichtbareAnzahl, async () => {
+    await nextTick()
+    panelRefs.value = panelRefs.value.slice(0, sichtbareAnzahl.value)
+})
+</script>
+
+<template>
+    <div class="chartSeite" :class="{ telefon }">
+        <div v-if="ladeFehler" class="alert alert-warning m-2">{{ t('chart.arbeitsplatzFehler') }}: {{ ladeFehler }}</div>
+
+        <template v-if="bereit">
+            <ChartKopfleiste ref="kopf" :panel="aktivesPanel" :raster="daten.raster" :sync="daten.sync" :layouts="layouts"
+                :layout-id="layoutId" :seitenleiste-offen="daten.seitenleiste.offen" :telefon="telefon"
+                @panel="setzePanel" @raster="setzeRaster" @sync="setzeSync" @layout-wechsel="layoutWechsel"
+                @layout-neu="layoutNeu" @layout-umbenennen="layoutUmbenennen" @layout-loeschen="layoutLoeschen"
+                @seitenleiste="daten.seitenleiste.offen = !daten.seitenleiste.offen" @foto="foto" />
+
+            <div class="arbeitsflaeche" :class="{ mitLeiste: daten.seitenleiste.offen }">
+                <div class="raster" :class="rasterKlasse">
+                    <ChartPanel v-for="(p, i) in sichtbarePanels" :key="layoutId + '-' + i"
+                        :ref="(el) => { if (el) panelRefs[i] = el }" :panel="p" :nummer="i"
+                        :aktiv="sichtbareAnzahl > 1 && i === aktivIndex" @fokus="fokus(i)" @kreuz="kreuz(i, $event)"
+                        @bereich="bereich(i)" />
+                </div>
+
+                <aside v-if="daten.seitenleiste.offen" class="seitenleiste">
+                    <div v-if="REITER.length > 1" class="reiter">
+                        <button v-for="r in REITER" :key="r.id" :class="{ an: daten.seitenleiste.reiter === r.id }"
+                            :title="t('chart.reiter.' + r.id)" @click="daten.seitenleiste.reiter = r.id">
+                            <i :class="r.icon"></i>
+                        </button>
+                    </div>
+                    <div class="reiterTitel">{{ t('chart.reiter.' + daten.seitenleiste.reiter) }}</div>
+                    <WatchlistReiter v-if="daten.seitenleiste.reiter === 'watchlist'" :watchlists="watchlists"
+                        :aktives-symbol="aktivesPanel.symbol" :aktiver-markt="aktivesPanel.markt"
+                        @waehle="setzePanel({ symbol: $event.symbol, markt: $event.markt })" @aendere="watchlistAendern"
+                        @neu="watchlistNeu" @loesche="watchlistLoeschen" />
+                </aside>
+            </div>
+        </template>
+        <div v-else-if="!ladeFehler" class="laden"><span class="spinner-border spinner-border-sm"></span></div>
+    </div>
+</template>
+
+<style scoped>
+.chartSeite {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 130px);
+    min-height: 460px;
+}
+
+.arbeitsflaeche {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.arbeitsflaeche.mitLeiste {
+    grid-template-columns: 1fr 260px;
+}
+
+.raster {
+    display: grid;
+    gap: 6px;
+    min-height: 0;
+    min-width: 0;
+}
+
+.raster.r1 {
+    grid-template: 1fr / 1fr;
+}
+
+.raster.r2h {
+    grid-template: 1fr / 1fr 1fr;
+}
+
+.raster.r2v {
+    grid-template: 1fr 1fr / 1fr;
+}
+
+.raster.r4 {
+    grid-template: 1fr 1fr / 1fr 1fr;
+}
+
+.seitenleiste {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    border: 1px solid var(--white-10);
+    border-radius: 6px;
+    padding: 8px;
+    background: var(--black-bg-7, #131722);
+}
+
+.reiter {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--white-10);
+    padding-bottom: 6px;
+}
+
+.reiter button {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--grey-text);
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.reiter button.an {
+    color: var(--blue-color);
+    background: rgba(1, 180, 255, 0.1);
+}
+
+.reiterTitel {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--grey-text);
+}
+
+.laden {
+    display: flex;
+    justify-content: center;
+    padding: 40px;
+}
+
+/* Telefon: ein Panel, Seitenleiste unter dem Chart statt daneben. */
+.chartSeite.telefon {
+    height: auto;
+}
+
+.chartSeite.telefon .arbeitsflaeche,
+.chartSeite.telefon .arbeitsflaeche.mitLeiste {
+    grid-template-columns: 1fr;
+}
+
+.chartSeite.telefon .raster {
+    height: 62dvh;
+    min-height: 340px;
+}
+
+.chartSeite.telefon .seitenleiste {
+    max-height: 50dvh;
+}
+
+@media (max-width: 991px) {
+    .arbeitsflaeche.mitLeiste {
+        grid-template-columns: 1fr;
+    }
+
+    .chartSeite {
+        height: auto;
+    }
+
+    .raster {
+        height: 62dvh;
+        min-height: 340px;
+    }
+}
+</style>

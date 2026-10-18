@@ -210,3 +210,31 @@ export function buildLiquidationUrl(symbol, market) {
     if (market === 'spot') return null
     return `${FUTURES_HOST}/market/ws/${symbol.toLowerCase()}@forceOrder`
 }
+
+/**
+ * Laufende Kerze für den Chart. `kline` liegt bei Futures auf `/market` —
+ * auf `/public` bliebe die Verbindung offen und stumm (siehe oben). Mehrere
+ * Panels mit demselben Symbol teilen sich trotzdem keine Verbindung: jedes
+ * Panel kann eine andere Zeiteinheit zeigen, und ein Socket je Panel hält den
+ * Abriss beim Symbolwechsel trivial.
+ */
+export function buildKlineUrl(symbol, market, interval) {
+    const s = `${symbol.toLowerCase()}@kline_${interval}`
+    return market === 'spot'
+        ? `${SPOT_HOST}/ws/${s}`
+        : `${FUTURES_HOST}/market/ws/${s}`
+}
+
+/**
+ * Kurse für eine Watchlist: ein kombinierter `miniTicker`-Stream je Markt,
+ * nur für die Symbole der Liste (nicht `!miniTicker@arr` — das schiebt jede
+ * Sekunde alle ~600 Märkte durch, um zwanzig davon anzuzeigen).
+ * `miniTicker` liegt bei Futures auf `/market`.
+ */
+export function buildMiniTickerUrl(symbole, market) {
+    if (!symbole.length) return null
+    const streams = symbole.map((s) => `${s.toLowerCase()}@miniTicker`).join('/')
+    return market === 'spot'
+        ? `${SPOT_HOST}/stream?streams=${streams}`
+        : `${FUTURES_HOST}/market/stream?streams=${streams}`
+}

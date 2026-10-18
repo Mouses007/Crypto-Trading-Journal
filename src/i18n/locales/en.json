@@ -55,7 +55,6 @@
     "tradeCategory": "TYPE",
     "categoryAll": "All",
     "analyze": "ANALYZE",
-    "startseite": "Overview",
     "dashboard": "Dashboard",
     "dailyView": "Daily View",
     "calendar": "Calendar",
@@ -106,7 +105,8 @@
     "liveSessions": "Archive",
     "liveAuswertung": "Evaluation",
     "lernen": "Learn",
-    "lernenGruppe": "LEARN"
+    "lernenGruppe": "LEARN",
+    "chart": "Chart"
   },
   "filters": {
     "periodRange": "Time period of displayed trades",
@@ -841,10 +841,6 @@
       "title": "Apply default settings?",
       "intro": "The currently recommended defaults are pre-checked — uncheck anything you'd rather set yourself.",
       "alreadyCustomized": "You already customized this yourself — so it isn't pre-checked.",
-      "startseiteKacheln": {
-        "label": "Reset the Overview to the recommended tile selection",
-        "info": "Resets the visibility of the Overview tiles to the current default. A custom selection is lost in the process."
-      },
       "marktradarPult": {
         "label": "Start Market Radar in the console view",
         "info": "The console view shows a fixed instrument bar instead of the freely arrangeable tile grid."
@@ -1521,7 +1517,7 @@
     "reportCreated": "Report for {label} has been created."
   },
   "modes": {
-    "start": "Overview",
+    "start": "Chart",
     "journal": "Journal",
     "live": "Live analysis",
     "liveShort": "Live",
@@ -2481,93 +2477,6 @@
     "read_shortDeckung": "Price rising, interest falling — suggests shorts covering rather than fresh buying",
     "read_longAufloesung": "Price and interest falling — suggests longs unwinding",
     "read_neutral": "no clear direction"
-  },
-  "startseite": {
-    "abrufFehler": "Could not load the data.",
-    "quiz": {
-      "title": "Quiz",
-      "faellig": "due today",
-      "karten": "cards",
-      "oeffnen": "Study now",
-      "info": "How many of your flashcards are due today and how they are spread across the four Leitner boxes. A click enlarges the tile — the study session then runs inside it, without leaving the overview."
-    },
-    "title": "Overview",
-    "kontostand": {
-      "title": "Account balance",
-      "start": "Start",
-      "bonus": "Bonus",
-      "broker": "Exchange",
-      "leer": "No starting balance set — add it under Accounts.",
-      "info": "The current balance of your accounts — the basis for every position size.\nSizing positions as a percentage of the account instead of a fixed amount keeps the risk per trade constant even as the account grows or shrinks."
-    },
-    "offeneTrades": {
-      "title": "Open trades",
-      "keine": "No open positions",
-      "info": "What's open right now, at a glance.\nWorth checking before opening another position: several trades open at once add up to a combined risk, even if each one looks small on its own."
-    },
-    "winrate": {
-      "einstufung_gut": "above average",
-      "einstufung_mittel": "middling",
-      "einstufung_schwach": "below average",
-      "title": "Win rate",
-      "wins": "wins",
-      "losses": "losses",
-      "trades": "trades",
-      "basis_net": "net · all-time",
-      "basis_gross": "gross · all-time",
-      "leer": "No trades recorded yet.",
-      "info": "How many of your trades closed in profit over the selected period.\nOn its own it says little: a 30 % hit rate can be very profitable, an 80 % one ruinous. Only together with the profit factor does it form a picture."
-    },
-    "kapitalkurve": {
-      "title": "Equity curve",
-      "kumuliert": "cumulative · all-time",
-      "leer": "No trades recorded yet.",
-      "info": "How your account has developed over time.\nThe shape of the curve says more than its end point — steadily rising is something quite different from one hit followed by a flat line."
-    },
-    "kennzahlen": {
-      "title": "Key figures",
-      "netto": "Net PnL",
-      "profitFaktor": "Profit factor",
-      "erwartung": "Expectancy/trade",
-      "avgWin": "Avg win",
-      "avgLoss": "Avg loss",
-      "gebuehren": "Fees",
-      "funding": "Funding",
-      "leer": "No trades recorded yet.",
-      "info": "The key figures for your selected period, in one row.\nThe profit factor says more about whether your trading actually holds up than the hit rate alone — it shows whether the winners really outweigh the losers."
-    },
-    "heatmap": {
-      "title": "Calendar heatmap",
-      "leer": "No trades recorded yet.",
-      "info": "Your result per day, coloured as a calendar.\nMakes patterns across weekdays and clusters visible that get lost in a plain list."
-    },
-    "performance": {
-      "title": "Performance",
-      "modus_wochentag": "Weekday",
-      "modus_dauer": "Duration",
-      "modus_symbol": "Symbol",
-      "tag_mo": "Mon",
-      "tag_di": "Tue",
-      "tag_mi": "Wed",
-      "tag_do": "Thu",
-      "tag_fr": "Fri",
-      "tag_sa": "Sat",
-      "tag_so": "Sun",
-      "dauer_lt5m": "<5m",
-      "dauer_lt30m": "5–30m",
-      "dauer_lt4h": "30m–4h",
-      "dauer_lt1d": "4–24h",
-      "dauer_gt1d": ">1d",
-      "leer": "No trades recorded yet.",
-      "info": "Your result grouped by weekday, holding time or symbol.\nShows whether a particular group regularly leads to losses — a pattern that disappears in the trade list as a whole."
-    },
-    "news": {
-      "label": "Market report",
-      "mehr": "Go to news",
-      "zurSeite": "Go to the news page",
-      "ohneTitel": "Current market report",
-      "leer": "No report generated yet. Create one on the news page."
-    }
   },
   "marktradar": {
     "pult": {
@@ -4881,5 +4790,64 @@
     "nurGesehen": "seen, not flagged",
     "stunden": "{n} h",
     "tage": "{n} days"
+  },
+  "chart": {
+    "status": {
+      "connecting": "Connecting …",
+      "open": "Live",
+      "closed": "Disconnected — reconnecting",
+      "error": "Error"
+    },
+    "ladeFehler": "Could not load candles",
+    "erneut": "Retry",
+    "symbolSuchen": "Search symbol (or just start typing)",
+    "symbolPlatzhalter": "Symbol, e.g. BTC or SOLUSDT",
+    "handelbarAuf": "Tradable as a future on {boerse}",
+    "keinTreffer": "No match",
+    "skala": {
+      "normal": "Linear scale",
+      "log": "Logarithmic scale",
+      "prozent": "Percentage scale"
+    },
+    "skalaKurz": {
+      "normal": "Lin",
+      "log": "Log",
+      "prozent": "%"
+    },
+    "raster": {
+      "1": "One chart",
+      "2h": "Two side by side",
+      "2v": "Two stacked",
+      "4": "Four charts"
+    },
+    "sync": {
+      "titel": "What is synced between charts",
+      "kreuz": "Crosshair",
+      "zeit": "Visible range",
+      "symbol": "Symbol",
+      "interval": "Timeframe"
+    },
+    "layouts": "Layouts",
+    "layoutNeu": "New layout (copy)",
+    "layoutUmbenennen": "Rename",
+    "layoutLoeschen": "Delete",
+    "layoutName": "Layout name",
+    "layoutNeuVorgabe": "New layout",
+    "layoutLoeschenFrage": "Delete layout “{name}”?",
+    "layoutStandard": "Default",
+    "foto": "Save chart as image",
+    "seitenleiste": "Toggle sidebar",
+    "reiter": {
+      "watchlist": "Watchlist"
+    },
+    "watchlistName": "Watchlist name",
+    "watchlistNeuVorgabe": "New list",
+    "watchlistLoeschenFrage": "Delete watchlist “{name}”?",
+    "watchlistNeu": "New watchlist",
+    "watchlistLoeschen": "Delete watchlist",
+    "watchlistHinzu": "Add {symbol}",
+    "watchlistLeer": "Empty — pick a symbol and add it above.",
+    "watchlistStandard": "Favourites",
+    "arbeitsplatzFehler": "Could not load workspace"
   }
 }

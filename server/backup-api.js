@@ -49,6 +49,13 @@ const BACKUP_TABLES = [
     // darin liesse sich zwar aus dem Journal neu rechnen — aber nicht mehr so,
     // wie er am Ende der Sitzung aussah.
     'live_sessions',
+    // ── Chart-Arbeitsplatz ──────────────────────────────────────────────
+    // Zeichnungen, Layouts, Watchlists und Alarme sind Handarbeit — nirgendwo
+    // sonst abgelegt und nicht nachbestellbar.
+    'chart_layouts',
+    'chart_watchlists',
+    'chart_zeichnungen',
+    'chart_alarme',
     // ── Strategie-Sektion ───────────────────────────────────────────────
     // Selbst gebaute Regelstrategien existieren NIRGENDWO sonst — sie sind
     // Handarbeit des Nutzers, kein Mitschnitt. Ohne sie wäre der
@@ -151,6 +158,11 @@ const DELETE_ORDER = [
     'strategy_param_history',
     'strategy_instances',
     'rule_strategies',
+    // Alarme verweisen (fachlich) auf Zeichnungen → zuerst.
+    'chart_alarme',
+    'chart_zeichnungen',
+    'chart_watchlists',
+    'chart_layouts',
     'live_sessions',
     'calendar_events',
     'market_snapshots',

@@ -75,7 +75,7 @@ export function getKnex() {
  * gemischtem `is_called` hinkt der Vergleich um eins.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute', 'hype_projekt', 'hype_frueh', 'hype_smart_kaeufe', 'hype_listungen_neu', 'hype_gedaechtnis']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute', 'hype_projekt', 'hype_frueh', 'hype_smart_kaeufe', 'hype_listungen_neu', 'hype_gedaechtnis', 'chart_layouts', 'chart_watchlists', 'chart_zeichnungen', 'chart_alarme']
     let fixed = 0
 
     for (const table of tables) {
@@ -186,7 +186,9 @@ async function fixPostgresSequences(knex) {
 // `handelsStart` an `hype_listungen_neu`. Rein additiv.
 // v25: Abverkaufs-Wache (`abverkauf_stand`) — je beobachtetem Perpetual
 // Phase, Treibstoff-Note und das letzte Urteil. Rein additiv.
-const SCHEMA_VERSION = 25
+// v26: Chart-Arbeitsplatz (ersetzt die Übersicht) — `chart_layouts`,
+// `chart_watchlists`, `chart_zeichnungen`, `chart_alarme`. Rein additiv.
+const SCHEMA_VERSION = 26
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -3414,6 +3416,73 @@ async function runMigrations(knex, client) {
             t.bigInteger('alarmiertAm').defaultTo(0)
         })
         console.log(' -> Created table: abverkauf_stand')
+    }
+
+    // ── v26 ─────────────────────────────────────────────────────────────
+    /*
+     * Chart-Arbeitsplatz. Alle vier Tabellen auf einmal, damit die folgenden
+     * Ausbaustufen (Zeichnungen, Alarme) keinen weiteren Schemasprung brauchen.
+     *
+     * Zeichnungen hängen am SYMBOL, nicht an Quelle oder Zeiteinheit: eine
+     * Linie auf BTCUSDT gilt auf Binance Futures, Spot und Bitunix gleichermassen,
+     * und ihre Punkte stehen in Zeit+Preis — nie in Pixeln oder Kerzenindex,
+     * sonst wanderte sie beim Wechsel der Zeiteinheit.
+     */
+    if (!(await knex.schema.hasTable('chart_layouts'))) {
+        await knex.schema.createTable('chart_layouts', (t) => {
+            t.increments('id').primary()
+            t.string('name').notNullable()
+            t.integer('aktiv').defaultTo(0)
+            t.text('daten').defaultTo('{}')          // JSON: Raster, Panels, Indikatoren, Overlays, Sync
+            t.bigInteger('geaendertAm').defaultTo(0)
+        })
+        console.log(' -> Created table: chart_layouts')
+    }
+    if (!(await knex.schema.hasTable('chart_watchlists'))) {
+        await knex.schema.createTable('chart_watchlists', (t) => {
+            t.increments('id').primary()
+            t.string('name').notNullable()
+            t.text('symbole').defaultTo('[]')        // JSON: [{symbol, markt}]
+            t.integer('reihenfolge').defaultTo(0)
+            t.bigInteger('geaendertAm').defaultTo(0)
+        })
+        console.log(' -> Created table: chart_watchlists')
+    }
+    if (!(await knex.schema.hasTable('chart_zeichnungen'))) {
+        await knex.schema.createTable('chart_zeichnungen', (t) => {
+            t.increments('id').primary()
+            t.string('symbol').notNullable()
+            t.string('typ').notNullable()
+            t.text('punkte').defaultTo('[]')         // JSON: [{t (ms), p}]
+            t.text('stil').defaultTo('{}')           // JSON: Farbe, Breite, Strich, Text …
+            t.text('sichtbarAuf')                    // JSON: Zeiteinheiten; null = alle
+            t.integer('gesperrt').defaultTo(0)
+            t.integer('versteckt').defaultTo(0)
+            t.bigInteger('erstelltAm').defaultTo(0)
+            t.bigInteger('geaendertAm').defaultTo(0)
+            t.index(['symbol'], 'idx_chart_zeichnungen_symbol')
+        })
+        console.log(' -> Created table: chart_zeichnungen')
+    }
+    if (!(await knex.schema.hasTable('chart_alarme'))) {
+        await knex.schema.createTable('chart_alarme', (t) => {
+            t.increments('id').primary()
+            t.string('symbol').notNullable()
+            t.string('markt').defaultTo('futures')   // futures | spot
+            t.string('art').notNullable()            // preis | linie | zone
+            t.text('bedingung').defaultTo('{}')      // JSON je Art
+            t.integer('zeichnungId')                 // Linien-/Zonenalarm: Quelle der Geometrie
+            t.text('kanaele')                        // JSON; null = Vorgabe
+            t.integer('einmalig').defaultTo(1)
+            t.integer('aktiv').defaultTo(1)
+            t.double('letzterPreis')
+            t.bigInteger('ausgeloestAm').defaultTo(0)
+            t.integer('anzahlAusgeloest').defaultTo(0)
+            t.text('notiz')
+            t.bigInteger('erstelltAm').defaultTo(0)
+            t.index(['aktiv'], 'idx_chart_alarme_aktiv')
+        })
+        console.log(' -> Created table: chart_alarme')
     }
 
     // ==================== SCHEMA-ANKER ====================

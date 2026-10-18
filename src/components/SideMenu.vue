@@ -290,14 +290,14 @@ const lernenGroups = computed(() => gruppenFuer('lernen'))
  * Modus man gerade steht. Vorher zielte der Klick auf die Startseite des
  * AKTUELLEN Modus (`appMode`), was den Logo-Klick zu einem reinen
  * „Modus-Home"-Knopf machte, der auf der Live-Seite z.B. wieder auf
- * `/marktradar` zurückfiel statt zur echten Übersicht zu springen. Ein Klick
+ * `/marktradar` zurückfiel statt zur Landing-Page zu springen. Ein Klick
  * aufs Logo meint aber „ganz nach vorn", nicht „diesen Modus von vorn".
  *
- * Ist die Übersicht selbst abgeschaltet (`startseiteAn`), gibt es sie
+ * Ist der Chart-Arbeitsplatz (früher Übersicht) abgeschaltet (`startseiteAn`), gibt es ihn
  * nirgends hinzuspringen — dann das Journal-Dashboard, der einzige Modus ohne
  * eigenes Flag und deshalb der sichere Grundzustand der App.
  */
-const logoZiel = computed(() => istModusAn('start', currentUser.value) ? '/startseite' : '/dashboard')
+const logoZiel = computed(() => istModusAn('start', currentUser.value) ? '/chart' : '/dashboard')
 
 function goToDashboard() {
     if (screenType.value === 'mobile') {

@@ -13,17 +13,6 @@
  */
 export const STANDARD_VORSCHLAEGE = [
     {
-        id: 'startseite-kacheln',
-        labelKey: 'onboarding.defaults.startseiteKacheln.label',
-        infoKey: 'onboarding.defaults.startseiteKacheln.info',
-        bereitsAngepasst: () => localStorage.getItem('startseite_hidden_cards') !== null,
-        anwenden: () => {
-            localStorage.removeItem('startseite_hidden_cards')
-            localStorage.removeItem('startseite_hidden_cards_order')
-            localStorage.removeItem('startseite_hidden_cards_size')
-        },
-    },
-    {
         id: 'marktradar-pult',
         labelKey: 'onboarding.defaults.marktradarPult.label',
         infoKey: 'onboarding.defaults.marktradarPult.info',
