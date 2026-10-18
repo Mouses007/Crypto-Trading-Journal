@@ -214,7 +214,10 @@ async function syncPositionsWithDb(apiPositions, broker, { vollstaendig = true }
                     leverage: parseFloat(apiPos.leverage ?? 0),
                     quantity: parseFloat(apiPos.qty ?? apiPos.maxQty ?? apiPos.quantity ?? 0),
                     unrealizedPNL: parseFloat(apiPos.unrealizedPNL ?? apiPos.unrealized_pnl ?? apiPos.unrealizedPL ?? 0),
-                    markPrice: parseFloat(apiPos.liqPrice ?? apiPos.liq_price ?? apiPos.markPrice ?? apiPos.liquidationPrice ?? 0),
+                    // Mark-Preis zuerst — wie beim Aktualisieren oben. Hier stand
+                    // die Reihenfolge noch verkehrt, und eine neue Position trug
+                    // bis zum ersten Update ihren Liquidationspreis als Mark.
+                    markPrice: parseFloat(apiPos.markPrice ?? apiPos.mark_price ?? apiPos.liqPrice ?? apiPos.liq_price ?? 0),
                     status: 'open',
                     broker: broker,
                     bitunixData: apiPos

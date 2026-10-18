@@ -7,6 +7,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SymbolSuche from './SymbolSuche.vue'
 import { INTERVALLE, INTERVALLE_SICHTBAR } from '../../utils/chart/kerzenQuelle.js'
+import { OVERLAYS, overlayAn } from '../../utils/chart/overlays/liste.js'
 
 const props = defineProps({
     panel: { type: Object, required: true },
@@ -24,6 +25,11 @@ const suche = ref(null)
 const mehrOffen = ref(false)
 const layoutOffen = ref(false)
 const syncOffen = ref(false)
+const overlayOffen = ref(false)
+
+function schalteOverlay(id, an) {
+    emit('panel', { overlays: { ...(props.panel.overlays || {}), [id]: an } })
+}
 
 const RASTER = [
     { id: '1', icon: 'uil uil-square-full' },
@@ -89,6 +95,17 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
             <button class="tf" :title="t('chart.indikatorenTitel')" @click="emit('indikatoren')">
                 <i class="uil uil-chart-growth"></i> {{ t('chart.indikatoren') }}
             </button>
+            <div class="aufklapp">
+                <button class="tf" :class="{ an: overlayOffen }" :title="t('chart.overlaysTitel')" @click="overlayOffen = !overlayOffen">
+                    <i class="uil uil-layers"></i> {{ t('chart.overlays') }}
+                </button>
+                <div v-if="overlayOffen" class="menue spalte">
+                    <label v-for="o in OVERLAYS" :key="o.id" class="schalter">
+                        <input type="checkbox" :checked="overlayAn(panel, o.id)" @change="schalteOverlay(o.id, $event.target.checked)" />
+                        <i :class="o.icon"></i> {{ t('chart.overlay.' + o.id) }}
+                    </label>
+                </div>
+            </div>
         </div>
 
         <slot />

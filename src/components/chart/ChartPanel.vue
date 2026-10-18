@@ -26,6 +26,11 @@ import { kurzname } from '../../utils/chart/indikatorRegister.js'
 import { ZeichenEbene } from '../../utils/chart/zeichnungen/ZeichenEbene.js'
 import { zeichnungenVon, legeAn, aendere, loesche } from '../../stores/chartZeichnungen.js'
 import ZeichnungStil from './ZeichnungStil.vue'
+import TradeKarte from './TradeKarte.vue'
+import axios from 'axios'
+import { JournalEbene } from '../../utils/chart/overlays/JournalEbene.js'
+import { ladeOffenePositionen } from '../../utils/chart/overlays/positionen.js'
+import { overlayAn as overlayAnFuer } from '../../utils/chart/overlays/liste.js'
 
 const props = defineProps({
     panel: { type: Object, required: true },     // { symbol, markt, interval, skala }
@@ -52,6 +57,14 @@ const indikatorWerte = ref({})       // id → [{key, farbe, wert}] unter dem Fa
 let zeichner = null
 let ebene = null
 const auswahlId = ref(null)
+let journalEbene = null
+const gewaehlterTrade = ref(null)
+const journalInfo = ref(null)          // { anzahl, gekappt } für die Legende
+let journalUhr = null
+let journalTakt = null
+let positionsTakt = null
+let positionsLinien = []               // [{ linie, art, pos }]
+let positionen = []
 let kreuzZeit = null                 // t (ms) unter dem Fadenkreuz; null = letzte Kerze
 let nachfuehrUhr = null
 
@@ -165,6 +178,13 @@ function baueChart() {
             textBearbeiten: textBearbeiten,
         },
     })
+    journalEbene = new JournalEbene({ chart: c, serie: ks, formatPreis: (p) => ks.priceFormatter().format(p) })
+    c.subscribeClick((p) => {
+        if (!p?.point || props.werkzeug) return
+        const tr = journalEbene?.trefferTest(p.point.x, p.point.y) || null
+        gewaehlterTrade.value = tr
+        journalEbene?.hebeHervor(tr?.id ?? null)
+    })
     ebene.setzeWerkzeug(props.werkzeug)
     ebene.setzeMagnet(props.magnet)
     ebene.setzeZeichnungen(sichtbareZeichnungen.value)
@@ -188,7 +208,101 @@ function setzeDaten(liste) {
     zeichner?.setze(props.panel.indikatoren, liste)
     if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
     ebene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
+    journalEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
+    planeJournal()
     emit('kerzen', liste)
+}
+
+// ── Journal und offene Positionen ────────────────────────────────────────
+const overlayAn = (name) => overlayAnFuer(props.panel, name)
+
+/** Journal für den geladenen Zeitraum holen — entprellt, weil Nachladen und Live-Neuaufbau kurz hintereinander kommen. */
+function planeJournal() {
+    clearTimeout(journalUhr)
+    journalUhr = setTimeout(ladeJournal, 300)
+}
+
+async function ladeJournal() {
+    if (!journalEbene) return
+    if (!overlayAn('journal') || !kerzen.value.length) {
+        journalEbene.setzeTrades([])
+        journalInfo.value = null
+        return
+    }
+    const nr = ladeNummer
+    try {
+        const { data } = await axios.get('/api/chart/journal', {
+            params: { symbol: props.panel.symbol, von: kerzen.value[0].t, bis: Date.now() + (INTERVALL_MS[props.panel.interval] || 0) },
+        })
+        if (nr !== ladeNummer) return
+        journalEbene.setzeTrades(data.trades)
+        journalInfo.value = { anzahl: data.trades.length, gekappt: data.gekappt }
+        if (gewaehlterTrade.value) gewaehlterTrade.value = data.trades.find((x) => x.id === gewaehlterTrade.value.id) || null
+    } catch {
+        // Journal ist Beiwerk — ohne Antwort bleibt der Chart, wie er ist.
+    }
+}
+
+function entfernePositionsLinien() {
+    for (const l of positionsLinien) {
+        try { kerzenSerie.value?.removePriceLine(l.linie) } catch { /* Serie schon weg */ }
+    }
+    positionsLinien = []
+}
+
+function positionsTitel(pos, kurs) {
+    const r = pos.richtung === 'long' ? 'Long' : 'Short'
+    if (!kurs || !pos.einstieg || !pos.menge) return `${r} ${pos.menge ?? ''}`
+    const pnl = (pos.richtung === 'long' ? kurs - pos.einstieg : pos.einstieg - kurs) * pos.menge
+    return `${r} ${pos.menge} · ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`
+}
+
+async function ladePositionen() {
+    if (!kerzenSerie.value) return
+    const symbol = props.panel.symbol
+    const liste = overlayAn('positionen') ? await ladeOffenePositionen(symbol) : []
+    if (symbol !== props.panel.symbol || !kerzenSerie.value) return
+    positionen = liste
+    entfernePositionsLinien()
+    const kurs = kerzen.value[kerzen.value.length - 1]?.c
+    for (const pos of liste) {
+        const linie = (preis, farbe, titel, art, stil = LineStyle.Solid) => {
+            if (!preis) return
+            positionsLinien.push({
+                art, pos,
+                linie: kerzenSerie.value.createPriceLine({ price: preis, color: farbe, lineWidth: 1, lineStyle: stil, axisLabelVisible: true, title: titel }),
+            })
+        }
+        linie(pos.einstieg, pos.richtung === 'long' ? '#26a69a' : '#ff6960', positionsTitel(pos, kurs), 'einstieg', LineStyle.Solid)
+        linie(pos.sl, '#ff6960', 'SL', 'sl', LineStyle.Dashed)
+        linie(pos.tp, '#26a69a', 'TP', 'tp', LineStyle.Dashed)
+        linie(pos.liq, '#ff9800', 'Liq', 'liq', LineStyle.Dotted)
+    }
+}
+
+/** Live-P&L im Titel der Einstiegslinie nachführen. */
+function aktualisierePositionsTitel() {
+    const kurs = kerzen.value[kerzen.value.length - 1]?.c
+    for (const l of positionsLinien) {
+        if (l.art === 'einstieg') l.linie.applyOptions({ title: positionsTitel(l.pos, kurs) })
+    }
+}
+
+function starteTakte() {
+    clearInterval(journalTakt)
+    clearInterval(positionsTakt)
+    // Neue Trades kommen über den Import ins Journal; alle zwei Minuten reicht.
+    journalTakt = setInterval(ladeJournal, 120_000)
+    positionsTakt = setInterval(ladePositionen, 15_000)
+    ladePositionen()
+}
+
+watch(() => props.panel.overlays, () => { ladeJournal(); ladePositionen() }, { deep: true })
+watch(() => props.panel.symbol, () => { gewaehlterTrade.value = null; entfernePositionsLinien(); ladePositionen() })
+
+function schliesseTrade() {
+    gewaehlterTrade.value = null
+    journalEbene?.hebeHervor(null)
 }
 
 // ── Zeichnungen ──────────────────────────────────────────────────────────
@@ -258,6 +372,7 @@ function planeNachfuehren() {
         nachfuehrUhr = null
         zeichner?.nachfuehren(kerzen.value)
         if (zeichner) indikatorWerte.value = zeichner.werteBei(kreuzZeit)
+        aktualisierePositionsTitel()
     }, 250)
 }
 
@@ -346,7 +461,11 @@ function starteLive(nr) {
             if (letzte && k.t < letzte.t) return
             const bar = { t: k.t, o: k.o, h: k.h, l: k.l, c: k.c, v: k.v }
             if (letzte && k.t === letzte.t) liste[liste.length - 1] = bar
-            else { liste.push(bar); ebene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval]) }
+            else {
+                liste.push(bar)
+                ebene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
+                journalEbene?.setzeKerzen(liste, INTERVALL_MS[props.panel.interval])
+            }
             kerzenSerie.value?.update({ time: zuLwc(bar.t), open: bar.o, high: bar.h, low: bar.l, close: bar.c })
             volumenSerie.value?.update(volumenBalken(bar))
             if (!extern) legende.value = letzteLegende()
@@ -441,6 +560,7 @@ function wertText(w) {
 onMounted(() => {
     baueChart()
     ladeNeu()
+    starteTakte()
 })
 onBeforeUnmount(() => {
     ladeNummer++
@@ -449,6 +569,11 @@ onBeforeUnmount(() => {
     zeichner = null
     ebene?.abbauen()
     ebene = null
+    clearTimeout(journalUhr)
+    clearInterval(journalTakt)
+    clearInterval(positionsTakt)
+    journalEbene?.abbauen()
+    journalEbene = null
     live?.stop()
     chart.value?.remove()
     chart.value = null
@@ -479,6 +604,9 @@ defineExpose({
                     {{ legendeDelta >= 0 ? '+' : '' }}{{ legendeDelta.toFixed(2) }} %
                 </span>
             </template>
+            <span v-if="journalInfo && journalInfo.anzahl" class="journalHinweis" :title="t('chart.journalHinweis')">
+                <i class="uil uil-book-alt"></i> {{ journalInfo.anzahl }}{{ journalInfo.gekappt ? '+' : '' }}
+            </span>
             <div v-for="ind in (panel.indikatoren || [])" :key="ind.id" class="indZeile" :class="{ aus: ind.sichtbar === false }">
                 <span class="indName">{{ kurzname(ind.typ, ind.params, t('chart.ind.' + ind.typ + '.kurz')) }}</span>
                 <span v-for="w in (indikatorWerte[ind.id] || [])" :key="w.key" :style="{ color: w.farbe }">{{ wertText(w.wert) }}</span>
@@ -498,6 +626,9 @@ defineExpose({
             :alarm-moeglich="['horizontale', 'strahlH', 'trendlinie', 'strahl', 'rechteck', 'kanal'].includes(ausgewaehlt.typ)"
             @aendere="aendereAuswahl" @loesche="loescheAuswahl" @text="textBearbeiten(ausgewaehlt.id)"
             @alarm="emit('alarmAufZeichnung', ausgewaehlt)" />
+
+        <TradeKarte v-if="gewaehlterTrade" :trade="gewaehlterTrade" :format-preis="(p) => kerzenSerie?.priceFormatter().format(p) ?? String(p)"
+            @schliesse="schliesseTrade" />
 
         <div v-if="laedt" class="hinweis"><span class="spinner-border spinner-border-sm"></span></div>
         <div v-else-if="fehler" class="hinweis fehler">
@@ -546,6 +677,10 @@ defineExpose({
 .legende b {
     color: var(--white-87, #ddd);
     font-weight: 500;
+}
+
+.journalHinweis {
+    color: var(--blue-color);
 }
 
 .indZeile {

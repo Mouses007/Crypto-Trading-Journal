@@ -10,7 +10,7 @@
  * Positions-R mit falsch gesetztem Stop, Magnet und Trefferabstand.
  */
 import {
-    zeitZuLogisch, logischZuZeit, abstandZuStrecke, verlaengere, preisAufGerade,
+    zeitZuLogisch, logischZuZeit, logischZuX, abstandZuStrecke, verlaengere, preisAufGerade,
     fibPreise, positionWerte, magnet, imRechteck, messung, dauerText,
 } from './chart/zeichnungen/geometrie.js'
 import { WERKZEUGE, stilFuer, STANDARD_STIL } from './chart/zeichnungen/werkzeuge.js'
@@ -44,6 +44,16 @@ for (const L of [-3.25, 0, 2.5, 9, 12.75]) {
     check('Lücke: Rückweg stimmt', nahe(logischZuZeit(L, mitLuecke, H), t0 + 3 * H))
 }
 check('Ohne Kerzen → null statt Absturz', zeitZuLogisch(t0, [], H) === null && logischZuZeit(1, [], H) === null)
+
+{
+    // Attrappe der Zeitachse, die sich wie Lightweight Charts verhält: ganze
+    // Indizes ergeben x = 50 + 10·i, gebrochene 0 (so gemessen in v5.2.1).
+    const achse = { logicalToCoordinate: (L) => (Number.isInteger(L) ? 50 + 10 * L : 0) }
+    check('Gebrochener Index wird zwischen den Nachbarn geteilt (nicht 0)', nahe(logischZuX(achse, 3.5), 85))
+    check('Ganzer Index unverändert', logischZuX(achse, 3) === 80)
+    check('Negativer gebrochener Index (vor den Daten)', nahe(logischZuX(achse, -1.25), 37.5))
+    check('null bleibt null', logischZuX(achse, null) === null)
+}
 
 console.log('\nTreffer und Verlängerung\n')
 check('Abstand zur Strecke (senkrecht)', nahe(abstandZuStrecke(5, 3, 0, 0, 10, 0), 3))

@@ -12,7 +12,7 @@
  * Vue-Seite (`neu`, `aendern`, `auswahl`, `werkzeugFertig`, `textBearbeiten`).
  */
 import {
-    zeitZuLogisch, logischZuZeit, abstandZuStrecke, verlaengere, preisAufGerade,
+    zeitZuLogisch, logischZuZeit, logischZuX, abstandZuStrecke, verlaengere, preisAufGerade,
     fibPreise, positionWerte, magnet, imRechteck, messung, dauerText,
 } from './geometrie.js'
 import { werkzeug, stilFuer } from './werkzeuge.js'
@@ -158,10 +158,7 @@ export class ZeichenEbene {
 
     // ── Koordinaten ──────────────────────────────────────────────────────
     zuL(t) { return zeitZuLogisch(t, this.zeiten, this.iv) }
-    zuX(t) {
-        const L = this.zuL(t)
-        return L == null ? null : this.chart.timeScale().logicalToCoordinate(L)
-    }
+    zuX(t) { return logischZuX(this.chart.timeScale(), this.zuL(t)) }
     zuY(p) { return this.serie.priceToCoordinate(p) }
     vonX(x) {
         const L = this.chart.timeScale().coordinateToLogical(x)

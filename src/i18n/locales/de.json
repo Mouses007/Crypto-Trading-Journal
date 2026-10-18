@@ -5014,6 +5014,28 @@
     "textEingeben": "Text:",
     "alleLoeschenFrage": "{n} Zeichnungen auf {symbol} löschen? Gesperrte bleiben stehen.",
     "objekteLeer": "Noch keine Zeichnungen auf {symbol}.",
-    "zeichnungFehler": "Zeichnung nicht gespeichert"
+    "zeichnungFehler": "Zeichnung nicht gespeichert",
+    "trade": {
+      "einstieg": "Einstieg",
+      "ausstieg": "Ausstieg",
+      "stop": "Anfangs-Stop",
+      "ziel": "Ziel",
+      "dauer": "Dauer",
+      "kosten": "Gebühren",
+      "keinR": "Kein R: zu diesem Trade ist kein Stop bekannt.",
+      "notizEinstieg": "Notiz Einstieg",
+      "notizAusstieg": "Notiz Ausstieg",
+      "regelTreu": "Nach Plan gehandelt",
+      "ja": "ja",
+      "nein": "nein",
+      "zumJournal": "Im Journal öffnen"
+    },
+    "journalHinweis": "Eigene Trades im sichtbaren Zeitraum (Klick auf einen Marker zeigt Details)",
+    "overlays": "Eigene Daten",
+    "overlaysTitel": "Eigene Daten im Chart ein-/ausblenden",
+    "overlay": {
+      "journal": "Journal-Trades",
+      "positionen": "Offene Positionen"
+    }
   }
 }

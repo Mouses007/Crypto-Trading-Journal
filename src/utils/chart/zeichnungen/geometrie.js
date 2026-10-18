@@ -30,6 +30,23 @@ export function zeitZuLogisch(t, zeiten, iv) {
     return lo + (spanne > 0 ? (t - zeiten[lo]) / spanne : 0)
 }
 
+/**
+ * Logischer Index → x-Pixel. `logicalToCoordinate` der Bibliothek nimmt nur
+ * GANZE Indizes ernst und liefert für 899.5 schlicht 0 (gemessen 18.10.2026,
+ * v5.2.1) — ein Ausstieg zur halben Kerze und jede Linie aus einer anderen
+ * Zeiteinheit (07:00 auf dem 4h-Chart) klebten dadurch am linken Rand. Also
+ * zwischen den beiden Nachbarn selbst teilen.
+ */
+export function logischZuX(zeitachse, L) {
+    if (L == null || !Number.isFinite(L)) return null
+    const a = Math.floor(L)
+    const xa = zeitachse.logicalToCoordinate(a)
+    const f = L - a
+    if (xa == null || f === 0) return xa
+    const xb = zeitachse.logicalToCoordinate(a + 1)
+    return xb == null ? xa : xa + f * (xb - xa)
+}
+
 /** Logischer Index → Zeit (ms). Umkehrung von `zeitZuLogisch`. */
 export function logischZuZeit(L, zeiten, iv) {
     const n = zeiten.length

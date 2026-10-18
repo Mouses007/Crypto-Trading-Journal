@@ -5014,6 +5014,28 @@
     "textEingeben": "Text:",
     "alleLoeschenFrage": "Delete {n} drawings on {symbol}? Locked ones stay.",
     "objekteLeer": "No drawings on {symbol} yet.",
-    "zeichnungFehler": "Drawing not saved"
+    "zeichnungFehler": "Drawing not saved",
+    "trade": {
+      "einstieg": "Entry",
+      "ausstieg": "Exit",
+      "stop": "Initial stop",
+      "ziel": "Target",
+      "dauer": "Duration",
+      "kosten": "Fees",
+      "keinR": "No R: no stop is known for this trade.",
+      "notizEinstieg": "Entry note",
+      "notizAusstieg": "Exit note",
+      "regelTreu": "Followed the plan",
+      "ja": "yes",
+      "nein": "no",
+      "zumJournal": "Open in journal"
+    },
+    "journalHinweis": "Own trades in the visible range (click a marker for details)",
+    "overlays": "Own data",
+    "overlaysTitel": "Show/hide own data on the chart",
+    "overlay": {
+      "journal": "Journal trades",
+      "positionen": "Open positions"
+    }
   }
 }

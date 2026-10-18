@@ -52,6 +52,7 @@ useVerlassenSchutz(() => {
 
 // ===== COMPOUND/FILLS TRACKING =====
 import axios from 'axios'
+import { holeTpSlOrders, aggregiereTpSl } from '../utils/positionTpsl.js'
 const positionFills = ref({}) // Map: positionId → { loading, trades[], error }
 
 async function fetchPositionFills(positionId, force = false, broker = 'bitunix', symbol = '', openTime = null, posSide = '') {
@@ -493,16 +494,9 @@ async function fetchPositionTpSl(positionId, force = false, broker = 'bitunix', 
     if (!force && positionTpSl.value[positionId]?.orders) return // cached
     positionTpSl.value[positionId] = { loading: true, orders: [], error: null }
     try {
-        let data
-        if (broker === 'bitget') {
-            const resp = await axios.get(`/api/bitget/position-tpsl/${encodeURIComponent(symbol)}`)
-            data = resp.data
-        } else {
-            const resp = await axios.get(`/api/bitunix/position-tpsl/${positionId}`)
-            data = resp.data
-        }
-        if (data.ok && data.orders) {
-            positionTpSl.value[positionId] = { loading: false, orders: data.orders, error: null }
+        const orders = await holeTpSlOrders(broker, positionId, symbol)
+        if (orders.length) {
+            positionTpSl.value[positionId] = { loading: false, orders, error: null }
             // Track changes — pass current position quantity for accurate % display
             const current = getTpSlForPosition(positionId)
             const pos = incomingPositions.find(p => p.positionId === positionId)
@@ -519,27 +513,10 @@ async function fetchPositionTpSl(positionId, force = false, broker = 'bitunix', 
     }
 }
 
+// Abruf und Verdichtung leben in `src/utils/positionTpsl.js` — der Chart
+// zeichnet Stop und Ziel offener Positionen mit derselben Antwort.
 function getTpSlForPosition(positionId) {
-    const data = positionTpSl.value[positionId]
-    if (!data || !data.orders || data.orders.length === 0) return { sl: null, tp: null, orders: [] }
-    // Safety: filter orders by positionId (API may return all pending orders)
-    const posId = String(positionId)
-    const filtered = data.orders.filter(o =>
-        !o.positionId && !o.position_id || String(o.positionId || o.position_id || '') === posId
-    )
-    // Aggregate: collect all SL/TP values
-    let sl = null, tp = null, slQty = 0, tpQty = 0
-    for (const o of filtered) {
-        if (o.slPrice && parseFloat(o.slPrice) > 0) {
-            sl = parseFloat(o.slPrice)
-            slQty += parseFloat(o.slQty || 0)
-        }
-        if (o.tpPrice && parseFloat(o.tpPrice) > 0) {
-            tp = parseFloat(o.tpPrice)
-            tpQty += parseFloat(o.tpQty || 0)
-        }
-    }
-    return { sl, tp, slQty, tpQty, orders: filtered }
+    return aggregiereTpSl(positionTpSl.value[positionId]?.orders, positionId)
 }
 
 // Screenshot upload state — separate previews for trend, entry and closing

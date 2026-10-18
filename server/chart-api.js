@@ -14,6 +14,7 @@
  *   CRUD /api/chart/layouts      Raster, Panels, Indikatoren, Overlay-Schalter
  *   CRUD /api/chart/watchlists   Symbol-Listen
  *   CRUD /api/chart/zeichnungen  Linien, Zonen, Fibonacci … je Symbol
+ *   GET  /api/chart/journal      eigene Trades eines Symbols im sichtbaren Zeitraum
  */
 
 import axios from 'axios'
@@ -21,6 +22,7 @@ import { getKnex } from './database.js'
 import { notiereGewicht, melde429 } from './binance-takt.js'
 import { ladeListungen } from './hype-radar/listungen.js'
 import { logWarn } from './logger.js'
+import { tradesAusZeilen, mitNotizen } from './chart-journal.js'
 
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
 const HTTP_TIMEOUT = 10000
@@ -322,6 +324,46 @@ export function setupChartRoutes(app) {
         try {
             await getKnex()('chart_watchlists').where('id', Number(req.params.id)).del()
             res.json({ ok: true })
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    /**
+     * GET /api/chart/journal?symbol=BTCUSDT&von=<ms>&bis=<ms>
+     *
+     * Eigene Trades des Symbols, deren Laufzeit den Zeitraum berührt, mit
+     * Anfangs-Stop, R, Teil-Fills, SL/TP-Verlauf, Notizen und Tags. Die
+     * Tageszeilen werden mit einer Woche Vorlauf gelesen: eine Zeile steht
+     * unter dem Tag des Schliessens, ein Swing-Trade kann Tage davor begonnen
+     * haben.
+     */
+    app.get('/api/chart/journal', async (req, res) => {
+        try {
+            const symbol = String(req.query.symbol || '').toUpperCase()
+            if (!SYMBOL_RE.test(symbol)) return res.status(400).json({ error: 'symbol ungültig' })
+            const bis = Number(req.query.bis) || Date.now()
+            const von = Number(req.query.von) || bis - 90 * 86_400_000
+            if (!(von < bis)) return res.status(400).json({ error: 'von muss vor bis liegen' })
+            const knex = getKnex()
+            const zeilen = await knex('trades')
+                .select('dateUnix', 'broker', 'trades')
+                .where('dateUnix', '>=', Math.floor(von / 1000) - 7 * 86400)
+                .where('dateUnix', '<=', Math.ceil(bis / 1000) + 86400)
+            const trades = tradesAusZeilen(zeilen, symbol, von, bis)
+            // Grosse Zeiträume (Wochenchart über Jahre) sollen den Browser nicht
+            // mit Tausenden Markern fluten — die jüngsten zählen.
+            const begrenzt = trades.slice(-500)
+            const ids = begrenzt.map((t) => t.id)
+            const notizen = []
+            const tags = []
+            for (let i = 0; i < ids.length; i += 400) {
+                const stueck = ids.slice(i, i + 400)
+                notizen.push(...await knex('notes')
+                    .select('tradeId', 'note', 'entryNote', 'closingNote', 'playbook', 'timeframe', 'tradeType', 'strategyFollowed',
+                        'screenshotId', 'trendScreenshotId', 'closingScreenshotId', 'tradingMetadata')
+                    .whereIn('tradeId', stueck))
+                tags.push(...await knex('tags').select('tradeId', 'tags', 'closingTags').whereIn('tradeId', stueck))
+            }
+            res.json({ symbol, von, bis, gekappt: trades.length > begrenzt.length, trades: mitNotizen(begrenzt, notizen, tags) })
         } catch (e) { res.status(500).json({ error: e.message }) }
     })
 
