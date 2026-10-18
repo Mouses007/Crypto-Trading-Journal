@@ -36,7 +36,7 @@ export const STANDARD_STIL = {
     rechteck: { farbe: '#ab47bc', breite: 1, strich: 'voll', fuellung: true, rechts: false, text: '' },
     fib: { farbe: '#8a9199', breite: 1, strich: 'voll', rechts: false },
     // farbe = Kaufvolumen; Verkauf rot, POC gelb. rechts = POC/VAH/VAL bis zum rechten Rand verlängern.
-    volprofil: { farbe: '#26a69a', zeilen: 24, rechts: true },
+    volprofil: { farbe: '#26a69a', zeilen: 24, rechts: true, einfarbig: false, marken: true },
     position: { breite: 1 },
     text: { farbe: '#e0e0e0', groesse: 13, text: '' },
     messen: { farbe: '#29b6f6' },

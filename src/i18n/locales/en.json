@@ -5216,7 +5216,9 @@
       "alarm": "Alert on this drawing",
       "sperren": "Lock",
       "entsperren": "Unlock",
-      "zeilen": "Volume profile rows"
+      "zeilen": "Volume profile rows",
+      "einfarbig": "Single colour (no buy/sell split)",
+      "marken": "Show POC, VAH and VAL as lines"
     },
     "textEingeben": "Text:",
     "alleLoeschenFrage": "Delete one drawing on {symbol}? Locked ones stay. | Delete {n} drawings on {symbol}? Locked ones stay.",

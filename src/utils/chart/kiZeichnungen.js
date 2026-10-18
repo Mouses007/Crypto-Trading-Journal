@@ -44,10 +44,31 @@ export function kandidatenVorschau(analyse) {
     if (!Array.isArray(k)) return []
     const gewaehlt = new Set([...(analyse.linien || []).map((l) => l.id), ...(analyse.zonen || []).flatMap((z) => z.ids || [])])
     const stil = (text) => ({ farbe: '#8a9199', breite: 1, strich: 'gepunktet', text })
-    return k.filter((x) => !gewaehlt.has(x.id)).map((x, i) => {
+    // V-Kandidaten gehören zum Profil, nicht als einzelne graue Linien
+    return k.filter((x) => !gewaehlt.has(x.id) && x.quelle !== 'volumenprofil').map((x, i) => {
         if (x.quelle === 'trend') return { id: -300 - i, typ: 'trendlinie', punkte: [{ t: x.t1, p: x.p1 }, { t: x.t2, p: x.p2 }], stil: { ...stil(x.id), rechts: true } }
         return { id: -300 - i, typ: 'strahlH', punkte: [{ t: x.t1 ?? analyse.kerzenVon, p: x.preis }], stil: stil(x.name ? `${x.id} ${x.name}` : x.id) }
     })
+}
+
+/*
+ * Volumenprofil: Wählt die KI eine V-Marke (POC/VAH/VAL, als Linie oder Zone),
+ * erscheint EIN Profil über den analysierten Bereich — einfarbig blau, ohne
+ * die drei Marken als Linien (die las man vorher als rote/grüne Niveaus, und
+ * das Profil selbst, auf das sie sich beziehen, fehlte).
+ */
+const istV = (id) => /^V\d+$/.test(String(id || ''))
+export const istProfilLinie = (l) => l?.quelle === 'volumenprofil' || istV(l?.id)
+export const istProfilZone = (z) => (z?.ids || []).some(istV)
+export function hatProfil(analyse) {
+    return (analyse?.linien || []).some(istProfilLinie) || (analyse?.zonen || []).some(istProfilZone)
+}
+export function profilAlsZeichnung(analyse) {
+    return {
+        typ: 'volprofil',
+        punkte: [{ t: analyse.kerzenVon, p: 0 }, { t: analyse.kerzenBis, p: 0 }],
+        stil: { farbe: '#2962ff', zeilen: 48, rechts: false, einfarbig: true, marken: false },
+    }
 }
 
 /** Alles aus einer Analyse als Vorschau (negative ids: nie verwechselbar mit gespeicherten). */
@@ -56,8 +77,9 @@ export function kiVorschau(analyse) {
     const ab = analyse.kerzenVon
     const bis = analyse.kerzenBis
     return [
-        ...(analyse.linien || []).map((l, i) => ({ id: -100 - i, ...linieAlsZeichnung(l) })),
-        ...(analyse.zonen || []).map((z, i) => ({ id: -200 - i, ...zoneAlsZeichnung(z, ab, bis) })),
+        ...(analyse.linien || []).map((l, i) => (istProfilLinie(l) ? null : { id: -100 - i, ...linieAlsZeichnung(l) })).filter(Boolean),
+        ...(analyse.zonen || []).map((z, i) => (istProfilZone(z) ? null : { id: -200 - i, ...zoneAlsZeichnung(z, ab, bis) })).filter(Boolean),
+        ...(hatProfil(analyse) ? [{ id: -150, ...profilAlsZeichnung(analyse) }] : []),
         ...(analyse._alle ? kandidatenVorschau(analyse) : []),
     ]
 }

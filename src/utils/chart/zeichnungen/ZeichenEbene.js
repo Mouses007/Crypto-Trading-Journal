@@ -681,7 +681,8 @@ export class ZeichenEbene {
                     const wAuf = lang * r.auf / max, wAb = lang * r.ab / max
                     ctx.fillStyle = mitAlpha(s.farbe, inVa ? 0.6 : 0.25)
                     ctx.fillRect(x1, Math.min(ya, yb), wAuf, h)
-                    ctx.fillStyle = mitAlpha('#ef5350', inVa ? 0.6 : 0.25)
+                    // einfarbig: Verkaufsvolumen in derselben Farbe — ein Profil, keine Kauf/Verkauf-Aufteilung
+                    ctx.fillStyle = mitAlpha(s.einfarbig ? s.farbe : '#ef5350', inVa ? 0.6 : 0.25)
                     ctx.fillRect(x1 + wAuf, Math.min(ya, yb), wAb, h)
                 }
                 const ende = s.rechts ? breite : x2
@@ -691,9 +692,11 @@ export class ZeichenEbene {
                     this.linie(ctx, x1, y, ende, y, { farbe, breite: 1, strich })
                     this.beschriftung(ctx, `${text} ${this.formatPreis(p)}`, Math.min(ende, breite) - 4, y - 3, farbe, { rechtsbuendig: true, hinten: 'rgba(0,0,0,0.45)' })
                 }
-                marke(vp.poc, '#f5c542', 'POC', 'voll')
-                marke(vp.vah, '#8a9199', 'VAH', 'gestrichelt')
-                marke(vp.val, '#8a9199', 'VAL', 'gestrichelt')
+                if (s.marken !== false) {
+                    marke(vp.poc, '#f5c542', 'POC', 'voll')
+                    marke(vp.vah, '#8a9199', 'VAH', 'gestrichelt')
+                    marke(vp.val, '#8a9199', 'VAL', 'gestrichelt')
+                }
                 break
             }
             case 'fib': {

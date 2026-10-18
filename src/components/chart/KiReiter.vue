@@ -12,7 +12,7 @@
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
-import { linieAlsZeichnung, zoneAlsZeichnung } from '../../utils/chart/kiZeichnungen.js'
+import { linieAlsZeichnung, zoneAlsZeichnung, profilAlsZeichnung, istProfilLinie, istProfilZone } from '../../utils/chart/kiZeichnungen.js'
 import { legeAn } from '../../stores/chartZeichnungen.js'
 import KiChat from './KiChat.vue'
 
@@ -129,6 +129,17 @@ async function warteAufErgebnis(beginn, meine, fuer) {
 
 async function uebernimm(art, i) {
     const a = analyse.value
+    // V-Marken: EIN Profil über den Bereich — einmal anlegen, alle V-Einträge gelten dann als übernommen
+    const profil = art === 'linie' ? istProfilLinie(a.linien[i]) : istProfilZone(a.zonen[i])
+    if (profil) {
+        if (!uebernommen.value.has('profil')) {
+            const z = await legeAn({ symbol: a.symbol || props.panel.symbol, ...profilAlsZeichnung(a), sichtbarAuf: null, gesperrt: false, versteckt: false })
+            if (!z) return
+        }
+        const v = [...a.linien.map((l, j) => (istProfilLinie(l) ? `linie${j}` : null)), ...a.zonen.map((x, j) => (istProfilZone(x) ? `zone${j}` : null))].filter(Boolean)
+        uebernommen.value = new Set([...uebernommen.value, 'profil', ...v])
+        return
+    }
     // Übernommen ohne ID im Text — „(N4)" bezieht sich nur auf diese Analyse.
     const roh = art === 'linie' ? linieAlsZeichnung({ ...a.linien[i], id: null }) : zoneAlsZeichnung({ ...a.zonen[i], ids: [] }, a.kerzenVon, a.kerzenBis)
     // Übernommen heisst: eigene Linie — durchgezogen statt gestrichelt.

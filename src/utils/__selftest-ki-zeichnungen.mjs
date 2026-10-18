@@ -6,7 +6,7 @@
  * Ältere Analysen (vor dem Umbau auf IDs, 18.10.2026) liegen bis zu 30 min im
  * Cache und müssen genauso gezeichnet werden wie bisher.
  */
-import { linieAlsZeichnung, zoneAlsZeichnung, kiVorschau, kandidatenVorschau, KI_FARBEN } from './chart/kiZeichnungen.js'
+import { linieAlsZeichnung, zoneAlsZeichnung, kiVorschau, kandidatenVorschau, KI_FARBEN, hatProfil } from './chart/kiZeichnungen.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -51,11 +51,26 @@ console.log('\nKandidaten\n')
         ] },
     }
     const k = kandidatenVorschau(analyse)
-    check('nur nicht gewählte Kandidaten (N3, V1, T1)', k.map((x) => x.stil.text).join() === 'N3,V1 POC,T1', k.map((x) => x.stil.text).join())
+    check('nur nicht gewählte Kandidaten (N3, T1) — V gehört zum Profil, keine graue Einzellinie', k.map((x) => x.stil.text).join() === 'N3,T1', k.map((x) => x.stil.text).join())
     check('grau gepunktet, eigene negative IDs', k.every((x) => x.stil.strich === 'gepunktet' && x.id <= -300))
     check('ohne Schalter nicht in der Vorschau', kiVorschau(analyse).length === 2)
-    check('mit Schalter dazu', kiVorschau({ ...analyse, _alle: true }).length === 5)
+    check('mit Schalter dazu', kiVorschau({ ...analyse, _alle: true }).length === 4)
     check('alte Analyse ohne auswahl → keine Kandidaten, kein Fehler', kandidatenVorschau({ linien: [] }).length === 0)
+}
+
+console.log('\nVolumenprofil\n')
+{
+    const a = {
+        kerzenVon: 1, kerzenBis: 99,
+        linien: [{ id: 'V1', quelle: 'volumenprofil', art: 'widerstand', t1: 1, p1: 105, t2: 99, p2: 105, label: 'POC' }, { id: 'V2', quelle: 'volumenprofil', art: 'widerstand', t1: 1, p1: 107, t2: 99, p2: 107, label: 'VAH' }, { id: 'N1', quelle: 'niveau', art: 'unterstuetzung', t1: 3, p1: 98, t2: 99, p2: 98, label: 'Boden' }],
+        zonen: [{ ids: ['V3'], art: 'unterstuetzung', tief: 99, hoch: 100, label: 'VAL' }],
+    }
+    const v = kiVorschau(a)
+    const profile = v.filter((z) => z.typ === 'volprofil')
+    check('V-Marken → genau EIN Profil über den Bereich', profile.length === 1 && profile[0].punkte[0].t === 1 && profile[0].punkte[1].t === 99)
+    check('einfarbig blau, ohne POC/VAH/VAL-Linien', profile[0].stil.farbe === '#2962ff' && profile[0].stil.einfarbig === true && profile[0].stil.marken === false)
+    check('keine V-Linie und keine V-Zone mehr einzeln', !v.some((z) => /V\d/.test(z.stil?.text || '')) && v.length === 2, JSON.stringify(v.map((z) => z.typ)))
+    check('Gegenprobe: ohne V kein Profil', !hatProfil({ linien: [{ id: 'N1' }], zonen: [] }))
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)

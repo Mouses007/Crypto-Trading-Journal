@@ -5216,7 +5216,9 @@
       "alarm": "Alarm auf diese Zeichnung",
       "sperren": "Sperren",
       "entsperren": "Entsperren",
-      "zeilen": "Zeilen des Volumenprofils"
+      "zeilen": "Zeilen des Volumenprofils",
+      "einfarbig": "Einfarbig (ohne Kauf/Verkauf-Aufteilung)",
+      "marken": "POC, VAH und VAL als Linien zeigen"
     },
     "textEingeben": "Text:",
     "alleLoeschenFrage": "Eine Zeichnung auf {symbol} löschen? Gesperrte bleiben stehen. | {n} Zeichnungen auf {symbol} löschen? Gesperrte bleiben stehen.",
