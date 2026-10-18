@@ -152,8 +152,8 @@ export const MODES = [
     // Landing-Page der App: der Chart-Arbeitsplatz. Die Modus-ID bleibt
     // `start` und das Flag `startseiteAn` — beide stehen in gespeicherten
     // Einstellungen und im localStorage bestehender Installationen.
-    { id: 'start', titleKey: 'modes.start', icon: 'uil uil-chart', home: '/chart', enabled: true, flag: 'startseiteAn' },
     { id: 'journal', titleKey: 'modes.journal', icon: 'uil uil-book-alt', home: '/dashboard', enabled: true },
+    { id: 'start', titleKey: 'modes.start', icon: 'uil uil-chart', home: '/chart', enabled: true, flag: 'startseiteAn' },
     { id: 'live', titleKey: 'modes.live', shortKey: 'modes.liveShort', icon: 'uil uil-chart-line', home: '/marktradar', enabled: true, flag: 'modusLiveAn' },
     /*
      * Entdecken: was es noch nicht ins Journal geschafft hat. Bislang ein
