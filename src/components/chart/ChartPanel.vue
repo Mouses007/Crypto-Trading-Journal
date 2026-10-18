@@ -185,6 +185,7 @@ function baueChart() {
         priceLineVisible: false,
     })
     c.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
+    vs.applyOptions({ visible: volumenAn.value })
 
     c.subscribeCrosshairMove((p) => {
         const bar = p?.time != null ? p.seriesData?.get(ks) : null
@@ -242,6 +243,10 @@ function letzteLegende() {
 function volumenBalken(k) {
     return { time: zuLwc(k.t), value: k.v, color: k.c >= k.o ? 'rgba(38,166,154,0.28)' : 'rgba(255,105,96,0.28)' }
 }
+
+/** Volumenbalken unter den Kerzen — je Panel im Layout, fehlt der Eintrag: an. */
+const volumenAn = computed(() => props.panel.volumen !== false)
+watch(volumenAn, (an) => volumenSerie.value?.applyOptions({ visible: an }))
 
 /*
  * Vektorkerzen (VWAP Vector): Farbe je Kerze für Körper, Rand und Docht —
@@ -987,6 +992,14 @@ defineExpose({
             <span v-if="journalInfo && journalInfo.anzahl" class="journalHinweis" :title="t('chart.journalHinweis')">
                 <i class="uil uil-book-alt"></i> {{ journalInfo.anzahl }}{{ journalInfo.gekappt ? '+' : '' }}
             </span>
+            <!-- Volumen ist kein Indikator aus dem Register, aber genauso ausblendbar; Zustand im Layout (panel.volumen). -->
+            <div class="indZeile" :class="{ aus: !volumenAn }">
+                <span class="indName">{{ t('chart.volumen') }}</span>
+                <span class="indKnoepfe">
+                    <button :title="t(volumenAn ? 'chart.ausblenden' : 'chart.einblenden')" @click.stop="emit('indikator', { aktion: 'volumen' })">
+                        <i :class="volumenAn ? 'uil uil-eye' : 'uil uil-eye-slash'"></i></button>
+                </span>
+            </div>
             <div v-for="ind in (panel.indikatoren || [])" :key="ind.id" class="indZeile" :class="{ aus: ind.sichtbar === false }">
                 <span class="indName">{{ kurzname(ind.typ, ind.params, t('chart.ind.' + ind.typ + '.kurz')) }}</span>
                 <span v-for="w in (indikatorWerte[ind.id] || [])" :key="w.key" :style="{ color: w.farbe }">{{ wertText(w.wert, ind.typ) }}</span>

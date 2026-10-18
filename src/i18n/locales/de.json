@@ -4796,6 +4796,7 @@
     "tage": "{n} Tage"
   },
   "chart": {
+    "volumen": "Volumen",
     "autoAn": "Automatisch einpassen ist an (Klick: aus)",
     "autoAus": "Automatisch einpassen — Klick passt den Kurs wieder ins Bild",
     "tfFavoriten": "Zeiteinheiten — Stern = in der Leiste",
