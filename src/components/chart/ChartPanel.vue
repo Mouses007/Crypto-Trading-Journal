@@ -812,10 +812,11 @@ function wendeSkalaAn() {
 }
 
 /*
- * Automatisch einpassen: Zieht oder staucht man die Preisachse, schaltet die
- * Bibliothek das Einpassen ab — und es bliebe auch nach einem Symbolwechsel
- * aus (ETH auf der BTC-Skala 77 000–87 500, also leer). Darum bei jedem
- * Neuladen wieder an, und der Knopf „A" unten rechts zeigt und schaltet es.
+ * Automatisch einpassen: Zieht oder staucht man die Preisachse (auch mit dem
+ * Mausrad über der Achse), schaltet das Einpassen ab — es bliebe sonst auch
+ * nach einem Symbolwechsel aus (ETH auf der BTC-Skala 77 000–87 500, also
+ * leer). Darum ist es bei jedem Öffnen und Neuladen wieder an; der Knopf „A"
+ * unten rechts und „Auto" in der Kopfleiste zeigen und schalten es.
  */
 const autoSkala = ref(props.panel.autoSkala !== false)
 function preisSkalen() {
@@ -839,6 +840,40 @@ function autoEinpassen(an = true) {
 }
 // Schalter in der Kopfleiste (oder ein anderes Gerät) hat umgestellt
 watch(() => props.panel.autoSkala !== false, (an) => { if (an !== autoSkala.value) autoEinpassen(an) })
+
+/**
+ * Mausrad über der Preisachse = Höhe verstellen (wie in TradingView), um die
+ * Mitte des sichtbaren Bereichs, im Log-Modus in Log-Preisen. Die Bibliothek
+ * kennt das Rad nur für die Zeitachse. Danach ist „Auto" aus.
+ */
+function radAufAchse(e) {
+    const c = chart.value
+    if (!c || !huelle.value) return
+    const rect = huelle.value.getBoundingClientRect()
+    const breite = c.priceScale('right', 0).width()
+    if (!breite || e.clientX < rect.right - breite) return
+    // Welches Pane liegt unter dem Zeiger?
+    let y = e.clientY - rect.top, idx = -1
+    const panes = c.panes()
+    for (let i = 0; i < panes.length; i++) {
+        const h = panes[i].getHeight()
+        if (y <= h) { idx = i; break }
+        y -= h + 1
+    }
+    if (idx < 0) return
+    const skala = c.priceScale('right', idx)
+    const bereich = skala.getVisibleRange()
+    if (!bereich || !(bereich.to > bereich.from)) return
+    e.preventDefault()
+    e.stopPropagation()
+    const faktor = Math.pow(1.0015, Math.max(-200, Math.min(200, e.deltaY)))
+    const log = skala.options().mode === PriceScaleMode.Logarithmic && bereich.from > 0
+    const hin = log ? Math.log : (v) => v, her = log ? Math.exp : (v) => v
+    const a = hin(bereich.from), b = hin(bereich.to), mitte = (a + b) / 2, halb = ((b - a) / 2) * faktor
+    skala.applyOptions({ autoScale: false })
+    skala.setVisibleRange({ from: her(mitte - halb), to: her(mitte + halb) })
+    if (idx === 0) { autoSkala.value = false; meldeAutoSkala() }
+}
 
 async function ladeNeu() {
     const nr = ++ladeNummer
@@ -872,12 +907,8 @@ async function ladeNeu() {
         // Die jüngsten ~150 Kerzen zeigen, nicht alle tausend gequetscht.
         const n = liste.length
         if (n) chart.value?.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 8 })
-        if (props.panel.autoSkala === false) {
-            // Erst zeichnen lassen (die Skala übernimmt den eingepassten Bereich), dann einfrieren.
-            requestAnimationFrame(() => requestAnimationFrame(() => {
-                if (nr === ladeNummer && props.panel.autoSkala === false) for (const s of preisSkalen()) s.applyOptions({ autoScale: false })
-            }))
-        }
+        // Beim Öffnen und nach jedem Wechsel ist „Auto" an, auch wenn es zuvor aus war.
+        autoEinpassen(true)
         wendePreisformatAn()
         starteLive(nr)
     } catch (e) {
@@ -1047,10 +1078,13 @@ onMounted(() => {
     marktNeuUhr = setTimeout(marktNeu, 1500)
     zeichneAlarmLinien()
     huelle.value.addEventListener('contextmenu', rechtsklick)
+    // Capture + nicht passiv: vor der Bibliothek, die das Rad sonst als Zeit-Zoom nimmt.
+    huelle.value.addEventListener('wheel', radAufAchse, { capture: true, passive: false })
     document.addEventListener('visibilitychange', sichtbarkeitGeaendert)
 })
 onBeforeUnmount(() => {
     document.removeEventListener('visibilitychange', sichtbarkeitGeaendert)
+    huelle.value?.removeEventListener('wheel', radAufAchse, { capture: true })
     ladeNummer++
     clearTimeout(nachfuehrUhr)
     zeichner?.abbauen()
