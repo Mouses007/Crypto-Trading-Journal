@@ -59,7 +59,7 @@ async function ladeLetzte() {
         if (meine !== nr || fuer !== stand()) return
         analyse.value = data.leer ? null : data
     } catch { if (meine === nr) analyse.value = null }
-    emit('vorschau', analyse.value)
+    zeigeVorschau(analyse.value)
 }
 
 async function erstelle() {
@@ -75,7 +75,7 @@ async function erstelle() {
         if (meine !== nr || fuer !== stand()) return
         analyse.value = data
         uebernommen.value = new Set()
-        emit('vorschau', data)
+        zeigeVorschau(data)
     } catch (e) {
         // Brach nur der Browser ab, rechnet der Server weiter und legt das Ergebnis ab —
         // dann nachsehen statt einen Fehler für bezahlte Arbeit zu zeigen.
@@ -101,7 +101,7 @@ async function warteAufErgebnis(beginn, meine, fuer) {
                 fehler.value = ''
                 analyse.value = data
                 uebernommen.value = new Set()
-                emit('vorschau', data)
+                zeigeVorschau(data)
                 return true
             }
         } catch { /* weiter warten */ }
@@ -111,7 +111,8 @@ async function warteAufErgebnis(beginn, meine, fuer) {
 
 async function uebernimm(art, i) {
     const a = analyse.value
-    const roh = art === 'linie' ? linieAlsZeichnung(a.linien[i]) : zoneAlsZeichnung(a.zonen[i], a.kerzenVon, a.kerzenBis)
+    // Übernommen ohne ID im Text — „(N4)" bezieht sich nur auf diese Analyse.
+    const roh = art === 'linie' ? linieAlsZeichnung({ ...a.linien[i], id: null }) : zoneAlsZeichnung({ ...a.zonen[i], ids: [] }, a.kerzenVon, a.kerzenBis)
     // Übernommen heisst: eigene Linie — durchgezogen statt gestrichelt.
     // Unter dem Symbol der ANALYSE, nicht des Panels — die beiden können auseinanderlaufen.
     const z = await legeAn({ symbol: a.symbol || props.panel.symbol, ...roh, stil: { ...roh.stil, strich: 'voll' }, sichtbarAuf: null, gesperrt: false, versteckt: false })
@@ -130,7 +131,27 @@ async function alleUebernehmen() {
 
 function verwerfen() {
     analyse.value = null
-    emit('vorschau', null)
+    zeigeVorschau(null)
+}
+
+/* „Alle Kandidaten zeigen": nicht gewählte Marken grau gepunktet dazu (im Browser gemerkt). */
+const alle = ref((() => { try { return localStorage.getItem('chartKiAlle') === '1' } catch { return false } })())
+function zeigeVorschau(a) { emit('vorschau', a ? { ...a, _alle: alle.value } : null) }
+function schalteAlle() {
+    alle.value = !alle.value
+    try { localStorage.setItem('chartKiAlle', alle.value ? '1' : '0') } catch { /* kein Speicher */ }
+    zeigeVorschau(analyse.value)
+}
+const ZUSTAND = { 1: 'auf', '-1': 'ab', 0: 'offen' }
+const struktur = (a) => {
+    const s = a?.auswahl
+    if (!s?.struktur) return ''
+    const br = s.struktur.bruch
+    return t('chart.ki.struktur', {
+        tf: a.interval, zustand: t('chart.ki.zustand.' + ZUSTAND[s.struktur.zustand]),
+        bruch: br ? t('chart.ki.bruch.' + br.richtung, { p: preis(br.marke), zeit: new Date(br.t).toLocaleDateString() }) : '',
+        von: s.spanne ? preis(s.spanne.tief) : '—', bis: s.spanne ? preis(s.spanne.hoch) : '—', pos: s.spanne ? Math.round(s.spanne.positionPct) : '—',
+    })
 }
 
 const zeit = (ms) => (ms ? new Date(ms).toLocaleString() : '')
@@ -161,20 +182,23 @@ watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], ladeL
                 <small>{{ zeit(analyse.stand) }} · {{ analyse.provider }}/{{ analyse.model }}<template v-if="analyse.costUsd != null">
                         · {{ analyse.costUsd.toFixed(4) }} $</template></small>
             </div>
+            <div v-if="analyse.auswahl" class="struktur">{{ struktur(analyse) }}</div>
             <p v-if="analyse.text" class="text">{{ analyse.text }}</p>
 
             <div v-if="analyse.bedingungen?.length" class="abschnitt">{{ t('chart.ki.bedingungen') }}</div>
             <div v-for="(b, i) in analyse.bedingungen" :key="'b' + i" class="bedingung">
-                <b>{{ t('chart.ki.wenn') }}</b> {{ b.wenn }} → {{ b.dann }}
+                <b>{{ t('chart.ki.wenn') }}</b> {{ b.wenn }} → {{ b.dann }}<span v-if="b.zielId" class="id">→ {{ b.zielId }}</span>
             </div>
 
             <div v-if="analyse.linien?.length || analyse.zonen?.length" class="abschnitt">
                 {{ t('chart.ki.vorschlaege') }}
                 <button class="btn btn-sm btn-link p-0 ms-2" :disabled="uebernimmtAlle" @click="alleUebernehmen">{{ t('chart.ki.alleUebernehmen') }}</button>
+                <button v-if="analyse.auswahl" class="btn btn-sm btn-link p-0 ms-2" :class="{ an: alle }" @click="schalteAlle">{{ t(alle ? 'chart.ki.kandidatenAus' : 'chart.ki.kandidatenZeigen') }}</button>
             </div>
             <div v-for="(l, i) in analyse.linien" :key="'l' + i" class="vorschlag">
                 <div class="zeile">
                     <span class="art">{{ t('chart.ki.art.' + l.art) }}</span>
+                    <span v-if="l.id" class="id" :class="l.gewicht">{{ l.id }}</span>
                     <span class="label">{{ l.label }}</span>
                     <span class="preis">{{ l.p1 === l.p2 ? preis(l.p1) : `${preis(l.p1)} → ${preis(l.p2)}` }}</span>
                     <button class="btn btn-sm btn-link p-0" :disabled="uebernommen.has('linie' + i)" @click="uebernimm('linie', i)">
@@ -185,6 +209,7 @@ watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], ladeL
             <div v-for="(z, i) in analyse.zonen" :key="'z' + i" class="vorschlag">
                 <div class="zeile">
                     <span class="art">{{ t('chart.ki.zone') }}</span>
+                    <span v-if="z.ids?.length" class="id" :class="z.gewicht">{{ z.ids.join('+') }}</span>
                     <span class="label">{{ z.label }}</span>
                     <span class="preis">{{ preis(z.tief) }}–{{ preis(z.hoch) }}</span>
                     <button class="btn btn-sm btn-link p-0" :disabled="uebernommen.has('zone' + i)" @click="uebernimm('zone', i)">
@@ -212,6 +237,33 @@ watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], ladeL
 
 .kiReiter:has(.chatFlaeche) {
     overflow: hidden;
+}
+
+.struktur {
+    color: var(--grey-text);
+    font-size: 11px;
+}
+
+.id {
+    font-size: 10px;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--white-10);
+    color: var(--grey-text);
+    margin: 0 2px;
+}
+
+.id.stark {
+    background: rgba(245, 197, 66, 0.25);
+    color: #f5c542;
+}
+
+.id.schwach {
+    opacity: 0.6;
+}
+
+.btn-link.an {
+    font-weight: 600;
 }
 
 .modus {

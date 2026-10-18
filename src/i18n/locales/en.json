@@ -5341,7 +5341,7 @@
     },
     "ki": {
       "erstellen": "AI analysis for {symbol} {tf}",
-      "hinweis": "Costs one AI call (provider under Settings → AI → “Chart analysis”). The AI only reads the candles, your lines and the leverage zones — no news. Suggestions appear dashed; adopting turns them into your own drawings.",
+      "hinweis": "Costs one AI call (provider under Settings → AI → \"Chart analysis\"). The code measures the chart — levels from highs/lows, volume profile, unbroken trendlines, higher timeframe — and the AI selects and explains. Suggestions appear dashed; adopting makes them your own drawings.",
       "bedingungen": "Conditions",
       "wenn": "If",
       "vorschlaege": "Suggestions",
@@ -5366,7 +5366,19 @@
       "chatBelegt": "An agent run is already in progress (AI agent page or another window) — please wait.",
       "frageStruktur": "What is the structure right now: trend, range, last breaks?",
       "frageMarken": "Which levels near the price matter and why?",
-      "frageLinien": "Do my drawn lines fit the highs and lows?"
+      "frageLinien": "Do my drawn lines fit the highs and lows?",
+      "struktur": "Structure {tf}: {zustand}{bruch} · range {von}–{bis}, price at {pos} %",
+      "zustand": {
+        "auf": "up",
+        "ab": "down",
+        "offen": "undetermined"
+      },
+      "bruch": {
+        "auf": ", last break above {p} on {zeit}",
+        "ab": ", last break below {p} on {zeit}"
+      },
+      "kandidatenZeigen": "show all candidates",
+      "kandidatenAus": "show selection only"
     },
     "indAktiv": "Active in this chart",
     "indHinzu": "Add",

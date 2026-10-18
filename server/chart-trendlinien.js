@@ -56,11 +56,15 @@ export function pruefeTrend(kerzen, i1, p1, i2, p2, seite, tol, pivots) {
     return { ok: true, beruehrungen }
 }
 
-/** Beste haltende Linie einer Seite, oder null. Anker sind immer echte Hochs/Tiefs. */
-export function besteTrendlinie(kerzen, seite, { tol, richtung = null, minAbstand = MIN_ABSTAND } = {}) {
+/**
+ * Alle haltenden Linien einer Seite (Paare von Wendepunkten ≥ minAbstand auseinander,
+ * kein Bruch bis jetzt, ≥ 2 Berührungen) — sortiert: meiste Berührungen, dann jüngerer
+ * zweiter Anker, dann früherer erster Anker (längere Spanne).
+ */
+export function alleTrendlinien(kerzen, seite, { tol, richtung = null, minAbstand = MIN_ABSTAND } = {}) {
     const pv = wendepunkte(kerzen, seite)
     const wert = (i) => (seite === 'hoch' ? kerzen[i].h : kerzen[i].l)
-    let beste = null
+    const aus = []
     for (let a = 0; a < pv.length; a++) {
         for (let b = a + 1; b < pv.length; b++) {
             const i1 = pv[a], i2 = pv[b]
@@ -70,12 +74,15 @@ export function besteTrendlinie(kerzen, seite, { tol, richtung = null, minAbstan
             if (richtung === 'auf' && !(p2 > p1)) continue
             const r = pruefeTrend(kerzen, i1, p1, i2, p2, seite, tol, pv)
             if (!r.ok || r.beruehrungen < 2) continue
-            const kandidat = { i1, p1, i2, p2, beruehrungen: r.beruehrungen }
-            if (!beste || r.beruehrungen > beste.beruehrungen
-                || (r.beruehrungen === beste.beruehrungen && (i2 > beste.i2 || (i2 === beste.i2 && i1 < beste.i1)))) beste = kandidat
+            aus.push({ i1, p1, i2, p2, beruehrungen: r.beruehrungen })
         }
     }
-    return beste
+    return aus.sort((x, y) => y.beruehrungen - x.beruehrungen || y.i2 - x.i2 || x.i1 - y.i1)
+}
+
+/** Beste haltende Linie einer Seite, oder null. Anker sind immer echte Hochs/Tiefs. */
+export function besteTrendlinie(kerzen, seite, opt = {}) {
+    return alleTrendlinien(kerzen, seite, opt)[0] || null
 }
 
 /**

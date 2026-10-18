@@ -17,90 +17,57 @@
  *   4. Was die Prüfung verwirft, steht im Protokoll und in der Antwort
  *      (`verworfen`) — sonst wüsste niemand, ob sie nützt oder frisst.
  *
- * `baueChartEingabe` und `pruefeChartAntwort` sind rein (Selbsttest:
+ * Seit 18.10.2026 vermisst der CODE den Chart (`chart-kandidaten.js`: Niveaus,
+ * Volumenprofil, ungebrochene Trendlinien, höhere Zeiteinheit, Struktur — mit
+ * IDs), und das Modell wählt nur noch per ID aus und erklärt. Vorher las es
+ * 150 Roh-Kerzen und erfand Geometrie: Schrägen aus zwei Preisen einer Marke,
+ * Trendlinien, durch die die Kerzen wuchsen.
+ *
+ * `baueChartEingabe` und `pruefeChartAuswahl` sind rein (Selbsttest:
  * `server/__selftest-chart-ki.mjs`).
  */
 import { getKnex } from './database.js'
 import { logWarn } from './logger.js'
 import { ladeLlmConfigFuerAufgabe, callLLMJson } from './llm.js'
-import { getClosedCandles, isValidTimeframe, timeframeMs } from './market-data.js'
+import { getClosedCandles, isValidTimeframe } from './market-data.js'
 import { holeHebelzonen } from './hebelzonen.js'
 import { pruefeEinordnung } from './coin-radar/einordnung.js'
 import { tradesAusZeilen } from './chart-journal.js'
-import { richteTrendAus } from './chart-trendlinien.js'
-import { volumenprofil } from '../shared/volumenprofil.js'
+import { baueKandidaten, kandidatenText, HTF_VON, KAND, zahl, preisVon } from './chart-kandidaten.js'
 
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
 const KERZEN = 150
 const TTL_MS = 30 * 60 * 1000
 const SPERRE_MS = 45 * 1000
 const CACHE_MAX = 12
-const MAX_LINIEN = 8
-// Eine Trendlinie braucht zwei Berührungen mit Abstand — zwei Hochs vier Kerzen
-// auseinander sind eine Zone, keine Richtung. Verlängert nach rechts wurde aus
-// 82 639 → 82 900 in vier 4h-Kerzen ein Strahl bis 87 000 (18.10.2026).
-export const MIN_TREND_KERZEN = 10
-const MAX_ZONEN = 5
-const MAX_BEDINGUNGEN = 5
-
-/** Zahl mit etwa fünf gültigen Stellen — reicht dem Modell und spart Text. */
-function kurz(x) {
-    if (!Number.isFinite(x)) return '—'
-    const a = Math.abs(x)
-    if (a >= 1000) return x.toFixed(1)
-    if (a >= 1) return x.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
-    return Number(x.toPrecision(5)).toString()
-}
+const MAX_LINIEN = 6
+const MAX_TRENDS = 3
+const MAX_ZONEN = 3
+const MAX_BEDINGUNGEN = 4
+const HTF_KERZEN = 120
 
 const isoKurz = (ms) => new Date(ms).toISOString().slice(0, 16) + 'Z'
 
 /**
- * Die Eingabe an das Modell — rein.
+ * Die Eingabe an das Modell — rein. Statt 150 Roh-Kerzen die vom Code
+ * vermessenen Kandidaten mit IDs (`chart-kandidaten.js`), dazu Hebelzonen und
+ * eigene Trades. Ohne `paket` wird es aus den Kerzen gebaut (KI-Chat).
  * @returns {string}
  */
-export function baueChartEingabe({ symbol, interval, kerzen, zeichnungen = [], hebelzonen = null, trades = [] }) {
-    const zeilen = [
-        `SYMBOL: ${symbol}`,
-        `ZEITEINHEIT: ${interval}`,
-        `JETZT: ${isoKurz(Date.now())}`,
-        '',
-        `KERZEN (älteste zuerst; Zeit,Eröffnung,Hoch,Tief,Schluss,Volumen) — ${kerzen.length} Stück:`,
-        ...kerzen.map((k) => [isoKurz(k.t), kurz(k.o), kurz(k.h), kurz(k.l), kurz(k.c), kurz(k.v)].join(',')),
-    ]
-    const linien = zeichnungen.filter((z) => ['horizontale', 'strahlH', 'trendlinie', 'strahl', 'rechteck'].includes(z.typ))
-    if (linien.length) {
-        zeilen.push('', 'EIGENE LINIEN DES NUTZERS (dürfen bestätigt oder widersprochen werden):')
-        for (const z of linien.slice(0, 20)) {
-            const p = z.punkte || []
-            const text = z.stil?.text ? ` „${z.stil.text}"` : ''
-            if (z.typ === 'rechteck') zeilen.push(`- Zone ${kurz(Math.min(p[0]?.p, p[1]?.p))}–${kurz(Math.max(p[0]?.p, p[1]?.p))}${text}`)
-            else if (p.length > 1) zeilen.push(`- ${z.typ} ${isoKurz(p[0].t)} ${kurz(p[0].p)} → ${isoKurz(p[1].t)} ${kurz(p[1].p)}${text}`)
-            else if (p.length) zeilen.push(`- ${z.typ} bei ${kurz(p[0].p)}${text}`)
-        }
-    }
-    // Volumenprofil: über den ganzen gezeigten Bereich, dazu jedes vom Nutzer gezogene Profil —
-    // dieselbe Rechnung wie das Zeichenwerkzeug, damit KI und Chart dasselbe Profil lesen.
-    const profilZeile = (name, vp) => `- ${name}: POC ${kurz(vp.poc)}, Value Area ${kurz(vp.val)}–${kurz(vp.vah)} (70 % des Volumens), Spanne ${kurz(vp.unten)}–${kurz(vp.oben)}`
-    const gesamt = volumenprofil(kerzen, { zeilen: 48 })
-    const eigene = zeichnungen.filter((z) => z.typ === 'volprofil' && (z.punkte || []).length >= 2).slice(0, 5)
-    if (gesamt || eigene.length) {
-        zeilen.push('', 'VOLUMENPROFIL (aus den Kerzen geschätzt; POC = Preis mit dem meisten Volumen — dort und an den Rändern der Value Area reagiert der Kurs oft):')
-        if (gesamt) zeilen.push(profilZeile('ganzer Bereich', gesamt))
-        for (const z of eigene) {
-            const von = Math.min(z.punkte[0].t, z.punkte[1].t), bis = Math.max(z.punkte[0].t, z.punkte[1].t)
-            const vp = volumenprofil(kerzen.filter((k) => k.t >= von && k.t <= bis), { zeilen: z.stil?.zeilen || 24 })
-            if (vp) zeilen.push(profilZeile(`vom Nutzer gezogen ${isoKurz(von)} → ${isoKurz(bis)}`, vp))
-        }
-    }
+export function baueChartEingabe({ symbol, interval, kerzen, kerzenHtf = null, zeichnungen = [], hebelzonen = null, trades = [], paket = null }) {
+    const pk = paket || baueKandidaten({ kerzen, kerzenHtf, interval, intervalHtf: HTF_VON[interval] || null, zeichnungen })
+    const zeilen = [`SYMBOL: ${symbol}`, `ZEITEINHEIT: ${interval}`, `JETZT: ${isoKurz(Date.now())}`, '']
+    if (pk) zeilen.push(kandidatenText(pk))
+    else zeilen.push('Zu wenige Kerzen für eine Vermessung.')
     if (hebelzonen && (hebelzonen.oben?.length || hebelzonen.unten?.length)) {
-        zeilen.push('', 'GESCHÄTZTE LIQUIDATIONSZONEN (Modell aus Open Interest, keine Messung):')
-        for (const z of (hebelzonen.oben || []).slice(0, 3)) zeilen.push(`- darüber ${kurz(z.preis)} (~${Math.round(z.usd / 1e6)} Mio USD Shorts)`)
-        for (const z of (hebelzonen.unten || []).slice(0, 3)) zeilen.push(`- darunter ${kurz(z.preis)} (~${Math.round(z.usd / 1e6)} Mio USD Longs)`)
+        zeilen.push('', 'GESCHÄTZTE LIQUIDATIONSZONEN (Modell aus Open Interest, keine Messung; nur zur Einordnung, nicht als Linie auswählbar):')
+        for (const z of (hebelzonen.oben || []).slice(0, 3)) zeilen.push(`- darüber ${zahl(z.preis)} (~${Math.round(z.usd / 1e6)} Mio USD Shorts)`)
+        for (const z of (hebelzonen.unten || []).slice(0, 3)) zeilen.push(`- darunter ${zahl(z.preis)} (~${Math.round(z.usd / 1e6)} Mio USD Longs)`)
     }
     if (trades.length) {
         zeilen.push('', 'EIGENE TRADES AUF DIESEM SYMBOL IM ZEITRAUM (nur zur Einordnung, nicht bewerten):')
         for (const t of trades.slice(-5)) {
-            zeilen.push(`- ${t.richtung} ${isoKurz(t.einstieg.t)} @ ${kurz(t.einstieg.p)}${t.ausstieg ? ` → ${isoKurz(t.ausstieg.t)} @ ${kurz(t.ausstieg.p)}` : ' (offen)'}`)
+            zeilen.push(`- ${t.richtung} ${isoKurz(t.einstieg.t)} @ ${zahl(t.einstieg.p)}${t.ausstieg ? ` → ${isoKurz(t.ausstieg.t)} @ ${zahl(t.ausstieg.p)}` : ' (offen)'}`)
         }
     }
     return zeilen.join('\n')
@@ -108,117 +75,184 @@ export function baueChartEingabe({ symbol, interval, kerzen, zeichnungen = [], h
 
 export function systemText(englisch, empfehlungen) {
     const sprache = englisch ? 'Write all texts in English.' : 'Schreibe alle Texte auf Deutsch.'
-    return `Du bist ein nüchterner technischer Analyst. Du liest einen Krypto-Kerzenchart und markierst, was ein erfahrener Trader dort einzeichnen würde.
+    return `Du bist ein nüchterner technischer Analyst. Der Code hat den Chart bereits vermessen: Niveaus (N…), Volumenprofil-Marken (V…), ungebrochene Trendlinien (T…), Marken der höheren Zeiteinheit (D…), Marktstruktur und Spanne. Jede Marke ist an den Kerzen geprüft. Deine Aufgabe: AUSWÄHLEN, GEWICHTEN, ERKLÄREN — nicht vermessen.
 
 Regeln:
-- Stütze dich NUR auf die gelieferten Kerzen, Linien und Zonen. Keine Nachrichten, kein Allgemeinwissen über den Coin.
-- Linien: Unterstützung und Widerstand sind WAAGERECHT — ein Preis "p" und die Zeit "t1", ab der die Marke gilt; kein t2/p2. Ein Bereich mit mehreren nahen Preisen ist eine ZONE, keine Linie.
-- Trendlinien ("art": "trend") verbinden zwei echte Hochs bzw. zwei echte Tiefs, mindestens ${MIN_TREND_KERZEN} Kerzen auseinander, beide auf Kerzen im gezeigten Bereich; die Linie wird nach rechts verlängert.
-- Volumenprofil: POC und Value-Area-Ränder sind starke Marken; nutze sie für Linien und Zonen und nenne sie im Grund (z. B. "POC des Bereichs").
-- Zonen: Preisbereiche mit mehrfacher Reaktion, mit "art" unterstuetzung (unter dem Kurs, hat gehalten) oder widerstand (darüber, hat abgewiesen).
-- Bedingungen: "wenn … dann …" — beobachtbar, an eine Zahl gebunden.
-${empfehlungen ? '' : '- KEINE Prognose, KEIN Kursziel, KEINE Handelsempfehlung, kein "dürfte", kein "kaufen/verkaufen". Beschreibe Marken und was ihr Bruch bedeuten würde.\n'}- Jede Linie und Zone bekommt eine kurze Beschriftung (max. 40 Zeichen) und einen Grund (max. 200 Zeichen), WARUM sie dort liegt (z. B. "drei Tiefs bei 101,2 am 12., 14. und 16.").
-- Höchstens ${MAX_LINIEN} Linien, ${MAX_ZONEN} Zonen, ${MAX_BEDINGUNGEN} Bedingungen. Lieber wenige gute.
+- Verwende NUR IDs aus der Liste. Erfinde keine Preise, keine Zeiten, keine Linien. Eine Marke, die nicht in der Liste steht, gibt es nicht. U-IDs (eigene Linien) darfst du nur im Text erwähnen, nicht auswählen.
+- Im Text, in "grund" und "dann" schreibst du Marken als [ID] (z. B. [N4], [T1]); der Code setzt den Preis ein. Schreibe keine eigenen Kurszahlen.
+- Linien: "id" aus N, V, D (waagerecht) oder T (Trendlinie). Wähle, was ein erfahrener Trader einzeichnen würde: nahe am Kurs, mehrfach berührt, deutliche Reaktion, wenig Durchquerungen. Mindestens je eine Marke über und unter dem Kurs, sofern vorhanden.
+- Zonen: "ids" mit einer ID (deren Band) oder zwei benachbarten N/D-IDs (Bereich dazwischen). Nur wo der Kurs mehrfach reagiert hat. Eine Marke ist entweder Linie oder Zone, nicht beides.
+- Gewicht: "stark" nur bei ≥ 3 Berührungen oder Übereinstimmung zweier Quellen (z. B. N und T, N und V oder N und D nahe beieinander). Nenne die Übereinstimmung im Grund.
+- Niveaus mit vielen Durchquerungen sind Drehpunkte der Spanne, keine harte Grenze — sag das.
+- Bedingungen: an eine ID gebunden; "richtung" ueber/unter meint einen Schluss der Zeiteinheit jenseits der Marke; "ziel" (optional) ist die nächste ID in dieser Richtung.
+- Stütze dich NUR auf die Eingabe. Keine Nachrichten, kein Allgemeinwissen über den Coin.
+${empfehlungen ? '' : '- KEINE Prognose, KEIN Kursziel, KEINE Handelsempfehlung, kein "dürfte", kein "wird steigen/fallen", kein "kaufen/verkaufen". "ziel" ist die nächste Marke, kein Kursziel — beschreibe, was ein Bruch bedeuten würde.\n'}- Höchstens ${MAX_LINIEN} Linien (davon höchstens ${MAX_TRENDS} Trendlinien), ${MAX_ZONEN} Zonen, ${MAX_BEDINGUNGEN} Bedingungen. Lieber wenige gute.
+- Beschriftung "label" höchstens 40 Zeichen, "grund" höchstens 200 Zeichen.
 - ${sprache}
 
 Antworte NUR mit JSON:
-{"text": "2–4 Sätze zur Lage",
- "linien": [{"art": "unterstuetzung|widerstand", "t1": "YYYY-MM-DDTHH:MMZ", "p": 0, "label": "...", "grund": "..."},
-            {"art": "trend", "t1": "YYYY-MM-DDTHH:MMZ", "p1": 0, "t2": "YYYY-MM-DDTHH:MMZ", "p2": 0, "label": "...", "grund": "..."}],
- "zonen": [{"art": "unterstuetzung|widerstand", "tief": 0, "hoch": 0, "label": "...", "grund": "..."}],
- "bedingungen": [{"wenn": "...", "dann": "..."}]}`
+{"text": "2–4 Sätze zur Lage, Marken als [ID]",
+ "linien": [{"id": "N4", "label": "...", "grund": "...", "gewicht": "stark|mittel|schwach"}],
+ "zonen": [{"ids": ["N3"], "label": "...", "grund": "...", "gewicht": "stark|mittel|schwach"}],
+ "bedingungen": [{"id": "N4", "richtung": "ueber|unter", "dann": "...", "ziel": "N2"}]}`
 }
 
-const zeitAus = (v) => {
-    if (typeof v === 'number') return v < 1e12 ? v * 1000 : v
-    const t = Date.parse(String(v || ''))
-    return Number.isFinite(t) ? t : null
-}
+const idVon = (x) => String(x ?? '').trim().toUpperCase().replace(/^\[|\]$/g, '')
+const ID_RE = /\[([A-Za-z]\d{1,2})\]/g
 
 /**
- * Antwort des Modells prüfen und säubern — rein.
+ * Antwort des Modells auf die Kandidaten abbilden — rein.
  *
- * Verworfen wird, was sich nicht zeichnen liesse oder was die Regeln bricht:
- * Zeiten weit ausserhalb des Kerzenbereichs, Preise fern jeder Kerze (ein
- * vertippter Preis wäre eine Linie an einem Ort, wo der Kurs nie war),
- * Prognosen und Empfehlungen (ausser `empfehlungen`).
- *
- * @param {object} json
- * @param {{vonT:number, bisT:number, iv:number, preisMin:number, preisMax:number, empfehlungen?:boolean}} rahmen
+ * Das Modell nennt IDs; Preise und Zeiten kommen ausschliesslich aus `paket`.
+ * Verworfen wird mit Grund: unbekannte ID, Zone aus einer Trendlinie, zu
+ * breite oder nicht benachbarte Zone, Ziel gegen die Richtung, doppelt,
+ * zu viele, Prognose/Empfehlung (ausser `empfehlungen`). Zahlen im Text, die
+ * zu keiner Marke passen, kommen nur in `warnungen` (erst beobachten, dann
+ * scharf schalten).
  */
-export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, kurs = null, kerzen = null, empfehlungen = false }) {
+export function pruefeChartAuswahl(json, paket, { empfehlungen = false } = {}) {
     const verworfen = []
-    const textOk = (s) => empfehlungen || pruefeEinordnung({ text: s }).ok
-    const spanne = preisMax - preisMin
-    const preisOk = (p) => Number.isFinite(p) && p >= preisMin - spanne * 0.5 && p <= preisMax + spanne * 0.5 && p > 0
-    // Trendpunkte dürfen etwas in der Zukunft liegen (verlängerte Linie),
-    // aber nicht vor dem gezeigten Bereich.
-    const zeitOk = (t) => Number.isFinite(t) && t >= vonT - iv && t <= bisT + 50 * iv
-    const wort = (s, max) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+    const warnungen = []
+    const textOk = (t) => empfehlungen || pruefeEinordnung({ text: t }).ok
+    const wort = (x, max) => String(x ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+    const A = paket.atr, kurs = paket.kurs
+    const karte = new Map(paket.kandidaten.map((k) => [k.id, k]))
+    const nutzerIds = new Set(paket.nutzer.map((u) => u.id))
 
-    let text = wort(json?.text, 1200)
-    if (text && !textOk(text)) { verworfen.push({ art: 'text', grund: 'prognose', inhalt: text.slice(0, 120) }); text = '' }
+    // [ID] → Preis. Unbekannte ID: `null` (der Aufrufer entscheidet, was dann geschieht).
+    const setzeEin = (t) => {
+        let unbekannt = false
+        const aus = String(t ?? '').replace(ID_RE, (_, id) => {
+            const k = karte.get(id.toUpperCase())
+            if (k) return k.quelle === 'trend' ? `Trendlinie ${k.id} (jetzt ${zahl(k.wertJetzt)})` : `${zahl(k.preis)} (${k.id})`
+            if (nutzerIds.has(id.toUpperCase())) return `eigene Linie ${id.toUpperCase()}`
+            unbekannt = true
+            return ''
+        })
+        return unbekannt ? null : aus
+    }
+    // Zahlen, die zu keiner Marke passen — protokollieren
+    const marken = [...paket.kandidaten.flatMap((k) => (k.quelle === 'trend' ? [k.wertJetzt, k.p1, k.p2] : [k.preis, k.tief, k.hoch])),
+        ...paket.roh.flatMap((r) => [r.h, r.l]), paket.spanne?.tief, paket.spanne?.hoch].filter(Number.isFinite)
+    const pruefeZahlen = (t, wo) => {
+        for (const m of String(t).matchAll(/\d[\d'’ ]*(?:[.,]\d+)?/g)) {
+            const z = Number(m[0].replace(/['’ ]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'))
+            if (!(z > 0.5 * kurs && z < 2 * kurs)) continue
+            if (!marken.some((x) => Math.abs(x - z) <= 0.3 * A)) warnungen.push({ wo, zahl: z })
+        }
+    }
+
+    // Text: ein Satz mit unbekannter ID fällt weg, der Rest bleibt.
+    let text = ''
+    if (json?.text) {
+        const saetze = String(json.text).split(/(?<=[.!?])\s+/).map((x) => setzeEin(x)).filter((x) => x != null)
+        text = wort(saetze.join(' '), 1200)
+        if (text && !textOk(text)) { verworfen.push({ art: 'text', grund: 'prognose', inhalt: text.slice(0, 120) }); text = '' }
+        if (text) pruefeZahlen(text, 'text')
+    }
+    const gewichtVon = (g) => (['stark', 'mittel', 'schwach'].includes(g) ? g : 'mittel')
+    const artNachLage = (preis) => (preis >= kurs ? 'widerstand' : 'unterstuetzung')
+
+    // Zonen zuerst — eine ID als Linie UND Zone: die Zone gewinnt.
+    const zonen = []
+    const zonenIds = new Set()
+    const preisListe = paket.kandidaten.filter((k) => k.quelle === 'niveau' || k.quelle === 'htf').sort((a, b) => a.preis - b.preis)
+    for (const z of Array.isArray(json?.zonen) ? json.zonen : []) {
+        const ids = (Array.isArray(z?.ids) ? z.ids : [z?.id]).map(idVon).filter(Boolean)
+        const label = wort(z?.label, 40)
+        const ks = ids.map((id) => karte.get(id))
+        if (!ids.length || ids.length > 2 || ks.some((k) => !k)) { verworfen.push({ art: 'zone', grund: 'unbekannteId', inhalt: ids.join('+') || label }); continue }
+        if (ks.some((k) => k.quelle === 'trend')) { verworfen.push({ art: 'zone', grund: 'zoneAusTrend', inhalt: ids.join('+') }); continue }
+        if (ks.length === 2) {
+            const [a, b] = [...ks].sort((x, y) => x.preis - y.preis)
+            const nb = ks.every((k) => k.quelle === 'niveau' || k.quelle === 'htf')
+                && !preisListe.some((k) => k.preis > a.preis && k.preis < b.preis && k.id !== a.id && k.id !== b.id)
+            if (!nb) { verworfen.push({ art: 'zone', grund: 'nichtBenachbart', inhalt: ids.join('+') }); continue }
+            if (b.hoch - a.tief > 2 * A) { verworfen.push({ art: 'zone', grund: 'zoneZuBreit', inhalt: ids.join('+') }); continue }
+        }
+        if (ids.some((id) => zonenIds.has(id))) continue
+        if (zonen.length >= MAX_ZONEN) { verworfen.push({ art: 'zone', grund: 'zuViele', inhalt: ids.join('+') }); continue }
+        const grund = setzeEin(z?.grund)
+        if (grund == null) { verworfen.push({ art: 'zone', grund: 'unbekannteId', inhalt: label }); continue }
+        if (!textOk(`${label}. ${grund}`)) { verworfen.push({ art: 'zone', grund: 'prognose', inhalt: label }); continue }
+        pruefeZahlen(grund, `zone ${ids.join('+')}`)
+        const tief = Math.min(...ks.map((k) => k.tief)), hoch = Math.max(...ks.map((k) => k.hoch))
+        const mitte = (tief + hoch) / 2
+        const art = kurs >= tief && kurs <= hoch
+            ? (ks[0].rolle === 'widerstand' || ks[0].rolle === 'unterstuetzung' ? ks[0].rolle : artNachLage(mitte))
+            : artNachLage(mitte)
+        ids.forEach((id) => zonenIds.add(id))
+        zonen.push({ art, tief, hoch, label: label || ids.join('+'), grund: wort(grund, 200), gewicht: gewichtVon(z?.gewicht), ids, vonT: Math.min(...ks.map((k) => k.t1 ?? paket.vonT)) })
+    }
 
     const linien = []
     for (const l of Array.isArray(json?.linien) ? json.linien : []) {
-        if (linien.length >= MAX_LINIEN) break
-        let t1 = zeitAus(l?.t1), t2 = zeitAus(l?.t2)
-        let p1 = Number(l?.p1 ?? l?.p), p2 = Number(l?.p2 ?? l?.p1 ?? l?.p)
-        if (t1 != null && t2 == null) { t2 = bisT; p2 = p1 }
-        if (!zeitOk(t1) || !zeitOk(t2)) { verworfen.push({ art: 'linie', grund: 'zeit', inhalt: wort(l?.label, 40) }); continue }
-        if (!preisOk(p1) || !preisOk(p2)) { verworfen.push({ art: 'linie', grund: 'preis', inhalt: wort(l?.label, 40) }); continue }
-        if (t2 < t1) { [t1, t2] = [t2, t1]; [p1, p2] = [p2, p1] }
+        const id = idVon(l?.id)
         const label = wort(l?.label, 40)
-        const grund = wort(l?.grund, 200)
-        if (!textOk(`${label}. ${grund}`)) { verworfen.push({ art: 'linie', grund: 'prognose', inhalt: label }); continue }
-        const art = ['unterstuetzung', 'widerstand', 'trend'].includes(l?.art) ? l.art : (p1 === p2 ? 'unterstuetzung' : 'trend')
-        if (art !== 'trend') {
-            // Unterstützung/Widerstand ist eine waagerechte Marke. Kommen zwei Preise, gilt der
-            // äussere (Widerstand: der höhere, Unterstützung: der tiefere) — die Modelle schreiben
-            // „Widerstand 82.900" und liefern 82 639 → 82 900, was als Schräge ins Nichts lief.
-            const p = art === 'widerstand' ? Math.max(p1, p2) : Math.min(p1, p2)
-            linien.push({ art, t1, p1: p, t2: bisT, p2: p, label, grund })
-            continue
-        }
-        if (iv > 0 && (t2 - t1) / iv < MIN_TREND_KERZEN) { verworfen.push({ art: 'linie', grund: 'trendZuKurz', inhalt: label }); continue }
-        // An den Kerzen prüfen: eine Linie, durch die die Kerzen wachsen, ist kein Widerstand.
-        // Hält sie nicht, kommt die beste echte Linie derselben Seite und Richtung an ihre Stelle.
-        if (Array.isArray(kerzen) && kerzen.length) {
-            const r = richteTrendAus(kerzen, { t1, p1, t2, p2 }, iv)
-            if (!r) { verworfen.push({ art: 'linie', grund: 'trendBricht', inhalt: label }); continue }
-            if (linien.some((x) => x.art === 'trend' && x.t1 === r.t1 && x.t2 === r.t2)) continue
-            linien.push({ art, t1: r.t1, p1: r.p1, t2: r.t2, p2: r.p2, label, grund: r.ersetzt ? wort(`An den Hochs/Tiefs ausgerichtet (${r.beruehrungen} Berührungen, kein Bruch). ${grund}`, 200) : grund, ausgerichtet: r.ersetzt })
-            continue
-        }
-        linien.push({ art, t1, p1, t2, p2, label, grund })
-    }
-
-    const zonen = []
-    for (const z of Array.isArray(json?.zonen) ? json.zonen : []) {
-        if (zonen.length >= MAX_ZONEN) break
-        let tief = Number(z?.tief), hoch = Number(z?.hoch)
-        if (tief > hoch) [tief, hoch] = [hoch, tief]
-        if (!preisOk(tief) || !preisOk(hoch) || tief === hoch) { verworfen.push({ art: 'zone', grund: 'preis', inhalt: wort(z?.label, 40) }); continue }
-        const label = wort(z?.label, 40)
-        const grund = wort(z?.grund, 200)
-        if (!textOk(`${label}. ${grund}`)) { verworfen.push({ art: 'zone', grund: 'prognose', inhalt: label }); continue }
-        // Ohne Angabe entscheidet die Lage zum letzten Kurs (für die Farbe im Chart).
-        const art = ['unterstuetzung', 'widerstand'].includes(z?.art) ? z.art
-            : Number.isFinite(kurs) ? ((tief + hoch) / 2 <= kurs ? 'unterstuetzung' : 'widerstand') : null
-        zonen.push({ art, tief, hoch, label, grund })
+        const k = karte.get(id)
+        if (!k) { verworfen.push({ art: 'linie', grund: 'unbekannteId', inhalt: id || label }); continue }
+        if (linien.some((x) => x.id === id)) continue
+        if (zonenIds.has(id)) { verworfen.push({ art: 'linie', grund: 'doppelt', inhalt: id }); continue }
+        const trend = k.quelle === 'trend'
+        if (!trend && linien.some((x) => x.quelle !== 'trend' && Math.abs(x.p1 - k.preis) < KAND.DECKT_ATR * A)) { verworfen.push({ art: 'linie', grund: 'doppelt', inhalt: id }); continue }
+        if (linien.length >= MAX_LINIEN || (trend && linien.filter((x) => x.quelle === 'trend').length >= MAX_TRENDS)) { verworfen.push({ art: 'linie', grund: 'zuViele', inhalt: id }); continue }
+        const grund = setzeEin(l?.grund)
+        if (grund == null) { verworfen.push({ art: 'linie', grund: 'unbekannteId', inhalt: label || id }); continue }
+        if (!textOk(`${label}. ${grund}`)) { verworfen.push({ art: 'linie', grund: 'prognose', inhalt: label || id }); continue }
+        pruefeZahlen(grund, `linie ${id}`)
+        const basis = { id, quelle: k.quelle, label: label || id, grund: wort(grund, 200), gewicht: gewichtVon(l?.gewicht) }
+        if (trend) linien.push({ ...basis, art: 'trend', t1: k.t1, p1: k.p1, t2: k.t2, p2: k.p2 })
+        else linien.push({ ...basis, art: artNachLage(k.preis), t1: k.t1 ?? paket.vonT, p1: k.preis, t2: paket.bisT, p2: k.preis })
     }
 
     const bedingungen = []
+    const iv = paket.interval || ''
     for (const b of Array.isArray(json?.bedingungen) ? json.bedingungen : []) {
-        if (bedingungen.length >= MAX_BEDINGUNGEN) break
-        const wenn = wort(b?.wenn, 200), dann = wort(b?.dann, 200)
-        if (!wenn || !dann) continue
-        if (!textOk(`Wenn ${wenn}, dann ${dann}.`)) { verworfen.push({ art: 'bedingung', grund: 'prognose', inhalt: wenn }); continue }
-        bedingungen.push({ wenn, dann })
+        const id = idVon(b?.id)
+        const k = karte.get(id)
+        if (!k) { verworfen.push({ art: 'bedingung', grund: 'unbekannteId', inhalt: id }); continue }
+        const richtung = b?.richtung === 'unter' ? 'unter' : b?.richtung === 'ueber' ? 'ueber' : null
+        if (!richtung) { verworfen.push({ art: 'bedingung', grund: 'richtung', inhalt: id }); continue }
+        const schwelle = preisVon(k)
+        let zielId = null
+        if (b?.ziel) {
+            zielId = idVon(b.ziel)
+            const z = karte.get(zielId)
+            if (!z) { verworfen.push({ art: 'bedingung', grund: 'unbekannteId', inhalt: zielId }); continue }
+            const zp = preisVon(z)
+            if (richtung === 'ueber' ? !(zp > schwelle) : !(zp < schwelle)) { verworfen.push({ art: 'bedingung', grund: 'zielGegenRichtung', inhalt: `${id}→${zielId}` }); continue }
+        }
+        if (bedingungen.length >= MAX_BEDINGUNGEN) { verworfen.push({ art: 'bedingung', grund: 'zuViele', inhalt: id }); continue }
+        const dann = setzeEin(b?.dann)
+        if (dann == null || !wort(dann, 200)) { verworfen.push({ art: 'bedingung', grund: 'unbekannteId', inhalt: id }); continue }
+        // Den „wenn"-Teil baut der Code — mit der Zahl, an die die Bedingung gebunden ist.
+        const seiteJetzt = kurs >= schwelle ? 'ueber' : 'unter'
+        const marke = `${zahl(schwelle)} (${id}${k.quelle === 'trend' ? ', Trendlinie' : ''})`
+        const wenn = seiteJetzt === richtung
+            ? `solange ${iv}-Schlüsse ${richtung === 'ueber' ? 'über' : 'unter'} ${marke} bleiben`
+            : `${iv}-Schluss ${richtung === 'ueber' ? 'über' : 'unter'} ${marke}`
+        if (!textOk(`Wenn ${wenn}, dann ${dann}.`)) { verworfen.push({ art: 'bedingung', grund: 'prognose', inhalt: id }); continue }
+        pruefeZahlen(dann, `bedingung ${id}`)
+        bedingungen.push({ wenn, dann: wort(dann, 200), id, richtung, schwelle, zielId })
     }
 
     const leer = !text && !linien.length && !zonen.length && !bedingungen.length
-    return { text, linien, zonen, bedingungen, verworfen, leer }
+    return { text, linien, zonen, bedingungen, verworfen, warnungen, leer }
+}
+
+/** Kompakte Kandidatenliste für den Reiter (was zur Wahl stand). */
+export function kandidatenKurz(paket) {
+    if (!paket) return null
+    return {
+        kurs: paket.kurs, atr: paket.atr, intervalHtf: paket.intervalHtf, spanne: paket.spanne, struktur: paket.struktur,
+        kandidaten: paket.kandidaten.slice(0, 24).map((k) => ({
+            id: k.id, quelle: k.quelle, name: k.name || null,
+            preis: k.quelle === 'trend' ? null : k.preis, tief: k.tief ?? null, hoch: k.hoch ?? null,
+            t1: k.t1 ?? null, p1: k.p1 ?? null, t2: k.t2 ?? null, p2: k.p2 ?? null, wertJetzt: k.wertJetzt ?? null,
+            beruehrungen: k.beruehrungen ?? null, durchquerungen: k.durchquerungen ?? null, letzteT: k.letzteT ?? null,
+            abstandAtr: k.abstandAtr ?? null, rolle: k.rolle ?? null, deckt: k.deckt ?? null,
+        })),
+    }
 }
 
 // ── Erzeugen ─────────────────────────────────────────────────────────────
@@ -280,11 +314,17 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
     }
 
     const lauf = (async () => {
-        const iv = timeframeMs(interval)
-        const { kerzen, zeichnungen, hebel, trades, englisch, empfehlungen } = await ladeChartDaten({ symbol, interval, markt })
+        const intervalHtf = HTF_VON[interval] || null
+        const [{ kerzen, zeichnungen, hebel, trades, englisch, empfehlungen }, kerzenHtf] = await Promise.all([
+            ladeChartDaten({ symbol, interval, markt }),
+            intervalHtf ? getClosedCandles(symbol, intervalHtf, HTF_KERZEN, { market: markt }).catch(() => null) : null,
+        ])
         if (kerzen.length < 30) throw new Error('Zu wenige Kerzen für eine Analyse')
         const vonT = kerzen[0].t
         const bisT = kerzen[kerzen.length - 1].t
+        // Der Code vermisst, das Modell wählt aus (chart-kandidaten.js).
+        const paket = baueKandidaten({ kerzen, kerzenHtf, interval, intervalHtf, zeichnungen })
+        if (!paket) throw new Error('Zu wenige Kerzen für eine Vermessung')
 
         const cfg = await ladeLlmConfigFuerAufgabe('chart-analyse')
         // Die bestellte Antwort ist lang (Linien mit Gründen). Nach Textlänge
@@ -293,7 +333,7 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
         // abgeschnittenem JSON einmal mit doppeltem Deckel.
         cfg.maxTokens = 3000
         const system = systemText(englisch, empfehlungen)
-        const user = baueChartEingabe({ symbol, interval, kerzen, zeichnungen, hebelzonen: hebel, trades })
+        const user = baueChartEingabe({ symbol, interval, paket, hebelzonen: hebel, trades })
         const buchung = { zweck: 'chart-analyse', ausloeser: 'manuell', bezug: { typ: 'symbol', id: symbol } }
         let antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000, ...buchung })
         // Kosten beider Aufrufe zusammen anzeigen — bei abgeschnittener Antwort wurde der erste auch bezahlt.
@@ -303,15 +343,13 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
             antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000, ...buchung })
             if (antwort.costUsd != null) kosten = (kosten ?? 0) + antwort.costUsd
         }
-        const preise = kerzen.flatMap((k) => [k.h, k.l])
-        const ergebnis = pruefeChartAntwort(antwort.json, {
-            vonT, bisT, iv, preisMin: Math.min(...preise), preisMax: Math.max(...preise), kurs: kerzen[kerzen.length - 1]?.c, kerzen, empfehlungen,
-        })
+        const ergebnis = pruefeChartAuswahl(antwort.json, paket, { empfehlungen })
         for (const v of ergebnis.verworfen) logWarn('chart-ki', `${symbol} ${interval}: ${v.art} verworfen (${v.grund}) — ${v.inhalt}`)
+        for (const w of ergebnis.warnungen) logWarn('chart-ki', `${symbol} ${interval}: Zahl ${w.zahl} in ${w.wo} passt zu keiner Marke`)
         if (ergebnis.leer) throw new Error('Die KI hat keine verwertbare Analyse geliefert')
 
         const payload = {
-            symbol, interval, ...ergebnis, kerzenVon: vonT, kerzenBis: bisT,
+            symbol, interval, ...ergebnis, kerzenVon: vonT, kerzenBis: bisT, auswahl: kandidatenKurz(paket),
             markt, provider: cfg.provider, model: cfg.model, costUsd: kosten,
         }
         cache.set(schluessel, { ts: Date.now(), payload })

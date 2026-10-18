@@ -9,8 +9,11 @@ export const KI_FARBEN = { unterstuetzung: '#26a69a', widerstand: '#ef5350', tre
 const FARBE = KI_FARBEN.trend
 const farbeVon = (art) => KI_FARBEN[art] || FARBE
 
+// „Label (N4)" — die ID verbindet die Linie im Chart mit dem Eintrag im Reiter.
+const mitId = (label, id) => (id && !String(label || '').includes(id) ? `${label || ''} (${id})`.trim() : label)
+
 export function linieAlsZeichnung(l) {
-    const stil = { farbe: farbeVon(l.art), breite: 1, strich: 'gestrichelt', text: l.label }
+    const stil = { farbe: farbeVon(l.art), breite: l.gewicht === 'stark' ? 2 : 1, strich: 'gestrichelt', text: mitId(l.label, l.id) }
     // Waagerechte Marke: als Strahl ab ihrem ersten Punkt — sie gilt ab dort. Unterstützung und
     // Widerstand sind IMMER waagerecht, auch wenn eine ältere Analyse (vor 18.10.2026) zwei
     // Preise trägt: dann der äussere, so wie der Server es heute ablegt.
@@ -22,11 +25,29 @@ export function linieAlsZeichnung(l) {
 }
 
 export function zoneAlsZeichnung(z, ab, bis) {
+    // Ab der ersten Berührung (neuere Analysen tragen `vonT`), sonst über den ganzen Bereich.
+    const von = Number.isFinite(z.vonT) ? z.vonT : ab
     return {
         typ: 'rechteck',
-        punkte: [{ t: ab, p: z.tief }, { t: bis, p: z.hoch }],
-        stil: { farbe: farbeVon(z.art), breite: 1, strich: 'gestrichelt', fuellung: true, rechts: true, text: z.label },
+        punkte: [{ t: von, p: z.tief }, { t: Math.max(bis, von), p: z.hoch }],
+        stil: { farbe: farbeVon(z.art), breite: z.gewicht === 'stark' ? 2 : 1, strich: 'gestrichelt', fuellung: true, rechts: true, text: mitId(z.label, (z.ids || []).join('+')) },
     }
+}
+
+/**
+ * Was zur Wahl stand, aber nicht gewählt wurde — grau gepunktet, nur auf
+ * Wunsch („Alle Kandidaten zeigen"). So sieht man, ob die Auswahl der KI
+ * etwas Wichtiges ausgelassen hat.
+ */
+export function kandidatenVorschau(analyse) {
+    const k = analyse?.auswahl?.kandidaten
+    if (!Array.isArray(k)) return []
+    const gewaehlt = new Set([...(analyse.linien || []).map((l) => l.id), ...(analyse.zonen || []).flatMap((z) => z.ids || [])])
+    const stil = (text) => ({ farbe: '#8a9199', breite: 1, strich: 'gepunktet', text })
+    return k.filter((x) => !gewaehlt.has(x.id)).map((x, i) => {
+        if (x.quelle === 'trend') return { id: -300 - i, typ: 'trendlinie', punkte: [{ t: x.t1, p: x.p1 }, { t: x.t2, p: x.p2 }], stil: { ...stil(x.id), rechts: true } }
+        return { id: -300 - i, typ: 'strahlH', punkte: [{ t: x.t1 ?? analyse.kerzenVon, p: x.preis }], stil: stil(x.name ? `${x.id} ${x.name}` : x.id) }
+    })
 }
 
 /** Alles aus einer Analyse als Vorschau (negative ids: nie verwechselbar mit gespeicherten). */
@@ -37,5 +58,6 @@ export function kiVorschau(analyse) {
     return [
         ...(analyse.linien || []).map((l, i) => ({ id: -100 - i, ...linieAlsZeichnung(l) })),
         ...(analyse.zonen || []).map((z, i) => ({ id: -200 - i, ...zoneAlsZeichnung(z, ab, bis) })),
+        ...(analyse._alle ? kandidatenVorschau(analyse) : []),
     ]
 }
