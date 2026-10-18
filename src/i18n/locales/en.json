@@ -5022,7 +5022,7 @@
       "position": "Long/short position",
       "text": "Text / note",
       "messen": "Measure",
-      "magnet": "Magnet (snaps to open/high/low/close)",
+      "magnet": "Magnet (snaps to open/high/low/close; hold Ctrl to invert)",
       "allesVerstecken": "Hide/show all drawings",
       "alleLoeschen": "Delete all drawings on this symbol"
     },

@@ -89,6 +89,7 @@ console.log('\nFibonacci, Position, Magnet, Messen\n')
     check('Magnet rastet aufs Hoch ein', magnet(104.6, k, 1) === 105)
     check('Magnet ausserhalb der Toleranz lässt den Preis', magnet(101.5, k, 1) === 101.5)
     check('Magnet ohne Kerze lässt den Preis', magnet(50, null, 10) === 50)
+    check('Starker Magnet (Toleranz ∞) rastet immer auf das nächste OHLC', magnet(101.5, k, Infinity) !== 101.5 && [k.o, k.h, k.l, k.c].includes(magnet(101.5, k, Infinity)))
 }
 {
     const m = messung({ t: t0, p: 100 }, { t: t0 + 5 * H, p: 110 }, H)

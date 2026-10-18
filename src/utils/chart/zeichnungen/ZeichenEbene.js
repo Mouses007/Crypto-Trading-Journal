@@ -79,6 +79,13 @@ export class ZeichenEbene {
         this._oben = (e) => this.zeigerOben(e)
         this._schlucken = (e) => { if (this.verschlucke) { e.stopPropagation(); e.preventDefault() } }
         this._doppel = (e) => this.doppelklick(e)
+        this._taste = (e) => this.taste(e)
+        this._raus = () => { this.letzterZeiger = null; if (this.fang) { this.fang = null; this.requestUpdate() } }
+        this.fang = null
+        this.letzterZeiger = null
+        window.addEventListener('keydown', this._taste)
+        window.addEventListener('keyup', this._taste)
+        huelle.addEventListener('pointerleave', this._raus)
         huelle.addEventListener('pointerdown', this._unten, true)
         huelle.addEventListener('pointermove', this._bewegt, true)
         huelle.addEventListener('pointerup', this._oben, true)
@@ -114,6 +121,9 @@ export class ZeichenEbene {
         h.removeEventListener('mousedown', this._schlucken, true)
         h.removeEventListener('touchstart', this._schlucken, true)
         h.removeEventListener('dblclick', this._doppel, true)
+        h.removeEventListener('pointerleave', this._raus)
+        window.removeEventListener('keydown', this._taste)
+        window.removeEventListener('keyup', this._taste)
         try { this.serie.detachPrimitive(this) } catch { /* Chart schon weg */ }
     }
 
@@ -138,6 +148,7 @@ export class ZeichenEbene {
     setzeWerkzeug(typ) {
         this.werkzeugTyp = typ || null
         this.entwurf = null
+        if (!typ) this.fang = null
         if (typ) this.auswahlId = null
         this.requestUpdate()
     }
@@ -147,7 +158,11 @@ export class ZeichenEbene {
         this.requestUpdate()
     }
 
-    setzeMagnet(an) { this.magnetAn = !!an }
+    setzeMagnet(an) {
+        this.magnetAn = !!an
+        if (!this.magnetAn) this.fang = null
+        this.requestUpdate()
+    }
 
     setzeTemporaer(liste) {
         this.temporaer = liste || []
@@ -172,19 +187,56 @@ export class ZeichenEbene {
     }
     vonY(y) { return this.serie.coordinateToPrice(y) }
 
-    /** Punkt aus Bildschirmkoordinaten; Zeit rastet auf Kerzen, Preis optional per Magnet. */
-    punktAus(x, y) {
+    /**
+     * Magnet für dieses Ereignis: Strg (Mac: ⌘) kehrt den Schalter um, solange
+     * die Taste gehalten wird — wie bei TradingView.
+     */
+    magnetFuer(e) {
+        const strg = !!(e && (e.ctrlKey || e.metaKey))
+        return this.magnetAn !== strg
+    }
+
+    /**
+     * Punkt aus Bildschirmkoordinaten; Zeit rastet auf Kerzen, Preis per Magnet
+     * auf O/H/L/C der Kerze unter dem Zeiger. Der Magnet ist „stark": er rastet
+     * immer auf den nächsten der vier Werte — mit 14 px Fangweite rastete er
+     * praktisch nie und sah aus, als wäre er aus.
+     */
+    punktAus(x, y, magnetAn = this.magnetAn) {
         let L = this.chart.timeScale().coordinateToLogical(x)
         if (L == null) return null
         L = Math.round(L)
         const t = logischZuZeit(L, this.zeiten, this.iv)
         let p = this.vonY(y)
         if (p == null) return null
-        if (this.magnetAn && L >= 0 && L < this.kerzen.length) {
-            const toleranz = Math.abs(this.vonY(y + 14) - p)
-            p = magnet(p, this.kerzen[L], toleranz)
-        }
+        if (magnetAn && this.aufKerze(L)) p = magnet(p, this.kerzen[L], Infinity)
         return { t, p }
+    }
+
+    aufKerze(L) { return L >= 0 && L < this.kerzen.length }
+
+    /** Fangpunkt unter dem Zeiger zeigen, solange gezeichnet wird und der Magnet wirkt. */
+    merkeFang(x, y, e) {
+        this.letzterZeiger = { x, y }
+        const zeichnet = !!(this.werkzeugTyp || this.entwurf || (this.ziehen && this.ziehen.anker != null))
+        const L = this.chart.timeScale().coordinateToLogical(x)
+        const neu = zeichnet && this.magnetFuer(e) && L != null && this.aufKerze(Math.round(L)) ? this.punktAus(x, y, true) : null
+        if ((neu?.t !== this.fang?.t) || (neu?.p !== this.fang?.p)) {
+            this.fang = neu
+            this.requestUpdate()
+        }
+    }
+
+    /** Strg gedrückt/losgelassen ohne Mausbewegung: Fangpunkt und Entwurf nachziehen. */
+    taste(e) {
+        if (e.key !== 'Control' && e.key !== 'Meta') return
+        const z = this.letzterZeiger
+        if (!z) return
+        this.merkeFang(z.x, z.y, e)
+        if (this.entwurf) {
+            const pt = this.punktAus(z.x, z.y, this.magnetFuer(e))
+            if (pt) { this.entwurf.punkte[this.entwurf.punkte.length - 1] = pt; this.requestUpdate() }
+        }
     }
 
     lokal(e) {
@@ -314,7 +366,7 @@ export class ZeichenEbene {
             this.verschlucke = true
             e.stopPropagation()
             e.preventDefault()
-            this.klick(x, y)
+            this.klick(x, y, this.magnetFuer(e))
             return
         }
         if (this.messErgebnis) { this.messErgebnis = null; this.requestUpdate() }
@@ -337,10 +389,12 @@ export class ZeichenEbene {
     }
 
     zeigerBewegt(e) {
-        const { x, y } = this.lokal(e)
+        const { x, y, innen } = this.lokal(e)
+        if (innen || this.ziehen) this.merkeFang(x, y, e)
+        else if (this.fang) { this.fang = null; this.requestUpdate() }
         if (this.ziehen) {
             e.stopPropagation()
-            const neu = this.gezogen(x, y, e.shiftKey)
+            const neu = this.gezogen(x, y, e.shiftKey, this.magnetFuer(e))
             if (neu) {
                 this.ziehen.bewegt = true
                 this.vorschau.set(this.ziehen.id, neu)
@@ -349,7 +403,7 @@ export class ZeichenEbene {
             return
         }
         if (this.entwurf) {
-            const pt = this.punktAus(x, y)
+            const pt = this.punktAus(x, y, this.magnetFuer(e))
             if (!pt) return
             const pk = this.entwurf.punkte
             if (e.shiftKey && pk.length > 1) pt.p = pk[pk.length - 2].p
@@ -381,7 +435,7 @@ export class ZeichenEbene {
     }
 
     /** Neue Punkte beim Ziehen: ganzer Körper oder ein Anker. */
-    gezogen(x, y, shift) {
+    gezogen(x, y, shift, magnetAn = this.magnetAn) {
         const z = this.ziehen
         const orig = z.orig
         if (z.anker == null) {
@@ -395,7 +449,7 @@ export class ZeichenEbene {
                 p: z.typ === 'vertikale' ? q.p : q.p + dp,
             }))
         }
-        const pt = this.punktAus(x, y)
+        const pt = this.punktAus(x, y, magnetAn)
         if (!pt) return null
         const neu = orig.map((q) => ({ ...q }))
         if (z.typ === 'position') {
@@ -412,8 +466,8 @@ export class ZeichenEbene {
         return neu
     }
 
-    klick(x, y) {
-        const pt = this.punktAus(x, y)
+    klick(x, y, magnetAn = this.magnetAn) {
+        const pt = this.punktAus(x, y, magnetAn)
         if (!pt) return
         const def = werkzeug(this.werkzeugTyp)
         if (!def) return
@@ -463,6 +517,19 @@ export class ZeichenEbene {
         }
         if (this.entwurf) this.zeichneEine(ctx, { id: -1, typ: this.entwurf.typ, stil: {} }, this.entwurfPunkte(), breite, hoehe, true)
         if (this.messErgebnis) this.zeichneEine(ctx, { id: -2, typ: 'messen', stil: {} }, this.messErgebnis, breite, hoehe, false)
+        if (this.fang) {
+            // Fangpunkt: hier landet der nächste Klick, wenn der Magnet wirkt.
+            const x = this.zuX(this.fang.t), y = this.zuY(this.fang.p)
+            if (x != null && y != null) {
+                ctx.beginPath()
+                ctx.arc(x, y, 4.5, 0, Math.PI * 2)
+                ctx.fillStyle = 'rgba(1,180,255,0.25)'
+                ctx.fill()
+                ctx.lineWidth = 1.5
+                ctx.strokeStyle = '#01b4ff'
+                ctx.stroke()
+            }
+        }
         ctx.restore()
     }
 
