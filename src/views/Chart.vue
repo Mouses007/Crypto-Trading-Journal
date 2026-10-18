@@ -25,6 +25,7 @@ import AlarmReiter from '../components/chart/AlarmReiter.vue'
 import KiReiter from '../components/chart/KiReiter.vue'
 import AlarmDialog from '../components/chart/AlarmDialog.vue'
 import MomentumBox from '../components/chart/MomentumBox.vue'
+import VwapVectorSchalter from '../components/chart/VwapVectorSchalter.vue'
 import { alarme, abonniereAlarme, neueAusloesungen, quittiere } from '../stores/chartAlarme.js'
 import { zeichnungenVon, aendere as zeichnungAendern, loesche as zeichnungLoeschen, macheRueckgaengig, macheWiederholen, fehlerMeldung } from '../stores/chartZeichnungen.js'
 import { neueInstanz, saubereParams, INDIKATOREN } from '../utils/chart/indikatorRegister.js'
@@ -344,6 +345,13 @@ function indikatorHinzu(typ) {
     dialog.value = null
 }
 
+/** Schnellschalter VWAP Vector: einzelne Parameter einer Instanz des aktiven Charts. */
+function vvSchalten(id, patch) {
+    const p = aktivesPanel.value
+    if (!p) return
+    p.indikatoren = (p.indikatoren || []).map((x) => (x.id === id ? { ...x, params: { ...x.params, ...patch } } : x))
+}
+
 function indikatorSpeichern(instanz) {
     const p = daten.value.panels[dialog.value.panel]
     p.indikatoren = p.indikatoren.map((x) => (x.id === instanz.id ? instanz : x))
@@ -598,6 +606,7 @@ watch(sichtbareAnzahl, async () => {
                         :sichtbar-bis="() => aktivesPanelRef?.sichtbarerZeitraum()?.bis"
                         @vorschau="(a) => aktivesPanelRef?.setzeKiVorschau(a)" />
                     </div>
+                    <VwapVectorSchalter class="vvSchalter" :panel="aktivesPanel" @aendere="vvSchalten" />
                     <!-- Momentum-Box  unter dem Reiter: Trenner ziehen = Höhe, Pfeil = ein-/ausklappen. -->
                     <div class="boxTrenner" :class="{ zu: !boxOffen }" @pointerdown="boxZiehenStart" @pointermove="boxZiehen"
                         @pointerup="boxZiehenEnde" @pointercancel="boxZiehenEnde" @dblclick="boxHoeheZurueck"
@@ -786,6 +795,11 @@ watch(sichtbareAnzahl, async () => {
     color: var(--grey-text);
     padding: 0 4px;
     cursor: pointer;
+}
+
+.vvSchalter {
+    flex-shrink: 0;
+    margin: 0 8px;
 }
 
 .boxBereich {
