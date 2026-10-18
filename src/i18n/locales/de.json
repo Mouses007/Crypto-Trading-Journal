@@ -5343,7 +5343,7 @@
     },
     "ki": {
       "erstellen": "KI-Analyse für {symbol} {tf}",
-      "hinweis": "Kostet einen KI-Aufruf (Anbieter unter Einstellungen → KI → „Chart-Analyse\"). Der Code vermisst den Chart — Niveaus aus Hochs/Tiefs, Volumenprofil, ungebrochene Trendlinien, höhere Zeiteinheit —, die KI wählt daraus aus und erklärt. Vorschläge erscheinen gestrichelt; übernehmen macht sie zu eigenen Zeichnungen.",
+      "hinweis": "Vorschläge erscheinen gestrichelt; übernehmen macht sie zu eigenen Zeichnungen.",
       "bedingungen": "Bedingungen",
       "wenn": "Wenn",
       "vorschlaege": "Vorschläge",
