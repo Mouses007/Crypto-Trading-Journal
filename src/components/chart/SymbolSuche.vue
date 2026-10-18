@@ -13,10 +13,14 @@ import axios from 'axios'
 import { loadSymbolMeta } from '../../utils/liveSymbols.js'
 
 const props = defineProps({
-    symbol: { type: String, required: true },
+    symbol: { type: String, default: '' },
     markt: { type: String, default: 'futures' },
+    // Watchlist: ohne eigenen Knopf (geöffnet von aussen) und als Teil der Leiste statt schwebend —
+    // eine schwebende Liste würde am Rand der Seitenleiste abgeschnitten.
+    ohneKnopf: { type: Boolean, default: false },
+    eingebettet: { type: Boolean, default: false },
 })
-const emit = defineEmits(['waehle'])
+const emit = defineEmits(['waehle', 'zu'])
 const { t } = useI18n()
 
 const offen = ref(false)
@@ -105,18 +109,18 @@ onMounted(async () => {
     } catch { /* ohne Kennzeichen weiter */ }
 })
 
-defineExpose({ oeffne })
+defineExpose({ oeffne, schliesse: () => { offen.value = false }, istOffen: () => offen.value })
 </script>
 
 <template>
     <div class="symbolSuche">
-        <button class="knopf" @click="oeffne" :title="t('chart.symbolSuchen')">
+        <button v-if="!ohneKnopf" class="knopf" @click="oeffne" :title="t('chart.symbolSuchen')">
             <i class="uil uil-search"></i>
             <span class="sym">{{ symbol }}</span>
             <span class="markt">{{ markt === 'spot' ? 'Spot' : 'Perp' }}</span>
         </button>
-        <div v-if="offen" class="hintergrund" @click="offen = false"></div>
-        <div v-if="offen" class="liste">
+        <div v-if="offen && !eingebettet" class="hintergrund" @click="offen = false"></div>
+        <div v-if="offen" class="liste" :class="{ eingebettet }">
             <input ref="feld" v-model="suche" class="form-control form-control-sm" :placeholder="t('chart.symbolPlatzhalter')"
                 @keydown="taste" />
             <div class="zeilen">
@@ -179,6 +183,13 @@ defineExpose({ oeffne })
     border-radius: 8px;
     padding: 8px;
     box-shadow: var(--shadow-sm);
+}
+
+.liste.eingebettet {
+    position: static;
+    width: 100%;
+    max-width: none;
+    box-shadow: none;
 }
 
 .zeilen {

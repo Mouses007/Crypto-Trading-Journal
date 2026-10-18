@@ -4864,7 +4864,7 @@
     "watchlistNeu": "New watchlist",
     "watchlistLoeschen": "Delete watchlist",
     "watchlistHinzu": "Add {symbol}",
-    "watchlistLeer": "Empty — pick a symbol and add it above.",
+    "watchlistLeer": "Still empty — use \"Add coin\" below or add the chart symbol above.",
     "watchlistStandard": "Favourites",
     "arbeitsplatzFehler": "Could not load workspace",
     "indikatoren": "Indicators",
@@ -5421,6 +5421,8 @@
       "tipStruktur": "BOS = break of a high/low WITH the trend, CHoCH = break AGAINST it. Then the broken level, how many candles ago, and the position relative to EMA50 — computed on 4h.",
       "tipTf": "Where is the wave of this timeframe? Long zone below −50, short zone above +50, \"near\" = 70 % of the way. Closed candles only.",
       "zeitebenen": "Timeframes"
-    }
+    },
+    "watchlistCoinHinzu": "Add coin",
+    "watchlistSucheZu": "Close search"
   }
 }

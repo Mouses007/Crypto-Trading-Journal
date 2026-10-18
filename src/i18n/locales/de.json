@@ -4864,7 +4864,7 @@
     "watchlistNeu": "Neue Watchlist",
     "watchlistLoeschen": "Watchlist löschen",
     "watchlistHinzu": "{symbol} hinzufügen",
-    "watchlistLeer": "Noch leer — Symbol wählen und oben hinzufügen.",
+    "watchlistLeer": "Noch leer — unten „Coin hinzufügen\" oder das Symbol des Charts oben hinzufügen.",
     "watchlistStandard": "Favoriten",
     "arbeitsplatzFehler": "Arbeitsstand nicht ladbar",
     "indikatoren": "Indikatoren",
@@ -5421,6 +5421,8 @@
       "tipStruktur": "BOS = Bruch eines Hochs/Tiefs IN Trendrichtung, CHoCH = Bruch GEGEN die bisherige Richtung. Dahinter das gebrochene Niveau, wie viele Kerzen her, und die Lage zur EMA50 — gerechnet auf 4h.",
       "tipTf": "Wo steht die Welle dieser Zeitebene? Long-Zone unter −50, Short-Zone über +50, „fast\" = 70 % des Weges dorthin. Gelesen nur über geschlossene Kerzen.",
       "zeitebenen": "Zeitebenen"
-    }
+    },
+    "watchlistCoinHinzu": "Coin hinzufügen",
+    "watchlistSucheZu": "Suche schliessen"
   }
 }

@@ -9,6 +9,7 @@ import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { BinanceStream, buildMiniTickerUrl } from '../../utils/binanceStream.js'
 import axios from 'axios'
+import SymbolSuche from './SymbolSuche.vue'
 
 const props = defineProps({
     watchlists: { type: Array, default: () => [] },
@@ -79,6 +80,25 @@ function fuegeHinzu() {
     emit('aendere', liste.value.id, [...symbole.value, { symbol: props.aktivesSymbol, markt: props.aktiverMarkt }])
 }
 
+/*
+ * „+ Coin hinzufügen" unten in der Liste: Suche öffnen, gewählter Coin kommt in
+ * die Liste — der Chart wechselt NICHT (dafür ist ein Klick auf die Zeile da).
+ */
+const suche = ref(null)
+const sucheOffen = ref(false)
+function oeffneSuche() {
+    // Nach der Suche fragen, nicht dem eigenen Merker: Esc schliesst sie von innen.
+    if (suche.value?.istOffen()) { suche.value.schliesse(); sucheOffen.value = false; return }
+    sucheOffen.value = true
+    suche.value?.oeffne()
+}
+function ausSuche(s) {
+    sucheOffen.value = false
+    if (!liste.value) return
+    if (symbole.value.some((x) => x.symbol === s.symbol && x.markt === s.markt)) return
+    emit('aendere', liste.value.id, [...symbole.value, { symbol: s.symbol, markt: s.markt }])
+}
+
 function entferne(s) {
     emit('aendere', liste.value.id, symbole.value.filter((x) => !(x.symbol === s.symbol && x.markt === s.markt)))
 }
@@ -130,11 +150,32 @@ function loescheListe() {
                 </span>
             </div>
             <div v-if="!symbole.length" class="leer">{{ t('chart.watchlistLeer') }}</div>
+            <button class="coinHinzu" :class="{ an: sucheOffen }" :disabled="!liste" @click="oeffneSuche">
+                <i :class="sucheOffen ? 'uil uil-times' : 'uil uil-plus'"></i> {{ t(sucheOffen ? 'chart.watchlistSucheZu' : 'chart.watchlistCoinHinzu') }}
+            </button>
+            <SymbolSuche ref="suche" ohne-knopf eingebettet @waehle="ausSuche" />
         </div>
     </div>
 </template>
 
 <style scoped>
+.coinHinzu {
+    width: 100%;
+    margin-top: 6px;
+    padding: 5px;
+    background: transparent;
+    border: 1px dashed var(--white-18, rgba(255, 255, 255, 0.18));
+    border-radius: 6px;
+    color: var(--grey-text);
+    font-size: 12px;
+}
+
+.coinHinzu:hover:not(:disabled),
+.coinHinzu.an {
+    color: var(--blue-color);
+    border-color: var(--blue-color);
+}
+
 .watchlist {
     display: flex;
     flex-direction: column;
