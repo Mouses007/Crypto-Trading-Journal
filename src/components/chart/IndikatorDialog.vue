@@ -7,6 +7,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { INDIKATOREN, saubereParams, kurzname } from '../../utils/chart/indikatorRegister.js'
+import FarbWahl from './FarbWahl.vue'
 
 const props = defineProps({
     instanz: { type: Object, default: null },    // null = hinzufügen
@@ -158,8 +159,8 @@ onMounted(async () => {
                                             :title="t('chart.indParam.' + p.key)" />
                                         <input v-else-if="p.typ === 'schalter'" v-model="entwurf.params[p.key]" type="checkbox"
                                             class="form-check-input schalter" :title="t('chart.indParam.' + p.key)" />
-                                        <input v-else-if="p.typ === 'farbe'" v-model="entwurf.params[p.key]" type="color"
-                                            :title="t('chart.indParam.' + p.key)" />
+                                        <FarbWahl v-else-if="p.typ === 'farbe'" v-model="entwurf.params[p.key]"
+                                            :titel="t('chart.indParam.' + p.key)" />
                                         <select v-else v-model="entwurf.params[p.key]" class="form-select form-select-sm wahl"
                                             :title="t('chart.indParam.' + p.key)">
                                             <option v-for="o in p.optionen" :key="o" :value="o">{{ p.roh ? o : t('chart.indWahl.' + o) }}</option>
@@ -170,10 +171,10 @@ onMounted(async () => {
                         </div>
                     </section>
                     <div v-if="def.ausgaben.length" class="trenner">{{ t('chart.farben') }}</div>
-                    <label v-for="a in def.ausgaben" :key="a.key" class="zeile">
+                    <div v-for="a in def.ausgaben" :key="a.key" class="zeile">
                         <span>{{ t('chart.indAusgabe.' + a.key) }}</span>
-                        <input type="color" :value="hexFuer(farbeVon(a))" @input="setzeFarbe(a.key, $event.target.value)" />
-                    </label>
+                        <FarbWahl :model-value="hexFuer(farbeVon(a))" :titel="t('chart.indAusgabe.' + a.key)" @update:model-value="(f) => setzeFarbe(a.key, f)" />
+                    </div>
                 </div>
                 <div class="fuss">
                     <button class="btn btn-sm btn-outline-secondary" @click="standard">{{ t('chart.standard') }}</button>
