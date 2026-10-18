@@ -424,7 +424,7 @@ onBeforeMount(async () => {
 
 <template>
     <SpinnerLoadingPage />
-    <div class="row mt-2">
+    <div class="row mt-2 dashKompakt">
 
         <div v-show="!spinnerLoadingPage">
             <div v-if="!hasData">
@@ -1114,6 +1114,43 @@ onBeforeMount(async () => {
 
 <style scoped>
 /* .card-config-* — global in style-dark.css, siehe dort. */
+
+/*
+ * Kompaktere Karten (nur Dashboard; .dailyCard/.chartClass sind global und
+ * bleiben auf den anderen Seiten wie sie sind): weniger Innenabstand,
+ * kleinere Überschriften und Kennzahlen, niedrigere Diagramme. Inline-Höhen
+ * einzelner Diagramme (Heatmap, Performance, Ringe) bleiben unberührt.
+ */
+.dashKompakt :deep(.dailyCard) {
+    padding: 0.6em 0.75em;
+}
+.dashKompakt :deep(.dailyCard h6) {
+    font-size: 0.9rem;
+    margin-bottom: 0.35rem;
+}
+/* nur ab Desktop — Tablet/Handy haben in style-dark.css schon eigene, kleinere Höhen */
+@media (min-width: 992px) {
+    .dashKompakt :deep(.chartClass) {
+        height: 300px;
+    }
+}
+.dashKompakt :deep(.chartIdCardClass) {
+    height: 110px;
+}
+.dashKompakt :deep(.fs-2) {
+    font-size: 1.45rem !important;
+}
+.dashKompakt :deep(.fs-5) {
+    font-size: 0.95rem !important;
+}
+.dashKompakt :deep(.mb-3) {
+    margin-bottom: 0.6rem !important;
+}
+.dashKompakt :deep(.dailyCard .row.py-1),
+.dashKompakt :deep(.dailyCard .py-1) {
+    padding-top: 0.15rem !important;
+    padding-bottom: 0.15rem !important;
+}
 @keyframes ctj-spin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
