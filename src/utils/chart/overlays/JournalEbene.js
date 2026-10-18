@@ -2,8 +2,9 @@
  * Eigene Trades im Chart — das, was TradingView nicht hat.
  *
  * Je geschlossenem Trade: Pfeil am Einstieg, Punkt am Ausstieg, eine
- * Verbindungslinie in der Farbe des Ergebnisses, Anfangs-Stop und Ziel als
- * kurze Stufen über die Laufzeit, Teil-Fills als kleine Punkte und am Ausstieg
+ * Verbindungslinie in der Farbe des Ergebnisses, Stop und Ziel als Stufen
+ * über die Laufzeit — mit jedem Setzen, Verschieben und Entfernen aus dem
+ * Bitunix-Verlauf (`tpslStufen`), ausgelöste als ✕ —, Teil-Fills als kleine Punkte und am Ausstieg
  * das Ergebnis in R (wenn ein Stop bekannt ist) und in USDT.
  *
  * Offene Positionen zeichnet diese Ebene NICHT selbst: dafür nimmt das Panel
@@ -14,6 +15,7 @@
  * Zeiten in ms; Umrechnung über dieselbe Geometrie wie die Zeichnungen.
  */
 import { ereignisZuLogisch, logischZuX, abstandZuStrecke } from '../zeichnungen/geometrie.js'
+import { tpslStufen } from '../tpslStufen.js'
 
 const GRUEN = '#26a69a'
 const ROT = '#ff6960'
@@ -111,18 +113,45 @@ export class JournalEbene {
         const hervor = this.hervor === tr.id
         const xEnde = ax ?? ex + 30
 
-        // Anfangs-Stop und Ziel als Stufen über die Laufzeit.
-        const stufe = (preis, f) => {
-            const y = this.zuY(preis)
-            if (y == null) return
+        // Stop und Ziel als Stufen über die Laufzeit: jede Änderung aus dem
+        // Bitunix-Verlauf eine eigene Stufe, senkrecht verbunden. Ohne Verlauf
+        // nur Anfangs-Stop und Ziel.
+        const SL_F = 'rgba(255,105,96,0.75)', TP_F = 'rgba(38,166,154,0.75)'
+        const strich = (x1, y1, x2, y2, f, muster) => {
             ctx.strokeStyle = f
-            ctx.lineWidth = 1
-            ctx.setLineDash([4, 3])
-            ctx.beginPath(); ctx.moveTo(ex, y); ctx.lineTo(xEnde, y); ctx.stroke()
+            ctx.lineWidth = hervor ? 1.5 : 1
+            ctx.setLineDash(muster)
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
             ctx.setLineDash([])
         }
-        if (tr.anfangsStop) stufe(tr.anfangsStop, 'rgba(255,105,96,0.7)')
-        if (tr.tp) stufe(tr.tp, 'rgba(38,166,154,0.7)')
+        const ende = tr.ausstieg?.t ?? Date.now()
+        const { stufen, ausgeloest } = tpslStufen(tr.tpslVerlauf, tr.einstieg.t, ende)
+        if (stufen.length) {
+            const letzte = {}
+            for (const s of stufen) {
+                const x1 = this.zuX(s.von), x2 = this.zuX(s.bis) ?? xEnde, y = this.zuY(s.preis)
+                if (x1 == null || y == null) continue
+                const f = s.art === 'SL' ? SL_F : TP_F
+                strich(x1, y, x2, y, f, [4, 3])
+                const v = letzte[s.art]
+                if (v && v.bis === s.von) strich(x1, v.y, x1, y, f, [1, 2])
+                if (s.anteil != null && (hervor || x2 - x1 > 40)) {
+                    ctx.fillStyle = f
+                    ctx.fillText(`${Math.round(s.anteil * 100)} %`, x1 + 3, y - 3)
+                }
+                letzte[s.art] = { bis: s.bis, y }
+            }
+            for (const a of ausgeloest) {
+                const x = this.zuX(a.t), y = this.zuY(a.preis)
+                if (x == null || y == null) continue
+                const f = a.art === 'SL' ? ROT : GRUEN
+                strich(x - 4, y - 4, x + 4, y + 4, f, [])
+                strich(x - 4, y + 4, x + 4, y - 4, f, [])
+            }
+        } else {
+            if (tr.anfangsStop) strich(ex, this.zuY(tr.anfangsStop), xEnde, this.zuY(tr.anfangsStop), SL_F, [4, 3])
+            if (tr.tp) strich(ex, this.zuY(tr.tp), xEnde, this.zuY(tr.tp), TP_F, [4, 3])
+        }
 
         // Verbindungslinie Einstieg → Ausstieg.
         if (ax != null && ay != null) {

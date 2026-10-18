@@ -135,7 +135,7 @@ export function mitNotizen(trades, notizen, tags) {
                 ? meta.fills.map((f) => ({ t: ms(f.time), p: zahl(f.price), menge: zahl(f.qty), reduzierend: !!f.reduceOnly })).filter((f) => f.t && f.p)
                 : [],
             tpslVerlauf: Array.isArray(meta?.tpslHistory)
-                ? meta.tpslHistory.map((h) => ({ t: ms(h.time), art: String(h.type || '').toUpperCase(), wert: zahl(h.newVal), aktion: h.action || null })).filter((h) => h.t)
+                ? meta.tpslHistory.map((h) => ({ t: ms(h.time), art: String(h.type || '').toUpperCase(), wert: zahl(h.newVal), alt: zahl(h.oldVal), menge: zahl(h.qty), posMenge: zahl(h.posQty), aktion: h.action || null })).filter((h) => h.t)
                 : [],
             notiz: n ? {
                 einstieg: n.entryNote || n.note || '',
