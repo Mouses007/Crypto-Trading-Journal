@@ -2125,7 +2125,9 @@
       "allowShort": "Allow short setups",
       "tpRr": "Fixed reward/risk",
       "obLastOpposite": "Last opposite candle (PDF)",
-      "obExtreme": "Extreme candle (like indicator)"
+      "obExtreme": "Extreme candle (like indicator)",
+      "obCandle": "Order block candle",
+      "slMode": "Stop placement"
     },
     "ema_touch": {
       "emaFast": "Fast EMA",
@@ -5107,7 +5109,12 @@
       "lblOffDO": "Label offset (candles)",
       "maAn": "Moving average (SMA of RSI)",
       "maLaenge": "Moving average length",
-      "gussEmas": "Show EMA 21/50/200"
+      "gussEmas": "Show EMA 21/50/200",
+      "sigLong": "Long setups",
+      "sigShort": "Short setups",
+      "sigVerworfen": "Show invalidated/expired",
+      "sigFarbeLong": "Colour long",
+      "sigFarbeShort": "Colour short"
     },
     "indWahl": {
       "c": "Close",
@@ -5425,7 +5432,16 @@
       "pocPer": "POC – periods (naked)",
       "pocC": "POC – candle (intrabar)",
       "vliq": "Vector candle zones",
-      "dopen": "Daily open"
+      "dopen": "Daily open",
+      "lsobStruktur": "Structure",
+      "lsobSweep": "Sweep",
+      "lsobOb": "Order block",
+      "lsobEinstieg": "Retest / entry",
+      "lsobAusstieg": "Stop / target",
+      "gussTrend": "Trend (EMAs)",
+      "gussImpuls": "Impulse",
+      "gussKorrektur": "Pullback \"in one pour\"",
+      "sigBild": "Display"
     },
     "indHilfe": {
       "showVector": "Colours candles by VOLUME — where unusually much traded, large participants were active.",

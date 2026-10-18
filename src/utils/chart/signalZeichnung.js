@@ -46,7 +46,8 @@ export class SignalZeichnung {
     updateAllViews() {}
     abbauen() { try { this.serie.detachPrimitive(this) } catch { /* weg */ } }
 
-    setze(daten, zeiten, iv) {
+    setze(daten, zeiten, iv, p = {}) {
+        this.p = p || {}
         this.daten = daten || null
         this.zeiten = zeiten || []
         this.iv = iv || this.iv
@@ -67,10 +68,13 @@ export class SignalZeichnung {
         ctx.font = SCHRIFT
         const rechts = groesse.width
         const bisT = this.zeiten[this.zeiten.length - 1]
+        const p = this.p || {}
         for (const s of setups) {
             const long = s.direction === 'long'
-            const farbe = long ? GRUEN : ROT
+            if (long ? p.sigLong === false : p.sigShort === false) continue
+            const farbe = long ? (p.sigFarbeLong || GRUEN) : (p.sigFarbeShort || ROT)
             const aktiv = s.status === 'triggered' || s.status === 'waiting_retest' || s.status === 'pending'
+            if (!aktiv && p.sigVerworfen === false) continue
             const blass = !aktiv
             // Zone: von ihrer Kerze bis zum Ende (Auslösung, Verwerfen) — offen bis jetzt
             const x1 = this.X(s.obCandleTime ?? s.sweepCandleTime)

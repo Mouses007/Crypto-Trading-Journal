@@ -8,6 +8,8 @@
  * Ausgang Ziel/Stop ab der Kerze NACH der Auslösung.
  */
 import { signalVerlauf } from './chart-signale.js'
+import { getStrategy } from './strategies/index.js'
+import { LSOB_PARAMS, GUSS_PARAMS } from '../src/utils/chart/indikatorRegister.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -65,6 +67,18 @@ console.log('\nSchleife\n')
     const k2 = kerzen.map((x, i) => (i === 35 ? { ...x, l: 97 } : x))
     const r2 = signalVerlauf({ strategie: attrappe, candles: k2, params: {}, ltfMs: H, anzeigen: 50 })
     check('Docht in der Auslösekerze löst keinen Stop aus', r2.setups[0].ausgang === 'ziel')
+}
+
+console.log('\nIndikator-Einstellungen = Strategie-Vorgaben\n')
+for (const [sid, liste] of [['lsob', LSOB_PARAMS], ['ema_touch', GUSS_PARAMS]]) {
+    const st = getStrategy(sid)
+    const vorgabe = Object.fromEntries(st.params.map((p) => [p.key, p]))
+    for (const p of liste.filter((x) => x.strategie)) {
+        const s = vorgabe[p.key]
+        const gleich = s && s.default === p.vorgabe && (p.typ !== 'zahl' || (s.min === p.min && s.max === p.max))
+            && (p.typ !== 'wahl' || JSON.stringify(s.options.map((o) => o.value)) === JSON.stringify(p.optionen))
+        check(`${sid}.${p.key}: Vorgabe/Grenzen wie in der Strategie`, gleich, JSON.stringify({ chart: [p.vorgabe, p.min, p.max], strategie: s && [s.default, s.min, s.max] }))
+    }
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)

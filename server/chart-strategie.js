@@ -83,14 +83,15 @@ const SIGNALE_TTL_MS = 60_000
 const SIGNAL_STRATEGIEN = ['lsob', 'ema_touch']
 const signalCache = new Map()   // schluessel → { t, daten } | { laeuft }
 
-async function holeSignale(strategyId, symbol, timeframe, market) {
-    const schluessel = `${strategyId}|${symbol}|${timeframe}|${market}`
+async function holeSignale(strategyId, symbol, timeframe, market, rohParams = {}) {
+    // Parameter aus dem Indikator-Dialog, geprüft wie bei Instanzen; der Schlüssel enthält die GEPRÜFTEN Werte
+    const params = validateParams(strategyId, rohParams || {}).values
+    const schluessel = `${strategyId}|${symbol}|${timeframe}|${market}|${JSON.stringify(params)}`
     const c = signalCache.get(schluessel)
     if (c?.daten && Date.now() - c.t < SIGNALE_TTL_MS) return c.daten
     if (c?.laeuft) return c.laeuft
     const laeuft = (async () => {
         const strategie = getStrategy(strategyId)
-        const params = validateParams(strategyId, {}).values
         const anzeigen = 500
         const candles = await getClosedCandles(symbol, timeframe, Math.min(MAX_KERZEN, fensterFuer(strategie, params) + anzeigen), { market })
         let htfCandles = null
@@ -129,7 +130,10 @@ export function setupChartStrategieRoutes(app) {
             if (!strategie.supportedTimeframes.includes(timeframe)) {
                 return res.status(400).json({ error: `${strategie.name || strategyId} läuft nur auf ${strategie.supportedTimeframes.join(', ')}` })
             }
-            res.json(await holeSignale(strategyId, symbol, timeframe, req.query.markt === 'spot' ? 'spot' : 'futures'))
+            let roh = {}
+            try { roh = req.query.params ? JSON.parse(String(req.query.params)) : {} } catch { return res.status(400).json({ error: 'params kein JSON' }) }
+            if (!roh || typeof roh !== 'object' || Array.isArray(roh)) roh = {}
+            res.json(await holeSignale(strategyId, symbol, timeframe, req.query.markt === 'spot' ? 'spot' : 'futures', roh))
         } catch (e) {
             const st = e.response?.status || e.status
             if (st === 400 || /invalid symbol|-1121/i.test(String(e.response?.data?.msg || e.message))) {

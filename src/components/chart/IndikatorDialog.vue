@@ -59,6 +59,9 @@ function klappe(id) {
 const zeileAus = (z) => z[0].typ === 'schalter' && z.length > 1 && entwurf.value.params[z[0].key] === false
 const gruppeAus = (g) => g.haupt && entwurf.value.params[g.haupt.key] === false
 const hilfe = (key) => (te('chart.indHilfe.' + key) ? t('chart.indHilfe.' + key) : '')
+// Strategie-Parameter (LSOB/GUSS) tragen ihre Beschriftung aus der Strategie mit
+const name = (p) => (p.label ? t(p.label) : t('chart.indParam.' + p.key))
+const optionName = (p, o) => (p.optionLabel?.[o] ? t(p.optionLabel[o]) : p.roh ? o : t('chart.indWahl.' + o))
 
 const liste = computed(() => {
     const q = suche.value.trim().toLowerCase()
@@ -151,19 +154,19 @@ onMounted(async () => {
                         </div>
                         <div v-show="!g.id || offen.has(g.id)" class="gInhalt" :class="{ aus: gruppeAus(g) }">
                             <div v-for="z in g.zeilen" :key="z[0].key" class="zeile" :class="{ aus: zeileAus(z) }" :title="hilfe(z[0].key)">
-                                <span class="zName">{{ t('chart.indParam.' + z[0].key) }}<i v-if="hilfe(z[0].key)" class="uil uil-info-circle hinweisI"></i></span>
+                                <span class="zName">{{ name(z[0]) }}<i v-if="hilfe(z[0].key)" class="uil uil-info-circle hinweisI"></i></span>
                                 <span class="regler">
                                     <template v-for="p in z" :key="p.key">
                                         <input v-if="p.typ === 'zahl'" v-model.number="entwurf.params[p.key]" type="number"
                                             class="form-control form-control-sm zahl" :min="p.min" :max="p.max" :step="p.schritt"
-                                            :title="t('chart.indParam.' + p.key)" />
+                                            :title="name(p)" />
                                         <input v-else-if="p.typ === 'schalter'" v-model="entwurf.params[p.key]" type="checkbox"
-                                            class="form-check-input schalter" :title="t('chart.indParam.' + p.key)" />
+                                            class="form-check-input schalter" :title="name(p)" />
                                         <FarbWahl v-else-if="p.typ === 'farbe'" v-model="entwurf.params[p.key]"
                                             :titel="t('chart.indParam.' + p.key)" />
                                         <select v-else v-model="entwurf.params[p.key]" class="form-select form-select-sm wahl"
-                                            :title="t('chart.indParam.' + p.key)">
-                                            <option v-for="o in p.optionen" :key="o" :value="o">{{ p.roh ? o : t('chart.indWahl.' + o) }}</option>
+                                            :title="name(p)">
+                                            <option v-for="o in p.optionen" :key="o" :value="o">{{ optionName(p, o) }}</option>
                                         </select>
                                     </template>
                                 </span>

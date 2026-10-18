@@ -2125,7 +2125,9 @@
       "allowShort": "Short-Setups zulassen",
       "tpRr": "Festes Chance/Risiko",
       "obLastOpposite": "Letzte Gegenkerze (PDF)",
-      "obExtreme": "Extrem-Kerze (wie Indikator)"
+      "obExtreme": "Extrem-Kerze (wie Indikator)",
+      "obCandle": "Kerze für den Order Block",
+      "slMode": "Stop-Platzierung"
     },
     "ema_touch": {
       "emaFast": "Schnelle EMA",
@@ -5107,7 +5109,12 @@
       "lblOffDO": "Schild-Abstand (Kerzen)",
       "maAn": "Gleitende Linie (SMA des RSI)",
       "maLaenge": "Länge der gleitenden Linie",
-      "gussEmas": "EMA 21/50/200 zeigen"
+      "gussEmas": "EMA 21/50/200 zeigen",
+      "sigLong": "Long-Setups",
+      "sigShort": "Short-Setups",
+      "sigVerworfen": "Verworfene/abgelaufene zeigen",
+      "sigFarbeLong": "Farbe Long",
+      "sigFarbeShort": "Farbe Short"
     },
     "indWahl": {
       "c": "Schluss",
@@ -5425,7 +5432,16 @@
       "pocPer": "POC – Perioden (naked)",
       "pocC": "POC – Candle (intrabar)",
       "vliq": "Vektorkerzen-Zonen",
-      "dopen": "Daily Open"
+      "dopen": "Daily Open",
+      "lsobStruktur": "Struktur",
+      "lsobSweep": "Sweep",
+      "lsobOb": "Order Block",
+      "lsobEinstieg": "Rücklauf / Einstieg",
+      "lsobAusstieg": "Stop / Ziel",
+      "gussTrend": "Trend (EMAs)",
+      "gussImpuls": "Impuls",
+      "gussKorrektur": "Korrektur „in einem Guss\"",
+      "sigBild": "Darstellung"
     },
     "indHilfe": {
       "showVector": "Färbt die Kerzen nach VOLUMEN statt nur grün/rot — dort, wo ungewöhnlich viel gehandelt wurde, waren grosse Marktteilnehmer aktiv.",

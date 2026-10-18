@@ -318,6 +318,7 @@ export class IndikatorZeichner {
     zeichnungSetzen(e) {
         if (e.band) e.band.setze(e.werte[e.def.band.linie])
         if (e.def.zeichner === 'vwapVector') e.zeichnung?.setze(e.werte._vv, this.kerzen, saubereParams(e.instanz.typ, e.instanz.params))
+        else if (e.def.zeichner === 'signale') e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand(), saubereParams(e.instanz.typ, e.instanz.params))
         else e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand())
     }
 

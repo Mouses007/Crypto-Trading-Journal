@@ -33,7 +33,7 @@ import axios from 'axios'
 import { JournalEbene } from '../../utils/chart/overlays/JournalEbene.js'
 import { StrategieEbene } from '../../utils/chart/overlays/StrategieEbene.js'
 import { MarktEbene, waendeAusBuch } from '../../utils/chart/overlays/MarktEbene.js'
-import { benoetigteQuellen, vwapVectorQuellen, saubereParams, INDIKATOREN } from '../../utils/chart/indikatorRegister.js'
+import { benoetigteQuellen, vwapVectorQuellen, saubereParams, INDIKATOREN, strategieParams } from '../../utils/chart/indikatorRegister.js'
 import { ladeOffenePositionen } from '../../utils/chart/overlays/positionen.js'
 import { overlayAn as overlayAnFuer } from '../../utils/chart/overlays/liste.js'
 
@@ -391,8 +391,10 @@ async function ladeExtern(nurWelche = null) {
             } else if (quelle.startsWith('signale_')) {
                 // Strategie-Signale (LSOB, GUSS) — nur Binance und nur auf den Zeiteinheiten der Strategie
                 const strategie = quelle.slice('signale_'.length)
+                const inst = (props.panel.indikatoren || []).find((i) => i.sichtbar !== false && INDIKATOREN[i.typ]?.extern === quelle)
+                const sp = inst ? strategieParams(inst.typ, inst.params) : {}
                 try {
-                    const { data } = await axios.get('/api/chart/signale', { params: { strategie, symbol, interval, markt: props.panel.markt } })
+                    const { data } = await axios.get('/api/chart/signale', { params: { strategie, symbol, interval, markt: props.panel.markt, params: JSON.stringify(sp) } })
                     if (symbol === props.panel.symbol && interval === props.panel.interval) { zeichner.setzeExtern(quelle, data); hinweis(quelle, null) }
                 } catch (e) {
                     if (e.response?.status !== 400) throw e
@@ -676,6 +678,9 @@ function sichtbarkeitGeaendert() {
 
 watch(() => props.panel.overlays, () => { ladeJournal(); ladePositionen(); ladeStrategie(); marktNeu() }, { deep: true })
 watch(() => benoetigteQuellen(props.panel.indikatoren).join(), () => ladeExtern())
+// LSOB/GUSS: geänderte Strategie-Einstellungen → Signale neu rechnen lassen
+watch(() => JSON.stringify((props.panel.indikatoren || []).filter((i) => INDIKATOREN[i.typ]?.zeichner === 'signale').map((i) => [i.typ, strategieParams(i.typ, i.params)])),
+    () => ladeExtern(['signale_lsob', 'signale_ema_touch']))
 // VWAP Vector: andere Zeiteinheiten (MTF-EMA, Fib, Intrabar) brauchen neue Kerzen.
 watch(() => JSON.stringify((props.panel.indikatoren || []).filter((i) => i.typ === 'vwapVector').map((i) => [i.sichtbar, i.params])),
     () => ladeExtern(['vwapVector']))

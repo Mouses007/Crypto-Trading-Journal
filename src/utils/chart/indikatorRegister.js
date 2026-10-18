@@ -231,6 +231,60 @@ export function vwapVectorQuellen(p, ivMs, tfMs) {
 }
 
 
+// ── Strategie-Indikatoren LSOB / GUSS ────────────────────────────────────
+// Parameter der STRATEGIE (`strategie: true` → gehen an den Server, der sie mit
+// validateParams prüft), Beschriftung aus deren i18n (`label`). Vorgaben müssen
+// denen in server/strategies/*.js gleichen — der Selbsttest
+// server/__selftest-chart-signale.mjs vergleicht sie.
+const SP = (sid, key, typ, vorgabe, gruppe, extra = {}) => ({ key, typ, vorgabe, gruppe, strategie: true, label: `strategies.${sid}.${key}`, ...extra })
+const SZ = (sid, key, vorgabe, min, max, schritt, gruppe) => SP(sid, key, 'zahl', vorgabe, gruppe, { min, max, schritt })
+const SW = (sid, key, vorgabe, optionen, gruppe) => SP(sid, key, 'wahl', vorgabe, gruppe, { optionen: optionen.map((o) => o[0]), optionLabel: Object.fromEntries(optionen.map(([v, l]) => [v, `strategies.${sid}.${l}`])) })
+const SIGNAL_DARSTELLUNG = [
+    { key: 'sigLong', typ: 'schalter', vorgabe: true, gruppe: 'sigBild' },
+    { key: 'sigShort', typ: 'schalter', vorgabe: true, gruppe: 'sigBild' },
+    { key: 'sigVerworfen', typ: 'schalter', vorgabe: true, gruppe: 'sigBild' },
+    { key: 'sigFarbeLong', typ: 'farbe', vorgabe: '#26a69a', gruppe: 'sigBild' },
+    { key: 'sigFarbeShort', typ: 'farbe', vorgabe: '#ef5350', gruppe: 'sigBild' },
+]
+export const LSOB_PARAMS = [
+    SZ('lsob', 'swingLookback', 5, 2, 50, 1, 'lsobStruktur'),
+    SZ('lsob', 'swingConfirmBars', 2, 1, 20, 1, 'lsobStruktur'),
+    SZ('lsob', 'equalHighTolerancePct', 0.05, 0, 2, 0.01, 'lsobSweep'),
+    SZ('lsob', 'sweepMinWickPct', 15, 0, 100, 1, 'lsobSweep'),
+    SZ('lsob', 'oppositeCandles', 2, 1, 5, 1, 'lsobOb'),
+    SW('lsob', 'obCandle', 'extreme', [['lastOpposite', 'obLastOpposite'], ['extreme', 'obExtreme']], 'lsobOb'),
+    SZ('lsob', 'obSearchBack', 3, 0, 10, 1, 'lsobOb'),
+    SW('lsob', 'obSource', 'wick', [['body', 'obSourceBody'], ['wick', 'obSourceWick']], 'lsobOb'),
+    SZ('lsob', 'impulseMinAtr', 1, 0, 10, 0.1, 'lsobOb'),
+    SZ('lsob', 'impulseMaxCandles', 10, 1, 50, 1, 'lsobOb'),
+    SZ('lsob', 'maxRetestDepthPct', 25, 5, 60, 1, 'lsobEinstieg'),
+    SZ('lsob', 'retestMaxCandles', 40, 3, 500, 1, 'lsobEinstieg'),
+    SW('lsob', 'entryMode', 'zone_touch', [['zone_touch', 'entryZoneTouch'], ['rejection_confirmed', 'entryRejection'], ['direction_confirmed', 'entryDirection']], 'lsobEinstieg'),
+    SW('lsob', 'slMode', 'sweep_extreme', [['sweep_extreme', 'slSweep'], ['retest_wick', 'slRetestWick']], 'lsobAusstieg'),
+    SW('lsob', 'tpMode', 'lastSwing', [['lastSwing', 'tpLastSwing'], ['rr', 'tpRr'], ['none', 'tpNone']], 'lsobAusstieg'),
+    SZ('lsob', 'tpRR', 2, 0.5, 20, 0.1, 'lsobAusstieg'),
+    ...SIGNAL_DARSTELLUNG,
+]
+export const GUSS_PARAMS = [
+    SZ('ema_touch', 'emaFast', 21, 5, 50, 1, 'gussTrend'),
+    SZ('ema_touch', 'emaEntry', 50, 20, 100, 1, 'gussTrend'),
+    SP('ema_touch', 'useEma200Filter', 'schalter', false, 'gussTrend'),
+    SZ('ema_touch', 'emaSlow', 200, 100, 300, 10, 'gussTrend'),
+    SZ('ema_touch', 'minOverextensionPct', 2.5, 0.1, 15, 0.1, 'gussImpuls'),
+    SZ('ema_touch', 'swingLookback', 10, 2, 50, 1, 'gussImpuls'),
+    SZ('ema_touch', 'swingConfirmBars', 2, 1, 20, 1, 'gussImpuls'),
+    SZ('ema_touch', 'maxCorrectionCandles', 10, 2, 50, 1, 'gussKorrektur'),
+    SZ('ema_touch', 'maxGegenkerzen', 0, 0, 5, 1, 'gussKorrektur'),
+    SZ('ema_touch', 'maxGegenkerzenAtr', 0.1, 0, 5, 0.05, 'gussKorrektur'),
+    { key: 'gussEmas', typ: 'schalter', vorgabe: true, gruppe: 'sigBild' },
+    ...SIGNAL_DARSTELLUNG,
+]
+/** Nur die Strategie-Parameter einer LSOB/GUSS-Instanz (für /api/chart/signale). */
+export function strategieParams(typ, roh) {
+    const p = saubereParams(typ, roh)
+    return Object.fromEntries((INDIKATOREN[typ]?.params || []).filter((x) => x.strategie).map((x) => [x.key, p[x.key]]))
+}
+
 export const INDIKATOREN = {
     sma: {
         ort: 'preis',
@@ -471,7 +525,7 @@ export const INDIKATOREN = {
         extern: 'signale_lsob',
         zeichner: 'signale',
         kurzOhneParams: true,
-        params: [],
+        params: LSOB_PARAMS,
         ausgaben: [],
         rechne: () => ({}),
     },
@@ -480,15 +534,15 @@ export const INDIKATOREN = {
         extern: 'signale_ema_touch',
         zeichner: 'signale',
         kurzOhneParams: true,
-        // Die drei EMAs der Strategie (Vorgaben aus ema_touch.js: 21 / 50 / 200)
-        params: [{ key: 'gussEmas', typ: 'schalter', vorgabe: true }],
+        // Die drei EMAs der Strategie — mit deren Längen aus den Einstellungen
+        params: GUSS_PARAMS,
         ausgaben: [],
         ausgabenFuer: (p) => (p.gussEmas ? [
             { key: 'ema21', art: 'linie', farbe: '#29b6f6', breite: 1 },
             { key: 'ema50', art: 'linie', farbe: '#f5c542', breite: 2 },
             { key: 'ema200', art: 'linie', farbe: '#ab47bc', breite: 1 },
         ] : []),
-        rechne: (k, p) => (p.gussEmas ? { ema21: ema(k, 21), ema50: ema(k, 50), ema200: ema(k, 200) } : {}),
+        rechne: (k, p) => (p.gussEmas ? { ema21: ema(k, p.emaFast), ema50: ema(k, p.emaEntry), ema200: ema(k, p.emaSlow) } : {}),
     },
     volSma: {
         ort: 'eigen',
