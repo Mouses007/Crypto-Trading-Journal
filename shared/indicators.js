@@ -86,11 +86,20 @@ export function rsi(candles, period = 14) {
     return out
 }
 
-/** Average True Range (Wilder). Array-Länge wie `candles`, führende null. */
+/**
+ * Average True Range (Wilder) wie `ta.atr` in Pine: `ta.rma(ta.tr(true), n)`.
+ * Die erste wahre Spanne ist Hoch − Tief (es gibt keinen Vorschluss), der
+ * Startwert der Glättung der Schnitt der ersten n Spannen, erster Wert also
+ * bei Index n − 1. Bis 18.10.2026 liess die Rechnung die erste Kerze aus und
+ * begann eine Kerze später — die Werte näherten sich TradingView erst nach
+ * einigen Dutzend Kerzen, und jede Strategie mit kurzem Fenster sah eine
+ * andere ATR als der Chart daneben.
+ * Array-Länge wie `candles`, führende null.
+ */
 export function atr(candles, period = 14) {
     period = Math.max(1, Math.round(Number(period) || 1))   // eine gebrochene Länge griff auf candles[i − 14.5]
     const out = new Array(candles.length).fill(null)
-    if (candles.length <= period) return out
+    if (candles.length < period) return out
 
     const tr = new Array(candles.length).fill(0)
     tr[0] = range(candles[0])
@@ -104,10 +113,10 @@ export function atr(candles, period = 14) {
     }
 
     let sum = 0
-    for (let i = 1; i <= period; i++) sum += tr[i]
+    for (let i = 0; i < period; i++) sum += tr[i]
     let value = sum / period
-    out[period] = value
-    for (let i = period + 1; i < candles.length; i++) {
+    out[period - 1] = value
+    for (let i = period; i < candles.length; i++) {
         value = (value * (period - 1) + tr[i]) / period
         out[i] = value
     }
@@ -658,8 +667,11 @@ export function hasRejectionCandle(prev, cur, direction) {
  * verlangt ausdrücklich eine EMA-Basis, und mit SMA käme eine andere Strategie
  * heraus als beschrieben.
  *
- * Die Standardabweichung wird über dasselbe Fenster wie die Basis gerechnet und
- * ist die der Grundgesamtheit (Nenner n), so wie es Handelsplattformen tun.
+ * Die Standardabweichung ist die der Grundgesamtheit (Nenner n) über dasselbe
+ * Fenster und — wie `ta.stdev` im eingebauten TradingView-Band — immer um den
+ * MITTELWERT des Fensters, auch bei EMA-Basis. Bis 18.10.2026 wurde bei EMA-
+ * Basis um die EMA gerechnet: nach einem Sprung lag die EMA weit vom Fenster-
+ * mittel, die Abweichungen wurden grösser und die Bänder breiter als im Chart.
  *
  * @returns {{ middle: Array, upper: Array, lower: Array }} Arrays wie `candles`
  */
@@ -672,9 +684,17 @@ export function bollinger(candles, { period = 20, mult = 2, basis = 'sma' } = {}
     for (let i = period - 1; i < n; i++) {
         const m = middle[i]
         if (m === null || m === undefined) continue
+        // Bei SMA-Basis IST m das Fenstermittel — dann genau m, sonst verschöbe die
+        // zweite Summe die Werte in der letzten Stelle.
+        let mittel = m
+        if (basis === 'ema') {
+            let summe = 0
+            for (let j = i - period + 1; j <= i; j++) summe += candles[j].c
+            mittel = summe / period
+        }
         let quadrate = 0
         for (let j = i - period + 1; j <= i; j++) {
-            const d = candles[j].c - m
+            const d = candles[j].c - mittel
             quadrate += d * d
         }
         const sd = Math.sqrt(quadrate / period)

@@ -9,7 +9,7 @@
  */
 
 import {
-    bollinger, adx, stochastic,
+    bollinger, adx, stochastic, atr,
     vwap, vwapBand, ankerStarts, ankerSichtKerzen, swingAnker, volumeSma, dayOpen,
 } from './indicators.js'
 
@@ -53,6 +53,37 @@ console.log('\nBollinger')
     check('EMA-Basis reagiert schneller als SMA-Basis',
         e.middle[39] > s.middle[39] && nah(s.middle[39], 150, 1e-9),
         `sma=${s.middle[39]} ema=${e.middle[39]}`)
+}
+
+{
+    // Wie ta.stdev im TradingView-Band: Abweichung um den FENSTERMITTEL, auch bei EMA-Basis.
+    // Nach dem Sprung 100→200 (30 + 10 Kerzen) liegt das Fenster bei 10×100 + 10×200 → σ = 50 genau.
+    const sprung = [...flach(100, 30), ...flach(200, 10)]
+    const e = bollinger(sprung, { period: 20, mult: 2, basis: 'ema' })
+    check('EMA-Basis: Bandbreite = 2·σ des Fensters (σ = 50), nicht um die EMA gerechnet',
+        nah(e.upper[39] - e.middle[39], 100, 1e-9) && nah(e.middle[39] - e.lower[39], 100, 1e-9),
+        `oben−mitte=${e.upper[39] - e.middle[39]}`)
+    const s2 = bollinger(sprung, { period: 20, mult: 2, basis: 'sma' })
+    check('Gegenprobe: SMA- und EMA-Basis haben dieselbe Bandbreite, nur andere Mitte',
+        nah(s2.upper[39] - s2.lower[39], e.upper[39] - e.lower[39], 1e-9) && !nah(s2.middle[39], e.middle[39], 1e-6))
+}
+
+console.log('\nATR (wie ta.atr)')
+
+{
+    // Von Hand nach Pine: tr[0] = h − l, rma startet mit dem Schnitt von tr[0..n−1] bei Index n−1.
+    const k = [
+        { o: 10, h: 12, l: 9, c: 11 },    // tr 3 (h − l, kein Vorschluss)
+        { o: 11, h: 13, l: 10, c: 12 },   // tr max(3, 2, 1) = 3
+        { o: 12, h: 12, l: 8, c: 9 },     // tr max(4, 0, 4) = 4
+        { o: 9, h: 15, l: 9, c: 14 },     // tr max(6, 6, 0) = 6
+        { o: 14, h: 14, l: 13, c: 13 },   // tr 1
+    ].map((x) => ({ ...x, t: 0 }))
+    const a = atr(k, 3)
+    check('ATR(3): erster Wert bei Index 2 = (3+3+4)/3', a[1] === null && nah(a[2], 10 / 3, 1e-12), JSON.stringify(a))
+    check('ATR(3): danach Wilder (vor·2 + tr)/3', nah(a[3], (10 / 3 * 2 + 6) / 3, 1e-12) && nah(a[4], (a[3] * 2 + 1) / 3, 1e-12))
+    check('ATR(3) mit genau 3 Kerzen → ein Wert, nicht null', nah(atr(k.slice(0, 3), 3)[2], 10 / 3, 1e-12))
+    check('zu wenig Kerzen → nur null', atr(k.slice(0, 2), 3).every((v) => v === null))
 }
 
 {
