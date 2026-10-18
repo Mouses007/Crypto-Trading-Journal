@@ -84,6 +84,7 @@ console.log('\nDatenfenster: fremde Reihen auf Kerzen\n')
     check('Ohne Fremddaten: Reihe aus null statt Absturz', rechneIndikator('oi', kerzen, {}, {}).wert.every((v) => v === null))
     const m = rechneIndikator('momentum', kerzen.slice(0, 5), {}, { momentum: { t: [kerzen[1].t, kerzen[3].t], w1: [10, 20], w2: [1, 2], mf: [3, 4] } })
     check('Momentum nur an exakt passenden Kerzenzeiten (andere Zeiteinheit → leer)', m.w1[0] === null && m.w1[1] === 10 && m.w1[3] === 20 && m.w1[2] === null)
+    check('Momentum-Geldfluss als Wert für die Legende', m.mf[1] === 3 && m.mf[3] === 4)
     check('Benötigte Quellen ohne Doppelte, ausgeblendete zählen nicht',
         benoetigteQuellen([{ typ: 'oi' }, { typ: 'longShort' }, { typ: 'funding', sichtbar: false }, { typ: 'ema' }]).join() === 'oi')
 }

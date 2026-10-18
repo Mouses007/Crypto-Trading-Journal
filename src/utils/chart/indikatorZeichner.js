@@ -15,6 +15,7 @@
  */
 import { LineSeries, HistogramSeries, LineStyle } from 'lightweight-charts'
 import { INDIKATOREN, rechneIndikator } from './indikatorRegister.js'
+import { MomentumZeichnung } from './momentumZeichnung.js'
 
 const GRUEN = 'rgba(38,166,154,0.7)'
 const ROT = 'rgba(255,105,96,0.7)'
@@ -62,6 +63,9 @@ export class IndikatorZeichner {
             const pane = def.ort === 'eigen' ? naechstesPane++ : 0
             const serien = {}
             for (const a of def.ausgaben) {
+                // „wert": nur für die Legende gerechnet, gezeichnet wird es von
+                // einer eigenen Zeichnung (Momentum-Geldfluss).
+                if (a.art === 'wert') continue
                 const farbe = instanz.farben?.[a.key] || a.farbe
                 const gemeinsam = {
                     priceLineVisible: false,
@@ -80,7 +84,10 @@ export class IndikatorZeichner {
             for (const marke of def.linien || []) {
                 erste?.createPriceLine({ price: marke, color: 'rgba(255,255,255,0.18)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
             }
-            this.eintraege.push({ instanz, def, serien, werte: {} })
+            const zeichnung = def.zeichner === 'momentum' && serien.w1
+                ? new MomentumZeichnung({ chart: this.chart, serie: serien.w1 })
+                : null
+            this.eintraege.push({ instanz, def, serien, werte: {}, zeichnung })
         }
         // Das Kerzen-Pane soll den Löwenanteil behalten.
         const panes = this.chart.panes()
@@ -92,6 +99,7 @@ export class IndikatorZeichner {
 
     abbauen() {
         for (const e of this.eintraege) {
+            e.zeichnung?.abbauen()
             for (const s of Object.values(e.serien)) {
                 try { this.chart.removeSeries(s) } catch { /* Chart schon weg */ }
             }
@@ -117,7 +125,13 @@ export class IndikatorZeichner {
             for (const [key, serie] of Object.entries(e.serien)) {
                 serie.setData(kerzen.map((_, i) => this.punkt(e, key, i, kerzen)))
             }
+            e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand())
         }
+    }
+
+    kerzenAbstand() {
+        const z = this.zeiten
+        return z.length > 1 ? z[z.length - 1] - z[z.length - 2] : 3_600_000
     }
 
     /** Laufende Kerze: neu rechnen, nur die letzten beiden Punkte schreiben. */
@@ -135,6 +149,7 @@ export class IndikatorZeichner {
                 if (neueKerze && n > 1) serie.update(this.punkt(e, key, n - 2, kerzen))
                 serie.update(this.punkt(e, key, n - 1, kerzen))
             }
+            if (neueKerze) e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand())
         }
     }
 

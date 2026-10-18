@@ -407,6 +407,10 @@ watch(sichtbareAnzahl, async () => {
                         :markt="aktivesPanel.markt" :kurs="aktuellerKurs" @neu="alarmBeiPreis" @bearbeite="alarmBearbeiten" />
                     <KiReiter v-else-if="daten.seitenleiste.reiter === 'ki'" :panel="aktivesPanel"
                         @vorschau="(a) => aktivesPanelRef?.setzeKiVorschau(a)" />
+                    <!-- Lizenzhinweis der Chart-Bibliothek (Apache-2.0): Hersteller und Link
+                         auf einer Seite der App — deshalb steht im Chart selbst kein Logo. -->
+                    <a class="lizenz" href="https://www.tradingview.com/" target="_blank" rel="noopener">
+                        Charts: TradingView Lightweight Charts™ · © TradingView, Inc.</a>
                 </aside>
             </div>
         </template>
@@ -490,6 +494,18 @@ watch(sichtbareAnzahl, async () => {
 .reiter button.an {
     color: var(--blue-color);
     background: rgba(1, 180, 255, 0.1);
+}
+
+.lizenz {
+    margin-top: auto;
+    font-size: 9px;
+    color: var(--grey-text);
+    opacity: 0.6;
+    text-decoration: none;
+}
+
+.lizenz:hover {
+    opacity: 1;
 }
 
 .reiterTitel {

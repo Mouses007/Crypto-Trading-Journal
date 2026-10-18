@@ -17,7 +17,8 @@ import { ref, shallowRef, watch, onMounted, onBeforeUnmount, computed } from 'vu
 import { useI18n } from 'vue-i18n'
 import dayjs from 'dayjs'
 import {
-    createChart, CandlestickSeries, HistogramSeries, CrosshairMode, PriceScaleMode, LineStyle,
+    createChart, CandlestickSeries, HistogramSeries, CrosshairMode, PriceScaleMode, LineStyle, ColorType,
+    createTextWatermark,
 } from 'lightweight-charts'
 import { ladeKerzen, LiveKerze, RestKerze, fuegeZusammen, INTERVALL_MS, istRestQuelle, QUELLEN_MAX } from '../../utils/chart/kerzenQuelle.js'
 import { loadSymbolMeta } from '../../utils/liveSymbols.js'
@@ -60,6 +61,18 @@ const legende = ref(null)            // Kerze unter dem Fadenkreuz (oder die let
 const preisStellen = ref(2)
 const indikatorWerte = ref({})       // id → [{key, farbe, wert}] unter dem Fadenkreuz
 let zeichner = null
+let wasserzeichen = null
+
+/** Symbol und Zeiteinheit blass im Hintergrund — wer vier Charts offen hat, sieht sofort, welcher welcher ist. */
+function wasserzeichenOptionen(schrift) {
+    return {
+        horzAlign: 'center', vertAlign: 'center',
+        lines: [
+            { text: props.panel.symbol, color: 'rgba(1,180,255,0.07)', fontSize: 56, fontFamily: schrift, fontStyle: 'bold' },
+            { text: `${props.panel.interval} · ${props.panel.markt === 'spot' ? 'Spot' : 'Perp'}`, color: 'rgba(1,180,255,0.06)', fontSize: 20, fontFamily: schrift, fontStyle: '' },
+        ],
+    }
+}
 let ebene = null
 const auswahlId = ref(null)
 let journalEbene = null
@@ -108,28 +121,38 @@ function baueChart() {
     const gruen = farbe('--green', '#26a69a')
     const rot = farbe('--red-color', '#FF6960')
     const text = farbe('--grey-text', '#8a9199')
-    const raster = 'rgba(255,255,255,0.04)'
+    const blau = farbe('--blue-color', '#01B4FF')
+    const schrift = getComputedStyle(document.body).fontFamily || "'Nunito Sans', sans-serif"
 
+    /*
+     * Eigener Look im Stil des Journals statt der Vorgaben der Bibliothek:
+     * App-Schrift, leichter Verlauf im Hintergrund, nur waagerechtes Raster,
+     * Fadenkreuz und Kursmarke im Journal-Blau.
+     *
+     * Kein TradingView-Logo im Chart: die Lizenz (Apache-2.0) verlangt den
+     * Hinweis auf TradingView mit Link auf einer Seite der App — der steht
+     * unten in der Seitenleiste des Arbeitsplatzes (`Chart.vue`), damit ist
+     * die Bedingung erfüllt und das Logo darf aus.
+     */
     const c = createChart(huelle.value, {
         autoSize: true,
         layout: {
-            background: { color: 'transparent' },
+            background: { type: ColorType.VerticalGradient, topColor: '#101826', bottomColor: '#0a0e16' },
             textColor: text,
             fontSize: 11,
-            // Das Logo verlangt die Lizenz der Bibliothek (Apache-2.0 mit
-            // Namensnennung) — es bleibt an.
-            attributionLogo: true,
-            panes: { separatorColor: 'rgba(255,255,255,0.08)', enableResize: true },
+            fontFamily: schrift,
+            attributionLogo: false,
+            panes: { separatorColor: 'rgba(1,180,255,0.12)', separatorHoverColor: 'rgba(1,180,255,0.25)', enableResize: true },
         },
-        grid: { vertLines: { color: raster }, horzLines: { color: raster } },
+        grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(1,180,255,0.05)' } },
         crosshair: {
             mode: CrosshairMode.Normal,
-            vertLine: { color: 'rgba(255,255,255,0.25)', style: LineStyle.Dashed, labelBackgroundColor: '#2a2e39' },
-            horzLine: { color: 'rgba(255,255,255,0.25)', style: LineStyle.Dashed, labelBackgroundColor: '#2a2e39' },
+            vertLine: { color: 'rgba(1,180,255,0.45)', width: 1, style: LineStyle.LargeDashed, labelBackgroundColor: blau },
+            horzLine: { color: 'rgba(1,180,255,0.45)', width: 1, style: LineStyle.LargeDashed, labelBackgroundColor: blau },
         },
-        rightPriceScale: { borderColor: 'rgba(255,255,255,0.08)' },
+        rightPriceScale: { borderVisible: false },
         timeScale: {
-            borderColor: 'rgba(255,255,255,0.08)',
+            borderVisible: false,
             timeVisible: true,
             secondsVisible: false,
             rightOffset: 8,
@@ -148,10 +171,13 @@ function baueChart() {
     })
 
     const ks = c.addSeries(CandlestickSeries, {
-        upColor: gruen, downColor: rot, borderUpColor: gruen, borderDownColor: rot,
+        // Steigende Kerzen hohl mit farbigem Rand, fallende gefüllt — so liest
+        // sich der Chart auch ohne Farbsinn und sieht nicht aus wie die Vorgabe.
+        upColor: 'rgba(38,166,154,0.12)', downColor: rot, borderUpColor: gruen, borderDownColor: rot,
         wickUpColor: gruen, wickDownColor: rot,
-        priceLineStyle: LineStyle.Dotted,
+        priceLineColor: blau, priceLineStyle: LineStyle.Dotted,
     })
+    wasserzeichen = createTextWatermark(c.panes()[0], wasserzeichenOptionen(schrift))
     const vs = c.addSeries(HistogramSeries, {
         priceScaleId: 'vol',
         priceFormat: { type: 'volume' },
@@ -213,7 +239,7 @@ function letzteLegende() {
 }
 
 function volumenBalken(k) {
-    return { time: zuLwc(k.t), value: k.v, color: k.c >= k.o ? 'rgba(38,166,154,0.35)' : 'rgba(255,105,96,0.35)' }
+    return { time: zuLwc(k.t), value: k.v, color: k.c >= k.o ? 'rgba(38,166,154,0.28)' : 'rgba(255,105,96,0.28)' }
 }
 
 function setzeDaten(liste) {
@@ -783,6 +809,9 @@ const legendeDelta = computed(() => {
 })
 
 watch(() => [props.panel.symbol, props.panel.markt, props.panel.interval, props.panel.boerse], ladeNeu)
+watch(() => [props.panel.symbol, props.panel.markt, props.panel.interval], () => {
+    wasserzeichen?.applyOptions(wasserzeichenOptionen(getComputedStyle(document.body).fontFamily))
+})
 watch(() => props.panel.skala, wendeSkalaAn)
 watch(() => props.panel.indikatoren, (inst) => {
     zeichner?.setze(inst, kerzen.value)
@@ -907,14 +936,16 @@ defineExpose({
     position: relative;
     min-width: 0;
     min-height: 0;
-    border: 1px solid var(--white-10);
-    border-radius: 6px;
+    border: 1px solid rgba(1, 180, 255, 0.12);
+    border-radius: var(--border-radius, 12px);
     overflow: hidden;
-    background: var(--black-bg-7, #131722);
+    background: #0a0e16;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .chartPanel.aktiv {
-    border-color: rgba(1, 180, 255, 0.45);
+    border-color: rgba(1, 180, 255, 0.55);
+    box-shadow: 0 0 0 1px rgba(1, 180, 255, 0.15), 0 0 18px rgba(1, 180, 255, 0.08);
 }
 
 .flaeche {

@@ -271,16 +271,22 @@ export const INDIKATOREN = {
         ort: 'eigen',
         extern: 'momentum',
         params: [],
+        // Eigene Zeichnung wie im Pine (`momentumZeichnung.js`): Flächen bis zur
+        // Nulllinie, Geldfluss je Kerze mit violetter Futures-Phase, Spot-Linie,
+        // Punkte, Rauten, Schienen, Divergenzen, 4h-Farbleiste. Als Serien
+        // bleiben nur Welle und Signallinie; der Geldfluss steht als Wert in der
+        // Legende.
+        zeichner: 'momentum',
         ausgaben: [
-            { key: 'hist', art: 'histogramm', farbe: '#26a69a' },
-            { key: 'w1', art: 'linie', farbe: '#29b6f6', breite: 2 },
-            { key: 'w2', art: 'linie', farbe: '#ff9800', breite: 1 },
+            { key: 'w1', art: 'linie', farbe: '#6fa8ff', breite: 2 },
+            { key: 'w2', art: 'linie', farbe: 'rgba(61,99,214,0.55)', breite: 1 },
+            { key: 'mf', art: 'wert', farbe: '#4caf50' },
         ],
-        linien: [60, 0, -60],
+        bereich: [-140, 128],
         rechne: (k, _p, ext) => ({
             w1: nachZeit(k, ext?.t, ext?.w1),
             w2: nachZeit(k, ext?.t, ext?.w2),
-            hist: nachZeit(k, ext?.t, ext?.mf),
+            mf: nachZeit(k, ext?.t, ext?.mf),
         }),
     },
     volSma: {
