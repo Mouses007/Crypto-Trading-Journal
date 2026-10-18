@@ -24,6 +24,7 @@ import StrategieReiter from '../components/chart/StrategieReiter.vue'
 import AlarmReiter from '../components/chart/AlarmReiter.vue'
 import KiReiter from '../components/chart/KiReiter.vue'
 import AlarmDialog from '../components/chart/AlarmDialog.vue'
+import MomentumBox from '../components/chart/MomentumBox.vue'
 import { alarme, abonniereAlarme, neueAusloesungen, quittiere } from '../stores/chartAlarme.js'
 import { zeichnungenVon, aendere as zeichnungAendern, loesche as zeichnungLoeschen, macheRueckgaengig, macheWiederholen, fehlerMeldung } from '../stores/chartZeichnungen.js'
 import { neueInstanz, saubereParams, INDIKATOREN } from '../utils/chart/indikatorRegister.js'
@@ -127,6 +128,40 @@ function leisteZuruecksetzen() {
     leisteBreite.value = 260
     try { localStorage.removeItem(LEISTE_SCHLUESSEL) } catch { /* kein Speicher */ }
 }
+
+/*
+ * Momentum-Box unten in der Seitenleiste: Höhe ziehbar, ein-/ausklappbar.
+ * Beides im Browser — wie die Leistenbreite eine Frage des Bildschirms.
+ */
+const BOX_VORGABE = 330
+function leseBox(schluessel, vorgabe) {
+    try { const v = localStorage.getItem(schluessel); return v == null ? vorgabe : JSON.parse(v) } catch { return vorgabe }
+}
+function schreibeBox(schluessel, wert) {
+    try { localStorage.setItem(schluessel, JSON.stringify(wert)) } catch { /* kein Speicher */ }
+}
+const boxOffen = ref(leseBox('chartMomentumBoxOffen', true) !== false)
+const boxHoehe = ref(Math.max(80, Math.min(900, Number(leseBox('chartMomentumBoxHoehe', BOX_VORGABE)) || BOX_VORGABE)))
+let boxZug = null
+function schalteBox() { boxOffen.value = !boxOffen.value; schreibeBox('chartMomentumBoxOffen', boxOffen.value) }
+function boxZiehenStart(e) {
+    if (!boxOffen.value) return
+    boxZug = { y: e.clientY, hoehe: boxHoehe.value, max: (e.currentTarget.parentElement?.clientHeight || 800) - 120 }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    document.body.style.userSelect = 'none'
+}
+function boxZiehen(e) {
+    if (!boxZug) return
+    // Trenner sitzt ÜBER der Box: nach oben ziehen macht sie höher.
+    boxHoehe.value = Math.round(Math.max(80, Math.min(boxZug.max, boxZug.hoehe + boxZug.y - e.clientY)))
+}
+function boxZiehenEnde() {
+    if (!boxZug) return
+    boxZug = null
+    document.body.style.userSelect = ''
+    schreibeBox('chartMomentumBoxHoehe', boxHoehe.value)
+}
+function boxHoeheZurueck() { boxHoehe.value = BOX_VORGABE; schreibeBox('chartMomentumBoxHoehe', BOX_VORGABE) }
 
 watch(daten, () => {
     if (ignoriereNaechsteAenderung) { ignoriereNaechsteAenderung = false; return }
@@ -455,6 +490,7 @@ watch(sichtbareAnzahl, async () => {
                             <i :class="r.icon"></i>
                         </button>
                     </div>
+                    <div class="reiterInhalt">
                     <div class="reiterTitel">{{ t('chart.reiter.' + daten.seitenleiste.reiter) }}</div>
                     <WatchlistReiter v-if="daten.seitenleiste.reiter === 'watchlist'" :watchlists="watchlists"
                         :aktives-symbol="aktivesPanel.symbol" :aktiver-markt="aktivesPanel.markt"
@@ -473,6 +509,18 @@ watch(sichtbareAnzahl, async () => {
                         :markt="aktivesPanel.markt" :kurs="aktuellerKurs" @neu="alarmBeiPreis" @bearbeite="alarmBearbeiten" />
                     <KiReiter v-else-if="daten.seitenleiste.reiter === 'ki'" :panel="aktivesPanel"
                         @vorschau="(a) => aktivesPanelRef?.setzeKiVorschau(a)" />
+                    </div>
+                    <!-- Momentum-Box (Pine-Panel) unter dem Reiter: Trenner ziehen = Höhe, Pfeil = ein-/ausklappen. -->
+                    <div class="boxTrenner" :class="{ zu: !boxOffen }" @pointerdown="boxZiehenStart" @pointermove="boxZiehen"
+                        @pointerup="boxZiehenEnde" @pointercancel="boxZiehenEnde" @dblclick="boxHoeheZurueck"
+                        :title="t('chart.mbox.trenner')">
+                        <span>{{ t('chart.mbox.titel') }}</span>
+                        <button @pointerdown.stop @click.stop="schalteBox" :title="t(boxOffen ? 'chart.mbox.zu' : 'chart.mbox.auf')">
+                            <i :class="boxOffen ? 'uil uil-angle-down' : 'uil uil-angle-up'"></i></button>
+                    </div>
+                    <div v-if="boxOffen" class="boxBereich" :style="{ height: boxHoehe + 'px' }">
+                        <MomentumBox :symbol="aktivesPanel.symbol" :interval="aktivesPanel.interval" :markt="aktivesPanel.markt" />
+                    </div>
                     <!-- Lizenzhinweis der Chart-Bibliothek (Apache-2.0): Hersteller und Link
                          auf einer Seite der App — deshalb steht im Chart selbst kein Logo. -->
                     <a class="lizenz" href="https://www.tradingview.com/" target="_blank" rel="noopener">
@@ -608,6 +656,53 @@ watch(sichtbareAnzahl, async () => {
 
 .lizenz:hover {
     opacity: 1;
+}
+
+.reiterInhalt {
+    flex: 1;
+    min-height: 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+}
+
+.boxTrenner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 3px 2px;
+    border-top: 1px solid var(--white-18, rgba(255, 255, 255, 0.18));
+    cursor: row-resize;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--grey-text);
+    touch-action: none;
+    flex-shrink: 0;
+}
+
+.boxTrenner.zu {
+    cursor: default;
+}
+
+.boxTrenner:hover:not(.zu) {
+    border-top-color: var(--blue-color);
+}
+
+.boxTrenner button {
+    background: transparent;
+    border: none;
+    color: var(--grey-text);
+    padding: 0 4px;
+    cursor: pointer;
+}
+
+.boxBereich {
+    flex-shrink: 0;
+    overflow-y: auto;
+    min-height: 0;
 }
 
 .reiterTitel {

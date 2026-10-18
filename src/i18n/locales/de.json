@@ -5391,6 +5391,29 @@
       "showVliq": "Jede Vektorkerze wird zur Zone; Folgekerzen fressen den durchhandelten Teil weg. Sichtbar bleibt nur die noch nicht abgeholte Liquidität.",
       "vliqBody": "An = Zone ist der Kerzenkörper, aus = ganze Kerze mit Dochten.",
       "showDOpen": "Eröffnungskurs des heutigen Tages (UTC) als gestrichelte Linie. Kurs darüber = Käufer haben die Kontrolle. Nur auf Intraday-Charts."
+    },
+    "mbox": {
+      "titel": "Momentum Radar",
+      "trenner": "Ziehen: Höhe der Box (Doppelklick: zurücksetzen)",
+      "zu": "Box einklappen",
+      "auf": "Box ausklappen",
+      "nurFutures": "Der Momentum Radar rechnet nur auf Perpetuals.",
+      "radarTf": "Radar gerechnet auf {tf} (nächste Zeitebene des Radars)",
+      "spotHoch": "Spot-Anteil hoch",
+      "kauft": "kauft",
+      "verkauft": "verkauft",
+      "richtungOffen": "Richtung offen",
+      "zLong": "Long-Zone",
+      "zShort": "Short-Zone",
+      "zFastLong": "fast Long-Zone",
+      "zFastShort": "fast Short-Zone",
+      "zNeutral": "neutral",
+      "tipSwing": "Liest Tag, 4h und 1h. Zeigen mindestens zwei davon in dieselbe Richtung und keine dagegen, steht hier ein Setup. Das Urteil beschreibt den Markt, nicht den offenen Chart.",
+      "tipDay": "Dasselbe für 15m und 5m, für den Handel innerhalb eines Tages. Welche Zeile die Kopfzeile bestimmt: bis 15m Day, darüber Swing.",
+      "tipHerkunft": "Rechts die Aufteilung des Handelsvolumens zwischen Perpetual und Spotmarkt. Links das Urteil: ein Signal ist erst die VERSCHIEBUNG des Verhältnisses gegen seinen Schnitt der letzten 200 Kerzen (1,5-mal so schief, drei Kerzen am Stück). „Spot-Anteil hoch\" sagt nichts über die Richtung — dahinter steht, ob der Spot kauft oder verkauft.",
+      "tipVwap": "Steht der Kurs über oder unter dem Wochen- und Monats-VWAP? Das Umfeld: der Radar sagt WANN, diese Zeile, ob das grosse Bild passt. Rechts der Geldfluss als Zahl (violett = Futures treiben).",
+      "tipStruktur": "BOS = Bruch eines Hochs/Tiefs IN Trendrichtung, CHoCH = Bruch GEGEN die bisherige Richtung. Dahinter das gebrochene Niveau, wie viele Kerzen her, und die Lage zur EMA50 — gerechnet auf 4h.",
+      "tipTf": "Wo steht die Welle dieser Zeitebene? Long-Zone unter −50, Short-Zone über +50, „fast\" = 70 % des Weges dorthin. Gelesen nur über geschlossene Kerzen."
     }
   }
 }

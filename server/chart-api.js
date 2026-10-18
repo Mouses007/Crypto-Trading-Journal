@@ -13,6 +13,7 @@
  *   GET  /api/chart/handelbar    welche Basiswährungen Bitunix/Bitget/Pionex führen
  *   CRUD /api/chart/layouts      Raster, Panels, Indikatoren, Overlay-Schalter
  *   CRUD /api/chart/watchlists   Symbol-Listen
+ *   GET  /api/chart/ticker       Startkurse der Watchlist (bis der Stream tickt)
  *   CRUD /api/chart/vorlagen     Indikator-Vorlagen (benannte Indikatorlisten)
  *   CRUD /api/chart/zeichnungen  Linien, Zonen, Fibonacci … je Symbol
  *   GET  /api/chart/journal      eigene Trades eines Symbols im sichtbaren Zeitraum
@@ -435,6 +436,41 @@ export function setupChartRoutes(app) {
         try {
             await getKnex()('chart_watchlists').where('id', Number(req.params.id)).del()
             res.json({ ok: true })
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    // ── Startkurse der Watchlist ─────────────────────────────────────────
+    /*
+     * GET /api/chart/ticker?markt=futures&symbole=BTCUSDT,ETHUSDT
+     *
+     * Die Watchlist bekommt ihre Kurse per miniTicker-Stream — bis zum ersten
+     * Tick (und nach jeder Neuverbindung) stand dort „—". Je Symbol ein
+     * 24h-Ticker (Gewicht 1; der Sammelabruf aller Symbole kostet 40), 10 s im
+     * Speicher, damit mehrere offene Fenster nicht mehrfach fragen.
+     */
+    const tickerCache = new Map()     // markt|symbol → { zeit, wert }
+    app.get('/api/chart/ticker', async (req, res) => {
+        try {
+            const markt = req.query.markt === 'spot' ? 'spot' : 'futures'
+            const symbole = String(req.query.symbole || '').toUpperCase().split(',').filter((x) => SYMBOL_RE.test(x)).slice(0, 40)
+            const basis = markt === 'spot' ? 'https://api.binance.com/api/v3/ticker/24hr' : 'https://fapi.binance.com/fapi/v1/ticker/24hr'
+            const aus = {}
+            await Promise.all(symbole.map(async (sym) => {
+                const k = `${markt}|${sym}`
+                const c = tickerCache.get(k)
+                if (c && Date.now() - c.zeit < 10_000) { aus[sym] = c.wert; return }
+                try {
+                    const antwort = await axios.get(basis, { params: { symbol: sym }, timeout: HTTP_TIMEOUT })
+                    if (markt === 'futures') notiereGewicht(antwort.headers)
+                    const data = antwort.data
+                    const wert = { c: Number(data.lastPrice), o: Number(data.openPrice) }
+                    if (Number.isFinite(wert.c)) { tickerCache.set(k, { zeit: Date.now(), wert }); aus[sym] = wert }
+                } catch (e) {
+                    if (markt === 'futures' && e.response) melde429(e.response.status, e.response.headers)
+                    // Ein unbekanntes Symbol bleibt einfach leer — der Stream liefert es auch nicht.
+                }
+            }))
+            res.json({ markt, kurse: aus })
         } catch (e) { res.status(500).json({ error: e.message }) }
     })
 

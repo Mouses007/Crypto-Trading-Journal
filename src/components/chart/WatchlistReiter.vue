@@ -8,6 +8,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { BinanceStream, buildMiniTickerUrl } from '../../utils/binanceStream.js'
+import axios from 'axios'
 
 const props = defineProps({
     watchlists: { type: Array, default: () => [] },
@@ -47,6 +48,12 @@ function verbinde() {
         })
         st.connect()
         streams.push(st)
+        // Startkurse sofort, nicht erst beim ersten Tick — sonst steht „—" da, bis jedes Symbol einmal gehandelt hat.
+        axios.get('/api/chart/ticker', { params: { markt, symbole: syms.join(',') } }).then(({ data }) => {
+            const neu = { ...kurse.value }
+            for (const [sym, k] of Object.entries(data.kurse || {})) if (!neu[`${markt}|${sym}`]) neu[`${markt}|${sym}`] = k
+            kurse.value = neu
+        }).catch(() => { /* der Stream füllt nach */ })
     }
 }
 

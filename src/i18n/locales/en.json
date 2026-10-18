@@ -5391,6 +5391,29 @@
       "showPocC": "Highest-volume price INSIDE each candle, from Binance intrabar candles. Older candles without loaded intrabar data get none.",
       "showVliq": "Each vector candle becomes a zone; later candles eat the traded part away — only untouched liquidity remains.",
       "showDOpen": "Today's opening price (UTC) as a dashed line. Intraday charts only."
+    },
+    "mbox": {
+      "titel": "Momentum Radar",
+      "trenner": "Drag: box height (double-click: reset)",
+      "zu": "Collapse box",
+      "auf": "Expand box",
+      "nurFutures": "The Momentum Radar only computes on perpetuals.",
+      "radarTf": "Radar computed on {tf} (nearest radar timeframe)",
+      "spotHoch": "Spot share high",
+      "kauft": "buying",
+      "verkauft": "selling",
+      "richtungOffen": "direction open",
+      "zLong": "Long zone",
+      "zShort": "Short zone",
+      "zFastLong": "near long zone",
+      "zFastShort": "near short zone",
+      "zNeutral": "neutral",
+      "tipSwing": "Reads day, 4h and 1h. If at least two point the same way and none against, there is a setup. Describes the market, not the open chart.",
+      "tipDay": "The same for 15m and 5m, for intraday trading. Up to 15m the header follows Day, above it Swing.",
+      "tipHerkunft": "Right: split of trading volume between perpetual and spot. Left: the verdict — a signal is only a SHIFT of the ratio against its 200-candle average (1.5× as skewed, three candles in a row). \"Spot share high\" says nothing about direction; it is followed by whether spot buys or sells.",
+      "tipVwap": "Is price above or below the weekly and monthly VWAP? The radar says WHEN, this row whether the big picture fits. Right: money flow as a number (violet = futures driving).",
+      "tipStruktur": "BOS = break of a high/low WITH the trend, CHoCH = break AGAINST it. Then the broken level, how many candles ago, and the position relative to EMA50 — computed on 4h.",
+      "tipTf": "Where is the wave of this timeframe? Long zone below −50, short zone above +50, \"near\" = 70 % of the way. Closed candles only."
     }
   }
 }
