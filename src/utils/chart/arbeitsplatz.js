@@ -73,6 +73,10 @@ export const api = {
     watchlistNeu: (name, symbole = []) => axios.post('/api/chart/watchlists', { name, symbole }).then((r) => r.data),
     watchlistSpeichern: (id, patch) => axios.put(`/api/chart/watchlists/${id}`, patch).then((r) => r.data),
     watchlistLoeschen: (id) => axios.delete(`/api/chart/watchlists/${id}`),
+    vorlagen: () => axios.get('/api/chart/vorlagen').then((r) => r.data),
+    vorlageNeu: (name, indikatoren) => axios.post('/api/chart/vorlagen', { name, indikatoren }).then((r) => r.data),
+    vorlageSpeichern: (id, patch) => axios.put(`/api/chart/vorlagen/${id}`, patch).then((r) => r.data),
+    vorlageLoeschen: (id) => axios.delete(`/api/chart/vorlagen/${id}`),
 }
 
 export const STANDARD_WATCHLIST = [

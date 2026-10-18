@@ -5138,6 +5138,21 @@
     "ausblenden": "Ausblenden",
     "einstellungen": "Einstellungen",
     "entfernen": "Entfernen",
+    "vorlage": {
+      "knopf": "Vorlagen",
+      "titel": "Indikator-Vorlagen",
+      "leer": "Noch keine Vorlage. Indikatoren zusammenstellen und unten speichern.",
+      "anwendenTitel": "Anwenden: ersetzt die Indikatoren dieses Charts ({n} Indikatoren)",
+      "hinzufuegen": "Zu den Indikatoren dieses Charts hinzufügen",
+      "ueberschreiben": "Mit den Indikatoren dieses Charts überschreiben",
+      "umbenennen": "Umbenennen",
+      "loeschen": "Löschen",
+      "speichern": "Aktuelle Indikatoren als Vorlage speichern ({n})",
+      "nameFrage": "Name der Vorlage",
+      "nameVorgabe": "Meine Vorlage",
+      "ueberschreibenFrage": "Vorlage „{name}\" mit den Indikatoren dieses Charts überschreiben?",
+      "loeschenFrage": "Vorlage „{name}\" löschen?"
+    },
     "wzKurz": {
       "alleZeichnungenLoeschen": "Alle Zeichnungen löschen",
       "ausklappen": "Werkzeugleiste ausklappen (mit Namen)",

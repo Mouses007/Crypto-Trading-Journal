@@ -5138,6 +5138,21 @@
     "ausblenden": "Hide",
     "einstellungen": "Settings",
     "entfernen": "Remove",
+    "vorlage": {
+      "knopf": "Templates",
+      "titel": "Indicator templates",
+      "leer": "No template yet. Put indicators together and save them below.",
+      "anwendenTitel": "Apply: replaces this chart's indicators ({n} indicators)",
+      "hinzufuegen": "Add to this chart's indicators",
+      "ueberschreiben": "Overwrite with this chart's indicators",
+      "umbenennen": "Rename",
+      "loeschen": "Delete",
+      "speichern": "Save current indicators as template ({n})",
+      "nameFrage": "Template name",
+      "nameVorgabe": "My template",
+      "ueberschreibenFrage": "Overwrite template \"{name}\" with this chart's indicators?",
+      "loeschenFrage": "Delete template \"{name}\"?"
+    },
     "wzKurz": {
       "alleZeichnungenLoeschen": "Delete all drawings",
       "ausklappen": "Expand toolbar (with names)",

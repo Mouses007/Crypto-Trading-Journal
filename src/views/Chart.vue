@@ -26,7 +26,7 @@ import KiReiter from '../components/chart/KiReiter.vue'
 import AlarmDialog from '../components/chart/AlarmDialog.vue'
 import { alarme, abonniereAlarme, neueAusloesungen, quittiere } from '../stores/chartAlarme.js'
 import { zeichnungenVon, aendere as zeichnungAendern, loesche as zeichnungLoeschen, macheRueckgaengig, macheWiederholen, fehlerMeldung } from '../stores/chartZeichnungen.js'
-import { neueInstanz } from '../utils/chart/indikatorRegister.js'
+import { neueInstanz, saubereParams, INDIKATOREN } from '../utils/chart/indikatorRegister.js'
 import { useIstTelefon } from '../utils/geraet.js'
 import { api, standardLayout, vervollstaendige, passeAnRaster, PANELS_JE_RASTER, STANDARD_WATCHLIST } from '../utils/chart/arbeitsplatz.js'
 
@@ -285,6 +285,24 @@ function indikatorSpeichern(instanz) {
     dialog.value = null
 }
 
+/**
+ * Vorlage auf den aktiven Chart: ersetzen (wie TradingView) oder dazunehmen.
+ * Jede Instanz bekommt eine neue ID — die Vorlage speichert keine, sonst
+ * trügen zwei Panels dieselbe. Typen, die dieser Stand nicht kennt (Vorlage
+ * von einem neueren Codestand), fallen weg statt ein leeres Fenster zu bauen.
+ */
+function vorlageAnwenden({ indikatoren, modus }) {
+    const p = daten.value.panels[aktivIndex.value]
+    if (!p) return
+    const neu = (indikatoren || []).filter((x) => INDIKATOREN[x.typ]).map((x) => ({
+        ...neueInstanz(x.typ),
+        params: saubereParams(x.typ, x.params),
+        farben: { ...(x.farben || {}) },
+        sichtbar: x.sichtbar !== false,
+    }))
+    p.indikatoren = modus === 'hinzu' ? [...(p.indikatoren || []), ...neu] : neu
+}
+
 function indikatorAktion(i, { aktion, id }) {
     const p = daten.value.panels[i]
     const inst = (p.indikatoren || []).find((x) => x.id === id)
@@ -396,7 +414,7 @@ watch(sichtbareAnzahl, async () => {
         <template v-if="bereit">
             <ChartKopfleiste ref="kopf" :panel="aktivesPanel" :raster="daten.raster" :sync="daten.sync" :layouts="layouts"
                 :layout-id="layoutId" :seitenleiste-offen="daten.seitenleiste.offen" :telefon="telefon"
-                @panel="setzePanel" @indikatoren="oeffneIndikatoren" @raster="setzeRaster" @sync="setzeSync" @layout-wechsel="layoutWechsel"
+                @panel="setzePanel" @indikatoren="oeffneIndikatoren" @vorlage="vorlageAnwenden" @raster="setzeRaster" @sync="setzeSync" @layout-wechsel="layoutWechsel"
                 @layout-neu="layoutNeu" @layout-umbenennen="layoutUmbenennen" @layout-loeschen="layoutLoeschen"
                 @seitenleiste="daten.seitenleiste.offen = !daten.seitenleiste.offen" @foto="foto" />
 

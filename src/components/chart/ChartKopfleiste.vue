@@ -6,6 +6,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SymbolSuche from './SymbolSuche.vue'
+import VorlagenMenue from './VorlagenMenue.vue'
 import { INTERVALLE, INTERVALLE_SICHTBAR, QUELLEN_OHNE } from '../../utils/chart/kerzenQuelle.js'
 import { OVERLAYS, overlayAn } from '../../utils/chart/overlays/liste.js'
 
@@ -18,7 +19,7 @@ const props = defineProps({
     seitenleisteOffen: { type: Boolean, default: true },
     telefon: { type: Boolean, default: false },
 })
-const emit = defineEmits(['panel', 'indikatoren', 'raster', 'sync', 'layoutWechsel', 'layoutNeu', 'layoutUmbenennen', 'layoutLoeschen', 'seitenleiste', 'foto'])
+const emit = defineEmits(['panel', 'indikatoren', 'raster', 'sync', 'layoutWechsel', 'layoutNeu', 'layoutUmbenennen', 'layoutLoeschen', 'seitenleiste', 'foto', 'vorlage'])
 const { t } = useI18n()
 
 const suche = ref(null)
@@ -138,6 +139,7 @@ defineExpose({ oeffneSuche: () => suche.value?.oeffne() })
             <button class="tf" :title="t('chart.indikatorenTitel')" @click="emit('indikatoren')">
                 <i class="uil uil-chart-growth"></i> {{ t('chart.indikatoren') }}
             </button>
+            <VorlagenMenue :aktuelle="panel.indikatoren || []" @anwenden="emit('vorlage', $event)" />
             <div class="aufklapp">
                 <button class="tf" :class="{ an: overlayOffen }" :title="t('chart.overlaysTitel')" @click="overlayOffen = !overlayOffen">
                     <i class="uil uil-layers"></i> {{ t('chart.overlays') }}

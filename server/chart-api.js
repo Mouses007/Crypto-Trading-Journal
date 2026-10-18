@@ -13,6 +13,7 @@
  *   GET  /api/chart/handelbar    welche Basiswährungen Bitunix/Bitget/Pionex führen
  *   CRUD /api/chart/layouts      Raster, Panels, Indikatoren, Overlay-Schalter
  *   CRUD /api/chart/watchlists   Symbol-Listen
+ *   CRUD /api/chart/vorlagen     Indikator-Vorlagen (benannte Indikatorlisten)
  *   CRUD /api/chart/zeichnungen  Linien, Zonen, Fibonacci … je Symbol
  *   GET  /api/chart/journal      eigene Trades eines Symbols im sichtbaren Zeitraum
  *   GET  /api/chart/hebelzonen   modellierte Liquidationszonen (Hebelkarte, verdichtet)
@@ -28,6 +29,7 @@ import { tradesAusZeilen, mitNotizen } from './chart-journal.js'
 import { holeHebelzonen } from './hebelzonen.js'
 import { getFundingHistory } from './market-data.js'
 import { ausCache } from './marktradar-api.js'
+import { saubereVorlage } from './chart-vorlagen.js'
 
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
 const HTTP_TIMEOUT = 10000
@@ -168,6 +170,10 @@ const MAX_WATCHLIST_SYMBOLE = 400
 
 function layoutZeile(r) {
     return { id: r.id, name: r.name, aktiv: Number(r.aktiv) === 1, daten: parse(r.daten, {}), geaendertAm: Number(r.geaendertAm) || 0 }
+}
+
+function vorlageZeile(r) {
+    return { id: r.id, name: r.name, indikatoren: parse(r.indikatoren, []), geaendertAm: Number(r.geaendertAm) || 0 }
 }
 
 function watchlistZeile(r) {
@@ -428,6 +434,54 @@ export function setupChartRoutes(app) {
     app.delete('/api/chart/watchlists/:id', async (req, res) => {
         try {
             await getKnex()('chart_watchlists').where('id', Number(req.params.id)).del()
+            res.json({ ok: true })
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    // ── Indikator-Vorlagen ───────────────────────────────────────────────
+    app.get('/api/chart/vorlagen', async (_req, res) => {
+        try {
+            const zeilen = await getKnex()('chart_vorlagen').orderBy([{ column: 'name' }, { column: 'id' }])
+            res.json(zeilen.map(vorlageZeile))
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    app.post('/api/chart/vorlagen', async (req, res) => {
+        try {
+            const v = saubereVorlage(req.body?.indikatoren)
+            if (!v.ok) return res.status(400).json({ error: v.fehler })
+            const knex = getKnex()
+            const [zeile] = await knex('chart_vorlagen').insert({
+                name: name(req.body?.name, 'Vorlage'),
+                indikatoren: JSON.stringify(v.indikatoren),
+                geaendertAm: Date.now(),
+            }).returning('id')
+            const id = typeof zeile === 'object' ? zeile.id : zeile
+            res.json(vorlageZeile(await knex('chart_vorlagen').where('id', id).first()))
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    app.put('/api/chart/vorlagen/:id', async (req, res) => {
+        try {
+            const id = Number(req.params.id)
+            const knex = getKnex()
+            const alt = await knex('chart_vorlagen').where('id', id).first()
+            if (!alt) return res.status(404).json({ error: 'Vorlage nicht gefunden' })
+            const patch = { geaendertAm: Date.now() }
+            if (req.body?.name !== undefined) patch.name = name(req.body.name, alt.name)
+            if (req.body?.indikatoren !== undefined) {
+                const v = saubereVorlage(req.body.indikatoren)
+                if (!v.ok) return res.status(400).json({ error: v.fehler })
+                patch.indikatoren = JSON.stringify(v.indikatoren)
+            }
+            await knex('chart_vorlagen').where('id', id).update(patch)
+            res.json(vorlageZeile(await knex('chart_vorlagen').where('id', id).first()))
+        } catch (e) { res.status(500).json({ error: e.message }) }
+    })
+
+    app.delete('/api/chart/vorlagen/:id', async (req, res) => {
+        try {
+            await getKnex()('chart_vorlagen').where('id', Number(req.params.id)).del()
             res.json({ ok: true })
         } catch (e) { res.status(500).json({ error: e.message }) }
     })

@@ -56,6 +56,7 @@ const BACKUP_TABLES = [
     'chart_watchlists',
     'chart_zeichnungen',
     'chart_alarme',
+    'chart_vorlagen',
     // ── Strategie-Sektion ───────────────────────────────────────────────
     // Selbst gebaute Regelstrategien existieren NIRGENDWO sonst — sie sind
     // Handarbeit des Nutzers, kein Mitschnitt. Ohne sie wäre der
@@ -163,6 +164,7 @@ const DELETE_ORDER = [
     'chart_zeichnungen',
     'chart_watchlists',
     'chart_layouts',
+    'chart_vorlagen',
     'live_sessions',
     'calendar_events',
     'market_snapshots',

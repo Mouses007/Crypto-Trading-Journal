@@ -75,7 +75,7 @@ export function getKnex() {
  * gemischtem `is_called` hinkt der Vergleich um eins.
  */
 async function fixPostgresSequences(knex) {
-    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute', 'hype_projekt', 'hype_frueh', 'hype_smart_kaeufe', 'hype_listungen_neu', 'hype_gedaechtnis', 'chart_layouts', 'chart_watchlists', 'chart_zeichnungen', 'chart_alarme']
+    const tables = ['notes', 'trades', 'screenshots', 'satisfactions', 'tags', 'excursions', 'incoming_positions', 'diaries', 'playbooks', 'ai_reports', 'ai_report_messages', 'ai_trade_messages', 'live_recordings', 'market_snapshots', 'calendar_events', 'live_sessions', 'ai_usage', 'hype_candidates', 'hype_reports', 'hype_settings', 'hype_favoriten', 'hype_alarme', 'coinradar_laeufe', 'coinradar_zeilen', 'coinradar_settings', 'radar_ergebnisse', 'oi_minute', 'hype_projekt', 'hype_frueh', 'hype_smart_kaeufe', 'hype_listungen_neu', 'hype_gedaechtnis', 'chart_layouts', 'chart_watchlists', 'chart_zeichnungen', 'chart_alarme', 'chart_vorlagen']
     let fixed = 0
 
     for (const table of tables) {
@@ -188,7 +188,8 @@ async function fixPostgresSequences(knex) {
 // Phase, Treibstoff-Note und das letzte Urteil. Rein additiv.
 // v26: Chart-Arbeitsplatz (ersetzt die Übersicht) — `chart_layouts`,
 // `chart_watchlists`, `chart_zeichnungen`, `chart_alarme`. Rein additiv.
-const SCHEMA_VERSION = 26
+// v27: Indikator-Vorlagen des Charts (`chart_vorlagen`). Rein additiv.
+const SCHEMA_VERSION = 27
 
 async function runMigrations(knex, client) {
     const isPg = client === 'pg'
@@ -3490,6 +3491,22 @@ async function runMigrations(knex, client) {
     // die Tabelle schon ohne diese Spalten angelegt haben, bekommen sie hier.
     await addColumnIfNotExists('chart_alarme', 'letzteZeit', (t) => t.bigInteger('letzteZeit').defaultTo(0))
     await addColumnIfNotExists('chart_alarme', 'verlauf', (t) => t.text('verlauf').defaultTo('[]'))
+
+    // ── v27 ─────────────────────────────────────────────────────────────
+    /*
+     * Indikator-Vorlagen: benannte Indikatorlisten, auf jeden Chart anwendbar.
+     * Eigene Tabelle statt Teil eines Layouts — eine Vorlage soll in jedem
+     * Layout und für jedes Symbol gelten.
+     */
+    if (!(await knex.schema.hasTable('chart_vorlagen'))) {
+        await knex.schema.createTable('chart_vorlagen', (t) => {
+            t.increments('id').primary()
+            t.string('name').notNullable()
+            t.text('indikatoren').defaultTo('[]')    // JSON: [{typ, params, farben, sichtbar}]
+            t.bigInteger('geaendertAm').defaultTo(0)
+        })
+        console.log(' -> Created table: chart_vorlagen')
+    }
 
     // ==================== SCHEMA-ANKER ====================
     // Ganz am Ende, damit die Version erst steht, wenn alle Checks durch sind.
