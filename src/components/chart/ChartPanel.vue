@@ -342,7 +342,8 @@ async function ladeExtern(nurWelche = null) {
         if (nurWelche && !nurWelche.includes(quelle)) continue
         try {
             if (quelle === 'oi') {
-                const { data } = await axios.get('/api/marktradar/ls-oi', { params: { symbol, stunden: 200 } })
+                // 500 Stunden = das, was Binance je Abruf gibt; vorher 200 — das OI-Fenster begann in der Bildmitte
+                const { data } = await axios.get('/api/marktradar/ls-oi', { params: { symbol, stunden: 500 } })
                 if (symbol === props.panel.symbol) zeichner.setzeExtern('oi', data.punkte || [])
             } else if (quelle === 'funding') {
                 const { data } = await axios.get('/api/chart/funding', { params: { symbol } })
@@ -355,7 +356,8 @@ async function ladeExtern(nurWelche = null) {
                     hinweis('momentum', t('chart.markt.momentumTf'))
                     continue
                 }
-                const { data } = await axios.get('/api/livetrading/momentum', { params: { symbol, tf: interval } })
+                // lang=1: ganzer Verlauf statt der letzten 150 Kerzen (die der Kachel genügen)
+                const { data } = await axios.get('/api/livetrading/momentum', { params: { symbol, tf: interval, lang: 1 } })
                 if (symbol === props.panel.symbol && interval === props.panel.interval) {
                     zeichner.setzeExtern('momentum', data.verlauf || null)
                     hinweis('momentum', null)

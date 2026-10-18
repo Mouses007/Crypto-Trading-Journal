@@ -4943,7 +4943,7 @@
       "oi": {
         "name": "Open interest",
         "kurz": "OI",
-        "text": "Open contracts (Binance, hourly, last ~8 days) — OI rising with price means new positions. The bars below show the change per candle: green = positions added, red = positions closed."
+        "text": "Open contracts (Binance, hourly, last ~21 days) — OI rising with price means new positions. The bars below show the change per candle: green = positions added, red = positions closed."
       },
       "longShort": {
         "name": "Long share of accounts",

@@ -851,7 +851,9 @@ const SYMBOL_RE = /^[A-Z0-9]{2,20}$/
 export async function holeLsOi(symbol, stunden = 48) {
     const sym = String(symbol || 'BTCUSDT').toUpperCase()
     if (!SYMBOL_RE.test(sym)) throw new Error('Ungültiges Symbol')
-    const limit = Math.max(6, Math.min(200, Number(stunden) || 48))
+    // Binance gibt je Abruf höchstens 500 Werte, und nur die letzten 30 Tage.
+    // Der Chart fragt 500 (knapp 21 Tage), die Kachel ihre 48–200.
+    const limit = Math.max(6, Math.min(500, Number(stunden) || 48))
 
     return ausCache(`lsoi|${sym}|${limit}`, 5 * 60 * 1000, async () => {
         const [ls, oi, kerzen] = await Promise.all([

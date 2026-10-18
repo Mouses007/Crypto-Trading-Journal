@@ -462,10 +462,20 @@ export function setupLivetradingRoutes(app) {
             const symbol = String(req.query.symbol || 'BTCUSDT').toUpperCase()
             if (!/^[A-Z0-9]{2,20}$/.test(symbol)) return res.status(400).json({ error: 'Ungültiges Symbol' })
             const tf = CHART_ZEITEBENEN.includes(String(req.query.tf)) ? String(req.query.tf) : '15m'
-            const key = `lt_momentum|${symbol}|${tf}`
+            /*
+             * `lang=1` (Chart-Arbeitsplatz): die Chart-Zeitebene mit 1500 Kerzen
+             * und der GANZE Verlauf statt der letzten 150 — der Chart lädt so
+             * viele Kerzen, und das Fenster begann sonst in der Bildmitte.
+             * Die Kachel bleibt bei 150 (eigener Cache-Eintrag).
+             */
+            const lang = req.query.lang === '1'
+            const key = `lt_momentum|${symbol}|${tf}${lang ? '|lang' : ''}`
             if (req.query.force) verwerfeCache(key)
             const nutzlast = await ausCache(key, 30 * 1000, async () => {
                 const LIMIT = { '1w': 300, '1d': 500, '4h': 500, '1h': 1000, '15m': 500, '5m': 500 }
+                // 1499: Binance liefert höchstens 1500, die laufende fällt weg — mit 1500
+                // bekäme getClosedCandles nie genug und fragte bei jedem Aufruf neu.
+                if (lang) LIMIT[tf] = 1499
                 const eintraege = await Promise.all(Object.entries(LIMIT).map(async ([z, n]) =>
                     [z, await getClosedCandles(symbol, z, n)]))
                 const kerzen = Object.fromEntries(eintraege)
@@ -480,13 +490,17 @@ export function setupLivetradingRoutes(app) {
                 let spot = null
                 let spotStatus = 'ok'
                 try {
-                    spot = await getClosedCandles(symbol, tf, 500, { market: 'spot' })
+                    spot = await getClosedCandles(symbol, tf, lang ? 1000 : 500, { market: 'spot' })
                     if (!spot?.length) spotStatus = 'fehlt'
                 } catch (e) {
                     spotStatus = e?.response?.status === 400 ? 'fehlt' : 'gestoert'
                     if (spotStatus === 'gestoert') logWarn('livetrading', `Momentum: Spot ${symbol} ${tf} nicht erreichbar`, e.message)
                 }
-                return { symbol, ...werteMomentumAus({ kerzen, spot, chartTf: tf }), spotVerfuegbar: spotStatus === 'ok', spotStatus }
+                return {
+                    symbol,
+                    ...werteMomentumAus({ kerzen, spot, chartTf: tf, ...(lang ? { punkte: kerzen[tf]?.length || 1499 } : {}) }),
+                    spotVerfuegbar: spotStatus === 'ok', spotStatus,
+                }
             })
             sendeRadar(res, nutzlast)
         } catch (e) {
