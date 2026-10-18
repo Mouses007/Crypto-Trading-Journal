@@ -394,7 +394,7 @@ async function ladeExtern(nurWelche = null) {
  * VWAP Vector: Kerzen höherer Zeiteinheiten (MTF-EMA, Fibonacci) und
  * Intrabar-Kerzen (Candle-POC). Immer von Binance — Bitunix/Bitget liefern
  * zu wenig Historie für eine EMA 50 auf dem Tag. Intrabar höchstens drei
- * Seiten (4500 Kerzen): ältere Chartkerzen bekommen keinen Candle-POC, wie
+ * Seiten (3000 Kerzen — Binance-Abrufe sind hier auf 1000 je Seite gedeckelt): ältere Chartkerzen bekommen keinen Candle-POC, wie
  * im Pine, wenn das Intrabar-Budget aufgebraucht ist.
  */
 const vvCache = { schluessel: '', htf: {}, intra: [] }
@@ -411,9 +411,15 @@ async function ladeVwapVector() {
     }
     const schluessel = `${symbol}|${markt}|${interval}|${intra}`
     if (vvCache.schluessel !== schluessel) { vvCache.schluessel = schluessel; vvCache.htf = {}; vvCache.intra = [] }
+    // Nur schreiben, solange der Speicher noch zu DIESEM Abruf gehört — ein späte
+    // Antwort für das alte Symbol mischte sonst dessen Kerzen in den neuen Bestand.
+    const nochMeins = () => vvCache.schluessel === schluessel
     const m = markt === 'spot' ? 'spot' : 'futures'
     await Promise.all([...htf].map(async (tf) => {
-        try { vvCache.htf[tf] = await ladeKerzen({ symbol, markt: m, interval: tf, limit: 1000 }) } catch { /* Modul bleibt leer */ }
+        try {
+            const k = await ladeKerzen({ symbol, markt: m, interval: tf, limit: 1000 })
+            if (nochMeins()) vvCache.htf[tf] = k
+        } catch { /* Modul bleibt leer */ }
     }))
     if (intra) {
         try {
@@ -426,13 +432,14 @@ async function ladeVwapVector() {
                     if (!alt.length) break
                     liste = fuegeZusammen(alt, liste)
                 }
-                vvCache.intra = liste
+                if (nochMeins()) vvCache.intra = liste
             } else {
-                vvCache.intra = fuegeZusammen(vvCache.intra, await ladeKerzen({ symbol, markt: m, interval: intra, limit: 200 }))
+                const neu = await ladeKerzen({ symbol, markt: m, interval: intra, limit: 200 })
+                if (nochMeins()) vvCache.intra = fuegeZusammen(vvCache.intra, neu)
             }
         } catch { /* ohne Intrabar-Daten kein Candle-POC */ }
     }
-    if (symbol !== props.panel.symbol || interval !== props.panel.interval) return
+    if (!nochMeins() || symbol !== props.panel.symbol || interval !== props.panel.interval) return
     zeichner.setzeExtern('vwapVector', { htf: { ...vvCache.htf }, intra: intra ? vvCache.intra : [], ivMs })
 }
 
@@ -451,6 +458,7 @@ function marktNeu() {
     marktZaehler = 0
     marktHinweise.value = {}
     clearInterval(marktTakt)
+    clearTimeout(marktNeuUhr)
     marktTick()
     marktTakt = setInterval(marktTick, 10_000)
 }
@@ -636,13 +644,20 @@ watch(() => props.panel.symbol, () => {
     setzeBacktest(null)
 })
 watch(() => props.panel.interval, () => { setzeStrategieVorschau(null); setzeKiVorschau(null) })
+let marktNeuUhr = null
 watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], () => {
     marktEbene?.setzeLiquidationen([])
     marktEbene?.setzeZonen(null)
     marktEbene?.setzeWaende(null)
+    // OI, Funding, Momentum, VWAP-Vector-Kerzen gehören zum ALTEN Symbol. Ohne
+    // Leeren rechneten die neuen Kerzen damit — und schlug der neue Abruf fehl,
+    // stand BTC-OI dauerhaft unter einem anderen Coin.
+    zeichner?.leereExtern()
     // Kurz warten, bis die neuen Kerzen da sind — Liquidationen und
-    // Datenfenster richten sich nach deren Zeitraum.
-    setTimeout(marktNeu, 1500)
+    // Datenfenster richten sich nach deren Zeitraum. Uhr merken: wird das Panel
+    // vorher abgebaut, legte marktNeu sonst einen Takt an, den niemand löscht.
+    clearTimeout(marktNeuUhr)
+    marktNeuUhr = setTimeout(marktNeu, 1500)
 })
 
 function schliesseTrade() {
@@ -997,6 +1012,7 @@ onBeforeUnmount(() => {
     strategieEbene?.abbauen()
     strategieEbene = null
     clearInterval(marktTakt)
+    clearTimeout(marktNeuUhr)
     marktEbene?.abbauen()
     marktEbene = null
     live?.stop()

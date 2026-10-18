@@ -13,7 +13,7 @@
  *
  * Zeiten in ms; Umrechnung über dieselbe Geometrie wie die Zeichnungen.
  */
-import { zeitZuLogisch, logischZuX, abstandZuStrecke } from '../zeichnungen/geometrie.js'
+import { ereignisZuLogisch, logischZuX, abstandZuStrecke } from '../zeichnungen/geometrie.js'
 
 const GRUEN = '#26a69a'
 const ROT = '#ff6960'
@@ -68,7 +68,8 @@ export class JournalEbene {
         this.requestUpdate()
     }
 
-    zuX(t) { return logischZuX(this.chart.timeScale(), zeitZuLogisch(t, this.zeiten, this.iv)) }
+    // Ereignisse sitzen IN ihrer Kerze (siehe ereignisZuLogisch), nicht auf der Teilung zwischen zwei Öffnungen.
+    zuX(t) { return logischZuX(this.chart.timeScale(), ereignisZuLogisch(t, this.zeiten, this.iv)) }
     zuY(p) { return p == null ? null : this.serie.priceToCoordinate(p) }
 
     /** Trade unter (x, y): Einstieg, Ausstieg oder Verbindungslinie. */

@@ -23,7 +23,7 @@
 
 import axios from 'axios'
 import { getKnex } from './database.js'
-import { notiereGewicht, melde429 } from './binance-takt.js'
+import { notiereGewicht, melde429, pausiertBis } from './binance-takt.js'
 import { ladeListungen } from './hype-radar/listungen.js'
 import { logWarn } from './logger.js'
 import { tradesAusZeilen, mitNotizen } from './chart-journal.js'
@@ -112,8 +112,13 @@ async function holeBitunix(symbol, interval, limit, endTime) {
         // Monatskerzen haben keine feste Länge — dort keine gebaute Kerze,
         // lieber keine als eine mit falscher Eröffnungszeit.
         if (preis > 0 && letzte && iv) {
-            const ab = Math.floor(Date.now() / iv) * iv
-            lauf = { t: Math.max(ab, letzte[0]), preis }
+            // Die laufende Kerze schliesst an die letzte geschlossene an. Früher
+            // floor(jetzt/iv)·iv: die Epoche (1.1.1970) war ein Donnerstag, Bitunix
+            // öffnet Wochenkerzen aber am Montag — die laufende 1w-Kerze stand drei
+            // Tage zu spät, mit einer Lücke davor. Liegt die letzte geschlossene
+            // Kerze mehr als eine Länge zurück (Lücke), lieber keine gebaute Kerze.
+            const t = letzte[0] + iv
+            if (t <= Date.now() && Date.now() < t + iv) lauf = { t, preis }
         }
     } catch { /* ohne Ticker eben ohne laufende Kerze */ }
     return { kerzen, lauf }
@@ -458,7 +463,9 @@ export function setupChartRoutes(app) {
             await Promise.all(symbole.map(async (sym) => {
                 const k = `${markt}|${sym}`
                 const c = tickerCache.get(k)
-                if (c && Date.now() - c.zeit < 10_000) { aus[sym] = c.wert; return }
+                if (c && Date.now() - c.zeit < (c.fehlt ? 5 * 60_000 : 10_000)) { if (c.wert) aus[sym] = c.wert; return }
+                // Während einer Binance-Strafe gar nicht erst fragen — jeder weitere Abruf verlängert sie.
+                if (pausiertBis()) { if (c?.wert) aus[sym] = c.wert; return }
                 try {
                     const antwort = await axios.get(basis, { params: { symbol: sym }, timeout: HTTP_TIMEOUT })
                     if (markt === 'futures') notiereGewicht(antwort.headers)
@@ -467,8 +474,13 @@ export function setupChartRoutes(app) {
                     const wert = { c: Number(data.lastPrice), o: Number(data.openPrice), q: Number(data.quoteVolume) }
                     if (Number.isFinite(wert.c)) { tickerCache.set(k, { zeit: Date.now(), wert }); aus[sym] = wert }
                 } catch (e) {
-                    if (markt === 'futures' && e.response) melde429(e.response.status, e.response.headers)
-                    // Ein unbekanntes Symbol bleibt einfach leer — der Stream liefert es auch nicht.
+                    const st = e.response?.status
+                    // NUR 429/418 sind eine Drosselung. melde429 setzt für jeden Status eine 30-s-Sperre
+                    // aller Binance-Historienabrufe — ein delistetes Symbol in der Watchlist (400) legte
+                    // so Coin-Radar und Ergebnis-Tracking still.
+                    if (markt === 'futures' && (st === 429 || st === 418)) melde429(st, e.response.headers)
+                    // Unbekanntes Symbol: 5 Minuten nicht wieder fragen (der Stream liefert es auch nicht).
+                    else if (st === 400) tickerCache.set(k, { zeit: Date.now(), wert: null, fehlt: true })
                 }
             }))
             res.json({ markt, kurse: aus })

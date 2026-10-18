@@ -534,7 +534,12 @@ export async function ladeLlmConfigFuerAufgabe(aufgabenId = '') {
     const override = aufgabenId ? taskProviders[aufgabenId] : ''
     if (override) {
         // Format: 'provider/modell' oder 'provider'
-        const [provider, model] = String(override).split('/').map((x) => x.trim())
+        // Nur am ERSTEN „/" trennen: `openrouter/anthropic/claude-…` ist Anbieter
+        // `openrouter` mit Modell `anthropic/claude-…` — split('/') schnitt das Modell ab.
+        const roh = String(override)
+        const i = roh.indexOf('/')
+        const provider = (i < 0 ? roh : roh.slice(0, i)).trim()
+        const model = i < 0 ? undefined : roh.slice(i + 1).trim()
         if (provider) {
             const spalte = keySpalte(provider)
             let apiKey = ''

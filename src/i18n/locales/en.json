@@ -5388,7 +5388,7 @@
       "showPocPer": "Highest-volume price per period (from chart candles); stays until price touches it again.",
       "pocPerDist": "Levels further than this many ATR(14) from price are hidden, not deleted. 0 = show all.",
       "pocCPiv": "Wick levels form at pivots with this many candles left/right — only if the POC lies in the wick.",
-      "pocCTf": "Timeframe of the intrabar candles; at most 4500 are loaded.",
+      "pocCTf": "Timeframe of the intrabar candles; at most 3000 are loaded.",
       "vliqBody": "On = zone is the candle body, off = whole candle incl. wicks.",
       "showATH": "VWAP from the highest high of the LOADED range; scrolling further back can move it.",
       "showATL": "VWAP from the lowest low of the loaded range.",

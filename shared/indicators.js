@@ -60,6 +60,7 @@ export function pivotLows(candles, left, right) {
  * `period` Werte sind null (noch keine Aussage möglich).
  */
 export function rsi(candles, period = 14) {
+    period = Math.max(1, Math.round(Number(period) || 1))   // eine gebrochene Länge griff auf candles[i − 14.5]
     const out = new Array(candles.length).fill(null)
     if (candles.length <= period) return out
 
@@ -87,6 +88,7 @@ export function rsi(candles, period = 14) {
 
 /** Average True Range (Wilder). Array-Länge wie `candles`, führende null. */
 export function atr(candles, period = 14) {
+    period = Math.max(1, Math.round(Number(period) || 1))   // eine gebrochene Länge griff auf candles[i − 14.5]
     const out = new Array(candles.length).fill(null)
     if (candles.length <= period) return out
 
@@ -114,6 +116,7 @@ export function atr(candles, period = 14) {
 
 /** Exponentieller gleitender Durchschnitt über Schlusskurse. */
 export function ema(candles, period) {
+    period = Math.max(1, Math.round(Number(period) || 1))   // eine gebrochene Länge griff auf candles[i − 14.5]
     const out = new Array(candles.length).fill(null)
     if (candles.length < period) return out
     const k = 2 / (period + 1)
@@ -576,6 +579,7 @@ export function dayOpen(candles) {
 
 /** Einfacher gleitender Durchschnitt über Schlusskurse. */
 export function sma(candles, period) {
+    period = Math.max(1, Math.round(Number(period) || 1))   // eine gebrochene Länge griff auf candles[i − 14.5]
     const out = new Array(candles.length).fill(null)
     if (candles.length < period || period < 1) return out
     let summe = 0

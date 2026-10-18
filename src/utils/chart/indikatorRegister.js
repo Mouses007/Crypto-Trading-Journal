@@ -482,8 +482,13 @@ export function saubereParams(typ, roh) {
     for (const x of def?.params || []) {
         const v = roh?.[x.key]
         if (x.typ === 'zahl') {
-            const n = Number(v)
-            p[x.key] = Number.isFinite(n) ? Math.min(x.max, Math.max(x.min, n)) : x.vorgabe
+            // Leeres Feld (v-model.number liefert '') ist die Vorgabe, nicht 0 → Minimum (EMA 1).
+            const n = v === '' || v == null ? NaN : Number(v)
+            if (!Number.isFinite(n)) { p[x.key] = x.vorgabe; continue }
+            // Ganzzahlige Längen runden: 14.5 liess ema/sma/rsi auf candles[i − 14.5] greifen und werfen.
+            // Faktoren mit Schritt 0.1 (Bollinger 2.25) bleiben, wie eingegeben.
+            const gerundet = (x.schritt ?? 1) >= 1 ? Math.round(n) : n
+            p[x.key] = Math.min(x.max, Math.max(x.min, gerundet))
         } else if (x.typ === 'schalter') {
             p[x.key] = typeof v === 'boolean' ? v : x.vorgabe
         } else if (x.typ === 'farbe') {

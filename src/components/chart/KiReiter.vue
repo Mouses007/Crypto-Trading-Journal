@@ -25,27 +25,45 @@ const analyse = ref(null)
 const laeuft = ref(false)
 const fehler = ref('')
 const uebernommen = ref(new Set())
+const uebernimmtAlle = ref(false)
+
+/*
+ * Jede Antwort gehört zu dem Panel-Stand, für den sie bestellt wurde. Ein Lauf
+ * dauert bis zu 2 × 90 s; wer währenddessen das Symbol wechselt, bekam sonst
+ * die BTC-Analyse im ETH-Panel — und „Alle übernehmen" legte BTC-Preise als
+ * ETH-Zeichnungen an.
+ */
+const stand = () => `${props.panel.symbol}|${props.panel.interval}|${props.panel.markt === 'spot' ? 'spot' : 'futures'}`
+let nr = 0
 
 async function ladeLetzte() {
+    const meine = ++nr
+    const fuer = stand()
     fehler.value = ''
     uebernommen.value = new Set()
     try {
-        const { data } = await axios.get('/api/chart/ki-analyse', { params: { symbol: props.panel.symbol, interval: props.panel.interval } })
+        const { data } = await axios.get('/api/chart/ki-analyse', { params: { symbol: props.panel.symbol, interval: props.panel.interval, markt: props.panel.markt } })
+        if (meine !== nr || fuer !== stand()) return
         analyse.value = data.leer ? null : data
-    } catch { analyse.value = null }
+    } catch { if (meine === nr) analyse.value = null }
     emit('vorschau', analyse.value)
 }
 
 async function erstelle() {
+    const meine = ++nr
+    const fuer = stand()
     laeuft.value = true
     fehler.value = ''
     try {
         const { data } = await axios.post('/api/chart/ki-analyse', { symbol: props.panel.symbol, interval: props.panel.interval, markt: props.panel.markt })
+        // Inzwischen anderes Symbol: verwerfen. Der Server hat sie abgelegt — zurück
+        // auf dem alten Symbol zeigt der Reiter sie wieder, ohne neu zu bezahlen.
+        if (meine !== nr || fuer !== stand()) return
         analyse.value = data
         uebernommen.value = new Set()
         emit('vorschau', data)
     } catch (e) {
-        fehler.value = e.response?.data?.error || e.message
+        if (meine === nr && fuer === stand()) fehler.value = e.response?.data?.error || e.message
     } finally {
         laeuft.value = false
     }
@@ -55,14 +73,19 @@ async function uebernimm(art, i) {
     const a = analyse.value
     const roh = art === 'linie' ? linieAlsZeichnung(a.linien[i]) : zoneAlsZeichnung(a.zonen[i], a.kerzenVon, a.kerzenBis)
     // Übernommen heisst: eigene Linie — durchgezogen statt gestrichelt.
-    const z = await legeAn({ symbol: props.panel.symbol, ...roh, stil: { ...roh.stil, strich: 'voll' }, sichtbarAuf: null, gesperrt: false, versteckt: false })
+    // Unter dem Symbol der ANALYSE, nicht des Panels — die beiden können auseinanderlaufen.
+    const z = await legeAn({ symbol: a.symbol || props.panel.symbol, ...roh, stil: { ...roh.stil, strich: 'voll' }, sichtbarAuf: null, gesperrt: false, versteckt: false })
     if (z) uebernommen.value = new Set([...uebernommen.value, `${art}${i}`])
 }
 
 async function alleUebernehmen() {
-    const a = analyse.value
-    for (let i = 0; i < a.linien.length; i++) if (!uebernommen.value.has(`linie${i}`)) await uebernimm('linie', i)
-    for (let i = 0; i < a.zonen.length; i++) if (!uebernommen.value.has(`zone${i}`)) await uebernimm('zone', i)
+    if (uebernimmtAlle.value) return     // zweiter Klick während des ersten legte alles doppelt an
+    uebernimmtAlle.value = true
+    try {
+        const a = analyse.value
+        for (let i = 0; i < a.linien.length; i++) if (!uebernommen.value.has(`linie${i}`)) await uebernimm('linie', i)
+        for (let i = 0; i < a.zonen.length; i++) if (!uebernommen.value.has(`zone${i}`)) await uebernimm('zone', i)
+    } finally { uebernimmtAlle.value = false }
 }
 
 function verwerfen() {
@@ -73,7 +96,7 @@ function verwerfen() {
 const zeit = (ms) => (ms ? new Date(ms).toLocaleString() : '')
 const preis = (p) => (Math.abs(p) >= 1000 ? p.toFixed(1) : Math.abs(p) >= 1 ? p.toFixed(3) : p.toPrecision(4))
 
-watch(() => [props.panel.symbol, props.panel.interval], ladeLetzte, { immediate: true })
+watch(() => [props.panel.symbol, props.panel.interval, props.panel.markt], ladeLetzte, { immediate: true })
 </script>
 
 <template>
@@ -99,7 +122,7 @@ watch(() => [props.panel.symbol, props.panel.interval], ladeLetzte, { immediate:
 
             <div v-if="analyse.linien?.length || analyse.zonen?.length" class="abschnitt">
                 {{ t('chart.ki.vorschlaege') }}
-                <button class="btn btn-sm btn-link p-0 ms-2" @click="alleUebernehmen">{{ t('chart.ki.alleUebernehmen') }}</button>
+                <button class="btn btn-sm btn-link p-0 ms-2" :disabled="uebernimmtAlle" @click="alleUebernehmen">{{ t('chart.ki.alleUebernehmen') }}</button>
             </div>
             <div v-for="(l, i) in analyse.linien" :key="'l' + i" class="vorschlag">
                 <div class="zeile">

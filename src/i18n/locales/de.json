@@ -5393,7 +5393,7 @@
       "pocPerDist": "Level weiter als so viele ATR(14) vom Kurs werden ausgeblendet, nicht gelöscht. 0 = alle zeigen.",
       "showPocC": "Preis mit dem meisten Volumen INNERHALB jeder Kerze, aus Intrabar-Kerzen von Binance. Ältere Kerzen ohne geladene Intrabar-Daten bekommen keinen.",
       "pocCPiv": "Docht-Level entstehen an Pivots mit so vielen Kerzen links/rechts — nur wenn der POC im Docht liegt (Wiederanlauf-Ziel).",
-      "pocCTf": "Zeiteinheit der Intrabar-Kerzen. Kleiner = genauer; geladen werden höchstens 4500 davon.",
+      "pocCTf": "Zeiteinheit der Intrabar-Kerzen. Kleiner = genauer; geladen werden höchstens 3000 davon.",
       "showVliq": "Jede Vektorkerze wird zur Zone; Folgekerzen fressen den durchhandelten Teil weg. Sichtbar bleibt nur die noch nicht abgeholte Liquidität.",
       "vliqBody": "An = Zone ist der Kerzenkörper, aus = ganze Kerze mit Dochten.",
       "showDOpen": "Eröffnungskurs des heutigen Tages (UTC) als gestrichelte Linie. Kurs darüber = Käufer haben die Kontrolle. Nur auf Intraday-Charts."

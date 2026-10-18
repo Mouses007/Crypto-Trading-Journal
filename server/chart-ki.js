@@ -181,17 +181,32 @@ export function pruefeChartAntwort(json, { vonT, bisT, iv, preisMin, preisMax, e
 const cache = new Map()      // `${symbol}|${interval}` → { ts, payload }
 const laufend = new Map()
 
-export function letzteChartAnalyse(symbol, interval) {
-    const e = cache.get(`${symbol}|${interval}`)
+/*
+ * Schlüssel mit Markt: Spot und Perpetual haben andere Kerzen — eine geteilte
+ * Ablage zeigte die Spot-Analyse im Futures-Panel, und die 45-s-Sperre gab der
+ * Futures-Anfrage das Spot-Ergebnis.
+ */
+const schluesselVon = (symbol, interval, markt) => `${symbol}|${interval}|${markt === 'spot' ? 'spot' : 'futures'}`
+// Fehlschläge sperren ebenfalls — die Antwort war bezahlt, ein sofortiger zweiter Klick bezahlte erneut.
+const fehlschlaege = new Map()   // schluessel → { ts, meldung }
+
+export function letzteChartAnalyse(symbol, interval, markt = 'futures') {
+    const e = cache.get(schluesselVon(symbol, interval, markt))
     if (!e || Date.now() - e.ts > TTL_MS) return null
     return { ...e.payload, stand: e.ts, alterMs: Date.now() - e.ts }
 }
 
 export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' }) {
-    const schluessel = `${symbol}|${interval}`
+    const schluessel = schluesselVon(symbol, interval, markt)
     const alt = cache.get(schluessel)
     if (alt && Date.now() - alt.ts < SPERRE_MS) return { ...alt.payload, stand: alt.ts, alterMs: Date.now() - alt.ts, aus: 'sperre' }
     if (laufend.has(schluessel)) return laufend.get(schluessel)
+    const fehl = fehlschlaege.get(schluessel)
+    if (fehl && Date.now() - fehl.ts < SPERRE_MS) {
+        const e = new Error(`${fehl.meldung} — nächster Versuch in ${Math.ceil((SPERRE_MS - (Date.now() - fehl.ts)) / 1000)} s`)
+        e.status = 429
+        throw e
+    }
 
     const lauf = (async () => {
         const iv = timeframeMs(interval)
@@ -222,9 +237,12 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
         const user = baueChartEingabe({ symbol, interval, kerzen, zeichnungen, hebelzonen: hebel, trades })
         const buchung = { zweck: 'chart-analyse', ausloeser: 'manuell', bezug: { typ: 'symbol', id: symbol } }
         let antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000, ...buchung })
+        // Kosten beider Aufrufe zusammen anzeigen — bei abgeschnittener Antwort wurde der erste auch bezahlt.
+        let kosten = antwort.costUsd ?? null
         if (!antwort.json && antwort.abgeschnitten) {
             cfg.maxTokens = 6000
             antwort = await callLLMJson(cfg, { system, user, timeoutMs: 90000, ...buchung })
+            if (antwort.costUsd != null) kosten = (kosten ?? 0) + antwort.costUsd
         }
         const preise = kerzen.flatMap((k) => [k.h, k.l])
         const ergebnis = pruefeChartAntwort(antwort.json, {
@@ -235,14 +253,21 @@ export async function erzeugeChartAnalyse({ symbol, interval, markt = 'futures' 
 
         const payload = {
             symbol, interval, ...ergebnis, kerzenVon: vonT, kerzenBis: bisT,
-            provider: cfg.provider, model: cfg.model, costUsd: antwort.costUsd ?? null,
+            markt, provider: cfg.provider, model: cfg.model, costUsd: kosten,
         }
         cache.set(schluessel, { ts: Date.now(), payload })
         while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value)
         return { ...payload, stand: Date.now(), alterMs: 0, aus: 'neu' }
     })()
     laufend.set(schluessel, lauf)
-    try { return await lauf } finally { laufend.delete(schluessel) }
+    try {
+        const r = await lauf
+        fehlschlaege.delete(schluessel)
+        return r
+    } catch (e) {
+        if (e.status !== 429) fehlschlaege.set(schluessel, { ts: Date.now(), meldung: e.message })
+        throw e
+    } finally { laufend.delete(schluessel) }
 }
 
 export function setupChartKiRoutes(app) {
@@ -250,7 +275,8 @@ export function setupChartKiRoutes(app) {
         const symbol = String(req.query.symbol || '').toUpperCase()
         const interval = String(req.query.interval || '')
         res.set('Cache-Control', 'no-store')
-        res.json(letzteChartAnalyse(symbol, interval) || { leer: true, symbol, interval })
+        const markt = req.query.markt === 'spot' ? 'spot' : 'futures'
+        res.json(letzteChartAnalyse(symbol, interval, markt) || { leer: true, symbol, interval, markt })
     })
 
     app.post('/api/chart/ki-analyse', async (req, res) => {
@@ -262,7 +288,7 @@ export function setupChartKiRoutes(app) {
             res.json(await erzeugeChartAnalyse({ symbol, interval, markt: req.body?.markt === 'spot' ? 'spot' : 'futures' }))
         } catch (e) {
             logWarn('chart-ki', `${symbol} ${interval}: ${e.message}`)
-            res.status(502).json({ error: e.message })
+            res.status(e.status === 429 ? 429 : 502).json({ error: e.message })
         }
     })
 }

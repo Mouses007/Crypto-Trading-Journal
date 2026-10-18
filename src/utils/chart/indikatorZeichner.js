@@ -175,6 +175,13 @@ export class IndikatorZeichner {
         this.kerzen = []
     }
 
+    /** Alle fremden Datenquellen verwerfen (Symbol- oder Zeiteinheitwechsel). */
+    leereExtern() {
+        const betroffen = this.eintraege.some((e) => e.def.extern && this.extern[e.def.extern] != null)
+        this.extern = {}
+        if (betroffen) this.daten(this.kerzen)
+    }
+
     /** Eine fremde Datenquelle setzen und die betroffenen Reihen neu rechnen. */
     setzeExtern(name, daten) {
         this.extern = { ...this.extern, [name]: daten }

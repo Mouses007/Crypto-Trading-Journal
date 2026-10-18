@@ -31,6 +31,26 @@ export function zeitZuLogisch(t, zeiten, iv) {
 }
 
 /**
+ * Zeit eines EREIGNISSES (Einstieg, Ausstieg, Teil-Fill) → logischer Index
+ * INNERHALB seiner Kerze.
+ *
+ * Zeichnungen teilen linear von Öffnungszeit zu Öffnungszeit — für eine Linie
+ * richtig, für ein Ereignis nicht: die Kerze i liegt auf dem Bildschirm um i
+ * zentriert, belegt also i − 0,5 … i + 0,5. Ein Trade am 11.10. um 14:00 auf
+ * dem Tageschart (Anteil 0,58) landete bei 1,58 und damit über der Kerze vom
+ * 12.10. Hier: i − 0,45 + 0,9 · Anteil — innerhalb der eigenen Kerze, die
+ * Reihenfolge innerhalb einer Kerze bleibt erhalten, und ein Ereignis genau
+ * zur Eröffnung sitzt nicht auf der Grenze zur Vorkerze.
+ */
+export function ereignisZuLogisch(t, zeiten, iv) {
+    const L = zeitZuLogisch(t, zeiten, iv)
+    if (L == null) return null
+    const i = Math.floor(L + 1e-9)
+    const anteil = Math.min(1, Math.max(0, L - i))
+    return i - 0.45 + 0.9 * anteil
+}
+
+/**
  * Logischer Index → x-Pixel. `logicalToCoordinate` der Bibliothek nimmt nur
  * GANZE Indizes ernst und liefert für 899.5 schlicht 0 (gemessen 18.10.2026,
  * v5.2.1) — ein Ausstieg zur halben Kerze und jede Linie aus einer anderen

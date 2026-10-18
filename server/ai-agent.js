@@ -67,7 +67,8 @@ async function loadAiSettings() {
             const taskProviders = settings.aiTaskProviders ? JSON.parse(settings.aiTaskProviders) : {}
             const taskAssignment = taskProviders['agent']
             if (taskAssignment && typeof taskAssignment === 'string' && taskAssignment.includes('/')) {
-                [provider, model] = taskAssignment.split('/').map(s => s.trim())
+                // nur am ersten Schrägstrich trennen: `openrouter/anthropic/claude-…` behält sein Modell
+                    { const i = taskAssignment.indexOf('/'); provider = taskAssignment.slice(0, i).trim(); model = taskAssignment.slice(i + 1).trim() }
             }
         } catch (e) { /* JSON parse error */ }
         

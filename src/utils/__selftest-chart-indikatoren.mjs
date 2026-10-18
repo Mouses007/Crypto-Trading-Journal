@@ -125,5 +125,16 @@ check('Kurzname BB', kurzname('bb', { laenge: 20, mult: 2, basis: 'sma' }, 'BB')
     check('neue Instanz trägt die Vorgaben', a.params.laenge === 21 && a.sichtbar === true)
 }
 
+console.log('\nEingaben säubern\n')
+{
+    const k = Array.from({ length: 100 }, (_, i) => ({ t: i * 3_600_000, o: 100 + i, h: 101 + i, l: 99 + i, c: 100 + i, v: 10 }))
+    let wirft = false
+    try { rechneIndikator('ema', k, { laenge: 14.5 }) } catch { wirft = true }
+    check('Länge 14.5 wird gerundet statt zu werfen (griff auf candles[i − 14.5])', !wirft && saubereParams('ema', { laenge: 14.5 }).laenge === 15)
+    check('leeres Feld ergibt die Vorgabe, nicht das Minimum (EMA 1)', saubereParams('ema', { laenge: '' }).laenge === vorgaben('ema').laenge && saubereParams('ema', { laenge: null }).laenge === vorgaben('ema').laenge)
+    check('Gegenprobe: Faktor mit Schritt 0.1 bleibt wie eingegeben (2.25)', saubereParams('bb', { mult: 2.25 }).mult === 2.25)
+    check('shared/ema rundet selbst (Strategien mit gebrochener Länge)', ema(k, 14.5)[99] === ema(k, 15)[99])
+}
+
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
 if (fehlgeschlagen) { console.log('Fehler:', fehler.join(', ')); process.exit(1) }

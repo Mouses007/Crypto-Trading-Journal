@@ -14,6 +14,7 @@ import {
     fibPreise, positionWerte, magnet, imRechteck, messung, dauerText,
 } from './chart/zeichnungen/geometrie.js'
 import { WERKZEUGE, stilFuer, STANDARD_STIL } from './chart/zeichnungen/werkzeuge.js'
+import { ereignisZuLogisch } from './chart/zeichnungen/geometrie.js'
 
 let bestanden = 0
 let fehlgeschlagen = 0
@@ -105,6 +106,20 @@ console.log('\nWerkzeuge\n')
     check('Jedes speicherbare Werkzeug hat eine Vorgabe-Gestaltung', gespeichert.every((t) => STANDARD_STIL[t]))
     check('Werkzeugleiste und Server-Liste decken sich (ohne flüchtige)', alle.filter((t) => !fluechtig.includes(t)).sort().join() === [...gespeichert].sort().join())
     check('Eigener Stil überschreibt die Vorgabe, Rest bleibt', stilFuer({ typ: 'trendlinie', stil: { farbe: '#fff' } }).farbe === '#fff' && stilFuer({ typ: 'trendlinie', stil: { farbe: '#fff' } }).breite === 2)
+}
+
+console.log('\nEreignisse in ihrer Kerze (Journal)\n')
+{
+    const T = 86_400_000, t0 = Date.UTC(2026, 9, 10)
+    const zeiten = [0, 1, 2, 3].map((i) => t0 + i * T)
+    const L = ereignisZuLogisch(t0 + T + 14 * 3_600_000, zeiten, T)
+    check('Trade 11.10. 14:00 auf 1d sitzt über der 11.10.-Kerze (Bereich 0,5…1,5), nicht über dem 12.10.', L > 0.5 && L < 1.5, String(L))
+    const linie = zeitZuLogisch(t0 + T + 14 * 3_600_000, zeiten, T)
+    check('Gegenprobe: dieselbe Zeit als Zeichnungspunkt bleibt bei 1,58 (Linien teilen zwischen Öffnungen)', Math.abs(linie - 1.5833) < 0.001, String(linie))
+    const auf = ereignisZuLogisch(t0 + T, zeiten, T)
+    check('Ereignis genau zur Eröffnung liegt innerhalb der Kerze, nicht auf der Grenze', auf > 0.5 && auf < 1, String(auf))
+    const a = ereignisZuLogisch(t0 + T + 3_600_000, zeiten, T), b = ereignisZuLogisch(t0 + T + 20 * 3_600_000, zeiten, T)
+    check('Reihenfolge in derselben Kerze bleibt (Einstieg 01:00 vor Ausstieg 20:00)', a < b && Math.round(a) === 1 && Math.round(b) === 1)
 }
 
 console.log(`\n${bestanden} bestanden, ${fehlgeschlagen} fehlgeschlagen`)
