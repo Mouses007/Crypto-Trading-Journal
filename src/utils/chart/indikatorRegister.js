@@ -33,6 +33,8 @@ import {
     sma, ema, bollinger, vwap, vwapBand, rsi, macd, stochastic, stochRsi, atr, adx, obv, mfi, volumeSma, smaSerie,
 } from '../../../shared/indicators.js'
 import { rechneVwapVector } from './vwapVector.js'
+import { lsobCv } from '../../../shared/lsobCv.js'
+import { gussCv } from '../../../shared/gussCv.js'
 
 /** Preisquelle — wie bei TradingView wählbar. */
 export const QUELLEN = {
@@ -279,6 +281,44 @@ export const GUSS_PARAMS = [
     { key: 'gussEmas', typ: 'schalter', vorgabe: true, gruppe: 'sigBild' },
     ...SIGNAL_DARSTELLUNG,
 ]
+// ── Nachbauten der TradingView-Indikatoren LSOB V3 / GUSS V8 (Claudius Vertesi) ──
+/** Letzte Kerze weglassen, wenn sie noch läuft (ihr Schluss liegt in der Zukunft). */
+function laufendRaus(k) {
+    if (k.length < 2) return k
+    const iv = k[k.length - 1].t - k[k.length - 2].t
+    return k[k.length - 1].t + iv > Date.now() ? k.slice(0, -1) : k
+}
+// Rechnung in shared/lsobCv.js / shared/gussCv.js, Selbsttest gegen das Original.
+const CZ = (key, vorgabe, min, max, schritt, gruppe) => ({ key, typ: 'zahl', vorgabe, min, max, schritt, gruppe })
+const CS = (key, vorgabe, gruppe) => ({ key, typ: 'schalter', vorgabe, gruppe })
+const CF = (key, vorgabe, gruppe) => ({ key, typ: 'farbe', vorgabe, gruppe })
+export const LSOB_CV_PARAMS = [
+    CZ('pivotLaenge', 5, 1, 50, 1, 'cvKern'),
+    CZ('invalidierungPct', 20, 0, 100, 1, 'cvKern'),
+    CZ('retestPct', 10, 0, 100, 1, 'cvKern'),
+    CS('strengDocht', false, 'cvKern'),
+    CZ('maxDochtPct', 50, 0, 100, 1, 'cvKern'),
+    CS('cvShort', true, 'cvBild'), CF('cvFarbeShort', '#ef5350', 'cvBild'),
+    CS('cvLong', true, 'cvBild'), CF('cvFarbeLong', '#4caf50', 'cvBild'),
+    CS('cvLabels', true, 'cvBild'), CS('cvSignale', true, 'cvBild'),
+    CS('cvVorwarn', false, 'cvVorwarn'), CZ('vorwarnAtr', 0.5, 0, 10, 0.1, 'cvVorwarn'), CF('cvVorwarnFarbe', '#2962ff', 'cvVorwarn'),
+    CZ('vorwarnVerzoegerung', 0, 0, 100, 1, 'cvVorwarn'), CZ('vorwarnAblauf', 150, 1, 2000, 1, 'cvVorwarn'),
+]
+export const GUSS_CV_PARAMS = [
+    CZ('lookback', 20, 2, 200, 1, 'gcvAllg'), CZ('bestaetigung', 0, 0, 20, 1, 'gcvAllg'), CZ('timeout', 20, 1, 200, 1, 'gcvAllg'),
+    CS('trendFilter', true, 'gcvAllg'), CS('ohne200', false, 'gcvAllg'),
+    CZ('ema0', 21, 2, 500, 1, 'gcvEma'), CZ('ema1', 50, 2, 500, 1, 'gcvEma'), CZ('ema2', 200, 2, 1000, 1, 'gcvEma'), CS('zeigeEmas', true, 'gcvEma'),
+    CS('vorwarn0', false, 'gcvEma'), CZ('vw0', 14, 2, 500, 1, 'gcvEma'),
+    CS('vorwarn1', false, 'gcvEma'), CZ('vw1', 35, 2, 500, 1, 'gcvEma'),
+    CS('vorwarn2', false, 'gcvEma'), CZ('vw2', 170, 2, 1000, 1, 'gcvEma'),
+    CS('abstandFilter', true, 'gcvAtr'), CZ('atrLaenge', 14, 2, 100, 1, 'gcvAtr'),
+    CZ('minAbstand2150', 0.5, 0, 10, 0.1, 'gcvAtr'), CZ('minAbstand50200', 0.5, 0, 10, 0.1, 'gcvAtr'),
+    CS('preisFilter', true, 'gcvAtr'), CZ('minAbstandPreis', 0.5, 0, 10, 0.1, 'gcvAtr'),
+    CS('zeigeLong', true, 'gcvZiel'), CS('zeigeShort', true, 'gcvZiel'),
+    CS('ziel21', false, 'gcvZiel'), CS('ziel50', true, 'gcvZiel'), CS('ziel200', true, 'gcvZiel'),
+    CZ('maxGegenkerzen', 1, 0, 10, 1, 'gcvGegen'), CZ('maxGegenkerzenAtr', 0.1, 0, 5, 0.05, 'gcvGegen'),
+]
+
 /** Nur die Strategie-Parameter einer LSOB/GUSS-Instanz (für /api/chart/signale). */
 export function strategieParams(typ, roh) {
     const p = saubereParams(typ, roh)
@@ -543,6 +583,41 @@ export const INDIKATOREN = {
             { key: 'ema200', art: 'linie', farbe: '#ab47bc', breite: 1 },
         ] : []),
         rechne: (k, p) => (p.gussEmas ? { ema21: ema(k, p.emaFast), ema50: ema(k, p.emaEntry), ema200: ema(k, p.emaSlow) } : {}),
+    },
+    lsobCv: {
+        ort: 'preis',
+        zeichner: 'cv',
+        kurzOhneParams: true,
+        params: LSOB_CV_PARAMS,
+        ausgaben: [],
+        // Ohne die laufende Kerze: sonst gilt ein frisches Pivot zu früh als bestätigt (5 Kerzen
+        // rechts, davon eine unfertig) und eine Box erscheint, die das Original noch nicht zeigt.
+        rechne: (k, p) => ({ _cv: { art: 'lsob', ...lsobCv(laufendRaus(k), p) } }),
+    },
+    gussCv: {
+        ort: 'preis',
+        zeichner: 'cv',
+        kurzOhneParams: true,
+        params: GUSS_CV_PARAMS,
+        ausgaben: [],
+        ausgabenFuer: (p) => [
+            ...(p.zeigeEmas ? [
+                { key: 'e0', art: 'linie', farbe: '#f5e663', breite: 1 },
+                { key: 'e1', art: 'linie', farbe: '#ff9800', breite: 2 },
+                { key: 'e2', art: 'linie', farbe: '#d1d4dc', breite: 2 },
+            ] : []),
+            ...(p.vorwarn0 ? [{ key: 'w0', art: 'linie', farbe: 'rgba(245,230,99,0.5)', breite: 1, strich: 'gestrichelt' }] : []),
+            ...(p.vorwarn1 ? [{ key: 'w1', art: 'linie', farbe: 'rgba(255,152,0,0.5)', breite: 1, strich: 'gestrichelt' }] : []),
+            ...(p.vorwarn2 ? [{ key: 'w2', art: 'linie', farbe: 'rgba(209,212,220,0.5)', breite: 1, strich: 'gestrichelt' }] : []),
+        ],
+        rechne: (k, p) => {
+            const r = gussCv(k, p)
+            return {
+                e0: r.emas.e0, e1: r.emas.e1, e2: r.emas.e2,
+                w0: p.vorwarn0 ? ema(k, p.vw0) : null, w1: p.vorwarn1 ? ema(k, p.vw1) : null, w2: p.vorwarn2 ? ema(k, p.vw2) : null,
+                _cv: { art: 'guss', ereignisse: r.ereignisse },
+            }
+        },
     },
     volSma: {
         ort: 'eigen',

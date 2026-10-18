@@ -18,6 +18,7 @@ import { INDIKATOREN, rechneIndikator, ausgabenVon, saubereParams } from './indi
 import { MomentumZeichnung } from './momentumZeichnung.js'
 import { VwapVectorZeichnung, vektorFarben } from './vwapVectorZeichnung.js'
 import { SignalZeichnung } from './signalZeichnung.js'
+import { CvZeichnung } from './cvZeichnung.js'
 import { logischZuX } from './zeichnungen/geometrie.js'
 
 const GRUEN = 'rgba(38,166,154,0.7)'
@@ -244,7 +245,7 @@ export class IndikatorZeichner {
                     }, pane)
                     serien[a.key].priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.3 } })
                 } else {
-                    serien[a.key] = this.chart.addSeries(LineSeries, { ...gemeinsam, ...(format || {}), color: farbe, lineWidth: a.breite || 1 }, pane)
+                    serien[a.key] = this.chart.addSeries(LineSeries, { ...gemeinsam, ...(format || {}), color: farbe, lineWidth: a.breite || 1, ...(a.strich === 'gestrichelt' ? { lineStyle: LineStyle.Dashed } : {}) }, pane)
                 }
             }
             const erste = serien[ausgaben.find((a) => a.art === 'linie' || a.art === 'flaeche')?.key] || Object.values(serien)[0]
@@ -266,7 +267,9 @@ export class IndikatorZeichner {
                     ? new VwapVectorZeichnung({ chart: this.chart, serie: this.kerzenSerie })
                     : def.zeichner === 'signale' && this.kerzenSerie
                         ? new SignalZeichnung({ chart: this.chart, serie: this.kerzenSerie })
-                        : null
+                        : def.zeichner === 'cv' && this.kerzenSerie
+                            ? new CvZeichnung({ chart: this.chart, serie: this.kerzenSerie })
+                            : null
             const titel = def.ort === 'eigen' && erste && this.titelFuer ? new FensterTitel(erste, this.titelFuer(instanz)) : null
             this.eintraege.push({ instanz, def, ausgaben, serien, werte: {}, zeichnung, titel, band })
         }
@@ -318,6 +321,7 @@ export class IndikatorZeichner {
     zeichnungSetzen(e) {
         if (e.band) e.band.setze(e.werte[e.def.band.linie])
         if (e.def.zeichner === 'vwapVector') e.zeichnung?.setze(e.werte._vv, this.kerzen, saubereParams(e.instanz.typ, e.instanz.params))
+        else if (e.def.zeichner === 'cv') e.zeichnung?.setze(e.werte._cv, this.zeiten, this.kerzenAbstand(), saubereParams(e.instanz.typ, e.instanz.params))
         else if (e.def.zeichner === 'signale') e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand(), saubereParams(e.instanz.typ, e.instanz.params))
         else e.zeichnung?.setze(this.extern[e.def.extern], this.zeiten, this.kerzenAbstand())
     }
